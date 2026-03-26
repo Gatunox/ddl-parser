@@ -254,14 +254,8 @@ body.light input.tree-search:focus, body.light #treeSearch:focus { background: #
 .hl-pic          { color: var(--accent); }
 .hl-field-id     { color: var(--warning); }
 .hl-type-kw      { color: var(--accent); }
-.ddl-path-bar    { padding: 0; background: var(--bg-deep); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; gap: 0; flex-shrink: 0; }
-.ddl-path-txt    { color: var(--text-dim); font-size: 10px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; padding: 0 6px 0 8px; display: flex; align-items: center; }
 .path-btn-group  { display: flex; flex-shrink: 0; overflow: hidden; margin-left: 4px; align-self: stretch; }
 .path-btn        { border: none !important; border-radius: 0 !important; padding: 0 8px !important; font-size: 11px !important; background: transparent !important; color: var(--text) !important; align-self: stretch !important; }
-#ddlName         { background: #1e2d3d; border: none; border-left: 1px solid var(--border); border-right: 1px solid var(--border); color: var(--text); padding: 6px 8px; font-size: calc(var(--sz-mono) - 0.5px); font-family: var(--font-mono); outline: none; width: 220px; align-self: stretch; flex-shrink: 0; }
-#ddlName:focus   { background: #1e2d3d; box-shadow: inset 0 0 0 2px var(--hl-hover); }
-body.light #ddlName { background: #d0d7de; }
-body.light #ddlName:focus { background: #d0d7de; box-shadow: inset 0 0 0 2px var(--hl-hover); }
 .path-btn:last-child { border-right: none !important; }
 .path-btn:hover  { background: rgba(88,166,255,0.12) !important; color: var(--accent) !important; box-shadow: inset 0 0 0 2px var(--accent) !important; }
 .path-btn-dim    { color: var(--text-dim) !important; }
@@ -381,7 +375,7 @@ body.light .msg-hl-wrap:has(textarea[readonly]){ background: #f0f2f5; }
   white-space: pre;
   overflow: auto;
   scrollbar-width: none;   /* Firefox */
-  color: var(--text);   /* non-highlighted text matches textarea colour */
+  color: var(--text-dim);   /* non-highlighted text is dimmed so highlights stand out */
   box-sizing: border-box;
 }
 .msg-hl-overlay::-webkit-scrollbar { display: none; }  /* Chrome/Safari */
@@ -461,12 +455,23 @@ input[type="text"]:focus { border-color: var(--accent); }
 .badge-ascii  { background: #1a3a1a; color: var(--success); border: 2px solid var(--success); }
 .badge-dump   { background: #3a2a1a; color: var(--warning); border: 2px solid var(--warning); }
 .badge-count  { background: #1a2a3a; color: var(--accent); border: 2px solid var(--accent); }
-.badge-netard { background: #1a2a3a; color: #7ee8fa; border: 2px solid #7ee8fa; }
+.badge-netard       { background: #1a2a3a; color: #7ee8fa; border: 2px solid #7ee8fa; }
+.badge-netard-hex   { background: #2d1b69; color: #c4b5fd; border: 2px solid #7c3aed; }
+.badge-netard-dump  { background: #3a2a1a; color: #fdba74; border: 2px solid #ea7c2a; }
+.badge-netard-oct   { background: #1a2a1a; color: #86efac; border: 2px solid #22c55e; }
+.badge-netard-ebcdic{ background: #2a2010; color: #fde68a; border: 2px solid #d97706; }
+.badge-netard-ascii { background: #0f2a2a; color: #5eead4; border: 2px solid #0d9488; }
 .badge-locked { background: #2a1a1a; color: var(--accent2); border: 2px solid var(--accent2); }
 /* ---- token map tree badges ---- */
 .tree-dirty .tree-ddl-lbl { color: var(--warning) !important; }
 .tree-tkn-map  { display:inline-block; font-size:9px; font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; background:rgba(20,184,166,0.18); color:#2dd4bf; border:2px solid #2dd4bf; letter-spacing:0.05em; flex-shrink:0; }
 .tree-tkn-id   { display:inline-block; font-size:9px; font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; background:rgba(148,130,255,0.18); color:#9482ff; border:2px solid #9482ff; letter-spacing:0.05em; flex-shrink:0; }
+.tree-type-badge { display:inline-block; font-size:9px; font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; letter-spacing:0.05em; flex-shrink:0; }
+.tree-type-badge.tbtype-iso  { background:rgba(210,153,34,0.18);  color:var(--warning); border:2px solid var(--warning); }
+.tree-type-badge.tbtype-stm  { background:rgba(88,166,255,0.18);  color:var(--accent);  border:2px solid var(--accent);  }
+.tree-type-badge.tbtype-pstm { background:rgba(63,185,80,0.18);   color:var(--success); border:2px solid var(--success); }
+.tree-type-badge.tbtype-ndc  { background:rgba(247,129,102,0.18); color:var(--accent2); border:2px solid var(--accent2); }
+.tree-type-badge.tbtype-b24  { background:rgba(148,130,255,0.18); color:#9482ff;        border:2px solid #9482ff; }
 /* ---- per-message type badges (shown in rec-meta bar) ---- */
 .btype { font-size: var(--sz-mono); font-weight: 700; padding: 1px 6px; border-radius: 2px; letter-spacing: 0.04em; }
 .btype-stm     { background:rgba(88,166,255,0.18); color:var(--accent);   border:2px solid var(--accent); }
@@ -475,6 +480,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btype-iso     { background:rgba(210,153,34,0.18); color:var(--warning);  border:2px solid var(--warning); }
 .btype-b24     { background:rgba(148,130,255,0.18);color:#9482ff;         border:2px solid #9482ff; }
 .btype-unknown { background:rgba(139,148,158,0.15);color:var(--text-dim); border:2px solid var(--text-dim); }
+.btype-user    { background:rgba(80,200,120,0.15); color:#50c878;         border:2px solid #50c878; }
 
 /* ===== DDLMM — DDL Message Map root node ===== */
 .tree-ddlmm-node {
@@ -653,8 +659,13 @@ body.light .trk-chk { color-scheme: light; }
   z-index: 9999; pointer-events: none; display: none;
   background: var(--success); color: #000;
 }
-.flash.warn  { background: #e6a817; color: #000; }
-.flash.error { background: #c0392b; color: #fff; }
+.flash.warn  { background: #e6a817; color: #000; pointer-events: auto; cursor: pointer; padding-right: 28px; }
+.flash.error { background: #c0392b; color: #fff; pointer-events: auto; cursor: pointer; padding-right: 28px; }
+#flash-x {
+  position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+  font-size: 13px; line-height: 1; opacity: 0.6; pointer-events: none; display: none;
+}
+.flash.warn #flash-x, .flash.error #flash-x { display: inline; }
 
 /* ===== CONTEXT MENU ===== */
 .ctx-menu {
@@ -846,7 +857,12 @@ body.light .badge-oct    { background: #e6f4ea; color: #1a6b2a; border-color: #2
 body.light .badge-ascii  { background: #d4edda; color: #1a7f37; border-color: #1a7f37; }
 body.light .badge-dump   { background: #fef3c7; color: #ca8a04; border-color: #ca8a04; }
 body.light .badge-count  { background: #ddf4ff; color: #0969da; border-color: #0969da; }
-body.light .badge-netard { background: #e0f7ff; color: #0076a3; border-color: #0076a3; }
+body.light .badge-netard       { background: #e0f7ff; color: #0076a3; border-color: #0076a3; }
+body.light .badge-netard-hex   { background: #ede9ff; color: #5b21b6; border-color: #7c3aed; }
+body.light .badge-netard-dump  { background: #fff7ed; color: #c2410c; border-color: #ea7c2a; }
+body.light .badge-netard-oct   { background: #f0fdf4; color: #15803d; border-color: #22c55e; }
+body.light .badge-netard-ebcdic{ background: #fffbeb; color: #b45309; border-color: #d97706; }
+body.light .badge-netard-ascii { background: #f0fdfa; color: #0f766e; border-color: #0d9488; }
 body.light .badge-locked { background: #fde8e8; color: #cf222e; border-color: #cf222e; }
 body.light .rec-meta { background: #f6f8fa; }
 body.light .settings-pill .btn.s-active { color: #fff; }
@@ -876,7 +892,10 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
     <div class="panel" id="ddlPanel">
       <div class="panel-header">
         <span class="panel-title">DDL Definition</span>
-        <span style="font-size:10px;color:var(--text-dim);flex:1">Right-click tree to manage</span>
+        <span id="ddlScopePath" style="font-size:10px;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;padding:0 4px">Right-click tree to manage</span>
+        <button class="btn path-btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
+        <button class="btn path-btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
+        <button class="btn path-btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
         <button class="panel-toggle" id="ddlToggle" onclick="togglePanel('ddlPanel','ddlToggle','ddlResizer')" title="Hide panel">−</button>
       </div>
       <div class="ddl-pane-split">
@@ -892,15 +911,6 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
         </div>
         <div class="resizer-h" id="ddlTreeResizer"></div>
         <div class="ddl-editor-pane">
-          <div class="ddl-path-bar">
-            <span class="ddl-path-txt" id="ddlScopePath">Select a DDL from the tree →</span>
-            <input type="text" id="ddlName" placeholder="name" title="Required for simple-format DDL. HPE DDL names are extracted automatically from DEF/RECORD statements."/>
-            <div class="path-btn-group">
-              <button class="btn path-btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
-              <button class="btn path-btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
-              <button class="btn path-btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
-            </div>
-          </div>
           <div class="ddl-hl-wrap">
             <div id="ddlEditorOverlay" class="ddl-hl-overlay" aria-hidden="true"></div>
           <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.scrollTop=this.scrollTop;o.scrollLeft=this.scrollLeft;o.style.width=this.scrollWidth+'px';}"
@@ -1002,7 +1012,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
   </div><!-- end bottom-row -->
 </div><!-- end main-layout -->
 
-<div class="flash" id="flash"></div>
+<div class="flash" id="flash"><span id="flash-msg"></span><span id="flash-x">✕</span></div>
 
 <script>
 'use strict';
@@ -1033,6 +1043,7 @@ const S = {
   tokenMap: {},      // { "DDL-NAME": "B4", ... } — built from token map files in tree
   ddlMsgMapRaw: '',  // raw DDLMM text content (editable source)
   ddlMsgMap:    [],  // parsed routing rules [{seq,type,msgRe,srcRe,dstRe,ddlPath,level}]
+  seenTypes:    new Set(),  // message types seen this session (suppresses repeat first-encounter prompts)
 };
 
 // ============================================================
@@ -1051,133 +1062,133 @@ MTI      FIXED    4   "Message Type Indicator"
 BMP      FIXED   16   "Primary Bitmap (ASCII hex encoded — 16 chars = 8 bytes)"
 
 1        BMP     16   "Secondary Bitmap (ASCII hex encoded — 16 chars = 8 bytes)"
-2      LLVAR   19   "Primary Account Number (PAN)"
-3      FIXED    6   "Processing Code"
-4      FIXED   12   "Amount, Transaction"
-5      FIXED   12   "Amount, Settlement"
-6      FIXED   12   "Amount, Cardholder Billing"
-7      FIXED   10   "Transmission Date & Time (MMDDhhmmss)"
-8      FIXED    8   "Amount, Cardholder Billing Fee"
-9      FIXED    8   "Conversion Rate, Settlement"
-10     FIXED    8   "Conversion Rate, Cardholder Billing"
-11     FIXED    6   "Systems Trace Audit Number (STAN)"
-12     FIXED    6   "Time, Local Transaction (hhmmss)"
-13     FIXED    4   "Date, Local Transaction (MMDD)"
-14     FIXED    4   "Date, Expiration (YYMM)"
-15     FIXED    4   "Date, Settlement (MMDD)"
-16     FIXED    4   "Date, Conversion (MMDD)"
-17     FIXED    4   "Date, Capture (MMDD)"
-18     FIXED    4   "Merchant Type (MCC)"
-19     FIXED    3   "Acquiring Institution Country Code"
-20     FIXED    3   "PAN Extended Country Code"
-21     FIXED    3   "Forwarding Institution Country Code"
-22     FIXED    3   "Point of Service Entry Mode"
-23     FIXED    3   "Application PAN Sequence Number"
-24     FIXED    3   "Function Code / Network International ID"
-25     FIXED    2   "Point of Service Condition Code"
-26     FIXED    2   "Point of Service PIN Capture Code"
-27     FIXED    1   "Authorizing ID Response Length"
-28     FIXED    9   "Amount, Transaction Fee"
-29     FIXED    9   "Amount, Settlement Fee"
-30     FIXED    9   "Amount, Transaction Processing Fee"
-31     FIXED    9   "Amount, Settlement Processing Fee"
-32     LLVAR   11   "Acquiring Institution ID Code"
-33     LLVAR   11   "Forwarding Institution ID Code"
-34     LLVAR   28   "PAN Extended"
-35     LLVAR   37   "Track 2 Data"
-36     LLLVAR 104   "Track 3 Data"
-37     FIXED   12   "Retrieval Reference Number"
-38     FIXED    6   "Authorization ID Response"
-39     FIXED    2   "Response Code"
-40     FIXED    3   "Service Restriction Code"
-41     FIXED    8   "Card Acceptor Terminal ID"
-42     FIXED   15   "Card Acceptor ID Code"
-43     FIXED   40   "Card Acceptor Name/Location"
-44     LLVAR   25   "Additional Response Data"
-45     LLVAR   76   "Track 1 Data"
-46     LLLVAR 999   "Additional Data — ISO"
-47     LLLVAR 999   "Additional Data — National"
-48     LLLVAR 999   "Additional Data — Private"
-49     FIXED    3   "Currency Code, Transaction"
-50     FIXED    3   "Currency Code, Settlement"
-51     FIXED    3   "Currency Code, Cardholder Billing"
-52     FIXED    8   "PIN Data"
-53     FIXED   16   "Security Related Control Info"
-54     LLLVAR 120   "Additional Amounts"
-55     LLLVAR 255   "ICC Data (EMV)"
-56     LLLVAR 999   "Reserved ISO"
-57     LLLVAR 999   "Reserved National"
-58     LLLVAR 999   "Reserved National"
-59     LLLVAR 999   "Reserved National"
-60     LLLVAR 999   "Reserved Private"
-61     LLLVAR 999   "Reserved Private"
-62     LLLVAR 999   "Reserved Private"
-63     LLLVAR 999   "Reserved Private"
-64     FIXED    8   "Message Authentication Code (MAC)"
-65     FIXED    8   "Bitmap Extended (Tertiary)"
-66     FIXED    1   "Settlement Code"
-67     FIXED    2   "Extended Payment Code"
-68     FIXED    3   "Receiving Institution Country Code"
-69     FIXED    3   "Settlement Institution Country Code"
-70     FIXED    3   "Network Management Info Code"
-71     FIXED    4   "Message Number"
-72     FIXED    4   "Message Number, Last"
-73     FIXED    6   "Date, Action (YYMMDD)"
-74     FIXED   10   "Credits, Number"
-75     FIXED   10   "Credits, Reversal Number"
-76     FIXED   10   "Debits, Number"
-77     FIXED   10   "Debits, Reversal Number"
-78     FIXED   10   "Transfer, Number"
-79     FIXED   10   "Transfer, Reversal Number"
-80     FIXED   10   "Inquiries, Number"
-81     FIXED   10   "Authorizations, Number"
-82     FIXED   12   "Credits, Processing Fee Amount"
-83     FIXED   12   "Credits, Transaction Fee Amount"
-84     FIXED   12   "Debits, Processing Fee Amount"
-85     FIXED   12   "Debits, Transaction Fee Amount"
-86     FIXED   16   "Credits, Amount"
-87     FIXED   16   "Credits, Reversal Amount"
-88     FIXED   16   "Debits, Amount"
-89     FIXED   16   "Debits, Reversal Amount"
-90     FIXED   42   "Original Data Elements"
-91     FIXED    1   "File Update Code"
-92     FIXED    2   "File Security Code"
-93     FIXED    5   "Response Indicator"
-94     FIXED    7   "Service Indicator"
-95     FIXED   42   "Replacement Amounts"
-96     FIXED    8   "Message Security Code"
-97     FIXED   17   "Amount, Net Settlement"
-98     FIXED   25   "Payee"
-99     LLVAR   11   "Settlement Institution ID Code"
-100    LLVAR   11   "Receiving Institution ID Code"
-101    LLVAR   17   "File Name"
-102    LLVAR   28   "Account Identification 1"
-103    LLVAR   28   "Account Identification 2"
-104    LLLVAR 100   "Transaction Description"
-105    LLLVAR 999   "Reserved ISO"
-106    LLLVAR 999   "Reserved ISO"
-107    LLLVAR 999   "Reserved ISO"
-108    LLLVAR 999   "Reserved ISO"
-109    LLLVAR 999   "Reserved ISO"
-110    LLLVAR 999   "Reserved ISO"
-111    LLLVAR 999   "Reserved ISO"
-112    LLLVAR 999   "Reserved National"
-113    LLLVAR 999   "Reserved National"
-114    LLLVAR 999   "Reserved National"
-115    LLLVAR 999   "Reserved National"
-116    LLLVAR 999   "Reserved National"
-117    LLLVAR 999   "Reserved National"
-118    LLLVAR 999   "Reserved National"
-119    LLLVAR 999   "Reserved National"
-120    LLLVAR 999   "Reserved Private"
-121    LLLVAR 999   "Reserved Private"
-122    LLLVAR 999   "Reserved Private"
-123    LLLVAR 999   "Reserved Private"
-124    LLLVAR 999   "Reserved Private"
-125    LLLVAR 999   "Reserved Private"
-126    LLLVAR 999   "Reserved Private"
-127    LLLVAR 999   "Reserved Private"
-128    FIXED    8   "Message Authentication Code (Secondary)"
+2        LLVAR   19   "Primary Account Number (PAN)"
+3        FIXED    6   "Processing Code"
+4        FIXED   12   "Amount, Transaction"
+5        FIXED   12   "Amount, Settlement"
+6        FIXED   12   "Amount, Cardholder Billing"
+7        FIXED   10   "Transmission Date & Time (MMDDhhmmss)"
+8        FIXED    8   "Amount, Cardholder Billing Fee"
+9        FIXED    8   "Conversion Rate, Settlement"
+10       FIXED    8   "Conversion Rate, Cardholder Billing"
+11       FIXED    6   "Systems Trace Audit Number (STAN)"
+12       FIXED    6   "Time, Local Transaction (hhmmss)"
+13       FIXED    4   "Date, Local Transaction (MMDD)"
+14       FIXED    4   "Date, Expiration (YYMM)"
+15       FIXED    4   "Date, Settlement (MMDD)"
+16       FIXED    4   "Date, Conversion (MMDD)"
+17       FIXED    4   "Date, Capture (MMDD)"
+18       FIXED    4   "Merchant Type (MCC)"
+19       FIXED    3   "Acquiring Institution Country Code"
+20       FIXED    3   "PAN Extended Country Code"
+21       FIXED    3   "Forwarding Institution Country Code"
+22       FIXED    3   "Point of Service Entry Mode"
+23       FIXED    3   "Application PAN Sequence Number"
+24       FIXED    3   "Function Code / Network International ID"
+25       FIXED    2   "Point of Service Condition Code"
+26       FIXED    2   "Point of Service PIN Capture Code"
+27       FIXED    1   "Authorizing ID Response Length"
+28       FIXED    9   "Amount, Transaction Fee"
+29       FIXED    9   "Amount, Settlement Fee"
+30       FIXED    9   "Amount, Transaction Processing Fee"
+31       FIXED    9   "Amount, Settlement Processing Fee"
+32       LLVAR   11   "Acquiring Institution ID Code"
+33       LLVAR   11   "Forwarding Institution ID Code"
+34       LLVAR   28   "PAN Extended"
+35       LLVAR   37   "Track 2 Data"
+36       LLLVAR 104   "Track 3 Data"
+37       FIXED   12   "Retrieval Reference Number"
+38       FIXED    6   "Authorization ID Response"
+39       FIXED    2   "Response Code"
+40       FIXED    3   "Service Restriction Code"
+41       FIXED    8   "Card Acceptor Terminal ID"
+42       FIXED   15   "Card Acceptor ID Code"
+43       FIXED   40   "Card Acceptor Name/Location"
+44       LLVAR   25   "Additional Response Data"
+45       LLVAR   76   "Track 1 Data"
+46       LLLVAR 999   "Additional Data — ISO"
+47       LLLVAR 999   "Additional Data — National"
+48       LLLVAR 999   "Additional Data — Private"
+49       FIXED    3   "Currency Code, Transaction"
+50       FIXED    3   "Currency Code, Settlement"
+51       FIXED    3   "Currency Code, Cardholder Billing"
+52       FIXED    8   "PIN Data"
+53       FIXED   16   "Security Related Control Info"
+54       LLLVAR 120   "Additional Amounts"
+55       LLLVAR 255   "ICC Data (EMV)"
+56       LLLVAR 999   "Reserved ISO"
+57       LLLVAR 999   "Reserved National"
+58       LLLVAR 999   "Reserved National"
+59       LLLVAR 999   "Reserved National"
+60       LLLVAR 999   "Reserved Private"
+61       LLLVAR 999   "Reserved Private"
+62       LLLVAR 999   "Reserved Private"
+63       LLLVAR 999   "Reserved Private"
+64       FIXED    8   "Message Authentication Code (MAC)"
+65       FIXED    8   "Bitmap Extended (Tertiary)"
+66       FIXED    1   "Settlement Code"
+67       FIXED    2   "Extended Payment Code"
+68       FIXED    3   "Receiving Institution Country Code"
+69       FIXED    3   "Settlement Institution Country Code"
+70       FIXED    3   "Network Management Info Code"
+71       FIXED    4   "Message Number"
+72       FIXED    4   "Message Number, Last"
+73       FIXED    6   "Date, Action (YYMMDD)"
+74       FIXED   10   "Credits, Number"
+75       FIXED   10   "Credits, Reversal Number"
+76       FIXED   10   "Debits, Number"
+77       FIXED   10   "Debits, Reversal Number"
+78       FIXED   10   "Transfer, Number"
+79       FIXED   10   "Transfer, Reversal Number"
+80       FIXED   10   "Inquiries, Number"
+81       FIXED   10   "Authorizations, Number"
+82       FIXED   12   "Credits, Processing Fee Amount"
+83       FIXED   12   "Credits, Transaction Fee Amount"
+84       FIXED   12   "Debits, Processing Fee Amount"
+85       FIXED   12   "Debits, Transaction Fee Amount"
+86       FIXED   16   "Credits, Amount"
+87       FIXED   16   "Credits, Reversal Amount"
+88       FIXED   16   "Debits, Amount"
+89       FIXED   16   "Debits, Reversal Amount"
+90       FIXED   42   "Original Data Elements"
+91       FIXED    1   "File Update Code"
+92       FIXED    2   "File Security Code"
+93       FIXED    5   "Response Indicator"
+94       FIXED    7   "Service Indicator"
+95       FIXED   42   "Replacement Amounts"
+96       FIXED    8   "Message Security Code"
+97       FIXED   17   "Amount, Net Settlement"
+98       FIXED   25   "Payee"
+99       LLVAR   11   "Settlement Institution ID Code"
+100      LLVAR   11   "Receiving Institution ID Code"
+101      LLVAR   17   "File Name"
+102      LLVAR   28   "Account Identification 1"
+103      LLVAR   28   "Account Identification 2"
+104      LLLVAR 100   "Transaction Description"
+105      LLLVAR 999   "Reserved ISO"
+106      LLLVAR 999   "Reserved ISO"
+107      LLLVAR 999   "Reserved ISO"
+108      LLLVAR 999   "Reserved ISO"
+109      LLLVAR 999   "Reserved ISO"
+110      LLLVAR 999   "Reserved ISO"
+111      LLLVAR 999   "Reserved ISO"
+112      LLLVAR 999   "Reserved National"
+113      LLLVAR 999   "Reserved National"
+114      LLLVAR 999   "Reserved National"
+115      LLLVAR 999   "Reserved National"
+116      LLLVAR 999   "Reserved National"
+117      LLLVAR 999   "Reserved National"
+118      LLLVAR 999   "Reserved National"
+119      LLLVAR 999   "Reserved National"
+120      LLLVAR 999   "Reserved Private"
+121      LLLVAR 999   "Reserved Private"
+122      LLLVAR 999   "Reserved Private"
+123      LLLVAR 999   "Reserved Private"
+124      LLLVAR 999   "Reserved Private"
+125      LLLVAR 999   "Reserved Private"
+126      LLLVAR 999   "Reserved Private"
+127      LLLVAR 999   "Reserved Private"
+128      FIXED    8   "Message Authentication Code (Secondary)"
 `;
 
 // ============================================================
@@ -2041,7 +2052,7 @@ function showDDLDoc() {
     // Simple format: wrap into a single section
     const defs = parseSimpleDDL(content);
     if (!defs.length) { flash('No field definitions found', 'warn'); return; }
-    sections = [{ name: document.getElementById('ddlName').value.trim() || 'DEFINITION', fields: defs, simple: true }];
+    sections = [{ name: S.scope?.name || 'DEFINITION', fields: defs, simple: true }];
   }
   if (!sections.length) { flash('No DEF/RECORD blocks found', 'warn'); return; }
 
@@ -2604,10 +2615,27 @@ function parseBitmap(bytes) {
 // ============================================================
 // ISO8583 MESSAGE PARSER
 // ============================================================
+
+// A DDL is ISO 8583 bitmap-driven if and only if:
+//   1. It contains a field named MTI
+//   2. The field immediately after MTI is declared as a bitmap:
+//      - type === 'BMP'  (explicit type declaration in flat DDL format)
+//      - OR field id contains the word BMAP or BITMAP
+//      - OR field description contains the word BMAP or BITMAP
+// This structural check works for both auto-detect and explicitly selected DDLs.
+// No field-name heuristics, no assumptions — the DDL declares itself.
+function _isISO8583DDL(defs) {
+  const mtiIdx = defs.findIndex(d => d.id === 'MTI');
+  if (mtiIdx < 0) return false;
+  const next = defs[mtiIdx + 1];
+  if (!next) return false;
+  return next.type === 'BMP'
+      || /\bBMAP\b|\bBITMAP\b/i.test(next.id)
+      || /\bBMAP\b|\bBITMAP\b/i.test(next.description || '');
+}
+
 function parseMessage(bytes, defs) {
-  // If no MTI field is defined the DDL describes a flat struct (e.g. HPE DDL).
-  // Fall back to sequential field reading — no bitmap logic.
-  if (!defs.find(d => d.id === 'MTI')) return parseFlatMessage(bytes, defs);
+  if (!_isISO8583DDL(defs)) return parseFlatMessage(bytes, defs);
 
   const fields = [];
   let offset = 0;
@@ -2775,6 +2803,8 @@ const MSG_TYPE_MAP = [
   { test: s => /^0[12]\d{2}01/.test(s),      type:'STM',     label:'Base24 STM (ATM)',vol:'ATM'    },
   { test: s => /^0[12]\d{2}02/.test(s),      type:'PSTM',    label:'Base24 PSTM (POS)',vol:'POS'  },
   { test: s => /^99\d{2}/.test(s),           type:'B24',     label:'Base24 Generic',  vol:'BASE'   },
+  // Fallback: ISO 8583 without "ISO" prefix (e.g. EBCDIC decoded messages — MTI + 16-char hex bitmap)
+  { test: s => /^0[0-9]{3}[0-9A-Fa-f]{16}/i.test(s), type:'ISO', label:'ISO 8583', vol:'SWITCH' },
 ];
 
 function detectMsgType(rawMsg) {
@@ -2783,6 +2813,239 @@ function detectMsgType(rawMsg) {
     if (p.test(rawMsg)) return { type:p.type, label:p.label, vol:p.vol };
   }
   return { type:'UNKNOWN', label:'Unknown', vol:null };
+}
+
+// ─── NETARD multi-format extraction helpers ──────────────────────────────────
+
+// EBCDIC Code Page 037 → ASCII/Latin-1
+const _EBCDIC_TO_ASCII = [
+  0x00,0x01,0x02,0x03,0x9C,0x09,0x86,0x7F,0x97,0x8D,0x8E,0x0B,0x0C,0x0D,0x0E,0x0F,
+  0x10,0x11,0x12,0x13,0x9D,0x0A,0x08,0x87,0x18,0x19,0x92,0x8F,0x1C,0x1D,0x1E,0x1F,
+  0x80,0x81,0x82,0x83,0x84,0x85,0x17,0x1B,0x88,0x89,0x8A,0x8B,0x8C,0x05,0x06,0x07,
+  0x90,0x91,0x16,0x93,0x94,0x95,0x96,0x04,0x98,0x99,0x9A,0x9B,0x14,0x15,0x9E,0x1A,
+  0x20,0xA0,0xE2,0xE4,0xE0,0xE1,0xE3,0xE5,0xE7,0xF1,0xA2,0x2E,0x3C,0x28,0x2B,0x7C,
+  0x26,0xE9,0xEA,0xEB,0xE8,0xED,0xEE,0xEF,0xEC,0xDF,0x21,0x24,0x2A,0x29,0x3B,0x5E,
+  0x2D,0x2F,0xC2,0xC4,0xC0,0xC1,0xC3,0xC5,0xC7,0xD1,0xA6,0x2C,0x25,0x5F,0x3E,0x3F,
+  0xF8,0xC9,0xCA,0xCB,0xC8,0xCD,0xCE,0xCF,0xCC,0x60,0x3A,0x23,0x40,0x27,0x3D,0x22,
+  0xD8,0x61,0x62,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0xAB,0xBB,0xF0,0xFD,0xFE,0xB1,
+  0xB0,0x6A,0x6B,0x6C,0x6D,0x6E,0x6F,0x70,0x71,0x72,0xAA,0xBA,0xE6,0xB8,0xC6,0xA4,
+  0xB5,0x7E,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0xA1,0xBF,0xD0,0x5B,0xDE,0xAE,
+  0xAC,0xA3,0xA5,0xB7,0xA9,0xA7,0xB6,0xBC,0xBD,0xBE,0xDD,0xA8,0xAF,0x5D,0xB4,0xD7,
+  0x7B,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0xAD,0xF4,0xF6,0xF2,0xF3,0xF5,
+  0x7D,0x4A,0x4B,0x4C,0x4D,0x4E,0x4F,0x50,0x51,0x52,0xB9,0xFB,0xFC,0xF9,0xFA,0xFF,
+  0x5C,0xF7,0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5A,0xB2,0xD4,0xD6,0xD2,0xD3,0xD5,
+  0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0xB3,0xDB,0xDC,0xD9,0xDA,0x9F,
+];
+
+// ASCII/Latin-1 → EBCDIC (reverse lookup)
+const _ASCII_TO_EBCDIC = (() => {
+  const m = new Array(256).fill(0x3F);
+  _EBCDIC_TO_ASCII.forEach((a, e) => { m[a] = e; });
+  return m;
+})();
+
+// EBCDIC control names → EBCDIC byte (for E- format parsing)
+const _EBCDIC_CTRL = {
+  NUL:0x00,SOH:0x01,STX:0x02,ETX:0x03,PF:0x04,HT:0x05,LC:0x06,DEL:0x07,
+  GE:0x08,RLF:0x09,SMM:0x0A,VT:0x0B,FF:0x0C,CR:0x0D,SO:0x0E,SI:0x0F,
+  DLE:0x10,DC1:0x11,DC2:0x12,TM:0x13,RES:0x14,NL:0x15,BS:0x16,IL:0x17,
+  CAN:0x18,EM:0x19,CC:0x1A,CU1:0x1B,IFS:0x1C,IGS:0x1D,IRS:0x1E,IUS:0x1F,
+  DS:0x20,SOS:0x21,FS:0x22,WUS:0x23,BYP:0x24,LF:0x25,ETB:0x26,ESC:0x27,
+  SA:0x28,SFE:0x29,SM:0x2A,CSP:0x2B,MFA:0x2C,ENQ:0x2D,ACK:0x2E,BEL:0x2F,
+  SYN:0x32,IR:0x33,PP:0x34,TRN:0x35,NBS:0x36,EOT:0x37,SBS:0x38,IT:0x39,
+  RFF:0x3A,CU3:0x3B,DC4:0x3C,NAK:0x3D,SUB:0x3F,
+};
+
+// ASCII control names → byte value (for A- format parsing)
+const _ASCII_CTRL = {
+  NUL:0x00,SOH:0x01,STX:0x02,ETX:0x03,EOT:0x04,ENQ:0x05,ACK:0x06,BEL:0x07,
+  BS:0x08,HT:0x09,LF:0x0A,VT:0x0B,FF:0x0C,CR:0x0D,SO:0x0E,SI:0x0F,
+  DLE:0x10,DC1:0x11,DC2:0x12,DC3:0x13,DC4:0x14,NAK:0x15,SYN:0x16,ETB:0x17,
+  CAN:0x18,EM:0x19,SUB:0x1A,ESC:0x1B,FS:0x1C,GS:0x1D,RS:0x1E,US:0x1F,DEL:0x7F,
+  // EBCDIC-origin names also seen in ASCII output context:
+  PF:0x04,TM:0x13,RES:0x14,NL:0x16,IL:0x18,RLF:0x0A,SMM:0x0B,DS:0x20,
+};
+
+// Identify which NETARD output format is present. Priority: hex > hexascii > octal > ebcdic > ascii.
+function _detectNetardFmt(lines) {
+  let hasA=false, hasE=false, has0=false, hasHex4=false;
+  for (const l of lines) {
+    if (/^H-[\s\d]/i.test(l)) return 'hex';   // H- wins immediately
+    if (/^A-[\s\d]/i.test(l)) hasA = true;
+    if (/^E-[\s\d]/i.test(l)) hasE = true;
+    if (/^0-[\s\d]/i.test(l)) has0 = true;
+    if (!hasHex4 && /^\d+:\s/.test(l)) {
+      const after = l.replace(/^\d+:\s*/, '').trimStart();
+      if (/^[0-9A-Fa-f]{4}(?:\s|$)/.test(after)) hasHex4 = true;
+    }
+  }
+  if (hasHex4) return 'hexascii';
+  if (has0)    return 'octal';
+  if (hasE)    return 'ebcdic';
+  if (hasA)    return 'ascii';
+  return 'hex';
+}
+
+// Parse whitespace-delimited 2-hex-char tokens; stop at '--'
+function _netardHexTokens(data) {
+  const bytes = [];
+  for (const t of data.split(/\s+/)) {
+    if (t === '--' || t === '-') break;
+    if (/^[0-9A-Fa-f]{2}$/.test(t)) bytes.push(parseInt(t, 16));
+  }
+  return bytes;
+}
+
+// Convert octal token strings to bytes (byteMode=true → 3-digit each, else word=6-digit)
+function _netardOctalTokens(toks, byteMode) {
+  const bytes = [];
+  for (const t of toks) {
+    const v = parseInt(t, 8);
+    if (byteMode) { bytes.push(v & 0xFF); }
+    else          { bytes.push((v >> 8) & 0xFF); bytes.push(v & 0xFF); }
+  }
+  return bytes;
+}
+
+// Parse A- / E- character-representation data back to raw bytes
+function _netardCtrlData(data, ctrlMap, isEbcdic) {
+  const bytes = [];
+  const keys  = Object.keys(ctrlMap).sort((a, b) => b.length - a.length);
+  data = data.replace(/\s*-{1,2}\s*$/, '');   // strip trailing '--' end-of-message marker
+  let i = 0;
+  while (i < data.length) {
+    if (data[i] === ' ') { i++; continue; }
+    if (isEbcdic) {
+      // E- format: greedy longest-match control names, no word-boundary required.
+      // Names are packed directly (e.g. "NULNUL", "PFNUL", "80NUL").
+      let found = false;
+      for (const k of keys) {
+        if (data.slice(i, i + k.length).toUpperCase() === k) {
+          bytes.push(ctrlMap[k]); i += k.length; found = true; break;
+        }
+      }
+      if (found) continue;
+      // Bare 2-hex-char token for non-standard bytes (e.g. "80", "3E")
+      if (i + 2 <= data.length && /^[0-9A-Fa-f]{2}$/.test(data.slice(i, i + 2))) {
+        bytes.push(parseInt(data.slice(i, i + 2), 16)); i += 2; continue;
+      }
+    } else {
+      // A- format: longest-match with word-boundary guard (names are space-separated)
+      let found = false;
+      for (const k of keys) {
+        if (data.slice(i, i + k.length).toUpperCase() === k) {
+          const after = data[i + k.length];
+          if (!after || !/[A-Za-z0-9]/.test(after)) {
+            bytes.push(ctrlMap[k]); i += k.length; found = true; break;
+          }
+        }
+      }
+      if (found) continue;
+    }
+    // Single printable character
+    const ch = data.charCodeAt(i);
+    bytes.push(isEbcdic ? (_ASCII_TO_EBCDIC[ch] ?? 0x3F) : (ch & 0xFF));
+    i++;
+  }
+  return bytes;
+}
+
+// Extract raw bytes from NETARD formatted output lines.
+// fmtLines: [{ content, charStart, indent }, ...]
+// Returns { bytes: number[], lineIdx: number[] }
+function _netardExtractBytes(fmtLines, fmt) {
+  const bytes = [], lineIdx = [];
+  const add = (bs, li) => { for (const b of bs) { bytes.push(b); lineIdx.push(li); } };
+  const lines = fmtLines.map(f => f.content);
+
+  if (fmt === 'hex') {
+    // Detect the initial labeled block to find pattern width and H- position.
+    // In combined formats (H+E, E+H, H+E+A, etc.) the first N consecutive lines
+    // each carry a format prefix (H-, E-, A-, 0-). After that, groups of N lines
+    // repeat in the same order without prefixes. H- may be at any position 0..N-1.
+    let hPos = -1, width = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^[HAEO0]-/i.test(lines[i])) {
+        if (/^H-/i.test(lines[i]) && hPos < 0) hPos = i;
+        width++;
+      } else break;
+    }
+
+    if (width > 1 && hPos >= 0) {
+      // ── Multi-format: extract only H- rows ───────────────────────────────
+      // First H- row is in the initial labeled block at index hPos.
+      add(_netardHexTokens(lines[hPos].replace(/^H-\s+(?:\d+:\s*)?/i, '')), hPos);
+      // Subsequent H- rows appear at index hPos within each continuation group.
+      for (let g = width; g < lines.length; g += width) {
+        const li = g + hPos;
+        if (li >= lines.length) break;
+        // Strip leading offset number if present, then parse hex tokens.
+        const raw = lines[li].replace(/^\d+:\s*/, '').trim();
+        add(_netardHexTokens(raw), li);
+      }
+    } else {
+      // ── Single H- format: original logic ─────────────────────────────────
+      let active = false;
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i];
+        if (/^H-\s/i.test(l)) {
+          active = true;
+          add(_netardHexTokens(l.replace(/^H-\s+\d+:\s*/, '')), i);
+        } else if (/^[A-Za-z]-\s/i.test(l)) {
+          /* other format prefix — skip */
+        } else if (active && /^\d+:\s/.test(l)) {
+          const data = l.replace(/^\d+:\s*/, '').trimStart();
+          if (/^[0-9A-Fa-f]{2}[\s-]/.test(data) || /^[0-9A-Fa-f]{2}$/.test(data.split(/\s/)[0])) {
+            add(_netardHexTokens(data), i);
+          }
+        }
+      }
+    }
+  } else if (fmt === 'hexascii') {
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (/^\d+:\s/.test(l)) {
+        const data = l.replace(/^\d+:\s*/, '').replace(/\[.*?\]/, '').trim();
+        // Accept 4-char (word pair) or 2-char (single trailing byte) hex tokens
+        const toks = data.split(/\s+/).filter(t => /^[0-9A-Fa-f]{2,4}$/.test(t) && t.length % 2 === 0);
+        add(toks.flatMap(t => { const b=[]; for(let j=0;j<t.length;j+=2) b.push(parseInt(t.slice(j,j+2),16)); return b; }), i);
+      }
+    }
+  } else if (fmt === 'octal') {
+    let active = false, byteMode = null;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (/^0-\s/i.test(l)) {
+        active = true;
+        const data = l.replace(/^0-\s+\d+:\s*/, '').replace(/--+/g, ' ').trim();
+        const toks = data.split(/\s+/).filter(t => /^[0-7]{3,6}$/.test(t));
+        if (byteMode === null && toks.length) byteMode = toks[0].length <= 3;
+        add(_netardOctalTokens(toks, byteMode), i);
+      } else if (active && /^\d+:\s/.test(l)) {
+        const data = l.replace(/^\d+:\s*/, '').replace(/--+/g, ' ').trim();
+        add(_netardOctalTokens(data.split(/\s+/).filter(t => /^[0-7]{3,6}$/.test(t)), byteMode), i);
+      } else if (/^[A-Za-z]-\s/i.test(l)) { active = false; }
+    }
+  } else {
+    // ascii or ebcdic
+    const isEbcdic = fmt === 'ebcdic';
+    const pfxRe    = isEbcdic ? /^E-\s/i : /^A-\s/i;
+    const ctrl     = isEbcdic ? _EBCDIC_CTRL : _ASCII_CTRL;
+    let active = false;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (pfxRe.test(l)) {
+        active = true;
+        const data = l.replace(isEbcdic ? /^E-\s+(?:\d+:\s*)?/ : /^A-\s+(?:\d+:\s*)?/, '');
+        add(_netardCtrlData(data, ctrl, isEbcdic), i);
+      } else if (active && /^\d+:\s/.test(l)) {
+        add(_netardCtrlData(l.replace(/^\d+:\s*/, ''), ctrl, isEbcdic), i);
+      } else if (/^[A-Za-z]-\s/i.test(l)) {
+        if (!pfxRe.test(l)) active = false;
+      }
+    }
+  }
+  return { bytes, lineIdx };
 }
 
 function isNetardLog(text) {
@@ -2808,38 +3071,49 @@ function parseNetardLog(text) {
 
   const flush = () => {
     if (!cur) return;
-    // Determine wrap width from the longest content line observed.
-    // Users configure their terminal width (commonly 80 cols → 73 data chars
-    // after the 7-space indent, or 132 cols → 125, etc.) so we must not
-    // assume a fixed value. Taking the max length restores trailing spaces
-    // that the terminal strips from shorter wrapped lines.
-    const W = cur._lines.reduce((m, l) => Math.max(m, l.length), 0) || 1;
-    const padded = cur._lines.map((line, i) =>
-      i < cur._lines.length - 1 ? line.padEnd(W, ' ') : line
-    );
-    let raw = padded.join('');
-    // Declared LENGTH is authoritative: pad or trim to match.
-    // Only apply when we actually have content (raw non-empty) to avoid
-    // padding header-only / truncated records with phantom space bytes.
-    if (cur.length > 0 && raw.length > 0) {
-      if (raw.length < cur.length) raw = raw.padEnd(cur.length, ' ');
-      else if (raw.length > cur.length) raw = raw.slice(0, cur.length);
-    }
-    cur.rawMsg = raw;
 
-    // Build byte → textarea-char map.
-    // Each byte at position b came from:
-    //   textarea line  = _lineCharStarts[ floor(b / W) ]
-    //   column in line = (b % W) + 7  (7-space indent)
-    const bcm = new Array(raw.length).fill(null);
-    for (let b = 0; b < raw.length; b++) {
-      const li = Math.floor(b / W);
-      const co = b % W;
-      if (li < cur._lineCharStarts.length) {
-        const cs = cur._lineCharStarts[li] + 7 + co;
-        bcm[b] = { s: cs, e: cs + 1 };
+    let rawMsg, bcm;
+
+    if (cur._fmtLines.length > 0) {
+      // ── Formatted output (H-, A-, E-, 0-, HEXASCII) ─────────────────────────
+      const fmt = _detectNetardFmt(cur._fmtLines.map(f => f.content));
+      cur.netardFmt = fmt;
+      const { bytes, lineIdx } = _netardExtractBytes(cur._fmtLines, fmt);
+      rawMsg = bytes.map(b => String.fromCharCode(b)).join('');
+      bcm = new Array(bytes.length).fill(null);
+      for (let i = 0; i < bytes.length; i++) {
+        const li = lineIdx[i];
+        if (li !== undefined && li < cur._fmtLines.length) {
+          const fl = cur._fmtLines[li];
+          bcm[i] = { s: fl.charStart + fl.indent, e: fl.charStart + fl.indent + fl.content.length };
+        }
+      }
+    } else {
+      // ── Standard format: 7-space indented raw bytes ──────────────────────────
+      // Determine wrap width from the longest content line observed.
+      const W = cur._lines.reduce((m, l) => Math.max(m, l.length), 0) || 1;
+      const padded = cur._lines.map((line, i) =>
+        i < cur._lines.length - 1 ? line.padEnd(W, ' ') : line
+      );
+      rawMsg = padded.join('');
+      // Declared LENGTH is authoritative: pad or trim to match.
+      if (cur.length > 0 && rawMsg.length > 0) {
+        if (rawMsg.length < cur.length) rawMsg = rawMsg.padEnd(cur.length, ' ');
+        else if (rawMsg.length > cur.length) rawMsg = rawMsg.slice(0, cur.length);
+      }
+      cur.netardFmt = 'standard';
+      bcm = new Array(rawMsg.length).fill(null);
+      for (let b = 0; b < rawMsg.length; b++) {
+        const li = Math.floor(b / W);
+        const co = b % W;
+        if (li < cur._lineCharStarts.length) {
+          const cs = cur._lineCharStarts[li] + 7 + co;
+          bcm[b] = { s: cs, e: cs + 1 };
+        }
       }
     }
+
+    cur.rawMsg = rawMsg;
     cur.byteCharMap = bcm;
     cur.charStart = cur._hdrCharStart !== undefined ? cur._hdrCharStart : (bcm.find(Boolean)?.s ?? 0);
     const lastBcm = [...bcm].reverse().find(Boolean);
@@ -2847,8 +3121,10 @@ function parseNetardLog(text) {
 
     delete cur._lines;
     delete cur._lineCharStarts;
+    delete cur._fmtLines;
+    delete cur._inFmtBlock;
     delete cur._hdrCharStart;
-    if (cur.rawMsg.length) records.push(cur);   // skip header-only records with no text
+    if (cur.rawMsg.length) records.push(cur);
     cur = null;
   };
 
@@ -2873,7 +3149,9 @@ function parseNetardLog(text) {
         source: '', sourceDet: '',
         dest:   '', destDet:   '',
         _lines: [],
-        _lineCharStarts: [],   // char position of each message-content line
+        _lineCharStarts: [],   // char position of standard-format content lines
+        _fmtLines: [],         // formatted output lines (H-, A-, E-, 0-, HEXASCII)
+        _inFmtBlock: false,    // true once any labeled format line has been seen
         _hdrCharStart: lineStart,  // char position of header line in textarea
       };
       continue;
@@ -2884,6 +3162,24 @@ function parseNetardLog(text) {
     if (SRC_RE.test(line)) { const m = line.match(SRC_RE); cur.source = m[1]; cur.sourceDet = m[2]; continue; }
     if (DST_RE.test(line)) { const m = line.match(DST_RE); cur.dest   = m[1]; cur.destDet   = m[2]; continue; }
 
+    // Formatted output lines (H-, A-, E-, 0-, HEXASCII) — checked before MSG_RE so that
+    // continuation lines (which may also have 7+ spaces) are not mixed into standard bytes.
+    const fmr = line.match(/^(\s{3,20})([HAEO0]-[\s\d].+|\d+:\s.+)/i);
+    if (fmr) {
+      cur._inFmtBlock = true;
+      cur._fmtLines.push({ content: fmr[2], charStart: lineStart, indent: fmr[1].length });
+      continue;
+    }
+    // Inside a multi-format block, capture unlabeled/no-offset continuation rows
+    // (e.g. E-/A- continuation lines that have no prefix and no offset number).
+    // These are identified purely by position in the repeating H/E/A pattern.
+    if (cur._inFmtBlock) {
+      const fmc = line.match(/^(\s{3,20})(.+)/);
+      if (fmc) {
+        cur._fmtLines.push({ content: fmc[2], charStart: lineStart, indent: fmc[1].length });
+        continue;
+      }
+    }
     const mm = line.match(MSG_RE);
     if (mm) {
       cur._lineCharStarts.push(lineStart);   // record where this content line starts
@@ -2938,21 +3234,38 @@ function doParseNetardLog(text) {
     .filter(d => d.defs.length > 0);
 
   const parsed = records.map(rec => {
-    // Build byte array from ASCII message text (1 char = 1 byte)
+    // Build byte array from message text (1 char = 1 byte)
     const bytes = [];
     for (let i = 0; i < rec.rawMsg.length; i++) bytes.push(rec.rawMsg.charCodeAt(i) & 0xFF);
 
-    const msgType = detectMsgType(rec.rawMsg);
+    // EBCDIC auto-detection: first 3 bytes = EBCDIC "ISO" (C9 E2 D6), or first 4 bytes
+    // are all EBCDIC digit range (F0–F9) → message is EBCDIC encoded; decode to ASCII.
+    const _isEbcdic = bytes.length >= 3 && (
+      (bytes[0] === 0xC9 && bytes[1] === 0xE2 && bytes[2] === 0xD6) ||
+      (bytes.length >= 4 && bytes.slice(0, 4).every(b => b >= 0xF0 && b <= 0xF9))
+    );
+    const parseBytes = _isEbcdic ? bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : bytes;
+    const parseRaw   = _isEbcdic ? parseBytes.map(b => String.fromCharCode(b)).join('') : rec.rawMsg;
 
-    // ── DDLMM routing (highest priority when rules are defined) ──────────────
+    let msgType = detectMsgType(parseRaw);
+
+    // ── Priority 2: DDLMM routing ────────────────────────────────────────────
+    // Matching is purely MSG / SOURCE / DEST — TYPE column is the badge label.
+    // When a rule matches: use its DDL for parsing AND set the badge from TYPE.
+    // Falls back to auto-detect when no rule matches or DDL yields no fields.
     let fields = [], ddlPath = null;
-    const ddlmmRule = matchDDLMM(msgType.type, rec.rawMsg, rec.source, rec.dest);
+    const ddlmmRule = matchDDLMM(parseRaw, rec.source, rec.dest, msgType.type);
     if (ddlmmRule) {
       const resolved = getDDLFromPath(ddlmmRule.ddlPath);
       if (resolved && resolved.defs.length) {
-        const result = bestDDLMatch(bytes, [resolved]);
+        const result = bestDDLMatch(parseBytes, [resolved]);
         fields  = result.fields;
         ddlPath = result.ddlPath;
+      }
+      // Rule TYPE overrides the badge (---- = keep auto-detected)
+      if (ddlmmRule.type !== '----') {
+        const knownLabel = MSG_TYPE_MAP.find(p => p.type === ddlmmRule.type)?.label;
+        msgType = { ...msgType, type: ddlmmRule.type, label: knownLabel || ddlmmRule.type };
       }
     }
 
@@ -2967,14 +3280,16 @@ function doParseNetardLog(text) {
       } else {
         candidates = scopeFallback.length ? scopeFallback : allCompiled;
       }
-      const result = bestDDLMatch(bytes, candidates);
+      const result = bestDDLMatch(parseBytes, candidates);
       fields  = result.fields;
       ddlPath = result.ddlPath;
+      // First-encounter: offer to save this type → DDL mapping for future messages
+      if (ddlPath) _suggestTypeMapping(msgType.type, msgType.label, ddlPath);
     }
 
     return {
-      bytes, raw: rec.rawMsg,
-      isNetard: true,
+      bytes: parseBytes, raw: parseRaw,
+      isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
       byteCharMap: rec.byteCharMap || [],
       charStart: rec.charStart, charEnd: rec.charEnd,
       recNo: rec.recNo, recLength: rec.length,
@@ -2992,7 +3307,11 @@ function doParseNetardLog(text) {
   S.selFieldId    = null;
   S.trackMode     = false;
   S.trackedFields = new Set();
-  S.inputFormat   = 'netard';
+  // Derive input format badge from the most common NETARD sub-format across all records
+  const _nfCounts = {};
+  for (const r of parsed) if (r.netardFmt) _nfCounts[r.netardFmt] = (_nfCounts[r.netardFmt] || 0) + 1;
+  const _topFmt = Object.entries(_nfCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'standard';
+  S.inputFormat   = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' }[_topFmt] || 'netard';
   syncParseBtn();
 
   document.getElementById('msgInput').readOnly = true;
@@ -3015,52 +3334,49 @@ function doParseMessages() {
   if (!msgText.trim()) { flash('Please enter a message to parse.', 'warn'); return; }
   if (/DEADC0DE/i.test(msgText.replace(/\s/g, ''))) { triggerDeadC0DE(); return; }
 
-  // NETARD audit log — handle separately (DDL optional)
+  // NETARD audit log — handle separately (DDL optional, uses own priority chain)
   if (!S.forcedFormat && isNetardLog(msgText)) { doParseNetardLog(msgText); return; }
-
-  const ddlContents = getDDLsForScope();
-  if (!ddlContents.length) { flash('Select a DDL, Subvolume, or Volume from the tree first.', 'warn'); return; }
-
-  // Validate DDL structure across all DDLs in scope — errors block parse, warnings are shown afterwards.
-  // Build a global type registry from ALL saved DDLs so cross-file TYPE references are resolved.
-  const parseTypeReg = buildRepoTypeRegistry();
-  const parseTypeSet = new Set(parseTypeReg.keys());
-  const allDDLValidation = ddlContents.map(({ path, content }) => {
-    const { errors, warnings } = validateDDLErrors(content, parseTypeSet);
-    return {
-      errors:   errors.map(e => `[${path}] ${e}`),
-      warnings: warnings.map(w => `[${path}] ${w}`),
-    };
-  });
-  const allDDLErrors   = allDDLValidation.flatMap(r => r.errors);
-  const allDDLWarnings = allDDLValidation.flatMap(r => r.warnings);
-  if (allDDLErrors.length) {
-    const rows = allDDLErrors.map(e =>
-      `<div style="padding:3px 0;border-bottom:1px solid rgba(192,57,43,0.2);word-break:break-word">${esc(e)}</div>`
-    ).join('');
-    document.getElementById('resContainer').innerHTML =
-      `<div style="padding:10px 14px;color:#e87461;font-size:11.5px;font-family:var(--font-mono)">
-        <div style="font-weight:700;margin-bottom:6px;font-size:12px">⚠ DDL Errors — fix before parsing</div>
-        ${rows}
-      </div>`;
-    return;
-  }
-  if (allDDLWarnings.length) {
-    setTimeout(() => flash(`⚠ ${allDDLWarnings.length} DDL warning${allDDLWarnings.length > 1 ? 's' : ''} — ${allDDLWarnings[0]}`, 'warn'), 400);
-  }
-
-  const activeDDLs = ddlContents.map(({ path, content }) => ({ path, defs: parseDDL(content) }))
-                                  .filter(d => d.defs.length > 0);
-  if (!activeDDLs.length) { flash('No valid field definitions found in selected scope.', 'warn'); return; }
 
   S.inputFormat = S.forcedFormat || detectFormat(msgText);
   const chunks  = splitMessages(msgText);
-  const parsed  = [];
 
-  for (const chunk of chunks) {
-    const bytes = extractBytes(chunk, S.inputFormat);
-    if (!bytes.length) continue;
-    // Try all DDLs in scope — pick the one that parses the most fields without errors
+  // ── Priority 1: single message + explicit DDL selected ─────────────────
+  // Use the selected DDL directly — no DDLMM lookup, no auto-detect.
+  if (chunks.length === 1 && S.scope?.type === 'ddl') {
+    const ddlContents = getDDLsForScope();
+    if (!ddlContents.length) { flash('Selected DDL is empty.', 'warn'); return; }
+
+    const parseTypeReg = buildRepoTypeRegistry();
+    const parseTypeSet = new Set(parseTypeReg.keys());
+    const allDDLValidation = ddlContents.map(({ path, content }) => {
+      const { errors, warnings } = validateDDLErrors(content, parseTypeSet);
+      return { errors: errors.map(e => `[${path}] ${e}`), warnings: warnings.map(w => `[${path}] ${w}`) };
+    });
+    const allDDLErrors   = allDDLValidation.flatMap(r => r.errors);
+    const allDDLWarnings = allDDLValidation.flatMap(r => r.warnings);
+    if (allDDLErrors.length) {
+      const rows = allDDLErrors.map(e =>
+        `<div style="padding:3px 0;border-bottom:1px solid rgba(192,57,43,0.2);word-break:break-word">${esc(e)}</div>`
+      ).join('');
+      document.getElementById('resContainer').innerHTML =
+        `<div style="padding:10px 14px;color:#e87461;font-size:11.5px;font-family:var(--font-mono)">
+          <div style="font-weight:700;margin-bottom:6px;font-size:12px">⚠ DDL Errors — fix before parsing</div>
+          ${rows}
+        </div>`;
+      return;
+    }
+    if (allDDLWarnings.length) {
+      setTimeout(() => flash(`⚠ ${allDDLWarnings.length} DDL warning${allDDLWarnings.length > 1 ? 's' : ''} — ${allDDLWarnings[0]}`, 'warn'), 400);
+    }
+
+    const activeDDLs = ddlContents.map(({ path, content }) => ({ path, defs: parseDDL(content) }))
+                                    .filter(d => d.defs.length > 0);
+    if (!activeDDLs.length) { flash('No valid field definitions found in selected scope.', 'warn'); return; }
+
+    const chunk       = chunks[0];
+    const bytes       = extractBytes(chunk, S.inputFormat);
+    if (!bytes.length) { flash('Could not extract any message bytes from input.', 'error'); return; }
+
     let best = { score: -1, fields: [], ddlPath: activeDDLs[0].path };
     for (const { path, defs } of activeDDLs) {
       const fields = parseMessage(bytes, defs);
@@ -3068,14 +3384,83 @@ function doParseMessages() {
       const score  = fields.length > 0 ? (fields.length - errs) / fields.length : 0;
       if (score > best.score) best = { score, fields, ddlPath: path };
     }
-    // Build byte → textarea-char map for field highlighting in the input panel
     const chunkStr    = typeof chunk === 'object' ? chunk.text : String(chunk);
     const chunkOffset = msgText.indexOf(chunkStr);
-    const byteCharMap = buildByteCharMap(chunkStr, S.inputFormat,
-                                         chunkOffset >= 0 ? chunkOffset : 0);
-    const charStart = chunkOffset >= 0 ? chunkOffset : 0;
-    parsed.push({ bytes, raw: chunk.text || chunk, timestamp: chunk.timestamp || null,
+    const byteCharMap = buildByteCharMap(chunkStr, S.inputFormat, chunkOffset >= 0 ? chunkOffset : 0);
+    const charStart   = chunkOffset >= 0 ? chunkOffset : 0;
+
+    S.messages      = [{ bytes, raw: chunk.text || chunk, timestamp: chunk.timestamp || null,
       fields: best.fields, ddlPath: best.ddlPath, byteCharMap,
+      charStart, charEnd: charStart + chunkStr.length,
+      msgType: { type: 'USER', label: 'User' } }];
+    S.curIdx = 0; S.isParsed = true; S.selFieldId = null;
+    S.trackMode = false; S.trackedFields = new Set();
+    syncParseBtn();
+    document.getElementById('msgInput').readOnly = true;
+    updateBadges(); updateNav(); renderCurrent();
+    return;
+  }
+
+  // ── Priority 2 + 3: DDLMM → auto-detect ─────────────────────────────────
+  // Pre-compile ALL DDLs in the tree, grouped by volume, for auto-detect.
+  const compiledByVol = {};
+  for (const vol of Object.keys(S.ddlTree)) {
+    const entries = getDDLsForVol(vol)
+      .map(({ path, content }) => ({ path, defs: parseDDL(content) }))
+      .filter(d => d.defs.length > 0);
+    if (entries.length) compiledByVol[vol] = entries;
+  }
+  const allCompiled = Object.values(compiledByVol).flat();
+
+  if (!allCompiled.length && !S.ddlMsgMap.length) {
+    flash('No DDL definitions found. Add a DDL to the tree or select one explicitly.', 'warn');
+    return;
+  }
+
+  const parsed = [];
+  for (const chunk of chunks) {
+    const chunkStr    = typeof chunk === 'object' ? chunk.text : String(chunk);
+    const bytes       = extractBytes(chunk, S.inputFormat);
+    if (!bytes.length) continue;
+
+    let msgType = detectMsgType(chunkStr);
+    let fields  = [], ddlPath = null;
+
+    // Priority 2: DDLMM — match on MSG content only (no source/dest in plain input)
+    const ddlmmRule = matchDDLMM(chunkStr, null, null, msgType.type);
+    if (ddlmmRule) {
+      const resolved = getDDLFromPath(ddlmmRule.ddlPath);
+      if (resolved && resolved.defs.length) {
+        const result = bestDDLMatch(bytes, [resolved]);
+        fields  = result.fields;
+        ddlPath = result.ddlPath;
+      }
+      // Rule TYPE overrides the badge (---- = keep auto-detected)
+      if (ddlmmRule.type !== '----') {
+        const knownLabel = MSG_TYPE_MAP.find(p => p.type === ddlmmRule.type)?.label;
+        msgType = { ...msgType, type: ddlmmRule.type, label: knownLabel || ddlmmRule.type };
+      }
+    }
+
+    // Priority 3: auto-detect fallback
+    if (!fields.length) {
+      const candidates = (msgType.vol && compiledByVol[msgType.vol]?.length)
+        ? compiledByVol[msgType.vol]
+        : allCompiled;
+      if (candidates.length) {
+        const result = bestDDLMatch(bytes, candidates);
+        fields  = result.fields;
+        ddlPath = result.ddlPath;
+        // First-encounter: offer to save this type → DDL mapping for future messages
+        if (ddlPath) _suggestTypeMapping(msgType.type, msgType.label, ddlPath);
+      }
+    }
+
+    const chunkOffset = msgText.indexOf(chunkStr);
+    const byteCharMap = buildByteCharMap(chunkStr, S.inputFormat, chunkOffset >= 0 ? chunkOffset : 0);
+    const charStart   = chunkOffset >= 0 ? chunkOffset : 0;
+    parsed.push({ bytes, raw: chunkStr, timestamp: chunk.timestamp || null,
+      fields, ddlPath, msgType, byteCharMap,
       charStart, charEnd: charStart + chunkStr.length });
   }
 
@@ -3167,8 +3552,9 @@ function _hlDDLMMLine(line) {
   // Capture whitespace separators between tokens so the overlay preserves
   // exact character positions — replacing them with a single ' ' would shift
   // the overlay text left and misalign the textarea cursor with what is visible.
+  // SEQ can be a number or ## (auto type-mapping sentinel).
   const m = rest.match(
-    /^(\d+)(\s+)(ISO|STM|PSTM|NDC|B24|----)(\s+)(MSG)(=)(\S+)(\s+)(SOURCE)(=)(\S+)(\s+)(DESTINATION)(=)(\S+)(\s+)(DDL)(=)(\S+)(.*)/i
+    /^(##|\d+)(\s+)(ISO|STM|PSTM|NDC|B24|----)(\s+)(MSG)(=)(\S+)(\s+)(SOURCE)(=)(\S+)(\s+)(DESTINATION)(=)(\S+)(\s+)(DDL)(=)(\S+)(.*)/i
   );
   if (!m) return _escH(line);
   const tCls = { ISO:'iso',STM:'stm',PSTM:'pstm',NDC:'ndc',B24:'b24','----':'any' }[m[3].toUpperCase()] || 'iso';
@@ -3399,8 +3785,9 @@ function renderCurrent() {
     const tp = msg.msgType?.label ? ` · ${msg.msgType.label}` : '';
     document.getElementById('resPanelTitle').textContent = `Rec #${msg.recNo}  ${msg.typeDesc}${tp}`;
   } else {
+    const tp       = (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') ? ` · ${msg.msgType.label}` : '';
     const ddlLabel = msg.ddlPath ? ` — ${msg.ddlPath.split('/').pop()}` : '';
-    document.getElementById('resPanelTitle').textContent = `Parse Results${ddlLabel}`;
+    document.getElementById('resPanelTitle').textContent = `Parse Results${tp}${ddlLabel}`;
   }
 }
 
@@ -3419,6 +3806,16 @@ function renderFieldTable(msg) {
       <span class="rec-meta-time">${esc(msg.time||'')}</span>
       <span class="rec-meta-pipe">|</span>
       <span>${msg.recLength} bytes</span>
+    </div>`;
+  } else if (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') {
+    const t   = msg.msgType;
+    const cls = 'btype btype-' + t.type.toLowerCase();
+    const ddlName = msg.ddlPath ? msg.ddlPath.split('/').pop() : '';
+    metaBar = `<div class="rec-meta">
+      <span class="${cls}">${esc(t.type)}</span>
+      ${ddlName ? `<span class="rec-meta-pipe">|</span><span>${esc(ddlName)}</span>` : ''}
+      <span class="rec-meta-pipe">|</span>
+      <span>${msg.bytes?.length || 0} bytes</span>
     </div>`;
   }
 
@@ -3803,7 +4200,18 @@ function updateBadges() {
   const cntEl = document.getElementById('cntBadge');
   // Badges only shown in AUTO mode — forced format is already visible in the combo
   if (S.forcedFormat) { fmtEl.innerHTML = ''; cntEl.innerHTML = ''; return; }
-  const fmtMap = { 'hex':['badge-hex','HEX'], 'tandem-dump':['badge-dump','TANDEM DUMP'], 'ascii':['badge-ascii','ASCII'], 'netard':['badge-netard','NETARD LOG'], 'oct':['badge-oct','OCT'] };
+  const fmtMap = {
+    'hex':              ['badge-hex',          'HEX'],
+    'tandem-dump':      ['badge-dump',         'TANDEM DUMP'],
+    'ascii':            ['badge-ascii',        'ASCII'],
+    'oct':              ['badge-oct',          'OCT'],
+    'netard':           ['badge-netard',       'NETARD'],
+    'netard-hex':       ['badge-netard-hex',   'NETARD HEX'],
+    'netard-dump':      ['badge-netard-dump',  'NETARD DUMP'],
+    'netard-oct':       ['badge-netard-oct',   'NETARD OCT'],
+    'netard-ebcdic':    ['badge-netard-ebcdic','NETARD EBCDIC'],
+    'netard-ascii':     ['badge-netard-ascii', 'NETARD ASCII'],
+  };
   if (S.inputFormat && fmtMap[S.inputFormat]) {
     const [cls, lbl] = fmtMap[S.inputFormat];
     fmtEl.innerHTML = `<span class="badge ${cls}">${lbl}</span>`;
@@ -3850,6 +4258,12 @@ function renderDDLTree() {
   const sc   = S.scope;
   const fq   = S.treeFilter.toLowerCase();   // filter query ('' = no filter)
   const vols = Object.keys(tree).sort();
+
+  // Build map of ddlPath → type from ## (auto type-mapping) rules
+  const typeMapBadges = {};
+  for (const r of S.ddlMsgMap) {
+    if (r.seq === Infinity) typeMapBadges[r.ddlPath] = r.type;
+  }
 
   // ── DDLMM root node (always shown at the top) ─────────────────────────────
   const ddlmmSel    = sc?.type === 'ddlmm' ? ' tree-sel' : '';
@@ -3959,9 +4373,14 @@ function renderDDLTree() {
               : tknId
                 ? `<span class="tree-tkn-id" title="Token ID: ${tknId}">${tknId}</span>`
                 : '';
+            // Type mapping badge: show type if this DDL is the target of a ## rule
+            const mappedType = !isPending && typeMapBadges[`${vol}/${sv}/${d}`];
+            const typeBadge  = mappedType
+              ? `<span class="tree-type-badge tbtype-${mappedType.toLowerCase()}" title="Auto type-mapping: ${mappedType}">${mappedType}</span>`
+              : '';
             html += `<div class="tree-node${dSel}${pendCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
               <span class="tree-caret" style="visibility:hidden">−</span>
-              <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${tknBadge}
+              <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${tknBadge}${typeBadge}
             </div>`;
           }
         }
@@ -4017,7 +4436,6 @@ function selectScope(type, vol, sv, name) {
   if (type === 'ddl') {
     const c = ((S.ddlTree[vol] || {})[sv] || {})[name] || '';
     document.getElementById('ddlEditor').value = c;
-    document.getElementById('ddlName').value = name;
     document.getElementById('ddlScopePath').textContent = `${vol} / ${sv} / ${name}`;
     S.editorBaseline = c;
     restoreDDLPlaceholder();
@@ -4256,17 +4674,15 @@ function newSubvolume() {
 function newDDLEntry() {
   const sc = S.scope;
   if (!sc || sc.type === 'vol') { flash('Select a subvolume first', 'warn'); return; }
-  showPrompt('New DDL name:', '', d => {
-    if (!d) return;
-    const nameErr = validateDDLDefName(d);
-    if (nameErr) { flash(nameErr, 'error'); return; }
-    const { vol, sv } = sc;
-    if (!S.ddlTree[vol]) S.ddlTree[vol] = {};
-    if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
-    if (S.ddlTree[vol][sv][d]) { flash('DDL already exists', 'warn'); return; }
-    S.ddlTree[vol][sv][d] = '';
-    selectScope('ddl', vol, sv, d);   // not persisted until user clicks Save
-  });
+  const { vol, sv } = sc;
+  if (!S.ddlTree[vol])     S.ddlTree[vol]     = {};
+  if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
+  // Generate a unique placeholder name — "new ddl", "new ddl 2", "new ddl 3", …
+  let placeholder = 'new ddl';
+  let idx = 2;
+  while (S.ddlTree[vol][sv][placeholder] !== undefined) placeholder = `new ddl ${idx++}`;
+  S.ddlTree[vol][sv][placeholder] = '';
+  selectScope('ddl', vol, sv, placeholder);   // not persisted until user clicks Save
 }
 
 // Split an HPE DDL file into individual { name, content }[] definitions.
@@ -4356,13 +4772,14 @@ function buildTokenMap() {
 // ============================================================
 
 // Compile a DDLMM wildcard pattern to a RegExp (prefix match).
-// $=single alphanum, *=any chars
+// $=single alphanum, #=single digit, *=any chars
 function compileWildcard(pattern) {
   if (!pattern || pattern === '*') return null;  // null = match anything
   const re = pattern
-    .replace(/[.+?^{}()|[\]\\]/g, '\\$&')   // escape regex specials (not * $)
+    .replace(/[.+?^{}()|[\]\\]/g, '\\$&')   // escape regex specials (not * $ #)
     .replace(/\*/g, '.*')
-    .replace(/\$/g, '[A-Za-z0-9]');
+    .replace(/\$/g, '[A-Za-z0-9]')
+    .replace(/#/g, '[0-9]');
   return new RegExp('^' + re, 'i');            // prefix match
 }
 
@@ -4389,16 +4806,18 @@ function parseDDLMsgMap(text) {
     const line = rawLine.replace(/^\*.*/, '').trim();   // strip * comments (col 1)
     if (!line) continue;
     // Format: SEQ  TYPE  MSG=PAT  SOURCE=PAT  DESTINATION=PAT  DDL=VOL/SV/NAME
+    // SEQ can be a number or ## (auto type-mapping catch-all sentinel, evaluated last at level-0)
     const m = line.match(
-      /^(\d+)\s+(ISO|STM|PSTM|NDC|B24|----)\s+MSG=(\S+)\s+SOURCE=(\S+)\s+DESTINATION=(\S+)\s+DDL=(\S+)/i
+      /^(##|\d+)\s+(ISO|STM|PSTM|NDC|B24|----)\s+MSG=(\S+)\s+SOURCE=(\S+)\s+DESTINATION=(\S+)\s+DDL=(\S+)/i
     );
     if (!m) continue;
-    const [, seq, type, msgPat, srcPat, dstPat, ddlPath] = m;
+    const [, seqStr, type, msgPat, srcPat, dstPat, ddlPath] = m;
     const msgRe = compileWildcard(msgPat);
     const srcRe = compileWildcard(srcPat);
     const dstRe = compileWildcard(dstPat);
     rules.push({
-      seq: parseInt(seq), type: type.toUpperCase(),
+      seq: seqStr === '##' ? Infinity : parseInt(seqStr, 10),
+      type: type.toUpperCase(),
       msgRe, srcRe, dstRe, ddlPath,
       level: ruleLevel(msgRe, srcRe, dstRe),
     });
@@ -4406,29 +4825,24 @@ function parseDDLMsgMap(text) {
   return rules;
 }
 
-// Main routing lookup. Returns { ddlPath, rule } or null.
-// Cascades from most-specific (level 1) to catch-all (level 0).
-function matchDDLMM(msgType, msgContent, source, dest) {
+// Main routing lookup. Returns matched rule or null.
+// TYPE column is a badge label only — not a matching criterion.
+// Exception: ## rules (seq=Infinity) at level-0 use TYPE as a discriminator —
+// they only match when detectedType equals the rule's TYPE (or rule.type === '----').
+// Cascades through all 5 specificity levels then catch-all (0).
+function matchDDLMM(msgContent, source, dest, detectedType) {
   if (!S.ddlMsgMap.length) return null;
-  const applicable = S.ddlMsgMap.filter(r =>
-    r.type === '----' || r.type === (msgType || '').toUpperCase()
-  );
-  for (let lvl = 1; lvl >= 0; lvl--) {   // lvl: 1=MSG+SRC+DST … 0=catch-all
-    // At each level, descend: 1→2→3→4→5→0
-    const order = lvl === 1 ? [1, 2, 3, 4, 5, 0] : null;
-    if (order) {
-      for (const targetLvl of order) {
-        const match = applicable
-          .filter(r => r.level === targetLvl)
-          .find(r =>
-            matchWildcard(msgContent, r.msgRe) &&
-            matchWildcard(source,     r.srcRe) &&
-            matchWildcard(dest,       r.dstRe)
-          );
-        if (match) return match;
-      }
-      break;
-    }
+  for (const targetLvl of [1, 2, 3, 4, 5, 0]) {
+    const match = S.ddlMsgMap
+      .filter(r => r.level === targetLvl)
+      .find(r => {
+        // ## sentinel rules discriminate by detected type
+        if (r.seq === Infinity && r.type !== '----' && r.type !== detectedType) return false;
+        return matchWildcard(msgContent, r.msgRe) &&
+               matchWildcard(source,     r.srcRe) &&
+               matchWildcard(dest,       r.dstRe);
+      });
+    if (match) return match;
   }
   return null;
 }
@@ -4456,6 +4870,87 @@ function loadDDLMsgMap() {
   } catch(e) {}
 }
 
+// ── Type-mapping helpers ───────────────────────────────────────────────────
+
+// Returns true if a ## type-mapping rule already exists for this type.
+function hasTypeMappingRule(type) {
+  return S.ddlMsgMap.some(r => r.seq === Infinity && r.type === type);
+}
+
+// Add (or replace) a ## type-mapping catch-all rule for the given type.
+// "Last one wins" — any existing ## rule for the same type is removed first.
+function addTypeMappingRule(type, ddlPath) {
+  const upperType = type.toUpperCase();
+  // Strip existing ## rules for this type from the raw text
+  const lines = S.ddlMsgMapRaw.split('\n');
+  const filtered = lines.filter(line => {
+    const m = line.match(/^##\s+(ISO|STM|PSTM|NDC|B24|----)\s+MSG=/i);
+    return !(m && m[1].toUpperCase() === upperType);
+  });
+  // Append new rule at end
+  filtered.push(`## ${upperType}  MSG=*  SOURCE=*  DESTINATION=*  DDL=${ddlPath}`);
+  S.ddlMsgMapRaw = filtered.join('\n');
+  S.ddlMsgMap    = parseDDLMsgMap(S.ddlMsgMapRaw);
+  saveDDLMsgMap();
+  // Sync editor text + highlight if DDLMM is currently open in the editor
+  if (S.scope?.type === 'ddlmm') {
+    const ed = document.getElementById('ddlEditor');
+    ed.value = S.ddlMsgMapRaw;
+    S.editorBaseline = S.ddlMsgMapRaw;
+    updateDDLHighlight();
+  }
+  renderDDLTree();
+  flash(`${upperType} → ${ddlPath.split('/').pop()}`, 'ok');
+}
+
+// Context-menu action: open type picker then map the selected DDL.
+function mapDDLToType(vol, sv, name) {
+  showTypePicker(`Map "${name}" to type:`, type => {
+    if (type) addTypeMappingRule(type, `${vol}/${sv}/${name}`);
+  });
+}
+
+// Type picker modal — shows clickable type badges; calls cb(type) or cb(null).
+let _typePickerCb = null;
+function showTypePicker(label, cb) {
+  const overlay = document.getElementById('typePickerOverlay');
+  document.getElementById('typePickerLabel').textContent = label;
+  const container = document.getElementById('typePickerBtns');
+  container.innerHTML = '';
+  _typePickerCb = cb;
+  const TYPES = ['ISO','STM','PSTM','NDC','B24'];
+  for (const t of TYPES) {
+    const btn = document.createElement('button');
+    btn.className = `btype btype-${t.toLowerCase()}`;
+    btn.style.cssText = 'cursor:pointer;padding:5px 12px;margin:3px;font-size:11px;border-radius:3px;';
+    btn.textContent = t;
+    btn.onclick = () => {
+      overlay.classList.add('hidden');
+      const fn = _typePickerCb; _typePickerCb = null;
+      if (fn) fn(t);
+    };
+    container.appendChild(btn);
+  }
+  overlay.classList.remove('hidden');
+}
+
+// First-encounter suggestion: after auto-detect resolves a DDL for a message type,
+// offer once per session to save a ## mapping rule so future messages use the same DDL.
+function _suggestTypeMapping(type, label, ddlPath) {
+  if (!type || type === 'UNKNOWN' || !ddlPath) return;
+  if (S.seenTypes.has(type)) return;
+  if (hasTypeMappingRule(type)) return;
+  S.seenTypes.add(type);
+  const ddlName = ddlPath.split('/').pop();
+  setTimeout(() => {
+    showConfirmHTML(
+      `Auto-detected <strong>${esc(label || type)}</strong> &mdash; parsed using <strong>${esc(ddlName)}</strong>.<br>` +
+      `Save this as the default DDL for all <strong>${esc(type)}</strong> messages?`,
+      ok => { if (ok) addTypeMappingRule(type, ddlPath); }
+    );
+  }, 500);
+}
+
 const DDL_EDITOR_PLACEHOLDER =
 `# DDL Definition — two formats supported:\n#\n# ── Simple (ISO 8583) ───────────────────────────────\n# FIELD_ID  TYPE  LENGTH  "Description"\n# Types:  FIXED  LLVAR  LLLVAR  BMP\n# IDs:    MTI  BMP  or field number 1–128\n#\n# ── HPE DDL (NonStop / Tandem) ──────────────────────\n# DEF message-name.\n#   02 field-name  PIC X(n).\n#   02 num-field   PIC 9(n) COMP.\n#   02 bin-field   TYPE BINARY 16.\n#   02 group.\n#     03 sub-field PIC X(5).\n# END.\n#\n# Select or create a DDL in the tree on the left,\n# or drop a .ddl / .txt file here to load it.`;
 
@@ -4463,14 +4958,12 @@ const DDL_EDITOR_PLACEHOLDER =
 function restoreDDLPlaceholder() {
   const ed = document.getElementById('ddlEditor');
   if (ed) ed.placeholder = DDL_EDITOR_PLACEHOLDER;
-  const nameEl = document.getElementById('ddlName');
-  if (nameEl) nameEl.disabled = false;
 }
 
 const DDLMM_PLACEHOLDER =
 `* DDL Message Map — routing rules that assign a DDL to each parsed message
 *
-* Wildcards:  $ = single alphanumeric   * = any sequence (also used as comment in col 1)
+* Wildcards:  $ = single alphanumeric   # = single digit   * = any sequence (also used as comment in col 1)
 *
 * Columns:
 *   SEQ   — rule number (evaluated in order within each priority level)
@@ -4486,7 +4979,7 @@ const DDLMM_PLACEHOLDER =
 *   Level 3  SOURCE  only               (DESTINATION = *, MSG = *)
 *   Level 4  DESTINATION  only          (SOURCE = *, MSG = *)
 *   Level 5  MSG     only               (SOURCE = *, DESTINATION = *)
-*   No match → message is flagged as unrouted
+*   No match → system will attempt auto-detection
 *
 * Examples:
 *   SEQ  TYPE  MSG=PATTERN   SOURCE=PATTERN     DESTINATION=PATTERN   DDL=VOL/SV/NAME
@@ -4498,7 +4991,16 @@ const DDLMM_PLACEHOLDER =
 *   06   ISO   MSG=ISO0420   SOURCE=*           DESTINATION=*            DDL=SWITCH/ISO/ISO-AUTH
 *   07   STM   MSG=010001    SOURCE=*           DESTINATION=*            DDL=ATM/STMFILES/STMTESTING
 *   08   STM   MSG=0*01      SOURCE=*           DESTINATION=*            DDL=ATM/STMFILES/STMTRAN
-*   09   PSTM  MSG=0*02      SOURCE=*           DESTINATION=*            DDL=POS/PSTMFILES/PSTMTRAN`;
+*   09   PSTM  MSG=0*02      SOURCE=*           DESTINATION=*            DDL=POS/PSTMFILES/PSTMTRAN
+*
+* Auto type-mapping rules (## sentinel — evaluated last, after all custom rules fail):
+*   ## TYPE  MSG=*  SOURCE=*  DESTINATION=*  DDL=VOL/SV/NAME
+*   These are catch-alls keyed by auto-detected type — right-click any DDL → "Map to type…"
+*   or confirm the first-encounter prompt to generate them automatically.
+*   ## ISO   MSG=*  SOURCE=*  DESTINATION=*  DDL=SWITCH/1987/Base24
+*   ## STM   MSG=*  SOURCE=*  DESTINATION=*  DDL=ATM/STMFILES/STMTRAN
+*   ## PSTM  MSG=*  SOURCE=*  DESTINATION=*  DDL=POS/PSTMFILES/PSTMTRAN
+*   ## B24   MSG=*  SOURCE=*  DESTINATION=*  DDL=BASE/B24FILES/GENERICB24`;
 
 function selectDDLMM() {
   // Guard: warn if current DDL editor has unsaved changes
@@ -4515,9 +5017,6 @@ function selectDDLMM() {
   const ed = document.getElementById('ddlEditor');
   ed.value = S.ddlMsgMapRaw;
   ed.placeholder = DDLMM_PLACEHOLDER;
-  const nameEl = document.getElementById('ddlName');
-  nameEl.value = '';
-  nameEl.disabled = true;
   document.getElementById('ddlScopePath').textContent = 'DDLMM — DDL Message Map';
   S.editorBaseline = S.ddlMsgMapRaw;
   renderDDLTree();
@@ -4543,7 +5042,6 @@ function clearDDLEditor() {
     return;
   }
   document.getElementById('ddlEditor').value = '';
-  document.getElementById('ddlName').value   = '';
   document.getElementById('ddlScopePath').textContent = 'Select a DDL from the tree →';
   S.scope = null;
   S.pendingDefs = null;
@@ -4560,7 +5058,6 @@ function loadStagedDef(name) {
   const def = S.stagingDefs.find(d => d.name === name);
   if (!def) return;
   document.getElementById('ddlEditor').value = def.content;
-  document.getElementById('ddlName').value   = def.name;
   const destHint = S.scope && (S.scope.type === 'sv' || S.scope.type === 'ddl')
     ? `${S.scope.vol} / ${S.scope.sv} — click Save to place here`
     : `Select a Volume / Subvolume to save "${def.name}"`;
@@ -4609,8 +5106,8 @@ function saveDDL() {
 
   // ── Token map file: lines of the form  NAME = "XX" ───────────────────
   if (isTokenMapText(content)) {
-    const newName = document.getElementById('ddlName').value.trim();
-    if (!newName) { flash('Enter a file name first', 'warn'); return; }
+    const newName = sc.type === 'ddl' ? sc.name : '';
+    if (!newName) { flash('Select a DDL entry in the tree first', 'warn'); return; }
     const existing = S.ddlTree[vol][sv][newName];
     const doSaveTkn = () => {
       if (sc.type === 'ddl' && newName !== sc.name) delete S.ddlTree[vol][sv][sc.name];
@@ -4667,7 +5164,6 @@ function saveDDL() {
       S.treeExp.add(vol); S.treeExp.add(`${vol}/${sv}`);
       const lastName = parts[parts.length - 1].name;
       if (parts.length === 1) {
-        document.getElementById('ddlName').value = lastName;
         selectScope('ddl', vol, sv, lastName);
       } else {
         selectScope('sv', vol, sv);
@@ -4691,11 +5187,9 @@ function saveDDL() {
     return;
   }
 
-  // ── Simple format: use the name field ─────────────────────────────────
-  const newName = document.getElementById('ddlName').value.trim();
-  if (!newName) { flash('Enter a DDL name first', 'warn'); return; }
-  const nameErr = validateDDLDefName(newName);
-  if (nameErr) { flash(nameErr, 'error'); return; }
+  // ── Simple format: use the current scope name (tree item) ─────────────
+  const newName = sc.type === 'ddl' ? sc.name : '';
+  if (!newName) { flash('Select a DDL entry in the tree first', 'warn'); return; }
 
   const existingEntry = S.ddlTree[vol][sv][newName];
 
@@ -4732,18 +5226,27 @@ function saveDDL() {
 
 function deleteScope() {
   const sc = S.scope; if (!sc) return;
-  const labels = { vol: `volume "${sc.vol}"`, sv: `subvolume "${sc.sv}"`, ddl: `DDL "${sc.name}"` };
-  showPrompt(`Type YES to delete ${labels[sc.type]} and all its contents:`, '', ans => {
-    if ((ans || '').toUpperCase() !== 'YES') return;
+
+  const doDelete = () => {
     if      (sc.type === 'vol') { delete S.ddlTree[sc.vol]; S.treeExp.delete(sc.vol); }
     else if (sc.type === 'sv')  { delete S.ddlTree[sc.vol][sc.sv]; S.treeExp.delete(`${sc.vol}/${sc.sv}`); }
     else                        { delete S.ddlTree[sc.vol][sc.sv][sc.name]; }
     S.scope = null;
     S.editorBaseline = null;
-    document.getElementById('ddlEditor').value     = '';
-    document.getElementById('ddlName').value        = '';
+    document.getElementById('ddlEditor').value = '';
     document.getElementById('ddlScopePath').textContent = 'Select a DDL from the tree →';
     saveTree(); renderDDLTree(); updateDDLEditorState(); updateDDLHighlight();
+  };
+
+  // Never-saved placeholder (empty content) — delete immediately, no confirmation needed
+  const isUnsavedPlaceholder = sc.type === 'ddl'
+    && (S.ddlTree[sc.vol]?.[sc.sv]?.[sc.name] === '');
+  if (isUnsavedPlaceholder) { doDelete(); return; }
+
+  const labels = { vol: `volume "${sc.vol}"`, sv: `subvolume "${sc.sv}"`, ddl: `DDL "${sc.name}"` };
+  showPrompt(`Type YES to delete ${labels[sc.type]} and all its contents:`, '', ans => {
+    if ((ans || '').toUpperCase() !== 'YES') return;
+    doDelete();
   });
 }
 
@@ -4791,7 +5294,7 @@ function buildCtxMenu(e) {
     // Right-clicked on empty tree area
     items.push({ icon: '＋', label: 'New Volume',  fn: () => newVolume() });
     items.push({ separator: true });
-    items.push({ icon: '⇩', label: 'Import DDL…', fn: () => triggerImport() });
+    items.push({ icon: '⇩', label: 'Import…', fn: () => triggerImport() });
     if (Object.keys(S.ddlTree).length)
       items.push({ icon: '⇧', label: 'Export All…', fn: () => ctxExport(null, null, null) });
     if (clip?.type === 'vol') {
@@ -4816,9 +5319,9 @@ function buildCtxMenu(e) {
       items.push({ icon: '✎', label: 'Rename…',        fn: () => ctxRenameVol(vol) });
       items.push({ icon: '✕', label: 'Delete Volume',  fn: () => deleteScope(), danger: true });
     } else if (t === 'sv') {
-      items.push({ icon: '＋', label: 'New DDL',           fn: () => newDDLEntry() });
+      items.push({ icon: '＋', label: 'New',                fn: () => newDDLEntry() });
       if (clip?.type === 'ddl')
-        items.push({ icon: '⎘', label: `Paste DDL  "${clip.name}"`, fn: () => ctxPasteDdl(vol, sv) });
+        items.push({ icon: '⎘', label: `Paste  "${clip.name}"`, fn: () => ctxPasteDdl(vol, sv) });
       items.push({ separator: true });
       items.push({ icon: '⎘', label: 'Copy Subvolume',    fn: () => ctxCopySv(vol, sv) });
       items.push({ icon: '⇧', label: 'Export Subvolume…', fn: () => ctxExport(vol, sv, null) });
@@ -4826,11 +5329,13 @@ function buildCtxMenu(e) {
       items.push({ icon: '✎', label: 'Rename…',           fn: () => ctxRenameSv(vol, sv) });
       items.push({ icon: '✕', label: 'Delete Subvolume',  fn: () => deleteScope(), danger: true });
     } else {
-      items.push({ icon: '⎘', label: 'Copy DDL',   fn: () => ctxCopyDdl(vol, sv, name) });
-      items.push({ icon: '⇧', label: 'Export DDL…', fn: () => ctxExport(vol, sv, name) });
+      items.push({ icon: '⎘', label: 'Copy',    fn: () => ctxCopyDdl(vol, sv, name) });
+      items.push({ icon: '⇧', label: 'Export…', fn: () => ctxExport(vol, sv, name) });
+      items.push({ separator: true });
+      items.push({ icon: '⊛', label: 'Map to type…', fn: () => mapDDLToType(vol, sv, name) });
       items.push({ separator: true });
       items.push({ icon: '✎', label: 'Rename…',    fn: () => ctxRenameDdl(vol, sv, name) });
-      items.push({ icon: '✕', label: 'Delete DDL', fn: () => deleteScope(), danger: true });
+      items.push({ icon: '✕', label: 'Delete', fn: () => deleteScope(), danger: true });
     }
   }
   showCtxMenu(e.clientX, e.clientY, items);
@@ -5150,6 +5655,12 @@ function loadTree() {
     S.ddlTree['SWITCH']['1987']['Base24'] = ISO8583_DDL;
     saveTree();
   }
+  // Migration: fix field alignment (type column was at col 7, now at col 9) in stored Base24 DDL
+  if (S.ddlTree['SWITCH']?.['1987']?.['Base24'] &&
+      !S.ddlTree['SWITCH']['1987']['Base24'].includes('1        BMP')) {
+    S.ddlTree['SWITCH']['1987']['Base24'] = ISO8583_DDL;
+    saveTree();
+  }
   buildTokenMap();
   loadDDLMsgMap();
   renderDDLTree();
@@ -5411,16 +5922,6 @@ function initDropZones() {
    * ---------------------------------------------------------- */
   const ddlTA = document.getElementById('ddlEditor');
 
-  // Auto-fill name field from first DEF/RECORD when user types/pastes HPE DDL
-  ddlTA.addEventListener('input', () => {
-    const v = ddlTA.value;
-    if (!isHPEDDLText(v)) return;
-    const nameEl = document.getElementById('ddlName');
-    if (nameEl && !nameEl.value) {
-      const m = v.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+(\S+)/mi);
-      if (m) nameEl.value = m[1].replace(/\.$/, '').toUpperCase();
-    }
-  });
 
   makeDrop(ddlTA, file => {
     const r = new FileReader();
@@ -5438,7 +5939,6 @@ function initDropZones() {
 
         // Load the first definition into the editor
         ddlTA.value = parts[0].content;
-        document.getElementById('ddlName').value = parts[0].name;
         document.getElementById('ddlScopePath').textContent =
           `${parts.length} definition${parts.length > 1 ? 's' : ''} staged — select Vol/SV then Save`;
 
@@ -5455,7 +5955,6 @@ function initDropZones() {
         S.editorBaseline = null;
 
         ddlTA.value = content;
-        document.getElementById('ddlName').value = base;
         document.getElementById('ddlScopePath').textContent =
           `"${base}" staged — select Vol/SV then Save`;
 
@@ -5480,15 +5979,25 @@ function esc(s) {
 
 let _ft = null;
 // level: 'info' (green, default) | 'warn' (yellow) | 'error' (red)
+// Success messages auto-dismiss after 4.5 s.
+// Warnings and errors stay until the user clicks them or a new message replaces them.
 function flash(msg, level) {
   const el = document.getElementById('flash');
-  el.textContent = msg;
+  document.getElementById('flash-msg').textContent = msg;
   el.className = 'flash' + (level === 'warn' ? ' warn' : level === 'error' ? ' error' : '');
   el.style.display = 'block';
-  // Errors stay 6 s, warnings 5 s, info/success messages 4.5 s
-  const dur = level === 'error' ? 6000 : level === 'warn' ? 5000 : 4500;
-  clearTimeout(_ft); _ft = setTimeout(() => el.style.display = 'none', dur);
+  clearTimeout(_ft);
+  if (!level || level === 'info') {
+    // Success: auto-dismiss after 4.5 s
+    _ft = setTimeout(() => el.style.display = 'none', 4500);
+  }
+  // warn / error: no timer — stays until clicked or replaced
 }
+// Dismiss warn/error on click
+document.addEventListener('DOMContentLoaded', () => {
+  const _fl = document.getElementById('flash');
+  _fl.addEventListener('click', () => { if (_fl.classList.contains('warn') || _fl.classList.contains('error')) _fl.style.display = 'none'; });
+});
 
 // ============================================================
 // INIT
@@ -5514,6 +6023,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   // ---- end modal init ----
 
+  // ---- type picker modal init ----
+  function _closeTypePicker() {
+    document.getElementById('typePickerOverlay').classList.add('hidden');
+    const fn = _typePickerCb; _typePickerCb = null;
+    if (fn) fn(null);
+  }
+  document.getElementById('typePickerCancel').addEventListener('click', _closeTypePicker);
+  document.getElementById('typePickerOverlay').addEventListener('mousedown', e => {
+    if (e.target === document.getElementById('typePickerOverlay')) _closeTypePicker();
+  });
+  // ---- end type picker modal init ----
+
   // ---- context menu ----
   document.addEventListener('contextmenu', buildCtxMenu);
   document.addEventListener('click', () => { hideCtxMenu(); });
@@ -5524,6 +6045,12 @@ document.addEventListener('DOMContentLoaded', () => {
       closeExportModal();
       closeMsgExportModal();
       closeImportModal();
+      const tpOverlay = document.getElementById('typePickerOverlay');
+      if (tpOverlay && !tpOverlay.classList.contains('hidden')) {
+        tpOverlay.classList.add('hidden');
+        const fn = _typePickerCb; _typePickerCb = null;
+        if (fn) fn(null);
+      }
     }
     // Arrow keys — but not when focus is inside a text input/textarea
     const tag = document.activeElement?.tagName;
@@ -5641,6 +6168,17 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="modal-btns">
       <button class="btn" id="modalCancel">Cancel</button>
       <button class="btn btn-primary" id="modalOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TYPE PICKER MODAL ===== -->
+<div class="modal-overlay hidden" id="typePickerOverlay">
+  <div class="modal-box" id="typePickerBox">
+    <div class="modal-label" id="typePickerLabel"></div>
+    <div id="typePickerBtns" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:14px 0 6px"></div>
+    <div class="modal-btns">
+      <button class="btn" id="typePickerCancel">Cancel</button>
     </div>
   </div>
 </div>

@@ -509,6 +509,19 @@ input[type="text"]:focus { border-color: var(--accent); }
 .rec-meta-route { color: var(--text); }
 .rec-meta-time  { color: var(--text-dim); }
 
+/* ---- Token area rows ---- */
+tr.tkn-area-hdr td {
+  background: rgba(139,92,246,0.10); color: var(--accent);
+  font-weight: 700; border-top: 2px solid var(--accent);
+  padding: 5px 8px; font-size: var(--sz-mono);
+}
+tr.tkn-hdr td {
+  background: rgba(139,92,246,0.05); color: var(--warning);
+  font-weight: 700; border-top: 1px solid var(--border);
+  padding: 3px 8px;
+}
+tr.tkn-unknown td { color: var(--accent2); font-style: italic; }
+
 /* ===== RESULTS TABLE ===== */
 .tbl-wrap { overflow-y: auto; flex: 1; min-height: 0; scrollbar-gutter: stable; }
 table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: var(--sz-mono); }
@@ -2337,6 +2350,7 @@ function validateDDLConstantName(name) {
 // ---- Auto-detect DDL format and dispatch ------------------------------------
 function parseDDL(text) {
   if (!text) return [];
+  if (isTokenMap(text)) return [];  // token map files are not DDL definitions
   // HPE DDL: has a DEF/DEFINITION/RECORD keyword AND level numbers like "02 fieldname"
   if (/^\s*(?:DEF|DEFINITION|RECORD|CONSTANT)\s+\S/mi.test(text) &&
       /^\s*\d{2}\s+\S/m.test(text)) {
@@ -2599,6 +2613,190 @@ function parseFlatMessage(bytes, defs) {
     });
   }
   return fields;
+}
+
+// ============================================================
+// TOKEN AREA PARSER
+// ============================================================
+
+// Auto-detect: a file is a token map if all non-blank non-comment lines match "XX" = NAME
+function isTokenMap(text) {
+  if (!text) return false;
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('*'));
+  if (!lines.length) return false;
+  return lines.every(l => /^"[A-Za-z0-9]{2}"\s*=\s*\S+/.test(l));
+}
+
+// Parse token map text → { ID: 'DDL-NAME', ... }
+function parseTokenMap(text) {
+  const map = {};
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('*')) continue;
+    const m = t.match(/^"([A-Za-z0-9]{2})"\s*=\s*(\S+)/);
+    if (m) map[m[1].toUpperCase()] = m[2];
+  }
+  return map;
+}
+
+// Gather all token maps from S.ddlTree; preferred volume comes first
+function getTokenMaps(preferredVol) {
+  const maps = [];
+  const vols = Object.keys(S.ddlTree).sort((a,b) =>
+    a === preferredVol ? -1 : b === preferredVol ? 1 : 0);
+  for (const vol of vols) {
+    for (const sv of Object.keys(S.ddlTree[vol] || {})) {
+      for (const name of Object.keys(S.ddlTree[vol][sv] || {})) {
+        const content = S.ddlTree[vol][sv][name];
+        if (isTokenMap(content))
+          maps.push({ vol, sv, name, path: `${vol}/${sv}/${name}`, map: parseTokenMap(content) });
+      }
+    }
+  }
+  return maps;
+}
+
+// Merge all token maps into one dict (preferred vol wins on collision)
+function mergeTokenMaps(maps, preferredVol) {
+  const merged = {};
+  for (const tm of maps) Object.assign(merged, tm.map);
+  // re-apply preferred vol to ensure it wins
+  for (const tm of maps.filter(t => t.vol === preferredVol)) Object.assign(merged, tm.map);
+  return merged;
+}
+
+// Find DDL by name for a token; for ISO try NAME+'X' first
+function findTokenDDL(ddlName, preferredVol, isISO) {
+  const tryNames = isISO ? [ddlName + 'X', ddlName] : [ddlName];
+  const vols = Object.keys(S.ddlTree).sort((a,b) =>
+    a === preferredVol ? -1 : b === preferredVol ? 1 : 0);
+  for (const tryName of tryNames) {
+    for (const vol of vols) {
+      for (const sv of Object.keys(S.ddlTree[vol] || {})) {
+        const content = S.ddlTree[vol]?.[sv]?.[tryName];
+        if (content && !isTokenMap(content)) {
+          const defs = parseDDL(content);
+          if (defs.length) return { path: `${vol}/${sv}/${tryName}`, defs };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// Parse a token area from bytes[startOffset..], returns array of token objects or null
+// startOffset must point to the '& ' eye-catcher
+// isBinary=true for STM/PSTM, false for ISO
+function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
+  const bToHex = b => b.map(x => x.toString(16).padStart(2,'0').toUpperCase()).join('');
+  const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : `[${x.toString(16).padStart(2,'0')}]`).join('');
+
+  if (bytes[startOffset] !== 0x26 || bytes[startOffset+1] !== 0x20) return null;
+
+  const tokenMaps = getTokenMaps(preferredVol);
+  if (!tokenMaps.length) return null;
+  const idMap = mergeTokenMaps(tokenMaps, preferredVol);
+
+  let offset = startOffset + 2; // skip '& '
+
+  let tokenCount, totalSize;
+  if (isBinary) {
+    if (offset + 4 > bytes.length) return null;
+    tokenCount = (bytes[offset] << 8) | bytes[offset+1]; offset += 2;
+    totalSize  = (bytes[offset] << 8) | bytes[offset+1]; offset += 2;
+  } else {
+    if (offset + 10 > bytes.length) return null;
+    tokenCount = parseInt(bytes.slice(offset,   offset+5 ).map(b=>String.fromCharCode(b)).join(''), 10);
+    totalSize  = parseInt(bytes.slice(offset+5, offset+10).map(b=>String.fromCharCode(b)).join(''), 10);
+    offset += 10;
+  }
+
+  const actualCount = tokenCount - 1; // spec says count = tokens + 1
+  // totalSize includes the '& ' eye-catcher itself
+  const areaEnd = startOffset + totalSize;
+  const tokens = [];
+
+  for (let i = 0; i < actualCount && offset < areaEnd && offset < bytes.length; i++) {
+    // Scan forward to find '! ' eye-catcher (0x21 0x20)
+    if (bytes[offset] !== 0x21 || bytes[offset+1] !== 0x20) {
+      let found = false;
+      for (let j = offset; j < Math.min(areaEnd, bytes.length) - 1; j++) {
+        if (bytes[j] === 0x21 && bytes[j+1] === 0x20) { offset = j; found = true; break; }
+      }
+      if (!found) break;
+    }
+    offset += 2; // skip '! '
+
+    let dataSize;
+    if (isBinary) {
+      if (offset + 2 > bytes.length) break;
+      dataSize = (bytes[offset] << 8) | bytes[offset+1]; offset += 2;
+    } else {
+      if (offset + 5 > bytes.length) break;
+      dataSize = parseInt(bytes.slice(offset, offset+5).map(b=>String.fromCharCode(b)).join(''), 10);
+      offset += 5;
+    }
+
+    if (offset + 2 > bytes.length) break;
+    const idBytes = bytes.slice(offset, offset+2);
+    const tokenId = idBytes.map(b => String.fromCharCode(b)).join('').toUpperCase();
+    offset += 2;
+
+    if (offset + dataSize > bytes.length) break;
+    const dataBytes = bytes.slice(offset, offset+dataSize);
+    offset += dataSize;
+
+    const ddlName = idMap[tokenId];
+    let fields = [], ddlPath = null, resolvedName = null;
+
+    if (ddlName) {
+      const entry = findTokenDDL(ddlName, preferredVol, isISO);
+      if (entry) {
+        fields = parseMessage(dataBytes, entry.defs);
+        ddlPath = entry.path;
+        resolvedName = entry.path.split('/').pop();
+      }
+    }
+
+    tokens.push({
+      id: tokenId,
+      ddlName: resolvedName || ddlName || null,
+      ddlPath,
+      fields,
+      rawBytes: dataBytes,
+      rawHex: bToHex(dataBytes),
+      error: !ddlName ? 'Unknown token ID' : !ddlPath ? 'DDL not found' : null,
+    });
+  }
+
+  return tokens.length ? tokens : null;
+}
+
+// Called after fixed-part parsing; tries to extract token area from a parsed message
+// Returns array of token objects or null
+function extractTokensFromMessage(fields, bytes, msgTypeStr, ddlPath) {
+  if (!fields.length) return null;
+  const preferredVol = ddlPath ? ddlPath.split('/')[0] : null;
+  const isISO = msgTypeStr === 'ISO' || msgTypeStr === 'B24';
+
+  if (isISO) {
+    // Tokens live inside DE-63 or DE-126
+    const tkField = fields.find(f => f.id === '63' || f.id === '126');
+    if (tkField && tkField.rawBytes?.length >= 2 &&
+        tkField.rawBytes[0] === 0x26 && tkField.rawBytes[1] === 0x20) {
+      return parseTokenArea(tkField.rawBytes, 0, false, preferredVol, true);
+    }
+  } else if (msgTypeStr === 'STM' || msgTypeStr === 'PSTM') {
+    const lastField = fields[fields.length - 1];
+    if (lastField?.endByte !== undefined) {
+      const tokenStart = lastField.endByte + 1;
+      if (tokenStart < bytes.length &&
+          bytes[tokenStart] === 0x26 && bytes[tokenStart+1] === 0x20) {
+        return parseTokenArea(bytes, tokenStart, true, preferredVol, false);
+      }
+    }
+  }
+  return null;
 }
 
 // ============================================================
@@ -3290,6 +3488,7 @@ function doParseNetardLog(text) {
       if (ddlPath) _suggestTypeMapping(msgType.type, msgType.label, ddlPath);
     }
 
+    const recTokens = extractTokensFromMessage(fields, parseBytes, msgType.type, ddlPath);
     return {
       bytes: parseBytes, raw: parseRaw,
       isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
@@ -3300,7 +3499,7 @@ function doParseNetardLog(text) {
       source: rec.source, sourceDet: rec.sourceDet,
       dest:   rec.dest,   destDet:   rec.destDet,
       msgType, timestamp: rec.time,
-      fields, ddlPath,
+      fields, ddlPath, tokens: recTokens,
     };
   });
 
@@ -3393,9 +3592,11 @@ function doParseMessages() {
     const byteCharMap = buildByteCharMap(chunkStr, S.inputFormat, chunkOffset >= 0 ? chunkOffset : 0);
     const charStart   = chunkOffset >= 0 ? chunkOffset : 0;
 
+    const p1Tokens = extractTokensFromMessage(best.fields, bytes, detectMsgType(chunkStr).type, best.ddlPath);
     S.messages      = [{ bytes, raw: chunk.text || chunk, timestamp: chunk.timestamp || null,
       fields: best.fields, ddlPath: best.ddlPath, byteCharMap,
       charStart, charEnd: charStart + chunkStr.length,
+      tokens: p1Tokens,
       msgType: { type: 'USER', label: 'User' } }];
     S.curIdx = 0; S.isParsed = true; S.selFieldId = null;
     S.trackMode = false; S.trackedFields = new Set();
@@ -3463,8 +3664,9 @@ function doParseMessages() {
     const chunkOffset = msgText.indexOf(chunkStr);
     const byteCharMap = buildByteCharMap(chunkStr, S.inputFormat, chunkOffset >= 0 ? chunkOffset : 0);
     const charStart   = chunkOffset >= 0 ? chunkOffset : 0;
+    const tkns = extractTokensFromMessage(fields, bytes, msgType.type, ddlPath);
     parsed.push({ bytes, raw: chunkStr, timestamp: chunk.timestamp || null,
-      fields, ddlPath, msgType, byteCharMap,
+      fields, ddlPath, msgType, tokens: tkns, byteCharMap,
       charStart, charEnd: charStart + chunkStr.length });
   }
 
@@ -3822,27 +4024,24 @@ function renderFieldTable(msg) {
     </div>`;
   }
 
-  const rows = msg.fields.map(f => {
-    const sel   = S.selFieldId === f.id ? 'row-sel' : '';
-    const ecls  = f.error ? 'c-err' : 'c-val';
-    const val   = f.value.length > 50 ? f.value.slice(0,50)+'…' : f.value;
-    const rHex  = (f.rawHex||'').length > 22 ? f.rawHex.slice(0,22)+'…' : (f.rawHex||'');
-    const trk   = S.trackedFields.has(f.id) ? 'checked' : '';
-    const det   = f.detail ? `<br><span style="color:var(--text-dim);font-size:10px">${esc(f.detail)}</span>` : '';
-    // Length cell: total field bytes consumed (prefix + data)
+  const makeFieldRows = (fieldList, prefix) => fieldList.map(f => {
+    const fid    = prefix ? `${prefix}::${f.id}` : f.id;
+    const sel    = S.selFieldId === fid ? 'row-sel' : '';
+    const ecls   = f.error ? 'c-err' : 'c-val';
+    const val    = f.value.length > 50 ? f.value.slice(0,50)+'…' : f.value;
+    const rHex   = (f.rawHex||'').length > 22 ? f.rawHex.slice(0,22)+'…' : (f.rawHex||'');
+    const trk    = S.trackedFields.has(fid) ? 'checked' : '';
+    const det    = f.detail ? `<br><span style="color:var(--text-dim);font-size:10px">${esc(f.detail)}</span>` : '';
     const totalLen = f.valueLength !== undefined
-      ? f.valueLength + (f.lenPrefix ? f.lenPrefix.length : 0)
-      : undefined;
-    const lenCell = totalLen !== undefined ? String(totalLen) : '';
-    // Value cell: show LLVAR/LLLVAR length prefix in amber before the data
+      ? f.valueLength + (f.lenPrefix ? f.lenPrefix.length : 0) : undefined;
+    const lenCell    = totalLen !== undefined ? String(totalLen) : '';
     const prefixHtml = f.lenPrefix ? `<span class="c-vlen">${esc(f.lenPrefix)}</span>` : '';
-    // Description tooltip: show DDL-style field definition
-    const ttType = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
-    const descTip = ttType ? `${ttType}\n${f.description}` : f.description;
-    return `<tr class="${sel}" data-fid="${esc(f.id)}"
-      onclick="selectField('${esc(f.id)}')"
-      ondblclick="copyFieldToClipboard('${esc(f.id)}')"
-      onmouseenter="hoverField('${esc(f.id)}')"
+    const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
+    const descTip    = ttType ? `${ttType}\n${f.description}` : f.description;
+    return `<tr class="${sel}" data-fid="${esc(fid)}"
+      onclick="selectField('${esc(fid)}')"
+      ondblclick="copyFieldToClipboard('${esc(fid)}')"
+      onmouseenter="hoverField('${esc(fid)}')"
       onmouseleave="clearHover()">
       <td class="c-id">${esc(f.id)}</td>
       <td class="c-desc" title="${esc(descTip)}">${esc(f.description)}${det}</td>
@@ -3851,10 +4050,35 @@ function renderFieldTable(msg) {
       <td class="c-raw" title="${esc(f.rawHex||'')}">${rHex}</td>
       <td class="c-trk" style="text-align:center">
         <input type="checkbox" class="trk-chk" ${trk}
-          onclick="event.stopPropagation();toggleTrack('${esc(f.id)}',this.checked)"/>
+          onclick="event.stopPropagation();toggleTrack('${esc(fid)}',this.checked)"/>
       </td>
     </tr>`;
   }).join('');
+
+  let rows = makeFieldRows(msg.fields, null);
+
+  if (msg.tokens?.length) {
+    const count = msg.tokens.length;
+    rows += `<tr class="tkn-area-hdr">
+      <td colspan="6">▼ TOKEN AREA &nbsp;·&nbsp; ${count} token${count !== 1 ? 's' : ''}</td>
+    </tr>`;
+    for (const tkn of msg.tokens) {
+      if (tkn.error) {
+        rows += `<tr class="tkn-unknown">
+          <td class="c-id">${esc(tkn.id)}</td>
+          <td colspan="5" class="c-err">${esc(tkn.error)}${tkn.rawHex ? ` &nbsp;<span style="color:var(--text-dim)">${esc(tkn.rawHex.slice(0,40))}</span>` : ''}</td>
+        </tr>`;
+      } else {
+        const ddlLabel = tkn.ddlPath ? tkn.ddlPath.split('/').pop() : tkn.ddlName || '?';
+        const byteCount = tkn.rawBytes?.length || 0;
+        rows += `<tr class="tkn-hdr">
+          <td class="c-id">${esc(tkn.id)}</td>
+          <td colspan="5">${esc(ddlLabel)} &nbsp;·&nbsp; ${byteCount} byte${byteCount !== 1 ? 's' : ''}</td>
+        </tr>`;
+        rows += makeFieldRows(tkn.fields, tkn.id);
+      }
+    }
+  }
 
   const tableOrEmpty = rows
     ? `<div class="tbl-wrap"><table class="res-tbl">
@@ -4740,19 +4964,17 @@ function isHPEDDLText(text) {
   return false;
 }
 
-// Detect whether text is a token map file: lines of the form  NAME = "XX"
-function isTokenMapText(text) {
-  if (!text || !text.trim()) return false;
-  const lines = text.trim().split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
-  if (!lines.length) return false;
-  return lines.every(l => /^\s*\S+\s*=\s*"[0-9A-Fa-f]{2}"\s*$/.test(l));
-}
+// Alias — detection uses the same logic as isTokenMap (format: "XX" = DDL-NAME)
+const isTokenMapText = isTokenMap;
 
-// Parse token map text into { DDL-NAME: "B4", ... }
+// Parse token map text into { DDL-NAME: tokenId } (reverse of parseTokenMap)
+// Used for tree badge display: given a DDL name, what token ID maps to it?
 function parseTokenMapText(text, out = {}) {
   for (const line of text.split('\n')) {
-    const m = line.match(/^\s*(\S+)\s*=\s*"([0-9A-Fa-f]{2})"\s*$/);
-    if (m) out[m[1]] = m[2].toUpperCase();
+    const t = line.trim();
+    if (!t || t.startsWith('*')) continue;
+    const m = t.match(/^"([A-Za-z0-9]{2})"\s*=\s*(\S+)/);
+    if (m) out[m[2]] = m[1].toUpperCase(); // ddlName → tokenId
   }
   return out;
 }
@@ -5107,7 +5329,7 @@ function saveDDL() {
   if (!S.ddlTree[vol])     S.ddlTree[vol]     = {};
   if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
 
-  // ── Token map file: lines of the form  NAME = "XX" ───────────────────
+  // ── Token map file: lines of the form  "XX" = DDL-NAME ─────────────────
   if (isTokenMapText(content)) {
     const newName = sc.type === 'ddl' ? sc.name : '';
     if (!newName) { flash('Select a DDL entry in the tree first', 'warn'); return; }
@@ -5122,8 +5344,8 @@ function saveDDL() {
       saveTree();
       S.treeExp.add(vol); S.treeExp.add(`${vol}/${sv}`);
       selectScope('ddl', vol, sv, newName);
-      const count = Object.keys(parseTokenMapText(content)).length;
-      flash(`✓ Token map saved: ${vol}/${sv}/${newName} (${count} tokens)`);
+      const count = Object.keys(parseTokenMap(content)).length;
+      flash(`✓ Token map saved: ${vol}/${sv}/${newName} (${count} token IDs)`);
     };
     if (existing) { showConfirmHTML(`DEF <span style="color:var(--warning);font-weight:700">${_escH(newName)}</span> already exists and will be overridden.<br>Are you sure you want to continue?`, ok => { if (ok) doSaveTkn(); }); }
     else { doSaveTkn(); }

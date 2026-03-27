@@ -226,10 +226,10 @@ body.light input.tree-search:focus, body.light #treeSearch:focus { background: #
 .tree-match-hi { background: rgba(230,168,23,0.35); border-radius: 2px; }
 .ddl-editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 /* ── DDL syntax-highlight overlay ── */
-.ddl-hl-wrap     { position: relative; flex: 1; min-height: 0; display: flex; }
-.ddl-hl-overlay  { position: absolute; inset: 0; padding: 8px; margin: 0;
+.ddl-hl-wrap     { position: relative; flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.ddl-hl-overlay  { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; margin: 0;
   font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6;
-  white-space: pre; overflow: hidden;
+  white-space: pre; overflow: visible;
   pointer-events: none; z-index: 0; color: var(--text); }
 #ddlEditor       { position: relative; z-index: 1; background: transparent !important;
   color: transparent; caret-color: var(--text); resize: none; flex: 1; }
@@ -653,19 +653,21 @@ body.light .trk-chk { color-scheme: light; }
   flex: 1; color: var(--text-dim); font-size: var(--sz-mono);
   flex-direction: column; gap: 6px; text-align: center; padding: 16px;
 }
-.flash {
+#flash-container {
   position: fixed; bottom: 16px; right: 16px;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+  z-index: 9999; pointer-events: none;
+}
+.flash {
   padding: 7px 14px; border-radius: 4px; font-size: 12px;
-  z-index: 9999; pointer-events: none; display: none;
-  background: var(--success); color: #000;
+  pointer-events: none; background: var(--success); color: #000;
 }
-.flash.warn  { background: #e6a817; color: #000; pointer-events: auto; cursor: pointer; padding-right: 28px; }
-.flash.error { background: #c0392b; color: #fff; pointer-events: auto; cursor: pointer; padding-right: 28px; }
-#flash-x {
+.flash.warn  { background: #e6a817; color: #000; pointer-events: auto; cursor: pointer; padding-right: 28px; position: relative; }
+.flash.error { background: #c0392b; color: #fff; pointer-events: auto; cursor: pointer; padding-right: 28px; position: relative; }
+.flash-x {
   position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
-  font-size: 13px; line-height: 1; opacity: 0.6; pointer-events: none; display: none;
+  font-size: 13px; line-height: 1; opacity: 0.6;
 }
-.flash.warn #flash-x, .flash.error #flash-x { display: inline; }
 
 /* ===== CONTEXT MENU ===== */
 .ctx-menu {
@@ -847,9 +849,9 @@ body.light {
 }
 body.light textarea:focus { background: transparent; }
 body.light textarea[readonly] { background: transparent; color: var(--text); }
-body.light .flash       { background: var(--success); color: #fff; }
-body.light .flash.warn  { background: #d97706; color: #fff; }
-body.light .flash.error { background: #a93226; color: #fff; }
+body.light .flash        { background: var(--success); color: #fff; }
+body.light .flash.warn   { background: #d97706; color: #fff; }
+body.light .flash.error  { background: #a93226; color: #fff; }
 body.light .btn-primary { color: #fff; }
 body.light .btn-primary:hover { background: #0860ca; border-color: #0860ca; color: #fff; }
 body.light .badge-hex    { background: #ede9ff; color: #6639ba; border-color: #7c3aed; }
@@ -913,7 +915,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
         <div class="ddl-editor-pane">
           <div class="ddl-hl-wrap">
             <div id="ddlEditorOverlay" class="ddl-hl-overlay" aria-hidden="true"></div>
-          <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.scrollTop=this.scrollTop;o.scrollLeft=this.scrollLeft;o.style.width=this.scrollWidth+'px';}"
+          <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}"
             placeholder="* DDL Definition — two formats supported:&#10;*&#10;* ── Simple (ISO 8583) ───────────────────────────────&#10;* FIELD_ID  TYPE  LENGTH  &quot;Description&quot;&#10;* Types:  FIXED  LLVAR  LLLVAR  BMP&#10;* IDs:    MTI  BMP  or field number 1–128&#10;*&#10;* ── HPE DDL (NonStop / Tandem) ──────────────────────&#10;* DEF message-name.&#10;*   02 field-name  PIC X(n).&#10;*   02 num-field   PIC 9(n) COMP.&#10;*   02 bin-field   TYPE BINARY 16.&#10;*   02 group.&#10;*     03 sub-field PIC X(5).&#10;* END.&#10;*&#10;* Select or create a DDL in the tree on the left,&#10;* or drop a .ddl / .txt file here to load it."></textarea>
           </div>
         </div>
@@ -1012,7 +1014,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
   </div><!-- end bottom-row -->
 </div><!-- end main-layout -->
 
-<div class="flash" id="flash"><span id="flash-msg"></span><span id="flash-x">✕</span></div>
+<div id="flash-container"></div>
 
 <script>
 'use strict';
@@ -3217,6 +3219,7 @@ function bestDDLMatch(bytes, candidates) {
 }
 
 function doParseNetardLog(text) {
+  S.seenTypes.clear();
   const records = parseNetardLog(text);
   if (!records.length) { flash('No records with message text found in NETARD log', 'warn'); return; }
 
@@ -3330,6 +3333,7 @@ function doParseNetardLog(text) {
 // MAIN PARSE ACTION
 // ============================================================
 function doParseMessages() {
+  S.seenTypes.clear();
   const msgText = document.getElementById('msgInput').value;
   if (!msgText.trim()) { flash('Please enter a message to parse.', 'warn'); return; }
   if (/DEADC0DE/i.test(msgText.replace(/\s/g, ''))) { triggerDeadC0DE(); return; }
@@ -3705,9 +3709,8 @@ function updateDDLHighlight() {
     return _hlSimpleLine(line);
   });
   overlay.innerHTML = lines.join('\n');
-  // sync scroll
-  overlay.scrollTop  = ta.scrollTop;
-  overlay.scrollLeft = ta.scrollLeft;
+  // sync scroll position via transform (overflow:hidden blocks scrollLeft on the overlay)
+  overlay.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
 }
 
 function updateDDLEditorState() {
@@ -4881,14 +4884,19 @@ function hasTypeMappingRule(type) {
 // "Last one wins" — any existing ## rule for the same type is removed first.
 function addTypeMappingRule(type, ddlPath) {
   const upperType = type.toUpperCase();
+  // If DDLMM is blank, seed it with the placeholder comments so they persist as documentation
+  if (!S.ddlMsgMapRaw.trim()) {
+    S.ddlMsgMapRaw = DDLMM_PLACEHOLDER;
+  }
   // Strip existing ## rules for this type from the raw text
   const lines = S.ddlMsgMapRaw.split('\n');
   const filtered = lines.filter(line => {
     const m = line.match(/^##\s+(ISO|STM|PSTM|NDC|B24|----)\s+MSG=/i);
     return !(m && m[1].toUpperCase() === upperType);
   });
-  // Append new rule at end
-  filtered.push(`## ${upperType}  MSG=*  SOURCE=*  DESTINATION=*  DDL=${ddlPath}`);
+  // Append new rule at end — columns aligned with manual rules (SEQ=5, TYPE=6, then padded columns)
+  const t = upperType.padEnd(6);
+  filtered.push(`##   ${t}MSG=*         SOURCE=*           DESTINATION=*            DDL=${ddlPath}`);
   S.ddlMsgMapRaw = filtered.join('\n');
   S.ddlMsgMap    = parseDDLMsgMap(S.ddlMsgMapRaw);
   saveDDLMsgMap();
@@ -4900,7 +4908,7 @@ function addTypeMappingRule(type, ddlPath) {
     updateDDLHighlight();
   }
   renderDDLTree();
-  flash(`${upperType} → ${ddlPath.split('/').pop()}`, 'ok');
+  flash(`Type mapping saved: ${upperType} → ${ddlPath.replace(/\//g, '.')}`, 'ok');
 }
 
 // Context-menu action: open type picker then map the selected DDL.
@@ -4938,13 +4946,13 @@ function showTypePicker(label, cb) {
 // offer once per session to save a ## mapping rule so future messages use the same DDL.
 function _suggestTypeMapping(type, label, ddlPath) {
   if (!type || type === 'UNKNOWN' || !ddlPath) return;
-  if (S.seenTypes.has(type)) return;
   if (hasTypeMappingRule(type)) return;
-  S.seenTypes.add(type);
-  const ddlName = ddlPath.split('/').pop();
+  if (S.seenTypes.has(type)) return;
+  S.seenTypes.add(type);  // suppress duplicates within this parse run; cleared on next parse
+  const ddlDisplay = ddlPath.replace(/\//g, '.');
   setTimeout(() => {
     showConfirmHTML(
-      `Auto-detected <strong>${esc(label || type)}</strong> &mdash; parsed using <strong>${esc(ddlName)}</strong>.<br>` +
+      `Auto-detected <strong>${esc(label || type)}</strong> &mdash; parsed using <strong>${esc(ddlDisplay)}</strong>.<br>` +
       `Save this as the default DDL for all <strong>${esc(type)}</strong> messages?`,
       ok => { if (ok) addTypeMappingRule(type, ddlPath); }
     );
@@ -4993,14 +5001,9 @@ const DDLMM_PLACEHOLDER =
 *   08   STM   MSG=0*01      SOURCE=*           DESTINATION=*            DDL=ATM/STMFILES/STMTRAN
 *   09   PSTM  MSG=0*02      SOURCE=*           DESTINATION=*            DDL=POS/PSTMFILES/PSTMTRAN
 *
-* Auto type-mapping rules (## sentinel — evaluated last, after all custom rules fail):
-*   ## TYPE  MSG=*  SOURCE=*  DESTINATION=*  DDL=VOL/SV/NAME
-*   These are catch-alls keyed by auto-detected type — right-click any DDL → "Map to type…"
-*   or confirm the first-encounter prompt to generate them automatically.
-*   ## ISO   MSG=*  SOURCE=*  DESTINATION=*  DDL=SWITCH/1987/Base24
-*   ## STM   MSG=*  SOURCE=*  DESTINATION=*  DDL=ATM/STMFILES/STMTRAN
-*   ## PSTM  MSG=*  SOURCE=*  DESTINATION=*  DDL=POS/PSTMFILES/PSTMTRAN
-*   ## B24   MSG=*  SOURCE=*  DESTINATION=*  DDL=BASE/B24FILES/GENERICB24`;
+* Auto type-mapping rules - these are catch-alls keyed by auto-detected type
+*   you can configure them by right-click any DDL → "Map to type…"
+*   or confirm the first-encounter prompt to generate them automatically.`;
 
 function selectDDLMM() {
   // Guard: warn if current DDL editor has unsaved changes
@@ -5977,27 +5980,23 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-let _ft = null;
-// level: 'info' (green, default) | 'warn' (yellow) | 'error' (red)
-// Success messages auto-dismiss after 4.5 s.
-// Warnings and errors stay until the user clicks them or a new message replaces them.
+// level: 'info'/'ok' (green, auto-dismiss) | 'warn' (yellow, click to dismiss) | 'error' (red, click to dismiss)
 function flash(msg, level) {
-  const el = document.getElementById('flash');
-  document.getElementById('flash-msg').textContent = msg;
+  const container = document.getElementById('flash-container');
+  if (!container) return;
+  const el = document.createElement('div');
   el.className = 'flash' + (level === 'warn' ? ' warn' : level === 'error' ? ' error' : '');
-  el.style.display = 'block';
-  clearTimeout(_ft);
-  if (!level || level === 'info') {
-    // Success: auto-dismiss after 4.5 s
-    _ft = setTimeout(() => el.style.display = 'none', 4500);
+  el.textContent = msg;
+  if (level === 'warn' || level === 'error') {
+    const x = document.createElement('span');
+    x.className = 'flash-x'; x.textContent = '✕';
+    el.appendChild(x);
+    el.addEventListener('click', () => el.remove());
+  } else {
+    setTimeout(() => el.remove(), 5000);
   }
-  // warn / error: no timer — stays until clicked or replaced
+  container.appendChild(el);
 }
-// Dismiss warn/error on click
-document.addEventListener('DOMContentLoaded', () => {
-  const _fl = document.getElementById('flash');
-  _fl.addEventListener('click', () => { if (_fl.classList.contains('warn') || _fl.classList.contains('error')) _fl.style.display = 'none'; });
-});
 
 // ============================================================
 // INIT

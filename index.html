@@ -11,7 +11,7 @@
   --bg-deep: #0d1117;
   --bg-panel: #161b22;
   --bg-input: #0d1117;
-  --border: #30363d;
+  --border: rgba(255,255,255,0.07);
   --accent: #58a6ff;
   --accent2: #f78166;
   --text: #c9d1d9;
@@ -21,7 +21,8 @@
   --success: #3fb950;
   --warning: #d29922;
   --mono: 'Consolas', 'Courier New', monospace;
-  --resizer-size: 5px;
+  --resizer-size: 2px;
+  --resizer-bg: rgba(255,255,255,0.10);
   --sz-mono: 11px;
 }
 body {
@@ -77,28 +78,25 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .resizer-v {
   flex-shrink: 0;
   height: var(--resizer-size);
-  background: var(--border);
+  background: var(--resizer-bg);
   cursor: row-resize;
   transition: background 0.15s;
   position: relative;
   z-index: 10;
 }
+/* wider invisible hit-area so a 2px bar is still easy to grab */
 .resizer-v::after {
   content: '';
   position: absolute;
-  left: 50%; top: 50%;
-  transform: translate(-50%, -50%);
-  width: 40px; height: 2px;
-  background: #444d56;
-  border-radius: 1px;
+  left: 0; right: 0;
+  top: -4px; bottom: -4px;
 }
 .resizer-v:hover, .resizer-v.dragging { background: var(--accent); }
-.resizer-v.dragging::after { background: #000; }
 
 .resizer-h {
   flex-shrink: 0;
   width: var(--resizer-size);
-  background: var(--border);
+  background: var(--resizer-bg);
   cursor: col-resize;
   transition: background 0.15s;
   position: relative;
@@ -107,15 +105,10 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .resizer-h::after {
   content: '';
   position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  height: 40px; width: 2px;
-  background: #444d56;
-  border-radius: 1px;
+  top: 0; bottom: 0;
+  left: -4px; right: -4px;
 }
 .resizer-h:hover, .resizer-h.dragging { background: var(--accent); }
-.resizer-h.dragging::after { background: #000; }
-#ddlTreeResizer { width: 2px; }
 
 /* ===== PANEL ===== */
 .panel {
@@ -864,7 +857,8 @@ body.light {
   --bg-deep:   #f6f8fa;
   --bg-panel:  #ffffff;
   --bg-input:  #eef1f3;
-  --border:    #d0d7de;
+  --border:    rgba(0,0,0,0.08);
+  --resizer-bg: rgba(0,0,0,0.10);
   --accent:    #0969da;
   --accent2:   #cf222e;
   --text:      #24292f;

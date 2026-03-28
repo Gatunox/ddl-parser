@@ -1385,11 +1385,10 @@ function parseHPEDDL(text) {
     return line.replace(/!([^!]*)(?:!|$)/g, '');
   }).join('\n');
 
-  // Split into statements on "." or "," at end of line (handles multi-line statements).
+  // Split into statements on "." at end of line (handles multi-line statements).
   // DEF, RECORD, and each field definition terminate with a period.
-  // Some HPE DDL files use a trailing comma in place of a period — both are accepted.
   const stmts = stripped
-    .split(/[.,]\s*(?:\n|$)/)
+    .split(/\.\s*(?:\n|$)/)
     .map(s => s.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
@@ -1485,15 +1484,26 @@ function validateDDLErrors(text, repoTypeSet) {
   const unresolvedTypes = new Set(); // user-defined TYPE names that couldn't be resolved
 
   // Strip comments: * in col 1 = full-line, !text! or !text→EOL = inline
-  const stripped = text.split('\n').map(line =>
+  const strippedLines = text.split('\n').map(line =>
     /^\*/.test(line) ? '' : line.replace(/!([^!]*)(?:!|$)/g, '')
-  ).join('\n');
+  );
+  const stripped = strippedLines.join('\n');
 
-  // Split into statements at "." or "," followed by optional whitespace + newline/EOL.
-  // Some HPE DDL files use a trailing comma in place of a period — both are accepted.
-  // Preserves leading-whitespace indent of each statement's first non-blank line.
+  // Line-level check: field lines that end with a comma instead of a period.
+  // Commas are not valid HPE DDL statement terminators — flag each one precisely.
+  for (const line of strippedLines) {
+    const trimmed = line.trimEnd();
+    if (/^\s*\d{2}\s+\S/.test(trimmed) && trimmed.endsWith(',')) {
+      const nm = (trimmed.trim().match(/^\d{2}\s+(\S+)/) || [])[1] || '?';
+      errors.push(`Field "${nm.replace(/,$/, '')}": statement ends with a comma — use a period as the terminator`);
+    }
+  }
+
+  // Split into statements at "." followed by optional whitespace + newline/EOL.
+  // Preserve leading-whitespace indent of each statement's first non-blank line
+  // so we can detect level-88 scope jumps even when level numbers are ambiguous.
   const items = stripped
-    .split(/[.,]\s*(?:\n|$)/)
+    .split(/\.\s*(?:\n|$)/)
     .map(s => {
       const firstLine = s.split('\n').find(l => l.trim().length > 0) || '';
       const indent    = (firstLine.match(/^(\s*)/) || ['',''])[1].length;

@@ -1801,14 +1801,25 @@ function validateDDLErrors(text, repoTypeSet) {
       continue;
     }
 
+    // Field name ending with '-' means there was a space inside the name (e.g. "CRD- LN" → "CRD-")
+    // Spaces are not allowed in HPE DDL field names.
+    if (rawName.endsWith('-')) {
+      errors.push(`[line ${stmtLine}] Field "${rawName}": name ends with a hyphen — spaces are not allowed in field names (check for a space after the hyphen)`);
+      continue;
+    }
+
     const picM       = rest.match(/\bPIC(?:TURE)?\s+(?:IS\s+)?(\S+)/i);
     // Built-in TYPE keywords (inc. SQL variants and the wildcard *)
     const typM       = rest.match(/\bTYPE\s+(?:IS\s+)?((?:CHARACTER|BINARY|FLOAT|COMPLEX|LOGICAL|ENUM|BIT|SQL)(?:\s+[\w,]+)?(?:\s+UNSIGNED)?|\*)/i);
     const hasTypeRef = /\bTYPE\s+\S/i.test(rest);   // any TYPE clause, incl. user-def / "*"
+    // TYPE * means the type name equals the field name itself (e.g. "02 PROD-ID TYPE *." → look for PROD-ID)
+    const typeIsSelf = typM && typM[1] === '*';
     // Capture user-defined type name (non-built-in) for cross-file resolution checks
     const userTypeM  = (!typM && hasTypeRef)
       ? rest.match(/\bTYPE\s+(?:IS\s+)?([A-Za-z][\w-]*)/i) : null;
-    const userTypeRef = userTypeM ? userTypeM[1].replace(/\.$/, '').toUpperCase() : null;
+    const userTypeRef = typeIsSelf     ? rawName.toUpperCase()
+                      : userTypeM      ? userTypeM[1].replace(/\.$/, '').toUpperCase()
+                      : null;
     const compM      = rest.match(/\b(COMP(?:-3)?|COMPUTATIONAL(?:-3)?)\b/i);
     const redfM      = rest.match(/\bREDEFINES\s+(\S+)/i);
     const occM       = rest.match(/\bOCCURS\s+(-?\d+)(?:\s+TO\s+(-?\d+))?\s+TIMES?\b/i);
@@ -5481,7 +5492,9 @@ function saveDDL() {
   }
   // Non-blocking warnings are shown after a short delay once the save completes
   if (picWarnings.length) {
-    setTimeout(() => flash(`⚠ ${picWarnings.length} DDL warning${picWarnings.length > 1 ? 's' : ''} — ${picWarnings[0]}`, 'warn'), 800);
+    const _allMissRef = picWarnings.every(w => w.includes('not found in loaded DDLs'));
+    const _warnDetail = _allMissRef ? 'Missing references' : picWarnings[0];
+    setTimeout(() => flash(`⚠ ${picWarnings.length} DDL warning${picWarnings.length > 1 ? 's' : ''} — ${_warnDetail}`, 'warn'), 800);
   }
 
   // ── HPE DDL: extract names from DEF/RECORD statements ─────────────────

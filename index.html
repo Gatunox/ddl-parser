@@ -1385,10 +1385,11 @@ function parseHPEDDL(text) {
     return line.replace(/!([^!]*)(?:!|$)/g, '');
   }).join('\n');
 
-  // Split into statements on "." at end of line (handles multi-line statements).
+  // Split into statements on "." or "," at end of line (handles multi-line statements).
   // DEF, RECORD, and each field definition terminate with a period.
+  // Some HPE DDL files use a trailing comma in place of a period — both are accepted.
   const stmts = stripped
-    .split(/\.\s*(?:\n|$)/)
+    .split(/[.,]\s*(?:\n|$)/)
     .map(s => s.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
@@ -1488,11 +1489,11 @@ function validateDDLErrors(text, repoTypeSet) {
     /^\*/.test(line) ? '' : line.replace(/!([^!]*)(?:!|$)/g, '')
   ).join('\n');
 
-  // Split into statements at "." followed by optional whitespace + newline/EOL.
-  // Preserve leading-whitespace indent of each statement's first non-blank line
-  // so we can detect level-88 scope jumps even when level numbers are ambiguous.
+  // Split into statements at "." or "," followed by optional whitespace + newline/EOL.
+  // Some HPE DDL files use a trailing comma in place of a period — both are accepted.
+  // Preserves leading-whitespace indent of each statement's first non-blank line.
   const items = stripped
-    .split(/\.\s*(?:\n|$)/)
+    .split(/[.,]\s*(?:\n|$)/)
     .map(s => {
       const firstLine = s.split('\n').find(l => l.trim().length > 0) || '';
       const indent    = (firstLine.match(/^(\s*)/) || ['',''])[1].length;
@@ -1775,6 +1776,15 @@ function validateDDLErrors(text, repoTypeSet) {
     const lvl     = parseInt(lvlM[1]);
     const rawName = lvlM[2].replace(/\.$/, '');
     const rest    = lvlM[3] || '';
+
+    // Merged-statement detector: if rest contains an embedded level-number field
+    // (e.g. "PIC 9(2) 04 AMT-1 TYPE..."), the previous field was missing its terminator.
+    // Report a precise error and skip this corrupted statement.
+    const mergedM = rest.match(/\b(\d{2})\s+([A-Za-z][\w-]*)\b/);
+    if (mergedM) {
+      errors.push(`Field "${rawName}": missing statement terminator (period or comma) — next field "${mergedM[2]}" was merged into this statement`);
+      continue;
+    }
 
     const picM       = rest.match(/\bPIC(?:TURE)?\s+(?:IS\s+)?(\S+)/i);
     // Built-in TYPE keywords (inc. SQL variants and the wildcard *)

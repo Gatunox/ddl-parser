@@ -1491,24 +1491,26 @@ function validateDDLErrors(text, repoTypeSet) {
 
   // Line-level check: field lines that end with a comma instead of a period.
   // Commas are not valid HPE DDL statement terminators — flag each one precisely.
-  for (const line of strippedLines) {
+  strippedLines.forEach((line, idx) => {
     const trimmed = line.trimEnd();
     if (/^\s*\d{2}\s+\S/.test(trimmed) && trimmed.endsWith(',')) {
       const nm = (trimmed.trim().match(/^\d{2}\s+(\S+)/) || [])[1] || '?';
-      errors.push(`Field "${nm.replace(/,$/, '')}": statement ends with a comma — use a period as the terminator`);
+      errors.push(`[line ${idx + 1}] Field "${nm.replace(/,$/, '')}": statement ends with a comma — use a period as the terminator`);
     }
-  }
+  });
 
   // Split into statements at "." followed by optional whitespace + newline/EOL.
-  // Preserve leading-whitespace indent of each statement's first non-blank line
-  // so we can detect level-88 scope jumps even when level numbers are ambiguous.
+  // Track the starting line number of each statement for error reporting.
+  let _lineCounter = 1;
   const items = stripped
     .split(/\.\s*(?:\n|$)/)
     .map(s => {
+      const startLine = _lineCounter;
+      _lineCounter += (s.match(/\n/g) || []).length + 1;
       const firstLine = s.split('\n').find(l => l.trim().length > 0) || '';
       const indent    = (firstLine.match(/^(\s*)/) || ['',''])[1].length;
       const stmt      = s.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-      return { stmt, indent };
+      return { stmt, indent, line: startLine };
     })
     .filter(x => x.stmt.length > 0);
 
@@ -1531,8 +1533,8 @@ function validateDDLErrors(text, repoTypeSet) {
   }
 
   // Per-definition state
-  let inDef = false, defName = '', endSeen = false;
-  let fields = [];   // { lvl, name, pic, comp, typeStr, redefines, occurs, occursTo, indent, userTypeRef }
+  let inDef = false, defName = '', defLine = 1, endSeen = false;
+  let fields = [];   // { lvl, name, pic, comp, typeStr, redefines, occurs, occursTo, indent, userTypeRef, line }
 
   // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -1575,11 +1577,12 @@ function validateDDLErrors(text, repoTypeSet) {
   // ── flushSection: run all structural checks on collected fields ───────────────
   function flushSection() {
     if (!inDef) return;
+    const L = n => `[line ${n}] `;
 
     // ① Missing END — only required when the definition has field-level items.
     //   Single-line reference DEFs (TYPE / PIC / VALUE inline, no nested fields) need no END.
     if (!endSeen && fields.length > 0) {
-      errors.push(`Definition "${defName}": missing END statement`);
+      errors.push(`${L(defLine)}Definition "${defName}": missing END statement`);
     }
 
     const groupIndices = buildGroupSet();
@@ -1587,6 +1590,7 @@ function validateDDLErrors(text, repoTypeSet) {
 
     for (let i = 0; i < fields.length; i++) {
       const f       = fields[i];
+      const ln      = L(f.line);
       const upper   = f.name.toUpperCase();
       const isGroup = groupIndices.has(i);
       const hasPic  = !!f.pic;
@@ -1596,13 +1600,13 @@ function validateDDLErrors(text, repoTypeSet) {
       // ② Reserved word used as field name → hard error
       //   FILLER is exempt — it is the conventional name for unnamed storage areas.
       if (!special && upper !== 'FILLER' && DDL_RESERVED.has(upper)) {
-        errors.push(`Field "${f.name}": "${upper}" is a DDL reserved word and cannot be used as a field name`);
+        errors.push(`${ln}Field "${f.name}": "${upper}" is a DDL reserved word and cannot be used as a field name`);
       }
 
       // ③ Duplicate field names (FILLER is exempt)
       if (upper !== 'FILLER') {
         if (nameSeen.has(upper)) {
-          errors.push(`Definition "${defName}": duplicate field name "${f.name}" (first defined at field #${nameSeen.get(upper) + 1})`);
+          errors.push(`${ln}Definition "${defName}": duplicate field name "${f.name}" (first defined at line ${fields[nameSeen.get(upper)].line})`);
         } else {
           nameSeen.set(upper, i);
         }
@@ -1611,7 +1615,7 @@ function validateDDLErrors(text, repoTypeSet) {
       // ④ Orphan field — no PIC, no TYPE (built-in or user-ref), no children, not special.
       //   hasTypeRef catches "TYPE user-def" and "TYPE *" which typeStr regex doesn't cover.
       if (!isGroup && !hasPic && !hasType && !f.hasTypeRef && !special) {
-        errors.push(`Field "${f.name}": has neither PIC nor TYPE clause and is not a group field`);
+        errors.push(`${ln}Field "${f.name}": has neither PIC nor TYPE clause and is not a group field`);
       }
 
       // ⑤ Level-88 condition-name scope check
@@ -1625,7 +1629,7 @@ function validateDDLErrors(text, repoTypeSet) {
           const af = fields[assocIdx];
           if (!af.pic && !af.typeStr && groupIndices.has(assocIdx)) {
             // 88 directly after a group opener (no intervening elementary)
-            errors.push(`Field "${f.name}" (level 88): condition-name cannot follow group description "${af.name}"`);
+            errors.push(`${ln}Field "${f.name}" (level 88): condition-name cannot follow group description "${af.name}"`);
           } else if (typeof f.indent === 'number' && f.indent < af.indent) {
             // 88 is indented shallower than its associated field → scope jump.
             // Find the last field at or above the 88's indent level; if it's a group, error.
@@ -1633,7 +1637,7 @@ function validateDDLErrors(text, repoTypeSet) {
               const fj = fields[j];
               if (fj.lvl < 66 && typeof fj.indent === 'number' && fj.indent <= f.indent) {
                 if (!fj.pic && !fj.typeStr && groupIndices.has(j)) {
-                  errors.push(`Field "${f.name}" (level 88): condition-name cannot be attached to group item "${fj.name}"`);
+                  errors.push(`${ln}Field "${f.name}" (level 88): condition-name cannot be attached to group item "${fj.name}"`);
                 }
                 break;
               }
@@ -1650,21 +1654,21 @@ function validateDDLErrors(text, repoTypeSet) {
 
         // PIC V (implied decimal) is incompatible with COMP binary storage
         if (picUpper.includes('V') && (compU === 'COMP' || compU === 'COMPUTATIONAL')) {
-          errors.push(`Field "${f.name}": PIC with implied decimal (V) is incompatible with COMP (binary) storage`);
+          errors.push(`${ln}Field "${f.name}": PIC with implied decimal (V) is incompatible with COMP (binary) storage`);
         }
         // Parenthesised repeat counts must be 1–5 digits
         const parenRe = /\(([^)]*)\)/g;
         let pm, hadParenErr = false;
         while ((pm = parenRe.exec(pic)) !== null) {
           if (!/^\d{1,5}$/.test(pm[1])) {
-            errors.push(`Field "${f.name}": repeat count "(${pm[1]})" must be 1–5 digits — found in PIC ${pic}`);
+            errors.push(`${ln}Field "${f.name}": repeat count "(${pm[1]})" must be 1–5 digits — found in PIC ${pic}`);
             hadParenErr = true;
           }
         }
         if (!hadParenErr) {
           const remaining = picUpper.replace(/[XSANP9VT](?:\(\d{1,5}\))?/g, '');
           if (remaining.length > 0) {
-            errors.push(`Field "${f.name}": invalid character(s) "${remaining}" in PIC ${pic}`);
+            errors.push(`${ln}Field "${f.name}": invalid character(s) "${remaining}" in PIC ${pic}`);
           }
         }
       }
@@ -1672,14 +1676,14 @@ function validateDDLErrors(text, repoTypeSet) {
       // ⑦ OCCURS range checks
       if (f.occurs !== null) {
         if (f.occurs < 0) {
-          errors.push(`Field "${f.name}": OCCURS value ${f.occurs} is negative — must be 0–32767 (0 only valid with TO clause)`);
+          errors.push(`${ln}Field "${f.name}": OCCURS value ${f.occurs} is negative — must be 0–32767 (0 only valid with TO clause)`);
         } else if (f.occurs === 0 && f.occursTo === null) {
-          errors.push(`Field "${f.name}": OCCURS 0 TIMES is not valid — minimum is 1`);
+          errors.push(`${ln}Field "${f.name}": OCCURS 0 TIMES is not valid — minimum is 1`);
         } else if (f.occurs > 32767) {
-          errors.push(`Field "${f.name}": OCCURS value ${f.occurs} exceeds maximum of 32767`);
+          errors.push(`${ln}Field "${f.name}": OCCURS value ${f.occurs} exceeds maximum of 32767`);
         }
         if (f.occursTo !== null && f.occursTo > 32767) {
-          errors.push(`Field "${f.name}": OCCURS TO value ${f.occursTo} exceeds maximum of 32767`);
+          errors.push(`${ln}Field "${f.name}": OCCURS TO value ${f.occursTo} exceeds maximum of 32767`);
         }
       }
 
@@ -1689,7 +1693,7 @@ function validateDDLErrors(text, repoTypeSet) {
       //   that simply hasn't been loaded yet (fully valid in HPE DDL compiled across multiple files).
       if (f.userTypeRef && repoTypeSet) {
         if (!intraFileDefNames.has(f.userTypeRef) && !repoTypeSet.has(f.userTypeRef)) {
-          warnings.push(`Field "${f.name}": TYPE "${f.userTypeRef}" not found in loaded DDLs — verify it is defined in another file`);
+          warnings.push(`${ln}Field "${f.name}": TYPE "${f.userTypeRef}" not found in loaded DDLs — verify it is defined in another file`);
           if (!unresolvedTypes.has(f.userTypeRef)) unresolvedTypes.add(f.userTypeRef);
         }
       }
@@ -1706,9 +1710,9 @@ function validateDDLErrors(text, repoTypeSet) {
           // Check if it exists later (forward reference) vs not at all
           const fwdIdx = fields.findIndex((ff, fi) => fi > i && ff.name.toUpperCase() === tgtUpper);
           if (fwdIdx === -1) {
-            errors.push(`Field "${f.name}": REDEFINES target "${f.redefines}" is not defined in this structure`);
+            errors.push(`${ln}Field "${f.name}": REDEFINES target "${f.redefines}" is not defined in this structure`);
           } else {
-            errors.push(`Field "${f.name}": REDEFINES target "${f.redefines}" must be defined before the REDEFINES clause`);
+            errors.push(`${ln}Field "${f.name}": REDEFINES target "${f.redefines}" must be defined before the REDEFINES clause`);
           }
         } else {
           // ⑨ REDEFINES size — error if redefining item is LARGER (can't extend beyond original);
@@ -1717,9 +1721,9 @@ function validateDDLErrors(text, repoTypeSet) {
           const curSize = computeFieldSize(i);
           if (tgtSize > 0 && curSize > 0) {
             if (curSize > tgtSize) {
-              errors.push(`Field "${f.name}": REDEFINES size mismatch — this field is ${curSize} byte(s) but "${f.redefines}" is only ${tgtSize} byte(s)`);
+              errors.push(`${ln}Field "${f.name}": REDEFINES size mismatch — this field is ${curSize} byte(s) but "${f.redefines}" is only ${tgtSize} byte(s)`);
             } else if (curSize < tgtSize) {
-              warnings.push(`Field "${f.name}": REDEFINES "${f.redefines}" (${tgtSize} bytes) with a smaller structure (${curSize} bytes) — overlaying a portion of the original is valid but may be unintentional`);
+              warnings.push(`${ln}Field "${f.name}": REDEFINES "${f.redefines}" (${tgtSize} bytes) with a smaller structure (${curSize} bytes) — overlaying a portion of the original is valid but may be unintentional`);
             }
           }
         }
@@ -1734,17 +1738,17 @@ function validateDDLErrors(text, repoTypeSet) {
           if (fields[j].lvl < f.lvl && fields[j].lvl < 66) { parentLvl = fields[j].lvl; break; }
         }
         if (parentLvl >= 0 && (f.lvl - parentLvl) > 2) {
-          warnings.push(`Field "${f.name}": level ${f.lvl} skips from parent level ${parentLvl} — consider using sequential level numbers (expected ≤ ${parentLvl + 2})`);
+          warnings.push(`${ln}Field "${f.name}": level ${f.lvl} skips from parent level ${parentLvl} — consider using sequential level numbers (expected ≤ ${parentLvl + 2})`);
         }
       }
     }
 
     // Reset for next definition
-    inDef = false; defName = ''; endSeen = false; fields = [];
+    inDef = false; defName = ''; defLine = 1; endSeen = false; fields = [];
   }
 
   // ── main statement loop ───────────────────────────────────────────────────────
-  for (const { stmt, indent } of items) {
+  for (const { stmt, indent, line: stmtLine } of items) {
 
     // ⑩ CONSTANT name must not be a DDL keyword
     if (/^CONSTANT\s+/i.test(stmt)) {
@@ -1752,7 +1756,7 @@ function validateDDLErrors(text, repoTypeSet) {
       if (m) {
         const cn  = m[1].replace(/\.$/, '');
         const err = validateDDLConstantName(cn);
-        if (err) errors.push(err);
+        if (err) errors.push(`[line ${stmtLine}] ${err}`);
       }
       continue;
     }
@@ -1767,7 +1771,7 @@ function validateDDLErrors(text, repoTypeSet) {
         const m2 = stmt.match(/^(?:DEF|DEFINITION|RECORD)\s+IS\s+(\S+)/i);
         defName = m2 ? m2[1].replace(/\.$/, '') : defName;
       }
-      inDef = true; endSeen = false; fields = [];
+      defLine = stmtLine; inDef = true; endSeen = false; fields = [];
       continue;
     }
 
@@ -1792,7 +1796,7 @@ function validateDDLErrors(text, repoTypeSet) {
     // Report a precise error and skip this corrupted statement.
     const mergedM = rest.match(/\b(\d{2})\s+([A-Za-z][\w-]*)\b/);
     if (mergedM) {
-      errors.push(`Field "${rawName}": missing statement terminator (period or comma) — next field "${mergedM[2]}" was merged into this statement`);
+      errors.push(`[line ${stmtLine}] Field "${rawName}": missing statement terminator — next field "${mergedM[2]}" was merged into this statement`);
       continue;
     }
 
@@ -1820,6 +1824,7 @@ function validateDDLErrors(text, repoTypeSet) {
       occurs:     occM  ? parseInt(occM[1]) : null,
       occursTo:   (occM && occM[2]) ? parseInt(occM[2]) : null,
       indent,
+      line:       stmtLine,
     });
   }
 

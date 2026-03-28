@@ -6296,21 +6296,20 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// level: 'info'/'ok' (green, auto-dismiss) | 'warn' (yellow, click to dismiss) | 'error' (red, click to dismiss)
+// level: 'info'/'ok' (green, 10 s) | 'warn' (yellow, 20 s) | 'error' (red, 30 s)
+// All levels show an ✕ so the user can dismiss early.
 function flash(msg, level) {
   const container = document.getElementById('flash-container');
   if (!container) return;
+  const ms = level === 'error' ? 30000 : level === 'warn' ? 20000 : 10000;
   const el = document.createElement('div');
   el.className = 'flash' + (level === 'warn' ? ' warn' : level === 'error' ? ' error' : '');
   el.textContent = msg;
-  if (level === 'warn' || level === 'error') {
-    const x = document.createElement('span');
-    x.className = 'flash-x'; x.textContent = '✕';
-    el.appendChild(x);
-    el.addEventListener('click', () => el.remove());
-  } else {
-    setTimeout(() => el.remove(), 5000);
-  }
+  const x = document.createElement('span');
+  x.className = 'flash-x'; x.textContent = '✕';
+  el.appendChild(x);
+  const timer = setTimeout(() => el.remove(), ms);
+  el.addEventListener('click', () => { clearTimeout(timer); el.remove(); });
   container.appendChild(el);
 }
 

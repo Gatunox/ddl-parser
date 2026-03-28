@@ -5553,7 +5553,7 @@ function deleteScope() {
     S.editorBaseline = null;
     document.getElementById('ddlEditor').value = '';
     document.getElementById('ddlScopePath').textContent = 'Select a DDL from the tree →';
-    saveTree(); renderDDLTree(); updateDDLEditorState(); updateDDLHighlight();
+    buildUnresolvedRefs(); saveTree(); renderDDLTree(); updateDDLEditorState(); updateDDLHighlight();
   };
 
   // Never-saved placeholder (empty content) — delete immediately, no confirmation needed
@@ -5718,7 +5718,7 @@ function ctxRenameVol(vol) {
     delete S.ddlTree[vol];
     if (S.treeExp.has(vol)) { S.treeExp.delete(vol); S.treeExp.add(newName); }
     if (S.scope?.vol === vol) S.scope.vol = newName;
-    saveTree(); renderDDLTree();
+    buildUnresolvedRefs(); saveTree(); renderDDLTree();
     flash(`Renamed to "${newName}"`);
   });
 }
@@ -5731,7 +5731,7 @@ function ctxRenameSv(vol, sv) {
     const oldKey = `${vol}/${sv}`, newKey = `${vol}/${newName}`;
     if (S.treeExp.has(oldKey)) { S.treeExp.delete(oldKey); S.treeExp.add(newKey); }
     if (S.scope?.vol === vol && S.scope?.sv === sv) S.scope.sv = newName;
-    saveTree(); renderDDLTree();
+    buildUnresolvedRefs(); saveTree(); renderDDLTree();
     flash(`Renamed to "${newName}"`);
   });
 }
@@ -5743,7 +5743,7 @@ function ctxRenameDdl(vol, sv, name) {
     delete S.ddlTree[vol][sv][name];
     if (S.scope?.type === 'ddl' && S.scope.vol === vol && S.scope.sv === sv && S.scope.name === name)
       S.scope.name = newName;
-    saveTree(); selectScope('ddl', vol, sv, newName);
+    buildUnresolvedRefs(); saveTree(); selectScope('ddl', vol, sv, newName);
     flash(`Renamed to "${newName}"`);
   });
 }

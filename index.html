@@ -212,7 +212,7 @@ body.light #colPickerSelect { background: var(--bg-panel); }
 /* ===== DDL TREE PANE ===== */
 .ddl-pane-split  { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
 .ddl-tree-pane   { width: 170px; flex-shrink: 0; overflow-y: hidden; overflow-x: hidden; background: var(--bg-deep); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-#ddlTree         { flex: 1; overflow-y: auto; overflow-x: hidden; }
+#ddlTree         { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
 .tree-search-wrap { width: 100%; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: center; background: var(--bg-panel); box-sizing: border-box; }
 input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 6px 22px 6px 8px; font-size: calc(var(--sz-mono) - 0.5px); background: #1e2d3d; border: none; color: var(--text); outline: none; font-family: var(--font-mono); box-sizing: border-box; }
 input.tree-search:focus, #treeSearch:focus { background: #1e2d3d; box-shadow: inset 0 0 0 1px rgba(88,166,255,0.3); }
@@ -225,8 +225,15 @@ body.light input.tree-search:focus, body.light #treeSearch:focus { background: #
 .tree-search-clear.visible { display: block; }
 .tree-match-hi { background: rgba(230,168,23,0.35); border-radius: 2px; }
 .ddl-editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-/* ── DDL syntax-highlight overlay ── */
-.ddl-hl-wrap     { position: relative; flex: 1; min-height: 0; display: flex; overflow: hidden; }
+/* ── DDL syntax-highlight overlay + line-number gutter ── */
+.ddl-hl-wrap        { flex: 1; min-height: 0; display: flex; flex-direction: row; overflow: hidden; }
+.ddl-gutter         { width: 44px; flex-shrink: 0; overflow: hidden; position: relative;
+  background: var(--bg-panel); border-right: 1px solid var(--border); }
+#ddlGutterInner     { position: absolute; top: 0; right: 0; left: 0;
+  padding: 8px 6px 8px 0; text-align: right;
+  font-family: var(--font-mono); font-size: var(--sz-mono); line-height: 1.6;
+  color: var(--text-dim); white-space: pre; user-select: none; pointer-events: none; }
+.ddl-hl-editor-inner { position: relative; flex: 1; min-width: 0; display: flex; overflow: hidden; }
 .ddl-hl-overlay  { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; margin: 0;
   font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6;
   white-space: pre; overflow: visible;
@@ -236,7 +243,7 @@ body.light input.tree-search:focus, body.light #treeSearch:focus { background: #
 #ddlEditor::selection { background: rgba(88,166,255,0.3); }
 /* highlight token colours — NO font-weight changes (overlay technique requires
    uniform glyph advance widths; bold synthesis shifts widths and misaligns cursor) */
-.hl-comment      { color: #6a8a7a; font-style: italic; }
+.hl-comment      { color: #6a8a7a; }
 .hl-kw           { color: var(--accent); }
 .hl-kw-reserved  { color: #e06c75; }          /* HPE DDL reserved keywords */
 .hl-op           { color: #f78c6c; }
@@ -931,10 +938,12 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
         <div class="resizer-h" id="ddlTreeResizer"></div>
         <div class="ddl-editor-pane">
           <div class="ddl-hl-wrap">
+            <div class="ddl-gutter" aria-hidden="true"><div id="ddlGutterInner"></div></div>
+            <div class="ddl-hl-editor-inner">
             <div id="ddlEditorOverlay" class="ddl-hl-overlay" aria-hidden="true"></div>
-          <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}"
+          <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}const g=document.getElementById('ddlGutterInner');if(g){g.style.transform='translateY('+(-this.scrollTop)+'px)';}"
             placeholder="* DDL Definition — two formats supported:&#10;*&#10;* ── Simple (ISO 8583) ───────────────────────────────&#10;* FIELD_ID  TYPE  LENGTH  &quot;Description&quot;&#10;* Types:  FIXED  LLVAR  LLLVAR  BMP&#10;* IDs:    MTI  BMP  or field number 1–128&#10;*&#10;* ── HPE DDL (NonStop / Tandem) ──────────────────────&#10;* DEF message-name.&#10;*   02 field-name  PIC X(n).&#10;*   02 num-field   PIC 9(n) COMP.&#10;*   02 bin-field   TYPE BINARY 16.&#10;*   02 group.&#10;*     03 sub-field PIC X(5).&#10;* END.&#10;*&#10;* Select or create a DDL in the tree on the left,&#10;* or drop a .ddl / .txt file here to load it."></textarea>
-          </div>
+          </div></div>
         </div>
       </div>
     </div>
@@ -1806,6 +1815,43 @@ function validateDDLErrors(text, repoTypeSet) {
     if (rawName.endsWith('-')) {
       errors.push(`[line ${stmtLine}] Field "${rawName}": name ends with a hyphen — spaces are not allowed in field names (check for a space after the hyphen)`);
       continue;
+    }
+
+    // Space-in-name detection: after level-number + field-name, the very next token must
+    // be a recognised HPE DDL clause keyword (PIC, TYPE, REDEFINES, COMP, HEADING, VALUE,
+    // OCCURS, LN) or the statement must end there (group / FILLER with no clauses).
+    // If the first token of rest is NOT a valid clause keyword, the user most likely
+    // intended a hyphen-joined name but typed a space instead.
+    //
+    // Special case — LN (LN-clause): LN is a valid clause but requires a locale argument
+    // that itself cannot be another clause keyword.  If LN is immediately followed by a
+    // recognised clause keyword (e.g. "LN TYPE …") then LN is part of an intended name,
+    // not an LN-clause, and the field name contains an illegal space.
+    {
+      const FIRST_CLAUSE_KW = new Set([
+        'PIC','PICTURE','TYPE','REDEFINES',
+        'COMP','COMP-3','COMPUTATIONAL','COMPUTATIONAL-3',
+        'HEADING','VALUE','OCCURS','LN'
+      ]);
+      const restFirstM = rest.match(/^([A-Za-z][\w-]*)/);
+      if (restFirstM) {
+        const rf = restFirstM[1].toUpperCase();
+        let spaceInName = false;
+        if (!FIRST_CLAUSE_KW.has(rf)) {
+          spaceInName = true;
+        } else if (rf === 'LN') {
+          // LN-clause needs a locale spec; if the word after LN is itself a clause
+          // keyword then LN is part of an illegal spaced name, not an LN-clause.
+          const afterLNM = rest.match(/^LN\s+([A-Za-z][\w-]*)/i);
+          if (afterLNM && FIRST_CLAUSE_KW.has(afterLNM[1].toUpperCase())) {
+            spaceInName = true;
+          }
+        }
+        if (spaceInName) {
+          errors.push(`[line ${stmtLine}] Field "${rawName}": illegal space in name — "${rawName} ${rf}" contains a space (HPE DDL names cannot contain spaces; use a hyphen to join words)`);
+          continue;
+        }
+      }
     }
 
     const picM       = rest.match(/\bPIC(?:TURE)?\s+(?:IS\s+)?(\S+)/i);
@@ -3933,13 +3979,27 @@ function _hlHPERest(raw) {
 function _hlHPELine(line) {
   if (/^\*/.test(line)) return _sp(line, 'comment');
   if (!line.trim()) return _escH(line);
-  // Numbered field line:  NN  FIELDNAME  <rest>
-  const m = line.match(/^(\s*)(\d{2})(\s+)(\S+)(.*)/);
-  if (m) {
-    return _escH(m[1]) + _sp(m[2], 'lvl') + _escH(m[3]) + _escH(m[4]) + _hlHPERest(m[5]);
+
+  // Isolate any ! inline comment (first ! through EOL).
+  // In HPE DDL the ! delimiter starts a comment; we highlight everything from
+  // the first ! to end-of-line as a comment so it gets comment colouring.
+  let codePart = line, commentPart = '';
+  const bangIdx = line.indexOf('!');
+  if (bangIdx >= 0) {
+    codePart    = line.slice(0, bangIdx);
+    commentPart = line.slice(bangIdx);
   }
-  // Structural / declaration line (DEF, RECORD, END, CONSTANT …)
-  return _hlHPERest(line);
+
+  // Highlight the code portion
+  let codeHL;
+  const m = codePart.match(/^(\s*)(\d{2})(\s+)(\S+)(.*)/);
+  if (m) {
+    codeHL = _escH(m[1]) + _sp(m[2], 'lvl') + _escH(m[3]) + _escH(m[4]) + _hlHPERest(m[5]);
+  } else {
+    codeHL = _hlHPERest(codePart);
+  }
+
+  return codeHL + (commentPart ? _sp(commentPart, 'comment') : '');
 }
 
 function updateDDLHighlight() {
@@ -3947,7 +4007,7 @@ function updateDDLHighlight() {
   const ta = document.getElementById('ddlEditor');
   if (!overlay || !ta) return;
   const text = ta.value;
-  if (!text) { overlay.innerHTML = ''; return; }
+  if (!text) { overlay.innerHTML = ''; updateDDLGutter(); return; }
   const isDDLMM = S.scope?.type === 'ddlmm';
   const isHPE   = !isDDLMM && isHPEDDLText(text);
   const lines = text.split('\n').map(line => {
@@ -3958,6 +4018,18 @@ function updateDDLHighlight() {
   overlay.innerHTML = lines.join('\n');
   // sync scroll position via transform (overflow:hidden blocks scrollLeft on the overlay)
   overlay.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
+  updateDDLGutter();
+}
+
+function updateDDLGutter() {
+  const ta    = document.getElementById('ddlEditor');
+  const inner = document.getElementById('ddlGutterInner');
+  if (!inner || !ta) return;
+  const count = ta.value ? ta.value.split('\n').length : 0;
+  let nums = '';
+  for (let i = 1; i <= count; i++) nums += i + '\n';
+  inner.textContent = nums;
+  inner.style.transform = `translateY(${-ta.scrollTop}px)`;
 }
 
 function updateDDLEditorState() {
@@ -4699,7 +4771,6 @@ function renderDDLTree() {
       html += `<div class="tree-node tree-missref-item" title="${esc(tip)}" onclick="createMissingRefStub('${esc(typeName)}')">
         <span class="tree-caret" style="visibility:hidden">−</span>
         <span class="tree-ddl-lbl">${esc(typeName)}</span>
-        <span class="tree-cnt" style="background:rgba(230,168,23,0.18);color:#e6a817">${refs.length}</span>
       </div>`;
     }
   }
@@ -5032,6 +5103,9 @@ function isHPEDDLText(text) {
   // Inline single-line DEF: no level-numbered children, PIC clause on the DEF line itself
   // e.g.  DEF ordernum PIC 9(3) HEADING "Order #".
   if (/^\s*(?:DEF|DEFINITION)\s+\S[^\n]*\bPIC(?:TURE)?\b/mi.test(text)) return true;
+  // Empty / stub DEF: just DEF … END with no field rows yet (e.g. a newly staged skeleton).
+  // Recognise it so the editor keeps HPE syntax highlighting instead of falling back to plain.
+  if (/^\s*END\b/mi.test(text)) return true;
   return false;
 }
 
@@ -5357,6 +5431,28 @@ function clearDDLEditor() {
     });
     return;
   }
+  // If a staged stub is currently loaded, only discard that one — leave the rest intact.
+  if (S.stagingActive) {
+    S.stagingDefs = S.stagingDefs.filter(d => d.name !== S.stagingActive);
+    if (S.stagingDefs.length > 0) {
+      // Advance to the next staged def automatically
+      const next = S.stagingDefs[0];
+      S.stagingActive = next.name;
+      S.editorBaseline = next.content;
+      document.getElementById('ddlEditor').value = next.content;
+      const destHint = S.scope && (S.scope.type === 'sv' || S.scope.type === 'ddl')
+        ? `${S.scope.vol} / ${S.scope.sv} — click Save to place here`
+        : `Select a Volume / Subvolume to save "${next.name}"`;
+      document.getElementById('ddlScopePath').textContent = destHint;
+      renderDDLTree();
+      updateDDLEditorState();
+      updateDDLHighlight();
+      return;
+    }
+    // No more staged defs — fall through to a full editor clear below
+    S.stagingActive = null;
+  }
+
   document.getElementById('ddlEditor').value = '';
   document.getElementById('ddlScopePath').textContent = 'Select a DDL from the tree →';
   S.scope = null;
@@ -5389,7 +5485,10 @@ function loadStagedDef(name) {
 // Adds a skeleton DEF stub to the Staged area (same as dropping a file),
 // so the user can pick a Vol/SV and Save — the workflow they already know.
 function createMissingRefStub(typeName) {
-  const stub = `DEF ${typeName}.\n* Fill in the field definitions below, then Save.\n  02 FILLER   PIC X(1).\nEND.`;
+  // Minimal stub — no placeholder fields so the user must add real definitions
+  // before Save is enabled (baseline is set to the stub content, so the editor
+  // is "clean" until the user makes a change).
+  const stub = `DEF ${typeName}.\nEND.`;
 
   // If already staged under the same name, just load it — don't duplicate
   if (S.stagingDefs.find(d => d.name === typeName)) {
@@ -5400,8 +5499,8 @@ function createMissingRefStub(typeName) {
 
   const doStage = () => {
     S.stagingDefs.push({ name: typeName, content: stub });
-    S.stagingActive = typeName;
-    S.editorBaseline = null;
+    S.stagingActive  = typeName;
+    S.editorBaseline = stub;   // Save disabled until user edits (adds real fields)
     document.getElementById('ddlEditor').value = stub;
     const destHint = S.scope && (S.scope.type === 'sv' || S.scope.type === 'ddl')
       ? `${S.scope.vol} / ${S.scope.sv} — click Save to place here`
@@ -5410,7 +5509,7 @@ function createMissingRefStub(typeName) {
     renderDDLTree();
     updateDDLEditorState();
     updateDDLHighlight();
-    flash(`"${typeName}" staged — select Vol/SV in tree then Save`);
+    flash(`"${typeName}" staged — add field definitions then Save`);
   };
 
   // Guard unsaved editor changes

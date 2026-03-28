@@ -228,11 +228,13 @@ body.light input.tree-search:focus, body.light #treeSearch:focus { background: #
 /* ── DDL syntax-highlight overlay + line-number gutter ── */
 .ddl-hl-wrap        { flex: 1; min-height: 0; display: flex; flex-direction: row; overflow: hidden; }
 .ddl-gutter         { width: 44px; flex-shrink: 0; overflow: hidden; position: relative;
-  background: var(--bg-panel); border-right: 1px solid var(--border); }
+  background: var(--bg-panel); border-right: 1px solid rgba(255,255,255,0.06); }
+body.light .ddl-gutter { border-right-color: rgba(0,0,0,0.08); }
 #ddlGutterInner     { position: absolute; top: 0; right: 0; left: 0;
   padding: 8px 6px 8px 0; text-align: right;
   font-family: var(--font-mono); font-size: var(--sz-mono); line-height: 1.6;
-  color: var(--text-dim); white-space: pre; user-select: none; pointer-events: none; }
+  color: #444d56; white-space: pre; user-select: none; pointer-events: none; }
+body.light #ddlGutterInner { color: #c8ced4; }
 .ddl-hl-editor-inner { position: relative; flex: 1; min-width: 0; display: flex; overflow: hidden; }
 .ddl-hl-overlay  { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; margin: 0;
   font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6;
@@ -256,6 +258,7 @@ body.light input.tree-search:focus, body.light #treeSearch:focus { background: #
 .hl-seq          { color: var(--warning); }
 .hl-val          { color: #e6c07b; }
 .hl-str          { color: #c3e88d; }
+body.light .hl-str { color: #3a7d0a; }
 .hl-lvl          { color: var(--warning); }
 .hl-def          { color: var(--accent2); }
 .hl-pic          { color: var(--accent); }

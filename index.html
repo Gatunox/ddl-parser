@@ -1392,7 +1392,8 @@ function parseHPEDDL(text) {
 
   for (const stmt of stmts) {
     // DEF / DEFINITION / RECORD  — start of a new data structure
-    if (/^(?:DEF|DEFINITION|RECORD)\s+\S/i.test(stmt)) { inDef = true; continue; }
+    // Optional FILE prefix: "FILE DEF name." declares a file-level definition
+    if (/^(?:FILE\s+)?(?:DEF|DEFINITION|RECORD)\s+\S/i.test(stmt)) { inDef = true; continue; }
     // END — close current structure
     if (/^END\b/i.test(stmt))                           { inDef = false; continue; }
     // CONSTANT — no byte allocation
@@ -1499,8 +1500,8 @@ function validateDDLErrors(text, repoTypeSet) {
   // pass the cross-file check without triggering "TYPE not defined" errors.
   const intraFileDefNames = new Set();
   for (const { stmt } of items) {
-    if (/^(?:DEF|DEFINITION|RECORD)\s+/i.test(stmt)) {
-      const dm = stmt.match(/^(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
+    if (/^(?:FILE\s+)?(?:DEF|DEFINITION|RECORD)\s+/i.test(stmt)) {
+      const dm = stmt.match(/^(?:FILE\s+)?(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
       if (dm) {
         let nm = dm[1].replace(/\.$/, '').toUpperCase();
         if (nm === 'IS') {
@@ -1666,12 +1667,12 @@ function validateDDLErrors(text, repoTypeSet) {
       }
 
       // ⑧ Cross-file TYPE reference resolution
-      //   When a field uses a user-defined TYPE (not a built-in keyword), the target must exist
-      //   either in this same file (intraFileDefNames) or in the DDL repository (repoTypeSet).
-      //   If repoTypeSet was not passed the check is skipped (backward-compatible).
+      //   When a field uses a user-defined TYPE (not a built-in keyword), warn if it cannot be
+      //   resolved locally — but do NOT block saving, because the type may live in another file
+      //   that simply hasn't been loaded yet (fully valid in HPE DDL compiled across multiple files).
       if (f.userTypeRef && repoTypeSet) {
         if (!intraFileDefNames.has(f.userTypeRef) && !repoTypeSet.has(f.userTypeRef)) {
-          errors.push(`Field "${f.name}": TYPE "${f.userTypeRef}" is not defined in this file or in the DDL repository — save its definition first`);
+          warnings.push(`Field "${f.name}": TYPE "${f.userTypeRef}" not found in loaded DDLs — verify it is defined in another file`);
         }
       }
 
@@ -1738,10 +1739,10 @@ function validateDDLErrors(text, repoTypeSet) {
       continue;
     }
 
-    // DEF / DEFINITION / RECORD start
-    if (/^(?:DEF|DEFINITION|RECORD)\s+/i.test(stmt)) {
+    // DEF / DEFINITION / RECORD start  (optional FILE prefix)
+    if (/^(?:FILE\s+)?(?:DEF|DEFINITION|RECORD)\s+/i.test(stmt)) {
       if (inDef) flushSection();   // previous def had no END → reports error
-      const m = stmt.match(/^(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
+      const m = stmt.match(/^(?:FILE\s+)?(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
       defName = m ? m[1].replace(/\.$/, '') : '?';
       // Handle "DEF IS name" record-reference syntax
       if (defName.toUpperCase() === 'IS') {
@@ -4955,7 +4956,7 @@ function splitHPEDDL(text) {
 
 // Detect whether text is HPE DDL format.
 function isHPEDDLText(text) {
-  if (!/^\s*(?:DEF|DEFINITION|RECORD|CONSTANT)\s+\S/mi.test(text)) return false;
+  if (!/^\s*(?:FILE\s+)?(?:DEF|DEFINITION|RECORD|CONSTANT)\s+\S/mi.test(text)) return false;
   // Standard: has at least one level-numbered field (02 fieldname ...)
   if (/^\s*\d{2}\s+\S/m.test(text)) return true;
   // Inline single-line DEF: no level-numbered children, PIC clause on the DEF line itself

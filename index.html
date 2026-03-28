@@ -1377,15 +1377,12 @@ function typeSize(t) {
 function parseHPEDDL(text) {
   const out = [];
 
-  // Strip comments and line sequence numbers:
-  //   * in column 1          → full-line comment
-  //   !text! or !text to EOL → inline comment
-  //   trailing \s+digits     → fixed-format line sequence numbers (cols 73-80)
+  // Strip comments:
+  //   * in column 1 = full-line comment
+  //   !text! or !text to EOL = inline comment
   const stripped = text.split('\n').map(line => {
     if (/^\*/.test(line)) return '';
-    return line
-      .replace(/!([^!]*)(?:!|$)/g, '')   // inline ! comments
-      .replace(/\s+\d+\s*$/, '');         // trailing sequence numbers
+    return line.replace(/!([^!]*)(?:!|$)/g, '');
   }).join('\n');
 
   // Split into statements on "." at end of line (handles multi-line statements).
@@ -1486,16 +1483,10 @@ function validateDDLErrors(text, repoTypeSet) {
   const warnings = [];
   const unresolvedTypes = new Set(); // user-defined TYPE names that couldn't be resolved
 
-  // Strip comments and line sequence numbers:
-  //   * in col 1          → full-line comment
-  //   !text! or !text EOL → inline comment
-  //   trailing \s+digits  → fixed-format line sequence numbers (cols 73-80)
-  const strippedLines = text.split('\n').map(line => {
-    if (/^\*/.test(line)) return '';
-    return line
-      .replace(/!([^!]*)(?:!|$)/g, '')   // inline ! comments
-      .replace(/\s+\d+\s*$/, '');         // trailing sequence numbers
-  });
+  // Strip comments: * in col 1 = full-line, !text! or !text→EOL = inline
+  const strippedLines = text.split('\n').map(line =>
+    /^\*/.test(line) ? '' : line.replace(/!([^!]*)(?:!|$)/g, '')
+  );
   const stripped = strippedLines.join('\n');
 
   // Line-level check: field lines that end with a comma instead of a period.

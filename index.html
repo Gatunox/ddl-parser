@@ -5369,35 +5369,39 @@ function loadStagedDef(name) {
 }
 
 // Called when user clicks a Missing Reference item in the tree.
-// Pre-fills the DDL editor with a minimal HPE DDL stub for the given type name
-// so the user can fill in the field definitions.
+// Adds a skeleton DEF stub to the Staged area (same as dropping a file),
+// so the user can pick a Vol/SV and Save — the workflow they already know.
 function createMissingRefStub(typeName) {
-  const stub = `DEF ${typeName}.
-* -------------------------------------------------------
-* Definition for ${typeName}
-* Fill in the field definitions below, then Save.
-* -------------------------------------------------------
-  02 FILLER   PIC X(1).
-END.`;
-  // Warn if editor has unsaved changes
-  if (S.editorBaseline !== null) {
-    const cur = document.getElementById('ddlEditor').value;
-    if (cur !== S.editorBaseline) {
-      showConfirm('You have unsaved changes in the editor. Discard and load stub?', ok => {
-        if (ok) { S.editorBaseline = null; _loadStub(typeName, stub); }
-      });
-      return;
-    }
-  }
-  _loadStub(typeName, stub);
-}
+  const stub = `DEF ${typeName}.\n* Fill in the field definitions below, then Save.\n  02 FILLER   PIC X(1).\nEND.`;
 
-function _loadStub(typeName, stub) {
-  document.getElementById('ddlEditor').value = stub;
-  document.getElementById('ddlScopePath').textContent = `new stub: ${typeName}`;
-  S.editorBaseline = null;
-  S.scope = null;
-  flash(`Stub created for "${typeName}" — select Vol/SV in tree then Save`, 'warn');
+  // If already staged under the same name, just load it — don't duplicate
+  if (S.stagingDefs.find(d => d.name === typeName)) {
+    loadStagedDef(typeName);
+    flash(`"${typeName}" is already staged — select Vol/SV then Save`);
+    return;
+  }
+
+  const doStage = () => {
+    S.stagingDefs.push({ name: typeName, content: stub });
+    S.stagingActive = typeName;
+    S.editorBaseline = null;
+    document.getElementById('ddlEditor').value = stub;
+    const destHint = S.scope && (S.scope.type === 'sv' || S.scope.type === 'ddl')
+      ? `${S.scope.vol} / ${S.scope.sv} — click Save to place here`
+      : `Select a Volume / Subvolume to save "${typeName}"`;
+    document.getElementById('ddlScopePath').textContent = destHint;
+    renderDDLTree();
+    updateDDLEditorState();
+    updateDDLHighlight();
+    flash(`"${typeName}" staged — select Vol/SV in tree then Save`);
+  };
+
+  // Guard unsaved editor changes
+  if (S.editorBaseline !== null && document.getElementById('ddlEditor').value !== S.editorBaseline) {
+    showConfirm('You have unsaved changes in the editor. Discard and stage stub?', ok => { if (ok) doStage(); });
+    return;
+  }
+  doStage();
 }
 
 function _removeStagedDef(savedName) {

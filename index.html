@@ -1791,10 +1791,11 @@ function validateDDLErrors(text, repoTypeSet) {
     const rawName = lvlM[2].replace(/\.$/, '');
     const rest    = lvlM[3] || '';
 
-    // Merged-statement detector: if rest contains an embedded level-number field
+    // Merged-statement detector: if rest contains what looks like a new field definition
     // (e.g. "PIC 9(2) 04 AMT-1 TYPE..."), the previous field was missing its terminator.
-    // Report a precise error and skip this corrupted statement.
-    const mergedM = rest.match(/\b(\d{2})\s+([A-Za-z][\w-]*)\b/);
+    // Requires the embedded identifier to be followed by a DDL clause keyword so that
+    // legitimate constructs like "OCCURS 24 TIMES" are never falsely triggered.
+    const mergedM = rest.match(/\b(\d{2})\s+([A-Za-z][\w-]*)\s+(?:PIC(?:TURE)?|TYPE|REDEFINES|COMP(?:UTATIONAL)?(?:-3)?|HEADING|VALUE|OCCURS)\b/i);
     if (mergedM) {
       errors.push(`[line ${stmtLine}] Field "${rawName}": missing statement terminator — next field "${mergedM[2]}" was merged into this statement`);
       continue;

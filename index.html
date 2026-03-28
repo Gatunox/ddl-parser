@@ -269,6 +269,10 @@ body.light input.tree-search:focus, body.light #treeSearch:focus { background: #
 .tree-ddl-lbl { color: var(--text); padding-left: 16px; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-pending .tree-ddl-lbl { color: #e6a817; font-style: italic; }
 .tree-staging-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
+.tree-missref-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: #e6a817; letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
+.tree-missref-item .tree-ddl-lbl { color: #e6a817; font-style: italic; }
+.tree-missref-item:hover { background: rgba(230,168,23,0.10); }
+.tree-unres-badge { font-size: 9px; padding: 0 4px; border-radius: 8px; background: rgba(230,168,23,0.18); color: #e6a817; flex-shrink: 0; margin-left: 2px; font-weight: 700; }
 .tree-node.tree-sel .tree-vol-lbl,
 .tree-node.tree-sel .tree-sv-lbl,
 .tree-node.tree-sel .tree-ddl-lbl { color: var(--accent); }
@@ -1056,6 +1060,7 @@ const S = {
   selFieldId:   null,
   hoverFieldId: null,
   tokenMap: {},      // { "DDL-NAME": "B4", ... } — built from token map files in tree
+  unresolvedRefs: {}, // { 'vol/sv/name': ['TYPE-A', 'TYPE-B'] } — types referenced but not found
   ddlMsgMapRaw: '',  // raw DDLMM text content (editable source)
   ddlMsgMap:    [],  // parsed routing rules [{seq,type,msgRe,srcRe,dstRe,ddlPath,level}]
   seenTypes:    new Set(),  // message types seen this session (suppresses repeat first-encounter prompts)
@@ -1476,6 +1481,7 @@ function validateDDLErrors(text, repoTypeSet) {
   if (!text || !isHPEDDLText(text)) return { errors: [], warnings: [] };
   const errors   = [];
   const warnings = [];
+  const unresolvedTypes = new Set(); // user-defined TYPE names that couldn't be resolved
 
   // Strip comments: * in col 1 = full-line, !text! or !text→EOL = inline
   const stripped = text.split('\n').map(line =>
@@ -1673,6 +1679,7 @@ function validateDDLErrors(text, repoTypeSet) {
       if (f.userTypeRef && repoTypeSet) {
         if (!intraFileDefNames.has(f.userTypeRef) && !repoTypeSet.has(f.userTypeRef)) {
           warnings.push(`Field "${f.name}": TYPE "${f.userTypeRef}" not found in loaded DDLs — verify it is defined in another file`);
+          if (!unresolvedTypes.has(f.userTypeRef)) unresolvedTypes.add(f.userTypeRef);
         }
       }
 
@@ -1799,7 +1806,7 @@ function validateDDLErrors(text, repoTypeSet) {
   // Flush any trailing unclosed definition
   if (inDef) flushSection();
 
-  return { errors, warnings };
+  return { errors, warnings, unresolvedTypes: [...unresolvedTypes] };
 }
 
 // ---- Simple columnar DDL  (ID  TYPE  LEN  "desc") ---------------------------
@@ -4606,9 +4613,13 @@ function renderDDLTree() {
             const typeBadge  = mappedType
               ? `<span class="tree-type-badge tbtype-${mappedType.toLowerCase()}" title="Auto type-mapping: ${mappedType}">${mappedType}</span>`
               : '';
+            const unresPaths = S.unresolvedRefs[`${vol}/${sv}/${d}`];
+            const unresBadge = unresPaths?.length
+              ? `<span class="tree-unres-badge" title="⚠ ${unresPaths.length} unresolved type ref${unresPaths.length > 1 ? 's' : ''}: ${unresPaths.join(', ')}">⚠${unresPaths.length}</span>`
+              : '';
             html += `<div class="tree-node${dSel}${pendCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
               <span class="tree-caret" style="visibility:hidden">−</span>
-              <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${tknBadge}${typeBadge}
+              <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${tknBadge}${typeBadge}${unresBadge}
             </div>`;
           }
         }
@@ -4630,6 +4641,28 @@ function renderDDLTree() {
       html += `<div class="tree-node tree-pending${activeCls}" onclick="loadStagedDef('${esc(def.name)}')">
         <span class="tree-caret" style="visibility:hidden">−</span>
         <span class="tree-ddl-lbl" title="${esc(def.name)} (staged — not yet saved)">${esc(def.name)}</span>
+      </div>`;
+    }
+  }
+
+  // Missing References section — type names referenced by HPE DDLs but not yet defined
+  const allMissing = {}; // typeName → [ddlPath, ...]
+  for (const [path, types] of Object.entries(S.unresolvedRefs || {})) {
+    for (const t of types) {
+      if (!allMissing[t]) allMissing[t] = [];
+      allMissing[t].push(path);
+    }
+  }
+  const missingNames = Object.keys(allMissing).sort();
+  if (missingNames.length > 0) {
+    html += `<div class="tree-missref-hdr">Missing References · ${missingNames.length} type${missingNames.length > 1 ? 's' : ''} needed</div>`;
+    for (const typeName of missingNames) {
+      const refs = allMissing[typeName];
+      const tip  = `Referenced by:\n${refs.join('\n')}\n\nClick to create a stub definition`;
+      html += `<div class="tree-node tree-missref-item" title="${esc(tip)}" onclick="createMissingRefStub('${esc(typeName)}')">
+        <span class="tree-caret" style="visibility:hidden">−</span>
+        <span class="tree-ddl-lbl">${esc(typeName)}</span>
+        <span class="tree-cnt" style="background:rgba(230,168,23,0.18);color:#e6a817">${refs.length}</span>
       </div>`;
     }
   }
@@ -4993,6 +5026,26 @@ function buildTokenMap() {
   }
 }
 
+// Rebuild S.unresolvedRefs by scanning all HPE DDL files for TYPE references
+// that cannot be resolved within the current tree.
+// Result: { 'vol/sv/name': ['MISSING-TYPE', ...] }
+function buildUnresolvedRefs() {
+  S.unresolvedRefs = {};
+  const typeSet = new Set(buildRepoTypeRegistry().keys());
+  for (const vol of Object.keys(S.ddlTree)) {
+    for (const sv of Object.keys(S.ddlTree[vol] || {})) {
+      for (const name of Object.keys(S.ddlTree[vol][sv] || {})) {
+        const content = S.ddlTree[vol][sv][name];
+        if (!content || !isHPEDDLText(content)) continue;
+        const { unresolvedTypes } = validateDDLErrors(content, typeSet);
+        if (unresolvedTypes && unresolvedTypes.length) {
+          S.unresolvedRefs[`${vol}/${sv}/${name}`] = unresolvedTypes;
+        }
+      }
+    }
+  }
+}
+
 // ============================================================
 // DDLMM — DDL Message Map engine
 // ============================================================
@@ -5295,6 +5348,38 @@ function loadStagedDef(name) {
   updateDDLHighlight();
 }
 
+// Called when user clicks a Missing Reference item in the tree.
+// Pre-fills the DDL editor with a minimal HPE DDL stub for the given type name
+// so the user can fill in the field definitions.
+function createMissingRefStub(typeName) {
+  const stub = `DEF ${typeName}.
+* -------------------------------------------------------
+* Definition for ${typeName}
+* Fill in the field definitions below, then Save.
+* -------------------------------------------------------
+  02 FILLER   PIC X(1).
+END.`;
+  // Warn if editor has unsaved changes
+  if (S.editorBaseline !== null) {
+    const cur = document.getElementById('ddlEditor').value;
+    if (cur !== S.editorBaseline) {
+      showConfirm('You have unsaved changes in the editor. Discard and load stub?', ok => {
+        if (ok) { S.editorBaseline = null; _loadStub(typeName, stub); }
+      });
+      return;
+    }
+  }
+  _loadStub(typeName, stub);
+}
+
+function _loadStub(typeName, stub) {
+  document.getElementById('ddlEditor').value = stub;
+  document.getElementById('ddlScopePath').textContent = `new stub: ${typeName}`;
+  S.editorBaseline = null;
+  S.scope = null;
+  flash(`Stub created for "${typeName}" — select Vol/SV in tree then Save`, 'warn');
+}
+
 function _removeStagedDef(savedName) {
   if (!S.stagingDefs.length) return;
   S.stagingDefs = S.stagingDefs.filter(d => d.name !== savedName);
@@ -5342,6 +5427,7 @@ function saveDDL() {
       S.editorBaseline = content;
       _removeStagedDef(newName);
       buildTokenMap();
+      buildUnresolvedRefs();
       saveTree();
       S.treeExp.add(vol); S.treeExp.add(`${vol}/${sv}`);
       selectScope('ddl', vol, sv, newName);
@@ -5358,7 +5444,7 @@ function saveDDL() {
   // Include the current (unsaved) content so same-file TYPE references also pass.
   const saveTypeReg = buildRepoTypeRegistry(content);
   const saveTypeSet = new Set(saveTypeReg.keys());
-  const { errors: picErrors, warnings: picWarnings } = validateDDLErrors(content, saveTypeSet);
+  const { errors: picErrors, warnings: picWarnings, unresolvedTypes: saveUnresolved } = validateDDLErrors(content, saveTypeSet);
   if (picErrors.length) {
     flash(`⚠ ${picErrors.length} DDL error${picErrors.length > 1 ? 's' : ''} — ${picErrors[0]}`, 'error');
     return;
@@ -5386,6 +5472,7 @@ function saveDDL() {
       S.pendingDefs = null;
       S.editorBaseline = document.getElementById('ddlEditor').value;
       for (const { name } of parts) _removeStagedDef(name);
+      buildUnresolvedRefs();
       saveTree();
       S.treeExp.add(vol); S.treeExp.add(`${vol}/${sv}`);
       const lastName = parts[parts.length - 1].name;
@@ -5394,7 +5481,8 @@ function saveDDL() {
       } else {
         selectScope('sv', vol, sv);
       }
-      flash(`✓ Saved ${parts.length} definition${parts.length !== 1 ? 's' : ''} → ${vol}/${sv}`);
+      const unresMsg = saveUnresolved?.length ? ` — ${saveUnresolved.length} unresolved type ref${saveUnresolved.length > 1 ? 's' : ''}` : '';
+      flash(`✓ Saved ${parts.length} definition${parts.length !== 1 ? 's' : ''} → ${vol}/${sv}${unresMsg}`);
     };
 
     // Any already-stored definition → ask to override (regardless of content diff).
@@ -5429,8 +5517,10 @@ function saveDDL() {
     S.pendingDefs = null;
     S.editorBaseline = content;
     _removeStagedDef(newName);
+    buildUnresolvedRefs();
     saveTree(); selectScope('ddl', vol, sv, newName);
-    flash(`Saved: ${vol}/${sv}/${newName}`);
+    const unresMsg = saveUnresolved?.length ? ` — ${saveUnresolved.length} unresolved type ref${saveUnresolved.length > 1 ? 's' : ''}` : '';
+    flash(`✓ Saved: ${vol}/${sv}/${newName}${unresMsg}`);
     return;
   }
 
@@ -5444,8 +5534,10 @@ function saveDDL() {
       S.pendingDefs = null;
       S.editorBaseline = content;
       _removeStagedDef(newName);
+      buildUnresolvedRefs();
       saveTree(); selectScope('ddl', vol, sv, newName);
-      flash(`Saved: ${vol}/${sv}/${newName}`);
+      const unresMsg = saveUnresolved?.length ? ` — ${saveUnresolved.length} unresolved type ref${saveUnresolved.length > 1 ? 's' : ''}` : '';
+      flash(`✓ Saved: ${vol}/${sv}/${newName}${unresMsg}`);
     }
   });
 }
@@ -5888,6 +5980,7 @@ function loadTree() {
     saveTree();
   }
   buildTokenMap();
+  buildUnresolvedRefs();
   loadDDLMsgMap();
   renderDDLTree();
 }

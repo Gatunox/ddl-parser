@@ -4155,7 +4155,25 @@ function _vbarRender() {
 }
 function _vbarPrev()    { if (_vbarIdx > 0) { _vbarIdx--; _vbarRender(); } }
 function _vbarNext()    { if (_vbarIdx < _vbarMsgs.length - 1) { _vbarIdx++; _vbarRender(); } }
-function _vbarCopyMsg() { const m = _vbarMsgs[_vbarIdx]; if (m) navigator.clipboard.writeText(m.text).then(() => flash('✓ Copied to clipboard')); }
+function _vbarCopyMsg() {
+  const m = _vbarMsgs[_vbarIdx];
+  if (!m) return;
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(m.text)
+      .then(() => flash('✓ Copied to clipboard'))
+      .catch(() => _copyFallback(m.text));
+  } else {
+    _copyFallback(m.text);
+  }
+}
+function _copyFallback(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try { document.execCommand('copy'); flash('✓ Copied to clipboard'); }
+  catch(e) { flash('Copy failed', 'warn'); }
+  document.body.removeChild(ta);
+}
 function _vbarClose() {
   const bar = document.getElementById('ddlValidationBar');
   if (bar) { bar.style.display = 'none'; bar.className = ''; bar.innerHTML = ''; }
@@ -6627,7 +6645,9 @@ function flash(msg, level) {
     cp.className = 'flash-copy'; cp.textContent = '⧉'; cp.title = 'Copy to clipboard';
     cp.addEventListener('click', e => {
       e.stopPropagation();
-      navigator.clipboard.writeText(msg).then(() => flash('✓ Copied to clipboard'));
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(msg).then(() => flash('✓ Copied to clipboard')).catch(() => _copyFallback(msg));
+      } else { _copyFallback(msg); }
     });
     el.insertBefore(cp, x);
   }

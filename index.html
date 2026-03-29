@@ -4160,7 +4160,7 @@ function _vbarCopyMsg() {
   if (!m) return;
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(m.text)
-      .then(() => flash('✓ Copied to clipboard'))
+      .then(() => showToast('✓ Copied to clipboard'))
       .catch(() => _copyFallback(m.text));
   } else {
     _copyFallback(m.text);
@@ -4170,8 +4170,8 @@ function _copyFallback(text) {
   const ta = document.createElement('textarea');
   ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
   document.body.appendChild(ta); ta.focus(); ta.select();
-  try { document.execCommand('copy'); flash('✓ Copied to clipboard'); }
-  catch(e) { flash('Copy failed', 'warn'); }
+  try { document.execCommand('copy'); showToast('✓ Copied to clipboard'); }
+  catch(e) { showToast('Copy failed'); }
   document.body.removeChild(ta);
 }
 function _vbarClose() {
@@ -6646,7 +6646,7 @@ function flash(msg, level) {
     cp.addEventListener('click', e => {
       e.stopPropagation();
       if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(msg).then(() => flash('✓ Copied to clipboard')).catch(() => _copyFallback(msg));
+        navigator.clipboard.writeText(msg).then(() => showToast('✓ Copied to clipboard')).catch(() => _copyFallback(msg));
       } else { _copyFallback(msg); }
     });
     el.insertBefore(cp, x);

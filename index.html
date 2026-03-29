@@ -959,7 +959,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
             <div class="ddl-gutter" aria-hidden="true"><div id="ddlGutterInner"></div></div>
             <div class="ddl-hl-editor-inner">
             <div id="ddlEditorOverlay" class="ddl-hl-overlay" aria-hidden="true"></div>
-          <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}const g=document.getElementById('ddlGutterInner');if(g){g.style.transform='translateY('+(-this.scrollTop)+'px)';}"
+          <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onkeydown="if(event.key==='Tab'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd;this.value=this.value.slice(0,s)+'    '+this.value.slice(e);this.selectionStart=this.selectionEnd=s+4;updateDDLEditorState();updateDDLHighlight();}" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}const g=document.getElementById('ddlGutterInner');if(g){g.style.transform='translateY('+(-this.scrollTop)+'px)';}"
             placeholder="* DDL Definition — two formats supported:&#10;*&#10;* ── Simple (ISO 8583) ───────────────────────────────&#10;* FIELD_ID  TYPE  LENGTH  &quot;Description&quot;&#10;* Types:  FIXED  LLVAR  LLLVAR  BMP&#10;* IDs:    MTI  BMP  or field number 1–128&#10;*&#10;* ── HPE DDL (NonStop / Tandem) ──────────────────────&#10;* DEF message-name.&#10;*   02 field-name  PIC X(n).&#10;*   02 num-field   PIC 9(n) COMP.&#10;*   02 bin-field   TYPE BINARY 16.&#10;*   02 group.&#10;*     03 sub-field PIC X(5).&#10;* END.&#10;*&#10;* Select or create a DDL in the tree on the left,&#10;* or drop a .ddl / .txt file here to load it."></textarea>
           </div></div>
         </div>
@@ -1503,9 +1503,13 @@ function parseHPEDDL(text) {
 // Returns { errors: string[], warnings: string[] }.
 // errors   → block save / parse (hard violations).
 // warnings → shown after save / parse but do not block (soft style issues).
-// repoTypeSet: optional Set<string> of uppercase def names known to exist in the DDL repository.
-//              When provided, fields that use a user-defined TYPE not found in the set are errors.
-function validateDDLErrors(text, repoTypeSet) {
+// repoTypeRegistry: Map<UPPERCASE_NAME, byteSize> from buildRepoTypeRegistry(), or a plain Set<string>.
+//   When a Map is provided, cross-file TYPE sizes are resolved correctly in REDEFINES checks.
+function validateDDLErrors(text, repoTypeRegistry) {
+  // Accept either Map (preferred — carries sizes) or legacy Set (names only)
+  const repoTypeSet = repoTypeRegistry instanceof Map
+    ? new Set(repoTypeRegistry.keys())
+    : (repoTypeRegistry instanceof Set ? repoTypeRegistry : new Set());
   if (!text || !isHPEDDLText(text)) return { errors: [], warnings: [], unresolvedTypes: [], deferredChecks: [] };
   const errors         = [];
   const warnings       = [];
@@ -1601,23 +1605,44 @@ function validateDDLErrors(text, repoTypeSet) {
     return null;
   }
 
+  // Resolve a user-defined TYPE name to its byte size using intra-file defs first,
+  // then the repository registry. Returns 0 if completely unknown.
+  function resolveUserTypeSize(upperName) {
+    if (!upperName) return 0;
+    // Registry carries sizes from buildRepoTypeRegistry()
+    if (repoTypeRegistry instanceof Map) {
+      const sz = repoTypeRegistry.get(upperName);
+      if (sz) return sz;
+    }
+    return 0;
+  }
+
+  // Compute the byte size of a single leaf field (PIC, built-in TYPE, or user-defined TYPE).
+  function leafSize(f) {
+    if (f.pic)        return picSize(f.pic, f.comp);
+    if (f.typeStr)    { const b = typeSize(f.typeStr); return b > 0 ? b : resolveUserTypeSize(f.userTypeRef); }
+    if (f.userTypeRef) return resolveUserTypeSize(f.userTypeRef);
+    return 0;
+  }
+
   // Sum byte-size of a field (group → recurse over leaf descendants).
+  // Handles built-in TYPE clauses, user-defined TYPE references, and PIC clauses.
   function computeFieldSize(idx) {
     const f = fields[idx];
     const occurs = (f.occurs !== null)
       ? Math.max(1, f.occursTo !== null ? f.occursTo : f.occurs) : 1;
-    if (f.pic)    return picSize(f.pic, f.comp) * occurs;
-    if (f.typeStr) return typeSize(f.typeStr)   * occurs;
+    // Leaf field: has PIC, built-in TYPE, or user-defined TYPE
+    if (f.pic || f.typeStr || f.userTypeRef) return leafSize(f) * occurs;
     if (f.lvl >= 66) return 0;
     // Group: sum every leaf descendant
     let total = 0;
     for (let j = idx + 1; j < fields.length; j++) {
       const c = fields[j];
       if (c.lvl <= f.lvl || c.lvl >= 66) break;
-      if (c.pic || c.typeStr) {
+      if (c.pic || c.typeStr || c.userTypeRef) {
         const cn = (c.occurs !== null)
           ? Math.max(1, c.occursTo !== null ? c.occursTo : c.occurs) : 1;
-        total += (c.pic ? picSize(c.pic, c.comp) : typeSize(c.typeStr)) * cn;
+        total += leafSize(c) * cn;
       }
     }
     return total;
@@ -3703,9 +3728,8 @@ function doParseMessages() {
     if (!ddlContents.length) { flash('Selected DDL is empty.', 'warn'); return; }
 
     const parseTypeReg = buildRepoTypeRegistry();
-    const parseTypeSet = new Set(parseTypeReg.keys());
     const allDDLValidation = ddlContents.map(({ path, content }) => {
-      const { errors, warnings } = validateDDLErrors(content, parseTypeSet);
+      const { errors, warnings } = validateDDLErrors(content, parseTypeReg);
       return { errors: errors.map(e => `[${path}] ${e}`), warnings: warnings.map(w => `[${path}] ${w}`) };
     });
     const allDDLErrors   = allDDLValidation.flatMap(r => r.errors);
@@ -4118,11 +4142,12 @@ function _vbarRender() {
       `<span class="vbar-ctr">${_vbarIdx + 1}&thinsp;/&thinsp;${total}</span>` +
       `<button class="vbar-btn" onclick="_vbarNext()" ${_vbarIdx === total - 1 ? 'disabled' : ''}>&gt;</button>` +
     `</span>` +
-    `<span class="vbar-msg" title="${_escH(cur.text)}">${_escH(cur.text)}</span>` +
+    `<span class="vbar-msg" title="${_escH(cur.text)} (right-click to copy)" oncontextmenu="event.preventDefault();_vbarCopyMsg()">${_escH(cur.text)}</span>` +
     `<span class="vbar-close" onclick="_vbarClose()" title="Dismiss">✕</span>`;
 }
-function _vbarPrev() { if (_vbarIdx > 0) { _vbarIdx--; _vbarRender(); } }
-function _vbarNext() { if (_vbarIdx < _vbarMsgs.length - 1) { _vbarIdx++; _vbarRender(); } }
+function _vbarPrev()    { if (_vbarIdx > 0) { _vbarIdx--; _vbarRender(); } }
+function _vbarNext()    { if (_vbarIdx < _vbarMsgs.length - 1) { _vbarIdx++; _vbarRender(); } }
+function _vbarCopyMsg() { const m = _vbarMsgs[_vbarIdx]; if (m) navigator.clipboard.writeText(m.text).then(() => flash('✓ Copied to clipboard')); }
 function _vbarClose() {
   const bar = document.getElementById('ddlValidationBar');
   if (bar) { bar.style.display = 'none'; bar.className = ''; bar.innerHTML = ''; }
@@ -5271,13 +5296,13 @@ function buildTokenMap() {
 function buildUnresolvedRefs() {
   S.unresolvedRefs        = {};
   S.ddlValidationResults  = {};
-  const typeSet = new Set(buildRepoTypeRegistry().keys());
+  const typeReg = buildRepoTypeRegistry();
   for (const vol of Object.keys(S.ddlTree)) {
     for (const sv of Object.keys(S.ddlTree[vol] || {})) {
       for (const name of Object.keys(S.ddlTree[vol][sv] || {})) {
         const content = S.ddlTree[vol][sv][name];
         if (!content || !isHPEDDLText(content)) continue;
-        const { unresolvedTypes, errors, warnings, deferredChecks } = validateDDLErrors(content, typeSet);
+        const { unresolvedTypes, errors, warnings, deferredChecks } = validateDDLErrors(content, typeReg);
         const path = `${vol}/${sv}/${name}`;
         if (unresolvedTypes && unresolvedTypes.length) {
           S.unresolvedRefs[path] = unresolvedTypes;
@@ -5721,8 +5746,7 @@ function saveDDL() {
   // Build a type registry from the saved repository so cross-file TYPE refs can be resolved.
   // Include the current (unsaved) content so same-file TYPE references also pass.
   const saveTypeReg = buildRepoTypeRegistry(content);
-  const saveTypeSet = new Set(saveTypeReg.keys());
-  const { errors: picErrors, warnings: picWarnings, unresolvedTypes: saveUnresolved } = validateDDLErrors(content, saveTypeSet);
+  const { errors: picErrors, warnings: picWarnings, unresolvedTypes: saveUnresolved } = validateDDLErrors(content, saveTypeReg);
   if (picErrors.length) {
     flash(`⚠ ${picErrors.length} DDL error${picErrors.length > 1 ? 's' : ''} — ${picErrors[0]}`, 'error');
     return;
@@ -6590,6 +6614,10 @@ function flash(msg, level) {
   el.appendChild(x);
   const timer = setTimeout(() => el.remove(), ms);
   el.addEventListener('click', () => { clearTimeout(timer); el.remove(); });
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    navigator.clipboard.writeText(msg).then(() => flash('✓ Copied to clipboard'));
+  });
   container.appendChild(el);
 }
 

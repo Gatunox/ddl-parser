@@ -4150,7 +4150,7 @@ function _vbarRender() {
       `<button class="vbar-btn" onclick="_vbarNext()" ${_vbarIdx === total - 1 ? 'disabled' : ''}>&gt;</button>` +
     `</span>` +
     `<span class="vbar-msg">${_escH(cur.text)}</span>` +
-    `<span class="vbar-copy" onclick="_vbarCopyMsg()" title="Copy to clipboard">⧉</span>` +
+    `<span class="vbar-copy" onclick="_vbarCopyMsg()" title="${_escH(cur.text)}">⧉</span>` +
     `<span class="vbar-close" onclick="_vbarClose()" title="Dismiss">✕</span>`;
 }
 function _vbarPrev()    { if (_vbarIdx > 0) { _vbarIdx--; _vbarRender(); } }

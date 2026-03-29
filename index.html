@@ -4060,6 +4060,10 @@ function _hlHPERest(raw) {
   s = s.replace(_HPE_KW, kw =>
     _sp(kw, _HPE_RESERVED_SET.has(kw.toUpperCase()) ? 'kw-reserved' : 'kw'));
   _HPE_KW.lastIndex = 0;
+  // Step 3.5 — the token immediately after TYPE is always a type-name reference,
+  // never a keyword. Strip any keyword colouring the previous step applied to it.
+  s = s.replace(/(<span class="hl-kw">TYPE<\/span>)(\s+)<span class="hl-kw(?:-reserved)?">([^<]+)<\/span>/g,
+    (_, typeSpan, sp, name) => typeSpan + sp + name);
   // Step 4 — resolve placeholders into coloured spans
   return s
     .replace(/\x00DOT\x00/g,  _sp('.', 'op'))
@@ -5680,7 +5684,12 @@ function loadStagedDef(name) {
   const def = S.stagingDefs.find(d => d.name === name);
   if (!def) return;
   document.getElementById('ddlEditor').value = def.content;
-  const destHint = S.scope && (S.scope.type === 'sv' || S.scope.type === 'ddl')
+  // Demote scope to sv-level so no existing DDL stays highlighted as selected.
+  // This prevents Save from accidentally targeting the previously-open DDL.
+  if (S.scope?.type === 'ddl') {
+    S.scope = { type: 'sv', vol: S.scope.vol, sv: S.scope.sv };
+  }
+  const destHint = S.scope && (S.scope.type === 'sv')
     ? `${S.scope.vol} / ${S.scope.sv} — click Save to place here`
     : `Select a Volume / Subvolume to save "${def.name}"`;
   document.getElementById('ddlScopePath').textContent = destHint;
@@ -5712,7 +5721,11 @@ function createMissingRefStub(typeName) {
     S.stagingActive  = typeName;
     S.editorBaseline = stub;   // Save disabled until user edits (adds real fields)
     document.getElementById('ddlEditor').value = stub;
-    const destHint = S.scope && (S.scope.type === 'sv' || S.scope.type === 'ddl')
+    // Demote scope to sv-level so no existing DDL stays highlighted as selected.
+    if (S.scope?.type === 'ddl') {
+      S.scope = { type: 'sv', vol: S.scope.vol, sv: S.scope.sv };
+    }
+    const destHint = S.scope?.type === 'sv'
       ? `${S.scope.vol} / ${S.scope.sv} — click Save to place here`
       : `Select a Volume / Subvolume to save "${typeName}"`;
     document.getElementById('ddlScopePath').textContent = destHint;

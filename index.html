@@ -702,12 +702,17 @@ body.light .trk-chk { color-scheme: light; }
   padding: 7px 14px; border-radius: 4px; font-size: 12px;
   pointer-events: none; background: var(--success); color: #000;
 }
-.flash.warn  { background: #e6a817; color: #000; pointer-events: auto; cursor: pointer; padding-right: 28px; position: relative; }
-.flash.error { background: #c0392b; color: #fff; pointer-events: auto; cursor: pointer; padding-right: 28px; position: relative; }
+.flash.warn  { background: #e6a817; color: #000; pointer-events: auto; cursor: pointer; padding-right: 46px; position: relative; }
+.flash.error { background: #c0392b; color: #fff; pointer-events: auto; cursor: pointer; padding-right: 46px; position: relative; }
 .flash-x {
   position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
   font-size: 13px; line-height: 1; opacity: 0.6;
 }
+.flash-copy {
+  position: absolute; top: 50%; right: 24px; transform: translateY(-50%);
+  font-size: 11px; line-height: 1; opacity: 0.6; cursor: pointer; user-select: none;
+}
+.flash-copy:hover, .flash-x:hover { opacity: 1; }
 
 /* ===== CONTEXT MENU ===== */
 .ctx-menu {
@@ -4142,7 +4147,7 @@ function _vbarRender() {
       `<span class="vbar-ctr">${_vbarIdx + 1}&thinsp;/&thinsp;${total}</span>` +
       `<button class="vbar-btn" onclick="_vbarNext()" ${_vbarIdx === total - 1 ? 'disabled' : ''}>&gt;</button>` +
     `</span>` +
-    `<span class="vbar-msg" title="${_escH(cur.text)} (right-click to copy)" oncontextmenu="event.preventDefault();_vbarCopyMsg()">${_escH(cur.text)}</span>` +
+    `<span class="vbar-msg" title="${_escH(cur.text)} (double-click to copy)" ondblclick="_vbarCopyMsg()">${_escH(cur.text)}</span>` +
     `<span class="vbar-close" onclick="_vbarClose()" title="Dismiss">✕</span>`;
 }
 function _vbarPrev()    { if (_vbarIdx > 0) { _vbarIdx--; _vbarRender(); } }
@@ -6614,10 +6619,15 @@ function flash(msg, level) {
   el.appendChild(x);
   const timer = setTimeout(() => el.remove(), ms);
   el.addEventListener('click', () => { clearTimeout(timer); el.remove(); });
-  el.addEventListener('contextmenu', e => {
-    e.preventDefault();
-    navigator.clipboard.writeText(msg).then(() => flash('✓ Copied to clipboard'));
-  });
+  if (level === 'warn' || level === 'error') {
+    const cp = document.createElement('span');
+    cp.className = 'flash-copy'; cp.textContent = '⧉'; cp.title = 'Copy to clipboard';
+    cp.addEventListener('click', e => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(msg).then(() => flash('✓ Copied to clipboard'));
+    });
+    el.insertBefore(cp, x);
+  }
   container.appendChild(el);
 }
 

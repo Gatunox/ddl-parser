@@ -240,6 +240,7 @@ body.light #ddlGutterInner { color: #c8ced4; }
 /* highlight token colours — NO font-weight changes (overlay technique requires
    uniform glyph advance widths; bold synthesis shifts widths and misaligns cursor) */
 .hl-comment      { color: #6a8a7a; }
+.hl-cmd          { color: #8878c0; font-style: italic; }   /* ?Section ?Page etc — compiler directives, ignored by parser */
 .hl-kw           { color: var(--accent); }
 .hl-kw-reserved  { color: #e06c75; }          /* HPE DDL reserved keywords */
 .hl-op           { color: #f78c6c; }
@@ -1414,9 +1415,10 @@ function parseHPEDDL(text) {
 
   // Strip comments:
   //   * in column 1 = full-line comment
-  //   !text! or !text to EOL = inline comment
+  //   !text! or !text to EOL = inline comment; ?cmd lines = compiler directives (ignored)
   const stripped = text.split('\n').map(line => {
     if (/^\*/.test(line)) return '';
+    if (/^\?/.test(line.trimStart())) return '';
     return line.replace(/!([^!]*)(?:!|$)/g, '');
   }).join('\n');
 
@@ -1523,9 +1525,9 @@ function validateDDLErrors(text, repoTypeRegistry) {
   const deferredChecks = [];
   const unresolvedTypes = new Set(); // user-defined TYPE names that couldn't be resolved
 
-  // Strip comments: * in col 1 = full-line, !text! or !text→EOL = inline
+  // Strip comments (* col-1), compiler directives (?), and inline comments (!)
   const strippedLines = text.split('\n').map(line =>
-    /^\*/.test(line) ? '' : line.replace(/!([^!]*)(?:!|$)/g, '')
+    (/^\*/.test(line) || /^\?/.test(line.trimStart())) ? '' : line.replace(/!([^!]*)(?:!|$)/g, '')
   );
   const stripped = strippedLines.join('\n');
 
@@ -1681,7 +1683,7 @@ function validateDDLErrors(text, repoTypeRegistry) {
     }
 
     const groupIndices = buildGroupSet();
-    const nameSeen     = new Map();   // UPPER-name → first index
+    const nameSeen     = new Map();   // "parentIdx:UPPER-name" → first index
 
     for (let i = 0; i < fields.length; i++) {
       const f       = fields[i];
@@ -1698,12 +1700,18 @@ function validateDDLErrors(text, repoTypeRegistry) {
         errors.push(`${ln}Field "${f.name}": "${upper}" is a DDL reserved word and cannot be used as a field name`);
       }
 
-      // ③ Duplicate field names (FILLER is exempt)
+      // ③ Duplicate field names — only flag when same name appears at the same
+      //   nesting level under the same parent group (FILLER is always exempt).
       if (upper !== 'FILLER') {
-        if (nameSeen.has(upper)) {
-          errors.push(`${ln}Definition "${defName}": duplicate field name "${f.name}" (first defined at line ${fields[nameSeen.get(upper)].line})`);
+        let parentIdx = -1;
+        for (let j = i - 1; j >= 0; j--) {
+          if (fields[j].lvl < f.lvl && fields[j].lvl < 66) { parentIdx = j; break; }
+        }
+        const nsKey = `${parentIdx}:${upper}`;
+        if (nameSeen.has(nsKey)) {
+          errors.push(`${ln}Definition "${defName}": duplicate field name "${f.name}" (first defined at line ${fields[nameSeen.get(nsKey)].line})`);
         } else {
-          nameSeen.set(upper, i);
+          nameSeen.set(nsKey, i);
         }
       }
 
@@ -2013,7 +2021,7 @@ function parseSimpleDDL(text) {
 function parseDDLSections(text) {
   // Returns [{name, items:[{level,name,pic,comp,typeClause,occurs,redefines,desc}]}]
   const stripped = text.split('\n').map(line =>
-    /^\*/.test(line) ? '' : line.replace(/!([^!]*)(?:!|$)/g, '')
+    (/^\*/.test(line) || /^\?/.test(line.trimStart())) ? '' : line.replace(/!([^!]*)(?:!|$)/g, '')
   ).join('\n');
   const stmts = stripped
     .split(/\.\s*(?:\n|$)/)
@@ -4075,6 +4083,7 @@ function _hlHPERest(raw) {
 
 function _hlHPELine(line) {
   if (/^\*/.test(line)) return _sp(line, 'comment');
+  if (/^\?/.test(line.trimStart())) return _sp(line, 'cmd');
   if (!line.trim()) return _escH(line);
 
   // Isolate any ! inline comment (first ! through EOL).

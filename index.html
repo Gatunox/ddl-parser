@@ -5272,33 +5272,43 @@ function splitHPEDDL(text) {
   const warnings = [];
   const lines = text.split('\n');
   let name = null, buf = [], preamble = [];
+
   for (const line of lines) {
-    const startM = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
-    if (startM) {
-      if (name) defs.push({ name, content: buf.join('\n') });   // flush previous
-      let rawName = startM[1].replace(/\.$/, '').toUpperCase();
-      // "DEF IS custinfo" is a Record Reference — "IS" is a keyword, not the name
-      if (rawName === 'IS') {
-        const m2 = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+IS\s+(\S+)/i);
-        if (m2) rawName = m2[1].replace(/\.$/, '').toUpperCase();
-      }
-      const err = validateDDLDefName(rawName);
-      if (err) warnings.push(err);
-      name = rawName;
-      // prepend any preamble comment lines (e.g. * lines before the first DEF)
-      buf  = preamble.length ? [...preamble, line] : [line];
-      preamble = [];
-    } else if (name) {
+    const trimmed = line.trimStart();
+
+    if (name) {
+      // Inside a definition — accumulate until END
       buf.push(line);
       if (/^\s*END\b/i.test(line)) {
         defs.push({ name, content: buf.join('\n') });
         name = null; buf = [];
+        preamble = [];   // lines after END belong to the NEXT def's preamble, start fresh
       }
     } else {
-      // before any DEF — collect as preamble (comments, blanks)
-      preamble.push(line);
+      // Between definitions (or before the first one)
+      const startM = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
+      if (startM) {
+        // Start of a new definition
+        let rawName = startM[1].replace(/\.$/, '').toUpperCase();
+        if (rawName === 'IS') {
+          const m2 = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+IS\s+(\S+)/i);
+          if (m2) rawName = m2[1].replace(/\.$/, '').toUpperCase();
+        }
+        const err = validateDDLDefName(rawName);
+        if (err) warnings.push(err);
+        name = rawName;
+        // Prepend any accumulated preamble (?Section, comments, SECTION cmd, etc.)
+        buf = preamble.length ? [...preamble, line] : [line];
+        preamble = [];   // consumed — reset so next sibling def gets no stale preamble
+      } else if (/^\s*DELETE\s+/i.test(trimmed)) {
+        // DELETE Record / DELETE Definition — schema maintenance commands, skip entirely
+      } else {
+        // ?Section, ?Page, SECTION, * comments, blanks — potential preamble for next def
+        preamble.push(line);
+      }
     }
   }
+
   if (name && buf.length) defs.push({ name, content: buf.join('\n') });   // flush final
   if (warnings.length) {
     setTimeout(() => flash('DDL validation: ' + warnings.join('; '), 'warn'), 100);

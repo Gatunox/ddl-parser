@@ -6512,6 +6512,11 @@ function _lwUpdateDisplay() {
 function _lwSetVisible(show) {
   const w = document.getElementById('lwWidget');
   if (w) w.classList.toggle('hidden', !show);
+  // Reset to Auto when NETARD goes away, so next detection always starts at 68
+  if (!show && P.lineWidth !== 0) {
+    P.lineWidth = 0;
+    savePrefs(); _lwUpdateDisplay();
+  }
 }
 
 function lwStartEdit() {

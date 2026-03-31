@@ -275,6 +275,13 @@ body.light .hl-str { color: #3a7d0a; }
 .path-btn:hover  { background: rgba(88,166,255,0.12) !important; color: var(--accent) !important; box-shadow: inset 0 0 0 2px var(--accent) !important; }
 .path-btn-dim    { color: var(--text-dim) !important; }
 .path-btn-dim:hover { color: var(--text) !important; background: rgba(255,255,255,0.05) !important; }
+/* DDL editor search bar */
+.ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; padding: 0 4px; border-left: 1px solid var(--border); border-right: 1px solid var(--border); overflow: hidden; }
+.ddl-search-lbl { font-size: 10px; color: var(--text-dim); opacity: 0.7; user-select: none; flex-shrink: 0; padding-right: 3px; font-family: var(--font-mono); }
+.ddl-search-input { flex: 1; min-width: 0; background: transparent; border: none; border-bottom: 1px solid var(--border); color: var(--text); font-family: var(--font-mono); font-size: var(--sz-mono); padding: 1px 3px; outline: none; }
+.ddl-search-input:focus { border-bottom-color: var(--accent); }
+.ddl-search-count { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); flex-shrink: 0; min-width: 3em; text-align: right; }
+.ddl-search-btn { padding: 0 5px !important; font-size: 10px !important; }
 .tree-node { padding: 3px 5px; cursor: pointer; font-size: calc(var(--sz-mono) - 0.5px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; }
 .tree-node:hover  { background: rgba(88,166,255,0.08); }
 .tree-node.tree-sel { background: rgba(88,166,255,0.18); }
@@ -953,7 +960,17 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
     <div class="panel" id="ddlPanel">
       <div class="panel-header">
         <span class="panel-title">DDL Definition</span>
-        <span id="ddlScopePath" style="font-size:10px;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;padding:0 4px">Right-click tree to manage</span>
+        <span id="ddlScopePath" style="font-size:10px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:140px;padding:0 4px"></span>
+        <div class="ddl-search-bar" id="ddlSearchBar">
+          <span class="ddl-search-lbl">Search</span>
+          <input id="ddlSearchInput" class="ddl-search-input" type="text" autocomplete="off" spellcheck="false"
+            oninput="ddlSearchUpdate()"
+            onkeydown="if(event.key==='Enter'){ddlSearchNext();}else if(event.key==='Escape'){ddlSearchClear();}"/>
+          <span id="ddlSearchCount" class="ddl-search-count"></span>
+          <button class="btn path-btn ddl-search-btn" onclick="ddlSearchPrev()" title="Previous match">&lt;</button>
+          <button class="btn path-btn ddl-search-btn" onclick="ddlSearchNext()" title="Next match">&gt;</button>
+          <button class="btn path-btn ddl-search-btn" onclick="ddlSearchClear()" title="Clear search">✕</button>
+        </div>
         <button class="btn path-btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
         <button class="btn path-btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
         <button class="btn path-btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
@@ -6571,6 +6588,54 @@ function lwStep(dir) {
   P.lineWidth = presets[idx];
   savePrefs(); _lwUpdateDisplay();
 }
+
+// ── DDL editor search ────────────────────────────────────────────────────────
+let _ddlSrchMatches = [], _ddlSrchIdx = -1;
+
+function ddlSearchUpdate() {
+  const q = document.getElementById('ddlSearchInput').value;
+  const ta = document.getElementById('ddlEditor');
+  const countEl = document.getElementById('ddlSearchCount');
+  _ddlSrchMatches = []; _ddlSrchIdx = -1;
+  if (!q) { countEl.textContent = ''; return; }
+  const text = ta.value, lower = text.toLowerCase(), ql = q.toLowerCase();
+  let pos = 0;
+  while ((pos = lower.indexOf(ql, pos)) !== -1) { _ddlSrchMatches.push(pos); pos++; }
+  if (_ddlSrchMatches.length) { _ddlSrchIdx = 0; _ddlSrchShow(); }
+  else countEl.textContent = '0 / 0';
+}
+
+function _ddlSrchShow() {
+  const ta = document.getElementById('ddlEditor');
+  const q = document.getElementById('ddlSearchInput').value;
+  const pos = _ddlSrchMatches[_ddlSrchIdx];
+  ta.focus(); ta.setSelectionRange(pos, pos + q.length);
+  // scroll the textarea so the match is visible
+  const lines = ta.value.substring(0, pos).split('\n');
+  const lineH = parseFloat(getComputedStyle(ta).lineHeight) || 16;
+  ta.scrollTop = Math.max(0, (lines.length - 4) * lineH);
+  document.getElementById('ddlSearchCount').textContent =
+    `${_ddlSrchIdx + 1} / ${_ddlSrchMatches.length}`;
+}
+
+function ddlSearchNext() {
+  if (!_ddlSrchMatches.length) { ddlSearchUpdate(); return; }
+  _ddlSrchIdx = (_ddlSrchIdx + 1) % _ddlSrchMatches.length;
+  _ddlSrchShow();
+}
+
+function ddlSearchPrev() {
+  if (!_ddlSrchMatches.length) { ddlSearchUpdate(); return; }
+  _ddlSrchIdx = (_ddlSrchIdx - 1 + _ddlSrchMatches.length) % _ddlSrchMatches.length;
+  _ddlSrchShow();
+}
+
+function ddlSearchClear() {
+  document.getElementById('ddlSearchInput').value = '';
+  document.getElementById('ddlSearchCount').textContent = '';
+  _ddlSrchMatches = []; _ddlSrchIdx = -1;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function adjustLineWidth(delta) {
   if (delta === 0) { P.lineWidth = 0; }

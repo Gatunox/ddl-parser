@@ -196,12 +196,15 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .panel-header > span:not(.panel-title) { display: flex; align-items: center; padding: 0 4px; }
 .panel-header .btn:hover { background: rgba(88,166,255,0.12) !important; color: var(--accent) !important; box-shadow: inset 0 0 0 2px var(--accent) !important; }
 #fmtForceSelect { background: var(--bg-deep); color: var(--text-dim); border: 2px solid transparent; border-radius: 0; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 6px; height: auto; align-self: stretch; cursor: pointer; outline: none; }
-.lw-widget { display: flex; align-items: center; gap: 3px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--sz-mono); color: var(--text-dim); padding: 0 4px; border-left: 1px solid var(--border); }
-.lw-lbl  { opacity: 0.5; user-select: none; }
+.lw-widget { display: flex; align-items: center; gap: 2px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--sz-mono); color: var(--text-dim); padding: 0 4px; border-left: 1px solid var(--border); }
+.lw-widget.hidden { display: none !important; }
+.lw-lbl  { opacity: 0.5; user-select: none; margin-right: 2px; }
+.lw-step { cursor: pointer; opacity: 0.55; padding: 0 3px; user-select: none; line-height: 1; }
+.lw-step:hover { opacity: 1; color: var(--accent); }
 .lw-val  { cursor: pointer; text-decoration: underline dotted; min-width: 2.8em; text-align: center; }
 .lw-val:hover { color: var(--text); }
 .lw-input { width: 4em; background: var(--bg-deep); color: var(--text); border: 1px solid var(--accent); border-radius: 2px; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 3px; text-align: center; outline: none; }
-.lw-reset { cursor: pointer; opacity: 0.45; font-size: calc(var(--sz-mono) + 1px); user-select: none; }
+.lw-reset { cursor: pointer; opacity: 0.35; padding: 0 2px; user-select: none; }
 .lw-reset:hover { opacity: 1; }
 #fmtForceSelect:hover { border-color: var(--accent); color: var(--accent); }
 #fmtForceSelect.fmt-forced { color: var(--warning); border-color: var(--warning); }
@@ -994,12 +997,14 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
           <option value="hex">Hex</option>
           <option value="oct">Oct</option>
         </select>
-        <span class="lw-widget" title="NETARD line width — click value to edit, ↺ to reset">
+        <span class="lw-widget hidden" id="lwWidget" title="NETARD line width — click value to type, ‹ › to step presets, ↺ to reset">
           <span class="lw-lbl">LW</span>
+          <span class="lw-step" onclick="lwStep(-1)" title="Previous preset">&#x2039;</span>
           <span id="lwDisplay" class="lw-val" onclick="lwStartEdit()" title="Click to type a value">Auto</span>
-          <input id="lwInput" class="lw-input hidden" type="number" min="16" max="256" step="8"
+          <input id="lwInput" class="lw-input hidden" type="number" min="16" max="256"
             onblur="lwCommit()" onkeydown="if(event.key==='Enter'){lwCommit();}if(event.key==='Escape'){lwCancel();}"/>
-          <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">↺</span>
+          <span class="lw-step" onclick="lwStep(1)" title="Next preset">&#x203A;</span>
+          <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>
         </span>
         <div style="flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding-left:6px;overflow:hidden">
           <span id="msgFileName" style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0"></span>
@@ -4298,6 +4303,7 @@ function clearAll() {
 
   document.getElementById('fmtBadge').innerHTML = '';
   document.getElementById('cntBadge').innerHTML = '';
+  _lwSetVisible(false);
   document.getElementById('msgNav').style.display = 'none';
   document.getElementById('trkBtn').style.display = 'none';
   document.getElementById('exportBtn').style.display = 'none';
@@ -4788,6 +4794,10 @@ function updateBadges() {
   if (S.isParsed) {
     cntEl.innerHTML = S.messages.length > 1 ? `<span class="badge badge-count">${S.messages.length} msgs</span>` : '';
   } else { cntEl.innerHTML = ''; }
+  // Show LW widget only when NETARD format is active
+  const isNetardFmt = (S.inputFormat || '').startsWith('netard') ||
+                      (S.forcedFormat || '').startsWith('netard');
+  _lwSetVisible(isNetardFmt);
 }
 
 // ============================================================
@@ -6491,9 +6501,16 @@ function applyPrefs(updateUI = true) {
   }
 }
 
+const _LW_PRESETS = [0, 80, 96, 112, 128, 144, 160, 192, 224, 256]; // 0 = Auto
+
 function _lwUpdateDisplay() {
   const el = document.getElementById('lwDisplay');
   if (el) el.textContent = P.lineWidth > 0 ? String(P.lineWidth) : 'Auto';
+}
+
+function _lwSetVisible(show) {
+  const w = document.getElementById('lwWidget');
+  if (w) w.classList.toggle('hidden', !show);
 }
 
 function lwStartEdit() {
@@ -6531,12 +6548,30 @@ function lwCancel() {
   display.classList.remove('hidden');
 }
 
+function lwStep(dir) {
+  // Find current index in presets (or nearest)
+  const presets = _LW_PRESETS;
+  let idx = presets.indexOf(P.lineWidth);
+  if (idx === -1) {
+    // Not on a preset — snap to nearest in the direction of travel
+    idx = dir > 0
+      ? presets.findIndex(p => p > P.lineWidth)
+      : presets.slice().reverse().findIndex(p => p < P.lineWidth || p === 0);
+    if (idx === -1) idx = dir > 0 ? presets.length - 1 : 0;
+    else if (dir < 0) idx = presets.length - 1 - idx;
+  } else {
+    idx = Math.max(0, Math.min(presets.length - 1, idx + dir));
+  }
+  P.lineWidth = presets[idx];
+  savePrefs(); _lwUpdateDisplay();
+}
+
 function adjustLineWidth(delta) {
   if (delta === 0) { P.lineWidth = 0; }
   else {
     const cur = P.lineWidth > 0 ? P.lineWidth : 64;
     P.lineWidth = Math.min(256, Math.max(0, cur + delta));
-    if (P.lineWidth < 16) P.lineWidth = 0;   // snap back to Auto below 16
+    if (P.lineWidth < 16) P.lineWidth = 0;
   }
   savePrefs(); applyPrefs();
 }

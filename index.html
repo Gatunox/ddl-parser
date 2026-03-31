@@ -1643,11 +1643,19 @@ function validateDDLErrors(text, repoTypeRegistry) {
     // Leaf field: has PIC, built-in TYPE, or user-defined TYPE
     if (f.pic || f.typeStr || f.userTypeRef) return leafSize(f) * occurs;
     if (f.lvl >= 66) return 0;
-    // Group: sum every leaf descendant
+    // Group: sum leaf descendants, skipping REDEFINES fields and their subtrees.
+    // A REDEFINES field reuses existing storage — it must NOT be added again.
     let total = 0;
+    let skipAbove = null;   // when set, skip everything at lvl > skipAbove
     for (let j = idx + 1; j < fields.length; j++) {
       const c = fields[j];
       if (c.lvl <= f.lvl || c.lvl >= 66) break;
+      // Leaving a REDEFINES subtree?
+      if (skipAbove !== null) {
+        if (c.lvl <= skipAbove) skipAbove = null; else continue;
+      }
+      // Field (leaf or group) that redefines something → skip it and its children
+      if (c.redefines) { skipAbove = c.lvl; continue; }
       if (c.pic || c.typeStr || c.userTypeRef) {
         const cn = (c.occurs !== null)
           ? Math.max(1, c.occursTo !== null ? c.occursTo : c.occurs) : 1;

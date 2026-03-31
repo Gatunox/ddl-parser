@@ -282,6 +282,8 @@ body.light .hl-str { color: #3a7d0a; }
 .ddl-search-input:focus { border-bottom-color: var(--accent); }
 .ddl-search-count { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); flex-shrink: 0; min-width: 3em; text-align: right; }
 .ddl-search-btn { padding: 0 5px !important; font-size: 10px !important; }
+.ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
+.ddl-search-controls.hidden { display: none; }
 .tree-node { padding: 3px 5px; cursor: pointer; font-size: calc(var(--sz-mono) - 0.5px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; }
 .tree-node:hover  { background: rgba(88,166,255,0.08); }
 .tree-node.tree-sel { background: rgba(88,166,255,0.18); }
@@ -966,10 +968,12 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
           <input id="ddlSearchInput" class="ddl-search-input" type="text" autocomplete="off" spellcheck="false"
             oninput="ddlSearchUpdate()"
             onkeydown="if(event.key==='Enter'){ddlSearchNext();}else if(event.key==='Escape'){ddlSearchClear();}"/>
-          <span id="ddlSearchCount" class="ddl-search-count"></span>
-          <button class="btn path-btn ddl-search-btn" onclick="ddlSearchPrev()" title="Previous match">&lt;</button>
-          <button class="btn path-btn ddl-search-btn" onclick="ddlSearchNext()" title="Next match">&gt;</button>
-          <button class="btn path-btn ddl-search-btn" onclick="ddlSearchClear()" title="Clear search">✕</button>
+          <div id="ddlSearchControls" class="ddl-search-controls hidden">
+            <button class="btn path-btn ddl-search-btn" onclick="ddlSearchPrev()" title="Previous match">&lt;</button>
+            <span id="ddlSearchCount" class="ddl-search-count"></span>
+            <button class="btn path-btn ddl-search-btn" onclick="ddlSearchNext()" title="Next match">&gt;</button>
+            <button class="btn path-btn ddl-search-btn" onclick="ddlSearchClear()" title="Clear search">✕</button>
+          </div>
         </div>
         <button class="btn path-btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
         <button class="btn path-btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
@@ -6596,8 +6600,10 @@ function ddlSearchUpdate() {
   const q = document.getElementById('ddlSearchInput').value;
   const ta = document.getElementById('ddlEditor');
   const countEl = document.getElementById('ddlSearchCount');
+  const ctrlEl = document.getElementById('ddlSearchControls');
   _ddlSrchMatches = []; _ddlSrchIdx = -1;
-  if (!q) { countEl.textContent = ''; return; }
+  if (!q) { countEl.textContent = ''; ctrlEl.classList.add('hidden'); return; }
+  ctrlEl.classList.remove('hidden');
   const text = ta.value, lower = text.toLowerCase(), ql = q.toLowerCase();
   let pos = 0;
   while ((pos = lower.indexOf(ql, pos)) !== -1) { _ddlSrchMatches.push(pos); pos++; }
@@ -6633,6 +6639,7 @@ function ddlSearchPrev() {
 function ddlSearchClear() {
   document.getElementById('ddlSearchInput').value = '';
   document.getElementById('ddlSearchCount').textContent = '';
+  document.getElementById('ddlSearchControls').classList.add('hidden');
   _ddlSrchMatches = []; _ddlSrchIdx = -1;
 }
 // ─────────────────────────────────────────────────────────────────────────────

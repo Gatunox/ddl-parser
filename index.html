@@ -6501,7 +6501,8 @@ function applyPrefs(updateUI = true) {
   }
 }
 
-const _LW_PRESETS = [0, 68, 80, 96, 112, 128, 144, 160, 192, 224, 256]; // 0 = Auto
+// 0 = Auto, then 68–256 in steps of 4
+const _LW_PRESETS = [0, ...Array.from({length: (256-68)/4+1}, (_,i) => 68 + i*4)];
 
 function _lwUpdateDisplay() {
   const el = document.getElementById('lwDisplay');

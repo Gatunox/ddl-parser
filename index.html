@@ -4935,9 +4935,11 @@ function renderDDLTree() {
             const warnBadge  = (!valResult?.errors?.length && valResult?.warnings?.length)
               ? `<span class="tree-warn-badge" title="${esc(valResult.warnings.map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${valResult.warnings.length}</span>`
               : '';
+            const secName   = !isPending ? getDDLSectionName(S.ddlTree[vol]?.[sv]?.[d]) : null;
+            const secBadge  = secName ? `<span class="tree-ddlmm-cnt" title="Section: ${esc(secName)}">${esc(secName)}</span>` : '';
             html += `<div class="tree-node${dSel}${pendCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
               <span class="tree-caret" style="visibility:hidden">−</span>
-              <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${tknBadge}${typeBadge}${unresBadge}${errBadge}${warnBadge}
+              <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${secBadge}${tknBadge}${typeBadge}${unresBadge}${errBadge}${warnBadge}
             </div>`;
           }
         }
@@ -5019,12 +5021,15 @@ function selectScope(type, vol, sv, name) {
     restoreDDLPlaceholder();
     updateDDLValidationBar(`${vol}/${sv}/${name}`);
   } else {
-    // Selecting a vol or sv sets the save destination but does NOT clear the editor —
-    // the user may have just loaded a file and is now picking where to save it.
     updateDDLValidationBar(null);
     const label = type === 'vol' ? vol : `${vol} / ${sv}`;
     document.getElementById('ddlScopePath').textContent =
       `${label}  —  ${ddls.length} DDL${ddls.length !== 1 ? 's' : ''} in scope`;
+    // Clear the editor when navigating to a vol/sv with no staged content pending
+    if (!S.stagingActive) {
+      document.getElementById('ddlEditor').value = '';
+      S.editorBaseline = null;
+    }
   }
   renderDDLTree();
   updateDDLEditorState();
@@ -5314,6 +5319,18 @@ function splitHPEDDL(text) {
     setTimeout(() => flash('DDL validation: ' + warnings.join('; '), 'warn'), 100);
   }
   return defs;
+}
+
+// Extract the section name from a DDL's preamble (?SECTION or SECTION command
+// appearing before the first DEF/RECORD/END line). Returns null if none found.
+function getDDLSectionName(content) {
+  if (!content) return null;
+  for (const line of content.split('\n')) {
+    if (/^\s*(?:DEF|DEFINITION|RECORD|END)\b/i.test(line)) break;
+    const m = line.match(/^\s*\??SECTION\s+(\S+)/i);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 // Detect whether text is HPE DDL format.

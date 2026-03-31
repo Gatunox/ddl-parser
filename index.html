@@ -3491,11 +3491,12 @@ function parseNetardLog(text) {
       }
     } else {
       // ── Standard format: 7-space indented raw bytes ──────────────────────────
-      // Determine wrap width from the longest content line observed.
-      const W = cur._lines.reduce((m, l) => Math.max(m, l.length), 0) || 1;
-      const padded = cur._lines.map((line, i) =>
-        i < cur._lines.length - 1 ? line.padEnd(W, ' ') : line
-      );
+      // Use user-configured line width (P.lineWidth) when set; otherwise fall
+      // back to the longest observed line. Pad ALL lines including the last —
+      // NETARD truncates trailing spaces from every line, not just the final one.
+      const autoW = cur._lines.reduce((m, l) => Math.max(m, l.length), 0) || 1;
+      const W     = (P.lineWidth > 0) ? P.lineWidth : autoW;
+      const padded = cur._lines.map(line => line.padEnd(W, ' '));
       rawMsg = padded.join('');
       // Declared LENGTH is authoritative: pad or trim to match.
       if (cur.length > 0 && rawMsg.length > 0) {
@@ -6445,7 +6446,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', monoSize: 11,
+  theme: 'dark', monoSize: 11, lineWidth: 0,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences
@@ -6472,7 +6473,19 @@ function applyPrefs(updateUI = true) {
       const b = document.getElementById('theme_' + t);
       if (b) b.classList.toggle('s-active', P.theme === t);
     });
+    const lwLbl = document.getElementById('lwLabel');
+    if (lwLbl) lwLbl.textContent = P.lineWidth > 0 ? P.lineWidth + ' chars' : 'Auto';
   }
+}
+
+function adjustLineWidth(delta) {
+  if (delta === 0) { P.lineWidth = 0; }
+  else {
+    const cur = P.lineWidth > 0 ? P.lineWidth : 64;
+    P.lineWidth = Math.min(256, Math.max(0, cur + delta));
+    if (P.lineWidth < 16) P.lineWidth = 0;   // snap back to Auto below 16
+  }
+  savePrefs(); applyPrefs();
 }
 
 function openSettings() {
@@ -6481,6 +6494,8 @@ function openSettings() {
   // Sync control states to current prefs
   const lbl = document.getElementById('szLabel');
   if (lbl) lbl.textContent = P.monoSize + 'px';
+  const lwLbl = document.getElementById('lwLabel');
+  if (lwLbl) lwLbl.textContent = P.lineWidth > 0 ? P.lineWidth + ' chars' : 'Auto';
   ['dark','light'].forEach(t => {
     const b = document.getElementById('theme_' + t);
     if (b) b.classList.toggle('s-active', P.theme === t);
@@ -6932,6 +6947,16 @@ document.addEventListener('DOMContentLoaded', () => {
             <button class="btn" onclick="adjustFontSize(-1)" style="padding:2px 8px;font-size:12px" title="Decrease font size">A−</button>
             <span class="sz-label" id="szLabel">11px</span>
             <button class="btn" onclick="adjustFontSize(1)"  style="padding:2px 8px;font-size:14px" title="Increase font size">A+</button>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <span class="settings-lbl">NETARD Line Width</span>
+          <div class="flex-row" style="gap:4px">
+            <button class="btn" onclick="adjustLineWidth(-8)" style="padding:2px 8px;font-size:12px" title="Decrease by 8">−</button>
+            <span class="sz-label" id="lwLabel">Auto</span>
+            <button class="btn" onclick="adjustLineWidth(8)"  style="padding:2px 8px;font-size:12px" title="Increase by 8">+</button>
+            <button class="btn" onclick="adjustLineWidth(0)"  style="padding:2px 6px;font-size:11px;opacity:0.6" title="Reset to Auto">↺</button>
           </div>
         </div>
 

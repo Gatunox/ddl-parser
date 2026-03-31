@@ -203,7 +203,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .lw-step:hover { opacity: 1; color: var(--accent); }
 .lw-val  { cursor: pointer; min-width: 2.8em; text-align: center; }
 .lw-val:hover { color: var(--text); }
-.lw-input { width: 3ch; background: var(--bg-deep); color: var(--text); border: 1px solid var(--accent); border-radius: 2px; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 2px; text-align: center; outline: none; line-height: 1.2; height: 1.4em; }
+.lw-input { width: 28px !important; background: var(--bg-deep); color: var(--text); border: 1px solid var(--accent); border-radius: 2px; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 2px; text-align: center; outline: none; line-height: 1.2; height: 1.4em; }
 .lw-reset { cursor: pointer; opacity: 0.35; padding: 0 2px; user-select: none; }
 .lw-reset:hover { opacity: 1; }
 #fmtForceSelect:hover { border-color: var(--accent); color: var(--accent); }
@@ -1007,7 +1007,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
             <span class="lw-lbl">Line Width</span>
             <span class="lw-step" onclick="lwStep(-1)" title="Previous preset">&lt;</span>
             <span id="lwDisplay" class="lw-val" onclick="lwStartEdit()" title="Click to type a value">Auto</span>
-            <input id="lwInput" class="lw-input hidden" type="text" inputmode="numeric" pattern="[0-9]*"
+            <input id="lwInput" class="lw-input hidden" type="text" inputmode="numeric" pattern="[0-9]*" size="3" maxlength="3"
               onblur="lwCommit()" onkeydown="if(event.key==='Enter'){lwCommit();}if(event.key==='Escape'){lwCancel();}"/>
             <span class="lw-step" onclick="lwStep(1)" title="Next preset">&gt;</span>
             <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>

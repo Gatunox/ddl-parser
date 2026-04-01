@@ -1454,111 +1454,26 @@ function typeSize(t) {
 // ---- HPE DDL parser (NonStop / Tandem Data Definition Language) -------------
 // Converts DEF/RECORD statements into flat { id, type, length, description }[].
 function parseHPEDDL(text, externalDefs) {
+  // Delegate to buildDDLDocFields so REDEFINES offsets, qualified names, and
+  // group structure are all handled consistently with the DDL Doc display.
+  const typeRegistry = externalDefs instanceof Map ? externalDefs
+    : (externalDefs ? new Map(externalDefs) : null);
+
+  const sections = parseDDLSections(text);
   const out = [];
 
-  // Strip comments:
-  //   * in column 1 = full-line comment
-  //   !text! or !text to EOL = inline comment; ?cmd lines = compiler directives (ignored)
-  const stripped = text.split('\n').map(line => {
-    if (/^\*/.test(line)) return '';
-    if (/^\?/.test(line.trimStart())) return '';
-    return line.replace(/!([^!]*)(?:!|$)/g, '');
-  }).join('\n');
-
-  // Split into statements on "." at end of line (handles multi-line statements).
-  // DEF, RECORD, and each field definition terminate with a period.
-  const stmts = stripped
-    .split(/\.\s*(?:\n|$)/)
-    .map(s => s.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-
-  let inDef = false;
-  // Pre-seed with sizes from the repository so cross-file TYPE * and TYPE def-name resolve
-  const knownDefs = externalDefs ? Object.fromEntries(externalDefs) : {};
-  // Level stack for building qualified names (e.g. ORIG.SEQ-NUM vs SEQ-NUM)
-  const nStack = []; // [{level, name}]
-
-  for (const stmt of stmts) {
-    // DEF / DEFINITION / RECORD  — start of a new data structure
-    // Optional FILE prefix: "FILE DEF name." declares a file-level definition
-    if (/^(?:FILE\s+)?(?:DEF|DEFINITION|RECORD)\s+\S/i.test(stmt)) { inDef = true; nStack.length = 0; continue; }
-    // END — close current structure
-    if (/^END\b/i.test(stmt))                           { inDef = false; nStack.length = 0; continue; }
-    // CONSTANT — no byte allocation
-    if (/^CONSTANT\s+/i.test(stmt))                     continue;
-    if (!inDef) continue;
-
-    // Must start with a two-digit level number
-    const lvlM = stmt.match(/^(\d{2})\s+(\S+)\s*(.*)/s);
-    if (!lvlM) continue;
-
-    const level   = parseInt(lvlM[1]);
-    const rawName = lvlM[2];
-    const rest    = lvlM[3] || '';
-
-    // Levels 66 (RENAMES), 88 (condition-name), 89 (enumeration) allocate no bytes
-    if (level === 66 || level === 88 || level === 89) continue;
-
-    const isFiller = /^FILLER\b/i.test(rawName);
-
-    // ── PICTURE clause ────────────────────────────────────────────────────
-    const picM = rest.match(/\bPIC(?:TURE)?\s+(?:IS\s+)?([XSANP9VT()\d]+)/i);
-
-    // ── USAGE / COMP modifier ─────────────────────────────────────────────
-    const usageM =
-      rest.match(/\bUSAGE\s+(?:IS\s+)?(COMP(?:UTATIONAL)?(?:-3)?|PACKED-DECIMAL|INDEX)\b/i) ||
-      rest.match(/\b(COMP(?:UTATIONAL)?(?:-3)?|PACKED-DECIMAL)\b/i);
-    const comp = usageM ? usageM[1] : '';
-
-    // ── TYPE clause ───────────────────────────────────────────────────────
-    // Capture the type value: a data-type keyword with optional size/flags, a def-name, or '*'
-    const typeM = rest.match(
-      /\bTYPE\s+(?:IS\s+)?((?:CHARACTER|BINARY|FLOAT|COMPLEX|LOGICAL|ENUM|BIT|SQL)(?:\s+[\d,]+)?(?:\s+UNSIGNED)?|\*|[\w-]+)/i
-    );
-
-    // ── OCCURS ───────────────────────────────────────────────────────────
-    const occM   = rest.match(/\bOCCURS\s+(\d+)(?:\s+TO\s+(\d+))?\s*(?:TIMES)?/i);
-    const occurs = occM ? parseInt(occM[2] || occM[1]) : 1;
-
-    // Update level stack for qualified naming — must happen before REDEFINES skip
-    // so that children of a REDEFINES group still inherit the correct parent path.
-    while (nStack.length && nStack[nStack.length - 1].level >= level) nStack.pop();
-    const upperName = rawName.toUpperCase();
-    nStack.push({ level, name: upperName });
-
-    // ── REDEFINES — overlaps previous field; skip for sequential layout ──
-    if (/\bREDEFINES\b/i.test(rest)) continue;
-
-    // ── HEADING / AS description ──────────────────────────────────────────
-    const headM = rest.match(/\bHEADING\s+"([^"]*)"/) || rest.match(/\bAS\s+"([^"]*)"/);
-    const desc  = headM ? headM[1] : rawName;
-
-    // ── Compute byte size ─────────────────────────────────────────────────
-    let size = 0;
-    if (picM) {
-      size = picSize(picM[1], comp);
-    } else if (typeM) {
-      const tv = typeM[1].trim();
-      if (/^(?:CHARACTER|BINARY|FLOAT|COMPLEX|LOGICAL|ENUM|BIT|SQL)\b/i.test(tv)) {
-        size = typeSize(tv);
-      } else if (tv === '*') {
-        // TYPE * — field's type is its own name (e.g. "04 PROD-ID TYPE *." → look up PROD-ID)
-        size = knownDefs[rawName.toUpperCase()] || 0;
-      } else {
-        // def-name reference — look up previously parsed definition
-        size = knownDefs[tv.toUpperCase()] || 0;
-      }
-    }
-
-    size *= occurs;
-
-    if (size > 0) {
-      const parentPath = nStack.slice(0, -1).map(e => e.name).join('.');
-      const qualName = isFiller
+  for (const sec of sections) {
+    const { fields } = buildDDLDocFields(sec.items, typeRegistry);
+    for (const f of fields) {
+      if (f.isGroup || f.size === 0) continue; // groups have no bytes of their own
+      const isFiller = /^FILLER$/i.test(f.name);
+      const parentPath = f.qualName.split('.').slice(0, -1).join('.');
+      const id = isFiller
         ? (parentPath ? `${parentPath}.FILLER` : 'FILLER')
-        : nStack.map(e => e.name).join('.');
-      out.push({ id: qualName, type: 'FIXED', length: size, description: desc });
-      knownDefs[upperName] = size;
+        : f.qualName;
+      // Include explicit offset so parseFlatMessage can reset the read position
+      // correctly for REDEFINES fields (which share the offset of the redefined item).
+      out.push({ id, type: 'FIXED', length: f.size, offset: f.offset, description: f.desc });
     }
   }
 
@@ -2841,34 +2756,43 @@ function parseFlatMessage(bytes, defs) {
   const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x)
                                                         : `[${x.toString(16).padStart(2,'0')}]`).join('');
   const fields = [];
-  let offset = 0;
+  let seqOffset = 0; // sequential cursor — used only when def has no explicit offset
 
   for (const def of defs) {
-    if (offset >= bytes.length) break;
-    const fStart = offset;
-    let len = def.length;
+    const hasExplicit = def.offset !== undefined;
+    const fStart = hasExplicit ? def.offset : seqOffset;
 
+    if (!hasExplicit && fStart >= bytes.length) break;
+    if ( hasExplicit && fStart >= bytes.length) continue;
+
+    let len = def.length;
     let lenPrefix = null;
+    let dataStart = fStart;
+
     if (def.type === 'LLVAR') {
-      const lb = bytes.slice(offset, offset + 2); offset += 2;
-      lenPrefix = lb.map(b => String.fromCharCode(b)).join('');
+      lenPrefix = bytes.slice(fStart, fStart + 2).map(b => String.fromCharCode(b)).join('');
       len = parseInt(lenPrefix, 10) || 0;
+      dataStart = fStart + 2;
     } else if (def.type === 'LLLVAR') {
-      const lb = bytes.slice(offset, offset + 3); offset += 3;
-      lenPrefix = lb.map(b => String.fromCharCode(b)).join('');
+      lenPrefix = bytes.slice(fStart, fStart + 3).map(b => String.fromCharCode(b)).join('');
       len = parseInt(lenPrefix, 10) || 0;
+      dataStart = fStart + 3;
     }
 
-    const fBytes = bytes.slice(offset, offset + len);
-    offset += len;
-    if (!fBytes.length) break;
+    const fBytes = bytes.slice(dataStart, dataStart + len);
+    const fEnd   = dataStart + len;
+
+    if (!hasExplicit) {
+      seqOffset = fEnd;
+      if (!fBytes.length) break;
+    }
 
     fields.push({
       id: def.id, description: def.description,
       type: def.type, maxLength: def.length, lenPrefix,
       valueLength: fBytes.length,
       value: bToStr(fBytes), rawHex: bToHex(fBytes), rawBytes: fBytes,
-      startByte: fStart, endByte: offset - 1,
+      startByte: fStart, endByte: fEnd - 1,
     });
   }
   return fields;
@@ -6462,7 +6386,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.77';
+const APP_VERSION  = '1.0.0.78';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

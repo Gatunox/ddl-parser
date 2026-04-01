@@ -1520,6 +1520,12 @@ function parseHPEDDL(text, externalDefs) {
     const occM   = rest.match(/\bOCCURS\s+(\d+)(?:\s+TO\s+(\d+))?\s*(?:TIMES)?/i);
     const occurs = occM ? parseInt(occM[2] || occM[1]) : 1;
 
+    // Update level stack for qualified naming — must happen before REDEFINES skip
+    // so that children of a REDEFINES group still inherit the correct parent path.
+    while (nStack.length && nStack[nStack.length - 1].level >= level) nStack.pop();
+    const upperName = rawName.toUpperCase();
+    nStack.push({ level, name: upperName });
+
     // ── REDEFINES — overlaps previous field; skip for sequential layout ──
     if (/\bREDEFINES\b/i.test(rest)) continue;
 
@@ -1543,11 +1549,6 @@ function parseHPEDDL(text, externalDefs) {
         size = knownDefs[tv.toUpperCase()] || 0;
       }
     }
-
-    // Update level stack for qualified naming (track all items, including groups)
-    while (nStack.length && nStack[nStack.length - 1].level >= level) nStack.pop();
-    const upperName = rawName.toUpperCase();
-    nStack.push({ level, name: upperName });
 
     size *= occurs;
 
@@ -6460,7 +6461,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.74';
+const APP_VERSION  = '1.0.0.75';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

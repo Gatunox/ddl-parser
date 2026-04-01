@@ -5544,7 +5544,7 @@ function getDDLFromPath(ddlPath) {
   const name = rest.join('/');
   const content = S.ddlTree[vol]?.[sv]?.[name];
   if (!content) return null;
-  return { path: ddlPath, content, defs: parseDDL(content) };
+  return { path: ddlPath, content, defs: parseDDL(content, buildRepoTypeRegistry()) };
 }
 
 function saveDDLMsgMap() {
@@ -6451,7 +6451,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.72';
+const APP_VERSION  = '1.0.0.73';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

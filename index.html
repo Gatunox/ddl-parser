@@ -1475,13 +1475,15 @@ function parseHPEDDL(text, externalDefs) {
   let inDef = false;
   // Pre-seed with sizes from the repository so cross-file TYPE * and TYPE def-name resolve
   const knownDefs = externalDefs ? Object.fromEntries(externalDefs) : {};
+  // Level stack for building qualified names (e.g. ORIG.SEQ-NUM vs SEQ-NUM)
+  const nStack = []; // [{level, name}]
 
   for (const stmt of stmts) {
     // DEF / DEFINITION / RECORD  — start of a new data structure
     // Optional FILE prefix: "FILE DEF name." declares a file-level definition
-    if (/^(?:FILE\s+)?(?:DEF|DEFINITION|RECORD)\s+\S/i.test(stmt)) { inDef = true; continue; }
+    if (/^(?:FILE\s+)?(?:DEF|DEFINITION|RECORD)\s+\S/i.test(stmt)) { inDef = true; nStack.length = 0; continue; }
     // END — close current structure
-    if (/^END\b/i.test(stmt))                           { inDef = false; continue; }
+    if (/^END\b/i.test(stmt))                           { inDef = false; nStack.length = 0; continue; }
     // CONSTANT — no byte allocation
     if (/^CONSTANT\s+/i.test(stmt))                     continue;
     if (!inDef) continue;
@@ -1542,12 +1544,19 @@ function parseHPEDDL(text, externalDefs) {
       }
     }
 
+    // Update level stack for qualified naming (track all items, including groups)
+    while (nStack.length && nStack[nStack.length - 1].level >= level) nStack.pop();
+    const upperName = rawName.toUpperCase();
+    nStack.push({ level, name: upperName });
+
     size *= occurs;
 
     if (size > 0) {
-      const id = isFiller ? `FILLER_${out.length}` : rawName.toUpperCase();
-      out.push({ id, type: 'FIXED', length: size, description: desc });
-      knownDefs[rawName.toUpperCase()] = size;
+      const qualName = isFiller
+        ? `FILLER_${out.length}`
+        : nStack.map(e => e.name).join('.');
+      out.push({ id: qualName, type: 'FIXED', length: size, description: desc });
+      knownDefs[upperName] = size;
     }
   }
 
@@ -6451,7 +6460,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.73';
+const APP_VERSION  = '1.0.0.74';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

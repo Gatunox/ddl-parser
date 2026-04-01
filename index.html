@@ -1553,8 +1553,9 @@ function parseHPEDDL(text, externalDefs) {
     size *= occurs;
 
     if (size > 0) {
+      const parentPath = nStack.slice(0, -1).map(e => e.name).join('.');
       const qualName = isFiller
-        ? `FILLER_${out.length}`
+        ? (parentPath ? `${parentPath}.FILLER_${out.length}` : `FILLER_${out.length}`)
         : nStack.map(e => e.name).join('.');
       out.push({ id: qualName, type: 'FIXED', length: size, description: desc });
       knownDefs[upperName] = size;
@@ -6461,7 +6462,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.75';
+const APP_VERSION  = '1.0.0.76';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

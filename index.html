@@ -1453,7 +1453,7 @@ function typeSize(t) {
 
 // ---- HPE DDL parser (NonStop / Tandem Data Definition Language) -------------
 // Converts DEF/RECORD statements into flat { id, type, length, description }[].
-function parseHPEDDL(text) {
+function parseHPEDDL(text, externalDefs) {
   const out = [];
 
   // Strip comments:
@@ -1473,44 +1473,8 @@ function parseHPEDDL(text) {
     .filter(Boolean);
 
   let inDef = false;
-  const knownDefs = {};   // def-name → byte-size (for TYPE def-name resolution)
-
-  // ── Pre-pass: collect total byte size for each top-level DEF ─────────────
-  // This allows forward references (e.g. TYPE * where the referenced DEF comes
-  // after the field that uses it in the same file).
-  {
-    let preDefName = null, preTotal = 0, preInDef = false;
-    for (const stmt of stmts) {
-      const defM = stmt.match(/^(?:FILE\s+)?(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
-      if (defM) { preDefName = defM[1].replace(/\.$/, '').toUpperCase(); preTotal = 0; preInDef = true; continue; }
-      if (/^END\b/i.test(stmt)) {
-        if (preDefName && preTotal > 0) knownDefs[preDefName] = preTotal;
-        preDefName = null; preInDef = false; continue;
-      }
-      if (!preInDef) continue;
-      const lvlM = stmt.match(/^(\d{2})\s+(\S+)\s*(.*)/s);
-      if (!lvlM) continue;
-      const lvl = parseInt(lvlM[1]);
-      if (lvl === 66 || lvl === 88 || lvl === 89) continue;
-      if (/\bREDEFINES\b/i.test(lvlM[3])) continue;
-      const picM2  = lvlM[3].match(/\bPIC(?:TURE)?\s+(?:IS\s+)?([XSANP9VT()\d]+)/i);
-      const usageM2 = lvlM[3].match(/\bUSAGE\s+(?:IS\s+)?(COMP(?:UTATIONAL)?(?:-3)?|PACKED-DECIMAL|INDEX)\b/i) ||
-                      lvlM[3].match(/\b(COMP(?:UTATIONAL)?(?:-3)?|PACKED-DECIMAL)\b/i);
-      const typeM2 = lvlM[3].match(/\bTYPE\s+(?:IS\s+)?((?:CHARACTER|BINARY|FLOAT|COMPLEX|LOGICAL|ENUM|BIT|SQL)(?:\s+[\d,]+)?(?:\s+UNSIGNED)?|\*|[\w-]+)/i);
-      const occM2  = lvlM[3].match(/\bOCCURS\s+(\d+)(?:\s+TO\s+(\d+))?\s*(?:TIMES)?/i);
-      const occ2   = occM2 ? parseInt(occM2[2] || occM2[1]) : 1;
-      let sz = 0;
-      if (picM2) { sz = picSize(picM2[1], usageM2 ? usageM2[1] : ''); }
-      else if (typeM2) {
-        const tv2 = typeM2[1].trim();
-        if (/^(?:CHARACTER|BINARY|FLOAT|COMPLEX|LOGICAL|ENUM|BIT|SQL)\b/i.test(tv2)) sz = typeSize(tv2);
-        else if (tv2 !== '*') sz = knownDefs[tv2.toUpperCase()] || 0;
-        // TYPE * handled in main pass after knownDefs is populated
-      }
-      preTotal += sz * occ2;
-    }
-  }
-  // ─────────────────────────────────────────────────────────────────────────
+  // Pre-seed with sizes from the repository so cross-file TYPE * and TYPE def-name resolve
+  const knownDefs = externalDefs ? Object.fromEntries(externalDefs) : {};
 
   for (const stmt of stmts) {
     // DEF / DEFINITION / RECORD  — start of a new data structure
@@ -2632,13 +2596,13 @@ function validateDDLConstantName(name) {
 }
 
 // ---- Auto-detect DDL format and dispatch ------------------------------------
-function parseDDL(text) {
+function parseDDL(text, externalDefs) {
   if (!text) return [];
   if (isTokenMap(text)) return [];  // token map files are not DDL definitions
   // HPE DDL: has a DEF/DEFINITION/RECORD keyword AND level numbers like "02 fieldname"
   if (/^\s*(?:DEF|DEFINITION|RECORD|CONSTANT)\s+\S/mi.test(text) &&
       /^\s*\d{2}\s+\S/m.test(text)) {
-    return parseHPEDDL(text);
+    return parseHPEDDL(text, externalDefs);
   }
   return parseSimpleDDL(text);
 }
@@ -3708,15 +3672,16 @@ function doParseNetardLog(text) {
 
   // Pre-compile ALL DDLs in the tree, grouped by volume — used for auto-detection.
   // Falls back to the manually selected scope when the detected volume has no DDLs.
+  const _netardReg = buildRepoTypeRegistry();
   const compiledByVol = {};
   for (const vol of Object.keys(S.ddlTree)) {
     const entries = getDDLsForVol(vol)
-      .map(({ path, content }) => ({ path, defs: parseDDL(content) }))
+      .map(({ path, content }) => ({ path, defs: parseDDL(content, _netardReg) }))
       .filter(d => d.defs.length > 0);
     if (entries.length) compiledByVol[vol] = entries;
   }
   const scopeFallback = getDDLsForScope()
-    .map(({ path, content }) => ({ path, defs: parseDDL(content) }))
+    .map(({ path, content }) => ({ path, defs: parseDDL(content, _netardReg) }))
     .filter(d => d.defs.length > 0);
 
   const parsed = records.map(rec => {
@@ -3856,7 +3821,7 @@ function doParseMessages() {
       setTimeout(() => flash(`⚠ ${allDDLWarnings.length} DDL warning${allDDLWarnings.length > 1 ? 's' : ''} — ${allDDLWarnings[0]}`, 'warn'), 400);
     }
 
-    const activeDDLs = ddlContents.map(({ path, content }) => ({ path, defs: parseDDL(content) }))
+    const activeDDLs = ddlContents.map(({ path, content }) => ({ path, defs: parseDDL(content, parseTypeReg) }))
                                     .filter(d => d.defs.length > 0);
     if (!activeDDLs.length) { flash('No valid field definitions found in selected scope.', 'warn'); return; }
 
@@ -3892,10 +3857,11 @@ function doParseMessages() {
 
   // ── Priority 2 + 3: DDLMM → auto-detect ─────────────────────────────────
   // Pre-compile ALL DDLs in the tree, grouped by volume, for auto-detect.
+  const _repoReg = buildRepoTypeRegistry();
   const compiledByVol = {};
   for (const vol of Object.keys(S.ddlTree)) {
     const entries = getDDLsForVol(vol)
-      .map(({ path, content }) => ({ path, defs: parseDDL(content) }))
+      .map(({ path, content }) => ({ path, defs: parseDDL(content, _repoReg) }))
       .filter(d => d.defs.length > 0);
     if (entries.length) compiledByVol[vol] = entries;
   }

@@ -604,6 +604,10 @@ thead th {
 tbody tr { border-bottom: 1px solid rgba(48,54,61,0.4); cursor: pointer; }
 tbody tr:hover td { background: var(--hl-hover); }
 tbody tr.row-sel td { background: var(--hl-active) !important; }
+tbody tr.row-redef td { color: #e6a817; }
+tbody tr.row-redef td.c-val { color: #c8941a; }
+body.light tbody tr.row-redef td { color: #b7770a; }
+.c-redef-mark { opacity: 0.55; font-size: 10px; color: #e6a817; }
 tbody td { padding: 3px 8px; vertical-align: top; font-size: var(--sz-mono); overflow: hidden; text-overflow: ellipsis; }
 td.c-id   { color: var(--warning); font-weight: 700; white-space: nowrap; }
 td.c-desc { color: var(--text-dim); }
@@ -1473,7 +1477,8 @@ function parseHPEDDL(text, externalDefs) {
         : f.qualName;
       // Include explicit offset so parseFlatMessage can reset the read position
       // correctly for REDEFINES fields (which share the offset of the redefined item).
-      out.push({ id, type: 'FIXED', length: f.size, offset: f.offset, description: f.desc });
+      out.push({ id, type: 'FIXED', length: f.size, offset: f.offset, description: f.desc,
+                 isRedefines: f.isRedefines || f.isInsideRedefines });
     }
   }
 
@@ -2151,7 +2156,8 @@ function buildDDLDocFields(rawItems, typeRegistry) {
       occurs:      item.occurs,
       dataType,
       isGroup,
-      isRedefines: !!item.redefines,
+      isRedefines:       !!item.redefines,
+      isInsideRedefines: !item.redefines && posCtx.length > 1, // child of a REDEFINES group
       redefinesName: item.redefines,
       desc:        item.desc,
     };
@@ -2286,9 +2292,12 @@ function showDDLDoc() {
     for (const f of fields) {
       if (f.isGroup) continue;
       rowNum++;
-      const cls        = f.isRedefines ? ' class="ddl-doc-redef"' : '';
+      const isRedefRow = f.isRedefines || f.isInsideRedefines;
+      const cls        = isRedefRow ? ' class="ddl-doc-redef"' : '';
       const redefNote  = f.isRedefines
-        ? `<span style="font-size:10px;opacity:.7"> ⟵ ${esc(f.redefinesName)}</span>` : '';
+        ? `<span style="font-size:10px;opacity:.7"> ⟵ ${esc(f.redefinesName)}</span>`
+        : f.isInsideRedefines
+        ? `<span style="font-size:10px;opacity:.7"> ⟵ redef</span>` : '';
       const descTxt    = f.desc && f.desc.toUpperCase() !== f.name ? esc(f.desc) : '';
       const occurs     = f.occurs > 1 ? `×${f.occurs}` : '—';
       html += `<tr${cls}>
@@ -2807,17 +2816,29 @@ function isTokenMap(text) {
   if (!text) return false;
   const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('*'));
   if (!lines.length) return false;
-  return lines.every(l => /^"[A-Za-z0-9]{2}"\s*=\s*\S+/.test(l));
+  // Accept both:  "B4" = DDL-NAME   and   DDL-NAME = "B4"
+  return lines.every(l =>
+    /^"[A-Za-z0-9]{2}"\s*=\s*\S+/.test(l) ||
+    /^\S+\s*=\s*"[A-Za-z0-9]{2}"/.test(l)
+  );
 }
 
 // Parse token map text → { ID: 'DDL-NAME', ... }
+// Accepts both:  "B4" = DDL-NAME   and   DDL-NAME = "B4"
 function parseTokenMap(text) {
   const map = {};
   for (const line of text.split('\n')) {
     const t = line.trim();
     if (!t || t.startsWith('*')) continue;
-    const m = t.match(/^"([A-Za-z0-9]{2})"\s*=\s*(\S+)/);
-    if (m) map[m[1].toUpperCase()] = m[2];
+    const m = t.match(/^"([A-Za-z0-9]{2})"\s*=\s*(\S+)/) ||
+              t.match(/^(\S+)\s*=\s*"([A-Za-z0-9]{2})"/);
+    if (m) {
+      // Normalise: always store as id → ddlName
+      const isReverse = t.startsWith('"') ? false : true;
+      const id  = isReverse ? m[2].toUpperCase() : m[1].toUpperCase();
+      const ddl = isReverse ? m[1] : m[2];
+      map[id] = ddl;
+    }
   }
   return map;
 }
@@ -2877,8 +2898,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
   if (bytes[startOffset] !== 0x26 || bytes[startOffset+1] !== 0x20) return null;
 
   const tokenMaps = getTokenMaps(preferredVol);
-  if (!tokenMaps.length) return null;
-  const idMap = mergeTokenMaps(tokenMaps, preferredVol);
+  const idMap = tokenMaps.length ? mergeTokenMaps(tokenMaps, preferredVol) : {};
 
   let offset = startOffset + 2; // skip '& '
 
@@ -2948,7 +2968,9 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       fields,
       rawBytes: dataBytes,
       rawHex: bToHex(dataBytes),
-      error: !ddlName ? 'Unknown token ID' : !ddlPath ? 'DDL not found' : null,
+      error: !tokenMaps.length ? 'Token area present — no token definitions loaded'
+           : !ddlName  ? `Unknown token ID: ${tokenId}`
+           : !ddlPath  ? 'DDL not found' : null,
     });
   }
 
@@ -4351,12 +4373,14 @@ function renderFieldTable(msg) {
     const prefixHtml = f.lenPrefix ? `<span class="c-vlen">${esc(f.lenPrefix)}</span>` : '';
     const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
     const descTip    = ttType ? `${ttType}\n${f.description}` : f.description;
-    return `<tr class="${sel}" data-fid="${esc(fid)}"
+    const redefMark  = f.isRedefines ? `<span class="c-redef-mark" title="REDEFINES overlay"> ⟵</span>` : '';
+    const rowCls     = [sel, f.isRedefines ? 'row-redef' : ''].filter(Boolean).join(' ');
+    return `<tr class="${rowCls}" data-fid="${esc(fid)}"
       onclick="selectField('${esc(fid)}')"
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
       onmouseenter="hoverField('${esc(fid)}')"
       onmouseleave="clearHover()">
-      <td class="c-id">${esc(f.id)}</td>
+      <td class="c-id">${esc(f.id)}${redefMark}</td>
       <td class="c-desc" title="${esc(descTip)}">${esc(f.description)}${det}</td>
       <td class="c-len">${lenCell}</td>
       <td class="${ecls}" title="${esc(f.value)}">${prefixHtml}${esc(val)}</td>
@@ -4377,8 +4401,9 @@ function renderFieldTable(msg) {
     </tr>`;
     for (const tkn of msg.tokens) {
       if (tkn.error) {
+        const idCell = tkn.id ? esc(tkn.id) : '<span style="color:var(--text-dim)">—</span>';
         rows += `<tr class="tkn-unknown">
-          <td class="c-id">${esc(tkn.id)}</td>
+          <td class="c-id">${idCell}</td>
           <td colspan="5" class="c-err">${esc(tkn.error)}${tkn.rawHex ? ` &nbsp;<span style="color:var(--text-dim)">${esc(tkn.rawHex.slice(0,40))}</span>` : ''}</td>
         </tr>`;
       } else {
@@ -4396,7 +4421,7 @@ function renderFieldTable(msg) {
   const tableOrEmpty = rows
     ? `<div class="tbl-wrap"><table class="res-tbl">
         <thead><tr>
-          <th class="th-id" style="width:54px">Field<span class="th-resize"></span></th>
+          <th class="th-id" style="width:140px">Field<span class="th-resize"></span></th>
           <th class="th-desc" style="width:180px">Description<span class="th-resize"></span></th>
           <th class="th-len" style="width:44px">Len<span class="th-resize"></span></th>
           <th class="th-val">Value<span class="th-resize"></span></th>
@@ -5340,8 +5365,14 @@ function parseTokenMapText(text, out = {}) {
   for (const line of text.split('\n')) {
     const t = line.trim();
     if (!t || t.startsWith('*')) continue;
-    const m = t.match(/^"([A-Za-z0-9]{2})"\s*=\s*(\S+)/);
-    if (m) out[m[2]] = m[1].toUpperCase(); // ddlName → tokenId
+    const m = t.match(/^"([A-Za-z0-9]{2})"\s*=\s*(\S+)/) ||
+              t.match(/^(\S+)\s*=\s*"([A-Za-z0-9]{2})"/);
+    if (m) {
+      const isReverse = t.startsWith('"') ? false : true;
+      const id  = isReverse ? m[2].toUpperCase() : m[1].toUpperCase();
+      const ddl = isReverse ? m[1] : m[2];
+      out[ddl] = id; // ddlName → tokenId (for badge display)
+    }
   }
   return out;
 }
@@ -6386,7 +6417,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.78';
+const APP_VERSION  = '1.0.0.79';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

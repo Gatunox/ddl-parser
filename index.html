@@ -1074,12 +1074,12 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
         <button class="btn" id="exportBtn" onclick="openMsgExportModal()" style="display:none;flex-shrink:0" title="Export messages">⬇ Export</button>
         <select id="colPickerSelect" onchange="onColPickerChange(this)" title="Show/hide columns">
           <option value="" disabled selected>Columns</option>
-          <option value="th-id"   data-col="th-id,c-id">✓ Field</option>
-          <option value="th-desc" data-col="th-desc,c-desc">✓ Description</option>
-          <option value="th-len"  data-col="th-len,c-len">✓ Length</option>
-          <option value="th-val"  data-col="th-val,c-val,c-err">✓ Value</option>
-          <option value="th-raw"  data-col="th-raw,c-raw">✓ Raw Hex</option>
-          <option value="th-trk"  data-col="th-trk,c-trk">✓ Trk</option>
+          <option value="id"  data-col="id">✓ Field</option>
+          <option value="desc" data-col="desc">✓ Description</option>
+          <option value="len"  data-col="len">✓ Length</option>
+          <option value="val"  data-col="val">✓ Value</option>
+          <option value="raw"  data-col="raw">✓ Raw Hex</option>
+          <option value="trk"  data-col="trk">✓ Trk</option>
         </select>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
@@ -1468,17 +1468,26 @@ function parseHPEDDL(text, externalDefs) {
 
   for (const sec of sections) {
     const { fields } = buildDDLDocFields(sec.items, typeRegistry);
+    let lastRedefTarget = null; // tracks the redefinesName of the current REDEFINES group
     for (const f of fields) {
-      if (f.isGroup || f.size === 0) continue; // groups have no bytes of their own
+      if (f.isGroup) {
+        // Track which field the REDEFINES group overlaps so children can display it
+        lastRedefTarget = f.isRedefines ? f.redefinesName : null;
+        continue;
+      }
+      if (f.size === 0) continue;
+      if (!f.isRedefines && !f.isInsideRedefines) lastRedefTarget = null;
+
       const isFiller = /^FILLER$/i.test(f.name);
       const parentPath = f.qualName.split('.').slice(0, -1).join('.');
       const id = isFiller
         ? (parentPath ? `${parentPath}.FILLER` : 'FILLER')
         : f.qualName;
-      // Include explicit offset so parseFlatMessage can reset the read position
-      // correctly for REDEFINES fields (which share the offset of the redefined item).
+      // redefTarget: for single-element REDEFINES use its own redefinesName;
+      // for children of a REDEFINES group use the group's redefinesName.
+      const redefTarget = f.isRedefines ? f.redefinesName : lastRedefTarget;
       out.push({ id, type: 'FIXED', length: f.size, offset: f.offset, description: f.desc,
-                 isRedefines: f.isRedefines || f.isInsideRedefines });
+                 isRedefines: f.isRedefines || f.isInsideRedefines, redefTarget });
     }
   }
 
@@ -2802,6 +2811,8 @@ function parseFlatMessage(bytes, defs) {
       valueLength: fBytes.length,
       value: bToStr(fBytes), rawHex: bToHex(fBytes), rawBytes: fBytes,
       startByte: fStart, endByte: fEnd - 1,
+      isRedefines: def.isRedefines || false,
+      redefTarget: def.redefTarget || null,
     });
   }
   return fields;
@@ -4373,7 +4384,9 @@ function renderFieldTable(msg) {
     const prefixHtml = f.lenPrefix ? `<span class="c-vlen">${esc(f.lenPrefix)}</span>` : '';
     const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
     const descTip    = ttType ? `${ttType}\n${f.description}` : f.description;
-    const redefMark  = f.isRedefines ? `<span class="c-redef-mark" title="REDEFINES overlay"> ⟵</span>` : '';
+    const redefMark  = f.isRedefines
+      ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${f.redefTarget || '?'}"> ⟵${f.redefTarget ? ' '+f.redefTarget : ''}</span>`
+      : '';
     const rowCls     = [sel, f.isRedefines ? 'row-redef' : ''].filter(Boolean).join(' ');
     return `<tr class="${rowCls}" data-fid="${esc(fid)}"
       onclick="selectField('${esc(fid)}')"
@@ -6417,7 +6430,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.79';
+const APP_VERSION  = '1.0.0.80';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

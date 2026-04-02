@@ -563,17 +563,18 @@ input[type="text"]:focus { border-color: var(--accent); }
 .rec-meta-time  { color: var(--text-dim); }
 
 /* ---- Token area rows ---- */
+tr.tkn-area-hdr { cursor: pointer; user-select: none; }
 tr.tkn-area-hdr td {
   background: rgba(139,92,246,0.10); color: var(--accent);
   font-weight: 700; border-top: 2px solid var(--accent);
   padding: 5px 8px; font-size: var(--sz-mono);
 }
+tr.tkn-area-hdr:hover td { background: rgba(139,92,246,0.18); }
 tr.tkn-hdr td {
   background: rgba(139,92,246,0.05); color: var(--warning);
   font-weight: 700; border-top: 1px solid var(--border);
   padding: 3px 8px;
 }
-tr.tkn-unknown td { color: var(--accent2); font-style: italic; }
 
 /* ===== RESULTS TABLE ===== */
 .tbl-wrap { overflow-y: auto; flex: 1; min-height: 0; scrollbar-gutter: stable; }
@@ -1140,6 +1141,7 @@ const S = {
   isParsed: false,
   selFieldId:   null,
   hoverFieldId: null,
+  tokenAreaCollapsed: false,
   tokenMap: {},      // { "DDL-NAME": "B4", ... } — built from token map files in tree
   unresolvedRefs: {}, // { 'vol/sv/name': ['TYPE-A', 'TYPE-B'] } — types referenced but not found
   ddlValidationResults: {}, // { 'vol/sv/name': { errors, warnings, deferredChecks } }
@@ -4390,7 +4392,7 @@ function renderFieldTable(msg) {
     </div>`;
   }
 
-  const makeFieldRows = (fieldList, prefix) => fieldList.map(f => {
+  const makeFieldRows = (fieldList, prefix, extraClass = '') => fieldList.map(f => {
     const fid    = prefix ? `${prefix}::${f.id}` : f.id;
     const sel    = S.selFieldId === fid ? 'row-sel' : '';
     const ecls   = f.error ? 'c-err' : 'c-val';
@@ -4407,7 +4409,7 @@ function renderFieldTable(msg) {
     const redefMark  = f.isRedefines
       ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${f.redefTarget || '?'}"> ⟵${f.redefTarget ? ' '+f.redefTarget : ''}</span>`
       : '';
-    const rowCls     = [sel, f.isRedefines ? 'row-redef' : ''].filter(Boolean).join(' ');
+    const rowCls     = [sel, f.isRedefines ? 'row-redef' : '', extraClass].filter(Boolean).join(' ');
     return `<tr class="${rowCls}" data-fid="${esc(fid)}"
       onclick="selectField('${esc(fid)}')"
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
@@ -4429,8 +4431,10 @@ function renderFieldTable(msg) {
 
   if (msg.tokens?.length) {
     const count = msg.tokens.length;
-    rows += `<tr class="tkn-area-hdr">
-      <td colspan="6">▼ TOKEN AREA &nbsp;·&nbsp; ${count} token${count !== 1 ? 's' : ''}</td>
+    const tknIcon = S.tokenAreaCollapsed ? '▶' : '▼';
+    const tknHide = S.tokenAreaCollapsed ? ' style="display:none"' : '';
+    rows += `<tr class="tkn-area-hdr" onclick="toggleTokenArea()">
+      <td colspan="6"><span id="tknAreaIcon">${tknIcon}</span> TOKEN AREA &nbsp;·&nbsp; ${count} token${count !== 1 ? 's' : ''}</td>
     </tr>`;
     for (const tkn of msg.tokens) {
       if (tkn.error) {
@@ -4438,20 +4442,18 @@ function renderFieldTable(msg) {
           // Token parsed from binary but no DDL definition — show raw data as a normal row
           const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x)
                                                                 : `[${x.toString(16).padStart(2,'0')}]`).join('');
-          const val    = bToStr(tkn.rawBytes);
-          const valDisp = val.length > 50 ? val.slice(0, 50) + '…' : val;
-          const rawDisp = (tkn.rawHex||'').length > 22 ? tkn.rawHex.slice(0, 22) + '…' : (tkn.rawHex||'');
-          rows += `<tr class="tkn-unknown">
+          const val = bToStr(tkn.rawBytes);
+          rows += `<tr class="tkn-body-row"${tknHide}>
             <td class="c-id">${esc(tkn.id)}</td>
             <td class="c-desc" style="color:var(--text-dim)">No definition found</td>
             <td class="c-len">${tkn.rawBytes.length}</td>
-            <td class="c-val" title="${esc(val)}">${esc(valDisp)}</td>
-            <td class="c-raw" title="${esc(tkn.rawHex||'')}">${rawDisp}</td>
+            <td class="c-val" style="word-break:break-all">${esc(val)}</td>
+            <td class="c-raw" style="word-break:break-all">${esc(tkn.rawHex||'')}</td>
             <td class="c-trk"></td>
           </tr>`;
         } else {
           // Sentinel — token area detected but structure could not be read
-          rows += `<tr class="tkn-unknown">
+          rows += `<tr class="tkn-body-row"${tknHide}>
             <td class="c-id" style="color:var(--text-dim)">—</td>
             <td colspan="5" class="c-err">${esc(tkn.error)}</td>
           </tr>`;
@@ -4459,11 +4461,11 @@ function renderFieldTable(msg) {
       } else {
         const ddlLabel = tkn.ddlPath ? tkn.ddlPath.split('/').pop() : tkn.ddlName || '?';
         const byteCount = tkn.rawBytes?.length || 0;
-        rows += `<tr class="tkn-hdr">
+        rows += `<tr class="tkn-hdr tkn-body-row"${tknHide}>
           <td class="c-id">${esc(tkn.id)}</td>
           <td colspan="5">${esc(ddlLabel)} &nbsp;·&nbsp; ${byteCount} byte${byteCount !== 1 ? 's' : ''}</td>
         </tr>`;
-        rows += makeFieldRows(tkn.fields, tkn.id);
+        rows += makeFieldRows(tkn.fields, tkn.id, 'tkn-body-row').replace(/<tr /g, `<tr${tknHide} `);
       }
     }
   }
@@ -4560,6 +4562,17 @@ function clearRawHL(cls) {
   document.querySelectorAll(`.hb.${cls}`).forEach(el => el.classList.remove(cls));
 }
 
+function toggleTokenArea() {
+  S.tokenAreaCollapsed = !S.tokenAreaCollapsed;
+  // Update icon
+  const icon = document.getElementById('tknAreaIcon');
+  if (icon) icon.textContent = S.tokenAreaCollapsed ? '▶' : '▼';
+  // Show/hide all token body rows
+  document.querySelectorAll('#resContainer tbody tr.tkn-body-row').forEach(tr => {
+    tr.style.display = S.tokenAreaCollapsed ? 'none' : '';
+  });
+}
+
 function selectField(fid) {
   S.selFieldId  = fid;
   S.hoverFieldId = null;
@@ -4626,11 +4639,20 @@ function renderInputOverlay() {
   ranges.sort((a, b) => a.s - b.s);
 
   const text = ta.value;
+  // Helper: wrap segment in <mark>, splitting at newlines so the highlight never
+  // bleeds into the leading indentation of the next line (NETARD format issue).
+  const markSeg = (seg, color) => {
+    if (!seg) return '';
+    return seg.split('\n').map((part, i, arr) =>
+      (part ? `<mark style="background:${color}">${esc(part)}</mark>` : '') +
+      (i < arr.length - 1 ? '\n' : '')
+    ).join('');
+  };
   let html = '', pos = 0;
   for (const { s, e, color } of ranges) {
     const rs = Math.max(s, pos);
     if (rs > pos) html += esc(text.slice(pos, rs));
-    if (rs < e)   html += `<mark style="background:${color}">${esc(text.slice(rs, e))}</mark>`;
+    if (rs < e)   html += markSeg(text.slice(rs, e), color);
     pos = Math.max(pos, e);
   }
   html += esc(text.slice(pos));
@@ -6467,7 +6489,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.86';
+const APP_VERSION  = '1.0.0.87';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

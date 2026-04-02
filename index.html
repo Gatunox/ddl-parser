@@ -2932,24 +2932,37 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
     }
     offset += 2; // skip '! '
 
-    let dataSize;
-    if (isBinary) {
-      if (offset + 2 > bytes.length) break;
-      dataSize = (bytes[offset] << 8) | bytes[offset+1]; offset += 2;
-    } else {
-      if (offset + 5 > bytes.length) break;
-      dataSize = parseInt(bytes.slice(offset, offset+5).map(b=>String.fromCharCode(b)).join(''), 10);
-      offset += 5;
-    }
-
+    // Token ID comes first (2 bytes ASCII), then size, then data
     if (offset + 2 > bytes.length) break;
-    const idBytes = bytes.slice(offset, offset+2);
-    const tokenId = idBytes.map(b => String.fromCharCode(b)).join('').toUpperCase();
+    const tokenId = bytes.slice(offset, offset+2).map(b => String.fromCharCode(b)).join('').toUpperCase();
     offset += 2;
 
-    if (offset + dataSize > bytes.length) break;
-    const dataBytes = bytes.slice(offset, offset+dataSize);
-    offset += dataSize;
+    let dataBytes;
+    if (isBinary) {
+      if (offset + 2 > bytes.length) break;
+      const dataSize = (bytes[offset] << 8) | bytes[offset+1]; offset += 2;
+      const areaLimit = Math.min(areaEnd, bytes.length);
+      if (dataSize >= 0 && offset + dataSize <= areaLimit) {
+        // Size is valid — use it
+        dataBytes = bytes.slice(offset, offset + dataSize);
+        offset += dataSize;
+      } else {
+        // Size unreadable or out of range — fall back to delimiter-based:
+        // read until next '! ' eye-catcher or end of token area
+        let nextTok = areaLimit;
+        for (let j = offset; j < areaLimit - 1; j++) {
+          if (bytes[j] === 0x21 && bytes[j+1] === 0x20) { nextTok = j; break; }
+        }
+        dataBytes = bytes.slice(offset, nextTok);
+        offset = nextTok;
+      }
+    } else {
+      if (offset + 5 > bytes.length) break;
+      const dataSize = parseInt(bytes.slice(offset, offset+5).map(b=>String.fromCharCode(b)).join(''), 10);
+      offset += 5;
+      dataBytes = bytes.slice(offset, offset + dataSize);
+      offset += dataSize;
+    }
 
     const ddlName = idMap[tokenId];
     let fields = [], ddlPath = null, resolvedName = null;
@@ -6448,7 +6461,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.84';
+const APP_VERSION  = '1.0.0.85';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

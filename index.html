@@ -575,6 +575,17 @@ tr.tkn-hdr td {
   font-weight: 700; border-top: 1px solid var(--border);
   padding: 3px 8px;
 }
+tr.row-token-hidden { display: none; }
+tr.row-filter-hide  { display: none; }
+#resContainer.hide-redef tr.row-redef { display: none; }
+.res-filter-input {
+  font-family: var(--mono); font-size: var(--sz-mono);
+  background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px;
+  padding: 2px 6px; width: 100px; flex-shrink: 0;
+}
+.res-filter-input:focus { outline: none; border-color: var(--accent); }
+.res-filter-input::placeholder { color: var(--text-dim); opacity: 0.7; }
 
 /* ===== RESULTS TABLE ===== */
 .tbl-wrap { overflow-y: auto; flex: 1; min-height: 0; scrollbar-gutter: stable; }
@@ -1081,6 +1092,8 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
           <option value="raw"  data-col="raw">✓ Raw Hex</option>
           <option value="trk"  data-col="trk">✓ Trk</option>
         </select>
+        <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
+        <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0" title="Hide/show REDEFINES fields">Hide Redef</button>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
       </div>
@@ -1142,6 +1155,7 @@ const S = {
   selFieldId:   null,
   hoverFieldId: null,
   tokenAreaCollapsed: false,
+  hideRedefines: false,
   tokenMap: {},      // { "DDL-NAME": "B4", ... } — built from token map files in tree
   unresolvedRefs: {}, // { 'vol/sv/name': ['TYPE-A', 'TYPE-B'] } — types referenced but not found
   ddlValidationResults: {}, // { 'vol/sv/name': { errors, warnings, deferredChecks } }
@@ -2302,7 +2316,8 @@ function showDDLDoc() {
         ? `<span style="font-size:10px;opacity:.7"> ⟵ ${esc(redefNoteName)}</span>` : '';
       const descTxt    = f.desc && f.desc.toUpperCase() !== f.name ? esc(f.desc) : '';
       const occurs     = f.occurs > 1 ? `×${f.occurs}` : '—';
-      html += `<tr${cls}>
+      const docSearch = esc([f.qualName, f.desc || '', f.dataType || ''].join(' ').toLowerCase());
+      html += `<tr${cls} data-search="${docSearch}">
         <td class="ddl-doc-hex" style="color:var(--text-dim)">${rowNum}</td>
         <td><span style="font-weight:500">${esc(f.qualName)}</span>${redefNote}</td>
         <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
@@ -2327,12 +2342,26 @@ function showDDLDoc() {
     : `DDLDOC — ${sections.length} definitions  (total ${grandTotal} bytes)`;
 
   document.getElementById('ddlDocTitle').textContent = title;
+  const ddlFilt = document.getElementById('ddlDocFilterInput');
+  if (ddlFilt) ddlFilt.value = '';
   document.getElementById('ddlDocBody').innerHTML = html;
   document.getElementById('ddlDocOverlay').classList.remove('hidden');
 }
 
 function closeDDLDoc() {
   document.getElementById('ddlDocOverlay').classList.add('hidden');
+}
+
+function filterDDLDoc(q) {
+  const query = q.trim().toLowerCase();
+  document.querySelectorAll('#ddlDocBody tbody tr').forEach(tr => {
+    if (tr.classList.contains('ddl-doc-sec-hdr') || tr.classList.contains('ddl-doc-foot')) {
+      tr.classList.remove('row-filter-hide');
+      return;
+    }
+    const text = (tr.dataset.search || tr.textContent || '').toLowerCase();
+    tr.classList.toggle('row-filter-hide', !!query && !text.includes(query));
+  });
 }
 
 // ============================================================
@@ -2938,6 +2967,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       }
       if (!found) break;
     }
+    const tknHeaderStart = offset; // absolute position of '! ' eye-catcher
     offset += 2; // skip '! '
 
     // Token ID comes first (2 bytes ASCII), then size, then data
@@ -2996,6 +3026,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       rawBytes: dataBytes,
       rawHex: bToHex(dataBytes),
       dataStart, // absolute byte offset of token data in the message bytes array
+      headerStart: tknHeaderStart,
       error: !tokenMaps.length ? 'Token area present — no token definitions loaded'
            : !ddlName  ? `Unknown token ID: ${tokenId}`
            : !ddlPath  ? 'DDL not found' : null,
@@ -3553,8 +3584,9 @@ function parseNetardLog(text) {
         // Only map bytes that have a real character in the textarea — NETARD strips
         // trailing spaces from each line, so bytes beyond the actual line content
         // would point into the newline or the next line's indentation.
-        if (li < cur._lineCharStarts.length && co < cur._lines[li].length) {
-          const cs = cur._lineCharStarts[li] + 7 + co;
+        if (li < cur._lineCharStarts.length) {
+          const clampedCo = Math.min(co, cur._lines[li].length);
+          const cs = cur._lineCharStarts[li] + 7 + clampedCo;
           bcm[b] = { s: cs, e: cs + 1 };
         }
       }
@@ -4417,8 +4449,9 @@ function renderFieldTable(msg) {
     const redefMark  = f.isRedefines
       ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${f.redefTarget || '?'}"> ⟵${f.redefTarget ? ' '+f.redefTarget : ''}</span>`
       : '';
-    const rowCls     = [sel, f.isRedefines ? 'row-redef' : '', extraClass].filter(Boolean).join(' ');
-    return `<tr class="${rowCls}" data-fid="${esc(fid)}"
+    const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', extraClass].filter(Boolean).join(' ');
+    const searchStr = [fid, f.description || '', f.value || ''].join(' ').toLowerCase();
+    return `<tr class="${rowCls}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}"
       onclick="selectField('${esc(fid)}')"
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
       onmouseenter="hoverField('${esc(fid)}')"
@@ -4440,7 +4473,7 @@ function renderFieldTable(msg) {
   if (msg.tokens?.length) {
     const count = msg.tokens.length;
     const tknIcon = S.tokenAreaCollapsed ? '▶' : '▼';
-    const tknHide = S.tokenAreaCollapsed ? ' style="display:none"' : '';
+    const tknHideCls = S.tokenAreaCollapsed ? ' row-token-hidden' : '';
     rows += `<tr class="tkn-area-hdr" onclick="toggleTokenArea()">
       <td colspan="6"><span id="tknAreaIcon">${tknIcon}</span> TOKEN AREA &nbsp;·&nbsp; ${count} token${count !== 1 ? 's' : ''}</td>
     </tr>`;
@@ -4453,7 +4486,7 @@ function renderFieldTable(msg) {
           const val  = bToStr(tkn.rawBytes);
           const tfid = `tkn::${tkn.id}`;
           const tsel = S.selFieldId === tfid ? ' row-sel' : '';
-          rows += `<tr class="tkn-body-row${tsel}" data-fid="${esc(tfid)}"${tknHide}
+          rows += `<tr class="tkn-body-row${tsel}${tknHideCls}" data-fid="${esc(tfid)}" data-search="${esc(('tkn::'+tkn.id+' no definition found').toLowerCase())}"
             onclick="selectField('${esc(tfid)}')"
             onmouseenter="hoverField('${esc(tfid)}')"
             onmouseleave="clearHover()">
@@ -4466,7 +4499,7 @@ function renderFieldTable(msg) {
           </tr>`;
         } else {
           // Sentinel — token area detected but structure could not be read
-          rows += `<tr class="tkn-body-row"${tknHide}>
+          rows += `<tr class="tkn-body-row${tknHideCls}">
             <td class="c-id" style="color:var(--text-dim)">—</td>
             <td colspan="5" class="c-err">${esc(tkn.error)}</td>
           </tr>`;
@@ -4474,11 +4507,16 @@ function renderFieldTable(msg) {
       } else {
         const ddlLabel = tkn.ddlPath ? tkn.ddlPath.split('/').pop() : tkn.ddlName || '?';
         const byteCount = tkn.rawBytes?.length || 0;
-        rows += `<tr class="tkn-hdr tkn-body-row"${tknHide}>
+        const hfid = `tkn-hdr::${tkn.id}`;
+        const hsel = S.selFieldId === hfid ? ' row-sel' : '';
+        rows += `<tr class="tkn-hdr tkn-body-row${tknHideCls}${hsel}" data-fid="${esc(hfid)}" data-search="${esc(('tkn-hdr::'+tkn.id+' '+ddlLabel).toLowerCase())}"
+          onclick="selectField('${esc(hfid)}')"
+          onmouseenter="hoverField('${esc(hfid)}')"
+          onmouseleave="clearHover()">
           <td class="c-id">${esc(tkn.id)}</td>
           <td colspan="5">${esc(ddlLabel)} &nbsp;·&nbsp; ${byteCount} byte${byteCount !== 1 ? 's' : ''}</td>
         </tr>`;
-        rows += makeFieldRows(tkn.fields, tkn.id, 'tkn-body-row').replace(/<tr /g, `<tr${tknHide} `);
+        rows += makeFieldRows(tkn.fields, tkn.id, `tkn-body-row${tknHideCls}`);
       }
     }
   }
@@ -4502,6 +4540,17 @@ function renderFieldTable(msg) {
 
   document.getElementById('resContainer').innerHTML = metaBar + tableOrEmpty;
   initColResize();
+
+  // Show filter input whenever there are field rows; show Hide Redef button only when DDL has redefines
+  const _hasFields = (msg.fields?.length > 0) || (msg.tokens?.length > 0);
+  const _hasRedef  = msg.fields?.some(f => f.isRedefines || f.isInsideRedefines) ||
+                     msg.tokens?.some(t => t.fields?.some(f => f.isRedefines || f.isInsideRedefines));
+  const _filterIn  = document.getElementById('resFilterInput');
+  const _redefBtn  = document.getElementById('hideRedefBtn');
+  if (_filterIn) { _filterIn.style.display = _hasFields ? '' : 'none'; _filterIn.value = ''; }
+  if (_redefBtn) { _redefBtn.style.display = _hasRedef ? '' : 'none'; }
+  // Re-apply hide-redef class if state is active
+  if (S.hideRedefines) document.getElementById('resContainer').classList.add('hide-redef');
 }
 
 // ============================================================
@@ -4562,6 +4611,13 @@ function renderRaw(msg) {
 // with absolute startByte/endByte in the full message, or null if not found.
 function findField(msg, fid) {
   if (!msg || !fid) return null;
+  if (fid.startsWith('tkn-hdr::')) {
+    const tknId = fid.slice(9);
+    const tkn = msg.tokens?.find(t => t.id === tknId);
+    if (!tkn || tkn.dataStart === undefined || !tkn.rawBytes?.length) return null;
+    const hdrStart = tkn.headerStart !== undefined ? tkn.headerStart : tkn.dataStart;
+    return { startByte: hdrStart, endByte: tkn.dataStart + tkn.rawBytes.length - 1 };
+  }
   if (fid.startsWith('tkn::')) {
     const tknId = fid.slice(5);
     const tkn = msg.tokens?.find(t => t.id === tknId);
@@ -4599,6 +4655,21 @@ function clearRawHL(cls) {
   document.querySelectorAll(`.hb.${cls}`).forEach(el => el.classList.remove(cls));
 }
 
+function filterParsePanel(q) {
+  const query = q.trim().toLowerCase();
+  document.querySelectorAll('#resContainer tbody tr[data-fid]').forEach(tr => {
+    const matches = !query || (tr.dataset.search || '').includes(query);
+    tr.classList.toggle('row-filter-hide', !matches);
+  });
+}
+
+function toggleHideRedefines() {
+  S.hideRedefines = !S.hideRedefines;
+  document.getElementById('resContainer').classList.toggle('hide-redef', S.hideRedefines);
+  const btn = document.getElementById('hideRedefBtn');
+  if (btn) btn.textContent = S.hideRedefines ? 'Show Redef' : 'Hide Redef';
+}
+
 function toggleTokenArea() {
   S.tokenAreaCollapsed = !S.tokenAreaCollapsed;
   // Update icon
@@ -4606,7 +4677,7 @@ function toggleTokenArea() {
   if (icon) icon.textContent = S.tokenAreaCollapsed ? '▶' : '▼';
   // Show/hide all token body rows
   document.querySelectorAll('#resContainer tbody tr.tkn-body-row').forEach(tr => {
-    tr.style.display = S.tokenAreaCollapsed ? 'none' : '';
+    tr.classList.toggle('row-token-hidden', S.tokenAreaCollapsed);
   });
 }
 
@@ -4668,7 +4739,7 @@ function renderInputOverlay() {
       const bc = msg.byteCharMap[b];
       if (!bc) { if (run) { ranges.push({ ...run, color }); run = null; } continue; }
       if (!run) { run = { s: bc.s, e: bc.e }; }
-      else if (bc.s === run.e) { run.e = bc.e; }
+      else if (bc.s <= run.e) { run.e = Math.max(run.e, bc.e); }
       else { ranges.push({ ...run, color }); run = { s: bc.s, e: bc.e }; }
     }
     if (run) ranges.push({ ...run, color });
@@ -6526,7 +6597,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.88';
+const APP_VERSION  = '1.0.0.89';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7134,6 +7205,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="ddl-doc-hdr">
       <span id="ddlDocTitle" class="ddl-doc-title"></span>
       <div style="display:flex;gap:6px;align-items:center">
+        <input type="text" id="ddlDocFilterInput" class="res-filter-input" placeholder="Filter fields…" title="Filter DDL Doc" oninput="filterDDLDoc(this.value)">
         <button class="btn btn-sm" onclick="copyDDLDoc()" title="Copy as text">⎘ Copy</button>
         <button class="btn btn-sm" onclick="closeDDLDoc()">✕</button>
       </div>

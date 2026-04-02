@@ -3577,19 +3577,40 @@ function parseNetardLog(text) {
         else if (rawMsg.length > cur.length) rawMsg = rawMsg.slice(0, cur.length);
       }
       cur.netardFmt = 'standard';
+
+      // NETARD strips trailing spaces from every line.  To allow highlighting
+      // those invisible spaces we build a padded overlay text (stored on cur)
+      // where each content line is extended to 7+W chars with actual spaces.
+      // The bcm is computed against this padded text, so every byte — including
+      // trailing spaces — maps to a real character in the overlay.
+
+      // Cumulative extra chars added by padding content lines 0..li-1
+      const cumExtra = [];
+      let extra = 0;
+      for (let li = 0; li < cur._lines.length; li++) {
+        cumExtra.push(extra);
+        extra += W - cur._lines[li].length;
+      }
+
       bcm = new Array(rawMsg.length).fill(null);
       for (let b = 0; b < rawMsg.length; b++) {
         const li = Math.floor(b / W);
         const co = b % W;
-        // Only map bytes that have a real character in the textarea — NETARD strips
-        // trailing spaces from each line, so bytes beyond the actual line content
-        // would point into the newline or the next line's indentation.
         if (li < cur._lineCharStarts.length) {
-          const clampedCo = Math.min(co, cur._lines[li].length);
-          const cs = cur._lineCharStarts[li] + 7 + clampedCo;
+          const cs = cur._lineCharStarts[li] + cumExtra[li] + 7 + co;
           bcm[b] = { s: cs, e: cs + 1 };
         }
       }
+
+      // Build the padded overlay text: pad each content line of THIS message to
+      // 7+W chars so the highlight can cover stripped trailing spaces visually.
+      const paddedLinesArr = [...lines];
+      cur._lineIndices.forEach((idx, li) => {
+        if (cur._lines[li].length < W) {
+          paddedLinesArr[idx] = lines[idx].padEnd(7 + W);
+        }
+      });
+      cur.netardOverlayText = paddedLinesArr.join('\n');
     }
 
     cur.rawMsg = rawMsg;
@@ -3599,6 +3620,7 @@ function parseNetardLog(text) {
     cur.charEnd = lastBcm ? lastBcm.e : cur.charStart;
 
     delete cur._lines;
+    delete cur._lineIndices;
     delete cur._lineCharStarts;
     delete cur._fmtLines;
     delete cur._inFmtBlock;
@@ -3608,8 +3630,10 @@ function parseNetardLog(text) {
   };
 
   let charOffset = 0;   // running character position within the full textarea text
+  let lineNum    = 0;   // index into lines[]
   for (const line of lines) {
-    const lineStart = charOffset;        // char position of this line's first char
+    const lineStart  = charOffset;        // char position of this line's first char
+    const lineIndex  = lineNum++;
     charOffset += line.length + 1;       // advance past line + newline
 
     if (/RECD-NO\s+LENGTH/.test(line)) continue;  // page header
@@ -3628,6 +3652,7 @@ function parseNetardLog(text) {
         source: '', sourceDet: '',
         dest:   '', destDet:   '',
         _lines: [],
+        _lineIndices: [],      // index into lines[] for each standard-format content line
         _lineCharStarts: [],   // char position of standard-format content lines
         _fmtLines: [],         // formatted output lines (H-, A-, E-, 0-, HEXASCII)
         _inFmtBlock: false,    // true once any labeled format line has been seen
@@ -3662,6 +3687,7 @@ function parseNetardLog(text) {
     const mm = line.match(MSG_RE);
     if (mm) {
       cur._lineCharStarts.push(lineStart);   // record where this content line starts
+      cur._lineIndices.push(lineIndex);      // record which lines[] entry this is
       cur._lines.push(mm[1]);
     }
   }
@@ -4755,7 +4781,9 @@ function renderInputOverlay() {
   // Sort by start position so we can build the HTML left-to-right
   ranges.sort((a, b) => a.s - b.s);
 
-  const text = ta.value;
+  // For NETARD messages use the padded overlay text (content lines extended to
+  // full width W with spaces) so that stripped trailing spaces can be highlighted.
+  const text = msg.netardOverlayText || ta.value;
   let html = '', pos = 0;
   for (const { s, e, color } of ranges) {
     const rs = Math.max(s, pos);
@@ -6597,7 +6625,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.89';
+const APP_VERSION  = '1.0.0.90';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

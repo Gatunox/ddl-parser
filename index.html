@@ -2946,12 +2946,14 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
     offset += 2;
 
     let dataBytes;
+    let dataStart; // absolute byte offset of token data within `bytes`
     if (isBinary) {
       if (offset + 2 > bytes.length) break;
       const dataSize = (bytes[offset] << 8) | bytes[offset+1]; offset += 2;
       const areaLimit = Math.min(areaEnd, bytes.length);
       if (dataSize >= 0 && offset + dataSize <= areaLimit) {
         // Size is valid — use it
+        dataStart = offset;
         dataBytes = bytes.slice(offset, offset + dataSize);
         offset += dataSize;
       } else {
@@ -2961,6 +2963,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
         for (let j = offset; j < areaLimit - 1; j++) {
           if (bytes[j] === 0x21 && bytes[j+1] === 0x20) { nextTok = j; break; }
         }
+        dataStart = offset;
         dataBytes = bytes.slice(offset, nextTok);
         offset = nextTok;
       }
@@ -2968,6 +2971,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       if (offset + 5 > bytes.length) break;
       const dataSize = parseInt(bytes.slice(offset, offset+5).map(b=>String.fromCharCode(b)).join(''), 10);
       offset += 5;
+      dataStart = offset;
       dataBytes = bytes.slice(offset, offset + dataSize);
       offset += dataSize;
     }
@@ -2991,6 +2995,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       fields,
       rawBytes: dataBytes,
       rawHex: bToHex(dataBytes),
+      dataStart, // absolute byte offset of token data in the message bytes array
       error: !tokenMaps.length ? 'Token area present — no token definitions loaded'
            : !ddlName  ? `Unknown token ID: ${tokenId}`
            : !ddlPath  ? 'DDL not found' : null,
@@ -3545,7 +3550,10 @@ function parseNetardLog(text) {
       for (let b = 0; b < rawMsg.length; b++) {
         const li = Math.floor(b / W);
         const co = b % W;
-        if (li < cur._lineCharStarts.length) {
+        // Only map bytes that have a real character in the textarea — NETARD strips
+        // trailing spaces from each line, so bytes beyond the actual line content
+        // would point into the newline or the next line's indentation.
+        if (li < cur._lineCharStarts.length && co < cur._lines[li].length) {
           const cs = cur._lineCharStarts[li] + 7 + co;
           bcm[b] = { s: cs, e: cs + 1 };
         }
@@ -4442,13 +4450,18 @@ function renderFieldTable(msg) {
           // Token parsed from binary but no DDL definition — show raw data as a normal row
           const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x)
                                                                 : `[${x.toString(16).padStart(2,'0')}]`).join('');
-          const val = bToStr(tkn.rawBytes);
-          rows += `<tr class="tkn-body-row"${tknHide}>
+          const val  = bToStr(tkn.rawBytes);
+          const tfid = `tkn::${tkn.id}`;
+          const tsel = S.selFieldId === tfid ? ' row-sel' : '';
+          rows += `<tr class="tkn-body-row${tsel}" data-fid="${esc(tfid)}"${tknHide}
+            onclick="selectField('${esc(tfid)}')"
+            onmouseenter="hoverField('${esc(tfid)}')"
+            onmouseleave="clearHover()">
             <td class="c-id">${esc(tkn.id)}</td>
             <td class="c-desc" style="color:var(--text-dim)">No definition found</td>
             <td class="c-len">${tkn.rawBytes.length}</td>
-            <td class="c-val" style="word-break:break-all">${esc(val)}</td>
-            <td class="c-raw" style="word-break:break-all">${esc(tkn.rawHex||'')}</td>
+            <td class="c-val" style="word-break:break-all" title="${esc(val)}">${esc(val)}</td>
+            <td class="c-raw" style="word-break:break-all" title="${esc(tkn.rawHex||'')}">${esc(tkn.rawHex||'')}</td>
             <td class="c-trk"></td>
           </tr>`;
         } else {
@@ -4544,11 +4557,35 @@ function renderRaw(msg) {
   }
 }
 
+// Resolve a field by fid, handling token sub-fields (prefix::id) and
+// synthetic no-definition tokens (tkn::TOKENID). Returns a field-like object
+// with absolute startByte/endByte in the full message, or null if not found.
+function findField(msg, fid) {
+  if (!msg || !fid) return null;
+  if (fid.startsWith('tkn::')) {
+    const tknId = fid.slice(5);
+    const tkn = msg.tokens?.find(t => t.id === tknId);
+    if (!tkn || !tkn.rawBytes?.length || tkn.dataStart === undefined) return null;
+    return { startByte: tkn.dataStart, endByte: tkn.dataStart + tkn.rawBytes.length - 1 };
+  }
+  const sep = fid.indexOf('::');
+  if (sep >= 0) {
+    const tknId  = fid.slice(0, sep);
+    const fieldId = fid.slice(sep + 2);
+    const tkn = msg.tokens?.find(t => t.id === tknId);
+    if (!tkn || tkn.dataStart === undefined) return null;
+    const f = tkn.fields?.find(x => x.id === fieldId);
+    if (!f) return null;
+    return { ...f, startByte: tkn.dataStart + f.startByte, endByte: tkn.dataStart + f.endByte };
+  }
+  return msg.fields?.find(x => x.id === fid) || null;
+}
+
 function applyRawHL(fid, cls) {
   clearRawHL(cls);
   const msg = S.messages[S.curIdx];
   if (!msg || !fid) return;
-  const f = msg.fields.find(x => x.id === fid);
+  const f = findField(msg, fid);
   if (!f) return;
   const raw = document.getElementById('rawDisplay');
   for (let i = f.startByte; i <= f.endByte; i++) {
@@ -4590,7 +4627,7 @@ function hoverField(fid) {
   clearRawHL('hb-hover');
   const msg = S.messages[S.curIdx];
   if (!msg) return;
-  const f = msg.fields.find(x => x.id === fid);
+  const f = findField(msg, fid);
   if (!f) return;
   const raw = document.getElementById('rawDisplay');
   for (let i = f.startByte; i <= f.endByte; i++) {
@@ -4617,15 +4654,24 @@ function renderInputOverlay() {
   const msg = S.messages?.[S.curIdx];
   if (!msg?.byteCharMap?.length) { overlay.innerHTML = ''; return; }
 
-  // Collect ranges to highlight
+  // Collect ranges to highlight.
+  // Iterates per-byte so that null bcm entries (NETARD padded trailing spaces)
+  // and multi-line fields each produce separate, correct character ranges —
+  // preventing highlights from bleeding into the next line's indentation.
   const ranges = [];
   const addRange = (fid, color) => {
     if (!fid) return;
-    const f = msg.fields.find(x => x.id === fid);
+    const f = findField(msg, fid);
     if (!f) return;
-    const se = msg.byteCharMap[f.startByte];
-    const ee = msg.byteCharMap[f.endByte];
-    if (se && ee) ranges.push({ s: se.s, e: ee.e, color });
+    let run = null;
+    for (let b = f.startByte; b <= f.endByte; b++) {
+      const bc = msg.byteCharMap[b];
+      if (!bc) { if (run) { ranges.push({ ...run, color }); run = null; } continue; }
+      if (!run) { run = { s: bc.s, e: bc.e }; }
+      else if (bc.s === run.e) { run.e = bc.e; }
+      else { ranges.push({ ...run, color }); run = { s: bc.s, e: bc.e }; }
+    }
+    if (run) ranges.push({ ...run, color });
   };
 
   addRange(S.selFieldId,   'var(--hl-active)');
@@ -4639,20 +4685,11 @@ function renderInputOverlay() {
   ranges.sort((a, b) => a.s - b.s);
 
   const text = ta.value;
-  // Helper: wrap segment in <mark>, splitting at newlines so the highlight never
-  // bleeds into the leading indentation of the next line (NETARD format issue).
-  const markSeg = (seg, color) => {
-    if (!seg) return '';
-    return seg.split('\n').map((part, i, arr) =>
-      (part ? `<mark style="background:${color}">${esc(part)}</mark>` : '') +
-      (i < arr.length - 1 ? '\n' : '')
-    ).join('');
-  };
   let html = '', pos = 0;
   for (const { s, e, color } of ranges) {
     const rs = Math.max(s, pos);
     if (rs > pos) html += esc(text.slice(pos, rs));
-    if (rs < e)   html += markSeg(text.slice(rs, e), color);
+    if (rs < e)   html += `<mark style="background:${color}">${esc(text.slice(rs, e))}</mark>`;
     pos = Math.max(pos, e);
   }
   html += esc(text.slice(pos));
@@ -6489,7 +6526,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.87';
+const APP_VERSION  = '1.0.0.88';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

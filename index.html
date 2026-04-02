@@ -238,6 +238,11 @@ body.light .ddl-gutter { border-right-color: rgba(0,0,0,0.08); }
   color: #444d56; white-space: pre; user-select: none; pointer-events: none; }
 body.light #ddlGutterInner { color: #c8ced4; }
 .ddl-hl-editor-inner { position: relative; flex: 1; min-width: 0; display: flex; overflow: hidden; }
+/* DDL search — full-line background highlights */
+.ddl-srch-lines-bg { position: absolute; top: 0; left: 0; right: 0; pointer-events: none; z-index: 0; padding-top: 8px; overflow: hidden; }
+.ddl-srch-line { display: block; height: calc(var(--sz-mono) * 1.6); }
+.ddl-srch-line.hit { background: rgba(255,255,255,0.07); }
+body.light .ddl-srch-line.hit { background: rgba(0,0,0,0.05); }
 .ddl-hl-overlay  { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; margin: 0;
   font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6;
   white-space: pre; overflow: visible;
@@ -1015,6 +1020,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
           <div class="ddl-hl-wrap">
             <div class="ddl-gutter" aria-hidden="true"><div id="ddlGutterInner"></div></div>
             <div class="ddl-hl-editor-inner">
+            <div id="ddlSearchLinesBg" class="ddl-srch-lines-bg" aria-hidden="true"></div>
             <div id="ddlEditorOverlay" class="ddl-hl-overlay" aria-hidden="true"></div>
           <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onkeydown="if(event.key==='Tab'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd;this.value=this.value.slice(0,s)+'    '+this.value.slice(e);this.selectionStart=this.selectionEnd=s+4;updateDDLEditorState();updateDDLHighlight();}" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}const g=document.getElementById('ddlGutterInner');if(g){g.style.transform='translateY('+(-this.scrollTop)+'px)';}"
             placeholder="* DDL Definition — two formats supported:&#10;*&#10;* ── Simple (ISO 8583) ───────────────────────────────&#10;* FIELD_ID  TYPE  LENGTH  &quot;Description&quot;&#10;* Types:  FIXED  LLVAR  LLLVAR  BMP&#10;* IDs:    MTI  BMP  or field number 1–128&#10;*&#10;* ── HPE DDL (NonStop / Tandem) ──────────────────────&#10;* DEF message-name.&#10;*   02 field-name  PIC X(n).&#10;*   02 num-field   PIC 9(n) COMP.&#10;*   02 bin-field   TYPE BINARY 16.&#10;*   02 group.&#10;*     03 sub-field PIC X(5).&#10;* END.&#10;*&#10;* Select or create a DDL in the tree on the left,&#10;* or drop a .ddl / .txt file here to load it."></textarea>
@@ -6645,7 +6651,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.95';
+const APP_VERSION  = '1.0.0.96';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6801,6 +6807,28 @@ function lwStep(dir) {
 // ── DDL editor search ────────────────────────────────────────────────────────
 let _ddlSrchMatches = [], _ddlSrchIdx = -1;
 
+function _ddlUpdateLinesBg() {
+  const bg = document.getElementById('ddlSearchLinesBg');
+  if (!bg) return;
+  const ta = document.getElementById('ddlEditor');
+  if (!_ddlSrchMatches.length || !ta.value) { bg.innerHTML = ''; return; }
+  // Build a set of line indices that contain at least one match position
+  const rawLines = ta.value.split('\n');
+  const matchLineSet = new Set();
+  let offset = 0;
+  for (let li = 0; li < rawLines.length; li++) {
+    const lineEnd = offset + rawLines[li].length;
+    for (const m of _ddlSrchMatches) {
+      if (m >= offset && m <= lineEnd) { matchLineSet.add(li); break; }
+    }
+    offset = lineEnd + 1; // +1 for the \n
+  }
+  bg.innerHTML = rawLines.map((_, li) =>
+    `<span class="ddl-srch-line${matchLineSet.has(li) ? ' hit' : ''}"></span>`
+  ).join('');
+  bg.style.transform = `translateY(${-ta.scrollTop}px)`;
+}
+
 function ddlSearchUpdate() {
   const q = document.getElementById('ddlSearchInput').value;
   const ta = document.getElementById('ddlEditor');
@@ -6808,13 +6836,13 @@ function ddlSearchUpdate() {
   const ctrlEl = document.getElementById('ddlSearchControls');
   _ddlSrchMatches = []; _ddlSrchIdx = -1;
   const bar = document.getElementById('ddlSearchBar');
-  if (!q) { countEl.textContent = ''; ctrlEl.classList.add('hidden'); bar.classList.remove('has-query'); return; }
+  if (!q) { countEl.textContent = ''; ctrlEl.classList.add('hidden'); bar.classList.remove('has-query'); _ddlUpdateLinesBg(); return; }
   ctrlEl.classList.remove('hidden'); bar.classList.add('has-query');
   const text = ta.value, lower = text.toLowerCase(), ql = q.toLowerCase();
   let pos = 0;
   while ((pos = lower.indexOf(ql, pos)) !== -1) { _ddlSrchMatches.push(pos); pos++; }
   if (_ddlSrchMatches.length) { _ddlSrchIdx = 0; _ddlSrchShow(false); }
-  else countEl.textContent = '0 / 0';
+  else { countEl.textContent = '0 / 0'; _ddlUpdateLinesBg(); }
 }
 
 function _ddlSrchShow(moveFocus) {
@@ -6828,6 +6856,7 @@ function _ddlSrchShow(moveFocus) {
   if (moveFocus) { ta.focus(); ta.setSelectionRange(pos, pos + q.length); }
   document.getElementById('ddlSearchCount').textContent =
     `${_ddlSrchIdx + 1} / ${_ddlSrchMatches.length}`;
+  _ddlUpdateLinesBg();
 }
 
 function ddlSearchNext() {
@@ -6848,6 +6877,7 @@ function ddlSearchClear() {
   document.getElementById('ddlSearchControls').classList.add('hidden');
   document.getElementById('ddlSearchBar').classList.remove('has-query');
   _ddlSrchMatches = []; _ddlSrchIdx = -1;
+  _ddlUpdateLinesBg();
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -7212,6 +7242,12 @@ document.addEventListener('DOMContentLoaded', () => {
   updateDDLEditorState();
   updateDDLHighlight();
   syncParseBtn();
+
+  // Keep search line-background div scrolled in sync with the DDL editor
+  document.getElementById('ddlEditor').addEventListener('scroll', () => {
+    const bg = document.getElementById('ddlSearchLinesBg');
+    if (bg && bg.innerHTML) bg.style.transform = `translateY(${-document.getElementById('ddlEditor').scrollTop}px)`;
+  });
 
   // Triple-click on DDL editor while DDLMM is selected and empty → autofill placeholder as text
   document.getElementById('ddlEditor').addEventListener('click', e => {

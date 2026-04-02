@@ -25,6 +25,7 @@
   --resizer-bg: rgba(255,255,255,0.10);
   --sz-mono: 11px;
   --sz-badge: calc(9px + (var(--sz-mono) - 9px) / 3);
+  --panel-header-h: 27px;
 }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -149,7 +150,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
   gap: 0;
   flex-wrap: nowrap;
   min-width: 0;
-  min-height: 27px;
+  min-height: var(--panel-header-h, 27px);
 }
 .panel-title {
   font-size: var(--sz-mono);
@@ -208,21 +209,18 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .lw-reset:hover { opacity: 1; }
 #fmtForceSelect:hover { border-color: var(--accent); color: var(--accent); }
 #fmtForceSelect.fmt-forced { color: var(--warning); border-color: var(--warning); }
-body.light #fmtForceSelect { background: var(--bg-panel); }
+body.light #fmtForceSelect { background: var(--bg-deep); }
 #colPickerSelect { background: var(--bg-deep); color: var(--text-dim); border: 2px solid transparent; border-radius: 0; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 6px; height: auto; align-self: stretch; cursor: pointer; outline: none; display: none; }
 #colPickerSelect:hover { border-color: var(--accent); color: var(--accent); }
-body.light #colPickerSelect { background: var(--bg-panel); }
+body.light #colPickerSelect { background: var(--bg-deep); }
 
 /* ===== DDL TREE PANE ===== */
 .ddl-pane-split  { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
 .ddl-tree-pane   { width: 170px; flex-shrink: 0; overflow-y: hidden; overflow-x: hidden; background: var(--bg-deep); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
 #ddlTree         { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
-.tree-search-wrap { width: 100%; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: center; background: var(--bg-panel); box-sizing: border-box; }
-input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 6px 22px 6px 8px; font-size: calc(var(--sz-mono) - 0.5px); background: #1e2d3d; border: none; color: var(--text); outline: none; font-family: var(--font-mono); box-sizing: border-box; }
-input.tree-search:focus, #treeSearch:focus { background: #1e2d3d; box-shadow: inset 0 0 0 1px rgba(88,166,255,0.3); }
-body.light .tree-search-wrap  { background: #e8edf2; }
-body.light input.tree-search, body.light #treeSearch  { background: #d0d7de; }
-body.light input.tree-search:focus, body.light #treeSearch:focus { background: #d0d7de; box-shadow: inset 0 0 0 1px rgba(30,100,210,0.35); }
+.tree-search-wrap { width: 100%; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: center; background: var(--bg-deep); box-sizing: border-box; padding: 4px 6px; min-height: var(--panel-header-h, 27px); }
+input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 2px 22px 2px 6px; font-size: calc(var(--sz-mono) - 0.5px); background: var(--bg-input); border: 1px solid var(--border); border-radius: 3px; color: var(--text); outline: none; font-family: var(--font-mono); box-sizing: border-box; }
+input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); box-shadow: none; }
 .tree-search::placeholder { color: var(--text-dim); }
 .tree-search-clear { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-size: 9px; color: var(--text-dim); cursor: pointer; display: none; line-height: 1; padding: 2px; }
 .tree-search-clear:hover { color: var(--text); }
@@ -278,10 +276,11 @@ body.light .hl-str { color: #3a7d0a; }
 /* Align DDL search bar with the editor gutter (tree pane width - header padding) */
 #ddlPanel .panel-title { min-width: 172px; }
 /* DDL editor search bar */
-.ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; padding: 0 0 0 4px; border-right: 1px solid var(--border); overflow: hidden; }
-.ddl-search-lbl { font-size: var(--sz-mono); color: var(--text-dim); opacity: 0.7; user-select: none; flex-shrink: 0; padding-right: 3px; font-family: var(--font-mono); }
-.ddl-search-input { flex: 1; min-width: 0; background: transparent; border: none !important; -webkit-appearance: none; appearance: none; color: var(--text); font-family: var(--font-mono); font-size: var(--sz-mono); padding: 1px 3px; outline: none; box-shadow: none; }
-.ddl-search-bar:focus-within, .ddl-search-bar.has-query { box-shadow: inset 0 -2px 0 var(--accent); }
+.ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 0 4px; border-right: 1px solid var(--border); overflow: hidden; }
+.ddl-search-lbl { font-size: var(--sz-mono); color: var(--text-dim); opacity: 0.7; user-select: none; flex-shrink: 0; padding-right: 2px; font-family: var(--font-mono); }
+.ddl-search-input { flex: 1; min-width: 0; background: var(--bg-input); border: 1px solid var(--border) !important; border-radius: 3px; -webkit-appearance: none; appearance: none; color: var(--text); font-family: var(--font-mono); font-size: var(--sz-mono); padding: 2px 6px; outline: none; box-shadow: none; }
+.ddl-search-input:focus { border-color: var(--accent) !important; }
+.ddl-search-bar:focus-within, .ddl-search-bar.has-query { box-shadow: none; }
 .ddl-search-count { font-size: var(--sz-mono); color: var(--text-dim); font-family: var(--font-mono); flex-shrink: 0; min-width: 3em; text-align: right; }
 .ddl-search-nav { cursor: pointer; opacity: 0.55; padding: 0 4px; user-select: none; line-height: 1; font-family: var(--font-mono); font-size: var(--sz-mono); }
 .ddl-search-nav:hover { opacity: 1; color: var(--accent); }
@@ -578,6 +577,7 @@ tr.tkn-hdr td {
 tr.row-token-hidden { display: none; }
 tr.row-filter-hide  { display: none; }
 #resContainer.hide-redef tr.row-redef { display: none; }
+.btn-accent-on { color: var(--accent) !important; }
 .res-filter-input {
   font-family: var(--mono); font-size: var(--sz-mono);
   background: var(--bg-input); color: var(--text);
@@ -1093,7 +1093,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
           <option value="trk"  data-col="trk">✓ Trk</option>
         </select>
         <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
-        <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0" title="Hide/show REDEFINES fields">Hide Redef</button>
+        <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0;min-width:80px;text-align:center" title="Hide/show REDEFINES fields">Hide Redef</button>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
       </div>
@@ -4710,7 +4710,10 @@ function toggleHideRedefines() {
   S.hideRedefines = !S.hideRedefines;
   document.getElementById('resContainer').classList.toggle('hide-redef', S.hideRedefines);
   const btn = document.getElementById('hideRedefBtn');
-  if (btn) btn.textContent = S.hideRedefines ? 'Show Redef' : 'Hide Redef';
+  if (btn) {
+    btn.textContent = S.hideRedefines ? 'Show Redef' : 'Hide Redef';
+    btn.classList.toggle('btn-accent-on', S.hideRedefines);
+  }
 }
 
 function toggleTokenArea() {
@@ -5348,12 +5351,12 @@ function triggerDeadC0DE() {
   container.innerHTML = '<div id="eggFlood" style="padding:6px 0"></div>';
   panel.classList.add('egg-flood');
 
-  // Unlock Green accent option in Settings
+  // Unlock Green accent option in Settings and auto-switch to it
   _eggDeadFound = true;
-  _syncEggAccentUI();
+  _eggSetAccent('green');
 
   const flood  = document.getElementById('eggFlood');
-  const FIRE   = ['#ff2200','#ff4400','#ff6600','#ff8800','#ffaa00','#cc1100','#ff3311'];
+  const FIRE   = ['#3fb950','#56d364','#2ea043','#1a7f37','#4bca64','#26a641','#73d893'];
   const SIZES  = ['11px','12px','13px','14px','15px','11px','13px','12px'];
   const TEXTS  = [
     'you shall not parse!',
@@ -6642,7 +6645,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.91';
+const APP_VERSION  = '1.0.0.92';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6711,6 +6714,8 @@ function savePrefs() {
 function applyPrefs(updateUI = true) {
   document.body.classList.toggle('light', P.theme === 'light');
   document.documentElement.style.setProperty('--sz-mono', P.monoSize + 'px');
+  const _headerH = 27 + Math.floor((P.monoSize - 12) / 3);
+  document.documentElement.style.setProperty('--panel-header-h', _headerH + 'px');
   if (updateUI) {
     const lbl = document.getElementById('szLabel');
     if (lbl) lbl.textContent = P.monoSize + 'px';
@@ -7321,9 +7326,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="settings-row hidden" id="eggAccentRow">
           <span class="settings-lbl">Accent Color <span style="font-size:10px;color:var(--text-dim)">🥚</span></span>
           <div class="settings-pill">
-            <button class="btn s-active" id="eggAccentDefault" onclick="_eggSetAccent('blue')">Blue</button>
-            <button class="btn"          id="eggAccentOrange"  onclick="_eggSetAccent('orange')">Orange</button>
-            <button class="btn hidden"   id="eggAccentGreen"   onclick="_eggSetAccent('green')">Green</button>
+            <button class="btn s-active" id="eggAccentDefault" onclick="_eggSetAccent('blue')"   style="min-width:58px;text-align:center">Blue</button>
+            <button class="btn"          id="eggAccentOrange"  onclick="_eggSetAccent('orange')" style="min-width:58px;text-align:center">Orange</button>
+            <button class="btn hidden"   id="eggAccentGreen"   onclick="_eggSetAccent('green')"  style="min-width:58px;text-align:center">Green</button>
           </div>
         </div>
       </div>

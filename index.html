@@ -3577,40 +3577,20 @@ function parseNetardLog(text) {
         else if (rawMsg.length > cur.length) rawMsg = rawMsg.slice(0, cur.length);
       }
       cur.netardFmt = 'standard';
+      cur.netardLineWidth = W;  // stored so doParseNetardLog can pad the textarea
 
-      // NETARD strips trailing spaces from every line.  To allow highlighting
-      // those invisible spaces we build a padded overlay text (stored on cur)
-      // where each content line is extended to 7+W chars with actual spaces.
-      // The bcm is computed against this padded text, so every byte — including
-      // trailing spaces — maps to a real character in the overlay.
-
-      // Cumulative extra chars added by padding content lines 0..li-1
-      const cumExtra = [];
-      let extra = 0;
-      for (let li = 0; li < cur._lines.length; li++) {
-        cumExtra.push(extra);
-        extra += W - cur._lines[li].length;
-      }
-
+      // Build bcm using raw positions (against the original textarea text).
+      // doParseNetardLog will pad stripped trailing spaces into the textarea and
+      // then rebuild each record's bcm with the correct shifted positions.
       bcm = new Array(rawMsg.length).fill(null);
       for (let b = 0; b < rawMsg.length; b++) {
         const li = Math.floor(b / W);
         const co = b % W;
         if (li < cur._lineCharStarts.length) {
-          const cs = cur._lineCharStarts[li] + cumExtra[li] + 7 + co;
+          const cs = cur._lineCharStarts[li] + 7 + co;
           bcm[b] = { s: cs, e: cs + 1 };
         }
       }
-
-      // Build the padded overlay text: pad each content line of THIS message to
-      // 7+W chars so the highlight can cover stripped trailing spaces visually.
-      const paddedLinesArr = [...lines];
-      cur._lineIndices.forEach((idx, li) => {
-        if (cur._lines[li].length < W) {
-          paddedLinesArr[idx] = lines[idx].padEnd(7 + W);
-        }
-      });
-      cur.netardOverlayText = paddedLinesArr.join('\n');
     }
 
     cur.rawMsg = rawMsg;
@@ -3619,9 +3599,6 @@ function parseNetardLog(text) {
     const lastBcm = [...bcm].reverse().find(Boolean);
     cur.charEnd = lastBcm ? lastBcm.e : cur.charStart;
 
-    delete cur._lines;
-    delete cur._lineIndices;
-    delete cur._lineCharStarts;
     delete cur._fmtLines;
     delete cur._inFmtBlock;
     delete cur._hdrCharStart;
@@ -3725,6 +3702,46 @@ function doParseNetardLog(text) {
   S.seenTypes.clear();
   const records = parseNetardLog(text);
   if (!records.length) { flash('No records with message text found in NETARD log', 'warn'); return; }
+
+  // Pad NETARD content lines to full width W so stripped trailing spaces can be highlighted.
+  // NETARD right-trims every line, so lines shorter than W need spaces added to the textarea.
+  {
+    const ta = document.getElementById('msgInput');
+    const taLines = ta.value.split('\n');
+    let globalExtra = 0; // cumulative extra chars inserted by all previous records
+    for (const rec of records) {
+      if (rec.netardFmt !== 'standard' || !rec.netardLineWidth || !rec._lines) continue;
+      const W = rec.netardLineWidth;
+      // Per-line extra spaces needed (0 if already full width)
+      const lineExtras = rec._lines.map(l => Math.max(0, W - l.length));
+      // Build per-line cumulative offset (accounting for all prior records' padding)
+      const cumExtra = [];
+      let cum = globalExtra;
+      for (let li = 0; li < rec._lineIndices.length; li++) {
+        cumExtra.push(cum);
+        if (lineExtras[li] > 0) taLines[rec._lineIndices[li]] = taLines[rec._lineIndices[li]].padEnd(7 + W);
+        cum += lineExtras[li];
+      }
+      // Rebuild bcm using padded positions
+      const rawMsgLen = rec.rawMsg.length;
+      rec.byteCharMap = new Array(rawMsgLen).fill(null);
+      for (let b = 0; b < rawMsgLen; b++) {
+        const li = Math.floor(b / W);
+        const co = b % W;
+        if (li < rec._lineCharStarts.length) {
+          const cs = rec._lineCharStarts[li] + cumExtra[li] + 7 + co;
+          rec.byteCharMap[b] = { s: cs, e: cs + 1 };
+        }
+      }
+      globalExtra = cum;
+      delete rec._lines;
+      delete rec._lineIndices;
+      delete rec._lineCharStarts;
+    }
+    if (records.some(r => r.netardFmt === 'standard')) {
+      ta.value = taLines.join('\n');
+    }
+  }
 
   // Pre-compile ALL DDLs in the tree, grouped by volume — used for auto-detection.
   // Falls back to the manually selected scope when the detected volume has no DDLs.
@@ -4783,7 +4800,7 @@ function renderInputOverlay() {
 
   // For NETARD messages use the padded overlay text (content lines extended to
   // full width W with spaces) so that stripped trailing spaces can be highlighted.
-  const text = msg.netardOverlayText || ta.value;
+  const text = ta.value;
   let html = '', pos = 0;
   for (const { s, e, color } of ranges) {
     const rs = Math.max(s, pos);
@@ -6625,7 +6642,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.90';
+const APP_VERSION  = '1.0.0.91';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

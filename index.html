@@ -1467,24 +1467,15 @@ function parseHPEDDL(text, externalDefs) {
 
   for (const sec of sections) {
     const { fields } = buildDDLDocFields(sec.items, typeRegistry);
-    let lastRedefTarget = null; // tracks the redefinesName of the current REDEFINES group
     for (const f of fields) {
-      if (f.isGroup) {
-        // Track which field the REDEFINES group overlaps so children can display it
-        lastRedefTarget = f.isRedefines ? f.redefinesName : null;
-        continue;
-      }
-      if (f.size === 0) continue;
-      if (!f.isRedefines && !f.isInsideRedefines) lastRedefTarget = null;
-
+      if (f.isGroup || f.size === 0) continue;
       const isFiller = /^FILLER$/i.test(f.name);
       const parentPath = f.qualName.split('.').slice(0, -1).join('.');
       const id = isFiller
         ? (parentPath ? `${parentPath}.FILLER` : 'FILLER')
         : f.qualName;
-      // redefTarget: for single-element REDEFINES use its own redefinesName;
-      // for children of a REDEFINES group use the group's redefinesName.
-      const redefTarget = f.isRedefines ? f.redefinesName : lastRedefTarget;
+      // redefTarget comes directly from buildDDLDocFields — no manual tracking needed.
+      const redefTarget = f.isRedefines ? f.redefinesName : f.redefGroupTarget;
       out.push({ id, type: 'FIXED', length: f.size, offset: f.offset, description: f.desc,
                  isRedefines: f.isRedefines || f.isInsideRedefines, redefTarget });
     }
@@ -2088,8 +2079,8 @@ function buildDDLDocFields(rawItems, typeRegistry) {
   const nStack  = [];    // [{level, qualName}] — qualified name ancestry
 
   // pos-context stack handles REDEFINES groups resetting the byte pointer.
-  // Each ctx = {level, pos}; the outermost (index 0) is the real sequential pointer.
-  const posCtx = [{ level: -1, pos: 0 }];
+  // Each ctx = {level, pos, redefTarget}; redefTarget is the name of the field being redefined.
+  const posCtx = [{ level: -1, pos: 0, redefTarget: null }];
   const getPos = ()  => posCtx[posCtx.length - 1].pos;
   const setPos = (p) => { posCtx[posCtx.length - 1].pos = p; };
 
@@ -2166,7 +2157,8 @@ function buildDDLDocFields(rawItems, typeRegistry) {
       isGroup,
       isRedefines:       !!item.redefines,
       isInsideRedefines: !item.redefines && posCtx.length > 1, // child of a REDEFINES group
-      redefinesName: item.redefines,
+      redefinesName:     item.redefines,
+      redefGroupTarget:  posCtx.length > 1 ? posCtx[posCtx.length - 1].redefTarget : null,
       desc:        item.desc,
     };
     result.push(entry);
@@ -2174,8 +2166,9 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     nStack.push({ level: item.level, qualName });
 
     if (isGroup && item.redefines) {
-      // REDEFINES group: push a new pos-context so children restart from target offset
-      posCtx.push({ level: item.level, pos: itemOffset });
+      // REDEFINES group: push a new pos-context so children restart from target offset.
+      // Store redefTarget so children can display which field they overlap.
+      posCtx.push({ level: item.level, pos: itemOffset, redefTarget: item.redefines });
     } else if (!isGroup) {
       if (!item.redefines) {
         setPos(itemOffset + entry.size);
@@ -2302,10 +2295,9 @@ function showDDLDoc() {
       rowNum++;
       const isRedefRow = f.isRedefines || f.isInsideRedefines;
       const cls        = isRedefRow ? ' class="ddl-doc-redef"' : '';
-      const redefNote  = f.isRedefines
-        ? `<span style="font-size:10px;opacity:.7"> ⟵ ${esc(f.redefinesName)}</span>`
-        : f.isInsideRedefines
-        ? `<span style="font-size:10px;opacity:.7"> ⟵ redef</span>` : '';
+      const redefNoteName = f.isRedefines ? f.redefinesName : f.redefGroupTarget;
+      const redefNote  = redefNoteName
+        ? `<span style="font-size:10px;opacity:.7"> ⟵ ${esc(redefNoteName)}</span>` : '';
       const descTxt    = f.desc && f.desc.toUpperCase() !== f.name ? esc(f.desc) : '';
       const occurs     = f.occurs > 1 ? `×${f.occurs}` : '—';
       html += `<tr${cls}>
@@ -4423,11 +4415,28 @@ function renderFieldTable(msg) {
     </tr>`;
     for (const tkn of msg.tokens) {
       if (tkn.error) {
-        const idCell = tkn.id ? esc(tkn.id) : '<span style="color:var(--text-dim)">—</span>';
-        rows += `<tr class="tkn-unknown">
-          <td class="c-id">${idCell}</td>
-          <td colspan="5" class="c-err">${esc(tkn.error)}${tkn.rawHex ? ` &nbsp;<span style="color:var(--text-dim)">${esc(tkn.rawHex.slice(0,40))}</span>` : ''}</td>
-        </tr>`;
+        if (tkn.id && tkn.rawBytes?.length) {
+          // Token parsed from binary but no DDL definition — show raw data as a normal row
+          const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x)
+                                                                : `[${x.toString(16).padStart(2,'0')}]`).join('');
+          const val    = bToStr(tkn.rawBytes);
+          const valDisp = val.length > 50 ? val.slice(0, 50) + '…' : val;
+          const rawDisp = (tkn.rawHex||'').length > 22 ? tkn.rawHex.slice(0, 22) + '…' : (tkn.rawHex||'');
+          rows += `<tr class="tkn-unknown">
+            <td class="c-id">${esc(tkn.id)}</td>
+            <td class="c-desc" style="color:var(--text-dim)">No definition found</td>
+            <td class="c-len">${tkn.rawBytes.length}</td>
+            <td class="c-val" title="${esc(val)}">${esc(valDisp)}</td>
+            <td class="c-raw" title="${esc(tkn.rawHex||'')}">${rawDisp}</td>
+            <td class="c-trk"></td>
+          </tr>`;
+        } else {
+          // Sentinel — token area detected but structure could not be read
+          rows += `<tr class="tkn-unknown">
+            <td class="c-id" style="color:var(--text-dim)">—</td>
+            <td colspan="5" class="c-err">${esc(tkn.error)}</td>
+          </tr>`;
+        }
       } else {
         const ddlLabel = tkn.ddlPath ? tkn.ddlPath.split('/').pop() : tkn.ddlName || '?';
         const byteCount = tkn.rawBytes?.length || 0;
@@ -6439,7 +6448,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.83';
+const APP_VERSION  = '1.0.0.84';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

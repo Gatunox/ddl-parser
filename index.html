@@ -2893,6 +2893,12 @@ function findTokenDDL(ddlName, preferredVol, isISO) {
 // Parse a token area from bytes[startOffset..], returns array of token objects or null
 // startOffset must point to the '& ' eye-catcher
 // isBinary=true for STM/PSTM, false for ISO
+// Note: when the message is pasted as plain text (e.g. from NETADRD), the binary header
+// bytes (token count, total size) arrive as non-printable characters and cannot be read.
+// The per-token size field has the same problem. The delimiter-based fallback handles this:
+// instead of relying on the binary size, it scans forward for the next '! ' eye-catcher
+// to bound each token's data — the same technique humans use when visually inspecting
+// a STM/PSTM message in NETADRD.
 function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
   const bToHex = b => b.map(x => x.toString(16).padStart(2,'0').toUpperCase()).join('');
   const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : `[${x.toString(16).padStart(2,'0')}]`).join('');
@@ -2947,8 +2953,8 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
         dataBytes = bytes.slice(offset, offset + dataSize);
         offset += dataSize;
       } else {
-        // Size unreadable or out of range — fall back to delimiter-based:
-        // read until next '! ' eye-catcher or end of token area
+        // Per-token size is non-printable when pasted as plain text from NETADRD —
+        // fall back to delimiter-based: read until next '! ' eye-catcher or end of area
         let nextTok = areaLimit;
         for (let j = offset; j < areaLimit - 1; j++) {
           if (bytes[j] === 0x21 && bytes[j+1] === 0x20) { nextTok = j; break; }
@@ -6461,7 +6467,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.85';
+const APP_VERSION  = '1.0.0.86';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

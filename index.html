@@ -6652,7 +6652,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.98';
+const APP_VERSION  = '1.0.0.99';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6873,7 +6873,17 @@ function _ddlSrchShow(moveFocus) {
   const lines = ta.value.substring(0, pos).split('\n');
   const lineH = parseFloat(getComputedStyle(ta).lineHeight) || 16;
   ta.scrollTop = Math.max(0, (lines.length - 4) * lineH);
-  if (moveFocus) { ta.focus(); ta.setSelectionRange(pos, pos + q.length); }
+  if (moveFocus) {
+    ta.focus();
+    ta.setSelectionRange(pos, pos + q.length);
+  } else {
+    // Focus briefly to register the selection visually, then return focus to
+    // the search input so the user can keep typing their query.
+    const prev = document.activeElement;
+    ta.focus();
+    ta.setSelectionRange(pos, pos + q.length);
+    if (prev && prev !== ta) prev.focus();
+  }
   document.getElementById('ddlSearchCount').textContent =
     `${_ddlSrchIdx + 1} / ${_ddlSrchMatches.length}`;
   _ddlUpdateLinesBg();

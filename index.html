@@ -883,7 +883,7 @@ body.light .trk-chk { color-scheme: light; }
 .settings-overlay.hidden { display: none; }
 .settings-scrim  { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
 .settings-drawer {
-  position: relative; z-index: 1; width: 330px; max-width: 92vw;
+  position: relative; z-index: 1; width: calc(210px + var(--sz-mono) * 10); max-width: 92vw;
   background: var(--bg-panel); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
   box-shadow: -8px 0 28px rgba(0,0,0,0.55);
@@ -6745,7 +6745,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.121';
+const APP_VERSION  = '1.0.0.122';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6794,7 +6794,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', monoSize: 11, lineWidth: 0, rawHexTruncate: true,
+  theme: 'dark', monoSize: 12, lineWidth: 0, rawHexTruncate: true,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences

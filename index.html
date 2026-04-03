@@ -2453,7 +2453,7 @@ function openMsgExportModal() {
     const pan     = _msgPan(msg);
     const panDisp = pan;
     const type    = msg.msgType?.type || '';
-    const proc    = msg.typeDesc || '';
+    const proc    = msg.typeDesc || _netardTypeLabel(msg.typeCode);
     const origin  = msg.isNetard ? (msg.source || '') : (msg.ddlPath ? msg.ddlPath.split('/').pop() : '');
     const dest    = msg.isNetard ? (msg.dest || '') : '';
     const time    = msg.time || msg.timestamp || '';
@@ -2533,7 +2533,7 @@ function doMsgExport() {
 
     // Header line
     const type  = msg.msgType?.type || '';
-    const proc  = msg.typeDesc || '';
+    const proc  = msg.typeDesc || _netardTypeLabel(msg.typeCode);
     const origin = msg.isNetard ? (msg.source || '') : (msg.ddlPath || '');
     const dest   = msg.isNetard ? (msg.dest || '') : '';
     const route  = dest ? `${origin} → ${dest}` : origin;
@@ -3611,6 +3611,31 @@ function isNetardLog(text) {
          /^\s+SOURCE\s+\S/m.test(text);
 }
 
+const NETARD_TYPE_MAP = (() => {
+  const m = {
+    0: 'Read from a station',
+    2: 'Write to a station',
+    3: 'Write back to a source',
+    4: 'Message dropped',
+    5: 'System message',
+    6: 'Read from a process',
+    7: 'Write to a process',
+    8: 'Console message',
+    20: 'XPNET text command message',
+    180: 'Line Open',
+    181: 'Line Close',
+    190: 'Line error',
+  };
+  for (let i = 9;  i <= 19; i++) m[i] = 'Statistical message';
+  for (let i = 90; i <= 99; i++) m[i] = 'User table dump record';
+  return m;
+})();
+
+function _netardTypeLabel(code) {
+  if (code == null) return '';
+  return NETARD_TYPE_MAP[code] || '';
+}
+
 function parseNetardLog(text) {
   const lines    = text.split('\n');
   const records  = [];
@@ -3618,8 +3643,9 @@ function parseNetardLog(text) {
 
   // Allow 0-6 leading spaces so large RECD-NO values (no leading pad) are matched.
   const HDR_RE = /^\s{0,6}(\d+)\s+([0-9A-Za-z]+)\s+(\d{2}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+)/;
-  // TYPE description after the dash is optional — may be cut off in narrow terminals.
-  const TYP_RE = /(\d+)(?:\s*-\s*(.+?))?\s*$/;
+  // Only extract TYPE when dash separator is present — number to its left is reliable TYPE_CODE.
+  // If no dash found (e.g. TRN-NO consumed all space), typeCode stays null.
+  const TYP_RE = /(\d{1,3})\s*-\s*(.+?)\s*$/;
   const SRC_RE = /^\s+SOURCE\s+(\S+)\s+\(\s*(.+?)\s*\)/;
   const DST_RE = /^\s+DEST\.?\s+(\S+)\s+\(\s*(.+?)\s*\)/;
   const MSG_RE = /^\s{7}(.+)/;    // 7-space indent + any content (incl. space-prefixed)
@@ -6773,7 +6799,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.134';
+const APP_VERSION  = '1.0.0.135';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

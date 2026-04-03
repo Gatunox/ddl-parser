@@ -1117,6 +1117,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
           <option value="desc" data-col="desc">✓ Description</option>
           <option value="len"  data-col="len">✓ Length</option>
           <option value="val"  data-col="val">✓ Value</option>
+          <option value="raw"  data-col="raw" style="display:none">✓ Raw Hex</option>
           <option value="trk"  data-col="trk">✓ Trk</option>
         </select>
         <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
@@ -1448,11 +1449,18 @@ function togglePanel(panelId, btnId, resizerId) {
 }
 
 function _syncRawHexCol() {
-  const rawPanel   = document.getElementById('rawPanel');
-  const container  = document.getElementById('resContainer');
+  const rawPanel  = document.getElementById('rawPanel');
+  const container = document.getElementById('resContainer');
+  const opt       = document.querySelector('#colPickerSelect option[value="raw"]');
   if (!rawPanel || !container) return;
-  const rawHidden = rawPanel.classList.contains('collapsed');
-  container.classList.toggle('hide-raw', !rawHidden);
+  const rawCollapsed = rawPanel.classList.contains('collapsed');
+  // Auto-manage column: show when raw panel is hidden, hide when it's visible
+  container.classList.toggle('hide-raw', !rawCollapsed);
+  // Show/hide dropdown option and reset its checkmark when the panel collapses
+  if (opt) {
+    opt.style.display = rawCollapsed ? '' : 'none';
+    if (rawCollapsed) opt.textContent = '✓ Raw Hex';
+  }
 }
 
 // ============================================================
@@ -6731,7 +6739,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.112';
+const APP_VERSION  = '1.0.0.113';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

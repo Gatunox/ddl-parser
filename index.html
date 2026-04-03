@@ -2420,12 +2420,32 @@ function filterDDLDoc(q) {
 // ============================================================
 // EXPORT MODAL
 // ============================================================
+function _panFromTrack2(val) {
+  if (!val) return '';
+  const data = val.startsWith(';') ? val.slice(1) : val;
+  const sep = data.search(/[D=]/);
+  return sep >= 0 ? data.slice(0, sep) : data;
+}
+
+function _msgMti(msg) {
+  if (msg.isNetard) return msg.fields?.find(f => f.id === 'TYP')?.value || '';
+  return msg.fields?.find(f => f.id === 'MTI')?.value || '';
+}
+
+function _msgPan(msg) {
+  if (msg.isNetard) {
+    const t2 = msg.fields?.find(f => f.id.startsWith('RQST.TRACK2'));
+    return _panFromTrack2(t2?.value || '');
+  }
+  return msg.fields?.find(f => f.id === '2')?.value || '';
+}
+
 function openMsgExportModal() {
   if (!S.isParsed || !S.messages.length) return;
 
   const rows = S.messages.map((msg, idx) => {
-    const mti     = msg.fields?.find(f => f.id === 'MTI')?.value || '';
-    const pan     = msg.fields?.find(f => f.id === '2' || f.id === 'PAN')?.value || '';
+    const mti     = _msgMti(msg);
+    const pan     = _msgPan(msg);
     const panDisp = pan;
     const type    = msg.msgType?.type || '';
     const proc    = msg.typeDesc || '';
@@ -2511,7 +2531,7 @@ function doMsgExport() {
     const route = msg.isNetard ? `${msg.source || '?'} → ${msg.dest || '?'}` : (msg.ddlPath || '');
     const time  = msg.time || msg.timestamp || '';
     const size  = msg.isNetard ? msg.recLength : (msg.bytes?.length || 0);
-    const mti   = msg.fields?.find(f => f.id === 'MTI')?.value || '';
+    const mti   = _msgMti(msg);
     const hdr   = [
       msg.isNetard ? `Rec #${msg.recNo}` : `Msg #${idx + 1}`,
       type, proc, route, time, `${size} bytes`, mti ? `MTI: ${mti}` : ''
@@ -6752,7 +6772,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.129';
+const APP_VERSION  = '1.0.0.130';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

@@ -2427,13 +2427,18 @@ function _panFromTrack2(val) {
   return sep >= 0 ? data.slice(0, sep) : data;
 }
 
+function _isStmMsg(msg) {
+  const t = msg.msgType?.type || '';
+  return t === 'STM' || t === 'PSTM';
+}
+
 function _msgMti(msg) {
-  if (msg.isNetard) return msg.fields?.find(f => f.id === 'TYP')?.value || '';
+  if (_isStmMsg(msg)) return msg.fields?.find(f => f.id === 'TYP')?.value || '';
   return msg.fields?.find(f => f.id === 'MTI')?.value || '';
 }
 
 function _msgPan(msg) {
-  if (msg.isNetard) {
+  if (_isStmMsg(msg)) {
     const t2 = msg.fields?.find(f => f.id.startsWith('RQST.TRACK2'));
     return _panFromTrack2(t2?.value || '');
   }
@@ -6775,7 +6780,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.131';
+const APP_VERSION  = '1.0.0.132';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

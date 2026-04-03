@@ -4543,9 +4543,8 @@ function renderFieldTable(msg) {
       ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${f.redefTarget || '?'}"> ⟵${f.redefTarget ? ' '+f.redefTarget : ''}</span>`
       : '';
     const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', extraClass].filter(Boolean).join(' ');
-    const _rawColVisible = document.getElementById('rawPanel')?.classList.contains('collapsed');
-    const searchStr = [fid, f.description || '', f.value || '', _rawColVisible ? (f.rawHex || '') : ''].join(' ').toLowerCase();
-    return `<tr class="${rowCls}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}"
+    const searchStr = [fid, f.description || '', f.value || ''].join(' ').toLowerCase();
+    return `<tr class="${rowCls}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}" data-raw="${esc((f.rawHex||'').toLowerCase())}"
       onclick="selectField('${esc(fid)}')"
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
       onmouseenter="hoverField('${esc(fid)}')"
@@ -4754,8 +4753,11 @@ function clearRawHL(cls) {
 
 function filterParsePanel(q) {
   const query = q.trim().toLowerCase();
+  const rawColVisible = document.getElementById('rawPanel')?.classList.contains('collapsed');
   document.querySelectorAll('#resContainer tbody tr[data-fid]').forEach(tr => {
-    const matches = !query || (tr.dataset.search || '').includes(query);
+    let searchTarget = tr.dataset.search || '';
+    if (rawColVisible) searchTarget += ' ' + (tr.dataset.raw || '');
+    const matches = !query || searchTarget.includes(query);
     tr.classList.toggle('row-filter-hide', !matches);
   });
 }
@@ -6743,7 +6745,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.119';
+const APP_VERSION  = '1.0.0.120';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

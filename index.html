@@ -1117,7 +1117,6 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
           <option value="desc" data-col="desc">✓ Description</option>
           <option value="len"  data-col="len">✓ Length</option>
           <option value="val"  data-col="val">✓ Value</option>
-          <option value="raw"  data-col="raw">✓ Raw Hex</option>
           <option value="trk"  data-col="trk">✓ Trk</option>
         </select>
         <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
@@ -1445,6 +1444,15 @@ function togglePanel(panelId, btnId, resizerId) {
     btn.title = 'Hide panel';
     if (resizer) resizer.style.display = '';
   }
+  if (panelId === 'rawPanel') _syncRawHexCol();
+}
+
+function _syncRawHexCol() {
+  const rawPanel   = document.getElementById('rawPanel');
+  const container  = document.getElementById('resContainer');
+  if (!rawPanel || !container) return;
+  const rawHidden = rawPanel.classList.contains('collapsed');
+  container.classList.toggle('hide-raw', !rawHidden);
 }
 
 // ============================================================
@@ -6723,7 +6731,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.111';
+const APP_VERSION  = '1.0.0.112';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6808,14 +6816,14 @@ function saveLayout() {
     // Hidden columns
     const container = document.getElementById('resContainer');
     if (container) {
-      layout.hiddenCols = ['id','desc','len','val','raw','trk']
+      layout.hiddenCols = ['id','desc','len','val','trk']
         .filter(c => container.classList.contains('hide-' + c));
     }
     // Column header widths
     const table = document.querySelector('#resContainer table.res-tbl');
     if (table) {
       const cw = {};
-      ['id','desc','len','val','raw','trk'].forEach(c => {
+      ['id','desc','len','val','trk'].forEach(c => {
         const th = table.querySelector('th.th-' + c);
         if (th && th.style.width) cw[c] = th.style.width;
       });
@@ -6854,7 +6862,7 @@ function loadLayout() {
     if (Array.isArray(layout.hiddenCols)) {
       const container = document.getElementById('resContainer');
       if (container) {
-        ['id','desc','len','val','raw','trk'].forEach(c => container.classList.remove('hide-' + c));
+        ['id','desc','len','val','trk'].forEach(c => container.classList.remove('hide-' + c));
         layout.hiddenCols.forEach(c => container.classList.add('hide-' + c));
         _syncColPickerCheckmarks(layout.hiddenCols);
       }
@@ -6869,7 +6877,7 @@ function loadLayout() {
 function _applyColWidths() {
   const table = document.querySelector('#resContainer table.res-tbl');
   if (!table || !Object.keys(_savedColWidths).length) return;
-  ['id','desc','len','val','raw','trk'].forEach(c => {
+  ['id','desc','len','val','trk'].forEach(c => {
     if (_savedColWidths[c]) {
       const th = table.querySelector('th.th-' + c);
       if (th) th.style.width = _savedColWidths[c];
@@ -6891,14 +6899,14 @@ function resetLayout() {
   // Show all columns
   const container = document.getElementById('resContainer');
   if (container) {
-    ['id','desc','len','val','raw','trk'].forEach(c => container.classList.remove('hide-' + c));
+    ['id','desc','len','val','trk'].forEach(c => container.classList.remove('hide-' + c));
     _syncColPickerCheckmarks([]);
   }
   // Reset column header widths to defaults
   const table = document.querySelector('#resContainer table.res-tbl');
   if (table) {
-    const defaults = { id:'140px', desc:'180px', len:'44px', val:'', raw:'120px', trk:'36px' };
-    ['id','desc','len','val','raw','trk'].forEach(c => {
+    const defaults = { id:'140px', desc:'180px', len:'44px', val:'', trk:'36px' };
+    ['id','desc','len','val','trk'].forEach(c => {
       const th = table.querySelector('th.th-' + c);
       if (th) th.style.width = defaults[c] || '';
     });
@@ -7492,6 +7500,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadLayout();
   _initCellTooltip();
   applyPanelDefaults();
+  _syncRawHexCol();
   loadTree();
   initTreePaneResizer();
   initDropZones();
@@ -7748,7 +7757,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <ul style="padding-left:16px;margin:0">
               <li>Click a row → highlights that field's bytes in the Raw hex dump</li>
               <li><strong>Filter bar</strong> — type to narrow results by field name or value</li>
-              <li><strong>Columns</strong> dropdown — show or hide Field, Description, Length, Value, Raw Hex, Trk</li>
+              <li><strong>Columns</strong> dropdown — show or hide Field, Description, Length, Value, Trk</li>
+              <li><strong>Raw Hex</strong> column appears automatically when the Raw Message panel is collapsed</li>
               <li>Drag any <strong>column header edge</strong> to resize that column</li>
               <li><strong>Show Redef</strong> button — toggle visibility of redefine fields</li>
               <li><strong>Trk</strong> checkbox — mark fields you want to track across messages</li>

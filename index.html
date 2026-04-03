@@ -357,10 +357,10 @@ body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);
 .exp-tbl { width:100%; border-collapse:collapse; font-size:11px; font-family:var(--font-mono); }
 .exp-tbl th { position:sticky; top:0; background:var(--bg-deep); color:var(--text-dim); font-weight:600; text-align:left; padding:4px 6px; border-bottom:1px solid var(--border); white-space:nowrap; z-index:1; }
 .exp-tbl th:first-child { width:28px; text-align:center; }
-.exp-tbl th .th-label { display:block; font-size:10px; color:var(--text-dim); margin-bottom:3px; }
-.exp-tbl th input.exp-filter { width:100%; box-sizing:border-box; background:var(--bg-input,var(--bg)); border:1px solid var(--border); border-radius:3px; color:var(--text); font-size:10px; font-family:var(--font-mono); padding:2px 4px; outline:none; }
-.exp-tbl th input.exp-filter:focus { border-color:var(--accent); }
-.exp-tbl th input.exp-filter::placeholder { color:var(--text-dim); opacity:0.5; }
+.exp-tbl th .th-label { display:block; font-size:10px; color:var(--text-dim); }
+#expFilterInput { flex:1; min-width:0; margin:0 10px; background:var(--bg-input,var(--bg)); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:12px; font-family:var(--mono); padding:3px 8px; outline:none; }
+#expFilterInput:focus { border-color:var(--accent); }
+#expFilterInput::placeholder { color:var(--text-dim); opacity:0.5; }
 .exp-tbl td { padding:3px 8px; border-bottom:1px solid rgba(255,255,255,0.04); color:var(--text); white-space:nowrap; overflow:hidden; max-width:200px; text-overflow:ellipsis; }
 .exp-tbl td:last-child { max-width:none; min-width:160px; }
 .exp-tbl td:first-child { text-align:center; }
@@ -2434,7 +2434,8 @@ function openMsgExportModal() {
       : (msg.ddlPath ? msg.ddlPath.split('/').pop() : '');
     const time    = msg.time || msg.timestamp || '';
     const size    = msg.isNetard ? msg.recLength : (msg.bytes?.length || 0);
-    return `<tr data-idx="${idx}">
+    const search  = [type, route, proc, time, size + ' B', mti, panDisp].join(' ').toLowerCase();
+    return `<tr data-idx="${idx}" data-search="${esc(search)}">
       <td><input type="checkbox" class="exp-chk trk-chk" data-idx="${idx}" checked onchange="expRowChange(this)"/></td>
       <td style="color:var(--text-dim)">${idx + 1}</td>
       <td>${type ? `<span class="btype btype-${type.toLowerCase()}">${esc(type)}</span>` : ''}</td>
@@ -2452,16 +2453,18 @@ function openMsgExportModal() {
       <thead><tr>
         <th><input type="checkbox" id="expSelAll" class="trk-chk" checked title="Select all" onchange="expToggleAll(this.checked)"/></th>
         <th><span class="th-label">#</span></th>
-        <th><span class="th-label">Type</span><input class="exp-filter" placeholder="filter…" oninput="filterExpTable()"></th>
-        <th><span class="th-label">Origin → Dest</span><input class="exp-filter" placeholder="filter…" oninput="filterExpTable()"></th>
-        <th><span class="th-label">Process</span><input class="exp-filter" placeholder="filter…" oninput="filterExpTable()"></th>
-        <th><span class="th-label">Date &amp; Time</span><input class="exp-filter" placeholder="filter…" oninput="filterExpTable()"></th>
-        <th><span class="th-label">Size</span><input class="exp-filter" placeholder="filter…" oninput="filterExpTable()"></th>
-        <th><span class="th-label">MTI</span><input class="exp-filter" placeholder="filter…" oninput="filterExpTable()"></th>
-        <th><span class="th-label">PAN</span><input class="exp-filter" placeholder="filter…" oninput="filterExpTable()"></th>
+        <th><span class="th-label">Type</span></th>
+        <th><span class="th-label">Origin → Dest</span></th>
+        <th><span class="th-label">Process</span></th>
+        <th><span class="th-label">Date &amp; Time</span></th>
+        <th><span class="th-label">Size</span></th>
+        <th><span class="th-label">MTI</span></th>
+        <th><span class="th-label">PAN</span></th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+  const expFlt = document.getElementById('expFilterInput');
+  if (expFlt) { expFlt.value = ''; }
   document.getElementById('msgExportOverlay').classList.remove('hidden');
 }
 
@@ -2483,12 +2486,9 @@ function expRowChange(cb) {
 }
 
 function filterExpTable() {
-  // filters: columns 2-8 (0-based td index), matching .exp-filter inputs in order
-  const filters = [...document.querySelectorAll('.exp-filter')].map(i => i.value.trim().toLowerCase());
+  const q = (document.getElementById('expFilterInput')?.value || '').trim().toLowerCase();
   document.querySelectorAll('.exp-tbl tbody tr').forEach(tr => {
-    const cells = tr.querySelectorAll('td');
-    // td indices 2-8 map to filter indices 0-6
-    const match = filters.every((f, i) => !f || (cells[i + 2]?.textContent.toLowerCase().includes(f)));
+    const match = !q || (tr.dataset.search || '').includes(q);
     tr.style.display = match ? '' : 'none';
   });
 }
@@ -6752,7 +6752,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.128';
+const APP_VERSION  = '1.0.0.129';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7586,7 +7586,8 @@ document.addEventListener('DOMContentLoaded', () => {
   <div class="ddl-doc-modal" style="width:min(820px,96vw)">
     <div class="ddl-doc-hdr">
       <span class="ddl-doc-title">Export Messages</span>
-      <div style="display:flex;gap:6px;align-items:center">
+      <input id="expFilterInput" placeholder="Filter messages…" oninput="filterExpTable()" autocomplete="off">
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <button class="btn btn-sm btn-primary" onclick="doMsgExport()">⬇ Download</button>
         <button class="btn btn-sm" onclick="closeMsgExportModal()">✕</button>
       </div>

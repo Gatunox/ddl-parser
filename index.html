@@ -1348,6 +1348,7 @@ function initHResizer(resizerId, leftPanelId, rightPanelId) {
       resizer.classList.remove('dragging');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      saveLayout();
     };
 
     document.addEventListener('mousemove', onMove);
@@ -1380,6 +1381,7 @@ function initVResizer(resizerId, topRowId, bottomRowId) {
       resizer.classList.remove('dragging');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      saveLayout();
     };
 
     document.addEventListener('mousemove', onMove);
@@ -4050,6 +4052,7 @@ function initColResize() {
         document.body.style.cursor = '';
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        saveLayout();
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -4071,6 +4074,7 @@ function onColPickerChange(sel) {
   opt.textContent = (isHidden ? '✓ ' : '  ') + opt.textContent.replace(/^[✓ ]+/, '');
   // Reset select to placeholder
   sel.value = '';
+  saveLayout();
 }
 
 function setResCol(col, visible) {
@@ -4594,6 +4598,7 @@ function renderFieldTable(msg) {
 
   document.getElementById('resContainer').innerHTML = metaBar + tableOrEmpty;
   initColResize();
+  _applyColWidths();
 
   // Show filter input whenever there are field rows; show Hide Redef button only when DDL has redefines
   const _hasFields = (msg.fields?.length > 0) || (msg.tokens?.length > 0);
@@ -6647,7 +6652,7 @@ function initTreePaneResizer() {
     const startX = e.clientX, startW = treePane.offsetWidth;
     resizer.classList.add('dragging');
     const onMove = e => { treePane.style.width = Math.max(80, Math.min(400, startW + e.clientX - startX)) + 'px'; };
-    const onUp   = () => { resizer.classList.remove('dragging'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    const onUp   = () => { resizer.classList.remove('dragging'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); saveLayout(); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup',   onUp);
   });
@@ -6656,7 +6661,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.103';
+const APP_VERSION  = '1.0.0.104';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6720,6 +6725,122 @@ function loadPrefs() {
 
 function savePrefs() {
   try { localStorage.setItem('up_settings', JSON.stringify(P)); } catch(e) {}
+}
+
+// ============================================================
+// LAYOUT PERSISTENCE
+// ============================================================
+let _savedColWidths = {};
+
+function saveLayout() {
+  try {
+    const layout = {};
+    // Panel / row flex splits
+    ['topRow','bottomRow','ddlPanel','msgPanel','resPanel','rawPanel'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.style.flex) layout[id + 'Flex'] = el.style.flex;
+    });
+    // Tree pane width
+    const treePane = document.getElementById('ddlTreePane');
+    if (treePane && treePane.style.width) layout.treePaneWidth = treePane.style.width;
+    // Hidden columns
+    const container = document.getElementById('resContainer');
+    if (container) {
+      layout.hiddenCols = ['id','desc','len','val','raw','trk']
+        .filter(c => container.classList.contains('hide-' + c));
+    }
+    // Column header widths
+    const table = document.querySelector('#resContainer table.res-tbl');
+    if (table) {
+      const cw = {};
+      ['id','desc','len','val','raw','trk'].forEach(c => {
+        const th = table.querySelector('th.th-' + c);
+        if (th && th.style.width) cw[c] = th.style.width;
+      });
+      if (Object.keys(cw).length) layout.colWidths = cw;
+    }
+    localStorage.setItem('up_layout', JSON.stringify(layout));
+  } catch(e) {}
+}
+
+function _syncColPickerCheckmarks(hiddenCols) {
+  const sel = document.getElementById('colPickerSelect');
+  if (!sel) return;
+  sel.querySelectorAll('option[data-col]').forEach(opt => {
+    const cols = opt.dataset.col.split(',');
+    const isHidden = cols.some(c => hiddenCols.includes(c));
+    opt.textContent = (isHidden ? '  ' : '✓ ') + opt.textContent.replace(/^[✓ ]+/, '');
+  });
+}
+
+function loadLayout() {
+  try {
+    const s = localStorage.getItem('up_layout');
+    if (!s) return;
+    const layout = JSON.parse(s);
+    // Panel / row flex splits
+    ['topRow','bottomRow','ddlPanel','msgPanel','resPanel','rawPanel'].forEach(id => {
+      const flex = layout[id + 'Flex'];
+      if (flex) { const el = document.getElementById(id); if (el) el.style.flex = flex; }
+    });
+    // Tree pane width
+    if (layout.treePaneWidth) {
+      const treePane = document.getElementById('ddlTreePane');
+      if (treePane) treePane.style.width = layout.treePaneWidth;
+    }
+    // Hidden columns
+    if (Array.isArray(layout.hiddenCols)) {
+      const container = document.getElementById('resContainer');
+      if (container) {
+        ['id','desc','len','val','raw','trk'].forEach(c => container.classList.remove('hide-' + c));
+        layout.hiddenCols.forEach(c => container.classList.add('hide-' + c));
+        _syncColPickerCheckmarks(layout.hiddenCols);
+      }
+    }
+    // Column widths — stored for when the parse table is built
+    if (layout.colWidths && typeof layout.colWidths === 'object') {
+      _savedColWidths = layout.colWidths;
+    }
+  } catch(e) {}
+}
+
+function _applyColWidths() {
+  const table = document.querySelector('#resContainer table.res-tbl');
+  if (!table || !Object.keys(_savedColWidths).length) return;
+  ['id','desc','len','val','raw','trk'].forEach(c => {
+    if (_savedColWidths[c]) {
+      const th = table.querySelector('th.th-' + c);
+      if (th) th.style.width = _savedColWidths[c];
+    }
+  });
+}
+
+function resetLayout() {
+  localStorage.removeItem('up_layout');
+  _savedColWidths = {};
+  // Reset panel / row flex to CSS defaults
+  ['topRow','bottomRow','ddlPanel','msgPanel','resPanel','rawPanel'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.flex = '';
+  });
+  // Reset tree pane width to CSS default (170px)
+  const treePane = document.getElementById('ddlTreePane');
+  if (treePane) treePane.style.width = '';
+  // Show all columns
+  const container = document.getElementById('resContainer');
+  if (container) {
+    ['id','desc','len','val','raw','trk'].forEach(c => container.classList.remove('hide-' + c));
+    _syncColPickerCheckmarks([]);
+  }
+  // Reset column header widths to defaults
+  const table = document.querySelector('#resContainer table.res-tbl');
+  if (table) {
+    const defaults = { id:'140px', desc:'180px', len:'44px', val:'', raw:'120px', trk:'36px' };
+    ['id','desc','len','val','raw','trk'].forEach(c => {
+      const th = table.querySelector('th.th-' + c);
+      if (th) th.style.width = defaults[c] || '';
+    });
+  }
 }
 
 function applyPrefs(updateUI = true) {
@@ -7289,6 +7410,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ---- end context menu ----
 
   loadPrefs();
+  loadLayout();
   applyPanelDefaults();
   loadTree();
   initTreePaneResizer();
@@ -7453,6 +7575,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         <div class="settings-row">
           <span class="settings-lbl" style="color:var(--text-dim);font-size:11px">Each row must keep at least one panel expanded</span>
+        </div>
+      </div>
+
+      <!-- ── LAYOUT ─────────────────────────────────── -->
+      <div class="settings-section">
+        <div class="settings-stitle">Layout</div>
+        <div class="settings-row">
+          <span class="settings-lbl" style="color:var(--text-dim);font-size:11px">Panel sizes, column widths &amp; visibility are saved automatically</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-lbl">Reset</span>
+          <button class="btn btn-sm" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
         </div>
       </div>
 

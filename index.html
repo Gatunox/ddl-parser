@@ -4502,7 +4502,7 @@ function renderFieldTable(msg) {
     const fid    = prefix ? `${prefix}::${f.id}` : f.id;
     const sel    = S.selFieldId === fid ? 'row-sel' : '';
     const ecls   = f.error ? 'c-err' : 'c-val';
-    const val    = f.value.length > 50 ? f.value.slice(0,50)+'…' : f.value;
+    const val    = f.value;
     const rHex   = (f.rawHex||'').length > 22 ? f.rawHex.slice(0,22)+'…' : (f.rawHex||'');
     const trk    = S.trackedFields.has(fid) ? 'checked' : '';
     const det    = f.detail ? `<br><span style="color:var(--text-dim);font-size:10px">${esc(f.detail)}</span>` : '';
@@ -6672,7 +6672,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.108';
+const APP_VERSION  = '1.0.0.109';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

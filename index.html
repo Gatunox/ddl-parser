@@ -6742,7 +6742,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.116';
+const APP_VERSION  = '1.0.0.117';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6943,8 +6943,8 @@ function applyPrefs(updateUI = true) {
   if (P.eggDeadFound)  _eggDeadFound  = true;
   if (P.accent && P.accent !== 'blue') _eggSetAccent(P.accent, false);
   else _syncEggAccentUI();
-  // Sync raw hex truncate button
-  if (updateUI) _syncRawHexTruncateUI();
+  // Sync raw hex truncate button (always — needed on startup to reflect saved pref)
+  _syncRawHexTruncateUI();
 }
 
 function _syncRawHexTruncateUI() {

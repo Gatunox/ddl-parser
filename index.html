@@ -4529,7 +4529,8 @@ function renderFieldTable(msg) {
     const sel    = S.selFieldId === fid ? 'row-sel' : '';
     const ecls   = f.error ? 'c-err' : 'c-val';
     const val    = f.value;
-    const rHex   = (f.rawHex||'').length > 22 ? f.rawHex.slice(0,22)+'…' : (f.rawHex||'');
+    const _rFull = f.rawHex || '';
+    const rHex   = (P.rawHexTruncate !== false) && _rFull.length > 22 ? _rFull.slice(0,22)+'…' : _rFull;
     const trk    = S.trackedFields.has(fid) ? 'checked' : '';
     const det    = f.detail ? `<br><span style="color:var(--text-dim);font-size:10px">${esc(f.detail)}</span>` : '';
     const totalLen = f.valueLength !== undefined
@@ -4577,7 +4578,7 @@ function renderFieldTable(msg) {
                                                                 : `[${x.toString(16).padStart(2,'0')}]`).join('');
           const val     = bToStr(tkn.rawBytes);
           const tknRaw  = tkn.rawHex || '';
-          const tknRHex = tknRaw.length > 22 ? tknRaw.slice(0, 22) + '…' : tknRaw;
+          const tknRHex = (P.rawHexTruncate !== false) && tknRaw.length > 22 ? tknRaw.slice(0, 22) + '…' : tknRaw;
           const tfid = `tkn::${tkn.id}`;
           const tsel = S.selFieldId === tfid ? ' row-sel' : '';
           rows += `<tr class="tkn-body-row${tsel}${tknHideCls}" data-fid="${esc(tfid)}" data-search="${esc(('tkn::'+tkn.id+' no definition found').toLowerCase())}"
@@ -6741,7 +6742,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.114';
+const APP_VERSION  = '1.0.0.115';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6790,7 +6791,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', monoSize: 11, lineWidth: 0,
+  theme: 'dark', monoSize: 11, lineWidth: 0, rawHexTruncate: true,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences
@@ -6942,6 +6943,22 @@ function applyPrefs(updateUI = true) {
   if (P.eggDeadFound)  _eggDeadFound  = true;
   if (P.accent && P.accent !== 'blue') _eggSetAccent(P.accent, false);
   else _syncEggAccentUI();
+  // Sync raw hex truncate button
+  if (updateUI) _syncRawHexTruncateUI();
+}
+
+function _syncRawHexTruncateUI() {
+  const btnT = document.getElementById('rawHexTruncOn');
+  const btnF = document.getElementById('rawHexTruncOff');
+  if (btnT) btnT.classList.toggle('s-active',  P.rawHexTruncate !== false);
+  if (btnF) btnF.classList.toggle('s-active',  P.rawHexTruncate === false);
+}
+
+function setRawHexTruncate(val) {
+  P.rawHexTruncate = val;
+  savePrefs();
+  _syncRawHexTruncateUI();
+  renderParseResults();
 }
 
 // 0 = Auto, then 68–256 in steps of 4
@@ -7636,6 +7653,14 @@ document.addEventListener('DOMContentLoaded', () => {
             <button class="btn" onclick="adjustFontSize(-1)" style="padding:2px 8px;font-size:12px" title="Decrease font size">A−</button>
             <span class="sz-label" id="szLabel">11px</span>
             <button class="btn" onclick="adjustFontSize(1)"  style="padding:2px 8px;font-size:14px" title="Increase font size">A+</button>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <span class="settings-lbl">Raw Hex</span>
+          <div class="settings-pill">
+            <button class="btn s-active" id="rawHexTruncOn"  onclick="setRawHexTruncate(true)"  title="Truncate raw hex at 22 chars">Truncate</button>
+            <button class="btn"          id="rawHexTruncOff" onclick="setRawHexTruncate(false)" title="Show full raw hex value">Full</button>
           </div>
         </div>
 

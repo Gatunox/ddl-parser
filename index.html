@@ -6669,7 +6669,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.105';
+const APP_VERSION  = '1.0.0.106';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7158,6 +7158,11 @@ function toggleHelpSub(el) {
   if (!body) return;
   const open = el.classList.toggle('open');
   body.classList.toggle('open', open);
+  // Grow outer collapsible container so it never clips expanded subsections
+  const outer = el.closest('.settings-collapsible-body');
+  if (outer && !outer.classList.contains('collapsed')) {
+    outer.style.maxHeight = outer.scrollHeight + 9999 + 'px';
+  }
 }
 
 function syncPanelSettingsUI() {

@@ -4699,14 +4699,11 @@ function renderFieldTable(msg) {
   initColResize();
   _applyColWidths();
 
-  // Show filter input whenever there are field rows; show Hide Redef button only when DDL has redefines
-  const _hasFields = (msg.fields?.length > 0) || (msg.tokens?.length > 0);
-  const _hasRedef  = msg.fields?.some(f => f.isRedefines || f.isInsideRedefines) ||
-                     msg.tokens?.some(t => t.fields?.some(f => f.isRedefines || f.isInsideRedefines));
+  // Always show filter and Hide Redef when a message is active; redef button is visually inert when no redefines present
   const _filterIn  = document.getElementById('resFilterInput');
   const _redefBtn  = document.getElementById('hideRedefBtn');
-  if (_filterIn) { _filterIn.style.display = _hasFields ? '' : 'none'; _filterIn.value = ''; }
-  if (_redefBtn) { _redefBtn.style.display = _hasRedef ? '' : 'none'; }
+  if (_filterIn) { _filterIn.style.display = ''; _filterIn.value = ''; }
+  if (_redefBtn) { _redefBtn.style.display = ''; }
   // Re-apply hide-redef class if state is active
   if (S.hideRedefines) document.getElementById('resContainer').classList.add('hide-redef');
 }
@@ -6800,7 +6797,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.136';
+const APP_VERSION  = '1.0.0.137';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

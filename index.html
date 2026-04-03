@@ -2449,17 +2449,17 @@ function openMsgExportModal() {
     const panDisp = pan;
     const type    = msg.msgType?.type || '';
     const proc    = msg.typeDesc || '';
-    const route   = msg.isNetard
-      ? `${msg.source || '?'} → ${msg.dest || '?'}`
-      : (msg.ddlPath ? msg.ddlPath.split('/').pop() : '');
+    const origin  = msg.isNetard ? (msg.source || '') : (msg.ddlPath ? msg.ddlPath.split('/').pop() : '');
+    const dest    = msg.isNetard ? (msg.dest || '') : '';
     const time    = msg.time || msg.timestamp || '';
     const size    = msg.isNetard ? msg.recLength : (msg.bytes?.length || 0);
-    const search  = [type, route, proc, time, size + ' B', mti, panDisp].join(' ').toLowerCase();
+    const search  = [type, origin, dest, proc, time, size + ' B', mti, panDisp].join(' ').toLowerCase();
     return `<tr data-idx="${idx}" data-search="${esc(search)}">
       <td><input type="checkbox" class="exp-chk trk-chk" data-idx="${idx}" checked onchange="expRowChange(this)"/></td>
       <td style="color:var(--text-dim)">${idx + 1}</td>
       <td>${type ? `<span class="btype btype-${type.toLowerCase()}">${esc(type)}</span>` : ''}</td>
-      <td>${esc(route)}</td>
+      <td>${esc(origin)}</td>
+      <td>${esc(dest)}</td>
       <td>${esc(proc)}</td>
       <td>${esc(time)}</td>
       <td>${size} B</td>
@@ -2474,7 +2474,8 @@ function openMsgExportModal() {
         <th><input type="checkbox" id="expSelAll" class="trk-chk" checked title="Select all" onchange="expToggleAll(this.checked)"/></th>
         <th><span class="th-label">#</span></th>
         <th><span class="th-label">Type</span></th>
-        <th><span class="th-label">Origin → Dest</span></th>
+        <th><span class="th-label">Origin</span></th>
+        <th><span class="th-label">Dest</span></th>
         <th><span class="th-label">Process</span></th>
         <th><span class="th-label">Date &amp; Time</span></th>
         <th><span class="th-label">Size</span></th>
@@ -2528,7 +2529,9 @@ function doMsgExport() {
     // Header line
     const type  = msg.msgType?.type || '';
     const proc  = msg.typeDesc || '';
-    const route = msg.isNetard ? `${msg.source || '?'} → ${msg.dest || '?'}` : (msg.ddlPath || '');
+    const origin = msg.isNetard ? (msg.source || '') : (msg.ddlPath || '');
+    const dest   = msg.isNetard ? (msg.dest || '') : '';
+    const route  = dest ? `${origin} → ${dest}` : origin;
     const time  = msg.time || msg.timestamp || '';
     const size  = msg.isNetard ? msg.recLength : (msg.bytes?.length || 0);
     const mti   = _msgMti(msg);
@@ -6772,7 +6775,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.130';
+const APP_VERSION  = '1.0.0.131';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

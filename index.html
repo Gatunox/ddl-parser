@@ -5377,6 +5377,7 @@ function triggerDeadC0DE() {
 
   // Unlock Green accent option in Settings and auto-switch to it
   _eggDeadFound = true;
+  P.eggDeadFound = true; P.eggDiscovered = true; savePrefs();
   _eggSetAccent('green');
 
   const flood  = document.getElementById('eggFlood');
@@ -5425,7 +5426,7 @@ const _EGG_PALETTES = {
   green:  { accent: '#3fb950',   hover: 'rgba(63,185,80,0.25)'    },
 };
 
-function _eggSetAccent(color) {
+function _eggSetAccent(color, save = true) {
   const p = _EGG_PALETTES[color] || _EGG_PALETTES.blue;
   // Must override both <html> (dark theme) and <body> (light theme redefines --accent on body.light)
   for (const el of [document.documentElement, document.body]) {
@@ -5440,6 +5441,7 @@ function _eggSetAccent(color) {
     }
   }
   _eggAccent = color;
+  if (save) { P.accent = color; savePrefs(); }
   _syncEggAccentUI();
 }
 
@@ -5472,6 +5474,7 @@ function _syncEggAccentUI() {
     if (_eggClicks >= 3) {
       _eggClicks = 0;
       _eggDiscovered = true;   // unlock the Accent Color toggle permanently
+      P.eggDiscovered = true; savePrefs();
       closeSettings();
       const built = new Date(document.lastModified);
       const ds = built.getFullYear() > 2000
@@ -6669,7 +6672,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.106';
+const APP_VERSION  = '1.0.0.107';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6865,6 +6868,11 @@ function applyPrefs(updateUI = true) {
     });
     _lwUpdateDisplay();
   }
+  // Restore egg / accent state
+  if (P.eggDiscovered) _eggDiscovered = true;
+  if (P.eggDeadFound)  _eggDeadFound  = true;
+  if (P.accent && P.accent !== 'blue') _eggSetAccent(P.accent, false);
+  else _syncEggAccentUI();
 }
 
 // 0 = Auto, then 68–256 in steps of 4

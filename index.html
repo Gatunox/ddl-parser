@@ -649,6 +649,16 @@ body.light .trk-chk { color-scheme: light; }
 }
 #toast.toast-show { opacity: 1; }
 
+#cellTooltip {
+  position: fixed; z-index: 19999; display: none; pointer-events: none;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  color: var(--text); font-family: var(--mono); font-size: var(--sz-mono);
+  padding: 4px 8px; border-radius: 4px;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.45);
+  max-width: 420px; word-break: break-all; white-space: pre-wrap;
+  line-height: 1.5;
+}
+
 #appLogo { cursor: default; user-select: none; }
 
 /* Easter egg — DEADC0DE flood */
@@ -4525,8 +4535,8 @@ function renderFieldTable(msg) {
       <td class="c-id">${esc(f.id)}${redefMark}</td>
       <td class="c-desc" title="${esc(descTip)}">${esc(f.description)}${det}</td>
       <td class="c-len">${lenCell}</td>
-      <td class="${ecls}" title="${esc(f.value)}">${prefixHtml}${esc(val)}</td>
-      <td class="c-raw" title="${esc(f.rawHex||'')}">${rHex}</td>
+      <td class="${ecls}" data-tip="${esc(f.value)}">${prefixHtml}${esc(val)}</td>
+      <td class="c-raw" data-tip="${esc(f.rawHex||'')}">${rHex}</td>
       <td class="c-trk" style="text-align:center">
         <input type="checkbox" class="trk-chk" ${trk}
           onclick="event.stopPropagation();toggleTrack('${esc(fid)}',this.checked)"/>
@@ -4760,6 +4770,41 @@ function selectField(fid) {
   clearRawHL('hb-hover');
   applyRawHL(fid, 'hb-selected');
   renderInputOverlay();
+}
+
+// ── Cell tooltip (replaces unreliable native title on value/raw cells) ──────
+function _showCellTip(e, text) {
+  if (!text) return;
+  const tip = document.getElementById('cellTooltip');
+  if (!tip) return;
+  tip.textContent = text;
+  tip.style.display = 'block';
+  _positionCellTip(e, tip);
+}
+function _positionCellTip(e, tip) {
+  tip = tip || document.getElementById('cellTooltip');
+  if (!tip || tip.style.display === 'none') return;
+  const x = e.clientX + 14, y = e.clientY + 18;
+  tip.style.left = Math.min(x, window.innerWidth  - tip.offsetWidth  - 8) + 'px';
+  tip.style.top  = Math.min(y, window.innerHeight - tip.offsetHeight - 8) + 'px';
+}
+function _hideCellTip() {
+  const tip = document.getElementById('cellTooltip');
+  if (tip) tip.style.display = 'none';
+}
+// Event delegation — attach once after DOM ready; reads data-tip from td
+function _initCellTooltip() {
+  const container = document.getElementById('resContainer');
+  if (!container) return;
+  container.addEventListener('mouseover', e => {
+    const td = e.target.closest('td[data-tip]');
+    if (!td) { _hideCellTip(); return; }
+    _showCellTip(e, td.dataset.tip);
+  });
+  container.addEventListener('mousemove', e => { _positionCellTip(e); });
+  container.addEventListener('mouseout',  e => {
+    if (!e.relatedTarget || !e.relatedTarget.closest('td[data-tip]')) _hideCellTip();
+  });
 }
 
 function hoverField(fid) {
@@ -6672,7 +6717,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.109';
+const APP_VERSION  = '1.0.0.110';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7439,6 +7484,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   loadPrefs();
   loadLayout();
+  _initCellTooltip();
   applyPanelDefaults();
   loadTree();
   initTreePaneResizer();
@@ -7510,6 +7556,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 <div id="toast"></div>
+<div id="cellTooltip"></div>
 
 <!-- ===== INLINE MODAL ===== -->
 <div class="modal-overlay hidden" id="modalOverlay">

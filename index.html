@@ -6656,7 +6656,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.102';
+const APP_VERSION  = '1.0.0.103';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6893,10 +6893,13 @@ function _ddlSrchShow(moveFocus) {
   const ta = document.getElementById('ddlEditor');
   const q = document.getElementById('ddlSearchInput').value;
   const pos = _ddlSrchMatches[_ddlSrchIdx];
-  // Scroll only if the match is outside the visible area (scroll-into-view)
+  // Apply focus/selection FIRST so browser auto-scroll fires before our override
+  if (moveFocus) { ta.focus(); ta.setSelectionRange(pos, pos + q.length); }
+  // Then apply our scroll-into-view (overrides any browser auto-scroll)
   const linesBefore = ta.value.substring(0, pos).split('\n');
-  const lineH       = parseFloat(getComputedStyle(ta).lineHeight) || 16;
-  const matchTop    = (linesBefore.length - 1) * lineH;
+  const lineH    = parseFloat(getComputedStyle(ta).lineHeight) || 16;
+  const padTop   = parseFloat(getComputedStyle(ta).paddingTop) || 0;
+  const matchTop    = padTop + (linesBefore.length - 1) * lineH;
   const matchBottom = matchTop + lineH;
   const margin      = lineH * 2;
   if (matchTop < ta.scrollTop + margin) {
@@ -6904,7 +6907,6 @@ function _ddlSrchShow(moveFocus) {
   } else if (matchBottom > ta.scrollTop + ta.clientHeight - margin) {
     ta.scrollTop = matchBottom - ta.clientHeight + margin;
   }
-  if (moveFocus) { ta.focus(); ta.setSelectionRange(pos, pos + q.length); }
   document.getElementById('ddlSearchCount').textContent =
     `${_ddlSrchIdx + 1} / ${_ddlSrchMatches.length}`;
   _ddlUpdateLinesBg();

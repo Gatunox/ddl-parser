@@ -4575,7 +4575,9 @@ function renderFieldTable(msg) {
           // Token parsed from binary but no DDL definition — show raw data as a normal row
           const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x)
                                                                 : `[${x.toString(16).padStart(2,'0')}]`).join('');
-          const val  = bToStr(tkn.rawBytes);
+          const val     = bToStr(tkn.rawBytes);
+          const tknRaw  = tkn.rawHex || '';
+          const tknRHex = tknRaw.length > 22 ? tknRaw.slice(0, 22) + '…' : tknRaw;
           const tfid = `tkn::${tkn.id}`;
           const tsel = S.selFieldId === tfid ? ' row-sel' : '';
           rows += `<tr class="tkn-body-row${tsel}${tknHideCls}" data-fid="${esc(tfid)}" data-search="${esc(('tkn::'+tkn.id+' no definition found').toLowerCase())}"
@@ -4586,7 +4588,7 @@ function renderFieldTable(msg) {
             <td class="c-desc" style="color:var(--text-dim)">No definition found</td>
             <td class="c-len">${tkn.rawBytes.length}</td>
             <td class="c-val" style="word-break:break-all" title="${esc(val)}">${esc(val)}</td>
-            <td class="c-raw" style="word-break:break-all" title="${esc(tkn.rawHex||'')}">${esc(tkn.rawHex||'')}</td>
+            <td class="c-raw" data-tip="${esc(tknRaw)}">${esc(tknRHex)}</td>
             <td class="c-trk"></td>
           </tr>`;
         } else {
@@ -6739,7 +6741,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.113';
+const APP_VERSION  = '1.0.0.114';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

@@ -943,8 +943,8 @@ body.light .trk-chk { color-scheme: light; }
 .settings-help .h-sub-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 5px 7px; margin: 3px -7px 0; border-radius: 4px; transition: background 0.1s, color 0.1s; }
 .settings-help .h-sub-toggle:hover { background: rgba(255,255,255,0.05); color: var(--text); }
 body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
-.settings-help .h-sub-arrow { font-size: calc(var(--sz-mono) - 2px); flex-shrink: 0; transition: transform 0.15s; display: inline-block; }
-.settings-help .h-sub-toggle.open .h-sub-arrow { transform: rotate(90deg); }
+.settings-help .h-sub-arrow { background: transparent; color: var(--text-dim); border: 1px solid var(--border); width: 26px; height: 20px; border-radius: 3px; font-size: calc(var(--sz-mono) + 2px); line-height: 1; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.1s; padding: 0; pointer-events: none; }
+.settings-help .h-sub-toggle.open .h-sub-arrow { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
 .settings-help .h-sub-body { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
 .settings-help .h-sub-body.open { max-height: 600px; }
 .settings-help .h-sub-body-inner { padding: 4px 0 8px; }
@@ -6799,7 +6799,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.139';
+const APP_VERSION  = '1.0.0.140';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7313,6 +7313,8 @@ function toggleHelpSub(el) {
   if (!body) return;
   const open = el.classList.toggle('open');
   body.classList.toggle('open', open);
+  const arrow = el.querySelector('.h-sub-arrow');
+  if (arrow) arrow.textContent = open ? '−' : '+';
   // Grow outer collapsible container so it never clips expanded subsections
   const outer = el.closest('.settings-collapsible-body');
   if (outer && !outer.classList.contains('collapsed')) {
@@ -7786,7 +7788,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="settings-help">
 
           <!-- 1. Getting Started -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Getting Started <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Getting Started <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ol style="padding-left:18px;margin:0">
               <li>Write or load a <strong>DDL definition</strong> in the top-left panel</li>
@@ -7797,7 +7799,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div></div>
 
           <!-- 2. DDL Definition -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Definition <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Definition <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <div style="margin:0 0 6px;padding:6px 8px;background:var(--bg-input);border-radius:4px;font-family:var(--mono);font-size:10px;line-height:1.8">
               <span style="color:var(--text-dim)">* comment line</span><br>
@@ -7813,7 +7815,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div></div>
 
           <!-- 3. DDL Tree -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Tree <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Tree <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Right-click <strong>empty area</strong> → New Volume / Import… / Export All…</li>
@@ -7825,7 +7827,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div></div>
 
           <!-- 4. Message Input -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Input <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Input <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Paste one or more messages — separate them with a <strong>blank line</strong></li>
@@ -7837,7 +7839,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div></div>
 
           <!-- 5. Message Formats -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Formats <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Formats <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li><strong>Pure hex</strong> — <code>F0200022000000...</code></li>
@@ -7849,7 +7851,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div></div>
 
           <!-- 6. Parse Results -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Parse Results <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Parse Results <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Click a row → highlights that field's bytes in the Raw hex dump</li>
@@ -7863,7 +7865,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div></div>
 
           <!-- 7. Track Mode -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Track Mode <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Track Mode <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ol style="padding-left:16px;margin:0">
               <li>Check <strong>Trk</strong> on any fields you want to compare</li>
@@ -7873,7 +7875,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div></div>
 
           <!-- 8. Export / Import -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Export / Import <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Export / Import <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li><strong>Export</strong> — saves a <code>.json</code> file; choose exactly which Volumes / Subvolumes / DDLs to include via the checklist</li>
@@ -7883,7 +7885,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div></div>
 
           <!-- 9. Layout -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Layout <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Layout <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Drag any <strong>splitter bar</strong> to resize panels horizontally or vertically</li>
@@ -7894,7 +7896,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div></div>
 
           <!-- 10. Token Maps -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Token Maps <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Token Maps <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <p style="margin:0 0 6px">Token maps link a 2-character token ID to the DDL name used to parse its data. Store them as DDL files inside the tree — the parser auto-detects them by their format.</p>
             <p style="margin:0 0 4px;font-weight:700">Supported formats:</p>

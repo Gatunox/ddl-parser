@@ -6656,7 +6656,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.101';
+const APP_VERSION  = '1.0.0.102';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -6893,10 +6893,17 @@ function _ddlSrchShow(moveFocus) {
   const ta = document.getElementById('ddlEditor');
   const q = document.getElementById('ddlSearchInput').value;
   const pos = _ddlSrchMatches[_ddlSrchIdx];
-  // scroll the textarea so the match is visible
-  const lines = ta.value.substring(0, pos).split('\n');
-  const lineH = parseFloat(getComputedStyle(ta).lineHeight) || 16;
-  ta.scrollTop = Math.max(0, (lines.length - 4) * lineH);
+  // Scroll only if the match is outside the visible area (scroll-into-view)
+  const linesBefore = ta.value.substring(0, pos).split('\n');
+  const lineH       = parseFloat(getComputedStyle(ta).lineHeight) || 16;
+  const matchTop    = (linesBefore.length - 1) * lineH;
+  const matchBottom = matchTop + lineH;
+  const margin      = lineH * 2;
+  if (matchTop < ta.scrollTop + margin) {
+    ta.scrollTop = Math.max(0, matchTop - margin);
+  } else if (matchBottom > ta.scrollTop + ta.clientHeight - margin) {
+    ta.scrollTop = matchBottom - ta.clientHeight + margin;
+  }
   if (moveFocus) { ta.focus(); ta.setSelectionRange(pos, pos + q.length); }
   document.getElementById('ddlSearchCount').textContent =
     `${_ddlSrchIdx + 1} / ${_ddlSrchMatches.length}`;

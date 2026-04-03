@@ -6797,7 +6797,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.137';
+const APP_VERSION  = '1.0.0.138';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7888,6 +7888,23 @@ document.addEventListener('DOMContentLoaded', () => {
               <li>Drag the edge of the <strong>tree pane</strong> to resize it</li>
               <li>All panel sizes, column widths, and column visibility are <strong>saved automatically</strong></li>
               <li>Go to <strong>Settings → Layout → ↺ Reset Layout</strong> to restore all defaults</li>
+            </ul>
+          </div></div>
+
+          <!-- 10. Token Maps -->
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Token Maps <span class="h-sub-arrow">▸</span></div>
+          <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 6px">Token maps link a 2-character token ID to the DDL name used to parse its data. Store them as DDL files inside the tree — the parser auto-detects them by their format.</p>
+            <p style="margin:0 0 4px;font-weight:700">Supported formats:</p>
+            <div style="margin:0 0 8px;padding:6px 8px;background:var(--bg-input);border-radius:4px;font-family:var(--mono);font-size:10px;line-height:1.8">
+              "B4" = EMV-STAT-TKN<br>
+              EMV-STAT-TKN = "B4"
+            </div>
+            <ul style="padding-left:16px;margin:0">
+              <li>Both directions are accepted — <code>"ID" = NAME</code> and <code>NAME = "ID"</code></li>
+              <li>Token IDs are exactly <strong>2 characters</strong> enclosed in double-quotes</li>
+              <li>Comments (<code>*</code> in column 1) are ignored</li>
+              <li>When the same token has both a <strong>Binary</strong> and an <strong>ASCII</strong> DDL variant (e.g. <code>EMV-STAT-TKN</code> and <code>EMV-STAT-TKNX</code>), map only the <strong>Binary name</strong> (without the <code>X</code> suffix) — the parser selects the <code>X</code> variant automatically for ISO/B24 messages</li>
             </ul>
           </div></div>
 

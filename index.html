@@ -5086,14 +5086,7 @@ function nextMsg() { if (S.curIdx < S.messages.length-1) { S.curIdx++; S.selFiel
 function updateNav() {
   const total = S.messages.length;
   const msg   = S.messages[S.curIdx];
-  let ctr;
-  if (msg?.isNetard) {
-    const tp = msg.msgType?.type ? ` · ${msg.msgType.type}` : '';
-    ctr = `<span style="color:var(--text-dim)">Rec #${msg.recNo}${tp}</span>  ${S.curIdx+1}/${total}`;
-    document.getElementById('msgCtr').innerHTML = ctr;
-  } else {
-    document.getElementById('msgCtr').textContent = `${S.curIdx+1} / ${total}`;
-  }
+  document.getElementById('msgCtr').textContent = `${S.curIdx+1} / ${total}`;
   document.getElementById('msgNav').style.display = total > 1 ? 'flex' : 'none';
   document.getElementById('trkBtn').style.display = S.trackedFields.size > 0 || S.trackMode ? 'inline-block' : 'none';
   document.getElementById('exportBtn').style.display = total > 0 ? 'inline-block' : 'none';
@@ -6780,7 +6773,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.132';
+const APP_VERSION  = '1.0.0.133';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

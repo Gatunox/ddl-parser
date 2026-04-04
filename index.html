@@ -1479,7 +1479,10 @@ function togglePanel(panelId, btnId, resizerId) {
     btn.classList.remove('is-collapsed');
     btn.title = 'Hide panel';
     if (resizer) resizer.style.display = '';
-    setTimeout(() => panel.classList.remove('panel-expanding'), 150);
+    panel.addEventListener('transitionend', function _onExp() {
+      panel.classList.remove('panel-expanding');
+      panel.removeEventListener('transitionend', _onExp);
+    });
   }
   if (panelId === 'rawPanel') _syncRawHexCol();
 }

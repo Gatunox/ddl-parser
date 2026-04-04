@@ -132,12 +132,32 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .panel.collapsed .panel-body { display: none; }
 .panel.collapsed .ddl-pane-split { display: none; }
 .panel.collapsed .panel-header {
-  border-bottom: 1px solid var(--border);
-  padding: 0;
-  justify-content: center;
+  border-bottom: none;
+  border-right: 1px solid var(--border);
+  padding: 4px 0 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   min-width: 28px;
+  height: 100%;
 }
-.panel.collapsed .panel-header > *:not(.panel-toggle) { display: none !important; }
+.panel.collapsed .panel-header > *:not(.panel-toggle):not(.panel-title) { display: none !important; }
+.panel.collapsed .panel-header .panel-title {
+  display: flex !important;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+  padding: 4px 0;
+  min-height: 0;
+}
+#ddlPanel.collapsed .panel-title { min-width: 0; }
 
 .panel-header {
   display: flex;
@@ -6800,7 +6820,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.146';
+const APP_VERSION  = '1.0.0.147';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

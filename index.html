@@ -124,10 +124,8 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
   transition: flex 0.25s ease;
 }
 /* Collapse/expand fade sequence */
-.panel > .panel-header,
-.panel > .panel-body { transition: opacity 0.1s ease; }
-.panel.panel-fading > .panel-header,
-.panel.panel-fading > .panel-body { opacity: 0; }
+.panel > * { transition: opacity 0.15s ease; }
+.panel.panel-fading > * { opacity: 0; }
 .panel.collapsed {
   flex: 0 0 28px !important;
   min-width: 0;
@@ -1493,7 +1491,7 @@ function togglePanel(panelId, btnId, resizerId) {
         if (done) return;
         done = true;
         panel.removeEventListener('transitionend', _onCollapse);
-        panel.classList.remove('panel-fading');
+        requestAnimationFrame(() => panel.classList.remove('panel-fading'));
       };
       const _onCollapse = e => {
         if (e.target !== panel || !e.propertyName.startsWith('flex-g')) return;
@@ -1501,7 +1499,7 @@ function togglePanel(panelId, btnId, resizerId) {
       };
       panel.addEventListener('transitionend', _onCollapse);
       setTimeout(finish, 500);
-    }, 120);
+    }, 200);
 
   } else {
     // EXPAND sequence:
@@ -1524,7 +1522,7 @@ function togglePanel(panelId, btnId, resizerId) {
         if (done) return;
         done = true;
         panel.removeEventListener('transitionend', _onExpand);
-        panel.classList.remove('panel-fading');
+        requestAnimationFrame(() => panel.classList.remove('panel-fading'));
       };
       const _onExpand = e => {
         if (e.target !== panel || !e.propertyName.startsWith('flex-g')) return;
@@ -1532,7 +1530,7 @@ function togglePanel(panelId, btnId, resizerId) {
       };
       panel.addEventListener('transitionend', _onExpand);
       setTimeout(finish, 500);
-    }, 120);
+    }, 200);
   }
 }
 
@@ -6907,7 +6905,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.163';
+const APP_VERSION  = '1.0.0.165';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

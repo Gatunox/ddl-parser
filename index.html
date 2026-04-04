@@ -1479,7 +1479,8 @@ function togglePanel(panelId, btnId, resizerId) {
     btn.classList.remove('is-collapsed');
     btn.title = 'Hide panel';
     if (resizer) resizer.style.display = '';
-    panel.addEventListener('transitionend', function _onExp() {
+    panel.addEventListener('transitionend', function _onExp(e) {
+      if (e.target !== panel || !e.propertyName.startsWith('flex-g')) return;
       panel.classList.remove('panel-expanding');
       panel.removeEventListener('transitionend', _onExp);
     });

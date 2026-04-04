@@ -123,6 +123,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
   flex: 1 1 50%;
   transition: flex 0.15s ease;
 }
+.panel.panel-expanding .panel-title { opacity: 0; }
 .panel.collapsed {
   flex: 0 0 auto !important;
   min-width: 0;
@@ -1472,11 +1473,13 @@ function togglePanel(panelId, btnId, resizerId) {
     if (resizer) resizer.style.display = 'none';
   } else {
     panel.classList.remove('collapsed');
+    panel.classList.add('panel-expanding');
     panel.style.flex = panel.dataset.savedFlex || '1 1 50%';
     btn.textContent = '−';
     btn.classList.remove('is-collapsed');
     btn.title = 'Hide panel';
     if (resizer) resizer.style.display = '';
+    setTimeout(() => panel.classList.remove('panel-expanding'), 150);
   }
   if (panelId === 'rawPanel') _syncRawHexCol();
 }

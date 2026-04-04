@@ -7843,6 +7843,13 @@ document.addEventListener('DOMContentLoaded', () => {
               <li>Paste or drop a <strong>message</strong> in the Message Input panel</li>
               <li>Click <strong>▶ Parse</strong> — results appear in the bottom panels</li>
             </ol>
+            <br>
+            <strong>Keyboard shortcuts:</strong>
+            <ul style="padding-left:16px;margin:4px 0 0">
+              <li><kbd>← →</kbd> navigate previous / next message</li>
+              <li><kbd>↑ ↓</kbd> move selection up / down in Parse Results</li>
+              <li><kbd>Esc</kbd> closes any open modal, context menu, or search field</li>
+            </ul>
           </div></div>
 
           <!-- 2. DDL Definition -->
@@ -7857,20 +7864,31 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             Field types: <code>FIXED</code> <code>LLVAR</code> <code>LLLVAR</code> <code>BMP</code><br>
             Lines starting with <code>*</code> are comments.<br><br>
-            <strong>Search bar</strong> — type to find fields; use <strong>&lt; &gt;</strong> to step through matches. Matching lines are highlighted in the editor.<br><br>
-            <strong>Drag &amp; drop</strong> — drop a DDL text file onto the editor to preview it, then click <strong>Save</strong> to store it in the tree.
+            <ul style="padding-left:16px;margin:0">
+              <li><strong>Scope path</strong> — the header shows the active Vol / SV / DDL; selecting a node in the tree sets the parse scope</li>
+              <li><strong>Search bar</strong> — type to find fields; use <strong>&lt; &gt;</strong> to step through matches (<kbd>Enter</kbd> / <kbd>Esc</kbd> to clear); matching lines are highlighted in the editor</li>
+              <li><strong>Save</strong> — stores the current editor content into the selected tree node; enabled only when content has changed</li>
+              <li><strong>Clear</strong> — wipes the editor</li>
+              <li><strong>Copy (⎘)</strong> — copies all DDL content to the clipboard as plain text</li>
+              <li><strong>Drag &amp; drop</strong> — drop a DDL text file onto the editor to preview it, then click <strong>Save</strong> to store it in the tree</li>
+              <li><strong>Validation bar</strong> — appears below the editor; shows errors, warnings, and unresolved TYPE references with &lt; &gt; navigation and a copy button</li>
+              <li>Tree nodes show <strong>✖ / ⚠ badges</strong> for errors and warnings; a <em>Missing References</em> section appears automatically for unresolved TYPEs</li>
+            </ul>
           </div></div>
 
           <!-- 3. DDL Tree -->
           <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Tree <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
+              <li><strong>Filter box</strong> — type to narrow volumes / subvolumes / DDLs by name; <kbd>Esc</kbd> to clear</li>
+              <li>Click a <strong>chevron</strong> to expand or collapse a Volume or Subvolume</li>
+              <li>Click a <strong>DDL name</strong> to set it as the active parse scope (highlighted in accent color)</li>
               <li>Right-click <strong>empty area</strong> → New Volume / Import… / Export All…</li>
-              <li>Right-click <strong>Volume</strong> → New Subvolume / Rename / Copy / Export… / Delete</li>
-              <li>Right-click <strong>Subvolume</strong> → New DDL / Rename / Copy / Export… / Delete</li>
+              <li>Right-click <strong>Volume</strong> → New Subvolume / Rename / Copy / Paste / Export… / Delete</li>
+              <li>Right-click <strong>Subvolume</strong> → New DDL / Rename / Copy / Paste / Export… / Delete</li>
               <li>Right-click <strong>DDL</strong> → Rename / Copy / Export… / Delete</li>
-            </ul><br>
-            Drop a <code>.json</code> export file onto the tree pane to import it directly.
+              <li>Drop a <code>.json</code> export file onto the tree pane to import it directly</li>
+            </ul>
           </div></div>
 
           <!-- 4. Message Input -->
@@ -7878,22 +7896,27 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Paste one or more messages — separate them with a <strong>blank line</strong></li>
-              <li>ISO timestamp prefixes are auto-detected and stripped</li>
-              <li>NETARD capture files are supported (multi-record, multi-message)</li>
+              <li><strong>Format auto-detect</strong> — the parser automatically identifies the input format (Pure Hex, Spaced Hex, Tandem Dump, ASCII, NETARD, etc.) on each parse</li>
+              <li><strong>Format selector</strong> (<em>Auto</em> dropdown) — override auto-detection by selecting a specific format; the dropdown turns amber when a format is forced</li>
+              <li>ISO timestamp prefixes (<code>YYYY-MM-DD HH:MM:SS</code>) are automatically stripped and displayed separately</li>
+              <li>NETARD capture files are supported (multi-record, multi-message); a <strong>Line Width</strong> control appears in the header for NETARD input</li>
               <li>Drop any text or capture file onto the panel to load it</li>
-              <li>Use <strong>&lt; &gt;</strong> arrows in the header to navigate between messages</li>
+              <li><strong>✕ Clear</strong> button — clears all input and resets the parser</li>
+              <li>Use <strong>&lt; &gt;</strong> arrows in the header to navigate between messages when multiple are loaded</li>
+              <li>The header shows a <strong>format badge</strong> (e.g. <em>NETARD</em>, <em>HEX</em>) and a <strong>message count badge</strong> when multiple messages are present</li>
             </ul>
           </div></div>
 
           <!-- 5. Message Formats -->
           <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Formats <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 6px">The format is auto-detected on each parse. Separate multiple messages with one or more <strong>blank lines</strong>.</p>
             <ul style="padding-left:16px;margin:0">
               <li><strong>Pure hex</strong> — <code>F0200022000000...</code></li>
               <li><strong>Spaced hex</strong> — <code>F0 20 00 22 ...</code></li>
               <li><strong>Tandem dump</strong> — <code>0000: F0 F2 .. |0200|</code></li>
               <li><strong>ASCII raw</strong> — character bytes interpreted as-is</li>
-              <li><strong>NETARD capture</strong> — multi-record files with packet headers</li>
+              <li><strong>NETARD capture</strong> — multi-record files with packet headers; sub-formats (HEX, DUMP, OCT, EBCDIC, ASCII) are detected per-record</li>
             </ul>
           </div></div>
 
@@ -7901,14 +7924,18 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Parse Results <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
-              <li>Click a row → highlights that field's bytes in the Raw hex dump</li>
-              <li><strong>Filter bar</strong> — type to narrow results by field name or value</li>
+              <li>Click a row → highlights that field's bytes in the Raw hex dump and selects it (accent background)</li>
+              <li>Hover a row → previews byte highlighting without changing selection</li>
+              <li><kbd>↑ ↓</kbd> — move field selection up / down</li>
+              <li><strong>Filter bar</strong> — type to narrow results by field ID or value</li>
               <li><strong>Columns</strong> dropdown — show or hide Field, Description, Length, Value, Trk</li>
               <li><strong>Raw Hex</strong> column appears automatically when the Raw Message panel is collapsed</li>
               <li>Drag any <strong>column header edge</strong> to resize that column</li>
-              <li><strong>Show Redef</strong> button — toggle visibility of redefine fields</li>
+              <li><strong>Hide Redef</strong> button — toggle visibility of REDEFINES fields</li>
               <li><strong>Trk</strong> checkbox — mark fields you want to track across messages</li>
-              <li><strong>Double-click</strong> the panel title (e.g. <em>Rec #975415</em>) or the <strong>n / m</strong> record counter to copy all fields of the current message to the clipboard as tab-separated text (Field ID, Description, Len, Value)</li>
+              <li><strong>⊞ Track Mode</strong> button — appears when at least one Trk checkbox is checked; switches to cross-message matrix view</li>
+              <li><strong>⬇ Export</strong> button — appears when messages are parsed; opens the message export modal</li>
+              <li><strong>Double-click</strong> the panel title (e.g. <em>Rec #975415</em>) or the <strong>n / m</strong> counter to copy all fields of the current message to the clipboard as tab-separated text (Field ID, Description, Len, Value)</li>
               <li><strong>Double-click</strong> any field row to copy just that field to the clipboard</li>
             </ul>
           </div></div>
@@ -7919,17 +7946,27 @@ document.addEventListener('DOMContentLoaded', () => {
             <ol style="padding-left:16px;margin:0">
               <li>Check <strong>Trk</strong> on any fields you want to compare</li>
               <li>Click <strong>⊞ Track Mode</strong> in the Parse Results header</li>
-              <li>A cross-message matrix appears — one column per message, one row per tracked field</li>
+              <li>A cross-message matrix appears — one row per tracked field, one column per message</li>
             </ol>
+            <br>
+            <ul style="padding-left:16px;margin:0">
+              <li>Click <strong>⊞ Track Mode</strong> again to return to the normal field list</li>
+              <li>Trk selections are preserved when navigating between messages</li>
+            </ul>
           </div></div>
 
           <!-- 8. Export / Import -->
           <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Export / Import <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 4px;font-weight:700">DDL Definitions:</p>
+            <ul style="padding-left:16px;margin:0 0 8px">
+              <li><strong>Export</strong> — saves a <code>.json</code> file; choose exactly which Volumes / Subvolumes / DDLs to include via the checklist; can export a single DDL, an entire Subvolume, a Volume, or everything</li>
+              <li><strong>Import</strong> — reads a previously exported <code>.json</code>; a preview modal shows conflicts before confirming</li>
+              <li>Drop a <code>.json</code> file onto the <strong>tree pane</strong> to import it directly</li>
+            </ul>
+            <p style="margin:0 0 4px;font-weight:700">Messages:</p>
             <ul style="padding-left:16px;margin:0">
-              <li><strong>Export</strong> — saves a <code>.json</code> file; choose exactly which Volumes / Subvolumes / DDLs to include via the checklist</li>
-              <li><strong>Import</strong> — reads a previously exported <code>.json</code>; conflicts are highlighted and overwritten on confirm</li>
-              <li>Drop a <code>.json</code> file onto the <strong>tree pane</strong> to import it without going through the menu</li>
+              <li><strong>⬇ Export</strong> button in the Parse Results header — opens a modal to select and export parsed messages to a <code>.json</code> file with full field data and metadata</li>
             </ul>
           </div></div>
 
@@ -7938,8 +7975,11 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Drag any <strong>splitter bar</strong> to resize panels horizontally or vertically</li>
-              <li>Drag the edge of the <strong>tree pane</strong> to resize it</li>
-              <li>All panel sizes, column widths, and column visibility are <strong>saved automatically</strong></li>
+              <li>Drag the right edge of the <strong>tree pane</strong> to resize it</li>
+              <li>Each panel has a <strong>− toggle button</strong> to collapse it to a labeled strip; click again to expand</li>
+              <li>At least one panel per row must remain expanded</li>
+              <li><strong>Settings → Panels on Startup</strong> — set the default collapsed / expanded state for each panel at load time</li>
+              <li>All panel sizes, column widths, and column visibility are <strong>saved automatically</strong> in the browser</li>
               <li>Go to <strong>Settings → Layout → ↺ Reset Layout</strong> to restore all defaults</li>
             </ul>
           </div></div>
@@ -7957,6 +7997,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <li>Both directions are accepted — <code>"ID" = NAME</code> and <code>NAME = "ID"</code></li>
               <li>Token IDs are exactly <strong>2 characters</strong> enclosed in double-quotes</li>
               <li>Comments (<code>*</code> in column 1) are ignored</li>
+              <li>If a token is not found in any map, the record is shown as unparsed (raw bytes with the token ID)</li>
               <li>When the same token has both a <strong>Binary</strong> and an <strong>ASCII</strong> DDL variant (e.g. <code>EMV-STAT-TKN</code> and <code>EMV-STAT-TKNX</code>), map only the <strong>Binary name</strong> (without the <code>X</code> suffix) — the parser selects the <code>X</code> variant automatically for ISO/B24 messages</li>
             </ul>
           </div></div>

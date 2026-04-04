@@ -1140,7 +1140,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
         <span class="panel-title" id="resPanelTitle" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">Parse Results</span>
         <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0">
           <button class="btn" onclick="prevMsg()">&lt;</button>
-          <span id="msgCtr" class="msg-ctr">1 / 1</span>
+          <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
           <button class="btn" onclick="nextMsg()">&gt;</button>
         </div>
         <button class="btn" id="exportBtn" onclick="openMsgExportModal()" style="display:none;flex-shrink:0" title="Export messages">⬇ Export</button>
@@ -5661,6 +5661,29 @@ function copyFieldToClipboard(fid) {
   showToast(ok ? `Field ${fid} copied to clipboard` : `Field ${fid} — copy failed`);
 }
 
+// ---- Copy full parsed message to clipboard on double-click of record counter ----
+function copyMsgToClipboard() {
+  const msg = S.messages?.[S.curIdx];
+  if (!msg) return;
+  const lines = ['Field ID\tDescription\tLen\tValue'];
+  (msg.fields || []).forEach(f => {
+    const len = f.valueLength !== undefined
+      ? f.valueLength + (f.lenPrefix ? f.lenPrefix.length : 0)
+      : '';
+    lines.push(`${f.id}\t${f.description || ''}\t${len}\t${f.value || ''}`);
+  });
+  const text = lines.join('\n');
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = document.execCommand('copy');
+  document.body.removeChild(ta);
+  showToast(ok ? `✓ Message ${S.curIdx + 1} copied to clipboard` : 'Copy failed');
+}
+
 function newVolume() {
   showPrompt('New volume name:', '', v => {
     if (!v) return;
@@ -6823,7 +6846,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.147';
+const APP_VERSION  = '1.0.0.152';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

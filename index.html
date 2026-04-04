@@ -6806,21 +6806,27 @@ function loadTree() {
   } catch(e) {}
   // Seed ISO8583 default if tree is empty
   if (!Object.keys(S.ddlTree).length) {
-    S.ddlTree['SWITCH'] = { '1987': { 'Base24': ISO8583_DDL } };
+    S.ddlTree['SWITCH'] = { '1987': { 'Standard ISO': ISO8583_DDL } };
     saveTree();
   }
-  // Migration: ensure SWITCH/1987/Base24 always exists with latest DDL (BMP FIXED 16)
+  // Migration: rename SWITCH/1987/Base24 → Standard ISO
+  if (S.ddlTree['SWITCH']?.['1987']?.['Base24'] && !S.ddlTree['SWITCH']['1987']['Standard ISO']) {
+    S.ddlTree['SWITCH']['1987']['Standard ISO'] = S.ddlTree['SWITCH']['1987']['Base24'];
+    delete S.ddlTree['SWITCH']['1987']['Base24'];
+    saveTree();
+  }
+  // Migration: ensure SWITCH/1987/Standard ISO always exists with latest DDL (BMP FIXED 16)
   // Fixes old localStorage DDLs that had BMP FIXED 8 (binary bitmap) causing false field 35/36 errors
-  if (!S.ddlTree['SWITCH'] || !S.ddlTree['SWITCH']['1987'] || !S.ddlTree['SWITCH']['1987']['Base24']) {
+  if (!S.ddlTree['SWITCH'] || !S.ddlTree['SWITCH']['1987'] || !S.ddlTree['SWITCH']['1987']['Standard ISO']) {
     if (!S.ddlTree['SWITCH']) S.ddlTree['SWITCH'] = {};
     if (!S.ddlTree['SWITCH']['1987']) S.ddlTree['SWITCH']['1987'] = {};
-    S.ddlTree['SWITCH']['1987']['Base24'] = ISO8583_DDL;
+    S.ddlTree['SWITCH']['1987']['Standard ISO'] = ISO8583_DDL;
     saveTree();
   }
-  // Migration: fix field alignment (type column was at col 7, now at col 9) in stored Base24 DDL
-  if (S.ddlTree['SWITCH']?.['1987']?.['Base24'] &&
-      !S.ddlTree['SWITCH']['1987']['Base24'].includes('1        BMP')) {
-    S.ddlTree['SWITCH']['1987']['Base24'] = ISO8583_DDL;
+  // Migration: fix field alignment (type column was at col 7, now at col 9) in stored Standard ISO DDL
+  if (S.ddlTree['SWITCH']?.['1987']?.['Standard ISO'] &&
+      !S.ddlTree['SWITCH']['1987']['Standard ISO'].includes('1        BMP')) {
+    S.ddlTree['SWITCH']['1987']['Standard ISO'] = ISO8583_DDL;
     saveTree();
   }
   buildTokenMap();

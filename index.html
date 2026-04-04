@@ -1239,6 +1239,7 @@ const S = {
   ddlMsgMapRaw: '',  // raw DDLMM text content (editable source)
   ddlMsgMap:    [],  // parsed routing rules [{seq,type,msgRe,srcRe,dstRe,ddlPath,level}]
   seenTypes:    new Set(),  // message types seen this session (suppresses repeat first-encounter prompts)
+  netardRulerCol: 0,  // total column position of the ruler (left-margin + data width); set on input change
 };
 
 // ============================================================
@@ -3763,13 +3764,15 @@ function parseNetardLog(text) {
         }
       }
     } else {
-      // ── Standard format: 7-space indented raw bytes ──────────────────────────
-      // Use user-configured line width (P.lineWidth) when set; otherwise fall
-      // back to the longest observed line. Pad ALL lines including the last —
-      // NETARD truncates trailing spaces from every line, not just the final one.
-      const autoW = cur._lines.reduce((m, l) => Math.max(m, l.length), 0) || 1;
-      const W     = (P.lineWidth > 0) ? P.lineWidth : autoW;
-      const padded = cur._lines.map(line => line.padEnd(W, ' '));
+      // ── Standard format: indented raw bytes ──────────────────────────────────
+      // Line width = ruler column (user-set or auto-detected from longest textarea line)
+      // minus the left margin (number of leading spaces before data, from SOURCE/DEST).
+      // Everything beyond the ruler column is discarded — not data, not highlighted.
+      const lm  = cur.leftMargin ?? 7;
+      const rulerCol = (P.lineWidth > 0) ? P.lineWidth : S.netardRulerCol;
+      const W   = Math.max(1, rulerCol - lm);
+      // Pad short lines to W; clip long lines at W (content beyond ruler is not data).
+      const padded = cur._lines.map(line => line.slice(0, W).padEnd(W, ' '));
       rawMsg = padded.join('');
       // Declared LENGTH is authoritative: pad or trim to match.
       if (cur.length > 0 && rawMsg.length > 0) {
@@ -3782,12 +3785,13 @@ function parseNetardLog(text) {
       // Build bcm using raw positions (against the original textarea text).
       // doParseNetardLog will pad stripped trailing spaces into the textarea and
       // then rebuild each record's bcm with the correct shifted positions.
+      const lmBcm = cur.leftMargin ?? 7;
       bcm = new Array(rawMsg.length).fill(null);
       for (let b = 0; b < rawMsg.length; b++) {
         const li = Math.floor(b / W);
         const co = b % W;
         if (li < cur._lineCharStarts.length) {
-          const cs = cur._lineCharStarts[li] + 7 + co;
+          const cs = cur._lineCharStarts[li] + lmBcm + co;
           bcm[b] = { s: cs, e: cs + 1 };
         }
       }
@@ -3828,6 +3832,8 @@ function parseNetardLog(text) {
         typeDesc:  tm ? (tm[2]?.trim() || '') : '',
         source: '', sourceDet: '',
         dest:   '', destDet:   '',
+        leftMargin: null,   // leading spaces before data (detected from SOURCE/DEST indent)
+        _dataRE: null,      // cached regex for matching data lines at the detected indent
         _lines: [],
         _lineIndices: [],      // index into lines[] for each standard-format content line
         _lineCharStarts: [],   // char position of standard-format content lines
@@ -3840,8 +3846,20 @@ function parseNetardLog(text) {
 
     if (!cur) continue;
 
-    if (SRC_RE.test(line)) { const m = line.match(SRC_RE); cur.source = m[1]; cur.sourceDet = m[2]; continue; }
-    if (DST_RE.test(line)) { const m = line.match(DST_RE); cur.dest   = m[1]; cur.destDet   = m[2]; continue; }
+    if (SRC_RE.test(line)) {
+      const m = line.match(SRC_RE); cur.source = m[1]; cur.sourceDet = m[2];
+      if (cur.leftMargin === null) {
+        const lm = line.match(/^(\s+)SOURCE/); if (lm) { cur.leftMargin = lm[1].length; cur._dataRE = new RegExp(`^\\s{${cur.leftMargin}}(.+)`); }
+      }
+      continue;
+    }
+    if (DST_RE.test(line)) {
+      const m = line.match(DST_RE); cur.dest = m[1]; cur.destDet = m[2];
+      if (cur.leftMargin === null) {
+        const lm = line.match(/^(\s+)DEST/); if (lm) { cur.leftMargin = lm[1].length; cur._dataRE = new RegExp(`^\\s{${cur.leftMargin}}(.+)`); }
+      }
+      continue;
+    }
 
     // Formatted output lines (H-, A-, E-, 0-, HEXASCII) — checked before MSG_RE so that
     // continuation lines (which may also have 7+ spaces) are not mixed into standard bytes.
@@ -3861,7 +3879,7 @@ function parseNetardLog(text) {
         continue;
       }
     }
-    const mm = line.match(MSG_RE);
+    const mm = line.match(cur._dataRE || MSG_RE);
     if (mm) {
       cur._lineCharStarts.push(lineStart);   // record where this content line starts
       cur._lineIndices.push(lineIndex);      // record which lines[] entry this is
@@ -3919,7 +3937,7 @@ function doParseNetardLog(text) {
       let cum = globalExtra;
       for (let li = 0; li < rec._lineIndices.length; li++) {
         cumExtra.push(cum);
-        if (lineExtras[li] > 0) taLines[rec._lineIndices[li]] = taLines[rec._lineIndices[li]].padEnd(7 + W);
+        if (lineExtras[li] > 0) taLines[rec._lineIndices[li]] = taLines[rec._lineIndices[li]].padEnd((rec.leftMargin ?? 7) + W);
         cum += lineExtras[li];
       }
       // Rebuild bcm using padded positions
@@ -3929,7 +3947,7 @@ function doParseNetardLog(text) {
         const li = Math.floor(b / W);
         const co = b % W;
         if (li < rec._lineCharStarts.length) {
-          const cs = rec._lineCharStarts[li] + cumExtra[li] + 7 + co;
+          const cs = rec._lineCharStarts[li] + cumExtra[li] + (rec.leftMargin ?? 7) + co;
           rec.byteCharMap[b] = { s: cs, e: cs + 1 };
         }
       }
@@ -5261,7 +5279,7 @@ function updateBadges() {
   if (isNetardFmt && P.lineWidth === 0) {
     const ta = document.getElementById('msgInput');
     const detectedW = ta ? ta.value.split('\n').reduce((m, l) => Math.max(m, l.length), 0) : 0;
-    if (detectedW > 0) _lwShowAutoMarker(detectedW);
+    if (detectedW > 0) { S.netardRulerCol = detectedW; _lwShowAutoMarker(detectedW); }
   }
 }
 
@@ -7162,7 +7180,7 @@ function _lwUpdateDisplay() {
     const isVisible = widget && !widget.classList.contains('hidden');
     if (isVisible && ta && ta.value.trim()) {
       const dw = ta.value.split('\n').reduce((m, l) => Math.max(m, l.length), 0);
-      if (dw > 0) { _lwShowAutoMarker(dw); return; }
+      if (dw > 0) { S.netardRulerCol = dw; _lwShowAutoMarker(dw); return; }
     }
     _lwUpdateRuler(); // hides marker
   }

@@ -467,6 +467,17 @@ body.light .msg-hl-wrap:has(textarea[readonly]){ background: #f0f2f5; }
   box-sizing: border-box;
 }
 .msg-hl-overlay::-webkit-scrollbar { display: none; }  /* Chrome/Safari */
+/* Line-width column marker */
+#lwColMarker {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--accent);
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 2;
+}
+#lwColMarker.hidden { display: none; }
 .msg-hl-overlay mark {
   border-radius: 2px;
   color: #ffffff;   /* highlighted text is full white */
@@ -1123,6 +1134,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
       <div class="panel-body" style="flex-direction:row">
         <div id="msgGutter" class="msg-gutter" aria-hidden="true"></div>
         <div class="msg-hl-wrap">
+          <div id="lwColMarker" class="hidden" aria-hidden="true"></div>
           <div id="msgInputOverlay" class="msg-hl-overlay" aria-hidden="true"></div>
           <textarea id="msgInput" spellcheck="false" oninput="onMsgChange()"
             placeholder="Paste one or more messages here, or drop a file.&#10;&#10;Accepted formats:&#10;  • NETARD audit log  (auto-detected — all records extracted)&#10;  • Pure hex:         F0200F220000...&#10;  • Hex with spaces:  F0 22 00 38...&#10;  • Tandem hex dump:  0000: F0 F2 ... |0200..|&#10;  • ASCII raw bytes&#10;&#10;Multiple messages: separate with blank lines&#10;or timestamps will be auto-detected from logs.&#10;&#10;This field locks after Parse is clicked."></textarea>
@@ -6905,7 +6917,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.166';
+const APP_VERSION  = '1.0.0.167';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7134,6 +7146,27 @@ const _LW_PRESETS = [0, ...Array.from({length: (256-68)/4+1}, (_,i) => 68 + i*4)
 function _lwUpdateDisplay() {
   const el = document.getElementById('lwDisplay');
   if (el) el.textContent = P.lineWidth > 0 ? String(P.lineWidth) : 'Auto';
+  _lwUpdateRuler();
+}
+
+function _lwUpdateRuler() {
+  const marker = document.getElementById('lwColMarker');
+  const ta     = document.getElementById('msgInput');
+  if (!marker || !ta) return;
+  const w = P.lineWidth;
+  if (w <= 0) { marker.classList.add('hidden'); return; }
+
+  // Measure monospace char width using a temporary span
+  const probe = document.createElement('span');
+  probe.style.cssText = `position:absolute;visibility:hidden;font-family:${getComputedStyle(ta).fontFamily};font-size:${getComputedStyle(ta).fontSize};white-space:pre`;
+  probe.textContent = 'X'.repeat(10);
+  document.body.appendChild(probe);
+  const charW = probe.getBoundingClientRect().width / 10;
+  document.body.removeChild(probe);
+
+  const pad  = parseFloat(getComputedStyle(ta).paddingLeft) || 8;
+  marker.style.left = (pad + w * charW) + 'px';
+  marker.classList.remove('hidden');
 }
 
 function _lwSetVisible(show) {
@@ -7144,6 +7177,7 @@ function _lwSetVisible(show) {
     P.lineWidth = 0;
     savePrefs(); _lwUpdateDisplay();
   }
+  if (!show) _lwUpdateRuler();
 }
 
 function lwStartEdit() {

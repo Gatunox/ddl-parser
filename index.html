@@ -123,7 +123,11 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
   flex: 1 1 50%;
   transition: flex 0.15s ease;
 }
-.panel.panel-expanding .panel-header > * { opacity: 0; }
+/* Collapse/expand fade sequence */
+.panel > .panel-header,
+.panel > .panel-body { transition: opacity 0.1s ease; }
+.panel.panel-fading > .panel-header,
+.panel.panel-fading > .panel-body { opacity: 0; }
 .panel.collapsed {
   flex: 0 0 auto !important;
   min-width: 0;
@@ -1448,9 +1452,13 @@ function initVResizer(resizerId, topRowId, bottomRowId) {
 const _panelSibling = { ddlPanel:'msgPanel', msgPanel:'ddlPanel', resPanel:'rawPanel', rawPanel:'resPanel' };
 
 function togglePanel(panelId, btnId, resizerId) {
-  const panel    = document.getElementById(panelId);
-  const btn      = document.getElementById(btnId);
-  const resizer  = document.getElementById(resizerId);
+  const panel   = document.getElementById(panelId);
+  const btn     = document.getElementById(btnId);
+  const resizer = document.getElementById(resizerId);
+
+  // Guard: ignore clicks while an animation is in progress
+  if (panel.classList.contains('panel-fading')) return;
+
   const isCollapsing = !panel.classList.contains('collapsed');
 
   if (isCollapsing) {
@@ -1463,29 +1471,69 @@ function togglePanel(panelId, btnId, resizerId) {
         return;
       }
     }
-    // Save current flex size before collapsing
-    panel.dataset.savedFlex = panel.style.flex || '';
-    panel.style.flex = '';
-    panel.classList.add('collapsed');
-    btn.textContent = '+';
-    btn.classList.add('is-collapsed');
-    btn.title = 'Show panel';
-    if (resizer) resizer.style.display = 'none';
+
+    // COLLAPSE sequence:
+    // Step 1 — fade out expanded content (header + body)
+    panel.classList.add('panel-fading');
+
+    setTimeout(() => {
+      // Step 2 — apply collapsed state so flex transition begins (border moves)
+      panel.dataset.savedFlex = panel.style.flex || '';
+      panel.style.flex = '';
+      panel.classList.add('collapsed');
+      btn.textContent = '+';
+      btn.classList.add('is-collapsed');
+      btn.title = 'Show panel';
+      if (resizer) resizer.style.display = 'none';
+      if (panelId === 'rawPanel') _syncRawHexCol();
+
+      // Step 3 — wait for flex animation to finish, then fade in vertical title
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        panel.removeEventListener('transitionend', _onCollapse);
+        panel.classList.remove('panel-fading');
+      };
+      const _onCollapse = e => {
+        if (e.target !== panel || !e.propertyName.startsWith('flex-g')) return;
+        finish();
+      };
+      panel.addEventListener('transitionend', _onCollapse);
+      setTimeout(finish, 400);
+    }, 100);
+
   } else {
-    panel.classList.remove('collapsed');
-    panel.classList.add('panel-expanding');
-    panel.style.flex = panel.dataset.savedFlex || '1 1 50%';
-    btn.textContent = '−';
-    btn.classList.remove('is-collapsed');
-    btn.title = 'Hide panel';
-    if (resizer) resizer.style.display = '';
-    panel.addEventListener('transitionend', function _onExp(e) {
-      if (e.target !== panel || !e.propertyName.startsWith('flex-g')) return;
-      panel.classList.remove('panel-expanding');
-      panel.removeEventListener('transitionend', _onExp);
-    });
+    // EXPAND sequence:
+    // Step 1 — fade out vertical title strip (header + body while still collapsed)
+    panel.classList.add('panel-fading');
+
+    setTimeout(() => {
+      // Step 2 — remove collapsed state so flex transition begins (border moves back)
+      panel.classList.remove('collapsed');
+      panel.style.flex = panel.dataset.savedFlex || '1 1 50%';
+      btn.textContent = '−';
+      btn.classList.remove('is-collapsed');
+      btn.title = 'Hide panel';
+      if (resizer) resizer.style.display = '';
+      if (panelId === 'rawPanel') _syncRawHexCol();
+
+      // Step 3 — wait for flex animation to finish, then fade in expanded content
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        panel.removeEventListener('transitionend', _onExpand);
+        panel.classList.remove('panel-fading');
+      };
+      const _onExpand = e => {
+        if (e.target !== panel || !e.propertyName.startsWith('flex-g')) return;
+        finish();
+      };
+      panel.addEventListener('transitionend', _onExpand);
+      setTimeout(finish, 400);
+    }, 100);
   }
-  if (panelId === 'rawPanel') _syncRawHexCol();
 }
 
 function _syncRawHexCol() {
@@ -6859,7 +6907,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.152';
+const APP_VERSION  = '1.0.0.162';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

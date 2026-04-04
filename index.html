@@ -6923,7 +6923,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.170';
+const APP_VERSION  = '1.0.0.171';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7152,7 +7152,19 @@ const _LW_PRESETS = [0, ...Array.from({length: (256-68)/4+1}, (_,i) => 68 + i*4)
 function _lwUpdateDisplay() {
   const el = document.getElementById('lwDisplay');
   if (el) el.textContent = P.lineWidth > 0 ? String(P.lineWidth) : 'Auto';
-  _lwUpdateRuler();
+  if (P.lineWidth > 0) {
+    _lwUpdateRuler();
+  } else {
+    // Auto — show marker at detected width if NETARD is active
+    const ta = document.getElementById('msgInput');
+    const widget = document.getElementById('lwWidget');
+    const isVisible = widget && !widget.classList.contains('hidden');
+    if (isVisible && ta && ta.value.trim()) {
+      const dw = ta.value.split('\n').reduce((m, l) => Math.max(m, l.length), 0);
+      if (dw > 0) { _lwShowAutoMarker(dw); return; }
+    }
+    _lwUpdateRuler(); // hides marker
+  }
 }
 
 function _lwShowAutoMarker(detectedW) {

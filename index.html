@@ -235,6 +235,10 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .lw-input { width: 36px !important; background: var(--bg-deep); color: var(--text); border: 1px solid var(--accent); border-radius: 2px; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 2px; text-align: center; outline: none; line-height: 1.2; height: 1.4em; }
 .lw-reset { cursor: pointer; opacity: 0.35; padding: 0 2px; user-select: none; }
 .lw-reset:hover { opacity: 1; }
+.lw-widget.parsed .lw-step,
+.lw-widget.parsed .lw-val,
+.lw-widget.parsed .lw-reset { pointer-events: none; opacity: 0.2; cursor: default; }
+.lw-widget.parsed .lw-lbl { opacity: 0.25; }
 #fmtForceSelect:hover { border-color: var(--accent); color: var(--accent); }
 #fmtForceSelect.fmt-forced { color: var(--warning); border-color: var(--warning); }
 body.light #fmtForceSelect { background: var(--bg-deep); }
@@ -4056,6 +4060,7 @@ function doParseNetardLog(text) {
   const _topFmt = Object.entries(_nfCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'standard';
   S.inputFormat   = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' }[_topFmt] || 'netard';
   syncParseBtn();
+  _lwSetParsed(true);
 
   document.getElementById('msgInput').readOnly = true;
   updateBadges();
@@ -4627,6 +4632,7 @@ function clearAll() {
 
   document.getElementById('fmtBadge').innerHTML = '';
   document.getElementById('cntBadge').innerHTML = '';
+  _lwSetParsed(false);
   _lwSetVisible(false);
   document.getElementById('msgNav').style.display = 'none';
   document.getElementById('trkBtn').style.display = 'none';
@@ -6942,7 +6948,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.173';
+const APP_VERSION  = '1.0.0.174';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7230,6 +7236,11 @@ function _lwSetVisible(show) {
     savePrefs(); _lwUpdateDisplay();
   }
   _lwUpdateRuler();
+}
+
+function _lwSetParsed(on) {
+  const w = document.getElementById('lwWidget');
+  if (w) w.classList.toggle('parsed', on);
 }
 
 function lwStartEdit() {

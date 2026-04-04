@@ -1081,7 +1081,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
             <div id="ddlEditorOverlay" class="ddl-hl-overlay" aria-hidden="true"></div>
             <div id="ddlSrchCurMark" class="ddl-srch-cur-layer" aria-hidden="true"></div>
           <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onkeydown="if(event.key==='Tab'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd;this.value=this.value.slice(0,s)+'    '+this.value.slice(e);this.selectionStart=this.selectionEnd=s+4;updateDDLEditorState();updateDDLHighlight();}" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}const g=document.getElementById('ddlGutterInner');if(g){g.style.transform='translateY('+(-this.scrollTop)+'px)';}"
-            placeholder="* DDL Definition — two formats supported:&#10;*&#10;* ── Simple (ISO 8583) ───────────────────────────────&#10;* FIELD_ID  TYPE  LENGTH  &quot;Description&quot;&#10;* Types:  FIXED  LLVAR  LLLVAR  BMP&#10;* IDs:    MTI  BMP  or field number 1–128&#10;*&#10;* ── HPE DDL (NonStop / Tandem) ──────────────────────&#10;* DEF message-name.&#10;*   02 field-name  PIC X(n).&#10;*   02 num-field   PIC 9(n) COMP.&#10;*   02 bin-field   TYPE BINARY 16.&#10;*   02 group.&#10;*     03 sub-field PIC X(5).&#10;* END.&#10;*&#10;* Select or create a DDL in the tree on the left,&#10;* or drop a .ddl / .txt file here to load it."></textarea>
+            placeholder="DDL Definition — two formats supported:&#10;&#10;── Simple (ISO 8583) ───────────────────────────────&#10;FIELD_ID  TYPE  LENGTH  &quot;Description&quot;&#10;Types:  FIXED  LLVAR  LLLVAR  BMP&#10;IDs:    MTI  BMP  or field number 1–128&#10;&#10;── HPE DDL (NonStop / Tandem) ──────────────────────&#10;DEF message-name.&#10;  02 field-name  PIC X(n).&#10;  02 num-field   PIC 9(n) COMP.&#10;  02 bin-field   TYPE BINARY 16.&#10;  02 group.&#10;    03 sub-field PIC X(5).&#10;END.&#10;&#10;Select or create a DDL in the tree on the left,&#10;or drop a .ddl / .txt file here to load it."></textarea>
           </div></div>
         </div>
       </div>
@@ -6093,7 +6093,7 @@ function _suggestTypeMapping(type, label, ddlPath) {
 }
 
 const DDL_EDITOR_PLACEHOLDER =
-`# DDL Definition — two formats supported:\n#\n# ── Simple (ISO 8583) ───────────────────────────────\n# FIELD_ID  TYPE  LENGTH  "Description"\n# Types:  FIXED  LLVAR  LLLVAR  BMP\n# IDs:    MTI  BMP  or field number 1–128\n#\n# ── HPE DDL (NonStop / Tandem) ──────────────────────\n# DEF message-name.\n#   02 field-name  PIC X(n).\n#   02 num-field   PIC 9(n) COMP.\n#   02 bin-field   TYPE BINARY 16.\n#   02 group.\n#     03 sub-field PIC X(5).\n# END.\n#\n# Select or create a DDL in the tree on the left,\n# or drop a .ddl / .txt file here to load it.`;
+`DDL Definition — two formats supported:\n\n── Simple (ISO 8583) ───────────────────────────────\nFIELD_ID  TYPE  LENGTH  "Description"\nTypes:  FIXED  LLVAR  LLLVAR  BMP\nIDs:    MTI  BMP  or field number 1–128\n\n── HPE DDL (NonStop / Tandem) ──────────────────────\nDEF message-name.\n  02 field-name  PIC X(n).\n  02 num-field   PIC 9(n) COMP.\n  02 bin-field   TYPE BINARY 16.\n  02 group.\n    03 sub-field PIC X(5).\nEND.\n\nSelect or create a DDL in the tree on the left,\nor drop a .ddl / .txt file here to load it.`;
 
 
 function restoreDDLPlaceholder() {
@@ -6905,7 +6905,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.165';
+const APP_VERSION  = '1.0.0.166';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

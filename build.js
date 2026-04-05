@@ -82,6 +82,8 @@ const result = JavaScriptObfuscator.obfuscate(jsSource, {
 const obfuscatedCode = result.getObfuscatedCode()
   // Strip the sourceMappingURL comment so the browser can't find the map
   .replace(/\n?\/\/# sourceMappingURL=.*$/m, '')
+  // Escape </script> so the HTML parser doesn't close the tag prematurely
+  .replace(/<\/script>/gi, '<\\/script>')
   // Escape </script> inside string literals so the HTML parser doesn't terminate the block early
   .replace(/<\/script>/gi, '<\\/script>');
 

@@ -81,16 +81,15 @@ const result = JavaScriptObfuscator.obfuscate(jsSource, {
 
 const obfuscatedCode = result.getObfuscatedCode()
   // Strip the sourceMappingURL comment so the browser can't find the map
-  .replace(/\n?\/\/# sourceMappingURL=.*$/m, '')
-  // Escape </script> so the HTML parser doesn't close the tag prematurely
-  .replace(/<\/script>/gi, '<\\/script>')
-  // Escape </script> inside string literals so the HTML parser doesn't terminate the block early
-  .replace(/<\/script>/gi, '<\\/script>');
+  .replace(/\n?\/\/# sourceMappingURL=.*$/m, '');
 
 const sourceMap = result.getSourceMap();
 
 // ── write output ───────────────────────────────────────────────────────────
-const outHtml = html.replace(fullMatch, `${openTag}\n${obfuscatedCode}\n${closeTag}`);
+// Use a function replacement to prevent $ signs in obfuscated code being
+// interpreted as special replacement patterns (e.g. $& would re-insert the
+// original match, which contains </script>, breaking the HTML structure).
+const outHtml = html.replace(fullMatch, () => `${openTag}\n${obfuscatedCode}\n${closeTag}`);
 fs.writeFileSync(OUT,  outHtml,   'utf8');
 fs.writeFileSync(MAP,  sourceMap, 'utf8');
 

@@ -9,10 +9,9 @@ const path = require('path');
 const JavaScriptObfuscator = require('javascript-obfuscator');
 
 // ── paths ──────────────────────────────────────────────────────────────────
-const SRC  = path.join(__dirname, 'index.html');
-const DIST = path.join(__dirname, 'dist');
-const OUT  = path.join(DIST, 'index.html');
-const MAP  = path.join(DIST, 'index.js.map');   // kept private, never deploy
+const SRC  = path.join(__dirname, 'source.html');  // development source — gitignored
+const OUT  = path.join(__dirname, 'index.html');   // obfuscated output — committed to repo
+const MAP  = path.join(__dirname, 'index.js.map'); // source map — gitignored, never deploy
 
 // ── global names called from onclick / onchange / etc. ────────────────────
 // These are referenced as bare identifiers in HTML attributes and must not
@@ -87,8 +86,6 @@ const obfuscatedCode = result.getObfuscatedCode()
 const sourceMap = result.getSourceMap();
 
 // ── write output ───────────────────────────────────────────────────────────
-if (!fs.existsSync(DIST)) fs.mkdirSync(DIST, { recursive: true });
-
 const outHtml = html.replace(fullMatch, `${openTag}\n${obfuscatedCode}\n${closeTag}`);
 fs.writeFileSync(OUT,  outHtml,   'utf8');
 fs.writeFileSync(MAP,  sourceMap, 'utf8');
@@ -98,7 +95,6 @@ const outKB  = Math.round(fs.statSync(OUT).size / 1024);
 const mapKB  = Math.round(fs.statSync(MAP).size / 1024);
 
 console.log(`\nDone!`);
-console.log(`  Source : index.html          ${srcKB} KB`);
-console.log(`  Output : dist/index.html     ${outKB} KB`);
-console.log(`  Map    : dist/index.js.map   ${mapKB} KB  (keep private)`);
-console.log(`\nDeploy only: dist/index.html`);
+console.log(`  Source : source.html    ${srcKB} KB  (gitignored)`);
+console.log(`  Output : index.html     ${outKB} KB  (commit this)`);
+console.log(`  Map    : index.js.map   ${mapKB} KB  (gitignored — keep private)`);

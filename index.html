@@ -1690,57 +1690,28 @@ function parseHPEDDL(text, externalDefs, externalSections) {
       // Prefix defs: non-REDEFINES fields before the MTI, in order
       const prefixDefs = leafIdx.slice(0, bmpLeafPos - 1).map(i => out[i]);
 
-      // Data elements — two-pass approach:
-      //
-      // Pass 1: use non-REDEFINES fields only (leafIdx) to create elements and
-      //         assign bit numbers.  This prevents top-level REDEFINES fields
-      //         (02 ALT REDEFINES ORIG) from generating phantom elements that
-      //         shift all subsequent bit→element mappings.
-      //
-      // Pass 2: fold REDEFINES leaf fields into the element whose key matches,
-      //         so alternate views of DATA sub-fields are available for display.
-      //
+      // Build data elements: one element per unique top-level key (bmpDepth),
+      // collecting all sub-fields (plain and REDEFINES) in declaration order.
       //   e.g. bitmap id = 'ISOPSEM.PRI-BIT-MAP'  → bmpDepth = 2
-      //   'ISOPSEM.PAN.LEN'                → key 'ISOPSEM.PAN'       → DE-2
-      //   'ISOPSEM.PAN.DATA'               → key 'ISOPSEM.PAN'       → DE-2
-      //   'ISOPSEM.PROC-CDE.TRAN-CDE'     → key 'ISOPSEM.PROC-CDE'  → DE-3
-      //   'ISOPSEM.TRAN-AMT'              → key 'ISOPSEM.TRAN-AMT'  → DE-4
+      //   'ISOPSEM.PAN.LEN'            → key 'ISOPSEM.PAN'      → DE-2
+      //   'ISOPSEM.PAN.DATA'           → key 'ISOPSEM.PAN'      → DE-2
+      //   'ISOPSEM.PROC-CDE.TRAN-CDE' → key 'ISOPSEM.PROC-CDE' → DE-3
+      //   'ISOPSEM.TRAN-AMT'          → key 'ISOPSEM.TRAN-AMT' → DE-4
       const bmpDepth    = out[bmpOutIdx].id.split('.').length;
-      const dataStartOI = leafIdx[dataStartLeaf] ?? out.length;
-
-      // Pass 1: non-REDEFINES only → correct bit numbering
-      const dataElements  = [];
-      const deKeyToElem   = new Map();
+      const dataElements = [];
       let deKey = null, deElem = null;
-      for (const i of leafIdx.slice(dataStartLeaf)) {
-        const f   = out[i];
+      for (let oi = (leafIdx[dataStartLeaf] ?? out.length); oi < out.length; oi++) {
+        const f   = out[oi];
         const key = f.id.split('.').slice(0, bmpDepth).join('.');
         if (key !== deKey) {
           deElem = { bitNum: dataElements.length + 2, id: key, subFields: [] };
           dataElements.push(deElem);
-          deKeyToElem.set(key, deElem);
           deKey = key;
         }
         deElem.subFields.push({
           id: f.id, length: f.length, description: f.description,
-          offset: f.offset, isRedefines: false
+          offset: f.offset, isRedefines: f.isRedefines
         });
-      }
-
-      // Pass 2: fold REDEFINES fields into their parent element (same key)
-      for (let oi = dataStartOI; oi < out.length; oi++) {
-        const f = out[oi];
-        if (!f.isRedefines) continue;
-        const key  = f.id.split('.').slice(0, bmpDepth).join('.');
-        const elem = deKeyToElem.get(key);
-        if (elem) {
-          elem.subFields.push({
-            id: f.id, length: f.length, description: f.description,
-            offset: f.offset, isRedefines: true
-          });
-        }
-        // Top-level REDEFINES with unknown key are skipped — they are alternate
-        // views of an element as a whole and do not consume new bit positions.
       }
 
       // Post-process: detect implicit LLVAR (LEN+DATA pattern) and compute totalLength
@@ -7747,7 +7718,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.209';
+const APP_VERSION  = '1.0.0.210';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

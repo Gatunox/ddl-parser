@@ -1721,7 +1721,7 @@ function parseHPEDDL(text, externalDefs, externalSections) {
         const second   = plain[1];
         const lastName = sf => sf.id.split('.').pop().toUpperCase();
         if (first  && /(?:^|[-_])LEN$/.test(lastName(first))  &&
-            (first.length === 2 || first.length === 3 || first.length === 4) &&
+            (first.length === 2 || first.length === 3) &&
             second && /(?:^|[-_])DATA$/.test(lastName(second))) {
           de.isLLVar         = true;
           de.lenBytes        = first.length;    // 2/3/4 decimal digits → LL/LLL/LLLL
@@ -7718,7 +7718,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.210';
+const APP_VERSION  = '1.0.0.211';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

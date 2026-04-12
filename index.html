@@ -6292,12 +6292,12 @@ function renderDDLTree() {
             // OR type='def' pointing to a DEF inside it (ancestor style).
             const fileContent  = !isPending ? (S.ddlTree[vol]?.[sv]?.[d] || '') : '';
             const fileDefNames = !isPending && isHPEDDLText(fileContent) ? parseDEFNames(fileContent) : [];
-            // Single-DEF files: the filename IS the DDL — no sub-nodes, badges stay on
-            // the filename node (same as old model).  Only multi-DEF files expand.
-            const showDefSubNodes = fileDefNames.length > 1;
+            // All HPE DDL files act as collapsible folders — DEF sub-nodes always rendered.
+            const showDefSubNodes = fileDefNames.length >= 1;
+            const singleDefFile   = fileDefNames.length === 1;
             const fileActive = sc?.vol === vol && sc?.sv === sv && sc?.name === d;
-            // For single-DEF files, treat type='def' scope as selected (no sub-node to highlight)
-            const dSel = (sc?.type === 'ddl' || (!showDefSubNodes && sc?.type === 'def')) && fileActive ? ' tree-sel' : '';
+            // Filename is selected only when scope type='ddl'; it's an ancestor when a DEF inside is active
+            const dSel = sc?.type === 'ddl' && fileActive ? ' tree-sel' : '';
             const dAnc = sc?.type === 'def' && showDefSubNodes && fileActive ? ' tree-anc' : '';
             const isNewEmpty = !isPending && (tree[vol]?.[sv]?.[d] || '') === '';
             const pendCls    = (isPending || isNewEmpty) ? ' tree-pending' : '';
@@ -6339,18 +6339,21 @@ function renderDDLTree() {
             const warnBadge  = (!valResult?.errors?.length && valResult?.warnings?.length)
               ? `<span class="tree-warn-badge" title="${esc(valResult.warnings.map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${valResult.warnings.length}</span>`
               : '';
+            // Single-DEF: badges belong on the DEF sub-node; Multi-DEF: file-level summary on filename
+            const fileBadges = singleDefFile ? '' : tknBadge + typeBadge + unresBadge + errBadge + warnBadge;
+            const defBadges  = singleDefFile ? tknBadge + typeBadge + unresBadge + errBadge + warnBadge : '';
             html += `<div class="tree-node${dSel}${dAnc}${pendCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
               ${fileCaret}
-              <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${tknBadge}${typeBadge}${unresBadge}${errBadge}${warnBadge}
+              <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${fileBadges}
             </div>`;
-            // ── DEF sub-nodes (only for multi-DEF HPE DDL files) ──────────────
+            // ── DEF sub-nodes (all HPE DDL files act as folders) ──────────────
             if (showDefSubNodes && fileExp) {
               for (const defName of fileDefNames) {
                 if (fq && !defName.toLowerCase().includes(fq) && !d.toLowerCase().includes(fq)) continue;
                 const defSel = sc?.type === 'def' && fileActive && sc.defName === defName ? ' tree-sel' : '';
                 html += `<div class="tree-node${defSel}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
                   <span class="tree-caret" style="visibility:hidden">−</span>
-                  <span class="tree-def-lbl" title="Jump to DEF ${esc(defName)} in ${esc(d)}">${hi(defName)}</span>
+                  <span class="tree-def-lbl" title="Jump to DEF ${esc(defName)} in ${esc(d)}">${hi(defName)}</span>${defBadges}
                 </div>`;
               }
             }
@@ -7890,7 +7893,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.219';
+const APP_VERSION  = '1.0.0.220';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

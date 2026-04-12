@@ -335,6 +335,7 @@ body.light .hl-str { color: #3a7d0a; }
 .tree-sv-lbl  { color: var(--text);     padding-left: 8px;  flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-ddl-lbl { color: var(--text); padding-left: 16px; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-pending .tree-ddl-lbl { color: #e6a817; font-style: italic; }
+.tree-def-lbl { color: var(--text-dim); padding-left: 28px; flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 11px; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(88,166,255,0.35); }
 .tree-staging-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
 .tree-missref-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: #e6a817; letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
 .tree-missref-item .tree-ddl-lbl { color: #e6a817; font-style: italic; }
@@ -363,10 +364,12 @@ body.light #ddlValidationBar.vbar-warning    { background: rgba(180,120,0,0.06);
 body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);  border-color: rgba(180,120,0,0.16);  color: #7a5500; }
 .tree-node.tree-sel .tree-vol-lbl,
 .tree-node.tree-sel .tree-sv-lbl,
-.tree-node.tree-sel .tree-ddl-lbl { color: var(--accent); }
+.tree-node.tree-sel .tree-ddl-lbl,
+.tree-node.tree-sel .tree-def-lbl { color: var(--accent); }
 .tree-node.tree-sel.tree-pending .tree-ddl-lbl { color: #e6a817; }
 .tree-node.tree-anc .tree-vol-lbl,
-.tree-node.tree-anc .tree-sv-lbl  { color: var(--accent); }
+.tree-node.tree-anc .tree-sv-lbl,
+.tree-node.tree-anc .tree-ddl-lbl { color: var(--accent); }
 .tree-cnt { font-size: var(--sz-badge); padding: 0 4px; border-radius: 8px; background: rgba(88,166,255,0.12); color: var(--accent); flex-shrink: 0; margin-left: 2px; }
 
 /* ===== DDL DOC MODAL ===== */
@@ -568,6 +571,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 .badge-locked { background: #2a1a1a; color: var(--accent2); border: 2px solid var(--accent2); }
 /* ---- token map tree badges ---- */
 .tree-dirty .tree-ddl-lbl { color: var(--warning) !important; }
+.tree-dirty .tree-def-lbl { color: var(--warning) !important; }
 .tree-tkn-map  { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; background:rgba(20,184,166,0.18); color:#2dd4bf; border:2px solid #2dd4bf; letter-spacing:0.05em; flex-shrink:0; }
 .tree-tkn-id   { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; background:rgba(148,130,255,0.18); color:#9482ff; border:2px solid #9482ff; letter-spacing:0.05em; flex-shrink:0; }
 .tree-type-badge { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; letter-spacing:0.05em; flex-shrink:0; }
@@ -1720,7 +1724,10 @@ function parseHPEDDL(text, externalDefs, externalSections) {
         const f   = out[i];
         const key = f.id.split('.').slice(0, bmpDepth).join('.');
         if (key !== deKey) {
-          deElem = { bitNum: dataElements.length + 2, id: key, subFields: [] };
+          // Bit 65 = tertiary bitmap (not declared in BASE24 DDLs — skip the slot).
+          // All secondary-bitmap elements (DE-66+) are shifted up by 1 automatically.
+          const _rawBit = dataElements.length + 2;
+          deElem = { bitNum: _rawBit >= 65 ? _rawBit + 1 : _rawBit, id: key, subFields: [] };
           dataElements.push(deElem);
           deKeyToElem.set(key, deElem);
           deKey = key;
@@ -6109,7 +6116,7 @@ function getDDLsForScope() {
     for (const d of Object.keys((tree[vol] || {})[sv] || {}).sort()) {
       results.push({ path: `${vol}/${sv}/${d}`, content: tree[vol][sv][d] });
     }
-  } else if (type === 'ddl') {
+  } else if (type === 'ddl' || type === 'def') {
     const c = ((tree[vol] || {})[sv] || {})[name];
     if (c !== undefined) results.push({ path: `${vol}/${sv}/${name}`, content: c });
   }
@@ -6164,14 +6171,27 @@ function renderDDLTree() {
 
   // When filtering, pre-build set of vols/svs that have at least one matching DDL
   let matchVols = null, matchSvs = null;
+  let matchFiles = null;   // Set of 'vol/sv/name' that match the filter
   if (fq) {
-    matchVols = new Set(); matchSvs = new Set();
+    matchVols = new Set(); matchSvs = new Set(); matchFiles = new Set();
     for (const vol of vols) {
       for (const sv of Object.keys(tree[vol] || {})) {
         for (const d of Object.keys(tree[vol][sv] || {})) {
+          const fileKey = `${vol}/${sv}/${d}`;
+          // Match on filename itself
           if (d.toLowerCase().includes(fq)) {
-            matchVols.add(vol);
-            matchSvs.add(`${vol}/${sv}`);
+            matchVols.add(vol); matchSvs.add(`${vol}/${sv}`); matchFiles.add(fileKey);
+          } else {
+            // Match on any DEF name inside the file
+            const content = tree[vol][sv][d] || '';
+            if (isHPEDDLText(content)) {
+              for (const defName of parseDEFNames(content)) {
+                if (defName.toLowerCase().includes(fq)) {
+                  matchVols.add(vol); matchSvs.add(`${vol}/${sv}`); matchFiles.add(fileKey);
+                  break;
+                }
+              }
+            }
           }
         }
         // also check pending defs
@@ -6210,7 +6230,7 @@ function renderDDLTree() {
         if (matchSvs && !matchSvs.has(svKey)) continue;   // filtered out
         const svActive = sc?.vol === vol && sc?.sv === sv;
         const svSel = sc?.type === 'sv' && svActive ? ' tree-sel' : '';
-        const svAnc = sc?.type === 'ddl' && svActive ? ' tree-anc' : '';
+        const svAnc = (sc?.type === 'ddl' || sc?.type === 'def') && svActive ? ' tree-anc' : '';
         const svExp = fq ? true : S.treeExp.has(svKey);
         const svCnt = Object.keys(tree[vol][sv] || {}).length;
         const svCaretClick = fq
@@ -6226,16 +6246,31 @@ function renderDDLTree() {
           const pendNames  = (S.pendingDefs?.vol === vol && S.pendingDefs?.sv === sv) ? S.pendingDefs.names : [];
           const allNames   = [...new Set([...savedNames, ...pendNames])].sort();
           for (const d of allNames) {
-            if (fq && !d.toLowerCase().includes(fq)) continue;   // filtered out
+            const fileKey = `${vol}/${sv}/${d}`;
+            if (matchFiles && !matchFiles.has(fileKey)) continue;   // filtered out
             const isPending  = pendNames.includes(d) && !savedNames.includes(d);
-            const dSel       = sc?.type === 'ddl' && sc.vol === vol && sc.sv === sv && sc.name === d ? ' tree-sel' : '';
+            // A filename node is "selected" if scope is type='ddl' pointing to it,
+            // OR type='def' pointing to a DEF inside it (ancestor style).
+            const fileActive = sc?.vol === vol && sc?.sv === sv && sc?.name === d;
+            const dSel       = sc?.type === 'ddl' && fileActive ? ' tree-sel' : '';
+            const dAnc       = sc?.type === 'def'  && fileActive ? ' tree-anc' : '';
             const isNewEmpty = !isPending && (tree[vol]?.[sv]?.[d] || '') === '';
             const pendCls    = (isPending || isNewEmpty) ? ' tree-pending' : '';
             const onclick = isPending
               ? `onclick="flash('Not saved yet — click Save to persist','warn')"`
               : `onclick="selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}')"`;
+            // Determine if this file has multiple DEF blocks (HPE DDL) — if so show caret
+            const fileContent  = !isPending ? (S.ddlTree[vol]?.[sv]?.[d] || '') : '';
+            const fileDefNames = !isPending && isHPEDDLText(fileContent) ? parseDEFNames(fileContent) : [];
+            const fileExp      = fq ? true : S.treeExp.has(fileKey);
+            const fileCaretClick = fq
+              ? `onclick="event.stopPropagation()"`
+              : `onclick="event.stopPropagation();toggleTreeExp('${esc(fileKey)}')"`;
+            const fileCaret    = fileDefNames.length > 0
+              ? `<span class="tree-caret" ${fileCaretClick}>${fileExp?'−':'+'}</span>`
+              : `<span class="tree-caret" style="visibility:hidden">−</span>`;
             // Token map badge: show [TKN] if this entry is a token map file
-            const isTknMap = !isPending && isTokenMapText(S.ddlTree[vol]?.[sv]?.[d] || '');
+            const isTknMap = !isPending && isTokenMapText(fileContent);
             // Token ID badge: show [XX] if this DDL name is referenced in any token map
             const tknId    = !isTknMap && S.tokenMap[d];
             const tknBadge = isTknMap
@@ -6244,28 +6279,39 @@ function renderDDLTree() {
                 ? `<span class="tree-tkn-id" title="Token ID: ${tknId}">${tknId}</span>`
                 : '';
             // Type mapping badge: show type if this DDL is the target of a ## rule
-            const mappedType = !isPending && typeMapBadges[`${vol}/${sv}/${d}`];
+            const mappedType = !isPending && typeMapBadges[fileKey];
             const typeBadge  = mappedType
               ? `<span class="tree-type-badge tbtype-${mappedType.toLowerCase()}" title="Auto type-mapping: ${mappedType}">${mappedType}</span>`
               : '';
-            const unresPaths  = S.unresolvedRefs[`${vol}/${sv}/${d}`];
-            const unresResult = S.ddlValidationResults[`${vol}/${sv}/${d}`];
+            const unresPaths  = S.unresolvedRefs[fileKey];
+            const unresResult = S.ddlValidationResults[fileKey];
             const unresCount  = unresResult?.unresolvedWarnings?.length || unresPaths?.length || 0;
             const unresTypes  = unresPaths?.join(', ') || '';
             const unresBadge  = unresCount
               ? `<span class="tree-unres-badge" title="⚠ ${unresCount} unresolved type ref${unresCount > 1 ? 's' : ''}${unresTypes ? ': ' + unresTypes : ''} — click to see list" onclick="event.stopPropagation();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{updateDDLValidationBar('${esc(vol)}/${esc(sv)}/${esc(d)}',true);document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${unresCount}</span>`
               : '';
-            const valResult  = S.ddlValidationResults[`${vol}/${sv}/${d}`];
+            const valResult  = S.ddlValidationResults[fileKey];
             const errBadge   = valResult?.errors?.length
               ? `<span class="tree-error-badge" title="${esc(valResult.errors.map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${valResult.errors.length}</span>`
               : '';
             const warnBadge  = (!valResult?.errors?.length && valResult?.warnings?.length)
               ? `<span class="tree-warn-badge" title="${esc(valResult.warnings.map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${valResult.warnings.length}</span>`
               : '';
-            html += `<div class="tree-node${dSel}${pendCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
-              <span class="tree-caret" style="visibility:hidden">−</span>
+            html += `<div class="tree-node${dSel}${dAnc}${pendCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
+              ${fileCaret}
               <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${tknBadge}${typeBadge}${unresBadge}${errBadge}${warnBadge}
             </div>`;
+            // ── DEF sub-nodes (HPE DDL files with multiple DEF blocks) ────────
+            if (fileDefNames.length > 0 && fileExp) {
+              for (const defName of fileDefNames) {
+                if (fq && !defName.toLowerCase().includes(fq) && !d.toLowerCase().includes(fq)) continue;
+                const defSel = sc?.type === 'def' && fileActive && sc.defName === defName ? ' tree-sel' : '';
+                html += `<div class="tree-node${defSel}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
+                  <span class="tree-caret" style="visibility:hidden">−</span>
+                  <span class="tree-def-lbl" title="Jump to DEF ${esc(defName)} in ${esc(d)}">${hi(defName)}</span>
+                </div>`;
+              }
+            }
           }
         }
       }
@@ -6320,31 +6366,41 @@ function toggleTreeExp(key) {
   renderDDLTree();
 }
 
-function selectScope(type, vol, sv, name) {
-  // Guard: warn before navigating to a different DDL with unsaved editor changes
-  if (type === 'ddl' && S.editorBaseline !== null) {
+function selectScope(type, vol, sv, name, defName) {
+  // Guard: warn before navigating to a different file with unsaved editor changes
+  if ((type === 'ddl' || type === 'def') && S.editorBaseline !== null) {
     const cur = document.getElementById('ddlEditor').value;
-    const isDifferentDDL = S.scope?.type !== 'ddl' || S.scope?.vol !== vol
-                        || S.scope?.sv !== sv || S.scope?.name !== name;
-    if (isDifferentDDL && cur !== S.editorBaseline) {
+    const curFile  = S.scope?.name;
+    const destFile = name;
+    const isDifferentFile = (S.scope?.type !== 'ddl' && S.scope?.type !== 'def')
+                         || S.scope?.vol !== vol || S.scope?.sv !== sv || curFile !== destFile;
+    if (isDifferentFile && cur !== S.editorBaseline) {
       showConfirm('You have unsaved changes. Discard and continue?', ok => {
-        if (ok) { S.editorBaseline = null; selectScope(type, vol, sv, name); }
+        if (ok) { S.editorBaseline = null; selectScope(type, vol, sv, name, defName); }
       });
       return;
     }
   }
 
-  S.scope = { type, vol, sv: sv || null, name: name || null };
+  S.scope = { type, vol, sv: sv || null, name: name || null, defName: defName || null };
   S.treeExp.add(vol);
   if (sv) S.treeExp.add(`${vol}/${sv}`);
+  if (name && type === 'def') S.treeExp.add(`${vol}/${sv}/${name}`);
   const ddls = getDDLsForScope();
-  if (type === 'ddl') {
+  if (type === 'ddl' || type === 'def') {
     const c = ((S.ddlTree[vol] || {})[sv] || {})[name] || '';
     document.getElementById('ddlEditor').value = c;
-    document.getElementById('ddlScopePath').textContent = `${vol} / ${sv} / ${name}`;
+    if (type === 'def' && defName) {
+      document.getElementById('ddlScopePath').textContent = `${vol} / ${sv} / ${name} / ${defName}`;
+    } else {
+      document.getElementById('ddlScopePath').textContent = `${vol} / ${sv} / ${name}`;
+    }
     S.editorBaseline = c;
     restoreDDLPlaceholder();
     updateDDLValidationBar(`${vol}/${sv}/${name}`, true);
+    if (type === 'def' && defName) {
+      setTimeout(() => _scrollEditorToDef(defName), 50);
+    }
   } else {
     updateDDLValidationBar(null);
     const label = type === 'vol' ? vol : `${vol} / ${sv}`;
@@ -6653,12 +6709,14 @@ function newDDLEntry() {
   const { vol, sv } = sc;
   if (!S.ddlTree[vol])     S.ddlTree[vol]     = {};
   if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
-  // Generate a unique placeholder name — "new ddl", "new ddl 2", "new ddl 3", …
-  let placeholder = 'new ddl';
-  let idx = 2;
-  while (S.ddlTree[vol][sv][placeholder] !== undefined) placeholder = `new ddl ${idx++}`;
-  S.ddlTree[vol][sv][placeholder] = '';
-  selectScope('ddl', vol, sv, placeholder);   // not persisted until user clicks Save
+  showPrompt('New filename:', '', rawName => {
+    if (!rawName) return;
+    const filename = rawName.trim().toUpperCase();
+    if (!filename) return;
+    if (S.ddlTree[vol][sv][filename] !== undefined) { flash('File already exists', 'warn'); return; }
+    S.ddlTree[vol][sv][filename] = '';
+    selectScope('ddl', vol, sv, filename);   // not persisted until user clicks Save
+  });
 }
 
 // Split an HPE DDL file into individual { name, content }[] definitions.
@@ -6710,6 +6768,39 @@ function splitHPEDDL(text) {
     setTimeout(() => flash('DDL validation: ' + warnings.join('; '), 'warn'), 100);
   }
   return defs;
+}
+
+// Extract only the DEF/RECORD names from an HPE DDL text (no content parsing).
+// Returns an array of definition name strings in order of appearance.
+function parseDEFNames(text) {
+  const names = [];
+  for (const line of text.split('\n')) {
+    const m = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+(?:IS\s+)?(\S+)/i);
+    if (m) {
+      let name = m[1].replace(/\.$/, '').toUpperCase();
+      if (name === 'IS') {
+        const m2 = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+IS\s+(\S+)/i);
+        if (m2) name = m2[1].replace(/\.$/, '').toUpperCase();
+      }
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+// Scroll the DDL editor textarea to the line that starts a specific DEF/RECORD block.
+function _scrollEditorToDef(defName) {
+  const ta = document.getElementById('ddlEditor');
+  if (!ta) return;
+  const text = ta.value;
+  const re = new RegExp(`^\\s*(?:DEF|DEFINITION|RECORD)\\s+(?:IS\\s+)?${defName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`, 'im');
+  const m  = re.exec(text);
+  if (!m) return;
+  ta.focus();
+  ta.setSelectionRange(m.index, m.index + m[0].length);
+  const linesBefore   = text.substring(0, m.index).split('\n').length - 1;
+  const lineHeightPx  = parseInt(getComputedStyle(ta).lineHeight) || 16;
+  ta.scrollTop = Math.max(0, (linesBefore - 2)) * lineHeightPx;
 }
 
 // Detect whether text is HPE DDL format.
@@ -7075,7 +7166,7 @@ function clearDDLEditor() {
       S.stagingActive = next.name;
       S.editorBaseline = next.content;
       document.getElementById('ddlEditor').value = next.content;
-      const destHint = S.scope && (S.scope.type === 'sv' || S.scope.type === 'ddl')
+      const destHint = S.scope && (S.scope.type === 'sv' || S.scope.type === 'ddl' || S.scope.type === 'def')
         ? `${S.scope.vol} / ${S.scope.sv} — click Save to place here`
         : `Select a Volume / Subvolume to save "${next.name}"`;
       document.getElementById('ddlScopePath').textContent = destHint;
@@ -7108,7 +7199,7 @@ function loadStagedDef(name) {
   document.getElementById('ddlEditor').value = def.content;
   // Demote scope to sv-level so no existing DDL stays highlighted as selected.
   // This prevents Save from accidentally targeting the previously-open DDL.
-  if (S.scope?.type === 'ddl') {
+  if (S.scope?.type === 'ddl' || S.scope?.type === 'def') {
     S.scope = { type: 'sv', vol: S.scope.vol, sv: S.scope.sv };
   }
   const destHint = S.scope && (S.scope.type === 'sv')
@@ -7144,7 +7235,7 @@ function createMissingRefStub(typeName) {
     S.editorBaseline = stub;   // Save disabled until user edits (adds real fields)
     document.getElementById('ddlEditor').value = stub;
     // Demote scope to sv-level so no existing DDL stays highlighted as selected.
-    if (S.scope?.type === 'ddl') {
+    if (S.scope?.type === 'ddl' || S.scope?.type === 'def') {
       S.scope = { type: 'sv', vol: S.scope.vol, sv: S.scope.sv };
     }
     const destHint = S.scope?.type === 'sv'
@@ -7193,7 +7284,7 @@ function saveDDL() {
   if (!content) { flash('Nothing to save', 'warn'); return; }
 
   let vol, sv;
-  if (sc?.type === 'ddl')     { vol = sc.vol; sv = sc.sv; }
+  if (sc?.type === 'ddl' || sc?.type === 'def') { vol = sc.vol; sv = sc.sv; }
   else if (sc?.type === 'sv') { vol = sc.vol; sv = sc.sv; }
   else { flash('Select a Volume / Subvolume first', 'warn'); return; }
 
@@ -7202,11 +7293,11 @@ function saveDDL() {
 
   // ── Token map file: lines of the form  "XX" = DDL-NAME ─────────────────
   if (isTokenMapText(content)) {
-    const newName = sc.type === 'ddl' ? sc.name : '';
+    const newName = (sc.type === 'ddl' || sc.type === 'def') ? sc.name : '';
     if (!newName) { flash('Select a DDL entry in the tree first', 'warn'); return; }
     const existing = S.ddlTree[vol][sv][newName];
     const doSaveTkn = () => {
-      if (sc.type === 'ddl' && newName !== sc.name) delete S.ddlTree[vol][sv][sc.name];
+      if ((sc.type === 'ddl' || sc.type === 'def') && newName !== sc.name) delete S.ddlTree[vol][sv][sc.name];
       S.ddlTree[vol][sv][newName] = content;
       S.pendingDefs = null;
       S.editorBaseline = content;
@@ -7240,65 +7331,25 @@ function saveDDL() {
     setTimeout(() => flash(`⚠ ${picWarnings.length} DDL warning${picWarnings.length > 1 ? 's' : ''} — ${_warnDetail}`, 'warn'), 800);
   }
 
-  // ── HPE DDL: extract names from DEF/RECORD statements ─────────────────
+  // ── HPE DDL: validate DEF blocks exist, then fall through to filename-keyed save ──
   if (isHPEDDLText(content)) {
-    const parts = splitHPEDDL(content);
-    if (!parts.length) { flash('No DEF/RECORD definitions found', 'warn'); return; }
-
-    const svStore      = S.ddlTree[vol][sv];
-    const existsAlready = parts.filter(p => svStore[p.name] !== undefined);
-    const brandNew      = parts.filter(p => svStore[p.name] === undefined);
-
-    const doSaveHPE = () => {
-      // Rename-cleanup: only when editing an existing loaded DDL (baseline set),
-      // never when saving a staged item (baseline is null → different scope's name must not be deleted).
-      if (sc.type === 'ddl' && parts.length === 1 && parts[0].name !== sc.name && S.editorBaseline !== null)
-        delete S.ddlTree[vol][sv][sc.name];
-      for (const { name, content: c } of parts) S.ddlTree[vol][sv][name] = c;
-      S.pendingDefs = null;
-      S.editorBaseline = document.getElementById('ddlEditor').value;
-      for (const { name } of parts) _removeStagedDef(name);
-      buildUnresolvedRefs();
-      saveTree();
-      S.treeExp.add(vol); S.treeExp.add(`${vol}/${sv}`);
-      const lastName = parts[parts.length - 1].name;
-      if (parts.length === 1) {
-        selectScope('ddl', vol, sv, lastName);
-      } else {
-        selectScope('sv', vol, sv);
-      }
-      const unresMsg = saveUnresolved?.length ? ` — ${saveUnresolved.length} unresolved type ref${saveUnresolved.length > 1 ? 's' : ''}` : '';
-      flash(`✓ Saved ${parts.length} definition${parts.length !== 1 ? 's' : ''} → ${vol}/${sv}${unresMsg}`);
-    };
-
-    // Any already-stored definition → ask to override (regardless of content diff).
-    // brandNew-only → save directly. Save button guards the "nothing changed" case.
-    if (existsAlready.length > 0) {
-      const amber = 'color:var(--warning);font-weight:700';
-      const nameList = existsAlready.map(p => `<span style="${amber}">${_escH(p.name)}</span>`).join(', ');
-      const verb = existsAlready.length === 1 ? 'already exists' : 'already exist';
-      showConfirmHTML(
-        `DEF ${nameList} ${verb} and will be overridden.<br>Are you sure you want to continue?`,
-        ok => { if (ok) doSaveHPE(); }
-      );
-    } else {
-      doSaveHPE();
-    }
-    return;
+    const defNames = parseDEFNames(content);
+    if (!defNames.length) { flash('No DEF/RECORD definitions found', 'warn'); return; }
+    // Fall through — whole file stored under the filename key (sc.name)
   }
 
-  // ── Simple format: use the current scope name (tree item) ─────────────
-  const newName = sc.type === 'ddl' ? sc.name : '';
+  // ── Save whole content under the current filename key ─────────────────
+  const newName = (sc.type === 'ddl' || sc.type === 'def') ? sc.name : '';
   if (!newName) { flash('Select a DDL entry in the tree first', 'warn'); return; }
 
   const existingEntry = S.ddlTree[vol][sv][newName];
 
   // Treat an in-memory empty entry (never persisted) as new — no override prompt
-  const isUnsavedNew = existingEntry === '' && sc.type === 'ddl' && sc.name === newName;
+  const isUnsavedNew = existingEntry === '' && (sc.type === 'ddl' || sc.type === 'def') && sc.name === newName;
 
   if (existingEntry === undefined || isUnsavedNew) {
     // New entry — save directly (rename-cleanup only when editing a loaded DDL, not staging)
-    if (sc.type === 'ddl' && newName !== sc.name && S.editorBaseline !== null) delete S.ddlTree[vol][sv][sc.name];
+    if ((sc.type === 'ddl' || sc.type === 'def') && newName !== sc.name && S.editorBaseline !== null) delete S.ddlTree[vol][sv][sc.name];
     S.ddlTree[vol][sv][newName] = content;
     S.pendingDefs = null;
     S.editorBaseline = content;
@@ -7315,7 +7366,7 @@ function saveDDL() {
     ok => {
     if (ok) {
       // Rename-cleanup only when editing a loaded DDL, not staging
-      if (sc.type === 'ddl' && newName !== sc.name && S.editorBaseline !== null) delete S.ddlTree[vol][sv][sc.name];
+      if ((sc.type === 'ddl' || sc.type === 'def') && newName !== sc.name && S.editorBaseline !== null) delete S.ddlTree[vol][sv][sc.name];
       S.ddlTree[vol][sv][newName] = content;
       S.pendingDefs = null;
       S.editorBaseline = content;
@@ -7343,12 +7394,12 @@ function deleteScope() {
   };
 
   // Never-saved placeholder (empty content) — delete immediately, no confirmation needed
-  const isUnsavedPlaceholder = sc.type === 'ddl'
+  const isUnsavedPlaceholder = (sc.type === 'ddl' || sc.type === 'def')
     && (S.ddlTree[sc.vol]?.[sc.sv]?.[sc.name] === '');
   if (isUnsavedPlaceholder) { doDelete(); return; }
 
-  const labels = { vol: `volume "${sc.vol}"`, sv: `subvolume "${sc.sv}"`, ddl: `DDL "${sc.name}"` };
-  showPrompt(`Type YES to delete ${labels[sc.type]} and all its contents:`, '', ans => {
+  const labels = { vol: `volume "${sc.vol}"`, sv: `subvolume "${sc.sv}"`, ddl: `file "${sc.name}"`, def: `file "${sc.name}"` };
+  showPrompt(`Type YES to delete ${labels[sc.type] || `"${sc.name}"`} and all its contents:`, '', ans => {
     if ((ans || '').toUpperCase() !== 'YES') return;
     doDelete();
   });
@@ -7406,10 +7457,11 @@ function buildCtxMenu(e) {
       items.push({ icon: '⎘', label: `Paste Volume  "${clip.vol}"`, fn: () => ctxPasteVol() });
     }
   } else {
-    const { ntype: t, vol, sv, name } = node.dataset;
+    const { ntype: t, vol, sv, name, def: defName } = node.dataset;
     // Select the clicked node first so scope is right for downstream functions
     if (t === 'vol') selectScope('vol', vol);
     else if (t === 'sv') selectScope('sv', vol, sv);
+    else if (t === 'def') selectScope('def', vol, sv, name, defName);
     else selectScope('ddl', vol, sv, name);
 
     if (t === 'vol') {
@@ -7527,7 +7579,7 @@ function ctxRenameDdl(vol, sv, name) {
     if ((S.ddlTree[vol]?.[sv] || {})[newName]) { flash('DDL already exists', 'warn'); return; }
     S.ddlTree[vol][sv][newName] = S.ddlTree[vol][sv][name];
     delete S.ddlTree[vol][sv][name];
-    if (S.scope?.type === 'ddl' && S.scope.vol === vol && S.scope.sv === sv && S.scope.name === name)
+    if ((S.scope?.type === 'ddl' || S.scope?.type === 'def') && S.scope.vol === vol && S.scope.sv === sv && S.scope.name === name)
       S.scope.name = newName;
     buildUnresolvedRefs(); saveTree(); selectScope('ddl', vol, sv, newName);
     flash(`Renamed to "${newName}"`);
@@ -7794,7 +7846,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.214';
+const APP_VERSION  = '1.0.0.215';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -7811,7 +7863,9 @@ function openFeedbackMail(type) {
   const ddlCount = Object.values(S.ddlTree).reduce((a, sv) =>
     a + Object.values(sv).reduce((b, d) => b + Object.keys(d).length, 0), 0);
   const scope    = S.scope
-    ? (S.scope.type === 'ddl' ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}` : `${S.scope.vol}/${S.scope.sv || ''}`)
+    ? ((S.scope.type === 'ddl' || S.scope.type === 'def')
+        ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}${S.scope.defName ? '/' + S.scope.defName : ''}`
+        : `${S.scope.vol}/${S.scope.sv || ''}`)
     : 'None';
   const fmtLabel = S.forcedFormat ? S.forcedFormat.toUpperCase() : (S.inputFormat ? `AUTO → ${S.inputFormat.toUpperCase()}` : 'AUTO (no input)');
   const msgCount = S.messages.length;
@@ -8462,23 +8516,23 @@ function initDropZones() {
       const content = ev.target.result;
 
       if (isHPEDDLText(content)) {
-        const parts = splitHPEDDL(content);
-        if (!parts.length) { flash('No DEF/RECORD definitions found in file', 'warn'); return; }
+        const defNames = parseDEFNames(content);
+        if (!defNames.length) { flash('No DEF/RECORD definitions found in file', 'warn'); return; }
 
-        // Stage all definitions at the root of the tree
-        S.stagingDefs   = parts;
-        S.stagingActive = parts[0].name;
+        // Stage as a single file entry — whole content, filename from dropped file
+        const base = file.name.replace(/\.[^.]+$/, '').toUpperCase();
+        S.stagingDefs   = [{ name: base, content }];
+        S.stagingActive = base;
         S.editorBaseline = null;
 
-        // Load the first definition into the editor
-        ddlTA.value = parts[0].content;
+        ddlTA.value = content;
         document.getElementById('ddlScopePath').textContent =
-          `${parts.length} definition${parts.length > 1 ? 's' : ''} staged — select Vol/SV then Save`;
+          `"${base}" staged (${defNames.length} DEF${defNames.length > 1 ? 's' : ''}) — select Vol/SV then Save`;
 
         renderDDLTree();
         updateDDLEditorState();
         updateDDLHighlight();
-        const defCount = parts.length === 1 ? '1 definition' : `${parts.length} definitions`;
+        const defCount = defNames.length === 1 ? '1 definition' : `${defNames.length} definitions`;
         flash(`Loaded "${file.name}" — ${defCount} staged in tree`);
       } else {
         // Simple format — stage as single entry

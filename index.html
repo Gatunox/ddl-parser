@@ -1690,28 +1690,61 @@ function parseHPEDDL(text, externalDefs, externalSections) {
       // Prefix defs: non-REDEFINES fields before the MTI, in order
       const prefixDefs = leafIdx.slice(0, bmpLeafPos - 1).map(i => out[i]);
 
-      // Build data elements: one element per unique top-level key (bmpDepth),
-      // collecting all sub-fields (plain and REDEFINES) in declaration order.
+      // Build data elements — two-pass approach:
+      //
+      // Pass 1: non-REDEFINES leaves only (leafIdx) → correct bit numbering.
+      //   Top-level REDEFINES groups (e.g. BASE24-SEC-INFO REDEFINES SEC-CNTRL-INFO)
+      //   are skipped so they cannot create phantom elements that shift all
+      //   subsequent DE assignments.
+      //
+      // Pass 2: fold REDEFINES leaf fields back in by matching their top-level key
+      //   to an existing element.  If the key is unknown (REDEFINES group has a
+      //   different name than its target) the field is silently skipped — it is an
+      //   alternate view of a field already counted in pass 1.
+      //
       //   e.g. bitmap id = 'ISOPSEM.PRI-BIT-MAP'  → bmpDepth = 2
-      //   'ISOPSEM.PAN.LEN'            → key 'ISOPSEM.PAN'      → DE-2
-      //   'ISOPSEM.PAN.DATA'           → key 'ISOPSEM.PAN'      → DE-2
-      //   'ISOPSEM.PROC-CDE.TRAN-CDE' → key 'ISOPSEM.PROC-CDE' → DE-3
-      //   'ISOPSEM.TRAN-AMT'          → key 'ISOPSEM.TRAN-AMT' → DE-4
+      //   'ISOPSEM.PAN.LEN'                → key 'ISOPSEM.PAN'      → DE-2
+      //   'ISOPSEM.PROC-CDE.TRAN-CDE'     → key 'ISOPSEM.PROC-CDE' → DE-3
+      //   'ISOPSEM.SEC-CNTRL-INFO'        → key 'ISOPSEM.SEC-CNTRL-INFO' → DE-53
+      //   'ISOPSEM.BASE24-SEC-INFO.KEY-TYP' (REDEFINES) → skipped in pass 1,
+      //     folded into DE-53 only if its top-level key matches (it does not here,
+      //     so it is dropped — alternate view, same bytes as SEC-CNTRL-INFO)
       const bmpDepth    = out[bmpOutIdx].id.split('.').length;
+      const dataStartOI = leafIdx[dataStartLeaf] ?? out.length;
+
+      // Pass 1: non-REDEFINES only → correct bit numbering
       const dataElements = [];
+      const deKeyToElem  = new Map();
       let deKey = null, deElem = null;
-      for (let oi = (leafIdx[dataStartLeaf] ?? out.length); oi < out.length; oi++) {
-        const f   = out[oi];
+      for (const i of leafIdx.slice(dataStartLeaf)) {
+        const f   = out[i];
         const key = f.id.split('.').slice(0, bmpDepth).join('.');
         if (key !== deKey) {
           deElem = { bitNum: dataElements.length + 2, id: key, subFields: [] };
           dataElements.push(deElem);
+          deKeyToElem.set(key, deElem);
           deKey = key;
         }
         deElem.subFields.push({
           id: f.id, length: f.length, description: f.description,
-          offset: f.offset, isRedefines: f.isRedefines
+          offset: f.offset, isRedefines: false
         });
+      }
+
+      // Pass 2: fold REDEFINES leaf fields into their parent element by key.
+      // Unknown keys (REDEFINES groups with a different name than their target)
+      // are silently skipped — they are alternate views, not new bit positions.
+      for (let oi = dataStartOI; oi < out.length; oi++) {
+        const f = out[oi];
+        if (!f.isRedefines) continue;
+        const key  = f.id.split('.').slice(0, bmpDepth).join('.');
+        const elem = deKeyToElem.get(key);
+        if (elem) {
+          elem.subFields.push({
+            id: f.id, length: f.length, description: f.description,
+            offset: f.offset, isRedefines: true
+          });
+        }
       }
 
       // Post-process: detect implicit LLVAR (LEN+DATA pattern) and compute totalLength
@@ -2620,13 +2653,18 @@ function showDDLDoc() {
       })()
     : null;
 
-  // Build DE-N lookup map from _hpeIsoLayout (HPE COBOL ISO 8583 only)
-  let deKeyMap = null, deKeyDepth = 0;
+  // Build DE-N lookup maps from _hpeIsoLayout (HPE COBOL ISO 8583 only).
+  // deKeyMap:      top-level key → bitNum  (primary, from dataElements)
+  // redefTargetMap: REDEFINES-group key → bitNum  (secondary, for fields inside a
+  //   REDEFINES group whose group name differs from its target, e.g.
+  //   BASE24-SEC-INFO REDEFINES SEC-CNTRL-INFO → map 'BASE24-SEC-INFO' → DE-53)
+  let deKeyMap = null, redefTargetMap = null, deKeyDepth = 0;
   if (isHPE) {
     const hpeDefs = parseHPEDDL(content, docTypeRegistry, docSectionByName);
     if (hpeDefs._hpeIsoLayout) {
-      deKeyDepth = hpeDefs._hpeIsoLayout.bmpDef.id.split('.').length;
-      deKeyMap   = new Map();
+      deKeyDepth     = hpeDefs._hpeIsoLayout.bmpDef.id.split('.').length;
+      deKeyMap       = new Map();
+      redefTargetMap = new Map();
       for (const de of hpeDefs._hpeIsoLayout.dataElements) {
         deKeyMap.set(de.id, de.bitNum);
       }
@@ -2664,6 +2702,25 @@ function showDDLDoc() {
         ? expandTypeRefs(sec.items, docSectionByName)
         : sec.items;
       ({ fields, totalSize } = buildDDLDocFields(expandedItems, docTypeRegistry));
+      // Populate redefTargetMap: for fields inside a REDEFINES group whose
+      // top-level key differs from the target (e.g. BASE24-SEC-INFO REDEFINES
+      // SEC-CNTRL-INFO), map the group's key → the target's bitNum so the badge
+      // can be shown correctly even though parseHPEDDL (two-pass) dropped the
+      // phantom element.
+      if (redefTargetMap && deKeyMap && deKeyDepth) {
+        for (const f of fields) {
+          if (!f.redefGroupTarget) continue;
+          const redefKey  = f.qualName.split('.').slice(0, deKeyDepth).join('.');
+          if (redefTargetMap.has(redefKey)) continue;          // already mapped
+          // Reconstruct the target's full key: same prefix, different leaf name.
+          // For deKeyDepth=1: targetKey = redefGroupTarget
+          // For deKeyDepth=2: targetKey = prefix[0] + '.' + redefGroupTarget
+          const prefix    = redefKey.split('.').slice(0, deKeyDepth - 1).join('.');
+          const targetKey = prefix ? prefix + '.' + f.redefGroupTarget : f.redefGroupTarget;
+          const bitNum    = deKeyMap.get(targetKey);
+          if (bitNum != null) redefTargetMap.set(redefKey, bitNum);
+        }
+      }
     }
 
     grandTotal += totalSize;
@@ -2680,9 +2737,10 @@ function showDDLDoc() {
         ? `<span style="font-size:10px;opacity:.7"> ⟵ ${esc(redefNoteName)}</span>` : '';
       const descTxt    = f.desc && f.desc.toUpperCase() !== f.name ? esc(f.desc) : '';
       const occurs     = f.occurs > 1 ? `×${f.occurs}` : '—';
-      const deKey    = deKeyMap && deKeyDepth && f.qualName.includes('.')
+      const deKey    = deKeyMap && deKeyDepth
         ? f.qualName.split('.').slice(0, deKeyDepth).join('.') : null;
-      const deBitNum = deKey != null ? deKeyMap.get(deKey) : undefined;
+      const deBitNum = deKey != null
+        ? (deKeyMap.get(deKey) ?? redefTargetMap.get(deKey)) : undefined;
       const deBadge  = deBitNum != null
         ? `<span class="c-de-badge" title="ISO 8583 Data Element ${deBitNum}">DE-${deBitNum}</span>` : '';
       const docSearch = esc([f.qualName, f.desc || '', f.dataType || '', deBitNum != null ? `DE-${deBitNum}` : ''].join(' ').toLowerCase());
@@ -7736,7 +7794,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.213';
+const APP_VERSION  = '1.0.0.214';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

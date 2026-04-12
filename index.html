@@ -2680,33 +2680,9 @@ function showDDLDoc() {
   //   BASE24-SEC-INFO REDEFINES SEC-CNTRL-INFO → map 'BASE24-SEC-INFO' → DE-53)
   let deKeyMap = null, redefTargetMap = null, deKeyDepth = 0;
   if (isHPE) {
-    // For badge computation, build context from ALL HPE DDL files in the same SV.
-    // This is needed when a file only contains secondary-bitmap elements (e.g. ISOSSEM
-    // alone) — without the primary-bitmap file (ISOPSEM), bit numbering would start
-    // at DE-2 instead of DE-66.  We only gather cross-file context when the current
-    // file alone doesn't produce a valid _hpeIsoLayout (no MTI+bitmap section found).
-    let badgeContent = content;
-    const _testLayout = parseHPEDDL(content, docTypeRegistry, docSectionByName);
-    if (!_testLayout._hpeIsoLayout && S.scope?.vol && S.scope?.sv) {
-      const svStore = S.ddlTree[S.scope.vol]?.[S.scope.sv] || {};
-      const currentDefNames = new Set(parseDEFNames(content).map(n => n.toUpperCase()));
-      const contextParts = Object.entries(svStore)
-        .filter(([name, c]) => {
-          if (name === S.scope.name) return false;          // exclude current file
-          if (!isHPEDDLText(c || '')) return false;         // HPE DDL only
-          const defs = parseDEFNames(c);
-          return !defs.some(d => currentDefNames.has(d.toUpperCase())); // no DEF name clash
-        })
-        .sort(([a], [b]) => a < b ? -1 : 1)
-        .map(([, c]) => c);
-      if (contextParts.length > 0) {
-        badgeContent = [...contextParts, content].join('\n\n');
-      }
-    }
-
-    const hpeDefs = _testLayout._hpeIsoLayout
-      ? _testLayout
-      : parseHPEDDL(badgeContent, docTypeRegistry, docSectionByName);
+    // Parse the full file content (which may contain multiple DEF blocks, e.g. both
+    // ISOPSEM and ISOSSEM) so that secondary-bitmap elements are numbered correctly.
+    const hpeDefs = parseHPEDDL(content, docTypeRegistry, docSectionByName);
     if (hpeDefs._hpeIsoLayout) {
       deKeyDepth     = hpeDefs._hpeIsoLayout.bmpDef.id.split('.').length;
       deKeyMap       = new Map();
@@ -7902,7 +7878,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.216';
+const APP_VERSION  = '1.0.0.217';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

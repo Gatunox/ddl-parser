@@ -633,6 +633,7 @@ tr.tkn-hdr td {
 tr.row-token-hidden { display: none; }
 tr.row-filter-hide  { display: none; }
 #resContainer.hide-redef tr.row-redef { display: none; }
+#ddlDocBody.hide-redef tr.ddl-doc-redef { display: none; }
 .panel-header .btn.btn-accent-on { color: var(--accent) !important; }
 .res-filter-input {
   font-family: var(--mono); font-size: var(--sz-mono);
@@ -1246,6 +1247,7 @@ const S = {
   hoverFieldId: null,
   tokenAreaCollapsed: false,
   hideRedefines: false,
+  ddlDocHideRedef: false,
   tokenMap: {},      // { "DDL-NAME": "B4", ... } — built from token map files in tree
   unresolvedRefs: {}, // { 'vol/sv/name': ['TYPE-A', 'TYPE-B'] } — types referenced but not found
   ddlValidationResults: {}, // { 'vol/sv/name': { errors, warnings, deferredChecks } }
@@ -1778,7 +1780,9 @@ function parseHPEDDL(text, externalDefs, externalSections) {
         mtiDef:      out[mtiOutIdx],
         bmpDef:      out[bmpOutIdx],
         secBmpDef:   secBmpOutIdx >= 0 ? out[secBmpOutIdx] : null,
-        dataElements
+        dataElements,
+        // Fast bitNum → element lookup — handles the DE-65 gap without index arithmetic.
+        deByBit: new Map(dataElements.map(de => [de.bitNum, de]))
       };
     }
   }
@@ -2646,6 +2650,15 @@ function showDDLDoc() {
   }
   if (!sections.length) { flash('No DEF/RECORD blocks found', 'warn'); return; }
 
+  // When scope is type='def' (DEF hyperlink in tree), show only the selected DEF's section.
+  // When type='ddl' (whole file), show all sections.
+  let displaySections = sections;
+  if (isHPE && S.scope?.type === 'def' && S.scope.defName) {
+    const defFilter = S.scope.defName.toUpperCase();
+    const filtered  = sections.filter(s => s.name.toUpperCase() === defFilter);
+    if (filtered.length > 0) displaySections = filtered;
+  }
+
   // Build a type registry so cross-file TYPE references show correct sizes in the DOC table.
   // Pass the current editor content as well to handle same-file, not-yet-saved cross-def refs.
   const docTypeRegistry = isHPE ? buildRepoTypeRegistry(content) : null;
@@ -2667,7 +2680,33 @@ function showDDLDoc() {
   //   BASE24-SEC-INFO REDEFINES SEC-CNTRL-INFO → map 'BASE24-SEC-INFO' → DE-53)
   let deKeyMap = null, redefTargetMap = null, deKeyDepth = 0;
   if (isHPE) {
-    const hpeDefs = parseHPEDDL(content, docTypeRegistry, docSectionByName);
+    // For badge computation, build context from ALL HPE DDL files in the same SV.
+    // This is needed when a file only contains secondary-bitmap elements (e.g. ISOSSEM
+    // alone) — without the primary-bitmap file (ISOPSEM), bit numbering would start
+    // at DE-2 instead of DE-66.  We only gather cross-file context when the current
+    // file alone doesn't produce a valid _hpeIsoLayout (no MTI+bitmap section found).
+    let badgeContent = content;
+    const _testLayout = parseHPEDDL(content, docTypeRegistry, docSectionByName);
+    if (!_testLayout._hpeIsoLayout && S.scope?.vol && S.scope?.sv) {
+      const svStore = S.ddlTree[S.scope.vol]?.[S.scope.sv] || {};
+      const currentDefNames = new Set(parseDEFNames(content).map(n => n.toUpperCase()));
+      const contextParts = Object.entries(svStore)
+        .filter(([name, c]) => {
+          if (name === S.scope.name) return false;          // exclude current file
+          if (!isHPEDDLText(c || '')) return false;         // HPE DDL only
+          const defs = parseDEFNames(c);
+          return !defs.some(d => currentDefNames.has(d.toUpperCase())); // no DEF name clash
+        })
+        .sort(([a], [b]) => a < b ? -1 : 1)
+        .map(([, c]) => c);
+      if (contextParts.length > 0) {
+        badgeContent = [...contextParts, content].join('\n\n');
+      }
+    }
+
+    const hpeDefs = _testLayout._hpeIsoLayout
+      ? _testLayout
+      : parseHPEDDL(badgeContent, docTypeRegistry, docSectionByName);
     if (hpeDefs._hpeIsoLayout) {
       deKeyDepth     = hpeDefs._hpeIsoLayout.bmpDef.id.split('.').length;
       deKeyMap       = new Map();
@@ -2690,9 +2729,9 @@ function showDDLDoc() {
 
   let grandTotal = 0;
 
-  for (const sec of sections) {
-    // Section header row (only when multi-def file)
-    if (sections.length > 1) {
+  for (const sec of displaySections) {
+    // Section header row (only when displaying multiple sections)
+    if (displaySections.length > 1) {
       html += `<tr class="ddl-doc-sec-hdr"><td colspan="7">DEF ${esc(sec.name)}</td></tr>`;
     }
 
@@ -2771,14 +2810,21 @@ function showDDLDoc() {
 
   html += '</tbody></table>';
 
-  const title = sections.length === 1
-    ? `DDLDOC — ${sections[0].name}`
-    : `DDLDOC — ${sections.length} definitions  (total ${grandTotal} bytes)`;
+  const title = displaySections.length === 1
+    ? `DDLDOC — ${displaySections[0].name}`
+    : `DDLDOC — ${displaySections.length} definitions  (total ${grandTotal} bytes)`;
 
   document.getElementById('ddlDocTitle').textContent = title;
   const ddlFilt = document.getElementById('ddlDocFilterInput');
   if (ddlFilt) ddlFilt.value = '';
-  document.getElementById('ddlDocBody').innerHTML = html;
+  const ddlBody = document.getElementById('ddlDocBody');
+  ddlBody.innerHTML = html;
+  ddlBody.classList.toggle('hide-redef', !!S.ddlDocHideRedef);
+  const ddlRedefBtn = document.getElementById('ddlDocHideRedefBtn');
+  if (ddlRedefBtn) {
+    ddlRedefBtn.textContent = S.ddlDocHideRedef ? 'Show Redef' : 'Hide Redef';
+    ddlRedefBtn.classList.toggle('btn-accent-on', !!S.ddlDocHideRedef);
+  }
   document.getElementById('ddlDocOverlay').classList.remove('hidden');
 }
 
@@ -3728,13 +3774,13 @@ function parseHPEISOMessage(bytes, defs) {
     }
   }
 
-  // 5. Data elements — bit N (2–128) → dataElements[N-2]
-  // Each data element may contain multiple sub-fields.  Fixed elements are read
-  // as a contiguous block; LLVAR/LLLVAR elements use the LEN sub-field value to
-  // determine how many bytes DATA occupies in the message stream.
+  // 5. Data elements — bit N (2–128) → looked up via deByBit Map.
+  // Using a Map (bitNum → element) correctly handles the DE-65 gap where the
+  // tertiary bitmap slot is skipped; a raw [N-2] index would be off by 1 for
+  // all secondary-bitmap elements (DE-66 and above).
   for (const num of [...extSet].sort((a, b) => a - b)) {
     if (offset >= bytes.length) break;
-    const de = layout.dataElements[num - 2];
+    const de = layout.deByBit?.get(num) ?? layout.dataElements[num - 2];
     if (!de) {
       fields.push({ id: String(num), description: `Bit ${num} — no definition in DDL`,
         value: '(cannot parse: missing definition)',
@@ -5740,6 +5786,16 @@ function toggleHideRedefines() {
   if (btn) {
     btn.textContent = S.hideRedefines ? 'Show Redef' : 'Hide Redef';
     btn.classList.toggle('btn-accent-on', S.hideRedefines);
+  }
+}
+
+function toggleDDLDocHideRedef() {
+  S.ddlDocHideRedef = !S.ddlDocHideRedef;
+  document.getElementById('ddlDocBody').classList.toggle('hide-redef', S.ddlDocHideRedef);
+  const btn = document.getElementById('ddlDocHideRedefBtn');
+  if (btn) {
+    btn.textContent = S.ddlDocHideRedef ? 'Show Redef' : 'Hide Redef';
+    btn.classList.toggle('btn-accent-on', S.ddlDocHideRedef);
   }
 }
 
@@ -7846,7 +7902,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.215';
+const APP_VERSION  = '1.0.0.216';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -8756,6 +8812,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <span id="ddlDocTitle" class="ddl-doc-title"></span>
       <div style="display:flex;gap:6px;align-items:center">
         <input type="text" id="ddlDocFilterInput" class="res-filter-input" placeholder="Filter fields…" title="Filter DDL Doc" oninput="filterDDLDoc(this.value)">
+        <button class="btn btn-sm" id="ddlDocHideRedefBtn" onclick="toggleDDLDocHideRedef()" title="Hide/show REDEFINES fields">Hide Redef</button>
         <button class="btn btn-sm" onclick="copyDDLDoc()" title="Copy as text">⎘ Copy</button>
         <button class="btn btn-sm" onclick="closeDDLDoc()">✕</button>
       </div>

@@ -2620,6 +2620,19 @@ function showDDLDoc() {
       })()
     : null;
 
+  // Build DE-N lookup map from _hpeIsoLayout (HPE COBOL ISO 8583 only)
+  let deKeyMap = null, deKeyDepth = 0;
+  if (isHPE) {
+    const hpeDefs = parseHPEDDL(content, docTypeRegistry, docSectionByName);
+    if (hpeDefs._hpeIsoLayout) {
+      deKeyDepth = hpeDefs._hpeIsoLayout.bmpDef.id.split('.').length;
+      deKeyMap   = new Map();
+      for (const de of hpeDefs._hpeIsoLayout.dataElements) {
+        deKeyMap.set(de.id, de.bitNum);
+      }
+    }
+  }
+
   // Build the full table HTML — elementary fields only, full qualified names
   const hex4 = n => '0x' + n.toString(16).toUpperCase().padStart(4, '0');
 
@@ -2667,10 +2680,15 @@ function showDDLDoc() {
         ? `<span style="font-size:10px;opacity:.7"> ⟵ ${esc(redefNoteName)}</span>` : '';
       const descTxt    = f.desc && f.desc.toUpperCase() !== f.name ? esc(f.desc) : '';
       const occurs     = f.occurs > 1 ? `×${f.occurs}` : '—';
-      const docSearch = esc([f.qualName, f.desc || '', f.dataType || ''].join(' ').toLowerCase());
+      const deKey    = deKeyMap && deKeyDepth && f.qualName.includes('.')
+        ? f.qualName.split('.').slice(0, deKeyDepth).join('.') : null;
+      const deBitNum = deKey != null ? deKeyMap.get(deKey) : undefined;
+      const deBadge  = deBitNum != null
+        ? `<span class="c-de-badge" title="ISO 8583 Data Element ${deBitNum}">DE-${deBitNum}</span>` : '';
+      const docSearch = esc([f.qualName, f.desc || '', f.dataType || '', deBitNum != null ? `DE-${deBitNum}` : ''].join(' ').toLowerCase());
       html += `<tr${cls} data-search="${docSearch}">
         <td class="ddl-doc-hex" style="color:var(--text-dim)">${rowNum}</td>
-        <td><span style="font-weight:500">${esc(f.qualName)}</span>${redefNote}</td>
+        <td><span style="font-weight:500">${esc(f.qualName)}</span>${redefNote}${deBadge}</td>
         <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
         <td class="ddl-doc-num">${f.size}</td>
         <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -7718,7 +7736,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.212';
+const APP_VERSION  = '1.0.0.213';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

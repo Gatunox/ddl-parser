@@ -4552,13 +4552,22 @@ function getDDLsForVol(volName) {
 }
 
 // Pick the best-scoring DDL from a candidate list for a given byte array.
+// Score = accuracy × coverage:
+//   accuracy = (fields without error) / total fields
+//   coverage = bytes accounted for by parsed fields / total message bytes
+// This prevents trivial 1-field type defs from outscoring full message definitions.
 function bestDDLMatch(bytes, candidates) {
   if (!candidates.length) return { fields: [], ddlPath: null };
   let best = { score: -1, fields: [], ddlPath: candidates[0].path };
   for (const { path, defs } of candidates) {
     const f    = parseMessage(bytes, defs);
     const errs = f.filter(x => x.error).length;
-    const sc   = f.length > 0 ? (f.length - errs) / f.length : 0;
+    if (!f.length) continue;
+    const accuracy = (f.length - errs) / f.length;
+    // Sum bytes consumed by successfully-parsed non-error fields
+    const consumed = f.filter(x => !x.error).reduce((s, x) => s + (x.rawBytes?.length ?? x.length ?? 0), 0);
+    const coverage = bytes.length > 0 ? Math.min(consumed, bytes.length) / bytes.length : 0;
+    const sc = accuracy * (0.4 + 0.6 * coverage);
     if (sc > best.score) best = { score: sc, fields: f, ddlPath: path };
   }
   return best;
@@ -6517,13 +6526,22 @@ function showDDLPickerModal(msgTypeLabel, matches, cb) {
   const cancelBtn = document.getElementById('ddlPickerCancel');
 
   labelEl.innerHTML = `Multiple DDLs matched <strong>${esc(msgTypeLabel)}</strong> — select one to use:`;
-  listEl.innerHTML  = matches.map((m, i) =>
-    `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border)">
+  listEl.innerHTML  = matches.map((m, i) => {
+    const parts = m.ddlPath.split('/');
+    const [pVol, pSv, pName] = parts;
+    const fileContent = (pVol && pSv && pName) ? (S.ddlTree[pVol]?.[pSv]?.[pName] || '') : '';
+    const defNames = fileContent && isHPEDDLText(fileContent) ? parseDEFNames(fileContent) : [];
+    const defSuffix = defNames.length === 1
+      ? ` <span style="color:var(--accent);opacity:0.85">/ ${esc(defNames[0])}</span>`
+      : defNames.length > 1
+        ? ` <span style="color:var(--text-dim);font-size:10px">[${defNames.map(esc).join(', ')}]</span>`
+        : '';
+    return `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border)">
        <input type="radio" name="ddl-pick-r" value="${i}" style="flex-shrink:0">
-       <span style="font-family:var(--font-mono);font-size:11px;flex:1;word-break:break-all">${esc(m.ddlPath)}</span>
+       <span style="font-family:var(--font-mono);font-size:11px;flex:1;word-break:break-all">${esc(m.ddlPath)}${defSuffix}</span>
        <span style="color:var(--text-dim);font-size:10px;white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
-     </label>`
-  ).join('');
+     </label>`;
+  }).join('');
 
   sessBtn.disabled = true;
   ruleBtn.disabled = true;
@@ -7898,7 +7916,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.221';
+const APP_VERSION  = '1.0.0.222';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

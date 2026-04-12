@@ -4040,10 +4040,10 @@ const MSG_TYPE_MAP = [
   { test: s => s.startsWith('990601') || s.startsWith('990701'),                type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM'    },
   // 990602 / 990702 → PSTM exceptions (must precede generic B24 99xx catch-all)
   { test: s => s.startsWith('990602') || s.startsWith('990702'),                type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS'    },
-  // STM: 0[1-9][012489][012345]01 + binary bytes at positions 6-7
-  { test: s => /^0[1-9][012489][012345]01/.test(s) && _hasBin67(s),              type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM'    },
+  // STM: 0[1-9][012489][012345]01
+  { test: s => /^0[1-9][012489][012345]01/.test(s),                               type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM'    },
   // PSTM: same structure ending in 02 (POS volume)
-  { test: s => /^0[1-9][012489][012345]02/.test(s) && _hasBin67(s),              type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS'    },
+  { test: s => /^0[1-9][012489][012345]02/.test(s),                               type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS'    },
   // B24: all remaining 99xx messages
   { test: s => /^99\d{2}/.test(s),                                              type:'B24',  label:'Base24 Generic',    vol:'BASE'   },
   // ISO fallback: 0 + digit + 2 digits + 16 hex chars (MTI + primary bitmap); STM/PSTM already caught above
@@ -4690,7 +4690,9 @@ function doParseNetardLog(text) {
         continue;
       }
       // Build pool by walking the volume hierarchy (e.g. ATM → BASE)
-      const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || []);
+      // Exclude trivial single-field defs — no complex message type can be parsed by a 1-element DDL
+      const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || [])
+        .filter(c => c.defs.length > 1);
 
       const allMatches = pool
         .map(c => { const r = bestDDLMatch(parseBytes, [c]); return { ddlPath: r.ddlPath, fields: r.fields, score: r.score }; })
@@ -4930,7 +4932,9 @@ function doParseMessages() {
       }
 
       // Build pool by walking the volume hierarchy (e.g. ATM → BASE)
-      const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || []);
+      // Exclude trivial single-field defs — no complex message type can be parsed by a 1-element DDL
+      const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || [])
+        .filter(c => c.defs.length > 1);
 
       // Score every candidate; keep only those with score > 0, sorted best-first
       const allMatches = pool
@@ -7916,7 +7920,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.222';
+const APP_VERSION  = '1.0.0.223';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

@@ -335,7 +335,7 @@ body.light .hl-str { color: #3a7d0a; }
 .tree-sv-lbl  { color: var(--text);     padding-left: 8px;  flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-ddl-lbl { color: var(--text); padding-left: 16px; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-pending .tree-ddl-lbl { color: #e6a817; font-style: italic; }
-.tree-def-lbl { color: var(--text-dim); padding-left: 28px; flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 11px; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(88,166,255,0.35); }
+.tree-def-lbl { color: var(--text-dim); padding-left: 28px; flex: 1; overflow: hidden; text-overflow: ellipsis; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(88,166,255,0.35); }
 .tree-staging-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
 .tree-missref-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: #e6a817; letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
 .tree-missref-item .tree-ddl-lbl { color: #e6a817; font-style: italic; }
@@ -6290,22 +6290,25 @@ function renderDDLTree() {
             const isPending  = pendNames.includes(d) && !savedNames.includes(d);
             // A filename node is "selected" if scope is type='ddl' pointing to it,
             // OR type='def' pointing to a DEF inside it (ancestor style).
+            const fileContent  = !isPending ? (S.ddlTree[vol]?.[sv]?.[d] || '') : '';
+            const fileDefNames = !isPending && isHPEDDLText(fileContent) ? parseDEFNames(fileContent) : [];
+            // Single-DEF files: the filename IS the DDL — no sub-nodes, badges stay on
+            // the filename node (same as old model).  Only multi-DEF files expand.
+            const showDefSubNodes = fileDefNames.length > 1;
             const fileActive = sc?.vol === vol && sc?.sv === sv && sc?.name === d;
-            const dSel       = sc?.type === 'ddl' && fileActive ? ' tree-sel' : '';
-            const dAnc       = sc?.type === 'def'  && fileActive ? ' tree-anc' : '';
+            // For single-DEF files, treat type='def' scope as selected (no sub-node to highlight)
+            const dSel = (sc?.type === 'ddl' || (!showDefSubNodes && sc?.type === 'def')) && fileActive ? ' tree-sel' : '';
+            const dAnc = sc?.type === 'def' && showDefSubNodes && fileActive ? ' tree-anc' : '';
             const isNewEmpty = !isPending && (tree[vol]?.[sv]?.[d] || '') === '';
             const pendCls    = (isPending || isNewEmpty) ? ' tree-pending' : '';
             const onclick = isPending
               ? `onclick="flash('Not saved yet — click Save to persist','warn')"`
               : `onclick="selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}')"`;
-            // Determine if this file has multiple DEF blocks (HPE DDL) — if so show caret
-            const fileContent  = !isPending ? (S.ddlTree[vol]?.[sv]?.[d] || '') : '';
-            const fileDefNames = !isPending && isHPEDDLText(fileContent) ? parseDEFNames(fileContent) : [];
-            const fileExp      = fq ? true : S.treeExp.has(fileKey);
+            const fileExp      = showDefSubNodes && (fq ? true : S.treeExp.has(fileKey));
             const fileCaretClick = fq
               ? `onclick="event.stopPropagation()"`
               : `onclick="event.stopPropagation();toggleTreeExp('${esc(fileKey)}')"`;
-            const fileCaret    = fileDefNames.length > 0
+            const fileCaret    = showDefSubNodes
               ? `<span class="tree-caret" ${fileCaretClick}>${fileExp?'−':'+'}</span>`
               : `<span class="tree-caret" style="visibility:hidden">−</span>`;
             // Token map badge: show [TKN] if this entry is a token map file
@@ -6340,8 +6343,8 @@ function renderDDLTree() {
               ${fileCaret}
               <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${tknBadge}${typeBadge}${unresBadge}${errBadge}${warnBadge}
             </div>`;
-            // ── DEF sub-nodes (HPE DDL files with multiple DEF blocks) ────────
-            if (fileDefNames.length > 0 && fileExp) {
+            // ── DEF sub-nodes (only for multi-DEF HPE DDL files) ──────────────
+            if (showDefSubNodes && fileExp) {
               for (const defName of fileDefNames) {
                 if (fq && !defName.toLowerCase().includes(fq) && !d.toLowerCase().includes(fq)) continue;
                 const defSel = sc?.type === 'def' && fileActive && sc.defName === defName ? ' tree-sel' : '';
@@ -7332,7 +7335,7 @@ function saveDDL() {
 
   // ── Token map file: lines of the form  "XX" = DDL-NAME ─────────────────
   if (isTokenMapText(content)) {
-    const newName = (sc.type === 'ddl' || sc.type === 'def') ? sc.name : '';
+    const newName = (sc.type === 'ddl' || sc.type === 'def') ? sc.name : (S.stagingActive || '');
     if (!newName) { flash('Select a DDL entry in the tree first', 'warn'); return; }
     const existing = S.ddlTree[vol][sv][newName];
     const doSaveTkn = () => {
@@ -7378,7 +7381,9 @@ function saveDDL() {
   }
 
   // ── Save whole content under the current filename key ─────────────────
-  const newName = (sc.type === 'ddl' || sc.type === 'def') ? sc.name : '';
+  // When saving a staged item (S.stagingActive set) from sv-level scope, use the
+  // staged name as the filename so "select vol/sv then Save" works as intended.
+  const newName = (sc.type === 'ddl' || sc.type === 'def') ? sc.name : (S.stagingActive || '');
   if (!newName) { flash('Select a DDL entry in the tree first', 'warn'); return; }
 
   const existingEntry = S.ddlTree[vol][sv][newName];
@@ -7885,7 +7890,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.218';
+const APP_VERSION  = '1.0.0.219';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

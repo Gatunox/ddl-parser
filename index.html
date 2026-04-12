@@ -3614,10 +3614,17 @@ function extractTokensFromMessage(fields, bytes, msgTypeStr, ddlPath) {
   const isISO = msgTypeStr === 'ISO' || msgTypeStr === 'B24';
 
   if (isISO) {
-    // Tokens live inside DE-63 or DE-126
-    const tkField = fields.find(f => f.id === '63' || f.id === '126');
-    if (tkField && tkField.rawBytes?.length >= 2 &&
-        tkField.rawBytes[0] === 0x26 && tkField.rawBytes[1] === 0x20) {
+    // Tokens live inside DE-63 or DE-126.
+    // Match by numeric id (flat DDL format) OR by deNum (HPE DDL format where
+    // the field id is a qualified name like ISOPSEM.ADD-DATA-PRVT.DATA).
+    // The eyecatcher check is also inside the predicate so we skip the LEN
+    // sub-field (2-3 ASCII digits, never starts with '&').
+    const tkField = fields.find(f =>
+      (f.id === '63' || f.id === '126' || f.deNum === 63 || f.deNum === 126) &&
+      f.rawBytes?.length >= 2 &&
+      f.rawBytes[0] === 0x26 && f.rawBytes[1] === 0x20
+    );
+    if (tkField) {
       return parseTokenArea(tkField.rawBytes, 0, false, preferredVol, true);
     }
   } else if (msgTypeStr === 'STM' || msgTypeStr === 'PSTM') {
@@ -7878,7 +7885,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.217';
+const APP_VERSION  = '1.0.0.218';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

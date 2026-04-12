@@ -4612,6 +4612,8 @@ function doParseNetardLog(text) {
   // Pre-compile ALL DDLs in the tree, grouped by volume — used for auto-detection.
   // Vol/sv scope selection does NOT restrict the pool; only an explicit single-DDL
   // selection (P1 mode in doParseMessages) restricts to that DDL.
+  // Keys are UPPERCASED so volSearchChain() lookups (always uppercase) always match
+  // regardless of how the user named their volumes in the tree.
   const _netardReg    = buildRepoTypeRegistry();
   const _netardSecReg = buildRepoSectionRegistry();
   const compiledByVol = {};
@@ -4620,7 +4622,7 @@ function doParseNetardLog(text) {
       .filter(({ path }) => !S.tokenMap[path.split('/').pop()])
       .map(({ path, content }) => ({ path, defs: parseDDL(content, _netardReg, _netardSecReg) }))
       .filter(d => d.defs.length > 0);
-    if (entries.length) compiledByVol[vol] = entries;
+    if (entries.length) compiledByVol[vol.toUpperCase()] = (compiledByVol[vol.toUpperCase()] || []).concat(entries);
   }
 
   const parsed         = [];
@@ -4852,6 +4854,8 @@ function doParseMessages() {
 
   // ── Priority 2 + 3: DDLMM → auto-detect ─────────────────────────────────
   // Pre-compile ALL DDLs in the tree, grouped by volume, for auto-detect.
+  // Keys are UPPERCASED so volSearchChain() lookups (always uppercase) always match
+  // regardless of how the user named their volumes in the tree.
   const _repoReg    = buildRepoTypeRegistry();
   const _repoSecReg = buildRepoSectionRegistry();
   const compiledByVol = {};
@@ -4860,7 +4864,7 @@ function doParseMessages() {
       .filter(({ path }) => !S.tokenMap[path.split('/').pop()])
       .map(({ path, content }) => ({ path, defs: parseDDL(content, _repoReg, _repoSecReg) }))
       .filter(d => d.defs.length > 0);
-    if (entries.length) compiledByVol[vol] = entries;
+    if (entries.length) compiledByVol[vol.toUpperCase()] = (compiledByVol[vol.toUpperCase()] || []).concat(entries);
   }
   const allCompiled = Object.values(compiledByVol).flat();
 
@@ -5588,8 +5592,9 @@ function renderFieldTable(msg) {
         <tbody>${rows}</tbody>
        </table></div>`
     : `<div class="empty-st">
-        <div>${msg.unknownType ? 'Unknown message type — auto-detection not possible.' : msg.noMatchDDL ? 'No matching DDL for this message.' : msg.isNetard ? 'Record extracted — no DDL applied yet.' : 'No fields parsed.'}</div>
+        <div>${msg.unknownType ? 'Unknown message type — auto-detection not possible.' : (msg.isNetard && msg.noMatchDDL) ? 'No matching DDL for this record.' : msg.noMatchDDL ? 'No matching DDL for this message.' : msg.isNetard ? 'Record extracted — no DDL applied yet.' : 'No fields parsed.'}</div>
         <div>${msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a DDLMM rule to route this message type.` : 'Create a DDLMM rule for this message, or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.')
+            : (msg.isNetard && msg.noMatchDDL) ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again to apply it to this record.'
             : msg.noMatchDDL  ? 'Load a matching DDL or use Manual Override: select a DDL in the tree and press <strong>▶ Parse</strong>.'
             : msg.isNetard    ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again.'
             : 'Check your DDL definition.'}</div>
@@ -7893,7 +7898,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.220';
+const APP_VERSION  = '1.0.0.221';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

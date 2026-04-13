@@ -1106,7 +1106,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
             <div id="ddlSearchLinesBg" class="ddl-srch-lines-bg" aria-hidden="true"></div>
             <div id="ddlEditorOverlay" class="ddl-hl-overlay" aria-hidden="true"></div>
             <div id="ddlSrchCurMark" class="ddl-srch-cur-layer" aria-hidden="true"></div>
-          <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlight()" onkeydown="if(event.key==='Tab'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd;this.value=this.value.slice(0,s)+'    '+this.value.slice(e);this.selectionStart=this.selectionEnd=s+4;updateDDLEditorState();updateDDLHighlight();}" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}const g=document.getElementById('ddlGutterInner');if(g){g.style.transform='translateY('+(-this.scrollTop)+'px)';}"
+          <textarea id="ddlEditor" spellcheck="false" oninput="updateDDLEditorState();updateDDLHighlightDebounced()" onkeydown="if(event.key==='Tab'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd;this.value=this.value.slice(0,s)+'    '+this.value.slice(e);this.selectionStart=this.selectionEnd=s+4;updateDDLEditorState();updateDDLHighlight();}" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}const g=document.getElementById('ddlGutterInner');if(g){g.style.transform='translateY('+(-this.scrollTop)+'px)';}updateDDLHighlightOnScroll();"
             placeholder="DDL Definition — two formats supported:&#10;&#10;── Simple (ISO 8583) ───────────────────────────────&#10;FIELD_ID  TYPE  LENGTH  &quot;Description&quot;&#10;Types:  FIXED  LLVAR  LLLVAR  BMP&#10;IDs:    MTI  BMP  or field number 1–128&#10;&#10;── HPE DDL (NonStop / Tandem) ──────────────────────&#10;DEF message-name.&#10;  02 field-name  PIC X(n).&#10;  02 num-field   PIC 9(n) COMP.&#10;  02 bin-field   TYPE BINARY 16.&#10;  02 group.&#10;    03 sub-field PIC X(5).&#10;END.&#10;&#10;Select or create a DDL in the tree on the left,&#10;or drop a .ddl / .txt file here to load it."></textarea>
           </div></div>
         </div>
@@ -5414,24 +5414,67 @@ function _hlHPELine(line) {
   return codeHL + (commentPart ? _sp(commentPart, 'comment') : '');
 }
 
-function updateDDLHighlight() {
+// Virtual-rendering threshold: files above this line count get partial highlighting.
+// Lines outside the visible viewport + buffer are output as plain escaped text,
+// dramatically reducing DOM node count and layout cost for large files.
+const _HL_VIRT_THRESHOLD = 800;
+const _HL_VIRT_BUFFER    = 120;  // extra lines above/below viewport to highlight
+
+let _ddlHlDebounceTimer = null;
+
+function updateDDLHighlight(fromScroll = false) {
   const overlay = document.getElementById('ddlEditorOverlay');
   const ta = document.getElementById('ddlEditor');
   if (!overlay || !ta) return;
   const text = ta.value;
   if (!text) { overlay.innerHTML = ''; updateDDLGutter(); _ddlSrchRecompute(); return; }
+
   const isDDLMM = S.scope?.type === 'ddlmm';
   const isHPE   = !isDDLMM && isHPEDDLText(text);
-  const lines = text.split('\n').map(line => {
+  const rawLines = text.split('\n');
+  const lineCount = rawLines.length;
+
+  // Virtual rendering: for large files only highlight lines near the viewport
+  let visStart = 0, visEnd = lineCount;
+  if (lineCount > _HL_VIRT_THRESHOLD) {
+    const lineH  = parseFloat(getComputedStyle(ta).lineHeight) || 16;
+    visStart = Math.max(0, Math.floor(ta.scrollTop / lineH) - _HL_VIRT_BUFFER);
+    visEnd   = Math.min(lineCount, Math.ceil((ta.scrollTop + ta.clientHeight) / lineH) + _HL_VIRT_BUFFER);
+  }
+
+  const lines = rawLines.map((line, i) => {
+    if (i < visStart || i >= visEnd) return _escH(line); // plain text outside viewport
     if (isDDLMM) return _hlDDLMMLine(line);
     if (isHPE)   return _hlHPELine(line);
     return _hlSimpleLine(line);
   });
+
   overlay.innerHTML = lines.join('\n');
   // sync scroll position via transform (overflow:hidden blocks scrollLeft on the overlay)
   overlay.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
-  updateDDLGutter();
-  _ddlSrchRecompute();
+  if (!fromScroll) { updateDDLGutter(); _ddlSrchRecompute(); }
+}
+
+// Debounced version for oninput on large files — avoids re-highlighting on every keystroke
+function updateDDLHighlightDebounced() {
+  const ta = document.getElementById('ddlEditor');
+  const lineCount = ta ? ta.value.split('\n').length : 0;
+  if (lineCount > _HL_VIRT_THRESHOLD) {
+    clearTimeout(_ddlHlDebounceTimer);
+    _ddlHlDebounceTimer = setTimeout(() => updateDDLHighlight(), 180);
+  } else {
+    updateDDLHighlight();
+  }
+}
+
+// Scroll-triggered overlay refresh — updates visible lines without recomputing gutter/search
+function updateDDLHighlightOnScroll() {
+  const ta = document.getElementById('ddlEditor');
+  const lineCount = ta ? ta.value.split('\n').length : 0;
+  if (lineCount > _HL_VIRT_THRESHOLD) {
+    clearTimeout(_ddlHlDebounceTimer);
+    _ddlHlDebounceTimer = setTimeout(() => updateDDLHighlight(true), 60);
+  }
 }
 
 function updateDDLGutter() {
@@ -7046,14 +7089,20 @@ function _scrollEditorToDef(defName) {
   const ta = document.getElementById('ddlEditor');
   if (!ta) return;
   const text = ta.value;
-  const re = new RegExp(`^\\s*(?:DEF|DEFINITION|RECORD)\\s+(?:IS\\s+)?${defName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`, 'im');
+  // Use [^\S\n]* (spaces/tabs only) instead of \s* so the match never
+  // consumes newlines before the DEF line — prevents multi-line selection.
+  const re = new RegExp(`^[^\\S\\n]*(?:DEF|DEFINITION|RECORD)\\s+(?:IS\\s+)?${defName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`, 'im');
   const m  = re.exec(text);
   if (!m) return;
   ta.focus();
   ta.setSelectionRange(m.index, m.index + m[0].length);
-  const linesBefore   = text.substring(0, m.index).split('\n').length - 1;
-  const lineHeightPx  = parseInt(getComputedStyle(ta).lineHeight) || 16;
-  ta.scrollTop = Math.max(0, (linesBefore - 2)) * lineHeightPx;
+  // Count lines before the match for scroll positioning
+  const linesBefore  = text.substring(0, m.index).split('\n').length - 1;
+  const lineH        = parseFloat(getComputedStyle(ta).lineHeight) || 16;
+  const padTop       = parseFloat(getComputedStyle(ta).paddingTop)  || 0;
+  const matchTop     = padTop + linesBefore * lineH;
+  // Scroll so target line sits 3 lines from the top of the visible area
+  ta.scrollTop = Math.max(0, matchTop - lineH * 3);
 }
 
 // Detect whether text is HPE DDL format.
@@ -8101,7 +8150,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.235';
+const APP_VERSION  = '1.0.0.236';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

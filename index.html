@@ -877,7 +877,7 @@ body.light .trk-chk { color-scheme: light; }
   display: flex; flex-direction: column; gap: 12px;
 }
 .modal-label {
-  font-size: 12px; color: var(--text); font-weight: 600;
+  font-size: var(--sz-mono); color: var(--text); font-weight: 600;
 }
 .modal-input {
   background: var(--bg-input);
@@ -6670,29 +6670,29 @@ function showDDLPickerModal(msgTypeLabel, matches, cb) {
       // Single entry — flat row (may have a defName suffix)
       const { m, i } = entries[0];
       const defSuffix = m.defName
-        ? ` <span style="color:var(--accent);opacity:0.85;font-size:10px">/ ${esc(m.defName)}</span>`
+        ? ` <span style="color:var(--accent);opacity:0.85;font-size:var(--sz-mono)">/ ${esc(m.defName)}</span>`
         : '';
       html += `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border)">
         <input type="radio" name="ddl-pick-r" value="${i}" style="flex-shrink:0">
-        <span style="font-family:var(--font-mono);font-size:11px;flex:1;word-break:break-all">${esc(path)}${defSuffix}</span>
-        <span style="color:var(--text-dim);font-size:10px;white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
+        <span style="font-family:var(--font-mono);font-size:var(--sz-mono);flex:1;word-break:break-all">${esc(path)}${defSuffix}</span>
+        <span style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
       </label>`;
     } else {
-      // Multi-DEF group — collapsed header + expandable sub-list
+      // Multi-DEF group — collapsed header + expandable sub-list (no inner scroll — outer list scrolls)
       const groupId = `dpg-${path.replace(/\W/g,'_')}`;
       html += `<div style="border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;user-select:none"
              onclick="(function(btn,body){body.style.display=body.style.display==='none'?'block':'none';btn.textContent=body.style.display==='none'?'+':'−';})(this.querySelector('.dpg-btn'),document.getElementById('${groupId}'))">
           <span class="dpg-btn" style="flex-shrink:0;width:14px;text-align:center;font-weight:700;color:var(--accent)">+</span>
-          <span style="font-family:var(--font-mono);font-size:11px;flex:1;word-break:break-all">${esc(path)}</span>
-          <span style="color:var(--text-dim);font-size:10px;white-space:nowrap">${entries.length} definitions</span>
+          <span style="font-family:var(--font-mono);font-size:var(--sz-mono);flex:1;word-break:break-all">${esc(path)}</span>
+          <span style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap">${entries.length} definitions</span>
         </div>
-        <div id="${groupId}" style="display:none;max-height:220px;overflow-y:auto;background:rgba(0,0,0,0.15)">
+        <div id="${groupId}" style="display:none;background:rgba(0,0,0,0.15)">
           ${entries.map(({ m, i }) => `
           <label style="display:flex;align-items:center;gap:8px;padding:5px 10px 5px 28px;cursor:pointer;border-top:1px solid var(--border)">
             <input type="radio" name="ddl-pick-r" value="${i}" style="flex-shrink:0">
-            <span style="font-family:var(--font-mono);font-size:11px;flex:1">${esc(m.defName || '—')}</span>
-            <span style="color:var(--text-dim);font-size:10px;white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
+            <span style="font-family:var(--font-mono);font-size:var(--sz-mono);flex:1">${esc(m.defName || '—')}</span>
+            <span style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
           </label>`).join('')}
         </div>
       </div>`;
@@ -8073,7 +8073,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.231';
+const APP_VERSION  = '1.0.0.232';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -9010,9 +9010,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <!-- ===== DDL MATCH PICKER MODAL ===== -->
 <div class="modal-overlay hidden" id="ddlPickerOverlay">
-  <div class="modal-box" style="min-width:340px;max-width:520px">
+  <div class="modal-box" style="min-width:340px;max-width:520px;max-height:80vh">
     <div class="modal-label" id="ddlPickerLabel">Multiple DDLs matched — select one:</div>
-    <div id="ddlPickerList" style="margin:10px 0 4px;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;background:var(--bg-input)"></div>
+    <div id="ddlPickerList" style="margin:10px 0 4px;flex:1;min-height:0;overflow-y:auto;border:1px solid var(--border);border-radius:4px;background:var(--bg-input)"></div>
     <div class="modal-btns" style="justify-content:flex-end;gap:6px">
       <button class="btn" id="ddlPickerCancel">Cancel</button>
       <button class="btn" id="ddlPickerSession" disabled>Use for session</button>

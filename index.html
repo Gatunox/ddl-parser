@@ -6418,19 +6418,12 @@ function renderDDLTree() {
             const fileCaret    = showDefSubNodes
               ? `<span class="tree-caret" ${fileCaretClick}>${fileExp?'−':'+'}</span>`
               : `<span class="tree-caret" style="visibility:hidden">−</span>`;
-            // Token map badge: show [TKN] if this entry is a token map file
+            // Token map badge: show [TKN] on filename only if this file IS a token map
+            // XX token ID badges belong on DEF sub-nodes only (token maps reference DEF names, not filenames)
             const isTknMap = !isPending && isTokenMapText(fileContent);
-            // Token ID badge: show [XX] if this filename OR any DEF name inside is referenced in a token map
-            // (token maps reference DEF names, not filenames, so we check both)
-            const tknId    = !isTknMap && (
-              S.tokenMap[d.toUpperCase()] ||
-              fileDefNames.map(n => S.tokenMap[n.toUpperCase()]).find(Boolean)
-            );
             const tknBadge = isTknMap
               ? `<span class="tree-tkn-map" title="Token map file">TKN</span>`
-              : tknId
-                ? `<span class="tree-tkn-id" title="Token ID: ${tknId}">${tknId}</span>`
-                : '';
+              : '';
             // Type mapping badge: show type if this DDL is the target of a ## rule
             const mappedType = !isPending && typeMapBadges[fileKey];
             const typeBadge  = mappedType
@@ -8016,7 +8009,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.228';
+const APP_VERSION  = '1.0.0.229';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

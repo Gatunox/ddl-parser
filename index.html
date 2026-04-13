@@ -1633,9 +1633,10 @@ function typeSize(t) {
 
 // ---- HPE DDL parser (NonStop / Tandem Data Definition Language) -------------
 // Converts DEF/RECORD statements into flat { id, type, length, description }[].
-function parseHPEDDL(text, externalDefs, externalSections) {
+function parseHPEDDL(text, externalDefs, externalSections, targetDef = null) {
   // Delegate to buildDDLDocFields so REDEFINES offsets, qualified names, and
   // group structure are all handled consistently with the DDL Doc display.
+  // targetDef: if set, only process the named DEF section (for per-DEF scoring).
   const typeRegistry = externalDefs instanceof Map ? externalDefs
     : (externalDefs ? new Map(externalDefs) : null);
 
@@ -1644,6 +1645,7 @@ function parseHPEDDL(text, externalDefs, externalSections) {
   const out = [];
 
   for (const sec of sections) {
+    if (targetDef && sec.name.toUpperCase() !== targetDef.toUpperCase()) continue;
     const expandedItems = expandTypeRefs(sec.items, sectionByName, new Set(), externalSections || null);
     const { fields } = buildDDLDocFields(expandedItems, typeRegistry);
     for (const f of fields) {
@@ -2930,7 +2932,7 @@ function openMsgExportModal() {
     const panDisp = pan;
     const type    = msg.msgType?.type || '';
     const proc    = msg.typeDesc || _netardTypeLabel(msg.typeCode);
-    const origin  = msg.isNetard ? (msg.source || '') : (msg.ddlPath ? msg.ddlPath.split('/').pop() : '');
+    const origin  = msg.isNetard ? (msg.source || '') : (msg.ddlPath ? (msg.ddlPath.split('/').pop() + (msg.defName ? '/' + msg.defName : '')) : '');
     const dest    = msg.isNetard ? (msg.dest || '') : '';
     const time    = msg.time || msg.timestamp || '';
     const size    = msg.isNetard ? msg.recLength : (msg.bytes?.length || 0);
@@ -4614,6 +4616,22 @@ function parseNetardLog(text) {
   return records;
 }
 
+// Expand a file entry into one candidate per DEF for multi-DEF HPE files,
+// or a single candidate for everything else.
+// Each candidate: { path, defName (null for single-def/ISO), defs[] }
+function expandToCandidates(path, content, externalDefs, externalSections) {
+  if (isHPEDDLText(content)) {
+    const defNames = parseDEFNames(content);
+    if (defNames.length > 1) {
+      return defNames
+        .map(dn => ({ path, defName: dn, defs: parseHPEDDL(content, externalDefs, externalSections, dn) }))
+        .filter(c => c.defs.length > 1);
+    }
+  }
+  const defs = parseDDL(content, externalDefs, externalSections);
+  return defs.length > 1 ? [{ path, defName: null, defs }] : [];
+}
+
 // Return all DDL entries in a given volume (all subvolumes).
 // Used by auto-detection to find the right definitions without manual scope selection.
 function getDDLsForVol(volName) {
@@ -4721,14 +4739,14 @@ function doParseNetardLog(text) {
   for (const vol of Object.keys(S.ddlTree)) {
     const entries = getDDLsForVol(vol)
       .filter(({ path }) => !S.tokenMap[path.split('/').pop().toUpperCase()])
-      .map(({ path, content }) => ({ path, defs: parseDDL(content, _netardReg, _netardSecReg) }))
-      .filter(d => d.defs.length > 0);
+      .flatMap(({ path, content }) => expandToCandidates(path, content, _netardReg, _netardSecReg))
+      .filter(c => !/(?:TKN|TKNX)$/i.test((c.defName || c.path.split('/').pop())));
     if (entries.length) compiledByVol[vol.toUpperCase()] = (compiledByVol[vol.toUpperCase()] || []).concat(entries);
   }
 
   const parsed         = [];
   const deferreds      = [];
-  const sessionMappings = {};
+  const sessionMappings = {}; // type → { ddlPath, defName }
 
   for (const rec of records) {
     // Build byte array from message text (1 char = 1 byte)
@@ -4782,12 +4800,16 @@ function doParseNetardLog(text) {
         continue;
       }
       // Build pool by walking the volume hierarchy (e.g. ATM → BASE)
-      // Exclude trivial single-field defs — no complex message type can be parsed by a 1-element DDL
-      const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || [])
-        .filter(c => c.defs.length > 1);
+      const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || []);
 
       const allMatches = pool
-        .map(c => { const r = bestDDLMatch(parseBytes, [c]); return { ddlPath: r.ddlPath, fields: r.fields, score: r.score }; })
+        .map(c => {
+          const r = bestDDLMatch(parseBytes, [c]);
+          const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
+          const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
+          const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
+          return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score };
+        })
         .filter(m => m.score > 0)
         .sort((a, b) => b.score - a.score);
 
@@ -4795,8 +4817,9 @@ function doParseNetardLog(text) {
         parsed.push({ ..._base, msgType, fields: [], ddlPath: null, tokens: [], noMatchDDL: true });
 
       } else if (allMatches.length === 1 || sessionMappings[msgType.type]) {
-        const match = sessionMappings[msgType.type]
-          ? (allMatches.find(m => m.ddlPath === sessionMappings[msgType.type]) || allMatches[0])
+        const sm    = sessionMappings[msgType.type];
+        const match = sm
+          ? (allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || allMatches[0])
           : allMatches[0];
         if (allMatches.length === 1) _suggestTypeMapping(msgType.type, msgType.label, match.ddlPath);
         const tkns = extractTokensFromMessage(match.fields, parseBytes, msgType.type, match.ddlPath);
@@ -4844,17 +4867,18 @@ function doParseNetardLog(text) {
     if (idx >= deferreds.length) { _finalizeNetard(); return; }
     const d = deferreds[idx];
     if (sessionMappings[d.msgType.type]) {
-      const match = d.allMatches.find(m => m.ddlPath === sessionMappings[d.msgType.type]) || d.allMatches[0];
+      const sm    = sessionMappings[d.msgType.type];
+      const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
       const tkns  = extractTokensFromMessage(match.fields, d.parseBytes, d.msgType.type, match.ddlPath);
-      parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: match.fields, ddlPath: match.ddlPath, tokens: tkns };
+      parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: tkns };
       _processNetardDeferred(idx + 1);
       return;
     }
     showDDLPickerModal(d.msgType.label || d.msgType.type, d.allMatches, choice => {
       const match = choice ? choice.match : d.allMatches[0];
-      sessionMappings[d.msgType.type] = match.ddlPath;
+      sessionMappings[d.msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
       const tkns = extractTokensFromMessage(match.fields, d.parseBytes, d.msgType.type, match.ddlPath);
-      parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: match.fields, ddlPath: match.ddlPath, tokens: tkns };
+      parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: tkns };
       if (choice?.saveRule) addTypeMappingRule(d.msgType.type, d.msgType.label, match.ddlPath);
       _processNetardDeferred(idx + 1);
     });
@@ -4965,8 +4989,8 @@ function doParseMessages() {
   for (const vol of Object.keys(S.ddlTree)) {
     const entries = getDDLsForVol(vol)
       .filter(({ path }) => !S.tokenMap[path.split('/').pop().toUpperCase()])
-      .map(({ path, content }) => ({ path, defs: parseDDL(content, _repoReg, _repoSecReg) }))
-      .filter(d => d.defs.length > 0);
+      .flatMap(({ path, content }) => expandToCandidates(path, content, _repoReg, _repoSecReg))
+      .filter(c => !/(?:TKN|TKNX)$/i.test((c.defName || c.path.split('/').pop())));
     if (entries.length) compiledByVol[vol.toUpperCase()] = (compiledByVol[vol.toUpperCase()] || []).concat(entries);
   }
   const allCompiled = Object.values(compiledByVol).flat();
@@ -5024,13 +5048,17 @@ function doParseMessages() {
       }
 
       // Build pool by walking the volume hierarchy (e.g. ATM → BASE)
-      // Exclude trivial single-field defs — no complex message type can be parsed by a 1-element DDL
-      const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || [])
-        .filter(c => c.defs.length > 1);
+      const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || []);
 
-      // Score every candidate; keep only those with score > 0, sorted best-first
+      // Score every candidate; apply name-match bonus; keep score > 0, sorted best-first
       const allMatches = pool
-        .map(c => { const r = bestDDLMatch(bytes, [c]); return { ddlPath: r.ddlPath, fields: r.fields, score: r.score }; })
+        .map(c => {
+          const r = bestDDLMatch(bytes, [c]);
+          const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
+          const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
+          const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
+          return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score };
+        })
         .filter(m => m.score > 0)
         .sort((a, b) => b.score - a.score);
 
@@ -5042,8 +5070,9 @@ function doParseMessages() {
 
       } else if (allMatches.length === 1 || sessionMappings[msgType.type]) {
         // Single match OR session already chose a DDL for this type
-        const match = sessionMappings[msgType.type]
-          ? (allMatches.find(m => m.ddlPath === sessionMappings[msgType.type]) || allMatches[0])
+        const sm    = sessionMappings[msgType.type];
+        const match = sm
+          ? (allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || allMatches[0])
           : allMatches[0];
         if (allMatches.length === 1) _suggestTypeMapping(msgType.type, msgType.label, match.ddlPath);
         const tkns = extractTokensFromMessage(match.fields, bytes, msgType.type, match.ddlPath);
@@ -5095,10 +5124,11 @@ function doParseMessages() {
 
     // Reuse session choice if already made for this type
     if (sessionMappings[d.msgType.type]) {
-      const match = d.allMatches.find(m => m.ddlPath === sessionMappings[d.msgType.type]) || d.allMatches[0];
+      const sm    = sessionMappings[d.msgType.type];
+      const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
       const tkns  = extractTokensFromMessage(match.fields, d.bytes, d.msgType.type, match.ddlPath);
       parsed[d.parsedIdx] = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
-        fields: match.fields, ddlPath: match.ddlPath, msgType: d.msgType, tokens: tkns,
+        fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, msgType: d.msgType, tokens: tkns,
         byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length };
       _processDeferred(idx + 1);
       return;
@@ -5106,10 +5136,10 @@ function doParseMessages() {
 
     showDDLPickerModal(d.msgType.label || d.msgType.type, d.allMatches, choice => {
       const match = choice ? choice.match : d.allMatches[0]; // cancel → best guess
-      sessionMappings[d.msgType.type] = match.ddlPath;
+      sessionMappings[d.msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
       const tkns = extractTokensFromMessage(match.fields, d.bytes, d.msgType.type, match.ddlPath);
       parsed[d.parsedIdx] = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
-        fields: match.fields, ddlPath: match.ddlPath, msgType: d.msgType, tokens: tkns,
+        fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, msgType: d.msgType, tokens: tkns,
         byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length };
       if (choice?.saveRule) addTypeMappingRule(d.msgType.type, d.msgType.label, match.ddlPath);
       _processDeferred(idx + 1);
@@ -5556,7 +5586,7 @@ function renderCurrent() {
     document.getElementById('resPanelTitle').textContent = `Rec #${msg.recNo}  ${msg.typeDesc}${tp}`;
   } else {
     const tp       = (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') ? ` · ${msg.msgType.label}` : '';
-    const ddlLabel = msg.ddlPath ? ` — ${msg.ddlPath.split('/').pop()}` : '';
+    const ddlLabel = msg.ddlPath ? ` — ${msg.ddlPath.split('/').pop()}${msg.defName ? '/' + msg.defName : ''}` : '';
     document.getElementById('resPanelTitle').textContent = `Parse Results${tp}${ddlLabel}`;
   }
 }
@@ -5580,7 +5610,7 @@ function renderFieldTable(msg) {
   } else if (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') {
     const t   = msg.msgType;
     const cls = 'btype btype-' + t.type.toLowerCase();
-    const ddlName = msg.ddlPath ? msg.ddlPath.split('/').pop() : '';
+    const ddlName = msg.ddlPath ? (msg.ddlPath.split('/').pop() + (msg.defName ? '/' + msg.defName : '')) : '';
     metaBar = `<div class="rec-meta">
       <span class="${cls}">${esc(t.type)}</span>
       ${ddlName ? `<span class="rec-meta-pipe">|</span><span>${esc(ddlName)}</span>` : ''}
@@ -6622,22 +6652,53 @@ function showDDLPickerModal(msgTypeLabel, matches, cb) {
   const cancelBtn = document.getElementById('ddlPickerCancel');
 
   labelEl.innerHTML = `Multiple DDLs matched <strong>${esc(msgTypeLabel)}</strong> — select one to use:`;
-  listEl.innerHTML  = matches.map((m, i) => {
-    const parts = m.ddlPath.split('/');
-    const [pVol, pSv, pName] = parts;
-    const fileContent = (pVol && pSv && pName) ? (S.ddlTree[pVol]?.[pSv]?.[pName] || '') : '';
-    const defNames = fileContent && isHPEDDLText(fileContent) ? parseDEFNames(fileContent) : [];
-    const defSuffix = defNames.length === 1
-      ? ` <span style="color:var(--accent);opacity:0.85">/ ${esc(defNames[0])}</span>`
-      : defNames.length > 1
-        ? ` <span style="color:var(--text-dim);font-size:10px">[${defNames.map(esc).join(', ')}]</span>`
+
+  // Group matches by ddlPath. Single-DEF files show as a flat row.
+  // Multi-DEF files (same path, multiple defNames) show as a collapsed group with expand toggle.
+  const groups = [];
+  const pathOrder = [];
+  const byPath = new Map();
+  matches.forEach((m, i) => {
+    if (!byPath.has(m.ddlPath)) { byPath.set(m.ddlPath, []); pathOrder.push(m.ddlPath); }
+    byPath.get(m.ddlPath).push({ m, i });
+  });
+
+  let html = '';
+  for (const path of pathOrder) {
+    const entries = byPath.get(path);
+    if (entries.length === 1) {
+      // Single entry — flat row (may have a defName suffix)
+      const { m, i } = entries[0];
+      const defSuffix = m.defName
+        ? ` <span style="color:var(--accent);opacity:0.85;font-size:10px">/ ${esc(m.defName)}</span>`
         : '';
-    return `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border)">
-       <input type="radio" name="ddl-pick-r" value="${i}" style="flex-shrink:0">
-       <span style="font-family:var(--font-mono);font-size:11px;flex:1;word-break:break-all">${esc(m.ddlPath)}${defSuffix}</span>
-       <span style="color:var(--text-dim);font-size:10px;white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
-     </label>`;
-  }).join('');
+      html += `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border)">
+        <input type="radio" name="ddl-pick-r" value="${i}" style="flex-shrink:0">
+        <span style="font-family:var(--font-mono);font-size:11px;flex:1;word-break:break-all">${esc(path)}${defSuffix}</span>
+        <span style="color:var(--text-dim);font-size:10px;white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
+      </label>`;
+    } else {
+      // Multi-DEF group — collapsed header + expandable sub-list
+      const groupId = `dpg-${path.replace(/\W/g,'_')}`;
+      html += `<div style="border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;user-select:none"
+             onclick="(function(btn,body){body.style.display=body.style.display==='none'?'block':'none';btn.textContent=body.style.display==='none'?'+':'−';})(this.querySelector('.dpg-btn'),document.getElementById('${groupId}'))">
+          <span class="dpg-btn" style="flex-shrink:0;width:14px;text-align:center;font-weight:700;color:var(--accent)">+</span>
+          <span style="font-family:var(--font-mono);font-size:11px;flex:1;word-break:break-all">${esc(path)}</span>
+          <span style="color:var(--text-dim);font-size:10px;white-space:nowrap">${entries.length} definitions</span>
+        </div>
+        <div id="${groupId}" style="display:none;max-height:220px;overflow-y:auto;background:rgba(0,0,0,0.15)">
+          ${entries.map(({ m, i }) => `
+          <label style="display:flex;align-items:center;gap:8px;padding:5px 10px 5px 28px;cursor:pointer;border-top:1px solid var(--border)">
+            <input type="radio" name="ddl-pick-r" value="${i}" style="flex-shrink:0">
+            <span style="font-family:var(--font-mono);font-size:11px;flex:1">${esc(m.defName || '—')}</span>
+            <span style="color:var(--text-dim);font-size:10px;white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
+          </label>`).join('')}
+        </div>
+      </div>`;
+    }
+  }
+  listEl.innerHTML = html;
 
   sessBtn.disabled = true;
   ruleBtn.disabled = true;
@@ -8012,7 +8073,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.230';
+const APP_VERSION  = '1.0.0.231';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

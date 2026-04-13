@@ -3548,12 +3548,27 @@ function findTokenDDL(ddlName, preferredVol, isISO) {
   const vols = Object.keys(S.ddlTree).sort((a,b) =>
     a === preferredVol ? -1 : b === preferredVol ? 1 : 0);
   for (const tryName of tryNames) {
+    const tryUpper = tryName.toUpperCase();
     for (const vol of vols) {
       for (const sv of Object.keys(S.ddlTree[vol] || {})) {
-        const content = S.ddlTree[vol]?.[sv]?.[tryName];
-        if (content && !isTokenMap(content)) {
-          const defs = parseDDL(content);
-          if (defs.length) return { path: `${vol}/${sv}/${tryName}`, defs };
+        const svFiles = S.ddlTree[vol][sv] || {};
+        for (const fileName of Object.keys(svFiles)) {
+          const content = svFiles[fileName];
+          if (!content || isTokenMap(content)) continue;
+          // Match 1: filename matches (case-insensitive)
+          if (fileName.toUpperCase() === tryUpper) {
+            const defs = parseDDL(content);
+            if (defs.length) return { path: `${vol}/${sv}/${fileName}`, defs };
+          }
+          // Match 2: a DEF name inside the file matches (case-insensitive)
+          // Needed because the tree is now keyed by filename, not DEF name
+          if (isHPEDDLText(content)) {
+            const defNames = parseDEFNames(content);
+            if (defNames.some(dn => dn.toUpperCase() === tryUpper)) {
+              const defs = parseHPEDDL(content, null, null, tryName);
+              if (defs.length) return { path: `${vol}/${sv}/${fileName}`, defs };
+            }
+          }
         }
       }
     }
@@ -8086,7 +8101,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.234';
+const APP_VERSION  = '1.0.0.235';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

@@ -4622,7 +4622,8 @@ function parseNetardLog(text) {
 function expandToCandidates(path, content, externalDefs, externalSections) {
   if (isHPEDDLText(content)) {
     const defNames = parseDEFNames(content);
-    if (defNames.length > 1) {
+    if (defNames.length >= 1) {
+      // One candidate per DEF — single-DEF files still get defName set so picker shows it
       return defNames
         .map(dn => ({ path, defName: dn, defs: parseHPEDDL(content, externalDefs, externalSections, dn) }))
         .filter(c => c.defs.length > 1);
@@ -8085,7 +8086,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.233';
+const APP_VERSION  = '1.0.0.234';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

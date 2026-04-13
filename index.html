@@ -6446,9 +6446,10 @@ function renderDDLTree() {
             const warnBadge  = (!valResult?.errors?.length && valResult?.warnings?.length)
               ? `<span class="tree-warn-badge" title="${esc(valResult.warnings.map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${valResult.warnings.length}</span>`
               : '';
-            // Single-DEF: badges belong on the DEF sub-node; Multi-DEF: file-level summary on filename
-            const fileBadges = singleDefFile ? '' : tknBadge + typeBadge + unresBadge + errBadge + warnBadge;
-            const defBadges  = singleDefFile ? tknBadge + typeBadge + unresBadge + errBadge + warnBadge : '';
+            // tknBadge and typeBadge are file-level — always on filename node (visible even when collapsed).
+            // unresBadge/errBadge/warnBadge go on DEF sub-node for single-DEF files, filename for multi-DEF.
+            const fileBadges = tknBadge + typeBadge + (singleDefFile ? '' : unresBadge + errBadge + warnBadge);
+            const defBadges  = singleDefFile ? unresBadge + errBadge + warnBadge : '';
             html += `<div class="tree-node${dSel}${dAnc}${pendCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
               ${fileCaret}
               <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${fileBadges}
@@ -8009,7 +8010,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.226';
+const APP_VERSION  = '1.0.0.227';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

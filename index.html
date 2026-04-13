@@ -1263,143 +1263,143 @@ const S = {
 const ISO8583_DDL = `* ISO 8583:1987 — Base24 Internal Format
 * Bitmap is ASCII-hex encoded: 16 printable hex chars represent 8 binary bytes.
 * ISO_PFX is the 3-byte "ISO" routing prefix used by Base24.
-* NOTE: Base24 header fields (before MTI) are TBD — update when spec is available.
-* Format: FIELD_ID  TYPE  LENGTH  "Description"
+* Format: FIELD_ID  TYPE  LENGTH  DATATYPE  "Description"
 * Types:  FIXED | LLVAR | LLLVAR | BMP
+* DataTypes: N=numeric  A=alpha  AN=alphanumeric  ANS=alphanumeric+special  B=binary  Z=track2/3
 
-ISO_PFX  FIXED    3   "ISO Protocol Header (Base24 routing prefix)"
+ISO_PFX  FIXED    3   AN   "ISO Protocol Header (Base24 routing prefix)"
 
-MTI      FIXED    4   "Message Type Indicator"
-BMP      FIXED   16   "Primary Bitmap (ASCII hex encoded — 16 chars = 8 bytes)"
+MTI      FIXED    4   N    "Message Type Indicator"
+BMP      FIXED   16   B    "Primary Bitmap (ASCII hex encoded — 16 chars = 8 bytes)"
 
-1        BMP     16   "Secondary Bitmap (ASCII hex encoded — 16 chars = 8 bytes)"
-2        LLVAR   19   "Primary Account Number (PAN)"
-3        FIXED    6   "Processing Code"
-4        FIXED   12   "Amount, Transaction"
-5        FIXED   12   "Amount, Settlement"
-6        FIXED   12   "Amount, Cardholder Billing"
-7        FIXED   10   "Transmission Date & Time (MMDDhhmmss)"
-8        FIXED    8   "Amount, Cardholder Billing Fee"
-9        FIXED    8   "Conversion Rate, Settlement"
-10       FIXED    8   "Conversion Rate, Cardholder Billing"
-11       FIXED    6   "Systems Trace Audit Number (STAN)"
-12       FIXED    6   "Time, Local Transaction (hhmmss)"
-13       FIXED    4   "Date, Local Transaction (MMDD)"
-14       FIXED    4   "Date, Expiration (YYMM)"
-15       FIXED    4   "Date, Settlement (MMDD)"
-16       FIXED    4   "Date, Conversion (MMDD)"
-17       FIXED    4   "Date, Capture (MMDD)"
-18       FIXED    4   "Merchant Type (MCC)"
-19       FIXED    3   "Acquiring Institution Country Code"
-20       FIXED    3   "PAN Extended Country Code"
-21       FIXED    3   "Forwarding Institution Country Code"
-22       FIXED    3   "Point of Service Entry Mode"
-23       FIXED    3   "Application PAN Sequence Number"
-24       FIXED    3   "Function Code / Network International ID"
-25       FIXED    2   "Point of Service Condition Code"
-26       FIXED    2   "Point of Service PIN Capture Code"
-27       FIXED    1   "Authorizing ID Response Length"
-28       FIXED    9   "Amount, Transaction Fee"
-29       FIXED    9   "Amount, Settlement Fee"
-30       FIXED    9   "Amount, Transaction Processing Fee"
-31       FIXED    9   "Amount, Settlement Processing Fee"
-32       LLVAR   11   "Acquiring Institution ID Code"
-33       LLVAR   11   "Forwarding Institution ID Code"
-34       LLVAR   28   "PAN Extended"
-35       LLVAR   37   "Track 2 Data"
-36       LLLVAR 104   "Track 3 Data"
-37       FIXED   12   "Retrieval Reference Number"
-38       FIXED    6   "Authorization ID Response"
-39       FIXED    2   "Response Code"
-40       FIXED    3   "Service Restriction Code"
-41       FIXED    8   "Card Acceptor Terminal ID"
-42       FIXED   15   "Card Acceptor ID Code"
-43       FIXED   40   "Card Acceptor Name/Location"
-44       LLVAR   25   "Additional Response Data"
-45       LLVAR   76   "Track 1 Data"
-46       LLLVAR 999   "Additional Data — ISO"
-47       LLLVAR 999   "Additional Data — National"
-48       LLLVAR 999   "Additional Data — Private"
-49       FIXED    3   "Currency Code, Transaction"
-50       FIXED    3   "Currency Code, Settlement"
-51       FIXED    3   "Currency Code, Cardholder Billing"
-52       FIXED    8   "PIN Data"
-53       FIXED   16   "Security Related Control Info"
-54       LLLVAR 120   "Additional Amounts"
-55       LLLVAR 255   "ICC Data (EMV)"
-56       LLLVAR 999   "Reserved ISO"
-57       LLLVAR 999   "Reserved National"
-58       LLLVAR 999   "Reserved National"
-59       LLLVAR 999   "Reserved National"
-60       LLLVAR 999   "Reserved Private"
-61       LLLVAR 999   "Reserved Private"
-62       LLLVAR 999   "Reserved Private"
-63       LLLVAR 999   "Reserved Private"
-64       FIXED    8   "Message Authentication Code (MAC)"
-65       FIXED    8   "Bitmap Extended (Tertiary)"
-66       FIXED    1   "Settlement Code"
-67       FIXED    2   "Extended Payment Code"
-68       FIXED    3   "Receiving Institution Country Code"
-69       FIXED    3   "Settlement Institution Country Code"
-70       FIXED    3   "Network Management Info Code"
-71       FIXED    4   "Message Number"
-72       FIXED    4   "Message Number, Last"
-73       FIXED    6   "Date, Action (YYMMDD)"
-74       FIXED   10   "Credits, Number"
-75       FIXED   10   "Credits, Reversal Number"
-76       FIXED   10   "Debits, Number"
-77       FIXED   10   "Debits, Reversal Number"
-78       FIXED   10   "Transfer, Number"
-79       FIXED   10   "Transfer, Reversal Number"
-80       FIXED   10   "Inquiries, Number"
-81       FIXED   10   "Authorizations, Number"
-82       FIXED   12   "Credits, Processing Fee Amount"
-83       FIXED   12   "Credits, Transaction Fee Amount"
-84       FIXED   12   "Debits, Processing Fee Amount"
-85       FIXED   12   "Debits, Transaction Fee Amount"
-86       FIXED   16   "Credits, Amount"
-87       FIXED   16   "Credits, Reversal Amount"
-88       FIXED   16   "Debits, Amount"
-89       FIXED   16   "Debits, Reversal Amount"
-90       FIXED   42   "Original Data Elements"
-91       FIXED    1   "File Update Code"
-92       FIXED    2   "File Security Code"
-93       FIXED    5   "Response Indicator"
-94       FIXED    7   "Service Indicator"
-95       FIXED   42   "Replacement Amounts"
-96       FIXED    8   "Message Security Code"
-97       FIXED   17   "Amount, Net Settlement"
-98       FIXED   25   "Payee"
-99       LLVAR   11   "Settlement Institution ID Code"
-100      LLVAR   11   "Receiving Institution ID Code"
-101      LLVAR   17   "File Name"
-102      LLVAR   28   "Account Identification 1"
-103      LLVAR   28   "Account Identification 2"
-104      LLLVAR 100   "Transaction Description"
-105      LLLVAR 999   "Reserved ISO"
-106      LLLVAR 999   "Reserved ISO"
-107      LLLVAR 999   "Reserved ISO"
-108      LLLVAR 999   "Reserved ISO"
-109      LLLVAR 999   "Reserved ISO"
-110      LLLVAR 999   "Reserved ISO"
-111      LLLVAR 999   "Reserved ISO"
-112      LLLVAR 999   "Reserved National"
-113      LLLVAR 999   "Reserved National"
-114      LLLVAR 999   "Reserved National"
-115      LLLVAR 999   "Reserved National"
-116      LLLVAR 999   "Reserved National"
-117      LLLVAR 999   "Reserved National"
-118      LLLVAR 999   "Reserved National"
-119      LLLVAR 999   "Reserved National"
-120      LLLVAR 999   "Reserved Private"
-121      LLLVAR 999   "Reserved Private"
-122      LLLVAR 999   "Reserved Private"
-123      LLLVAR 999   "Reserved Private"
-124      LLLVAR 999   "Reserved Private"
-125      LLLVAR 999   "Reserved Private"
-126      LLLVAR 999   "Reserved Private"
-127      LLLVAR 999   "Reserved Private"
-128      FIXED    8   "Message Authentication Code (Secondary)"
+1        BMP     16   B    "Secondary Bitmap (ASCII hex encoded — 16 chars = 8 bytes)"
+2        LLVAR   19   N    "Primary Account Number (PAN)"
+3        FIXED    6   N    "Processing Code"
+4        FIXED   12   N    "Amount, Transaction"
+5        FIXED   12   N    "Amount, Settlement"
+6        FIXED   12   N    "Amount, Cardholder Billing"
+7        FIXED   10   N    "Transmission Date & Time (MMDDhhmmss)"
+8        FIXED    8   N    "Amount, Cardholder Billing Fee"
+9        FIXED    8   N    "Conversion Rate, Settlement"
+10       FIXED    8   N    "Conversion Rate, Cardholder Billing"
+11       FIXED    6   N    "Systems Trace Audit Number (STAN)"
+12       FIXED    6   N    "Time, Local Transaction (hhmmss)"
+13       FIXED    4   N    "Date, Local Transaction (MMDD)"
+14       FIXED    4   N    "Date, Expiration (YYMM)"
+15       FIXED    4   N    "Date, Settlement (MMDD)"
+16       FIXED    4   N    "Date, Conversion (MMDD)"
+17       FIXED    4   N    "Date, Capture (MMDD)"
+18       FIXED    4   N    "Merchant Type (MCC)"
+19       FIXED    3   N    "Acquiring Institution Country Code"
+20       FIXED    3   N    "PAN Extended Country Code"
+21       FIXED    3   N    "Forwarding Institution Country Code"
+22       FIXED    3   N    "Point of Service Entry Mode"
+23       FIXED    3   N    "Application PAN Sequence Number"
+24       FIXED    3   N    "Function Code / Network International ID"
+25       FIXED    2   N    "Point of Service Condition Code"
+26       FIXED    2   N    "Point of Service PIN Capture Code"
+27       FIXED    1   N    "Authorizing ID Response Length"
+28       FIXED    9   AN   "Amount, Transaction Fee (sign + 8 digits)"
+29       FIXED    9   AN   "Amount, Settlement Fee (sign + 8 digits)"
+30       FIXED    9   AN   "Amount, Transaction Processing Fee (sign + 8 digits)"
+31       FIXED    9   AN   "Amount, Settlement Processing Fee (sign + 8 digits)"
+32       LLVAR   11   N    "Acquiring Institution ID Code"
+33       LLVAR   11   N    "Forwarding Institution ID Code"
+34       LLVAR   28   N    "PAN Extended"
+35       LLVAR   37   Z    "Track 2 Data"
+36       LLLVAR 104   Z    "Track 3 Data"
+37       FIXED   12   AN   "Retrieval Reference Number"
+38       FIXED    6   AN   "Authorization ID Response"
+39       FIXED    2   AN   "Response Code"
+40       FIXED    3   N    "Service Restriction Code"
+41       FIXED    8   ANS  "Card Acceptor Terminal ID"
+42       FIXED   15   ANS  "Card Acceptor ID Code"
+43       FIXED   40   ANS  "Card Acceptor Name/Location"
+44       LLVAR   25   AN   "Additional Response Data"
+45       LLVAR   76   ANS  "Track 1 Data"
+46       LLLVAR 999   ANS  "Additional Data — ISO"
+47       LLLVAR 999   ANS  "Additional Data — National"
+48       LLLVAR 999   ANS  "Additional Data — Private"
+49       FIXED    3   N    "Currency Code, Transaction"
+50       FIXED    3   N    "Currency Code, Settlement"
+51       FIXED    3   N    "Currency Code, Cardholder Billing"
+52       FIXED    8   B    "PIN Data"
+53       FIXED   16   N    "Security Related Control Info"
+54       LLLVAR 120   AN   "Additional Amounts"
+55       LLLVAR 255   B    "ICC Data (EMV)"
+56       LLLVAR 999   ANS  "Reserved ISO"
+57       LLLVAR 999   ANS  "Reserved National"
+58       LLLVAR 999   ANS  "Reserved National"
+59       LLLVAR 999   ANS  "Reserved National"
+60       LLLVAR 999   ANS  "Reserved Private"
+61       LLLVAR 999   ANS  "Reserved Private"
+62       LLLVAR 999   ANS  "Reserved Private"
+63       LLLVAR 999   ANS  "Reserved Private"
+64       FIXED    8   B    "Message Authentication Code (MAC)"
+65       FIXED    8   B    "Bitmap Extended (Tertiary)"
+66       FIXED    1   N    "Settlement Code"
+67       FIXED    2   N    "Extended Payment Code"
+68       FIXED    3   N    "Receiving Institution Country Code"
+69       FIXED    3   N    "Settlement Institution Country Code"
+70       FIXED    3   N    "Network Management Info Code"
+71       FIXED    4   N    "Message Number"
+72       FIXED    4   N    "Message Number, Last"
+73       FIXED    6   N    "Date, Action (YYMMDD)"
+74       FIXED   10   N    "Credits, Number"
+75       FIXED   10   N    "Credits, Reversal Number"
+76       FIXED   10   N    "Debits, Number"
+77       FIXED   10   N    "Debits, Reversal Number"
+78       FIXED   10   N    "Transfer, Number"
+79       FIXED   10   N    "Transfer, Reversal Number"
+80       FIXED   10   N    "Inquiries, Number"
+81       FIXED   10   N    "Authorizations, Number"
+82       FIXED   12   N    "Credits, Processing Fee Amount"
+83       FIXED   12   N    "Credits, Transaction Fee Amount"
+84       FIXED   12   N    "Debits, Processing Fee Amount"
+85       FIXED   12   N    "Debits, Transaction Fee Amount"
+86       FIXED   16   N    "Credits, Amount"
+87       FIXED   16   N    "Credits, Reversal Amount"
+88       FIXED   16   N    "Debits, Amount"
+89       FIXED   16   N    "Debits, Reversal Amount"
+90       FIXED   42   N    "Original Data Elements"
+91       FIXED    1   AN   "File Update Code"
+92       FIXED    2   N    "File Security Code"
+93       FIXED    5   AN   "Response Indicator"
+94       FIXED    7   AN   "Service Indicator"
+95       FIXED   42   AN   "Replacement Amounts (sign + digits)"
+96       FIXED    8   B    "Message Security Code"
+97       FIXED   17   AN   "Amount, Net Settlement (sign + 16 digits)"
+98       FIXED   25   ANS  "Payee"
+99       LLVAR   11   N    "Settlement Institution ID Code"
+100      LLVAR   11   N    "Receiving Institution ID Code"
+101      LLVAR   17   ANS  "File Name"
+102      LLVAR   28   ANS  "Account Identification 1"
+103      LLVAR   28   ANS  "Account Identification 2"
+104      LLLVAR 100   ANS  "Transaction Description"
+105      LLLVAR 999   ANS  "Reserved ISO"
+106      LLLVAR 999   ANS  "Reserved ISO"
+107      LLLVAR 999   ANS  "Reserved ISO"
+108      LLLVAR 999   ANS  "Reserved ISO"
+109      LLLVAR 999   ANS  "Reserved ISO"
+110      LLLVAR 999   ANS  "Reserved ISO"
+111      LLLVAR 999   ANS  "Reserved ISO"
+112      LLLVAR 999   ANS  "Reserved National"
+113      LLLVAR 999   ANS  "Reserved National"
+114      LLLVAR 999   ANS  "Reserved National"
+115      LLLVAR 999   ANS  "Reserved National"
+116      LLLVAR 999   ANS  "Reserved National"
+117      LLLVAR 999   ANS  "Reserved National"
+118      LLLVAR 999   ANS  "Reserved National"
+119      LLLVAR 999   ANS  "Reserved National"
+120      LLLVAR 999   ANS  "Reserved Private"
+121      LLLVAR 999   ANS  "Reserved Private"
+122      LLLVAR 999   ANS  "Reserved Private"
+123      LLLVAR 999   ANS  "Reserved Private"
+124      LLLVAR 999   ANS  "Reserved Private"
+125      LLLVAR 999   ANS  "Reserved Private"
+126      LLLVAR 999   ANS  "Reserved Private"
+127      LLLVAR 999   ANS  "Reserved Private"
+128      FIXED    8   B    "Message Authentication Code (Secondary)"
 `;
 
 // ============================================================
@@ -2283,12 +2283,85 @@ function validateDDLErrors(text, repoTypeRegistry) {
   return { errors, warnings, unresolvedTypes: [...unresolvedTypes], deferredChecks };
 }
 
-// ---- Simple columnar DDL  (ID  TYPE  LEN  "desc") ---------------------------
+// ---- Data-type helpers (used by content validation in bestDDLMatch) ----------
+
+// Normalise any data-type tag to one of: N A AN ANS B Z X  (or null = unknown)
+function normalizeDataType(dt) {
+  if (!dt) return null;
+  const u = dt.trim().toUpperCase();
+  if (/^PIC\s*9/.test(u))            return 'N';
+  if (/^PIC\s*A/.test(u))            return 'A';
+  if (/^PIC\s*X/.test(u))            return 'ANS';
+  if (/^(BINARY|COMP)/.test(u))      return 'B';
+  if (['N','A','AN','ANS','B','Z','X'].includes(u)) return u;
+  return null;
+}
+
+// Returns true if rawBytes are valid for the declared dataType, false = violation.
+// Unknown / binary types always return true (skip validation).
+function validateFieldContent(rawBytes, dataType) {
+  if (!rawBytes || !rawBytes.length || !dataType) return true;
+  const dt = normalizeDataType(dataType);
+  if (!dt || dt === 'B') return true;
+  for (const b of rawBytes) {
+    let ok;
+    switch (dt) {
+      case 'N':   ok = b >= 0x30 && b <= 0x39; break;
+      case 'A':   ok = (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) || b === 0x20; break;
+      case 'AN':  ok = (b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) || b === 0x20; break;
+      case 'ANS':
+      case 'X':   ok = b >= 0x20 && b <= 0x7E; break;
+      case 'Z':   ok = (b >= 0x30 && b <= 0x39) || b === 0x44 || b === 0x64 || b === 0x3D || b === 0x3F || b === 0x20; break;
+      default:    ok = true;
+    }
+    if (!ok) return false;
+  }
+  return true;
+}
+
+// Build the set of field IDs that must be skipped for content validation.
+// Rule: if a base field has any REDEFINES sibling with a different normalised
+// data type, the entire group (base + all redefines) is skipped.
+function buildRedefSkipSet(defs) {
+  const skipSet = new Set();
+  // Map each redefTarget → array of dataTypes seen in its REDEFINES entries
+  const redefTypeMap = new Map();
+  for (const d of defs) {
+    if (!d.isRedefines || !d.redefTarget) continue;
+    const nt = normalizeDataType(d._dataType || d.dataType);
+    if (!redefTypeMap.has(d.redefTarget)) redefTypeMap.set(d.redefTarget, []);
+    redefTypeMap.get(d.redefTarget).push(nt);
+  }
+  for (const [baseId, redefTypes] of redefTypeMap) {
+    const baseDef = defs.find(d => d.id === baseId && !d.isRedefines);
+    if (!baseDef) continue;
+    const baseNt = normalizeDataType(baseDef._dataType || baseDef.dataType);
+    const mixed  = redefTypes.some(t => t !== baseNt);
+    if (mixed) skipSet.add(baseId);
+  }
+  return skipSet;
+}
+
+// ---- Simple columnar DDL  (ID  TYPE  LEN  [DATATYPE]  "desc") ---------------
+// DATATYPE column is optional and backward-compatible.
+// Known data-type tokens: N A AN ANS B Z X
+const _SIMPLE_DDL_DT = new Set(['N','A','AN','ANS','B','Z','X']);
 function parseSimpleDDL(text) {
   const defs = [];
   for (const rawLine of text.split('\n')) {
     const line = rawLine.trim();
     if (!line || line.startsWith('*') || line.startsWith('#') || line.startsWith('//') || line.startsWith('--')) continue;
+    // Try 5-token form first: ID  TYPE  LEN  DATATYPE  "desc"
+    const m5 = line.match(/^(\S+)\s+(\w+)\s+(\d+)\s+([A-Za-z]+)\s+"([^"]*)"/);
+    if (m5 && _SIMPLE_DDL_DT.has(m5[4].toUpperCase())) {
+      const len = parseInt(m5[3], 10);
+      if (!isNaN(len)) {
+        defs.push({ id: m5[1].toUpperCase(), type: m5[2].toUpperCase(), length: len,
+                    dataType: m5[4].toUpperCase(), description: m5[5] || m5[1].toUpperCase() });
+        continue;
+      }
+    }
+    // Fall back to 4-token form: ID  TYPE  LEN  "desc"  (or unquoted)
     const m = line.match(/^(\S+)\s+(\w+)\s+(\d+)\s+"([^"]*)"/) ||
               line.match(/^(\S+)\s+(\w+)\s+(\d+)(?:\s+(.*))?/);
     if (!m) continue;
@@ -4552,19 +4625,35 @@ function getDDLsForVol(volName) {
 }
 
 // Pick the best-scoring DDL from a candidate list for a given byte array.
-// Score = accuracy × coverage:
-//   accuracy = (fields without error) / total fields
-//   coverage = bytes accounted for by parsed fields / total message bytes
-// This prevents trivial 1-field type defs from outscoring full message definitions.
+// Score = accuracy × coverage, where accuracy incorporates content violations
+// as soft errors (weight 0.5) vs hard parse errors (weight 1.0):
+//   hard errors   = truncated / missing-definition fields
+//   soft errors   = fields whose bytes violate their declared data type
+//   coverage      = bytes consumed by matched fields / total message bytes
+// REDEFINES rule: fields belonging to a mixed-type redefine group are excluded
+// from content validation entirely (neither penalised nor validated).
 function bestDDLMatch(bytes, candidates) {
   if (!candidates.length) return { fields: [], ddlPath: null };
   let best = { score: -1, fields: [], ddlPath: candidates[0].path };
   for (const { path, defs } of candidates) {
     const f    = parseMessage(bytes, defs);
-    const errs = f.filter(x => x.error).length;
     if (!f.length) continue;
-    const accuracy = (f.length - errs) / f.length;
-    // Sum bytes consumed by successfully-parsed non-error fields
+    const hardErrs = f.filter(x => x.error).length;
+
+    // Build per-def lookup and redefines skip set for content validation
+    const defsById  = new Map(defs.map(d => [d.id, d]));
+    const skipSet   = buildRedefSkipSet(defs);
+    let   softErrs  = 0;
+    for (const field of f) {
+      if (field.error || field.isRedefines) continue;   // hard error or redefines — skip
+      if (skipSet.has(field.id)) continue;              // mixed-type redefine group — skip
+      const def = defsById.get(field.id);
+      const dt  = def?._dataType ?? def?.dataType ?? field.dataType ?? null;
+      if (!validateFieldContent(field.rawBytes, dt)) softErrs++;
+    }
+
+    const weightedErrors = hardErrs * 1.0 + softErrs * 0.5;
+    const accuracy = 1 - (weightedErrors / f.length);
     const consumed = f.filter(x => !x.error).reduce((s, x) => s + (x.rawBytes?.length ?? x.length ?? 0), 0);
     const coverage = bytes.length > 0 ? Math.min(consumed, bytes.length) / bytes.length : 0;
     const sc = accuracy * (0.4 + 0.6 * coverage);
@@ -7920,7 +8009,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.223';
+const APP_VERSION  = '1.0.0.224';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

@@ -3777,6 +3777,13 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
 
 // Called after fixed-part parsing; tries to extract token area from a parsed message
 // Returns array of token objects or null
+// Resolve tokens for a message in-place if not yet done (tokens === null).
+// Safe to call multiple times — no-ops if already resolved or no fields/path.
+function _resolveTokens(msg) {
+  if (!msg || msg.tokens !== null || !msg.fields?.length || !msg.ddlPath) return;
+  msg.tokens = extractTokensFromMessage(msg.fields, msg.bytes, msg.msgType?.type, msg.ddlPath) ?? [];
+}
+
 function extractTokensFromMessage(fields, bytes, msgTypeStr, ddlPath) {
   if (!fields.length) return null;
   const preferredVol = ddlPath ? ddlPath.split('/')[0] : null;
@@ -5100,8 +5107,7 @@ function doParseNetardLog(text) {
                   const match = sm
                     ? (allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || allMatches[0])
                     : allMatches[0];
-                  const tkns = extractTokensFromMessage(match.fields, parseBytes, msgType.type, match.ddlPath);
-                  parsed.push({ ..._base, msgType, fields: match.fields, ddlPath: match.ddlPath, tokens: tkns });
+                  parsed.push({ ..._base, msgType, fields: match.fields, ddlPath: match.ddlPath, tokens: null });
                 } else {
                   const pidx = parsed.length;
                   parsed.push(null);
@@ -5113,8 +5119,7 @@ function doParseNetardLog(text) {
                 }
                 continue;
               }
-              const tkns = extractTokensFromMessage(fields, parseBytes, msgType.type, ddlPath);
-              parsed.push({ ..._base, msgType, fields, ddlPath, tokens: tkns });
+              parsed.push({ ..._base, msgType, fields, ddlPath, tokens: null });
             }
             _parseProgressDoneLast();
             function _finalizeNetard() {
@@ -5132,6 +5137,8 @@ function doParseNetardLog(text) {
               syncParseBtn();
               _lwSetParsed(true);
               document.getElementById('msgInput').readOnly = true;
+              _resolveTokens(S.messages[0]);
+              _resolveTokens(S.messages[1]);
               updateBadges(); updateNav(); renderCurrent();
               const tc = {};
               S.messages.forEach(m => { const t = m.msgType.type; tc[t] = (tc[t]||0)+1; });
@@ -5145,14 +5152,13 @@ function doParseNetardLog(text) {
               _parseProgressDoneLast();
               _parseProgressHide();
             }
-            // Phase 2: all pickers answered — apply choices to every deferred record in one pass
+            // Phase 2: all pickers answered — apply DDL choices to every deferred record; tokens resolved lazily at render
             function _applyNetardDeferreds() {
               for (const d of deferreds) {
                 const sm = sessionMappings[d.msgType.type];
                 if (!sm) continue; // type was cancelled — leave slot null (filtered in finalize)
                 const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
-                const tkns  = extractTokensFromMessage(match.fields, d.parseBytes, d.msgType.type, match.ddlPath);
-                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: tkns };
+                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: null };
               }
               _parseProgressStep('Finalizing\u2026');
               setTimeout(() => _finalizeNetard(), 500);
@@ -5526,9 +5532,8 @@ function doParseMessages() {
                   ? (allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || allMatches[0])
                   : allMatches[0];
                 if (allMatches.length === 1) _suggestTypeMapping(msgType.type, msgType.label, match.ddlPath);
-                const tkns = extractTokensFromMessage(match.fields, bytes, msgType.type, match.ddlPath);
                 parsed.push({ bytes, raw: chunkStr, timestamp: chunk.timestamp || null,
-                  fields: match.fields, ddlPath: match.ddlPath, msgType, tokens: tkns, byteCharMap,
+                  fields: match.fields, ddlPath: match.ddlPath, msgType, tokens: null, byteCharMap,
                   charStart, charEnd: charStart + chunkStr.length });
 
               } else {
@@ -5548,9 +5553,8 @@ function doParseMessages() {
             const chunkOffset2 = msgText.indexOf(chunkStr);
             const byteCharMap2 = _remapByteCharMapForMargin(buildByteCharMap(chunkStr, S.inputFormat, chunkOffset2 >= 0 ? chunkOffset2 : 0), _parseText, _parseMargin);
             const charStart2   = chunkOffset2 >= 0 ? chunkOffset2 : 0;
-            const tkns = extractTokensFromMessage(fields, bytes, msgType.type, ddlPath);
             parsed.push({ bytes, raw: chunkStr, timestamp: chunk.timestamp || null,
-              fields, ddlPath, msgType, tokens: tkns, byteCharMap: byteCharMap2,
+              fields, ddlPath, msgType, tokens: null, byteCharMap: byteCharMap2,
               charStart: charStart2, charEnd: charStart2 + chunkStr.length });
           }
 
@@ -5565,6 +5569,8 @@ function doParseMessages() {
             _syncTrkColVisibility();
             syncParseBtn();
             document.getElementById('msgInput').readOnly = true;
+            _resolveTokens(S.messages[0]);
+            _resolveTokens(S.messages[1]);
             updateBadges(); updateNav(); renderCurrent();
             // Warn about unknown-type messages that could not be auto-detected
             const unkIdxs = finalParsed.map((m, i) => m.unknownType ? i + 1 : null).filter(Boolean);
@@ -5580,15 +5586,14 @@ function doParseMessages() {
             _parseProgressHide();
           }
 
-          // Phase 2: all pickers answered — apply choices to every deferred chunk in one pass
+          // Phase 2: all pickers answered — apply DDL choices to every deferred chunk; tokens resolved lazily at render
           function _applyDeferreds() {
             for (const d of deferreds) {
               const sm = sessionMappings[d.msgType.type];
               if (!sm) continue; // type was cancelled — leave slot null (filtered in finalize)
               const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
-              const tkns  = extractTokensFromMessage(match.fields, d.bytes, d.msgType.type, match.ddlPath);
               parsed[d.parsedIdx] = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
-                fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, msgType: d.msgType, tokens: tkns,
+                fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, msgType: d.msgType, tokens: null,
                 byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length };
             }
             _parseProgressStep('Finalizing\u2026');
@@ -6207,6 +6212,8 @@ function renderCurrent() {
   if (S.trackMode) { renderTracking(); return; }
   const msg = S.messages[S.curIdx];
   if (!msg) return;
+  _resolveTokens(msg);
+  _resolveTokens(S.messages[S.curIdx + 1]); // prefetch next
   renderFieldTable(msg);
   renderRaw(msg);
   updateMsgGutter(true);
@@ -8833,7 +8840,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.260';
+const APP_VERSION  = '1.0.0.261';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

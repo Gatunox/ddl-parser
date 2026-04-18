@@ -4817,7 +4817,10 @@ function _svHash(vol, sv) {
   const vTree = S.ddlTree[vol] || S.ddlTree[vol.toLowerCase()] || S.ddlTree[vol.toUpperCase()];
   if (!vTree) return '0';
   const svTree = vTree[sv] || vTree[sv.toLowerCase()] || vTree[sv.toUpperCase()];
-  return svTree ? _strHash(JSON.stringify(svTree)) : '0';
+  if (!svTree) return '0';
+  // Sort keys so insertion-order differences across sessions don't bust the cache
+  const sorted = Object.fromEntries(Object.keys(svTree).sort().map(k => [k, svTree[k]]));
+  return _strHash(JSON.stringify(sorted));
 }
 function getDDLsForSv(vol, sv) {
   const vTree = S.ddlTree[vol];
@@ -7116,7 +7119,7 @@ function renderDDLTree() {
     const vSel  = sc?.type === 'vol' && volActive ? ' tree-sel' : '';
     const vAnc  = sc?.type !== 'vol' && volActive ? ' tree-anc' : '';
     const vExp  = fq ? true : S.treeExp.has(vol);    // always expand when filtering
-    const cnt   = Object.values(tree[vol] || {}).reduce((n, s) => n + Object.keys(s).length, 0);
+    const cnt   = Object.keys(tree[vol] || {}).length;
     // When filtering, caret is cosmetic only (can't collapse while filter active)
     const caretClick = fq
       ? `onclick="event.stopPropagation()"`
@@ -7209,7 +7212,8 @@ function renderDDLTree() {
             const fileExcl    = isExcluded(vol, sv, d);
             const fileExclCls = fileExcl ? ' tree-excl-node' : '';
             const exclBadge   = fileExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
-            const fileBadges = tknBadge + typeBadge + exclBadge + (!showDefSubNodes || !fileExp ? unresBadge + errBadge + warnBadge : '');
+            const defCntBadge = fileDefNames.length > 1 ? `<span class="tree-cnt">${fileDefNames.length}</span>` : '';
+            const fileBadges = tknBadge + typeBadge + exclBadge + defCntBadge + (!showDefSubNodes || !fileExp ? unresBadge + errBadge + warnBadge : '');
             const defBadges  = showDefSubNodes && fileExp ? unresBadge + errBadge + warnBadge : '';
             html += `<div class="tree-node${dSel}${dAnc}${pendCls}${fileExclCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
               ${fileCaret}
@@ -8947,7 +8951,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.282';
+const APP_VERSION  = '1.0.0.283';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

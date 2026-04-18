@@ -5184,7 +5184,7 @@ function doParseNetardLog(text) {
               const noMatchCount = S.messages.filter(m => m.noMatchDDL && !m.unknownType).length;
               if (noMatchCount) setTimeout(() => flash(`${noMatchCount} record${noMatchCount !== 1 ? 's' : ''} \u2014 no matching DDL found.`, 'warn'), 400);
               _parseProgressDoneLast();
-              _parseProgressHide();
+              setTimeout(() => _parseProgressHide(), 700);
             }
             // Phase 2: all pickers answered — apply DDL choices to every deferred record; tokens resolved lazily at render
             function _applyNetardDeferreds() {
@@ -5627,7 +5627,7 @@ function doParseMessages() {
             const noMatchCount = finalParsed.filter(m => m.noMatchDDL && !m.unknownType).length;
             if (noMatchCount) setTimeout(() => flash(`${noMatchCount} message${noMatchCount !== 1 ? 's' : ''} \u2014 no matching DDL found.`, 'warn'), 400);
             _parseProgressDoneLast();
-            _parseProgressHide();
+            setTimeout(() => _parseProgressHide(), 700);
           }
 
           // Phase 2: all pickers answered — apply DDL choices to every deferred chunk; tokens resolved lazily at render
@@ -8942,7 +8942,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.270';
+const APP_VERSION  = '1.0.0.271';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

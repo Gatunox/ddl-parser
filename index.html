@@ -4791,6 +4791,8 @@ function bestDDLMatch(bytes, candidates) {
 // and scoring, so the UI doesn't appear frozen on large DDL trees.
 // ============================================================
 let _ppSteps = [];
+let _parseAborted = false;
+let _ppPickerCb   = null;   // set while picker is visible; called with null on abort
 let _ddlTreeVersion  = 0;                          // bumped in saveTree() on any tree change
 let _ddlCompileCache = { version: -1, byVol: null }; // invalidated when version mismatches
 let _repoTypeRegCache = { version: -1, reg: null };  // cache for buildRepoTypeRegistry()
@@ -4878,11 +4880,28 @@ function _parseProgressDoneLast() {
 }
 
 function _parseProgressShow() {
+  _parseAborted = false;
+  _ppPickerCb   = null;
   _ppSteps = [];
   const el = document.getElementById('parseProgressOverlay');
   if (el) el.classList.remove('hidden');
   const stepsEl = document.getElementById('parseProgressSteps');
   if (stepsEl) stepsEl.innerHTML = '';
+  const ppClose = document.getElementById('ppCloseBtn');
+  if (ppClose) { ppClose.classList.remove('hidden'); ppClose.onclick = _abortParse; }
+}
+
+function _abortParse() {
+  _parseAborted = true;
+  if (_ppPickerCb) {
+    const cb = _ppPickerCb;
+    _ppPickerCb = null;
+    cb({ match: null, saveRule: false });
+    return;
+  }
+  _parseProgressHide();
+  document.getElementById('msgInput').readOnly = false;
+  syncParseBtn();
 }
 
 function _parseProgressStep(label) {
@@ -4938,8 +4957,7 @@ function _showProgressPicker(label, matches, cb) {
   const pp = document.getElementById('ppPicker');
   if (!pp) { cb({ match: matches[0] || null, saveRule: false }); return; }
   pp.classList.remove('hidden');
-  const ppClose = document.getElementById('ppCloseBtn');
-  if (ppClose) ppClose.classList.remove('hidden');
+  _ppPickerCb = cb;
   const shown = matches;
   pp.innerHTML =
     `<div style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);padding:0 0 4px 21px">Select DDL definition:</div>` +
@@ -4962,16 +4980,10 @@ function _showProgressPicker(label, matches, cb) {
   pp.querySelectorAll('button[data-ppi]').forEach(btn => {
     btn.addEventListener('click', () => {
       pp.innerHTML = ''; pp.classList.add('hidden');
-      if (ppClose) ppClose.classList.add('hidden');
+      _ppPickerCb = null;
       _parseProgressDoneLast();
       cb({ match: shown[parseInt(btn.dataset.ppi, 10)], saveRule: _saveRule });
     });
-  });
-  if (ppClose) ppClose.addEventListener('click', () => {
-    pp.innerHTML = ''; pp.classList.add('hidden');
-    ppClose.classList.add('hidden');
-    _parseProgressHide();
-    cb({ match: null, saveRule: false });
   });
 }
 
@@ -5030,14 +5042,17 @@ function doParseNetardLog(text) {
   // Step 0 — record count (informational)
   _parseProgressStep(`NETARD audit log \u2014 ${records.length} record${records.length !== 1 ? 's' : ''} detected`);
   setTimeout(() => {
+    if (_parseAborted) return;
     _parseProgressDoneLast();
     // Step 1 — detecting types (informational)
     _parseProgressStep('Detecting record types');
     setTimeout(() => {
+      if (_parseAborted) return;
       _parseProgressDoneLast();
       // Step 2 — evaluating DDLMM rules (informational)
       _parseProgressStep('Evaluating DDL Message Map rules');
       setTimeout(() => {
+        if (_parseAborted) return;
         _parseProgressDoneLast();
 
         // Step 3 — compile (use cache when tree unchanged)
@@ -5050,6 +5065,7 @@ function doParseNetardLog(text) {
           const _totalCands = Object.values(compiledByVol).flat().length;
           _parseProgressStep(`Scoring ${records.length} record${records.length !== 1 ? 's' : ''} against ${_totalCands} candidate${_totalCands !== 1 ? 's' : ''}\u2026`);
           setTimeout(() => {
+            if (_parseAborted) return;
             // ── Score all records ────────────────────────────────────────────
             const parsed          = [];
             const deferreds       = [];
@@ -5251,6 +5267,7 @@ function doParseNetardLog(text) {
           _parseProgressStep(`Compiling DDL definitions\u2026 0 of ${_nTasks.length}`);
           let _nti = 0;
           function _netardCompileNext() {
+            if (_parseAborted) return;
             if (_nti >= _nTasks.length) {
               _commitNetardCache();
               _parseProgressDoneLast();
@@ -5441,10 +5458,12 @@ function doParseMessages() {
   // Step 0 — informational: detecting message types
   _parseProgressStep('Detecting message types');
   setTimeout(() => {
+    if (_parseAborted) return;
     _parseProgressDoneLast();
     // Step 1 — informational: evaluating DDLMM rules
     _parseProgressStep('Evaluating DDL Message Map rules');
     setTimeout(() => {
+      if (_parseAborted) return;
       _parseProgressDoneLast();
 
       // Step 2 — compile (use cache when tree unchanged)
@@ -5467,6 +5486,7 @@ function doParseMessages() {
         _parseProgressStep(`Scoring ${allCompiled.length} candidate${allCompiled.length !== 1 ? 's' : ''}\u2026`);
 
         setTimeout(() => {
+          if (_parseAborted) return;
           // ── Score every chunk against the candidate pool ─────────────────────
           const parsed          = [];
           const deferreds       = [];       // chunks needing user DDL selection (multi-match)
@@ -5693,6 +5713,7 @@ function doParseMessages() {
           _parseProgressStep(`Compiling DDL definitions\u2026 0 of ${_tasks.length}`);
           let _ti = 0;
           function _compileNext() {
+            if (_parseAborted) return;
             if (_ti >= _tasks.length) {
               _commitP23Cache();
               _parseProgressDoneLast();
@@ -8912,7 +8933,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.268';
+const APP_VERSION  = '1.0.0.269';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

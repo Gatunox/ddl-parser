@@ -1598,6 +1598,8 @@ function _syncRawHexCol() {
   const rawCollapsed = rawPanel.classList.contains('collapsed');
   // Auto-manage column: show when raw panel is hidden, hide when it's visible
   container.classList.toggle('hide-raw', !rawCollapsed);
+  // Raw Hex truncate setting is only relevant when the column is visible
+  document.getElementById('rawHexTruncRow')?.classList.toggle('hidden', !rawCollapsed);
   // When hiding, clear the th inline width so table-layout:fixed doesn't reserve ghost space.
   // When showing, restore it (default 120px or whatever the resizer last set).
   const thRaw = container.querySelector('th.th-raw');
@@ -8945,7 +8947,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.281';
+const APP_VERSION  = '1.0.0.282';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -9955,7 +9957,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
 
-        <div class="settings-row">
+        <div class="settings-row" id="rawHexTruncRow">
           <span class="settings-lbl">Raw Hex</span>
           <div class="settings-pill">
             <button class="btn s-active" id="rawHexTruncOn"  onclick="setRawHexTruncate(true)"  title="Truncate raw hex at 22 chars">Truncate</button>

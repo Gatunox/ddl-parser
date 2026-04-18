@@ -7607,8 +7607,7 @@ function copyFieldToClipboard(fid) {
   const totalLen = f.valueLength !== undefined
     ? f.valueLength + (f.lenPrefix ? f.lenPrefix.length : 0)
     : '';
-  const fullId = f.description ? `${f.description}` : f.id;
-  const line = `${fullId}\t${totalLen}\t${f.value}`;
+  const line = `${f.id}\t${totalLen}\t${f.value}`;
   // Use execCommand fallback — works reliably from user gesture regardless of focus
   const ta = document.createElement('textarea');
   ta.value = line;
@@ -8942,7 +8941,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.271';
+const APP_VERSION  = '1.0.0.272';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {

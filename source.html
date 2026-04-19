@@ -1085,8 +1085,8 @@ body.light .cm-host .cm-cursor { border-left-color: var(--text); }
 #ddlEditor.cm-host { flex: 1; }
 /* Message input host fills the panel body */
 #msgInput.cm-host { background: var(--bg-input); }
-/* Placeholder text — muted, matching original textarea placeholder tone */
-.cm-host .cm-placeholder { color: var(--text-dim); opacity: 0.55; }
+/* Placeholder — absolute so it doesn't inflate the first line's height */
+.cm-host .cm-placeholder { color: var(--text-dim); opacity: 0.55; display: block; position: absolute; pointer-events: none; }
 /* Line number gutter — match panel background and dim text */
 .cm-host .cm-gutters { background: var(--bg-panel); border-right: 1px solid rgba(255,255,255,0.06); color: var(--text-dim); }
 body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }

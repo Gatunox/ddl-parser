@@ -6086,6 +6086,70 @@ function _hlHPELine(line) {
 const _HL_VIRT_THRESHOLD = 0;    // always use virtual rendering
 const _HL_VIRT_BUFFER    = 50;   // extra lines above/below viewport to highlight
 
+// ── CodeMirror syntax-highlight extension ───────────────────────────────────
+// Reuses the existing HTML-generating tokenizers (_hlHPELine etc.) by parsing
+// their output to recover character ranges, then applies CM Mark decorations.
+const _hlParseDiv = document.createElement('div'); // shared scratch element
+
+function _htmlToTokens(html) {
+  _hlParseDiv.innerHTML = html;
+  const toks = [];
+  let offset = 0;
+  function walk(node) {
+    if (node.nodeType === 3) {                    // text node
+      offset += node.textContent.length;
+    } else if (node.nodeType === 1) {             // element node
+      const cls = node.className;
+      const start = offset;
+      for (const ch of node.childNodes) walk(ch);
+      if (cls) toks.push({ from: start, to: offset, cls });
+    }
+  }
+  for (const ch of _hlParseDiv.childNodes) walk(ch);
+  return toks;
+}
+
+function _ddlHighlightExtension() {
+  if (!window.CM) return [];
+  const { ViewPlugin, Decoration, RangeSetBuilder } = window.CM;
+  if (!ViewPlugin || !Decoration || !RangeSetBuilder) return [];
+
+  return ViewPlugin.fromClass(class {
+    constructor(view) { this.decorations = this._build(view); }
+    update(u)         { if (u.docChanged || u.viewportChanged) this.decorations = this._build(u.view); }
+
+    _build(view) {
+      const builder  = new RangeSetBuilder();
+      const doc      = view.state.doc;
+      if (!doc.length) return builder.finish();
+
+      const isDDLMM  = S.scope?.type === 'ddlmm';
+      const text     = doc.toString();
+      const isHPE    = !isDDLMM && isHPEDDLText(text);
+
+      for (const { from, to } of view.visibleRanges) {
+        const firstLine = doc.lineAt(from);
+        const lastLine  = doc.lineAt(to);
+
+        for (let n = firstLine.number; n <= lastLine.number; n++) {
+          const line    = doc.line(n);
+          const lineStr = line.text;
+          const html    = isDDLMM ? _hlDDLMMLine(lineStr)
+                        : isHPE  ? _hlHPELine(lineStr)
+                        :          _hlSimpleLine(lineStr);
+          for (const tok of _htmlToTokens(html)) {
+            const f = line.from + tok.from;
+            const t = line.from + tok.to;
+            if (f < t && t <= doc.length)
+              builder.add(f, t, Decoration.mark({ class: tok.cls }));
+          }
+        }
+      }
+      return builder.finish();
+    }
+  }, { decorations: v => v.decorations });
+}
+
 let _ddlHlDebounceTimer   = null;
 let _ddlEditorStateTimer  = null;   // debounce for updateDDLEditorState on large files
 let _cachedSelDDLEl       = null;   // cached .tree-node.tree-sel[data-ntype="ddl"]
@@ -9852,6 +9916,7 @@ document.addEventListener('DOMContentLoaded', () => {
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           ddlEditableComp.of(EditorView.editable.of(true)),
           placeholder('DDL Definition — Simple: FIELD_ID TYPE LENGTH "Description"\nor HPE DDL: DEF name.\n  02 field PIC X(n).\nEND.\n\nSelect or create a DDL in the tree, or drop a .ddl / .txt file here.'),
+          _ddlHighlightExtension(),
           EditorView.updateListener.of(u => { if (u.docChanged) onDDLInput(); }),
         ],
       }),

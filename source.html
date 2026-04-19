@@ -16,6 +16,7 @@
   --accent2: #f78166;
   --text: #c9d1d9;
   --text-dim: #8b949e;
+  --text-very-dim: #4d5561;
   --hl-active: var(--hl-hover);
   --hl-hover: rgba(88, 166, 255, 0.25);
   --success: #3fb950;
@@ -292,6 +293,9 @@ body.light .ddl-srch-line.hit { background: rgba(0,0,0,0.05); }
 /* DDL search — current match accent highlight overlay */
 .ddl-srch-cur-layer { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; pointer-events: none; z-index: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6; white-space: pre; overflow: visible; color: transparent; }
 .ddl-srch-cur { background: var(--accent); opacity: 0.45; border-radius: 2px; }
+/* DDL search — CodeMirror equivalents */
+#ddlEditor .cm-line.ddl-srch-line-hit { background: rgba(255,255,255,0.07); }
+body.light #ddlEditor .cm-line.ddl-srch-line-hit { background: rgba(0,0,0,0.05); }
 .ddl-hl-overlay  { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; margin: 0;
   font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6;
   white-space: pre; overflow: visible;
@@ -705,7 +709,7 @@ body.light tbody tr.row-redef td.c-id { color: #b7770a; }
 tbody td { padding: 0 8px; height: 24px; vertical-align: middle; font-size: var(--sz-mono); line-height: 24px; overflow: hidden; text-overflow: ellipsis; }
 td.c-id   { color: var(--text); font-weight: 700; white-space: nowrap; }
 td.c-desc { color: var(--text-dim); }
-td.c-val  { color: var(--success); word-break: break-all; text-overflow: clip; overflow: visible; }
+td.c-val  { color: var(--success); word-break: break-all; text-overflow: clip; overflow: visible; white-space: pre-wrap; }
 td.c-len  { color: var(--text-dim); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 td.c-raw  { color: #6e7681; word-break: break-all; }
 td.c-err  { color: var(--accent2); }
@@ -816,7 +820,7 @@ body.light .trk-chk { color-scheme: light; }
 .track-tbl-wrap { overflow: auto; flex: 1; min-height: 0; }
 .track-tbl thead th { white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .track-tbl td.t-ts  { color: var(--text-dim); font-size: var(--sz-mono); white-space: nowrap; }
-.track-tbl td.t-val { color: var(--success); word-break: break-all; max-width: 100px; }
+.track-tbl td.t-val { color: var(--success); word-break: break-all; max-width: 100px; white-space: pre-wrap; }
 .track-tbl tr.track-cur td { background: rgba(88,166,255,0.1) !important; }
 
 /* ===== MISC ===== */
@@ -1043,9 +1047,10 @@ body.light {
   --accent2:   #cf222e;
   --text:      #24292f;
   --text-dim:  #656d76;
+  --text-very-dim: #9ba3ab;
   --hl-active: var(--hl-hover);
   --hl-hover:  rgba(9,105,218,0.20);
-  --success:   #1a7f37;
+  --success:   #0d5523;
   --warning:   #ca8a04;
 }
 body.light textarea:focus { background: transparent; }
@@ -1098,6 +1103,18 @@ body.light .cm-host .cm-cursor { border-left-color: var(--text); }
 #ddlEditor.cm-host { flex: 1; }
 /* Message input host fills the panel body */
 #msgInput.cm-host { background: var(--bg-input); }
+/* Both CM panels: less-bright default text */
+#ddlEditor .cm-content,
+#msgInput .cm-content { color: var(--text-dim); }
+/* After parse: dim message input further so field highlights pop */
+#msgInput .cm-editor.msg-parsed .cm-content { color: var(--text-very-dim); }
+/* With an active highlight: restore to text-dim so non-highlighted text stays readable */
+#msgInput .cm-editor.msg-has-hl .cm-content { color: var(--text-dim); }
+/* Field highlight mark classes */
+#msgInput .cm-hl-active { background: var(--hl-active); border-radius: 2px; color: #fff; }
+#msgInput .cm-hl-hover  { background: var(--hl-hover);  border-radius: 2px; color: #fff; }
+body.light #msgInput .cm-hl-active,
+body.light #msgInput .cm-hl-hover  { color: var(--text); }
 /* Placeholder — absolute so it doesn't inflate the first line's height */
 .cm-host .cm-placeholder { color: var(--text-dim); opacity: 0.55; display: block; position: absolute; pointer-events: none; }
 /* Line number gutter — match panel background and dim text */
@@ -1194,7 +1211,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
         <button class="panel-toggle" id="msgToggle" onclick="togglePanel('msgPanel','msgToggle','ddlResizer')" title="Hide panel">−</button>
       </div>
       <div class="panel-body" style="flex-direction:row">
-        <div id="msgGutter" class="msg-gutter" style="display:none" aria-hidden="true"></div>
+        <div id="msgGutter" class="msg-gutter" aria-hidden="true"></div>
         <div id="msgInput" class="cm-host" style="flex:1;min-width:0;overflow:hidden"></div>
       </div>
     </div>
@@ -6886,21 +6903,10 @@ function clearHover() {
 }
 
 // ---- Message Input overlay highlighting ----
-// Renders coloured marks behind the textarea for the selected field and/or
-// the currently hovered field simultaneously, matching the Raw Message panel behaviour.
-function renderInputOverlay() {
-  if (window._msgInputCM) return;
-  const overlay = document.getElementById('msgInputOverlay');
-  const ta      = document.getElementById('msgInput');
-  if (!overlay || !ta) return;
-
+// Collects highlight ranges for the selected/hovered field from the byte-char map.
+function _buildInputHLRanges() {
   const msg = S.messages?.[S.curIdx];
-  if (!msg?.byteCharMap?.length) { overlay.innerHTML = ''; return; }
-
-  // Collect ranges to highlight.
-  // Iterates per-byte so that null bcm entries (NETARD padded trailing spaces)
-  // and multi-line fields each produce separate, correct character ranges —
-  // preventing highlights from bleeding into the next line's indentation.
+  if (!msg?.byteCharMap?.length) return [];
   const ranges = [];
   const addRange = (fid, color) => {
     if (!fid) return;
@@ -6914,11 +6920,9 @@ function renderInputOverlay() {
         if (asciiRun) { ranges.push({ ...asciiRun, color }); asciiRun = null; }
         continue;
       }
-      // Hex range
       if (!run) { run = { s: bc.s, e: bc.e }; }
       else if (bc.s <= run.e) { run.e = Math.max(run.e, bc.e); }
       else { ranges.push({ ...run, color }); run = { s: bc.s, e: bc.e }; }
-      // ASCII bracket range (hexascii format only)
       if (bc.ascii) {
         if (!asciiRun) { asciiRun = { s: bc.ascii.s, e: bc.ascii.e }; }
         else if (bc.ascii.s <= asciiRun.e) { asciiRun.e = Math.max(asciiRun.e, bc.ascii.e); }
@@ -6928,19 +6932,24 @@ function renderInputOverlay() {
     if (run)      ranges.push({ ...run,      color });
     if (asciiRun) ranges.push({ ...asciiRun, color });
   };
-
-  addRange(S.selFieldId,   'var(--hl-active)');
-  // Hover on a different field shows on top of (or beside) the selected highlight
+  addRange(S.selFieldId, 'var(--hl-active)');
   if (S.hoverFieldId && S.hoverFieldId !== S.selFieldId)
     addRange(S.hoverFieldId, 'var(--hl-hover)');
+  return ranges;
+}
 
+// Renders coloured marks for the selected/hovered field in the message input.
+function renderInputOverlay() {
+  if (window._msgInputHL) {
+    window._msgInputHL(_buildInputHLRanges(), !!S.selFieldId);
+    return;
+  }
+  const overlay = document.getElementById('msgInputOverlay');
+  const ta      = document.getElementById('msgInput');
+  if (!overlay || !ta) return;
+  const ranges = _buildInputHLRanges();
   if (!ranges.length) { overlay.innerHTML = ''; return; }
-
-  // Sort by start position so we can build the HTML left-to-right
   ranges.sort((a, b) => a.s - b.s);
-
-  // For NETARD messages use the padded overlay text (content lines extended to
-  // full width W with spaces) so that stripped trailing spaces can be highlighted.
   const text = ta.value;
   let html = '', pos = 0;
   for (const { s, e, color } of ranges) {
@@ -6951,48 +6960,71 @@ function renderInputOverlay() {
   }
   html += esc(text.slice(pos));
   overlay.innerHTML = html;
-
   overlay.scrollTop  = ta.scrollTop;
   overlay.scrollLeft = ta.scrollLeft;
 }
 
 function clearInputHL() {
+  if (window._msgInputHL) { window._msgInputHL([]); return; }
   const overlay = document.getElementById('msgInputOverlay');
   if (overlay) overlay.innerHTML = '';
 }
 
 function updateMsgGutter(scrollIntoView = false) {
-  if (window._msgInputCM) return;
   const gutter = document.getElementById('msgGutter');
-  const ta     = document.getElementById('msgInput');
-  if (!gutter || !ta) return;
+  if (!gutter) return;
   const msg = S.isParsed ? S.messages[S.curIdx] : null;
   if (!msg || msg.charStart === undefined) { gutter.innerHTML = ''; return; }
 
-  const text  = ta.value;
-  const style = getComputedStyle(ta);
-  const lineH = parseFloat(style.lineHeight);
+  if (window._msgInputCM) {
+    const view   = window._msgInputCM;
+    const docLen = view.state.doc.length;
+    const startPos = Math.min(msg.charStart, docLen);
+    let endPos;
+    if (msg.isNetard) {
+      const nextMsg = S.messages[S.curIdx + 1];
+      if (nextMsg?.charStart !== undefined) {
+        const nLine = view.state.doc.lineAt(Math.min(nextMsg.charStart, docLen));
+        endPos = nLine.from > 0 ? view.state.doc.lineAt(nLine.from - 1).to : startPos;
+      } else {
+        endPos = docLen;
+      }
+    } else {
+      endPos = Math.min(msg.charEnd ?? msg.charStart, docLen);
+    }
+    const startBlock = view.lineBlockAt(startPos);
+    const endBlock   = view.lineBlockAt(endPos);
+    const scrollTop  = view.scrollDOM.scrollTop;
+    const top    = startBlock.top - scrollTop;
+    const height = endBlock.bottom - startBlock.top;
+    gutter.innerHTML = `<div class="msg-gutter-bar" style="top:${top}px;height:${height}px"></div>`;
+    if (scrollIntoView) {
+      const clientH = view.scrollDOM.clientHeight;
+      if (startBlock.top < scrollTop || startBlock.top > scrollTop + clientH - view.defaultLineHeight) {
+        view.scrollDOM.scrollTop = Math.max(0, startBlock.top - view.defaultLineHeight);
+      }
+    }
+    return;
+  }
+
+  const ta = document.getElementById('msgInput');
+  if (!ta) return;
+  const text   = ta.value;
+  const style  = getComputedStyle(ta);
+  const lineH  = parseFloat(style.lineHeight);
   const padTop = parseFloat(style.paddingTop);
-
   const startLine = (text.slice(0, msg.charStart).match(/\n/g) || []).length;
-
-  // For NETARD: span to just before the next message header (or end of text).
-  // For non-NETARD: span to charEnd as before.
   let endLine;
   if (msg.isNetard) {
     const nextMsg = S.messages[S.curIdx + 1];
     if (nextMsg?.charStart !== undefined) {
-      // End on the last line before the next message header
       endLine = (text.slice(0, nextMsg.charStart).match(/\n/g) || []).length - 1;
     } else {
-      // Last message — span to end of textarea content
       endLine = (text.match(/\n/g) || []).length;
     }
   } else {
     endLine = (text.slice(0, msg.charEnd).match(/\n/g) || []).length;
   }
-
-  // Auto-scroll textarea so the active message start is visible
   if (scrollIntoView) {
     const msgTop    = padTop + startLine * lineH;
     const msgBottom = padTop + (endLine + 1) * lineH;
@@ -7000,10 +7032,8 @@ function updateMsgGutter(scrollIntoView = false) {
       ta.scrollTop = Math.max(0, msgTop - lineH);
     }
   }
-
   const top    = padTop + startLine * lineH - ta.scrollTop;
   const height = (endLine - startLine + 1) * lineH;
-
   gutter.innerHTML = `<div class="msg-gutter-bar" style="top:${top}px;height:${height}px"></div>`;
 }
 
@@ -8545,6 +8575,12 @@ function saveDDL() {
   if (isHPEDDLText(content)) {
     const defNames = parseDEFNames(content);
     if (!defNames.length) { flash('No DEF/RECORD definitions found', 'warn'); return; }
+    const _seen = new Set();
+    const _dups = [...new Set(defNames.filter(n => _seen.has(n) || !_seen.add(n)))];
+    if (_dups.length) {
+      flash(`Duplicate DEF name${_dups.length > 1 ? 's' : ''}: ${_dups.join(', ')}`, 'error');
+      return;
+    }
     // Fall through — whole file stored under the filename key (sc.name)
   }
 
@@ -9133,7 +9169,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.1.6';
+const APP_VERSION  = '1.0.1.14';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -9386,37 +9422,40 @@ function _lwUpdateDisplay() {
   }
 }
 
-function _lwShowAutoMarker(detectedW) {
-  const marker = document.getElementById('lwColMarker');
-  const ta     = document.getElementById('msgInput');
-  if (!marker || !ta) return;
+function _lwCharMetrics() {
+  if (window._msgInputCM) {
+    const view  = window._msgInputCM;
+    const charW = view.defaultCharacterWidth;
+    // Pad = gutter width + content left padding — both relative to .cm-editor
+    const gutterW = view.dom.querySelector('.cm-gutters')?.offsetWidth || 0;
+    const pad     = gutterW + (parseFloat(getComputedStyle(view.contentDOM).paddingLeft) || 0);
+    return { charW, pad };
+  }
+  const ta = document.getElementById('msgInput');
+  if (!ta) return { charW: 8, pad: 8 };
   const probe = document.createElement('span');
   probe.style.cssText = `position:absolute;visibility:hidden;font-family:${getComputedStyle(ta).fontFamily};font-size:${getComputedStyle(ta).fontSize};white-space:pre`;
   probe.textContent = 'X'.repeat(10);
   document.body.appendChild(probe);
   const charW = probe.getBoundingClientRect().width / 10;
   document.body.removeChild(probe);
-  const pad = parseFloat(getComputedStyle(ta).paddingLeft) || 8;
+  return { charW, pad: parseFloat(getComputedStyle(ta).paddingLeft) || 8 };
+}
+
+function _lwShowAutoMarker(detectedW) {
+  const marker = document.getElementById('lwColMarker');
+  if (!marker) return;
+  const { charW, pad } = _lwCharMetrics();
   marker.style.left = (pad + detectedW * charW) + 'px';
   marker.classList.remove('hidden');
 }
 
 function _lwUpdateRuler() {
   const marker = document.getElementById('lwColMarker');
-  const ta     = document.getElementById('msgInput');
-  if (!marker || !ta) return;
+  if (!marker) return;
   const w = P.lineWidth;
   if (w <= 0) { marker.classList.add('hidden'); return; }
-
-  // Measure monospace char width using a temporary span
-  const probe = document.createElement('span');
-  probe.style.cssText = `position:absolute;visibility:hidden;font-family:${getComputedStyle(ta).fontFamily};font-size:${getComputedStyle(ta).fontSize};white-space:pre`;
-  probe.textContent = 'X'.repeat(10);
-  document.body.appendChild(probe);
-  const charW = probe.getBoundingClientRect().width / 10;
-  document.body.removeChild(probe);
-
-  const pad  = parseFloat(getComputedStyle(ta).paddingLeft) || 8;
+  const { charW, pad } = _lwCharMetrics();
   marker.style.left = (pad + w * charW) + 'px';
   marker.classList.remove('hidden');
 }
@@ -9514,7 +9553,11 @@ function _ddlSrchRecompute() {
 }
 
 function _ddlSrchUpdateCurMark() {
-  if (window._ddlEditorCM) return;
+  if (window._ddlEditorCM) {
+    const q = document.getElementById('ddlSearchInput')?.value || '';
+    window._ddlSrchHL(_ddlSrchMatches, _ddlSrchIdx, q.length);
+    return;
+  }
   const mark = document.getElementById('ddlSrchCurMark');
   if (!mark) return;
   const ta = document.getElementById('ddlEditor');
@@ -9895,14 +9938,39 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── CodeMirror 6 initialization ──────────────────────────────────────────
   // Must run before any code that reads ddlEditor / msgInput via getElementById.
   if (window.CM) {
-    const { EditorView, EditorState, Compartment, keymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter, history, defaultKeymap, historyKeymap, indentWithTab } = window.CM;
+    const { EditorView, EditorState, Compartment, StateEffect, StateField, keymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter, history, defaultKeymap, historyKeymap, indentWithTab, Decoration } = window.CM;
 
-    function _cmProxy(view, editableComp, inputCb) {
+    // Decoration field for DDL editor search highlights (hit lines + current match)
+    const _ddlSrchEffect = StateEffect.define();
+    const _ddlSrchField  = StateField.define({
+      create: () => Decoration.none,
+      update(decs, tr) {
+        for (const e of tr.effects) if (e.is(_ddlSrchEffect)) return e.value;
+        return decs.map(tr.changes);
+      },
+      provide: f => EditorView.decorations.from(f),
+    });
+
+    // Decoration field for message input field highlights
+    const _msgHLEffect = StateEffect.define();
+    const _msgHLField  = StateField.define({
+      create: () => Decoration.none,
+      update(decs, tr) {
+        for (const e of tr.effects) if (e.is(_msgHLEffect)) return e.value;
+        return decs.map(tr.changes);
+      },
+      provide: f => EditorView.decorations.from(f),
+    });
+
+    function _cmProxy(view, editableComp, inputCb, placeholderComp, parsedClass) {
       return {
         get value()  { return view.state.doc.toString(); },
         set value(v) { view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: String(v) } }); },
         get readOnly()    { return !view.state.facet(EditorView.editable); },
-        set readOnly(rdo) { view.dispatch({ effects: editableComp.reconfigure(EditorView.editable.of(!rdo)) }); },
+        set readOnly(rdo) {
+          view.dispatch({ effects: editableComp.reconfigure(EditorView.editable.of(!rdo)) });
+          if (parsedClass) view.dom.classList.toggle(parsedClass, !!rdo);
+        },
         get scrollTop()   { return view.scrollDOM.scrollTop; },
         set scrollTop(v)  { view.scrollDOM.scrollTop = v; },
         get scrollLeft()  { return view.scrollDOM.scrollLeft; },
@@ -9927,10 +9995,14 @@ document.addEventListener('DOMContentLoaded', () => {
           else view.dom.removeEventListener(type, fn, opts);
         },
         get classList() { return view.dom.classList; },
+        set placeholder(text) {
+          if (placeholderComp) view.dispatch({ effects: placeholderComp.reconfigure(placeholder(text)) });
+        },
       };
     }
 
-    const ddlEditableComp = new Compartment();
+    const ddlEditableComp   = new Compartment();
+    const ddlPlaceholderComp = new Compartment();
     window._ddlEditorCM = new EditorView({
       state: EditorState.create({
         doc: '',
@@ -9941,13 +10013,36 @@ document.addEventListener('DOMContentLoaded', () => {
           highlightActiveLine(),
           highlightActiveLineGutter(),
           ddlEditableComp.of(EditorView.editable.of(true)),
-          placeholder('DDL Definition — Simple: FIELD_ID TYPE LENGTH "Description"\nor HPE DDL: DEF name.\n  02 field PIC X(n).\nEND.\n\nSelect or create a DDL in the tree, or drop a .ddl / .txt file here.'),
+          ddlPlaceholderComp.of(placeholder(DDL_EDITOR_PLACEHOLDER)),
+          _ddlSrchField,
           _ddlHighlightExtension(),
           EditorView.updateListener.of(u => { if (u.docChanged) onDDLInput(); }),
         ],
       }),
       parent: document.getElementById('ddlEditor'),
     });
+
+    // Expose DDL search highlight dispatch
+    window._ddlSrchHL = (matches, curIdx, queryLen) => {
+      const view = window._ddlEditorCM;
+      const doc  = view.state.doc;
+      if (!matches.length || !queryLen) {
+        view.dispatch({ effects: _ddlSrchEffect.of(Decoration.none) });
+        return;
+      }
+      const hitLines = new Set();
+      for (const pos of matches) hitLines.add(doc.lineAt(Math.min(pos, doc.length - 1 || 0)).number);
+      const decs = [];
+      for (const num of [...hitLines].sort((a, b) => a - b))
+        decs.push(Decoration.line({ class: 'ddl-srch-line-hit' }).range(doc.line(num).from));
+      if (curIdx >= 0 && curIdx < matches.length) {
+        const from = Math.min(matches[curIdx], doc.length);
+        const to   = Math.min(from + queryLen, doc.length);
+        if (from < to) decs.push(Decoration.mark({ class: 'ddl-srch-cur' }).range(from, to));
+      }
+      decs.sort((a, b) => a.from - b.from || a.to - b.to);
+      view.dispatch({ effects: _ddlSrchEffect.of(Decoration.set(decs, true)) });
+    };
 
     const msgEditableComp = new Compartment();
     window._msgInputCM = new EditorView({
@@ -9958,15 +10053,49 @@ document.addEventListener('DOMContentLoaded', () => {
           keymap.of([...defaultKeymap, ...historyKeymap]),
           msgEditableComp.of(EditorView.editable.of(true)),
           placeholder('Paste one or more messages here, or drop a file.\n\nAccepted: NETARD audit log · Pure hex · Hex with spaces · Tandem hex dump · ASCII raw bytes\n\nThis field locks after Parse is clicked.'),
+          _msgHLField,
           EditorView.updateListener.of(u => { if (u.docChanged) onMsgChange(); }),
         ],
       }),
       parent: document.getElementById('msgInput'),
     });
 
+    // Inject ruler marker onto the editor element so it stays fixed on screen
+    const _lwMarker = document.createElement('div');
+    _lwMarker.id = 'lwColMarker';
+    _lwMarker.className = 'hidden';
+    window._msgInputCM.dom.appendChild(_lwMarker);
+
+    // Update gutter on CM scroll
+    window._msgInputCM.scrollDOM.addEventListener('scroll', () => updateMsgGutter());
+
+    // Expose highlight dispatch — called by renderInputOverlay() and clearInputHL()
+    window._msgInputHL = (ranges, hasSelection = false) => {
+      const view = window._msgInputCM;
+      const cmEl = view.dom;
+      if (!ranges.length) {
+        cmEl.classList.remove('msg-has-hl');
+        view.dispatch({ effects: _msgHLEffect.of(Decoration.none) });
+        return;
+      }
+      cmEl.classList.toggle('msg-has-hl', hasSelection);
+      const marks = [];
+      const docLen = view.state.doc.length;
+      for (const { s, e, color } of ranges) {
+        const from = Math.max(0, Math.min(s, docLen));
+        const to   = Math.max(0, Math.min(e, docLen));
+        if (from < to) marks.push(
+          Decoration.mark({ class: color === 'var(--hl-active)' ? 'cm-hl-active' : 'cm-hl-hover' })
+            .range(from, to)
+        );
+      }
+      marks.sort((a, b) => a.from - b.from || a.to - b.to);
+      view.dispatch({ effects: _msgHLEffect.of(Decoration.set(marks)) });
+    };
+
     const _origGBI = document.getElementById.bind(document);
-    const _ddlProxy = _cmProxy(window._ddlEditorCM, ddlEditableComp, onDDLInput);
-    const _msgProxy = _cmProxy(window._msgInputCM,  msgEditableComp, onMsgChange);
+    const _ddlProxy = _cmProxy(window._ddlEditorCM, ddlEditableComp, onDDLInput, ddlPlaceholderComp);
+    const _msgProxy = _cmProxy(window._msgInputCM,  msgEditableComp, onMsgChange, null, 'msg-parsed');
     document.getElementById = function(id) {
       if (id === 'ddlEditor') return _ddlProxy;
       if (id === 'msgInput')  return _msgProxy;

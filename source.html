@@ -200,10 +200,12 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
   text-transform: uppercase;
   letter-spacing: 0.08em;
   white-space: nowrap;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   padding: 0 6px 0 8px;
+  overflow: hidden;
 }
 .panel-body {
   flex: 1;
@@ -334,7 +336,7 @@ body.light .hl-str { color: #3a7d0a; }
 /* Align DDL search bar with the editor gutter (tree pane width - header padding) */
 #ddlPanel .panel-title { min-width: 172px; }
 /* DDL editor search bar */
-.ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 4px; padding: 0 0 0 4px; border-right: 1px solid var(--border); overflow: hidden; }
+.ddl-search-bar { width: var(--tree-w, 170px); flex: none; min-width: 0; box-sizing: border-box; display: flex; align-items: stretch; gap: 4px; padding: 0; border-right: 1px solid var(--border); overflow: hidden; }
 .ddl-search-lbl { font-size: var(--sz-mono); color: var(--text-dim); opacity: 0.7; user-select: none; flex-shrink: 0; padding-right: 2px; font-family: var(--font-mono); display: flex; align-items: center; }
 .ddl-search-input { flex: 1; min-width: 0; background: var(--bg-input); border: 2px solid var(--bg-input) !important; border-radius: 3px; -webkit-appearance: none; appearance: none; color: var(--text); font-family: var(--mono); font-size: var(--sz-mono); padding: 2px 6px; outline: none; box-shadow: none; }
 .ddl-search-input:focus { border-color: var(--accent) !important; }
@@ -1142,8 +1144,6 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
     <!-- DDL PANEL -->
     <div class="panel" id="ddlPanel">
       <div class="panel-header">
-        <span class="panel-title">DDL Definition</span>
-        <span id="ddlScopePath" style="display:none"></span>
         <div class="ddl-search-bar" id="ddlSearchBar">
           <input id="ddlSearchInput" class="ddl-search-input" type="text" placeholder="Search" autocomplete="off" spellcheck="false"
             oninput="ddlSearchUpdate()"
@@ -1155,6 +1155,8 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
             <span class="ddl-search-nav ddl-search-nav-x" onclick="ddlSearchClear()" title="Clear search">✕</span>
           </div>
         </div>
+        <span class="panel-title">DDL Definition</span>
+        <span id="ddlScopePath" style="display:none"></span>
         <button class="btn path-btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
         <button class="btn path-btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
         <button class="btn path-btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
@@ -9219,6 +9221,14 @@ function loadTree() {
   renderDDLTree();
 }
 
+// Sync --tree-w CSS variable on #ddlPanel to the current tree pane pixel width.
+// Used to keep the header Search bar width tracking the resizable tree pane.
+function _syncTreeW() {
+  const tp    = document.getElementById('ddlTreePane');
+  const panel = document.getElementById('ddlPanel');
+  if (tp && panel) panel.style.setProperty('--tree-w', tp.offsetWidth + 'px');
+}
+
 function initTreePaneResizer() {
   const resizer  = document.getElementById('ddlTreeResizer');
   const treePane = document.getElementById('ddlTreePane');
@@ -9226,17 +9236,21 @@ function initTreePaneResizer() {
     e.preventDefault();
     const startX = e.clientX, startW = treePane.offsetWidth;
     resizer.classList.add('dragging');
-    const onMove = e => { treePane.style.width = Math.max(80, Math.min(400, startW + e.clientX - startX)) + 'px'; };
+    const onMove = e => {
+      treePane.style.width = Math.max(80, Math.min(400, startW + e.clientX - startX)) + 'px';
+      _syncTreeW();
+    };
     const onUp   = () => { resizer.classList.remove('dragging'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); saveLayout(); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup',   onUp);
   });
+  _syncTreeW();   // set initial value
 }
 
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.1.19';
+const APP_VERSION  = '1.0.1.20';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -9363,7 +9377,7 @@ function loadLayout() {
     // Tree pane width
     if (layout.treePaneWidth) {
       const treePane = document.getElementById('ddlTreePane');
-      if (treePane) treePane.style.width = layout.treePaneWidth;
+      if (treePane) { treePane.style.width = layout.treePaneWidth; requestAnimationFrame(_syncTreeW); }
     }
     // Hidden columns
     if (Array.isArray(layout.hiddenCols)) {
@@ -9402,7 +9416,7 @@ function resetLayout() {
   });
   // Reset tree pane width to CSS default (170px)
   const treePane = document.getElementById('ddlTreePane');
-  if (treePane) treePane.style.width = '';
+  if (treePane) { treePane.style.width = ''; requestAnimationFrame(_syncTreeW); }
   // Show all columns
   const container = document.getElementById('resContainer');
   if (container) {

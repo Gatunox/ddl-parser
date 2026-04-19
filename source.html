@@ -16,6 +16,7 @@
   --accent2: #f78166;
   --text: #c9d1d9;
   --text-dim: #8b949e;
+  --text-very-dim: #4d5561;
   --hl-active: var(--hl-hover);
   --hl-hover: rgba(88, 166, 255, 0.25);
   --success: #3fb950;
@@ -40,12 +41,25 @@ body {
   user-select: none;
 }
 
-/* ===== SCROLLBARS ===== */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-deep); }
-::-webkit-scrollbar-thumb { background: #3a4049; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-::-webkit-scrollbar-corner { background: var(--bg-deep); }
+/* ===== SCROLLBARS =====
+   Track is 10px wide (easy to click); thumb uses a transparent border to
+   appear narrow (~4px), shrinking to 1px on hover to reveal an 8px thumb.
+   No layout shift — track width never changes. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #3a4049;
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  transition: border-width 0.15s ease, background-color 0.15s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+  border-width: 1px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* ===== HEADER ===== */
 header {
@@ -279,6 +293,9 @@ body.light .ddl-srch-line.hit { background: rgba(0,0,0,0.05); }
 /* DDL search — current match accent highlight overlay */
 .ddl-srch-cur-layer { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; pointer-events: none; z-index: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6; white-space: pre; overflow: visible; color: transparent; }
 .ddl-srch-cur { background: var(--accent); opacity: 0.45; border-radius: 2px; }
+/* DDL search — CodeMirror equivalents */
+#ddlEditor .cm-line.ddl-srch-line-hit { background: rgba(255,255,255,0.07); }
+body.light #ddlEditor .cm-line.ddl-srch-line-hit { background: rgba(0,0,0,0.05); }
 .ddl-hl-overlay  { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; margin: 0;
   font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6;
   white-space: pre; overflow: visible;
@@ -692,7 +709,7 @@ body.light tbody tr.row-redef td.c-id { color: #b7770a; }
 tbody td { padding: 0 8px; height: 24px; vertical-align: middle; font-size: var(--sz-mono); line-height: 24px; overflow: hidden; text-overflow: ellipsis; }
 td.c-id   { color: var(--text); font-weight: 700; white-space: nowrap; }
 td.c-desc { color: var(--text-dim); }
-td.c-val  { color: var(--success); word-break: break-all; text-overflow: clip; overflow: visible; }
+td.c-val  { color: var(--success); word-break: break-all; text-overflow: clip; overflow: visible; white-space: pre-wrap; }
 td.c-len  { color: var(--text-dim); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 td.c-raw  { color: #6e7681; word-break: break-all; }
 td.c-err  { color: var(--accent2); }
@@ -803,7 +820,7 @@ body.light .trk-chk { color-scheme: light; }
 .track-tbl-wrap { overflow: auto; flex: 1; min-height: 0; }
 .track-tbl thead th { white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .track-tbl td.t-ts  { color: var(--text-dim); font-size: var(--sz-mono); white-space: nowrap; }
-.track-tbl td.t-val { color: var(--success); word-break: break-all; max-width: 100px; }
+.track-tbl td.t-val { color: var(--success); word-break: break-all; max-width: 100px; white-space: pre-wrap; }
 .track-tbl tr.track-cur td { background: rgba(88,166,255,0.1) !important; }
 
 /* ===== MISC ===== */
@@ -1030,9 +1047,10 @@ body.light {
   --accent2:   #cf222e;
   --text:      #24292f;
   --text-dim:  #656d76;
+  --text-very-dim: #9ba3ab;
   --hl-active: var(--hl-hover);
   --hl-hover:  rgba(9,105,218,0.20);
-  --success:   #1a7f37;
+  --success:   #0d5523;
   --warning:   #ca8a04;
 }
 body.light textarea:focus { background: transparent; }
@@ -1062,6 +1080,47 @@ body.light .hb.hb-selected { color: var(--text) !important; }
 body.light .ctx-menu { box-shadow: 0 6px 20px rgba(0,0,0,0.18); }
 body.light .settings-drawer { box-shadow: -8px 0 28px rgba(0,0,0,0.15); }
 body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
+
+/* ===== CODEMIRROR HOST CONTAINERS ===== */
+.cm-host { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.cm-host .cm-editor { flex: 1; min-height: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6; background: var(--bg-input); color: var(--text); outline: none; }
+.cm-host .cm-editor.cm-focused { outline: none; }
+.cm-host .cm-scroller { flex: 1; overflow: auto; }
+.cm-host .cm-content { padding: 8px; white-space: pre; min-height: 100%; }
+.cm-host .cm-line { padding: 0; }
+/* Native browser caret — already blinks by default */
+.cm-host .cm-content { caret-color: var(--text); }
+.cm-host .cm-selectionBackground { background: rgba(88,166,255,0.3) !important; }
+.cm-host .cm-focused .cm-selectionBackground { background: rgba(88,166,255,0.3) !important; }
+/* Active line — subtle highlight so cursor line is always visible */
+.cm-host .cm-activeLine { background: rgba(255,255,255,0.04); }
+.cm-host .cm-activeLineGutter { background: rgba(255,255,255,0.07); color: var(--text); }
+body.light .cm-host .cm-activeLine { background: rgba(0,0,0,0.04); }
+body.light .cm-host .cm-activeLineGutter { background: rgba(0,0,0,0.07); }
+body.light .cm-host .cm-editor { background: var(--bg-input); color: var(--text); }
+body.light .cm-host .cm-cursor { border-left-color: var(--text); }
+/* DDL editor host fills the pane */
+#ddlEditor.cm-host { flex: 1; }
+/* Message input host fills the panel body */
+#msgInput.cm-host { background: var(--bg-input); }
+/* Both CM panels: less-bright default text */
+#ddlEditor .cm-content,
+#msgInput .cm-content { color: var(--text-dim); }
+/* After parse: dim message input further so field highlights pop */
+#msgInput .cm-editor.msg-parsed .cm-content { color: var(--text-very-dim); }
+/* With an active highlight: restore to text-dim so non-highlighted text stays readable */
+#msgInput .cm-editor.msg-has-hl .cm-content { color: var(--text-dim); }
+/* Field highlight mark classes */
+#msgInput .cm-hl-active { background: var(--hl-active); border-radius: 2px; color: #fff; }
+#msgInput .cm-hl-hover  { background: var(--hl-hover);  border-radius: 2px; color: #fff; }
+body.light #msgInput .cm-hl-active,
+body.light #msgInput .cm-hl-hover  { color: var(--text); }
+/* Placeholder — absolute so it doesn't inflate the first line's height */
+.cm-host .cm-placeholder { color: var(--text-dim); opacity: 0.55; display: block; position: absolute; pointer-events: none; }
+/* Line number gutter — match panel background and dim text */
+.cm-host .cm-gutters { background: var(--bg-panel); border-right: 1px solid rgba(255,255,255,0.06); color: var(--text-dim); }
+body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
+.cm-host .cm-lineNumbers .cm-gutterElement { padding: 0 6px 0 0; min-width: 36px; text-align: right; font-size: var(--sz-mono); }
 </style>
 </head>
 <body>
@@ -1113,15 +1172,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
         <div class="resizer-h" id="ddlTreeResizer"></div>
         <div class="ddl-editor-pane">
           <div id="ddlValidationBar"></div>
-          <div class="ddl-hl-wrap">
-            <div class="ddl-gutter" aria-hidden="true"><div id="ddlGutterInner"></div></div>
-            <div class="ddl-hl-editor-inner">
-            <div id="ddlSearchLinesBg" class="ddl-srch-lines-bg" aria-hidden="true"></div>
-            <div id="ddlEditorOverlay" class="ddl-hl-overlay" aria-hidden="true"></div>
-            <div id="ddlSrchCurMark" class="ddl-srch-cur-layer" aria-hidden="true"></div>
-          <textarea id="ddlEditor" spellcheck="false" oninput="onDDLInput()" onkeydown="if(event.key==='Tab'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd;this.value=this.value.slice(0,s)+'    '+this.value.slice(e);this.selectionStart=this.selectionEnd=s+4;updateDDLEditorState();updateDDLHighlight();}" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}const g=document.getElementById('ddlGutterInner');if(g){g.style.transform='translateY('+(-this.scrollTop)+'px)';}updateDDLHighlightOnScroll();"
-            placeholder="DDL Definition — two formats supported:&#10;&#10;── Simple (ISO 8583) ───────────────────────────────&#10;FIELD_ID  TYPE  LENGTH  &quot;Description&quot;&#10;Types:  FIXED  LLVAR  LLLVAR  BMP&#10;IDs:    MTI  BMP  or field number 1–128&#10;&#10;── HPE DDL (NonStop / Tandem) ──────────────────────&#10;DEF message-name.&#10;  02 field-name  PIC X(n).&#10;  02 num-field   PIC 9(n) COMP.&#10;  02 bin-field   TYPE BINARY 16.&#10;  02 group.&#10;    03 sub-field PIC X(5).&#10;END.&#10;&#10;Select or create a DDL in the tree on the left,&#10;or drop a .ddl / .txt file here to load it."></textarea>
-          </div></div>
+          <div id="ddlEditor" class="cm-host"></div>
         </div>
       </div>
     </div>
@@ -1161,12 +1212,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
       </div>
       <div class="panel-body" style="flex-direction:row">
         <div id="msgGutter" class="msg-gutter" aria-hidden="true"></div>
-        <div class="msg-hl-wrap">
-          <div id="lwColMarker" class="hidden" aria-hidden="true"></div>
-          <div id="msgInputOverlay" class="msg-hl-overlay" aria-hidden="true"></div>
-          <textarea id="msgInput" spellcheck="false" oninput="onMsgChange()"
-            placeholder="Paste one or more messages here, or drop a file.&#10;&#10;Accepted formats:&#10;  • NETARD audit log  (auto-detected — all records extracted)&#10;  • Pure hex:         F0200F220000...&#10;  • Hex with spaces:  F0 22 00 38...&#10;  • Tandem hex dump:  0000: F0 F2 ... |0200..|&#10;  • ASCII raw bytes&#10;&#10;Multiple messages: separate with blank lines&#10;or timestamps will be auto-detected from logs.&#10;&#10;This field locks after Parse is clicked."></textarea>
-        </div>
+        <div id="msgInput" class="cm-host" style="flex:1;min-width:0;overflow:hidden"></div>
       </div>
     </div>
 
@@ -1232,7 +1278,8 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
 
 <div id="flash-container"></div>
 
-<script>
+<script src="codemirror.bundle.js"></script>
+<script id="app">
 'use strict';
 
 // ============================================================
@@ -4798,6 +4845,9 @@ function bestDDLMatch(bytes, candidates) {
 // ============================================================
 let _ppSteps = [];
 let _parseAborted = false;
+let _cacheRestoreStats = { hit: 0, miss: 0, noEntry: 0 }; // populated by _restoreCompiledCache
+let _compiledCacheDB   = null;   // IndexedDB instance for compiled-def cache
+let _compiledCacheReady = null;  // Promise; null once resolved
 let _ppPickerCb   = null;   // set while picker is visible; called with null on abort
 let _ddlTreeVersion  = 0;                          // bumped in saveTree() on any tree change
 let _ddlCompileCache = { version: -1, byVol: null }; // invalidated when version mismatches
@@ -4829,45 +4879,95 @@ function getDDLsForSv(vol, sv) {
   if (!svTree) return [];
   return Object.keys(svTree).sort().map(d => ({ path: `${vol}/${sv}/${d}`, content: svTree[d] }));
 }
-function _persistCompiledCache(compiledBySv) {
-  for (const [svk, entries] of Object.entries(compiledBySv)) {
+function _openCacheDB() {
+  return new Promise(resolve => {
     try {
-      const [vol, sv] = svk.split('/');
-      // _hpeIsoLayout is a non-numeric property on the defs array — JSON.stringify silently
-      // drops it. Lift it to a plain entry property (excluding the Map) so it survives.
-      const data = entries.map(e => {
-        const iso = e.defs._hpeIsoLayout;
-        return iso ? { ...e, _hpeIsoLayout: { ...iso, deByBit: undefined } } : e;
-      });
-      localStorage.setItem('up_cc3_' + svk, JSON.stringify({ hash: _svHash(vol, sv), data }));
-    } catch(e) {}
-  }
+      const req = indexedDB.open('ddl-parser-cache', 1);
+      req.onupgradeneeded = e => {
+        e.target.result.createObjectStore('compiled', { keyPath: 'svk' });
+      };
+      req.onsuccess = e => {
+        _compiledCacheDB = e.target.result;
+        // One-time migration: remove old localStorage cc3 keys to reclaim quota
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('up_cc3_')) localStorage.removeItem(k);
+        }
+        resolve();
+      };
+      req.onerror = () => { console.warn('[DDL cache] IDB unavailable — cache disabled'); resolve(); };
+    } catch(e) { resolve(); }
+  });
 }
-function _restoreCompiledCache() {
+function _persistCompiledCache(compiledBySv) {
+  if (!_compiledCacheDB) return;
+  // Delete stale (hash-mismatched) entries
+  if (_cacheRestoreStats.missSvs?.length) {
+    const dtx = _compiledCacheDB.transaction('compiled', 'readwrite');
+    for (const svk of _cacheRestoreStats.missSvs) dtx.objectStore('compiled').delete(svk);
+  }
+  const tx = _compiledCacheDB.transaction('compiled', 'readwrite');
+  const store = tx.objectStore('compiled');
+  for (const [svk, entries] of Object.entries(compiledBySv)) {
+    const [vol, sv] = svk.split('/');
+    const data = entries.map(e => {
+      const iso = e.defs._hpeIsoLayout;
+      return iso ? { ...e, _hpeIsoLayout: { ...iso, deByBit: undefined } } : e;
+    });
+    store.put({ svk, hash: _svHash(vol, sv), data });
+  }
+  tx.onerror = e => {
+    console.warn('[DDL cache] IDB write error', e.target?.error);
+    setTimeout(() => flash('Cache save failed — will recompile on next reload.', 'warn'), 500);
+  };
+}
+async function _restoreCompiledCache() {
   const bySv = {};
   const byVol = {};
+  _cacheRestoreStats = { hit: 0, miss: 0, noEntry: 0, hitSvs: [], missSvs: [], noEntrySvs: [] };
+  if (!_compiledCacheDB) return;
+  // Read all stored entries in one IDB transaction
+  const allStored = await new Promise(resolve => {
+    const tx = _compiledCacheDB.transaction('compiled', 'readonly');
+    const req = tx.objectStore('compiled').getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror  = () => resolve([]);
+  });
+  const storedMap = new Map(allStored.map(r => [r.svk, r]));
   for (const vol of Object.keys(S.ddlTree)) {
     const svMap = S.ddlTree[vol];
     if (!svMap) continue;
     for (const svName of Object.keys(svMap)) {
+      const svTree = svMap[svName];
+      // Skip empty subvolumes — nothing to compile, nothing to cache
+      if (!svTree || !Object.keys(svTree).length) continue;
       const svk = `${vol.toUpperCase()}/${svName.toUpperCase()}`;
-      try {
-        const stored = JSON.parse(localStorage.getItem('up_cc3_' + svk) || 'null');
-        if (stored && stored.hash === _svHash(vol, svName)) {
-          bySv[svk] = stored.data.map(e => {
-            if (e._hpeIsoLayout) {
-              // Re-attach layout to the defs array and rebuild the Map that can't survive JSON.
-              e.defs._hpeIsoLayout = e._hpeIsoLayout;
-              e.defs._hpeIsoLayout.deByBit = new Map(
-                (e._hpeIsoLayout.dataElements || []).map(de => [de.bitNum, de])
-              );
-            }
-            return e;
-          });
-          const vk = vol.toUpperCase();
-          (byVol[vk] || (byVol[vk] = [])).push(...bySv[svk]);
-        }
-      } catch(e) {}
+      // Skip excluded SVs and evict their IDB entry
+      if (S.excl && S.excl.has(svk)) {
+        const dtx = _compiledCacheDB.transaction('compiled', 'readwrite');
+        dtx.objectStore('compiled').delete(svk);
+        continue;
+      }
+      const stored = storedMap.get(svk) || null;
+      if (!stored) { _cacheRestoreStats.noEntry++; _cacheRestoreStats.noEntrySvs.push(svk); continue; }
+      if (stored.hash === _svHash(vol, svName)) {
+        _cacheRestoreStats.hit++; _cacheRestoreStats.hitSvs.push(svk);
+        bySv[svk] = stored.data.map(e => {
+          if (e._hpeIsoLayout) {
+            // Re-attach layout to the defs array and rebuild the Map that can't survive JSON.
+            e.defs._hpeIsoLayout = e._hpeIsoLayout;
+            e.defs._hpeIsoLayout.deByBit = new Map(
+              (e._hpeIsoLayout.dataElements || []).map(de => [de.bitNum, de])
+            );
+          }
+          return e;
+        });
+        const vk = vol.toUpperCase();
+        (byVol[vk] || (byVol[vk] = [])).push(...bySv[svk]);
+      } else {
+        _cacheRestoreStats.miss++; _cacheRestoreStats.missSvs.push(svk);
+        console.info('[DDL cache] Hash mismatch for', svk, '— will recompile');
+      }
     }
   }
   if (Object.keys(bySv).length) {
@@ -4876,16 +4976,17 @@ function _restoreCompiledCache() {
       const [v, s] = svk.split('/');
       svHashes[svk] = _svHash(v, s);
     }
-    // version stays -1 so the per-sv path always runs on the first parse of each session,
-    // compiling any svs whose cache hash no longer matches (e.g. after editing a DDL and
-    // reloading the page).  _commitNetardCache / _commitP23Cache set version = _ddlTreeVersion
-    // once the full byVol is assembled, enabling the fast path for the rest of the session.
+    // version stays -1 so per-sv path always runs on the first parse of each session
     _ddlCompileCache = { version: -1, byVol, svHashes, svEntries: bySv };
   }
 }
 
 function _parseProgressDoneLast() {
   if (_ppSteps.length) { _ppSteps[_ppSteps.length - 1].done = true; _parseProgressRender(); }
+}
+function _cacheStampNote() {
+  const { hitSvs = [], missSvs = [], noEntrySvs = [] } = _cacheRestoreStats;
+  console.info('[DDL cache] hit:', hitSvs, '| miss:', missSvs, '| no-entry:', noEntrySvs);
 }
 
 function _parseProgressShow() {
@@ -4963,7 +5064,7 @@ function _parseProgressHide() {
 // label   — step label shown as a new progress step
 // matches — array of { path, defName } candidates (max 15 shown)
 // cb      — called with the chosen match object, or null if cancelled
-function _showProgressPicker(label, matches, cb) {
+function _showProgressPicker(label, matches, cb, msgType = null) {
   _parseProgressStep(label);
   if (matches.length === 1) {
     _parseProgressDoneLast();
@@ -4975,8 +5076,11 @@ function _showProgressPicker(label, matches, cb) {
   pp.classList.remove('hidden');
   _ppPickerCb = cb;
   const shown = matches;
+  const _typeTag = msgType?.type
+    ? `<span class="btype btype-${msgType.type.toLowerCase()}" style="font-size:var(--sz-badge);padding:1px 5px;vertical-align:middle">${esc(msgType.type)}</span>`
+    : '';
   pp.innerHTML =
-    `<div style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);padding:0 0 4px 21px">Select DDL definition:</div>` +
+    `<div style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);padding:0 0 4px 21px">Select DDL definition for: ${_typeTag}</div>` +
     `<div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;padding:2px 4px 2px 2px">` +
     shown.map((m, i) =>
       `<button class="btn btn-sm" data-ppi="${i}" style="text-align:left;font-family:var(--mono);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.path)}">${esc(m.defName)} <span style="color:var(--text-dim);font-size:0.9em">${esc(m.path)}</span> <span style="color:var(--warning);font-size:0.9em">${m.score != null ? Math.round(m.score * 100) + '%' : ''}</span></button>`
@@ -5212,7 +5316,7 @@ function doParseNetardLog(text) {
               const { msgType, allMatches } = typePickerQueue[idx];
               if (sessionMappings[msgType.type]) { _showNetardTypePickers(idx + 1); return; }
               const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
-              _showProgressPicker(`Candidate list for ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
+              _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
                 if (!match) {
                   _parseProgressHide();
                   document.getElementById('msgInput').readOnly = false;
@@ -5222,16 +5326,17 @@ function doParseNetardLog(text) {
                 if (saveRule) addTypeMappingRule(msgType.type, match.defName ? `${match.ddlPath}/${match.defName}` : match.ddlPath);
                 sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
                 _showNetardTypePickers(idx + 1);
-              });
+              }, msgType);
             }
             setTimeout(() => _showNetardTypePickers(0), 300);
           }, 300);
         }
 
         if (useCache) {
-          // Compile step — instantly done from cache
-          _parseProgressStep('Compiling DDL definitions\u2026');
+          const _nSvs = Object.keys(_ddlCompileCache.svEntries || {}).length;
+          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
           _parseProgressDoneLast();
+          _cacheStampNote();
           _startNetardScoring(_ddlCompileCache.byVol);
         } else {
           // Per-subvolume cache check: reuse subvolumes whose content hash still matches
@@ -5277,18 +5382,28 @@ function doParseNetardLog(text) {
             _persistCompiledCache(compiledBySv);
           }
           if (!_nTasks.length) {
-            _parseProgressStep('Compiling DDL definitions\u2026');
+            const _nSvs = Object.keys(_cachedSvs).length;
+            _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
             _commitNetardCache();
             _parseProgressDoneLast();
+            _cacheStampNote();
             _startNetardScoring(_ddlCompileCache.byVol);
           } else {
-          _parseProgressStep(`Compiling DDL definitions\u2026 0 of ${_nTasks.length}`);
+          const _nCached = Object.keys(_cachedSvs).length;
+          if (_nCached > 0) {
+            _parseProgressStep(`Retrieving DDL definitions from ${_nCached} subvolume${_nCached !== 1 ? 's' : ''}\u2026`);
+            _parseProgressDoneLast();
+          }
+          const _nSvsToCompile = new Set(_nTasks.map(t => `${t.vol.toUpperCase()}/${t.sv.toUpperCase()}`)).size;
+          const _svLabel = (n) => `${n} subvolume${n !== 1 ? 's' : ''}`;
+          _parseProgressStep(`Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 0 of ${_nTasks.length}`);
           let _nti = 0;
           function _netardCompileNext() {
             if (_parseAborted) return;
             if (_nti >= _nTasks.length) {
               _commitNetardCache();
               _parseProgressDoneLast();
+              _cacheStampNote();
               _startNetardScoring(_ddlCompileCache.byVol);
               return;
             }
@@ -5300,7 +5415,7 @@ function doParseNetardLog(text) {
               const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
               (compiledBySv[svk] || (compiledBySv[svk] = [])).push({ path, defName, defs });
             }
-            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions\u2026 ${_nti} of ${_nTasks.length}`);
+            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 ${_nti} of ${_nTasks.length}`);
             setTimeout(_netardCompileNext, 0);
           }
           setTimeout(_netardCompileNext, 0);
@@ -5658,7 +5773,7 @@ function doParseMessages() {
             const { msgType, allMatches } = typePickerQueue[idx];
             if (sessionMappings[msgType.type]) { _showTypePickers(idx + 1); return; }
             const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
-            _showProgressPicker(`Candidate list for ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
+            _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
               if (!match) {
                 _parseProgressHide();
                 document.getElementById('msgInput').readOnly = false;
@@ -5668,7 +5783,7 @@ function doParseMessages() {
               if (saveRule) addTypeMappingRule(msgType.type, match.defName ? `${match.ddlPath}/${match.defName}` : match.ddlPath);
               sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
               _showTypePickers(idx + 1);
-            });
+            }, msgType);
           }
 
           setTimeout(() => _showTypePickers(0), 300);
@@ -5676,8 +5791,10 @@ function doParseMessages() {
       }
 
       if (useCache) {
-        _parseProgressStep('Compiling DDL definitions\u2026');
+        const _nSvs = Object.keys(_ddlCompileCache.svEntries || {}).length;
+        _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
         _parseProgressDoneLast();
+        _cacheStampNote();
         _startP23Scoring(_ddlCompileCache.byVol);
       } else {
         // Per-subvolume cache check: reuse subvolumes whose content hash still matches
@@ -5723,18 +5840,28 @@ function doParseMessages() {
           _persistCompiledCache(compiledBySv);
         }
         if (!_tasks.length) {
-          _parseProgressStep('Compiling DDL definitions\u2026');
+          const _nSvs = Object.keys(_cachedSvs).length;
+          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
           _commitP23Cache();
           _parseProgressDoneLast();
+          _cacheStampNote();
           _startP23Scoring(_ddlCompileCache.byVol);
         } else {
-          _parseProgressStep(`Compiling DDL definitions\u2026 0 of ${_tasks.length}`);
+          const _p23Cached = Object.keys(_cachedSvs).length;
+          if (_p23Cached > 0) {
+            _parseProgressStep(`Retrieving DDL definitions from ${_p23Cached} subvolume${_p23Cached !== 1 ? 's' : ''}\u2026`);
+            _parseProgressDoneLast();
+          }
+          const _nSvsToCompile = new Set(_tasks.map(t => `${t.vol.toUpperCase()}/${t.sv.toUpperCase()}`)).size;
+          const _svLabel = (n) => `${n} subvolume${n !== 1 ? 's' : ''}`;
+          _parseProgressStep(`Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 0 of ${_tasks.length}`);
           let _ti = 0;
           function _compileNext() {
             if (_parseAborted) return;
             if (_ti >= _tasks.length) {
               _commitP23Cache();
               _parseProgressDoneLast();
+              _cacheStampNote();
               _startP23Scoring(_ddlCompileCache.byVol);
               return;
             }
@@ -5746,7 +5873,7 @@ function doParseMessages() {
               const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
               (compiledBySv[svk] || (compiledBySv[svk] = [])).push({ path, defName, defs });
             }
-            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions\u2026 ${_ti} of ${_tasks.length}`);
+            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 ${_ti} of ${_tasks.length}`);
             setTimeout(_compileNext, 0);
           }
           setTimeout(_compileNext, 0);
@@ -5999,6 +6126,70 @@ function _hlHPELine(line) {
 const _HL_VIRT_THRESHOLD = 0;    // always use virtual rendering
 const _HL_VIRT_BUFFER    = 50;   // extra lines above/below viewport to highlight
 
+// ── CodeMirror syntax-highlight extension ───────────────────────────────────
+// Reuses the existing HTML-generating tokenizers (_hlHPELine etc.) by parsing
+// their output to recover character ranges, then applies CM Mark decorations.
+const _hlParseDiv = document.createElement('div'); // shared scratch element
+
+function _htmlToTokens(html) {
+  _hlParseDiv.innerHTML = html;
+  const toks = [];
+  let offset = 0;
+  function walk(node) {
+    if (node.nodeType === 3) {                    // text node
+      offset += node.textContent.length;
+    } else if (node.nodeType === 1) {             // element node
+      const cls = node.className;
+      const start = offset;
+      for (const ch of node.childNodes) walk(ch);
+      if (cls) toks.push({ from: start, to: offset, cls });
+    }
+  }
+  for (const ch of _hlParseDiv.childNodes) walk(ch);
+  return toks;
+}
+
+function _ddlHighlightExtension() {
+  if (!window.CM) return [];
+  const { ViewPlugin, Decoration, RangeSetBuilder } = window.CM;
+  if (!ViewPlugin || !Decoration || !RangeSetBuilder) return [];
+
+  return ViewPlugin.fromClass(class {
+    constructor(view) { this.decorations = this._build(view); }
+    update(u)         { if (u.docChanged || u.viewportChanged) this.decorations = this._build(u.view); }
+
+    _build(view) {
+      const builder  = new RangeSetBuilder();
+      const doc      = view.state.doc;
+      if (!doc.length) return builder.finish();
+
+      const isDDLMM  = S.scope?.type === 'ddlmm';
+      const text     = doc.toString();
+      const isHPE    = !isDDLMM && isHPEDDLText(text);
+
+      for (const { from, to } of view.visibleRanges) {
+        const firstLine = doc.lineAt(from);
+        const lastLine  = doc.lineAt(to);
+
+        for (let n = firstLine.number; n <= lastLine.number; n++) {
+          const line    = doc.line(n);
+          const lineStr = line.text;
+          const html    = isDDLMM ? _hlDDLMMLine(lineStr)
+                        : isHPE  ? _hlHPELine(lineStr)
+                        :          _hlSimpleLine(lineStr);
+          for (const tok of _htmlToTokens(html)) {
+            const f = line.from + tok.from;
+            const t = line.from + tok.to;
+            if (f < t && t <= doc.length)
+              builder.add(f, t, Decoration.mark({ class: tok.cls }));
+          }
+        }
+      }
+      return builder.finish();
+    }
+  }, { decorations: v => v.decorations });
+}
+
 let _ddlHlDebounceTimer   = null;
 let _ddlEditorStateTimer  = null;   // debounce for updateDDLEditorState on large files
 let _cachedSelDDLEl       = null;   // cached .tree-node.tree-sel[data-ntype="ddl"]
@@ -6007,6 +6198,7 @@ let _cachedDDLMMEl        = null;   // cached .tree-ddlmm-node
 let _ddlLineCount = 0;
 
 function updateDDLHighlight(fromScroll = false) {
+  if (window._ddlEditorCM) return;
   const overlay = document.getElementById('ddlEditorOverlay');
   const ta = document.getElementById('ddlEditor');
   if (!overlay || !ta) return;
@@ -6052,6 +6244,7 @@ function updateDDLHighlight(fromScroll = false) {
 // Debounced version — 50ms so text appears near-instantly after typing stops.
 // The windowed approach makes each call cheap enough for a tight debounce.
 function updateDDLHighlightDebounced() {
+  if (window._ddlEditorCM) return;
   clearTimeout(_ddlHlDebounceTimer);
   _ddlHlDebounceTimer = setTimeout(() => updateDDLHighlight(), 50);
 }
@@ -6072,6 +6265,7 @@ function onDDLInput() {
 // Scroll-triggered overlay refresh — updates visible lines without recomputing gutter/search.
 // Also uses cached _ddlLineCount to avoid O(n) work in the hot scroll path.
 function updateDDLHighlightOnScroll() {
+  if (window._ddlEditorCM) return;
   if (_ddlLineCount > _HL_VIRT_THRESHOLD) {
     clearTimeout(_ddlHlDebounceTimer);
     _ddlHlDebounceTimer = setTimeout(() => updateDDLHighlight(true), 60);
@@ -6079,6 +6273,7 @@ function updateDDLHighlightOnScroll() {
 }
 
 function updateDDLGutter() {
+  if (window._ddlEditorCM) return;
   const ta    = document.getElementById('ddlEditor');
   const inner = document.getElementById('ddlGutterInner');
   if (!inner || !ta) return;
@@ -6708,20 +6903,10 @@ function clearHover() {
 }
 
 // ---- Message Input overlay highlighting ----
-// Renders coloured marks behind the textarea for the selected field and/or
-// the currently hovered field simultaneously, matching the Raw Message panel behaviour.
-function renderInputOverlay() {
-  const overlay = document.getElementById('msgInputOverlay');
-  const ta      = document.getElementById('msgInput');
-  if (!overlay || !ta) return;
-
+// Collects highlight ranges for the selected/hovered field from the byte-char map.
+function _buildInputHLRanges() {
   const msg = S.messages?.[S.curIdx];
-  if (!msg?.byteCharMap?.length) { overlay.innerHTML = ''; return; }
-
-  // Collect ranges to highlight.
-  // Iterates per-byte so that null bcm entries (NETARD padded trailing spaces)
-  // and multi-line fields each produce separate, correct character ranges —
-  // preventing highlights from bleeding into the next line's indentation.
+  if (!msg?.byteCharMap?.length) return [];
   const ranges = [];
   const addRange = (fid, color) => {
     if (!fid) return;
@@ -6735,11 +6920,9 @@ function renderInputOverlay() {
         if (asciiRun) { ranges.push({ ...asciiRun, color }); asciiRun = null; }
         continue;
       }
-      // Hex range
       if (!run) { run = { s: bc.s, e: bc.e }; }
       else if (bc.s <= run.e) { run.e = Math.max(run.e, bc.e); }
       else { ranges.push({ ...run, color }); run = { s: bc.s, e: bc.e }; }
-      // ASCII bracket range (hexascii format only)
       if (bc.ascii) {
         if (!asciiRun) { asciiRun = { s: bc.ascii.s, e: bc.ascii.e }; }
         else if (bc.ascii.s <= asciiRun.e) { asciiRun.e = Math.max(asciiRun.e, bc.ascii.e); }
@@ -6749,19 +6932,24 @@ function renderInputOverlay() {
     if (run)      ranges.push({ ...run,      color });
     if (asciiRun) ranges.push({ ...asciiRun, color });
   };
-
-  addRange(S.selFieldId,   'var(--hl-active)');
-  // Hover on a different field shows on top of (or beside) the selected highlight
+  addRange(S.selFieldId, 'var(--hl-active)');
   if (S.hoverFieldId && S.hoverFieldId !== S.selFieldId)
     addRange(S.hoverFieldId, 'var(--hl-hover)');
+  return ranges;
+}
 
+// Renders coloured marks for the selected/hovered field in the message input.
+function renderInputOverlay() {
+  if (window._msgInputHL) {
+    window._msgInputHL(_buildInputHLRanges(), !!S.selFieldId);
+    return;
+  }
+  const overlay = document.getElementById('msgInputOverlay');
+  const ta      = document.getElementById('msgInput');
+  if (!overlay || !ta) return;
+  const ranges = _buildInputHLRanges();
   if (!ranges.length) { overlay.innerHTML = ''; return; }
-
-  // Sort by start position so we can build the HTML left-to-right
   ranges.sort((a, b) => a.s - b.s);
-
-  // For NETARD messages use the padded overlay text (content lines extended to
-  // full width W with spaces) so that stripped trailing spaces can be highlighted.
   const text = ta.value;
   let html = '', pos = 0;
   for (const { s, e, color } of ranges) {
@@ -6772,47 +6960,71 @@ function renderInputOverlay() {
   }
   html += esc(text.slice(pos));
   overlay.innerHTML = html;
-
   overlay.scrollTop  = ta.scrollTop;
   overlay.scrollLeft = ta.scrollLeft;
 }
 
 function clearInputHL() {
+  if (window._msgInputHL) { window._msgInputHL([]); return; }
   const overlay = document.getElementById('msgInputOverlay');
   if (overlay) overlay.innerHTML = '';
 }
 
 function updateMsgGutter(scrollIntoView = false) {
   const gutter = document.getElementById('msgGutter');
-  const ta     = document.getElementById('msgInput');
-  if (!gutter || !ta) return;
+  if (!gutter) return;
   const msg = S.isParsed ? S.messages[S.curIdx] : null;
   if (!msg || msg.charStart === undefined) { gutter.innerHTML = ''; return; }
 
-  const text  = ta.value;
-  const style = getComputedStyle(ta);
-  const lineH = parseFloat(style.lineHeight);
+  if (window._msgInputCM) {
+    const view   = window._msgInputCM;
+    const docLen = view.state.doc.length;
+    const startPos = Math.min(msg.charStart, docLen);
+    let endPos;
+    if (msg.isNetard) {
+      const nextMsg = S.messages[S.curIdx + 1];
+      if (nextMsg?.charStart !== undefined) {
+        const nLine = view.state.doc.lineAt(Math.min(nextMsg.charStart, docLen));
+        endPos = nLine.from > 0 ? view.state.doc.lineAt(nLine.from - 1).to : startPos;
+      } else {
+        endPos = docLen;
+      }
+    } else {
+      endPos = Math.min(msg.charEnd ?? msg.charStart, docLen);
+    }
+    const startBlock = view.lineBlockAt(startPos);
+    const endBlock   = view.lineBlockAt(endPos);
+    const scrollTop  = view.scrollDOM.scrollTop;
+    const top    = startBlock.top - scrollTop;
+    const height = endBlock.bottom - startBlock.top;
+    gutter.innerHTML = `<div class="msg-gutter-bar" style="top:${top}px;height:${height}px"></div>`;
+    if (scrollIntoView) {
+      const clientH = view.scrollDOM.clientHeight;
+      if (startBlock.top < scrollTop || startBlock.top > scrollTop + clientH - view.defaultLineHeight) {
+        view.scrollDOM.scrollTop = Math.max(0, startBlock.top - view.defaultLineHeight);
+      }
+    }
+    return;
+  }
+
+  const ta = document.getElementById('msgInput');
+  if (!ta) return;
+  const text   = ta.value;
+  const style  = getComputedStyle(ta);
+  const lineH  = parseFloat(style.lineHeight);
   const padTop = parseFloat(style.paddingTop);
-
   const startLine = (text.slice(0, msg.charStart).match(/\n/g) || []).length;
-
-  // For NETARD: span to just before the next message header (or end of text).
-  // For non-NETARD: span to charEnd as before.
   let endLine;
   if (msg.isNetard) {
     const nextMsg = S.messages[S.curIdx + 1];
     if (nextMsg?.charStart !== undefined) {
-      // End on the last line before the next message header
       endLine = (text.slice(0, nextMsg.charStart).match(/\n/g) || []).length - 1;
     } else {
-      // Last message — span to end of textarea content
       endLine = (text.match(/\n/g) || []).length;
     }
   } else {
     endLine = (text.slice(0, msg.charEnd).match(/\n/g) || []).length;
   }
-
-  // Auto-scroll textarea so the active message start is visible
   if (scrollIntoView) {
     const msgTop    = padTop + startLine * lineH;
     const msgBottom = padTop + (endLine + 1) * lineH;
@@ -6820,15 +7032,14 @@ function updateMsgGutter(scrollIntoView = false) {
       ta.scrollTop = Math.max(0, msgTop - lineH);
     }
   }
-
   const top    = padTop + startLine * lineH - ta.scrollTop;
   const height = (endLine - startLine + 1) * lineH;
-
   gutter.innerHTML = `<div class="msg-gutter-bar" style="top:${top}px;height:${height}px"></div>`;
 }
 
 // Keep overlay in sync when the user scrolls the textarea
 function _syncOverlayScroll() {
+  if (window._msgInputCM) return;
   const ta = document.getElementById('msgInput');
   if (!ta) return;
   ta.addEventListener('scroll', () => {
@@ -7773,8 +7984,9 @@ function _scrollEditorToDef(defName) {
   const m  = re.exec(text);
   if (!m) return;
   const linesBefore = text.substring(0, m.index).split('\n').length - 1;
-  const lineH       = parseFloat(getComputedStyle(ta).lineHeight) || 16;
-  const padTop      = parseFloat(getComputedStyle(ta).paddingTop)  || 0;
+  const _csEl  = window._ddlEditorCM ? window._ddlEditorCM.scrollDOM : ta;
+  const lineH       = parseFloat(getComputedStyle(_csEl).lineHeight) || 16;
+  const padTop      = parseFloat(getComputedStyle(_csEl).paddingTop)  || 0;
   const targetTop   = Math.max(0, padTop + linesBefore * lineH - lineH * 3);
   // Set scroll, apply selection (which auto-scrolls synchronously), then immediately
   // reassert our scroll position — all three are synchronous so the final value wins.
@@ -8363,6 +8575,12 @@ function saveDDL() {
   if (isHPEDDLText(content)) {
     const defNames = parseDEFNames(content);
     if (!defNames.length) { flash('No DEF/RECORD definitions found', 'warn'); return; }
+    const _seen = new Set();
+    const _dups = [...new Set(defNames.filter(n => _seen.has(n) || !_seen.add(n)))];
+    if (_dups.length) {
+      flash(`Duplicate DEF name${_dups.length > 1 ? 's' : ''}: ${_dups.join(', ')}`, 'error');
+      return;
+    }
     // Fall through — whole file stored under the filename key (sc.name)
   }
 
@@ -8951,7 +9169,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.284';
+const APP_VERSION  = '1.0.1.14';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -9204,37 +9422,40 @@ function _lwUpdateDisplay() {
   }
 }
 
-function _lwShowAutoMarker(detectedW) {
-  const marker = document.getElementById('lwColMarker');
-  const ta     = document.getElementById('msgInput');
-  if (!marker || !ta) return;
+function _lwCharMetrics() {
+  if (window._msgInputCM) {
+    const view  = window._msgInputCM;
+    const charW = view.defaultCharacterWidth;
+    // Pad = gutter width + content left padding — both relative to .cm-editor
+    const gutterW = view.dom.querySelector('.cm-gutters')?.offsetWidth || 0;
+    const pad     = gutterW + (parseFloat(getComputedStyle(view.contentDOM).paddingLeft) || 0);
+    return { charW, pad };
+  }
+  const ta = document.getElementById('msgInput');
+  if (!ta) return { charW: 8, pad: 8 };
   const probe = document.createElement('span');
   probe.style.cssText = `position:absolute;visibility:hidden;font-family:${getComputedStyle(ta).fontFamily};font-size:${getComputedStyle(ta).fontSize};white-space:pre`;
   probe.textContent = 'X'.repeat(10);
   document.body.appendChild(probe);
   const charW = probe.getBoundingClientRect().width / 10;
   document.body.removeChild(probe);
-  const pad = parseFloat(getComputedStyle(ta).paddingLeft) || 8;
+  return { charW, pad: parseFloat(getComputedStyle(ta).paddingLeft) || 8 };
+}
+
+function _lwShowAutoMarker(detectedW) {
+  const marker = document.getElementById('lwColMarker');
+  if (!marker) return;
+  const { charW, pad } = _lwCharMetrics();
   marker.style.left = (pad + detectedW * charW) + 'px';
   marker.classList.remove('hidden');
 }
 
 function _lwUpdateRuler() {
   const marker = document.getElementById('lwColMarker');
-  const ta     = document.getElementById('msgInput');
-  if (!marker || !ta) return;
+  if (!marker) return;
   const w = P.lineWidth;
   if (w <= 0) { marker.classList.add('hidden'); return; }
-
-  // Measure monospace char width using a temporary span
-  const probe = document.createElement('span');
-  probe.style.cssText = `position:absolute;visibility:hidden;font-family:${getComputedStyle(ta).fontFamily};font-size:${getComputedStyle(ta).fontSize};white-space:pre`;
-  probe.textContent = 'X'.repeat(10);
-  document.body.appendChild(probe);
-  const charW = probe.getBoundingClientRect().width / 10;
-  document.body.removeChild(probe);
-
-  const pad  = parseFloat(getComputedStyle(ta).paddingLeft) || 8;
+  const { charW, pad } = _lwCharMetrics();
   marker.style.left = (pad + w * charW) + 'px';
   marker.classList.remove('hidden');
 }
@@ -9332,6 +9553,11 @@ function _ddlSrchRecompute() {
 }
 
 function _ddlSrchUpdateCurMark() {
+  if (window._ddlEditorCM) {
+    const q = document.getElementById('ddlSearchInput')?.value || '';
+    window._ddlSrchHL(_ddlSrchMatches, _ddlSrchIdx, q.length);
+    return;
+  }
   const mark = document.getElementById('ddlSrchCurMark');
   if (!mark) return;
   const ta = document.getElementById('ddlEditor');
@@ -9351,6 +9577,7 @@ function _ddlSrchUpdateCurMark() {
 }
 
 function _ddlUpdateLinesBg() {
+  if (window._ddlEditorCM) return;
   const bg = document.getElementById('ddlSearchLinesBg');
   if (!bg) return;
   const ta = document.getElementById('ddlEditor');
@@ -9396,8 +9623,9 @@ function _ddlSrchShow(moveFocus) {
   if (moveFocus) { ta.focus(); ta.setSelectionRange(pos, pos + q.length); }
   // Then apply our scroll-into-view (overrides any browser auto-scroll)
   const linesBefore = ta.value.substring(0, pos).split('\n');
-  const lineH    = parseFloat(getComputedStyle(ta).lineHeight) || 16;
-  const padTop   = parseFloat(getComputedStyle(ta).paddingTop) || 0;
+  const _csEl2   = window._ddlEditorCM ? window._ddlEditorCM.scrollDOM : ta;
+  const lineH    = parseFloat(getComputedStyle(_csEl2).lineHeight) || 16;
+  const padTop   = parseFloat(getComputedStyle(_csEl2).paddingTop) || 0;
   const matchTop    = padTop + (linesBefore.length - 1) * lineH;
   const matchBottom = matchTop + lineH;
   const margin      = lineH * 2;
@@ -9707,6 +9935,175 @@ function flash(msg, level) {
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
+  // ── CodeMirror 6 initialization ──────────────────────────────────────────
+  // Must run before any code that reads ddlEditor / msgInput via getElementById.
+  if (window.CM) {
+    const { EditorView, EditorState, Compartment, StateEffect, StateField, keymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter, history, defaultKeymap, historyKeymap, indentWithTab, Decoration } = window.CM;
+
+    // Decoration field for DDL editor search highlights (hit lines + current match)
+    const _ddlSrchEffect = StateEffect.define();
+    const _ddlSrchField  = StateField.define({
+      create: () => Decoration.none,
+      update(decs, tr) {
+        for (const e of tr.effects) if (e.is(_ddlSrchEffect)) return e.value;
+        return decs.map(tr.changes);
+      },
+      provide: f => EditorView.decorations.from(f),
+    });
+
+    // Decoration field for message input field highlights
+    const _msgHLEffect = StateEffect.define();
+    const _msgHLField  = StateField.define({
+      create: () => Decoration.none,
+      update(decs, tr) {
+        for (const e of tr.effects) if (e.is(_msgHLEffect)) return e.value;
+        return decs.map(tr.changes);
+      },
+      provide: f => EditorView.decorations.from(f),
+    });
+
+    function _cmProxy(view, editableComp, inputCb, placeholderComp, parsedClass) {
+      return {
+        get value()  { return view.state.doc.toString(); },
+        set value(v) { view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: String(v) } }); },
+        get readOnly()    { return !view.state.facet(EditorView.editable); },
+        set readOnly(rdo) {
+          view.dispatch({ effects: editableComp.reconfigure(EditorView.editable.of(!rdo)) });
+          if (parsedClass) view.dom.classList.toggle(parsedClass, !!rdo);
+        },
+        get scrollTop()   { return view.scrollDOM.scrollTop; },
+        set scrollTop(v)  { view.scrollDOM.scrollTop = v; },
+        get scrollLeft()  { return view.scrollDOM.scrollLeft; },
+        set scrollLeft(v) { view.scrollDOM.scrollLeft = v; },
+        get clientHeight(){ return view.scrollDOM.clientHeight; },
+        get clientWidth() { return view.scrollDOM.clientWidth; },
+        focus() { view.focus(); },
+        blur()  { view.contentDOM.blur(); },
+        setSelectionRange(s, e) {
+          const len = view.state.doc.length;
+          s = Math.min(s, len); e = Math.min(e, len);
+          view.dispatch({ selection: { anchor: s, head: e },
+            effects: EditorView.scrollIntoView(s, { y: 'center' }) });
+        },
+        dispatchEvent(ev) { if (ev.type === 'input' && inputCb) inputCb(); },
+        addEventListener(type, fn, opts) {
+          if (type === 'scroll') view.scrollDOM.addEventListener('scroll', fn, opts);
+          else view.dom.addEventListener(type, fn, opts);
+        },
+        removeEventListener(type, fn, opts) {
+          if (type === 'scroll') view.scrollDOM.removeEventListener('scroll', fn, opts);
+          else view.dom.removeEventListener(type, fn, opts);
+        },
+        get classList() { return view.dom.classList; },
+        set placeholder(text) {
+          if (placeholderComp) view.dispatch({ effects: placeholderComp.reconfigure(placeholder(text)) });
+        },
+      };
+    }
+
+    const ddlEditableComp   = new Compartment();
+    const ddlPlaceholderComp = new Compartment();
+    window._ddlEditorCM = new EditorView({
+      state: EditorState.create({
+        doc: '',
+        extensions: [
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          lineNumbers(),
+          highlightActiveLine(),
+          highlightActiveLineGutter(),
+          ddlEditableComp.of(EditorView.editable.of(true)),
+          ddlPlaceholderComp.of(placeholder(DDL_EDITOR_PLACEHOLDER)),
+          _ddlSrchField,
+          _ddlHighlightExtension(),
+          EditorView.updateListener.of(u => { if (u.docChanged) onDDLInput(); }),
+        ],
+      }),
+      parent: document.getElementById('ddlEditor'),
+    });
+
+    // Expose DDL search highlight dispatch
+    window._ddlSrchHL = (matches, curIdx, queryLen) => {
+      const view = window._ddlEditorCM;
+      const doc  = view.state.doc;
+      if (!matches.length || !queryLen) {
+        view.dispatch({ effects: _ddlSrchEffect.of(Decoration.none) });
+        return;
+      }
+      const hitLines = new Set();
+      for (const pos of matches) hitLines.add(doc.lineAt(Math.min(pos, doc.length - 1 || 0)).number);
+      const decs = [];
+      for (const num of [...hitLines].sort((a, b) => a - b))
+        decs.push(Decoration.line({ class: 'ddl-srch-line-hit' }).range(doc.line(num).from));
+      if (curIdx >= 0 && curIdx < matches.length) {
+        const from = Math.min(matches[curIdx], doc.length);
+        const to   = Math.min(from + queryLen, doc.length);
+        if (from < to) decs.push(Decoration.mark({ class: 'ddl-srch-cur' }).range(from, to));
+      }
+      decs.sort((a, b) => a.from - b.from || a.to - b.to);
+      view.dispatch({ effects: _ddlSrchEffect.of(Decoration.set(decs, true)) });
+    };
+
+    const msgEditableComp = new Compartment();
+    window._msgInputCM = new EditorView({
+      state: EditorState.create({
+        doc: '',
+        extensions: [
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap]),
+          msgEditableComp.of(EditorView.editable.of(true)),
+          placeholder('Paste one or more messages here, or drop a file.\n\nAccepted: NETARD audit log · Pure hex · Hex with spaces · Tandem hex dump · ASCII raw bytes\n\nThis field locks after Parse is clicked.'),
+          _msgHLField,
+          EditorView.updateListener.of(u => { if (u.docChanged) onMsgChange(); }),
+        ],
+      }),
+      parent: document.getElementById('msgInput'),
+    });
+
+    // Inject ruler marker onto the editor element so it stays fixed on screen
+    const _lwMarker = document.createElement('div');
+    _lwMarker.id = 'lwColMarker';
+    _lwMarker.className = 'hidden';
+    window._msgInputCM.dom.appendChild(_lwMarker);
+
+    // Update gutter on CM scroll
+    window._msgInputCM.scrollDOM.addEventListener('scroll', () => updateMsgGutter());
+
+    // Expose highlight dispatch — called by renderInputOverlay() and clearInputHL()
+    window._msgInputHL = (ranges, hasSelection = false) => {
+      const view = window._msgInputCM;
+      const cmEl = view.dom;
+      if (!ranges.length) {
+        cmEl.classList.remove('msg-has-hl');
+        view.dispatch({ effects: _msgHLEffect.of(Decoration.none) });
+        return;
+      }
+      cmEl.classList.toggle('msg-has-hl', hasSelection);
+      const marks = [];
+      const docLen = view.state.doc.length;
+      for (const { s, e, color } of ranges) {
+        const from = Math.max(0, Math.min(s, docLen));
+        const to   = Math.max(0, Math.min(e, docLen));
+        if (from < to) marks.push(
+          Decoration.mark({ class: color === 'var(--hl-active)' ? 'cm-hl-active' : 'cm-hl-hover' })
+            .range(from, to)
+        );
+      }
+      marks.sort((a, b) => a.from - b.from || a.to - b.to);
+      view.dispatch({ effects: _msgHLEffect.of(Decoration.set(marks)) });
+    };
+
+    const _origGBI = document.getElementById.bind(document);
+    const _ddlProxy = _cmProxy(window._ddlEditorCM, ddlEditableComp, onDDLInput, ddlPlaceholderComp);
+    const _msgProxy = _cmProxy(window._msgInputCM,  msgEditableComp, onMsgChange, null, 'msg-parsed');
+    document.getElementById = function(id) {
+      if (id === 'ddlEditor') return _ddlProxy;
+      if (id === 'msgInput')  return _msgProxy;
+      return _origGBI(id);
+    };
+  }
+  // ── end CodeMirror init ──────────────────────────────────────────────────
+
   // ---- modal init ----
   const _mOverlay  = document.getElementById('modalOverlay');
   const _mInput    = document.getElementById('modalInput');
@@ -9808,7 +10205,7 @@ document.addEventListener('DOMContentLoaded', () => {
   applyPanelDefaults();
   _syncRawHexCol();
   loadTree();
-  _restoreCompiledCache();
+  _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
   initTreePaneResizer();
   initDropZones();
   _syncOverlayScroll();
@@ -9909,7 +10306,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <!-- ===== PARSE PROGRESS OVERLAY ===== -->
 <div class="modal-overlay hidden" id="parseProgressOverlay">
-  <div class="modal-box" style="min-width:360px;max-width:480px;gap:10px;position:relative">
+  <div class="modal-box" style="min-width:480px;max-width:480px;gap:10px;position:relative">
     <button id="ppCloseBtn" class="hidden" style="position:absolute;top:6px;right:8px;background:none;border:none;color:var(--text-dim);font-size:1.1em;cursor:pointer;line-height:1;padding:2px 4px;opacity:0.7" title="Cancel">✕</button>
     <div class="modal-label">Parsing…</div>
     <div id="parseProgressSteps" style="display:flex;flex-direction:column;gap:8px;padding:2px 0 4px"></div>

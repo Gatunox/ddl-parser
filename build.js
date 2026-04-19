@@ -4,14 +4,17 @@
  * Run: npm run build
  */
 
-const fs   = require('fs');
-const path = require('path');
+const fs            = require('fs');
+const path          = require('path');
+const { execSync }  = require('child_process');
 const JavaScriptObfuscator = require('javascript-obfuscator');
 
 // ── paths ──────────────────────────────────────────────────────────────────
-const SRC  = path.join(__dirname, 'source.html');  // development source — gitignored
-const OUT  = path.join(__dirname, 'index.html');   // obfuscated output — committed to repo
-const MAP  = path.join(__dirname, 'index.js.map'); // source map — gitignored, never deploy
+const SRC    = path.join(__dirname, 'source.html');         // development source — gitignored
+const OUT    = path.join(__dirname, 'index.html');           // obfuscated output — committed to repo
+const MAP    = path.join(__dirname, 'index.js.map');         // source map — gitignored, never deploy
+const CM_SRC = path.join(__dirname, 'codemirror-entry.js');
+const CM_OUT = path.join(__dirname, 'codemirror.bundle.js');
 
 // ── global names called from onclick / onchange / etc. ────────────────────
 // These are referenced as bare identifiers in HTML attributes and must not
@@ -37,11 +40,25 @@ const RESERVED = [
   'updateDDLValidationBar',
 ];
 
-// ── read source ────────────────────────────────────────────────────────────
-const html = fs.readFileSync(SRC, 'utf8');
+// ── bundle CodeMirror ──────────────────────────────────────────────────────
+console.log('Bundling CodeMirror 6…');
+execSync(
+  `npx esbuild ${CM_SRC} --bundle --format=iife --outfile=${CM_OUT} --minify`,
+  { stdio: 'inherit' }
+);
+const cmBundle = fs.readFileSync(CM_OUT, 'utf8');
 
-// Extract the single inline <script> block
-const scriptRE = /(<script>)([\s\S]*?)(<\/script>)/;
+// ── read source ────────────────────────────────────────────────────────────
+let html = fs.readFileSync(SRC, 'utf8');
+
+// Inline the CM bundle: replace the <script src="codemirror.bundle.js"> tag
+html = html.replace(
+  /<script src="codemirror\.bundle\.js"><\/script>/,
+  `<script>\n${cmBundle}\n</script>`
+);
+
+// Extract the app <script id="app"> block for obfuscation
+const scriptRE = /(<script id="app">)([\s\S]*?)(<\/script>)/;
 const match = html.match(scriptRE);
 if (!match) { console.error('ERROR: <script> block not found'); process.exit(1); }
 
@@ -89,7 +106,7 @@ const sourceMap = result.getSourceMap();
 // Use a function replacement to prevent $ signs in obfuscated code being
 // interpreted as special replacement patterns (e.g. $& would re-insert the
 // original match, which contains </script>, breaking the HTML structure).
-const outHtml = html.replace(fullMatch, () => `${openTag}\n${obfuscatedCode}\n${closeTag}`);
+const outHtml = html.replace(fullMatch, () => `<script>\n${obfuscatedCode}\n</script>`);
 fs.writeFileSync(OUT,  outHtml,   'utf8');
 fs.writeFileSync(MAP,  sourceMap, 'utf8');
 

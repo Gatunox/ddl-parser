@@ -1081,6 +1081,10 @@ body.light .cm-host .cm-cursor { border-left-color: var(--text); }
 #msgInput.cm-host { background: var(--bg-input); }
 /* Placeholder text — muted, matching original textarea placeholder tone */
 .cm-host .cm-placeholder { color: var(--text-dim); opacity: 0.55; }
+/* Line number gutter — match panel background and dim text */
+.cm-host .cm-gutters { background: var(--bg-panel); border-right: 1px solid rgba(255,255,255,0.06); color: var(--text-dim); }
+body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
+.cm-host .cm-lineNumbers .cm-gutterElement { padding: 0 6px 0 0; min-width: 36px; text-align: right; font-size: var(--sz-mono); }
 </style>
 </head>
 <body>
@@ -9872,7 +9876,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── CodeMirror 6 initialization ──────────────────────────────────────────
   // Must run before any code that reads ddlEditor / msgInput via getElementById.
   if (window.CM) {
-    const { EditorView, EditorState, Compartment, keymap, placeholder, history, defaultKeymap, historyKeymap, indentWithTab } = window.CM;
+    const { EditorView, EditorState, Compartment, keymap, placeholder, lineNumbers, history, defaultKeymap, historyKeymap, indentWithTab } = window.CM;
 
     function _cmProxy(view, editableComp, inputCb) {
       return {
@@ -9914,6 +9918,7 @@ document.addEventListener('DOMContentLoaded', () => {
         extensions: [
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          lineNumbers(),
           ddlEditableComp.of(EditorView.editable.of(true)),
           placeholder('DDL Definition — Simple: FIELD_ID TYPE LENGTH "Description"\nor HPE DDL: DEF name.\n  02 field PIC X(n).\nEND.\n\nSelect or create a DDL in the tree, or drop a .ddl / .txt file here.'),
           _ddlHighlightExtension(),

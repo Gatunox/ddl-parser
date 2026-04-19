@@ -1062,6 +1062,25 @@ body.light .hb.hb-selected { color: var(--text) !important; }
 body.light .ctx-menu { box-shadow: 0 6px 20px rgba(0,0,0,0.18); }
 body.light .settings-drawer { box-shadow: -8px 0 28px rgba(0,0,0,0.15); }
 body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
+
+/* ===== CODEMIRROR HOST CONTAINERS ===== */
+.cm-host { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.cm-host .cm-editor { flex: 1; min-height: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6; background: var(--bg-input); color: var(--text); outline: none; }
+.cm-host .cm-editor.cm-focused { outline: none; }
+.cm-host .cm-scroller { flex: 1; overflow: auto; }
+.cm-host .cm-content { padding: 8px; white-space: pre; min-height: 100%; }
+.cm-host .cm-line { padding: 0; }
+.cm-host .cm-cursor { border-left-color: var(--text); }
+.cm-host .cm-selectionBackground { background: rgba(88,166,255,0.3) !important; }
+.cm-host .cm-focused .cm-selectionBackground { background: rgba(88,166,255,0.3) !important; }
+body.light .cm-host .cm-editor { background: var(--bg-input); color: var(--text); }
+body.light .cm-host .cm-cursor { border-left-color: var(--text); }
+/* DDL editor host fills the pane */
+#ddlEditor.cm-host { flex: 1; }
+/* Message input host fills the panel body */
+#msgInput.cm-host { background: var(--bg-input); }
+/* Placeholder text — muted, matching original textarea placeholder tone */
+.cm-host .cm-placeholder { color: var(--text-dim); opacity: 0.55; }
 </style>
 </head>
 <body>
@@ -1113,15 +1132,7 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
         <div class="resizer-h" id="ddlTreeResizer"></div>
         <div class="ddl-editor-pane">
           <div id="ddlValidationBar"></div>
-          <div class="ddl-hl-wrap">
-            <div class="ddl-gutter" aria-hidden="true"><div id="ddlGutterInner"></div></div>
-            <div class="ddl-hl-editor-inner">
-            <div id="ddlSearchLinesBg" class="ddl-srch-lines-bg" aria-hidden="true"></div>
-            <div id="ddlEditorOverlay" class="ddl-hl-overlay" aria-hidden="true"></div>
-            <div id="ddlSrchCurMark" class="ddl-srch-cur-layer" aria-hidden="true"></div>
-          <textarea id="ddlEditor" spellcheck="false" oninput="onDDLInput()" onkeydown="if(event.key==='Tab'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd;this.value=this.value.slice(0,s)+'    '+this.value.slice(e);this.selectionStart=this.selectionEnd=s+4;updateDDLEditorState();updateDDLHighlight();}" onscroll="const o=document.getElementById('ddlEditorOverlay');if(o){o.style.transform='translate('+(-this.scrollLeft)+'px,'+(-this.scrollTop)+'px)';}const g=document.getElementById('ddlGutterInner');if(g){g.style.transform='translateY('+(-this.scrollTop)+'px)';}updateDDLHighlightOnScroll();"
-            placeholder="DDL Definition — two formats supported:&#10;&#10;── Simple (ISO 8583) ───────────────────────────────&#10;FIELD_ID  TYPE  LENGTH  &quot;Description&quot;&#10;Types:  FIXED  LLVAR  LLLVAR  BMP&#10;IDs:    MTI  BMP  or field number 1–128&#10;&#10;── HPE DDL (NonStop / Tandem) ──────────────────────&#10;DEF message-name.&#10;  02 field-name  PIC X(n).&#10;  02 num-field   PIC 9(n) COMP.&#10;  02 bin-field   TYPE BINARY 16.&#10;  02 group.&#10;    03 sub-field PIC X(5).&#10;END.&#10;&#10;Select or create a DDL in the tree on the left,&#10;or drop a .ddl / .txt file here to load it."></textarea>
-          </div></div>
+          <div id="ddlEditor" class="cm-host"></div>
         </div>
       </div>
     </div>
@@ -1160,13 +1171,8 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
         <button class="panel-toggle" id="msgToggle" onclick="togglePanel('msgPanel','msgToggle','ddlResizer')" title="Hide panel">−</button>
       </div>
       <div class="panel-body" style="flex-direction:row">
-        <div id="msgGutter" class="msg-gutter" aria-hidden="true"></div>
-        <div class="msg-hl-wrap">
-          <div id="lwColMarker" class="hidden" aria-hidden="true"></div>
-          <div id="msgInputOverlay" class="msg-hl-overlay" aria-hidden="true"></div>
-          <textarea id="msgInput" spellcheck="false" oninput="onMsgChange()"
-            placeholder="Paste one or more messages here, or drop a file.&#10;&#10;Accepted formats:&#10;  • NETARD audit log  (auto-detected — all records extracted)&#10;  • Pure hex:         F0200F220000...&#10;  • Hex with spaces:  F0 22 00 38...&#10;  • Tandem hex dump:  0000: F0 F2 ... |0200..|&#10;  • ASCII raw bytes&#10;&#10;Multiple messages: separate with blank lines&#10;or timestamps will be auto-detected from logs.&#10;&#10;This field locks after Parse is clicked."></textarea>
-        </div>
+        <div id="msgGutter" class="msg-gutter" style="display:none" aria-hidden="true"></div>
+        <div id="msgInput" class="cm-host" style="flex:1;min-width:0;overflow:hidden"></div>
       </div>
     </div>
 
@@ -1232,7 +1238,8 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
 
 <div id="flash-container"></div>
 
-<script>
+<script src="codemirror.bundle.js"></script>
+<script id="app">
 'use strict';
 
 // ============================================================
@@ -4798,6 +4805,9 @@ function bestDDLMatch(bytes, candidates) {
 // ============================================================
 let _ppSteps = [];
 let _parseAborted = false;
+let _cacheRestoreStats = { hit: 0, miss: 0, noEntry: 0 }; // populated by _restoreCompiledCache
+let _compiledCacheDB   = null;   // IndexedDB instance for compiled-def cache
+let _compiledCacheReady = null;  // Promise; null once resolved
 let _ppPickerCb   = null;   // set while picker is visible; called with null on abort
 let _ddlTreeVersion  = 0;                          // bumped in saveTree() on any tree change
 let _ddlCompileCache = { version: -1, byVol: null }; // invalidated when version mismatches
@@ -4829,45 +4839,95 @@ function getDDLsForSv(vol, sv) {
   if (!svTree) return [];
   return Object.keys(svTree).sort().map(d => ({ path: `${vol}/${sv}/${d}`, content: svTree[d] }));
 }
-function _persistCompiledCache(compiledBySv) {
-  for (const [svk, entries] of Object.entries(compiledBySv)) {
+function _openCacheDB() {
+  return new Promise(resolve => {
     try {
-      const [vol, sv] = svk.split('/');
-      // _hpeIsoLayout is a non-numeric property on the defs array — JSON.stringify silently
-      // drops it. Lift it to a plain entry property (excluding the Map) so it survives.
-      const data = entries.map(e => {
-        const iso = e.defs._hpeIsoLayout;
-        return iso ? { ...e, _hpeIsoLayout: { ...iso, deByBit: undefined } } : e;
-      });
-      localStorage.setItem('up_cc3_' + svk, JSON.stringify({ hash: _svHash(vol, sv), data }));
-    } catch(e) {}
-  }
+      const req = indexedDB.open('ddl-parser-cache', 1);
+      req.onupgradeneeded = e => {
+        e.target.result.createObjectStore('compiled', { keyPath: 'svk' });
+      };
+      req.onsuccess = e => {
+        _compiledCacheDB = e.target.result;
+        // One-time migration: remove old localStorage cc3 keys to reclaim quota
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('up_cc3_')) localStorage.removeItem(k);
+        }
+        resolve();
+      };
+      req.onerror = () => { console.warn('[DDL cache] IDB unavailable — cache disabled'); resolve(); };
+    } catch(e) { resolve(); }
+  });
 }
-function _restoreCompiledCache() {
+function _persistCompiledCache(compiledBySv) {
+  if (!_compiledCacheDB) return;
+  // Delete stale (hash-mismatched) entries
+  if (_cacheRestoreStats.missSvs?.length) {
+    const dtx = _compiledCacheDB.transaction('compiled', 'readwrite');
+    for (const svk of _cacheRestoreStats.missSvs) dtx.objectStore('compiled').delete(svk);
+  }
+  const tx = _compiledCacheDB.transaction('compiled', 'readwrite');
+  const store = tx.objectStore('compiled');
+  for (const [svk, entries] of Object.entries(compiledBySv)) {
+    const [vol, sv] = svk.split('/');
+    const data = entries.map(e => {
+      const iso = e.defs._hpeIsoLayout;
+      return iso ? { ...e, _hpeIsoLayout: { ...iso, deByBit: undefined } } : e;
+    });
+    store.put({ svk, hash: _svHash(vol, sv), data });
+  }
+  tx.onerror = e => {
+    console.warn('[DDL cache] IDB write error', e.target?.error);
+    setTimeout(() => flash('Cache save failed — will recompile on next reload.', 'warn'), 500);
+  };
+}
+async function _restoreCompiledCache() {
   const bySv = {};
   const byVol = {};
+  _cacheRestoreStats = { hit: 0, miss: 0, noEntry: 0, hitSvs: [], missSvs: [], noEntrySvs: [] };
+  if (!_compiledCacheDB) return;
+  // Read all stored entries in one IDB transaction
+  const allStored = await new Promise(resolve => {
+    const tx = _compiledCacheDB.transaction('compiled', 'readonly');
+    const req = tx.objectStore('compiled').getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror  = () => resolve([]);
+  });
+  const storedMap = new Map(allStored.map(r => [r.svk, r]));
   for (const vol of Object.keys(S.ddlTree)) {
     const svMap = S.ddlTree[vol];
     if (!svMap) continue;
     for (const svName of Object.keys(svMap)) {
+      const svTree = svMap[svName];
+      // Skip empty subvolumes — nothing to compile, nothing to cache
+      if (!svTree || !Object.keys(svTree).length) continue;
       const svk = `${vol.toUpperCase()}/${svName.toUpperCase()}`;
-      try {
-        const stored = JSON.parse(localStorage.getItem('up_cc3_' + svk) || 'null');
-        if (stored && stored.hash === _svHash(vol, svName)) {
-          bySv[svk] = stored.data.map(e => {
-            if (e._hpeIsoLayout) {
-              // Re-attach layout to the defs array and rebuild the Map that can't survive JSON.
-              e.defs._hpeIsoLayout = e._hpeIsoLayout;
-              e.defs._hpeIsoLayout.deByBit = new Map(
-                (e._hpeIsoLayout.dataElements || []).map(de => [de.bitNum, de])
-              );
-            }
-            return e;
-          });
-          const vk = vol.toUpperCase();
-          (byVol[vk] || (byVol[vk] = [])).push(...bySv[svk]);
-        }
-      } catch(e) {}
+      // Skip excluded SVs and evict their IDB entry
+      if (S.excl && S.excl.has(svk)) {
+        const dtx = _compiledCacheDB.transaction('compiled', 'readwrite');
+        dtx.objectStore('compiled').delete(svk);
+        continue;
+      }
+      const stored = storedMap.get(svk) || null;
+      if (!stored) { _cacheRestoreStats.noEntry++; _cacheRestoreStats.noEntrySvs.push(svk); continue; }
+      if (stored.hash === _svHash(vol, svName)) {
+        _cacheRestoreStats.hit++; _cacheRestoreStats.hitSvs.push(svk);
+        bySv[svk] = stored.data.map(e => {
+          if (e._hpeIsoLayout) {
+            // Re-attach layout to the defs array and rebuild the Map that can't survive JSON.
+            e.defs._hpeIsoLayout = e._hpeIsoLayout;
+            e.defs._hpeIsoLayout.deByBit = new Map(
+              (e._hpeIsoLayout.dataElements || []).map(de => [de.bitNum, de])
+            );
+          }
+          return e;
+        });
+        const vk = vol.toUpperCase();
+        (byVol[vk] || (byVol[vk] = [])).push(...bySv[svk]);
+      } else {
+        _cacheRestoreStats.miss++; _cacheRestoreStats.missSvs.push(svk);
+        console.info('[DDL cache] Hash mismatch for', svk, '— will recompile');
+      }
     }
   }
   if (Object.keys(bySv).length) {
@@ -4876,16 +4936,17 @@ function _restoreCompiledCache() {
       const [v, s] = svk.split('/');
       svHashes[svk] = _svHash(v, s);
     }
-    // version stays -1 so the per-sv path always runs on the first parse of each session,
-    // compiling any svs whose cache hash no longer matches (e.g. after editing a DDL and
-    // reloading the page).  _commitNetardCache / _commitP23Cache set version = _ddlTreeVersion
-    // once the full byVol is assembled, enabling the fast path for the rest of the session.
+    // version stays -1 so per-sv path always runs on the first parse of each session
     _ddlCompileCache = { version: -1, byVol, svHashes, svEntries: bySv };
   }
 }
 
 function _parseProgressDoneLast() {
   if (_ppSteps.length) { _ppSteps[_ppSteps.length - 1].done = true; _parseProgressRender(); }
+}
+function _cacheStampNote() {
+  const { hitSvs = [], missSvs = [], noEntrySvs = [] } = _cacheRestoreStats;
+  console.info('[DDL cache] hit:', hitSvs, '| miss:', missSvs, '| no-entry:', noEntrySvs);
 }
 
 function _parseProgressShow() {
@@ -4963,7 +5024,7 @@ function _parseProgressHide() {
 // label   — step label shown as a new progress step
 // matches — array of { path, defName } candidates (max 15 shown)
 // cb      — called with the chosen match object, or null if cancelled
-function _showProgressPicker(label, matches, cb) {
+function _showProgressPicker(label, matches, cb, msgType = null) {
   _parseProgressStep(label);
   if (matches.length === 1) {
     _parseProgressDoneLast();
@@ -4975,8 +5036,11 @@ function _showProgressPicker(label, matches, cb) {
   pp.classList.remove('hidden');
   _ppPickerCb = cb;
   const shown = matches;
+  const _typeTag = msgType?.type
+    ? `<span class="btype btype-${msgType.type.toLowerCase()}" style="font-size:var(--sz-badge);padding:1px 5px;vertical-align:middle">${esc(msgType.type)}</span>`
+    : '';
   pp.innerHTML =
-    `<div style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);padding:0 0 4px 21px">Select DDL definition:</div>` +
+    `<div style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);padding:0 0 4px 21px">Select DDL definition for: ${_typeTag}</div>` +
     `<div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;padding:2px 4px 2px 2px">` +
     shown.map((m, i) =>
       `<button class="btn btn-sm" data-ppi="${i}" style="text-align:left;font-family:var(--mono);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.path)}">${esc(m.defName)} <span style="color:var(--text-dim);font-size:0.9em">${esc(m.path)}</span> <span style="color:var(--warning);font-size:0.9em">${m.score != null ? Math.round(m.score * 100) + '%' : ''}</span></button>`
@@ -5212,7 +5276,7 @@ function doParseNetardLog(text) {
               const { msgType, allMatches } = typePickerQueue[idx];
               if (sessionMappings[msgType.type]) { _showNetardTypePickers(idx + 1); return; }
               const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
-              _showProgressPicker(`Candidate list for ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
+              _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
                 if (!match) {
                   _parseProgressHide();
                   document.getElementById('msgInput').readOnly = false;
@@ -5222,16 +5286,17 @@ function doParseNetardLog(text) {
                 if (saveRule) addTypeMappingRule(msgType.type, match.defName ? `${match.ddlPath}/${match.defName}` : match.ddlPath);
                 sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
                 _showNetardTypePickers(idx + 1);
-              });
+              }, msgType);
             }
             setTimeout(() => _showNetardTypePickers(0), 300);
           }, 300);
         }
 
         if (useCache) {
-          // Compile step — instantly done from cache
-          _parseProgressStep('Compiling DDL definitions\u2026');
+          const _nSvs = Object.keys(_ddlCompileCache.svEntries || {}).length;
+          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
           _parseProgressDoneLast();
+          _cacheStampNote();
           _startNetardScoring(_ddlCompileCache.byVol);
         } else {
           // Per-subvolume cache check: reuse subvolumes whose content hash still matches
@@ -5277,18 +5342,28 @@ function doParseNetardLog(text) {
             _persistCompiledCache(compiledBySv);
           }
           if (!_nTasks.length) {
-            _parseProgressStep('Compiling DDL definitions\u2026');
+            const _nSvs = Object.keys(_cachedSvs).length;
+            _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
             _commitNetardCache();
             _parseProgressDoneLast();
+            _cacheStampNote();
             _startNetardScoring(_ddlCompileCache.byVol);
           } else {
-          _parseProgressStep(`Compiling DDL definitions\u2026 0 of ${_nTasks.length}`);
+          const _nCached = Object.keys(_cachedSvs).length;
+          if (_nCached > 0) {
+            _parseProgressStep(`Retrieving DDL definitions from ${_nCached} subvolume${_nCached !== 1 ? 's' : ''}\u2026`);
+            _parseProgressDoneLast();
+          }
+          const _nSvsToCompile = new Set(_nTasks.map(t => `${t.vol.toUpperCase()}/${t.sv.toUpperCase()}`)).size;
+          const _svLabel = (n) => `${n} subvolume${n !== 1 ? 's' : ''}`;
+          _parseProgressStep(`Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 0 of ${_nTasks.length}`);
           let _nti = 0;
           function _netardCompileNext() {
             if (_parseAborted) return;
             if (_nti >= _nTasks.length) {
               _commitNetardCache();
               _parseProgressDoneLast();
+              _cacheStampNote();
               _startNetardScoring(_ddlCompileCache.byVol);
               return;
             }
@@ -5300,7 +5375,7 @@ function doParseNetardLog(text) {
               const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
               (compiledBySv[svk] || (compiledBySv[svk] = [])).push({ path, defName, defs });
             }
-            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions\u2026 ${_nti} of ${_nTasks.length}`);
+            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 ${_nti} of ${_nTasks.length}`);
             setTimeout(_netardCompileNext, 0);
           }
           setTimeout(_netardCompileNext, 0);
@@ -5658,7 +5733,7 @@ function doParseMessages() {
             const { msgType, allMatches } = typePickerQueue[idx];
             if (sessionMappings[msgType.type]) { _showTypePickers(idx + 1); return; }
             const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
-            _showProgressPicker(`Candidate list for ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
+            _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
               if (!match) {
                 _parseProgressHide();
                 document.getElementById('msgInput').readOnly = false;
@@ -5668,7 +5743,7 @@ function doParseMessages() {
               if (saveRule) addTypeMappingRule(msgType.type, match.defName ? `${match.ddlPath}/${match.defName}` : match.ddlPath);
               sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
               _showTypePickers(idx + 1);
-            });
+            }, msgType);
           }
 
           setTimeout(() => _showTypePickers(0), 300);
@@ -5676,8 +5751,10 @@ function doParseMessages() {
       }
 
       if (useCache) {
-        _parseProgressStep('Compiling DDL definitions\u2026');
+        const _nSvs = Object.keys(_ddlCompileCache.svEntries || {}).length;
+        _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
         _parseProgressDoneLast();
+        _cacheStampNote();
         _startP23Scoring(_ddlCompileCache.byVol);
       } else {
         // Per-subvolume cache check: reuse subvolumes whose content hash still matches
@@ -5723,18 +5800,28 @@ function doParseMessages() {
           _persistCompiledCache(compiledBySv);
         }
         if (!_tasks.length) {
-          _parseProgressStep('Compiling DDL definitions\u2026');
+          const _nSvs = Object.keys(_cachedSvs).length;
+          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
           _commitP23Cache();
           _parseProgressDoneLast();
+          _cacheStampNote();
           _startP23Scoring(_ddlCompileCache.byVol);
         } else {
-          _parseProgressStep(`Compiling DDL definitions\u2026 0 of ${_tasks.length}`);
+          const _p23Cached = Object.keys(_cachedSvs).length;
+          if (_p23Cached > 0) {
+            _parseProgressStep(`Retrieving DDL definitions from ${_p23Cached} subvolume${_p23Cached !== 1 ? 's' : ''}\u2026`);
+            _parseProgressDoneLast();
+          }
+          const _nSvsToCompile = new Set(_tasks.map(t => `${t.vol.toUpperCase()}/${t.sv.toUpperCase()}`)).size;
+          const _svLabel = (n) => `${n} subvolume${n !== 1 ? 's' : ''}`;
+          _parseProgressStep(`Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 0 of ${_tasks.length}`);
           let _ti = 0;
           function _compileNext() {
             if (_parseAborted) return;
             if (_ti >= _tasks.length) {
               _commitP23Cache();
               _parseProgressDoneLast();
+              _cacheStampNote();
               _startP23Scoring(_ddlCompileCache.byVol);
               return;
             }
@@ -5746,7 +5833,7 @@ function doParseMessages() {
               const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
               (compiledBySv[svk] || (compiledBySv[svk] = [])).push({ path, defName, defs });
             }
-            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions\u2026 ${_ti} of ${_tasks.length}`);
+            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 ${_ti} of ${_tasks.length}`);
             setTimeout(_compileNext, 0);
           }
           setTimeout(_compileNext, 0);
@@ -6007,6 +6094,7 @@ let _cachedDDLMMEl        = null;   // cached .tree-ddlmm-node
 let _ddlLineCount = 0;
 
 function updateDDLHighlight(fromScroll = false) {
+  if (window._ddlEditorCM) return;
   const overlay = document.getElementById('ddlEditorOverlay');
   const ta = document.getElementById('ddlEditor');
   if (!overlay || !ta) return;
@@ -6052,6 +6140,7 @@ function updateDDLHighlight(fromScroll = false) {
 // Debounced version — 50ms so text appears near-instantly after typing stops.
 // The windowed approach makes each call cheap enough for a tight debounce.
 function updateDDLHighlightDebounced() {
+  if (window._ddlEditorCM) return;
   clearTimeout(_ddlHlDebounceTimer);
   _ddlHlDebounceTimer = setTimeout(() => updateDDLHighlight(), 50);
 }
@@ -6072,6 +6161,7 @@ function onDDLInput() {
 // Scroll-triggered overlay refresh — updates visible lines without recomputing gutter/search.
 // Also uses cached _ddlLineCount to avoid O(n) work in the hot scroll path.
 function updateDDLHighlightOnScroll() {
+  if (window._ddlEditorCM) return;
   if (_ddlLineCount > _HL_VIRT_THRESHOLD) {
     clearTimeout(_ddlHlDebounceTimer);
     _ddlHlDebounceTimer = setTimeout(() => updateDDLHighlight(true), 60);
@@ -6079,6 +6169,7 @@ function updateDDLHighlightOnScroll() {
 }
 
 function updateDDLGutter() {
+  if (window._ddlEditorCM) return;
   const ta    = document.getElementById('ddlEditor');
   const inner = document.getElementById('ddlGutterInner');
   if (!inner || !ta) return;
@@ -6711,6 +6802,7 @@ function clearHover() {
 // Renders coloured marks behind the textarea for the selected field and/or
 // the currently hovered field simultaneously, matching the Raw Message panel behaviour.
 function renderInputOverlay() {
+  if (window._msgInputCM) return;
   const overlay = document.getElementById('msgInputOverlay');
   const ta      = document.getElementById('msgInput');
   if (!overlay || !ta) return;
@@ -6783,6 +6875,7 @@ function clearInputHL() {
 }
 
 function updateMsgGutter(scrollIntoView = false) {
+  if (window._msgInputCM) return;
   const gutter = document.getElementById('msgGutter');
   const ta     = document.getElementById('msgInput');
   if (!gutter || !ta) return;
@@ -6829,6 +6922,7 @@ function updateMsgGutter(scrollIntoView = false) {
 
 // Keep overlay in sync when the user scrolls the textarea
 function _syncOverlayScroll() {
+  if (window._msgInputCM) return;
   const ta = document.getElementById('msgInput');
   if (!ta) return;
   ta.addEventListener('scroll', () => {
@@ -7773,8 +7867,9 @@ function _scrollEditorToDef(defName) {
   const m  = re.exec(text);
   if (!m) return;
   const linesBefore = text.substring(0, m.index).split('\n').length - 1;
-  const lineH       = parseFloat(getComputedStyle(ta).lineHeight) || 16;
-  const padTop      = parseFloat(getComputedStyle(ta).paddingTop)  || 0;
+  const _csEl  = window._ddlEditorCM ? window._ddlEditorCM.scrollDOM : ta;
+  const lineH       = parseFloat(getComputedStyle(_csEl).lineHeight) || 16;
+  const padTop      = parseFloat(getComputedStyle(_csEl).paddingTop)  || 0;
   const targetTop   = Math.max(0, padTop + linesBefore * lineH - lineH * 3);
   // Set scroll, apply selection (which auto-scrolls synchronously), then immediately
   // reassert our scroll position — all three are synchronous so the final value wins.
@@ -8951,7 +9046,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.0.284';
+const APP_VERSION  = '1.0.1.0';
 const FEEDBACK_EMAIL = 'universal.parser@pm.me';
 
 function openFeedbackMail(type) {
@@ -9332,6 +9427,7 @@ function _ddlSrchRecompute() {
 }
 
 function _ddlSrchUpdateCurMark() {
+  if (window._ddlEditorCM) return;
   const mark = document.getElementById('ddlSrchCurMark');
   if (!mark) return;
   const ta = document.getElementById('ddlEditor');
@@ -9351,6 +9447,7 @@ function _ddlSrchUpdateCurMark() {
 }
 
 function _ddlUpdateLinesBg() {
+  if (window._ddlEditorCM) return;
   const bg = document.getElementById('ddlSearchLinesBg');
   if (!bg) return;
   const ta = document.getElementById('ddlEditor');
@@ -9396,8 +9493,9 @@ function _ddlSrchShow(moveFocus) {
   if (moveFocus) { ta.focus(); ta.setSelectionRange(pos, pos + q.length); }
   // Then apply our scroll-into-view (overrides any browser auto-scroll)
   const linesBefore = ta.value.substring(0, pos).split('\n');
-  const lineH    = parseFloat(getComputedStyle(ta).lineHeight) || 16;
-  const padTop   = parseFloat(getComputedStyle(ta).paddingTop) || 0;
+  const _csEl2   = window._ddlEditorCM ? window._ddlEditorCM.scrollDOM : ta;
+  const lineH    = parseFloat(getComputedStyle(_csEl2).lineHeight) || 16;
+  const padTop   = parseFloat(getComputedStyle(_csEl2).paddingTop) || 0;
   const matchTop    = padTop + (linesBefore.length - 1) * lineH;
   const matchBottom = matchTop + lineH;
   const margin      = lineH * 2;
@@ -9707,6 +9805,85 @@ function flash(msg, level) {
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
+  // ── CodeMirror 6 initialization ──────────────────────────────────────────
+  // Must run before any code that reads ddlEditor / msgInput via getElementById.
+  if (window.CM) {
+    const { EditorView, EditorState, Compartment, keymap, placeholder, history, defaultKeymap, historyKeymap, indentWithTab } = window.CM;
+
+    function _cmProxy(view, editableComp, inputCb) {
+      return {
+        get value()  { return view.state.doc.toString(); },
+        set value(v) { view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: String(v) } }); },
+        get readOnly()    { return !view.state.facet(EditorView.editable); },
+        set readOnly(rdo) { view.dispatch({ effects: editableComp.reconfigure(EditorView.editable.of(!rdo)) }); },
+        get scrollTop()   { return view.scrollDOM.scrollTop; },
+        set scrollTop(v)  { view.scrollDOM.scrollTop = v; },
+        get scrollLeft()  { return view.scrollDOM.scrollLeft; },
+        set scrollLeft(v) { view.scrollDOM.scrollLeft = v; },
+        get clientHeight(){ return view.scrollDOM.clientHeight; },
+        get clientWidth() { return view.scrollDOM.clientWidth; },
+        focus() { view.focus(); },
+        blur()  { view.contentDOM.blur(); },
+        setSelectionRange(s, e) {
+          const len = view.state.doc.length;
+          s = Math.min(s, len); e = Math.min(e, len);
+          view.dispatch({ selection: { anchor: s, head: e },
+            effects: EditorView.scrollIntoView(s, { y: 'center' }) });
+        },
+        dispatchEvent(ev) { if (ev.type === 'input' && inputCb) inputCb(); },
+        addEventListener(type, fn, opts) {
+          if (type === 'scroll') view.scrollDOM.addEventListener('scroll', fn, opts);
+          else view.dom.addEventListener(type, fn, opts);
+        },
+        removeEventListener(type, fn, opts) {
+          if (type === 'scroll') view.scrollDOM.removeEventListener('scroll', fn, opts);
+          else view.dom.removeEventListener(type, fn, opts);
+        },
+        get classList() { return view.dom.classList; },
+      };
+    }
+
+    const ddlEditableComp = new Compartment();
+    window._ddlEditorCM = new EditorView({
+      state: EditorState.create({
+        doc: '',
+        extensions: [
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          ddlEditableComp.of(EditorView.editable.of(true)),
+          placeholder('DDL Definition — Simple: FIELD_ID TYPE LENGTH "Description"\nor HPE DDL: DEF name.\n  02 field PIC X(n).\nEND.\n\nSelect or create a DDL in the tree, or drop a .ddl / .txt file here.'),
+          EditorView.updateListener.of(u => { if (u.docChanged) onDDLInput(); }),
+        ],
+      }),
+      parent: document.getElementById('ddlEditor'),
+    });
+
+    const msgEditableComp = new Compartment();
+    window._msgInputCM = new EditorView({
+      state: EditorState.create({
+        doc: '',
+        extensions: [
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap]),
+          msgEditableComp.of(EditorView.editable.of(true)),
+          placeholder('Paste one or more messages here, or drop a file.\n\nAccepted: NETARD audit log · Pure hex · Hex with spaces · Tandem hex dump · ASCII raw bytes\n\nThis field locks after Parse is clicked.'),
+          EditorView.updateListener.of(u => { if (u.docChanged) onMsgChange(); }),
+        ],
+      }),
+      parent: document.getElementById('msgInput'),
+    });
+
+    const _origGBI = document.getElementById.bind(document);
+    const _ddlProxy = _cmProxy(window._ddlEditorCM, ddlEditableComp, onDDLInput);
+    const _msgProxy = _cmProxy(window._msgInputCM,  msgEditableComp, onMsgChange);
+    document.getElementById = function(id) {
+      if (id === 'ddlEditor') return _ddlProxy;
+      if (id === 'msgInput')  return _msgProxy;
+      return _origGBI(id);
+    };
+  }
+  // ── end CodeMirror init ──────────────────────────────────────────────────
+
   // ---- modal init ----
   const _mOverlay  = document.getElementById('modalOverlay');
   const _mInput    = document.getElementById('modalInput');
@@ -9808,7 +9985,7 @@ document.addEventListener('DOMContentLoaded', () => {
   applyPanelDefaults();
   _syncRawHexCol();
   loadTree();
-  _restoreCompiledCache();
+  _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
   initTreePaneResizer();
   initDropZones();
   _syncOverlayScroll();
@@ -9909,7 +10086,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <!-- ===== PARSE PROGRESS OVERLAY ===== -->
 <div class="modal-overlay hidden" id="parseProgressOverlay">
-  <div class="modal-box" style="min-width:360px;max-width:480px;gap:10px;position:relative">
+  <div class="modal-box" style="min-width:480px;max-width:480px;gap:10px;position:relative">
     <button id="ppCloseBtn" class="hidden" style="position:absolute;top:6px;right:8px;background:none;border:none;color:var(--text-dim);font-size:1.1em;cursor:pointer;line-height:1;padding:2px 4px;opacity:0.7" title="Cancel">✕</button>
     <div class="modal-label">Parsing…</div>
     <div id="parseProgressSteps" style="display:flex;flex-direction:column;gap:8px;padding:2px 0 4px"></div>

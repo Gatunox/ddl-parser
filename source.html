@@ -1070,9 +1070,14 @@ body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
 .cm-host .cm-scroller { flex: 1; overflow: auto; }
 .cm-host .cm-content { padding: 8px; white-space: pre; min-height: 100%; }
 .cm-host .cm-line { padding: 0; }
-.cm-host .cm-cursor { border-left-color: var(--text); }
+.cm-host .cm-cursor, .cm-host .cm-cursor-primary { border-left: 2px solid var(--text) !important; }
 .cm-host .cm-selectionBackground { background: rgba(88,166,255,0.3) !important; }
 .cm-host .cm-focused .cm-selectionBackground { background: rgba(88,166,255,0.3) !important; }
+/* Active line — subtle highlight so cursor line is always visible */
+.cm-host .cm-activeLine { background: rgba(255,255,255,0.04); }
+.cm-host .cm-activeLineGutter { background: rgba(255,255,255,0.07); color: var(--text); }
+body.light .cm-host .cm-activeLine { background: rgba(0,0,0,0.04); }
+body.light .cm-host .cm-activeLineGutter { background: rgba(0,0,0,0.07); }
 body.light .cm-host .cm-editor { background: var(--bg-input); color: var(--text); }
 body.light .cm-host .cm-cursor { border-left-color: var(--text); }
 /* DDL editor host fills the pane */
@@ -9876,7 +9881,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── CodeMirror 6 initialization ──────────────────────────────────────────
   // Must run before any code that reads ddlEditor / msgInput via getElementById.
   if (window.CM) {
-    const { EditorView, EditorState, Compartment, keymap, placeholder, lineNumbers, history, defaultKeymap, historyKeymap, indentWithTab } = window.CM;
+    const { EditorView, EditorState, Compartment, keymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter, history, defaultKeymap, historyKeymap, indentWithTab } = window.CM;
 
     function _cmProxy(view, editableComp, inputCb) {
       return {
@@ -9919,6 +9924,8 @@ document.addEventListener('DOMContentLoaded', () => {
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           lineNumbers(),
+          highlightActiveLine(),
+          highlightActiveLineGutter(),
           ddlEditableComp.of(EditorView.editable.of(true)),
           placeholder('DDL Definition — Simple: FIELD_ID TYPE LENGTH "Description"\nor HPE DDL: DEF name.\n  02 field PIC X(n).\nEND.\n\nSelect or create a DDL in the tree, or drop a .ddl / .txt file here.'),
           _ddlHighlightExtension(),

@@ -2795,7 +2795,8 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     for (let k = j; k < result.length; k++) result[k].offset += extra;
   }
 
-  return { fields: result, totalSize: posCtx[0].pos };
+  const totalSize = result.reduce((mx, f) => Math.max(mx, f.offset + f.size), posCtx[0].pos);
+  return { fields: result, totalSize };
 }
 
 // ---- Build a registry of all DEF/RECORD names → byte sizes from the entire DDL repository ---
@@ -2977,10 +2978,10 @@ function showDDLDoc() {
 
     grandTotal += totalSize;
 
-    // Only emit elementary (non-group) fields
+    // Emit elementary fields; also emit OCCURS groups so they appear with ×N in the table
     let rowNum = 0;
     for (const f of fields) {
-      if (f.isGroup) continue;
+      if (f.isGroup && (f.occurs || 1) <= 1) continue;
       rowNum++;
       const isRedefRow = f.isRedefines || f.isInsideRedefines;
       const cls        = isRedefRow ? ' class="ddl-doc-redef"' : '';
@@ -9338,7 +9339,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.2.0';
+const APP_VERSION  = '1.0.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

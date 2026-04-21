@@ -8708,6 +8708,12 @@ function saveDDL() {
   const saveTypeReg = buildRepoTypeRegistry(content);
   const { errors: picErrors, warnings: picWarnings, unresolvedTypes: saveUnresolved } = validateDDLErrors(content, saveTypeReg);
   if (picErrors.length) {
+    _vbarMsgs = [
+      ...picErrors.map(t => ({ icon: '✖', text: t, severity: 'error' })),
+      ...picWarnings.map(t => ({ icon: '⚠', text: t, severity: 'warning' })),
+    ];
+    _vbarIdx = 0; _vbarScope = '';
+    _vbarRender();
     flash(`⚠ ${picErrors.length} DDL error${picErrors.length > 1 ? 's' : ''} — ${picErrors[0]}`, 'error');
     return;
   }
@@ -9337,7 +9343,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.2.5';
+const APP_VERSION  = '1.0.2.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

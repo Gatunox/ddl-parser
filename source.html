@@ -2120,11 +2120,7 @@ function validateDDLErrors(text, repoTypeRegistry) {
       const hasType = !!f.typeStr;
       const special = f.lvl === 66 || f.lvl === 88 || f.lvl === 89;
 
-      // ② Reserved word used as field name → hard error
-      //   FILLER is exempt — it is the conventional name for unnamed storage areas.
-      if (!special && upper !== 'FILLER' && DDL_RESERVED.has(upper)) {
-        errors.push(`${ln}Field "${f.name}": "${upper}" is a DDL reserved word and cannot be used as a field name`);
-      }
+      // ② Reserved words cannot be used as DEF names but ARE allowed as field names inside a DEF.
 
       // ③ Duplicate field names — only flag when same name appears at the same
       //   nesting level under the same parent group (FILLER is always exempt).
@@ -9339,7 +9335,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.2.1';
+const APP_VERSION  = '1.0.2.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

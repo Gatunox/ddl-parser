@@ -2332,8 +2332,15 @@ function validateDDLErrors(text, repoTypeRegistry) {
       const fLvlM = fStmt.match(/^(\d{2})\s+(\S+)\s*(.*)/s);
       if (!fLvlM) return;
       const fLvl     = parseInt(fLvlM[1]);
-      const fRawName = fLvlM[2].replace(/\.$/, '');
-      const fRest    = fLvlM[3] || '';
+      const fNameToken = fLvlM[2];
+      const fRawName   = fNameToken.replace(/\.$/, '');
+      const fRest      = fLvlM[3] || '';
+
+      // Trailing dot on name with PIC/TYPE clause — e.g. "02 RCV-INST-ID-NUM.  PIC X(16)."
+      // The dot makes it look like a group header but the PIC/TYPE makes it a leaf — contradictory.
+      if (fNameToken.endsWith('.') && /\bPIC(?:TURE)?\b|\bTYPE\s+\S/i.test(fRest)) {
+        errors.push(`[line ${fLine}] Field "${fRawName}": unexpected PICTURE/TYPE clause on a group-style declaration — remove the period after the name`);
+      }
 
       // Merged-statement detector
       const fMergedM = fRest.match(/\b(\d{2})\s+([A-Za-z][\w-]*)\s+(?:PIC(?:TURE)?|TYPE|REDEFINES|COMP(?:UTATIONAL)?(?:-3)?|HEADING|VALUE|OCCURS)\b/i);
@@ -9335,7 +9342,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.2.2';
+const APP_VERSION  = '1.0.2.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -10086,7 +10093,24 @@ function flash(msg, level) {
   x.className = 'flash-x'; x.textContent = '✕';
   el.appendChild(x);
   const timer = setTimeout(() => el.remove(), ms);
-  el.addEventListener('click', () => { clearTimeout(timer); el.remove(); });
+  x.addEventListener('click', (e) => { e.stopPropagation(); clearTimeout(timer); el.remove(); });
+  // Double-click on the message text jumps to the referenced line in the DDL editor
+  el.addEventListener('dblclick', () => {
+    const lm = msg.match(/\[line\s+(\d+)\]/i);
+    if (!lm) return;
+    const lineNum = parseInt(lm[1], 10) - 1;
+    const ed = document.getElementById('ddlEditor');
+    if (!ed) return;
+    const lines = (ed.value || '').split('\n');
+    if (lineNum < 0 || lineNum >= lines.length) return;
+    const pos = lines.slice(0, lineNum).reduce((s, l) => s + l.length + 1, 0);
+    const lineH = parseFloat(getComputedStyle(ed).lineHeight) || 16;
+    const padTop = parseFloat(getComputedStyle(ed).paddingTop) || 0;
+    ed.focus();
+    ed.setSelectionRange(pos, pos + lines[lineNum].length);
+    ed.scrollTop = Math.max(0, padTop + lineNum * lineH - lineH * 3);
+    updateDDLHighlight(true);
+  });
   if (level === 'warn' || level === 'error') {
     const cp = document.createElement('span');
     cp.className = 'flash-copy'; cp.textContent = '⧉'; cp.title = 'Copy to clipboard';

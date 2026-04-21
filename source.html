@@ -6457,11 +6457,8 @@ function _vbarJumpToLine() {
   const lines = ed.value.split('\n');
   if (lineNum < 0 || lineNum >= lines.length) return;
   const pos = lines.slice(0, lineNum).reduce((s, l) => s + l.length + 1, 0);
-  const lineH  = parseFloat(getComputedStyle(ed).lineHeight) || 16;
-  const padTop = parseFloat(getComputedStyle(ed).paddingTop)  || 0;
   ed.focus();
   ed.setSelectionRange(pos, pos + lines[lineNum].length);
-  ed.scrollTop = Math.max(0, padTop + lineNum * lineH - lineH * 3);
   updateDDLHighlight(true);
 }
 
@@ -9342,7 +9339,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.2.3';
+const APP_VERSION  = '1.0.2.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -10104,11 +10101,8 @@ function flash(msg, level) {
     const lines = (ed.value || '').split('\n');
     if (lineNum < 0 || lineNum >= lines.length) return;
     const pos = lines.slice(0, lineNum).reduce((s, l) => s + l.length + 1, 0);
-    const lineH = parseFloat(getComputedStyle(ed).lineHeight) || 16;
-    const padTop = parseFloat(getComputedStyle(ed).paddingTop) || 0;
     ed.focus();
     ed.setSelectionRange(pos, pos + lines[lineNum].length);
-    ed.scrollTop = Math.max(0, padTop + lineNum * lineH - lineH * 3);
     updateDDLHighlight(true);
   });
   if (level === 'warn' || level === 'error') {

@@ -6384,9 +6384,7 @@ function _vbarRender() {
   if (!bar || !_vbarMsgs.length) return;
   const total  = _vbarMsgs.length;
   const cur    = _vbarMsgs[_vbarIdx];
-  const hasErr = _vbarMsgs.some(m => m.severity === 'error');
-  const hasUnr = !hasErr && _vbarMsgs.some(m => m.severity === 'unresolved');
-  bar.className = hasErr ? 'vbar-error' : hasUnr ? 'vbar-unresolved' : 'vbar-warning';
+  bar.className = cur.severity === 'error' ? 'vbar-error' : cur.severity === 'unresolved' ? 'vbar-unresolved' : 'vbar-warning';
   bar.style.display = 'flex';
   bar.innerHTML =
     `<span class="vbar-nav">` +
@@ -9339,7 +9337,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.2.4';
+const APP_VERSION  = '1.0.2.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

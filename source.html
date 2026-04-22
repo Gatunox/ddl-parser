@@ -584,6 +584,7 @@ input[type="text"]:focus { border-color: var(--accent); }
   flex-shrink: 0;
 }
 .badge-hex    { background: #1a0f35; color: #8b5cf6; border: 2px solid #8b5cf6; }
+.badge-ebcdic { background: #1a1000; color: #f59e0b; border: 2px solid #f59e0b; }
 .badge-oct    { background: #052016; color: #10b981; border: 2px solid #10b981; }
 .badge-ascii  { background: #051a20; color: #06b6d4; border: 2px solid #06b6d4; }
 .badge-dump         { background: #200a10; color: #f43f5e; border: 2px solid #f43f5e; }
@@ -1073,6 +1074,7 @@ body.light .flash.error  { background: #a93226; color: #fff; }
 body.light .btn-primary { color: #fff; }
 body.light .btn-primary:hover { background: #0860ca; border-color: #0860ca; color: #fff; }
 body.light .badge-hex         { background: #ede9ff; color: #6d28d9; border-color: #8b5cf6; }
+body.light .badge-ebcdic      { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
 body.light .badge-oct    { background: #d1fae5; color: #065f46; border-color: #10b981; }
 body.light .badge-ascii  { background: #cffafe; color: #0e7490; border-color: #06b6d4; }
 body.light .badge-dump         { background: #ffe4e6; color: #be123c; border-color: #f43f5e; }
@@ -1196,11 +1198,12 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
       <div class="panel-header">
         <span class="panel-title">Message Input</span>
         <select id="fmtForceSelect" onchange="onFmtForceChange()" title="Force input format (overrides auto-detect)">
-          <option value="">Auto</option>
-          <option value="ascii">Ascii</option>
-          <option value="tandem-dump">HexAscii</option>
-          <option value="hex">Hex</option>
-          <option value="oct">Oct</option>
+          <option value="">AUTO</option>
+          <option value="ascii">ASCII</option>
+          <option value="tandem-dump">HEXASCII</option>
+          <option value="hex">HEX</option>
+          <option value="ebcdic">EBCDIC</option>
+          <option value="oct">OCT</option>
         </select>
         <div style="flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding-left:6px;overflow:hidden">
           <span id="msgFileName" style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0"></span>
@@ -3356,7 +3359,24 @@ function detectFormat(text) {
   if (haCount >= 1 && haCount >= lines.length * 0.4) return 'tandem-dump';
 
   const stripped = t.replace(/\s/g, '');
-  if (stripped.length >= 8 && /^[0-9a-fA-F]+$/.test(stripped)) return 'hex';
+  if (stripped.length >= 8) {
+    const hexCount = (stripped.match(/[0-9a-fA-F]/g) || []).length;
+    if (hexCount / stripped.length >= 0.9) {
+      // EBCDIC hex: count byte pairs in F0–F9 range (EBCDIC-encoded digits 0–9).
+      // Skip pairs where either nibble is a non-hex char (e.g. OCR artifact).
+      // In random binary hex the expected density is ~4% (10/256); a genuine
+      // EBCDIC ISO message is typically 40–70%. Threshold 25% separates them.
+      let f09 = 0, total = 0;
+      for (let i = 0; i + 1 < stripped.length; i += 2) {
+        const hi = stripped[i], lo = stripped[i + 1];
+        if (!/[0-9a-fA-F]/.test(hi) || !/[0-9a-fA-F]/.test(lo)) continue;
+        total++;
+        if ((hi === 'F' || hi === 'f') && lo >= '0' && lo <= '9') f09++;
+      }
+      if (total > 0 && f09 / total > 0.30) return 'ebcdic';
+      return 'hex';
+    }
+  }
 
   return 'ascii';
 }
@@ -3455,7 +3475,7 @@ function extractBytes(chunk, format) {
     return tokens.filter(t => /^[0-7]+$/.test(t)).map(t => parseInt(t, 8) & 0xff);
   }
 
-  if (format === 'hex' || format === 'hex-partial') {
+  if (format === 'hex' || format === 'hex-partial' || format === 'ebcdic') {
     let hexStr = '';
     for (const line of text.split('\n')) {
       const candidate = line.trim().replace(/\s/g, '');
@@ -3468,8 +3488,10 @@ function extractBytes(chunk, format) {
     }
     if (!hexStr) hexStr = text.replace(/\s/g, '');
     const bytes = [];
-    for (let i = 0; i + 1 < hexStr.length; i += 2)
-      bytes.push(parseInt(hexStr.substr(i, 2), 16));
+    for (let i = 0; i + 1 < hexStr.length; i += 2) {
+      const b = parseInt(hexStr.substr(i, 2), 16);
+      bytes.push(format === 'ebcdic' ? (_EBCDIC_TO_ASCII[b] ?? b) : b);
+    }
     return bytes;
   }
 
@@ -3546,7 +3568,7 @@ function buildByteCharMap(text, format, textOffset) {
   // that extractBytes() would consume, then pair them into bytes.
   const hexPos = [];
 
-  if (format === 'hex' || format === 'hex-partial') {
+  if (format === 'hex' || format === 'hex-partial' || format === 'ebcdic') {
     let pos = off;
     let anyLine = false;
     for (const line of text.split('\n')) {
@@ -7312,6 +7334,7 @@ function updateBadges() {
   } else {
     const fmtMap = {
       'hex':              ['badge-hex',          'HEX'],
+      'ebcdic':           ['badge-ebcdic',       'EBCDIC'],
       'tandem-dump':      ['badge-dump',         'HEXASCII'],
       'ascii':            ['badge-ascii',        'ASCII'],
       'oct':              ['badge-oct',          'OCT'],
@@ -9392,7 +9415,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.2.8';
+const APP_VERSION  = '1.0.2.9';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

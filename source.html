@@ -6768,7 +6768,7 @@ function renderFieldTable(msg) {
             rows = [
               `<tr><td>1. Format</td><td>${ok(`NETARD ${fmtLabel}`)}</td></tr>`,
               `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
-              `<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected (${_escH(d.ebcdicHow)}) — MTI: <code>${_escH(d.decodedMTI)}</code>`) : inf(`not detected — bytes[0..3]: <code>${_escH(d.bytesSample.split(' ').slice(0,4).join(' '))}</code> (no ISO prefix, not all F0–F9, density ≤30%)`)}</td></tr>`,
+              `<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected (${_escH(d.ebcdicHow)}) — MTI: <code>${_escH(d.decodedMTI)}</code>`) : inf(`not detected — bytes[0..3]: <code>${_escH(d.bytesSample.split(' ').slice(0,4).join(' '))}</code> (no ISO prefix C9 E2 D6, not all F0–F9)`)}</td></tr>`,
               `<tr><td>4. Msg type</td><td>${fail(`no pattern matched <code>${_escH(d.decodedMTI)}</code>`)}</td></tr>`,
               `<tr><td>5. DDLMM rule</td><td>${d.ddlmmMatched ? ok('rule matched') : fail('no rule matched source / dest / type')}</td></tr>`,
               `<tr><td>6. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
@@ -9425,7 +9425,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.3.2';
+const APP_VERSION  = '1.0.3.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

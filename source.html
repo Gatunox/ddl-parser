@@ -3358,18 +3358,13 @@ function detectFormat(text) {
   const haCount = lines.filter(l => isHexAsciiLine(l)).length;
   if (haCount >= 1 && haCount >= lines.length * 0.4) return 'tandem-dump';
 
+  // If text starts with literal 'ISO', it is an ASCII-encoded message regardless of hex content
+  if (/^ISO/i.test(t)) return 'ascii';
+
   const stripped = t.replace(/\s/g, '');
   if (stripped.length >= 8) {
     const hexCount = (stripped.match(/[0-9a-fA-F]/g) || []).length;
     if (hexCount / stripped.length >= 0.9) {
-      // ISO prefix check: if first 3 decoded bytes are 'I','S','O' (0x49,0x53,0x4F)
-      // it is an ASCII-encoded ISO message — must not be classified as hex or EBCDIC.
-      if (stripped.length >= 6) {
-        const b0 = parseInt(stripped.slice(0, 2), 16);
-        const b1 = parseInt(stripped.slice(2, 4), 16);
-        const b2 = parseInt(stripped.slice(4, 6), 16);
-        if (b0 === 0x49 && b1 === 0x53 && b2 === 0x4F) return 'ascii';
-      }
       // EBCDIC hex: count byte pairs in F0–F9 range (EBCDIC-encoded digits 0–9).
       // Skip pairs where either nibble is a non-hex char (e.g. OCR artifact).
       // In random binary hex the expected density is ~4% (10/256); a genuine
@@ -9448,7 +9443,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.3.9';
+const APP_VERSION  = '1.0.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

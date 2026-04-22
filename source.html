@@ -5795,10 +5795,21 @@ function doParseMessages() {
 
               // Unknown type — cannot search any volume; user must create a DDLMM rule
               if (!msgType.vol) {
+                const _diag = {
+                  isNetard: false,
+                  fmt: S.inputFormat,
+                  byteCount: bytes.length,
+                  bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
+                  decodedMTI: detectStr.slice(0, 4),
+                  msgTypeDetected: !!msgType.type,
+                  msgTypeLabel: msgType.type || null,
+                  ddlmmMatched: !!ddlmmRule,
+                  volResolved: false,
+                };
                 parsed.push({ bytes, raw: chunkStr, timestamp: chunk.timestamp || null,
                   fields: [], ddlPath: null, msgType, tokens: [], byteCharMap,
                   charStart, charEnd: charStart + chunkStr.length,
-                  noMatchDDL: true, unknownType: true });
+                  noMatchDDL: true, unknownType: true, _diag });
                 continue;
               }
 
@@ -6747,18 +6758,31 @@ function renderFieldTable(msg) {
         <div>${msg.unknownType ? 'Unknown message type — auto-detection not possible.' : (msg.isNetard && msg.noMatchDDL) ? 'No matching DDL for this record.' : msg.noMatchDDL ? 'No matching DDL for this message.' : msg.isNetard ? 'Record extracted — no DDL applied yet.' : 'No fields parsed.'}</div>
         ${msg.unknownType && msg._diag ? (() => {
           const d = msg._diag;
-          const fmtLabel = { hex:'HEX', hexascii:'HEXASCII', octal:'OCTAL', ebcdic:'EBCDIC', ascii:'ASCII', standard:'Standard' }[d.fmt] || d.fmt.toUpperCase();
+          const fmtLabel = { hex:'HEX', 'tandem-dump':'HEXASCII', octal:'OCTAL', ebcdic:'EBCDIC', ascii:'ASCII', standard:'Standard' }[d.fmt] || (d.fmt || '').toUpperCase();
           const ok  = s => `<span class="diag-ok">✓</span> ${s}`;
           const fail= s => `<span class="diag-fail">✗</span> ${s}`;
           const inf = s => `<span class="diag-info">—</span> ${s}`;
-          const rows = [
-            `<tr><td>1. Format</td><td>${ok(`NETARD ${fmtLabel}`)}</td></tr>`,
-            `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
-            `<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected (${_escH(d.ebcdicHow)}) — MTI: <code>${_escH(d.decodedMTI)}</code>`) : inf(`not detected — bytes[0..3]: <code>${_escH(d.bytesSample.split(' ').slice(0,4).join(' '))}</code> (no ISO prefix, not all F0–F9, density ≤30%)`)}</td></tr>`,
-            `<tr><td>4. Msg type</td><td>${fail(`no pattern matched <code>${_escH(d.decodedMTI)}</code>`)}</td></tr>`,
-            `<tr><td>5. DDLMM rule</td><td>${d.ddlmmMatched ? ok('rule matched') : fail('no rule matched source / dest / type')}</td></tr>`,
-            `<tr><td>6. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
-          ];
+          let rows;
+          if (d.isNetard !== false) {
+            // NETARD path
+            rows = [
+              `<tr><td>1. Format</td><td>${ok(`NETARD ${fmtLabel}`)}</td></tr>`,
+              `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
+              `<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected (${_escH(d.ebcdicHow)}) — MTI: <code>${_escH(d.decodedMTI)}</code>`) : inf(`not detected — bytes[0..3]: <code>${_escH(d.bytesSample.split(' ').slice(0,4).join(' '))}</code> (no ISO prefix, not all F0–F9, density ≤30%)`)}</td></tr>`,
+              `<tr><td>4. Msg type</td><td>${fail(`no pattern matched <code>${_escH(d.decodedMTI)}</code>`)}</td></tr>`,
+              `<tr><td>5. DDLMM rule</td><td>${d.ddlmmMatched ? ok('rule matched') : fail('no rule matched source / dest / type')}</td></tr>`,
+              `<tr><td>6. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
+            ];
+          } else {
+            // Non-NETARD path
+            rows = [
+              `<tr><td>1. Format</td><td>${ok(fmtLabel || 'AUTO')}</td></tr>`,
+              `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
+              `<tr><td>3. Msg type</td><td>${d.msgTypeDetected ? inf(`detected <code>${_escH(d.msgTypeLabel)}</code> but no vol resolved`) : fail(`no pattern matched <code>${_escH(d.decodedMTI)}</code>`)}</td></tr>`,
+              `<tr><td>4. DDLMM rule</td><td>${d.ddlmmMatched ? ok('rule matched') : fail('no rule matched')}</td></tr>`,
+              `<tr><td>5. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
+            ];
+          }
           return `<table class="diag-table">${rows.join('')}</table>`;
         })() : ''}
         <div style="margin-top:8px">${msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a DDLMM rule to route this message type.` : 'Create a DDLMM rule for this message, or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.')
@@ -9401,7 +9425,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.3.0';
+const APP_VERSION  = '1.0.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

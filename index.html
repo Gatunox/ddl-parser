@@ -5765,8 +5765,8 @@ function doParseMessages() {
             const bytes       = extractBytes(chunk, S.inputFormat);
             if (!bytes.length) continue;
 
-            // For HEXASCII and EBCDIC formats the raw text is hex — type patterns must match decoded bytes
-            const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic')
+            // For hex-based formats the raw text is not the message — type patterns must match decoded bytes
+            const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic' || S.inputFormat === 'hex')
               ? bytes.map(b => String.fromCharCode(b)).join('')
               : chunkStr;
             let msgType = detectMsgType(detectStr);
@@ -5803,7 +5803,7 @@ function doParseMessages() {
                   byteCount: bytes.length,
                   bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
                   decodedMTI: detectStr.slice(0, 4),
-                  msgTypeDetected: !!msgType.type,
+                  msgTypeDetected: !!msgType.type && msgType.type !== 'UNKNOWN',
                   msgTypeLabel: msgType.type || null,
                   ddlmmMatched: !!ddlmmRule,
                   volResolved: false,
@@ -9427,7 +9427,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.3.4';
+const APP_VERSION  = '1.0.3.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

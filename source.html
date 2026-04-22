@@ -5317,10 +5317,11 @@ function doParseNetardLog(text) {
             for (const rec of records) {
               const bytes = [];
               for (let i = 0; i < rec.rawMsg.length; i++) bytes.push(rec.rawMsg.charCodeAt(i) & 0xFF);
-              const _ebcdicIso = bytes.length >= 3 && bytes[0]===0xC9 && bytes[1]===0xE2 && bytes[2]===0xD6;
-              const _ebcdicMti = bytes.length >= 4 && bytes.slice(0,4).every(b => b>=0xF0 && b<=0xF9);
-              const _isEbcdic  = _ebcdicIso || _ebcdicMti;
-              const _ebcdicHow = _ebcdicIso ? 'ISO prefix C9 E2 D6' : _ebcdicMti ? 'MTI bytes all F0–F9' : null;
+              let _f09 = 0;
+              for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
+              const _ebcdicDens = bytes.length > 0 ? _f09 / bytes.length : 0;
+              const _isEbcdic   = _ebcdicDens > 0.30;
+              const _ebcdicHow  = _isEbcdic ? `F0–F9 density ${Math.round(_ebcdicDens * 100)}%` : null;
               const parseBytes = _isEbcdic ? bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : bytes;
               const parseRaw   = _isEbcdic ? parseBytes.map(b => String.fromCharCode(b)).join('') : rec.rawMsg;
               const _base = {
@@ -5358,6 +5359,7 @@ function doParseNetardLog(text) {
                     bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
                     isEbcdic: _isEbcdic,
                     ebcdicHow: _ebcdicHow,
+                    ebcdicDens: Math.round(_ebcdicDens * 100),
                     decodedMTI: parseRaw.slice(0, 4),
                     msgTypeDetected: false,
                     ddlmmMatched: !!ddlmmRule,
@@ -6768,7 +6770,7 @@ function renderFieldTable(msg) {
             rows = [
               `<tr><td>1. Format</td><td>${ok(`NETARD ${fmtLabel}`)}</td></tr>`,
               `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
-              `<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected (${_escH(d.ebcdicHow)}) — MTI: <code>${_escH(d.decodedMTI)}</code>`) : inf(`not detected — bytes[0..3]: <code>${_escH(d.bytesSample.split(' ').slice(0,4).join(' '))}</code> (no ISO prefix C9 E2 D6, not all F0–F9)`)}</td></tr>`,
+              `<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected — F0–F9 density: ${d.ebcdicDens}% (&gt;30%)`) : inf(`not detected — F0–F9 density: ${d.ebcdicDens}% (≤30%)`)}</td></tr>`,
               `<tr><td>4. Msg type</td><td>${fail(`no pattern matched <code>${_escH(d.decodedMTI)}</code>`)}</td></tr>`,
               `<tr><td>5. DDLMM rule</td><td>${d.ddlmmMatched ? ok('rule matched') : fail('no rule matched source / dest / type')}</td></tr>`,
               `<tr><td>6. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
@@ -9425,7 +9427,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.3.3';
+const APP_VERSION  = '1.0.3.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

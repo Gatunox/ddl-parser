@@ -5369,7 +5369,7 @@ function doParseNetardLog(text) {
                   continue;
                 }
                 const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || [])
-                  .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn); });
+                  .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
                 const allMatches = pool
                   .map(c => {
                     const r = bestDDLMatch(parseBytes, [c]);
@@ -5739,7 +5739,7 @@ function doParseMessages() {
 
       function _startP23Scoring(compiledByVol) {
         const allCompiled = Object.values(compiledByVol).flat()
-          .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn); });
+          .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
 
         if (!allCompiled.length && !S.ddlMsgMap.length) {
           _parseProgressHide();
@@ -5817,7 +5817,7 @@ function doParseMessages() {
 
               // Build pool by walking the volume hierarchy (e.g. ATM → BASE)
               const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || [])
-                .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn); });
+                .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
 
               // Score every candidate; apply name-match bonus; keep score > 0, sorted best-first
               const allMatches = pool
@@ -7626,8 +7626,11 @@ function renderDDLTree() {
                 const _dWarnBadge = (!_dr?.errors?.length && _dr?.warnings?.length)
                   ? `<span class="tree-warn-badge" title="${esc((_dr.warnings).map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${_dr.warnings.length}</span>`
                   : '';
-                const defBadges = _dUnresBadge + _dErrBadge + _dWarnBadge;
-                html += `<div class="tree-node${defSel}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
+                const defExcl    = isExcluded(vol, sv, d, defName);
+                const defExclCls = defExcl ? ' tree-excl-node' : '';
+                const defExclBadge = defExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
+                const defBadges = defExclBadge + _dUnresBadge + _dErrBadge + _dWarnBadge;
+                html += `<div class="tree-node${defSel}${defExclCls}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
                   <span class="tree-caret" style="visibility:hidden">−</span>
                   <span class="tree-def-lbl" title="Jump to DEF ${esc(defName)} in ${esc(d)}">${hi(defName)}</span>${defTknBadge}${defBadges}
                 </div>`;
@@ -8431,19 +8434,23 @@ function saveDDLMsgMap() {
 }
 
 // ---- Exclusion helpers ----
-function _exclKey(vol, sv, name) {
-  if (name) return `${vol.toUpperCase()}/${sv.toUpperCase()}/${name.toUpperCase()}`;
-  if (sv)   return `${vol.toUpperCase()}/${sv.toUpperCase()}`;
+function _exclKey(vol, sv, name, defName) {
+  if (defName) return `${vol.toUpperCase()}/${sv.toUpperCase()}/${name.toUpperCase()}/${defName.toUpperCase()}`;
+  if (name)    return `${vol.toUpperCase()}/${sv.toUpperCase()}/${name.toUpperCase()}`;
+  if (sv)      return `${vol.toUpperCase()}/${sv.toUpperCase()}`;
   return vol.toUpperCase();
 }
-function isExcluded(vol, sv, name) {
+function isExcluded(vol, sv, name, defName) {
   const vk = vol.toUpperCase();
   if (S.excl.has(vk)) return true;
   if (!sv) return false;
   const sk = `${vk}/${sv.toUpperCase()}`;
   if (S.excl.has(sk)) return true;
   if (!name) return false;
-  return S.excl.has(`${sk}/${name.toUpperCase()}`);
+  const fk = `${sk}/${name.toUpperCase()}`;
+  if (S.excl.has(fk)) return true;
+  if (!defName) return false;
+  return S.excl.has(`${fk}/${defName.toUpperCase()}`);
 }
 function toggleExclusion(vol, sv, name) {
   const key = _exclKey(vol, sv, name);
@@ -8988,7 +8995,11 @@ function buildCtxMenu(e) {
       items.push({ separator: true });
       items.push({ icon: '✎', label: 'Rename…',    fn: () => ctxRenameDdl(vol, sv, name) });
       items.push({ separator: true });
-      items.push({ icon: isExcluded(vol, sv, name) ? '◎' : '⊘', label: isExcluded(vol, sv, name) ? 'Include in parsing' : 'Exclude from parsing', fn: () => toggleExclusion(vol, sv, name) });
+      if (t === 'def' && defName) {
+        items.push({ icon: isExcluded(vol, sv, name, defName) ? '◎' : '⊘', label: isExcluded(vol, sv, name, defName) ? 'Include DEF in parsing' : 'Exclude DEF from parsing', fn: () => toggleExclusion(vol, sv, name, defName) });
+      } else {
+        items.push({ icon: isExcluded(vol, sv, name) ? '◎' : '⊘', label: isExcluded(vol, sv, name) ? 'Include in parsing' : 'Exclude from parsing', fn: () => toggleExclusion(vol, sv, name) });
+      }
       items.push({ icon: '✕', label: 'Delete', fn: () => deleteScope(), danger: true });
     }
   }
@@ -9429,7 +9440,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.3.6';
+const APP_VERSION  = '1.0.3.7';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -8452,8 +8452,8 @@ function isExcluded(vol, sv, name, defName) {
   if (!defName) return false;
   return S.excl.has(`${fk}/${defName.toUpperCase()}`);
 }
-function toggleExclusion(vol, sv, name) {
-  const key = _exclKey(vol, sv, name);
+function toggleExclusion(vol, sv, name, defName) {
+  const key = _exclKey(vol, sv, name, defName);
   if (S.excl.has(key)) S.excl.delete(key); else S.excl.add(key);
   saveExcl();
   _ddlCompileCache = { version: -1, byVol: null };
@@ -9440,7 +9440,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.3.7';
+const APP_VERSION  = '1.0.3.8';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

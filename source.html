@@ -5232,7 +5232,7 @@ function _showProgressPicker(label, matches, cb, msgType = null) {
   });
 }
 
-function doParseNetardLog(text) {
+function doParseNetardLog(text, opts = {}) {
   S.seenTypes.clear();
   const records = parseNetardLog(text);
   if (!records.length) { flash('No records with message text found in NETARD log', 'warn'); return; }
@@ -5285,7 +5285,10 @@ function doParseNetardLog(text) {
   document.getElementById('msgInput').readOnly = true;
 
   // Step 0 — record count (informational)
-  _parseProgressStep(`NETARD audit log \u2014 ${records.length} record${records.length !== 1 ? 's' : ''} detected`);
+  const _overrideSuffix = opts.ignoreOverride ? ' \u2014 IGNORING Manual override'
+    : opts.showOverride   ? ` \u2014 Manual DDL override \u2014 ${S.scope.vol}/${S.scope.sv}/${S.scope.name}`
+    : '';
+  _parseProgressStep(`NETARD audit log \u2014 ${records.length} record${records.length !== 1 ? 's' : ''} detected${_overrideSuffix}`);
   setTimeout(() => {
     if (_parseAborted) return;
     _parseProgressDoneLast();
@@ -5622,7 +5625,14 @@ function doParseMessages() {
   if (/DEADC0DE/i.test(msgText.replace(/\s/g, ''))) { triggerDeadC0DE(); return; }
 
   // NETARD audit log — handle separately (DDL optional, uses own priority chain)
-  if (!S.forcedFormat && isNetardLog(msgText)) { doParseNetardLog(msgText); return; }
+  if (!S.forcedFormat && isNetardLog(msgText)) {
+    const _nRecs = parseNetardLog(msgText);
+    const _hasScope = S.scope?.type === 'ddl' || S.scope?.type === 'def';
+    const _ignoreOverride = _hasScope && _nRecs.length > 1;
+    const _showOverride   = _hasScope && _nRecs.length === 1;
+    doParseNetardLog(msgText, { ignoreOverride: _ignoreOverride, showOverride: _showOverride });
+    return;
+  }
 
   S.inputFormat = S.forcedFormat || detectFormat(msgText);
   // Detect uniform left margin and strip internally for byte extraction — textarea untouched.
@@ -9443,7 +9453,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.4.0';
+const APP_VERSION  = '1.0.4.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

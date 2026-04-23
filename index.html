@@ -5137,8 +5137,8 @@ function _abortParse() {
   syncParseBtn();
 }
 
-function _parseProgressStep(label, subLabel, subColor) {
-  _ppSteps.push({ label, done: false, subLabel: subLabel || null, subColor: subColor || null });
+function _parseProgressStep(label, subLabel, subColor, labelColor) {
+  _ppSteps.push({ label, done: false, subLabel: subLabel || null, subColor: subColor || null, labelColor: labelColor || null });
   _parseProgressRender();
 }
 
@@ -5172,9 +5172,10 @@ function _parseProgressRender() {
           `<span style="color:${s.subColor || 'var(--warning)'}">${esc(s.subLabel)}</span>` +
         `</div>`
       : '';
+    const labelCol = s.labelColor && !s.done ? s.labelColor : textCol;
     return `<div style="display:flex;gap:9px;align-items:baseline">` +
         `<span style="color:${iconCol};min-width:12px">${icon}</span>` +
-        `<span style="color:${textCol}">${esc(s.label)}</span>` +
+        `<span style="color:${labelCol}">${esc(s.label)}</span>` +
       `</div>${subRow}${noteRow}`;
   }).join('');
 }
@@ -5291,11 +5292,7 @@ function doParseNetardLog(text, opts = {}) {
   document.getElementById('msgInput').readOnly = true;
 
   // Step 0 — record count (informational)
-  const _overrideSub = opts.ignoreOverride
-    ? 'IGNORING Manual override'
-    : opts.showOverride
-    ? `Manual DDL override \u2014 ${S.scope.vol}/${S.scope.sv}/${S.scope.name}`
-    : null;
+  const _overrideSub = opts.ignoreOverride ? 'IGNORING Manual override' : null;
   _parseProgressStep(
     `NETARD audit log \u2014 ${records.length} record${records.length !== 1 ? 's' : ''} detected`,
     _overrideSub,
@@ -5304,6 +5301,56 @@ function doParseNetardLog(text, opts = {}) {
   setTimeout(() => {
     if (_parseAborted) return;
     _parseProgressDoneLast();
+
+    // ── Manual override on single record: mirror non-NETARD P1 parse exactly ──
+    if (opts.showOverride) {
+      const p1Path = `${S.scope.vol}/${S.scope.sv}/${S.scope.name}`;
+      _parseProgressStep(`Manual DDL override \u2014 ${p1Path}`, null, null, '#e74c3c');
+      setTimeout(() => {
+        _parseProgressDoneLast();
+        _parseProgressStep('Parsing\u2026');
+        setTimeout(() => {
+          const rec = records[0];
+          const bytes = [];
+          for (let i = 0; i < rec.rawMsg.length; i++) bytes.push(rec.rawMsg.charCodeAt(i) & 0xFF);
+          let _f09 = 0;
+          for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
+          const _ebcdicDens = bytes.length > 0 ? _f09 / bytes.length : 0;
+          const _isEbcdic   = _ebcdicDens > 0.30;
+          const parseBytes  = _isEbcdic ? bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : bytes;
+          const parseRaw    = _isEbcdic ? parseBytes.map(b => String.fromCharCode(b)).join('') : rec.rawMsg;
+          const resolved    = getDDLFromPath(p1Path);
+          let fields = [], ddlPath = null, defName = null;
+          if (resolved && resolved.defs.length) {
+            const result = bestDDLMatch(parseBytes, [resolved]);
+            fields  = result.fields;
+            ddlPath = result.ddlPath;
+            defName = resolved.defName ?? null;
+          }
+          const msgType = detectMsgType(parseRaw);
+          const tokens  = extractTokensFromMessage(fields, parseBytes, msgType?.type, ddlPath) ?? [];
+          const parsed  = [{ bytes: parseBytes, raw: parseRaw,
+            isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
+            byteCharMap: rec.byteCharMap || [], charStart: rec.charStart, charEnd: rec.charEnd,
+            recNo: rec.recNo, recLength: rec.length,
+            time: rec.time, typeCode: rec.typeCode, typeDesc: rec.typeDesc,
+            source: rec.source, sourceDet: rec.sourceDet, dest: rec.dest, destDet: rec.destDet,
+            timestamp: rec.time, msgType, fields, ddlPath, defName, tokens,
+            noMatchDDL: !fields.length,
+          }];
+          S.messages = parsed;
+          S.curIdx   = 0;
+          S.inputFormat = rec.netardFmt === 'hexascii' ? 'tandem-dump' : rec.netardFmt || 'ascii';
+          _parseProgressDoneLast();
+          _parseProgressHide();
+          renderParsed(S.messages, 0);
+          renderRaw(S.messages[0]);
+          renderMetaBar(S.messages);
+        }, 400);
+      }, 400);
+      return;
+    }
+
     // Step 1 — detecting types (informational)
     _parseProgressStep('Detecting record types');
     setTimeout(() => {
@@ -9465,7 +9512,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.4.2';
+const APP_VERSION  = '1.0.4.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

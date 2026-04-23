@@ -10390,6 +10390,20 @@ function flash(msg, level) {
 // ─── Tutorial ────────────────────────────────────────────────────────────────
 const _TUT_STEPS = [
   {
+    target: null,
+    title: 'Welcome to DDL Parser',
+    bodyHTML:
+      '<span style="color:var(--text-dim)">The app is split into four panels:</span><br><br>' +
+      '<span style="color:var(--accent);font-weight:700">DDL Definition</span> <span style="color:var(--text-dim)">&mdash; top-left</span><br>' +
+      'Load and manage field definitions organized as Vol &rarr; Subvolume &rarr; DDL.<br><br>' +
+      '<span style="color:var(--accent);font-weight:700">Message Input</span> <span style="color:var(--text-dim)">&mdash; top-right</span><br>' +
+      'Paste or drop a raw message to parse.<br><br>' +
+      '<span style="color:var(--accent);font-weight:700">Parse Results</span> <span style="color:var(--text-dim)">&mdash; bottom-left</span><br>' +
+      'Decoded field names, types, and values after parsing.<br><br>' +
+      '<span style="color:var(--accent);font-weight:700">Raw Message</span> <span style="color:var(--text-dim)">&mdash; bottom-right</span><br>' +
+      'Raw bytes displayed as hex and ASCII side by side.',
+  },
+  {
     target: '#ddlTreePane', prefer: 'right',
     title: 'Loading DDL Definitions',
     body: 'Drag .ddl files onto this panel to load definitions, or right-click to create a Volume \u2192 Subvolume \u2192 DDL hierarchy.\n\nRight-click any volume to import a previously exported .json package. Each DDL describes the fields of a message type.',
@@ -10447,7 +10461,7 @@ function _tutRender() {
   if (!card || !step) return;
   document.getElementById('tutProgress').textContent = `Step ${_tutIdx + 1} of ${_TUT_STEPS.length}`;
   document.getElementById('tutTitle').textContent    = step.title;
-  document.getElementById('tutBody').innerHTML       = esc(step.body).replace(/\n/g, '<br>');
+  document.getElementById('tutBody').innerHTML       = step.bodyHTML || esc(step.body).replace(/\n/g, '<br>');
   const prev = document.getElementById('tutPrev');
   const next = document.getElementById('tutNext');
   if (prev) prev.style.visibility = _tutIdx === 0 ? 'hidden' : 'visible';
@@ -11274,8 +11288,8 @@ document.addEventListener('DOMContentLoaded', () => {
   <div class="tut-body"     id="tutBody"></div>
   <div class="tut-nav">
     <button class="tut-skip" id="tutSkip">Skip tutorial</button>
-    <button class="btn btn-sm" id="tutPrev">\u2190 Back</button>
-    <button class="btn btn-sm" id="tutNext">Next \u2192</button>
+    <button class="btn btn-sm" id="tutPrev">&#x2190; Back</button>
+    <button class="btn btn-sm" id="tutNext">Next &#x2192;</button>
   </div>
 </div>
 

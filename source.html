@@ -10390,18 +10390,24 @@ function flash(msg, level) {
 // ─── Tutorial ────────────────────────────────────────────────────────────────
 const _TUT_STEPS = [
   {
-    target: null,
-    title: 'Welcome to DDL Parser',
-    bodyHTML:
-      '<span style="color:var(--text-dim)">The app is split into four panels:</span><br><br>' +
-      '<span style="color:var(--accent);font-weight:700">DDL Definition</span> <span style="color:var(--text-dim)">&mdash; top-left</span><br>' +
-      'Load and manage field definitions organized as Vol &rarr; Subvolume &rarr; DDL.<br><br>' +
-      '<span style="color:var(--accent);font-weight:700">Message Input</span> <span style="color:var(--text-dim)">&mdash; top-right</span><br>' +
-      'Paste or drop a raw message to parse.<br><br>' +
-      '<span style="color:var(--accent);font-weight:700">Parse Results</span> <span style="color:var(--text-dim)">&mdash; bottom-left</span><br>' +
-      'Decoded field names, types, and values after parsing.<br><br>' +
-      '<span style="color:var(--accent);font-weight:700">Raw Message</span> <span style="color:var(--text-dim)">&mdash; bottom-right</span><br>' +
-      'Raw bytes displayed as hex and ASCII side by side.',
+    target: '#ddlPanel', prefer: 'right',
+    title: 'DDL Definition \u2014 top-left',
+    body: 'This is where you load and manage your field definitions.\n\nDefinitions are organized in a tree: Volume \u2192 Subvolume \u2192 DDL. Each DDL file describes the fields of a message type and is used to parse and label your messages.',
+  },
+  {
+    target: '#msgPanel', prefer: 'left',
+    title: 'Message Input \u2014 top-right',
+    body: 'Paste or drop a raw message here to parse it.\n\nThe format is auto-detected (ASCII, HEX, HEXASCII, EBCDIC, NETARD). Use the format selector to override, and press \u25b6 Parse or Ctrl+Enter to run.',
+  },
+  {
+    target: '#resPanel', prefer: 'right',
+    title: 'Parse Results \u2014 bottom-left',
+    body: 'After parsing, this panel shows the decoded fields \u2014 name, type, offset, length, and value \u2014 for the active message.\n\nUse the navigation arrows to move between messages. Click a field row to highlight the corresponding bytes in the Raw Message panel.',
+  },
+  {
+    target: '#rawPanel', prefer: 'left',
+    title: 'Raw Message \u2014 bottom-right',
+    body: 'Displays the raw bytes of the active message as a hex and ASCII side-by-side dump.\n\nBytes belonging to the selected field are highlighted. The panel updates in sync with your selection in Parse Results.',
   },
   {
     target: '#ddlTreePane', prefer: 'right',

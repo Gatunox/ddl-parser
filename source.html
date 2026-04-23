@@ -1135,6 +1135,28 @@ body.light #msgInput .cm-hl-hover  { color: var(--text); }
 .cm-host .cm-gutters { background: var(--bg-panel); border-right: 1px solid rgba(255,255,255,0.06); color: var(--text-dim); }
 body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .cm-host .cm-lineNumbers .cm-gutterElement { padding: 0 6px 0 0; min-width: 36px; text-align: right; font-size: var(--sz-mono); }
+/* ─── Tutorial ──────────────────────────────────────────────────────────────── */
+#tutorialSpotlight {
+  position: fixed; border-radius: 5px;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.72);
+  pointer-events: none; z-index: 19000;
+  transition: top .22s ease, left .22s ease, width .22s ease, height .22s ease;
+}
+#tutorialCard {
+  position: fixed; width: 300px;
+  background: var(--bg-panel); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 16px 18px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  z-index: 20000; pointer-events: all;
+  transition: top .22s ease, left .22s ease;
+}
+.tut-progress { font-family: var(--mono); font-size: var(--sz-mono); color: var(--text-dim); }
+.tut-title    { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent); }
+.tut-body     { font-family: var(--mono); font-size: var(--sz-mono); color: var(--text); line-height: 1.6; }
+.tut-nav      { display: flex; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 4px; }
+.tut-skip     { margin-right: auto; font-family: var(--mono); font-size: var(--sz-mono); color: var(--text-dim); background: none; border: none; cursor: pointer; padding: 0; text-decoration: underline; }
+.tut-skip:hover { color: var(--text); }
 </style>
 </head>
 <body>
@@ -9633,7 +9655,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', monoSize: 12, lineWidth: 0, rawHexTruncate: true,
+  theme: 'dark', monoSize: 12, lineWidth: 0, rawHexTruncate: true, tutorialSeen: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences
@@ -10365,6 +10387,111 @@ function flash(msg, level) {
 // ============================================================
 // INIT
 // ============================================================
+// ─── Tutorial ────────────────────────────────────────────────────────────────
+const _TUT_STEPS = [
+  {
+    target: '#ddlTreePane', prefer: 'right',
+    title: 'Loading DDL Definitions',
+    body: 'Drag .ddl files onto this panel to load definitions, or right-click to create a Volume \u2192 Subvolume \u2192 DDL hierarchy.\n\nRight-click any volume to import a previously exported .json package. Each DDL describes the fields of a message type.',
+  },
+  {
+    target: '#ddlDocBtn', prefer: 'bottom',
+    title: 'DDLDOC \u2014 Field Reference',
+    body: 'With a DDL selected in the tree, click Doc to open DDLDOC \u2014 a searchable field reference for the active definition.\n\nUse the filter to find fields by name. Toggle Hide Redef to show or hide REDEFINES groups.',
+  },
+  {
+    target: '#ddlScopePath', prefer: 'bottom',
+    title: 'Manual DDL Override',
+    body: 'Click any DDL node in the tree to make it the active scope \u2014 the path is shown here.\n\nWith a scope selected, pressing \u25b6 Parse forces that exact DDL instead of auto-detecting. Useful when you know exactly which definition applies.',
+  },
+  {
+    target: '#msgPanel', prefer: 'left',
+    title: 'Pasting a Message',
+    body: 'Paste your raw message here. The format is auto-detected: ASCII, HEX, HEXASCII, or EBCDIC. Use the format selector on the left to override.\n\nThe line width control appears for NETARD input \u2014 adjust it to match the width of your terminal dump. Press \u25b6 Parse or Ctrl+Enter to run.',
+  },
+  {
+    target: '#ddlTreePane', prefer: 'right',
+    title: 'Exclusions \u0026 Right-Click Menu',
+    body: 'Right-click any tree node for context options: create, rename, import/export, and Exclude from parsing.\n\nExcluded DDLs are greyed out and skipped during auto-detection scoring. Right-click a DEF sub-node to exclude only that specific definition, leaving the rest of the file active.',
+  },
+  {
+    target: '#ddlTree', prefer: 'right',
+    title: 'DDLMM \u2014 Message Routing Rules',
+    body: 'Click the DDLMM node at the top of the tree to define DDL Message Map rules.\n\nRules automatically route specific message types to specific DDLs \u2014 e.g., always parse ISO 0200 with your ATM definition. Matched messages skip the scoring step entirely.',
+  },
+  {
+    target: '#msgPanel', prefer: 'left',
+    title: 'NETARD Audit Log Parsing',
+    body: 'Paste a NETARD multi-record audit log and press \u25b6 Parse. The parser detects all records, identifies EBCDIC/ASCII encoding per record, and scores each against your DDL tree.\n\nA navigation bar lets you step through all results. With a single-record log and a DDL scope selected, Manual Override applies automatically.',
+  },
+  {
+    target: '#trkBtn', prefer: 'left',
+    title: 'Field Tracking',
+    body: 'Check Trk on any field in the parse results, then click \u229e Track Mode to compare that field across all parsed messages in a matrix view.\n\nEspecially useful with NETARD multi-record logs to spot patterns or anomalies across transactions.',
+  },
+];
+let _tutIdx = 0;
+
+function _tutRect(sel) {
+  const el = sel ? document.querySelector(sel) : null;
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width && !r.height) return null;
+  return { top: r.top - 6, left: r.left - 6, w: r.width + 12, h: r.height + 12 };
+}
+
+function _tutRender() {
+  const step = _TUT_STEPS[_tutIdx];
+  const card = document.getElementById('tutorialCard');
+  const spot = document.getElementById('tutorialSpotlight');
+  if (!card || !step) return;
+  document.getElementById('tutProgress').textContent = `Step ${_tutIdx + 1} of ${_TUT_STEPS.length}`;
+  document.getElementById('tutTitle').textContent    = step.title;
+  document.getElementById('tutBody').innerHTML       = esc(step.body).replace(/\n/g, '<br>');
+  const prev = document.getElementById('tutPrev');
+  const next = document.getElementById('tutNext');
+  if (prev) prev.style.visibility = _tutIdx === 0 ? 'hidden' : 'visible';
+  if (next) next.textContent = _tutIdx === _TUT_STEPS.length - 1 ? 'Finish \u2713' : 'Next \u2192';
+  card.classList.remove('hidden');
+  requestAnimationFrame(() => {
+    const rect = _tutRect(step.target);
+    if (rect && spot) {
+      spot.style.top = rect.top + 'px'; spot.style.left = rect.left + 'px';
+      spot.style.width = rect.w + 'px'; spot.style.height = rect.h + 'px';
+      spot.classList.remove('hidden');
+    } else if (spot) { spot.classList.add('hidden'); }
+    if (!card) return;
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    const vw = window.innerWidth,  vh = window.innerHeight, gap = 14;
+    let top = 0, left = 0;
+    if (!rect) {
+      top = Math.round((vh - ch) / 2); left = Math.round((vw - cw) / 2);
+    } else {
+      const opts = { right:[rect.top, rect.left+rect.w+gap], left:[rect.top, rect.left-cw-gap], bottom:[rect.top+rect.h+gap, rect.left], top:[rect.top-ch-gap, rect.left] };
+      const order = [step.prefer,'right','left','bottom','top'].filter((v,i,a)=>a.indexOf(v)===i);
+      let placed = false;
+      for (const p of order) {
+        const [t,l] = opts[p] || [0,0];
+        if (l >= 8 && l+cw <= vw-8 && t >= 8 && t+ch <= vh-8) { top=t; left=l; placed=true; break; }
+      }
+      if (!placed) { [top,left] = opts[step.prefer]||[0,0]; top=Math.max(8,Math.min(top,vh-ch-8)); left=Math.max(8,Math.min(left,vw-cw-8)); }
+    }
+    card.style.top = Math.round(top) + 'px'; card.style.left = Math.round(left) + 'px';
+  });
+}
+
+function showTutorial() {
+  _tutIdx = 0;
+  _tutRender();
+}
+
+function closeTutorial() {
+  document.getElementById('tutorialSpotlight')?.classList.add('hidden');
+  document.getElementById('tutorialCard')?.classList.add('hidden');
+  P.tutorialSeen = true;
+  savePrefs();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // ── CodeMirror 6 initialization ──────────────────────────────────────────
   // Must run before any code that reads ddlEditor / msgInput via getElementById.
@@ -10629,11 +10756,19 @@ document.addEventListener('DOMContentLoaded', () => {
   if (vl) vl.textContent = APP_VERSION;
   // ---- end context menu ----
 
+  document.getElementById('tutNext')?.addEventListener('click', () => {
+    if (_tutIdx >= _TUT_STEPS.length - 1) { closeTutorial(); return; }
+    _tutIdx++; _tutRender();
+  });
+  document.getElementById('tutPrev')?.addEventListener('click', () => { if (_tutIdx > 0) { _tutIdx--; _tutRender(); } });
+  document.getElementById('tutSkip')?.addEventListener('click', closeTutorial);
+
   loadPrefs();
   loadExcl();
   loadLayout();
   _initCellTooltip();
   applyPanelDefaults();
+  if (!P.tutorialSeen) setTimeout(showTutorial, 600);
   _syncRawHexCol();
   loadTree();
   _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
@@ -10841,6 +10976,15 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="settings-row">
           <span class="settings-lbl">Reset</span>
           <button class="btn btn-sm" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
+        </div>
+      </div>
+
+      <!-- ── TUTORIAL ─────────────────────────────────── -->
+      <div class="settings-section">
+        <div class="settings-stitle">Tutorial</div>
+        <div class="settings-row">
+          <span class="settings-lbl">Guided tour of key features</span>
+          <button class="btn btn-sm" onclick="showTutorial();closeSettings();">\u25b6 Launch</button>
         </div>
       </div>
 
@@ -11121,6 +11265,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <!-- Hidden file input for import -->
 <input type="file" id="importFileInput" accept=".json" style="display:none">
+
+<!-- ===== TUTORIAL ===== -->
+<div id="tutorialSpotlight" class="hidden"></div>
+<div id="tutorialCard" class="hidden">
+  <div class="tut-progress" id="tutProgress"></div>
+  <div class="tut-title"    id="tutTitle"></div>
+  <div class="tut-body"     id="tutBody"></div>
+  <div class="tut-nav">
+    <button class="tut-skip" id="tutSkip">Skip tutorial</button>
+    <button class="btn btn-sm" id="tutPrev">\u2190 Back</button>
+    <button class="btn btn-sm" id="tutNext">Next \u2192</button>
+  </div>
+</div>
 
 </body>
 </html>

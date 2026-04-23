@@ -5172,7 +5172,7 @@ function _parseProgressRender() {
           `<span style="color:${s.subColor || 'var(--warning)'}">${esc(s.subLabel)}</span>` +
         `</div>`
       : '';
-    const labelCol = s.labelColor && !s.done ? s.labelColor : textCol;
+    const labelCol = s.labelColor ? s.labelColor : textCol;
     return `<div style="display:flex;gap:9px;align-items:baseline">` +
         `<span style="color:${iconCol};min-width:12px">${icon}</span>` +
         `<span style="color:${labelCol}">${esc(s.label)}</span>` +
@@ -9512,7 +9512,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.4.4';
+const APP_VERSION  = '1.0.4.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

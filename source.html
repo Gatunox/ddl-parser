@@ -6187,8 +6187,8 @@ function syncParseBtn() {
   const hasInput = !!document.getElementById('msgInput').value.trim();
   const b = document.getElementById('parseBtn');
   if (b) {
-    b.disabled = !hasInput || S.isParsed;
-    b.classList.toggle('btn-primary', hasInput && !S.isParsed);
+    b.disabled = !hasInput;
+    b.classList.toggle('btn-primary', hasInput);
   }
   const c = document.getElementById('msgClearBtn');
   if (c) c.disabled = !S.isParsed && !hasInput;
@@ -9596,7 +9596,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.2';
+const APP_VERSION  = '1.0.5.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -5386,6 +5386,7 @@ function doParseNetardLog(text, opts = {}) {
             const sessionMappings = {}; // type → { ddlPath, defName }
             const typePickerQueue = []; // one entry per unique type needing user selection
             const _typeSeen       = new Set();
+            const _ddlErrors      = []; // DDLs that threw during scoring
             for (const rec of records) {
               const bytes = [];
               for (let i = 0; i < rec.rawMsg.length; i++) bytes.push(rec.rawMsg.charCodeAt(i) & 0xFF);
@@ -5444,11 +5445,18 @@ function doParseNetardLog(text, opts = {}) {
                   .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
                 const allMatches = pool
                   .map(c => {
-                    const r = bestDDLMatch(parseBytes, [c]);
-                    const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
-                    const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
-                    const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
-                    return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score };
+                    try {
+                      const r = bestDDLMatch(parseBytes, [c]);
+                      const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
+                      const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
+                      const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
+                      return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score };
+                    } catch (err) {
+                      const label = c.path + (c.defName ? '/' + c.defName : '');
+                      console.warn('[NETARD scoring] DDL error —', label, err);
+                      _ddlErrors.push(label);
+                      return { ddlPath: c.path, defName: c.defName ?? null, fields: [], score: -1 };
+                    }
                   })
                   .filter(m => m.score > 0)
                   .sort((a, b) => b.score - a.score);
@@ -5472,6 +5480,10 @@ function doParseNetardLog(text, opts = {}) {
                 continue;
               }
               parsed.push({ ..._base, msgType, fields, ddlPath, defName, tokens: null });
+            }
+            if (_ddlErrors.length) {
+              console.warn('[NETARD scoring] DDL(s) with errors (skipped):', _ddlErrors);
+              setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check console for details.`, 'warn'), 350);
             }
             _parseProgressDoneLast();
             } catch (err) {
@@ -5859,6 +5871,7 @@ function doParseMessages() {
           const sessionMappings = {};       // type → { ddlPath, defName } chosen for this parse run
           const typePickerQueue = [];       // one entry per unique type needing user selection
           const _typeSeen       = new Set();
+          const _ddlErrors      = []; // DDLs that threw during scoring
 
           for (const chunk of chunks) {
             const chunkStr    = typeof chunk === 'object' ? chunk.text : String(chunk);
@@ -5932,11 +5945,18 @@ function doParseMessages() {
               // Score every candidate; apply name-match bonus; keep score > 0, sorted best-first
               const allMatches = pool
                 .map(c => {
-                  const r = bestDDLMatch(parseBytes, [c]);
-                  const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
-                  const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
-                  const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
-                  return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score };
+                  try {
+                    const r = bestDDLMatch(parseBytes, [c]);
+                    const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
+                    const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
+                    const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
+                    return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score };
+                  } catch (err) {
+                    const label = c.path + (c.defName ? '/' + c.defName : '');
+                    console.warn('[P2/P3 scoring] DDL error —', label, err);
+                    _ddlErrors.push(label);
+                    return { ddlPath: c.path, defName: c.defName ?? null, fields: [], score: -1 };
+                  }
                 })
                 .filter(m => m.score > 0)
                 .sort((a, b) => b.score - a.score);
@@ -5980,6 +6000,10 @@ function doParseMessages() {
               charStart: charStart2, charEnd: charStart2 + chunkStr.length });
           }
 
+          if (_ddlErrors.length) {
+            console.warn('[P2/P3 scoring] DDL(s) with errors (skipped):', _ddlErrors);
+            setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check console for details.`, 'warn'), 350);
+          }
           _parseProgressDoneLast();
           } catch (err) {
             console.error('[P2/P3 scoring] unexpected error:', err);
@@ -9558,7 +9582,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.4.9';
+const APP_VERSION  = '1.0.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

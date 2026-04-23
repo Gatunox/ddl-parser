@@ -1809,7 +1809,7 @@ function parseHPEDDL(text, externalDefs, externalSections, targetDef = null) {
   // to the array so parseMessage can dispatch to the dedicated HPE ISO parser.
   // No field IDs are renamed — STM / PSTM / other fixed DDLs are never touched.
   {
-    const _isBmp = e => /(?:BITMAP|BIT-MAP)$/i.test(e._rawName) && e._dataType === 'PIC X(16)';
+    const _isBmp = e => /(?:BITMAP|BIT-MAP)$/i.test(e._rawName) && (e._dataType === 'PIC X(16)' || e._dataType === 'PIC X(8)');
 
     // Positional index: non-REDEFINES entries only (REDEFINES overlay existing bytes)
     const leafIdx = out
@@ -1823,7 +1823,8 @@ function parseHPEDDL(text, externalDefs, externalSections, targetDef = null) {
       if (_isBmp(out[leafIdx[li]])) { bmpLeafPos = li; bmpOutIdx = leafIdx[li]; break; }
     }
 
-    if (bmpLeafPos === 2 || bmpLeafPos === 7) {
+    const _nextIsBmp = bmpLeafPos >= 0 && (bmpLeafPos + 1) < leafIdx.length && _isBmp(out[leafIdx[bmpLeafPos + 1]]);
+    if (bmpLeafPos === 2 || bmpLeafPos === 7 || (bmpLeafPos === 1 && _nextIsBmp)) {
       const mtiOutIdx    = leafIdx[bmpLeafPos - 1];
       let dataStartLeaf  = bmpLeafPos + 1;
       let secBmpOutIdx   = -1;
@@ -1916,7 +1917,7 @@ function parseHPEDDL(text, externalDefs, externalSections, targetDef = null) {
       }
 
       out._hpeIsoLayout = {
-        isoType:     bmpLeafPos === 7 ? 'BASE24' : 'ISO',
+        isoType:     bmpLeafPos === 7 ? 'BASE24' : bmpLeafPos === 1 ? 'HISO' : 'ISO',
         prefixDefs,
         mtiDef:      out[mtiOutIdx],
         bmpDef:      out[bmpOutIdx],
@@ -4052,6 +4053,17 @@ function parseHPEISOMessage(bytes, defs) {
     return { bin, set };
   };
 
+  // Decode 8 raw binary bytes → bit set (1-based)
+  const decodeRawBitmap = raw => {
+    const set = new Set();
+    raw.forEach((byte, bi) => {
+      for (let bit = 0; bit < 8; bit++) {
+        if (byte & (0x80 >> bit)) set.add(bi * 8 + bit + 1);
+      }
+    });
+    return { bin: raw, set };
+  };
+
   // 1. Prefix fields — always present, read sequentially by length
   for (const def of layout.prefixDefs) {
     const fStart = offset;
@@ -4073,16 +4085,18 @@ function parseHPEISOMessage(bytes, defs) {
     value: bToStr(mtiB), rawHex: bToHex(mtiB), rawBytes: mtiB,
     startByte: mtiStart, endByte: offset - 1 });
 
-  // 3. Primary bitmap — 16 ASCII hex bytes
-  const bmpDef   = layout.bmpDef;
-  const bmpStart = offset;
-  const bmpRaw   = read(16);
+  // 3. Primary bitmap — 16 ASCII hex bytes (ISO/BASE24) or 8 raw binary bytes (HISO)
+  const bmpDef    = layout.bmpDef;
+  const bmpIsRaw  = bmpDef._dataType === 'PIC X(8)';
+  const bmpSize   = bmpIsRaw ? 8 : 16;
+  const bmpStart  = offset;
+  const bmpRaw    = read(bmpSize);
   if (!bmpRaw) return fields;
-  const { bin: bmpBin, set: bmpSet } = decodeHexBitmap(bmpRaw);
-  const bmpHexStr = bmpRaw.map(b => String.fromCharCode(b)).join('');
+  const { bin: bmpBin, set: bmpSet } = bmpIsRaw ? decodeRawBitmap(bmpRaw) : decodeHexBitmap(bmpRaw);
+  const bmpHexStr = bmpIsRaw ? bToHex(bmpBin) : bmpRaw.map(b => String.fromCharCode(b)).join('');
   const presentNums = [...bmpSet].sort((a, b) => a - b);
   fields.push({ id: bmpDef.id, description: bmpDef.description || 'Primary Bitmap',
-    type: 'FIXED', maxLength: 16, valueLength: 16,
+    type: 'FIXED', maxLength: bmpSize, valueLength: bmpSize,
     value: bmpHexStr,
     detail: `Fields present: ${presentNums.join(', ')}`,
     rawHex: bToHex(bmpBin), rawBytes: bmpBin,
@@ -4093,16 +4107,16 @@ function parseHPEISOMessage(bytes, defs) {
 
   // 4. Secondary bitmap — if bit 1 is set and layout defines one
   if (bmpSet.has(1) && layout.secBmpDef) {
-    const secDef   = layout.secBmpDef;
+    const secDef    = layout.secBmpDef;
     const sec2Start = offset;
-    const sec2Raw   = read(16);
+    const sec2Raw   = read(bmpSize);
     if (sec2Raw) {
-      const { bin: sec2Bin, set: sec2Set } = decodeHexBitmap(sec2Raw);
+      const { bin: sec2Bin, set: sec2Set } = bmpIsRaw ? decodeRawBitmap(sec2Raw) : decodeHexBitmap(sec2Raw);
       sec2Set.forEach(b => extSet.add(b + 64));
-      const sec2HexStr = sec2Raw.map(b => String.fromCharCode(b)).join('');
+      const sec2HexStr = bmpIsRaw ? bToHex(sec2Bin) : sec2Raw.map(b => String.fromCharCode(b)).join('');
       const hiNums = [...sec2Set].map(n => n + 64).sort((a, b) => a - b);
       fields.push({ id: secDef.id, description: secDef.description || 'Secondary Bitmap',
-        type: 'FIXED', maxLength: 16, valueLength: 16,
+        type: 'FIXED', maxLength: bmpSize, valueLength: bmpSize,
         value: sec2HexStr,
         detail: `High fields: ${hiNums.join(', ')}`,
         rawHex: bToHex(sec2Bin), rawBytes: sec2Bin,
@@ -9582,7 +9596,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.1';
+const APP_VERSION  = '1.0.5.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

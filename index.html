@@ -1823,8 +1823,7 @@ function parseHPEDDL(text, externalDefs, externalSections, targetDef = null) {
       if (_isBmp(out[leafIdx[li]])) { bmpLeafPos = li; bmpOutIdx = leafIdx[li]; break; }
     }
 
-    const _nextIsBmp = bmpLeafPos >= 0 && (bmpLeafPos + 1) < leafIdx.length && _isBmp(out[leafIdx[bmpLeafPos + 1]]);
-    if (bmpLeafPos === 2 || bmpLeafPos === 7 || (bmpLeafPos === 1 && _nextIsBmp)) {
+    if (bmpLeafPos === 2 || bmpLeafPos === 7 || bmpLeafPos === 1) {
       const mtiOutIdx    = leafIdx[bmpLeafPos - 1];
       let dataStartLeaf  = bmpLeafPos + 1;
       let secBmpOutIdx   = -1;
@@ -9596,7 +9595,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.3';
+const APP_VERSION  = '1.0.5.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

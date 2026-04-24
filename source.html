@@ -8675,7 +8675,16 @@ function toggleExclusion(vol, sv, name, defName) {
     renderDDLTree();
     return;
   }
-  if (S.excl.has(key)) S.excl.delete(key); else S.excl.add(key);
+  if (S.excl.has(key)) {
+    S.excl.delete(key);
+  } else {
+    S.excl.add(key);
+    // Purge any child override inclusions — explicit exclude of a container beats prior child inclusions
+    const prefix = key + '/';
+    let inclChanged = false;
+    for (const k of [...S.incl]) { if (k.startsWith(prefix)) { S.incl.delete(k); inclChanged = true; } }
+    if (inclChanged) saveIncl();
+  }
   saveExcl();
   _ddlCompileCache = { version: -1, byVol: null };
   renderDDLTree();
@@ -9670,7 +9679,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.18';
+const APP_VERSION  = '1.0.5.19';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

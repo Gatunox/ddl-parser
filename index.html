@@ -7797,7 +7797,7 @@ function renderDDLTree() {
             const fileExclCls = fileExcl ? ' tree-excl-node' : '';
             const exclBadge   = fileExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
             const defCntBadge = fileDefNames.length > 0 ? `<span class="tree-cnt">${fileDefNames.length}</span>` : '';
-            const fileBadges = tknBadge + typeBadge + exclBadge + defCntBadge + (!showDefSubNodes || !fileExp ? unresBadge + errBadge + warnBadge : '');
+            const fileBadges = tknBadge + typeBadge + defCntBadge + exclBadge + (!showDefSubNodes || !fileExp ? unresBadge + errBadge + warnBadge : '');
             html += `<div class="tree-node${dSel}${dAnc}${pendCls}${fileExclCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
               ${fileCaret}
               <span class="tree-ddl-lbl${isTknMap ? ' no-prefix' : ''}" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${fileBadges}
@@ -9686,7 +9686,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.20';
+const APP_VERSION  = '1.0.5.21';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

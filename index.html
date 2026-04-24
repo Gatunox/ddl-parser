@@ -7801,8 +7801,7 @@ function renderDDLTree() {
                 const defExcl      = isExcluded(vol, sv, d, defName);
                 const defIsOverride = S.incl.has(_exclKey(vol, sv, d, defName));
                 const defExclCls   = defExcl ? ' tree-excl-node' : '';
-                const defExclBadge = defExcl ? '<span class="tree-excl-badge">EXCL</span>'
-                                   : defIsOverride ? '<span class="tree-incl-badge">INCL</span>' : '';
+                const defExclBadge = defExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
                 const defBadges = defExclBadge + _dUnresBadge + _dErrBadge + _dWarnBadge;
                 html += `<div class="tree-node${defSel}${defExclCls}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
                   <span class="tree-caret" style="visibility:hidden">−</span>
@@ -9641,7 +9640,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.10';
+const APP_VERSION  = '1.0.5.11';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

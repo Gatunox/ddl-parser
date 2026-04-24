@@ -8649,8 +8649,14 @@ function isExcluded(vol, sv, name, defName) {
 }
 // When including a child of an excluded parent: remove the parent from S.excl,
 // then add all siblings at each intermediate level so only the target passes through.
+// Also purges any intermediate path keys (VOL/SV, VOL/SV/FILE) that may have been
+// independently excluded, ensuring a single click always fully includes the target.
 function _cascadeInclude(vol, sv, name, defName, excludingKey) {
   S.excl.delete(excludingKey);
+  // Remove any other ancestor keys on the direct path to the target
+  if (sv)             S.excl.delete(_exclKey(vol, sv));
+  if (sv && name)     S.excl.delete(_exclKey(vol, sv, name));
+  if (sv && name && defName) S.excl.delete(_exclKey(vol, sv, name, defName));
   const excLevel = excludingKey.split('/').length; // 1=vol, 2=sv, 3=file
   if (excLevel === 1 && sv) {
     for (const s of Object.keys(S.ddlTree[vol] || {}))
@@ -8669,25 +8675,22 @@ function _cascadeInclude(vol, sv, name, defName, excludingKey) {
 }
 function toggleExclusion(vol, sv, name, defName) {
   const key = _exclKey(vol, sv, name, defName);
-  // If the key itself is excluded, just remove it
-  if (S.excl.has(key)) {
-    S.excl.delete(key);
-    saveExcl();
-    _ddlCompileCache = { version: -1, byVol: null };
-    renderDDLTree();
-    return;
-  }
-  // Find the closest excluding ancestor and cascade-include
+  const wasDirectlyExcluded = S.excl.has(key);
+  // Remove own key first (if directly excluded) — then check for excluding ancestors
+  // below so that multiple simultaneous exclusions (own key + ancestors) are resolved
+  // in a single click instead of requiring one click per exclusion level.
+  if (wasDirectlyExcluded) S.excl.delete(key);
+
+  // Find the outermost (most general) excluding ancestor — prefer VOL > SV > FILE
+  // so cascade covers all intermediate levels in one pass.
   const vk = _exclKey(vol);
   const sk = sv ? _exclKey(vol, sv) : null;
   const fk = (sv && name) ? _exclKey(vol, sv, name) : null;
   let excludingKey = null;
-  if      (sv && !name  && S.excl.has(vk))           excludingKey = vk;
-  else if (name && !defName && sk && S.excl.has(sk))  excludingKey = sk;
-  else if (name && !defName && S.excl.has(vk))        excludingKey = vk;
-  else if (defName && fk && S.excl.has(fk))           excludingKey = fk;
-  else if (defName && sk && S.excl.has(sk))           excludingKey = sk;
-  else if (defName && S.excl.has(vk))                 excludingKey = vk;
+  if      (sv && S.excl.has(vk))            excludingKey = vk;
+  else if (name && sk && S.excl.has(sk))    excludingKey = sk;
+  else if (defName && fk && S.excl.has(fk)) excludingKey = fk;
+
   if (excludingKey) {
     _cascadeInclude(vol, sv, name, defName, excludingKey);
     saveExcl();
@@ -8695,8 +8698,9 @@ function toggleExclusion(vol, sv, name, defName) {
     renderDDLTree();
     return;
   }
-  // Nothing excluded — add to S.excl
-  S.excl.add(key);
+  // No excluding ancestors — if we removed own key, the node is now included (done).
+  // If neither directly excluded nor any ancestor, this is a new exclusion.
+  if (!wasDirectlyExcluded) S.excl.add(key);
   saveExcl();
   _ddlCompileCache = { version: -1, byVol: null };
   renderDDLTree();
@@ -9682,7 +9686,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.27';
+const APP_VERSION  = '1.0.5.28';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

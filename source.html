@@ -5734,6 +5734,7 @@ function _remapByteCharMapForMargin(map, parseText, margin) {
 }
 
 function doParseMessages() {
+  _clearResultsOnly();
   S.seenTypes.clear();
   const msgText = document.getElementById('msgInput').value;
   if (!msgText.trim()) { flash('Please enter a message to parse.', 'warn'); return; }
@@ -6735,6 +6736,27 @@ function updateDDLEditorState() {
   if (_cachedDDLMMEl) _cachedDDLMMEl.classList.toggle('tree-ddlmm-dirty', isDDLMM && isDirty);
 }
 
+function _clearResultsOnly() {
+  clearInputHL();
+  Object.assign(S, { isParsed: false, messages: [], curIdx: 0,
+    selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set() });
+  _lwSetParsed(false);
+  _lwSetVisible(false);
+  document.getElementById('cntBadge').innerHTML = '';
+  document.getElementById('msgNav').style.display = 'none';
+  document.getElementById('trkBtn').style.display = 'none';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('colPickerSelect').style.display = 'none';
+  document.getElementById('resFilterInput').style.display = 'none';
+  document.getElementById('hideRedefBtn').style.display = 'none';
+  document.getElementById('resPanelTitle').textContent = 'Parse Results';
+  document.getElementById('resContainer').innerHTML =
+    '<div class="empty-st"><div>No messages parsed yet.</div></div>';
+  document.getElementById('rawDisplay').innerHTML =
+    '<span style="color:var(--text-dim)">Raw message bytes will appear here after parsing.</span>';
+  document.getElementById('rawInfo').textContent = '';
+  document.getElementById('msgGutter').innerHTML = '';
+}
 function clearAll() {
   clearInputHL();
   const el = document.getElementById('msgInput');
@@ -9640,7 +9662,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.11';
+const APP_VERSION  = '1.0.5.12';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

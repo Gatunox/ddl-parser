@@ -7870,7 +7870,7 @@ function renderDDLTree() {
   }
   const missingNames = Object.keys(allMissing).sort();
   if (missingNames.length > 0) {
-    html += `<div class="tree-missref-hdr">Missing References · ${missingNames.length} type${missingNames.length > 1 ? 's' : ''} needed</div>`;
+    html += `<div class="tree-missref-hdr">${missingNames.length} — Missing References</div>`;
     for (const typeName of missingNames) {
       const refs = allMissing[typeName];
       const tip  = `Referenced by:\n${refs.join('\n')}\n\nClick to create a stub definition`;
@@ -9686,7 +9686,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.21';
+const APP_VERSION  = '1.0.5.22';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

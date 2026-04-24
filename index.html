@@ -4025,10 +4025,13 @@ function parseBitmap(bytes) {
 // structure in a COBOL-syntax DDL).  The bitmap is 16 ASCII hex characters
 // (PIC X(16)) which decode to 8 binary bytes.  Field IDs in the output keep
 // their full DDL qualified name (e.g. ISOMSG.ISODATA.PAN).
-function parseHPEISOMessage(bytes, defs) {
+function parseHPEISOMessage(bytes, defs, rawBytes) {
   const layout  = defs._hpeIsoLayout;
   const fields  = [];
   let   offset  = 0;
+
+  // rawBytes: original pre-EBCDIC bytes — used for raw binary bitmap fields only.
+  // EBCDIC conversion is 1:1 (no length change), so offsets are identical in both arrays.
 
   const read    = n => {
     if (offset + n > bytes.length) return null;
@@ -4091,7 +4094,9 @@ function parseHPEISOMessage(bytes, defs) {
   const bmpStart  = offset;
   const bmpRaw    = read(bmpSize);
   if (!bmpRaw) return fields;
-  const { bin: bmpBin, set: bmpSet } = bmpIsRaw ? decodeRawBitmap(bmpRaw) : decodeHexBitmap(bmpRaw);
+  // For raw binary bitmaps, use original bytes (rawBytes) to avoid EBCDIC corruption.
+  const bmpForDecode = (bmpIsRaw && rawBytes) ? rawBytes.slice(bmpStart, bmpStart + bmpSize) : bmpRaw;
+  const { bin: bmpBin, set: bmpSet } = bmpIsRaw ? decodeRawBitmap(bmpForDecode) : decodeHexBitmap(bmpRaw);
   const bmpHexStr = bmpIsRaw ? bToHex(bmpBin) : bmpRaw.map(b => String.fromCharCode(b)).join('');
   const presentNums = [...bmpSet].sort((a, b) => a - b);
   fields.push({ id: bmpDef.id, description: bmpDef.description || 'Primary Bitmap',
@@ -4110,14 +4115,15 @@ function parseHPEISOMessage(bytes, defs) {
     const sec2Start = offset;
     const sec2Raw   = read(bmpSize);
     if (sec2Raw) {
-      const { bin: sec2Bin, set: sec2Set } = bmpIsRaw ? decodeRawBitmap(sec2Raw) : decodeHexBitmap(sec2Raw);
+      const sec2ForDecode = (bmpIsRaw && rawBytes) ? rawBytes.slice(sec2Start, sec2Start + bmpSize) : sec2Raw;
+      const { bin: sec2Bin, set: sec2Set } = bmpIsRaw ? decodeRawBitmap(sec2ForDecode) : decodeHexBitmap(sec2Raw);
       sec2Set.forEach(b => extSet.add(b + 64));
       const sec2HexStr = bmpIsRaw ? bToHex(sec2Bin) : sec2Raw.map(b => String.fromCharCode(b)).join('');
       const hiNums = [...sec2Set].map(n => n + 64).sort((a, b) => a - b);
       fields.push({ id: secDef.id, description: secDef.description || 'Secondary Bitmap',
         type: 'FIXED', maxLength: bmpSize, valueLength: bmpSize,
         value: sec2HexStr,
-        detail: `High fields: ${hiNums.join(', ')}`,
+        detail: `Fields present: ${hiNums.join(', ')}`,
         rawHex: bToHex(sec2Bin), rawBytes: sec2Bin,
         startByte: sec2Start, endByte: offset - 1 });
     }
@@ -4228,8 +4234,8 @@ function _isISO8583DDL(defs) {
       || /\bBMAP\b|\bBITMAP\b/i.test(next.description || '');
 }
 
-function parseMessage(bytes, defs) {
-  if (defs._hpeIsoLayout)    return parseHPEISOMessage(bytes, defs);
+function parseMessage(bytes, defs, rawBytes) {
+  if (defs._hpeIsoLayout)    return parseHPEISOMessage(bytes, defs, rawBytes);
   if (!_isISO8583DDL(defs))  return parseFlatMessage(bytes, defs);
 
   const fields = [];
@@ -4944,11 +4950,11 @@ function getDDLsForVol(volName) {
 //   coverage      = bytes consumed by matched fields / total message bytes
 // REDEFINES rule: fields belonging to a mixed-type redefine group are excluded
 // from content validation entirely (neither penalised nor validated).
-function bestDDLMatch(bytes, candidates) {
+function bestDDLMatch(bytes, candidates, rawBytes) {
   if (!candidates.length) return { fields: [], ddlPath: null };
   let best = { score: -1, fields: [], ddlPath: candidates[0].path };
   for (const { path, defs } of candidates) {
-    const f    = parseMessage(bytes, defs);
+    const f    = parseMessage(bytes, defs, rawBytes);
     if (!f.length) continue;
     const hardErrs = f.filter(x => x.error).length;
 
@@ -5343,7 +5349,7 @@ function doParseNetardLog(text, opts = {}) {
           const resolved    = getDDLFromPath(p1Path);
           let fields = [], ddlPath = null, defName = null;
           if (resolved && resolved.defs.length) {
-            const result = bestDDLMatch(parseBytes, [resolved]);
+            const result = bestDDLMatch(parseBytes, [resolved], bytes);
             fields  = result.fields;
             ddlPath = result.ddlPath;
             defName = resolved.defName ?? null;
@@ -5435,7 +5441,7 @@ function doParseNetardLog(text, opts = {}) {
               if (ddlmmRule) {
                 const resolved = getDDLFromPath(ddlmmRule.ddlPath);
                 if (resolved && resolved.defs.length) {
-                  const result = bestDDLMatch(parseBytes, [resolved]);
+                  const result = bestDDLMatch(parseBytes, [resolved], bytes);
                   fields  = result.fields;
                   ddlPath = result.ddlPath;
                   defName = resolved.defName ?? null;
@@ -5467,7 +5473,7 @@ function doParseNetardLog(text, opts = {}) {
                 const allMatches = pool
                   .map(c => {
                     try {
-                      const r = bestDDLMatch(parseBytes, [c]);
+                      const r = bestDDLMatch(parseBytes, [c], bytes);
                       const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
                       const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
                       const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
@@ -5827,7 +5833,7 @@ function doParseMessages() {
       }
     }
 
-    const best = bestDDLMatch(parseBytes, candidates);
+    const best = bestDDLMatch(parseBytes, candidates, bytes);
     const chunkStr    = typeof chunk === 'object' ? chunk.text : String(chunk);
     const chunkOffset = msgText.indexOf(chunkStr);
     const byteCharMap = _remapByteCharMapForMargin(buildByteCharMap(chunkStr, S.inputFormat, chunkOffset >= 0 ? chunkOffset : 0), _parseText, _parseMargin);
@@ -5921,7 +5927,7 @@ function doParseMessages() {
             if (ddlmmRule) {
               const resolved = getDDLFromPath(ddlmmRule.ddlPath);
               if (resolved && resolved.defs.length) {
-                const result = bestDDLMatch(parseBytes, [resolved]);
+                const result = bestDDLMatch(parseBytes, [resolved], bytes);
                 fields  = result.fields;
                 ddlPath = result.ddlPath;
                 defName = resolved.defName ?? null;
@@ -5967,7 +5973,7 @@ function doParseMessages() {
               const allMatches = pool
                 .map(c => {
                   try {
-                    const r = bestDDLMatch(parseBytes, [c]);
+                    const r = bestDDLMatch(parseBytes, [c], bytes);
                     const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
                     const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
                     const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
@@ -9604,7 +9610,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.8';
+const APP_VERSION  = '1.0.5.9';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -6988,7 +6988,7 @@ function renderFieldTable(msg) {
           }
           return `<table class="diag-table">${rows.join('')}</table>`;
         })() : ''}
-        <div style="margin-top:8px">${msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a DDLMM rule to route this message type.` : 'Create a DDLMM rule for this message, or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.')
+        <div style="margin-top:8px">${msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="selectDDLMM()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">DDL Message Map</span> rule to route this message type.` : 'Create a <span onclick="selectDDLMM()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">DDL Message Map</span> rule for this message, or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.')
             : (msg.isNetard && msg.noMatchDDL) ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again to apply it to this record.'
             : msg.noMatchDDL  ? 'Load a matching DDL or use Manual Override: select a DDL in the tree and press <strong>▶ Parse</strong>.'
             : msg.isNetard    ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again.'
@@ -9687,7 +9687,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.25';
+const APP_VERSION  = '1.0.5.26';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

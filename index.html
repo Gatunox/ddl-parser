@@ -601,6 +601,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 .tree-dirty .tree-def-lbl { color: var(--warning) !important; }
 .tree-tkn-map  { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; background:rgba(20,184,166,0.18); color:#2dd4bf; border:2px solid #2dd4bf; letter-spacing:0.05em; flex-shrink:0; }
 .tree-excl-badge { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; background:rgba(156,163,175,0.10); color:#6b7280; border:2px solid #6b7280; letter-spacing:0.05em; flex-shrink:0; }
+.tree-incl-badge { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; background:rgba(34,197,94,0.12); color:#4ade80; border:2px solid #4ade80; letter-spacing:0.05em; flex-shrink:0; }
 .tree-excl-node .tree-vol-lbl, .tree-excl-node .tree-sv-lbl, .tree-excl-node .tree-ddl-lbl { opacity:0.4; }
 .tree-tkn-id   { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; background:rgba(148,130,255,0.18); color:#9482ff; border:2px solid #9482ff; letter-spacing:0.05em; flex-shrink:0; }
 .tree-type-badge { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius:2px; margin-left:5px; letter-spacing:0.05em; flex-shrink:0; }
@@ -1330,6 +1331,7 @@ const S = {
   ddlMsgMap:    [],  // parsed routing rules [{seq,type,msgRe,srcRe,dstRe,ddlPath,level}]
   seenTypes:    new Set(),  // message types seen this session (suppresses repeat first-encounter prompts)
   excl:         new Set(),  // excluded vol/sv/file paths (uppercase keys, persisted in up_excl)
+  incl:         new Set(),  // DEF-level override inclusions — override a parent file/sv/vol exclusion
   netardRulerCol: 0,  // total column position of the ruler (left-margin + data width); set on input change
   asciiRulerCol:  0,  // auto-detected data width for ASCII format (after margin strip); set on input change
   asciiMargin:    0,  // auto-detected left margin for ASCII format (chars to skip per line)
@@ -7796,9 +7798,11 @@ function renderDDLTree() {
                 const _dWarnBadge = (!_dr?.errors?.length && _dr?.warnings?.length)
                   ? `<span class="tree-warn-badge" title="${esc((_dr.warnings).map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${_dr.warnings.length}</span>`
                   : '';
-                const defExcl    = isExcluded(vol, sv, d, defName);
-                const defExclCls = defExcl ? ' tree-excl-node' : '';
-                const defExclBadge = defExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
+                const defExcl      = isExcluded(vol, sv, d, defName);
+                const defIsOverride = S.incl.has(_exclKey(vol, sv, d, defName));
+                const defExclCls   = defExcl ? ' tree-excl-node' : '';
+                const defExclBadge = defExcl ? '<span class="tree-excl-badge">EXCL</span>'
+                                   : defIsOverride ? '<span class="tree-incl-badge">INCL</span>' : '';
                 const defBadges = defExclBadge + _dUnresBadge + _dErrBadge + _dWarnBadge;
                 html += `<div class="tree-node${defSel}${defExclCls}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
                   <span class="tree-caret" style="visibility:hidden">−</span>
@@ -8612,6 +8616,11 @@ function _exclKey(vol, sv, name, defName) {
 }
 function isExcluded(vol, sv, name, defName) {
   const vk = vol.toUpperCase();
+  // DEF-level override: explicit inclusion in S.incl beats any parent exclusion
+  if (sv && name && defName) {
+    const dk = `${vk}/${sv.toUpperCase()}/${name.toUpperCase()}/${defName.toUpperCase()}`;
+    if (S.incl.has(dk)) return false;
+  }
   if (S.excl.has(vk)) return true;
   if (!sv) return false;
   const sk = `${vk}/${sv.toUpperCase()}`;
@@ -8624,6 +8633,19 @@ function isExcluded(vol, sv, name, defName) {
 }
 function toggleExclusion(vol, sv, name, defName) {
   const key = _exclKey(vol, sv, name, defName);
+  // DEF-level toggle: if a parent (file/sv/vol) is excluded, toggle S.incl override instead of S.excl
+  if (defName && sv && name) {
+    const fk = _exclKey(vol, sv, name);
+    const sk = _exclKey(vol, sv);
+    const vk = _exclKey(vol);
+    if (S.excl.has(fk) || S.excl.has(sk) || S.excl.has(vk)) {
+      if (S.incl.has(key)) S.incl.delete(key); else S.incl.add(key);
+      saveIncl();
+      _ddlCompileCache = { version: -1, byVol: null };
+      renderDDLTree();
+      return;
+    }
+  }
   if (S.excl.has(key)) S.excl.delete(key); else S.excl.add(key);
   saveExcl();
   _ddlCompileCache = { version: -1, byVol: null };
@@ -8636,6 +8658,15 @@ function loadExcl() {
   try {
     const s = localStorage.getItem('up_excl');
     if (s) S.excl = new Set(JSON.parse(s));
+  } catch(e) {}
+}
+function saveIncl() {
+  try { localStorage.setItem('up_incl', JSON.stringify([...S.incl])); } catch(e) {}
+}
+function loadIncl() {
+  try {
+    const s = localStorage.getItem('up_incl');
+    if (s) S.incl = new Set(JSON.parse(s));
   } catch(e) {}
 }
 
@@ -9610,7 +9641,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.9';
+const APP_VERSION  = '1.0.5.10';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -10659,6 +10690,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   loadPrefs();
   loadExcl();
+  loadIncl();
   loadLayout();
   _initCellTooltip();
   applyPanelDefaults();

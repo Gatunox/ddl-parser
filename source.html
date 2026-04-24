@@ -5147,6 +5147,11 @@ function _parseProgressShow() {
   if (ppClose) { ppClose.classList.remove('hidden'); ppClose.onclick = _abortParse; }
 }
 
+function _abortParseCleanup() {
+  _parseProgressHide();
+  document.getElementById('msgInput').readOnly = false;
+  syncParseBtn();
+}
 function _abortParse() {
   _parseAborted = true;
   if (_ppPickerCb) {
@@ -5155,9 +5160,7 @@ function _abortParse() {
     cb({ match: null, saveRule: false });
     return;
   }
-  _parseProgressHide();
-  document.getElementById('msgInput').readOnly = false;
-  syncParseBtn();
+  _abortParseCleanup();
 }
 
 function _parseProgressStep(label, subLabel, subColor, labelColor) {
@@ -5572,7 +5575,7 @@ function doParseNetardLog(text, opts = {}) {
               const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
               _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
                 if (!match) {
-                  // Cancelled — mark type as skipped and continue to next picker
+                  if (_parseAborted) { _abortParseCleanup(); return; }
                   sessionMappings[msgType.type] = null;
                   _showNetardTypePickers(idx + 1);
                   return;
@@ -6091,7 +6094,7 @@ function doParseMessages() {
             const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
             _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
               if (!match) {
-                // Cancelled — mark type as skipped and continue to next picker
+                if (_parseAborted) { _abortParseCleanup(); return; }
                 sessionMappings[msgType.type] = null;
                 _showTypePickers(idx + 1);
                 return;
@@ -9662,7 +9665,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.12';
+const APP_VERSION  = '1.0.5.13';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

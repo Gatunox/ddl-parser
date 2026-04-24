@@ -9665,7 +9665,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.14';
+const APP_VERSION  = '1.0.5.15';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -10667,7 +10667,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (fn) fn(null);
       }
       const ppOverlay = document.getElementById('parseProgressOverlay');
-      if (ppOverlay && !ppOverlay.classList.contains('hidden')) _abortParse();
+      if (ppOverlay && !ppOverlay.classList.contains('hidden')) { _abortParse(); document.activeElement?.blur(); }
     }
     // Arrow keys — but not when focus is inside a text input/textarea
     const tag = document.activeElement?.tagName;

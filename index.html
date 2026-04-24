@@ -6733,7 +6733,7 @@ function clearAll() {
   el.readOnly = false;
   el.value = '';
   Object.assign(S, { isParsed: false, messages: [], curIdx: 0, inputFormat: null, forcedFormat: null,
-    selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set() });
+    _badgeFmt: null, selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set() });
   const fmtSel = document.getElementById('fmtForceSelect');
   if (fmtSel) { fmtSel.value = ''; fmtSel.classList.remove('fmt-forced'); }
   syncParseBtn();
@@ -7488,6 +7488,7 @@ function updateNav() {
 function onMsgChange() {
   const text = document.getElementById('msgInput').value;
   S.inputFormat = S.forcedFormat || detectFormat(text);
+  S._badgeFmt   = S.inputFormat;   // frozen for badge — never overwritten by parser
   updateBadges();
   syncParseBtn();
 }
@@ -7496,9 +7497,9 @@ function onFmtForceChange() {
   const sel = document.getElementById('fmtForceSelect');
   S.forcedFormat = sel.value || null;
   sel.classList.toggle('fmt-forced', !!S.forcedFormat);
-  // Re-run format detection with new override
   const text = document.getElementById('msgInput').value;
   S.inputFormat = S.forcedFormat || detectFormat(text);
+  S._badgeFmt   = S.inputFormat;   // frozen for badge — never overwritten by parser
   updateBadges();
 }
 
@@ -7522,8 +7523,8 @@ function updateBadges() {
       'netard-ebcdic':    ['badge-netard-ebcdic','NETARD-EBCDIC'],
       'netard-ascii':     ['badge-netard-ascii', 'NETARD-ASCII'],
     };
-    if (S.inputFormat && fmtMap[S.inputFormat]) {
-      const [cls, lbl] = fmtMap[S.inputFormat];
+    if (S._badgeFmt && fmtMap[S._badgeFmt]) {
+      const [cls, lbl] = fmtMap[S._badgeFmt];
       fmtEl.innerHTML = `<span class="badge ${cls}">${lbl}</span>`;
     } else { fmtEl.innerHTML = ''; }
     if (S.isParsed) {
@@ -9603,7 +9604,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.7';
+const APP_VERSION  = '1.0.5.8';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

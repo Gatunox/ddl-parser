@@ -5018,9 +5018,11 @@ function getDDLsForSv(vol, sv) {
 function _openCacheDB() {
   return new Promise(resolve => {
     try {
-      const req = indexedDB.open('ddl-parser-cache', 1);
+      const req = indexedDB.open('ddl-parser-cache', 2);
       req.onupgradeneeded = e => {
-        e.target.result.createObjectStore('compiled', { keyPath: 'svk' });
+        const db = e.target.result;
+        if (db.objectStoreNames.contains('compiled')) db.deleteObjectStore('compiled');
+        db.createObjectStore('compiled', { keyPath: 'svk' });
       };
       req.onsuccess = e => {
         _compiledCacheDB = e.target.result;
@@ -5357,14 +5359,20 @@ function doParseNetardLog(text, opts = {}) {
             timestamp: rec.time, msgType, fields, ddlPath, defName, tokens,
             noMatchDDL: !fields.length,
           }];
-          S.messages = parsed;
-          S.curIdx   = 0;
-          S.inputFormat = rec.netardFmt === 'hexascii' ? 'tandem-dump' : rec.netardFmt || 'ascii';
+          S.messages      = parsed;
+          S.curIdx        = 0;
+          S.inputFormat   = rec.netardFmt === 'hexascii' ? 'tandem-dump' : rec.netardFmt || 'ascii';
+          S.isParsed      = true;
+          S.selFieldId    = null;
+          S.trackMode     = false;
+          S.trackedFields = new Set();
+          _syncTrkColVisibility();
           _parseProgressDoneLast();
           _parseProgressHide();
-          renderParsed(S.messages, 0);
-          renderRaw(S.messages[0]);
-          renderMetaBar(S.messages);
+          syncParseBtn();
+          _lwSetParsed(true);
+          _resolveTokens(S.messages[0]);
+          updateBadges(); updateNav(); renderCurrent();
         }, 400);
       }, 400);
       return;
@@ -9595,7 +9603,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.6';
+const APP_VERSION  = '1.0.5.7';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

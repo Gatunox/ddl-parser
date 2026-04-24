@@ -7827,9 +7827,8 @@ function renderDDLTree() {
                 const _dWarnBadge = (!_dr?.errors?.length && _dr?.warnings?.length)
                   ? `<span class="tree-warn-badge" title="${esc((_dr.warnings).map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${_dr.warnings.length}</span>`
                   : '';
-                const defExcl      = isExcluded(vol, sv, d, defName);
-                const defIsOverride = S.incl.has(_exclKey(vol, sv, d, defName));
-                const defExclCls   = defExcl ? ' tree-excl-node' : '';
+                const defExcl    = isExcluded(vol, sv, d, defName);
+                const defExclCls = defExcl ? ' tree-excl-node' : '';
                 const defExclBadge = defExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
                 const defBadges = defExclBadge + _dUnresBadge + _dErrBadge + _dWarnBadge;
                 html += `<div class="tree-node${defSel}${defExclCls}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
@@ -8644,35 +8643,37 @@ function _exclKey(vol, sv, name, defName) {
 }
 function isExcluded(vol, sv, name, defName) {
   const vk = vol.toUpperCase();
-  // DEF-level override: explicit inclusion in S.incl beats any parent exclusion
-  if (sv && name && defName) {
-    const dk = `${vk}/${sv.toUpperCase()}/${name.toUpperCase()}/${defName.toUpperCase()}`;
-    if (S.incl.has(dk)) return false;
-  }
+  const sk = sv   ? `${vk}/${sv.toUpperCase()}`              : null;
+  const fk = sk && name   ? `${sk}/${name.toUpperCase()}`    : null;
+  const dk = fk && defName ? `${fk}/${defName.toUpperCase()}` : null;
+  // Any S.incl entry at or above the queried level overrides a parent exclusion
+  if (dk && S.incl.has(dk)) return false;
+  if (fk && S.incl.has(fk)) return false;
+  if (sk && S.incl.has(sk)) return false;
   if (S.excl.has(vk)) return true;
   if (!sv) return false;
-  const sk = `${vk}/${sv.toUpperCase()}`;
   if (S.excl.has(sk)) return true;
   if (!name) return false;
-  const fk = `${sk}/${name.toUpperCase()}`;
   if (S.excl.has(fk)) return true;
   if (!defName) return false;
-  return S.excl.has(`${fk}/${defName.toUpperCase()}`);
+  return S.excl.has(dk);
 }
 function toggleExclusion(vol, sv, name, defName) {
   const key = _exclKey(vol, sv, name, defName);
-  // DEF-level toggle: if a parent (file/sv/vol) is excluded, toggle S.incl override instead of S.excl
-  if (defName && sv && name) {
-    const fk = _exclKey(vol, sv, name);
-    const sk = _exclKey(vol, sv);
-    const vk = _exclKey(vol);
-    if (S.excl.has(fk) || S.excl.has(sk) || S.excl.has(vk)) {
-      if (S.incl.has(key)) S.incl.delete(key); else S.incl.add(key);
-      saveIncl();
-      _ddlCompileCache = { version: -1, byVol: null };
-      renderDDLTree();
-      return;
-    }
+  const vk  = _exclKey(vol);
+  const sk  = sv   ? _exclKey(vol, sv)        : null;
+  const fk  = (sv && name) ? _exclKey(vol, sv, name) : null;
+  // If any ancestor is excluded, use S.incl override instead of S.excl
+  const parentExcluded =
+    (defName && (S.excl.has(fk) || S.excl.has(sk) || S.excl.has(vk))) ||
+    (name && !defName && (S.excl.has(sk) || S.excl.has(vk)))           ||
+    (sv && !name && S.excl.has(vk));
+  if (parentExcluded) {
+    if (S.incl.has(key)) S.incl.delete(key); else S.incl.add(key);
+    saveIncl();
+    _ddlCompileCache = { version: -1, byVol: null };
+    renderDDLTree();
+    return;
   }
   if (S.excl.has(key)) S.excl.delete(key); else S.excl.add(key);
   saveExcl();
@@ -9669,7 +9670,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.17';
+const APP_VERSION  = '1.0.5.18';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

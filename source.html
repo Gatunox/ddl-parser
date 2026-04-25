@@ -7766,7 +7766,7 @@ function renderDDLTree() {
       : `onclick="event.stopPropagation();toggleTreeExp('${esc(vol)}')"`;
     const vExcl    = isExcluded(vol);
     const vExclCls = vExcl ? ' tree-excl-node' : '';
-    html += `<div class="tree-node${vSel}${vAnc}${vExclCls}" data-ntype="vol" data-vol="${esc(vol)}" onclick="selectScope('vol','${esc(vol)}')">
+    html += `<div class="tree-node${vSel}${vAnc}${vExclCls}" data-ntype="vol" data-vol="${esc(vol)}" onclick="selectScope('vol','${esc(vol)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${esc(vol)}')"`}>
       <span class="tree-caret" ${caretClick}>${vExp?'−':'+'}</span>
       <span class="tree-vol-lbl" title="${esc(vol)}">${hi(vol)}</span>
       <span class="tree-cnt">${cnt}</span>${vExcl ? '<span class="tree-excl-badge">EXCL</span>' : ''}
@@ -7785,7 +7785,7 @@ function renderDDLTree() {
           : `onclick="event.stopPropagation();toggleTreeExp('${esc(svKey)}')"`;
         const svExcl    = isExcluded(vol, sv);
         const svExclCls = svExcl ? ' tree-excl-node' : '';
-        html += `<div class="tree-node${svSel}${svAnc}${svExclCls}" data-ntype="sv" data-vol="${esc(vol)}" data-sv="${esc(sv)}" onclick="selectScope('sv','${esc(vol)}','${esc(sv)}')">
+        html += `<div class="tree-node${svSel}${svAnc}${svExclCls}" data-ntype="sv" data-vol="${esc(vol)}" data-sv="${esc(sv)}" onclick="selectScope('sv','${esc(vol)}','${esc(sv)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${esc(svKey)}')"`}>
           <span class="tree-caret" ${svCaretClick}>${svExp?'−':'+'}</span>
           <span class="tree-sv-lbl" title="${esc(sv)}">${hi(sv)}</span>
           <span class="tree-cnt">${svCnt}</span>${svExcl ? '<span class="tree-excl-badge">EXCL</span>' : ''}
@@ -9301,7 +9301,7 @@ function buildCtxMenu(e) {
       items.push({ separator: true });
       items.push({ icon: '✎', label: 'Rename…',        fn: () => ctxRenameVol(vol) });
       items.push({ separator: true });
-      items.push({ icon: isExcluded(vol) ? '◎' : '⊘', label: isExcluded(vol) ? 'Include in parsing' : 'Exclude from parsing', fn: () => toggleExclusion(vol) });
+      items.push({ icon: isExcluded(vol) ? '◎' : '⊘', label: isExcluded(vol) ? 'Include in auto-detect' : 'Exclude from auto-detect', fn: () => toggleExclusion(vol) });
       items.push({ icon: '✕', label: 'Delete Volume',  fn: () => deleteScope(), danger: true });
     } else if (t === 'sv') {
       items.push({ icon: '＋', label: 'New File',           fn: () => newDDLEntry() });
@@ -9313,7 +9313,7 @@ function buildCtxMenu(e) {
       items.push({ separator: true });
       items.push({ icon: '✎', label: 'Rename…',           fn: () => ctxRenameSv(vol, sv) });
       items.push({ separator: true });
-      items.push({ icon: isExcluded(vol, sv) ? '◎' : '⊘', label: isExcluded(vol, sv) ? 'Include in parsing' : 'Exclude from parsing', fn: () => toggleExclusion(vol, sv) });
+      items.push({ icon: isExcluded(vol, sv) ? '◎' : '⊘', label: isExcluded(vol, sv) ? 'Include in auto-detect' : 'Exclude from auto-detect', fn: () => toggleExclusion(vol, sv) });
       items.push({ icon: '✕', label: 'Delete Subvolume',  fn: () => deleteScope(), danger: true });
     } else {
       items.push({ icon: '⎘', label: 'Copy',    fn: () => ctxCopyDdl(vol, sv, name) });
@@ -9328,7 +9328,7 @@ function buildCtxMenu(e) {
       if (t === 'def' && defName) {
         items.push({ icon: isExcluded(vol, sv, name, defName) ? '◎' : '⊘', label: isExcluded(vol, sv, name, defName) ? 'Include DEF in parsing' : 'Exclude DEF from parsing', fn: () => toggleExclusion(vol, sv, name, defName) });
       } else {
-        items.push({ icon: isExcluded(vol, sv, name) ? '◎' : '⊘', label: isExcluded(vol, sv, name) ? 'Include in parsing' : 'Exclude from parsing', fn: () => toggleExclusion(vol, sv, name) });
+        items.push({ icon: isExcluded(vol, sv, name) ? '◎' : '⊘', label: isExcluded(vol, sv, name) ? 'Include in auto-detect' : 'Exclude from auto-detect', fn: () => toggleExclusion(vol, sv, name) });
       }
       items.push({ icon: '✕', label: 'Delete', fn: () => deleteScope(), danger: true });
     }
@@ -9787,7 +9787,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.34';
+const APP_VERSION  = '1.0.5.35';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

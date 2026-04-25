@@ -713,6 +713,8 @@ body.light tbody tr.row-redef td.c-id { color: #b7770a; }
 .c-de-badge { margin-left: 5px; font-size: 9px; font-weight: 600; color: #4fc3f7; opacity: 0.85;
               background: rgba(79,195,247,.12); border: 1px solid rgba(79,195,247,.3);
               border-radius: 3px; padding: 0 3px; vertical-align: middle; letter-spacing: .3px; }
+.c-de-badge-edit { cursor: pointer; }
+.c-de-badge-edit:hover { opacity: 1; border-color: rgba(79,195,247,.7); }
 tbody td { padding: 0 8px; height: 24px; vertical-align: middle; font-size: var(--sz-mono); line-height: 24px; overflow: hidden; text-overflow: ellipsis; }
 td.c-id   { color: var(--text); font-weight: 700; white-space: nowrap; }
 td.c-desc { color: var(--text-dim); }
@@ -1333,6 +1335,7 @@ const S = {
   ddlMsgMap:    [],  // parsed routing rules [{seq,type,msgRe,srcRe,dstRe,ddlPath,level}]
   seenTypes:    new Set(),  // message types seen this session (suppresses repeat first-encounter prompts)
   excl:         new Set(),  // excluded vol/sv/file paths (uppercase keys, persisted in up_excl)
+  deOverrides:  {},         // { 'VOL/SV/FILE/DEFNAME': { '0': deNum, '5': deNum, ... } } — persisted in de_overrides
   netardRulerCol: 0,  // total column position of the ruler (left-margin + data width); set on input change
   asciiRulerCol:  0,  // auto-detected data width for ASCII format (after margin strip); set on input change
   asciiMargin:    0,  // auto-detected left margin for ASCII format (chars to skip per line)
@@ -1870,10 +1873,7 @@ function parseHPEDDL(text, externalDefs, externalSections, targetDef = null) {
         const f   = out[i];
         const key = f.id.split('.').slice(0, bmpDepth).join('.');
         if (key !== deKey) {
-          // Bit 65 = tertiary bitmap (not declared in BASE24 DDLs — skip the slot).
-          // All secondary-bitmap elements (DE-66+) are shifted up by 1 automatically.
-          const _rawBit = dataElements.length + 2;
-          deElem = { bitNum: _rawBit >= 65 ? _rawBit + 1 : _rawBit, id: key, subFields: [] };
+          deElem = { bitNum: dataElements.length + 2, id: key, subFields: [] };
           dataElements.push(deElem);
           deKeyToElem.set(key, deElem);
           deKey = key;
@@ -2939,15 +2939,23 @@ function showDDLDoc() {
 
     // Build DE-N lookup maps per section (HPE COBOL ISO 8583 only).
     // Must be per-section so multi-DEF files get correct bitNum for each DEF independently.
-    let deKeyMap = null, redefTargetMap = null, deKeyDepth = 0;
+    let deKeyMap = null, redefTargetMap = null, deKeyDepth = 0, deSeqIdxMap = null;
+    let sectionOverrideKey = null;
     if (isHPE && !sec.simple) {
       const hpeDefs = parseHPEDDL(content, docTypeRegistry, docSectionByName, sec.name);
       if (hpeDefs._hpeIsoLayout) {
+        sectionOverrideKey = S.scope?.vol && S.scope?.sv && S.scope?.name
+          ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}/${sec.name}`.toUpperCase()
+          : null;
+        applyDEOverrides(hpeDefs._hpeIsoLayout, sectionOverrideKey ? S.deOverrides[sectionOverrideKey] : null);
         deKeyDepth     = hpeDefs._hpeIsoLayout.bmpDef.id.split('.').length;
         deKeyMap       = new Map();
         redefTargetMap = new Map();
-        for (const de of hpeDefs._hpeIsoLayout.dataElements) {
+        deSeqIdxMap    = new Map();
+        for (let i = 0; i < hpeDefs._hpeIsoLayout.dataElements.length; i++) {
+          const de = hpeDefs._hpeIsoLayout.dataElements[i];
           deKeyMap.set(de.id, de.bitNum);
+          deSeqIdxMap.set(de.id, i);
         }
       }
     }
@@ -3003,9 +3011,13 @@ function showDDLDoc() {
       const deKey    = deKeyMap && deKeyDepth
         ? f.qualName.split('.').slice(0, deKeyDepth).join('.') : null;
       const deBitNum = deKey != null
-        ? (deKeyMap.get(deKey) ?? redefTargetMap.get(deKey)) : undefined;
+        ? (deKeyMap.get(deKey) ?? redefTargetMap?.get(deKey)) : undefined;
+      const deSeqIdx = (deKey != null && deSeqIdxMap) ? (deSeqIdxMap.get(deKey) ?? -1) : -1;
       const deBadge  = deBitNum != null
-        ? `<span class="c-de-badge" title="ISO 8583 Data Element ${deBitNum}">DE-${deBitNum}</span>` : '';
+        ? (sectionOverrideKey && deSeqIdx >= 0
+            ? `<span class="c-de-badge c-de-badge-edit" title="DE-${deBitNum} — double-click to reassign" ondblclick="editDEBadge(event,${JSON.stringify(sectionOverrideKey)},${deSeqIdx},${deBitNum})">DE-${deBitNum}</span>`
+            : `<span class="c-de-badge" title="ISO 8583 Data Element ${deBitNum}">DE-${deBitNum}</span>`)
+        : '';
       const docSearch = esc([f.qualName, f.desc || '', f.dataType || '', deBitNum != null ? `DE-${deBitNum}` : ''].join(' ').toLowerCase());
       html += `<tr${cls} data-search="${docSearch}">
         <td class="ddl-doc-hex" style="color:var(--text-dim)">${rowNum}</td>
@@ -3047,6 +3059,35 @@ function showDDLDoc() {
 
 function closeDDLDoc() {
   document.getElementById('ddlDocOverlay').classList.add('hidden');
+}
+
+function editDEBadge(evt, fullKey, seqIdx, currentNum) {
+  evt.stopPropagation();
+  if (seqIdx < 0 || !fullKey) return;
+  const span = evt.currentTarget;
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.value = currentNum; inp.min = '1';
+  inp.style.cssText = 'width:44px;font-size:10px;padding:0 2px;border-radius:2px;border:1px solid var(--accent);background:var(--bg-deep);color:var(--text);text-align:center;';
+  span.replaceWith(inp);
+  inp.select();
+  let done = false;
+  const commit = () => {
+    if (done) return; done = true;
+    const v = parseInt(inp.value, 10);
+    if (!isNaN(v) && v >= 1) {
+      if (!S.deOverrides[fullKey]) S.deOverrides[fullKey] = {};
+      S.deOverrides[fullKey][String(seqIdx)] = v;
+      saveDeOverrides();
+    }
+    showDDLDoc();
+  };
+  const cancel = () => { if (done) return; done = true; showDDLDoc(); };
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  inp.addEventListener('blur', commit);
+  inp.focus();
 }
 
 function filterDDLDoc(q) {
@@ -5809,11 +5850,13 @@ function doParseMessages() {
         if (S.scope.type === 'def' && S.scope.defName) {
           // Specific DEF selected — compile only that one
           const defs = parseHPEDDL(content, parseTypeReg, parseSecReg, S.scope.defName);
+          applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${S.scope.defName}`.toUpperCase()]);
           if (defs.length) candidates.push({ path, defs });
         } else {
           // Whole DDL file selected — compile each DEF separately so bestDDLMatch can score them
           for (const defName of parseDEFNames(content)) {
             const defs = parseHPEDDL(content, parseTypeReg, parseSecReg, defName);
+            applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
             if (defs.length) candidates.push({ path, defs });
           }
         }
@@ -8606,6 +8649,7 @@ function getDDLFromPath(ddlPath) {
     const content = S.ddlTree[vol]?.[sv]?.[name];
     if (content && isHPEDDLText(content)) {
       const defs = parseHPEDDL(content, typeReg, secReg, defName);
+      applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${vol}/${sv}/${name}/${defName}`.toUpperCase()]);
       if (defs.length) return { path: `${vol}/${sv}/${name}`, defName, defs };
     }
   }
@@ -8618,6 +8662,7 @@ function getDDLFromPath(ddlPath) {
     const defNames = parseDEFNames(content);
     if (defNames.length === 1) {
       const defs = parseHPEDDL(content, typeReg, secReg, defNames[0]);
+      applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${vol}/${sv}/${name}/${defNames[0]}`.toUpperCase()]);
       if (defs.length) return { path: ddlPath, defName: defNames[0], defs };
     }
   }
@@ -8713,6 +8758,28 @@ function loadExcl() {
     const s = localStorage.getItem('up_excl');
     if (s) S.excl = new Set(JSON.parse(s));
   } catch(e) {}
+}
+// Apply user DE-number overrides to an _hpeIsoLayout in place.
+// overrides: { [seqIdx: string]: deNum } — sparse, only restart points.
+// Adjusts dataElements[i].bitNum by replaying the sequence from the beginning,
+// restarting from the override value whenever one is encountered.
+// Rebuilds deByBit after adjustment.
+function applyDEOverrides(layout, overrides) {
+  if (!layout?.dataElements) return;
+  let de = 2;
+  for (let i = 0; i < layout.dataElements.length; i++) {
+    const ov = overrides?.[String(i)];
+    if (ov != null) de = Number(ov);
+    layout.dataElements[i].bitNum = de;
+    de++;
+  }
+  layout.deByBit = new Map(layout.dataElements.map(e => [e.bitNum, e]));
+}
+function saveDeOverrides() {
+  try { localStorage.setItem('de_overrides', JSON.stringify(S.deOverrides)); } catch(e) {}
+}
+function loadDeOverrides() {
+  try { const s = localStorage.getItem('de_overrides'); if (s) S.deOverrides = JSON.parse(s); } catch(e) {}
 }
 
 function loadDDLMsgMap() {
@@ -9438,13 +9505,20 @@ function doExport() {
   const selected = [...document.querySelectorAll('#exportTree .pick-ddl-cb:checked')];
   if (!selected.length) { flash('Select at least one DDL to export', 'warn'); return; }
   const out = {};
+  const deOvOut = {};
   selected.forEach(cb => {
     const { vol: v, sv: s, ddl: d } = cb.dataset;
     if (!out[v]) out[v] = {};
     if (!out[v][s]) out[v][s] = {};
     out[v][s][d] = S.ddlTree[v]?.[s]?.[d] || '';
+    // Include any DE overrides for DEFs inside this DDL file
+    const prefix = `${v}/${s}/${d}`.toUpperCase() + '/';
+    for (const [k, v2] of Object.entries(S.deOverrides)) {
+      if (k.startsWith(prefix)) deOvOut[k] = v2;
+    }
   });
-  const payload = { type: 'ddl-export', version: '1.0', exported: new Date().toISOString(), data: out };
+  const payload = { type: 'ddl-export', version: '1.0', exported: new Date().toISOString(), data: out,
+    ...(Object.keys(deOvOut).length ? { deOverrides: deOvOut } : {}) };
   const ts = new Date().toISOString().slice(0, 10);
   _downloadJSON(payload, `ddl-export_${ts}_${selected.length}items.json`);
   closeExportModal();
@@ -9587,6 +9661,16 @@ function confirmImport() {
       }
     }
   }
+  // Merge incoming DE overrides for imported DDLs
+  if (_importData.deOverrides) {
+    for (const [k, v] of Object.entries(_importData.deOverrides)) {
+      const parts = k.split('/');
+      if (parts.length >= 4 && checked.has(`${parts[0]}\0${parts[1]}\0${parts[2]}`)) {
+        S.deOverrides[k] = v;
+      }
+    }
+    saveDeOverrides();
+  }
   buildUnresolvedRefs(); saveTree(); renderDDLTree();
   closeImportModal();
   flash(`Imported ${count} DDL(s)`);
@@ -9686,7 +9770,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.29';
+const APP_VERSION  = '1.0.5.30';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -10737,6 +10821,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   loadPrefs();
   loadExcl();
+  loadDeOverrides();
   loadLayout();
   _initCellTooltip();
   applyPanelDefaults();

@@ -710,6 +710,9 @@ tbody tr:hover td { background: var(--hl-hover); }
 tbody tr.row-sel td { background: var(--hl-active) !important; }
 tbody tr.row-redef td.c-id { color: #e6a817; }
 body.light tbody tr.row-redef td.c-id { color: #b7770a; }
+tbody tr.row-unreliable td { background: rgba(var(--accent-rgb),0.07); }
+.unreliable-badge { font-size:9px; font-weight:700; color:var(--accent); margin-left:6px;
+                    text-transform:uppercase; vertical-align:middle; letter-spacing:.3px; }
 .c-redef-mark { opacity: 0.7; font-size: 10px; color: #e6a817; }
 .c-de-badge { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--accent);
               background: rgba(var(--accent-rgb),.12); border: 2px solid var(--accent);
@@ -2944,6 +2947,7 @@ function showDDLDoc() {
        + '</tr></thead><tbody>';
 
   let grandTotal = 0;
+  let hasDEBadges = false;
 
   for (const sec of displaySections) {
     // Section header row (only when displaying multiple sections)
@@ -2958,6 +2962,7 @@ function showDDLDoc() {
     if (isHPE && !sec.simple) {
       const hpeDefs = parseHPEDDL(content, docTypeRegistry, docSectionByName, sec.name);
       if (hpeDefs._hpeIsoLayout) {
+        hasDEBadges = true;
         sectionOverrideKey = S.scope?.vol && S.scope?.sv && S.scope?.name
           ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}/${sec.name}`.toUpperCase()
           : null;
@@ -3058,6 +3063,7 @@ function showDDLDoc() {
     : `DDLDOC — ${displaySections.length} definitions  (total ${grandTotal} bytes)`;
 
   document.getElementById('ddlDocTitle').textContent = title;
+  document.getElementById('ddlDocDEHint').style.display = hasDEBadges ? '' : 'none';
   const ddlFilt = document.getElementById('ddlDocFilterInput');
   if (ddlFilt) ddlFilt.value = '';
   const ddlBody = document.getElementById('ddlDocBody');
@@ -3733,6 +3739,11 @@ function parseFlatMessage(bytes, defs) {
   const fields = [];
   let seqOffset = 0; // sequential cursor — used only when def has no explicit offset
 
+  // In ASCII-like formats, BINARY fields cannot be reliably read — mark them unreliable.
+  // Reliable formats (hex, tandem-dump, netard-hex, netard-dump, ebcdic) are excluded.
+  const _fmt = S.inputFormat || '';
+  const _binUnreliable = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard';
+
   // OCCURS group actual-count cache: resolved once per group by scanning for '& ' eye-catcher.
   // Key = group qualName, value = actual occurrence count (0..occursMax).
   const _occursActual = {};
@@ -3785,6 +3796,7 @@ function parseFlatMessage(bytes, defs) {
       if (!fBytes.length) break;
     }
 
+    const _isBinField = _binUnreliable && /\bBINARY\b/i.test(def._dataType || '');
     fields.push({
       id: def.id, description: def.description,
       type: def.type, maxLength: def.length, lenPrefix,
@@ -3793,6 +3805,8 @@ function parseFlatMessage(bytes, defs) {
       startByte: fStart, endByte: fEnd - 1,
       isRedefines: def.isRedefines || false,
       redefTarget: def.redefTarget || null,
+      unreliable: _isBinField || undefined,
+      maskInRaw:  _isBinField || undefined,
     });
   }
   return fields;
@@ -4304,9 +4318,237 @@ function _isISO8583DDL(defs) {
       || /\bBMAP\b|\bBITMAP\b/i.test(next.description || '');
 }
 
+// ============================================================
+// PSTM MESSAGE PARSERS (ASCII and Binary)
+// Separate from parseFlatMessage — handles variable sections:
+// SERVICES (OCCURS-based), USER-DATA (USER-FLG controlled), TOKENS.
+// ============================================================
+
+function parsePSTMMessageASCII(bytes, defs) {
+  const bToHex = b => b.map(x => x.toString(16).padStart(2,'0').toUpperCase()).join('');
+  const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : `[${x.toString(16).padStart(2,'0')}]`).join('');
+  const isSvcChar = b => (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) || b === 0x2A; // A-Z, a-z, *
+
+  const fields = [];
+  let seqOffset = 0;
+
+  // ── Fixed section (non-OCCURS fields) ──
+  for (const def of defs) {
+    if (def._occursGroup !== undefined) continue;
+    const fStart = def.offset !== undefined ? def.offset : seqOffset;
+    if (def.offset === undefined && fStart >= bytes.length) break;
+    if (def.offset !== undefined && fStart >= bytes.length) continue;
+    const fBytes = bytes.slice(fStart, fStart + def.length);
+    const fEnd   = fStart + def.length;
+    if (def.offset === undefined) seqOffset = fEnd;
+    const isBin = /\bBINARY\b/i.test(def._dataType || '');
+    fields.push({
+      id: def.id, description: def.description,
+      type: def.type, maxLength: def.length, lenPrefix: null,
+      valueLength: fBytes.length,
+      value:    isBin ? '[binary]' : bToStr(fBytes),
+      rawHex:   bToHex(fBytes), rawBytes: fBytes,
+      startByte: fStart, endByte: fEnd - 1,
+      isRedefines: def.isRedefines || false, redefTarget: def.redefTarget || null,
+      unreliable: isBin, maskInRaw: isBin,
+    });
+  }
+
+  // ── USER-FLG: exact field 'USER-FLG', next def must be 'NUM-SERVICES' ──
+  const userFlgDefIdx = defs.findIndex(d => d.id === 'USER-FLG');
+  const hasValidFlg   = userFlgDefIdx >= 0 && defs[userFlgDefIdx + 1]?.id === 'NUM-SERVICES';
+  const userFlgField  = hasValidFlg ? fields.find(f => f.id === 'USER-FLG') : null;
+  const userFlgPresent = userFlgField?.value === '1';
+
+  // ── SERVICES GROUP info ──
+  const firstOcc = defs.find(d => d._occursGroup !== undefined);
+  if (!firstOcc) return fields;
+  const groupId   = firstOcc._occursGroup;
+  const groupStart = firstOcc._occursGroupOffset;
+  const childSize  = firstOcc._occursChildSize;
+  const maxOccurs  = firstOcc._occursMax;
+
+  // Field defs for occurrence 0, sorted by absolute offset
+  const occ0Defs = defs
+    .filter(d => d._occursGroup === groupId && d._occursIdx === 0)
+    .sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0));
+
+  // ── Heuristic variable section loop ──
+  let cursor = groupStart;
+  let svcCount = 0;
+
+  while (cursor + 1 < bytes.length) {
+    if (bytes[cursor] === 0x26 && bytes[cursor + 1] === 0x20) break; // token eye-catcher
+
+    const b0 = bytes[cursor], b1 = bytes[cursor + 1];
+
+    if (isSvcChar(b0) && isSvcChar(b1) && svcCount < maxOccurs) {
+      // SERVICE occurrence
+      const lbl = String(svcCount + 1).padStart(2, '0');
+      for (const def of occ0Defs) {
+        const relOff = (def.offset ?? 0) - groupStart;
+        const fStart = cursor + relOff;
+        if (fStart + def.length > bytes.length) break;
+        const fBytes = bytes.slice(fStart, fStart + def.length);
+        const isBin  = /\bBINARY\b/i.test(def._dataType || '');
+        fields.push({
+          id: def.id.replace('[01]', `[${lbl}]`), description: def.description,
+          type: def.type, maxLength: def.length, lenPrefix: null,
+          valueLength: fBytes.length,
+          value:    isBin ? '[binary]' : bToStr(fBytes),
+          rawHex:   bToHex(fBytes), rawBytes: fBytes,
+          startByte: fStart, endByte: fStart + def.length - 1,
+          isRedefines: def.isRedefines || false, redefTarget: def.redefTarget || null,
+          unreliable: true, maskInRaw: isBin,
+        });
+      }
+      cursor += childSize;
+      svcCount++;
+    } else if (userFlgPresent) {
+      // USER-DATA section: 2-byte binary LENGTH + buffer until '& ' or end
+      const lenStart = cursor;
+      const lenBytes = bytes.slice(cursor, cursor + 2);
+      cursor += 2;
+      fields.push({
+        id: 'USER-DATA.LENGTH', description: 'User Data Length',
+        type: 'FIXED', maxLength: 2, valueLength: lenBytes.length,
+        value: '[binary]', rawHex: bToHex(lenBytes), rawBytes: lenBytes,
+        startByte: lenStart, endByte: lenStart + 1,
+        unreliable: true, maskInRaw: true,
+      });
+      let bufEnd = cursor;
+      while (bufEnd + 1 < bytes.length) {
+        if (bytes[bufEnd] === 0x26 && bytes[bufEnd + 1] === 0x20) break;
+        bufEnd++;
+      }
+      if (bufEnd > cursor) {
+        const bufBytes = bytes.slice(cursor, bufEnd);
+        fields.push({
+          id: 'USER-DATA.BUFFER', description: 'User Data Buffer',
+          type: 'FIXED', maxLength: 200, valueLength: bufBytes.length,
+          value: bToStr(bufBytes), rawHex: bToHex(bufBytes), rawBytes: bufBytes,
+          startByte: cursor, endByte: bufEnd - 1,
+          unreliable: true, maskInRaw: false,
+        });
+      }
+      cursor = bufEnd;
+      break;
+    } else {
+      break; // non-service bytes, no USER-DATA expected
+    }
+  }
+
+  return fields;
+}
+
+function parsePSTMMessageBinary(bytes, defs) {
+  const bToHex = b => b.map(x => x.toString(16).padStart(2,'0').toUpperCase()).join('');
+  const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : `[${x.toString(16).padStart(2,'0')}]`).join('');
+
+  const fields = [];
+  let seqOffset = 0;
+
+  // ── Fixed section (non-OCCURS fields) ──
+  for (const def of defs) {
+    if (def._occursGroup !== undefined) continue;
+    const fStart = def.offset !== undefined ? def.offset : seqOffset;
+    if (def.offset === undefined && fStart >= bytes.length) break;
+    if (def.offset !== undefined && fStart >= bytes.length) continue;
+    const fBytes = bytes.slice(fStart, fStart + def.length);
+    const fEnd   = fStart + def.length;
+    if (def.offset === undefined) seqOffset = fEnd;
+    fields.push({
+      id: def.id, description: def.description,
+      type: def.type, maxLength: def.length, lenPrefix: null,
+      valueLength: fBytes.length,
+      value: bToStr(fBytes), rawHex: bToHex(fBytes), rawBytes: fBytes,
+      startByte: fStart, endByte: fEnd - 1,
+      isRedefines: def.isRedefines || false, redefTarget: def.redefTarget || null,
+    });
+  }
+
+  // ── Read USER-FLG and NUM-SERVICES from fixed fields ──
+  const userFlgField  = fields.find(f => f.id === 'USER-FLG');
+  const userFlgPresent = userFlgField?.value === '1';
+  const numSvcsField  = fields.find(f => f.id === 'NUM-SERVICES');
+  const numServices   = numSvcsField?.rawBytes?.length >= 2
+    ? ((numSvcsField.rawBytes[0] << 8) | numSvcsField.rawBytes[1]) : 0;
+
+  // ── SERVICES GROUP info ──
+  const firstOcc = defs.find(d => d._occursGroup !== undefined);
+  if (!firstOcc) return fields;
+  const groupId    = firstOcc._occursGroup;
+  const groupStart = firstOcc._occursGroupOffset;
+  const childSize  = firstOcc._occursChildSize;
+  const maxOccurs  = firstOcc._occursMax;
+  const actualCount = Math.min(numServices, maxOccurs);
+
+  // ── Parse exactly actualCount service occurrences ──
+  const svcDefs = defs
+    .filter(d => d._occursGroup === groupId && d._occursIdx < actualCount)
+    .sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0));
+
+  for (const def of svcDefs) {
+    const fStart = def.offset ?? seqOffset;
+    if (fStart + def.length > bytes.length) break;
+    const fBytes = bytes.slice(fStart, fStart + def.length);
+    fields.push({
+      id: def.id, description: def.description,
+      type: def.type, maxLength: def.length, lenPrefix: null,
+      valueLength: fBytes.length,
+      value: bToStr(fBytes), rawHex: bToHex(fBytes), rawBytes: fBytes,
+      startByte: fStart, endByte: fStart + def.length - 1,
+      isRedefines: def.isRedefines || false, redefTarget: def.redefTarget || null,
+    });
+  }
+
+  // ── USER-DATA section (if USER-FLG = '1') ──
+  if (userFlgPresent) {
+    let cursor = groupStart + actualCount * childSize;
+    if (cursor + 2 <= bytes.length && bytes[cursor] !== 0x26) {
+      const udLen    = (bytes[cursor] << 8) | bytes[cursor + 1];
+      const lenBytes = bytes.slice(cursor, cursor + 2);
+      fields.push({
+        id: 'USER-DATA.LENGTH', description: 'User Data Length',
+        type: 'FIXED', maxLength: 2, valueLength: lenBytes.length,
+        value: String(udLen), rawHex: bToHex(lenBytes), rawBytes: lenBytes,
+        startByte: cursor, endByte: cursor + 1,
+      });
+      cursor += 2;
+      if (udLen > 0 && cursor + udLen <= bytes.length) {
+        const bufBytes = bytes.slice(cursor, cursor + udLen);
+        fields.push({
+          id: 'USER-DATA.BUFFER', description: 'User Data Buffer',
+          type: 'FIXED', maxLength: 200, valueLength: bufBytes.length,
+          value: bToStr(bufBytes), rawHex: bToHex(bufBytes), rawBytes: bufBytes,
+          startByte: cursor, endByte: cursor + udLen - 1,
+        });
+      }
+    }
+  }
+
+  return fields;
+}
+
 function parseMessage(bytes, defs, rawBytes) {
   if (defs._hpeIsoLayout)    return parseHPEISOMessage(bytes, defs, rawBytes);
-  if (!_isISO8583DDL(defs))  return parseFlatMessage(bytes, defs);
+  if (!_isISO8583DDL(defs)) {
+    // PSTM auto-detect: bytes match PSTM type code AND DDL has USER-FLG→NUM-SERVICES+OCCURS
+    const userFlgIdx = defs.findIndex(d => d.id === 'USER-FLG');
+    const hasPSTMStruct = userFlgIdx >= 0
+      && defs[userFlgIdx + 1]?.id === 'NUM-SERVICES'
+      && defs.some(d => d._occursGroup !== undefined);
+    if (hasPSTMStruct) {
+      const rawHead = bytes.slice(0, 8).map(b => String.fromCharCode(b)).join('');
+      const isPSTMBytes = /^0[1-9][012489][012345]02/.test(rawHead)
+        || rawHead.startsWith('990602') || rawHead.startsWith('990702');
+      if (isPSTMBytes) {
+        const isAscii = _isAlnum(bytes[6]) && _isAlnum(bytes[7]);
+        return isAscii ? parsePSTMMessageASCII(bytes, defs) : parsePSTMMessageBinary(bytes, defs);
+      }
+    }
+    return parseFlatMessage(bytes, defs);
+  }
 
   const fields = [];
   let offset = 0;
@@ -6940,14 +7182,16 @@ function renderFieldTable(msg) {
     const deBadge    = f.deNum != null
       ? `<span class="c-de-badge" title="ISO 8583 Data Element ${f.deNum}">DE-${f.deNum}</span>`
       : '';
-    const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', extraClass].filter(Boolean).join(' ');
+    const unreliableBadge = f.unreliable
+      ? `<span class="unreliable-badge">unreliable</span>` : '';
+    const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', f.unreliable ? 'row-unreliable' : '', extraClass].filter(Boolean).join(' ');
     const searchStr = [fid, f.description || '', f.value || ''].join(' ').toLowerCase();
     return `<tr class="${rowCls}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}" data-raw="${esc((f.rawHex||'').toLowerCase())}"
       onclick="selectField('${esc(fid)}')"
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
       onmouseenter="hoverField('${esc(fid)}')"
       onmouseleave="clearHover()">
-      <td class="c-id">${esc(f.id)}${redefMark}${deBadge}</td>
+      <td class="c-id">${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
       <td class="c-desc" title="${esc(descTip)}">${esc(f.description)}${det}</td>
       <td class="c-len">${lenCell}</td>
       <td class="${ecls}" data-tip="${esc(f.value)}">${prefixHtml}${esc(val)}</td>
@@ -7090,6 +7334,14 @@ function renderRaw(msg) {
   const COLS = 16;
   let html = '';
 
+  // Build mask set from fields marked maskInRaw (binary fields in ASCII PSTM)
+  const _rawMask = new Set();
+  if (msg.fields) {
+    for (const f of msg.fields) {
+      if (f.maskInRaw) for (let i = f.startByte; i <= f.endByte; i++) _rawMask.add(i);
+    }
+  }
+
   for (let row = 0; row < bytes.length; row += COLS) {
     const rowB = bytes.slice(row, row + COLS);
     html += `<span class="dump-offset">${row.toString(16).padStart(6,'0').toUpperCase()}</span><span class="dump-sep">  </span>`;
@@ -7098,7 +7350,7 @@ function renderRaw(msg) {
       if (col === COLS / 2) html += '<span class="dump-sep"> </span>';
       const idx = row + col;
       if (col < rowB.length) {
-        const hex = rowB[col].toString(16).padStart(2,'0').toUpperCase();
+        const hex = _rawMask.has(idx) ? '..' : rowB[col].toString(16).padStart(2,'0').toUpperCase();
         html += `<span class="hb" data-idx="${idx}">${hex}</span> `;
       } else {
         html += '   ';
@@ -7109,9 +7361,10 @@ function renderRaw(msg) {
     for (let col = 0; col < rowB.length; col++) {
       const idx = row + col;
       const b   = rowB[col];
-      const ch  = b >= 32 && b < 127
-        ? (b === 60 ? '&lt;' : b === 62 ? '&gt;' : b === 38 ? '&amp;' : String.fromCharCode(b))
-        : '.';
+      const ch  = _rawMask.has(idx) ? '.'
+        : b >= 32 && b < 127
+          ? (b === 60 ? '&lt;' : b === 62 ? '&gt;' : b === 38 ? '&amp;' : String.fromCharCode(b))
+          : '.';
       html += `<span class="hb" data-ascii-idx="${idx}">${ch}</span>`;
     }
     html += '|</span>\n';
@@ -8227,9 +8480,9 @@ let _eggDiscovered = false;    // egg #1 found — unlocks Orange option
 let _eggDeadFound  = false;    // egg #2 found — unlocks Green option
 
 const _EGG_PALETTES = {
-  blue:   { accent: null,        hover: null                       },   // null = remove (restore CSS default)
-  orange: { accent: '#f0883e',   hover: 'rgba(240,136,62,0.25)'   },
-  green:  { accent: '#3fb950',   hover: 'rgba(63,185,80,0.25)'    },
+  blue:   { accent: null,        hover: null,                        accentRgb: null           },   // null = remove (restore CSS default)
+  orange: { accent: '#f0883e',   hover: 'rgba(240,136,62,0.25)',    accentRgb: '240,136,62'   },
+  green:  { accent: '#3fb950',   hover: 'rgba(63,185,80,0.25)',     accentRgb: '63,185,80'    },
 };
 
 function _eggSetAccent(color, save = true) {
@@ -8240,10 +8493,12 @@ function _eggSetAccent(color, save = true) {
       el.style.setProperty('--accent',    p.accent);
       el.style.setProperty('--hl-hover',  p.hover);
       el.style.setProperty('--hl-active', p.hover);
+      el.style.setProperty('--accent-rgb', p.accentRgb);
     } else {
       el.style.removeProperty('--accent');
       el.style.removeProperty('--hl-hover');
       el.style.removeProperty('--hl-active');
+      el.style.removeProperty('--accent-rgb');
     }
   }
   _eggAccent = color;
@@ -10923,7 +11178,7 @@ document.addEventListener('DOMContentLoaded', () => {
   <div class="ddl-doc-modal">
     <div class="ddl-doc-hdr">
       <span id="ddlDocTitle" class="ddl-doc-title"></span>
-      <span style="font-size:11px;font-weight:700;color:var(--accent);font-family:var(--font-mono);margin-left:10px;flex-shrink:0">Adjust DE-# by clicking on DE Badge</span>
+      <span id="ddlDocDEHint" style="display:none;font-size:11px;font-weight:700;color:var(--accent);font-family:var(--font-mono);margin-left:10px;flex-shrink:0">Click on any DE Badge to reassign its value</span>
       <div style="display:flex;gap:6px;align-items:center">
         <input type="text" id="ddlDocFilterInput" class="res-filter-input" placeholder="Filter fields…" title="Filter DDL Doc" oninput="filterDDLDoc(this.value)">
         <button class="btn btn-sm" id="ddlDocHideRedefBtn" onclick="toggleDDLDocHideRedef()" title="Hide/show REDEFINES fields">Hide Redef</button>

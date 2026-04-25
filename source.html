@@ -3065,30 +3065,14 @@ function editDEBadge(evt, fullKey, seqIdx, currentNum) {
   evt.stopPropagation();
   evt.preventDefault();
   if (seqIdx < 0 || !fullKey) return;
-  const span = evt.currentTarget;
-  const inp = document.createElement('input');
-  inp.type = 'number'; inp.value = currentNum; inp.min = '1';
-  inp.style.cssText = 'width:52px;font-size:11px;padding:1px 3px;border-radius:3px;border:1px solid var(--accent);background:var(--bg-deep);color:var(--text);text-align:center;';
-  span.replaceWith(inp);
-  let done = false;
-  const commit = () => {
-    if (done) return; done = true;
-    const v = parseInt(inp.value, 10);
-    if (!isNaN(v) && v >= 1) {
-      if (!S.deOverrides[fullKey]) S.deOverrides[fullKey] = {};
-      S.deOverrides[fullKey][String(seqIdx)] = v;
-      saveDeOverrides();
-    }
-    showDDLDoc();
-  };
-  const cancel = () => { if (done) return; done = true; showDDLDoc(); };
-  inp.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-  });
-  inp.addEventListener('blur', commit);
-  // Delay focus so the click event fully resolves before the input captures focus
-  requestAnimationFrame(() => { inp.focus(); inp.select(); });
+  const raw = window.prompt(`New DE number for position ${seqIdx + 1} onwards:`, String(currentNum));
+  if (raw === null) return;
+  const v = parseInt(raw, 10);
+  if (isNaN(v) || v < 1) { flash('Invalid DE number — must be a positive integer', 'warn'); return; }
+  if (!S.deOverrides[fullKey]) S.deOverrides[fullKey] = {};
+  S.deOverrides[fullKey][String(seqIdx)] = v;
+  saveDeOverrides();
+  showDDLDoc();
 }
 
 function filterDDLDoc(q) {
@@ -9771,7 +9755,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.31';
+const APP_VERSION  = '1.0.5.32';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

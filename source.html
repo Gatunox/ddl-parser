@@ -411,8 +411,8 @@ body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);
 .ddl-doc-tbl tr:hover td { background: rgba(var(--accent-rgb),0.06); }
 .ddl-doc-grp td { background: rgba(var(--accent-rgb),0.05); color: var(--text-dim); font-style: italic; }
 .ddl-doc-grp:hover td { background: rgba(var(--accent-rgb),0.10) !important; }
-.ddl-doc-redef td { color: #e6a817; }
-.ddl-doc-redef:hover td { background: rgba(230,168,23,0.08) !important; }
+.ddl-doc-redef td { color: rgba(var(--accent-rgb),0.65); }
+.ddl-doc-redef:hover td { background: rgba(var(--accent-rgb),0.08) !important; }
 .ddl-doc-foot td { border-top: 2px solid var(--border); font-weight: 700; color: var(--accent); background: var(--bg-deep); padding: 5px 10px; }
 .ddl-doc-sec-hdr td { background: rgba(var(--accent-rgb),0.1); color: var(--accent); font-weight: 700; padding: 4px 10px; border-top: 1px solid var(--border); font-style: normal; }
 .ddl-doc-num  { text-align: left; font-variant-numeric: tabular-nums; }
@@ -431,7 +431,7 @@ body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);
 .exp-tbl tr.exp-sel td { background:rgba(var(--accent-rgb),0.1); }
 .ddl-doc-hex  { color: var(--text-dim); font-size: 10px; }
 body.light .ddl-doc-grp td   { background: rgba(0,0,0,0.04); }
-body.light .ddl-doc-redef td { color: #b7770a; }
+body.light .ddl-doc-redef td { color: rgba(var(--accent-rgb),0.75); }
 body.light .ddl-doc-sec-hdr td { background: rgba(30,100,210,0.08); }
 body.light .ddl-doc-tbl td   { border-bottom-color: rgba(0,0,0,0.06); }
 
@@ -709,12 +709,12 @@ thead th {
 tbody tr { border-bottom: 1px solid rgba(48,54,61,0.4); cursor: pointer; }
 tbody tr:hover td { background: var(--hl-hover); }
 tbody tr.row-sel td { background: var(--hl-active) !important; }
-tbody tr.row-redef td.c-id { color: #e6a817; }
-body.light tbody tr.row-redef td.c-id { color: #b7770a; }
+tbody tr.row-redef td.c-id { color: rgba(var(--accent-rgb),0.65); }
+body.light tbody tr.row-redef td.c-id { color: rgba(var(--accent-rgb),0.75); }
 tbody tr.row-unreliable td { background: rgba(var(--accent-rgb),0.07); }
 .unreliable-badge { font-size:9px; font-weight:700; color:var(--accent); margin-left:6px;
                     text-transform:uppercase; vertical-align:middle; letter-spacing:.3px; }
-.c-redef-mark { opacity: 0.7; font-size: 10px; color: #e6a817; }
+.c-redef-mark { opacity: 0.7; font-size: 10px; color: rgba(var(--accent-rgb),0.65); }
 .c-de-badge { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--accent);
               background: rgba(var(--accent-rgb),.12); border: 2px solid var(--accent);
               border-radius: 3px; padding: 1px 5px; vertical-align: middle; letter-spacing: .3px; }
@@ -3025,7 +3025,7 @@ function showDDLDoc() {
       const cls        = isRedefRow ? ' class="ddl-doc-redef"' : '';
       const redefNoteName = f.isRedefines ? f.redefinesName : f.redefGroupTarget;
       const redefNote  = redefNoteName
-        ? `<span style="font-size:10px;opacity:.7"> ⟵ ${esc(redefNoteName)}</span>` : '';
+        ? `<span style="font-size:10px;opacity:.7"> ↩ ${esc(redefNoteName)}</span>` : '';
       const descTxt    = f.desc && f.desc.toUpperCase() !== f.name ? esc(f.desc) : '';
       const occurs     = f.occurs > 1 ? `×${f.occurs}` : '—';
       const deKey    = deKeyMap && deKeyDepth
@@ -7188,7 +7188,7 @@ function renderFieldTable(msg) {
     const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
     const descTip    = ttType ? `${ttType}\n${f.description}` : f.description;
     const redefMark  = f.isRedefines
-      ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${f.redefTarget || '?'}"> ⟵${f.redefTarget ? ' '+f.redefTarget : ''}</span>`
+      ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${f.redefTarget || '?'}"> ↩${f.redefTarget ? ' '+f.redefTarget : ''}</span>`
       : '';
     const deBadge    = f.deNum != null
       ? `<span class="c-de-badge" title="ISO 8583 Data Element ${f.deNum}">DE-${f.deNum}</span>`

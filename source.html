@@ -336,6 +336,7 @@ body.light .hl-str { color: #3a7d0a; }
 .path-btn-dim:hover { color: var(--text) !important; background: rgba(255,255,255,0.05) !important; }
 /* Align DDL search bar with the editor gutter (tree pane width - header padding) */
 #ddlPanel .panel-title { min-width: 172px; }
+#rawPanel .panel-title { width: auto; }
 /* DDL editor search bar */
 .ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 4px; padding: 0 0 0 4px; overflow: hidden; }
 .ddl-search-lbl { font-size: var(--sz-mono); color: var(--text-dim); opacity: 0.7; user-select: none; flex-shrink: 0; padding-right: 2px; font-family: var(--font-mono); display: flex; align-items: center; }
@@ -654,11 +655,11 @@ input[type="text"]:focus { border-color: var(--accent); }
 /* ---- Token area rows ---- */
 tr.tkn-area-hdr { cursor: pointer; user-select: none; }
 tr.tkn-area-hdr td {
-  background: rgba(139,92,246,0.10); color: var(--accent);
+  background: rgba(var(--accent-rgb),0.10); color: var(--accent);
   font-weight: 700; border-top: 2px solid var(--accent);
   padding: 5px 8px; font-size: var(--sz-mono);
 }
-tr.tkn-area-hdr:hover td { background: rgba(139,92,246,0.18); }
+tr.tkn-area-hdr:hover td { background: rgba(var(--accent-rgb),0.18); }
 tr.tkn-hdr td {
   background: rgba(139,92,246,0.05); color: var(--warning);
   font-weight: 700; border-top: 1px solid var(--border);
@@ -5552,7 +5553,10 @@ function _showProgressPicker(label, matches, cb, msgType = null) {
     ? `<span class="btype btype-${msgType.type.toLowerCase()}" style="font-size:var(--sz-badge);padding:1px 5px;vertical-align:middle">${esc(msgType.type)}</span>`
     : '';
   pp.innerHTML =
-    `<div style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);padding:0 0 4px 21px">Select DDL definition for: ${_typeTag}</div>` +
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 4px 21px">` +
+      `<span style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim)">Select DDL definition for: ${_typeTag}</span>` +
+      `<button class="btn btn-sm pp-skip-btn" style="font-family:var(--mono);font-size:var(--sz-mono)">Skip</button>` +
+    `</div>` +
     `<div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;padding:2px 4px 2px 2px">` +
     shown.map((m, i) =>
       `<button class="btn btn-sm" data-ppi="${i}" style="text-align:left;font-family:var(--mono);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.path)}">${esc(m.defName)} <span style="color:var(--text-dim);font-size:0.9em">${esc(m.path)}</span> <span style="color:var(--warning);font-size:0.9em">${m.score != null ? Math.round(m.score * 100) + '%' : ''}</span></button>`
@@ -5568,6 +5572,13 @@ function _showProgressPicker(label, matches, cb, msgType = null) {
       _saveRule = b.dataset.sr === '1';
       pp.querySelectorAll('.pp-sr-btn').forEach(x => { x.classList.toggle('pp-sr-active', x === b); x.style.opacity = x === b ? '1' : '0.5'; });
     });
+  });
+  pp.querySelector('.pp-skip-btn')?.addEventListener('click', () => {
+    pp.innerHTML = ''; pp.classList.add('hidden');
+    _ppPickerCb = null;
+    if (_ppSteps.length) _ppSteps[_ppSteps.length - 1].note = 'skipped';
+    _parseProgressDoneLast();
+    cb({ match: null, saveRule: false });
   });
   pp.querySelectorAll('button[data-ppi]').forEach(btn => {
     btn.addEventListener('click', () => {

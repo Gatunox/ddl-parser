@@ -13,6 +13,7 @@
   --bg-input: #0d1117;
   --border: rgba(255,255,255,0.07);
   --accent: #58a6ff;
+  --accent-rgb: 88,166,255;
   --accent2: #f78166;
   --text: #c9d1d9;
   --text-dim: #8b949e;
@@ -710,19 +711,19 @@ tbody tr.row-sel td { background: var(--hl-active) !important; }
 tbody tr.row-redef td.c-id { color: #e6a817; }
 body.light tbody tr.row-redef td.c-id { color: #b7770a; }
 .c-redef-mark { opacity: 0.7; font-size: 10px; color: #e6a817; }
-.c-de-badge { margin-left: 5px; font-size: 11px; font-weight: 600; color: #4fc3f7; opacity: 0.85;
-              background: rgba(79,195,247,.12); border: 1px solid rgba(79,195,247,.3);
+.c-de-badge { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--accent); opacity: 0.85;
+              background: rgba(var(--accent-rgb),.12); border: 1px solid rgba(var(--accent-rgb),.3);
               border-radius: 3px; padding: 1px 5px; vertical-align: middle; letter-spacing: .3px; }
 .c-de-badge-edit { cursor: pointer; }
-.c-de-badge-edit:hover { opacity: 1; border-color: rgba(79,195,247,.7); background: rgba(79,195,247,.22); }
+.c-de-badge-edit:hover { opacity: 1; border-color: rgba(var(--accent-rgb),.7); background: rgba(var(--accent-rgb),.22); }
 .de-edit-widget { display:inline-flex; align-items:center; gap:1px; margin-left:5px; vertical-align:middle; }
 .de-edit-step  { font-size:11px; font-weight:700; padding:0 5px; cursor:pointer; line-height:1.6;
-                 background:rgba(79,195,247,.15); border:1px solid rgba(79,195,247,.4);
-                 border-radius:2px; color:#4fc3f7; user-select:none; }
-.de-edit-step:hover  { background:rgba(79,195,247,.35); }
-.de-edit-val   { font-size:11px; font-weight:600; color:#4fc3f7; padding:0 5px; line-height:1.6;
-                 background:rgba(79,195,247,.08); border-top:1px solid rgba(79,195,247,.4);
-                 border-bottom:1px solid rgba(79,195,247,.4); min-width:3.5em; text-align:center; }
+                 background:rgba(var(--accent-rgb),.15); border:1px solid rgba(var(--accent-rgb),.4);
+                 border-radius:2px; color:var(--accent); user-select:none; }
+.de-edit-step:hover  { background:rgba(var(--accent-rgb),.35); }
+.de-edit-val   { font-size:11px; font-weight:600; color:var(--accent); padding:0 5px; line-height:1.6;
+                 background:rgba(var(--accent-rgb),.08); border-top:1px solid rgba(var(--accent-rgb),.4);
+                 border-bottom:1px solid rgba(var(--accent-rgb),.4); min-width:3.5em; text-align:center; }
 .de-edit-close { font-size:10px; font-weight:700; padding:0 5px; cursor:pointer; line-height:1.6;
                  background:rgba(107,114,128,.15); border:1px solid rgba(107,114,128,.35);
                  border-radius:2px; color:var(--text-dim); user-select:none; margin-left:2px; }
@@ -1073,6 +1074,7 @@ body.light {
   --border:    rgba(0,0,0,0.08);
   --resizer-bg: rgba(0,0,0,0.10);
   --accent:    #0969da;
+  --accent-rgb: 9,105,218;
   --accent2:   #cf222e;
   --text:      #24292f;
   --text-dim:  #656d76;
@@ -9805,7 +9807,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.38';
+const APP_VERSION  = '1.0.5.39';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

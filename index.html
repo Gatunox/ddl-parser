@@ -3279,16 +3279,28 @@ function doMsgExport() {
 }
 
 function copyDDLDoc() {
-  // Copy a plain-text version of the table
   const rows = document.querySelectorAll('#ddlDocBody tr');
   const lines = [];
   rows.forEach(tr => {
     const cells = [...tr.querySelectorAll('th,td')].map(td => td.textContent.replace(/\s+/g,' ').trim());
     lines.push(cells.join('\t'));
   });
-  navigator.clipboard.writeText(lines.join('\n'))
-    .then(() => flash('DDLDOC copied to clipboard'))
-    .catch(() => flash('Copy failed', 'error'));
+  const text = lines.join('\n');
+  const ok = msg => flash(msg);
+  const fail = () => {
+    // execCommand fallback for overlay/focus contexts where clipboard API is denied
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try { document.execCommand('copy') ? ok('DDLDOC copied to clipboard') : ok('Copy failed'); }
+    catch(e) { ok('Copy failed'); }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(() => ok('DDLDOC copied to clipboard')).catch(fail);
+  } else { fail(); }
 }
 
 // ============================================================
@@ -9793,7 +9805,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.36';
+const APP_VERSION  = '1.0.5.37';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

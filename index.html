@@ -7854,7 +7854,9 @@ function renderDDLTree() {
             const exclBadge   = fileExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
             const defCntBadge = fileDefNames.length > 0 ? `<span class="tree-cnt">${fileDefNames.length}</span>` : '';
             const fileBadges = tknBadge + typeBadge + defCntBadge + exclBadge + (!showDefSubNodes || !fileExp ? unresBadge + errBadge + warnBadge : '');
-            html += `<div class="tree-node${dSel}${dAnc}${pendCls}${fileExclCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick}>
+            const fileDblClick = showDefSubNodes && !fq && !isPending
+              ? `ondblclick="event.stopPropagation();toggleTreeExp('${esc(fileKey)}')"` : '';
+            html += `<div class="tree-node${dSel}${dAnc}${pendCls}${fileExclCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick} ${fileDblClick}>
               ${fileCaret}
               <span class="tree-ddl-lbl${isTknMap ? ' no-prefix' : ''}" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${fileBadges}
             </div>`;
@@ -7974,9 +7976,13 @@ function selectScope(type, vol, sv, name, defName) {
   }
 
   S.scope = { type, vol, sv: sv || null, name: name || null, defName: defName || null };
-  S.treeExp.add(vol);
-  if (sv) S.treeExp.add(`${vol}/${sv}`);
-  if (name && type === 'def') S.treeExp.add(`${vol}/${sv}/${name}`);
+  // Auto-expand ancestors only when navigating INTO a child node (ddl/def), not when
+  // clicking the container itself — containers expand/collapse on double-click only.
+  if (type === 'ddl' || type === 'def') {
+    S.treeExp.add(vol);
+    if (sv) S.treeExp.add(`${vol}/${sv}`);
+    if (name && type === 'def') S.treeExp.add(`${vol}/${sv}/${name}`);
+  }
   const ddls = getDDLsForScope();
   if (type === 'ddl' || type === 'def') {
     const c = ((S.ddlTree[vol] || {})[sv] || {})[name] || '';
@@ -9787,7 +9793,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.35';
+const APP_VERSION  = '1.0.5.36';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

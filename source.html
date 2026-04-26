@@ -9635,8 +9635,6 @@ function buildCtxMenu(e) {
       items.push({ icon: '✕', label: 'Delete Volume',  fn: () => deleteScope(), danger: true });
     } else if (t === 'sv') {
       items.push({ icon: '＋', label: 'New File',           fn: () => newDDLEntry() });
-      if (clip?.type === 'ddl')
-        items.push({ icon: '⎘', label: `Paste  "${clip.name}"`, fn: () => ctxPasteDdl(vol, sv) });
       items.push({ separator: true });
       items.push({ icon: '⎘', label: 'Copy Subvolume',    fn: () => ctxCopySv(vol, sv) });
       items.push({ icon: '⇧', label: 'Export Subvolume…', fn: () => ctxExport(vol, sv, null) });

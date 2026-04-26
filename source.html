@@ -835,10 +835,12 @@ body.light .trk-chk { color-scheme: light; }
 .hb { display: inline; border-radius: 2px; }
 .hb.hb-hover    { background: var(--hl-hover);  color: #ffffff; }
 .hb.hb-selected { background: var(--hl-active); color: #ffffff; }
+.hb.hb-masked   { color: #404850; }
 .dump-offset { color: #6e7681; user-select: none; }
 .dump-sep    { color: #444d56; user-select: none; }
 .dump-ascii  { color: #6e7681; }
 .dump-ascii .hb            { color: #6e7681; }
+.dump-ascii .hb.hb-masked  { color: #404850; }
 .dump-ascii .hb.hb-hover   { color: #ffffff; }
 .dump-ascii .hb.hb-selected { color: #ffffff; }
 
@@ -1113,6 +1115,7 @@ body.light .settings-pill .btn.s-active { color: #fff; }
 body.light tbody tr.row-sel td { color: var(--text) !important; }
 body.light .hb.hb-hover    { color: var(--text) !important; }
 body.light .hb.hb-selected { color: var(--text) !important; }
+body.light .hb.hb-masked   { color: #c8ccd0; }
 body.light .ctx-menu { box-shadow: 0 6px 20px rgba(0,0,0,0.18); }
 body.light .settings-drawer { box-shadow: -8px 0 28px rgba(0,0,0,0.15); }
 body.light .modal-box { box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
@@ -7366,7 +7369,7 @@ function renderRaw(msg) {
         const isNonPrintable = _isAsciiLike && (rowB[col] < 32 || rowB[col] > 126);
         const showDot = _rawMask.has(idx) || isNonPrintable;
         const hex = showDot ? '??' : rowB[col].toString(16).padStart(2,'0').toUpperCase();
-        html += `<span class="hb" data-idx="${idx}">${hex}</span> `;
+        html += `<span class="hb${showDot ? ' hb-masked' : ''}" data-idx="${idx}">${hex}</span> `;
       } else {
         html += '   ';
       }
@@ -7380,7 +7383,7 @@ function renderRaw(msg) {
       const showDot = _rawMask.has(idx) || isNonPrintable;
       const ch  = showDot ? '?'
         : (b === 60 ? '&lt;' : b === 62 ? '&gt;' : b === 38 ? '&amp;' : String.fromCharCode(b));
-      html += `<span class="hb" data-ascii-idx="${idx}">${ch}</span>`;
+      html += `<span class="hb${showDot ? ' hb-masked' : ''}" data-ascii-idx="${idx}">${ch}</span>`;
     }
     html += '|</span>\n';
   }
@@ -10079,7 +10082,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.47';
+const APP_VERSION  = '1.0.5.48';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

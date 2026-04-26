@@ -6033,15 +6033,19 @@ function _detectAsciiLineMetrics(text) {
 // Returns { cleanText, margin } — margin is 0 when no stripping is needed.
 function _prepNonNetardChunk(text) {
   const lines = text.split('\n');
+  // Discard leading empty lines — only analyse from the first non-empty line onward
+  let start = 0;
+  while (start < lines.length && lines[start].trim() === '') start++;
+  const active = lines.slice(start);
   let margin = 0;
-  for (const line of lines) {
+  for (const line of active) {
     const col = line.search(/\S/);
     if (col > 0) { margin = col; break; }
     if (col === 0) break; // content starts at column 0 — no margin
   }
-  if (!margin) return { cleanText: text, margin: 0 };
+  if (!margin) return { cleanText: active.join('\n'), margin: 0 };
   return {
-    cleanText: lines.map(l => l.length >= margin ? l.slice(margin) : l.trimStart()).join('\n'),
+    cleanText: active.map(l => l.length >= margin ? l.slice(margin) : l.trimStart()).join('\n'),
     margin
   };
 }
@@ -10082,7 +10086,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.49';
+const APP_VERSION  = '1.0.5.50';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

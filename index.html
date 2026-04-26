@@ -1144,7 +1144,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 }
 #tutorialCard {
   position: fixed; width: 300px;
-  background: var(--bg-panel); border: 1px solid var(--accent); border-radius: 8px;
+  background: var(--bg-panel); border: 2px solid var(--accent); border-radius: 8px;
   padding: 16px 18px 14px;
   display: flex; flex-direction: column; gap: 10px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.6);
@@ -7602,7 +7602,7 @@ function renderDDLTree() {
                       document.getElementById('ddlEditor').value !== S.editorBaseline;
   const ddlmmDirtyCls = ddlmmDirty ? ' tree-ddlmm-dirty' : '';
   const ruleCount   = S.ddlMsgMap.length;
-  const ddlmmHtml   = `<div class="tree-ddlmm-node${ddlmmSel}${ddlmmDirtyCls}" onclick="selectDDLMM()">
+  const ddlmmHtml   = `<div id="ddlmmNode" class="tree-ddlmm-node${ddlmmSel}${ddlmmDirtyCls}" onclick="selectDDLMM()">
     <span class="tree-ddlmm-lbl">DDL Message Map</span>
     ${ruleCount ? `<span class="tree-ddlmm-cnt">${ruleCount} rule${ruleCount !== 1 ? 's' : ''}</span>` : ''}
   </div>`;
@@ -10397,7 +10397,7 @@ const _TUT_STEPS = [
   {
     target: '#ddlPanel', prefer: 'right',
     title: 'DDL Definition \u2014 top-left',
-    body: 'This is where you load and manage your field definitions.\n\nDefinitions are organized in a tree: Volume \u2192 Subvolume \u2192 DDL. Each DDL file describes the fields of a message type and is used to parse and label your messages.',
+    body: 'This is where you load and manage your DDL definitions.\n\nDefinitions are organized in a tree (Left Side): Volume \u2192 Subvolume \u2192 DDL. You can paste/drop the files used in your current Base24 (Right Side).',
   },
   {
     target: '#msgPanel', prefer: 'left',
@@ -10417,7 +10417,7 @@ const _TUT_STEPS = [
   {
     target: '#ddlTreePane', prefer: 'right',
     title: 'Loading DDL Definitions',
-    body: 'Drag .ddl files onto this panel to load definitions, or right-click to create a Volume \u2192 Subvolume \u2192 DDL hierarchy.\n\nRight-click any volume to import a previously exported .json package. Each DDL describes the fields of a message type.',
+    body: 'Right-click to create a Volume \u2192 Subvolume \u2192 DDL File hierarchy.\n\nRight-click any volume to import a previously exported .json package. Each DDL describes the fields of a message type.',
   },
   {
     target: '#ddlDocBtn', prefer: 'bottom',
@@ -10425,14 +10425,14 @@ const _TUT_STEPS = [
     body: 'With a DDL selected in the tree, click Doc to open DDLDOC \u2014 a searchable field reference for the active definition.\n\nUse the filter to find fields by name. Toggle Hide Redef to show or hide REDEFINES groups.',
   },
   {
-    target: '#ddlScopePath', prefer: 'bottom',
-    title: 'Manual DDL Override',
-    body: 'Click any DDL node in the tree to make it the active scope \u2014 the path is shown here.\n\nWith a scope selected, pressing \u25b6 Parse forces that exact DDL instead of auto-detecting. Useful when you know exactly which definition applies.',
-  },
-  {
     target: '#msgPanel', prefer: 'left',
     title: 'Pasting a Message',
     body: 'Paste your raw message here. The format is auto-detected: ASCII, HEX, HEXASCII, or EBCDIC. Use the format selector on the left to override.\n\nThe line width control appears for NETARD input \u2014 adjust it to match the width of your terminal dump. Press \u25b6 Parse or Ctrl+Enter to run.',
+  },
+  {
+    target: '#ddlScopePath', prefer: 'bottom',
+    title: 'Manual DDL Override',
+    body: 'Click any DDL node in the tree to make it the active scope \u2014 the path is shown here.\n\nWith a scope selected, pressing \u25b6 Parse forces that exact DDL instead of auto-detecting. Useful when you know exactly which definition applies.',
   },
   {
     target: '#ddlTreePane', prefer: 'right',
@@ -10440,19 +10440,24 @@ const _TUT_STEPS = [
     body: 'Right-click any tree node for context options: create, rename, import/export, and Exclude from parsing.\n\nExcluded DDLs are greyed out and skipped during auto-detection scoring. Right-click a DEF sub-node to exclude only that specific definition, leaving the rest of the file active.',
   },
   {
-    target: '#ddlTree', prefer: 'right',
+    target: '#ddlmmNode', prefer: 'right',
     title: 'DDLMM \u2014 Message Routing Rules',
     body: 'Click the DDLMM node at the top of the tree to define DDL Message Map rules.\n\nRules automatically route specific message types to specific DDLs \u2014 e.g., always parse ISO 0200 with your ATM definition. Matched messages skip the scoring step entirely.',
   },
   {
     target: '#msgPanel', prefer: 'left',
     title: 'NETARD Audit Log Parsing',
-    body: 'Paste a NETARD multi-record audit log and press \u25b6 Parse. The parser detects all records, identifies EBCDIC/ASCII encoding per record, and scores each against your DDL tree.\n\nA navigation bar lets you step through all results. With a single-record log and a DDL scope selected, Manual Override applies automatically.',
+    body: 'Paste a NETARD multi-record audit log and press \u25b6 Parse. The parser detects all records, identifies EBCDIC/ASCII encoding per record, and scores each against your DDL tree.\n\nOnce parsed arrow buttons on the parse panel allow you step through all results. If you parse a single-record log and a DDL scope selected, Manual Override applies automatically. You can not Manual Override a multi-record file.',
   },
   {
     target: '#trkBtn', prefer: 'left',
-    title: 'Field Tracking',
-    body: 'Check Trk on any field in the parse results, then click \u229e Track Mode to compare that field across all parsed messages in a matrix view.\n\nEspecially useful with NETARD multi-record logs to spot patterns or anomalies across transactions.',
+    title: 'Multi-record tracking',
+    body: 'Check Trk on any field in the parse results, then click \u229e Track Mode to compare that field across all parsed messages in a matrix view.\n\nOnly available for NETARD multi-record logs to spot patterns or anomalies across transactions.',
+  },
+  {
+    target: null,
+    title: 'Need Help?',
+    body: 'Open Settings (\u2699 top-right) and scroll to the Help section for further details.\n\nAdditionally, from there you can submit a Bug Report or a Feature Request directly \u2014 they\'ll include your app version and environment automatically.\n\nThank you for using DDL Parser!',
   },
 ];
 let _tutIdx = 0;

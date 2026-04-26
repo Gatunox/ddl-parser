@@ -9646,6 +9646,8 @@ function buildCtxMenu(e) {
       items.push({ icon: isExcluded(vol, sv) ? '◎' : '⊘', label: isExcluded(vol, sv) ? 'Include in auto-detect' : 'Exclude from auto-detect', fn: () => toggleExclusion(vol, sv) });
       items.push({ icon: '✕', label: 'Delete Subvolume',  fn: () => deleteScope(), danger: true });
     } else {
+      if (clip?.type === 'ddl')
+        items.push({ icon: '⎘', label: `Paste  "${clip.name}"`, fn: () => ctxPasteDdl(vol, sv) });
       items.push({ icon: '⎘', label: 'Copy',    fn: () => ctxCopyDdl(vol, sv, name) });
       items.push({ icon: '⇧', label: 'Export…', fn: () => ctxExport(vol, sv, name) });
       if (t === 'def') {

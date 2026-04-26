@@ -9606,9 +9606,9 @@ function buildCtxMenu(e) {
     // Right-clicked on empty tree area
     items.push({ icon: '＋', label: 'New Volume',  fn: () => newVolume() });
     items.push({ separator: true });
-    items.push({ icon: '⇩', label: 'Import…', fn: () => triggerImport() });
+    items.push({ icon: '⬇', label: 'Import…', fn: () => triggerImport() });
     if (Object.keys(S.ddlTree).length)
-      items.push({ icon: '⇧', label: 'Export All…', fn: () => ctxExport(null, null, null) });
+      items.push({ icon: '⬆', label: 'Export All…', fn: () => ctxExport(null, null, null) });
     if (clip?.type === 'vol') {
       items.push({ separator: true });
       items.push({ icon: '⎘', label: `Paste Volume  "${clip.vol}"`, fn: () => ctxPasteVol() });
@@ -9627,7 +9627,7 @@ function buildCtxMenu(e) {
         items.push({ icon: '⎘', label: `Paste Subvolume  "${clip.sv}"`, fn: () => ctxPasteSv(vol) });
       items.push({ separator: true });
       items.push({ icon: '⎘', label: 'Copy Volume',    fn: () => ctxCopyVol(vol) });
-      items.push({ icon: '⇧', label: 'Export Volume…', fn: () => ctxExport(vol, null, null) });
+      items.push({ icon: '⬆', label: 'Export Volume…', fn: () => ctxExport(vol, null, null) });
       items.push({ separator: true });
       items.push({ icon: '✎', label: 'Rename…',        fn: () => ctxRenameVol(vol) });
       items.push({ separator: true });
@@ -9639,7 +9639,7 @@ function buildCtxMenu(e) {
         items.push({ icon: '⎘', label: `Paste  "${clip.name}"`, fn: () => ctxPasteDdl(vol, sv) });
       items.push({ separator: true });
       items.push({ icon: '⎘', label: 'Copy Subvolume',    fn: () => ctxCopySv(vol, sv) });
-      items.push({ icon: '⇧', label: 'Export Subvolume…', fn: () => ctxExport(vol, sv, null) });
+      items.push({ icon: '⬆', label: 'Export Subvolume…', fn: () => ctxExport(vol, sv, null) });
       items.push({ separator: true });
       items.push({ icon: '✎', label: 'Rename…',           fn: () => ctxRenameSv(vol, sv) });
       items.push({ separator: true });
@@ -9649,7 +9649,7 @@ function buildCtxMenu(e) {
       if (clip?.type === 'def')
         items.push({ icon: '⎘', label: `Paste  "${clip.name}"`, fn: () => ctxPasteDef(vol, sv) });
       items.push({ icon: '⎘', label: t === 'ddl' ? `Copy  "${name}"` : `Copy  "${defName}"`, fn: t === 'ddl' ? () => ctxCopyDdl(vol, sv, name) : () => ctxCopyDef(vol, sv, name, defName) });
-      items.push({ icon: '⇧', label: 'Export…', fn: () => ctxExport(vol, sv, name) });
+      items.push({ icon: '⬆', label: 'Export…', fn: () => ctxExport(vol, sv, name) });
       if (t === 'def') {
         items.push({ separator: true });
         items.push({ icon: '⊛', label: 'Map to type…', fn: () => mapDDLToType(vol, sv, name, defName) });

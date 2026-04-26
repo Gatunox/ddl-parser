@@ -7351,6 +7351,10 @@ function renderRaw(msg) {
     }
   }
 
+  // In ASCII/NETADRD mode any byte outside printable ASCII (32-126) is shown as dots
+  const _fmt = S.inputFormat || '';
+  const _isAsciiLike = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard';
+
   for (let row = 0; row < bytes.length; row += COLS) {
     const rowB = bytes.slice(row, row + COLS);
     html += `<span class="dump-offset">${row.toString(16).padStart(6,'0').toUpperCase()}</span><span class="dump-sep">  </span>`;
@@ -7359,7 +7363,9 @@ function renderRaw(msg) {
       if (col === COLS / 2) html += '<span class="dump-sep"> </span>';
       const idx = row + col;
       if (col < rowB.length) {
-        const hex = _rawMask.has(idx) ? '..' : rowB[col].toString(16).padStart(2,'0').toUpperCase();
+        const isNonPrintable = _isAsciiLike && (rowB[col] < 32 || rowB[col] > 126);
+        const showDot = _rawMask.has(idx) || isNonPrintable;
+        const hex = showDot ? '..' : rowB[col].toString(16).padStart(2,'0').toUpperCase();
         html += `<span class="hb" data-idx="${idx}">${hex}</span> `;
       } else {
         html += '   ';
@@ -7370,10 +7376,10 @@ function renderRaw(msg) {
     for (let col = 0; col < rowB.length; col++) {
       const idx = row + col;
       const b   = rowB[col];
-      const ch  = _rawMask.has(idx) ? '.'
-        : b >= 32 && b < 127
-          ? (b === 60 ? '&lt;' : b === 62 ? '&gt;' : b === 38 ? '&amp;' : String.fromCharCode(b))
-          : '.';
+      const isNonPrintable = _isAsciiLike && (b < 32 || b > 126);
+      const showDot = _rawMask.has(idx) || isNonPrintable;
+      const ch  = showDot ? '.'
+        : (b === 60 ? '&lt;' : b === 62 ? '&gt;' : b === 38 ? '&amp;' : String.fromCharCode(b));
       html += `<span class="hb" data-ascii-idx="${idx}">${ch}</span>`;
     }
     html += '|</span>\n';
@@ -10073,7 +10079,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.45';
+const APP_VERSION  = '1.0.5.46';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

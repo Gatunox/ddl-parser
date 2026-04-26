@@ -9648,7 +9648,7 @@ function buildCtxMenu(e) {
     } else {
       if (clip?.type === 'ddl')
         items.push({ icon: '⎘', label: `Paste  "${clip.name}"`, fn: () => ctxPasteDdl(vol, sv) });
-      items.push({ icon: '⎘', label: t === 'ddl' ? `Copy  "${name}"` : 'Copy', fn: () => ctxCopyDdl(vol, sv, name) });
+      items.push({ icon: '⎘', label: t === 'ddl' ? `Copy  "${name}"` : `Copy  "${defName}"`, fn: t === 'ddl' ? () => ctxCopyDdl(vol, sv, name) : () => ctxCopyDef(vol, sv, name, defName) });
       items.push({ icon: '⇧', label: 'Export…', fn: () => ctxExport(vol, sv, name) });
       if (t === 'def') {
         items.push({ separator: true });
@@ -9681,6 +9681,13 @@ function ctxCopyDdl(vol, sv, name) {
   const content = ((S.ddlTree[vol] || {})[sv] || {})[name] || '';
   S.clipboard = { type: 'ddl', name, content };
   flash(`Copied DDL "${name}"`);
+}
+function ctxCopyDef(vol, sv, fileName, defName) {
+  const fileContent = ((S.ddlTree[vol] || {})[sv] || {})[fileName] || '';
+  const def = splitHPEDDL(fileContent).find(d => d.name === defName.toUpperCase());
+  const content = def ? def.content : '';
+  S.clipboard = { type: 'ddl', name: defName, content };
+  flash(`Copied DDL "${defName}"`);
 }
 
 // ---- Paste ----

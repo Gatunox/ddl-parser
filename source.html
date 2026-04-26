@@ -9646,8 +9646,8 @@ function buildCtxMenu(e) {
       items.push({ icon: isExcluded(vol, sv) ? '◎' : '⊘', label: isExcluded(vol, sv) ? 'Include in auto-detect' : 'Exclude from auto-detect', fn: () => toggleExclusion(vol, sv) });
       items.push({ icon: '✕', label: 'Delete Subvolume',  fn: () => deleteScope(), danger: true });
     } else {
-      if (clip?.type === 'ddl')
-        items.push({ icon: '⎘', label: `Paste  "${clip.name}"`, fn: () => ctxPasteDdl(vol, sv) });
+      if (clip?.type === 'def')
+        items.push({ icon: '⎘', label: `Paste  "${clip.name}"`, fn: () => ctxPasteDef(vol, sv) });
       items.push({ icon: '⎘', label: t === 'ddl' ? `Copy  "${name}"` : `Copy  "${defName}"`, fn: t === 'ddl' ? () => ctxCopyDdl(vol, sv, name) : () => ctxCopyDef(vol, sv, name, defName) });
       items.push({ icon: '⇧', label: 'Export…', fn: () => ctxExport(vol, sv, name) });
       if (t === 'def') {
@@ -9686,7 +9686,7 @@ function ctxCopyDef(vol, sv, fileName, defName) {
   const fileContent = ((S.ddlTree[vol] || {})[sv] || {})[fileName] || '';
   const def = splitHPEDDL(fileContent).find(d => d.name === defName.toUpperCase());
   const content = def ? def.content : '';
-  S.clipboard = { type: 'ddl', name: defName, content };
+  S.clipboard = { type: 'def', name: defName, content };
   flash(`Copied DDL "${defName}"`);
 }
 
@@ -9714,6 +9714,18 @@ function ctxPasteSv(vol) {
 }
 function ctxPasteDdl(vol, sv) {
   if (!S.clipboard || S.clipboard.type !== 'ddl') return;
+  showPrompt('Paste DDL as:', S.clipboard.name, newName => {
+    if (!newName) return;
+    if (!S.ddlTree[vol]) S.ddlTree[vol] = {};
+    if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
+    if (S.ddlTree[vol][sv][newName]) { flash('DDL already exists', 'warn'); return; }
+    S.ddlTree[vol][sv][newName] = S.clipboard.content;
+    buildUnresolvedRefs(); saveTree(); selectScope('ddl', vol, sv, newName);
+    flash(`Pasted as "${newName}"`);
+  });
+}
+function ctxPasteDef(vol, sv) {
+  if (!S.clipboard || S.clipboard.type !== 'def') return;
   showPrompt('Paste DDL as:', S.clipboard.name, newName => {
     if (!newName) return;
     if (!S.ddlTree[vol]) S.ddlTree[vol] = {};

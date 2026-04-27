@@ -173,6 +173,21 @@ test('REDEFINES group: children start at target offset', () => {
   eq(byName(fields, 'FIELD-C').offset, 5, 'FIELD-C after REDEFINES group');
 });
 
+test('[REGRESSION] elementary REDEFINES larger than target: next sibling anchored at target end', () => {
+  // FIELD2=15 bytes. FIELD3 REDEFINES FIELD2 as 20 bytes (leaf, no children).
+  // FIELD4 REDEFINES FIELD2 as 15 bytes. FIELD5 must start at 15, not 20.
+  const { fields } = buildDDLDocFields([
+    f(2, 'FIELD2',  { pic: 'X(15)' }),
+    f(2, 'FIELD3',  { pic: 'X(20)', redefines: 'FIELD2' }),
+    f(2, 'FIELD4',  { pic: 'X(15)', redefines: 'FIELD2' }),
+    f(2, 'FIELD5',  { pic: 'X(3)'  }),
+  ]);
+  eq(byName(fields, 'FIELD2').offset, 0,  'FIELD2.offset');
+  eq(byName(fields, 'FIELD3').offset, 0,  'FIELD3.offset must equal FIELD2');
+  eq(byName(fields, 'FIELD4').offset, 0,  'FIELD4.offset must equal FIELD2');
+  eq(byName(fields, 'FIELD5').offset, 15, 'FIELD5 must follow FIELD2 (15), not FIELD3 (20)');
+});
+
 test('[REGRESSION] two consecutive REDEFINES groups larger than target: next sibling anchored at target end', () => {
   // FIELD2 = 15 bytes. FIELD3 REDEFINES FIELD2 = 20 bytes (LARGER).
   // FIELD4 REDEFINES FIELD2 = 15 bytes. FIELD5 must start at 15, not at 20.

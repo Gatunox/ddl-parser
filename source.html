@@ -2818,10 +2818,10 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     } else if (!isGroup) {
       if (!item.redefines) {
         setPos(itemOffset + entry.size);
-      } else {
-        // Elementary REDEFINES: advance to whichever end is further
-        setPos(Math.max(getPos(), itemOffset + entry.size));
       }
+      // Elementary REDEFINES: do NOT advance pos — REDEFINES overlays existing storage.
+      // The cursor stays at the natural end of the redefined target, regardless of whether
+      // the REDEFINES field is larger or smaller than the original.
       // Non-REDEFINES group: children naturally advance pos, no action needed
     }
   }
@@ -10164,7 +10164,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.62';
+const APP_VERSION  = '1.0.5.63';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

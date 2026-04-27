@@ -209,6 +209,28 @@ test('[REGRESSION] two consecutive REDEFINES groups larger than target: next sib
   eq(byName(fields, 'FIELD5').offset, 15,  'FIELD5 must follow FIELD2 (15 bytes), not FIELD3 (20 bytes)');
 });
 
+test('[REGRESSION] OCCURS inside REDEFINES group: shift must not bleed past REDEFINES boundary', () => {
+  // FIELD3 REDEFINES FIELD2 and contains FIELD3-GRP OCCURS 100 TIMES.
+  // Pass-3's OCCURS shift must stop at the REDEFINES boundary — FIELD5 must
+  // NOT be displaced by the 100× expansion inside FIELD3.
+  const { fields } = buildDDLDocFields([
+    f(2, 'FIELD2'),
+    f(3, 'FIELD2-YYY', { pic: 'X(5)' }),
+    f(3, 'FIELD2-ZZZ', { pic: 'X(3)' }),
+    f(2, 'FIELD3',     { redefines: 'FIELD2' }),
+    f(3, 'FIELD3-GRP', { occurs: 100 }),
+    f(4, 'FIELD3-ITEM',{ pic: 'X(10)' }),
+    f(3, 'FIELD3-ZZZ', { pic: 'X(2)' }),
+    f(2, 'FIELD4',     { redefines: 'FIELD2' }),
+    f(3, 'FIELD4-YYY', { pic: 'X(4)' }),
+    f(3, 'FIELD4-ZZZ', { pic: 'X(4)' }),
+    f(2, 'FIELD5',     { pic: 'X(3)' }),
+  ]);
+  eq(byName(fields, 'FIELD3').offset, 0, 'FIELD3.offset = FIELD2.offset');
+  eq(byName(fields, 'FIELD4').offset, 0, 'FIELD4.offset = FIELD2.offset');
+  eq(byName(fields, 'FIELD5').offset, 8, 'FIELD5 must follow FIELD2 (5+3=8), not be shifted by OCCURS inside FIELD3');
+});
+
 // ── buildDDLDocFields — OCCURS ───────────────────────────────────────────────
 console.log('\nbuildDDLDocFields — OCCURS');
 test('OCCURS group: size = childSpan × occurs', () => {

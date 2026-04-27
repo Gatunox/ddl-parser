@@ -2862,8 +2862,17 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     // Find the index of the first item that is NOT a descendant of this group
     let j = i + 1;
     while (j < result.length && result[j].level > gl) j++;
-    // Shift all subsequent fields (siblings and their children)
-    for (let k = j; k < result.length; k++) result[k].offset += extra;
+    // Shift subsequent fields.
+    // If this OCCURS group is inside a REDEFINES scope (isInsideRedefines), cap the
+    // shift at the REDEFINES boundary: stop as soon as we reach a field that is neither
+    // inside a REDEFINES scope nor a REDEFINES group header itself. Without this guard
+    // the shift bleeds into genuinely subsequent fields (e.g. FIELD5 after the last
+    // REDEFINES block) and places them hundreds/thousands of bytes off.
+    const insideRedef = result[i].isInsideRedefines;
+    for (let k = j; k < result.length; k++) {
+      if (insideRedef && !result[k].isInsideRedefines && !result[k].isRedefines) break;
+      result[k].offset += extra;
+    }
   }
 
   // Fourth pass — re-anchor REDEFINES fields to their target's (now-shifted) offset.
@@ -10164,7 +10173,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.63';
+const APP_VERSION  = '1.0.5.64';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

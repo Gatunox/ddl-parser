@@ -2861,6 +2861,26 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     for (let k = j; k < result.length; k++) result[k].offset += extra;
   }
 
+  // Fourth pass — re-anchor REDEFINES fields to their target's (now-shifted) offset.
+  // The third pass may have incorrectly shifted a REDEFINES field when its target
+  // precedes the OCCURS group but the REDEFINES clause appears after it.
+  for (let i = 0; i < result.length; i++) {
+    if (!result[i].isRedefines) continue;
+    const tgtName = (result[i].redefinesName || '').toUpperCase();
+    let tgtOffset = null;
+    for (let j = i - 1; j >= 0; j--) {
+      if (result[j].name.toUpperCase() === tgtName) { tgtOffset = result[j].offset; break; }
+    }
+    if (tgtOffset === null) continue;
+    const delta = tgtOffset - result[i].offset;
+    if (delta === 0) continue;
+    result[i].offset += delta;
+    // Shift children of this REDEFINES group by the same delta
+    for (let k = i + 1; k < result.length && result[k].level > result[i].level; k++) {
+      result[k].offset += delta;
+    }
+  }
+
   const totalSize = result.reduce((mx, f) => Math.max(mx, f.offset + f.size), posCtx[0].pos);
   return { fields: result, totalSize };
 }
@@ -10139,7 +10159,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.60';
+const APP_VERSION  = '1.0.5.61';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -628,11 +628,10 @@ input[type="text"]:focus { border-color: var(--accent); }
 /* ===== DDLMM — DDL Message Map root node ===== */
 .tree-ddlmm-node {
   display: flex; align-items: center; gap: 6px;
-  padding: 4px 20px 4px 8px; cursor: pointer;
+  padding: 4px 8px; cursor: pointer;
   font-size: calc(var(--sz-mono) - 0.5px);
   background: rgba(var(--accent-rgb),0.05);
-  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
-  margin-right: -20px; margin-bottom: 3px;
+  border-bottom: 1px solid var(--border);
 }
 .tree-ddlmm-node:hover { background: rgba(var(--accent-rgb),0.10); }
 .tree-ddlmm-node.tree-sel { background: rgba(var(--accent-rgb),0.15); }
@@ -1231,6 +1230,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
       </div>
       <div class="ddl-pane-split">
         <div class="ddl-tree-pane" id="ddlTreePane">
+          <div id="ddlmmBar"></div>
           <div class="tree-search-wrap">
             <input id="treeSearch" class="tree-search" type="text" placeholder="Filter DDLs…"
               oninput="filterDDLTree(this.value)"
@@ -8019,7 +8019,8 @@ function renderDDLTree() {
   </div>`;
 
   if (!vols.length) {
-    document.getElementById('ddlTree').innerHTML = ddlmmHtml +
+    document.getElementById('ddlmmBar').innerHTML = ddlmmHtml;
+    document.getElementById('ddlTree').innerHTML =
       '<div style="padding:10px 6px;color:var(--text-dim);font-size:11px;line-height:1.6">No DDLs yet.<br>Right-click here to create a Volume.</div>';
     return;
   }
@@ -8259,7 +8260,8 @@ function renderDDLTree() {
     }
   }
 
-  document.getElementById('ddlTree').innerHTML = ddlmmHtml + html;
+  document.getElementById('ddlmmBar').innerHTML = ddlmmHtml;
+  document.getElementById('ddlTree').innerHTML = html;
 }
 
 function toggleTreeExp(key) {
@@ -10138,7 +10140,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.55';
+const APP_VERSION  = '1.0.5.56';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

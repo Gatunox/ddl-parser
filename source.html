@@ -2734,8 +2734,11 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     // Pop pos-contexts that have been exited (level dropped back)
     while (posCtx.length > 1 && posCtx[posCtx.length-1].level >= item.level) {
       const done = posCtx.pop();
-      // Outer pos = max(outer pos, child pos) — REDEFINES can extend beyond original
-      posCtx[posCtx.length-1].pos = Math.max(posCtx[posCtx.length-1].pos, done.pos);
+      // REDEFINES groups overlay existing storage — they never extend the outer boundary.
+      // Only propagate inner pos for non-REDEFINES contexts (e.g. nested regular groups).
+      if (!done.redefTarget) {
+        posCtx[posCtx.length-1].pos = Math.max(posCtx[posCtx.length-1].pos, done.pos);
+      }
     }
 
     // Qualified name
@@ -2826,7 +2829,9 @@ function buildDDLDocFields(rawItems, typeRegistry) {
   // Drain any remaining pos-contexts
   while (posCtx.length > 1) {
     const done = posCtx.pop();
-    posCtx[posCtx.length-1].pos = Math.max(posCtx[posCtx.length-1].pos, done.pos);
+    if (!done.redefTarget) {
+      posCtx[posCtx.length-1].pos = Math.max(posCtx[posCtx.length-1].pos, done.pos);
+    }
   }
 
   // Second pass — compute group sizes from max-end of all descendants
@@ -10159,7 +10164,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.61';
+const APP_VERSION  = '1.0.5.62';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

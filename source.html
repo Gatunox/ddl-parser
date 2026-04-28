@@ -3169,6 +3169,12 @@ function showDDLDoc() {
     ddlRedefBtn.textContent = S.ddlDocHideRedef ? 'Show Redef' : 'Hide Redef';
     ddlRedefBtn.classList.toggle('btn-accent-on', !!S.ddlDocHideRedef);
   }
+  const collapseBtn = document.getElementById('ddlDocCollapseAllBtn');
+  if (collapseBtn) {
+    collapseBtn.dataset.state = 'expanded';
+    collapseBtn.textContent = 'Collapse All';
+    collapseBtn.classList.remove('btn-accent-on');
+  }
   document.getElementById('ddlDocOverlay').classList.remove('hidden');
 }
 
@@ -3228,6 +3234,30 @@ function _deEditCommit() {
   S.deOverrides[fullKey][String(seqIdx)] = num;
   saveDeOverrides();
   showDDLDoc();
+}
+
+function toggleDDLDocCollapseAll() {
+  const btn = document.getElementById('ddlDocCollapseAllBtn');
+  const tbl = document.querySelector('#ddlDocBody table');
+  if (!tbl) return;
+  const isCollapsing = btn.dataset.state !== 'collapsed';
+  if (isCollapsing) {
+    tbl.querySelectorAll('tr[data-grp]').forEach(tr => tr.classList.add('ddl-grp-collapsed'));
+    tbl.querySelectorAll('tr[data-qn]').forEach(tr => {
+      // Hide all leaf rows and nested group rows (those whose qualName contains a dot)
+      if (!tr.dataset.grp || tr.getAttribute('data-qn').includes('.'))
+        tr.classList.add('ddl-grp-hidden');
+    });
+    btn.dataset.state = 'collapsed';
+    btn.textContent = 'Expand All';
+    btn.classList.add('btn-accent-on');
+  } else {
+    tbl.querySelectorAll('tr[data-grp]').forEach(tr => tr.classList.remove('ddl-grp-collapsed'));
+    tbl.querySelectorAll('tr[data-qn]').forEach(tr => tr.classList.remove('ddl-grp-hidden'));
+    btn.dataset.state = 'expanded';
+    btn.textContent = 'Collapse All';
+    btn.classList.remove('btn-accent-on');
+  }
 }
 
 function filterDDLDoc(q) {
@@ -10221,7 +10251,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.75';
+const APP_VERSION  = '1.0.5.76';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -11483,6 +11513,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <span id="ddlDocDEHint" style="display:none;font-size:11px;font-weight:700;color:var(--accent);font-family:var(--font-mono);margin-left:10px;flex-shrink:0">Click on any DE Badge to reassign its value</span>
       <div style="display:flex;gap:6px;align-items:center">
         <input type="text" id="ddlDocFilterInput" class="res-filter-input" placeholder="Filter fields…" title="Filter DDL Doc" oninput="filterDDLDoc(this.value)">
+        <button class="btn btn-sm" id="ddlDocCollapseAllBtn" data-state="expanded" onclick="toggleDDLDocCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
         <button class="btn btn-sm" id="ddlDocHideRedefBtn" onclick="toggleDDLDocHideRedef()" title="Hide/show REDEFINES fields">Hide Redef</button>
         <button class="btn btn-sm" onclick="copyDDLDoc()" title="Copy as text">⎘ Copy</button>
         <button class="btn btn-sm" onclick="closeDDLDoc()">✕</button>

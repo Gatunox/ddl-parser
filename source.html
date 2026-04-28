@@ -2683,11 +2683,6 @@ function expandTypeRefs(items, sectionByName, visited = new Set(), externalSecti
         ? sectionByName.get(refName)
         : (externalSections?.get(refName) ?? null);
       if (!visited.has(refName) && refItems?.length) {
-        // The TYPE * item itself becomes a GROUP wrapper — preserve the field's name
-        // and level so the caller's qualified-name hierarchy is intact (e.g. PEPE.PAN.LEN,
-        // not just PAN.LEN). Clear typeClause so buildDDLDocFields treats it as a group.
-        result.push({ ...item, typeClause: null, pic: null });
-
         // If the referenced section's root item is a group with the same name as
         // the TYPE * field, it is a redundant wrapper — skip it to avoid double-nesting
         // (e.g.  DEF ISOPSEM { 02 ISOPSEM { 03 F1 } }  →  don't emit ISOPSEM.ISOPSEM.F1).
@@ -2706,9 +2701,20 @@ function expandTypeRefs(items, sectionByName, visited = new Set(), externalSecti
           // Level-adjust: minimum child level maps to (TYPE * item level + 1)
           const minChildLevel = Math.min(...childExpanded.map(r => r.level));
           const childLevelAdj = item.level + 1 - minChildLevel;
-          for (const ri of childExpanded) {
-            result.push({ ...ri, level: ri.level + childLevelAdj });
+
+          // Single elementary type ref → inline as elementary field, no group wrapper
+          if (childExpanded.length === 1 && childExpanded[0].pic && !childExpanded[0].typeClause) {
+            result.push({ ...item, typeClause: null, pic: childExpanded[0].pic, comp: childExpanded[0].comp || item.comp || null });
+          } else {
+            // Multi-field type → GROUP wrapper + children
+            result.push({ ...item, typeClause: null, pic: null });
+            for (const ri of childExpanded) {
+              result.push({ ...ri, level: ri.level + childLevelAdj });
+            }
           }
+        } else {
+          // Type found but no children after skipRoot — empty group wrapper
+          result.push({ ...item, typeClause: null, pic: null });
         }
         continue;   // do not fall through to the plain result.push below
       }
@@ -10215,7 +10221,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.74';
+const APP_VERSION  = '1.0.5.75';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

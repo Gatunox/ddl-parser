@@ -3093,14 +3093,16 @@ function showDDLDoc() {
       const redefNoteName = f.isRedefines ? f.redefinesName : f.redefGroupTarget;
       const redefNote     = redefNoteName
         ? `<span style="font-size:10px;opacity:.7"> ↩ ${esc(redefNoteName)}</span>` : '';
-      const descTxt = f.desc && f.desc.toUpperCase() !== f.name ? esc(f.desc) : '';
-      const occurs  = f.occurs > 1 ? `×${f.occurs}` : '—';
+      const descTxt  = f.desc && f.desc.toUpperCase() !== f.name ? esc(f.desc) : '';
+      const occurs   = f.occurs > 1 ? `×${f.occurs}` : '—';
+      const depth    = f.qualName.split('.').length - 1;
+      const namePadL = `padding-left:${10 + depth * 16}px`;
 
       if (f.isGroup) {
         const grpCls = isRedefRow ? 'ddl-doc-grp ddl-doc-redef' : 'ddl-doc-grp';
         html += `<tr class="${grpCls}" data-qn="${esc(f.qualName)}" data-grp="1" onclick="toggleDDLGroup(this)">
           <td class="ddl-doc-hex" style="color:var(--text-dim)"></td>
-          <td><span class="ddl-grp-icon">▼ </span><span style="font-weight:500">${esc(f.qualName)}.</span>${redefNote}</td>
+          <td style="${namePadL}"><span class="ddl-grp-icon">▼ </span><span style="font-weight:500">${esc(f.qualName)}.</span>${redefNote}</td>
           <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
           <td class="ddl-doc-num">${f.size}</td>
           <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -3125,7 +3127,7 @@ function showDDLDoc() {
       const cls = isRedefRow ? ' class="ddl-doc-redef"' : '';
       html += `<tr${cls} data-qn="${esc(f.qualName)}" data-search="${docSearch}">
         <td class="ddl-doc-hex" style="color:var(--text-dim)">${rowNum}</td>
-        <td><span style="font-weight:500">${esc(f.qualName)}</span>${redefNote}${deBadge}</td>
+        <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span>${redefNote}${deBadge}</td>
         <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
         <td class="ddl-doc-num">${f.size}</td>
         <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -10213,7 +10215,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.66';
+const APP_VERSION  = '1.0.5.67';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

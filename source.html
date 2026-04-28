@@ -413,6 +413,8 @@ body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);
 .ddl-doc-grp td { background: rgba(var(--accent-rgb),0.05); color: var(--text-dim); font-style: italic; }
 .ddl-doc-grp:hover td { background: rgba(var(--accent-rgb),0.10) !important; }
 .ddl-grp-hidden { display: none; }
+.ddl-grp-icon { display: inline-block; transition: transform 0.15s; transform: rotate(90deg); }
+.ddl-grp-collapsed .ddl-grp-icon { transform: rotate(0deg); }
 .ddl-doc-redef td { color: rgba(var(--accent-rgb),0.65); }
 .ddl-doc-redef:hover td { background: rgba(var(--accent-rgb),0.08) !important; }
 .ddl-doc-foot td { border-top: 2px solid var(--border); font-weight: 700; color: var(--accent); background: var(--bg-deep); padding: 5px 10px; }
@@ -3102,7 +3104,7 @@ function showDDLDoc() {
         const grpCls = isRedefRow ? 'ddl-doc-grp ddl-doc-redef' : 'ddl-doc-grp';
         html += `<tr class="${grpCls}" data-qn="${esc(f.qualName)}" data-grp="1" onclick="toggleDDLGroup(this)">
           <td class="ddl-doc-hex" style="color:var(--text-dim)"></td>
-          <td style="${namePadL}"><span class="ddl-grp-icon">▼ </span><span style="font-weight:500">${esc(f.qualName)}.</span>${redefNote}</td>
+          <td style="${namePadL}"><span class="ddl-grp-icon">›</span> <span style="font-weight:500">${esc(f.qualName)}.</span>${redefNote}</td>
           <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
           <td class="ddl-doc-num">${f.size}</td>
           <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -3173,8 +3175,6 @@ function toggleDDLGroup(tr) {
   if (!grpQn) return;
   const tbl = tr.closest('table');
   const collapsed = tr.classList.toggle('ddl-grp-collapsed');
-  const icon = tr.querySelector('.ddl-grp-icon');
-  if (icon) icon.textContent = collapsed ? '▶ ' : '▼ ';
   const prefix = grpQn + '.';
   for (const row of tbl.querySelectorAll('tr[data-qn]')) {
     const qn = row.getAttribute('data-qn');
@@ -10215,7 +10215,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.68';
+const APP_VERSION  = '1.0.5.70';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

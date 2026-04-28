@@ -3249,8 +3249,8 @@ function toggleDDLDocCollapseAll() {
   if (isCollapsing) {
     tbl.querySelectorAll('tr[data-grp]').forEach(tr => tr.classList.add('ddl-grp-collapsed'));
     tbl.querySelectorAll('tr[data-qn]').forEach(tr => {
-      // Hide all leaf rows and nested group rows (those whose qualName contains a dot)
-      if (!tr.dataset.grp || tr.getAttribute('data-qn').includes('.'))
+      // Only hide rows that are nested inside a group (qualName contains a dot)
+      if (tr.getAttribute('data-qn').includes('.'))
         tr.classList.add('ddl-grp-hidden');
     });
     btn.dataset.state = 'collapsed';
@@ -10256,7 +10256,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.78';
+const APP_VERSION  = '1.0.5.79';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

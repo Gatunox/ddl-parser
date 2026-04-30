@@ -5847,7 +5847,7 @@ function doParseNetardLog(text, opts = {}) {
           }];
           S.messages      = parsed;
           S.curIdx        = 0;
-          S.inputFormat   = rec.netardFmt === 'hexascii' ? 'tandem-dump' : rec.netardFmt || 'ascii';
+          S.inputFormat   = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' }[rec.netardFmt] || 'netard';
           S.isParsed      = true;
           S.selFieldId    = null;
           S.trackMode     = false;
@@ -8064,25 +8064,30 @@ function updateBadges() {
       cntEl.innerHTML = S.messages.length > 1 ? `<span class="badge badge-count">${S.messages.length} msgs</span>` : '';
     } else { cntEl.innerHTML = ''; }
   }
-  // Show LW widget when NETARD or ASCII format is active (runs regardless of forced/auto)
-  const isNetardFmt = (S.inputFormat || '').startsWith('netard') ||
-                      (S.forcedFormat || '').startsWith('netard');
+  // Show LW widget for NETARD-family and ASCII formats
+  const isNetardFmt = (S.inputFormat || '').startsWith('netard') || (S.forcedFormat || '').startsWith('netard');
   const isAsciiFmt  = S.inputFormat === 'ascii' || S.forcedFormat === 'ascii';
-  _lwSetVisible(isNetardFmt || isAsciiFmt);
+  const isDumpFmt   = S.inputFormat === 'tandem-dump' || S.forcedFormat === 'tandem-dump';
+  _lwSetVisible(isNetardFmt || isAsciiFmt || isDumpFmt);
   // Auto-detect ruler column from content as soon as text is present
   if (P.lineWidth === 0) {
     const ta = document.getElementById('msgInput');
     if (ta && ta.value.trim()) {
-      if (isAsciiFmt) {
+      if (isAsciiFmt || isDumpFmt) {
         const { margin, dataWidth } = _detectAsciiLineMetrics(ta.value);
         if (dataWidth > 0) { S.asciiMargin = margin; S.asciiRulerCol = dataWidth; _lwShowAutoMarker(margin + dataWidth); }
-      } else if (isNetardFmt) {
+      }
+      if (isNetardFmt || isDumpFmt) {
         const _hdrRe = /^\s{0,6}\d+\s+[0-9A-Za-z]+\s+\d{2}\/\d{2}\/\d{2}/;
+        const _isSubFmt = (S.forcedFormat || S.inputFormat || '').startsWith('netard-') || isDumpFmt;
         const dw = ta.value.split('\n')
           .filter(l => !_hdrRe.test(l) && l.trim().length > 0)
           .reduce((m, l) => {
-            const bi = l.indexOf(' ['); // bracket ASCII column separator
-            return Math.max(m, bi > 1 ? bi : l.trimEnd().length);
+            if (_isSubFmt) {
+              const brM = /\s+\[[^\]]*\]\s*$/.exec(l); // bracket ASCII column at end of line
+              if (brM && brM.index > 1) return Math.max(m, brM.index);
+            }
+            return Math.max(m, l.trimEnd().length);
           }, 0);
         if (dw > 0) { S.netardRulerCol = dw; _lwShowAutoMarker(dw); }
       }
@@ -10267,7 +10272,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.93';
+const APP_VERSION  = '1.0.5.98';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -10511,19 +10516,23 @@ function _lwUpdateDisplay() {
     const isVisible = widget && !widget.classList.contains('hidden');
     if (isVisible && ta && ta.value.trim()) {
       const _isAscii = S.inputFormat === 'ascii' || S.forcedFormat === 'ascii';
-      if (_isAscii) {
+      const _isDump  = S.inputFormat === 'tandem-dump' || S.forcedFormat === 'tandem-dump';
+      if (_isAscii || _isDump) {
         const { margin, dataWidth } = _detectAsciiLineMetrics(ta.value);
         if (dataWidth > 0) { S.asciiMargin = margin; S.asciiRulerCol = dataWidth; _lwShowAutoMarker(margin + dataWidth); return; }
-      } else {
-        const _hdrRe = /^\s{0,6}\d+\s+[0-9A-Za-z]+\s+\d{2}\/\d{2}\/\d{2}/;
-        const dw = ta.value.split('\n')
-          .filter(l => !_hdrRe.test(l) && l.trim().length > 0)
-          .reduce((m, l) => {
-            const bi = l.indexOf(' ['); // bracket ASCII column separator
-            return Math.max(m, bi > 1 ? bi : l.trimEnd().length);
-          }, 0);
-        if (dw > 0) { S.netardRulerCol = dw; _lwShowAutoMarker(dw); return; }
       }
+      const _hdrRe = /^\s{0,6}\d+\s+[0-9A-Za-z]+\s+\d{2}\/\d{2}\/\d{2}/;
+      const _isSubFmt = (S.forcedFormat || S.inputFormat || '').startsWith('netard-') || _isDump;
+      const dw = ta.value.split('\n')
+        .filter(l => !_hdrRe.test(l) && l.trim().length > 0)
+        .reduce((m, l) => {
+          if (_isSubFmt) {
+            const brM = /\s+\[[^\]]*\]\s*$/.exec(l);
+            if (brM && brM.index > 1) return Math.max(m, brM.index);
+          }
+          return Math.max(m, l.trimEnd().length);
+        }, 0);
+      if (dw > 0) { S.netardRulerCol = dw; _lwShowAutoMarker(dw); return; }
     }
     _lwUpdateRuler(); // hides marker
   }
@@ -10533,9 +10542,12 @@ function _lwCharMetrics() {
   if (window._msgInputCM) {
     const view  = window._msgInputCM;
     const charW = view.defaultCharacterWidth;
-    // Pad = gutter width + content left padding — both relative to .cm-editor
-    const gutterW = view.dom.querySelector('.cm-gutters')?.offsetWidth || 0;
-    const pad     = gutterW + (parseFloat(getComputedStyle(view.contentDOM).paddingLeft) || 0);
+    // Pad = gutter width + content left padding + line left padding — all relative to .cm-editor
+    const gutterW     = view.dom.querySelector('.cm-gutters')?.offsetWidth || 0;
+    const contentPadL = parseFloat(getComputedStyle(view.contentDOM).paddingLeft) || 0;
+    const firstLine   = view.contentDOM.querySelector('.cm-line');
+    const linePadL    = firstLine ? (parseFloat(getComputedStyle(firstLine).paddingLeft) || 0) : 0;
+    const pad = gutterW + contentPadL + linePadL;
     return { charW, pad };
   }
   const ta = document.getElementById('msgInput');

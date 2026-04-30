@@ -3109,8 +3109,8 @@ function showDDLDoc() {
       const descTxt  = f.desc && f.desc.toUpperCase() !== f.name ? esc(f.desc) : '';
       const occurs   = f.occurs > 1 ? `×${f.occurs}` : '—';
       const depth    = f.qualName.split('.').length - 1;
-      const namePadL = `padding-left:${5 + depth * 16}px`;
-      const grpPadL  = `padding-left:${10 + depth * 16}px`;
+      const namePadL = `padding-left:${depth * 16}px`;
+      const grpPadL  = `padding-left:${5 + depth * 16}px`;
 
       const deKey    = deKeyMap && deKeyDepth
         ? f.qualName.split('.').slice(0, deKeyDepth).join('.') : null;
@@ -10273,7 +10273,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.102';
+const APP_VERSION  = '1.0.5.103';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

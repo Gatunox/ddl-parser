@@ -336,6 +336,7 @@ body.light .hl-str { color: #3a7d0a; }
 /* Align DDL search bar with the editor gutter (tree pane width - header padding) */
 #ddlPanel .panel-title { min-width: 172px; }
 #rawPanel .panel-title { width: auto; }
+#msgPanel .panel-title { width: auto; padding-right: 0; }
 /* DDL editor search bar */
 .ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 4px; padding: 0 0 0 4px; overflow: hidden; }
 .ddl-search-lbl { font-size: var(--sz-mono); color: var(--text-dim); opacity: 0.7; user-select: none; flex-shrink: 0; padding-right: 2px; font-family: var(--font-mono); display: flex; align-items: center; }
@@ -847,8 +848,8 @@ body.light .trk-chk { color-scheme: light; }
   user-select: text;
 }
 .hb { display: inline; border-radius: 2px; }
-.hb.hb-hover    { background: var(--hl-hover);  color: #ffffff; }
-.hb.hb-selected { background: var(--hl-active); color: #ffffff; }
+.hb.hb-hover    { background: rgba(var(--accent-rgb), 0.40); color: #ffffff; }
+.hb.hb-selected { background: rgba(var(--accent-rgb), 0.55); color: #ffffff; }
 .hb.hb-masked   { color: #566070; }
 .dump-offset { color: #6e7681; user-select: none; }
 .dump-sep    { color: #444d56; user-select: none; }
@@ -1163,6 +1164,8 @@ body.light .cm-host .cm-cursor { border-left-color: var(--text); }
 #msgInput .cm-editor.msg-parsed .cm-content { color: var(--text-very-dim); }
 /* With an active highlight: restore to text-dim so non-highlighted text stays readable */
 #msgInput .cm-editor.msg-has-hl .cm-content { color: var(--text-dim); }
+/* Keep very-dim when parsed — don't let msg-has-hl brighten the text on field selection */
+#msgInput .cm-editor.msg-parsed.msg-has-hl .cm-content { color: var(--text-very-dim); }
 /* Field highlight mark classes */
 #msgInput .cm-hl-active { background: var(--hl-active); border-radius: 2px; color: #fff; }
 #msgInput .cm-hl-hover  { background: var(--hl-hover);  border-radius: 2px; color: #fff; }
@@ -1270,9 +1273,9 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
         </select>
         <div style="flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding-left:6px;overflow:hidden">
           <span id="msgFileName" style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0"></span>
-          <span id="fmtBadge" style="flex-shrink:0"></span>
-          <span id="cntBadge" style="flex-shrink:0"></span>
         </div>
+        <span id="fmtBadge" style="flex-shrink:0;padding:0 4px"></span>
+        <span id="cntBadge" style="flex-shrink:0"></span>
         <div class="flex-row">
           <span class="lw-widget hidden" id="lwWidget" title="Line width — click value to type, ‹ › to step presets, ↺ to reset">
             <span class="lw-lbl">Line Width</span>
@@ -1964,9 +1967,9 @@ function parseHPEDDL(text, externalDefs, externalSections, targetDef = null) {
         const first    = plain[0];
         const second   = plain[1];
         const lastName = sf => sf.id.split('.').pop().toUpperCase();
-        if (first  && /(?:^|[-_])LEN$/.test(lastName(first))  &&
+        if (first  && /(?:^|[-_])(?:LEN|LGTH|LENGTH)$/.test(lastName(first))  &&
             (first.length === 2 || first.length === 3 || first.length === 4) &&
-            second && /(?:^|[-_])DATA$/.test(lastName(second))) {
+            second) {
           de.isLLVar         = true;
           de.lenBytes        = first.length;    // 2/3/4 decimal digits → LL/LLL/LLLL
           de.dataMaxLen      = second.length;   // DDL-declared maximum
@@ -4380,7 +4383,7 @@ function parseHPEISOMessage(bytes, defs, rawBytes) {
       // ── HPE COBOL implicit LLVAR / LLLVAR ──────────────────────────────
       // 1. Read the LEN sub-field (2 or 3 decimal digits)
       const lenSf    = de.subFields.find(sf => !sf.isRedefines &&
-                         /(?:^|[-_])LEN$/.test(sf.id.split('.').pop().toUpperCase()));
+                         /(?:^|[-_])(?:LEN|LGTH|LENGTH)$/.test(sf.id.split('.').pop().toUpperCase()));
       const lenStart = offset;
       const lenRaw   = read(de.lenBytes);
       if (!lenRaw) {
@@ -4409,7 +4412,7 @@ function parseHPEISOMessage(bytes, defs, rawBytes) {
 
       // 3. Push the non-REDEFINES, non-LEN sub-fields (i.e. DATA itself)
       const dataSfs = de.subFields.filter(sf => !sf.isRedefines &&
-                        !/(?:^|[-_])LEN$/.test(sf.id.split('.').pop().toUpperCase()));
+                        !/(?:^|[-_])(?:LEN|LGTH|LENGTH)$/.test(sf.id.split('.').pop().toUpperCase()));
       for (const sf of dataSfs) {
         fields.push({ id: sf.id, description: sf.description,
           deNum: de.bitNum, type: 'LLVAR', maxLength: sf.length, valueLength: actualLen,
@@ -5519,7 +5522,7 @@ function _persistCompiledCache(compiledBySv) {
       const iso = e.defs._hpeIsoLayout;
       return iso ? { ...e, _hpeIsoLayout: { ...iso, deByBit: undefined } } : e;
     });
-    store.put({ svk, hash: _svHash(vol, sv), data });
+    store.put({ svk, hash: _svHash(vol, sv), appVersion: APP_VERSION, data });
   }
   tx.onerror = e => {
     console.warn('[DDL cache] IDB write error', e.target?.error);
@@ -5555,7 +5558,7 @@ async function _restoreCompiledCache() {
       }
       const stored = storedMap.get(svk) || null;
       if (!stored) { _cacheRestoreStats.noEntry++; _cacheRestoreStats.noEntrySvs.push(svk); continue; }
-      if (stored.hash === _svHash(vol, svName)) {
+      if (stored.hash === _svHash(vol, svName) && stored.appVersion === APP_VERSION) {
         _cacheRestoreStats.hit++; _cacheRestoreStats.hitSvs.push(svk);
         bySv[svk] = stored.data.map(e => {
           if (e._hpeIsoLayout) {
@@ -5564,6 +5567,7 @@ async function _restoreCompiledCache() {
             e.defs._hpeIsoLayout.deByBit = new Map(
               (e._hpeIsoLayout.dataElements || []).map(de => [de.bitNum, de])
             );
+            if (e.defName) applyDEOverrides(e.defs._hpeIsoLayout, S.deOverrides[`${e.path}/${e.defName}`.toUpperCase()]);
           }
           return e;
         });
@@ -6139,6 +6143,7 @@ function doParseNetardLog(text, opts = {}) {
             const defs = defName
               ? parseHPEDDL(content, _netardReg, _netardSecReg, defName)
               : parseDDL(content, _netardReg, _netardSecReg);
+            if (defName) applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
             if (defs.length > 1 && !/(?:TKN|TKNX)$/i.test(defName || path.split('/').pop())) {
               const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
               (compiledBySv[svk] || (compiledBySv[svk] = [])).push({ path, defName, defs });
@@ -7221,7 +7226,6 @@ function _clearResultsOnly() {
   Object.assign(S, { isParsed: false, messages: [], curIdx: 0,
     selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set() });
   _lwSetParsed(false);
-  _lwSetVisible(false);
   document.getElementById('cntBadge').innerHTML = '';
   document.getElementById('msgNav').style.display = 'none';
   document.getElementById('trkBtn').style.display = 'none';
@@ -7251,6 +7255,7 @@ function clearAll() {
   document.getElementById('fmtBadge').innerHTML = '';
   document.getElementById('cntBadge').innerHTML = '';
   _lwSetParsed(false);
+  if (P.lineWidth !== 0) { P.lineWidth = 0; savePrefs(); _lwUpdateDisplay(); }
   _lwSetVisible(false);
   document.getElementById('msgNav').style.display = 'none';
   document.getElementById('trkBtn').style.display = 'none';
@@ -7530,11 +7535,12 @@ function renderRaw(msg) {
     for (let col = 0; col < rowB.length; col++) {
       const idx = row + col;
       const b   = rowB[col];
-      const isNonPrintable = _isAsciiLike && (b < 32 || b > 126);
-      const showDot = _rawMask.has(idx) || isNonPrintable;
-      const ch  = showDot ? '?'
+      const isMasked = _rawMask.has(idx);
+      const isNonPrintable = b < 0x20 || b > 0x7E;
+      const ch  = isMasked ? '?'
+        : isNonPrintable ? '.'
         : (b === 60 ? '&lt;' : b === 62 ? '&gt;' : b === 38 ? '&amp;' : String.fromCharCode(b));
-      html += `<span class="hb${showDot ? ' hb-masked' : ''}" data-ascii-idx="${idx}">${ch}</span>`;
+      html += `<span class="hb${(isMasked || isNonPrintable) ? ' hb-masked' : ''}" data-ascii-idx="${idx}">${ch}</span>`;
     }
     html += '|</span>\n';
   }
@@ -8072,7 +8078,12 @@ function updateBadges() {
         if (dataWidth > 0) { S.asciiMargin = margin; S.asciiRulerCol = dataWidth; _lwShowAutoMarker(margin + dataWidth); }
       } else if (isNetardFmt) {
         const _hdrRe = /^\s{0,6}\d+\s+[0-9A-Za-z]+\s+\d{2}\/\d{2}\/\d{2}/;
-        const dw = ta.value.split('\n').filter(l => !_hdrRe.test(l)).reduce((m, l) => Math.max(m, l.length), 0);
+        const dw = ta.value.split('\n')
+          .filter(l => !_hdrRe.test(l) && l.trim().length > 0)
+          .reduce((m, l) => {
+            const bi = l.indexOf(' ['); // bracket ASCII column separator
+            return Math.max(m, bi > 1 ? bi : l.trimEnd().length);
+          }, 0);
         if (dw > 0) { S.netardRulerCol = dw; _lwShowAutoMarker(dw); }
       }
     }
@@ -10256,7 +10267,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.79';
+const APP_VERSION  = '1.0.5.93';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -10505,7 +10516,12 @@ function _lwUpdateDisplay() {
         if (dataWidth > 0) { S.asciiMargin = margin; S.asciiRulerCol = dataWidth; _lwShowAutoMarker(margin + dataWidth); return; }
       } else {
         const _hdrRe = /^\s{0,6}\d+\s+[0-9A-Za-z]+\s+\d{2}\/\d{2}\/\d{2}/;
-        const dw = ta.value.split('\n').filter(l => !_hdrRe.test(l)).reduce((m, l) => Math.max(m, l.length), 0);
+        const dw = ta.value.split('\n')
+          .filter(l => !_hdrRe.test(l) && l.trim().length > 0)
+          .reduce((m, l) => {
+            const bi = l.indexOf(' ['); // bracket ASCII column separator
+            return Math.max(m, bi > 1 ? bi : l.trimEnd().length);
+          }, 0);
         if (dw > 0) { S.netardRulerCol = dw; _lwShowAutoMarker(dw); return; }
       }
     }
@@ -10554,11 +10570,6 @@ function _lwUpdateRuler() {
 function _lwSetVisible(show) {
   const w = document.getElementById('lwWidget');
   if (w) w.classList.toggle('hidden', !show);
-  // Reset to Auto when NETARD goes away, so next detection always starts at 68
-  if (!show && P.lineWidth !== 0) {
-    P.lineWidth = 0;
-    savePrefs(); _lwUpdateDisplay();
-  }
   _lwUpdateRuler();
 }
 

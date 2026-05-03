@@ -283,23 +283,23 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 2px var(--a
 body.light .ddl-gutter { border-right-color: rgba(0,0,0,0.08); }
 #ddlGutterInner     { position: absolute; top: 0; right: 0; left: 0;
   padding: 8px 6px 8px 0; text-align: right;
-  font-family: var(--font-mono); font-size: var(--sz-mono); line-height: 1.6;
+  font-family: var(--font-mono); font-size: var(--sz-mono); line-height: 1.3;
   color: #444d56; white-space: pre; user-select: none; pointer-events: none; }
 body.light #ddlGutterInner { color: #c8ced4; }
 .ddl-hl-editor-inner { position: relative; flex: 1; min-width: 0; display: flex; overflow: hidden; }
 /* DDL search — full-line background highlights */
 .ddl-srch-lines-bg { position: absolute; top: 0; left: 0; right: 0; pointer-events: none; z-index: 0; padding-top: 8px; overflow: hidden; }
-.ddl-srch-line { display: block; height: calc(var(--sz-mono) * 1.6); }
+.ddl-srch-line { display: block; height: calc(var(--sz-mono) * 1.3); }
 .ddl-srch-line.hit { background: rgba(255,255,255,0.07); }
 body.light .ddl-srch-line.hit { background: rgba(0,0,0,0.05); }
 /* DDL search — current match accent highlight overlay */
-.ddl-srch-cur-layer { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; pointer-events: none; z-index: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6; white-space: pre; overflow: visible; color: transparent; }
+.ddl-srch-cur-layer { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; pointer-events: none; z-index: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.3; white-space: pre; overflow: visible; color: transparent; }
 .ddl-srch-cur { background: var(--accent); opacity: 0.45; border-radius: 2px; }
 /* DDL search — CodeMirror equivalents */
 #ddlEditor .cm-line.ddl-srch-line-hit { background: rgba(255,255,255,0.07); }
 body.light #ddlEditor .cm-line.ddl-srch-line-hit { background: rgba(0,0,0,0.05); }
 .ddl-hl-overlay  { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; margin: 0;
-  font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6;
+  font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.3;
   white-space: pre; overflow: visible;
   pointer-events: none; z-index: 0; color: var(--text); }
 #ddlEditor       { position: relative; z-index: 1; background: transparent !important;
@@ -621,16 +621,16 @@ input[type="text"]:focus { border-color: var(--accent); }
 .tree-type-badge.tbtype-ndc  { background:rgba(247,129,102,0.18); color:var(--accent2); border:2px solid var(--accent2); }
 .tree-type-badge.tbtype-b24  { background:rgba(148,130,255,0.18); color:#9482ff;        border:2px solid #9482ff; }
 /* ---- per-message type badges (shown in rec-meta bar) ---- */
-.btype { font-size: var(--sz-mono); font-weight: 700; padding: 1px 6px; border-radius: 2px; letter-spacing: 0.04em; }
+.btype { font-size: var(--sz-mono); font-weight: 700; padding: 1px 6px; border-radius: 2px; letter-spacing: 0.04em; display:inline-block; }
 .type-pick-btn { cursor: pointer; padding: 7px 20px; font-size: 12px; border-radius: 4px; letter-spacing: 0.06em; transition: filter 0.12s, box-shadow 0.12s; }
 .type-pick-btn:hover { filter: brightness(1.15); box-shadow: 0 0 0 3px rgba(255,255,255,0.08); }
-.btype-stm     { background:rgba(var(--accent-rgb),0.18); color:var(--accent);   border:2px solid var(--accent); }
-.btype-pstm    { background:rgba(63,185,80,0.18);  color:var(--success);  border:2px solid var(--success); }
-.btype-ndc     { background:rgba(247,129,102,0.18);color:var(--accent2);  border:2px solid var(--accent2); }
-.btype-iso     { background:rgba(210,153,34,0.18); color:var(--warning);  border:2px solid var(--warning); }
-.btype-b24     { background:rgba(148,130,255,0.18);color:#9482ff;         border:2px solid #9482ff; }
-.btype-unknown { background:rgba(139,148,158,0.15);color:var(--text-dim); border:2px solid var(--text-dim); }
-.btype-user    { background:rgba(80,200,120,0.15); color:#50c878;         border:2px solid #50c878; }
+.btype-stm     { background:rgba(0,200,212,0.18);   color:#00c8d4; border:2px solid #00c8d4; }
+.btype-pstm    { background:rgba(92,214,92,0.18);   color:#5cd65c; border:2px solid #5cd65c; }
+.btype-ndc     { background:rgba(255,107,53,0.22);  color:#ff6b35; border:2px solid #ff6b35; }
+.btype-iso     { background:rgba(245,197,66,0.20);  color:#f5c542; border:2px solid #f5c542; }
+.btype-b24     { background:rgba(164,123,255,0.20); color:#a47bff; border:2px solid #a47bff; }
+.btype-unknown { background:rgba(139,148,158,0.15); color:#8b949e; border:2px solid #8b949e; }
+.btype-user    { background:rgba(80,200,120,0.15);  color:#50c878; border:2px solid #50c878; }
 
 /* ===== DDLMM — DDL Message Map root node ===== */
 .tree-ddlmm-node {
@@ -701,15 +701,17 @@ table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-s
 table.res-tbl { width: 100%; }
 thead th {
   position: sticky; top: 0; z-index: 1;
-  background: var(--bg-deep);
-  color: var(--accent);
-  padding: 5px 8px;
+  background: var(--bg-panel);
+  color: var(--text-very-dim);
+  padding: 2px 8px;
   text-align: left;
   border-bottom: 1px solid var(--border);
   font-weight: 700;
   white-space: nowrap;
-  font-size: var(--sz-mono);
+  font-size: calc(var(--sz-mono) - 1px);
   overflow: hidden;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 .th-resize {
   position: absolute;
@@ -721,9 +723,9 @@ thead th {
 }
 .th-resize:hover { background: rgba(var(--accent-rgb),0.4); }
 .th-resize.th-resize-active { background: var(--accent); opacity: 0.7; }
-tbody tr { border-bottom: 1px solid rgba(48,54,61,0.4); cursor: pointer; }
+tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); cursor: pointer; }
 tbody tr:hover td { background: var(--hl-hover); }
-tbody tr.row-sel td { background: var(--hl-active) !important; }
+tbody tr.row-sel td { background: rgba(var(--accent-rgb),0.18) !important; }
 tbody tr.row-redef td.c-id { color: rgba(var(--accent-rgb),0.65); }
 body.light tbody tr.row-redef td.c-id { color: rgba(var(--accent-rgb),0.75); }
 tbody tr.row-unreliable td { background: rgba(var(--accent-rgb),0.07); }
@@ -747,7 +749,8 @@ tbody tr.row-unreliable td { background: rgba(var(--accent-rgb),0.07); }
                  background:rgba(107,114,128,.15); border:1px solid rgba(107,114,128,.35);
                  border-radius:2px; color:var(--text-dim); user-select:none; margin-left:2px; }
 .de-edit-close:hover { background:rgba(107,114,128,.3); color:var(--text); }
-tbody td { padding: 0 8px; height: 24px; vertical-align: middle; font-size: var(--sz-mono); line-height: 24px; overflow: hidden; text-overflow: ellipsis; }
+tbody td { padding: 0 6px; height: 16px; vertical-align: middle; font-size: var(--sz-mono); line-height: 16px; overflow: hidden; text-overflow: ellipsis; }
+td.c-num { color: var(--text-very-dim); text-align: right; min-width: 28px; padding-right: 8px; font-variant-numeric: tabular-nums; user-select: none; }
 td.c-id   { color: var(--text); font-weight: 700; white-space: nowrap; }
 td.c-desc { color: var(--text-dim); }
 td.c-val  { color: var(--success); word-break: break-all; text-overflow: clip; overflow: visible; white-space: pre-wrap; }
@@ -1087,6 +1090,114 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .about-sub { font-size: calc(var(--sz-mono) - 0.5px); color: var(--text-dim); line-height: 1.7; margin-top: 4px; }
 .about-tag { display: inline-block; padding: 1px 7px; border-radius: 2px; font-size: calc(var(--sz-mono) - 1px); font-weight: 700; margin: 3px 2px 0; }
 
+/* ===== AUDIT FILE BROWSER ===== */
+#auditBrowser { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.audit-progress-wrap { padding:20px 16px; display:flex; flex-direction:column; gap:10px; }
+.audit-progress-label { font-size:var(--sz-mono); color:var(--text-dim); }
+.audit-progress-track { height:5px; background:rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; }
+.audit-progress-fill  { height:100%; background:var(--accent); border-radius:3px; transition:width 0.12s linear; width:0%; }
+.audit-progress-count { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); }
+.audit-cfg-bar {
+  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
+  border-bottom:2px solid var(--border); font-size:calc(var(--sz-mono) - 1px);
+  background:rgba(212,167,44,0.07); color:var(--text); flex-wrap:wrap;
+  position:relative;
+}
+.audit-cfg-bar .audit-cfg-field { color:var(--text-dim); }
+.audit-cfg-bar .audit-cfg-val   { color:var(--warning); font-weight:700; }
+.audit-cfg-bar select, .audit-cfg-bar input[type=text] {
+  background:var(--bg-panel); border:2px solid var(--border); color:var(--text);
+  font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono);
+  padding:0 4px; border-radius:2px; height:calc(var(--sz-mono) + 8px);
+}
+.audit-cfg-bar select:focus, .audit-cfg-bar input[type=text]:focus { outline:none; border-color:var(--accent); }
+.audit-flt-group { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+.audit-sd-op { background:none; border:2px solid var(--border); color:var(--text-dim); font-family:var(--font-mono); font-size:calc(var(--sz-mono) - 2px); padding:0; height:calc(var(--sz-mono) + 8px); border-radius:2px; cursor:pointer; flex-shrink:0; width:calc(var(--sz-mono) * 3 + 8px); display:inline-flex; align-items:center; justify-content:center; }
+.audit-sd-op:hover { border-color:var(--accent); color:var(--text); }
+.audit-sd-op.is-and { border-color:var(--accent); color:var(--accent); }
+.audit-dt-copy { display:flex; flex-direction:row; gap:2px; flex-shrink:0; align-items:center; }
+.audit-dt-copy button { background:none; border:2px solid var(--border); color:var(--text-dim); font-family:var(--font-mono); font-size:calc(var(--sz-mono) - 2px); padding:0; width:calc(var(--sz-mono) + 2px); height:calc(var(--sz-mono) + 8px); border-radius:2px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+.audit-dt-copy button:hover { border-color:var(--accent); color:var(--text); }
+.audit-stats { color:var(--text-very-dim); font-size:calc(var(--sz-mono) - 1px); flex-shrink:0; }
+body.audit-active #fmtForceSelect { opacity:0.35; pointer-events:none; }
+body.audit-active #fmtBadge, body.audit-active #cntBadge { visibility:hidden; }
+.audit-list-header {
+  display:flex; align-items:center; gap:0; padding:3px 8px; flex-shrink:0;
+  border-bottom:2px solid var(--border); font-size:calc(var(--sz-mono) - 1px);
+  color:var(--text-very-dim); font-family:var(--font-mono); background:rgba(var(--accent-rgb),0.07);
+  user-select:none;
+}
+.audit-record-list { flex:1; overflow-y:auto; }
+.audit-record-row {
+  display:flex; flex-direction:column; padding:2px 8px 3px;
+  border-bottom:1px solid rgba(255,255,255,0.03);
+  cursor:pointer; font-family:var(--font-mono); font-size:var(--sz-mono);
+}
+.audit-record-row:hover    { background:var(--hl-hover); }
+.audit-record-row.aud-sel  { background:rgba(var(--accent-rgb),0.18); }
+.ar-meta    { display:flex; align-items:center; overflow:hidden; white-space:nowrap; }
+.ar-preview { color:var(--text-dim); font-size:calc(var(--sz-mono) - 0.5px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:46px; line-height:1.4; }
+.ac-idx   { min-width:calc(var(--sz-mono) * 4); text-align:right; padding-right:6px; color:var(--text-dim); flex-shrink:0; }
+.ac-badge { width:calc(var(--sz-mono) * 3.8); flex-shrink:0; padding-right:4px; }
+.audit-record-row .btype { font-size:calc(var(--sz-mono) - 2px); padding:0 3px; border-width:1px; line-height:1; display:inline-flex; align-items:center; vertical-align:middle; }
+.ac-len   { min-width:calc(var(--sz-mono) * 3.8); text-align:right; padding-right:8px; color:var(--success); flex-shrink:0; }
+.ac-ts    { width:calc(var(--sz-mono) * 14); color:var(--text); padding-right:8px; flex-shrink:0; overflow:hidden; }
+.ac-onode { min-width:calc(var(--sz-mono) * 6); color:var(--text-dim); padding-right:4px; flex-shrink:0; }
+.ac-src   { min-width:calc(var(--sz-mono) * 11); color:var(--accent); overflow:hidden; text-overflow:ellipsis; padding-right:4px; flex-shrink:0; }
+.ac-arrow { width:calc(var(--sz-mono) * 1.8); text-align:center; color:var(--text-very-dim); flex-shrink:0; }
+.ac-dnode { min-width:calc(var(--sz-mono) * 6); color:var(--text-dim); padding-right:4px; flex-shrink:0; }
+.ac-dst   { min-width:calc(var(--sz-mono) * 11); color:var(--accent); overflow:hidden; text-overflow:ellipsis; padding-right:6px; flex-shrink:0; }
+.ac-msgno { min-width:calc(var(--sz-mono) * 7); color:var(--text-dim); padding-right:6px; flex-shrink:0; }
+.ac-fail  { min-width:calc(var(--sz-mono) * 5); color:var(--accent2); padding-right:6px; flex-shrink:0; }
+.ac-rt    { color:var(--text-dim); flex-shrink:0; }
+.audit-error-msg { padding:16px; color:var(--accent2); font-size:var(--sz-mono); font-family:var(--font-mono); line-height:1.6; }
+/* Config dialog */
+.audit-cfg-dialog {
+  position:absolute; top:100%; right:8px; z-index:200;
+  background:var(--bg-panel); border:2px solid var(--border); border-radius:4px;
+  padding:10px 12px; min-width:calc(var(--sz-mono) * 27); box-shadow:0 6px 24px rgba(0,0,0,0.5);
+  font-size:var(--sz-mono); display:none;
+}
+.audit-cfg-section { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); margin:8px 0 6px; padding-top:8px; border-top:1px solid var(--border); }
+.audit-cfg-row .panel-toggle { width:26px; height:calc(var(--sz-mono) + 8px); border:2px solid var(--border); border-radius:2px; padding:0; align-self:auto; box-sizing:border-box; font-size:var(--sz-mono); background:transparent; color:var(--text-dim); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+.audit-cfg-row .panel-toggle:hover { border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),0.1); }
+.audit-cfg-row .panel-toggle.is-collapsed { border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),0.1); }
+.audit-cfg-dialog.open { display:block; }
+.audit-cfg-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.audit-cfg-row label { min-width:calc(var(--sz-mono) * 10); color:var(--text-dim); }
+.audit-cfg-row input  {
+  width:calc(var(--sz-mono) * 6); background:var(--bg-input); border:2px solid var(--border); color:var(--text);
+  font-family:var(--font-mono); font-size:var(--sz-mono); padding:2px 4px; border-radius:2px;
+}
+.audit-cfg-row input:focus { outline:none; border-color:var(--accent); }
+.audit-cfg-row select { -webkit-appearance:none; appearance:none; background:var(--bg-panel); border:2px solid var(--border); color:var(--text); font-family:var(--font-mono); font-size:var(--sz-mono); padding:2px 20px 2px 4px; border-radius:2px; min-width:calc(var(--sz-mono) * 5); height:calc(var(--sz-mono) + 8px); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 5px center; }
+.audit-cfg-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+body.light .audit-record-row:hover { background:rgba(var(--accent-rgb),0.08); }
+body.light .audit-cfg-dialog { box-shadow:0 6px 20px rgba(0,0,0,0.18); }
+body.light .audit-filter-bar select, body.light .audit-filter-bar input[type=text] { background:#fff; }
+/* Record detail popup */
+.audit-popup {
+  position:absolute; left:0; right:0; bottom:0; height:220px;
+  background:var(--bg-panel); border-top:2px solid var(--accent);
+  display:flex; flex-direction:column; z-index:20;
+  box-shadow:0 -4px 18px rgba(0,0,0,0.4);
+}
+.audit-popup-hdr {
+  display:flex; align-items:center; gap:6px; padding:4px 8px; flex-shrink:0;
+  border-bottom:1px solid var(--border); background:rgba(var(--accent-rgb),0.07);
+}
+.audit-popup-title { flex:1; font-size:var(--sz-mono); color:var(--accent); font-weight:700; }
+.audit-popup-body  { flex:1; overflow-y:auto; padding:8px; font-family:var(--font-mono); font-size:var(--sz-mono); }
+.audit-field-row   { display:flex; flex-direction:column; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.05); }
+.audit-field-label { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); margin-bottom:2px; }
+.audit-field-bytes { color:var(--text-dim); word-break:break-all; line-height:1.7; }
+.audit-field-value { color:var(--text); margin-top:2px; }
+.audit-field-value.is-known  { color:var(--success); }
+.audit-field-value.is-tbd    { color:var(--text-very-dim); font-style:italic; }
+.audit-field-payload { color:var(--text-dim); word-break:break-all; line-height:1.6; max-height:120px; overflow-y:auto; }
+.audit-netard-dump { margin:0; padding:4px 0; color:var(--text); line-height:1.7; white-space:pre; overflow-x:auto; font-family:var(--font-mono); font-size:var(--sz-mono); }
+body.light .audit-popup { box-shadow:-4px 0 14px rgba(0,0,0,0.15); }
+
 /* ===== LIGHT THEME ===== */
 body.light {
   --bg-deep:   #f6f8fa;
@@ -1155,11 +1266,15 @@ body.light .cm-host .cm-editor { background: var(--bg-input); color: var(--text)
 body.light .cm-host .cm-cursor { border-left-color: var(--text); }
 /* DDL editor host fills the pane */
 #ddlEditor.cm-host { flex: 1; }
+#ddlEditor.cm-host .cm-editor { line-height: 1.3; }
 /* Message input host fills the panel body */
 #msgInput.cm-host { background: var(--bg-input); }
 /* Both CM panels: less-bright default text */
 #ddlEditor .cm-content,
 #msgInput .cm-content { color: var(--text-dim); }
+/* Compact DDL editor — override CM6's internal line-height */
+#ddlEditor .cm-content,
+#ddlEditor .cm-line { line-height: 1.3 !important; }
 /* After parse: dim message input further so field highlights pop */
 #msgInput .cm-editor.msg-parsed .cm-content { color: var(--text-very-dim); }
 /* With an active highlight: restore to text-dim so non-highlighted text stays readable */
@@ -1286,14 +1401,112 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
             <span class="lw-step" onclick="lwStep(1)" title="Next preset">&gt;</span>
             <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>
           </span>
+          <input type="file" id="auditFileInput" style="display:none" onchange="onAuditFileOpen(this)">
+          <button class="btn" id="auditOpenBtn" onclick="openAuditFileDialog()" title="Open binary audit file">📂 Audit</button>
+          <button class="btn" id="auditExitBtn" onclick="auditCloseMode()" title="Exit audit mode — return to message paste" style="display:none">✕ Audit</button>
           <button class="btn btn-primary" id="parseBtn" onclick="doParseMessages()">▶ Parse</button>
           <button class="btn" id="msgClearBtn" onclick="clearAll()">✕ Clear</button>
         </div>
         <button class="panel-toggle" id="msgToggle" onclick="togglePanel('msgPanel','msgToggle','ddlResizer')" title="Hide panel">−</button>
       </div>
-      <div class="panel-body" style="flex-direction:row">
+      <div class="panel-body" style="flex-direction:row;position:relative">
         <div id="msgGutter" class="msg-gutter" aria-hidden="true"></div>
         <div id="msgInput" class="cm-host" style="flex:1;min-width:0;overflow:hidden"></div>
+        <!-- AUDIT BROWSER — shown when a binary audit file is open -->
+        <div id="auditBrowser" style="display:none;flex:1;min-width:0;flex-direction:column;overflow:hidden;position:relative">
+          <!-- Progress (shown while scanning) -->
+          <div id="auditProgressArea" class="audit-progress-wrap">
+            <div id="auditProgressLabel" class="audit-progress-label">Opening file…</div>
+            <div class="audit-progress-track"><div id="auditProgressFill" class="audit-progress-fill"></div></div>
+            <div id="auditProgressCount" class="audit-progress-count"></div>
+          </div>
+          <!-- Browser (shown when scan is done) -->
+          <div id="auditBrowserReady" style="display:none;flex:1;flex-direction:column;min-height:0;overflow:hidden">
+            <!-- Combined filter + cfg bar -->
+            <div id="auditCfgBar" class="audit-cfg-bar">
+              <div id="auditFltGrpSrc" class="audit-flt-group">
+                <span class="audit-cfg-field">Source:</span>
+                <select id="auditFltSrc" onchange="auditApplyFilter()" style="max-width:calc(var(--sz-mono) * 11)"><option value="">All</option></select>
+              </div>
+              <button id="auditFltSdOp" class="audit-sd-op" onclick="auditToggleSdOp()" title="Toggle Source/Dest logic: OR shows records matching either, AND requires both">OR</button>
+              <div id="auditFltGrpDst" class="audit-flt-group">
+                <span class="audit-cfg-field">Dest:</span>
+                <select id="auditFltDst" onchange="auditApplyFilter()" style="max-width:calc(var(--sz-mono) * 11)"><option value="">All</option></select>
+              </div>
+              <div id="auditFltGrpRec" class="audit-flt-group">
+                <span class="audit-cfg-field">Rec#:</span>
+                <input type="text" id="auditFltFrom" placeholder="from" style="width:calc(var(--sz-mono) * 5)" oninput="auditApplyFilter()">
+                <span style="color:var(--text-very-dim)">–</span>
+                <input type="text" id="auditFltTo" placeholder="to" style="width:calc(var(--sz-mono) * 5)" oninput="auditApplyFilter()">
+              </div>
+              <button id="auditFltDtDir" class="audit-sd-op" onclick="auditToggleDtDir()" title="Forward: from=first record, to=last. Backward: from=last, to=first">▶</button>
+              <div id="auditFltGrpDt" class="audit-flt-group">
+                <span class="audit-cfg-field">Date:</span>
+                <input type="text" id="auditFltDtFrom" placeholder="YY/MM/DD" style="width:calc(var(--sz-mono) * 5.5)" oninput="auditApplyFilter()">
+                <div class="audit-dt-copy">
+                  <button onclick="auditCopyDtRange('left','dt')" title="Copy to → from">←</button>
+                  <button onclick="auditCopyDtRange('right','dt')" title="Copy from → to">→</button>
+                </div>
+                <input type="text" id="auditFltDtTo" placeholder="YY/MM/DD" style="width:calc(var(--sz-mono) * 5.5)" oninput="auditApplyFilter()">
+              </div>
+              <div id="auditFltGrpTm" class="audit-flt-group">
+                <span class="audit-cfg-field">Time:</span>
+                <input type="text" id="auditFltTmFrom" placeholder="HH:MM" style="width:calc(var(--sz-mono) * 4.5)" oninput="auditApplyFilter()">
+                <div class="audit-dt-copy">
+                  <button onclick="auditCopyDtRange('left','tm')" title="Copy to → from">←</button>
+                  <button onclick="auditCopyDtRange('right','tm')" title="Copy from → to">→</button>
+                </div>
+                <input type="text" id="auditFltTmTo" placeholder="HH:MM" style="width:calc(var(--sz-mono) * 4.5)" oninput="auditApplyFilter()">
+              </div>
+              <div id="auditFltGrpCount" class="audit-flt-group">
+                <span class="audit-cfg-field">Count:</span>
+                <input type="text" id="auditFltCount" placeholder="max" style="width:calc(var(--sz-mono) * 5)" oninput="auditApplyFilter()">
+              </div>
+              <span class="audit-stats" id="auditStats"></span>
+              <div style="flex:1"></div>
+              <button id="auditParseAllBtn" class="btn btn-primary" style="display:none;padding:0 8px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseAll()">▶ Parse All</button>
+              <button class="btn" style="padding:0 6px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleCfgDialog()" title="Configure">⚙</button>
+              <!-- Config dialog (floats below cfg bar) -->
+              <div id="auditCfgDialog" class="audit-cfg-dialog">
+                <div class="audit-cfg-hdr">
+                  <span>Visible filters</span>
+                  <button class="btn" onclick="auditToggleCfgDialog()" style="padding:1px 7px;font-size:13px">✕</button>
+                </div>
+                <div class="audit-cfg-row"><label>Source / Dest</label><button class="panel-toggle" id="afg_srcdst" onclick="auditToggleFltGrp('srcdst')">−</button></div>
+                <div class="audit-cfg-row"><label>Rec#</label><button class="panel-toggle" id="afg_rec" onclick="auditToggleFltGrp('rec')">−</button></div>
+                <div class="audit-cfg-row"><label>Date</label><button class="panel-toggle" id="afg_dt" onclick="auditToggleFltGrp('dt')">−</button></div>
+                <div class="audit-cfg-row"><label>Time</label><button class="panel-toggle" id="afg_tm" onclick="auditToggleFltGrp('tm')">−</button></div>
+                <div class="audit-cfg-row"><label>Count</label><button class="panel-toggle" id="afg_count" onclick="auditToggleFltGrp('count')">−</button></div>
+              </div>
+            </div>
+            <!-- Column header -->
+            <div class="audit-list-header">
+              <span class="ac-idx">#</span>
+              <span class="ac-badge"></span>
+              <span class="ac-len">Len</span>
+              <span class="ac-ts">Timestamp</span>
+              <span class="ac-onode">ORIG</span>
+              <span class="ac-src">Source</span>
+              <span class="ac-arrow"> </span>
+              <span class="ac-dnode">DEST</span>
+              <span class="ac-dst">Destination</span>
+              <span class="ac-msgno">MSG#</span>
+              <span class="ac-fail">Failure</span>
+              <span class="ac-rt">RT</span>
+            </div>
+            <!-- Record list -->
+            <div id="auditRecordList" class="audit-record-list"></div>
+            <!-- Record detail popup (single-click) -->
+            <div id="auditPopup" class="audit-popup" style="display:none">
+              <div class="audit-popup-hdr">
+                <span id="auditPopupTitle" class="audit-popup-title">Record</span>
+                <button class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Message Input and parse (press P)">&#9654; Parse</button>
+                <button class="btn" style="height:20px;padding:0 6px" onclick="auditClosePopup()">&#10005;</button>
+              </div>
+              <div id="auditPopupBody" class="audit-popup-body"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -3885,7 +4098,7 @@ function buildByteCharMap(text, format, textOffset) {
 // ============================================================
 // Reads fields one-by-one in definition order — no MTI or bitmap logic.
 // Handles FIXED, LLVAR, LLLVAR field types.
-function parseFlatMessage(bytes, defs) {
+function parseFlatMessage(bytes, defs, rawBytes) {
   const bToHex = b => b.map(x => x.toString(16).padStart(2, '0').toUpperCase()).join('');
   const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x)
                                                         : `[${x.toString(16).padStart(2,'0')}]`).join('');
@@ -3896,6 +4109,18 @@ function parseFlatMessage(bytes, defs) {
   // Reliable formats (hex, tandem-dump, netard-hex, netard-dump, ebcdic) are excluded.
   const _fmt = S.inputFormat || '';
   const _binUnreliable = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard';
+
+  // Value renderer for TYPE BINARY fields.
+  // srcB = original (unconverted) bytes for decimal; dispB = parsed bytes for char display.
+  const _binValue = (srcB, dispB) => {
+    if (_binUnreliable)
+      return dispB.map(b => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '[??]').join('');
+    if (_fmt === 'hexascii')
+      return bToStr(dispB);
+    return srcB.length > 6
+      ? srcB.reduce((acc, b) => acc * 256n + BigInt(b), 0n).toString()
+      : srcB.reduce((acc, b) => acc * 256  + b,         0 ).toString();
+  };
 
   // OCCURS group actual-count cache: resolved once per group by scanning for '& ' eye-catcher.
   // Key = group qualName, value = actual occurrence count (0..occursMax).
@@ -3949,12 +4174,15 @@ function parseFlatMessage(bytes, defs) {
       if (!fBytes.length) break;
     }
 
-    const _isBinField = _binUnreliable && /\bBINARY\b/i.test(def._dataType || '');
+    const isBin      = /\bBINARY\b/i.test(def._dataType || '');
+    const _isBinField = _binUnreliable && isBin;
+    const _srcBytes  = (isBin && rawBytes) ? rawBytes.slice(dataStart, dataStart + len) : fBytes;
     fields.push({
       id: def.id, description: def.description,
       type: def.type, maxLength: def.length, lenPrefix,
       valueLength: fBytes.length,
-      value: bToStr(fBytes), rawHex: bToHex(fBytes), rawBytes: fBytes,
+      value: isBin ? _binValue(_srcBytes, fBytes) : bToStr(fBytes),
+      rawHex: bToHex(fBytes), rawBytes: fBytes,
       startByte: fStart, endByte: fEnd - 1,
       isRedefines: def.isRedefines || false,
       redefTarget: def.redefTarget || null,
@@ -4700,7 +4928,7 @@ function parseMessage(bytes, defs, rawBytes) {
         return isAscii ? parsePSTMMessageASCII(bytes, defs) : parsePSTMMessageBinary(bytes, defs);
       }
     }
-    return parseFlatMessage(bytes, defs);
+    return parseFlatMessage(bytes, defs, rawBytes);
   }
 
   const fields = [];
@@ -5174,13 +5402,13 @@ function isNetardLog(text) {
 
 const NETARD_TYPE_MAP = (() => {
   const m = {
-    0: 'Read from a station',
+    0: 'Station Input',
     2: 'Write to a station',
     3: 'Write back to a source',
     4: 'Message dropped',
     5: 'System message',
-    6: 'Read from a process',
-    7: 'Write to a process',
+    6: 'Process Input',
+    7: 'Process Output',
     8: 'Console message',
     20: 'XPNET text command message',
     180: 'Line Open',
@@ -5745,6 +5973,24 @@ function _showProgressPicker(label, matches, cb, msgType = null) {
   });
 }
 
+function _netardEbcdic(rawMsg) {
+  const bytes = [];
+  for (let i = 0; i < rawMsg.length; i++) bytes.push(rawMsg.charCodeAt(i) & 0xFF);
+  let _f09 = 0;
+  for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
+  const _mtiEbcdic = bytes.length >= 4 &&
+    bytes[0] >= 0xF0 && bytes[0] <= 0xF9 &&
+    bytes[1] >= 0xF0 && bytes[1] <= 0xF9 &&
+    bytes[2] >= 0xF0 && bytes[2] <= 0xF9 &&
+    bytes[3] >= 0xF0 && bytes[3] <= 0xF9;
+  const ebcdicDens = bytes.length > 0 ? _f09 / bytes.length : 0;
+  const isEbcdic   = ebcdicDens > 0.30 || _mtiEbcdic;
+  const parseBytes = isEbcdic ? bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : bytes;
+  const parseRaw   = isEbcdic ? parseBytes.map(b => String.fromCharCode(b)).join('') : rawMsg;
+  const ebcdicHow  = isEbcdic ? `F0–F9 density ${Math.round(ebcdicDens * 100)}%${_mtiEbcdic && ebcdicDens <= 0.30 ? ' (MTI)' : ''}` : null;
+  return { bytes, parseBytes, parseRaw, isEbcdic, ebcdicDens, ebcdicHow };
+}
+
 function doParseNetardLog(text, opts = {}) {
   S.seenTypes.clear();
   const records = parseNetardLog(text);
@@ -5819,14 +6065,7 @@ function doParseNetardLog(text, opts = {}) {
         _parseProgressStep('Parsing\u2026');
         setTimeout(() => {
           const rec = records[0];
-          const bytes = [];
-          for (let i = 0; i < rec.rawMsg.length; i++) bytes.push(rec.rawMsg.charCodeAt(i) & 0xFF);
-          let _f09 = 0;
-          for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
-          const _ebcdicDens = bytes.length > 0 ? _f09 / bytes.length : 0;
-          const _isEbcdic   = _ebcdicDens > 0.30;
-          const parseBytes  = _isEbcdic ? bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : bytes;
-          const parseRaw    = _isEbcdic ? parseBytes.map(b => String.fromCharCode(b)).join('') : rec.rawMsg;
+          const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic } = _netardEbcdic(rec.rawMsg);
           const resolved    = getDDLFromPath(p1Path);
           let fields = [], ddlPath = null, defName = null;
           if (resolved && resolved.defs.length) {
@@ -5896,15 +6135,7 @@ function doParseNetardLog(text, opts = {}) {
             try {
             // ── Score all records ────────────────────────────────────────────
             for (const rec of records) {
-              const bytes = [];
-              for (let i = 0; i < rec.rawMsg.length; i++) bytes.push(rec.rawMsg.charCodeAt(i) & 0xFF);
-              let _f09 = 0;
-              for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
-              const _ebcdicDens = bytes.length > 0 ? _f09 / bytes.length : 0;
-              const _isEbcdic   = _ebcdicDens > 0.30;
-              const _ebcdicHow  = _isEbcdic ? `F0–F9 density ${Math.round(_ebcdicDens * 100)}%` : null;
-              const parseBytes = _isEbcdic ? bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : bytes;
-              const parseRaw   = _isEbcdic ? parseBytes.map(b => String.fromCharCode(b)).join('') : rec.rawMsg;
+              const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic, ebcdicDens: _ebcdicDens, ebcdicHow: _ebcdicHow } = _netardEbcdic(rec.rawMsg);
               const _base = {
                 bytes: parseBytes, raw: parseRaw,
                 isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
@@ -6237,8 +6468,15 @@ function doParseMessages() {
   S.inputFormat = S.forcedFormat || detectFormat(msgText);
   // Detect uniform left margin and strip internally for byte extraction — textarea untouched.
   const { cleanText: _parseText, margin: _parseMargin } = _prepNonNetardChunk(msgText);
-  // Non-NETARD: always treat entire input as one message — no splitting.
-  const chunks = [_parseText];
+  // Audit batch overrides: one chunk per record; otherwise single message.
+  let chunks;
+  if (_auditBatchPayloads) {
+    chunks = _auditBatchPayloads;
+    _auditBatchPayloads = null;
+    S.inputFormat = 'hex';
+  } else {
+    chunks = [_parseText];
+  }
 
   // ── Priority 1: single message + explicit DDL selected ─────────────────
   // Show progress overlay and run parse directly — no DDLMM, no auto-detect.
@@ -6312,9 +6550,10 @@ function doParseMessages() {
     const bytes = extractBytes(chunk, S.inputFormat);
     if (!bytes.length) { flash('Could not extract any message bytes from input.', 'error'); return; }
 
-    // EBCDIC detection for hex-based formats
+    // EBCDIC detection for hex-based formats — only in AUTO mode.
+    // When the user explicitly forces a format, treat bytes as-is.
     let parseBytes = bytes;
-    if (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex') {
+    if (!S.forcedFormat && (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex')) {
       let _f09 = 0;
       for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
       if (bytes.length > 0 && _f09 / bytes.length > 0.30) {
@@ -6399,7 +6638,12 @@ function doParseMessages() {
             if (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex') {
               let _f09 = 0;
               for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
-              if (bytes.length > 0 && _f09 / bytes.length > 0.30) {
+              const _mtiEbcdic = bytes.length >= 4 &&
+                bytes[0] >= 0xF0 && bytes[0] <= 0xF9 &&
+                bytes[1] >= 0xF0 && bytes[1] <= 0xF9 &&
+                bytes[2] >= 0xF0 && bytes[2] <= 0xF9 &&
+                bytes[3] >= 0xF0 && bytes[3] <= 0xF9;
+              if (bytes.length > 0 && (_f09 / bytes.length > 0.30 || _mtiEbcdic)) {
                 parseBytes = bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
               }
             }
@@ -6450,7 +6694,7 @@ function doParseMessages() {
                 parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
                   fields: [], ddlPath: null, msgType, tokens: [], byteCharMap,
                   charStart, charEnd: charStart + chunkStr.length,
-                  noMatchDDL: true, unknownType: true, _diag });
+                  noMatchDDL: true, unknownType: true, _diag, _auditChunk: chunk });
                 continue;
               }
 
@@ -6481,7 +6725,7 @@ function doParseMessages() {
                 // No DDL matched in vol chain — rendered as "No matching DDL"
                 parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
                   fields: [], ddlPath: null, msgType, tokens: [], byteCharMap,
-                  charStart, charEnd: charStart + chunkStr.length, noMatchDDL: true });
+                  charStart, charEnd: charStart + chunkStr.length, noMatchDDL: true, _auditChunk: chunk });
 
               } else if (allMatches.length === 1 || sessionMappings[msgType.type]) {
                 // Single match OR session already chose a DDL for this type
@@ -6492,7 +6736,7 @@ function doParseMessages() {
                 if (allMatches.length === 1) _suggestTypeMapping(msgType.type, msgType.label, match.ddlPath);
                 parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
                   fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, msgType, tokens: null, byteCharMap,
-                  charStart, charEnd: charStart + chunkStr.length });
+                  charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk });
 
               } else {
                 // Multiple matches — defer until user picks
@@ -6513,7 +6757,7 @@ function doParseMessages() {
             const charStart2   = chunkOffset2 >= 0 ? chunkOffset2 : 0;
             parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
               fields, ddlPath, defName, msgType, tokens: null, byteCharMap: byteCharMap2,
-              charStart: charStart2, charEnd: charStart2 + chunkStr.length });
+              charStart: charStart2, charEnd: charStart2 + chunkStr.length, _auditChunk: chunk });
           }
 
           if (_ddlErrors.length) {
@@ -6532,9 +6776,25 @@ function doParseMessages() {
 
           // ── Finalize: commit results and render ──────────────────────────────
           function _finalizeParse() {
-            const finalParsed = parsed.filter(p => p !== null);
+            const isAuditMode  = !!chunks[0]?.recNo;
+            const isBatchAudit = isAuditMode && chunks.length > 1;
+            // Batch audit: silently drop unrecognised-type records (user sees no-badge in the list)
+            // Single-record audit or legacy: keep them so the diagnostic table is shown
+            const finalParsed = parsed.filter(p => p !== null && !(isBatchAudit && p.unknownType));
             if (!finalParsed.length) { _parseProgressHide(); flash('Could not extract any message bytes from input.', 'error'); return; }
             S.messages = finalParsed; S.curIdx = 0; S.isParsed = true;
+            // Carry audit metadata when parsing from the audit file reader
+            if (isAuditMode)
+              finalParsed.forEach(m => {
+                const c = m._auditChunk; if (!c?.recNo) return;
+                m.isNetard  = true;
+                m.recNo     = c.recNo;
+                m.source    = c.source;
+                m.dest      = c.dest;
+                m.recLength = c.recLength;
+                m.time      = c.time;
+                delete m._auditChunk;
+              });
             S.selFieldId = null; S.trackMode = false; S.trackedFields = new Set();
             _syncTrkColVisibility();
             syncParseBtn();
@@ -6564,7 +6824,7 @@ function doParseMessages() {
               const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
               parsed[d.parsedIdx] = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
                 fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, msgType: d.msgType, tokens: null,
-                byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length };
+                byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length, _auditChunk: d.chunk };
             }
             _parseProgressStep('Finalizing\u2026');
             setTimeout(() => _finalizeParse(), 500);
@@ -6686,13 +6946,19 @@ function doParseMessages() {
 }
 
 function syncParseBtn() {
-  const hasInput = !!document.getElementById('msgInput').value.trim();
+  const inAudit = document.body.classList.contains('audit-active');
   const b = document.getElementById('parseBtn');
+  const c = document.getElementById('msgClearBtn');
+  if (inAudit) {
+    if (b) { b.disabled = true; b.classList.remove('btn-primary'); }
+    if (c) c.disabled = true;
+    return;
+  }
+  const hasInput = !!document.getElementById('msgInput').value.trim();
   if (b) {
     b.disabled = !hasInput;
     b.classList.toggle('btn-primary', hasInput);
   }
-  const c = document.getElementById('msgClearBtn');
   if (c) c.disabled = !S.isParsed && !hasInput;
 }
 
@@ -7143,11 +7409,11 @@ function _vbarCopyMsg() {
     _copyFallback(m.text);
   }
 }
-function _copyFallback(text) {
+function _copyFallback(text, msg) {
   const ta = document.createElement('textarea');
   ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
   document.body.appendChild(ta); ta.focus(); ta.select();
-  try { document.execCommand('copy'); showToast('✓ Copied to clipboard'); }
+  try { document.execCommand('copy'); showToast(msg || '✓ Copied to clipboard'); }
   catch(e) { showToast('Copy failed'); }
   document.body.removeChild(ta);
 }
@@ -7294,7 +7560,27 @@ function renderCurrent() {
   updateMsgGutter(true);
   if (msg.isNetard) {
     const tp = msg.msgType?.label ? ` · ${msg.msgType.label}` : '';
-    document.getElementById('resPanelTitle').textContent = `Rec #${msg.recNo}  ${msg.typeDesc}${tp}`;
+    document.getElementById('resPanelTitle').textContent = `Rec #${msg.recNo}${msg.typeDesc ? '  ' + msg.typeDesc : ''}${tp}`;
+    // Sync audit record list highlight
+    if (msg.recNo != null && _auditSt?.filtered?.length) {
+      const fi = _auditSt.filtered.findIndex(r => r.recNo === msg.recNo);
+      if (fi >= 0) {
+        const prev = _auditSt.selIdx;
+        _auditSt.selIdx = fi;
+        if (prev >= 0 && prev !== fi) document.getElementById('aud-row-' + prev)?.classList.remove('aud-sel');
+        // Scroll list so the row is visible, then highlight (virtual scroll re-renders the slice)
+        const listEl = document.getElementById('auditRecordList');
+        if (listEl) {
+          const rowH   = _auditCurRowH;
+          const rowTop = fi * rowH;
+          if (rowTop < listEl.scrollTop || rowTop + rowH > listEl.scrollTop + listEl.clientHeight)
+            listEl.scrollTop = Math.max(0, rowTop - listEl.clientHeight / 2 + rowH / 2);
+          else
+            _auditVirtRenderSlice(listEl.scrollTop);
+        }
+        requestAnimationFrame(() => document.getElementById('aud-row-' + fi)?.classList.add('aud-sel'));
+      }
+    }
   } else {
     const tp       = (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') ? ` · ${msg.msgType.label}` : '';
     const ddlLabel = msg.ddlPath ? ` — ${msg.ddlPath.split('/').pop()}${msg.defName ? '/' + msg.defName : ''}` : '';
@@ -7311,8 +7597,7 @@ function renderFieldTable(msg) {
     metaBar = `<div class="rec-meta">
       <span class="${cls}">${esc(t.type)}</span>
       <span class="rec-meta-route">${esc(msg.source||'?')} → ${esc(msg.dest||'?')}</span>
-      <span class="rec-meta-pipe">|</span>
-      <span>${esc(msg.typeDesc||'')}</span>
+      ${msg.typeDesc ? `<span class="rec-meta-pipe">|</span><span>${esc(msg.typeDesc)}</span>` : ''}
       <span class="rec-meta-pipe">|</span>
       <span class="rec-meta-time">${esc(msg.time||'')}</span>
       <span class="rec-meta-pipe">|</span>
@@ -7330,7 +7615,9 @@ function renderFieldTable(msg) {
     </div>`;
   }
 
+  let _rowNum = 0;
   const makeFieldRows = (fieldList, prefix, extraClass = '') => fieldList.map(f => {
+    _rowNum++;
     const fid    = prefix ? `${prefix}::${f.id}` : f.id;
     const sel    = S.selFieldId === fid ? 'row-sel' : '';
     const ecls   = f.error ? 'c-err' : 'c-val';
@@ -7360,6 +7647,7 @@ function renderFieldTable(msg) {
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
       onmouseenter="hoverField('${esc(fid)}')"
       onmouseleave="clearHover()">
+      <td class="c-num">${_rowNum}</td>
       <td class="c-id">${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
       <td class="c-desc" title="${esc(descTip)}">${esc(f.description)}${det}</td>
       <td class="c-len">${lenCell}</td>
@@ -7430,6 +7718,7 @@ function renderFieldTable(msg) {
   const tableOrEmpty = rows
     ? `<div class="tbl-wrap"><table class="res-tbl">
         <thead><tr>
+          <th class="th-num" style="width:28px;text-align:right">#</th>
           <th class="th-id" style="width:140px">Field<span class="th-resize"></span></th>
           <th class="th-desc" style="width:180px">Description<span class="th-resize"></span></th>
           <th class="th-len" style="width:44px">Len<span class="th-resize"></span></th>
@@ -7579,25 +7868,10 @@ function copyRawToClipboard() {
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(text)
       .then(() => showToast('✓ Raw dump copied to clipboard'))
-      .catch(() => _copyFallback(text));
+      .catch(() => _copyFallback(text, '✓ Raw dump copied to clipboard'));
   } else {
-    _copyFallback(text);
+    _copyFallback(text, '✓ Raw dump copied to clipboard');
   }
-}
-
-function _copyFallback(text) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
-  document.body.appendChild(ta);
-  ta.focus(); ta.select();
-  try {
-    document.execCommand('copy');
-    showToast('✓ Raw dump copied to clipboard');
-  } catch (e) {
-    showToast('Copy failed');
-  }
-  document.body.removeChild(ta);
 }
 
 // Resolve a field by fid, handling token sub-fields (prefix::id) and
@@ -7851,17 +8125,7 @@ function updateMsgGutter(scrollIntoView = false) {
     const docLen = view.state.doc.length;
     const startPos = Math.min(msg.charStart, docLen);
     let endPos;
-    if (msg.isNetard) {
-      const nextMsg = S.messages[S.curIdx + 1];
-      if (nextMsg?.charStart !== undefined) {
-        const nLine = view.state.doc.lineAt(Math.min(nextMsg.charStart, docLen));
-        endPos = nLine.from > 0 ? view.state.doc.lineAt(nLine.from - 1).to : startPos;
-      } else {
-        endPos = docLen;
-      }
-    } else {
-      endPos = Math.min(msg.charEnd ?? msg.charStart, docLen);
-    }
+    endPos = Math.min(msg.charEnd ?? msg.charStart, docLen);
     const startBlock = view.lineBlockAt(startPos);
     const endBlock   = view.lineBlockAt(endPos);
     const scrollTop  = view.scrollDOM.scrollTop;
@@ -7885,16 +8149,7 @@ function updateMsgGutter(scrollIntoView = false) {
   const padTop = parseFloat(style.paddingTop);
   const startLine = (text.slice(0, msg.charStart).match(/\n/g) || []).length;
   let endLine;
-  if (msg.isNetard) {
-    const nextMsg = S.messages[S.curIdx + 1];
-    if (nextMsg?.charStart !== undefined) {
-      endLine = (text.slice(0, nextMsg.charStart).match(/\n/g) || []).length - 1;
-    } else {
-      endLine = (text.match(/\n/g) || []).length;
-    }
-  } else {
-    endLine = (text.slice(0, msg.charEnd).match(/\n/g) || []).length;
-  }
+  endLine = (text.slice(0, msg.charEnd ?? msg.charStart).match(/\n/g) || []).length;
   if (scrollIntoView) {
     const msgTop    = padTop + startLine * lineH;
     const msgBottom = padTop + (endLine + 1) * lineH;
@@ -7918,6 +8173,779 @@ function _syncOverlayScroll() {
     updateMsgGutter();
   });
 }
+
+// ============================================================
+// AUDIT FILE BROWSER
+// ============================================================
+
+// Header config — update offsets as the binary format is reverse-engineered.
+// All offsets are byte positions from the START of each record.
+// Set offset to -1 to mark a field as unknown/disabled.
+const AUDIT_HDR_CFG = {
+  recLen: { offset: 0, size: 2, endian: 'big', includesHeader: true },
+  hdrSize: 110,
+  msgPayloadOffset: 110,
+};
+
+// Worker source — runs in a background thread, zero UI blocking.
+const _AUDIT_WORKER_SRC = `
+'use strict';
+function readAscii(u8, pos, size) {
+  let s = '';
+  for (let i = 0; i < size; i++) {
+    const c = u8[pos + i];
+    if (c === 0) break;
+    s += String.fromCharCode(c);
+  }
+  return s.trim();
+}
+async function scan(file) {
+  const buf   = await file.arrayBuffer();
+  const u8    = new Uint8Array(buf);
+  const total = u8.length;
+  const index = [];
+  const HDR   = 110;
+  let pos = 0;
+  while (pos < total) {
+    if (pos + 2 > total) break;
+    const recLength = (u8[pos] << 8 | u8[pos + 1]) >>> 0;
+    if (recLength < HDR + 1 || recLength > 1048576) {
+      self.postMessage({ type: 'error', pos, recLength, total, index });
+      return;
+    }
+    const entry = { offset: pos, length: recLength };
+    if (pos + HDR <= total) {
+      entry.origTypeNum  = (u8[pos+4]  << 8 | u8[pos+5])  >>> 0;
+      entry.destTypeNum  = (u8[pos+6]  << 8 | u8[pos+7])  >>> 0;
+      entry.source       = readAscii(u8, pos + 8,  16);
+      entry.dest         = readAscii(u8, pos + 24, 16);
+      entry.msgFailure   = (u8[pos+66] << 8 | u8[pos+67]) >>> 0;
+      entry.messageLen   = (u8[pos+68] << 8 | u8[pos+69]) >>> 0;
+      entry.seqnoRecType = (u8[pos+70] << 8 | u8[pos+71]) >>> 0;
+      entry.msgNumber    = (u8[pos+92]<<24 | u8[pos+93]<<16 | u8[pos+94]<<8 | u8[pos+95]) >>> 0;
+      entry.tsBytes      = [u8[pos+80], u8[pos+81], u8[pos+82], u8[pos+83], u8[pos+84], u8[pos+85]];
+    }
+    // Payload peek — first 32 bytes starting at offset 110
+    const payStart  = pos + HDR;
+    const peekLen   = Math.min(32, total - payStart, recLength - HDR);
+    let payloadPeek = '';
+    for (let i = 0; i < peekLen; i++)
+      payloadPeek += u8[payStart + i].toString(16).padStart(2, '0');
+    entry.payloadPeek = payloadPeek;
+    entry.recNo = index.length + 1;
+    index.push(entry);
+    pos += recLength;
+    if (index.length % 2000 === 0)
+      self.postMessage({ type: 'progress', pct: pos / total, count: index.length });
+  }
+  self.postMessage({ type: 'done', index, fileSize: total });
+}
+self.onmessage = e => scan(e.data.file).catch(err =>
+  self.postMessage({ type: 'error', msg: err.message }));
+`;
+
+const AUDIT_VIRT_COUNT = 300;   // rows rendered in DOM at a time
+const AUDIT_VIRT_OVERSCAN = 20; // extra rows above/below visible area
+
+const _auditSt = {
+  file:     null,
+  index:    [],      // full scanned index
+  filtered: [],      // after filter applied
+  worker:   null,
+  selIdx:   -1,      // absolute index into _auditSt.filtered of the currently selected row
+};
+
+let _auditRowH    = {};  // precomputed row height keyed by monoSize (9–18)
+let _auditCurRowH = 36;  // current row height (updated on font-size change)
+
+// BIT PACKET timestamp (6 bytes big-endian centiseconds) → "YYMMDD HH:MM:SS.cc"
+// Epoch: 1974-12-31 00:00:00 UTC (= Unix epoch + 1825 days = +157,680,000,000 ms)
+function _auditFmtTs(tsArr) {
+  if (!tsArr || tsArr.length < 6) return '—';
+  let v = 0;
+  for (const b of tsArr) v = v * 256 + b;
+  const d = new Date(v * 10 + 157_680_000_000);
+  const p = n => String(n).padStart(2, '0');
+  const yy = String(d.getUTCFullYear()).slice(-2);
+  return `${yy}/${p(d.getUTCMonth()+1)}/${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}.${p(Math.floor(d.getUTCMilliseconds()/10))}`;
+}
+
+// ORIG/DEST 2-byte word → "type:nnn"  (high nibble = type, low 3 nibbles = number)
+const _AUDIT_NODE_TYPE = { 1: 'proc', 2: 'stn' };
+function _auditFmtNode(word) {
+  if (word == null) return '—';
+  const type = (word >> 12) & 0xF;
+  const num  = word & 0xFFF;
+  return `${_AUDIT_NODE_TYPE[type] || type}:${String(num).padStart(3, '0')}`;
+}
+
+// EBCDIC-decode a payload peek hex string if the first 4 bytes look like an EBCDIC MTI.
+// Returns a new hex string of the decoded bytes, or the original if no decoding needed.
+function _auditDecodePeek(payPeekHex) {
+  if (!payPeekHex || payPeekHex.length < 8) return payPeekHex;
+  const bytes = [];
+  for (let i = 0; i + 1 < payPeekHex.length; i += 2)
+    bytes.push(parseInt(payPeekHex.substr(i, 2), 16));
+  const _mtiEbcdic = bytes.length >= 4 &&
+    bytes[0] >= 0xF0 && bytes[0] <= 0xF9 &&
+    bytes[1] >= 0xF0 && bytes[1] <= 0xF9 &&
+    bytes[2] >= 0xF0 && bytes[2] <= 0xF9 &&
+    bytes[3] >= 0xF0 && bytes[3] <= 0xF9;
+  let f09 = 0;
+  for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) f09++; }
+  if (!_mtiEbcdic && f09 / bytes.length <= 0.30) return payPeekHex;
+  return bytes.map(b => (_EBCDIC_TO_ASCII[b] ?? b).toString(16).padStart(2, '0')).join('');
+}
+
+// Detect badge type from payload peek hex string → 'iso'|'stm'|'pstm'|'ndc'|'b24'|null
+function _auditBadgeType(payPeekHex) {
+  if (!payPeekHex || payPeekHex.length < 4) return null;
+  let raw = '';
+  for (let i = 0; i < Math.min(payPeekHex.length, 32); i += 2)
+    raw += String.fromCharCode(parseInt(payPeekHex.substr(i, 2), 16));
+  const mt = detectMsgType(raw);
+  return mt.type !== 'UNKNOWN' ? mt.type.toLowerCase() : null;
+}
+
+// Payload preview: bToStr-like rendering of hex peek bytes
+function _auditPayloadPreview(payPeekHex) {
+  if (!payPeekHex) return '';
+  let s = '';
+  for (let i = 0; i + 1 < payPeekHex.length; i += 2) {
+    const b = parseInt(payPeekHex.substr(i, 2), 16);
+    if (b >= 0x20 && b < 0x7F) {
+      const c = String.fromCharCode(b);
+      s += c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '&' ? '&amp;' : c;
+    } else {
+      s += `[${payPeekHex.substr(i, 2)}]`;
+    }
+  }
+  return s;
+}
+
+// Simple HTML escape for source/dest strings
+const _auditEsc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function _auditWorkerURL() {
+  return URL.createObjectURL(new Blob([_AUDIT_WORKER_SRC], { type: 'application/javascript' }));
+}
+
+function openAuditFileDialog() {
+  document.getElementById('auditFileInput').click();
+}
+
+function onAuditFileOpen(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  _auditBeginLoad(file);
+}
+
+function _auditBeginLoad(file) {
+  _auditSt.file    = file;
+  _auditSt.index   = [];
+  _auditSt.filtered = [];
+  _auditSt.selIdx  = -1;
+
+  // Switch panel to audit mode
+  document.getElementById('msgGutter').style.display = 'none';
+  const msgInputEl = document.getElementById('msgInput');
+  if (msgInputEl._cmHost) msgInputEl._cmHost.style.display = 'none';
+  // Locate the actual cm-host DOM element (not the proxy)
+  const cmHostEl = document.querySelector('#msgPanel .cm-host');
+  if (cmHostEl) cmHostEl.style.display = 'none';
+  document.body.classList.add('audit-active');
+  const browser = document.getElementById('auditBrowser');
+  browser.style.display = 'flex';
+  document.getElementById('auditOpenBtn').style.display = 'none';
+  document.getElementById('auditExitBtn').style.display = '';
+
+  // Show filename in panel header
+  const fnEl = document.getElementById('msgFileName');
+  if (fnEl) fnEl.textContent = '📂 ' + file.name;
+
+  // Progress UI
+  document.getElementById('auditProgressArea').style.display = '';
+  document.getElementById('auditBrowserReady').style.display = 'none';
+  document.getElementById('auditProgressLabel').textContent = 'Reading: ' + file.name;
+  document.getElementById('auditProgressFill').style.width = '0%';
+  document.getElementById('auditProgressCount').textContent = '';
+
+  // Kill any previous worker
+  if (_auditSt.worker) { _auditSt.worker.terminate(); _auditSt.worker = null; }
+
+  const url    = _auditWorkerURL();
+  const worker = new Worker(url);
+  _auditSt.worker = worker;
+
+  worker.onmessage = e => {
+    const msg = e.data;
+    if (msg.type === 'progress') {
+      document.getElementById('auditProgressFill').style.width = (msg.pct * 100).toFixed(1) + '%';
+      document.getElementById('auditProgressCount').textContent =
+        msg.count.toLocaleString() + ' records scanned…';
+    } else if (msg.type === 'done') {
+      worker.terminate(); _auditSt.worker = null; URL.revokeObjectURL(url);
+      _auditSt.index = msg.index;
+      _auditOnIndexed(msg.fileSize);
+    } else if (msg.type === 'error') {
+      worker.terminate(); _auditSt.worker = null; URL.revokeObjectURL(url);
+      if (msg.index && msg.index.length) _auditSt.index = msg.index;
+      _auditOnScanError(msg);
+    }
+  };
+  worker.onerror = err => {
+    worker.terminate(); _auditSt.worker = null;
+    flash('Audit worker error: ' + (err.message || 'unknown'), 'warn');
+  };
+  worker.postMessage({ file });
+}
+
+function _auditOnIndexed(fileSize) {
+  document.getElementById('auditProgressArea').style.display = 'none';
+  document.getElementById('auditBrowserReady').style.display = 'flex';
+  _auditPopulateFilterDrops();
+  _auditPreloadDateTimeFilters();
+  _auditApplyFltVis();
+  auditApplyFilter();
+  const mb = (fileSize / 1048576).toFixed(1);
+  flash('✓ ' + _auditSt.file.name + ' — ' + _auditSt.index.length.toLocaleString() + ' records, ' + mb + ' MB');
+}
+
+function _auditOnScanError(msg) {
+  document.getElementById('auditProgressArea').style.display = 'none';
+  document.getElementById('auditBrowserReady').style.display = 'flex';
+  const partial = _auditSt.index.length;
+  const errHtml = '<div class="audit-error-msg">'
+    + '⚠ Scan stopped at offset 0x' + (msg.pos || 0).toString(16).toUpperCase()
+    + (msg.recLength != null ? ' — got length=' + msg.recLength : '')
+    + '<br><span style="color:var(--text-dim)">'
+    + (partial ? partial.toLocaleString() + ' records found before error. ' : '')
+    + 'Header offsets may be wrong — click ⚙ Configure to adjust.</span></div>';
+  if (partial) {
+    _auditPopulateFilterDrops();
+    auditApplyFilter();
+    const list = document.getElementById('auditRecordList');
+    list.insertAdjacentHTML('afterbegin', errHtml);
+  } else {
+    document.getElementById('auditRecordList').innerHTML = errHtml;
+  }
+}
+
+
+function _auditPopulateFilterDrops() {
+  const srcSet = new Set(), dstSet = new Set();
+  for (const r of _auditSt.index) {
+    if (r.source) srcSet.add(r.source);
+    if (r.dest)   dstSet.add(r.dest);
+  }
+  function fillDrop(id, values) {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All</option>';
+    for (const v of [...values].sort()) {
+      const o = document.createElement('option');
+      o.value = o.textContent = v;
+      sel.appendChild(o);
+    }
+    if (cur) sel.value = cur;
+  }
+  fillDrop('auditFltSrc', srcSet);
+  fillDrop('auditFltDst', dstSet);
+}
+
+function _auditCsToYymmddHhmm(cs) {
+  const d = new Date(cs * 10 + 157_680_000_000);
+  const p = n => String(n).padStart(2, '0');
+  const yy = String(d.getUTCFullYear()).slice(-2);
+  return {
+    date: yy + '/' + p(d.getUTCMonth() + 1) + '/' + p(d.getUTCDate()),
+    time: p(d.getUTCHours()) + ':' + p(d.getUTCMinutes())
+  };
+}
+
+function _auditTsBytesToYymmddHhmm(tsBytes) {
+  const cs = _auditTsBytesToCs(tsBytes);
+  return cs !== null ? _auditCsToYymmddHhmm(cs) : null;
+}
+
+function _auditTsBytesToCs(tsBytes) {
+  if (!tsBytes || tsBytes.length < 6) return null;
+  let v = 0;
+  for (const b of tsBytes) v = v * 256 + b;
+  return v;
+}
+
+function _auditPreloadDateTimeFilters() {
+  const idx = _auditSt.index;
+  if (!idx.length) return;
+  const head = idx.slice(0, 4);
+  const tail = idx.slice(-4);
+  let minCs = null, maxCs = null;
+  for (const r of head) {
+    const cs = _auditTsBytesToCs(r.tsBytes);
+    if (cs !== null && (minCs === null || cs < minCs)) minCs = cs;
+  }
+  for (const r of tail) {
+    const cs = _auditTsBytesToCs(r.tsBytes);
+    if (cs !== null && (maxCs === null || cs > maxCs)) maxCs = cs;
+  }
+  if (minCs === null || maxCs === null) return;
+  const first = _auditCsToYymmddHhmm(minCs);
+  const last  = _auditCsToYymmddHhmm(maxCs);
+  const fwd = document.getElementById('auditFltDtDir').textContent.trim() === '▶';
+  const a = fwd ? first : last;
+  const b = fwd ? last  : first;
+  document.getElementById('auditFltDtFrom').value = a.date;
+  document.getElementById('auditFltDtTo').value   = b.date;
+  document.getElementById('auditFltTmFrom').value = a.time;
+  document.getElementById('auditFltTmTo').value   = b.time;
+}
+
+function auditToggleDtDir() {
+  const btn = document.getElementById('auditFltDtDir');
+  const next = btn.textContent.trim() === '▶' ? '◀' : '▶';
+  btn.textContent = next;
+  btn.classList.toggle('is-and', next === '◀');
+  _auditPreloadDateTimeFilters();
+  auditApplyFilter();
+}
+
+function auditCopyDtRange(dir, grp) {
+  const fromId = grp === 'dt' ? 'auditFltDtFrom' : 'auditFltTmFrom';
+  const toId   = grp === 'dt' ? 'auditFltDtTo'   : 'auditFltTmTo';
+  if (dir === 'right') {
+    document.getElementById(toId).value = document.getElementById(fromId).value;
+  } else {
+    document.getElementById(fromId).value = document.getElementById(toId).value;
+  }
+  auditApplyFilter();
+}
+
+function _auditParseFltDate(s) {
+  if (!s || !s.trim()) return null;
+  const m = s.trim().match(/^(\d{2})\/(\d{2})\/(\d{2})$/);
+  if (!m) return null;
+  return +m[1] * 10000 + +m[2] * 100 + +m[3];
+}
+
+function _auditParseFltTime(s) {
+  if (!s || !s.trim()) return null;
+  const m = s.trim().match(/^(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  return +m[1] * 60 + +m[2];
+}
+
+function _auditTsBytesToParts(tsBytes) {
+  if (!tsBytes || tsBytes.length < 6) return { yymmdd: 0, hhmm: 0 };
+  let v = 0;
+  for (const b of tsBytes) v = v * 256 + b;
+  const d = new Date(v * 10 + 157_680_000_000);
+  const yymmdd = (d.getUTCFullYear() % 100) * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+  const hhmm   = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return { yymmdd, hhmm };
+}
+
+const _AUDIT_FLT_GRP_DEFS = {
+  srcdst: ['auditFltGrpSrc', 'auditFltSdOp', 'auditFltGrpDst'],
+  rec:    ['auditFltGrpRec'],
+  dt:     ['auditFltGrpDt'],
+  tm:     ['auditFltGrpTm'],
+  count:  ['auditFltGrpCount'],
+};
+
+function _auditApplyFltVis() {
+  let vis = {};
+  try { vis = JSON.parse(localStorage.getItem('auditFltVis') || '{}'); } catch(e) {}
+  for (const [key, ids] of Object.entries(_AUDIT_FLT_GRP_DEFS)) {
+    const show = vis[key] !== false;
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = show ? '' : 'none';
+    }
+    const btn = document.getElementById('afg_' + key);
+    if (btn) { btn.textContent = show ? '−' : '+'; btn.classList.toggle('is-collapsed', !show); }
+  }
+  const showDir = vis.dt !== false || vis.tm !== false;
+  const dirBtn = document.getElementById('auditFltDtDir');
+  if (dirBtn) dirBtn.style.display = showDir ? '' : 'none';
+}
+
+function auditToggleFltGrp(key) {
+  let vis = {};
+  try { vis = JSON.parse(localStorage.getItem('auditFltVis') || '{}'); } catch(e) {}
+  vis[key] = vis[key] === false ? true : false;
+  localStorage.setItem('auditFltVis', JSON.stringify(vis));
+  _auditApplyFltVis();
+}
+
+function auditToggleSdOp() {
+  const btn = document.getElementById('auditFltSdOp');
+  const next = btn.textContent === 'OR' ? 'AND' : 'OR';
+  btn.textContent = next;
+  btn.classList.toggle('is-and', next === 'AND');
+  auditApplyFilter();
+}
+
+function auditApplyFilter() {
+  const src    = document.getElementById('auditFltSrc').value;
+  const dst    = document.getElementById('auditFltDst').value;
+  const sdAnd  = document.getElementById('auditFltSdOp').textContent === 'AND';
+  const fromV  = parseInt(document.getElementById('auditFltFrom').value, 10);
+  const toV    = parseInt(document.getElementById('auditFltTo').value,   10);
+  const countV = parseInt(document.getElementById('auditFltCount').value, 10);
+  const hasFrom = !isNaN(fromV), hasTo = !isNaN(toV), hasCount = !isNaN(countV) && countV > 0;
+  const dtFrom = _auditParseFltDate(document.getElementById('auditFltDtFrom').value);
+  const dtTo   = _auditParseFltDate(document.getElementById('auditFltDtTo').value);
+  const tmFrom = _auditParseFltTime(document.getElementById('auditFltTmFrom').value);
+  const tmTo   = _auditParseFltTime(document.getElementById('auditFltTmTo').value);
+  let filtered = _auditSt.index.filter((r, i) => {
+    if (src || dst) {
+      if (sdAnd || !(src && dst)) {
+        if (src && r.source !== src) return false;
+        if (dst && r.dest   !== dst) return false;
+      } else {
+        if (r.source !== src && r.dest !== dst) return false;
+      }
+    }
+    const n = r.recNo != null ? r.recNo : i + 1;
+    if (hasFrom && n < fromV) return false;
+    if (hasTo   && n > toV)   return false;
+    if (dtFrom !== null || dtTo !== null || tmFrom !== null || tmTo !== null) {
+      const { yymmdd, hhmm } = _auditTsBytesToParts(r.tsBytes);
+      const dtLo = dtFrom !== null && dtTo !== null ? Math.min(dtFrom, dtTo) : dtFrom;
+      const dtHi = dtFrom !== null && dtTo !== null ? Math.max(dtFrom, dtTo) : dtTo;
+      const tmLo = tmFrom !== null && tmTo !== null ? Math.min(tmFrom, tmTo) : tmFrom;
+      const tmHi = tmFrom !== null && tmTo !== null ? Math.max(tmFrom, tmTo) : tmTo;
+      if (dtLo !== null && yymmdd < dtLo) return false;
+      if (dtHi !== null && yymmdd > dtHi) return false;
+      if (tmLo !== null && hhmm   < tmLo) return false;
+      if (tmHi !== null && hhmm   > tmHi) return false;
+    }
+    return true;
+  });
+  if (document.getElementById('auditFltDtDir').textContent.trim() === '◀') filtered = filtered.slice().reverse();
+  if (hasCount) filtered = filtered.slice(0, countV);
+  _auditSt.filtered = filtered;
+  document.getElementById('auditStats').textContent =
+    _auditSt.filtered.length.toLocaleString() + ' / ' + _auditSt.index.length.toLocaleString() + ' records';
+  const isFiltered = _auditSt.filtered.length < _auditSt.index.length;
+  const paBtn = document.getElementById('auditParseAllBtn');
+  if (paBtn) {
+    paBtn.style.display = isFiltered ? '' : 'none';
+    paBtn.textContent   = '▶ Parse All (' + _auditSt.filtered.length.toLocaleString() + ')';
+  }
+  _auditRenderList();
+}
+
+function _auditBuildRowHtml(r, absIdx) {
+  const peek  = _auditDecodePeek(r.payloadPeek);
+  const badge = _auditBadgeType(peek);
+  const badgeHtml = badge ? '<span class="btype btype-' + badge + '">' + badge.toUpperCase() + '</span>' : '';
+  const fail = r.msgFailure ? String(r.msgFailure) : '';
+  return '<div id="aud-row-' + absIdx + '" class="audit-record-row' + (absIdx === _auditSt.selIdx ? ' aud-sel' : '')
+    + '" onclick="auditInspectRecord(' + absIdx + ')">'
+    + '<div class="ar-meta">'
+    + '<span class="ac-idx">'   + r.recNo + '</span>'
+    + '<span class="ac-badge">' + badgeHtml + '</span>'
+    + '<span class="ac-len">'   + r.messageLen + '</span>'
+    + '<span class="ac-ts">'    + _auditFmtTs(r.tsBytes) + '</span>'
+    + '<span class="ac-onode">' + _auditFmtNode(r.origTypeNum) + '</span>'
+    + '<span class="ac-src">'   + _auditEsc(r.source || '') + '</span>'
+    + '<span class="ac-arrow">→</span>'
+    + '<span class="ac-dnode">' + _auditFmtNode(r.destTypeNum) + '</span>'
+    + '<span class="ac-dst">'   + _auditEsc(r.dest || '') + '</span>'
+    + '<span class="ac-msgno">#' + (r.msgNumber || 0) + '</span>'
+    + '<span class="ac-fail">'  + fail + '</span>'
+    + '<span class="ac-rt">'    + (r.seqnoRecType != null ? (rtCode => rtCode + (NETARD_TYPE_MAP[rtCode] ? ' - ' + NETARD_TYPE_MAP[rtCode] : ''))(r.seqnoRecType & 0xFFF) : '—') + '</span>'
+    + '</div>'
+    + '<div class="ar-preview">' + _auditPayloadPreview(peek) + '</div>'
+    + '</div>';
+}
+
+function _auditRenderList() {
+  const rows = _auditSt.filtered;
+  const el   = document.getElementById('auditRecordList');
+  if (!el) return;
+
+  if (!rows.length) {
+    el.innerHTML = '<div style="padding:16px;color:var(--text-very-dim)">No records match the current filter.</div>';
+    return;
+  }
+
+  const rowH   = _auditCurRowH;
+  const totalH = rows.length * rowH;
+
+  // Build spacer + viewport once; reuse on subsequent calls
+  let spacer   = document.getElementById('auditVirtSpacer');
+  let viewport = document.getElementById('auditVirtViewport');
+  if (!spacer) {
+    el.innerHTML = '';
+    spacer = document.createElement('div');
+    spacer.id = 'auditVirtSpacer';
+    spacer.style.cssText = 'position:relative';
+    viewport = document.createElement('div');
+    viewport.id = 'auditVirtViewport';
+    viewport.style.cssText = 'position:absolute;top:0;left:0;right:0;will-change:transform;overflow:visible';
+    spacer.appendChild(viewport);
+    el.appendChild(spacer);
+    el.addEventListener('scroll', _auditOnVirtScroll, { passive: true });
+  }
+
+  spacer.style.height = (totalH + rowH * 2) + 'px';
+  el.scrollTop = 0;
+  _auditVirtRenderSlice(0);
+}
+
+function _auditVirtRenderSlice(scrollTop) {
+  const rows     = _auditSt.filtered;
+  const viewport = document.getElementById('auditVirtViewport');
+  if (!viewport || !rows.length) return;
+
+  const rowH     = _auditCurRowH;
+  const startIdx = Math.max(0, Math.floor(scrollTop / rowH) - AUDIT_VIRT_OVERSCAN);
+  const endIdx   = Math.min(rows.length, startIdx + AUDIT_VIRT_COUNT + AUDIT_VIRT_OVERSCAN * 2);
+
+  let html = '';
+  for (let i = startIdx; i < endIdx; i++) html += _auditBuildRowHtml(rows[i], i);
+  viewport.style.transform = 'translateY(' + (startIdx * rowH) + 'px)';
+  viewport.innerHTML = html;
+}
+
+function _auditOnVirtScroll() {
+  const el = document.getElementById('auditRecordList');
+  if (el) _auditVirtRenderSlice(el.scrollTop);
+}
+
+function _auditPrecomputeRowHeights() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:-9999px;pointer-events:none';
+  // Representative row — same structure as _auditBuildRowHtml
+  probe.innerHTML =
+    '<div class="audit-record-row">' +
+      '<div class="ar-meta">' +
+        '<span class="ac-idx">9999</span>' +
+        '<span class="ac-badge"></span>' +
+        '<span class="ac-len">1294</span>' +
+        '<span class="ac-ts">26/04/15 08:13:02</span>' +
+        '<span class="ac-onode">proc:012</span>' +
+        '<span class="ac-src">P1A-AUTHXXXXXX</span>' +
+        '<span class="ac-arrow">→</span>' +
+        '<span class="ac-dnode">stn:092</span>' +
+        '<span class="ac-dst">P1A-SWITCH</span>' +
+        '<span class="ac-msgno">#970010</span>' +
+        '<span class="ac-fail"></span>' +
+        '<span class="ac-rt">6 - Process Input</span>' +
+      '</div>' +
+      '<div class="ar-preview">F0F8F0F08220000080000000040000000000F0F3</div>' +
+    '</div>';
+  document.body.appendChild(probe);
+  const rowEl = probe.querySelector('.audit-record-row');
+  for (let sz = 9; sz <= 18; sz++) {
+    probe.style.setProperty('--sz-mono', sz + 'px');
+    _auditRowH[sz] = rowEl.getBoundingClientRect().height;
+  }
+  document.body.removeChild(probe);
+  _auditCurRowH = _auditRowH[P.monoSize] || 36;
+}
+
+// Confirmed 110-byte header field table for the inspect popup
+const _AUDIT_HDR_FIELDS = [
+  { label:'Record Length',    off:0,   sz:2,  fmt:v=>v+' B'                                    },
+  { label:'Msg Type',         off:2,   sz:2                                                     },
+  { label:'ORIG',             off:4,   sz:2,  fmt:v=>_auditFmtNode(v)                          },
+  { label:'DEST',             off:6,   sz:2,  fmt:v=>_auditFmtNode(v)                          },
+  { label:'Source',           off:8,   sz:16, ascii:true                                        },
+  { label:'Destination',      off:24,  sz:16, ascii:true                                        },
+  { label:'Msg Source Class', off:40,  sz:4,  ascii:true                                        },
+  { label:'Payload Length',   off:44,  sz:2                                                     },
+  { label:'Service Flags',    off:46,  sz:2                                                     },
+  { label:'?',                off:48,  sz:4,  tbd:true                                          },
+  { label:'MSG-PRO-NOM',      off:52,  sz:2                                                     },
+  { label:'Various Flags',    off:54,  sz:2                                                     },
+  { label:'Sym Type Source',  off:56,  sz:2                                                     },
+  { label:'?',                off:58,  sz:2,  tbd:true                                          },
+  { label:'Msg Priority',     off:60,  sz:2                                                     },
+  { label:'Msg Category',     off:62,  sz:2                                                     },
+  { label:'Msg Sub-Category', off:64,  sz:2                                                     },
+  { label:'Msg Failure',      off:66,  sz:2,  fmt:v=>v ? v+' (error)' : '0'                   },
+  { label:'Message Length',   off:68,  sz:2,  fmt:v=>v+' B'                                    },
+  { label:'SEQNO/Rec Type',   off:70,  sz:2,  fmt:v=>'seq='+(v>>12)+' rt='+(v&0xFFF)          },
+  { label:'Msg Error',        off:72,  sz:2                                                     },
+  { label:'?',                off:74,  sz:4,  tbd:true                                          },
+  { label:'Msg TPTR',         off:78,  sz:2                                                     },
+  { label:'Timestamp',        off:80,  sz:6,  ts:true                                           },
+  { label:'Time Limit',       off:86,  sz:6,  ts:true                                           },
+  { label:'Message Number',   off:92,  sz:4                                                     },
+  { label:'Flags/MSG-PRO',    off:96,  sz:10                                                    },
+  { label:'Connect ID',       off:106, sz:2                                                     },
+  { label:'Other Flags',      off:108, sz:2                                                     },
+];
+
+function auditInspectRecord(filteredIdx) {
+  const prev = _auditSt.selIdx;
+  const popupOpen = document.getElementById('auditPopup').style.display !== 'none';
+  if (filteredIdx === prev && popupOpen) {
+    auditClosePopup();
+    _auditSt.selIdx = -1;
+    document.getElementById('aud-row-' + filteredIdx)?.classList.remove('aud-sel');
+    return;
+  }
+  _auditSt.selIdx = filteredIdx;
+  if (prev >= 0) document.getElementById('aud-row-' + prev)?.classList.remove('aud-sel');
+  document.getElementById('aud-row-' + filteredIdx)?.classList.add('aud-sel');
+  const rec = _auditSt.filtered[filteredIdx];
+  if (!rec || !_auditSt.file) return;
+  _auditSt.file.slice(rec.offset, rec.offset + rec.length).arrayBuffer().then(buf => {
+    const u8  = new Uint8Array(buf);
+    const HDR = AUDIT_HDR_CFG.msgPayloadOffset;
+
+    // Node labels
+    const origType = (rec.origTypeNum >> 12) & 0xF;
+    const origNum  = rec.origTypeNum & 0xFFF;
+    const destType = (rec.destTypeNum >> 12) & 0xF;
+    const destNum  = rec.destTypeNum & 0xFFF;
+    const nodeLabel = (t, n) => t === 1 ? 'PRO ' + n : t === 2 ? 'STN ' + n : t + ':' + n;
+
+    // Timestamp — _auditFmtTs already returns YY/MM/DD HH:MM:SS.CC
+    const tsStr = _auditFmtTs(rec.tsBytes);
+
+    // Header line — recNo is the static file-position number (not renumbered by filter)
+    const recno  = rec.recNo || (filteredIdx + 1);
+    const msgno  = rec.msgNumber || 0;
+    const fail   = rec.msgFailure || 0;
+    const rt     = rec.seqnoRecType != null ? rec.seqnoRecType & 0xFFF : 0;
+    const rtDesc = NETARD_TYPE_MAP[rt] ? rt + ' - ' + NETARD_TYPE_MAP[rt] : String(rt);
+    const hdrLine = String(recno).padStart(6) + '  ' + String(rec.length).padStart(5)
+                  + ' ' + tsStr + ' '.repeat(23)
+                  + String(msgno).padStart(10) + '  '
+                  + (fail ? String(fail) + '  ' : '')
+                  + rtDesc;
+
+    // SOURCE / DEST lines
+    const srcLine = '       SOURCE ' + (rec.source || '').padEnd(20) + ' ( ' + nodeLabel(origType, origNum) + ' )';
+    const dstLine = '       DEST   ' + (rec.dest   || '').padEnd(20) + ' ( ' + nodeLabel(destType, destNum) + ' )';
+
+    // Payload as wrapped ASCII (non-printable → ?)
+    const pay = u8.slice(HDR);
+    let raw = '';
+    for (let i = 0; i < pay.length; i++)
+      raw += (pay[i] >= 0x20 && pay[i] <= 0x7E) ? String.fromCharCode(pay[i]) : '?';
+    const indent = '       ';
+    let payLines = '';
+    for (let i = 0; i < raw.length; i += 68)
+      payLines += indent + raw.slice(i, i + 68) + '\n';
+    if (!payLines) payLines = indent + '(empty payload)\n';
+
+    const text = hdrLine + '\n\n' + srcLine + '\n' + dstLine + '\n\n' + payLines;
+
+    document.getElementById('auditPopupTitle').textContent =
+      'Record ' + recno + ' — ' + rec.length + ' B — ' + _auditFmtTs(rec.tsBytes);
+    document.getElementById('auditPopupBody').innerHTML =
+      '<pre class="audit-netard-dump">' + _auditEsc(text) + '</pre>';
+    document.getElementById('auditPopup').style.display = 'flex';
+    _auditSt._inspectBuf = buf;
+  });
+}
+
+function auditClosePopup() {
+  document.getElementById('auditPopup').style.display = 'none';
+  _auditSt._inspectBuf = null;
+}
+
+function auditParseSelected() {
+  const rec = _auditSt.filtered[_auditSt.selIdx];
+  if (!rec || !_auditSt.file) return;
+  const load = buf => {
+    const u8  = new Uint8Array(buf);
+    const pay = u8.slice(AUDIT_HDR_CFG.msgPayloadOffset);
+    const hex = Array.from(pay, b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    _auditBatchPayloads = [{ text: hex, recNo: rec.recNo, source: rec.source, dest: rec.dest,
+      recLength: rec.messageLen, time: _auditFmtTs(rec.tsBytes) }];
+    const msgEl = document.getElementById('msgInput');
+    msgEl.readOnly = false;
+    msgEl.value   = hex;
+    onMsgChange();
+    doParseMessages();
+  };
+  if (_auditSt._inspectBuf) { load(_auditSt._inspectBuf); return; }
+  _auditSt.file.slice(rec.offset, rec.offset + rec.length).arrayBuffer().then(load);
+}
+
+// Pre-built audit batch: set before calling doParseMessages so the P2/P3 pipeline
+// receives one chunk per record instead of treating the whole textarea as one message.
+let _auditBatchPayloads = null;
+
+async function auditParseAll() {
+  const rows = _auditSt.filtered;
+  if (!rows.length || !_auditSt.file) return;
+  const bufs = await Promise.all(rows.map(r =>
+    _auditSt.file.slice(r.offset, r.offset + r.length).arrayBuffer()
+  ));
+  _auditBatchPayloads = bufs.map((buf, i) => ({
+    text: Array.from(new Uint8Array(buf).slice(AUDIT_HDR_CFG.msgPayloadOffset),
+                     b => b.toString(16).padStart(2,'0')).join('').toUpperCase(),
+    recNo:     rows[i].recNo ?? (i + 1),
+    source:    rows[i].source,
+    dest:      rows[i].dest,
+    recLength: rows[i].messageLen,
+    time:      _auditFmtTs(rows[i].tsBytes),
+  })).filter(c => c.text.length > 0);
+  if (!_auditBatchPayloads.length) { _auditBatchPayloads = null; return; }
+  const msgEl = document.getElementById('msgInput');
+  msgEl.readOnly = false;
+  msgEl.value   = _auditBatchPayloads[0].text;
+  onMsgChange();
+  doParseMessages();
+}
+
+
+function auditSelectRecord(filteredIdx) {
+  const prev = _auditSt.selIdx;
+  _auditSt.selIdx = filteredIdx;
+  if (prev >= 0) document.getElementById('aud-row-' + prev)?.classList.remove('aud-sel');
+  document.getElementById('aud-row-' + filteredIdx)?.classList.add('aud-sel');
+  const rec = _auditSt.filtered[filteredIdx];
+  if (!rec || !_auditSt.file) return;
+  _auditSt.file.slice(rec.offset, rec.offset + rec.length).arrayBuffer().then(buf => {
+    const u8  = new Uint8Array(buf);
+    const pay = u8.slice(AUDIT_HDR_CFG.msgPayloadOffset);
+    const hex = Array.from(pay, b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    _auditBatchPayloads = [{ text: hex, recNo: rec.recNo, source: rec.source, dest: rec.dest,
+      recLength: rec.messageLen, time: _auditFmtTs(rec.tsBytes) }];
+    const msgEl = document.getElementById('msgInput');
+    msgEl.readOnly = false;
+    msgEl.value   = hex;
+    onMsgChange();
+    flash('Record ' + rec.recNo + ' loaded — ' + rec.messageLen + ' bytes');
+    doParseMessages();
+  });
+}
+
+function auditCloseMode() {
+  document.body.classList.remove('audit-active');
+  if (_auditSt.worker) { _auditSt.worker.terminate(); _auditSt.worker = null; }
+  _auditSt.file     = null;
+  _auditSt.index    = [];
+  _auditSt.filtered = [];
+  _auditSt.selIdx   = -1;
+  // Restore normal message input
+  document.getElementById('auditBrowser').style.display  = 'none';
+  document.getElementById('auditOpenBtn').style.display  = '';
+  document.getElementById('auditExitBtn').style.display  = 'none';
+  const cmHostEl = document.querySelector('#msgPanel .cm-host');
+  if (cmHostEl) cmHostEl.style.display = '';
+  document.getElementById('msgGutter').style.display = '';
+  const fnEl = document.getElementById('msgFileName');
+  if (fnEl) fnEl.textContent = '';
+  clearAll();
+}
+
+function auditToggleCfgDialog() {
+  const dlg = document.getElementById('auditCfgDialog');
+  dlg.classList.toggle('open');
+}
+
 
 // ============================================================
 // TRACKING MODE
@@ -10273,7 +11301,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.0.5.104';
+const APP_VERSION  = '1.0.5.163';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -10486,6 +11514,16 @@ function applyPrefs(updateUI = true) {
   else _syncEggAccentUI();
   // Sync raw hex truncate button (always — needed on startup to reflect saved pref)
   _syncRawHexTruncateUI();
+  // Update virtual scroll row height when font size changes
+  if (_auditRowH[P.monoSize]) {
+    _auditCurRowH = _auditRowH[P.monoSize];
+    if (document.body.classList.contains('audit-active') && _auditSt.filtered.length) {
+      const spacer = document.getElementById('auditVirtSpacer');
+      if (spacer) spacer.style.height = (_auditSt.filtered.length * _auditCurRowH) + 'px';
+      const el = document.getElementById('auditRecordList');
+      if (el) _auditVirtRenderSlice(el.scrollTop);
+    }
+  }
 }
 
 function _syncRawHexTruncateUI() {
@@ -10948,6 +11986,7 @@ function initDropZones() {
     const r = new FileReader();
     r.onload = ev => {
       msgTA.value = ev.target.result;
+      msgTA.setSelectionRange(0, 0);
       onMsgChange();
       // Show filename next to panel title
       const fnEl = document.getElementById('msgFileName');
@@ -11423,6 +12462,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
+    if (e.key === 'p' || e.key === 'P') {
+      const popup = document.getElementById('auditPopup');
+      if (popup && popup.style.display !== 'none') { e.preventDefault(); auditParseSelected(); }
+    }
+
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       if (!S.isParsed || S.messages.length <= 1) return;
       e.preventDefault();
@@ -11472,6 +12516,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tutSkip')?.addEventListener('click', closeTutorial);
 
   loadPrefs();
+  _auditPrecomputeRowHeights();
   loadExcl();
   loadDeOverrides();
   loadLayout();

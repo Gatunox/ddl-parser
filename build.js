@@ -38,6 +38,10 @@ const RESERVED = [
   'toggleSettingsSection', 'toggleTokenArea', 'toggleTrack', 'toggleTrackMode',
   'toggleTreeExp', 'updateDDLEditorState', 'updateDDLHighlight',
   'updateDDLValidationBar',
+  // Audit file browser
+  'openAuditFileDialog', 'onAuditFileOpen', 'auditCloseMode',
+  'auditSelectRecord', 'auditApplyFilter', 'auditToggleCfgDialog', 'auditApplyCfg',
+  'auditInspectRecord', 'auditParseSelected', 'auditClosePopup',
 ];
 
 // ── bundle CodeMirror ──────────────────────────────────────────────────────

@@ -11339,7 +11339,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.0.3';
+const APP_VERSION  = '1.1.0.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12833,28 +12833,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
       <!-- ── MESSAGE DETECTION ─────────────────────── -->
       <div class="settings-section">
-        <div class="settings-stitle">Message Detection</div>
-        <div class="settings-row" style="margin-bottom:6px">
-          <span class="settings-lbl" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px)">Rules tested in order — first match wins</span>
+        <div class="settings-stitle collapsed" id="detectStitle">Message Detection
+          <button class="stitle-toggle" onclick="toggleSettingsSection(document.getElementById('detectStitle'))">+</button>
         </div>
-        <table class="dr-table">
-          <colgroup>
-            <col class="dr-col-rx"><col class="dr-col-ty"><col class="dr-col-lb"><col class="dr-col-vl"><col class="dr-col-ac">
-          </colgroup>
-          <thead>
-            <tr>
-              <th class="dr-th">Regex</th>
-              <th class="dr-th">Type</th>
-              <th class="dr-th">Label</th>
-              <th class="dr-th">Vol</th>
-              <th class="dr-th"></th>
-            </tr>
-          </thead>
-          <tbody id="detectRulesTbody"></tbody>
-        </table>
-        <div class="settings-row" style="margin-top:10px">
-          <button class="btn btn-sm" onclick="resetDetectRules()" title="Restore built-in detection rules">↺ Reset</button>
-          <button class="btn btn-sm" onclick="addDetectRule()" title="Add new detection rule">+ Add Rule</button>
+        <div class="settings-collapsible-body collapsed" style="max-height:500px">
+          <div class="settings-row" style="margin-bottom:6px">
+            <span class="settings-lbl" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px)">Rules tested in order — first match wins</span>
+          </div>
+          <table class="dr-table">
+            <colgroup>
+              <col class="dr-col-rx"><col class="dr-col-ty"><col class="dr-col-lb"><col class="dr-col-vl"><col class="dr-col-ac">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="dr-th">Regex</th>
+                <th class="dr-th">Type</th>
+                <th class="dr-th">Label</th>
+                <th class="dr-th">Vol</th>
+                <th class="dr-th"></th>
+              </tr>
+            </thead>
+            <tbody id="detectRulesTbody"></tbody>
+          </table>
+          <div class="settings-row" style="margin-top:10px">
+            <button class="btn btn-sm" onclick="resetDetectRules()" title="Restore built-in detection rules">↺ Reset</button>
+            <button class="btn btn-sm" onclick="addDetectRule()" title="Add new detection rule">+ Add Rule</button>
+          </div>
         </div>
       </div>
 

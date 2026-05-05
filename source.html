@@ -1533,7 +1533,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
             <div id="auditPopup" class="audit-popup" style="display:none">
               <div class="audit-popup-hdr">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
-                <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);min-width:5ch" onclick="auditToggleDumpMode()" title="Toggle hex/ASCII dump view">HEX</button>
+                <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle hex/ASCII dump view">HEX</button>
                 <button class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Message Input and parse (press P)">&#9654; Parse</button>
                 <button class="btn" style="height:20px;padding:0 6px" onclick="auditClosePopup()">&#10005;</button>
               </div>
@@ -8969,6 +8969,7 @@ function auditInspectRecord(filteredIdx) {
     document.getElementById('auditPopupTitle').textContent =
       'Record ' + recno + ' — ' + rec.length + ' B — ' + _auditFmtTs(rec.tsBytes);
     document.getElementById('auditPopup').style.display = 'flex';
+    requestAnimationFrame(_auditSyncToggleWidth);
     _auditSt._inspectBuf = buf;
   });
 }
@@ -8987,6 +8988,17 @@ function auditToggleDumpMode() {
   const rec = _auditSt.filtered[_auditSt.selIdx];
   if (!rec) return;
   _auditApplyDump(new Uint8Array(_auditSt._inspectBuf), rec, rec.recNo || (_auditSt.selIdx + 1));
+}
+
+function _auditSyncToggleWidth() {
+  const btn = document.getElementById('auditDumpToggle');
+  if (!btn || document.getElementById('auditPopup')?.style.display === 'none') return;
+  btn.style.minWidth = '';
+  const saved = btn.textContent;
+  btn.textContent = 'ASCII'; const aw = btn.getBoundingClientRect().width;
+  btn.textContent = 'HEX';   const hw = btn.getBoundingClientRect().width;
+  btn.textContent = saved;
+  btn.style.minWidth = Math.ceil(Math.max(aw, hw)) + 'px';
 }
 
 function auditParseSelected() {
@@ -11436,7 +11448,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.8';
+const APP_VERSION  = '1.1.1.11';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -11659,6 +11671,7 @@ function applyPrefs(updateUI = true) {
       if (el) _auditVirtRenderSlice(el.scrollTop);
     }
   }
+  requestAnimationFrame(_auditSyncToggleWidth);
 }
 
 function _syncRawHexTruncateUI() {

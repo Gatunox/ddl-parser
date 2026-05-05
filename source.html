@@ -1534,6 +1534,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
               <div class="audit-popup-hdr">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
                 <button class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Message Input and parse (press P)">&#9654; Parse</button>
+                <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleDumpMode()" title="Toggle hex/ASCII dump view">HEX</button>
                 <button class="btn" style="height:20px;padding:0 6px" onclick="auditClosePopup()">&#10005;</button>
               </div>
               <div id="auditPopupBody" class="audit-popup-body">
@@ -8353,6 +8354,7 @@ const _auditSt = {
 let _auditRowH    = {};  // precomputed row height keyed by monoSize (9–18)
 let _auditCurRowH = 36;  // current row height (updated on font-size change)
 let _auditPopupByteCharMap = null; // byte→char map for the audit dump CM (rebuilt per record)
+let _auditPopupMode = 'ascii'; // 'ascii' | 'hex' — persists across records
 
 // BIT PACKET timestamp (6 bytes big-endian centiseconds) → "YYMMDD HH:MM:SS.cc"
 // Epoch: 1974-12-31 00:00:00 UTC (= Unix epoch + 1825 days = +157,680,000,000 ms)
@@ -8871,6 +8873,82 @@ const _AUDIT_HDR_FIELDS = [
   { label:'Other Flags',      off:108, sz:2                                                     },
 ];
 
+function _auditApplyDump(u8, rec, recno) {
+  const HDR = AUDIT_HDR_CFG.msgPayloadOffset;
+  const origType = (rec.origTypeNum >> 12) & 0xF;
+  const origNum  = rec.origTypeNum & 0xFFF;
+  const destType = (rec.destTypeNum >> 12) & 0xF;
+  const destNum  = rec.destTypeNum & 0xFFF;
+  const nodeLabel = (t, n) => t === 1 ? 'PRO ' + n : t === 2 ? 'STN ' + n : t + ':' + n;
+  const fail   = rec.msgFailure || 0;
+  const rt     = rec.seqnoRecType != null ? rec.seqnoRecType & 0xFFF : 0;
+  const rtDesc = NETARD_TYPE_MAP[rt] ? rt + ' - ' + NETARD_TYPE_MAP[rt] : String(rt);
+  const hdrLine = String(recno).padStart(6) + '  ' + String(rec.length).padStart(5)
+                + ' ' + _auditFmtTs(rec.tsBytes) + ' '.repeat(23)
+                + String(rec.msgNumber || 0).padStart(10) + '  '
+                + (fail ? String(fail) + '  ' : '')
+                + rtDesc;
+  const srcLine = '       SOURCE ' + (rec.source || '').padEnd(20) + ' ( ' + nodeLabel(origType, origNum) + ' )';
+  const dstLine = '       DEST   ' + (rec.dest   || '').padEnd(20) + ' ( ' + nodeLabel(destType, destNum) + ' )';
+  const pay = u8.slice(HDR);
+  const payloadStart = hdrLine.length + 2 + srcLine.length + 1 + dstLine.length + 2;
+
+  let payText = '';
+  _auditPopupByteCharMap = null;
+
+  if (_auditPopupMode === 'hex') {
+    if (!pay.length) {
+      payText = '       (empty payload)\n';
+    } else {
+      let f09 = 0;
+      for (let i = 0; i < pay.length; i++)
+        if (pay[i] >= 0xF0 && pay[i] <= 0xF9) f09++;
+      const isEbcdic = f09 / pay.length > 0.30;
+      _auditPopupByteCharMap = new Array(pay.length);
+      for (let lineOff = 0; lineOff < pay.length; lineOff += 16) {
+        const n = Math.min(16, pay.length - lineOff);
+        const l = lineOff / 16;
+        let hexPart = '';
+        for (let g = 0; g < 8; g++) {
+          if (g > 0) hexPart += ' ';
+          const b0 = lineOff + g * 2, b1 = b0 + 1;
+          hexPart += b0 < pay.length ? pay[b0].toString(16).toUpperCase().padStart(2, '0') : '  ';
+          hexPart += b1 < pay.length ? pay[b1].toString(16).toUpperCase().padStart(2, '0') : '  ';
+        }
+        let charStr = '';
+        for (let i = 0; i < n; i++) {
+          const b = pay[lineOff + i];
+          const c = isEbcdic ? (_EBCDIC_TO_ASCII[b] ?? b) : b;
+          charStr += (c >= 0x20 && c <= 0x7E) ? String.fromCharCode(c) : '.';
+        }
+        payText += String(lineOff).padStart(6) + ': ' + hexPart + '  [' + charStr + ']\n';
+        for (let p = 0; p < n; p++) {
+          const g = Math.floor(p / 2), bi = p % 2;
+          const s = payloadStart + l * 69 + 8 + g * 5 + bi * 2;
+          _auditPopupByteCharMap[lineOff + p] = { s, e: s + 2 };
+        }
+      }
+    }
+  } else {
+    let raw = '';
+    for (let i = 0; i < pay.length; i++)
+      raw += (pay[i] >= 0x20 && pay[i] <= 0x7E) ? String.fromCharCode(pay[i]) : '?';
+    const indent = '       ';
+    for (let i = 0; i < raw.length; i += 68)
+      payText += indent + raw.slice(i, i + 68) + '\n';
+    if (!payText) payText = indent + '(empty payload)\n';
+    if (pay.length > 0) {
+      _auditPopupByteCharMap = new Array(pay.length);
+      for (let b = 0; b < pay.length; b++) {
+        const pos = payloadStart + Math.floor(b / 68) * 76 + 7 + (b % 68);
+        _auditPopupByteCharMap[b] = { s: pos, e: pos + 1 };
+      }
+    }
+  }
+
+  window._auditDumpLoad?.(hdrLine + '\n\n' + srcLine + '\n' + dstLine + '\n\n' + payText);
+}
+
 function auditInspectRecord(filteredIdx) {
   const prev = _auditSt.selIdx;
   const popupOpen = document.getElementById('auditPopup').style.display !== 'none';
@@ -8886,62 +8964,10 @@ function auditInspectRecord(filteredIdx) {
   const rec = _auditSt.filtered[filteredIdx];
   if (!rec || !_auditSt.file) return;
   _auditSt.file.slice(rec.offset, rec.offset + rec.length).arrayBuffer().then(buf => {
-    const u8  = new Uint8Array(buf);
-    const HDR = AUDIT_HDR_CFG.msgPayloadOffset;
-
-    // Node labels
-    const origType = (rec.origTypeNum >> 12) & 0xF;
-    const origNum  = rec.origTypeNum & 0xFFF;
-    const destType = (rec.destTypeNum >> 12) & 0xF;
-    const destNum  = rec.destTypeNum & 0xFFF;
-    const nodeLabel = (t, n) => t === 1 ? 'PRO ' + n : t === 2 ? 'STN ' + n : t + ':' + n;
-
-    // Timestamp — _auditFmtTs already returns YY/MM/DD HH:MM:SS.CC
-    const tsStr = _auditFmtTs(rec.tsBytes);
-
-    // Header line — recNo is the static file-position number (not renumbered by filter)
-    const recno  = rec.recNo || (filteredIdx + 1);
-    const msgno  = rec.msgNumber || 0;
-    const fail   = rec.msgFailure || 0;
-    const rt     = rec.seqnoRecType != null ? rec.seqnoRecType & 0xFFF : 0;
-    const rtDesc = NETARD_TYPE_MAP[rt] ? rt + ' - ' + NETARD_TYPE_MAP[rt] : String(rt);
-    const hdrLine = String(recno).padStart(6) + '  ' + String(rec.length).padStart(5)
-                  + ' ' + tsStr + ' '.repeat(23)
-                  + String(msgno).padStart(10) + '  '
-                  + (fail ? String(fail) + '  ' : '')
-                  + rtDesc;
-
-    // SOURCE / DEST lines
-    const srcLine = '       SOURCE ' + (rec.source || '').padEnd(20) + ' ( ' + nodeLabel(origType, origNum) + ' )';
-    const dstLine = '       DEST   ' + (rec.dest   || '').padEnd(20) + ' ( ' + nodeLabel(destType, destNum) + ' )';
-
-    // Payload as wrapped ASCII (non-printable → ?)
-    const pay = u8.slice(HDR);
-    let raw = '';
-    for (let i = 0; i < pay.length; i++)
-      raw += (pay[i] >= 0x20 && pay[i] <= 0x7E) ? String.fromCharCode(pay[i]) : '?';
-    const indent = '       ';
-    let payLines = '';
-    for (let i = 0; i < raw.length; i += 68)
-      payLines += indent + raw.slice(i, i + 68) + '\n';
-    if (!payLines) payLines = indent + '(empty payload)\n';
-
-    const text = hdrLine + '\n\n' + srcLine + '\n' + dstLine + '\n\n' + payLines;
-
+    const recno = rec.recNo || (filteredIdx + 1);
+    _auditApplyDump(new Uint8Array(buf), rec, recno);
     document.getElementById('auditPopupTitle').textContent =
       'Record ' + recno + ' — ' + rec.length + ' B — ' + _auditFmtTs(rec.tsBytes);
-    // Load into the audit dump CM and rebuild the byte→char map for field highlighting.
-    window._auditDumpLoad?.(text);
-    _auditPopupByteCharMap = null;
-    if (pay.length > 0) {
-      const payloadStart = hdrLine.length + 2 + srcLine.length + 1 + dstLine.length + 2;
-      const LINE_W = 68, IND = 7;
-      _auditPopupByteCharMap = new Array(pay.length);
-      for (let b = 0; b < pay.length; b++) {
-        const pos = payloadStart + Math.floor(b / LINE_W) * (IND + LINE_W + 1) + IND + (b % LINE_W);
-        _auditPopupByteCharMap[b] = { s: pos, e: pos + 1 };
-      }
-    }
     document.getElementById('auditPopup').style.display = 'flex';
     _auditSt._inspectBuf = buf;
   });
@@ -8951,6 +8977,16 @@ function auditClosePopup() {
   document.getElementById('auditPopup').style.display = 'none';
   _auditSt._inspectBuf = null;
   _auditPopupByteCharMap = null;
+}
+
+function auditToggleDumpMode() {
+  _auditPopupMode = _auditPopupMode === 'ascii' ? 'hex' : 'ascii';
+  const btn = document.getElementById('auditDumpToggle');
+  if (btn) btn.textContent = _auditPopupMode === 'ascii' ? 'HEX' : 'ASCII';
+  if (!_auditSt._inspectBuf) return;
+  const rec = _auditSt.filtered[_auditSt.selIdx];
+  if (!rec) return;
+  _auditApplyDump(new Uint8Array(_auditSt._inspectBuf), rec, rec.recNo || (_auditSt.selIdx + 1));
 }
 
 function auditParseSelected() {
@@ -11400,7 +11436,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.6';
+const APP_VERSION  = '1.1.1.7';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -5099,7 +5099,8 @@ function parseMessage(bytes, defs, rawBytes) {
 // Each entry: { test: fn(rawMsg) → bool, type, label, vol }
 // Helper: true when char code is alphanumeric (0-9, A-Z, a-z).
 const _isAlnum = c => (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A);
-// STM/PSTM: the 2 bytes immediately after the 6-char type code must both be non-alphanumeric (binary field).
+// ISO binary-bitmap fallback: after a 4-char ASCII MTI, the bitmap starts at position 4.
+// Positions 6-7 are bitmap bytes 2-3; in a binary bitmap they are raw bytes and therefore non-alphanumeric.
 const _hasBin67 = s => s.length >= 8 && !_isAlnum(s.charCodeAt(6)) && !_isAlnum(s.charCodeAt(7));
 
 const MSG_TYPE_MAP = [
@@ -5119,8 +5120,8 @@ const MSG_TYPE_MAP = [
   { test: s => /^99\d{2}/.test(s),                                              type:'B24',  label:'Base24 Generic',    vol:'BASE'   },
   // ISO fallback — binary bitmap (EBCDIC/hex-dump messages): valid MTI + non-alnum at positions 6-7
   { test: s => /^0[1-9]\d{2}/.test(s) && _hasBin67(s),                          type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
-  // ISO fallback — ASCII hex bitmap: MTI + 16 hex chars; STM/PSTM already caught above
-  { test: s => /^0[1-9]\d{2}[0-9A-Fa-f]{16}/i.test(s) && !_hasBin67(s),        type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
+  // ISO fallback — ASCII hex bitmap: MTI followed by 16 hex chars; STM/PSTM already caught above
+  { test: s => /^0[1-9]\d{2}[0-9A-Fa-f]{16}/i.test(s),                          type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
 ];
 
 // Volume search hierarchy for auto-detect fallback.
@@ -11312,7 +11313,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.0.0';
+const APP_VERSION  = '1.1.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

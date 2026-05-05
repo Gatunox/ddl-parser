@@ -1094,6 +1094,19 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .settings-help .h-sub-body.open { max-height: 1200px; overflow-y: auto; }
 .settings-help .h-sub-body-inner { padding: 4px 0 8px; }
 .about-ver { font-size: calc(var(--sz-mono) + 9px); font-weight: 700; color: var(--accent); }
+.dr-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.dr-th { font-size:calc(var(--sz-mono) - 1px); color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em; padding:0 2px 4px; text-align:left; border-bottom:2px solid var(--border); }
+.dr-col-rx { width:34%; } .dr-col-ty { width:12%; } .dr-col-lb { width:24%; } .dr-col-vl { width:12%; } .dr-col-ac { width:18%; }
+.dr-cell { padding:3px 2px; vertical-align:middle; }
+.dr-input { width:100%; box-sizing:border-box; background:var(--bg-deep); border:2px solid var(--border); border-radius:2px; color:var(--text); font-family:var(--mono); font-size:calc(var(--sz-mono) - 1px); padding:1px 3px; outline:none; }
+.dr-input:focus { border-color:var(--accent); }
+.dr-input.dr-invalid { border-color:#f85149 !important; }
+.dr-acts { display:flex; gap:2px; justify-content:flex-end; }
+.dr-btn { background:transparent; border:2px solid var(--border); border-radius:2px; color:var(--text-dim); font-size:9px; padding:0; width:18px; height:18px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; }
+.dr-btn:hover:not([disabled]) { border-color:var(--accent); color:var(--accent); }
+.dr-btn[disabled] { opacity:0.3; cursor:default; }
+.dr-del:hover:not([disabled]) { border-color:#f85149 !important; color:#f85149 !important; }
+.dr-row td { border-bottom:1px solid var(--border); }
 .btn-feedback-bug:hover { color: #f85149 !important; background: rgba(248,81,73,0.15) !important; border-color: #f85149 !important; box-shadow: 0 0 0 1px #f85149 !important; }
 .about-sub { font-size: calc(var(--sz-mono) - 0.5px); color: var(--text-dim); line-height: 1.7; margin-top: 4px; }
 .about-tag { display: inline-block; padding: 1px 7px; border-radius: 2px; font-size: calc(var(--sz-mono) - 1px); font-weight: 700; margin: 3px 2px 0; }
@@ -5098,31 +5111,44 @@ function parseMessage(bytes, defs, rawBytes) {
 // Add new entries here as new protocols are encountered.
 // Each entry: { test: fn(rawMsg) → bool, type, label, vol }
 // Helper: true when char code is alphanumeric (0-9, A-Z, a-z).
-const _isAlnum = c => (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A);
-// ISO binary-bitmap fallback: after a 4-char ASCII MTI, the bitmap starts at position 4.
-// Positions 6-7 are bitmap bytes 2-3; in a binary bitmap they are raw bytes and therefore non-alphanumeric.
-const _hasBin67 = s => s.length >= 8 && !_isAlnum(s.charCodeAt(6)) && !_isAlnum(s.charCodeAt(7));
-
-const MSG_TYPE_MAP = [
-  // ISO 8583 with explicit "ISO" prefix
-  { test: s => s.startsWith('ISO'),                                             type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
-  // NDC/912 ATM
-  { test: s => /^(?:[12][0-9A-Z]\?|[3-9]\?)/.test(s),                          type:'NDC',  label:'NDC/912',            vol:'ATM'    },
-  // 990601 / 990701 → STM exceptions (must precede generic B24 99xx catch-all)
-  { test: s => s.startsWith('990601') || s.startsWith('990701'),                type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM'    },
-  // 990602 / 990702 → PSTM exceptions (must precede generic B24 99xx catch-all)
-  { test: s => s.startsWith('990602') || s.startsWith('990702'),                type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS'    },
-  // STM: 0[1-9][012489][012345]01
-  { test: s => /^0[1-9][012489][012345]01/.test(s),                               type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM'    },
-  // PSTM: same structure ending in 02 (POS volume)
-  { test: s => /^0[1-9][012489][012345]02/.test(s),                               type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS'    },
-  // B24: all remaining 99xx messages
-  { test: s => /^99\d{2}/.test(s),                                              type:'B24',  label:'Base24 Generic',    vol:'BASE'   },
-  // ISO fallback — binary bitmap (EBCDIC/hex-dump messages): valid MTI + non-alnum at positions 6-7
-  { test: s => /^0[1-9]\d{2}/.test(s) && _hasBin67(s),                          type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
-  // ISO fallback — ASCII hex bitmap: MTI followed by 16 hex chars; STM/PSTM already caught above
-  { test: s => /^0[1-9]\d{2}[0-9A-Fa-f]{16}/i.test(s),                          type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
+const _DEFAULT_DETECT_RULES = [
+  { regex:'^ISO',                                type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
+  { regex:'^(?:[12][0-9A-Z]\\?|[3-9]\\?)',      type:'NDC',  label:'NDC/912',            vol:'ATM'    },
+  { regex:'^990601|^990701',                     type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM'    },
+  { regex:'^990602|^990702',                     type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS'    },
+  { regex:'^0[1-9][012489][012345]01',           type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM'    },
+  { regex:'^0[1-9][012489][012345]02',           type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS'    },
+  { regex:'^99\\d{2}',                           type:'B24',  label:'Base24 Generic',     vol:'BASE'   },
+  { regex:'^0[1-9]\\d{2}(?![0-9A-Fa-f]{16})',   type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
+  { regex:'^0[1-9]\\d{2}[0-9A-Fa-f]{16}',       type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
 ];
+
+let _detectRules = _DEFAULT_DETECT_RULES.map(r => ({...r}));
+
+function _rebuildMsgTypeMap() {
+  MSG_TYPE_MAP = _detectRules.map(r => {
+    let re; try { re = new RegExp(r.regex); } catch(e) { re = null; }
+    return { ...r, test: re ? s => re.test(s) : () => false };
+  });
+}
+
+function _loadDetectRules() {
+  try {
+    const s = localStorage.getItem('up_detect_rules');
+    if (s) _detectRules = JSON.parse(s);
+  } catch(e) {}
+  _rebuildMsgTypeMap();
+}
+
+function _saveDetectRules() {
+  _rebuildMsgTypeMap();
+  try { localStorage.setItem('up_detect_rules', JSON.stringify(_detectRules)); } catch(e) {}
+}
+
+let MSG_TYPE_MAP = _detectRules.map(r => {
+  let re; try { re = new RegExp(r.regex); } catch(e) { re = null; }
+  return { ...r, test: re ? s => re.test(s) : () => false };
+});
 
 // Volume search hierarchy for auto-detect fallback.
 // When a message is typed, search its own vol first, then walk up to the parent.
@@ -11313,7 +11339,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.0.1';
+const APP_VERSION  = '1.1.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -11840,7 +11866,8 @@ function adjustLineWidth(delta) {
 
 function openSettings() {
   document.getElementById('settingsOverlay').classList.remove('hidden');
-  _syncEggAccentUI();   // show/update Accent Color row if egg was discovered
+  _syncEggAccentUI();
+  renderDetectRulesTable();
   // Sync control states to current prefs
   const lbl = document.getElementById('szLabel');
   if (lbl) lbl.textContent = P.monoSize + 'px';
@@ -11854,6 +11881,74 @@ function openSettings() {
 
 function closeSettings() {
   document.getElementById('settingsOverlay').classList.add('hidden');
+}
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderDetectRulesTable() {
+  const tbody = document.getElementById('detectRulesTbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  _detectRules.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.className = 'dr-row';
+    const last = i === _detectRules.length - 1;
+    tr.innerHTML =
+      `<td class="dr-cell"><input class="dr-input" value="${_escHtml(r.regex)}" oninput="_drUpdate(${i},'regex',this.value,this)" title="${_escHtml(r.regex)}"></td>` +
+      `<td class="dr-cell"><input class="dr-input" value="${_escHtml(r.type)}" oninput="_drUpdate(${i},'type',this.value,this)"></td>` +
+      `<td class="dr-cell"><input class="dr-input" value="${_escHtml(r.label)}" oninput="_drUpdate(${i},'label',this.value,this)"></td>` +
+      `<td class="dr-cell"><input class="dr-input" value="${_escHtml(r.vol||'')}" oninput="_drUpdate(${i},'vol',this.value,this)"></td>` +
+      `<td class="dr-cell"><div class="dr-acts">` +
+        `<button class="dr-btn" onclick="moveDetectRule(${i},-1)" title="Move up"${i===0?' disabled':''}>↑</button>` +
+        `<button class="dr-btn" onclick="moveDetectRule(${i},1)" title="Move down"${last?' disabled':''}>↓</button>` +
+        `<button class="dr-btn dr-del" onclick="deleteDetectRule(${i})" title="Remove">✕</button>` +
+      `</div></td>`;
+    const rxInput = tr.querySelector('td:first-child .dr-input');
+    try { new RegExp(r.regex); } catch(e) { rxInput?.classList.add('dr-invalid'); }
+    tbody.appendChild(tr);
+  });
+}
+
+function _drUpdate(i, field, value, el) {
+  _detectRules[i] = { ..._detectRules[i], [field]: value };
+  if (field === 'regex') {
+    let valid = true;
+    try { new RegExp(value); } catch(e) { valid = false; }
+    el?.classList.toggle('dr-invalid', !valid);
+    if (!valid) return;
+  }
+  _saveDetectRules();
+}
+
+function addDetectRule() {
+  _detectRules.push({ regex:'^', type:'', label:'', vol:'' });
+  _saveDetectRules();
+  renderDetectRulesTable();
+  document.getElementById('detectRulesTbody')?.lastElementChild?.querySelector('input')?.focus();
+}
+
+function deleteDetectRule(i) {
+  _detectRules.splice(i, 1);
+  _saveDetectRules();
+  renderDetectRulesTable();
+}
+
+function moveDetectRule(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= _detectRules.length) return;
+  [_detectRules[i], _detectRules[j]] = [_detectRules[j], _detectRules[i]];
+  _saveDetectRules();
+  renderDetectRulesTable();
+}
+
+function resetDetectRules() {
+  if (!confirm('Reset detection rules to built-in defaults?')) return;
+  localStorage.removeItem('up_detect_rules');
+  _detectRules = _DEFAULT_DETECT_RULES.map(r => ({...r}));
+  _saveDetectRules();
+  renderDetectRulesTable();
 }
 
 function setTheme(t) {
@@ -12527,6 +12622,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tutPrev')?.addEventListener('click', () => { if (_tutIdx > 0) { _tutIdx--; _tutRender(); } });
   document.getElementById('tutSkip')?.addEventListener('click', closeTutorial);
 
+  _loadDetectRules();
   loadPrefs();
   _auditPrecomputeRowHeights();
   loadExcl();
@@ -12732,6 +12828,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         <div class="settings-row">
           <span class="settings-lbl" style="color:var(--text-dim);font-size:11px">Each row must keep at least one panel expanded</span>
+        </div>
+      </div>
+
+      <!-- ── MESSAGE DETECTION ─────────────────────── -->
+      <div class="settings-section">
+        <div class="settings-stitle">Message Detection</div>
+        <div class="settings-row" style="margin-bottom:6px">
+          <span class="settings-lbl" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px)">Rules tested in order — first match wins</span>
+        </div>
+        <table class="dr-table">
+          <colgroup>
+            <col class="dr-col-rx"><col class="dr-col-ty"><col class="dr-col-lb"><col class="dr-col-vl"><col class="dr-col-ac">
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="dr-th">Regex</th>
+              <th class="dr-th">Type</th>
+              <th class="dr-th">Label</th>
+              <th class="dr-th">Vol</th>
+              <th class="dr-th"></th>
+            </tr>
+          </thead>
+          <tbody id="detectRulesTbody"></tbody>
+        </table>
+        <div class="settings-row" style="margin-top:10px">
+          <button class="btn btn-sm" onclick="resetDetectRules()" title="Restore built-in detection rules">↺ Reset</button>
+          <button class="btn btn-sm" onclick="addDetectRule()" title="Add new detection rule">+ Add Rule</button>
         </div>
       </div>
 

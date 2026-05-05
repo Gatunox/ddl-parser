@@ -7694,7 +7694,11 @@ function renderFieldTable(msg) {
     const lenCell    = totalLen !== undefined ? String(totalLen) : '';
     const prefixHtml = f.lenPrefix ? `<span class="c-vlen">${esc(f.lenPrefix)}</span>` : '';
     const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
-    const descText   = f.description || f.dataType || '';
+    // Use description only when it carries real info (differs from the field's own leaf name).
+    // HPE DDL without HEADING sets desc = rawName, making description == field name — show dataType instead.
+    const _idLeaf  = (f.id.split('.').pop() || '').toUpperCase();
+    const _descReal = f.description && f.description.toUpperCase() !== _idLeaf;
+    const descText  = _descReal ? f.description : (f.dataType || '');
     const descTip    = ttType ? `${ttType}\n${descText}` : descText;
     const redefMark  = f.isRedefines
       ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${f.redefTarget || '?'}"> ↩${f.redefTarget ? ' '+f.redefTarget : ''}</span>`
@@ -11396,7 +11400,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.5';
+const APP_VERSION  = '1.1.1.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

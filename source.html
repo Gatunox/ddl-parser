@@ -4213,7 +4213,7 @@ function parseFlatMessage(bytes, defs, rawBytes) {
     const _isBinField = _binUnreliable && isBin;
     const _srcBytes  = (isBin && rawBytes) ? rawBytes.slice(dataStart, dataStart + len) : fBytes;
     fields.push({
-      id: def.id, description: def.description,
+      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
       type: def.type, maxLength: def.length, lenPrefix,
       valueLength: fBytes.length,
       value: isBin ? _binValue(_srcBytes, fBytes) : bToStr(fBytes),
@@ -4759,7 +4759,7 @@ function parsePSTMMessageASCII(bytes, defs) {
     if (def.offset === undefined) seqOffset = fEnd;
     const isBin = /\bBINARY\b/i.test(def._dataType || '');
     fields.push({
-      id: def.id, description: def.description,
+      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
       type: def.type, maxLength: def.length, lenPrefix: null,
       valueLength: fBytes.length,
       value:    isBin ? '[binary]' : bToStr(fBytes),
@@ -4808,7 +4808,7 @@ function parsePSTMMessageASCII(bytes, defs) {
         const fBytes = bytes.slice(fStart, fStart + def.length);
         const isBin  = /\bBINARY\b/i.test(def._dataType || '');
         fields.push({
-          id: def.id.replace('[01]', `[${lbl}]`), description: def.description,
+          id: def.id.replace('[01]', `[${lbl}]`), description: def.description, dataType: def._dataType || def.dataType || '',
           type: def.type, maxLength: def.length, lenPrefix: null,
           valueLength: fBytes.length,
           value:    isBin ? '[binary]' : bToStr(fBytes),
@@ -4874,7 +4874,7 @@ function parsePSTMMessageBinary(bytes, defs) {
     const fEnd   = fStart + def.length;
     if (def.offset === undefined) seqOffset = fEnd;
     fields.push({
-      id: def.id, description: def.description,
+      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
       type: def.type, maxLength: def.length, lenPrefix: null,
       valueLength: fBytes.length,
       value: bToStr(fBytes), rawHex: bToHex(fBytes), rawBytes: fBytes,
@@ -4909,7 +4909,7 @@ function parsePSTMMessageBinary(bytes, defs) {
     if (fStart + def.length > bytes.length) break;
     const fBytes = bytes.slice(fStart, fStart + def.length);
     fields.push({
-      id: def.id, description: def.description,
+      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
       type: def.type, maxLength: def.length, lenPrefix: null,
       valueLength: fBytes.length,
       value: bToStr(fBytes), rawHex: bToHex(fBytes), rawBytes: fBytes,
@@ -5005,7 +5005,7 @@ function parseMessage(bytes, defs, rawBytes) {
     const fStart = offset;
     const fB = read(def.length);
     if (!fB) return fields;
-    fields.push({ id: def.id, description: def.description,
+    fields.push({ id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
       type: def.type, maxLength: def.length, valueLength: fB.length,
       value: bToStr(fB), rawHex: bToHex(fB), rawBytes: fB,
       startByte: fStart, endByte: offset - 1 });
@@ -5083,7 +5083,7 @@ function parseMessage(bytes, defs, rawBytes) {
       lenPrefix = lB.map(b => String.fromCharCode(b)).join('');
       const n = parseInt(lenPrefix, 10);
       if (isNaN(n) || n > def.length) {
-        fields.push({ id, description: def.description, value: `(invalid LL prefix)`,
+        fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', value: `(invalid LL prefix)`,
           type: def.type, maxLength: def.length,
           rawHex: bToHex(lB), rawBytes: lB, startByte: fStart, endByte: offset-1, error: true });
         break;
@@ -5094,7 +5094,7 @@ function parseMessage(bytes, defs, rawBytes) {
       lenPrefix = lB.map(b => String.fromCharCode(b)).join('');
       const n = parseInt(lenPrefix, 10);
       if (isNaN(n) || n > def.length) {
-        fields.push({ id, description: def.description, value: `(invalid LLL prefix)`,
+        fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', value: `(invalid LLL prefix)`,
           type: def.type, maxLength: def.length,
           rawHex: bToHex(lB), rawBytes: lB, startByte: fStart, endByte: offset-1, error: true });
         break;
@@ -5103,14 +5103,14 @@ function parseMessage(bytes, defs, rawBytes) {
     }
 
     if (!fBytes) {
-      fields.push({ id, description: def.description, value: '(truncated)',
+      fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', value: '(truncated)',
         type: def.type, maxLength: def.length,
         rawHex: '', rawBytes: [], startByte: fStart, endByte: offset, error: true });
       break;
     }
 
     const allB = bytes.slice(fStart, offset);
-    fields.push({ id, description: def.description, value: bToStr(fBytes),
+    fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', value: bToStr(fBytes),
       type: def.type, maxLength: def.length, lenPrefix,
       valueLength: fBytes.length,
       rawHex: bToHex(allB), rawBytes: allB, startByte: fStart, endByte: offset - 1 });
@@ -7694,7 +7694,8 @@ function renderFieldTable(msg) {
     const lenCell    = totalLen !== undefined ? String(totalLen) : '';
     const prefixHtml = f.lenPrefix ? `<span class="c-vlen">${esc(f.lenPrefix)}</span>` : '';
     const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
-    const descTip    = ttType ? `${ttType}\n${f.description}` : f.description;
+    const descText   = f.description || f.dataType || '';
+    const descTip    = ttType ? `${ttType}\n${descText}` : descText;
     const redefMark  = f.isRedefines
       ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${f.redefTarget || '?'}"> ↩${f.redefTarget ? ' '+f.redefTarget : ''}</span>`
       : '';
@@ -7704,7 +7705,7 @@ function renderFieldTable(msg) {
     const unreliableBadge = f.unreliable
       ? `<span class="unreliable-badge">unreliable</span>` : '';
     const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', f.unreliable ? 'row-unreliable' : '', extraClass].filter(Boolean).join(' ');
-    const searchStr = [fid, f.description || '', f.value || ''].join(' ').toLowerCase();
+    const searchStr = [fid, descText, f.value || ''].join(' ').toLowerCase();
     return `<tr class="${rowCls}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}" data-raw="${esc((f.rawHex||'').toLowerCase())}"
       onclick="selectField('${esc(fid)}')"
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
@@ -7712,7 +7713,7 @@ function renderFieldTable(msg) {
       onmouseleave="clearHover()">
       <td class="c-num">${_rowNum}</td>
       <td class="c-id">${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
-      <td class="c-desc" title="${esc(descTip)}">${esc(f.description)}${det}</td>
+      <td class="c-desc" title="${esc(descTip)}">${esc(descText)}${det}</td>
       <td class="c-len">${lenCell}</td>
       <td class="${ecls}" data-tip="${esc(f.value)}">${prefixHtml}${esc(val)}</td>
       <td class="c-raw" data-tip="${esc(f.rawHex||'')}">${rHex}</td>
@@ -11395,7 +11396,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.4';
+const APP_VERSION  = '1.1.1.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

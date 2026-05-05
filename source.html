@@ -1158,6 +1158,7 @@ body.audit-active #fmtBadge, body.audit-active #cntBadge { visibility:hidden; }
 .audit-record-row.aud-sel  { background:rgba(var(--accent-rgb),0.18); }
 .ar-meta    { display:flex; align-items:center; overflow:hidden; white-space:nowrap; }
 .ar-preview { color:var(--text-dim); font-size:calc(var(--sz-mono) - 0.5px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:46px; line-height:1.4; }
+.ar-no-msg { color:var(--text-very-dim,var(--text-dim)); font-style:italic; }
 .ac-idx   { min-width:calc(var(--sz-mono) * 4); text-align:right; padding-right:6px; color:var(--text-dim); flex-shrink:0; }
 .ac-badge { width:calc(var(--sz-mono) * 3.8); flex-shrink:0; padding-right:4px; }
 .audit-record-row .btype { font-size:calc(var(--sz-mono) - 2px); padding:0 3px; border-width:1px; line-height:1; display:inline-flex; align-items:center; vertical-align:middle; }
@@ -8256,7 +8257,7 @@ async function scan(file) {
   while (pos < total) {
     if (pos + 2 > total) break;
     const recLength = (u8[pos] << 8 | u8[pos + 1]) >>> 0;
-    if (recLength < HDR + 1 || recLength > 1048576) {
+    if (recLength < HDR || recLength > 1048576) {
       self.postMessage({ type: 'error', pos, recLength, total, index });
       return;
     }
@@ -8279,6 +8280,7 @@ async function scan(file) {
     for (let i = 0; i < peekLen; i++)
       payloadPeek += u8[payStart + i].toString(16).padStart(2, '0');
     entry.payloadPeek = payloadPeek;
+    entry.noPayload   = recLength === HDR;
     entry.recNo = index.length + 1;
     index.push(entry);
     pos += recLength;
@@ -8699,7 +8701,7 @@ function _auditBuildRowHtml(r, absIdx) {
     + '<span class="ac-fail">'  + fail + '</span>'
     + '<span class="ac-rt">'    + (r.seqnoRecType != null ? (rtCode => rtCode + (NETARD_TYPE_MAP[rtCode] ? ' - ' + NETARD_TYPE_MAP[rtCode] : ''))(r.seqnoRecType & 0xFFF) : '—') + '</span>'
     + '</div>'
-    + '<div class="ar-preview">' + _auditPayloadPreview(peek) + '</div>'
+    + '<div class="ar-preview">' + (r.noPayload ? '<span class="ar-no-msg">&lt;NO MESSAGE&gt;</span>' : _auditPayloadPreview(peek)) + '</div>'
     + '</div>';
 }
 
@@ -11339,7 +11341,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.0';
+const APP_VERSION  = '1.1.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -11479,7 +11479,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.25';
+const APP_VERSION  = '1.1.1.29';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12762,6 +12762,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
         if (e.key === 'Escape')             { auditClosePopup(); return; }
+        if (e.key === 'v' || e.key === 'V') { e.preventDefault(); auditClosePopup(); return; }
         if (e.key === 's' || e.key === 'S') { e.preventDefault(); auditNavPopup(1); return; }
         if (e.key === 'p' || e.key === 'P') { e.preventDefault(); auditParseSelected(); return; }
         if (e.key === 'Enter')              { e.preventDefault(); auditParseSelected(); return; }
@@ -12825,6 +12826,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const ppOverlay = document.getElementById('parseProgressOverlay');
       if (ppOverlay && !ppOverlay.classList.contains('hidden')) { _abortParse(); document.activeElement?.blur(); }
     }
+    if (e.key === ' ' && e.target.closest('#auditRecordList')) { e.preventDefault(); return; }
+
     // Arrow keys — but not when focus is inside a text input/textarea
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -12839,6 +12842,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'x' || e.key === 'X') {
       e.preventDefault();
       _clearBtnClick();
+    }
+
+    if (e.key === 'v' || e.key === 'V') {
+      const _apEl = document.getElementById('auditPopup');
+      if (_apEl.style.display !== 'none') {
+        e.preventDefault();
+        auditClosePopup();
+      } else if (_auditSt.filtered.length > 0 && _auditSt.selIdx >= 0) {
+        e.preventDefault();
+        auditInspectRecord(_auditSt.selIdx);
+      }
     }
 
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {

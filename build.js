@@ -42,6 +42,7 @@ const RESERVED = [
   'openAuditFileDialog', 'onAuditFileOpen', 'auditCloseMode',
   'auditSelectRecord', 'auditApplyFilter', 'auditToggleCfgDialog', 'auditApplyCfg',
   'auditInspectRecord', 'auditParseSelected', 'auditClosePopup',
+  'auditToggleDumpMode', 'auditCopyDumpToClipboard',
 ];
 
 // ── bundle CodeMirror ──────────────────────────────────────────────────────

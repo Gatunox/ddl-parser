@@ -1531,7 +1531,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
             <div id="auditRecordList" class="audit-record-list"></div>
             <!-- Record detail popup (single-click) -->
             <div id="auditPopup" class="audit-popup" style="display:none">
-              <div class="audit-popup-hdr">
+              <div class="audit-popup-hdr" ondblclick="auditCopyDumpToClipboard(event)" title="Double-click to copy dump to clipboard">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle hex/ASCII dump view">HEX</button>
                 <button class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Message Input and parse (press P)">&#9654; Parse</button>
@@ -8980,6 +8980,13 @@ function auditClosePopup() {
   _auditPopupByteCharMap = null;
 }
 
+function auditCopyDumpToClipboard(e) {
+  if (e.target.closest('button')) return;
+  const text = window._auditDumpCM?.state.doc.toString();
+  if (!text || !navigator.clipboard || !window.isSecureContext) return;
+  navigator.clipboard.writeText(text).then(() => flash('✓ Audit dump copied to clipboard')).catch(() => {});
+}
+
 function auditToggleDumpMode() {
   _auditPopupMode = _auditPopupMode === 'ascii' ? 'hex' : 'ascii';
   const btn = document.getElementById('auditDumpToggle');
@@ -11448,7 +11455,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.11';
+const APP_VERSION  = '1.1.1.12';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12380,6 +12387,11 @@ const _TUT_STEPS = [
     target: '#msgPanel', prefer: 'left',
     title: 'NETARD Audit Log Parsing',
     body: 'Paste a NETARD multi-record audit log and press \u25b6 Parse. The parser detects all records, identifies EBCDIC/ASCII encoding per record, and scores each against your DDL tree.\n\nOnce parsed arrow buttons on the parse panel allow you step through all results. If you parse a single-record log and a DDL scope selected, Manual Override applies automatically. You can not Manual Override a multi-record file.',
+  },
+  {
+    target: '#auditOpenBtn', prefer: 'bottom',
+    title: 'Binary Audit File Reader',
+    body: 'Click 📂 Audit to open a BIT PACKET binary audit file directly — no copy-pasting required.\n\nThe app indexes all records instantly. Click any row to open the record popup showing the raw NETARD dump. Press ▶ Parse to load that record\'s payload into Message Input and parse it against your DDL definitions.\n\nUse the HEX/ASCII toggle to switch between the text dump and a side-by-side hex view. Double-click the popup header bar to copy the full dump to the clipboard.',
   },
   {
     target: '#trkBtn', prefer: 'left',

@@ -8983,8 +8983,14 @@ function auditClosePopup() {
 function auditCopyDumpToClipboard(e) {
   if (e.target.closest('button')) return;
   const text = window._auditDumpCM?.state.doc.toString();
-  if (!text || !navigator.clipboard || !window.isSecureContext) return;
-  navigator.clipboard.writeText(text).then(() => showToast('✓ Audit dump copied to clipboard')).catch(() => {});
+  if (!text) return;
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+      .then(() => showToast('✓ Audit dump copied to clipboard'))
+      .catch(() => _copyFallback(text, '✓ Audit dump copied to clipboard'));
+  } else {
+    _copyFallback(text, '✓ Audit dump copied to clipboard');
+  }
 }
 
 function auditToggleDumpMode() {
@@ -11455,7 +11461,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.14';
+const APP_VERSION  = '1.1.1.15';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

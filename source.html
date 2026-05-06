@@ -1533,6 +1533,8 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
             <div id="auditPopup" class="audit-popup" style="display:none">
               <div class="audit-popup-hdr" ondblclick="auditCopyDumpToClipboard(event)" title="Double-click to copy dump to clipboard">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-1)" title="Previous record (←)">&lt;</button>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle hex/ASCII dump view">HEX</button>
                 <button class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Message Input and parse (press P)">&#9654; Parse</button>
                 <button class="btn" style="height:20px;padding:0 6px" onclick="auditClosePopup()">&#10005;</button>
@@ -8974,6 +8976,21 @@ function auditInspectRecord(filteredIdx) {
   });
 }
 
+function auditNavPopup(delta) {
+  const n = _auditSt.filtered.length;
+  if (n === 0) return;
+  const next = _auditSt.selIdx + delta;
+  if (next < 0 || next >= n) return;
+  const listEl = document.getElementById('auditRecordList');
+  if (listEl) {
+    const rowH = _auditCurRowH;
+    const rowTop = next * rowH;
+    if (rowTop < listEl.scrollTop || rowTop + rowH > listEl.scrollTop + listEl.clientHeight)
+      listEl.scrollTop = Math.max(0, rowTop - listEl.clientHeight / 2 + rowH / 2);
+  }
+  auditInspectRecord(next);
+}
+
 function auditClosePopup() {
   document.getElementById('auditPopup').style.display = 'none';
   _auditSt._inspectBuf = null;
@@ -11461,7 +11478,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.18';
+const APP_VERSION  = '1.1.1.19';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12753,6 +12770,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      const auditPopup = document.getElementById('auditPopup');
+      if (auditPopup && auditPopup.style.display !== 'none') {
+        e.preventDefault();
+        auditNavPopup(e.key === 'ArrowLeft' ? -1 : 1);
+        return;
+      }
       if (!S.isParsed || S.messages.length <= 1) return;
       e.preventDefault();
       if (e.key === 'ArrowLeft') prevMsg(); else nextMsg();

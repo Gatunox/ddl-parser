@@ -11479,7 +11479,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.24';
+const APP_VERSION  = '1.1.1.25';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12769,6 +12769,44 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'ArrowDown')          { e.preventDefault(); auditNavPopup(1); return; }
         if (!e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
         return;
+      }
+    }
+
+    // === DDL-picker popup: keyboard navigation + focus trap ===
+    {
+      const _ppo = document.getElementById('parseProgressOverlay');
+      const _pp  = document.getElementById('ppPicker');
+      if (_ppo && !_ppo.classList.contains('hidden') && _pp && !_pp.classList.contains('hidden')) {
+        if (e.key === 'Escape') { /* fall through — global Escape calls _abortParse */ }
+        else if (e.key === 'Tab') {
+          const focusable = [..._ppo.querySelectorAll('button')].filter(b => b.offsetParent !== null);
+          const idx = focusable.indexOf(document.activeElement);
+          if (focusable.length) {
+            e.preventDefault();
+            const next = e.shiftKey ? (idx <= 0 ? focusable.length - 1 : idx - 1)
+                                    : (idx >= focusable.length - 1 ? 0 : idx + 1);
+            focusable[next].focus();
+          }
+          return;
+        } else if (e.key === 's' || e.key === 'S') {
+          e.preventDefault(); _pp.querySelector('.pp-skip-btn')?.click(); return;
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          const cands = [..._pp.querySelectorAll('button[data-ppi]')];
+          if (cands.length) {
+            e.preventDefault();
+            const idx = cands.indexOf(document.activeElement);
+            const next = e.key === 'ArrowUp' ? (idx <= 0 ? cands.length - 1 : idx - 1)
+                                              : (idx >= cands.length - 1 ? 0 : idx + 1);
+            cands[next].focus();
+          }
+          return;
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          _pp.querySelector('button[data-ppi]:focus')?.click(); return;
+        } else {
+          if (!e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
+          return;
+        }
       }
     }
 

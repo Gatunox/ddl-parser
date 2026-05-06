@@ -11479,7 +11479,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.22';
+const APP_VERSION  = '1.1.1.23';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12764,6 +12764,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Arrow keys — but not when focus is inside a text input/textarea
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+    if (e.key === '1') { e.preventDefault(); togglePanel('ddlPanel', 'ddlToggle', 'ddlResizer'); }
+    if (e.key === '2') { e.preventDefault(); togglePanel('msgPanel', 'msgToggle', 'ddlResizer'); }
+    if (e.key === '3') { e.preventDefault(); togglePanel('resPanel', 'resToggle', 'resResizer'); }
+    if (e.key === '4') { e.preventDefault(); togglePanel('rawPanel', 'rawToggle', 'resResizer'); }
 
     if (e.key === 'p' || e.key === 'P') {
       e.preventDefault();

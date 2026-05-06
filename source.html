@@ -11478,7 +11478,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.20';
+const APP_VERSION  = '1.1.1.21';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12765,8 +12765,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
     if (e.key === 'p' || e.key === 'P') {
+      e.preventDefault();
       const popup = document.getElementById('auditPopup');
-      if (popup && popup.style.display !== 'none') { e.preventDefault(); auditParseSelected(); }
+      if (popup && popup.style.display !== 'none') { auditParseSelected(); }
+      else { _parseBtnClick(); }
+    }
+
+    if (e.key === 'x' || e.key === 'X') {
+      e.preventDefault();
+      _clearBtnClick();
     }
 
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {

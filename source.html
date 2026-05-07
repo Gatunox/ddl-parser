@@ -1024,6 +1024,8 @@ body.light .trk-chk { color-scheme: light; }
 
 /* ===== SETTINGS DRAWER ===== */
 .settings-overlay { position: fixed; inset: 0; z-index: 30000; display: flex; justify-content: flex-end; }
+.settings-confirm { position: absolute; inset: 0; z-index: 200; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
+.settings-confirm.hidden { display: none; }
 .settings-overlay.hidden { display: none; }
 .settings-scrim  { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
 .settings-drawer {
@@ -1094,19 +1096,30 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .settings-help .h-sub-body.open { max-height: 1200px; overflow-y: auto; }
 .settings-help .h-sub-body-inner { padding: 4px 0 8px; }
 .about-ver { font-size: calc(var(--sz-mono) + 9px); font-weight: 700; color: var(--accent); }
-.dr-table { width:100%; border-collapse:collapse; table-layout:fixed; }
-.dr-th { font-size:calc(var(--sz-mono) - 1px); color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em; padding:0 2px 4px; text-align:left; border-bottom:2px solid var(--border); }
-.dr-col-rx { width:34%; } .dr-col-ty { width:12%; } .dr-col-lb { width:24%; } .dr-col-vl { width:12%; } .dr-col-ac { width:18%; }
-.dr-cell { padding:3px 2px; vertical-align:middle; }
-.dr-input { width:100%; box-sizing:border-box; background:var(--bg-deep); border:2px solid var(--border); border-radius:2px; color:var(--text); font-family:var(--mono); font-size:calc(var(--sz-mono) - 1px); padding:1px 3px; outline:none; }
+.dr-list { display:flex; flex-direction:column; }
+.dr-rule { padding:5px 0; border-bottom:1px solid var(--border); }
+.dr-rule:last-child { border-bottom:none; }
+.dr-rule-top { display:flex; gap:4px; align-items:center; margin-bottom:3px; }
+.dr-num { font-size:calc(var(--sz-mono) - 2px); color:var(--text-dim); min-width:18px; text-align:right; flex-shrink:0; }
+.dr-rule-bot { display:flex; gap:4px; align-items:flex-end; }
+.dr-field { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.dr-field-grow { flex:1; }
+.dr-lbl { font-size:calc(var(--sz-mono) - 4px); color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; padding-left:1px; line-height:1; }
+.dr-input { box-sizing:border-box; background:var(--bg-deep); border:2px solid var(--border); border-radius:2px; color:var(--text); font-family:var(--mono); font-size:calc(var(--sz-mono) - 1px); padding:1px 3px; outline:none; min-width:0; width:100%; }
 .dr-input:focus { border-color:var(--accent); }
 .dr-input.dr-invalid { border-color:#f85149 !important; }
-.dr-acts { display:flex; gap:2px; justify-content:flex-end; }
+.dr-input-rx { flex:1; }
+.dr-input-ty { width:54px; }
+.dr-input-lb { width:100%; }
+.dr-input-vl { width:68px; }
+.dr-acts { display:flex; gap:2px; flex-shrink:0; }
 .dr-btn { background:transparent; border:2px solid var(--border); border-radius:2px; color:var(--text-dim); font-size:9px; padding:0; width:18px; height:18px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; }
 .dr-btn:hover:not([disabled]) { border-color:var(--accent); color:var(--accent); }
 .dr-btn[disabled] { opacity:0.3; cursor:default; }
 .dr-del:hover:not([disabled]) { border-color:#f85149 !important; color:#f85149 !important; }
-.dr-row td { border-bottom:1px solid var(--border); }
+.dr-color { width:22px; height:22px; padding:0; border:2px solid var(--border); border-radius:2px; cursor:pointer; flex-shrink:0; }
+.dr-color::-webkit-color-swatch-wrapper { padding:0; }
+.dr-color::-webkit-color-swatch { border:none; border-radius:1px; }
 .btn-feedback-bug:hover { color: #f85149 !important; background: rgba(248,81,73,0.15) !important; border-color: #f85149 !important; box-shadow: 0 0 0 1px #f85149 !important; }
 .about-sub { font-size: calc(var(--sz-mono) - 0.5px); color: var(--text-dim); line-height: 1.7; margin-top: 4px; }
 .about-tag { display: inline-block; padding: 1px 7px; border-radius: 2px; font-size: calc(var(--sz-mono) - 1px); font-weight: 700; margin: 3px 2px 0; }
@@ -1161,16 +1174,16 @@ body.audit-active #fmtBadge, body.audit-active #cntBadge { visibility:hidden; }
 .ar-no-msg { color:var(--text-very-dim,var(--text-dim)); font-style:italic; }
 .ac-idx   { min-width:calc(var(--sz-mono) * 4); text-align:right; padding-right:6px; color:var(--text-dim); flex-shrink:0; }
 .ac-badge { width:calc(var(--sz-mono) * 3.8); flex-shrink:0; padding-right:4px; display:flex; align-items:center; }
-.audit-record-row .btype { font-size:calc(var(--sz-mono) - 2px); padding:2px 3px 0; border-width:1px; line-height:1; display:inline-block; vertical-align:middle; }
+.audit-record-row .btype { font-size:calc(var(--sz-mono) - 2px); padding:2px 3px 0; border-width:2px; line-height:1; display:inline-block; vertical-align:middle; }
 .ac-len   { min-width:calc(var(--sz-mono) * 3.8); text-align:right; padding-right:8px; color:var(--success); flex-shrink:0; }
 .ac-ts    { width:calc(var(--sz-mono) * 14); color:var(--text); padding-right:8px; flex-shrink:0; overflow:hidden; }
 .ac-onode { min-width:calc(var(--sz-mono) * 6); color:var(--text-dim); padding-right:4px; flex-shrink:0; }
-.ac-src   { min-width:calc(var(--sz-mono) * 11); color:var(--accent); overflow:hidden; text-overflow:ellipsis; padding-right:4px; flex-shrink:0; }
-.ac-arrow { width:calc(var(--sz-mono) * 1.8); text-align:center; color:var(--text-very-dim); flex-shrink:0; }
+.ac-src   { width:calc(var(--sz-mono) * 9.6); color:var(--accent); overflow:hidden; text-overflow:ellipsis; padding-right:4px; flex-shrink:0; }
+.ac-arrow { display:none; }
 .ac-dnode { min-width:calc(var(--sz-mono) * 6); color:var(--text-dim); padding-right:4px; flex-shrink:0; }
-.ac-dst   { min-width:calc(var(--sz-mono) * 11); color:var(--accent); overflow:hidden; text-overflow:ellipsis; padding-right:6px; flex-shrink:0; }
+.ac-dst   { width:calc(var(--sz-mono) * 9.6); color:var(--accent); overflow:hidden; text-overflow:ellipsis; padding-right:6px; flex-shrink:0; }
 .ac-msgno { min-width:calc(var(--sz-mono) * 7); color:var(--text-dim); padding-right:6px; flex-shrink:0; }
-.ac-fail  { min-width:calc(var(--sz-mono) * 5); color:var(--accent2); padding-right:6px; flex-shrink:0; }
+.ac-fail  { min-width:calc(var(--sz-mono) * 4); color:var(--accent2); padding-right:6px; flex-shrink:0; }
 .ac-rt    { color:var(--text-dim); flex-shrink:0; }
 .audit-error-msg { padding:16px; color:var(--accent2); font-size:var(--sz-mono); font-family:var(--font-mono); line-height:1.6; }
 /* Config dialog */
@@ -1524,8 +1537,8 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
               <span class="ac-dnode">DEST</span>
               <span class="ac-dst">Destination</span>
               <span class="ac-msgno">MSG#</span>
-              <span class="ac-fail">Failure</span>
-              <span class="ac-rt">RT</span>
+              <span class="ac-fail">Fail</span>
+              <span class="ac-rt">Record-Type</span>
             </div>
             <!-- Record list -->
             <div id="auditRecordList" class="audit-record-list"></div>
@@ -3548,6 +3561,23 @@ function _isStmMsg(msg) {
   return t === 'STM' || t === 'PSTM';
 }
 
+const _KNOWN_BTYPES = new Set(['iso','stm','pstm','ndc','b24','unknown','user']);
+function _btypeClass(type) {
+  const t = (type||'').toLowerCase();
+  return 'btype btype-' + (_KNOWN_BTYPES.has(t) ? t : 'unknown');
+}
+function _btypeStyle(color) {
+  if (!color) return '';
+  const h = color.replace('#','');
+  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+  return `background:rgba(${r},${g},${b},0.18);color:${color};border:2px solid ${color}`;
+}
+function _btypeHtml(type, color) {
+  if (!type) return '';
+  const st = _btypeStyle(color);
+  return `<span class="${st ? 'btype' : _btypeClass(type)}"${st ? ` style="${st}"` : ''}>${esc(type)}</span>`;
+}
+
 function _msgMti(msg) {
   if (_isStmMsg(msg)) return msg.fields?.find(f => f.id === 'TYP')?.value || '';
   return msg.fields?.find(f => f.id === 'MTI')?.value || '';
@@ -3578,7 +3608,7 @@ function openMsgExportModal() {
     return `<tr data-idx="${idx}" data-search="${esc(search)}">
       <td><input type="checkbox" class="exp-chk trk-chk" data-idx="${idx}" checked onchange="expRowChange(this)"/></td>
       <td style="color:var(--text-dim)">${idx + 1}</td>
-      <td>${type ? `<span class="btype btype-${type.toLowerCase()}">${esc(type)}</span>` : ''}</td>
+      <td>${_btypeHtml(type, msg.msgType?.color)}</td>
       <td>${esc(origin)}</td>
       <td>${esc(dest)}</td>
       <td>${esc(proc)}</td>
@@ -5131,15 +5161,15 @@ function parseMessage(bytes, defs, rawBytes) {
 // Each entry: { test: fn(rawMsg) → bool, type, label, vol }
 // Helper: true when char code is alphanumeric (0-9, A-Z, a-z).
 const _DEFAULT_DETECT_RULES = [
-  { regex:'^ISO',                                type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
-  { regex:'^(?:[12][0-9A-Z]\\?|[3-9]\\?)',      type:'NDC',  label:'NDC/912',            vol:'ATM'    },
-  { regex:'^990601|^990701',                     type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM'    },
-  { regex:'^990602|^990702',                     type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS'    },
-  { regex:'^0[1-9][012489][012345]01',           type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM'    },
-  { regex:'^0[1-9][012489][012345]02',           type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS'    },
-  { regex:'^99\\d{2}',                           type:'B24',  label:'Base24 Generic',     vol:'BASE'   },
-  { regex:'^0[1-9]\\d{2}(?![0-9A-Fa-f]{16})',   type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
-  { regex:'^0[1-9]\\d{2}[0-9A-Fa-f]{16}',       type:'ISO',  label:'ISO 8583',           vol:'SWITCH' },
+  { regex:'^(?:[12][0-9A-Z]\\?|[3-9]\\?)',      type:'NDC',  label:'NDC/912',            vol:'ATM',    color:'#ff6b35' },
+  { regex:'^990601|^990701',                     type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM',    color:'#00c8d4' },
+  { regex:'^990602|^990702',                     type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS',    color:'#5cd65c' },
+  { regex:'^0[1-9][012489][012345]01',           type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM',    color:'#00c8d4' },
+  { regex:'^0[1-9][012489][012345]02',           type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS',    color:'#5cd65c' },
+  { regex:'^99\\d{2}',                           type:'B24',  label:'Base24 Generic',     vol:'BASE',   color:'#a47bff' },
+  { regex:'^ISO',                                type:'ISO',  label:'ISO 8583',           vol:'SWITCH', color:'#f5c542' },
+  { regex:'^0[1-9]\\d{2}(?![0-9A-Fa-f]{16})',   type:'ISO',  label:'ISO 8583',           vol:'SWITCH', color:'#f5c542' },
+  { regex:'^0[1-9]\\d{2}[0-9A-Fa-f]{16}',       type:'ISO',  label:'ISO 8583',           vol:'SWITCH', color:'#f5c542' },
 ];
 
 let _detectRules = _DEFAULT_DETECT_RULES.map(r => ({...r}));
@@ -5154,7 +5184,15 @@ function _rebuildMsgTypeMap() {
 function _loadDetectRules() {
   try {
     const s = localStorage.getItem('up_detect_rules');
-    if (s) _detectRules = JSON.parse(s);
+    if (s) {
+      _detectRules = JSON.parse(s);
+      _detectRules.forEach(r => {
+        if (!r.color) {
+          const def = _DEFAULT_DETECT_RULES.find(d => d.type === r.type);
+          if (def?.color) r.color = def.color;
+        }
+      });
+    }
   } catch(e) {}
   _rebuildMsgTypeMap();
 }
@@ -5182,7 +5220,7 @@ function volSearchChain(vol) {
 function detectMsgType(rawMsg) {
   if (!rawMsg) return { type:'UNKNOWN', label:'Unknown', vol:null };
   for (const p of MSG_TYPE_MAP) {
-    if (p.test(rawMsg)) return { type:p.type, label:p.label, vol:p.vol };
+    if (p.test(rawMsg)) return { type:p.type, label:p.label, vol:p.vol, color:p.color||'' };
   }
   return { type:'UNKNOWN', label:'Unknown', vol:null };
 }
@@ -5983,7 +6021,7 @@ function _showProgressPicker(label, matches, cb, msgType = null) {
   _ppPickerCb = cb;
   const shown = matches;
   const _typeTag = msgType?.type
-    ? `<span class="btype btype-${msgType.type.toLowerCase()}" style="font-size:var(--sz-badge);padding:1px 5px;vertical-align:middle">${esc(msgType.type)}</span>`
+    ? (() => { const _st = _btypeStyle(msgType.color); return `<span class="${_st ? 'btype' : _btypeClass(msgType.type)}" style="${_st ? _st+';' : ''}font-size:var(--sz-badge);padding:1px 5px;vertical-align:middle">${esc(msgType.type)}</span>`; })()
     : '';
   pp.innerHTML =
     `<div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 4px 21px">` +
@@ -6678,8 +6716,46 @@ function doParseMessages() {
           const _typeSeen       = new Set();
           const _ddlErrors      = []; // DDLs that threw during scoring
           try {
-          // ── Score every chunk against the candidate pool ─────────────────────
-
+          // ── Pre-scoring: score one representative per type against all DDLs ──
+          const typeMatchCache = {};
+          {
+            const longestByType = {};
+            for (const chunk of chunks) {
+              const chunkStr = typeof chunk === 'object' ? chunk.text : String(chunk);
+              const bytes    = extractBytes(chunk, S.inputFormat);
+              if (!bytes.length) continue;
+              let parseBytes = bytes;
+              if (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex') {
+                let _f09 = 0; for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
+                const _mtiEbcdic = bytes.length >= 4 && bytes[0]>=0xF0&&bytes[0]<=0xF9&&bytes[1]>=0xF0&&bytes[1]<=0xF9&&bytes[2]>=0xF0&&bytes[2]<=0xF9&&bytes[3]>=0xF0&&bytes[3]<=0xF9;
+                if (bytes.length > 0 && (_f09/bytes.length > 0.30 || _mtiEbcdic)) parseBytes = bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
+              }
+              const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic' || S.inputFormat === 'hex')
+                ? parseBytes.map(b => String.fromCharCode(b)).join('') : chunkStr;
+              const msgType = detectMsgType(detectStr);
+              if (!msgType.vol) continue;
+              if (matchDDLMM(detectStr, null, null, msgType.type)) continue;
+              const key = msgType.type + ':' + msgType.vol;
+              if (!longestByType[key] || bytes.length > longestByType[key].byteLen)
+                longestByType[key] = { parseBytes, bytes, byteLen: bytes.length, msgType };
+            }
+            for (const [key, rep] of Object.entries(longestByType)) {
+              const pool = volSearchChain(rep.msgType.vol).flatMap(v => compiledByVol[v] || [])
+                .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
+              typeMatchCache[key] = pool.map(c => {
+                try {
+                  const r         = bestDDLMatch(rep.parseBytes, [c], rep.bytes);
+                  const nameCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
+                  const bonus     = nameCheck === rep.msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
+                  const score     = bonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
+                  return { ddlPath: r.ddlPath, defName: c.defName ?? null, score };
+                } catch (err) {
+                  _ddlErrors.push(c.path + (c.defName ? '/' + c.defName : ''));
+                  return { ddlPath: c.path, defName: c.defName ?? null, score: -1 };
+                }
+              }).filter(m => m.score > 0).sort((a, b) => b.score - a.score);
+            }
+          }
           for (const chunk of chunks) {
             const chunkStr    = typeof chunk === 'object' ? chunk.text : String(chunk);
             const bytes       = extractBytes(chunk, S.inputFormat);
@@ -6750,51 +6826,18 @@ function doParseMessages() {
                 continue;
               }
 
-              // Build pool by walking the volume hierarchy (e.g. ATM → BASE)
-              const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || [])
-                .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
-
-              // Score every candidate; apply name-match bonus; keep score > 0, sorted best-first
-              const allMatches = pool
-                .map(c => {
-                  try {
-                    const r = bestDDLMatch(parseBytes, [c], bytes);
-                    const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
-                    const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
-                    const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
-                    return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score };
-                  } catch (err) {
-                    const label = c.path + (c.defName ? '/' + c.defName : '');
-                    console.warn('[P2/P3 scoring] DDL error —', label, err);
-                    _ddlErrors.push(label);
-                    return { ddlPath: c.path, defName: c.defName ?? null, fields: [], score: -1 };
-                  }
-                })
-                .filter(m => m.score > 0)
-                .sort((a, b) => b.score - a.score);
+              // Look up pre-scored candidates for this message type
+              const cacheKey   = msgType.type + ':' + (msgType.vol || '');
+              const allMatches = typeMatchCache[cacheKey] || [];
 
               if (allMatches.length === 0) {
-                // No DDL matched in vol chain — rendered as "No matching DDL"
                 parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
                   fields: [], ddlPath: null, msgType, tokens: [], byteCharMap,
                   charStart, charEnd: charStart + chunkStr.length, noMatchDDL: true, _auditChunk: chunk });
-
-              } else if (allMatches.length === 1 || sessionMappings[msgType.type]) {
-                // Single match OR session already chose a DDL for this type
-                const sm    = sessionMappings[msgType.type];
-                const match = sm
-                  ? (allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || allMatches[0])
-                  : allMatches[0];
-                if (allMatches.length === 1) _suggestTypeMapping(msgType.type, msgType.label, match.ddlPath);
-                parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
-                  fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, msgType, tokens: null, byteCharMap,
-                  charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk });
-
               } else {
-                // Multiple matches — defer until user picks
                 const pidx = parsed.length;
-                parsed.push(null); // placeholder
-                deferreds.push({ parsedIdx: pidx, chunk, bytes: parseBytes, chunkStr, charStart, byteCharMap, allMatches, msgType });
+                parsed.push(null);
+                deferreds.push({ parsedIdx: pidx, chunk, bytes: parseBytes, rawBytes: bytes, chunkStr, charStart, byteCharMap, allMatches, msgType });
                 if (!_typeSeen.has(msgType.type)) {
                   _typeSeen.add(msgType.type);
                   typePickerQueue.push({ msgType, allMatches });
@@ -6835,6 +6878,7 @@ function doParseMessages() {
             const finalParsed = parsed.filter(p => p !== null && !(isBatchAudit && p.unknownType));
             if (!finalParsed.length) { _parseProgressHide(); flash('Could not extract any message bytes from input.', 'error'); return; }
             S.messages = finalParsed; S.curIdx = 0; S.isParsed = true;
+            _lazyTotalCount = _lazyDeferreds ? S.messages.length + _lazyDeferreds.length : 0;
             // Carry audit metadata when parsing from the audit file reader
             if (isAuditMode)
               finalParsed.forEach(m => {
@@ -6868,15 +6912,29 @@ function doParseMessages() {
             setTimeout(() => _parseProgressHide(), 700);
           }
 
-          // Phase 2: all pickers answered — apply DDL choices to every deferred chunk; tokens resolved lazily at render
+          // Phase 2: all pickers answered — parse first 2 deferreds, store rest for lazy loading
           function _applyDeferreds() {
-            for (const d of deferreds) {
+            const immediateCount = Math.min(2, deferreds.length);
+            for (let i = 0; i < immediateCount; i++) {
+              const d  = deferreds[i];
               const sm = sessionMappings[d.msgType.type];
-              if (!sm) continue; // type was cancelled — leave slot null (filtered in finalize)
-              const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
+              if (!sm) continue;
+              const chosen = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
+              const cand   = allCompiled.find(c => c.path === chosen.ddlPath && (c.defName ?? null) === (chosen.defName ?? null));
+              let fields = [], ddlPath = chosen.ddlPath, defName = chosen.defName;
+              if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
               parsed[d.parsedIdx] = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
-                fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, msgType: d.msgType, tokens: null,
+                fields, ddlPath, defName, msgType: d.msgType, tokens: null,
                 byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length, _auditChunk: d.chunk };
+            }
+            if (deferreds.length > 2) {
+              _lazyDeferreds       = deferreds.slice(2);
+              _lazyDeferredIdx     = 0;
+              _lazyAllCompiled     = allCompiled;
+              _lazySessionMappings = Object.assign({}, sessionMappings);
+            } else {
+              _lazyDeferreds = null; _lazyDeferredIdx = 0;
+              _lazyAllCompiled = null; _lazySessionMappings = null;
             }
             _parseProgressStep('Finalizing\u2026');
             setTimeout(() => _finalizeParse(), 500);
@@ -6983,6 +7041,7 @@ function doParseMessages() {
             const defs = defName
               ? parseHPEDDL(content, _repoReg, _repoSecReg, defName)
               : parseDDL(content, _repoReg, _repoSecReg);
+            if (defName) applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
             if (defs.length > 1 && !/(?:TKN|TKNX)$/i.test(defName || path.split('/').pop())) {
               const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
               (compiledBySv[svk] || (compiledBySv[svk] = [])).push({ path, defName, defs });
@@ -7659,9 +7718,8 @@ function renderFieldTable(msg) {
   let metaBar = '';
   if (msg.isNetard) {
     const t   = msg.msgType || { type:'UNKNOWN' };
-    const cls = 'btype btype-' + t.type.toLowerCase();
     metaBar = `<div class="rec-meta">
-      <span class="${cls}">${esc(t.type)}</span>
+      ${_btypeHtml(t.type, t.color)}
       <span class="rec-meta-route">${esc(msg.source||'?')} → ${esc(msg.dest||'?')}</span>
       ${msg.typeDesc ? `<span class="rec-meta-pipe">|</span><span>${esc(msg.typeDesc)}</span>` : ''}
       <span class="rec-meta-pipe">|</span>
@@ -7671,10 +7729,9 @@ function renderFieldTable(msg) {
     </div>`;
   } else if (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') {
     const t   = msg.msgType;
-    const cls = 'btype btype-' + t.type.toLowerCase();
     const ddlName = msg.ddlPath ? (msg.ddlPath.split('/').pop() + (msg.defName ? '/' + msg.defName : '')) : '';
     metaBar = `<div class="rec-meta">
-      <span class="${cls}">${esc(t.type)}</span>
+      ${_btypeHtml(t.type, t.color)}
       ${ddlName ? `<span class="rec-meta-pipe">|</span><span>${esc(ddlName)}</span>` : ''}
       <span class="rec-meta-pipe">|</span>
       <span>${msg.bytes?.length || 0} bytes</span>
@@ -8374,6 +8431,7 @@ function _auditFmtTs(tsArr) {
 const _AUDIT_NODE_TYPE = { 1: 'proc', 2: 'stn' };
 function _auditFmtNode(word) {
   if (word == null) return '—';
+  if ((word & 0xFFFF) === 0xFFFF) return '--------';
   const type = (word >> 12) & 0xF;
   const num  = word & 0xFFF;
   return `${_AUDIT_NODE_TYPE[type] || type}:${String(num).padStart(3, '0')}`;
@@ -8597,8 +8655,8 @@ function _auditPreloadDateTimeFilters() {
   const b = fwd ? last  : first;
   document.getElementById('auditFltDtFrom').value = a.date;
   document.getElementById('auditFltDtTo').value   = b.date;
-  document.getElementById('auditFltTmFrom').value = a.time;
-  document.getElementById('auditFltTmTo').value   = b.time;
+  document.getElementById('auditFltTmFrom').value = '00:00';
+  document.getElementById('auditFltTmTo').value   = '23:59';
 }
 
 function auditToggleDtDir() {
@@ -8735,7 +8793,9 @@ function auditApplyFilter() {
 function _auditBuildRowHtml(r, absIdx) {
   const peek  = _auditDecodePeek(r.payloadPeek);
   const badge = _auditBadgeType(peek);
-  const badgeHtml = badge ? '<span class="btype btype-' + badge + '">' + badge.toUpperCase() + '</span>' : '';
+  const _badgeColor = badge ? (MSG_TYPE_MAP.find(r => r.type.toLowerCase() === badge)?.color || '') : '';
+  const _badgeSt = _btypeStyle(_badgeColor);
+  const badgeHtml = badge ? `<span class="${_badgeSt ? 'btype' : _btypeClass(badge)}"${_badgeSt ? ` style="${_badgeSt}"` : ''}>${badge.toUpperCase()}</span>` : '';
   const fail = r.msgFailure ? String(r.msgFailure) : '';
   return '<div id="aud-row-' + absIdx + '" class="audit-record-row' + (absIdx === _auditSt.selIdx ? ' aud-sel' : '')
     + '" onclick="auditInspectRecord(' + absIdx + ')">'
@@ -9054,7 +9114,12 @@ function auditParseSelected() {
 
 // Pre-built audit batch: set before calling doParseMessages so the P2/P3 pipeline
 // receives one chunk per record instead of treating the whole textarea as one message.
-let _auditBatchPayloads = null;
+let _auditBatchPayloads  = null;
+let _lazyDeferreds       = null;  // deferred chunks not yet parsed (lazy)
+let _lazyDeferredIdx     = 0;     // next index into _lazyDeferreds
+let _lazyTotalCount      = 0;     // total messages including unparsed lazy chunks
+let _lazyAllCompiled     = null;  // compiled DDL candidates for lazy parsing
+let _lazySessionMappings = null;  // type → {ddlPath,defName} for lazy parsing
 
 async function auditParseAll() {
   const rows = _auditSt.filtered;
@@ -9102,6 +9167,24 @@ function auditSelectRecord(filteredIdx) {
   });
 }
 
+function _auditLazyParseNext() {
+  if (!_lazyDeferreds || _lazyDeferredIdx >= _lazyDeferreds.length) return;
+  const d  = _lazyDeferreds[_lazyDeferredIdx++];
+  const sm = _lazySessionMappings?.[d.msgType.type];
+  if (!sm) { if (_lazyDeferredIdx < _lazyDeferreds.length) _auditLazyParseNext(); return; }
+  const chosen = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
+  const cand   = _lazyAllCompiled?.find(c => c.path === chosen.ddlPath && (c.defName ?? null) === (chosen.defName ?? null));
+  let fields = [], ddlPath = chosen.ddlPath, defName = chosen.defName;
+  if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
+  const msg = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
+    fields, ddlPath, defName, msgType: d.msgType, tokens: null,
+    byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length,
+    isNetard: true, recNo: d.chunk.recNo, source: d.chunk.source, dest: d.chunk.dest,
+    recLength: d.chunk.recLength, time: d.chunk.time };
+  _resolveTokens(msg);
+  S.messages.push(msg);
+}
+
 function auditCloseMode() {
   document.body.classList.remove('audit-active');
   if (_auditSt.worker) { _auditSt.worker.terminate(); _auditSt.worker = null; }
@@ -9116,6 +9199,8 @@ function auditCloseMode() {
   document.getElementById('msgGutter').style.display = '';
   const fnEl = document.getElementById('msgFileName');
   if (fnEl) fnEl.textContent = '';
+  _lazyDeferreds = null; _lazyDeferredIdx = 0; _lazyTotalCount = 0;
+  _lazyAllCompiled = null; _lazySessionMappings = null;
   clearAll();
 }
 
@@ -9200,9 +9285,10 @@ function renderTracking() {
 }
 
 function jumpTo(idx) {
-  S.curIdx = idx;
+  while (_lazyDeferreds && _lazyDeferredIdx < _lazyDeferreds.length && S.messages.length <= idx + 1) _auditLazyParseNext();
+  S.curIdx = Math.min(idx, S.messages.length - 1);
   updateNav();
-  if (S.trackMode) { renderTracking(); renderRaw(S.messages[idx]); }
+  if (S.trackMode) { renderTracking(); renderRaw(S.messages[S.curIdx]); }
   else renderCurrent();
 }
 
@@ -9210,10 +9296,17 @@ function jumpTo(idx) {
 // NAVIGATION
 // ============================================================
 function prevMsg() { if (S.curIdx > 0) { S.curIdx--; S.selFieldId = null; clearInputHL(); updateNav(); renderCurrent(); } }
-function nextMsg() { if (S.curIdx < S.messages.length-1) { S.curIdx++; S.selFieldId = null; clearInputHL(); updateNav(); renderCurrent(); } }
+function nextMsg() {
+  const lazyTotal = _lazyTotalCount || S.messages.length;
+  if (S.curIdx >= lazyTotal - 1) return;
+  if (S.curIdx + 1 >= S.messages.length) _auditLazyParseNext();
+  S.curIdx++;
+  if (S.curIdx + 1 >= S.messages.length && _lazyDeferreds && _lazyDeferredIdx < _lazyDeferreds.length) _auditLazyParseNext();
+  S.selFieldId = null; clearInputHL(); updateNav(); renderCurrent();
+}
 
 function updateNav() {
-  const total = S.messages.length;
+  const total = _lazyTotalCount || S.messages.length;
   const msg   = S.messages[S.curIdx];
   document.getElementById('msgCtr').textContent = `${S.curIdx+1} / ${total}`;
   document.getElementById('msgNav').style.display = total > 1 ? 'flex' : 'none';
@@ -10537,7 +10630,7 @@ function showTypePicker(label, cb) {
   const TYPES = ['ISO','STM','PSTM','NDC','B24'];
   for (const t of TYPES) {
     const btn = document.createElement('button');
-    btn.className = `btype btype-${t.toLowerCase()} type-pick-btn`;
+    btn.className = _btypeClass(t) + ' type-pick-btn';
     btn.textContent = t;
     btn.onclick = () => {
       overlay.classList.add('hidden');
@@ -11479,7 +11572,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.29';
+const APP_VERSION  = '1.1.1.33';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12009,6 +12102,7 @@ function openSettings() {
   document.getElementById('settingsOverlay').classList.remove('hidden');
   _syncEggAccentUI();
   renderDetectRulesTable();
+  _drSetDirty(_drDirty);
   // Sync control states to current prefs
   const lbl = document.getElementById('szLabel');
   if (lbl) lbl.textContent = P.monoSize + 'px';
@@ -12029,67 +12123,119 @@ function _escHtml(s) {
 }
 
 function renderDetectRulesTable() {
-  const tbody = document.getElementById('detectRulesTbody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
+  const list = document.getElementById('detectRulesTbody');
+  if (!list) return;
+  list.innerHTML = '';
   _detectRules.forEach((r, i) => {
-    const tr = document.createElement('tr');
-    tr.className = 'dr-row';
+    const rule = document.createElement('div');
+    rule.className = 'dr-rule';
     const last = i === _detectRules.length - 1;
-    tr.innerHTML =
-      `<td class="dr-cell"><input class="dr-input" value="${_escHtml(r.regex)}" oninput="_drUpdate(${i},'regex',this.value,this)" title="${_escHtml(r.regex)}"></td>` +
-      `<td class="dr-cell"><input class="dr-input" value="${_escHtml(r.type)}" oninput="_drUpdate(${i},'type',this.value,this)"></td>` +
-      `<td class="dr-cell"><input class="dr-input" value="${_escHtml(r.label)}" oninput="_drUpdate(${i},'label',this.value,this)"></td>` +
-      `<td class="dr-cell"><input class="dr-input" value="${_escHtml(r.vol||'')}" oninput="_drUpdate(${i},'vol',this.value,this)"></td>` +
-      `<td class="dr-cell"><div class="dr-acts">` +
-        `<button class="dr-btn" onclick="moveDetectRule(${i},-1)" title="Move up"${i===0?' disabled':''}>↑</button>` +
-        `<button class="dr-btn" onclick="moveDetectRule(${i},1)" title="Move down"${last?' disabled':''}>↓</button>` +
-        `<button class="dr-btn dr-del" onclick="deleteDetectRule(${i})" title="Remove">✕</button>` +
-      `</div></td>`;
-    const rxInput = tr.querySelector('td:first-child .dr-input');
+    const color = r.color || '#888888';
+    rule.innerHTML =
+      `<div class="dr-rule-top">` +
+        `<span class="dr-num">#${i+1}</span>` +
+        `<input class="dr-input dr-input-rx" value="${_escHtml(r.regex)}" oninput="_drUpdate(${i},'regex',this.value,this)" placeholder="Regex" title="${_escHtml(r.regex)}">` +
+        `<div class="dr-acts">` +
+          `<button class="dr-btn" onclick="moveDetectRule(${i},-1)" title="Move up"${i===0?' disabled':''}>↑</button>` +
+          `<button class="dr-btn" onclick="moveDetectRule(${i},1)" title="Move down"${last?' disabled':''}>↓</button>` +
+          `<button class="dr-btn dr-del" onclick="deleteDetectRule(${i})" title="Remove">✕</button>` +
+        `</div>` +
+      `</div>` +
+      `<div class="dr-rule-bot">` +
+        `<div class="dr-field"><span class="dr-lbl">Type</span><input class="dr-input dr-input-ty" value="${_escHtml(r.type)}" oninput="_drUpdate(${i},'type',this.value,this)"></div>` +
+        `<div class="dr-field dr-field-grow"><span class="dr-lbl">Label</span><input class="dr-input dr-input-lb" value="${_escHtml(r.label)}" oninput="_drUpdate(${i},'label',this.value,this)"></div>` +
+        `<div class="dr-field"><span class="dr-lbl">Volume</span><input class="dr-input dr-input-vl" value="${_escHtml(r.vol||'')}" oninput="_drUpdate(${i},'vol',this.value,this)"></div>` +
+        `<div class="dr-field"><input type="color" class="dr-color" value="${_escHtml(color)}" oninput="_drUpdate(${i},'color',this.value,this)" title="Badge color"></div>` +
+      `</div>`;
+    const rxInput = rule.querySelector('.dr-input-rx');
     try { new RegExp(r.regex); } catch(e) { rxInput?.classList.add('dr-invalid'); }
-    tbody.appendChild(tr);
+    list.appendChild(rule);
   });
+}
+
+let _drDirty = false;
+function _drDiffersFromDefaults() {
+  if (_detectRules.length !== _DEFAULT_DETECT_RULES.length) return true;
+  return _detectRules.some((r, i) => {
+    const d = _DEFAULT_DETECT_RULES[i];
+    return r.regex !== d.regex || r.type !== d.type || r.label !== d.label || r.vol !== d.vol || (r.color||'') !== (d.color||'');
+  });
+}
+function _drSetDirty(dirty) {
+  _drDirty = dirty;
+  const applyBtn = document.getElementById('drApplyBtn');
+  const resetBtn = document.getElementById('drResetBtn');
+  if (applyBtn) applyBtn.disabled = !dirty;
+  if (resetBtn) resetBtn.disabled = !_drDiffersFromDefaults();
 }
 
 function _drUpdate(i, field, value, el) {
   _detectRules[i] = { ..._detectRules[i], [field]: value };
+  if (field === 'type') {
+    const def = _DEFAULT_DETECT_RULES.find(r => r.type.toLowerCase() === value.toLowerCase());
+    if (def?.color) {
+      _detectRules[i].color = def.color;
+      const colorEl = el?.closest('.dr-rule')?.querySelector('.dr-color');
+      if (colorEl) colorEl.value = def.color;
+    }
+  }
   if (field === 'regex') {
     let valid = true;
     try { new RegExp(value); } catch(e) { valid = false; }
     el?.classList.toggle('dr-invalid', !valid);
-    if (!valid) return;
   }
-  _saveDetectRules();
+  _drSetDirty(true);
 }
 
 function addDetectRule() {
-  _detectRules.push({ regex:'^', type:'', label:'', vol:'' });
-  _saveDetectRules();
+  _detectRules.push({ regex:'^', type:'', label:'', vol:'', color:'' });
   renderDetectRulesTable();
+  _drSetDirty(true);
   document.getElementById('detectRulesTbody')?.lastElementChild?.querySelector('input')?.focus();
 }
 
 function deleteDetectRule(i) {
   _detectRules.splice(i, 1);
-  _saveDetectRules();
   renderDetectRulesTable();
+  _drSetDirty(true);
 }
 
 function moveDetectRule(i, dir) {
   const j = i + dir;
   if (j < 0 || j >= _detectRules.length) return;
   [_detectRules[i], _detectRules[j]] = [_detectRules[j], _detectRules[i]];
-  _saveDetectRules();
   renderDetectRulesTable();
+  _drSetDirty(true);
+}
+
+function applyDetectRules() {
+  _saveDetectRules();
+  if (_auditSt.file) _auditBeginLoad(_auditSt.file);
+  _drSetDirty(false);
+}
+
+function showSettingsConfirm(label, cb) {
+  const overlay = document.getElementById('settingsConfirm');
+  document.getElementById('settingsConfirmLabel').textContent = label;
+  overlay.classList.remove('hidden');
+  const ok = document.getElementById('settingsConfirmOk');
+  const cancel = document.getElementById('settingsConfirmCancel');
+  const close = result => { overlay.classList.add('hidden'); ok.onclick = null; cancel.onclick = null; cb(result); };
+  ok.onclick = () => close(true);
+  cancel.onclick = () => close(false);
+  setTimeout(() => ok.focus(), 30);
 }
 
 function resetDetectRules() {
-  if (!confirm('Reset detection rules to built-in defaults?')) return;
-  localStorage.removeItem('up_detect_rules');
-  _detectRules = _DEFAULT_DETECT_RULES.map(r => ({...r}));
-  _saveDetectRules();
-  renderDetectRulesTable();
+  showSettingsConfirm('Reset detection rules to built-in defaults?', ok => {
+    if (!ok) return;
+    localStorage.removeItem('up_detect_rules');
+    _detectRules = _DEFAULT_DETECT_RULES.map(r => ({...r}));
+    _saveDetectRules();
+    renderDetectRulesTable();
+    if (_auditSt.file) _auditBeginLoad(_auditSt.file);
+    _drSetDirty(false);
+  });
 }
 
 function setTheme(t) {
@@ -12768,6 +12914,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter')              { e.preventDefault(); auditParseSelected(); return; }
         if (e.key === 'ArrowUp')            { e.preventDefault(); auditNavPopup(-1); return; }
         if (e.key === 'ArrowDown')          { e.preventDefault(); auditNavPopup(1); return; }
+        if (e.key === '1') { e.preventDefault(); togglePanel('ddlPanel', 'ddlToggle', 'ddlResizer'); return; }
+        if (e.key === '2') { e.preventDefault(); togglePanel('msgPanel', 'msgToggle', 'ddlResizer'); return; }
+        if (e.key === '3') { e.preventDefault(); togglePanel('resPanel', 'resToggle', 'resResizer'); return; }
+        if (e.key === '4') { e.preventDefault(); togglePanel('rawPanel', 'rawToggle', 'resResizer'); return; }
         if (!e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
         return;
       }
@@ -12828,16 +12978,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (e.key === ' ' && e.target.closest('#auditRecordList')) { e.preventDefault(); return; }
 
-    // Arrow keys — but not when focus is inside a text input/textarea
+    // Don't intercept when focus is inside a text input, textarea, or contenteditable (e.g. CodeMirror)
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (document.activeElement?.isContentEditable) return;
 
     if (e.key === '1') { e.preventDefault(); togglePanel('ddlPanel', 'ddlToggle', 'ddlResizer'); }
     if (e.key === '2') { e.preventDefault(); togglePanel('msgPanel', 'msgToggle', 'ddlResizer'); }
     if (e.key === '3') { e.preventDefault(); togglePanel('resPanel', 'resToggle', 'resResizer'); }
     if (e.key === '4') { e.preventDefault(); togglePanel('rawPanel', 'rawToggle', 'resResizer'); }
 
-    if (e.key === 'p' || e.key === 'P') { e.preventDefault(); _parseBtnClick(); }
+    if (e.key === 'p' || e.key === 'P') {
+      e.preventDefault();
+      if (document.body.classList.contains('audit-active')) auditParseSelected();
+      else doParseMessages();
+    }
 
     if (e.key === 'x' || e.key === 'X') {
       e.preventDefault();
@@ -13121,23 +13276,10 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="settings-row" style="margin-bottom:6px">
             <span class="settings-lbl" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px)">Rules tested in order — first match wins</span>
           </div>
-          <table class="dr-table">
-            <colgroup>
-              <col class="dr-col-rx"><col class="dr-col-ty"><col class="dr-col-lb"><col class="dr-col-vl"><col class="dr-col-ac">
-            </colgroup>
-            <thead>
-              <tr>
-                <th class="dr-th">Regex</th>
-                <th class="dr-th">Type</th>
-                <th class="dr-th">Label</th>
-                <th class="dr-th">Vol</th>
-                <th class="dr-th"></th>
-              </tr>
-            </thead>
-            <tbody id="detectRulesTbody"></tbody>
-          </table>
+          <div class="dr-list" id="detectRulesTbody"></div>
           <div class="settings-row" style="margin-top:10px">
-            <button class="btn btn-sm" onclick="resetDetectRules()" title="Restore built-in detection rules">↺ Reset</button>
+            <button id="drResetBtn" class="btn btn-sm" onclick="resetDetectRules()" title="Restore built-in detection rules" disabled>↺ Reset</button>
+            <button id="drApplyBtn" class="btn btn-sm" onclick="applyDetectRules()" title="Apply changes and reload audit" disabled>✓ Apply</button>
             <button class="btn btn-sm" onclick="addDetectRule()" title="Add new detection rule">+ Add Rule</button>
           </div>
         </div>
@@ -13402,6 +13544,15 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
 
     </div><!-- end settings-body -->
+    <div class="settings-confirm hidden" id="settingsConfirm">
+      <div class="modal-box" style="min-width:260px;max-width:340px">
+        <div class="modal-label" id="settingsConfirmLabel"></div>
+        <div class="modal-btns">
+          <button class="btn" id="settingsConfirmCancel">Cancel</button>
+          <button class="btn btn-primary" id="settingsConfirmOk">OK</button>
+        </div>
+      </div>
+    </div>
   </div><!-- end settings-drawer -->
 </div><!-- end settings-overlay -->
 

@@ -923,7 +923,7 @@ body.light .trk-chk { color-scheme: light; }
   border-radius: 5px;
   padding: 4px 0;
   min-width: 185px;
-  z-index: 20000;
+  z-index: 26000;
   box-shadow: 0 6px 20px rgba(0,0,0,0.55);
   user-select: none;
 }
@@ -11978,7 +11978,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.41';
+const APP_VERSION  = '1.1.1.42';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13585,6 +13585,7 @@ function _meRenderSidebar() {
       del.onclick = e => { e.stopPropagation(); _meDeleteItem('msg', i); };
       d.append(sw, nm, del);
       d.onclick = () => _meSelectItem('msg', i);
+      d.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); _meCtxMsg(e, i); };
       msgs.appendChild(d);
     });
   }
@@ -14087,6 +14088,40 @@ function _meDeleteItem(section, idx) {
     _meRenderSidebar();
     _meRenderRight();
   });
+}
+
+let _meMsgClipboard = null;
+
+function _meCtxMsg(e, idx) {
+  const items = [
+    { icon: '⧉', label: 'Duplicate',    fn: () => _meDupItem(idx) },
+    { icon: '⎘', label: 'Copy',         fn: () => { _meMsgClipboard = JSON.parse(JSON.stringify(_meState.specs[idx])); } },
+  ];
+  if (_meMsgClipboard) {
+    items.push({ icon: '⏎', label: 'Paste as new', fn: () => _mePasteMsg() });
+  }
+  items.push({ separator: true });
+  items.push({ icon: '✕', label: 'Delete', danger: true, fn: () => _meDeleteItem('msg', idx) });
+  showCtxMenu(e.clientX, e.clientY, items);
+}
+
+function _meDupItem(idx) {
+  const clone = JSON.parse(JSON.stringify(_meState.specs[idx]));
+  clone.label = 'Copy of ' + (clone.label || clone.name || 'message');
+  clone.name  = 'copy_' + (clone.name || 'msg');
+  _meState.specs.splice(idx + 1, 0, clone);
+  _meSetDirty();
+  _meSelectItem('msg', idx + 1);
+}
+
+function _mePasteMsg() {
+  if (!_meMsgClipboard) return;
+  const clone = JSON.parse(JSON.stringify(_meMsgClipboard));
+  clone.label = 'Copy of ' + (clone.label || clone.name || 'message');
+  clone.name  = 'copy_' + (clone.name || 'msg');
+  _meState.specs.push(clone);
+  _meSetDirty();
+  _meSelectItem('msg', _meState.specs.length - 1);
 }
 
 function _meSave() {

@@ -1430,7 +1430,7 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-rb[disabled]{opacity:.3;cursor:default;}
 .me-rec-form{border-top:2px solid var(--border);background:var(--bg-deep);padding:8px;display:none;flex-direction:column;gap:8px;}
 .me-rec-form.open{display:flex;}
-.me-help-link{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:var(--sz-mono);text-decoration:underline;margin-left:6px;user-select:none;flex-shrink:0;}
+.me-help-link{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:9px;text-decoration:underline;margin-left:6px;user-select:none;flex-shrink:0;}
 .me-help-link:hover{opacity:0.75;}
 .me-rec-help{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);background:rgba(255,255,255,.03);border:2px solid var(--border);border-radius:2px;padding:8px 12px;line-height:1.6;}
 .me-rec-help b{color:var(--text);}
@@ -11978,7 +11978,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.42';
+const APP_VERSION  = '1.1.1.43';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13859,7 +13859,7 @@ function _meRecForm(r, idx) {
                  'min-length','mti','bitmap','regex','ebcdic-density','hex-density',
                  'oct-density','length-prefix','flag-prefix'];
   const cur = r ? r.type : 'literal';
-  const typeSel = `<div class="me-rf-fld"><div class="me-lbl" style="display:flex;align-items:center">Type<span class="me-help-link" onclick="_meToggleRecHelp(${idx})">help</span></div>
+  const typeSel = `<div class="me-rf-fld"><div class="me-lbl" style="display:flex;align-items:center">Type<span class="me-help-link" onclick="_meToggleRecHelp(${idx})">click for help</span></div>
     <select class="me-sel" style="width:130px" id="me-rt-${idx}" onchange="_meRecTypeChange(${idx},this.value)">
       ${types.map(t => `<option${t === cur ? ' selected' : ''}>${t}</option>`).join('')}
     </select></div>`;

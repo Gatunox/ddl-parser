@@ -5481,7 +5481,7 @@ function parseMessage(bytes, defs, rawBytes) {
     return n / total >= min_density;
   };
 
-  _R['length-prefix'] = (bytes, { offset=0, encoding='uint16-be', body_offset, includes_self=false }) => {
+  _R['length-payload'] = _R['length-prefix'] = (bytes, { offset=0, encoding='uint16-be', body_offset, includes_self=false }) => {
     const len = _readLen(bytes, offset, encoding);
     if (len === null) return false;
     const bodyStart = body_offset !== undefined ? body_offset : offset + _lenFieldSize(encoding);
@@ -5489,7 +5489,7 @@ function parseMessage(bytes, defs, rawBytes) {
     return bodyLen >= 0 && bodyStart + bodyLen <= bytes.length;
   };
 
-  _R['flag-prefix'] = (bytes, { offset=0, encoding='uint8', body_offset, body_length }) => {
+  _R['flag-payload'] = _R['flag-prefix'] = (bytes, { offset=0, encoding='uint8', body_offset, body_length }) => {
     const flag = _readLen(bytes, offset, encoding);
     if (flag === null || flag === 0) return false;
     if (body_offset !== undefined && body_length !== undefined)
@@ -11997,7 +11997,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.49';
+const APP_VERSION  = '1.1.1.50';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13801,8 +13801,8 @@ function _meRecSum(r) {
     case 'bitmap':      return wrap(`@${r.offset} bit${r.bit}=${r.value}`);
     case 'regex':       return wrap(esc(r.pattern));
     case 'ebcdic-density': case 'hex-density': case 'oct-density': return wrap(`min ${r.min}`);
-    case 'length-prefix': return wrap(`@${r.offset} ${r.encoding||'uint16-be'} body@${r.body_offset||0}${r.includes_self?' incl.self':''}`);
-    case 'flag-prefix':   return wrap(`@${r.offset} ${r.encoding||'uint8'} body@${r.body_offset||0} len:${r.body_length||0}`);
+    case 'length-payload': case 'length-prefix': return wrap(`@${r.offset} ${r.encoding||'uint16-be'} payload@${r.body_offset||0}${r.includes_self?' incl.self':''}`);
+    case 'flag-payload':   case 'flag-prefix':   return wrap(`@${r.offset} ${r.encoding||'uint8'} payload@${r.body_offset||0} len:${r.body_length||0}`);
     default: return '';
   }
 }
@@ -13883,13 +13883,13 @@ pos 4 (origin): &nbsp;0=Acquirer &nbsp;1=Acq Repeat &nbsp;2=Issuer &nbsp;3=Iss R
 <div class="me-rh-flds">min — 0.0–1.0</div>
 <div class="me-rh-exs"><b>Example:</b> octal-dump format → min=0.7</div>`,
 
-  'length-prefix': `<b>Reads an N-byte length field at offset and verifies the declared length matches the actual message body size.</b>
-<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— byte position of the length field<br>encoding &nbsp;&nbsp;&nbsp;&nbsp;— how the length field is encoded: <b>uint8</b> (1 byte), <b>uint16-be</b> (2 bytes big-endian), <b>uint16-le</b> (2 bytes little-endian), <b>bcd2</b> (2 BCD bytes = 4 decimal digits)<br>body offset — byte where the message body begins (after any header bytes)<br>incl. self &nbsp;&nbsp;— Yes if the length value counts the length field bytes themselves, No if it counts only the body<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
-<div class="me-rh-exs"><b>Examples:</b> 2-byte BE prefix before body → encoding=uint16-be body@=2 incl.self=No &nbsp;|&nbsp; BCD length at offset 0, body starts at 2, length counts itself → encoding=bcd2 body@=2 incl.self=Yes &nbsp;|&nbsp; single-byte length → encoding=uint8 body@=1 incl.self=No</div>`,
+  'length-payload': `<b>Reads a length field and verifies the declared value matches the actual payload size.</b>
+<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— byte position of the length field<br>encoding &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— how the length field is encoded: <b>uint8</b> (1 byte), <b>uint16-be</b> (2 bytes big-endian), <b>uint16-le</b> (2 bytes little-endian), <b>bcd2</b> (2 BCD bytes = 4 decimal digits)<br>payload offset — byte where the payload begins (after header/length bytes)<br>incl. self &nbsp;&nbsp;&nbsp;— Yes if the length value counts the length field bytes themselves, No if it counts only the payload<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
+<div class="me-rh-exs"><b>Examples:</b> 2-byte BE length, payload starts at 2 → encoding=uint16-be payload@=2 incl.self=No &nbsp;|&nbsp; BCD length counting itself, payload at 2 → encoding=bcd2 payload@=2 incl.self=Yes &nbsp;|&nbsp; 1-byte length, payload at 1 → encoding=uint8 payload@=1 incl.self=No</div>`,
 
-  'flag-prefix': `<b>Reads a flag/type field and checks it is non-zero — confirming an actual payload follows.</b> Optionally validates that the declared body fits within the message.
-<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;&nbsp;— byte position of the flag field<br>encoding &nbsp;&nbsp;— <b>uint8</b> (1 byte), <b>uint16-be</b>, <b>uint16-le</b>, <b>bcd2</b><br>body offset — byte where the body begins<br>body length — expected body size in bytes (0 = skip size check)<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
-<div class="me-rh-exs"><b>Examples:</b> TPDU flag byte non-zero, body of 20 bytes at offset 5 → offset=0 encoding=uint8 body@=5 body len=20 &nbsp;|&nbsp; 2-byte flag, body starts at 2 → encoding=uint16-be body@=2</div>`,
+  'flag-payload': `<b>Reads a flag/type field and checks it is non-zero — confirming a payload follows.</b> Optionally validates the payload fits within the message.
+<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— byte position of the flag field<br>encoding &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— <b>uint8</b> (1 byte), <b>uint16-be</b>, <b>uint16-le</b>, <b>bcd2</b><br>payload offset — byte where the payload begins<br>payload length — expected payload size in bytes (0 = skip size check)<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
+<div class="me-rh-exs"><b>Examples:</b> TPDU flag non-zero, 20-byte payload at offset 5 → offset=0 encoding=uint8 payload@=5 payload len=20 &nbsp;|&nbsp; 2-byte flag, payload at 2 → encoding=uint16-be payload@=2</div>`,
 };
 
 function _meToggleRecHelp(idx) {
@@ -13898,13 +13898,13 @@ function _meToggleRecHelp(idx) {
 }
 
 function _meRecForm(r, idx) {
-  const _ALIAS = { byte:'uint8', word:'uint16', dword:'uint32' };
+  const _ALIAS = { byte:'uint8', word:'uint16', dword:'uint32', 'length-prefix':'length-payload', 'flag-prefix':'flag-payload' };
   const types = [
     ['literal','literal'], ['binary','binary'],
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
     ['min-length','min-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
     ['ebcdic-density','ebcdic-density'], ['hex-density','hex-density'], ['oct-density','oct-density'],
-    ['length-prefix','length-prefix'], ['flag-prefix','flag-prefix'],
+    ['length-payload','length-payload'], ['flag-payload','flag-payload'],
   ];
   const cur = r ? (_ALIAS[r.type] || r.type) : 'literal';
   const typeSel = `<div class="me-rf-fld"><div class="me-lbl" style="display:flex;align-items:center">Type<span class="me-help-link" onclick="_meToggleRecHelp(${idx})">click for help</span></div>
@@ -14010,23 +14010,23 @@ function _meRecFields(r, id) {
       return `<div class="me-rf-fld"><div class="me-lbl">Min (0.0–1.0)</div>
        <input class="me-inp" style="width:72px" type="number" step="0.01" min="0" max="1"
          id="me-rv-min-${id}" value="${ea(r.min != null ? r.min : 0.9)}"></div>`;
-    case 'length-prefix': {
+    case 'length-payload': case 'length-prefix': {
       const enc = r.encoding || 'uint16-be';
       const incSelf = String(r.includes_self) === 'true' ? 'true' : 'false';
       const pfxEncs = ['uint8','uint16-be','uint16-le','bcd2'];
       return nf('offset','Offset',0) + encSel('encoding',pfxEncs,enc) +
-        nf('body_offset','Body @',0) +
+        nf('body_offset','Payload @',0) +
         `<div class="me-rf-fld"><div class="me-lbl">Incl. self</div>
          <select class="me-sel" style="width:55px" id="me-rv-includes_self-${id}">
            <option${incSelf==='false'?' selected':''} value="false">No</option>
            <option${incSelf==='true'?' selected':''} value="true">Yes</option>
          </select></div>`;
     }
-    case 'flag-prefix': {
+    case 'flag-payload': case 'flag-prefix': {
       const enc = r.encoding || 'uint8';
       const pfxEncs = ['uint8','uint16-be','uint16-le','bcd2'];
       return nf('offset','Offset',0) + encSel('encoding',pfxEncs,enc) +
-        nf('body_offset','Body @',0) + nf('body_length','Body Len',0);
+        nf('body_offset','Payload @',0) + nf('body_length','Payload Len',0);
     }
     default: return '';
   }
@@ -14070,13 +14070,13 @@ function _meRecRead(idx) {
     case 'regex': return { type, pattern: gv('pattern'), ...r_id };
     case 'ebcdic-density': case 'hex-density': case 'oct-density':
       return { type, min: nf('min', 0.9), ...r_id };
-    case 'length-prefix': {
+    case 'length-payload': case 'length-prefix': {
       const isEl = document.getElementById(`me-rv-includes_self-${idx}`);
-      return { type, offset: ni('offset'), encoding: gv('encoding') || 'uint16-be',
+      return { type: 'length-payload', offset: ni('offset'), encoding: gv('encoding') || 'uint16-be',
         body_offset: ni('body_offset'), includes_self: isEl ? isEl.value === 'true' : false, ...r_id };
     }
-    case 'flag-prefix':
-      return { type, offset: ni('offset'), encoding: gv('encoding') || 'uint8',
+    case 'flag-payload': case 'flag-prefix':
+      return { type: 'flag-payload', offset: ni('offset'), encoding: gv('encoding') || 'uint8',
         body_offset: ni('body_offset'), body_length: ni('body_length'), ...r_id };
     default: return { type, ...r_id };
   }

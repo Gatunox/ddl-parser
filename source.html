@@ -11997,7 +11997,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.50';
+const APP_VERSION  = '1.1.1.51';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14183,19 +14183,12 @@ function _meDeleteItem(section, idx) {
   });
 }
 
-let _meMsgClipboard = null;
-
 function _meCtxMsg(e, idx) {
-  const items = [
-    { icon: '⧉', label: 'Duplicate',    fn: () => _meDupItem(idx) },
-    { icon: '⎘', label: 'Copy',         fn: () => { _meMsgClipboard = JSON.parse(JSON.stringify(_meState.specs[idx])); } },
-  ];
-  if (_meMsgClipboard) {
-    items.push({ icon: '⏎', label: 'Paste as new', fn: () => _mePasteMsg() });
-  }
-  items.push({ separator: true });
-  items.push({ icon: '✕', label: 'Delete', danger: true, fn: () => _meDeleteItem('msg', idx) });
-  showCtxMenu(e.clientX, e.clientY, items);
+  showCtxMenu(e.clientX, e.clientY, [
+    { icon: '⧉', label: 'Duplicate', fn: () => _meDupItem(idx) },
+    { separator: true },
+    { icon: '✕', label: 'Delete', danger: true, fn: () => _meDeleteItem('msg', idx) },
+  ]);
 }
 
 function _meDupItem(idx) {
@@ -14207,15 +14200,6 @@ function _meDupItem(idx) {
   _meSelectItem('msg', idx + 1);
 }
 
-function _mePasteMsg() {
-  if (!_meMsgClipboard) return;
-  const clone = JSON.parse(JSON.stringify(_meMsgClipboard));
-  clone.label = 'Copy of ' + (clone.label || clone.name || 'message');
-  clone.name  = 'copy_' + (clone.name || 'msg');
-  _meState.specs.push(clone);
-  _meSetDirty();
-  _meSelectItem('msg', _meState.specs.length - 1);
-}
 
 function _meSave() {
   _fmtSave(_meState.specs, _meState.validators);

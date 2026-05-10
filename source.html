@@ -5394,14 +5394,33 @@ function parseMessage(bytes, defs, rawBytes) {
 
   _R['min-length'] = (bytes, { length=0 }) => bytes.length >= length;
 
-  _R['mti'] = (bytes, { offset=0, encoding='ascii' }) => {
+  _R['mti'] = (bytes, { offset=0, encoding='ascii', value='####' }) => {
     if (offset+4 > bytes.length) return false;
-    if (encoding === 'ebcdic') {
-      for (let i = 0; i < 4; i++) if (bytes[offset+i] < 0xF0 || bytes[offset+i] > 0xF9) return false;
-      return bytes[offset+1] !== 0xF0;
+    // Valid digit sets per MTI position (ISO 8583)
+    const VALID = [
+      new Set([0,1,2,9]),         // pos 0: version (0=1987, 1=1993, 2=2003, 9=private)
+      new Set([1,2,3,4,5,6,7,8,9]), // pos 1: class (1–9, 0 is reserved)
+      new Set([0,1,2,3,4,8,9]),   // pos 2: function
+      new Set([0,1,2,3,4,5]),     // pos 3: origin
+    ];
+    const pat = (typeof value === 'string' && value.length === 4) ? value : '####';
+    const digits = [];
+    for (let i = 0; i < 4; i++) {
+      let d;
+      if (encoding === 'ebcdic') {
+        if (bytes[offset+i] < 0xF0 || bytes[offset+i] > 0xF9) return false;
+        d = bytes[offset+i] - 0xF0;
+      } else {
+        if (bytes[offset+i] < 0x30 || bytes[offset+i] > 0x39) return false;
+        d = bytes[offset+i] - 0x30;
+      }
+      digits.push(d);
     }
-    for (let i = 0; i < 4; i++) if (bytes[offset+i] < 0x30 || bytes[offset+i] > 0x39) return false;
-    return bytes[offset+1] !== 0x30;
+    for (let i = 0; i < 4; i++) {
+      if (pat[i] === '#') { if (!VALID[i].has(digits[i])) return false; }
+      else                { if (digits[i] !== parseInt(pat[i], 10)) return false; }
+    }
+    return true;
   };
 
   _R['bitmap'] = (bytes, { offset=0, encoding='binary', length=8 }) => {
@@ -11978,7 +11997,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.43';
+const APP_VERSION  = '1.1.1.44';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13816,9 +13835,16 @@ Value forms:<br>
 <div class="me-rh-flds">value — minimum byte count</div>
 <div class="me-rh-exs"><b>Examples:</b> ISO minimum (MTI + bitmap) → value=20 &nbsp;|&nbsp; NDC minimum → value=4</div>`,
 
-  'mti': `<b>ISO 8583 MTI match — reads 4 ASCII bytes at offset and compares.</b>
-<div class="me-rh-flds">offset — byte position of MTI (0 for plain ISO, 3 if "ISO" prefix present)<br>value &nbsp;— exact 4-char MTI or wildcard pattern</div>
-<div class="me-rh-exs"><b>Examples:</b> financial request → value=0200 &nbsp;|&nbsp; any auth → value=0100 &nbsp;|&nbsp; any MTI → value=0###</div>`,
+  'mti': `<b>ISO 8583 MTI match — reads 4 ASCII bytes at offset and validates against ISO 8583 digit rules.</b>
+<div class="me-rh-flds">offset — byte position of MTI (0 for plain ISO, 3 if "ISO" text prefix)<br>value &nbsp;— 4-char pattern: use a specific digit for exact match, or <b>#</b> to allow any valid digit for that position</div>
+<b>Valid digits per position:</b>
+<div class="me-rh-flds">
+pos 1 (version): 0=1987 &nbsp;1=1993 &nbsp;2=2003 &nbsp;9=private<br>
+pos 2 (class): &nbsp;1=Auth &nbsp;2=Financial &nbsp;3=File &nbsp;4=Reversal &nbsp;5=Reconciliation &nbsp;6=Admin &nbsp;7=Fee &nbsp;8=Network<br>
+pos 3 (function): 0=Request &nbsp;1=Response &nbsp;2=Advice &nbsp;3=Advice Resp &nbsp;4=Notification &nbsp;8=Ack &nbsp;9=Nack<br>
+pos 4 (origin): &nbsp;0=Acquirer &nbsp;1=Acq Repeat &nbsp;2=Issuer &nbsp;3=Iss Repeat &nbsp;4=Other &nbsp;5=Other Repeat
+</div>
+<div class="me-rh-exs"><b>Examples:</b> any valid MTI → #### &nbsp;|&nbsp; financial request → 0200 &nbsp;|&nbsp; any auth msg → 01## &nbsp;|&nbsp; any 1993 version → 1###</div>`,
 
   'bitmap': `<b>Checks whether a specific ISO 8583 DE bit is on or off in the bitmap.</b>
 <div class="me-rh-flds">offset — byte position where bitmap starts<br>bit &nbsp;&nbsp;— DE number 1–128<br>value — 1 (bit on / DE present) or 0 (bit off / DE absent)</div>

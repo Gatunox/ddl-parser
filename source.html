@@ -5403,6 +5403,7 @@ function parseMessage(bytes, defs, rawBytes) {
   };
 
   _R['min-length'] = (bytes, { length=0 }) => bytes.length >= length;
+  _R['max-length'] = (bytes, { length=0 }) => bytes.length <= length;
 
   _R['mti'] = (bytes, { offset=0, encoding='ascii', value='####' }) => {
     if (offset+4 > bytes.length) return false;
@@ -12007,7 +12008,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.57';
+const APP_VERSION  = '1.1.1.58';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13811,6 +13812,7 @@ function _meRecSum(r) {
       return wrap(`@${r.offset} ${p.join(' ')}`);
     }
     case 'min-length':  return wrap(`≥ ${r.value} bytes`);
+    case 'max-length':  return wrap(`≤ ${r.value} bytes`);
     case 'mti':         return wrap(`@${r.offset} = ${esc(r.value)}`);
     case 'bitmap':      return wrap(`@${r.offset} bit${r.bit}=${r.value}`);
     case 'regex':       return wrap(esc(r.pattern));
@@ -13870,6 +13872,10 @@ eq &nbsp;&nbsp;&nbsp;&nbsp;— masked result must equal this (0–255, leave bla
 <div class="me-rh-flds">value — minimum byte count</div>
 <div class="me-rh-exs"><b>Examples:</b> ISO minimum (MTI + bitmap) → value=20 &nbsp;|&nbsp; NDC minimum → value=4</div>`,
 
+  'max-length': `<b>Total message length must be at most N bytes.</b> Fails if the buffer exceeds the limit — use to reject oversized messages before running heavier checks.
+<div class="me-rh-flds">value — maximum byte count</div>
+<div class="me-rh-exs"><b>Examples:</b> reject buffers over 4096 bytes → value=4096 &nbsp;|&nbsp; fixed-length NDC cap → value=128</div>`,
+
   'mti': `<b>ISO 8583 MTI match — reads 4 ASCII bytes at offset and validates against ISO 8583 digit rules.</b>
 <div class="me-rh-flds">offset — byte position of MTI (0 for plain ISO, 3 if "ISO" text prefix)<br>value &nbsp;— 4-char pattern: use a specific digit for exact match, or <b>#</b> to allow any valid digit for that position</div>
 <b>Valid digits per position:</b>
@@ -13920,7 +13926,7 @@ function _meRecForm(r, idx) {
   const types = [
     ['literal','literal'], ['binary','binary'], ['ascii','ascii'],
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
-    ['min-length','min-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
+    ['min-length','min-length'], ['max-length','max-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
     ['ebcdic-density','ebcdic-density'], ['hex-density','hex-density'], ['oct-density','oct-density'],
     ['length-payload','length-payload'], ['flag-payload','flag-payload'],
   ];
@@ -14012,6 +14018,8 @@ function _meRecFields(r, id) {
     }
     case 'min-length':
       return nf('value','Min Bytes',1,null,1);
+    case 'max-length':
+      return nf('value','Max Bytes',1,null,1);
     case 'mti':
       return nf('offset','Offset',0) + tf('value','MTI Pattern','e.g. 0200');
     case 'bitmap': {
@@ -14081,7 +14089,8 @@ function _meRecRead(idx) {
       const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
       return { type, offset:ni('offset'), endian:gv('endian')||'be', eq:oi('eq'), min:oi('min'), max:oi('max'), ...r_id };
     }
-    case 'min-length': return { type, value: ni('value', 1), ...r_id };
+    case 'min-length':
+    case 'max-length': return { type, value: ni('value', 1), ...r_id };
     case 'mti':        return { type, offset: ni('offset'), value: gv('value'), ...r_id };
     case 'bitmap': {
       const bvEl = document.getElementById(`me-rv-bv-${idx}`);

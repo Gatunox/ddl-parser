@@ -11997,7 +11997,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.47';
+const APP_VERSION  = '1.1.1.48';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13893,13 +13893,18 @@ function _meToggleRecHelp(idx) {
 }
 
 function _meRecForm(r, idx) {
-  const types = ['literal','binary','uint8','byte','uint16','word','uint32','dword',
-                 'min-length','mti','bitmap','regex','ebcdic-density','hex-density',
-                 'oct-density','length-prefix','flag-prefix'];
-  const cur = r ? r.type : 'literal';
+  const _ALIAS = { byte:'uint8', word:'uint16', dword:'uint32' };
+  const types = [
+    ['literal','literal'], ['binary','binary'],
+    ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
+    ['min-length','min-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
+    ['ebcdic-density','ebcdic-density'], ['hex-density','hex-density'], ['oct-density','oct-density'],
+    ['length-prefix','length-prefix'], ['flag-prefix','flag-prefix'],
+  ];
+  const cur = r ? (_ALIAS[r.type] || r.type) : 'literal';
   const typeSel = `<div class="me-rf-fld"><div class="me-lbl" style="display:flex;align-items:center">Type<span class="me-help-link" onclick="_meToggleRecHelp(${idx})">click for help</span></div>
-    <select class="me-sel" style="width:130px" id="me-rt-${idx}" onchange="_meRecTypeChange(${idx},this.value)">
-      ${types.map(t => `<option${t === cur ? ' selected' : ''}>${t}</option>`).join('')}
+    <select class="me-sel" style="width:150px" id="me-rt-${idx}" onchange="_meRecTypeChange(${idx},this.value)">
+      ${types.map(([v,l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}
     </select></div>`;
   const btns = `<div style="display:flex;gap:6px;align-self:flex-end;flex-shrink:0;margin-left:auto">
     <button class="btn btn-sm" onclick="_meRecCancel(${idx})">Cancel</button>

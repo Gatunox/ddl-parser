@@ -1385,6 +1385,7 @@ body.light .me-item:hover{background:rgba(0,0,0,.04);}
 .me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .me-item-del{background:transparent;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1;margin-left:2px;}
 .me-item-del:hover{color:#f85149;}
+.me-item-pri{font-size:9px;color:var(--text-dim);flex-shrink:0;opacity:0.7;}
 .me-sidebar-note{padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);}
 .me-empty{padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-align:center;}
 .me-right{display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;}
@@ -11998,7 +11999,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.54';
+const APP_VERSION  = '1.1.1.55';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13588,7 +13589,9 @@ function _meRenderSidebar() {
   if (!_meState.specs.length) {
     msgs.innerHTML = '<div class="me-empty">No messages defined</div>';
   } else {
-    _meState.specs.forEach((s, i) => {
+    const sorted = _meState.specs.map((s, i) => ({ s, i }))
+      .sort((a, b) => (b.s.priority || 0) - (a.s.priority || 0));
+    sorted.forEach(({ s, i }) => {
       const active = _meState.section === 'msg' && _meState.selIdx === i;
       const d = document.createElement('div');
       d.className = 'me-item' + (active ? ' active' : '');
@@ -13598,12 +13601,15 @@ function _meRenderSidebar() {
       const nm = document.createElement('span');
       nm.className = 'me-item-name';
       nm.textContent = s.label || s.name || '(unnamed)';
+      const pri = document.createElement('span');
+      pri.className = 'me-item-pri';
+      pri.textContent = (s.priority || 0) > 0 ? s.priority : '';
       const del = document.createElement('button');
       del.className = 'me-item-del';
       del.textContent = '×';
       del.title = 'Delete';
       del.onclick = e => { e.stopPropagation(); _meDeleteItem('msg', i); };
-      d.append(sw, nm, del);
+      d.append(sw, nm, pri, del);
       d.onclick = () => _meSelectItem('msg', i);
       d.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); _meCtxMsg(e, i); };
       msgs.appendChild(d);
@@ -13698,8 +13704,8 @@ function _meHtmlId(item) {
     </div>
     <div class="me-fld">
       <div class="me-lbl">Priority</div>
-      <input class="me-inp" type="number" min="0" value="${item.priority || 0}"
-        oninput="_meField('priority',+this.value||0)">
+      <input class="me-inp" type="number" min="0" max="100" value="${item.priority || 0}"
+        oninput="_meField('priority',Math.min(100,Math.max(0,+this.value||0)))">
     </div>
     <div class="me-fld">
       <div class="me-lbl">Color</div>
@@ -13731,7 +13737,7 @@ function _meField(field, value) {
   if (!item) return;
   item[field] = value;
   _meSetDirty();
-  if (field === 'name' || field === 'label' || field === 'color') _meRenderSidebar();
+  if (field === 'name' || field === 'label' || field === 'color' || field === 'priority') _meRenderSidebar();
 }
 
 // ── Recognizers Tab ───────────────────────────────────────────────────────

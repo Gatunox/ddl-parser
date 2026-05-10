@@ -11997,7 +11997,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.48';
+const APP_VERSION  = '1.1.1.49';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13823,8 +13823,13 @@ Value forms:<br>
 <div class="me-rh-exs"><b>Examples:</b> high bit set → mask=80 value=80 &nbsp;|&nbsp; upper nibble is 6x → mask=F0 value=60 &nbsp;|&nbsp; high bit clear → mask=80 value=00</div>`,
 
   'uint8': `<b>Single byte check at offset.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound. All set conditions must pass.
-<div class="me-rh-flds">offset — byte position<br>mask &nbsp;&nbsp;— optional hex bitmask applied before compare (e.g. F0 checks high nibble only)<br>eq &nbsp;&nbsp;&nbsp;&nbsp;— byte must equal this value (0–255)<br>min &nbsp;&nbsp;&nbsp;— byte must be ≥ this value<br>max &nbsp;&nbsp;&nbsp;— byte must be ≤ this value<br>id &nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
-<div class="me-rh-exs"><b>Examples:</b> TPDU range 0x60–0x6F → min=96 max=111 &nbsp;|&nbsp; exact STX → eq=2 &nbsp;|&nbsp; high nibble = 6 → mask=F0 eq=96</div>`,
+<div class="me-rh-flds">offset — byte position from message start<br>mask &nbsp;&nbsp;— optional hex bitmask (0–FF). The engine does <b>byte AND mask</b> before comparing. Use this to isolate specific bits:<br>
+&nbsp;&nbsp;F0 → keeps top 4 bits (high nibble), zeroes bottom 4 — e.g. 0x67 AND F0 = 0x60<br>
+&nbsp;&nbsp;0F → keeps bottom 4 bits (low nibble)<br>
+&nbsp;&nbsp;80 → keeps only the high bit (on/off check)<br>
+&nbsp;&nbsp;FF → keeps all bits (same as no mask)<br>
+eq &nbsp;&nbsp;&nbsp;&nbsp;— masked result must equal this (0–255, leave blank to skip)<br>min &nbsp;&nbsp;&nbsp;— masked result must be ≥ this (leave blank to skip)<br>max &nbsp;&nbsp;&nbsp;— masked result must be ≤ this (leave blank to skip)<br>id &nbsp;&nbsp;&nbsp;&nbsp;— optional label shown in the row</div>
+<div class="me-rh-exs"><b>Examples:</b> TPDU range 0x60–0x6F → min=96 max=111 &nbsp;|&nbsp; same using mask → mask=F0 eq=96 &nbsp;|&nbsp; exact STX byte → eq=2 &nbsp;|&nbsp; high bit set → mask=80 eq=128</div>`,
 
   'byte': `<b>Alias for uint8.</b> Single byte check at offset.
 <div class="me-rh-flds">offset, mask (optional hex), eq / min / max (0–255, leave blank to skip)</div>`,
@@ -13929,9 +13934,9 @@ function _meRecFields(r, id) {
        id="me-rv-${k}-${id}" value="${ea(r[k] != null ? r[k] : def != null ? def : 0)}"></div>`;
   const tf = (k, lbl, ph, w) => w
     ? `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
-       <input class="me-inp" style="width:${w}" id="me-rv-${k}-${id}" type="text" value="${ea(r[k])}" placeholder="${ph || ''}"></div>`
+       <input class="me-inp" style="width:${w}" id="me-rv-${k}-${id}" type="text" value="${ea(r[k])}"></div>`
     : `<div style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px"><div class="me-lbl">${lbl}</div>
-       <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-${k}-${id}" type="text" value="${ea(r[k])}" placeholder="${ph || ''}"></div>`;
+       <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-${k}-${id}" type="text" value="${ea(r[k])}"></div>`;
   const opf = k => {
     const cur = r[k] || '=';
     return `<div class="me-rf-fld"><div class="me-lbl">Op</div>
@@ -13954,8 +13959,7 @@ function _meRecFields(r, id) {
   };
   const litField = (id) =>
     `<div style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px"><div class="me-lbl">Value</div>
-     <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-value-${id}" type="text" value="${litVal(r.value)}"
-       placeholder='e.g. F0F1 or ["0","1"] or [{"from":"0","to":"9"}]'></div>`;
+     <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-value-${id}" type="text" value="${litVal(r.value)}"></div>`;
   const encSel = (k, opts, cur) =>
     `<div class="me-rf-fld"><div class="me-lbl">Encoding</div>
      <select class="me-sel" id="me-rv-${k}-${id}">
@@ -13971,20 +13975,20 @@ function _meRecFields(r, id) {
     case 'uint8': case 'byte': {
       const onf = (k,lbl,mn,mx) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
         <input class="me-inp" style="width:55px" type="number" min="${mn||0}"${mx!=null?` max="${mx}"`:''}
-          id="me-rv-${k}-${id}" value="${v!==undefined?v:''}" placeholder="any"></div>`; };
+          id="me-rv-${k}-${id}" value="${v!==undefined?v:''}"></div>`; };
       return nf('offset','Offset',0) + tf('mask','Mask','e.g. F0','55px') +
         onf('eq','Eq',0,255) + onf('min','Min',0,255) + onf('max','Max',0,255);
     }
     case 'uint16': case 'word': {
       const onf = (k,lbl,mn,mx) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
         <input class="me-inp" style="width:62px" type="number" min="${mn||0}"${mx!=null?` max="${mx}"`:''}
-          id="me-rv-${k}-${id}" value="${v!==undefined?v:''}" placeholder="any"></div>`; };
+          id="me-rv-${k}-${id}" value="${v!==undefined?v:''}"></div>`; };
       return nf('offset','Offset',0) + endf('endian') + onf('eq','Eq',0,65535) + onf('min','Min',0,65535) + onf('max','Max',0,65535);
     }
     case 'uint32': case 'dword': {
       const onf = (k,lbl) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
         <input class="me-inp" style="width:72px" type="number" min="0"
-          id="me-rv-${k}-${id}" value="${v!==undefined?v:''}" placeholder="any"></div>`; };
+          id="me-rv-${k}-${id}" value="${v!==undefined?v:''}"></div>`; };
       return nf('offset','Offset',0) + endf('endian') + onf('eq','Eq') + onf('min','Min') + onf('max','Max');
     }
     case 'min-length':

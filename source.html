@@ -11999,7 +11999,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.55';
+const APP_VERSION  = '1.1.1.56';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13787,7 +13787,7 @@ function _meRecSum(r) {
       };
       return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${fmtLit(r.value)}`);
     }
-    case 'binary':      return wrap(`@${r.offset} mask:${esc(r.mask)} = ${esc(r.value)}`);
+    case 'binary':      return wrap(`@${r.offset} len:${r.length ?? 1}`);
     case 'uint8':  case 'byte': {
       const p = []; if(r.mask!==undefined)p.push(`mask:${r.mask}`);
       if(r.eq!==undefined)p.push(`= ${r.eq}`); if(r.min!==undefined)p.push(`>= ${r.min}`); if(r.max!==undefined)p.push(`<= ${r.max}`);
@@ -13823,9 +13823,9 @@ Value forms:<br>
 &nbsp;mixed &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>[{"from":"0","to":"4"},"8","9"]</b> — range + extra values
 <div class="me-rh-exs"><b>Examples:</b> ISO text prefix (ascii) → offset=0 encoding=ascii value="ISO" &nbsp;|&nbsp; EBCDIC header → offset=0 encoding=ebcdic value="ISO" &nbsp;|&nbsp; raw binary marker → offset=0 encoding=hex value="F0F8" &nbsp;|&nbsp; POS product code → offset=4 value="02"</div>`,
 
-  'binary': `<b>Bitmask check: (byte[offset] &amp; mask) == value.</b>
-<div class="me-rh-flds">offset — byte position<br>mask &nbsp;— hex bitmask applied before compare (e.g. "80" = high bit, "FF" = all bits)<br>value — expected result after AND, in hex</div>
-<div class="me-rh-exs"><b>Examples:</b> high bit set → mask=80 value=80 &nbsp;|&nbsp; upper nibble is 6x → mask=F0 value=60 &nbsp;|&nbsp; high bit clear → mask=80 value=00</div>`,
+  'binary': `<b>Non-ASCII presence check over a byte range.</b> Returns true if at least one byte in the scanned region is outside printable ASCII (i.e. &lt; 0x20 or ≥ 0x7F). Use this to confirm a field contains raw binary data rather than text.
+<div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
+<div class="me-rh-exs"><b>Examples:</b> bitmap at offset 2 is 8 bytes → offset=2 length=8 &nbsp;|&nbsp; single binary header byte → offset=0 length=1</div>`,
 
   'uint8': `<b>Single byte check at offset.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound. All set conditions must pass.
 <div class="me-rh-flds">offset — byte position from message start<br>mask &nbsp;&nbsp;— optional hex bitmask (0–FF). The engine does <b>byte AND mask</b> before comparing. Use this to isolate specific bits:<br>
@@ -13976,7 +13976,7 @@ function _meRecFields(r, id) {
       return nf('offset','Offset',0) + encSel('encoding',['ascii','hex','ebcdic'],enc) + litField(id);
     }
     case 'binary':
-      return nf('offset','Offset',0) + tf('mask','Mask','hex e.g. FF80','80px') + tf('value','Value','hex e.g. 8000');
+      return nf('offset','Offset',0) + nf('length','Length',1);
     case 'uint8': case 'byte': {
       const onf = (k,lbl,mn,mx) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
         <input class="me-inp" style="width:55px" type="number" min="${mn||0}"${mx!=null?` max="${mx}"`:''}
@@ -14052,7 +14052,7 @@ function _meRecRead(idx) {
       let val; try { val = JSON.parse(raw); } catch(e) { val = raw; }
       return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: val, ...r_id };
     }
-    case 'binary':     return { type, offset: ni('offset'), mask: gv('mask'), value: gv('value'), ...r_id };
+    case 'binary':     return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
     case 'uint8': case 'byte': {
       const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
       const mk = gv('mask').trim()||undefined;

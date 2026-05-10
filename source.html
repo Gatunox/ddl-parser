@@ -11997,7 +11997,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.45';
+const APP_VERSION  = '1.1.1.46';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13799,14 +13799,14 @@ function _meRecSum(r) {
 
 const _REC_HELP = {
   'literal': `<b>Matches exact bytes at a fixed offset.</b>
-<div class="me-rh-flds">offset — byte position from message start<br>value — what to match (see forms below)</div>
+<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position from message start<br>encoding — how to interpret value and compare bytes: <b>ascii</b> (default), <b>hex</b> (value is hex pairs e.g. F0F8), <b>ebcdic</b> (compare in EBCDIC space)<br>value &nbsp;&nbsp;&nbsp;&nbsp;— what to match (see forms below)<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label shown in the recognizer row (for readability only)</div>
 Value forms:<br>
-&nbsp;exact string &nbsp;&nbsp;&nbsp;<b>"ISO"</b> — bytes must equal these ASCII chars<br>
-&nbsp;wildcard &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>"0###"</b> — # matches any digit 0–9, ? matches any byte<br>
-&nbsp;OR list &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>["0200","0100","0800"]</b> — any of these values<br>
+&nbsp;exact string &nbsp;&nbsp;&nbsp;<b>"ISO"</b> — bytes must equal these chars<br>
+&nbsp;wildcard &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>"0###"</b> — # matches any digit 0–9, ? matches any single byte<br>
+&nbsp;OR list &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>["0200","0100","0800"]</b> — any of these exact values<br>
 &nbsp;range &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>[{"from":"1","to":"9"}]</b> — all values from…to inclusive<br>
 &nbsp;mixed &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>[{"from":"0","to":"4"},"8","9"]</b> — range + extra values
-<div class="me-rh-exs"><b>Examples:</b> ISO prefix → offset=0 value="ISO" &nbsp;|&nbsp; MTI version → offset=0 value=[{"from":"0","to":"1"}] &nbsp;|&nbsp; POS product code → offset=4 value="02"</div>`,
+<div class="me-rh-exs"><b>Examples:</b> ISO text prefix (ascii) → offset=0 encoding=ascii value="ISO" &nbsp;|&nbsp; EBCDIC header → offset=0 encoding=ebcdic value="ISO" &nbsp;|&nbsp; raw binary marker → offset=0 encoding=hex value="F0F8" &nbsp;|&nbsp; POS product code → offset=4 value="02"</div>`,
 
   'binary': `<b>Bitmask check: (byte[offset] &amp; mask) == value.</b>
 <div class="me-rh-flds">offset — byte position<br>mask &nbsp;— hex bitmask applied before compare (e.g. "80" = high bit, "FF" = all bits)<br>value — expected result after AND, in hex</div>
@@ -13868,13 +13868,13 @@ pos 4 (origin): &nbsp;0=Acquirer &nbsp;1=Acq Repeat &nbsp;2=Issuer &nbsp;3=Iss R
 <div class="me-rh-flds">min — 0.0–1.0</div>
 <div class="me-rh-exs"><b>Example:</b> octal-dump format → min=0.7</div>`,
 
-  'length-prefix': `<b>Reads a length field at offset and checks its decoded value.</b>
-<div class="me-rh-flds">offset — byte position of the length field<br>size &nbsp;&nbsp;— 1, 2, or 4 bytes for the length field<br>endian — be or le<br>op, value — comparison against the decoded integer</div>
-<div class="me-rh-exs"><b>Examples:</b> 2-byte BE length = 51 → offset=0 size=2 be = 51 &nbsp;|&nbsp; at least 8 bytes → op=&gt;= value=8</div>`,
+  'length-prefix': `<b>Reads an N-byte length field at offset and verifies the declared length matches the actual message body size.</b>
+<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— byte position of the length field<br>encoding &nbsp;&nbsp;&nbsp;&nbsp;— how the length field is encoded: <b>uint8</b> (1 byte), <b>uint16-be</b> (2 bytes big-endian), <b>uint16-le</b> (2 bytes little-endian), <b>bcd2</b> (2 BCD bytes = 4 decimal digits)<br>body offset — byte where the message body begins (after any header bytes)<br>incl. self &nbsp;&nbsp;— Yes if the length value counts the length field bytes themselves, No if it counts only the body<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
+<div class="me-rh-exs"><b>Examples:</b> 2-byte BE prefix before body → encoding=uint16-be body@=2 incl.self=No &nbsp;|&nbsp; BCD length at offset 0, body starts at 2, length counts itself → encoding=bcd2 body@=2 incl.self=Yes &nbsp;|&nbsp; single-byte length → encoding=uint8 body@=1 incl.self=No</div>`,
 
-  'flag-prefix': `<b>Checks a single flag byte at offset against an exact hex value.</b>
-<div class="me-rh-flds">offset — byte position<br>value &nbsp;— expected byte in hex (e.g. "60", "FF", "02")</div>
-<div class="me-rh-exs"><b>Examples:</b> TPDU start → offset=0 value=60 &nbsp;|&nbsp; STX marker → offset=0 value=02</div>`,
+  'flag-prefix': `<b>Reads a flag/type field and checks it is non-zero — confirming an actual payload follows.</b> Optionally validates that the declared body fits within the message.
+<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;&nbsp;— byte position of the flag field<br>encoding &nbsp;&nbsp;— <b>uint8</b> (1 byte), <b>uint16-be</b>, <b>uint16-le</b>, <b>bcd2</b><br>body offset — byte where the body begins<br>body length — expected body size in bytes (0 = skip size check)<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
+<div class="me-rh-exs"><b>Examples:</b> TPDU flag byte non-zero, body of 20 bytes at offset 5 → offset=0 encoding=uint8 body@=5 body len=20 &nbsp;|&nbsp; 2-byte flag, body starts at 2 → encoding=uint16-be body@=2</div>`,
 };
 
 function _meToggleRecHelp(idx) {

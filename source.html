@@ -11997,7 +11997,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.46';
+const APP_VERSION  = '1.1.1.47';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13783,9 +13783,19 @@ function _meRecSum(r) {
       return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${fmtLit(r.value)}`);
     }
     case 'binary':      return wrap(`@${r.offset} mask:${esc(r.mask)} = ${esc(r.value)}`);
-    case 'uint8':  case 'byte':   return wrap(`@${r.offset} ${r.op || '='}${r.value}`);
-    case 'uint16': case 'word':   return wrap(`@${r.offset} ${r.endian || 'be'} ${r.op || '='}${r.value}`);
-    case 'uint32': case 'dword':  return wrap(`@${r.offset} ${r.endian || 'be'} ${r.op || '='}${r.value}`);
+    case 'uint8':  case 'byte': {
+      const p = []; if(r.mask!==undefined)p.push(`mask:${r.mask}`);
+      if(r.eq!==undefined)p.push(`= ${r.eq}`); if(r.min!==undefined)p.push(`>= ${r.min}`); if(r.max!==undefined)p.push(`<= ${r.max}`);
+      return wrap(`@${r.offset} ${p.join(' ')}`);
+    }
+    case 'uint16': case 'word': {
+      const p = [r.endian||'be']; if(r.eq!==undefined)p.push(`= ${r.eq}`); if(r.min!==undefined)p.push(`>= ${r.min}`); if(r.max!==undefined)p.push(`<= ${r.max}`);
+      return wrap(`@${r.offset} ${p.join(' ')}`);
+    }
+    case 'uint32': case 'dword': {
+      const p = [r.endian||'be']; if(r.eq!==undefined)p.push(`= ${r.eq}`); if(r.min!==undefined)p.push(`>= ${r.min}`); if(r.max!==undefined)p.push(`<= ${r.max}`);
+      return wrap(`@${r.offset} ${p.join(' ')}`);
+    }
     case 'min-length':  return wrap(`≥ ${r.value} bytes`);
     case 'mti':         return wrap(`@${r.offset} = ${esc(r.value)}`);
     case 'bitmap':      return wrap(`@${r.offset} bit${r.bit}=${r.value}`);
@@ -13812,26 +13822,26 @@ Value forms:<br>
 <div class="me-rh-flds">offset — byte position<br>mask &nbsp;— hex bitmask applied before compare (e.g. "80" = high bit, "FF" = all bits)<br>value — expected result after AND, in hex</div>
 <div class="me-rh-exs"><b>Examples:</b> high bit set → mask=80 value=80 &nbsp;|&nbsp; upper nibble is 6x → mask=F0 value=60 &nbsp;|&nbsp; high bit clear → mask=80 value=00</div>`,
 
-  'uint8': `<b>Single byte comparison at offset.</b>
-<div class="me-rh-flds">offset — byte position<br>op &nbsp;&nbsp;&nbsp;— = &nbsp;!= &nbsp;&lt; &nbsp;&gt; &nbsp;&lt;= &nbsp;&gt;=<br>value — 0–255</div>
-<div class="me-rh-exs"><b>Examples:</b> TPDU range → op=&gt;= value=96 AND op=&lt;= value=111 (0x60–0x6F) &nbsp;|&nbsp; specific byte → op== value=2</div>`,
+  'uint8': `<b>Single byte check at offset.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound. All set conditions must pass.
+<div class="me-rh-flds">offset — byte position<br>mask &nbsp;&nbsp;— optional hex bitmask applied before compare (e.g. F0 checks high nibble only)<br>eq &nbsp;&nbsp;&nbsp;&nbsp;— byte must equal this value (0–255)<br>min &nbsp;&nbsp;&nbsp;— byte must be ≥ this value<br>max &nbsp;&nbsp;&nbsp;— byte must be ≤ this value<br>id &nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
+<div class="me-rh-exs"><b>Examples:</b> TPDU range 0x60–0x6F → min=96 max=111 &nbsp;|&nbsp; exact STX → eq=2 &nbsp;|&nbsp; high nibble = 6 → mask=F0 eq=96</div>`,
 
-  'byte': `<b>Alias for uint8.</b> Single byte comparison at offset.
-<div class="me-rh-flds">offset, op (= != &lt; &gt; &lt;= &gt;=), value (0–255)</div>`,
+  'byte': `<b>Alias for uint8.</b> Single byte check at offset.
+<div class="me-rh-flds">offset, mask (optional hex), eq / min / max (0–255, leave blank to skip)</div>`,
 
-  'uint16': `<b>2-byte integer comparison.</b>
-<div class="me-rh-flds">offset — first byte position<br>endian — be (big-endian / network order) &nbsp;or&nbsp; le (little-endian)<br>op &nbsp;&nbsp;&nbsp;— = &nbsp;!= &nbsp;&lt; &nbsp;&gt; &nbsp;&lt;= &nbsp;&gt;=<br>value — 0–65535</div>
-<div class="me-rh-exs"><b>Examples:</b> length prefix = 51 → offset=0 be = 51 &nbsp;|&nbsp; non-zero → op=&gt; value=0 &nbsp;|&nbsp; at most 4096 bytes → op=&lt;= value=4096</div>`,
+  'uint16': `<b>2-byte integer check.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound.
+<div class="me-rh-flds">offset — first byte position<br>endian — be (big-endian, network order) or le (little-endian)<br>eq &nbsp;&nbsp;&nbsp;&nbsp;— value must equal this (0–65535)<br>min &nbsp;&nbsp;&nbsp;— value must be ≥ this<br>max &nbsp;&nbsp;&nbsp;— value must be ≤ this</div>
+<div class="me-rh-exs"><b>Examples:</b> length field = 51 → eq=51 &nbsp;|&nbsp; non-zero length → min=1 &nbsp;|&nbsp; at most 4096 bytes → max=4096 &nbsp;|&nbsp; range 100–200 → min=100 max=200</div>`,
 
-  'word': `<b>Alias for uint16.</b> 2-byte integer comparison.
-<div class="me-rh-flds">offset, endian (be/le), op, value (0–65535)</div>`,
+  'word': `<b>Alias for uint16.</b> 2-byte integer check.
+<div class="me-rh-flds">offset, endian (be/le), eq / min / max (0–65535, leave blank to skip)</div>`,
 
-  'uint32': `<b>4-byte integer comparison.</b>
-<div class="me-rh-flds">offset — first byte position<br>endian — be or le<br>op, value — 0–4 294 967 295</div>
-<div class="me-rh-exs"><b>Examples:</b> non-zero length → op=&gt; value=0 &nbsp;|&nbsp; specific session ID → op== value=305419896</div>`,
+  'uint32': `<b>4-byte integer check.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound.
+<div class="me-rh-flds">offset — first byte position<br>endian — be or le<br>eq / min / max — 0–4 294 967 295, leave blank to skip</div>
+<div class="me-rh-exs"><b>Examples:</b> non-zero → min=1 &nbsp;|&nbsp; specific value → eq=305419896</div>`,
 
-  'dword': `<b>Alias for uint32.</b> 4-byte integer comparison.
-<div class="me-rh-flds">offset, endian (be/le), op, value</div>`,
+  'dword': `<b>Alias for uint32.</b> 4-byte integer check.
+<div class="me-rh-flds">offset, endian (be/le), eq / min / max (leave blank to skip)</div>`,
 
   'min-length': `<b>Total message length must be at least N bytes.</b> Use as a cheap first guard — reject short buffers before running heavier checks.
 <div class="me-rh-flds">value — minimum byte count</div>
@@ -13953,12 +13963,25 @@ function _meRecFields(r, id) {
     }
     case 'binary':
       return nf('offset','Offset',0) + tf('mask','Mask','hex e.g. FF80','80px') + tf('value','Value','hex e.g. 8000');
-    case 'uint8': case 'byte':
-      return nf('offset','Offset',0) + opf('op') + nf('value','Value',0,255);
-    case 'uint16': case 'word':
-      return nf('offset','Offset',0) + endf('endian') + opf('op') + nf('value','Value',0,65535);
-    case 'uint32': case 'dword':
-      return nf('offset','Offset',0) + endf('endian') + opf('op') + nf('value','Value',0);
+    case 'uint8': case 'byte': {
+      const onf = (k,lbl,mn,mx) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
+        <input class="me-inp" style="width:55px" type="number" min="${mn||0}"${mx!=null?` max="${mx}"`:''}
+          id="me-rv-${k}-${id}" value="${v!==undefined?v:''}" placeholder="any"></div>`; };
+      return nf('offset','Offset',0) + tf('mask','Mask','e.g. F0','55px') +
+        onf('eq','Eq',0,255) + onf('min','Min',0,255) + onf('max','Max',0,255);
+    }
+    case 'uint16': case 'word': {
+      const onf = (k,lbl,mn,mx) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
+        <input class="me-inp" style="width:62px" type="number" min="${mn||0}"${mx!=null?` max="${mx}"`:''}
+          id="me-rv-${k}-${id}" value="${v!==undefined?v:''}" placeholder="any"></div>`; };
+      return nf('offset','Offset',0) + endf('endian') + onf('eq','Eq',0,65535) + onf('min','Min',0,65535) + onf('max','Max',0,65535);
+    }
+    case 'uint32': case 'dword': {
+      const onf = (k,lbl) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
+        <input class="me-inp" style="width:72px" type="number" min="0"
+          id="me-rv-${k}-${id}" value="${v!==undefined?v:''}" placeholder="any"></div>`; };
+      return nf('offset','Offset',0) + endf('endian') + onf('eq','Eq') + onf('min','Min') + onf('max','Max');
+    }
     case 'min-length':
       return nf('value','Min Bytes',1,null,1);
     case 'mti':
@@ -14016,9 +14039,19 @@ function _meRecRead(idx) {
       return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: val, ...r_id };
     }
     case 'binary':     return { type, offset: ni('offset'), mask: gv('mask'), value: gv('value'), ...r_id };
-    case 'uint8': case 'byte':   return { type, offset: ni('offset'), op: gv('op'), value: ni('value'), ...r_id };
-    case 'uint16': case 'word':  return { type, offset: ni('offset'), endian: gv('endian'), op: gv('op'), value: ni('value'), ...r_id };
-    case 'uint32': case 'dword': return { type, offset: ni('offset'), endian: gv('endian'), op: gv('op'), value: ni('value'), ...r_id };
+    case 'uint8': case 'byte': {
+      const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
+      const mk = gv('mask').trim()||undefined;
+      return { type, offset:ni('offset'), ...(mk?{mask:mk}:{}), ...({eq:oi('eq'),min:oi('min'),max:oi('max')}), ...r_id };
+    }
+    case 'uint16': case 'word': {
+      const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
+      return { type, offset:ni('offset'), endian:gv('endian')||'be', eq:oi('eq'), min:oi('min'), max:oi('max'), ...r_id };
+    }
+    case 'uint32': case 'dword': {
+      const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
+      return { type, offset:ni('offset'), endian:gv('endian')||'be', eq:oi('eq'), min:oi('min'), max:oi('max'), ...r_id };
+    }
     case 'min-length': return { type, value: ni('value', 1), ...r_id };
     case 'mti':        return { type, offset: ni('offset'), value: gv('value'), ...r_id };
     case 'bitmap': {

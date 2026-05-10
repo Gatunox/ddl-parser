@@ -952,7 +952,7 @@ body.light .trk-chk { color-scheme: light; }
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.65);
   display: flex; align-items: center; justify-content: center;
-  z-index: 10000;
+  z-index: 25000;
 }
 .modal-overlay.hidden { display: none; }
 .modal-box {
@@ -1363,6 +1363,85 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .tut-nav      { display: flex; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 4px; }
 .tut-skip     { margin-right: auto; font-family: var(--mono); font-size: var(--sz-mono); color: var(--text-dim); background: none; border: none; cursor: pointer; padding: 0; text-decoration: underline; }
 .tut-skip:hover { color: var(--text); }
+
+/* ── Message Editor ──────────────────────────────────────────────────────── */
+.me-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:21000;display:flex;align-items:center;justify-content:center;}
+.me-overlay.hidden{display:none;}
+.me-shell{display:flex;width:86vw;height:82vh;max-width:1100px;overflow:hidden;background:var(--bg-panel);border:2px solid var(--border);border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,0.7);}
+.me-sidebar{width:210px;flex-shrink:0;border-right:2px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.me-sidebar-sect{display:flex;flex-direction:column;flex:1;min-height:60px;overflow:hidden;}
+.me-sidebar-sect+.me-sidebar-sect{border-top:2px solid var(--border);}
+.me-sect-rules{flex:0 0 auto;}
+.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--bg-deep);flex-shrink:0;border-bottom:2px solid var(--border);}
+.me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
+.me-sidebar-add{background:transparent;border:2px solid var(--border);border-radius:2px;color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
+.me-sidebar-add:hover{border-color:var(--accent);color:var(--accent);}
+.me-item-list{flex:1;overflow-y:auto;min-height:0;}
+.me-item{display:flex;align-items:center;gap:5px;padding:4px 8px;cursor:pointer;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom:1px solid var(--border);}
+.me-item:hover{background:rgba(255,255,255,.04);}
+body.light .me-item:hover{background:rgba(0,0,0,.04);}
+.me-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
+.me-item-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0;border:1px solid rgba(255,255,255,.2);}
+.me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.me-item-del{background:transparent;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1;margin-left:2px;}
+.me-item-del:hover{color:#f85149;}
+.me-sidebar-note{padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);}
+.me-empty{padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-align:center;}
+.me-right{display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;}
+.me-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px 6px 14px;border-bottom:2px solid var(--border);background:var(--bg-deep);flex-shrink:0;}
+.me-header-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.me-section{border-bottom:2px solid var(--border);}
+.me-section:last-child{border-bottom:none;}
+.me-section-hdr{display:flex;align-items:center;justify-content:space-between;padding:7px 14px;cursor:pointer;user-select:none;font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);background:var(--bg-deep);}
+.me-section-hdr:hover{background:rgba(255,255,255,.05);}
+body.light .me-section-hdr:hover{background:rgba(0,0,0,.04);}
+.me-section-arrow,.me-section-arr{font-size:8px;color:var(--text-dim);}
+.me-section-body{padding:14px;display:none;}
+.me-section-body.open{display:block;}
+.me-tab-body{flex:1;overflow-y:auto;padding:0;min-height:0;}
+.me-no-sel{padding:20px;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);text-align:center;}
+.me-stub{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
+.me-stub-h{font-size:calc(var(--sz-mono) + 2px);color:var(--text);margin-bottom:8px;}
+.me-form{display:flex;flex-direction:column;gap:16px;}
+.me-row{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;}
+.me-fld{display:flex;flex-direction:column;gap:3px;min-width:0;}
+.me-fld.grow{flex:1;}
+.me-lbl{font-family:var(--mono);font-size:calc(var(--sz-mono) - 3px);color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;}
+.me-inp{box-sizing:border-box;background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 5px;outline:none;width:100%;}
+.me-inp:focus{border-color:var(--accent);}
+.me-sel{box-sizing:border-box;background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 4px;outline:none;cursor:pointer;}
+.me-sel:focus{border-color:var(--accent);}
+.me-color-row{display:flex;gap:6px;align-items:center;}
+.me-swatch{width:22px;height:22px;border-radius:3px;border:2px solid var(--border);cursor:pointer;flex-shrink:0;padding:0;-webkit-appearance:none;appearance:none;}
+.me-swatch::-webkit-color-swatch-wrapper{padding:0;}
+.me-swatch::-webkit-color-swatch{border:none;border-radius:1px;}
+.me-swatch::-moz-color-swatch{border:none;}
+.me-rec-list{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;}
+.me-rec-row{border:2px solid var(--border);border-radius:3px;overflow:hidden;}
+.me-rec-head{display:flex;align-items:center;gap:6px;padding:4px 7px;cursor:pointer;user-select:none;}
+.me-rec-head:hover{background:rgba(255,255,255,.04);}
+body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
+.me-rec-type{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--accent);min-width:100px;}
+.me-rec-sum{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.me-rec-acts{display:flex;gap:2px;margin-left:auto;flex-shrink:0;}
+.me-rb{background:transparent;border:2px solid var(--border);border-radius:2px;color:var(--text-dim);font-size:9px;width:18px;height:18px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;padding:0;}
+.me-rb:hover:not([disabled]){border-color:var(--accent);color:var(--accent);}
+.me-rb.del:hover{border-color:#f85149 !important;color:#f85149 !important;}
+.me-rb[disabled]{opacity:.3;cursor:default;}
+.me-rec-form{border-top:2px solid var(--border);background:var(--bg-deep);padding:8px;display:none;flex-direction:column;gap:8px;}
+.me-rec-form.open{display:flex;}
+.me-help-link{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:var(--sz-mono);text-decoration:underline;margin-left:6px;user-select:none;flex-shrink:0;}
+.me-help-link:hover{opacity:0.75;}
+.me-rec-help{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);background:rgba(255,255,255,.03);border:2px solid var(--border);border-radius:2px;padding:8px 12px;line-height:1.6;}
+.me-rec-help b{color:var(--text);}
+.me-rec-help .me-rh-flds{margin:4px 0 4px 8px;}
+.me-rec-help .me-rh-exs{margin-top:4px;}
+.me-rf-row{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;}
+.me-rf-fld{display:flex;flex-direction:column;gap:3px;}
+.me-rf-fld.grow{flex:1;min-width:80px;}
+.me-rf-btns{display:flex;gap:4px;margin-top:2px;}
+.me-footer{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:8px 14px;border-top:2px solid var(--border);background:var(--bg-deep);flex-shrink:0;}
+.me-status{flex:1;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 </style>
 </head>
 <body>
@@ -5156,6 +5235,327 @@ function parseMessage(bytes, defs, rawBytes) {
 // NETARD AUDIT LOG PARSER
 // ============================================================
 
+// ─── Format Detection Engine v2 ──────────────────────────────────────────────
+// Declarative byte-level recognizer pipeline. Runs before the legacy regex
+// fallback. Specs and validators stored in localStorage 'up_format_specs'.
+// See SPEC-message-format-detector.md for full design.
+
+(function() {
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function _hn(v) { // hex-or-number
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string' && v.startsWith('0x')) return parseInt(v, 16);
+    return Number(v);
+  }
+
+  function _lenFieldSize(enc) {
+    if (enc === 'uint8')                      return 1;
+    if (enc === 'uint16-be' || enc === 'uint16-le') return 2;
+    if (enc === 'uint32-be' || enc === 'uint32-le') return 4;
+    if (enc === 'bcd2')                       return 2;
+    return 2;
+  }
+
+  function _readLen(bytes, offset, enc) {
+    switch (enc) {
+      case 'uint8':     return offset < bytes.length ? bytes[offset] : null;
+      case 'uint16-be': return offset+2 <= bytes.length ? (bytes[offset]<<8)|bytes[offset+1] : null;
+      case 'uint16-le': return offset+2 <= bytes.length ? bytes[offset]|(bytes[offset+1]<<8) : null;
+      case 'uint32-be': return offset+4 <= bytes.length
+        ? (((bytes[offset]<<24)|(bytes[offset+1]<<16)|(bytes[offset+2]<<8)|bytes[offset+3])>>>0) : null;
+      case 'uint32-le': return offset+4 <= bytes.length
+        ? ((bytes[offset]|(bytes[offset+1]<<8)|(bytes[offset+2]<<16)|(bytes[offset+3]<<24))>>>0) : null;
+      case 'bcd2': {
+        if (offset+2 > bytes.length) return null;
+        const h = bytes[offset], l = bytes[offset+1];
+        return (h>>4)*1000 + (h&0xF)*100 + (l>>4)*10 + (l&0xF);
+      }
+      default: return null;
+    }
+  }
+
+  // Expand literal value(s) to a flat array of string patterns.
+  // Supports: single string, array of strings, range objects {from,to}.
+  function _expandLiteral(value) {
+    const items = Array.isArray(value) ? value : [value];
+    const out = [];
+    for (const item of items) {
+      if (typeof item === 'string') {
+        out.push(item);
+      } else if (item && typeof item === 'object' && item.from != null && item.to != null) {
+        const { from, to } = item;
+        if (from.length !== to.length) continue; // reject mixed-length ranges
+        const fromN = parseInt(from, 10), toN = parseInt(to, 10);
+        const isNumeric = !isNaN(fromN) && !isNaN(toN) &&
+                          String(fromN).padStart(from.length, '0') === from;
+        if (isNumeric) {
+          for (let i = fromN; i <= toN; i++) out.push(String(i).padStart(from.length, '0'));
+        } else {
+          for (let cur = from; cur <= to; ) {
+            out.push(cur);
+            const a = cur.split('');
+            let pos = a.length - 1;
+            while (pos >= 0) {
+              const next = String.fromCharCode(a[pos].charCodeAt(0) + 1);
+              if (next <= to[pos]) { a[pos] = next; break; }
+              a[pos] = from[pos]; pos--;
+            }
+            if (pos < 0) break;
+            cur = a.join('');
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  // ── Recognizer functions  (bytes: Uint8Array, attrs: object) → bool ────────
+
+  const _R = {};
+
+  _R['literal'] = (bytes, { offset=0, encoding='ascii', _patterns }) => {
+    if (!_patterns || !_patterns.length) return false;
+    for (const pat of _patterns) {
+      if (encoding === 'hex') {
+        const byteLen = Math.ceil(pat.length / 2);
+        if (offset + byteLen > bytes.length) continue;
+        let ok = true;
+        for (let i = 0; i < byteLen && ok; i++) {
+          const c1 = pat[i*2], c2 = pat[i*2+1] || '0';
+          if (c1 === '?' && c2 === '?') continue;
+          if (bytes[offset+i] !== parseInt(c1+c2, 16)) ok = false;
+        }
+        if (ok) return true;
+        continue;
+      }
+      const len = pat.length;
+      if (offset + len > bytes.length) continue;
+      let ok = true;
+      for (let i = 0; i < len && ok; i++) {
+        const ch = pat[i];
+        if (ch === '?') continue;
+        if (ch === '#') { if (bytes[offset+i] < 0x30 || bytes[offset+i] > 0x39) ok = false; continue; }
+        const bv = encoding === 'ebcdic'
+          ? (_EBCDIC_TO_ASCII[bytes[offset+i]] ?? bytes[offset+i])
+          : bytes[offset+i];
+        if (bv !== ch.charCodeAt(0)) ok = false;
+      }
+      if (ok) return true;
+    }
+    return false;
+  };
+
+  _R['binary'] = (bytes, { offset=0, length=1, _validatorFns }) => {
+    if (offset + length > bytes.length) return false;
+    let hasBin = false;
+    for (let i = offset; i < offset+length; i++) {
+      if (bytes[i] < 0x20 || bytes[i] >= 0x7F) { hasBin = true; break; }
+    }
+    if (!hasBin) return false;
+    if (_validatorFns && _validatorFns.length) {
+      const slice = bytes.slice(offset, offset+length);
+      return _validatorFns.every(fn => fn(slice));
+    }
+    return true;
+  };
+
+  _R['uint8'] = _R['byte'] = (bytes, { offset=0, eq, min, max, mask }) => {
+    if (offset >= bytes.length) return false;
+    let v = bytes[offset];
+    if (mask !== undefined) v &= _hn(mask);
+    if (eq  !== undefined && v !== _hn(eq))  return false;
+    if (min !== undefined && v <  _hn(min))  return false;
+    if (max !== undefined && v >  _hn(max))  return false;
+    return true;
+  };
+
+  _R['uint16'] = _R['word'] = (bytes, { offset=0, endian='big', eq, min, max }) => {
+    if (offset+2 > bytes.length) return false;
+    const v = endian === 'big' ? (bytes[offset]<<8)|bytes[offset+1]
+                               : bytes[offset]|(bytes[offset+1]<<8);
+    if (eq  !== undefined && v !== _hn(eq))  return false;
+    if (min !== undefined && v <  _hn(min))  return false;
+    if (max !== undefined && v >  _hn(max))  return false;
+    return true;
+  };
+
+  _R['uint32'] = _R['dword'] = (bytes, { offset=0, endian='big', eq, min, max }) => {
+    if (offset+4 > bytes.length) return false;
+    const v = endian === 'big'
+      ? (((bytes[offset]<<24)|(bytes[offset+1]<<16)|(bytes[offset+2]<<8)|bytes[offset+3])>>>0)
+      : ((bytes[offset]|(bytes[offset+1]<<8)|(bytes[offset+2]<<16)|(bytes[offset+3]<<24))>>>0);
+    if (eq  !== undefined && v !== _hn(eq))  return false;
+    if (min !== undefined && v <  _hn(min))  return false;
+    if (max !== undefined && v >  _hn(max))  return false;
+    return true;
+  };
+
+  _R['min-length'] = (bytes, { length=0 }) => bytes.length >= length;
+
+  _R['mti'] = (bytes, { offset=0, encoding='ascii' }) => {
+    if (offset+4 > bytes.length) return false;
+    if (encoding === 'ebcdic') {
+      for (let i = 0; i < 4; i++) if (bytes[offset+i] < 0xF0 || bytes[offset+i] > 0xF9) return false;
+      return bytes[offset+1] !== 0xF0;
+    }
+    for (let i = 0; i < 4; i++) if (bytes[offset+i] < 0x30 || bytes[offset+i] > 0x39) return false;
+    return bytes[offset+1] !== 0x30;
+  };
+
+  _R['bitmap'] = (bytes, { offset=0, encoding='binary', length=8 }) => {
+    if (encoding === 'ascii-hex') {
+      if (offset+16 > bytes.length) return false;
+      for (let i = offset; i < offset+16; i++) {
+        const b = bytes[i];
+        if (!((b>=0x30&&b<=0x39)||(b>=0x41&&b<=0x46)||(b>=0x61&&b<=0x66))) return false;
+      }
+      return true;
+    }
+    if (encoding === 'ebcdic') {
+      if (offset+16 > bytes.length) return false;
+      for (let i = offset; i < offset+16; i++) {
+        const b = bytes[i];
+        if (!((b>=0xF0&&b<=0xF9)||(b>=0xC1&&b<=0xC6)||(b>=0x81&&b<=0x86))) return false;
+      }
+      return true;
+    }
+    return offset+length <= bytes.length;
+  };
+
+  _R['regex'] = (bytes, { offset=0, length, encoding='ascii', _re }) => {
+    if (!_re || offset >= bytes.length) return false;
+    const end = length !== undefined ? Math.min(offset+length, bytes.length) : bytes.length;
+    let s = '';
+    for (let i = offset; i < end; i++) {
+      const b = encoding === 'ebcdic' ? (_EBCDIC_TO_ASCII[bytes[i]] ?? bytes[i]) : bytes[i];
+      s += String.fromCharCode(b);
+    }
+    return _re.test(s);
+  };
+
+  _R['ebcdic-density'] = (bytes, { offset=0, length, min_density=0.3 }) => {
+    const end = length !== undefined ? Math.min(offset+length, bytes.length) : bytes.length;
+    const total = end - offset; if (!total) return false;
+    let n = 0;
+    for (let i = offset; i < end; i++) if (bytes[i] >= 0xF0 && bytes[i] <= 0xF9) n++;
+    return n / total >= min_density;
+  };
+
+  _R['hex-density'] = (bytes, { offset=0, length, min_density=0.8 }) => {
+    const end = length !== undefined ? Math.min(offset+length, bytes.length) : bytes.length;
+    const total = end - offset; if (!total) return false;
+    let n = 0;
+    for (let i = offset; i < end; i++) {
+      const b = bytes[i];
+      if ((b>=0x30&&b<=0x39)||(b>=0x41&&b<=0x46)||(b>=0x61&&b<=0x66)) n++;
+    }
+    return n / total >= min_density;
+  };
+
+  _R['oct-density'] = (bytes, { offset=0, length, min_density=0.8 }) => {
+    const end = length !== undefined ? Math.min(offset+length, bytes.length) : bytes.length;
+    const total = end - offset; if (!total) return false;
+    let n = 0;
+    for (let i = offset; i < end; i++) if (bytes[i] >= 0x30 && bytes[i] <= 0x37) n++;
+    return n / total >= min_density;
+  };
+
+  _R['length-prefix'] = (bytes, { offset=0, encoding='uint16-be', body_offset, includes_self=false }) => {
+    const len = _readLen(bytes, offset, encoding);
+    if (len === null) return false;
+    const bodyStart = body_offset !== undefined ? body_offset : offset + _lenFieldSize(encoding);
+    const bodyLen   = includes_self ? len - _lenFieldSize(encoding) : len;
+    return bodyLen >= 0 && bodyStart + bodyLen <= bytes.length;
+  };
+
+  _R['flag-prefix'] = (bytes, { offset=0, encoding='uint8', body_offset, body_length }) => {
+    const flag = _readLen(bytes, offset, encoding);
+    if (flag === null || flag === 0) return false;
+    if (body_offset !== undefined && body_length !== undefined)
+      return body_offset + body_length <= bytes.length;
+    return true;
+  };
+
+  // ── Compiler ───────────────────────────────────────────────────────────────
+
+  function _compileRecognizer(r, validatorMap) {
+    const c = { ...r };
+    if (r.type === 'literal') c._patterns = _expandLiteral(r.value ?? []);
+    if (r.type === 'regex' && r.pattern) {
+      try { c._re = new RegExp(r.pattern); } catch(e) { c._re = null; }
+    }
+    if (r.type === 'binary' && r.validator) {
+      const vrList = typeof r.validator === 'string'
+        ? (validatorMap[r.validator]?.recognizers ?? null)
+        : Array.isArray(r.validator) ? r.validator : null;
+      if (vrList) {
+        c._validatorFns = vrList.map(vr => {
+          const fn = _R[vr.type];
+          const cv = _compileRecognizer(vr, validatorMap);
+          return fn ? (slice => fn(slice, cv)) : (() => true);
+        });
+      }
+    }
+    return c;
+  }
+
+  function _compileSpec(spec, validatorMap) {
+    const fns = (spec.recognizers || []).map(r => {
+      const fn = _R[r.type];
+      if (!fn) return () => false;
+      const c = _compileRecognizer(r, validatorMap);
+      return bytes => fn(bytes, c);
+    });
+    return { ...spec, _fns: fns };
+  }
+
+  // ── State & storage ────────────────────────────────────────────────────────
+
+  let _fmtSpecs = [];   // compiled, sorted by priority desc
+  let _fmtValMap = {};  // name → validator spec
+
+  function _fmtLoad() {
+    let raw = { specs: [], validators: [] };
+    try { const s = localStorage.getItem('up_format_specs'); if (s) raw = JSON.parse(s); } catch(e) {}
+    _fmtValMap = {};
+    (raw.validators || []).forEach(v => { _fmtValMap[v.name] = v; });
+    _fmtSpecs = (raw.specs || [])
+      .map(s => _compileSpec(s, _fmtValMap))
+      .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  }
+
+  function _fmtSave(specs, validators) {
+    try { localStorage.setItem('up_format_specs', JSON.stringify({ specs, validators })); } catch(e) {}
+    _fmtLoad();
+  }
+
+  function _fmtGetData() {
+    try { const s = localStorage.getItem('up_format_specs'); return s ? JSON.parse(s) : { specs:[], validators:[] }; }
+    catch(e) { return { specs:[], validators:[] }; }
+  }
+
+  // ── Detection ──────────────────────────────────────────────────────────────
+
+  function _fmtDetect(bytes) {
+    for (const spec of _fmtSpecs) {
+      if (spec._fns.every(fn => fn(bytes))) {
+        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '' };
+      }
+    }
+    return null;
+  }
+
+  // Expose
+  window._fmtLoad    = _fmtLoad;
+  window._fmtSave    = _fmtSave;
+  window._fmtGetData = _fmtGetData;
+  window._fmtDetect  = _fmtDetect;
+
+})();
+
+// ─── Legacy regex detection (fallback) ───────────────────────────────────────
 // Extensible message-type prefix table.
 // Add new entries here as new protocols are encountered.
 // Each entry: { test: fn(rawMsg) → bool, type, label, vol }
@@ -5219,6 +5619,12 @@ function volSearchChain(vol) {
 
 function detectMsgType(rawMsg) {
   if (!rawMsg) return { type:'UNKNOWN', label:'Unknown', vol:null };
+  // ── New engine (runs first) ──────────────────────────────────────────────
+  const bytes = new Uint8Array(rawMsg.length);
+  for (let i = 0; i < rawMsg.length; i++) bytes[i] = rawMsg.charCodeAt(i) & 0xFF;
+  const newResult = _fmtDetect(bytes);
+  if (newResult) return newResult;
+  // ── Legacy regex fallback ────────────────────────────────────────────────
   for (const p of MSG_TYPE_MAP) {
     if (p.test(rawMsg)) return { type:p.type, label:p.label, vol:p.vol, color:p.color||'' };
   }
@@ -11572,7 +11978,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.33';
+const APP_VERSION  = '1.1.1.41';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13058,6 +13464,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tutPrev')?.addEventListener('click', () => { if (_tutIdx > 0) { _tutIdx--; _tutRender(); } });
   document.getElementById('tutSkip')?.addEventListener('click', closeTutorial);
 
+  _fmtLoad();
   _loadDetectRules();
   loadPrefs();
   _auditPrecomputeRowHeights();
@@ -13103,6 +13510,593 @@ document.addEventListener('DOMContentLoaded', () => {
   // Vertical resizer (between rows)
   initVResizer('mainResizer', 'topRow', 'bottomRow');
 });
+
+// ─── Message Editor (Phase 2) ──────────────────────────────────────────────
+
+let _meState = null;
+
+function openMsgEditor() {
+  closeSettings();
+  const data = _fmtGetData();
+  _meState = {
+    specs:      JSON.parse(JSON.stringify(data.specs      || [])),
+    validators: JSON.parse(JSON.stringify(data.validators || [])),
+    section:  'msg',
+    selIdx:   -1,
+    sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false },
+    editRec:  -1,
+    pend:     {},
+    dirty:    false
+  };
+  const btn = document.getElementById('me-save-btn');
+  if (btn) btn.disabled = true;
+  _meRenderSidebar();
+  _meRenderRight();
+  document.getElementById('msgEditorOverlay').classList.remove('hidden');
+  if (_meState.specs.length > 0) _meSelectItem('msg', 0);
+}
+
+function closeMsgEditor() {
+  document.getElementById('msgEditorOverlay').classList.add('hidden');
+}
+
+function _meSetDirty() {
+  _meState.dirty = true;
+  const btn = document.getElementById('me-save-btn');
+  if (btn) btn.disabled = false;
+}
+
+function _meSectionToggle(sec) {
+  _meState.sections[sec] = !_meState.sections[sec];
+  _meRenderRight();
+}
+
+function _meSelectItem(section, idx) {
+  _meState.editRec = -1;
+  _meState.pend    = {};
+  _meState.section = section;
+  _meState.selIdx  = idx;
+  _meRenderSidebar();
+  _meRenderRight();
+}
+
+function _meRenderSidebar() {
+  const msgs = document.getElementById('me-msg-list');
+  const vals = document.getElementById('me-val-list');
+
+  msgs.innerHTML = '';
+  if (!_meState.specs.length) {
+    msgs.innerHTML = '<div class="me-empty">No messages defined</div>';
+  } else {
+    _meState.specs.forEach((s, i) => {
+      const active = _meState.section === 'msg' && _meState.selIdx === i;
+      const d = document.createElement('div');
+      d.className = 'me-item' + (active ? ' active' : '');
+      const sw = document.createElement('span');
+      sw.className = 'me-item-swatch';
+      sw.style.background = s.color || 'transparent';
+      const nm = document.createElement('span');
+      nm.className = 'me-item-name';
+      nm.textContent = s.label || s.name || '(unnamed)';
+      const del = document.createElement('button');
+      del.className = 'me-item-del';
+      del.textContent = '×';
+      del.title = 'Delete';
+      del.onclick = e => { e.stopPropagation(); _meDeleteItem('msg', i); };
+      d.append(sw, nm, del);
+      d.onclick = () => _meSelectItem('msg', i);
+      msgs.appendChild(d);
+    });
+  }
+
+  vals.innerHTML = '';
+  if (!_meState.validators.length) {
+    vals.innerHTML = '<div class="me-empty">No validators defined</div>';
+  } else {
+    _meState.validators.forEach((v, i) => {
+      const active = _meState.section === 'validator' && _meState.selIdx === i;
+      const d = document.createElement('div');
+      d.className = 'me-item' + (active ? ' active' : '');
+      const nm = document.createElement('span');
+      nm.className = 'me-item-name';
+      nm.textContent = v.name || '(unnamed)';
+      const del = document.createElement('button');
+      del.className = 'me-item-del';
+      del.textContent = '×';
+      del.title = 'Delete';
+      del.onclick = e => { e.stopPropagation(); _meDeleteItem('validator', i); };
+      d.append(nm, del);
+      d.onclick = () => _meSelectItem('validator', i);
+      vals.appendChild(d);
+    });
+  }
+}
+
+function _meCurItem() {
+  if (_meState.selIdx < 0) return null;
+  return _meState.section === 'msg'
+    ? (_meState.specs[_meState.selIdx]      || null)
+    : (_meState.validators[_meState.selIdx] || null);
+}
+
+function _meRenderRight() {
+  const body = document.getElementById('me-tab-body');
+  const item = _meCurItem();
+  if (!item) {
+    body.innerHTML = '<div class="me-no-sel">Select a message or validator from the sidebar.</div>';
+    return;
+  }
+  const isMsg = _meState.section === 'msg';
+  const secs  = _meState.sections;
+  const sect  = (key, title, html) => {
+    const open = secs[key];
+    return `<div class="me-section">
+  <div class="me-section-hdr" onclick="_meSectionToggle('${key}')">
+    <span>${title}</span><span class="me-section-arr">${open ? '&#9650;' : '&#9660;'}</span>
+  </div>
+  <div class="me-section-body${open ? ' open' : ''}">${html}</div>
+</div>`;
+  };
+  let html = sect('identity', 'Identity', _meHtmlId(item))
+           + sect('recognizers', 'Recognizers', _meHtmlRecs(item));
+  if (isMsg) {
+    html += sect('parse_spec',    'Parse Spec',    _meHtmlStub('parse_spec'))
+          + sect('ddl_bindings',  'DDL Bindings',  _meHtmlStub('ddl_bindings'))
+          + sect('overrides',     'Overrides',     _meHtmlStub('overrides'));
+  }
+  body.innerHTML = html;
+}
+
+function _meHtmlStub(tab) {
+  const names = { parse_spec: 'Parse Spec', ddl_bindings: 'DDL Bindings', overrides: 'Overrides' };
+  return `<div class="me-stub"><div class="me-stub-h">${names[tab] || tab}</div>Coming in Phase 3.</div>`;
+}
+
+// ── Identity Tab ──────────────────────────────────────────────────────────
+
+function _meHtmlId(item) {
+  const isMsg = _meState.section === 'msg';
+  const ea = v => (v == null ? '' : String(v)).replace(/"/g, '&quot;');
+  if (isMsg) {
+    return `<div class="me-form">
+  <div style="display:grid;grid-template-columns:110px 1fr;gap:12px">
+    <div class="me-fld">
+      <div class="me-lbl">Type code</div>
+      <input class="me-inp" type="text" maxlength="10" value="${ea(item.name)}"
+        oninput="_meField('name',this.value)" title="Short identifier — used in DDLMM TYPE column" placeholder="STM">
+    </div>
+    <div class="me-fld">
+      <div class="me-lbl">Label</div>
+      <input class="me-inp" type="text" value="${ea(item.label)}"
+        oninput="_meField('label',this.value)" placeholder="Friendly name">
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 90px 170px;gap:12px">
+    <div class="me-fld">
+      <div class="me-lbl">Vol</div>
+      <input class="me-inp" type="text" value="${ea(item.vol)}"
+        oninput="_meField('vol',this.value)" placeholder="ATM / POS">
+    </div>
+    <div class="me-fld">
+      <div class="me-lbl">Priority</div>
+      <input class="me-inp" type="number" min="0" value="${item.priority || 0}"
+        oninput="_meField('priority',+this.value||0)">
+    </div>
+    <div class="me-fld">
+      <div class="me-lbl">Color</div>
+      <div class="me-color-row">
+        <input type="color" class="me-swatch" id="me-color-pick" value="${item.color || '#888888'}"
+          oninput="_meField('color',this.value);const h=document.getElementById('me-color-hex');if(h)h.value=this.value">
+        <input class="me-inp" type="text" id="me-color-hex" value="${ea(item.color)}"
+          oninput="_meField('color',this.value);const p=document.getElementById('me-color-pick');if(p&&this.value.match(/^#[0-9a-fA-F]{6}$/))p.value=this.value"
+          placeholder="#rrggbb">
+      </div>
+    </div>
+  </div>
+</div>`;
+  } else {
+    return `<div class="me-form">
+  <div class="me-row">
+    <div class="me-fld grow">
+      <div class="me-lbl">Name</div>
+      <input class="me-inp" type="text" value="${ea(item.name)}"
+        oninput="_meField('name',this.value)" placeholder="validator_name">
+    </div>
+  </div>
+</div>`;
+  }
+}
+
+function _meField(field, value) {
+  const item = _meCurItem();
+  if (!item) return;
+  item[field] = value;
+  _meSetDirty();
+  if (field === 'name' || field === 'label' || field === 'color') _meRenderSidebar();
+}
+
+// ── Recognizers Tab ───────────────────────────────────────────────────────
+
+function _meHtmlRecs(item) {
+  const recs = item.recognizers || [];
+  let h = '<div class="me-rec-list">';
+  if (!recs.length) h += '<div class="me-empty">No recognizers yet.</div>';
+  recs.forEach((r, i) => {
+    const editing  = _meState.editRec === i;
+    const formRec  = (_meState.pend && _meState.pend[i] !== undefined) ? _meState.pend[i] : r;
+    const isFirst  = i === 0;
+    const isLast   = i === recs.length - 1;
+    h += `<div class="me-rec-row" id="me-rr-${i}">
+  <div class="me-rec-head" onclick="_meToggleRec(${i})">
+    <span class="me-rec-type">${r.type}</span>
+    <span class="me-rec-sum">${_meRecSum(r)}</span>
+    <span class="me-rec-acts" onclick="event.stopPropagation()">
+      <button class="me-rb" onclick="_meMoveRec(${i},-1)" title="Move up"${isFirst  ? ' disabled' : ''}>&#x2191;</button>
+      <button class="me-rb" onclick="_meMoveRec(${i},1)"  title="Move down"${isLast ? ' disabled' : ''}>&#x2193;</button>
+      <button class="me-rb del" onclick="_meDelRec(${i})" title="Delete">&#x00D7;</button>
+    </span>
+  </div>
+  ${editing ? _meRecForm(formRec, i) : ''}
+</div>`;
+  });
+  h += '</div>';
+  h += `<button class="btn btn-sm" onclick="_meNewRec()">+ Add Recognizer</button>`;
+  if (_meState.editRec === -2) {
+    const newRec = (_meState.pend && _meState.pend[-2] !== undefined) ? _meState.pend[-2] : { type: 'literal' };
+    h += `<div class="me-rec-row" style="margin-top:6px">${_meRecForm(newRec, -2)}</div>`;
+  }
+  return h;
+}
+
+function _meRecSum(r) {
+  const esc = s => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  switch (r.type) {
+    case 'literal': {
+      const fmtLit = v => {
+        if (!Array.isArray(v)) return esc(v);
+        return v.map(x => (x && typeof x === 'object' && x.from != null)
+          ? `"${x.from}".."${x.to}"`
+          : `"${x}"`).join(' | ');
+      };
+      return `@${r.offset} = ${fmtLit(r.value)}`;
+    }
+    case 'binary':      return `@${r.offset} mask:${esc(r.mask)} = ${esc(r.value)}`;
+    case 'uint8':  case 'byte':   return `@${r.offset} ${r.op || '='}${r.value}`;
+    case 'uint16': case 'word':   return `@${r.offset} ${r.endian || 'be'} ${r.op || '='}${r.value}`;
+    case 'uint32': case 'dword':  return `@${r.offset} ${r.endian || 'be'} ${r.op || '='}${r.value}`;
+    case 'min-length':  return `≥ ${r.value} bytes`;
+    case 'mti':         return `@${r.offset} = ${esc(r.value)}`;
+    case 'bitmap':      return `@${r.offset} bit${r.bit}=${r.value}`;
+    case 'regex':       return esc(r.pattern);
+    case 'ebcdic-density': case 'hex-density': case 'oct-density': return `min ${r.min}`;
+    case 'length-prefix': return `@${r.offset} size:${r.size} ${r.endian || 'be'} ${r.op || ''}${r.value != null ? r.value : ''}`;
+    case 'flag-prefix': return `@${r.offset} = ${esc(r.value)}`;
+    default: return '';
+  }
+}
+
+const _REC_HELP = {
+  'literal': `<b>Matches exact bytes at a fixed offset.</b>
+<div class="me-rh-flds">offset — byte position from message start<br>value — what to match (see forms below)</div>
+Value forms:<br>
+&nbsp;exact string &nbsp;&nbsp;&nbsp;<b>"ISO"</b> — bytes must equal these ASCII chars<br>
+&nbsp;wildcard &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>"0###"</b> — # matches any digit 0–9, ? matches any byte<br>
+&nbsp;OR list &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>["0200","0100","0800"]</b> — any of these values<br>
+&nbsp;range &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>[{"from":"1","to":"9"}]</b> — all values from…to inclusive<br>
+&nbsp;mixed &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>[{"from":"0","to":"4"},"8","9"]</b> — range + extra values
+<div class="me-rh-exs"><b>Examples:</b> ISO prefix → offset=0 value="ISO" &nbsp;|&nbsp; MTI version → offset=0 value=[{"from":"0","to":"1"}] &nbsp;|&nbsp; POS product code → offset=4 value="02"</div>`,
+
+  'binary': `<b>Bitmask check: (byte[offset] &amp; mask) == value.</b>
+<div class="me-rh-flds">offset — byte position<br>mask &nbsp;— hex bitmask applied before compare (e.g. "80" = high bit, "FF" = all bits)<br>value — expected result after AND, in hex</div>
+<div class="me-rh-exs"><b>Examples:</b> high bit set → mask=80 value=80 &nbsp;|&nbsp; upper nibble is 6x → mask=F0 value=60 &nbsp;|&nbsp; high bit clear → mask=80 value=00</div>`,
+
+  'uint8': `<b>Single byte comparison at offset.</b>
+<div class="me-rh-flds">offset — byte position<br>op &nbsp;&nbsp;&nbsp;— = &nbsp;!= &nbsp;&lt; &nbsp;&gt; &nbsp;&lt;= &nbsp;&gt;=<br>value — 0–255</div>
+<div class="me-rh-exs"><b>Examples:</b> TPDU range → op=&gt;= value=96 AND op=&lt;= value=111 (0x60–0x6F) &nbsp;|&nbsp; specific byte → op== value=2</div>`,
+
+  'byte': `<b>Alias for uint8.</b> Single byte comparison at offset.
+<div class="me-rh-flds">offset, op (= != &lt; &gt; &lt;= &gt;=), value (0–255)</div>`,
+
+  'uint16': `<b>2-byte integer comparison.</b>
+<div class="me-rh-flds">offset — first byte position<br>endian — be (big-endian / network order) &nbsp;or&nbsp; le (little-endian)<br>op &nbsp;&nbsp;&nbsp;— = &nbsp;!= &nbsp;&lt; &nbsp;&gt; &nbsp;&lt;= &nbsp;&gt;=<br>value — 0–65535</div>
+<div class="me-rh-exs"><b>Examples:</b> length prefix = 51 → offset=0 be = 51 &nbsp;|&nbsp; non-zero → op=&gt; value=0 &nbsp;|&nbsp; at most 4096 bytes → op=&lt;= value=4096</div>`,
+
+  'word': `<b>Alias for uint16.</b> 2-byte integer comparison.
+<div class="me-rh-flds">offset, endian (be/le), op, value (0–65535)</div>`,
+
+  'uint32': `<b>4-byte integer comparison.</b>
+<div class="me-rh-flds">offset — first byte position<br>endian — be or le<br>op, value — 0–4 294 967 295</div>
+<div class="me-rh-exs"><b>Examples:</b> non-zero length → op=&gt; value=0 &nbsp;|&nbsp; specific session ID → op== value=305419896</div>`,
+
+  'dword': `<b>Alias for uint32.</b> 4-byte integer comparison.
+<div class="me-rh-flds">offset, endian (be/le), op, value</div>`,
+
+  'min-length': `<b>Total message length must be at least N bytes.</b> Use as a cheap first guard — reject short buffers before running heavier checks.
+<div class="me-rh-flds">value — minimum byte count</div>
+<div class="me-rh-exs"><b>Examples:</b> ISO minimum (MTI + bitmap) → value=20 &nbsp;|&nbsp; NDC minimum → value=4</div>`,
+
+  'mti': `<b>ISO 8583 MTI match — reads 4 ASCII bytes at offset and compares.</b>
+<div class="me-rh-flds">offset — byte position of MTI (0 for plain ISO, 3 if "ISO" prefix present)<br>value &nbsp;— exact 4-char MTI or wildcard pattern</div>
+<div class="me-rh-exs"><b>Examples:</b> financial request → value=0200 &nbsp;|&nbsp; any auth → value=0100 &nbsp;|&nbsp; any MTI → value=0###</div>`,
+
+  'bitmap': `<b>Checks whether a specific ISO 8583 DE bit is on or off in the bitmap.</b>
+<div class="me-rh-flds">offset — byte position where bitmap starts<br>bit &nbsp;&nbsp;— DE number 1–128<br>value — 1 (bit on / DE present) or 0 (bit off / DE absent)</div>
+<div class="me-rh-exs"><b>Examples:</b> PAN present → bit=2 value=1 &nbsp;|&nbsp; secondary bitmap present → bit=1 value=1</div>`,
+
+  'regex': `<b>JavaScript regex matched against ASCII bytes.</b> Good for complex patterns that literal/wildcard can't express.
+<div class="me-rh-flds">pattern — any JavaScript regular expression (no surrounding /.../ needed)</div>
+<div class="me-rh-exs"><b>Examples:</b> Base24 POS → ^0[1-9][012489][012345]02 &nbsp;|&nbsp; ISO prefix → ^ISO &nbsp;|&nbsp; NDC class → ^[12][0-9A-Z]</div>`,
+
+  'ebcdic-density': `<b>Fraction of bytes in 0xF0–0xF9 (EBCDIC digits 0–9) must meet the threshold.</b> Confirms the message uses EBCDIC encoding.
+<div class="me-rh-flds">min — 0.0–1.0 (e.g. 0.4 = at least 40% of bytes are EBCDIC digits)</div>
+<div class="me-rh-exs"><b>Example:</b> typical EBCDIC ISO → min=0.35</div>`,
+
+  'hex-density': `<b>Fraction of bytes that are ASCII hex chars (0–9, A–F, a–f) must meet the threshold.</b> Confirms hex-dump encoded messages.
+<div class="me-rh-flds">min — 0.0–1.0</div>
+<div class="me-rh-exs"><b>Example:</b> hex-dump format → min=0.7</div>`,
+
+  'oct-density': `<b>Fraction of bytes that are ASCII octal chars (0–7) must meet the threshold.</b> Confirms octal-dump encoded messages.
+<div class="me-rh-flds">min — 0.0–1.0</div>
+<div class="me-rh-exs"><b>Example:</b> octal-dump format → min=0.7</div>`,
+
+  'length-prefix': `<b>Reads a length field at offset and checks its decoded value.</b>
+<div class="me-rh-flds">offset — byte position of the length field<br>size &nbsp;&nbsp;— 1, 2, or 4 bytes for the length field<br>endian — be or le<br>op, value — comparison against the decoded integer</div>
+<div class="me-rh-exs"><b>Examples:</b> 2-byte BE length = 51 → offset=0 size=2 be = 51 &nbsp;|&nbsp; at least 8 bytes → op=&gt;= value=8</div>`,
+
+  'flag-prefix': `<b>Checks a single flag byte at offset against an exact hex value.</b>
+<div class="me-rh-flds">offset — byte position<br>value &nbsp;— expected byte in hex (e.g. "60", "FF", "02")</div>
+<div class="me-rh-exs"><b>Examples:</b> TPDU start → offset=0 value=60 &nbsp;|&nbsp; STX marker → offset=0 value=02</div>`,
+};
+
+function _meToggleRecHelp(idx) {
+  const el = document.getElementById(`me-rh-${idx}`);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+function _meRecForm(r, idx) {
+  const types = ['literal','binary','uint8','byte','uint16','word','uint32','dword',
+                 'min-length','mti','bitmap','regex','ebcdic-density','hex-density',
+                 'oct-density','length-prefix','flag-prefix'];
+  const cur = r ? r.type : 'literal';
+  const typeSel = `<div class="me-rf-fld"><div class="me-lbl" style="display:flex;align-items:center">Type<span class="me-help-link" onclick="_meToggleRecHelp(${idx})">help</span></div>
+    <select class="me-sel" style="width:130px" id="me-rt-${idx}" onchange="_meRecTypeChange(${idx},this.value)">
+      ${types.map(t => `<option${t === cur ? ' selected' : ''}>${t}</option>`).join('')}
+    </select></div>`;
+  const btns = `<div style="display:flex;gap:6px;align-self:flex-end;flex-shrink:0;margin-left:auto">
+    <button class="btn btn-sm" onclick="_meRecCancel(${idx})">Cancel</button>
+    <button class="btn btn-sm btn-primary" onclick="_meRecSave(${idx})">&#x2713; Apply</button>
+  </div>`;
+  const helpText = _REC_HELP[cur] || '';
+  return `<div class="me-rec-form open" id="me-rf-${idx}">
+  <div class="me-rf-row">${typeSel}${_meRecFields(r || { type: 'literal' }, idx)}${btns}</div>
+  ${helpText ? `<div class="me-rec-help" id="me-rh-${idx}" style="display:none">${helpText}</div>` : ''}
+</div>`;
+}
+
+function _meRecFields(r, id) {
+  const ea = v => (v == null ? '' : String(v)).replace(/"/g, '&quot;');
+  const nf = (k, lbl, min, max, def) =>
+    `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
+     <input class="me-inp" style="width:62px" type="number" min="${min || 0}"${max != null ? ` max="${max}"` : ''}
+       id="me-rv-${k}-${id}" value="${ea(r[k] != null ? r[k] : def != null ? def : 0)}"></div>`;
+  const tf = (k, lbl, ph, w) => w
+    ? `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
+       <input class="me-inp" style="width:${w}" id="me-rv-${k}-${id}" type="text" value="${ea(r[k])}" placeholder="${ph || ''}"></div>`
+    : `<div style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px"><div class="me-lbl">${lbl}</div>
+       <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-${k}-${id}" type="text" value="${ea(r[k])}" placeholder="${ph || ''}"></div>`;
+  const opf = k => {
+    const cur = r[k] || '=';
+    return `<div class="me-rf-fld"><div class="me-lbl">Op</div>
+     <select class="me-sel" id="me-rv-${k}-${id}">
+       ${['=','!=','<','>','<=','>='].map(o => `<option${cur === o ? ' selected' : ''}>${o}</option>`).join('')}
+     </select></div>`;
+  };
+  const endf = k => {
+    const cur = r[k] || 'be';
+    return `<div class="me-rf-fld"><div class="me-lbl">Endian</div>
+     <select class="me-sel" id="me-rv-${k}-${id}">
+       <option${cur === 'be' ? ' selected' : ''}>be</option>
+       <option${cur === 'le' ? ' selected' : ''}>le</option>
+     </select></div>`;
+  };
+  const litVal = v => {
+    if (v == null) return '';
+    if (Array.isArray(v) || (typeof v === 'object')) return JSON.stringify(v).replace(/"/g, '&quot;');
+    return String(v).replace(/"/g, '&quot;');
+  };
+  const litField = (id) =>
+    `<div style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px"><div class="me-lbl">Value</div>
+     <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-value-${id}" type="text" value="${litVal(r.value)}"
+       placeholder='e.g. F0F1 or ["0","1"] or [{"from":"0","to":"9"}]'></div>`;
+  switch (r.type) {
+    case 'literal':
+      return nf('offset','Offset',0) + litField(id);
+    case 'binary':
+      return nf('offset','Offset',0) + tf('mask','Mask','hex e.g. FF80','80px') + tf('value','Value','hex e.g. 8000');
+    case 'uint8': case 'byte':
+      return nf('offset','Offset',0) + opf('op') + nf('value','Value',0,255);
+    case 'uint16': case 'word':
+      return nf('offset','Offset',0) + endf('endian') + opf('op') + nf('value','Value',0,65535);
+    case 'uint32': case 'dword':
+      return nf('offset','Offset',0) + endf('endian') + opf('op') + nf('value','Value',0);
+    case 'min-length':
+      return nf('value','Min Bytes',1,null,1);
+    case 'mti':
+      return nf('offset','Offset',0) + tf('value','MTI Pattern','e.g. 0200');
+    case 'bitmap': {
+      const bv = String(r.value != null ? r.value : 1);
+      return nf('offset','Offset',0) + nf('bit','Bit (1–128)',1,128,1) +
+        `<div class="me-rf-fld"><div class="me-lbl">Value</div>
+         <select class="me-sel" id="me-rv-bv-${id}">
+           <option${bv === '0' ? ' selected' : ''} value="0">0 (off)</option>
+           <option${bv === '1' ? ' selected' : ''} value="1">1 (on)</option>
+         </select></div>`;
+    }
+    case 'regex':
+      return tf('pattern','Pattern','JavaScript regex');
+    case 'ebcdic-density': case 'hex-density': case 'oct-density':
+      return `<div class="me-rf-fld"><div class="me-lbl">Min (0.0–1.0)</div>
+       <input class="me-inp" style="width:72px" type="number" step="0.01" min="0" max="1"
+         id="me-rv-min-${id}" value="${ea(r.min != null ? r.min : 0.9)}"></div>`;
+    case 'length-prefix': {
+      const sz = r.size || 2;
+      return nf('offset','Offset',0) +
+        `<div class="me-rf-fld"><div class="me-lbl">Size</div>
+         <select class="me-sel" id="me-rv-size-${id}">
+           ${[1,2,4].map(n => `<option${sz == n ? ' selected' : ''}>${n}</option>`).join('')}
+         </select></div>` +
+        endf('endian') + opf('op') + nf('value','Value',0);
+    }
+    case 'flag-prefix':
+      return nf('offset','Offset',0) + tf('value','Value (hex byte)','e.g. FF');
+    default: return '';
+  }
+}
+
+function _meRecRead(idx) {
+  const typeSel = document.getElementById(`me-rt-${idx}`);
+  if (!typeSel) return null;
+  const type = typeSel.value;
+  const gv = k => { const el = document.getElementById(`me-rv-${k}-${idx}`); return el ? el.value : ''; };
+  const ni = (k, def) => { const v = parseInt(gv(k)); return isNaN(v) ? (def || 0) : v; };
+  const nf = (k, def) => { const v = parseFloat(gv(k)); return isNaN(v) ? (def != null ? def : 0) : v; };
+  switch (type) {
+    case 'literal': {
+      const raw = gv('value');
+      let val; try { val = JSON.parse(raw); } catch(e) { val = raw; }
+      return { type, offset: ni('offset'), value: val };
+    }
+    case 'binary':     return { type, offset: ni('offset'), mask: gv('mask'), value: gv('value') };
+    case 'uint8': case 'byte':   return { type, offset: ni('offset'), op: gv('op'), value: ni('value') };
+    case 'uint16': case 'word':  return { type, offset: ni('offset'), endian: gv('endian'), op: gv('op'), value: ni('value') };
+    case 'uint32': case 'dword': return { type, offset: ni('offset'), endian: gv('endian'), op: gv('op'), value: ni('value') };
+    case 'min-length': return { type, value: ni('value', 1) };
+    case 'mti':        return { type, offset: ni('offset'), value: gv('value') };
+    case 'bitmap': {
+      const bvEl = document.getElementById(`me-rv-bv-${idx}`);
+      return { type, offset: ni('offset'), bit: ni('bit', 1), value: bvEl ? parseInt(bvEl.value) : 1 };
+    }
+    case 'regex': return { type, pattern: gv('pattern') };
+    case 'ebcdic-density': case 'hex-density': case 'oct-density':
+      return { type, min: nf('min', 0.9) };
+    case 'length-prefix': {
+      const szEl = document.getElementById(`me-rv-size-${idx}`);
+      return { type, offset: ni('offset'), size: szEl ? parseInt(szEl.value) : 2, endian: gv('endian'), op: gv('op'), value: ni('value') };
+    }
+    case 'flag-prefix': return { type, offset: ni('offset'), value: gv('value') };
+    default: return { type };
+  }
+}
+
+function _meToggleRec(idx) {
+  if (_meState.editRec === idx) {
+    _meState.editRec = -1;
+    if (_meState.pend) delete _meState.pend[idx];
+  } else {
+    _meState.editRec = idx;
+  }
+  _meRenderRight();
+}
+
+function _meNewRec() {
+  _meState.editRec = -2;
+  _meRenderRight();
+}
+
+function _meRecTypeChange(idx, newType) {
+  if (!_meState.pend) _meState.pend = {};
+  _meState.pend[idx] = { type: newType };
+  _meRenderRight();
+}
+
+function _meRecSave(idx) {
+  const rec = _meRecRead(idx);
+  if (!rec) return;
+  const item = _meCurItem();
+  if (!item) return;
+  if (!item.recognizers) item.recognizers = [];
+  if (idx === -2) item.recognizers.push(rec);
+  else            item.recognizers[idx] = rec;
+  _meState.editRec = -1;
+  if (_meState.pend) delete _meState.pend[idx];
+  _meSetDirty();
+  _meRenderRight();
+}
+
+function _meRecCancel(idx) {
+  _meState.editRec = -1;
+  if (_meState.pend) delete _meState.pend[idx];
+  _meRenderRight();
+}
+
+function _meDelRec(idx) {
+  showPrompt('Type DELETE to remove this recognizer:', '', val => {
+    if (val !== 'DELETE') return;
+    const item = _meCurItem();
+    if (!item || !item.recognizers) return;
+    item.recognizers.splice(idx, 1);
+    _meState.editRec = -1;
+    _meState.pend    = {};
+    _meSetDirty();
+    _meRenderRight();
+  });
+}
+
+function _meMoveRec(idx, dir) {
+  const item = _meCurItem();
+  if (!item || !item.recognizers) return;
+  const j = idx + dir;
+  if (j < 0 || j >= item.recognizers.length) return;
+  [item.recognizers[idx], item.recognizers[j]] = [item.recognizers[j], item.recognizers[idx]];
+  _meState.editRec = -1;
+  _meState.pend    = {};
+  _meSetDirty();
+  _meRenderRight();
+}
+
+function _meAddMsg() {
+  _meState.specs.push({ name: 'NEW', label: 'New Message', color: '#888888', vol: '', priority: 0, recognizers: [] });
+  _meSetDirty();
+  _meSelectItem('msg', _meState.specs.length - 1);
+}
+
+function _meAddValidator() {
+  _meState.validators.push({ name: 'new_validator', recognizers: [] });
+  _meSetDirty();
+  _meSelectItem('validator', _meState.validators.length - 1);
+}
+
+function _meDeleteItem(section, idx) {
+  const itemName = section === 'msg'
+    ? (_meState.specs[idx]?.name || 'message')
+    : (_meState.validators[idx]?.name || 'validator');
+  showPrompt(`Type DELETE to remove "${itemName}" and all its contents:`, '', val => {
+    if (val !== 'DELETE') return;
+    if (section === 'msg') {
+      _meState.specs.splice(idx, 1);
+      if (_meState.section === 'msg')
+        _meState.selIdx = Math.min(_meState.selIdx, _meState.specs.length - 1);
+    } else {
+      _meState.validators.splice(idx, 1);
+      if (_meState.section === 'validator')
+        _meState.selIdx = Math.min(_meState.selIdx, _meState.validators.length - 1);
+    }
+    _meState.editRec = -1;
+    _meState.pend    = {};
+    _meSetDirty();
+    _meRenderSidebar();
+    _meRenderRight();
+  });
+}
+
+function _meSave() {
+  _fmtSave(_meState.specs, _meState.validators);
+  _meState.dirty = false;
+  const btn = document.getElementById('me-save-btn');
+  if (btn) btn.disabled = true;
+  const s = document.getElementById('me-status');
+  if (s) { s.textContent = 'Saved.'; setTimeout(() => { if (s) s.textContent = ''; }, 2000); }
+}
 </script>
 
 <!-- ===== CONTEXT MENU ===== -->
@@ -13273,8 +14267,11 @@ document.addEventListener('DOMContentLoaded', () => {
           <button class="stitle-toggle" onclick="toggleSettingsSection(document.getElementById('detectStitle'))">+</button>
         </div>
         <div class="settings-collapsible-body collapsed" style="max-height:500px">
+          <div class="settings-row" style="margin-bottom:8px">
+            <button class="btn btn-sm" onclick="openMsgEditor()" title="Open the Message Format Editor to define byte-level recognizers and parse specs">⊞ Message Editor</button>
+          </div>
           <div class="settings-row" style="margin-bottom:6px">
-            <span class="settings-lbl" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px)">Rules tested in order — first match wins</span>
+            <span class="settings-lbl" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px)">Legacy regex rules (fallback, tested in order):</span>
           </div>
           <div class="dr-list" id="detectRulesTbody"></div>
           <div class="settings-row" style="margin-top:10px">
@@ -13603,6 +14600,49 @@ document.addEventListener('DOMContentLoaded', () => {
     <button class="tut-skip" id="tutSkip">Skip tutorial</button>
     <button class="btn btn-sm" id="tutPrev">&#x2190; Back</button>
     <button class="btn btn-sm" id="tutNext">Next &#x2192;</button>
+  </div>
+</div>
+
+<!-- ===== MESSAGE EDITOR MODAL ===== -->
+<div class="me-overlay hidden" id="msgEditorOverlay">
+  <div class="me-shell">
+
+    <!-- ── Sidebar ── -->
+    <div class="me-sidebar">
+      <div class="me-sidebar-sect" id="me-sect-msgs">
+        <div class="me-sidebar-hdr">
+          <span class="me-sidebar-title">Messages</span>
+          <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
+        </div>
+        <div class="me-item-list" id="me-msg-list"></div>
+      </div>
+      <div class="me-sidebar-sect" id="me-sect-vals">
+        <div class="me-sidebar-hdr">
+          <span class="me-sidebar-title">Validators</span>
+          <button class="me-sidebar-add" onclick="_meAddValidator()">+ New</button>
+        </div>
+        <div class="me-item-list" id="me-val-list"></div>
+      </div>
+      <div class="me-sidebar-sect me-sect-rules">
+        <div class="me-sidebar-hdr"><span class="me-sidebar-title">Rules</span></div>
+        <div class="me-sidebar-note">Configure in the DDL Rules (DDLMM) panel.</div>
+      </div>
+    </div>
+
+    <!-- ── Right panel ── -->
+    <div class="me-right">
+      <div class="me-header">
+        <span class="me-header-title" id="me-header-title">Message Editor</span>
+        <button class="btn btn-sm" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
+      </div>
+      <div class="me-tab-body" id="me-tab-body"></div>
+      <div class="me-footer">
+        <span class="me-status" id="me-status"></span>
+        <button class="btn" onclick="closeMsgEditor()">Cancel</button>
+        <button class="btn btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
+      </div>
+    </div>
+
   </div>
 </div>
 

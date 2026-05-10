@@ -5363,6 +5363,14 @@ function parseMessage(bytes, defs, rawBytes) {
     return true;
   };
 
+  _R['ascii'] = (bytes, { offset=0, length=1 }) => {
+    if (offset + length > bytes.length) return false;
+    for (let i = offset; i < offset+length; i++) {
+      if (bytes[i] < 0x20 || bytes[i] >= 0x7F) return false;
+    }
+    return true;
+  };
+
   _R['uint8'] = _R['byte'] = (bytes, { offset=0, eq, min, max, mask }) => {
     if (offset >= bytes.length) return false;
     let v = bytes[offset];
@@ -11999,7 +12007,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.56';
+const APP_VERSION  = '1.1.1.57';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13788,6 +13796,7 @@ function _meRecSum(r) {
       return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${fmtLit(r.value)}`);
     }
     case 'binary':      return wrap(`@${r.offset} len:${r.length ?? 1}`);
+    case 'ascii':       return wrap(`@${r.offset} len:${r.length ?? 1}`);
     case 'uint8':  case 'byte': {
       const p = []; if(r.mask!==undefined)p.push(`mask:${r.mask}`);
       if(r.eq!==undefined)p.push(`= ${r.eq}`); if(r.min!==undefined)p.push(`>= ${r.min}`); if(r.max!==undefined)p.push(`<= ${r.max}`);
@@ -13826,6 +13835,10 @@ Value forms:<br>
   'binary': `<b>Non-ASCII presence check over a byte range.</b> Returns true if at least one byte in the scanned region is outside printable ASCII (i.e. &lt; 0x20 or ≥ 0x7F). Use this to confirm a field contains raw binary data rather than text.
 <div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
 <div class="me-rh-exs"><b>Examples:</b> bitmap at offset 2 is 8 bytes → offset=2 length=8 &nbsp;|&nbsp; single binary header byte → offset=0 length=1</div>`,
+
+  'ascii': `<b>Printable ASCII check over a byte range.</b> Returns true if <b>every</b> byte in the scanned region is within the printable ASCII range (0x20–0x7E). Use this to confirm a field contains plain text with no binary bytes.
+<div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
+<div class="me-rh-exs"><b>Examples:</b> 4-byte ASCII message type → offset=0 length=4 &nbsp;|&nbsp; confirm 16-byte text field is clean ASCII → offset=4 length=16</div>`,
 
   'uint8': `<b>Single byte check at offset.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound. All set conditions must pass.
 <div class="me-rh-flds">offset — byte position from message start<br>mask &nbsp;&nbsp;— optional hex bitmask (0–FF). The engine does <b>byte AND mask</b> before comparing. Use this to isolate specific bits:<br>
@@ -13905,7 +13918,7 @@ function _meToggleRecHelp(idx) {
 function _meRecForm(r, idx) {
   const _ALIAS = { byte:'uint8', word:'uint16', dword:'uint32', 'length-prefix':'length-payload', 'flag-prefix':'flag-payload' };
   const types = [
-    ['literal','literal'], ['binary','binary'],
+    ['literal','literal'], ['binary','binary'], ['ascii','ascii'],
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
     ['min-length','min-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
     ['ebcdic-density','ebcdic-density'], ['hex-density','hex-density'], ['oct-density','oct-density'],
@@ -13976,6 +13989,7 @@ function _meRecFields(r, id) {
       return nf('offset','Offset',0) + encSel('encoding',['ascii','hex','ebcdic'],enc) + litField(id);
     }
     case 'binary':
+    case 'ascii':
       return nf('offset','Offset',0) + nf('length','Length',1);
     case 'uint8': case 'byte': {
       const onf = (k,lbl,mn,mx) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
@@ -14052,7 +14066,8 @@ function _meRecRead(idx) {
       let val; try { val = JSON.parse(raw); } catch(e) { val = raw; }
       return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: val, ...r_id };
     }
-    case 'binary':     return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
+    case 'binary':
+    case 'ascii':      return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
     case 'uint8': case 'byte': {
       const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
       const mk = gv('mask').trim()||undefined;

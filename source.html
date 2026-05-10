@@ -11997,7 +11997,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.44';
+const APP_VERSION  = '1.1.1.45';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13770,6 +13770,8 @@ function _meHtmlRecs(item) {
 
 function _meRecSum(r) {
   const esc = s => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const idPfx = r.id ? `<span style="color:var(--text-dim);margin-right:4px">[${esc(r.id)}]</span>` : '';
+  const wrap = s => idPfx + s;
   switch (r.type) {
     case 'literal': {
       const fmtLit = v => {
@@ -13778,19 +13780,19 @@ function _meRecSum(r) {
           ? `"${x.from}".."${x.to}"`
           : `"${x}"`).join(' | ');
       };
-      return `@${r.offset} = ${fmtLit(r.value)}`;
+      return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${fmtLit(r.value)}`);
     }
-    case 'binary':      return `@${r.offset} mask:${esc(r.mask)} = ${esc(r.value)}`;
-    case 'uint8':  case 'byte':   return `@${r.offset} ${r.op || '='}${r.value}`;
-    case 'uint16': case 'word':   return `@${r.offset} ${r.endian || 'be'} ${r.op || '='}${r.value}`;
-    case 'uint32': case 'dword':  return `@${r.offset} ${r.endian || 'be'} ${r.op || '='}${r.value}`;
-    case 'min-length':  return `≥ ${r.value} bytes`;
-    case 'mti':         return `@${r.offset} = ${esc(r.value)}`;
-    case 'bitmap':      return `@${r.offset} bit${r.bit}=${r.value}`;
-    case 'regex':       return esc(r.pattern);
-    case 'ebcdic-density': case 'hex-density': case 'oct-density': return `min ${r.min}`;
-    case 'length-prefix': return `@${r.offset} size:${r.size} ${r.endian || 'be'} ${r.op || ''}${r.value != null ? r.value : ''}`;
-    case 'flag-prefix': return `@${r.offset} = ${esc(r.value)}`;
+    case 'binary':      return wrap(`@${r.offset} mask:${esc(r.mask)} = ${esc(r.value)}`);
+    case 'uint8':  case 'byte':   return wrap(`@${r.offset} ${r.op || '='}${r.value}`);
+    case 'uint16': case 'word':   return wrap(`@${r.offset} ${r.endian || 'be'} ${r.op || '='}${r.value}`);
+    case 'uint32': case 'dword':  return wrap(`@${r.offset} ${r.endian || 'be'} ${r.op || '='}${r.value}`);
+    case 'min-length':  return wrap(`≥ ${r.value} bytes`);
+    case 'mti':         return wrap(`@${r.offset} = ${esc(r.value)}`);
+    case 'bitmap':      return wrap(`@${r.offset} bit${r.bit}=${r.value}`);
+    case 'regex':       return wrap(esc(r.pattern));
+    case 'ebcdic-density': case 'hex-density': case 'oct-density': return wrap(`min ${r.min}`);
+    case 'length-prefix': return wrap(`@${r.offset} ${r.encoding||'uint16-be'} body@${r.body_offset||0}${r.includes_self?' incl.self':''}`);
+    case 'flag-prefix':   return wrap(`@${r.offset} ${r.encoding||'uint8'} body@${r.body_offset||0} len:${r.body_length||0}`);
     default: return '';
   }
 }
@@ -13893,9 +13895,13 @@ function _meRecForm(r, idx) {
     <button class="btn btn-sm" onclick="_meRecCancel(${idx})">Cancel</button>
     <button class="btn btn-sm btn-primary" onclick="_meRecSave(${idx})">&#x2713; Apply</button>
   </div>`;
+  const ea = v => (v == null ? '' : String(v)).replace(/"/g, '&quot;');
+  const idFld = `<div class="me-rf-fld"><div class="me-lbl">ID</div>
+    <input class="me-inp" style="width:72px" id="me-rv-id-${idx}" type="text"
+      value="${ea(r?.id || '')}" placeholder="label"></div>`;
   const helpText = _REC_HELP[cur] || '';
   return `<div class="me-rec-form open" id="me-rf-${idx}">
-  <div class="me-rf-row">${typeSel}${_meRecFields(r || { type: 'literal' }, idx)}${btns}</div>
+  <div class="me-rf-row">${typeSel}${_meRecFields(r || { type: 'literal' }, idx)}${idFld}${btns}</div>
   ${helpText ? `<div class="me-rec-help" id="me-rh-${idx}" style="display:none">${helpText}</div>` : ''}
 </div>`;
 }
@@ -13935,9 +13941,16 @@ function _meRecFields(r, id) {
     `<div style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px"><div class="me-lbl">Value</div>
      <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-value-${id}" type="text" value="${litVal(r.value)}"
        placeholder='e.g. F0F1 or ["0","1"] or [{"from":"0","to":"9"}]'></div>`;
+  const encSel = (k, opts, cur) =>
+    `<div class="me-rf-fld"><div class="me-lbl">Encoding</div>
+     <select class="me-sel" id="me-rv-${k}-${id}">
+       ${opts.map(e => `<option${cur===e?' selected':''}>${e}</option>`).join('')}
+     </select></div>`;
   switch (r.type) {
-    case 'literal':
-      return nf('offset','Offset',0) + litField(id);
+    case 'literal': {
+      const enc = r.encoding || 'ascii';
+      return nf('offset','Offset',0) + encSel('encoding',['ascii','hex','ebcdic'],enc) + litField(id);
+    }
     case 'binary':
       return nf('offset','Offset',0) + tf('mask','Mask','hex e.g. FF80','80px') + tf('value','Value','hex e.g. 8000');
     case 'uint8': case 'byte':
@@ -13966,16 +13979,23 @@ function _meRecFields(r, id) {
        <input class="me-inp" style="width:72px" type="number" step="0.01" min="0" max="1"
          id="me-rv-min-${id}" value="${ea(r.min != null ? r.min : 0.9)}"></div>`;
     case 'length-prefix': {
-      const sz = r.size || 2;
-      return nf('offset','Offset',0) +
-        `<div class="me-rf-fld"><div class="me-lbl">Size</div>
-         <select class="me-sel" id="me-rv-size-${id}">
-           ${[1,2,4].map(n => `<option${sz == n ? ' selected' : ''}>${n}</option>`).join('')}
-         </select></div>` +
-        endf('endian') + opf('op') + nf('value','Value',0);
+      const enc = r.encoding || 'uint16-be';
+      const incSelf = String(r.includes_self) === 'true' ? 'true' : 'false';
+      const pfxEncs = ['uint8','uint16-be','uint16-le','bcd2'];
+      return nf('offset','Offset',0) + encSel('encoding',pfxEncs,enc) +
+        nf('body_offset','Body @',0) +
+        `<div class="me-rf-fld"><div class="me-lbl">Incl. self</div>
+         <select class="me-sel" style="width:55px" id="me-rv-includes_self-${id}">
+           <option${incSelf==='false'?' selected':''} value="false">No</option>
+           <option${incSelf==='true'?' selected':''} value="true">Yes</option>
+         </select></div>`;
     }
-    case 'flag-prefix':
-      return nf('offset','Offset',0) + tf('value','Value (hex byte)','e.g. FF');
+    case 'flag-prefix': {
+      const enc = r.encoding || 'uint8';
+      const pfxEncs = ['uint8','uint16-be','uint16-le','bcd2'];
+      return nf('offset','Offset',0) + encSel('encoding',pfxEncs,enc) +
+        nf('body_offset','Body @',0) + nf('body_length','Body Len',0);
+    }
     default: return '';
   }
 }
@@ -13987,31 +14007,36 @@ function _meRecRead(idx) {
   const gv = k => { const el = document.getElementById(`me-rv-${k}-${idx}`); return el ? el.value : ''; };
   const ni = (k, def) => { const v = parseInt(gv(k)); return isNaN(v) ? (def || 0) : v; };
   const nf = (k, def) => { const v = parseFloat(gv(k)); return isNaN(v) ? (def != null ? def : 0) : v; };
+  const idv = gv('id').trim() || undefined;
+  const r_id = idv ? { id: idv } : {};
   switch (type) {
     case 'literal': {
       const raw = gv('value');
       let val; try { val = JSON.parse(raw); } catch(e) { val = raw; }
-      return { type, offset: ni('offset'), value: val };
+      return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: val, ...r_id };
     }
-    case 'binary':     return { type, offset: ni('offset'), mask: gv('mask'), value: gv('value') };
-    case 'uint8': case 'byte':   return { type, offset: ni('offset'), op: gv('op'), value: ni('value') };
-    case 'uint16': case 'word':  return { type, offset: ni('offset'), endian: gv('endian'), op: gv('op'), value: ni('value') };
-    case 'uint32': case 'dword': return { type, offset: ni('offset'), endian: gv('endian'), op: gv('op'), value: ni('value') };
-    case 'min-length': return { type, value: ni('value', 1) };
-    case 'mti':        return { type, offset: ni('offset'), value: gv('value') };
+    case 'binary':     return { type, offset: ni('offset'), mask: gv('mask'), value: gv('value'), ...r_id };
+    case 'uint8': case 'byte':   return { type, offset: ni('offset'), op: gv('op'), value: ni('value'), ...r_id };
+    case 'uint16': case 'word':  return { type, offset: ni('offset'), endian: gv('endian'), op: gv('op'), value: ni('value'), ...r_id };
+    case 'uint32': case 'dword': return { type, offset: ni('offset'), endian: gv('endian'), op: gv('op'), value: ni('value'), ...r_id };
+    case 'min-length': return { type, value: ni('value', 1), ...r_id };
+    case 'mti':        return { type, offset: ni('offset'), value: gv('value'), ...r_id };
     case 'bitmap': {
       const bvEl = document.getElementById(`me-rv-bv-${idx}`);
-      return { type, offset: ni('offset'), bit: ni('bit', 1), value: bvEl ? parseInt(bvEl.value) : 1 };
+      return { type, offset: ni('offset'), bit: ni('bit', 1), value: bvEl ? parseInt(bvEl.value) : 1, ...r_id };
     }
-    case 'regex': return { type, pattern: gv('pattern') };
+    case 'regex': return { type, pattern: gv('pattern'), ...r_id };
     case 'ebcdic-density': case 'hex-density': case 'oct-density':
-      return { type, min: nf('min', 0.9) };
+      return { type, min: nf('min', 0.9), ...r_id };
     case 'length-prefix': {
-      const szEl = document.getElementById(`me-rv-size-${idx}`);
-      return { type, offset: ni('offset'), size: szEl ? parseInt(szEl.value) : 2, endian: gv('endian'), op: gv('op'), value: ni('value') };
+      const isEl = document.getElementById(`me-rv-includes_self-${idx}`);
+      return { type, offset: ni('offset'), encoding: gv('encoding') || 'uint16-be',
+        body_offset: ni('body_offset'), includes_self: isEl ? isEl.value === 'true' : false, ...r_id };
     }
-    case 'flag-prefix': return { type, offset: ni('offset'), value: gv('value') };
-    default: return { type };
+    case 'flag-prefix':
+      return { type, offset: ni('offset'), encoding: gv('encoding') || 'uint8',
+        body_offset: ni('body_offset'), body_length: ni('body_length'), ...r_id };
+    default: return { type, ...r_id };
   }
 }
 

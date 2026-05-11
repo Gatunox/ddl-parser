@@ -12008,7 +12008,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.58';
+const APP_VERSION  = '1.1.1.59';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13796,7 +13796,7 @@ function _meRecSum(r) {
       };
       return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${fmtLit(r.value)}`);
     }
-    case 'binary':      return wrap(`@${r.offset} len:${r.length ?? 1}`);
+    case 'binary':      return wrap(`@${r.offset} len:${r.length ?? 1}${r.validator ? ' → '+r.validator : ''}`);
     case 'ascii':       return wrap(`@${r.offset} len:${r.length ?? 1}`);
     case 'uint8':  case 'byte': {
       const p = []; if(r.mask!==undefined)p.push(`mask:${r.mask}`);
@@ -13835,8 +13835,8 @@ Value forms:<br>
 <div class="me-rh-exs"><b>Examples:</b> ISO text prefix (ascii) → offset=0 encoding=ascii value="ISO" &nbsp;|&nbsp; EBCDIC header → offset=0 encoding=ebcdic value="ISO" &nbsp;|&nbsp; raw binary marker → offset=0 encoding=hex value="F0F8" &nbsp;|&nbsp; POS product code → offset=4 value="02"</div>`,
 
   'binary': `<b>Non-ASCII presence check over a byte range.</b> Returns true if at least one byte in the scanned region is outside printable ASCII (i.e. &lt; 0x20 or ≥ 0x7F). Use this to confirm a field contains raw binary data rather than text.
-<div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
-<div class="me-rh-exs"><b>Examples:</b> bitmap at offset 2 is 8 bytes → offset=2 length=8 &nbsp;|&nbsp; single binary header byte → offset=0 length=1</div>`,
+<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position where the scan starts<br>length &nbsp;&nbsp;&nbsp;— number of bytes to scan (default 1)<br>validator — optional: name of a Validator whose recognizers are applied to the matched byte slice; all must pass</div>
+<div class="me-rh-exs"><b>Examples:</b> bitmap at offset 2 is 8 bytes → offset=2 length=8 &nbsp;|&nbsp; bitmap with extra checks → offset=2 length=8 validator=my_bitmap_check</div>`,
 
   'ascii': `<b>Printable ASCII check over a byte range.</b> Returns true if <b>every</b> byte in the scanned region is within the printable ASCII range (0x20–0x7E). Use this to confirm a field contains plain text with no binary bytes.
 <div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
@@ -13994,7 +13994,17 @@ function _meRecFields(r, id) {
       const enc = r.encoding || 'ascii';
       return nf('offset','Offset',0) + encSel('encoding',['ascii','hex','ebcdic'],enc) + litField(id);
     }
-    case 'binary':
+    case 'binary': {
+      const ea2 = v => String(v||'').replace(/"/g,'&quot;');
+      const vOpts = (_meState.validators||[]).map(v =>
+        `<option value="${ea2(v.name)}"${r.validator===v.name?' selected':''}>${ea2(v.name)}</option>`
+      ).join('');
+      const vSel = `<div class="me-rf-fld"><div class="me-lbl">Validator</div>
+        <select class="me-inp" id="me-rv-validator-${id}" style="width:130px">
+          <option value="">— none —</option>${vOpts}
+        </select></div>`;
+      return nf('offset','Offset',0) + nf('length','Length',1) + vSel;
+    }
     case 'ascii':
       return nf('offset','Offset',0) + nf('length','Length',1);
     case 'uint8': case 'byte': {
@@ -14074,7 +14084,10 @@ function _meRecRead(idx) {
       let val; try { val = JSON.parse(raw); } catch(e) { val = raw; }
       return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: val, ...r_id };
     }
-    case 'binary':
+    case 'binary': {
+      const val = gv('validator') || undefined;
+      return { type, offset: ni('offset'), length: ni('length') ?? 1, ...(val ? {validator: val} : {}), ...r_id };
+    }
     case 'ascii':      return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
     case 'uint8': case 'byte': {
       const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };

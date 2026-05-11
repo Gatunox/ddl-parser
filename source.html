@@ -5349,18 +5349,12 @@ function parseMessage(bytes, defs, rawBytes) {
     return false;
   };
 
-  _R['binary'] = (bytes, { offset=0, length=1, _validatorFns }) => {
+  _R['binary'] = (bytes, { offset=0, length=1 }) => {
     if (offset + length > bytes.length) return false;
-    let hasBin = false;
     for (let i = offset; i < offset+length; i++) {
-      if (bytes[i] < 0x20 || bytes[i] >= 0x7F) { hasBin = true; break; }
+      if (bytes[i] < 0x20 || bytes[i] >= 0x7F) return true;
     }
-    if (!hasBin) return false;
-    if (_validatorFns && _validatorFns.length) {
-      const slice = bytes.slice(offset, offset+length);
-      return _validatorFns.every(fn => fn(slice));
-    }
-    return true;
+    return false;
   };
 
   _R['ascii'] = (bytes, { offset=0, length=1 }) => {
@@ -5510,32 +5504,20 @@ function parseMessage(bytes, defs, rawBytes) {
 
   // ── Compiler ───────────────────────────────────────────────────────────────
 
-  function _compileRecognizer(r, validatorMap) {
+  function _compileRecognizer(r) {
     const c = { ...r };
     if (r.type === 'literal') c._patterns = _expandLiteral(r.value ?? []);
     if (r.type === 'regex' && r.pattern) {
       try { c._re = new RegExp(r.pattern); } catch(e) { c._re = null; }
     }
-    if (r.type === 'binary' && r.validator) {
-      const vrList = typeof r.validator === 'string'
-        ? (validatorMap[r.validator]?.recognizers ?? null)
-        : Array.isArray(r.validator) ? r.validator : null;
-      if (vrList) {
-        c._validatorFns = vrList.map(vr => {
-          const fn = _R[vr.type];
-          const cv = _compileRecognizer(vr, validatorMap);
-          return fn ? (slice => fn(slice, cv)) : (() => true);
-        });
-      }
-    }
     return c;
   }
 
-  function _compileSpec(spec, validatorMap) {
+  function _compileSpec(spec) {
     const fns = (spec.recognizers || []).map(r => {
       const fn = _R[r.type];
       if (!fn) return () => false;
-      const c = _compileRecognizer(r, validatorMap);
+      const c = _compileRecognizer(r);
       return bytes => fn(bytes, c);
     });
     return { ...spec, _fns: fns };
@@ -5544,26 +5526,23 @@ function parseMessage(bytes, defs, rawBytes) {
   // ── State & storage ────────────────────────────────────────────────────────
 
   let _fmtSpecs = [];   // compiled, sorted by priority desc
-  let _fmtValMap = {};  // name → validator spec
 
   function _fmtLoad() {
-    let raw = { specs: [], validators: [] };
+    let raw = { specs: [] };
     try { const s = localStorage.getItem('up_format_specs'); if (s) raw = JSON.parse(s); } catch(e) {}
-    _fmtValMap = {};
-    (raw.validators || []).forEach(v => { _fmtValMap[v.name] = v; });
     _fmtSpecs = (raw.specs || [])
-      .map(s => _compileSpec(s, _fmtValMap))
+      .map(s => _compileSpec(s))
       .sort((a, b) => (b.priority || 0) - (a.priority || 0));
   }
 
-  function _fmtSave(specs, validators) {
-    try { localStorage.setItem('up_format_specs', JSON.stringify({ specs, validators })); } catch(e) {}
+  function _fmtSave(specs) {
+    try { localStorage.setItem('up_format_specs', JSON.stringify({ specs })); } catch(e) {}
     _fmtLoad();
   }
 
   function _fmtGetData() {
-    try { const s = localStorage.getItem('up_format_specs'); return s ? JSON.parse(s) : { specs:[], validators:[] }; }
-    catch(e) { return { specs:[], validators:[] }; }
+    try { const s = localStorage.getItem('up_format_specs'); return s ? JSON.parse(s) : { specs:[] }; }
+    catch(e) { return { specs:[] }; }
   }
 
   // ── Detection ──────────────────────────────────────────────────────────────
@@ -12008,7 +11987,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.59';
+const APP_VERSION  = '1.1.1.60';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13550,7 +13529,6 @@ function openMsgEditor() {
   const data = _fmtGetData();
   _meState = {
     specs:      JSON.parse(JSON.stringify(data.specs      || [])),
-    validators: JSON.parse(JSON.stringify(data.validators || [])),
     section:  'msg',
     selIdx:   -1,
     sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false },
@@ -13592,7 +13570,6 @@ function _meSelectItem(section, idx) {
 
 function _meRenderSidebar() {
   const msgs = document.getElementById('me-msg-list');
-  const vals = document.getElementById('me-val-list');
 
   msgs.innerHTML = '';
   if (!_meState.specs.length) {
@@ -13625,41 +13602,18 @@ function _meRenderSidebar() {
     });
   }
 
-  vals.innerHTML = '';
-  if (!_meState.validators.length) {
-    vals.innerHTML = '<div class="me-empty">No validators defined</div>';
-  } else {
-    _meState.validators.forEach((v, i) => {
-      const active = _meState.section === 'validator' && _meState.selIdx === i;
-      const d = document.createElement('div');
-      d.className = 'me-item' + (active ? ' active' : '');
-      const nm = document.createElement('span');
-      nm.className = 'me-item-name';
-      nm.textContent = v.name || '(unnamed)';
-      const del = document.createElement('button');
-      del.className = 'me-item-del';
-      del.textContent = '×';
-      del.title = 'Delete';
-      del.onclick = e => { e.stopPropagation(); _meDeleteItem('validator', i); };
-      d.append(nm, del);
-      d.onclick = () => _meSelectItem('validator', i);
-      vals.appendChild(d);
-    });
-  }
 }
 
 function _meCurItem() {
   if (_meState.selIdx < 0) return null;
-  return _meState.section === 'msg'
-    ? (_meState.specs[_meState.selIdx]      || null)
-    : (_meState.validators[_meState.selIdx] || null);
+  return _meState.specs[_meState.selIdx] || null;
 }
 
 function _meRenderRight() {
   const body = document.getElementById('me-tab-body');
   const item = _meCurItem();
   if (!item) {
-    body.innerHTML = '<div class="me-no-sel">Select a message or validator from the sidebar.</div>';
+    body.innerHTML = '<div class="me-no-sel">Select a message from the sidebar.</div>';
     return;
   }
   const isMsg = _meState.section === 'msg';
@@ -13728,16 +13682,6 @@ function _meHtmlId(item) {
     </div>
   </div>
 </div>`;
-  } else {
-    return `<div class="me-form">
-  <div class="me-row">
-    <div class="me-fld grow">
-      <div class="me-lbl">Name</div>
-      <input class="me-inp" type="text" value="${ea(item.name)}"
-        oninput="_meField('name',this.value)" placeholder="validator_name">
-    </div>
-  </div>
-</div>`;
   }
 }
 
@@ -13796,7 +13740,7 @@ function _meRecSum(r) {
       };
       return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${fmtLit(r.value)}`);
     }
-    case 'binary':      return wrap(`@${r.offset} len:${r.length ?? 1}${r.validator ? ' → '+r.validator : ''}`);
+    case 'binary':      return wrap(`@${r.offset} len:${r.length ?? 1}`);
     case 'ascii':       return wrap(`@${r.offset} len:${r.length ?? 1}`);
     case 'uint8':  case 'byte': {
       const p = []; if(r.mask!==undefined)p.push(`mask:${r.mask}`);
@@ -13835,8 +13779,8 @@ Value forms:<br>
 <div class="me-rh-exs"><b>Examples:</b> ISO text prefix (ascii) → offset=0 encoding=ascii value="ISO" &nbsp;|&nbsp; EBCDIC header → offset=0 encoding=ebcdic value="ISO" &nbsp;|&nbsp; raw binary marker → offset=0 encoding=hex value="F0F8" &nbsp;|&nbsp; POS product code → offset=4 value="02"</div>`,
 
   'binary': `<b>Non-ASCII presence check over a byte range.</b> Returns true if at least one byte in the scanned region is outside printable ASCII (i.e. &lt; 0x20 or ≥ 0x7F). Use this to confirm a field contains raw binary data rather than text.
-<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position where the scan starts<br>length &nbsp;&nbsp;&nbsp;— number of bytes to scan (default 1)<br>validator — optional: name of a Validator whose recognizers are applied to the matched byte slice; all must pass</div>
-<div class="me-rh-exs"><b>Examples:</b> bitmap at offset 2 is 8 bytes → offset=2 length=8 &nbsp;|&nbsp; bitmap with extra checks → offset=2 length=8 validator=my_bitmap_check</div>`,
+<div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
+<div class="me-rh-exs"><b>Examples:</b> bitmap at offset 2 is 8 bytes → offset=2 length=8 &nbsp;|&nbsp; single binary header byte → offset=0 length=1</div>`,
 
   'ascii': `<b>Printable ASCII check over a byte range.</b> Returns true if <b>every</b> byte in the scanned region is within the printable ASCII range (0x20–0x7E). Use this to confirm a field contains plain text with no binary bytes.
 <div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
@@ -13994,17 +13938,7 @@ function _meRecFields(r, id) {
       const enc = r.encoding || 'ascii';
       return nf('offset','Offset',0) + encSel('encoding',['ascii','hex','ebcdic'],enc) + litField(id);
     }
-    case 'binary': {
-      const ea2 = v => String(v||'').replace(/"/g,'&quot;');
-      const vOpts = (_meState.validators||[]).map(v =>
-        `<option value="${ea2(v.name)}"${r.validator===v.name?' selected':''}>${ea2(v.name)}</option>`
-      ).join('');
-      const vSel = `<div class="me-rf-fld"><div class="me-lbl">Validator</div>
-        <select class="me-inp" id="me-rv-validator-${id}" style="width:130px">
-          <option value="">— none —</option>${vOpts}
-        </select></div>`;
-      return nf('offset','Offset',0) + nf('length','Length',1) + vSel;
-    }
+    case 'binary':
     case 'ascii':
       return nf('offset','Offset',0) + nf('length','Length',1);
     case 'uint8': case 'byte': {
@@ -14084,10 +14018,7 @@ function _meRecRead(idx) {
       let val; try { val = JSON.parse(raw); } catch(e) { val = raw; }
       return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: val, ...r_id };
     }
-    case 'binary': {
-      const val = gv('validator') || undefined;
-      return { type, offset: ni('offset'), length: ni('length') ?? 1, ...(val ? {validator: val} : {}), ...r_id };
-    }
+    case 'binary':
     case 'ascii':      return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
     case 'uint8': case 'byte': {
       const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
@@ -14196,27 +14127,13 @@ function _meAddMsg() {
   _meSelectItem('msg', _meState.specs.length - 1);
 }
 
-function _meAddValidator() {
-  _meState.validators.push({ name: 'new_validator', recognizers: [] });
-  _meSetDirty();
-  _meSelectItem('validator', _meState.validators.length - 1);
-}
-
 function _meDeleteItem(section, idx) {
-  const itemName = section === 'msg'
-    ? (_meState.specs[idx]?.name || 'message')
-    : (_meState.validators[idx]?.name || 'validator');
+  const itemName = _meState.specs[idx]?.name || 'message';
   showPrompt(`Type DELETE to remove "${itemName}" and all its contents:`, '', val => {
     if (val !== 'DELETE') return;
-    if (section === 'msg') {
-      _meState.specs.splice(idx, 1);
-      if (_meState.section === 'msg')
-        _meState.selIdx = Math.min(_meState.selIdx, _meState.specs.length - 1);
-    } else {
-      _meState.validators.splice(idx, 1);
-      if (_meState.section === 'validator')
-        _meState.selIdx = Math.min(_meState.selIdx, _meState.validators.length - 1);
-    }
+    _meState.specs.splice(idx, 1);
+    if (_meState.section === 'msg')
+      _meState.selIdx = Math.min(_meState.selIdx, _meState.specs.length - 1);
     _meState.editRec = -1;
     _meState.pend    = {};
     _meSetDirty();
@@ -14244,7 +14161,7 @@ function _meDupItem(idx) {
 
 
 function _meSave() {
-  _fmtSave(_meState.specs, _meState.validators);
+  _fmtSave(_meState.specs);
   _meState.dirty = false;
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;
@@ -14769,13 +14686,6 @@ function _meSave() {
           <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
         </div>
         <div class="me-item-list" id="me-msg-list"></div>
-      </div>
-      <div class="me-sidebar-sect" id="me-sect-vals">
-        <div class="me-sidebar-hdr">
-          <span class="me-sidebar-title">Validators</span>
-          <button class="me-sidebar-add" onclick="_meAddValidator()">+ New</button>
-        </div>
-        <div class="me-item-list" id="me-val-list"></div>
       </div>
       <div class="me-sidebar-sect me-sect-rules">
         <div class="me-sidebar-hdr"><span class="me-sidebar-title">Rules</span></div>

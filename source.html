@@ -1444,6 +1444,19 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-rf-btns{display:flex;gap:4px;margin-top:2px;}
 .me-footer{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:8px 14px;border-top:2px solid var(--border);background:var(--bg-deep);flex-shrink:0;}
 .me-status{flex:1;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
+.me-test-bar{border-top:2px solid var(--border);flex-shrink:0;background:var(--bg-panel);}
+.me-test-hdr{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;background:var(--bg-deep);font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);user-select:none;}
+.me-test-hdr:hover{color:var(--text);}
+.me-test-title{font-weight:bold;color:var(--text);}
+.me-test-summary{flex:1;font-size:var(--sz-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.me-test-body{padding:8px 12px;display:flex;flex-direction:column;gap:6px;}
+.me-test-row{display:flex;align-items:center;gap:8px;}
+.me-test-ta{width:100%;min-height:56px;max-height:110px;resize:vertical;font-family:var(--mono);font-size:var(--sz-mono);background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text);padding:4px 6px;box-sizing:border-box;outline:none;}
+.me-test-ta:focus{border-color:var(--accent);}
+.me-test-out{font-family:var(--mono);font-size:var(--sz-mono);max-height:90px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
+.me-test-pass{color:#3fb950;}
+.me-test-fail{color:var(--text-dim);}
+.me-test-err{color:#f85149;}
 </style>
 </head>
 <body>
@@ -5555,6 +5568,19 @@ function parseMessage(bytes, defs, rawBytes) {
     }
     return null;
   }
+
+  window._fmtTestSpecs = function(rawSpecs, bytes) {
+    const results = [];
+    for (const spec of rawSpecs) {
+      const compiled = _compileSpec(spec);
+      let failAt = null, passed = true;
+      for (let i = 0; i < compiled._fns.length; i++) {
+        if (!compiled._fns[i](bytes)) { failAt = i; passed = false; break; }
+      }
+      results.push({ spec, passed, failAt });
+    }
+    return results;
+  };
 
   // Expose
   window._fmtLoad    = _fmtLoad;
@@ -11987,7 +12013,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.60';
+const APP_VERSION  = '1.1.1.61';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14160,6 +14186,65 @@ function _meDupItem(idx) {
 }
 
 
+function _meToggleTest() {
+  const body = document.getElementById('me-test-body');
+  const arr  = document.getElementById('me-test-arr');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (arr) arr.innerHTML = open ? '&#9660;' : '&#9650;';
+}
+
+function _meParseBytes(text, fmt) {
+  const looksHex = /^[\s0-9a-fA-F:]+$/.test(text) && text.replace(/[\s:]/g,'').length % 2 === 0;
+  const useHex = fmt === 'hex' || (fmt === 'auto' && looksHex && text.length > 1);
+  if (useHex) {
+    const clean = text.replace(/[\s:]/g, '');
+    if (clean.length % 2 !== 0) throw new Error('odd hex digit count');
+    const arr = new Uint8Array(clean.length / 2);
+    for (let i = 0; i < arr.length; i++) arr[i] = parseInt(clean.slice(i*2, i*2+2), 16);
+    return arr;
+  }
+  const arr = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) arr[i] = text.charCodeAt(i) & 0xFF;
+  return arr;
+}
+
+function _meRunTest() {
+  const inp  = document.getElementById('me-test-input');
+  const fmt  = document.getElementById('me-test-fmt')?.value || 'auto';
+  const out  = document.getElementById('me-test-out');
+  const summ = document.getElementById('me-test-summary');
+  if (!inp || !out) return;
+  const text = inp.value.trim();
+  if (!text) { out.innerHTML = ''; if (summ) summ.textContent = ''; return; }
+  let bytes;
+  try { bytes = _meParseBytes(text, fmt); }
+  catch(e) {
+    out.innerHTML = `<div class="me-test-err">Parse error: ${e.message}</div>`;
+    if (summ) { summ.textContent = '⚠ parse error'; summ.style.color = '#f85149'; }
+    return;
+  }
+  const results = _fmtTestSpecs(_meState.specs, bytes);
+  const match = results.find(r => r.passed);
+  if (summ) {
+    summ.textContent = match ? `✓ ${match.spec.label || match.spec.name}` : results.length ? '✗ no match' : '— no specs';
+    summ.style.color = match ? '#3fb950' : '#f85149';
+  }
+  let html = '';
+  for (const r of results) {
+    if (r.passed) {
+      html += `<div class="me-test-pass">✓ ${r.spec.label || r.spec.name}</div>`;
+    } else {
+      const rec = r.failAt !== null ? r.spec.recognizers?.[r.failAt] : null;
+      const detail = rec ? ` — rec ${r.failAt + 1} (${rec.type}${rec.id ? ' #'+rec.id : ''})` : '';
+      html += `<div class="me-test-fail">✗ ${r.spec.label || r.spec.name}${detail}</div>`;
+    }
+  }
+  if (!results.length) html = `<div class="me-test-err">No message specs defined.</div>`;
+  out.innerHTML = html;
+}
+
 function _meSave() {
   _fmtSave(_meState.specs);
   _meState.dirty = false;
@@ -14700,6 +14785,25 @@ function _meSave() {
         <button class="btn btn-sm" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
       </div>
       <div class="me-tab-body" id="me-tab-body"></div>
+      <div class="me-test-bar">
+        <div class="me-test-hdr" onclick="_meToggleTest()">
+          <span class="me-test-title">Test</span>
+          <span class="me-test-summary" id="me-test-summary"></span>
+          <span class="me-section-arr" id="me-test-arr">&#9660;</span>
+        </div>
+        <div class="me-test-body" id="me-test-body" style="display:none">
+          <div class="me-test-row">
+            <select id="me-test-fmt" class="me-inp" style="width:70px">
+              <option value="auto">auto</option>
+              <option value="hex">hex</option>
+              <option value="ascii">ascii</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="_meRunTest()">&#x25B6; Run</button>
+          </div>
+          <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…"></textarea>
+          <div id="me-test-out" class="me-test-out"></div>
+        </div>
+      </div>
       <div class="me-footer">
         <span class="me-status" id="me-status"></span>
         <button class="btn" onclick="closeMsgEditor()">Cancel</button>

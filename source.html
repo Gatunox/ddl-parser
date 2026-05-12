@@ -1125,7 +1125,7 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .dr-spec-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; border:1px solid rgba(255,255,255,.2); }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-spec-pri { font-size:9px; color:var(--accent); flex-shrink:0; width:24px; text-align:right; }
-.dr-spec-type { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; }
+.dr-spec-type { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; width:36px; text-align:right; }
 .dr-spec-vol { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; }
 .dr-color { width:22px; height:22px; padding:0; border:2px solid var(--border); border-radius:2px; cursor:pointer; flex-shrink:0; }
 .dr-color::-webkit-color-swatch-wrapper { padding:0; }
@@ -12093,7 +12093,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.86';
+const APP_VERSION  = '1.1.1.87';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12682,7 +12682,7 @@ function renderDetectSpecsList() {
     return;
   }
   const sorted = specs.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
-  const head = `<div class="dr-spec-head"><span style="width:10px;flex-shrink:0"></span><span class="dr-lbl" style="flex:1">Label</span><span class="dr-lbl" style="width:24px;text-align:right">Pri</span><span class="dr-lbl">Type</span></div>`;
+  const head = `<div class="dr-spec-head"><span style="width:10px;flex-shrink:0"></span><span class="dr-lbl" style="flex:1">Label</span><span class="dr-lbl" style="width:24px;text-align:right">Pri</span><span class="dr-lbl" style="width:36px;text-align:right">Type</span></div>`;
   el.innerHTML = head + sorted.map(s => {
     const color = _escHtml(s.color || '#888');
     const label = _escHtml(s.label || s.name || '—');

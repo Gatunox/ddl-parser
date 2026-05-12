@@ -5525,14 +5525,6 @@ function parseMessage(bytes, defs, rawBytes) {
     return _re.test(s);
   };
 
-  _R['ebcdic-density'] = (bytes, { offset=0, length, min=0.3 }) => {
-    const end = length !== undefined ? Math.min(offset+length, bytes.length) : bytes.length;
-    const total = end - offset; if (!total) return false;
-    let n = 0;
-    for (let i = offset; i < end; i++) if (bytes[i] >= 0xF0 && bytes[i] <= 0xF9) n++;
-    return n / total >= min;
-  };
-
   _R['hex-density'] = (bytes, { offset=0, length, min=0.8, encoding='ascii' }) => {
     const end = length !== undefined ? Math.min(offset+length, bytes.length) : bytes.length;
     const total = end - offset; if (!total) return false;
@@ -12104,7 +12096,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.100';
+const APP_VERSION  = '1.1.1.101';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13906,7 +13898,7 @@ function _meRecSum(r) {
     case 'mti':         return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${esc(r.value)}`);
     case 'bitmap':      return wrap(`@${r.offset} bit${r.bit}=${r.value}`);
     case 'regex':       return wrap(esc(r.pattern));
-    case 'ebcdic-density': case 'hex-density': case 'oct-density': return wrap(`@${r.offset||0} len:${r.length??'all'} min:${r.min}${r.encoding&&r.encoding!=='ascii'?' '+r.encoding:''}`);
+    case 'hex-density': case 'oct-density': return wrap(`@${r.offset||0} len:${r.length??'all'} min:${r.min}${r.encoding&&r.encoding!=='ascii'?' '+r.encoding:''}`);
     case 'length-payload': case 'length-prefix': return wrap(`@${r.offset} ${r.encoding||'uint16-be'} payload@${r.body_offset||0}${r.includes_self?' incl.self':''}`);
     case 'flag-payload':   case 'flag-prefix':   return wrap(`@${r.offset} ${r.encoding||'uint8'} payload@${r.body_offset||0} len:${r.body_length||0}`);
     default: return '';
@@ -13985,10 +13977,6 @@ pos 4 (origin): &nbsp;0=Acquirer &nbsp;1=Acq Repeat &nbsp;2=Issuer &nbsp;3=Iss R
 <div class="me-rh-flds">pattern — any JavaScript regular expression (no surrounding /.../ needed)</div>
 <div class="me-rh-exs"><b>Examples:</b> Base24 POS → ^0[1-9][012489][012345]02 &nbsp;|&nbsp; ISO prefix → ^ISO &nbsp;|&nbsp; NDC class → ^[12][0-9A-Z]</div>`,
 
-  'ebcdic-density': `<b>Fraction of bytes that are EBCDIC digits (0–9 / 0xF0–0xF9) must meet the threshold.</b> Counts only digit bytes 0xF0–0xF9. EBCDIC A–F (0xC1–0xC6) are NOT counted.
-<div class="me-rh-flds">min — 0.0–1.0 (e.g. 0.4 = at least 40% of bytes are EBCDIC digits)</div>
-<div class="me-rh-exs"><b>Example:</b> typical EBCDIC ISO → min=0.35</div>`,
-
   'hex-density': `<b>Fraction of bytes that are hex chars must meet the threshold.</b>
 ASCII: 0–9, A–F, a–f (0x30–0x39, 0x41–0x46, 0x61–0x66).
 EBCDIC: 0–9, A–F, a–f (0xF0–0xF9, 0xC1–0xC6, 0x81–0x86).
@@ -14024,7 +14012,7 @@ function _meRecForm(r, idx) {
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
     ['numeric','numeric'], ['alphabetic','alphabetic'], ['alphanumeric','alphanumeric'],
     ['min-length','min-length'], ['max-length','max-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
-    ['ebcdic-density','ebcdic-density'], ['hex-density','hex-density'], ['oct-density','oct-density'],
+    ['hex-density','hex-density'], ['oct-density','oct-density'],
     ['length-payload','length-payload'], ['flag-payload','flag-payload'],
   ];
   const cur = r ? (_ALIAS[r.type] || r.type) : 'literal';
@@ -14068,7 +14056,7 @@ function _meRecByteLen(r) {
   if (t === 'mti')                     return 4;
   if (t === 'bitmap')                  return r.length || 8;
   if (['binary','ascii','numeric','alphabetic','alphanumeric','regex',
-       'ebcdic-density','hex-density','oct-density'].includes(t)) return r.length != null ? r.length : null;
+       'hex-density','oct-density'].includes(t)) return r.length != null ? r.length : null;
   return null;
 }
 
@@ -14184,11 +14172,6 @@ function _meRecFields(r, id) {
     }
     case 'regex':
       return tf('pattern','Pattern','JavaScript regex');
-    case 'ebcdic-density':
-      return offF() + nf('length','Length',1) +
-        `<div class="me-rf-fld"><div class="me-lbl">Min (0.0–1.0)</div>
-         <input class="me-inp" style="width:72px" type="number" step="0.01" min="0" max="1"
-           id="me-rv-min-${id}" value="${ea(r.min != null ? r.min : 0.3)}"></div>`;
     case 'hex-density': case 'oct-density': {
       const enc = r.encoding || 'ascii';
       return offF() + nf('length','Length',1) +
@@ -14264,8 +14247,6 @@ function _meRecRead(idx) {
       return { type, offset: ni('offset'), bit: ni('bit', 1), value: bvEl ? parseInt(bvEl.value) : 1, ...r_id };
     }
     case 'regex': return { type, pattern: gv('pattern'), ...r_id };
-    case 'ebcdic-density':
-      return { type, offset: ni('offset'), length: ni('length', 1), min: nf('min', 0.3), ...r_id };
     case 'hex-density': case 'oct-density':
       return { type, offset: ni('offset'), length: ni('length', 1), min: nf('min', 0.8), encoding: gv('encoding') || 'ascii', ...r_id };
     case 'length-payload': case 'length-prefix': {

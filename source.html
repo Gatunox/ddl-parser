@@ -5391,6 +5391,14 @@ function parseMessage(bytes, defs, rawBytes) {
     return true;
   };
 
+  _R['ebcdic'] = (bytes, { offset=0, length=1 }) => {
+    if (offset + length > bytes.length) return false;
+    for (let i = offset; i < offset+length; i++) {
+      if (bytes[i] < 0x40) return false;
+    }
+    return true;
+  };
+
   _R['uint8'] = _R['byte'] = (bytes, { offset=0, eq, min, max, mask }) => {
     if (offset >= bytes.length) return false;
     let v = bytes[offset];
@@ -12096,7 +12104,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.102';
+const APP_VERSION  = '1.1.1.103';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13889,6 +13897,7 @@ function _meRecSum(r) {
     }
     case 'binary':        return wrap(`@${r.offset} len:${r.length ?? 1}`);
     case 'ascii':         return wrap(`@${r.offset} len:${r.length ?? 1}`);
+    case 'ebcdic':        return wrap(`@${r.offset} len:${r.length ?? 1}`);
     case 'numeric':       return wrap(`@${r.offset} len:${r.length ?? 1}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''}`);
     case 'alphabetic':    return wrap(`@${r.offset} len:${r.length ?? 1}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''}`);
     case 'alphanumeric':  return wrap(`@${r.offset} len:${r.length ?? 1}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''}`);
@@ -13935,6 +13944,10 @@ Value forms:<br>
   'ascii': `<b>Printable ASCII check over a byte range.</b> Returns true if <b>every</b> byte in the scanned region is within the printable ASCII range (0x20–0x7E). Use this to confirm a field contains plain text with no binary bytes.
 <div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
 <div class="me-rh-exs"><b>Examples:</b> 4-byte ASCII message type → offset=0 length=4 &nbsp;|&nbsp; confirm 16-byte text field is clean ASCII → offset=4 length=16</div>`,
+
+  'ebcdic': `<b>Printable EBCDIC check over a byte range.</b> Returns true if <b>every</b> byte in the scanned region is ≥ 0x40. In EBCDIC, control characters occupy 0x00–0x3F and all printable characters (space, letters, digits, punctuation) are ≥ 0x40. Use this to confirm a field contains EBCDIC text with no control bytes.
+<div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
+<div class="me-rh-exs"><b>Examples:</b> 4-byte EBCDIC message type → offset=0 length=4 &nbsp;|&nbsp; confirm 16-byte EBCDIC text field → offset=4 length=16</div>`,
 
   'uint8': `<b>Single byte check at offset.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound. All set conditions must pass.
 <div class="me-rh-flds">offset — byte position from message start<br>mask &nbsp;&nbsp;— optional hex bitmask (0–FF). The engine does <b>byte AND mask</b> before comparing. Use this to isolate specific bits:<br>
@@ -14020,7 +14033,7 @@ function _meToggleRecHelp(idx) {
 function _meRecForm(r, idx) {
   const _ALIAS = { byte:'uint8', word:'uint16', dword:'uint32', 'length-prefix':'length-payload', 'flag-prefix':'flag-payload' };
   const types = [
-    ['literal','literal'], ['binary','binary'], ['ascii','ascii'],
+    ['literal','literal'], ['binary','binary'], ['ascii','ascii'], ['ebcdic','ebcdic'],
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
     ['numeric','numeric'], ['alphabetic','alphabetic'], ['alphanumeric','alphanumeric'],
     ['min-length','min-length'], ['max-length','max-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
@@ -14067,7 +14080,7 @@ function _meRecByteLen(r) {
   if (t === 'uint32' || t === 'dword') return 4;
   if (t === 'mti')                     return 4;
   if (t === 'bitmap')                  return r.length || 8;
-  if (['binary','ascii','numeric','alphabetic','alphanumeric','regex',
+  if (['binary','ascii','ebcdic','numeric','alphabetic','alphanumeric','regex',
        'hex-density','oct-density'].includes(t)) return r.length != null ? r.length : null;
   return null;
 }
@@ -14139,6 +14152,7 @@ function _meRecFields(r, id) {
     }
     case 'binary':
     case 'ascii':
+    case 'ebcdic':
       return offF() + nf('length','Length',1);
     case 'numeric':
     case 'alphabetic':
@@ -14234,7 +14248,8 @@ function _meRecRead(idx) {
       return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: val, ...r_id };
     }
     case 'binary':
-    case 'ascii':         return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
+    case 'ascii':
+    case 'ebcdic':        return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
     case 'numeric':
     case 'alphabetic':
     case 'alphanumeric':  return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', length: ni('length', 1), ...r_id };

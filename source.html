@@ -5588,13 +5588,35 @@ function parseMessage(bytes, defs, rawBytes) {
     return { ...spec, _fns: fns };
   }
 
+  // ── Default format specs ───────────────────────────────────────────────────
+
+  const _DEFAULT_FMT_SPECS = [
+    { name:'ISO', label:'ISO 5253 Standard', color:'#f5f910', vol:'', priority:0,
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'####'},{type:'min-length',value:23}] },
+    { name:'ISO', label:'ISO 8583 BIC', color:'#ffbb00', vol:'', priority:20,
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'min-length',value:23}] },
+    { name:'ISO', label:'ISO 8583 SWITCH', color:'#c59102', vol:'', priority:20,
+      recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'hex-density',offset:4,length:16,min:1},{type:'min-length',value:23}] },
+    { name:'STM', label:'STM', color:'#1eff00', vol:'ATM', priority:0,
+      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'01'},{type:'min-length',value:873}] },
+    { name:'PSTM', label:'PSTM', color:'#00aaff', vol:'POS', priority:0,
+      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'02'},{type:'min-length',value:873}] },
+    { name:'B24', label:'Base24 Generic', color:'#f95ddc', vol:'BASE', priority:0,
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'99'},{type:'literal',offset:2,encoding:'ascii',value:['06','07']}] },
+    { name:'B24', label:'Base24 ATM Generic', color:'#f95ddc', vol:'ATM', priority:0,
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'99'},{type:'literal',offset:2,encoding:'ascii',value:['06','07']},{type:'literal',offset:4,encoding:'ascii',value:'01'}] },
+    { name:'B24', label:'Base24 POS Generic', color:'#f95ddc', vol:'POS', priority:0,
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'99'},{type:'literal',offset:2,encoding:'ascii',value:['06','07']},{type:'literal',offset:4,encoding:'ascii',value:'01'}] },
+    { name:'NDC', label:'NDC', color:'#ff0000', vol:'ATM', priority:0,
+      recognizers:[{type:'regex',pattern:'^(11|12|22|4)\\x1c'}] }
+  ];
+
   // ── State & storage ────────────────────────────────────────────────────────
 
   let _fmtSpecs = [];   // compiled, sorted by priority desc
 
   function _fmtLoad() {
-    let raw = { specs: [] };
-    try { const s = localStorage.getItem('up_format_specs'); if (s) raw = JSON.parse(s); } catch(e) {}
+    const raw = _fmtGetData();
     _fmtSpecs = (raw.specs || [])
       .map(s => _compileSpec(s))
       .sort((a, b) => (b.priority || 0) - (a.priority || 0));
@@ -5606,8 +5628,11 @@ function parseMessage(bytes, defs, rawBytes) {
   }
 
   function _fmtGetData() {
-    try { const s = localStorage.getItem('up_format_specs'); return s ? JSON.parse(s) : { specs:[] }; }
-    catch(e) { return { specs:[] }; }
+    try {
+      const s = localStorage.getItem('up_format_specs');
+      if (s !== null) return JSON.parse(s);
+    } catch(e) {}
+    return { specs: JSON.parse(JSON.stringify(_DEFAULT_FMT_SPECS)) };
   }
 
   // ── Detection ──────────────────────────────────────────────────────────────
@@ -12067,7 +12092,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.79';
+const APP_VERSION  = '1.1.1.80';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

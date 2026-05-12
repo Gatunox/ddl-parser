@@ -12092,7 +12092,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.83';
+const APP_VERSION  = '1.1.1.84';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12685,9 +12685,9 @@ function renderDetectSpecsList() {
     const color = _escHtml(s.color || '#888');
     const label = _escHtml(s.label || s.name || '—');
     const type  = _escHtml(s.name || '');
-    const vol   = s.vol ? `<span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
+    const vol   = s.vol ? ` <span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
     const pri   = (s.priority || 0) > 0 ? `<span class="dr-spec-pri">${s.priority}</span>` : '';
-    return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}</span>${pri}<span class="dr-spec-type">${type}</span>${vol}</div>`;
+    return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span>${pri}<span class="dr-spec-type">${type}</span></div>`;
   }).join('');
 }
 

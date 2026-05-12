@@ -12093,7 +12093,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.96';
+const APP_VERSION  = '1.1.1.97';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13974,7 +13974,7 @@ pos 4 (origin): &nbsp;0=Acquirer &nbsp;1=Acq Repeat &nbsp;2=Issuer &nbsp;3=Iss R
 <div class="me-rh-flds">pattern — any JavaScript regular expression (no surrounding /.../ needed)</div>
 <div class="me-rh-exs"><b>Examples:</b> Base24 POS → ^0[1-9][012489][012345]02 &nbsp;|&nbsp; ISO prefix → ^ISO &nbsp;|&nbsp; NDC class → ^[12][0-9A-Z]</div>`,
 
-  'ebcdic-density': `<b>Fraction of bytes that are EBCDIC digits (0–9 / 0xF0–0xF9) must meet the threshold.</b> Confirms the message uses EBCDIC encoding. Note: bytes outside 0xF0–0xF9 will fail this check.
+  'ebcdic-density': `<b>Fraction of bytes that are EBCDIC digits (0–9 / 0xF0–0xF9) must meet the threshold.</b> Confirms the message uses EBCDIC encoding. Note: only checks digit bytes 0xF0–0xF9 — EBCDIC A–F (0xC1–0xC6) are not counted. Bytes outside 0xF0–0xF9 will fail this check.
 <div class="me-rh-flds">min — 0.0–1.0 (e.g. 0.4 = at least 40% of bytes are EBCDIC digits)</div>
 <div class="me-rh-exs"><b>Example:</b> typical EBCDIC ISO → min=0.35</div>`,
 

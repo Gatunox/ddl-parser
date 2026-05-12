@@ -5596,8 +5596,8 @@ function parseMessage(bytes, defs, rawBytes) {
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'####'},{type:'min-length',value:23}] },
     { name:'ISO', label:'ISO 8583 BIC', color:'#ffbb00', vol:'', priority:20,
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'min-length',value:23}] },
-    { name:'ISO', label:'ISO 8583 SWITCH', color:'#c59102', vol:'', priority:20,
-      recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'hex-density',offset:4,length:16,min:1},{type:'min-length',value:23}] },
+    { name:'ISO', label:'ISO 8583 Switch', color:'#c59102', vol:'', priority:20,
+      recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'uint16',offset:4,endian:'be',min:0,max:65535},{type:'uint16',offset:6,endian:'be',min:0,max:65535},{type:'uint16',offset:8,endian:'be',min:0,max:65535},{type:'uint16',offset:10,endian:'be',min:0,max:65535},{type:'min-length',value:23}] },
     { name:'STM', label:'STM', color:'#1eff00', vol:'ATM', priority:0,
       recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'01'},{type:'min-length',value:873}] },
     { name:'PSTM', label:'PSTM', color:'#00aaff', vol:'POS', priority:0,
@@ -12093,7 +12093,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.93';
+const APP_VERSION  = '1.1.1.94';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

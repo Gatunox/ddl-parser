@@ -5525,15 +5525,15 @@ function parseMessage(bytes, defs, rawBytes) {
     return _re.test(s);
   };
 
-  _R['ebcdic-density'] = (bytes, { offset=0, length, min_density=0.3 }) => {
+  _R['ebcdic-density'] = (bytes, { offset=0, length, min=0.3 }) => {
     const end = length !== undefined ? Math.min(offset+length, bytes.length) : bytes.length;
     const total = end - offset; if (!total) return false;
     let n = 0;
     for (let i = offset; i < end; i++) if (bytes[i] >= 0xF0 && bytes[i] <= 0xF9) n++;
-    return n / total >= min_density;
+    return n / total >= min;
   };
 
-  _R['hex-density'] = (bytes, { offset=0, length, min_density=0.8 }) => {
+  _R['hex-density'] = (bytes, { offset=0, length, min=0.8 }) => {
     const end = length !== undefined ? Math.min(offset+length, bytes.length) : bytes.length;
     const total = end - offset; if (!total) return false;
     let n = 0;
@@ -5541,15 +5541,15 @@ function parseMessage(bytes, defs, rawBytes) {
       const b = bytes[i];
       if ((b>=0x30&&b<=0x39)||(b>=0x41&&b<=0x46)||(b>=0x61&&b<=0x66)) n++;
     }
-    return n / total >= min_density;
+    return n / total >= min;
   };
 
-  _R['oct-density'] = (bytes, { offset=0, length, min_density=0.8 }) => {
+  _R['oct-density'] = (bytes, { offset=0, length, min=0.8 }) => {
     const end = length !== undefined ? Math.min(offset+length, bytes.length) : bytes.length;
     const total = end - offset; if (!total) return false;
     let n = 0;
     for (let i = offset; i < end; i++) if (bytes[i] >= 0x30 && bytes[i] <= 0x37) n++;
-    return n / total >= min_density;
+    return n / total >= min;
   };
 
   _R['length-payload'] = _R['length-prefix'] = (bytes, { offset=0, encoding='uint16-be', body_offset, includes_self=false }) => {
@@ -12093,7 +12093,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.92';
+const APP_VERSION  = '1.1.1.93';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13978,7 +13978,7 @@ pos 4 (origin): &nbsp;0=Acquirer &nbsp;1=Acq Repeat &nbsp;2=Issuer &nbsp;3=Iss R
 <div class="me-rh-flds">min — 0.0–1.0 (e.g. 0.4 = at least 40% of bytes are EBCDIC digits)</div>
 <div class="me-rh-exs"><b>Example:</b> typical EBCDIC ISO → min=0.35</div>`,
 
-  'hex-density': `<b>Fraction of bytes that are ASCII hex chars (0–9, A–F, a–f) must meet the threshold.</b> Confirms hex-dump encoded messages.
+  'hex-density': `<b>Fraction of bytes that are ASCII hex chars (0–9, A–F, a–f / 0x30–0x46) must meet the threshold.</b> Confirms hex-dump encoded messages. Note: binary bitmap bytes (e.g. 0x82, 0x20) are NOT hex chars and will fail this check.
 <div class="me-rh-flds">min — 0.0–1.0</div>
 <div class="me-rh-exs"><b>Example:</b> hex-dump format → min=0.7</div>`,
 

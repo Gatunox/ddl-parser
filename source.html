@@ -5394,7 +5394,23 @@ function parseMessage(bytes, defs, rawBytes) {
   _R['ebcdic'] = (bytes, { offset=0, length=1 }) => {
     if (offset + length > bytes.length) return false;
     for (let i = offset; i < offset+length; i++) {
-      if (bytes[i] < 0x40) return false;
+      const b = bytes[i];
+      const ok =
+        b === 0x40 ||                        // space
+        (b >= 0x4C && b <= 0x4F) ||          // < ( + |
+        b === 0x50 ||                        // &
+        (b >= 0x5B && b <= 0x61) ||          // $ * ) ; ¬ - /
+        (b >= 0x6B && b <= 0x6F) ||          // , % _ > ?
+        b === 0x70 ||                        // °
+        (b >= 0x79 && b <= 0x7F) ||          // ` : # @ ' = "
+        (b >= 0x81 && b <= 0x89) ||          // a-i
+        (b >= 0x91 && b <= 0x99) ||          // j-r
+        (b >= 0xA2 && b <= 0xA9) ||          // s-z
+        (b >= 0xC1 && b <= 0xC9) ||          // A-I
+        (b >= 0xD1 && b <= 0xD9) ||          // J-R
+        (b >= 0xE2 && b <= 0xE9) ||          // S-Z
+        (b >= 0xF0 && b <= 0xF9);            // 0-9
+      if (!ok) return false;
     }
     return true;
   };
@@ -12104,7 +12120,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.104';
+const APP_VERSION  = '1.1.1.105';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13945,8 +13961,8 @@ Value forms:<br>
 <div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
 <div class="me-rh-exs"><b>Examples:</b> 4-byte ASCII message type → offset=0 length=4 &nbsp;|&nbsp; confirm 16-byte text field is clean ASCII → offset=4 length=16</div>`,
 
-  'ebcdic': `<b>Printable EBCDIC check over a byte range.</b> Returns true if <b>every</b> byte in the scanned region is ≥ 0x40. In EBCDIC, control characters occupy 0x00–0x3F and all printable characters (space, letters, digits, punctuation) are ≥ 0x40. Use this to confirm a field contains EBCDIC text with no control bytes.
-<div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
+  'ebcdic': `<b>Printable EBCDIC check over a byte range.</b> Returns true if <b>every</b> byte is a recognised printable EBCDIC character. Unlike ASCII, printable EBCDIC values are spread across multiple non-contiguous ranges:
+<div class="me-rh-flds">0x40 — space<br>0x4C–0x4F — &lt; ( + |<br>0x50 — &amp;<br>0x5B–0x61 — $ * ) ; ¬ - /<br>0x6B–0x6F — , % _ &gt; ?<br>0x70, 0x79–0x7F — ° &#x60; : # @ ' = "<br>0x81–0x89 — a–i &nbsp;|&nbsp; 0x91–0x99 — j–r &nbsp;|&nbsp; 0xA2–0xA9 — s–z<br>0xC1–0xC9 — A–I &nbsp;|&nbsp; 0xD1–0xD9 — J–R &nbsp;|&nbsp; 0xE2–0xE9 — S–Z<br>0xF0–0xF9 — 0–9<br><br>offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
 <div class="me-rh-exs"><b>Examples:</b> 4-byte EBCDIC message type → offset=0 length=4 &nbsp;|&nbsp; confirm 16-byte EBCDIC text field → offset=4 length=16</div>`,
 
   'numeric': `<b>Digit-only check over a byte range.</b> Returns true if <b>every</b> byte is a digit character. Supports ASCII and EBCDIC.

@@ -1121,6 +1121,7 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .dr-specs-empty { color:var(--text-dim); font-size:calc(var(--sz-mono) - 2px); padding:4px 0 6px; }
 .dr-spec-item { display:flex; align-items:center; gap:5px; padding:4px 8px; border-bottom:1px solid var(--border); font-size:var(--sz-mono); color:var(--text); }
 .dr-spec-item:last-child { border-bottom:none; }
+.dr-spec-head { display:flex; align-items:center; gap:5px; padding:2px 8px 3px; border-bottom:2px solid var(--border); }
 .dr-spec-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; border:1px solid rgba(255,255,255,.2); }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-spec-pri { font-size:9px; color:var(--accent); flex-shrink:0; }
@@ -12092,7 +12093,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.84';
+const APP_VERSION  = '1.1.1.85';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12681,7 +12682,8 @@ function renderDetectSpecsList() {
     return;
   }
   const sorted = specs.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
-  el.innerHTML = sorted.map(s => {
+  const head = `<div class="dr-spec-head"><span style="width:10px;flex-shrink:0"></span><span class="dr-lbl" style="flex:1">Label</span><span class="dr-lbl">Pri</span><span class="dr-lbl">Type</span></div>`;
+  el.innerHTML = head + sorted.map(s => {
     const color = _escHtml(s.color || '#888');
     const label = _escHtml(s.label || s.name || '—');
     const type  = _escHtml(s.name || '');

@@ -12096,7 +12096,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.101';
+const APP_VERSION  = '1.1.1.102';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13660,8 +13660,17 @@ function openMsgEditor() {
       if (r.type === 'literal' && typeof r.value === 'number') r.value = String(r.value);
     return specs;
   };
+  const specs = _migrateSpecs(JSON.parse(JSON.stringify(data.specs || [])));
+  let startIdx = specs.length > 0 ? 0 : -1;
+  try {
+    const lastLabel = localStorage.getItem('up_me_last_sel');
+    if (lastLabel !== null) {
+      const found = specs.findIndex(s => (s.label || s.name || '') === lastLabel);
+      if (found !== -1) startIdx = found;
+    }
+  } catch(e) {}
   _meState = {
-    specs:      _migrateSpecs(JSON.parse(JSON.stringify(data.specs || []))),
+    specs,
     section:  'msg',
     selIdx:   -1,
     sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false },
@@ -13674,7 +13683,7 @@ function openMsgEditor() {
   _meRenderSidebar();
   _meRenderRight();
   document.getElementById('msgEditorOverlay').classList.remove('hidden');
-  if (_meState.specs.length > 0) _meSelectItem('msg', 0);
+  if (startIdx !== -1) _meSelectItem('msg', startIdx);
 }
 
 function closeMsgEditor() {
@@ -13698,6 +13707,9 @@ function _meSelectItem(section, idx) {
   _meState.pend    = {};
   _meState.section = section;
   _meState.selIdx  = idx;
+  if (section === 'msg' && idx >= 0 && idx < _meState.specs.length) {
+    try { localStorage.setItem('up_me_last_sel', _meState.specs[idx].label || _meState.specs[idx].name || ''); } catch(e) {}
+  }
   _meRenderSidebar();
   _meRenderRight();
 }

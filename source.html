@@ -1117,6 +1117,15 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .dr-btn:hover:not([disabled]) { border-color:var(--accent); color:var(--accent); }
 .dr-btn[disabled] { opacity:0.3; cursor:default; }
 .dr-del:hover:not([disabled]) { border-color:#f85149 !important; color:#f85149 !important; }
+.dr-spec-list { display:flex; flex-direction:column; margin-bottom:2px; }
+.dr-specs-empty { color:var(--text-dim); font-size:calc(var(--sz-mono) - 2px); padding:4px 0 6px; }
+.dr-spec-item { display:flex; align-items:center; gap:5px; padding:4px 0; border-bottom:1px solid var(--border); font-size:calc(var(--sz-mono) - 1px); }
+.dr-spec-item:last-child { border-bottom:none; }
+.dr-spec-dot { width:9px; height:9px; border-radius:2px; flex-shrink:0; }
+.dr-spec-pri { background:var(--accent); color:#000; border-radius:2px; padding:0 3px; font-size:9px; line-height:15px; flex-shrink:0; }
+.dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dr-spec-type { color:var(--text-dim); font-size:calc(var(--sz-mono) - 2px); flex-shrink:0; }
+.dr-spec-vol { color:var(--text-dim); font-size:calc(var(--sz-mono) - 2px); flex-shrink:0; }
 .dr-color { width:22px; height:22px; padding:0; border:2px solid var(--border); border-radius:2px; cursor:pointer; flex-shrink:0; }
 .dr-color::-webkit-color-swatch-wrapper { padding:0; }
 .dr-color::-webkit-color-swatch { border:none; border-radius:1px; }
@@ -1367,7 +1376,8 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 /* ── Message Editor ──────────────────────────────────────────────────────── */
 .me-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:21000;display:flex;align-items:center;justify-content:center;}
 .me-overlay.hidden{display:none;}
-.me-shell{display:flex;width:86vw;height:82vh;max-width:1100px;overflow:hidden;background:var(--bg-panel);border:2px solid var(--border);border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,0.7);}
+.me-shell{display:flex;flex-direction:column;width:86vw;height:82vh;max-width:1100px;overflow:hidden;background:var(--bg-panel);border:2px solid var(--border);border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,0.7);}
+.me-main{display:flex;flex:1;min-height:0;overflow:hidden;}
 .me-sidebar{width:210px;flex-shrink:0;border-right:2px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
 .me-sidebar-sect{display:flex;flex-direction:column;flex:1;min-height:60px;overflow:hidden;}
 .me-sidebar-sect+.me-sidebar-sect{border-top:2px solid var(--border);}
@@ -1440,6 +1450,8 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-rec-help .me-rh-exs{margin-top:4px;}
 .me-rf-row{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;}
 .me-rf-fld{display:flex;flex-direction:column;gap:3px;}
+.me-off-auto{font-size:10px;color:var(--accent);cursor:pointer;opacity:.75;white-space:nowrap;}
+.me-off-auto:hover{opacity:1;text-decoration:underline;}
 .me-rf-fld.grow{flex:1;min-width:80px;}
 .me-rf-btns{display:flex;gap:4px;margin-top:2px;}
 .me-footer{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:8px 14px;border-top:2px solid var(--border);background:var(--bg-deep);flex-shrink:0;}
@@ -5411,6 +5423,46 @@ function parseMessage(bytes, defs, rawBytes) {
 
   _R['min-length'] = (bytes, { length=0 }) => bytes.length >= length;
   _R['max-length'] = (bytes, { length=0 }) => bytes.length <= length;
+  _R['numeric'] = (bytes, { offset=0, length=1, encoding='ascii' }) => {
+    if (offset + length > bytes.length) return false;
+    for (let i = offset; i < offset + length; i++) {
+      const b = bytes[i];
+      if (encoding === 'ebcdic') { if (b < 0xF0 || b > 0xF9) return false; }
+      else { if (b < 0x30 || b > 0x39) return false; }
+    }
+    return true;
+  };
+  _R['alphabetic'] = (bytes, { offset=0, length=1, encoding='ascii' }) => {
+    if (offset + length > bytes.length) return false;
+    for (let i = offset; i < offset + length; i++) {
+      const b = bytes[i];
+      let ok;
+      if (encoding === 'ebcdic') {
+        ok = (b >= 0xC1 && b <= 0xC9) || (b >= 0xD1 && b <= 0xD9) || (b >= 0xE2 && b <= 0xE9) ||
+             (b >= 0x81 && b <= 0x89) || (b >= 0x91 && b <= 0x99) || (b >= 0xA2 && b <= 0xA9);
+      } else {
+        ok = (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A);
+      }
+      if (!ok) return false;
+    }
+    return true;
+  };
+  _R['alphanumeric'] = (bytes, { offset=0, length=1, encoding='ascii' }) => {
+    if (offset + length > bytes.length) return false;
+    for (let i = offset; i < offset + length; i++) {
+      const b = bytes[i];
+      let ok;
+      if (encoding === 'ebcdic') {
+        ok = (b >= 0xF0 && b <= 0xF9) ||
+             (b >= 0xC1 && b <= 0xC9) || (b >= 0xD1 && b <= 0xD9) || (b >= 0xE2 && b <= 0xE9) ||
+             (b >= 0x81 && b <= 0x89) || (b >= 0x91 && b <= 0x99) || (b >= 0xA2 && b <= 0xA9);
+      } else {
+        ok = (b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A);
+      }
+      if (!ok) return false;
+    }
+    return true;
+  };
 
   _R['mti'] = (bytes, { offset=0, encoding='ascii', value='####' }) => {
     if (offset+4 > bytes.length) return false;
@@ -5570,14 +5622,16 @@ function parseMessage(bytes, defs, rawBytes) {
   }
 
   window._fmtTestSpecs = function(rawSpecs, bytes) {
+    const sorted = rawSpecs.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
     const results = [];
-    for (const spec of rawSpecs) {
+    for (const spec of sorted) {
       const compiled = _compileSpec(spec);
       let failAt = null, passed = true;
       for (let i = 0; i < compiled._fns.length; i++) {
         if (!compiled._fns[i](bytes)) { failAt = i; passed = false; break; }
       }
       results.push({ spec, passed, failAt });
+      if (passed) break; // stop at first match — mirrors real detection engine
     }
     return results;
   };
@@ -12013,7 +12067,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.61';
+const APP_VERSION  = '1.1.1.79';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12542,8 +12596,7 @@ function adjustLineWidth(delta) {
 function openSettings() {
   document.getElementById('settingsOverlay').classList.remove('hidden');
   _syncEggAccentUI();
-  renderDetectRulesTable();
-  _drSetDirty(_drDirty);
+  renderDetectSpecsList();
   // Sync control states to current prefs
   const lbl = document.getElementById('szLabel');
   if (lbl) lbl.textContent = P.monoSize + 'px';
@@ -12592,6 +12645,25 @@ function renderDetectRulesTable() {
     try { new RegExp(r.regex); } catch(e) { rxInput?.classList.add('dr-invalid'); }
     list.appendChild(rule);
   });
+}
+
+function renderDetectSpecsList() {
+  const el = document.getElementById('detectSpecsList');
+  if (!el) return;
+  const { specs = [] } = _fmtGetData();
+  if (!specs.length) {
+    el.innerHTML = '<div class="dr-specs-empty">No format specs — use Message Editor to add detectors</div>';
+    return;
+  }
+  const sorted = specs.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  el.innerHTML = sorted.map(s => {
+    const color = _escHtml(s.color || '#888');
+    const label = _escHtml(s.label || s.name || '—');
+    const type  = _escHtml(s.name || '');
+    const vol   = s.vol ? ` <span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
+    const pri   = (s.priority || 0) > 0 ? `<span class="dr-spec-pri">${s.priority}</span> ` : '';
+    return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span>${pri}<span class="dr-spec-name">${label}</span> <span class="dr-spec-type">${type}</span>${vol}</div>`;
+  }).join('');
 }
 
 let _drDirty = false;
@@ -13553,8 +13625,13 @@ let _meState = null;
 function openMsgEditor() {
   closeSettings();
   const data = _fmtGetData();
+  const _migrateSpecs = specs => {
+    for (const s of specs) for (const r of (s.recognizers || []))
+      if (r.type === 'literal' && typeof r.value === 'number') r.value = String(r.value);
+    return specs;
+  };
   _meState = {
-    specs:      JSON.parse(JSON.stringify(data.specs      || [])),
+    specs:      _migrateSpecs(JSON.parse(JSON.stringify(data.specs || []))),
     section:  'msg',
     selIdx:   -1,
     sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false },
@@ -13572,6 +13649,7 @@ function openMsgEditor() {
 
 function closeMsgEditor() {
   document.getElementById('msgEditorOverlay').classList.add('hidden');
+  renderDetectSpecsList();
 }
 
 function _meSetDirty() {
@@ -13723,6 +13801,7 @@ function _meField(field, value) {
 
 function _meHtmlRecs(item) {
   const recs = item.recognizers || [];
+  const _TYPE_LABEL = { uint8:'uint8 / byte', uint16:'uint16 / word', uint32:'uint32 / dword' };
   let h = '<div class="me-rec-list">';
   if (!recs.length) h += '<div class="me-empty">No recognizers yet.</div>';
   recs.forEach((r, i) => {
@@ -13732,7 +13811,7 @@ function _meHtmlRecs(item) {
     const isLast   = i === recs.length - 1;
     h += `<div class="me-rec-row" id="me-rr-${i}">
   <div class="me-rec-head" onclick="_meToggleRec(${i})">
-    <span class="me-rec-type">${r.type}</span>
+    <span class="me-rec-type">${_TYPE_LABEL[r.type] || r.type}</span>
     <span class="me-rec-sum">${_meRecSum(r)}</span>
     <span class="me-rec-acts" onclick="event.stopPropagation()">
       <button class="me-rb" onclick="_meMoveRec(${i},-1)" title="Move up"${isFirst  ? ' disabled' : ''}>&#x2191;</button>
@@ -13759,15 +13838,18 @@ function _meRecSum(r) {
   switch (r.type) {
     case 'literal': {
       const fmtLit = v => {
-        if (!Array.isArray(v)) return esc(v);
+        if (!Array.isArray(v)) return `"${esc(v)}"`;
         return v.map(x => (x && typeof x === 'object' && x.from != null)
           ? `"${x.from}".."${x.to}"`
           : `"${x}"`).join(' | ');
       };
       return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${fmtLit(r.value)}`);
     }
-    case 'binary':      return wrap(`@${r.offset} len:${r.length ?? 1}`);
-    case 'ascii':       return wrap(`@${r.offset} len:${r.length ?? 1}`);
+    case 'binary':        return wrap(`@${r.offset} len:${r.length ?? 1}`);
+    case 'ascii':         return wrap(`@${r.offset} len:${r.length ?? 1}`);
+    case 'numeric':       return wrap(`@${r.offset} len:${r.length ?? 1}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''}`);
+    case 'alphabetic':    return wrap(`@${r.offset} len:${r.length ?? 1}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''}`);
+    case 'alphanumeric':  return wrap(`@${r.offset} len:${r.length ?? 1}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''}`);
     case 'uint8':  case 'byte': {
       const p = []; if(r.mask!==undefined)p.push(`mask:${r.mask}`);
       if(r.eq!==undefined)p.push(`= ${r.eq}`); if(r.min!==undefined)p.push(`>= ${r.min}`); if(r.max!==undefined)p.push(`<= ${r.max}`);
@@ -13783,10 +13865,10 @@ function _meRecSum(r) {
     }
     case 'min-length':  return wrap(`≥ ${r.value} bytes`);
     case 'max-length':  return wrap(`≤ ${r.value} bytes`);
-    case 'mti':         return wrap(`@${r.offset} = ${esc(r.value)}`);
+    case 'mti':         return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${esc(r.value)}`);
     case 'bitmap':      return wrap(`@${r.offset} bit${r.bit}=${r.value}`);
     case 'regex':       return wrap(esc(r.pattern));
-    case 'ebcdic-density': case 'hex-density': case 'oct-density': return wrap(`min ${r.min}`);
+    case 'ebcdic-density': case 'hex-density': case 'oct-density': return wrap(`@${r.offset||0} len:${r.length??'all'} min:${r.min}`);
     case 'length-payload': case 'length-prefix': return wrap(`@${r.offset} ${r.encoding||'uint16-be'} payload@${r.body_offset||0}${r.includes_self?' incl.self':''}`);
     case 'flag-payload':   case 'flag-prefix':   return wrap(`@${r.offset} ${r.encoding||'uint8'} payload@${r.body_offset||0} len:${r.body_length||0}`);
     default: return '';
@@ -13896,6 +13978,7 @@ function _meRecForm(r, idx) {
   const types = [
     ['literal','literal'], ['binary','binary'], ['ascii','ascii'],
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
+    ['numeric','numeric'], ['alphabetic','alphabetic'], ['alphanumeric','alphanumeric'],
     ['min-length','min-length'], ['max-length','max-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
     ['ebcdic-density','ebcdic-density'], ['hex-density','hex-density'], ['oct-density','oct-density'],
     ['length-payload','length-payload'], ['flag-payload','flag-payload'],
@@ -13918,6 +14001,31 @@ function _meRecForm(r, idx) {
   <div class="me-rf-row">${typeSel}${_meRecFields(r || { type: 'literal' }, idx)}${idFld}${btns}</div>
   ${helpText ? `<div class="me-rec-help" id="me-rh-${idx}" style="display:none">${helpText}</div>` : ''}
 </div>`;
+}
+
+function _meRecByteLen(r) {
+  if (!r) return null;
+  const t = r.type;
+  if (t === 'literal') {
+    const enc = r.encoding || 'ascii';
+    if (Array.isArray(r.value)) {
+      const strs = r.value.filter(x => typeof x === 'string' && !x.from);
+      if (!strs.length) return null;
+      const len0 = enc === 'hex' ? strs[0].replace(/\s/g,'').length / 2 : strs[0].length;
+      return strs.every(s => (enc === 'hex' ? s.replace(/\s/g,'').length / 2 : s.length) === len0) ? len0 : null;
+    }
+    const v = String(r.value || '');
+    if (enc === 'hex') { const h = v.replace(/\s/g,''); return h.length % 2 === 0 ? h.length / 2 : null; }
+    return v.length;
+  }
+  if (t === 'uint8'  || t === 'byte')  return 1;
+  if (t === 'uint16' || t === 'word')  return 2;
+  if (t === 'uint32' || t === 'dword') return 4;
+  if (t === 'mti')                     return 4;
+  if (t === 'bitmap')                  return r.length || 8;
+  if (['binary','ascii','numeric','alphabetic','alphanumeric','regex',
+       'ebcdic-density','hex-density','oct-density'].includes(t)) return r.length != null ? r.length : null;
+  return null;
 }
 
 function _meRecFields(r, id) {
@@ -13949,11 +14057,32 @@ function _meRecFields(r, id) {
   const litVal = v => {
     if (v == null) return '';
     if (Array.isArray(v) || (typeof v === 'object')) return JSON.stringify(v).replace(/"/g, '&quot;');
-    return String(v).replace(/"/g, '&quot;');
+    return JSON.stringify(String(v)).replace(/"/g, '&quot;');
   };
   const litField = (id) =>
     `<div style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px"><div class="me-lbl">Value</div>
      <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-value-${id}" type="text" value="${litVal(r.value)}"></div>`;
+  const offF = () => {
+    const recs = _meState.specs[_meState.selIdx]?.recognizers;
+    const limit = id < 0 ? recs?.length : id;
+    let tip = '';
+    if (recs && limit > 0) {
+      for (let i = limit - 1; i >= 0; i--) {
+        const p = recs[i];
+        if (p.offset != null) {
+          const len = _meRecByteLen(p);
+          if (len != null) {
+            const auto = (p.offset || 0) + len;
+            tip = `<span class="me-off-auto" onclick="document.getElementById('me-rv-offset-${id}').value=${auto}">← ${auto}</span>`;
+          }
+          break; // stop at first rec with a known offset (whether or not len is calculable)
+        }
+      }
+    }
+    return `<div class="me-rf-fld"><div class="me-lbl" style="display:flex;align-items:center;gap:6px">Offset${tip}</div>
+      <input class="me-inp" style="width:62px" type="number" min="0"
+        id="me-rv-offset-${id}" value="${ea(r.offset != null ? r.offset : 0)}"></div>`;
+  };
   const encSel = (k, opts, cur) =>
     `<div class="me-rf-fld"><div class="me-lbl">Encoding</div>
      <select class="me-sel" id="me-rv-${k}-${id}">
@@ -13962,39 +14091,47 @@ function _meRecFields(r, id) {
   switch (r.type) {
     case 'literal': {
       const enc = r.encoding || 'ascii';
-      return nf('offset','Offset',0) + encSel('encoding',['ascii','hex','ebcdic'],enc) + litField(id);
+      return offF() + encSel('encoding',['ascii','hex','ebcdic'],enc) + litField(id);
     }
     case 'binary':
     case 'ascii':
-      return nf('offset','Offset',0) + nf('length','Length',1);
+      return offF() + nf('length','Length',1);
+    case 'numeric':
+    case 'alphabetic':
+    case 'alphanumeric': {
+      const enc = r.encoding || 'ascii';
+      return offF() + encSel('encoding',['ascii','ebcdic'],enc) + nf('length','Length',1);
+    }
     case 'uint8': case 'byte': {
       const onf = (k,lbl,mn,mx) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
         <input class="me-inp" style="width:55px" type="number" min="${mn||0}"${mx!=null?` max="${mx}"`:''}
           id="me-rv-${k}-${id}" value="${v!==undefined?v:''}"></div>`; };
-      return nf('offset','Offset',0) + tf('mask','Mask','e.g. F0','55px') +
+      return offF() + tf('mask','Mask','e.g. F0','55px') +
         onf('eq','Eq',0,255) + onf('min','Min',0,255) + onf('max','Max',0,255);
     }
     case 'uint16': case 'word': {
       const onf = (k,lbl,mn,mx) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
-        <input class="me-inp" style="width:62px" type="number" min="${mn||0}"${mx!=null?` max="${mx}"`:''}
+        <input class="me-inp" style="width:80px" type="number" min="${mn||0}"${mx!=null?` max="${mx}"`:''}
           id="me-rv-${k}-${id}" value="${v!==undefined?v:''}"></div>`; };
-      return nf('offset','Offset',0) + endf('endian') + onf('eq','Eq',0,65535) + onf('min','Min',0,65535) + onf('max','Max',0,65535);
+      return offF() + endf('endian') + onf('eq','Eq',0,65535) + onf('min','Min',0,65535) + onf('max','Max',0,65535);
     }
     case 'uint32': case 'dword': {
       const onf = (k,lbl) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
-        <input class="me-inp" style="width:72px" type="number" min="0"
+        <input class="me-inp" style="width:110px" type="number" min="0"
           id="me-rv-${k}-${id}" value="${v!==undefined?v:''}"></div>`; };
-      return nf('offset','Offset',0) + endf('endian') + onf('eq','Eq') + onf('min','Min') + onf('max','Max');
+      return offF() + endf('endian') + onf('eq','Eq') + onf('min','Min') + onf('max','Max');
     }
     case 'min-length':
       return nf('value','Min Bytes',1,null,1);
     case 'max-length':
       return nf('value','Max Bytes',1,null,1);
-    case 'mti':
-      return nf('offset','Offset',0) + tf('value','MTI Pattern','e.g. 0200');
+    case 'mti': {
+      const enc = r.encoding || 'ascii';
+      return offF() + encSel('encoding',['ascii','ebcdic'],enc) + tf('value','MTI Pattern','e.g. 0200');
+    }
     case 'bitmap': {
       const bv = String(r.value != null ? r.value : 1);
-      return nf('offset','Offset',0) + nf('bit','Bit (1–128)',1,128,1) +
+      return offF() + nf('bit','Bit (1–128)',1,128,1) +
         `<div class="me-rf-fld"><div class="me-lbl">Value</div>
          <select class="me-sel" id="me-rv-bv-${id}">
            <option${bv === '0' ? ' selected' : ''} value="0">0 (off)</option>
@@ -14004,14 +14141,15 @@ function _meRecFields(r, id) {
     case 'regex':
       return tf('pattern','Pattern','JavaScript regex');
     case 'ebcdic-density': case 'hex-density': case 'oct-density':
-      return `<div class="me-rf-fld"><div class="me-lbl">Min (0.0–1.0)</div>
-       <input class="me-inp" style="width:72px" type="number" step="0.01" min="0" max="1"
-         id="me-rv-min-${id}" value="${ea(r.min != null ? r.min : 0.9)}"></div>`;
+      return offF() + nf('length','Length',1) +
+        `<div class="me-rf-fld"><div class="me-lbl">Min (0.0–1.0)</div>
+         <input class="me-inp" style="width:72px" type="number" step="0.01" min="0" max="1"
+           id="me-rv-min-${id}" value="${ea(r.min != null ? r.min : 0.9)}"></div>`;
     case 'length-payload': case 'length-prefix': {
       const enc = r.encoding || 'uint16-be';
       const incSelf = String(r.includes_self) === 'true' ? 'true' : 'false';
       const pfxEncs = ['uint8','uint16-be','uint16-le','bcd2'];
-      return nf('offset','Offset',0) + encSel('encoding',pfxEncs,enc) +
+      return offF() + encSel('encoding',pfxEncs,enc) +
         nf('body_offset','Payload @',0) +
         `<div class="me-rf-fld"><div class="me-lbl">Incl. self</div>
          <select class="me-sel" style="width:55px" id="me-rv-includes_self-${id}">
@@ -14022,7 +14160,7 @@ function _meRecFields(r, id) {
     case 'flag-payload': case 'flag-prefix': {
       const enc = r.encoding || 'uint8';
       const pfxEncs = ['uint8','uint16-be','uint16-le','bcd2'];
-      return nf('offset','Offset',0) + encSel('encoding',pfxEncs,enc) +
+      return offF() + encSel('encoding',pfxEncs,enc) +
         nf('body_offset','Payload @',0) + nf('body_length','Payload Len',0);
     }
     default: return '';
@@ -14045,7 +14183,10 @@ function _meRecRead(idx) {
       return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: val, ...r_id };
     }
     case 'binary':
-    case 'ascii':      return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
+    case 'ascii':         return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
+    case 'numeric':
+    case 'alphabetic':
+    case 'alphanumeric':  return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', length: ni('length', 1), ...r_id };
     case 'uint8': case 'byte': {
       const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
       const mk = gv('mask').trim()||undefined;
@@ -14061,14 +14202,14 @@ function _meRecRead(idx) {
     }
     case 'min-length':
     case 'max-length': return { type, value: ni('value', 1), ...r_id };
-    case 'mti':        return { type, offset: ni('offset'), value: gv('value'), ...r_id };
+    case 'mti':        return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: gv('value'), ...r_id };
     case 'bitmap': {
       const bvEl = document.getElementById(`me-rv-bv-${idx}`);
       return { type, offset: ni('offset'), bit: ni('bit', 1), value: bvEl ? parseInt(bvEl.value) : 1, ...r_id };
     }
     case 'regex': return { type, pattern: gv('pattern'), ...r_id };
     case 'ebcdic-density': case 'hex-density': case 'oct-density':
-      return { type, min: nf('min', 0.9), ...r_id };
+      return { type, offset: ni('offset'), length: ni('length', 1), min: nf('min', 0.9), ...r_id };
     case 'length-payload': case 'length-prefix': {
       const isEl = document.getElementById(`me-rv-includes_self-${idx}`);
       return { type: 'length-payload', offset: ni('offset'), encoding: gv('encoding') || 'uint16-be',
@@ -14423,17 +14564,9 @@ function _meSave() {
           <button class="stitle-toggle" onclick="toggleSettingsSection(document.getElementById('detectStitle'))">+</button>
         </div>
         <div class="settings-collapsible-body collapsed" style="max-height:500px">
-          <div class="settings-row" style="margin-bottom:8px">
+          <div class="dr-spec-list" id="detectSpecsList"></div>
+          <div class="settings-row" style="margin-top:8px">
             <button class="btn btn-sm" onclick="openMsgEditor()" title="Open the Message Format Editor to define byte-level recognizers and parse specs">⊞ Message Editor</button>
-          </div>
-          <div class="settings-row" style="margin-bottom:6px">
-            <span class="settings-lbl" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px)">Legacy regex rules (fallback, tested in order):</span>
-          </div>
-          <div class="dr-list" id="detectRulesTbody"></div>
-          <div class="settings-row" style="margin-top:10px">
-            <button id="drResetBtn" class="btn btn-sm" onclick="resetDetectRules()" title="Restore built-in detection rules" disabled>↺ Reset</button>
-            <button id="drApplyBtn" class="btn btn-sm" onclick="applyDetectRules()" title="Apply changes and reload audit" disabled>✓ Apply</button>
-            <button class="btn btn-sm" onclick="addDetectRule()" title="Add new detection rule">+ Add Rule</button>
           </div>
         </div>
       </div>
@@ -14763,51 +14896,55 @@ function _meSave() {
 <div class="me-overlay hidden" id="msgEditorOverlay">
   <div class="me-shell">
 
-    <!-- ── Sidebar ── -->
-    <div class="me-sidebar">
-      <div class="me-sidebar-sect" id="me-sect-msgs">
-        <div class="me-sidebar-hdr">
-          <span class="me-sidebar-title">Messages</span>
-          <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
+    <div class="me-main">
+      <!-- ── Sidebar ── -->
+      <div class="me-sidebar">
+        <div class="me-sidebar-sect" id="me-sect-msgs">
+          <div class="me-sidebar-hdr">
+            <span class="me-sidebar-title">Messages</span>
+            <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
+          </div>
+          <div class="me-item-list" id="me-msg-list"></div>
         </div>
-        <div class="me-item-list" id="me-msg-list"></div>
+        <div class="me-sidebar-sect me-sect-rules">
+          <div class="me-sidebar-hdr"><span class="me-sidebar-title">Rules</span></div>
+          <div class="me-sidebar-note">Configure in the DDL Rules (DDLMM) panel.</div>
+        </div>
       </div>
-      <div class="me-sidebar-sect me-sect-rules">
-        <div class="me-sidebar-hdr"><span class="me-sidebar-title">Rules</span></div>
-        <div class="me-sidebar-note">Configure in the DDL Rules (DDLMM) panel.</div>
+
+      <!-- ── Right panel ── -->
+      <div class="me-right">
+        <div class="me-header">
+          <span class="me-header-title" id="me-header-title">Message Editor</span>
+          <button class="btn btn-sm" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
+        </div>
+        <div class="me-tab-body" id="me-tab-body"></div>
+        <div class="me-footer">
+          <span class="me-status" id="me-status"></span>
+          <button class="btn" onclick="closeMsgEditor()">Cancel</button>
+          <button class="btn btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
+        </div>
       </div>
     </div>
 
-    <!-- ── Right panel ── -->
-    <div class="me-right">
-      <div class="me-header">
-        <span class="me-header-title" id="me-header-title">Message Editor</span>
-        <button class="btn btn-sm" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
+    <!-- ── Test bar (full width) ── -->
+    <div class="me-test-bar">
+      <div class="me-test-hdr" onclick="_meToggleTest()">
+        <span class="me-test-title">Test</span>
+        <span class="me-test-summary" id="me-test-summary"></span>
+        <span class="me-section-arr" id="me-test-arr">&#9660;</span>
       </div>
-      <div class="me-tab-body" id="me-tab-body"></div>
-      <div class="me-test-bar">
-        <div class="me-test-hdr" onclick="_meToggleTest()">
-          <span class="me-test-title">Test</span>
-          <span class="me-test-summary" id="me-test-summary"></span>
-          <span class="me-section-arr" id="me-test-arr">&#9660;</span>
+      <div class="me-test-body" id="me-test-body" style="display:none">
+        <div class="me-test-row">
+          <select id="me-test-fmt" class="me-inp" style="width:70px">
+            <option value="auto">auto</option>
+            <option value="hex">hex</option>
+            <option value="ascii">ascii</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="_meRunTest()">&#x25B6; Run</button>
         </div>
-        <div class="me-test-body" id="me-test-body" style="display:none">
-          <div class="me-test-row">
-            <select id="me-test-fmt" class="me-inp" style="width:70px">
-              <option value="auto">auto</option>
-              <option value="hex">hex</option>
-              <option value="ascii">ascii</option>
-            </select>
-            <button class="btn btn-primary btn-sm" onclick="_meRunTest()">&#x25B6; Run</button>
-          </div>
-          <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…"></textarea>
-          <div id="me-test-out" class="me-test-out"></div>
-        </div>
-      </div>
-      <div class="me-footer">
-        <span class="me-status" id="me-status"></span>
-        <button class="btn" onclick="closeMsgEditor()">Cancel</button>
-        <button class="btn btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
+        <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…"></textarea>
+        <div id="me-test-out" class="me-test-out"></div>
       </div>
     </div>
 

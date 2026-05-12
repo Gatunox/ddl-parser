@@ -12104,7 +12104,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.103';
+const APP_VERSION  = '1.1.1.104';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13948,6 +13948,18 @@ Value forms:<br>
   'ebcdic': `<b>Printable EBCDIC check over a byte range.</b> Returns true if <b>every</b> byte in the scanned region is ≥ 0x40. In EBCDIC, control characters occupy 0x00–0x3F and all printable characters (space, letters, digits, punctuation) are ≥ 0x40. Use this to confirm a field contains EBCDIC text with no control bytes.
 <div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
 <div class="me-rh-exs"><b>Examples:</b> 4-byte EBCDIC message type → offset=0 length=4 &nbsp;|&nbsp; confirm 16-byte EBCDIC text field → offset=4 length=16</div>`,
+
+  'numeric': `<b>Digit-only check over a byte range.</b> Returns true if <b>every</b> byte is a digit character. Supports ASCII and EBCDIC.
+<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position where the scan starts<br>length &nbsp;&nbsp;&nbsp;— number of bytes to scan (default 1)<br>encoding — <b>ascii</b> (default): 0–9 → 0x30–0x39 &nbsp;|&nbsp; <b>ebcdic</b>: 0–9 → 0xF0–0xF9</div>
+<div class="me-rh-exs"><b>Examples:</b> 9-digit BIC field (ASCII) → offset=3 length=9 &nbsp;|&nbsp; EBCDIC amount field → offset=10 length=12 encoding=ebcdic</div>`,
+
+  'alphabetic': `<b>Letters-only check over a byte range.</b> Returns true if <b>every</b> byte is a letter (A–Z or a–z). Supports ASCII and EBCDIC.
+<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position where the scan starts<br>length &nbsp;&nbsp;&nbsp;— number of bytes to scan (default 1)<br>encoding — <b>ascii</b> (default): A–Z 0x41–0x5A, a–z 0x61–0x7A &nbsp;|&nbsp; <b>ebcdic</b>: A–I 0xC1–0xC9, J–R 0xD1–0xD9, S–Z 0xE2–0xE9, a–i 0x81–0x89, j–r 0x91–0x99, s–z 0xA2–0xA9</div>
+<div class="me-rh-exs"><b>Examples:</b> 3-letter currency code → offset=5 length=3 &nbsp;|&nbsp; EBCDIC name field → offset=0 length=20 encoding=ebcdic</div>`,
+
+  'alphanumeric': `<b>Letters and digits check over a byte range.</b> Returns true if <b>every</b> byte is a letter (A–Z, a–z) or digit (0–9). Supports ASCII and EBCDIC.
+<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position where the scan starts<br>length &nbsp;&nbsp;&nbsp;— number of bytes to scan (default 1)<br>encoding — <b>ascii</b> (default): 0–9 0x30–0x39, A–Z 0x41–0x5A, a–z 0x61–0x7A &nbsp;|&nbsp; <b>ebcdic</b>: same ranges as numeric + alphabetic combined</div>
+<div class="me-rh-exs"><b>Examples:</b> 6-char terminal ID → offset=0 length=6 &nbsp;|&nbsp; EBCDIC account number → offset=2 length=16 encoding=ebcdic</div>`,
 
   'uint8': `<b>Single byte check at offset.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound. All set conditions must pass.
 <div class="me-rh-flds">offset — byte position from message start<br>mask &nbsp;&nbsp;— optional hex bitmask (0–FF). The engine does <b>byte AND mask</b> before comparing. Use this to isolate specific bits:<br>

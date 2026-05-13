@@ -7878,7 +7878,7 @@ function _hlHPELine(line) {
     // because the \bAUDIT\b pattern fails to match when a digit follows.
     const sm = codePart.match(/^(\s*)((?:FILE\s+)?(?:DEF|DEFINITION|RECORD|END)\b)(\s*)([A-Za-z_](?:[A-Za-z0-9_-]{0,28}[A-Za-z0-9_])?)?(.*)/i);
     codeHL = sm
-      ? _escH(sm[1]) + _sp(sm[2], 'def') + _escH(sm[3] || '') + (sm[4] ? _sp(sm[4], 'def') : '') + _hlHPERest(sm[5] || '')
+      ? _escH(sm[1]) + _sp(sm[2], 'def') + _escH(sm[3] || '') + (sm[4] ? _sp(sm[4], 'kw') : '') + _hlHPERest(sm[5] || '')
       : _hlHPERest(codePart);
   }
 
@@ -12144,7 +12144,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.115';
+const APP_VERSION  = '1.1.1.116';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

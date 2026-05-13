@@ -1482,8 +1482,11 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-bind-row{display:flex;gap:5px;align-items:center;}
 .me-bind-inp{flex:1;min-width:0;}
 .me-ddl-drop{position:fixed;z-index:22000;background:var(--bg-panel);border:2px solid var(--accent);border-radius:2px;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.4);display:none;}
-.me-ddl-opt{font-family:var(--mono);font-size:var(--sz-mono);padding:4px 10px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.me-ddl-opt:hover{background:rgba(var(--accent-rgb),.15);color:var(--accent);}
+.me-ddl-opt{display:flex;align-items:baseline;gap:8px;padding:4px 10px;cursor:pointer;}
+.me-ddl-opt:hover{background:rgba(var(--accent-rgb),.15);}
+.me-ddl-opt:hover .me-ddl-opt-name{color:var(--accent);}
+.me-ddl-opt-name{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);white-space:nowrap;flex-shrink:0;}
+.me-ddl-opt-path{font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .me-ddl-empty{font-family:var(--mono);font-size:var(--sz-mono);padding:6px 10px;color:var(--text-dim);}
 .me-ov-section{margin-bottom:14px;}
 .me-ov-section:last-child{margin-bottom:0;}
@@ -12139,7 +12142,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.109';
+const APP_VERSION  = '1.1.1.110';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13918,9 +13921,13 @@ function _meBindShowDrop(idx) {
   if (!filtered.length) {
     drop.innerHTML = '<div class="me-ddl-empty">' + (paths.length ? 'No match' : 'No DDLs loaded') + '</div>';
   } else {
-    drop.innerHTML = filtered.slice(0, 30).map(p =>
-      `<div class="me-ddl-opt" onmousedown="event.preventDefault();_meBindPick(${idx},${JSON.stringify(p)})">${_escHtml(p)}</div>`
-    ).join('');
+    drop.innerHTML = filtered.map(p => {
+      const name = p.split('/').pop();
+      return `<div class="me-ddl-opt" onmousedown="event.preventDefault();_meBindPick(${idx},${JSON.stringify(p)})">
+  <span class="me-ddl-opt-name">${_escHtml(name)}</span>
+  <span class="me-ddl-opt-path">${_escHtml(p)}</span>
+</div>`;
+    }).join('');
   }
   const r = inp.getBoundingClientRect();
   drop.style.left  = r.left + 'px';

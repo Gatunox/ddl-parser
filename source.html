@@ -1481,6 +1481,10 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-bind-list{display:flex;flex-direction:column;gap:3px;}
 .me-bind-row{display:flex;gap:5px;align-items:center;}
 .me-bind-inp{flex:1;min-width:0;}
+.me-ddl-drop{position:fixed;z-index:9999;background:var(--bg-panel);border:2px solid var(--accent);border-radius:2px;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.4);display:none;}
+.me-ddl-opt{font-family:var(--mono);font-size:var(--sz-mono);padding:4px 10px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.me-ddl-opt:hover{background:rgba(var(--accent-rgb),.15);color:var(--accent);}
+.me-ddl-empty{font-family:var(--mono);font-size:var(--sz-mono);padding:6px 10px;color:var(--text-dim);}
 .me-ov-section{margin-bottom:14px;}
 .me-ov-section:last-child{margin-bottom:0;}
 .me-ov-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);margin-bottom:3px;}
@@ -12135,7 +12139,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.107';
+const APP_VERSION  = '1.1.1.108';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13868,33 +13872,76 @@ function _mePsFmt() {
 
 function _meHtmlDDLBindings(item) {
   const bindings = item.ddl_bindings || [];
-
-  // Build datalist from loaded DDL tree (S.ddlTree = { vol: { sv: { name: content } } })
-  let opts = '';
-  const tree = S.ddlTree || {};
-  for (const vol of Object.keys(tree).sort()) {
-    for (const sv of Object.keys(tree[vol] || {}).sort()) {
-      for (const name of Object.keys(tree[vol][sv] || {}).sort()) {
-        opts += `<option value="${_escHtml(vol + '/' + sv + '/' + name)}">`;
-      }
-    }
-  }
-  if (!opts) opts = '<option value="" disabled>(no DDLs loaded yet)">'; // hint only
-
-  let h = `<datalist id="me-ddl-paths">${opts}</datalist>
-<div class="me-bind-list">`;
+  let h = '<div class="me-bind-list">';
   if (!bindings.length) h += '<div class="me-empty">No DDL bindings yet.</div>';
   bindings.forEach((b, i) => {
     h += `<div class="me-bind-row">
   <span class="me-lbl" style="min-width:18px;text-align:right;flex-shrink:0">${i + 1}</span>
-  <input class="me-inp me-bind-inp" list="me-ddl-paths" value="${_escHtml(b)}"
-    placeholder="VOL/SUBVOL/FILENAME" oninput="_meBindSet(${i}, this.value)">
+  <input class="me-inp me-bind-inp" id="me-bind-inp-${i}" value="${_escHtml(b)}"
+    placeholder="VOL/SUBVOL/FILENAME"
+    oninput="_meBindInput(${i},this.value)"
+    onfocus="_meBindShowDrop(${i})"
+    onblur="_meBindHideDrop()">
   <button class="me-rb del" onclick="_meBindDel(${i})" title="Remove">✕</button>
 </div>`;
   });
   h += `</div>
 <button class="btn btn-sm" onclick="_meBindAdd()" style="margin-top:6px">+ Add Binding</button>`;
   return h;
+}
+
+function _meDDLPaths() {
+  const paths = [];
+  const tree = S.ddlTree || {};
+  for (const vol of Object.keys(tree).sort()) {
+    for (const sv of Object.keys(tree[vol] || {}).sort()) {
+      for (const name of Object.keys(tree[vol][sv] || {}).sort()) {
+        paths.push(vol + '/' + sv + '/' + name);
+      }
+    }
+  }
+  return paths;
+}
+
+function _meBindInput(idx, val) {
+  _meBindSet(idx, val);
+  _meBindShowDrop(idx);
+}
+
+function _meBindShowDrop(idx) {
+  const inp  = document.getElementById('me-bind-inp-' + idx);
+  const drop = document.getElementById('me-ddl-drop');
+  if (!inp || !drop) return;
+  const paths = _meDDLPaths();
+  const q = inp.value.toLowerCase();
+  const filtered = paths.filter(p => !q || p.toLowerCase().includes(q));
+  if (!filtered.length) {
+    drop.innerHTML = '<div class="me-ddl-empty">' + (paths.length ? 'No match' : 'No DDLs loaded') + '</div>';
+  } else {
+    drop.innerHTML = filtered.slice(0, 30).map(p =>
+      `<div class="me-ddl-opt" onmousedown="event.preventDefault();_meBindPick(${idx},${JSON.stringify(p)})">${_escHtml(p)}</div>`
+    ).join('');
+  }
+  const r = inp.getBoundingClientRect();
+  drop.style.left  = r.left + 'px';
+  drop.style.top   = (r.bottom + 2) + 'px';
+  drop.style.width = r.width + 'px';
+  drop.style.display = 'block';
+}
+
+function _meBindHideDrop() {
+  setTimeout(() => {
+    const drop = document.getElementById('me-ddl-drop');
+    if (drop) drop.style.display = 'none';
+  }, 120);
+}
+
+function _meBindPick(idx, path) {
+  const inp = document.getElementById('me-bind-inp-' + idx);
+  if (inp) inp.value = path;
+  _meBindSet(idx, path);
+  const drop = document.getElementById('me-ddl-drop');
+  if (drop) drop.style.display = 'none';
 }
 
 function _meBindSet(idx, val) {
@@ -15227,6 +15274,8 @@ function _meSave() {
 </div>
 
 <!-- ===== MESSAGE EDITOR MODAL ===== -->
+<div class="me-ddl-drop" id="me-ddl-drop"></div>
+
 <div class="me-overlay hidden" id="msgEditorOverlay">
   <div class="me-shell">
 

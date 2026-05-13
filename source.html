@@ -12142,7 +12142,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.110';
+const APP_VERSION  = '1.1.1.112';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13893,17 +13893,26 @@ function _meHtmlDDLBindings(item) {
   return h;
 }
 
-function _meDDLPaths() {
-  const paths = [];
+function _meDDLEntries() {
+  const entries = [];
   const tree = S.ddlTree || {};
   for (const vol of Object.keys(tree).sort()) {
     for (const sv of Object.keys(tree[vol] || {}).sort()) {
-      for (const name of Object.keys(tree[vol][sv] || {}).sort()) {
-        paths.push(vol + '/' + sv + '/' + name);
+      for (const fname of Object.keys(tree[vol][sv] || {}).sort()) {
+        const content = tree[vol][sv][fname] || '';
+        const path    = vol + '/' + sv + '/' + fname;
+        const sections = isHPEDDLText(content) ? parseDDLSections(content) : [];
+        if (sections.length) {
+          for (const sec of sections) {
+            entries.push({ defName: sec.name, path });
+          }
+        } else {
+          entries.push({ defName: fname.toUpperCase(), path });
+        }
       }
     }
   }
-  return paths;
+  return entries;
 }
 
 function _meBindInput(idx, val) {
@@ -13915,19 +13924,18 @@ function _meBindShowDrop(idx) {
   const inp  = document.getElementById('me-bind-inp-' + idx);
   const drop = document.getElementById('me-ddl-drop');
   if (!inp || !drop) return;
-  const paths = _meDDLPaths();
+  const entries = _meDDLEntries();
   const q = inp.value.toLowerCase();
-  const filtered = paths.filter(p => !q || p.toLowerCase().includes(q));
+  const filtered = entries.filter(e => !q || e.defName.toLowerCase().includes(q) || e.path.toLowerCase().includes(q));
   if (!filtered.length) {
-    drop.innerHTML = '<div class="me-ddl-empty">' + (paths.length ? 'No match' : 'No DDLs loaded') + '</div>';
+    drop.innerHTML = '<div class="me-ddl-empty">' + (entries.length ? 'No match' : 'No DDLs loaded') + '</div>';
   } else {
-    drop.innerHTML = filtered.map(p => {
-      const name = p.split('/').pop();
-      return `<div class="me-ddl-opt" onmousedown="event.preventDefault();_meBindPick(${idx},${JSON.stringify(p)})">
-  <span class="me-ddl-opt-name">${_escHtml(name)}</span>
-  <span class="me-ddl-opt-path">${_escHtml(p)}</span>
-</div>`;
-    }).join('');
+    drop.innerHTML = filtered.map(e =>
+      `<div class="me-ddl-opt" onmousedown="event.preventDefault();_meBindPick(${idx},${JSON.stringify(e.path)})">
+  <span class="me-ddl-opt-name">${_escHtml(e.defName)}</span>
+  <span class="me-ddl-opt-path">${_escHtml(e.path)}</span>
+</div>`
+    ).join('');
   }
   const r = inp.getBoundingClientRect();
   drop.style.left  = r.left + 'px';

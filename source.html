@@ -5183,7 +5183,7 @@ function _rebuildMsgTypeMap() {
 
 function _loadDetectRules() {
   try {
-    const s = localStorage.getItem('up_detect_rules');
+    const s = _kvGet('up_detect_rules');
     if (s) {
       _detectRules = JSON.parse(s);
       _detectRules.forEach(r => {
@@ -5199,7 +5199,7 @@ function _loadDetectRules() {
 
 function _saveDetectRules() {
   _rebuildMsgTypeMap();
-  try { localStorage.setItem('up_detect_rules', JSON.stringify(_detectRules)); } catch(e) {}
+  _kvSet('up_detect_rules', JSON.stringify(_detectRules));
 }
 
 let MSG_TYPE_MAP = _detectRules.map(r => {
@@ -8713,7 +8713,7 @@ const _AUDIT_FLT_GRP_DEFS = {
 
 function _auditApplyFltVis() {
   let vis = {};
-  try { vis = JSON.parse(localStorage.getItem('auditFltVis') || '{}'); } catch(e) {}
+  try { vis = JSON.parse(_kvGet('auditFltVis') || '{}'); } catch(e) {}
   for (const [key, ids] of Object.entries(_AUDIT_FLT_GRP_DEFS)) {
     const show = vis[key] !== false;
     for (const id of ids) {
@@ -8730,9 +8730,9 @@ function _auditApplyFltVis() {
 
 function auditToggleFltGrp(key) {
   let vis = {};
-  try { vis = JSON.parse(localStorage.getItem('auditFltVis') || '{}'); } catch(e) {}
+  try { vis = JSON.parse(_kvGet('auditFltVis') || '{}'); } catch(e) {}
   vis[key] = vis[key] === false ? true : false;
-  localStorage.setItem('auditFltVis', JSON.stringify(vis));
+  _kvSet('auditFltVis', JSON.stringify(vis));
   _auditApplyFltVis();
 }
 
@@ -10451,7 +10451,7 @@ function getDDLFromPath(ddlPath) {
 }
 
 function saveDDLMsgMap() {
-  try { localStorage.setItem('up_ddlmm', S.ddlMsgMapRaw); } catch(e) {}
+  _kvSet('up_ddlmm', S.ddlMsgMapRaw);
 }
 
 // ---- Exclusion helpers ----
@@ -10532,11 +10532,11 @@ function toggleExclusion(vol, sv, name, defName) {
   renderDDLTree();
 }
 function saveExcl() {
-  try { localStorage.setItem('up_excl', JSON.stringify([...S.excl])); } catch(e) {}
+  _kvSet('up_excl', JSON.stringify([...S.excl]));
 }
 function loadExcl() {
   try {
-    const s = localStorage.getItem('up_excl');
+    const s = _kvGet('up_excl');
     if (s) S.excl = new Set(JSON.parse(s));
   } catch(e) {}
 }
@@ -10557,15 +10557,15 @@ function applyDEOverrides(layout, overrides) {
   layout.deByBit = new Map(layout.dataElements.map(e => [e.bitNum, e]));
 }
 function saveDeOverrides() {
-  try { localStorage.setItem('de_overrides', JSON.stringify(S.deOverrides)); } catch(e) {}
+  _kvSet('de_overrides', JSON.stringify(S.deOverrides));
 }
 function loadDeOverrides() {
-  try { const s = localStorage.getItem('de_overrides'); if (s) S.deOverrides = JSON.parse(s); } catch(e) {}
+  try { const s = _kvGet('de_overrides'); if (s) S.deOverrides = JSON.parse(s); } catch(e) {}
 }
 
 function loadDDLMsgMap() {
   try {
-    const s = localStorage.getItem('up_ddlmm');
+    const s = _kvGet('up_ddlmm');
     if (s) { S.ddlMsgMapRaw = s; S.ddlMsgMap = parseDDLMsgMap(s); }
   } catch(e) {}
 }
@@ -10943,7 +10943,11 @@ function saveDDL() {
       document.getElementById('ddlEditor').value = content;
       _removeStagedDef(fn);
       buildUnresolvedRefs();
-      saveTree(); selectScope('ddl', vol, sv, fn);
+      const saved = saveTree(); selectScope('ddl', vol, sv, fn);
+      if (!saved) {
+        flash('✗ Storage quota exceeded — DDL is in memory but will be lost on reload. Export your data now.', 'error');
+        return;
+      }
       const unresMsg = saveUnresolved?.length ? ` — ${saveUnresolved.length} unresolved type ref${saveUnresolved.length > 1 ? 's' : ''}` : '';
       flash(`✓ Saved: ${vol}/${sv}/${fn}${unresMsg}`);
     };
@@ -11478,8 +11482,77 @@ function confirmImport() {
   flash(`Imported ${count} DDL(s)`);
 }
 
+// ============================================================
+// APP KEY-VALUE STORE (IndexedDB, localStorage fallback)
+// ============================================================
+const _APP_KV_KEYS = [
+  'up_ddl_tree', 'up_ddlmm', 'up_excl', 'de_overrides',
+  'up_tree_exp', 'up_detect_rules', 'up_settings', 'up_layout',
+  'auditFltVis', 'up_ddl_versions'
+];
+let _appKV   = {};
+let _appKVDB = null;
+
+function _kvGet(key)        { return Object.prototype.hasOwnProperty.call(_appKV, key) ? _appKV[key] : null; }
+function _kvDel(key) {
+  delete _appKV[key];
+  if (_appKVDB) {
+    try { _appKVDB.transaction('kv', 'readwrite').objectStore('kv').delete(key); } catch(e) {}
+  } else {
+    localStorage.removeItem(key);
+  }
+}
+function _kvSet(key, value) {
+  _appKV[key] = value;
+  if (_appKVDB) {
+    try { _appKVDB.transaction('kv', 'readwrite').objectStore('kv').put({ key, value }); } catch(e) { return false; }
+  } else {
+    try { localStorage.setItem(key, value); } catch(e) { return false; }
+  }
+  return true;
+}
+function _openAppKV() {
+  return new Promise(resolve => {
+    const _fallback = () => {
+      for (const key of _APP_KV_KEYS) {
+        const val = localStorage.getItem(key);
+        if (val !== null) _appKV[key] = val;
+      }
+      resolve();
+    };
+    try {
+      const req = indexedDB.open('ddl-parser-kv', 1);
+      req.onupgradeneeded = e => { e.target.result.createObjectStore('kv', { keyPath: 'key' }); };
+      req.onsuccess = e => {
+        _appKVDB = e.target.result;
+        const all = _appKVDB.transaction('kv', 'readonly').objectStore('kv').getAll();
+        all.onsuccess = () => {
+          if (all.result.length > 0) {
+            for (const row of all.result) _appKV[row.key] = row.value;
+          } else {
+            // First run — migrate from localStorage
+            const wtx = _appKVDB.transaction('kv', 'readwrite');
+            const store = wtx.objectStore('kv');
+            for (const key of _APP_KV_KEYS) {
+              const val = localStorage.getItem(key);
+              if (val !== null) {
+                _appKV[key] = val;
+                store.put({ key, value: val });
+                localStorage.removeItem(key);
+              }
+            }
+          }
+          resolve();
+        };
+        all.onerror = () => resolve();
+      };
+      req.onerror = _fallback;
+    } catch(e) { _fallback(); }
+  });
+}
+
 function saveTreeExp() {
-  try { localStorage.setItem('up_tree_exp', JSON.stringify([...S.treeExp])); } catch(e) {}
+  _kvSet('up_tree_exp', JSON.stringify([...S.treeExp]));
 }
 
 function saveTree() {
@@ -11490,16 +11563,17 @@ function saveTree() {
   } else {
     for (const v of Object.keys(S.ddlTree)) localStorage.removeItem('up_cc_' + v.toUpperCase());
   }
-  try { localStorage.setItem('up_ddl_tree', JSON.stringify(S.ddlTree)); } catch(e) {}
+  if (!_kvSet('up_ddl_tree', JSON.stringify(S.ddlTree))) return false;
   saveTreeExp();
+  return true;
 }
 
 function loadTree() {
-  try { const s = localStorage.getItem('up_ddl_tree'); if (s) S.ddlTree = JSON.parse(s); } catch(e) {}
+  try { const s = _kvGet('up_ddl_tree'); if (s) S.ddlTree = JSON.parse(s); } catch(e) {}
   // treeExp intentionally NOT restored — tree always starts fully collapsed on reload
   // Migrate old flat format
   try {
-    const old = localStorage.getItem('up_ddl_versions');
+    const old = _kvGet('up_ddl_versions');
     if (old && !Object.keys(S.ddlTree).length) {
       const flat = JSON.parse(old);
       S.ddlTree['Imported'] = { 'Default': flat };
@@ -11572,7 +11646,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.33';
+const APP_VERSION  = '1.1.1.34';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -11630,7 +11704,7 @@ let P = { ..._DEF_PREFS };   // active preferences
 
 function loadPrefs() {
   try {
-    const s = localStorage.getItem('up_settings');
+    const s = _kvGet('up_settings');
     if (s) P = { ..._DEF_PREFS, ...JSON.parse(s) };
   } catch(e) {}
   // Allow external sites (e.g. gu2.dev) to pass a preferred theme via ?theme=light|dark
@@ -11643,7 +11717,7 @@ function loadPrefs() {
 }
 
 function savePrefs() {
-  try { localStorage.setItem('up_settings', JSON.stringify(P)); } catch(e) {}
+  _kvSet('up_settings', JSON.stringify(P));
 }
 
 // ============================================================
@@ -11678,7 +11752,7 @@ function saveLayout() {
       });
       if (Object.keys(cw).length) { layout.colWidths = cw; _savedColWidths = { ..._savedColWidths, ...cw }; }
     }
-    localStorage.setItem('up_layout', JSON.stringify(layout));
+    _kvSet('up_layout', JSON.stringify(layout));
   } catch(e) {}
 }
 
@@ -11694,7 +11768,7 @@ function _syncColPickerCheckmarks(hiddenCols) {
 
 function loadLayout() {
   try {
-    const s = localStorage.getItem('up_layout');
+    const s = _kvGet('up_layout');
     if (!s) return;
     const layout = JSON.parse(s);
     // Panel / row flex splits
@@ -11735,7 +11809,7 @@ function _applyColWidths() {
 }
 
 function resetLayout() {
-  localStorage.removeItem('up_layout');
+  _kvDel('up_layout');
   _savedColWidths = {};
   // Reset panel / row flex to CSS defaults
   ['topRow','bottomRow','ddlPanel','msgPanel','resPanel','rawPanel'].forEach(id => {
@@ -12229,7 +12303,7 @@ function showSettingsConfirm(label, cb) {
 function resetDetectRules() {
   showSettingsConfirm('Reset detection rules to built-in defaults?', ok => {
     if (!ok) return;
-    localStorage.removeItem('up_detect_rules');
+    _kvDel('up_detect_rules');
     _detectRules = _DEFAULT_DETECT_RULES.map(r => ({...r}));
     _saveDetectRules();
     renderDetectRulesTable();
@@ -13058,24 +13132,26 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tutPrev')?.addEventListener('click', () => { if (_tutIdx > 0) { _tutIdx--; _tutRender(); } });
   document.getElementById('tutSkip')?.addEventListener('click', closeTutorial);
 
-  _loadDetectRules();
-  loadPrefs();
-  _auditPrecomputeRowHeights();
-  loadExcl();
-  loadDeOverrides();
-  loadLayout();
-  _initCellTooltip();
-  applyPanelDefaults();
-  if (!P.tutorialSeen) setTimeout(showTutorial, 600);
-  _syncRawHexCol();
-  loadTree();
-  _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
-  initTreePaneResizer();
-  initDropZones();
-  _syncOverlayScroll();
-  updateDDLEditorState();
-  updateDDLHighlight();
-  syncParseBtn();
+  _openAppKV().then(() => {
+    _loadDetectRules();
+    loadPrefs();
+    _auditPrecomputeRowHeights();
+    loadExcl();
+    loadDeOverrides();
+    loadLayout();
+    _initCellTooltip();
+    applyPanelDefaults();
+    if (!P.tutorialSeen) setTimeout(showTutorial, 600);
+    _syncRawHexCol();
+    loadTree();
+    _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
+    initTreePaneResizer();
+    initDropZones();
+    _syncOverlayScroll();
+    updateDDLEditorState();
+    updateDDLHighlight();
+    syncParseBtn();
+  });
 
   // Keep search line-background div scrolled in sync with the DDL editor
   document.getElementById('ddlEditor').addEventListener('scroll', () => {

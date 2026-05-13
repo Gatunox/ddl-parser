@@ -12135,7 +12135,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.106';
+const APP_VERSION  = '1.1.1.107';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13868,13 +13868,27 @@ function _mePsFmt() {
 
 function _meHtmlDDLBindings(item) {
   const bindings = item.ddl_bindings || [];
-  let h = '<div class="me-bind-list">';
+
+  // Build datalist from loaded DDL tree (S.ddlTree = { vol: { sv: { name: content } } })
+  let opts = '';
+  const tree = S.ddlTree || {};
+  for (const vol of Object.keys(tree).sort()) {
+    for (const sv of Object.keys(tree[vol] || {}).sort()) {
+      for (const name of Object.keys(tree[vol][sv] || {}).sort()) {
+        opts += `<option value="${_escHtml(vol + '/' + sv + '/' + name)}">`;
+      }
+    }
+  }
+  if (!opts) opts = '<option value="" disabled>(no DDLs loaded yet)">'; // hint only
+
+  let h = `<datalist id="me-ddl-paths">${opts}</datalist>
+<div class="me-bind-list">`;
   if (!bindings.length) h += '<div class="me-empty">No DDL bindings yet.</div>';
   bindings.forEach((b, i) => {
     h += `<div class="me-bind-row">
   <span class="me-lbl" style="min-width:18px;text-align:right;flex-shrink:0">${i + 1}</span>
-  <input class="me-inp me-bind-inp" value="${_escHtml(b)}" placeholder="VOL/SUBVOL/FILENAME"
-    oninput="_meBindSet(${i}, this.value)">
+  <input class="me-inp me-bind-inp" list="me-ddl-paths" value="${_escHtml(b)}"
+    placeholder="VOL/SUBVOL/FILENAME" oninput="_meBindSet(${i}, this.value)">
   <button class="me-rb del" onclick="_meBindDel(${i})" title="Remove">✕</button>
 </div>`;
   });

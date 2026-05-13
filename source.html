@@ -1470,6 +1470,21 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-test-pass{color:#3fb950;}
 .me-test-fail{color:var(--text-dim);}
 .me-test-err{color:#f85149;}
+/* ── Parse Spec ── */
+.me-ps-wrap{display:flex;flex-direction:column;gap:4px;}
+.me-ps-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+.me-ps-hint{flex:1;font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);}
+.me-ps-ta{width:100%;min-height:220px;max-height:420px;resize:vertical;font-family:var(--mono);font-size:var(--sz-mono);background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text);padding:6px 8px;box-sizing:border-box;outline:none;line-height:1.5;tab-size:2;}
+.me-ps-ta:focus{border-color:var(--accent);}
+.me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
+/* ── DDL Bindings + Overrides ── */
+.me-bind-list{display:flex;flex-direction:column;gap:3px;}
+.me-bind-row{display:flex;gap:5px;align-items:center;}
+.me-bind-inp{flex:1;min-width:0;}
+.me-ov-section{margin-bottom:14px;}
+.me-ov-section:last-child{margin-bottom:0;}
+.me-ov-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);margin-bottom:3px;}
+.me-ov-hint{font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);margin-bottom:6px;line-height:1.4;}
 </style>
 </head>
 <body>
@@ -12120,7 +12135,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.105';
+const APP_VERSION  = '1.1.1.106';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13800,16 +13815,227 @@ function _meRenderRight() {
   let html = sect('identity', 'Identity', _meHtmlId(item))
            + sect('recognizers', 'Recognizers', _meHtmlRecs(item));
   if (isMsg) {
-    html += sect('parse_spec',    'Parse Spec',    _meHtmlStub('parse_spec'))
-          + sect('ddl_bindings',  'DDL Bindings',  _meHtmlStub('ddl_bindings'))
-          + sect('overrides',     'Overrides',     _meHtmlStub('overrides'));
+    html += sect('parse_spec',    'Parse Spec',    _meHtmlParseSpec(item))
+          + sect('ddl_bindings',  'DDL Bindings',  _meHtmlDDLBindings(item))
+          + sect('overrides',     'Overrides',     _meHtmlOverrides(item));
   }
   body.innerHTML = html;
 }
 
-function _meHtmlStub(tab) {
-  const names = { parse_spec: 'Parse Spec', ddl_bindings: 'DDL Bindings', overrides: 'Overrides' };
-  return `<div class="me-stub"><div class="me-stub-h">${names[tab] || tab}</div>Coming in Phase 3.</div>`;
+// ── Parse Spec Tab ────────────────────────────────────────────────────────
+
+function _meHtmlParseSpec(item) {
+  const raw = _escHtml(JSON.stringify(item.parse_spec || [], null, 2));
+  return `<div class="me-ps-wrap">
+  <div class="me-ps-toolbar">
+    <span class="me-ps-hint">JSON array of parse blocks — read, read-bitmap, bitmap-fields, skip, when, repeat, read-until, read-fixed, read-length-prefix, read-tlv, token-area</span>
+    <button class="btn btn-sm" onclick="_mePsFmt()">Format</button>
+  </div>
+  <textarea class="me-ps-ta" id="me-ps-ta" spellcheck="false"
+    oninput="_mePsChange(this.value)">${raw}</textarea>
+  <div id="me-ps-err" class="me-ps-err"></div>
+</div>`;
+}
+
+function _mePsChange(val) {
+  const item = _meCurItem();
+  const errEl = document.getElementById('me-ps-err');
+  if (!item) return;
+  try {
+    const parsed = JSON.parse(val || '[]');
+    if (!Array.isArray(parsed)) throw new Error('top-level value must be an array');
+    item.parse_spec = parsed;
+    if (errEl) errEl.textContent = '';
+    _meSetDirty();
+  } catch(e) {
+    if (errEl) errEl.textContent = '⚠ ' + e.message;
+  }
+}
+
+function _mePsFmt() {
+  const ta = document.getElementById('me-ps-ta');
+  const errEl = document.getElementById('me-ps-err');
+  if (!ta) return;
+  try {
+    ta.value = JSON.stringify(JSON.parse(ta.value || '[]'), null, 2);
+    if (errEl) errEl.textContent = '';
+  } catch(e) {
+    if (errEl) errEl.textContent = '⚠ ' + e.message;
+  }
+}
+
+// ── DDL Bindings Tab ──────────────────────────────────────────────────────
+
+function _meHtmlDDLBindings(item) {
+  const bindings = item.ddl_bindings || [];
+  let h = '<div class="me-bind-list">';
+  if (!bindings.length) h += '<div class="me-empty">No DDL bindings yet.</div>';
+  bindings.forEach((b, i) => {
+    h += `<div class="me-bind-row">
+  <span class="me-lbl" style="min-width:18px;text-align:right;flex-shrink:0">${i + 1}</span>
+  <input class="me-inp me-bind-inp" value="${_escHtml(b)}" placeholder="VOL/SUBVOL/FILENAME"
+    oninput="_meBindSet(${i}, this.value)">
+  <button class="me-rb del" onclick="_meBindDel(${i})" title="Remove">✕</button>
+</div>`;
+  });
+  h += `</div>
+<button class="btn btn-sm" onclick="_meBindAdd()" style="margin-top:6px">+ Add Binding</button>`;
+  return h;
+}
+
+function _meBindSet(idx, val) {
+  const item = _meCurItem(); if (!item) return;
+  if (!item.ddl_bindings) item.ddl_bindings = [];
+  item.ddl_bindings[idx] = val;
+  _meSetDirty();
+}
+function _meBindAdd() {
+  const item = _meCurItem(); if (!item) return;
+  if (!item.ddl_bindings) item.ddl_bindings = [];
+  item.ddl_bindings.push('');
+  _meSetDirty();
+  _meRenderRight();
+}
+function _meBindDel(idx) {
+  const item = _meCurItem(); if (!item || !item.ddl_bindings) return;
+  item.ddl_bindings.splice(idx, 1);
+  _meSetDirty();
+  _meRenderRight();
+}
+
+// ── Overrides Tab ─────────────────────────────────────────────────────────
+
+function _meHtmlOverrides(item) {
+  const ea = v => (v == null ? '' : String(v)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const deMap = item.de_map           || [];
+  const vlg   = item.var_length_groups || [];
+  const fo    = item.field_overrides   || [];
+
+  // de_map rows
+  let dmHtml = '';
+  if (!deMap.length) dmHtml = '<div class="me-empty">No DE map anchors.</div>';
+  deMap.forEach((e, i) => {
+    dmHtml += `<div class="me-bind-row">
+  <input class="me-inp" style="flex:1;min-width:0" value="${ea(e.field || '')}" placeholder="FIELD-ID"
+    oninput="_meDeMapField(${i},'field',this.value)">
+  <span style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);padding:0 5px;flex-shrink:0">→ DE</span>
+  <input class="me-inp" style="width:52px" type="number" min="1" max="128" value="${ea(e.de || '')}"
+    oninput="_meDeMapField(${i},'de',this.value)">
+  <button class="me-rb del" onclick="_meDeMapDel(${i})" title="Remove">✕</button>
+</div>`;
+  });
+
+  // var_length_groups rows
+  let vlgHtml = '';
+  if (!vlg.length) vlgHtml = '<div class="me-empty">No variable length groups.</div>';
+  vlg.forEach((g, i) => {
+    vlgHtml += `<div class="me-bind-row">
+  <input class="me-inp me-bind-inp" value="${ea(g)}" placeholder="DE-2"
+    oninput="_meVlgSet(${i}, this.value)">
+  <button class="me-rb del" onclick="_meVlgDel(${i})" title="Remove">✕</button>
+</div>`;
+  });
+
+  // field_overrides rows
+  const TYPE_OPTS = ['','uint8','uint16-be','uint16-le','uint32-be','uint32-le','binary','ascii','ebcdic'];
+  const DISP_OPTS = ['','datetime','amount','hex','text'];
+  const selOpts = (opts, cur, ph) =>
+    opts.map(o => `<option value="${o}"${(cur || '') === o ? ' selected' : ''}>${o || ph}</option>`).join('');
+  let foHtml = '';
+  if (!fo.length) foHtml = '<div class="me-empty">No field overrides.</div>';
+  fo.forEach((e, i) => {
+    foHtml += `<div class="me-bind-row">
+  <input class="me-inp" style="flex:1;min-width:0" value="${ea(e.field || '')}" placeholder="DE-7"
+    oninput="_meFoSet(${i},'field',this.value)">
+  <select class="me-sel" oninput="_meFoSet(${i},'type',this.value)">${selOpts(TYPE_OPTS, e.type, 'type…')}</select>
+  <select class="me-sel" oninput="_meFoSet(${i},'display',this.value)">${selOpts(DISP_OPTS, e.display, 'display…')}</select>
+  <button class="me-rb del" onclick="_meFoDel(${i})" title="Remove">✕</button>
+</div>`;
+  });
+
+  return `<div class="me-ov-section">
+  <div class="me-ov-title">DE Map</div>
+  <div class="me-ov-hint">Anchor: field → DE number. All subsequent DDL fields increment from the anchor. Fields before the first anchor start at DE-1.</div>
+  <div class="me-bind-list">${dmHtml}</div>
+  <button class="btn btn-sm" onclick="_meDeMapAdd()" style="margin-top:4px">+ Add Anchor</button>
+</div>
+<div class="me-ov-section">
+  <div class="me-ov-title">Variable Length Groups</div>
+  <div class="me-ov-hint">Group field IDs whose LEN sub-field controls how many bytes DATA consumes (LLVAR / LLLVAR). bitmap-fields uses this to read only LEN bytes instead of the full declared DATA length.</div>
+  <div class="me-bind-list">${vlgHtml}</div>
+  <button class="btn btn-sm" onclick="_meVlgAdd()" style="margin-top:4px">+ Add Group</button>
+</div>
+<div class="me-ov-section">
+  <div class="me-ov-title">Field Overrides</div>
+  <div class="me-ov-hint">Override how a DDL field is consumed (type) and/or formatted for display. Fields overridden to a binary type are automatically marked unreliable in ASCII input.</div>
+  <div class="me-bind-list">${foHtml}</div>
+  <button class="btn btn-sm" onclick="_meFoAdd()" style="margin-top:4px">+ Add Override</button>
+</div>`;
+}
+
+// de_map handlers
+function _meDeMapField(idx, key, val) {
+  const item = _meCurItem(); if (!item) return;
+  if (!item.de_map) item.de_map = [];
+  item.de_map[idx][key] = key === 'de' ? (parseInt(val) || 0) : val;
+  _meSetDirty();
+}
+function _meDeMapAdd() {
+  const item = _meCurItem(); if (!item) return;
+  if (!item.de_map) item.de_map = [];
+  item.de_map.push({ field: '', de: 1 });
+  _meSetDirty();
+  _meRenderRight();
+}
+function _meDeMapDel(idx) {
+  const item = _meCurItem(); if (!item || !item.de_map) return;
+  item.de_map.splice(idx, 1);
+  _meSetDirty();
+  _meRenderRight();
+}
+
+// var_length_groups handlers
+function _meVlgSet(idx, val) {
+  const item = _meCurItem(); if (!item) return;
+  if (!item.var_length_groups) item.var_length_groups = [];
+  item.var_length_groups[idx] = val;
+  _meSetDirty();
+}
+function _meVlgAdd() {
+  const item = _meCurItem(); if (!item) return;
+  if (!item.var_length_groups) item.var_length_groups = [];
+  item.var_length_groups.push('');
+  _meSetDirty();
+  _meRenderRight();
+}
+function _meVlgDel(idx) {
+  const item = _meCurItem(); if (!item || !item.var_length_groups) return;
+  item.var_length_groups.splice(idx, 1);
+  _meSetDirty();
+  _meRenderRight();
+}
+
+// field_overrides handlers
+function _meFoSet(idx, key, val) {
+  const item = _meCurItem(); if (!item) return;
+  if (!item.field_overrides) item.field_overrides = [];
+  const entry = item.field_overrides[idx]; if (!entry) return;
+  if (!val) delete entry[key];
+  else entry[key] = val;
+  _meSetDirty();
+}
+function _meFoAdd() {
+  const item = _meCurItem(); if (!item) return;
+  if (!item.field_overrides) item.field_overrides = [];
+  item.field_overrides.push({ field: '' });
+  _meSetDirty();
+  _meRenderRight();
+}
+function _meFoDel(idx) {
+  const item = _meCurItem(); if (!item || !item.field_overrides) return;
+  item.field_overrides.splice(idx, 1);
+  _meSetDirty();
+  _meRenderRight();
 }
 
 // ── Identity Tab ──────────────────────────────────────────────────────────

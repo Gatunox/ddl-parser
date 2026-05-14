@@ -614,6 +614,8 @@ input[type="text"]:focus { border-color: var(--accent); }
 .badge-netard-oct   { background: #052016; color: #10b981; border: 2px solid #10b981; }
 .badge-netard-ebcdic{ background: #1a1c1e; color: #d1d5db; border: 2px solid #d1d5db; }
 .badge-netard-ascii { background: #051a20; color: #06b6d4; border: 2px solid #06b6d4; }
+.badge-fup-hex   { background: #0f1d1a; color: #34d399; border: 2px solid #34d399; }
+.badge-fup-ascii { background: #1a0f1a; color: #a78bfa; border: 2px solid #a78bfa; }
 .badge-locked { background: #2a1a1a; color: var(--accent2); border: 2px solid var(--accent2); }
 /* ---- token map tree badges ---- */
 .tree-dirty .tree-ddl-lbl { color: var(--warning) !important; }
@@ -1293,6 +1295,8 @@ body.light .badge-netard-dump  { background: #e0f2fe; color: #be123c; border-col
 body.light .badge-netard-oct   { background: #d1fae5; color: #065f46; border-color: #10b981; }
 body.light .badge-netard-ebcdic{ background: #f3f4f6; color: #374151; border-color: #d1d5db; }
 body.light .badge-netard-ascii { background: #cffafe; color: #0e7490; border-color: #06b6d4; }
+body.light .badge-fup-hex   { background: #d1fae5; color: #065f46; border-color: #34d399; }
+body.light .badge-fup-ascii { background: #ede9ff; color: #5b21b6; border-color: #a78bfa; }
 body.light .badge-locked { background: #fde8e8; color: #cf222e; border-color: #cf222e; }
 body.light .rec-meta { background: #f6f8fa; }
 body.light .settings-pill .btn.s-active { color: #fff; }
@@ -3983,6 +3987,10 @@ function hexAsciiStartCol(text) {
 
 function detectFormat(text) {
   if (!text || !text.trim()) return null;
+  if (isFupCopyLog(text)) {
+    const firstData = text.split('\n').find(l => /^\s*\d+:\s/.test(l));
+    return (firstData && /^\s*\d+:\s{3}[0-9A-Fa-f]{4}/.test(firstData)) ? 'fup-hex' : 'fup-ascii';
+  }
   if (isNetardLog(text)) {
     const sub = _quickNetardSubFmt(text);
     return { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct',
@@ -4305,7 +4313,7 @@ function parseFlatMessage(bytes, defs, rawBytes) {
   // In ASCII-like formats, BINARY fields cannot be reliably read — mark them unreliable.
   // Reliable formats (hex, tandem-dump, netard-hex, netard-dump, ebcdic) are excluded.
   const _fmt = S.inputFormat || '';
-  const _binUnreliable = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard';
+  const _binUnreliable = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard' || _fmt === 'fup-ascii';
 
   // Value renderer for TYPE BINARY fields.
   // srcB = original (unconverted) bytes for decimal; dispB = parsed bytes for char display.
@@ -5747,7 +5755,7 @@ function _rebuildMsgTypeMap() {
 
 function _loadDetectRules() {
   try {
-    const s = localStorage.getItem('up_detect_rules');
+    const s = _kvGet('up_detect_rules');
     if (s) {
       _detectRules = JSON.parse(s);
       _detectRules.forEach(r => {
@@ -5763,7 +5771,7 @@ function _loadDetectRules() {
 
 function _saveDetectRules() {
   _rebuildMsgTypeMap();
-  try { localStorage.setItem('up_detect_rules', JSON.stringify(_detectRules)); } catch(e) {}
+  _kvSet('up_detect_rules', JSON.stringify(_detectRules));
 }
 
 let MSG_TYPE_MAP = _detectRules.map(r => {
@@ -6058,6 +6066,94 @@ function isNetardLog(text) {
   // and large RECD-NO values leave no leading spaces, so allow 0-6 spaces.
   return /^\s{0,6}\d+\s+[0-9A-Za-z]+\s+\d{2}\/\d{2}\/\d{2}/m.test(text) &&
          /^\s+SOURCE\s+\S/m.test(text);
+}
+
+function isFupCopyLog(text) {
+  // [\SYS.]$VOL.SV.FILE  RECORD N  KEY N
+  return /^\s*(?:\\[A-Z0-9]+\.)?\$[A-Z0-9]{1,8}\.[A-Z0-9]{1,8}\.[A-Z0-9]{1,8}\s+RECORD\s+\d+\s+KEY\s+/im.test(text);
+}
+
+function parseFupCopyLog(text) {
+  const lines   = text.split('\n');
+  const records = [];
+  let cur       = null;
+  let charPos   = 0;
+
+  const HDR_RE  = /^\s*(?:\\([A-Z0-9]+)\.)?\$([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\s+RECORD\s+(\d+)\s+KEY\s+(\S+)/i;
+  const LEN_RE  = /\bLEN\s+(\d+)/i;
+  const DATA_RE = /^\d+:\s/;
+
+  const flush = () => {
+    if (!cur || !cur._dl.length) { cur = null; return; }
+    const isHex = /^\d+:\s{3}[0-9A-Fa-f]{4}/.test(cur._dl[0].text);
+    cur.netardFmt = isHex ? 'hex' : 'ascii';
+    const bytes = [], bcm = [];
+
+    if (isHex) {
+      for (const dl of cur._dl) {
+        const pfxM = dl.text.match(/^(\d+:\s{3})/);
+        if (!pfxM) continue;
+        let pos = pfxM[1].length, grp = 0;
+        while (grp < 8 && pos < dl.text.length) {
+          while (pos < dl.text.length && dl.text[pos] === ' ') pos++;
+          const chunk = dl.text.slice(pos, pos + 4);
+          if (!/^[0-9A-Fa-f]{4}$/.test(chunk)) break;
+          for (let bi = 0; bi < 4; bi += 2) {
+            bytes.push(parseInt(chunk.slice(bi, bi + 2), 16));
+            const s = dl.lineStart + pos + bi;
+            bcm.push({ s, e: s + 2 });
+          }
+          pos += 4; grp++;
+        }
+      }
+    } else {
+      for (const dl of cur._dl) {
+        const m = dl.text.match(/^(\d+:\s{2})(.*)/);
+        if (!m) continue;
+        const pfxLen = m[1].length;
+        for (let ci = 0; ci < m[2].length; ci++) {
+          bytes.push(m[2].charCodeAt(ci));
+          const s = dl.lineStart + pfxLen + ci;
+          bcm.push({ s, e: s + 1 });
+        }
+      }
+    }
+
+    const last = cur._dl[cur._dl.length - 1];
+    cur.rawMsg      = bytes.map(b => String.fromCharCode(b)).join('');
+    cur.byteCharMap = bcm;
+    cur.charEnd     = last.lineStart + last.text.length;
+    delete cur._dl;
+    records.push(cur);
+    cur = null;
+  };
+
+  for (let li = 0; li < lines.length; li++) {
+    const line      = lines[li];
+    const lineStart = charPos;
+    charPos += line.length + 1;
+
+    const hm = HDR_RE.exec(line);
+    if (hm) {
+      flush();
+      const lenM  = LEN_RE.exec(line);
+      const fpath = (hm[1] ? `\\${hm[1]}.` : '') + `$${hm[2]}.${hm[3]}.${hm[4]}`;
+      cur = {
+        filePath: fpath, recNo: parseInt(hm[5], 10), keyNo: hm[6],
+        length: lenM ? parseInt(lenM[1], 10) : null,
+        netardFmt: null, rawMsg: '', byteCharMap: [],
+        charStart: lineStart, charEnd: lineStart + line.length,
+        time: null, typeCode: null, typeDesc: null,
+        source: fpath, sourceDet: `KEY ${hm[6]}`, dest: null, destDet: null,
+        _dl: [],
+      };
+    } else if (cur) {
+      const t = line.trim();
+      if (t && DATA_RE.test(t)) cur._dl.push({ text: t, lineStart });
+    }
+  }
+  flush();
+  return records;
 }
 
 const NETARD_TYPE_MAP = (() => {
@@ -6653,8 +6749,8 @@ function _netardEbcdic(rawMsg) {
 
 function doParseNetardLog(text, opts = {}) {
   S.seenTypes.clear();
-  const records = parseNetardLog(text);
-  if (!records.length) { flash('No records with message text found in NETARD log', 'warn'); return; }
+  const records = opts.parsedRecords || parseNetardLog(text);
+  if (!records.length) { flash(opts.emptyMsg || 'No records with message text found in NETARD log', 'warn'); return; }
 
   // Pad NETARD content lines to full width W so stripped trailing spaces can be highlighted.
   // NETARD right-trims every line, so lines shorter than W need spaces added to the textarea.
@@ -6706,7 +6802,7 @@ function doParseNetardLog(text, opts = {}) {
   // Step 0 — record count (informational)
   const _overrideSub = opts.ignoreOverride ? 'ATTENTION: Ignoring manual override' : null;
   _parseProgressStep(
-    `NETARD audit log \u2014 ${records.length} record${records.length !== 1 ? 's' : ''} detected`,
+    `${opts.logLabel || 'NETARD audit log'} \u2014 ${records.length} record${records.length !== 1 ? 's' : ''} detected`,
     _overrideSub,
     '#f39c12'
   );
@@ -6747,7 +6843,7 @@ function doParseNetardLog(text, opts = {}) {
           }];
           S.messages      = parsed;
           S.curIdx        = 0;
-          S.inputFormat   = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' }[rec.netardFmt] || 'netard';
+          S.inputFormat   = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[rec.netardFmt] || (opts.fmtDefault || 'netard');
           S.isParsed      = true;
           S.selFieldId    = null;
           S.trackMode     = false;
@@ -6904,7 +7000,7 @@ function doParseNetardLog(text, opts = {}) {
               const _nfCounts = {};
               for (const r of S.messages) if (r.netardFmt) _nfCounts[r.netardFmt] = (_nfCounts[r.netardFmt] || 0) + 1;
               const _topFmt = Object.entries(_nfCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'standard';
-              S.inputFormat = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' }[_topFmt] || 'netard';
+              S.inputFormat = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[_topFmt] || (opts.fmtDefault || 'netard');
               syncParseBtn();
               _lwSetParsed(true);
               document.getElementById('msgInput').readOnly = true;
@@ -7051,6 +7147,18 @@ function doParseNetardLog(text, opts = {}) {
   }, 500);
 }
 
+function doFupCopyLog(text, opts = {}) {
+  const parsedRecords = parseFupCopyLog(text);
+  doParseNetardLog(text, {
+    ...opts,
+    parsedRecords,
+    logLabel:   'FUP COPY',
+    emptyMsg:   'No records found in FUP COPY output',
+    fmtMap:     { hex: 'fup-hex', ascii: 'fup-ascii' },
+    fmtDefault: 'fup-hex',
+  });
+}
+
 // ============================================================
 // MAIN PARSE ACTION
 // ============================================================
@@ -7114,6 +7222,14 @@ function doParseMessages() {
   const msgText = document.getElementById('msgInput').value;
   if (!msgText.trim()) { flash('Please enter a message to parse.', 'warn'); return; }
   if (/DEADC0DE/i.test(msgText.replace(/\s/g, ''))) { triggerDeadC0DE(); return; }
+
+  // FUP COPY dump — handle separately (same scoring pipeline as NETARD)
+  if (!S.forcedFormat && isFupCopyLog(msgText)) {
+    const _fRecs = parseFupCopyLog(msgText);
+    const _hasScope = S.scope?.type === 'ddl' || S.scope?.type === 'def';
+    doFupCopyLog(msgText, { ignoreOverride: _hasScope && _fRecs.length > 1, showOverride: _hasScope && _fRecs.length === 1 });
+    return;
+  }
 
   // NETARD audit log — handle separately (DDL optional, uses own priority chain)
   if (!S.forcedFormat && isNetardLog(msgText)) {
@@ -9285,7 +9401,7 @@ const _AUDIT_FLT_GRP_DEFS = {
 
 function _auditApplyFltVis() {
   let vis = {};
-  try { vis = JSON.parse(localStorage.getItem('auditFltVis') || '{}'); } catch(e) {}
+  try { vis = JSON.parse(_kvGet('auditFltVis') || '{}'); } catch(e) {}
   for (const [key, ids] of Object.entries(_AUDIT_FLT_GRP_DEFS)) {
     const show = vis[key] !== false;
     for (const id of ids) {
@@ -9302,9 +9418,9 @@ function _auditApplyFltVis() {
 
 function auditToggleFltGrp(key) {
   let vis = {};
-  try { vis = JSON.parse(localStorage.getItem('auditFltVis') || '{}'); } catch(e) {}
+  try { vis = JSON.parse(_kvGet('auditFltVis') || '{}'); } catch(e) {}
   vis[key] = vis[key] === false ? true : false;
-  localStorage.setItem('auditFltVis', JSON.stringify(vis));
+  _kvSet('auditFltVis', JSON.stringify(vis));
   _auditApplyFltVis();
 }
 
@@ -9927,6 +10043,8 @@ function updateBadges() {
       'netard-oct':       ['badge-netard-oct',   'NETARD-OCT'],
       'netard-ebcdic':    ['badge-netard-ebcdic','NETARD-EBCDIC'],
       'netard-ascii':     ['badge-netard-ascii', 'NETARD-ASCII'],
+      'fup-hex':          ['badge-fup-hex',      'FUP-HEX'],
+      'fup-ascii':        ['badge-fup-ascii',    'FUP-ASCII'],
     };
     if (S._badgeFmt && fmtMap[S._badgeFmt]) {
       const [cls, lbl] = fmtMap[S._badgeFmt];
@@ -11023,7 +11141,7 @@ function getDDLFromPath(ddlPath) {
 }
 
 function saveDDLMsgMap() {
-  try { localStorage.setItem('up_ddlmm', S.ddlMsgMapRaw); } catch(e) {}
+  _kvSet('up_ddlmm', S.ddlMsgMapRaw);
 }
 
 // ---- Exclusion helpers ----
@@ -11104,11 +11222,11 @@ function toggleExclusion(vol, sv, name, defName) {
   renderDDLTree();
 }
 function saveExcl() {
-  try { localStorage.setItem('up_excl', JSON.stringify([...S.excl])); } catch(e) {}
+  _kvSet('up_excl', JSON.stringify([...S.excl]));
 }
 function loadExcl() {
   try {
-    const s = localStorage.getItem('up_excl');
+    const s = _kvGet('up_excl');
     if (s) S.excl = new Set(JSON.parse(s));
   } catch(e) {}
 }
@@ -11129,15 +11247,15 @@ function applyDEOverrides(layout, overrides) {
   layout.deByBit = new Map(layout.dataElements.map(e => [e.bitNum, e]));
 }
 function saveDeOverrides() {
-  try { localStorage.setItem('de_overrides', JSON.stringify(S.deOverrides)); } catch(e) {}
+  _kvSet('de_overrides', JSON.stringify(S.deOverrides));
 }
 function loadDeOverrides() {
-  try { const s = localStorage.getItem('de_overrides'); if (s) S.deOverrides = JSON.parse(s); } catch(e) {}
+  try { const s = _kvGet('de_overrides'); if (s) S.deOverrides = JSON.parse(s); } catch(e) {}
 }
 
 function loadDDLMsgMap() {
   try {
-    const s = localStorage.getItem('up_ddlmm');
+    const s = _kvGet('up_ddlmm');
     if (s) { S.ddlMsgMapRaw = s; S.ddlMsgMap = parseDDLMsgMap(s); }
   } catch(e) {}
 }
@@ -11515,7 +11633,11 @@ function saveDDL() {
       document.getElementById('ddlEditor').value = content;
       _removeStagedDef(fn);
       buildUnresolvedRefs();
-      saveTree(); selectScope('ddl', vol, sv, fn);
+      const saved = saveTree(); selectScope('ddl', vol, sv, fn);
+      if (!saved) {
+        flash('✗ Storage quota exceeded — DDL is in memory but will be lost on reload. Export your data now.', 'error');
+        return;
+      }
       const unresMsg = saveUnresolved?.length ? ` — ${saveUnresolved.length} unresolved type ref${saveUnresolved.length > 1 ? 's' : ''}` : '';
       flash(`✓ Saved: ${vol}/${sv}/${fn}${unresMsg}`);
     };
@@ -12050,8 +12172,77 @@ function confirmImport() {
   flash(`Imported ${count} DDL(s)`);
 }
 
+// ============================================================
+// APP KEY-VALUE STORE (IndexedDB, localStorage fallback)
+// ============================================================
+const _APP_KV_KEYS = [
+  'up_ddl_tree', 'up_ddlmm', 'up_excl', 'de_overrides',
+  'up_tree_exp', 'up_detect_rules', 'up_settings', 'up_layout',
+  'auditFltVis', 'up_ddl_versions'
+];
+let _appKV   = {};
+let _appKVDB = null;
+
+function _kvGet(key)        { return Object.prototype.hasOwnProperty.call(_appKV, key) ? _appKV[key] : null; }
+function _kvDel(key) {
+  delete _appKV[key];
+  if (_appKVDB) {
+    try { _appKVDB.transaction('kv', 'readwrite').objectStore('kv').delete(key); } catch(e) {}
+  } else {
+    localStorage.removeItem(key);
+  }
+}
+function _kvSet(key, value) {
+  _appKV[key] = value;
+  if (_appKVDB) {
+    try { _appKVDB.transaction('kv', 'readwrite').objectStore('kv').put({ key, value }); } catch(e) { return false; }
+  } else {
+    try { localStorage.setItem(key, value); } catch(e) { return false; }
+  }
+  return true;
+}
+function _openAppKV() {
+  return new Promise(resolve => {
+    const _fallback = () => {
+      for (const key of _APP_KV_KEYS) {
+        const val = localStorage.getItem(key);
+        if (val !== null) _appKV[key] = val;
+      }
+      resolve();
+    };
+    try {
+      const req = indexedDB.open('ddl-parser-kv', 1);
+      req.onupgradeneeded = e => { e.target.result.createObjectStore('kv', { keyPath: 'key' }); };
+      req.onsuccess = e => {
+        _appKVDB = e.target.result;
+        const all = _appKVDB.transaction('kv', 'readonly').objectStore('kv').getAll();
+        all.onsuccess = () => {
+          if (all.result.length > 0) {
+            for (const row of all.result) _appKV[row.key] = row.value;
+          } else {
+            // First run — migrate from localStorage
+            const wtx = _appKVDB.transaction('kv', 'readwrite');
+            const store = wtx.objectStore('kv');
+            for (const key of _APP_KV_KEYS) {
+              const val = localStorage.getItem(key);
+              if (val !== null) {
+                _appKV[key] = val;
+                store.put({ key, value: val });
+                localStorage.removeItem(key);
+              }
+            }
+          }
+          resolve();
+        };
+        all.onerror = () => resolve();
+      };
+      req.onerror = _fallback;
+    } catch(e) { _fallback(); }
+  });
+}
+
 function saveTreeExp() {
-  try { localStorage.setItem('up_tree_exp', JSON.stringify([...S.treeExp])); } catch(e) {}
+  _kvSet('up_tree_exp', JSON.stringify([...S.treeExp]));
 }
 
 function saveTree() {
@@ -12062,16 +12253,17 @@ function saveTree() {
   } else {
     for (const v of Object.keys(S.ddlTree)) localStorage.removeItem('up_cc_' + v.toUpperCase());
   }
-  try { localStorage.setItem('up_ddl_tree', JSON.stringify(S.ddlTree)); } catch(e) {}
+  if (!_kvSet('up_ddl_tree', JSON.stringify(S.ddlTree))) return false;
   saveTreeExp();
+  return true;
 }
 
 function loadTree() {
-  try { const s = localStorage.getItem('up_ddl_tree'); if (s) S.ddlTree = JSON.parse(s); } catch(e) {}
+  try { const s = _kvGet('up_ddl_tree'); if (s) S.ddlTree = JSON.parse(s); } catch(e) {}
   // treeExp intentionally NOT restored — tree always starts fully collapsed on reload
   // Migrate old flat format
   try {
-    const old = localStorage.getItem('up_ddl_versions');
+    const old = _kvGet('up_ddl_versions');
     if (old && !Object.keys(S.ddlTree).length) {
       const flat = JSON.parse(old);
       S.ddlTree['Imported'] = { 'Default': flat };
@@ -12144,7 +12336,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.116';
+const APP_VERSION  = '1.1.1.117';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12202,7 +12394,7 @@ let P = { ..._DEF_PREFS };   // active preferences
 
 function loadPrefs() {
   try {
-    const s = localStorage.getItem('up_settings');
+    const s = _kvGet('up_settings');
     if (s) P = { ..._DEF_PREFS, ...JSON.parse(s) };
   } catch(e) {}
   // Allow external sites (e.g. gu2.dev) to pass a preferred theme via ?theme=light|dark
@@ -12215,7 +12407,7 @@ function loadPrefs() {
 }
 
 function savePrefs() {
-  try { localStorage.setItem('up_settings', JSON.stringify(P)); } catch(e) {}
+  _kvSet('up_settings', JSON.stringify(P));
 }
 
 // ============================================================
@@ -12250,7 +12442,7 @@ function saveLayout() {
       });
       if (Object.keys(cw).length) { layout.colWidths = cw; _savedColWidths = { ..._savedColWidths, ...cw }; }
     }
-    localStorage.setItem('up_layout', JSON.stringify(layout));
+    _kvSet('up_layout', JSON.stringify(layout));
   } catch(e) {}
 }
 
@@ -12266,7 +12458,7 @@ function _syncColPickerCheckmarks(hiddenCols) {
 
 function loadLayout() {
   try {
-    const s = localStorage.getItem('up_layout');
+    const s = _kvGet('up_layout');
     if (!s) return;
     const layout = JSON.parse(s);
     // Panel / row flex splits
@@ -12307,7 +12499,7 @@ function _applyColWidths() {
 }
 
 function resetLayout() {
-  localStorage.removeItem('up_layout');
+  _kvDel('up_layout');
   _savedColWidths = {};
   // Reset panel / row flex to CSS defaults
   ['topRow','bottomRow','ddlPanel','msgPanel','resPanel','rawPanel'].forEach(id => {
@@ -12820,7 +13012,7 @@ function showSettingsConfirm(label, cb) {
 function resetDetectRules() {
   showSettingsConfirm('Reset detection rules to built-in defaults?', ok => {
     if (!ok) return;
-    localStorage.removeItem('up_detect_rules');
+    _kvDel('up_detect_rules');
     _detectRules = _DEFAULT_DETECT_RULES.map(r => ({...r}));
     _saveDetectRules();
     renderDetectRulesTable();
@@ -13649,25 +13841,27 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tutPrev')?.addEventListener('click', () => { if (_tutIdx > 0) { _tutIdx--; _tutRender(); } });
   document.getElementById('tutSkip')?.addEventListener('click', closeTutorial);
 
-  _fmtLoad();
-  _loadDetectRules();
-  loadPrefs();
-  _auditPrecomputeRowHeights();
-  loadExcl();
-  loadDeOverrides();
-  loadLayout();
-  _initCellTooltip();
-  applyPanelDefaults();
-  if (!P.tutorialSeen) setTimeout(showTutorial, 600);
-  _syncRawHexCol();
-  loadTree();
-  _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
-  initTreePaneResizer();
-  initDropZones();
-  _syncOverlayScroll();
-  updateDDLEditorState();
-  updateDDLHighlight();
-  syncParseBtn();
+  _openAppKV().then(() => {
+    _fmtLoad();
+    _loadDetectRules();
+    loadPrefs();
+    _auditPrecomputeRowHeights();
+    loadExcl();
+    loadDeOverrides();
+    loadLayout();
+    _initCellTooltip();
+    applyPanelDefaults();
+    if (!P.tutorialSeen) setTimeout(showTutorial, 600);
+    _syncRawHexCol();
+    loadTree();
+    _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
+    initTreePaneResizer();
+    initDropZones();
+    _syncOverlayScroll();
+    updateDDLEditorState();
+    updateDDLHighlight();
+    syncParseBtn();
+  });
 
   // Keep search line-background div scrolled in sync with the DDL editor
   document.getElementById('ddlEditor').addEventListener('scroll', () => {

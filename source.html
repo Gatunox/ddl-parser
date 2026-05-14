@@ -614,6 +614,8 @@ input[type="text"]:focus { border-color: var(--accent); }
 .badge-netard-oct   { background: #052016; color: #10b981; border: 2px solid #10b981; }
 .badge-netard-ebcdic{ background: #1a1c1e; color: #d1d5db; border: 2px solid #d1d5db; }
 .badge-netard-ascii { background: #051a20; color: #06b6d4; border: 2px solid #06b6d4; }
+.badge-fup-hex   { background: #0f1d1a; color: #34d399; border: 2px solid #34d399; }
+.badge-fup-ascii { background: #1a0f1a; color: #a78bfa; border: 2px solid #a78bfa; }
 .badge-locked { background: #2a1a1a; color: var(--accent2); border: 2px solid var(--accent2); }
 /* ---- token map tree badges ---- */
 .tree-dirty .tree-ddl-lbl { color: var(--warning) !important; }
@@ -1283,6 +1285,8 @@ body.light .badge-netard-dump  { background: #e0f2fe; color: #be123c; border-col
 body.light .badge-netard-oct   { background: #d1fae5; color: #065f46; border-color: #10b981; }
 body.light .badge-netard-ebcdic{ background: #f3f4f6; color: #374151; border-color: #d1d5db; }
 body.light .badge-netard-ascii { background: #cffafe; color: #0e7490; border-color: #06b6d4; }
+body.light .badge-fup-hex   { background: #d1fae5; color: #065f46; border-color: #34d399; }
+body.light .badge-fup-ascii { background: #ede9ff; color: #5b21b6; border-color: #a78bfa; }
 body.light .badge-locked { background: #fde8e8; color: #cf222e; border-color: #cf222e; }
 body.light .rec-meta { background: #f6f8fa; }
 body.light .settings-pill .btn.s-active { color: #fff; }
@@ -3854,6 +3858,10 @@ function hexAsciiStartCol(text) {
 
 function detectFormat(text) {
   if (!text || !text.trim()) return null;
+  if (isFupCopyLog(text)) {
+    const firstData = text.split('\n').find(l => /^\s*\d+:\s/.test(l));
+    return (firstData && /^\s*\d+:\s{3}[0-9A-Fa-f]{4}/.test(firstData)) ? 'fup-hex' : 'fup-ascii';
+  }
   if (isNetardLog(text)) {
     const sub = _quickNetardSubFmt(text);
     return { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct',
@@ -4176,7 +4184,7 @@ function parseFlatMessage(bytes, defs, rawBytes) {
   // In ASCII-like formats, BINARY fields cannot be reliably read — mark them unreliable.
   // Reliable formats (hex, tandem-dump, netard-hex, netard-dump, ebcdic) are excluded.
   const _fmt = S.inputFormat || '';
-  const _binUnreliable = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard';
+  const _binUnreliable = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard' || _fmt === 'fup-ascii';
 
   // Value renderer for TYPE BINARY fields.
   // srcB = original (unconverted) bytes for decimal; dispB = parsed bytes for char display.
@@ -5490,6 +5498,94 @@ function isNetardLog(text) {
          /^\s+SOURCE\s+\S/m.test(text);
 }
 
+function isFupCopyLog(text) {
+  // [\SYS.]$VOL.SV.FILE  RECORD N  KEY N
+  return /^\s*(?:\\[A-Z0-9]+\.)?\$[A-Z0-9]{1,8}\.[A-Z0-9]{1,8}\.[A-Z0-9]{1,8}\s+RECORD\s+\d+\s+KEY\s+/im.test(text);
+}
+
+function parseFupCopyLog(text) {
+  const lines   = text.split('\n');
+  const records = [];
+  let cur       = null;
+  let charPos   = 0;
+
+  const HDR_RE  = /^\s*(?:\\([A-Z0-9]+)\.)?\$([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\s+RECORD\s+(\d+)\s+KEY\s+(\S+)/i;
+  const LEN_RE  = /\bLEN\s+(\d+)/i;
+  const DATA_RE = /^\d+:\s/;
+
+  const flush = () => {
+    if (!cur || !cur._dl.length) { cur = null; return; }
+    const isHex = /^\d+:\s{3}[0-9A-Fa-f]{4}/.test(cur._dl[0].text);
+    cur.netardFmt = isHex ? 'hex' : 'ascii';
+    const bytes = [], bcm = [];
+
+    if (isHex) {
+      for (const dl of cur._dl) {
+        const pfxM = dl.text.match(/^(\d+:\s{3})/);
+        if (!pfxM) continue;
+        let pos = pfxM[1].length, grp = 0;
+        while (grp < 8 && pos < dl.text.length) {
+          while (pos < dl.text.length && dl.text[pos] === ' ') pos++;
+          const chunk = dl.text.slice(pos, pos + 4);
+          if (!/^[0-9A-Fa-f]{4}$/.test(chunk)) break;
+          for (let bi = 0; bi < 4; bi += 2) {
+            bytes.push(parseInt(chunk.slice(bi, bi + 2), 16));
+            const s = dl.lineStart + pos + bi;
+            bcm.push({ s, e: s + 2 });
+          }
+          pos += 4; grp++;
+        }
+      }
+    } else {
+      for (const dl of cur._dl) {
+        const m = dl.text.match(/^(\d+:\s{2})(.*)/);
+        if (!m) continue;
+        const pfxLen = m[1].length;
+        for (let ci = 0; ci < m[2].length; ci++) {
+          bytes.push(m[2].charCodeAt(ci));
+          const s = dl.lineStart + pfxLen + ci;
+          bcm.push({ s, e: s + 1 });
+        }
+      }
+    }
+
+    const last = cur._dl[cur._dl.length - 1];
+    cur.rawMsg      = bytes.map(b => String.fromCharCode(b)).join('');
+    cur.byteCharMap = bcm;
+    cur.charEnd     = last.lineStart + last.text.length;
+    delete cur._dl;
+    records.push(cur);
+    cur = null;
+  };
+
+  for (let li = 0; li < lines.length; li++) {
+    const line      = lines[li];
+    const lineStart = charPos;
+    charPos += line.length + 1;
+
+    const hm = HDR_RE.exec(line);
+    if (hm) {
+      flush();
+      const lenM  = LEN_RE.exec(line);
+      const fpath = (hm[1] ? `\\${hm[1]}.` : '') + `$${hm[2]}.${hm[3]}.${hm[4]}`;
+      cur = {
+        filePath: fpath, recNo: parseInt(hm[5], 10), keyNo: hm[6],
+        length: lenM ? parseInt(lenM[1], 10) : null,
+        netardFmt: null, rawMsg: '', byteCharMap: [],
+        charStart: lineStart, charEnd: lineStart + line.length,
+        time: null, typeCode: null, typeDesc: null,
+        source: fpath, sourceDet: `KEY ${hm[6]}`, dest: null, destDet: null,
+        _dl: [],
+      };
+    } else if (cur) {
+      const t = line.trim();
+      if (t && DATA_RE.test(t)) cur._dl.push({ text: t, lineStart });
+    }
+  }
+  flush();
+  return records;
+}
+
 const NETARD_TYPE_MAP = (() => {
   const m = {
     0: 'Station Input',
@@ -6083,8 +6179,8 @@ function _netardEbcdic(rawMsg) {
 
 function doParseNetardLog(text, opts = {}) {
   S.seenTypes.clear();
-  const records = parseNetardLog(text);
-  if (!records.length) { flash('No records with message text found in NETARD log', 'warn'); return; }
+  const records = opts.parsedRecords || parseNetardLog(text);
+  if (!records.length) { flash(opts.emptyMsg || 'No records with message text found in NETARD log', 'warn'); return; }
 
   // Pad NETARD content lines to full width W so stripped trailing spaces can be highlighted.
   // NETARD right-trims every line, so lines shorter than W need spaces added to the textarea.
@@ -6136,7 +6232,7 @@ function doParseNetardLog(text, opts = {}) {
   // Step 0 — record count (informational)
   const _overrideSub = opts.ignoreOverride ? 'ATTENTION: Ignoring manual override' : null;
   _parseProgressStep(
-    `NETARD audit log \u2014 ${records.length} record${records.length !== 1 ? 's' : ''} detected`,
+    `${opts.logLabel || 'NETARD audit log'} \u2014 ${records.length} record${records.length !== 1 ? 's' : ''} detected`,
     _overrideSub,
     '#f39c12'
   );
@@ -6177,7 +6273,7 @@ function doParseNetardLog(text, opts = {}) {
           }];
           S.messages      = parsed;
           S.curIdx        = 0;
-          S.inputFormat   = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' }[rec.netardFmt] || 'netard';
+          S.inputFormat   = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[rec.netardFmt] || (opts.fmtDefault || 'netard');
           S.isParsed      = true;
           S.selFieldId    = null;
           S.trackMode     = false;
@@ -6334,7 +6430,7 @@ function doParseNetardLog(text, opts = {}) {
               const _nfCounts = {};
               for (const r of S.messages) if (r.netardFmt) _nfCounts[r.netardFmt] = (_nfCounts[r.netardFmt] || 0) + 1;
               const _topFmt = Object.entries(_nfCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'standard';
-              S.inputFormat = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' }[_topFmt] || 'netard';
+              S.inputFormat = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[_topFmt] || (opts.fmtDefault || 'netard');
               syncParseBtn();
               _lwSetParsed(true);
               document.getElementById('msgInput').readOnly = true;
@@ -6481,6 +6577,18 @@ function doParseNetardLog(text, opts = {}) {
   }, 500);
 }
 
+function doFupCopyLog(text, opts = {}) {
+  const parsedRecords = parseFupCopyLog(text);
+  doParseNetardLog(text, {
+    ...opts,
+    parsedRecords,
+    logLabel:   'FUP COPY',
+    emptyMsg:   'No records found in FUP COPY output',
+    fmtMap:     { hex: 'fup-hex', ascii: 'fup-ascii' },
+    fmtDefault: 'fup-hex',
+  });
+}
+
 // ============================================================
 // MAIN PARSE ACTION
 // ============================================================
@@ -6544,6 +6652,14 @@ function doParseMessages() {
   const msgText = document.getElementById('msgInput').value;
   if (!msgText.trim()) { flash('Please enter a message to parse.', 'warn'); return; }
   if (/DEADC0DE/i.test(msgText.replace(/\s/g, ''))) { triggerDeadC0DE(); return; }
+
+  // FUP COPY dump — handle separately (same scoring pipeline as NETARD)
+  if (!S.forcedFormat && isFupCopyLog(msgText)) {
+    const _fRecs = parseFupCopyLog(msgText);
+    const _hasScope = S.scope?.type === 'ddl' || S.scope?.type === 'def';
+    doFupCopyLog(msgText, { ignoreOverride: _hasScope && _fRecs.length > 1, showOverride: _hasScope && _fRecs.length === 1 });
+    return;
+  }
 
   // NETARD audit log — handle separately (DDL optional, uses own priority chain)
   if (!S.forcedFormat && isNetardLog(msgText)) {
@@ -9355,6 +9471,8 @@ function updateBadges() {
       'netard-oct':       ['badge-netard-oct',   'NETARD-OCT'],
       'netard-ebcdic':    ['badge-netard-ebcdic','NETARD-EBCDIC'],
       'netard-ascii':     ['badge-netard-ascii', 'NETARD-ASCII'],
+      'fup-hex':          ['badge-fup-hex',      'FUP-HEX'],
+      'fup-ascii':        ['badge-fup-ascii',    'FUP-ASCII'],
     };
     if (S._badgeFmt && fmtMap[S._badgeFmt]) {
       const [cls, lbl] = fmtMap[S._badgeFmt];
@@ -11646,7 +11764,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.1.34';
+const APP_VERSION  = '1.1.1.35';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

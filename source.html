@@ -3949,7 +3949,7 @@ function parseDDL(text, externalDefs, externalSections) {
 // Quickly detect the NETARD sub-format from raw text without a full parse.
 // Scans formatted output lines after the first SOURCE/DEST and runs _detectNetardFmt.
 function _quickNetardSubFmt(text) {
-  const fmtLineRe = /^\s{3,20}([HAEO0]-[\s\d].+|\d+:\s.+)/i;
+  const fmtLineRe = /^\s{3,20}([HAEO0]-[\s\d].+|[0-9A-Fa-f]+:\s.+)/i;
   const contents = [];
   let foundSource = false;
   for (const line of text.split('\n')) {
@@ -3988,8 +3988,8 @@ function hexAsciiStartCol(text) {
 function detectFormat(text) {
   if (!text || !text.trim()) return null;
   if (isFupCopyLog(text)) {
-    const firstData = text.split('\n').find(l => /^\s*\d+:\s/.test(l));
-    return (firstData && /^\s*\d+:\s{3}[0-9A-Fa-f]{4}/.test(firstData)) ? 'fup-hex' : 'fup-ascii';
+    const firstData = text.split('\n').find(l => /^\s*[0-9A-Fa-f]+:\s/.test(l));
+    return (firstData && /^\s*[0-9A-Fa-f]+:\s+[0-9A-Fa-f]{4}/.test(firstData)) ? 'fup-hex' : 'fup-ascii';
   }
   if (isNetardLog(text)) {
     const sub = _quickNetardSubFmt(text);
@@ -5862,8 +5862,8 @@ function _detectNetardFmt(lines) {
     if (/^A-[\s\d]/i.test(l)) hasA = true;
     if (/^E-[\s\d]/i.test(l)) hasE = true;
     if (/^0-[\s\d]/i.test(l)) has0 = true;
-    if (!hasHex4 && /^\d+:\s/.test(l)) {
-      const after = l.replace(/^\d+:\s*/, '').trimStart();
+    if (!hasHex4 && /^[0-9A-Fa-f]+:\s/.test(l)) {
+      const after = l.replace(/^[0-9A-Fa-f]+:\s*/, '').trimStart();
       if (/^[0-9A-Fa-f]{4}(?:\s|$)/.test(after)) hasHex4 = true;
     }
   }
@@ -5968,13 +5968,13 @@ function _netardExtractBytes(fmtLines, fmt) {
     if (width > 1 && hPos >= 0) {
       // ── Multi-format: extract only H- rows ───────────────────────────────
       // First H- row is in the initial labeled block at index hPos.
-      add(_netardHexTokens(lines[hPos].replace(/^H-\s+(?:\d+:\s*)?/i, '')), hPos);
+      add(_netardHexTokens(lines[hPos].replace(/^H-\s+(?:[0-9A-Fa-f]+:\s*)?/i, '')), hPos);
       // Subsequent H- rows appear at index hPos within each continuation group.
       for (let g = width; g < lines.length; g += width) {
         const li = g + hPos;
         if (li >= lines.length) break;
         // Strip leading offset number if present, then parse hex tokens.
-        const raw = lines[li].replace(/^\d+:\s*/, '').trim();
+        const raw = lines[li].replace(/^[0-9A-Fa-f]+:\s*/, '').trim();
         add(_netardHexTokens(raw), li);
       }
     } else {
@@ -5984,11 +5984,11 @@ function _netardExtractBytes(fmtLines, fmt) {
         const l = lines[i];
         if (/^H-\s/i.test(l)) {
           active = true;
-          add(_netardHexTokens(l.replace(/^H-\s+\d+:\s*/, '')), i);
+          add(_netardHexTokens(l.replace(/^H-\s+[0-9A-Fa-f]+:\s*/, '')), i);
         } else if (/^[A-Za-z]-\s/i.test(l)) {
           /* other format prefix — skip */
-        } else if (active && /^\d+:\s/.test(l)) {
-          const data = l.replace(/^\d+:\s*/, '').trimStart();
+        } else if (active && /^[0-9A-Fa-f]+:\s/.test(l)) {
+          const data = l.replace(/^[0-9A-Fa-f]+:\s*/, '').trimStart();
           if (/^[0-9A-Fa-f]{2}[\s-]/.test(data) || /^[0-9A-Fa-f]{2}$/.test(data.split(/\s/)[0])) {
             add(_netardHexTokens(data), i);
           }
@@ -5998,9 +5998,9 @@ function _netardExtractBytes(fmtLines, fmt) {
   } else if (fmt === 'hexascii') {
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
-      if (/^\d+:\s/.test(l)) {
+      if (/^[0-9A-Fa-f]+:\s/.test(l)) {
         // Length of address prefix "NNN:  " — varies with address magnitude
-        const prefixLen = l.match(/^\d+:\s*/)[0].length;
+        const prefixLen = l.match(/^[0-9A-Fa-f]+:\s*/)[0].length;
         // Strip ASCII bracket [...]  from the end before scanning for hex tokens
         const hexEnd = l.indexOf('[');
         const hexPart = hexEnd >= 0 ? l.slice(0, hexEnd) : l;
@@ -6029,12 +6029,12 @@ function _netardExtractBytes(fmtLines, fmt) {
       const l = lines[i];
       if (/^0-\s/i.test(l)) {
         active = true;
-        const data = l.replace(/^0-\s+\d+:\s*/, '').replace(/--+/g, ' ').trim();
+        const data = l.replace(/^0-\s+[0-9A-Fa-f]+:\s*/, '').replace(/--+/g, ' ').trim();
         const toks = data.split(/\s+/).filter(t => /^[0-7]{3,6}$/.test(t));
         if (byteMode === null && toks.length) byteMode = toks[0].length <= 3;
         add(_netardOctalTokens(toks, byteMode), i);
-      } else if (active && /^\d+:\s/.test(l)) {
-        const data = l.replace(/^\d+:\s*/, '').replace(/--+/g, ' ').trim();
+      } else if (active && /^[0-9A-Fa-f]+:\s/.test(l)) {
+        const data = l.replace(/^[0-9A-Fa-f]+:\s*/, '').replace(/--+/g, ' ').trim();
         add(_netardOctalTokens(data.split(/\s+/).filter(t => /^[0-7]{3,6}$/.test(t)), byteMode), i);
       } else if (/^[A-Za-z]-\s/i.test(l)) { active = false; }
     }
@@ -6048,10 +6048,10 @@ function _netardExtractBytes(fmtLines, fmt) {
       const l = lines[i];
       if (pfxRe.test(l)) {
         active = true;
-        const data = l.replace(isEbcdic ? /^E-\s+(?:\d+:\s*)?/ : /^A-\s+(?:\d+:\s*)?/, '');
+        const data = l.replace(isEbcdic ? /^E-\s+(?:[0-9A-Fa-f]+:\s*)?/ : /^A-\s+(?:[0-9A-Fa-f]+:\s*)?/, '');
         add(_netardCtrlData(data, ctrl, isEbcdic), i);
-      } else if (active && /^\d+:\s/.test(l)) {
-        add(_netardCtrlData(l.replace(/^\d+:\s*/, ''), ctrl, isEbcdic), i);
+      } else if (active && /^[0-9A-Fa-f]+:\s/.test(l)) {
+        add(_netardCtrlData(l.replace(/^[0-9A-Fa-f]+:\s*/, ''), ctrl, isEbcdic), i);
       } else if (/^[A-Za-z]-\s/i.test(l)) {
         if (!pfxRe.test(l)) active = false;
       }
@@ -6081,19 +6081,20 @@ function parseFupCopyLog(text) {
 
   const HDR_RE  = /^\s*(?:\\([A-Z0-9]+)\.)?\$([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\s+RECORD\s+(\d+)\s+KEY\s+(\S+)/i;
   const LEN_RE  = /\bLEN\s+(\d+)/i;
-  const DATA_RE = /^\d+:\s/;
+  const DATA_RE = /^[0-9A-Fa-f]+:\s/;
 
   const flush = () => {
     if (!cur || !cur._dl.length) { cur = null; return; }
-    const isHex = /^\d+:\s{3}[0-9A-Fa-f]{4}/.test(cur._dl[0].text);
+    const isHex = /^[0-9A-Fa-f]+:\s+[0-9A-Fa-f]{4}/.test(cur._dl[0].text);
     cur.netardFmt = isHex ? 'hex' : 'ascii';
     const bytes = [], bcm = [];
 
     if (isHex) {
       for (const dl of cur._dl) {
-        const pfxM = dl.text.match(/^(\d+:\s{3})/);
-        if (!pfxM) continue;
-        let pos = pfxM[1].length, grp = 0;
+        const colonIdx = dl.text.indexOf(':');
+        if (colonIdx < 0) continue;
+        let pos = colonIdx + 1, grp = 0;
+        while (pos < dl.text.length && dl.text[pos] === ' ') pos++;
         while (grp < 8 && pos < dl.text.length) {
           while (pos < dl.text.length && dl.text[pos] === ' ') pos++;
           const chunk = dl.text.slice(pos, pos + 4);
@@ -6108,11 +6109,13 @@ function parseFupCopyLog(text) {
       }
     } else {
       for (const dl of cur._dl) {
-        const m = dl.text.match(/^(\d+:\s{2})(.*)/);
-        if (!m) continue;
-        const pfxLen = m[1].length;
-        for (let ci = 0; ci < m[2].length; ci++) {
-          bytes.push(m[2].charCodeAt(ci));
+        const colonIdx = dl.text.indexOf(':');
+        if (colonIdx < 0) continue;
+        let pfxLen = colonIdx + 1;
+        while (pfxLen < dl.text.length && dl.text[pfxLen] === ' ') pfxLen++;
+        const data = dl.text.slice(pfxLen);
+        for (let ci = 0; ci < data.length; ci++) {
+          bytes.push(data.charCodeAt(ci));
           const s = dl.lineStart + pfxLen + ci;
           bcm.push({ s, e: s + 1 });
         }
@@ -10043,8 +10046,8 @@ function updateBadges() {
       'netard-oct':       ['badge-netard-oct',   'NETARD-OCT'],
       'netard-ebcdic':    ['badge-netard-ebcdic','NETARD-EBCDIC'],
       'netard-ascii':     ['badge-netard-ascii', 'NETARD-ASCII'],
-      'fup-hex':          ['badge-fup-hex',      'FUP-HEX'],
-      'fup-ascii':        ['badge-fup-ascii',    'FUP-ASCII'],
+      'fup-hex':          ['badge-fup-hex',      'FUPCOPY HEX'],
+      'fup-ascii':        ['badge-fup-ascii',    'FUPCOPY ASCII'],
     };
     if (S._badgeFmt && fmtMap[S._badgeFmt]) {
       const [cls, lbl] = fmtMap[S._badgeFmt];

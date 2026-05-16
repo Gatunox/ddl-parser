@@ -6293,6 +6293,60 @@ function doParseNetardLog(text, opts = {}) {
       return;
     }
 
+    // ── FUP COPY: force selected scope for all records, no auto-detect ──
+    if (opts.forceScopeAll) {
+      const p1Path = (S.scope.type === 'def' && S.scope.defName)
+        ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}/${S.scope.defName}`
+        : `${S.scope.vol}/${S.scope.sv}/${S.scope.name}`;
+      _parseProgressStep(`Using DDL — ${p1Path}`, null, null, '#e74c3c');
+      setTimeout(() => {
+        if (_parseAborted) return;
+        _parseProgressDoneLast();
+        _parseProgressStep('Parsing…');
+        setTimeout(() => {
+          if (_parseAborted) return;
+          const resolved = getDDLFromPath(p1Path);
+          const parsed = [];
+          for (const rec of records) {
+            const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic } = _netardEbcdic(rec.rawMsg);
+            let fields = [], ddlPath = null, defName = null;
+            if (resolved && resolved.defs.length) {
+              const result = bestDDLMatch(parseBytes, [resolved], bytes);
+              fields  = result.fields;
+              ddlPath = result.ddlPath;
+              defName = resolved.defName ?? null;
+            }
+            const msgType = detectMsgType(parseRaw);
+            const tokens  = extractTokensFromMessage(fields, parseBytes, msgType?.type, ddlPath) ?? [];
+            parsed.push({
+              bytes: parseBytes, raw: parseRaw,
+              isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
+              byteCharMap: rec.byteCharMap || [], charStart: rec.charStart, charEnd: rec.charEnd,
+              recNo: rec.recNo, recLength: rec.length,
+              time: rec.time, typeCode: rec.typeCode, typeDesc: rec.typeDesc,
+              source: rec.source, sourceDet: rec.sourceDet, dest: rec.dest, destDet: rec.destDet,
+              timestamp: rec.time, msgType, fields, ddlPath, defName, tokens,
+              noMatchDDL: !fields.length,
+            });
+          }
+          S.messages      = parsed;
+          S.curIdx        = 0;
+          S.inputFormat   = (opts.fmtMap || {})[records[0]?.netardFmt] || (opts.fmtDefault || 'netard');
+          S.isParsed      = true;
+          S.selFieldId    = null;
+          S.trackMode     = false;
+          S.trackedFields = new Set();
+          _syncTrkColVisibility();
+          _parseProgressDoneLast();
+          _parseProgressHide();
+          syncParseBtn();
+          _resolveTokens(S.messages[0]);
+          updateBadges(); updateNav(); renderCurrent();
+        }, 400);
+      }, 400);
+      return;
+    }
+
     // Step 1 — detecting types (informational)
     _parseProgressStep('Detecting record types');
     setTimeout(() => {
@@ -6656,11 +6710,11 @@ function doParseMessages() {
   if (!msgText.trim()) { flash('Please enter a message to parse.', 'warn'); return; }
   if (/DEADC0DE/i.test(msgText.replace(/\s/g, ''))) { triggerDeadC0DE(); return; }
 
-  // FUP COPY dump — handle separately (same scoring pipeline as NETARD)
+  // FUP COPY dump — requires manual DDL selection, no auto-detection
   if (!S.forcedFormat && isFupCopyLog(msgText)) {
-    const _fRecs = parseFupCopyLog(msgText);
     const _hasScope = S.scope?.type === 'ddl' || S.scope?.type === 'def';
-    doFupCopyLog(msgText, { ignoreOverride: _hasScope && _fRecs.length > 1, showOverride: _hasScope && _fRecs.length === 1 });
+    if (!_hasScope) { flash('FUP COPY: select a DDL first to parse this file', 'error'); return; }
+    doFupCopyLog(msgText, { forceScopeAll: true });
     return;
   }
 

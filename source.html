@@ -5582,7 +5582,7 @@ function parseFupCopyLog(text) {
       };
     } else if (cur) {
       const t = line.trim();
-      if (t && DATA_RE.test(t)) cur._dl.push({ text: t, lineStart: lineStart + (line.length - line.trimStart().length) });
+      if (t && DATA_RE.test(t)) cur._dl.push({ text: line, lineStart });
     }
   }
   flush();

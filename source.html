@@ -3989,7 +3989,7 @@ function detectFormat(text) {
   if (!text || !text.trim()) return null;
   if (isFupCopyLog(text)) {
     const firstData = text.split('\n').find(l => /^\s*[0-9A-Fa-f]+:\s/.test(l));
-    return (firstData && /^\s*[0-9A-Fa-f]+:\s+[0-9A-Fa-f]{4}/.test(firstData)) ? 'fup-hex' : 'fup-ascii';
+    return (firstData && /^\s*[0-9A-Fa-f]+:\s+[0-9A-Fa-f]{4}\s+[0-9A-Fa-f]{4}/.test(firstData)) ? 'fup-hex' : 'fup-ascii';
   }
   if (isNetardLog(text)) {
     const sub = _quickNetardSubFmt(text);
@@ -6085,7 +6085,7 @@ function parseFupCopyLog(text) {
 
   const flush = () => {
     if (!cur || !cur._dl.length) { cur = null; return; }
-    const isHex = /^[0-9A-Fa-f]+:\s+[0-9A-Fa-f]{4}/.test(cur._dl[0].text);
+    const isHex = /^[0-9A-Fa-f]+:\s+[0-9A-Fa-f]{4}\s+[0-9A-Fa-f]{4}/.test(cur._dl[0].text);
     cur.netardFmt = isHex ? 'hex' : 'ascii';
     const bytes = [], bcm = [];
 

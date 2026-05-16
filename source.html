@@ -6337,7 +6337,7 @@ function parseNetardLog(text) {
 
     // Formatted output lines (H-, A-, E-, 0-, HEXASCII) — checked before MSG_RE so that
     // continuation lines (which may also have 7+ spaces) are not mixed into standard bytes.
-    const fmr = line.match(/^(\s{3,20})([HAEO0]-[\s\d].+|\d+:\s.+)/i);
+    const fmr = line.match(/^(\s{3,20})([HAEO0]-[\s\d].+|[0-9A-Fa-f]+:\s.+)/i);
     if (fmr) {
       cur._inFmtBlock = true;
       cur._fmtLines.push({ content: fmr[2], charStart: lineStart, indent: fmr[1].length });

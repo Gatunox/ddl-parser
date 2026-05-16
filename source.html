@@ -5381,6 +5381,11 @@ function _netardExtractBytes(fmtLines, fmt) {
     }
   };
   const lines = fmtLines.map(f => f.content);
+  const _afterColon = (s, fbRe) => {
+    const ci = s.indexOf(':');
+    if (ci >= 0) { let p = ci + 1; while (p < s.length && s[p] === ' ') p++; return s.slice(p); }
+    return fbRe ? s.replace(fbRe, '') : s;
+  };
 
   if (fmt === 'hex') {
     // Detect the initial labeled block to find pattern width and H- position.
@@ -5394,14 +5399,6 @@ function _netardExtractBytes(fmtLines, fmt) {
         width++;
       } else break;
     }
-
-    // Helper: return the data portion of a line — everything after the first ':', spaces skipped.
-    // Falls back to stripping the format prefix (e.g. "H- ") when no colon is present.
-    const _afterColon = (s, fbRe) => {
-      const ci = s.indexOf(':');
-      if (ci >= 0) { let p = ci + 1; while (p < s.length && s[p] === ' ') p++; return s.slice(p); }
-      return fbRe ? s.replace(fbRe, '') : s;
-    };
 
     if (width > 1 && hPos >= 0) {
       // ── Multi-format: extract only H- rows ───────────────────────────────
@@ -5432,9 +5429,8 @@ function _netardExtractBytes(fmtLines, fmt) {
   } else if (fmt === 'hexascii') {
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
+      if (!/^[0-9A-Fa-f]+:\s/.test(l)) continue;
       const colonIdx = l.indexOf(':');
-      if (colonIdx < 0) continue;
-      // Start scanning for hex tokens immediately after ':' + spaces
       let pos = colonIdx + 1;
       while (pos < l.length && l[pos] === ' ') pos++;
       const hexEnd = l.indexOf('[');

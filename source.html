@@ -5395,17 +5395,21 @@ function _netardExtractBytes(fmtLines, fmt) {
       } else break;
     }
 
+    // Helper: return the data portion of a line — everything after the first ':', spaces skipped.
+    // Falls back to stripping the format prefix (e.g. "H- ") when no colon is present.
+    const _afterColon = (s, fbRe) => {
+      const ci = s.indexOf(':');
+      if (ci >= 0) { let p = ci + 1; while (p < s.length && s[p] === ' ') p++; return s.slice(p); }
+      return fbRe ? s.replace(fbRe, '') : s;
+    };
+
     if (width > 1 && hPos >= 0) {
       // ── Multi-format: extract only H- rows ───────────────────────────────
-      // First H- row is in the initial labeled block at index hPos.
-      add(_netardHexTokens(lines[hPos].replace(/^H-\s+(?:[0-9A-Fa-f]+:\s*)?/i, '')), hPos);
-      // Subsequent H- rows appear at index hPos within each continuation group.
+      add(_netardHexTokens(_afterColon(lines[hPos], /^H-\s+/i)), hPos);
       for (let g = width; g < lines.length; g += width) {
         const li = g + hPos;
         if (li >= lines.length) break;
-        // Strip leading offset number if present, then parse hex tokens.
-        const raw = lines[li].replace(/^[0-9A-Fa-f]+:\s*/, '').trim();
-        add(_netardHexTokens(raw), li);
+        add(_netardHexTokens(_afterColon(lines[li])), li);
       }
     } else {
       // ── Single H- format: original logic ─────────────────────────────────
@@ -5414,11 +5418,11 @@ function _netardExtractBytes(fmtLines, fmt) {
         const l = lines[i];
         if (/^H-\s/i.test(l)) {
           active = true;
-          add(_netardHexTokens(l.replace(/^H-\s+[0-9A-Fa-f]+:\s*/, '')), i);
+          add(_netardHexTokens(_afterColon(l, /^H-\s+/i)), i);
         } else if (/^[A-Za-z]-\s/i.test(l)) {
           /* other format prefix — skip */
-        } else if (active && /^[0-9A-Fa-f]+:\s/.test(l)) {
-          const data = l.replace(/^[0-9A-Fa-f]+:\s*/, '').trimStart();
+        } else if (active && l.includes(':')) {
+          const data = _afterColon(l);
           if (/^[0-9A-Fa-f]{2}[\s-]/.test(data) || /^[0-9A-Fa-f]{2}$/.test(data.split(/\s/)[0])) {
             add(_netardHexTokens(data), i);
           }
@@ -5428,29 +5432,27 @@ function _netardExtractBytes(fmtLines, fmt) {
   } else if (fmt === 'hexascii') {
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
-      if (/^[0-9A-Fa-f]+:\s/.test(l)) {
-        // Length of address prefix "NNN:  " — varies with address magnitude
-        const prefixLen = l.match(/^[0-9A-Fa-f]+:\s*/)[0].length;
-        // Strip ASCII bracket [...]  from the end before scanning for hex tokens
-        const hexEnd = l.indexOf('[');
-        const hexPart = hexEnd >= 0 ? l.slice(0, hexEnd) : l;
-        // Scan hex tokens and record their column within content (fl.content = l here)
-        let pos = prefixLen;
-        while (pos < hexPart.length) {
-          const ws = hexPart.slice(pos).match(/^\s+/);
-          if (ws) { pos += ws[0].length; continue; }
-          const tok = hexPart.slice(pos).match(/^[0-9A-Fa-f]{2,4}(?=\s|$)/);
-          if (!tok) { pos++; continue; }
-          const t = tok[0];
-          if (t.length % 2 !== 0) { pos += t.length; continue; }
-          const bs = [], cols = [];
-          for (let j = 0; j < t.length; j += 2) {
-            bs.push(parseInt(t.slice(j, j + 2), 16));
-            cols.push(pos + j);  // char position of this byte's hex pair within content
-          }
-          add(bs, i, cols);
-          pos += t.length;
+      const colonIdx = l.indexOf(':');
+      if (colonIdx < 0) continue;
+      // Start scanning for hex tokens immediately after ':' + spaces
+      let pos = colonIdx + 1;
+      while (pos < l.length && l[pos] === ' ') pos++;
+      const hexEnd = l.indexOf('[');
+      const hexPart = hexEnd >= 0 ? l.slice(0, hexEnd) : l;
+      while (pos < hexPart.length) {
+        const ws = hexPart.slice(pos).match(/^\s+/);
+        if (ws) { pos += ws[0].length; continue; }
+        const tok = hexPart.slice(pos).match(/^[0-9A-Fa-f]{2,4}(?=\s|$)/);
+        if (!tok) { pos++; continue; }
+        const t = tok[0];
+        if (t.length % 2 !== 0) { pos += t.length; continue; }
+        const bs = [], cols = [];
+        for (let j = 0; j < t.length; j += 2) {
+          bs.push(parseInt(t.slice(j, j + 2), 16));
+          cols.push(pos + j);
         }
+        add(bs, i, cols);
+        pos += t.length;
       }
     }
   } else if (fmt === 'octal') {
@@ -5459,12 +5461,12 @@ function _netardExtractBytes(fmtLines, fmt) {
       const l = lines[i];
       if (/^0-\s/i.test(l)) {
         active = true;
-        const data = l.replace(/^0-\s+[0-9A-Fa-f]+:\s*/, '').replace(/--+/g, ' ').trim();
+        const data = _afterColon(l, /^0-\s+/i).replace(/--+/g, ' ').trimStart();
         const toks = data.split(/\s+/).filter(t => /^[0-7]{3,6}$/.test(t));
         if (byteMode === null && toks.length) byteMode = toks[0].length <= 3;
         add(_netardOctalTokens(toks, byteMode), i);
-      } else if (active && /^[0-9A-Fa-f]+:\s/.test(l)) {
-        const data = l.replace(/^[0-9A-Fa-f]+:\s*/, '').replace(/--+/g, ' ').trim();
+      } else if (active && l.includes(':')) {
+        const data = _afterColon(l).replace(/--+/g, ' ').trimStart();
         add(_netardOctalTokens(data.split(/\s+/).filter(t => /^[0-7]{3,6}$/.test(t)), byteMode), i);
       } else if (/^[A-Za-z]-\s/i.test(l)) { active = false; }
     }
@@ -5472,16 +5474,16 @@ function _netardExtractBytes(fmtLines, fmt) {
     // ascii or ebcdic
     const isEbcdic = fmt === 'ebcdic';
     const pfxRe    = isEbcdic ? /^E-\s/i : /^A-\s/i;
+    const pfxFbRe  = isEbcdic ? /^E-\s+/i : /^A-\s+/i;
     const ctrl     = isEbcdic ? _EBCDIC_CTRL : _ASCII_CTRL;
     let active = false;
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
       if (pfxRe.test(l)) {
         active = true;
-        const data = l.replace(isEbcdic ? /^E-\s+(?:[0-9A-Fa-f]+:\s*)?/ : /^A-\s+(?:[0-9A-Fa-f]+:\s*)?/, '');
-        add(_netardCtrlData(data, ctrl, isEbcdic), i);
-      } else if (active && /^[0-9A-Fa-f]+:\s/.test(l)) {
-        add(_netardCtrlData(l.replace(/^[0-9A-Fa-f]+:\s*/, ''), ctrl, isEbcdic), i);
+        add(_netardCtrlData(_afterColon(l, pfxFbRe), ctrl, isEbcdic), i);
+      } else if (active && l.includes(':')) {
+        add(_netardCtrlData(_afterColon(l), ctrl, isEbcdic), i);
       } else if (/^[A-Za-z]-\s/i.test(l)) {
         if (!pfxRe.test(l)) active = false;
       }

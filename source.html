@@ -2480,7 +2480,8 @@ function validateDDLErrors(text, repoTypeRegistry) {
 
       // ④ Orphan field — no PIC, no TYPE (built-in or user-ref), no children, not special.
       //   hasTypeRef catches "TYPE user-def" and "TYPE *" which typeStr regex doesn't cover.
-      if (!isGroup && !hasPic && !hasType && !f.hasTypeRef && !special) {
+      //   REDEFINES without PIC/TYPE is valid — it inherits the target's structure.
+      if (!isGroup && !hasPic && !hasType && !f.hasTypeRef && !special && !f.redefines) {
         errors.push(`${ln}Field "${f.name}": has neither PIC nor TYPE clause and is not a group field`);
       }
 
@@ -3177,6 +3178,24 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     for (let k = i + 1; k < result.length && result[k].level > result[i].level; k++) {
       result[k].offset += delta;
     }
+  }
+
+  // Fifth pass — bare REDEFINES (no PIC/TYPE, no children): inherit target's size and type.
+  for (let i = 0; i < result.length; i++) {
+    const f = result[i];
+    if (!f.isGroup || !f.isRedefines) continue;
+    const hasChildren = i + 1 < result.length && result[i + 1].level > f.level;
+    if (hasChildren) continue;
+    const tgtName = (f.redefinesName || '').toUpperCase();
+    let tgt = null;
+    for (let j = i - 1; j >= 0; j--) {
+      if (result[j].name.toUpperCase() === tgtName) { tgt = result[j]; break; }
+    }
+    if (!tgt) continue;
+    f.isGroup  = false;
+    f.size     = tgt.size;
+    f.unitSize = tgt.unitSize;
+    f.dataType = tgt.dataType;
   }
 
   const totalSize = result.reduce((mx, f) => Math.max(mx, f.offset + f.size), posCtx[0].pos);
@@ -11173,6 +11192,7 @@ function saveDDL() {
       }
       const unresMsg = saveUnresolved?.length ? ` — ${saveUnresolved.length} unresolved type ref${saveUnresolved.length > 1 ? 's' : ''}` : '';
       flash(`✓ Saved: ${vol}/${sv}/${fn}${unresMsg}`);
+      if (S.isParsed && document.getElementById('msgInput').value.trim()) doParseMessages();
     };
     if (existingEntry === undefined || isUnsavedNew) {
       doWrite();
@@ -11869,7 +11889,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.7';
+const APP_VERSION  = '1.1.2.10';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

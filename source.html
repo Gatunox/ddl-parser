@@ -1425,17 +1425,6 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
       <div class="panel-header">
         <span class="panel-title">DDL Definition</span>
         <span id="ddlScopePath" style="display:none"></span>
-        <div class="ddl-search-bar" id="ddlSearchBar">
-          <input id="ddlSearchInput" class="ddl-search-input" type="text" placeholder="Search" autocomplete="off" spellcheck="false"
-            oninput="ddlSearchUpdate()"
-            onkeydown="if(event.key==='Enter'){ddlSearchNext();}else if(event.key==='Escape'){ddlSearchClear();}"/>
-          <div id="ddlSearchControls" class="ddl-search-controls hidden">
-            <span class="ddl-search-nav" onclick="ddlSearchPrev()" title="Previous match">&lt;</span>
-            <span id="ddlSearchCount" class="ddl-search-count"></span>
-            <span class="ddl-search-nav" onclick="ddlSearchNext()" title="Next match">&gt;</span>
-            <span class="ddl-search-nav ddl-search-nav-x" onclick="ddlSearchClear()" title="Clear search">✕</span>
-          </div>
-        </div>
         <button class="panel-toggle" id="ddlToggle" onclick="togglePanel('ddlPanel','ddlToggle','ddlResizer')" title="Hide panel">−</button>
       </div>
       <div class="ddl-pane-split">
@@ -1453,6 +1442,18 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
         <div class="resizer-h" id="ddlTreeResizer"></div>
         <div class="ddl-editor-pane">
           <div id="ddlCfgBar">
+            <div class="ddl-search-bar" id="ddlSearchBar">
+              <input id="ddlSearchInput" class="ddl-search-input" type="text" placeholder="Search" autocomplete="off" spellcheck="false"
+                oninput="ddlSearchUpdate()"
+                onkeydown="if(event.key==='Enter'){ddlSearchNext();}else if(event.key==='Escape'){ddlSearchClear();}"/>
+              <div id="ddlSearchControls" class="ddl-search-controls hidden">
+                <span class="ddl-search-nav" onclick="ddlSearchPrev()" title="Previous match">&lt;</span>
+                <span id="ddlSearchCount" class="ddl-search-count"></span>
+                <span class="ddl-search-nav" onclick="ddlSearchNext()" title="Next match">&gt;</span>
+                <span class="ddl-search-nav ddl-search-nav-x" onclick="ddlSearchClear()" title="Clear search">✕</span>
+              </div>
+            </div>
+            <span style="flex:1"></span>
             <button class="btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
             <button class="btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
             <button class="btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
@@ -11968,7 +11969,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.30';
+const APP_VERSION  = '1.1.2.31';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

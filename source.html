@@ -723,6 +723,16 @@ tr.row-filter-hide  { display: none; }
   font-family:var(--font-mono); min-height:calc(var(--sz-mono) + 14px);
 }
 .panel.collapsed #rawCfgBar { display:none !important; }
+#ddlCfgBar {
+  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
+  border-bottom:2px solid var(--border); font-size:calc(var(--sz-mono) - 1px);
+  background:rgba(212,167,44,0.07); color:var(--text); flex-wrap:wrap;
+  min-height:calc(var(--sz-mono) + 14px);
+}
+.panel.collapsed #ddlCfgBar { display:none !important; }
+#ddlCfgBar .btn { background:none; border:2px solid var(--border); color:var(--text-dim); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 6px; border-radius:2px; cursor:pointer; height:calc(var(--sz-mono) + 8px); display:inline-flex; align-items:center; justify-content:center; }
+#ddlCfgBar .btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+#ddlCfgBar .btn:disabled { opacity:0.35; cursor:default; }
 #resCfgControls {
   display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom:2px solid var(--border); font-size:calc(var(--sz-mono) - 1px);
@@ -1426,10 +1436,12 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
             <span class="ddl-search-nav ddl-search-nav-x" onclick="ddlSearchClear()" title="Clear search">✕</span>
           </div>
         </div>
-        <button class="btn path-btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
-        <button class="btn path-btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
-        <button class="btn path-btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
         <button class="panel-toggle" id="ddlToggle" onclick="togglePanel('ddlPanel','ddlToggle','ddlResizer')" title="Hide panel">−</button>
+      </div>
+      <div id="ddlCfgBar">
+        <button class="btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
+        <button class="btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
+        <button class="btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
       </div>
       <div class="ddl-pane-split">
         <div class="ddl-tree-pane" id="ddlTreePane">
@@ -11956,7 +11968,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.28';
+const APP_VERSION  = '1.1.2.29';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

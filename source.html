@@ -1438,11 +1438,6 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
         </div>
         <button class="panel-toggle" id="ddlToggle" onclick="togglePanel('ddlPanel','ddlToggle','ddlResizer')" title="Hide panel">−</button>
       </div>
-      <div id="ddlCfgBar">
-        <button class="btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
-        <button class="btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
-        <button class="btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
-      </div>
       <div class="ddl-pane-split">
         <div class="ddl-tree-pane" id="ddlTreePane">
           <div id="ddlmmBar"></div>
@@ -1457,6 +1452,11 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
         </div>
         <div class="resizer-h" id="ddlTreeResizer"></div>
         <div class="ddl-editor-pane">
+          <div id="ddlCfgBar">
+            <button class="btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
+            <button class="btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
+            <button class="btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
+          </div>
           <div id="ddlValidationBar"></div>
           <div id="ddlEditor" class="cm-host"></div>
         </div>
@@ -11968,7 +11968,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.29';
+const APP_VERSION  = '1.1.2.30';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

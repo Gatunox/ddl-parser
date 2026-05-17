@@ -248,9 +248,19 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 body.light #parseBtn.btn-primary { color: #fff !important; }
 body.light #parseBtn.btn-primary:hover { background: #0860ca !important; border-color: #0860ca !important; }
 #fmtForceSelect { background: var(--bg-deep); color: var(--text-dim); border: 2px solid transparent; border-radius: 0; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 6px; height: auto; align-self: stretch; cursor: pointer; outline: none; }
-.lw-widget { display: flex; align-items: center; gap: 2px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--sz-mono); color: var(--text-dim); padding: 0 6px 0 4px; border-right: 1px solid var(--border); }
+.lw-widget { display: flex; align-items: center; gap: 2px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--sz-mono); color: var(--text-dim); padding: 0 6px 0 4px; }
 .lw-widget.hidden { display: none !important; }
-body.audit-active #lwWidget { display: none !important; }
+#msgCfgBar {
+  display:none; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
+  border-bottom:2px solid var(--border); font-size:calc(var(--sz-mono) - 1px);
+  background:rgba(212,167,44,0.07); color:var(--text); flex-wrap:wrap;
+  position:relative;
+}
+#msgCfgBar select { background:var(--bg-panel); border:2px solid var(--border); color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 4px; border-radius:2px; height:calc(var(--sz-mono) + 8px); }
+#msgCfgBar select:focus { outline:none; border-color:var(--accent); }
+#msgCfgBar select:hover { border-color:var(--accent); color:var(--accent); }
+#msgCfgBar select.fmt-forced { color:var(--warning); border-color:var(--warning); }
+body.audit-active #msgCfgBar, .panel.collapsed #msgCfgBar { display:none !important; }
 body.audit-active #auditStats { display: flex !important; align-items: center; padding: 0 6px 0 4px; border-right: 1px solid var(--border); font-size: var(--sz-mono); color: var(--text-dim); font-family: var(--font-mono); }
 .lw-lbl  { opacity: 0.5; user-select: none; margin-right: 2px; }
 .lw-step { cursor: pointer; opacity: 0.55; padding: 0 3px; user-select: none; line-height: 1; }
@@ -588,7 +598,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btn-active:hover { background: var(--warning); color: #000; border-color: var(--warning); box-shadow: 0 0 0 1px var(--warning); }
 
 /* ===== BADGES ===== */
-#fmtBadge, #cntBadge, #rawInfo { display: flex; align-items: center; gap: 4px; }
+#fmtBadge, #cntBadge { display: flex; align-items: center; gap: 4px; }
 .badge {
   display: inline-flex;
   align-items: center;
@@ -669,9 +679,10 @@ input[type="text"]:focus { border-color: var(--accent); }
 .tree-ddlmm-dirty .tree-ddlmm-lbl::after { content: ' (*)'; color: var(--warning); font-weight: 700; }
 /* ---- NETARD record metadata bar (top of parse results) ---- */
 .rec-meta {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 4px 8px; background: var(--bg-deep); border-bottom: 1px solid var(--border);
-  font-size: var(--sz-mono); color: var(--text-dim); flex-shrink: 0; font-family: var(--mono);
+  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
+  border-bottom:2px solid var(--border); font-size:calc(var(--sz-mono) - 1px);
+  background:rgba(212,167,44,0.07); color:var(--text); flex-wrap:wrap;
+  position:relative; font-family:var(--mono);
 }
 .rec-meta-pipe { color: var(--border); margin: 0 2px; }
 .rec-meta-route { color: var(--text); }
@@ -697,13 +708,31 @@ tr.row-filter-hide  { display: none; }
 .panel-header .btn.btn-accent-on { color: var(--accent) !important; }
 .btn.btn-accent-on { color: var(--accent) !important; }
 .res-filter-input {
-  font-family: var(--mono); font-size: var(--sz-mono);
-  background: var(--bg-input); color: var(--text);
-  border: 1px solid var(--border); border-radius: 3px;
-  padding: 2px 6px; width: 100px; flex-shrink: 0;
+  font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px);
+  background: var(--bg-panel); color: var(--text);
+  border: 2px solid var(--border); border-radius: 2px;
+  padding: 0 4px; width: 100px; height: calc(var(--sz-mono) + 8px); flex-shrink: 0;
 }
 .res-filter-input:focus { outline: none; border-color: var(--accent); }
 .res-filter-input::placeholder { color: var(--text-dim); opacity: 0.7; }
+#resCfgBar { display:none; flex-direction:column; flex-shrink:0; }
+#rawCfgBar {
+  display:none; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
+  border-bottom:2px solid var(--border); font-size:calc(var(--sz-mono) - 1px);
+  background:rgba(212,167,44,0.07); color:var(--text-dim); flex-wrap:wrap;
+  font-family:var(--font-mono);
+}
+.panel.collapsed #rawCfgBar { display:none !important; }
+#resCfgControls {
+  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
+  border-bottom:2px solid var(--border); font-size:calc(var(--sz-mono) - 1px);
+  background:rgba(212,167,44,0.07); color:var(--text); flex-wrap:wrap; position:relative;
+}
+#resCfgControls .btn { background:none; border:2px solid var(--border); color:var(--text-dim); font-family:var(--font-mono); font-size:var(--sz-mono); padding:0 8px; height:calc(var(--sz-mono) + 8px); border-radius:2px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+#resCfgControls .btn:hover { border-color:var(--accent); color:var(--text); }
+#resCfgControls select { background:var(--bg-panel); border:2px solid var(--border); color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 4px; border-radius:2px; height:calc(var(--sz-mono) + 8px); align-self:auto; }
+#resCfgControls select:hover { border-color:var(--accent); color:var(--accent); }
+#resCfgControls select:focus { outline:none; border-color:var(--accent); }
 
 /* ===== RESULTS TABLE ===== */
 .tbl-wrap { overflow-y: auto; flex: 1; min-height: 0; scrollbar-gutter: stable; }
@@ -1155,8 +1184,6 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .audit-dt-copy button { background:none; border:2px solid var(--border); color:var(--text-dim); font-family:var(--font-mono); font-size:calc(var(--sz-mono) - 2px); padding:0; width:calc(var(--sz-mono) + 2px); height:calc(var(--sz-mono) + 8px); border-radius:2px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
 .audit-dt-copy button:hover { border-color:var(--accent); color:var(--text); }
 .audit-stats { color:var(--text-very-dim); font-size:calc(var(--sz-mono) - 1px); flex-shrink:0; }
-body.audit-active #fmtForceSelect { opacity:0.35; pointer-events:none; }
-body.audit-active #fmtBadge, body.audit-active #cntBadge { visibility:hidden; }
 .audit-list-header {
   display:flex; align-items:center; gap:0; padding:3px 8px; flex-shrink:0;
   border-bottom:2px solid var(--border); font-size:calc(var(--sz-mono) - 1px);
@@ -1430,6 +1457,19 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
     <div class="panel" id="msgPanel">
       <div class="panel-header">
         <span class="panel-title">Message Input</span>
+        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding-left:6px;overflow:hidden">
+          <span id="msgFileName" style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0"></span>
+        </div>
+        <div class="flex-row">
+          <span id="auditStats" class="audit-stats" style="display:none"></span>
+          <input type="file" id="auditFileInput" style="display:none" onchange="onAuditFileOpen(this)">
+          <button class="btn" id="auditOpenBtn" onclick="openAuditFileDialog()" title="Open binary audit file">📂 Audit</button>
+          <button class="btn btn-primary" id="parseBtn" onclick="_parseBtnClick()" style="min-width:calc(var(--sz-mono)*13);padding:0 8px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">▶ Parse</button>
+          <button class="btn" id="msgClearBtn" onclick="_clearBtnClick()">✕ Clear</button>
+        </div>
+        <button class="panel-toggle" id="msgToggle" onclick="togglePanel('msgPanel','msgToggle','ddlResizer')" title="Hide panel">−</button>
+      </div>
+      <div id="msgCfgBar">
         <select id="fmtForceSelect" onchange="onFmtForceChange()" title="Force input format (overrides auto-detect)">
           <option value="">AUTO</option>
           <option value="ascii">ASCII</option>
@@ -1438,28 +1478,18 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
           <option value="ebcdic">EBCDIC</option>
           <option value="oct">OCT</option>
         </select>
-        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding-left:6px;overflow:hidden">
-          <span id="msgFileName" style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0"></span>
-        </div>
         <span id="fmtBadge" style="flex-shrink:0;padding:0 4px"></span>
         <span id="cntBadge" style="flex-shrink:0"></span>
-        <div class="flex-row">
-          <span id="auditStats" class="audit-stats" style="display:none"></span>
-          <span class="lw-widget hidden" id="lwWidget" title="Line width — click value to type, ‹ › to step presets, ↺ to reset">
-            <span class="lw-lbl">Line Width</span>
-            <span class="lw-step" onclick="lwStep(-1)" title="Previous preset">&lt;</span>
-            <span id="lwDisplay" class="lw-val" onclick="lwStartEdit()" title="Click to type a value">Auto</span>
-            <input id="lwInput" class="lw-input hidden" type="text" inputmode="numeric" pattern="[0-9]*" size="3" maxlength="3"
-              onblur="lwCommit()" onkeydown="if(event.key==='Enter'){lwCommit();}if(event.key==='Escape'){lwCancel();}"/>
-            <span class="lw-step" onclick="lwStep(1)" title="Next preset">&gt;</span>
-            <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>
-          </span>
-          <input type="file" id="auditFileInput" style="display:none" onchange="onAuditFileOpen(this)">
-          <button class="btn" id="auditOpenBtn" onclick="openAuditFileDialog()" title="Open binary audit file">📂 Audit</button>
-          <button class="btn btn-primary" id="parseBtn" onclick="_parseBtnClick()" style="min-width:calc(var(--sz-mono)*13);padding:0 8px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">▶ Parse</button>
-          <button class="btn" id="msgClearBtn" onclick="_clearBtnClick()">✕ Clear</button>
-        </div>
-        <button class="panel-toggle" id="msgToggle" onclick="togglePanel('msgPanel','msgToggle','ddlResizer')" title="Hide panel">−</button>
+        <span style="flex:1"></span>
+        <span class="lw-widget hidden" id="lwWidget" title="Line width — click value to type, ‹ › to step presets, ↺ to reset">
+          <span class="lw-lbl">Line Width</span>
+          <span class="lw-step" onclick="lwStep(-1)" title="Previous preset">&lt;</span>
+          <span id="lwDisplay" class="lw-val" onclick="lwStartEdit()" title="Click to type a value">Auto</span>
+          <input id="lwInput" class="lw-input hidden" type="text" inputmode="numeric" pattern="[0-9]*" size="3" maxlength="3"
+            onblur="lwCommit()" onkeydown="if(event.key==='Enter'){lwCommit();}if(event.key==='Escape'){lwCancel();}"/>
+          <span class="lw-step" onclick="lwStep(1)" title="Next preset">&gt;</span>
+          <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>
+        </span>
       </div>
       <div class="panel-body" style="flex-direction:row;position:relative">
         <div id="msgGutter" class="msg-gutter" aria-hidden="true"></div>
@@ -1581,20 +1611,29 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
           <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
           <button class="btn" onclick="nextMsg()">&gt;</button>
         </div>
-        <button class="btn" id="exportBtn" onclick="openMsgExportModal()" style="display:none;flex-shrink:0" title="Export messages">⬇ Export</button>
-        <select id="colPickerSelect" onchange="onColPickerChange(this)" title="Show/hide columns">
-          <option value="" disabled selected>Columns</option>
-          <option value="id"  data-col="id">✓ Field</option>
-          <option value="desc" data-col="desc">✓ Description</option>
-          <option value="len"  data-col="len">✓ Length</option>
-          <option value="val"  data-col="val">✓ Value</option>
-          <option value="raw"  data-col="raw" style="display:none">✓ Raw Hex</option>
-          <option value="trk"  data-col="trk">✓ Trk</option>
-        </select>
-        <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
-        <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0;min-width:80px;text-align:center" title="Hide/show REDEFINES fields">Hide Redef</button>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
+      </div>
+      <div id="resCfgBar">
+        <div class="rec-meta" id="recMetaRow" style="display:none"></div>
+        <div id="resCfgControls">
+          <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
+          <span style="flex:1"></span>
+          <button class="btn" id="exportBtn" onclick="openMsgExportModal()" style="display:none;flex-shrink:0" title="Export messages">Export</button>
+          <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0;min-width:80px;" title="Hide/show REDEFINES fields">Hide Redef</button>
+          <div style="position:relative;display:inline-flex">
+            <button class="btn" id="colCfgBtn" onclick="toggleColCfgDialog()" title="Column visibility" style="display:none;padding:0 6px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">⚙</button>
+            <div id="colCfgDialog" class="audit-cfg-dialog">
+              <div class="audit-cfg-hdr"><span>Columns</span><button class="btn" onclick="toggleColCfgDialog()" style="padding:1px 7px;font-size:13px">✕</button></div>
+              <div class="audit-cfg-row"><label>Field</label><button class="panel-toggle" id="ccol_id" onclick="toggleResColVisibility('id')">−</button></div>
+              <div class="audit-cfg-row"><label>Description</label><button class="panel-toggle" id="ccol_desc" onclick="toggleResColVisibility('desc')">−</button></div>
+              <div class="audit-cfg-row"><label>Length</label><button class="panel-toggle" id="ccol_len" onclick="toggleResColVisibility('len')">−</button></div>
+              <div class="audit-cfg-row"><label>Value</label><button class="panel-toggle" id="ccol_val" onclick="toggleResColVisibility('val')">−</button></div>
+              <div class="audit-cfg-row" id="ccol_raw_row"><label>Raw Hex</label><button class="panel-toggle" id="ccol_raw" onclick="toggleResColVisibility('raw')">−</button></div>
+              <div class="audit-cfg-row"><label>Trk</label><button class="panel-toggle" id="ccol_trk" onclick="toggleResColVisibility('trk')">−</button></div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="panel-body" id="resContainer">
         <div class="empty-st">
@@ -1610,10 +1649,10 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
     <div class="panel" id="rawPanel">
       <div class="panel-header" ondblclick="copyRawToClipboard()" title="Double-click to copy raw dump to clipboard">
         <span class="panel-title" id="rawTitle">Raw Message</span>
-        <div class="flex-row">
-          <span id="rawInfo" style="font-size:var(--sz-mono);color:var(--text-dim)"></span>
-        </div>
         <button class="panel-toggle" id="rawToggle" onclick="togglePanel('rawPanel','rawToggle','resResizer')" title="Hide panel">−</button>
+      </div>
+      <div id="rawCfgBar">
+        <span id="rawInfo"></span>
       </div>
       <div class="panel-body">
         <div id="rawDisplay" class="hex-dump">
@@ -2008,11 +2047,10 @@ function _syncRawHexCol() {
       thRaw.style.width = thRaw.dataset.savedWidth || '120px';
     }
   }
-  // Show/hide dropdown option and reset its checkmark when the panel collapses
-  if (opt) {
-    opt.style.display = rawCollapsed ? '' : 'none';
-    if (rawCollapsed) opt.textContent = '✓ Raw Hex';
-  }
+  // Show/hide Raw Hex row in column dialog and reset its state when panel collapses
+  const rawRow = document.getElementById('ccol_raw_row');
+  if (rawRow) rawRow.style.display = rawCollapsed ? '' : 'none';
+  if (rawCollapsed) { const b = document.getElementById('ccol_raw'); if (b) b.classList.remove('is-collapsed'); }
 }
 
 // ============================================================
@@ -6282,8 +6320,9 @@ function doParseNetardLog(text, opts = {}) {
             ddlPath = result.ddlPath;
             defName = resolved.defName ?? null;
           }
-          const msgType = detectMsgType(parseRaw);
-          const tokens  = extractTokensFromMessage(fields, parseBytes, msgType?.type, ddlPath) ?? [];
+          const _ddlLabel = defName || p1Path.split('/').pop();
+          const msgType = { type: _ddlLabel, label: _ddlLabel, color: '#50c878' };
+          const tokens  = extractTokensFromMessage(fields, parseBytes, msgType.type, ddlPath) ?? [];
           const parsed  = [{ bytes: parseBytes, raw: parseRaw,
             isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
             byteCharMap: rec.byteCharMap || [], charStart: rec.charStart, charEnd: rec.charEnd,
@@ -6335,8 +6374,9 @@ function doParseNetardLog(text, opts = {}) {
               ddlPath = result.ddlPath;
               defName = resolved.defName ?? null;
             }
-            const msgType = detectMsgType(parseRaw);
-            const tokens  = extractTokensFromMessage(fields, parseBytes, msgType?.type, ddlPath) ?? [];
+            const _ddlLabel = defName || p1Path.split('/').pop();
+            const msgType = { type: _ddlLabel, label: _ddlLabel, color: '#50c878' };
+            const tokens  = extractTokensFromMessage(fields, parseBytes, msgType.type, ddlPath) ?? [];
             parsed.push({
               bytes: parseBytes, raw: parseRaw,
               isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
@@ -6689,6 +6729,9 @@ function _padFupCopyAsciiLines(text) {
 }
 
 function doFupCopyLog(text, opts = {}) {
+  // Web terminals paste non-breaking spaces ( ) where data has 0x20 — normalize first.
+  const nbspNorm = text.replace(/ /g, ' ');
+  if (nbspNorm !== text) { document.getElementById('msgInput').value = nbspNorm; text = nbspNorm; }
   const paddedText = _padFupCopyAsciiLines(text);
   if (paddedText !== text) document.getElementById('msgInput').value = paddedText;
   const parsedRecords = parseFupCopyLog(paddedText);
@@ -7316,6 +7359,8 @@ function syncParseBtn() {
   const hasInput = !!document.getElementById('msgInput').value.trim();
   if (b) { b.disabled = !hasInput; b.classList.toggle('btn-primary', hasInput); }
   if (c) c.disabled = !S.isParsed && !hasInput;
+  const bar = document.getElementById('msgCfgBar');
+  if (bar) bar.style.display = (hasInput || S.isParsed) ? 'flex' : 'none';
 }
 
 function _parseBtnClick() {
@@ -7862,15 +7907,21 @@ function _clearResultsOnly() {
   document.getElementById('msgNav').style.display = 'none';
   document.getElementById('trkBtn').style.display = 'none';
   document.getElementById('exportBtn').style.display = 'none';
-  document.getElementById('colPickerSelect').style.display = 'none';
+  document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
+  const _cfgBar = document.getElementById('resCfgBar');
+  if (_cfgBar) _cfgBar.style.display = 'none';
+  const _recMeta = document.getElementById('recMetaRow');
+  if (_recMeta) { _recMeta.innerHTML = ''; _recMeta.style.display = 'none'; }
   document.getElementById('resPanelTitle').textContent = 'Parse Results';
   document.getElementById('resContainer').innerHTML =
     '<div class="empty-st"><div>No messages parsed yet.</div></div>';
   document.getElementById('rawDisplay').innerHTML =
     '<span style="color:var(--text-dim)">Raw message bytes will appear here after parsing.</span>';
   document.getElementById('rawInfo').textContent = '';
+  const _rawCfgBar1 = document.getElementById('rawCfgBar');
+  if (_rawCfgBar1) _rawCfgBar1.style.display = 'none';
   document.getElementById('msgGutter').innerHTML = '';
 }
 function clearAll() {
@@ -7892,9 +7943,13 @@ function clearAll() {
   document.getElementById('msgNav').style.display = 'none';
   document.getElementById('trkBtn').style.display = 'none';
   document.getElementById('exportBtn').style.display = 'none';
-  document.getElementById('colPickerSelect').style.display = 'none';
+  document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
+  const _cfgBar3 = document.getElementById('resCfgBar');
+  if (_cfgBar3) _cfgBar3.style.display = 'none';
+  const _recMeta3 = document.getElementById('recMetaRow');
+  if (_recMeta3) { _recMeta3.innerHTML = ''; _recMeta3.style.display = 'none'; }
   document.getElementById('resPanelTitle').textContent = 'Parse Results';
 
   document.getElementById('resContainer').innerHTML = `
@@ -7905,6 +7960,8 @@ function clearAll() {
   document.getElementById('rawDisplay').innerHTML =
     '<span style="color:var(--text-dim)">Raw message bytes will appear here after parsing.</span>';
   document.getElementById('rawInfo').textContent = '';
+  const _rawCfgBar2 = document.getElementById('rawCfgBar');
+  if (_rawCfgBar2) _rawCfgBar2.style.display = 'none';
   // clear filename from panel title
   const fnEl = document.getElementById('msgFileName');
   if (fnEl) fnEl.textContent = '';
@@ -7923,9 +7980,8 @@ function renderCurrent() {
   renderFieldTable(msg);
   renderRaw(msg);
   updateMsgGutter(true);
+  document.getElementById('resPanelTitle').textContent = 'Parse Results';
   if (msg.isNetard) {
-    const tp = msg.msgType?.label ? ` · ${msg.msgType.label}` : '';
-    document.getElementById('resPanelTitle').textContent = `Rec #${msg.recNo}${msg.typeDesc ? '  ' + msg.typeDesc : ''}${tp}`;
     // Sync audit record list highlight
     if (msg.recNo != null && _auditSt?.filtered?.length) {
       const fi = _auditSt.filtered.findIndex(r => r.recNo === msg.recNo);
@@ -7946,37 +8002,34 @@ function renderCurrent() {
         requestAnimationFrame(() => document.getElementById('aud-row-' + fi)?.classList.add('aud-sel'));
       }
     }
-  } else {
-    const tp       = (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') ? ` · ${msg.msgType.label}` : '';
-    const ddlLabel = msg.ddlPath ? ` — ${msg.ddlPath.split('/').pop()}${msg.defName ? '/' + msg.defName : ''}` : '';
-    document.getElementById('resPanelTitle').textContent = `Parse Results${tp}${ddlLabel}`;
   }
 }
 
 function renderFieldTable(msg) {
   // NETARD record metadata bar
-  let metaBar = '';
+  let metaContent = '';
   if (msg.isNetard) {
     const t   = msg.msgType || { type:'UNKNOWN' };
-    metaBar = `<div class="rec-meta">
-      ${_btypeHtml(t.type, t.color)}
+    const recLabel = [msg.recNo != null ? `Rec #${msg.recNo}` : '', msg.typeDesc || ''].filter(Boolean).join(' · ');
+    metaContent = `${_btypeHtml(t.type, t.color)}
+      ${recLabel ? `<span class="rec-meta-route">${esc(recLabel)}</span><span class="rec-meta-pipe">|</span>` : ''}
       <span class="rec-meta-route">${esc(msg.source||'?')} → ${esc(msg.dest||'?')}</span>
-      ${msg.typeDesc ? `<span class="rec-meta-pipe">|</span><span>${esc(msg.typeDesc)}</span>` : ''}
       <span class="rec-meta-pipe">|</span>
       <span class="rec-meta-time">${esc(msg.time||'')}</span>
       <span class="rec-meta-pipe">|</span>
-      <span>${msg.recLength} bytes</span>
-    </div>`;
+      <span>${msg.recLength} bytes</span>`;
   } else if (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') {
     const t   = msg.msgType;
     const ddlName = msg.ddlPath ? (msg.ddlPath.split('/').pop() + (msg.defName ? '/' + msg.defName : '')) : '';
-    metaBar = `<div class="rec-meta">
-      ${_btypeHtml(t.type, t.color)}
+    metaContent = `${_btypeHtml(t.type, t.color)}
       ${ddlName ? `<span class="rec-meta-pipe">|</span><span>${esc(ddlName)}</span>` : ''}
       <span class="rec-meta-pipe">|</span>
-      <span>${msg.bytes?.length || 0} bytes</span>
-    </div>`;
+      <span>${msg.bytes?.length || 0} bytes</span>`;
   }
+  const _recMetaRow = document.getElementById('recMetaRow');
+  if (_recMetaRow) { _recMetaRow.innerHTML = metaContent; _recMetaRow.style.display = metaContent ? 'flex' : 'none'; }
+  const _resCfgBar = document.getElementById('resCfgBar');
+  if (_resCfgBar) _resCfgBar.style.display = 'flex';
 
   let _rowNum = 0;
   const makeFieldRows = (fieldList, prefix, extraClass = '') => fieldList.map(f => {
@@ -8134,7 +8187,7 @@ function renderFieldTable(msg) {
             : 'Check your DDL definition.'}</div>
        </div>`;
 
-  document.getElementById('resContainer').innerHTML = metaBar + tableOrEmpty;
+  document.getElementById('resContainer').innerHTML = tableOrEmpty;
   initColResize();
   _applyColWidths();
 
@@ -8142,7 +8195,7 @@ function renderFieldTable(msg) {
   const _filterIn  = document.getElementById('resFilterInput');
   const _redefBtn  = document.getElementById('hideRedefBtn');
   if (_filterIn) { _filterIn.style.display = ''; _filterIn.value = ''; }
-  if (_redefBtn) { _redefBtn.style.display = ''; }
+  if (_redefBtn) { _redefBtn.style.display = 'inline-flex'; }
   // Re-apply hide-redef class if state is active
   if (S.hideRedefines) document.getElementById('resContainer').classList.add('hide-redef');
 }
@@ -8210,6 +8263,8 @@ function renderRaw(msg) {
   } else {
     document.getElementById('rawInfo').textContent = `${bytes.length} bytes  |  ${S.inputFormat || 'unknown'}`;
   }
+  const _rawCfgBar = document.getElementById('rawCfgBar');
+  if (_rawCfgBar) _rawCfgBar.style.display = 'flex';
   if (S.selFieldId) {
     applyRawHL(S.selFieldId, 'hb-selected');
     renderInputOverlay();
@@ -9448,6 +9503,16 @@ function auditToggleCfgDialog() {
   const dlg = document.getElementById('auditCfgDialog');
   dlg.classList.toggle('open');
 }
+function toggleColCfgDialog() {
+  document.getElementById('colCfgDialog').classList.toggle('open');
+}
+function toggleResColVisibility(col) {
+  const isHidden = document.getElementById('resContainer').classList.contains('hide-' + col);
+  setResCol(col, isHidden);
+  const btn = document.getElementById('ccol_' + col);
+  if (btn) btn.classList.toggle('is-collapsed', !isHidden);
+  saveLayout();
+}
 
 
 // ============================================================
@@ -9464,7 +9529,7 @@ function toggleTrack(fid, checked) {
 function toggleTrackMode() {
   S.trackMode = !S.trackMode;
   const btn = document.getElementById('trkBtn');
-  const colPicker = document.getElementById('colPickerSelect');
+  const colPicker = document.getElementById('colCfgBtn');
   if (S.trackMode) {
     btn.textContent = '⊟ Exit Track';
     btn.classList.remove('btn-primary');
@@ -9477,7 +9542,7 @@ function toggleTrackMode() {
     btn.classList.toggle('btn-primary', S.trackedFields.size > 0);
     // Restore columns picker visibility based on parsed content
     const total = S.messages?.length ?? 0;
-    if (colPicker) colPicker.style.display = total > 0 ? 'inline-block' : 'none';
+    if (colPicker) colPicker.style.display = total > 0 ? 'inline-flex' : 'none';
     renderCurrent();
   }
 }
@@ -9551,8 +9616,10 @@ function updateNav() {
   document.getElementById('msgCtr').textContent = `${S.curIdx+1} / ${total}`;
   document.getElementById('msgNav').style.display = total > 1 ? 'flex' : 'none';
   document.getElementById('trkBtn').style.display = S.trackedFields.size > 0 || S.trackMode ? 'inline-block' : 'none';
-  document.getElementById('exportBtn').style.display = total > 0 ? 'inline-block' : 'none';
-  document.getElementById('colPickerSelect').style.display = total > 0 ? 'inline-block' : 'none';
+  document.getElementById('exportBtn').style.display = total > 0 ? 'inline-flex' : 'none';
+  document.getElementById('colCfgBtn').style.display = total > 0 ? 'inline-flex' : 'none';
+  const _cfgBar2 = document.getElementById('resCfgBar');
+  if (_cfgBar2) _cfgBar2.style.display = total > 0 ? 'flex' : 'none';
 }
 
 // ============================================================
@@ -11889,7 +11956,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.10';
+const APP_VERSION  = '1.1.2.27';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -12000,12 +12067,9 @@ function saveLayout() {
 }
 
 function _syncColPickerCheckmarks(hiddenCols) {
-  const sel = document.getElementById('colPickerSelect');
-  if (!sel) return;
-  sel.querySelectorAll('option[data-col]').forEach(opt => {
-    const cols = opt.dataset.col.split(',');
-    const isHidden = cols.some(c => hiddenCols.includes(c));
-    opt.textContent = (isHidden ? '  ' : '✓ ') + opt.textContent.replace(/^[✓ ]+/, '');
+  ['id','desc','len','val','raw','trk'].forEach(col => {
+    const btn = document.getElementById('ccol_' + col);
+    if (btn) btn.classList.toggle('is-collapsed', hiddenCols.includes(col));
   });
 }
 

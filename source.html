@@ -5542,8 +5542,7 @@ function parseFupCopyLog(text) {
       for (const dl of cur._dl) {
         const colonIdx = dl.text.indexOf(':');
         if (colonIdx < 0) continue;
-        let pfxLen = colonIdx + 1;
-        while (pfxLen < dl.text.length && dl.text[pfxLen] === ' ') pfxLen++;
+        const pfxLen = colonIdx + 3; // colon + exactly 2 spaces
         const data = dl.text.slice(pfxLen);
         for (let ci = 0; ci < data.length; ci++) {
           bytes.push(data.charCodeAt(ci));
@@ -6661,8 +6660,7 @@ function _padFupCopyAsciiLines(text) {
     } else if (t && DATA_RE.test(t)) {
       const ci = line.indexOf(':');
       if (ci < 0) continue;
-      let pfx = ci + 1;
-      while (pfx < line.length && line[pfx] === ' ') pfx++;
+      const pfx = ci + 3; // colon + exactly 2 spaces
       if (isHexRec === null) isHexRec = /^[0-9A-Fa-f]{4}\s/.test(line.slice(ci + 1).trimStart());
       curData.push({ li, dataLen: line.length - pfx });
     }
@@ -11871,7 +11869,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.6';
+const APP_VERSION  = '1.1.2.7';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

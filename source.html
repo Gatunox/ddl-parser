@@ -713,7 +713,7 @@ tr.row-filter-hide  { display: none; }
   font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px);
   background: var(--bg-panel); color: var(--text);
   border: 2px solid var(--border); border-radius: 2px;
-  padding: 0 4px; width: 100px; height: calc(var(--sz-mono) + 8px); flex-shrink: 0;
+  padding: 0 4px; height: calc(var(--sz-mono) + 8px); flex-shrink: 0;
 }
 .res-filter-input:focus { outline: none; border-color: var(--accent); }
 .res-filter-input::placeholder { color: var(--text-dim); opacity: 0.7; }
@@ -7387,6 +7387,18 @@ function _clearBtnClick() {
   else clearAll();
 }
 
+function _syncFilterPos() {
+  const bar = document.getElementById('resCfgControls');
+  const inp = document.getElementById('resFilterInput');
+  const thId = document.querySelector('#resContainer th.th-id');
+  if (!bar || !inp || !thId || getComputedStyle(thId).display === 'none') return;
+  const barR = bar.getBoundingClientRect();
+  const thR = thId.getBoundingClientRect();
+  const padLeft = parseFloat(getComputedStyle(bar).paddingLeft) || 0;
+  inp.style.marginLeft = Math.max(0, thR.left - barR.left - padLeft) + 'px';
+  inp.style.width = thR.width + 'px';
+}
+
 function initColResize() {
   const table = document.querySelector('#resContainer table.res-tbl');
   if (!table) return;
@@ -7401,6 +7413,7 @@ function initColResize() {
       document.body.style.cursor = 'col-resize';
       const onMove = ev => {
         th.style.width = Math.max(36, startW + ev.clientX - startX) + 'px';
+        _syncFilterPos();
       };
       const onUp = () => {
         handle.classList.remove('th-resize-active');
@@ -8209,7 +8222,7 @@ function renderFieldTable(msg) {
   // Always show filter and Hide Redef when a message is active; redef button is visually inert when no redefines present
   const _filterIn  = document.getElementById('resFilterInput');
   const _redefBtn  = document.getElementById('hideRedefBtn');
-  if (_filterIn) { _filterIn.style.display = ''; _filterIn.value = ''; }
+  if (_filterIn) { _filterIn.style.display = ''; _filterIn.value = ''; _syncFilterPos(); }
   if (_redefBtn) { _redefBtn.style.display = 'inline-flex'; }
   // Re-apply hide-redef class if state is active
   if (S.hideRedefines) document.getElementById('resContainer').classList.add('hide-redef');
@@ -11971,7 +11984,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.33';
+const APP_VERSION  = '1.1.2.34';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

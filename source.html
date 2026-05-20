@@ -1538,6 +1538,8 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-test-fid{color:var(--accent);white-space:nowrap;}
 .me-test-fdesc{color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
 .me-test-fval{color:var(--text);word-break:break-all;}
+.me-test-fbracket{color:var(--text-dim);user-select:none;}
+.me-test-fsp{color:var(--text-dim);opacity:.35;user-select:none;}
 .me-test-flen{color:var(--text-dim);white-space:nowrap;text-align:right;}
 .me-test-fbytes{color:var(--text-dim);white-space:nowrap;font-size:calc(var(--sz-mono) - 2px);}
 .me-test-ferr{color:#f85149;font-style:italic;}
@@ -12640,7 +12642,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.68';
+const APP_VERSION  = '1.1.2.69';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15625,12 +15627,20 @@ function _meTestSection(title, color, body, badge) {
   return `<div class="me-test-section"><div class="me-test-sec-hdr">${dot}${title}${bdg}</div>${body}</div>`;
 }
 
+function _meTestFmtVal(raw) {
+  const s = String(raw).slice(0, 120);
+  const inner = s.split('').map(ch =>
+    ch === ' ' ? '<span class="me-test-fsp">·</span>' : _escHtml(ch)
+  ).join('');
+  return `<span class="me-test-fbracket">[</span>${inner}<span class="me-test-fbracket">]</span>`;
+}
+
 function _meTestFieldTable(fields) {
   if (!fields.length) return '<div class="me-test-note">No fields parsed.</div>';
   const rows = fields.map(f => {
-    if (f.error) return `<tr><td class="me-test-fid">${_escHtml(f.id||'?')}</td><td colspan="3" class="me-test-ferr">${_escHtml(f.error)}</td></tr>`;
-    const val = f.value != null ? _escHtml(String(f.value).slice(0, 120)) : '';
-    const desc = f.description ? _escHtml(f.description.slice(0, 30)) : '';
+    if (f.error) return `<tr><td class="me-test-fid">${_escHtml(f.id||'?')}</td><td colspan="4" class="me-test-ferr">${_escHtml(f.error)}</td></tr>`;
+    const val   = f.value != null ? _meTestFmtVal(f.value) : '';
+    const desc  = f.description ? _escHtml(f.description.slice(0, 30)) : '';
     const brange = f.startByte != null ? `${f.startByte}–${f.endByte}` : '';
     return `<tr>` +
       `<td class="me-test-fid">${_escHtml(f.id||'')}</td>` +

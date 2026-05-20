@@ -1533,6 +1533,17 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-ps-ta{width:100%;min-height:220px;max-height:420px;resize:vertical;font-family:var(--mono);font-size:var(--sz-mono);background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text);padding:6px 8px;box-sizing:border-box;outline:none;line-height:1.5;tab-size:2;}
 .me-ps-ta:focus{border-color:var(--accent);}
 .me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
+.me-ps-help{background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;padding:10px 12px;display:none;overflow-y:auto;max-height:340px;}
+.me-ps-help.open{display:block;}
+.me-ps-help-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
+.me-ps-help-table th{text-align:left;color:var(--text-dim);font-weight:600;padding:0 10px 5px 0;border-bottom:1px solid var(--border);white-space:nowrap;}
+.me-ps-help-table td{padding:4px 10px 4px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.04);line-height:1.4;}
+.me-ps-help-table tr:last-child td{border-bottom:none;}
+.me-ps-help-block{color:var(--accent);white-space:nowrap;}
+.me-ps-help-dim{color:var(--text-dim);}
+.me-ps-help-ex{margin-top:10px;padding-top:8px;border-top:1px solid var(--border);}
+.me-ps-help-ex-title{color:var(--text-dim);font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);margin-bottom:4px;}
+.me-ps-help-snippet{background:var(--bg-panel);border:1px solid var(--border);border-radius:2px;padding:6px 8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text);white-space:pre;line-height:1.5;overflow-x:auto;}
 /* ── DDL Bindings + Overrides ── */
 .me-bind-list{display:flex;flex-direction:column;gap:3px;}
 .me-bind-row{display:flex;gap:5px;align-items:center;}
@@ -12595,7 +12606,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.64';
+const APP_VERSION  = '1.1.2.65';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14307,13 +14318,60 @@ function _meHtmlParseSpec(item) {
   const raw = _escHtml(JSON.stringify(item.parse_spec || [], null, 2));
   return `<div class="me-ps-wrap">
   <div class="me-ps-toolbar">
-    <span class="me-ps-hint">JSON array of parse blocks — read, read-bitmap, bitmap-fields, skip, when, repeat, read-until, read-fixed, read-length-prefix, read-tlv, token-area</span>
+    <span class="me-ps-hint">JSON array of parse blocks</span>
+    <button class="btn btn-sm" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
     <button class="btn btn-sm" onclick="_mePsFmt()">Format</button>
   </div>
+  <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
   <textarea class="me-ps-ta" id="me-ps-ta" spellcheck="false"
     oninput="_mePsChange(this.value)">${raw}</textarea>
   <div id="me-ps-err" class="me-ps-err"></div>
 </div>`;
+}
+
+function _mePsToggleHelp() {
+  const el = document.getElementById('me-ps-help');
+  if (el) el.classList.toggle('open');
+}
+
+function _mePsHelpHtml() {
+  const rows = [
+    ['read',               'Read a DDL-defined field (offset + length from DDL)',         'field: "FIELD-ID"'],
+    ['read-fixed',         'Read N bytes inline, no DDL ref needed',                      'length: 4 (or "FIELD-ID"), type, encoding, as: "FIELD-ID"'],
+    ['read-until',         'Read bytes until sentinel byte(s) or end of message',         'sentinels: ["0x1C"], eom: true, as: "FIELD-ID"'],
+    ['read-length-prefix', 'Read a 1–2 byte length prefix, then that many bytes',         'prefix: "uint8"|"uint16-be"|"uint16-le"|"bcd2", as: "FIELD-ID", sentinels, eom'],
+    ['read-to-end',        'Consume all remaining bytes into a field',                     'as: "FIELD-ID"'],
+    ['read-bitmap',        'Read 8 or 16 bytes as a DE bitmap',                           'field: "FIELD-ID", encoding: "binary"|"ascii-hex"'],
+    ['bitmap-fields',      'Read DE fields flagged by a prior bitmap via de_map',          'bitmap: "BITMAP-FIELD-ID"'],
+    ['read-tlv',           'Parse a buffer as repeating TLV triples until exhausted',     'field: "FIELD-ID", tag_length: 2, length_length: 2, encoding: "binary"|"ascii-hex"'],
+    ['skip',               'Advance the read cursor N bytes',                             'length: 4'],
+    ['when',               'Conditional branch on a prior field value',                   'field: "FIELD-ID", is: "1" (or [...]), not: "X", then: [...]'],
+    ['repeat',             'Loop N times — N read from a prior field',                    'count: "FIELD-ID", body: [...]'],
+    ['token-area',         'Hand off remaining bytes to token/variable-length parser',    '(no attributes)'],
+  ];
+  const thead = '<tr><th>Block</th><th>Purpose</th><th>Key attributes</th></tr>';
+  const tbody = rows.map(([blk, purpose, attrs]) =>
+    `<tr><td class="me-ps-help-block">${blk}</td><td>${purpose}</td><td class="me-ps-help-dim">${attrs}</td></tr>`
+  ).join('');
+  const ex1 = _escHtml(JSON.stringify([
+    {"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}},
+    {"read": "MTI"},
+    {"bitmap-fields": "BITMAP"}
+  ], null, 2));
+  const ex2 = _escHtml(JSON.stringify([
+    {"read": "MESSAGE-CLASS"},
+    {"read-until": {"sentinels": ["0x1C"], "eom": true, "as": "BUFFER-A"}},
+    {"when": {"field": "MESSAGE-CLASS", "is": "1", "then": [
+      {"read-until": {"sentinels": ["0x1C"], "eom": true, "as": "BUFFER-B"}}
+    ]}}
+  ], null, 2));
+  return `<table class="me-ps-help-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>
+<div class="me-ps-help-ex">
+  <div class="me-ps-help-ex-title">Example — ISO 8583 bitmap message:</div>
+  <pre class="me-ps-help-snippet">${ex1}</pre>
+  <div class="me-ps-help-ex-title" style="margin-top:8px">Example — conditional buffers (NDC-style):</div>
+  <pre class="me-ps-help-snippet">${ex2}</pre>
+</div>`
 }
 
 function _mePsChange(val) {

@@ -1539,8 +1539,8 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-bind-inp{flex:1;min-width:0;}
 .me-ddl-drop{position:fixed;z-index:22000;background:var(--bg-panel);border:2px solid var(--accent);border-radius:2px;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.4);display:none;}
 .me-ddl-opt{display:flex;align-items:baseline;gap:8px;padding:4px 10px;cursor:pointer;}
-.me-ddl-opt:hover{background:rgba(var(--accent-rgb),.15);}
-.me-ddl-opt:hover .me-ddl-opt-name{color:var(--accent);}
+.me-ddl-opt:hover,.me-ddl-opt.me-ddl-focused{background:rgba(var(--accent-rgb),.15);}
+.me-ddl-opt:hover .me-ddl-opt-name,.me-ddl-opt.me-ddl-focused .me-ddl-opt-name{color:var(--accent);}
 .me-ddl-opt-name{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);white-space:nowrap;flex-shrink:0;}
 .me-ddl-opt-path{font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .me-ddl-empty{font-family:var(--mono);font-size:var(--sz-mono);padding:6px 10px;color:var(--text-dim);}
@@ -12595,7 +12595,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.62';
+const APP_VERSION  = '1.1.2.63';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14356,7 +14356,8 @@ function _meHtmlDDLBindings(item) {
     placeholder="VOL/SUBVOL/FILENAME"
     oninput="_meBindInput(${i},this.value)"
     onfocus="_meBindShowDrop(${i})"
-    onblur="_meBindHideDrop()">
+    onblur="_meBindHideDrop()"
+    onkeydown="_meBindKeyDown(${i},event)">
   <button class="me-rb del" onclick="_meBindDel(${i})" title="Remove">✕</button>
 </div>`;
   });
@@ -14385,6 +14386,8 @@ function _meDDLEntries() {
   return entries;
 }
 
+let _meDropEntries = [], _meDropBindIdx = -1, _meDropFocusIdx = -1;
+
 function _meBindInput(idx, val) {
   _meBindSet(idx, val);
   _meBindShowDrop(idx);
@@ -14394,17 +14397,18 @@ function _meBindShowDrop(idx) {
   const inp  = document.getElementById('me-bind-inp-' + idx);
   const drop = document.getElementById('me-ddl-drop');
   if (!inp || !drop) return;
+  _meDropBindIdx   = idx;
+  _meDropFocusIdx  = -1;
   const entries = _meDDLEntries();
   const q = inp.value.toLowerCase();
-  const filtered = entries.filter(e => !q || e.defName.toLowerCase().includes(q) || e.path.toLowerCase().includes(q));
-  if (!filtered.length) {
+  _meDropEntries = entries.filter(e => !q || e.defName.toLowerCase().includes(q) || e.path.toLowerCase().includes(q));
+  if (!_meDropEntries.length) {
     drop.innerHTML = '<div class="me-ddl-empty">' + (entries.length ? 'No match' : 'No DDLs loaded') + '</div>';
   } else {
-    drop.innerHTML = filtered.map(e =>
-      `<div class="me-ddl-opt" onmousedown="event.preventDefault();_meBindPick(${idx},${JSON.stringify(e.path)})">
-  <span class="me-ddl-opt-name">${_escHtml(e.defName)}</span>
-  <span class="me-ddl-opt-path">${_escHtml(e.path)}</span>
-</div>`
+    drop.innerHTML = _meDropEntries.map((e, i) =>
+      `<div class="me-ddl-opt" id="me-ddl-opt-${i}" onmousedown="event.preventDefault();_meBindPickIdx(${i})">` +
+      `<span class="me-ddl-opt-name">${_escHtml(e.defName)}</span>` +
+      `<span class="me-ddl-opt-path">${_escHtml(e.path)}</span></div>`
     ).join('');
   }
   const r = inp.getBoundingClientRect();
@@ -14418,7 +14422,45 @@ function _meBindHideDrop() {
   setTimeout(() => {
     const drop = document.getElementById('me-ddl-drop');
     if (drop) drop.style.display = 'none';
+    _meDropEntries = []; _meDropBindIdx = -1; _meDropFocusIdx = -1;
   }, 120);
+}
+
+function _meBindFocusOpt(i) {
+  const drop = document.getElementById('me-ddl-drop');
+  if (!drop) return;
+  drop.querySelectorAll('.me-ddl-opt').forEach((el, j) =>
+    el.classList.toggle('me-ddl-focused', j === i)
+  );
+  const el = document.getElementById('me-ddl-opt-' + i);
+  if (el) el.scrollIntoView({ block: 'nearest' });
+  _meDropFocusIdx = i;
+}
+
+function _meBindPickIdx(entryIdx) {
+  const e = _meDropEntries[entryIdx];
+  if (!e) return;
+  _meBindPick(_meDropBindIdx, e.path);
+}
+
+function _meBindKeyDown(idx, ev) {
+  const drop = document.getElementById('me-ddl-drop');
+  const visible = drop && drop.style.display !== 'none';
+  if (ev.key === 'ArrowDown') {
+    ev.preventDefault();
+    if (!visible) { _meBindShowDrop(idx); return; }
+    _meBindFocusOpt(Math.min(_meDropFocusIdx + 1, _meDropEntries.length - 1));
+  } else if (ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    _meBindFocusOpt(Math.max(_meDropFocusIdx - 1, 0));
+  } else if (ev.key === 'Enter') {
+    ev.preventDefault();
+    if (_meDropFocusIdx >= 0) _meBindPickIdx(_meDropFocusIdx);
+  } else if (ev.key === 'Escape') {
+    const d = document.getElementById('me-ddl-drop');
+    if (d) d.style.display = 'none';
+    _meDropEntries = []; _meDropBindIdx = -1; _meDropFocusIdx = -1;
+  }
 }
 
 function _meBindPick(idx, path) {
@@ -14427,6 +14469,7 @@ function _meBindPick(idx, path) {
   _meBindSet(idx, path);
   const drop = document.getElementById('me-ddl-drop');
   if (drop) drop.style.display = 'none';
+  _meDropEntries = []; _meDropBindIdx = -1; _meDropFocusIdx = -1;
 }
 
 function _meBindSet(idx, val) {

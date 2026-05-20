@@ -1522,10 +1522,29 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-test-row{display:flex;align-items:center;gap:8px;}
 .me-test-ta{width:100%;min-height:56px;max-height:110px;resize:vertical;font-family:var(--mono);font-size:var(--sz-mono);background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text);padding:4px 6px;box-sizing:border-box;outline:none;}
 .me-test-ta:focus{border-color:var(--accent);}
-.me-test-out{font-family:var(--mono);font-size:var(--sz-mono);max-height:90px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
+.me-test-out{font-family:var(--mono);font-size:var(--sz-mono);max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:0;}
 .me-test-pass{color:#3fb950;}
 .me-test-fail{color:var(--text-dim);}
 .me-test-err{color:#f85149;}
+.me-test-note{color:var(--text-dim);font-style:italic;}
+.me-test-section{margin-bottom:8px;}
+.me-test-section:last-child{margin-bottom:0;}
+.me-test-sec-hdr{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border);margin-bottom:4px;color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+.me-test-sec-badge{font-size:calc(var(--sz-mono) - 2px);padding:1px 5px;border-radius:2px;font-weight:700;}
+.me-test-ftbl{width:100%;border-collapse:collapse;font-size:calc(var(--sz-mono) - 1px);}
+.me-test-ftbl td{padding:2px 8px 2px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.04);line-height:1.4;}
+.me-test-ftbl tr:last-child td{border-bottom:none;}
+.me-test-ftbl tr:hover td{background:rgba(var(--accent-rgb),.06);}
+.me-test-fid{color:var(--accent);white-space:nowrap;}
+.me-test-fdesc{color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
+.me-test-fval{color:var(--text);word-break:break-all;}
+.me-test-flen{color:var(--text-dim);white-space:nowrap;text-align:right;}
+.me-test-fbytes{color:var(--text-dim);white-space:nowrap;font-size:calc(var(--sz-mono) - 2px);}
+.me-test-ferr{color:#f85149;font-style:italic;}
+.me-test-tok-id{color:var(--accent2);white-space:nowrap;min-width:30px;}
+.me-test-tok-name{color:var(--text-dim);white-space:nowrap;}
+.me-test-tok-val{color:var(--text);word-break:break-all;}
+.me-test-tok-err{color:#f85149;font-style:italic;}
 /* ── Parse Spec ── */
 .me-ps-wrap{display:flex;flex-direction:column;gap:4px;}
 .me-ps-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
@@ -12621,7 +12640,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.67';
+const APP_VERSION  = '1.1.2.68';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15479,38 +15498,161 @@ function _meParseBytes(text, fmt) {
 }
 
 function _meRunTest() {
-  const inp  = document.getElementById('me-test-input');
-  const fmt  = document.getElementById('me-test-fmt')?.value || 'auto';
-  const out  = document.getElementById('me-test-out');
-  const summ = document.getElementById('me-test-summary');
+  const inp    = document.getElementById('me-test-input');
+  const fmtSel = document.getElementById('me-test-fmt')?.value || 'auto';
+  const out    = document.getElementById('me-test-out');
+  const summ   = document.getElementById('me-test-summary');
   if (!inp || !out) return;
+
   const text = inp.value.trim();
   if (!text) { out.innerHTML = ''; if (summ) summ.textContent = ''; return; }
-  let bytes;
-  try { bytes = _meParseBytes(text, fmt); }
-  catch(e) {
-    out.innerHTML = `<div class="me-test-err">Parse error: ${e.message}</div>`;
-    if (summ) { summ.textContent = '⚠ parse error'; summ.style.color = '#f85149'; }
+
+  const item = _meCurItem();
+  if (!item) {
+    out.innerHTML = '<div class="me-test-err">No message entity selected.</div>';
     return;
   }
-  const results = _fmtTestSpecs(_meState.specs, bytes);
-  const match = results.find(r => r.passed);
-  if (summ) {
-    summ.textContent = match ? `✓ ${match.spec.label || match.spec.name}` : results.length ? '✗ no match' : '— no specs';
-    summ.style.color = match ? '#3fb950' : '#f85149';
+
+  // — decode input bytes —
+  let bytes, inputFmt;
+  try {
+    bytes = _meParseBytes(text, fmtSel);
+    const looksHex = /^[\s0-9a-fA-F:]+$/.test(text) && text.replace(/[\s:]/g,'').length % 2 === 0;
+    inputFmt = (fmtSel === 'hex' || (fmtSel === 'auto' && looksHex && text.length > 1)) ? 'hex' : 'ascii';
+  } catch(e) {
+    out.innerHTML = `<div class="me-test-err">Input error: ${e.message}</div>`;
+    if (summ) { summ.textContent = '⚠ input error'; summ.style.color='#f85149'; }
+    return;
   }
-  let html = '';
-  for (const r of results) {
-    if (r.passed) {
-      html += `<div class="me-test-pass">✓ ${r.spec.label || r.spec.name}</div>`;
-    } else {
-      const rec = r.failAt !== null ? r.spec.recognizers?.[r.failAt] : null;
-      const detail = rec ? ` — rec ${r.failAt + 1} (${rec.type}${rec.id ? ' #'+rec.id : ''})` : '';
-      html += `<div class="me-test-fail">✗ ${r.spec.label || r.spec.name}${detail}</div>`;
+
+  const parts = [];
+
+  // ── 1. Recognition ──────────────────────────────────────────────────────────
+  const recResult = _fmtTestSpecs([item], bytes)[0];
+  const recPassed = recResult?.passed ?? false;
+  let recHtml;
+  if (!item.recognizers?.length) {
+    recHtml = '<div class="me-test-note">No recognizers defined — skipped.</div>';
+  } else if (recPassed) {
+    recHtml = `<div class="me-test-pass">✓ All ${item.recognizers.length} recognizer(s) passed</div>`;
+  } else {
+    const fi = recResult?.failAt ?? 0;
+    const rec = item.recognizers[fi];
+    recHtml = `<div class="me-test-fail">✗ Failed at recognizer ${fi + 1}` +
+      (rec ? ` (${rec.type}${rec.id ? ' #'+rec.id : ''})` : '') + '</div>';
+  }
+  parts.push(_meTestSection('Recognition',
+    recPassed ? '#3fb950' : (item.recognizers?.length ? '#f85149' : null),
+    recHtml));
+
+  // ── 2. DDL Binding parse ─────────────────────────────────────────────────────
+  const bindings   = item.ddl_bindings || [];
+  const parseSpec  = item.parse_spec   || [];
+  const hasReadDDL = parseSpec.some(b => b != null && typeof b === 'object' && 'read-ddl' in b);
+  const hasTokenArea = parseSpec.some(b => b != null && typeof b === 'object' && 'token-area' in b)
+                    || (typeof parseSpec.find(b => b === 'token-area') === 'string');
+
+  // Which bindings to read: explicit read-ddl blocks, or all bindings if spec is empty / has no read-ddl
+  const readOps = hasReadDDL
+    ? parseSpec.filter(b => b != null && typeof b === 'object' && 'read-ddl' in b)
+               .map(b => ({ idx: b['read-ddl']?.binding ?? 0 }))
+    : bindings.map((_, i) => ({ idx: i }));
+
+  let allFields = [], primaryDDLPath = null, fieldHtml = '';
+  if (!bindings.length) {
+    fieldHtml = '<div class="me-test-note">No DDL Bindings defined.</div>';
+  } else {
+    const prevFmt = S.inputFormat;
+    S.inputFormat = inputFmt;
+    for (const { idx } of readOps) {
+      const path = bindings[idx];
+      if (!path) { fieldHtml += `<div class="me-test-err">Binding ${idx}: path not set</div>`; continue; }
+      const resolved = getDDLFromPath(path);
+      if (!resolved?.defs?.length) {
+        fieldHtml += `<div class="me-test-err">Binding ${idx}: could not resolve ${_escHtml(path)}</div>`; continue;
+      }
+      if (!primaryDDLPath) primaryDDLPath = resolved.path;
+      const fields = parseFlatMessage(bytes, resolved.defs, bytes);
+      allFields = allFields.concat(fields);
+      const label = readOps.length > 1 ? `<span style="color:var(--text-dim);margin-bottom:2px;display:block">Binding ${idx}: ${_escHtml(path)}</span>` : '';
+      fieldHtml += label + _meTestFieldTable(fields);
     }
+    S.inputFormat = prevFmt;
   }
-  if (!results.length) html = `<div class="me-test-err">No message specs defined.</div>`;
-  out.innerHTML = html;
+  const fieldCount = allFields.filter(f => !f.error).length;
+  parts.push(_meTestSection('DDL Fields', fieldCount ? '#3fb950' : null, fieldHtml,
+    fieldCount ? `${fieldCount} field${fieldCount !== 1 ? 's' : ''}` : 'none'));
+
+  // ── 3. Token area ────────────────────────────────────────────────────────────
+  if (hasTokenArea || !parseSpec.length) {
+    const msgType = item.type || '';
+    const tokens  = extractTokensFromMessage(allFields, bytes, msgType, primaryDDLPath || bindings[0] || '');
+    let tokHtml;
+    if (!tokens) {
+      tokHtml = '<div class="me-test-note">No token area found in message.</div>';
+    } else if (!tokens.length) {
+      tokHtml = '<div class="me-test-note">Token area present but empty.</div>';
+    } else {
+      tokHtml = _meTestTokenTable(tokens);
+    }
+    parts.push(_meTestSection('Tokens', tokens?.length ? '#3fb950' : null, tokHtml,
+      tokens?.length ? `${tokens.length} token${tokens.length !== 1 ? 's' : ''}` : null));
+  }
+
+  // ── 4. Unsupported blocks notice ─────────────────────────────────────────────
+  const skip = new Set(['read-ddl','token-area']);
+  const unsupported = parseSpec
+    .filter(b => b && typeof b === 'object')
+    .map(b => Object.keys(b)[0])
+    .filter(k => !skip.has(k));
+  if (unsupported.length) {
+    const types = [...new Set(unsupported)].join(', ');
+    parts.push(_meTestSection('Notice', null,
+      `<div class="me-test-note">ℹ ${_escHtml(types)}: not yet executed in test mode</div>`));
+  }
+
+  out.innerHTML = parts.join('');
+  if (summ) {
+    const ok = recPassed && fieldCount > 0;
+    summ.textContent = ok ? `✓ ${fieldCount} field(s)` : recPassed ? `✓ recognized · ${fieldCount} field(s)` : '✗ recognition failed';
+    summ.style.color = recPassed ? '#3fb950' : '#f85149';
+  }
+}
+
+function _meTestSection(title, color, body, badge) {
+  const dot = color ? `<span style="color:${color};font-size:10px">●</span> ` : '';
+  const bdg = badge ? ` <span class="me-test-sec-badge" style="background:rgba(${color?'var(--accent-rgb)':'128,128,128'},0.15);color:${color||'var(--text-dim)'}">${badge}</span>` : '';
+  return `<div class="me-test-section"><div class="me-test-sec-hdr">${dot}${title}${bdg}</div>${body}</div>`;
+}
+
+function _meTestFieldTable(fields) {
+  if (!fields.length) return '<div class="me-test-note">No fields parsed.</div>';
+  const rows = fields.map(f => {
+    if (f.error) return `<tr><td class="me-test-fid">${_escHtml(f.id||'?')}</td><td colspan="3" class="me-test-ferr">${_escHtml(f.error)}</td></tr>`;
+    const val = f.value != null ? _escHtml(String(f.value).slice(0, 120)) : '';
+    const desc = f.description ? _escHtml(f.description.slice(0, 30)) : '';
+    const brange = f.startByte != null ? `${f.startByte}–${f.endByte}` : '';
+    return `<tr>` +
+      `<td class="me-test-fid">${_escHtml(f.id||'')}</td>` +
+      `<td class="me-test-fdesc">${desc}</td>` +
+      `<td class="me-test-fval">${val}</td>` +
+      `<td class="me-test-flen">${f.valueLength ?? ''}</td>` +
+      `<td class="me-test-fbytes">${brange}</td></tr>`;
+  });
+  return `<table class="me-test-ftbl"><tbody>${rows.join('')}</tbody></table>`;
+}
+
+function _meTestTokenTable(tokens) {
+  const rows = tokens.map(t => {
+    if (t.error && !t.fields?.length)
+      return `<tr><td class="me-test-tok-id">${_escHtml(t.id)}</td><td colspan="2" class="me-test-tok-err">${_escHtml(t.error)}</td></tr>`;
+    const name = t.ddlName ? _escHtml(t.ddlName) : '';
+    const val  = t.fields?.length
+      ? t.fields.slice(0,3).map(f => `${_escHtml(f.id||'')}=${_escHtml(String(f.value??'').slice(0,20))}`).join(' ')
+      : _escHtml((t.rawHex||'').slice(0,40)) + (t.rawHex?.length > 40 ? '…' : '');
+    return `<tr><td class="me-test-tok-id">${_escHtml(t.id)}</td><td class="me-test-tok-name">${name}</td><td class="me-test-tok-val">${val}</td></tr>`;
+  });
+  return `<table class="me-test-ftbl"><tbody>${rows.join('')}</tbody></table>`;
 }
 
 function _meSave() {

@@ -12621,7 +12621,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.66';
+const APP_VERSION  = '1.1.2.67';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14333,7 +14333,7 @@ function _meHtmlParseSpec(item) {
   const raw = _escHtml(JSON.stringify(item.parse_spec || [], null, 2));
   return `<div class="me-ps-wrap">
   <div class="me-ps-toolbar">
-    <span class="me-ps-hint">JSON array of parse blocks</span>
+    <span class="me-ps-hint">JSON array of parse blocks — click ? for reference</span>
     <button class="btn btn-sm" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
     <button class="btn btn-sm" onclick="_mePsFmt()">Format</button>
   </div>
@@ -14350,6 +14350,16 @@ function _mePsToggleHelp() {
 }
 
 const _PS_HELP = {
+  'read-ddl': {
+    desc: 'Reads ALL fields from the DDL Binding in declaration order — no individual field listing needed. Use this for messages where the fixed section is fully described by the DDL. If the message has multiple DDL Bindings, use one read-ddl block per binding (specify binding: 0, binding: 1, etc.).',
+    attrs: [
+      ['binding', 'int', false, 'Index into ddl_bindings (0-based). Defaults to 0.'],
+    ],
+    examples: [
+      ['All fixed DDL fields then tokens (STM-style)', [{"read-ddl": null}, {"token-area": null}]],
+      ['Two DDL bindings (header + body)', [{"read-ddl": {"binding": 0}}, {"read-ddl": {"binding": 1}}, {"token-area": null}]],
+    ],
+  },
   'read': {
     desc: 'Reads a single DDL-defined field. Offset, length, and type come from the DDL. If the field is a group it reads all sub-fields sequentially. If the group has OCCURS it loops automatically.',
     attrs: [

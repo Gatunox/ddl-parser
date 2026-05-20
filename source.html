@@ -1539,7 +1539,7 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-test-fdesc{color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
 .me-test-fval{color:var(--text);word-break:break-all;}
 .me-test-fbracket{color:var(--text-dim);user-select:none;}
-.me-test-fsp{color:var(--text-dim);opacity:.35;user-select:none;}
+.me-test-fsp{color:var(--accent);opacity:.45;user-select:none;}
 .me-test-flen{color:var(--text-dim);white-space:nowrap;text-align:right;}
 .me-test-fbytes{color:var(--text-dim);white-space:nowrap;font-size:calc(var(--sz-mono) - 2px);}
 .me-test-ferr{color:#f85149;font-style:italic;}
@@ -12642,7 +12642,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.69';
+const APP_VERSION  = '1.1.2.70';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15574,7 +15574,7 @@ function _meRunTest() {
         fieldHtml += `<div class="me-test-err">Binding ${idx}: could not resolve ${_escHtml(path)}</div>`; continue;
       }
       if (!primaryDDLPath) primaryDDLPath = resolved.path;
-      const fields = parseFlatMessage(bytes, resolved.defs, bytes);
+      const fields = parseMessage(bytes, resolved.defs, bytes);
       allFields = allFields.concat(fields);
       const label = readOps.length > 1 ? `<span style="color:var(--text-dim);margin-bottom:2px;display:block">Binding ${idx}: ${_escHtml(path)}</span>` : '';
       fieldHtml += label + _meTestFieldTable(fields);

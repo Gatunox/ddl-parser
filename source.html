@@ -1533,16 +1533,31 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-ps-ta{width:100%;min-height:220px;max-height:420px;resize:vertical;font-family:var(--mono);font-size:var(--sz-mono);background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text);padding:6px 8px;box-sizing:border-box;outline:none;line-height:1.5;tab-size:2;}
 .me-ps-ta:focus{border-color:var(--accent);}
 .me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
-.me-ps-help{background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;padding:10px 12px;display:none;overflow-y:auto;max-height:340px;}
-.me-ps-help.open{display:block;}
+.me-ps-help{background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;padding:10px 12px;display:none;flex-direction:column;gap:8px;}
+.me-ps-help.open{display:flex;}
+.me-ps-help-tbl-wrap{overflow-y:auto;max-height:190px;flex-shrink:0;}
 .me-ps-help-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
-.me-ps-help-table th{text-align:left;color:var(--text-dim);font-weight:600;padding:0 10px 5px 0;border-bottom:1px solid var(--border);white-space:nowrap;}
+.me-ps-help-table th{position:sticky;top:0;background:var(--bg-deep);z-index:1;text-align:left;color:var(--text-dim);font-weight:600;padding:0 10px 5px 0;border-bottom:1px solid var(--border);white-space:nowrap;}
 .me-ps-help-table td{padding:4px 10px 4px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.04);line-height:1.4;}
 .me-ps-help-table tr:last-child td{border-bottom:none;}
+.me-ps-help-table tbody tr{cursor:pointer;}
+.me-ps-help-table tbody tr:hover td{background:rgba(var(--accent-rgb),.07);}
+.me-ps-help-table tbody tr.me-ps-sel td{background:rgba(var(--accent-rgb),.13);}
 .me-ps-help-block{color:var(--accent);white-space:nowrap;}
 .me-ps-help-dim{color:var(--text-dim);}
-.me-ps-help-ex{margin-top:10px;padding-top:8px;border-top:1px solid var(--border);}
-.me-ps-help-ex-title{color:var(--text-dim);font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);margin-bottom:4px;}
+.me-ps-help-detail{border-top:1px solid var(--border);padding-top:8px;display:none;}
+.me-ps-help-detail.open{display:block;}
+.me-ps-help-detail-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--accent);margin-bottom:4px;}
+.me-ps-help-detail-desc{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text);margin-bottom:8px;line-height:1.5;}
+.me-ps-help-atbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);margin-bottom:8px;}
+.me-ps-help-atbl th{text-align:left;color:var(--text-dim);font-size:calc(var(--sz-mono) - 2px);padding:0 8px 3px 0;border-bottom:1px solid var(--border);}
+.me-ps-help-atbl td{padding:3px 8px 3px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.04);line-height:1.4;}
+.me-ps-help-atbl tr:last-child td{border-bottom:none;}
+.me-ps-help-aname{color:var(--accent2);white-space:nowrap;}
+.me-ps-help-atype{color:var(--text-dim);white-space:nowrap;}
+.me-ps-help-req{color:#f85149;font-size:calc(var(--sz-mono) - 3px);}
+.me-ps-help-opt{color:var(--text-dim);font-size:calc(var(--sz-mono) - 3px);}
+.me-ps-help-ex-title{color:var(--text-dim);font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);margin-bottom:4px;margin-top:6px;}
 .me-ps-help-snippet{background:var(--bg-panel);border:1px solid var(--border);border-radius:2px;padding:6px 8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text);white-space:pre;line-height:1.5;overflow-x:auto;}
 /* ── DDL Bindings + Overrides ── */
 .me-bind-list{display:flex;flex-direction:column;gap:3px;}
@@ -12606,7 +12621,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.65';
+const APP_VERSION  = '1.1.2.66';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14334,44 +14349,179 @@ function _mePsToggleHelp() {
   if (el) el.classList.toggle('open');
 }
 
+const _PS_HELP = {
+  'read': {
+    desc: 'Reads a single DDL-defined field. Offset, length, and type come from the DDL. If the field is a group it reads all sub-fields sequentially. If the group has OCCURS it loops automatically.',
+    attrs: [
+      ['field', 'string', true, 'DDL field ID to read'],
+    ],
+    examples: [
+      ['Simple field', [{"read": "MTI"}]],
+      ['Group field (reads all sub-fields)', [{"read": "TRANSACTION-DATA"}]],
+    ],
+  },
+  'read-fixed': {
+    desc: 'Reads an exact number of bytes inline, without requiring a DDL field at that offset.',
+    attrs: [
+      ['length', 'int | "FIELD-ID"', true,  'Byte count — literal integer or ID of a previously read numeric field'],
+      ['type',     '"X"|"9"|"BINARY"', false, 'Character class — defaults to X (alphanumeric)'],
+      ['encoding', '"ascii"|"ebcdic"|"bcd"', false, 'Byte encoding — defaults to ascii'],
+      ['as',       'string', false, 'DDL field ID to attach metadata/label to the result'],
+    ],
+    examples: [
+      ['Fixed 4-byte header tag', [{"read-fixed": {"length": 4, "as": "HEADER-TAG"}}]],
+      ['Length driven by prior field', [{"read": "DATA-LEN"}, {"read-fixed": {"length": "DATA-LEN", "as": "DATA-BODY"}}]],
+    ],
+  },
+  'read-until': {
+    desc: 'Reads bytes until a sentinel byte is encountered or end-of-message is reached. At least one of sentinels or eom must be set. The sentinel byte itself is not included in the result.',
+    attrs: [
+      ['sentinels', '["0x1C", ...]', false, 'List of hex stop-bytes — reading stops on any match'],
+      ['eom',       'bool',          false, 'Also stop at end of message'],
+      ['as',        'string',        false, 'DDL field ID to label the captured bytes'],
+    ],
+    examples: [
+      ['Read until FS (0x1C) or EOM', [{"read-until": {"sentinels": ["0x1C"], "eom": true, "as": "BUFFER-A"}}]],
+      ['Multiple sentinels', [{"read-until": {"sentinels": ["0x1C", "0x1D", "0x1E"], "as": "TOKEN"}}]],
+    ],
+  },
+  'read-length-prefix': {
+    desc: 'Reads a 1–4 byte length prefix, then reads exactly that many bytes of payload. Useful for LLVAR/LLLVAR-style fields and binary TLV payloads.',
+    attrs: [
+      ['prefix',    '"uint8"|"uint16-be"|"uint16-le"|"bcd2"', true,  'Format of the length prefix field'],
+      ['as',        'string',    false, 'DDL field ID to label the result'],
+      ['sentinels', '["0x26", ...]', false, 'Optional early-stop bytes (in addition to the declared length)'],
+      ['eom',       'bool',      false, 'Also stop at end of message'],
+    ],
+    examples: [
+      ['2-byte big-endian length prefix', [{"read-length-prefix": {"prefix": "uint16-be", "as": "USER-DATA"}}]],
+      ['With sentinel and EOM', [{"read-length-prefix": {"prefix": "uint16-be", "as": "PAYLOAD", "sentinels": ["0x26", "0x20"], "eom": true}}]],
+    ],
+  },
+  'read-to-end': {
+    desc: 'Consumes all remaining bytes in the message into one field. Typically used as the last block to capture a variable trailing section.',
+    attrs: [
+      ['as', 'string', false, 'DDL field ID to label the captured bytes'],
+    ],
+    examples: [
+      ['Capture trailer', [{"read-to-end": {"as": "TRAILER"}}]],
+    ],
+  },
+  'read-bitmap': {
+    desc: 'Reads 8 bytes (primary bitmap) or 16 bytes (primary + secondary bitmap) and stores the result for use by a bitmap-fields block. The field must be declared in the DDL with the appropriate length.',
+    attrs: [
+      ['field',    'string',                    true, 'DDL field ID for the bitmap'],
+      ['encoding', '"binary"|"ascii-hex"', true, 'binary = raw bits; ascii-hex = hex-encoded (e.g. ISO ASCII)'],
+    ],
+    examples: [
+      ['ASCII ISO bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}}]],
+      ['Binary EBCDIC bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}}]],
+    ],
+  },
+  'bitmap-fields': {
+    desc: 'Reads the DE fields indicated by a prior read-bitmap result. Each set bit maps to a DDL field ID via de_map. Variable-length groups declared in var_length_groups are handled automatically.',
+    attrs: [
+      ['bitmap', 'string', true, 'Field ID of a preceding read-bitmap result'],
+    ],
+    examples: [
+      ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}}, {"bitmap-fields": "BITMAP"}]],
+    ],
+  },
+  'read-tlv': {
+    desc: 'Parses a DDL buffer field as repeating TAG+LENGTH+VALUE triples until the buffer is exhausted or fewer bytes remain than tag_length. Used for EMV DE-55 and similar TLV structures.',
+    attrs: [
+      ['field',         'string',              true, 'DDL buffer field containing the raw TLV bytes'],
+      ['tag_length',    'int',                 true, 'Number of bytes per tag'],
+      ['length_length', 'int',                 true, 'Number of bytes per length field'],
+      ['encoding',      '"binary"|"ascii-hex"', true, 'How tag and length bytes are encoded'],
+    ],
+    examples: [
+      ['EMV DE-55', [{"read-tlv": {"field": "DE-55", "tag_length": 2, "length_length": 2, "encoding": "binary"}}]],
+    ],
+  },
+  'skip': {
+    desc: 'Advances the read cursor by N bytes without capturing any data. Use for padding, reserved fields, or header bytes that do not need to be parsed.',
+    attrs: [
+      ['length', 'int', true, 'Number of bytes to skip'],
+    ],
+    examples: [
+      ['Skip 2-byte pad', [{"skip": {"length": 2}}]],
+    ],
+  },
+  'when': {
+    desc: 'Executes a list of blocks only when a condition on a previously read field is true. Multiple when blocks referencing the same field act as if / else-if. Nesting is supported.',
+    attrs: [
+      ['field', 'string',          true,  'Field ID of a previously read field to test'],
+      ['is',    'string | [...]',  false, 'Execute then if field equals this value (or any in list)'],
+      ['not',   'string | [...]',  false, 'Execute then if field does NOT equal this value (or any in list)'],
+      ['then',  '[blocks]',        true,  'Array of parse blocks to execute when condition matches'],
+    ],
+    examples: [
+      ['Single value match', [{"when": {"field": "MSG-TYPE", "is": "1200", "then": [{"read": "AMOUNT"}]}}]],
+      ['Set match + nested when', [{"when": {"field": "FLAG", "is": ["A", "B"], "then": [{"when": {"field": "SUB-FLAG", "is": "1", "then": [{"read": "EXTRA"}]}}]}}]],
+    ],
+  },
+  'repeat': {
+    desc: 'Executes a list of blocks N times, where N is the value of a previously read numeric field. Used for OCCURS-style repeating groups not expressed in the DDL.',
+    attrs: [
+      ['count', 'string',   true, 'Field ID whose parsed integer value is the repeat count'],
+      ['body',  '[blocks]', true, 'Array of parse blocks to execute each iteration'],
+    ],
+    examples: [
+      ['Repeat service entries', [{"repeat": {"count": "NUM-SERVICES", "body": [{"read": "SERVICE-CODE"}, {"read": "SERVICE-DATA"}]}}]],
+    ],
+  },
+  'token-area': {
+    desc: 'Hands off all remaining bytes to the existing token / variable-length-field parser. No further parse_spec blocks execute after this. Use at the end of the spec for messages with a trailing token section.',
+    attrs: [],
+    examples: [
+      ['End of spec hand-off', [{"read": "MTI"}, {"bitmap-fields": "BITMAP"}, {"token-area": null}]],
+    ],
+  },
+};
+
 function _mePsHelpHtml() {
-  const rows = [
-    ['read',               'Read a DDL-defined field (offset + length from DDL)',         'field: "FIELD-ID"'],
-    ['read-fixed',         'Read N bytes inline, no DDL ref needed',                      'length: 4 (or "FIELD-ID"), type, encoding, as: "FIELD-ID"'],
-    ['read-until',         'Read bytes until sentinel byte(s) or end of message',         'sentinels: ["0x1C"], eom: true, as: "FIELD-ID"'],
-    ['read-length-prefix', 'Read a 1–2 byte length prefix, then that many bytes',         'prefix: "uint8"|"uint16-be"|"uint16-le"|"bcd2", as: "FIELD-ID", sentinels, eom'],
-    ['read-to-end',        'Consume all remaining bytes into a field',                     'as: "FIELD-ID"'],
-    ['read-bitmap',        'Read 8 or 16 bytes as a DE bitmap',                           'field: "FIELD-ID", encoding: "binary"|"ascii-hex"'],
-    ['bitmap-fields',      'Read DE fields flagged by a prior bitmap via de_map',          'bitmap: "BITMAP-FIELD-ID"'],
-    ['read-tlv',           'Parse a buffer as repeating TLV triples until exhausted',     'field: "FIELD-ID", tag_length: 2, length_length: 2, encoding: "binary"|"ascii-hex"'],
-    ['skip',               'Advance the read cursor N bytes',                             'length: 4'],
-    ['when',               'Conditional branch on a prior field value',                   'field: "FIELD-ID", is: "1" (or [...]), not: "X", then: [...]'],
-    ['repeat',             'Loop N times — N read from a prior field',                    'count: "FIELD-ID", body: [...]'],
-    ['token-area',         'Hand off remaining bytes to token/variable-length parser',    '(no attributes)'],
-  ];
-  const thead = '<tr><th>Block</th><th>Purpose</th><th>Key attributes</th></tr>';
-  const tbody = rows.map(([blk, purpose, attrs]) =>
-    `<tr><td class="me-ps-help-block">${blk}</td><td>${purpose}</td><td class="me-ps-help-dim">${attrs}</td></tr>`
+  const rows = Object.entries(_PS_HELP).map(([blk, info]) => {
+    const firstAttr = info.attrs.length ? info.attrs.map(a => a[0]).slice(0, 3).join(', ') : '(none)';
+    return `<tr onclick="_mePsHelpSelect('${blk}')" data-blk="${blk}">` +
+      `<td class="me-ps-help-block">${blk}</td>` +
+      `<td>${info.desc.split('.')[0]}</td>` +
+      `<td class="me-ps-help-dim">${firstAttr}</td></tr>`;
+  });
+  const thead = '<tr><th>Block</th><th>Purpose</th><th>Attributes</th></tr>';
+  return `<div class="me-ps-help-tbl-wrap"><table class="me-ps-help-table">` +
+    `<thead>${thead}</thead><tbody>${rows.join('')}</tbody></table></div>` +
+    `<div class="me-ps-help-detail" id="me-ps-help-detail"></div>`;
+}
+
+function _mePsHelpSelect(blk) {
+  const info = _PS_HELP[blk];
+  const det  = document.getElementById('me-ps-help-detail');
+  if (!info || !det) return;
+  // highlight row
+  document.querySelectorAll('#me-ps-help .me-ps-help-table tbody tr').forEach(tr =>
+    tr.classList.toggle('me-ps-sel', tr.dataset.blk === blk)
+  );
+  // build attr table
+  const attrRows = info.attrs.map(([name, type, req, desc]) =>
+    `<tr><td class="me-ps-help-aname">${name}</td>` +
+    `<td class="me-ps-help-atype">${_escHtml(type)}</td>` +
+    `<td>${req ? '<span class="me-ps-help-req">required</span>' : '<span class="me-ps-help-opt">optional</span>'}</td>` +
+    `<td>${desc}</td></tr>`
   ).join('');
-  const ex1 = _escHtml(JSON.stringify([
-    {"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}},
-    {"read": "MTI"},
-    {"bitmap-fields": "BITMAP"}
-  ], null, 2));
-  const ex2 = _escHtml(JSON.stringify([
-    {"read": "MESSAGE-CLASS"},
-    {"read-until": {"sentinels": ["0x1C"], "eom": true, "as": "BUFFER-A"}},
-    {"when": {"field": "MESSAGE-CLASS", "is": "1", "then": [
-      {"read-until": {"sentinels": ["0x1C"], "eom": true, "as": "BUFFER-B"}}
-    ]}}
-  ], null, 2));
-  return `<table class="me-ps-help-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>
-<div class="me-ps-help-ex">
-  <div class="me-ps-help-ex-title">Example — ISO 8583 bitmap message:</div>
-  <pre class="me-ps-help-snippet">${ex1}</pre>
-  <div class="me-ps-help-ex-title" style="margin-top:8px">Example — conditional buffers (NDC-style):</div>
-  <pre class="me-ps-help-snippet">${ex2}</pre>
-</div>`
+  const attrTbl = info.attrs.length
+    ? `<table class="me-ps-help-atbl"><thead><tr><th>Attribute</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${attrRows}</tbody></table>`
+    : `<p class="me-ps-help-dim" style="margin:0 0 8px">No attributes.</p>`;
+  // build examples
+  const exHtml = info.examples.map(([label, json]) =>
+    `<div class="me-ps-help-ex-title">${label}:</div>` +
+    `<pre class="me-ps-help-snippet">${_escHtml(JSON.stringify(json, null, 2))}</pre>`
+  ).join('<div style="height:6px"></div>');
+  det.innerHTML =
+    `<div class="me-ps-help-detail-title">${blk}</div>` +
+    `<div class="me-ps-help-detail-desc">${info.desc}</div>` +
+    attrTbl + exHtml;
+  det.classList.add('open');
 }
 
 function _mePsChange(val) {

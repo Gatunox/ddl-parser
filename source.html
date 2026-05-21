@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.73';
+const APP_VERSION  = '1.1.2.74';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15485,21 +15485,6 @@ function _meToggleTest() {
   if (arr) arr.innerHTML = open ? '&#9660;' : '&#9650;';
 }
 
-function _meParseBytes(text, fmt) {
-  const looksHex = /^[\s0-9a-fA-F:]+$/.test(text) && text.replace(/[\s:]/g,'').length % 2 === 0;
-  const useHex = fmt === 'hex' || (fmt === 'auto' && looksHex && text.length > 1);
-  if (useHex) {
-    const clean = text.replace(/[\s:]/g, '');
-    if (clean.length % 2 !== 0) throw new Error('odd hex digit count');
-    const arr = new Uint8Array(clean.length / 2);
-    for (let i = 0; i < arr.length; i++) arr[i] = parseInt(clean.slice(i*2, i*2+2), 16);
-    return arr;
-  }
-  const arr = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) arr[i] = text.charCodeAt(i) & 0xFF;
-  return arr;
-}
-
 function _meRunTest() {
   const inp    = document.getElementById('me-test-input');
   const fmtSel = document.getElementById('me-test-fmt')?.value || 'auto';
@@ -15516,12 +15501,23 @@ function _meRunTest() {
     return;
   }
 
-  // — decode input bytes —
-  let bytes, inputFmt;
+  // — decode input bytes — replicate the main app's parse pipeline exactly:
+  //   detectFormat() → extractBytes() → optional EBCDIC conversion
+  let bytes, inputFmt, ebcdicApplied = false;
   try {
-    bytes = _meParseBytes(text, fmtSel);
-    const looksHex = /^[\s0-9a-fA-F:]+$/.test(text) && text.replace(/[\s:]/g,'').length % 2 === 0;
-    inputFmt = (fmtSel === 'hex' || (fmtSel === 'auto' && looksHex && text.length > 1)) ? 'hex' : 'ascii';
+    inputFmt = fmtSel === 'auto' ? detectFormat(text) : fmtSel;
+    let rawBytes = extractBytes(text, inputFmt);
+    if (!rawBytes.length) throw new Error('no bytes could be extracted');
+    // EBCDIC auto-detect for hex-based formats — same heuristic as main app (line 7588)
+    if (fmtSel === 'auto' && (inputFmt === 'tandem-dump' || inputFmt === 'hex')) {
+      let _f09 = 0;
+      for (const b of rawBytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
+      if (rawBytes.length > 0 && _f09 / rawBytes.length > 0.30) {
+        rawBytes = rawBytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
+        ebcdicApplied = true;
+      }
+    }
+    bytes = rawBytes;
   } catch(e) {
     out.innerHTML = `<div class="me-test-err">Input error: ${e.message}</div>`;
     if (summ) { summ.textContent = '⚠ input error'; summ.style.color='#f85149'; }
@@ -15533,7 +15529,8 @@ function _meRunTest() {
   // ── 0. Input info ────────────────────────────────────────────────────────────
   const dumpBytes = Array.from(bytes.slice(0, 32)).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
   const dumpMore  = bytes.length > 32 ? `…+${bytes.length - 32}` : '';
-  parts.push(`<div class="me-test-section"><div class="me-test-sec-hdr"><span>Input</span><span class="me-test-sec-badge" style="background:var(--bg-deep);color:var(--text-dim)">${bytes.length} bytes · ${inputFmt}</span></div>` +
+  const fmtBadge  = `${bytes.length} bytes · ${inputFmt}${ebcdicApplied ? ' (EBCDIC→ASCII)' : ''}`;
+  parts.push(`<div class="me-test-section"><div class="me-test-sec-hdr"><span>Input</span><span class="me-test-sec-badge" style="background:var(--bg-deep);color:var(--text-dim)">${fmtBadge}</span></div>` +
     `<div style="font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);word-break:break-all">${_escHtml(dumpBytes)}${dumpMore}</div></div>`);
 
   // ── 1. Recognition ──────────────────────────────────────────────────────────

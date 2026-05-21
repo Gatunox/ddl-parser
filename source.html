@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.75';
+const APP_VERSION  = '1.1.2.76';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15491,9 +15491,20 @@ function _meToggleTest() {
 // Walks an item's parse_spec block-by-block, advancing a byte cursor,
 // reading DDL-bound fields and emitting a flat field list.
 // Each block consumes some bytes and pushes zero or more fields.
-// Currently implemented blocks: read-ddl, read, skip, read-to-end, token-area.
-// Other blocks (read-fixed, read-until, when, repeat, read-tlv, etc.)
-// emit a stub field with "not implemented" — to be added incrementally.
+//
+// Implemented blocks:
+//   read-ddl, read, read-fixed, read-until, read-length-prefix,
+//   read-to-end, read-bitmap, bitmap-fields, read-tlv,
+//   when, repeat, skip, token-area
+//
+// Notes:
+//   - read-bitmap stores a Set of DE numbers on the field as `bitSet`,
+//     consumed by bitmap-fields.
+//   - bitmap-fields honours item.de_map (delta/anchor) and
+//     item.var_length_groups (LEN+DATA pairs).
+//   - when supports a single is/then or not/then per block; chain
+//     multiple when blocks to express if/else-if.
+//   - repeat counts come from a previously-read field's parsed value.
 
 function _meBytesToStr(bytes) {
   return bytes.map(x => (x >= 32 && x < 127)
@@ -15607,6 +15618,380 @@ function _meExecTokenArea(_attrs, ctx) {
   ctx.tokens = extractTokensFromMessage(ctx.fields, ctx.bytes, msgType, ddlPath) || [];
 }
 
+// ── Shared helpers for the remaining blocks ─────────────────────────────────
+
+function _meFindDefById(id, ctx) {
+  if (!id) return null;
+  for (const r of ctx.resolvedBindings) {
+    if (!r?.defs) continue;
+    const d = r.defs.find(d => d.id === id);
+    if (d) return d;
+  }
+  return null;
+}
+
+function _meMakeSyntheticField(id, fBytes, startByte, endByte, ctx, opts) {
+  const def = (opts && opts.def) || _meFindDefById(id, ctx);
+  return {
+    id,
+    description: def?.description || (opts && opts.description) || '',
+    dataType:    def?._dataType || def?.dataType || (opts && opts.dataType) || '',
+    type:        def?.type || (opts && opts.type) || '',
+    valueLength: fBytes.length,
+    value:       _meBytesToStr(fBytes),
+    rawHex:      _meBytesToHex(fBytes),
+    startByte, endByte,
+  };
+}
+
+function _meResolveLength(lengthAttr, ctx) {
+  if (typeof lengthAttr === 'number') return lengthAttr;
+  if (typeof lengthAttr === 'string') {
+    const f = ctx.fieldsById[lengthAttr];
+    if (!f) return null;
+    return parseInt(f.value, 10) || 0;
+  }
+  return null;
+}
+
+function _meParseSentinels(list) {
+  return new Set((list || []).map(s => typeof s === 'string' ? parseInt(s, 16) : s));
+}
+
+// ── Block: read-fixed ───────────────────────────────────────────────────────
+
+function _meExecReadFixed(attrs, ctx) {
+  if (!attrs || typeof attrs !== 'object') {
+    ctx.fields.push({ id: 'read-fixed', error: 'Missing attributes' });
+    return;
+  }
+  const len = _meResolveLength(attrs.length, ctx);
+  if (len == null) {
+    ctx.fields.push({ id: attrs.as || 'read-fixed', error: `Cannot resolve length: ${attrs.length}` });
+    return;
+  }
+  const start  = ctx.cursor;
+  const fBytes = Array.from(ctx.bytes.slice(start, start + len));
+  ctx.cursor   = start + len;
+  const id = attrs.as || 'read-fixed';
+  const f  = _meMakeSyntheticField(id, fBytes, start, start + len - 1, ctx);
+  ctx.fields.push(f);
+  ctx.fieldsById[id] = f;
+}
+
+// ── Block: read-until ───────────────────────────────────────────────────────
+
+function _meExecReadUntil(attrs, ctx) {
+  if (!attrs) {
+    ctx.fields.push({ id: 'read-until', error: 'Missing attributes' });
+    return;
+  }
+  const sentinels = _meParseSentinels(attrs.sentinels);
+  const eom = !!attrs.eom;
+  if (!sentinels.size && !eom) {
+    ctx.fields.push({ id: attrs.as || 'read-until', error: 'No sentinels or eom specified' });
+    return;
+  }
+  const start = ctx.cursor;
+  let end = ctx.bytes.length;
+  for (let i = start; i < ctx.bytes.length; i++) {
+    if (sentinels.has(ctx.bytes[i])) { end = i; break; }
+  }
+  if (!eom && end === ctx.bytes.length) {
+    ctx.fields.push({ id: attrs.as || 'read-until', error: 'Sentinel not found and eom=false' });
+    return;
+  }
+  const fBytes = Array.from(ctx.bytes.slice(start, end));
+  ctx.cursor = end;
+  const id = attrs.as || 'BUFFER';
+  const f  = _meMakeSyntheticField(id, fBytes, start, end - 1, ctx);
+  ctx.fields.push(f);
+  ctx.fieldsById[id] = f;
+}
+
+// ── Block: read-length-prefix ───────────────────────────────────────────────
+
+function _meReadIntPrefix(bytes, offset, kind) {
+  switch (kind) {
+    case 'uint8':
+      if (offset >= bytes.length) return { len: 0, val: 0 };
+      return { len: 1, val: bytes[offset] };
+    case 'uint16-be':
+      if (offset + 1 >= bytes.length) return { len: 0, val: 0 };
+      return { len: 2, val: (bytes[offset] << 8) | bytes[offset + 1] };
+    case 'uint16-le':
+      if (offset + 1 >= bytes.length) return { len: 0, val: 0 };
+      return { len: 2, val: (bytes[offset + 1] << 8) | bytes[offset] };
+    case 'bcd2': {
+      if (offset + 1 >= bytes.length) return { len: 0, val: 0 };
+      const hi = (bytes[offset]     >> 4) * 1000 + (bytes[offset]     & 0xF) * 100;
+      const lo = (bytes[offset + 1] >> 4) *   10 + (bytes[offset + 1] & 0xF);
+      return { len: 2, val: hi + lo };
+    }
+    default: return { len: 0, val: 0 };
+  }
+}
+
+function _meExecReadLengthPrefix(attrs, ctx) {
+  if (!attrs || !attrs.prefix) {
+    ctx.fields.push({ id: 'read-length-prefix', error: 'Missing prefix attribute' });
+    return;
+  }
+  const start = ctx.cursor;
+  const { len: pLen, val: dataLen } = _meReadIntPrefix(ctx.bytes, start, attrs.prefix);
+  if (pLen === 0) {
+    ctx.fields.push({ id: attrs.as || 'LEN-DATA', error: `Cannot read ${attrs.prefix} prefix at offset ${start}` });
+    return;
+  }
+  const dataStart = start + pLen;
+  let dataEnd = dataStart + dataLen;
+  const sentinels = _meParseSentinels(attrs.sentinels);
+  if (sentinels.size) {
+    for (let i = dataStart; i < Math.min(dataEnd, ctx.bytes.length); i++) {
+      if (sentinels.has(ctx.bytes[i])) { dataEnd = i; break; }
+    }
+  }
+  if (attrs.eom) dataEnd = Math.min(dataEnd, ctx.bytes.length);
+  const fBytes = Array.from(ctx.bytes.slice(dataStart, dataEnd));
+  ctx.cursor = dataEnd;
+  const id = attrs.as || 'LEN-DATA';
+  const f  = _meMakeSyntheticField(id, fBytes, dataStart, dataEnd - 1, ctx, {
+    description: `length-prefix ${attrs.prefix} (${dataLen} bytes)`,
+  });
+  f.lenPrefix = String(dataLen);
+  ctx.fields.push(f);
+  ctx.fieldsById[id] = f;
+}
+
+// ── Block: read-to-end ──────────────────────────────────────────────────────
+
+function _meExecReadToEnd(attrs, ctx) {
+  const start  = ctx.cursor;
+  const fBytes = Array.from(ctx.bytes.slice(start));
+  ctx.cursor   = ctx.bytes.length;
+  const id = (attrs && attrs.as) || 'TAIL';
+  const f  = _meMakeSyntheticField(id, fBytes, start, ctx.bytes.length - 1, ctx,
+    { description: 'read-to-end' });
+  ctx.fields.push(f);
+  ctx.fieldsById[id] = f;
+}
+
+// ── Block: read-bitmap ──────────────────────────────────────────────────────
+
+function _meExecReadBitmap(attrs, ctx) {
+  if (!attrs || !attrs.field) {
+    ctx.fields.push({ id: 'read-bitmap', error: 'Missing field attribute' });
+    return;
+  }
+  const encoding  = attrs.encoding || 'binary';
+  const baseChunk = encoding === 'ascii-hex' ? 16 : 8;
+  const start     = ctx.cursor;
+  if (start + baseChunk > ctx.bytes.length) {
+    ctx.fields.push({ id: attrs.field, error: `Not enough bytes for bitmap (need ${baseChunk}, have ${ctx.bytes.length - start})` });
+    return;
+  }
+  const toRawBlock = (off, n) => {
+    if (encoding === 'ascii-hex') {
+      const hex = Array.from(ctx.bytes.slice(off, off + n)).map(b => String.fromCharCode(b)).join('');
+      const out = [];
+      for (let i = 0; i < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16) || 0);
+      return out;
+    }
+    return Array.from(ctx.bytes.slice(off, off + n));
+  };
+  const rawPrimary  = toRawBlock(start, baseChunk);
+  const hasSecondary = !!(rawPrimary[0] & 0x80);
+  let totalBytes = baseChunk;
+  let allRaw = rawPrimary;
+  if (hasSecondary) {
+    if (start + 2 * baseChunk > ctx.bytes.length) {
+      ctx.fields.push({ id: attrs.field, error: 'Bitmap claims secondary but message too short' });
+      return;
+    }
+    const rawSecondary = toRawBlock(start + baseChunk, baseChunk);
+    allRaw = rawPrimary.concat(rawSecondary);
+    totalBytes = 2 * baseChunk;
+  }
+  const bitSet = parseBitmap(allRaw);
+  bitSet.delete(1);  // bit 1 is the secondary-present indicator, not a DE
+  const fBytes = Array.from(ctx.bytes.slice(start, start + totalBytes));
+  ctx.cursor = start + totalBytes;
+  const f = _meMakeSyntheticField(attrs.field, fBytes, start, start + totalBytes - 1, ctx,
+    { description: `bitmap (${bitSet.size} DEs set)` });
+  f.bitSet = bitSet;
+  ctx.fields.push(f);
+  ctx.fieldsById[attrs.field] = f;
+}
+
+// ── Block: bitmap-fields ────────────────────────────────────────────────────
+
+function _meBuildDEMap(ctx) {
+  // Walk binding 0's defs in declaration order, applying anchors from item.de_map.
+  // Returns: { [deNumber]: def }.
+  const map = {};
+  const defs = ctx.resolvedBindings[0]?.defs || [];
+  const anchors = new Map((ctx.item.de_map || []).map(e => [e.field, e.de]));
+  let currentDE = 1;
+  for (const def of defs) {
+    if (def._occursGroup !== undefined && def._occursIdx > 0) continue;
+    if (anchors.has(def.id)) currentDE = anchors.get(def.id);
+    map[currentDE] = def;
+    currentDE++;
+  }
+  return map;
+}
+
+function _meExecBitmapFields(attrs, ctx) {
+  const bitmapId = (typeof attrs === 'string') ? attrs : attrs?.bitmap;
+  if (!bitmapId) {
+    ctx.fields.push({ id: 'bitmap-fields', error: 'Missing bitmap attribute' });
+    return;
+  }
+  const bmField = ctx.fieldsById[bitmapId];
+  if (!bmField?.bitSet) {
+    ctx.fields.push({ id: 'bitmap-fields', error: `No bitset found for bitmap '${bitmapId}' — run read-bitmap first` });
+    return;
+  }
+  const deMap = _meBuildDEMap(ctx);
+  const varGroups = new Set(ctx.item.var_length_groups || []);
+  const bits = Array.from(bmField.bitSet).sort((a, b) => a - b);
+  for (const de of bits) {
+    const def = deMap[de];
+    if (!def) {
+      ctx.fields.push({ id: `DE-${de}`, error: 'No DDL field mapped to this DE' });
+      continue;
+    }
+    if (varGroups.has(def.id)) {
+      // LEN+DATA group — read LEN sub-field, then read N bytes for DATA
+      const kids = def._groupChildren || [];
+      const lenDef = kids[0], dataDef = kids[1];
+      if (!lenDef || !dataDef) {
+        ctx.fields.push({ id: def.id, error: 'var_length_groups: LEN/DATA sub-fields not found' });
+        continue;
+      }
+      const lStart = ctx.cursor;
+      const lLen   = lenDef.length;
+      const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
+      const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
+      const N      = parseInt(lValue, 10) || 0;
+      ctx.cursor = lStart + lLen;
+      ctx.fields.push({
+        id: `${def.id}.${lenDef.id}`, description: lenDef.description,
+        dataType: lenDef._dataType, valueLength: lLen,
+        value: _meBytesToStr(lBytes), rawHex: _meBytesToHex(lBytes),
+        startByte: lStart, endByte: lStart + lLen - 1,
+      });
+      const dStart = ctx.cursor;
+      const dBytes = Array.from(ctx.bytes.slice(dStart, dStart + N));
+      ctx.cursor = dStart + N;
+      ctx.fields.push({
+        id: `${def.id}.${dataDef.id}`, description: dataDef.description,
+        dataType: dataDef._dataType, valueLength: N, lenPrefix: lValue,
+        value: _meBytesToStr(dBytes), rawHex: _meBytesToHex(dBytes),
+        startByte: dStart, endByte: dStart + N - 1,
+      });
+    } else {
+      const f = _meReadOneFieldFromDef(def, ctx);
+      if (f) {
+        ctx.fields.push(f);
+        ctx.fieldsById[def.id] = f;
+      }
+    }
+  }
+}
+
+// ── Block: when ─────────────────────────────────────────────────────────────
+
+function _meMatchValue(value, matcher) {
+  if (matcher == null) return false;
+  const v = String(value).trim();
+  if (Array.isArray(matcher)) return matcher.some(m => String(m).trim() === v);
+  return String(matcher).trim() === v;
+}
+
+function _meExecWhen(attrs, ctx) {
+  if (!attrs || !attrs.field) {
+    ctx.fields.push({ id: 'when', error: 'Missing field attribute' });
+    return;
+  }
+  const f = ctx.fieldsById[attrs.field];
+  if (!f) {
+    ctx.fields.push({ id: 'when', error: `Field '${attrs.field}' not yet read` });
+    return;
+  }
+  let matched = false;
+  if (attrs.is !== undefined)        matched =  _meMatchValue(f.value, attrs.is);
+  else if (attrs.not !== undefined)  matched = !_meMatchValue(f.value, attrs.not);
+  if (matched && Array.isArray(attrs.then)) {
+    for (const b of attrs.then) _meExecBlock(b, ctx);
+  }
+}
+
+// ── Block: repeat ───────────────────────────────────────────────────────────
+
+function _meExecRepeat(attrs, ctx) {
+  if (!attrs || !attrs.count) {
+    ctx.fields.push({ id: 'repeat', error: 'Missing count attribute' });
+    return;
+  }
+  const f = ctx.fieldsById[attrs.count];
+  if (!f) {
+    ctx.fields.push({ id: 'repeat', error: `Count field '${attrs.count}' not yet read` });
+    return;
+  }
+  const N = parseInt(f.value, 10) || 0;
+  const body = Array.isArray(attrs.body) ? attrs.body : [];
+  for (let i = 0; i < N; i++) {
+    for (const b of body) _meExecBlock(b, ctx);
+  }
+}
+
+// ── Block: read-tlv ─────────────────────────────────────────────────────────
+
+function _meExecReadTLV(attrs, ctx) {
+  if (!attrs || !attrs.field) {
+    ctx.fields.push({ id: 'read-tlv', error: 'Missing field attribute' });
+    return;
+  }
+  const buf = ctx.fieldsById[attrs.field];
+  if (!buf || buf.startByte == null) {
+    ctx.fields.push({ id: 'read-tlv', error: `Buffer field '${attrs.field}' not yet read` });
+    return;
+  }
+  const tagLen = attrs.tag_length    || 0;
+  const lenLen = attrs.length_length || 0;
+  if (!tagLen || !lenLen) {
+    ctx.fields.push({ id: 'read-tlv', error: 'tag_length and length_length required' });
+    return;
+  }
+  const encoding = attrs.encoding || 'binary';
+  let bufBytes = Array.from(ctx.bytes.slice(buf.startByte, buf.endByte + 1));
+  if (encoding === 'ascii-hex') {
+    const hex = bufBytes.map(b => String.fromCharCode(b)).join('');
+    bufBytes = [];
+    for (let i = 0; i + 1 < hex.length; i += 2) bufBytes.push(parseInt(hex.substr(i, 2), 16) || 0);
+  }
+  let p = 0;
+  while (p + tagLen + lenLen <= bufBytes.length) {
+    const tagBytes = bufBytes.slice(p, p + tagLen);
+    const tag      = tagBytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+    p += tagLen;
+    let L = 0;
+    for (let i = 0; i < lenLen; i++) L = (L << 8) | bufBytes[p + i];
+    p += lenLen;
+    if (p + L > bufBytes.length) break;
+    const valBytes = bufBytes.slice(p, p + L);
+    p += L;
+    ctx.fields.push({
+      id: `${attrs.field}.${tag}`,
+      description: `TLV tag ${tag} · length ${L}`,
+      valueLength: L,
+      value:  _meBytesToStr(valBytes),
+      rawHex: _meBytesToHex(valBytes),
+    });
+  }
+}
+
 function _meExecBlock(block, ctx) {
   if (block == null) return;
   if (typeof block === 'string') {
@@ -15621,30 +16006,25 @@ function _meExecBlock(block, ctx) {
   const attrs = block[type];
 
   switch (type) {
-    case 'read-ddl':    return _meExecReadDDL(attrs, ctx);
-    case 'read':        return _meExecReadField(attrs, ctx);
-    case 'token-area':  return _meExecTokenArea(attrs, ctx);
+    case 'read-ddl':            return _meExecReadDDL(attrs, ctx);
+    case 'read':                return _meExecReadField(attrs, ctx);
+    case 'read-fixed':          return _meExecReadFixed(attrs, ctx);
+    case 'read-until':          return _meExecReadUntil(attrs, ctx);
+    case 'read-length-prefix':  return _meExecReadLengthPrefix(attrs, ctx);
+    case 'read-to-end':         return _meExecReadToEnd(attrs, ctx);
+    case 'read-bitmap':         return _meExecReadBitmap(attrs, ctx);
+    case 'bitmap-fields':       return _meExecBitmapFields(attrs, ctx);
+    case 'read-tlv':            return _meExecReadTLV(attrs, ctx);
+    case 'when':                return _meExecWhen(attrs, ctx);
+    case 'repeat':              return _meExecRepeat(attrs, ctx);
+    case 'token-area':          return _meExecTokenArea(attrs, ctx);
     case 'skip': {
       const n = (typeof attrs === 'number') ? attrs : (attrs?.length || 0);
       ctx.cursor = Math.min(ctx.cursor + n, ctx.bytes.length);
       return;
     }
-    case 'read-to-end': {
-      const start  = ctx.cursor;
-      const fBytes = Array.from(ctx.bytes.slice(start));
-      ctx.cursor   = ctx.bytes.length;
-      const id     = attrs?.as || 'TAIL';
-      const f = {
-        id, description: 'read-to-end', valueLength: fBytes.length,
-        value: _meBytesToStr(fBytes), rawHex: _meBytesToHex(fBytes),
-        startByte: start, endByte: ctx.bytes.length - 1,
-      };
-      ctx.fields.push(f);
-      ctx.fieldsById[id] = f;
-      return;
-    }
     default:
-      ctx.fields.push({ id: type, error: `Block '${type}' not implemented yet` });
+      ctx.fields.push({ id: type, error: `Block '${type}' not recognized` });
   }
 }
 

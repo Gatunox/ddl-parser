@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.74';
+const APP_VERSION  = '1.1.2.75';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15485,6 +15485,187 @@ function _meToggleTest() {
   if (arr) arr.innerHTML = open ? '&#9660;' : '&#9650;';
 }
 
+// ============================================================
+// PARSE SPEC INTERPRETER (NEW pipeline — does NOT use parseMessage/parseFlatMessage)
+// ============================================================
+// Walks an item's parse_spec block-by-block, advancing a byte cursor,
+// reading DDL-bound fields and emitting a flat field list.
+// Each block consumes some bytes and pushes zero or more fields.
+// Currently implemented blocks: read-ddl, read, skip, read-to-end, token-area.
+// Other blocks (read-fixed, read-until, when, repeat, read-tlv, etc.)
+// emit a stub field with "not implemented" — to be added incrementally.
+
+function _meBytesToStr(bytes) {
+  return bytes.map(x => (x >= 32 && x < 127)
+    ? String.fromCharCode(x)
+    : `[${x.toString(16).padStart(2, '0')}]`).join('');
+}
+
+function _meBytesToHex(bytes) {
+  return bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+}
+
+function _meReadOneFieldFromDef(def, ctx) {
+  const hasExplicit = def.offset !== undefined;
+  const fStart = hasExplicit ? def.offset : ctx.cursor;
+  if (fStart >= ctx.bytes.length) return null;
+
+  let len = def.length;
+  let lenPrefix = null;
+  let dataStart = fStart;
+
+  if (def.type === 'LLVAR') {
+    lenPrefix = Array.from(ctx.bytes.slice(fStart, fStart + 2)).map(b => String.fromCharCode(b)).join('');
+    len = parseInt(lenPrefix, 10) || 0;
+    dataStart = fStart + 2;
+  } else if (def.type === 'LLLVAR') {
+    lenPrefix = Array.from(ctx.bytes.slice(fStart, fStart + 3)).map(b => String.fromCharCode(b)).join('');
+    len = parseInt(lenPrefix, 10) || 0;
+    dataStart = fStart + 3;
+  }
+
+  const fBytes = Array.from(ctx.bytes.slice(dataStart, dataStart + len));
+  const fEnd   = dataStart + len;
+  if (!hasExplicit) ctx.cursor = fEnd;
+
+  return {
+    id: def.id,
+    description: def.description,
+    dataType: def._dataType || def.dataType || '',
+    type: def.type,
+    maxLength: def.length,
+    lenPrefix,
+    valueLength: fBytes.length,
+    value: _meBytesToStr(fBytes),
+    rawHex: _meBytesToHex(fBytes),
+    startByte: fStart,
+    endByte: fEnd - 1,
+    isRedefines: def.isRedefines || false,
+    redefTarget: def.redefTarget || null,
+  };
+}
+
+function _meExecReadDDL(attrs, ctx) {
+  const idx = attrs?.binding ?? 0;
+  const resolved = ctx.resolvedBindings[idx];
+  if (!resolved?.defs?.length) {
+    ctx.fields.push({ id: 'read-ddl', error: `Binding ${idx}: could not resolve ${ctx.item.ddl_bindings?.[idx] || '(none)'}` });
+    return;
+  }
+  // OCCURS actual-count cache: scan once per group for '& ' eye-catcher (existing convention).
+  const _occursActual = {};
+  for (const def of resolved.defs) {
+    if (def._occursGroup !== undefined) {
+      const gid = def._occursGroup;
+      if (_occursActual[gid] === undefined) {
+        const groupStart = def._occursGroupOffset;
+        let eyePos = ctx.bytes.length;
+        for (let bi = groupStart; bi < ctx.bytes.length - 1; bi++) {
+          if (ctx.bytes[bi] === 0x26 && ctx.bytes[bi + 1] === 0x20) { eyePos = bi; break; }
+        }
+        const available = eyePos - groupStart;
+        _occursActual[gid] = Math.min(def._occursMax, Math.max(0, Math.floor(available / def._occursChildSize)));
+      }
+      if (def._occursIdx >= _occursActual[gid]) continue;
+    }
+    const f = _meReadOneFieldFromDef(def, ctx);
+    if (!f) {
+      if (def.offset === undefined) break;   // sequential and ran out
+      continue;                              // explicit and out of range — skip
+    }
+    ctx.fields.push(f);
+    ctx.fieldsById[def.id] = f;
+  }
+}
+
+function _meExecReadField(attrs, ctx) {
+  const fieldId = (typeof attrs === 'string') ? attrs : attrs?.field;
+  if (!fieldId) {
+    ctx.fields.push({ id: 'read', error: 'Missing field attribute' });
+    return;
+  }
+  let def = null;
+  for (const r of ctx.resolvedBindings) {
+    if (!r?.defs) continue;
+    def = r.defs.find(d => d.id === fieldId);
+    if (def) break;
+  }
+  if (!def) {
+    ctx.fields.push({ id: fieldId, error: 'Field not found in any DDL binding' });
+    return;
+  }
+  const f = _meReadOneFieldFromDef(def, ctx);
+  if (f) {
+    ctx.fields.push(f);
+    ctx.fieldsById[fieldId] = f;
+  }
+}
+
+function _meExecTokenArea(_attrs, ctx) {
+  const msgType = ctx.item.type || '';
+  const ddlPath = ctx.item.ddl_bindings?.[0] || '';
+  ctx.tokens = extractTokensFromMessage(ctx.fields, ctx.bytes, msgType, ddlPath) || [];
+}
+
+function _meExecBlock(block, ctx) {
+  if (block == null) return;
+  if (typeof block === 'string') {
+    if (block === 'token-area') return _meExecTokenArea(null, ctx);
+    ctx.fields.push({ id: block, error: `Bare-string block '${block}' not recognized` });
+    return;
+  }
+  if (typeof block !== 'object') return;
+  const keys = Object.keys(block);
+  if (!keys.length) return;
+  const type  = keys[0];
+  const attrs = block[type];
+
+  switch (type) {
+    case 'read-ddl':    return _meExecReadDDL(attrs, ctx);
+    case 'read':        return _meExecReadField(attrs, ctx);
+    case 'token-area':  return _meExecTokenArea(attrs, ctx);
+    case 'skip': {
+      const n = (typeof attrs === 'number') ? attrs : (attrs?.length || 0);
+      ctx.cursor = Math.min(ctx.cursor + n, ctx.bytes.length);
+      return;
+    }
+    case 'read-to-end': {
+      const start  = ctx.cursor;
+      const fBytes = Array.from(ctx.bytes.slice(start));
+      ctx.cursor   = ctx.bytes.length;
+      const id     = attrs?.as || 'TAIL';
+      const f = {
+        id, description: 'read-to-end', valueLength: fBytes.length,
+        value: _meBytesToStr(fBytes), rawHex: _meBytesToHex(fBytes),
+        startByte: start, endByte: ctx.bytes.length - 1,
+      };
+      ctx.fields.push(f);
+      ctx.fieldsById[id] = f;
+      return;
+    }
+    default:
+      ctx.fields.push({ id: type, error: `Block '${type}' not implemented yet` });
+  }
+}
+
+function _meExecParseSpec(item, bytes) {
+  const parseSpec = item.parse_spec   || [];
+  const bindings  = item.ddl_bindings || [];
+  const resolvedBindings = bindings.map(p => p ? getDDLFromPath(p) : null);
+
+  // Default: if no parse_spec, walk each DDL binding then read token area.
+  const effectiveSpec = parseSpec.length
+    ? parseSpec
+    : bindings.map((_, i) => ({ 'read-ddl': { binding: i } })).concat([{ 'token-area': null }]);
+
+  const ctx = {
+    bytes, cursor: 0, fields: [], fieldsById: {},
+    tokens: null, resolvedBindings, item,
+  };
+  for (const block of effectiveSpec) _meExecBlock(block, ctx);
+  return ctx;
+}
+
 function _meRunTest() {
   const inp    = document.getElementById('me-test-input');
   const fmtSel = document.getElementById('me-test-fmt')?.value || 'auto';
@@ -15551,70 +15732,34 @@ function _meRunTest() {
     recPassed ? '#3fb950' : (item.recognizers?.length ? '#f85149' : null),
     recHtml));
 
-  // ── 2. DDL Binding parse ─────────────────────────────────────────────────────
-  const bindings   = item.ddl_bindings || [];
-  const parseSpec  = item.parse_spec   || [];
-  const hasReadDDL = parseSpec.some(b => b != null && typeof b === 'object' && 'read-ddl' in b);
-  const hasTokenArea = parseSpec.some(b => b != null && typeof b === 'object' && 'token-area' in b)
-                    || (typeof parseSpec.find(b => b === 'token-area') === 'string');
-
-  // Which bindings to read: explicit read-ddl blocks, or all bindings if spec is empty / has no read-ddl
-  const readOps = hasReadDDL
-    ? parseSpec.filter(b => b != null && typeof b === 'object' && 'read-ddl' in b)
-               .map(b => ({ idx: b['read-ddl']?.binding ?? 0 }))
-    : bindings.map((_, i) => ({ idx: i }));
-
-  let allFields = [], primaryDDLPath = null, fieldHtml = '';
-  if (!bindings.length) {
-    fieldHtml = '<div class="me-test-note">No DDL Bindings defined.</div>';
-  } else {
-    const prevFmt = S.inputFormat;
-    S.inputFormat = inputFmt;
-    for (const { idx } of readOps) {
-      const path = bindings[idx];
-      if (!path) { fieldHtml += `<div class="me-test-err">Binding ${idx}: path not set</div>`; continue; }
-      const resolved = getDDLFromPath(path);
-      if (!resolved?.defs?.length) {
-        fieldHtml += `<div class="me-test-err">Binding ${idx}: could not resolve ${_escHtml(path)}</div>`; continue;
-      }
-      if (!primaryDDLPath) primaryDDLPath = resolved.path;
-      const fields = parseMessage(bytes, resolved.defs, bytes);
-      allFields = allFields.concat(fields);
-      const label = readOps.length > 1 ? `<span style="color:var(--text-dim);margin-bottom:2px;display:block">Binding ${idx}: ${_escHtml(path)}</span>` : '';
-      fieldHtml += label + _meTestFieldTable(fields);
-    }
-    S.inputFormat = prevFmt;
-  }
-  const fieldCount = allFields.filter(f => !f.error).length;
-  parts.push(_meTestSection('DDL Fields', fieldCount ? '#3fb950' : null, fieldHtml,
-    fieldCount ? `${fieldCount} field${fieldCount !== 1 ? 's' : ''}` : 'none'));
+  // ── 2. Parse Spec execution ──────────────────────────────────────────────────
+  // Run the user's parse_spec block-by-block against the input bytes.
+  // Falls back to "read each binding then token-area" when parse_spec is empty.
+  const ctx = _meExecParseSpec(item, bytes);
+  const fieldCount = ctx.fields.filter(f => !f.error).length;
+  const errCount   = ctx.fields.filter(f =>  f.error).length;
+  const fieldHtml  = ctx.fields.length
+    ? _meTestFieldTable(ctx.fields)
+    : '<div class="me-test-note">parse_spec produced no fields.</div>';
+  const psBadge    = fieldCount
+    ? `${fieldCount} field${fieldCount !== 1 ? 's' : ''}${errCount ? ` · ${errCount} error${errCount !== 1 ? 's' : ''}` : ''}`
+    : (errCount ? `${errCount} error${errCount !== 1 ? 's' : ''}` : 'none');
+  parts.push(_meTestSection('Parse Spec',
+    fieldCount && !errCount ? '#3fb950' : (errCount ? '#f85149' : null),
+    fieldHtml, psBadge));
 
   // ── 3. Token area ────────────────────────────────────────────────────────────
-  if (hasTokenArea || !parseSpec.length) {
-    const msgType = item.type || '';
-    const tokens  = extractTokensFromMessage(allFields, bytes, msgType, primaryDDLPath || bindings[0] || '');
+  // Only rendered when a token-area block executed during interpretation.
+  if (ctx.tokens !== null) {
+    const tokens = ctx.tokens;
     let tokHtml;
-    if (!tokens) {
-      tokHtml = '<div class="me-test-note">No token area found in message.</div>';
-    } else if (!tokens.length) {
+    if (!tokens.length) {
       tokHtml = '<div class="me-test-note">Token area present but empty.</div>';
     } else {
       tokHtml = _meTestTokenTable(tokens);
     }
-    parts.push(_meTestSection('Tokens', tokens?.length ? '#3fb950' : null, tokHtml,
-      tokens?.length ? `${tokens.length} token${tokens.length !== 1 ? 's' : ''}` : null));
-  }
-
-  // ── 4. Unsupported blocks notice ─────────────────────────────────────────────
-  const skip = new Set(['read-ddl','token-area']);
-  const unsupported = parseSpec
-    .filter(b => b && typeof b === 'object')
-    .map(b => Object.keys(b)[0])
-    .filter(k => !skip.has(k));
-  if (unsupported.length) {
-    const types = [...new Set(unsupported)].join(', ');
-    parts.push(_meTestSection('Notice', null,
-      `<div class="me-test-note">ℹ ${_escHtml(types)}: not yet executed in test mode</div>`));
+    parts.push(_meTestSection('Tokens', tokens.length ? '#3fb950' : null, tokHtml,
+      tokens.length ? `${tokens.length} token${tokens.length !== 1 ? 's' : ''}` : null));
   }
 
   out.innerHTML = parts.join('');

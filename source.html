@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.72';
+const APP_VERSION  = '1.1.2.73';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15530,6 +15530,12 @@ function _meRunTest() {
 
   const parts = [];
 
+  // ── 0. Input info ────────────────────────────────────────────────────────────
+  const dumpBytes = Array.from(bytes.slice(0, 32)).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+  const dumpMore  = bytes.length > 32 ? `…+${bytes.length - 32}` : '';
+  parts.push(`<div class="me-test-section"><div class="me-test-sec-hdr"><span>Input</span><span class="me-test-sec-badge" style="background:var(--bg-deep);color:var(--text-dim)">${bytes.length} bytes · ${inputFmt}</span></div>` +
+    `<div style="font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);word-break:break-all">${_escHtml(dumpBytes)}${dumpMore}</div></div>`);
+
   // ── 1. Recognition ──────────────────────────────────────────────────────────
   const recResult = _fmtTestSpecs([item], bytes)[0];
   const recPassed = recResult?.passed ?? false;
@@ -15631,7 +15637,7 @@ function _meTestSection(title, color, body, badge) {
 function _meTestFmtVal(raw) {
   const s = String(raw).slice(0, 120);
   const inner = s.split('').map(ch =>
-    ch === ' ' ? '<span class="me-test-fsp">&#xB7;</span>' : _escHtml(ch)
+    ch === ' ' ? '<span class="me-test-fsp" title="space (0x20)">&#xB7;</span>' : _escHtml(ch)
   ).join('');
   return `<span class="me-test-fbracket">[</span>${inner}<span class="me-test-fbracket">]</span>`;
 }

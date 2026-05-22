@@ -164,7 +164,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | `when` | Branch on a prior field value | `field` (field ID), `is` / `not` (value, list, or range), `then` (block list) |
 | `repeat` | Loop N times — N from a prior field | `count` (field ID), `body` (block list) |
 | `read-tlv` | Parse a DDL buffer field as repeating TLV triples until buffer exhausted | `field` (DDL field ID of the buffer), `tag_length` (bytes per tag), `length_length` (bytes per length), `encoding` (`binary`\|`ascii-hex`) |
-| `token-area` | Trigger existing token parsing logic | — |
+| `token-area` | Read tokens from the message (see §5.3) | `tokens` (`"ANY"` \| list), `from`, `until` |
 
 ### 5.2 `read-ddl` — full DDL binding read
 
@@ -175,22 +175,75 @@ Use this for messages where:
 - There are no conditionals, loops, or sentinel-delimited sections in the fixed area
 - Only the post-fixed section (token area, variable buffers) requires explicit parse_spec blocks
 
+**Attributes:**
+
+| Attribute | Type | Default | Meaning |
+|-----------|------|---------|---------|
+| `binding` | int \| `"ANY"` | `"ANY"` | Index into `ddl_bindings`. `"ANY"` walks every binding in order. |
+| `fields`  | `"ANY"` \| array of field ids | `"ANY"` | Cherry-pick: list of DDL field ids to emit. `"ANY"` emits all. |
+| `from`    | field id | — | Inclusive lower bound: emission starts at this field. |
+| `until`   | field id | — | Inclusive upper bound: emission stops after this field. |
+
+The byte cursor always advances through every field in declaration order so that later parse_spec blocks (`when`, `repeat`, `read-tlv`) can reference any field id — `fields` / `from` / `until` only filter what is emitted to the output.
+
+**Cherry-pick takes precedence over `from`/`until`.** If `fields` is an array, `from` and `until` are ignored.
+
+**Use `"ANY"`** (not `null`) when you want defaults — `null` is accepted for backwards compatibility but `"ANY"` is the canonical form.
+
 ```json
 [
-  { "read-ddl": null },
-  { "token-area": null }
+  { "read-ddl": "ANY" },
+  { "token-area": "ANY" }
 ]
 ```
 
-The `binding` attribute selects which entry in `ddl_bindings` to walk (0-based index, default `0`). If the message has multiple DDL bindings (e.g. a header DEF and a body DEF), use two `read-ddl` blocks with `binding: 0` and `binding: 1`.
+Two bindings (header + body), then tokens:
 
 ```json
 [
   { "read-ddl": { "binding": 0 } },
   { "read-ddl": { "binding": 1 } },
-  { "token-area": null }
+  { "token-area": "ANY" }
 ]
 ```
+
+Cherry-pick three fields:
+
+```json
+[
+  { "read-ddl": { "fields": ["MTI", "PAN", "AMOUNT"] } }
+]
+```
+
+Emit a contiguous window between two fields:
+
+```json
+[
+  { "read-ddl": { "from": "TYP", "until": "TIM-OFST" } }
+]
+```
+
+### 5.3 `token-area` — token read with filters
+
+Reads the message's token area (tokens are the named 2-byte-prefixed records produced after fixed-section parsing).
+
+**Attributes:**
+
+| Attribute | Type | Default | Meaning |
+|-----------|------|---------|---------|
+| `tokens` | `"ANY"` \| array of token ids | `"ANY"` | Cherry-pick: list of token ids to emit. `"ANY"` emits all. |
+| `from`   | token id | — | Inclusive lower bound. |
+| `until`  | token id | — | Inclusive upper bound. |
+
+**Use `"ANY"`** (not `null`) for defaults — `null` is accepted for backwards compatibility but `"ANY"` is the canonical form.
+
+```json
+{ "token-area": "ANY" }
+{ "token-area": { "tokens": ["B4", "C0", "F1"] } }
+{ "token-area": { "from": "B4", "until": "ZZ" } }
+```
+
+Cherry-pick takes precedence over `from`/`until`.
 
 ### 5.4 `read-fixed` — length attribute
 
@@ -235,7 +288,7 @@ Multiple `when` blocks on the same field act as if/else-if. Nested `when` blocks
 
 No extra parse_spec attributes needed — all behaviour is derived from DDL structure.
 
-### 5.6 Reliability model
+### 5.8 Reliability model
 
 Reliability is **derived from the operation type and field type** — no explicit flag needed.
 
@@ -249,7 +302,7 @@ Reliability is **derived from the operation type and field type** — no explici
 ASCII-class formats: `ascii`, `netard-ascii`, `netard`.  
 Binary-class formats: `hex`, `hexascii`, `netard-hex`, `netard-hexascii`, `ebcdic`, `tandem-dump`, audit.
 
-### 5.7 Example parse_specs
+### 5.9 Example parse_specs
 
 **ISO 8583 standard ASCII:**
 ```yaml
@@ -278,7 +331,7 @@ parse_spec:
           as: USER-DATA.BUFFER
           sentinels: [0x26, 0x20]
           eom: true
-  - token-area
+  - token-area: ANY
 ```
 
 **TLV buffer (e.g. DE-55 EMV data):**

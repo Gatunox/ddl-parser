@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.76';
+const APP_VERSION  = '1.1.2.77';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15556,13 +15556,41 @@ function _meReadOneFieldFromDef(def, ctx) {
   };
 }
 
-function _meExecReadDDL(attrs, ctx) {
-  const idx = attrs?.binding ?? 0;
+// Normalize read-ddl attrs into { binding, fields, from, until }.
+// Forms accepted:
+//   undefined / null / "ANY"          → { binding:'ANY', fields:'ANY' }
+//   number                            → { binding:N,     fields:'ANY' }
+//   { binding, fields, from, until }  → as given (binding defaults to 'ANY')
+//   binding="ANY" means walk every entry in ddl_bindings in order.
+//   fields is "ANY" (all defs) or an array of DDL field ids to cherry-pick.
+//   from/until name DDL field ids defining an inclusive emission window.
+//   Cherry-pick (fields=[...]) takes precedence over from/until.
+function _meReadDDLAttrs(attrs) {
+  if (attrs == null || attrs === 'ANY')
+    return { binding: 'ANY', fields: 'ANY', from: null, until: null };
+  if (typeof attrs === 'number')
+    return { binding: attrs, fields: 'ANY', from: null, until: null };
+  if (typeof attrs === 'object') {
+    return {
+      binding: attrs.binding === undefined ? 'ANY' : attrs.binding,
+      fields:  attrs.fields  ?? 'ANY',
+      from:    attrs.from    || null,
+      until:   attrs.until   || null,
+    };
+  }
+  return { binding: 'ANY', fields: 'ANY', from: null, until: null };
+}
+
+function _meReadDDLBinding(idx, fields, from, until, ctx) {
   const resolved = ctx.resolvedBindings[idx];
   if (!resolved?.defs?.length) {
     ctx.fields.push({ id: 'read-ddl', error: `Binding ${idx}: could not resolve ${ctx.item.ddl_bindings?.[idx] || '(none)'}` });
     return;
   }
+  const picks   = Array.isArray(fields) ? new Set(fields) : null;
+  const allMode = !picks && !from && !until;
+  let started   = !from;
+
   // OCCURS actual-count cache: scan once per group for '& ' eye-catcher (existing convention).
   const _occursActual = {};
   for (const def of resolved.defs) {
@@ -15579,14 +15607,41 @@ function _meExecReadDDL(attrs, ctx) {
       }
       if (def._occursIdx >= _occursActual[gid]) continue;
     }
+    // Always read each field so the byte cursor stays aligned and so
+    // later parse_spec blocks (when / repeat / read-tlv) can reference
+    // any field id, even one the user filtered out of the emit list.
     const f = _meReadOneFieldFromDef(def, ctx);
     if (!f) {
       if (def.offset === undefined) break;   // sequential and ran out
       continue;                              // explicit and out of range — skip
     }
-    ctx.fields.push(f);
     ctx.fieldsById[def.id] = f;
+
+    // Decide whether to emit this field to the visible output.
+    let emit;
+    if      (allMode) emit = true;
+    else if (picks)   emit = picks.has(def.id);
+    else {
+      if (!started && def.id === from) started = true;
+      emit = started;
+    }
+    if (emit) ctx.fields.push(f);
+
+    // until: inclusive — stop after the matching field is processed.
+    if (until && def.id === until) break;
   }
+}
+
+function _meExecReadDDL(attrs, ctx) {
+  const { binding, fields, from, until } = _meReadDDLAttrs(attrs);
+  const bindings = binding === 'ANY'
+    ? ctx.resolvedBindings.map((r, i) => r?.defs?.length ? i : -1).filter(i => i >= 0)
+    : [binding];
+  if (!bindings.length) {
+    ctx.fields.push({ id: 'read-ddl', error: 'No DDL bindings available' });
+    return;
+  }
+  for (const idx of bindings) _meReadDDLBinding(idx, fields, from, until, ctx);
 }
 
 function _meExecReadField(attrs, ctx) {
@@ -15612,10 +15667,49 @@ function _meExecReadField(attrs, ctx) {
   }
 }
 
-function _meExecTokenArea(_attrs, ctx) {
+// Normalize token-area attrs into { tokens, from, until }.
+// Forms accepted:
+//   undefined / null / "ANY"        → { tokens:'ANY' } (emit all tokens)
+//   { tokens, from, until }         → tokens is "ANY" or an array of token ids;
+//                                     from/until name token ids defining an
+//                                     inclusive window. Cherry-pick wins over
+//                                     from/until.
+function _meTokenAreaAttrs(attrs) {
+  if (attrs == null || attrs === 'ANY')
+    return { tokens: 'ANY', from: null, until: null };
+  if (typeof attrs === 'object') {
+    return {
+      tokens: attrs.tokens ?? 'ANY',
+      from:   attrs.from   || null,
+      until:  attrs.until  || null,
+    };
+  }
+  return { tokens: 'ANY', from: null, until: null };
+}
+
+function _meExecTokenArea(attrs, ctx) {
+  const { tokens, from, until } = _meTokenAreaAttrs(attrs);
   const msgType = ctx.item.type || '';
   const ddlPath = ctx.item.ddl_bindings?.[0] || '';
-  ctx.tokens = extractTokensFromMessage(ctx.fields, ctx.bytes, msgType, ddlPath) || [];
+  const all = extractTokensFromMessage(ctx.fields, ctx.bytes, msgType, ddlPath) || [];
+
+  if (tokens === 'ANY' && !from && !until) { ctx.tokens = all; return; }
+
+  if (Array.isArray(tokens)) {
+    const picks = new Set(tokens);
+    ctx.tokens = all.filter(t => picks.has(t.id));
+    return;
+  }
+
+  // from/until range (inclusive both sides)
+  const out = [];
+  let started = !from;
+  for (const t of all) {
+    if (!started && t.id === from) started = true;
+    if (started) out.push(t);
+    if (until && t.id === until) break;
+  }
+  ctx.tokens = out;
 }
 
 // ── Shared helpers for the remaining blocks ─────────────────────────────────
@@ -16033,10 +16127,10 @@ function _meExecParseSpec(item, bytes) {
   const bindings  = item.ddl_bindings || [];
   const resolvedBindings = bindings.map(p => p ? getDDLFromPath(p) : null);
 
-  // Default: if no parse_spec, walk each DDL binding then read token area.
+  // Default: if no parse_spec, walk every DDL binding then read all tokens.
   const effectiveSpec = parseSpec.length
     ? parseSpec
-    : bindings.map((_, i) => ({ 'read-ddl': { binding: i } })).concat([{ 'token-area': null }]);
+    : [{ 'read-ddl': 'ANY' }, { 'token-area': 'ANY' }];
 
   const ctx = {
     bytes, cursor: 0, fields: [], fieldsById: {},

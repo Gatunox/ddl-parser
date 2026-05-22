@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.77';
+const APP_VERSION  = '1.1.2.78';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14373,13 +14373,19 @@ function _mePsToggleHelp() {
 
 const _PS_HELP = {
   'read-ddl': {
-    desc: 'Reads ALL fields from the DDL Binding in declaration order — no individual field listing needed. Use this for messages where the fixed section is fully described by the DDL. If the message has multiple DDL Bindings, use one read-ddl block per binding (specify binding: 0, binding: 1, etc.).',
+    desc: 'Reads fields from the DDL Binding in declaration order. By default walks every binding ("ANY") and emits every field. Optional attributes let you choose a specific binding, cherry-pick fields by id, or define an inclusive from/until window. The byte cursor always advances through every field so later blocks (when, repeat, read-tlv) can reference any id — the filters only narrow the visible output. Use "ANY" (not null) as the canonical no-filter value.',
     attrs: [
-      ['binding', 'int', false, 'Index into ddl_bindings (0-based). Defaults to 0.'],
+      ['binding', 'int | "ANY"',                 false, 'Which entry in ddl_bindings to walk. "ANY" walks every binding in order. Default: "ANY".'],
+      ['fields',  '"ANY" | [field-id, …]',       false, 'Cherry-pick: list of DDL field ids to emit. "ANY" emits all. Takes precedence over from/until.'],
+      ['from',    'field-id',                    false, 'Inclusive lower bound: emission starts at this field.'],
+      ['until',   'field-id',                    false, 'Inclusive upper bound: emission stops after this field.'],
     ],
     examples: [
-      ['All fixed DDL fields then tokens (STM-style)', [{"read-ddl": null}, {"token-area": null}]],
-      ['Two DDL bindings (header + body)', [{"read-ddl": {"binding": 0}}, {"read-ddl": {"binding": 1}}, {"token-area": null}]],
+      ['All fields then tokens',           [{"read-ddl": "ANY"}, {"token-area": "ANY"}]],
+      ['Specific binding',                 [{"read-ddl": {"binding": 0}}]],
+      ['Two bindings (header + body)',     [{"read-ddl": {"binding": 0}}, {"read-ddl": {"binding": 1}}, {"token-area": "ANY"}]],
+      ['Cherry-pick three fields',         [{"read-ddl": {"fields": ["MTI", "PAN", "AMOUNT"]}}]],
+      ['Window from TYP to TIM-OFST',      [{"read-ddl": {"from": "TYP", "until": "TIM-OFST"}}]],
     ],
   },
   'read': {
@@ -14504,10 +14510,16 @@ const _PS_HELP = {
     ],
   },
   'token-area': {
-    desc: 'Hands off all remaining bytes to the existing token / variable-length-field parser. No further parse_spec blocks execute after this. Use at the end of the spec for messages with a trailing token section.',
-    attrs: [],
+    desc: 'Reads the message\'s token area (named 2-byte-prefixed records that follow the fixed section). By default emits every token ("ANY"). Optional attributes let you cherry-pick token ids or define an inclusive from/until window. Use "ANY" (not null) as the canonical no-filter value.',
+    attrs: [
+      ['tokens', '"ANY" | [token-id, …]', false, 'Cherry-pick: list of token ids to emit. "ANY" emits all. Takes precedence over from/until.'],
+      ['from',   'token-id',              false, 'Inclusive lower bound: emission starts at this token.'],
+      ['until',  'token-id',              false, 'Inclusive upper bound: emission stops after this token.'],
+    ],
     examples: [
-      ['End of spec hand-off', [{"read": "MTI"}, {"bitmap-fields": "BITMAP"}, {"token-area": null}]],
+      ['All tokens',                  [{"read": "MTI"}, {"bitmap-fields": "BITMAP"}, {"token-area": "ANY"}]],
+      ['Cherry-pick specific tokens', [{"token-area": {"tokens": ["B4", "C0", "F1"]}}]],
+      ['Window between two tokens',   [{"token-area": {"from": "B4", "until": "ZZ"}}]],
     ],
   },
 };

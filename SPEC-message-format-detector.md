@@ -5,6 +5,19 @@ Status: **Partially implemented** (`feat/format-detector`)
 
 ---
 
+## Changelog
+
+| Date | Change |
+|------|--------|
+| 2026-05-23 | `read-while` block added — guard-bounded loop for variable-count loops where the count field is unreliable (ASCII PSTM services). See §5.8. |
+| 2026-05-23 | `repeat.count`, `read-fixed.length` (field-id ref), and `read-while.max` now auto-decode **binary** numeric fields by reading `rawHex` as big-endian unsigned int when the rendered value isn't pure ASCII digits. See §5.9. |
+| 2026-05-23 | `read-until` / `read-length-prefix` sentinels accept decimal ints, `"26"`, and `"0x26"` interchangeably. |
+| 2026-05-23 | Parse Spec editor accepts **JSONC** — `//` line comments, `/* */` block comments, trailing commas. Storage stays canonical JSON; the raw annotated source is preserved on `parse_spec_source` for round-trip. See §13. |
+| 2026-05-23 | `read-ddl` gains `binding: "ANY"`, `fields`, `from`, `until` attributes. `null` accepted for back-compat; `"ANY"` is canonical. See §5.2. |
+| 2026-05-23 | `token-area` gains `tokens`, `from`, `until` attributes with the same cherry-pick / window semantics as `read-ddl`. See §5.3. |
+
+---
+
 ## 1. Goals
 
 - Replace the current regex-only detection system with a declarative, byte-level recognizer pipeline capable of 100% accuracy across all known and future message formats.
@@ -169,6 +182,8 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 
 ### 5.2 `read-ddl` — full DDL binding read
 
+> *Updated 2026-05-23 — added `binding: "ANY"`, `fields`, `from`, `until` attributes.*
+
 `read-ddl` walks the DDL specified in `ddl_bindings[binding]` and reads every field in declaration order, exactly as the DDL defines them (offset, length, type, encoding). No individual `read` blocks are needed.
 
 Use this for messages where:
@@ -226,6 +241,8 @@ Emit a contiguous window between two fields:
 
 ### 5.3 `token-area` — token read with filters
 
+> *Added 2026-05-23 — `tokens`, `from`, `until` attributes; `"ANY"` is the canonical no-filter value.*
+
 Reads the message's token area (tokens are the named 2-byte-prefixed records produced after fixed-section parsing).
 
 **Attributes:**
@@ -263,6 +280,8 @@ Any stop condition ends the read. All are optional but at least one must be spec
     as: BUFFER-A               # DDL field ID for metadata
 ```
 
+> *Updated 2026-05-23 — `sentinels` entries accept decimal integers (`38`), bare hex strings (`"26"`), and `0x`-prefixed hex strings (`"0x26"`) interchangeably. The `0x` prefix used to silently parse as `0`; that is fixed. The same rule applies to `read-length-prefix.sentinels`.*
+
 ### 5.6 `when` — condition forms
 
 ```yaml
@@ -290,6 +309,8 @@ Multiple `when` blocks on the same field act as if/else-if. Nested `when` blocks
 No extra parse_spec attributes needed — all behaviour is derived from DDL structure.
 
 ### 5.8 `read-while` — guard-bounded loop
+
+> *Added 2026-05-23.*
 
 For variable-count loops where a count field is **unavailable or unreliable** (canonical case: ASCII PSTM where `NUM-SERVICES` is binary and the only way to know if another service follows is to peek at the next 2 bytes for the service-tag convention).
 
@@ -343,6 +364,21 @@ Reliability is **derived from the operation type and field type** — no explici
 
 ASCII-class formats: `ascii`, `netard-ascii`, `netard`.  
 Binary-class formats: `hex`, `hexascii`, `netard-hex`, `netard-hexascii`, `ebcdic`, `tandem-dump`, audit.
+
+#### 5.9.1 Decoding binary numeric fields as counts / lengths
+
+> *Added 2026-05-23.*
+
+`repeat.count`, `read-fixed.length` (when given a field-id reference), and `read-while.max` resolve a field id to an integer using this rule:
+
+1. If the field's rendered value is pure ASCII digits (e.g. `"042"`) → `parseInt(value, 10)`.
+2. Otherwise, decode `rawHex` as a **big-endian unsigned integer** (up to 6 bytes). A 2-byte field whose raw bytes are `0x00 0x42` (rawHex `"0042"`) resolves to `66` — its uint16-be value.
+3. Otherwise (missing field, non-numeric content) → `null`. Callers treat this as either zero or an error depending on the block (`repeat` errors out, `read-while.max` falls back to "no cap").
+
+This means the **same parse_spec works** for ASCII and binary inputs of the same logical message, as long as the spec author respects the reliability table above:
+
+- In a **binary/hex** input, a 1-byte `NUM-SERVICES` containing `0x03` decodes to `3`, so `repeat: { count: "NUM-SERVICES" }` runs 3 iterations.
+- In an **ASCII** input, that field's bytes are noise from the reliability standpoint; spec authors should use `read-while` with a guard predicate instead of referencing the unreliable count.
 
 ### 5.10 Example parse_specs
 
@@ -633,6 +669,27 @@ Once all messages are migrated and verified:
 - Message specs stored in `localStorage` as JSON.
 - YAML is documentation format only — internal representation is always JSON.
 - Key: `up_format_specs` (replaces `up_detect_rules`).
+
+### 13.1 Editor input format — JSONC
+
+> *Added 2026-05-23.*
+
+The Parse Spec textarea accepts **JSONC** — JSON with two relaxations:
+
+- `//` line comments
+- `/* … */` block comments
+- Trailing commas before `]` or `}`
+
+A string-aware preprocessor strips comments before `JSON.parse` so `//` or `/*` sequences inside JSON string values (regex patterns, URLs, etc.) are not treated as comments.
+
+Round-trip:
+
+- The parsed canonical array goes into `item.parse_spec` (what the interpreter reads).
+- The raw annotated source text is preserved on `item.parse_spec_source`. Save/reload, localStorage, and import/export all carry this through.
+- When the tab re-renders, the textarea is seeded from `parse_spec_source` if present, otherwise from `JSON.stringify(parse_spec, null, 2)`.
+- The **Format** button strips comments and re-emits canonical JSON; it also updates `parse_spec_source` so the visible text and stored source stay in sync.
+
+JSONC is editor-side only. The persisted `parse_spec` field is always canonical JSON, so any external consumer can read it without a JSONC parser.
 
 ---
 

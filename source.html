@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.79';
+const APP_VERSION  = '1.1.2.80';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14509,6 +14509,36 @@ const _PS_HELP = {
       ['Repeat service entries', [{"repeat": {"count": "NUM-SERVICES", "body": [{"read": "SERVICE-CODE"}, {"read": "SERVICE-DATA"}]}}]],
     ],
   },
+  'read-while': {
+    desc: 'Loops body blocks as long as a guard predicate matches at the current cursor. Use when the iteration count is unknown or unreliable (e.g. ASCII PSTM where NUM-SERVICES is binary and the only way to know if another service follows is to peek at the next 2 bytes). The body MUST advance the cursor each iteration or the loop aborts. Stops at first guard miss, max iterations, or EOM. Hard cap of 10000 iterations as a safety net.',
+    attrs: [
+      ['while', 'object',         true,  'Guard predicate at cursor. type: alphabetic | numeric | alphanumeric | ascii | regex | literal. length: bytes to read for the check. encoding: ascii | ebcdic (default ascii). pattern: regex string (when type=regex). value: exact string (when type=literal).'],
+      ['body',  '[blocks]',       true,  'Blocks to execute each iteration. Must advance the cursor.'],
+      ['max',   'int | field-id', false, 'Safety cap on iterations. Literal int, or id of a previously-read field whose parsed value is used. If the field is missing or non-numeric (e.g. binary in ASCII mode), no cap is applied — guard + hard cap still bound the loop.'],
+    ],
+    examples: [
+      ['PSTM ASCII services (2-letter peek)',
+       [{"read-while": {
+         "while": {"type":"regex","length":2,"pattern":"^[A-Za-z*]{2}$"},
+         "max": "NUM-SERVICES",
+         "body": [{"read":"SRVCS"}]
+       }}]
+      ],
+      ['Numeric items, count-capped',
+       [{"read-while": {
+         "while": {"type":"numeric","length":1},
+         "max": 99,
+         "body": [{"read":"ITEM"}]
+       }}]
+      ],
+      ['Literal marker tag (read while next 2 bytes are "TX")',
+       [{"read-while": {
+         "while": {"type":"literal","length":2,"value":"TX"},
+         "body": [{"read":"TX-RECORD"}]
+       }}]
+      ],
+    ],
+  },
   'token-area': {
     desc: 'Reads the message\'s token area (named 2-byte-prefixed records that follow the fixed section). By default emits every token ("ANY"). Optional attributes let you cherry-pick token ids or define an inclusive from/until window. Use "ANY" (not null) as the canonical no-filter value.',
     attrs: [
@@ -15507,7 +15537,7 @@ function _meToggleTest() {
 // Implemented blocks:
 //   read-ddl, read, read-fixed, read-until, read-length-prefix,
 //   read-to-end, read-bitmap, bitmap-fields, read-tlv,
-//   when, repeat, skip, token-area
+//   when, repeat, read-while, skip, token-area
 //
 // Notes:
 //   - read-bitmap stores a Set of DE numbers on the field as `bitSet`,
@@ -15761,7 +15791,15 @@ function _meResolveLength(lengthAttr, ctx) {
 }
 
 function _meParseSentinels(list) {
-  return new Set((list || []).map(s => typeof s === 'string' ? parseInt(s, 16) : s));
+  return new Set((list || []).map(s => {
+    if (typeof s === 'number') return s & 0xFF;
+    if (typeof s === 'string') {
+      const t = s.replace(/^0x/i, '');
+      const n = parseInt(t, 16);
+      return Number.isFinite(n) ? n & 0xFF : 0;
+    }
+    return 0;
+  }));
 }
 
 // ── Block: read-fixed ───────────────────────────────────────────────────────
@@ -16052,6 +16090,77 @@ function _meExecRepeat(attrs, ctx) {
   }
 }
 
+// ── Block: read-while ───────────────────────────────────────────────────────
+// Guard-bounded loop. Use when the iteration count is unknown or unreliable
+// (e.g. ASCII PSTM where NUM-SERVICES is binary and the only way to know if
+// another service follows is to peek at the next 2 bytes and check they
+// match the service-tag convention).
+
+function _meResolveMaxLimit(maxAttr, ctx) {
+  if (maxAttr == null) return null;
+  if (typeof maxAttr === 'number') return maxAttr;
+  if (typeof maxAttr === 'string') {
+    const f = ctx.fieldsById[maxAttr];
+    if (!f) return null;
+    const n = parseInt(f.value, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function _meGuardDecodeText(slice, encoding) {
+  if (encoding === 'ebcdic') {
+    return Array.from(slice).map(b => String.fromCharCode(_EBCDIC_TO_ASCII[b] ?? b)).join('');
+  }
+  return Array.from(slice).map(b => String.fromCharCode(b)).join('');
+}
+
+function _meGuardMatches(guard, ctx) {
+  if (!guard || typeof guard !== 'object') return false;
+  const len = guard.length || 1;
+  if (ctx.cursor + len > ctx.bytes.length) return false;
+  const slice = ctx.bytes.slice(ctx.cursor, ctx.cursor + len);
+  const text  = _meGuardDecodeText(slice, guard.encoding || 'ascii');
+  switch (guard.type) {
+    case 'regex': {
+      if (!guard.pattern) return false;
+      try { return new RegExp(guard.pattern).test(text); }
+      catch { return false; }
+    }
+    case 'alphabetic':   return /^[A-Za-z]+$/.test(text);
+    case 'numeric':      return /^[0-9]+$/.test(text);
+    case 'alphanumeric': return /^[A-Za-z0-9]+$/.test(text);
+    case 'ascii':        return Array.from(slice).every(b => b >= 0x20 && b < 0x7F);
+    case 'literal':      return guard.value != null && text === String(guard.value);
+    default:             return false;
+  }
+}
+
+function _meExecReadWhile(attrs, ctx) {
+  if (!attrs || !attrs.while || !Array.isArray(attrs.body)) {
+    ctx.fields.push({ id: 'read-while', error: 'Missing while or body attribute' });
+    return;
+  }
+  const maxLimit = _meResolveMaxLimit(attrs.max, ctx);
+  const HARD_CAP = 10000;
+  let iters = 0;
+  while (ctx.cursor < ctx.bytes.length) {
+    if (!_meGuardMatches(attrs.while, ctx)) break;
+    const before = ctx.cursor;
+    for (const b of attrs.body) _meExecBlock(b, ctx);
+    iters++;
+    if (ctx.cursor === before) {
+      ctx.fields.push({ id: 'read-while', error: 'Body did not advance cursor — aborting to avoid infinite loop' });
+      break;
+    }
+    if (maxLimit != null && iters >= maxLimit) break;
+    if (iters >= HARD_CAP) {
+      ctx.fields.push({ id: 'read-while', error: `Hard iteration cap ${HARD_CAP} reached` });
+      break;
+    }
+  }
+}
+
 // ── Block: read-tlv ─────────────────────────────────────────────────────────
 
 function _meExecReadTLV(attrs, ctx) {
@@ -16123,6 +16232,7 @@ function _meExecBlock(block, ctx) {
     case 'read-tlv':            return _meExecReadTLV(attrs, ctx);
     case 'when':                return _meExecWhen(attrs, ctx);
     case 'repeat':              return _meExecRepeat(attrs, ctx);
+    case 'read-while':          return _meExecReadWhile(attrs, ctx);
     case 'token-area':          return _meExecTokenArea(attrs, ctx);
     case 'skip': {
       const n = (typeof attrs === 'number') ? attrs : (attrs?.length || 0);

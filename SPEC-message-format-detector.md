@@ -163,6 +163,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | `read-to-end` | Consume remaining bytes | `as` (DDL field ID) |
 | `when` | Branch on a prior field value | `field` (field ID), `is` / `not` (value, list, or range), `then` (block list) |
 | `repeat` | Loop N times — N from a prior field | `count` (field ID), `body` (block list) |
+| `read-while` | Loop body blocks while a guard predicate matches at the cursor; use when iteration count is unknown or unreliable | `while` (guard), `body` (block list), `max` (int \| field id) |
 | `read-tlv` | Parse a DDL buffer field as repeating TLV triples until buffer exhausted | `field` (DDL field ID of the buffer), `tag_length` (bytes per tag), `length_length` (bytes per length), `encoding` (`binary`\|`ascii-hex`) |
 | `token-area` | Read tokens from the message (see §5.3) | `tokens` (`"ANY"` \| list), `from`, `until` |
 
@@ -288,7 +289,48 @@ Multiple `when` blocks on the same field act as if/else-if. Nested `when` blocks
 
 No extra parse_spec attributes needed — all behaviour is derived from DDL structure.
 
-### 5.8 Reliability model
+### 5.8 `read-while` — guard-bounded loop
+
+For variable-count loops where a count field is **unavailable or unreliable** (canonical case: ASCII PSTM where `NUM-SERVICES` is binary and the only way to know if another service follows is to peek at the next 2 bytes for the service-tag convention).
+
+The guard is evaluated **before** each iteration. The body must advance the byte cursor or the loop aborts (prevents infinite loops on misconfigured specs). Stops at first guard miss, `max` iterations, EOM, or a hard cap of 10000.
+
+**Attributes:**
+
+| Attribute | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `while` | object | yes | Guard predicate at cursor (see below) |
+| `body`  | array of blocks | yes | Executed each iteration |
+| `max`   | int \| field id | no | Iteration cap. If a field id and that field is missing or non-numeric (e.g. binary read in ASCII mode), no cap is applied — guard + hard cap still bound the loop. |
+
+**Guard predicate types** (all check N bytes starting at the cursor):
+
+| `while.type` | Matches when… | Extra attrs |
+|--------------|---------------|-------------|
+| `alphabetic` | All N bytes are A-Z or a-z | `length` |
+| `numeric` | All N bytes are 0-9 | `length` |
+| `alphanumeric` | All N bytes are A-Z, a-z, or 0-9 | `length` |
+| `ascii` | All N bytes are printable ASCII (0x20–0x7E) | `length` |
+| `regex` | Decoded text matches the JS regex | `length`, `pattern` |
+| `literal` | Decoded text equals the value exactly | `length`, `value` |
+
+`while.encoding` (default `ascii`) — `ascii` or `ebcdic`; converts bytes before the check.
+
+**PSTM ASCII services loop:**
+
+```json
+{
+  "read-while": {
+    "while": { "type": "regex", "length": 2, "pattern": "^[A-Za-z*]{2}$" },
+    "max":   "NUM-SERVICES",
+    "body":  [ { "read": "SRVCS" } ]
+  }
+}
+```
+
+In ASCII mode `NUM-SERVICES` is binary and unreliable so `max` evaluates to no cap — the loop continues as long as the next 2 bytes look like a service tag. In hex/binary mode the field is reliable and `max` actually caps the loop. The guard stops the loop when the token area `& ` eye-catcher (or anything non-service-like) appears.
+
+### 5.9 Reliability model
 
 Reliability is **derived from the operation type and field type** — no explicit flag needed.
 
@@ -302,7 +344,7 @@ Reliability is **derived from the operation type and field type** — no explici
 ASCII-class formats: `ascii`, `netard-ascii`, `netard`.  
 Binary-class formats: `hex`, `hexascii`, `netard-hex`, `netard-hexascii`, `ebcdic`, `tandem-dump`, audit.
 
-### 5.9 Example parse_specs
+### 5.10 Example parse_specs
 
 **ISO 8583 standard ASCII:**
 ```yaml

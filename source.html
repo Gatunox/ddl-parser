@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.81';
+const APP_VERSION  = '1.1.2.82';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15782,12 +15782,32 @@ function _meMakeSyntheticField(id, fBytes, startByte, endByte, ctx, opts) {
   };
 }
 
+// Decode a previously-read field's value as an integer.
+//   - Pure-digit ASCII string ("042")     → parseInt base 10
+//   - Otherwise decode rawHex as big-endian unsigned int (binary numeric fields)
+// Returns null when the field is missing or has no decodable numeric content.
+// Caller decides whether null → error or null → 0.
+function _meFieldAsInt(f) {
+  if (!f) return null;
+  const v = (f.value == null) ? '' : String(f.value).trim();
+  if (/^\d+$/.test(v)) {
+    const n = parseInt(v, 10);
+    if (Number.isFinite(n)) return n;
+  }
+  if (f.rawHex && f.rawHex.length > 0 && f.rawHex.length <= 12) {
+    const n = parseInt(f.rawHex, 16);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 function _meResolveLength(lengthAttr, ctx) {
   if (typeof lengthAttr === 'number') return lengthAttr;
   if (typeof lengthAttr === 'string') {
     const f = ctx.fieldsById[lengthAttr];
     if (!f) return null;
-    return parseInt(f.value, 10) || 0;
+    const n = _meFieldAsInt(f);
+    return n == null ? 0 : n;
   }
   return null;
 }
@@ -16085,7 +16105,11 @@ function _meExecRepeat(attrs, ctx) {
     ctx.fields.push({ id: 'repeat', error: `Count field '${attrs.count}' not yet read` });
     return;
   }
-  const N = parseInt(f.value, 10) || 0;
+  const N = _meFieldAsInt(f);
+  if (N == null) {
+    ctx.fields.push({ id: 'repeat', error: `Count field '${attrs.count}' has no decodable numeric value` });
+    return;
+  }
   const body = Array.isArray(attrs.body) ? attrs.body : [];
   for (let i = 0; i < N; i++) {
     for (const b of body) _meExecBlock(b, ctx);
@@ -16104,8 +16128,7 @@ function _meResolveMaxLimit(maxAttr, ctx) {
   if (typeof maxAttr === 'string') {
     const f = ctx.fieldsById[maxAttr];
     if (!f) return null;
-    const n = parseInt(f.value, 10);
-    return Number.isFinite(n) ? n : null;
+    return _meFieldAsInt(f);
   }
   return null;
 }

@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.80';
+const APP_VERSION  = '1.1.2.81';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14555,7 +14555,9 @@ const _PS_HELP = {
 };
 
 function _mePsHelpHtml() {
-  const rows = Object.entries(_PS_HELP).map(([blk, info]) => {
+  const rows = Object.entries(_PS_HELP)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([blk, info]) => {
     const firstAttr = info.attrs.length ? info.attrs.map(a => a[0]).slice(0, 3).join(', ') : '(none)';
     return `<tr onclick="_mePsHelpSelect('${blk}')" data-blk="${blk}">` +
       `<td class="me-ps-help-block">${blk}</td>` +

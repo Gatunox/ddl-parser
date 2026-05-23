@@ -12643,7 +12643,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.82';
+const APP_VERSION  = '1.1.2.83';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14352,12 +14352,17 @@ function _meRenderRight() {
 // ── Parse Spec Tab ────────────────────────────────────────────────────────
 
 function _meHtmlParseSpec(item) {
-  const raw = _escHtml(JSON.stringify(item.parse_spec || [], null, 2));
+  // Prefer the user's saved source (preserves // comments and trailing commas).
+  // Fall back to a pretty-printed canonical JSON view when no source is stored.
+  const src = (typeof item.parse_spec_source === 'string' && item.parse_spec_source.trim())
+    ? item.parse_spec_source
+    : JSON.stringify(item.parse_spec || [], null, 2);
+  const raw = _escHtml(src);
   return `<div class="me-ps-wrap">
   <div class="me-ps-toolbar">
-    <span class="me-ps-hint">JSON array of parse blocks — click ? for reference</span>
+    <span class="me-ps-hint">JSONC array of parse blocks — // and /* */ comments and trailing commas OK · click ? for reference</span>
     <button class="btn btn-sm" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
-    <button class="btn btn-sm" onclick="_mePsFmt()">Format</button>
+    <button class="btn btn-sm" onclick="_mePsFmt()" title="Strip comments and reformat as canonical JSON">Format</button>
   </div>
   <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
   <textarea class="me-ps-ta" id="me-ps-ta" spellcheck="false"
@@ -14600,14 +14605,53 @@ function _mePsHelpSelect(blk) {
   det.classList.add('open');
 }
 
+// ── JSONC preprocessor ─────────────────────────────────────────────────────
+// Accepts JSON with // line comments, /* block */ comments, and trailing
+// commas before } or ]. Walks the source character by character so // or
+// /* sequences inside JSON string literals are NOT treated as comments.
+// Returns plain JSON-parseable text. Storage stays canonical JSON; the raw
+// source (with comments) lives on item.parse_spec_source for round-trip.
+function _stripJsonc(src) {
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    if (c === '"') {
+      out += c; i++;
+      while (i < n) {
+        const d = src[i]; out += d;
+        if (d === '\\' && i + 1 < n) { out += src[i + 1]; i += 2; continue; }
+        i++;
+        if (d === '"') break;
+      }
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '/') {
+      while (i < n && src[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      i += 2;
+      while (i < n - 1 && !(src[i] === '*' && src[i + 1] === '/')) i++;
+      i += 2;
+      continue;
+    }
+    out += c; i++;
+  }
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
 function _mePsChange(val) {
   const item = _meCurItem();
   const errEl = document.getElementById('me-ps-err');
   if (!item) return;
   try {
-    const parsed = JSON.parse(val || '[]');
+    const stripped = _stripJsonc(val || '[]');
+    const parsed   = JSON.parse(stripped);
     if (!Array.isArray(parsed)) throw new Error('top-level value must be an array');
-    item.parse_spec = parsed;
+    item.parse_spec        = parsed;
+    item.parse_spec_source = val;   // preserve comments + trailing commas
     if (errEl) errEl.textContent = '';
     _meSetDirty();
   } catch(e) {
@@ -14620,7 +14664,12 @@ function _mePsFmt() {
   const errEl = document.getElementById('me-ps-err');
   if (!ta) return;
   try {
-    ta.value = JSON.stringify(JSON.parse(ta.value || '[]'), null, 2);
+    // Format strips comments and trailing commas — output is canonical JSON.
+    const parsed = JSON.parse(_stripJsonc(ta.value || '[]'));
+    ta.value = JSON.stringify(parsed, null, 2);
+    // Sync the persisted source to the formatted version
+    const item = _meCurItem();
+    if (item) { item.parse_spec = parsed; item.parse_spec_source = ta.value; _meSetDirty(); }
     if (errEl) errEl.textContent = '';
   } catch(e) {
     if (errEl) errEl.textContent = '⚠ ' + e.message;

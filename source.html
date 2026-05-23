@@ -1043,7 +1043,7 @@ body.light #rawPanel > .panel-header:hover { background: var(--bg-deep); }
 /* ===== EXPORT / IMPORT PICK MODALS ===== */
 .pick-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.65);
-  display: flex; align-items: center; justify-content: center; z-index: 10000;
+  display: flex; align-items: center; justify-content: center; z-index: 21500;
 }
 .pick-overlay.hidden { display: none; }
 .pick-box {
@@ -12219,24 +12219,78 @@ function ctxRenameDdl(vol, sv, name) {
 // ================================================================
 // EXPORT
 // ================================================================
+// ── Current Message specs accessor — works both inside and outside the editor.
+function _exportGetSpecs() {
+  if (typeof _meState !== 'undefined' && _meState && Array.isArray(_meState.specs)) {
+    return _meState.specs;
+  }
+  try { return (typeof _fmtGetData === 'function' ? (_fmtGetData().specs || []) : []); }
+  catch(e) { return []; }
+}
+
+// Open the unified Export modal. Pre-check args:
+//   { ddls: Set<"vol/sv/name">, specs: Set<"name-upper">, allDDLs: bool, allSpecs: bool }
 function ctxExport(vol, sv, name) {
+  _openBundleExport({ vol, sv, name });
+}
+
+function _ctxMsgExport(msgIdx, msgName) {
+  const set = new Set();
+  if (msgName) set.add(String(msgName).toUpperCase());
+  _openBundleExport({ specs: set, allDDLs: false });
+}
+
+function _openBundleExport(opts) {
   const tree = S.ddlTree;
   const vols = Object.keys(tree);
-  if (!vols.length) { flash('No DDL definitions to export', 'warn'); return; }
+  const specs = _exportGetSpecs();
+  if (!vols.length && !specs.length) { flash('Nothing to export — no DDLs or message specs', 'warn'); return; }
 
-  // Build set of pre-checked keys based on what was right-clicked
-  const preCheck = new Set();
-  for (const v of vols) {
-    for (const s of Object.keys(tree[v] || {})) {
-      for (const d of Object.keys((tree[v][s]) || {})) {
-        const key = `${v}/${s}/${d}`;
-        if      (vol && sv && name) { if (v===vol && s===sv && d===name) preCheck.add(key); }
-        else if (vol && sv)         { if (v===vol && s===sv)             preCheck.add(key); }
-        else if (vol)               { if (v===vol)                       preCheck.add(key); }
-        else                        { preCheck.add(key); } // empty space → all
+  const { vol, sv, name } = opts || {};
+  const preCheckDDLs  = new Set();
+  const preCheckSpecs = (opts && opts.specs instanceof Set) ? opts.specs : new Set();
+  const allDDLs   = !!(opts && opts.allDDLs);
+
+  if (!preCheckSpecs.size) {
+    // DDL-side pre-check: behave exactly like before
+    for (const v of vols) {
+      for (const s of Object.keys(tree[v] || {})) {
+        for (const d of Object.keys((tree[v][s]) || {})) {
+          const key = `${v}/${s}/${d}`;
+          if      (vol && sv && name) { if (v===vol && s===sv && d===name) preCheckDDLs.add(key); }
+          else if (vol && sv)         { if (v===vol && s===sv)             preCheckDDLs.add(key); }
+          else if (vol)               { if (v===vol)                       preCheckDDLs.add(key); }
+          else if (allDDLs || (!vol && !sv && !name)) { preCheckDDLs.add(key); }
+        }
       }
     }
   }
+
+  // ── Messages list ──
+  const msgListEl = document.getElementById('exportMsgList');
+  if (specs.length) {
+    msgListEl.innerHTML = specs.map((s, i) => {
+      const nm    = s.name  || s.label || '(unnamed)';
+      const lbl   = s.label || '';
+      const volS  = s.vol   || '';
+      const prio  = (s.priority != null) ? s.priority : 0;
+      const isChk = preCheckSpecs.has(String(s.name || '').toUpperCase());
+      return `<div class="pick-row pick-ddl">
+        <input type="checkbox" class="pick-spec-cb" data-idx="${i}" data-name="${esc(String(s.name||''))}" id="pcms_${i}" ${isChk?'checked':''}>
+        <label for="pcms_${i}">
+          <span style="color:var(--accent)">📋 ${esc(nm)}</span>
+          ${lbl && lbl !== nm ? ` <span style="color:var(--text-dim)">— ${esc(lbl)}</span>` : ''}
+          ${volS ? ` <span style="color:var(--text-dim);font-size:0.85em">[${esc(volS)}]</span>` : ''}
+          <span style="color:var(--text-dim);font-size:0.85em">· priority ${prio}</span>
+        </label></div>`;
+    }).join('');
+  } else {
+    msgListEl.innerHTML = '<div style="color:var(--text-dim);padding:4px;font-style:italic">(no Message specs defined)</div>';
+  }
+
+  // Restore toggle defaults
+  const autoDDL = document.getElementById('expAutoIncludeDDLs'); if (autoDDL) autoDDL.checked = true;
+  const autoMsg = document.getElementById('expAutoIncludeMsgs'); if (autoMsg) autoMsg.checked = false;
 
   // Build checkbox tree HTML
   const treeEl = document.getElementById('exportTree');
@@ -12251,7 +12305,7 @@ function ctxExport(vol, sv, name) {
         <input type="checkbox" class="pick-sv-cb" data-vol="${esc(v)}" data-sv="${esc(s)}" id="pcs_${esc(v)}_${esc(s)}">
         <label for="pcs_${esc(v)}_${esc(s)}">📂 ${esc(s)}</label></div>`;
       for (const d of Object.keys((tree[v][s]) || {})) {
-        const chk = preCheck.has(`${v}/${s}/${d}`) ? 'checked' : '';
+        const chk = preCheckDDLs.has(`${v}/${s}/${d}`) ? 'checked' : '';
         html += `<div class="pick-row pick-ddl">
           <input type="checkbox" class="pick-ddl-cb" data-vol="${esc(v)}" data-sv="${esc(s)}" data-ddl="${esc(d)}" id="pcd_${esc(v)}_${esc(s)}_${esc(d)}" ${chk}>
           <label for="pcd_${esc(v)}_${esc(s)}_${esc(d)}">📄 ${esc(d)}</label></div>`;
@@ -12277,9 +12331,70 @@ function ctxExport(vol, sv, name) {
       _syncExportParents();
     });
   });
-  treeEl.querySelectorAll('.pick-ddl-cb').forEach(cb => cb.addEventListener('change', _syncExportParents));
+  treeEl.querySelectorAll('.pick-ddl-cb').forEach(cb => {
+    cb.addEventListener('change', () => { _syncExportParents(); _expSyncAutoIncludeFromDDLs(); });
+  });
+  // Wire Messages → DDLs cascade
+  msgListEl.querySelectorAll('.pick-spec-cb').forEach(cb => {
+    cb.addEventListener('change', _expSyncAutoIncludeFromMsgs);
+  });
+
+  // If the modal opened with Messages pre-checked, immediately propagate to DDLs.
+  if (preCheckSpecs.size) _expSyncAutoIncludeFromMsgs();
 
   document.getElementById('exportOverlay').classList.remove('hidden');
+}
+
+// When a Message is selected and the "Auto-include DDLs" toggle is ON,
+// ensure all its ddl_bindings DDLs become checked in the DDL tree.
+function _expSyncAutoIncludeFromMsgs() {
+  const auto = document.getElementById('expAutoIncludeDDLs');
+  if (!auto?.checked) return;
+  const specs = _exportGetSpecs();
+  const checkedSpecs = [...document.querySelectorAll('#exportMsgList .pick-spec-cb:checked')]
+    .map(cb => specs[+cb.dataset.idx]).filter(Boolean);
+  // Collect referenced DDL paths
+  const paths = new Set();
+  for (const s of checkedSpecs) {
+    for (const p of (s.ddl_bindings || [])) {
+      if (!p) continue;
+      // ddl_bindings may include DEF: VOL/SV/FILE/DEF  →  trim to VOL/SV/FILE
+      const parts = String(p).split('/').filter(Boolean);
+      if (parts.length >= 3) paths.add(parts.slice(0, 3).join('/'));
+    }
+  }
+  if (!paths.size) return;
+  const treeEl = document.getElementById('exportTree');
+  paths.forEach(path => {
+    const [v, sv, name] = path.split('/');
+    const cb = treeEl.querySelector(`.pick-ddl-cb[data-vol="${CSS.escape(v)}"][data-sv="${CSS.escape(sv)}"][data-ddl="${CSS.escape(name)}"]`);
+    if (cb && !cb.checked) cb.checked = true;
+  });
+  _syncExportParents();
+}
+
+// Reverse direction (opt-in): when DDLs are selected and the toggle is ON,
+// tick Messages whose ddl_bindings reference any selected DDL.
+function _expSyncAutoIncludeFromDDLs() {
+  const auto = document.getElementById('expAutoIncludeMsgs');
+  if (!auto?.checked) return;
+  const treeEl = document.getElementById('exportTree');
+  const pickedPaths = new Set(
+    [...treeEl.querySelectorAll('.pick-ddl-cb:checked')]
+      .map(cb => `${cb.dataset.vol}/${cb.dataset.sv}/${cb.dataset.ddl}`)
+  );
+  if (!pickedPaths.size) return;
+  const specs = _exportGetSpecs();
+  document.querySelectorAll('#exportMsgList .pick-spec-cb').forEach(cb => {
+    if (cb.checked) return;
+    const s = specs[+cb.dataset.idx];
+    if (!s) return;
+    const refs = (s.ddl_bindings || []).map(p => {
+      const parts = String(p).split('/').filter(Boolean);
+      return parts.slice(0, 3).join('/');
+    });
+    if (refs.some(r => pickedPaths.has(r))) cb.checked = true;
+  });
 }
 
 function _syncExportParents() {
@@ -12299,6 +12414,7 @@ function _syncExportParents() {
 
 function exportPickAll(checked) {
   document.querySelectorAll('#exportTree .pick-ddl-cb').forEach(cb => cb.checked = checked);
+  document.querySelectorAll('#exportMsgList .pick-spec-cb').forEach(cb => cb.checked = checked);
   _syncExportParents();
 }
 
@@ -12307,27 +12423,48 @@ function closeExportModal() {
 }
 
 function doExport() {
-  const selected = [...document.querySelectorAll('#exportTree .pick-ddl-cb:checked')];
-  if (!selected.length) { flash('Select at least one DDL to export', 'warn'); return; }
+  // ── Collect selected DDLs (+ relevant DE overrides) ──
+  const selectedDDLs = [...document.querySelectorAll('#exportTree .pick-ddl-cb:checked')];
   const out = {};
   const deOvOut = {};
-  selected.forEach(cb => {
+  selectedDDLs.forEach(cb => {
     const { vol: v, sv: s, ddl: d } = cb.dataset;
     if (!out[v]) out[v] = {};
     if (!out[v][s]) out[v][s] = {};
     out[v][s][d] = S.ddlTree[v]?.[s]?.[d] || '';
-    // Include any DE overrides for DEFs inside this DDL file
     const prefix = `${v}/${s}/${d}`.toUpperCase() + '/';
     for (const [k, v2] of Object.entries(S.deOverrides)) {
       if (k.startsWith(prefix)) deOvOut[k] = v2;
     }
   });
-  const payload = { type: 'ddl-export', version: '1.0', exported: new Date().toISOString(), data: out,
-    ...(Object.keys(deOvOut).length ? { deOverrides: deOvOut } : {}) };
-  const ts = new Date().toISOString().slice(0, 10);
-  _downloadJSON(payload, `ddl-export_${ts}_${selected.length}items.json`);
+
+  // ── Collect selected Message specs ──
+  const allSpecs = _exportGetSpecs();
+  const selectedSpecs = [...document.querySelectorAll('#exportMsgList .pick-spec-cb:checked')]
+    .map(cb => allSpecs[+cb.dataset.idx]).filter(Boolean)
+    .map(s => JSON.parse(JSON.stringify(s)));   // deep clone
+
+  if (!selectedDDLs.length && !selectedSpecs.length) {
+    flash('Select at least one DDL or Message to export', 'warn'); return;
+  }
+
+  // ── Bundle v2.0 ──
+  const payload = {
+    type:     'ddl-bundle-export',
+    version:  '2.0',
+    exported: new Date().toISOString(),
+    ...(selectedSpecs.length ? { specs: selectedSpecs } : {}),
+    ...(selectedDDLs.length  ? { data: out } : {}),
+    ...(Object.keys(deOvOut).length ? { deOverrides: deOvOut } : {}),
+  };
+  const ts    = new Date().toISOString().slice(0, 10);
+  const total = selectedDDLs.length + selectedSpecs.length;
+  _downloadJSON(payload, `bundle-export_${ts}_${total}items.json`);
   closeExportModal();
-  flash(`Exported ${selected.length} DDL(s) across ${Object.keys(out).length} volume(s)`);
+  const parts = [];
+  if (selectedSpecs.length) parts.push(`${selectedSpecs.length} message${selectedSpecs.length !== 1 ? 's' : ''}`);
+  if (selectedDDLs.length)  parts.push(`${selectedDDLs.length} DDL${selectedDDLs.length !== 1 ? 's' : ''}`);
+  flash(`Exported ${parts.join(' + ')}`);
 }
 
 function _downloadJSON(data, filename) {
@@ -12354,9 +12491,9 @@ function _handleImportFile(e) {
   const reader = new FileReader();
   reader.onload = evt => {
     try {
-      const data = JSON.parse(evt.target.result);
-      if (!data || data.type !== 'ddl-export' || !data.data)
-        { flash('Not a valid DDL export file', 'error'); return; }
+      const raw = JSON.parse(evt.target.result);
+      const data = _normalizeImportFile(raw);
+      if (!data) { flash('Not a recognised export file', 'error'); return; }
       _showImportPreview(data);
     } catch { flash('Could not parse file — invalid JSON', 'error'); }
   };
@@ -12364,14 +12501,34 @@ function _handleImportFile(e) {
   e.target.value = ''; // allow re-selecting same file
 }
 
+// Normalise the supported file shapes into the v2.0 bundle:
+//   { type: 'ddl-bundle-export', version: '2.0', specs?, data?, deOverrides? }
+// Accepts:
+//   - v2.0 bundle (passthrough)
+//   - v1.0 'ddl-export' (DDL-only)
+//   - v1.0 'msg-specs-export' (Messages-only)
+function _normalizeImportFile(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw.type === 'ddl-bundle-export') return raw;
+  if (raw.type === 'ddl-export' && raw.data) {
+    return { type: 'ddl-bundle-export', version: '2.0', exported: raw.exported,
+             data: raw.data, ...(raw.deOverrides ? { deOverrides: raw.deOverrides } : {}) };
+  }
+  if (raw.type === 'msg-specs-export' && Array.isArray(raw.specs)) {
+    return { type: 'ddl-bundle-export', version: '2.0', exported: raw.exported, specs: raw.specs };
+  }
+  return null;
+}
+
 function _showImportPreview(data) {
   _importData = data;
-  const treeEl = document.getElementById('importTree');
-  const tree   = data.data;
-  const vols   = Object.keys(tree);
-  let totalDdl = 0, conflicts = 0;
-  let html = '';
 
+  // ── DDLs preview (may be empty) ──
+  const treeEl = document.getElementById('importTree');
+  const tree   = data.data || {};
+  const vols   = Object.keys(tree);
+  let totalDdl = 0, conflictsDdl = 0;
+  let html = '';
   for (const v of vols) {
     html += `<div class="pick-row pick-vol">
       <input type="checkbox" class="imp-vol-cb" data-vol="${esc(v)}" id="ipv_${esc(v)}" checked>
@@ -12383,7 +12540,7 @@ function _showImportPreview(data) {
       for (const d of Object.keys((tree[v][s]) || {})) {
         totalDdl++;
         const isOver = !!(S.ddlTree[v]?.[s]?.[d]);
-        if (isOver) conflicts++;
+        if (isOver) conflictsDdl++;
         const cls = isOver ? ' pick-over' : ' pick-new';
         html += `<div class="pick-row pick-ddl${cls}">
           <input type="checkbox" class="imp-chk" data-vol="${esc(v)}" data-sv="${esc(s)}" data-name="${esc(d)}" id="ipd_${esc(v)}_${esc(s)}_${esc(d)}" checked>
@@ -12391,10 +12548,7 @@ function _showImportPreview(data) {
       }
     }
   }
-
   treeEl.innerHTML = html;
-
-  // Vol cascade → all sv + ddl
   treeEl.querySelectorAll('.imp-vol-cb').forEach(cb => {
     cb.addEventListener('change', function() {
       const v = this.dataset.vol, c = this.checked;
@@ -12402,7 +12556,6 @@ function _showImportPreview(data) {
       treeEl.querySelectorAll(`.imp-chk[data-vol="${v}"]`).forEach(x => { x.checked = c; });
     });
   });
-  // SV cascade → ddls under it
   treeEl.querySelectorAll('.imp-sv-cb').forEach(cb => {
     cb.addEventListener('change', function() {
       const v = this.dataset.vol, s = this.dataset.sv, c = this.checked;
@@ -12410,18 +12563,83 @@ function _showImportPreview(data) {
       _syncImportParents();
     });
   });
-  // DDL → sync parents
   treeEl.querySelectorAll('.imp-chk').forEach(cb => cb.addEventListener('change', _syncImportParents));
 
-  let summary = `${totalDdl} DDL(s) across ${vols.length} volume(s)`;
+  // ── Messages preview (may be empty) ──
+  const incomingSpecs  = Array.isArray(data.specs) ? data.specs : [];
+  const existingSpecs  = _exportGetSpecs();
+  const existingByName = new Map(existingSpecs.map(s => [(s.name || '').toUpperCase(), s]));
+
+  // Set of DDL paths available after import — current tree ∪ paths in this file
+  const availablePaths = new Set();
+  Object.keys(S.ddlTree).forEach(v => {
+    Object.keys(S.ddlTree[v] || {}).forEach(s => {
+      Object.keys(S.ddlTree[v][s] || {}).forEach(d => availablePaths.add(`${v}/${s}/${d}`));
+    });
+  });
+  Object.keys(tree).forEach(v => {
+    Object.keys(tree[v] || {}).forEach(s => {
+      Object.keys(tree[v][s] || {}).forEach(d => availablePaths.add(`${v}/${s}/${d}`));
+    });
+  });
+
+  let conflictsMsg = 0, missingRefs = 0;
+  const msgRows = incomingSpecs.map((s, i) => {
+    const nm    = s.name  || s.label || '(unnamed)';
+    const lbl   = s.label || '';
+    const isOver = existingByName.has(String(s.name || '').toUpperCase());
+    if (isOver) conflictsMsg++;
+    // Check DDL bindings — flag any that won't be available after import
+    const missing = (s.ddl_bindings || []).map(p => {
+      const parts = String(p).split('/').filter(Boolean);
+      const path  = parts.slice(0, 3).join('/');
+      return availablePaths.has(path) ? null : p;
+    }).filter(Boolean);
+    if (missing.length) missingRefs++;
+    const cls = isOver ? ' pick-over' : ' pick-new';
+    const overTag = isOver ? ' <span style="color:var(--accent2);font-size:0.85em">overwrite</span>' : ' <span style="color:var(--success);font-size:0.85em">new</span>';
+    const missTag = missing.length
+      ? ` <span title="${esc(missing.join(', '))}" style="color:#f85149;font-size:0.85em">⚠ ${missing.length} missing DDL ref${missing.length !== 1 ? 's' : ''}</span>`
+      : '';
+    return `<div class="pick-row pick-ddl${cls}">
+      <input type="checkbox" class="imp-spec-cb" data-idx="${i}" id="ipms_${i}" checked>
+      <label for="ipms_${i}">
+        <span style="color:var(--accent)">📋 ${esc(nm)}</span>
+        ${lbl && lbl !== nm ? ` <span style="color:var(--text-dim)">— ${esc(lbl)}</span>` : ''}
+        ${overTag}${missTag}
+      </label></div>`;
+  }).join('');
+
+  const msgListEl = document.getElementById('importMsgList');
+  const msgHdrEl  = document.getElementById('importMsgsHdr');
+  const ddlHdrEl  = document.getElementById('importDDLsHdr');
+  if (incomingSpecs.length) {
+    msgListEl.innerHTML = msgRows;
+    msgListEl.style.display = '';
+    msgHdrEl.style.display  = '';
+  } else {
+    msgListEl.innerHTML = '';
+    msgListEl.style.display = 'none';
+    msgHdrEl.style.display  = 'none';
+  }
+  ddlHdrEl.style.display = vols.length ? '' : 'none';
+
+  // ── Summary ──
+  const sParts = [];
+  if (incomingSpecs.length) sParts.push(`${incomingSpecs.length} message${incomingSpecs.length !== 1 ? 's' : ''}`);
+  if (totalDdl)             sParts.push(`${totalDdl} DDL${totalDdl !== 1 ? 's' : ''} across ${vols.length} volume${vols.length !== 1 ? 's' : ''}`);
+  let summary = sParts.length ? sParts.join(' + ') : 'empty bundle';
   if (data.exported) summary += ` · saved ${data.exported.slice(0,10)}`;
-  if (conflicts)     summary += ` · <span style="color:var(--accent2)">${conflicts} conflict(s) will be overwritten</span>`;
+  const conflicts = conflictsDdl + conflictsMsg;
+  if (conflicts)   summary += ` · <span style="color:var(--accent2)">${conflicts} conflict(s) will be overwritten</span>`;
+  if (missingRefs) summary += ` · <span style="color:#f85149">${missingRefs} message${missingRefs !== 1 ? 's' : ''} with missing DDL refs</span>`;
   document.getElementById('importSummary').innerHTML = summary;
   document.getElementById('importOverlay').classList.remove('hidden');
 }
 
 function importPickAll(checked) {
   document.querySelectorAll('#importTree .imp-chk').forEach(cb => cb.checked = checked);
+  document.querySelectorAll('#importMsgList .imp-spec-cb').forEach(cb => cb.checked = checked);
   _syncImportParents();
 }
 
@@ -12446,39 +12664,74 @@ function closeImportModal() {
 }
 
 function confirmImport() {
-  if (!_importData?.data) return;
-  const tree = _importData.data;
-  // Build set of checked items from checkboxes
-  const checked = new Set();
+  if (!_importData) return;
+  const tree = _importData.data || {};
+
+  // ── DDL import ──
+  const checkedDDL = new Set();
   document.querySelectorAll('#importTree .imp-chk:checked').forEach(c => {
-    checked.add(`${c.dataset.vol}\0${c.dataset.sv}\0${c.dataset.name}`);
+    checkedDDL.add(`${c.dataset.vol}\0${c.dataset.sv}\0${c.dataset.name}`);
   });
-  let count = 0;
+  let ddlCount = 0;
   for (const v of Object.keys(tree)) {
     for (const s of Object.keys(tree[v] || {})) {
       for (const d of Object.keys((tree[v][s]) || {})) {
-        if (!checked.has(`${v}\0${s}\0${d}`)) continue;
+        if (!checkedDDL.has(`${v}\0${s}\0${d}`)) continue;
         if (!S.ddlTree[v]) S.ddlTree[v] = {};
         S.treeExp.add(v);
         if (!S.ddlTree[v][s]) S.ddlTree[v][s] = {};
         S.treeExp.add(`${v}/${s}`);
-        S.ddlTree[v][s][d] = tree[v][s][d]; count++;
+        S.ddlTree[v][s][d] = tree[v][s][d]; ddlCount++;
       }
     }
   }
-  // Merge incoming DE overrides for imported DDLs
   if (_importData.deOverrides) {
     for (const [k, v] of Object.entries(_importData.deOverrides)) {
       const parts = k.split('/');
-      if (parts.length >= 4 && checked.has(`${parts[0]}\0${parts[1]}\0${parts[2]}`)) {
+      if (parts.length >= 4 && checkedDDL.has(`${parts[0]}\0${parts[1]}\0${parts[2]}`)) {
         S.deOverrides[k] = v;
       }
     }
     saveDeOverrides();
   }
-  buildUnresolvedRefs(); saveTree(); renderDDLTree();
+  if (ddlCount) { buildUnresolvedRefs(); saveTree(); renderDDLTree(); }
+
+  // ── Message specs import ──
+  const incomingSpecs = Array.isArray(_importData.specs) ? _importData.specs : [];
+  const checkedSpecIdx = new Set(
+    [...document.querySelectorAll('#importMsgList .imp-spec-cb:checked')]
+      .map(c => +c.dataset.idx)
+  );
+  const pickedSpecs = incomingSpecs.filter((_, i) => checkedSpecIdx.has(i))
+    .map(s => JSON.parse(JSON.stringify(s)));   // deep clone
+  let specAdded = 0, specOverwritten = 0;
+  if (pickedSpecs.length) {
+    const editorOpen = (typeof _meState !== 'undefined' && _meState && Array.isArray(_meState.specs));
+    const currentSpecs = editorOpen ? _meState.specs : (_fmtGetData().specs || []);
+    const byName = new Map(currentSpecs.map((s, i) => [(s.name || '').toUpperCase(), i]));
+    for (const s of pickedSpecs) {
+      const k = (s.name || '').toUpperCase();
+      if (byName.has(k)) { currentSpecs[byName.get(k)] = s; specOverwritten++; }
+      else               { currentSpecs.push(s); byName.set(k, currentSpecs.length - 1); specAdded++; }
+    }
+    if (editorOpen) {
+      _meState.specs = currentSpecs;
+      _meSetDirty();
+      _meRenderSidebar();
+      _meRenderRight();
+    } else {
+      _fmtSave(currentSpecs);
+      if (typeof renderDetectSpecsList === 'function') renderDetectSpecsList();
+    }
+  }
+
   closeImportModal();
-  flash(`Imported ${count} DDL(s)`);
+  const parts = [];
+  if (ddlCount)          parts.push(`${ddlCount} DDL${ddlCount !== 1 ? 's' : ''}`);
+  if (specAdded || specOverwritten) {
+    parts.push(`${specAdded + specOverwritten} message${(specAdded+specOverwritten) !== 1 ? 's' : ''} (${specAdded} new, ${specOverwritten} overwritten)`);
+  }
+  flash(parts.length ? `Imported ${parts.join(' + ')}` : 'Nothing imported');
 }
 
 // ============================================================
@@ -12645,7 +12898,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.88';
+const APP_VERSION  = '1.1.2.90';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14284,6 +14537,8 @@ function _meSelectItem(section, idx) {
 
 function _meRenderSidebar() {
   const msgs = document.getElementById('me-msg-list');
+  // Re-bind container-level context menu (for clicks on empty space)
+  msgs.oncontextmenu = _meCtxMsgEmpty;
 
   msgs.innerHTML = '';
   if (!_meState.specs.length) {
@@ -15554,11 +15809,34 @@ function _meDeleteItem(section, idx) {
 }
 
 function _meCtxMsg(e, idx) {
+  const msg = _meState?.specs?.[idx];
   showCtxMenu(e.clientX, e.clientY, [
     { icon: '⧉', label: 'Duplicate', fn: () => _meDupItem(idx) },
     { separator: true },
+    { icon: '⬆', label: `Export "${msg?.name || msg?.label || 'message'}"…`, fn: () => _ctxMsgExport(idx, msg?.name) },
+    { icon: '⬆', label: 'Export All Messages…', fn: () => _ctxExportAllMsgs() },
+    { icon: '⬇', label: 'Import Bundle…', fn: () => triggerImport() },
+    { separator: true },
     { icon: '✕', label: 'Delete', danger: true, fn: () => _meDeleteItem('msg', idx) },
   ]);
+}
+
+// Right-click on empty area of the Messages list
+function _meCtxMsgEmpty(e) {
+  e.preventDefault(); e.stopPropagation();
+  showCtxMenu(e.clientX, e.clientY, [
+    { icon: '＋', label: 'New Message', fn: () => _meAddMsg() },
+    { separator: true },
+    { icon: '⬆', label: 'Export All Messages…', fn: () => _ctxExportAllMsgs() },
+    { icon: '⬇', label: 'Import Bundle…',       fn: () => triggerImport() },
+  ]);
+}
+
+function _ctxExportAllMsgs() {
+  const specs = _exportGetSpecs();
+  if (!specs.length) { flash('No message specs to export', 'warn'); return; }
+  const allNames = new Set(specs.map(s => String(s.name || '').toUpperCase()));
+  _openBundleExport({ specs: allNames });
 }
 
 function _meDupItem(idx) {
@@ -16496,6 +16774,7 @@ function _meSave() {
   const s = document.getElementById('me-status');
   if (s) { s.textContent = 'Saved.'; setTimeout(() => { if (s) s.textContent = ''; }, 2000); }
 }
+
 </script>
 
 <!-- ===== CONTEXT MENU ===== -->
@@ -16955,12 +17234,23 @@ function _meSave() {
 <!-- ===== EXPORT MODAL ===== -->
 <div class="pick-overlay hidden" id="exportOverlay">
   <div class="pick-box">
-    <div class="pick-title">⇧ Export DDL Definitions</div>
-    <div class="pick-sub">Select the items you want to include in the export file.</div>
-    <div class="pick-toolbar">
+    <div class="pick-title">⇧ Export Bundle</div>
+    <div class="pick-sub">Select Messages and / or DDLs to include. Auto-include keeps references intact.</div>
+    <div class="pick-toolbar" style="flex-wrap:wrap;gap:8px">
       <button class="btn" onclick="exportPickAll(true)"  style="font-size:11px;padding:2px 8px">All</button>
       <button class="btn" onclick="exportPickAll(false)" style="font-size:11px;padding:2px 8px">None</button>
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer">
+        <input type="checkbox" id="expAutoIncludeDDLs" checked onchange="_expSyncAutoIncludeFromMsgs()">
+        Auto-include DDLs referenced by selected Messages
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer">
+        <input type="checkbox" id="expAutoIncludeMsgs" onchange="_expSyncAutoIncludeFromDDLs()">
+        Also include Messages that reference selected DDLs
+      </label>
     </div>
+    <div style="font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">MESSAGES</div>
+    <div class="pick-tree" id="exportMsgList" style="max-height:180px"></div>
+    <div style="font-size:11px;color:var(--accent);font-weight:700;margin:10px 0 2px;letter-spacing:.04em">DDLs</div>
     <div class="pick-tree" id="exportTree"></div>
     <div class="modal-btns">
       <button class="btn"             onclick="closeExportModal()">Cancel</button>
@@ -16972,12 +17262,15 @@ function _meSave() {
 <!-- ===== IMPORT PREVIEW MODAL ===== -->
 <div class="pick-overlay hidden" id="importOverlay">
   <div class="pick-box">
-    <div class="pick-title">⇩ Import DDL Definitions</div>
+    <div class="pick-title">⇩ Import Bundle</div>
     <div class="pick-sub" id="importSummary"></div>
     <div class="pick-toolbar">
       <button class="btn" onclick="importPickAll(true)"  style="font-size:11px;padding:2px 8px">All</button>
       <button class="btn" onclick="importPickAll(false)" style="font-size:11px;padding:2px 8px">None</button>
     </div>
+    <div id="importMsgsHdr" style="display:none;font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">MESSAGES</div>
+    <div class="pick-tree" id="importMsgList" style="display:none;max-height:180px"></div>
+    <div id="importDDLsHdr" style="display:none;font-size:11px;color:var(--accent);font-weight:700;margin:10px 0 2px;letter-spacing:.04em">DDLs</div>
     <div class="pick-tree" id="importTree"></div>
     <div class="modal-btns">
       <button class="btn"             onclick="closeImportModal()">Cancel</button>
@@ -17028,6 +17321,7 @@ function _meSave() {
       <div class="me-right">
         <div class="me-header">
           <span class="me-header-title" id="me-header-title">Message Editor</span>
+          <span class="me-header-hint" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 2px);margin-right:8px">Right-click the Messages list for Import / Export</span>
           <button class="btn btn-sm" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
         </div>
         <div class="me-tab-body" id="me-tab-body"></div>

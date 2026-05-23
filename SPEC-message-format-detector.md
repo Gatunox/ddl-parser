@@ -15,6 +15,7 @@ Status: **Partially implemented** (`feat/format-detector`)
 | 2026-05-23 | Parse Spec editor accepts **JSONC** — `//` line comments, `/* */` block comments, trailing commas. Storage stays canonical JSON; the raw annotated source is preserved on `parse_spec_source` for round-trip. See §13. |
 | 2026-05-23 | `read-ddl` gains `binding: "ANY"`, `fields`, `from`, `until` attributes. `null` accepted for back-compat; `"ANY"` is canonical. See §5.2. |
 | 2026-05-23 | `token-area` gains `tokens`, `from`, `until` attributes with the same cherry-pick / window semantics as `read-ddl`. See §5.3. |
+| 2026-05-23 | **Unified Import / Export bundle.** One file format (`ddl-bundle-export v2.0`) holds any combination of Message specs, DDLs, and DE-overrides. Right-click drives both — DDL tree → as before; Messages list → new context menu. Auto-include of referenced DDLs when exporting Messages; missing-DDL warnings on import preview. Legacy `ddl-export v1.0` and `msg-specs-export v1.0` files still import. See §13.2. |
 
 ---
 
@@ -690,6 +691,72 @@ Round-trip:
 - The **Format** button strips comments and re-emits canonical JSON; it also updates `parse_spec_source` so the visible text and stored source stay in sync.
 
 JSONC is editor-side only. The persisted `parse_spec` field is always canonical JSON, so any external consumer can read it without a JSONC parser.
+
+### 13.2 Import / Export bundles
+
+> *Added 2026-05-23.*
+
+Both Message specs and DDLs share **one** Import / Export file format and **one** UI flow. The goal is to make "share my config" a single action without orphan references.
+
+#### File shape
+
+```jsonc
+{
+  "type":        "ddl-bundle-export",
+  "version":     "2.0",
+  "exported":    "2026-05-23T...",
+  "specs":       [ /* optional — Message Entities, same shape as item.parse_spec storage */ ],
+  "data":        { /* optional — DDL subtree { vol: { sv: { name: "<text>" } } } */ },
+  "deOverrides": { /* optional — DE number overrides keyed by VOL/SV/FILE/DEF */ }
+}
+```
+
+Any of the three content sections may be empty or absent. A pure-DDL export omits `specs`; a pure-spec export omits `data`. The importer reads what's present and shows preview sections only for what's there.
+
+**Back-compat on import** — these legacy shapes are still accepted and normalised to v2.0 internally:
+
+- `ddl-export v1.0` — old DDL-only export
+- `msg-specs-export v1.0` — interim Messages-only export (short-lived precursor)
+
+#### UI
+
+Both entry points use **right-click context menus** for consistency with the existing DDL flow.
+
+| Entry point | Pre-checks |
+|-------------|-----------|
+| Right-click on DDL tree → Export Volume / Subvolume / file… | The targeted DDLs; Messages section empty |
+| Right-click empty DDL tree area → Export All… | All DDLs; Messages section empty |
+| Right-click empty DDL tree area → Import… | (opens file picker) |
+| Right-click on a Message in the editor sidebar → Export "X"… | That Message; auto-included DDLs |
+| Right-click empty Messages area → Export All Messages… | All Messages; auto-included DDLs |
+| Right-click empty Messages area → Import Bundle… | (opens file picker) |
+
+#### Auto-include rules
+
+| Toggle | Default | Behaviour |
+|--------|---------|-----------|
+| **Auto-include DDLs referenced by selected Messages** | ON | When a Message is ticked, every DDL listed in its `ddl_bindings` is auto-ticked in the DDL tree. A `ddl_bindings` value of `VOL/SV/FILE/DEF` is trimmed to `VOL/SV/FILE` for matching. |
+| **Also include Messages that reference selected DDLs** | OFF | Opt-in reverse direction. When a DDL is ticked, any Message whose `ddl_bindings` resolves to that DDL is auto-ticked. Deliberately OFF by default because DDLs without Messages are still usable on their own. |
+
+#### Import preview
+
+For each Message in the file:
+- **New** (green) — no matching `name` in the current state
+- **Overwrite** (yellow) — a Message with the same `name` (case-insensitive) already exists; it will be replaced
+- **⚠ N missing DDL refs** (red) — one or more `ddl_bindings` entries reference DDL paths that are neither in the file nor in the current `S.ddlTree`. The Message is still importable; the receiver will need to add the missing DDL(s) separately.
+
+For each DDL in the file:
+- **New** (green) — no DDL at `VOL/SV/FILE` in the current tree
+- **Overwrite** (yellow) — DDL exists; content will be replaced
+- DE overrides from the file are imported only for DDLs that are checked.
+
+#### Merge semantics
+
+- Messages match by `name` (case-insensitive). Same-name = overwrite; new name = append.
+- DDLs match by `VOL/SV/FILE`. Same path = overwrite.
+- Editing context matters:
+  - **Editor open** during import → merge into `_meState.specs` and mark dirty (user must click Save to commit to localStorage). Lets the user undo by clicking Cancel.
+  - **Editor closed** during import → write directly to `up_format_specs` via `_fmtSave`, and refresh the Settings → Message Detection list.
 
 ---
 

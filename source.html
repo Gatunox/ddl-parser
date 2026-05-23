@@ -11392,9 +11392,9 @@ function buildCtxMenu(e) {
     // Right-clicked on empty tree area
     items.push({ icon: '＋', label: 'New Volume',  fn: () => newVolume() });
     items.push({ separator: true });
-    items.push({ icon: '⬇', label: 'Import…', fn: () => triggerImport() });
+    items.push({ icon: '⬇', label: 'Import', fn: () => triggerImport() });
     if (Object.keys(S.ddlTree).length)
-      items.push({ icon: '⬆', label: 'Export All…', fn: () => ctxExport(null, null, null) });
+      items.push({ icon: '⬆', label: 'Export', fn: () => ctxExport(null, null, null) });
     if (clip?.type === 'vol') {
       items.push({ separator: true });
       items.push({ icon: '⎘', label: `Paste Volume  "${clip.vol}"`, fn: () => ctxPasteVol() });
@@ -11994,7 +11994,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.63';
+const APP_VERSION  = '1.1.2.64';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14006,7 +14006,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="pick-tree" id="importTree"></div>
     <div class="modal-btns">
       <button class="btn"             onclick="closeImportModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmImport()">⇩ Import</button>
+      <button class="btn btn-primary" onclick="confirmImport()">Import</button>
     </div>
   </div>
 </div>

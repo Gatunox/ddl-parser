@@ -1496,8 +1496,6 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-rb[disabled]{opacity:.3;cursor:default;}
 .me-rec-form{border-top:2px solid var(--border);background:var(--bg-deep);padding:8px;display:none;flex-direction:column;gap:8px;}
 .me-rec-form.open{display:flex;}
-.me-help-link{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:9px;text-decoration:underline;margin-left:6px;user-select:none;flex-shrink:0;}
-.me-help-link:hover{opacity:0.75;}
 .me-rec-help{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);background:rgba(255,255,255,.03);border:2px solid var(--border);border-radius:2px;padding:8px 12px;line-height:1.6;}
 .me-rec-help b{color:var(--text);}
 .me-rec-help .me-rh-flds{margin:4px 0 4px 8px;}
@@ -1553,6 +1551,16 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-ps-ta::-webkit-scrollbar-corner{background:var(--bg-deep);}
 .me-ps-ta::-webkit-resizer{background-color:var(--bg-deep);background-image:linear-gradient(135deg,transparent 0,transparent 45%,var(--text-dim) 45%,var(--text-dim) 55%,transparent 55%,transparent 70%,var(--text-dim) 70%,var(--text-dim) 80%,transparent 80%);}
 .me-ps-ta:focus{border-color:var(--accent);}
+/* CodeMirror host for the Parse Spec editor (replaces the textarea) */
+.me-ps-cm{flex:none;width:100%;min-height:220px;resize:vertical;overflow:hidden;background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;box-sizing:border-box;display:flex;flex-direction:column;}
+.me-ps-cm:focus-within{border-color:var(--accent);}
+.me-ps-cm .cm-editor{background:var(--bg-deep)!important;color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);line-height:1.5;tab-size:2;flex:1;min-height:0;}
+.me-ps-cm .cm-scroller{overflow:auto;}
+.me-ps-cm .cm-content{padding:6px 0!important;caret-color:var(--text);}
+.me-ps-cm .cm-line{padding:0 8px!important;}
+.me-ps-cm::-webkit-scrollbar-corner{background:var(--bg-deep);}
+.me-ps-cm::-webkit-resizer{background-color:var(--bg-deep);background-image:linear-gradient(135deg,transparent 0,transparent 45%,var(--text-dim) 45%,var(--text-dim) 55%,transparent 55%,transparent 70%,var(--text-dim) 70%,var(--text-dim) 80%,transparent 80%);}
+/* JSONC syntax tokens reuse the DDL editor's .hl-* palette directly. */
 .me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
 .me-ps-help{background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;padding:10px 12px;display:none;flex-direction:column;gap:8px;}
 .me-ps-help.open{display:flex;}
@@ -5796,9 +5804,109 @@ function parseMessage(bytes, defs, rawBytes) {
     { name:'ISO', label:'ISO 8583 Switch', color:'#c59102', vol:'', priority:20,
       recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'uint16',offset:4,endian:'be',min:0,max:65535},{type:'uint16',offset:6,endian:'be',min:0,max:65535},{type:'uint16',offset:8,endian:'be',min:0,max:65535},{type:'uint16',offset:10,endian:'be',min:0,max:65535},{type:'min-length',value:23}] },
     { name:'STM', label:'STM', color:'#1eff00', vol:'ATM', priority:0,
-      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'01'},{type:'min-length',value:873}] },
+      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'01'},{type:'min-length',value:873}],
+      parse_spec_binary:[
+        {'read-ddl':{until:'NUM-SERVICES'}},
+        {'token-area':'ANY'}
+      ],
+      parse_spec_binary_source:
+`[
+  // ── Fixed section: walk DDL fields up to and including NUM-SERVICES
+  { "read-ddl": { "until": "NUM-SERVICES" } },
+
+  /*  Token Area, we extract ANY token only if they are present */
+  { "token-area": "ANY" }
+]` },
     { name:'PSTM', label:'PSTM', color:'#00aaff', vol:'POS', priority:0,
-      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'02'},{type:'min-length',value:873}] },
+      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'02'},{type:'min-length',value:873}],
+      parse_spec_binary:[
+        {'read-ddl':{until:'NUM-SERVICES'}},
+        {repeat:{count:'NUM-SERVICES',body:[{read:'SRVCS'}]}},
+        {when:{field:'USER-FLG',is:'1',then:[
+          {'read-fixed':{length:2,as:'USER-DATA.LENGTH'}},
+          {'read-fixed':{length:'USER-DATA.LENGTH',as:'USER-DATA.BUFFER'}}
+        ]}},
+        {'token-area':'ANY'}
+      ],
+      parse_spec_binary_source:
+`[
+  // ── Fixed section: walk DDL fields up to and including NUM-SERVICES
+  { "read-ddl": { "until": "NUM-SERVICES" } },
+
+  /*  Services loop — HEX mode */
+  {
+    "repeat": {
+      "count": "NUM-SERVICES",
+      "body":  [ { "read": "SRVCS" } ]
+    }
+  },
+
+  /*  User Data (only if USER-FLG = "1") — HEX mode */
+  {
+    "when": {
+      "field": "USER-FLG",
+      "is":    "1",
+      "then": [
+        { "read-fixed": { "length": 2, "as": "USER-DATA.LENGTH" } },
+        { "read-fixed": { "length": "USER-DATA.LENGTH", "as": "USER-DATA.BUFFER" } }
+      ]
+    }
+  },
+
+  /*  Token Area, we extract ANY token only if they are present */
+  { "token-area": "ANY" }
+]`,
+      parse_spec_ascii:[
+        {'read-ddl':{until:'NUM-SERVICES'}},
+        {'read-while':{while:{type:'regex',length:2,pattern:'^[A-Za-z*]{2}$'},body:[{read:'SRVCS'}]}},
+        {when:{field:'USER-FLG',is:'1',then:[
+          {'read-fixed':{length:2,as:'USER-DATA.LENGTH'}},
+          {'read-until':{sentinels:['0x26','0x20'],eom:true,as:'USER-DATA.BUFFER'}}
+        ]}},
+        {'token-area':'ANY'}
+      ],
+      parse_spec_ascii_source:
+`[
+  // ── Fixed section: walk DDL fields up to and including NUM-SERVICES
+  { "read-ddl": { "until": "NUM-SERVICES" } },
+
+  /*  Services loop — ASCII mode
+      We can't trust NUM-SERVICES (it's binary), so we peek the next 2 bytes:
+      if they're letters or '*' we read one more SRVCS, otherwise we stop. */
+  {
+    "read-while": {
+      "while": {
+        "type":    "regex",
+        "length":  2,
+        "pattern": "^[A-Za-z*]{2}$",   // service-tag convention
+      },
+      "body": [ { "read": "SRVCS" } ],
+    },
+  },
+
+  /*  User Data (only if USER-FLG = "1") — ASCII mode
+      We can't trust USER-DATA.LENGTH (it's binary), read until eye-catcher or
+      End Of Message. */
+  {
+    "when": {
+      "field": "USER-FLG",
+      "is":    "1",
+      "then": [
+        { "read-fixed": { "length": 2, "as": "USER-DATA.LENGTH" } },
+        {
+          "read-until": {
+            "sentinels": ["0x26", "0x20"],   // '& ' eye-catcher
+            "eom":       true,
+            "as":        "USER-DATA.BUFFER",
+          },
+        },
+      ],
+    },
+  },
+
+  /*  Token Area, we extract ANY token only if they are present */
+  { "token-area": "ANY" }
+]` },
     { name:'B24', label:'Base24 Generic', color:'#f95ddc', vol:'BASE', priority:0,
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'99'},{type:'literal',offset:2,encoding:'ascii',value:['06','07']}] },
     { name:'B24', label:'Base24 ATM Generic', color:'#f95ddc', vol:'ATM', priority:0,
@@ -5828,9 +5936,28 @@ function parseMessage(bytes, defs, rawBytes) {
   function _fmtGetData() {
     try {
       const s = localStorage.getItem('up_format_specs');
-      if (s !== null) return JSON.parse(s);
+      if (s !== null) {
+        const data = JSON.parse(s);
+        if (Array.isArray(data.specs)) data.specs.forEach(_migrateSpec);
+        return data;
+      }
     } catch(e) {}
     return { specs: JSON.parse(JSON.stringify(_DEFAULT_FMT_SPECS)) };
+  }
+
+  // Schema migration: rename parse_spec → parse_spec_binary so the schema can
+  // hold both a binary (default) and an ASCII variant. Idempotent.
+  function _migrateSpec(spec) {
+    if (!spec || typeof spec !== 'object') return spec;
+    if ('parse_spec' in spec && !('parse_spec_binary' in spec)) {
+      spec.parse_spec_binary = spec.parse_spec;
+      delete spec.parse_spec;
+    }
+    if ('parse_spec_source' in spec && !('parse_spec_binary_source' in spec)) {
+      spec.parse_spec_binary_source = spec.parse_spec_source;
+      delete spec.parse_spec_source;
+    }
+    return spec;
   }
 
   // ── Detection ──────────────────────────────────────────────────────────────
@@ -5860,9 +5987,10 @@ function parseMessage(bytes, defs, rawBytes) {
   };
 
   // Expose
-  window._fmtLoad    = _fmtLoad;
-  window._fmtSave    = _fmtSave;
-  window._fmtGetData = _fmtGetData;
+  window._fmtLoad      = _fmtLoad;
+  window._fmtSave      = _fmtSave;
+  window._fmtGetData   = _fmtGetData;
+  window._migrateSpec  = _migrateSpec;
   window._fmtDetect  = _fmtDetect;
 
 })();
@@ -12503,15 +12631,21 @@ function _handleImportFile(e) {
 //   - v1.0 'msg-specs-export' (Messages-only)
 function _normalizeImportFile(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  if (raw.type === 'ddl-bundle-export') return raw;
-  if (raw.type === 'ddl-export' && raw.data) {
-    return { type: 'ddl-bundle-export', version: '2.0', exported: raw.exported,
-             data: raw.data, ...(raw.deOverrides ? { deOverrides: raw.deOverrides } : {}) };
+  let bundle = null;
+  if (raw.type === 'ddl-bundle-export') bundle = raw;
+  else if (raw.type === 'ddl-export' && raw.data) {
+    bundle = { type: 'ddl-bundle-export', version: '2.0', exported: raw.exported,
+               data: raw.data, ...(raw.deOverrides ? { deOverrides: raw.deOverrides } : {}) };
   }
-  if (raw.type === 'msg-specs-export' && Array.isArray(raw.specs)) {
-    return { type: 'ddl-bundle-export', version: '2.0', exported: raw.exported, specs: raw.specs };
+  else if (raw.type === 'msg-specs-export' && Array.isArray(raw.specs)) {
+    bundle = { type: 'ddl-bundle-export', version: '2.0', exported: raw.exported, specs: raw.specs };
   }
-  return null;
+  if (!bundle) return null;
+  // Apply schema migrations to any incoming message specs.
+  if (Array.isArray(bundle.specs) && typeof _migrateSpec === 'function') {
+    bundle.specs.forEach(_migrateSpec);
+  }
+  return bundle;
 }
 
 function _showImportPreview(data) {
@@ -12892,7 +13026,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.90';
+const APP_VERSION  = '1.1.2.95';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14491,7 +14625,8 @@ function openMsgEditor() {
     sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false },
     editRec:  -1,
     pend:     {},
-    dirty:    false
+    dirty:    false,
+    recHelpOpen: false
   };
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;
@@ -14524,9 +14659,26 @@ function _meSelectItem(section, idx) {
   _meState.selIdx  = idx;
   if (section === 'msg' && idx >= 0 && idx < _meState.specs.length) {
     try { localStorage.setItem('up_me_last_sel', _meState.specs[idx].label || _meState.specs[idx].name || ''); } catch(e) {}
+    _meAutoSetParseSpecVariant(_meState.specs[idx]);
   }
   _meRenderSidebar();
   _meRenderRight();
+}
+
+// Pick the parse_spec variant to display when selecting an item.
+// Rule: keep the user's last variant choice if that variant has content;
+// otherwise switch to whichever variant has content. Defaults to Binary
+// when both are empty.
+function _meAutoSetParseSpecVariant(item) {
+  if (!_meState || !item) return;
+  const current = _meState.parseSpecVariant === 'ascii' ? 'ascii' : 'binary';
+  const binLen = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary.length : 0;
+  const ascLen = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii.length  : 0;
+  if (current === 'ascii' && ascLen > 0) return;   // stay
+  if (current === 'binary' && binLen > 0) return;  // stay
+  // Current variant is empty for this item — flip to whichever has content
+  if (ascLen > 0 && binLen === 0) _meState.parseSpecVariant = 'ascii';
+  else                             _meState.parseSpecVariant = 'binary';
 }
 
 function _meRenderSidebar() {
@@ -14573,6 +14725,11 @@ function _meCurItem() {
 }
 
 function _meRenderRight() {
+  // Tear down the Parse Spec CM editor (if any) BEFORE we wipe its host
+  // element — otherwise the editor is left attached to a detached DOM node
+  // and never gets garbage collected.
+  _mePsUnmountCM();
+
   const body = document.getElementById('me-tab-body');
   const item = _meCurItem();
   if (!item) {
@@ -14598,28 +14755,76 @@ function _meRenderRight() {
           + sect('overrides',     'Overrides',     _meHtmlOverrides(item));
   }
   body.innerHTML = html;
+
+  // Mount the Parse Spec CodeMirror editor if the section is open.
+  if (isMsg && secs.parse_spec) _mePsMountCM(item);
 }
 
 // ── Parse Spec Tab ────────────────────────────────────────────────────────
 
+// ── Parse Spec variant helpers ──
+// Each Message Entity holds TWO parse_specs:
+//   item.parse_spec_binary  — used for binary-class input (hex, hexascii,
+//                              tandem-dump, netard-hex, ebcdic, fup-hex, audit)
+//   item.parse_spec_ascii   — used for ASCII-class input (ascii, netard-ascii,
+//                              netard, fup-ascii). Optional — falls back to
+//                              parse_spec_binary when absent / empty.
+// Each has a parallel *_source field that preserves the user's JSONC text
+// (comments + trailing commas) across save/reload.
+function _mePsActiveVariant() {
+  return _meState?.parseSpecVariant === 'ascii' ? 'ascii' : 'binary';
+}
+function _mePsFieldsForVariant(v) {
+  return v === 'ascii'
+    ? { spec: 'parse_spec_ascii',  src: 'parse_spec_ascii_source'  }
+    : { spec: 'parse_spec_binary', src: 'parse_spec_binary_source' };
+}
+
 function _meHtmlParseSpec(item) {
-  // Prefer the user's saved source (preserves // comments and trailing commas).
-  // Fall back to a pretty-printed canonical JSON view when no source is stored.
-  const src = (typeof item.parse_spec_source === 'string' && item.parse_spec_source.trim())
-    ? item.parse_spec_source
-    : JSON.stringify(item.parse_spec || [], null, 2);
-  const raw = _escHtml(src);
+  const variant = _mePsActiveVariant();
+  // The CodeMirror editor seeds its content from item[srcField] / item[specField]
+  // at mount time — see _mePsMountCM. No textarea content is emitted here.
+  const binCount = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary.length : 0;
+  const ascCount = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii.length  : 0;
+  const binLabel = `Default — Binary Input  (${binCount} Block${binCount !== 1 ? 's' : ''})`;
+  const ascLabel = `Optional — ASCII Input  (${ascCount} Block${ascCount !== 1 ? 's' : ''})`;
   return `<div class="me-ps-wrap">
   <div class="me-ps-toolbar">
-    <span class="me-ps-hint">JSONC array of parse blocks — // and /* */ comments and trailing commas OK · click ? for reference</span>
+    <select class="me-inp" id="me-ps-variant" style="min-width:300px" onchange="_mePsSwitchVariant(this.value)" title="Which parse_spec variant to edit. Default — Binary Input is used for hex / tandem-dump / ebcdic / netard-hex / etc. Optional — ASCII Input is used for ASCII-class input (ascii, netard-ascii, netard, fup-ascii); when empty it falls back to the Binary spec.">
+      <option value="binary" ${variant === 'binary' ? 'selected' : ''}>${binLabel}</option>
+      <option value="ascii"  ${variant === 'ascii'  ? 'selected' : ''}>${ascLabel}</option>
+    </select>
+    <button class="btn btn-sm" onclick="_mePsFmt()" title="Re-indent JSONC, preserving // and /* */ comments and trailing commas">Format</button>
     <button class="btn btn-sm" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
-    <button class="btn btn-sm" onclick="_mePsFmt()" title="Strip comments and reformat as canonical JSON">Format</button>
   </div>
   <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
-  <textarea class="me-ps-ta" id="me-ps-ta" spellcheck="false"
-    oninput="_mePsChange(this.value)">${raw}</textarea>
+  <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
   <div id="me-ps-err" class="me-ps-err"></div>
 </div>`;
+  // Note: ${raw} no longer used here — the CodeMirror editor is mounted by
+  // _meRenderRight() after innerHTML is set, seeded from item[srcField].
+}
+
+function _mePsSwitchVariant(v) {
+  if (v !== 'ascii' && v !== 'binary') return;
+  if (!_meState) return;
+  _meState.parseSpecVariant = v;
+  // Re-mount the CM editor with the new variant's content; faster than a
+  // full panel re-render and keeps a clean undo history per variant.
+  const item = _meCurItem();
+  if (item) _mePsMountCM(item);
+}
+
+// Refresh just the variant-dropdown option labels with the current block
+// counts — runs after Save so the counts reflect what was committed without
+// re-rendering the whole panel (preserves the user's textarea cursor).
+function _mePsRefreshVariantLabels(item) {
+  const dd = document.getElementById('me-ps-variant');
+  if (!dd || !item) return;
+  const binCount = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary.length : 0;
+  const ascCount = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii.length  : 0;
+  if (dd.options[0]) dd.options[0].text = `Default — Binary Input  (${binCount} Block${binCount !== 1 ? 's' : ''})`;
+  if (dd.options[1]) dd.options[1].text = `Optional — ASCII Input  (${ascCount} Block${ascCount !== 1 ? 's' : ''})`;
 }
 
 function _mePsToggleHelp() {
@@ -14897,12 +15102,13 @@ function _mePsChange(val) {
   const item = _meCurItem();
   const errEl = document.getElementById('me-ps-err');
   if (!item) return;
+  const { spec: specField, src: srcField } = _mePsFieldsForVariant(_mePsActiveVariant());
   try {
     const stripped = _stripJsonc(val || '[]');
     const parsed   = JSON.parse(stripped);
     if (!Array.isArray(parsed)) throw new Error('top-level value must be an array');
-    item.parse_spec        = parsed;
-    item.parse_spec_source = val;   // preserve comments + trailing commas
+    item[specField] = parsed;
+    item[srcField]  = val;   // preserve comments + trailing commas
     if (errEl) errEl.textContent = '';
     _meSetDirty();
   } catch(e) {
@@ -14910,19 +15116,245 @@ function _mePsChange(val) {
   }
 }
 
+// Re-indent JSONC source preserving // and /* */ comments and trailing
+// commas. Walks line by line, tracking nesting depth from { [ ] } seen
+// outside strings/comments. Closing brackets at the start of a line use
+// the outer depth. Block-comment continuation lines are kept verbatim so
+// JSDoc-style alignment ('  * ...') is not disturbed.
+// ============================================================
+// JSONC syntax highlighting for the Parse Spec editor
+// ============================================================
+// Used by the CodeMirror editor that replaces the plain textarea. The
+// tokenizer is a single-pass character walk that emits {from, to, cls}
+// records for: line comments (//), block comments (/* */), string
+// literals (distinguishing keys from values by looking ahead for a
+// colon), numbers, true/false/null literals, and punctuation. Strings
+// that look like parse_spec block-type keys (read-ddl, read-while, …)
+// get their own class so the spec is visually structured by intent.
+
+const _PS_KNOWN_BLOCKS = new Set([
+  'read-ddl','read','read-fixed','read-until','read-length-prefix',
+  'read-to-end','read-bitmap','bitmap-fields','read-tlv',
+  'when','repeat','read-while','skip','token-area',
+]);
+
+// Token classes are the same hl-* classes the DDL editor uses, so the colors
+// are pulled from one place. Recognised block-type strings (read-ddl, when, …)
+// map to hl-kw-reserved so they stand out from regular object keys (hl-kw),
+// the same way reserved HPE DDL keywords stand out from ordinary ones.
+function _tokenizeJsonc(text) {
+  const out = [];
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const c = text[i];
+    // Line comment
+    if (c === '/' && text[i + 1] === '/') {
+      let j = i;
+      while (j < n && text[j] !== '\n') j++;
+      out.push({ from: i, to: j, cls: 'hl-comment' });
+      i = j;
+      continue;
+    }
+    // Block comment (possibly multi-line)
+    if (c === '/' && text[i + 1] === '*') {
+      let j = i + 2;
+      while (j < n - 1 && !(text[j] === '*' && text[j + 1] === '/')) j++;
+      const end = Math.min(j + 2, n);
+      out.push({ from: i, to: end, cls: 'hl-comment' });
+      i = end;
+      continue;
+    }
+    // String literal
+    if (c === '"') {
+      const startQuote = i;
+      let j = i + 1;
+      while (j < n && text[j] !== '"') {
+        if (text[j] === '\\' && j + 1 < n) j++;
+        j++;
+      }
+      const endQuote = Math.min(j + 1, n);
+      const strContent = text.slice(startQuote + 1, j);
+      // Is it a key? (followed by ':' ignoring whitespace)
+      let k = endQuote;
+      while (k < n && (text[k] === ' ' || text[k] === '\t')) k++;
+      const isKey   = text[k] === ':';
+      const isBlock = isKey && _PS_KNOWN_BLOCKS.has(strContent);
+      out.push({ from: startQuote, to: endQuote,
+        cls: isBlock ? 'hl-kw-reserved' : (isKey ? 'hl-kw' : 'hl-str') });
+      i = endQuote;
+      continue;
+    }
+    // Number
+    if (c === '-' || (c >= '0' && c <= '9')) {
+      let j = i;
+      if (text[j] === '-') j++;
+      while (j < n && text[j] >= '0' && text[j] <= '9') j++;
+      if (text[j] === '.') { j++; while (j < n && text[j] >= '0' && text[j] <= '9') j++; }
+      if (text[j] === 'e' || text[j] === 'E') {
+        j++;
+        if (text[j] === '+' || text[j] === '-') j++;
+        while (j < n && text[j] >= '0' && text[j] <= '9') j++;
+      }
+      if (j > i + (text[i] === '-' ? 1 : 0)) {
+        out.push({ from: i, to: j, cls: 'hl-val' });
+        i = j;
+        continue;
+      }
+    }
+    // Literals true / false / null
+    if (text.slice(i, i + 4) === 'true' || text.slice(i, i + 4) === 'null') {
+      out.push({ from: i, to: i + 4, cls: 'hl-op' });
+      i += 4;
+      continue;
+    }
+    if (text.slice(i, i + 5) === 'false') {
+      out.push({ from: i, to: i + 5, cls: 'hl-op' });
+      i += 5;
+      continue;
+    }
+    // Punctuation — no class (default text color, same as DDL editor)
+    if (c === '{' || c === '}' || c === '[' || c === ']' || c === ',' || c === ':') {
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return out;
+}
+
+function _jsoncHighlightExtension() {
+  if (!window.CM) return [];
+  const { ViewPlugin, Decoration, RangeSetBuilder } = window.CM;
+  if (!ViewPlugin || !Decoration || !RangeSetBuilder) return [];
+  return ViewPlugin.fromClass(class {
+    constructor(view) { this.decorations = this._build(view); }
+    update(u)         { if (u.docChanged || u.viewportChanged) this.decorations = this._build(u.view); }
+    _build(view) {
+      const builder = new RangeSetBuilder();
+      const doc     = view.state.doc;
+      if (!doc.length) return builder.finish();
+      const text    = doc.toString();
+      const tokens  = _tokenizeJsonc(text);
+      for (const tok of tokens) {
+        if (tok.from < tok.to && tok.to <= doc.length) {
+          builder.add(tok.from, tok.to, Decoration.mark({ class: tok.cls }));
+        }
+      }
+      return builder.finish();
+    }
+  }, { decorations: v => v.decorations });
+}
+
+// CM editor singleton for the Parse Spec textarea slot
+let _mePsCM = null;
+
+function _mePsUnmountCM() {
+  if (_mePsCM) {
+    try { _mePsCM.destroy(); } catch (e) {}
+    _mePsCM = null;
+  }
+}
+
+function _mePsMountCM(item) {
+  _mePsUnmountCM();
+  const host = document.getElementById('me-ps-ta-host');
+  if (!host || !window.CM || !item) return null;
+  const { EditorView, EditorState, history, keymap, defaultKeymap, historyKeymap, indentWithTab, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter } = window.CM;
+  const { spec: specField, src: srcField } = _mePsFieldsForVariant(_mePsActiveVariant());
+  const initial = (typeof item[srcField] === 'string' && item[srcField].trim())
+    ? item[srcField]
+    : JSON.stringify(item[specField] || [], null, 2);
+  _mePsCM = new EditorView({
+    state: EditorState.create({
+      doc: initial,
+      extensions: [
+        lineNumbers(),
+        highlightActiveLine(),
+        highlightActiveLineGutter(),
+        history(),
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        placeholder('[ ]  // empty parse_spec — falls back to read-ddl ANY + token-area ANY'),
+        _jsoncHighlightExtension(),
+        EditorView.updateListener.of(u => {
+          if (u.docChanged) _mePsChange(u.state.doc.toString());
+        }),
+      ],
+    }),
+    parent: host,
+  });
+  return _mePsCM;
+}
+
+function _formatJsonc(src) {
+  const lines = src.split('\n');
+  let depth = 0;
+  let inBlockComment = false;
+  const out = [];
+
+  for (const raw of lines) {
+    if (inBlockComment) {
+      out.push(raw);   // preserve continuation lines verbatim
+      const t = raw;
+      let j = 0;
+      while (j < t.length - 1) {
+        if (t[j] === '*' && t[j + 1] === '/') { inBlockComment = false; break; }
+        j++;
+      }
+      continue;
+    }
+
+    const trimmed = raw.trim();
+    if (!trimmed) { out.push(''); continue; }
+
+    // Closing bracket at start of line uses the outer depth
+    let lineDepth = depth;
+    const fc = trimmed[0];
+    if (fc === '}' || fc === ']') lineDepth = Math.max(0, depth - 1);
+
+    out.push('  '.repeat(lineDepth) + trimmed);
+
+    // Update depth from net brackets in this line (skip strings + comments)
+    let i = 0;
+    const n = trimmed.length;
+    while (i < n) {
+      const c = trimmed[i];
+      if (c === '/' && trimmed[i + 1] === '/') break;             // rest of line is comment
+      if (c === '/' && trimmed[i + 1] === '*') {
+        const end = trimmed.indexOf('*/', i + 2);
+        if (end >= 0) { i = end + 2; continue; }
+        inBlockComment = true; break;                              // unterminated → continues on next line
+      }
+      if (c === '"') {
+        i++;
+        while (i < n && trimmed[i] !== '"') {
+          if (trimmed[i] === '\\' && i + 1 < n) i++;
+          i++;
+        }
+        i++; continue;
+      }
+      if (c === '{' || c === '[') depth++;
+      else if (c === '}' || c === ']') depth--;
+      i++;
+    }
+  }
+  return out.join('\n');
+}
+
 function _mePsFmt() {
-  const ta = document.getElementById('me-ps-ta');
+  if (!_mePsCM) return;
   const errEl = document.getElementById('me-ps-err');
-  if (!ta) return;
+  const current = _mePsCM.state.doc.toString();
   try {
-    // Format strips comments and trailing commas — output is canonical JSON.
-    const parsed = JSON.parse(_stripJsonc(ta.value || '[]'));
-    ta.value = JSON.stringify(parsed, null, 2);
-    // Sync the persisted source to the formatted version
-    const item = _meCurItem();
-    if (item) { item.parse_spec = parsed; item.parse_spec_source = ta.value; _meSetDirty(); }
+    JSON.parse(_stripJsonc(current || '[]'));   // validate
+    const formatted = _formatJsonc(current || '');
+    // Dispatch the formatted text — the CM updateListener calls _mePsChange
+    // which writes both the parsed array and the source field on the item.
+    _mePsCM.dispatch({
+      changes: { from: 0, to: _mePsCM.state.doc.length, insert: formatted },
+    });
     if (errEl) errEl.textContent = '';
-  } catch(e) {
+  } catch (e) {
     if (errEl) errEl.textContent = '⚠ ' + e.message;
   }
 }
@@ -15267,7 +15699,9 @@ function _meField(field, value) {
 function _meHtmlRecs(item) {
   const recs = item.recognizers || [];
   const _TYPE_LABEL = { uint8:'uint8 / byte', uint16:'uint16 / word', uint32:'uint32 / dword' };
-  let h = '<div class="me-rec-list">';
+  const recHelpOpen = !!(_meState && _meState.recHelpOpen);
+  let h = `<div class="me-ps-help${recHelpOpen ? ' open' : ''}" id="me-rec-help" style="margin-bottom:8px">${_meRecHelpHtml()}</div>`;
+  h += '<div class="me-rec-list">';
   if (!recs.length) h += '<div class="me-empty">No recognizers yet.</div>';
   recs.forEach((r, i) => {
     const editing  = _meState.editRec === i;
@@ -15288,7 +15722,10 @@ function _meHtmlRecs(item) {
 </div>`;
   });
   h += '</div>';
-  h += `<button class="btn btn-sm" onclick="_meNewRec()">+ Add Recognizer</button>`;
+  h += `<div style="display:flex;gap:6px;align-items:center">
+    <button class="btn btn-sm" onclick="_meNewRec()">+ Add Recognizer</button>
+    <button class="btn btn-sm" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>
+  </div>`;
   if (_meState.editRec === -2) {
     const newRec = (_meState.pend && _meState.pend[-2] !== undefined) ? _meState.pend[-2] : { type: 'literal' };
     h += `<div class="me-rec-row" style="margin-top:6px">${_meRecForm(newRec, -2)}</div>`;
@@ -15452,9 +15889,63 @@ Note: binary bytes outside the range are NOT counted.
 <div class="me-rh-exs"><b>Examples:</b> TPDU flag non-zero, 20-byte payload at offset 5 → offset=0 encoding=uint8 payload@=5 payload len=20 &nbsp;|&nbsp; 2-byte flag, payload at 2 → encoding=uint16-be payload@=2</div>`,
 };
 
-function _meToggleRecHelp(idx) {
-  const el = document.getElementById(`me-rh-${idx}`);
-  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+// Recognizers section "?" — opens an inline reference panel that mirrors the
+// Parse Spec help (same .me-ps-help* styling): clickable rows of recognizer
+// types, with the existing _REC_HELP HTML rendered as the detail.
+const _REC_HELP_META = [
+  ['literal',        'Match exact bytes at a fixed offset',                            'offset, encoding, value'],
+  ['binary',         'Non-ASCII presence check over a byte range',                     'offset, length'],
+  ['ascii',          'Printable ASCII check over a byte range',                        'offset, length'],
+  ['ebcdic',         'Printable EBCDIC check over a byte range',                       'offset, length'],
+  ['numeric',        'Digit-only check (ASCII or EBCDIC)',                             'offset, length, encoding'],
+  ['alphabetic',     'Letters-only check (ASCII or EBCDIC)',                           'offset, length, encoding'],
+  ['alphanumeric',   'Letters + digits check (ASCII or EBCDIC)',                       'offset, length, encoding'],
+  ['uint8',          'Single byte check at offset (eq / min / max / mask)',            'offset, mask, eq, min, max'],
+  ['uint16',         '2-byte integer check (be/le, eq / min / max)',                   'offset, endian, eq, min, max'],
+  ['uint32',         '4-byte integer check (be/le, eq / min / max)',                   'offset, endian, eq, min, max'],
+  ['min-length',     'Total message length must be at least N bytes',                  'value'],
+  ['max-length',     'Total message length must be at most N bytes',                   'value'],
+  ['mti',            'ISO 8583 MTI match — 4 ASCII bytes with digit rules',            'offset, value'],
+  ['bitmap',         'Check a specific ISO 8583 DE bit is on/off',                     'offset, bit, value'],
+  ['regex',          'JavaScript regex against ASCII bytes',                           'pattern'],
+  ['hex-density',    'Fraction of bytes that are hex chars must meet a threshold',     'encoding, min'],
+  ['oct-density',    'Fraction of bytes that are octal chars must meet a threshold',   'encoding, min'],
+  ['length-payload', 'Read a length field and verify it matches actual payload size',  'offset, encoding, payload offset, incl. self'],
+  ['flag-payload',   'Read a flag field, check non-zero, optionally validate payload', 'offset, encoding, payload offset, payload length'],
+];
+
+function _meRecHelpHtml() {
+  const rows = _REC_HELP_META.map(([type, purpose, attrs]) =>
+    `<tr onclick="_meRecHelpSelect('${type}')" data-rec="${type}">` +
+    `<td class="me-ps-help-block">${type}</td>` +
+    `<td>${purpose}</td>` +
+    `<td class="me-ps-help-dim">${attrs}</td></tr>`
+  ).join('');
+  const thead = '<tr><th>Recognizer</th><th>Purpose</th><th>Attributes</th></tr>';
+  return `<div class="me-ps-help-tbl-wrap"><table class="me-ps-help-table">` +
+    `<thead>${thead}</thead><tbody>${rows}</tbody></table></div>` +
+    `<div class="me-ps-help-detail" id="me-rec-help-detail"></div>`;
+}
+
+function _meRecHelpSelect(type) {
+  const det = document.getElementById('me-rec-help-detail');
+  const html = _REC_HELP[type];
+  if (!det || !html) return;
+  document.querySelectorAll('#me-rec-help .me-ps-help-table tbody tr').forEach(tr =>
+    tr.classList.toggle('me-ps-sel', tr.dataset.rec === type)
+  );
+  det.innerHTML =
+    `<div class="me-ps-help-detail-title">${type}</div>` +
+    `<div class="me-rec-help" style="background:transparent;border:none;padding:0">${html}</div>`;
+  det.classList.add('open');
+}
+
+function _meToggleRecListHelp() {
+  const el = document.getElementById('me-rec-help');
+  if (!el) return;
+  el.classList.toggle('open');
+  // Persist so subsequent re-renders (combo change, add/delete/move) keep state.
+  if (_meState) _meState.recHelpOpen = el.classList.contains('open');
 }
 
 function _meRecForm(r, idx) {
@@ -15468,7 +15959,7 @@ function _meRecForm(r, idx) {
     ['length-payload','length-payload'], ['flag-payload','flag-payload'],
   ];
   const cur = r ? (_ALIAS[r.type] || r.type) : 'literal';
-  const typeSel = `<div class="me-rf-fld"><div class="me-lbl" style="display:flex;align-items:center">Type<span class="me-help-link" onclick="_meToggleRecHelp(${idx})">click for help</span></div>
+  const typeSel = `<div class="me-rf-fld"><div class="me-lbl">Type</div>
     <select class="me-sel" style="width:150px" id="me-rt-${idx}" onchange="_meRecTypeChange(${idx},this.value)">
       ${types.map(([v,l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}
     </select></div>`;
@@ -15480,10 +15971,8 @@ function _meRecForm(r, idx) {
   const idFld = `<div class="me-rf-fld"><div class="me-lbl">ID</div>
     <input class="me-inp" style="width:72px" id="me-rv-id-${idx}" type="text"
       value="${ea(r?.id || '')}" placeholder="label"></div>`;
-  const helpText = _REC_HELP[cur] || '';
   return `<div class="me-rec-form open" id="me-rf-${idx}">
   <div class="me-rf-row">${typeSel}${_meRecFields(r || { type: 'literal' }, idx)}${idFld}${btns}</div>
-  ${helpText ? `<div class="me-rec-help" id="me-rh-${idx}" style="display:none">${helpText}</div>` : ''}
 </div>`;
 }
 
@@ -16593,18 +17082,32 @@ function _meExecBlock(block, ctx) {
 }
 
 function _meExecParseSpec(item, bytes) {
-  const parseSpec = item.parse_spec   || [];
   const bindings  = item.ddl_bindings || [];
   const resolvedBindings = bindings.map(p => p ? getDDLFromPath(p) : null);
 
-  // Default: if no parse_spec, walk every DDL binding then read all tokens.
+  // ── Pick the parse_spec variant based on input format ──
+  // ASCII-class inputs use parse_spec_ascii if defined; everything else (hex,
+  // tandem-dump, ebcdic, netard-hex, etc.) uses parse_spec_binary. When the
+  // requested variant is empty, fall back to the other one so a single-variant
+  // entity still works against either input class.
+  const fmt = S.inputFormat || '';
+  const isAscii = (fmt === 'ascii' || fmt === 'netard-ascii' || fmt === 'netard' || fmt === 'fup-ascii');
+  const asciiSpec  = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii  : [];
+  const binarySpec = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary : [];
+  let parseSpec, parseSpecUsed;
+  if (isAscii && asciiSpec.length)       { parseSpec = asciiSpec;  parseSpecUsed = 'ascii';  }
+  else if (binarySpec.length)            { parseSpec = binarySpec; parseSpecUsed = 'binary'; }
+  else if (asciiSpec.length)             { parseSpec = asciiSpec;  parseSpecUsed = 'ascii (fallback)'; }
+  else                                    { parseSpec = [];         parseSpecUsed = 'default'; }
+
+  // If no spec at all, fall back to "walk every DDL binding then read all tokens".
   const effectiveSpec = parseSpec.length
     ? parseSpec
     : [{ 'read-ddl': 'ANY' }, { 'token-area': 'ANY' }];
 
   const ctx = {
     bytes, cursor: 0, fields: [], fieldsById: {},
-    tokens: null, resolvedBindings, item,
+    tokens: null, resolvedBindings, item, parseSpecUsed,
   };
   for (const block of effectiveSpec) _meExecBlock(block, ctx);
   return ctx;
@@ -16688,7 +17191,8 @@ function _meRunTest() {
   const psBadge    = fieldCount
     ? `${fieldCount} field${fieldCount !== 1 ? 's' : ''}${errCount ? ` · ${errCount} error${errCount !== 1 ? 's' : ''}` : ''}`
     : (errCount ? `${errCount} error${errCount !== 1 ? 's' : ''}` : 'none');
-  parts.push(_meTestSection('Parse Spec',
+  const psTitle = `Parse Spec (${ctx.parseSpecUsed || 'binary'})`;
+  parts.push(_meTestSection(psTitle,
     fieldCount && !errCount ? '#3fb950' : (errCount ? '#f85149' : null),
     fieldHtml, psBadge));
 
@@ -16767,6 +17271,10 @@ function _meSave() {
   if (btn) btn.disabled = true;
   const s = document.getElementById('me-status');
   if (s) { s.textContent = 'Saved.'; setTimeout(() => { if (s) s.textContent = ''; }, 2000); }
+  // Refresh parse_spec variant counts so the dropdown reflects the saved state.
+  if (typeof _mePsRefreshVariantLabels === 'function') {
+    _mePsRefreshVariantLabels(_meCurItem());
+  }
 }
 
 </script>

@@ -260,8 +260,7 @@ body.light #parseBtn.btn-primary:hover { background: #0860ca !important; border-
 #msgCfgBar select:focus { outline:none; border-color:var(--accent); }
 #msgCfgBar select:hover { border-color:var(--accent); color:var(--accent); }
 #msgCfgBar select.fmt-forced { color:var(--warning); border-color:var(--warning); }
-body.audit-active #fmtForceSelect, body.audit-active #fmtBadge, body.audit-active #cntBadge,
-.panel.collapsed #msgCfgBar { display:none !important; }
+body.audit-active #msgCfgBar, .panel.collapsed #msgCfgBar { display:none !important; }
 body.audit-active #auditStats { display: flex !important; align-items: center; padding: 0 6px 0 4px; border-right: 1px solid var(--border); font-size: var(--sz-mono); color: var(--text-dim); font-family: var(--font-mono); }
 .lw-lbl  { opacity: 0.5; user-select: none; margin-right: 2px; }
 .lw-step { cursor: pointer; opacity: 0.55; padding: 0 3px; user-select: none; line-height: 1; }
@@ -862,8 +861,7 @@ body.light .trk-chk { color-scheme: light; }
 #resPanel.egg-flood { animation: eggPanelPulse 0.75s ease-in-out infinite; }
 #resPanel.egg-flood > .panel-header { animation: eggHeaderPulse 0.75s ease-in-out infinite; }
 #rawPanel > .panel-header { cursor: default; }
-#rawPanel > .panel-header:hover { background: #1c2128; }
-body.light #rawPanel > .panel-header:hover { background: var(--bg-deep); }
+#rawPanel > .panel-header:hover { background: var(--bg-deep); }
 .egg-row {
   font-family: var(--mono); padding: 1px 10px; white-space: nowrap;
   animation: eggRowIn 0.18s ease-out forwards;
@@ -1047,17 +1045,17 @@ body.light #rawPanel > .panel-header:hover { background: var(--bg-deep); }
 }
 .pick-overlay.hidden { display: none; }
 .pick-box {
-  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-panel); border: 2px solid var(--border); border-radius: 6px;
   padding: 16px 18px 14px; width: 440px; max-width: 92vw; max-height: 82vh;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; flex-direction: column; gap: 10px; overflow: hidden;
 }
 .pick-title   { font-size: 13px; color: var(--text); font-weight: 700; }
 .pick-sub     { font-size: 11px; color: var(--text-dim); }
 .pick-toolbar { display: flex; gap: 6px; align-items: center; }
 .pick-tree {
-  flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 3px;
+  flex: 1; overflow-y: auto; border: 2px solid var(--border); border-radius: 3px;
   background: var(--bg-input); padding: 6px 8px;
-  font-family: var(--mono); font-size: 11px; max-height: 46vh; min-height: 60px;
+  font-family: var(--mono); font-size: 11px; min-height: 60px; max-height: 280px;
 }
 .pick-row {
   display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 3px;
@@ -1350,7 +1348,6 @@ body.light .badge-fup-hex   { background: #d1fae5; color: #065f46; border-color:
 body.light .badge-fup-ascii { background: #ede9ff; color: #5b21b6; border-color: #a78bfa; }
 body.light .badge-locked { background: #fde8e8; color: #cf222e; border-color: #cf222e; }
 body.light .rec-meta { background: rgba(0,0,0,0.05); }
-body.light .panel-header { background: var(--bg-deep); }
 body.light .settings-pill .btn.s-active { color: #fff; }
 body.light tbody tr.row-sel td { color: var(--text) !important; }
 body.light .hb.hb-hover    { background: rgba(var(--accent-rgb), 0.20); color: var(--text) !important; }
@@ -1668,14 +1665,15 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
           <span id="msgFileName" style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0"></span>
         </div>
         <div class="flex-row">
+          <span id="auditStats" class="audit-stats" style="display:none"></span>
           <input type="file" id="auditFileInput" style="display:none" onchange="onAuditFileOpen(this)">
           <button class="btn" id="auditOpenBtn" onclick="openAuditFileDialog()" title="Open binary audit file">📂 Audit</button>
+          <button class="btn btn-primary" id="parseBtn" onclick="_parseBtnClick()" style="min-width:calc(var(--sz-mono)*13);padding:0 8px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">▶ Parse</button>
           <button class="btn" id="msgClearBtn" onclick="_clearBtnClick()">✕ Clear</button>
         </div>
         <button class="panel-toggle" id="msgToggle" onclick="togglePanel('msgPanel','msgToggle','ddlResizer')" title="Hide panel">−</button>
       </div>
       <div id="msgCfgBar">
-        <span id="auditStats" class="audit-stats" style="display:none"></span>
         <select id="fmtForceSelect" onchange="onFmtForceChange()" title="Force input format (overrides auto-detect)">
           <option value="">AUTO</option>
           <option value="ascii">ASCII</option>
@@ -1696,7 +1694,6 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
           <span class="lw-step" onclick="lwStep(1)" title="Next preset">&gt;</span>
           <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>
         </span>
-        <button class="btn btn-primary" id="parseBtn" onclick="_parseBtnClick()" style="min-width:calc(var(--sz-mono)*13);padding:0 8px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">▶ Parse</button>
       </div>
       <div class="panel-body" style="flex-direction:row;position:relative">
         <div id="msgGutter" class="msg-gutter" aria-hidden="true"></div>
@@ -6293,7 +6290,8 @@ function parseFupCopyLog(text) {
         _dl: [],
       };
     } else if (cur) {
-      if (DATA_RE.test(line.trimStart())) cur._dl.push({ text: line, lineStart });
+      const t = line.trim();
+      if (t && DATA_RE.test(t)) cur._dl.push({ text: line, lineStart });
     }
   }
   flush();
@@ -7381,19 +7379,15 @@ function _padFupCopyAsciiLines(text) {
 
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
+    const t = line.trim();
     if (HDR_RE.test(line)) {
       flushRec();
-    } else if (/^[0-9A-Fa-f]+:/.test(line.trimStart())) {
-      const ci = lines[li].indexOf(':');
+    } else if (t && DATA_RE.test(t)) {
+      const ci = line.indexOf(':');
       if (ci < 0) continue;
-      // Normalize empty data lines (e.g. "110:") only when at least one data line
-      // already exists for this record — guards against false positives on isolated lines
-      if (lines[li].length < ci + 3 && curData.length > 0) {
-        lines[li] = lines[li].padEnd(ci + 3, ' '); changed = true;
-      }
-      const pfx = ci + 3;
-      if (isHexRec === null) isHexRec = /^[0-9A-Fa-f]{4}\s/.test(lines[li].slice(ci + 1).trimStart());
-      curData.push({ li, dataLen: Math.max(0, lines[li].length - pfx) });
+      const pfx = ci + 3; // colon + exactly 2 spaces
+      if (isHexRec === null) isHexRec = /^[0-9A-Fa-f]{4}\s/.test(line.slice(ci + 1).trimStart());
+      curData.push({ li, dataLen: line.length - pfx });
     }
   }
   flushRec();
@@ -12043,9 +12037,9 @@ function buildCtxMenu(e) {
     // Right-clicked on empty tree area
     items.push({ icon: '＋', label: 'New Volume',  fn: () => newVolume() });
     items.push({ separator: true });
-    items.push({ icon: '⬇', label: 'Import…', fn: () => triggerImport() });
+    items.push({ icon: '⬇', label: 'Import', fn: () => triggerImport() });
     if (Object.keys(S.ddlTree).length)
-      items.push({ icon: '⬆', label: 'Export All…', fn: () => ctxExport(null, null, null) });
+      items.push({ icon: '⬆', label: 'Export', fn: () => ctxExport(null, null, null) });
     if (clip?.type === 'vol') {
       items.push({ separator: true });
       items.push({ icon: '⎘', label: `Paste Volume  "${clip.vol}"`, fn: () => ctxPasteVol() });
@@ -17274,7 +17268,7 @@ function _meSave() {
     <div class="pick-tree" id="importTree"></div>
     <div class="modal-btns">
       <button class="btn"             onclick="closeImportModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmImport()">⇩ Import</button>
+      <button class="btn btn-primary" onclick="confirmImport()">Import</button>
     </div>
   </div>
 </div>

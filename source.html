@@ -596,6 +596,7 @@ input[type="text"]:focus { border-color: var(--accent); }
   flex-shrink: 0;
 }
 .btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+.settings-btn-20 { height: 20px !important; min-height: 20px !important; max-height: 20px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; line-height: 16px !important; box-sizing: content-box !important; padding-top: 0 !important; padding-bottom: 0 !important; }
 .btn:focus-visible { outline: none; border-color: var(--accent); }
 #settingsBtn:hover { border-color: var(--accent) !important; color: var(--accent) !important; background: rgba(var(--accent-rgb),0.1) !important; }
 .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
@@ -1601,6 +1602,51 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-ddl-empty{font-family:var(--mono);font-size:var(--sz-mono);padding:6px 10px;color:var(--text-dim);}
 .me-ov-section{margin-bottom:14px;}
 .me-ov-section:last-child{margin-bottom:0;}
+/* Field Map — table layout patterned after DDL Doc */
+.me-fm-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+.me-fm-filter{flex:1;min-width:0;height:22px;padding:0 8px;border:2px solid var(--border);border-radius:2px;background:var(--bg-deep);color:var(--text);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
+.me-fm-filter:focus{outline:none;border-color:var(--accent);}
+.me-fm-table-wrap{overflow:auto;max-height:560px;border:2px solid var(--border);border-radius:2px;}
+.me-fm-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
+.me-fm-table th{position:sticky;top:0;background:var(--bg-deep);color:var(--text-dim);font-weight:700;text-align:left;padding:5px 8px;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-size:calc(var(--sz-mono) - 2px);z-index:1;white-space:nowrap;}
+.me-fm-th-de {width:160px;text-align:center;}
+.me-fm-th-vlg{width:48px;text-align:center;}
+.me-fm-th-fo {width:96px;text-align:center;}
+.me-fm-table td{padding:2px 8px;border-bottom:1px solid rgba(255,255,255,0.04);color:var(--text);white-space:nowrap;vertical-align:middle;}
+body.light .me-fm-table td{border-bottom-color:rgba(0,0,0,0.06);}
+.me-fm-table tbody tr:hover td{background:rgba(var(--accent-rgb),0.06);}
+.me-fm-table .me-fm-fld{font-weight:500;overflow:hidden;text-overflow:ellipsis;max-width:0;}
+.me-fm-table .me-fm-de,.me-fm-table .me-fm-vlg,.me-fm-table .me-fm-fo{text-align:center;}
+.me-fm-de-inner{display:inline-flex;align-items:center;justify-content:center;gap:4px;}
+/* Group rows */
+.me-fm-grp td{background:rgba(var(--accent-rgb),0.05);}
+.me-fm-grp:hover td{background:rgba(var(--accent-rgb),0.10) !important;}
+body.light .me-fm-grp td{background:rgba(0,0,0,0.04);}
+.me-fm-grp .me-fm-name{color:var(--text-dim);}
+.me-fm-grp.me-fm-term .me-fm-name{color:var(--accent);font-weight:700;}
+.me-fm-grp-icon{display:inline-block;width:12px;color:var(--text-dim);font-size:9px;cursor:pointer;user-select:none;margin-right:4px;text-align:center;}
+.me-fm-grp-icon:hover{color:var(--accent);}
+.me-fm-grp-collapsed .me-fm-grp-icon{color:var(--accent);}
+/* REDEFINES rows */
+.me-fm-redef td{color:rgba(var(--accent-rgb),0.65);}
+body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
+/* Hidden by collapse / redef / filter */
+.me-fm-hidden{display:none;}
+/* Reused DE controls */
+.me-de-nudge{width:22px;height:20px;padding:0;flex-shrink:0;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
+.me-de-pill{display:inline-flex;align-items:center;justify-content:center;min-width:54px;height:20px;padding:0 8px;border:2px solid var(--border);border-radius:3px;background:var(--bg-deep);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);cursor:pointer;flex-shrink:0;user-select:none;}
+.me-de-pill:hover{border-color:var(--accent);color:var(--accent);}
+.me-de-pill.anchored{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.07);}
+.me-de-edit-inp{width:46px;height:16px;padding:0 2px;border:0;background:transparent;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--accent);text-align:center;outline:none;}
+.me-de-clear{width:22px;height:20px;padding:0;flex-shrink:0;}
+.me-de-clear-ph{display:inline-block;width:22px;flex-shrink:0;}
+/* VLG checkbox — color-scheme tells the browser to render dark-mode chrome
+   (dark unchecked box, light check); accent-color paints the check itself. */
+.me-vlg-cb{cursor:pointer;width:14px;height:14px;margin:0;accent-color:var(--accent);color-scheme:dark;}
+body.light .me-vlg-cb{color-scheme:light;}
+.me-fo-sel{height:20px;padding:0 4px;font-size:calc(var(--sz-mono) - 1px);width:90px;}
+/* Accent-on shared with DDL Doc buttons */
+.btn-accent-on{border-color:var(--accent);color:var(--accent);background:rgba(var(--accent-rgb),0.10);}
 .me-ov-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);margin-bottom:3px;}
 .me-ov-hint{font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);margin-bottom:6px;line-height:1.4;}
 </style>
@@ -13026,7 +13072,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.95';
+const APP_VERSION  = '1.1.2.118';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13622,7 +13668,7 @@ function renderDetectSpecsList() {
   if (!el) return;
   const { specs = [] } = _fmtGetData();
   if (!specs.length) {
-    el.innerHTML = '<div class="dr-specs-empty">No format specs — use Message Editor to add detectors</div>';
+    el.innerHTML = '<div class="dr-specs-empty">No format specs — use Data Editor to add detectors</div>';
     return;
   }
   const sorted = specs.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
@@ -14626,7 +14672,10 @@ function openMsgEditor() {
     editRec:  -1,
     pend:     {},
     dirty:    false,
-    recHelpOpen: false
+    recHelpOpen: false,
+    fmCollapsedGroups: new Set(),   // group qualnames currently collapsed (Field Map)
+    fmHideRedef: false,
+    fmFilter: ''
   };
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;
@@ -14634,6 +14683,54 @@ function openMsgEditor() {
   _meRenderRight();
   document.getElementById('msgEditorOverlay').classList.remove('hidden');
   if (startIdx !== -1) _meSelectItem('msg', startIdx);
+  _meInitSplitter();
+}
+
+// ── Sidebar resizer ─────────────────────────────────────────────────────────
+// Drag the .resizer-h between sidebar and right panel to adjust the sidebar
+// width. Persists in localStorage so the size survives reloads.
+const _ME_SIDEBAR_MIN = 150;
+const _ME_SIDEBAR_MAX = 500;
+let _meSplitterWired = false;
+function _meInitSplitter() {
+  const sb = document.getElementById('me-sidebar');
+  const sp = document.getElementById('me-splitter');
+  if (!sb || !sp) return;
+  // Restore saved width
+  try {
+    const saved = parseInt(localStorage.getItem('up_me_sidebar_w'), 10);
+    if (Number.isFinite(saved)) {
+      const w = Math.max(_ME_SIDEBAR_MIN, Math.min(_ME_SIDEBAR_MAX, saved));
+      sb.style.width = w + 'px';
+    }
+  } catch(e) {}
+  if (_meSplitterWired) return;
+  _meSplitterWired = true;
+  let dragging = false;
+  let startX = 0;
+  let startW = 0;
+  sp.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    startW = sb.getBoundingClientRect().width;
+    sp.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const w = Math.max(_ME_SIDEBAR_MIN, Math.min(_ME_SIDEBAR_MAX, startW + (e.clientX - startX)));
+    sb.style.width = w + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    sp.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    try { localStorage.setItem('up_me_sidebar_w', String(parseInt(sb.style.width, 10))); } catch(e) {}
+  });
 }
 
 function closeMsgEditor() {
@@ -14725,6 +14822,11 @@ function _meCurItem() {
 }
 
 function _meRenderRight() {
+  // Capture the Field Map scroll position before the rebuild so DE/VLG/type
+  // changes don't jump the user back to the top of the field list.
+  const _fmWrapBefore = document.querySelector('.me-fm-table-wrap');
+  const _fmScrollTop  = _fmWrapBefore ? _fmWrapBefore.scrollTop : 0;
+
   // Tear down the Parse Spec CM editor (if any) BEFORE we wipe its host
   // element — otherwise the editor is left attached to a detached DOM node
   // and never gets garbage collected.
@@ -14733,7 +14835,7 @@ function _meRenderRight() {
   const body = document.getElementById('me-tab-body');
   const item = _meCurItem();
   if (!item) {
-    body.innerHTML = '<div class="me-no-sel">Select a message from the sidebar.</div>';
+    body.innerHTML = '<div class="me-no-sel">Select an item from the sidebar.</div>';
     return;
   }
   const isMsg = _meState.section === 'msg';
@@ -14758,6 +14860,13 @@ function _meRenderRight() {
 
   // Mount the Parse Spec CodeMirror editor if the section is open.
   if (isMsg && secs.parse_spec) _mePsMountCM(item);
+
+  // Re-apply persisted Field Map state (collapse / hide-redef / filter).
+  if (typeof _meFmReapplyState === 'function') _meFmReapplyState();
+
+  // Restore Field Map scroll position so per-row edits don't reset the view.
+  const _fmWrapAfter = document.querySelector('.me-fm-table-wrap');
+  if (_fmWrapAfter && _fmScrollTop > 0) _fmWrapAfter.scrollTop = _fmScrollTop;
 }
 
 // ── Parse Spec Tab ────────────────────────────────────────────────────────
@@ -15516,69 +15625,360 @@ function _meHtmlOverrides(item) {
   const vlg   = item.var_length_groups || [];
   const fo    = item.field_overrides   || [];
 
-  // de_map rows
-  let dmHtml = '';
-  if (!deMap.length) dmHtml = '<div class="me-empty">No DE map anchors.</div>';
-  deMap.forEach((e, i) => {
-    dmHtml += `<div class="me-bind-row">
-  <input class="me-inp" style="flex:1;min-width:0" value="${ea(e.field || '')}" placeholder="FIELD-ID"
-    oninput="_meDeMapField(${i},'field',this.value)">
-  <span style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);padding:0 5px;flex-shrink:0">→ DE</span>
-  <input class="me-inp" style="width:52px" type="number" min="1" max="128" value="${ea(e.de || '')}"
-    oninput="_meDeMapField(${i},'de',this.value)">
-  <button class="me-rb del" onclick="_meDeMapDel(${i})" title="Remove">✕</button>
-</div>`;
-  });
+  // Lookup maps so per-row UI can pre-fill state.
+  const vlgSet = new Set(vlg);
+  const foByField = new Map();
+  for (const e of fo) if (e?.field) foByField.set(e.field, e);
+  const usesBitmapFields = _meItemUsesBitmapFields(item);
 
-  // var_length_groups rows
-  let vlgHtml = '';
-  if (!vlg.length) vlgHtml = '<div class="me-empty">No variable length groups.</div>';
-  vlg.forEach((g, i) => {
-    vlgHtml += `<div class="me-bind-row">
-  <input class="me-inp me-bind-inp" value="${ea(g)}" placeholder="DE-2"
-    oninput="_meVlgSet(${i}, this.value)">
-  <button class="me-rb del" onclick="_meVlgDel(${i})" title="Remove">✕</button>
-</div>`;
-  });
-
-  // field_overrides rows
+  // Unified field-list rows — one row per binding-0 elementary DDL field
+  // combining: DE number controls, VLG toggle, type override, display override.
+  const fieldList = _meResolveDEFieldList(item);
   const TYPE_OPTS = ['','uint8','uint16-be','uint16-le','uint32-be','uint32-le','binary','ascii','ebcdic'];
   const DISP_OPTS = ['','datetime','amount','hex','text'];
   const selOpts = (opts, cur, ph) =>
     opts.map(o => `<option value="${o}"${(cur || '') === o ? ' selected' : ''}>${o || ph}</option>`).join('');
-  let foHtml = '';
-  if (!fo.length) foHtml = '<div class="me-empty">No field overrides.</div>';
-  fo.forEach((e, i) => {
-    foHtml += `<div class="me-bind-row">
-  <input class="me-inp" style="flex:1;min-width:0" value="${ea(e.field || '')}" placeholder="DE-7"
-    oninput="_meFoSet(${i},'field',this.value)">
-  <select class="me-sel" oninput="_meFoSet(${i},'type',this.value)">${selOpts(TYPE_OPTS, e.type, 'type…')}</select>
-  <select class="me-sel" oninput="_meFoSet(${i},'display',this.value)">${selOpts(DISP_OPTS, e.display, 'display…')}</select>
-  <button class="me-rb del" onclick="_meFoDel(${i})" title="Remove">✕</button>
+
+  let dmHtml = '';
+  if (!fieldList) {
+    dmHtml = '<div class="me-empty">Bind a DDL above to see field → DE mappings.</div>';
+  } else if (!fieldList.length) {
+    dmHtml = '<div class="me-empty">Bound DDL has no elementary fields.</div>';
+  } else {
+    // Build rows as <tr> using DDL Doc styling conventions (table layout
+    // guarantees column alignment).
+    const bodyRows = fieldList.map(row => {
+      const id        = ea(row.id);
+      const depth     = row.id.split('.').length - 1;
+      const namePadL  = `padding-left:${depth * 16}px`;
+      const grpPadL   = `padding-left:${5 + depth * 16}px`;
+      const isGroup   = !!row.isGroup;
+      const trCls     = [
+        isGroup ? 'me-fm-grp' : '',
+        row.isRedef ? 'me-fm-redef' : '',
+        row.isTerminal ? 'me-fm-term' : '',
+        !isGroup && !row.underTerminal ? 'me-fm-leaf' : '',
+        row.underTerminal ? 'me-fm-leaf me-fm-under-term' : '',
+      ].filter(Boolean).join(' ');
+      const dataAttrs = isGroup
+        ? `data-grp="1" data-qn="${id}"`
+        : `data-qn="${id}"`;
+
+      // FIELD cell
+      const grpIcon = isGroup
+        ? `<span class="me-fm-grp-icon" onclick="_meFmToggleGroup(this.closest('tr'))">▼</span>`
+        : '';
+      const fieldCell = isGroup
+        ? `<td class="me-fm-fld" style="${grpPadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))">${grpIcon}<span class="me-fm-name">${id}</span></td>`
+        : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span></td>`;
+
+      // DE cell — hidden for REDEFINES rows (they overlay other bytes, no DE of their own)
+      let deCell;
+      if (usesBitmapFields && !row.underTerminal && !row.isRedef) {
+        const pillClass = 'me-de-pill' + (row.anchored ? ' anchored' : '');
+        const clearBtn  = row.anchored
+          ? `<button class="me-rb me-de-clear" title="Clear DE override (revert to default)" onclick="_meDeClear('${id}')">↺</button>`
+          : `<span class="me-de-clear-ph"></span>`;
+        deCell = `<td class="me-fm-de"><div class="me-fm-de-inner">
+    <button class="me-rb me-de-nudge" title="Decrease DE" onclick="_meDeNudge('${id}',-1)">&lt;</button>
+    <span class="${pillClass}" title="Click to type DE number" onclick="_meDeEditStart(this,'${id}',${row.de})">DE-${row.de}</span>
+    <button class="me-rb me-de-nudge" title="Increase DE" onclick="_meDeNudge('${id}',1)">&gt;</button>
+    ${clearBtn}
+  </div></td>`;
+      } else {
+        const tip = !usesBitmapFields ? 'DE controls appear only when the parse spec uses bitmap-fields.'
+                  : row.isRedef       ? 'REDEFINES overlays existing bytes — no DE of its own.'
+                  : row.underTerminal ? 'No DE here — the terminal group above owns the DE.'
+                  : '';
+        deCell = `<td class="me-fm-de" title="${tip}"></td>`;
+      }
+
+      // VLG cell — checkbox (only on terminal groups with ≥2 children, when bitmap-fields used, and not REDEFINES)
+      const isVlg       = vlgSet.has(row.id);
+      const vlgEligible = isGroup && row.isTerminal && (row.childCount || 0) >= 2 && !row.isRedef;
+      const vlgCell = (vlgEligible && usesBitmapFields)
+        ? `<td class="me-fm-vlg"><input type="checkbox" class="me-vlg-cb" ${isVlg ? 'checked' : ''} onchange="_meVlgToggleByField('${id}')" title="When on, bitmap-fields reads the first sub-field as LEN and distributes that many bytes across the rest."></td>`
+        : `<td class="me-fm-vlg"></td>`;
+
+      // Type / display cells
+      const foEntry = foByField.get(row.id) || {};
+      const typeCell = `<td class="me-fm-fo"><select class="me-sel me-fo-sel" onchange="_meFoSetByField('${id}','type',this.value)">${selOpts(TYPE_OPTS, foEntry.type, '')}</select></td>`;
+      const dispCell = `<td class="me-fm-fo"><select class="me-sel me-fo-sel" onchange="_meFoSetByField('${id}','display',this.value)">${selOpts(DISP_OPTS, foEntry.display, '')}</select></td>`;
+
+      return `<tr class="${trCls}" ${dataAttrs}>${fieldCell}${deCell}${vlgCell}${typeCell}${dispCell}</tr>`;
+    }).join('');
+
+    dmHtml = `
+<div class="me-fm-toolbar">
+  <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
+  <button class="btn btn-sm" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
+  <button class="btn btn-sm" id="me-fm-hide-redef-btn" onclick="_meFmToggleHideRedef()" title="Hide / show REDEFINES rows">Hide Redef</button>
+</div>
+<div class="me-fm-table-wrap">
+  <table class="me-fm-table">
+    <thead><tr>
+      <th class="me-fm-th-fld">Field</th>
+      <th class="me-fm-th-de">DE</th>
+      <th class="me-fm-th-vlg" title="Variable Length Group">VLG</th>
+      <th class="me-fm-th-fo">Type</th>
+      <th class="me-fm-th-fo">Display</th>
+    </tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table>
 </div>`;
-  });
+  }
 
   return `<div class="me-ov-section">
-  <div class="me-ov-title">DE Map</div>
-  <div class="me-ov-hint">Anchor: field → DE number. All subsequent DDL fields increment from the anchor. Fields before the first anchor start at DE-1.</div>
-  <div class="me-bind-list">${dmHtml}</div>
-  <button class="btn btn-sm" onclick="_meDeMapAdd()" style="margin-top:4px">+ Add Anchor</button>
-</div>
-<div class="me-ov-section">
-  <div class="me-ov-title">Variable Length Groups</div>
-  <div class="me-ov-hint">Group field IDs whose LEN sub-field controls how many bytes DATA consumes (LLVAR / LLLVAR). bitmap-fields uses this to read only LEN bytes instead of the full declared DATA length.</div>
-  <div class="me-bind-list">${vlgHtml}</div>
-  <button class="btn btn-sm" onclick="_meVlgAdd()" style="margin-top:4px">+ Add Group</button>
-</div>
-<div class="me-ov-section">
-  <div class="me-ov-title">Field Overrides</div>
-  <div class="me-ov-hint">Override how a DDL field is consumed (type) and/or formatted for display. Fields overridden to a binary type are automatically marked unreliable in ASCII input.</div>
-  <div class="me-bind-list">${foHtml}</div>
-  <button class="btn btn-sm" onclick="_meFoAdd()" style="margin-top:4px">+ Add Override</button>
+  <div class="me-ov-title">Field Map</div>
+  <div class="me-ov-hint">One row per binding-0 DDL field. <b>&lt; DE-N &gt;</b> and <b>VLG</b> appear only when the parse spec contains <code>bitmap-fields</code>. VLG further requires a terminal group (LEN + ≥1 payload sub-fields). Double-click a group row, or click the chevron, to collapse it. The two dropdowns override the field's <b>type</b> and <b>display format</b> regardless of spec.</div>
+  ${dmHtml}
 </div>`;
 }
 
-// de_map handlers
+// ── DE Map field-list helpers ───────────────────────────────────────────────
+// Resolve binding-0's DDL defs into a list of rows for the DE Map UI. Each
+// row carries the field id, the engine-resolved DE number (matching
+// _meBuildDEMap above), and whether the value comes from an anchor. Returns
+// null when there is no bound DDL, [] when the DDL has no fields.
+// True if any block (including nested when.then / repeat.body / read-while.body)
+// in the parse spec is a `bitmap-fields` block. Used by the Field Map UI to
+// hide the VLG toggle when the spec doesn't run bitmap-fields — VLG is dead
+// weight in that case.
+function _meSpecHasBitmapFields(spec) {
+  if (!Array.isArray(spec)) return false;
+  for (const block of spec) {
+    if (!block || typeof block !== 'object') continue;
+    if ('bitmap-fields' in block) return true;
+    if (block.when?.then         && _meSpecHasBitmapFields(block.when.then)) return true;
+    if (block.repeat?.body       && _meSpecHasBitmapFields(block.repeat.body)) return true;
+    if (block['read-while']?.body && _meSpecHasBitmapFields(block['read-while'].body)) return true;
+  }
+  return false;
+}
+function _meItemUsesBitmapFields(item) {
+  return _meSpecHasBitmapFields(item?.parse_spec_binary)
+      || _meSpecHasBitmapFields(item?.parse_spec_ascii);
+}
+
+function _meResolveDEFieldList(item) {
+  const path = item?.ddl_bindings?.[0];
+  if (!path) return null;
+  const r = (typeof getDDLFromPath === 'function') ? getDDLFromPath(path) : null;
+  const defs = r?.defs || [];
+  if (!defs.length) return [];
+  const anchors = new Map((item.de_map || []).map(e => [e.field, +e.de || 1]));
+
+  // Track REDEFINES on leaves so we can pass through to the UI for Hide Redef.
+  const redefSet = new Set(defs.filter(d => d.isRedefines).map(d => d.id));
+
+  // ── Pass 1: discover groups from leaf qualified names ───────────────────
+  const childrenByPrefix = new Map();   // prefix → Set of immediate child ids
+  for (const def of defs) {
+    if (def._occursGroup !== undefined && def._occursIdx > 0) continue;
+    const parts = def.id.split('.');
+    for (let i = 1; i < parts.length; i++) {
+      const prefix = parts.slice(0, i).join('.');
+      const child  = parts.slice(0, i + 1).join('.');
+      if (!childrenByPrefix.has(prefix)) childrenByPrefix.set(prefix, new Set());
+      childrenByPrefix.get(prefix).add(child);
+    }
+  }
+  const terminalGroups    = new Set();
+  const intermediateGroups = new Set();
+  for (const [prefix, children] of childrenByPrefix.entries()) {
+    const hasGroupChild = [...children].some(c => childrenByPrefix.has(c));
+    if (hasGroupChild) intermediateGroups.add(prefix);
+    else               terminalGroups.add(prefix);
+  }
+
+  // ── Pass 2: walk defs in declaration order, emitting ancestor groups ───
+  const emitted = new Set();
+  const out = [];
+  let currentDE = 1;
+  const assignDE = (id, extras) => {
+    if (anchors.has(id)) currentDE = anchors.get(id);
+    out.push({ id, de: currentDE, anchored: anchors.has(id), ...extras });
+    currentDE++;
+  };
+
+  for (const def of defs) {
+    if (def._occursGroup !== undefined && def._occursIdx > 0) continue;
+    const parts = def.id.split('.');
+
+    for (let i = 1; i < parts.length; i++) {
+      const prefix = parts.slice(0, i).join('.');
+      if (emitted.has(prefix)) continue;
+      emitted.add(prefix);
+      const isTerminal = terminalGroups.has(prefix);
+      const childCount = (childrenByPrefix.get(prefix) || new Set()).size;
+      // A group is REDEFINES-flagged if all its children are redefines (best-effort heuristic).
+      const isRedef = [...(childrenByPrefix.get(prefix) || new Set())].every(c => redefSet.has(c));
+      assignDE(prefix, { isGroup: true, isTerminal, childCount, underTerminal: false, isRedef });
+    }
+
+    const parentPrefix = parts.slice(0, -1).join('.');
+    const underTerminal = !!parentPrefix && terminalGroups.has(parentPrefix);
+    const isRedef = redefSet.has(def.id);
+    if (underTerminal) {
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal: true, isRedef });
+    } else {
+      assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef });
+    }
+  }
+  return out;
+}
+
+// Set / update / remove an anchor for one field so the row renders the
+// desired DE value. Storage stays sparse: an anchor is added only when the
+// requested value differs from what the engine would extrapolate naturally.
+function _meDeSet(fieldId, newDE) {
+  const item = _meCurItem(); if (!item) return;
+  const n = Math.max(1, Math.min(128, parseInt(newDE, 10) || 1));
+  if (!item.de_map) item.de_map = [];
+  const idx = item.de_map.findIndex(e => e.field === fieldId);
+  if (idx === -1) item.de_map.push({ field: fieldId, de: n });
+  else            item.de_map[idx].de = n;
+  _meSetDirty();
+  _meRenderRight();
+}
+function _meDeNudge(fieldId, delta) {
+  const list = _meResolveDEFieldList(_meCurItem());
+  const row  = list?.find(r => r.id === fieldId);
+  if (!row) return;
+  _meDeSet(fieldId, row.de + delta);
+}
+function _meDeClear(fieldId) {
+  const item = _meCurItem(); if (!item?.de_map) return;
+  const i = item.de_map.findIndex(e => e.field === fieldId);
+  if (i === -1) return;
+  item.de_map.splice(i, 1);
+  _meSetDirty();
+  _meRenderRight();
+}
+
+// Field-keyed VLG toggle — adds/removes the field id from var_length_groups.
+function _meVlgToggleByField(fieldId) {
+  const item = _meCurItem(); if (!item) return;
+  if (!Array.isArray(item.var_length_groups)) item.var_length_groups = [];
+  const i = item.var_length_groups.indexOf(fieldId);
+  if (i === -1) item.var_length_groups.push(fieldId);
+  else          item.var_length_groups.splice(i, 1);
+  _meSetDirty();
+  _meRenderRight();
+}
+
+// ── Field Map: collapse / hide-redef / filter ──
+function _meFmIsHiddenByCollapse(tr) {
+  const qn = tr.getAttribute('data-qn') || '';
+  if (!qn.includes('.')) return false;
+  const parts = qn.split('.');
+  for (let i = 1; i < parts.length; i++) {
+    const prefix = parts.slice(0, i).join('.');
+    if (_meState?.fmCollapsedGroups?.has(prefix)) return true;
+  }
+  return false;
+}
+function _meFmReapplyState() {
+  if (!_meState) return;
+  // Apply hide-redef
+  document.querySelectorAll('.me-fm-table tbody tr').forEach(tr => {
+    const qn = tr.getAttribute('data-qn') || '';
+    const isRedef    = tr.classList.contains('me-fm-redef');
+    const isHidden   = _meFmIsHiddenByCollapse(tr);
+    const hidByRedef = _meState.fmHideRedef && isRedef;
+    const hidByFilt  = _meState.fmFilter && !qn.toLowerCase().includes(_meState.fmFilter.toLowerCase());
+    tr.classList.toggle('me-fm-hidden', isHidden || hidByRedef || hidByFilt);
+  });
+  // Group rows: chevron orientation
+  document.querySelectorAll('.me-fm-grp').forEach(tr => {
+    const qn = tr.getAttribute('data-qn');
+    const collapsed = _meState.fmCollapsedGroups.has(qn);
+    tr.classList.toggle('me-fm-grp-collapsed', collapsed);
+    const icon = tr.querySelector('.me-fm-grp-icon');
+    if (icon) icon.textContent = collapsed ? '▶' : '▼';
+  });
+  // Toolbar button states
+  const collapseBtn = document.getElementById('me-fm-collapse-btn');
+  if (collapseBtn) {
+    const allCollapsed = _meState.fmCollapsedGroups.size > 0
+      && [...document.querySelectorAll('.me-fm-grp')].every(tr => _meState.fmCollapsedGroups.has(tr.getAttribute('data-qn')));
+    collapseBtn.textContent = allCollapsed ? 'Expand All' : 'Collapse All';
+    collapseBtn.classList.toggle('btn-accent-on', allCollapsed);
+    collapseBtn.dataset.state = allCollapsed ? 'collapsed' : 'expanded';
+  }
+  const redefBtn = document.getElementById('me-fm-hide-redef-btn');
+  if (redefBtn) {
+    redefBtn.textContent = _meState.fmHideRedef ? 'Show Redef' : 'Hide Redef';
+    redefBtn.classList.toggle('btn-accent-on', !!_meState.fmHideRedef);
+  }
+  const filterInput = document.querySelector('.me-fm-filter');
+  if (filterInput && _meState.fmFilter && filterInput.value !== _meState.fmFilter) {
+    filterInput.value = _meState.fmFilter;
+  }
+}
+function _meFmToggleGroup(tr) {
+  if (!tr || !_meState) return;
+  const qn = tr.getAttribute('data-qn');
+  if (_meState.fmCollapsedGroups.has(qn)) _meState.fmCollapsedGroups.delete(qn);
+  else                                    _meState.fmCollapsedGroups.add(qn);
+  _meFmReapplyState();
+}
+function _meFmToggleCollapseAll() {
+  if (!_meState) return;
+  const allGroups = [...document.querySelectorAll('.me-fm-grp')].map(tr => tr.getAttribute('data-qn'));
+  const allCollapsed = allGroups.length > 0 && allGroups.every(qn => _meState.fmCollapsedGroups.has(qn));
+  _meState.fmCollapsedGroups = new Set(allCollapsed ? [] : allGroups);
+  _meFmReapplyState();
+}
+function _meFmToggleHideRedef() {
+  if (!_meState) return;
+  _meState.fmHideRedef = !_meState.fmHideRedef;
+  _meFmReapplyState();
+}
+function _meFmFilter(q) {
+  if (!_meState) return;
+  _meState.fmFilter = q || '';
+  _meFmReapplyState();
+}
+
+// Field-keyed Field Override set — upserts a single key (type|display) on
+// the entry for this field id. Removes the entry when both keys are empty.
+function _meFoSetByField(fieldId, key, val) {
+  const item = _meCurItem(); if (!item) return;
+  if (!Array.isArray(item.field_overrides)) item.field_overrides = [];
+  let entry = item.field_overrides.find(e => e?.field === fieldId);
+  if (!entry) { entry = { field: fieldId }; item.field_overrides.push(entry); }
+  if (val) entry[key] = val;
+  else     delete entry[key];
+  // Garbage-collect an empty entry so we don't leave noise in storage.
+  const hasAnyOverride = entry.type || entry.display;
+  if (!hasAnyOverride) {
+    const idx = item.field_overrides.indexOf(entry);
+    if (idx !== -1) item.field_overrides.splice(idx, 1);
+  }
+  _meSetDirty();
+}
+// Swap the pill for a small number input on click; commit on Enter / blur.
+function _meDeEditStart(pill, fieldId, currentDE) {
+  if (!pill || pill.querySelector('input')) return;
+  const input = document.createElement('input');
+  input.type = 'number'; input.min = '1'; input.max = '128';
+  input.value = String(currentDE);
+  input.className = 'me-de-edit-inp';
+  pill.textContent = '';
+  pill.appendChild(input);
+  input.focus();
+  input.select();
+  const commit = () => _meDeSet(fieldId, input.value);
+  input.addEventListener('blur', commit, { once: true });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); _meRenderRight(); }
+  });
+}
+
+// Legacy de_map handlers — still used by Import/Export flows that construct
+// raw anchors. Kept for compatibility; new DE Map UI calls _meDeSet/Nudge/Clear.
 function _meDeMapField(idx, key, val) {
   const item = _meCurItem(); if (!item) return;
   if (!item.de_map) item.de_map = [];
@@ -16296,8 +16696,8 @@ function _meCtxMsg(e, idx) {
   showCtxMenu(e.clientX, e.clientY, [
     { icon: '⧉', label: 'Duplicate', fn: () => _meDupItem(idx) },
     { separator: true },
-    { icon: '⬆', label: `Export "${msg?.name || msg?.label || 'message'}"…`, fn: () => _ctxMsgExport(idx, msg?.name) },
-    { icon: '⬆', label: 'Export All Messages…', fn: () => _ctxExportAllMsgs() },
+    { icon: '⬆', label: `Export "${msg?.name || msg?.label || 'item'}"…`, fn: () => _ctxMsgExport(idx, msg?.name) },
+    { icon: '⬆', label: 'Export All Data…', fn: () => _ctxExportAllMsgs() },
     { icon: '⬇', label: 'Import Bundle…', fn: () => triggerImport() },
     { separator: true },
     { icon: '✕', label: 'Delete', danger: true, fn: () => _meDeleteItem('msg', idx) },
@@ -16308,9 +16708,9 @@ function _meCtxMsg(e, idx) {
 function _meCtxMsgEmpty(e) {
   e.preventDefault(); e.stopPropagation();
   showCtxMenu(e.clientX, e.clientY, [
-    { icon: '＋', label: 'New Message', fn: () => _meAddMsg() },
+    { icon: '＋', label: 'New', fn: () => _meAddMsg() },
     { separator: true },
-    { icon: '⬆', label: 'Export All Messages…', fn: () => _ctxExportAllMsgs() },
+    { icon: '⬆', label: 'Export All Data…', fn: () => _ctxExportAllMsgs() },
     { icon: '⬇', label: 'Import Bundle…',       fn: () => triggerImport() },
   ]);
 }
@@ -16840,15 +17240,21 @@ function _meExecBitmapFields(attrs, ctx) {
       continue;
     }
     if (varGroups.has(def.id)) {
-      // LEN+DATA group — read LEN sub-field, then read N bytes for DATA
-      const kids = def._groupChildren || [];
-      const lenDef = kids[0], dataDef = kids[1];
-      if (!lenDef || !dataDef) {
-        ctx.fields.push({ id: def.id, error: 'var_length_groups: LEN/DATA sub-fields not found' });
+      // VLG group — first sub-field is LEN (ASCII digits), remaining sub-fields
+      // share a buffer of N bytes that gets filled in declaration order:
+      // each child gets min(child.length, remaining) bytes; every child is
+      // emitted even if it consumed 0 bytes (to keep DDL shape in the output).
+      const kids = (def.subFields || def._groupChildren || []);
+      if (kids.length < 2) {
+        ctx.fields.push({ id: def.id, error: 'VLG: group needs a LEN sub-field plus at least one payload sub-field' });
         continue;
       }
+      const lenDef   = kids[0];
+      const dataDefs = kids.slice(1);
+
+      // Read LEN
       const lStart = ctx.cursor;
-      const lLen   = lenDef.length;
+      const lLen   = lenDef.length || 0;
       const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
       const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
       const N      = parseInt(lValue, 10) || 0;
@@ -16859,15 +17265,25 @@ function _meExecBitmapFields(attrs, ctx) {
         value: _meBytesToStr(lBytes), rawHex: _meBytesToHex(lBytes),
         startByte: lStart, endByte: lStart + lLen - 1,
       });
-      const dStart = ctx.cursor;
-      const dBytes = Array.from(ctx.bytes.slice(dStart, dStart + N));
-      ctx.cursor = dStart + N;
-      ctx.fields.push({
-        id: `${def.id}.${dataDef.id}`, description: dataDef.description,
-        dataType: dataDef._dataType, valueLength: N, lenPrefix: lValue,
-        value: _meBytesToStr(dBytes), rawHex: _meBytesToHex(dBytes),
-        startByte: dStart, endByte: dStart + N - 1,
-      });
+
+      // Distribute N bytes across the remaining children, in declaration order
+      let remaining = N;
+      for (const childDef of dataDefs) {
+        const declared = childDef.length || 0;
+        const take     = Math.min(declared, remaining);
+        const cStart   = ctx.cursor;
+        const cBytes   = Array.from(ctx.bytes.slice(cStart, cStart + take));
+        ctx.cursor = cStart + take;
+        remaining -= take;
+        ctx.fields.push({
+          id: `${def.id}.${childDef.id}`, description: childDef.description,
+          dataType: childDef._dataType, valueLength: take, lenPrefix: lValue,
+          value:  take > 0 ? _meBytesToStr(cBytes) : '',
+          rawHex: take > 0 ? _meBytesToHex(cBytes) : '',
+          startByte: take > 0 ? cStart : null,
+          endByte:   take > 0 ? cStart + take - 1 : null,
+        });
+      }
     } else {
       const f = _meReadOneFieldFromDef(def, ctx);
       if (f) {
@@ -17451,13 +17867,13 @@ function _meSave() {
 
       <!-- ── MESSAGE DETECTION ─────────────────────── -->
       <div class="settings-section">
-        <div class="settings-stitle collapsed" id="detectStitle">Message Detection
+        <div class="settings-stitle collapsed" id="detectStitle">Data Detection
           <button class="stitle-toggle" onclick="toggleSettingsSection(document.getElementById('detectStitle'))">+</button>
         </div>
         <div class="settings-collapsible-body collapsed" style="max-height:500px">
           <div class="dr-spec-list" id="detectSpecsList"></div>
           <div class="settings-row" style="margin-top:8px">
-            <button class="btn btn-sm" onclick="openMsgEditor()" title="Open the Message Format Editor to define byte-level recognizers and parse specs">⊞ Message Editor</button>
+            <button class="btn btn-sm settings-btn-20" style="flex:1" onclick="openMsgEditor()" title="Open the Data Editor to define byte-level recognizers and parse specs">⊞ Data Editor</button>
           </div>
         </div>
       </div>
@@ -17470,7 +17886,7 @@ function _meSave() {
         </div>
         <div class="settings-row">
           <span class="settings-lbl">Reset</span>
-          <button class="btn btn-sm" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
+          <button class="btn btn-sm settings-btn-20" style="flex:0 1 50%" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
         </div>
       </div>
 
@@ -17479,7 +17895,7 @@ function _meSave() {
         <div class="settings-stitle">Tutorial</div>
         <div class="settings-row">
           <span class="settings-lbl">Guided tour of key features</span>
-          <button class="btn btn-sm" onclick="showTutorial();closeSettings();">&#x25b6; Launch</button>
+          <button class="btn btn-sm settings-btn-20" style="flex:0 1 50%" onclick="showTutorial();closeSettings();">&#x25b6; Launch</button>
         </div>
       </div>
 
@@ -17698,8 +18114,8 @@ function _meSave() {
           Found a bug or have an idea? Send us a note — your email client will open with diagnostic info pre-filled.
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-feedback-bug" onclick="openFeedbackMail('bug')" style="font-size:11px;padding:3px 12px;flex:1">Report a Bug</button>
-          <button class="btn" onclick="openFeedbackMail('feature')" style="font-size:11px;padding:3px 12px;flex:1">Request a Feature</button>
+          <button class="btn btn-feedback-bug settings-btn-20" onclick="openFeedbackMail('bug')" style="font-size:11px;flex:1">Report a Bug</button>
+          <button class="btn settings-btn-20" onclick="openFeedbackMail('feature')" style="font-size:11px;flex:1">Request a Feature</button>
         </div>
       </div>
 
@@ -17737,20 +18153,20 @@ function _meSave() {
 <div class="pick-overlay hidden" id="exportOverlay">
   <div class="pick-box">
     <div class="pick-title">⇧ Export Bundle</div>
-    <div class="pick-sub">Select Messages and / or DDLs to include. Auto-include keeps references intact.</div>
+    <div class="pick-sub">Select Data and / or DDLs to include. Auto-include keeps references intact.</div>
     <div class="pick-toolbar" style="flex-wrap:wrap;gap:8px">
       <button class="btn" onclick="exportPickAll(true)"  style="font-size:11px;padding:2px 8px">All</button>
       <button class="btn" onclick="exportPickAll(false)" style="font-size:11px;padding:2px 8px">None</button>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer">
         <input type="checkbox" id="expAutoIncludeDDLs" checked onchange="_expSyncAutoIncludeFromMsgs()">
-        Auto-include DDLs referenced by selected Messages
+        Auto-include DDLs referenced by selected Data
       </label>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer">
         <input type="checkbox" id="expAutoIncludeMsgs" onchange="_expSyncAutoIncludeFromDDLs()">
-        Also include Messages that reference selected DDLs
+        Also include Data that reference selected DDLs
       </label>
     </div>
-    <div style="font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">MESSAGES</div>
+    <div style="font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">DATA</div>
     <div class="pick-tree" id="exportMsgList" style="max-height:180px"></div>
     <div style="font-size:11px;color:var(--accent);font-weight:700;margin:10px 0 2px;letter-spacing:.04em">DDLs</div>
     <div class="pick-tree" id="exportTree"></div>
@@ -17770,7 +18186,7 @@ function _meSave() {
       <button class="btn" onclick="importPickAll(true)"  style="font-size:11px;padding:2px 8px">All</button>
       <button class="btn" onclick="importPickAll(false)" style="font-size:11px;padding:2px 8px">None</button>
     </div>
-    <div id="importMsgsHdr" style="display:none;font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">MESSAGES</div>
+    <div id="importMsgsHdr" style="display:none;font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">DATA</div>
     <div class="pick-tree" id="importMsgList" style="display:none;max-height:180px"></div>
     <div id="importDDLsHdr" style="display:none;font-size:11px;color:var(--accent);font-weight:700;margin:10px 0 2px;letter-spacing:.04em">DDLs</div>
     <div class="pick-tree" id="importTree"></div>
@@ -17805,10 +18221,10 @@ function _meSave() {
 
     <div class="me-main">
       <!-- ── Sidebar ── -->
-      <div class="me-sidebar">
+      <div class="me-sidebar" id="me-sidebar">
         <div class="me-sidebar-sect" id="me-sect-msgs">
           <div class="me-sidebar-hdr">
-            <span class="me-sidebar-title">Messages</span>
+            <span class="me-sidebar-title">Data</span>
             <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
           </div>
           <div class="me-item-list" id="me-msg-list"></div>
@@ -17819,11 +18235,14 @@ function _meSave() {
         </div>
       </div>
 
+      <!-- ── Sidebar / right-panel splitter ── -->
+      <div class="resizer-h" id="me-splitter" title="Drag to resize sidebar"></div>
+
       <!-- ── Right panel ── -->
       <div class="me-right">
         <div class="me-header">
-          <span class="me-header-title" id="me-header-title">Message Editor</span>
-          <span class="me-header-hint" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 2px);margin-right:8px">Right-click the Messages list for Import / Export</span>
+          <span class="me-header-title" id="me-header-title">Data Editor</span>
+          <span class="me-header-hint" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 2px);margin-right:8px">Right-click the Data list for Import / Export</span>
           <button class="btn btn-sm" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
         </div>
         <div class="me-tab-body" id="me-tab-body"></div>

@@ -22,7 +22,8 @@ const domStub = new Proxy({}, {
   construct: () => domStub,
 });
 const domEl = new Proxy({}, {
-  get: (_, k) => {
+  get: (target, k) => {
+    if (k in target) return target[k];
     if (k === 'addEventListener') return () => {};
     if (k === 'removeEventListener') return () => {};
     if (k === 'getElementById') return () => domEl;
@@ -32,18 +33,26 @@ const domEl = new Proxy({}, {
     if (typeof k === 'string') return () => domEl;
     return domEl;
   },
+  set: (target, k, v) => { target[k] = v; return true; },
 });
+const storage = {
+  _data: {},
+  getItem(k) { return Object.prototype.hasOwnProperty.call(this._data, k) ? this._data[k] : null; },
+  setItem(k, v) { this._data[k] = String(v); },
+  removeItem(k) { delete this._data[k]; },
+};
 
 const sandbox = vm.createContext({
   // Core JS globals
   console, setTimeout: () => {}, clearTimeout: () => {}, setInterval: () => {},
   clearInterval: () => {}, requestAnimationFrame: () => {}, cancelAnimationFrame: () => {},
   parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent,
-  Math, JSON, Array, Object, Map, Set, WeakMap, WeakSet, RegExp,
+  Math, JSON, Array, Object, Map, Set, WeakMap, WeakSet, RegExp, Uint8Array,
   String, Number, Boolean, Symbol, Date, Promise, Error,
   // DOM stubs
   document: domEl,
   window:   domEl,
+  localStorage: storage,
   navigator: { clipboard: { writeText: () => Promise.resolve() } },
   location: { reload: () => {} },
   // Test export slot
@@ -60,6 +69,24 @@ _t.parseDDLSections   = parseDDLSections;
 _t.parseHPEDDL        = parseHPEDDL;
 _t.isHPEDDLText       = isHPEDDLText;
 _t.parseFlatMessage   = parseFlatMessage;
+_t.parseSimpleDDL     = parseSimpleDDL;
+_t.validateDDLErrors  = validateDDLErrors;
+_t.normalizeDataType  = normalizeDataType;
+_t.validateFieldContent = validateFieldContent;
+_t.buildRedefSkipSet  = buildRedefSkipSet;
+_t.detectFormat       = detectFormat;
+_t.isHexAsciiLine     = isHexAsciiLine;
+_t.hexAsciiStartCol   = hexAsciiStartCol;
+_t.extractBytes       = extractBytes;
+_t.splitMessages      = splitMessages;
+_t.splitHexAsciiMessages = splitHexAsciiMessages;
+_t.extractTS          = extractTS;
+_t.stripJsonc         = _stripJsonc;
+_t.migrateSpec        = window._migrateSpec;
+_t.fmtTestSpecs       = window._fmtTestSpecs;
+_t.meExecParseSpec    = _meExecParseSpec;
+_t.S                  = S;
+_t.P                  = P;
 `;
 
 try {
@@ -72,6 +99,10 @@ try {
 const {
   picSize, typeSize, buildDDLDocFields, expandTypeRefs,
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage,
+  parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
+  detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, splitMessages,
+  splitHexAsciiMessages, extractTS, stripJsonc, migrateSpec, fmtTestSpecs,
+  meExecParseSpec, S, P,
 } = sandbox._t;
 
 // ── Test harness ────────────────────────────────────────────────────────────
@@ -93,6 +124,10 @@ function eq(actual, expected, msg) {
   assert.strictEqual(actual, expected, `${msg}: got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
 }
 
+function deepEq(actual, expected, msg) {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)), expected, `${msg}: got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
+}
+
 // Helper: build a raw field item (same shape parseDDLSections / parseHPEDDL produce)
 function f(level, name, { pic = null, comp = null, typeClause = null, redefines = null, occurs = 1, desc = '' } = {}) {
   return {
@@ -110,6 +145,10 @@ function f(level, name, { pic = null, comp = null, typeClause = null, redefines 
 // Helper: find field by name in a buildDDLDocFields result
 function byName(fields, name) {
   return fields.find(f => f.name.toUpperCase() === name.toUpperCase());
+}
+
+function fixtureText(relPath) {
+  return fs.readFileSync(relPath, 'utf8');
 }
 
 // ── picSize ──────────────────────────────────────────────────────────────────
@@ -459,6 +498,36 @@ test('HPE DEF totalSize accounts for OCCURS span', () => {
   eq(tail.offset, 12, 'TAIL.offset = 4×3 = 12');
 });
 
+test('targetDef limits parsing to the requested DEF section', () => {
+  const ddl = `
+    DEF FIRST.
+      02 A PIC X(2).
+    END FIRST.
+    DEF SECOND.
+      02 B PIC X(3).
+    END SECOND.
+  `;
+  const defs = parseHPEDDL(ddl, null, null, 'SECOND');
+  eq(defs.length, 1, 'only one leaf from requested DEF');
+  eq(defs[0].id, 'B', 'requested DEF field id');
+  eq(defs[0].length, 3, 'requested DEF field length');
+});
+
+test('fixture smoke: parses representative repo DDL samples without validation errors', () => {
+  const fixtures = [
+    'test/DDL-Tests/DEF address.',
+    'test/DDL-Tests/DEF binary-pictures.',
+    'test/DDL-Tests/DEF employee-odo.',
+  ];
+  for (const file of fixtures) {
+    const text = fixtureText(file);
+    const validation = validateDDLErrors(text, new Map());
+    eq(validation.errors.length, 0, `${file} validation errors`);
+    const defs = parseHPEDDL(text);
+    assert.ok(defs.length > 0, `${file} produced parsed fields`);
+  }
+});
+
 // ── parseFlatMessage ─────────────────────────────────────────────────────────
 console.log('\nparseFlatMessage');
 test('sequential fields extracted at correct byte positions', () => {
@@ -485,6 +554,374 @@ test('REDEFINES field overlaps target byte range', () => {
   eq(fields[0].startByte, 0, 'X.startByte');
   eq(fields[1].startByte, 0, 'X-R.startByte same as X');
   eq(fields[2].startByte, 4, 'NEXT.startByte');
+});
+
+// ── typeSize ────────────────────────────────────────────────────────────────
+console.log('\ntypeSize');
+test('built-in HPE TYPE sizes', () => {
+  eq(typeSize('CHARACTER 12'), 12, 'CHARACTER');
+  eq(typeSize('BINARY 8'), 1, 'BINARY 8');
+  eq(typeSize('BINARY'), 2, 'BINARY default');
+  eq(typeSize('FLOAT 64'), 8, 'FLOAT 64');
+  eq(typeSize('BIT 9'), 2, 'BIT rounds up to bytes');
+});
+
+test('unknown TYPE size is 0', () => eq(typeSize('CUSTOM-TYPE'), 0, 'custom type'));
+
+// ── expandTypeRefs ──────────────────────────────────────────────────────────
+console.log('\nexpandTypeRefs');
+test('expands TYPE name references as nested children', () => {
+  const sectionByName = new Map([
+    ['ADDR', [
+      f(2, 'ADDR'),
+      f(3, 'STREET', { pic: 'X(4)' }),
+      f(3, 'ZIP', { pic: '9(5)' }),
+    ]],
+  ]);
+  const expanded = expandTypeRefs([
+    f(2, 'CUSTOMER'),
+    f(3, 'HOME', { typeClause: 'ADDR' }),
+  ], sectionByName);
+  deepEq(expanded.map(i => `${i.level}:${i.name}:${i.pic || ''}`), [
+    '2:CUSTOMER:',
+    '3:HOME:',
+    '4:ADDR:',
+    '5:STREET:X(4)',
+    '5:ZIP:9(5)',
+  ], 'expanded item shape');
+});
+
+test('cycle guard leaves recursive TYPE reference unresolved', () => {
+  const sectionByName = new Map([
+    ['NODE', [f(2, 'NODE', { typeClause: 'NODE' })]],
+  ]);
+  const expanded = expandTypeRefs([f(2, 'ROOT', { typeClause: 'NODE' })], sectionByName);
+  eq(expanded.length, 2, 'wrapper plus unresolved recursive child');
+  eq(expanded[1].typeClause, 'NODE', 'recursive child remains a type ref');
+});
+
+// ── parseSimpleDDL ──────────────────────────────────────────────────────────
+console.log('\nparseSimpleDDL');
+test('parses 5-column simple DDL with datatype and quoted description', () => {
+  const defs = parseSimpleDDL('pan FIXED 19 N "Primary account number"');
+  eq(defs[0].id, 'PAN', 'id');
+  eq(defs[0].dataType, 'N', 'dataType');
+  eq(defs[0].description, 'Primary account number', 'description');
+});
+
+test('ignores comments and parses unquoted simple DDL descriptions', () => {
+  const defs = parseSimpleDDL('# comment\nflag FIXED 1 Indicator');
+  eq(defs.length, 1, 'one definition');
+  eq(defs[0].description, 'Indicator', 'description');
+});
+
+// ── field content validation ────────────────────────────────────────────────
+console.log('\nfield content validation');
+test('normalizes PIC and simple datatype tags', () => {
+  eq(normalizeDataType('PIC 9(4)'), 'N', 'PIC 9');
+  eq(normalizeDataType('PIC A(4)'), 'A', 'PIC A');
+  eq(normalizeDataType('PIC X(4)'), 'ANS', 'PIC X');
+  eq(normalizeDataType('BINARY 16'), 'B', 'binary');
+});
+
+test('validates numeric, alphabetic, alphanumeric, printable, and track data', () => {
+  assert.ok(validateFieldContent(Buffer.from('12345'), 'N'), 'numeric accepts digits');
+  assert.ok(!validateFieldContent(Buffer.from('12A45'), 'N'), 'numeric rejects letters');
+  assert.ok(validateFieldContent(Buffer.from('Ab Z'), 'A'), 'alpha accepts letters and spaces');
+  assert.ok(!validateFieldContent(Buffer.from('AB1'), 'A'), 'alpha rejects digits');
+  assert.ok(validateFieldContent(Buffer.from('A9 Z'), 'AN'), 'alphanumeric accepts letters/digits/spaces');
+  assert.ok(!validateFieldContent(Buffer.from([0x1f]), 'ANS'), 'printable rejects control bytes');
+  assert.ok(validateFieldContent(Buffer.from('123D45=6?'), 'Z'), 'track data accepts D/d/=/?)');
+});
+
+test('buildRedefSkipSet skips mixed-type redefine bases only', () => {
+  const skip = buildRedefSkipSet([
+    { id: 'BASE', dataType: 'N' },
+    { id: 'BASE-R', isRedefines: true, redefTarget: 'BASE', dataType: 'ANS' },
+    { id: 'SAME', dataType: 'N' },
+    { id: 'SAME-R', isRedefines: true, redefTarget: 'SAME', dataType: 'N' },
+  ]);
+  assert.ok(skip.has('BASE'), 'mixed redefine base is skipped');
+  assert.ok(!skip.has('SAME'), 'same-type redefine base is not skipped');
+});
+
+// ── format detection and byte extraction ────────────────────────────────────
+console.log('\nformat detection and byte extraction');
+test('recognizes HEXASCII/Tandem dump lines and start column', () => {
+  const text = '  0000: 3031 3233 [0123]';
+  assert.ok(isHexAsciiLine(text), 'line is HEXASCII');
+  eq(hexAsciiStartCol(text), 6, 'start column includes address prefix after trimStart');
+  eq(detectFormat(text), 'tandem-dump', 'format');
+  deepEq(extractBytes(text, 'tandem-dump'), [0x30, 0x31, 0x32, 0x33], 'bytes');
+});
+
+test('detects ASCII ISO before hex-ratio heuristic', () => {
+  eq(detectFormat('ISO0100ABCDEF0123456789'), 'ascii', 'ISO literal is ASCII');
+});
+
+test('vetoes hex classification when first line is not predominantly hex', () => {
+  const mixed = 'message 1234\n30313233343536373839\n414243444546';
+  eq(detectFormat(mixed), 'ascii', 'later hex-heavy lines must not override textual first line');
+});
+
+test('detects EBCDIC-looking hex and decodes bytes to ASCII', () => {
+  const ebcdicDigits = 'F0F1F2F3F4F5F6F7';
+  eq(detectFormat(ebcdicDigits), 'ebcdic', 'EBCDIC format');
+  deepEq(extractBytes(ebcdicDigits, 'ebcdic'), Array.from('01234567').map(c => c.charCodeAt(0)), 'decoded');
+});
+
+test('extracts pure hex, labelled hex, octal, and fixed-width ASCII bytes', () => {
+  deepEq(extractBytes('30313233', 'hex'), [48, 49, 50, 51], 'pure hex');
+  deepEq(extractBytes('payload = 41 42 43 44', 'hex'), [65, 66, 67, 68], 'labelled hex');
+  deepEq(extractBytes('101 102 377', 'oct'), [65, 66, 255], 'octal');
+  P.lineWidth = 3; S.asciiMargin = 0; S.asciiRulerCol = 0;
+  deepEq(extractBytes('A\nBC', 'ascii'), [65, 32, 32, 66, 67, 32], 'ASCII padding');
+  P.lineWidth = 0;
+});
+
+// ── message splitting ───────────────────────────────────────────────────────
+console.log('\nmessage splitting');
+test('splits timestamped messages and carries each timestamp', () => {
+  const parts = splitMessages('2026-05-25 10:00:00 first\nbody\n2026-05-25 10:01:00 second');
+  eq(parts.length, 2, 'two messages');
+  eq(parts[0].timestamp, '2026-05-25 10:00:00', 'first ts');
+  eq(parts[1].timestamp, '2026-05-25 10:01:00', 'second ts');
+});
+
+test('splits blank-line and separator-delimited messages', () => {
+  eq(splitMessages('one\n\n two ').length, 2, 'blank-line split');
+  eq(splitMessages('one\n---\ntwo').length, 2, 'separator split');
+  eq(extractTS('x 2026/05/25T10:11:12.123 y'), '2026/05/25T10:11:12.123', 'extract timestamp');
+});
+
+test('splits HEXASCII blocks while skipping comments between blocks', () => {
+  const parts = splitHexAsciiMessages('0000: 4142 [AB]\ncomment\n0002: 4344 [CD]');
+  eq(parts.length, 2, 'two dump blocks');
+});
+
+// ── JSONC and recognizer pipeline ───────────────────────────────────────────
+console.log('\nJSONC and recognizer pipeline');
+test('stripJsonc preserves comment-like text inside strings and removes trailing commas', () => {
+  const src = `[
+    // comment
+    { "read-fixed": { "length": 2, "as": "A//B" } },
+    /* block */ { "skip": 1, },
+  ]`;
+  const parsed = JSON.parse(stripJsonc(src));
+  eq(parsed[0]['read-fixed'].as, 'A//B', 'string preserved');
+  eq(parsed[1].skip, 1, 'trailing comma removed');
+});
+
+test('migrates legacy parse_spec fields to binary variant', () => {
+  const spec = { name: 'X', parse_spec: [{ skip: 1 }], parse_spec_source: '[{"skip":1}]' };
+  migrateSpec(spec);
+  assert.ok(!('parse_spec' in spec), 'legacy parse_spec removed');
+  deepEq(spec.parse_spec_binary, [{ skip: 1 }], 'binary spec set');
+});
+
+test('format recognizers honor spec order, literals, ranges, regex, uint masks, and failAt', () => {
+  const bytes = Buffer.from('AB12Z');
+  const specs = [
+    { name: 'LOW', priority: 0, recognizers: [{ type: 'literal', offset: 0, value: 'AB##' }] },
+    { name: 'HIGH', priority: 5, recognizers: [
+      { type: 'literal', offset: 0, value: 'AB??' },
+      { type: 'regex', offset: 2, length: 2, pattern: '^\\d{2}$' },
+      { type: 'uint8', offset: 4, mask: '0xDF', eq: 0x5A },
+    ] },
+    { name: 'RANGE', priority: 10, recognizers: [{ type: 'literal', offset: 2, value: [{ from: '10', to: '12' }] }] },
+  ];
+  const results = fmtTestSpecs(specs, bytes);
+  eq(results[0].spec.name, 'LOW', 'first passing spec in list order wins');
+  assert.ok(results[0].passed, 'ordered literal match passes');
+  eq(results.length, 1, 'stops after first passing spec');
+
+  const failed = fmtTestSpecs([{ name: 'BAD', recognizers: [
+    { type: 'literal', offset: 0, value: 'AB' },
+    { type: 'numeric', offset: 4, length: 1 },
+  ] }], bytes);
+  assert.ok(!failed[0].passed, 'failing spec reported');
+  eq(failed[0].failAt, 1, 'failAt points to failing recognizer');
+});
+
+test('metadata recognizers match source, destination, and filename from context', () => {
+  const bytes = Buffer.from('ISO0200');
+  const results = fmtTestSpecs([{
+    name: 'CTX',
+    recognizers: [
+      { type: 'source', pattern: 'PIA^C###' },
+      { type: 'destination', pattern: 'PIA^SWITCH' },
+      { type: 'filename', pattern: '$VOL.SUBVOL.FILE#' },
+    ],
+  }], bytes, {
+    source: 'PIA^C910',
+    dest: 'PIA^SWITCH',
+    filename: '$VOL.SUBVOL.FILE7',
+  });
+  assert.ok(results[0].passed, 'context metadata recognizers pass');
+});
+
+test('metadata recognizers reject specific patterns when context is missing', () => {
+  const bytes = Buffer.from('ISO0200');
+  const results = fmtTestSpecs([{
+    name: 'CTX-MISS',
+    recognizers: [{ type: 'source', pattern: 'PIA^C###' }],
+  }], bytes, {});
+  assert.ok(!results[0].passed, 'specific source pattern fails without ctx.source');
+  eq(results[0].failAt, 0, 'missing metadata fails at first recognizer');
+});
+
+// ── fixture-driven validation ───────────────────────────────────────────────
+console.log('\nfixture-driven validation');
+test('invalid DDL fixtures surface hard validation errors', () => {
+  const fixtures = [
+    'test/DDL-Invalid/DEF missing-end.',
+    'test/DDL-Invalid/DEF invalid-pic-char.',
+    'test/DDL-Invalid/DEF redefines-larger.',
+  ];
+  for (const file of fixtures) {
+    const validation = validateDDLErrors(fixtureText(file), new Map());
+    assert.ok(validation.errors.length > 0, `${file} should produce validation errors`);
+  }
+});
+
+test('validator rejects COBOL-style comma terminators', () => {
+  const ddl = `
+    DEF REC.
+      02 FIELD-A PIC X(2),
+    END REC.
+  `;
+  const validation = validateDDLErrors(ddl, new Map());
+  assert.ok(validation.errors.some(e => e.includes('statement ends with a comma')), 'comma terminator error reported');
+});
+
+test('warning-only fixtures stay warnings instead of hard errors', () => {
+  const warnings = validateDDLErrors(fixtureText('test/DDL-Invalid/DEF unresolved-type.'), new Map());
+  eq(warnings.errors.length, 0, 'unresolved TYPE fixture has no hard errors');
+  assert.ok(warnings.warnings.some(w => w.includes('not found in loaded DDLs')), 'unresolved TYPE warning is reported');
+
+  const partialRedef = validateDDLErrors(fixtureText('test/DDL-Invalid/DEF redefines-smaller.'), new Map());
+  eq(partialRedef.errors.length, 0, 'smaller redefine fixture has no hard errors');
+  assert.ok(partialRedef.warnings.some(w => w.includes('smaller structure')), 'smaller redefine warning is reported');
+});
+
+// ── parse_spec interpreter ──────────────────────────────────────────────────
+console.log('\nparse_spec interpreter');
+test('executes read-ddl filters, repeat, when/not, length refs, read-until, read-to-end, and read-tlv', () => {
+  S.ddlTree = { VOL: { SV: { 'TESTDDL': `
+    DEF REC.
+      02 HEAD PIC X(2).
+      02 CNT PIC X(1).
+      02 ITEM PIC X(2).
+      02 FLAG PIC X(1).
+      02 LEN PIC X(1).
+      02 TAIL PIC X(10).
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = {
+    type: 'TST',
+    ddl_bindings: ['VOL/SV/TESTDDL/REC'],
+    parse_spec_binary: [
+      { 'read-ddl': { fields: ['HEAD', 'CNT'] } },
+      { skip: 3 },
+      { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 2, as: 'ITEM' } }] } },
+      { 'read-fixed': { length: 1, as: 'FLAG' } },
+      { 'read-fixed': { length: 1, as: 'LEN' } },
+      { when: { field: 'FLAG', not: '0', then: [{ 'read-fixed': { length: 'LEN', as: 'PAYLOAD' } }] } },
+      { 'read-until': { sentinels: ['0x26'], eom: true, as: 'UNTIL-AMP' } },
+      { skip: 1 },
+      { 'read-to-end': { as: 'REST' } },
+    ],
+  };
+  const bytes = Buffer.from('HH2AABB13XYZQQ&END');
+  const ctx = meExecParseSpec(item, bytes);
+  deepEq(ctx.fields.map(x => x.id), ['HEAD', 'CNT', 'ITEM', 'ITEM', 'FLAG', 'LEN', 'PAYLOAD', 'UNTIL-AMP', 'REST'], 'field sequence');
+  eq(ctx.fields.find(x => x.id === 'PAYLOAD').value, 'XYZ', 'length ref payload');
+  eq(ctx.fields.find(x => x.id === 'UNTIL-AMP').value, 'QQ', 'read-until payload');
+  eq(ctx.fields.find(x => x.id === 'REST').value, 'END', 'read-to-end after skip');
+
+  const tlvItem = {
+    ddl_bindings: [],
+    parse_spec_binary: [
+      { 'read-fixed': { length: 6, as: 'BUF' } },
+      { 'read-tlv': { field: 'BUF', tag_length: 1, length_length: 1 } },
+    ],
+  };
+  const tlv = meExecParseSpec(tlvItem, Uint8Array.from([0x9F, 0x02, 0x41, 0x42, 0x5A, 0x00]));
+  const tag = tlv.fields.find(x => x.id === 'BUF.9F');
+  assert.ok(tag, 'TLV tag emitted');
+  eq(tag.value, 'AB', 'TLV value');
+});
+
+test('read-ddl from/until emits an inclusive window but still reads hidden fields for references', () => {
+  S.ddlTree = { VOL: { SV: { 'WINDOWDDL': `
+    DEF REC.
+      02 A PIC X(1).
+      02 B PIC X(1).
+      02 C PIC X(1).
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: ['VOL/SV/WINDOWDDL/REC'],
+    parse_spec_binary: [{ 'read-ddl': { from: 'B', until: 'C' } }],
+  };
+  const ctx = meExecParseSpec(item, Buffer.from('ABC'));
+  deepEq(ctx.fields.map(x => x.id), ['B', 'C'], 'visible window is inclusive');
+  eq(ctx.fieldsById.A.value, 'A', 'hidden prefix field still read into field map');
+});
+
+test('read-length-prefix decodes bcd2 prefixes and read-while max can come from a binary field', () => {
+  S.ddlTree = {};
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: [],
+    parse_spec_binary: [
+      { 'read-length-prefix': { prefix: 'bcd2', as: 'DATA' } },
+      { 'read-fixed': { length: 1, as: 'COUNT' } },
+      { 'read-while': {
+          while: { type: 'alphabetic', length: 1 },
+          max: 'COUNT',
+          body: [{ 'read-fixed': { length: 1, as: 'CH' } }],
+      } },
+    ],
+  };
+  const ctx = meExecParseSpec(item, Uint8Array.from([
+    0x00, 0x03, 0x41, 0x42, 0x43, // bcd2 length=3, DATA='ABC'
+    0x02,                         // binary count field
+    0x44, 0x45, 0x46,             // alphabetic payload, but max should stop after D,E
+  ]));
+  eq(ctx.fields[0].id, 'DATA', 'first field id');
+  eq(ctx.fields[0].value, 'ABC', 'bcd2 payload');
+  eq(ctx.fields[0].lenPrefix, '3', 'bcd2 decoded length');
+  deepEq(ctx.fields.map(x => x.id), ['DATA', 'COUNT', 'CH', 'CH'], 'read-while stops at binary max count');
+  deepEq(ctx.fields.filter(x => x.id === 'CH').map(x => x.value), ['D', 'E'], 'read-while emitted only max iterations');
+  eq(ctx.cursor, 8, 'cursor stops after max-limited iterations');
+});
+
+test('ASCII parse_spec variant wins for ASCII input, binary variant otherwise', () => {
+  S.ddlTree = {};
+  S.inputFormat = 'ascii';
+  const item = {
+    ddl_bindings: [],
+    parse_spec_binary: [{ 'read-fixed': { length: 1, as: 'BIN' } }],
+    parse_spec_ascii: [{ 'read-fixed': { length: 1, as: 'ASC' } }],
+  };
+  eq(meExecParseSpec(item, Buffer.from('X')).parseSpecUsed, 'ascii', 'ASCII variant used');
+  S.inputFormat = 'hex';
+  eq(meExecParseSpec(item, Buffer.from('X')).parseSpecUsed, 'binary', 'binary variant used');
+});
+
+test('falls back to ASCII parse_spec when binary input has no binary variant', () => {
+  S.ddlTree = {};
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: [],
+    parse_spec_ascii: [{ 'read-fixed': { length: 1, as: 'ASC' } }],
+  };
+  const ctx = meExecParseSpec(item, Buffer.from('X'));
+  eq(ctx.parseSpecUsed, 'ascii (fallback)', 'ASCII fallback used');
+  deepEq(ctx.fields.map(x => x.id), ['ASC'], 'ASCII fallback emitted expected field');
 });
 
 // ── Summary ───────────────────────────────────────────────────────────────────

@@ -661,32 +661,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btype-unknown { background:rgba(139,148,158,0.15); color:#8b949e; border:2px solid #8b949e; }
 .btype-user    { background:rgba(80,200,120,0.15);  color:#50c878; border:2px solid #50c878; }
 
-/* ===== DDLMM — DDL Message Map root node ===== */
-.tree-ddlmm-node {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 8px; cursor: pointer;
-  font-size: calc(var(--sz-mono) - 0.5px);
-  background: rgba(var(--accent-rgb),0.05);
-  border-bottom: 1px solid var(--border);
-  min-height: calc(var(--sz-mono) + 14px);
-}
-.tree-ddlmm-node:hover { background: rgba(var(--accent-rgb),0.10); }
-.tree-ddlmm-node.tree-sel { background: rgba(var(--accent-rgb),0.15); }
-.tree-ddlmm-badge {
-  font-size: var(--sz-badge); font-weight: 700; padding: 1px 5px;
-  border-radius: 2px; letter-spacing: 0.05em; flex-shrink: 0;
-  background: rgba(210,153,34,0.18); color: var(--warning);
-  border: 2px solid var(--warning); white-space: nowrap;
-}
-.tree-ddlmm-pill {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
-  padding: 1px 4px; border-radius: 2px; flex-shrink: 0;
-  background: rgba(var(--accent-rgb),0.15); color: var(--accent);
-  border: 1px solid rgba(var(--accent-rgb),0.35);
-}
-.tree-ddlmm-lbl { color: var(--text-dim); font-size: var(--sz-mono); font-weight: 700; letter-spacing: 0.03em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-ddlmm-cnt { font-size: var(--sz-badge); padding: 0 4px; border-radius: 8px; background: rgba(var(--accent-rgb),0.12); color: var(--accent); flex-shrink: 0; }
-.tree-ddlmm-dirty .tree-ddlmm-lbl::after { content: ' (*)'; color: var(--warning); font-weight: 700; }
 /* ---- NETARD record metadata bar (top of parse results) ---- */
 .rec-meta {
   display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
@@ -1178,7 +1152,6 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .dr-spec-head { display:flex; align-items:center; gap:5px; padding:2px 8px 3px; border-bottom:2px solid var(--border); }
 .dr-spec-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; border:1px solid rgba(255,255,255,.2); }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.dr-spec-pri { font-size:9px; color:var(--accent); flex-shrink:0; width:24px; text-align:right; }
 .dr-spec-type { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; width:36px; text-align:right; }
 .dr-spec-vol { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; }
 .dr-color { width:22px; height:22px; padding:0; border:2px solid var(--border); border-radius:2px; cursor:pointer; flex-shrink:0; }
@@ -1431,18 +1404,20 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 /* ── Message Editor ──────────────────────────────────────────────────────── */
 .me-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:21000;display:flex;align-items:center;justify-content:center;}
 .me-overlay.hidden{display:none;}
-.me-shell{display:flex;flex-direction:column;width:86vw;height:82vh;max-width:1100px;overflow:hidden;background:var(--bg-panel);border:2px solid var(--border);border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,0.7);}
+.me-shell{display:flex;flex-direction:column;width:92vw;height:82vh;max-width:1400px;overflow:hidden;background:var(--bg-panel);border:2px solid var(--border);border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,0.7);}
 .me-main{display:flex;flex:1;min-height:0;overflow:hidden;}
-.me-sidebar{width:210px;flex-shrink:0;border-right:2px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.me-sidebar{width:343px;flex-shrink:0;border-right:2px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
 .me-sidebar-sect{display:flex;flex-direction:column;flex:1;min-height:60px;overflow:hidden;}
 .me-sidebar-sect+.me-sidebar-sect{border-top:2px solid var(--border);}
-.me-sect-rules{flex:0 0 auto;}
-.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--bg-deep);flex-shrink:0;border-bottom:2px solid var(--border);}
+.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;min-height:36px;box-sizing:border-box;background:var(--bg-deep);flex-shrink:0;border-bottom:2px solid var(--border);}
 .me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
 .me-sidebar-add{background:transparent;border:2px solid var(--border);border-radius:2px;color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
 .me-sidebar-add:hover{border-color:var(--accent);color:var(--accent);}
 .me-item-list{flex:1;overflow-y:auto;min-height:0;}
-.me-item{display:flex;align-items:center;gap:5px;padding:4px 8px;cursor:pointer;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom:1px solid var(--border);}
+.me-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:26px;cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom:1px solid var(--border);box-sizing:border-box;}
+.me-item.dragging{cursor:grabbing;opacity:.4;}
+.me-item.drop-before{box-shadow:0 -2px 0 0 var(--accent);}
+.me-item.drop-after{box-shadow:0 2px 0 0 var(--accent);}
 .me-item:hover{background:rgba(255,255,255,.04);}
 body.light .me-item:hover{background:rgba(0,0,0,.04);}
 .me-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
@@ -1450,8 +1425,6 @@ body.light .me-item:hover{background:rgba(0,0,0,.04);}
 .me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .me-item-del{background:transparent;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1;margin-left:2px;}
 .me-item-del:hover{color:#f85149;}
-.me-item-pri{font-size:9px;color:var(--accent);flex-shrink:0;}
-.me-sidebar-note{padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);}
 .me-empty{padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-align:center;}
 .me-right{display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;}
 .me-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px 6px 14px;border-bottom:2px solid var(--border);background:var(--bg-deep);flex-shrink:0;}
@@ -1485,7 +1458,11 @@ input.me-inp{width:100%;}
 .me-swatch::-moz-color-swatch{border:none;}
 .me-rec-list{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;}
 .me-rec-row{border:2px solid var(--border);border-radius:3px;overflow:hidden;}
-.me-rec-head{display:flex;align-items:center;gap:6px;padding:4px 7px;cursor:pointer;user-select:none;}
+.me-rec-row.dragging{opacity:.4;}
+.me-rec-row.drop-before{box-shadow:0 -2px 0 0 var(--accent);}
+.me-rec-row.drop-after{box-shadow:0 2px 0 0 var(--accent);}
+.me-rec-head{display:flex;align-items:center;gap:6px;padding:4px 7px;cursor:grab;user-select:none;}
+.me-rec-row.dragging .me-rec-head{cursor:grabbing;}
 .me-rec-head:hover{background:rgba(255,255,255,.04);}
 body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-rec-type{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--accent);min-width:100px;}
@@ -1507,6 +1484,7 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-off-auto:hover{opacity:1;text-decoration:underline;}
 .me-rf-fld.grow{flex:1;min-width:80px;}
 .me-rf-btns{display:flex;gap:4px;margin-top:2px;}
+.me-rf-btnrow{display:flex;justify-content:flex-end;gap:6px;}
 .me-footer{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:8px 14px;border-top:2px solid var(--border);background:var(--bg-deep);flex-shrink:0;}
 .me-status{flex:1;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 .me-test-bar{border-top:2px solid var(--border);flex-shrink:0;background:var(--bg-panel);}
@@ -1560,7 +1538,6 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-ps-cm .cm-content{padding:6px 0!important;caret-color:var(--text);}
 .me-ps-cm .cm-line{padding:0 8px!important;}
 .me-ps-cm::-webkit-scrollbar-corner{background:var(--bg-deep);}
-.me-ps-cm::-webkit-resizer{background-color:var(--bg-deep);background-image:linear-gradient(135deg,transparent 0,transparent 45%,var(--text-dim) 45%,var(--text-dim) 55%,transparent 55%,transparent 70%,var(--text-dim) 70%,var(--text-dim) 80%,transparent 80%);}
 /* JSONC syntax tokens reuse the DDL editor's .hl-* palette directly. */
 .me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
 .me-ps-help{background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;padding:10px 12px;display:none;flex-direction:column;gap:8px;}
@@ -1584,15 +1561,27 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-ps-help-atbl td{padding:3px 8px 3px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.04);line-height:1.4;}
 .me-ps-help-atbl tr:last-child td{border-bottom:none;}
 .me-ps-help-aname{color:var(--accent2);white-space:nowrap;}
-.me-ps-help-atype{color:var(--text-dim);white-space:nowrap;}
+.me-ps-help-atype{color:var(--text-dim);white-space:normal;word-break:break-word;min-width:80px;}
 .me-ps-help-req{color:#f85149;font-size:calc(var(--sz-mono) - 3px);}
 .me-ps-help-opt{color:var(--text-dim);font-size:calc(var(--sz-mono) - 3px);}
 .me-ps-help-ex-title{color:var(--text-dim);font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);margin-bottom:4px;margin-top:6px;}
+.me-ps-help-section{margin:8px 0 10px;}
+.me-ps-help-section-title{color:var(--text-dim);font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);font-weight:700;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;}
+.me-ps-help-ul{margin:0;padding-left:18px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text);line-height:1.5;}
+.me-ps-help-ul li{margin:2px 0;}
+.me-ps-help-ul li b{color:var(--accent);}
+.me-ps-help-ul li code{color:var(--accent2);}
 .me-ps-help-snippet{background:var(--bg-panel);border:1px solid var(--border);border-radius:2px;padding:6px 8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text);white-space:pre;line-height:1.5;overflow-x:auto;}
 /* ── DDL Bindings + Overrides ── */
 .me-bind-list{display:flex;flex-direction:column;gap:3px;}
 .me-bind-row{display:flex;gap:5px;align-items:center;}
 .me-bind-inp{flex:1;min-width:0;}
+.me-bind-inp[data-state="missing"]{border-color:#f85149;}
+.me-bind-inp[data-state="ok"]:focus{border-color:var(--accent);}
+.me-bind-status{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;font-size:12px;flex-shrink:0;cursor:help;}
+.me-bind-status[data-state=""]{display:none;}
+.me-bind-status[data-state="ok"]{color:var(--success,#3fb950);}
+.me-bind-status[data-state="missing"]{color:#f85149;}
 .me-ddl-drop{position:fixed;z-index:22000;background:var(--bg-panel);border:2px solid var(--accent);border-radius:2px;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.4);display:none;}
 .me-ddl-opt{display:flex;align-items:baseline;gap:8px;padding:4px 10px;cursor:pointer;}
 .me-ddl-opt:hover,.me-ddl-opt.me-ddl-focused{background:rgba(var(--accent-rgb),.15);}
@@ -1603,33 +1592,60 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-ov-section{margin-bottom:14px;}
 .me-ov-section:last-child{margin-bottom:0;}
 /* Field Map — table layout patterned after DDL Doc */
+.me-fm-warn{padding:6px 10px;margin-bottom:6px;border:2px solid var(--warning);border-radius:2px;background:rgba(255,193,7,0.08);color:var(--warning);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);line-height:1.4;}
 .me-fm-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
 .me-fm-filter{flex:1;min-width:0;height:22px;padding:0 8px;border:2px solid var(--border);border-radius:2px;background:var(--bg-deep);color:var(--text);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
-.me-fm-table-wrap{overflow:auto;max-height:560px;border:2px solid var(--border);border-radius:2px;}
-.me-fm-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
-.me-fm-table th{position:sticky;top:0;background:var(--bg-deep);color:var(--text-dim);font-weight:700;text-align:left;padding:5px 8px;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-size:calc(var(--sz-mono) - 2px);z-index:1;white-space:nowrap;}
-.me-fm-th-de {width:160px;text-align:center;}
+.me-fm-table-wrap{border:2px solid var(--border);border-radius:2px;overflow-x:auto;}
+/* No width:100% — with table-layout:fixed it would make column widths
+   proportional rather than absolute, and resizing one column would scale
+   every other column to fill the leftover space. */
+.me-fm-table{table-layout:fixed;border-collapse:collapse;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
+.me-fm-table th{position:sticky;top:0;background:var(--bg-deep);color:var(--text-dim);font-weight:700;text-align:left;padding:5px 8px;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-size:calc(var(--sz-mono) - 2px);z-index:1;white-space:nowrap;box-sizing:border-box;}
+.me-fm-th-num{width:36px;text-align:right;}
+.me-fm-th-fld{width:280px;}
+.me-fm-th-len{width:60px;text-align:right;}
+.me-fm-th-dt {width:140px;text-align:left;}
+.me-fm-th-de {width:120px;text-align:center;}
 .me-fm-th-vlg{width:48px;text-align:center;}
 .me-fm-th-fo {width:96px;text-align:center;}
-.me-fm-table td{padding:2px 8px;border-bottom:1px solid rgba(255,255,255,0.04);color:var(--text);white-space:nowrap;vertical-align:middle;}
+.me-fm-resizer{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:2;}
+.me-fm-resizer:hover,.me-fm-resizer.active{background:rgba(var(--accent-rgb),0.4);}
+body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-select:none !important;}
+.me-fm-num{color:var(--text-dim);font-size:10px;text-align:right;}
+.me-fm-len{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);text-align:right;font-variant-numeric:tabular-nums;}
+.me-fm-dt{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);overflow:hidden;text-overflow:ellipsis;}
+.me-fm-dt-sel{width:100%;color:var(--text);}
+.me-fm-dt-bad .me-fm-dt-sel{border-color:#f85149;}
+.me-fm-dt-warn{display:inline-block;margin-left:4px;color:#f85149;font-size:12px;cursor:help;}
+.me-fm-table td{padding:2px 8px;border-bottom:1px solid rgba(255,255,255,0.04);color:var(--text);white-space:nowrap;vertical-align:middle;box-sizing:border-box;}
 body.light .me-fm-table td{border-bottom-color:rgba(0,0,0,0.06);}
+/* Thin vertical separators between columns — keeps the eye on column edges
+   without the visual noise of full-row striping. Last column omitted so the
+   table doesn't draw a line flush against its right border. */
+.me-fm-table th,.me-fm-table td{border-right:1px solid rgba(255,255,255,0.06);}
+.me-fm-table th:last-child,.me-fm-table td:last-child{border-right:none;}
+body.light .me-fm-table th,body.light .me-fm-table td{border-right-color:rgba(0,0,0,0.07);}
 .me-fm-table tbody tr:hover td{background:rgba(var(--accent-rgb),0.06);}
-.me-fm-table .me-fm-fld{font-weight:500;overflow:hidden;text-overflow:ellipsis;max-width:0;}
+.me-fm-table .me-fm-fld{font-weight:500;overflow:hidden;text-overflow:ellipsis;}
 .me-fm-table .me-fm-de,.me-fm-table .me-fm-vlg,.me-fm-table .me-fm-fo{text-align:center;}
 .me-fm-de-inner{display:inline-flex;align-items:center;justify-content:center;gap:4px;}
 /* Group rows */
 .me-fm-grp td{background:rgba(var(--accent-rgb),0.05);}
 .me-fm-grp:hover td{background:rgba(var(--accent-rgb),0.10) !important;}
 body.light .me-fm-grp td{background:rgba(0,0,0,0.04);}
+/* All groups dim by default; only switch to accent when the user has
+   actively marked the group as VLG. */
 .me-fm-grp .me-fm-name{color:var(--text-dim);}
-.me-fm-grp.me-fm-term .me-fm-name{color:var(--accent);font-weight:700;}
-.me-fm-grp-icon{display:inline-block;width:12px;color:var(--text-dim);font-size:9px;cursor:pointer;user-select:none;margin-right:4px;text-align:center;}
+.me-fm-grp.me-fm-vlg-on .me-fm-name{color:var(--accent);font-weight:700;}
+/* Group icon mirrors DDL Doc: ">" character, rotated 90° when expanded. */
+.me-fm-grp-icon{display:inline-block;width:1em;text-align:center;font-style:normal;margin-left:-3px;margin-right:2px;position:relative;left:-5px;transition:transform 0.15s;transform:rotate(90deg);cursor:pointer;color:var(--text-dim);}
 .me-fm-grp-icon:hover{color:var(--accent);}
-.me-fm-grp-collapsed .me-fm-grp-icon{color:var(--accent);}
+.me-fm-grp-collapsed .me-fm-grp-icon{transform:rotate(0deg);color:var(--accent);}
 /* REDEFINES rows */
 .me-fm-redef td{color:rgba(var(--accent-rgb),0.65);}
 body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
+.me-fm-redef-note{font-size:10px;opacity:.7;margin-left:4px;}
 /* Hidden by collapse / redef / filter */
 .me-fm-hidden{display:none;}
 /* Reused DE controls */
@@ -1674,7 +1690,6 @@ body.light .me-vlg-cb{color-scheme:light;}
       </div>
       <div class="ddl-pane-split">
         <div class="ddl-tree-pane" id="ddlTreePane">
-          <div id="ddlmmBar"></div>
           <div class="tree-search-wrap">
             <input id="treeSearch" class="tree-search" type="text" placeholder="Filter DDLs…"
               oninput="filterDDLTree(this.value)"
@@ -1957,8 +1972,6 @@ const S = {
   tokenMap: {},      // { "DDL-NAME": "B4", ... } — built from token map files in tree
   unresolvedRefs: {}, // { 'vol/sv/name': ['TYPE-A', 'TYPE-B'] } — types referenced but not found
   ddlValidationResults: {}, // { 'vol/sv/name': { errors, warnings, deferredChecks } }
-  ddlMsgMapRaw: '',  // raw DDLMM text content (editable source)
-  ddlMsgMap:    [],  // parsed routing rules [{seq,type,msgRe,srcRe,dstRe,ddlPath,level}]
   seenTypes:    new Set(),  // message types seen this session (suppresses repeat first-encounter prompts)
   excl:         new Set(),  // excluded vol/sv/file paths (uppercase keys, persisted in up_excl)
   deOverrides:  {},         // { 'VOL/SV/FILE/DEFNAME': { '0': deNum, '5': deNum, ... } } — persisted in de_overrides
@@ -2346,21 +2359,22 @@ function picSize(pic, comp) {
 // ---- TYPE clause size (bytes) -----------------------------------------------
 function typeSize(t) {
   const s = (t || '').toUpperCase().replace(/\s+/g, ' ').trim();
-  if (/^CHARACTER\s+(\d+)/.test(s))   return parseInt(RegExp.$1);
-  if (/^BINARY\s+8\b/.test(s))        return 1;
-  if (/^BINARY\s+16\b/.test(s))       return 2;
-  if (/^BINARY\s+32\b/.test(s))       return 4;
-  if (/^BINARY\s+64\b/.test(s))       return 8;
-  if (/^BINARY\b/.test(s))            return 2;   // default = 16-bit
-  if (/^FLOAT\s+64\b/.test(s))        return 8;
-  if (/^FLOAT\b/.test(s))             return 4;   // default = 32-bit
-  if (/^COMPLEX\b/.test(s))           return 8;
-  if (/^LOGICAL\s+1\b/.test(s))       return 1;
-  if (/^LOGICAL\s+4\b/.test(s))       return 4;
-  if (/^LOGICAL\b/.test(s))           return 2;   // default = 16-bit
-  if (/^ENUM\b/.test(s))              return 2;
+  const charM = s.match(/^CHARACTER\s+(\d+)/);
+  if (charM)                           return parseInt(charM[1], 10);
+  if (/^BINARY\s+8\b/.test(s))         return 1;
+  if (/^BINARY\s+16\b/.test(s))        return 2;
+  if (/^BINARY\s+32\b/.test(s))        return 4;
+  if (/^BINARY\s+64\b/.test(s))        return 8;
+  if (/^BINARY\b/.test(s))             return 2;   // default = 16-bit
+  if (/^FLOAT\s+64\b/.test(s))         return 8;
+  if (/^FLOAT\b/.test(s))              return 4;   // default = 32-bit
+  if (/^COMPLEX\b/.test(s))            return 8;
+  if (/^LOGICAL\s+1\b/.test(s))        return 1;
+  if (/^LOGICAL\s+4\b/.test(s))        return 4;
+  if (/^LOGICAL\b/.test(s))            return 2;   // default = 16-bit
+  if (/^ENUM\b/.test(s))               return 2;
   const bm = s.match(/^BIT\s+(\d+)/);
-  if (bm) return Math.ceil(parseInt(bm[1]) / 8);
+  if (bm) return Math.ceil(parseInt(bm[1], 10) / 8);
   return 0;
 }
 
@@ -2593,6 +2607,13 @@ function validateDDLErrors(text, repoTypeRegistry) {
     if (/^\s*\d{2}\s+\S/.test(trimmed) && trimmed.endsWith(',')) {
       const nm = (trimmed.trim().match(/^\d{2}\s+(\S+)/) || [])[1] || '?';
       errors.push(`[line ${idx + 1}] Field "${nm.replace(/,$/, '')}": statement ends with a comma — use a period as the terminator`);
+    }
+    // Stray period before REDEFINES (e.g. "02 REEF. REDEFINES DATA-ELEMENT.")
+    // — the first period terminates the statement, leaving REDEFINES dangling
+    // outside any field declaration. Most parsers silently accept this and
+    // produce malformed field IDs (REEF.).
+    if (/\.\s+REDEFINES\b/i.test(line)) {
+      errors.push(`[line ${idx + 1}] Stray period before REDEFINES — a period terminates the statement; remove it`);
     }
   });
 
@@ -3725,9 +3746,12 @@ function showDDLDoc() {
       rowNum++;
       const docSearch = esc([f.qualName, f.desc || '', f.dataType || '', deBitNum != null ? `DE-${deBitNum}` : ''].join(' ').toLowerCase());
       const cls = isRedefRow ? ' class="ddl-doc-redef"' : '';
+      // Leaf rows skip the "↩ TARGET" note — the parent group title already
+      // carries it, and the faded styling on the leaf row indicates redef
+      // membership without repeating the target on every line.
       html += `<tr${cls} data-qn="${esc(f.qualName)}" data-search="${docSearch}">
         <td class="ddl-doc-hex" style="color:var(--text-dim)">${rowNum}</td>
-        <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span>${redefNote}${deBadge}</td>
+        <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span>${deBadge}</td>
         <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
         <td class="ddl-doc-num">${f.size}</td>
         <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -5819,6 +5843,24 @@ function parseMessage(bytes, defs, rawBytes) {
     return true;
   };
 
+  // ── Metadata recognizers (source / destination / filename) ─────────────────
+  // These match against fields on the message wrapper (passed in ctx), not the
+  // bytes. Pattern wildcards — $ = single alphanum, # = single digit,
+  // * = any chars. A pattern of "*" or empty = catch-all.
+  // When the pattern is specific but the corresponding ctx field is missing,
+  // we return false — refusing to claim a match we cannot verify.
+  function _meta(getCtxField) {
+    return (bytes, { _re }, ctx) => {
+      if (!_re) return true;                       // catch-all
+      const v = ctx ? getCtxField(ctx) : '';
+      if (!v) return false;                        // strict: can't verify → no match
+      return _re.test(String(v));
+    };
+  }
+  _R['source']      = _meta(ctx => ctx.source);
+  _R['destination'] = _meta(ctx => ctx.dest || ctx.destination);
+  _R['filename']    = _meta(ctx => ctx.filename);
+
   // ── Compiler ───────────────────────────────────────────────────────────────
 
   function _compileRecognizer(r) {
@@ -5826,6 +5868,34 @@ function parseMessage(bytes, defs, rawBytes) {
     if (r.type === 'literal') c._patterns = _expandLiteral(r.value ?? []);
     if (r.type === 'regex' && r.pattern) {
       try { c._re = new RegExp(r.pattern); } catch(e) { c._re = null; }
+    }
+    // source / destination — process-name patterns. Wildcards:
+    //   $ = single alphanum, # = single digit, * = any sequence.
+    // (NETARD process names don't carry "$" as a literal prefix, so $ is free
+    //  to act as a wildcard here.)
+    if (r.type === 'source' || r.type === 'destination') {
+      const pat = (r.pattern || '*').trim();
+      c._re = (pat === '' || pat === '*') ? null : (() => {
+        const re = pat
+          .replace(/[.+?^{}()|[\]\\]/g, '\\$&')
+          .replace(/\*/g, '.*')
+          .replace(/\$/g, '[A-Za-z0-9]')
+          .replace(/#/g, '[0-9]');
+        try { return new RegExp('^' + re + '$', 'i'); } catch(e) { return null; }
+      })();
+    }
+    // filename — Tandem $VOL.SUBVOL.FILE pattern. "$" and "." are LITERAL
+    // (volume prefix / component separator). Wildcards: * / ? / #.
+    if (r.type === 'filename') {
+      const pat = (r.pattern || '*').trim();
+      c._re = (pat === '' || pat === '*') ? null : (() => {
+        const re = pat
+          .replace(/[\\.+^${}()|[\]]/g, '\\$&')
+          .replace(/\*/g, '.*')
+          .replace(/\?/g, '.')
+          .replace(/#/g, '[0-9]');
+        try { return new RegExp('^' + re + '$', 'i'); } catch(e) { return null; }
+      })();
     }
     return c;
   }
@@ -5835,7 +5905,7 @@ function parseMessage(bytes, defs, rawBytes) {
       const fn = _R[r.type];
       if (!fn) return () => false;
       const c = _compileRecognizer(r);
-      return bytes => fn(bytes, c);
+      return (bytes, ctx) => fn(bytes, c, ctx);
     });
     return { ...spec, _fns: fns };
   }
@@ -5843,27 +5913,50 @@ function parseMessage(bytes, defs, rawBytes) {
   // ── Default format specs ───────────────────────────────────────────────────
 
   const _DEFAULT_FMT_SPECS = [
-    { name:'ISO', label:'ISO 5253 Standard', color:'#f5f910', vol:'', priority:0,
+    { name:'ISO', label:'ISO 5253 Standard', color:'#f5f910', vol:'',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'####'},{type:'min-length',value:23}] },
-    { name:'ISO', label:'ISO 8583 BIC', color:'#ffbb00', vol:'', priority:20,
-      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'min-length',value:23}] },
-    { name:'ISO', label:'ISO 8583 Switch', color:'#c59102', vol:'', priority:20,
+    { name:'ISO', label:'ISO 8583 BIC', color:'#ffbb00', vol:'',
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'min-length',value:23}],
+      parse_spec_binary:[
+        {'read-ddl':{binding:0,from:'START-OF-TEST',until:'TYP'}},
+        {'read-bitmap':{field:'PRI-BIT-MAP',encoding:'ascii-hex'}},
+        {'bitmap-fields':'PRI-BIT-MAP'}
+      ],
+      parse_spec_binary_source:
+`[
+  // ── Header (binding 0): walk DDL fields from START-OF-TEST up to and
+  //    including TYP (the MTI). Nothing in this range is a DE — these are
+  //    the fixed header positions that precede the bitmap.
+  { "read-ddl": { "binding": 0, "from": "START-OF-TEST", "until": "TYP" } },
+
+  // ── Bitmap: read PRI-BIT-MAP as 16 ASCII-hex chars (= 64 bits / primary).
+  //    If bit 1 is set the engine automatically pulls another 16 ASCII-hex
+  //    chars for the secondary bitmap, giving 128 bits total.
+  { "read-bitmap": { "field": "PRI-BIT-MAP", "encoding": "ascii-hex" } },
+
+  /*  DEs: walk the bitmap. Each set bit maps to a DDL field via the de_map
+      built from binding 0 + binding 1 in declaration order (anchors in the
+      Overrides section override the default numbering). VLG-flagged fields
+      consume LEN + payload automatically. */
+  { "bitmap-fields": "PRI-BIT-MAP" }
+]` },
+    { name:'ISO', label:'ISO 8583 Switch', color:'#c59102', vol:'',
       recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'uint16',offset:4,endian:'be',min:0,max:65535},{type:'uint16',offset:6,endian:'be',min:0,max:65535},{type:'uint16',offset:8,endian:'be',min:0,max:65535},{type:'uint16',offset:10,endian:'be',min:0,max:65535},{type:'min-length',value:23}] },
-    { name:'STM', label:'STM', color:'#1eff00', vol:'ATM', priority:0,
+    { name:'STM', label:'STM', color:'#1eff00', vol:'ATM',
       recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'01'},{type:'min-length',value:873}],
       parse_spec_binary:[
-        {'read-ddl':{until:'NUM-SERVICES'}},
+        {'read-ddl':{binding:0}},
         {'token-area':'ANY'}
       ],
       parse_spec_binary_source:
 `[
-  // ── Fixed section: walk DDL fields up to and including NUM-SERVICES
-  { "read-ddl": { "until": "NUM-SERVICES" } },
+  // ── Fixed section: walk DDL fields.
+  { "read-ddl": { "binding": 0 } },
 
   /*  Token Area, we extract ANY token only if they are present */
   { "token-area": "ANY" }
 ]` },
-    { name:'PSTM', label:'PSTM', color:'#00aaff', vol:'POS', priority:0,
+    { name:'PSTM', label:'PSTM', color:'#00aaff', vol:'POS',
       recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'02'},{type:'min-length',value:873}],
       parse_spec_binary:[
         {'read-ddl':{until:'NUM-SERVICES'}},
@@ -5953,25 +6046,23 @@ function parseMessage(bytes, defs, rawBytes) {
   /*  Token Area, we extract ANY token only if they are present */
   { "token-area": "ANY" }
 ]` },
-    { name:'B24', label:'Base24 Generic', color:'#f95ddc', vol:'BASE', priority:0,
+    { name:'B24', label:'Base24 Generic', color:'#f95ddc', vol:'BASE',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'99'},{type:'literal',offset:2,encoding:'ascii',value:['06','07']}] },
-    { name:'B24', label:'Base24 ATM Generic', color:'#f95ddc', vol:'ATM', priority:0,
+    { name:'B24', label:'Base24 ATM Generic', color:'#f95ddc', vol:'ATM',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'99'},{type:'literal',offset:2,encoding:'ascii',value:['06','07']},{type:'literal',offset:4,encoding:'ascii',value:'01'}] },
-    { name:'B24', label:'Base24 POS Generic', color:'#f95ddc', vol:'POS', priority:0,
+    { name:'B24', label:'Base24 POS Generic', color:'#f95ddc', vol:'POS',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'99'},{type:'literal',offset:2,encoding:'ascii',value:['06','07']},{type:'literal',offset:4,encoding:'ascii',value:'01'}] },
-    { name:'NDC', label:'NDC', color:'#ff0000', vol:'ATM', priority:0,
+    { name:'NDC', label:'NDC', color:'#ff0000', vol:'ATM',
       recognizers:[{type:'regex',pattern:'^(11|12|22|4)\\x1c'}] }
   ];
 
   // ── State & storage ────────────────────────────────────────────────────────
 
-  let _fmtSpecs = [];   // compiled, sorted by priority desc
+  let _fmtSpecs = [];   // compiled, iterated in array (sidebar) order
 
   function _fmtLoad() {
     const raw = _fmtGetData();
-    _fmtSpecs = (raw.specs || [])
-      .map(s => _compileSpec(s))
-      .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+    _fmtSpecs = (raw.specs || []).map(s => _compileSpec(s));
   }
 
   function _fmtSave(specs) {
@@ -6008,23 +6099,48 @@ function parseMessage(bytes, defs, rawBytes) {
 
   // ── Detection ──────────────────────────────────────────────────────────────
 
-  function _fmtDetect(bytes) {
+  function _fmtDetect(bytes, ctx) {
     for (const spec of _fmtSpecs) {
-      if (spec._fns.every(fn => fn(bytes))) {
+      if (spec._fns.every(fn => fn(bytes, ctx))) {
         return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '' };
       }
     }
     return null;
   }
 
-  window._fmtTestSpecs = function(rawSpecs, bytes) {
-    const sorted = rawSpecs.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  // Same as _fmtDetect but also returns a per-spec trace describing which
+  // specs were evaluated, whether they matched, and the first recognizer
+  // that failed. Stops collecting once a winner is found (mirrors real
+  // detection). Used by the parse-progress overlay.
+  function _fmtDetectTrace(bytes, ctx) {
+    const trace = [];
+    let winner = null;
+    for (const spec of _fmtSpecs) {
+      let failAt = null;
+      let passed = true;
+      for (let i = 0; i < spec._fns.length; i++) {
+        if (!spec._fns[i](bytes, ctx)) { failAt = i; passed = false; break; }
+      }
+      trace.push({
+        name: spec.name, label: spec.label || spec.name, color: spec.color || '',
+        recognizers: (spec.recognizers || []).map(r => ({ type: r.type, id: r.id })),
+        passed, failAt,
+      });
+      if (passed) {
+        winner = { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '' };
+        break;
+      }
+    }
+    return { winner, trace };
+  }
+
+  window._fmtTestSpecs = function(rawSpecs, bytes, ctx) {
     const results = [];
-    for (const spec of sorted) {
+    for (const spec of rawSpecs) {
       const compiled = _compileSpec(spec);
       let failAt = null, passed = true;
       for (let i = 0; i < compiled._fns.length; i++) {
-        if (!compiled._fns[i](bytes)) { failAt = i; passed = false; break; }
+        if (!compiled._fns[i](bytes, ctx)) { failAt = i; passed = false; break; }
       }
       results.push({ spec, passed, failAt });
       if (passed) break; // stop at first match — mirrors real detection engine
@@ -6037,7 +6153,8 @@ function parseMessage(bytes, defs, rawBytes) {
   window._fmtSave      = _fmtSave;
   window._fmtGetData   = _fmtGetData;
   window._migrateSpec  = _migrateSpec;
-  window._fmtDetect  = _fmtDetect;
+  window._fmtDetect      = _fmtDetect;
+  window._fmtDetectTrace = _fmtDetectTrace;
 
 })();
 
@@ -6103,18 +6220,34 @@ function volSearchChain(vol) {
   return _VOL_SEARCH_CHAIN[vol.toUpperCase()] || [vol];
 }
 
-function detectMsgType(rawMsg) {
+function detectMsgType(rawMsg, ctx) {
   if (!rawMsg) return { type:'UNKNOWN', label:'Unknown', vol:null };
   // ── New engine (runs first) ──────────────────────────────────────────────
   const bytes = new Uint8Array(rawMsg.length);
   for (let i = 0; i < rawMsg.length; i++) bytes[i] = rawMsg.charCodeAt(i) & 0xFF;
-  const newResult = _fmtDetect(bytes);
+  const newResult = _fmtDetect(bytes, ctx);
   if (newResult) return newResult;
   // ── Legacy regex fallback ────────────────────────────────────────────────
   for (const p of MSG_TYPE_MAP) {
     if (p.test(rawMsg)) return { type:p.type, label:p.label, vol:p.vol, color:p.color||'' };
   }
   return { type:'UNKNOWN', label:'Unknown', vol:null };
+}
+
+// Returns { winner, trace } — winner is the same shape as detectMsgType,
+// trace is an array of per-spec evaluation results. Used by the parse
+// progress overlay to show users what was checked and why some failed.
+function detectMsgTypeTrace(rawMsg, ctx) {
+  if (!rawMsg) return { winner: { type:'UNKNOWN', label:'Unknown', vol:null }, trace: [] };
+  const bytes = new Uint8Array(rawMsg.length);
+  for (let i = 0; i < rawMsg.length; i++) bytes[i] = rawMsg.charCodeAt(i) & 0xFF;
+  const result = _fmtDetectTrace(bytes, ctx);
+  if (result.winner) return result;
+  // Legacy regex fallback when no spec matched
+  for (const p of MSG_TYPE_MAP) {
+    if (p.test(rawMsg)) return { winner: { type:p.type, label:p.label, vol:p.vol, color:p.color||'' }, trace: result.trace, legacy: true };
+  }
+  return { winner: { type:'UNKNOWN', label:'Unknown', vol:null }, trace: result.trace };
 }
 
 // ─── NETARD multi-format extraction helpers ──────────────────────────────────
@@ -6962,11 +7095,24 @@ function _parseProgressRender() {
           `<span style="color:${s.subColor || 'var(--warning)'}">${esc(s.subLabel)}</span>` +
         `</div>`
       : '';
+    // details: array of {html, color?} — rendered as indented sub-rows. Each entry
+    // accepts plain text or pre-built HTML. Used to surface per-record detection
+    // traces under the "Detecting record types" step.
+    const detailRows = Array.isArray(s.details) && s.details.length
+      ? s.details.map(d => {
+          const html  = typeof d === 'string' ? esc(d) : (d.html || esc(d.text || ''));
+          const color = (typeof d === 'object' && d.color) ? d.color : 'var(--text-dim)';
+          return `<div style="display:flex;gap:9px;align-items:baseline;margin-top:1px">` +
+                   `<span style="min-width:12px"></span>` +
+                   `<span style="color:${color};font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px)">${html}</span>` +
+                 `</div>`;
+        }).join('')
+      : '';
     const labelCol = s.labelColor ? s.labelColor : textCol;
     return `<div style="display:flex;gap:9px;align-items:baseline">` +
         `<span style="color:${iconCol};min-width:12px">${icon}</span>` +
         `<span style="color:${labelCol}">${esc(s.label)}</span>` +
-      `</div>${subRow}${noteRow}`;
+      `</div>${subRow}${detailRows}${noteRow}`;
   }).join('');
 }
 
@@ -7028,18 +7174,7 @@ function _showProgressPicker(label, matches, cb, msgType = null) {
     shown.map((m, i) =>
       `<button class="btn btn-sm" data-ppi="${i}" style="text-align:left;font-family:var(--mono);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.path)}">${esc(m.defName)} <span style="color:var(--text-dim);font-size:0.9em">${esc(m.path)}</span> <span style="color:var(--warning);font-size:0.9em">${m.score != null ? Math.round(m.score * 100) + '%' : ''}</span></button>`
     ).join('') +
-    `</div>` +
-    `<div style="display:flex;gap:6px;padding:8px 0 2px;align-items:center;justify-content:center">` +
-      `<button class="btn btn-sm pp-sr-btn pp-sr-active" data-sr="0" style="font-family:var(--mono);font-size:var(--sz-mono)">Session only</button>` +
-      `<button class="btn btn-sm pp-sr-btn" data-sr="1" style="font-family:var(--mono);font-size:var(--sz-mono);opacity:0.5">Create DDLMM rule</button>` +
     `</div>`;
-  let _saveRule = false;
-  pp.querySelectorAll('.pp-sr-btn').forEach(b => {
-    b.addEventListener('click', () => {
-      _saveRule = b.dataset.sr === '1';
-      pp.querySelectorAll('.pp-sr-btn').forEach(x => { x.classList.toggle('pp-sr-active', x === b); x.style.opacity = x === b ? '1' : '0.5'; });
-    });
-  });
   pp.querySelector('.pp-skip-btn')?.addEventListener('click', () => {
     pp.innerHTML = ''; pp.classList.add('hidden');
     _ppPickerCb = null;
@@ -7054,7 +7189,8 @@ function _showProgressPicker(label, matches, cb, msgType = null) {
       const picked = shown[parseInt(btn.dataset.ppi, 10)];
       if (_ppSteps.length) _ppSteps[_ppSteps.length - 1].note = picked.defName ? `${picked.defName}  ${picked.path}` : picked.path;
       _parseProgressDoneLast();
-      cb({ match: picked, saveRule: _saveRule });
+      // saveRule is always false now — Session/DDLMM-rule choice removed.
+      cb({ match: picked, saveRule: false });
     });
   });
 }
@@ -7251,11 +7387,9 @@ function doParseNetardLog(text, opts = {}) {
     setTimeout(() => {
       if (_parseAborted) return;
       _parseProgressDoneLast();
-      // Step 2 — evaluating DDLMM rules (informational)
-      _parseProgressStep('Evaluating DDL Message Map rules');
+      // (DDLMM evaluation step removed — Data Detection supersedes it.)
       setTimeout(() => {
         if (_parseAborted) return;
-        _parseProgressDoneLast();
 
         // Step 3 — compile (use cache when tree unchanged)
         const _netardReg    = buildRepoTypeRegistry();
@@ -7274,6 +7408,7 @@ function doParseNetardLog(text, opts = {}) {
             const typePickerQueue = []; // one entry per unique type needing user selection
             const _typeSeen       = new Set();
             const _ddlErrors      = []; // DDLs that threw during scoring
+            const _detectTraces   = []; // per-record { recNo, winner, trace } for the Detect step
             try {
             // ── Score all records ────────────────────────────────────────────
             for (const rec of records) {
@@ -7289,22 +7424,15 @@ function doParseNetardLog(text, opts = {}) {
                 dest:   rec.dest,   destDet:   rec.destDet,
                 timestamp: rec.time,
               };
-              let msgType = detectMsgType(parseRaw);
+              // Run detection with metadata context so source/destination/
+              // filename recognizers can fire. Capture trace so the progress
+              // overlay can show the user what was evaluated and why.
+              const _detectCtx = { source: rec.source, dest: rec.dest, filename: rec.filename };
+              const _detectRes = detectMsgTypeTrace(parseRaw, _detectCtx);
+              let msgType = _detectRes.winner;
+              _detectTraces.push({ recNo: rec.recNo, source: rec.source, winner: msgType, trace: _detectRes.trace || [], legacy: !!_detectRes.legacy });
               let fields = [], ddlPath = null, defName = null;
-              const ddlmmRule = matchDDLMM(parseRaw, rec.source, rec.dest, msgType.type);
-              if (ddlmmRule) {
-                const resolved = getDDLFromPath(ddlmmRule.ddlPath);
-                if (resolved && resolved.defs.length) {
-                  const result = bestDDLMatch(parseBytes, [resolved], bytes);
-                  fields  = result.fields;
-                  ddlPath = result.ddlPath;
-                  defName = resolved.defName ?? null;
-                }
-                if (ddlmmRule.type !== '----') {
-                  const knownLabel = MSG_TYPE_MAP.find(p => p.type === ddlmmRule.type)?.label;
-                  msgType = { ...msgType, type: ddlmmRule.type, label: knownLabel || ddlmmRule.type };
-                }
-              }
+              // DDLMM routing removed — Data Detection drives the type now.
               if (!fields.length) {
                 if (!msgType.vol) {
                   const _diag = {
@@ -7316,7 +7444,6 @@ function doParseNetardLog(text, opts = {}) {
                     ebcdicDens: Math.round(_ebcdicDens * 100),
                     decodedMTI: parseRaw.slice(0, 4),
                     msgTypeDetected: false,
-                    ddlmmMatched: !!ddlmmRule,
                     volResolved: false,
                   };
                   parsed.push({ ..._base, msgType, fields: [], ddlPath: null, tokens: [], noMatchDDL: true, unknownType: true, _diag });
@@ -7366,6 +7493,112 @@ function doParseNetardLog(text, opts = {}) {
               console.warn('[NETARD scoring] DDL(s) with errors (skipped):', _ddlErrors);
               setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check console for details.`, 'warn'), 350);
             }
+            // Build a compact histogram of detection results and attach it to
+            // the "Detecting record types" step. Scales to many records: we
+            // show one line per matched spec (with count) and one line per
+            // unique failure mode (spec + recognizer index), never one line
+            // per record.
+            try {
+              const detectStep = _ppSteps.find(s => s.label === 'Detecting record types');
+              if (detectStep) {
+                const total   = _detectTraces.length;
+                let matched   = 0, unknown = 0;
+                const matchByLabel = new Map();   // 'STM' \u2192 { color, count }
+                // For UNKNOWN records, group by the CLOSEST-MISS spec
+                // (highest failAt = most recognizers passed before failing).
+                // This avoids enumerating every spec that rejected the record
+                // (which is all of them \u2014 useless noise) and instead surfaces
+                // the spec the user is most likely to be trying to define.
+                const nearMissByMode = new Map();
+                for (const tr of _detectTraces) {
+                  const w = tr.winner;
+                  if (w && w.type !== 'UNKNOWN') {
+                    matched++;
+                    const key = w.label || w.type;
+                    const cur = matchByLabel.get(key) || { color: w.color || 'var(--accent)', count: 0 };
+                    cur.count++;
+                    matchByLabel.set(key, cur);
+                  } else {
+                    unknown++;
+                    // Pick the closest-miss spec for this single record.
+                    let best = null;
+                    for (const t of tr.trace.filter(x => !x.passed)) {
+                      if (!best || t.failAt > best.failAt) best = t;
+                    }
+                    if (best) {
+                      const r = best.recognizers[best.failAt] || {};
+                      const recogLbl = r.id ? `${r.type} [${r.id}]` : (r.type || '(none)');
+                      // passed===0 means every spec failed at its first
+                      // recognizer — no near-miss exists. Coalesce all such
+                      // records into a single "No Match" bucket.
+                      const isNoMatch = best.failAt === 0;
+                      const key = isNoMatch ? '__no_match__' : `${best.name}|${best.failAt}|${recogLbl}`;
+                      const cur = nearMissByMode.get(key) || {
+                        specLabel: best.label, color: best.color || 'var(--text-dim)',
+                        recogLbl, recogIdx: best.failAt,
+                        passed: best.failAt, total: best.recognizers.length,
+                        count: 0,
+                      };
+                      cur.count++;
+                      nearMissByMode.set(key, cur);
+                    }
+                  }
+                }
+                const details = [];
+                // Header summary
+                details.push({
+                  html: `<b>${total}</b> record${total !== 1 ? 's' : ''} evaluated \u2014 `
+                      + `<span style="color:var(--success)">${matched} matched</span>`
+                      + (unknown ? ` &nbsp;\u00b7&nbsp; <span style="color:#f39c12">${unknown} Unmatched</span>` : ''),
+                  color: 'var(--text)',
+                });
+                // Matched specs (descending count). Wording: "Matched as <spec>"
+                // \u2014 record type is the spec that won.
+                if (matched) {
+                  const matchedRows = [...matchByLabel.entries()]
+                    .sort((a, b) => b[1].count - a[1].count);
+                  for (const [label, info] of matchedRows) {
+                    details.push({
+                      html: `&nbsp;&nbsp;&nbsp;&nbsp;\u2713 Matched as <span style="color:${info.color};font-weight:600">${esc(label)}</span>`
+                          + ` &nbsp;<span style="opacity:0.7">(${info.count} record${info.count !== 1 ? 's' : ''})</span>`,
+                      color: 'var(--text-dim)',
+                    });
+                  }
+                }
+                // Near-miss breakdown for UNKNOWN records (descending count,
+                // cap at 10). For each unknown record we already chose the
+                // spec that got closest to matching (highest failAt); here we
+                // group by that (spec, failure-point) tuple so users see the
+                // most common near-miss patterns instead of every spec that
+                // happened to reject (which is all of them \u2014 useless noise).
+                if (unknown) {
+                  const failRows = [...nearMissByMode.values()]
+                    .sort((a, b) => b.count - a.count);
+                  const shown = failRows.slice(0, 10);
+                  for (const info of shown) {
+                    // Zero recognizers passed = no spec got off the ground.
+                    // "Closest match X \u2014 passed 0/N" is misleading, so we
+                    // simplify to "No Match" for that case.
+                    const lineHtml = info.passed === 0
+                      ? `&nbsp;&nbsp;&nbsp;&nbsp;\u2717 <span style="color:#f39c12">Unmatched</span>`
+                          + ` &nbsp;<span style="opacity:0.7">(${info.count} record${info.count !== 1 ? 's' : ''})</span>`
+                      : `&nbsp;&nbsp;&nbsp;&nbsp;\u2717 Closest match <span style="color:${info.color}">${esc(info.specLabel)}</span>`
+                          + ` \u2014 passed ${info.passed}/${info.total}, stopped at #${info.recogIdx + 1} (<span style="color:#f39c12">${esc(info.recogLbl)}</span>)`
+                          + ` &nbsp;<span style="opacity:0.7">(${info.count} record${info.count !== 1 ? 's' : ''})</span>`;
+                    details.push({ html: lineHtml, color: 'var(--text-dim)' });
+                  }
+                  if (failRows.length > shown.length) {
+                    const moreCnt = failRows.length - shown.length;
+                    details.push({
+                      html: `&nbsp;&nbsp;&nbsp;&nbsp;<span style="opacity:0.6">\u2026 and ${moreCnt} more near-miss pattern${moreCnt !== 1 ? 's' : ''}</span>`,
+                      color: 'var(--text-dim)',
+                    });
+                  }
+                }
+                detectStep.details = details;
+                _parseProgressRender();
+              }
+            } catch (e) { console.warn('[detection trace render] ', e); }
             _parseProgressDoneLast();
             } catch (err) {
               console.error('[NETARD scoring] unexpected error:', err);
@@ -7398,7 +7631,7 @@ function doParseNetardLog(text, opts = {}) {
               const summary = Object.entries(tc).map(([t,n]) => `${n}\u00d7 ${t}`).join('  ');
               flash(`Loaded ${records.length} record(s) \u2014 ${summary}`);
               const unkRecs = S.messages.filter(m => m.unknownType).map(m => `#${m.recNo}`).join(', ');
-              if (unkRecs) setTimeout(() => flash(`Record(s) ${unkRecs}: unknown type \u2014 create DDLMM rules to route them.`, 'warn'), 300);
+              if (unkRecs) setTimeout(() => flash(`Record(s) ${unkRecs}: unknown type \u2014 create Data Detection rules to recognize them.`, 'warn'), 300);
               // Amber toast when any records have no matching DDL
               const noMatchCount = S.messages.filter(m => m.noMatchDDL && !m.unknownType).length;
               if (noMatchCount) setTimeout(() => flash(`${noMatchCount} record${noMatchCount !== 1 ? 's' : ''} \u2014 no matching DDL found.`, 'warn'), 400);
@@ -7429,7 +7662,6 @@ function doParseNetardLog(text, opts = {}) {
                   _showNetardTypePickers(idx + 1);
                   return;
                 }
-                if (saveRule) addTypeMappingRule(msgType.type, match.defName ? `${match.ddlPath}/${match.defName}` : match.ddlPath);
                 sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
                 _showNetardTypePickers(idx + 1);
               }, msgType);
@@ -7681,7 +7913,7 @@ function doParseMessages() {
   }
 
   // ── Priority 1: single message + explicit DDL selected ─────────────────
-  // Show progress overlay and run parse directly — no DDLMM, no auto-detect.
+  // Show progress overlay and run parse directly — skipping auto-detect.
   if (S.scope?.type === 'ddl' || S.scope?.type === 'def') {
     const p1Path = `${S.scope.vol}/${S.scope.sv}/${S.scope.name}`;
     _parseProgressShow();
@@ -7796,7 +8028,7 @@ function doParseMessages() {
     updateBadges(); updateNav(); renderCurrent();
   }
 
-  // ── Priority 2 + 3: DDLMM → auto-detect (async with progress overlay) ────
+  // ── Auto-detect (async with progress overlay) ────────────────────────────
   _parseProgressShow();
   document.getElementById('msgInput').readOnly = true;
 
@@ -7805,11 +8037,9 @@ function doParseMessages() {
   setTimeout(() => {
     if (_parseAborted) return;
     _parseProgressDoneLast();
-    // Step 1 — informational: evaluating DDLMM rules
-    _parseProgressStep('Evaluating DDL Message Map rules');
+    // (DDLMM evaluation step removed — Data Detection supersedes it.)
     setTimeout(() => {
       if (_parseAborted) return;
-      _parseProgressDoneLast();
 
       // Step 2 — compile (use cache when tree unchanged)
       const _repoReg    = buildRepoTypeRegistry();
@@ -7820,7 +8050,7 @@ function doParseMessages() {
         const allCompiled = Object.values(compiledByVol).flat()
           .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
 
-        if (!allCompiled.length && !S.ddlMsgMap.length) {
+        if (!allCompiled.length) {
           _parseProgressHide();
           flash('No DDL definitions found. Add a DDL to the tree or select one explicitly.', 'warn');
           document.getElementById('msgInput').readOnly = false;
@@ -7857,7 +8087,7 @@ function doParseMessages() {
                 ? parseBytes.map(b => String.fromCharCode(b)).join('') : chunkStr;
               const msgType = detectMsgType(detectStr);
               if (!msgType.vol) continue;
-              if (matchDDLMM(detectStr, null, null, msgType.type)) continue;
+              // DDLMM pre-filter removed — Data Detection supersedes it.
               const key = msgType.type + ':' + msgType.vol;
               if (!longestByType[key] || bytes.length > longestByType[key].byteLen)
                 longestByType[key] = { parseBytes, bytes, byteLen: bytes.length, msgType };
@@ -7904,32 +8134,14 @@ function doParseMessages() {
               ? parseBytes.map(b => String.fromCharCode(b)).join('')
               : chunkStr;
             let msgType = detectMsgType(detectStr);
-            let fields  = [], ddlPath = null, defName = null;
 
-            // Priority 2: DDLMM — match on MSG content only (no source/dest in plain input)
-            const ddlmmRule = matchDDLMM(detectStr, null, null, msgType.type);
-            if (ddlmmRule) {
-              const resolved = getDDLFromPath(ddlmmRule.ddlPath);
-              if (resolved && resolved.defs.length) {
-                const result = bestDDLMatch(parseBytes, [resolved], bytes);
-                fields  = result.fields;
-                ddlPath = result.ddlPath;
-                defName = resolved.defName ?? null;
-              }
-              // Rule TYPE overrides the badge (---- = keep auto-detected)
-              if (ddlmmRule.type !== '----') {
-                const knownLabel = MSG_TYPE_MAP.find(p => p.type === ddlmmRule.type)?.label;
-                msgType = { ...msgType, type: ddlmmRule.type, label: knownLabel || ddlmmRule.type };
-              }
-            }
-
-            // Priority 3: volume-hierarchy auto-detect fallback
-            if (!fields.length) {
+            // Auto-detect via volume-hierarchy scoring (DDLMM routing removed).
+            {
               const chunkOffset = msgText.indexOf(chunkStr);
               const byteCharMap = _remapByteCharMapForMargin(buildByteCharMap(chunkStr, S.inputFormat, chunkOffset >= 0 ? chunkOffset : 0), _parseText, _parseMargin);
               const charStart   = chunkOffset >= 0 ? chunkOffset : 0;
 
-              // Unknown type — cannot search any volume; user must create a DDLMM rule
+              // Unknown type — cannot search any volume; user must create a Data Detection rule
               if (!msgType.vol) {
                 const _diag = {
                   isNetard: false,
@@ -7939,7 +8151,6 @@ function doParseMessages() {
                   decodedMTI: detectStr.slice(0, 4),
                   msgTypeDetected: !!msgType.type && msgType.type !== 'UNKNOWN',
                   msgTypeLabel: msgType.type || null,
-                  ddlmmMatched: !!ddlmmRule,
                   volResolved: false,
                 };
                 parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
@@ -7968,14 +8179,6 @@ function doParseMessages() {
               }
               continue;
             }
-
-            // DDLMM path produced fields directly
-            const chunkOffset2 = msgText.indexOf(chunkStr);
-            const byteCharMap2 = _remapByteCharMapForMargin(buildByteCharMap(chunkStr, S.inputFormat, chunkOffset2 >= 0 ? chunkOffset2 : 0), _parseText, _parseMargin);
-            const charStart2   = chunkOffset2 >= 0 ? chunkOffset2 : 0;
-            parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
-              fields, ddlPath, defName, msgType, tokens: null, byteCharMap: byteCharMap2,
-              charStart: charStart2, charEnd: charStart2 + chunkStr.length, _auditChunk: chunk });
           }
 
           if (_ddlErrors.length) {
@@ -8024,9 +8227,9 @@ function doParseMessages() {
             // Warn about unknown-type messages that could not be auto-detected
             const unkIdxs = finalParsed.map((m, i) => m.unknownType ? i + 1 : null).filter(Boolean);
             if (unkIdxs.length === 1 && finalParsed.length === 1) {
-              setTimeout(() => flash('Unknown message type \u2014 create a DDLMM rule or select a DDL in the tree and press \u25b6 Parse for manual override.', 'warn'), 300);
+              setTimeout(() => flash('Unknown message type \u2014 create a Data Detection rule or select a DDL in the tree and press \u25b6 Parse for manual override.', 'warn'), 300);
             } else if (unkIdxs.length) {
-              setTimeout(() => flash(`Message(s) at position(s) ${unkIdxs.join(', ')}: unknown type \u2014 create DDLMM rules to route them.`, 'warn'), 300);
+              setTimeout(() => flash(`Message(s) at position(s) ${unkIdxs.join(', ')}: unknown type \u2014 create Data Detection rules to recognize them.`, 'warn'), 300);
             }
             // Amber toast when any message has no matching DDL
             const noMatchCount = finalParsed.filter(m => m.noMatchDDL && !m.unknownType).length;
@@ -8075,7 +8278,6 @@ function doParseMessages() {
                 _showTypePickers(idx + 1);
                 return;
               }
-              if (saveRule) addTypeMappingRule(msgType.type, match.defName ? `${match.ddlPath}/${match.defName}` : match.ddlPath);
               sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
               _showTypePickers(idx + 1);
             }, msgType);
@@ -8282,30 +8484,6 @@ function _escH(s) {
 }
 function _sp(text, cls) { return `<span class="hl-${cls}">${_escH(text)}</span>`; }
 
-function _hlDDLMMLine(line) {
-  if (/^\*/.test(line)) return _sp(line, 'comment');
-  if (!line.trim()) return _escH(line);
-  const lead = line.match(/^(\s*)/)[1];
-  const rest  = line.slice(lead.length);
-  // Capture whitespace separators between tokens so the overlay preserves
-  // exact character positions — replacing them with a single ' ' would shift
-  // the overlay text left and misalign the textarea cursor with what is visible.
-  // SEQ can be a number or ## (auto type-mapping sentinel).
-  const m = rest.match(
-    /^(##|\d+)(\s+)(ISO|STM|PSTM|NDC|B24|----)(\s+)(MSG)(=)(\S+)(\s+)(SOURCE)(=)(\S+)(\s+)(DESTINATION)(=)(\S+)(\s+)(DDL)(=)(\S+)(.*)/i
-  );
-  if (!m) return _escH(line);
-  const tCls = { ISO:'iso',STM:'stm',PSTM:'pstm',NDC:'ndc',B24:'b24','----':'any' }[m[3].toUpperCase()] || 'iso';
-  return _escH(lead)
-    + _sp(m[1],  'seq')              + _escH(m[2])
-    + _sp(m[3],  `kw-type-${tCls}`) + _escH(m[4])
-    + _sp(m[5],  'kw') + _sp(m[6],  'op') + _sp(m[7],  'val') + _escH(m[8])
-    + _sp(m[9],  'kw') + _sp(m[10], 'op') + _sp(m[11], 'val') + _escH(m[12])
-    + _sp(m[13], 'kw') + _sp(m[14], 'op') + _sp(m[15], 'val') + _escH(m[16])
-    + _sp(m[17], 'kw') + _sp(m[18], 'op') + _sp(m[19], 'val')
-    + _escH(m[20] || '');
-}
-
 function _hlFieldId(id) {
   // Color '.' separators inside field IDs as operators (e.g. ISO.001)
   return id.split('.').map(p => _escH(p)).join(_sp('.', 'op'));
@@ -8332,7 +8510,11 @@ const _HPE_RESERVED_SET = new Set([
 // Ordering rule: hyphenated forms whose suffix is also a standalone keyword must
 // appear BEFORE the shorter form, because \bKEY\b matches "KEY" in "KEY-SEQUENCED"
 // (the hyphen creates a word boundary after the root word).
-const _HPE_KW = new RegExp('\\b(' + [
+// Disallow hyphen on either boundary so e.g. PRI-BIT-MAP doesn't get its
+// inner BIT highlighted as a keyword. The pre-listed hyphenated forms
+// (COMPUTATIONAL-3, KEY-SEQUENCED, …) still match because the leading/
+// trailing chars in normal usage are whitespace or punctuation, not '-'.
+const _HPE_KW = new RegExp('(?<!-)\\b(' + [
   // --- hyphenated forms that need priority ---
   'COMPUTATIONAL-3','COMPUTATIONAL','COMP-3','COMP',
   'TOKEN-CODE','TOKEN-MAP','TOKEN-TYPE',
@@ -8391,7 +8573,7 @@ const _HPE_KW = new RegExp('\\b(' + [
   'YEAR',
   // --- Z ---
   'ZEROES','ZEROS','ZERO',
-].join('|') + ')\\b', 'gi');
+].join('|') + ')\\b(?!-)', 'gi');
 
 // Unified HPE rest-of-line highlighter used for both numbered field lines
 // and structural/declaration lines. Processes on raw text with placeholders
@@ -8498,9 +8680,8 @@ function _ddlHighlightExtension() {
       const doc      = view.state.doc;
       if (!doc.length) return builder.finish();
 
-      const isDDLMM  = S.scope?.type === 'ddlmm';
       const text     = doc.toString();
-      const isHPE    = !isDDLMM && isHPEDDLText(text);
+      const isHPE    = isHPEDDLText(text);
 
       for (const { from, to } of view.visibleRanges) {
         const firstLine = doc.lineAt(from);
@@ -8509,8 +8690,7 @@ function _ddlHighlightExtension() {
         for (let n = firstLine.number; n <= lastLine.number; n++) {
           const line    = doc.line(n);
           const lineStr = line.text;
-          const html    = isDDLMM ? _hlDDLMMLine(lineStr)
-                        : isHPE  ? _hlHPELine(lineStr)
+          const html    = isHPE  ? _hlHPELine(lineStr)
                         :          _hlSimpleLine(lineStr);
           for (const tok of _htmlToTokens(html)) {
             const f = line.from + tok.from;
@@ -8528,7 +8708,6 @@ function _ddlHighlightExtension() {
 let _ddlHlDebounceTimer   = null;
 let _ddlEditorStateTimer  = null;   // debounce for updateDDLEditorState on large files
 let _cachedSelDDLEl       = null;   // cached .tree-node.tree-sel[data-ntype="ddl"]
-let _cachedDDLMMEl        = null;   // cached .tree-ddlmm-node
 // Cached line count — updated by updateDDLHighlight() to avoid O(n) split on every keystroke.
 let _ddlLineCount = 0;
 
@@ -8540,8 +8719,7 @@ function updateDDLHighlight(fromScroll = false) {
   const text = ta.value;
   if (!text) { _ddlLineCount = 0; overlay.innerHTML = ''; overlay.style.paddingTop = ''; updateDDLGutter(); _ddlSrchRecompute(); return; }
 
-  const isDDLMM = S.scope?.type === 'ddlmm';
-  const isHPE   = !isDDLMM && isHPEDDLText(text);
+  const isHPE   = isHPEDDLText(text);
 
   // Count lines via char scan — no string allocation vs split('\n')
   let lineCount = 1;
@@ -8562,8 +8740,7 @@ function updateDDLHighlight(fromScroll = false) {
   const visLines = text.substring(startChar, p).split('\n');
 
   const rendered = visLines.map(line => {
-    if (isDDLMM) return _hlDDLMMLine(line);
-    if (isHPE)   return _hlHPELine(line);
+    if (isHPE) return _hlHPELine(line);
     return _hlSimpleLine(line);
   });
 
@@ -8731,15 +8908,14 @@ function updateDDLEditorState() {
   const baseline   = S.editorBaseline;
   const hasContent = content.trim().length > 0;
   const isDirty    = baseline !== null && content !== baseline;
-  const isDDLMM    = S.scope?.type === 'ddlmm';
 
   // Save: enabled when content changed from baseline (or new content with no baseline)
   const saveBtn = document.getElementById('ddlSaveBtn');
   if (saveBtn) saveBtn.disabled = !hasContent || (baseline !== null && !isDirty);
 
-  // Doc: disabled for DDLMM (no field layout); for regular DDL: clean + loaded
+  // Doc: enabled when content is clean and loaded
   const docBtn = document.getElementById('ddlDocBtn');
-  if (docBtn) docBtn.disabled = isDDLMM || baseline === null || isDirty;
+  if (docBtn) docBtn.disabled = baseline === null || isDirty;
 
   // Clear: enabled when editor has content or scope is active
   const clearBtn = document.getElementById('ddlClearBtn');
@@ -8749,10 +8925,7 @@ function updateDDLEditorState() {
   if (!_cachedSelDDLEl?.isConnected)
     _cachedSelDDLEl = document.querySelector('.tree-node.tree-sel[data-ntype="ddl"]');
   if (_cachedSelDDLEl) _cachedSelDDLEl.classList.toggle('tree-dirty', isDirty);
-
-  if (!_cachedDDLMMEl?.isConnected)
-    _cachedDDLMMEl = document.querySelector('.tree-ddlmm-node');
-  if (_cachedDDLMMEl) _cachedDDLMMEl.classList.toggle('tree-ddlmm-dirty', isDDLMM && isDirty);
+  // DDLMM tree node removed — no dirty-marker toggle needed for it.
 }
 
 function _clearResultsOnly() {
@@ -8894,7 +9067,10 @@ function renderFieldTable(msg) {
     const fid    = prefix ? `${prefix}::${f.id}` : f.id;
     const sel    = S.selFieldId === fid ? 'row-sel' : '';
     const ecls   = f.error ? 'c-err' : 'c-val';
-    const val    = f.value;
+    // Prefer the display-override formatted string when available so the
+    // user-chosen rendering (datetime/amount/hex/text) actually shows in the
+    // output. The raw `f.value` is kept in the tooltip via data-tip.
+    const val    = f.displayValue != null ? f.displayValue : f.value;
     const _rFull = f.rawHex || '';
     const rHex   = (P.rawHexTruncate !== false) && _rFull.length > 22 ? _rFull.slice(0,22)+'…' : _rFull;
     const trk    = S.trackedFields.has(fid) ? 'checked' : '';
@@ -9022,8 +9198,7 @@ function renderFieldTable(msg) {
               `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
               `<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected — F0–F9 density: ${d.ebcdicDens}% (&gt;30%)`) : inf(`not detected — F0–F9 density: ${d.ebcdicDens}% (≤30%)`)}</td></tr>`,
               `<tr><td>4. Msg type</td><td>${fail(`no pattern matched <code>${_escH(d.decodedMTI)}</code>`)}</td></tr>`,
-              `<tr><td>5. DDLMM rule</td><td>${d.ddlmmMatched ? ok('rule matched') : fail('no rule matched source / dest / type')}</td></tr>`,
-              `<tr><td>6. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
+              `<tr><td>5. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
             ];
           } else {
             // Non-NETARD path
@@ -9031,13 +9206,12 @@ function renderFieldTable(msg) {
               `<tr><td>1. Format</td><td>${ok(fmtLabel || 'AUTO')}</td></tr>`,
               `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
               `<tr><td>3. Msg type</td><td>${d.msgTypeDetected ? inf(`detected <code>${_escH(d.msgTypeLabel)}</code> but no vol resolved`) : fail(`no pattern matched <code>${_escH(d.decodedMTI)}</code>`)}</td></tr>`,
-              `<tr><td>4. DDLMM rule</td><td>${d.ddlmmMatched ? ok('rule matched') : fail('no rule matched')}</td></tr>`,
-              `<tr><td>5. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
+              `<tr><td>4. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
             ];
           }
           return `<table class="diag-table">${rows.join('')}</table>`;
         })() : ''}
-        <div style="margin-top:8px">${msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="selectDDLMM()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">DDL Message Map</span> rule to route this message type.` : 'Create a <span onclick="selectDDLMM()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">DDL Message Map</span> rule for this message, or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.')
+        <div style="margin-top:8px">${msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule to recognize this message.` : 'Create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule for this message, or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.')
             : (msg.isNetard && msg.noMatchDDL) ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again to apply it to this record.'
             : msg.noMatchDDL  ? 'Load a matching DDL or use Manual Override: select a DDL in the tree and press <strong>▶ Parse</strong>.'
             : msg.isNetard    ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again.'
@@ -10599,25 +10773,10 @@ function renderDDLTree() {
   const fq   = S.treeFilter.toLowerCase();   // filter query ('' = no filter)
   const vols = Object.keys(tree).sort();
 
-  // Build map of ddlPath → type from ## (auto type-mapping) rules
+  // Type-mapping badges from DDLMM auto-rules removed (DDLMM decommissioned).
   const typeMapBadges = {};
-  for (const r of S.ddlMsgMap) {
-    if (r.seq === Infinity) typeMapBadges[r.ddlPath] = r.type;
-  }
-
-  // ── DDLMM root node (always shown at the top) ─────────────────────────────
-  const ddlmmSel    = sc?.type === 'ddlmm' ? ' tree-sel' : '';
-  const ddlmmDirty  = sc?.type === 'ddlmm' && S.editorBaseline !== null &&
-                      document.getElementById('ddlEditor').value !== S.editorBaseline;
-  const ddlmmDirtyCls = ddlmmDirty ? ' tree-ddlmm-dirty' : '';
-  const ruleCount   = S.ddlMsgMap.length;
-  const ddlmmHtml   = `<div id="ddlmmNode" class="tree-ddlmm-node${ddlmmSel}${ddlmmDirtyCls}" onclick="selectDDLMM()">
-    <span class="tree-ddlmm-lbl">Message Map</span>
-    <span class="tree-ddlmm-cnt">${ruleCount} rule${ruleCount !== 1 ? 's' : ''}</span>
-  </div>`;
 
   if (!vols.length) {
-    document.getElementById('ddlmmBar').innerHTML = ddlmmHtml;
     document.getElementById('ddlTree').innerHTML =
       '<div style="padding:10px 6px;color:var(--text-dim);font-size:11px;line-height:1.6">No DDLs yet.<br>Right-click here to create a Volume.</div>';
     return;
@@ -10858,7 +11017,6 @@ function renderDDLTree() {
     }
   }
 
-  document.getElementById('ddlmmBar').innerHTML = ddlmmHtml;
   document.getElementById('ddlTree').innerHTML = html;
 }
 
@@ -11502,87 +11660,7 @@ function buildUnresolvedRefs() {
   }
 }
 
-// ============================================================
-// DDLMM — DDL Message Map engine
-// ============================================================
-
-// Compile a DDLMM wildcard pattern to a RegExp (prefix match).
-// $=single alphanum, #=single digit, *=any chars
-function compileWildcard(pattern) {
-  if (!pattern || pattern === '*') return null;  // null = match anything
-  const re = pattern
-    .replace(/[.+?^{}()|[\]\\]/g, '\\$&')   // escape regex specials (not * $ #)
-    .replace(/\*/g, '.*')
-    .replace(/\$/g, '[A-Za-z0-9]')
-    .replace(/#/g, '[0-9]');
-  return new RegExp('^' + re, 'i');            // prefix match
-}
-
-function matchWildcard(value, re) {
-  if (!re) return true;                        // null pattern = * = match all
-  return re.test(value || '');
-}
-
-// Determine rule specificity level (used for cascading fallback).
-// A field is "specific" when its pattern is not a pure catch-all (*).
-function ruleLevel(msgRe, srcRe, dstRe) {
-  const mSpec = msgRe !== null, sSpec = srcRe !== null, dSpec = dstRe !== null;
-  if  ( mSpec &&  sSpec &&  dSpec) return 1;  // MSG + SOURCE + DESTINATION
-  if  (!mSpec &&  sSpec &&  dSpec) return 2;  // SOURCE + DESTINATION
-  if  (!mSpec &&  sSpec && !dSpec) return 3;  // SOURCE only
-  if  (!mSpec && !sSpec &&  dSpec) return 4;  // DESTINATION only
-  if  ( mSpec && !sSpec && !dSpec) return 5;  // MSG only
-  return 0;                                    // catch-all (all *)
-}
-
-function parseDDLMsgMap(text) {
-  const rules = [];
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.replace(/^\*.*/, '').trim();   // strip * comments (col 1)
-    if (!line) continue;
-    // Format: SEQ  TYPE  MSG=PAT  SOURCE=PAT  DESTINATION=PAT  DDL=VOL/SV/NAME
-    // SEQ can be a number or ## (auto type-mapping catch-all sentinel, evaluated last at level-0)
-    const m = line.match(
-      /^(##|\d+)\s+(ISO|STM|PSTM|NDC|B24|----)\s+MSG=(\S+)\s+SOURCE=(\S+)\s+DESTINATION=(\S+)\s+DDL=(\S+)/i
-    );
-    if (!m) continue;
-    const [, seqStr, type, msgPat, srcPat, dstPat, ddlPath] = m;
-    const msgRe = compileWildcard(msgPat);
-    const srcRe = compileWildcard(srcPat);
-    const dstRe = compileWildcard(dstPat);
-    rules.push({
-      seq: seqStr === '##' ? Infinity : parseInt(seqStr, 10),
-      type: type.toUpperCase(),
-      msgRe, srcRe, dstRe, ddlPath,
-      level: ruleLevel(msgRe, srcRe, dstRe),
-    });
-  }
-  return rules;
-}
-
-// Main routing lookup. Returns matched rule or null.
-// TYPE column is a badge label only — not a matching criterion.
-// Exception: ## rules (seq=Infinity) at level-0 use TYPE as a discriminator —
-// they only match when detectedType equals the rule's TYPE (or rule.type === '----').
-// Cascades through all 5 specificity levels then catch-all (0).
-function matchDDLMM(msgContent, source, dest, detectedType) {
-  if (!S.ddlMsgMap.length) return null;
-  for (const targetLvl of [1, 2, 3, 4, 5, 0]) {
-    const match = S.ddlMsgMap
-      .filter(r => r.level === targetLvl)
-      .find(r => {
-        // ## sentinel rules discriminate by detected type
-        if (r.seq === Infinity && r.type !== '----' && r.type !== detectedType) return false;
-        return matchWildcard(msgContent, r.msgRe) &&
-               matchWildcard(source,     r.srcRe) &&
-               matchWildcard(dest,       r.dstRe);
-      });
-    if (match) return match;
-  }
-  return null;
-}
-
-// Look up a compiled DDL from a DDLMM rule's ddlPath.
+// Look up a compiled DDL from a path (used by Data Detection bindings).
 // Supports 3-part (VOL/SV/NAME) and 4-part (VOL/SV/NAME/DEFNAME) paths.
 function getDDLFromPath(ddlPath) {
   if (!ddlPath) return null;
@@ -11614,10 +11692,6 @@ function getDDLFromPath(ddlPath) {
     }
   }
   return { path: ddlPath, content, defs: parseDDL(content, typeReg, secReg) };
-}
-
-function saveDDLMsgMap() {
-  _kvSet('up_ddlmm', S.ddlMsgMapRaw);
 }
 
 // ---- Exclusion helpers ----
@@ -11729,61 +11803,7 @@ function loadDeOverrides() {
   try { const s = _kvGet('de_overrides'); if (s) S.deOverrides = JSON.parse(s); } catch(e) {}
 }
 
-function loadDDLMsgMap() {
-  try {
-    const s = _kvGet('up_ddlmm');
-    if (s) { S.ddlMsgMapRaw = s; S.ddlMsgMap = parseDDLMsgMap(s); }
-  } catch(e) {}
-}
-
-// ── Type-mapping helpers ───────────────────────────────────────────────────
-
-// Returns true if a ## type-mapping rule already exists for this type.
-function hasTypeMappingRule(type) {
-  return S.ddlMsgMap.some(r => r.seq === Infinity && r.type === type);
-}
-
-// Add (or replace) a ## type-mapping catch-all rule for the given type.
-// "Last one wins" — any existing ## rule for the same type is removed first.
-function addTypeMappingRule(type, ddlPath) {
-  const upperType = type.toUpperCase();
-  // If DDLMM is blank, seed it with the placeholder comments so they persist as documentation
-  if (!S.ddlMsgMapRaw.trim()) {
-    S.ddlMsgMapRaw = DDLMM_PLACEHOLDER;
-  }
-  // Strip existing ## rules for this type from the raw text
-  const lines = S.ddlMsgMapRaw.split('\n');
-  const filtered = lines.filter(line => {
-    const m = line.match(/^##\s+(ISO|STM|PSTM|NDC|B24|----)\s+MSG=/i);
-    return !(m && m[1].toUpperCase() === upperType);
-  });
-  // Append new rule at end — columns aligned with manual rules (SEQ=5, TYPE=6, then padded columns)
-  const t = upperType.padEnd(6);
-  filtered.push(`##   ${t}MSG=*         SOURCE=*           DESTINATION=*            DDL=${ddlPath}`);
-  S.ddlMsgMapRaw = filtered.join('\n');
-  S.ddlMsgMap    = parseDDLMsgMap(S.ddlMsgMapRaw);
-  saveDDLMsgMap();
-  // Sync editor text + highlight if DDLMM is currently open in the editor
-  if (S.scope?.type === 'ddlmm') {
-    const ed = document.getElementById('ddlEditor');
-    ed.value = S.ddlMsgMapRaw;
-    S.editorBaseline = S.ddlMsgMapRaw;
-    updateDDLHighlight();
-  }
-  renderDDLTree();
-  flash(`Type mapping saved: ${upperType} → ${ddlPath.replace(/\//g, '.')}`, 'ok');
-}
-
-// Context-menu action: open type picker then map the selected DDL.
-function mapDDLToType(vol, sv, name, defName) {
-  const label = defName
-    ? `Map <strong>${esc(defName)}</strong> <span style="color:var(--text-dim);font-weight:400">in ${esc(name)}</span>`
-    : `Map <strong>${esc(name)}</strong>`;
-  const ddlPath = defName ? `${vol}/${sv}/${name}/${defName}` : `${vol}/${sv}/${name}`;
-  showTypePicker(label, type => {
-    if (type) addTypeMappingRule(type, ddlPath);
-  });
-}
+// (DDLMM load/save and type-mapping helpers removed.)
 
 // Type picker modal — shows clickable type badges; calls cb(type) or cb(null).
 let _typePickerCb = null;
@@ -11819,83 +11839,9 @@ function restoreDDLPlaceholder() {
   if (ed) ed.placeholder = DDL_EDITOR_PLACEHOLDER;
 }
 
-const DDLMM_PLACEHOLDER =
-`* DDL Message Map — routing rules that assign a DDL to each parsed message
-*
-* Wildcards:  $ = single alphanumeric   # = single digit   * = any sequence (also used as comment in col 1)
-*
-* Columns:
-*   SEQ   — rule number (evaluated in order within each priority level)
-*   TYPE  — message type: ISO | STM | PSTM | NDC | B24 | ---- (any)
-*   MSG   — pattern matched against the start of the raw message
-*   SOURCE— source process name pattern  (from NETARD log)
-*   DESTINATION — destination process name pattern (from NETARD log)
-*   DDL   — target DDL path: VOLUME/SUBVOLUME/DDLNAME
-*
-* Priority cascade (most specific wins):
-*   Level 1  MSG + SOURCE + DESTINATION  all specified
-*   Level 2  SOURCE + DESTINATION  only  (MSG = *)
-*   Level 3  SOURCE  only               (DESTINATION = *, MSG = *)
-*   Level 4  DESTINATION  only          (SOURCE = *, MSG = *)
-*   Level 5  MSG     only               (SOURCE = *, DESTINATION = *)
-*   No match → system will attempt auto-detection
-*
-* Examples:
-*   SEQ  TYPE  MSG=PATTERN   SOURCE=PATTERN     DESTINATION=PATTERN   DDL=VOL/SV/NAME
-*   01   ISO   MSG=ISO0200   SOURCE=PIA^$910    DESTINATION=PI$^SWITCH   DDL=SWITCH/ISO/ISO-FINANCIAL
-*   02   ISO   MSG=ISO0100   SOURCE=PIA^SWITCH  DESTINATION=PIA^C*       DDL=SWITCH/ISO/ISO-AUTH
-*   03   ISO   MSG=*         SOURCE=PIA^SWITCH  DESTINATION=PIA^C456     DDL=SWITCH/ISO/ISO-ALTERNATE
-*   04   ISO   MSG=*         SOURCE=PIA^$910    DESTINATION=*            DDL=ISSUER/ISO/BANKISO
-*   05   ISO   MSG=*         SOURCE=*           DESTINATION=PIA^BANK     DDL=ISSUER/ISO/BANKISO
-*   06   ISO   MSG=ISO0420   SOURCE=*           DESTINATION=*            DDL=SWITCH/ISO/ISO-AUTH
-*   07   STM   MSG=010001    SOURCE=*           DESTINATION=*            DDL=ATM/STMFILES/STMTESTING
-*   08   STM   MSG=0*01      SOURCE=*           DESTINATION=*            DDL=ATM/STMFILES/STMTRAN
-*   09   PSTM  MSG=0*02      SOURCE=*           DESTINATION=*            DDL=POS/PSTMFILES/PSTMTRAN
-*
-* Auto type-mapping rules - these are catch-alls keyed by auto-detected type
-*   you can configure them by right-click any DDL → "Map to type…"
-*   or confirm the first-encounter prompt to generate them automatically.`;
-
-function selectDDLMM() {
-  // Guard: warn if current DDL editor has unsaved changes
-  if (S.editorBaseline !== null) {
-    const cur = document.getElementById('ddlEditor').value;
-    if (cur !== S.editorBaseline) {
-      showConfirm('You have unsaved DDL changes. Discard and continue?', ok => {
-        if (ok) { S.editorBaseline = null; selectDDLMM(); }
-      });
-      return;
-    }
-  }
-  S.scope = { type: 'ddlmm' };
-  const ed = document.getElementById('ddlEditor');
-  ed.value = S.ddlMsgMapRaw;
-  ed.placeholder = DDLMM_PLACEHOLDER;
-  document.getElementById('ddlScopePath').textContent = 'DDLMM — DDL Message Map';
-  S.editorBaseline = S.ddlMsgMapRaw;
-  renderDDLTree();
-  updateDDLEditorState();
-  updateDDLHighlight();
-  _vbarClose();
-}
+// (DDLMM_PLACEHOLDER, selectDDLMM, DDLMM clearDDLEditor branch removed.)
 
 function clearDDLEditor() {
-  if (S.scope?.type === 'ddlmm') {
-    const ed = document.getElementById('ddlEditor');
-    if (!ed.value.trim()) return;
-    showPrompt('Type YES to clear the entire DDL Message Map:', '', ans => {
-      if ((ans || '').toUpperCase() !== 'YES') return;
-      S.ddlMsgMapRaw = '';
-      S.ddlMsgMap    = [];
-      saveDDLMsgMap();
-      ed.value = '';
-      ed.dispatchEvent(new Event('input'));
-      S.editorBaseline = '';
-      renderDDLTree();
-      updateDDLEditorState();
-    });
-    return;
-  }
   // If a staged stub is currently loaded, only discard that one — leave the rest intact.
   if (S.stagingActive) {
     S.stagingDefs = S.stagingDefs.filter(d => d.name !== S.stagingActive);
@@ -12005,19 +11951,6 @@ function _removeStagedDef(savedName) {
 
 function saveDDL() {
   const sc      = S.scope;
-
-  // ── DDLMM save ────────────────────────────────────────────────────────────
-  if (sc?.type === 'ddlmm') {
-    const content = document.getElementById('ddlEditor').value;
-    S.ddlMsgMapRaw = content;
-    S.ddlMsgMap    = parseDDLMsgMap(content);
-    S.editorBaseline = content;
-    saveDDLMsgMap();
-    renderDDLTree();
-    updateDDLEditorState();
-    flash(`✓ Message Map saved — ${S.ddlMsgMap.length} rule${S.ddlMsgMap.length !== 1 ? 's' : ''}`);
-    return;
-  }
 
   const content = document.getElementById('ddlEditor').value.trim();
   if (!content) { flash('Nothing to save', 'warn'); return; }
@@ -12255,10 +12188,6 @@ function buildCtxMenu(e) {
         items.push({ icon: '⎘', label: `Paste  "${clip.name}"`, fn: () => ctxPasteDef(vol, sv) });
       items.push({ icon: '⎘', label: t === 'ddl' ? `Copy  "${name}"` : `Copy  "${defName}"`, fn: t === 'ddl' ? () => ctxCopyDdl(vol, sv, name) : () => ctxCopyDef(vol, sv, name, defName) });
       items.push({ icon: '⬆', label: 'Export…', fn: () => ctxExport(vol, sv, name) });
-      if (t === 'def') {
-        items.push({ separator: true });
-        items.push({ icon: '⊛', label: 'Map to type…', fn: () => mapDDLToType(vol, sv, name, defName) });
-      }
       items.push({ separator: true });
       items.push({ icon: '✎', label: 'Rename…',    fn: () => ctxRenameDdl(vol, sv, name) });
       items.push({ separator: true });
@@ -12441,7 +12370,6 @@ function _openBundleExport(opts) {
       const nm    = s.name  || s.label || '(unnamed)';
       const lbl   = s.label || '';
       const volS  = s.vol   || '';
-      const prio  = (s.priority != null) ? s.priority : 0;
       const isChk = preCheckSpecs.has(String(s.name || '').toUpperCase());
       return `<div class="pick-row pick-ddl">
         <input type="checkbox" class="pick-spec-cb" data-idx="${i}" data-name="${esc(String(s.name||''))}" id="pcms_${i}" ${isChk?'checked':''}>
@@ -12449,7 +12377,6 @@ function _openBundleExport(opts) {
           <span style="color:var(--accent)">📋 ${esc(nm)}</span>
           ${lbl && lbl !== nm ? ` <span style="color:var(--text-dim)">— ${esc(lbl)}</span>` : ''}
           ${volS ? ` <span style="color:var(--text-dim);font-size:0.85em">[${esc(volS)}]</span>` : ''}
-          <span style="color:var(--text-dim);font-size:0.85em">· priority ${prio}</span>
         </label></div>`;
     }).join('');
   } else {
@@ -13039,7 +12966,6 @@ function loadTree() {
   if (_baselineChanged) saveTree();
   buildTokenMap();
   buildUnresolvedRefs();
-  loadDDLMsgMap();
   renderDDLTree();
 }
 
@@ -13072,7 +12998,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.118';
+const APP_VERSION  = '1.1.2.199';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13671,15 +13597,13 @@ function renderDetectSpecsList() {
     el.innerHTML = '<div class="dr-specs-empty">No format specs — use Data Editor to add detectors</div>';
     return;
   }
-  const sorted = specs.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
-  const head = `<div class="dr-spec-head"><span style="width:10px;flex-shrink:0"></span><span class="dr-lbl" style="flex:1">Label</span><span class="dr-lbl" style="width:24px;text-align:right">Pri</span><span class="dr-lbl" style="width:36px;text-align:right">Type</span></div>`;
-  el.innerHTML = head + sorted.map(s => {
+  const head = `<div class="dr-spec-head"><span style="width:10px;flex-shrink:0"></span><span class="dr-lbl" style="flex:1">Label</span><span class="dr-lbl" style="width:36px;text-align:right">Type</span></div>`;
+  el.innerHTML = head + specs.map(s => {
     const color = _escHtml(s.color || '#888');
     const label = _escHtml(s.label || s.name || '—');
     const type  = _escHtml(s.name || '');
     const vol   = s.vol ? ` <span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
-    const pri   = `<span class="dr-spec-pri">${(s.priority || 0) > 0 ? s.priority : ''}</span>`;
-    return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span>${pri}<span class="dr-spec-type">${type}</span></div>`;
+    return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span><span class="dr-spec-type">${type}</span></div>`;
   }).join('');
 }
 
@@ -14085,11 +14009,6 @@ const _TUT_STEPS = [
     body: 'Right-click any tree node for context options: create, rename, import/export, and Exclude from parsing.\n\nExcluded DDLs are greyed out and skipped during auto-detection scoring. Right-click a DEF sub-node to exclude only that specific definition, leaving the rest of the file active.',
   },
   {
-    target: '#ddlmmNode', prefer: 'right',
-    title: 'DDLMM \u2014 Message Routing Rules',
-    body: 'Click the DDLMM node at the top of the tree to define DDL Message Map rules.\n\nRules automatically route specific message types to specific DDLs \u2014 e.g., always parse ISO 0200 with your ATM definition. Matched messages skip the scoring step entirely.',
-  },
-  {
     target: '#msgPanel', prefer: 'left',
     title: 'NETARD Audit Log Parsing',
     body: 'Paste a NETARD multi-record audit log and press \u25b6 Parse. The parser detects all records, identifies EBCDIC/ASCII encoding per record, and scores each against your DDL tree.\n\nOnce parsed arrow buttons on the parse panel allow you step through all results. If you parse a single-record log and a DDL scope selected, Manual Override applies automatically. You can not Manual Override a multi-record file.',
@@ -14241,12 +14160,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const ddlEditableComp   = new Compartment();
     const ddlPlaceholderComp = new Compartment();
+    // Custom Tab key: insert a literal tab at the cursor instead of indenting
+    // the whole line (the default `indentWithTab` behavior shifts everything
+    // past the cursor right, which feels wrong while typing).
+    const _tabInsertKey = { key: 'Tab', preventDefault: true,
+      run: v => { v.dispatch(v.state.replaceSelection('\t')); return true; } };
     window._ddlEditorCM = new EditorView({
       state: EditorState.create({
         doc: '',
         extensions: [
           history(),
-          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          keymap.of([...defaultKeymap, ...historyKeymap, _tabInsertKey]),
           lineNumbers(),
           highlightActiveLine(),
           highlightActiveLineGutter(),
@@ -14625,15 +14549,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mark && mark.innerHTML) mark.style.transform = `translate(${-ta.scrollLeft}px,${-ta.scrollTop}px)`;
   });
 
-  // Triple-click on DDL editor while DDLMM is selected and empty → autofill placeholder as text
-  document.getElementById('ddlEditor').addEventListener('click', e => {
-    if (e.detail !== 3) return;
-    if (S.scope?.type !== 'ddlmm') return;
-    const ed = document.getElementById('ddlEditor');
-    if (ed.value.trim()) return;  // only when empty
-    ed.value = DDLMM_PLACEHOLDER;
-    ed.dispatchEvent(new Event('input'));
-  });
 
   // Horizontal resizers (within rows)
   initHResizer('ddlResizer', 'ddlPanel', 'msgPanel');
@@ -14675,7 +14590,9 @@ function openMsgEditor() {
     recHelpOpen: false,
     fmCollapsedGroups: new Set(),   // group qualnames currently collapsed (Field Map)
     fmHideRedef: false,
-    fmFilter: ''
+    fmFilter: '',
+    fmHelpOpen: false,              // Field Map "?" help panel state
+    fmHelpSel:  null                // currently expanded help row id
   };
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;
@@ -14787,33 +14704,91 @@ function _meRenderSidebar() {
   if (!_meState.specs.length) {
     msgs.innerHTML = '<div class="me-empty">No messages defined</div>';
   } else {
-    const sorted = _meState.specs.map((s, i) => ({ s, i }))
-      .sort((a, b) => (b.s.priority || 0) - (a.s.priority || 0));
-    sorted.forEach(({ s, i }) => {
+    // Render in array order. Manual drag-and-drop controls position.
+    _meState.specs.forEach((s, i) => {
       const active = _meState.section === 'msg' && _meState.selIdx === i;
       const d = document.createElement('div');
       d.className = 'me-item' + (active ? ' active' : '');
+      d.setAttribute('draggable', 'true');
+      d.dataset.idx = String(i);
+      d.title = 'Drag to reorder';
       const sw = document.createElement('span');
       sw.className = 'me-item-swatch';
       sw.style.background = s.color || 'transparent';
       const nm = document.createElement('span');
       nm.className = 'me-item-name';
       nm.textContent = s.label || s.name || '(unnamed)';
-      const pri = document.createElement('span');
-      pri.className = 'me-item-pri';
-      pri.textContent = (s.priority || 0) > 0 ? s.priority : '';
       const del = document.createElement('button');
       del.className = 'me-item-del';
       del.textContent = '×';
       del.title = 'Delete';
       del.onclick = e => { e.stopPropagation(); _meDeleteItem('msg', i); };
-      d.append(sw, nm, pri, del);
+      d.append(sw, nm, del);
       d.onclick = () => _meSelectItem('msg', i);
       d.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); _meCtxMsg(e, i); };
+      d.ondragstart = e => _meSpecDragStart(e, i);
+      d.ondragover  = e => _meSpecDragOver(e, i);
+      d.ondragleave = e => _meSpecDragLeave(e);
+      d.ondrop      = e => _meSpecDrop(e, i);
+      d.ondragend   = e => _meSpecDragEnd(e);
       msgs.appendChild(d);
     });
   }
 
+}
+
+// ── Sidebar drag-and-drop reordering ───────────────────────────────────────
+// Same model as the recognizer rows: each item is HTML5-draggable, the drop
+// position (before/after) is decided by mouse Y in the target's halves.
+function _meSpecDragStart(e, idx) {
+  if (e.target.closest('.me-item-del')) { e.preventDefault(); return; }
+  _meState._dragSpecIdx = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', String(idx)); } catch(_) {}
+  e.currentTarget.classList.add('dragging');
+}
+function _meSpecDragOver(e, _idx) {
+  if (_meState._dragSpecIdx == null) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const rect = e.currentTarget.getBoundingClientRect();
+  const before = (e.clientY - rect.top) < rect.height / 2;
+  e.currentTarget.classList.toggle('drop-before', before);
+  e.currentTarget.classList.toggle('drop-after', !before);
+}
+function _meSpecDragLeave(e) {
+  e.currentTarget.classList.remove('drop-before', 'drop-after');
+}
+function _meSpecDrop(e, targetIdx) {
+  e.preventDefault();
+  const src = _meState._dragSpecIdx;
+  e.currentTarget.classList.remove('drop-before', 'drop-after');
+  if (src == null || src === targetIdx) { _meState._dragSpecIdx = null; return; }
+  const rect = e.currentTarget.getBoundingClientRect();
+  const before = (e.clientY - rect.top) < rect.height / 2;
+  let dst = before ? targetIdx : targetIdx + 1;
+  if (dst > src) dst--; // removing the earlier item shifts later indices
+  _meState._dragSpecIdx = null;
+  if (dst === src) return;
+  const [moved] = _meState.specs.splice(src, 1);
+  _meState.specs.splice(dst, 0, moved);
+  // Keep the selection pinned to the moved entity (and update other indices).
+  if (_meState.section === 'msg') {
+    if (_meState.selIdx === src) _meState.selIdx = dst;
+    else {
+      // Shift selIdx if it sat in the swept range
+      if (src < _meState.selIdx && dst >= _meState.selIdx) _meState.selIdx--;
+      else if (src > _meState.selIdx && dst <= _meState.selIdx) _meState.selIdx++;
+    }
+  }
+  _meSetDirty();
+  _meRenderSidebar();
+}
+function _meSpecDragEnd(_e) {
+  _meState._dragSpecIdx = null;
+  document.querySelectorAll('#me-msg-list .me-item').forEach(r => {
+    r.classList.remove('dragging', 'drop-before', 'drop-after');
+  });
 }
 
 function _meCurItem() {
@@ -14944,6 +14919,12 @@ function _mePsToggleHelp() {
 const _PS_HELP = {
   'read-ddl': {
     desc: 'Reads fields from the DDL Binding in declaration order. By default walks every binding ("ANY") and emits every field. Optional attributes let you choose a specific binding, cherry-pick fields by id, or define an inclusive from/until window. The byte cursor always advances through every field so later blocks (when, repeat, read-tlv) can reference any id — the filters only narrow the visible output. Use "ANY" (not null) as the canonical no-filter value.',
+    useWhen: [
+      'The DDL describes the whole message and you want a full structural pass.',
+      'You bind <b>multiple DDLs</b> and need to walk them sequentially (with <code>binding</code>=N).',
+      'You want to read a contiguous <i>window</i> of fields by id (<code>from</code> / <code>until</code>) without listing each one.',
+      'You want to cherry-pick a sparse set of field ids with <code>fields:[…]</code> while the cursor still advances through all of them.',
+    ],
     attrs: [
       ['binding', 'int | "ANY"',                 false, 'Which entry in ddl_bindings to walk. "ANY" walks every binding in order. Default: "ANY".'],
       ['fields',  '"ANY" | [field-id, …]',       false, 'Cherry-pick: list of DDL field ids to emit. "ANY" emits all. Takes precedence over from/until.'],
@@ -14959,17 +14940,38 @@ const _PS_HELP = {
     ],
   },
   'read': {
-    desc: 'Reads a single DDL-defined field. Offset, length, and type come from the DDL. If the field is a group it reads all sub-fields sequentially. If the group has OCCURS it loops automatically.',
+    desc: 'Reads a single DDL-defined field. Offset, length, and type come from the DDL. If the field is a group it reads all sub-fields sequentially. If the group has OCCURS it loops automatically. An optional <b>type</b> attribute overrides how the field\'s bytes are interpreted — but its byte size <b>must equal</b> the DDL\'s declared length, otherwise a warning is emitted and the override is ignored.',
+    useWhen: [
+      'You need <b>one specific field</b>, not a sweep of the whole DDL.',
+      'You need to read a field <b>before using its value</b> later (as a length for <code>read-fixed</code>, a count for <code>repeat</code>, or a guard for <code>when</code>).',
+      'The DDL field is a <b>group</b> with sub-fields you want emitted sequentially.',
+      'You want to <b>override the type</b> of a length-compatible field (e.g. read a <code>PIC X(2)</code> as <code>uint16-be</code>).',
+    ],
     attrs: [
-      ['field', 'string', true, 'DDL field ID to read'],
+      ['field', 'string', true,  'DDL field ID to read'],
+      ['type',  'string', false, 'Type override. Fixed-size numeric types — <b>uint8</b>/<b>BINARY 8</b> (1 byte), <b>uint16-be</b>/<b>uint16-le</b>/<b>BINARY 16</b> (2), <b>uint32-be</b>/<b>uint32-le</b>/<b>BINARY 32</b> (4), <b>BINARY 64</b> (8) — must match the DDL field\'s declared byte length. Class-only types — <b>ascii</b>, <b>ebcdic</b>, <b>binary</b> — accept any length.'],
     ],
     examples: [
-      ['Simple field', [{"read": "MTI"}]],
-      ['Group field (reads all sub-fields)', [{"read": "TRANSACTION-DATA"}]],
+      ['Simple field — read MTI as declared in the DDL',
+        [{"read": "MTI"}]],
+      ['Group field — reads all sub-fields in order',
+        [{"read": "TRANSACTION-DATA"}]],
+      ['Type override (length-compatible) — read a 2-byte PIC X(2) as a big-endian uint16',
+        [{"read": {"field": "TIM-OFST", "type": "uint16-be"}}]],
+      ['Type override (BINARY form) — same as above written as BINARY 16',
+        [{"read": {"field": "TIM-OFST", "type": "BINARY 16"}}]],
+      ['Type override mismatch (rejected) — PIC X(2) cannot be read as uint32 (4 bytes) — engine emits a warning and skips the override',
+        [{"read": {"field": "TIM-OFST", "type": "uint32-be"}}]],
     ],
   },
   'read-fixed': {
     desc: 'Reads an exact number of bytes inline, without requiring a DDL field at that offset.',
+    useWhen: [
+      'The length is a <b>named DDL field</b> (e.g. <code>DATA-LEN PIC 9(2)</code>) — read it with <code>read</code> first, then point <code>read-fixed</code> at it.',
+      'The length is a <b>literal</b> you know at spec time (e.g. always 9 bytes).',
+      'You need <b>byte-encoding control</b> (<code>ascii</code> / <code>ebcdic</code> / <code>bcd</code>) or character class (<code>X</code> / <code>9</code> / <code>BINARY</code>) for the payload.',
+      'You want to capture a <b>raw chunk</b> that the DDL doesn\'t (or can\'t) describe.',
+    ],
     attrs: [
       ['length', 'int | "FIELD-ID"', true,  'Byte count — literal integer or ID of a previously read numeric field'],
       ['type',     '"X"|"9"|"BINARY"', false, 'Character class — defaults to X (alphanumeric)'],
@@ -14977,12 +14979,22 @@ const _PS_HELP = {
       ['as',       'string', false, 'DDL field ID to attach metadata/label to the result'],
     ],
     examples: [
-      ['Fixed 4-byte header tag', [{"read-fixed": {"length": 4, "as": "HEADER-TAG"}}]],
-      ['Length driven by prior field', [{"read": "DATA-LEN"}, {"read-fixed": {"length": "DATA-LEN", "as": "DATA-BODY"}}]],
+      ['Fixed 9-byte header at a specific offset — reads 9 ASCII digits, labelled BIC_HEADER so later blocks can refer to it',
+        [{"read-fixed": {"length": 9, "type": "9", "encoding": "ascii", "as": "BIC_HEADER"}}]],
+      ['Length-prefixed payload — runtime size: first block reads a length field, second uses that value (e.g. 45) as its byte count',
+        [{"read": "DATA-LEN"}, {"read-fixed": {"length": "DATA-LEN", "as": "DATA-BODY"}}]],
+      ['EBCDIC chunk — 4 EBCDIC bytes (e.g. ISO 8583 Switch MTI)',
+        [{"read-fixed": {"length": 4, "encoding": "ebcdic", "as": "MTI"}}]],
     ],
   },
   'read-until': {
     desc: 'Reads bytes until a sentinel byte is encountered or end-of-message is reached. At least one of sentinels or eom must be set. The sentinel byte itself is not included in the result.',
+    useWhen: [
+      'The payload boundary is signaled by a <b>terminator byte</b>, not a length.',
+      'You\'re parsing <b>null-terminated</b> or <b>separator-terminated</b> data (e.g. <code>0x00</code>, <code>&amp;</code>, <code>0x20</code>).',
+      'You don\'t know the length up-front <i>and</i> there\'s no length prefix to read.',
+      'You want to read all remaining bytes when no sentinel appears (combine <code>eom: true</code> with sentinels).',
+    ],
     attrs: [
       ['sentinels', '["0x1C", ...]', false, 'List of hex stop-bytes — reading stops on any match'],
       ['eom',       'bool',          false, 'Also stop at end of message'],
@@ -14995,6 +15007,12 @@ const _PS_HELP = {
   },
   'read-length-prefix': {
     desc: 'Reads a 1–4 byte length prefix, then reads exactly that many bytes of payload. Useful for LLVAR/LLLVAR-style fields and binary TLV payloads.',
+    useWhen: [
+      'The length is <b>anonymous binary bytes</b> sitting in front of the payload — no DDL field, no name.',
+      'You want <b>one atomic block</b> instead of <code>read + read-fixed</code>.',
+      'The length is encoded as a <b>fixed-width binary integer</b> (<code>uint8</code>, <code>uint16-be</code>, <code>uint16-le</code>) or <b>BCD</b> (<code>bcd2</code>).',
+      'You need <b>early termination</b> via sentinels or end-of-message (the declared length might be wrong / lenient).',
+    ],
     attrs: [
       ['prefix',    '"uint8"|"uint16-be"|"uint16-le"|"bcd2"', true,  'Format of the length prefix field'],
       ['as',        'string',    false, 'DDL field ID to label the result'],
@@ -15008,6 +15026,12 @@ const _PS_HELP = {
   },
   'read-to-end': {
     desc: 'Consumes all remaining bytes in the message into one field. Typically used as the last block to capture a variable trailing section.',
+    useWhen: [
+      'The message has a <b>variable-length trailer</b> you want captured as a single chunk.',
+      'You\'re writing a <b>catch-all</b> final block to surface whatever bytes remain.',
+      'You want to <i>see</i> overflow / unparsed bytes during spec development.',
+      'No other byte-consuming block needs to run after this one.',
+    ],
     attrs: [
       ['as', 'string', false, 'DDL field ID to label the captured bytes'],
     ],
@@ -15017,6 +15041,12 @@ const _PS_HELP = {
   },
   'read-bitmap': {
     desc: 'Reads 8 bytes (primary bitmap) or 16 bytes (primary + secondary bitmap) and stores the result for use by a bitmap-fields block. The field must be declared in the DDL with the appropriate length.',
+    useWhen: [
+      'You\'re parsing an <b>ISO 8583</b> (or similar bitmap-based) message.',
+      'A <code>bitmap-fields</code> block follows that needs the bitset.',
+      'You know the encoding: <b>binary</b> (8 raw bytes) for EBCDIC/binary wire, or <b>ascii-hex</b> (16 chars) for ISO ASCII wire.',
+      'The bitmap field is declared in the bound DDL with the correct length.',
+    ],
     attrs: [
       ['field',    'string',                    true, 'DDL field ID for the bitmap'],
       ['encoding', '"binary"|"ascii-hex"', true, 'binary = raw bits; ascii-hex = hex-encoded (e.g. ISO ASCII)'],
@@ -15028,6 +15058,12 @@ const _PS_HELP = {
   },
   'bitmap-fields': {
     desc: 'Reads the DE fields indicated by a prior read-bitmap result. Each set bit maps to a DDL field ID via de_map. Variable-length groups declared in var_length_groups are handled automatically.',
+    useWhen: [
+      'You\'ve just executed <code>read-bitmap</code> and want to read only the DEs the bitmap marks present.',
+      'Your DDL declares each DE as a separate field (or has a populated <code>de_map</code> in the Overrides section).',
+      'Some DEs are <b>variable-length groups</b> (LEN + payload) — mark them as VLG in Overrides and this block honours the runtime LEN.',
+      'Standard ISO 8583 parsing — the canonical way to walk DE fields per the bitmap.',
+    ],
     attrs: [
       ['bitmap', 'string', true, 'Field ID of a preceding read-bitmap result'],
     ],
@@ -15037,6 +15073,12 @@ const _PS_HELP = {
   },
   'read-tlv': {
     desc: 'Parses a DDL buffer field as repeating TAG+LENGTH+VALUE triples until the buffer is exhausted or fewer bytes remain than tag_length. Used for EMV DE-55 and similar TLV structures.',
+    useWhen: [
+      'You have a <b>TLV-encoded buffer field</b> — EMV DE-55, ICC data, similar nested structures.',
+      'The DDL declares the outer buffer but <b>not its inner tags</b>.',
+      'Tag width and length-field width are <b>constant</b> across all triples.',
+      'You want every triple emitted as its own field for inspection / further processing.',
+    ],
     attrs: [
       ['field',         'string',              true, 'DDL buffer field containing the raw TLV bytes'],
       ['tag_length',    'int',                 true, 'Number of bytes per tag'],
@@ -15049,6 +15091,12 @@ const _PS_HELP = {
   },
   'skip': {
     desc: 'Advances the read cursor by N bytes without capturing any data. Use for padding, reserved fields, or header bytes that do not need to be parsed.',
+    useWhen: [
+      'There are <b>padding bytes</b> between meaningful fields.',
+      'You\'re crossing <b>reserved / unused</b> header bytes the spec doesn\'t care about.',
+      'You need to jump past <b>filler</b> the DDL doesn\'t describe.',
+      'You want to keep the cursor moving without emitting a field in the output.',
+    ],
     attrs: [
       ['length', 'int', true, 'Number of bytes to skip'],
     ],
@@ -15058,6 +15106,12 @@ const _PS_HELP = {
   },
   'when': {
     desc: 'Executes a list of blocks only when a condition on a previously read field is true. Multiple when blocks referencing the same field act as if / else-if. Nesting is supported.',
+    useWhen: [
+      'A field\'s value determines whether subsequent bytes are <b>present at all</b> (e.g. a presence flag).',
+      'You need to <b>branch</b> the parse path on an enumerated value (e.g. <code>MSG-TYPE</code>).',
+      'You want to apply a different sub-spec for a specific subtype while keeping one shared outer spec.',
+      'You\'re combining with <b>nested when</b> blocks to express if / else-if logic on multiple fields.',
+    ],
     attrs: [
       ['field', 'string',          true,  'Field ID of a previously read field to test'],
       ['is',    'string | [...]',  false, 'Execute then if field equals this value (or any in list)'],
@@ -15071,6 +15125,12 @@ const _PS_HELP = {
   },
   'repeat': {
     desc: 'Executes a list of blocks N times, where N is the value of a previously read numeric field. Used for OCCURS-style repeating groups not expressed in the DDL.',
+    useWhen: [
+      'A <b>count field</b> tells you how many iterations to perform (e.g. <code>NUM-SERVICES</code>).',
+      'Each iteration is <b>structurally identical</b> — same sub-pattern repeated.',
+      'You can <b>trust the count</b> — binary counters in hex / binary inputs are safe.',
+      'The DDL doesn\'t express this loop natively (it\'s not OCCURS, which <code>read-ddl</code> handles automatically).',
+    ],
     attrs: [
       ['count', 'string',   true, 'Field ID whose parsed integer value is the repeat count'],
       ['body',  '[blocks]', true, 'Array of parse blocks to execute each iteration'],
@@ -15081,6 +15141,12 @@ const _PS_HELP = {
   },
   'read-while': {
     desc: 'Loops body blocks as long as a guard predicate matches at the current cursor. Use when the iteration count is unknown or unreliable (e.g. ASCII PSTM where NUM-SERVICES is binary and the only way to know if another service follows is to peek at the next 2 bytes). The body MUST advance the cursor each iteration or the loop aborts. Stops at first guard miss, max iterations, or EOM. Hard cap of 10000 iterations as a safety net.',
+    useWhen: [
+      'You <b>can\'t trust</b> a declared count field (binary counter in an ASCII-mode message).',
+      'You\'re iterating as long as the next bytes <b>match a pattern</b> (regex, character class, or literal marker).',
+      'The loop has a <b>natural structural terminator</b> rather than a known count.',
+      'You want a <b>safety cap</b> (<code>max</code>) on iterations while still relying on the guard for the primary termination.',
+    ],
     attrs: [
       ['while', 'object',         true,  'Guard predicate at cursor. type: alphabetic | numeric | alphanumeric | ascii | regex | literal. length: bytes to read for the check. encoding: ascii | ebcdic (default ascii). pattern: regex string (when type=regex). value: exact string (when type=literal).'],
       ['body',  '[blocks]',       true,  'Blocks to execute each iteration. Must advance the cursor.'],
@@ -15111,6 +15177,12 @@ const _PS_HELP = {
   },
   'token-area': {
     desc: 'Reads the message\'s token area (named 2-byte-prefixed records that follow the fixed section). By default emits every token ("ANY"). Optional attributes let you cherry-pick token ids or define an inclusive from/until window. Use "ANY" (not null) as the canonical no-filter value.',
+    useWhen: [
+      'The message has a <b>token area</b> at the end — named 2-byte-prefixed records (PSTM / STM style).',
+      'You want <b>every</b> token surfaced automatically without listing each id (use <code>"ANY"</code>).',
+      'You want to <b>cherry-pick</b> a set of token ids, or extract a contiguous <i>window</i> via <code>from</code> / <code>until</code>.',
+      'You\'re writing the <b>final block</b> of a parse spec — token area is conventionally last.',
+    ],
     attrs: [
       ['tokens', '"ANY" | [token-id, …]', false, 'Cherry-pick: list of token ids to emit. "ANY" emits all. Takes precedence over from/until.'],
       ['from',   'token-id',              false, 'Inclusive lower bound: emission starts at this token.'],
@@ -15140,6 +15212,22 @@ function _mePsHelpHtml() {
     `<div class="me-ps-help-detail" id="me-ps-help-detail"></div>`;
 }
 
+// Render JSONC text as static HTML with the same .hl-* token classes the
+// CodeMirror editor uses. Used by the help-panel example snippets so they
+// match the editor's syntax highlighting.
+function _meHighlightJsonc(text) {
+  const tokens = _tokenizeJsonc(text);
+  let html = '';
+  let cursor = 0;
+  for (const tok of tokens) {
+    if (tok.from > cursor) html += _escHtml(text.slice(cursor, tok.from));
+    html += `<span class="${tok.cls}">${_escHtml(text.slice(tok.from, tok.to))}</span>`;
+    cursor = tok.to;
+  }
+  if (cursor < text.length) html += _escHtml(text.slice(cursor));
+  return html;
+}
+
 function _mePsHelpSelect(blk) {
   const info = _PS_HELP[blk];
   const det  = document.getElementById('me-ps-help-detail');
@@ -15158,15 +15246,23 @@ function _mePsHelpSelect(blk) {
   const attrTbl = info.attrs.length
     ? `<table class="me-ps-help-atbl"><thead><tr><th>Attribute</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${attrRows}</tbody></table>`
     : `<p class="me-ps-help-dim" style="margin:0 0 8px">No attributes.</p>`;
-  // build examples
-  const exHtml = info.examples.map(([label, json]) =>
-    `<div class="me-ps-help-ex-title">${label}:</div>` +
-    `<pre class="me-ps-help-snippet">${_escHtml(JSON.stringify(json, null, 2))}</pre>`
-  ).join('<div style="height:6px"></div>');
+  // build examples — JSONC text rendered via the same tokenizer the editor uses
+  const exHtml = info.examples.map(([label, json]) => {
+    const text = JSON.stringify(json, null, 2);
+    return `<div class="me-ps-help-ex-title">${label}:</div>` +
+      `<pre class="me-ps-help-snippet">${_meHighlightJsonc(text)}</pre>`;
+  }).join('<div style="height:6px"></div>');
+  // "Use when" guidance list — appears between description and attributes.
+  const guidanceHtml = Array.isArray(info.useWhen) && info.useWhen.length
+    ? `<div class="me-ps-help-section">
+         <div class="me-ps-help-section-title">Use when</div>
+         <ul class="me-ps-help-ul">${info.useWhen.map(b => `<li>${b}</li>`).join('')}</ul>
+       </div>`
+    : '';
   det.innerHTML =
     `<div class="me-ps-help-detail-title">${blk}</div>` +
     `<div class="me-ps-help-detail-desc">${info.desc}</div>` +
-    attrTbl + exHtml;
+    guidanceHtml + attrTbl + exHtml;
   det.classList.add('open');
 }
 
@@ -15369,11 +15465,15 @@ function _mePsMountCM(item) {
   _mePsUnmountCM();
   const host = document.getElementById('me-ps-ta-host');
   if (!host || !window.CM || !item) return null;
-  const { EditorView, EditorState, history, keymap, defaultKeymap, historyKeymap, indentWithTab, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter } = window.CM;
+  const { EditorView, EditorState, history, keymap, defaultKeymap, historyKeymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter } = window.CM;
   const { spec: specField, src: srcField } = _mePsFieldsForVariant(_mePsActiveVariant());
   const initial = (typeof item[srcField] === 'string' && item[srcField].trim())
     ? item[srcField]
     : JSON.stringify(item[specField] || [], null, 2);
+  // Same Tab override as the DDL editor: insert a literal tab at the cursor
+  // rather than reindenting the line.
+  const _tabInsertKey = { key: 'Tab', preventDefault: true,
+    run: v => { v.dispatch(v.state.replaceSelection('\t')); return true; } };
   _mePsCM = new EditorView({
     state: EditorState.create({
       doc: initial,
@@ -15382,7 +15482,7 @@ function _mePsMountCM(item) {
         highlightActiveLine(),
         highlightActiveLineGutter(),
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        keymap.of([...defaultKeymap, ...historyKeymap, _tabInsertKey]),
         placeholder('[ ]  // empty parse_spec — falls back to read-ddl ANY + token-area ANY'),
         _jsoncHighlightExtension(),
         EditorView.updateListener.of(u => {
@@ -15475,20 +15575,31 @@ function _meHtmlDDLBindings(item) {
   let h = '<div class="me-bind-list">';
   if (!bindings.length) h += '<div class="me-empty">No DDL bindings yet.</div>';
   bindings.forEach((b, i) => {
+    const state = _meBindValidate(b);   // '', 'ok', 'missing'
     h += `<div class="me-bind-row">
   <span class="me-lbl" style="min-width:18px;text-align:right;flex-shrink:0">${i + 1}</span>
   <input class="me-inp me-bind-inp" id="me-bind-inp-${i}" value="${_escHtml(b)}"
     placeholder="VOL/SUBVOL/FILENAME"
+    data-state="${state}"
     oninput="_meBindInput(${i},this.value)"
     onfocus="_meBindShowDrop(${i})"
     onblur="_meBindHideDrop()"
     onkeydown="_meBindKeyDown(${i},event)">
+  <span class="me-bind-status" id="me-bind-status-${i}" data-state="${state}" title="${state==='missing'?'DDL not found in repo — import it or fix the path':state==='ok'?'DDL resolved':''}">${state==='missing'?'⚠':state==='ok'?'✓':''}</span>
   <button class="me-rb del" onclick="_meBindDel(${i})" title="Remove">✕</button>
 </div>`;
   });
   h += `</div>
 <button class="btn btn-sm" onclick="_meBindAdd()" style="margin-top:6px">+ Add Binding</button>`;
   return h;
+}
+
+// Resolve a binding path against the loaded DDL repo. Empty → blank state
+// (no badge); resolved → 'ok'; otherwise → 'missing' (red badge).
+function _meBindValidate(path) {
+  if (!path || !path.trim()) return '';
+  if (typeof getDDLFromPath !== 'function') return '';
+  return getDDLFromPath(path.trim()) ? 'ok' : 'missing';
 }
 
 function _meDDLEntries() {
@@ -15516,6 +15627,18 @@ let _meDropEntries = [], _meDropBindIdx = -1, _meDropFocusIdx = -1;
 function _meBindInput(idx, val) {
   _meBindSet(idx, val);
   _meBindShowDrop(idx);
+  // Live revalidation — repaint the badge + input border without a full
+  // section re-render (the input keeps focus while typing).
+  const state  = _meBindValidate(val);
+  const inp    = document.getElementById('me-bind-inp-'    + idx);
+  const badge  = document.getElementById('me-bind-status-' + idx);
+  if (inp)   inp.setAttribute('data-state', state);
+  if (badge) {
+    badge.setAttribute('data-state', state);
+    badge.textContent = state === 'missing' ? '⚠' : state === 'ok' ? '✓' : '';
+    badge.title = state === 'missing' ? 'DDL not found in repo — import it or fix the path'
+                : state === 'ok'      ? 'DDL resolved' : '';
+  }
 }
 
 function _meBindShowDrop(idx) {
@@ -15527,15 +15650,17 @@ function _meBindShowDrop(idx) {
   const entries = _meDDLEntries();
   const q = inp.value.toLowerCase();
   _meDropEntries = entries.filter(e => !q || e.defName.toLowerCase().includes(q) || e.path.toLowerCase().includes(q));
+  // No matches → hide the dropdown entirely (the red validation badge already
+  // signals "this path doesn't resolve"; the empty list is noise).
   if (!_meDropEntries.length) {
-    drop.innerHTML = '<div class="me-ddl-empty">' + (entries.length ? 'No match' : 'No DDLs loaded') + '</div>';
-  } else {
-    drop.innerHTML = _meDropEntries.map((e, i) =>
-      `<div class="me-ddl-opt" id="me-ddl-opt-${i}" onmousedown="event.preventDefault();_meBindPickIdx(${i})">` +
-      `<span class="me-ddl-opt-name">${_escHtml(e.defName)}</span>` +
-      `<span class="me-ddl-opt-path">${_escHtml(e.path)}</span></div>`
-    ).join('');
+    drop.style.display = 'none';
+    return;
   }
+  drop.innerHTML = _meDropEntries.map((e, i) =>
+    `<div class="me-ddl-opt" id="me-ddl-opt-${i}" onmousedown="event.preventDefault();_meBindPickIdx(${i})">` +
+    `<span class="me-ddl-opt-name">${_escHtml(e.defName)}</span>` +
+    `<span class="me-ddl-opt-path">${_escHtml(e.path)}</span></div>`
+  ).join('');
   const r = inp.getBoundingClientRect();
   drop.style.left  = r.left + 'px';
   drop.style.top   = (r.bottom + 2) + 'px';
@@ -15629,12 +15754,25 @@ function _meHtmlOverrides(item) {
   const vlgSet = new Set(vlg);
   const foByField = new Map();
   for (const e of fo) if (e?.field) foByField.set(e.field, e);
-  const usesBitmapFields = _meItemUsesBitmapFields(item);
+  // Single source of truth: the bitmap field id (or null). Truthy means the
+  // spec uses bitmap-fields, so DE controls / VLG / "----" all key off this.
+  const usesBitmapFields = !!_meItemBitmapField(item);
+  // Sum unresolved-TYPE-ref counts across all bindings so the warning banner
+  // reflects the full Field Map (which now combines every binding's defs).
+  let unresolved = null;
+  for (const path of (item?.ddl_bindings || [])) {
+    const r = _meFmCountUnresolved(path);
+    if (!r) continue;
+    if (!unresolved) unresolved = { count: 0, sample: [] };
+    unresolved.count += r.count;
+    for (const s of r.sample) if (unresolved.sample.length < 5) unresolved.sample.push(s);
+  }
 
-  // Unified field-list rows — one row per binding-0 elementary DDL field
-  // combining: DE number controls, VLG toggle, type override, display override.
+  // Unified field-list rows — one row per elementary DDL field across ALL
+  // bindings (deduped by id), combining: DE number controls, VLG toggle,
+  // type override, display override.
   const fieldList = _meResolveDEFieldList(item);
-  const TYPE_OPTS = ['','uint8','uint16-be','uint16-le','uint32-be','uint32-le','binary','ascii','ebcdic'];
+  const TYPE_OPTS = ['','uint8','uint16-be','uint16-le','uint32-be','uint32-le','binary','ascii','ebcdic','hex-ascii','hex-ebcdic'];
   const DISP_OPTS = ['','datetime','amount','hex','text'];
   const selOpts = (opts, cur, ph) =>
     opts.map(o => `<option value="${o}"${(cur || '') === o ? ' selected' : ''}>${o || ph}</option>`).join('');
@@ -15647,6 +15785,7 @@ function _meHtmlOverrides(item) {
   } else {
     // Build rows as <tr> using DDL Doc styling conventions (table layout
     // guarantees column alignment).
+    let rowNum = 0;
     const bodyRows = fieldList.map(row => {
       const id        = ea(row.id);
       const depth     = row.id.split('.').length - 1;
@@ -15659,22 +15798,34 @@ function _meHtmlOverrides(item) {
         row.isTerminal ? 'me-fm-term' : '',
         !isGroup && !row.underTerminal ? 'me-fm-leaf' : '',
         row.underTerminal ? 'me-fm-leaf me-fm-under-term' : '',
+        vlgSet.has(row.id) ? 'me-fm-vlg-on' : '',
       ].filter(Boolean).join(' ');
       const dataAttrs = isGroup
         ? `data-grp="1" data-qn="${id}"`
         : `data-qn="${id}"`;
 
-      // FIELD cell
+      // FIELD cell — group row uses ">" icon (CSS-rotated 90° when expanded)
+      // and a trailing "." on the qualName, matching DDL Doc exactly.
       const grpIcon = isGroup
-        ? `<span class="me-fm-grp-icon" onclick="_meFmToggleGroup(this.closest('tr'))">▼</span>`
+        ? `<span class="me-fm-grp-icon" onclick="_meFmToggleGroup(this.closest('tr'))">&gt;</span>`
         : '';
+      // REDEFINES note on group rows only — the leaves below inherit the
+      // indication via their faded styling, no need to repeat the target on
+      // every child.
+      const redefNote = isGroup && row.isRedef && row.redefTarget
+        ? ` <span class="me-fm-redef-note">↩ ${ea(row.redefTarget)}</span>` : '';
       const fieldCell = isGroup
-        ? `<td class="me-fm-fld" style="${grpPadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))">${grpIcon}<span class="me-fm-name">${id}</span></td>`
+        ? `<td class="me-fm-fld" style="${grpPadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))">${grpIcon}<span class="me-fm-name">${id}.</span>${redefNote}</td>`
         : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span></td>`;
 
       // DE cell — hidden for REDEFINES rows (they overlay other bytes, no DE of their own)
       let deCell;
       if (usesBitmapFields && !row.underTerminal && !row.isRedef) {
+        if (row.de === null) {
+          // Pre-bitmap header (or the bitmap field itself) — no DE. Leave
+          // the cell empty; tooltip explains why on hover.
+          deCell = `<td class="me-fm-de" title="No DE here — this field is before (or is) the bitmap declared in the parse spec."></td>`;
+        } else {
         const pillClass = 'me-de-pill' + (row.anchored ? ' anchored' : '');
         const clearBtn  = row.anchored
           ? `<button class="me-rb me-de-clear" title="Clear DE override (revert to default)" onclick="_meDeClear('${id}')">↺</button>`
@@ -15685,6 +15836,7 @@ function _meHtmlOverrides(item) {
     <button class="me-rb me-de-nudge" title="Increase DE" onclick="_meDeNudge('${id}',1)">&gt;</button>
     ${clearBtn}
   </div></td>`;
+        }
       } else {
         const tip = !usesBitmapFields ? 'DE controls appear only when the parse spec uses bitmap-fields.'
                   : row.isRedef       ? 'REDEFINES overlays existing bytes — no DE of its own.'
@@ -15700,76 +15852,174 @@ function _meHtmlOverrides(item) {
         ? `<td class="me-fm-vlg"><input type="checkbox" class="me-vlg-cb" ${isVlg ? 'checked' : ''} onchange="_meVlgToggleByField('${id}')" title="When on, bitmap-fields reads the first sub-field as LEN and distributes that many bytes across the rest."></td>`
         : `<td class="me-fm-vlg"></td>`;
 
-      // Type / display cells
+      // Display override stays its own column.
       const foEntry = foByField.get(row.id) || {};
-      const typeCell = `<td class="me-fm-fo"><select class="me-sel me-fo-sel" onchange="_meFoSetByField('${id}','type',this.value)">${selOpts(TYPE_OPTS, foEntry.type, '')}</select></td>`;
       const dispCell = `<td class="me-fm-fo"><select class="me-sel me-fo-sel" onchange="_meFoSetByField('${id}','display',this.value)">${selOpts(DISP_OPTS, foEntry.display, '')}</select></td>`;
 
-      return `<tr class="${trCls}" ${dataAttrs}>${fieldCell}${deCell}${vlgCell}${typeCell}${dispCell}</tr>`;
+      // # column — number only the leaves, empty for group rows (mirrors DDL Doc).
+      const numText = isGroup ? '' : (++rowNum);
+      const numCell = `<td class="me-fm-num">${numText}</td>`;
+      // Length column — byte size from the DDL (groups sum their leaves).
+      const lenCell = `<td class="me-fm-len">${row.length || 0}</td>`;
+      // Data Type column — for elementary fields, a dropdown whose default
+      // entry is the DDL-declared type (empty value = no override). For
+      // groups (and REDEFINES wrappers), the cell stays a plain label.
+      // Strip the length suffix from PIC types ("PIC X(9)" → "PIC X") since
+      // the byte length now lives in its own column.
+      const stripLen     = (s) => String(s || '').replace(/\(\d+\)/g, '').replace(/\s+$/, '');
+      const overrideVal  = foEntry.type || '';
+      const defaultLabel = stripLen(row.dataType) || '(unknown)';
+      // Length-incompatible override → flag inline so the user sees the
+      // problem at edit time instead of waiting for parse output.
+      const overrideRequiredLen = overrideVal && typeof _meReadTypeByteLen === 'function'
+        ? _meReadTypeByteLen(overrideVal) : null;
+      const overrideBadLen = overrideRequiredLen !== null && overrideRequiredLen !== (row.length || 0);
+      const warnIcon = overrideBadLen
+        ? `<span class="me-fm-dt-warn" title="Override &quot;${ea(overrideVal)}&quot; needs ${overrideRequiredLen} bytes but this field is ${row.length} — override will be ignored at parse time.">⚠</span>` : '';
+      const dtCell = (isGroup || row.isRedef)
+        ? `<td class="me-fm-dt">${ea(defaultLabel)}</td>`
+        : `<td class="me-fm-dt${overrideBadLen ? ' me-fm-dt-bad' : ''}"><select class="me-sel me-fo-sel me-fm-dt-sel" onchange="_meFoSetByField('${id}','type',this.value)" title="Override the field's interpreted type (length must be compatible).">
+            <option value=""${overrideVal === '' ? ' selected' : ''}>${ea(defaultLabel)}</option>
+            ${TYPE_OPTS.filter(t => t).map(t => `<option value="${t}"${overrideVal === t ? ' selected' : ''}>${t}</option>`).join('')}
+          </select>${warnIcon}</td>`;
+      return `<tr class="${trCls}" ${dataAttrs}>${numCell}${fieldCell}${lenCell}${dtCell}${deCell}${vlgCell}${dispCell}</tr>`;
     }).join('');
 
-    dmHtml = `
+    const warnHtml = (unresolved && unresolved.count > 0)
+      ? `<div class="me-fm-warn" title="${ea(unresolved.sample.join(', '))}">⚠ ${unresolved.count} DDL item${unresolved.count !== 1 ? 's' : ''} not shown — unresolved TYPE references (size 0). Examples: ${ea(unresolved.sample.slice(0,3).join(', '))}${unresolved.sample.length > 3 ? '…' : ''}</div>`
+      : '';
+
+    const fmHelpOpen = !!(_meState && _meState.fmHelpOpen);
+    const helpHtml = `<div class="me-ps-help${fmHelpOpen ? ' open' : ''}" id="me-fm-help">${_meFmHelpHtml()}</div>`;
+
+    dmHtml = warnHtml + helpHtml + `
 <div class="me-fm-toolbar">
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
   <button class="btn btn-sm" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
   <button class="btn btn-sm" id="me-fm-hide-redef-btn" onclick="_meFmToggleHideRedef()" title="Hide / show REDEFINES rows">Hide Redef</button>
+  <button class="btn btn-sm" onclick="_meFmToggleHelp()" title="Column reference">?</button>
 </div>
 <div class="me-fm-table-wrap">
   <table class="me-fm-table">
     <thead><tr>
-      <th class="me-fm-th-fld">Field</th>
-      <th class="me-fm-th-de">DE</th>
-      <th class="me-fm-th-vlg" title="Variable Length Group">VLG</th>
-      <th class="me-fm-th-fo">Type</th>
-      <th class="me-fm-th-fo">Display</th>
+      <th class="me-fm-th-num" data-col="num">#<div class="me-fm-resizer" data-col="num"></div></th>
+      <th class="me-fm-th-fld" data-col="fld">Field<div class="me-fm-resizer" data-col="fld"></div></th>
+      <th class="me-fm-th-len" data-col="len" title="Byte length">Length<div class="me-fm-resizer" data-col="len"></div></th>
+      <th class="me-fm-th-dt"  data-col="dt" title="DDL-declared type (click cell to override)">Data Type<div class="me-fm-resizer" data-col="dt"></div></th>
+      <th class="me-fm-th-de"  data-col="de">Data Element<div class="me-fm-resizer" data-col="de"></div></th>
+      <th class="me-fm-th-vlg" data-col="vlg" title="Variable Length Group">VLG<div class="me-fm-resizer" data-col="vlg"></div></th>
+      <th class="me-fm-th-fo"  data-col="display">Display</th>
     </tr></thead>
     <tbody>${bodyRows}</tbody>
   </table>
 </div>`;
   }
 
-  return `<div class="me-ov-section">
-  <div class="me-ov-title">Field Map</div>
-  <div class="me-ov-hint">One row per binding-0 DDL field. <b>&lt; DE-N &gt;</b> and <b>VLG</b> appear only when the parse spec contains <code>bitmap-fields</code>. VLG further requires a terminal group (LEN + ≥1 payload sub-fields). Double-click a group row, or click the chevron, to collapse it. The two dropdowns override the field's <b>type</b> and <b>display format</b> regardless of spec.</div>
-  ${dmHtml}
-</div>`;
+  return `<div class="me-ov-section">${dmHtml}</div>`;
 }
 
 // ── DE Map field-list helpers ───────────────────────────────────────────────
-// Resolve binding-0's DDL defs into a list of rows for the DE Map UI. Each
-// row carries the field id, the engine-resolved DE number (matching
-// _meBuildDEMap above), and whether the value comes from an anchor. Returns
-// null when there is no bound DDL, [] when the DDL has no fields.
+// Resolve all bindings' DDL defs into a unified list of rows for the Field
+// Map UI. Walks every entry in item.ddl_bindings (deduped by id), carrying
+// the engine-resolved DE number and anchor state per row. Returns null when
+// the item has no bindings, [] when none of the bindings has any fields.
 // True if any block (including nested when.then / repeat.body / read-while.body)
 // in the parse spec is a `bitmap-fields` block. Used by the Field Map UI to
 // hide the VLG toggle when the spec doesn't run bitmap-fields — VLG is dead
 // weight in that case.
-function _meSpecHasBitmapFields(spec) {
-  if (!Array.isArray(spec)) return false;
+// Pull the bitmap field id out of the first `bitmap-fields` block in the
+// parse spec (recursing into when.then / repeat.body / read-while.body).
+// The block can be a bare string ({"bitmap-fields":"PRI-BIT-MAP"}) or an
+// object ({"bitmap-fields":{"bitmap":"PRI-BIT-MAP"}}). Returns null when no
+// bitmap-fields block exists — that null doubles as the "spec doesn't use
+// bitmap-fields" signal for the Field Map UI.
+function _meSpecBitmapField(spec) {
+  if (!Array.isArray(spec)) return null;
   for (const block of spec) {
     if (!block || typeof block !== 'object') continue;
-    if ('bitmap-fields' in block) return true;
-    if (block.when?.then         && _meSpecHasBitmapFields(block.when.then)) return true;
-    if (block.repeat?.body       && _meSpecHasBitmapFields(block.repeat.body)) return true;
-    if (block['read-while']?.body && _meSpecHasBitmapFields(block['read-while'].body)) return true;
+    if ('bitmap-fields' in block) {
+      const v = block['bitmap-fields'];
+      return (typeof v === 'string') ? v : (v && typeof v === 'object' ? v.bitmap : null);
+    }
+    const nested = _meSpecBitmapField(block.when?.then)
+                || _meSpecBitmapField(block.repeat?.body)
+                || _meSpecBitmapField(block['read-while']?.body);
+    if (nested) return nested;
   }
-  return false;
+  return null;
 }
-function _meItemUsesBitmapFields(item) {
-  return _meSpecHasBitmapFields(item?.parse_spec_binary)
-      || _meSpecHasBitmapFields(item?.parse_spec_ascii);
+function _meItemBitmapField(item) {
+  return _meSpecBitmapField(item?.parse_spec_binary)
+      || _meSpecBitmapField(item?.parse_spec_ascii);
+}
+
+// Count DDL fields that have size 0 (unresolved TYPE references etc.).
+// These are valid DDL items but parseHPEDDL filters them out, so they don't
+// appear in the Field Map. Returns { count, sampleIds } or null when the
+// binding is empty / unparseable.
+function _meFmCountUnresolved(path) {
+  if (!path || typeof S === 'undefined') return null;
+  const parts = path.split('/');
+  if (parts.length < 3) return null;
+  const [vol, sv, name, defName] = parts;
+  const content = S.ddlTree?.[vol]?.[sv]?.[name];
+  if (!content || typeof isHPEDDLText !== 'function' || !isHPEDDLText(content)) return null;
+  try {
+    const sections = parseDDLSections(content);
+    const sectionByName = new Map(sections.map(s => [s.name.toUpperCase(), s.items]));
+    const typeReg = (typeof buildRepoTypeRegistry === 'function') ? buildRepoTypeRegistry(content) : null;
+    const targetSecs = defName
+      ? sections.filter(s => s.name.toUpperCase() === defName.toUpperCase())
+      : sections;
+    let count = 0;
+    const sample = [];
+    for (const sec of targetSecs) {
+      const expanded = expandTypeRefs(sec.items, sectionByName, new Set(), null);
+      const { fields } = buildDDLDocFields(expanded, typeReg);
+      for (const f of fields) {
+        if (f.isGroup) continue;
+        if (f.size === 0) {
+          count++;
+          if (sample.length < 5) sample.push(f.qualName);
+        }
+      }
+    }
+    return { count, sample };
+  } catch(e) { return null; }
 }
 
 function _meResolveDEFieldList(item) {
-  const path = item?.ddl_bindings?.[0];
-  if (!path) return null;
-  const r = (typeof getDDLFromPath === 'function') ? getDDLFromPath(path) : null;
-  const defs = r?.defs || [];
+  const bindings = (item?.ddl_bindings || []).filter(Boolean);
+  if (!bindings.length) return null;
+  // Concatenate defs from every binding in declaration order. Dedupe by id
+  // (first binding wins) — the engine's de_map is field-id-keyed, so a field
+  // present in multiple bindings only needs one Field Map row.
+  const defs = [];
+  const seen = new Set();
+  for (const path of bindings) {
+    const r = (typeof getDDLFromPath === 'function') ? getDDLFromPath(path) : null;
+    for (const d of (r?.defs || [])) {
+      if (seen.has(d.id)) continue;
+      seen.add(d.id);
+      defs.push(d);
+    }
+  }
   if (!defs.length) return [];
   const anchors = new Map((item.de_map || []).map(e => [e.field, +e.de || 1]));
 
   // Track REDEFINES on leaves so we can pass through to the UI for Hide Redef.
   const redefSet = new Set(defs.filter(d => d.isRedefines).map(d => d.id));
+  // Capture each redef leaf's target so we can mirror DDL Doc's "↩ TARGET"
+  // suffix on the synthesized group row (every leaf under the same REDEFINES
+  // wrapper shares the target).
+  const redefTargetByLeaf = new Map(
+    defs.filter(d => d.isRedefines && d.redefTarget).map(d => [d.id, d.redefTarget])
+  );
+  // DDL-declared data type per field id (used by the read-only Data Type column).
+  const dtypeByField = new Map(defs.map(d => [d.id, d._dataType || '']));
+  // Byte length per leaf id. Group lengths are computed lazily by summing
+  // transitive leaf lengths (helper defined after childrenByPrefix is built).
+  const lengthByLeaf = new Map(defs.map(d => [d.id, d.length || 0]));
 
   // ── Pass 1: discover groups from leaf qualified names ───────────────────
   const childrenByPrefix = new Map();   // prefix → Set of immediate child ids
@@ -15792,13 +16042,60 @@ function _meResolveDEFieldList(item) {
   }
 
   // ── Pass 2: walk defs in declaration order, emitting ancestor groups ───
+  // DE numbering only begins on the field AFTER the bitmap field declared in
+  // the parse spec ({"bitmap-fields": "PRI-BIT-MAP"}) — header fields and the
+  // bitmap field itself aren't DEs. If the spec has no bitmap-fields block we
+  // fall back to numbering from the first field (legacy behaviour).
+  const bitmapField = _meItemBitmapField(item);
+  // Compute a group's total byte length by summing every transitive leaf
+  // under it. Cached so each prefix is visited at most once.
+  const groupLengthCache = new Map();
+  const groupLength = (prefix) => {
+    if (groupLengthCache.has(prefix)) return groupLengthCache.get(prefix);
+    const kids = childrenByPrefix.get(prefix);
+    if (!kids) return lengthByLeaf.get(prefix) || 0;
+    let sum = 0;
+    for (const c of kids) {
+      sum += childrenByPrefix.has(c) ? groupLength(c) : (lengthByLeaf.get(c) || 0);
+    }
+    groupLengthCache.set(prefix, sum);
+    return sum;
+  };
   const emitted = new Set();
   const out = [];
   let currentDE = 1;
+  let pastBitmap = !bitmapField;   // true straight away when there's no bitmap declared
+  // Determine REDEFINES status for any prefix by descending into its
+  // transitive leaves — intermediate synthesised groups (which never appear
+  // in redefSet) shouldn't disqualify a real REDEFINES wrapper.
+  const prefixIsRedef = (prefix) => {
+    const kids = childrenByPrefix.get(prefix);
+    if (!kids || !kids.size) return false;
+    for (const c of kids) {
+      if (childrenByPrefix.has(c)) {
+        if (!prefixIsRedef(c)) return false;
+      } else if (!redefSet.has(c)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  // REDEFINES overlays existing bytes, so it never advances the DE counter
+  // and never owns a DE number.
   const assignDE = (id, extras) => {
-    if (anchors.has(id)) currentDE = anchors.get(id);
-    out.push({ id, de: currentDE, anchored: anchors.has(id), ...extras });
-    currentDE++;
+    if (extras.isRedef) {
+      out.push({ id, de: null, anchored: false, ...extras });
+      return;
+    }
+    const isAnchor = anchors.has(id);
+    if (isAnchor) {
+      currentDE = anchors.get(id);
+      pastBitmap = true;
+    }
+    out.push({ id, de: pastBitmap ? currentDE : null, anchored: isAnchor, ...extras });
+    if (pastBitmap) currentDE++;
+    // The bitmap field itself stays null; numbering kicks in on the NEXT def.
+    if (bitmapField && id === bitmapField) pastBitmap = true;
   };
 
   for (const def of defs) {
@@ -15811,18 +16108,33 @@ function _meResolveDEFieldList(item) {
       emitted.add(prefix);
       const isTerminal = terminalGroups.has(prefix);
       const childCount = (childrenByPrefix.get(prefix) || new Set()).size;
-      // A group is REDEFINES-flagged if all its children are redefines (best-effort heuristic).
-      const isRedef = [...(childrenByPrefix.get(prefix) || new Set())].every(c => redefSet.has(c));
-      assignDE(prefix, { isGroup: true, isTerminal, childCount, underTerminal: false, isRedef });
+      const isRedef = prefixIsRedef(prefix);
+      // Find this prefix's REDEFINES target — sample any one of its descendant
+      // leaves (they all share the same target when the wrapper is REDEFINES).
+      let redefTarget = null;
+      if (isRedef) {
+        const findLeaf = (p) => {
+          const kids = childrenByPrefix.get(p);
+          if (!kids) return p;
+          for (const c of kids) return findLeaf(c);
+          return null;
+        };
+        const sampleLeaf = findLeaf(prefix);
+        redefTarget = sampleLeaf ? redefTargetByLeaf.get(sampleLeaf) || null : null;
+      }
+      assignDE(prefix, { isGroup: true, isTerminal, childCount, underTerminal: false, isRedef, redefTarget, dataType: 'GROUP', length: groupLength(prefix) });
     }
 
     const parentPrefix = parts.slice(0, -1).join('.');
     const underTerminal = !!parentPrefix && terminalGroups.has(parentPrefix);
     const isRedef = redefSet.has(def.id);
+    const redefTarget = redefTargetByLeaf.get(def.id) || null;
+    const dataType = dtypeByField.get(def.id) || '';
+    const length = def.length || 0;
     if (underTerminal) {
-      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal: true, isRedef });
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal: true, isRedef, redefTarget, dataType, length });
     } else {
-      assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef });
+      assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length });
     }
   }
   return out;
@@ -15878,8 +16190,111 @@ function _meFmIsHiddenByCollapse(tr) {
   }
   return false;
 }
+// Field Map column-width persistence and drag-to-resize on header borders.
+// Widths keyed by data-col attribute, saved per-key to localStorage so the
+// layout survives reloads / item switches.
+const _FM_COL_KEY = 'up_me_fm_col_w';
+function _meFmLoadColWidths() {
+  try { return JSON.parse(localStorage.getItem(_FM_COL_KEY)) || {}; } catch(_) { return {}; }
+}
+function _meFmSaveColWidth(col, w) {
+  const data = _meFmLoadColWidths();
+  data[col] = w;
+  try { localStorage.setItem(_FM_COL_KEY, JSON.stringify(data)); } catch(_) {}
+}
+function _meFmInitColResize() {
+  const widths = _meFmLoadColWidths();
+  const ths = Array.from(document.querySelectorAll('.me-fm-table thead th[data-col]'));
+  const table = document.querySelector('.me-fm-table');
+  const wrap  = document.querySelector('.me-fm-table-wrap');
+  if (!table || !wrap || !ths.length) return;
+
+  // Step 1: settle column widths. Either honour saved widths verbatim, or
+  // auto-fit (every column except FIELD at its natural content width, FIELD
+  // absorbing the wrap's leftover).
+  if (ths.every(th => widths[th.dataset.col])) {
+    ths.forEach(th => { th.style.width = widths[th.dataset.col] + 'px'; });
+    table.style.width = ths.reduce((s, th) => s + widths[th.dataset.col], 0) + 'px';
+  } else {
+    ths.forEach(th => { th.style.width = widths[th.dataset.col] ? (widths[th.dataset.col] + 'px') : ''; });
+    table.style.width = '';
+    table.style.tableLayout = 'auto';
+    void table.offsetWidth; // force reflow before measuring
+    const naturalW = {};
+    ths.forEach(th => { naturalW[th.dataset.col] = Math.ceil(th.getBoundingClientRect().width); });
+    table.style.tableLayout = '';
+    const wrapW = wrap.clientWidth - 4;
+    let nonFldSum = 0;
+    ths.forEach(th => { if (th.dataset.col !== 'fld') nonFldSum += naturalW[th.dataset.col]; });
+    const fldW = Math.max(120, wrapW - nonFldSum);
+    ths.forEach(th => {
+      const c = th.dataset.col;
+      th.style.width = (c === 'fld' ? fldW : naturalW[c]) + 'px';
+    });
+    table.style.width = (fldW + nonFldSum) + 'px';
+  }
+
+  // Step 2: wire the resize handles in BOTH branches — without this, users
+  // with saved widths from a previous session couldn't drag the column edges
+  // anymore (the binding sat inside the auto-fit branch).
+  document.querySelectorAll('.me-fm-resizer').forEach(handle => {
+    handle.onmousedown = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const th = handle.closest('th');
+      const nextTh = th.nextElementSibling;
+      const col = handle.dataset.col;
+      const nextCol = nextTh ? nextTh.dataset.col : null;
+      // Pin EVERY column AND the table itself to current rendered widths.
+      // table-layout:fixed only honors absolute column widths when the table
+      // itself has an absolute width; otherwise the browser fills the
+      // container by scaling columns proportionally, so dragging one column
+      // visibly shifts the rest.
+      const table = document.querySelector('.me-fm-table');
+      const allThs = Array.from(document.querySelectorAll('.me-fm-table thead th[data-col]'));
+      allThs.forEach(t => { t.style.width = Math.round(t.getBoundingClientRect().width) + 'px'; });
+      const totalW = allThs.reduce((s, t) => s + parseInt(t.style.width, 10), 0);
+      table.style.width = totalW + 'px';
+      const startX = e.clientX;
+      const startW = th.getBoundingClientRect().width;
+      const nextStartW = nextTh ? nextTh.getBoundingClientRect().width : 0;
+      const MIN = 36;
+      handle.classList.add('active');
+      document.body.classList.add('me-fm-resizing');
+      // Steal width from the right-hand neighbour (Excel-style) so columns
+      // further right stay stationary. Total table width never changes.
+      const onMove = ev => {
+        let delta = ev.clientX - startX;
+        if (delta < -(startW - MIN)) delta = -(startW - MIN);
+        if (nextTh && delta > nextStartW - MIN) delta = nextStartW - MIN;
+        th.style.width = (startW + delta) + 'px';
+        if (nextTh) nextTh.style.width = (nextStartW - delta) + 'px';
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        handle.classList.remove('active');
+        document.body.classList.remove('me-fm-resizing');
+        // Persist widths for the two affected columns AND any other column
+        // that didn't already have a saved width (so the pin survives a
+        // re-render). Don't overwrite columns the user previously sized.
+        const saved = _meFmLoadColWidths();
+        allThs.forEach(t => {
+          const c = t.dataset.col;
+          if (c === col || c === nextCol || !(c in saved)) {
+            _meFmSaveColWidth(c, parseInt(t.style.width, 10));
+          }
+        });
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    };
+  });
+}
+
 function _meFmReapplyState() {
   if (!_meState) return;
+  _meFmInitColResize();
   // Apply hide-redef
   document.querySelectorAll('.me-fm-table tbody tr').forEach(tr => {
     const qn = tr.getAttribute('data-qn') || '';
@@ -15889,13 +16304,12 @@ function _meFmReapplyState() {
     const hidByFilt  = _meState.fmFilter && !qn.toLowerCase().includes(_meState.fmFilter.toLowerCase());
     tr.classList.toggle('me-fm-hidden', isHidden || hidByRedef || hidByFilt);
   });
-  // Group rows: chevron orientation
+  // Group rows: toggle .me-fm-grp-collapsed; the CSS rotation handles the
+  // chevron orientation (matches DDL Doc).
   document.querySelectorAll('.me-fm-grp').forEach(tr => {
     const qn = tr.getAttribute('data-qn');
     const collapsed = _meState.fmCollapsedGroups.has(qn);
     tr.classList.toggle('me-fm-grp-collapsed', collapsed);
-    const icon = tr.querySelector('.me-fm-grp-icon');
-    if (icon) icon.textContent = collapsed ? '▶' : '▼';
   });
   // Toolbar button states
   const collapseBtn = document.getElementById('me-fm-collapse-btn');
@@ -15914,6 +16328,12 @@ function _meFmReapplyState() {
   const filterInput = document.querySelector('.me-fm-filter');
   if (filterInput && _meState.fmFilter && filterInput.value !== _meState.fmFilter) {
     filterInput.value = _meState.fmFilter;
+  }
+  // Restore the help panel's selected-row detail after a re-render.
+  if (_meState.fmHelpOpen && _meState.fmHelpSel
+      && typeof _meFmHelpSelect === 'function'
+      && document.getElementById('me-fm-help')) {
+    _meFmHelpSelect(_meState.fmHelpSel);
   }
 }
 function _meFmToggleGroup(tr) {
@@ -15941,6 +16361,110 @@ function _meFmFilter(q) {
   _meFmReapplyState();
 }
 
+// ── Field Map "?" help ────────────────────────────────────────────────────
+// Reference table that opens above the Field Map. Same UX as Parse Spec /
+// Recognizer help — click a row to expand the detail.
+const _FM_HELP = {
+  'Data Element': {
+    purpose: 'ISO 8583 DE number assigned to a field by bitmap-fields.',
+    desc: 'When the parse spec runs <code>bitmap-fields</code>, each set bit in the bitmap is mapped to a DDL field via this number. By default DEs are assigned in DDL declaration order (1, 2, 3, …). Overriding one field acts as an anchor: it resets the counter at that point, so every subsequent field shifts. Use <b>&lt;</b> / <b>&gt;</b> to nudge ±1, click <span class="me-ps-help-block">DE-N</span> to type a number, and <b>↺</b> to clear an override (returns the field to its anchor-extrapolated value). Leaves under a terminal group don\'t have a DE of their own — the terminal group owns the DE.',
+    rows: [
+      ['DDL order', 'TYP, RTE.STAT, RTE.ORE, SHRG-GRP …', 'TYP=DE-1, RTE.STAT=DE-2, RTE.ORE=DE-3, SHRG-GRP=DE-4, …'],
+      ['Override TYP→DE-3', 'Anchor at TYP shifts everything after', 'TYP=DE-3, RTE.STAT=DE-4, RTE.ORE=DE-5, …'],
+      ['Terminal group', 'Group + its leaf children', 'FIELD222=DE-7, FIELD222-A and FIELD222-B have no DE'],
+    ],
+  },
+  'VLG': {
+    purpose: 'Variable Length Group — distribute a runtime LEN across sub-fields.',
+    desc: 'Appears <b>only</b> on <i>terminal groups</i> (groups whose children are all leaves) <b>and only</b> when the parse spec uses <code>bitmap-fields</code>. When VLG is on for a group, <code>bitmap-fields</code> reads the first sub-field as a numeric LEN (ASCII digits) and distributes that many bytes across the remaining sub-fields, in order, each capped by its declared length. Every sub-field is emitted in the parse output, even ones that consumed 0 bytes.',
+    rows: [
+      ['LEN says 45',   'ICC-LEN=3, ICC-TAG=2, ICC-VAL=20, ICC-AUX=40', 'TAG gets 2, VAL gets 20, AUX gets 23'],
+      ['LEN says 3',    'Same DDL',                                     'TAG gets 2, VAL gets 1, AUX gets 0 (still emitted, empty)'],
+      ['VLG hidden',    'Spec has no bitmap-fields, or row is a leaf', 'Button doesn\'t render — placeholder column kept for alignment'],
+    ],
+  },
+  'Length': {
+    purpose: 'Byte length the DDL declares for this field.',
+    desc: 'Read-only column showing how many bytes the field occupies, taken straight from the DDL declaration. Group rows sum their leaf descendants. The length matters when overriding the Data Type — fixed-size integer overrides (<code>uint8</code>, <code>uint16-be</code>, …) must match this number, or the override is rejected with a warning at parse time and a red border + ⚠ icon at edit time.',
+    rows: [
+      ['PIC X(3)',  'Elementary field, 3 ASCII chars',              'Length = 3'],
+      ['PIC 9(12)', 'Elementary numeric field, 12 ASCII digits',    'Length = 12'],
+      ['GROUP',     'Synthesized parent (e.g. PAN with LEN+DATA)',  'Length = sum of leaves (2 + 19 = 21)'],
+      ['REDEFINES', 'Overlays existing bytes',                      'Length still shown per the field\'s own declaration'],
+    ],
+  },
+  'Data Type': {
+    purpose: 'DDL-declared type, with optional override of how the bytes are interpreted at parse time.',
+    desc: 'The dropdown defaults to the field\'s DDL type (the empty-value entry, e.g. <code>PIC X</code>). Pick a different entry to override the interpretation — the parsed value is recomputed from the raw bytes using the new rule. Fixed-size numeric overrides validate against the <b>Length</b> column; class/text overrides are length-unconstrained. Mismatched lengths show a red border and ⚠ icon immediately and emit a parse-time error.',
+    rows: [
+      ['(DDL default)',  'Honour the DDL\'s declared type',                                            'PROD-ID = PIC X(2), bytes 0x46 0x46 → "FF"'],
+      ['uint8',          'Read 1 raw byte as unsigned int (length must = 1)',                          'Bytes 0xFF → 255'],
+      ['uint16-be',      'Read 2 raw bytes as big-endian unsigned int (length must = 2)',              'Bytes 0x46 0x46 → 17990'],
+      ['uint16-le',      'Read 2 raw bytes as little-endian unsigned int (length must = 2)',           'Bytes 0xFF 0x00 → 255'],
+      ['uint32-be',      'Read 4 raw bytes as big-endian unsigned int (length must = 4)',              'Bytes 0x00 0x00 0x00 0xFF → 255'],
+      ['uint32-le',      'Read 4 raw bytes as little-endian unsigned int (length must = 4)',           'Bytes 0xFF 0x00 0x00 0x00 → 255'],
+      ['hex-ascii',      'Decode bytes as ASCII text, parse as base-16 (any length, hex chars only)',  'Bytes 0x46 0x46 ("FF") → 255'],
+      ['hex-ebcdic',     'Decode bytes as EBCDIC text, parse as base-16 (any length, hex chars only)', 'Bytes 0xC6 0xC6 (EBCDIC "FF") → 255'],
+      ['ascii',          'Render bytes as printable ASCII chars (any length)',                         'Bytes 0x48 0x69 → "Hi"'],
+      ['ebcdic',         'Translate bytes via EBCDIC→ASCII table, then render as chars (any length)',  'Bytes 0xC8 0x89 (EBCDIC "Hi") → "Hi"'],
+      ['binary',         'Show raw bytes as a hex string — no integer or text interpretation',         'Bytes 0xAB 0xCD → "0xabcd"'],
+    ],
+  },
+  'Display': {
+    purpose: 'Override how the parsed value is formatted in the output panel.',
+    desc: 'Does <b>not</b> change parsing — only how the raw value appears in the Parse Results. Use when the DDL doesn\'t carry enough context to format the value nicely. Empty = default rendering for the field\'s data type.',
+    rows: [
+      ['datetime', 'Format as readable date/time',     'TRAN-DAT (PIC 9(10) MMDDhhmmss) → 03/15 14:22:07'],
+      ['amount',   'Format as decimal amount',         '000000012345 → 123.45'],
+      ['hex',      'Show raw hex bytes',               'BMP (PIC X(16) ASCII hex) → 4022000003C00000'],
+      ['text',     'Force plain-text rendering',       'Strip framing / decoding hints'],
+    ],
+  },
+};
+
+function _meFmHelpHtml() {
+  const rows = Object.entries(_FM_HELP).map(([col, info]) =>
+    `<tr onclick="_meFmHelpSelect('${col}')" data-col="${col}">` +
+      `<td class="me-ps-help-block">${col}</td>` +
+      `<td>${info.purpose}</td>` +
+    `</tr>`).join('');
+  const thead = '<tr><th>Column</th><th>Purpose</th></tr>';
+  return `<div class="me-ps-help-tbl-wrap"><table class="me-ps-help-table">` +
+    `<thead>${thead}</thead><tbody>${rows}</tbody></table></div>` +
+    `<div class="me-ps-help-detail" id="me-fm-help-detail"></div>`;
+}
+
+function _meFmHelpSelect(col) {
+  const info = _FM_HELP[col];
+  const det  = document.getElementById('me-fm-help-detail');
+  if (!info || !det) return;
+  if (_meState) _meState.fmHelpSel = col;
+  document.querySelectorAll('#me-fm-help .me-ps-help-table tbody tr').forEach(tr =>
+    tr.classList.toggle('me-ps-sel', tr.dataset.col === col)
+  );
+  const exRows = info.rows.map(([scenario, setup, result]) =>
+    `<tr><td class="me-ps-help-aname">${scenario}</td>` +
+    `<td>${setup}</td>` +
+    `<td>${result}</td></tr>`
+  ).join('');
+  const exTbl = info.rows.length
+    ? `<table class="me-ps-help-atbl"><thead><tr><th>Scenario</th><th>Setup</th><th>Result</th></tr></thead><tbody>${exRows}</tbody></table>`
+    : '';
+  det.innerHTML =
+    `<div class="me-ps-help-detail-title">${col}</div>` +
+    `<div class="me-ps-help-detail-desc">${info.desc}</div>` +
+    exTbl;
+  det.classList.add('open');
+}
+
+function _meFmToggleHelp() {
+  if (!_meState) return;
+  _meState.fmHelpOpen = !_meState.fmHelpOpen;
+  _meRenderRight();
+  // If reopening, restore selection
+  if (_meState.fmHelpOpen && _meState.fmHelpSel) _meFmHelpSelect(_meState.fmHelpSel);
+}
+
 // Field-keyed Field Override set — upserts a single key (type|display) on
 // the entry for this field id. Removes the entry when both keys are empty.
 function _meFoSetByField(fieldId, key, val) {
@@ -15957,6 +16481,9 @@ function _meFoSetByField(fieldId, key, val) {
     if (idx !== -1) item.field_overrides.splice(idx, 1);
   }
   _meSetDirty();
+  // Re-render so the length-incompatibility warning (red border + ⚠ icon)
+  // refreshes against the newly chosen override.
+  _meRenderRight();
 }
 // Swap the pill for a small number input on click; commit on Enter / blur.
 function _meDeEditStart(pill, fieldId, currentDE) {
@@ -16050,11 +16577,11 @@ function _meHtmlId(item) {
   const ea = v => (v == null ? '' : String(v)).replace(/"/g, '&quot;');
   if (isMsg) {
     return `<div class="me-form">
-  <div style="display:grid;grid-template-columns:70px 1fr 110px 60px 150px;gap:12px;align-items:end">
+  <div style="display:grid;grid-template-columns:70px 1fr 110px 150px;gap:12px;align-items:end">
     <div class="me-fld">
       <div class="me-lbl">Type code</div>
       <input class="me-inp" type="text" maxlength="10" value="${ea(item.name)}"
-        oninput="_meField('name',this.value)" title="Short identifier — used in DDLMM TYPE column" placeholder="STM">
+        oninput="_meField('name',this.value)" title="Short identifier used as the entity's type label" placeholder="STM">
     </div>
     <div class="me-fld">
       <div class="me-lbl">Label</div>
@@ -16065,11 +16592,6 @@ function _meHtmlId(item) {
       <div class="me-lbl">Vol</div>
       <input class="me-inp" type="text" value="${ea(item.vol)}"
         oninput="_meField('vol',this.value)" placeholder="ATM / POS">
-    </div>
-    <div class="me-fld">
-      <div class="me-lbl">Priority</div>
-      <input class="me-inp" type="number" min="0" max="100" value="${item.priority || 0}"
-        oninput="_meField('priority',Math.min(100,Math.max(0,+this.value||0)))">
     </div>
     <div class="me-fld">
       <div class="me-lbl">Color</div>
@@ -16091,7 +16613,7 @@ function _meField(field, value) {
   if (!item) return;
   item[field] = value;
   _meSetDirty();
-  if (field === 'name' || field === 'label' || field === 'color' || field === 'priority') _meRenderSidebar();
+  if (field === 'name' || field === 'label' || field === 'color') _meRenderSidebar();
 }
 
 // ── Recognizers Tab ───────────────────────────────────────────────────────
@@ -16106,15 +16628,16 @@ function _meHtmlRecs(item) {
   recs.forEach((r, i) => {
     const editing  = _meState.editRec === i;
     const formRec  = (_meState.pend && _meState.pend[i] !== undefined) ? _meState.pend[i] : r;
-    const isFirst  = i === 0;
-    const isLast   = i === recs.length - 1;
-    h += `<div class="me-rec-row" id="me-rr-${i}">
-  <div class="me-rec-head" onclick="_meToggleRec(${i})">
+    h += `<div class="me-rec-row" id="me-rr-${i}" draggable="true"
+  ondragstart="_meRecDragStart(event,${i})"
+  ondragover="_meRecDragOver(event,${i})"
+  ondragleave="_meRecDragLeave(event)"
+  ondrop="_meRecDrop(event,${i})"
+  ondragend="_meRecDragEnd(event)">
+  <div class="me-rec-head" onclick="_meToggleRec(${i})" title="Drag to reorder">
     <span class="me-rec-type">${_TYPE_LABEL[r.type] || r.type}</span>
     <span class="me-rec-sum">${_meRecSum(r)}</span>
     <span class="me-rec-acts" onclick="event.stopPropagation()">
-      <button class="me-rb" onclick="_meMoveRec(${i},-1)" title="Move up"${isFirst  ? ' disabled' : ''}>&#x2191;</button>
-      <button class="me-rb" onclick="_meMoveRec(${i},1)"  title="Move down"${isLast ? ' disabled' : ''}>&#x2193;</button>
       <button class="me-rb del" onclick="_meDelRec(${i})" title="Delete">&#x00D7;</button>
     </span>
   </div>
@@ -16174,6 +16697,9 @@ function _meRecSum(r) {
     case 'hex-density': case 'oct-density': return wrap(`@${r.offset||0} len:${r.length??'all'} min:${r.min}${r.encoding&&r.encoding!=='ascii'?' '+r.encoding:''}`);
     case 'length-payload': case 'length-prefix': return wrap(`@${r.offset} ${r.encoding||'uint16-be'} payload@${r.body_offset||0}${r.includes_self?' incl.self':''}`);
     case 'flag-payload':   case 'flag-prefix':   return wrap(`@${r.offset} ${r.encoding||'uint8'} payload@${r.body_offset||0} len:${r.body_length||0}`);
+    case 'source':        return wrap(`source = ${esc(r.pattern || '*')}`);
+    case 'destination':   return wrap(`destination = ${esc(r.pattern || '*')}`);
+    case 'filename':      return wrap(`file = ${esc(r.pattern || '*')}`);
     default: return '';
   }
 }
@@ -16287,6 +16813,21 @@ Note: binary bytes outside the range are NOT counted.
   'flag-payload': `<b>Reads a flag/type field and checks it is non-zero — confirming a payload follows.</b> Optionally validates the payload fits within the message.
 <div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— byte position of the flag field<br>encoding &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— <b>uint8</b> (1 byte), <b>uint16-be</b>, <b>uint16-le</b>, <b>bcd2</b><br>payload offset — byte where the payload begins<br>payload length — expected payload size in bytes (0 = skip size check)<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
 <div class="me-rh-exs"><b>Examples:</b> TPDU flag non-zero, 20-byte payload at offset 5 → offset=0 encoding=uint8 payload@=5 payload len=20 &nbsp;|&nbsp; 2-byte flag, payload at 2 → encoding=uint16-be payload@=2</div>`,
+
+  'source': `<b>Match the message's <i>source process</i> against a wildcard pattern.</b> Source is the originating process name as captured by the NETARD AUDIT parser (16-byte ASCII process identifier — e.g. <code>PIA^A910</code>, <code>ACQ23</code>). Wildcards: <b>$</b> matches a single alphanumeric character, <b>#</b> matches a single digit, <b>*</b> matches any sequence. Anchored at both ends.
+<div class="me-rh-flds">pattern — e.g. <b>PIA^$910</b> or <b>*</b> for catch-all<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
+A specific pattern requires the message to carry a source field. If the field is missing the recognizer fails (no false positives). <b>*</b> always matches.
+<div class="me-rh-exs"><b>Examples:</b> exact acquirer → <code>PIA^A910</code> &nbsp;|&nbsp; any acquirer node → <code>PIA^$910</code> &nbsp;|&nbsp; numbered acquirers ACQ00–ACQ99 → <code>ACQ##</code> &nbsp;|&nbsp; any PIA process → <code>PIA*</code> &nbsp;|&nbsp; catch-all → <code>*</code></div>`,
+
+  'destination': `<b>Match the message's <i>destination process</i> against a wildcard pattern.</b> Destination is the receiving process name as captured by the NETARD AUDIT parser. Wildcards: <b>$</b> single alphanum, <b>#</b> single digit, <b>*</b> any sequence.
+<div class="me-rh-flds">pattern — e.g. <b>PI$^SWITCH</b> or <b>*</b> for catch-all<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
+A specific pattern requires the message to carry a destination field. If the field is missing the recognizer fails. <b>*</b> always matches.
+<div class="me-rh-exs"><b>Examples:</b> exact switch → <code>PIA^SWITCH</code> &nbsp;|&nbsp; switch on any node → <code>PI$^SWITCH</code> &nbsp;|&nbsp; any process on a node → <code>PIA^*</code> &nbsp;|&nbsp; catch-all → <code>*</code></div>`,
+
+  'filename': `<b>Match the message's source file against a Guardian-style wildcard pattern.</b> Filename uses the Tandem / NonStop convention <code>$VOLUME.SUBVOL.FILENAME</code> — volume starts with a literal <code>$</code>, components are 1–8 alphanumeric characters separated by literal <code>.</code>. Wildcards: <b>*</b> any sequence, <b>?</b> any single character, <b>#</b> any single digit.
+<div class="me-rh-flds">pattern — e.g. <b>$VOL.SUBVOL.FILE</b> or <b>*</b> for catch-all<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
+A specific pattern requires the message to carry a filename. If absent the recognizer fails. <b>*</b> always matches.
+<div class="me-rh-exs"><b>Examples:</b> exact audit file → <code>$ATM.AUDIT.LOG</code> &nbsp;|&nbsp; any file in subvol → <code>$ATM.AUDIT.*</code> &nbsp;|&nbsp; numbered NETARD logs → <code>*.NETARD.LOG##</code> &nbsp;|&nbsp; catch-all → <code>*</code></div>`,
 };
 
 // Recognizers section "?" — opens an inline reference panel that mirrors the
@@ -16312,6 +16853,9 @@ const _REC_HELP_META = [
   ['oct-density',    'Fraction of bytes that are octal chars must meet a threshold',   'encoding, min'],
   ['length-payload', 'Read a length field and verify it matches actual payload size',  'offset, encoding, payload offset, incl. self'],
   ['flag-payload',   'Read a flag field, check non-zero, optionally validate payload', 'offset, encoding, payload offset, payload length'],
+  ['source',         'Match the source process name (wildcards $ # *)',                'pattern'],
+  ['destination',    'Match the destination process name (wildcards $ # *)',           'pattern'],
+  ['filename',       'Match the source filename $VOL.SUBVOL.FILE (wildcards * ? #)',   'pattern'],
 ];
 
 function _meRecHelpHtml() {
@@ -16357,13 +16901,14 @@ function _meRecForm(r, idx) {
     ['min-length','min-length'], ['max-length','max-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
     ['hex-density','hex-density'], ['oct-density','oct-density'],
     ['length-payload','length-payload'], ['flag-payload','flag-payload'],
+    ['source','source'], ['destination','destination'], ['filename','filename'],
   ];
   const cur = r ? (_ALIAS[r.type] || r.type) : 'literal';
   const typeSel = `<div class="me-rf-fld"><div class="me-lbl">Type</div>
     <select class="me-sel" style="width:150px" id="me-rt-${idx}" onchange="_meRecTypeChange(${idx},this.value)">
       ${types.map(([v,l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}
     </select></div>`;
-  const btns = `<div style="display:flex;gap:6px;align-self:flex-end;flex-shrink:0;margin-left:auto">
+  const btns = `<div class="me-rf-btnrow">
     <button class="btn btn-sm" onclick="_meRecCancel(${idx})">Cancel</button>
     <button class="btn btn-sm btn-primary" onclick="_meRecSave(${idx})">&#x2713; Apply</button>
   </div>`;
@@ -16372,7 +16917,8 @@ function _meRecForm(r, idx) {
     <input class="me-inp" style="width:72px" id="me-rv-id-${idx}" type="text"
       value="${ea(r?.id || '')}" placeholder="label"></div>`;
   return `<div class="me-rec-form open" id="me-rf-${idx}">
-  <div class="me-rf-row">${typeSel}${_meRecFields(r || { type: 'literal' }, idx)}${idFld}${btns}</div>
+  <div class="me-rf-row">${typeSel}${_meRecFields(r || { type: 'literal' }, idx)}${idFld}</div>
+  ${btns}
 </div>`;
 }
 
@@ -16544,6 +17090,12 @@ function _meRecFields(r, id) {
       return offF() + encSel('encoding',pfxEncs,enc) +
         nf('body_offset','Payload @',0) + nf('body_length','Payload Len',0);
     }
+    case 'source':
+      return tf('pattern','Pattern','process name e.g. PIA^$910   (wildcards: $ # *)');
+    case 'destination':
+      return tf('pattern','Pattern','process name e.g. PI$^SWITCH  (wildcards: $ # *)');
+    case 'filename':
+      return tf('pattern','Pattern','$VOL.SUBVOL.FILE   (wildcards: * ? # ; $ . literal)');
     default: return '';
   }
 }
@@ -16600,6 +17152,10 @@ function _meRecRead(idx) {
     case 'flag-payload': case 'flag-prefix':
       return { type: 'flag-payload', offset: ni('offset'), encoding: gv('encoding') || 'uint8',
         body_offset: ni('body_offset'), body_length: ni('body_length'), ...r_id };
+    case 'source':
+    case 'destination':
+    case 'filename':
+      return { type, pattern: gv('pattern').trim() || '*', ...r_id };
     default: return { type, ...r_id };
   }
 }
@@ -16658,20 +17214,63 @@ function _meDelRec(idx) {
   });
 }
 
-function _meMoveRec(idx, dir) {
+// ── Recognizer drag-and-drop reordering ────────────────────────────────────
+// Native HTML5 drag on each row. Drop position (before/after the hover row)
+// is determined by whether the mouse Y is in the row's top or bottom half.
+function _meRecDragStart(e, idx) {
+  // Block drag from inside the form, the action buttons, or any input/button.
+  // (Inputs inside the open form must remain editable; the action-button
+  // cluster handles its own clicks.)
+  if (e.target.closest('.me-rec-acts, .me-rec-form, input, select, textarea, button')) {
+    e.preventDefault();
+    return;
+  }
+  _meState._dragRecIdx = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', String(idx)); } catch(_) {}
+  e.currentTarget.classList.add('dragging');
+}
+function _meRecDragOver(e, idx) {
+  if (_meState._dragRecIdx == null) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const rect = e.currentTarget.getBoundingClientRect();
+  const before = (e.clientY - rect.top) < rect.height / 2;
+  e.currentTarget.classList.toggle('drop-before', before);
+  e.currentTarget.classList.toggle('drop-after', !before);
+}
+function _meRecDragLeave(e) {
+  e.currentTarget.classList.remove('drop-before', 'drop-after');
+}
+function _meRecDrop(e, targetIdx) {
+  e.preventDefault();
+  const src = _meState._dragRecIdx;
+  e.currentTarget.classList.remove('drop-before', 'drop-after');
+  if (src == null || src === targetIdx) { _meState._dragRecIdx = null; return; }
+  const rect = e.currentTarget.getBoundingClientRect();
+  const before = (e.clientY - rect.top) < rect.height / 2;
+  let dst = before ? targetIdx : targetIdx + 1;
+  if (dst > src) dst--; // removing the earlier item shifts later indices
   const item = _meCurItem();
+  _meState._dragRecIdx = null;
   if (!item || !item.recognizers) return;
-  const j = idx + dir;
-  if (j < 0 || j >= item.recognizers.length) return;
-  [item.recognizers[idx], item.recognizers[j]] = [item.recognizers[j], item.recognizers[idx]];
+  if (dst === src) return;
+  const [moved] = item.recognizers.splice(src, 1);
+  item.recognizers.splice(dst, 0, moved);
   _meState.editRec = -1;
   _meState.pend    = {};
   _meSetDirty();
   _meRenderRight();
 }
+function _meRecDragEnd(_e) {
+  _meState._dragRecIdx = null;
+  document.querySelectorAll('.me-rec-row').forEach(r => {
+    r.classList.remove('dragging', 'drop-before', 'drop-after');
+  });
+}
 
 function _meAddMsg() {
-  _meState.specs.push({ name: 'NEW', label: 'New Message', color: '#888888', vol: '', priority: 0, recognizers: [] });
+  _meState.specs.push({ name: 'NEW', label: 'New Message', color: '#888888', vol: '', recognizers: [] });
   _meSetDirty();
   _meSelectItem('msg', _meState.specs.length - 1);
 }
@@ -16871,6 +17470,8 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
       if (def.offset === undefined) break;   // sequential and ran out
       continue;                              // explicit and out of range — skip
     }
+    _meApplyTypeOverride(f, def, ctx, null);
+    _meApplyDisplayOverride(f, def, ctx);
     ctx.fieldsById[def.id] = f;
 
     // Decide whether to emit this field to the visible output.
@@ -16900,8 +17501,174 @@ function _meExecReadDDL(attrs, ctx) {
   for (const idx of bindings) _meReadDDLBinding(idx, fields, from, until, ctx);
 }
 
+// Required byte length for a "read" block's type override. Returns null for
+// types that don't impose a fixed byte count (ascii/ebcdic/binary as a class).
+function _meReadTypeByteLen(type) {
+  if (!type) return null;
+  const t = String(type).toUpperCase().replace(/\s+/g, ' ').trim();
+  if (/^UINT8$|^BYTE$|^BINARY\s*8$/i.test(t))           return 1;
+  if (/^UINT16(-(BE|LE))?$|^WORD$|^BINARY\s*16$/i.test(t)) return 2;
+  if (/^UINT32(-(BE|LE))?$|^DWORD$|^BINARY\s*32$/i.test(t)) return 4;
+  if (/^BINARY\s*64$/i.test(t))                          return 8;
+  return null;
+}
+
+// Re-interpret the raw bytes of a field as the override type. Returns a
+// partial-update object that's merged into the field result. Leaves the field
+// alone for types that don't impose a fixed interpretation.
+function _meReadApplyTypeOverride(f, type) {
+  const t = String(type).toUpperCase().replace(/\s+/g, ' ').trim();
+  const bytes = f.rawHex ? f.rawHex.match(/.{1,2}/g).map(h => parseInt(h, 16)) : [];
+  const beInt = bs => bs.reduce((n, b) => (n << 8 >>> 0) + b, 0) >>> 0;
+  const leInt = bs => [...bs].reverse().reduce((n, b) => (n << 8 >>> 0) + b, 0) >>> 0;
+  let v = null;
+  if (/^UINT8$|^BYTE$|^BINARY\s*8$/i.test(t))           v = bytes[0] ?? 0;
+  else if (/^UINT16-LE$|^BINARY\s*16$/i.test(t) && /LE/.test(t))  v = leInt(bytes.slice(0, 2));
+  else if (/^UINT16(-BE)?$|^WORD$|^BINARY\s*16$/i.test(t))        v = beInt(bytes.slice(0, 2));
+  else if (/^UINT32-LE$/i.test(t))                       v = leInt(bytes.slice(0, 4));
+  else if (/^UINT32(-BE)?$|^DWORD$|^BINARY\s*32$/i.test(t))       v = beInt(bytes.slice(0, 4));
+  else if (/^BINARY\s*64$/i.test(t))                     v = '0x' + (f.rawHex || '');
+  // Class-only overrides — interpret bytes as text/binary without imposing a
+  // fixed length. Useful when the DDL declares one shape but the wire holds
+  // another (e.g. PIC X field actually carrying EBCDIC bytes).
+  else if (/^BINARY$/i.test(t)) {
+    v = '0x' + (f.rawHex || '');
+  }
+  else if (/^ASCII$/i.test(t)) {
+    v = bytes.map(b => (b >= 0x20 && b < 0x7F) ? String.fromCharCode(b) : '.').join('');
+  }
+  else if (/^EBCDIC$/i.test(t)) {
+    v = bytes.map(b => {
+      const a = _EBCDIC_TO_ASCII[b];
+      return (a != null && a >= 0x20 && a < 0x7F) ? String.fromCharCode(a) : '.';
+    }).join('');
+  }
+  // Text-encoded hex digits → integer. Decode the bytes as ASCII or EBCDIC
+  // text first, then parseInt(base 16). Used when the wire carries
+  // human-readable hex pairs (e.g. "FF" → 255) rather than raw binary.
+  else if (/^HEX-ASCII$/i.test(t)) {
+    const txt = bytes.map(b => String.fromCharCode(b)).join('').trim();
+    const n = parseInt(txt, 16);
+    if (!Number.isNaN(n) && /^[0-9A-Fa-f]+$/.test(txt)) v = n;
+  }
+  else if (/^HEX-EBCDIC$/i.test(t)) {
+    const txt = bytes.map(b => String.fromCharCode(_EBCDIC_TO_ASCII[b] ?? b)).join('').trim();
+    const n = parseInt(txt, 16);
+    if (!Number.isNaN(n) && /^[0-9A-Fa-f]+$/.test(txt)) v = n;
+  }
+  return v == null ? {} : { value: String(v), dataType: type, typeOverride: type };
+}
+
+// ── Display-override formatters ─────────────────────────────────────────────
+// These transform a parsed field's value into a human-readable string. They
+// do NOT change the underlying value — the renderer reads `f.displayValue`
+// when present and falls back to `f.value` otherwise.
+
+function _meFmtDateTime(value) {
+  const pad = n => String(n).padStart(2, '0');
+  const s = String(value || '').replace(/\D/g, '');
+  if (!s.length) return value;
+  const tryTime = (s6) => {
+    const h = +s6.slice(0,2), m = +s6.slice(2,4), sec = +s6.slice(4,6);
+    return (h < 24 && m < 60 && sec < 60) ? `${pad(h)}:${pad(m)}:${pad(sec)}` : null;
+  };
+  const tryDate = (s6) => {
+    const yy = +s6.slice(0,2), mm = +s6.slice(2,4), dd = +s6.slice(4,6);
+    return (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) ? `20${pad(yy)}-${pad(mm)}-${pad(dd)}` : null;
+  };
+  if (s.length === 4) {
+    const mm = +s.slice(0,2), dd = +s.slice(2,4);
+    return (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) ? `${pad(mm)}/${pad(dd)}` : value;
+  }
+  if (s.length === 6) return tryTime(s) || tryDate(s) || value;
+  if (s.length === 10) {
+    const mm = +s.slice(0,2), dd = +s.slice(2,4);
+    const t = tryTime(s.slice(4));
+    if (t && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) return `${pad(mm)}/${pad(dd)} ${t}`;
+    return value;
+  }
+  if (s.length === 12) {
+    const y = '20' + pad(+s.slice(0,2));
+    const mm = +s.slice(2,4), dd = +s.slice(4,6);
+    const t = tryTime(s.slice(6));
+    if (t && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) return `${y}-${pad(mm)}-${pad(dd)} ${t}`;
+    return value;
+  }
+  if (s.length === 14) {
+    const y = s.slice(0,4), mm = +s.slice(4,6), dd = +s.slice(6,8);
+    const t = tryTime(s.slice(8));
+    if (t && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) return `${y}-${pad(mm)}-${pad(dd)} ${t}`;
+    return value;
+  }
+  return value;
+}
+
+function _meFmtAmount(value) {
+  const s = String(value || '').replace(/\D/g, '');
+  if (!s.length) return value;
+  const n = parseInt(s, 10);
+  if (!Number.isFinite(n)) return value;
+  return (n / 100).toFixed(2);
+}
+
+function _meFmtHex(f) {
+  return f.rawHex ? '0x' + f.rawHex.toUpperCase() : String(f.value ?? '');
+}
+
+function _meFmtText(f) {
+  if (!f.rawHex) return String(f.value ?? '');
+  const bytes = f.rawHex.match(/.{1,2}/g).map(h => parseInt(h, 16));
+  return bytes.map(b => (b >= 0x20 && b < 0x7F) ? String.fromCharCode(b) : '.').join('');
+}
+
+// Look up item.field_overrides for `def.id`, run the matching formatter, and
+// attach the result as `f.displayValue` (plus `f.displayOverride` for hover
+// hints). Errored fields and fields with no override are left alone.
+function _meApplyDisplayOverride(f, def, ctx) {
+  if (!f || f.error) return;
+  const fo = (ctx.item?.field_overrides || []).find(e => e?.field === def.id);
+  const disp = fo?.display;
+  if (!disp) return;
+  let out;
+  switch (disp) {
+    case 'datetime': out = _meFmtDateTime(f.value); break;
+    case 'amount':   out = _meFmtAmount(f.value); break;
+    case 'hex':      out = _meFmtHex(f); break;
+    case 'text':     out = _meFmtText(f); break;
+    default: return;
+  }
+  if (out !== undefined && out !== null) {
+    f.displayValue = String(out);
+    f.displayOverride = disp;
+  }
+}
+
+// Apply a type override to a freshly-read field. The effective override is
+// the parse-spec inline `type` attr if present, else item.field_overrides
+// (set via the Field Map UI). Length must match — on mismatch an error row is
+// pushed and the override is ignored. Single helper used by every read path
+// so the inline syntax and the UI dropdown produce identical results.
+function _meApplyTypeOverride(f, def, ctx, inlineType) {
+  let typeOverride = inlineType || null;
+  if (!typeOverride) {
+    const fo = (ctx.item?.field_overrides || []).find(e => e?.field === def.id);
+    typeOverride = fo?.type || null;
+  }
+  if (!typeOverride) return;
+  const required = _meReadTypeByteLen(typeOverride);
+  if (required !== null && required !== def.length) {
+    ctx.fields.push({
+      id: def.id,
+      error: `Type override "${typeOverride}" requires ${required} bytes but DDL field "${def.id}" is ${def.length} bytes — override ignored.`,
+    });
+    return;
+  }
+  Object.assign(f, _meReadApplyTypeOverride(f, typeOverride));
+}
+
 function _meExecReadField(attrs, ctx) {
-  const fieldId = (typeof attrs === 'string') ? attrs : attrs?.field;
+  const fieldId     = (typeof attrs === 'string') ? attrs : attrs?.field;
+  const typeOverride = (typeof attrs === 'object') ? attrs?.type : null;
   if (!fieldId) {
     ctx.fields.push({ id: 'read', error: 'Missing field attribute' });
     return;
@@ -16918,6 +17685,8 @@ function _meExecReadField(attrs, ctx) {
   }
   const f = _meReadOneFieldFromDef(def, ctx);
   if (f) {
+    _meApplyTypeOverride(f, def, ctx, typeOverride);
+    _meApplyDisplayOverride(f, def, ctx);
     ctx.fields.push(f);
     ctx.fieldsById[fieldId] = f;
   }
@@ -17204,13 +17973,23 @@ function _meExecReadBitmap(attrs, ctx) {
 // ── Block: bitmap-fields ────────────────────────────────────────────────────
 
 function _meBuildDEMap(ctx) {
-  // Walk binding 0's defs in declaration order, applying anchors from item.de_map.
-  // Returns: { [deNumber]: def }.
+  // Walk every binding's defs in declaration order (dedup by field id, first
+  // binding wins — same shape as the Field Map UI's row list). Anchors from
+  // item.de_map can override the running DE counter so a later field re-aligns
+  // numbering for ISO 8583-style bitmaps. Returns: { [deNumber]: def }.
   const map = {};
-  const defs = ctx.resolvedBindings[0]?.defs || [];
+  const seen = new Set();
+  const allDefs = [];
+  for (const b of (ctx.resolvedBindings || [])) {
+    for (const def of (b?.defs || [])) {
+      if (seen.has(def.id)) continue;
+      seen.add(def.id);
+      allDefs.push(def);
+    }
+  }
   const anchors = new Map((ctx.item.de_map || []).map(e => [e.field, e.de]));
   let currentDE = 1;
-  for (const def of defs) {
+  for (const def of allDefs) {
     if (def._occursGroup !== undefined && def._occursIdx > 0) continue;
     if (anchors.has(def.id)) currentDE = anchors.get(def.id);
     map[currentDE] = def;
@@ -17287,6 +18066,8 @@ function _meExecBitmapFields(attrs, ctx) {
     } else {
       const f = _meReadOneFieldFromDef(def, ctx);
       if (f) {
+        _meApplyTypeOverride(f, def, ctx, null);
+        _meApplyDisplayOverride(f, def, ctx);
         ctx.fields.push(f);
         ctx.fieldsById[def.id] = f;
       }
@@ -17762,7 +18543,7 @@ function _meSave() {
 
 <!-- ===== PARSE PROGRESS OVERLAY ===== -->
 <div class="modal-overlay hidden" id="parseProgressOverlay">
-  <div class="modal-box" style="min-width:480px;max-width:480px;gap:10px;position:relative">
+  <div class="modal-box" style="min-width:640px;max-width:720px;gap:10px;position:relative">
     <button id="ppCloseBtn" class="hidden" style="position:absolute;top:6px;right:8px;background:none;border:none;color:var(--text-dim);font-size:1.1em;cursor:pointer;line-height:1;padding:2px 4px;opacity:0.7" title="Cancel">✕</button>
     <div class="modal-label">Parsing…</div>
     <div id="parseProgressSteps" style="display:flex;flex-direction:column;gap:8px;padding:2px 0 4px"></div>
@@ -17996,16 +18777,14 @@ function _meSave() {
                   <li><code>0XYZ</code> + 16 hex chars → ISO 8583 fallback</li>
                 </ul>
               </li>
-              <li style="margin-bottom:6px"><strong>DDL Message Map — DDLMM (Priority 2)</strong> — explicit routing rules defined by the user. Each rule specifies MSG pattern, SOURCE, DESTINATION, and a target DDL path. Rules are evaluated at six specificity levels (most specific wins). <code>##</code> sentinel rules additionally require the detected type to match the rule's TYPE column. When a rule matches, its DDL is used directly and its TYPE badge overrides the auto-detected type.</li>
-              <li><strong>Auto-detect Fallback (Priority 3)</strong> — if no DDLMM rule matched, every DDL in the preferred volume (or all volumes if unknown type) is tried. Each is scored: <em>successfully parsed fields ÷ total attempted</em>. Outcome depends on the number of DDLs with score &gt; 0:
+              <li><strong>Auto-detect Fallback</strong> — every DDL in the preferred volume (or all volumes if unknown type) is tried. Each is scored: <em>successfully parsed fields ÷ total attempted</em>. Outcome depends on the number of DDLs with score &gt; 0:
                 <ul style="padding-left:14px;margin:4px 0 0;font-size:10.5px">
                   <li><strong>Zero matches</strong> → <em>"No matching DDL for this message"</em> shown in results panel</li>
-                  <li><strong>One match</strong> → used automatically; a prompt offers to save it as a DDLMM rule</li>
-                  <li><strong>Multiple matches</strong> → a picker lists each DDL and its score; you choose one and select <em>Use for session</em> (applies to all same-type messages in this run) or <em>Save as rule</em> (creates a permanent DDLMM rule)</li>
+                  <li><strong>One match</strong> → used automatically</li>
+                  <li><strong>Multiple matches</strong> → a picker lists each DDL and its score; you choose one for the session</li>
                 </ul>
               </li>
             </ol>
-            <p style="margin:4px 0 0;color:var(--text-dim);font-size:10.5px">The DDL Message Map can be opened from the tree by clicking <strong>DDL Message Map</strong> at the top of the tree panel.</p>
           </div></div>
 
           <!-- 5. Message Formats -->
@@ -18228,10 +19007,6 @@ function _meSave() {
             <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
           </div>
           <div class="me-item-list" id="me-msg-list"></div>
-        </div>
-        <div class="me-sidebar-sect me-sect-rules">
-          <div class="me-sidebar-hdr"><span class="me-sidebar-title">Rules</span></div>
-          <div class="me-sidebar-note">Configure in the DDL Rules (DDLMM) panel.</div>
         </div>
       </div>
 

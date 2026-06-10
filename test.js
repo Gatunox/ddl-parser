@@ -78,13 +78,17 @@ _t.detectFormat       = detectFormat;
 _t.isHexAsciiLine     = isHexAsciiLine;
 _t.hexAsciiStartCol   = hexAsciiStartCol;
 _t.extractBytes       = extractBytes;
-_t.splitMessages      = splitMessages;
-_t.splitHexAsciiMessages = splitHexAsciiMessages;
-_t.extractTS          = extractTS;
 _t.stripJsonc         = _stripJsonc;
 _t.migrateSpec        = window._migrateSpec;
 _t.fmtTestSpecs       = window._fmtTestSpecs;
 _t.meExecParseSpec    = _meExecParseSpec;
+_t.meWalkDEFields     = _meWalkDEFields;
+_t.meCollectBindingDefs = _meCollectBindingDefs;
+_t.getDDLFromPath     = getDDLFromPath;
+_t.meFmtDateTime      = _meFmtDateTime;
+_t.meFmtAmount        = _meFmtAmount;
+_t.meFmtHex           = _meFmtHex;
+_t.meFmtText          = _meFmtText;
 _t.S                  = S;
 _t.P                  = P;
 `;
@@ -100,8 +104,8 @@ const {
   picSize, typeSize, buildDDLDocFields, expandTypeRefs,
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
-  detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, splitMessages,
-  splitHexAsciiMessages, extractTS, stripJsonc, migrateSpec, fmtTestSpecs,
+  detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
+  stripJsonc, migrateSpec, fmtTestSpecs,
   meExecParseSpec, S, P,
 } = sandbox._t;
 
@@ -556,6 +560,21 @@ test('REDEFINES field overlaps target byte range', () => {
   eq(fields[2].startByte, 4, 'NEXT.startByte');
 });
 
+test('LLVAR and LLLVAR fields advance the sequential cursor by prefix plus payload', () => {
+  const defs = [
+    { id: 'L2', type: 'LLVAR',  length: 99,  description: 'L2' },
+    { id: 'L3', type: 'LLLVAR', length: 999, description: 'L3' },
+  ];
+  const fields = parseFlatMessage(Array.from(Buffer.from('03ABC004WXYZ')), defs);
+  eq(fields.length, 2, 'two variable-length fields parsed');
+  eq(fields[0].lenPrefix, '03', 'LLVAR length prefix');
+  eq(fields[0].value, 'ABC', 'LLVAR payload');
+  eq(fields[0].startByte, 0, 'LLVAR starts at byte 0');
+  eq(fields[1].lenPrefix, '004', 'LLLVAR length prefix');
+  eq(fields[1].value, 'WXYZ', 'LLLVAR payload');
+  eq(fields[1].startByte, 5, 'LLLVAR starts after LLVAR prefix and payload');
+});
+
 // ── typeSize ────────────────────────────────────────────────────────────────
 console.log('\ntypeSize');
 test('built-in HPE TYPE sizes', () => {
@@ -670,6 +689,11 @@ test('detects EBCDIC-looking hex and decodes bytes to ASCII', () => {
   deepEq(extractBytes(ebcdicDigits, 'ebcdic'), Array.from('01234567').map(c => c.charCodeAt(0)), 'decoded');
 });
 
+test('detects FUP COPY fixtures as ASCII vs hex dumps before generic heuristics', () => {
+  eq(detectFormat(fixtureText('test/FUP-test/fup-copy-ascii.txt')), 'fup-ascii', 'FUP ASCII fixture');
+  eq(detectFormat(fixtureText('test/FUP-test/fup-copy-hex.txt')), 'fup-hex', 'FUP hex fixture');
+});
+
 test('extracts pure hex, labelled hex, octal, and fixed-width ASCII bytes', () => {
   deepEq(extractBytes('30313233', 'hex'), [48, 49, 50, 51], 'pure hex');
   deepEq(extractBytes('payload = 41 42 43 44', 'hex'), [65, 66, 67, 68], 'labelled hex');
@@ -677,26 +701,6 @@ test('extracts pure hex, labelled hex, octal, and fixed-width ASCII bytes', () =
   P.lineWidth = 3; S.asciiMargin = 0; S.asciiRulerCol = 0;
   deepEq(extractBytes('A\nBC', 'ascii'), [65, 32, 32, 66, 67, 32], 'ASCII padding');
   P.lineWidth = 0;
-});
-
-// ── message splitting ───────────────────────────────────────────────────────
-console.log('\nmessage splitting');
-test('splits timestamped messages and carries each timestamp', () => {
-  const parts = splitMessages('2026-05-25 10:00:00 first\nbody\n2026-05-25 10:01:00 second');
-  eq(parts.length, 2, 'two messages');
-  eq(parts[0].timestamp, '2026-05-25 10:00:00', 'first ts');
-  eq(parts[1].timestamp, '2026-05-25 10:01:00', 'second ts');
-});
-
-test('splits blank-line and separator-delimited messages', () => {
-  eq(splitMessages('one\n\n two ').length, 2, 'blank-line split');
-  eq(splitMessages('one\n---\ntwo').length, 2, 'separator split');
-  eq(extractTS('x 2026/05/25T10:11:12.123 y'), '2026/05/25T10:11:12.123', 'extract timestamp');
-});
-
-test('splits HEXASCII blocks while skipping comments between blocks', () => {
-  const parts = splitHexAsciiMessages('0000: 4142 [AB]\ncomment\n0002: 4344 [CD]');
-  eq(parts.length, 2, 'two dump blocks');
 });
 
 // ── JSONC and recognizer pipeline ───────────────────────────────────────────
@@ -807,14 +811,13 @@ test('warning-only fixtures stay warnings instead of hard errors', () => {
 // ── parse_spec interpreter ──────────────────────────────────────────────────
 console.log('\nparse_spec interpreter');
 test('executes read-ddl filters, repeat, when/not, length refs, read-until, read-to-end, and read-tlv', () => {
+  // The DDL covers only the fixed header — read-ddl walks it and leaves the
+  // cursor right after CNT, so the synthetic read-fixed blocks continue from
+  // there (cursor always advances through every field read).
   S.ddlTree = { VOL: { SV: { 'TESTDDL': `
     DEF REC.
       02 HEAD PIC X(2).
       02 CNT PIC X(1).
-      02 ITEM PIC X(2).
-      02 FLAG PIC X(1).
-      02 LEN PIC X(1).
-      02 TAIL PIC X(10).
     END REC.
   ` } } };
   S.inputFormat = 'hex';
@@ -823,7 +826,6 @@ test('executes read-ddl filters, repeat, when/not, length refs, read-until, read
     ddl_bindings: ['VOL/SV/TESTDDL/REC'],
     parse_spec_binary: [
       { 'read-ddl': { fields: ['HEAD', 'CNT'] } },
-      { skip: 3 },
       { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 2, as: 'ITEM' } }] } },
       { 'read-fixed': { length: 1, as: 'FLAG' } },
       { 'read-fixed': { length: 1, as: 'LEN' } },
@@ -897,6 +899,239 @@ test('read-length-prefix decodes bcd2 prefixes and read-while max can come from 
   deepEq(ctx.fields.map(x => x.id), ['DATA', 'COUNT', 'CH', 'CH'], 'read-while stops at binary max count');
   deepEq(ctx.fields.filter(x => x.id === 'CH').map(x => x.value), ['D', 'E'], 'read-while emitted only max iterations');
   eq(ctx.cursor, 8, 'cursor stops after max-limited iterations');
+});
+
+test('field_overrides can reinterpret bound DDL fields and add a display formatter', () => {
+  S.ddlTree = { VOL: { SV: { 'OVRDDL': `
+    DEF REC.
+      02 LEN PIC X(2).
+      02 TXT PIC X(2).
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: ['VOL/SV/OVRDDL/REC'],
+    field_overrides: [
+      { field: 'LEN', type: 'uint16-be' },
+      { field: 'TXT', display: 'hex' },
+    ],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+  };
+  const ctx = meExecParseSpec(item, Uint8Array.from([0x01, 0x02, 0x41, 0x42]));
+  const len = ctx.fields.find(x => x.id === 'LEN');
+  const txt = ctx.fields.find(x => x.id === 'TXT');
+  eq(len.value, '258', 'type override reinterprets bytes as uint16-be');
+  eq(len.dataType, 'uint16-be', 'type override updates dataType');
+  eq(len.typeOverride, 'uint16-be', 'type override marker set');
+  eq(txt.value, 'AB', 'underlying field value stays text');
+  eq(txt.displayValue, '0x4142', 'display override exposes hex rendering');
+  eq(txt.displayOverride, 'hex', 'display override marker set');
+});
+
+test('field_overrides reject incompatible lengths without replacing the parsed field', () => {
+  S.ddlTree = { VOL: { SV: { 'BADOVR': `
+    DEF REC.
+      02 ONE PIC X(1).
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: ['VOL/SV/BADOVR/REC'],
+    field_overrides: [{ field: 'ONE', type: 'uint16-be' }],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+  };
+  const ctx = meExecParseSpec(item, Buffer.from('A'));
+  const parsed = ctx.fields.find(x => x.id === 'ONE' && !x.error);
+  const err = ctx.fields.find(x => x.id === 'ONE' && x.error);
+  eq(parsed.value, 'A', 'original parsed field remains visible');
+  assert.ok(!parsed.typeOverride, 'invalid override is not applied');
+  assert.ok(err.error.includes('override ignored'), 'mismatch emits warning row');
+});
+
+test('inline parse-spec type overrides take precedence over field_overrides', () => {
+  S.ddlTree = { VOL: { SV: { 'INLINEOVR': `
+    DEF REC.
+      02 NUM PIC X(2).
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: ['VOL/SV/INLINEOVR/REC'],
+    field_overrides: [{ field: 'NUM', type: 'uint16-be' }],
+    parse_spec_binary: [{ read: { field: 'NUM', type: 'uint16-le' } }],
+  };
+  const ctx = meExecParseSpec(item, Uint8Array.from([0x01, 0x02]));
+  const num = ctx.fields.find(x => x.id === 'NUM' && !x.error);
+  eq(num.value, '513', 'inline type override wins over UI field override');
+  eq(num.dataType, 'uint16-le', 'effective data type reflects inline override');
+  eq(num.typeOverride, 'uint16-le', 'field records the inline override that was applied');
+});
+
+test('bitmap-fields honors DE anchors from item.de_map when mapping set bits', () => {
+  S.ddlTree = { VOL: { SV: { 'BITDDL': `
+    DEF REC.
+      02 F1 PIC X(1).
+      02 F2 PIC X(1).
+      02 F3 PIC X(1).
+    END REC.
+  ` } } };
+  S.inputFormat = 'ascii';
+  const item = {
+    ddl_bindings: ['VOL/SV/BITDDL/REC'],
+    de_map: [{ field: 'F1', de: 2 }],
+    parse_spec_binary: [],
+    parse_spec_ascii: [
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'bitmap-fields': 'BMP' },
+    ],
+  };
+  const ctx = meExecParseSpec(item, Buffer.from('5000000000000000AC'));
+  deepEq(ctx.fields.map(x => x.id), ['BMP', 'F1', 'F3'], 'DE-2 and DE-4 map to anchored fields');
+  // Present DEs are read sequentially after the bitmap — DDL offsets assume
+  // every field is present and would point inside the bitmap region here.
+  eq(ctx.fields.find(x => x.id === 'F1').startByte, 16, 'first present DE starts right after the bitmap');
+  eq(ctx.fields.find(x => x.id === 'F1').value, 'A', 'first present DE reads the first payload byte');
+  eq(ctx.fields.find(x => x.id === 'F3').startByte, 17, 'next present DE follows sequentially (absent F2 consumes nothing)');
+  eq(ctx.fields.find(x => x.id === 'F3').value, 'C', 'next present DE reads the second payload byte');
+});
+
+test('DE numbering starts after the bitmap field and skips REDEFINES, matching the Field Map UI', () => {
+  S.ddlTree = { VOL: { SV: { 'ISODDL': `
+    DEF REC.
+      02 HDR PIC X(3).
+      02 BMP PIC X(16).
+      02 PAN.
+        03 LEN PIC 9(2).
+        03 DATA PIC X(4).
+      02 ALT-VIEW REDEFINES PAN.
+        03 RAW PIC X(6).
+      02 AMT PIC 9(3).
+    END REC.
+  ` } } };
+  S.inputFormat = 'ascii';
+  const item = {
+    ddl_bindings: ['VOL/SV/ISODDL/REC'],
+    // Bit 1 is the secondary-bitmap indicator (never a DE), so anchor the
+    // first real DE to 2 — same shape as BIC's SEC-BIT-MAP=DE-1 convention.
+    de_map: [{ field: 'PAN', de: 2 }],
+    parse_spec_ascii: [
+      { 'read-ddl': { until: 'HDR' } },
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'bitmap-fields': 'BMP' },
+    ],
+    parse_spec_binary: [],
+  };
+  // UI walker view: HDR and BMP unnumbered; PAN group anchored to DE-2
+  // (terminal, owns its leaves); ALT-VIEW (REDEFINES) skipped; AMT = DE-3.
+  const rows = sandbox._t.meWalkDEFields(
+    sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/ISODDL/REC')]), item);
+  const rowDE = id => rows.find(r => r.id === id)?.de ?? null;
+  eq(rowDE('HDR'), null, 'header field carries no DE');
+  eq(rowDE('BMP'), null, 'bitmap field carries no DE');
+  eq(rowDE('PAN'), 2, 'terminal group owns the anchored DE-2');
+  eq(rowDE('PAN.LEN'), null, 'leaf under terminal group carries no DE');
+  eq(rowDE('ALT-VIEW'), null, 'REDEFINES wrapper carries no DE');
+  eq(rowDE('AMT'), 3, 'numbering continues past the redef without consuming a DE');
+
+  // Engine view must agree: bits 2 and 3 (0x60) → PAN group, AMT.
+  // Message: HDR(3) + bitmap(16 ascii-hex) + PAN.LEN(2) + PAN.DATA(4) + AMT(3)
+  const ctx = meExecParseSpec(item, Buffer.from('HHH600000000000000004ABCD123'));
+  const ids = ctx.fields.map(f => f.id);
+  deepEq(ids, ['HDR', 'BMP', 'PAN.LEN', 'PAN.DATA', 'AMT'], 'group DE reads its leaves; AMT follows');
+  eq(ctx.fields.find(f => f.id === 'PAN.DATA').value, 'ABCD', 'group leaves read sequentially after the bitmap');
+  eq(ctx.fields.find(f => f.id === 'AMT').value, '123', 'second DE follows the group');
+});
+
+test('VLG group distributes runtime LEN across children with real ids and overrides applied', () => {
+  S.ddlTree = { VOL: { SV: { 'VLGDDL': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 ICC.
+        03 LEN PIC 9(2).
+        03 TAG PIC X(2).
+        03 VAL PIC X(8).
+    END REC.
+  ` } } };
+  S.inputFormat = 'ascii';
+  const item = {
+    ddl_bindings: ['VOL/SV/VLGDDL/REC'],
+    var_length_groups: ['ICC'],
+    field_overrides: [{ field: 'ICC.VAL', display: 'hex' }],
+    parse_spec_ascii: [
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'bitmap-fields': 'BMP' },
+    ],
+    parse_spec_binary: [],
+  };
+  // Bitmap 0x80... → wait, bit 1 is the secondary indicator; use bit 2 (0x40).
+  // ICC is the only group after BMP → DE-1... but bit 1 is reserved. Anchor it to 2.
+  item.de_map = [{ field: 'ICC', de: 2 }];
+  // LEN says 05: TAG takes 2, VAL takes 3 (capped by remaining), emitted even short.
+  const ctx = meExecParseSpec(item, Buffer.from('400000000000000005TTVVV'));
+  const ids = ctx.fields.map(f => f.id);
+  deepEq(ids, ['BMP', 'ICC.LEN', 'ICC.TAG', 'ICC.VAL'], 'VLG children use their real qualified ids');
+  eq(ctx.fields.find(f => f.id === 'ICC.LEN').value, '05', 'LEN read as declared');
+  eq(ctx.fields.find(f => f.id === 'ICC.TAG').value, 'TT', 'first child takes its declared width');
+  const val = ctx.fields.find(f => f.id === 'ICC.VAL');
+  eq(val.valueLength, 3, 'last child capped by remaining LEN bytes');
+  eq(val.displayValue, '0x565656', 'display override applied to VLG child');
+});
+
+test('display override formatters: datetime, amount with sign, hex, text', () => {
+  eq(sandbox._t.meFmtDateTime('0315142207'), '03/15 14:22:07', 'MMDDhhmmss');
+  eq(sandbox._t.meFmtDateTime('999999'), '999999', 'unparseable input falls through');
+  eq(sandbox._t.meFmtAmount('000000012345'), '123.45', 'plain amount');
+  eq(sandbox._t.meFmtAmount('000000012345D'), '-123.45', 'trailing D = debit = negative');
+  eq(sandbox._t.meFmtAmount('-12345'), '-123.45', 'leading minus preserved');
+  eq(sandbox._t.meFmtAmount('000000012345C'), '123.45', 'trailing C = credit = positive');
+  eq(sandbox._t.meFmtHex({ rawHex: 'abcd' }), '0xABCD', 'hex dump');
+  eq(sandbox._t.meFmtText({ rawHex: '486900ff' }), 'Hi..', 'text with non-printables dotted');
+});
+
+test('read-bitmap reports a truncated secondary bitmap without advancing the cursor', () => {
+  S.ddlTree = {};
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: [],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'binary' } }],
+  };
+  const ctx = meExecParseSpec(item, Uint8Array.from([0x80, 0, 0, 0, 0, 0, 0, 0]));
+  eq(ctx.cursor, 0, 'cursor stays put on secondary-bitmap truncation');
+  eq(ctx.fields.length, 1, 'one error row emitted');
+  eq(ctx.fields[0].id, 'BMP', 'error is attributed to the bitmap field');
+  assert.ok(ctx.fields[0].error.includes('claims secondary'), 'secondary-bitmap truncation surfaces a specific error');
+});
+
+test('read-bitmap also holds the cursor on truncated ASCII-hex secondary bitmaps', () => {
+  S.ddlTree = {};
+  S.inputFormat = 'ascii';
+  const item = {
+    ddl_bindings: [],
+    parse_spec_ascii: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }],
+  };
+  const ctx = meExecParseSpec(item, Buffer.from('8000000000000000'));
+  eq(ctx.cursor, 0, 'cursor stays put on ASCII-hex secondary-bitmap truncation');
+  eq(ctx.fields.length, 1, 'one error row emitted');
+  eq(ctx.fields[0].id, 'BMP', 'error is attributed to the bitmap field');
+  assert.ok(ctx.fields[0].error.includes('claims secondary'), 'ASCII-hex truncation reports the same specific error');
+});
+
+test('empty parse_spec falls back to read-ddl ANY and uses the default parseSpecUsed label', () => {
+  S.ddlTree = { VOL: { SV: { 'DEFAULTDDL': `
+    DEF REC.
+      02 A PIC X(1).
+      02 B PIC X(1).
+    END REC.
+  ` } } };
+  S.inputFormat = 'ascii';
+  const item = {
+    ddl_bindings: ['VOL/SV/DEFAULTDDL/REC'],
+    parse_spec_ascii: [],
+    parse_spec_binary: [],
+  };
+  const ctx = meExecParseSpec(item, Buffer.from('AB'));
+  eq(ctx.parseSpecUsed, 'default', 'empty spec reports the default variant');
+  deepEq(ctx.fields.map(x => x.id), ['A', 'B'], 'default fallback reads every bound DDL field');
 });
 
 test('ASCII parse_spec variant wins for ASCII input, binary variant otherwise', () => {

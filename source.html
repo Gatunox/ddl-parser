@@ -283,9 +283,6 @@ body.light .rec-meta,
 body.light #rawCfgBar,
 body.light #ddlCfgBar { background: rgba(0,0,0,0.05); }
 body.light #rawCfgBar:hover { background: rgba(0,0,0,0.05); }
-#colPickerSelect { background: var(--bg-deep); color: var(--text-dim); border: 2px solid transparent; border-radius: 0; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 6px; height: auto; align-self: stretch; cursor: pointer; outline: none; display: none; }
-#colPickerSelect:hover { border-color: var(--accent); color: var(--accent); }
-body.light #colPickerSelect { background: var(--bg-deep); }
 
 /* ===== DDL TREE PANE ===== */
 .ddl-pane-split  { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
@@ -651,8 +648,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 .tree-type-badge.tbtype-b24  { background:rgba(148,130,255,0.18); color:#9482ff;        border:2px solid #9482ff; }
 /* ---- per-message type badges (shown in rec-meta bar) ---- */
 .btype { font-size: var(--sz-mono); font-weight: 700; padding: 1px 6px; border-radius: 2px; letter-spacing: 0.04em; display:inline-block; }
-.type-pick-btn { cursor: pointer; padding: 7px 20px; font-size: 12px; border-radius: 4px; letter-spacing: 0.06em; transition: filter 0.12s, box-shadow 0.12s; }
-.type-pick-btn:hover { filter: brightness(1.15); box-shadow: 0 0 0 3px rgba(255,255,255,0.08); }
 .btype-stm     { background:rgba(0,200,212,0.18);   color:#00c8d4; border:2px solid #00c8d4; }
 .btype-pstm    { background:rgba(92,214,92,0.18);   color:#5cd65c; border:2px solid #5cd65c; }
 .btype-ndc     { background:rgba(255,107,53,0.22);  color:#ff6b35; border:2px solid #ff6b35; }
@@ -1052,8 +1047,6 @@ body.light .trk-chk { color-scheme: light; }
 
 /* ===== SETTINGS DRAWER ===== */
 .settings-overlay { position: fixed; inset: 0; z-index: 30000; display: flex; justify-content: flex-end; }
-.settings-confirm { position: absolute; inset: 0; z-index: 200; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
-.settings-confirm.hidden { display: none; }
 .settings-overlay.hidden { display: none; }
 .settings-scrim  { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
 .settings-drawer {
@@ -1124,27 +1117,7 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .settings-help .h-sub-body.open { max-height: 1200px; overflow-y: auto; }
 .settings-help .h-sub-body-inner { padding: 4px 0 8px; }
 .about-ver { font-size: calc(var(--sz-mono) + 9px); font-weight: 700; color: var(--accent); }
-.dr-list { display:flex; flex-direction:column; }
-.dr-rule { padding:5px 0; border-bottom:1px solid var(--border); }
-.dr-rule:last-child { border-bottom:none; }
-.dr-rule-top { display:flex; gap:4px; align-items:center; margin-bottom:3px; }
-.dr-num { font-size:calc(var(--sz-mono) - 2px); color:var(--text-dim); min-width:18px; text-align:right; flex-shrink:0; }
-.dr-rule-bot { display:flex; gap:4px; align-items:flex-end; }
-.dr-field { display:flex; flex-direction:column; gap:2px; min-width:0; }
-.dr-field-grow { flex:1; }
 .dr-lbl { font-size:calc(var(--sz-mono) - 4px); color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; padding-left:1px; line-height:1; }
-.dr-input { box-sizing:border-box; background:var(--bg-deep); border:2px solid var(--border); border-radius:2px; color:var(--text); font-family:var(--mono); font-size:calc(var(--sz-mono) - 1px); padding:1px 3px; outline:none; min-width:0; width:100%; }
-.dr-input:focus { border-color:var(--accent); }
-.dr-input.dr-invalid { border-color:#f85149 !important; }
-.dr-input-rx { flex:1; }
-.dr-input-ty { width:54px; }
-.dr-input-lb { width:100%; }
-.dr-input-vl { width:68px; }
-.dr-acts { display:flex; gap:2px; flex-shrink:0; }
-.dr-btn { background:transparent; border:2px solid var(--border); border-radius:2px; color:var(--text-dim); font-size:9px; padding:0; width:18px; height:18px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; }
-.dr-btn:hover:not([disabled]) { border-color:var(--accent); color:var(--accent); }
-.dr-btn[disabled] { opacity:0.3; cursor:default; }
-.dr-del:hover:not([disabled]) { border-color:#f85149 !important; color:#f85149 !important; }
 .dr-spec-list { display:flex; flex-direction:column; margin-bottom:2px; }
 .dr-specs-empty { color:var(--text-dim); font-size:calc(var(--sz-mono) - 2px); padding:4px 0 6px; }
 .dr-spec-item { display:flex; align-items:center; gap:5px; padding:4px 8px; border-bottom:1px solid var(--border); font-size:var(--sz-mono); color:var(--text); }
@@ -1154,9 +1127,6 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-spec-type { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; width:36px; text-align:right; }
 .dr-spec-vol { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; }
-.dr-color { width:22px; height:22px; padding:0; border:2px solid var(--border); border-radius:2px; cursor:pointer; flex-shrink:0; }
-.dr-color::-webkit-color-swatch-wrapper { padding:0; }
-.dr-color::-webkit-color-swatch { border:none; border-radius:1px; }
 .btn-feedback-bug:hover { color: #f85149 !important; background: rgba(248,81,73,0.15) !important; border-color: #f85149 !important; }
 .about-sub { font-size: calc(var(--sz-mono) - 0.5px); color: var(--text-dim); line-height: 1.7; margin-top: 4px; }
 .about-tag { display: inline-block; padding: 1px 7px; border-radius: 2px; font-size: calc(var(--sz-mono) - 1px); font-weight: 700; margin: 3px 2px 0; }
@@ -2300,7 +2270,6 @@ function _syncTrkColVisibility() {
 function _syncRawHexCol() {
   const rawPanel  = document.getElementById('rawPanel');
   const container = document.getElementById('resContainer');
-  const opt       = document.querySelector('#colPickerSelect option[value="raw"]');
   if (!rawPanel || !container) return;
   const rawCollapsed = rawPanel.classList.contains('collapsed');
   // Auto-manage column: show when raw panel is hidden, hide when it's visible
@@ -4129,13 +4098,6 @@ function validateDDLDefName(name) {
   return null;
 }
 
-function validateDDLFieldName(name) {
-  const upper = name.toUpperCase();
-  if (DDL_RESERVED.has(upper))
-    return `"${name}" is a DDL reserved word and cannot be used as a field name`;
-  return null;
-}
-
 function validateDDLConstantName(name) {
   const upper = name.toUpperCase();
   if (DDL_KEYWORDS.has(upper))
@@ -4246,72 +4208,6 @@ function detectFormat(text) {
   }
 
   return 'ascii';
-}
-
-// ============================================================
-// MESSAGE SPLITTER
-// ============================================================
-function splitMessages(text) {
-  const TS_RE = /^(\d{4}[-/]\d{2}[-/]\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?)/;
-  const lines = text.split('\n');
-  const chunks = [];
-  let cur = [], curTs = null;
-
-  const hasTs = lines.some(l => TS_RE.test(l.trim()));
-  if (hasTs) {
-    for (const line of lines) {
-      const m = line.trim().match(TS_RE);
-      if (m && cur.length) {
-        chunks.push({ text: cur.join('\n'), timestamp: curTs });
-        cur = [line]; curTs = m[1];
-      } else {
-        cur.push(line);
-        if (!curTs && m) curTs = m[1];
-      }
-    }
-    if (cur.length) chunks.push({ text: cur.join('\n'), timestamp: curTs });
-    if (chunks.length > 1) return chunks;
-  }
-
-  const parts = text.split(/\n[ \t]*\n+/);
-  if (parts.length > 1) {
-    return parts.map(p => p.trim()).filter(p => p.length)
-      .map(p => ({ text: p, timestamp: extractTS(p) }));
-  }
-
-  const sepParts = text.split(/^[-=*]{3,}\s*$/m);
-  if (sepParts.length > 1) {
-    return sepParts.map(p => p.trim()).filter(p => p.length)
-      .map(p => ({ text: p, timestamp: extractTS(p) }));
-  }
-
-  return [{ text: text.trim(), timestamp: extractTS(text) }];
-}
-
-// Splits HEXASCII input into message blocks.
-// A block is a contiguous sequence of isHexAsciiLine() lines.
-// Empty lines and non-HEXASCII lines between blocks are skipped (descriptions/comments).
-function splitHexAsciiMessages(text) {
-  const messages = [];
-  let block = [];
-  for (const line of text.split('\n')) {
-    if (isHexAsciiLine(line)) {
-      block.push(line);
-    } else {
-      if (block.length > 0) {
-        messages.push({ text: block.join('\n'), timestamp: null });
-        block = [];
-      }
-      // empty or non-HEXASCII lines are skipped
-    }
-  }
-  if (block.length > 0) messages.push({ text: block.join('\n'), timestamp: null });
-  return messages.length > 0 ? messages : [{ text: text.trim(), timestamp: null }];
-}
-
-function extractTS(text) {
-  const m = text.match(/(\d{4}[-/]\d{2}[-/]\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?)/);
-  return m ? m[1] : null;
 }
 
 // ============================================================
@@ -6094,6 +5990,8 @@ function parseMessage(bytes, defs, rawBytes) {
       spec.parse_spec_binary_source = spec.parse_spec_source;
       delete spec.parse_spec_source;
     }
+    // priority was removed (sidebar order is manual now) — strip stale keys.
+    if ('priority' in spec) delete spec.priority;
     return spec;
   }
 
@@ -6198,11 +6096,6 @@ function _loadDetectRules() {
     }
   } catch(e) {}
   _rebuildMsgTypeMap();
-}
-
-function _saveDetectRules() {
-  _rebuildMsgTypeMap();
-  _kvSet('up_detect_rules', JSON.stringify(_detectRules));
 }
 
 let MSG_TYPE_MAP = _detectRules.map(r => {
@@ -6810,36 +6703,6 @@ function parseNetardLog(text) {
   return records;
 }
 
-// Expand a file entry into one candidate per DEF for multi-DEF HPE files,
-// or a single candidate for everything else.
-// Each candidate: { path, defName (null for single-def/ISO), defs[] }
-function expandToCandidates(path, content, externalDefs, externalSections) {
-  if (isHPEDDLText(content)) {
-    const defNames = parseDEFNames(content);
-    if (defNames.length >= 1) {
-      // One candidate per DEF — single-DEF files still get defName set so picker shows it
-      return defNames
-        .map(dn => ({ path, defName: dn, defs: parseHPEDDL(content, externalDefs, externalSections, dn) }))
-        .filter(c => c.defs.length > 1);
-    }
-  }
-  const defs = parseDDL(content, externalDefs, externalSections);
-  return defs.length > 1 ? [{ path, defName: null, defs }] : [];
-}
-
-// Return all DDL entries in a given volume (all subvolumes).
-// Used by auto-detection to find the right definitions without manual scope selection.
-function getDDLsForVol(volName) {
-  if (!volName) return [];
-  const sv = S.ddlTree[volName];
-  if (!sv) return [];
-  const results = [];
-  for (const s of Object.keys(sv).sort())
-    for (const d of Object.keys(sv[s] || {}).sort())
-      results.push({ path: `${volName}/${s}/${d}`, content: sv[s][d] });
-  return results;
-}
-
 // Pick the best-scoring DDL from a candidate list for a given byte array.
 // Score = accuracy × coverage, where accuracy incorporates content violations
 // as soft errors (weight 0.5) vs hard parse errors (weight 1.0):
@@ -6898,10 +6761,6 @@ function _strHash(s) {
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
   return (h >>> 0).toString(36);
-}
-function _volHash(vol) {
-  const v = S.ddlTree[vol] || S.ddlTree[vol.toLowerCase()] || S.ddlTree[vol.toUpperCase()];
-  return v ? _strHash(JSON.stringify(v)) : '0';
 }
 function _svHash(vol, sv) {
   const vTree = S.ddlTree[vol] || S.ddlTree[vol.toLowerCase()] || S.ddlTree[vol.toUpperCase()];
@@ -7063,10 +6922,6 @@ function _abortParse() {
 function _parseProgressStep(label, subLabel, subColor, labelColor) {
   _ppSteps.push({ label, done: false, subLabel: subLabel || null, subColor: subColor || null, labelColor: labelColor || null });
   _parseProgressRender();
-}
-
-function _parseProgressDone(idx) {
-  if (_ppSteps[idx]) { _ppSteps[idx].done = true; _parseProgressRender(); }
 }
 
 function _parseProgressUpdate(idx, label) {
@@ -8457,23 +8312,6 @@ function initColResize() {
   });
 }
 
-function onColPickerChange(sel) {
-  const val = sel.value;
-  if (!val) return;
-  const opt = sel.querySelector(`option[value="${val}"]`);
-  if (!opt) return;
-  const cols = opt.dataset.col.split(',');
-  // Determine current visibility by checking if first col class is hidden
-  const container = document.getElementById('resContainer');
-  const isHidden = container.classList.contains('hide-' + cols[0]);
-  cols.forEach(c => setResCol(c, isHidden));
-  // Toggle checkmark in option text
-  opt.textContent = (isHidden ? '✓ ' : '  ') + opt.textContent.replace(/^[✓ ]+/, '');
-  // Reset select to placeholder
-  sel.value = '';
-  saveLayout();
-}
-
 function setResCol(col, visible) {
   document.getElementById('resContainer').classList.toggle('hide-' + col, !visible);
 }
@@ -8772,16 +8610,6 @@ function onDDLInput() {
     updateDDLEditorState();
   }
   updateDDLHighlightDebounced();
-}
-
-// Scroll-triggered overlay refresh — updates visible lines without recomputing gutter/search.
-// Also uses cached _ddlLineCount to avoid O(n) work in the hot scroll path.
-function updateDDLHighlightOnScroll() {
-  if (window._ddlEditorCM) return;
-  if (_ddlLineCount > _HL_VIRT_THRESHOLD) {
-    clearTimeout(_ddlHlDebounceTimer);
-    _ddlHlDebounceTimer = setTimeout(() => updateDDLHighlight(true), 60);
-  }
 }
 
 function updateDDLGutter() {
@@ -9095,7 +8923,7 @@ function renderFieldTable(msg) {
     const unreliableBadge = f.unreliable
       ? `<span class="unreliable-badge">unreliable</span>` : '';
     const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', f.unreliable ? 'row-unreliable' : '', extraClass].filter(Boolean).join(' ');
-    const searchStr = [fid, descText, f.value || ''].join(' ').toLowerCase();
+    const searchStr = [fid, descText, f.value || '', f.displayValue || ''].join(' ').toLowerCase();
     return `<tr class="${rowCls}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}" data-raw="${esc((f.rawHex||'').toLowerCase())}"
       onclick="selectField('${esc(fid)}')"
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
@@ -9947,11 +9775,6 @@ function _auditCsToYymmddHhmm(cs) {
   };
 }
 
-function _auditTsBytesToYymmddHhmm(tsBytes) {
-  const cs = _auditTsBytesToCs(tsBytes);
-  return cs !== null ? _auditCsToYymmddHhmm(cs) : null;
-}
-
 function _auditTsBytesToCs(tsBytes) {
   if (!tsBytes || tsBytes.length < 6) return null;
   let v = 0;
@@ -10470,28 +10293,6 @@ async function auditParseAll() {
   doParseMessages();
 }
 
-
-function auditSelectRecord(filteredIdx) {
-  const prev = _auditSt.selIdx;
-  _auditSt.selIdx = filteredIdx;
-  if (prev >= 0) document.getElementById('aud-row-' + prev)?.classList.remove('aud-sel');
-  document.getElementById('aud-row-' + filteredIdx)?.classList.add('aud-sel');
-  const rec = _auditSt.filtered[filteredIdx];
-  if (!rec || !_auditSt.file) return;
-  _auditSt.file.slice(rec.offset, rec.offset + rec.length).arrayBuffer().then(buf => {
-    const u8  = new Uint8Array(buf);
-    const pay = u8.slice(AUDIT_HDR_CFG.msgPayloadOffset);
-    const hex = Array.from(pay, b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-    _auditBatchPayloads = [{ text: hex, recNo: rec.recNo, source: rec.source, dest: rec.dest,
-      recLength: rec.messageLen, time: _auditFmtTs(rec.tsBytes) }];
-    const msgEl = document.getElementById('msgInput');
-    msgEl.readOnly = false;
-    msgEl.value   = hex;
-    onMsgChange();
-    flash('Record ' + rec.recNo + ' loaded — ' + rec.messageLen + ' bytes');
-    doParseMessages();
-  });
-}
 
 function _auditLazyParseNext() {
   if (!_lazyDeferreds || _lazyDeferredIdx >= _lazyDeferreds.length) return;
@@ -11137,86 +10938,6 @@ function showConfirmHTML(labelHTML, cb) {
   _modalCb = val => cb(val === '__confirm__');
   setTimeout(() => document.getElementById('modalOk').focus(), 30);
 }
-// Show DDL match picker when multiple DDLs scored > 0 for the same message.
-// matches = [{ ddlPath, fields, score }, ...] sorted best-first.
-// cb receives { match, saveRule } on selection, or null on cancel.
-function showDDLPickerModal(msgTypeLabel, matches, cb) {
-  const overlay   = document.getElementById('ddlPickerOverlay');
-  const labelEl   = document.getElementById('ddlPickerLabel');
-  const listEl    = document.getElementById('ddlPickerList');
-  const sessBtn   = document.getElementById('ddlPickerSession');
-  const ruleBtn   = document.getElementById('ddlPickerSaveRule');
-  const cancelBtn = document.getElementById('ddlPickerCancel');
-
-  labelEl.innerHTML = `Multiple DDLs matched <strong>${esc(msgTypeLabel)}</strong> — select one to use:`;
-
-  // Group matches by ddlPath. Single-DEF files show as a flat row.
-  // Multi-DEF files (same path, multiple defNames) show as a collapsed group with expand toggle.
-  const groups = [];
-  const pathOrder = [];
-  const byPath = new Map();
-  matches.forEach((m, i) => {
-    if (!byPath.has(m.ddlPath)) { byPath.set(m.ddlPath, []); pathOrder.push(m.ddlPath); }
-    byPath.get(m.ddlPath).push({ m, i });
-  });
-
-  let html = '';
-  for (const path of pathOrder) {
-    const entries = byPath.get(path);
-    if (entries.length === 1) {
-      // Single entry — flat row (may have a defName suffix)
-      const { m, i } = entries[0];
-      const defSuffix = m.defName
-        ? ` <span style="color:var(--accent);opacity:0.85;font-size:var(--sz-mono)">/ ${esc(m.defName)}</span>`
-        : '';
-      html += `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border)">
-        <input type="radio" name="ddl-pick-r" value="${i}" style="flex-shrink:0">
-        <span style="font-family:var(--font-mono);font-size:var(--sz-mono);flex:1;word-break:break-all">${esc(path)}${defSuffix}</span>
-        <span style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
-      </label>`;
-    } else {
-      // Multi-DEF group — collapsed header + expandable sub-list (no inner scroll — outer list scrolls)
-      const groupId = `dpg-${path.replace(/\W/g,'_')}`;
-      html += `<div style="border-bottom:1px solid var(--border)">
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;user-select:none"
-             onclick="(function(btn,body){body.style.display=body.style.display==='none'?'block':'none';btn.textContent=body.style.display==='none'?'+':'−';})(this.querySelector('.dpg-btn'),document.getElementById('${groupId}'))">
-          <span class="dpg-btn" style="flex-shrink:0;width:14px;text-align:center;font-weight:700;color:var(--accent)">+</span>
-          <span style="font-family:var(--font-mono);font-size:var(--sz-mono);flex:1;word-break:break-all">${esc(path)}</span>
-          <span style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap">${entries.length} definitions</span>
-        </div>
-        <div id="${groupId}" style="display:none;background:rgba(0,0,0,0.15)">
-          ${entries.map(({ m, i }) => `
-          <label style="display:flex;align-items:center;gap:8px;padding:5px 10px 5px 28px;cursor:pointer;border-top:1px solid var(--border)">
-            <input type="radio" name="ddl-pick-r" value="${i}" style="flex-shrink:0">
-            <span style="font-family:var(--font-mono);font-size:var(--sz-mono);flex:1">${esc(m.defName || '—')}</span>
-            <span style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap">score&nbsp;${Math.round(m.score * 100)}%</span>
-          </label>`).join('')}
-        </div>
-      </div>`;
-    }
-  }
-  listEl.innerHTML = html;
-
-  sessBtn.disabled = true;
-  ruleBtn.disabled = true;
-  overlay.classList.remove('hidden');
-
-  listEl.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', () => {
-    sessBtn.disabled = false;
-    ruleBtn.disabled = false;
-  }));
-
-  const cleanup = () => overlay.classList.add('hidden');
-  const getSelected = () => {
-    const r = listEl.querySelector('input[type=radio]:checked');
-    return r ? matches[+r.value] : null;
-  };
-
-  sessBtn.onclick = () => { const m = getSelected(); if (m) { cleanup(); cb({ match: m, saveRule: false }); } };
-  ruleBtn.onclick = () => { const m = getSelected(); if (m) { cleanup(); cb({ match: m, saveRule: true  }); } };
-  cancelBtn.onclick = () => { cleanup(); cb(null); };
-}
-
 /* ---- end modal helpers ---- */
 
 // ---- Toast notification ----
@@ -11804,29 +11525,6 @@ function loadDeOverrides() {
 }
 
 // (DDLMM load/save and type-mapping helpers removed.)
-
-// Type picker modal — shows clickable type badges; calls cb(type) or cb(null).
-let _typePickerCb = null;
-function showTypePicker(label, cb) {
-  const overlay = document.getElementById('typePickerOverlay');
-  document.getElementById('typePickerLabel').innerHTML = label;
-  const container = document.getElementById('typePickerBtns');
-  container.innerHTML = '';
-  _typePickerCb = cb;
-  const TYPES = ['ISO','STM','PSTM','NDC','B24'];
-  for (const t of TYPES) {
-    const btn = document.createElement('button');
-    btn.className = _btypeClass(t) + ' type-pick-btn';
-    btn.textContent = t;
-    btn.onclick = () => {
-      overlay.classList.add('hidden');
-      const fn = _typePickerCb; _typePickerCb = null;
-      if (fn) fn(t);
-    };
-    container.appendChild(btn);
-  }
-  overlay.classList.remove('hidden');
-}
 
 // _suggestTypeMapping removed — popup was intrusive and unhelpful.
 
@@ -12998,7 +12696,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.199';
+const APP_VERSION  = '1.1.2.200';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13558,37 +13256,6 @@ function _escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function renderDetectRulesTable() {
-  const list = document.getElementById('detectRulesTbody');
-  if (!list) return;
-  list.innerHTML = '';
-  _detectRules.forEach((r, i) => {
-    const rule = document.createElement('div');
-    rule.className = 'dr-rule';
-    const last = i === _detectRules.length - 1;
-    const color = r.color || '#888888';
-    rule.innerHTML =
-      `<div class="dr-rule-top">` +
-        `<span class="dr-num">#${i+1}</span>` +
-        `<input class="dr-input dr-input-rx" value="${_escHtml(r.regex)}" oninput="_drUpdate(${i},'regex',this.value,this)" placeholder="Regex" title="${_escHtml(r.regex)}">` +
-        `<div class="dr-acts">` +
-          `<button class="dr-btn" onclick="moveDetectRule(${i},-1)" title="Move up"${i===0?' disabled':''}>↑</button>` +
-          `<button class="dr-btn" onclick="moveDetectRule(${i},1)" title="Move down"${last?' disabled':''}>↓</button>` +
-          `<button class="dr-btn dr-del" onclick="deleteDetectRule(${i})" title="Remove">✕</button>` +
-        `</div>` +
-      `</div>` +
-      `<div class="dr-rule-bot">` +
-        `<div class="dr-field"><span class="dr-lbl">Type</span><input class="dr-input dr-input-ty" value="${_escHtml(r.type)}" oninput="_drUpdate(${i},'type',this.value,this)"></div>` +
-        `<div class="dr-field dr-field-grow"><span class="dr-lbl">Label</span><input class="dr-input dr-input-lb" value="${_escHtml(r.label)}" oninput="_drUpdate(${i},'label',this.value,this)"></div>` +
-        `<div class="dr-field"><span class="dr-lbl">Volume</span><input class="dr-input dr-input-vl" value="${_escHtml(r.vol||'')}" oninput="_drUpdate(${i},'vol',this.value,this)"></div>` +
-        `<div class="dr-field"><input type="color" class="dr-color" value="${_escHtml(color)}" oninput="_drUpdate(${i},'color',this.value,this)" title="Badge color"></div>` +
-      `</div>`;
-    const rxInput = rule.querySelector('.dr-input-rx');
-    try { new RegExp(r.regex); } catch(e) { rxInput?.classList.add('dr-invalid'); }
-    list.appendChild(rule);
-  });
-}
-
 function renderDetectSpecsList() {
   const el = document.getElementById('detectSpecsList');
   if (!el) return;
@@ -13605,91 +13272,6 @@ function renderDetectSpecsList() {
     const vol   = s.vol ? ` <span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
     return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span><span class="dr-spec-type">${type}</span></div>`;
   }).join('');
-}
-
-let _drDirty = false;
-function _drDiffersFromDefaults() {
-  if (_detectRules.length !== _DEFAULT_DETECT_RULES.length) return true;
-  return _detectRules.some((r, i) => {
-    const d = _DEFAULT_DETECT_RULES[i];
-    return r.regex !== d.regex || r.type !== d.type || r.label !== d.label || r.vol !== d.vol || (r.color||'') !== (d.color||'');
-  });
-}
-function _drSetDirty(dirty) {
-  _drDirty = dirty;
-  const applyBtn = document.getElementById('drApplyBtn');
-  const resetBtn = document.getElementById('drResetBtn');
-  if (applyBtn) applyBtn.disabled = !dirty;
-  if (resetBtn) resetBtn.disabled = !_drDiffersFromDefaults();
-}
-
-function _drUpdate(i, field, value, el) {
-  _detectRules[i] = { ..._detectRules[i], [field]: value };
-  if (field === 'type') {
-    const def = _DEFAULT_DETECT_RULES.find(r => r.type.toLowerCase() === value.toLowerCase());
-    if (def?.color) {
-      _detectRules[i].color = def.color;
-      const colorEl = el?.closest('.dr-rule')?.querySelector('.dr-color');
-      if (colorEl) colorEl.value = def.color;
-    }
-  }
-  if (field === 'regex') {
-    let valid = true;
-    try { new RegExp(value); } catch(e) { valid = false; }
-    el?.classList.toggle('dr-invalid', !valid);
-  }
-  _drSetDirty(true);
-}
-
-function addDetectRule() {
-  _detectRules.push({ regex:'^', type:'', label:'', vol:'', color:'' });
-  renderDetectRulesTable();
-  _drSetDirty(true);
-  document.getElementById('detectRulesTbody')?.lastElementChild?.querySelector('input')?.focus();
-}
-
-function deleteDetectRule(i) {
-  _detectRules.splice(i, 1);
-  renderDetectRulesTable();
-  _drSetDirty(true);
-}
-
-function moveDetectRule(i, dir) {
-  const j = i + dir;
-  if (j < 0 || j >= _detectRules.length) return;
-  [_detectRules[i], _detectRules[j]] = [_detectRules[j], _detectRules[i]];
-  renderDetectRulesTable();
-  _drSetDirty(true);
-}
-
-function applyDetectRules() {
-  _saveDetectRules();
-  if (_auditSt.file) _auditBeginLoad(_auditSt.file);
-  _drSetDirty(false);
-}
-
-function showSettingsConfirm(label, cb) {
-  const overlay = document.getElementById('settingsConfirm');
-  document.getElementById('settingsConfirmLabel').textContent = label;
-  overlay.classList.remove('hidden');
-  const ok = document.getElementById('settingsConfirmOk');
-  const cancel = document.getElementById('settingsConfirmCancel');
-  const close = result => { overlay.classList.add('hidden'); ok.onclick = null; cancel.onclick = null; cb(result); };
-  ok.onclick = () => close(true);
-  cancel.onclick = () => close(false);
-  setTimeout(() => ok.focus(), 30);
-}
-
-function resetDetectRules() {
-  showSettingsConfirm('Reset detection rules to built-in defaults?', ok => {
-    if (!ok) return;
-    _kvDel('up_detect_rules');
-    _detectRules = _DEFAULT_DETECT_RULES.map(r => ({...r}));
-    _saveDetectRules();
-    renderDetectRulesTable();
-    if (_auditSt.file) _auditBeginLoad(_auditSt.file);
-    _drSetDirty(false);
-  });
 }
 
 function setTheme(t) {
@@ -14095,7 +13677,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── CodeMirror 6 initialization ──────────────────────────────────────────
   // Must run before any code that reads ddlEditor / msgInput via getElementById.
   if (window.CM) {
-    const { EditorView, EditorState, Compartment, StateEffect, StateField, keymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter, history, defaultKeymap, historyKeymap, indentWithTab, Decoration } = window.CM;
+    const { EditorView, EditorState, Compartment, StateEffect, StateField, keymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter, history, defaultKeymap, historyKeymap, Decoration } = window.CM;
 
     // Decoration field for DDL editor search highlights (hit lines + current match)
     const _ddlSrchEffect = StateEffect.define();
@@ -14336,18 +13918,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   // ---- end modal init ----
 
-  // ---- type picker modal init ----
-  function _closeTypePicker() {
-    document.getElementById('typePickerOverlay').classList.add('hidden');
-    const fn = _typePickerCb; _typePickerCb = null;
-    if (fn) fn(null);
-  }
-  document.getElementById('typePickerCancel').addEventListener('click', _closeTypePicker);
-  document.getElementById('typePickerOverlay').addEventListener('mousedown', e => {
-    if (e.target === document.getElementById('typePickerOverlay')) _closeTypePicker();
-  });
-  // ---- end type picker modal init ----
-
   // ---- context menu ----
   document.addEventListener('contextmenu', buildCtxMenu);
   document.addEventListener('click', () => { hideCtxMenu(); });
@@ -14427,12 +13997,6 @@ document.addEventListener('DOMContentLoaded', () => {
       closeExportModal();
       closeMsgExportModal();
       closeImportModal();
-      const tpOverlay = document.getElementById('typePickerOverlay');
-      if (tpOverlay && !tpOverlay.classList.contains('hidden')) {
-        tpOverlay.classList.add('hidden');
-        const fn = _typePickerCb; _typePickerCb = null;
-        if (fn) fn(null);
-      }
       const ppOverlay = document.getElementById('parseProgressOverlay');
       if (ppOverlay && !ppOverlay.classList.contains('hidden')) { _abortParse(); document.activeElement?.blur(); }
     }
@@ -14949,7 +14513,7 @@ const _PS_HELP = {
     ],
     attrs: [
       ['field', 'string', true,  'DDL field ID to read'],
-      ['type',  'string', false, 'Type override. Fixed-size numeric types — <b>uint8</b>/<b>BINARY 8</b> (1 byte), <b>uint16-be</b>/<b>uint16-le</b>/<b>BINARY 16</b> (2), <b>uint32-be</b>/<b>uint32-le</b>/<b>BINARY 32</b> (4), <b>BINARY 64</b> (8) — must match the DDL field\'s declared byte length. Class-only types — <b>ascii</b>, <b>ebcdic</b>, <b>binary</b> — accept any length.'],
+      ['type',  'string', false, 'Type override. Fixed-size numeric types — <b>uint8</b>/<b>BINARY 8</b> (1 byte), <b>uint16-be</b>/<b>uint16-le</b>/<b>BINARY 16</b> (2), <b>uint32-be</b>/<b>uint32-le</b>/<b>BINARY 32</b> (4), <b>BINARY 64</b> (8) — must match the DDL field\'s declared byte length. Length-flexible types — <b>ascii</b> (render bytes as printable ASCII), <b>ebcdic</b> (translate EBCDIC→ASCII), <b>binary</b> (raw hex dump 0x…), <b>hex-ascii</b> / <b>hex-ebcdic</b> (decode bytes as text, then parse as base-16: "FF" → 255). The same overrides can be set per-field via the Overrides section\'s Data Type dropdown — the inline attr wins when both are present.'],
     ],
     examples: [
       ['Simple field — read MTI as declared in the DDL',
@@ -15057,10 +14621,10 @@ const _PS_HELP = {
     ],
   },
   'bitmap-fields': {
-    desc: 'Reads the DE fields indicated by a prior read-bitmap result. Each set bit maps to a DDL field ID via de_map. Variable-length groups declared in var_length_groups are handled automatically.',
+    desc: 'Reads the DE fields indicated by a prior read-bitmap result. DE numbering matches the Overrides table exactly: it starts on the field after the bitmap, groups own one DE (their leaves none), REDEFINES rows are skipped, and Data Element anchors re-align the counter. A set bit on an elementary field reads that field; on a group it reads every leaf in declaration order; on a VLG-flagged group it reads the first sub-field as LEN and distributes that many bytes across the rest. Present fields are read sequentially at the cursor (DDL offsets are ignored — they assume every DE is present). Data Type / Display overrides from the Overrides section are applied to each field read.',
     useWhen: [
       'You\'ve just executed <code>read-bitmap</code> and want to read only the DEs the bitmap marks present.',
-      'Your DDL declares each DE as a separate field (or has a populated <code>de_map</code> in the Overrides section).',
+      'The Overrides table shows the DE numbers you expect (anchor the first real DE if the defaults are off).',
       'Some DEs are <b>variable-length groups</b> (LEN + payload) — mark them as VLG in Overrides and this block honours the runtime LEN.',
       'Standard ISO 8583 parsing — the canonical way to walk DE fields per the bitmap.',
     ],
@@ -15885,9 +15449,15 @@ function _meHtmlOverrides(item) {
       return `<tr class="${trCls}" ${dataAttrs}>${numCell}${fieldCell}${lenCell}${dtCell}${deCell}${vlgCell}${dispCell}</tr>`;
     }).join('');
 
-    const warnHtml = (unresolved && unresolved.count > 0)
+    let warnHtml = (unresolved && unresolved.count > 0)
       ? `<div class="me-fm-warn" title="${ea(unresolved.sample.join(', '))}">⚠ ${unresolved.count} DDL item${unresolved.count !== 1 ? 's' : ''} not shown — unresolved TYPE references (size 0). Examples: ${ea(unresolved.sample.slice(0,3).join(', '))}${unresolved.sample.length > 3 ? '…' : ''}</div>`
       : '';
+    // The parse spec names a bitmap field that doesn't exist in any binding —
+    // every row would show an empty DE with no hint why. Surface the mismatch.
+    const _bmpField = _meItemBitmapField(item);
+    if (_bmpField && !fieldList.some(r => r.id === _bmpField)) {
+      warnHtml += `<div class="me-fm-warn">⚠ Parse spec references bitmap field "${ea(_bmpField)}" but no bound DDL field has that id — DE numbering can't start. Fix the {"bitmap-fields"} value or the binding.</div>`;
+    }
 
     const fmHelpOpen = !!(_meState && _meState.fmHelpOpen);
     const helpHtml = `<div class="me-ps-help${fmHelpOpen ? ' open' : ''}" id="me-fm-help">${_meFmHelpHtml()}</div>`;
@@ -15988,24 +15558,45 @@ function _meFmCountUnresolved(path) {
   } catch(e) { return null; }
 }
 
-function _meResolveDEFieldList(item) {
-  const bindings = (item?.ddl_bindings || []).filter(Boolean);
-  if (!bindings.length) return null;
-  // Concatenate defs from every binding in declaration order. Dedupe by id
-  // (first binding wins) — the engine's de_map is field-id-keyed, so a field
-  // present in multiple bindings only needs one Field Map row.
+// Concatenate defs from every binding in declaration order, deduped by id
+// (first binding wins). Shared by the Field Map UI and the bitmap-fields
+// engine so both see the identical def sequence.
+function _meCollectBindingDefs(resolvedBindings) {
   const defs = [];
   const seen = new Set();
-  for (const path of bindings) {
-    const r = (typeof getDDLFromPath === 'function') ? getDDLFromPath(path) : null;
+  for (const r of (resolvedBindings || [])) {
     for (const d of (r?.defs || [])) {
       if (seen.has(d.id)) continue;
       seen.add(d.id);
       defs.push(d);
     }
   }
+  return defs;
+}
+
+function _meResolveDEFieldList(item) {
+  const bindings = (item?.ddl_bindings || []).filter(Boolean);
+  if (!bindings.length) return null;
+  const resolved = bindings.map(p => (typeof getDDLFromPath === 'function') ? getDDLFromPath(p) : null);
+  const defs = _meCollectBindingDefs(resolved);
   if (!defs.length) return [];
-  const anchors = new Map((item.de_map || []).map(e => [e.field, +e.de || 1]));
+  return _meWalkDEFields(defs, item);
+}
+
+// ── Shared DE walker ─────────────────────────────────────────────────────────
+// THE single source of truth for DE numbering. Both the Field Map UI
+// (_meResolveDEFieldList) and the parse engine (_meBuildDEMap) consume this,
+// so what the user sees in the Overrides table is exactly what bitmap-fields
+// executes. Rules:
+//   • groups are synthesized from leaf qualified names; terminal groups (all
+//     children are leaves) own one DE; their leaves carry none
+//   • intermediate groups also own a DE (per UI behaviour)
+//   • REDEFINES rows never receive or advance a DE
+//   • numbering starts on the field AFTER the parse spec's bitmap field; no
+//     bitmap-fields block → numbering starts at the first field
+//   • de_map anchors reset the running counter at the anchored row
+function _meWalkDEFields(defs, item) {
+  const anchors = new Map((item?.de_map || []).map(e => [e.field, +e.de || 1]));
 
   // Track REDEFINES on leaves so we can pass through to the UI for Hide Redef.
   const redefSet = new Set(defs.filter(d => d.isRedefines).map(d => d.id));
@@ -16033,12 +15624,10 @@ function _meResolveDEFieldList(item) {
       childrenByPrefix.get(prefix).add(child);
     }
   }
-  const terminalGroups    = new Set();
-  const intermediateGroups = new Set();
+  const terminalGroups = new Set();
   for (const [prefix, children] of childrenByPrefix.entries()) {
     const hasGroupChild = [...children].some(c => childrenByPrefix.has(c));
-    if (hasGroupChild) intermediateGroups.add(prefix);
-    else               terminalGroups.add(prefix);
+    if (!hasGroupChild) terminalGroups.add(prefix);
   }
 
   // ── Pass 2: walk defs in declaration order, emitting ancestor groups ───
@@ -16502,72 +16091,6 @@ function _meDeEditStart(pill, fieldId, currentDE) {
     if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
     if (e.key === 'Escape') { e.preventDefault(); _meRenderRight(); }
   });
-}
-
-// Legacy de_map handlers — still used by Import/Export flows that construct
-// raw anchors. Kept for compatibility; new DE Map UI calls _meDeSet/Nudge/Clear.
-function _meDeMapField(idx, key, val) {
-  const item = _meCurItem(); if (!item) return;
-  if (!item.de_map) item.de_map = [];
-  item.de_map[idx][key] = key === 'de' ? (parseInt(val) || 0) : val;
-  _meSetDirty();
-}
-function _meDeMapAdd() {
-  const item = _meCurItem(); if (!item) return;
-  if (!item.de_map) item.de_map = [];
-  item.de_map.push({ field: '', de: 1 });
-  _meSetDirty();
-  _meRenderRight();
-}
-function _meDeMapDel(idx) {
-  const item = _meCurItem(); if (!item || !item.de_map) return;
-  item.de_map.splice(idx, 1);
-  _meSetDirty();
-  _meRenderRight();
-}
-
-// var_length_groups handlers
-function _meVlgSet(idx, val) {
-  const item = _meCurItem(); if (!item) return;
-  if (!item.var_length_groups) item.var_length_groups = [];
-  item.var_length_groups[idx] = val;
-  _meSetDirty();
-}
-function _meVlgAdd() {
-  const item = _meCurItem(); if (!item) return;
-  if (!item.var_length_groups) item.var_length_groups = [];
-  item.var_length_groups.push('');
-  _meSetDirty();
-  _meRenderRight();
-}
-function _meVlgDel(idx) {
-  const item = _meCurItem(); if (!item || !item.var_length_groups) return;
-  item.var_length_groups.splice(idx, 1);
-  _meSetDirty();
-  _meRenderRight();
-}
-
-// field_overrides handlers
-function _meFoSet(idx, key, val) {
-  const item = _meCurItem(); if (!item) return;
-  if (!item.field_overrides) item.field_overrides = [];
-  const entry = item.field_overrides[idx]; if (!entry) return;
-  if (!val) delete entry[key];
-  else entry[key] = val;
-  _meSetDirty();
-}
-function _meFoAdd() {
-  const item = _meCurItem(); if (!item) return;
-  if (!item.field_overrides) item.field_overrides = [];
-  item.field_overrides.push({ field: '' });
-  _meSetDirty();
-  _meRenderRight();
-}
-function _meFoDel(idx) {
-  const item = _meCurItem(); if (!item || !item.field_overrides) return;
-  item.field_overrides.splice(idx, 1);
-  _meSetDirty();
-  _meRenderRight();
 }
 
 // ── Identity Tab ──────────────────────────────────────────────────────────
@@ -17392,7 +16915,12 @@ function _meReadOneFieldFromDef(def, ctx) {
 
   const fBytes = Array.from(ctx.bytes.slice(dataStart, dataStart + len));
   const fEnd   = dataStart + len;
-  if (!hasExplicit) ctx.cursor = fEnd;
+  // Advance the cursor past this field even when the def carries an explicit
+  // DDL offset — otherwise a read-ddl walk over HPE defs (which all have
+  // offsets) leaves the cursor at 0 and every subsequent cursor-based block
+  // (read-bitmap, read-fixed, …) reads from the wrong position. Math.max so
+  // REDEFINES re-reads of earlier offsets never rewind the cursor.
+  ctx.cursor = hasExplicit ? Math.max(ctx.cursor, fEnd) : fEnd;
 
   return {
     id: def.id,
@@ -17604,11 +17132,16 @@ function _meFmtDateTime(value) {
 }
 
 function _meFmtAmount(value) {
-  const s = String(value || '').replace(/\D/g, '');
+  // Sign conventions: a leading '-' or a trailing 'D' (debit) makes the
+  // amount negative; a trailing 'C' (credit) is positive. ISO 8583 DE-54 and
+  // several switch formats use the D/C suffix form.
+  const raw = String(value || '').trim();
+  const neg = /^-/.test(raw) || /D$/i.test(raw);
+  const s = raw.replace(/\D/g, '');
   if (!s.length) return value;
   const n = parseInt(s, 10);
   if (!Number.isFinite(n)) return value;
-  return (n / 100).toFixed(2);
+  return (neg ? '-' : '') + (n / 100).toFixed(2);
 }
 
 function _meFmtHex(f) {
@@ -17973,27 +17506,30 @@ function _meExecReadBitmap(attrs, ctx) {
 // ── Block: bitmap-fields ────────────────────────────────────────────────────
 
 function _meBuildDEMap(ctx) {
-  // Walk every binding's defs in declaration order (dedup by field id, first
-  // binding wins — same shape as the Field Map UI's row list). Anchors from
-  // item.de_map can override the running DE counter so a later field re-aligns
-  // numbering for ISO 8583-style bitmaps. Returns: { [deNumber]: def }.
+  // Delegate to the shared walker so the engine's DE numbering is identical
+  // to what the Field Map UI displays (bitmap-relative start, REDEFINES
+  // exclusion, terminal/intermediate groups owning DEs, de_map anchors).
+  // Returns: { [deNumber]: entry } where entry is either
+  //   { def }              — DE maps to one elementary field
+  //   { groupId, kids }    — DE maps to a group; kids are the non-REDEFINES
+  //                          leaf defs under it, in declaration order
+  const defs = _meCollectBindingDefs(ctx.resolvedBindings);
+  if (!defs.length) return {};
+  const rows = _meWalkDEFields(defs, ctx.item);
+  const defById = new Map(defs.map(d => [d.id, d]));
   const map = {};
-  const seen = new Set();
-  const allDefs = [];
-  for (const b of (ctx.resolvedBindings || [])) {
-    for (const def of (b?.defs || [])) {
-      if (seen.has(def.id)) continue;
-      seen.add(def.id);
-      allDefs.push(def);
+  for (const row of rows) {
+    if (row.de == null || map[row.de] !== undefined) continue;
+    if (row.isGroup) {
+      const prefix = row.id + '.';
+      // All transitive leaves under the group, skipping REDEFINES overlays
+      // (they re-view existing bytes, never consume new ones). OCCURS
+      // expansions are kept — each occurrence slot consumes its own bytes.
+      const kids = defs.filter(d => d.id.startsWith(prefix) && !d.isRedefines);
+      map[row.de] = { groupId: row.id, kids };
+    } else {
+      map[row.de] = { def: defById.get(row.id) };
     }
-  }
-  const anchors = new Map((ctx.item.de_map || []).map(e => [e.field, e.de]));
-  let currentDE = 1;
-  for (const def of allDefs) {
-    if (def._occursGroup !== undefined && def._occursIdx > 0) continue;
-    if (anchors.has(def.id)) currentDE = anchors.get(def.id);
-    map[currentDE] = def;
-    currentDE++;
   }
   return map;
 }
@@ -18012,20 +17548,49 @@ function _meExecBitmapFields(attrs, ctx) {
   const deMap = _meBuildDEMap(ctx);
   const varGroups = new Set(ctx.item.var_length_groups || []);
   const bits = Array.from(bmField.bitSet).sort((a, b) => a - b);
+
+  // Bitmap-present fields are sequential on the wire: each present DE starts
+  // where the previous one ended. DDL offsets assume EVERY field is present,
+  // so they are wrong whenever any earlier DE is absent — strip the offset to
+  // force cursor-relative reads.
+  const readSeq = (def) => {
+    const f = _meReadOneFieldFromDef({ ...def, offset: undefined }, ctx);
+    if (f) {
+      _meApplyTypeOverride(f, def, ctx, null);
+      _meApplyDisplayOverride(f, def, ctx);
+      ctx.fields.push(f);
+      ctx.fieldsById[def.id] = f;
+    }
+    return f;
+  };
+
   for (const de of bits) {
-    const def = deMap[de];
-    if (!def) {
+    const entry = deMap[de];
+    if (!entry) {
       ctx.fields.push({ id: `DE-${de}`, error: 'No DDL field mapped to this DE' });
       continue;
     }
-    if (varGroups.has(def.id)) {
+
+    // ── Elementary DE ───────────────────────────────────────────────────────
+    if (entry.def) {
+      readSeq(entry.def);
+      continue;
+    }
+
+    // ── Group DE ────────────────────────────────────────────────────────────
+    const { groupId, kids } = entry;
+    if (!kids.length) {
+      ctx.fields.push({ id: groupId, error: 'Group has no readable sub-fields' });
+      continue;
+    }
+
+    if (varGroups.has(groupId)) {
       // VLG group — first sub-field is LEN (ASCII digits), remaining sub-fields
       // share a buffer of N bytes that gets filled in declaration order:
       // each child gets min(child.length, remaining) bytes; every child is
       // emitted even if it consumed 0 bytes (to keep DDL shape in the output).
-      const kids = (def.subFields || def._groupChildren || []);
       if (kids.length < 2) {
-        ctx.fields.push({ id: def.id, error: 'VLG: group needs a LEN sub-field plus at least one payload sub-field' });
+        ctx.fields.push({ id: groupId, error: 'VLG: group needs a LEN sub-field plus at least one payload sub-field' });
         continue;
       }
       const lenDef   = kids[0];
@@ -18038,12 +17603,16 @@ function _meExecBitmapFields(attrs, ctx) {
       const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
       const N      = parseInt(lValue, 10) || 0;
       ctx.cursor = lStart + lLen;
-      ctx.fields.push({
-        id: `${def.id}.${lenDef.id}`, description: lenDef.description,
+      const lf = {
+        id: lenDef.id, description: lenDef.description,
         dataType: lenDef._dataType, valueLength: lLen,
         value: _meBytesToStr(lBytes), rawHex: _meBytesToHex(lBytes),
         startByte: lStart, endByte: lStart + lLen - 1,
-      });
+      };
+      _meApplyTypeOverride(lf, lenDef, ctx, null);
+      _meApplyDisplayOverride(lf, lenDef, ctx);
+      ctx.fields.push(lf);
+      ctx.fieldsById[lenDef.id] = lf;
 
       // Distribute N bytes across the remaining children, in declaration order
       let remaining = N;
@@ -18054,22 +17623,23 @@ function _meExecBitmapFields(attrs, ctx) {
         const cBytes   = Array.from(ctx.bytes.slice(cStart, cStart + take));
         ctx.cursor = cStart + take;
         remaining -= take;
-        ctx.fields.push({
-          id: `${def.id}.${childDef.id}`, description: childDef.description,
+        const cf = {
+          id: childDef.id, description: childDef.description,
           dataType: childDef._dataType, valueLength: take, lenPrefix: lValue,
           value:  take > 0 ? _meBytesToStr(cBytes) : '',
           rawHex: take > 0 ? _meBytesToHex(cBytes) : '',
           startByte: take > 0 ? cStart : null,
           endByte:   take > 0 ? cStart + take - 1 : null,
-        });
+        };
+        _meApplyTypeOverride(cf, childDef, ctx, null);
+        _meApplyDisplayOverride(cf, childDef, ctx);
+        ctx.fields.push(cf);
+        ctx.fieldsById[childDef.id] = cf;
       }
     } else {
-      const f = _meReadOneFieldFromDef(def, ctx);
-      if (f) {
-        _meApplyTypeOverride(f, def, ctx, null);
-        _meApplyDisplayOverride(f, def, ctx);
-        ctx.fields.push(f);
-        ctx.fieldsById[def.id] = f;
+      // Fixed group — read every leaf sequentially.
+      for (const kid of kids) {
+        if (!readSeq(kid)) break;   // ran out of bytes
       }
     }
   }
@@ -18529,18 +18099,6 @@ function _meSave() {
 </div>
 
 <!-- ===== DDL MATCH PICKER MODAL ===== -->
-<div class="modal-overlay hidden" id="ddlPickerOverlay">
-  <div class="modal-box" style="min-width:340px;max-width:520px;max-height:80vh">
-    <div class="modal-label" id="ddlPickerLabel">Multiple DDLs matched — select one:</div>
-    <div id="ddlPickerList" style="margin:10px 0 4px;flex:1;min-height:0;overflow-y:auto;border:1px solid var(--border);border-radius:4px;background:var(--bg-input)"></div>
-    <div class="modal-btns" style="justify-content:flex-end;gap:6px">
-      <button class="btn" id="ddlPickerCancel">Cancel</button>
-      <button class="btn" id="ddlPickerSession" disabled>Use for session</button>
-      <button class="btn btn-primary" id="ddlPickerSaveRule" disabled>Save as rule</button>
-    </div>
-  </div>
-</div>
-
 <!-- ===== PARSE PROGRESS OVERLAY ===== -->
 <div class="modal-overlay hidden" id="parseProgressOverlay">
   <div class="modal-box" style="min-width:640px;max-width:720px;gap:10px;position:relative">
@@ -18548,17 +18106,6 @@ function _meSave() {
     <div class="modal-label">Parsing…</div>
     <div id="parseProgressSteps" style="display:flex;flex-direction:column;gap:8px;padding:2px 0 4px"></div>
     <div id="ppPicker" class="hidden" style="display:flex;flex-direction:column;gap:6px;padding:4px 0 2px"></div>
-  </div>
-</div>
-
-<!-- ===== TYPE PICKER MODAL ===== -->
-<div class="modal-overlay hidden" id="typePickerOverlay">
-  <div class="modal-box" id="typePickerBox">
-    <div class="modal-label" id="typePickerLabel"></div>
-    <div id="typePickerBtns" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:14px 0 6px"></div>
-    <div class="modal-btns">
-      <button class="btn" id="typePickerCancel">Cancel</button>
-    </div>
   </div>
 </div>
 
@@ -18916,15 +18463,6 @@ function _meSave() {
       </div>
 
     </div><!-- end settings-body -->
-    <div class="settings-confirm hidden" id="settingsConfirm">
-      <div class="modal-box" style="min-width:260px;max-width:340px">
-        <div class="modal-label" id="settingsConfirmLabel"></div>
-        <div class="modal-btns">
-          <button class="btn" id="settingsConfirmCancel">Cancel</button>
-          <button class="btn btn-primary" id="settingsConfirmOk">OK</button>
-        </div>
-      </div>
-    </div>
   </div><!-- end settings-drawer -->
 </div><!-- end settings-overlay -->
 

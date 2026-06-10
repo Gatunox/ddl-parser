@@ -1462,15 +1462,26 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-footer{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:8px 14px;border-top:2px solid var(--border);background:var(--bg-deep);flex-shrink:0;}
 .me-status{flex:1;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 .me-test-bar{border-top:2px solid var(--border);flex-shrink:0;background:var(--bg-panel);}
-.me-test-hdr{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;background:var(--bg-deep);font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);user-select:none;}
+.me-test-hdr{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;background:var(--bg-deep);font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);user-select:none;border-bottom:2px solid var(--border);}
 .me-test-hdr:hover{color:var(--text);}
 .me-test-title{font-weight:bold;color:var(--text);}
-.me-test-summary{flex:1;font-size:var(--sz-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.me-test-body{padding:8px 12px;display:flex;flex-direction:column;gap:6px;}
+.me-test-summary{font-size:var(--sz-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+/* Fixed-height panel when open — content scrolls inside each pane rather
+   than growing the bar and pushing the editor layout around. */
+.me-test-body{display:flex;align-items:stretch;height:364px;}
+.me-test-list{width:343px;flex-shrink:0;border-right:2px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.me-test-list-body{flex:1;overflow-y:auto;min-height:0;}
+.me-test-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:26px;cursor:pointer;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom:1px solid var(--border);box-sizing:border-box;}
+.me-test-item:hover{background:rgba(255,255,255,.04);}
+body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
+.me-test-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
+.me-test-item .me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.me-test-win{font-size:9px;font-weight:700;color:#3fb950;border:1px solid #3fb950;border-radius:2px;padding:0 4px;flex-shrink:0;}
+.me-test-main{flex:1;min-width:0;padding:8px 12px;display:flex;flex-direction:column;gap:6px;}
 .me-test-row{display:flex;align-items:center;gap:8px;}
 .me-test-ta{width:100%;min-height:56px;max-height:110px;resize:vertical;font-family:var(--mono);font-size:var(--sz-mono);background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text);padding:4px 6px;box-sizing:border-box;outline:none;}
 .me-test-ta:focus{border-color:var(--accent);}
-.me-test-out{font-family:var(--mono);font-size:var(--sz-mono);max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:0;}
+.me-test-out{font-family:var(--mono);font-size:var(--sz-mono);flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:0;}
 .me-test-pass{color:#3fb950;}
 .me-test-fail{color:var(--text-dim);}
 .me-test-err{color:#f85149;}
@@ -12703,7 +12714,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.203';
+const APP_VERSION  = '1.1.2.210';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14243,6 +14254,22 @@ function _meSelectItem(section, idx) {
   _meState.recTest = null;   // dots are per-entity, drop the old verdict
   _meState.section = section;
   _meState.selIdx  = idx;
+  // Sections reflect the selected entity's content: panels WITH data open,
+  // empty panels start collapsed. (User can still toggle manually after.)
+  if (section === 'msg') {
+    const it = _meState.specs[idx];
+    if (it) {
+      const bindings = (it.ddl_bindings || []).filter(Boolean);
+      _meState.sections = {
+        identity:     true,
+        recognizers:  (it.recognizers || []).length > 0,
+        parse_spec:   (it.parse_spec_binary || []).length > 0 || (it.parse_spec_ascii || []).length > 0,
+        ddl_bindings: bindings.length > 0,
+        overrides:    bindings.length > 0 || (it.de_map || []).length > 0
+                   || (it.var_length_groups || []).length > 0 || (it.field_overrides || []).length > 0,
+      };
+    }
+  }
   if (section === 'msg' && idx >= 0 && idx < _meState.specs.length) {
     try { localStorage.setItem('up_me_last_sel', _meState.specs[idx].label || _meState.specs[idx].name || ''); } catch(e) {}
     _meAutoSetParseSpecVariant(_meState.specs[idx]);
@@ -18046,6 +18073,45 @@ function _meExecParseSpec(item, bytes) {
   return ctx;
 }
 
+// Render the left-hand verdict list of the Test bar: every Data entity in
+// sidebar order, with a pass/fail dot against the current input and a WINS
+// badge on the first match (= what detection would pick). Clicking a row
+// selects that entity and re-runs the test so the right pane follows.
+function _meTestRenderList(results, winnerIdx) {
+  const body = document.getElementById('me-test-list-body');
+  if (!body) return;
+  body.innerHTML = (_meState.specs || []).map((s, i) => {
+    const passed = !!results[i]?.passed;
+    const dot    = `<span class="me-rec-dot ${passed ? 'pass' : 'fail'}" title="${passed ? 'All recognizers passed' : 'Failed at recognizer ' + (((results[i]?.failAt) ?? 0) + 1)}"></span>`;
+    const win    = i === winnerIdx ? '<span class="me-test-win">WINS</span>' : '';
+    const active = i === _meState.selIdx ? ' active' : '';
+    return `<div class="me-test-item${active}" onclick="_meTestPick(${i})" title="Click to inspect this entity against the same input">
+      ${dot}<span class="me-item-swatch" style="background:${_escHtml(s.color || 'transparent')}"></span>
+      <span class="me-item-name">${_escHtml(s.label || s.name || '(unnamed)')}</span>${win}
+    </div>`;
+  }).join('');
+}
+
+function _meTestPick(idx) {
+  if (!_meState || idx === _meState.selIdx) return;
+  _meSelectItem('msg', idx);
+  _meRunTest();
+}
+
+// Reset the Test bar: input, results, verdict list, summary, recognizer dots.
+function _meTestClear() {
+  const inp = document.getElementById('me-test-input');
+  if (inp) inp.value = '';
+  const out = document.getElementById('me-test-out');
+  if (out) out.innerHTML = '';
+  const list = document.getElementById('me-test-list-body');
+  if (list) list.innerHTML = '<div class="me-empty">Run a test to evaluate every entity against the input.</div>';
+  const summ = document.getElementById('me-test-summary');
+  if (summ) summ.textContent = '';
+  if (_meState) _meState.recTest = null;
+  document.querySelectorAll('.me-rec-dot').forEach(d => { d.className = 'me-rec-dot'; d.title = ''; });
+}
+
 function _meRunTest() {
   const inp    = document.getElementById('me-test-input');
   const fmtSel = document.getElementById('me-test-fmt')?.value || 'auto';
@@ -18129,13 +18195,20 @@ function _meRunTest() {
   // Detection-order check: matching is necessary but not sufficient — the
   // FIRST matching entity in Data-list order wins detection. Surface
   // shadowing so a generic spec ranked above this one is never a silent trap.
-  if (recPassed && Array.isArray(_meState?.specs)) {
-    const all = _fmtTestSpecs(_meState.specs, bytes);
+  // The same all-entity evaluation also drives the verdict list on the left.
+  let detWinner = false;   // is the selected entity the one detection would pick?
+  if (Array.isArray(_meState?.specs)) {
+    // Evaluate every entity independently — _fmtTestSpecs over the whole list
+    // stops at the first match (mirroring real detection), but the verdict
+    // list is a diagnostic: it must show which entities WOULD pass.
+    const all = _meState.specs.map(s => _fmtTestSpecs([s], bytes)[0]);
     const winnerIdx = all.findIndex(r => r?.passed);
-    if (winnerIdx !== -1 && winnerIdx !== _meState.selIdx) {
+    detWinner = winnerIdx !== -1 && winnerIdx === _meState.selIdx;
+    _meTestRenderList(all, winnerIdx);
+    if (recPassed && winnerIdx !== -1 && winnerIdx !== _meState.selIdx) {
       const w = _meState.specs[winnerIdx];
       recHtml += `<div class="me-test-warn">⚠ Shadowed — “${_escHtml(w.label || w.name || '?')}” (position ${winnerIdx + 1} in the Data list) also matches and is ranked higher, so detection would pick it instead. Drag this entity above it to win.</div>`;
-    } else if (winnerIdx === _meState.selIdx) {
+    } else if (recPassed && winnerIdx === _meState.selIdx) {
       recHtml += `<div class="me-test-note">✓ Would win detection — first match in Data-list order.</div>`;
     }
   }
@@ -18176,8 +18249,10 @@ function _meRunTest() {
 
   out.innerHTML = parts.join('');
   if (summ) {
-    const ok = recPassed && fieldCount > 0;
-    summ.textContent = ok ? `✓ ${fieldCount} field(s)` : recPassed ? `✓ recognized · ${fieldCount} field(s)` : '✗ recognition failed';
+    // Same vocabulary as the Detection list: Pass / Fail for the recognizer
+    // outcome, Wins when this entity is the one detection would pick.
+    summ.textContent = !recPassed ? 'Fail'
+      : `${detWinner ? 'Wins' : 'Pass'} · ${fieldCount} field(s)`;
     summ.style.color = recPassed ? '#3fb950' : '#f85149';
   }
 }
@@ -18768,20 +18843,31 @@ function _meSave() {
     <div class="me-test-bar">
       <div class="me-test-hdr" onclick="_meToggleTest()">
         <span class="me-test-title">Test</span>
-        <span class="me-test-summary" id="me-test-summary"></span>
+        <span style="flex:1"></span>
         <span class="me-section-arr" id="me-test-arr">&#9660;</span>
       </div>
       <div class="me-test-body" id="me-test-body" style="display:none">
-        <div class="me-test-row">
-          <select id="me-test-fmt" class="me-inp" style="width:70px">
-            <option value="auto">auto</option>
-            <option value="hex">hex</option>
-            <option value="ascii">ascii</option>
-          </select>
-          <button class="btn btn-primary btn-sm" onclick="_meRunTest()">&#x25B6; Run</button>
+        <!-- Left: per-entity detection verdicts, mirroring the Data sidebar -->
+        <div class="me-test-list" id="me-test-list">
+          <div class="me-sidebar-hdr"><span class="me-sidebar-title">Detection</span><span class="me-test-summary" id="me-test-summary"></span></div>
+          <div class="me-test-list-body" id="me-test-list-body">
+            <div class="me-empty">Run a test to evaluate every entity against the input.</div>
+          </div>
         </div>
-        <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…"></textarea>
-        <div id="me-test-out" class="me-test-out"></div>
+        <!-- Right: input + results for the selected entity -->
+        <div class="me-test-main">
+          <div class="me-test-row">
+            <select id="me-test-fmt" class="me-inp" style="width:70px">
+              <option value="auto">auto</option>
+              <option value="hex">hex</option>
+              <option value="ascii">ascii</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="_meRunTest()">&#x25B6; Run</button>
+            <button class="btn btn-sm" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
+          </div>
+          <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…"></textarea>
+          <div id="me-test-out" class="me-test-out"></div>
+        </div>
       </div>
     </div>
 

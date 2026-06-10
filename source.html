@@ -1435,6 +1435,10 @@ input.me-inp{width:100%;}
 .me-rec-row.dragging .me-rec-head{cursor:grabbing;}
 .me-rec-head:hover{background:rgba(255,255,255,.04);}
 body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
+.me-rec-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:transparent;border:1px solid var(--border);}
+.me-rec-dot.pass{background:#3fb950;border-color:#3fb950;}
+.me-rec-dot.fail{background:#f85149;border-color:#f85149;}
+.me-rec-dot.skip{background:transparent;border-color:var(--text-dim);opacity:.5;}
 .me-rec-type{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--accent);min-width:100px;}
 .me-rec-sum{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .me-rec-acts{display:flex;gap:2px;margin-left:auto;flex-shrink:0;}
@@ -1471,6 +1475,7 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-test-fail{color:var(--text-dim);}
 .me-test-err{color:#f85149;}
 .me-test-note{color:var(--text-dim);font-style:italic;}
+.me-test-warn{color:var(--warning);margin-top:4px;}
 .me-test-section{margin-bottom:8px;}
 .me-test-section:last-child{margin-bottom:0;}
 .me-test-sec-hdr{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border);margin-bottom:4px;color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
@@ -1510,6 +1515,8 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-ps-cm::-webkit-scrollbar-corner{background:var(--bg-deep);}
 /* JSONC syntax tokens reuse the DDL editor's .hl-* palette directly. */
 .me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
+.me-ps-lint{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--warning);}
+.me-ps-lint-row{padding:1px 0;}
 .me-ps-help{background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;padding:10px 12px;display:none;flex-direction:column;gap:8px;}
 .me-ps-help.open{display:flex;}
 .me-ps-help-tbl-wrap{overflow-y:auto;max-height:190px;flex-shrink:0;}
@@ -5809,7 +5816,7 @@ function parseMessage(bytes, defs, rawBytes) {
   // ── Default format specs ───────────────────────────────────────────────────
 
   const _DEFAULT_FMT_SPECS = [
-    { name:'ISO', label:'ISO 5253 Standard', color:'#f5f910', vol:'',
+    { name:'ISO', label:'ISO 8583 Standard', color:'#f5f910', vol:'',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'####'},{type:'min-length',value:23}] },
     { name:'ISO', label:'ISO 8583 BIC', color:'#ffbb00', vol:'',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'min-length',value:23}],
@@ -12696,7 +12703,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.200';
+const APP_VERSION  = '1.1.2.203';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14233,6 +14240,7 @@ function _meSectionToggle(sec) {
 function _meSelectItem(section, idx) {
   _meState.editRec = -1;
   _meState.pend    = {};
+  _meState.recTest = null;   // dots are per-entity, drop the old verdict
   _meState.section = section;
   _meState.selIdx  = idx;
   if (section === 'msg' && idx >= 0 && idx < _meState.specs.length) {
@@ -14448,6 +14456,7 @@ function _meHtmlParseSpec(item) {
   <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
   <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
   <div id="me-ps-err" class="me-ps-err"></div>
+  <div id="me-ps-lint" class="me-ps-lint"></div>
 </div>`;
   // Note: ${raw} no longer used here — the CodeMirror editor is mounted by
   // _meRenderRight() after innerHTML is set, seeded from item[srcField].
@@ -14880,9 +14889,150 @@ function _mePsChange(val) {
     item[srcField]  = val;   // preserve comments + trailing commas
     if (errEl) errEl.textContent = '';
     _meSetDirty();
+    _mePsScheduleLint(item, parsed);
   } catch(e) {
     if (errEl) errEl.textContent = '⚠ ' + e.message;
+    // Syntax broken — semantic lint would be noise; clear it.
+    const lintEl = document.getElementById('me-ps-lint');
+    if (lintEl) lintEl.innerHTML = '';
   }
+}
+
+// ── Parse Spec semantic lint ────────────────────────────────────────────────
+// Runs after every successful JSONC parse (debounced — resolving DDL bindings
+// parses the DDL text, too heavy per keystroke). Checks block names, field-id
+// references against the bound DDLs and earlier synthetic ids, type-override
+// names, and bitmap-fields/read-bitmap pairing. Warnings only — they never
+// block saving.
+let _mePsLintTimer = null;
+let _mePsLintIdCache = { key: '', ids: null };
+
+function _mePsScheduleLint(item, parsed) {
+  clearTimeout(_mePsLintTimer);
+  _mePsLintTimer = setTimeout(() => _mePsRunLint(item, parsed), 350);
+}
+
+function _mePsKnownDDLIds(item) {
+  const key = (item.ddl_bindings || []).join('|');
+  if (_mePsLintIdCache.key === key && _mePsLintIdCache.ids) return _mePsLintIdCache.ids;
+  const ids = new Set();
+  for (const path of (item.ddl_bindings || [])) {
+    if (!path) continue;
+    const r = (typeof getDDLFromPath === 'function') ? getDDLFromPath(path) : null;
+    for (const d of (r?.defs || [])) {
+      ids.add(d.id);
+      // Group prefixes are valid refs too (read GROUP, until GROUP, …)
+      const parts = d.id.split('.');
+      for (let i = 1; i < parts.length; i++) ids.add(parts.slice(0, i).join('.'));
+    }
+  }
+  _mePsLintIdCache = { key, ids };
+  return ids;
+}
+
+const _PS_VALID_TYPES_RE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?|ascii|ebcdic|hex-ascii|hex-ebcdic)$/i;
+
+function _mePsRunLint(item, parsed) {
+  const lintEl = document.getElementById('me-ps-lint');
+  if (!lintEl) return;
+  const blockTypes = new Set(Object.keys(_PS_HELP));
+  const ddlIds = _mePsKnownDDLIds(item);
+  const synthetic = new Set();   // ids declared by earlier blocks (as / read-bitmap.field)
+  const bitmaps   = new Set();   // read-bitmap field ids seen so far
+  const warns = [];
+  const known = id => ddlIds.has(id) || synthetic.has(id);
+
+  const checkRef = (n, attr, id, allowSynthetic = true) => {
+    if (typeof id !== 'string' || !id) return;
+    if (allowSynthetic ? known(id) : ddlIds.has(id)) return;
+    warns.push(`[block ${n}] ${attr}: "${id}" not found in ${allowSynthetic ? 'bound DDLs or earlier blocks' : 'bound DDLs'}`);
+  };
+
+  const walk = (blocks, label) => {
+    if (!Array.isArray(blocks)) return;
+    blocks.forEach((block, i) => {
+      const n = label ? `${label}.${i + 1}` : String(i + 1);
+      if (block == null || typeof block !== 'object') {
+        if (block !== 'token-area') warns.push(`[block ${n}] not an object`);
+        return;
+      }
+      const keys = Object.keys(block);
+      if (!keys.length) return;
+      const type  = keys[0];
+      const attrs = block[type];
+      if (!blockTypes.has(type)) {
+        warns.push(`[block ${n}] unknown block type "${type}"`);
+        return;
+      }
+      switch (type) {
+        case 'read': {
+          const fid = (typeof attrs === 'string') ? attrs : attrs?.field;
+          checkRef(n, 'read.field', fid, false);
+          const t = (typeof attrs === 'object') ? attrs?.type : null;
+          if (t && !_PS_VALID_TYPES_RE.test(String(t).trim()))
+            warns.push(`[block ${n}] read.type: "${t}" is not a recognized type override`);
+          break;
+        }
+        case 'read-ddl': {
+          if (attrs && typeof attrs === 'object') {
+            checkRef(n, 'read-ddl.from',  attrs.from,  false);
+            checkRef(n, 'read-ddl.until', attrs.until, false);
+            if (Array.isArray(attrs.fields))
+              for (const f of attrs.fields) checkRef(n, 'read-ddl.fields', f, false);
+          }
+          break;
+        }
+        case 'read-bitmap': {
+          if (attrs?.field) { synthetic.add(attrs.field); bitmaps.add(attrs.field); }
+          else warns.push(`[block ${n}] read-bitmap needs a "field" attribute`);
+          break;
+        }
+        case 'bitmap-fields': {
+          const ref = (typeof attrs === 'string') ? attrs : attrs?.bitmap;
+          if (!ref) warns.push(`[block ${n}] bitmap-fields needs a bitmap field id`);
+          else if (!bitmaps.has(ref))
+            warns.push(`[block ${n}] bitmap-fields: "${ref}" has no preceding read-bitmap block`);
+          break;
+        }
+        case 'read-fixed': {
+          if (typeof attrs?.length === 'string') checkRef(n, 'read-fixed.length', attrs.length);
+          if (attrs?.as) synthetic.add(attrs.as);
+          break;
+        }
+        case 'read-until':
+        case 'read-length-prefix':
+        case 'read-to-end': {
+          if (attrs?.as) synthetic.add(attrs.as);
+          break;
+        }
+        case 'read-tlv': {
+          checkRef(n, 'read-tlv.field', attrs?.field);
+          break;
+        }
+        case 'when': {
+          checkRef(n, 'when.field', attrs?.field);
+          walk(attrs?.then, n);
+          break;
+        }
+        case 'repeat': {
+          if (typeof attrs?.count === 'string') checkRef(n, 'repeat.count', attrs.count);
+          walk(attrs?.body, n);
+          break;
+        }
+        case 'read-while': {
+          if (typeof attrs?.max === 'string') checkRef(n, 'read-while.max', attrs.max);
+          walk(attrs?.body, n);
+          break;
+        }
+      }
+    });
+  };
+  walk(parsed, '');
+
+  lintEl.innerHTML = warns.length
+    ? warns.slice(0, 8).map(w => `<div class="me-ps-lint-row">⚠ ${_escHtml(w)}</div>`).join('')
+      + (warns.length > 8 ? `<div class="me-ps-lint-row">… and ${warns.length - 8} more</div>` : '')
+    : '';
 }
 
 // Re-indent JSONC source preserving // and /* */ comments and trailing
@@ -15056,6 +15206,9 @@ function _mePsMountCM(item) {
     }),
     parent: host,
   });
+  // Lint the freshly mounted content so existing warnings show without
+  // requiring an edit first.
+  if (Array.isArray(item[specField])) _mePsScheduleLint(item, item[specField]);
   return _mePsCM;
 }
 
@@ -16148,9 +16301,18 @@ function _meHtmlRecs(item) {
   let h = `<div class="me-ps-help${recHelpOpen ? ' open' : ''}" id="me-rec-help" style="margin-bottom:8px">${_meRecHelpHtml()}</div>`;
   h += '<div class="me-rec-list">';
   if (!recs.length) h += '<div class="me-empty">No recognizers yet.</div>';
+  // Last Test-run verdict per recognizer (pass / fail / skip) — set by
+  // _meRunTest, cleared whenever the recognizer list changes.
+  const rt = _meState.recTest;
   recs.forEach((r, i) => {
     const editing  = _meState.editRec === i;
     const formRec  = (_meState.pend && _meState.pend[i] !== undefined) ? _meState.pend[i] : r;
+    let dotCls = '', dotTip = '';
+    if (rt && rt.count === recs.length) {
+      if (rt.passed || i < rt.failAt) { dotCls = 'pass'; dotTip = 'Passed against the last Test input'; }
+      else if (i === rt.failAt)       { dotCls = 'fail'; dotTip = 'Failed against the last Test input'; }
+      else                            { dotCls = 'skip'; dotTip = 'Not evaluated — an earlier recognizer already failed'; }
+    }
     h += `<div class="me-rec-row" id="me-rr-${i}" draggable="true"
   ondragstart="_meRecDragStart(event,${i})"
   ondragover="_meRecDragOver(event,${i})"
@@ -16158,6 +16320,7 @@ function _meHtmlRecs(item) {
   ondrop="_meRecDrop(event,${i})"
   ondragend="_meRecDragEnd(event)">
   <div class="me-rec-head" onclick="_meToggleRec(${i})" title="Drag to reorder">
+    <span class="me-rec-dot ${dotCls}" id="me-rd-${i}" title="${dotTip}"></span>
     <span class="me-rec-type">${_TYPE_LABEL[r.type] || r.type}</span>
     <span class="me-rec-sum">${_meRecSum(r)}</span>
     <span class="me-rec-acts" onclick="event.stopPropagation()">
@@ -16712,6 +16875,7 @@ function _meRecSave(idx) {
   if (!item.recognizers) item.recognizers = [];
   if (idx === -2) item.recognizers.push(rec);
   else            item.recognizers[idx] = rec;
+  _meState.recTest = null;   // recognizer changed — last verdict is stale
   _meState.editRec = -1;
   if (_meState.pend) delete _meState.pend[idx];
   _meSetDirty();
@@ -16730,6 +16894,7 @@ function _meDelRec(idx) {
     const item = _meCurItem();
     if (!item || !item.recognizers) return;
     item.recognizers.splice(idx, 1);
+    _meState.recTest = null;
     _meState.editRec = -1;
     _meState.pend    = {};
     _meSetDirty();
@@ -16780,6 +16945,7 @@ function _meRecDrop(e, targetIdx) {
   if (dst === src) return;
   const [moved] = item.recognizers.splice(src, 1);
   item.recognizers.splice(dst, 0, moved);
+  _meState.recTest = null;
   _meState.editRec = -1;
   _meState.pend    = {};
   _meSetDirty();
@@ -17931,6 +18097,23 @@ function _meRunTest() {
   // ── 1. Recognition ──────────────────────────────────────────────────────────
   const recResult = _fmtTestSpecs([item], bytes)[0];
   const recPassed = recResult?.passed ?? false;
+  // Persist the verdict and repaint the per-recognizer dots in the
+  // Recognizers section without a full re-render.
+  _meState.recTest = {
+    passed: recPassed,
+    failAt: recResult?.failAt ?? null,
+    count:  (item.recognizers || []).length,
+  };
+  (item.recognizers || []).forEach((_, i) => {
+    const dot = document.getElementById('me-rd-' + i);
+    if (!dot) return;
+    const rt = _meState.recTest;
+    const cls = (rt.passed || i < rt.failAt) ? 'pass' : (i === rt.failAt) ? 'fail' : 'skip';
+    dot.className = 'me-rec-dot ' + cls;
+    dot.title = cls === 'pass' ? 'Passed against the last Test input'
+              : cls === 'fail' ? 'Failed against the last Test input'
+              : 'Not evaluated — an earlier recognizer already failed';
+  });
   let recHtml;
   if (!item.recognizers?.length) {
     recHtml = '<div class="me-test-note">No recognizers defined — skipped.</div>';
@@ -17941,6 +18124,20 @@ function _meRunTest() {
     const rec = item.recognizers[fi];
     recHtml = `<div class="me-test-fail">✗ Failed at recognizer ${fi + 1}` +
       (rec ? ` (${rec.type}${rec.id ? ' #'+rec.id : ''})` : '') + '</div>';
+  }
+
+  // Detection-order check: matching is necessary but not sufficient — the
+  // FIRST matching entity in Data-list order wins detection. Surface
+  // shadowing so a generic spec ranked above this one is never a silent trap.
+  if (recPassed && Array.isArray(_meState?.specs)) {
+    const all = _fmtTestSpecs(_meState.specs, bytes);
+    const winnerIdx = all.findIndex(r => r?.passed);
+    if (winnerIdx !== -1 && winnerIdx !== _meState.selIdx) {
+      const w = _meState.specs[winnerIdx];
+      recHtml += `<div class="me-test-warn">⚠ Shadowed — “${_escHtml(w.label || w.name || '?')}” (position ${winnerIdx + 1} in the Data list) also matches and is ranked higher, so detection would pick it instead. Drag this entity above it to win.</div>`;
+    } else if (winnerIdx === _meState.selIdx) {
+      recHtml += `<div class="me-test-note">✓ Would win detection — first match in Data-list order.</div>`;
+    }
   }
   parts.push(_meTestSection('Recognition',
     recPassed ? '#3fb950' : (item.recognizers?.length ? '#f85149' : null),

@@ -5832,16 +5832,16 @@ function parseMessage(bytes, defs, rawBytes) {
     { name:'ISO', label:'ISO 8583 BIC', color:'#ffbb00', vol:'',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'min-length',value:23}],
       parse_spec_binary:[
-        {'read-ddl':{binding:0,from:'START-OF-TEST',until:'TYP'}},
+        {'read-ddl':{binding:0,from:'START-OF-TEXT',until:'TYP'}},
         {'read-bitmap':{field:'PRI-BIT-MAP',encoding:'ascii-hex'}},
         {'bitmap-fields':'PRI-BIT-MAP'}
       ],
       parse_spec_binary_source:
 `[
-  // ── Header (binding 0): walk DDL fields from START-OF-TEST up to and
+  // ── Header (binding 0): walk DDL fields from START-OF-TEXT up to and
   //    including TYP (the MTI). Nothing in this range is a DE — these are
   //    the fixed header positions that precede the bitmap.
-  { "read-ddl": { "binding": 0, "from": "START-OF-TEST", "until": "TYP" } },
+  { "read-ddl": { "binding": 0, "from": "START-OF-TEXT", "until": "TYP" } },
 
   // ── Bitmap: read PRI-BIT-MAP as 16 ASCII-hex chars (= 64 bits / primary).
   //    If bit 1 is set the engine automatically pulls another 16 ASCII-hex
@@ -12714,7 +12714,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.210';
+const APP_VERSION  = '1.1.2.213';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14940,7 +14940,17 @@ function _mePsScheduleLint(item, parsed) {
 }
 
 function _mePsKnownDDLIds(item) {
-  const key = (item.ddl_bindings || []).join('|');
+  // Cache key covers binding paths AND the bound files' content, so editing
+  // a DDL (rename a field, add one) invalidates the id set immediately —
+  // path-only keying left the lint complaining about ids that now exist.
+  const bindings = (item.ddl_bindings || []).filter(Boolean);
+  let contentSig = '';
+  for (const path of bindings) {
+    const [vol, sv, name] = path.split('/');
+    const content = S.ddlTree?.[vol]?.[sv]?.[name] || '';
+    contentSig += '#' + (typeof _strHash === 'function' ? _strHash(content) : content.length);
+  }
+  const key = bindings.join('|') + contentSig;
   if (_mePsLintIdCache.key === key && _mePsLintIdCache.ids) return _mePsLintIdCache.ids;
   const ids = new Set();
   for (const path of (item.ddl_bindings || [])) {
@@ -15471,6 +15481,12 @@ function _meBindSet(idx, val) {
   if (!item.ddl_bindings) item.ddl_bindings = [];
   item.ddl_bindings[idx] = val;
   _meSetDirty();
+  // Bindings feed the Parse Spec lint's known-id set — re-lint so stale
+  // "not found in bound DDLs" warnings clear/appear as the binding changes.
+  // (Cache key covers binding paths + DDL content; no-op when the parse_spec
+  // section is closed since the lint container isn't in the DOM.)
+  const { spec: specField } = _mePsFieldsForVariant(_mePsActiveVariant());
+  if (Array.isArray(item[specField])) _mePsScheduleLint(item, item[specField]);
 }
 function _meBindAdd() {
   const item = _meCurItem(); if (!item) return;

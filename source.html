@@ -439,8 +439,6 @@ body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);
 .ddl-grp-hidden { display: none; }
 .ddl-grp-icon { display: inline-block; width: 1em; text-align: center; font-style: normal; margin-left: -3px; margin-right: 2px; position: relative; left: -5px; transition: transform 0.15s; transform: rotate(90deg); cursor: pointer; }
 .ddl-grp-collapsed .ddl-grp-icon { transform: rotate(0deg); }
-.ddl-grp-de { display: none; }
-.ddl-grp-collapsed .ddl-grp-de { display: inline; }
 .ddl-doc-redef td { color: rgba(var(--accent-rgb),0.65); }
 .ddl-doc-redef:hover td { background: rgba(var(--accent-rgb),0.08) !important; }
 .ddl-doc-foot td { border-top: 2px solid var(--border); font-weight: 700; color: var(--accent); background: var(--bg-deep); padding: 5px 10px; }
@@ -766,20 +764,6 @@ tbody tr.row-unreliable td { background: rgba(var(--accent-rgb),0.07); }
 .c-de-badge { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--accent);
               background: rgba(var(--accent-rgb),.12); border: 2px solid var(--accent);
               border-radius: 3px; padding: 1px 5px; vertical-align: middle; letter-spacing: .3px; }
-.c-de-badge-edit { cursor: pointer; }
-.c-de-badge-edit:hover { background: rgba(var(--accent-rgb),.22); }
-.de-edit-widget { display:inline-flex; align-items:center; gap:1px; margin-left:5px; vertical-align:middle; }
-.de-edit-step  { font-size:11px; font-weight:700; padding:0 5px; cursor:pointer; line-height:1.6;
-                 background:rgba(var(--accent-rgb),.15); border:1px solid rgba(var(--accent-rgb),.4);
-                 border-radius:2px; color:var(--accent); user-select:none; }
-.de-edit-step:hover  { background:rgba(var(--accent-rgb),.35); }
-.de-edit-val   { font-size:11px; font-weight:600; color:var(--accent); padding:0 5px; line-height:1.6;
-                 background:rgba(var(--accent-rgb),.08); border-top:1px solid rgba(var(--accent-rgb),.4);
-                 border-bottom:1px solid rgba(var(--accent-rgb),.4); min-width:3.5em; text-align:center; }
-.de-edit-close { font-size:10px; font-weight:700; padding:0 5px; cursor:pointer; line-height:1.6;
-                 background:rgba(107,114,128,.15); border:1px solid rgba(107,114,128,.35);
-                 border-radius:2px; color:var(--text-dim); user-select:none; margin-left:2px; }
-.de-edit-close:hover { background:rgba(107,114,128,.3); color:var(--text); }
 tbody td { padding: 0 6px; height: 16px; vertical-align: middle; font-size: var(--sz-mono); line-height: 16px; overflow: hidden; text-overflow: ellipsis; }
 td.c-num { color: var(--text-very-dim); text-align: right; min-width: 28px; padding-right: 8px; font-variant-numeric: tabular-nums; user-select: none; }
 td.c-id   { color: var(--text); font-weight: 700; white-space: nowrap; }
@@ -1592,7 +1576,10 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-table th{position:sticky;top:0;background:var(--bg-deep);color:var(--text-dim);font-weight:700;text-align:left;padding:5px 8px;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-size:calc(var(--sz-mono) - 2px);z-index:1;white-space:nowrap;box-sizing:border-box;}
 .me-fm-th-num{width:36px;text-align:right;}
 .me-fm-th-fld{width:280px;}
+.me-fm-th-off{width:90px;text-align:right;}
 .me-fm-th-len{width:60px;text-align:right;}
+.me-fm-off{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);text-align:right;font-variant-numeric:tabular-nums;}
+.me-fm-off-hex{color:var(--text-dim);opacity:.6;font-size:10px;}
 .me-fm-th-dt {width:140px;text-align:left;}
 .me-fm-th-de {width:120px;text-align:center;}
 .me-fm-th-vlg{width:48px;text-align:center;}
@@ -3622,36 +3609,14 @@ function showDDLDoc() {
        + '</tr></thead><tbody>';
 
   let grandTotal = 0;
-  let hasDEBadges = false;
+  // DE badges removed from DDL Doc — DE numbering now lives in each Data
+  // entity's Overrides (Field Map), where it belongs to the message, not the
+  // DDL. (S.deOverrides is still honoured by the legacy parse path.)
 
   for (const sec of displaySections) {
     // Section header row (only when displaying multiple sections)
     if (displaySections.length > 1) {
       html += `<tr class="ddl-doc-sec-hdr"><td colspan="7">DEF ${esc(sec.name)}</td></tr>`;
-    }
-
-    // Build DE-N lookup maps per section (HPE COBOL ISO 8583 only).
-    // Must be per-section so multi-DEF files get correct bitNum for each DEF independently.
-    let deKeyMap = null, redefTargetMap = null, deKeyDepth = 0, deSeqIdxMap = null;
-    let sectionOverrideKey = null;
-    if (isHPE && !sec.simple) {
-      const hpeDefs = parseHPEDDL(content, docTypeRegistry, docSectionByName, sec.name);
-      if (hpeDefs._hpeIsoLayout) {
-        hasDEBadges = true;
-        sectionOverrideKey = S.scope?.vol && S.scope?.sv && S.scope?.name
-          ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}/${sec.name}`.toUpperCase()
-          : null;
-        applyDEOverrides(hpeDefs._hpeIsoLayout, sectionOverrideKey ? S.deOverrides[sectionOverrideKey] : null);
-        deKeyDepth     = hpeDefs._hpeIsoLayout.bmpDef.id.split('.').length;
-        deKeyMap       = new Map();
-        redefTargetMap = new Map();
-        deSeqIdxMap    = new Map();
-        for (let i = 0; i < hpeDefs._hpeIsoLayout.dataElements.length; i++) {
-          const de = hpeDefs._hpeIsoLayout.dataElements[i];
-          deKeyMap.set(de.id, de.bitNum);
-          deSeqIdxMap.set(de.id, i);
-        }
-      }
     }
 
     let fields, totalSize;
@@ -3667,25 +3632,6 @@ function showDDLDoc() {
         ? expandTypeRefs(sec.items, docSectionByName)
         : sec.items;
       ({ fields, totalSize } = buildDDLDocFields(expandedItems, docTypeRegistry));
-      // Populate redefTargetMap: for fields inside a REDEFINES group whose
-      // top-level key differs from the target (e.g. BASE24-SEC-INFO REDEFINES
-      // SEC-CNTRL-INFO), map the group's key → the target's bitNum so the badge
-      // can be shown correctly even though parseHPEDDL (two-pass) dropped the
-      // phantom element.
-      if (redefTargetMap && deKeyMap && deKeyDepth) {
-        for (const f of fields) {
-          if (!f.redefGroupTarget) continue;
-          const redefKey  = f.qualName.split('.').slice(0, deKeyDepth).join('.');
-          if (redefTargetMap.has(redefKey)) continue;          // already mapped
-          // Reconstruct the target's full key: same prefix, different leaf name.
-          // For deKeyDepth=1: targetKey = redefGroupTarget
-          // For deKeyDepth=2: targetKey = prefix[0] + '.' + redefGroupTarget
-          const prefix    = redefKey.split('.').slice(0, deKeyDepth - 1).join('.');
-          const targetKey = prefix ? prefix + '.' + f.redefGroupTarget : f.redefGroupTarget;
-          const bitNum    = deKeyMap.get(targetKey);
-          if (bitNum != null) redefTargetMap.set(redefKey, bitNum);
-        }
-      }
     }
 
     grandTotal += totalSize;
@@ -3703,24 +3649,11 @@ function showDDLDoc() {
       const namePadL = `padding-left:${depth * 16}px`;
       const grpPadL  = `padding-left:${5 + depth * 16}px`;
 
-      const deKey    = deKeyMap && deKeyDepth
-        ? f.qualName.split('.').slice(0, deKeyDepth).join('.') : null;
-      const deBitNum = deKey != null
-        ? (deKeyMap.get(deKey) ?? redefTargetMap?.get(deKey)) : undefined;
-      const deSeqIdx = (deKey != null && deSeqIdxMap) ? (deSeqIdxMap.get(deKey) ?? -1) : -1;
-      const deBadge  = deBitNum != null
-        ? (sectionOverrideKey && deSeqIdx >= 0
-            ? `<span class="c-de-badge c-de-badge-edit" title="DE-${deBitNum} — click to reassign" onclick="editDEBadge(event,'${sectionOverrideKey}',${deSeqIdx},${deBitNum})">DE-${deBitNum}</span>`
-            : `<span class="c-de-badge" title="ISO 8583 Data Element ${deBitNum}">DE-${deBitNum}</span>`)
-        : '';
-
       if (f.isGroup) {
         const grpCls = isRedefRow ? 'ddl-doc-grp ddl-doc-redef' : 'ddl-doc-grp';
-        const grpDeBadge = deBadge
-          ? deBadge.replace('c-de-badge', 'c-de-badge ddl-grp-de') : '';
         html += `<tr class="${grpCls}" data-qn="${esc(f.qualName)}" data-grp="1" ondblclick="toggleDDLGroup(this)">
           <td class="ddl-doc-hex" style="color:var(--text-dim)"></td>
-          <td style="${grpPadL}"><span class="ddl-grp-icon" onclick="toggleDDLGroup(this.closest('tr'))">></span><span style="font-weight:500">${esc(f.qualName)}.</span>${redefNote}${grpDeBadge}</td>
+          <td style="${grpPadL}"><span class="ddl-grp-icon" onclick="toggleDDLGroup(this.closest('tr'))">></span><span style="font-weight:500">${esc(f.qualName)}.</span>${redefNote}</td>
           <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
           <td class="ddl-doc-num">${f.size}</td>
           <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -3731,14 +3664,14 @@ function showDDLDoc() {
       }
 
       rowNum++;
-      const docSearch = esc([f.qualName, f.desc || '', f.dataType || '', deBitNum != null ? `DE-${deBitNum}` : ''].join(' ').toLowerCase());
+      const docSearch = esc([f.qualName, f.desc || '', f.dataType || ''].join(' ').toLowerCase());
       const cls = isRedefRow ? ' class="ddl-doc-redef"' : '';
       // Leaf rows skip the "↩ TARGET" note — the parent group title already
       // carries it, and the faded styling on the leaf row indicates redef
       // membership without repeating the target on every line.
       html += `<tr${cls} data-qn="${esc(f.qualName)}" data-search="${docSearch}">
         <td class="ddl-doc-hex" style="color:var(--text-dim)">${rowNum}</td>
-        <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span>${deBadge}</td>
+        <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span></td>
         <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
         <td class="ddl-doc-num">${f.size}</td>
         <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -3761,7 +3694,6 @@ function showDDLDoc() {
     : `DDLDOC — ${displaySections.length} definitions  (total ${grandTotal} bytes)`;
 
   document.getElementById('ddlDocTitle').textContent = title;
-  document.getElementById('ddlDocDEHint').style.display = hasDEBadges ? '' : 'none';
   const ddlFilt = document.getElementById('ddlDocFilterInput');
   if (ddlFilt) ddlFilt.value = '';
   const ddlBody = document.getElementById('ddlDocBody');
@@ -3803,40 +3735,6 @@ function toggleDDLGroup(tr) {
       if (!hiddenByAncestor) row.classList.remove('ddl-grp-hidden');
     }
   }
-}
-
-let _deEdit = null; // { fullKey, seqIdx, num }
-
-function editDEBadge(evt, fullKey, seqIdx, currentNum) {
-  evt.stopPropagation();
-  evt.preventDefault();
-  if (seqIdx < 0 || !fullKey) return;
-  _deEdit = { fullKey, seqIdx, num: currentNum };
-  const span = evt.currentTarget;
-  const w = document.createElement('span');
-  w.className = 'de-edit-widget';
-  w.id = 'deEditWidget';
-  w.innerHTML =
-    `<span class="de-edit-step" onclick="_deEditStep(-1)">‹</span>` +
-    `<span class="de-edit-val"  id="deEditVal">DE-${currentNum}</span>` +
-    `<span class="de-edit-step" onclick="_deEditStep(1)">›</span>` +
-    `<span class="de-edit-close" onclick="_deEditCommit()">✕</span>`;
-  span.replaceWith(w);
-}
-function _deEditStep(delta) {
-  if (!_deEdit) return;
-  _deEdit.num = Math.max(1, _deEdit.num + delta);
-  const el = document.getElementById('deEditVal');
-  if (el) el.textContent = `DE-${_deEdit.num}`;
-}
-function _deEditCommit() {
-  if (!_deEdit) return;
-  const { fullKey, seqIdx, num } = _deEdit;
-  _deEdit = null;
-  if (!S.deOverrides[fullKey]) S.deOverrides[fullKey] = {};
-  S.deOverrides[fullKey][String(seqIdx)] = num;
-  saveDeOverrides();
-  showDDLDoc();
 }
 
 function toggleDDLDocCollapseAll() {
@@ -12714,7 +12612,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.213';
+const APP_VERSION  = '1.1.2.214';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15619,6 +15517,10 @@ function _meHtmlOverrides(item) {
       // # column — number only the leaves, empty for group rows (mirrors DDL Doc).
       const numText = isGroup ? '' : (++rowNum);
       const numCell = `<td class="me-fm-num">${numText}</td>`;
+      // Offset column — DDL-declared byte offset, dec + hex (same as DDL Doc).
+      const offCell = row.offset != null
+        ? `<td class="me-fm-off">${row.offset}<span class="me-fm-off-hex"> 0x${row.offset.toString(16).toUpperCase().padStart(4, '0')}</span></td>`
+        : `<td class="me-fm-off"></td>`;
       // Length column — byte size from the DDL (groups sum their leaves).
       const lenCell = `<td class="me-fm-len">${row.length || 0}</td>`;
       // Data Type column — for elementary fields, a dropdown whose default
@@ -15642,7 +15544,7 @@ function _meHtmlOverrides(item) {
             <option value=""${overrideVal === '' ? ' selected' : ''}>${ea(defaultLabel)}</option>
             ${TYPE_OPTS.filter(t => t).map(t => `<option value="${t}"${overrideVal === t ? ' selected' : ''}>${t}</option>`).join('')}
           </select>${warnIcon}</td>`;
-      return `<tr class="${trCls}" ${dataAttrs}>${numCell}${fieldCell}${lenCell}${dtCell}${deCell}${vlgCell}${dispCell}</tr>`;
+      return `<tr class="${trCls}" ${dataAttrs}>${numCell}${fieldCell}${offCell}${lenCell}${dtCell}${deCell}${vlgCell}${dispCell}</tr>`;
     }).join('');
 
     let warnHtml = (unresolved && unresolved.count > 0)
@@ -15670,6 +15572,7 @@ function _meHtmlOverrides(item) {
     <thead><tr>
       <th class="me-fm-th-num" data-col="num">#<div class="me-fm-resizer" data-col="num"></div></th>
       <th class="me-fm-th-fld" data-col="fld">Field<div class="me-fm-resizer" data-col="fld"></div></th>
+      <th class="me-fm-th-off" data-col="off" title="Byte offset within the DDL record (dec + hex)">Offset<div class="me-fm-resizer" data-col="off"></div></th>
       <th class="me-fm-th-len" data-col="len" title="Byte length">Length<div class="me-fm-resizer" data-col="len"></div></th>
       <th class="me-fm-th-dt"  data-col="dt" title="DDL-declared type (click cell to override)">Data Type<div class="me-fm-resizer" data-col="dt"></div></th>
       <th class="me-fm-th-de"  data-col="de">Data Element<div class="me-fm-resizer" data-col="de"></div></th>
@@ -15907,7 +15810,10 @@ function _meWalkDEFields(defs, item) {
         const sampleLeaf = findLeaf(prefix);
         redefTarget = sampleLeaf ? redefTargetByLeaf.get(sampleLeaf) || null : null;
       }
-      assignDE(prefix, { isGroup: true, isTerminal, childCount, underTerminal: false, isRedef, redefTarget, dataType: 'GROUP', length: groupLength(prefix) });
+      // The current def is the first leaf under this prefix (prefixes are
+      // emitted while walking defs in declaration order), so its offset IS
+      // the group's start offset — same convention as DDL Doc.
+      assignDE(prefix, { isGroup: true, isTerminal, childCount, underTerminal: false, isRedef, redefTarget, dataType: 'GROUP', length: groupLength(prefix), offset: def.offset });
     }
 
     const parentPrefix = parts.slice(0, -1).join('.');
@@ -15916,10 +15822,11 @@ function _meWalkDEFields(defs, item) {
     const redefTarget = redefTargetByLeaf.get(def.id) || null;
     const dataType = dtypeByField.get(def.id) || '';
     const length = def.length || 0;
+    const offset = def.offset;
     if (underTerminal) {
-      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal: true, isRedef, redefTarget, dataType, length });
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal: true, isRedef, redefTarget, dataType, length, offset });
     } else {
-      assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length });
+      assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, offset });
     }
   }
   return out;
@@ -16166,6 +16073,15 @@ const _FM_HELP = {
       ['LEN says 45',   'ICC-LEN=3, ICC-TAG=2, ICC-VAL=20, ICC-AUX=40', 'TAG gets 2, VAL gets 20, AUX gets 23'],
       ['LEN says 3',    'Same DDL',                                     'TAG gets 2, VAL gets 1, AUX gets 0 (still emitted, empty)'],
       ['VLG hidden',    'Spec has no bitmap-fields, or row is a leaf', 'Button doesn\'t render — placeholder column kept for alignment'],
+    ],
+  },
+  'Offset': {
+    purpose: 'Byte offset of the field within the DDL record (dec + hex).',
+    desc: 'Read-only column mirroring DDL Doc. Shows where the field starts when every field is present, per the DDL declaration. Note: inside <code>bitmap-fields</code>, present DEs are read <b>sequentially at the cursor</b>, so the actual wire position can differ whenever an earlier DE is absent — the offset is the DDL\'s static layout, not the runtime position.',
+    rows: [
+      ['Header field',  'TYP at DDL offset 12',                  '12 0x000C'],
+      ['Group',         'PAN (LEN+DATA) starting at offset 32',  '32 0x0020 — the group shows its first leaf\'s offset'],
+      ['REDEFINES',     'Overlay of an earlier field',           'Shows the overlaid region\'s offset'],
     ],
   },
   'Length': {
@@ -18357,7 +18273,6 @@ function _meSave() {
   <div class="ddl-doc-modal">
     <div class="ddl-doc-hdr">
       <span id="ddlDocTitle" class="ddl-doc-title"></span>
-      <span id="ddlDocDEHint" style="display:none;font-size:11px;font-weight:700;color:var(--accent);font-family:var(--font-mono);margin-left:10px;flex-shrink:0">Click on any DE Badge to reassign its value</span>
       <div style="display:flex;gap:6px;align-items:center">
         <input type="text" id="ddlDocFilterInput" class="res-filter-input" placeholder="Filter fields…" title="Filter DDL Doc" oninput="filterDDLDoc(this.value)">
         <button class="btn btn-sm" id="ddlDocCollapseAllBtn" data-state="expanded" onclick="toggleDDLDocCollapseAll()" title="Collapse or expand all groups">Collapse All</button>

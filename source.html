@@ -1593,7 +1593,11 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-fm-dt-sel{width:100%;color:var(--text);}
 .me-fm-dt-bad .me-fm-dt-sel{border-color:#f85149;}
 .me-fm-dt-warn{display:inline-block;margin-left:4px;color:#f85149;font-size:12px;cursor:help;}
-.me-fm-table td{padding:2px 8px;border-bottom:1px solid rgba(255,255,255,0.04);color:var(--text);white-space:nowrap;vertical-align:middle;box-sizing:border-box;}
+/* Read-only info cells (#, offset, length, data type label) are dimmed; the
+   field NAME carries full text color so it stands out. Interactive cells
+   (dropdowns, DE pills) set their own colors and aren't affected. */
+.me-fm-table td{padding:2px 8px;border-bottom:1px solid rgba(255,255,255,0.04);color:var(--text-dim);white-space:nowrap;vertical-align:middle;box-sizing:border-box;}
+.me-fm-table td .me-fm-name{color:var(--text);}
 body.light .me-fm-table td{border-bottom-color:rgba(0,0,0,0.06);}
 /* Thin vertical separators between columns — keeps the eye on column edges
    without the visual noise of full-row striping. Last column omitted so the
@@ -12612,7 +12616,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.214';
+const APP_VERSION  = '1.1.2.219';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14872,6 +14876,7 @@ function _mePsRunLint(item, parsed) {
   if (!lintEl) return;
   const blockTypes = new Set(Object.keys(_PS_HELP));
   const ddlIds = _mePsKnownDDLIds(item);
+  const bindingCount = (item.ddl_bindings || []).filter(Boolean).length;
   const synthetic = new Set();   // ids declared by earlier blocks (as / read-bitmap.field)
   const bitmaps   = new Set();   // read-bitmap field ids seen so far
   const warns = [];
@@ -14909,6 +14914,17 @@ function _mePsRunLint(item, parsed) {
           break;
         }
         case 'read-ddl': {
+          // No bound DDL at all → read-ddl has nothing to walk.
+          if (!bindingCount) {
+            warns.push(`[block ${n}] read-ddl: no DDL bindings — add a binding in DDL Bindings`);
+          } else {
+            // Numeric binding index out of range (e.g. binding:1 with one binding).
+            const b = (typeof attrs === 'number') ? attrs
+                    : (attrs && typeof attrs === 'object') ? attrs.binding : undefined;
+            if (typeof b === 'number' && (b < 0 || b >= bindingCount)) {
+              warns.push(`[block ${n}] read-ddl.binding: index ${b} out of range — only ${bindingCount} binding${bindingCount !== 1 ? 's' : ''} bound`);
+            }
+          }
           if (attrs && typeof attrs === 'object') {
             checkRef(n, 'read-ddl.from',  attrs.from,  false);
             checkRef(n, 'read-ddl.until', attrs.until, false);

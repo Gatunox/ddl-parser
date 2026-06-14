@@ -815,7 +815,7 @@ body.light .trk-chk { color-scheme: light; }
 #resPanel.egg-flood { animation: eggPanelPulse 0.75s ease-in-out infinite; }
 #resPanel.egg-flood > .panel-header { animation: eggHeaderPulse 0.75s ease-in-out infinite; }
 #rawPanel > .panel-header { cursor: default; }
-#rawPanel > .panel-header:hover { background: var(--bg-deep); }
+#rawPanel > .panel-header:hover { background: #1c2128; }
 .egg-row {
   font-family: var(--mono); padding: 1px 10px; white-space: nowrap;
   animation: eggRowIn 0.18s ease-out forwards;
@@ -1582,7 +1582,7 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-off-hex{color:var(--text-dim);opacity:.6;font-size:10px;}
 .me-fm-th-dt {width:140px;text-align:left;}
 .me-fm-th-de {width:120px;text-align:center;}
-.me-fm-th-vlg{width:48px;text-align:center;}
+.me-fm-th-vlg{width:76px;text-align:center;}
 .me-fm-th-fo {width:96px;text-align:center;}
 .me-fm-resizer{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:2;}
 .me-fm-resizer:hover,.me-fm-resizer.active{background:rgba(var(--accent-rgb),0.4);}
@@ -1635,10 +1635,8 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
 .me-de-edit-inp{width:46px;height:16px;padding:0 2px;border:0;background:transparent;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--accent);text-align:center;outline:none;}
 .me-de-clear{width:22px;height:20px;padding:0;flex-shrink:0;}
 .me-de-clear-ph{display:inline-block;width:22px;flex-shrink:0;}
-/* VLG checkbox — color-scheme tells the browser to render dark-mode chrome
-   (dark unchecked box, light check); accent-color paints the check itself. */
-.me-vlg-cb{cursor:pointer;width:14px;height:14px;margin:0;accent-color:var(--accent);color-scheme:dark;}
-body.light .me-vlg-cb{color-scheme:light;}
+/* VLG LEN-field selector — picks which sub-field holds the length. */
+.me-vlg-sel{height:20px;padding:0 2px;font-size:calc(var(--sz-mono) - 1px);width:68px;}
 .me-fo-sel{height:20px;padding:0 4px;font-size:calc(var(--sz-mono) - 1px);width:90px;}
 /* Accent-on shared with DDL Doc buttons */
 .btn-accent-on{border-color:var(--accent);color:var(--accent);background:rgba(var(--accent-rgb),0.10);}
@@ -5757,7 +5755,28 @@ function parseMessage(bytes, defs, rawBytes) {
   { "bitmap-fields": "PRI-BIT-MAP" }
 ]` },
     { name:'ISO', label:'ISO 8583 Switch', color:'#c59102', vol:'',
-      recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'uint16',offset:4,endian:'be',min:0,max:65535},{type:'uint16',offset:6,endian:'be',min:0,max:65535},{type:'uint16',offset:8,endian:'be',min:0,max:65535},{type:'uint16',offset:10,endian:'be',min:0,max:65535},{type:'min-length',value:23}] },
+      recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'uint16',offset:4,endian:'be',min:0,max:65535},{type:'uint16',offset:6,endian:'be',min:0,max:65535},{type:'uint16',offset:8,endian:'be',min:0,max:65535},{type:'uint16',offset:10,endian:'be',min:0,max:65535},{type:'min-length',value:23}],
+      parse_spec_binary:[
+        {'read':'TYP'},
+        {'read-bitmap':{field:'PBIT-MAP',encoding:'ascii-hex'}},
+        {'bitmap-fields':'PBIT-MAP'}
+      ],
+      parse_spec_binary_source:
+`[
+  // ── Header Read Message Type
+  { "read": "TYP" },
+
+  // ── Bitmap: read PBIT-MAP as 16 ASCII-hex chars (= 64 bits / primary).
+  //    If bit 1 is set the engine automatically pulls another 16 ASCII-hex
+  //    chars for the secondary bitmap, giving 128 bits total.
+  { "read-bitmap": { "field": "PBIT-MAP", "encoding": "ascii-hex" } },
+
+  /*  DEs: walk the bitmap. Each set bit maps to a DDL field via the de_map
+      built from binding 0 + binding 1 in declaration order (anchors in the
+      Overrides section override the default numbering). VLG-flagged fields
+      consume LEN + payload automatically. */
+  { "bitmap-fields": "PBIT-MAP" }
+]` },
     { name:'STM', label:'STM', color:'#1eff00', vol:'ATM',
       recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'01'},{type:'min-length',value:873}],
       parse_spec_binary:[
@@ -12616,7 +12635,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.219';
+const APP_VERSION  = '1.1.2.229';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14559,7 +14578,7 @@ const _PS_HELP = {
     ],
   },
   'bitmap-fields': {
-    desc: 'Reads the DE fields indicated by a prior read-bitmap result. DE numbering matches the Overrides table exactly: it starts on the field after the bitmap, groups own one DE (their leaves none), REDEFINES rows are skipped, and Data Element anchors re-align the counter. A set bit on an elementary field reads that field; on a group it reads every leaf in declaration order; on a VLG-flagged group it reads the first sub-field as LEN and distributes that many bytes across the rest. Present fields are read sequentially at the cursor (DDL offsets are ignored — they assume every DE is present). Data Type / Display overrides from the Overrides section are applied to each field read.',
+    desc: 'Reads the DE fields indicated by a prior read-bitmap result. DE numbering matches the Overrides table exactly: it starts on the field after the bitmap, groups own one DE (their leaves none), REDEFINES rows are skipped, and Data Element anchors re-align the counter. A set bit on an elementary field reads that field; on a group it reads every leaf in declaration order; on a VLG-flagged group it reads the user-selected LEN sub-field and distributes that many bytes across the sub-fields after it (fields before the LEN read at their declared length). Present fields are read sequentially at the cursor (DDL offsets are ignored — they assume every DE is present). Data Type / Display overrides from the Overrides section are applied to each field read.',
     useWhen: [
       'You\'ve just executed <code>read-bitmap</code> and want to read only the DEs the bitmap marks present.',
       'The Overrides table shows the DE numbers you expect (anchor the first real DE if the defaults are off).',
@@ -15421,11 +15440,10 @@ function _meBindDel(idx) {
 function _meHtmlOverrides(item) {
   const ea = v => (v == null ? '' : String(v)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   const deMap = item.de_map           || [];
-  const vlg   = item.var_length_groups || [];
   const fo    = item.field_overrides   || [];
 
   // Lookup maps so per-row UI can pre-fill state.
-  const vlgSet = new Set(vlg);
+  const vlgMap = _meVlgLenMap(item);   // groupId → LEN leaf id (or null = first leaf)
   const foByField = new Map();
   for (const e of fo) if (e?.field) foByField.set(e.field, e);
   // Single source of truth: the bitmap field id (or null). Truthy means the
@@ -15472,7 +15490,7 @@ function _meHtmlOverrides(item) {
         row.isTerminal ? 'me-fm-term' : '',
         !isGroup && !row.underTerminal ? 'me-fm-leaf' : '',
         row.underTerminal ? 'me-fm-leaf me-fm-under-term' : '',
-        vlgSet.has(row.id) ? 'me-fm-vlg-on' : '',
+        vlgMap.has(row.id) ? 'me-fm-vlg-on' : '',
       ].filter(Boolean).join(' ');
       const dataAttrs = isGroup
         ? `data-grp="1" data-qn="${id}"`
@@ -15519,12 +15537,24 @@ function _meHtmlOverrides(item) {
         deCell = `<td class="me-fm-de" title="${tip}"></td>`;
       }
 
-      // VLG cell — checkbox (only on terminal groups with ≥2 children, when bitmap-fields used, and not REDEFINES)
-      const isVlg       = vlgSet.has(row.id);
-      const vlgEligible = isGroup && row.isTerminal && (row.childCount || 0) >= 2 && !row.isRedef;
-      const vlgCell = (vlgEligible && usesBitmapFields)
-        ? `<td class="me-fm-vlg"><input type="checkbox" class="me-vlg-cb" ${isVlg ? 'checked' : ''} onchange="_meVlgToggleByField('${id}')" title="When on, bitmap-fields reads the first sub-field as LEN and distributes that many bytes across the rest."></td>`
-        : `<td class="me-fm-vlg"></td>`;
+      // VLG cell — combo (on any group with ≥2 children, when bitmap-fields used, and not REDEFINES).
+      // Options are the group's leaf fields; selecting one marks the group as VLG
+      // with that field as the LEN. The leading "—" option means "not a VLG".
+      const vlgEligible = isGroup && (row.childCount || 0) >= 2 && !row.isRedef;
+      let vlgCell;
+      if (vlgEligible && usesBitmapFields) {
+        const prefix    = row.id + '.';
+        const vlgLeaves = fieldList.filter(r => !r.isGroup && !r.isRedef && r.id.startsWith(prefix));
+        // null (legacy on, no field chosen) → default to the first leaf.
+        const curLen    = vlgMap.has(row.id) ? (vlgMap.get(row.id) || (vlgLeaves[0] && vlgLeaves[0].id)) : '';
+        const opts = `<option value=""></option>` + vlgLeaves.map(l => {
+          const label = ea(l.id.slice(prefix.length));
+          return `<option value="${ea(l.id)}"${l.id === curLen ? ' selected' : ''}>${label}</option>`;
+        }).join('');
+        vlgCell = `<td class="me-fm-vlg"><select class="me-sel me-vlg-sel" onchange="_meVlgSetLen('${id}',this.value)" title="Pick the sub-field that holds the length. bitmap-fields reads it as a numeric LEN and distributes that many bytes across the fields after it; fields before it read at their declared length.">${opts}</select></td>`;
+      } else {
+        vlgCell = `<td class="me-fm-vlg"></td>`;
+      }
 
       // Display override stays its own column.
       const foEntry = foByField.get(row.id) || {};
@@ -15581,6 +15611,7 @@ function _meHtmlOverrides(item) {
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
   <button class="btn btn-sm" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
   <button class="btn btn-sm" id="me-fm-hide-redef-btn" onclick="_meFmToggleHideRedef()" title="Hide / show REDEFINES rows">Hide Redef</button>
+  <button class="btn btn-sm" onclick="_meFmResetCols()" title="Reset column widths to auto-fit">Reset Column</button>
   <button class="btn btn-sm" onclick="_meFmToggleHelp()" title="Column reference">?</button>
 </div>
 <div class="me-fm-table-wrap">
@@ -15876,13 +15907,28 @@ function _meDeClear(fieldId) {
   _meRenderRight();
 }
 
-// Field-keyed VLG toggle — adds/removes the field id from var_length_groups.
-function _meVlgToggleByField(fieldId) {
+// Normalize var_length_groups into Map<groupId, lenFieldId|null>. Accepts both
+// legacy bare-string entries (LEN = first sub-field → null) and the current
+// {group, len} object form. Shared by the Field Map UI and the parse engine so
+// the two never diverge on which field is the LEN.
+function _meVlgLenMap(item) {
+  const m = new Map();
+  for (const e of (item?.var_length_groups || [])) {
+    if (typeof e === 'string')      m.set(e, null);
+    else if (e && e.group)          m.set(e.group, e.len || null);
+  }
+  return m;
+}
+
+// Set or clear the LEN field for a group's variable-length-group config.
+// value '' clears (removes the group); any leaf id stores {group, len:value}.
+function _meVlgSetLen(groupId, value) {
   const item = _meCurItem(); if (!item) return;
   if (!Array.isArray(item.var_length_groups)) item.var_length_groups = [];
-  const i = item.var_length_groups.indexOf(fieldId);
-  if (i === -1) item.var_length_groups.push(fieldId);
-  else          item.var_length_groups.splice(i, 1);
+  // Drop any existing entry (string or object) for this group, then re-add.
+  item.var_length_groups = item.var_length_groups.filter(e =>
+    (typeof e === 'string' ? e : (e && e.group)) !== groupId);
+  if (value) item.var_length_groups.push({ group: groupId, len: value });
   _meSetDirty();
   _meRenderRight();
 }
@@ -15902,44 +15948,78 @@ function _meFmIsHiddenByCollapse(tr) {
 // Widths keyed by data-col attribute, saved per-key to localStorage so the
 // layout survives reloads / item switches.
 const _FM_COL_KEY = 'up_me_fm_col_w';
+let _meFmRO = null;   // ResizeObserver that re-fits columns when the wrap resizes
 function _meFmLoadColWidths() {
   try { return JSON.parse(localStorage.getItem(_FM_COL_KEY)) || {}; } catch(_) { return {}; }
+}
+// Settle column widths to fill the wrap — the auto-fit that "Reset Column" runs.
+// Every column except FIELD takes its saved or natural content width; FIELD
+// always absorbs the wrap's leftover, so the columns fill the panel with no gap.
+// Bails when the wrap has no width yet (panel not laid out) — the ResizeObserver
+// re-runs this once the panel reaches its real width.
+function _meFmFitCols() {
+  const widths = _meFmLoadColWidths();
+  const ths = Array.from(document.querySelectorAll('.me-fm-table thead th[data-col]'));
+  const table = document.querySelector('.me-fm-table');
+  const wrap  = document.querySelector('.me-fm-table-wrap');
+  if (!table || !wrap || !ths.length) return;
+  const avail = wrap.clientWidth;
+  if (avail <= 0) return;   // not laid out yet — ResizeObserver will refit later
+  ths.forEach(th => { th.style.width = widths[th.dataset.col] ? (widths[th.dataset.col] + 'px') : ''; });
+  table.style.width = '';
+  table.style.tableLayout = 'auto';
+  void table.offsetWidth; // force reflow before measuring
+  const naturalW = {};
+  ths.forEach(th => { naturalW[th.dataset.col] = Math.ceil(th.getBoundingClientRect().width); });
+  table.style.tableLayout = '';
+  const wrapW = avail - 4;
+  let nonFldSum = 0;
+  ths.forEach(th => { if (th.dataset.col !== 'fld') nonFldSum += naturalW[th.dataset.col]; });
+  const fldW = Math.max(120, wrapW - nonFldSum);
+  ths.forEach(th => {
+    const c = th.dataset.col;
+    th.style.width = (c === 'fld' ? fldW : naturalW[c]) + 'px';
+  });
+  table.style.width = (fldW + nonFldSum) + 'px';
 }
 function _meFmSaveColWidth(col, w) {
   const data = _meFmLoadColWidths();
   data[col] = w;
   try { localStorage.setItem(_FM_COL_KEY, JSON.stringify(data)); } catch(_) {}
 }
+// Clear all saved column widths and re-run the auto-fit, so every column
+// returns to its natural content width (FIELD absorbs the leftover). Recovers
+// from a column dragged to zero / off-screen.
+function _meFmResetCols() {
+  try { localStorage.removeItem(_FM_COL_KEY); } catch(_) {}
+  // Drop any inline widths so the auto-fit branch can remeasure from scratch.
+  document.querySelectorAll('.me-fm-table thead th[data-col]').forEach(th => { th.style.width = ''; });
+  const table = document.querySelector('.me-fm-table');
+  if (table) table.style.width = '';
+  _meFmInitColResize();
+}
 function _meFmInitColResize() {
-  const widths = _meFmLoadColWidths();
   const ths = Array.from(document.querySelectorAll('.me-fm-table thead th[data-col]'));
   const table = document.querySelector('.me-fm-table');
   const wrap  = document.querySelector('.me-fm-table-wrap');
   if (!table || !wrap || !ths.length) return;
 
-  // Step 1: settle column widths. Either honour saved widths verbatim, or
-  // auto-fit (every column except FIELD at its natural content width, FIELD
-  // absorbing the wrap's leftover).
-  if (ths.every(th => widths[th.dataset.col])) {
-    ths.forEach(th => { th.style.width = widths[th.dataset.col] + 'px'; });
-    table.style.width = ths.reduce((s, th) => s + widths[th.dataset.col], 0) + 'px';
-  } else {
-    ths.forEach(th => { th.style.width = widths[th.dataset.col] ? (widths[th.dataset.col] + 'px') : ''; });
-    table.style.width = '';
-    table.style.tableLayout = 'auto';
-    void table.offsetWidth; // force reflow before measuring
-    const naturalW = {};
-    ths.forEach(th => { naturalW[th.dataset.col] = Math.ceil(th.getBoundingClientRect().width); });
-    table.style.tableLayout = '';
-    const wrapW = wrap.clientWidth - 4;
-    let nonFldSum = 0;
-    ths.forEach(th => { if (th.dataset.col !== 'fld') nonFldSum += naturalW[th.dataset.col]; });
-    const fldW = Math.max(120, wrapW - nonFldSum);
-    ths.forEach(th => {
-      const c = th.dataset.col;
-      th.style.width = (c === 'fld' ? fldW : naturalW[c]) + 'px';
+  // Step 1: settle column widths now (if the panel is already laid out) AND
+  // re-settle whenever the wrap's width changes. The initial render can run
+  // before the Overrides panel has reached its real width (auto-open / modal
+  // still settling), which would size FIELD too small and leave a gap once the
+  // panel grows. A ResizeObserver re-fits on every real width change, so the
+  // default layout always converges to the same fill as "Reset Column".
+  _meFmFitCols();
+  if (typeof ResizeObserver !== 'undefined') {
+    if (_meFmRO) _meFmRO.disconnect();
+    let lastW = wrap.clientWidth;
+    _meFmRO = new ResizeObserver(() => {
+      const w = wrap.clientWidth;
+      // Width-only changes; table-width edits don't affect the wrap, so no loop.
+      if (w > 0 && w !== lastW) { lastW = w; _meFmFitCols(); }
     });
-    table.style.width = (fldW + nonFldSum) + 'px';
+    _meFmRO.observe(wrap);
   }
 
   // Step 2: wire the resize handles in BOTH branches — without this, users
@@ -16083,12 +16163,13 @@ const _FM_HELP = {
     ],
   },
   'VLG': {
-    purpose: 'Variable Length Group — distribute a runtime LEN across sub-fields.',
-    desc: 'Appears <b>only</b> on <i>terminal groups</i> (groups whose children are all leaves) <b>and only</b> when the parse spec uses <code>bitmap-fields</code>. When VLG is on for a group, <code>bitmap-fields</code> reads the first sub-field as a numeric LEN (ASCII digits) and distributes that many bytes across the remaining sub-fields, in order, each capped by its declared length. Every sub-field is emitted in the parse output, even ones that consumed 0 bytes.',
+    purpose: 'Variable Length Group — pick the LEN sub-field; distribute it across the rest.',
+    desc: 'A dropdown on <i>any group</i> with at least two leaf sub-fields, shown <b>only</b> when the parse spec uses <code>bitmap-fields</code>. The options are the group\'s leaf fields; the <b>blank</b> option means "not a VLG". Pick the sub-field that holds the length and <code>bitmap-fields</code> reads it as a numeric LEN (ASCII digits). Sub-fields <b>before</b> the LEN read at their declared fixed length; sub-fields <b>after</b> it share N bytes, distributed in declaration order, each capped by its declared length. This handles TLV layouts (TAG, then LEN, then VALUE) where the length isn\'t the first field. Every sub-field is emitted in the parse output, even ones that consumed 0 bytes.',
     rows: [
-      ['LEN says 45',   'ICC-LEN=3, ICC-TAG=2, ICC-VAL=20, ICC-AUX=40', 'TAG gets 2, VAL gets 20, AUX gets 23'],
-      ['LEN says 3',    'Same DDL',                                     'TAG gets 2, VAL gets 1, AUX gets 0 (still emitted, empty)'],
-      ['VLG hidden',    'Spec has no bitmap-fields, or row is a leaf', 'Button doesn\'t render — placeholder column kept for alignment'],
+      ['Pick LEN, says 45', 'TAG=2, LEN=3, VAL=20, AUX=40', 'TAG reads 2 (fixed), LEN=45, VAL gets 20, AUX gets 23'],
+      ['Pick LEN, says 3',  'Same DDL',                     'TAG reads 2 (fixed), VAL gets 1, AUX gets 0 (still emitted, empty)'],
+      ['Set to blank',      'Any group',                    'Not a VLG — group reads every leaf at its declared length'],
+      ['VLG hidden',        'Spec has no bitmap-fields, or row is a leaf', 'Dropdown doesn\'t render — placeholder column kept for alignment'],
     ],
   },
   'Offset': {
@@ -17687,7 +17768,7 @@ function _meExecBitmapFields(attrs, ctx) {
     return;
   }
   const deMap = _meBuildDEMap(ctx);
-  const varGroups = new Set(ctx.item.var_length_groups || []);
+  const varGroups = _meVlgLenMap(ctx.item);   // groupId → LEN leaf id (or null = first leaf)
   const bits = Array.from(bmField.bitSet).sort((a, b) => a - b);
 
   // Bitmap-present fields are sequential on the wire: each present DE starts
@@ -17726,16 +17807,28 @@ function _meExecBitmapFields(attrs, ctx) {
     }
 
     if (varGroups.has(groupId)) {
-      // VLG group — first sub-field is LEN (ASCII digits), remaining sub-fields
-      // share a buffer of N bytes that gets filled in declaration order:
-      // each child gets min(child.length, remaining) bytes; every child is
-      // emitted even if it consumed 0 bytes (to keep DDL shape in the output).
+      // VLG group — one sub-field holds a numeric LEN (ASCII digits). Sub-fields
+      // BEFORE it read at their declared fixed length; the sub-fields AFTER it
+      // share a buffer of N bytes filled in declaration order (each gets
+      // min(child.length, remaining) bytes; every child is emitted even if it
+      // consumed 0 bytes, to keep DDL shape in the output). The LEN field is
+      // user-selected in Overrides (the configured leaf id); a null/missing
+      // selection falls back to the first sub-field (legacy behaviour).
       if (kids.length < 2) {
         ctx.fields.push({ id: groupId, error: 'VLG: group needs a LEN sub-field plus at least one payload sub-field' });
         continue;
       }
-      const lenDef   = kids[0];
-      const dataDefs = kids.slice(1);
+      const lenId  = varGroups.get(groupId);
+      let   lenIdx = lenId ? kids.findIndex(k => k.id === lenId) : 0;
+      if (lenIdx < 0) lenIdx = 0;   // configured field no longer present → first
+      const beforeDefs = kids.slice(0, lenIdx);
+      const lenDef     = kids[lenIdx];
+      const dataDefs   = kids.slice(lenIdx + 1);
+
+      // Fields before the LEN read at their declared fixed length, sequentially.
+      for (const bd of beforeDefs) {
+        if (!readSeq(bd)) break;   // ran out of bytes
+      }
 
       // Read LEN
       const lStart = ctx.cursor;

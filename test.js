@@ -1077,6 +1077,39 @@ test('VLG group distributes runtime LEN across children with real ids and overri
   eq(val.displayValue, '0x565656', 'display override applied to VLG child');
 });
 
+test('VLG with selected LEN field: fields before LEN read fixed, fields after distribute (TLV)', () => {
+  S.ddlTree = { VOL: { SV: { 'VLGTLV': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 ICC.
+        03 TAG PIC X(2).
+        03 LEN PIC 9(2).
+        03 VAL PIC X(8).
+    END REC.
+  ` } } };
+  S.inputFormat = 'ascii';
+  const item = {
+    ddl_bindings: ['VOL/SV/VLGTLV/REC'],
+    // LEN is the 2nd sub-field, not the first — selected explicitly.
+    var_length_groups: [{ group: 'ICC', len: 'ICC.LEN' }],
+    parse_spec_ascii: [
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'bitmap-fields': 'BMP' },
+    ],
+    parse_spec_binary: [],
+  };
+  item.de_map = [{ field: 'ICC', de: 2 }];
+  // TAG='TT' (fixed 2), LEN='05', VAL takes 5 of remaining (declared 8).
+  const ctx = meExecParseSpec(item, Buffer.from('4000000000000000TT05VVVVV'));
+  const ids = ctx.fields.map(f => f.id);
+  deepEq(ids, ['BMP', 'ICC.TAG', 'ICC.LEN', 'ICC.VAL'], 'fields emitted in declaration order, TAG before LEN');
+  eq(ctx.fields.find(f => f.id === 'ICC.TAG').value, 'TT', 'TAG before LEN reads its declared fixed width');
+  eq(ctx.fields.find(f => f.id === 'ICC.LEN').value, '05', 'selected LEN field read as declared');
+  const val = ctx.fields.find(f => f.id === 'ICC.VAL');
+  eq(val.valueLength, 5, 'field after LEN gets the distributed bytes');
+  eq(val.value, 'VVVVV', 'VAL takes 5 bytes per the runtime LEN');
+});
+
 test('display override formatters: datetime, amount with sign, hex, text', () => {
   eq(sandbox._t.meFmtDateTime('0315142207'), '03/15 14:22:07', 'MMDDhhmmss');
   eq(sandbox._t.meFmtDateTime('999999'), '999999', 'unparseable input falls through');

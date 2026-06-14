@@ -1638,6 +1638,10 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
 /* VLG LEN-field selector — picks which sub-field holds the length. */
 .me-vlg-sel{height:20px;padding:0 2px;font-size:calc(var(--sz-mono) - 1px);width:68px;}
 .me-fo-sel{height:20px;padding:0 4px;font-size:calc(var(--sz-mono) - 1px);width:90px;}
+/* When a non-blank option is chosen, show the selected text in the accent
+   colour so an active override / VLG selection stands out. */
+.me-vlg-sel:has(option:checked:not([value=""])),
+.me-fo-sel:has(option:checked:not([value=""])){color:var(--accent);}
 /* Accent-on shared with DDL Doc buttons */
 .btn-accent-on{border-color:var(--accent);color:var(--accent);background:rgba(var(--accent-rgb),0.10);}
 .me-ov-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);margin-bottom:3px;}
@@ -12635,7 +12639,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.229';
+const APP_VERSION  = '1.1.2.230';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

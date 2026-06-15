@@ -437,8 +437,8 @@ body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);
 .ddl-doc-grp td { background: rgba(var(--accent-rgb),0.05); color: var(--text-dim); }
 .ddl-doc-grp:hover td { background: rgba(var(--accent-rgb),0.10) !important; }
 .ddl-grp-hidden { display: none; }
-.ddl-grp-icon { display: inline-block; width: 1em; text-align: center; font-style: normal; margin-left: -3px; margin-right: 2px; position: relative; left: -5px; transition: transform 0.15s; transform: rotate(90deg); cursor: pointer; }
-.ddl-grp-collapsed .ddl-grp-icon { transform: rotate(0deg); }
+.ddl-grp-icon { display: inline-block; width: 1em; text-align: center; font-style: normal; margin-left: 0; transition: transform 0.15s; transform: rotate(90deg); cursor: pointer; }
+.ddl-grp-collapsed .ddl-grp-icon { transform: rotate(0deg); color: var(--accent); }
 .ddl-doc-redef td { color: rgba(var(--accent-rgb),0.65); }
 .ddl-doc-redef:hover td { background: rgba(var(--accent-rgb),0.08) !important; }
 .ddl-doc-foot td { border-top: 2px solid var(--border); font-weight: 700; color: var(--accent); background: var(--bg-deep); padding: 5px 10px; }
@@ -1618,7 +1618,7 @@ body.light .me-fm-grp td{background:rgba(0,0,0,0.04);}
 .me-fm-grp .me-fm-name{color:var(--text-dim);}
 .me-fm-grp.me-fm-vlg-on .me-fm-name{color:var(--accent);font-weight:700;}
 /* Group icon mirrors DDL Doc: ">" character, rotated 90° when expanded. */
-.me-fm-grp-icon{display:inline-block;width:1em;text-align:center;font-style:normal;margin-left:-3px;margin-right:2px;position:relative;left:-5px;transition:transform 0.15s;transform:rotate(90deg);cursor:pointer;color:var(--text-dim);}
+.me-fm-grp-icon{display:inline-block;width:1em;text-align:center;font-style:normal;margin-left:0;transition:transform 0.15s;transform:rotate(90deg);cursor:pointer;color:var(--text-dim);}
 .me-fm-grp-icon:hover{color:var(--accent);}
 .me-fm-grp-collapsed .me-fm-grp-icon{transform:rotate(0deg);color:var(--accent);}
 /* REDEFINES rows */
@@ -3653,13 +3653,12 @@ function showDDLDoc() {
       const occurs   = f.occurs > 1 ? `×${f.occurs}` : '—';
       const depth    = f.qualName.split('.').length - 1;
       const namePadL = `padding-left:${depth * 16}px`;
-      const grpPadL  = `padding-left:${5 + depth * 16}px`;
 
       if (f.isGroup) {
         const grpCls = isRedefRow ? 'ddl-doc-grp ddl-doc-redef' : 'ddl-doc-grp';
         html += `<tr class="${grpCls}" data-qn="${esc(f.qualName)}" data-grp="1" ondblclick="toggleDDLGroup(this)">
           <td class="ddl-doc-hex" style="color:var(--text-dim)"></td>
-          <td style="${grpPadL}"><span class="ddl-grp-icon" onclick="toggleDDLGroup(this.closest('tr'))">></span><span style="font-weight:500">${esc(f.qualName)}.</span>${redefNote}</td>
+          <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span><span class="ddl-grp-icon" onclick="toggleDDLGroup(this.closest('tr'))">></span>${redefNote}</td>
           <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
           <td class="ddl-doc-num">${f.size}</td>
           <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -12639,7 +12638,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.230';
+const APP_VERSION  = '1.1.2.235';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15486,7 +15485,6 @@ function _meHtmlOverrides(item) {
       const id        = ea(row.id);
       const depth     = row.id.split('.').length - 1;
       const namePadL  = `padding-left:${depth * 16}px`;
-      const grpPadL   = `padding-left:${5 + depth * 16}px`;
       const isGroup   = !!row.isGroup;
       const trCls     = [
         isGroup ? 'me-fm-grp' : '',
@@ -15501,7 +15499,7 @@ function _meHtmlOverrides(item) {
         : `data-qn="${id}"`;
 
       // FIELD cell — group row uses ">" icon (CSS-rotated 90° when expanded)
-      // and a trailing "." on the qualName, matching DDL Doc exactly.
+      // placed flush AFTER the qualName.
       const grpIcon = isGroup
         ? `<span class="me-fm-grp-icon" onclick="_meFmToggleGroup(this.closest('tr'))">&gt;</span>`
         : '';
@@ -15511,7 +15509,7 @@ function _meHtmlOverrides(item) {
       const redefNote = isGroup && row.isRedef && row.redefTarget
         ? ` <span class="me-fm-redef-note">↩ ${ea(row.redefTarget)}</span>` : '';
       const fieldCell = isGroup
-        ? `<td class="me-fm-fld" style="${grpPadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))">${grpIcon}<span class="me-fm-name">${id}.</span>${redefNote}</td>`
+        ? `<td class="me-fm-fld" style="${namePadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))"><span class="me-fm-name">${id}</span>${grpIcon}${redefNote}</td>`
         : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span></td>`;
 
       // DE cell — hidden for REDEFINES rows (they overlay other bytes, no DE of their own)

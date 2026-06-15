@@ -798,6 +798,34 @@ test('validator rejects COBOL-style comma terminators', () => {
   assert.ok(validation.errors.some(e => e.includes('statement ends with a comma')), 'comma terminator error reported');
 });
 
+test('DDL name validity: invalid characters, bad start char, and length', () => {
+  // Invalid character (colon) in a field name.
+  const badChar = validateDDLErrors('DEF REC.\n  02 DE-33: PIC X(2).\nEND REC.\n', new Map());
+  assert.ok(badChar.errors.some(e => e.includes('DE-33') && e.includes('invalid character')),
+    'field name with a colon is flagged');
+
+  // Name must begin with a letter or underscore (here a digit).
+  const badStart = validateDDLErrors('DEF REC.\n  02 1ABC PIC X(2).\nEND REC.\n', new Map());
+  assert.ok(badStart.errors.some(e => e.includes('begin with a letter')),
+    'field name starting with a digit is flagged');
+
+  // Maximum 30 characters.
+  const longName = 'A'.repeat(31);
+  const tooLong = validateDDLErrors(`DEF REC.\n  02 ${longName} PIC X(2).\nEND REC.\n`, new Map());
+  assert.ok(tooLong.errors.some(e => e.includes('maximum is 30')),
+    'field name longer than 30 chars is flagged');
+
+  // DEF name is validated too.
+  const badDef = validateDDLErrors('DEF RE:C.\n  02 A PIC X(2).\nEND.\n', new Map());
+  assert.ok(badDef.errors.some(e => e.includes('Definition') && e.includes('invalid character')),
+    'DEF name with an invalid character is flagged');
+
+  // A perfectly valid name produces no name-related error.
+  const ok = validateDDLErrors('DEF REC.\n  02 DE-33 PIC X(2).\nEND REC.\n', new Map());
+  assert.ok(!ok.errors.some(e => e.includes('invalid character') || e.includes('begin with a letter') || e.includes('maximum is 30')),
+    'valid names produce no name-rule errors');
+});
+
 test('warning-only fixtures stay warnings instead of hard errors', () => {
   const warnings = validateDDLErrors(fixtureText('test/DDL-Invalid/DEF unresolved-type.'), new Map());
   eq(warnings.errors.length, 0, 'unresolved TYPE fixture has no hard errors');

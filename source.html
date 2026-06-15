@@ -2647,6 +2647,18 @@ function validateDDLErrors(text, repoTypeRegistry) {
 
   // ── helpers ──────────────────────────────────────────────────────────────────
 
+  // HPE DDL name rules: begins with a letter (A-Z/a-z) or underscore; thereafter
+  // only letters, digits, hyphen or underscore; at most 30 characters; never
+  // ends with a hyphen. Returns a human-readable reason when invalid, else null.
+  function ddlNameError(name) {
+    if (name.length > 30) return `name is ${name.length} characters — the maximum is 30`;
+    if (!/^[A-Za-z_]/.test(name)) return 'name must begin with a letter (A-Z) or underscore (_)';
+    const bad = name.replace(/[A-Za-z0-9_-]/g, '');
+    if (bad) return `name contains invalid character(s) "${[...new Set(bad)].join('')}" — only letters, digits, hyphen (-) and underscore (_) are allowed`;
+    if (name.endsWith('-')) return 'name must not end with a hyphen';
+    return null;
+  }
+
   // Returns the first unresolved user-TYPE name found in the subtree rooted at idx,
   // or null if everything is either built-in or already resolved.
   function hasUnresolvedTypeRef(idx) {
@@ -2945,6 +2957,10 @@ function validateDDLErrors(text, repoTypeRegistry) {
         const m2 = stmt.match(/^(?:DEF|DEFINITION|RECORD)\s+IS\s+(\S+)/i);
         defName = m2 ? m2[1].replace(/\.$/, '') : defName;
       }
+      if (defName !== '?') {
+        const defNameErr = ddlNameError(defName);
+        if (defNameErr) errors.push(`[line ${stmtLine}] Definition "${defName}": ${defNameErr}`);
+      }
       defLine = stmtLine; inDef = true; endSeen = false; fields = [];
       // Period-split bug: when DEF FOO has no trailing period the first child
       // field (e.g. "02 BAR TYPE *.") gets merged into this statement.
@@ -2990,6 +3006,12 @@ function validateDDLErrors(text, repoTypeRegistry) {
 
       if (fRawName.endsWith('-')) {
         errors.push(`[line ${fLine}] Field "${fRawName}": name ends with a hyphen — spaces are not allowed in field names (check for a space after the hyphen)`);
+        return;
+      }
+
+      const fNameErr = ddlNameError(fRawName);
+      if (fNameErr) {
+        errors.push(`[line ${fLine}] Field "${fRawName}": ${fNameErr}`);
         return;
       }
 
@@ -12638,7 +12660,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.235';
+const APP_VERSION  = '1.1.2.236';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

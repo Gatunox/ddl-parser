@@ -379,12 +379,10 @@ body.light .hl-str { color: #3a7d0a; }
 .tree-vol-lbl { color: var(--text); font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-sv-lbl  { color: var(--text);     padding-left: 0px;  flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-sv-lbl::before  { content: '└\00a0'; color: var(--text-dim); font-weight: 400; }
-.tree-ddl-lbl { color: var(--text); padding-left: 26px; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.tree-ddl-lbl { color: var(--text); padding-left: 15px; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-ddl-lbl::before { content: '└\00a0'; color: var(--text-dim); font-weight: 400; }
-.tree-ddl-lbl.no-prefix::before { content: ''; }
-.tree-ddl-lbl.no-prefix { padding-left: 52px; }
 .tree-pending .tree-ddl-lbl { color: #e6a817; font-style: italic; }
-.tree-def-lbl { color: var(--text-dim); padding-left: 52px; flex: 1; overflow: hidden; text-overflow: ellipsis; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(var(--accent-rgb),0.35); }
+.tree-def-lbl { color: var(--text-dim); padding-left: 30px; flex: 1; overflow: hidden; text-overflow: ellipsis; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(var(--accent-rgb),0.35); }
 .tree-staging-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
 .tree-missref-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: #e6a817; letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
 .tree-missref-item .tree-ddl-lbl { color: #e6a817; font-style: italic; padding-left: 0; }
@@ -1590,7 +1588,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-fm-num{color:var(--text-dim);font-size:10px;text-align:right;}
 .me-fm-len{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);text-align:right;font-variant-numeric:tabular-nums;}
 .me-fm-dt{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);overflow:hidden;text-overflow:ellipsis;}
-.me-fm-dt-sel{width:100%;color:var(--text);}
+.me-fm-dt-sel{width:100%;min-width:124px;color:var(--text);}
 .me-fm-dt-bad .me-fm-dt-sel{border-color:#f85149;}
 .me-fm-dt-warn{display:inline-block;margin-left:4px;color:#f85149;font-size:12px;cursor:help;}
 /* Read-only info cells (#, offset, length, data type label) are dimmed; the
@@ -3693,12 +3691,14 @@ function showDDLDoc() {
       rowNum++;
       const docSearch = esc([f.qualName, f.desc || '', f.dataType || ''].join(' ').toLowerCase());
       const cls = isRedefRow ? ' class="ddl-doc-redef"' : '';
-      // Leaf rows skip the "↩ TARGET" note — the parent group title already
-      // carries it, and the faded styling on the leaf row indicates redef
-      // membership without repeating the target on every line.
+      // Leaves that are merely INSIDE a redefining group skip the "↩ TARGET"
+      // note — the group header already carries it. But a leaf that is ITSELF a
+      // REDEFINES (an elementary field redefining another) has no group header,
+      // so it must show its own arrow.
+      const leafRedefNote = f.isRedefines ? redefNote : '';
       html += `<tr${cls} data-qn="${esc(f.qualName)}" data-search="${docSearch}">
         <td class="ddl-doc-hex" style="color:var(--text-dim)">${rowNum}</td>
-        <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span></td>
+        <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span>${leafRedefNote}</td>
         <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
         <td class="ddl-doc-num">${f.size}</td>
         <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -6595,7 +6595,19 @@ function parseNetardLog(text) {
     charOffset += line.length + 1;       // advance past line + newline
 
     if (/RECD-NO\s+LENGTH/.test(line)) continue;  // page header
-    if (/^\s*$/.test(line)) continue;             // blank
+    if (/^\s*$/.test(line)) {
+      // A blank / all-space line INSIDE the data block is real message data: an
+      // all-space message line that the NETARD copy stripped to an empty line.
+      // Capture it as an empty data line so flush() pads it to the full detected
+      // width W, keeping every following byte aligned. Skip blanks before data
+      // starts (structural gap after DEST) and inside a formatted block.
+      if (cur && cur._dataRE && cur._lines.length > 0 && !cur._inFmtBlock) {
+        cur._lineCharStarts.push(lineStart);
+        cur._lineIndices.push(lineIndex);
+        cur._lines.push('');
+      }
+      continue;
+    }
 
     const hm = line.match(HDR_RE);
     if (hm) {
@@ -7047,8 +7059,13 @@ function doParseNetardLog(text, opts = {}) {
       if (rec.netardFmt !== 'standard' || !rec.netardLineWidth || !rec._lines) continue;
       rec.charStart += globalExtra;
       const W = rec.netardLineWidth;
-      // Per-line extra spaces needed (0 if already full width)
-      const lineExtras = rec._lines.map(l => Math.max(0, W - l.length));
+      // Per-line extra spaces needed (0 if already full width). Measure against
+      // the ACTUAL textarea line length + target margin+W, not the data length:
+      // a reconstructed all-space line has no margin in the textarea, so basing
+      // this on data length alone would under-count its padding by the margin
+      // width and shift every following line's highlight left into the margin.
+      const _lmPad = rec.leftMargin ?? 7;
+      const lineExtras = rec._lineIndices.map(idx => Math.max(0, _lmPad + W - taLines[idx].length));
       // Build per-line cumulative offset (accounting for all prior records' padding)
       const cumExtra = [];
       let cum = globalExtra;
@@ -8931,7 +8948,7 @@ function renderFieldTable(msg) {
             onmouseenter="hoverField('${esc(tfid)}')"
             onmouseleave="clearHover()">
             <td class="c-id">${esc(tkn.id)}</td>
-            <td class="c-desc" style="color:var(--text-dim)" title="${esc(tkn.error || '')}">No definition found — ${esc(tkn.error || `token ${tkn.id}`)}</td>
+            <td class="c-desc" colspan="2" style="color:var(--text-dim)" title="${esc(tkn.error || '')}">No definition found — ${esc(tkn.error || `token ${tkn.id}`)}</td>
             <td class="c-len">${tkn.rawBytes.length}</td>
             <td class="c-val" style="word-break:break-all" title="${esc(val)}">${esc(val)}</td>
             <td class="c-raw" data-tip="${esc(tknRaw)}">${esc(tknRHex)}</td>
@@ -10701,7 +10718,7 @@ function renderDDLTree() {
               ? `ondblclick="event.stopPropagation();toggleTreeExp('${esc(fileKey)}')"` : '';
             html += `<div class="tree-node${dSel}${dAnc}${pendCls}${fileExclCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick} ${fileDblClick}>
               ${fileCaret}
-              <span class="tree-ddl-lbl${isTknMap ? ' no-prefix' : ''}" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${fileBadges}
+              <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${fileBadges}
             </div>`;
             // ── DEF sub-nodes (all HPE DDL files act as folders) ──────────────
             if (showDefSubNodes && fileExp) {
@@ -12660,7 +12677,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.236';
+const APP_VERSION  = '1.1.2.245';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

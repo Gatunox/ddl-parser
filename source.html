@@ -12677,7 +12677,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.245';
+const APP_VERSION  = '1.1.2.246';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15542,14 +15542,15 @@ function _meHtmlOverrides(item) {
       const grpIcon = isGroup
         ? `<span class="me-fm-grp-icon" onclick="_meFmToggleGroup(this.closest('tr'))">&gt;</span>`
         : '';
-      // REDEFINES note on group rows only — the leaves below inherit the
-      // indication via their faded styling, no need to repeat the target on
-      // every child.
-      const redefNote = isGroup && row.isRedef && row.redefTarget
+      // REDEFINES note on any row that is ITSELF a REDEFINES — a redefining
+      // group OR an elementary leaf that redefines another field. Leaves that
+      // are merely inside a redefining group carry isRedef=false, so they
+      // inherit the indication via their faded styling without repeating it.
+      const redefNote = row.isRedef && row.redefTarget
         ? ` <span class="me-fm-redef-note">↩ ${ea(row.redefTarget)}</span>` : '';
       const fieldCell = isGroup
         ? `<td class="me-fm-fld" style="${namePadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))"><span class="me-fm-name">${id}</span>${grpIcon}${redefNote}</td>`
-        : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span></td>`;
+        : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span>${redefNote}</td>`;
 
       // DE cell — hidden for REDEFINES rows (they overlay other bytes, no DE of their own)
       let deCell;

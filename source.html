@@ -5964,7 +5964,7 @@ function parseMessage(bytes, defs, rawBytes) {
   function _fmtDetect(bytes, ctx) {
     for (const spec of _fmtSpecs) {
       if (spec._fns.every(fn => fn(bytes, ctx))) {
-        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '' };
+        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', ddl_bindings: (spec.ddl_bindings || []).filter(Boolean) };
       }
     }
     return null;
@@ -5989,7 +5989,7 @@ function parseMessage(bytes, defs, rawBytes) {
         passed, failAt,
       });
       if (passed) {
-        winner = { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '' };
+        winner = { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', ddl_bindings: (spec.ddl_bindings || []).filter(Boolean) };
         break;
       }
     }
@@ -6707,7 +6707,7 @@ function bestDDLMatch(bytes, candidates, rawBytes) {
       if (!validateFieldContent(field.rawBytes, dt)) softErrs++;
     }
 
-    const weightedErrors = hardErrs * 1.0 + softErrs * 0.5;
+    const weightedErrors = hardErrs * 1.0 + softErrs * 0.7;
     const accuracy = 1 - (weightedErrors / f.length);
     const consumed = f.filter(x => !x.error).reduce((s, x) => s + (x.rawBytes?.length ?? x.length ?? 0), 0);
     const coverage = bytes.length > 0 ? Math.min(consumed, bytes.length) / bytes.length : 0;
@@ -7232,10 +7232,14 @@ function doParseNetardLog(text, opts = {}) {
         const _netardSecReg = buildRepoSectionRegistry();
         const useCache = _ddlCompileCache.version === _ddlTreeVersion;
 
-        function _startNetardScoring(compiledByVol) {
-          // Step 4 — scoring
+        function _startNetardScoring(compiledByVol, preDet) {
+          // Step 4 — score ONLY the NON-MATCH records against the candidate pool.
+          // MATCH records were already resolved (and scored once) by their
+          // binding in the detection pre-pass, so they never touch the pool.
           const _totalCands = Object.values(compiledByVol).flat().length;
-          _parseProgressStep(`Scoring ${records.length} record${records.length !== 1 ? 's' : ''} against ${_totalCands} candidate${_totalCands !== 1 ? 's' : ''}\u2026`);
+          const _nToScore   = preDet.filter(p => !p.bound).length;
+          const _scoreStep  = _nToScore > 0;
+          if (_scoreStep) _parseProgressStep(`Scoring ${_nToScore} record${_nToScore !== 1 ? 's' : ''} against ${_totalCands} candidate${_totalCands !== 1 ? 's' : ''}\u2026`);
           setTimeout(() => {
             if (_parseAborted) return;
             const parsed          = [];
@@ -7245,10 +7249,13 @@ function doParseNetardLog(text, opts = {}) {
             const _typeSeen       = new Set();
             const _ddlErrors      = []; // DDLs that threw during scoring
             const _detectTraces   = []; // per-record { recNo, winner, trace } for the Detect step
+            const _boundWarnings  = []; // bound DDL used but scored < 90% — surfaced on the overlay
             try {
             // ── Score all records ────────────────────────────────────────────
-            for (const rec of records) {
-              const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic, ebcdicDens: _ebcdicDens, ebcdicHow: _ebcdicHow } = _netardEbcdic(rec.rawMsg);
+            for (let _ri = 0; _ri < records.length; _ri++) {
+              const rec = records[_ri];
+              const _pd = preDet[_ri];   // { dec, det, winner, bound } from the pre-pass
+              const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic, ebcdicDens: _ebcdicDens, ebcdicHow: _ebcdicHow } = _pd.dec;
               const _base = {
                 bytes: parseBytes, raw: parseRaw,
                 isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
@@ -7260,16 +7267,23 @@ function doParseNetardLog(text, opts = {}) {
                 dest:   rec.dest,   destDet:   rec.destDet,
                 timestamp: rec.time,
               };
-              // Run detection with metadata context so source/destination/
-              // filename recognizers can fire. Capture trace so the progress
-              // overlay can show the user what was evaluated and why.
-              const _detectCtx = { source: rec.source, dest: rec.dest, filename: rec.filename };
-              const _detectRes = detectMsgTypeTrace(parseRaw, _detectCtx);
-              let msgType = _detectRes.winner;
-              _detectTraces.push({ recNo: rec.recNo, source: rec.source, winner: msgType, trace: _detectRes.trace || [], legacy: !!_detectRes.legacy });
+              // Detection + binding were resolved once, up front, in the pre-pass.
+              let msgType = _pd.winner;
+              _detectTraces.push({ recNo: rec.recNo, source: rec.source, winner: msgType, trace: _pd.det.trace || [], legacy: !!_pd.det.legacy });
               let fields = [], ddlPath = null, defName = null;
-              // DDLMM routing removed — Data Detection drives the type now.
               if (!fields.length) {
+                // ── MATCH path ───────────────────────────────────────────────
+                // The detected format declared a DDL binding that resolved (and
+                // was scored once) in the pre-pass. Honour it directly, never
+                // prompt; a weak score only raises a warning.
+                if (_pd.bound) {
+                  parsed.push({ ..._base, msgType, fields: _pd.bound.fields, ddlPath: _pd.bound.ddlPath, defName: _pd.bound.defName, tokens: null, noMatchDDL: !_pd.bound.fields.length });
+                  if (_pd.bound.score < 0.95) {
+                    _boundWarnings.push({ recNo: rec.recNo, label: msgType.label || msgType.type, ddl: _pd.bound.ddlPath, pct: Math.round(_pd.bound.score * 100) });
+                  }
+                  continue;
+                }
+                // ── NON-MATCH path ───────────────────────────────────────────
                 if (!msgType.vol) {
                   const _diag = {
                     fmt: rec.netardFmt || 'standard',
@@ -7435,7 +7449,18 @@ function doParseNetardLog(text, opts = {}) {
                 _parseProgressRender();
               }
             } catch (e) { console.warn('[detection trace render] ', e); }
-            _parseProgressDoneLast();
+            if (_scoreStep) _parseProgressDoneLast();
+            // Flag bound DDLs that were honoured but scored below 95% — the
+            // binding was used regardless (the user's explicit choice), but the
+            // weak match is surfaced on the overlay so it can be verified.
+            for (const w of _boundWarnings) {
+              _parseProgressStep(
+                `${w.label} — bound DDL ${w.ddl.split('/').pop()} matched at ${w.pct}%`,
+                'Score below 95%, verify DDL bind is correct.',
+                '#f39c12'
+              );
+              _parseProgressDoneLast();
+            }
             } catch (err) {
               console.error('[NETARD scoring] unexpected error:', err);
               _parseProgressHide();
@@ -7506,12 +7531,48 @@ function doParseNetardLog(text, opts = {}) {
           }, 300);
         }
 
-        if (useCache) {
+        // ── Detection + binding pre-pass (single pass over all records) ──────
+        // Detect every record's format and, when the format declares a DDL
+        // binding, resolve + score THAT DDL once (MATCH path). Records with a
+        // resolved binding are complete and never touch the candidate pool;
+        // only NON-MATCH records drive the compile-all + candidate scoring.
+        const _boundDefsCache = {};   // binding path -> resolved DDL (compiled once)
+        const _preDet = records.map(rec => {
+          const dec    = _netardEbcdic(rec.rawMsg);
+          const det    = detectMsgTypeTrace(dec.parseRaw, { source: rec.source, dest: rec.dest, filename: rec.filename });
+          const winner = det.winner;
+          let bound = null;
+          for (const bp of ((winner && winner.ddl_bindings) || [])) {
+            if (!bp) continue;
+            const [pv, ps, pn, pdf] = bp.split('/');
+            if (isExcluded(pv, ps, pn, pdf)) continue;
+            if (!(bp in _boundDefsCache)) {
+              // Compile this specific DDL — inform the user only when it happens.
+              _parseProgressStep(`Compiling ${winner.label || winner.type} DDL — ${pdf || pn}…`);
+              _boundDefsCache[bp] = getDDLFromPath(bp) || null;
+              _parseProgressDoneLast();
+            }
+            const resolved = _boundDefsCache[bp];
+            if (resolved && resolved.defs && resolved.defs.length) {
+              const r = bestDDLMatch(dec.parseBytes, [resolved], dec.bytes);
+              bound = { ddlPath: r.ddlPath || resolved.path, defName: resolved.defName != null ? resolved.defName : null, fields: r.fields, score: r.score != null ? r.score : 0 };
+              break;
+            }
+          }
+          return { dec, det, winner, bound };
+        });
+        const _anyUnbound = _preDet.some(p => !p.bound);
+
+        if (!_anyUnbound) {
+          // MATCH-only — no candidate pool needed; go straight to scoring
+          // (which will short-circuit every record on its binding).
+          _startNetardScoring({}, _preDet);
+        } else if (useCache) {
           const _nSvs = Object.keys(_ddlCompileCache.svEntries || {}).length;
           _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
           _parseProgressDoneLast();
           _cacheStampNote();
-          _startNetardScoring(_ddlCompileCache.byVol);
+          _startNetardScoring(_ddlCompileCache.byVol, _preDet);
         } else {
           // Per-subvolume cache check: reuse subvolumes whose content hash still matches
           const _cachedSvs = {};
@@ -7561,7 +7622,7 @@ function doParseNetardLog(text, opts = {}) {
             _commitNetardCache();
             _parseProgressDoneLast();
             _cacheStampNote();
-            _startNetardScoring(_ddlCompileCache.byVol);
+            _startNetardScoring(_ddlCompileCache.byVol, _preDet);
           } else {
           const _nCached = Object.keys(_cachedSvs).length;
           if (_nCached > 0) {
@@ -7578,7 +7639,7 @@ function doParseNetardLog(text, opts = {}) {
               _commitNetardCache();
               _parseProgressDoneLast();
               _cacheStampNote();
-              _startNetardScoring(_ddlCompileCache.byVol);
+              _startNetardScoring(_ddlCompileCache.byVol, _preDet);
               return;
             }
             const { vol, sv, path, content, defName } = _nTasks[_nti++];
@@ -12677,7 +12738,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.246';
+const APP_VERSION  = '1.1.2.250';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

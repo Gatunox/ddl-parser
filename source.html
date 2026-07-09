@@ -767,6 +767,9 @@ td.c-num { color: var(--text-very-dim); text-align: right; min-width: 28px; padd
 td.c-id   { color: var(--text); font-weight: 700; white-space: nowrap; }
 td.c-desc { color: var(--text-dim); }
 td.c-val  { color: var(--success); word-break: break-all; text-overflow: clip; overflow: visible; white-space: pre-wrap; }
+/* Value whose bytes don't match the field's data type — invalid for the type
+   (e.g. "X" in a PIC 9) or a "?" placeholder in a binary field. */
+td.c-val.c-val-bad { color: #f85149; }
 td.c-len  { color: var(--text-dim); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 td.c-raw  { color: #6e7681; word-break: break-all; }
 td.c-err  { color: var(--accent2); }
@@ -887,6 +890,9 @@ body.light .trk-chk { color-scheme: light; }
 .sep-v    { width: 1px; height: 14px; background: var(--border); flex-shrink: 0; }
 .msg-nav  { display: flex; align-items: center; gap: 1px; }
 .msg-ctr  { color: var(--text-dim); font-size: var(--sz-mono); white-space: nowrap; padding: 0 4px; text-align: center; }
+/* Prev/next nav buttons: borderless until hovered (2px kept, just transparent). */
+.msg-nav .btn { border-color: transparent; }
+.msg-nav .btn:hover { border-color: var(--accent); }
 .empty-st {
   display: flex; align-items: center; justify-content: center;
   flex: 1; color: var(--text-dim); font-size: var(--sz-mono);
@@ -1858,16 +1864,18 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
     <div class="panel" id="resPanel">
       <div class="panel-header">
         <span class="panel-title" id="resPanelTitle" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;cursor:pointer">Parse Results</span>
-        <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0">
-          <button class="btn" onclick="prevMsg()">&lt;</button>
-          <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
-          <button class="btn" onclick="nextMsg()">&gt;</button>
-        </div>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
       </div>
       <div id="resCfgBar">
-        <div class="rec-meta" id="recMetaRow" style="display:none"></div>
+        <div class="rec-meta" id="recMetaRow" style="display:none">
+          <span id="recMetaContent" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0"></span>
+          <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0;margin-left:auto">
+            <button class="btn" onclick="prevMsg()">&lt;</button>
+            <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
+            <button class="btn" onclick="nextMsg()">&gt;</button>
+          </div>
+        </div>
         <div id="resCfgControls">
           <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
           <span style="flex:1"></span>
@@ -6730,6 +6738,7 @@ let _compiledCacheReady = null;  // Promise; null once resolved
 let _ppPickerCb   = null;   // set while picker is visible; called with null on abort
 let _ddlTreeVersion  = 0;                          // bumped in saveTree() on any tree change
 let _ddlCompileCache = { version: -1, byVol: null }; // invalidated when version mismatches
+let _boundDDLCache   = { version: -1, defs: {} };    // binding path -> resolved DDL; version-gated like _ddlCompileCache
 let _repoTypeRegCache = { version: -1, reg: null };  // cache for buildRepoTypeRegistry()
 let _repoSecRegCache  = { version: -1, reg: null };  // cache for buildRepoSectionRegistry()
 
@@ -6910,8 +6919,8 @@ function _parseProgressRender() {
   const firstPending = _ppSteps.findIndex(s => !s.done);
   el.innerHTML = _ppSteps.map((s, i) => {
     const isActive = !s.done && i === firstPending;
-    const icon    = s.done ? '✓' : '○';
-    const iconCol = s.done ? 'var(--success)' : isActive ? 'var(--accent)' : 'var(--text-dim)';
+    const icon    = s.icon || (s.done ? '✓' : '○');
+    const iconCol = s.iconColor || (s.done ? 'var(--success)' : isActive ? 'var(--accent)' : 'var(--text-dim)');
     const textCol = s.done ? 'var(--text-dim)' : isActive ? 'var(--text)' : 'var(--text-dim)';
     const noteRow = s.note
       ? `<div style="display:flex;gap:9px;align-items:baseline;margin-top:2px">` +
@@ -6940,7 +6949,8 @@ function _parseProgressRender() {
         }).join('')
       : '';
     const labelCol = s.labelColor ? s.labelColor : textCol;
-    return `<div style="display:flex;gap:9px;align-items:baseline">` +
+    const titleAttr = s.tooltip ? ` title="${esc(s.tooltip)}"` : '';
+    return `<div style="display:flex;gap:9px;align-items:baseline"${titleAttr}>` +
         `<span style="color:${iconCol};min-width:12px">${icon}</span>` +
         `<span style="color:${labelCol}">${esc(s.label)}</span>` +
       `</div>${subRow}${detailRows}${noteRow}`;
@@ -7451,16 +7461,17 @@ function doParseNetardLog(text, opts = {}) {
             } catch (e) { console.warn('[detection trace render] ', e); }
             if (_scoreStep) _parseProgressDoneLast();
             // Flag bound DDLs that were honoured but scored below 95% — the
-            // binding was used regardless (the user's explicit choice), but the
-            // weak match is surfaced on the overlay so it can be verified.
+            // binding was used regardless (the user's explicit choice). Render
+            // it as an amber warning line (⚠ chip + amber text); the guidance
+            // lives in the hover tooltip, no extra sentence in the popup.
             for (const w of _boundWarnings) {
-              _parseProgressStep(
-                `${w.label} — bound DDL ${w.ddl.split('/').pop()} matched at ${w.pct}%`,
-                'Score below 95%, verify DDL bind is correct.',
-                '#f39c12'
-              );
-              _parseProgressDoneLast();
+              _ppSteps.push({
+                label: `${w.label} — bound DDL ${w.ddl.split('/').pop()} matched at ${w.pct}%`,
+                done: true, icon: '⚠', iconColor: '#f39c12', labelColor: '#f39c12',
+                tooltip: 'Score below 95% — verify the DDL binding is correct.',
+              });
             }
+            if (_boundWarnings.length) _parseProgressRender();
             } catch (err) {
               console.error('[NETARD scoring] unexpected error:', err);
               _parseProgressHide();
@@ -7531,39 +7542,81 @@ function doParseNetardLog(text, opts = {}) {
           }, 300);
         }
 
-        // ── Detection + binding pre-pass (single pass over all records) ──────
-        // Detect every record's format and, when the format declares a DDL
-        // binding, resolve + score THAT DDL once (MATCH path). Records with a
-        // resolved binding are complete and never touch the candidate pool;
-        // only NON-MATCH records drive the compile-all + candidate scoring.
-        const _boundDefsCache = {};   // binding path -> resolved DDL (compiled once)
-        const _preDet = records.map(rec => {
+        // ── Detection pre-pass (single pass over all records) ────────────────
+        // Detect each record's format and note its first usable DDL binding.
+        // A record with a resolvable binding takes the MATCH path; others take
+        // the NON-MATCH path (compile-all + candidate scoring + selection).
+        if (_boundDDLCache.version !== _ddlTreeVersion) _boundDDLCache = { version: _ddlTreeVersion, defs: {} };
+        const _det = records.map(rec => {
           const dec    = _netardEbcdic(rec.rawMsg);
           const det    = detectMsgTypeTrace(dec.parseRaw, { source: rec.source, dest: rec.dest, filename: rec.filename });
           const winner = det.winner;
-          let bound = null;
+          let bindPath = null;
           for (const bp of ((winner && winner.ddl_bindings) || [])) {
             if (!bp) continue;
             const [pv, ps, pn, pdf] = bp.split('/');
             if (isExcluded(pv, ps, pn, pdf)) continue;
-            if (!(bp in _boundDefsCache)) {
-              // Compile this specific DDL — inform the user only when it happens.
-              _parseProgressStep(`Compiling ${winner.label || winner.type} DDL — ${pdf || pn}…`);
-              _boundDefsCache[bp] = getDDLFromPath(bp) || null;
-              _parseProgressDoneLast();
-            }
-            const resolved = _boundDefsCache[bp];
-            if (resolved && resolved.defs && resolved.defs.length) {
-              const r = bestDDLMatch(dec.parseBytes, [resolved], dec.bytes);
-              bound = { ddlPath: r.ddlPath || resolved.path, defName: resolved.defName != null ? resolved.defName : null, fields: r.fields, score: r.score != null ? r.score : 0 };
-              break;
+            bindPath = bp; break;   // first usable binding path
+          }
+          return { rec, dec, det, winner, bindPath };
+        });
+
+        // ── Compilation (independent of MATCH/NON-MATCH) ─────────────────────
+        // A bound DDL is compiled into the in-memory cache when it isn't there
+        // yet (e.g. first parse of a session). But the COMPILE STEP is shown
+        // only when the DDL's CONTENT changed since we last recorded it — a hash
+        // persisted across page reloads — so re-warming an unchanged DDL after a
+        // reload happens silently. If nothing changed, no step at all.
+        const _boundHashes = (() => { try { return JSON.parse(_kvGet('up_bound_ddl_hashes') || '{}'); } catch(_) { return {}; } })();
+        const _pathContent = bp => { const [v, s, f] = bp.split('/'); return (S.ddlTree[v] && S.ddlTree[v][s] && S.ddlTree[v][s][f]) || ''; };
+        const _boundToCompile = [];   // { bp, changed, hash } — bindings needing an in-memory compile
+        const _seenBound = new Set();
+        for (const d of _det) {
+          if (d.bindPath && !_seenBound.has(d.bindPath)) {
+            _seenBound.add(d.bindPath);
+            if (!(d.bindPath in _boundDDLCache.defs)) {
+              const hash = _strHash(_pathContent(d.bindPath));
+              _boundToCompile.push({ bp: d.bindPath, changed: _boundHashes[d.bindPath] !== hash, hash });
             }
           }
-          return { dec, det, winner, bound };
-        });
-        const _anyUnbound = _preDet.some(p => !p.bound);
+        }
+        const _changedCount = _boundToCompile.filter(x => x.changed).length;
+        if (_changedCount) _parseProgressStep(`Compiling DDL definitions… 0 of ${_changedCount}`);
+        let _bci = 0, _shownC = 0;
+        function _compileBoundNext() {
+          if (_parseAborted) return;
+          if (_bci >= _boundToCompile.length) {
+            if (_changedCount) {
+              _parseProgressUpdate(_ppSteps.length - 1, `Compiled ${_changedCount} DDL${_changedCount !== 1 ? 's' : ''}`);
+              _parseProgressDoneLast();
+              for (const x of _boundToCompile) if (x.changed) _boundHashes[x.bp] = x.hash;
+              try { _kvSet('up_bound_ddl_hashes', JSON.stringify(_boundHashes)); } catch(_) {}
+            }
+            _afterBoundCompile();
+            return;
+          }
+          const x = _boundToCompile[_bci++];
+          _boundDDLCache.defs[x.bp] = getDDLFromPath(x.bp) || null;   // compile for defs (silent if unchanged)
+          if (x.changed) { _shownC++; _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions… ${_shownC} of ${_changedCount}`); }
+          setTimeout(_compileBoundNext, 0);
+        }
 
-        if (!_anyUnbound) {
+        function _afterBoundCompile() {
+          // Resolve + score each record against its (now-cached) bound DDL.
+          const _preDet = _det.map(d => {
+            let bound = null;
+            if (d.bindPath) {
+              const resolved = _boundDDLCache.defs[d.bindPath];
+              if (resolved && resolved.defs && resolved.defs.length) {
+                const r = bestDDLMatch(d.dec.parseBytes, [resolved], d.dec.bytes);
+                bound = { ddlPath: r.ddlPath || resolved.path, defName: resolved.defName != null ? resolved.defName : null, fields: r.fields, score: r.score != null ? r.score : 0 };
+              }
+            }
+            return { dec: d.dec, det: d.det, winner: d.winner, bound };
+          });
+          const _anyUnbound = _preDet.some(p => !p.bound);
+
+          if (!_anyUnbound) {
           // MATCH-only — no candidate pool needed; go straight to scoring
           // (which will short-circuit every record on its binding).
           _startNetardScoring({}, _preDet);
@@ -7657,6 +7710,8 @@ function doParseNetardLog(text, opts = {}) {
           setTimeout(_netardCompileNext, 0);
           }  // end inner else (has tasks)
         }  // end outer else (per-subvolume compile block)
+        }  // end _afterBoundCompile
+        _compileBoundNext();   // kick off: compile bound DDLs (if any), then _afterBoundCompile
       }, 500);
     }, 500);
   }, 500);
@@ -8812,8 +8867,10 @@ function _clearResultsOnly() {
   document.getElementById('hideRedefBtn').style.display = 'none';
   const _cfgBar = document.getElementById('resCfgBar');
   if (_cfgBar) _cfgBar.style.display = 'none';
+  const _recMetaC = document.getElementById('recMetaContent');
+  if (_recMetaC) _recMetaC.innerHTML = '';   // clear only the content, keep the nested msgNav
   const _recMeta = document.getElementById('recMetaRow');
-  if (_recMeta) { _recMeta.innerHTML = ''; _recMeta.style.display = 'none'; }
+  if (_recMeta) _recMeta.style.display = 'none';
   document.getElementById('resPanelTitle').textContent = 'Parse Results';
   document.getElementById('resContainer').innerHTML =
     '<div class="empty-st"><div>No messages parsed yet.</div></div>';
@@ -8848,8 +8905,10 @@ function clearAll() {
   document.getElementById('hideRedefBtn').style.display = 'none';
   const _cfgBar3 = document.getElementById('resCfgBar');
   if (_cfgBar3) _cfgBar3.style.display = 'none';
+  const _recMetaC3 = document.getElementById('recMetaContent');
+  if (_recMetaC3) _recMetaC3.innerHTML = '';   // clear only the content, keep the nested msgNav
   const _recMeta3 = document.getElementById('recMetaRow');
-  if (_recMeta3) { _recMeta3.innerHTML = ''; _recMeta3.style.display = 'none'; }
+  if (_recMeta3) _recMeta3.style.display = 'none';
   document.getElementById('resPanelTitle').textContent = 'Parse Results';
 
   document.getElementById('resContainer').innerHTML = `
@@ -8926,8 +8985,13 @@ function renderFieldTable(msg) {
       <span class="rec-meta-pipe">|</span>
       <span>${msg.bytes?.length || 0} bytes</span>`;
   }
+  const _recMetaContent = document.getElementById('recMetaContent');
+  if (_recMetaContent) _recMetaContent.innerHTML = metaContent;
   const _recMetaRow = document.getElementById('recMetaRow');
-  if (_recMetaRow) { _recMetaRow.innerHTML = metaContent; _recMetaRow.style.display = metaContent ? 'flex' : 'none'; }
+  // Keep the row visible when there's metadata OR more than one message to
+  // navigate — the message nav (< N/N >) now lives here, right-aligned.
+  const _navTotal = _lazyTotalCount || S.messages.length;
+  if (_recMetaRow) _recMetaRow.style.display = (metaContent || _navTotal > 1) ? 'flex' : 'none';
   const _resCfgBar = document.getElementById('resCfgBar');
   if (_resCfgBar) _resCfgBar.style.display = 'flex';
 
@@ -8936,7 +9000,16 @@ function renderFieldTable(msg) {
     _rowNum++;
     const fid    = prefix ? `${prefix}::${f.id}` : f.id;
     const sel    = S.selFieldId === fid ? 'row-sel' : '';
-    const ecls   = f.error ? 'c-err' : 'c-val';
+    // Content-vs-type check: turn the value red on a discrepancy. Non-binary
+    // types fail when a byte is invalid for the type (e.g. "X" in a PIC 9).
+    // Binary types accept any byte, but a "?" (0x3F) marks a placeholder for a
+    // byte lost when the input was captured as ASCII, so binary fields
+    // containing "?" are flagged too. REDEFINES overlays are skipped.
+    const _isBinaryType = normalizeDataType((f.dataType || '').replace(/^\s*TYPE\s+/i, '')) === 'B';
+    const _contentBad = !f.error && f.rawBytes && f.rawBytes.length && !f.isRedefines
+      && (!validateFieldContent(f.rawBytes, f.dataType)
+          || (_isBinaryType && Array.from(f.rawBytes).includes(0x3F)));
+    const ecls   = f.error ? 'c-err' : (_contentBad ? 'c-val c-val-bad' : 'c-val');
     // Prefer the display-override formatted string when available so the
     // user-chosen rendering (datetime/amount/hex/text) actually shows in the
     // output. The raw `f.value` is kept in the tooltip via data-tip.
@@ -10487,11 +10560,13 @@ function nextMsg() {
 function updateNav() {
   const total = _lazyTotalCount || S.messages.length;
   const msg   = S.messages[S.curIdx];
-  document.getElementById('msgCtr').textContent = `${S.curIdx+1} / ${total}`;
-  document.getElementById('msgNav').style.display = total > 1 ? 'flex' : 'none';
-  document.getElementById('trkBtn').style.display = S.trackedFields.size > 0 || S.trackMode ? 'inline-block' : 'none';
-  document.getElementById('exportBtn').style.display = total > 0 ? 'inline-flex' : 'none';
-  document.getElementById('colCfgBtn').style.display = total > 0 ? 'inline-flex' : 'none';
+  const _set = (id, prop, val) => { const el = document.getElementById(id); if (el) el[prop] = val; };
+  const _sty = (id, val) => { const el = document.getElementById(id); if (el) el.style.display = val; };
+  _set('msgCtr', 'textContent', `${S.curIdx+1} / ${total}`);
+  _sty('msgNav', total > 1 ? 'flex' : 'none');
+  _sty('trkBtn', S.trackedFields.size > 0 || S.trackMode ? 'inline-block' : 'none');
+  _sty('exportBtn', total > 0 ? 'inline-flex' : 'none');
+  _sty('colCfgBtn', total > 0 ? 'inline-flex' : 'none');
   const _cfgBar2 = document.getElementById('resCfgBar');
   if (_cfgBar2) _cfgBar2.style.display = total > 0 ? 'flex' : 'none';
 }
@@ -12738,7 +12813,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.250';
+const APP_VERSION  = '1.1.2.260';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

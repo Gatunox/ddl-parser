@@ -162,6 +162,9 @@ test('PIC 9(4) → 4', () => eq(picSize('9(4)'), 4));
 test('PIC X(3) COMP → 2 (COMP rounds up to half-word)', () => eq(picSize('9(4)', 'COMP'), 2));
 test('PIC S9(7) COMP-3 → 4 (packed)', () => eq(picSize('S9(7)', 'COMP-3'), 4));
 test('PIC X → 1', () => eq(picSize('X'), 1));
+test('PIC S9(5) → 6 (DISPLAY: 5 digits + separate leading sign)', () => eq(picSize('S9(5)'), 6));
+test('PIC 9(5)S → 6 (DISPLAY: 5 digits + separate trailing sign)', () => eq(picSize('9(5)S'), 6));
+test('PIC S9(4) COMP → 2 (sign folds into binary width)', () => eq(picSize('S9(4)', 'COMP'), 2));
 
 // ── buildDDLDocFields — basic sequential ────────────────────────────────────
 console.log('\nbuildDDLDocFields — sequential');
@@ -641,6 +644,20 @@ test('normalizes PIC and simple datatype tags', () => {
   eq(normalizeDataType('PIC A(4)'), 'A', 'PIC A');
   eq(normalizeDataType('PIC X(4)'), 'ANS', 'PIC X');
   eq(normalizeDataType('BINARY 16'), 'B', 'binary');
+  eq(normalizeDataType('PIC S9(5)'), 'SN', 'leading signed numeric');
+  eq(normalizeDataType('PIC 9(5)S'), 'SN', 'trailing signed numeric');
+  eq(normalizeDataType('PIC T9(5)'), 'SN', 'embedded-sign numeric');
+  eq(normalizeDataType('PIC N(5)'), 'NAT', 'national');
+  eq(normalizeDataType('PIC 9(4) COMP'), 'B', 'COMP numeric is binary, not ASCII');
+  eq(normalizeDataType('PIC S9(9) COMP-3'), 'B', 'packed decimal is binary, not ASCII');
+});
+
+test('signed & national fields validate without false positives', () => {
+  assert.ok(validateFieldContent(Buffer.from('-12345'), 'SN'), 'signed accepts leading - and digits');
+  assert.ok(validateFieldContent(Buffer.from('12345+'), 'SN'), 'signed accepts trailing + and digits');
+  assert.ok(!validateFieldContent(Buffer.from('12X45'), 'SN'), 'signed still rejects X mid-field');
+  assert.ok(!validateFieldContent(Buffer.from('1234?'), 'SN'), 'signed rejects ? placeholder');
+  assert.ok(validateFieldContent(Buffer.from([0x00, 0xFF, 0x3F]), 'NAT'), 'national skips byte validation');
 });
 
 test('validates numeric, alphabetic, alphanumeric, printable, and track data', () => {

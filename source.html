@@ -2326,8 +2326,9 @@ function picSize(pic, comp) {
     if      (ch === 'X' || ch === 'A') charBytes += n;
     else if (ch === '9')               { charBytes += n; nineCount += n; }
     else if (ch === 'N')               charBytes += n * 2;  // national = 2 bytes
-    else if (ch === 'T')               charBytes += 1;      // trailing sign
-    // S (sign), V (implied decimal), P (trailing zeros) consume 0 bytes
+    else if (ch === 'T')               charBytes += 1;      // embedded-sign digit (1 byte)
+    else if (ch === 'S')               charBytes += 1;      // separate leading/trailing sign byte
+    // V (implied decimal), P (trailing zeros) consume 0 bytes
   }
   const cu = (comp || '').toUpperCase().replace(/[\s-]/g, '');
   if (cu === 'COMP' || cu === 'COMPUTATIONAL') {
@@ -3091,11 +3092,15 @@ function validateDDLErrors(text, repoTypeRegistry) {
 function normalizeDataType(dt) {
   if (!dt) return null;
   const u = dt.trim().toUpperCase();
+  // Binary storage (COMP / COMPUTATIONAL / COMP-3 / BINARY) is not ASCII text — skip byte checks
+  if (/\bCOMP/.test(u) || /^BINARY/.test(u)) return 'B';
+  if (/^PIC\s*N/.test(u))            return 'NAT';   // national (2-byte) — recognised, not byte-validated
+  // Signed DISPLAY numeric — separate sign (S) or embedded sign (T)
+  if (/^PIC/.test(u) && /[ST]/.test(u.replace(/^PIC(?:TURE)?\s*/, ''))) return 'SN';
   if (/^PIC\s*9/.test(u))            return 'N';
   if (/^PIC\s*A/.test(u))            return 'A';
   if (/^PIC\s*X/.test(u))            return 'ANS';
-  if (/^(BINARY|COMP)/.test(u))      return 'B';
-  if (['N','A','AN','ANS','B','Z','X'].includes(u)) return u;
+  if (['N','A','AN','ANS','B','Z','X','SN','NAT'].includes(u)) return u;
   return null;
 }
 
@@ -3104,11 +3109,15 @@ function normalizeDataType(dt) {
 function validateFieldContent(rawBytes, dataType) {
   if (!rawBytes || !rawBytes.length || !dataType) return true;
   const dt = normalizeDataType(dataType);
-  if (!dt || dt === 'B') return true;
+  if (!dt || dt === 'B' || dt === 'NAT') return true;
   for (const b of rawBytes) {
     let ok;
     switch (dt) {
       case 'N':   ok = b >= 0x30 && b <= 0x39; break;
+      case 'SN':  ok = (b >= 0x30 && b <= 0x39)                 // digits
+                     || b === 0x2B || b === 0x2D || b === 0x20   // + - space (separate sign S)
+                     || b === 0x7B || b === 0x7D                 // { } embedded-sign zero
+                     || (b >= 0x41 && b <= 0x52); break;         // A-R embedded-sign 1-9 (T)
       case 'A':   ok = (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) || b === 0x20; break;
       case 'AN':  ok = (b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) || b === 0x20; break;
       case 'ANS':
@@ -12813,7 +12822,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.260';
+const APP_VERSION  = '1.1.2.261';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

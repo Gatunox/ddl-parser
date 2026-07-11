@@ -48,7 +48,7 @@ const sandbox = vm.createContext({
   clearInterval: () => {}, requestAnimationFrame: () => {}, cancelAnimationFrame: () => {},
   parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent,
   Math, JSON, Array, Object, Map, Set, WeakMap, WeakSet, RegExp, Uint8Array,
-  String, Number, Boolean, Symbol, Date, Promise, Error,
+  String, Number, Boolean, Symbol, Date, Promise, Error, BigInt,
   // DOM stubs
   document: domEl,
   window:   domEl,
@@ -89,6 +89,7 @@ _t.meFmtDateTime      = _meFmtDateTime;
 _t.meFmtAmount        = _meFmtAmount;
 _t.meFmtHex           = _meFmtHex;
 _t.meFmtText          = _meFmtText;
+_t.meFmtEbcdic        = _meFmtEbcdic;
 _t.S                  = S;
 _t.P                  = P;
 `;
@@ -973,6 +974,31 @@ test('field_overrides can reinterpret bound DDL fields and add a display formatt
   eq(txt.displayOverride, 'hex', 'display override marker set');
 });
 
+test('uint64-be/le overrides decode 8 bytes to a decimal integer via BigInt', () => {
+  S.ddlTree = { VOL: { SV: { 'U64DDL': `
+    DEF REC.
+      02 BE TYPE BINARY 64.
+      02 LE TYPE BINARY 64.
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: ['VOL/SV/U64DDL/REC'],
+    field_overrides: [
+      { field: 'BE', type: 'uint64-be' },
+      { field: 'LE', type: 'uint64-le' },
+    ],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+  };
+  // 123456 = 0x01E240 → be: 00 00 00 00 00 01 E2 40 ; le: 40 E2 01 00 00 00 00 00
+  const ctx = meExecParseSpec(item, Uint8Array.from([
+    0x00,0x00,0x00,0x00,0x00,0x01,0xE2,0x40,
+    0x40,0xE2,0x01,0x00,0x00,0x00,0x00,0x00,
+  ]));
+  eq(ctx.fields.find(x => x.id === 'BE').value, '123456', 'uint64-be decodes big-endian');
+  eq(ctx.fields.find(x => x.id === 'LE').value, '123456', 'uint64-le decodes little-endian');
+});
+
 test('field_overrides reject incompatible lengths without replacing the parsed field', () => {
   S.ddlTree = { VOL: { SV: { 'BADOVR': `
     DEF REC.
@@ -1163,7 +1189,33 @@ test('display override formatters: datetime, amount with sign, hex, text', () =>
   eq(sandbox._t.meFmtAmount('-12345'), '-123.45', 'leading minus preserved');
   eq(sandbox._t.meFmtAmount('000000012345C'), '123.45', 'trailing C = credit = positive');
   eq(sandbox._t.meFmtHex({ rawHex: 'abcd' }), '0xABCD', 'hex dump');
-  eq(sandbox._t.meFmtText({ rawHex: '486900ff' }), 'Hi..', 'text with non-printables dotted');
+  eq(sandbox._t.meFmtText({ rawHex: '486900ff' }), 'Hi..', 'ascii render (raw bytes) with non-printables dotted');
+  // ebcdic display: EBCDIC "HI" = C8 C9, F1 = "1", non-printable byte -> "."
+  eq(sandbox._t.meFmtEbcdic({ rawHex: 'C8C9F100' }), 'HI1.', 'ebcdic render of raw bytes');
+});
+
+test('display ascii/text alias and ebcdic render raw bytes ignoring the type override', () => {
+  S.ddlTree = { VOL: { SV: { 'DISPDDL': `
+    DEF REC.
+      02 A PIC X(1).
+      02 B PIC X(1).
+      02 C PIC X(1).
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: ['VOL/SV/DISPDDL/REC'],
+    field_overrides: [
+      { field: 'A', type: 'binary', display: 'ascii' },  // raw F1 -> non-printable -> '.'
+      { field: 'B', type: 'binary', display: 'ebcdic' },  // raw F1 -> EBCDIC '1'
+      { field: 'C', display: 'text' },                    // legacy alias still works
+    ],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+  };
+  const ctx = meExecParseSpec(item, Uint8Array.from([0xF1, 0xF1, 0x41]));
+  eq(ctx.fields.find(x => x.id === 'A').displayValue, '.', 'ascii display ignores binary type override, dots non-printable F1');
+  eq(ctx.fields.find(x => x.id === 'B').displayValue, '1', 'ebcdic display renders F1 as "1"');
+  eq(ctx.fields.find(x => x.id === 'C').displayValue, 'A', 'legacy text alias renders raw byte');
 });
 
 test('read-bitmap reports a truncated secondary bitmap without advancing the cursor', () => {

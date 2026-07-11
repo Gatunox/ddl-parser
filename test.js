@@ -278,6 +278,29 @@ test('[REGRESSION] OCCURS inside REDEFINES group: shift must not bleed past REDE
   eq(byName(fields, 'FIELD5').offset, 8, 'FIELD5 must follow FIELD2 (5+3=8), not be shifted by OCCURS inside FIELD3');
 });
 
+test('[REGRESSION] nested OCCURS: inner OCCURS size rolls up into the outer + grandparent group', () => {
+  // MULT OCCURS 2 contains INFO OCCURS 5. MULT must use INFO's full 95 (19×5),
+  // giving (2+1+1+95)×2 = 198 — not (2+1+1+19)×2 = 46. The grandparent ACCT then
+  // spans MULT(198) + PIN(1) + SAVE(171) = 370, with the trailing siblings shifted.
+  const { fields } = buildDDLDocFields([
+    f(2, 'ACCT'),
+    f(4, 'MULT', { occurs: 2 }),
+    f(6, 'ACCT-TYP',  { pic: '9(2)' }),
+    f(6, 'CNT',       { pic: 'X' }),
+    f(6, 'USER-FLD7', { pic: 'X' }),
+    f(6, 'INFO', { occurs: 5 }),
+    f(8, 'NUM', { pic: 'X(19)' }),
+    f(4, 'PIN-VRFY-FLG', { pic: '9' }),
+    f(4, 'SAVE-AREA',    { pic: 'X(171)' }),
+  ]);
+  eq(byName(fields, 'INFO').size, 95, 'INFO = 19 × 5');
+  eq(byName(fields, 'MULT').size, 198, 'MULT = (2+1+1+95) × 2 = 198, not 46');
+  eq(byName(fields, 'MULT').occursChildSize, 99, 'MULT single occurrence = 99');
+  eq(byName(fields, 'ACCT').size, 370, 'ACCT = MULT 198 + PIN 1 + SAVE 171 = 370');
+  eq(byName(fields, 'PIN-VRFY-FLG').offset, 198, 'PIN follows MULT full span');
+  eq(byName(fields, 'SAVE-AREA').offset, 199, 'SAVE follows PIN');
+});
+
 // ── buildDDLDocFields — OCCURS ───────────────────────────────────────────────
 console.log('\nbuildDDLDocFields — OCCURS');
 test('OCCURS group: size = childSpan × occurs', () => {
@@ -472,6 +495,45 @@ test('parses a basic HPE DEF and produces correct field offsets', () => {
   assert.ok(b, 'FIELD-B in output');
   eq(a.offset, 0, 'FIELD-A.offset');
   eq(b.offset, 5, 'FIELD-B.offset');
+});
+
+test('[REGRESSION] parseHPEDDL expands nested OCCURS (inner group repeats per outer occurrence)', () => {
+  const ddl = `
+    DEF T.
+      02 ACCT.
+         04 MULT OCCURS 2 TIMES.
+            06 ACCT-TYP PIC 9(2).
+            06 CNT PIC X.
+            06 USER-FLD7 PIC X.
+            06 INFO OCCURS 5 TIMES.
+               08 NUM PIC X(19).
+         04 PIN-VRFY-FLG PIC 9.
+    END T.
+  `;
+  const defs = parseHPEDDL(ddl, null, null, 'T');
+  const nums = defs.filter(d => /NUM/.test(d.id));
+  eq(nums.length, 10, 'NUM emitted 2 (MULT) × 5 (INFO) = 10 times, not once per MULT');
+  deepEq(nums.map(d => d.offset), [4, 23, 42, 61, 80, 103, 122, 141, 160, 179], 'nested NUM offsets');
+  assert.ok(defs.find(d => d.id === 'ACCT.MULT[01].INFO[05].NUM'), 'hierarchical [NN] id per OCCURS level');
+  eq(defs.find(d => /PIN-VRFY/.test(d.id)).offset, 198, 'field after MULT follows its full 198-byte span');
+});
+
+test('[REGRESSION] parseFlatMessage nested OCCURS: fixed keeps all; eye-catcher bounds each outer frame', () => {
+  const ddl = `
+    DEF T.
+      02 MULT OCCURS 2 TIMES.
+        06 ATYP PIC 9(2).
+        06 INFO OCCURS 5 TIMES.
+          08 NUM PIC X(19).
+    END T.
+  `;
+  const defs = parseHPEDDL(ddl, null, null, 'T');   // single MULT = 97, total = 194
+  const numCount = bytes => parseFlatMessage(Uint8Array.from(bytes), defs, Uint8Array.from(bytes))
+    .filter(f => /NUM/.test(f.id) && !f.error).length;
+  eq(numCount(Array(200).fill(0x41)), 10, 'fixed/full → all 2×5 = 10 occurrences kept');
+  // '& ' eye-catcher at byte 116 → MULT[0] full (available≥97), MULT[1] dropped (only 1 full 97-byte occ)
+  const b = Array(200).fill(0x41); b[116] = 0x26; b[117] = 0x20;
+  eq(numCount(b), 5, 'eye-catcher bounds the outer OCCURS: MULT[1] dropped, MULT[0] intact');
 });
 
 test('[REGRESSION] HPE DEF with REDEFINES after OCCURS: correct offset', () => {
@@ -1111,6 +1173,24 @@ test('DE numbering starts after the bitmap field and skips REDEFINES, matching t
   deepEq(ids, ['HDR', 'BMP', 'PAN.LEN', 'PAN.DATA', 'AMT'], 'group DE reads its leaves; AMT follows');
   eq(ctx.fields.find(f => f.id === 'PAN.DATA').value, 'ABCD', 'group leaves read sequentially after the bitmap');
   eq(ctx.fields.find(f => f.id === 'AMT').value, '123', 'second DE follows the group');
+});
+
+test('[REGRESSION] DE walker collapses nested OCCURS to one representative row per group', () => {
+  S.ddlTree = { VOL: { SV: { 'NESTDDL': `
+    DEF REC.
+      02 ACCT.
+        04 MULT OCCURS 2 TIMES.
+          06 ATYP PIC 9(2).
+          06 INFO OCCURS 5 TIMES.
+            08 NUM PIC X(19).
+    END REC.
+  ` } } };
+  const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/NESTDDL/REC')]);
+  const rows = sandbox._t.meWalkDEFields(defs, { ddl_bindings: ['VOL/SV/NESTDDL/REC'] });
+  const ids = rows.map(r => r.id);
+  assert.ok(ids.includes('ACCT.MULT[01].INFO[01].NUM'), 'representative leaf (all idx 0) present');
+  assert.ok(!ids.some(id => /MULT\[0[2-9]\]/.test(id)), 'outer non-representative occurrences collapsed (no MULT[02]+)');
+  assert.ok(!ids.some(id => /INFO\[0[2-9]\]/.test(id)), 'inner non-representative occurrences collapsed (no INFO[02]+)');
 });
 
 test('VLG group distributes runtime LEN across children with real ids and overrides applied', () => {

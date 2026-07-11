@@ -2390,56 +2390,57 @@ function parseHPEDDL(text, externalDefs, externalSections, targetDef = null) {
     if (targetDef && sec.name.toUpperCase() !== targetDef.toUpperCase()) continue;
     const expandedItems = expandTypeRefs(sec.items, sectionByName, new Set(), externalSections || null);
     const { fields } = buildDDLDocFields(expandedItems, typeRegistry);
-    for (let fi = 0; fi < fields.length; fi++) {
-      const f = fields[fi];
-      if (f.isGroup) {
-        const occ = f.occurs || 1;
-        if (occ > 1) {
-          // Collect all leaf descendants of this OCCURS group
-          const children = [];
-          let ci = fi + 1;
-          while (ci < fields.length && fields[ci].level > f.level) {
-            const cf = fields[ci];
-            if (!cf.isGroup && cf.size > 0) children.push(cf);
-            ci++;
-          }
-          const childSize = f.occursChildSize || Math.round(f.size / occ);
-          // Emit children for each occurrence with adjusted offsets and indexed IDs.
-          // parseFlatMessage naturally skips occurrences beyond bytes.length (ASCII fallback).
-          for (let occIdx = 0; occIdx < occ; occIdx++) {
-            for (const child of children) {
-              const isFiller = /^FILLER$/i.test(child.name);
-              const relName  = child.qualName.startsWith(f.qualName + '.')
-                ? child.qualName.slice(f.qualName.length + 1) : child.qualName;
-              const occLabel = `[${String(occIdx + 1).padStart(2, '0')}]`;
-              const id = isFiller
-                ? `${f.qualName}${occLabel}.FILLER`
-                : `${f.qualName}${occLabel}.${relName}`;
-              const redefTarget = child.isRedefines ? child.redefinesName : child.redefGroupTarget;
-              out.push({ id, type: 'FIXED',
-                length: child.size, offset: child.offset + occIdx * childSize,
-                description: child.desc,
-                isRedefines: child.isRedefines || child.isInsideRedefines, redefTarget,
-                _rawName: child.name, _dataType: child.dataType,
-                _occursGroup: f.qualName, _occursIdx: occIdx, _occursMax: occ,
-                _occursGroupOffset: f.offset, _occursChildSize: childSize });
+    // Emit leaf fields, applying nested OCCURS recursively. A leaf enclosed by N
+    // OCCURS groups is emitted once per combination of occurrence indices, with a
+    // [NN] label at each OCCURS level and its offset shifted by Σ(childSize × idx).
+    // Previously the expansion was single-level: an inner OCCURS group's leaves
+    // were emitted once per OUTER occurrence, so INFO OCCURS 5 inside MULT OCCURS 2
+    // produced 2 rows instead of 10. occInfo carries the INNERMOST OCCURS context
+    // for the _occurs* metadata (used by single-level actual-count / DE walkers).
+    const emitBlock = (start, end, offDelta, idPrefix, occPath) => {
+      let i = start;
+      while (i < end) {
+        const f = fields[i];
+        let j = i + 1;
+        while (j < end && fields[j].level > f.level) j++;
+        const seg = /^FILLER$/i.test(f.name) ? 'FILLER' : (f.qualName.split('.').pop() || f.name);
+        const myPrefix = idPrefix ? `${idPrefix}.${seg}` : seg;
+        if (f.isGroup) {
+          const occ = f.occurs || 1;
+          if (occ > 1) {
+            const cs = f.occursChildSize || Math.round(f.size / occ);
+            for (let k = 0; k < occ; k++) {
+              const label = `[${String(k + 1).padStart(2, '0')}]`;
+              // occOffset = this occurrence-frame's real byte start (declared base
+              // + accumulated outer-occurrence shift + this frame's own shift).
+              const frame = { group: f.qualName, idx: k, max: occ, childSize: cs,
+                groupOffset: f.offset, occOffset: f.offset + offDelta + k * cs };
+              emitBlock(i + 1, j, offDelta + k * cs, `${myPrefix}${label}`, occPath.concat(frame));
             }
+          } else {
+            emitBlock(i + 1, j, offDelta, myPrefix, occPath);
           }
-          fi = ci - 1; // skip children — already expanded above
+        } else if (f.size > 0) {
+          const redefTarget = f.isRedefines ? f.redefinesName : f.redefGroupTarget;
+          const entry = {
+            id: myPrefix, type: 'FIXED', length: f.size, offset: f.offset + offDelta,
+            description: f.desc, isRedefines: f.isRedefines || f.isInsideRedefines, redefTarget,
+            _rawName: f.name, _dataType: f.dataType,
+          };
+          if (occPath.length) {
+            entry._occursPath = occPath;                 // full outer→inner occurrence path
+            // Back-compat scalars — outermost frame. Single-level OCCURS is a
+            // 1-frame path, so these are byte-for-byte identical to before.
+            const o = occPath[0];
+            entry._occursGroup = o.group; entry._occursIdx = o.idx; entry._occursMax = o.max;
+            entry._occursGroupOffset = o.groupOffset; entry._occursChildSize = o.childSize;
+          }
+          out.push(entry);
         }
-        continue;
+        i = j;
       }
-      if (f.size === 0) continue;
-      const isFiller = /^FILLER$/i.test(f.name);
-      const parentPath = f.qualName.split('.').slice(0, -1).join('.');
-      const id = isFiller
-        ? (parentPath ? `${parentPath}.FILLER` : 'FILLER')
-        : f.qualName;
-      const redefTarget = f.isRedefines ? f.redefinesName : f.redefGroupTarget;
-      out.push({ id, type: 'FIXED', length: f.size, offset: f.offset, description: f.desc,
-                 isRedefines: f.isRedefines || f.isInsideRedefines, redefTarget,
-                 _rawName: f.name, _dataType: f.dataType });
-    }
+    };
+    emitBlock(0, fields.length, 0, '', []);
   }
 
   // ── HPE COBOL ISO 8583 layout detection ──────────────────────────────────
@@ -3461,10 +3462,19 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     }
   }
 
-  // Second pass — compute group sizes from max-end of all descendants
+  // Second pass — compute group sizes from max-end of all descendants.
   // For OCCURS groups the size = one-occurrence child span × occurs count.
-  for (let i = 0; i < result.length; i++) {
-    if (!result[i].isGroup) continue;
+  // Process the DEEPEST groups first so a nested OCCURS group's full (occurs-
+  // multiplied) size is already set when its parent group sums its descendants.
+  // In index order the parent is reached first, while the inner group still has
+  // size 0 — so the parent's span was taken from the inner group's leaves and the
+  // inner OCCURS multiplier was lost (e.g. MULT with an inner INFO OCCURS 5 was
+  // sized from NUM's 19 bytes instead of INFO's 95, giving 46 instead of 198).
+  const _groupsDeepFirst = result
+    .map((r, i) => i)
+    .filter(i => result[i].isGroup)
+    .sort((a, b) => result[b].level - result[a].level);
+  for (const i of _groupsDeepFirst) {
     const gl = result[i].level, go = result[i].offset;
     let maxEnd = go;
     for (let j = i + 1; j < result.length; j++) {
@@ -3520,6 +3530,25 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     for (let k = i + 1; k < result.length && result[k].level > result[i].level; k++) {
       result[k].offset += delta;
     }
+  }
+
+  // Final size pass — recompute group sizes from the now-settled offsets (after
+  // OCCURS shifting and REDEFINES re-anchoring). A group whose trailing siblings
+  // sit after an inner OCCURS group was sized in the second pass before those
+  // siblings were shifted, so its total was understated (e.g. ACCT = MULT 198 +
+  // PIN-VRFY-FLG 1 + SAVE-AREA 171 = 370, not 198). occursChildSize is left as-is
+  // — it drives parser OCCURS expansion and is keyed to the applied offset shifts.
+  for (const i of _groupsDeepFirst) {
+    const gl = result[i].level, go = result[i].offset;
+    let maxEnd = go, hasDesc = false;
+    for (let j = i + 1; j < result.length; j++) {
+      if (result[j].level <= gl) break;
+      hasDesc = true;
+      maxEnd = Math.max(maxEnd, result[j].offset + result[j].size);
+    }
+    if (!hasDesc) continue;   // childless groups are handled by the bare-REDEFINES pass
+    const occ = Math.max(1, result[i].occurs || 1);
+    result[i].size = (maxEnd - go) * occ;
   }
 
   // Fifth pass — bare REDEFINES (no PIC/TYPE, no children): inherit target's size and type.
@@ -4380,6 +4409,36 @@ function buildByteCharMap(text, format, textOffset) {
   return map;
 }
 
+// Nested-OCCURS actual-count / skip decision. Given an expanded leaf `def` and the
+// message bytes, returns true if this occurrence must be DROPPED because an enclosing
+// OCCURS frame has fewer actual occurrences than this leaf's index at that frame.
+// The actual count per frame is inferred from the '& ' (0x26 0x20) eye-catcher,
+// scanned from that frame's occurrence-0 real byte start; `cache` memoizes counts
+// per (outer-context, group) so a variable inner OCCURS is counted independently
+// within each outer occurrence. Leaves not inside any OCCURS never skip.
+function _occursShouldSkip(def, bytes, cache) {
+  const path = def._occursPath;
+  if (!path || !path.length) return false;
+  let outerDelta = 0, keyPrefix = '';
+  for (const fr of path) {
+    const start0 = fr.groupOffset + outerDelta;   // byte start of occurrence 0 in this context
+    const key = `${keyPrefix}|${fr.group}`;
+    let count = cache[key];
+    if (count === undefined) {
+      let eyePos = bytes.length;
+      for (let bi = start0; bi < bytes.length - 1; bi++) {
+        if (bytes[bi] === 0x26 && bytes[bi + 1] === 0x20) { eyePos = bi; break; }
+      }
+      count = Math.min(fr.max, Math.max(0, Math.floor((eyePos - start0) / fr.childSize)));
+      cache[key] = count;
+    }
+    if (fr.idx >= count) return true;
+    outerDelta += fr.idx * fr.childSize;
+    keyPrefix = `${key}[${fr.idx}]`;
+  }
+  return false;
+}
+
 // ============================================================
 // FLAT / SEQUENTIAL MESSAGE PARSER  (used for HPE DDL structs)
 // ============================================================
@@ -4409,29 +4468,12 @@ function parseFlatMessage(bytes, defs, rawBytes) {
       : srcB.reduce((acc, b) => acc * 256  + b,         0 ).toString();
   };
 
-  // OCCURS group actual-count cache: resolved once per group by scanning for '& ' eye-catcher.
-  // Key = group qualName, value = actual occurrence count (0..occursMax).
+  // OCCURS actual-count cache — nested-aware, keyed per (outer-context, group).
   const _occursActual = {};
 
   for (const def of defs) {
-    // OCCURS group: determine actual count on first encounter, skip excess occurrences.
-    if (def._occursGroup !== undefined) {
-      const gid = def._occursGroup;
-      if (_occursActual[gid] === undefined) {
-        const groupStart = def._occursGroupOffset;
-        // Scan forward for '& ' eye-catcher (0x26 0x20) — marks start of token area.
-        let eyePos = bytes.length;
-        for (let bi = groupStart; bi < bytes.length - 1; bi++) {
-          if (bytes[bi] === 0x26 && bytes[bi + 1] === 0x20) { eyePos = bi; break; }
-        }
-        const available = eyePos - groupStart;
-        _occursActual[gid] = Math.min(
-          def._occursMax,
-          Math.max(0, Math.floor(available / def._occursChildSize))
-        );
-      }
-      if (def._occursIdx >= _occursActual[gid]) continue;
-    }
+    // OCCURS: drop occurrences beyond the actual count of any enclosing frame.
+    if (def._occursPath && _occursShouldSkip(def, bytes, _occursActual)) continue;
 
     const hasExplicit = def.offset !== undefined;
     const fStart = hasExplicit ? def.offset : seqOffset;
@@ -5060,7 +5102,10 @@ function parsePSTMMessageASCII(bytes, defs) {
         const fBytes = bytes.slice(fStart, fStart + def.length);
         const isBin  = /\bBINARY\b/i.test(def._dataType || '');
         fields.push({
-          id: def.id.replace('[01]', `[${lbl}]`), description: def.description, dataType: def._dataType || def.dataType || '',
+          // Relabel only the OUTER (first) occurrence segment — the SERVICES loop
+          // index — leaving any nested OCCURS labels intact (e.g. a service that
+          // contains DETAIL OCCURS n keeps its DETAIL[nn] labels).
+          id: def.id.replace(/\[\d+\]/, `[${lbl}]`), description: def.description, dataType: def._dataType || def.dataType || '',
           type: def.type, maxLength: def.length, lenPrefix: null,
           valueLength: fBytes.length,
           value:    isBin ? '[binary]' : bToStr(fBytes),
@@ -12909,7 +12954,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.269';
+const APP_VERSION  = '1.1.2.272';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16035,7 +16080,7 @@ function _meWalkDEFields(defs, item) {
   // ── Pass 1: discover groups from leaf qualified names ───────────────────
   const childrenByPrefix = new Map();   // prefix → Set of immediate child ids
   for (const def of defs) {
-    if (def._occursGroup !== undefined && def._occursIdx > 0) continue;
+    if (def._occursPath && !def._occursPath.every(fr => fr.idx === 0)) continue;
     const parts = def.id.split('.');
     for (let i = 1; i < parts.length; i++) {
       const prefix = parts.slice(0, i).join('.');
@@ -16108,7 +16153,7 @@ function _meWalkDEFields(defs, item) {
   };
 
   for (const def of defs) {
-    if (def._occursGroup !== undefined && def._occursIdx > 0) continue;
+    if (def._occursPath && !def._occursPath.every(fr => fr.idx === 0)) continue;
     const parts = def.id.split('.');
 
     for (let i = 1; i < parts.length; i++) {
@@ -17470,22 +17515,10 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
   const allMode = !picks && !from && !until;
   let started   = !from;
 
-  // OCCURS actual-count cache: scan once per group for '& ' eye-catcher (existing convention).
+  // OCCURS actual-count cache — nested-aware, keyed per (outer-context, group).
   const _occursActual = {};
   for (const def of resolved.defs) {
-    if (def._occursGroup !== undefined) {
-      const gid = def._occursGroup;
-      if (_occursActual[gid] === undefined) {
-        const groupStart = def._occursGroupOffset;
-        let eyePos = ctx.bytes.length;
-        for (let bi = groupStart; bi < ctx.bytes.length - 1; bi++) {
-          if (ctx.bytes[bi] === 0x26 && ctx.bytes[bi + 1] === 0x20) { eyePos = bi; break; }
-        }
-        const available = eyePos - groupStart;
-        _occursActual[gid] = Math.min(def._occursMax, Math.max(0, Math.floor(available / def._occursChildSize)));
-      }
-      if (def._occursIdx >= _occursActual[gid]) continue;
-    }
+    if (def._occursPath && _occursShouldSkip(def, ctx.bytes, _occursActual)) continue;
     // Always read each field so the byte cursor stays aligned and so
     // later parse_spec blocks (when / repeat / read-tlv) can reference
     // any field id, even one the user filtered out of the emit list.
@@ -18038,11 +18071,14 @@ function _meBuildDEMap(ctx) {
   for (const row of rows) {
     if (row.de == null || map[row.de] !== undefined) continue;
     if (row.isGroup) {
-      const prefix = row.id + '.';
       // All transitive leaves under the group, skipping REDEFINES overlays
-      // (they re-view existing bytes, never consume new ones). OCCURS
-      // expansions are kept — each occurrence slot consumes its own bytes.
-      const kids = defs.filter(d => d.id.startsWith(prefix) && !d.isRedefines);
+      // (they re-view existing bytes, never consume new ones). The walker yields
+      // the [01] representative for OCCURS groups; match on the occurrence-
+      // stripped id so a group DE consumes the WHOLE repeated block (every
+      // occurrence's bytes, in declaration order), not just occurrence [01].
+      const _canon = s => s.replace(/\[\d+\]/g, '');
+      const gpref  = _canon(row.id) + '.';
+      const kids = defs.filter(d => !d.isRedefines && _canon(d.id).startsWith(gpref));
       map[row.de] = { groupId: row.id, kids };
     } else {
       map[row.de] = { def: defById.get(row.id) };

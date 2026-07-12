@@ -12977,7 +12977,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.279';
+const APP_VERSION  = '1.1.2.282';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16541,7 +16541,7 @@ const _FM_HELP = {
   },
   'Length': {
     purpose: 'Byte length the DDL declares for this field.',
-    desc: 'Read-only column showing how many bytes the field occupies, taken straight from the DDL declaration. Group rows sum their leaf descendants. The length matters when overriding the Data Type — fixed-size integer overrides (<code>uint8</code>, <code>uint16-be</code>, …) must match this number, or the override is rejected with a warning at parse time and a red border + ⚠ icon at edit time.',
+    desc: 'Read-only column showing how many bytes the field occupies, taken straight from the DDL declaration. Group rows sum their leaf descendants. The length matters when overriding the Data Type — <code>uint-be</code> / <code>uint-le</code> decode exactly this many bytes, and legacy fixed-width overrides (<code>uint16-be</code>, …, from older imports) must match it or the cell shows a red border + ⚠ icon and the override is ignored at parse time.',
     rows: [
       ['PIC X(3)',  'Elementary field, 3 ASCII chars',              'Length = 3'],
       ['PIC 9(12)', 'Elementary numeric field, 12 ASCII digits',    'Length = 12'],
@@ -16551,29 +16551,60 @@ const _FM_HELP = {
   },
   'Data Type': {
     purpose: 'DDL-declared type, with optional override of how the bytes are interpreted at parse time.',
-    desc: 'The dropdown defaults to the field\'s DDL type (the empty-value entry, e.g. <code>PIC X</code>). Pick a different entry to override the interpretation — the parsed value is recomputed from the raw bytes using the new rule. Fixed-size numeric overrides validate against the <b>Length</b> column; class/text overrides are length-unconstrained. Mismatched lengths show a red border and ⚠ icon immediately and emit a parse-time error.',
+    desc: 'The dropdown defaults to the field\'s DDL type (the empty-value entry, e.g. <code>PIC X</code>). Pick a different entry to override the interpretation — the parsed value is recomputed from the raw bytes using the new rule. Every option is length-flexible: <code>uint-be</code> / <code>uint-le</code> take their width from the field\'s <b>Length</b> column (widths over 4 bytes decode via BigInt). Legacy fixed-width overrides (<code>uint16-be</code>, …, from older imports) still validate against the Length — a mismatch shows a red border and ⚠ icon and the override is ignored at parse time.',
+    cols: ['Type ovr', 'Declared', 'Raw bytes (hex)', 'Natural value', 'Result', 'Notes'],
     rows: [
-      ['(DDL default)',  'Honour the DDL\'s declared type',                                            'PROD-ID = PIC X(2), bytes 0x46 0x46 → "FF"'],
-      ['uint8',          'Read 1 raw byte as unsigned int (length must = 1)',                          'Bytes 0xFF → 255'],
-      ['uint16-be',      'Read 2 raw bytes as big-endian unsigned int (length must = 2)',              'Bytes 0x46 0x46 → 17990'],
-      ['uint16-le',      'Read 2 raw bytes as little-endian unsigned int (length must = 2)',           'Bytes 0xFF 0x00 → 255'],
-      ['uint32-be',      'Read 4 raw bytes as big-endian unsigned int (length must = 4)',              'Bytes 0x00 0x00 0x00 0xFF → 255'],
-      ['uint32-le',      'Read 4 raw bytes as little-endian unsigned int (length must = 4)',           'Bytes 0xFF 0x00 0x00 0x00 → 255'],
-      ['hex-ascii',      'Decode bytes as ASCII text, parse as base-16 (any length, hex chars only)',  'Bytes 0x46 0x46 ("FF") → 255'],
-      ['hex-ebcdic',     'Decode bytes as EBCDIC text, parse as base-16 (any length, hex chars only)', 'Bytes 0xC6 0xC6 (EBCDIC "FF") → 255'],
-      ['ascii',          'Render bytes as printable ASCII chars (any length)',                         'Bytes 0x48 0x69 → "Hi"'],
-      ['ebcdic',         'Translate bytes via EBCDIC→ASCII table, then render as chars (any length)',  'Bytes 0xC8 0x89 (EBCDIC "Hi") → "Hi"'],
-      ['binary',         'Show raw bytes as a hex string — no integer or text interpretation',         'Bytes 0xAB 0xCD → "0xabcd"'],
+      ['(DDL default)', 'PIC 9(5)',       '3132333435',       '12345',                          '12345',    'honour the DDL\'s declared type'],
+      ['uint-be',       'TYPE BINARY 8',  'FF',               '[ff]',                           '255',      '1 byte → unsigned int'],
+      ['uint-be',       'TYPE BINARY 16', '01F4',             '[01][f4]',                       '500',      '2 bytes big-endian'],
+      ['uint-le',       'TYPE BINARY 16', 'F401',             '[f4][01]',                       '500',      '2 bytes little-endian (same 500)'],
+      ['uint-be',       'TYPE BINARY 32', '0001E240',         '[00][01][e2]@',                  '123456',   '4 bytes big-endian'],
+      ['uint-le',       'TYPE BINARY 32', '40E20100',         '@[e2][01][00]',                  '123456',   '4 bytes little-endian (same 123456)'],
+      ['uint-be',       'TYPE BINARY 64', '000000000001E240', '[00][00][00][00][00][01][e2]@',  '123456',   '8 bytes big-endian (BigInt decode)'],
+      ['uint-le',       'TYPE BINARY 64', '40E2010000000000', '@[e2][01][00][00][00][00][00]',  '123456',   '8 bytes little-endian (BigInt decode)'],
+      ['binary',        'PIC X(3)',       'AABBCC',           '[aa][bb][cc]',                   '0xAABBCC', 'length-flexible hex dump (uppercase)'],
+      ['ascii',         'PIC X(5)',       '48454C4C4F',       'HELLO',                          'HELLO',    'decode bytes as printable ASCII'],
+      ['ascii',         'PIC X(4)',       '4109427F',         'A[09]B[7f]',                     'A.B.',     'non-printable (0x09, 0x7F) → "."'],
+      ['ebcdic',        'PIC X(5)',       'C8C5D3D3D6',       '[c8][c5][d3][d3][d6]',           'HELLO',    'EBCDIC "HELLO" bytes decoded to ASCII'],
+      ['hex-ascii',     'PIC X(4)',       '30304646',         '00FF',                           '255',      'ASCII text "00FF" parsed base-16'],
+      ['hex-ascii',     'PIC X(4)',       '31323334',         '1234',                           '4660',     'ASCII text "1234" parsed base-16 = 0x1234'],
+      ['hex-ebcdic',    'PIC X(2)',       'C6C6',             '[c6][c6]',                       '255',      'EBCDIC text "FF" decoded then parsed base-16'],
     ],
   },
   'Display': {
     purpose: 'Override how the parsed value is formatted in the output panel.',
-    desc: 'Does <b>not</b> change parsing — only how the raw value appears in the Parse Results. Use when the DDL doesn\'t carry enough context to format the value nicely. Empty = default rendering for the field\'s data type.',
+    desc: 'Does <b>not</b> change parsing — only how the raw value appears in the Parse Results. <code>datetime</code> adapts to the digit count (4/6/10/12/14); <code>gmt-ts</code> decodes an 8-byte NonStop JULIANTIMESTAMP (µs since Julian day 0) in GMT. Empty = default rendering for the field\'s data type. See <b>Data Type & Display</b> below for how a Display override combines with a Data Type override on the same field.',
+    cols: ['Display ovr', 'Declared', 'Raw bytes (hex)', 'Natural value', 'Result', 'Notes'],
     rows: [
-      ['datetime', 'Format as readable date/time',     'TRAN-DAT (PIC 9(10) MMDDhhmmss) → 03/15 14:22:07'],
-      ['amount',   'Format as decimal amount',         '000000012345 → 123.45'],
-      ['hex',      'Show raw hex bytes',               'BMP (PIC X(16) ASCII hex) → 4022000003C00000'],
-      ['text',     'Force plain-text rendering',       'Strip framing / decoding hints'],
+      ['datetime', 'PIC X(4)',       '30373034',                     '0704',                 '07/04',                          '4 digits → MM/DD'],
+      ['datetime', 'PIC X(6)',       '313433303235',                 '143025',               '14:30:25',                       '6 digits, valid time → HH:MM:SS (time tried first)'],
+      ['datetime', 'PIC X(6)',       '323530373034',                 '250704',               '2025-07-04',                     '6 digits, not a valid time → YYMMDD date'],
+      ['datetime', 'PIC X(10)',      '30373034313433303235',         '0704143025',           '07/04 14:30:25',                 '10 digits → MM/DD HH:MM:SS'],
+      ['datetime', 'PIC X(12)',      '323530373034313433303235',     '250704143025',         '2025-07-04 14:30:25',            '12 digits → YYMMDD HH:MM:SS (YY assumed 20xx)'],
+      ['datetime', 'PIC X(14)',      '3230323530373034313433303235', '20250704143025',       '2025-07-04 14:30:25',            '14 digits → full YYYYMMDD HH:MM:SS'],
+      ['amount',   'PIC X(12)',      '303030303030303132333435',     '000000012345',         '123.45',                         'divide by 100, 2 decimals'],
+      ['amount',   'PIC X(13)',      '30303030303030313233343544',   '000000012345D',        '-123.45',                        'trailing D (debit) → negative'],
+      ['amount',   'PIC X(13)',      '30303030303030313233343543',   '000000012345C',        '123.45',                         'trailing C (credit) → positive'],
+      ['amount',   'PIC X(11)',      '2D30303030303132333435',       '-0000012345',          '-123.45',                        'leading minus → negative'],
+      ['hex',      'PIC X(4)',       'DEADBEEF',                     '[de][ad][be][ef]',     '0xDEADBEEF',                     'raw bytes as 0x + uppercase hex, no charset conversion'],
+      ['ascii',    'PIC X(5)',       '4100427F43',                   'A[00]B[7f]C',          'A.B.C',                          'raw bytes as printable ASCII, non-printable → "."'],
+      ['ebcdic',   'PIC X(5)',       'C8C5D3D3D6',                   '[c8][c5][d3][d3][d6]', 'HELLO',                          'raw bytes decoded through the EBCDIC table'],
+      ['gmt-ts',   'TYPE BINARY 64', '02F35F58D95C2240',             '[02][f3]_X[d9]\\"@',   '2025-07-04 14:30:25.000000 GMT', '8-byte JULIANTIMESTAMP rendered in GMT'],
+    ],
+  },
+  'Data Type & Display': {
+    purpose: 'How a Data Type override and a Display override combine on the same field.',
+    desc: 'The Data Type override computes the value first, then Display formats the result (e.g. <code>uint-be</code> 0x30 39 → 12345, then <code>amount</code> → 123.45). Exception: the <code>hex</code>, <code>ascii</code> and <code>ebcdic</code> displays read the field\'s <b>raw bytes</b> directly, ignoring the type override — useful for dumping or charset-checking a field regardless of how it is decoded.',
+    cols: ['Type ovr', 'Display ovr', 'Declared', 'Raw bytes (hex)', 'Natural value', 'Result', 'Notes'],
+    rows: [
+      ['hex-ascii', 'amount',   'PIC X(4)',       '33303339',   '3039',         '123.45',   'hex-ascii → 12345, then amount → 123.45'],
+      ['uint-be',   'amount',   'TYPE BINARY 16', '3039',       '09',           '123.45',   'uint-be → 12345, then amount → 123.45'],
+      ['ascii',     'datetime', 'PIC X(6)',       '313433303235', '143025',     '14:30:25', 'ascii → "143025", then datetime → time'],
+      ['binary',    'hex',      'PIC X(3)',       'AABBCC',     '[aa][bb][cc]', '0xAABBCC', 'hex display reads raw bytes — ignores the type override'],
+      ['binary',    'ascii',    'PIC X(4)',       '5758595A',   'WXYZ',         'WXYZ',     'ascii display reads raw bytes — ignores the type override'],
+      ['binary',    'ascii',    'PIC X(1)',       'F1',         '[f1]',         '.',        '0xF1 is outside 20-7F → not printable in ASCII'],
+      ['binary',    'ebcdic',   'PIC X(1)',       'F1',         '[f1]',         '1',        'EBCDIC byte 0xF1 decodes to "1"'],
+      ['binary',    'hex',      'PIC X(1)',       'F1',         '[f1]',         '0xF1',     'hex leaves the raw byte untouched (0x prefix)'],
     ],
   },
 };
@@ -16598,13 +16629,17 @@ function _meFmHelpSelect(col) {
   document.querySelectorAll('#me-fm-help .me-ps-help-table tbody tr').forEach(tr =>
     tr.classList.toggle('me-ps-sel', tr.dataset.col === col)
   );
-  const exRows = info.rows.map(([scenario, setup, result]) =>
-    `<tr><td class="me-ps-help-aname">${scenario}</td>` +
-    `<td>${setup}</td>` +
-    `<td>${result}</td></tr>`
+  // Entries may declare their own column set (`cols`) — e.g. the Data Type /
+  // Display tables mirror the Test-Data-Override report layout. Default stays
+  // the 3-column Scenario/Setup/Result shape. Override-name columns (headers
+  // ending in "ovr") get the accent highlight; default tables highlight col 0.
+  const cols = info.cols || ['Scenario', 'Setup', 'Result'];
+  const hl = cols.map((c, i) => info.cols ? / ovr$/.test(c) : i === 0);
+  const exRows = info.rows.map(cells =>
+    `<tr>${cells.map((c, i) => `<td${hl[i] ? ' class="me-ps-help-aname"' : ''}>${c}</td>`).join('')}</tr>`
   ).join('');
   const exTbl = info.rows.length
-    ? `<table class="me-ps-help-atbl"><thead><tr><th>Scenario</th><th>Setup</th><th>Result</th></tr></thead><tbody>${exRows}</tbody></table>`
+    ? `<table class="me-ps-help-atbl"><thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${exRows}</tbody></table>`
     : '';
   det.innerHTML =
     `<div class="me-ps-help-detail-title">${col}</div>` +

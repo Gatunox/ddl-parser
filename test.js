@@ -1099,6 +1099,51 @@ test('uint-be / uint-le are size-adaptive (width = field length) and migrate fro
   eq(v('L2'), '500',    'migrated uint-le on a 2-byte field');
 });
 
+test('gmt-ts display decodes a NonStop JULIANTIMESTAMP (BINARY 64) to GMT', () => {
+  S.ddlTree = { VOL: { SV: { 'TSDDL': `
+    DEF REC.
+      02 EXIT-TIM TYPE BINARY 64.
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  // JULIANTIMESTAMP = unixMicros + epoch; epoch = Julian day 2440588 (1970-01-01)
+  // × 86400 × 1e6 = 210866803200000000 µs.
+  const EPOCH = 210866803200000000n;
+  const jt = BigInt(Date.UTC(2024, 5, 15, 12, 30, 45)) * 1000n + EPOCH;
+  const bytes = []; let x = jt;
+  for (let i = 0; i < 8; i++) { bytes.unshift(Number(x & 255n)); x >>= 8n; }
+  const item = {
+    ddl_bindings: ['VOL/SV/TSDDL/REC'],
+    field_overrides: [{ field: 'EXIT-TIM', display: 'gmt-ts' }],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+  };
+  const ctx = meExecParseSpec(item, Uint8Array.from(bytes));
+  eq(ctx.fields.find(f => f.id === 'EXIT-TIM').displayValue,
+     '2024-06-15 12:30:45.000000 GMT', 'JULIANTIMESTAMP → GMT date/time');
+});
+
+test('field_overrides match ALL occurrences of a nested OCCURS field (occurrence-independent)', () => {
+  S.ddlTree = { VOL: { SV: { 'FOCC': `
+    DEF REC.
+      02 MULT OCCURS 2 TIMES.
+        06 INFO OCCURS 3 TIMES.
+          08 NUM TYPE BINARY 16.
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: ['VOL/SV/FOCC/REC'],
+    field_overrides: [{ field: 'MULT.INFO.NUM', type: 'uint-be' }],  // occurrence-stripped id
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+  };
+  const bytes = []; for (let i = 1; i <= 6; i++) bytes.push(0x00, i);  // 2 MULT × 3 INFO, uint16-be 1..6
+  const ctx = meExecParseSpec(item, Uint8Array.from(bytes));
+  const nums = ctx.fields.filter(f => /NUM$/.test(f.id) && !f.error);
+  eq(nums.length, 6, 'all 6 occurrences read');
+  deepEq(nums.map(f => f.value), ['1','2','3','4','5','6'], 'canonical override applied to EVERY occurrence');
+  eq(nums.every(f => f.typeOverride === 'uint-be'), true, 'each occurrence carries the override marker');
+});
+
 test('field_overrides reject incompatible lengths without replacing the parsed field', () => {
   S.ddlTree = { VOL: { SV: { 'BADOVR': `
     DEF REC.
@@ -1213,7 +1258,7 @@ test('DE numbering starts after the bitmap field and skips REDEFINES, matching t
   eq(ctx.fields.find(f => f.id === 'AMT').value, '123', 'second DE follows the group');
 });
 
-test('[REGRESSION] DE walker collapses nested OCCURS to one representative row per group', () => {
+test('[REGRESSION] DE walker expands every nested OCCURS occurrence; DE only on representatives', () => {
   S.ddlTree = { VOL: { SV: { 'NESTDDL': `
     DEF REC.
       02 ACCT.
@@ -1226,9 +1271,15 @@ test('[REGRESSION] DE walker collapses nested OCCURS to one representative row p
   const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/NESTDDL/REC')]);
   const rows = sandbox._t.meWalkDEFields(defs, { ddl_bindings: ['VOL/SV/NESTDDL/REC'] });
   const ids = rows.map(r => r.id);
-  assert.ok(ids.includes('ACCT.MULT[01].INFO[01].NUM'), 'representative leaf (all idx 0) present');
-  assert.ok(!ids.some(id => /MULT\[0[2-9]\]/.test(id)), 'outer non-representative occurrences collapsed (no MULT[02]+)');
-  assert.ok(!ids.some(id => /INFO\[0[2-9]\]/.test(id)), 'inner non-representative occurrences collapsed (no INFO[02]+)');
+  // Full expansion: every occurrence is its own row.
+  eq(ids.filter(id => /\.NUM$/.test(id)).length, 10, '2 (MULT) × 5 (INFO) = 10 NUM rows shown');
+  assert.ok(ids.includes('ACCT.MULT[02].INFO[05].NUM'), 'both nesting dimensions expanded');
+  assert.ok(ids.includes('ACCT.MULT[02]'), 'outer occurrence 2 group row present');
+  // A repeated field is one logical DE: only the all-[01] representative owns/advances a DE.
+  const de = id => rows.find(r => r.id === id)?.de;
+  assert.ok(de('ACCT.MULT[01].INFO[01]') != null, 'representative terminal group owns a DE');
+  assert.ok(de('ACCT.MULT[02].INFO[01]') == null, 'non-representative occurrence carries no DE');
+  assert.ok(de('ACCT.MULT[02]') == null, 'non-representative group carries no DE');
 });
 
 test('VLG group distributes runtime LEN across children with real ids and overrides applied', () => {

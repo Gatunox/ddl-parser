@@ -4416,6 +4416,11 @@ function buildByteCharMap(text, format, textOffset) {
 // scanned from that frame's occurrence-0 real byte start; `cache` memoizes counts
 // per (outer-context, group) so a variable inner OCCURS is counted independently
 // within each outer occurrence. Leaves not inside any OCCURS never skip.
+// Occurrence-independent field id: strip every OCCURS [NN] label so per-field
+// config (field_overrides) matches ALL occurrences of a repeated field.
+// e.g. "ACCT.MULT[02].INFO[03].NUM" → "ACCT.MULT.INFO.NUM".
+function _canonFieldId(id) { return String(id).replace(/\[\d+\]/g, ''); }
+
 function _occursShouldSkip(def, bytes, cache) {
   const path = def._occursPath;
   if (!path || !path.length) return false;
@@ -9080,7 +9085,7 @@ function renderFieldTable(msg) {
     ? window._fmtSpecByName(msg.msgType.type) : null;
   const _foMap = {};
   if (_msgSpec && Array.isArray(_msgSpec.field_overrides)) {
-    for (const _fo of _msgSpec.field_overrides) if (_fo?.field) _foMap[_fo.field] = _fo;
+    for (const _fo of _msgSpec.field_overrides) if (_fo?.field) _foMap[_canonFieldId(_fo.field)] = _fo;
   }
 
   // Apply the spec's field_overrides to the actual field values (once per message)
@@ -9091,7 +9096,7 @@ function renderFieldTable(msg) {
   if (!msg._ovrApplied && Object.keys(_foMap).length) {
     for (const _f of msg.fields || []) {
       if (!_f || _f.error) continue;
-      const _o = _foMap[_f.id];
+      const _o = _foMap[_canonFieldId(_f.id)];
       if (!_o) continue;
       if (_o.type) {
         const _req = _meReadTypeByteLen(_o.type);
@@ -9109,6 +9114,7 @@ function renderFieldTable(msg) {
           case 'hex':                _out = _meFmtHex(_f);            break;
           case 'ascii': case 'text': _out = _meFmtText(_f);          break;
           case 'ebcdic':             _out = _meFmtEbcdic(_f);         break;
+          case 'gmt-ts':             _out = _meFmtJulianTs(_f);       break;
         }
         if (_out != null) { _f.displayValue = String(_out); _f.displayOverride = _o.display; }
       }
@@ -9154,7 +9160,7 @@ function renderFieldTable(msg) {
     // plus " as <DISPLAY>" when a display override is set. Config comes from the
     // spec (_foMap) — the main parse renders declared types, so the field object
     // itself doesn't carry the override markers.
-    const _fo   = _foMap[f.id] || null;
+    const _fo   = _foMap[_canonFieldId(f.id)] || null;
     const _tOvr = _fo && _fo.type    ? _fo.type    : null;
     const _dOvr = _fo && _fo.display ? _fo.display : null;
     let descHtml, descText;
@@ -12960,7 +12966,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.273';
+const APP_VERSION  = '1.1.2.275';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15770,7 +15776,7 @@ function _meHtmlOverrides(item) {
   // Lookup maps so per-row UI can pre-fill state.
   const vlgMap = _meVlgLenMap(item);   // groupId → LEN leaf id (or null = first leaf)
   const foByField = new Map();
-  for (const e of fo) if (e?.field) foByField.set(e.field, e);
+  for (const e of fo) if (e?.field) foByField.set(_canonFieldId(e.field), e);
   // Single source of truth: the bitmap field id (or null). Truthy means the
   // spec uses bitmap-fields, so DE controls / VLG / "----" all key off this.
   const usesBitmapFields = !!_meItemBitmapField(item);
@@ -15793,7 +15799,7 @@ function _meHtmlOverrides(item) {
   // is taken from the field's own length (no fixed uint8/16/32/64 to pick — and
   // no "wrong width" error). Legacy uintN values still decode and are migrated.
   const TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-ascii','hex-ebcdic'];
-  const DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic'];
+  const DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts'];
   const selOpts = (opts, cur, ph) =>
     opts.map(o => `<option value="${o}"${(cur || '') === o ? ' selected' : ''}>${o || ph}</option>`).join('');
 
@@ -15885,7 +15891,7 @@ function _meHtmlOverrides(item) {
       }
 
       // Display override stays its own column.
-      const foEntry = foByField.get(row.id) || {};
+      const foEntry = foByField.get(_canonFieldId(row.id)) || {};
       const dispCell = `<td class="me-fm-fo"><select class="me-sel me-fo-sel" onchange="_meFoSetByField('${id}','display',this.value)">${selOpts(DISP_OPTS, foEntry.display, '')}</select></td>`;
 
       // # column — number only the leaves, empty for group rows (mirrors DDL Doc).
@@ -16072,6 +16078,12 @@ function _meResolveDEFieldList(item) {
 function _meWalkDEFields(defs, item) {
   const anchors = new Map((item?.de_map || []).map(e => [e.field, +e.de || 1]));
 
+  // A field is a "representative" occurrence when every OCCURS index in its id is
+  // the first ([01]). Non-representative occurrences are now shown as their own
+  // rows (full expansion), but they do NOT own or advance a DE — a repeated field
+  // is one logical DE. field_overrides are matched occurrence-independently.
+  const _isRepOcc = id => (String(id).match(/\[\d+\]/g) || []).every(l => l === '[01]');
+
   // Track REDEFINES on leaves so we can pass through to the UI for Hide Redef.
   const redefSet = new Set(defs.filter(d => d.isRedefines).map(d => d.id));
   // Capture each redef leaf's target so we can mirror DDL Doc's "↩ TARGET"
@@ -16089,7 +16101,6 @@ function _meWalkDEFields(defs, item) {
   // ── Pass 1: discover groups from leaf qualified names ───────────────────
   const childrenByPrefix = new Map();   // prefix → Set of immediate child ids
   for (const def of defs) {
-    if (def._occursPath && !def._occursPath.every(fr => fr.idx === 0)) continue;
     const parts = def.id.split('.');
     for (let i = 1; i < parts.length; i++) {
       const prefix = parts.slice(0, i).join('.');
@@ -16162,7 +16173,6 @@ function _meWalkDEFields(defs, item) {
   };
 
   for (const def of defs) {
-    if (def._occursPath && !def._occursPath.every(fr => fr.idx === 0)) continue;
     const parts = def.id.split('.');
 
     for (let i = 1; i < parts.length; i++) {
@@ -16188,7 +16198,9 @@ function _meWalkDEFields(defs, item) {
       // The current def is the first leaf under this prefix (prefixes are
       // emitted while walking defs in declaration order), so its offset IS
       // the group's start offset — same convention as DDL Doc.
-      assignDE(prefix, { isGroup: true, isTerminal, childCount, underTerminal: false, isRedef, redefTarget, dataType: 'GROUP', length: groupLength(prefix), offset: def.offset });
+      const _gextras = { isGroup: true, isTerminal, childCount, underTerminal: false, isRedef, redefTarget, dataType: 'GROUP', length: groupLength(prefix), offset: def.offset };
+      if (_isRepOcc(prefix)) assignDE(prefix, _gextras);
+      else                   out.push({ id: prefix, de: null, anchored: false, ..._gextras });
     }
 
     const parentPrefix = parts.slice(0, -1).join('.');
@@ -16200,8 +16212,10 @@ function _meWalkDEFields(defs, item) {
     const offset = def.offset;
     if (underTerminal) {
       out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal: true, isRedef, redefTarget, dataType, length, offset });
-    } else {
+    } else if (_isRepOcc(def.id)) {
       assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, offset });
+    } else {
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, offset });
     }
   }
   return out;
@@ -16596,8 +16610,11 @@ function _meFmToggleHelp() {
 function _meFoSetByField(fieldId, key, val) {
   const item = _meCurItem(); if (!item) return;
   if (!Array.isArray(item.field_overrides)) item.field_overrides = [];
-  let entry = item.field_overrides.find(e => e?.field === fieldId);
-  if (!entry) { entry = { field: fieldId }; item.field_overrides.push(entry); }
+  // Store overrides occurrence-independently: one entry per logical field, keyed
+  // by the [NN]-stripped id, so it applies to every occurrence of a repeated field.
+  const canon = _canonFieldId(fieldId);
+  let entry = item.field_overrides.find(e => e?.field != null && _canonFieldId(e.field) === canon);
+  if (!entry) { entry = { field: canon }; item.field_overrides.push(entry); }
   if (val) entry[key] = val;
   else     delete entry[key];
   // Garbage-collect an empty entry so we don't leave noise in storage.
@@ -17717,12 +17734,34 @@ function _meFmtEbcdic(f) {
   }).join('');
 }
 
+// Display 'gmt-ts' — decode the RAW bytes as a NonStop JULIANTIMESTAMP (64-bit
+// big-endian microseconds since the Julian-day epoch) and render as GMT date/time.
+// Unix epoch (1970-01-01 00:00 GMT) = Julian day 2440588 = 210866803200000000 µs,
+// so unixMicros = julianMicros − that offset. Reads rawHex directly, so no type
+// override is needed on the BINARY 64 field.
+const _JT_UNIX_EPOCH_US = 210866803200000000n;
+function _meFmtJulianTs(f) {
+  if (!f.rawHex) return String(f.value ?? '');
+  const bytes = f.rawHex.match(/.{1,2}/g).map(h => parseInt(h, 16));
+  let jt = 0n;
+  for (const b of bytes) jt = jt * 256n + BigInt(b);
+  const unixUs = jt - _JT_UNIX_EPOCH_US;
+  const unixMs = Number(unixUs / 1000n);
+  if (!Number.isFinite(unixMs)) return String(f.value ?? '');
+  const d = new Date(unixMs);
+  if (isNaN(d.getTime())) return String(f.value ?? '');
+  const p = (n, w = 2) => String(n).padStart(w, '0');
+  const us = Number(((unixUs % 1000000n) + 1000000n) % 1000000n);
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} `
+       + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}.${p(us, 6)} GMT`;
+}
+
 // Look up item.field_overrides for `def.id`, run the matching formatter, and
 // attach the result as `f.displayValue` (plus `f.displayOverride` for hover
 // hints). Errored fields and fields with no override are left alone.
 function _meApplyDisplayOverride(f, def, ctx) {
   if (!f || f.error) return;
-  const fo = (ctx.item?.field_overrides || []).find(e => e?.field === def.id);
+  const fo = (ctx.item?.field_overrides || []).find(e => e?.field != null && _canonFieldId(e.field) === _canonFieldId(def.id));
   const disp = fo?.display;
   if (!disp) return;
   let out;
@@ -17733,6 +17772,7 @@ function _meApplyDisplayOverride(f, def, ctx) {
     case 'ascii':    // 'text' kept as a back-compat alias for pre-rename specs
     case 'text':     out = _meFmtText(f); break;
     case 'ebcdic':   out = _meFmtEbcdic(f); break;
+    case 'gmt-ts':   out = _meFmtJulianTs(f); break;
     default: return;
   }
   if (out !== undefined && out !== null) {
@@ -17749,7 +17789,7 @@ function _meApplyDisplayOverride(f, def, ctx) {
 function _meApplyTypeOverride(f, def, ctx, inlineType) {
   let typeOverride = inlineType || null;
   if (!typeOverride) {
-    const fo = (ctx.item?.field_overrides || []).find(e => e?.field === def.id);
+    const fo = (ctx.item?.field_overrides || []).find(e => e?.field != null && _canonFieldId(e.field) === _canonFieldId(def.id));
     typeOverride = fo?.type || null;
   }
   if (!typeOverride) return;

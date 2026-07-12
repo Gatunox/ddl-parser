@@ -878,6 +878,29 @@ test('validator rejects COBOL-style comma terminators', () => {
   assert.ok(validation.errors.some(e => e.includes('statement ends with a comma')), 'comma terminator error reported');
 });
 
+test('[REGRESSION] validator sizes nested OCCURS for REDEFINES checks (ancestor OCCURS multipliers)', () => {
+  // ACCT = MULT OCCURS 2 { 2+1+1 + INFO OCCURS 5 { NUM 19 } } + PIN 1 + SAVE 171
+  //      = 2*(4 + 5*19) + 172 = 2*99 + 172 = 370.
+  const body = `
+      02 ACCT REDEFINES RQST.
+         04 MULT OCCURS 2 TIMES.
+            06 ACCT-TYP PIC 9(2).
+            06 CNT PIC X.
+            06 USER-FLD7 PIC X.
+            06 INFO OCCURS 5 TIMES.
+               08 NUM PIC X(19).
+         04 PIN-VRFY-FLG PIC 9.
+         04 SAVE-AREA PIC X(171).`;
+  // Equal-size target → no size warning (previously ACCT was under-counted → false warning).
+  const ok = validateDDLErrors(`DEF T.\n  02 RQST PIC X(370).${body}\nEND.\n`, new Map());
+  assert.ok(!ok.warnings.some(w => /smaller structure/.test(w)) && !ok.errors.some(e => /REDEFINES size mismatch/.test(e)),
+    'nested-OCCURS ACCT sizes to 370 = RQST → no REDEFINES warning');
+  // Smaller target → ACCT (370) is larger → real mismatch is still reported.
+  const bad = validateDDLErrors(`DEF T.\n  02 RQST PIC X(200).${body}\nEND.\n`, new Map());
+  assert.ok(bad.errors.some(e => /REDEFINES size mismatch/.test(e) && e.includes('370')),
+    'ACCT computed as 370 bytes (nested OCCURS counted), flags mismatch vs RQST 200');
+});
+
 test('DDL name validity: invalid characters, bad start char, and length', () => {
   // Invalid character (colon) in a field name.
   const badChar = validateDDLErrors('DEF REC.\n  02 DE-33: PIC X(2).\nEND REC.\n', new Map());

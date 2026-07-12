@@ -2729,21 +2729,32 @@ function validateDDLErrors(text, repoTypeRegistry) {
     if (f.lvl >= 66) return 0;
     // Group: sum leaf descendants, skipping REDEFINES fields and their subtrees.
     // A REDEFINES field reuses existing storage — it must NOT be added again.
+    // Each leaf is multiplied by its own OCCURS *and* by the OCCURS of every
+    // enclosing intermediate group (nested OCCURS), tracked via occStack — so
+    // e.g. MULT OCCURS 2 containing INFO OCCURS 5 counts NUM 2×5 = 10 times.
     let total = 0;
     let skipAbove = null;   // when set, skip everything at lvl > skipAbove
+    const occStack = [];    // enclosing OCCURS groups: { lvl, occ }
     for (let j = idx + 1; j < fields.length; j++) {
       const c = fields[j];
       if (c.lvl <= f.lvl || c.lvl >= 66) break;
+      // Pop any enclosing groups we've now exited.
+      while (occStack.length && c.lvl <= occStack[occStack.length - 1].lvl) occStack.pop();
       // Leaving a REDEFINES subtree?
       if (skipAbove !== null) {
         if (c.lvl <= skipAbove) skipAbove = null; else continue;
       }
       // Field (leaf or group) that redefines something → skip it and its children
       if (c.redefines) { skipAbove = c.lvl; continue; }
+      const cocc = (c.occurs !== null)
+        ? Math.max(1, c.occursTo !== null ? c.occursTo : c.occurs) : 1;
       if (c.pic || c.typeStr || c.userTypeRef) {
-        const cn = (c.occurs !== null)
-          ? Math.max(1, c.occursTo !== null ? c.occursTo : c.occurs) : 1;
-        total += leafSize(c) * cn;
+        let mult = cocc;
+        for (const fr of occStack) mult *= fr.occ;   // ancestor OCCURS multipliers
+        total += leafSize(c) * mult;
+      } else {
+        // Intermediate group — its OCCURS multiplies every descendant leaf.
+        occStack.push({ lvl: c.lvl, occ: cocc });
       }
     }
     return total;
@@ -12966,7 +12977,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.275';
+const APP_VERSION  = '1.1.2.279';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13854,6 +13865,11 @@ const _TUT_STEPS = [
     target: '#ddlScopePath', prefer: 'bottom',
     title: 'Manual DDL Override',
     body: 'Click any DDL node in the tree to make it the active scope \u2014 the path is shown here.\n\nWith a scope selected, pressing \u25b6 Parse forces that exact DDL instead of auto-detecting. Useful when you know exactly which definition applies.',
+  },
+  {
+    target: '#settingsBtn', prefer: 'left',
+    title: 'Data Editor \u2014 Message Detection & Overrides',
+    body: 'Open Settings (\u2699, top-right), expand the Data Detection section, then click \u229e Data Editor to control how messages are recognized and parsed.\n\nEach message type has an ordered list of recognizers \u2014 byte-level conditions (a literal at an offset, an MTI pattern, a length, a bitmap, a source/destination) that must all pass to match; the first matching type wins. A type can also carry DDL bindings, a parse spec, and field overrides that reinterpret a field (uint-be/le, ascii, ebcdic, hex) or format its value (amount, date/time, GMT timestamp).\n\nBuilt-in defaults cover ISO 8583, STM, PSTM, Base24 and NDC \u2014 edit them or add your own. The Test panel lets you paste a sample and see exactly what detects and parses.',
   },
   {
     target: '#ddlTreePane', prefer: 'right',
@@ -19006,30 +19022,29 @@ function _meSave() {
             </ul>
           </div></div>
 
-          <!-- 4b. DDL Matching -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Matching &amp; Parse Flow <span class="h-sub-arrow">+</span></div>
+          <!-- 4b. Message Detection & DDL Matching -->
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Detection &amp; DDL Matching <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
-            <p style="margin:0 0 6px">When <strong>▶ Parse</strong> is clicked the app selects a DDL through four priority levels:</p>
-            <ol style="padding-left:18px;margin:0 0 8px">
-              <li style="margin-bottom:6px"><strong>Manual Override (Priority 1)</strong> — if you have a single DDL node selected in the tree <em>and</em> the input contains exactly one message, a confirmation dialog asks whether to use that DDL exclusively. The <span style="font-family:var(--font-mono);font-size:10px;background:var(--bg-input);padding:1px 3px;border-radius:2px">USER</span> badge appears in the results when this path is used.</li>
-              <li style="margin-bottom:6px"><strong>Message Type Detection (Step 3)</strong> — the decoded message content is matched against known protocol signatures:
+            <p style="margin:0 0 6px"><strong>Detection is configurable.</strong> Open <strong>Settings → Data Detection → ⊞ Data Editor</strong> (expand the Data Detection section) to define message types. Each type carries an ordered list of <strong>recognizers</strong> — byte-level conditions such as a <code>literal</code> at an offset, an <code>mti</code> pattern, <code>min-length</code>/<code>max-length</code>, a <code>numeric</code>/<code>regex</code> field, a <code>bitmap</code>, or a <code>source</code>/<code>destination</code>/<code>filename</code> match.</p>
+            <ul style="padding-left:16px;margin:0 0 8px;font-size:10.5px">
+              <li><strong>All</strong> recognizers of a type must pass for it to match (first failing one short-circuits).</li>
+              <li>Types are tried in <strong>sidebar order</strong>; the <strong>first</strong> whose recognizers all pass wins.</li>
+              <li>Each type can also carry <strong>DDL bindings</strong>, a <strong>parse spec</strong>, a DE map, and field overrides.</li>
+              <li>Built-in defaults cover ISO 8583, STM, PSTM, Base24 and NDC; edit or add your own. A message no type recognizes shows <em>Unknown</em> — click <em>Data Detection</em> in the results to define a rule.</li>
+            </ul>
+            <p style="margin:8px 0 4px"><strong>When ▶ Parse runs:</strong></p>
+            <ol style="padding-left:18px;margin:0">
+              <li style="margin-bottom:6px"><strong>Manual override</strong> — if a single DDL node is selected in the tree <em>and</em> the input is one message, a dialog offers to use that DDL exclusively (the <span style="font-family:var(--font-mono);font-size:10px;background:var(--bg-input);padding:1px 3px;border-radius:2px">USER</span> badge shows in results).</li>
+              <li style="margin-bottom:6px"><strong>Detection → bound DDL.</strong> The recognizers run. If a type matches <em>and</em> it has a DDL binding, that bound DDL is used directly — compiled only if its content changed, then scored once. If the bound DDL scores below <strong>95%</strong>, an amber <span style="color:#f39c12">⚠</span> line flags it so you can verify the binding is right.</li>
+              <li style="margin-bottom:6px"><strong>DDL scoring.</strong> When nothing matches, or a matched type has no binding, candidate DDLs are compiled and scored. The score blends <em>accuracy</em> — per-byte type validity, with hard errors weighted 1.0 and soft type mismatches 0.7 — and <em>coverage</em> (bytes consumed ÷ message length), so a DDL that both fits the bytes and explains most of the message wins:
                 <ul style="padding-left:14px;margin:4px 0 0;font-size:10.5px">
-                  <li>Starts with <code>ISO</code> → ISO 8583 (SWITCH volume)</li>
-                  <li><code>0XYZ01</code> + binary bytes → Base24 STM · ATM volume<br><span style="color:var(--text-dim)">X=1–9 · Y=1,2,3,4,8,9 · Z=1,2,3,4,5 · bytes 6–7 non-alphanumeric</span></li>
-                  <li><code>0XYZ02</code> + binary bytes → Base24 PSTM · POS volume</li>
-                  <li><code>990601</code> / <code>990701</code> → STM &nbsp;|&nbsp; <code>990602</code> / <code>990702</code> → PSTM</li>
-                  <li><code>99xx</code> (all others) → Base24 Generic · BASE volume</li>
-                  <li><code>0XYZ</code> + 16 hex chars → ISO 8583 fallback</li>
-                </ul>
-              </li>
-              <li><strong>Auto-detect Fallback</strong> — every DDL in the preferred volume (or all volumes if unknown type) is tried. Each is scored: <em>successfully parsed fields ÷ total attempted</em>. Outcome depends on the number of DDLs with score &gt; 0:
-                <ul style="padding-left:14px;margin:4px 0 0;font-size:10.5px">
-                  <li><strong>Zero matches</strong> → <em>"No matching DDL for this message"</em> shown in results panel</li>
-                  <li><strong>One match</strong> → used automatically</li>
-                  <li><strong>Multiple matches</strong> → a picker lists each DDL and its score; you choose one for the session</li>
+                  <li><strong>Zero</strong> → <em>"No matching DDL for this message"</em></li>
+                  <li><strong>One</strong> → used automatically</li>
+                  <li><strong>Multiple</strong> → a picker lists each DDL and its score; you pick one for the session</li>
                 </ul>
               </li>
             </ol>
+            <p style="margin:6px 0 0;color:var(--text-dim);font-size:10.5px">The parse-progress overlay shows each step live — detection, any compilation (<em>Compiling 1 of N</em>), and scoring — so long DDL trees don't look frozen.</p>
           </div></div>
 
           <!-- 5. Message Formats -->
@@ -19053,7 +19068,8 @@ function _meSave() {
               <li>Hover a row → previews byte highlighting without changing selection</li>
               <li><kbd>↑ ↓</kbd> — move field selection up / down</li>
               <li><strong>Filter bar</strong> — type to narrow results by field ID or value</li>
-              <li><strong>Columns</strong> dropdown — show or hide Field, Description, Length, Value, Trk</li>
+              <li><strong>Columns</strong> dropdown — show or hide Field, Type / Description, Length, Value, Trk</li>
+              <li><strong>Type / Description</strong> column — shows the field's DDL type (or HEADING). When a field has an override configured for its message type it reads <span style="font-family:var(--font-mono);font-size:10px"><span style="color:var(--text-dim)">newtype</span> ↩ <span style="color:rgba(88,166,255,.9)">original</span></span> (redefine-style, e.g. <span style="font-family:var(--font-mono);font-size:10px">uint-be ↩ TYPE BINARY 16</span>) plus <span style="font-family:var(--font-mono);font-size:10px">as DISPLAY</span> when a display override (amount, datetime, hex, ascii, ebcdic, gmt-ts) is set — and the Value column shows the converted result.</li>
               <li><strong>Raw Hex</strong> column appears automatically when the Raw Message panel is collapsed</li>
               <li>Drag any <strong>column header edge</strong> to resize that column</li>
               <li><strong>Hide Redef</strong> button — toggle visibility of REDEFINES fields</li>

@@ -43,6 +43,11 @@ const RESERVED = [
   'auditSelectRecord', 'auditApplyFilter', 'auditToggleCfgDialog', 'auditApplyCfg',
   'auditInspectRecord', 'auditParseSelected', 'auditClosePopup',
   'auditToggleDumpMode', 'auditCopyDumpToClipboard', 'auditNavPopup',
+  // Message Editor
+  'openMsgEditor', 'closeMsgEditor',
+  '_meSectionToggle', '_meToggleRecHelp', '_meSave', '_meAddMsg', '_meAddValidator',
+  '_meToggleRec', '_meMoveRec', '_meDelRec', '_meRecTypeChange',
+  '_meRecSave', '_meRecCancel', '_meField', '_meNewRec',
 ];
 
 // ── bundle CodeMirror ──────────────────────────────────────────────────────

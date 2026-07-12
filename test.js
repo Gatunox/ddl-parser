@@ -1061,6 +1061,44 @@ test('uint64-be/le overrides decode 8 bytes to a decimal integer via BigInt', ()
   eq(ctx.fields.find(x => x.id === 'LE').value, '123456', 'uint64-le decodes little-endian');
 });
 
+test('uint-be / uint-le are size-adaptive (width = field length) and migrate from legacy uintN', () => {
+  S.ddlTree = { VOL: { SV: { 'UADDL': `
+    DEF REC.
+      02 B1 TYPE BINARY 8.
+      02 B2 TYPE BINARY 16.
+      02 B4 TYPE BINARY 32.
+      02 B8 TYPE BINARY 64.
+      02 L2 TYPE BINARY 16.
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = migrateSpec({
+    ddl_bindings: ['VOL/SV/UADDL/REC'],
+    field_overrides: [
+      { field: 'B1', type: 'uint-be' },
+      { field: 'B2', type: 'uint-be' },
+      { field: 'B4', type: 'uint-be' },
+      { field: 'B8', type: 'uint-be' },
+      { field: 'L2', type: 'uint16-le' },   // legacy → migrates to uint-le
+    ],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+  });
+  eq(item.field_overrides.find(o => o.field === 'L2').type, 'uint-le', 'legacy uint16-le migrated to uint-le');
+  const ctx = meExecParseSpec(item, Uint8Array.from([
+    0xFF,                                     // B1 → 255
+    0x01, 0xF4,                               // B2 → 500
+    0x00, 0x01, 0xE2, 0x40,                   // B4 → 123456
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xE2, 0x40, // B8 → 123456
+    0xF4, 0x01,                               // L2 (le) → 500
+  ]));
+  const v = id => ctx.fields.find(x => x.id === id).value;
+  eq(v('B1'), '255',    'uint-be on a 1-byte field');
+  eq(v('B2'), '500',    'uint-be on a 2-byte field');
+  eq(v('B4'), '123456', 'uint-be on a 4-byte field');
+  eq(v('B8'), '123456', 'uint-be on an 8-byte field');
+  eq(v('L2'), '500',    'migrated uint-le on a 2-byte field');
+});
+
 test('field_overrides reject incompatible lengths without replacing the parsed field', () => {
   S.ddlTree = { VOL: { SV: { 'BADOVR': `
     DEF REC.

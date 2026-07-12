@@ -6032,6 +6032,12 @@ function parseMessage(bytes, defs, rawBytes) {
     if (Array.isArray(spec.field_overrides)) {
       for (const fo of spec.field_overrides) {
         if (fo && fo.display === 'text') fo.display = 'ascii';
+        // Fixed-width uintN collapsed to size-adaptive uint-be / uint-le.
+        if (fo && typeof fo.type === 'string') {
+          const t = fo.type.toLowerCase();
+          if (/^uint(16|32|64)-le$/.test(t))                          fo.type = 'uint-le';
+          else if (/^uint(8|16|32|64)(-be)?$|^byte$|^word$|^dword$/.test(t)) fo.type = 'uint-be';
+        }
       }
     }
     return spec;
@@ -12954,7 +12960,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.272';
+const APP_VERSION  = '1.1.2.273';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15783,7 +15789,10 @@ function _meHtmlOverrides(item) {
   // bindings (deduped by id), combining: DE number controls, VLG toggle,
   // type override, display override.
   const fieldList = _meResolveDEFieldList(item);
-  const TYPE_OPTS = ['','uint8','uint16-be','uint16-le','uint32-be','uint32-le','uint64-be','uint64-le','binary','ascii','ebcdic','hex-ascii','hex-ebcdic'];
+  // uint-be / uint-le decode the field's bytes as an unsigned integer; the width
+  // is taken from the field's own length (no fixed uint8/16/32/64 to pick — and
+  // no "wrong width" error). Legacy uintN values still decode and are migrated.
+  const TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-ascii','hex-ebcdic'];
   const DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic'];
   const selOpts = (opts, cur, ph) =>
     opts.map(o => `<option value="${o}"${(cur || '') === o ? ' selected' : ''}>${o || ph}</option>`).join('');
@@ -17582,7 +17591,13 @@ function _meReadApplyTypeOverride(f, type) {
   const beBig = bs => bs.reduce((n, b) => n * BigInt(256) + BigInt(b), BigInt(0));
   const leBig = bs => [...bs].reverse().reduce((n, b) => n * BigInt(256) + BigInt(b), BigInt(0));
   let v = null;
-  if (/^UINT8$|^BYTE$|^BINARY\s*8$/i.test(t))           v = bytes[0] ?? 0;
+  // Size-adaptive: decode the whole field as an unsigned integer — width is the
+  // field's own byte length (BigInt handles any width incl. 8-byte). Endianness
+  // only; no fixed uint8/16/32/64 to choose and no length-mismatch error.
+  if (/^UINT-LE$/i.test(t))                             v = leBig(bytes).toString();
+  else if (/^UINT-BE$/i.test(t))                        v = beBig(bytes).toString();
+  // Fixed-width (legacy) — still accepted for back-compat and inline parse_spec.
+  else if (/^UINT8$|^BYTE$|^BINARY\s*8$/i.test(t))      v = bytes[0] ?? 0;
   else if (/^UINT16-LE$|^BINARY\s*16$/i.test(t) && /LE/.test(t))  v = leInt(bytes.slice(0, 2));
   else if (/^UINT16(-BE)?$|^WORD$|^BINARY\s*16$/i.test(t))        v = beInt(bytes.slice(0, 2));
   else if (/^UINT32-LE$/i.test(t))                       v = leInt(bytes.slice(0, 4));

@@ -1481,6 +1481,20 @@ test('falls back to ASCII parse_spec when binary input has no binary variant', (
   deepEq(ctx.fields.map(x => x.id), ['ASC'], 'ASCII fallback emitted expected field');
 });
 
+// ── Default format specs ──────────────────────────────────────────────────────
+console.log('\ndefault format specs');
+
+test('defaults: Base24 POS @4 = "02" (ATM stays "01"); all ISO 8583 vols = SWITCH', () => {
+  storage.removeItem('up_format_specs');   // sandbox storage → defaults path
+  const specs = domEl._fmtGetData().specs;
+  const lit4 = label => specs.find(s => s.label === label)
+    .recognizers.find(r => r.type === 'literal' && r.offset === 4).value;
+  eq(lit4('Base24 POS Generic'), '02', 'POS @4 literal');
+  eq(lit4('Base24 ATM Generic'), '01', 'ATM @4 literal');
+  deepEq(specs.filter(s => s.name === 'ISO').map(s => s.vol),
+    ['SWITCH', 'SWITCH', 'SWITCH'], 'ISO 8583 Standard/BIC/Switch vol');
+});
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

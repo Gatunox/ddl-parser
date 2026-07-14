@@ -82,6 +82,8 @@ _t.stripJsonc         = _stripJsonc;
 _t.migrateSpec        = window._migrateSpec;
 _t.fmtTestSpecs       = window._fmtTestSpecs;
 _t.meExecParseSpec    = _meExecParseSpec;
+_t.mePsKnownDDLIds    = _mePsKnownDDLIds;
+_t.meFmCountUnresolved = _meFmCountUnresolved;
 _t.meWalkDEFields     = _meWalkDEFields;
 _t.meCollectBindingDefs = _meCollectBindingDefs;
 _t.getDDLFromPath     = getDDLFromPath;
@@ -107,7 +109,7 @@ const {
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
   stripJsonc, migrateSpec, fmtTestSpecs,
-  meExecParseSpec, S, P,
+  meExecParseSpec, mePsKnownDDLIds, meFmCountUnresolved, S, P,
 } = sandbox._t;
 
 // ── Test harness ────────────────────────────────────────────────────────────
@@ -1479,6 +1481,66 @@ test('falls back to ASCII parse_spec when binary input has no binary variant', (
   const ctx = meExecParseSpec(item, Buffer.from('X'));
   eq(ctx.parseSpecUsed, 'ascii (fallback)', 'ASCII fallback used');
   deepEq(ctx.fields.map(x => x.id), ['ASC'], 'ASCII fallback emitted expected field');
+});
+
+// ── read of a repeated (OCCURS) field/group by canonical id ──────────────────
+console.log('\nread of OCCURS field/group by canonical id');
+
+const SRVCS_DDL = `DEF PSTM-REC.
+  02 NUM-SERVICES  PIC 9(2).
+  02 SRVCS OCCURS 30 TIMES.
+    04 TYP           PIC X(2).
+    04 TRAN-PROFILE  PIC X.
+END
+`;
+
+test('read "SRVCS" in read-while consumes one group occurrence per call', () => {
+  S.ddlTree = { VOL: { SV: { PSTMDDL: SRVCS_DDL } } };
+  S.inputFormat = 'ascii';
+  const item = {
+    ddl_bindings: ['VOL/SV/PSTMDDL'],
+    parse_spec_ascii: [
+      { 'read-ddl': { until: 'NUM-SERVICES' } },
+      { 'read-while': { while: { type: 'regex', length: 2, pattern: '^[A-Za-z*]{2}$' },
+                        body: [{ read: 'SRVCS' }] } },
+    ],
+  };
+  const ctx = meExecParseSpec(item, Buffer.from('02AB1CD2'));
+  const errs = ctx.fields.filter(f => f.error).map(f => f.error);
+  deepEq(errs, [], 'no errors');
+  deepEq(ctx.fields.map(f => [f.id, f.value]), [
+    ['NUM-SERVICES', '02'],
+    ['SRVCS[01].TYP', 'AB'], ['SRVCS[01].TRAN-PROFILE', '1'],
+    ['SRVCS[02].TYP', 'CD'], ['SRVCS[02].TRAN-PROFILE', '2'],
+  ], 'two occurrences read in order');
+});
+
+test('parse-spec lint id set includes canonical (occurrence-stripped) ids', () => {
+  S.ddlTree = { VOL: { SV: { PSTMDDL: SRVCS_DDL } } };
+  const ids = mePsKnownDDLIds({ ddl_bindings: ['VOL/SV/PSTMDDL'] });
+  eq(ids.has('SRVCS'), true, 'canonical group id');
+  eq(ids.has('SRVCS.TYP'), true, 'canonical leaf id');
+  eq(ids.has('SRVCS[01].TYP'), true, 'raw occurrence id still valid');
+  eq(ids.has('NUM-SERVICES'), true, 'plain id');
+});
+
+// ── Field Map unresolved-TYPE counter ─────────────────────────────────────────
+console.log('\nField Map unresolved-TYPE counter');
+
+test('cross-file TYPE refs are not counted as unresolved', () => {
+  const mainDDL  = 'DEF MAINREC.\n  02 PLAIN PIC X(2).\n  02 XREF TYPE FOOTYPE.\nEND\n';
+  const typesDDL = 'DEF FOOTYPE.\n  02 A PIC X(5).\nEND\n';
+  S.ddlTree = { VOL: { SV: { MAIN: mainDDL, TYPES: typesDDL } } };
+  const r = meFmCountUnresolved('VOL/SV/MAIN/MAINREC');
+  eq(r?.count, 0, 'no unresolved items when the TYPE lives in another file');
+});
+
+test('a genuinely missing TYPE ref is still counted', () => {
+  const mainDDL = 'DEF MAINREC.\n  02 PLAIN PIC X(2).\n  02 XREF TYPE NOWHERE.\nEND\n';
+  S.ddlTree = { VOL: { SV: { MAIN: mainDDL } } };
+  const r = meFmCountUnresolved('VOL/SV/MAIN/MAINREC');
+  eq(r?.count, 1, 'missing TYPE counted');
+  eq(r?.sample?.[0]?.includes('XREF'), true, 'sample names the field');
 });
 
 // ── Default format specs ──────────────────────────────────────────────────────

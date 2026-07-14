@@ -1654,6 +1654,14 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
    colour so an active override / VLG selection stands out. */
 .me-vlg-sel:has(option:checked:not([value=""])),
 .me-fo-sel:has(option:checked:not([value=""])){color:var(--accent);}
+/* Lazy override cells — fake-select span, real <select> materializes on click */
+.me-fo-cell{cursor:pointer;}
+.me-fo-fake{box-sizing:border-box;display:inline-flex;align-items:center;background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text-dim);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);height:20px;padding:0 4px;width:90px;overflow:hidden;white-space:nowrap;vertical-align:middle;}
+.me-fo-fake.set{color:var(--accent);}
+.me-fo-fake .me-fo-caret{margin-left:auto;opacity:.55;font-size:8px;padding-left:4px;}
+.me-fm-dt .me-fo-fake{width:100%;min-width:124px;color:var(--text);}
+.me-fm-dt .me-fo-fake.set{color:var(--accent);}
+.me-fm-dt-bad .me-fo-fake{border-color:#f85149;}
 /* Accent-on shared with DDL Doc buttons */
 .btn-accent-on{border-color:var(--accent);color:var(--accent);background:rgba(var(--accent-rgb),0.10);}
 .me-ov-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);margin-bottom:3px;}
@@ -3855,15 +3863,38 @@ function toggleDDLDocCollapseAll() {
 
 function filterDDLDoc(q) {
   const query = q.trim().toLowerCase();
-  document.querySelectorAll('#ddlDocBody tbody tr').forEach(tr => {
-    if (tr.classList.contains('ddl-doc-sec-hdr') || tr.classList.contains('ddl-doc-foot') ||
-        tr.classList.contains('ddl-doc-grp')) {
+  const rows = document.querySelectorAll('#ddlDocBody tbody tr');
+  if (!query) { rows.forEach(tr => tr.classList.remove('row-filter-hide')); return; }
+  // Group rows show only when the group itself matches or some descendant
+  // matches — walk in document order keeping the ancestor-group stack, mark
+  // ancestors visible on every match, then apply visibility at the end.
+  const grpStack = [];   // ancestors of the current row
+  const grpAll   = [];   // every group row seen, with its computed visibility
+  const popTo = qn => {
+    while (grpStack.length && !(qn + '.').startsWith(grpStack[grpStack.length - 1].qn + '.'))
+      grpStack.pop();
+  };
+  rows.forEach(tr => {
+    if (tr.classList.contains('ddl-doc-sec-hdr') || tr.classList.contains('ddl-doc-foot')) {
       tr.classList.remove('row-filter-hide');
+      grpStack.length = 0;
+      return;
+    }
+    const qn = tr.dataset.qn || '';
+    popTo(qn);
+    if (tr.classList.contains('ddl-doc-grp')) {
+      const entry = { tr, qn, visible: qn.toLowerCase().includes(query) };
+      if (entry.visible) grpStack.forEach(g => g.visible = true);
+      grpStack.push(entry);
+      grpAll.push(entry);
       return;
     }
     const text = (tr.dataset.search || tr.textContent || '').toLowerCase();
-    tr.classList.toggle('row-filter-hide', !!query && !text.includes(query));
+    const match = text.includes(query);
+    tr.classList.toggle('row-filter-hide', !match);
+    if (match) grpStack.forEach(g => g.visible = true);
   });
+  grpAll.forEach(g => g.tr.classList.toggle('row-filter-hide', !g.visible));
 }
 
 // ============================================================
@@ -11658,8 +11689,27 @@ function buildUnresolvedRefs() {
 
 // Look up a compiled DDL from a path (used by Data Detection bindings).
 // Supports 3-part (VOL/SV/NAME) and 4-part (VOL/SV/NAME/DEFNAME) paths.
+// Compile cache for getDDLFromPath — parsing a huge DDL costs tens of ms (or
+// worse on old hardware) and hot paths call this repeatedly: binding
+// validation on every keystroke, Field Map render, parse-spec lint, engine
+// test runs. Keyed by path; invalidated by DDL-tree version and DE-override
+// version. Cached results are shared — callers must treat defs as read-only.
+const _getDDLPathCache = new Map();   // path → { treeV, deV, result }
+let _deOvrVersion = 0;                // bumped wherever S.deOverrides changes
+
 function getDDLFromPath(ddlPath) {
   if (!ddlPath) return null;
+  // Validity = version counter + tree object identity (covers wholesale
+  // S.ddlTree reassignment, which doesn't bump the version).
+  const hit = _getDDLPathCache.get(ddlPath);
+  if (hit && hit.treeV === _ddlTreeVersion && hit.deV === _deOvrVersion && hit.tree === S.ddlTree)
+    return hit.result;
+  const result = _getDDLFromPathUncached(ddlPath);
+  _getDDLPathCache.set(ddlPath, { treeV: _ddlTreeVersion, deV: _deOvrVersion, tree: S.ddlTree, result });
+  return result;
+}
+
+function _getDDLFromPathUncached(ddlPath) {
   const parts = ddlPath.split('/');
   if (parts.length < 3) return null;
   const typeReg = buildRepoTypeRegistry();
@@ -11793,10 +11843,11 @@ function applyDEOverrides(layout, overrides) {
   layout.deByBit = new Map(layout.dataElements.map(e => [e.bitNum, e]));
 }
 function saveDeOverrides() {
+  _deOvrVersion++;   // invalidate the getDDLFromPath compile cache
   _kvSet('de_overrides', JSON.stringify(S.deOverrides));
 }
 function loadDeOverrides() {
-  try { const s = _kvGet('de_overrides'); if (s) S.deOverrides = JSON.parse(s); } catch(e) {}
+  try { const s = _kvGet('de_overrides'); if (s) { S.deOverrides = JSON.parse(s); _deOvrVersion++; } } catch(e) {}
 }
 
 // (DDLMM load/save and type-mapping helpers removed.)
@@ -12977,7 +13028,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.283';
+const APP_VERSION  = '1.1.2.284';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15229,6 +15280,14 @@ function _mePsKnownDDLIds(item) {
       // Group prefixes are valid refs too (read GROUP, until GROUP, …)
       const parts = d.id.split('.');
       for (let i = 1; i < parts.length; i++) ids.add(parts.slice(0, i).join('.'));
+      // Occurrence-stripped (canonical) forms: OCCURS fields/groups are emitted
+      // as SRVCS[01].TYP…, but specs reference them as SRVCS / SRVCS.TYP.
+      const canon = _canonFieldId(d.id);
+      if (canon !== d.id) {
+        ids.add(canon);
+        const cp = canon.split('.');
+        for (let i = 1; i < cp.length; i++) ids.add(cp.slice(0, i).join('.'));
+      }
     }
   }
   _mePsLintIdCache = { key, ids };
@@ -15636,7 +15695,16 @@ function _meBindValidate(path) {
   return getDDLFromPath(path.trim()) ? 'ok' : 'missing';
 }
 
+let _meDDLEntriesCache = { treeV: -1, tree: null, entries: null };
 function _meDDLEntries() {
+  if (_meDDLEntriesCache.treeV === _ddlTreeVersion && _meDDLEntriesCache.tree === S.ddlTree
+      && _meDDLEntriesCache.entries)
+    return _meDDLEntriesCache.entries;
+  const entries = _meDDLEntriesUncached();
+  _meDDLEntriesCache = { treeV: _ddlTreeVersion, tree: S.ddlTree, entries };
+  return entries;
+}
+function _meDDLEntriesUncached() {
   const entries = [];
   const tree = S.ddlTree || {};
   for (const vol of Object.keys(tree).sort()) {
@@ -15661,8 +15729,14 @@ let _meDropEntries = [], _meDropBindIdx = -1, _meDropFocusIdx = -1;
 function _meBindInput(idx, val) {
   _meBindSet(idx, val);
   _meBindShowDrop(idx);
-  // Live revalidation — repaint the badge + input border without a full
-  // section re-render (the input keeps focus while typing).
+  _meBindRepaint(idx, val);
+}
+
+// Live revalidation — repaint the badge + input border without a full
+// section re-render (the input keeps focus while typing). Shared by the
+// typing path AND the suggestion-pick path: picking used to skip it, leaving
+// the red border of the last typed (unresolved) prefix on a valid selection.
+function _meBindRepaint(idx, val) {
   const state  = _meBindValidate(val);
   const inp    = document.getElementById('me-bind-inp-'    + idx);
   const badge  = document.getElementById('me-bind-status-' + idx);
@@ -15751,6 +15825,7 @@ function _meBindPick(idx, path) {
   const inp = document.getElementById('me-bind-inp-' + idx);
   if (inp) inp.value = path;
   _meBindSet(idx, path);
+  _meBindRepaint(idx, path);
   const drop = document.getElementById('me-ddl-drop');
   if (drop) drop.style.display = 'none';
   _meDropEntries = []; _meDropBindIdx = -1; _meDropFocusIdx = -1;
@@ -15811,13 +15886,6 @@ function _meHtmlOverrides(item) {
   // bindings (deduped by id), combining: DE number controls, VLG toggle,
   // type override, display override.
   const fieldList = _meResolveDEFieldList(item);
-  // uint-be / uint-le decode the field's bytes as an unsigned integer; the width
-  // is taken from the field's own length (no fixed uint8/16/32/64 to pick — and
-  // no "wrong width" error). Legacy uintN values still decode and are migrated.
-  const TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-ascii','hex-ebcdic'];
-  const DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts'];
-  const selOpts = (opts, cur, ph) =>
-    opts.map(o => `<option value="${o}"${(cur || '') === o ? ' selected' : ''}>${o || ph}</option>`).join('');
 
   let dmHtml = '';
   if (!fieldList) {
@@ -15906,9 +15974,11 @@ function _meHtmlOverrides(item) {
         vlgCell = `<td class="me-fm-vlg"></td>`;
       }
 
-      // Display override stays its own column.
+      // Display override stays its own column. Rendered as a lightweight
+      // click-to-edit cell — a real <select> materializes on click. Huge DDLs
+      // produce thousands of rows; two live selects per row froze the open.
       const foEntry = foByField.get(_canonFieldId(row.id)) || {};
-      const dispCell = `<td class="me-fm-fo"><select class="me-sel me-fo-sel" onchange="_meFoSetByField('${id}','display',this.value)">${selOpts(DISP_OPTS, foEntry.display, '')}</select></td>`;
+      const dispCell = `<td class="me-fm-fo me-fo-cell" data-kind="display" data-fid="${id}" onclick="_meFoCellEdit(this)">${_meFoFakeHtml(foEntry.display || '', '')}</td>`;
 
       // # column — number only the leaves, empty for group rows (mirrors DDL Doc).
       const numText = isGroup ? '' : (++rowNum);
@@ -15936,10 +16006,7 @@ function _meHtmlOverrides(item) {
         ? `<span class="me-fm-dt-warn" title="Override &quot;${ea(overrideVal)}&quot; needs ${overrideRequiredLen} bytes but this field is ${row.length} — override will be ignored at parse time.">⚠</span>` : '';
       const dtCell = (isGroup || row.isRedef)
         ? `<td class="me-fm-dt">${ea(defaultLabel)}</td>`
-        : `<td class="me-fm-dt${overrideBadLen ? ' me-fm-dt-bad' : ''}"><select class="me-sel me-fo-sel me-fm-dt-sel" onchange="_meFoSetByField('${id}','type',this.value)" title="Override the field's interpreted type (length must be compatible).">
-            <option value=""${overrideVal === '' ? ' selected' : ''}>${ea(defaultLabel)}</option>
-            ${TYPE_OPTS.filter(t => t).map(t => `<option value="${t}"${overrideVal === t ? ' selected' : ''}>${t}</option>`).join('')}
-          </select>${warnIcon}</td>`;
+        : `<td class="me-fm-dt me-fo-cell${overrideBadLen ? ' me-fm-dt-bad' : ''}" data-kind="type" data-fid="${id}" data-def="${ea(defaultLabel)}" data-len="${row.length || 0}" onclick="_meFoCellEdit(this)" title="Override the field's interpreted type (length must be compatible).">${_meFoFakeHtml(overrideVal, defaultLabel)}${warnIcon}</td>`;
       return `<tr class="${trCls}" ${dataAttrs}>${numCell}${fieldCell}${offCell}${lenCell}${dtCell}${deCell}${vlgCell}${dispCell}</tr>`;
     }).join('');
 
@@ -16023,8 +16090,16 @@ function _meItemBitmapField(item) {
 // These are valid DDL items but parseHPEDDL filters them out, so they don't
 // appear in the Field Map. Returns { count, sampleIds } or null when the
 // binding is empty / unparseable.
+const _meFmUnresolvedCache = new Map();   // path → { treeV, tree, result }
 function _meFmCountUnresolved(path) {
   if (!path || typeof S === 'undefined') return null;
+  const cached = _meFmUnresolvedCache.get(path);
+  if (cached && cached.treeV === _ddlTreeVersion && cached.tree === S.ddlTree) return cached.result;
+  const result = _meFmCountUnresolvedUncached(path);
+  _meFmUnresolvedCache.set(path, { treeV: _ddlTreeVersion, tree: S.ddlTree, result });
+  return result;
+}
+function _meFmCountUnresolvedUncached(path) {
   const parts = path.split('/');
   if (parts.length < 3) return null;
   const [vol, sv, name, defName] = parts;
@@ -16032,7 +16107,16 @@ function _meFmCountUnresolved(path) {
   if (!content || typeof isHPEDDLText !== 'function' || !isHPEDDLText(content)) return null;
   try {
     const sections = parseDDLSections(content);
-    const sectionByName = new Map(sections.map(s => [s.name.toUpperCase(), s.items]));
+    // Repo-wide section registry with local overrides — same source showDDLDoc
+    // uses, so cross-FILE TYPE refs resolve here exactly like in the DDL Doc
+    // (same-file-only lookup falsely counted them as unresolved / size 0).
+    let sectionByName;
+    if (typeof buildRepoSectionRegistry === 'function') {
+      sectionByName = buildRepoSectionRegistry(content);
+      for (const s of sections) sectionByName.set(s.name.toUpperCase(), s.items);
+    } else {
+      sectionByName = new Map(sections.map(s => [s.name.toUpperCase(), s.items]));
+    }
     const typeReg = (typeof buildRepoTypeRegistry === 'function') ? buildRepoTypeRegistry(content) : null;
     const targetSecs = defName
       ? sections.filter(s => s.name.toUpperCase() === defName.toUpperCase())
@@ -16675,9 +16759,82 @@ function _meFoSetByField(fieldId, key, val) {
     if (idx !== -1) item.field_overrides.splice(idx, 1);
   }
   _meSetDirty();
-  // Re-render so the length-incompatibility warning (red border + ⚠ icon)
-  // refreshes against the newly chosen override.
-  _meRenderRight();
+  // Repaint only the affected override cells (every occurrence row of this
+  // canonical field) — a full _meRenderRight froze the editor on huge DDLs.
+  _meFoCellRepaintAll(fieldId, key);
+}
+
+// ── Click-to-edit override cells ──────────────────────────────────────────
+// The Field Map renders a lightweight fake-select span per override cell; a
+// real <select> materializes on click and is torn down on commit. With huge
+// DDLs (thousands of rows) rendering two live selects per row up-front froze
+// the editor open for seconds.
+const _ME_TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-ascii','hex-ebcdic'];
+const _ME_DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts'];
+
+function _meFoFakeHtml(cur, defLabel) {
+  const shown = cur || defLabel || '';
+  return `<span class="me-fo-fake${cur ? ' set' : ''}">${_escHtml(shown)}<span class="me-fo-caret">▾</span></span>`;
+}
+
+function _meFoGet(fid, kind) {
+  const item = _meCurItem(); if (!item) return '';
+  const canon = _canonFieldId(fid);
+  const e = (item.field_overrides || []).find(x => x?.field != null && _canonFieldId(x.field) === canon);
+  return (e && e[kind]) || '';
+}
+
+function _meFoCellEdit(td) {
+  if (!td || td.querySelector('select')) return;
+  const kind = td.dataset.kind;                  // 'type' | 'display'
+  const fid  = td.dataset.fid;
+  const cur  = _meFoGet(fid, kind);
+  const opts = kind === 'type'
+    ? `<option value="">${_escHtml(td.dataset.def || '')}</option>` +
+      _ME_TYPE_OPTS.filter(t => t).map(t => `<option value="${t}"${t === cur ? ' selected' : ''}>${t}</option>`).join('')
+    : _ME_DISP_OPTS.map(o => `<option value="${o}"${(cur || '') === o ? ' selected' : ''}>${o}</option>`).join('');
+  const cls = kind === 'type' ? 'me-sel me-fo-sel me-fm-dt-sel' : 'me-sel me-fo-sel';
+  td.innerHTML = `<select class="${cls}">${opts}</select>`;
+  const sel = td.querySelector('select');
+  let done = false;
+  const finish = commit => {
+    if (done) return;
+    done = true;
+    if (commit && sel.value !== (cur || '')) _meFoSetByField(fid, kind, sel.value);
+    else _meFoCellRepaintAll(fid, kind);       // restore the fake span
+  };
+  sel.addEventListener('change', () => finish(true));
+  sel.addEventListener('blur',   () => finish(true));
+  sel.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); finish(false); } });
+  sel.focus();
+  try { sel.showPicker(); } catch (e) {}       // open the dropdown right away
+}
+
+function _meFoCellPaint(td) {
+  const kind = td.dataset.kind, fid = td.dataset.fid;
+  const cur  = _meFoGet(fid, kind);
+  if (kind === 'type') {
+    const defLabel = td.dataset.def || '';
+    const len      = parseInt(td.dataset.len || '0', 10) || 0;
+    const reqLen   = cur && typeof _meReadTypeByteLen === 'function' ? _meReadTypeByteLen(cur) : null;
+    const bad      = reqLen !== null && reqLen !== len;
+    td.classList.toggle('me-fm-dt-bad', bad);
+    const warn = bad
+      ? `<span class="me-fm-dt-warn" title="Override &quot;${_escHtml(cur)}&quot; needs ${reqLen} bytes but this field is ${len} — override will be ignored at parse time.">⚠</span>` : '';
+    td.innerHTML = _meFoFakeHtml(cur, defLabel) + warn;
+  } else {
+    td.innerHTML = _meFoFakeHtml(cur, '');
+  }
+}
+
+// Repaint every cell of this kind belonging to the same canonical field —
+// overrides are occurrence-independent, so all [NN] rows change together.
+function _meFoCellRepaintAll(fid, kind) {
+  const canon = _canonFieldId(fid);
+  document.querySelectorAll(`td.me-fo-cell[data-kind="${kind}"]`).forEach(td => {
+    if (_canonFieldId(td.dataset.fid || '') !== canon) return;
+    _meFoCellPaint(td);
+  });
 }
 // Swap the pill for a small number input on click; commit on Enter / blur.
 function _meDeEditStart(pill, fieldId, currentDE) {
@@ -17855,6 +18012,29 @@ function _meApplyTypeOverride(f, def, ctx, inlineType) {
   Object.assign(f, _meReadApplyTypeOverride(f, typeOverride));
 }
 
+// Occurrence buckets for a canonical field id. OCCURS fields/groups are
+// emitted as SRVCS[01], SRVCS[01].TYP, … — a spec's `read: "SRVCS"` refers to
+// them by the occurrence-stripped id. Buckets group the defs of one occurrence
+// (a repeated leaf → 1 def; a repeated group → its leaves in declaration
+// order), keyed by the raw id prefix up to the target's last segment
+// (e.g. "SRVCS[03]"), in declaration order.
+function _meOccurrenceBuckets(fieldId, ctx) {
+  const segs = String(fieldId).split('.')
+    .map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:\\[\\d+\\])?');
+  const re = new RegExp('^' + segs.join('\\.') + '(?=$|\\.)');
+  const buckets = new Map();
+  for (const r of ctx.resolvedBindings) {
+    for (const d of (r?.defs || [])) {
+      const m = re.exec(d.id);
+      if (!m) continue;
+      const key = m[0];
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(d);
+    }
+  }
+  return buckets.size ? [...buckets.values()] : null;
+}
+
 function _meExecReadField(attrs, ctx) {
   const fieldId     = (typeof attrs === 'string') ? attrs : attrs?.field;
   const typeOverride = (typeof attrs === 'object') ? attrs?.type : null;
@@ -17869,6 +18049,28 @@ function _meExecReadField(attrs, ctx) {
     if (def) break;
   }
   if (!def) {
+    // Repeated field/group: each `read` consumes the NEXT occurrence, reading
+    // its leaves sequentially at the cursor (loop idiom — repeat / read-while
+    // bodies call read once per occurrence).
+    const occ = _meOccurrenceBuckets(fieldId, ctx);
+    if (occ) {
+      if (!ctx._occReadNext) ctx._occReadNext = {};
+      const k = ctx._occReadNext[fieldId] || 0;
+      if (k >= occ.length) {
+        ctx.fields.push({ id: fieldId, error: `All ${occ.length} occurrences of "${fieldId}" already read` });
+        return;
+      }
+      ctx._occReadNext[fieldId] = k + 1;
+      for (const d of occ[k]) {
+        const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
+        if (!f) return;
+        _meApplyTypeOverride(f, d, ctx, typeOverride);
+        _meApplyDisplayOverride(f, d, ctx);
+        ctx.fields.push(f);
+        ctx.fieldsById[d.id] = f;
+      }
+      return;
+    }
     ctx.fields.push({ id: fieldId, error: 'Field not found in any DDL binding' });
     return;
   }

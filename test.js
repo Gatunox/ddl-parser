@@ -1524,6 +1524,28 @@ test('parse-spec lint id set includes canonical (occurrence-stripped) ids', () =
   eq(ids.has('NUM-SERVICES'), true, 'plain id');
 });
 
+// ── KEYTAG clause ─────────────────────────────────────────────────────────────
+console.log('\nKEYTAG clause');
+
+test('KEYTAG on a group or leaf does not trigger the space-in-name error', () => {
+  const ddl = `RECORD PARTINFO.
+  02 PARTKEY KEYTAG "pn".
+    04 PARTNUM   PIC 9(4) KEYTAG 0 HEADING "Part".
+    04 PARTNAME  PIC X(18).
+  02 INVENTORY PIC 9(3)S.
+  02 LOCATION  PIC X(3) DISPLAY "loc".
+END
+`;
+  const { errors } = validateDDLErrors(ddl);
+  const spaceErrs = errors.filter(e => e.includes('illegal space in name'));
+  deepEq(spaceErrs, [], 'no false space-in-name errors');
+});
+
+test('a real space in a field name is still flagged', () => {
+  const { errors } = validateDDLErrors('DEF R.\n  02 BAD NAME PIC X(2).\nEND\n');
+  eq(errors.some(e => e.includes('illegal space in name')), true, 'space still detected');
+});
+
 // ── Field Map unresolved-TYPE counter ─────────────────────────────────────────
 console.log('\nField Map unresolved-TYPE counter');
 

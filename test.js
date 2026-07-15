@@ -84,6 +84,7 @@ _t.fmtTestSpecs       = window._fmtTestSpecs;
 _t.meExecParseSpec    = _meExecParseSpec;
 _t.mePsKnownDDLIds    = _mePsKnownDDLIds;
 _t.meFmCountUnresolved = _meFmCountUnresolved;
+_t.meExtractCommentDEs = _meExtractCommentDEs;
 _t.meWalkDEFields     = _meWalkDEFields;
 _t.meCollectBindingDefs = _meCollectBindingDefs;
 _t.getDDLFromPath     = getDDLFromPath;
@@ -109,7 +110,7 @@ const {
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
   stripJsonc, migrateSpec, fmtTestSpecs,
-  meExecParseSpec, mePsKnownDDLIds, meFmCountUnresolved, S, P,
+  meExecParseSpec, mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs, S, P,
 } = sandbox._t;
 
 // ── Test harness ────────────────────────────────────────────────────────────
@@ -1283,6 +1284,37 @@ test('DE numbering starts after the bitmap field and skips REDEFINES, matching t
   eq(ctx.fields.find(f => f.id === 'AMT').value, '123', 'second DE follows the group');
 });
 
+test('a REDEFINES child group does not split its parent\'s DE (DATA-ELEMENT-37 case)', () => {
+  S.ddlTree = { VOL: { SV: { 'D37DDL': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 DATA-ELEMENT-37.
+        04 DATA PIC X(12).
+        04 TLR REDEFINES DATA.
+          06 TRAN PIC X(6).
+          06 DEV PIC X(6).
+      02 DATA-ELEMENT-38 PIC X(6).
+    END REC.
+  ` } } };
+  const item = {
+    ddl_bindings: ['VOL/SV/D37DDL/REC'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'bitmap-fields': 'BMP' },
+    ],
+  };
+  const rows = sandbox._t.meWalkDEFields(
+    sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/D37DDL/REC')]), item);
+  const row = id => rows.find(r => r.id === id);
+  eq(row('DATA-ELEMENT-37')?.de, 1, 'group owns the DE (terminal despite the redef child)');
+  eq(row('DATA-ELEMENT-37')?.isTerminal, true, 'redef child group does not break terminal status');
+  eq(row('DATA-ELEMENT-37.DATA')?.de ?? null, null, 'DATA carries no DE of its own');
+  eq(row('DATA-ELEMENT-37.DATA')?.underTerminal, true, 'DATA sits under the terminal group');
+  eq(row('DATA-ELEMENT-37.TLR')?.de ?? null, null, 'REDEFINES wrapper carries no DE');
+  eq(row('DATA-ELEMENT-37.TLR.TRAN')?.de ?? null, null, 'redef leaf carries no DE');
+  eq(row('DATA-ELEMENT-38')?.de, 2, 'next field numbers straight after the group');
+});
+
 test('[REGRESSION] DE walker expands every nested OCCURS occurrence; DE only on representatives', () => {
   S.ddlTree = { VOL: { SV: { 'NESTDDL': `
     DEF REC.
@@ -1548,6 +1580,52 @@ END
   eq(get('T-8W.OPTIONS-AREA').size, 280, 'overlay sized from 8 × 35');
   eq(get('T-8W.OPTIONS-AREA.ITEM').size, 280, 'ITEM group = 8 × 35');
   eq(totalSize, 480, 'record total stays RQST size');
+});
+
+// ── Auto Order: DE extraction from DDL comments ───────────────────────────────
+console.log('\nAuto Order — comment DE extraction');
+
+test('extracts "Bit map position = NN" (and the postion typo) from comment blocks', () => {
+  const ddl = `DEF ISOMSG.
+* Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
+* eiusmod tempor. BIt map postion = 39. Excepteur sint occaecat
+* cupidatat non proident.
+    02 DATA-ELEMENT-39   PIC X(2).
+* Bit map position: 41
+    02 DATA-ELEMENT-41   PIC X(8).
+    02 NO-COMMENT-FLD    PIC X(1).
+* pos of something else = 7 (must not match)
+    02 UNRELATED         PIC X(1).
+END
+`;
+  const m = meExtractCommentDEs(ddl, 'ISOMSG');
+  eq(m.get('DATA-ELEMENT-39'), 39, 'typo "postion" tolerated');
+  eq(m.get('DATA-ELEMENT-41'), 41, 'colon separator tolerated');
+  eq(m.has('NO-COMMENT-FLD'), false, 'field without comment DE not mapped');
+  eq(m.has('UNRELATED'), false, 'non-bitmap comment ignored');
+});
+
+test('comment block binds to the NEXT declaration only; last match wins; DEF scoping', () => {
+  const ddl = `DEF OTHERDEF.
+* Bit map position = 99
+    02 WRONG-SCOPE PIC X(1).
+END
+DEF TARGET.
+* Bit map position = 5
+* correction: Bit map position = 6
+    02 FLD-A.
+      04 CHILD PIC X(2).
+* inline style
+    02 FLD-B PIC X(3). ! Bit map position = 8 !
+    02 FLD-C PIC X(3).
+END
+`;
+  const m = meExtractCommentDEs(ddl, 'TARGET');
+  eq(m.has('WRONG-SCOPE'), false, 'other DEF sections are skipped');
+  eq(m.get('FLD-A'), 6, 'last match in the block wins');
+  eq(m.has('CHILD'), false, 'buffer resets after a declaration');
+  eq(m.get('FLD-B'), 8, 'inline comment on the declaration line describes that field');
+  eq(m.has('FLD-C'), false, 'no leak to the following field');
 });
 
 // ── KEYTAG clause ─────────────────────────────────────────────────────────────

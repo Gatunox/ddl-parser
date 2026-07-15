@@ -1657,6 +1657,9 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
    colour so an active override / VLG selection stands out. */
 .me-vlg-sel:has(option:checked:not([value=""])),
 .me-fo-sel:has(option:checked:not([value=""])){color:var(--accent);}
+/* Auto Order button in the Data Element column header */
+.me-de-auto{margin-left:8px;height:18px;padding:0 8px;font-size:10px;font-family:var(--mono);border:2px solid var(--border);border-radius:3px;background:var(--bg-deep);color:var(--text-dim);cursor:pointer;text-transform:none;letter-spacing:0;vertical-align:middle;}
+.me-de-auto:hover{color:var(--accent);border-color:var(--accent);}
 /* Section-load progress bars — staged Data Editor rendering */
 .me-sect-loading{padding:10px 8px;}
 .me-progress{height:8px;border:2px solid var(--border);border-radius:3px;overflow:hidden;background:var(--bg-deep);}
@@ -13046,7 +13049,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.289';
+const APP_VERSION  = '1.1.2.291';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15991,7 +15994,7 @@ function _meOverridesPrep(item) {
       <th class="me-fm-th-off" data-col="off" title="Byte offset within the DDL record (dec + hex)">Offset<div class="me-fm-resizer" data-col="off"></div></th>
       <th class="me-fm-th-len" data-col="len" title="Byte length">Length<div class="me-fm-resizer" data-col="len"></div></th>
       <th class="me-fm-th-dt"  data-col="dt" title="DDL-declared type (click cell to override)">Data Type<div class="me-fm-resizer" data-col="dt"></div></th>
-      <th class="me-fm-th-de"  data-col="de">Data Element<div class="me-fm-resizer" data-col="de"></div></th>
+      <th class="me-fm-th-de"  data-col="de">Data Element${usesBitmapFields ? '<button class="me-de-auto" onclick="_meFmAutoOrder()" title="Anchor each DE from the \'Bit map position = NN\' comment above its declaration in the bound DDL files — anchored pills (accent + ↺) are yours to verify.">Auto Order</button>' : ''}<div class="me-fm-resizer" data-col="de"></div></th>
       <th class="me-fm-th-vlg" data-col="vlg" title="Variable Length Group">VLG<div class="me-fm-resizer" data-col="vlg"></div></th>
       <th class="me-fm-th-fo"  data-col="display">Display</th>
     </tr></thead>
@@ -16435,9 +16438,28 @@ function _meWalkDEFields(defs, item) {
       childrenByPrefix.get(prefix).add(child);
     }
   }
+  // Determine REDEFINES status for any prefix by descending into its
+  // transitive leaves — intermediate synthesised groups (which never appear
+  // in redefSet) shouldn't disqualify a real REDEFINES wrapper.
+  const prefixIsRedef = (prefix) => {
+    const kids = childrenByPrefix.get(prefix);
+    if (!kids || !kids.size) return false;
+    for (const c of kids) {
+      if (childrenByPrefix.has(c)) {
+        if (!prefixIsRedef(c)) return false;
+      } else if (!redefSet.has(c)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  // Terminal group = owns the DE; its leaves don't get one. A REDEFINES child
+  // group must not disqualify the parent — it overlays the sibling leaf's
+  // bytes (e.g. `04 DATA PIC X(12). 04 TLR REDEFINES DATA.` — the parent is
+  // still one logical DE; DATA must not consume a second number).
   const terminalGroups = new Set();
   for (const [prefix, children] of childrenByPrefix.entries()) {
-    const hasGroupChild = [...children].some(c => childrenByPrefix.has(c));
+    const hasGroupChild = [...children].some(c => childrenByPrefix.has(c) && !prefixIsRedef(c));
     if (!hasGroupChild) terminalGroups.add(prefix);
   }
 
@@ -16465,21 +16487,6 @@ function _meWalkDEFields(defs, item) {
   const out = [];
   let currentDE = 1;
   let pastBitmap = !bitmapField;   // true straight away when there's no bitmap declared
-  // Determine REDEFINES status for any prefix by descending into its
-  // transitive leaves — intermediate synthesised groups (which never appear
-  // in redefSet) shouldn't disqualify a real REDEFINES wrapper.
-  const prefixIsRedef = (prefix) => {
-    const kids = childrenByPrefix.get(prefix);
-    if (!kids || !kids.size) return false;
-    for (const c of kids) {
-      if (childrenByPrefix.has(c)) {
-        if (!prefixIsRedef(c)) return false;
-      } else if (!redefSet.has(c)) {
-        return false;
-      }
-    }
-    return true;
-  };
   // REDEFINES overlays existing bytes, so it never advances the DE counter
   // and never owns a DE number.
   const assignDE = (id, extras) => {
@@ -16545,6 +16552,95 @@ function _meWalkDEFields(defs, item) {
     }
   }
   return out;
+}
+
+// ── Auto Order: DE anchors from DDL comments ────────────────────────────────
+// Many real DDLs document each data element's bitmap position in the comment
+// block right above its declaration ("Bit map position = 39"). Auto Order
+// scans the RAW bound files (the parser strips comments), maps field name →
+// commented DE, and anchors every DE-capable row it can match — the anchored
+// (accent + ↺) pills are the review surface.
+
+// Scan raw DDL text: for each field declaration, the comment lines accumulated
+// since the previous declaration belong to it; the LAST "bit map position(=|:)
+// NN" in that block wins (tolerates "postion", "pos", case, hyphens).
+// Returns Map<FIELD-NAME, de>. First declaration of a name wins.
+function _meExtractCommentDEs(content, defName) {
+  const map = new Map();
+  const deRe = /bit\s*-?\s*map\s+pos\w*\s*[=:]\s*(\d{1,3})/gi;
+  let inTarget = !defName;
+  let buf = '';
+  for (const line of String(content).split('\n')) {
+    const secM = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+([A-Za-z][\w-]*)/i);
+    if (secM) { inTarget = !defName || secM[1].toUpperCase() === defName.toUpperCase(); buf = ''; continue; }
+    if (!inTarget) continue;
+    const t = line.trimStart();
+    if (t.startsWith('*') || t.startsWith('?')) { buf += ' ' + line; continue; }
+    // Inline !comments! contribute to the block, then vanish from the code side.
+    const inl = line.match(/!([^!]*)(?:!|$)/g);
+    if (inl) buf += ' ' + inl.join(' ');
+    const code = line.replace(/!([^!]*)(?:!|$)/g, ' ');
+    const declM = code.match(/^\s*(\d{2})\s+([A-Za-z][\w-]*)/);
+    if (declM && +declM[1] < 66) {
+      let m, de = null;
+      deRe.lastIndex = 0;
+      while ((m = deRe.exec(buf)) !== null) de = +m[1];
+      const name = declM[2].toUpperCase();
+      if (de !== null && !map.has(name)) map.set(name, de);
+      buf = '';
+    }
+  }
+  return map;
+}
+
+function _meFmAutoOrder() {
+  const item = _meCurItem(); if (!item) return;
+  if (!_meItemBitmapField(item)) { flash('Auto Order needs a parse spec with a bitmap-fields block', 'warn'); return; }
+  // Comment-DE map across all bindings (first binding wins, like defs dedup).
+  const commentDE = new Map();
+  for (const path of (item.ddl_bindings || [])) {
+    if (!path) continue;
+    const [vol, sv, name, defName] = path.split('/');
+    const content = S.ddlTree?.[vol]?.[sv]?.[name];
+    if (!content) continue;
+    for (const [k, v] of _meExtractCommentDEs(content, defName || null))
+      if (!commentDE.has(k)) commentDE.set(k, v);
+  }
+  if (!commentDE.size) { flash('No "Bit map position = NN" comments found in the bound DDL files', 'warn'); return; }
+  const fieldList = _meResolveDEFieldList(item);
+  if (!fieldList) return;
+  if (!Array.isArray(item.de_map)) item.de_map = [];
+  // Name → DE matching is only safe when the name is unique among DE-capable
+  // rows (a stray leaf called DATA must not steal DATA-ELEMENT-2's comment).
+  const nameCount = new Map();
+  const deRows = fieldList.filter(r => r.de !== null);
+  for (const r of deRows) {
+    const n = _canonFieldId(r.id).split('.').pop();
+    nameCount.set(n, (nameCount.get(n) || 0) + 1);
+  }
+  let added = 0, updated = 0, unmatched = 0, ambiguous = 0;
+  const suspects = [];
+  for (const row of deRows) {
+    const name = _canonFieldId(row.id).split('.').pop();
+    const de = commentDE.get(name);
+    if (de === undefined) { unmatched++; continue; }
+    if (nameCount.get(name) > 1) { ambiguous++; continue; }
+    const idx = item.de_map.findIndex(e => e.field === row.id);
+    if (idx !== -1) { if (item.de_map[idx].de !== de) { item.de_map[idx].de = de; updated++; } }
+    else            { item.de_map.push({ field: row.id, de }); added++; }
+    // Suspect: the field name itself ends in a number that disagrees with the comment.
+    const nm = name.match(/(\d{1,3})$/);
+    if (nm && +nm[1] !== de) suspects.push(`${name} → DE-${de}`);
+  }
+  _meSetDirty();
+  if (!_meFmPatchDECells()) _meRenderRight();
+  let msg = `Auto Order: ${added} DE anchor${added !== 1 ? 's' : ''} set from comments`;
+  if (updated)   msg += `, ${updated} existing updated`;
+  if (unmatched) msg += `, ${unmatched} without a comment match`;
+  if (ambiguous) msg += `, ${ambiguous} skipped (duplicate name)`;
+  flash(msg);
+  if (suspects.length)
+    setTimeout(() => flash(`⚠ field name vs comment mismatch: ${suspects.slice(0, 3).join(', ')}${suspects.length > 3 ? '…' : ''} — verify these`, 'warn'), 1200);
 }
 
 // Set / update / remove an anchor for one field so the row renders the

@@ -1580,7 +1580,11 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
 .me-fm-filter{flex:1;min-width:0;height:22px;padding:0 8px;border:2px solid var(--border);border-radius:2px;background:var(--bg-deep);color:var(--text);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
-.me-fm-table-wrap{border:2px solid var(--border);border-radius:2px;overflow-x:auto;}
+.me-fm-table-wrap{border:2px solid var(--border);border-radius:2px;overflow:auto;max-height:62vh;}
+/* Uniform row height — required by the virtualized window's spacer math. */
+.me-fm-table tbody tr{height:24px;}
+.me-fm-table tr.me-fm-spacer{height:auto;}
+.me-fm-table tr.me-fm-spacer td{padding:0;border:0;}
 /* No width:100% — with table-layout:fixed it would make column widths
    proportional rather than absolute, and resizing one column would scale
    every other column to fill the leftover space. */
@@ -1638,7 +1642,6 @@ body.light .me-fm-grp td{background:rgba(0,0,0,0.04);}
 body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
 .me-fm-redef-note{font-size:10px;opacity:.7;margin-left:4px;}
 /* Hidden by collapse / redef / filter */
-.me-fm-hidden{display:none;}
 /* Reused DE controls */
 .me-de-nudge{width:22px;height:20px;padding:0;flex-shrink:0;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
 .me-de-pill{display:inline-flex;align-items:center;justify-content:center;min-width:54px;height:20px;padding:0 8px;border:2px solid var(--border);border-radius:3px;background:var(--bg-deep);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);cursor:pointer;flex-shrink:0;user-select:none;}
@@ -13043,7 +13046,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.287';
+const APP_VERSION  = '1.1.2.289';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14736,6 +14739,11 @@ function _meCurItem() {
 let _meRenderSeq = 0;
 const _ME_SECT_LOADING =
   '<div class="me-sect-loading"><div class="me-progress indet"><div class="me-progress-fill"></div></div></div>';
+// Overrides gets a DETERMINATE bar from the first paint — the indeterminate
+// slide loop read as "progress resetting to zero" while a huge Field Map
+// prepared. This one only ever moves forward (0 → 100%).
+const _ME_SECT_LOADING_DET =
+  '<div class="me-sect-loading"><div class="me-progress"><div class="me-progress-fill"></div></div></div>';
 
 function _meRenderRight() {
   const seq = ++_meRenderSeq;
@@ -14743,6 +14751,9 @@ function _meRenderRight() {
   // changes don't jump the user back to the top of the field list.
   const _fmWrapBefore = document.querySelector('.me-fm-table-wrap');
   const _fmScrollTop  = _fmWrapBefore ? _fmWrapBefore.scrollTop : 0;
+  // The virtual window belongs to the outgoing DOM — drop it; the overrides
+  // stage builds a fresh one (or none, if the section is closed).
+  _meFmVirt = null;
 
   // Tear down the Parse Spec CM editor (if any) BEFORE we wipe its host
   // element — otherwise the editor is left attached to a detached DOM node
@@ -14761,11 +14772,12 @@ function _meRenderRight() {
   const sect   = (key, title, fill) => {
     const open = secs[key];
     if (open) stages.push({ key, fill });
+    const loading = key === 'overrides' ? _ME_SECT_LOADING_DET : _ME_SECT_LOADING;
     return `<div class="me-section">
   <div class="me-section-hdr" onclick="_meSectionToggle('${key}')">
     <span>${title}</span><span class="me-section-arr">${open ? '&#9650;' : '&#9660;'}</span>
   </div>
-  <div class="me-section-body${open ? ' open' : ''}" id="me-sect-body-${key}">${open ? _ME_SECT_LOADING : ''}</div>
+  <div class="me-section-body${open ? ' open' : ''}" id="me-sect-body-${key}">${open ? loading : ''}</div>
 </div>`;
   };
   const syncFill = build => (el, done) => { el.innerHTML = build(); done(); };
@@ -16087,7 +16099,9 @@ function _meFmRowHtml(row, ctx, counter) {
   const dispCell = `<td class="me-fm-fo me-fo-cell" data-kind="display" data-fid="${id}" onclick="_meFoCellEdit(this)">${_meFoFakeHtml(foEntry.display || '', '')}</td>`;
 
   // # column — number only the leaves, empty for group rows (mirrors DDL Doc).
-  const numText = isGroup ? '' : (++counter.n);
+  // Windowed rendering precomputes absolute numbers (_fmNum); the counter is
+  // the fallback for full sequential builds.
+  const numText = isGroup ? '' : (row._fmNum != null ? row._fmNum : ++counter.n);
   const numCell = `<td class="me-fm-num">${numText}</td>`;
   // Offset column — DDL-declared byte offset, dec + hex (same as DDL Doc).
   const offCell = row.offset != null
@@ -16127,57 +16141,139 @@ function _meHtmlOverrides(item) {
   return `<div class="me-ov-section">${html}</div>`;
 }
 
-// Chunked async build — fills the section tbody a slice at a time behind a
-// determinate progress bar so a huge DDL never freezes the editor open.
-// Aborts silently when seq no longer matches (item switched / editor closed).
-function _meFillOverridesSection(el, item, seq, done) {
-  const prep = _meOverridesPrep(item);
-  if (prep.emptyHtml) { el.innerHTML = `<div class="me-ov-section">${prep.emptyHtml}</div>`; done(); return; }
-  el.innerHTML = `<div class="me-ov-section">`
-    + `<div class="me-sect-loading" id="me-fm-loading"><div class="me-progress"><div class="me-progress-fill" id="me-fm-prog"></div></div></div>`
-    + prep.chrome('') + `</div>`;
-  const tbody = el.querySelector('.me-fm-table tbody');
-  const prog  = el.querySelector('#me-fm-prog');
-  const rows  = prep.fieldList;
-  const counter = { n: 0 };
-  const CHUNK = 500;
-  let i = 0;
-  const stepChunk = () => {
-    if (seq !== _meRenderSeq || !tbody.isConnected) return;   // stale render
-    let html = '';
-    const end = Math.min(rows.length, i + CHUNK);
-    for (; i < end; i++) html += _meFmRowHtml(rows[i], prep.ctx, counter);
-    tbody.insertAdjacentHTML('beforeend', html);
-    if (prog) prog.style.width = Math.round(i / rows.length * 100) + '%';
-    if (i < rows.length) { setTimeout(stepChunk, 0); return; }
-    el.querySelector('#me-fm-loading')?.remove();
-    done();
-  };
-  stepChunk();
+// ── Virtualized Field Map ───────────────────────────────────────────────────
+// Only the rows in (and around) the wrap's viewport exist in the DOM; spacer
+// rows stand in for the rest, sized by the uniform 24px row height. Laying
+// out ALL rows of a 10k-item DDL cost ~550ms even on fast hardware (seconds
+// on the production PC) no matter how the rows were inserted — windowing
+// makes open, filter, collapse, and DE edits O(viewport) instead of O(DDL).
+let _meFmVirt = null;   // { all, visible, ctx, rowH, start, end, wrap, tbody }
+const _ME_FM_BUF = 40;  // extra rows rendered above/below the viewport
+
+// Apply the collapse / hide-redef / filter predicates to the full row list.
+// Mirrors the old per-<tr> class logic exactly, but on data.
+function _meFmVisibleRows(all) {
+  const st        = _meState || {};
+  const collapsed = st.fmCollapsedGroups || new Set();
+  const filt      = (st.fmFilter || '').toLowerCase();
+  const out = [];
+  for (const row of all) {
+    const qn = row.id;
+    let hid = false;
+    if (collapsed.size && qn.includes('.')) {
+      const parts = qn.split('.');
+      let prefix = '';
+      for (let i = 0; i < parts.length - 1 && !hid; i++) {
+        prefix = prefix ? prefix + '.' + parts[i] : parts[i];
+        if (collapsed.has(prefix)) hid = true;
+      }
+    }
+    if (!hid && st.fmHideRedef && row.isRedef) hid = true;
+    if (!hid && filt && !qn.toLowerCase().includes(filt)) hid = true;
+    if (!hid) out.push(row);
+  }
+  return out;
 }
 
-// In-place DE-cell patch — recompute the field list (fast, pure JS) and swap
-// only the DE cells whose signature changed. Rebuilding the whole right pane
-// for one nudge froze the UI 1-2 s on huge DDLs. Returns false when the table
-// isn't fully rendered (mid-chunk / filtered mismatch) → caller falls back.
+function _meFmRenderWindow(force) {
+  const v = _meFmVirt;
+  if (!v || !v.tbody || !v.tbody.isConnected) return;
+  // Don't rebuild under the user's feet while a DE input or a materialized
+  // select is being edited inside the table (scroll-triggered refreshes only;
+  // forced refreshes come from commit/cancel paths and must proceed).
+  const ae = document.activeElement;
+  if (!force && ae && v.tbody.contains(ae)
+      && (ae.classList?.contains('me-de-edit-inp') || ae.tagName === 'SELECT')) return;
+  const total = v.visible.length;
+  const rowH  = v.rowH || 24;
+  const vh    = v.wrap.clientHeight || 600;
+  const start = Math.max(0, Math.floor(v.wrap.scrollTop / rowH) - _ME_FM_BUF);
+  const end   = Math.min(total, Math.ceil((v.wrap.scrollTop + vh) / rowH) + _ME_FM_BUF);
+  if (!force && start === v.start && end === v.end) return;
+  v.start = start; v.end = end;
+  // Fresh override lookup so committed Type/Display changes render correctly.
+  const item = _meCurItem();
+  v.ctx.foByField = new Map();
+  for (const e of (item?.field_overrides || [])) if (e?.field) v.ctx.foByField.set(_canonFieldId(e.field), e);
+  const collapsed = _meState?.fmCollapsedGroups || new Set();
+  const spacer = px => `<tr class="me-fm-spacer" style="height:${px}px"><td colspan="8"></td></tr>`;
+  let html = start > 0 ? spacer(start * rowH) : '';
+  const counter = { n: 0 };
+  for (let i = start; i < end; i++) {
+    const row = v.visible[i];
+    let tr = _meFmRowHtml(row, v.ctx, counter);
+    if (row.isGroup && collapsed.has(row.id)) tr = tr.replace('<tr class="', '<tr class="me-fm-grp-collapsed ');
+    html += tr;
+  }
+  if (end < total) html += spacer((total - end) * rowH);
+  v.tbody.innerHTML = html;
+  // Measure the real row height once; if the estimate was off, re-space.
+  if (!v.rowH) {
+    const probe = v.tbody.querySelector('tr:not(.me-fm-spacer)');
+    v.rowH = (probe && probe.offsetHeight) || rowH;
+    if (v.rowH !== rowH) { _meFmRenderWindow(true); return; }
+  }
+}
+
+// Refresh the virtual list from a (re)computed field list — used after DE
+// edits and by _meFmReapplyState after filter/collapse/hide-redef changes.
+function _meFmVirtRefresh(fieldList) {
+  if (!_meFmVirt) return;
+  if (fieldList) {
+    let n = 0;
+    for (const r of fieldList) r._fmNum = r.isGroup ? null : ++n;
+    _meFmVirt.all = fieldList;
+  }
+  _meFmVirt.visible = _meFmVisibleRows(_meFmVirt.all);
+  _meFmRenderWindow(true);
+}
+
+// Async section fill: prep (the only data-heavy step) runs off the paint,
+// then the chrome + first window land — constant DOM cost at any DDL size.
+// Aborts silently when seq no longer matches (item switched / editor closed).
+function _meFillOverridesSection(el, item, seq, done) {
+  const prog = el.querySelector('.me-progress-fill');   // skeleton bar — reused
+  const setP = p => { if (prog && prog.isConnected) prog.style.width = p + '%'; };
+  setP(10);
+  // Let the bar paint before the synchronous field-list resolution runs.
+  setTimeout(() => {
+    if (seq !== _meRenderSeq || !el.isConnected) return;
+    const prep = _meOverridesPrep(item);
+    if (prep.emptyHtml) { el.innerHTML = `<div class="me-ov-section">${prep.emptyHtml}</div>`; done(); return; }
+    setP(70);
+    setTimeout(() => {
+      if (seq !== _meRenderSeq || !el.isConnected) return;
+      // Absolute leaf numbers for the # column — window rows need their
+      // position among ALL leaves, not within the rendered slice.
+      let n = 0;
+      for (const r of prep.fieldList) r._fmNum = r.isGroup ? null : ++n;
+      el.innerHTML = `<div class="me-ov-section">` + prep.chrome('') + `</div>`;
+      const wrap  = el.querySelector('.me-fm-table-wrap');
+      const tbody = el.querySelector('.me-fm-table tbody');
+      _meFmVirt = { all: prep.fieldList, visible: _meFmVisibleRows(prep.fieldList),
+                    ctx: prep.ctx, rowH: 0, start: -1, end: -1, wrap, tbody };
+      let schedTick = false;
+      wrap.addEventListener('scroll', () => {
+        if (schedTick) return;
+        schedTick = true;
+        requestAnimationFrame(() => { schedTick = false; _meFmRenderWindow(false); });
+      }, { passive: true });
+      _meFmRenderWindow(true);
+      done();
+    }, 0);
+  }, 0);
+}
+
+// DE-edit refresh — recompute the field list (fast, pure JS) and re-render
+// the virtual window with it. Rebuilding the whole right pane for one nudge
+// froze the UI 1-2 s on huge DDLs; the window rebuild is O(viewport).
 function _meFmPatchDECells() {
   const item = _meCurItem(); if (!item) return false;
-  const tbody = document.querySelector('.me-fm-table tbody');
-  if (!tbody) return false;
+  if (!_meFmVirt || !_meFmVirt.tbody?.isConnected) return false;
   const fieldList = _meResolveDEFieldList(item);
-  if (!fieldList || tbody.rows.length !== fieldList.length) return false;
-  const ctx = {
-    ea: _meOvEsc,
-    usesBitmapFields: !!_meItemBitmapField(item),
-  };
-  for (let i = 0; i < fieldList.length; i++) {
-    const row = fieldList[i];
-    const td  = tbody.rows[i].cells[5];               // DE column
-    if (!td) continue;
-    const sig = _meFmDeSig(row, ctx.usesBitmapFields);
-    if (td.dataset.sig === sig) continue;
-    td.outerHTML = _meFmDeCellHtml(row, ctx);
-  }
+  if (!fieldList) return false;
+  _meFmVirt.ctx.usesBitmapFields = !!_meItemBitmapField(item);
+  _meFmVirtRefresh(fieldList);
   return true;
 }
 
@@ -16508,16 +16604,7 @@ function _meVlgSetLen(groupId, value) {
 }
 
 // ── Field Map: collapse / hide-redef / filter ──
-function _meFmIsHiddenByCollapse(tr) {
-  const qn = tr.getAttribute('data-qn') || '';
-  if (!qn.includes('.')) return false;
-  const parts = qn.split('.');
-  for (let i = 1; i < parts.length; i++) {
-    const prefix = parts.slice(0, i).join('.');
-    if (_meState?.fmCollapsedGroups?.has(prefix)) return true;
-  }
-  return false;
-}
+// (visibility now lives in _meFmVisibleRows — the virtual window's predicate)
 // Field Map column-width persistence and drag-to-resize on header borders.
 // Widths keyed by data-col attribute, saved per-key to localStorage so the
 // layout survives reloads / item switches.
@@ -16657,27 +16744,17 @@ function _meFmInitColResize() {
 function _meFmReapplyState() {
   if (!_meState) return;
   _meFmInitColResize();
-  // Apply hide-redef
-  document.querySelectorAll('.me-fm-table tbody tr').forEach(tr => {
-    const qn = tr.getAttribute('data-qn') || '';
-    const isRedef    = tr.classList.contains('me-fm-redef');
-    const isHidden   = _meFmIsHiddenByCollapse(tr);
-    const hidByRedef = _meState.fmHideRedef && isRedef;
-    const hidByFilt  = _meState.fmFilter && !qn.toLowerCase().includes(_meState.fmFilter.toLowerCase());
-    tr.classList.toggle('me-fm-hidden', isHidden || hidByRedef || hidByFilt);
-  });
-  // Group rows: toggle .me-fm-grp-collapsed; the CSS rotation handles the
-  // chevron orientation (matches DDL Doc).
-  document.querySelectorAll('.me-fm-grp').forEach(tr => {
-    const qn = tr.getAttribute('data-qn');
-    const collapsed = _meState.fmCollapsedGroups.has(qn);
-    tr.classList.toggle('me-fm-grp-collapsed', collapsed);
-  });
+  // Collapse / hide-redef / filter are applied by the virtual window's
+  // visibility predicate — recompute the visible list and re-render it.
+  // (The old path toggled classes across EVERY row: O(DDL) DOM work.)
+  _meFmVirtRefresh();
   // Toolbar button states
   const collapseBtn = document.getElementById('me-fm-collapse-btn');
   if (collapseBtn) {
-    const allCollapsed = _meState.fmCollapsedGroups.size > 0
-      && [...document.querySelectorAll('.me-fm-grp')].every(tr => _meState.fmCollapsedGroups.has(tr.getAttribute('data-qn')));
+    const allGroupIds = _meFmVirt ? _meFmVirt.all.filter(r => r.isGroup).map(r => r.id)
+      : [...document.querySelectorAll('.me-fm-grp')].map(tr => tr.getAttribute('data-qn'));
+    const allCollapsed = _meState.fmCollapsedGroups.size > 0 && allGroupIds.length > 0
+      && allGroupIds.every(qn => _meState.fmCollapsedGroups.has(qn));
     collapseBtn.textContent = allCollapsed ? 'Expand All' : 'Collapse All';
     collapseBtn.classList.toggle('btn-accent-on', allCollapsed);
     collapseBtn.dataset.state = allCollapsed ? 'collapsed' : 'expanded';
@@ -16707,7 +16784,11 @@ function _meFmToggleGroup(tr) {
 }
 function _meFmToggleCollapseAll() {
   if (!_meState) return;
-  const allGroups = [...document.querySelectorAll('.me-fm-grp')].map(tr => tr.getAttribute('data-qn'));
+  // Group ids come from the DATA, not the DOM — with the virtual window only
+  // the viewport's rows exist as <tr>s.
+  const allGroups = _meFmVirt
+    ? _meFmVirt.all.filter(r => r.isGroup).map(r => r.id)
+    : [...document.querySelectorAll('.me-fm-grp')].map(tr => tr.getAttribute('data-qn'));
   const allCollapsed = allGroups.length > 0 && allGroups.every(qn => _meState.fmCollapsedGroups.has(qn));
   _meState.fmCollapsedGroups = new Set(allCollapsed ? [] : allGroups);
   _meFmReapplyState();

@@ -85,6 +85,7 @@ _t.meExecParseSpec    = _meExecParseSpec;
 _t.mePsKnownDDLIds    = _mePsKnownDDLIds;
 _t.meFmCountUnresolved = _meFmCountUnresolved;
 _t.meExtractCommentDEs = _meExtractCommentDEs;
+_t.meComputeAutoOrderAnchors = _meComputeAutoOrderAnchors;
 _t.meWalkDEFields     = _meWalkDEFields;
 _t.meCollectBindingDefs = _meCollectBindingDefs;
 _t.getDDLFromPath     = getDDLFromPath;
@@ -110,7 +111,8 @@ const {
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
   stripJsonc, migrateSpec, fmtTestSpecs,
-  meExecParseSpec, mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs, S, P,
+  meExecParseSpec, mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
+  meComputeAutoOrderAnchors, S, P,
 } = sandbox._t;
 
 // ── Test harness ────────────────────────────────────────────────────────────
@@ -1626,6 +1628,37 @@ END
   eq(m.has('CHILD'), false, 'buffer resets after a declaration');
   eq(m.get('FLD-B'), 8, 'inline comment on the declaration line describes that field');
   eq(m.has('FLD-C'), false, 'no leak to the following field');
+});
+
+test('Auto Order anchors only fields whose DE differs from natural extrapolation', () => {
+  // Natural DE = 1,2,3,4,5. Comments: A=1 (match), B=2 (match), C=5 (jump),
+  // D=none, E=6. Only C and E should be anchored; A/B stay natural (no blue).
+  const rows = [
+    { id: 'A', naturalDE: 1, commentDE: 1 },
+    { id: 'B', naturalDE: 2, commentDE: 2 },
+    { id: 'C', naturalDE: 3, commentDE: 5 },
+    { id: 'D', naturalDE: 4, commentDE: null },
+    { id: 'E', naturalDE: 5, commentDE: 6 },
+  ];
+  // A,B match natural → no anchor. C jumps 3→5 → anchor. D extrapolates to 6.
+  // E's expected is 7 (after D), comment 6 ≠ 7 → anchor. So C and E only.
+  const anchors = meComputeAutoOrderAnchors(rows);
+  deepEq(anchors, [{ field: 'C', de: 5 }, { field: 'E', de: 6 }],
+    'only fields that break the running sequence are anchored');
+});
+
+test('Auto Order: all-jumped comments anchor every matched field', () => {
+  const rows = [
+    { id: 'TRACK2', naturalDE: 1, commentDE: 35 },
+    { id: 'TRACK3', naturalDE: 2, commentDE: 36 },
+    { id: 'GAP',    naturalDE: 3, commentDE: null },
+    { id: 'TRACK1', naturalDE: 4, commentDE: 45 },
+  ];
+  const anchors = meComputeAutoOrderAnchors(rows);
+  // TRACK2: 1→35 anchor. TRACK3: expected 36 == comment 36 → NO anchor.
+  // GAP: expected 37. TRACK1: expected 37 != 45 → anchor.
+  deepEq(anchors, [{ field: 'TRACK2', de: 35 }, { field: 'TRACK1', de: 45 }],
+    'contiguous comment run needs one anchor; the gap breaks continuity');
 });
 
 // ── KEYTAG clause ─────────────────────────────────────────────────────────────

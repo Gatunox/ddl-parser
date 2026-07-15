@@ -1654,6 +1654,12 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
    colour so an active override / VLG selection stands out. */
 .me-vlg-sel:has(option:checked:not([value=""])),
 .me-fo-sel:has(option:checked:not([value=""])){color:var(--accent);}
+/* Section-load progress bars — staged Data Editor rendering */
+.me-sect-loading{padding:10px 8px;}
+.me-progress{height:8px;border:2px solid var(--border);border-radius:3px;overflow:hidden;background:var(--bg-deep);}
+.me-progress-fill{height:100%;width:0%;background:var(--accent);transition:width .1s linear;}
+.me-progress.indet .me-progress-fill{width:35%;animation:meProgSlide 1.1s linear infinite;}
+@keyframes meProgSlide{0%{margin-left:-35%}100%{margin-left:100%}}
 /* Lazy override cells — fake-select span, real <select> materializes on click */
 .me-fo-cell{cursor:pointer;}
 .me-fo-fake{box-sizing:border-box;display:inline-flex;align-items:center;background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;color:var(--text-dim);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);height:20px;padding:0 4px;width:90px;overflow:hidden;white-space:nowrap;vertical-align:middle;}
@@ -3521,15 +3527,21 @@ function buildDDLDocFields(rawItems, typeRegistry) {
     // Find the index of the first item that is NOT a descendant of this group
     let j = i + 1;
     while (j < result.length && result[j].level > gl) j++;
-    // Shift subsequent fields.
-    // If this OCCURS group is inside a REDEFINES scope (isInsideRedefines), cap the
-    // shift at the REDEFINES boundary: stop as soon as we reach a field that is neither
-    // inside a REDEFINES scope nor a REDEFINES group header itself. Without this guard
-    // the shift bleeds into genuinely subsequent fields (e.g. FIELD5 after the last
-    // REDEFINES block) and places them hundreds/thousands of bytes off.
-    const insideRedef = result[i].isInsideRedefines;
+    // Shift subsequent fields — but never past the nearest enclosing REDEFINES
+    // overlay. An overlay re-views existing bytes, so growth inside it must not
+    // advance the outer layout: with `OPTIONS-AREA REDEFINES DATA-AREA` holding
+    // `ITEM OCCURS 8`, the shift applies to later fields INSIDE OPTIONS-AREA
+    // only — a sibling after it (FILLER) keeps its offset. A boolean
+    // inside-a-redefines check is not enough (the old guard leaked when the
+    // following field sat inside a DIFFERENT, outer overlay like T-8W).
+    let capLevel = -1;   // stop shifting at the first field with level <= capLevel
+    for (let a = i - 1, lvl = gl; a >= 0; a--) {
+      if (result[a].level >= lvl) continue;       // not an ancestor
+      lvl = result[a].level;
+      if (result[a].isRedefines) { capLevel = result[a].level; break; }
+    }
     for (let k = j; k < result.length; k++) {
-      if (insideRedef && !result[k].isInsideRedefines && !result[k].isRedefines) break;
+      if (capLevel >= 0 && result[k].level <= capLevel) break;
       result[k].offset += extra;
     }
   }
@@ -13031,7 +13043,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.285';
+const APP_VERSION  = '1.1.2.287';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14717,7 +14729,16 @@ function _meCurItem() {
   return _meState.specs[_meState.selIdx] || null;
 }
 
+// Staged renderer: the section skeleton (headers + progress bars) paints
+// immediately; each OPEN section's content fills on its own animation frame,
+// the Overrides table in chunks. On old hardware with a huge DDL the old
+// single-pass innerHTML kept the editor invisible/frozen for seconds.
+let _meRenderSeq = 0;
+const _ME_SECT_LOADING =
+  '<div class="me-sect-loading"><div class="me-progress indet"><div class="me-progress-fill"></div></div></div>';
+
 function _meRenderRight() {
+  const seq = ++_meRenderSeq;
   // Capture the Field Map scroll position before the rebuild so DE/VLG/type
   // changes don't jump the user back to the top of the field list.
   const _fmWrapBefore = document.querySelector('.me-fm-table-wrap');
@@ -14734,35 +14755,50 @@ function _meRenderRight() {
     body.innerHTML = '<div class="me-no-sel">Select an item from the sidebar.</div>';
     return;
   }
-  const isMsg = _meState.section === 'msg';
-  const secs  = _meState.sections;
-  const sect  = (key, title, html) => {
+  const isMsg  = _meState.section === 'msg';
+  const secs   = _meState.sections;
+  const stages = [];   // open sections, filled one per frame in order
+  const sect   = (key, title, fill) => {
     const open = secs[key];
+    if (open) stages.push({ key, fill });
     return `<div class="me-section">
   <div class="me-section-hdr" onclick="_meSectionToggle('${key}')">
     <span>${title}</span><span class="me-section-arr">${open ? '&#9650;' : '&#9660;'}</span>
   </div>
-  <div class="me-section-body${open ? ' open' : ''}">${html}</div>
+  <div class="me-section-body${open ? ' open' : ''}" id="me-sect-body-${key}">${open ? _ME_SECT_LOADING : ''}</div>
 </div>`;
   };
-  let html = sect('identity', 'Identity', _meHtmlId(item))
-           + sect('recognizers', 'Recognizers', _meHtmlRecs(item));
+  const syncFill = build => (el, done) => { el.innerHTML = build(); done(); };
+  let html = sect('identity',    'Identity',    syncFill(() => _meHtmlId(item)))
+           + sect('recognizers', 'Recognizers', syncFill(() => _meHtmlRecs(item)));
   if (isMsg) {
-    html += sect('parse_spec',    'Parse Spec',    _meHtmlParseSpec(item))
-          + sect('ddl_bindings',  'DDL Bindings',  _meHtmlDDLBindings(item))
-          + sect('overrides',     'Overrides',     _meHtmlOverrides(item));
+    html += sect('parse_spec',   'Parse Spec',  (el, done) => {
+              el.innerHTML = _meHtmlParseSpec(item);
+              _mePsMountCM(item);
+              done();
+            })
+          + sect('ddl_bindings', 'DDL Bindings', syncFill(() => _meHtmlDDLBindings(item)))
+          + sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done));
   }
   body.innerHTML = html;
 
-  // Mount the Parse Spec CodeMirror editor if the section is open.
-  if (isMsg && secs.parse_spec) _mePsMountCM(item);
-
-  // Re-apply persisted Field Map state (collapse / hide-redef / filter).
-  if (typeof _meFmReapplyState === 'function') _meFmReapplyState();
-
-  // Restore Field Map scroll position so per-row edits don't reset the view.
-  const _fmWrapAfter = document.querySelector('.me-fm-table-wrap');
-  if (_fmWrapAfter && _fmScrollTop > 0) _fmWrapAfter.scrollTop = _fmScrollTop;
+  const finish = () => {
+    if (seq !== _meRenderSeq) return;
+    // Re-apply persisted Field Map state (collapse / hide-redef / filter).
+    if (typeof _meFmReapplyState === 'function') _meFmReapplyState();
+    // Restore Field Map scroll position so per-row edits don't reset the view.
+    const _fmWrapAfter = document.querySelector('.me-fm-table-wrap');
+    if (_fmWrapAfter && _fmScrollTop > 0) _fmWrapAfter.scrollTop = _fmScrollTop;
+  };
+  const step = () => {
+    if (seq !== _meRenderSeq) return;
+    const st = stages.shift();
+    if (!st) { finish(); return; }
+    const el = document.getElementById('me-sect-body-' + st.key);
+    if (!el) { requestAnimationFrame(step); return; }
+    st.fill(el, () => requestAnimationFrame(step));
+  };
+  requestAnimationFrame(step);
 }
 
 // ── Parse Spec Tab ────────────────────────────────────────────────────────
@@ -15862,15 +15898,18 @@ function _meBindDel(idx) {
 
 // ── Overrides Tab ─────────────────────────────────────────────────────────
 
-function _meHtmlOverrides(item) {
-  const ea = v => (v == null ? '' : String(v)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-  const deMap = item.de_map           || [];
-  const fo    = item.field_overrides   || [];
+// ── Overrides section builders ──────────────────────────────────────────────
+// Split into prep (lookup maps + chrome) and a per-row HTML builder so the
+// section can render synchronously (small DDLs) or in chunks with a progress
+// bar (a huge DDL's whole table in one innerHTML froze the editor open).
+function _meOvEsc(v) { return (v == null ? '' : String(v)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 
+function _meOverridesPrep(item) {
+  const ea = _meOvEsc;
   // Lookup maps so per-row UI can pre-fill state.
   const vlgMap = _meVlgLenMap(item);   // groupId → LEN leaf id (or null = first leaf)
   const foByField = new Map();
-  for (const e of fo) if (e?.field) foByField.set(_canonFieldId(e.field), e);
+  for (const e of (item.field_overrides || [])) if (e?.field) foByField.set(_canonFieldId(e.field), e);
   // Single source of truth: the bitmap field id (or null). Truthy means the
   // spec uses bitmap-fields, so DE controls / VLG / "----" all key off this.
   const usesBitmapFields = !!_meItemBitmapField(item);
@@ -15889,144 +15928,42 @@ function _meHtmlOverrides(item) {
   // bindings (deduped by id), combining: DE number controls, VLG toggle,
   // type override, display override.
   const fieldList = _meResolveDEFieldList(item);
+  if (!fieldList)
+    return { fieldList, emptyHtml: '<div class="me-empty">Bind a DDL above to see field → DE mappings.</div>' };
+  if (!fieldList.length)
+    return { fieldList, emptyHtml: '<div class="me-empty">Bound DDL has no elementary fields.</div>' };
 
-  let dmHtml = '';
-  if (!fieldList) {
-    dmHtml = '<div class="me-empty">Bind a DDL above to see field → DE mappings.</div>';
-  } else if (!fieldList.length) {
-    dmHtml = '<div class="me-empty">Bound DDL has no elementary fields.</div>';
-  } else {
-    // Build rows as <tr> using DDL Doc styling conventions (table layout
-    // guarantees column alignment).
-    let rowNum = 0;
-    const bodyRows = fieldList.map(row => {
-      const id        = ea(row.id);
-      const depth     = row.id.split('.').length - 1;
-      const namePadL  = `padding-left:${depth * 16}px`;
-      const isGroup   = !!row.isGroup;
-      const trCls     = [
-        isGroup ? 'me-fm-grp' : '',
-        row.isRedef ? 'me-fm-redef' : '',
-        row.isTerminal ? 'me-fm-term' : '',
-        !isGroup && !row.underTerminal ? 'me-fm-leaf' : '',
-        row.underTerminal ? 'me-fm-leaf me-fm-under-term' : '',
-        vlgMap.has(row.id) ? 'me-fm-vlg-on' : '',
-      ].filter(Boolean).join(' ');
-      const dataAttrs = isGroup
-        ? `data-grp="1" data-qn="${id}"`
-        : `data-qn="${id}"`;
-
-      // FIELD cell — group row uses ">" icon (CSS-rotated 90° when expanded)
-      // placed flush AFTER the qualName.
-      const grpIcon = isGroup
-        ? `<span class="me-fm-grp-icon" onclick="_meFmToggleGroup(this.closest('tr'))">&gt;</span>`
-        : '';
-      // REDEFINES note on any row that is ITSELF a REDEFINES — a redefining
-      // group OR an elementary leaf that redefines another field. Leaves that
-      // are merely inside a redefining group carry isRedef=false, so they
-      // inherit the indication via their faded styling without repeating it.
-      const redefNote = row.isRedef && row.redefTarget
-        ? ` <span class="me-fm-redef-note">↩ ${ea(row.redefTarget)}</span>` : '';
-      const fieldCell = isGroup
-        ? `<td class="me-fm-fld" style="${namePadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))"><span class="me-fm-name">${id}</span>${grpIcon}${redefNote}</td>`
-        : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span>${redefNote}</td>`;
-
-      // DE cell — hidden for REDEFINES rows (they overlay other bytes, no DE of their own)
-      let deCell;
-      if (usesBitmapFields && !row.underTerminal && !row.isRedef) {
-        if (row.de === null) {
-          // Pre-bitmap header (or the bitmap field itself) — no DE. Leave
-          // the cell empty; tooltip explains why on hover.
-          deCell = `<td class="me-fm-de" title="No DE here — this field is before (or is) the bitmap declared in the parse spec."></td>`;
-        } else {
-        const pillClass = 'me-de-pill' + (row.anchored ? ' anchored' : '');
-        const clearBtn  = row.anchored
-          ? `<button class="me-rb me-de-clear" title="Clear DE override (revert to default)" onclick="_meDeClear('${id}')">↺</button>`
-          : `<span class="me-de-clear-ph"></span>`;
-        deCell = `<td class="me-fm-de"><div class="me-fm-de-inner">
-    <button class="me-rb me-de-nudge" title="Decrease DE" onclick="_meDeNudge('${id}',-1)">&lt;</button>
-    <span class="${pillClass}" title="Click to type DE number" onclick="_meDeEditStart(this,'${id}',${row.de})">DE-${row.de}</span>
-    <button class="me-rb me-de-nudge" title="Increase DE" onclick="_meDeNudge('${id}',1)">&gt;</button>
-    ${clearBtn}
-  </div></td>`;
-        }
-      } else {
-        const tip = !usesBitmapFields ? 'DE controls appear only when the parse spec uses bitmap-fields.'
-                  : row.isRedef       ? 'REDEFINES overlays existing bytes — no DE of its own.'
-                  : row.underTerminal ? 'No DE here — the terminal group above owns the DE.'
-                  : '';
-        deCell = `<td class="me-fm-de" title="${tip}"></td>`;
-      }
-
-      // VLG cell — combo (on any group with ≥2 children, when bitmap-fields used, and not REDEFINES).
-      // Options are the group's leaf fields; selecting one marks the group as VLG
-      // with that field as the LEN. The leading "—" option means "not a VLG".
-      const vlgEligible = isGroup && (row.childCount || 0) >= 2 && !row.isRedef;
-      let vlgCell;
-      if (vlgEligible && usesBitmapFields) {
-        const prefix    = row.id + '.';
-        const vlgLeaves = fieldList.filter(r => !r.isGroup && !r.isRedef && r.id.startsWith(prefix));
-        // null (legacy on, no field chosen) → default to the first leaf.
-        const curLen    = vlgMap.has(row.id) ? (vlgMap.get(row.id) || (vlgLeaves[0] && vlgLeaves[0].id)) : '';
-        const opts = `<option value=""></option>` + vlgLeaves.map(l => {
-          const label = ea(l.id.slice(prefix.length));
-          return `<option value="${ea(l.id)}"${l.id === curLen ? ' selected' : ''}>${label}</option>`;
-        }).join('');
-        vlgCell = `<td class="me-fm-vlg"><select class="me-sel me-vlg-sel" onchange="_meVlgSetLen('${id}',this.value)" title="Pick the sub-field that holds the length. bitmap-fields reads it as a numeric LEN and distributes that many bytes across the fields after it; fields before it read at their declared length.">${opts}</select></td>`;
-      } else {
-        vlgCell = `<td class="me-fm-vlg"></td>`;
-      }
-
-      // Display override stays its own column. Rendered as a lightweight
-      // click-to-edit cell — a real <select> materializes on click. Huge DDLs
-      // produce thousands of rows; two live selects per row froze the open.
-      const foEntry = foByField.get(_canonFieldId(row.id)) || {};
-      const dispCell = `<td class="me-fm-fo me-fo-cell" data-kind="display" data-fid="${id}" onclick="_meFoCellEdit(this)">${_meFoFakeHtml(foEntry.display || '', '')}</td>`;
-
-      // # column — number only the leaves, empty for group rows (mirrors DDL Doc).
-      const numText = isGroup ? '' : (++rowNum);
-      const numCell = `<td class="me-fm-num">${numText}</td>`;
-      // Offset column — DDL-declared byte offset, dec + hex (same as DDL Doc).
-      const offCell = row.offset != null
-        ? `<td class="me-fm-off">${row.offset}<span class="me-fm-off-hex"> 0x${row.offset.toString(16).toUpperCase().padStart(4, '0')}</span></td>`
-        : `<td class="me-fm-off"></td>`;
-      // Length column — byte size from the DDL (groups sum their leaves).
-      const lenCell = `<td class="me-fm-len">${row.length || 0}</td>`;
-      // Data Type column — for elementary fields, a dropdown whose default
-      // entry is the DDL-declared type (empty value = no override). For
-      // groups (and REDEFINES wrappers), the cell stays a plain label.
-      // Strip the length suffix from PIC types ("PIC X(9)" → "PIC X") since
-      // the byte length now lives in its own column.
-      const stripLen     = (s) => String(s || '').replace(/\(\d+\)/g, '').replace(/\s+$/, '');
-      const overrideVal  = foEntry.type || '';
-      const defaultLabel = stripLen(row.dataType) || '(unknown)';
-      // Length-incompatible override → flag inline so the user sees the
-      // problem at edit time instead of waiting for parse output.
-      const overrideRequiredLen = overrideVal && typeof _meReadTypeByteLen === 'function'
-        ? _meReadTypeByteLen(overrideVal) : null;
-      const overrideBadLen = overrideRequiredLen !== null && overrideRequiredLen !== (row.length || 0);
-      const warnIcon = overrideBadLen
-        ? `<span class="me-fm-dt-warn" title="Override &quot;${ea(overrideVal)}&quot; needs ${overrideRequiredLen} bytes but this field is ${row.length} — override will be ignored at parse time.">⚠</span>` : '';
-      const dtCell = (isGroup || row.isRedef)
-        ? `<td class="me-fm-dt">${ea(defaultLabel)}</td>`
-        : `<td class="me-fm-dt me-fo-cell${overrideBadLen ? ' me-fm-dt-bad' : ''}" data-kind="type" data-fid="${id}" data-def="${ea(defaultLabel)}" data-len="${row.length || 0}" onclick="_meFoCellEdit(this)" title="Override the field's interpreted type (length must be compatible).">${_meFoFakeHtml(overrideVal, defaultLabel)}${warnIcon}</td>`;
-      return `<tr class="${trCls}" ${dataAttrs}>${numCell}${fieldCell}${offCell}${lenCell}${dtCell}${deCell}${vlgCell}${dispCell}</tr>`;
-    }).join('');
-
-    let warnHtml = (unresolved && unresolved.count > 0)
-      ? `<div class="me-fm-warn" title="${ea(unresolved.sample.join(', '))}">⚠ ${unresolved.count} DDL item${unresolved.count !== 1 ? 's' : ''} not shown — unresolved TYPE references (size 0). Examples: ${ea(unresolved.sample.slice(0,3).join(', '))}${unresolved.sample.length > 3 ? '…' : ''}</div>`
-      : '';
-    // The parse spec names a bitmap field that doesn't exist in any binding —
-    // every row would show an empty DE with no hint why. Surface the mismatch.
-    const _bmpField = _meItemBitmapField(item);
-    if (_bmpField && !fieldList.some(r => r.id === _bmpField)) {
-      warnHtml += `<div class="me-fm-warn">⚠ Parse spec references bitmap field "${ea(_bmpField)}" but no bound DDL field has that id — DE numbering can't start. Fix the {"bitmap-fields"} value or the binding.</div>`;
+  // Non-REDEFINES leaves under every group prefix, in declaration order —
+  // O(rows × depth) instead of a per-group fieldList.filter scan (O(n²) on
+  // huge DDLs with many groups).
+  const leavesByGroup = new Map();
+  for (const r of fieldList) {
+    if (r.isGroup || r.isRedef) continue;
+    const parts = r.id.split('.');
+    let prefix = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      prefix = prefix ? prefix + '.' + parts[i] : parts[i];
+      let arr = leavesByGroup.get(prefix);
+      if (!arr) leavesByGroup.set(prefix, arr = []);
+      arr.push(r);
     }
+  }
 
-    const fmHelpOpen = !!(_meState && _meState.fmHelpOpen);
-    const helpHtml = `<div class="me-ps-help${fmHelpOpen ? ' open' : ''}" id="me-fm-help">${_meFmHelpHtml()}</div>`;
+  let warnHtml = (unresolved && unresolved.count > 0)
+    ? `<div class="me-fm-warn" title="${ea(unresolved.sample.join(', '))}">⚠ ${unresolved.count} DDL item${unresolved.count !== 1 ? 's' : ''} not shown — unresolved TYPE references (size 0). Examples: ${ea(unresolved.sample.slice(0,3).join(', '))}${unresolved.sample.length > 3 ? '…' : ''}</div>`
+    : '';
+  // The parse spec names a bitmap field that doesn't exist in any binding —
+  // every row would show an empty DE with no hint why. Surface the mismatch.
+  const _bmpField = _meItemBitmapField(item);
+  if (_bmpField && !fieldList.some(r => r.id === _bmpField)) {
+    warnHtml += `<div class="me-fm-warn">⚠ Parse spec references bitmap field "${ea(_bmpField)}" but no bound DDL field has that id — DE numbering can't start. Fix the {"bitmap-fields"} value or the binding.</div>`;
+  }
 
-    dmHtml = warnHtml + helpHtml + `
+  const fmHelpOpen = !!(_meState && _meState.fmHelpOpen);
+  const helpHtml = `<div class="me-ps-help${fmHelpOpen ? ' open' : ''}" id="me-fm-help">${_meFmHelpHtml()}</div>`;
+
+  // chrome(bodyRowsHtml) → full section markup with the given tbody content.
+  const chrome = bodyRows => warnHtml + helpHtml + `
 <div class="me-fm-toolbar">
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
   <button class="btn btn-sm" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
@@ -16046,12 +15983,202 @@ function _meHtmlOverrides(item) {
       <th class="me-fm-th-vlg" data-col="vlg" title="Variable Length Group">VLG<div class="me-fm-resizer" data-col="vlg"></div></th>
       <th class="me-fm-th-fo"  data-col="display">Display</th>
     </tr></thead>
-    <tbody>${bodyRows}</tbody>
+    <tbody></tbody>
   </table>
 </div>`;
+
+  return { fieldList, ctx: { ea, vlgMap, foByField, usesBitmapFields, leavesByGroup }, chrome };
+}
+
+// DE cell — hidden for REDEFINES rows (they overlay other bytes, no DE of
+// their own). data-sig lets _meFmPatchDECells skip unchanged cells.
+function _meFmDeSig(row, usesBitmapFields) {
+  if (!(usesBitmapFields && !row.underTerminal && !row.isRedef)) return 'x';
+  if (row.de === null) return 'n';
+  return row.de + (row.anchored ? 'a' : '');
+}
+function _meFmDeCellHtml(row, ctx) {
+  const ea  = ctx.ea;
+  const id  = ea(row.id);
+  const sig = _meFmDeSig(row, ctx.usesBitmapFields);
+  if (ctx.usesBitmapFields && !row.underTerminal && !row.isRedef) {
+    if (row.de === null) {
+      // Pre-bitmap header (or the bitmap field itself) — no DE. Leave
+      // the cell empty; tooltip explains why on hover.
+      return `<td class="me-fm-de" data-sig="${sig}" title="No DE here — this field is before (or is) the bitmap declared in the parse spec."></td>`;
+    }
+    const pillClass = 'me-de-pill' + (row.anchored ? ' anchored' : '');
+    const clearBtn  = row.anchored
+      ? `<button class="me-rb me-de-clear" title="Clear DE override (revert to default)" onclick="_meDeClear('${id}')">↺</button>`
+      : `<span class="me-de-clear-ph"></span>`;
+    return `<td class="me-fm-de" data-sig="${sig}"><div class="me-fm-de-inner">
+    <button class="me-rb me-de-nudge" title="Decrease DE" onclick="_meDeNudge('${id}',-1)">&lt;</button>
+    <span class="${pillClass}" title="Click to type DE number" onclick="_meDeEditStart(this,'${id}',${row.de})">DE-${row.de}</span>
+    <button class="me-rb me-de-nudge" title="Increase DE" onclick="_meDeNudge('${id}',1)">&gt;</button>
+    ${clearBtn}
+  </div></td>`;
+  }
+  const tip = !ctx.usesBitmapFields ? 'DE controls appear only when the parse spec uses bitmap-fields.'
+            : row.isRedef           ? 'REDEFINES overlays existing bytes — no DE of its own.'
+            : row.underTerminal     ? 'No DE here — the terminal group above owns the DE.'
+            : '';
+  return `<td class="me-fm-de" data-sig="${sig}" title="${tip}"></td>`;
+}
+
+// One Field Map <tr>. counter.n numbers the leaves (groups stay blank).
+function _meFmRowHtml(row, ctx, counter) {
+  const ea        = ctx.ea;
+  const id        = ea(row.id);
+  const depth     = row.id.split('.').length - 1;
+  const namePadL  = `padding-left:${depth * 16}px`;
+  const isGroup   = !!row.isGroup;
+  const trCls     = [
+    isGroup ? 'me-fm-grp' : '',
+    row.isRedef ? 'me-fm-redef' : '',
+    row.isTerminal ? 'me-fm-term' : '',
+    !isGroup && !row.underTerminal ? 'me-fm-leaf' : '',
+    row.underTerminal ? 'me-fm-leaf me-fm-under-term' : '',
+    ctx.vlgMap.has(row.id) ? 'me-fm-vlg-on' : '',
+  ].filter(Boolean).join(' ');
+  const dataAttrs = isGroup
+    ? `data-grp="1" data-qn="${id}"`
+    : `data-qn="${id}"`;
+
+  // FIELD cell — group row uses ">" icon (CSS-rotated 90° when expanded)
+  // placed flush AFTER the qualName.
+  const grpIcon = isGroup
+    ? `<span class="me-fm-grp-icon" onclick="_meFmToggleGroup(this.closest('tr'))">&gt;</span>`
+    : '';
+  // REDEFINES note on any row that is ITSELF a REDEFINES — a redefining
+  // group OR an elementary leaf that redefines another field. Leaves that
+  // are merely inside a redefining group carry isRedef=false, so they
+  // inherit the indication via their faded styling without repeating it.
+  const redefNote = row.isRedef && row.redefTarget
+    ? ` <span class="me-fm-redef-note">↩ ${ea(row.redefTarget)}</span>` : '';
+  const fieldCell = isGroup
+    ? `<td class="me-fm-fld" style="${namePadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))"><span class="me-fm-name">${id}</span>${grpIcon}${redefNote}</td>`
+    : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span>${redefNote}</td>`;
+
+  const deCell = _meFmDeCellHtml(row, ctx);
+
+  // VLG cell — combo (on any group with ≥2 children, when bitmap-fields used, and not REDEFINES).
+  // Options are the group's leaf fields; selecting one marks the group as VLG
+  // with that field as the LEN. The leading "—" option means "not a VLG".
+  const vlgEligible = isGroup && (row.childCount || 0) >= 2 && !row.isRedef;
+  let vlgCell;
+  if (vlgEligible && ctx.usesBitmapFields) {
+    const prefix    = row.id + '.';
+    const vlgLeaves = ctx.leavesByGroup.get(row.id) || [];
+    // null (legacy on, no field chosen) → default to the first leaf.
+    const curLen    = ctx.vlgMap.has(row.id) ? (ctx.vlgMap.get(row.id) || (vlgLeaves[0] && vlgLeaves[0].id)) : '';
+    const opts = `<option value=""></option>` + vlgLeaves.map(l => {
+      const label = ea(l.id.slice(prefix.length));
+      return `<option value="${ea(l.id)}"${l.id === curLen ? ' selected' : ''}>${label}</option>`;
+    }).join('');
+    vlgCell = `<td class="me-fm-vlg"><select class="me-sel me-vlg-sel" onchange="_meVlgSetLen('${id}',this.value)" title="Pick the sub-field that holds the length. bitmap-fields reads it as a numeric LEN and distributes that many bytes across the fields after it; fields before it read at their declared length.">${opts}</select></td>`;
+  } else {
+    vlgCell = `<td class="me-fm-vlg"></td>`;
   }
 
-  return `<div class="me-ov-section">${dmHtml}</div>`;
+  // Display override stays its own column. Rendered as a lightweight
+  // click-to-edit cell — a real <select> materializes on click. Huge DDLs
+  // produce thousands of rows; two live selects per row froze the open.
+  const foEntry = ctx.foByField.get(_canonFieldId(row.id)) || {};
+  const dispCell = `<td class="me-fm-fo me-fo-cell" data-kind="display" data-fid="${id}" onclick="_meFoCellEdit(this)">${_meFoFakeHtml(foEntry.display || '', '')}</td>`;
+
+  // # column — number only the leaves, empty for group rows (mirrors DDL Doc).
+  const numText = isGroup ? '' : (++counter.n);
+  const numCell = `<td class="me-fm-num">${numText}</td>`;
+  // Offset column — DDL-declared byte offset, dec + hex (same as DDL Doc).
+  const offCell = row.offset != null
+    ? `<td class="me-fm-off">${row.offset}<span class="me-fm-off-hex"> 0x${row.offset.toString(16).toUpperCase().padStart(4, '0')}</span></td>`
+    : `<td class="me-fm-off"></td>`;
+  // Length column — byte size from the DDL (groups sum their leaves).
+  const lenCell = `<td class="me-fm-len">${row.length || 0}</td>`;
+  // Data Type column — for elementary fields, a dropdown whose default
+  // entry is the DDL-declared type (empty value = no override). For
+  // groups (and REDEFINES wrappers), the cell stays a plain label.
+  // Strip the length suffix from PIC types ("PIC X(9)" → "PIC X") since
+  // the byte length now lives in its own column.
+  const stripLen     = (s) => String(s || '').replace(/\(\d+\)/g, '').replace(/\s+$/, '');
+  const overrideVal  = foEntry.type || '';
+  const defaultLabel = stripLen(row.dataType) || '(unknown)';
+  // Length-incompatible override → flag inline so the user sees the
+  // problem at edit time instead of waiting for parse output.
+  const overrideRequiredLen = overrideVal && typeof _meReadTypeByteLen === 'function'
+    ? _meReadTypeByteLen(overrideVal) : null;
+  const overrideBadLen = overrideRequiredLen !== null && overrideRequiredLen !== (row.length || 0);
+  const warnIcon = overrideBadLen
+    ? `<span class="me-fm-dt-warn" title="Override &quot;${ea(overrideVal)}&quot; needs ${overrideRequiredLen} bytes but this field is ${row.length} — override will be ignored at parse time.">⚠</span>` : '';
+  const dtCell = (isGroup || row.isRedef)
+    ? `<td class="me-fm-dt">${ea(defaultLabel)}</td>`
+    : `<td class="me-fm-dt me-fo-cell${overrideBadLen ? ' me-fm-dt-bad' : ''}" data-kind="type" data-fid="${id}" data-def="${ea(defaultLabel)}" data-len="${row.length || 0}" onclick="_meFoCellEdit(this)" title="Override the field's interpreted type (length must be compatible).">${_meFoFakeHtml(overrideVal, defaultLabel)}${warnIcon}</td>`;
+  return `<tr class="${trCls}" ${dataAttrs}>${numCell}${fieldCell}${offCell}${lenCell}${dtCell}${deCell}${vlgCell}${dispCell}</tr>`;
+}
+
+// Synchronous full build — kept for small DDLs and non-staged callers.
+function _meHtmlOverrides(item) {
+  const prep = _meOverridesPrep(item);
+  if (prep.emptyHtml) return `<div class="me-ov-section">${prep.emptyHtml}</div>`;
+  const counter = { n: 0 };
+  let rows = '';
+  for (const row of prep.fieldList) rows += _meFmRowHtml(row, prep.ctx, counter);
+  const html = prep.chrome('').replace('<tbody></tbody>', `<tbody>${rows}</tbody>`);
+  return `<div class="me-ov-section">${html}</div>`;
+}
+
+// Chunked async build — fills the section tbody a slice at a time behind a
+// determinate progress bar so a huge DDL never freezes the editor open.
+// Aborts silently when seq no longer matches (item switched / editor closed).
+function _meFillOverridesSection(el, item, seq, done) {
+  const prep = _meOverridesPrep(item);
+  if (prep.emptyHtml) { el.innerHTML = `<div class="me-ov-section">${prep.emptyHtml}</div>`; done(); return; }
+  el.innerHTML = `<div class="me-ov-section">`
+    + `<div class="me-sect-loading" id="me-fm-loading"><div class="me-progress"><div class="me-progress-fill" id="me-fm-prog"></div></div></div>`
+    + prep.chrome('') + `</div>`;
+  const tbody = el.querySelector('.me-fm-table tbody');
+  const prog  = el.querySelector('#me-fm-prog');
+  const rows  = prep.fieldList;
+  const counter = { n: 0 };
+  const CHUNK = 500;
+  let i = 0;
+  const stepChunk = () => {
+    if (seq !== _meRenderSeq || !tbody.isConnected) return;   // stale render
+    let html = '';
+    const end = Math.min(rows.length, i + CHUNK);
+    for (; i < end; i++) html += _meFmRowHtml(rows[i], prep.ctx, counter);
+    tbody.insertAdjacentHTML('beforeend', html);
+    if (prog) prog.style.width = Math.round(i / rows.length * 100) + '%';
+    if (i < rows.length) { setTimeout(stepChunk, 0); return; }
+    el.querySelector('#me-fm-loading')?.remove();
+    done();
+  };
+  stepChunk();
+}
+
+// In-place DE-cell patch — recompute the field list (fast, pure JS) and swap
+// only the DE cells whose signature changed. Rebuilding the whole right pane
+// for one nudge froze the UI 1-2 s on huge DDLs. Returns false when the table
+// isn't fully rendered (mid-chunk / filtered mismatch) → caller falls back.
+function _meFmPatchDECells() {
+  const item = _meCurItem(); if (!item) return false;
+  const tbody = document.querySelector('.me-fm-table tbody');
+  if (!tbody) return false;
+  const fieldList = _meResolveDEFieldList(item);
+  if (!fieldList || tbody.rows.length !== fieldList.length) return false;
+  const ctx = {
+    ea: _meOvEsc,
+    usesBitmapFields: !!_meItemBitmapField(item),
+  };
+  for (let i = 0; i < fieldList.length; i++) {
+    const row = fieldList[i];
+    const td  = tbody.rows[i].cells[5];               // DE column
+    if (!td) continue;
+    const sig = _meFmDeSig(row, ctx.usesBitmapFields);
+    if (td.dataset.sig === sig) continue;
+    td.outerHTML = _meFmDeCellHtml(row, ctx);
+  }
+  return true;
 }
 
 // ── DE Map field-list helpers ───────────────────────────────────────────────
@@ -16335,7 +16462,9 @@ function _meDeSet(fieldId, newDE) {
   if (idx === -1) item.de_map.push({ field: fieldId, de: n });
   else            item.de_map[idx].de = n;
   _meSetDirty();
-  _meRenderRight();
+  // Patch only the DE cells that changed — a full re-render froze the UI
+  // for seconds on huge DDLs. Falls back when the table isn't fully built.
+  if (!_meFmPatchDECells()) _meRenderRight();
 }
 function _meDeNudge(fieldId, delta) {
   const list = _meResolveDEFieldList(_meCurItem());
@@ -16349,7 +16478,7 @@ function _meDeClear(fieldId) {
   if (i === -1) return;
   item.de_map.splice(i, 1);
   _meSetDirty();
-  _meRenderRight();
+  if (!_meFmPatchDECells()) _meRenderRight();
 }
 
 // Normalize var_length_groups into Map<groupId, lenFieldId|null>. Accepts both
@@ -16842,6 +16971,11 @@ function _meFoCellRepaintAll(fid, kind) {
 // Swap the pill for a small number input on click; commit on Enter / blur.
 function _meDeEditStart(pill, fieldId, currentDE) {
   if (!pill || pill.querySelector('input')) return;
+  // The input replaces the pill inside the DE cell — drop the cell's patch
+  // signature so _meFmPatchDECells always rebuilds it (even when the DE value
+  // ends up unchanged), restoring the pill.
+  const td = pill.closest('td');
+  if (td) td.removeAttribute('data-sig');
   const input = document.createElement('input');
   input.type = 'number'; input.min = '1'; input.max = '128';
   input.value = String(currentDE);
@@ -16854,7 +16988,7 @@ function _meDeEditStart(pill, fieldId, currentDE) {
   input.addEventListener('blur', commit, { once: true });
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-    if (e.key === 'Escape') { e.preventDefault(); _meRenderRight(); }
+    if (e.key === 'Escape') { e.preventDefault(); if (!_meFmPatchDECells()) _meRenderRight(); }
   });
 }
 

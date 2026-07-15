@@ -1524,6 +1524,32 @@ test('parse-spec lint id set includes canonical (occurrence-stripped) ids', () =
   eq(ids.has('NUM-SERVICES'), true, 'plain id');
 });
 
+// ── OCCURS inside a REDEFINES overlay ─────────────────────────────────────────
+console.log('\nOCCURS inside a REDEFINES overlay (DDL Doc sizing)');
+
+test('OCCURS growth inside a REDEFINES overlay does not shift outer siblings', () => {
+  const ddl = `DEF STM.
+  02 RQST PIC X(480).
+  02 T-8W REDEFINES RQST.
+    04 DATA-AREA PIC X(280).
+    04 OPTIONS-AREA REDEFINES DATA-AREA.
+      08 ITEM OCCURS 8 TIMES.
+        16 ID PIC X(02).
+        16 CODIGO PIC X(04).
+        16 DESC PIC X(29).
+    04 FILLER PIC X(80).
+END
+`;
+  const sec = parseDDLSections(ddl)[0];
+  const { fields, totalSize } = buildDDLDocFields(sec.items, null);
+  const get = qn => fields.find(f => f.qualName === qn);
+  eq(get('T-8W').size, 360, 'T-8W = DATA-AREA 280 + FILLER 80');
+  eq(get('T-8W.FILLER').offset, 280, 'FILLER not shifted by ITEM OCCURS 8');
+  eq(get('T-8W.OPTIONS-AREA').size, 280, 'overlay sized from 8 × 35');
+  eq(get('T-8W.OPTIONS-AREA.ITEM').size, 280, 'ITEM group = 8 × 35');
+  eq(totalSize, 480, 'record total stays RQST size');
+});
+
 // ── KEYTAG clause ─────────────────────────────────────────────────────────────
 console.log('\nKEYTAG clause');
 

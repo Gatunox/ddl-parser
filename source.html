@@ -1396,7 +1396,7 @@ body.light .me-item:hover{background:rgba(0,0,0,.04);}
 /* Editor-scoped toasts — the main-page #flash-container sits BELOW the editor
    overlay (z-index), so its toasts are hidden behind the popup. These render
    inside the right panel instead. */
-#me-flash-container{position:absolute;top:44px;right:14px;z-index:50;display:flex;flex-direction:column;gap:6px;align-items:flex-end;max-width:70%;pointer-events:none;}
+#me-flash-container{position:absolute;bottom:52px;right:14px;z-index:50;display:flex;flex-direction:column;gap:6px;align-items:flex-end;max-width:70%;pointer-events:none;}
 .me-flash{pointer-events:auto;padding:7px 34px 7px 14px;border-radius:4px;font-size:12px;font-family:var(--mono);background:var(--success);color:#000;position:relative;box-shadow:0 4px 16px rgba(0,0,0,0.5);}
 .me-flash.warn{background:#e6a817;color:#000;}
 .me-flash-x{position:absolute;top:50%;right:10px;transform:translateY(-50%);font-size:13px;line-height:1;opacity:.6;cursor:pointer;}
@@ -1597,11 +1597,11 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
    proportional rather than absolute, and resizing one column would scale
    every other column to fill the leftover space. */
 .me-fm-table{table-layout:fixed;border-collapse:collapse;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
-.me-fm-table th{position:sticky;top:0;background:var(--bg-deep);color:var(--text-dim);font-weight:700;text-align:left;padding:5px 8px;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-size:calc(var(--sz-mono) - 2px);z-index:1;white-space:nowrap;box-sizing:border-box;}
-.me-fm-th-num{width:36px;text-align:right;}
+.me-fm-table th{position:sticky;top:0;background:var(--bg-deep);color:var(--text-dim);font-weight:700;text-align:center;padding:5px 8px;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-size:calc(var(--sz-mono) - 2px);z-index:1;white-space:nowrap;box-sizing:border-box;}
+.me-fm-th-num{width:36px;}
 .me-fm-th-fld{width:280px;}
-.me-fm-th-off{width:90px;text-align:right;}
-.me-fm-th-len{width:60px;text-align:right;}
+.me-fm-th-off{width:90px;}
+.me-fm-th-len{width:60px;}
 .me-fm-off{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);text-align:right;font-variant-numeric:tabular-nums;}
 .me-fm-off-hex{color:var(--text-dim);opacity:.6;font-size:10px;}
 .me-fm-th-dt {width:140px;text-align:left;}
@@ -1656,19 +1656,31 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
 .me-de-pill:hover{border-color:var(--accent);color:var(--accent);}
 .me-de-pill.anchored{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.07);}
 .me-de-edit-inp{width:46px;height:16px;padding:0 2px;border:0;background:transparent;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--accent);text-align:center;outline:none;}
+/* Nudge chevrons and ↺ clear buttons sit borderless until hovered — the 2px
+   border stays in the box (transparent) so nothing shifts on hover. */
+.me-de-nudge,.me-de-clear{border-color:transparent;}
 .me-de-clear{width:22px;height:20px;padding:0;flex-shrink:0;}
+.me-de-clear-all{margin-left:6px;vertical-align:middle;font-size:11px;}
 .me-de-clear-ph{display:inline-block;width:22px;flex-shrink:0;}
-/* VLG LEN-field selector — picks which sub-field holds the length. */
-.me-vlg-sel{height:20px;padding:0 2px;font-size:calc(var(--sz-mono) - 1px);width:68px;}
 .me-fo-sel{height:20px;padding:0 4px;font-size:calc(var(--sz-mono) - 1px);width:90px;}
 /* When a non-blank option is chosen, show the selected text in the accent
-   colour so an active override / VLG selection stands out. */
-.me-vlg-sel:has(option:checked:not([value=""])),
+   colour so an active override stands out. */
 .me-fo-sel:has(option:checked:not([value=""])){color:var(--accent);}
-/* Auto Order button in the Data Element column header */
-.me-de-auto{margin-left:8px;height:18px;padding:0 8px;font-size:10px;font-family:var(--mono);border:2px solid var(--border);border-radius:3px;background:var(--bg-deep);color:var(--text-dim);cursor:pointer;text-transform:none;letter-spacing:0;vertical-align:middle;}
-.me-de-auto:hover{color:var(--accent);border-color:var(--accent);}
-.me-de-auto.active{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
+/* VLG toggles — group pill marks the group as a VLG; leaf pill marks the LEN */
+.me-vlg-tgl{height:18px;padding:0 8px;font-size:9px;font-family:var(--mono);border:2px solid var(--border);border-radius:9px;background:transparent;color:var(--text-dim);cursor:pointer;letter-spacing:.04em;}
+.me-vlg-tgl:hover{color:var(--accent);border-color:var(--accent);}
+.me-vlg-tgl.on{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
+.me-vlg-len{height:16px;padding:0 7px;font-size:9px;font-family:var(--mono);border:2px solid var(--border);border-radius:8px;background:transparent;color:var(--text-very-dim,var(--text-dim));cursor:pointer;letter-spacing:.04em;}
+.me-vlg-len:hover{color:var(--accent);border-color:var(--accent);}
+.me-vlg-len.on{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
+/* Field Map column visibility (Columns chooser) */
+.me-fm-hide-num .me-fm-num,.me-fm-hide-num .me-fm-th-num{display:none;}
+.me-fm-hide-off .me-fm-off,.me-fm-hide-off .me-fm-th-off{display:none;}
+.me-fm-hide-len .me-fm-len,.me-fm-hide-len .me-fm-th-len{display:none;}
+.me-fm-hide-dt .me-fm-dt,.me-fm-hide-dt .me-fm-th-dt{display:none;}
+.me-fm-hide-de .me-fm-de,.me-fm-hide-de .me-fm-th-de{display:none;}
+.me-fm-hide-vlg .me-fm-vlg,.me-fm-hide-vlg .me-fm-th-vlg{display:none;}
+.me-fm-hide-display .me-fm-fo,.me-fm-hide-display .me-fm-th-fo{display:none;}
 /* Section-load progress bars — staged Data Editor rendering */
 .me-sect-loading{padding:10px 8px;}
 .me-progress{height:8px;border:2px solid var(--border);border-radius:3px;overflow:hidden;background:var(--bg-deep);}
@@ -13058,7 +13070,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.292';
+const APP_VERSION  = '1.1.2.294';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15987,12 +15999,24 @@ function _meOverridesPrep(item) {
   const helpHtml = `<div class="me-ps-help${fmHelpOpen ? ' open' : ''}" id="me-fm-help">${_meFmHelpHtml()}</div>`;
 
   // chrome(bodyRowsHtml) → full section markup with the given tbody content.
+  const autoOn = _meAutoOrderSnap.has(item) || !!_meFmUiState(item).autoOrder;
+  const colsRows = _ME_FM_COLS.map(([k, label]) =>
+    `<div class="audit-cfg-row"><label>${label}</label><button class="panel-toggle" id="me-fm-ccol-${k}" onclick="_meFmToggleColVis('${k}')">−</button></div>`
+  ).join('');
   const chrome = bodyRows => warnHtml + helpHtml + `
 <div class="me-fm-toolbar">
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
+  ${usesBitmapFields ? `<button class="btn btn-sm${autoOn ? ' btn-accent-on' : ''}" id="me-fm-auto-btn" onclick="_meFmAutoOrder()" title="Anchor each DE from the 'Bit map position = NN' comment above its declaration in the bound DDL files. Toggle: press again to revert to the order before Auto Order.">Auto Order</button>` : ''}
   <button class="btn btn-sm" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
   <button class="btn btn-sm" id="me-fm-hide-redef-btn" onclick="_meFmToggleHideRedef()" title="Hide / show REDEFINES rows">Hide Redef</button>
   <button class="btn btn-sm" onclick="_meFmResetCols()" title="Reset column widths to auto-fit">Reset Column</button>
+  <div style="position:relative;display:inline-flex">
+    <button class="btn btn-sm" onclick="_meFmToggleColsDlg()" title="Column visibility" style="padding:0 6px">⚙</button>
+    <div id="me-fm-cols-dlg" class="audit-cfg-dialog">
+      <div class="audit-cfg-hdr"><span>Columns</span><button class="btn" onclick="_meFmToggleColsDlg()" style="padding:1px 7px;font-size:13px">✕</button></div>
+      ${colsRows}
+    </div>
+  </div>
   <button class="btn btn-sm" onclick="_meFmToggleHelp()" title="Column reference">?</button>
 </div>
 <div class="me-fm-table-wrap">
@@ -16003,7 +16027,7 @@ function _meOverridesPrep(item) {
       <th class="me-fm-th-off" data-col="off" title="Byte offset within the DDL record (dec + hex)">Offset<div class="me-fm-resizer" data-col="off"></div></th>
       <th class="me-fm-th-len" data-col="len" title="Byte length">Length<div class="me-fm-resizer" data-col="len"></div></th>
       <th class="me-fm-th-dt"  data-col="dt" title="DDL-declared type (click cell to override)">Data Type<div class="me-fm-resizer" data-col="dt"></div></th>
-      <th class="me-fm-th-de"  data-col="de">Data Element${usesBitmapFields ? `<button class="me-de-auto${_meAutoOrderSnap.has(item) ? ' active' : ''}" onclick="_meFmAutoOrder()" title="Anchor each DE from the 'Bit map position = NN' comment above its declaration in the bound DDL files. Toggle: press again to revert to the order before Auto Order.">Auto Order</button>` : ''}<div class="me-fm-resizer" data-col="de"></div></th>
+      <th class="me-fm-th-de"  data-col="de">Data Element${usesBitmapFields ? '<button class="me-rb me-de-clear me-de-clear-all" onclick="_meFmClearDEs()" title="Clear ALL DE overrides — every field returns to the natural ordinal sequence">↺</button>' : ''}<div class="me-fm-resizer" data-col="de"></div></th>
       <th class="me-fm-th-vlg" data-col="vlg" title="Variable Length Group">VLG<div class="me-fm-resizer" data-col="vlg"></div></th>
       <th class="me-fm-th-fo"  data-col="display">Display</th>
     </tr></thead>
@@ -16085,23 +16109,25 @@ function _meFmRowHtml(row, ctx, counter) {
 
   const deCell = _meFmDeCellHtml(row, ctx);
 
-  // VLG cell — combo (on any group with ≥2 children, when bitmap-fields used, and not REDEFINES).
-  // Options are the group's leaf fields; selecting one marks the group as VLG
-  // with that field as the LEN. The leading "—" option means "not a VLG".
+  // VLG cell — toggles instead of a dropdown (long field names don't fit the
+  // narrow column). An eligible GROUP row gets a VLG pill; when it's ON, each
+  // leaf under it gets a LEN pill (radio semantics — first leaf is the
+  // default when none is explicitly chosen).
   const vlgEligible = isGroup && (row.childCount || 0) >= 2 && !row.isRedef;
-  let vlgCell;
-  if (vlgEligible && ctx.usesBitmapFields) {
-    const prefix    = row.id + '.';
-    const vlgLeaves = ctx.leavesByGroup.get(row.id) || [];
-    // null (legacy on, no field chosen) → default to the first leaf.
-    const curLen    = ctx.vlgMap.has(row.id) ? (ctx.vlgMap.get(row.id) || (vlgLeaves[0] && vlgLeaves[0].id)) : '';
-    const opts = `<option value=""></option>` + vlgLeaves.map(l => {
-      const label = ea(l.id.slice(prefix.length));
-      return `<option value="${ea(l.id)}"${l.id === curLen ? ' selected' : ''}>${label}</option>`;
-    }).join('');
-    vlgCell = `<td class="me-fm-vlg"><select class="me-sel me-vlg-sel" onchange="_meVlgSetLen('${id}',this.value)" title="Pick the sub-field that holds the length. bitmap-fields reads it as a numeric LEN and distributes that many bytes across the fields after it; fields before it read at their declared length.">${opts}</select></td>`;
-  } else {
-    vlgCell = `<td class="me-fm-vlg"></td>`;
+  let vlgCell = `<td class="me-fm-vlg"></td>`;
+  if (ctx.usesBitmapFields) {
+    if (vlgEligible) {
+      const on = ctx.vlgMap.has(row.id);
+      vlgCell = `<td class="me-fm-vlg"><button class="me-vlg-tgl${on ? ' on' : ''}" onclick="_meVlgToggleGroup('${id}')" title="Mark this group as a Variable Length Group — bitmap-fields reads the LEN sub-field as a numeric length and distributes that many bytes across the rest.">VLG</button></td>`;
+    } else if (!isGroup && !row.isRedef) {
+      const g = _meVlgAncestor(row.id, ctx.vlgMap);
+      if (g) {
+        const leaves = ctx.leavesByGroup.get(g) || [];
+        const lenId  = ctx.vlgMap.get(g) || (leaves[0] && leaves[0].id);
+        const isLen  = lenId === row.id;
+        vlgCell = `<td class="me-fm-vlg"><button class="me-vlg-len${isLen ? ' on' : ''}" onclick="_meVlgSetLen('${ea(g)}','${id}')" title="Use this sub-field as the group's LEN">LEN</button></td>`;
+      }
+    }
   }
 
   // Display override stays its own column. Rendered as a lightweight
@@ -16203,10 +16229,11 @@ function _meFmRenderWindow(force) {
   const end   = Math.min(total, Math.ceil((v.wrap.scrollTop + vh) / rowH) + _ME_FM_BUF);
   if (!force && start === v.start && end === v.end) return;
   v.start = start; v.end = end;
-  // Fresh override lookup so committed Type/Display changes render correctly.
+  // Fresh override + VLG lookups so committed changes render correctly.
   const item = _meCurItem();
   v.ctx.foByField = new Map();
   for (const e of (item?.field_overrides || [])) if (e?.field) v.ctx.foByField.set(_canonFieldId(e.field), e);
+  v.ctx.vlgMap = _meVlgLenMap(item);
   const collapsed = _meState?.fmCollapsedGroups || new Set();
   const spacer = px => `<tr class="me-fm-spacer" style="height:${px}px"><td colspan="8"></td></tr>`;
   let html = start > 0 ? spacer(start * rowH) : '';
@@ -16219,10 +16246,12 @@ function _meFmRenderWindow(force) {
   }
   if (end < total) html += spacer((total - end) * rowH);
   v.tbody.innerHTML = html;
-  // Measure the real row height once; if the estimate was off, re-space.
+  // Measure the real row height once (fractional — zoom/DPI scale rows to
+  // non-integer heights, and integer math drifts the spacers on huge lists);
+  // if the estimate was off, re-space.
   if (!v.rowH) {
     const probe = v.tbody.querySelector('tr:not(.me-fm-spacer)');
-    v.rowH = (probe && probe.offsetHeight) || rowH;
+    v.rowH = (probe && probe.getBoundingClientRect().height) || rowH;
     if (v.rowH !== rowH) { _meFmRenderWindow(true); return; }
   }
 }
@@ -16259,17 +16288,50 @@ function _meFillOverridesSection(el, item, seq, done) {
       // position among ALL leaves, not within the rendered slice.
       let n = 0;
       for (const r of prep.fieldList) r._fmNum = r.isGroup ? null : ++n;
+      // Restore this message's persisted toggle states (collapse / hide-redef)
+      // before the first visibility computation.
+      const ui = _meFmUiState(item);
+      if (_meState) {
+        _meState.fmHideRedef = !!ui.hideRedef;
+        const allGroups = prep.fieldList.filter(r => r.isGroup).map(r => r.id);
+        _meState.fmCollapsedGroups =
+          ui.collapseMode === 'all'  ? new Set(allGroups.filter(g => !(ui.collapsedExcept || []).includes(g)))
+        : ui.collapseMode === 'list' ? new Set(ui.collapsed || [])
+        : new Set();
+      }
       el.innerHTML = `<div class="me-ov-section">` + prep.chrome('') + `</div>`;
       const wrap  = el.querySelector('.me-fm-table-wrap');
       const tbody = el.querySelector('.me-fm-table tbody');
-      _meFmVirt = { all: prep.fieldList, visible: _meFmVisibleRows(prep.fieldList),
-                    ctx: prep.ctx, rowH: 0, start: -1, end: -1, wrap, tbody };
+      _meFmApplyColVis();
+      const v = _meFmVirt = { all: prep.fieldList, visible: _meFmVisibleRows(prep.fieldList),
+                              ctx: prep.ctx, rowH: 0, start: -1, end: -1, wrap, tbody };
       let schedTick = false;
       wrap.addEventListener('scroll', () => {
         if (schedTick) return;
         schedTick = true;
         requestAnimationFrame(() => { schedTick = false; _meFmRenderWindow(false); });
       }, { passive: true });
+      // Safety nets for machines where the scroll→rAF chain proves unreliable
+      // (production report: window stopped filling after part of the list):
+      // a slow interval re-checks scroll position / viewport size, and a
+      // ResizeObserver catches wrap growth. Both are no-ops when in sync.
+      v._tickTop = -1; v._tickVh = -1;
+      v._timer = setInterval(() => {
+        if (_meFmVirt !== v || !v.tbody.isConnected) {
+          clearInterval(v._timer);
+          if (v._ro) v._ro.disconnect();
+          return;
+        }
+        if (v.wrap.scrollTop !== v._tickTop || v.wrap.clientHeight !== v._tickVh || !v.rowH) {
+          v._tickTop = v.wrap.scrollTop;
+          v._tickVh  = v.wrap.clientHeight;
+          _meFmRenderWindow(false);
+        }
+      }, 350);
+      if (typeof ResizeObserver === 'function') {
+        v._ro = new ResizeObserver(() => { if (_meFmVirt === v) _meFmRenderWindow(false); });
+        v._ro.observe(wrap);
+      }
       _meFmRenderWindow(true);
       done();
     }, 0);
@@ -16647,12 +16709,15 @@ function _meFmAutoOrder() {
   const item = _meCurItem(); if (!item) return;
   if (!_meItemBitmapField(item)) { _meFlash('Auto Order needs a parse spec with a bitmap-fields block', 'warn'); return; }
 
-  // Toggle OFF — restore the pre-Auto-Order de_map.
-  if (_meAutoOrderSnap.has(item)) {
-    item.de_map = _meAutoOrderSnap.get(item);
+  // Toggle OFF — restore the pre-Auto-Order de_map (session snapshot, or the
+  // persisted one when the editor was reloaded in between).
+  const ui = _meFmUiState(item);
+  if (_meAutoOrderSnap.has(item) || ui.autoOrder) {
+    item.de_map = _meAutoOrderSnap.get(item) || ui.autoOrderSnap || [];
     _meAutoOrderSnap.delete(item);
+    _meFmUiSave(item, { autoOrder: false, autoOrderSnap: null });
     _meSetDirty();
-    document.querySelector('.me-de-auto')?.classList.remove('active');
+    document.getElementById('me-fm-auto-btn')?.classList.remove('btn-accent-on');
     if (!_meFmPatchDECells()) _meRenderRight();
     _meFlash('Auto Order off — reverted to the previous order');
     return;
@@ -16702,15 +16767,20 @@ function _meFmAutoOrder() {
   });
 
   // Snapshot BEFORE overwriting, then apply the minimal anchor set.
-  _meAutoOrderSnap.set(item, JSON.parse(JSON.stringify(item.de_map || [])));
+  const snap = JSON.parse(JSON.stringify(item.de_map || []));
+  _meAutoOrderSnap.set(item, snap);
   item.de_map = _meComputeAutoOrderAnchors(rows);
+  _meFmUiSave(item, { autoOrder: true, autoOrderSnap: snap });
   _meSetDirty();
-  document.querySelector('.me-de-auto')?.classList.add('active');
+  document.getElementById('me-fm-auto-btn')?.classList.add('btn-accent-on');
   if (!_meFmPatchDECells()) _meRenderRight();
 
-  let msg = `Auto Order: ${matched} DE${matched !== 1 ? 's' : ''} set from comments`;
-  if (unmatched) msg += `, ${unmatched} without a comment`;
-  if (ambiguous) msg += `, ${ambiguous} skipped (duplicate name)`;
+  const nBind = (item.ddl_bindings || []).filter(Boolean).length;
+  const anchored = item.de_map.length;
+  let msg = `Auto Order: ${matched} of ${deRows.length} DE fields matched a comment`
+          + ` (${anchored} anchored, ${matched - anchored} already in order)`;
+  if (unmatched) msg += ` · ${unmatched} DE field${unmatched !== 1 ? 's' : ''} across ${nBind} binding${nBind !== 1 ? 's' : ''} ${unmatched !== 1 ? 'have' : 'has'} no comment`;
+  if (ambiguous) msg += ` · ${ambiguous} skipped (duplicate name)`;
   _meFlash(msg);
   if (suspects.length)
     setTimeout(() => _meFlash(`⚠ name vs comment mismatch: ${suspects.slice(0, 3).join(', ')}${suspects.length > 3 ? '…' : ''} — verify these`, 'warn'), 900);
@@ -16746,6 +16816,102 @@ function _meDeClear(fieldId) {
   if (!_meFmPatchDECells()) _meRenderRight();
 }
 
+// ── Field Map UI-state persistence (per message spec) ───────────────────────
+// Collapse / Hide-Redef / Auto-Order are toggles whose state must survive
+// item switches and reloads. Stored OUTSIDE the spec JSON (localStorage side-
+// store) so exports stay clean. Keyed by spec name|label.
+const _ME_FM_UI_KEY = 'up_me_fm_ui';
+function _meFmUiKey(item) { return (item?.name || '') + '|' + (item?.label || ''); }
+function _meFmUiLoadAll() {
+  try { return JSON.parse(localStorage.getItem(_ME_FM_UI_KEY)) || {}; } catch (_) { return {}; }
+}
+function _meFmUiState(item) { return _meFmUiLoadAll()[_meFmUiKey(item)] || {}; }
+function _meFmUiSave(item, patch) {
+  if (!item) return;
+  const all = _meFmUiLoadAll();
+  const k = _meFmUiKey(item);
+  all[k] = { ...(all[k] || {}), ...patch };
+  try { localStorage.setItem(_ME_FM_UI_KEY, JSON.stringify(all)); } catch (_) {}
+}
+// Persist the collapse set compactly: near-all-collapsed stores mode 'all' +
+// the expanded exceptions; otherwise the collapsed list itself.
+function _meFmUiSaveCollapse(item) {
+  if (!_meFmVirt || !_meState) return;
+  const allGroups = _meFmVirt.all.filter(r => r.isGroup).map(r => r.id);
+  const set = _meState.fmCollapsedGroups || new Set();
+  if (!set.size) { _meFmUiSave(item, { collapseMode: 'none', collapsed: [], collapsedExcept: [] }); return; }
+  if (set.size > allGroups.length / 2) {
+    _meFmUiSave(item, { collapseMode: 'all', collapsedExcept: allGroups.filter(g => !set.has(g)), collapsed: [] });
+  } else {
+    _meFmUiSave(item, { collapseMode: 'list', collapsed: [...set], collapsedExcept: [] });
+  }
+}
+
+// ── Field Map column visibility ──────────────────────────────────────────────
+const _ME_FM_COLS = [
+  ['num', '#'], ['off', 'Offset'], ['len', 'Length'], ['dt', 'Data Type'],
+  ['de', 'Data Element'], ['vlg', 'VLG'], ['display', 'Display'],
+];   // Field column is always visible
+const _ME_FM_COLVIS_KEY = 'up_me_fm_colvis';
+function _meFmHiddenCols() {
+  try { return JSON.parse(localStorage.getItem(_ME_FM_COLVIS_KEY)) || {}; } catch (_) { return {}; }
+}
+function _meFmToggleColVis(key) {
+  const h = _meFmHiddenCols();
+  h[key] = !h[key];
+  try { localStorage.setItem(_ME_FM_COLVIS_KEY, JSON.stringify(h)); } catch (_) {}
+  _meFmApplyColVis();
+  // Redistribute the freed (or reclaimed) space — FIELD absorbs the leftover.
+  _meFmFitCols();
+}
+// Pure CSS-class application — no table rebuild needed.
+function _meFmApplyColVis() {
+  const wrap = document.querySelector('.me-fm-table-wrap');
+  const h = _meFmHiddenCols();
+  for (const [k] of _ME_FM_COLS) {
+    if (wrap) wrap.classList.toggle('me-fm-hide-' + k, !!h[k]);
+    const b = document.getElementById('me-fm-ccol-' + k);
+    if (b) b.classList.toggle('is-collapsed', !!h[k]);
+  }
+}
+function _meFmToggleColsDlg() {
+  document.getElementById('me-fm-cols-dlg')?.classList.toggle('open');
+}
+
+// ── VLG toggles ──────────────────────────────────────────────────────────────
+// Nearest ancestor group of `id` marked as a VLG (deepest wins).
+function _meVlgAncestor(id, vlgMap) {
+  const parts = String(id).split('.');
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const p = parts.slice(0, i).join('.');
+    if (vlgMap.has(p)) return p;
+  }
+  return null;
+}
+function _meVlgToggleGroup(groupId) {
+  const item = _meCurItem(); if (!item) return;
+  if (!Array.isArray(item.var_length_groups)) item.var_length_groups = [];
+  const wasOn = _meVlgLenMap(item).has(groupId);
+  item.var_length_groups = item.var_length_groups.filter(e =>
+    (typeof e === 'string' ? e : (e && e.group)) !== groupId);
+  if (!wasOn) item.var_length_groups.push({ group: groupId, len: null });
+  _meSetDirty();
+  if (_meFmVirt) _meFmRenderWindow(true); else _meRenderRight();
+}
+
+// ── Clear all DE overrides ───────────────────────────────────────────────────
+function _meFmClearDEs() {
+  const item = _meCurItem(); if (!item) return;
+  const n = (item.de_map || []).length;
+  item.de_map = [];
+  _meAutoOrderSnap.delete(item);
+  _meFmUiSave(item, { autoOrder: false, autoOrderSnap: null });
+  document.getElementById('me-fm-auto-btn')?.classList.remove('btn-accent-on');
+  _meSetDirty();
+  if (!_meFmPatchDECells()) _meRenderRight();
+  _meFlash(n ? `Cleared ${n} DE override${n !== 1 ? 's' : ''} — back to the natural order` : 'No DE overrides to clear');
+}
+
 // Normalize var_length_groups into Map<groupId, lenFieldId|null>. Accepts both
 // legacy bare-string entries (LEN = first sub-field → null) and the current
 // {group, len} object form. Shared by the Field Map UI and the parse engine so
@@ -16769,7 +16935,7 @@ function _meVlgSetLen(groupId, value) {
     (typeof e === 'string' ? e : (e && e.group)) !== groupId);
   if (value) item.var_length_groups.push({ group: groupId, len: value });
   _meSetDirty();
-  _meRenderRight();
+  if (_meFmVirt) _meFmRenderWindow(true); else _meRenderRight();
 }
 
 // ── Field Map: collapse / hide-redef / filter ──
@@ -16789,7 +16955,11 @@ function _meFmLoadColWidths() {
 // re-runs this once the panel reaches its real width.
 function _meFmFitCols() {
   const widths = _meFmLoadColWidths();
-  const ths = Array.from(document.querySelectorAll('.me-fm-table thead th[data-col]'));
+  // Hidden columns (Columns chooser) must not take part in the fit — their
+  // 0-width measurement would otherwise be written back as an inline 0px
+  // width that sticks when the column is shown again.
+  const ths = Array.from(document.querySelectorAll('.me-fm-table thead th[data-col]'))
+    .filter(th => getComputedStyle(th).display !== 'none');
   const table = document.querySelector('.me-fm-table');
   const wrap  = document.querySelector('.me-fm-table-wrap');
   if (!table || !wrap || !ths.length) return;
@@ -16949,6 +17119,7 @@ function _meFmToggleGroup(tr) {
   const qn = tr.getAttribute('data-qn');
   if (_meState.fmCollapsedGroups.has(qn)) _meState.fmCollapsedGroups.delete(qn);
   else                                    _meState.fmCollapsedGroups.add(qn);
+  _meFmUiSaveCollapse(_meCurItem());
   _meFmReapplyState();
 }
 function _meFmToggleCollapseAll() {
@@ -16960,11 +17131,13 @@ function _meFmToggleCollapseAll() {
     : [...document.querySelectorAll('.me-fm-grp')].map(tr => tr.getAttribute('data-qn'));
   const allCollapsed = allGroups.length > 0 && allGroups.every(qn => _meState.fmCollapsedGroups.has(qn));
   _meState.fmCollapsedGroups = new Set(allCollapsed ? [] : allGroups);
+  _meFmUiSaveCollapse(_meCurItem());
   _meFmReapplyState();
 }
 function _meFmToggleHideRedef() {
   if (!_meState) return;
   _meState.fmHideRedef = !_meState.fmHideRedef;
+  _meFmUiSave(_meCurItem(), { hideRedef: _meState.fmHideRedef });
   _meFmReapplyState();
 }
 function _meFmFilter(q) {

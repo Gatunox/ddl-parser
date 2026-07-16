@@ -11756,7 +11756,10 @@ function _getDDLFromPathUncached(ddlPath) {
   if (parts.length < 3) return null;
   const typeReg = buildRepoTypeRegistry();
   const secReg  = buildRepoSectionRegistry();
-  // 4-part path: VOL/SV/NAME/DEFNAME — compile only the specified DEF
+  // 4-part path: VOL/SV/NAME/DEFNAME — compile ONLY the specified DEF. A
+  // DEF that doesn't exist returns null (binding shows ⚠ missing) instead of
+  // silently falling through to the whole file: that fallthrough bound every
+  // definition in the file, exploding the Field Map / Auto Order scope.
   if (parts.length === 4) {
     const [vol, sv, name, defName] = parts;
     const content = S.ddlTree[vol]?.[sv]?.[name];
@@ -11765,6 +11768,7 @@ function _getDDLFromPathUncached(ddlPath) {
       applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${vol}/${sv}/${name}/${defName}`.toUpperCase()]);
       if (defs.length) return { path: `${vol}/${sv}/${name}`, defName, defs };
     }
+    return null;
   }
   // 3-part path: VOL/SV/NAME
   const [vol, sv, name] = parts;
@@ -13070,7 +13074,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.294';
+const APP_VERSION  = '1.1.2.295';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16042,7 +16046,7 @@ function _meOverridesPrep(item) {
 // their own). data-sig lets _meFmPatchDECells skip unchanged cells.
 function _meFmDeSig(row, usesBitmapFields) {
   if (!(usesBitmapFields && !row.underTerminal && !row.isRedef)) return 'x';
-  if (row.de === null) return 'n';
+  if (row.de === null) return row.deOverflow ? 'o' : 'n';
   return row.de + (row.anchored ? 'a' : '');
 }
 function _meFmDeCellHtml(row, ctx) {
@@ -16051,9 +16055,12 @@ function _meFmDeCellHtml(row, ctx) {
   const sig = _meFmDeSig(row, ctx.usesBitmapFields);
   if (ctx.usesBitmapFields && !row.underTerminal && !row.isRedef) {
     if (row.de === null) {
-      // Pre-bitmap header (or the bitmap field itself) — no DE. Leave
-      // the cell empty; tooltip explains why on hover.
-      return `<td class="me-fm-de" data-sig="${sig}" title="No DE here — this field is before (or is) the bitmap declared in the parse spec."></td>`;
+      // No DE: either a pre-bitmap header field, or the running sequence has
+      // passed DE-128 (a bitmap message carries at most 128 data elements).
+      const tip = row.deOverflow
+        ? 'Beyond DE-128 — a bitmap message has at most 128 data elements. Anchor an earlier field (Auto Order or manual) to bring this range back into 1–128.'
+        : 'No DE here — this field is before (or is) the bitmap declared in the parse spec.';
+      return `<td class="me-fm-de" data-sig="${sig}" title="${tip}"></td>`;
     }
     const pillClass = 'me-de-pill' + (row.anchored ? ' anchored' : '');
     const clearBtn  = row.anchored
@@ -16559,7 +16566,11 @@ function _meWalkDEFields(defs, item) {
   let currentDE = 1;
   let pastBitmap = !bitmapField;   // true straight away when there's no bitmap declared
   // REDEFINES overlays existing bytes, so it never advances the DE counter
-  // and never owns a DE number.
+  // and never owns a DE number. A bitmap message carries AT MOST 128 data
+  // elements (128 bitmap bits) — the running sequence keeps counting
+  // (deSeq, used by Auto Order to reason about eligible fields), but the
+  // DISPLAYED/effective DE (de) is null beyond 128 until an anchor pulls the
+  // sequence back into range (e.g. a secondary-elements binding anchored at 65).
   const assignDE = (id, extras) => {
     if (extras.isRedef) {
       out.push({ id, de: null, anchored: false, ...extras });
@@ -16570,7 +16581,9 @@ function _meWalkDEFields(defs, item) {
       currentDE = anchors.get(id);
       pastBitmap = true;
     }
-    out.push({ id, de: pastBitmap ? currentDE : null, anchored: isAnchor, ...extras });
+    const seq = pastBitmap ? currentDE : null;
+    const de  = (seq !== null && seq <= 128) ? seq : null;
+    out.push({ id, de, deSeq: seq, deOverflow: seq !== null && seq > 128, anchored: isAnchor, ...extras });
     if (pastBitmap) currentDE++;
     // The bitmap field itself stays null; numbering kicks in on the NEXT def.
     if (bitmapField && id === bitmapField) pastBitmap = true;
@@ -16705,6 +16718,37 @@ function _meComputeAutoOrderAnchors(rows) {
 // anchors). Keyed by item object; transient (session-only).
 const _meAutoOrderSnap = new WeakMap();
 
+// Resolve the DEFINITION a binding refers to, with its raw content and the
+// set of field names it declares. 4-part bindings name the DEF; a whole-file
+// binding on a multi-DEF file resolves to the DEF declaring the parse spec's
+// bitmap field (fallback: first DEF) — `multi` carries the file's DEF count
+// so the caller can surface which definition was chosen.
+function _meBindingTargetDef(path, item) {
+  const [vol, sv, name, defName] = String(path).split('/');
+  const content = S.ddlTree?.[vol]?.[sv]?.[name];
+  if (!content || typeof isHPEDDLText !== 'function' || !isHPEDDLText(content)) return null;
+  const sections = parseDDLSections(content);
+  if (!sections.length) return null;
+  let target = null, multi = null;
+  if (defName) {
+    target = sections.find(s => s.name.toUpperCase() === defName.toUpperCase()) || null;
+  } else if (sections.length === 1) {
+    target = sections[0];
+  } else {
+    multi = sections.length;
+    const bmp = (_meItemBitmapField(item) || '').toUpperCase();
+    target = sections[0];
+    if (bmp) {
+      for (const s of sections) {
+        if ((s.items || []).some(it => (it.name || '').toUpperCase() === bmp)) { target = s; break; }
+      }
+    }
+  }
+  if (!target) return null;
+  const names = new Set((target.items || []).map(it => (it.name || '').toUpperCase()));
+  return { content, defName: target.name, names, multi };
+}
+
 function _meFmAutoOrder() {
   const item = _meCurItem(); if (!item) return;
   if (!_meItemBitmapField(item)) { _meFlash('Auto Order needs a parse spec with a bitmap-fields block', 'warn'); return; }
@@ -16723,34 +16767,57 @@ function _meFmAutoOrder() {
     return;
   }
 
-  // Comment-DE map across all bindings (first binding wins, like defs dedup).
-  const commentDE = new Map();
+  // Auto Order works DEFINITION-scoped: comments and eligible fields must stay
+  // inside each binding's bound record — a file can hold MANY definitions.
+  // 4-part bindings name their DEF; for a whole-file binding the record DEF is
+  // resolved as the one declaring the parse spec's bitmap field (fallback:
+  // first DEF). Both the comment scan and the eligible-row set use only those
+  // definitions' boundaries.
+  const commentDE   = new Map();   // field name → commented DE (first binding wins)
+  const scopeNames  = new Set();   // field names inside the bound definitions
+  const scopeNotes  = [];          // per-binding "scoped to DEF" info for multi-DEF files
   for (const path of (item.ddl_bindings || [])) {
     if (!path) continue;
-    const [vol, sv, name, defName] = path.split('/');
-    const content = S.ddlTree?.[vol]?.[sv]?.[name];
-    if (!content) continue;
-    for (const [k, v] of _meExtractCommentDEs(content, defName || null))
+    const t = _meBindingTargetDef(path, item);
+    if (!t) continue;
+    for (const [k, v] of _meExtractCommentDEs(t.content, t.defName))
       if (!commentDE.has(k)) commentDE.set(k, v);
+    for (const n of t.names) scopeNames.add(n);
+    if (t.multi) scopeNotes.push(`"${path}" spans ${t.multi} definitions — scoped to ${t.defName}`);
   }
-  if (!commentDE.size) { _meFlash('No "Bit map position = NN" comments found in the bound DDL files', 'warn'); return; }
+  if (!commentDE.size) { _meFlash('No "Bit map position = NN" comments found in the bound definitions', 'warn'); return; }
 
-  // Natural walk (no anchors) → each DE-capable row's baseline DE, in order.
+  // Natural walk (no anchors) → each DE-eligible row's baseline sequence, in
+  // order. deSeq (uncapped) rather than de (capped at 128): a field whose
+  // natural position overflows 128 must still be anchorable by its comment.
   const naturalRows = _meResolveDEFieldList({ ...item, de_map: [] });
   if (!naturalRows) return;
-  const deRows = naturalRows.filter(r => r.de !== null);
+  const deRows = naturalRows.filter(r => r.deSeq != null);
 
-  // Name → DE matching is only safe when the name is unique among DE-capable
-  // rows (a stray leaf called DATA must not steal DATA-ELEMENT-2's comment).
+  // A row belongs to the Auto Order scope when its TOP-LEVEL field name sits
+  // inside one of the bound definitions — fields from other DEFs in the same
+  // file are ignored (they still walk/extrapolate, but never match a comment
+  // and never count against the totals).
+  const rootOf   = id => _canonFieldId(id).split('.')[0].toUpperCase();
+  const useScope = scopeNames.size > 0;
+  const inScopeRow = row => !useScope || scopeNames.has(rootOf(row.id));
+
+  // Name → DE matching is only safe when the name is unique among in-scope
+  // DE rows (a stray leaf called DATA must not steal DATA-ELEMENT-2's comment).
   const nameCount = new Map();
   for (const r of deRows) {
+    if (!inScopeRow(r)) continue;
     const n = _canonFieldId(r.id).split('.').pop();
     nameCount.set(n, (nameCount.get(n) || 0) + 1);
   }
 
-  let matched = 0, unmatched = 0, ambiguous = 0;
+  let matched = 0, unmatched = 0, ambiguous = 0, outOfScope = 0;
   const suspects = [];
   const rows = deRows.map(row => {
+    if (!inScopeRow(row)) {
+      outOfScope++;
+      return { id: row.id, naturalDE: row.deSeq, commentDE: null };
+    }
     const name = _canonFieldId(row.id).split('.').pop();
     let de = commentDE.get(name);
     if (de === undefined) { unmatched++; de = null; }
@@ -16763,7 +16830,7 @@ function _meFmAutoOrder() {
       const em = name.match(/element[-_ ]?(\d{1,3})$/i) || name.match(/(?:^|[-_])de[-_ ]?(\d{1,3})$/i);
       if (em && +em[1] !== de) suspects.push(`${name} → DE-${de}`);
     }
-    return { id: row.id, naturalDE: row.de, commentDE: de };
+    return { id: row.id, naturalDE: row.deSeq, commentDE: de };
   });
 
   // Snapshot BEFORE overwriting, then apply the minimal anchor set.
@@ -16777,11 +16844,20 @@ function _meFmAutoOrder() {
 
   const nBind = (item.ddl_bindings || []).filter(Boolean).length;
   const anchored = item.de_map.length;
-  let msg = `Auto Order: ${matched} of ${deRows.length} DE fields matched a comment`
-          + ` (${anchored} anchored, ${matched - anchored} already in order)`;
-  if (unmatched) msg += ` · ${unmatched} DE field${unmatched !== 1 ? 's' : ''} across ${nBind} binding${nBind !== 1 ? 's' : ''} ${unmatched !== 1 ? 'have' : 'has'} no comment`;
-  if (ambiguous) msg += ` · ${ambiguous} skipped (duplicate name)`;
+  // How many rows actually hold a DE number (1–128) after anchoring.
+  const finalRows = _meResolveDEFieldList(item) || [];
+  const withDE = finalRows.filter(r => r.de !== null).length;
+  const overflow = finalRows.filter(r => r.deOverflow).length;
+  const inScope = deRows.length - outOfScope;
+  let msg = `Auto Order: ${matched} of ${inScope} fields in the bound definition${nBind !== 1 ? 's' : ''} matched a comment`
+          + ` (${anchored} anchored, ${matched - anchored} already in order) · ${withDE} DE${withDE !== 1 ? 's' : ''} assigned`;
+  if (unmatched)  msg += ` · ${unmatched} field${unmatched !== 1 ? 's' : ''} without a comment`;
+  if (ambiguous)  msg += ` · ${ambiguous} skipped (duplicate name)`;
+  if (outOfScope) msg += ` · ${outOfScope} field${outOfScope !== 1 ? 's' : ''} outside the bound definition${nBind !== 1 ? 's' : ''} ignored`;
+  if (overflow)   msg += ` · ${overflow} beyond DE-128 (no DE — a bitmap message has at most 128 elements)`;
   _meFlash(msg);
+  if (scopeNotes.length)
+    setTimeout(() => _meFlash(scopeNotes.join(' · ')), 500);
   if (suspects.length)
     setTimeout(() => _meFlash(`⚠ name vs comment mismatch: ${suspects.slice(0, 3).join(', ')}${suspects.length > 3 ? '…' : ''} — verify these`, 'warn'), 900);
 }

@@ -86,6 +86,7 @@ _t.mePsKnownDDLIds    = _mePsKnownDDLIds;
 _t.meFmCountUnresolved = _meFmCountUnresolved;
 _t.meExtractCommentDEs = _meExtractCommentDEs;
 _t.meComputeAutoOrderAnchors = _meComputeAutoOrderAnchors;
+_t.meBindingTargetDef = _meBindingTargetDef;
 _t.meWalkDEFields     = _meWalkDEFields;
 _t.meCollectBindingDefs = _meCollectBindingDefs;
 _t.getDDLFromPath     = getDDLFromPath;
@@ -1659,6 +1660,63 @@ test('Auto Order: all-jumped comments anchor every matched field', () => {
   // GAP: expected 37. TRACK1: expected 37 != 45 → anchor.
   deepEq(anchors, [{ field: 'TRACK2', de: 35 }, { field: 'TRACK1', de: 45 }],
     'contiguous comment run needs one anchor; the gap breaks continuity');
+});
+
+// ── DE cap at 128 + definition-scoped bindings ────────────────────────────────
+console.log('\nDE cap at 128 + definition-scoped bindings');
+
+test('DE numbering caps at 128; an anchor pulls the sequence back into range', () => {
+  let ddl = 'DEF BIGISO.\n    02 BMP PIC X(16).\n';
+  for (let i = 1; i <= 140; i++) ddl += `    02 FLD-${String(i).padStart(3, '0')} PIC X(2).\n`;
+  ddl += 'END\n';
+  S.ddlTree = { VOL: { SV: { BIG: ddl } } };
+  const mkItem = de_map => ({
+    ddl_bindings: ['VOL/SV/BIG/BIGISO'], de_map,
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'BMP' }],
+  });
+  const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/BIG/BIGISO')]);
+  // Natural: fields 129/140 exceed the 128-bit bitmap → no DE, flagged overflow.
+  let rows = sandbox._t.meWalkDEFields(defs, mkItem([]));
+  const row = (rs, id) => rs.find(r => r.id === id);
+  eq(row(rows, 'FLD-128').de, 128, 'DE-128 still assigned');
+  eq(row(rows, 'FLD-129').de, null, 'DE-129 does not exist');
+  eq(row(rows, 'FLD-129').deOverflow, true, 'overflow flagged');
+  eq(row(rows, 'FLD-129').deSeq, 129, 'uncapped sequence kept for Auto Order');
+  // Anchoring FLD-100 back to DE-60 brings the tail into range again.
+  rows = sandbox._t.meWalkDEFields(defs, mkItem([{ field: 'FLD-100', de: 60 }]));
+  eq(row(rows, 'FLD-100').de, 60, 'anchor applied');
+  eq(row(rows, 'FLD-129').de, 89, 'post-anchor field back inside 1-128');
+  eq(row(rows, 'FLD-140').de, 100, 'tail numbered normally after the anchor');
+});
+
+test('a 4-part binding whose DEF does not exist resolves to null (no whole-file fallthrough)', () => {
+  S.ddlTree = { VOL: { SV: { MULTI: 'DEF AA.\n  02 F1 PIC X(2).\nEND\nDEF BB.\n  02 F2 PIC X(3).\nEND\n' } } };
+  eq(sandbox._t.getDDLFromPath('VOL/SV/MULTI/AA')?.defs?.length, 1, 'existing DEF resolves scoped');
+  eq(sandbox._t.getDDLFromPath('VOL/SV/MULTI/NOPE'), null, 'missing DEF is a missing binding, not the whole file');
+});
+
+test('Auto Order resolves a whole-file binding to the DEF declaring the bitmap field', () => {
+  const file = `DEF HELPERS.
+* Bit map position = 99
+  02 SOME-TYPE PIC X(4).
+END
+DEF ISOMSG.
+  02 PBIT-MAP PIC X(16).
+* Bit map position = 2
+  02 DATA-ELEMENT-2 PIC X(2).
+END
+`;
+  S.ddlTree = { VOL: { SV: { F: file } } };
+  const item = { parse_spec_binary: [{ 'read-bitmap': { field: 'PBIT-MAP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'PBIT-MAP' }] };
+  const t = sandbox._t.meBindingTargetDef('VOL/SV/F', item);
+  eq(t?.defName, 'ISOMSG', 'DEF containing the bitmap field wins');
+  eq(t?.multi, 2, 'multi-DEF file reported');
+  eq(t?.names.has('DATA-ELEMENT-2'), true, 'scope covers the record fields');
+  eq(t?.names.has('SOME-TYPE'), false, 'other definitions excluded from scope');
+  // 4-part binding: named DEF wins regardless of bitmap
+  const t2 = sandbox._t.meBindingTargetDef('VOL/SV/F/HELPERS', item);
+  eq(t2?.defName, 'HELPERS', '4-part binding names its DEF');
+  eq(t2?.multi, null, 'no multi note for an explicit DEF');
 });
 
 // ── KEYTAG clause ─────────────────────────────────────────────────────────────

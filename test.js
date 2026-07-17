@@ -1806,6 +1806,56 @@ END
   ], 'anchors computed from bound-DEF comments only');
 });
 
+// ── Line-item clauses: any clause, any order ──────────────────────────────────
+console.log('\nline-item clauses — any clause, any order');
+
+test('every manual clause is accepted as the FIRST token after the name', () => {
+  const lines = [
+    '02 X1 AS "alias" PIC X(2).',
+    '02 X2 USAGE COMP PIC 9(4).',
+    '02 X3 EDIT-PIC "ZZ9" PIC 9(3).',
+    '02 X4 HELP "text" PIC X(2).',
+    '02 X5 JUSTIFIED RIGHT PIC X(4).',
+    '02 X6 MUST BE 1 THRU 9 PIC 9(1).',
+    '02 X7 NULL " " PIC X(2).',
+    '02 X8 SPI-NULL 255 PIC X(2).',
+    '02 X9 SQLNULLABLE PIC X(2).',
+    '02 X10 TACL STRING PIC X(2).',
+    '02 X11 VALUE 5 PIC 9(1).',
+    '02 X12 UPSHIFT PIC X(3).',
+  ];
+  for (const l of lines) {
+    const { errors } = validateDDLErrors('DEF T.\n  ' + l + '\nEND\n');
+    const spaceErr = errors.find(e => e.includes('illegal space'));
+    eq(spaceErr || null, null, 'no false space-in-name for: ' + l);
+  }
+  // A REAL space in a name must still be caught.
+  const bad = validateDDLErrors('DEF T.\n  02 BAD NAME PIC X(2).\nEND\n');
+  eq(bad.errors.some(e => e.includes('illegal space')), true, 'genuine space still detected');
+});
+
+test('clause order is free: PIC … OCCURS … REDEFINES (prod pattern) sizes and parses', () => {
+  const ddl = `DEF ZOO.
+  02 BASE          PIC X(6).
+  02 TAIL-REDEF    PIC X(2) OCCURS 3 TIMES REDEFINES BASE.
+  02 MID-REDEF     PIC X(2) REDEFINES BASE OCCURS 3 TIMES.
+  02 OCC-FIRST     OCCURS 3 TIMES PIC X(2).
+  02 LAST          PIC X(2).
+END
+`;
+  const { errors, warnings } = validateDDLErrors(ddl);
+  deepEq(errors, [], 'validator clean');
+  deepEq(warnings || [], [], 'no warnings');
+  const { fields, totalSize } = buildDDLDocFields(parseDDLSections(ddl)[0].items, null);
+  const get = qn => fields.find(f => f.qualName === qn);
+  eq(get('TAIL-REDEF').offset, 0, 'tail REDEFINES anchors to the target');
+  eq(get('TAIL-REDEF').size, 6, 'OCCURS multiplies the redefining leaf (2×3)');
+  eq(get('MID-REDEF').size, 6, 'clause order irrelevant');
+  eq(get('OCC-FIRST').offset, 6, 'sequential field after the redef target');
+  eq(get('LAST').offset, 12, 'layout cursor unaffected by the overlays');
+  eq(totalSize, 14, 'record total');
+});
+
 // ── KEYTAG clause ─────────────────────────────────────────────────────────────
 console.log('\nKEYTAG clause');
 

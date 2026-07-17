@@ -3086,11 +3086,14 @@ function validateDDLErrors(text, repoTypeRegistry) {
       {
         const FIRST_CLAUSE_KW = new Set([
           'PIC','PICTURE','TYPE','REDEFINES',
-          'COMP','COMP-3','COMPUTATIONAL','COMPUTATIONAL-3',
+          'COMP','COMP-3','COMPUTATIONAL','COMPUTATIONAL-3','PACKED-DECIMAL',
           'HEADING','VALUE','OCCURS','LN',
-          // Item clauses that may legally follow the name directly — common on
-          // group items, which have no PIC/TYPE (e.g. `02 GRP KEYTAG "pn".`).
-          'KEYTAG','DISPLAY'
+          // Per the manual's line-item specification, ANY clause may follow the
+          // name in ANY order — all of them are legal first tokens (real DDLs
+          // write e.g. `02 X USAGE COMP PIC 9(4).` or `02 GRP KEYTAG "pn".`).
+          'KEYTAG','DISPLAY','AS','EDIT-PIC','HELP','JUSTIFIED','JUST',
+          'MUST','NULL','SPI-NULL','SQLNULLABLE','TACL','USAGE','UPSHIFT',
+          'NOVERSION','DEPENDING'
         ]);
         const restFirstM = fRest.match(/^([A-Za-z][\w-]*)/);
         if (restFirstM) {
@@ -13074,7 +13077,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.297';
+const APP_VERSION  = '1.1.2.298';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -13074,7 +13074,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.296';
+const APP_VERSION  = '1.1.2.297';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14835,10 +14835,21 @@ function _meRenderRight() {
     const st = stages.shift();
     if (!st) { finish(); return; }
     const el = document.getElementById('me-sect-body-' + st.key);
-    if (!el) { requestAnimationFrame(step); return; }
-    st.fill(el, () => requestAnimationFrame(step));
+    if (!el) { _meDefer(step); return; }
+    st.fill(el, () => _meDefer(step));
   };
-  requestAnimationFrame(step);
+  _meDefer(step);
+}
+
+// Schedule fn on the next animation frame WITH a timeout fallback — rAF
+// freezes entirely on hidden/backgrounded tabs and can stall on throttled
+// GPUs (production: editor sections never filled; Field Map stopped part-way).
+// Whichever trigger fires first wins.
+function _meDefer(fn) {
+  let ran = false;
+  const run = () => { if (ran) return; ran = true; fn(); };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+  setTimeout(run, 60);
 }
 
 // ── Parse Spec Tab ────────────────────────────────────────────────────────
@@ -16318,7 +16329,7 @@ function _meFillOverridesSection(el, item, seq, done) {
       wrap.addEventListener('scroll', () => {
         if (schedTick) return;
         schedTick = true;
-        requestAnimationFrame(() => { schedTick = false; _meFmRenderWindow(false); });
+        _meDefer(() => { schedTick = false; _meFmRenderWindow(false); });
       }, { passive: true });
       // Safety nets for machines where the scroll→rAF chain proves unreliable
       // (production report: window stopped filling after part of the list):

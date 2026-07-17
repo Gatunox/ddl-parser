@@ -13074,7 +13074,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.295';
+const APP_VERSION  = '1.1.2.296';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16055,10 +16055,12 @@ function _meFmDeCellHtml(row, ctx) {
   const sig = _meFmDeSig(row, ctx.usesBitmapFields);
   if (ctx.usesBitmapFields && !row.underTerminal && !row.isRedef) {
     if (row.de === null) {
-      // No DE: either a pre-bitmap header field, or the running sequence has
-      // passed DE-128 (a bitmap message carries at most 128 data elements).
+      // No DE: nested sub-structure, a pre-bitmap header field, or the
+      // sequence passed DE-128 (a bitmap message has at most 128 elements).
       const tip = row.deOverflow
         ? 'Beyond DE-128 — a bitmap message has at most 128 data elements. Anchor an earlier field (Auto Order or manual) to bring this range back into 1–128.'
+        : row.id.includes('.')
+        ? 'Nested field — the top-level element owns the DE.'
         : 'No DE here — this field is before (or is) the bitmap declared in the parse spec.';
       return `<td class="me-fm-de" data-sig="${sig}" title="${tip}"></td>`;
     }
@@ -16475,12 +16477,13 @@ function _meResolveDEFieldList(item) {
 // (_meResolveDEFieldList) and the parse engine (_meBuildDEMap) consume this,
 // so what the user sees in the Overrides table is exactly what bitmap-fields
 // executes. Rules:
-//   • groups are synthesized from leaf qualified names; terminal groups (all
-//     children are leaves) own one DE; their leaves carry none
-//   • intermediate groups also own a DE (per UI behaviour)
+//   • a data element is a TOP-LEVEL field of the bound definition — only
+//     depth-0 rows (group or leaf) own and advance a DE; every nested group /
+//     leaf is sub-structure of its element and carries none
 //   • REDEFINES rows never receive or advance a DE
-//   • numbering starts on the field AFTER the parse spec's bitmap field; no
-//     bitmap-fields block → numbering starts at the first field
+//   • numbering starts on the field AFTER the parse spec's bitmap field (no
+//     bitmap-fields block → numbering starts at the first field) and caps at
+//     DE-128 — the bitmap has 128 bits
 //   • de_map anchors reset the running counter at the anchored row
 function _meWalkDEFields(defs, item) {
   const anchors = new Map((item?.de_map || []).map(e => [e.field, +e.de || 1]));
@@ -16616,7 +16619,11 @@ function _meWalkDEFields(defs, item) {
       // emitted while walking defs in declaration order), so its offset IS
       // the group's start offset — same convention as DDL Doc.
       const _gextras = { isGroup: true, isTerminal, childCount, underTerminal: false, isRedef, redefTarget, dataType: 'GROUP', length: groupLength(prefix), offset: def.offset };
-      if (_isRepOcc(prefix)) assignDE(prefix, _gextras);
+      // Only TOP-LEVEL rows own a DE: a data element is one 02-level field of
+      // the bound definition. A nested group is sub-structure INSIDE an
+      // element — it must never draw its own number (composite elements were
+      // burning 2-3 DEs each, inflating a ~127-element record to 325 "DEs").
+      if (_isRepOcc(prefix) && !prefix.includes('.')) assignDE(prefix, _gextras);
       else                   out.push({ id: prefix, de: null, anchored: false, ..._gextras });
     }
 
@@ -16627,8 +16634,11 @@ function _meWalkDEFields(defs, item) {
     const dataType = dtypeByField.get(def.id) || '';
     const length = def.length || 0;
     const offset = def.offset;
-    if (underTerminal) {
-      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal: true, isRedef, redefTarget, dataType, length, offset });
+    // Only TOP-LEVEL leaves own a DE (see the group emit above) — any nested
+    // leaf is part of its top-level element's data.
+    const topLevel = !def.id.includes('.');
+    if (underTerminal || !topLevel) {
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal, isRedef, redefTarget, dataType, length, offset });
     } else if (_isRepOcc(def.id)) {
       assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, offset });
     } else {

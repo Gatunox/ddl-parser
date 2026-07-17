@@ -1335,11 +1335,40 @@ test('[REGRESSION] DE walker expands every nested OCCURS occurrence; DE only on 
   eq(ids.filter(id => /\.NUM$/.test(id)).length, 10, '2 (MULT) × 5 (INFO) = 10 NUM rows shown');
   assert.ok(ids.includes('ACCT.MULT[02].INFO[05].NUM'), 'both nesting dimensions expanded');
   assert.ok(ids.includes('ACCT.MULT[02]'), 'outer occurrence 2 group row present');
-  // A repeated field is one logical DE: only the all-[01] representative owns/advances a DE.
+  // A data element is a TOP-LEVEL field: only ACCT owns a DE; every nested
+  // group/leaf (any occurrence) is sub-structure and carries none.
   const de = id => rows.find(r => r.id === id)?.de;
-  assert.ok(de('ACCT.MULT[01].INFO[01]') != null, 'representative terminal group owns a DE');
+  assert.ok(de('ACCT') != null, 'top-level element owns the DE');
+  assert.ok(de('ACCT.MULT[01].INFO[01]') == null, 'nested group carries no DE');
   assert.ok(de('ACCT.MULT[02].INFO[01]') == null, 'non-representative occurrence carries no DE');
   assert.ok(de('ACCT.MULT[02]') == null, 'non-representative group carries no DE');
+});
+
+test('a composite element (nested sub-groups) consumes exactly ONE DE', () => {
+  S.ddlTree = { VOL: { SV: { COMP: `
+    DEF ISOMSG.
+      02 BMP PIC X(16).
+      02 DATA-ELEMENT-62.
+        04 LEN PIC 9(3).
+        04 DATA.
+          06 PART1 PIC X(5).
+          06 PART2 PIC X(5).
+      02 DATA-ELEMENT-63 PIC X(4).
+    END
+  ` } } };
+  const item = {
+    ddl_bindings: ['VOL/SV/COMP/ISOMSG'], de_map: [],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'BMP' }],
+  };
+  const rows = sandbox._t.meWalkDEFields(
+    sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/COMP/ISOMSG')]), item);
+  const de = id => rows.find(r => r.id === id)?.de ?? null;
+  eq(de('DATA-ELEMENT-62'), 1, 'composite element owns one DE');
+  eq(de('DATA-ELEMENT-62.LEN'), null, 'nested leaf carries no DE');
+  eq(de('DATA-ELEMENT-62.DATA'), null, 'nested group carries no DE');
+  eq(de('DATA-ELEMENT-62.DATA.PART1'), null, 'deep leaf carries no DE');
+  eq(de('DATA-ELEMENT-63'), 2, 'next element numbers immediately after — no inflation');
+  eq(rows.filter(r => r.de !== null).length, 2, 'exactly one DE per top-level element');
 });
 
 test('VLG group distributes runtime LEN across children with real ids and overrides applied', () => {
@@ -1717,6 +1746,64 @@ END
   const t2 = sandbox._t.meBindingTargetDef('VOL/SV/F/HELPERS', item);
   eq(t2?.defName, 'HELPERS', '4-part binding names its DEF');
   eq(t2?.multi, null, 'no multi note for an explicit DEF');
+});
+
+test('multi-DEF file: binding one DEF parses ONLY that DEF (fields, DEs, comments)', () => {
+  // Three definitions in ONE file. HDR-DEF and TRAILER-DEF carry decoy
+  // fields and decoy "Bit map position" comments that must never leak into
+  // the bound ISOMSG scope.
+  const file = `DEF HDR-DEF.
+* Bit map position = 90 (decoy)
+  02 HDR-A PIC X(4).
+  02 HDR-B PIC X(4).
+END
+DEF ISOMSG.
+  02 PBIT-MAP PIC X(16).
+* Bit map position = 2
+  02 DATA-ELEMENT-2 PIC X(19).
+* Bit map position = 44
+  02 DATA-ELEMENT-44.
+    04 LEN PIC 9(2).
+    04 DATA.
+      06 PART1 PIC X(10).
+      06 PART2 PIC X(10).
+* Bit map position = 53
+  02 DATA-ELEMENT-53 PIC X(16).
+END
+DEF TRAILER-DEF.
+* Bit map position = 91 (decoy)
+  02 TR-A PIC X(9).
+END
+`;
+  S.ddlTree = { VOL: { SV: { F: file } } };
+  const item = {
+    ddl_bindings: ['VOL/SV/F/ISOMSG'], de_map: [],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'PBIT-MAP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'PBIT-MAP' }],
+  };
+  // 1. The compiled defs contain ONLY the bound DEF's fields.
+  const r = sandbox._t.getDDLFromPath('VOL/SV/F/ISOMSG');
+  const roots = new Set(r.defs.map(d => d.id.split('.')[0]));
+  deepEq([...roots].sort(), ['DATA-ELEMENT-2', 'DATA-ELEMENT-44', 'DATA-ELEMENT-53', 'PBIT-MAP'],
+    'field list holds only the bound DEF');
+  // 2. DE rows: one per top-level element of the bound DEF, nothing else.
+  const rows = sandbox._t.meWalkDEFields(sandbox._t.meCollectBindingDefs([r]), item);
+  deepEq(rows.filter(x => x.de !== null).map(x => `${x.id}=DE-${x.de}`),
+    ['DATA-ELEMENT-2=DE-1', 'DATA-ELEMENT-44=DE-2', 'DATA-ELEMENT-53=DE-3'],
+    'exactly one DE per top-level element of the bound DEF');
+  // 3. Comment extraction scoped to the bound DEF — decoys invisible.
+  const m = meExtractCommentDEs(file, 'ISOMSG');
+  deepEq([...m.entries()].sort(), [['DATA-ELEMENT-2', 2], ['DATA-ELEMENT-44', 44], ['DATA-ELEMENT-53', 53]],
+    'only the bound DEF\'s comments extracted');
+  eq(m.has('HDR-A'), false, 'decoy before the DEF ignored');
+  eq(m.has('TR-A'), false, 'decoy after the DEF ignored');
+  // 4. The minimal anchor set from those comments.
+  const anchors = meComputeAutoOrderAnchors(rows.filter(x => x.deSeq != null).map(x =>
+    ({ id: x.id, naturalDE: x.deSeq, commentDE: m.get(x.id) ?? null })));
+  deepEq(anchors, [
+    { field: 'DATA-ELEMENT-2', de: 2 },
+    { field: 'DATA-ELEMENT-44', de: 44 },
+    { field: 'DATA-ELEMENT-53', de: 53 },
+  ], 'anchors computed from bound-DEF comments only');
 });
 
 // ── KEYTAG clause ─────────────────────────────────────────────────────────────

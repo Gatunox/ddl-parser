@@ -3058,15 +3058,19 @@ function validateDDLErrors(text, repoTypeRegistry) {
       const fNameToken = fLvlM[2];
       const fRawName   = fNameToken.replace(/\.$/, '');
       const fRest      = fLvlM[3] || '';
+      // Clause keywords must NEVER match inside quoted strings — a
+      // HEADING "OCCURS 5 TIMES" or HELP "REDEFINES X" is prose, not clauses.
+      // All clause regexes below run on the string-blanked copy.
+      const fClauses   = _ddlStripStrings(_ddlUnquotePic(fRest));
 
       // Trailing dot on name with PIC/TYPE clause — e.g. "02 RCV-INST-ID-NUM.  PIC X(16)."
       // The dot makes it look like a group header but the PIC/TYPE makes it a leaf — contradictory.
-      if (fNameToken.endsWith('.') && /\bPIC(?:TURE)?\b|\bTYPE\s+\S/i.test(fRest)) {
+      if (fNameToken.endsWith('.') && /(?<![\w-])PIC(?:TURE)?\b|\bTYPE\s+\S/i.test(fClauses)) {
         errors.push(`[line ${fLine}] Field "${fRawName}": unexpected PICTURE/TYPE clause on a group-style declaration — remove the period after the name`);
       }
 
       // Merged-statement detector
-      const fMergedM = fRest.match(/\b(\d{2})\s+([A-Za-z][\w-]*)\s+(?:PIC(?:TURE)?|TYPE|REDEFINES|COMP(?:UTATIONAL)?(?:-3)?|HEADING|VALUE|OCCURS)\b/i);
+      const fMergedM = fClauses.match(/\b(\d{2})\s+([A-Za-z][\w-]*)\s+(?:PIC(?:TURE)?|TYPE|REDEFINES|COMP(?:UTATIONAL)?(?:-3)?|HEADING|VALUE|OCCURS)\b/i);
       if (fMergedM) {
         errors.push(`[line ${fLine}] Field "${fRawName}": missing statement terminator — next field "${fMergedM[2]}" was merged into this statement`);
         return;
@@ -3093,7 +3097,7 @@ function validateDDLErrors(text, repoTypeRegistry) {
           // write e.g. `02 X USAGE COMP PIC 9(4).` or `02 GRP KEYTAG "pn".`).
           'KEYTAG','DISPLAY','AS','EDIT-PIC','HELP','JUSTIFIED','JUST',
           'MUST','NULL','SPI-NULL','SQLNULLABLE','TACL','USAGE','UPSHIFT',
-          'NOVERSION','DEPENDING'
+          'NOVERSION','DEPENDING','EXTERNAL','NOVALUE','NOT','NOTSQLNULLABLE'
         ]);
         const restFirstM = fRest.match(/^([A-Za-z][\w-]*)/);
         if (restFirstM) {
@@ -3112,18 +3116,44 @@ function validateDDLErrors(text, repoTypeRegistry) {
         }
       }
 
-      const fPicM      = fRest.match(/\bPIC(?:TURE)?\s+(?:IS\s+)?(\S+)/i);
-      const fTypM      = fRest.match(/\bTYPE\s+(?:IS\s+)?((?:CHARACTER|BINARY|FLOAT|COMPLEX|LOGICAL|ENUM|BIT|SQL)(?:\s+[\w,]+)?(?:\s+UNSIGNED)?|\*)/i);
-      const fHasType   = /\bTYPE\s+\S/i.test(fRest);
+      // (?<![\w-]) on PIC: EDIT-PIC's own keyword must never count as the
+      // field's PICTURE clause.
+      const fPicM      = fClauses.match(/(?<![\w-])PIC(?:TURE)?\s+(?:IS\s+)?(\S+)/i);
+      const fTypM      = fClauses.match(/\bTYPE\s+(?:IS\s+)?((?:CHARACTER|BINARY|FLOAT|COMPLEX|LOGICAL|ENUM|BIT|SQL)(?:\s+[\w,]+)?(?:\s+UNSIGNED)?|\*)/i);
+      const fHasType   = /\bTYPE\s+\S/i.test(fClauses);
       const fTypeIsSelf = fTypM && fTypM[1] === '*';
       const fUserTypeM = (!fTypM && fHasType)
-        ? fRest.match(/\bTYPE\s+(?:IS\s+)?([A-Za-z][\w-]*)/i) : null;
+        ? fClauses.match(/\bTYPE\s+(?:IS\s+)?([A-Za-z][\w-]*)/i) : null;
       const fUserTypeRef = fTypeIsSelf  ? fRawName.toUpperCase()
                          : fUserTypeM   ? fUserTypeM[1].replace(/\.$/, '').toUpperCase()
                          : null;
-      const fCompM     = fRest.match(/\b(COMP(?:-3)?|COMPUTATIONAL(?:-3)?)\b/i);
-      const fRedfM     = fRest.match(/\bREDEFINES\s+(\S+)/i);
-      const fOccM      = fRest.match(/\bOCCURS\s+(-?\d+)(?:\s+TO\s+(-?\d+))?\s+TIMES?\b/i);
+      const fCompM     = fClauses.match(/\b(COMP(?:-3)?|COMPUTATIONAL(?:-3)?)\b/i);
+      const fRedfM     = fClauses.match(/\bREDEFINES\s+(\S+)/i);
+      // TIMES is optional per the manual (OCCURS max [TIMES] [INDEXED BY …]).
+      const fOccM      = fClauses.match(/\bOCCURS\s+(-?\d+)(?:\s+TO\s+(-?\d+))?(?:\s+TIMES?\b)?/i);
+
+      // FILLER Clause rules (manual): an unnamed field that is never
+      // referenced directly. It MUST size itself with a PICTURE or TYPE
+      // clause (never a group); the PIC must be noncomputational and the
+      // TYPE nonnumeric; and it cannot take DISPLAY, HEADING, HELP, KEYTAG,
+      // MUST BE, NULL, REDEFINES, or UPSHIFT.
+      if (fRawName.toUpperCase() === 'FILLER') {
+        if (!fPicM && !fHasType) {
+          errors.push(`${fLine ? `[line ${fLine}] ` : ''}FILLER must specify its data type and size with a PICTURE or TYPE clause — a FILLER group is not allowed`);
+        }
+        if (fCompM) {
+          errors.push(`${fLine ? `[line ${fLine}] ` : ''}FILLER cannot use a computational PICTURE (${fCompM[1].toUpperCase()}) — only noncomputational PICs are allowed`);
+        }
+        if (fTypM && /^(BINARY|FLOAT|COMPLEX|LOGICAL|ENUM)/i.test(fTypM[1])) {
+          errors.push(`${fLine ? `[line ${fLine}] ` : ''}FILLER cannot use a numeric TYPE (${fTypM[1].trim().toUpperCase()}) — only nonnumeric types like CHARACTER are allowed`);
+        }
+        const fProhib = fClauses.match(/\b(DISPLAY|HEADING|HELP|KEYTAG|MUST\s+BE|(?<![\w-])NULL|UPSHIFT)\b/i);
+        if (fRedfM) {
+          errors.push(`${fLine ? `[line ${fLine}] ` : ''}FILLER cannot REDEFINES — it is an unnamed field that can never be referenced`);
+        } else if (fProhib) {
+          errors.push(`${fLine ? `[line ${fLine}] ` : ''}FILLER cannot be described with a ${fProhib[1].toUpperCase().replace(/\s+/g, ' ')} clause`);
+        }
+      }
 
       fields.push({
         lvl:        fLvl,
@@ -3258,6 +3288,18 @@ function parseSimpleDDL(text) {
 // ============================================================
 
 // ---- Parse HPE DDL into raw item list (includes groups + REDEFINES) ---------
+// Blank the CONTENTS of quoted strings so clause-keyword regexes can't match
+// prose inside HEADING / HELP / VALUE / EDIT-PIC arguments. Quotes stay so
+// token boundaries hold. Shared by the statement parser and the validator.
+function _ddlStripStrings(s) {
+  return String(s).replace(/"[^"]*"/g, '""');
+}
+// The manual allows the picture string itself to be QUOTED (PIC "X(5)") —
+// unquote it BEFORE string-blanking so the PIC survives clause extraction.
+function _ddlUnquotePic(s) {
+  return String(s).replace(/((?<![\w-])PIC(?:TURE)?\s+(?:IS\s+)?)"([^"]+)"/gi, '$1$2');
+}
+
 function parseDDLSections(text) {
   // Returns [{name, items:[{level,name,pic,comp,typeClause,occurs,redefines,desc}]}]
   const stripped = text.split('\n').map(line =>
@@ -3279,12 +3321,18 @@ function parseDDLSections(text) {
     const level = parseInt(lvlM[1]);
     if (level === 66 || level === 88 || level === 89) return;
     const rawName = lvlM[2], rest = lvlM[3] || '';
-    const picM   = rest.match(/\bPIC(?:TURE)?\s+(?:IS\s+)?([XSANP9VT()\d]+)/i);
-    const usageM = rest.match(/\bUSAGE\s+(?:IS\s+)?(COMP(?:UTATIONAL)?(?:-3)?|PACKED-DECIMAL)\b/i)
-                || rest.match(/\b(COMP(?:UTATIONAL)?(?:-3)?|PACKED-DECIMAL)\b/i);
-    const typeM  = rest.match(/\bTYPE\s+(?:IS\s+)?((?:CHARACTER|BINARY|FLOAT|COMPLEX|LOGICAL|ENUM|BIT|SQL)(?:\s+[\d,]+)?(?:\s+UNSIGNED)?|\*|[\w-]+)/i);
-    const occM   = rest.match(/\bOCCURS\s+(\d+)(?:\s+TO\s+(\d+))?\s*(?:TIMES)?/i);
-    const redefM = rest.match(/\bREDEFINES\s+(\S+)/i);
+    // Clause keywords must never match INSIDE quoted strings — a
+    // HEADING "OCCURS 5 TIMES" is prose, not an OCCURS clause. Clause
+    // regexes run on the string-blanked copy; HEADING/AS extraction keeps
+    // the original so the quoted text survives. (?<![\w-]) on PIC keeps
+    // EDIT-PIC's keyword from being read as the field's PICTURE.
+    const clauses = _ddlStripStrings(_ddlUnquotePic(rest));
+    const picM   = clauses.match(/(?<![\w-])PIC(?:TURE)?\s+(?:IS\s+)?([XSANP9VT()\d]+)/i);
+    const usageM = clauses.match(/\bUSAGE\s+(?:IS\s+)?(COMP(?:UTATIONAL)?(?:-3)?|PACKED-DECIMAL)\b/i)
+                || clauses.match(/\b(COMP(?:UTATIONAL)?(?:-3)?|PACKED-DECIMAL)\b/i);
+    const typeM  = clauses.match(/\bTYPE\s+(?:IS\s+)?((?:CHARACTER|BINARY|FLOAT|COMPLEX|LOGICAL|ENUM|BIT|SQL)(?:\s+[\d,]+)?(?:\s+UNSIGNED)?|\*|[\w-]+)/i);
+    const occM   = clauses.match(/\bOCCURS\s+(\d+)(?:\s+TO\s+(\d+))?\s*(?:TIMES)?/i);
+    const redefM = clauses.match(/\bREDEFINES\s+(\S+)/i);
     const headM  = rest.match(/\bHEADING\s+"([^"]*)"/) || rest.match(/\bAS\s+"([^"]*)"/);
     cur.items.push({
       level,
@@ -13077,7 +13125,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.298';
+const APP_VERSION  = '1.1.2.299';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16073,6 +16121,8 @@ function _meFmDeCellHtml(row, ctx) {
       // sequence passed DE-128 (a bitmap message has at most 128 elements).
       const tip = row.deOverflow
         ? 'Beyond DE-128 — a bitmap message has at most 128 data elements. Anchor an earlier field (Auto Order or manual) to bring this range back into 1–128.'
+        : _canonFieldId(row.id) === 'FILLER' && !row.id.includes('.')
+        ? 'FILLER — padding; it neither owns nor advances the DE numbering.'
         : row.id.includes('.')
         ? 'Nested field — the top-level element owns the DE.'
         : 'No DE here — this field is before (or is) the bitmap declared in the parse spec.';
@@ -16156,8 +16206,12 @@ function _meFmRowHtml(row, ctx, counter) {
   // Display override stays its own column. Rendered as a lightweight
   // click-to-edit cell — a real <select> materializes on click. Huge DDLs
   // produce thousands of rows; two live selects per row froze the open.
-  const foEntry = ctx.foByField.get(_canonFieldId(row.id)) || {};
-  const dispCell = `<td class="me-fm-fo me-fo-cell" data-kind="display" data-fid="${id}" onclick="_meFoCellEdit(this)">${_meFoFakeHtml(foEntry.display || '', '')}</td>`;
+  // FILLER is unnamed and can never be referenced (manual) — no overrides.
+  const isFiller = _canonFieldId(row.id).split('.').pop() === 'FILLER';
+  const foEntry = isFiller ? {} : (ctx.foByField.get(_canonFieldId(row.id)) || {});
+  const dispCell = isFiller
+    ? `<td class="me-fm-fo" title="FILLER cannot be referenced — no overrides."></td>`
+    : `<td class="me-fm-fo me-fo-cell" data-kind="display" data-fid="${id}" onclick="_meFoCellEdit(this)">${_meFoFakeHtml(foEntry.display || '', '')}</td>`;
 
   // # column — number only the leaves, empty for group rows (mirrors DDL Doc).
   // Windowed rendering precomputes absolute numbers (_fmNum); the counter is
@@ -16185,7 +16239,7 @@ function _meFmRowHtml(row, ctx, counter) {
   const overrideBadLen = overrideRequiredLen !== null && overrideRequiredLen !== (row.length || 0);
   const warnIcon = overrideBadLen
     ? `<span class="me-fm-dt-warn" title="Override &quot;${ea(overrideVal)}&quot; needs ${overrideRequiredLen} bytes but this field is ${row.length} — override will be ignored at parse time.">⚠</span>` : '';
-  const dtCell = (isGroup || row.isRedef)
+  const dtCell = (isGroup || row.isRedef || isFiller)
     ? `<td class="me-fm-dt">${ea(defaultLabel)}</td>`
     : `<td class="me-fm-dt me-fo-cell${overrideBadLen ? ' me-fm-dt-bad' : ''}" data-kind="type" data-fid="${id}" data-def="${ea(defaultLabel)}" data-len="${row.length || 0}" onclick="_meFoCellEdit(this)" title="Override the field's interpreted type (length must be compatible).">${_meFoFakeHtml(overrideVal, defaultLabel)}${warnIcon}</td>`;
   return `<tr class="${trCls}" ${dataAttrs}>${numCell}${fieldCell}${offCell}${lenCell}${dtCell}${deCell}${vlgCell}${dispCell}</tr>`;
@@ -16469,8 +16523,14 @@ function _meCollectBindingDefs(resolvedBindings) {
   const seen = new Set();
   for (const r of (resolvedBindings || [])) {
     for (const d of (r?.defs || [])) {
-      if (seen.has(d.id)) continue;
-      seen.add(d.id);
+      // Dedup by id AND offset: two bindings resolving the same field merge,
+      // but repeated FILLER items (same id, different offsets — the manual
+      // allows FILLER in place of a name any number of times) must ALL
+      // survive; keying on id alone silently dropped every FILLER but the
+      // first, shifting the Field Map and the bitmap DE mapping.
+      const key = d.id + '@' + d.offset;
+      if (seen.has(key)) continue;
+      seen.add(key);
       defs.push(d);
     }
   }
@@ -16637,8 +16697,10 @@ function _meWalkDEFields(defs, item) {
       // the bound definition. A nested group is sub-structure INSIDE an
       // element — it must never draw its own number (composite elements were
       // burning 2-3 DEs each, inflating a ~127-element record to 325 "DEs").
-      if (_isRepOcc(prefix) && !prefix.includes('.')) assignDE(prefix, _gextras);
-      else                   out.push({ id: prefix, de: null, anchored: false, ..._gextras });
+      // FILLER is padding: it neither owns NOR advances the DE counter.
+      if (_isRepOcc(prefix) && !prefix.includes('.') && _canonFieldId(prefix) !== 'FILLER')
+        assignDE(prefix, _gextras);
+      else out.push({ id: prefix, de: null, anchored: false, ..._gextras });
     }
 
     const parentPrefix = parts.slice(0, -1).join('.');
@@ -16649,8 +16711,9 @@ function _meWalkDEFields(defs, item) {
     const length = def.length || 0;
     const offset = def.offset;
     // Only TOP-LEVEL leaves own a DE (see the group emit above) — any nested
-    // leaf is part of its top-level element's data.
-    const topLevel = !def.id.includes('.');
+    // leaf is part of its top-level element's data. FILLER is padding and
+    // neither owns nor advances the counter.
+    const topLevel = !def.id.includes('.') && _canonFieldId(def.id) !== 'FILLER';
     if (underTerminal || !topLevel) {
       out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal, isRedef, redefTarget, dataType, length, offset });
     } else if (_isRepOcc(def.id)) {

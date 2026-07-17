@@ -1856,6 +1856,149 @@ END
   eq(totalSize, 14, 'record total');
 });
 
+test('leaf REDEFINES with OCCURS: size check multiplies the occurs, in either clause order', () => {
+  const mk = line => 'DEF Z.\n  02 BASE PIC X(4).\n  ' + line + '\n  02 AFTER PIC X(2).\nEND\n';
+  for (const line of [
+    '02 OV PIC X(2) OCCURS 3 TIMES REDEFINES BASE.',
+    '02 OV PIC X(2) REDEFINES BASE OCCURS 3 TIMES.',
+  ]) {
+    const r = validateDDLErrors(mk(line));
+    eq(r.errors.some(e => /REDEFINES size mismatch/.test(e) && e.includes('6 byte') && e.includes('only 4 byte')),
+      true, 'oversized overlay (2×3 over 4) errors for: ' + line);
+  }
+  // Exact fit (2×2 over 4) must stay silent in both orders.
+  for (const line of [
+    '02 OV PIC X(2) OCCURS 2 TIMES REDEFINES BASE.',
+    '02 OV PIC X(2) REDEFINES BASE OCCURS 2 TIMES.',
+  ]) {
+    const r = validateDDLErrors(mk(line));
+    deepEq(r.errors, [], 'exact-fit overlay clean for: ' + line);
+  }
+});
+
+test('repeated FILLER items all survive: layout, Field Map defs, and DE slots', () => {
+  const ddl = `DEF ZOO3.
+  02 BMP        PIC X(16).
+  02 A          PIC X(2).
+  02 FILLER     PIC X(3).
+  02 B          PIC X(2).
+  02 FILLER     PIC X(5).
+  02 C          PIC X(2) HELP "Sentence ends here.".
+  02 D          PIC X(2).
+END
+`;
+  const { errors, warnings } = validateDDLErrors(ddl);
+  deepEq(errors, [], 'validator clean (incl. quoted period inside HELP)');
+  deepEq(warnings || [], [], 'no warnings');
+  S.ddlTree = { VOL: { SV: { Z: ddl } } };
+  const merged = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/Z/ZOO3')]);
+  deepEq(merged.map(d => `${d.id}@${d.offset}`),
+    ['BMP@0', 'A@16', 'FILLER@18', 'B@21', 'FILLER@23', 'C@28', 'D@30'],
+    'both FILLERs survive the id+offset dedup');
+  const item = { ddl_bindings: ['VOL/SV/Z/ZOO3'], de_map: [],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'BMP' }] };
+  const rows = sandbox._t.meWalkDEFields(merged, item);
+  // FILLER is padding: it neither owns nor advances the DE counter.
+  deepEq(rows.filter(r => r.de !== null).map(r => `${r.id}=DE-${r.de}`),
+    ['A=DE-1', 'B=DE-2', 'C=DE-3', 'D=DE-4'],
+    'FILLERs are transparent to DE numbering');
+  deepEq(rows.filter(r => r.id === 'FILLER').map(r => r.de), [null, null],
+    'FILLER rows carry no DE');
+});
+
+test('manual grammar: quoted PIC strings, TIMES-less OCCURS, INDEXED BY, EXTERNAL/NOVALUE/NOT', () => {
+  const ddl = `DEF T.
+  02 P1 PIC "X(5)".
+  02 P2 PICTURE "9(3)V99".
+  02 BASE PIC X(4).
+  02 OV PIC X(2) OCCURS 2 REDEFINES BASE.
+  02 O2 PIC X(2) OCCURS 4 TIMES INDEXED BY IX.
+  02 E1 EXTERNAL PIC X(2).
+  02 E2 NOVALUE PIC 9(2).
+  02 E3 NOT SQLNULLABLE PIC X(2).
+END
+`;
+  const v = validateDDLErrors(ddl);
+  deepEq(v.errors, [], 'no errors — quoted PICs, optional TIMES, INDEXED BY, and the extra first-position keywords are all legal');
+  deepEq(v.warnings || [], [], 'no warnings — the 2×2 overlay exactly fits its 4-byte target');
+  const { fields } = buildDDLDocFields(parseDDLSections(ddl)[0].items, null);
+  const get = qn => fields.find(f => f.qualName === qn);
+  eq(get('P1').size, 5, 'PIC "X(5)" unquoted and sized');
+  eq(get('P2').size, 5, 'PICTURE "9(3)V99" = 5 bytes');
+  eq(get('O2').size, 8, 'OCCURS 4 TIMES INDEXED BY sized ×4');
+  eq(get('OV').size, 4, 'TIMES-less OCCURS multiplies (2×2)');
+});
+
+test('TIMES-less OCCURS reaches the validator size check (was invisible to it)', () => {
+  const r = validateDDLErrors('DEF T.\n  02 BASE PIC X(4).\n  02 OV PIC X(2) OCCURS 3 REDEFINES BASE.\nEND\n');
+  eq(r.errors.some(e => /REDEFINES size mismatch/.test(e) && e.includes('6 byte')), true,
+    'oversized overlay detected without the TIMES keyword');
+});
+
+test('metadata clauses are inert: keywords inside strings and EDIT-PIC never corrupt PIC/OCCURS/REDEFINES', () => {
+  const ddl = `DEF T.
+  02 BASE PIC X(6).
+  02 A EDIT-PIC "ZZ9" PIC 9(3).
+  02 B HEADING "OCCURS 5 TIMES" PIC X(2).
+  02 C HELP "REDEFINES BASE" PIC X(2).
+  02 D PIC X(2) HEADING "h" OCCURS 3 TIMES JUSTIFIED RIGHT REDEFINES BASE.
+  02 E VALUE "PIC 9(9)" PIC X(4).
+END
+`;
+  const v = validateDDLErrors(ddl);
+  deepEq(v.errors, [], 'no validator errors');
+  deepEq(v.warnings || [], [], 'no warnings');
+  const { fields, totalSize } = buildDDLDocFields(parseDDLSections(ddl)[0].items, null);
+  const get = qn => fields.find(f => f.qualName === qn);
+  eq(get('A').size, 3, 'EDIT-PIC argument does not hijack the real PIC');
+  eq(get('B').size, 2, 'no phantom OCCURS from a HEADING string');
+  eq(get('B').occurs, 1, 'occurs stays 1');
+  eq(get('B').desc, 'OCCURS 5 TIMES', 'the string still feeds the description verbatim');
+  eq(get('C').isRedefines, false, 'no phantom REDEFINES from a HELP string');
+  eq(get('D').size, 6, 'interleaved metadata does not disturb real OCCURS×REDEFINES');
+  eq(get('D').offset, 0, 'D still overlays BASE');
+  eq(get('E').size, 4, 'no PIC hijack from a VALUE string');
+  eq(totalSize, 17, 'record total intact');
+});
+
+test('FILLER clause rules per the manual: mandatory size, noncomputational, no forbidden clauses', () => {
+  const check = line => validateDDLErrors('DEF T.\n  02 A PIC X(2).\n  ' + line + '\nEND\n');
+  // Legal forms (from the manual's FILLER Clause examples)
+  for (const line of [
+    '02 FILLER PIC X(6).',
+    '02 FILLER TYPE CHARACTER 6.',
+    '02 FILLER PIC 9(6).',
+    '02 FILLER PIC X(2) OCCURS 3 TIMES.',
+  ]) {
+    deepEq(check(line).errors, [], 'legal: ' + line);
+  }
+  // Illegal forms
+  const cases = [
+    ['02 FILLER.',                        /PICTURE or TYPE/],
+    ['02 FILLER PIC 9(4) COMP.',          /computational/],
+    ['02 FILLER TYPE BINARY 16.',         /numeric TYPE/],
+    ['02 FILLER PIC X(2) REDEFINES A.',   /cannot REDEFINES/],
+    ['02 FILLER PIC X(2) HEADING "h".',   /HEADING/],
+    ['02 FILLER PIC X(2) KEYTAG 0.',      /KEYTAG/],
+    ['02 FILLER PIC X(2) MUST BE 1.',     /MUST BE/],
+    ['02 FILLER PIC X(2) UPSHIFT.',       /UPSHIFT/],
+  ];
+  for (const [line, re] of cases) {
+    eq(check(line).errors.some(e => re.test(e)), true, 'flagged: ' + line);
+  }
+  // SPI-NULL is NOT in the prohibited list — the NULL check must not false-flag it.
+  eq(check('02 FILLER PIC X(2) SPI-NULL 255.').errors.length, 0, 'SPI-NULL allowed on FILLER');
+});
+
+test('PIC scaling and scaled binary size correctly', () => {
+  const ddl = 'DEF T.\n  02 E PIC 9(5)P.\n  02 F TYPE BINARY 16,2.\n  02 G PIC S9(4)V9.\nEND\n';
+  const { fields } = buildDDLDocFields(parseDDLSections(ddl)[0].items, null);
+  const get = qn => fields.find(f => f.qualName === qn);
+  eq(get('E').size, 5, 'P scaling position stores no byte');
+  eq(get('F').size, 2, 'scaled BINARY 16,2 is still 2 bytes');
+  eq(get('G').size, 6, 'S9(4)V9 = separate sign + 5 digits');
+});
+
 // ── KEYTAG clause ─────────────────────────────────────────────────────────────
 console.log('\nKEYTAG clause');
 

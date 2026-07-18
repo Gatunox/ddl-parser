@@ -1935,6 +1935,27 @@ test('TIMES-less OCCURS reaches the validator size check (was invisible to it)',
     'oversized overlay detected without the TIMES keyword');
 });
 
+test('kitchen sink: every ignorable clause with unquoted args on ONE field beside a real OCCURS', () => {
+  // Unquoted clause arguments can never collide with clause keywords — DDL's
+  // reserved-word rule forbids user names from being keywords, so keyword-
+  // anchored extraction stays sound no matter how many clauses pile up.
+  const ddl = 'DEF T.\n'
+    + '  02 K PIC 9(2) JUSTIFIED RIGHT LN"fr_CA.ISO88591" MUST BE 1 THRU 12 '
+    + 'SPI-NULL 255 NOT SQLNULLABLE TACL TSTAMP UPSHIFT EXTERNAL VALUE 5 '
+    + 'OCCURS 2 TIMES INDEXED BY IX HEADING "month nbr".\n'
+    + '  02 L PIC X(3).\nEND\n';
+  const v = validateDDLErrors(ddl);
+  deepEq(v.errors, [], 'no errors');
+  deepEq(v.warnings || [], [], 'no warnings');
+  const { fields, totalSize } = buildDDLDocFields(parseDDLSections(ddl)[0].items, null);
+  const k = fields.find(f => f.qualName === 'K');
+  eq(k.size, 4, 'PIC 9(2) × OCCURS 2 survives twelve sibling clauses');
+  eq(k.occurs, 2, 'occurs intact');
+  eq(k.desc, 'month nbr', 'heading still extracted');
+  eq(fields.find(f => f.qualName === 'L').offset, 4, 'layout cursor exact');
+  eq(totalSize, 7, 'record total exact');
+});
+
 test('metadata clauses are inert: keywords inside strings and EDIT-PIC never corrupt PIC/OCCURS/REDEFINES', () => {
   const ddl = `DEF T.
   02 BASE PIC X(6).

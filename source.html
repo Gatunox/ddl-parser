@@ -13324,7 +13324,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.318';
+const APP_VERSION  = '1.1.2.319';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17951,19 +17951,32 @@ function _meField(field, value) {
 
 // ── Recognizers Tab ───────────────────────────────────────────────────────
 
-// File-entity completeness warnings (top of the Recognizers panel).
-// A file detection is keyed by its filename — extra recognizers may refine
-// (e.g. tell versions of the same file apart), but the filename identifier
-// must always be present. Beyond that, the entity is only functional with
-// BOTH a DDL binding (the file's layout) and a parse spec (how to read it).
+// Entity completeness warnings (top of the Recognizers panel).
+// File detections are keyed by their filename and need both a binding and a
+// parse spec. Message detections work either way, but a parse_spec that reads
+// DDL fields (read-ddl / read-bitmap-fields / …) needs a bound DDL to parse
+// against — without one, records fall back to slow candidate scoring + the
+// DDL picker at parse time, so we nudge the user to bind a DDL.
+const _PS_NEEDS_BINDING = /read-ddl|read-bitmap-fields|read-segment-fields|(?<![\w-])read\b/;
 function _meFileWarnsHtml(item) {
-  if (!item || item.kind !== 'file') return '';
+  if (!item) return '';
+  const hasBind = (item.ddl_bindings || []).filter(Boolean).length > 0;
+  const hasSpec = (item.parse_spec_binary || []).length > 0 || (item.parse_spec_ascii || []).length > 0;
+
+  // ── Message detections ────────────────────────────────────────────────────
+  if (item.kind !== 'file') {
+    if (!hasSpec || hasBind) return '';
+    // Parse spec present but no binding — only warn if the spec actually reads DDL.
+    const specStr = JSON.stringify(item.parse_spec_binary || []) + JSON.stringify(item.parse_spec_ascii || []);
+    if (!_PS_NEEDS_BINDING.test(specStr)) return '';
+    return `<div class="me-test-warn" style="margin:0 0 8px">⚠ No DDL binding — this message's parse spec reads DDL fields, but no DDL is bound. At parse time it will fall back to scoring every candidate DDL and prompting you to pick one. Add the DDL in DDL Bindings to parse it directly.</div>`;
+  }
+
+  // ── File detections ───────────────────────────────────────────────────────
   let h = '';
   if (!(item.recognizers || []).some(r => r.type === 'filename')) {
     h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ File detections must carry a filename recognizer ($VOL.SUBVOL.FILE) — add one, or this entity can never match.</div>`;
   }
-  const hasBind = (item.ddl_bindings || []).filter(Boolean).length > 0;
-  const hasSpec = (item.parse_spec_binary || []).length > 0 || (item.parse_spec_ascii || []).length > 0;
   if (!hasBind && !hasSpec) {
     h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ Inert — this file entity has no DDL binding and no parse spec, so it will never claim records. It needs both: a binding (the file's DDL) and a parse spec (how to read it).</div>`;
   } else if (!hasBind) {

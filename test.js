@@ -69,6 +69,8 @@ _t.parseDDLSections   = parseDDLSections;
 _t.parseHPEDDL        = parseHPEDDL;
 _t.isHPEDDLText       = isHPEDDLText;
 _t.parseFlatMessage   = parseFlatMessage;
+_t.parseMessage       = parseMessage;
+_t.parseHPEISOMessage = parseHPEISOMessage;
 _t.parseSimpleDDL     = parseSimpleDDL;
 _t.validateDDLErrors  = validateDDLErrors;
 _t.normalizeDataType  = normalizeDataType;
@@ -82,6 +84,7 @@ _t.stripJsonc         = _stripJsonc;
 _t.migrateSpec        = window._migrateSpec;
 _t.fmtTestSpecs       = window._fmtTestSpecs;
 _t.meExecParseSpec    = _meExecParseSpec;
+_t.meParseFileWithSpec = _meParseFileWithSpec;
 _t.mePsKnownDDLIds    = _mePsKnownDDLIds;
 _t.meFmCountUnresolved = _meFmCountUnresolved;
 _t.meExtractCommentDEs = _meExtractCommentDEs;
@@ -108,12 +111,12 @@ try {
 
 const {
   picSize, typeSize, buildDDLDocFields, expandTypeRefs,
-  parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage,
+  parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
   stripJsonc, migrateSpec, fmtTestSpecs,
-  meExecParseSpec, mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
-  meComputeAutoOrderAnchors, S, P,
+  meExecParseSpec, meParseFileWithSpec, mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
+  meComputeAutoOrderAnchors, getDDLFromPath, S, P,
 } = sandbox._t;
 
 // ── Test harness ────────────────────────────────────────────────────────────
@@ -1227,7 +1230,7 @@ test('bitmap-fields honors DE anchors from item.de_map when mapping set bits', (
     parse_spec_binary: [],
     parse_spec_ascii: [
       { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
-      { 'bitmap-fields': 'BMP' },
+      { 'read-bitmap-fields': 'BMP' },
     ],
   };
   const ctx = meExecParseSpec(item, Buffer.from('5000000000000000AC'));
@@ -1262,7 +1265,7 @@ test('DE numbering starts after the bitmap field and skips REDEFINES, matching t
     parse_spec_ascii: [
       { 'read-ddl': { until: 'HDR' } },
       { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
-      { 'bitmap-fields': 'BMP' },
+      { 'read-bitmap-fields': 'BMP' },
     ],
     parse_spec_binary: [],
   };
@@ -1303,7 +1306,7 @@ test('a REDEFINES child group does not split its parent\'s DE (DATA-ELEMENT-37 c
     ddl_bindings: ['VOL/SV/D37DDL/REC'],
     parse_spec_binary: [
       { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
-      { 'bitmap-fields': 'BMP' },
+      { 'read-bitmap-fields': 'BMP' },
     ],
   };
   const rows = sandbox._t.meWalkDEFields(
@@ -1358,7 +1361,7 @@ test('a composite element (nested sub-groups) consumes exactly ONE DE', () => {
   ` } } };
   const item = {
     ddl_bindings: ['VOL/SV/COMP/ISOMSG'], de_map: [],
-    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'BMP' }],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'BMP' }],
   };
   const rows = sandbox._t.meWalkDEFields(
     sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/COMP/ISOMSG')]), item);
@@ -1388,7 +1391,7 @@ test('VLG group distributes runtime LEN across children with real ids and overri
     field_overrides: [{ field: 'ICC.VAL', display: 'hex' }],
     parse_spec_ascii: [
       { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
-      { 'bitmap-fields': 'BMP' },
+      { 'read-bitmap-fields': 'BMP' },
     ],
     parse_spec_binary: [],
   };
@@ -1423,7 +1426,7 @@ test('VLG with selected LEN field: fields before LEN read fixed, fields after di
     var_length_groups: [{ group: 'ICC', len: 'ICC.LEN' }],
     parse_spec_ascii: [
       { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
-      { 'bitmap-fields': 'BMP' },
+      { 'read-bitmap-fields': 'BMP' },
     ],
     parse_spec_binary: [],
   };
@@ -1701,7 +1704,7 @@ test('DE numbering caps at 128; an anchor pulls the sequence back into range', (
   S.ddlTree = { VOL: { SV: { BIG: ddl } } };
   const mkItem = de_map => ({
     ddl_bindings: ['VOL/SV/BIG/BIGISO'], de_map,
-    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'BMP' }],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'BMP' }],
   });
   const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/BIG/BIGISO')]);
   // Natural: fields 129/140 exceed the 128-bit bitmap → no DE, flagged overflow.
@@ -1736,7 +1739,7 @@ DEF ISOMSG.
 END
 `;
   S.ddlTree = { VOL: { SV: { F: file } } };
-  const item = { parse_spec_binary: [{ 'read-bitmap': { field: 'PBIT-MAP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'PBIT-MAP' }] };
+  const item = { parse_spec_binary: [{ 'read-bitmap': { field: 'PBIT-MAP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'PBIT-MAP' }] };
   const t = sandbox._t.meBindingTargetDef('VOL/SV/F', item);
   eq(t?.defName, 'ISOMSG', 'DEF containing the bitmap field wins');
   eq(t?.multi, 2, 'multi-DEF file reported');
@@ -1778,7 +1781,7 @@ END
   S.ddlTree = { VOL: { SV: { F: file } } };
   const item = {
     ddl_bindings: ['VOL/SV/F/ISOMSG'], de_map: [],
-    parse_spec_binary: [{ 'read-bitmap': { field: 'PBIT-MAP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'PBIT-MAP' }],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'PBIT-MAP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'PBIT-MAP' }],
   };
   // 1. The compiled defs contain ONLY the bound DEF's fields.
   const r = sandbox._t.getDDLFromPath('VOL/SV/F/ISOMSG');
@@ -1896,7 +1899,7 @@ END
     ['BMP@0', 'A@16', 'FILLER@18', 'B@21', 'FILLER@23', 'C@28', 'D@30'],
     'both FILLERs survive the id+offset dedup');
   const item = { ddl_bindings: ['VOL/SV/Z/ZOO3'], de_map: [],
-    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'bitmap-fields': 'BMP' }] };
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'BMP' }] };
   const rows = sandbox._t.meWalkDEFields(merged, item);
   // FILLER is padding: it neither owns nor advances the DE counter.
   deepEq(rows.filter(r => r.de !== null).map(r => `${r.id}=DE-${r.de}`),
@@ -2073,6 +2076,339 @@ test('defaults: Base24 POS @4 = "02" (ATM stays "01"); all ISO 8583 vols = SWITC
   eq(lit4('Base24 ATM Generic'), '01', 'ATM @4 literal');
   deepEq(specs.filter(s => s.name === 'ISO').map(s => s.vol),
     ['SWITCH', 'SWITCH', 'SWITCH'], 'ISO 8583 Standard/BIC/Switch vol');
+});
+
+// ── Message / File detection split ────────────────────────────────────────────
+console.log('\nmessage vs file detection order');
+
+test('message specs always rank first; file specs are only consulted for records with a filename', () => {
+  const bytes = s => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; };
+  domEl._fmtSave([
+    { name: 'FIL', label: 'Any-name file', kind: 'file',                        // deliberately FIRST in the list
+      recognizers: [{ type: 'filename', pattern: '*' }],
+      parse_spec_binary: [{ 'read-to-end': { as: 'DATA' } }] },
+    { name: 'MSG', label: 'Hello message', recognizers: [{ type: 'regex', pattern: '^HELLO' }] },
+  ]);
+  deepEq(domEl._detectOrderIdxs(domEl._fmtGetData().specs), [1, 0], 'messages rank before files');
+  eq(domEl._fmtDetect(bytes('HELLO WORLD'), {})?.type, 'MSG',
+     'message spec wins even though the any-name file spec is listed first');
+  eq(domEl._fmtDetect(bytes('SOMETHING ELSE'), {}), null,
+     'record without a wrapper filename can never be a file — file specs skipped');
+  eq(domEl._fmtDetect(bytes('SOMETHING ELSE'), { filename: '$D.SV.ANYFILE' })?.type, 'FIL',
+     'same bytes WITH a filename fall through to the file specs');
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();
+});
+
+test('a file spec can refine with extra identifiers, but the filename recognizer is mandatory', () => {
+  const bytes = s => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; };
+  domEl._fmtSave([
+    // Two versions of the same file: same name pattern, told apart by content
+    { name: 'RPTV2', label: 'Report v2', kind: 'file',
+      recognizers: [{ type: 'filename', pattern: '$DATA.SUB.RPT*' }, { type: 'regex', pattern: '^V2' }],
+      parse_spec_binary: [{ 'read-to-end': { as: 'DATA' } }] },
+    { name: 'RPTV1', label: 'Report v1', kind: 'file',
+      recognizers: [{ type: 'filename', pattern: '$DATA.SUB.RPT*' }],
+      parse_spec_binary: [{ 'read-to-end': { as: 'DATA' } }] },
+    // Invalid: kind file but NO filename recognizer — must never match
+    { name: 'BAD', label: 'No filename id', kind: 'file',
+      recognizers: [{ type: 'regex', pattern: '^ZZ' }],
+      parse_spec_binary: [{ 'read-to-end': { as: 'DATA' } }] },
+  ]);
+  const fname = { filename: '$DATA.SUB.RPT01' };
+  eq(domEl._fmtDetect(bytes('V2 CONTENT'), fname)?.type, 'RPTV2', 'version condition refines the same filename');
+  eq(domEl._fmtDetect(bytes('OLD CONTENT'), fname)?.type, 'RPTV1', 'falls to the plain filename match otherwise');
+  eq(domEl._fmtDetect(bytes('ZZ DATA'), { filename: '$X.Y.OTHER' }), null,
+     'a file spec without a filename recognizer never matches, even when its content condition passes');
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();
+});
+
+test('an inert file spec (no binding, no parse spec) never claims records', () => {
+  const bytes = new Uint8Array([0x41, 0x42]);
+  domEl._fmtSave([
+    // Catch-all placeholder with nothing to parse — must be skipped entirely
+    { name: 'PLACE', label: 'Placeholder', kind: 'file', recognizers: [{ type: 'filename', pattern: '*' }] },
+    { name: 'REAL', label: 'Real file', kind: 'file', recognizers: [{ type: 'filename', pattern: '$A.B.C' }],
+      parse_spec_binary: [{ 'read-to-end': { as: 'DATA' } }] },
+  ]);
+  eq(domEl._fmtDetect(bytes, { filename: '$A.B.C' })?.type, 'REAL',
+     'inert catch-all is skipped; the actionable spec wins');
+  eq(domEl._fmtDetect(bytes, { filename: '$X.Y.OTHER' }), null,
+     'a filename only the inert spec would match resolves to nothing');
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();
+});
+
+test('file spec matches by wrapper filename; a specific pattern refuses records without one', () => {
+  const bytes = new Uint8Array([0x41, 0x42]);
+  domEl._fmtSave([
+    { name: 'MSG', label: 'msg', recognizers: [{ type: 'regex', pattern: '^ZZZ' }] },
+    { name: 'RPT', label: 'Report file', kind: 'file', recognizers: [{ type: 'filename', pattern: '$DATA.SUB.RPT*' }],
+      parse_spec_binary: [{ 'read-to-end': { as: 'DATA' } }] },
+  ]);
+  eq(domEl._fmtDetect(bytes, { filename: '$DATA.SUB.RPT01' })?.type, 'RPT', 'filename pattern matches');
+  eq(domEl._fmtDetect(bytes, {}), null, 'no filename on the record → file spec does not claim it');
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();
+});
+
+// ── Segmented file parsing (seg-map / segment-fields) ────────────────────────
+console.log('\nsegmented file parsing (seg-map / segment-fields)');
+
+const SEG_DDL = `DEF FILE-DUMMY.
+  02 SEG0 TYPE BASE-SEGMENT.
+  02 SEG1 TYPE ATM-SEGMENT.
+  02 SEG5 TYPE POS-SEGMENT.
+  02 SEG11 TYPE XX-SEGMENT.
+END
+
+DEF BASE-SEGMENT.
+  02 B1 PIC X(4).
+  02 B2 PIC X(2).
+END
+
+DEF ATM-SEGMENT.
+  02 A1 PIC X(3).
+END
+
+DEF POS-SEGMENT.
+  02 P1 PIC X(5).
+END
+
+DEF XX-SEGMENT.
+  02 X1 PIC X(2).
+END
+`;
+
+const segItem = value => ({
+  name: 'SEGF', kind: 'file', ddl_bindings: ['V/S/SEGFILE/FILE-DUMMY'],
+  parse_spec_binary: [
+    { 'read-bitmap': value !== undefined ? { bits: 32, value } : { bits: 32 } },
+    { 'read-segment-fields': {} },
+  ],
+});
+const segBytes = s => [...s].map(c => c.charCodeAt(0));
+
+test('seg-map + segment-fields: only present segments read, mapped by trailing number', () => {
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  // C0100000 → binary 1100 0000 0001 0000 … → bits 0, 1, 11 (SEG5 absent)
+  const ctx = meExecParseSpec(segItem('C0100000'), segBytes('AAAABBCCCXX'));
+  const ids = ctx.fields.map(f => f.id);
+  deepEq(ids, ['SEG-MAP', 'SEG0.B1', 'SEG0.B2', 'SEG1', 'SEG11'], 'field sequence skips SEG5');
+  eq(ctx.fields.some(f => f.error), false, 'no errors');
+  const by = ctx.fieldsById;
+  eq(by['SEG-MAP'].value, 'C0100000', 'map echoed as hex');
+  eq(by['SEG-MAP'].valueLength, 0, 'map consumes no payload bytes');
+  eq(by['SEG-MAP'].description.includes('0, 1, 11'), true, 'present SEGs listed');
+  eq(by['SEG1'].startByte, 6, 'SEG1 starts right after SEG0 (SEG5 gone from the wire)');
+  eq(by['SEG1'].value, 'CCC', 'SEG1 bytes');
+  eq(by['SEG11'].startByte, 9, 'SEG11 follows SEG1');
+  eq(by['SEG11'].value, 'XX', 'SEG11 bytes');
+  eq(ctx.cursor, 11, 'whole payload consumed');
+});
+
+test('seg-map accepts a binary-digit value; equivalent to the hex form', () => {
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  const ctx = meExecParseSpec(segItem('1100 0000 0001 0000 0000 0000 0000 0000'), segBytes('AAAABBCCCXX'));
+  deepEq(ctx.fields.map(f => f.id), ['SEG-MAP', 'SEG0.B1', 'SEG0.B2', 'SEG1', 'SEG11'], 'same result as C0100000');
+  eq(ctx.fields.some(f => f.error), false, 'no errors');
+});
+
+test('ad-hoc override beats the spec value; leftover bytes are flagged', () => {
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  // Spec says C0100000 but the override narrows to SEG0+SEG1 only.
+  const ctx = meExecParseSpec(segItem('C0100000'), segBytes('AAAABBCCCXX'), { segMapOverride: 'C0000000' });
+  deepEq(ctx.fields.filter(f => !f.error).map(f => f.id), ['SEG-MAP', 'SEG0.B1', 'SEG0.B2', 'SEG1'], 'override wins');
+  eq(ctx.fieldsById['SEG-MAP'].description.includes('ad-hoc'), true, 'source labelled ad-hoc');
+  const err = ctx.fields.find(f => f.error);
+  eq(err?.error?.includes('2 unparsed byte(s)'), true, 'leftover bytes flagged');
+  eq(err?.error?.includes('SEG5'), true, 'absent segments listed as candidates');
+});
+
+test('canonical form: read-bitmap declared mode (bits/value) + read-segment-fields reference', () => {
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  const item = {
+    name: 'SEGF', kind: 'file', ddl_bindings: ['V/S/SEGFILE/FILE-DUMMY'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'FIID-SEG-MAP', encoding: 'ascii-hex', bits: 32, value: 'C0100000' } },
+      { 'read-segment-fields': 'FIID-SEG-MAP' },
+    ],
+  };
+  const ctx = meExecParseSpec(item, segBytes('AAAABBCCCXX'));
+  deepEq(ctx.fields.map(f => f.id), ['FIID-SEG-MAP', 'SEG0.B1', 'SEG0.B2', 'SEG1', 'SEG11'],
+    'bits/value flips read-bitmap to declared mode; read-segment-fields resolves the reference');
+  eq(ctx.fields.some(f => f.error), false, 'no errors');
+  eq(ctx.fieldsById['FIID-SEG-MAP'].valueLength, 0, 'declared mode consumes no payload bytes');
+  // "11000000" is 8 chars of 0/1 — hex-LENGTH for a 32-bit map, so auto-detect
+  // would silently read it as hex 0x11000000. encoding:"ascii-bits" rejects it.
+  const binItem = { ...item, parse_spec_binary: [
+    { 'read-bitmap': { field: 'M', encoding: 'ascii-bits', bits: 32, value: '11000000' } },
+    { 'read-segment-fields': 'M' },
+  ] };
+  const bad = meExecParseSpec(binItem, segBytes('AAAABB'));
+  eq(bad.fields[0]?.error?.includes('encoding "ascii-bits"'), true,
+     'declared ascii-bits encoding refuses an 8-char value instead of mis-reading it as hex');
+});
+
+test('ascii-bits value with spaces every 4 chars parses identically to ascii-hex', () => {
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  const spaced = {
+    name: 'SEGF', kind: 'file', ddl_bindings: ['V/S/SEGFILE/FILE-DUMMY'],
+    parse_spec_binary: [
+      // C0100000 = 1100 0000 0001 0000 … → bits 0, 1, 11 (SEG0, SEG1, SEG11)
+      { 'read-bitmap': { field: 'M', encoding: 'ascii-bits', bits: 32,
+                         value: '1100 0000 0001 0000 0000 0000 0000 0000' } },
+      { 'read-segment-fields': 'M' },
+    ],
+  };
+  const ctx = meExecParseSpec(spaced, segBytes('AAAABBCCCXX'));
+  deepEq(ctx.fields.map(f => f.id), ['M', 'SEG0.B1', 'SEG0.B2', 'SEG1', 'SEG11'],
+    'spaces are ignored; same segments as the C0100000 hex form');
+  eq(ctx.fields.some(f => f.error), false, 'no errors');
+});
+
+test('legacy block names + mid-session encodings are auto-migrated on load (no runtime aliases)', () => {
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  const spec = migrateSpec({
+    name: 'SEGF', kind: 'file', ddl_bindings: ['V/S/SEGFILE/FILE-DUMMY'],
+    parse_spec_binary: [
+      { 'seg-map': { field: 'FIID-SEG-MAP', bits: 32, value: 'C0100000', encoding: 'hex' } },
+      { 'segment-fields': 'FIID-SEG-MAP' },
+    ],
+    parse_spec_binary_source:
+      '[ { "read-bitmap": { "field": "B", "encoding": "hex" } }, { "bitmap-fields": "B" }, { "seg-map": {} }, { "segment-fields": {} } ]',
+  });
+  // Arrays: block keys renamed in place; declared "hex" → "ascii-hex"
+  deepEq(spec.parse_spec_binary.map(b => Object.keys(b)[0]),
+    ['read-bitmap', 'read-segment-fields'], 'seg-map → read-bitmap, segment-fields → read-segment-fields');
+  eq(spec.parse_spec_binary[0]['read-bitmap'].bits, 32, 'declared-map attrs preserved');
+  eq(spec.parse_spec_binary[0]['read-bitmap'].encoding, 'ascii-hex', 'declared hex → ascii-hex in array');
+  // Source text: block names rewritten and encoding "hex" → "ascii-hex"
+  eq(/"seg-map"|"segment-fields"|"bitmap-fields"/.test(spec.parse_spec_binary_source), false,
+    'no legacy block-name tokens remain in the source');
+  eq(spec.parse_spec_binary_source.includes('"read-bitmap-fields"'), true, 'bitmap-fields → read-bitmap-fields in source');
+  eq(/"encoding"\s*:\s*"hex"/.test(spec.parse_spec_binary_source), false, 'no bare "hex" encoding left in source');
+  eq(spec.parse_spec_binary_source.includes('"encoding": "ascii-hex"'), true, 'encoding hex → ascii-hex in source');
+  // A source seg-map with no bits/value still becomes read-bitmap in text
+  eq((spec.parse_spec_binary_source.match(/"read-bitmap"/g) || []).length, 2, 'both read-bitmap and the ex-seg-map present');
+  // Declared "binary" migrates to "ascii-bits"; wire "binary" is left alone
+  const encSpec = migrateSpec({ parse_spec_binary: [
+    { 'read-bitmap': { field: 'W', encoding: 'binary' } },                       // wire → stays binary
+    { 'read-bitmap': { field: 'D', bits: 32, value: '1'.repeat(32), encoding: 'binary' } }, // declared → ascii-bits
+  ] });
+  eq(encSpec.parse_spec_binary[0]['read-bitmap'].encoding, 'binary', 'wire binary (raw bytes) untouched');
+  eq(encSpec.parse_spec_binary[1]['read-bitmap'].encoding, 'ascii-bits', 'declared binary → ascii-bits');
+  // And the migrated spec executes correctly through the canonical names only
+  const ctx = meExecParseSpec(spec, segBytes('AAAABBCCCXX'));
+  eq(ctx.fields.some(f => f.id === 'SEG1' && !f.error), true, 'migrated spec parses the present segments');
+});
+
+test('a stray legacy block name is NOT executed (aliases removed)', () => {
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  // Bypass migration: feed the executor an un-migrated legacy name directly.
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: [],
+    parse_spec_binary: [{ 'bitmap-fields': 'NOPE' }] }, segBytes('AA'));
+  eq(ctx.fields[0]?.error?.includes('not recognized'), true, 'legacy name is unknown to the executor');
+});
+
+test('main-flow adapter: engine fields gain rawBytes; score is the errorless ratio', () => {
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  const r = meParseFileWithSpec(segItem('C0100000'), segBytes('AAAABBCCCXX'));
+  eq(r.score, 1, 'clean parse scores 1');
+  deepEq(r.fields.find(f => f.id === 'SEG1').rawBytes, [0x43, 0x43, 0x43], 'rawBytes decoded for the renderer');
+  // Truncated payload → error rows → score drops below the 0.95 warning bar
+  const bad = meParseFileWithSpec(segItem('C0100000'), segBytes('AAAABB'));
+  eq(bad.score < 0.95, true, 'errors depress the score');
+});
+
+test('seg-map without any value, and with a malformed value, error clearly', () => {
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  const noVal = meExecParseSpec(segItem(undefined), segBytes('AAAABB'));
+  eq(noVal.fields[0]?.error?.includes('no value'), true, 'missing value reported');
+  const bad = meExecParseSpec(segItem('ZZZZ'), segBytes('AAAABB'));
+  eq(bad.fields[0]?.error?.includes('hex chars or'), true, 'malformed value reported');
+});
+
+// ── Parse-spec engine ≡ legacy extraction (migration equivalence) ─────────────
+console.log('\nparse-spec engine vs legacy extraction equivalence');
+
+const ISO_DDL = `DEF TESTISO.
+  02 START-OF-TEXT PIC X(3).
+  02 TYP PIC X(4).
+  02 PRI-BIT-MAP PIC X(16).
+  02 SEC-BIT-MAP PIC X(16).
+  02 PAN.
+    03 PAN-LEN PIC 9(2).
+    03 PAN-DATA PIC X(19).
+  02 PROC-CODE PIC X(6).
+  02 TRAN-AMT PIC X(12).
+END
+`;
+const ISO_SPEC = {
+  name: 'TISO', ddl_bindings: ['ZZISO/SV/T/TESTISO'],
+  parse_spec_binary: [
+    { 'read-ddl': { binding: 0, from: 'START-OF-TEXT', until: 'TYP' } },
+    { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'ascii-hex' } },
+    { 'read-bitmap-fields': 'PRI-BIT-MAP' },
+  ],
+};
+// Build a primary-bitmap ISO message with DEs {2:PAN LLVAR, 3, 4} present.
+const buildIso = panLen => {
+  const bmp = [0,0,0,0,0,0,0,0];
+  for (const b of [2,3,4]) bmp[Math.floor((b-1)/8)] |= (0x80 >> ((b-1)%8));
+  const bmpHex = bmp.map(x => x.toString(16).padStart(2,'0').toUpperCase()).join('');
+  const digits = n => '0123456789'.repeat(Math.ceil(n/10)).slice(0,n);
+  const s = 'ISO' + '0210' + bmpHex
+    + String(panLen).padStart(2,'0') + digits(panLen)   // PAN LLVAR: LEN + data
+    + digits(6) + digits(12);                            // PROC-CODE, TRAN-AMT (fixed)
+  return [...s].map(c => c.charCodeAt(0) & 0xFF);
+};
+
+test('engine read-bitmap-fields honors LLVAR length prefix, matching legacy parseHPEISOMessage', () => {
+  S.ddlTree = { ZZISO: { SV: { T: ISO_DDL } } };
+  S.inputFormat = 'ascii';
+  const defs = getDDLFromPath('ZZISO/SV/T/TESTISO').defs;
+  for (const panLen of [8, 5, 19]) {          // partial and full-length PAN
+    const bytes = buildIso(panLen);
+    const legacy = parseHPEISOMessage(bytes, defs, bytes);
+    const engine = meExecParseSpec(ISO_SPEC, bytes).fields.filter(f => !f.error);
+    eq(engine.length, legacy.length, `PAN=${panLen}: same field count`);
+    for (let i = 0; i < legacy.length; i++) {
+      const L = legacy[i], E = engine[i];
+      eq(E.id, L.id, `PAN=${panLen} #${i}: id`);
+      eq(E.startByte, L.startByte, `PAN=${panLen} field ${L.id}: offset`);
+      eq(E.value ?? '', L.value ?? '', `PAN=${panLen} field ${L.id}: value`);
+    }
+    // The variable field really did shrink to the LEN prefix (not declared max 19)
+    const panData = engine.find(f => f.id === 'PAN.PAN-DATA');
+    eq(panData.valueLength, panLen, `PAN=${panLen}: DATA consumed exactly LEN bytes`);
+  }
+});
+
+test('engine read-ddl flat walk matches legacy parseFlatMessage field-for-field', () => {
+  const FLAT = `DEF FLATREC.
+  02 A PIC X(4).
+  02 B PIC 9(2).
+  02 GRP.
+    03 G1 PIC X(3).
+    03 G2 PIC X(2).
+  02 C PIC X(5).
+END
+`;
+  S.ddlTree = { ZZ: { S: { F: FLAT } } };
+  S.inputFormat = 'ascii';
+  const defs = getDDLFromPath('ZZ/S/F/FLATREC').defs;
+  const bytes = [...'ABCD12XYZ12HELLO'].map(c => c.charCodeAt(0) & 0xFF);
+  const legacy = parseFlatMessage(bytes, defs, bytes);
+  const spec = { name: 'F', ddl_bindings: ['ZZ/S/F/FLATREC'], parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] };
+  const engine = meExecParseSpec(spec, bytes).fields.filter(f => !f.error);
+  eq(engine.length, legacy.length, 'same field count');
+  for (let i = 0; i < legacy.length; i++) {
+    eq(engine[i].id, legacy[i].id, `#${i} id`);
+    eq(engine[i].startByte, legacy[i].startByte, `${legacy[i].id} offset`);
+    eq(engine[i].value ?? '', legacy[i].value ?? '', `${legacy[i].id} value`);
+  }
 });
 
 // ── Summary ───────────────────────────────────────────────────────────────────

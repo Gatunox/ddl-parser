@@ -1074,7 +1074,7 @@ body.light .trk-chk { color-scheme: light; }
   transition: all 0.1s; padding: 0;
 }
 .settings-stitle .stitle-toggle:hover { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
-.settings-stitle:not(.collapsed) .stitle-toggle { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+.settings-stitle.collapsed .stitle-toggle { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
 .settings-collapsible-body { overflow: hidden; transition: max-height 0.2s ease; }
 .settings-collapsible-body.collapsed { max-height: 0 !important; }
 .settings-row {
@@ -1119,6 +1119,7 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .dr-spec-item { display:flex; align-items:center; gap:5px; padding:4px 8px; border-bottom:1px solid var(--border); font-size:var(--sz-mono); color:var(--text); }
 .dr-spec-item:last-child { border-bottom:none; }
 .dr-spec-head { display:flex; align-items:center; gap:5px; padding:2px 8px 3px; border-bottom:2px solid var(--border); }
+.dr-spec-group { padding:5px 8px 2px; font-size:calc(var(--sz-mono) - 2px); font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-dim); border-bottom:2px solid var(--border); }
 .dr-spec-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; border:1px solid rgba(255,255,255,.2); }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-spec-type { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; width:36px; text-align:right; }
@@ -1375,6 +1376,11 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .me-sidebar{width:343px;flex-shrink:0;border-right:2px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
 .me-sidebar-sect{display:flex;flex-direction:column;flex:1;min-height:60px;overflow:hidden;}
 .me-sidebar-sect+.me-sidebar-sect{border-top:2px solid var(--border);}
+/* Both lists are content-sized so the Files header sits right after the last
+   message; each list scrolls internally once the sidebar runs out of height
+   (Files never takes more than half). */
+#me-sect-msgs{flex:0 1 auto;}
+#me-sect-files{flex:0 1 auto;max-height:50%;}
 .me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;min-height:36px;box-sizing:border-box;background:var(--bg-deep);flex-shrink:0;border-bottom:2px solid var(--border);}
 .me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
 .me-sidebar-add{background:transparent;border:2px solid var(--border);border-radius:2px;color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
@@ -1927,6 +1933,12 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
         </div>
         <div id="resCfgControls">
           <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
+          <span id="segMapBar" style="display:none;align-items:center;gap:5px;flex-shrink:0">
+            <span style="font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);letter-spacing:0.04em">SEG-MAP</span>
+            <input type="text" id="segMapInput" class="res-filter-input" style="width:140px"
+              title="Ad-hoc segment map override (hex or binary). Blank = use the value stored in the spec. Enter or blur re-parses."
+              onkeydown="if(event.key==='Enter')_segMapApply()" onchange="_segMapApply()">
+          </span>
           <span style="flex:1"></span>
           <button class="btn" id="exportBtn" onclick="openMsgExportModal()" style="display:none;flex-shrink:0" title="Export messages">Export</button>
           <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0;min-width:80px;" title="Hide/show REDEFINES fields">Hide Redef</button>
@@ -5956,7 +5968,18 @@ function parseMessage(bytes, defs, rawBytes) {
       const c = _compileRecognizer(r);
       return (bytes, ctx) => fn(bytes, c, ctx);
     });
-    return { ...spec, _fns: fns };
+    // A file detection is keyed by its filename: without a filename
+    // recognizer it must never match anything (extra recognizers only
+    // refine, e.g. to tell versions of the same file apart).
+    const fileNoName = spec.kind === 'file' && !(spec.recognizers || []).some(r => r.type === 'filename');
+    // A file spec with neither a DDL binding nor a parse spec cannot parse
+    // the records it would claim — an inert spec must not win detection and
+    // dead-end the record (e.g. a catch-all "*" placeholder entity).
+    const fileInert = spec.kind === 'file'
+      && !(spec.ddl_bindings || []).filter(Boolean).length
+      && !(spec.parse_spec_binary || []).length
+      && !(spec.parse_spec_ascii || []).length;
+    return { ...spec, _fns: fns, _fileNoName: fileNoName, _fileInert: fileInert };
   }
 
   // ── Default format specs ───────────────────────────────────────────────────
@@ -5969,7 +5992,7 @@ function parseMessage(bytes, defs, rawBytes) {
       parse_spec_binary:[
         {'read-ddl':{binding:0,from:'START-OF-TEXT',until:'TYP'}},
         {'read-bitmap':{field:'PRI-BIT-MAP',encoding:'ascii-hex'}},
-        {'bitmap-fields':'PRI-BIT-MAP'}
+        {'read-bitmap-fields':'PRI-BIT-MAP'}
       ],
       parse_spec_binary_source:
 `[
@@ -5987,14 +6010,14 @@ function parseMessage(bytes, defs, rawBytes) {
       built from binding 0 + binding 1 in declaration order (anchors in the
       Overrides section override the default numbering). VLG-flagged fields
       consume LEN + payload automatically. */
-  { "bitmap-fields": "PRI-BIT-MAP" }
+  { "read-bitmap-fields": "PRI-BIT-MAP" }
 ]` },
     { name:'ISO', label:'ISO 8583 Switch', color:'#c59102', vol:'SWITCH',
       recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'uint16',offset:4,endian:'be',min:0,max:65535},{type:'uint16',offset:6,endian:'be',min:0,max:65535},{type:'uint16',offset:8,endian:'be',min:0,max:65535},{type:'uint16',offset:10,endian:'be',min:0,max:65535},{type:'min-length',value:23}],
       parse_spec_binary:[
         {'read':'TYP'},
         {'read-bitmap':{field:'PBIT-MAP',encoding:'ascii-hex'}},
-        {'bitmap-fields':'PBIT-MAP'}
+        {'read-bitmap-fields':'PBIT-MAP'}
       ],
       parse_spec_binary_source:
 `[
@@ -6010,7 +6033,7 @@ function parseMessage(bytes, defs, rawBytes) {
       built from binding 0 + binding 1 in declaration order (anchors in the
       Overrides section override the default numbering). VLG-flagged fields
       consume LEN + payload automatically. */
-  { "bitmap-fields": "PBIT-MAP" }
+  { "read-bitmap-fields": "PBIT-MAP" }
 ]` },
     { name:'STM', label:'STM', color:'#1eff00', vol:'ATM',
       recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'01'},{type:'min-length',value:873}],
@@ -6128,11 +6151,23 @@ function parseMessage(bytes, defs, rawBytes) {
 
   // ── State & storage ────────────────────────────────────────────────────────
 
-  let _fmtSpecs = [];   // compiled, iterated in array (sidebar) order
+  let _fmtSpecs = [];   // compiled, iterated in detection order (messages, then files)
+
+  // Detection order: message specs first (sidebar order), file specs after.
+  // File specs have NO order of their own — they match on the wrapper
+  // filename ($VOL.SUBVOL.FILE) and are never consulted for records that
+  // don't carry one, so they can't sit in front of (or slow down) message
+  // lookups. The msgs/files split below only separates the two groups.
+  function _detectOrderIdxs(specs) {
+    const msgs = [], files = [];
+    (specs || []).forEach((s, i) => ((s && s.kind === 'file') ? files : msgs).push(i));
+    return msgs.concat(files);
+  }
 
   function _fmtLoad() {
     const raw = _fmtGetData();
-    _fmtSpecs = (raw.specs || []).map(s => _compileSpec(s));
+    const specs = raw.specs || [];
+    _fmtSpecs = _detectOrderIdxs(specs).map(i => _compileSpec(specs[i]));
   }
 
   function _fmtSave(specs) {
@@ -6152,6 +6187,58 @@ function parseMessage(bytes, defs, rawBytes) {
     return { specs: JSON.parse(JSON.stringify(_DEFAULT_FMT_SPECS)) };
   }
 
+  // Parse-spec block migration (idempotent). Renames the old block names to
+  // the canonical read-* forms and unifies the wire hex encoding name:
+  //   bitmap-fields   → read-bitmap-fields
+  //   segment-fields  → read-segment-fields
+  //   seg-map         → read-bitmap   (declared mode: bits/value present)
+  //   encoding "hex"  → "ascii-hex"   (canonical hex-digit name, both modes)
+  //   declared encoding "binary" → "ascii-bits"  (0/1 text; wire "binary"
+  //                   = raw bytes and is left untouched)
+  // Applied to both the parsed arrays and, for editor display, the JSONC
+  // source text. No runtime alias support — old names are converted on load.
+  function _migratePsBlock(block) {
+    if (!block || typeof block !== 'object') return block;
+    const keys = Object.keys(block);
+    if (keys.length !== 1) return block;
+    const k = keys[0];
+    let nk = k, attrs = block[k];
+    if (k === 'bitmap-fields')  nk = 'read-bitmap-fields';
+    else if (k === 'segment-fields') nk = 'read-segment-fields';
+    else if (k === 'seg-map') {
+      nk = 'read-bitmap';
+      // seg-map is always a DECLARED map — guarantee the bits/value marker so
+      // the merged read-bitmap block doesn't fall back to wire mode.
+      if (attrs && typeof attrs === 'object' && attrs.bits === undefined && attrs.value === undefined)
+        attrs = { ...attrs, bits: 32 };
+    }
+    if (nk === 'read-bitmap' && attrs && typeof attrs === 'object') {
+      const declared = attrs.bits !== undefined || attrs.value !== undefined;
+      if (attrs.encoding === 'hex') attrs = { ...attrs, encoding: 'ascii-hex' };
+      else if (declared && attrs.encoding === 'binary') attrs = { ...attrs, encoding: 'ascii-bits' };
+    }
+    if (nk !== k || attrs !== block[k]) { delete block[k]; block[nk] = attrs; }
+    // Recurse into nested bodies (when.then / repeat.body / read-while.body).
+    const a = block[nk];
+    if (a && typeof a === 'object') {
+      if (Array.isArray(a.then)) a.then.forEach(_migratePsBlock);
+      if (Array.isArray(a.body)) a.body.forEach(_migratePsBlock);
+    }
+    return block;
+  }
+  function _migratePsSource(src) {
+    if (typeof src !== 'string') return src;
+    return src
+      .replace(/"bitmap-fields"/g,  '"read-bitmap-fields"')
+      .replace(/"segment-fields"/g, '"read-segment-fields"')
+      .replace(/"seg-map"/g,        '"read-bitmap"')
+      // encoding "hex" → "ascii-hex" (unambiguous — display overrides use the
+      // "display" key, this only rewrites the encoding value token). Declared
+      // "binary" isn't rewritten in source: it can't be told apart from wire
+      // raw-bytes "binary" by text, and the parsed array is authoritative.
+      .replace(/("encoding"\s*:\s*)"hex"/g, '$1"ascii-hex"');
+  }
+
   // Schema migration: rename parse_spec → parse_spec_binary so the schema can
   // hold both a binary (default) and an ASCII variant. Idempotent.
   function _migrateSpec(spec) {
@@ -6166,6 +6253,11 @@ function parseMessage(bytes, defs, rawBytes) {
     }
     // priority was removed (sidebar order is manual now) — strip stale keys.
     if ('priority' in spec) delete spec.priority;
+    // Parse-spec block renames + encoding unification (arrays + source text).
+    for (const k of ['parse_spec_binary', 'parse_spec_ascii'])
+      if (Array.isArray(spec[k])) spec[k].forEach(_migratePsBlock);
+    for (const k of ['parse_spec_binary_source', 'parse_spec_ascii_source'])
+      if (typeof spec[k] === 'string') spec[k] = _migratePsSource(spec[k]);
     // Display override 'text' renamed to 'ascii' (a charset render of the raw
     // bytes, alongside the new 'ebcdic'). Migrate stored specs so the dropdown
     // shows the current value; the formatter still accepts 'text' as an alias.
@@ -6187,8 +6279,13 @@ function parseMessage(bytes, defs, rawBytes) {
 
   function _fmtDetect(bytes, ctx) {
     for (const spec of _fmtSpecs) {
+      // File specs are keyed by wrapper filename — a record without one
+      // can never be a file; a file spec without a filename recognizer is
+      // invalid, and one with nothing to parse (no binding, no parse spec)
+      // is inert — skipped outright either way.
+      if (spec.kind === 'file' && (spec._fileNoName || spec._fileInert || !(ctx && ctx.filename))) continue;
       if (spec._fns.every(fn => fn(bytes, ctx))) {
-        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', ddl_bindings: (spec.ddl_bindings || []).filter(Boolean) };
+        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean) };
       }
     }
     return null;
@@ -6202,6 +6299,11 @@ function parseMessage(bytes, defs, rawBytes) {
     const trace = [];
     let winner = null;
     for (const spec of _fmtSpecs) {
+      // Same rule as _fmtDetect: file specs only exist for records that
+      // carry a wrapper filename, must themselves carry a filename
+      // recognizer, and must have something to parse with — skip (and
+      // don't trace) otherwise.
+      if (spec.kind === 'file' && (spec._fileNoName || spec._fileInert || !(ctx && ctx.filename))) continue;
       let failAt = null;
       let passed = true;
       for (let i = 0; i < spec._fns.length; i++) {
@@ -6213,7 +6315,7 @@ function parseMessage(bytes, defs, rawBytes) {
         passed, failAt,
       });
       if (passed) {
-        winner = { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', ddl_bindings: (spec.ddl_bindings || []).filter(Boolean) };
+        winner = { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean) };
         break;
       }
     }
@@ -6240,9 +6342,11 @@ function parseMessage(bytes, defs, rawBytes) {
   window._fmtGetData   = _fmtGetData;
   // Look up a compiled spec by its type/name (field_overrides survive _compileSpec).
   window._fmtSpecByName = name => _fmtSpecs.find(s => (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
+  window._fmtFileSpecByName = name => _fmtSpecs.find(s => s.kind === 'file' && (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
   window._migrateSpec  = _migrateSpec;
   window._fmtDetect      = _fmtDetect;
   window._fmtDetectTrace = _fmtDetectTrace;
+  window._detectOrderIdxs = _detectOrderIdxs;
 
 })();
 
@@ -7330,7 +7434,7 @@ function doParseNetardLog(text, opts = {}) {
   document.getElementById('msgInput').readOnly = true;
 
   // Step 0 — record count (informational)
-  const _overrideSub = opts.ignoreOverride ? 'ATTENTION: Ignoring manual override' : null;
+  const _overrideSub = opts.ignoreOverride ? 'ATTENTION: manual override not allowed for multiple messages' : null;
   _parseProgressStep(
     `${opts.logLabel || 'NETARD audit log'} \u2014 ${records.length} record${records.length !== 1 ? 's' : ''} detected`,
     _overrideSub,
@@ -7404,11 +7508,29 @@ function doParseNetardLog(text, opts = {}) {
         setTimeout(() => {
           if (_parseAborted) return;
           const resolved = getDDLFromPath(p1Path);
+          // Segmented-file support under manual selection: when the scoped DDL
+          // is a segmented DEFINITION, the SEG-MAP bar applies here too. With
+          // a map typed, records parse through the segment engine (only the
+          // present segments); with no map, the legacy full walk runs (= all
+          // segments present).
+          const segInfo = _meScopeSegmentedDef(p1Path);
+          const segKey  = segInfo ? 'ddl:' + p1Path : null;
+          const segVal  = segKey ? (_segMapOverrides[segKey] || '') : '';
+          const [_sv1, _sv2, _sv3] = p1Path.split('/');
+          const segSynth = segInfo && segVal ? {
+            name: segKey, kind: 'file',
+            ddl_bindings: [`${_sv1}/${_sv2}/${_sv3}/${segInfo.defName}`],
+            parse_spec_binary: [{ 'read-bitmap': { field: 'SEG-MAP', bits: 32 } }, { 'read-segment-fields': 'SEG-MAP' }],
+          } : null;
           const parsed = [];
           for (const rec of records) {
             const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic } = _netardEbcdic(rec.rawMsg);
             let fields = [], ddlPath = null, defName = null;
-            if (resolved && resolved.defs.length) {
+            if (segSynth) {
+              fields  = _meParseFileWithSpec(segSynth, parseBytes).fields;
+              ddlPath = p1Path.split('/').slice(0, 3).join('/');
+              defName = segInfo.defName;
+            } else if (resolved && resolved.defs.length) {
               const result = bestDDLMatch(parseBytes, [resolved], bytes);
               fields  = result.fields;
               ddlPath = result.ddlPath;
@@ -7426,6 +7548,7 @@ function doParseNetardLog(text, opts = {}) {
               source: rec.source, sourceDet: rec.sourceDet, dest: rec.dest, destDet: rec.destDet,
               timestamp: rec.time, msgType, fields, ddlPath, defName, tokens,
               noMatchDDL: !fields.length,
+              _segScopeKey: segKey,
             });
           }
           S.messages      = parsed;
@@ -7767,7 +7890,7 @@ function doParseNetardLog(text, opts = {}) {
         if (_boundDDLCache.version !== _ddlTreeVersion) _boundDDLCache = { version: _ddlTreeVersion, defs: {} };
         const _det = records.map(rec => {
           const dec    = _netardEbcdic(rec.rawMsg);
-          const det    = detectMsgTypeTrace(dec.parseRaw, { source: rec.source, dest: rec.dest, filename: rec.filename });
+          const det    = detectMsgTypeTrace(dec.parseRaw, { source: rec.source, dest: rec.dest, filename: rec.filename || rec.filePath || null });
           const winner = det.winner;
           let bindPath = null;
           for (const bp of ((winner && winner.ddl_bindings) || [])) {
@@ -7823,7 +7946,17 @@ function doParseNetardLog(text, opts = {}) {
           // Resolve + score each record against its (now-cached) bound DDL.
           const _preDet = _det.map(d => {
             let bound = null;
-            if (d.bindPath) {
+            // FILE records parse through the parse-spec ENGINE (seg-map aware):
+            // the winning file spec's parse_spec is authoritative. Messages
+            // keep the legacy bestDDLMatch path until they are migrated.
+            const _fileSpec = d.winner?.kind === 'file' ? window._fmtFileSpecByName(d.winner.type) : null;
+            if (_fileSpec && ((_fileSpec.parse_spec_binary || []).length || (_fileSpec.parse_spec_ascii || []).length)) {
+              const r  = _meParseFileWithSpec(_fileSpec, d.dec.parseBytes);
+              const bp = (_fileSpec.ddl_bindings || []).filter(Boolean)[0] || d.bindPath || '';
+              const parts = bp.split('/');
+              bound = { ddlPath: parts.slice(0, 3).join('/') || null, defName: parts[3] || null,
+                        fields: r.fields, score: r.score };
+            } else if (d.bindPath) {
               const resolved = _boundDDLCache.defs[d.bindPath];
               if (resolved && resolved.defs && resolved.defs.length) {
                 const r = bestDDLMatch(d.dec.parseBytes, [resolved], d.dec.bytes);
@@ -8051,11 +8184,17 @@ function doParseMessages() {
   if (!msgText.trim()) { flash('Please enter a message to parse.', 'warn'); return; }
   if (/DEADC0DE/i.test(msgText.replace(/\s/g, ''))) { triggerDeadC0DE(); return; }
 
-  // FUP COPY dump — requires manual DDL selection, no auto-detection
+  // FUP COPY dump — file records. A manually selected DDL is ALWAYS the
+  // override (Priority 1, same as everywhere else). With nothing selected,
+  // FILE specs (filename recognizer + parse spec / binding) claim their
+  // records via detection; when neither applies, ask the user.
   if (!S.forcedFormat && isFupCopyLog(msgText)) {
     const _hasScope = S.scope?.type === 'ddl' || S.scope?.type === 'def';
-    if (!_hasScope) { flash('FUP COPY: select a DDL first to parse this file', 'error'); return; }
-    doFupCopyLog(msgText, { forceScopeAll: true });
+    if (_hasScope) { doFupCopyLog(msgText, { forceScopeAll: true }); return; }
+    const _fupRecs = parseFupCopyLog(msgText);
+    const _anyFileSpec = _fupRecs.some(r => detectMsgType(r.rawMsg, { filename: r.filePath })?.kind === 'file');
+    if (_anyFileSpec) { doFupCopyLog(msgText); return; }
+    flash('FUP COPY: select a DDL to parse this file — or define a File detection for it in the Data Editor', 'error');
     return;
   }
 
@@ -8580,6 +8719,20 @@ function syncParseBtn() {
 function _parseBtnClick() {
   if (document.body.classList.contains('audit-active')) auditParseAll();
   else doParseMessages();
+}
+
+// Apply the inline SEG-MAP override and re-parse the current input.
+// Blank input clears the override (the spec's stored value takes effect).
+function _segMapApply() {
+  const bar = document.getElementById('segMapBar');
+  const inp = document.getElementById('segMapInput');
+  if (!bar || !inp || bar.style.display === 'none') return;
+  const spec = bar.dataset.spec;
+  if (!spec) return;
+  const v = inp.value.trim();
+  if ((_segMapOverrides[spec] ?? '') === v) return;   // unchanged — no reparse
+  if (v) _segMapOverrides[spec] = v; else delete _segMapOverrides[spec];
+  _parseBtnClick();
 }
 function _clearBtnClick() {
   if (document.body.classList.contains('audit-active')) auditCloseMode();
@@ -9217,7 +9370,29 @@ function renderFieldTable(msg) {
   // Description column ("uint8 < TYPE BINARY 8 as ASCII"). The main parse renders
   // the declared type; the override config lives on the spec, so source it there.
   const _msgSpec = (typeof window._fmtSpecByName === 'function' && msg.msgType?.type)
-    ? window._fmtSpecByName(msg.msgType.type) : null;
+    ? (msg.msgType.kind === 'file' ? window._fmtFileSpecByName(msg.msgType.type) : window._fmtSpecByName(msg.msgType.type))
+    : null;
+
+  // Inline SEG-MAP bar — shown when this message's spec parses via seg-map,
+  // OR when a manually selected segmented DDL parsed it (msg._segScopeKey).
+  // The input is the ad-hoc override; blank falls back to the spec's value
+  // (spec mode) or to "all segments present" (manual-selection mode).
+  const _segBar = document.getElementById('segMapBar');
+  if (_segBar) {
+    const _segBlk = _msgSpec ? _meSpecSegMapBlock(_msgSpec) : null;
+    const _segKey = _segBlk ? _msgSpec.name : (msg._segScopeKey || null);
+    _segBar.style.display = _segKey ? 'inline-flex' : 'none';
+    if (_segKey) {
+      const _segInp = document.getElementById('segMapInput');
+      if (_segInp && document.activeElement !== _segInp) {
+        _segInp.value = _segMapOverrides[_segKey] ?? '';
+        _segInp.placeholder = _segBlk?.value ? `spec: ${_segBlk.value}`
+                            : _segBlk ? 'hex or binary'
+                            : 'all segments';
+      }
+      _segBar.dataset.spec = _segKey;
+    }
+  }
   const _foMap = {};
   if (_msgSpec && Array.isArray(_msgSpec.field_overrides)) {
     for (const _fo of _msgSpec.field_overrides) if (_fo?.field) _foMap[_canonFieldId(_fo.field)] = _fo;
@@ -9233,7 +9408,9 @@ function renderFieldTable(msg) {
       if (!_f || _f.error) continue;
       const _o = _foMap[_canonFieldId(_f.id)];
       if (!_o) continue;
-      if (_o.type) {
+      // Engine-parsed fields (file specs) already carry applied overrides —
+      // re-applying here would convert an already-converted value.
+      if (_o.type && !_f.typeOverride) {
         const _req = _meReadTypeByteLen(_o.type);
         const _len = _f.rawBytes ? _f.rawBytes.length : (_f.rawHex ? _f.rawHex.length / 2 : 0);
         if (_req === null || _req === _len) {
@@ -9241,7 +9418,7 @@ function renderFieldTable(msg) {
           if (_u.value !== undefined) { _f.value = _u.value; _f.typeOverride = _o.type; }
         }
       }
-      if (_o.display) {
+      if (_o.display && !_f.displayOverride) {
         let _out;
         switch (_o.display) {
           case 'datetime':           _out = _meFmtDateTime(_f.value); break;
@@ -13125,7 +13302,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.300';
+const APP_VERSION  = '1.1.2.316';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -13691,16 +13868,28 @@ function renderDetectSpecsList() {
   const { specs = [] } = _fmtGetData();
   if (!specs.length) {
     el.innerHTML = '<div class="dr-specs-empty">No format specs — use Data Editor to add detectors</div>';
-    return;
+  } else {
+    const row = s => {
+      const color = _escHtml(s.color || '#888');
+      const label = _escHtml(s.label || s.name || '—');
+      const type  = _escHtml(s.name || '');
+      const vol   = s.vol ? ` <span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
+      return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span><span class="dr-spec-type">${type}</span></div>`;
+    };
+    const head  = `<div class="dr-spec-head"><span style="width:10px;flex-shrink:0"></span><span class="dr-lbl" style="flex:1">Label</span><span class="dr-lbl" style="width:36px;text-align:right">Type</span></div>`;
+    const msgs  = specs.filter(s => s.kind !== 'file');
+    const files = specs.filter(s => s.kind === 'file');
+    el.innerHTML = head
+      + (files.length ? `<div class="dr-spec-group">Messages</div>` : '')
+      + msgs.map(row).join('')
+      + (files.length ? `<div class="dr-spec-group">Files</div>` + files.map(row).join('') : '');
   }
-  const head = `<div class="dr-spec-head"><span style="width:10px;flex-shrink:0"></span><span class="dr-lbl" style="flex:1">Label</span><span class="dr-lbl" style="width:36px;text-align:right">Type</span></div>`;
-  el.innerHTML = head + specs.map(s => {
-    const color = _escHtml(s.color || '#888');
-    const label = _escHtml(s.label || s.name || '—');
-    const type  = _escHtml(s.name || '');
-    const vol   = s.vol ? ` <span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
-    return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span><span class="dr-spec-type">${type}</span></div>`;
-  }).join('');
+  // The section is expanded by default with a fixed inline max-height —
+  // grow it to fit however many specs the user has defined.
+  const outer = el.closest('.settings-collapsible-body');
+  if (outer && !outer.classList.contains('collapsed')) {
+    outer.style.maxHeight = Math.max(500, outer.scrollHeight) + 'px';
+  }
 }
 
 function setTheme(t) {
@@ -14692,6 +14881,7 @@ function _meSelectItem(section, idx) {
   }
   _meRenderSidebar();
   _meRenderRight();
+  if (typeof _meTestSyncSegMap === 'function') _meTestSyncSegMap();
 }
 
 // Pick the parse_spec variant to display when selecting an item.
@@ -14711,45 +14901,77 @@ function _meAutoSetParseSpecVariant(item) {
 }
 
 function _meRenderSidebar() {
-  const msgs = document.getElementById('me-msg-list');
-  // Re-bind container-level context menu (for clicks on empty space)
-  msgs.oncontextmenu = _meCtxMsgEmpty;
+  // Two lists over ONE specs array: kind === 'file' renders in Files,
+  // everything else in Messages. Items carry their REAL array index, so
+  // selection / delete / drag splices keep working unchanged.
+  _meRenderSpecList('me-msg-list',  s => s.kind !== 'file', 'No messages defined', null);
+  _meRenderSpecList('me-file-list', s => s.kind === 'file', 'No file detections defined', 'file');
+}
 
-  msgs.innerHTML = '';
-  if (!_meState.specs.length) {
-    msgs.innerHTML = '<div class="me-empty">No messages defined</div>';
-  } else {
-    // Render in array order. Manual drag-and-drop controls position.
-    _meState.specs.forEach((s, i) => {
-      const active = _meState.section === 'msg' && _meState.selIdx === i;
-      const d = document.createElement('div');
-      d.className = 'me-item' + (active ? ' active' : '');
-      d.setAttribute('draggable', 'true');
-      d.dataset.idx = String(i);
-      d.title = 'Drag to reorder';
-      const sw = document.createElement('span');
-      sw.className = 'me-item-swatch';
-      sw.style.background = s.color || 'transparent';
-      const nm = document.createElement('span');
-      nm.className = 'me-item-name';
-      nm.textContent = s.label || s.name || '(unnamed)';
-      const del = document.createElement('button');
-      del.className = 'me-item-del';
-      del.textContent = '×';
-      del.title = 'Delete';
-      del.onclick = e => { e.stopPropagation(); _meDeleteItem('msg', i); };
-      d.append(sw, nm, del);
-      d.onclick = () => _meSelectItem('msg', i);
-      d.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); _meCtxMsg(e, i); };
-      d.ondragstart = e => _meSpecDragStart(e, i);
-      d.ondragover  = e => _meSpecDragOver(e, i);
-      d.ondragleave = e => _meSpecDragLeave(e);
-      d.ondrop      = e => _meSpecDrop(e, i);
-      d.ondragend   = e => _meSpecDragEnd(e);
-      msgs.appendChild(d);
-    });
+function _meRenderSpecList(contId, match, emptyMsg, kind) {
+  const cont = document.getElementById(contId);
+  if (!cont) return;
+  // Re-bind container-level handlers (context menu on empty space, and a
+  // drop target so a spec can be dragged into this list — even when empty).
+  cont.oncontextmenu = e => _meCtxMsgEmpty(e, kind);
+  cont.ondragover = e => {
+    if (_meState._dragSpecIdx == null) return;
+    if (e.target !== cont) return;              // items handle their own dragover
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+  cont.ondrop = e => {
+    if (_meState._dragSpecIdx == null) return;
+    if (e.target !== cont) return;              // items handle their own drop
+    e.preventDefault();
+    _meSpecDropOnList(kind);
+  };
+
+  cont.innerHTML = '';
+  const idxs = [];
+  _meState.specs.forEach((s, i) => { if (match(s)) idxs.push(i); });
+  if (!idxs.length) {
+    cont.innerHTML = `<div class="me-empty">${emptyMsg}</div>`;
+    return;
   }
-
+  // Messages render in array order (drag-and-drop controls detection rank).
+  // File detections have no order — they match by filename — so the Files
+  // list displays alphabetically.
+  if (kind === 'file') {
+    const lbl = i => String(_meState.specs[i].label || _meState.specs[i].name || '');
+    idxs.sort((a, b) => lbl(a).localeCompare(lbl(b), undefined, { sensitivity: 'base' }));
+  }
+  for (const i of idxs) {
+    const s = _meState.specs[i];
+    const active = _meState.section === 'msg' && _meState.selIdx === i;
+    const d = document.createElement('div');
+    d.className = 'me-item' + (active ? ' active' : '');
+    d.setAttribute('draggable', 'true');
+    d.dataset.idx = String(i);
+    d.title = kind === 'file'
+      ? 'Detected by filename ($VOL.SUBVOL.FILE) — order doesn’t matter. Drag to Messages to convert.'
+      : 'Drag to reorder';
+    const sw = document.createElement('span');
+    sw.className = 'me-item-swatch';
+    sw.style.background = s.color || 'transparent';
+    const nm = document.createElement('span');
+    nm.className = 'me-item-name';
+    nm.textContent = s.label || s.name || '(unnamed)';
+    const del = document.createElement('button');
+    del.className = 'me-item-del';
+    del.textContent = '×';
+    del.title = 'Delete';
+    del.onclick = e => { e.stopPropagation(); _meDeleteItem('msg', i); };
+    d.append(sw, nm, del);
+    d.onclick = () => _meSelectItem('msg', i);
+    d.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); _meCtxMsg(e, i); };
+    d.ondragstart = e => _meSpecDragStart(e, i);
+    d.ondragover  = e => _meSpecDragOver(e, i);
+    d.ondragleave = e => _meSpecDragLeave(e);
+    d.ondrop      = e => _meSpecDrop(e, i);
+    d.ondragend   = e => _meSpecDragEnd(e);
+    cont.appendChild(d);
+  }
 }
 
 // ── Sidebar drag-and-drop reordering ───────────────────────────────────────
@@ -14762,10 +14984,12 @@ function _meSpecDragStart(e, idx) {
   try { e.dataTransfer.setData('text/plain', String(idx)); } catch(_) {}
   e.currentTarget.classList.add('dragging');
 }
-function _meSpecDragOver(e, _idx) {
+function _meSpecDragOver(e, idx) {
   if (_meState._dragSpecIdx == null) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
+  // File detections are unordered — no positional indicator over the Files list.
+  if (_meState.specs[idx]?.kind === 'file') return;
   const rect = e.currentTarget.getBoundingClientRect();
   const before = (e.clientY - rect.top) < rect.height / 2;
   e.currentTarget.classList.toggle('drop-before', before);
@@ -14779,13 +15003,17 @@ function _meSpecDrop(e, targetIdx) {
   const src = _meState._dragSpecIdx;
   e.currentTarget.classList.remove('drop-before', 'drop-after');
   if (src == null || src === targetIdx) { _meState._dragSpecIdx = null; return; }
+  // Dropping anywhere in the Files list only reclassifies — files are unordered.
+  if (_meState.specs[targetIdx]?.kind === 'file') { _meSpecDropOnList('file'); return; }
   const rect = e.currentTarget.getBoundingClientRect();
   const before = (e.clientY - rect.top) < rect.height / 2;
   let dst = before ? targetIdx : targetIdx + 1;
   if (dst > src) dst--; // removing the earlier item shifts later indices
   _meState._dragSpecIdx = null;
-  if (dst === src) return;
+  const srcKind = _meState.specs[src]?.kind === 'file' ? 'file' : null;
+  if (dst === src && !srcKind) return;
   const [moved] = _meState.specs.splice(src, 1);
+  delete moved.kind;   // target list is Messages
   _meState.specs.splice(dst, 0, moved);
   // Keep the selection pinned to the moved entity (and update other indices).
   if (_meState.section === 'msg') {
@@ -14801,9 +15029,36 @@ function _meSpecDrop(e, targetIdx) {
 }
 function _meSpecDragEnd(_e) {
   _meState._dragSpecIdx = null;
-  document.querySelectorAll('#me-msg-list .me-item').forEach(r => {
+  document.querySelectorAll('#me-msg-list .me-item, #me-file-list .me-item').forEach(r => {
     r.classList.remove('dragging', 'drop-before', 'drop-after');
   });
+}
+
+// Drop on a list's empty space. Files are unordered, so moving INTO the
+// Files list just flips the kind in place; dropping into the Messages list
+// appends at the end of the detection order.
+function _meSpecDropOnList(kind) {
+  const src = _meState._dragSpecIdx;
+  _meState._dragSpecIdx = null;
+  if (src == null) return;
+  const s = _meState.specs[src];
+  if (!s) return;
+  const srcKind = s.kind === 'file' ? 'file' : null;
+  if (kind === 'file') {
+    if (srcKind === 'file') return;            // already a file — nothing to do
+    s.kind = 'file';
+  } else {
+    delete s.kind;
+    const [moved] = _meState.specs.splice(src, 1);
+    _meState.specs.push(moved);
+    const dst = _meState.specs.length - 1;
+    if (_meState.section === 'msg') {
+      if (_meState.selIdx === src) _meState.selIdx = dst;
+      else if (src < _meState.selIdx) _meState.selIdx--;
+    }
+  }
+  _meSetDirty();
+  _meRenderSidebar();
 }
 
 function _meCurItem() {
@@ -15100,26 +15355,30 @@ const _PS_HELP = {
     ],
   },
   'read-bitmap': {
-    desc: 'Reads 8 bytes (primary bitmap) or 16 bytes (primary + secondary bitmap) and stores the result for use by a bitmap-fields block. The field must be declared in the DDL with the appropriate length.',
+    desc: 'Establishes a bitmap for a following read-bitmap-fields or read-segment-fields block. Two modes, chosen by the attributes: <b>wire mode</b> (no bits/value) reads 8 bytes (primary) or 16 bytes (primary + secondary) from the record at the cursor — the field must be declared in the DDL with the appropriate length. <b>Declared mode</b> (bits and/or value present) consumes NO payload bytes: the map lives outside the record (e.g. a Base24 FIID-SEG-MAP on the institution\'s IDF, TYPE BITMAP 32) and its value comes from this block or from the ad-hoc SEG-MAP input at parse time, which overrides it. Declared mode emits a synthetic zero-byte field listing the present SEG numbers.',
     useWhen: [
-      'You\'re parsing an <b>ISO 8583</b> (or similar bitmap-based) message.',
-      'A <code>bitmap-fields</code> block follows that needs the bitset.',
-      'You know the encoding: <b>binary</b> (8 raw bytes) for EBCDIC/binary wire, or <b>ascii-hex</b> (16 chars) for ISO ASCII wire.',
-      'The bitmap field is declared in the bound DDL with the correct length.',
+      'Wire mode — you\'re parsing an <b>ISO 8583</b> (or similar bitmap-based) message and a <code>read-bitmap-fields</code> block follows.',
+      'Wire mode — you know the encoding: <b>binary</b> (8 raw bytes) for EBCDIC/binary wire, or <b>ascii-hex</b> (16 hex chars) for ISO ASCII wire.',
+      'Declared mode — you\'re parsing a <b>Base24 segmented file</b>: the record only holds the segments the institution configured, and the map is on its IDF, not in the payload. A <code>read-segment-fields</code> block follows.',
     ],
     attrs: [
-      ['field',    'string',                    true, 'DDL field ID for the bitmap'],
-      ['encoding', '"binary"|"ascii-hex"', true, 'binary = raw bits; ascii-hex = hex-encoded (e.g. ISO ASCII)'],
+      ['field',    'string', true, 'Wire mode: DDL field ID for the bitmap. Declared mode: id for the map — names the synthetic result row and is what read-segment-fields references (e.g. "FIID-SEG-MAP")'],
+      ['encoding', 'string', false, 'How the bits are written. Wire mode: <b>binary</b> (raw bytes) | <b>ascii-hex</b> (16 hex chars). Declared mode: <b>ascii-hex</b> (bits/4 hex chars, e.g. "C4180000") | <b>ascii-bits</b> (a 0/1 string — spaces optional, group every 4 for readability: "1100 0100 0000 1000 0000 0000 0000 0000"). Declared mode may omit it (auto-detect by length); the ad-hoc SEG-MAP input always auto-detects.'],
+      ['bits',     'number', false, 'DECLARED MODE MARKER — map width in bits (32 for TYPE BITMAP 32)'],
+      ['value',    'string', false, 'DECLARED MODE — the map value in the chosen encoding: ascii-hex like "C4180000", or ascii-bits like "1100 0100 0000 1000 0000 0000 0000 0000" (spaces are ignored, group every 4 for readability). The SEG-MAP input at parse time overrides this ad-hoc.'],
+      ['bit0',     '"left"|"right"', false, 'Declared mode: which end of the map is bit 0 / SEG0 — default "left" (leftmost bit)'],
     ],
     examples: [
-      ['ASCII ISO bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}}]],
-      ['Binary EBCDIC bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}}]],
+      ['Wire: ASCII ISO bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}}]],
+      ['Wire: binary EBCDIC bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}}]],
+      ['Declared: segmented-file map, ascii-hex (C4180000 = SEG0,1,5,11,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "encoding": "ascii-hex", "bits": 32, "value": "C4180000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
+      ['Declared: ascii-bits — spaces every 4 for readability (SEG0,1,5,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "encoding": "ascii-bits", "bits": 32, "value": "1100 0100 0000 1000 0000 0000 0000 0000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
     ],
   },
-  'bitmap-fields': {
-    desc: 'Reads the DE fields indicated by a prior read-bitmap result. DE numbering matches the Overrides table exactly: it starts on the field after the bitmap, groups own one DE (their leaves none), REDEFINES rows are skipped, and Data Element anchors re-align the counter. A set bit on an elementary field reads that field; on a group it reads every leaf in declaration order; on a VLG-flagged group it reads the user-selected LEN sub-field and distributes that many bytes across the sub-fields after it (fields before the LEN read at their declared length). Present fields are read sequentially at the cursor (DDL offsets are ignored — they assume every DE is present). Data Type / Display overrides from the Overrides section are applied to each field read.',
+  'read-bitmap-fields': {
+    desc: 'Reads the DE fields indicated by a prior wire-mode read-bitmap result. (Renamed from "bitmap-fields" — old specs are migrated automatically on load.) DE numbering matches the Overrides table exactly: it starts on the field after the bitmap, groups own one DE (their leaves none), REDEFINES rows are skipped, and Data Element anchors re-align the counter. A set bit on an elementary field reads that field; on a group it reads every leaf in declaration order; on a VLG-flagged group it reads the user-selected LEN sub-field and distributes that many bytes across the sub-fields after it (fields before the LEN read at their declared length). Present fields are read sequentially at the cursor (DDL offsets are ignored — they assume every DE is present). Data Type / Display overrides from the Overrides section are applied to each field read.',
     useWhen: [
-      'You\'ve just executed <code>read-bitmap</code> and want to read only the DEs the bitmap marks present.',
+      'You\'ve just executed a wire-mode <code>read-bitmap</code> and want to read only the DEs the bitmap marks present.',
       'The Overrides table shows the DE numbers you expect (anchor the first real DE if the defaults are off).',
       'Some DEs are <b>variable-length groups</b> (LEN + payload) — mark them as VLG in Overrides and this block honours the runtime LEN.',
       'Standard ISO 8583 parsing — the canonical way to walk DE fields per the bitmap.',
@@ -15128,7 +15387,22 @@ const _PS_HELP = {
       ['bitmap', 'string', true, 'Field ID of a preceding read-bitmap result'],
     ],
     examples: [
-      ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}}, {"bitmap-fields": "BITMAP"}]],
+      ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}}, {"read-bitmap-fields": "BITMAP"}]],
+    ],
+  },
+  'read-segment-fields': {
+    desc: 'Reads only the segments a prior declared-mode read-bitmap marks present. (Renamed from "segment-fields" — old specs are migrated automatically on load.) Walks the bound DDL\'s TOP-LEVEL fields in declaration order and maps each to a bit by the TRAILING NUMBER in its name (SEG0 ↔ bit 0, SEG07 ↔ bit 7, SEG11 ↔ bit 11 — declared segments need not be consecutive). A set bit reads the segment\'s full TYPE-expanded structure sequentially at the cursor (DDL offsets are ignored — they assume every segment is present); a clear bit consumes nothing. Top-level fields without a trailing number are always read. Flags leftover bytes after the last mapped segment, since that usually means the map is missing a segment.',
+    useWhen: [
+      'A declared-mode <code>read-bitmap</code> (bits/value) precedes this one.',
+      'The bound DDL is a segmented file definition — top-level fields named SEG0, SEG1, SEG5, … each TYPE XXX-SEGMENT.',
+      'You want absent segments skipped entirely, exactly as Base24 reads/writes the file.',
+    ],
+    attrs: [
+      ['(bare string)', 'string', true, 'Field id of a preceding declared-mode read-bitmap — same convention as read-bitmap-fields (a bare {"read-segment-fields": "FIID-SEG-MAP"}). Falls back to the most recent declared map when omitted.'],
+      ['binding', 'number', false, 'DDL binding index to walk — defaults to all bindings'],
+    ],
+    examples: [
+      ['Standard usage', [{"read-bitmap": {"field": "FIID-SEG-MAP", "encoding": "ascii-hex", "bits": 32, "value": "C4180000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
     ],
   },
   'read-tlv': {
@@ -15143,7 +15417,7 @@ const _PS_HELP = {
       ['field',         'string',              true, 'DDL buffer field containing the raw TLV bytes'],
       ['tag_length',    'int',                 true, 'Number of bytes per tag'],
       ['length_length', 'int',                 true, 'Number of bytes per length field'],
-      ['encoding',      '"binary"|"ascii-hex"', true, 'How tag and length bytes are encoded'],
+      ['encoding',      '"binary"|"ascii-hex"', true, 'How tag and length bytes are encoded (ascii-hex = ASCII hex chars in the buffer)'],
     ],
     examples: [
       ['EMV DE-55', [{"read-tlv": {"field": "DE-55", "tag_length": 2, "length_length": 2, "encoding": "binary"}}]],
@@ -15249,7 +15523,7 @@ const _PS_HELP = {
       ['until',  'token-id',              false, 'Inclusive upper bound: emission stops after this token.'],
     ],
     examples: [
-      ['All tokens',                  [{"read": "MTI"}, {"bitmap-fields": "BITMAP"}, {"token-area": "ANY"}]],
+      ['All tokens',                  [{"read": "MTI"}, {"read-bitmap-fields": "BITMAP"}, {"token-area": "ANY"}]],
       ['Cherry-pick specific tokens', [{"token-area": {"tokens": ["B4", "C0", "F1"]}}]],
       ['Window between two tokens',   [{"token-area": {"from": "B4", "until": "ZZ"}}]],
     ],
@@ -15377,6 +15651,7 @@ function _mePsChange(val) {
     if (errEl) errEl.textContent = '';
     _meSetDirty();
     _mePsScheduleLint(item, parsed);
+    _meFileWarnsRefresh();
   } catch(e) {
     if (errEl) errEl.textContent = '⚠ ' + e.message;
     // Syntax broken — semantic lint would be noise; clear it.
@@ -15445,6 +15720,7 @@ function _mePsRunLint(item, parsed) {
   const bindingCount = (item.ddl_bindings || []).filter(Boolean).length;
   const synthetic = new Set();   // ids declared by earlier blocks (as / read-bitmap.field)
   const bitmaps   = new Set();   // read-bitmap field ids seen so far
+  const segmaps   = new Set();   // seg-map labels seen so far
   const warns = [];
   const known = id => ddlIds.has(id) || synthetic.has(id);
 
@@ -15500,15 +15776,41 @@ function _mePsRunLint(item, parsed) {
           break;
         }
         case 'read-bitmap': {
-          if (attrs?.field) { synthetic.add(attrs.field); bitmaps.add(attrs.field); }
-          else warns.push(`[block ${n}] read-bitmap needs a "field" attribute`);
+          const declared = attrs && (attrs.bits !== undefined || attrs.value !== undefined);
+          if (declared) {
+            const lbl = attrs?.field || attrs?.label || 'SEG-MAP';
+            synthetic.add(lbl);
+            segmaps.add(lbl);
+            if (attrs?.encoding && !/^(ascii-hex|ascii-bits)$/i.test(String(attrs.encoding)))
+              warns.push(`[block ${n}] read-bitmap (declared map): encoding "${attrs.encoding}" — use "ascii-hex" or "ascii-bits"`);
+            if (attrs?.value != null && String(attrs.value).trim() !== '') {
+              const bits = Number(attrs?.bits) > 0 && Number(attrs.bits) % 4 === 0 ? Number(attrs.bits) : 32;
+              const r = _meParseSegMap(attrs.value, bits, attrs?.bit0 === 'right' ? 'right' : 'left', attrs?.encoding);
+              if (r.error) warns.push(`[block ${n}] read-bitmap.value: ${r.error}`);
+            }
+          } else if (attrs?.field) {
+            synthetic.add(attrs.field);
+            bitmaps.add(attrs.field);
+            if (attrs?.encoding && !/^(binary|ascii-hex)$/i.test(String(attrs.encoding)))
+              warns.push(`[block ${n}] read-bitmap: encoding "${attrs.encoding}" — use "binary" or "ascii-hex"`);
+          } else {
+            warns.push(`[block ${n}] read-bitmap needs a "field" attribute`);
+          }
           break;
         }
-        case 'bitmap-fields': {
+        case 'read-bitmap-fields': {
           const ref = (typeof attrs === 'string') ? attrs : attrs?.bitmap;
-          if (!ref) warns.push(`[block ${n}] bitmap-fields needs a bitmap field id`);
+          if (!ref) warns.push(`[block ${n}] read-bitmap-fields needs a bitmap field id`);
           else if (!bitmaps.has(ref))
-            warns.push(`[block ${n}] bitmap-fields: "${ref}" has no preceding read-bitmap block`);
+            warns.push(`[block ${n}] read-bitmap-fields: "${ref}" has no preceding wire-mode read-bitmap block`);
+          break;
+        }
+        case 'read-segment-fields': {
+          const ref = (typeof attrs === 'string') ? attrs : attrs?.map;
+          if (ref && !segmaps.has(ref))
+            warns.push(`[block ${n}] read-segment-fields: "${ref}" has no preceding declared-map read-bitmap block`);
+          else if (!ref && !segmaps.size)
+            warns.push(`[block ${n}] read-segment-fields: no preceding declared-map read-bitmap block`);
           break;
         }
         case 'read-fixed': {
@@ -15570,7 +15872,7 @@ function _mePsRunLint(item, parsed) {
 
 const _PS_KNOWN_BLOCKS = new Set([
   'read-ddl','read','read-fixed','read-until','read-length-prefix',
-  'read-to-end','read-bitmap','bitmap-fields','read-tlv',
+  'read-to-end','read-bitmap','read-bitmap-fields','read-segment-fields','read-tlv',
   'when','repeat','read-while','skip','token-area',
 ]);
 
@@ -15983,6 +16285,7 @@ function _meBindSet(idx, val) {
   // section is closed since the lint container isn't in the DOM.)
   const { spec: specField } = _mePsFieldsForVariant(_mePsActiveVariant());
   if (Array.isArray(item[specField])) _mePsScheduleLint(item, item[specField]);
+  _meFileWarnsRefresh();
 }
 function _meBindAdd() {
   const item = _meCurItem(); if (!item) return;
@@ -16058,7 +16361,7 @@ function _meOverridesPrep(item) {
   // every row would show an empty DE with no hint why. Surface the mismatch.
   const _bmpField = _meItemBitmapField(item);
   if (_bmpField && !fieldList.some(r => r.id === _bmpField)) {
-    warnHtml += `<div class="me-fm-warn">⚠ Parse spec references bitmap field "${ea(_bmpField)}" but no bound DDL field has that id — DE numbering can't start. Fix the {"bitmap-fields"} value or the binding.</div>`;
+    warnHtml += `<div class="me-fm-warn">⚠ Parse spec references bitmap field "${ea(_bmpField)}" but no bound DDL field has that id — DE numbering can't start. Fix the {"read-bitmap-fields"} value or the binding.</div>`;
   }
 
   const fmHelpOpen = !!(_meState && _meState.fmHelpOpen);
@@ -16139,7 +16442,7 @@ function _meFmDeCellHtml(row, ctx) {
     ${clearBtn}
   </div></td>`;
   }
-  const tip = !ctx.usesBitmapFields ? 'DE controls appear only when the parse spec uses bitmap-fields.'
+  const tip = !ctx.usesBitmapFields ? 'DE controls appear only when the parse spec uses read-bitmap-fields.'
             : row.isRedef           ? 'REDEFINES overlays existing bytes — no DE of its own.'
             : row.underTerminal     ? 'No DE here — the terminal group above owns the DE.'
             : '';
@@ -16191,7 +16494,7 @@ function _meFmRowHtml(row, ctx, counter) {
   if (ctx.usesBitmapFields) {
     if (vlgEligible) {
       const on = ctx.vlgMap.has(row.id);
-      vlgCell = `<td class="me-fm-vlg"><button class="me-vlg-tgl${on ? ' on' : ''}" onclick="_meVlgToggleGroup('${id}')" title="Mark this group as a Variable Length Group — bitmap-fields reads the LEN sub-field as a numeric length and distributes that many bytes across the rest.">VLG</button></td>`;
+      vlgCell = `<td class="me-fm-vlg"><button class="me-vlg-tgl${on ? ' on' : ''}" onclick="_meVlgToggleGroup('${id}')" title="Mark this group as a Variable Length Group — read-bitmap-fields reads the LEN sub-field as a numeric length and distributes that many bytes across the rest.">VLG</button></td>`;
     } else if (!isGroup && !row.isRedef) {
       const g = _meVlgAncestor(row.id, ctx.vlgMap);
       if (g) {
@@ -16434,21 +16737,21 @@ function _meFmPatchDECells() {
 // the engine-resolved DE number and anchor state per row. Returns null when
 // the item has no bindings, [] when none of the bindings has any fields.
 // True if any block (including nested when.then / repeat.body / read-while.body)
-// in the parse spec is a `bitmap-fields` block. Used by the Field Map UI to
-// hide the VLG toggle when the spec doesn't run bitmap-fields — VLG is dead
-// weight in that case.
-// Pull the bitmap field id out of the first `bitmap-fields` block in the
+// in the parse spec is a `read-bitmap-fields` block. Used by the Field Map UI
+// to hide the VLG toggle when the spec doesn't run read-bitmap-fields — VLG is
+// dead weight in that case.
+// Pull the bitmap field id out of the first `read-bitmap-fields` block in the
 // parse spec (recursing into when.then / repeat.body / read-while.body).
-// The block can be a bare string ({"bitmap-fields":"PRI-BIT-MAP"}) or an
-// object ({"bitmap-fields":{"bitmap":"PRI-BIT-MAP"}}). Returns null when no
-// bitmap-fields block exists — that null doubles as the "spec doesn't use
-// bitmap-fields" signal for the Field Map UI.
+// The block can be a bare string ({"read-bitmap-fields":"PRI-BIT-MAP"}) or an
+// object ({"read-bitmap-fields":{"bitmap":"PRI-BIT-MAP"}}). Returns null when
+// no read-bitmap-fields block exists — that null doubles as the "spec doesn't
+// use read-bitmap-fields" signal for the Field Map UI.
 function _meSpecBitmapField(spec) {
   if (!Array.isArray(spec)) return null;
   for (const block of spec) {
     if (!block || typeof block !== 'object') continue;
-    if ('bitmap-fields' in block) {
-      const v = block['bitmap-fields'];
+    if ('read-bitmap-fields' in block) {
+      const v = block['read-bitmap-fields'];
       return (typeof v === 'string') ? v : (v && typeof v === 'object' ? v.bitmap : null);
     }
     const nested = _meSpecBitmapField(block.when?.then)
@@ -16620,9 +16923,9 @@ function _meWalkDEFields(defs, item) {
 
   // ── Pass 2: walk defs in declaration order, emitting ancestor groups ───
   // DE numbering only begins on the field AFTER the bitmap field declared in
-  // the parse spec ({"bitmap-fields": "PRI-BIT-MAP"}) — header fields and the
-  // bitmap field itself aren't DEs. If the spec has no bitmap-fields block we
-  // fall back to numbering from the first field (legacy behaviour).
+  // the parse spec ({"read-bitmap-fields": "PRI-BIT-MAP"}) — header fields and
+  // the bitmap field itself aren't DEs. If the spec has no read-bitmap-fields
+  // block we fall back to numbering from the first field (legacy behaviour).
   const bitmapField = _meItemBitmapField(item);
   // Compute a group's total byte length by summing every transitive leaf
   // under it. Cached so each prefix is visited at most once.
@@ -17626,11 +17929,43 @@ function _meField(field, value) {
 
 // ── Recognizers Tab ───────────────────────────────────────────────────────
 
+// File-entity completeness warnings (top of the Recognizers panel).
+// A file detection is keyed by its filename — extra recognizers may refine
+// (e.g. tell versions of the same file apart), but the filename identifier
+// must always be present. Beyond that, the entity is only functional with
+// BOTH a DDL binding (the file's layout) and a parse spec (how to read it).
+function _meFileWarnsHtml(item) {
+  if (!item || item.kind !== 'file') return '';
+  let h = '';
+  if (!(item.recognizers || []).some(r => r.type === 'filename')) {
+    h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ File detections must carry a filename recognizer ($VOL.SUBVOL.FILE) — add one, or this entity can never match.</div>`;
+  }
+  const hasBind = (item.ddl_bindings || []).filter(Boolean).length > 0;
+  const hasSpec = (item.parse_spec_binary || []).length > 0 || (item.parse_spec_ascii || []).length > 0;
+  if (!hasBind && !hasSpec) {
+    h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ Inert — this file entity has no DDL binding and no parse spec, so it will never claim records. It needs both: a binding (the file's DDL) and a parse spec (how to read it).</div>`;
+  } else if (!hasBind) {
+    h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ No DDL binding — the parse spec has no DDL to read from (read-ddl / segment-fields will fail at parse time). Add the file's DDL in DDL Bindings.</div>`;
+  } else if (!hasSpec) {
+    h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ No parse spec — records will parse as a full DDL walk, every field and segment assumed present. Segmented files need a read-bitmap (bits/value) + read-segment-fields parse spec.</div>`;
+  }
+  return h;
+}
+
+// Patch the warnings in place. Binding-path and parse-spec edits update the
+// item WITHOUT a full right-panel re-render (that would steal input focus /
+// destroy the CodeMirror editor mid-keystroke) — so they call this instead.
+function _meFileWarnsRefresh() {
+  const el = document.getElementById('me-file-warns');
+  if (el) el.innerHTML = _meFileWarnsHtml(_meCurItem());
+}
+
 function _meHtmlRecs(item) {
   const recs = item.recognizers || [];
   const _TYPE_LABEL = { uint8:'uint8 / byte', uint16:'uint16 / word', uint32:'uint32 / dword' };
   const recHelpOpen = !!(_meState && _meState.recHelpOpen);
   let h = `<div class="me-ps-help${recHelpOpen ? ' open' : ''}" id="me-rec-help" style="margin-bottom:8px">${_meRecHelpHtml()}</div>`;
+  h += `<div id="me-file-warns">${_meFileWarnsHtml(item)}</div>`;
   h += '<div class="me-rec-list">';
   if (!recs.length) h += '<div class="me-empty">No recognizers yet.</div>';
   // Last Test-run verdict per recognizer (pass / fail / skip) — set by
@@ -18296,6 +18631,23 @@ function _meAddMsg() {
   _meSelectItem('msg', _meState.specs.length - 1);
 }
 
+function _meAddFile() {
+  // File detections match on the wrapper filename, so seed one filename recognizer.
+  _meState.specs.push({ name: 'NEWFILE', label: 'New File', color: '#888888', vol: '', kind: 'file',
+                        recognizers: [{ type: 'filename', pattern: '' }] });
+  _meSetDirty();
+  _meSelectItem('msg', _meState.specs.length - 1);
+}
+
+// Flip a spec between the Messages and Files lists.
+function _meMoveKind(idx) {
+  const s = _meState.specs[idx];
+  if (!s) return;
+  if (s.kind === 'file') delete s.kind; else s.kind = 'file';
+  _meSetDirty();
+  _meRenderSidebar();
+}
+
 function _meDeleteItem(section, idx) {
   const itemName = _meState.specs[idx]?.name || 'message';
   showPrompt(`Type DELETE to remove "${itemName}" and all its contents:`, '', val => {
@@ -18315,6 +18667,7 @@ function _meCtxMsg(e, idx) {
   const msg = _meState?.specs?.[idx];
   showCtxMenu(e.clientX, e.clientY, [
     { icon: '⧉', label: 'Duplicate', fn: () => _meDupItem(idx) },
+    { icon: '⇄', label: msg?.kind === 'file' ? 'Move to Messages' : 'Move to Files', fn: () => _meMoveKind(idx) },
     { separator: true },
     { icon: '⬆', label: `Export "${msg?.name || msg?.label || 'item'}"…`, fn: () => _ctxMsgExport(idx, msg?.name) },
     { icon: '⬆', label: 'Export All Data…', fn: () => _ctxExportAllMsgs() },
@@ -18324,11 +18677,11 @@ function _meCtxMsg(e, idx) {
   ]);
 }
 
-// Right-click on empty area of the Messages list
-function _meCtxMsgEmpty(e) {
+// Right-click on empty area of the Messages / Files list
+function _meCtxMsgEmpty(e, kind) {
   e.preventDefault(); e.stopPropagation();
   showCtxMenu(e.clientX, e.clientY, [
-    { icon: '＋', label: 'New', fn: () => _meAddMsg() },
+    { icon: '＋', label: 'New', fn: () => (kind === 'file' ? _meAddFile() : _meAddMsg()) },
     { separator: true },
     { icon: '⬆', label: 'Export All Data…', fn: () => _ctxExportAllMsgs() },
     { icon: '⬇', label: 'Import Bundle…',       fn: () => triggerImport() },
@@ -19040,6 +19393,12 @@ function _meExecReadToEnd(attrs, ctx) {
 // ── Block: read-bitmap ──────────────────────────────────────────────────────
 
 function _meExecReadBitmap(attrs, ctx) {
+  // One block, two modes. `bits` / `value` mark a DECLARED map: the value is
+  // not in the payload (it comes from the spec or the ad-hoc SEG-MAP input,
+  // e.g. a Base24 FIID-SEG-MAP that lives on the IDF) and zero bytes are
+  // consumed — its field id defaults to "SEG-MAP". Without them, the bitmap
+  // is read from the record at the cursor (the field is declared in the DDL).
+  if (attrs && (attrs.bits !== undefined || attrs.value !== undefined)) return _meExecSegMap(attrs, ctx);
   if (!attrs || !attrs.field) {
     ctx.fields.push({ id: 'read-bitmap', error: 'Missing field attribute' });
     return;
@@ -19118,15 +19477,30 @@ function _meBuildDEMap(ctx) {
   return map;
 }
 
+// Implicit LLVAR/LLLVAR detection — the group's first sub-field is a
+// *-LEN / *-LGTH / *-LENGTH of 2, 3 or 4 digits, with a DATA field after it.
+// Identical rule to the ISO layout builder (parseHPEDDL, ~line 2597) so the
+// engine's read-bitmap-fields reads variable-length DEs exactly like legacy.
+// Returns the LEN sub-field id, or null when the group isn't LLVAR.
+function _meAutoLLVarLenId(kids) {
+  if (!kids || kids.length < 2) return null;
+  const first = kids[0];
+  const nm = String(first.id).split('.').pop().toUpperCase();
+  const L = first.length;
+  if (/(?:^|[-_])(?:LEN|LGTH|LENGTH)$/.test(nm) && (L === 2 || L === 3 || L === 4))
+    return first.id;
+  return null;
+}
+
 function _meExecBitmapFields(attrs, ctx) {
   const bitmapId = (typeof attrs === 'string') ? attrs : attrs?.bitmap;
   if (!bitmapId) {
-    ctx.fields.push({ id: 'bitmap-fields', error: 'Missing bitmap attribute' });
+    ctx.fields.push({ id: 'read-bitmap-fields', error: 'Missing bitmap attribute' });
     return;
   }
   const bmField = ctx.fieldsById[bitmapId];
   if (!bmField?.bitSet) {
-    ctx.fields.push({ id: 'bitmap-fields', error: `No bitset found for bitmap '${bitmapId}' — run read-bitmap first` });
+    ctx.fields.push({ id: 'read-bitmap-fields', error: `No bitset found for bitmap '${bitmapId}' — run read-bitmap first` });
     return;
   }
   const deMap = _meBuildDEMap(ctx);
@@ -19168,7 +19542,19 @@ function _meExecBitmapFields(attrs, ctx) {
       continue;
     }
 
-    if (varGroups.has(groupId)) {
+    // Variable-length group: either the user flagged it (var_length_groups) or
+    // it's an implicit LLVAR/LLLVAR — a group whose first sub-field is a
+    // *-LEN/LGTH/LENGTH of 2/3/4 digits. The auto-detect uses the SAME rule as
+    // the ISO layout builder (parseHPEDDL) so the engine reads LLVAR DEs
+    // exactly like the legacy parser: read LEN, then that many DATA bytes.
+    let isVarGroup = false, cfgLenId;
+    if (varGroups.has(groupId)) { isVarGroup = true; cfgLenId = varGroups.get(groupId); }
+    else {
+      const autoLenId = _meAutoLLVarLenId(kids);
+      if (autoLenId) { isVarGroup = true; cfgLenId = autoLenId; }
+    }
+
+    if (isVarGroup) {
       // VLG group — one sub-field holds a numeric LEN (ASCII digits). Sub-fields
       // BEFORE it read at their declared fixed length; the sub-fields AFTER it
       // share a buffer of N bytes filled in declaration order (each gets
@@ -19180,7 +19566,7 @@ function _meExecBitmapFields(attrs, ctx) {
         ctx.fields.push({ id: groupId, error: 'VLG: group needs a LEN sub-field plus at least one payload sub-field' });
         continue;
       }
-      const lenId  = varGroups.get(groupId);
+      const lenId  = cfgLenId;
       let   lenIdx = lenId ? kids.findIndex(k => k.id === lenId) : 0;
       if (lenIdx < 0) lenIdx = 0;   // configured field no longer present → first
       const beforeDefs = kids.slice(0, lenIdx);
@@ -19361,6 +19747,168 @@ function _meExecReadWhile(attrs, ctx) {
   }
 }
 
+// ── Blocks: seg-map / segment-fields (Base24 segmented files) ───────────────
+// A segmented file's DEFINITION declares only "SEGn TYPE XXX-SEGMENT" groups.
+// Which segments are actually present in a record is configured per
+// institution on the IDF (FIID-SEG-MAP, TYPE BITMAP 32) — it is NOT part of
+// the payload. seg-map establishes that map from the spec value (or the
+// ad-hoc input at parse time); segment-fields then reads only the present
+// segments, in declaration order, mapping SEGn ↔ bit n by the TRAILING
+// NUMBER in the field name (declared segments need not be consecutive:
+// SEG0, SEG1, SEG5, SEG11, …).
+
+// Parse a declared-map value into a Set of segment numbers.
+//   encoding "ascii-hex"  — bits/4 hex chars (e.g. "E0100000" for 32 bits)
+//   encoding "ascii-bits" — exactly `bits` chars of 0/1 (spaces optional,
+//                           e.g. "1100 0100 0000 1000 0000 0000 0000 0000")
+//   no encoding           — auto-detect by length (a value that is all 0/1
+//                           AND exactly bits/4 long is read as hex)
+// Spaces, dots, dashes and underscores are ignored. bit0: 'left' (default)
+// numbers bits from the LEFTMOST position; 'right' from the rightmost.
+function _meParseSegMap(value, bits, bit0, encoding) {
+  const clean = String(value ?? '').replace(/[\s._-]/g, '');
+  if (!clean) return { error: 'empty value' };
+  const enc = encoding ? String(encoding).toLowerCase() : null;
+  if (enc && enc !== 'ascii-hex' && enc !== 'ascii-bits') {
+    return { error: `unknown encoding "${encoding}" — use "ascii-hex" or "ascii-bits"` };
+  }
+  let bin = null;
+  if (enc === 'ascii-bits') {
+    if (clean.length !== bits || !/^[01]+$/.test(clean))
+      return { error: `encoding "ascii-bits": need exactly ${bits} 0/1 digits (got ${clean.length})` };
+    bin = clean;
+  } else if (enc === 'ascii-hex') {
+    if (clean.length !== bits / 4 || !/^[0-9a-fA-F]+$/.test(clean))
+      return { error: `encoding "ascii-hex": need exactly ${bits / 4} hex chars (got ${clean.length})` };
+    bin = clean.split('').map(c => parseInt(c, 16).toString(2).padStart(4, '0')).join('');
+  } else if (clean.length === bits / 4 && /^[0-9a-fA-F]+$/.test(clean)) {
+    bin = clean.split('').map(c => parseInt(c, 16).toString(2).padStart(4, '0')).join('');
+  } else if (clean.length === bits && /^[01]+$/.test(clean)) {
+    bin = clean;
+  } else {
+    return { error: `value must be ${bits / 4} hex chars or ${bits} 0/1 digits (got ${clean.length})` };
+  }
+  const set = new Set();
+  for (let i = 0; i < bits; i++) {
+    if (bin[i] === '1') set.add(bit0 === 'right' ? bits - 1 - i : i);
+  }
+  let hex = '';
+  for (let i = 0; i < bits; i += 4) hex += parseInt(bin.slice(i, i + 4), 2).toString(16).toUpperCase();
+  return { set, hex, bin };
+}
+
+function _meExecSegMap(attrs, ctx) {
+  const a     = attrs || {};
+  const bits  = Number(a.bits) > 0 && Number(a.bits) % 4 === 0 ? Number(a.bits) : 32;
+  const label = a.field || a.label || 'SEG-MAP';
+  // Ad-hoc value from the parse-time input wins over the value stored in the spec.
+  const adhoc = ctx.segMapOverride != null && String(ctx.segMapOverride).trim() !== ''
+    ? String(ctx.segMapOverride) : null;
+  const raw = adhoc ?? a.value;
+  if (raw == null || String(raw).trim() === '') {
+    ctx.fields.push({ id: label, error: 'declared map: no value — set "value" in the read-bitmap block or type one in the SEG-MAP input' });
+    return;
+  }
+  // The declared encoding constrains the SPEC value; the ad-hoc input stays
+  // auto-detected so the parse-time bar accepts either form.
+  const r = _meParseSegMap(raw, bits, a.bit0 === 'right' ? 'right' : 'left', adhoc ? null : a.encoding);
+  if (r.error) {
+    ctx.fields.push({ id: label, error: `declared map: ${r.error}` });
+    return;
+  }
+  const segs = [...r.set].sort((x, y) => x - y);
+  // Synthetic zero-byte field: the map is not part of the payload, but showing
+  // it in the results makes the parse self-documenting.
+  const f = {
+    id: label,
+    description: `segment map (${adhoc ? 'ad-hoc input' : 'spec value'}) — SEGs present: ${segs.join(', ') || 'none'}`,
+    valueLength: 0,
+    value: r.hex, rawHex: '',
+    startByte: ctx.cursor, endByte: ctx.cursor - 1,
+  };
+  f.segSet = r.set;
+  ctx.fields.push(f);
+  ctx.fieldsById[label] = f;
+  ctx.segMap = f;
+}
+
+function _meExecSegmentFields(attrs, ctx) {
+  const a = (typeof attrs === 'string') ? { map: attrs } : (attrs || {});
+  const smField = (a.map && ctx.fieldsById[a.map]) || ctx.segMap;
+  if (!smField?.segSet) {
+    ctx.fields.push({ id: 'read-segment-fields', error: a.map
+      ? `No declared map "${a.map}" — declare it in a read-bitmap block (bits/value) first`
+      : 'No preceding read-bitmap block with a declared map (bits/value)' });
+    return;
+  }
+  const bindings = (a.binding !== undefined && a.binding !== 'ANY')
+    ? [a.binding]
+    : ctx.resolvedBindings.map((r, i) => r?.defs?.length ? i : -1).filter(i => i >= 0);
+  const defs = [];
+  for (const bi of bindings) {
+    const r = ctx.resolvedBindings[bi];
+    if (r?.defs) defs.push(...r.defs);
+  }
+  if (!defs.length) {
+    ctx.fields.push({ id: 'read-segment-fields', error: 'No DDL bindings available' });
+    return;
+  }
+
+  const canon = s => String(s).replace(/\[\d+\]/g, '');
+  const topOf = id => canon(id).split('.')[0];
+
+  // Group the (leaf-only) defs by their top-level segment, declaration order.
+  const segOrder = [];
+  const segLeaves = new Map();
+  for (const d of defs) {
+    const t = topOf(d.id);
+    if (!segLeaves.has(t)) { segLeaves.set(t, []); segOrder.push(t); }
+    segLeaves.get(t).push(d);
+  }
+
+  // Absent segments make the DDL's declared offsets wrong, so every present
+  // field reads sequentially at the cursor (offset stripped) — same rule as
+  // bitmap-fields.
+  const readSeq = def => {
+    const f = _meReadOneFieldFromDef({ ...def, offset: undefined }, ctx);
+    if (f) {
+      _meApplyTypeOverride(f, def, ctx, null);
+      _meApplyDisplayOverride(f, def, ctx);
+      ctx.fields.push(f);
+      ctx.fieldsById[def.id] = f;
+    }
+    return f;
+  };
+
+  const absent = [];
+  let truncated = false;
+  for (const seg of segOrder) {
+    const m = /(\d+)$/.exec(seg);
+    const segNo = m ? parseInt(m[1], 10) : null;
+    // A top-level field without a trailing number is not a segment — always read.
+    if (segNo !== null && !smField.segSet.has(segNo)) { absent.push(seg); continue; }
+    for (const d of segLeaves.get(seg)) {
+      // REDEFINES overlays re-view bytes already consumed — with sequential
+      // reads they would consume NEW bytes, so skip them (same as bitmap-fields).
+      if (d.isRedefines) continue;
+      if (!readSeq(d)) {
+        ctx.fields.push({ id: seg, error: `Ran out of bytes inside ${seg} — the seg map may mark a segment present that isn't in the payload` });
+        truncated = true;
+        break;
+      }
+    }
+    if (truncated) break;
+  }
+  // Length reconciliation: leftover bytes mean the map is missing a segment
+  // (or the payload holds more than the DDL declares).
+  if (!truncated && ctx.cursor < ctx.bytes.length) {
+    const left = ctx.bytes.length - ctx.cursor;
+    ctx.fields.push({ id: smField.id,
+      error: `${left} unparsed byte(s) after the last mapped segment — the seg map may be missing a segment`
+        + (absent.length ? ` (absent per map: ${absent.join(', ')})` : '') });
+  }
+}
+
 // ── Block: read-tlv ─────────────────────────────────────────────────────────
 
 function _meExecReadTLV(attrs, ctx) {
@@ -19428,7 +19976,8 @@ function _meExecBlock(block, ctx) {
     case 'read-length-prefix':  return _meExecReadLengthPrefix(attrs, ctx);
     case 'read-to-end':         return _meExecReadToEnd(attrs, ctx);
     case 'read-bitmap':         return _meExecReadBitmap(attrs, ctx);
-    case 'bitmap-fields':       return _meExecBitmapFields(attrs, ctx);
+    case 'read-bitmap-fields':  return _meExecBitmapFields(attrs, ctx);
+    case 'read-segment-fields': return _meExecSegmentFields(attrs, ctx);
     case 'read-tlv':            return _meExecReadTLV(attrs, ctx);
     case 'when':                return _meExecWhen(attrs, ctx);
     case 'repeat':              return _meExecRepeat(attrs, ctx);
@@ -19444,7 +19993,7 @@ function _meExecBlock(block, ctx) {
   }
 }
 
-function _meExecParseSpec(item, bytes) {
+function _meExecParseSpec(item, bytes, opts) {
   const bindings  = item.ddl_bindings || [];
   const resolvedBindings = bindings.map(p => p ? getDDLFromPath(p) : null);
 
@@ -19471,9 +20020,49 @@ function _meExecParseSpec(item, bytes) {
   const ctx = {
     bytes, cursor: 0, fields: [], fieldsById: {},
     tokens: null, resolvedBindings, item, parseSpecUsed,
+    segMapOverride: opts?.segMapOverride ?? null,
   };
   for (const block of effectiveSpec) _meExecBlock(block, ctx);
   return ctx;
+}
+
+// Ad-hoc SEG-MAP overrides for main-flow parses, keyed by spec name.
+// Session-only — the persistent value lives in the spec's seg-map block.
+const _segMapOverrides = {};
+
+// Detect a segmented-file DEFINITION inside a manually selected scope path
+// (3-part V/S/FILE or 4-part V/S/FILE/DEF). A DEF is "segmented" when at
+// least two of its top-level items are TYPE references whose names end in a
+// number (SEG0, SEG5, SEG11, …). Returns { defName } or null.
+function _meScopeSegmentedDef(p1Path) {
+  const [vol, sv, name, defSel] = String(p1Path || '').split('/');
+  const content = ((S.ddlTree[vol] || {})[sv] || {})[name];
+  if (!content || !isHPEDDLText(content)) return null;
+  let sections;
+  try { sections = parseDDLSections(content); } catch (_) { return null; }
+  for (const sec of (sections || [])) {
+    if (defSel && String(sec.name).toUpperCase() !== defSel.toUpperCase()) continue;
+    const items = sec.items || [];
+    if (!items.length) continue;
+    const minLvl = Math.min(...items.map(it => it.level));
+    const segTops = items.filter(it =>
+      it.level === minLvl && it.typeClause && /\d+$/.test(it.name));
+    if (segTops.length >= 2) return { defName: sec.name };
+  }
+  return null;
+}
+
+// Parse a FILE record through the parse-spec engine (main flow). Adapts the
+// engine's field output to the main renderer's shape (rawBytes arrays) and
+// scores by errorless-field ratio so the bound-DDL warning threshold applies.
+function _meParseFileWithSpec(spec, bytes) {
+  const ctx = _meExecParseSpec(spec, bytes, { segMapOverride: _segMapOverrides[spec.name] ?? null });
+  for (const f of ctx.fields) {
+    if (!f.rawBytes) f.rawBytes = f.rawHex ? f.rawHex.match(/.{2}/g).map(h => parseInt(h, 16)) : [];
+  }
+  const errs = ctx.fields.filter(f => f.error).length;
+  const score = ctx.fields.length ? (ctx.fields.length - errs) / ctx.fields.length : 0;
+  return { fields: ctx.fields, score };
 }
 
 // Render the left-hand verdict list of the Test bar: every Data entity in
@@ -19483,7 +20072,9 @@ function _meExecParseSpec(item, bytes) {
 function _meTestRenderList(results, winnerIdx) {
   const body = document.getElementById('me-test-list-body');
   if (!body) return;
-  body.innerHTML = (_meState.specs || []).map((s, i) => {
+  // Verdict list follows detection order: Messages first, then Files.
+  body.innerHTML = _detectOrderIdxs(_meState.specs || []).map(i => {
+    const s = _meState.specs[i];
     const passed = !!results[i]?.passed;
     const dot    = `<span class="me-rec-dot ${passed ? 'pass' : 'fail'}" title="${passed ? 'All recognizers passed' : 'Failed at recognizer ' + (((results[i]?.failAt) ?? 0) + 1)}"></span>`;
     const win    = i === winnerIdx ? '<span class="me-test-win">WINS</span>' : '';
@@ -19515,12 +20106,41 @@ function _meTestClear() {
   document.querySelectorAll('.me-rec-dot').forEach(d => { d.className = 'me-rec-dot'; d.title = ''; });
 }
 
+// First seg-map block of an entity's parse spec (either variant, including
+// nested when/repeat/read-while bodies). Null when the spec doesn't use one.
+function _meSpecSegMapBlock(item) {
+  const scan = spec => {
+    if (!Array.isArray(spec)) return null;
+    for (const block of spec) {
+      if (!block || typeof block !== 'object') continue;
+      // Declared map: read-bitmap with bits/value present.
+      const rb = block['read-bitmap'];
+      if (rb && typeof rb === 'object' && (rb.bits !== undefined || rb.value !== undefined)) return rb;
+      const nested = scan(block.when?.then) || scan(block.repeat?.body) || scan(block['read-while']?.body);
+      if (nested) return nested;
+    }
+    return null;
+  };
+  return scan(item?.parse_spec_binary) || scan(item?.parse_spec_ascii);
+}
+
+// Show the Test bar's SEG-MAP input only when the selected entity's parse
+// spec uses seg-map; pre-fill the placeholder with the spec's stored value.
+function _meTestSyncSegMap() {
+  const el = document.getElementById('me-test-segmap');
+  if (!el) return;
+  const blk = _meSpecSegMapBlock(_meCurItem());
+  el.style.display = blk ? '' : 'none';
+  if (blk) el.placeholder = blk.value ? `SEG-MAP (spec: ${blk.value})` : 'SEG-MAP (hex or binary)';
+}
+
 function _meRunTest() {
   const inp    = document.getElementById('me-test-input');
   const fmtSel = document.getElementById('me-test-fmt')?.value || 'auto';
   const out    = document.getElementById('me-test-out');
   const summ   = document.getElementById('me-test-summary');
   if (!inp || !out) return;
+  _meTestSyncSegMap();
 
   const text = inp.value.trim();
   if (!text) { out.innerHTML = ''; if (summ) summ.textContent = ''; return; }
@@ -19605,14 +20225,20 @@ function _meRunTest() {
     // stops at the first match (mirroring real detection), but the verdict
     // list is a diagnostic: it must show which entities WOULD pass.
     const all = _meState.specs.map(s => _fmtTestSpecs([s], bytes)[0]);
-    const winnerIdx = all.findIndex(r => r?.passed);
+    // Real detection walks Messages in list order; file specs are keyed by
+    // the wrapper filename, which pasted test input doesn't carry — so they
+    // can never win here and are excluded from the winner computation.
+    const order = _detectOrderIdxs(_meState.specs).filter(i => _meState.specs[i]?.kind !== 'file');
+    const winnerIdx = order.find(i => all[i]?.passed) ?? -1;
     detWinner = winnerIdx !== -1 && winnerIdx === _meState.selIdx;
     _meTestRenderList(all, winnerIdx);
-    if (recPassed && winnerIdx !== -1 && winnerIdx !== _meState.selIdx) {
+    if (item.kind === 'file') {
+      recHtml += `<div class="me-test-note">File detection — matches on the wrapper filename ($VOL.SUBVOL.FILE), not on pasted bytes, so it cannot win this test.</div>`;
+    } else if (recPassed && winnerIdx !== -1 && winnerIdx !== _meState.selIdx) {
       const w = _meState.specs[winnerIdx];
-      recHtml += `<div class="me-test-warn">⚠ Shadowed — “${_escHtml(w.label || w.name || '?')}” (position ${winnerIdx + 1} in the Data list) also matches and is ranked higher, so detection would pick it instead. Drag this entity above it to win.</div>`;
+      recHtml += `<div class="me-test-warn">⚠ Shadowed — “${_escHtml(w.label || w.name || '?')}” (higher in the Messages list) also matches, so detection would pick it instead. Drag this entity above it to win.</div>`;
     } else if (recPassed && winnerIdx === _meState.selIdx) {
-      recHtml += `<div class="me-test-note">✓ Would win detection — first match in Data-list order.</div>`;
+      recHtml += `<div class="me-test-note">✓ Would win detection — first match in the Messages list.</div>`;
     }
   }
   parts.push(_meTestSection('Recognition',
@@ -19622,7 +20248,8 @@ function _meRunTest() {
   // ── 2. Parse Spec execution ──────────────────────────────────────────────────
   // Run the user's parse_spec block-by-block against the input bytes.
   // Falls back to "read each binding then token-area" when parse_spec is empty.
-  const ctx = _meExecParseSpec(item, bytes);
+  const ctx = _meExecParseSpec(item, bytes,
+    { segMapOverride: document.getElementById('me-test-segmap')?.value || null });
   const fieldCount = ctx.fields.filter(f => !f.error).length;
   const errCount   = ctx.fields.filter(f =>  f.error).length;
   const fieldHtml  = ctx.fields.length
@@ -19869,10 +20496,10 @@ function _meSave() {
 
       <!-- ── MESSAGE DETECTION ─────────────────────── -->
       <div class="settings-section">
-        <div class="settings-stitle collapsed" id="detectStitle">Data Detection
-          <button class="stitle-toggle" onclick="toggleSettingsSection(document.getElementById('detectStitle'))">+</button>
+        <div class="settings-stitle" id="detectStitle">Data Detection
+          <button class="stitle-toggle" onclick="toggleSettingsSection(document.getElementById('detectStitle'))">−</button>
         </div>
-        <div class="settings-collapsible-body collapsed" style="max-height:500px">
+        <div class="settings-collapsible-body" style="max-height:500px">
           <div class="dr-spec-list" id="detectSpecsList"></div>
           <div class="settings-row" style="margin-top:8px">
             <button class="btn btn-sm settings-btn-20" style="flex:1" onclick="openMsgEditor()" title="Open the Data Editor to define byte-level recognizers and parse specs">⊞ Data Editor</button>
@@ -20215,10 +20842,17 @@ function _meSave() {
       <div class="me-sidebar" id="me-sidebar">
         <div class="me-sidebar-sect" id="me-sect-msgs">
           <div class="me-sidebar-hdr">
-            <span class="me-sidebar-title">Data</span>
+            <span class="me-sidebar-title">Messages</span>
             <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
           </div>
           <div class="me-item-list" id="me-msg-list"></div>
+        </div>
+        <div class="me-sidebar-sect" id="me-sect-files">
+          <div class="me-sidebar-hdr">
+            <span class="me-sidebar-title">Files</span>
+            <button class="me-sidebar-add" onclick="_meAddFile()">+ New</button>
+          </div>
+          <div class="me-item-list" id="me-file-list"></div>
         </div>
       </div>
 
@@ -20265,6 +20899,9 @@ function _meSave() {
               <option value="hex">hex</option>
               <option value="ascii">ascii</option>
             </select>
+            <input id="me-test-segmap" class="me-inp" style="display:none;width:210px"
+              placeholder="SEG-MAP (hex or binary)"
+              title="Ad-hoc segment map for this test — overrides the value stored in the spec's seg-map block. Hex (8 chars for 32 bits) or binary digits.">
             <button class="btn btn-primary btn-sm" onclick="_meRunTest()">&#x25B6; Run</button>
             <button class="btn btn-sm" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
           </div>

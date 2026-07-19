@@ -4596,6 +4596,25 @@ function _occursShouldSkip(def, bytes, cache) {
 // ============================================================
 // Reads fields one-by-one in definition order — no MTI or bitmap logic.
 // Handles FIXED, LLVAR, LLLVAR field types.
+// Value renderer for TYPE BINARY fields — SHARED by the legacy flat parser and
+// the parse-spec engine so both render binary fields identically. Format-aware:
+//   ASCII-class (ascii/netard-ascii/netard/fup-ascii) → printable chars, non-
+//     printable shown as [??] (bytes are unreliable in these text formats);
+//   hexascii → raw chars with [hh] for non-printable;
+//   binary-class (hex/tandem-dump/netard-hex/netard-dump/ebcdic) → big-endian
+//     integer (BigInt past 6 bytes).
+// srcB = original (pre-EBCDIC) bytes for the integer decode; dispB = the parsed
+// bytes for char display.
+function _binaryFieldValue(srcB, dispB, fmt) {
+  if (fmt === 'ascii' || fmt === 'netard-ascii' || fmt === 'netard' || fmt === 'fup-ascii')
+    return dispB.map(b => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '[??]').join('');
+  if (fmt === 'hexascii')
+    return dispB.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : `[${x.toString(16).padStart(2,'0')}]`).join('');
+  return srcB.length > 6
+    ? srcB.reduce((acc, b) => acc * 256n + BigInt(b), 0n).toString()
+    : srcB.reduce((acc, b) => acc * 256  + b,         0 ).toString();
+}
+
 function parseFlatMessage(bytes, defs, rawBytes) {
   const bToHex = b => b.map(x => x.toString(16).padStart(2, '0').toUpperCase()).join('');
   const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x)
@@ -4608,17 +4627,8 @@ function parseFlatMessage(bytes, defs, rawBytes) {
   const _fmt = S.inputFormat || '';
   const _binUnreliable = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard' || _fmt === 'fup-ascii';
 
-  // Value renderer for TYPE BINARY fields.
-  // srcB = original (unconverted) bytes for decimal; dispB = parsed bytes for char display.
-  const _binValue = (srcB, dispB) => {
-    if (_binUnreliable)
-      return dispB.map(b => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '[??]').join('');
-    if (_fmt === 'hexascii')
-      return bToStr(dispB);
-    return srcB.length > 6
-      ? srcB.reduce((acc, b) => acc * 256n + BigInt(b), 0n).toString()
-      : srcB.reduce((acc, b) => acc * 256  + b,         0 ).toString();
-  };
+  // Value renderer for TYPE BINARY fields (shared with the parse-spec engine).
+  const _binValue = (srcB, dispB) => _binaryFieldValue(srcB, dispB, _fmt);
 
   // OCCURS actual-count cache — nested-aware, keyed per (outer-context, group).
   const _occursActual = {};
@@ -6343,6 +6353,9 @@ function parseMessage(bytes, defs, rawBytes) {
   // Look up a compiled spec by its type/name (field_overrides survive _compileSpec).
   window._fmtSpecByName = name => _fmtSpecs.find(s => (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
   window._fmtFileSpecByName = name => _fmtSpecs.find(s => s.kind === 'file' && (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
+  // Label is the only unique key — several specs can share a name (e.g. the
+  // three "ISO" specs Standard/BIC/Switch). Detection winners carry the label.
+  window._fmtSpecByLabel = label => _fmtSpecs.find(s => (s.label || '') === String(label || '')) || null;
   window._migrateSpec  = _migrateSpec;
   window._fmtDetect      = _fmtDetect;
   window._fmtDetectTrace = _fmtDetectTrace;
@@ -7946,17 +7959,26 @@ function doParseNetardLog(text, opts = {}) {
           // Resolve + score each record against its (now-cached) bound DDL.
           const _preDet = _det.map(d => {
             let bound = null;
-            // FILE records parse through the parse-spec ENGINE (seg-map aware):
-            // the winning file spec's parse_spec is authoritative. Messages
-            // keep the legacy bestDDLMatch path until they are migrated.
-            const _fileSpec = d.winner?.kind === 'file' ? window._fmtFileSpecByName(d.winner.type) : null;
-            if (_fileSpec && ((_fileSpec.parse_spec_binary || []).length || (_fileSpec.parse_spec_ascii || []).length)) {
-              const r  = _meParseFileWithSpec(_fileSpec, d.dec.parseBytes);
-              const bp = (_fileSpec.ddl_bindings || []).filter(Boolean)[0] || d.bindPath || '';
+            // ── Recognized + bound + has parse_spec → parse-spec ENGINE ────────
+            // The winning spec's parse_spec drives extraction (file OR message).
+            // Its bound DDL is authoritative — we score only that binding, never
+            // the whole candidate pool. Message specs need an explicit binding;
+            // file specs resolve theirs internally (seg-map etc.).
+            const _spec = _meWinningSpec(d.winner);
+            const _hasPS   = _spec && ((_spec.parse_spec_binary || []).length || (_spec.parse_spec_ascii || []).length);
+            const _hasBind = _spec && (_spec.ddl_bindings || []).filter(Boolean).length > 0;
+            if (_spec && _hasPS && (_spec.kind === 'file' || _hasBind)) {
+              // Per-record input format (same mapping _finalizeNetard applies) so
+              // BINARY fields decode correctly; original bytes for the decode.
+              const _fmt = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[d.rec.netardFmt] || (opts.fmtDefault || 'netard');
+              const r  = _meParseFileWithSpec(_spec, d.dec.parseBytes, { format: _fmt, rawBytes: d.dec.bytes });
+              const bp = (_spec.ddl_bindings || []).filter(Boolean)[0] || d.bindPath || '';
               const parts = bp.split('/');
               bound = { ddlPath: parts.slice(0, 3).join('/') || null, defName: parts[3] || null,
-                        fields: r.fields, score: r.score };
+                        fields: r.fields, score: r.score, viaEngine: true };
             } else if (d.bindPath) {
+              // Recognized + bound, but NO parse_spec → legacy extraction of that
+              // one binding (still scores only the bind, per the resolution rules).
               const resolved = _boundDDLCache.defs[d.bindPath];
               if (resolved && resolved.defs && resolved.defs.length) {
                 const r = bestDDLMatch(d.dec.parseBytes, [resolved], d.dec.bytes);
@@ -13302,7 +13324,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.316';
+const APP_VERSION  = '1.1.2.318';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18773,6 +18795,15 @@ function _meReadOneFieldFromDef(def, ctx) {
   // REDEFINES re-reads of earlier offsets never rewind the cursor.
   ctx.cursor = hasExplicit ? Math.max(ctx.cursor, fEnd) : fEnd;
 
+  // TYPE BINARY fields render via the shared decoder so the engine matches the
+  // legacy flat parser byte-for-byte (integer for binary-class input formats,
+  // printable/[??] for ASCII-class). Uses the ORIGINAL bytes for the integer
+  // decode, exactly like legacy (matters for EBCDIC input).
+  const isBin = /\bBINARY\b/i.test(def._dataType || def.dataType || '');
+  const fmt   = ctx.format || S.inputFormat || '';
+  const srcB  = (isBin && ctx.rawBytes) ? Array.from(ctx.rawBytes.slice(dataStart, dataStart + len)) : fBytes;
+  const binUnreliable = isBin && (fmt === 'ascii' || fmt === 'netard-ascii' || fmt === 'netard' || fmt === 'fup-ascii');
+
   return {
     id: def.id,
     description: def.description,
@@ -18781,12 +18812,15 @@ function _meReadOneFieldFromDef(def, ctx) {
     maxLength: def.length,
     lenPrefix,
     valueLength: fBytes.length,
-    value: _meBytesToStr(fBytes),
+    value: isBin ? _binaryFieldValue(srcB, fBytes, fmt) : _meBytesToStr(fBytes),
     rawHex: _meBytesToHex(fBytes),
+    rawBytes: fBytes,
     startByte: fStart,
     endByte: fEnd - 1,
     isRedefines: def.isRedefines || false,
     redefTarget: def.redefTarget || null,
+    unreliable: binUnreliable || undefined,
+    maskInRaw:  binUnreliable || undefined,
   };
 }
 
@@ -20002,7 +20036,7 @@ function _meExecParseSpec(item, bytes, opts) {
   // tandem-dump, ebcdic, netard-hex, etc.) uses parse_spec_binary. When the
   // requested variant is empty, fall back to the other one so a single-variant
   // entity still works against either input class.
-  const fmt = S.inputFormat || '';
+  const fmt = opts?.format ?? S.inputFormat ?? '';
   const isAscii = (fmt === 'ascii' || fmt === 'netard-ascii' || fmt === 'netard' || fmt === 'fup-ascii');
   const asciiSpec  = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii  : [];
   const binarySpec = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary : [];
@@ -20021,6 +20055,10 @@ function _meExecParseSpec(item, bytes, opts) {
     bytes, cursor: 0, fields: [], fieldsById: {},
     tokens: null, resolvedBindings, item, parseSpecUsed,
     segMapOverride: opts?.segMapOverride ?? null,
+    // format + original (pre-EBCDIC) bytes so TYPE BINARY fields render exactly
+    // like the legacy parser (format-dependent decode; integer from raw bytes).
+    format: opts?.format ?? S.inputFormat ?? '',
+    rawBytes: opts?.rawBytes ?? null,
   };
   for (const block of effectiveSpec) _meExecBlock(block, ctx);
   return ctx;
@@ -20029,6 +20067,22 @@ function _meExecParseSpec(item, bytes, opts) {
 // Ad-hoc SEG-MAP overrides for main-flow parses, keyed by spec name.
 // Session-only — the persistent value lives in the spec's seg-map block.
 const _segMapOverrides = {};
+
+// Resolve a detection winner back to its full (uncompiled-shape) spec so the
+// pipeline can read parse_spec_binary / ddl_bindings. Matches by LABEL, which
+// is unique — winner.type (the spec name) is not, since Standard/BIC/Switch
+// all share the name "ISO".
+function _meWinningSpec(winner) {
+  if (!winner) return null;
+  if (winner.label && typeof window._fmtSpecByLabel === 'function') {
+    const s = window._fmtSpecByLabel(winner.label);
+    if (s) return s;
+  }
+  if (!winner.type) return null;
+  return winner.kind === 'file'
+    ? window._fmtFileSpecByName(winner.type)
+    : window._fmtSpecByName(winner.type);
+}
 
 // Detect a segmented-file DEFINITION inside a manually selected scope path
 // (3-part V/S/FILE or 4-part V/S/FILE/DEF). A DEF is "segmented" when at
@@ -20052,11 +20106,17 @@ function _meScopeSegmentedDef(p1Path) {
   return null;
 }
 
-// Parse a FILE record through the parse-spec engine (main flow). Adapts the
-// engine's field output to the main renderer's shape (rawBytes arrays) and
-// scores by errorless-field ratio so the bound-DDL warning threshold applies.
-function _meParseFileWithSpec(spec, bytes) {
-  const ctx = _meExecParseSpec(spec, bytes, { segMapOverride: _segMapOverrides[spec.name] ?? null });
+// Parse a record through the parse-spec engine (main flow) — file OR message
+// spec. Adapts the engine's field output to the main renderer's shape (rawBytes
+// arrays) and scores by errorless-field ratio so the bound-DDL warning threshold
+// applies. opts.format / opts.rawBytes let TYPE BINARY fields render exactly
+// like the legacy parser for the record's actual input format.
+function _meParseFileWithSpec(spec, bytes, opts) {
+  const ctx = _meExecParseSpec(spec, bytes, {
+    segMapOverride: _segMapOverrides[spec.name] ?? null,
+    format:   opts?.format,
+    rawBytes: opts?.rawBytes,
+  });
   for (const f of ctx.fields) {
     if (!f.rawBytes) f.rawBytes = f.rawHex ? f.rawHex.match(/.{2}/g).map(h => parseInt(h, 16)) : [];
   }

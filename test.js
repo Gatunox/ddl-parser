@@ -2386,28 +2386,39 @@ test('engine read-bitmap-fields honors LLVAR length prefix, matching legacy pars
   }
 });
 
-test('engine read-ddl flat walk matches legacy parseFlatMessage field-for-field', () => {
+test('engine read-ddl flat walk matches legacy parseFlatMessage — incl. TYPE BINARY across formats', () => {
   const FLAT = `DEF FLATREC.
   02 A PIC X(4).
   02 B PIC 9(2).
   02 GRP.
     03 G1 PIC X(3).
     03 G2 PIC X(2).
+  02 BIN2 TYPE BINARY 16.
+  02 BIN8 TYPE BINARY 64.
   02 C PIC X(5).
 END
 `;
   S.ddlTree = { ZZ: { S: { F: FLAT } } };
-  S.inputFormat = 'ascii';
   const defs = getDDLFromPath('ZZ/S/F/FLATREC').defs;
-  const bytes = [...'ABCD12XYZ12HELLO'].map(c => c.charCodeAt(0) & 0xFF);
-  const legacy = parseFlatMessage(bytes, defs, bytes);
+  // A(4) B(2) G1(3) G2(2) BIN2(2) BIN8(8) C(5) = 26 bytes; BIN fields carry
+  // non-printable bytes (0x00, 0xFF) so binary decode actually differs by format.
+  const bytes = [
+    ...[...'ABCD12XYZ12'].map(c=>c.charCodeAt(0)&0xFF),
+    0x00, 0xFF,                                   // BIN2
+    0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x02,      // BIN8
+    ...[...'HELLO'].map(c=>c.charCodeAt(0)&0xFF),
+  ];
   const spec = { name: 'F', ddl_bindings: ['ZZ/S/F/FLATREC'], parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] };
-  const engine = meExecParseSpec(spec, bytes).fields.filter(f => !f.error);
-  eq(engine.length, legacy.length, 'same field count');
-  for (let i = 0; i < legacy.length; i++) {
-    eq(engine[i].id, legacy[i].id, `#${i} id`);
-    eq(engine[i].startByte, legacy[i].startByte, `${legacy[i].id} offset`);
-    eq(engine[i].value ?? '', legacy[i].value ?? '', `${legacy[i].id} value`);
+  for (const fmt of ['ascii', 'netard-ascii', 'hexascii', 'netard-dump', 'hex']) {
+    S.inputFormat = fmt;
+    const legacy = parseFlatMessage(bytes, defs, bytes);
+    const engine = meExecParseSpec(spec, bytes, { format: fmt, rawBytes: bytes }).fields.filter(f => !f.error);
+    eq(engine.length, legacy.length, `[${fmt}] same field count`);
+    for (let i = 0; i < legacy.length; i++) {
+      eq(engine[i].id, legacy[i].id, `[${fmt}] #${i} id`);
+      eq(engine[i].startByte, legacy[i].startByte, `[${fmt}] ${legacy[i].id} offset`);
+      eq(engine[i].value ?? '', legacy[i].value ?? '', `[${fmt}] ${legacy[i].id} value`);
+    }
   }
 });
 

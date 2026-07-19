@@ -5996,20 +5996,41 @@ function parseMessage(bytes, defs, rawBytes) {
 
   const _DEFAULT_FMT_SPECS = [
     { name:'ISO', label:'ISO 8583 Standard', color:'#f5f910', vol:'SWITCH',
-      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'####'},{type:'min-length',value:23}] },
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'####'},{type:'min-length',value:23}],
+      ddl_bindings:['SWITCH/1987/Standard ISO'],
+      parse_spec_binary:[
+        {'read-ddl':{binding:0,from:'ISO_PFX',until:'MTI'}},
+        {'read-bitmap':{field:'BMP',encoding:'ascii-hex'}},
+        {'read-bitmap-fields':'BMP'}
+      ],
+      parse_spec_binary_source:
+`[
+  // ── Header: walk from the ISO routing prefix through the MTI (inclusive).
+  //    Standard ISO 8583:1987 — ISO_PFX(3) + MTI(4) precede the primary bitmap.
+  { "read-ddl": { "binding": 0, "from": "ISO_PFX", "until": "MTI" } },
+
+  // ── Bitmap: BMP is 16 ASCII-hex chars (= 8 bytes / 64 bits, primary).
+  //    If bit 1 is set the engine pulls a second 16-char bitmap (128 bits total).
+  { "read-bitmap": { "field": "BMP", "encoding": "ascii-hex" } },
+
+  /*  DEs: each set bit maps to the DDL field of that number (2..128), read in
+      bitmap order. LLVAR / LLLVAR DEs honor their LEN prefix automatically. */
+  { "read-bitmap-fields": "BMP" }
+]` },
     { name:'ISO', label:'ISO 8583 BIC', color:'#ffbb00', vol:'SWITCH',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'min-length',value:23}],
+      ddl_bindings:['BASE/DDL/ISOPSEM/ISOPSEM','BASE/DDL/ISOSSEM/ISOSSEM'],
       parse_spec_binary:[
-        {'read-ddl':{binding:0,from:'START-OF-TEXT',until:'TYP'}},
+        {'read-ddl':{binding:0,from:'STRT-OF-TXT',until:'TYP'}},
         {'read-bitmap':{field:'PRI-BIT-MAP',encoding:'ascii-hex'}},
         {'read-bitmap-fields':'PRI-BIT-MAP'}
       ],
       parse_spec_binary_source:
 `[
-  // ── Header (binding 0): walk DDL fields from START-OF-TEXT up to and
+  // ── Header (binding 0): walk DDL fields from STRT-OF-TXT up to and
   //    including TYP (the MTI). Nothing in this range is a DE — these are
   //    the fixed header positions that precede the bitmap.
-  { "read-ddl": { "binding": 0, "from": "START-OF-TEXT", "until": "TYP" } },
+  { "read-ddl": { "binding": 0, "from": "STRT-OF-TXT", "until": "TYP" } },
 
   // ── Bitmap: read PRI-BIT-MAP as 16 ASCII-hex chars (= 64 bits / primary).
   //    If bit 1 is set the engine automatically pulls another 16 ASCII-hex
@@ -6156,7 +6177,27 @@ function parseMessage(bytes, defs, rawBytes) {
     { name:'B24', label:'Base24 POS Generic', color:'#f95ddc', vol:'POS',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'99'},{type:'literal',offset:2,encoding:'ascii',value:['06','07']},{type:'literal',offset:4,encoding:'ascii',value:'02'}] },
     { name:'NDC', label:'NDC', color:'#ff0000', vol:'ATM',
-      recognizers:[{type:'regex',pattern:'^(11|12|22|4)\\x1c'}] }
+      recognizers:[{type:'regex',pattern:'^(11|12|22|4)\\x1c'}] },
+    // Base24 segmented file (IDF) template. Ships WITHOUT a DDL binding — the
+    // user binds their segmented-file DEFINITION and adjusts the filename
+    // pattern; until then the missing-binding warning guides them.
+    { name:'FILE', label:'Segmented File', color:'#888888', vol:'', kind:'file',
+      recognizers:[{type:'filename',pattern:'*'}],
+      parse_spec_binary:[
+        {'read-bitmap':{field:'FIID-SEG-MAP',encoding:'ascii-hex',bits:32,value:'E0100000'}},
+        {'read-segment-fields':'FIID-SEG-MAP'}
+      ],
+      parse_spec_binary_source:
+`[
+  // ── Segment map: the value lives on the institution's IDF (FIID-SEG-MAP,
+  //    TYPE BITMAP 32), NOT in the record — set "value" here or type one in the
+  //    SEG-MAP input at parse time. Declared mode (bits/value) reads no payload.
+  { "read-bitmap": { "field": "FIID-SEG-MAP", "encoding": "ascii-hex", "bits": 32, "value": "E0100000" } },
+
+  /*  Segments: walk the bound DDL's top-level SEGn fields and read only the
+      segments whose bit is set, in declaration order (absent ones consume 0). */
+  { "read-segment-fields": "FIID-SEG-MAP" }
+]` }
   ];
 
   // ── State & storage ────────────────────────────────────────────────────────
@@ -13324,7 +13365,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.319';
+const APP_VERSION  = '1.1.2.320';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

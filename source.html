@@ -6047,7 +6047,7 @@ function parseMessage(bytes, defs, rawBytes) {
       recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'uint16',offset:4,endian:'be',min:0,max:65535},{type:'uint16',offset:6,endian:'be',min:0,max:65535},{type:'uint16',offset:8,endian:'be',min:0,max:65535},{type:'uint16',offset:10,endian:'be',min:0,max:65535},{type:'min-length',value:23}],
       parse_spec_binary:[
         {'read':'TYP'},
-        {'read-bitmap':{field:'PBIT-MAP',encoding:'ascii-hex'}},
+        {'read-bitmap':{field:'PBIT-MAP',encoding:'binary'}},
         {'read-bitmap-fields':'PBIT-MAP'}
       ],
       parse_spec_binary_source:
@@ -6055,10 +6055,11 @@ function parseMessage(bytes, defs, rawBytes) {
   // ── Header Read Message Type
   { "read": "TYP" },
 
-  // ── Bitmap: read PBIT-MAP as 16 ASCII-hex chars (= 64 bits / primary).
-  //    If bit 1 is set the engine automatically pulls another 16 ASCII-hex
-  //    chars for the secondary bitmap, giving 128 bits total.
-  { "read-bitmap": { "field": "PBIT-MAP", "encoding": "ascii-hex" } },
+  // ── Bitmap: read PBIT-MAP as 8 raw bytes (= 64 bits / primary). Switch
+  //    messages are EBCDIC with a raw binary bitmap (PIC X(8)), not ASCII hex.
+  //    If bit 1 is set the engine automatically pulls another 8 raw bytes for
+  //    the secondary bitmap, giving 128 bits total.
+  { "read-bitmap": { "field": "PBIT-MAP", "encoding": "binary" } },
 
   /*  DEs: walk the bitmap. Each set bit maps to a DDL field via the de_map
       built from binding 0 + binding 1 in declaration order (anchors in the
@@ -13365,7 +13366,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.320';
+const APP_VERSION  = '1.1.2.321';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19522,13 +19523,50 @@ function _meExecReadBitmap(attrs, ctx) {
   }
   const bitSet = parseBitmap(allRaw);
   bitSet.delete(1);  // bit 1 is the secondary-present indicator, not a DE
-  const fBytes = Array.from(ctx.bytes.slice(start, start + totalBytes));
-  ctx.cursor = start + totalBytes;
-  const f = _meMakeSyntheticField(attrs.field, fBytes, start, start + totalBytes - 1, ctx,
+
+  // Primary bitmap row — exactly baseChunk bytes, so Parse Results honors the
+  // DDL's declared PIC width (X(8) raw binary / X(16) ascii-hex) instead of a
+  // merged double-width row. It carries the FULL bitset (primary + secondary
+  // bits) so read-bitmap-fields still walks every present DE.
+  const priBytes = Array.from(ctx.bytes.slice(start, start + baseChunk));
+  const pf = _meMakeSyntheticField(attrs.field, priBytes, start, start + baseChunk - 1, ctx,
     { description: `bitmap (${bitSet.size} DEs set)` });
-  f.bitSet = bitSet;
-  ctx.fields.push(f);
-  ctx.fieldsById[attrs.field] = f;
+  pf.bitSet = bitSet;
+  ctx.fields.push(pf);
+  ctx.fieldsById[attrs.field] = pf;
+
+  // Secondary bitmap, when present, is its OWN row (never merged) — named after
+  // the DDL field declared right after the primary (e.g. SBIT-MAP), preserving
+  // the twin PIC X(8) split the DDL declares.
+  if (hasSecondary) {
+    const secStart = start + baseChunk;
+    const secName  = _meSecondaryBitmapName(ctx, attrs.field, baseChunk) || `${attrs.field}-2`;
+    const secBytes = Array.from(ctx.bytes.slice(secStart, secStart + baseChunk));
+    const sf = _meMakeSyntheticField(secName, secBytes, secStart, secStart + baseChunk - 1, ctx,
+      { description: 'secondary bitmap' });
+    ctx.fields.push(sf);
+    ctx.fieldsById[secName] = sf;
+  }
+  ctx.cursor = start + totalBytes;
+}
+
+// The secondary bitmap's DDL field is the top-level field declared right after
+// the primary bitmap field (ISO layout: TYP, PBIT-MAP, SBIT-MAP, DEs…). Only
+// borrow its name when it actually looks like a bitmap (bitmap-ish name or the
+// same width) — otherwise the row keeps a generic "<primary>-2" label so a real
+// DE is never mislabelled as the secondary bitmap.
+function _meSecondaryBitmapName(ctx, primaryId, baseChunk) {
+  try {
+    const defs = _meCollectBindingDefs(ctx.resolvedBindings);
+    const i = defs.findIndex(d => d.id === primaryId);
+    if (i < 0) return null;
+    for (let j = i + 1; j < defs.length; j++) {
+      const id = String(defs[j].id);
+      if (id.includes('.')) continue;                       // skip sub-fields
+      return (/bit.?map|bmp/i.test(id) || defs[j].length === baseChunk) ? id : null;
+    }
+  } catch (_) {}
+  return null;
 }
 
 // ── Block: bitmap-fields ────────────────────────────────────────────────────

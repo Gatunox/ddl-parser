@@ -6249,6 +6249,36 @@ function parseMessage(bytes, defs, rawBytes) {
     return { specs: JSON.parse(JSON.stringify(_DEFAULT_FMT_SPECS)) };
   }
 
+  // One-time merge (run at app startup): overlay any built-in default the saved
+  // set doesn't already have onto the user's saved specs — so you get BOTH
+  // (saved customizations win on conflicts, new defaults appear). Tracked by
+  // unique label in up_format_default_seen so a default the user deleted is not
+  // resurrected on later runs. No-op (and does NOT touch storage) when there are
+  // no saved specs yet — a fresh install already gets the full defaults.
+  function _fmtMergeNewDefaults() {
+    let raw;
+    try { raw = localStorage.getItem('up_format_specs'); } catch(_) { return; }
+    if (raw === null) return;
+    let data;
+    try { data = JSON.parse(raw); } catch(_) { return; }
+    if (!data || !Array.isArray(data.specs)) return;
+    let seen;
+    try { seen = JSON.parse(localStorage.getItem('up_format_default_seen')); } catch(_) {}
+    seen = new Set(Array.isArray(seen) ? seen : []);
+    const have = new Set(data.specs.map(s => s.label || s.name));
+    let added = false;
+    for (const def of _DEFAULT_FMT_SPECS) {
+      const label = def.label || def.name;
+      if (!have.has(label) && !seen.has(label)) {
+        data.specs.push(JSON.parse(JSON.stringify(def)));
+        added = true;
+      }
+      seen.add(label);
+    }
+    try { localStorage.setItem('up_format_default_seen', JSON.stringify([...seen])); } catch(_) {}
+    if (added) { try { localStorage.setItem('up_format_specs', JSON.stringify(data)); } catch(_) {} }
+  }
+
   // Parse-spec block migration (idempotent). Renames the old block names to
   // the canonical read-* forms and unifies the wire hex encoding name:
   //   bitmap-fields   → read-bitmap-fields
@@ -6418,6 +6448,7 @@ function parseMessage(bytes, defs, rawBytes) {
   window._fmtLoad      = _fmtLoad;
   window._fmtSave      = _fmtSave;
   window._fmtGetData   = _fmtGetData;
+  window._fmtMergeNewDefaults = _fmtMergeNewDefaults;
   // Look up a compiled spec by its type/name (field_overrides survive _compileSpec).
   window._fmtSpecByName = name => _fmtSpecs.find(s => (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
   window._fmtFileSpecByName = name => _fmtSpecs.find(s => s.kind === 'file' && (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
@@ -13400,7 +13431,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.322';
+const APP_VERSION  = '1.1.2.323';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14804,6 +14835,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tutSkip')?.addEventListener('click', closeTutorial);
 
   _openAppKV().then(() => {
+    _fmtMergeNewDefaults();   // one-time: overlay any missing built-in defaults onto saved specs
     _fmtLoad();
     _loadDetectRules();
     loadPrefs();

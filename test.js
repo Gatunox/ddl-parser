@@ -2100,6 +2100,31 @@ test('message specs always rank first; file specs are only consulted for records
   domEl._fmtLoad();
 });
 
+test('startup merge overlays missing built-in defaults, is idempotent, and never resurrects a deleted default', () => {
+  storage.removeItem('up_format_default_seen');
+  storage.setItem('up_format_specs', JSON.stringify({ specs: [
+    { name: 'CUST', label: 'My Custom', recognizers: [] },
+  ] }));
+  domEl._fmtMergeNewDefaults();
+  let after = JSON.parse(storage.getItem('up_format_specs')).specs.map(s => s.label);
+  eq(after.includes('My Custom'), true, 'saved custom entity kept');
+  eq(after.includes('ISO 8583 Switch'), true, 'a missing built-in default is merged in');
+  eq(after.includes('Segmented File'), true, 'Segmented File is merged in');
+  const count1 = JSON.parse(storage.getItem('up_format_specs')).specs.length;
+  // Idempotent: a second run adds nothing.
+  domEl._fmtMergeNewDefaults();
+  eq(JSON.parse(storage.getItem('up_format_specs')).specs.length, count1, 'second run is a no-op');
+  // Delete a merged default and re-run: the seen marker keeps it deleted.
+  const trimmed = { specs: JSON.parse(storage.getItem('up_format_specs')).specs.filter(s => s.label !== 'NDC') };
+  storage.setItem('up_format_specs', JSON.stringify(trimmed));
+  domEl._fmtMergeNewDefaults();
+  eq(JSON.parse(storage.getItem('up_format_specs')).specs.some(s => s.label === 'NDC'), false,
+    'a deleted default is not resurrected');
+  storage.removeItem('up_format_specs');
+  storage.removeItem('up_format_default_seen');
+  domEl._fmtLoad();
+});
+
 test('a file spec can refine with extra identifiers, but the filename recognizer is mandatory', () => {
   const bytes = s => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; };
   domEl._fmtSave([

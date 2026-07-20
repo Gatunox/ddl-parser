@@ -13460,7 +13460,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.325';
+const APP_VERSION  = '1.1.2.326';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20422,15 +20422,19 @@ function _meRunTest() {
   const _FMT_MAP = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' };
   let bytes, rawBytes, parseBytes, inputFmt, engineFmt, msgEnc;
   try {
-    if (fmtSel === 'auto') {
-      const recs = parseNetardLog(text);
-      if (recs && recs.length && recs[0].rawMsg && recs[0].rawMsg.length) {
-        rawBytes  = Array.from(recs[0].rawMsg, c => c.charCodeAt(0) & 0xFF);
-        inputFmt  = recs[0].netardFmt || 'hex';
-        engineFmt = _FMT_MAP[inputFmt] || 'netard';
-      }
-    }
-    if (!rawBytes) {                       // manual format, or nothing NETARD-shaped
+    // A formatted NETARD record (a SOURCE/DEST wrapper, or an H-/hexascii block)
+    // is stripped + decoded by parseNetardLog for BOTH auto and manual — a
+    // manual format only overrides the label/engine format, it never re-adds the
+    // wrapper. Only bare stripped input (no wrapper, no formatted block) falls
+    // through to extractBytes, where the manual/detected format drives decoding.
+    const recs = parseNetardLog(text);
+    const rec  = (recs && recs.length && recs[0].rawMsg && recs[0].rawMsg.length
+                  && (recs[0].source || recs[0].dest || recs[0].netardFmt)) ? recs[0] : null;
+    if (rec) {
+      rawBytes  = Array.from(rec.rawMsg, c => c.charCodeAt(0) & 0xFF);
+      inputFmt  = fmtSel === 'auto' ? (rec.netardFmt || 'standard') : fmtSel;
+      engineFmt = _FMT_MAP[inputFmt] || 'netard';
+    } else {
       inputFmt  = fmtSel === 'auto' ? detectFormat(text) : fmtSel;
       rawBytes  = extractBytes(text, inputFmt);
       engineFmt = _FMT_MAP[inputFmt] || inputFmt;

@@ -1679,6 +1679,14 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
 .me-vlg-len{height:16px;padding:0 7px;font-size:9px;font-family:var(--mono);border:2px solid var(--border);border-radius:8px;background:transparent;color:var(--text-very-dim,var(--text-dim));cursor:pointer;letter-spacing:.04em;}
 .me-vlg-len:hover{color:var(--accent);border-color:var(--accent);}
 .me-vlg-len.on{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
+/* Parse-spec variant toggles (Binary / ASCII) — patterned after .me-vlg-len.
+   Empty + unselected = dim; has-content (in use) = accent text; selected = accent border+bg. */
+.me-ps-variants{display:inline-flex;gap:6px;}
+.me-ps-variant-tgl{height:24px;padding:0 12px;font-size:11px;font-family:var(--mono);border:2px solid var(--border);border-radius:8px;background:transparent;color:var(--text-very-dim,var(--text-dim));cursor:pointer;letter-spacing:.04em;white-space:nowrap;}
+.me-ps-variant-tgl:hover{color:var(--accent);border-color:var(--accent);}
+.me-ps-variant-tgl.in-use{color:var(--accent);}
+.me-ps-variant-tgl.on{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
+.me-ps-variant-tgl .me-ps-vtgl-n{opacity:0.7;font-weight:400;}
 /* Field Map column visibility (Columns chooser) */
 .me-fm-hide-num .me-fm-num,.me-fm-hide-num .me-fm-th-num{display:none;}
 .me-fm-hide-off .me-fm-off,.me-fm-hide-off .me-fm-th-off{display:none;}
@@ -6000,7 +6008,7 @@ function parseMessage(bytes, defs, rawBytes) {
       ddl_bindings:['SWITCH/1987/Standard ISO'],
       parse_spec_binary:[
         {'read-ddl':{binding:0,from:'ISO_PFX',until:'MTI'}},
-        {'read-bitmap':{field:'BMP',encoding:'ascii-hex'}},
+        {'read-bitmap':{field:'BMP',encoding:'hex'}},
         {'read-bitmap-fields':'BMP'}
       ],
       parse_spec_binary_source:
@@ -6009,9 +6017,10 @@ function parseMessage(bytes, defs, rawBytes) {
   //    Standard ISO 8583:1987 — ISO_PFX(3) + MTI(4) precede the primary bitmap.
   { "read-ddl": { "binding": 0, "from": "ISO_PFX", "until": "MTI" } },
 
-  // ── Bitmap: BMP is 16 ASCII-hex chars (= 8 bytes / 64 bits, primary).
-  //    If bit 1 is set the engine pulls a second 16-char bitmap (128 bits total).
-  { "read-bitmap": { "field": "BMP", "encoding": "ascii-hex" } },
+  // ── Bitmap: BMP is 16 hex chars (= 8 bytes / 64 bits, primary). "hex" means
+  //    ASCII or EBCDIC hex, resolved from the message's recognizer encoding. If
+  //    bit 1 is set the engine pulls a second 16-char bitmap (128 bits total).
+  { "read-bitmap": { "field": "BMP", "encoding": "hex" } },
 
   /*  DEs: each set bit maps to the DDL field of that number (2..128), read in
       bitmap order. LLVAR / LLLVAR DEs honor their LEN prefix automatically. */
@@ -6022,7 +6031,7 @@ function parseMessage(bytes, defs, rawBytes) {
       ddl_bindings:['BASE/DDL/ISOPSEM/ISOPSEM','BASE/DDL/ISOSSEM/ISOSSEM'],
       parse_spec_binary:[
         {'read-ddl':{binding:0,from:'STRT-OF-TXT',until:'TYP'}},
-        {'read-bitmap':{field:'PRI-BIT-MAP',encoding:'ascii-hex'}},
+        {'read-bitmap':{field:'PRI-BIT-MAP',encoding:'hex'}},
         {'read-bitmap-fields':'PRI-BIT-MAP'}
       ],
       parse_spec_binary_source:
@@ -6032,10 +6041,11 @@ function parseMessage(bytes, defs, rawBytes) {
   //    the fixed header positions that precede the bitmap.
   { "read-ddl": { "binding": 0, "from": "STRT-OF-TXT", "until": "TYP" } },
 
-  // ── Bitmap: read PRI-BIT-MAP as 16 ASCII-hex chars (= 64 bits / primary).
-  //    If bit 1 is set the engine automatically pulls another 16 ASCII-hex
+  // ── Bitmap: read PRI-BIT-MAP as 16 hex chars (= 64 bits / primary). "hex"
+  //    means ASCII or EBCDIC hex, resolved from the message's recognizer
+  //    encoding. If bit 1 is set the engine automatically pulls another 16 hex
   //    chars for the secondary bitmap, giving 128 bits total.
-  { "read-bitmap": { "field": "PRI-BIT-MAP", "encoding": "ascii-hex" } },
+  { "read-bitmap": { "field": "PRI-BIT-MAP", "encoding": "hex" } },
 
   /*  DEs: walk the bitmap. Each set bit maps to a DDL field via the de_map
       built from binding 0 + binding 1 in declaration order (anchors in the
@@ -6244,7 +6254,7 @@ function parseMessage(bytes, defs, rawBytes) {
   //   bitmap-fields   → read-bitmap-fields
   //   segment-fields  → read-segment-fields
   //   seg-map         → read-bitmap   (declared mode: bits/value present)
-  //   encoding "hex"  → "ascii-hex"   (canonical hex-digit name, both modes)
+  //   wire encoding "ascii-hex" → "hex"  (canonical; declared-mode "hex" → "ascii-hex")
   //   declared encoding "binary" → "ascii-bits"  (0/1 text; wire "binary"
   //                   = raw bytes and is left untouched)
   // Applied to both the parsed arrays and, for editor display, the JSONC
@@ -6266,8 +6276,15 @@ function parseMessage(bytes, defs, rawBytes) {
     }
     if (nk === 'read-bitmap' && attrs && typeof attrs === 'object') {
       const declared = attrs.bits !== undefined || attrs.value !== undefined;
-      if (attrs.encoding === 'hex') attrs = { ...attrs, encoding: 'ascii-hex' };
-      else if (declared && attrs.encoding === 'binary') attrs = { ...attrs, encoding: 'ascii-bits' };
+      if (declared) {
+        // Declared-map value encoding — canonical: ascii-hex / ascii-bits.
+        if (attrs.encoding === 'hex') attrs = { ...attrs, encoding: 'ascii-hex' };
+        else if (attrs.encoding === 'binary') attrs = { ...attrs, encoding: 'ascii-bits' };
+      } else if (attrs.encoding === 'ascii-hex') {
+        // Wire mode — canonical is "hex" (ASCII/EBCDIC resolved from the
+        // winning recognizer's encoding, not baked into the spec).
+        attrs = { ...attrs, encoding: 'hex' };
+      }
     }
     if (nk !== k || attrs !== block[k]) { delete block[k]; block[nk] = attrs; }
     // Recurse into nested bodies (when.then / repeat.body / read-while.body).
@@ -6283,12 +6300,11 @@ function parseMessage(bytes, defs, rawBytes) {
     return src
       .replace(/"bitmap-fields"/g,  '"read-bitmap-fields"')
       .replace(/"segment-fields"/g, '"read-segment-fields"')
-      .replace(/"seg-map"/g,        '"read-bitmap"')
-      // encoding "hex" → "ascii-hex" (unambiguous — display overrides use the
-      // "display" key, this only rewrites the encoding value token). Declared
-      // "binary" isn't rewritten in source: it can't be told apart from wire
-      // raw-bytes "binary" by text, and the parsed array is authoritative.
-      .replace(/("encoding"\s*:\s*)"hex"/g, '$1"ascii-hex"');
+      .replace(/"seg-map"/g,        '"read-bitmap"');
+      // Encoding value tokens aren't rewritten in source: wire-mode canonical is
+      // "hex", declared-mode is "ascii-hex"/"ascii-bits", and the two can't be
+      // told apart from the text alone. The parsed array (migrated by
+      // _migratePsBlock, which knows the mode) is authoritative.
   }
 
   // Schema migration: rename parse_spec → parse_spec_binary so the schema can
@@ -6329,6 +6345,16 @@ function parseMessage(bytes, defs, rawBytes) {
 
   // ── Detection ──────────────────────────────────────────────────────────────
 
+  // Resolve a spec's character encoding (ascii|ebcdic) from its recognizers —
+  // the MTI recognizer's encoding wins; else the first recognizer that declares
+  // one; else 'ascii'. Single source of truth for how digit / text / hex fields
+  // decode, so encoding never needs a separate parse_spec.
+  function _specEncoding(spec) {
+    const recs = (spec && spec.recognizers) || [];
+    const r = recs.find(x => x.type === 'mti' && x.encoding) || recs.find(x => x.encoding);
+    return (r && r.encoding === 'ebcdic') ? 'ebcdic' : 'ascii';
+  }
+
   function _fmtDetect(bytes, ctx) {
     for (const spec of _fmtSpecs) {
       // File specs are keyed by wrapper filename — a record without one
@@ -6337,7 +6363,7 @@ function parseMessage(bytes, defs, rawBytes) {
       // is inert — skipped outright either way.
       if (spec.kind === 'file' && (spec._fileNoName || spec._fileInert || !(ctx && ctx.filename))) continue;
       if (spec._fns.every(fn => fn(bytes, ctx))) {
-        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean) };
+        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean), encoding: _specEncoding(spec) };
       }
     }
     return null;
@@ -6367,7 +6393,7 @@ function parseMessage(bytes, defs, rawBytes) {
         passed, failAt,
       });
       if (passed) {
-        winner = { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean) };
+        winner = { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean), encoding: _specEncoding(spec) };
         break;
       }
     }
@@ -7945,8 +7971,16 @@ function doParseNetardLog(text, opts = {}) {
         if (_boundDDLCache.version !== _ddlTreeVersion) _boundDDLCache = { version: _ddlTreeVersion, defs: {} };
         const _det = records.map(rec => {
           const dec    = _netardEbcdic(rec.rawMsg);
-          const det    = detectMsgTypeTrace(dec.parseRaw, { source: rec.source, dest: rec.dest, filename: rec.filename || rec.filePath || null });
+          // Detect on the RAW bytes (rec.rawMsg's char codes are the un-decoded
+          // message bytes) so encoding-aware recognizers self-select. The
+          // winner's encoding then DETERMINISTICALLY drives the EBCDIC decode,
+          // replacing _netardEbcdic's density guess.
+          const det    = detectMsgTypeTrace(rec.rawMsg, { source: rec.source, dest: rec.dest, filename: rec.filename || rec.filePath || null });
           const winner = det.winner;
+          const _enc   = (winner && winner.encoding) || 'ascii';
+          dec.msgEncoding = _enc;
+          dec.parseBytes  = _enc === 'ebcdic' ? dec.bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : dec.bytes.slice();
+          dec.parseRaw    = dec.parseBytes.map(b => String.fromCharCode(b)).join('');
           let bindPath = null;
           for (const bp of ((winner && winner.ddl_bindings) || [])) {
             if (!bp) continue;
@@ -8386,7 +8420,7 @@ function doParseMessages() {
     const charStart   = chunkOffset >= 0 ? chunkOffset : 0;
 
     const p1DetectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex')
-      ? parseBytes.map(b => String.fromCharCode(b)).join('') : chunkStr;
+      ? bytes.map(b => String.fromCharCode(b)).join('') : chunkStr;   // detect on RAW bytes (encoding-aware recognizers)
     const p1Tokens = extractTokensFromMessage(best.fields, parseBytes, detectMsgType(p1DetectStr).type, best.ddlPath);
     S.messages      = [{ bytes: parseBytes, raw: chunk.text || chunk, timestamp: chunk.timestamp || null,
       fields: best.fields, ddlPath: best.ddlPath, defName: S.scope.defName || null, byteCharMap,
@@ -8457,7 +8491,7 @@ function doParseMessages() {
                 if (bytes.length > 0 && (_f09/bytes.length > 0.30 || _mtiEbcdic)) parseBytes = bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
               }
               const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic' || S.inputFormat === 'hex')
-                ? parseBytes.map(b => String.fromCharCode(b)).join('') : chunkStr;
+                ? bytes.map(b => String.fromCharCode(b)).join('') : chunkStr;   // RAW bytes
               const msgType = detectMsgType(detectStr);
               if (!msgType.vol) continue;
               // DDLMM pre-filter removed — Data Detection supersedes it.
@@ -8504,7 +8538,7 @@ function doParseMessages() {
 
             // For hex-based formats the raw text is not the message — type patterns must match decoded bytes
             const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic' || S.inputFormat === 'hex')
-              ? parseBytes.map(b => String.fromCharCode(b)).join('')
+              ? bytes.map(b => String.fromCharCode(b)).join('')   // RAW bytes
               : chunkStr;
             let msgType = detectMsgType(detectStr);
 
@@ -13366,7 +13400,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.321';
+const APP_VERSION  = '1.1.2.322';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15248,14 +15282,14 @@ function _meHtmlParseSpec(item) {
   // at mount time — see _mePsMountCM. No textarea content is emitted here.
   const binCount = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary.length : 0;
   const ascCount = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii.length  : 0;
-  const binLabel = `Default — Binary Input  (${binCount} Block${binCount !== 1 ? 's' : ''})`;
-  const ascLabel = `Optional — ASCII Input  (${ascCount} Block${ascCount !== 1 ? 's' : ''})`;
+  const binCls = variant === 'binary' ? 'on' : (binCount > 0 ? 'in-use' : '');
+  const ascCls = variant === 'ascii'  ? 'on' : (ascCount > 0 ? 'in-use' : '');
   return `<div class="me-ps-wrap">
   <div class="me-ps-toolbar">
-    <select class="me-inp" id="me-ps-variant" style="min-width:300px" onchange="_mePsSwitchVariant(this.value)" title="Which parse_spec variant to edit. Default — Binary Input is used for hex / tandem-dump / ebcdic / netard-hex / etc. Optional — ASCII Input is used for ASCII-class input (ascii, netard-ascii, netard, fup-ascii); when empty it falls back to the Binary spec.">
-      <option value="binary" ${variant === 'binary' ? 'selected' : ''}>${binLabel}</option>
-      <option value="ascii"  ${variant === 'ascii'  ? 'selected' : ''}>${ascLabel}</option>
-    </select>
+    <div class="me-ps-variants" id="me-ps-variants">
+      <button class="me-ps-variant-tgl ${binCls}" data-variant="binary" onclick="_mePsSwitchVariant('binary')" title="Binary Input — the default variant; used for hex / tandem-dump / ebcdic / netard-hex / etc.">Binary <span class="me-ps-vtgl-n">(${binCount})</span></button>
+      <button class="me-ps-variant-tgl ${ascCls}" data-variant="ascii" onclick="_mePsSwitchVariant('ascii')" title="ASCII Input — used for ASCII-class input (ascii, netard-ascii, netard, fup-ascii); when empty it falls back to the Binary spec.">ASCII <span class="me-ps-vtgl-n">(${ascCount})</span></button>
+    </div>
     <button class="btn btn-sm" onclick="_mePsFmt()" title="Re-indent JSONC, preserving // and /* */ comments and trailing commas">Format</button>
     <button class="btn btn-sm" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
@@ -15275,19 +15309,28 @@ function _mePsSwitchVariant(v) {
   // Re-mount the CM editor with the new variant's content; faster than a
   // full panel re-render and keeps a clean undo history per variant.
   const item = _meCurItem();
-  if (item) _mePsMountCM(item);
+  if (item) { _mePsMountCM(item); _mePsRefreshVariantLabels(item); }
 }
 
 // Refresh just the variant-dropdown option labels with the current block
 // counts — runs after Save so the counts reflect what was committed without
 // re-rendering the whole panel (preserves the user's textarea cursor).
 function _mePsRefreshVariantLabels(item) {
-  const dd = document.getElementById('me-ps-variant');
-  if (!dd || !item) return;
-  const binCount = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary.length : 0;
-  const ascCount = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii.length  : 0;
-  if (dd.options[0]) dd.options[0].text = `Default — Binary Input  (${binCount} Block${binCount !== 1 ? 's' : ''})`;
-  if (dd.options[1]) dd.options[1].text = `Optional — ASCII Input  (${ascCount} Block${ascCount !== 1 ? 's' : ''})`;
+  const wrap = document.getElementById('me-ps-variants');
+  if (!wrap || !item) return;
+  const variant = _mePsActiveVariant();
+  const counts = {
+    binary: Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary.length : 0,
+    ascii:  Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii.length  : 0,
+  };
+  wrap.querySelectorAll('.me-ps-variant-tgl').forEach(btn => {
+    const v = btn.dataset.variant;
+    const n = counts[v] ?? 0;
+    btn.classList.toggle('on', v === variant);
+    btn.classList.toggle('in-use', n > 0 && v !== variant);
+    const nEl = btn.querySelector('.me-ps-vtgl-n');
+    if (nEl) nEl.textContent = `(${n})`;
+  });
 }
 
 function _mePsToggleHelp() {
@@ -15422,18 +15465,18 @@ const _PS_HELP = {
     desc: 'Establishes a bitmap for a following read-bitmap-fields or read-segment-fields block. Two modes, chosen by the attributes: <b>wire mode</b> (no bits/value) reads 8 bytes (primary) or 16 bytes (primary + secondary) from the record at the cursor — the field must be declared in the DDL with the appropriate length. <b>Declared mode</b> (bits and/or value present) consumes NO payload bytes: the map lives outside the record (e.g. a Base24 FIID-SEG-MAP on the institution\'s IDF, TYPE BITMAP 32) and its value comes from this block or from the ad-hoc SEG-MAP input at parse time, which overrides it. Declared mode emits a synthetic zero-byte field listing the present SEG numbers.',
     useWhen: [
       'Wire mode — you\'re parsing an <b>ISO 8583</b> (or similar bitmap-based) message and a <code>read-bitmap-fields</code> block follows.',
-      'Wire mode — you know the encoding: <b>binary</b> (8 raw bytes) for EBCDIC/binary wire, or <b>ascii-hex</b> (16 hex chars) for ISO ASCII wire.',
+      'Wire mode — the bitmap is either <b>binary</b> (8 raw bytes) or <b>hex</b> (16 hex chars). Whether hex chars are ASCII or EBCDIC is resolved from the message\'s recognizer encoding, so you never bake that into the spec.',
       'Declared mode — you\'re parsing a <b>Base24 segmented file</b>: the record only holds the segments the institution configured, and the map is on its IDF, not in the payload. A <code>read-segment-fields</code> block follows.',
     ],
     attrs: [
       ['field',    'string', true, 'Wire mode: DDL field ID for the bitmap. Declared mode: id for the map — names the synthetic result row and is what read-segment-fields references (e.g. "FIID-SEG-MAP")'],
-      ['encoding', 'string', false, 'How the bits are written. Wire mode: <b>binary</b> (raw bytes) | <b>ascii-hex</b> (16 hex chars). Declared mode: <b>ascii-hex</b> (bits/4 hex chars, e.g. "C4180000") | <b>ascii-bits</b> (a 0/1 string — spaces optional, group every 4 for readability: "1100 0100 0000 1000 0000 0000 0000 0000"). Declared mode may omit it (auto-detect by length); the ad-hoc SEG-MAP input always auto-detects.'],
+      ['encoding', 'string', false, 'How the bits are written. Wire mode: <b>binary</b> (raw bytes) | <b>hex</b> (16 hex chars — ASCII or EBCDIC per the message encoding; <code>ascii-hex</code> still accepted as a legacy alias). Declared mode: <b>ascii-hex</b> (bits/4 hex chars, e.g. "C4180000") | <b>ascii-bits</b> (a 0/1 string — spaces optional, group every 4 for readability: "1100 0100 0000 1000 0000 0000 0000 0000"). Declared mode may omit it (auto-detect by length); the ad-hoc SEG-MAP input always auto-detects.'],
       ['bits',     'number', false, 'DECLARED MODE MARKER — map width in bits (32 for TYPE BITMAP 32)'],
       ['value',    'string', false, 'DECLARED MODE — the map value in the chosen encoding: ascii-hex like "C4180000", or ascii-bits like "1100 0100 0000 1000 0000 0000 0000 0000" (spaces are ignored, group every 4 for readability). The SEG-MAP input at parse time overrides this ad-hoc.'],
       ['bit0',     '"left"|"right"', false, 'Declared mode: which end of the map is bit 0 / SEG0 — default "left" (leftmost bit)'],
     ],
     examples: [
-      ['Wire: ASCII ISO bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}}]],
+      ['Wire: hex-char ISO bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}}]],
       ['Wire: binary EBCDIC bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}}]],
       ['Declared: segmented-file map, ascii-hex (C4180000 = SEG0,1,5,11,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "encoding": "ascii-hex", "bits": 32, "value": "C4180000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
       ['Declared: ascii-bits — spaces every 4 for readability (SEG0,1,5,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "encoding": "ascii-bits", "bits": 32, "value": "1100 0100 0000 1000 0000 0000 0000 0000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
@@ -15451,7 +15494,7 @@ const _PS_HELP = {
       ['bitmap', 'string', true, 'Field ID of a preceding read-bitmap result'],
     ],
     examples: [
-      ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "ascii-hex"}}, {"read-bitmap-fields": "BITMAP"}]],
+      ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}}, {"read-bitmap-fields": "BITMAP"}]],
     ],
   },
   'read-segment-fields': {
@@ -15855,8 +15898,8 @@ function _mePsRunLint(item, parsed) {
           } else if (attrs?.field) {
             synthetic.add(attrs.field);
             bitmaps.add(attrs.field);
-            if (attrs?.encoding && !/^(binary|ascii-hex)$/i.test(String(attrs.encoding)))
-              warns.push(`[block ${n}] read-bitmap: encoding "${attrs.encoding}" — use "binary" or "ascii-hex"`);
+            if (attrs?.encoding && !/^(binary|hex|ascii-hex)$/i.test(String(attrs.encoding)))
+              warns.push(`[block ${n}] read-bitmap: encoding "${attrs.encoding}" — use "binary" or "hex"`);
           } else {
             warns.push(`[block ${n}] read-bitmap needs a "field" attribute`);
           }
@@ -19493,20 +19536,26 @@ function _meExecReadBitmap(attrs, ctx) {
     return;
   }
   const encoding  = attrs.encoding || 'binary';
-  const baseChunk = encoding === 'ascii-hex' ? 16 : 8;
+  // 'hex' (canonical) == 'ascii-hex' (legacy): the bitmap is written as hex
+  // CHARACTERS in the decoded stream (ASCII or EBCDIC hex, already normalized to
+  // ASCII by the deterministic decode). 'binary' == raw bytes, read from the
+  // PRE-decode raw bytes so the message-wide EBCDIC decode can't mangle them.
+  const isHexEnc  = encoding === 'ascii-hex' || encoding === 'hex';
+  const baseChunk = isHexEnc ? 16 : 8;
+  const src       = isHexEnc ? ctx.bytes : (ctx.rawBytes || ctx.bytes);
   const start     = ctx.cursor;
-  if (start + baseChunk > ctx.bytes.length) {
-    ctx.fields.push({ id: attrs.field, error: `Not enough bytes for bitmap (need ${baseChunk}, have ${ctx.bytes.length - start})` });
+  if (start + baseChunk > src.length) {
+    ctx.fields.push({ id: attrs.field, error: `Not enough bytes for bitmap (need ${baseChunk}, have ${src.length - start})` });
     return;
   }
   const toRawBlock = (off, n) => {
-    if (encoding === 'ascii-hex') {
+    if (isHexEnc) {
       const hex = Array.from(ctx.bytes.slice(off, off + n)).map(b => String.fromCharCode(b)).join('');
       const out = [];
       for (let i = 0; i < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16) || 0);
       return out;
     }
-    return Array.from(ctx.bytes.slice(off, off + n));
+    return Array.from(src.slice(off, off + n));
   };
   const rawPrimary  = toRawBlock(start, baseChunk);
   const hasSecondary = !!(rawPrimary[0] & 0x80);
@@ -19528,7 +19577,7 @@ function _meExecReadBitmap(attrs, ctx) {
   // DDL's declared PIC width (X(8) raw binary / X(16) ascii-hex) instead of a
   // merged double-width row. It carries the FULL bitset (primary + secondary
   // bits) so read-bitmap-fields still walks every present DE.
-  const priBytes = Array.from(ctx.bytes.slice(start, start + baseChunk));
+  const priBytes = Array.from(src.slice(start, start + baseChunk));
   const pf = _meMakeSyntheticField(attrs.field, priBytes, start, start + baseChunk - 1, ctx,
     { description: `bitmap (${bitSet.size} DEs set)` });
   pf.bitSet = bitSet;
@@ -19541,7 +19590,7 @@ function _meExecReadBitmap(attrs, ctx) {
   if (hasSecondary) {
     const secStart = start + baseChunk;
     const secName  = _meSecondaryBitmapName(ctx, attrs.field, baseChunk) || `${attrs.field}-2`;
-    const secBytes = Array.from(ctx.bytes.slice(secStart, secStart + baseChunk));
+    const secBytes = Array.from(src.slice(secStart, secStart + baseChunk));
     const sf = _meMakeSyntheticField(secName, secBytes, secStart, secStart + baseChunk - 1, ctx,
       { description: 'secondary bitmap' });
     ctx.fields.push(sf);

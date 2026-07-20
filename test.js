@@ -2284,21 +2284,25 @@ test('legacy block names + mid-session encodings are auto-migrated on load (no r
     ['read-bitmap', 'read-segment-fields'], 'seg-map → read-bitmap, segment-fields → read-segment-fields');
   eq(spec.parse_spec_binary[0]['read-bitmap'].bits, 32, 'declared-map attrs preserved');
   eq(spec.parse_spec_binary[0]['read-bitmap'].encoding, 'ascii-hex', 'declared hex → ascii-hex in array');
-  // Source text: block names rewritten and encoding "hex" → "ascii-hex"
+  // Source text: block names rewritten; wire-mode "hex" is canonical and preserved
   eq(/"seg-map"|"segment-fields"|"bitmap-fields"/.test(spec.parse_spec_binary_source), false,
     'no legacy block-name tokens remain in the source');
   eq(spec.parse_spec_binary_source.includes('"read-bitmap-fields"'), true, 'bitmap-fields → read-bitmap-fields in source');
-  eq(/"encoding"\s*:\s*"hex"/.test(spec.parse_spec_binary_source), false, 'no bare "hex" encoding left in source');
-  eq(spec.parse_spec_binary_source.includes('"encoding": "ascii-hex"'), true, 'encoding hex → ascii-hex in source');
+  eq(/"encoding"\s*:\s*"hex"/.test(spec.parse_spec_binary_source), true, 'wire-mode "hex" preserved in source (now canonical)');
   // A source seg-map with no bits/value still becomes read-bitmap in text
   eq((spec.parse_spec_binary_source.match(/"read-bitmap"/g) || []).length, 2, 'both read-bitmap and the ex-seg-map present');
-  // Declared "binary" migrates to "ascii-bits"; wire "binary" is left alone
+  // Declared "binary" migrates to "ascii-bits"; wire "binary" is left alone;
+  // wire "ascii-hex" migrates to the canonical "hex"; declared "hex" → "ascii-hex".
   const encSpec = migrateSpec({ parse_spec_binary: [
     { 'read-bitmap': { field: 'W', encoding: 'binary' } },                       // wire → stays binary
     { 'read-bitmap': { field: 'D', bits: 32, value: '1'.repeat(32), encoding: 'binary' } }, // declared → ascii-bits
+    { 'read-bitmap': { field: 'H', encoding: 'ascii-hex' } },                    // wire → hex
+    { 'read-bitmap': { field: 'DH', bits: 32, value: 'C0100000', encoding: 'hex' } }, // declared → ascii-hex
   ] });
   eq(encSpec.parse_spec_binary[0]['read-bitmap'].encoding, 'binary', 'wire binary (raw bytes) untouched');
   eq(encSpec.parse_spec_binary[1]['read-bitmap'].encoding, 'ascii-bits', 'declared binary → ascii-bits');
+  eq(encSpec.parse_spec_binary[2]['read-bitmap'].encoding, 'hex', 'wire ascii-hex → hex (canonical)');
+  eq(encSpec.parse_spec_binary[3]['read-bitmap'].encoding, 'ascii-hex', 'declared hex → ascii-hex');
   // And the migrated spec executes correctly through the canonical names only
   const ctx = meExecParseSpec(spec, segBytes('AAAABBCCCXX'));
   eq(ctx.fields.some(f => f.id === 'SEG1' && !f.error), true, 'migrated spec parses the present segments');

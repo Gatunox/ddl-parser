@@ -1687,6 +1687,10 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
 .me-ps-variant-tgl.in-use{color:var(--accent);}
 .me-ps-variant-tgl.on{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
 .me-ps-variant-tgl .me-ps-vtgl-n{opacity:0.7;font-weight:400;}
+/* Test-bar format toggles: NETARD-wrapped input disables the toggles and shows a badge */
+.me-test-fmt-badge{display:none;height:24px;line-height:20px;padding:0 10px;font-size:10px;font-family:var(--mono);font-weight:700;letter-spacing:.06em;border:2px solid #38bdf8;border-radius:8px;color:#38bdf8;background:rgba(56,189,248,.12);}
+#me-test-fmt-tgls.netard .me-ps-variant-tgl{opacity:.35;pointer-events:none;}
+#me-test-fmt-tgls.netard .me-test-fmt-badge{display:inline-flex;align-items:center;}
 /* Field Map column visibility (Columns chooser) */
 .me-fm-hide-num .me-fm-num,.me-fm-hide-num .me-fm-th-num{display:none;}
 .me-fm-hide-off .me-fm-off,.me-fm-hide-off .me-fm-th-off{display:none;}
@@ -13470,7 +13474,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.327';
+const APP_VERSION  = '1.1.2.328';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20376,6 +20380,7 @@ function _meTestClear() {
   if (summ) summ.textContent = '';
   if (_meState) _meState.recTest = null;
   document.querySelectorAll('.me-rec-dot').forEach(d => { d.className = 'me-rec-dot'; d.title = ''; });
+  _meTestUpdateFmtState();   // input cleared → re-enable format toggles
 }
 
 // First seg-map block of an entity's parse spec (either variant, including
@@ -20406,9 +20411,38 @@ function _meTestSyncSegMap() {
   if (blk) el.placeholder = blk.value ? `SEG-MAP (spec: ${blk.value})` : 'SEG-MAP (hex or binary)';
 }
 
+// Test-bar format toggle (AUTO / HEX / ASCII). A full NETARD record (a SOURCE/
+// DEST wrapper or a formatted H-/hexascii block) is stripped + auto-detected by
+// the run, so the manual toggles are disabled and a NETARD badge is shown; the
+// toggles only drive extraction of bare (stripped) input.
+function _meIsNetardWrapped(text) {
+  if (!text) return false;
+  return /^\s+(SOURCE|DEST)\b/m.test(text)
+      || /^\s{3,20}([HAEO0]-[\s\d]|[0-9A-Fa-f]{1,8}:\s)/mi.test(text);
+}
+function _meTestFmt() {
+  const wrap = document.getElementById('me-test-fmt-tgls');
+  if (!wrap || wrap.classList.contains('netard')) return 'auto';
+  return wrap.querySelector('.me-ps-variant-tgl.on')?.dataset.tf || 'auto';
+}
+function _meTestSetFmt(f) {
+  const wrap = document.getElementById('me-test-fmt-tgls');
+  if (!wrap || wrap.classList.contains('netard')) return;   // locked while NETARD
+  wrap.querySelectorAll('.me-ps-variant-tgl').forEach(b => b.classList.toggle('on', b.dataset.tf === f));
+  _meRunTest();
+}
+function _meTestUpdateFmtState() {
+  const wrap = document.getElementById('me-test-fmt-tgls');
+  if (!wrap) return;
+  const netard = _meIsNetardWrapped(document.getElementById('me-test-input')?.value || '');
+  wrap.classList.toggle('netard', netard);
+  if (netard) wrap.querySelectorAll('.me-ps-variant-tgl').forEach(b => b.classList.toggle('on', b.dataset.tf === 'auto'));
+}
+
 function _meRunTest() {
+  _meTestUpdateFmtState();
   const inp    = document.getElementById('me-test-input');
-  const fmtSel = document.getElementById('me-test-fmt')?.value || 'auto';
+  const fmtSel = _meTestFmt();
   const out    = document.getElementById('me-test-out');
   const summ   = document.getElementById('me-test-summary');
   if (!inp || !out) return;
@@ -21187,18 +21221,19 @@ function _meSave() {
         <!-- Right: input + results for the selected entity -->
         <div class="me-test-main">
           <div class="me-test-row">
-            <select id="me-test-fmt" class="me-inp" style="width:70px">
-              <option value="auto">auto</option>
-              <option value="hex">hex</option>
-              <option value="ascii">ascii</option>
-            </select>
+            <div class="me-ps-variants" id="me-test-fmt-tgls" title="Input format. Auto-detected on paste; a full NETARD record is stripped automatically (toggles disabled). For bare/stripped input, force how the bytes are read.">
+              <button class="me-ps-variant-tgl on" data-tf="auto"  onclick="_meTestSetFmt('auto')">AUTO</button>
+              <button class="me-ps-variant-tgl"    data-tf="hex"   onclick="_meTestSetFmt('hex')">HEX</button>
+              <button class="me-ps-variant-tgl"    data-tf="ascii" onclick="_meTestSetFmt('ascii')">ASCII</button>
+              <span class="me-test-fmt-badge" id="me-test-fmt-badge">NETARD</span>
+            </div>
             <input id="me-test-segmap" class="me-inp" style="display:none;width:210px"
               placeholder="SEG-MAP (hex or binary)"
               title="Ad-hoc segment map for this test — overrides the value stored in the spec's seg-map block. Hex (8 chars for 32 bits) or binary digits.">
             <button class="btn btn-primary btn-sm" onclick="_meRunTest()">&#x25B6; Run</button>
             <button class="btn btn-sm" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
           </div>
-          <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…"></textarea>
+          <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…" oninput="_meTestUpdateFmtState()"></textarea>
           <div id="me-test-out" class="me-test-out"></div>
         </div>
       </div>

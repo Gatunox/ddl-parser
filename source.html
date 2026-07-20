@@ -6477,6 +6477,7 @@ function parseMessage(bytes, defs, rawBytes) {
   window._fmtSave      = _fmtSave;
   window._fmtGetData   = _fmtGetData;
   window._fmtSyncDefaults = _fmtSyncDefaults;
+  window._specEncoding = _specEncoding;
   // Look up a compiled spec by its type/name (field_overrides survive _compileSpec).
   window._fmtSpecByName = name => _fmtSpecs.find(s => (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
   window._fmtFileSpecByName = name => _fmtSpecs.find(s => s.kind === 'file' && (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
@@ -13459,7 +13460,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.324';
+const APP_VERSION  = '1.1.2.325';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20412,23 +20413,32 @@ function _meRunTest() {
     return;
   }
 
-  // — decode input bytes — replicate the main app's parse pipeline exactly:
-  //   detectFormat() → extractBytes() → optional EBCDIC conversion
-  let bytes, inputFmt, ebcdicApplied = false;
+  // — decode input bytes — mirror the Message Input pipeline. On "auto", run the
+  //   full NETARD audit parser (SOURCE/DEST/H-/hexascii, autodetected) so users
+  //   can paste real formatted data unstripped; otherwise honor the manual
+  //   format. Character encoding (ASCII/EBCDIC) is resolved from THIS entity's
+  //   recognizer (same as the main pipeline), then applied deterministically:
+  //   the engine reads binary fields from rawBytes and text/hex from parseBytes.
+  const _FMT_MAP = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' };
+  let bytes, rawBytes, parseBytes, inputFmt, engineFmt, msgEnc;
   try {
-    inputFmt = fmtSel === 'auto' ? detectFormat(text) : fmtSel;
-    let rawBytes = extractBytes(text, inputFmt);
-    if (!rawBytes.length) throw new Error('no bytes could be extracted');
-    // EBCDIC auto-detect for hex-based formats — same heuristic as main app (line 7588)
-    if (fmtSel === 'auto' && (inputFmt === 'tandem-dump' || inputFmt === 'hex')) {
-      let _f09 = 0;
-      for (const b of rawBytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
-      if (rawBytes.length > 0 && _f09 / rawBytes.length > 0.30) {
-        rawBytes = rawBytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
-        ebcdicApplied = true;
+    if (fmtSel === 'auto') {
+      const recs = parseNetardLog(text);
+      if (recs && recs.length && recs[0].rawMsg && recs[0].rawMsg.length) {
+        rawBytes  = Array.from(recs[0].rawMsg, c => c.charCodeAt(0) & 0xFF);
+        inputFmt  = recs[0].netardFmt || 'hex';
+        engineFmt = _FMT_MAP[inputFmt] || 'netard';
       }
     }
-    bytes = rawBytes;
+    if (!rawBytes) {                       // manual format, or nothing NETARD-shaped
+      inputFmt  = fmtSel === 'auto' ? detectFormat(text) : fmtSel;
+      rawBytes  = extractBytes(text, inputFmt);
+      engineFmt = _FMT_MAP[inputFmt] || inputFmt;
+    }
+    if (!rawBytes.length) throw new Error('no bytes could be extracted');
+    msgEnc     = (typeof _specEncoding === 'function') ? _specEncoding(item) : 'ascii';
+    parseBytes = msgEnc === 'ebcdic' ? rawBytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : rawBytes.slice();
+    bytes      = rawBytes;                  // recognizers + the input dump run on RAW bytes
   } catch(e) {
     out.innerHTML = `<div class="me-test-err">Input error: ${e.message}</div>`;
     if (summ) { summ.textContent = '⚠ input error'; summ.style.color='#f85149'; }
@@ -20440,7 +20450,7 @@ function _meRunTest() {
   // ── 0. Input info ────────────────────────────────────────────────────────────
   const dumpBytes = Array.from(bytes.slice(0, 32)).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
   const dumpMore  = bytes.length > 32 ? `…+${bytes.length - 32}` : '';
-  const fmtBadge  = `${bytes.length} bytes · ${inputFmt}${ebcdicApplied ? ' (EBCDIC→ASCII)' : ''}`;
+  const fmtBadge  = `${bytes.length} bytes · ${inputFmt} · ${msgEnc}`;
   parts.push(`<div class="me-test-section"><div class="me-test-sec-hdr"><span>Input</span><span class="me-test-sec-badge" style="background:var(--bg-deep);color:var(--text-dim)">${fmtBadge}</span></div>` +
     `<div style="font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);word-break:break-all">${_escHtml(dumpBytes)}${dumpMore}</div></div>`);
 
@@ -20509,8 +20519,8 @@ function _meRunTest() {
   // ── 2. Parse Spec execution ──────────────────────────────────────────────────
   // Run the user's parse_spec block-by-block against the input bytes.
   // Falls back to "read each binding then token-area" when parse_spec is empty.
-  const ctx = _meExecParseSpec(item, bytes,
-    { segMapOverride: document.getElementById('me-test-segmap')?.value || null });
+  const ctx = _meExecParseSpec(item, parseBytes,
+    { rawBytes, format: engineFmt, segMapOverride: document.getElementById('me-test-segmap')?.value || null });
   const fieldCount = ctx.fields.filter(f => !f.error).length;
   const errCount   = ctx.fields.filter(f =>  f.error).length;
   const fieldHtml  = ctx.fields.length

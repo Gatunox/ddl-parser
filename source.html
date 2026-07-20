@@ -6249,34 +6249,58 @@ function parseMessage(bytes, defs, rawBytes) {
     return { specs: JSON.parse(JSON.stringify(_DEFAULT_FMT_SPECS)) };
   }
 
-  // One-time merge (run at app startup): overlay any built-in default the saved
-  // set doesn't already have onto the user's saved specs — so you get BOTH
-  // (saved customizations win on conflicts, new defaults appear). Tracked by
-  // unique label in up_format_default_seen so a default the user deleted is not
-  // resurrected on later runs. No-op (and does NOT touch storage) when there are
-  // no saved specs yet — a fresh install already gets the full defaults.
-  function _fmtMergeNewDefaults() {
+  // Bump whenever the built-in defaults gain fields/entities that should reach
+  // users who already have saved specs. Triggers a one-time reconcile per bump.
+  const _FMT_SYNC_VER = 1;
+
+  // One-time (per sync version) reconciliation at app startup: bring saved specs
+  // up to date with the built-in defaults without clobbering customizations —
+  // "load all defaults, apply your data on top". Steps:
+  //   1. migrate every saved spec (block renames + wire ascii-hex → hex) and PERSIST;
+  //   2. field-overlay: fill any field the default has that the saved entity
+  //      lacks (e.g. a parse_spec added in a later version) — your values win on
+  //      everything you've set;
+  //   3. add any default entity you don't have at all, unless you deleted it
+  //      (tracked in up_format_default_seen so it isn't resurrected).
+  // No-op for a fresh install (already gets the full defaults) and idempotent
+  // within a sync version.
+  function _fmtSyncDefaults() {
     let raw;
     try { raw = localStorage.getItem('up_format_specs'); } catch(_) { return; }
-    if (raw === null) return;
+    if (raw === null) return;                       // fresh install → defaults already complete
     let data;
     try { data = JSON.parse(raw); } catch(_) { return; }
     if (!data || !Array.isArray(data.specs)) return;
+    let ver = 0;
+    try { ver = +JSON.parse(localStorage.getItem('up_format_sync_ver')) || 0; } catch(_) {}
+    if (ver >= _FMT_SYNC_VER) return;               // already reconciled for this version
+
+    // 1. Migrate saved specs (array block/encoding renames + source text).
+    data.specs.forEach(_migrateSpec);
+
+    // 2. Field-overlay defaults onto matching saved entities (saved keys win).
+    const defByLabel = new Map(_DEFAULT_FMT_SPECS.map(d => [d.label || d.name, d]));
+    for (const spec of data.specs) {
+      const def = defByLabel.get(spec.label || spec.name);
+      if (!def) continue;
+      for (const k of Object.keys(def))
+        if (!(k in spec)) spec[k] = JSON.parse(JSON.stringify(def[k]));
+    }
+
+    // 3. Add missing default entities (never resurrect a deleted one).
     let seen;
     try { seen = JSON.parse(localStorage.getItem('up_format_default_seen')); } catch(_) {}
     seen = new Set(Array.isArray(seen) ? seen : []);
     const have = new Set(data.specs.map(s => s.label || s.name));
-    let added = false;
     for (const def of _DEFAULT_FMT_SPECS) {
       const label = def.label || def.name;
-      if (!have.has(label) && !seen.has(label)) {
-        data.specs.push(JSON.parse(JSON.stringify(def)));
-        added = true;
-      }
+      if (!have.has(label) && !seen.has(label)) data.specs.push(JSON.parse(JSON.stringify(def)));
       seen.add(label);
     }
+
     try { localStorage.setItem('up_format_default_seen', JSON.stringify([...seen])); } catch(_) {}
-    if (added) { try { localStorage.setItem('up_format_specs', JSON.stringify(data)); } catch(_) {} }
+    try { localStorage.setItem('up_format_specs', JSON.stringify(data)); } catch(_) {}
+    try { localStorage.setItem('up_format_sync_ver', JSON.stringify(_FMT_SYNC_VER)); } catch(_) {}
   }
 
   // Parse-spec block migration (idempotent). Renames the old block names to
@@ -6330,11 +6354,15 @@ function parseMessage(bytes, defs, rawBytes) {
     return src
       .replace(/"bitmap-fields"/g,  '"read-bitmap-fields"')
       .replace(/"segment-fields"/g, '"read-segment-fields"')
-      .replace(/"seg-map"/g,        '"read-bitmap"');
-      // Encoding value tokens aren't rewritten in source: wire-mode canonical is
-      // "hex", declared-mode is "ascii-hex"/"ascii-bits", and the two can't be
-      // told apart from the text alone. The parsed array (migrated by
-      // _migratePsBlock, which knows the mode) is authoritative.
+      .replace(/"seg-map"/g,        '"read-bitmap"')
+      // Wire-mode read-bitmap encoding "ascii-hex" → canonical "hex". Declared
+      // mode (the block carries "bits"/"value") keeps "ascii-hex"/"ascii-bits",
+      // so we scope the rewrite to each read-bitmap object body and skip any that
+      // has a bits/value marker.
+      .replace(/("read-bitmap"\s*:\s*\{)([^{}]*)(\})/g, (m, open, body, close) =>
+        /"bits"|"value"/.test(body)
+          ? m
+          : open + body.replace(/("encoding"\s*:\s*)"ascii-hex"/g, '$1"hex"') + close);
   }
 
   // Schema migration: rename parse_spec → parse_spec_binary so the schema can
@@ -6448,7 +6476,7 @@ function parseMessage(bytes, defs, rawBytes) {
   window._fmtLoad      = _fmtLoad;
   window._fmtSave      = _fmtSave;
   window._fmtGetData   = _fmtGetData;
-  window._fmtMergeNewDefaults = _fmtMergeNewDefaults;
+  window._fmtSyncDefaults = _fmtSyncDefaults;
   // Look up a compiled spec by its type/name (field_overrides survive _compileSpec).
   window._fmtSpecByName = name => _fmtSpecs.find(s => (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
   window._fmtFileSpecByName = name => _fmtSpecs.find(s => s.kind === 'file' && (s.name || '').toUpperCase() === String(name || '').toUpperCase()) || null;
@@ -13431,7 +13459,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.323';
+const APP_VERSION  = '1.1.2.324';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14835,7 +14863,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tutSkip')?.addEventListener('click', closeTutorial);
 
   _openAppKV().then(() => {
-    _fmtMergeNewDefaults();   // one-time: overlay any missing built-in defaults onto saved specs
+    _fmtSyncDefaults();   // one-time (per sync version): reconcile saved specs with built-in defaults
     _fmtLoad();
     _loadDetectRules();
     loadPrefs();

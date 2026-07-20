@@ -2100,28 +2100,38 @@ test('message specs always rank first; file specs are only consulted for records
   domEl._fmtLoad();
 });
 
-test('startup merge overlays missing built-in defaults, is idempotent, and never resurrects a deleted default', () => {
+test('startup sync: field-overlay fills missing default fields, adds missing entities, no resurrection', () => {
   storage.removeItem('up_format_default_seen');
+  storage.removeItem('up_format_sync_ver');
   storage.setItem('up_format_specs', JSON.stringify({ specs: [
     { name: 'CUST', label: 'My Custom', recognizers: [] },
+    // ISO 8583 Standard exists but WITHOUT a parse_spec (an old saved copy).
+    { name: 'ISO', label: 'ISO 8583 Standard', recognizers: [{ type: 'literal', offset: 0, encoding: 'ascii', value: 'ISO' }] },
   ] }));
-  domEl._fmtMergeNewDefaults();
-  let after = JSON.parse(storage.getItem('up_format_specs')).specs.map(s => s.label);
-  eq(after.includes('My Custom'), true, 'saved custom entity kept');
-  eq(after.includes('ISO 8583 Switch'), true, 'a missing built-in default is merged in');
-  eq(after.includes('Segmented File'), true, 'Segmented File is merged in');
-  const count1 = JSON.parse(storage.getItem('up_format_specs')).specs.length;
-  // Idempotent: a second run adds nothing.
-  domEl._fmtMergeNewDefaults();
-  eq(JSON.parse(storage.getItem('up_format_specs')).specs.length, count1, 'second run is a no-op');
-  // Delete a merged default and re-run: the seen marker keeps it deleted.
+  domEl._fmtSyncDefaults();
+  let specs = JSON.parse(storage.getItem('up_format_specs')).specs;
+  const byLabel = l => specs.find(s => s.label === l);
+  eq(!!byLabel('My Custom'), true, 'saved custom entity kept');
+  eq(!!byLabel('Segmented File'), true, 'a missing built-in default entity is added');
+  // Field-overlay: the missing parse_spec is filled from the default…
+  eq(Array.isArray(byLabel('ISO 8583 Standard').parse_spec_binary)
+     && byLabel('ISO 8583 Standard').parse_spec_binary.length > 0, true, 'missing parse_spec filled from default');
+  // …but the saved recognizers are preserved (your data wins on what you set).
+  eq(byLabel('ISO 8583 Standard').recognizers.length, 1, 'saved recognizers preserved, not overwritten');
+  const count1 = specs.length;
+  // Idempotent within the sync version.
+  domEl._fmtSyncDefaults();
+  eq(JSON.parse(storage.getItem('up_format_specs')).specs.length, count1, 'same sync version → no-op');
+  // New sync version + a deleted default: the seen marker keeps it deleted.
+  storage.removeItem('up_format_sync_ver');
   const trimmed = { specs: JSON.parse(storage.getItem('up_format_specs')).specs.filter(s => s.label !== 'NDC') };
   storage.setItem('up_format_specs', JSON.stringify(trimmed));
-  domEl._fmtMergeNewDefaults();
+  domEl._fmtSyncDefaults();
   eq(JSON.parse(storage.getItem('up_format_specs')).specs.some(s => s.label === 'NDC'), false,
     'a deleted default is not resurrected');
   storage.removeItem('up_format_specs');
   storage.removeItem('up_format_default_seen');
+  storage.removeItem('up_format_sync_ver');
   domEl._fmtLoad();
 });
 
@@ -2331,6 +2341,17 @@ test('legacy block names + mid-session encodings are auto-migrated on load (no r
   // And the migrated spec executes correctly through the canonical names only
   const ctx = meExecParseSpec(spec, segBytes('AAAABBCCCXX'));
   eq(ctx.fields.some(f => f.id === 'SEG1' && !f.error), true, 'migrated spec parses the present segments');
+});
+
+test('source migration: wire-mode read-bitmap "ascii-hex" → "hex"; declared-mode "ascii-hex" kept', () => {
+  const spec = migrateSpec({
+    parse_spec_binary_source:
+      '[ { "read-bitmap": { "field": "W", "encoding": "ascii-hex" } }, ' +
+      '{ "read-bitmap": { "field": "D", "encoding": "ascii-hex", "bits": 32, "value": "C0100000" } } ]',
+  });
+  const src = spec.parse_spec_binary_source;
+  eq(/"field": "W", "encoding": "hex"/.test(src), true, 'wire ascii-hex → hex in source');
+  eq(/"field": "D", "encoding": "ascii-hex"/.test(src), true, 'declared-mode ascii-hex kept in source');
 });
 
 test('a stray legacy block name is NOT executed (aliases removed)', () => {

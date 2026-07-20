@@ -6958,6 +6958,25 @@ function _netardTypeLabel(code) {
   return NETARD_TYPE_MAP[code] || '';
 }
 
+// Auto-detect the NETARD ruler column (total line width incl. left margin) from
+// input text: the longest non-header, non-blank content line. For netard sub-
+// formats (hexascii) a trailing "[ascii]" column marks the data end. parseNetardLog
+// uses this width to clip/pad each standard-format data line — without it the
+// width defaults to 1 and every line collapses to its first character. Shared by
+// the Main panel's input handler and the Data Editor's Test bar.
+function _detectNetardRuler(text, isSubFmt) {
+  const _hdrRe = /^\s{0,6}\d+\s+[0-9A-Za-z]+\s+\d{2}\/\d{2}\/\d{2}/;
+  return String(text || '').split('\n')
+    .filter(l => !_hdrRe.test(l) && l.trim().length > 0)
+    .reduce((m, l) => {
+      if (isSubFmt) {
+        const brM = /\s+\[[^\]]*\]\s*$/.exec(l);   // bracket ASCII column at end of line
+        if (brM && brM.index > 1) return Math.max(m, brM.index);
+      }
+      return Math.max(m, l.trimEnd().length);
+    }, 0);
+}
+
 function parseNetardLog(text) {
   const lines    = text.split('\n');
   const records  = [];
@@ -11253,17 +11272,8 @@ function updateBadges() {
         if (dataWidth > 0) { S.asciiMargin = margin; S.asciiRulerCol = dataWidth; _lwShowAutoMarker(margin + dataWidth); }
       }
       if (isNetardFmt || isDumpFmt) {
-        const _hdrRe = /^\s{0,6}\d+\s+[0-9A-Za-z]+\s+\d{2}\/\d{2}\/\d{2}/;
         const _isSubFmt = (S.forcedFormat || S.inputFormat || '').startsWith('netard-') || isDumpFmt;
-        const dw = ta.value.split('\n')
-          .filter(l => !_hdrRe.test(l) && l.trim().length > 0)
-          .reduce((m, l) => {
-            if (_isSubFmt) {
-              const brM = /\s+\[[^\]]*\]\s*$/.exec(l); // bracket ASCII column at end of line
-              if (brM && brM.index > 1) return Math.max(m, brM.index);
-            }
-            return Math.max(m, l.trimEnd().length);
-          }, 0);
+        const dw = _detectNetardRuler(ta.value, _isSubFmt);
         if (dw > 0) { S.netardRulerCol = dw; _lwShowAutoMarker(dw); }
       }
     }
@@ -13460,7 +13470,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.326';
+const APP_VERSION  = '1.1.2.327';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20422,6 +20432,14 @@ function _meRunTest() {
   const _FMT_MAP = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' };
   let bytes, rawBytes, parseBytes, inputFmt, engineFmt, msgEnc;
   try {
+    // Auto-detect the NETARD ruler width from the input — same as the Main panel
+    // does on every input change — so parseNetardLog clips/pads standard-format
+    // lines to the right width before stripping (without it W defaults to 1 and
+    // every line collapses to its first character).
+    if (!(P.lineWidth > 0)) {
+      const _rc = _detectNetardRuler(text, String(fmtSel).startsWith('netard-'));
+      if (_rc > 0) S.netardRulerCol = _rc;
+    }
     // A formatted NETARD record (a SOURCE/DEST wrapper, or an H-/hexascii block)
     // is stripped + decoded by parseNetardLog for BOTH auto and manual — a
     // manual format only overrides the label/engine format, it never re-adds the

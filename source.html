@@ -381,8 +381,29 @@ body.light .hl-str { color: #3a7d0a; }
 .tree-sv-lbl::before  { content: '└\00a0'; color: var(--text-dim); font-weight: 400; }
 .tree-ddl-lbl { color: var(--text); padding-left: 15px; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-ddl-lbl::before { content: '└\00a0'; color: var(--text-dim); font-weight: 400; }
+/* Node-type glyphs, right of the name — masked SVGs so they follow currentColor (theme + selection aware) */
+.tree-vol-lbl::after, .tree-sv-lbl::after, .tree-ddl-lbl::after {
+  content: ''; display: inline-block; width: 1em; height: 1em; margin-left: 0.35em;
+  vertical-align: -0.13em; background-color: currentColor; opacity: 0.5;
+  -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+}
+.tree-vol-lbl::after, .tree-sv-lbl::after {
+  width: 1.2em; height: 1.2em; vertical-align: -0.22em;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6a1 1 0 0 1 .7.3L8 4.5h4.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6a1 1 0 0 1 .7.3L8 4.5h4.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z'/%3E%3C/svg%3E");
+}
+.tree-ddl-lbl::after {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M4 1.5h4.5L13 6v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.5a1 1 0 0 1 1-1zM8.5 2.6V5.5a.5.5 0 0 0 .5.5h2.9zM5 8.25h6v1H5zM5 10.5h6v1H5zM5 12.75h4v1H5z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M4 1.5h4.5L13 6v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.5a1 1 0 0 1 1-1zM8.5 2.6V5.5a.5.5 0 0 0 .5.5h2.9zM5 8.25h6v1H5zM5 10.5h6v1H5zM5 12.75h4v1H5z'/%3E%3C/svg%3E");
+}
+/* Expanded volume/subvolume → open-folder glyph */
+.tree-open .tree-vol-lbl::after, .tree-open .tree-sv-lbl::after {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6a1 1 0 0 1 .7.3L8 4.5h4a1.5 1.5 0 0 1 1.5 1.5v.5H5.2a1.5 1.5 0 0 0-1.44 1.08L2 12.9V4.5zM3.3 13l1.7-5.1a.5.5 0 0 1 .48-.4h9.1a.5.5 0 0 1 .48.66L13.9 13a.5.5 0 0 1-.48.34H3.78A.5.5 0 0 1 3.3 13z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6a1 1 0 0 1 .7.3L8 4.5h4a1.5 1.5 0 0 1 1.5 1.5v.5H5.2a1.5 1.5 0 0 0-1.44 1.08L2 12.9V4.5zM3.3 13l1.7-5.1a.5.5 0 0 1 .48-.4h9.1a.5.5 0 0 1 .48.66L13.9 13a.5.5 0 0 1-.48.34H3.78A.5.5 0 0 1 3.3 13z'/%3E%3C/svg%3E");
+}
 .tree-pending .tree-ddl-lbl { color: #e6a817; font-style: italic; }
-.tree-def-lbl { color: var(--text-dim); padding-left: 30px; flex: 1; overflow: hidden; text-overflow: ellipsis; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(var(--accent-rgb),0.35); }
+.tree-def-lbl { color: var(--text-dim); padding-left: 30px; flex: 1; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .tree-staging-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
 .tree-missref-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: #e6a817; letter-spacing: 0.05em; text-transform: uppercase; border-top: 1px solid var(--border); margin-top: 4px; }
 .tree-missref-item .tree-ddl-lbl { color: #e6a817; font-style: italic; padding-left: 0; }
@@ -1113,12 +1134,10 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .settings-help .h-sub-body.open { max-height: 1200px; overflow-y: auto; }
 .settings-help .h-sub-body-inner { padding: 4px 0 8px; }
 .about-ver { font-size: calc(var(--sz-mono) + 9px); font-weight: 700; color: var(--accent); }
-.dr-lbl { font-size:calc(var(--sz-mono) - 4px); color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; padding-left:1px; line-height:1; }
 .dr-spec-list { display:flex; flex-direction:column; margin-bottom:2px; }
 .dr-specs-empty { color:var(--text-dim); font-size:calc(var(--sz-mono) - 2px); padding:4px 0 6px; }
 .dr-spec-item { display:flex; align-items:center; gap:5px; padding:4px 8px; border-bottom:1px solid var(--border); font-size:var(--sz-mono); color:var(--text); }
 .dr-spec-item:last-child { border-bottom:none; }
-.dr-spec-head { display:flex; align-items:center; gap:5px; padding:2px 8px 3px; border-bottom:2px solid var(--border); }
 .dr-spec-group { padding:5px 8px 2px; font-size:calc(var(--sz-mono) - 2px); font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-dim); border-bottom:2px solid var(--border); }
 .dr-spec-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; border:1px solid rgba(255,255,255,.2); }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -9277,6 +9296,13 @@ function updateDDLGutter() {
 let _vbarMsgs  = [];   // [{ icon, text, severity }]
 let _vbarIdx   = 0;
 let _vbarScope = '';   // '' = file-level; 'DEF NAME' = filtered to one definition
+let _vbarPath  = '';   // path key of the file currently shown in the bar
+let _vbarForce = false; // set true right before a badge-click selection to force-show (and un-dismiss)
+const _vbarDismissed = new Set(); // file keys (vol/sv/name) the user dismissed via ✕ — don't auto-show
+// Group all of a file's defs under one dismiss key so dismissing once suppresses the whole file.
+function _vbarFileKey(path) { return String(path || '').split('/').slice(0, 3).join('/'); }
+// Called from a badge's inline onclick (global scope) to arm a forced show for the next selection.
+function _vbarArm() { _vbarForce = true; }
 
 function _vbarRender() {
   const bar = document.getElementById('ddlValidationBar');
@@ -9294,7 +9320,7 @@ function _vbarRender() {
     `</span>` +
     `<span class="vbar-msg" ondblclick="javascript:_vbarJumpToLine()" style="cursor:pointer;user-select:text" title="Double-click to jump to line">${_escH(cur.text)}</span>` +
     `<span class="vbar-copy" onclick="_vbarCopyMsg()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>` +
-    `<span class="vbar-close" onclick="_vbarClose()" title="Dismiss">✕</span>`;
+    `<span class="vbar-close" onclick="_vbarDismiss()" title="Dismiss">✕</span>`;
 }
 function _vbarPrev()    { if (_vbarIdx > 0) { _vbarIdx--; _vbarRender(); } }
 function _vbarNext()    { if (_vbarIdx < _vbarMsgs.length - 1) { _vbarIdx++; _vbarRender(); } }
@@ -9343,6 +9369,12 @@ function _vbarClose() {
   if (bar) { bar.style.display = 'none'; bar.className = ''; bar.innerHTML = ''; }
   _vbarMsgs = []; _vbarIdx = 0; _vbarScope = '';
 }
+// User pressed ✕ — remember this file as dismissed so it won't auto-show again,
+// until the user explicitly clicks its warning/error badge.
+function _vbarDismiss() {
+  if (_vbarPath) _vbarDismissed.add(_vbarFileKey(_vbarPath));
+  _vbarClose();
+}
 function _vbarJumpToLine() {
   const msg = _vbarMsgs[_vbarIdx];
   if (!msg) return;
@@ -9365,6 +9397,16 @@ function updateDDLValidationBar(path, showUnresolved, scopeLabel = '') {
   const bar = document.getElementById('ddlValidationBar');
   if (!bar) return;
   if (!path) { _vbarClose(); return; }
+
+  const forced = _vbarForce; _vbarForce = false;
+  _vbarPath = path;
+  const fileKey = _vbarFileKey(path);
+  if (forced) {
+    _vbarDismissed.delete(fileKey);          // badge click re-enables the bar for this file
+  } else if (_vbarDismissed.has(fileKey)) {
+    _vbarClose();                            // previously dismissed — stay hidden on plain selection
+    return;
+  }
 
   const result = S.ddlValidationResults[path] || {};
 
@@ -11393,10 +11435,10 @@ function renderDDLTree() {
       : `onclick="event.stopPropagation();toggleTreeExp('${esc(vol)}')"`;
     const vExcl    = isExcluded(vol);
     const vExclCls = vExcl ? ' tree-excl-node' : '';
-    html += `<div class="tree-node${vSel}${vAnc}${vExclCls}" data-ntype="vol" data-vol="${esc(vol)}" onclick="selectScope('vol','${esc(vol)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${esc(vol)}')"`}>
+    html += `<div class="tree-node${vSel}${vAnc}${vExclCls}${vExp?' tree-open':''}" data-ntype="vol" data-vol="${esc(vol)}" onclick="selectScope('vol','${esc(vol)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${esc(vol)}')"`}>
       <span class="tree-caret" ${caretClick}>${vExp?'−':'+'}</span>
       <span class="tree-vol-lbl" title="${esc(vol)}">${hi(vol)}</span>
-      <span class="tree-cnt">${cnt}</span>${vExcl ? '<span class="tree-excl-badge">EXCL</span>' : ''}
+      ${vExcl ? '<span class="tree-excl-badge">EXCL</span>' : ''}<span class="tree-cnt">${cnt}</span>
     </div>`;
     if (vExp) {
       for (const sv of Object.keys(tree[vol] || {}).sort()) {
@@ -11412,10 +11454,10 @@ function renderDDLTree() {
           : `onclick="event.stopPropagation();toggleTreeExp('${esc(svKey)}')"`;
         const svExcl    = isExcluded(vol, sv);
         const svExclCls = svExcl ? ' tree-excl-node' : '';
-        html += `<div class="tree-node${svSel}${svAnc}${svExclCls}" data-ntype="sv" data-vol="${esc(vol)}" data-sv="${esc(sv)}" onclick="selectScope('sv','${esc(vol)}','${esc(sv)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${esc(svKey)}')"`}>
+        html += `<div class="tree-node${svSel}${svAnc}${svExclCls}${svExp?' tree-open':''}" data-ntype="sv" data-vol="${esc(vol)}" data-sv="${esc(sv)}" onclick="selectScope('sv','${esc(vol)}','${esc(sv)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${esc(svKey)}')"`}>
           <span class="tree-caret" ${svCaretClick}>${svExp?'−':'+'}</span>
           <span class="tree-sv-lbl" title="${esc(sv)}">${hi(sv)}</span>
-          <span class="tree-cnt">${svCnt}</span>${svExcl ? '<span class="tree-excl-badge">EXCL</span>' : ''}
+          ${svExcl ? '<span class="tree-excl-badge">EXCL</span>' : ''}<span class="tree-cnt">${svCnt}</span>
         </div>`;
         if (svExp) {
           const savedNames = Object.keys(tree[vol][sv] || {}).sort();
@@ -11464,14 +11506,14 @@ function renderDDLTree() {
             const unresCount  = unresResult?.unresolvedWarnings?.length || unresPaths?.length || 0;
             const unresTypes  = unresPaths?.join(', ') || '';
             const unresBadge  = unresCount
-              ? `<span class="tree-unres-badge" title="⚠ ${unresCount} unresolved type ref${unresCount > 1 ? 's' : ''}${unresTypes ? ': ' + unresTypes : ''} — click to see list" onclick="event.stopPropagation();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{updateDDLValidationBar('${esc(vol)}/${esc(sv)}/${esc(d)}',true);document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${unresCount}</span>`
+              ? `<span class="tree-unres-badge" title="⚠ ${unresCount} unresolved type ref${unresCount > 1 ? 's' : ''}${unresTypes ? ': ' + unresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{updateDDLValidationBar('${esc(vol)}/${esc(sv)}/${esc(d)}',true);document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${unresCount}</span>`
               : '';
             const valResult  = S.ddlValidationResults[fileKey];
             const errBadge   = valResult?.errors?.length
-              ? `<span class="tree-error-badge" title="${esc(valResult.errors.map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${valResult.errors.length}</span>`
+              ? `<span class="tree-error-badge" title="${esc(valResult.errors.map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${valResult.errors.length}</span>`
               : '';
             const warnBadge  = (!valResult?.errors?.length && valResult?.warnings?.length)
-              ? `<span class="tree-warn-badge" title="${esc(valResult.warnings.map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${valResult.warnings.length}</span>`
+              ? `<span class="tree-warn-badge" title="${esc(valResult.warnings.map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${valResult.warnings.length}</span>`
               : '';
             // tknBadge and typeBadge are file-level — always on filename node (visible even when collapsed).
             // unresBadge/errBadge/warnBadge go on DEF sub-node for single-DEF files, filename for multi-DEF.
@@ -11480,7 +11522,7 @@ function renderDDLTree() {
             const fileExclCls = fileExcl ? ' tree-excl-node' : '';
             const exclBadge   = fileExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
             const defCntBadge = fileDefNames.length > 0 ? `<span class="tree-cnt">${fileDefNames.length}</span>` : '';
-            const fileBadges = tknBadge + typeBadge + defCntBadge + exclBadge + (!showDefSubNodes || !fileExp ? unresBadge + errBadge + warnBadge : '');
+            const fileBadges = tknBadge + typeBadge + exclBadge + (!showDefSubNodes || !fileExp ? unresBadge + errBadge + warnBadge : '') + defCntBadge;
             const fileDblClick = showDefSubNodes && !fq && !isPending
               ? `ondblclick="event.stopPropagation();toggleTreeExp('${esc(fileKey)}')"` : '';
             html += `<div class="tree-node${dSel}${dAnc}${pendCls}${fileExclCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick} ${fileDblClick}>
@@ -11502,13 +11544,13 @@ function renderDDLTree() {
                 const _dUnresCount = _dr?.unresolvedWarnings?.length || _durPaths?.length || 0;
                 const _dUnresTypes = _durPaths?.join(', ') || '';
                 const _dUnresBadge = _dUnresCount
-                  ? `<span class="tree-unres-badge" title="⚠ ${_dUnresCount} unresolved type ref${_dUnresCount > 1 ? 's' : ''}${_dUnresTypes ? ': ' + _dUnresTypes : ''} — click to see list" onclick="event.stopPropagation();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${_dUnresCount}</span>`
+                  ? `<span class="tree-unres-badge" title="⚠ ${_dUnresCount} unresolved type ref${_dUnresCount > 1 ? 's' : ''}${_dUnresTypes ? ': ' + _dUnresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${_dUnresCount}</span>`
                   : '';
                 const _dErrBadge  = _dr?.errors?.length
-                  ? `<span class="tree-error-badge" title="${esc((_dr.errors).map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${_dr.errors.length}</span>`
+                  ? `<span class="tree-error-badge" title="${esc((_dr.errors).map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${_dr.errors.length}</span>`
                   : '';
                 const _dWarnBadge = (!_dr?.errors?.length && _dr?.warnings?.length)
-                  ? `<span class="tree-warn-badge" title="${esc((_dr.warnings).map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${_dr.warnings.length}</span>`
+                  ? `<span class="tree-warn-badge" title="${esc((_dr.warnings).map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${_dr.warnings.length}</span>`
                   : '';
                 const defExcl    = isExcluded(vol, sv, d, defName);
                 const defExclCls = defExcl ? ' tree-excl-node' : '';
@@ -13474,7 +13516,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.328';
+const APP_VERSION  = '1.1.2.339';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14048,11 +14090,9 @@ function renderDetectSpecsList() {
       const vol   = s.vol ? ` <span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
       return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span><span class="dr-spec-type">${type}</span></div>`;
     };
-    const head  = `<div class="dr-spec-head"><span style="width:10px;flex-shrink:0"></span><span class="dr-lbl" style="flex:1">Label</span><span class="dr-lbl" style="width:36px;text-align:right">Type</span></div>`;
     const msgs  = specs.filter(s => s.kind !== 'file');
     const files = specs.filter(s => s.kind === 'file');
-    el.innerHTML = head
-      + (files.length ? `<div class="dr-spec-group">Messages</div>` : '')
+    el.innerHTML = (files.length ? `<div class="dr-spec-group">Messages</div>` : '')
       + msgs.map(row).join('')
       + (files.length ? `<div class="dr-spec-group">Files</div>` + files.map(row).join('') : '');
   }
@@ -20842,7 +20882,7 @@ function _meSave() {
         </div>
         <div class="settings-row">
           <span class="settings-lbl">Reset</span>
-          <button class="btn btn-sm settings-btn-20" style="flex:0 1 50%" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
+          <button class="btn btn-sm settings-btn-20" style="flex:0 0 148px" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
         </div>
       </div>
 
@@ -20851,7 +20891,7 @@ function _meSave() {
         <div class="settings-stitle">Tutorial</div>
         <div class="settings-row">
           <span class="settings-lbl">Guided tour of key features</span>
-          <button class="btn btn-sm settings-btn-20" style="flex:0 1 50%" onclick="showTutorial();closeSettings();">&#x25b6; Launch</button>
+          <button class="btn btn-sm settings-btn-20" style="flex:0 0 148px" onclick="showTutorial();closeSettings();">&#x25b6; Launch</button>
         </div>
       </div>
 

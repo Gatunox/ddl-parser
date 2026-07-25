@@ -1218,6 +1218,7 @@ test('inline parse-spec type overrides take precedence over field_overrides', ()
 test('bitmap-fields honors DE anchors from item.de_map when mapping set bits', () => {
   S.ddlTree = { VOL: { SV: { 'BITDDL': `
     DEF REC.
+      02 BMP PIC X(16).
       02 F1 PIC X(1).
       02 F2 PIC X(1).
       02 F3 PIC X(1).
@@ -2225,6 +2226,53 @@ const segItem = value => ({
 });
 const segBytes = s => [...s].map(c => c.charCodeAt(0));
 
+// ── File-read seg map: the map is a BINARY 32 field inside SEG0 (Base24 SEG-MAP,
+//    or FIID-SEG-MAP on a 6.0 IDF) — read from the record, not supplied. ──
+const SEGMAP_FILE_DDL = `DEF FILEMAP.
+  02 SEG0 TYPE BASE-SEG.
+  02 SEG1 TYPE ATM-SEG.
+  02 SEG5 TYPE POS-SEG.
+  02 SEG11 TYPE XX-SEG.
+END
+
+DEF BASE-SEG.
+  02 LGTH TYPE BINARY 16.
+  02 SEG-MAP-R.
+    04 LW TYPE BINARY 16.
+    04 RW TYPE BINARY 16.
+  02 SEG-MAP REDEFINES SEG-MAP-R TYPE BINARY 32.
+  02 FIID-SEG-MAP TYPE BINARY 32.
+  02 B1 PIC X(4).
+END
+
+DEF ATM-SEG.
+  02 A1 PIC X(3).
+END
+
+DEF POS-SEG.
+  02 P1 PIC X(5).
+END
+
+DEF XX-SEG.
+  02 X1 PIC X(2).
+END
+`;
+// Build a FILEMAP record for present segments 0,1,11 (map 0xC0100000). The 4-byte
+// map fills SEG-MAP-R (off 2) and/or FIID-SEG-MAP (off 6); the rest is ASCII.
+const u32b = n => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+const fileMapBytes = ({ segMap = 0, fiidSegMap = 0 }) => [
+  0x00, 0x13,                 // LGTH = 19
+  ...u32b(segMap),            // SEG-MAP-R / SEG-MAP  (off 2)
+  ...u32b(fiidSegMap),        // FIID-SEG-MAP          (off 6)
+  ...segBytes('AAAA'),        // SEG0.B1               (off 10)
+  ...segBytes('CCC'),         // SEG1.A1
+  ...segBytes('XX'),          // SEG11.X1
+];
+const fileMapItem = field => ({
+  name: 'FMAP', kind: 'file', ddl_bindings: ['V/S/SEGMAPF/FILEMAP'],
+  parse_spec_binary: [{ 'read-bitmap': { field } }, { 'read-segment-fields': field }],
+});
+
 test('seg-map + segment-fields: only present segments read, mapped by trailing number', () => {
   S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
   // C0100000 → binary 1100 0000 0001 0000 … → bits 0, 1, 11 (SEG5 absent)
@@ -2378,6 +2426,78 @@ test('seg-map without any value, and with a malformed value, error clearly', () 
   eq(noVal.fields[0]?.error?.includes('no value'), true, 'missing value reported');
   const bad = meExecParseSpec(segItem('ZZZZ'), segBytes('AAAABB'));
   eq(bad.fields[0]?.error?.includes('hex chars or'), true, 'malformed value reported');
+});
+
+test('file-read: SEG-MAP read from the record (Base24 <6.0) drives segment selection', () => {
+  S.ddlTree = { V: { S: { SEGMAPF: SEGMAP_FILE_DDL } } };
+  const bytes = fileMapBytes({ segMap: 0xC0100000 });   // bits 0,1,11 → SEG0,SEG1,SEG11
+  const ctx = meExecParseSpec(fileMapItem('SEG-MAP'), bytes, { format: 'hex', rawBytes: bytes });
+  eq(ctx.fields.some(f => f.error), false, 'no errors');
+  const map = ctx.fieldsById['SEG-MAP'];
+  eq(map.value, 'C0100000', 'map echoed as hex from the file bytes');
+  eq(map.valueLength, 0, 'peek — the map consumes no bytes of its own');
+  eq([...map.segSet].sort((a, b) => a - b).join(','), '0,1,11', 'segSet decoded from the record');
+  eq(map.description.includes('read from file'), true, 'labelled read-from-file');
+  const segsRead = [...new Set(ctx.fields.filter(f => !f.error && /^SEG\d+/.test(f.id)).map(f => f.id.match(/^SEG(\d+)/)[1]))];
+  deepEq(segsRead, ['0', '1', '11'], 'SEG5 skipped (bit clear)');
+  eq(ctx.fieldsById['SEG1'].value, 'CCC', 'SEG1 payload');
+  eq(ctx.fieldsById['SEG11'].value, 'XX', 'SEG11 payload');
+  eq(ctx.cursor, bytes.length, 'whole record consumed');
+});
+
+test('file-read: FIID-SEG-MAP read from the record (6.0 IDF) drives segment selection', () => {
+  S.ddlTree = { V: { S: { SEGMAPF: SEGMAP_FILE_DDL } } };
+  const bytes = fileMapBytes({ fiidSegMap: 0xC0100000 });  // SEG-MAP zeroed; map on FIID-SEG-MAP
+  const ctx = meExecParseSpec(fileMapItem('FIID-SEG-MAP'), bytes, { format: 'hex', rawBytes: bytes });
+  eq(ctx.fields.some(f => f.error), false, 'no errors');
+  eq(ctx.fieldsById['FIID-SEG-MAP'].value, 'C0100000', 'map read from the FIID-SEG-MAP field bytes');
+  eq(ctx.fieldsById['SEG1'].value, 'CCC', 'SEG1 payload');
+  eq(ctx.fieldsById['SEG11'].value, 'XX', 'SEG11 payload');
+});
+
+test('file-read: all-zeros map errors (the 6.0 signal) — no silent fallback', () => {
+  S.ddlTree = { V: { S: { SEGMAPF: SEGMAP_FILE_DDL } } };
+  const bytes = fileMapBytes({ segMap: 0, fiidSegMap: 0 });
+  const ctx = meExecParseSpec(fileMapItem('SEG-MAP'), bytes, { format: 'hex', rawBytes: bytes });
+  const err = ctx.fields.find(f => f.error);
+  eq(err?.error?.includes('all zeros'), true, 'all-zeros map surfaced as an error');
+  eq(ctx.fields.some(f => f.segSet), false, 'no seg map established, so no segments read');
+});
+
+test('wire read-bitmap: strict field resolution — top-level short name or fully qualified path', () => {
+  // BIC-style merged DDL: the ISO layout nested under a group, so the bitmap's
+  // id is ISOPSEM.PRI-BIT-MAP (no top-level PRI-BIT-MAP exists).
+  S.ddlTree = { V: { S: { BICW: `DEF BICW.
+  02 ISOPSEM.
+    03 TYP PIC X(4).
+    03 PRI-BIT-MAP PIC X(16).
+  02 TRAILER PIC X(2).
+END
+` } } };
+  const mk = field => ({ name: 'BW', ddl_bindings: ['V/S/BICW/BICW'],
+    parse_spec_binary: [{ 'read-bitmap': { field, encoding: 'ascii-hex' } }] });
+  const bytes = segBytes('0000000000000000');   // 16 hex chars → primary only
+  const ok = meExecParseSpec(mk('ISOPSEM.PRI-BIT-MAP'), bytes);
+  eq(ok.fields.some(f => f.error), false, 'fully qualified path resolves');
+  eq(ok.fields[0].id, 'ISOPSEM.PRI-BIT-MAP', 'row keeps the declared id');
+  const bad = meExecParseSpec(mk('PRI-BIT-MAP'), bytes);
+  eq(bad.fields[0]?.error?.includes('not found in the bound DDL'), true,
+     'bare leaf name rejected when the field is nested — must use the qualified path');
+  // No bindings resolved → nothing to validate against; reads generically.
+  const unbound = meExecParseSpec({ name: 'NB', ddl_bindings: [],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'ANY-MAP', encoding: 'ascii-hex' } }] }, bytes);
+  eq(unbound.fields.some(f => f.error), false, 'unbound spec is not blocked');
+});
+
+test('file-read: the SEG-MAP input still overrides the on-file map', () => {
+  S.ddlTree = { V: { S: { SEGMAPF: SEGMAP_FILE_DDL } } };
+  const bytes = fileMapBytes({ segMap: 0xC0100000 });   // file says 0,1,11
+  // Override to SEG0 only → SEG1 & SEG11 become leftover bytes.
+  const ctx = meExecParseSpec(fileMapItem('SEG-MAP'), bytes, { format: 'hex', rawBytes: bytes, segMapOverride: '80000000' });
+  eq(ctx.fieldsById['SEG-MAP'].description.includes('ad-hoc'), true, 'override path taken, not the file bytes');
+  eq([...ctx.fieldsById['SEG-MAP'].segSet].join(','), '0', 'override narrows to SEG0');
+  const err = ctx.fields.find(f => f.error);
+  eq(err?.error?.includes('unparsed byte'), true, 'the un-mapped segments are flagged as leftover');
 });
 
 // ── Parse-spec engine ≡ legacy extraction (migration equivalence) ─────────────

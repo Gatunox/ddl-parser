@@ -6218,19 +6218,27 @@ function parseMessage(bytes, defs, rawBytes) {
     { name:'FILE', label:'Segmented File', color:'#888888', vol:'', kind:'file',
       recognizers:[{type:'filename',pattern:'*'}],
       parse_spec_binary:[
-        {'read-bitmap':{field:'FIID-SEG-MAP',encoding:'ascii-hex',bits:32,value:'E0100000'}},
-        {'read-segment-fields':'FIID-SEG-MAP'}
+        {'read-bitmap':{field:'SEG-MAP'}},
+        {'read-segment-fields':'SEG-MAP'}
       ],
       parse_spec_binary_source:
 `[
-  // ── Segment map: the value lives on the institution's IDF (FIID-SEG-MAP,
-  //    TYPE BITMAP 32), NOT in the record — set "value" here or type one in the
-  //    SEG-MAP input at parse time. Declared mode (bits/value) reads no payload.
-  { "read-bitmap": { "field": "FIID-SEG-MAP", "encoding": "ascii-hex", "bits": 32, "value": "E0100000" } },
+  /* ── Segment map — three Base24 cases, pick the read-bitmap that matches:
+     1) pre-6.0 file: the map IS in the record (SEG0's SEG-MAP, BINARY 32) —
+        just name the field, it is read from the file at its DDL position:
+          { "read-bitmap": { "field": "SEG-MAP" } }
+     2) 6.0 IDF: SEG-MAP is zeroed; the real map is SEG0's FIID-SEG-MAP —
+        also read from the file:
+          { "read-bitmap": { "field": "FIID-SEG-MAP" } }
+     3) 6.0 non-IDF file: SEG-MAP is zeroed and the map lives on the IDF, not
+        here — supply it ("value", or type it in the SEG-MAP input at parse
+        time). bits/value = declared mode, reads no payload:
+          { "read-bitmap": { "field": "FIID-SEG-MAP", "bits": 32, "value": "C4180000" } } */
+  { "read-bitmap": { "field": "SEG-MAP" } },
 
   /*  Segments: walk the bound DDL's top-level SEGn fields and read only the
       segments whose bit is set, in declaration order (absent ones consume 0). */
-  { "read-segment-fields": "FIID-SEG-MAP" }
+  { "read-segment-fields": "SEG-MAP" }
 ]` }
   ];
 
@@ -7632,7 +7640,9 @@ function doParseNetardLog(text, opts = {}) {
       const p1Path = (S.scope.type === 'def' && S.scope.defName)
         ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}/${S.scope.defName}`
         : `${S.scope.vol}/${S.scope.sv}/${S.scope.name}`;
-      _parseProgressStep(`Manual DDL override \u2014 ${p1Path}`, null, null, '#e74c3c');
+      _parseProgressStep(`Manual override mode \u2014 ${p1Path}`,
+        'Identify \u00b7 Recognizers \u00b7 Parse-specs \u2014 not used',
+        '#e6a817', '#e6a817');
       setTimeout(() => {
         _parseProgressDoneLast();
         _parseProgressStep('Parsing\u2026');
@@ -7683,23 +7693,28 @@ function doParseNetardLog(text, opts = {}) {
       const p1Path = (S.scope.type === 'def' && S.scope.defName)
         ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}/${S.scope.defName}`
         : `${S.scope.vol}/${S.scope.sv}/${S.scope.name}`;
-      _parseProgressStep(`Using DDL — ${p1Path}`, null, null, '#e74c3c');
+      _parseProgressStep(`Manual override mode — ${p1Path}`,
+        'Identify · Recognizers · Parse-specs — not used',
+        '#e6a817', '#e6a817');
       setTimeout(() => {
         if (_parseAborted) return;
         _parseProgressDoneLast();
         _parseProgressStep('Parsing…');
         setTimeout(() => {
           if (_parseAborted) return;
-          const resolved = getDDLFromPath(p1Path);
-          // Segmented-file support under manual selection: when the scoped DDL
-          // is a segmented DEFINITION, the SEG-MAP bar applies here too. With
-          // a map typed, records parse through the segment engine (only the
-          // present segments); with no map, the legacy full walk runs (= all
-          // segments present).
+          // Manual selection parses strictly per the DDL — field by field, all
+          // segments as declared, ONCE. The segment engine only runs when the
+          // user explicitly types a map in the SEG-MAP bar.
           const segInfo = _meScopeSegmentedDef(p1Path);
           const segKey  = segInfo ? 'ddl:' + p1Path : null;
           const segVal  = segKey ? (_segMapOverrides[segKey] || '') : '';
           const [_sv1, _sv2, _sv3] = p1Path.split('/');
+          // A file-node selection (3-part) of a segmented file resolves to its
+          // record DEF only — otherwise every DEF in the file is walked in turn
+          // and the structure repeats after the record ends.
+          const _walkPath = (segInfo && !p1Path.split('/')[3])
+            ? `${_sv1}/${_sv2}/${_sv3}/${segInfo.defName}` : p1Path;
+          const resolved = getDDLFromPath(_walkPath);
           const segSynth = segInfo && segVal ? {
             name: segKey, kind: 'file',
             ddl_bindings: [`${_sv1}/${_sv2}/${_sv3}/${segInfo.defName}`],
@@ -7710,7 +7725,8 @@ function doParseNetardLog(text, opts = {}) {
             const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic } = _netardEbcdic(rec.rawMsg);
             let fields = [], ddlPath = null, defName = null;
             if (segSynth) {
-              fields  = _meParseFileWithSpec(segSynth, parseBytes).fields;
+              fields  = _meParseFileWithSpec(segSynth, parseBytes,
+                { format: (opts.fmtMap || {})[rec.netardFmt] || opts.fmtDefault, rawBytes: bytes }).fields;
               ddlPath = p1Path.split('/').slice(0, 3).join('/');
               defName = segInfo.defName;
             } else if (resolved && resolved.defs.length) {
@@ -8426,7 +8442,9 @@ function doParseMessages() {
   if (S.scope?.type === 'ddl' || S.scope?.type === 'def') {
     const p1Path = `${S.scope.vol}/${S.scope.sv}/${S.scope.name}`;
     _parseProgressShow();
-    _parseProgressStep(`Manual DDL override \u2014 ${p1Path}`, null, null, '#e74c3c');
+    _parseProgressStep(`Manual override mode \u2014 ${p1Path}`,
+      'Identify \u00b7 Recognizers \u00b7 Parse-specs \u2014 not used',
+      '#e6a817', '#e6a817');
     setTimeout(() => {
       _parseProgressDoneLast();
       _parseProgressStep('Parsing\u2026');
@@ -12488,8 +12506,8 @@ function saveDDL() {
       document.getElementById('ddlEditor').value = content;
       _removeStagedDef(newName);
       buildTokenMap();
-      buildUnresolvedRefs();
       saveTree();
+      buildUnresolvedRefs();
       S.treeExp.add(vol); S.treeExp.add(`${vol}/${sv}`);
       selectScope('ddl', vol, sv, newName);
       const count = Object.keys(parseTokenMap(content)).length;
@@ -12553,8 +12571,9 @@ function saveDDL() {
       S.editorBaseline = content;
       document.getElementById('ddlEditor').value = content;
       _removeStagedDef(fn);
+      const saved = saveTree();
       buildUnresolvedRefs();
-      const saved = saveTree(); selectScope('ddl', vol, sv, fn);
+      selectScope('ddl', vol, sv, fn);
       if (!saved) {
         flash('✗ Storage quota exceeded — DDL is in memory but will be lost on reload. Export your data now.', 'error');
         return;
@@ -12597,7 +12616,7 @@ function deleteScope() {
     S.editorBaseline = null;
     document.getElementById('ddlEditor').value = '';
     document.getElementById('ddlScopePath').textContent = 'Select a DDL from the tree →';
-    buildUnresolvedRefs(); saveTree(); renderDDLTree(); updateDDLEditorState(); updateDDLHighlight();
+    saveTree(); buildUnresolvedRefs(); renderDDLTree(); updateDDLEditorState(); updateDDLHighlight();
   };
 
   // Never-saved placeholder (empty content) — delete immediately, no confirmation needed
@@ -12743,7 +12762,7 @@ function ctxPasteVol() {
     if (!newName) return;
     if (S.ddlTree[newName]) { flash('Volume already exists', 'warn'); return; }
     S.ddlTree[newName] = JSON.parse(JSON.stringify(S.clipboard.data));
-    buildUnresolvedRefs(); saveTree(); S.treeExp.add(newName); renderDDLTree();
+    saveTree(); buildUnresolvedRefs(); S.treeExp.add(newName); renderDDLTree();
     flash(`Pasted as "${newName}"`);
   });
 }
@@ -12754,7 +12773,7 @@ function ctxPasteSv(vol) {
     if ((S.ddlTree[vol] || {})[newName]) { flash('Subvolume already exists', 'warn'); return; }
     if (!S.ddlTree[vol]) S.ddlTree[vol] = {};
     S.ddlTree[vol][newName] = JSON.parse(JSON.stringify(S.clipboard.data));
-    buildUnresolvedRefs(); saveTree(); S.treeExp.add(vol); S.treeExp.add(`${vol}/${newName}`); renderDDLTree();
+    saveTree(); buildUnresolvedRefs(); S.treeExp.add(vol); S.treeExp.add(`${vol}/${newName}`); renderDDLTree();
     flash(`Pasted as "${newName}"`);
   });
 }
@@ -12766,7 +12785,7 @@ function ctxPasteDdl(vol, sv) {
     if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
     if (S.ddlTree[vol][sv][newName]) { flash('DDL already exists', 'warn'); return; }
     S.ddlTree[vol][sv][newName] = S.clipboard.content;
-    buildUnresolvedRefs(); saveTree(); selectScope('ddl', vol, sv, newName);
+    saveTree(); buildUnresolvedRefs(); selectScope('ddl', vol, sv, newName);
     flash(`Pasted as "${newName}"`);
   });
 }
@@ -12778,7 +12797,7 @@ function ctxPasteDef(vol, sv) {
     if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
     if (S.ddlTree[vol][sv][newName]) { flash('DDL already exists', 'warn'); return; }
     S.ddlTree[vol][sv][newName] = S.clipboard.content;
-    buildUnresolvedRefs(); saveTree(); selectScope('ddl', vol, sv, newName);
+    saveTree(); buildUnresolvedRefs(); selectScope('ddl', vol, sv, newName);
     flash(`Pasted as "${newName}"`);
   });
 }
@@ -12793,7 +12812,7 @@ function ctxRenameVol(vol) {
     delete S.ddlTree[vol];
     if (S.treeExp.has(vol)) { S.treeExp.delete(vol); S.treeExp.add(newName); }
     if (S.scope?.vol === vol) S.scope.vol = newName;
-    buildUnresolvedRefs(); saveTree(); renderDDLTree();
+    saveTree(); buildUnresolvedRefs(); renderDDLTree();
     flash(`Renamed to "${newName}"`);
   });
 }
@@ -12807,7 +12826,7 @@ function ctxRenameSv(vol, sv) {
     const oldKey = `${vol}/${sv}`, newKey = `${vol}/${newName}`;
     if (S.treeExp.has(oldKey)) { S.treeExp.delete(oldKey); S.treeExp.add(newKey); }
     if (S.scope?.vol === vol && S.scope?.sv === sv) S.scope.sv = newName;
-    buildUnresolvedRefs(); saveTree(); renderDDLTree();
+    saveTree(); buildUnresolvedRefs(); renderDDLTree();
     flash(`Renamed to "${newName}"`);
   });
 }
@@ -12820,7 +12839,7 @@ function ctxRenameDdl(vol, sv, name) {
     delete S.ddlTree[vol][sv][name];
     if ((S.scope?.type === 'ddl' || S.scope?.type === 'def') && S.scope.vol === vol && S.scope.sv === sv && S.scope.name === name)
       S.scope.name = newName;
-    buildUnresolvedRefs(); saveTree(); selectScope('ddl', vol, sv, newName);
+    saveTree(); buildUnresolvedRefs(); selectScope('ddl', vol, sv, newName);
     flash(`Renamed to "${newName}"`);
   });
 }
@@ -13307,7 +13326,7 @@ function confirmImport() {
     }
     saveDeOverrides();
   }
-  if (ddlCount) { buildUnresolvedRefs(); saveTree(); renderDDLTree(); }
+  if (ddlCount) { saveTree(); buildUnresolvedRefs(); renderDDLTree(); }
 
   // ── Message specs import ──
   const incomingSpecs = Array.isArray(_importData.specs) ? _importData.specs : [];
@@ -13476,11 +13495,12 @@ function loadTree() {
     S.ddlTree['SWITCH']['1987']['Standard ISO'] = ISO8583_DDL;
     saveTree();
   }
-  // Seed baseline volumes — ATM, POS, BASE — if not yet present
+  // Seed baseline volumes — ATM, POS, BASE, FILES — if not yet present
   let _baselineChanged = false;
-  if (!S.ddlTree['BASE']) { S.ddlTree['BASE'] = {}; _baselineChanged = true; }
-  if (!S.ddlTree['ATM'])  { S.ddlTree['ATM']  = {}; _baselineChanged = true; }
-  if (!S.ddlTree['POS'])  { S.ddlTree['POS']  = {}; _baselineChanged = true; }
+  if (!S.ddlTree['BASE'])  { S.ddlTree['BASE']  = {}; _baselineChanged = true; }
+  if (!S.ddlTree['ATM'])   { S.ddlTree['ATM']   = {}; _baselineChanged = true; }
+  if (!S.ddlTree['POS'])   { S.ddlTree['POS']   = {}; _baselineChanged = true; }
+  if (!S.ddlTree['FILES']) { S.ddlTree['FILES'] = {}; _baselineChanged = true; }
   if (_baselineChanged) saveTree();
   buildTokenMap();
   buildUnresolvedRefs();
@@ -13516,7 +13536,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.339';
+const APP_VERSION  = '1.1.2.348';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15577,23 +15597,25 @@ const _PS_HELP = {
     ],
   },
   'read-bitmap': {
-    desc: 'Establishes a bitmap for a following read-bitmap-fields or read-segment-fields block. Two modes, chosen by the attributes: <b>wire mode</b> (no bits/value) reads 8 bytes (primary) or 16 bytes (primary + secondary) from the record at the cursor — the field must be declared in the DDL with the appropriate length. <b>Declared mode</b> (bits and/or value present) consumes NO payload bytes: the map lives outside the record (e.g. a Base24 FIID-SEG-MAP on the institution\'s IDF, TYPE BITMAP 32) and its value comes from this block or from the ad-hoc SEG-MAP input at parse time, which overrides it. Declared mode emits a synthetic zero-byte field listing the present SEG numbers.',
+    desc: 'Establishes a bitmap for a following read-bitmap-fields (ISO) or read-segment-fields (segmented file) block. Three modes, chosen by the attributes and the block that follows. <b>Wire mode</b> — no bits/value, a <code>read-bitmap-fields</code> block follows: reads 8 bytes (primary) or 16 bytes (primary + secondary) from the record at the cursor (field declared in the DDL with that length). <b>File-read segment map</b> — no bits/value, a <code>read-segment-fields</code> block follows: the map is a field IN the record — a Base24 <code>SEG-MAP</code> in SEG0 (pre-6.0) or a 6.0 IDF\'s <code>FIID-SEG-MAP</code>. It is read at its DDL position using its declared TYPE (e.g. BINARY 32 → 4 raw bytes, big-endian, bit0 = leftmost) and consumes NO cursor bytes (a peek — read-segment-fields then reads SEG0 from the start). An all-zeros map is how Base24 6.0 signals "the real map is on the IDF", so it is surfaced as an error rather than read as empty. <b>Declared segment map</b> — bits and/or value present: the map is NOT in this record (a 6.0 non-IDF file whose SEG-MAP is zeroed), so its value comes from this block or the ad-hoc SEG-MAP input, which overrides. Consumes no payload bytes and emits a synthetic zero-byte row listing the present SEG numbers.',
     useWhen: [
-      'Wire mode — you\'re parsing an <b>ISO 8583</b> (or similar bitmap-based) message and a <code>read-bitmap-fields</code> block follows.',
-      'Wire mode — the bitmap is either <b>binary</b> (8 raw bytes) or <b>hex</b> (16 hex chars). Whether hex chars are ASCII or EBCDIC is resolved from the message\'s recognizer encoding, so you never bake that into the spec.',
-      'Declared mode — you\'re parsing a <b>Base24 segmented file</b>: the record only holds the segments the institution configured, and the map is on its IDF, not in the payload. A <code>read-segment-fields</code> block follows.',
+      'Wire mode — you\'re parsing an <b>ISO 8583</b> (or similar bitmap-based) message and a <code>read-bitmap-fields</code> block follows. The bitmap is <b>binary</b> (8 raw bytes) or <b>hex</b> (16 hex chars); ASCII vs EBCDIC is resolved from the message recognizer, never baked into the spec.',
+      'File-read segment map — a <b>Base24 segmented file whose map is in the record</b>: a pre-6.0 file\'s <code>SEG-MAP</code>, or a 6.0 <b>IDF</b>\'s <code>FIID-SEG-MAP</code>. Just name the field — no value, no encoding. A <code>read-segment-fields</code> block follows.',
+      'Declared segment map — a 6.0 <b>non-IDF</b> file: its SEG-MAP is zeroed and the real map lives on the IDF, so supply the value here (bits/value) or via the SEG-MAP input. A <code>read-segment-fields</code> block follows.',
     ],
     attrs: [
-      ['field',    'string', true, 'Wire mode: DDL field ID for the bitmap. Declared mode: id for the map — names the synthetic result row and is what read-segment-fields references (e.g. "FIID-SEG-MAP")'],
-      ['encoding', 'string', false, 'How the bits are written. Wire mode: <b>binary</b> (raw bytes) | <b>hex</b> (16 hex chars — ASCII or EBCDIC per the message encoding; <code>ascii-hex</code> still accepted as a legacy alias). Declared mode: <b>ascii-hex</b> (bits/4 hex chars, e.g. "C4180000") | <b>ascii-bits</b> (a 0/1 string — spaces optional, group every 4 for readability: "1100 0100 0000 1000 0000 0000 0000 0000"). Declared mode may omit it (auto-detect by length); the ad-hoc SEG-MAP input always auto-detects.'],
-      ['bits',     'number', false, 'DECLARED MODE MARKER — map width in bits (32 for TYPE BITMAP 32)'],
-      ['value',    'string', false, 'DECLARED MODE — the map value in the chosen encoding: ascii-hex like "C4180000", or ascii-bits like "1100 0100 0000 1000 0000 0000 0000 0000" (spaces are ignored, group every 4 for readability). The SEG-MAP input at parse time overrides this ad-hoc.'],
-      ['bit0',     '"left"|"right"', false, 'Declared mode: which end of the map is bit 0 / SEG0 — default "left" (leftmost bit)'],
+      ['field',    'string', true, 'DDL field ID. Wire mode: the bitmap field. File-read: the SEG-MAP / FIID-SEG-MAP field to read from SEG0. Declared: names the synthetic row and is what read-segment-fields references (e.g. "FIID-SEG-MAP").'],
+      ['encoding', 'string', false, 'How the bits are written. Wire mode: <b>binary</b> (raw bytes) | <b>hex</b> (16 hex chars — ASCII or EBCDIC per the message encoding; <code>ascii-hex</code> still accepted as a legacy alias). File-read segment map: <b>not used</b> — the field\'s declared TYPE (e.g. BINARY 32) drives the read. Declared segment map: <b>ascii-hex</b> (bits/4 hex chars, e.g. "C4180000") | <b>ascii-bits</b> (a 0/1 string — spaces optional, group every 4: "1100 0100 …"); may be omitted (auto-detect by length); the ad-hoc SEG-MAP input always auto-detects.'],
+      ['bits',     'number', false, 'DECLARED SEGMENT-MAP MARKER — map width in bits (32). Presence of bits/value forces declared mode even when a read-segment-fields block follows.'],
+      ['value',    'string', false, 'DECLARED SEGMENT MAP — the map value in the chosen encoding: ascii-hex like "C4180000", or ascii-bits like "1100 0100 0000 1000 0000 0000 0000 0000" (spaces ignored). The SEG-MAP input at parse time overrides this ad-hoc.'],
+      ['bit0',     '"left"|"right"', false, 'Declared mode: which end of the map is bit 0 / SEG0 — default "left" (leftmost bit). File-read is always left (bit0 = MSB of the first byte).'],
     ],
     examples: [
       ['Wire: hex-char ISO bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}}]],
       ['Wire: binary EBCDIC bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}}]],
-      ['Declared: segmented-file map, ascii-hex (C4180000 = SEG0,1,5,11,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "encoding": "ascii-hex", "bits": 32, "value": "C4180000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
+      ['File-read: 6.0 IDF — map read from FIID-SEG-MAP in the record', [{"read-bitmap": {"field": "FIID-SEG-MAP"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
+      ['File-read: pre-6.0 file — map read from SEG-MAP in the record', [{"read-bitmap": {"field": "SEG-MAP"}}, {"read-segment-fields": "SEG-MAP"}]],
+      ['Declared: 6.0 non-IDF — SEG-MAP zeroed, map supplied (C4180000 = SEG0,1,5,11,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "bits": 32, "value": "C4180000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
       ['Declared: ascii-bits — spaces every 4 for readability (SEG0,1,5,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "encoding": "ascii-bits", "bits": 32, "value": "1100 0100 0000 1000 0000 0000 0000 0000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
     ],
   },
@@ -15613,9 +15635,9 @@ const _PS_HELP = {
     ],
   },
   'read-segment-fields': {
-    desc: 'Reads only the segments a prior declared-mode read-bitmap marks present. (Renamed from "segment-fields" — old specs are migrated automatically on load.) Walks the bound DDL\'s TOP-LEVEL fields in declaration order and maps each to a bit by the TRAILING NUMBER in its name (SEG0 ↔ bit 0, SEG07 ↔ bit 7, SEG11 ↔ bit 11 — declared segments need not be consecutive). A set bit reads the segment\'s full TYPE-expanded structure sequentially at the cursor (DDL offsets are ignored — they assume every segment is present); a clear bit consumes nothing. Top-level fields without a trailing number are always read. Flags leftover bytes after the last mapped segment, since that usually means the map is missing a segment.',
+    desc: 'Reads only the segments a prior read-bitmap marks present — whether that map was a declared value or read from the file (SEG-MAP / FIID-SEG-MAP). (Renamed from "segment-fields" — old specs are migrated automatically on load.) Walks the bound DDL\'s TOP-LEVEL fields in declaration order and maps each to a bit by the TRAILING NUMBER in its name (SEG0 ↔ bit 0, SEG07 ↔ bit 7, SEG11 ↔ bit 11 — declared segments need not be consecutive). A set bit reads the segment\'s full TYPE-expanded structure sequentially at the cursor (DDL offsets are ignored — they assume every segment is present); a clear bit consumes nothing. Top-level fields without a trailing number are always read. Flags leftover bytes after the last mapped segment, since that usually means the map is missing a segment.',
     useWhen: [
-      'A declared-mode <code>read-bitmap</code> (bits/value) precedes this one.',
+      'A <code>read-bitmap</code> precedes this one — either declared (bits/value) or read from the file (SEG-MAP / FIID-SEG-MAP with no value).',
       'The bound DDL is a segmented file definition — top-level fields named SEG0, SEG1, SEG5, … each TYPE XXX-SEGMENT.',
       'You want absent segments skipped entirely, exactly as Base24 reads/writes the file.',
     ],
@@ -15945,6 +15967,15 @@ function _mePsRunLint(item, parsed) {
   const segmaps   = new Set();   // seg-map labels seen so far
   const warns = [];
   const known = id => ddlIds.has(id) || synthetic.has(id);
+  const _leaf = s => String(s).split('.').pop();
+  // Qualified ("SEG0.SEG-MAP") and leaf ("SEG-MAP") forms both name the same
+  // DDL field — the engine resolves either, so the lint accepts either.
+  const knownFieldLeaf = id => ddlIds.has(id) || [...ddlIds].some(k => _leaf(k) === id);
+  // Same flag the engine uses: a top-level read-segment-fields block marks a
+  // segmented-file spec, where a no-value read-bitmap READS the map field from
+  // the record (SEG-MAP / FIID-SEG-MAP) instead of being an ISO wire bitmap.
+  const segSpec = Array.isArray(parsed) &&
+    parsed.some(b => b && typeof b === 'object' && 'read-segment-fields' in b);
 
   const checkRef = (n, attr, id, allowSynthetic = true) => {
     if (typeof id !== 'string' || !id) return;
@@ -16012,9 +16043,22 @@ function _mePsRunLint(item, parsed) {
             }
           } else if (attrs?.field) {
             synthetic.add(attrs.field);
-            bitmaps.add(attrs.field);
-            if (attrs?.encoding && !/^(binary|hex|ascii-hex)$/i.test(String(attrs.encoding)))
-              warns.push(`[block ${n}] read-bitmap: encoding "${attrs.encoding}" — use "binary" or "hex"`);
+            if (segSpec) {
+              // File-read segment map: the field is read from the record at its
+              // DDL position — it must exist in the bound DDLs (qualified
+              // "SEG0.SEG-MAP" or leaf "SEG-MAP" both name it).
+              segmaps.add(attrs.field);
+              if (bindingCount && ddlIds.size && !knownFieldLeaf(attrs.field))
+                warns.push(`[block ${n}] read-bitmap (segment map): "${attrs.field}" not found in bound DDLs`);
+            } else {
+              bitmaps.add(attrs.field);
+              // Strict: the field must exist in the bound DDLs — top-level
+              // short name, or the fully qualified path when nested.
+              if (bindingCount && ddlIds.size && !ddlIds.has(attrs.field))
+                warns.push(`[block ${n}] read-bitmap.field: "${attrs.field}" not found in bound DDLs — use the top-level field name or its fully qualified path`);
+              if (attrs?.encoding && !/^(binary|hex|ascii-hex)$/i.test(String(attrs.encoding)))
+                warns.push(`[block ${n}] read-bitmap: encoding "${attrs.encoding}" — use "binary" or "hex"`);
+            }
           } else {
             warns.push(`[block ${n}] read-bitmap needs a "field" attribute`);
           }
@@ -16029,10 +16073,13 @@ function _mePsRunLint(item, parsed) {
         }
         case 'read-segment-fields': {
           const ref = (typeof attrs === 'string') ? attrs : attrs?.map;
-          if (ref && !segmaps.has(ref))
-            warns.push(`[block ${n}] read-segment-fields: "${ref}" has no preceding declared-map read-bitmap block`);
+          // Leaf-aware: a map declared as "SEG0.SEG-MAP" is referenceable as
+          // "SEG-MAP" (and vice versa) — same equivalence the engine applies.
+          const segRefOk = r => segmaps.has(r) || [...segmaps].some(l => _leaf(l) === _leaf(r));
+          if (ref && !segRefOk(ref))
+            warns.push(`[block ${n}] read-segment-fields: "${ref}" has no preceding segment-map read-bitmap block`);
           else if (!ref && !segmaps.size)
-            warns.push(`[block ${n}] read-segment-fields: no preceding declared-map read-bitmap block`);
+            warns.push(`[block ${n}] read-segment-fields: no preceding segment-map read-bitmap block`);
           break;
         }
         case 'read-fixed': {
@@ -19650,6 +19697,22 @@ function _meExecReadBitmap(attrs, ctx) {
     ctx.fields.push({ id: 'read-bitmap', error: 'Missing field attribute' });
     return;
   }
+  // Segmented-file spec (a read-segment-fields block follows) with no declared
+  // value: the map is the named field IN THE FILE — Base24 SEG-MAP (pre-6.0) or
+  // FIID-SEG-MAP on a 6.0 IDF — read at its DDL position. A parse-time SEG-MAP
+  // input still overrides (e.g. a 6.0 non-IDF file whose SEG-MAP is zeroed).
+  if (ctx.segSpec) {
+    const adhoc = ctx.segMapOverride != null && String(ctx.segMapOverride).trim() !== '';
+    return adhoc ? _meExecSegMap(attrs, ctx) : _meExecReadSegMapFromFile(attrs, ctx);
+  }
+  // Strict field resolution: when DDL bindings are resolved, the declared
+  // field must exist — the short name for a top-level field, or the fully
+  // qualified path (e.g. "ISOPSEM.PRI-BIT-MAP" when the bound DDL nests the
+  // structure under a group).
+  if ((ctx.resolvedBindings || []).some(r => r?.defs?.length) && !_meFindDefById(attrs.field, ctx)) {
+    ctx.fields.push({ id: attrs.field, error: `Bitmap field "${attrs.field}" not found in the bound DDL — use the top-level field name, or its fully qualified path (e.g. "ISOPSEM.${attrs.field}")` });
+    return;
+  }
   const encoding  = attrs.encoding || 'binary';
   // 'hex' (canonical) == 'ascii-hex' (legacy): the bitmap is written as hex
   // CHARACTERS in the decoded stream (ASCII or EBCDIC hex, already normalized to
@@ -20087,6 +20150,58 @@ function _meParseSegMap(value, bits, bit0, encoding) {
   return { set, hex, bin };
 }
 
+// Segment map read FROM THE RECORD (Base24 segmented file). The map field —
+// SEG-MAP (pre-6.0, REDEFINES BINARY 32) or FIID-SEG-MAP (6.0 IDF, BINARY 32) —
+// is declared in SEG0; read it at its DDL offset as a big-endian bitmap, bit0 =
+// leftmost. This is a PEEK: 0 bytes consumed, so the following read-segment-
+// fields reads SEG0 (incl. these bytes) from the start. The field's declared
+// TYPE/length drives the read — no `encoding` needed. All-zeros is how a 6.0
+// file signals "the real map is on the IDF", so it's surfaced as an error.
+function _meExecReadSegMapFromFile(attrs, ctx) {
+  const label = attrs.field;
+  const defs  = _meCollectBindingDefs(ctx.resolvedBindings);
+  const canon = s => String(s).replace(/\[\d+\]/g, '');
+  const leaf  = id => canon(id).split('.').pop();
+  const def   = defs.find(d => canon(d.id) === label) || defs.find(d => leaf(d.id) === label);
+  if (!def) {
+    ctx.fields.push({ id: label, error: `Segment-map field "${label}" is not declared in the bound DDL — it must exist in SEG0 (e.g. SEG-MAP / FIID-SEG-MAP TYPE BINARY 32)` });
+    return;
+  }
+  const off = def.offset, len = def.length || 0;
+  if (off == null || len <= 0) {
+    ctx.fields.push({ id: label, error: `Segment-map field "${label}" has no resolved position/length in the DDL` });
+    return;
+  }
+  // SEG0 is always first, so its DDL offset equals its real offset regardless of
+  // which later segments are present. Read raw (pre-decode) bytes so a message-
+  // wide EBCDIC pass can't mangle the map.
+  const src = ctx.rawBytes || ctx.bytes;
+  if (off + len > src.length) {
+    ctx.fields.push({ id: label, error: `Not enough bytes for segment map "${label}" (need ${len} at offset ${off}, have ${src.length})` });
+    return;
+  }
+  const raw = Array.from(src.slice(off, off + len));
+  if (raw.every(b => b === 0)) {
+    ctx.fields.push({ id: label, error: `${label} is all zeros — a Base24 6.0 file signals "use the IDF map" this way. Bind the IDF's FIID-SEG-MAP, or supply the map on the parse-spec ("value") or the SEG-MAP input.` });
+    return;
+  }
+  const set = new Set();
+  for (let i = 0; i < raw.length; i++)
+    for (let b = 0; b < 8; b++)
+      if (raw[i] & (0x80 >> b)) set.add(i * 8 + b);   // big-endian, bit0 = leftmost
+  const segs = [...set].sort((x, y) => x - y);
+  const f = {
+    id: label, segSet: set,
+    description: `segment map (read from file @${off}) — SEGs present: ${segs.join(', ') || 'none'}`,
+    valueLength: 0,
+    value: raw.map(x => x.toString(16).toUpperCase().padStart(2, '0')).join(''), rawHex: '',
+    startByte: ctx.cursor, endByte: ctx.cursor - 1,
+  };
+  ctx.fields.push(f);
+  ctx.fieldsById[label] = f;
+  ctx.segMap = f;
+}
+
 function _meExecSegMap(attrs, ctx) {
   const a     = attrs || {};
   const bits  = Number(a.bits) > 0 && Number(a.bits) % 4 === 0 ? Number(a.bits) : 32;
@@ -20307,9 +20422,14 @@ function _meExecParseSpec(item, bytes, opts) {
     ? parseSpec
     : [{ 'read-ddl': 'ANY' }, { 'token-area': 'ANY' }];
 
+  // A read-segment-fields block marks this as a segmented-file spec — that's how
+  // a no-value read-bitmap knows to read the map field FROM the record (SEG-MAP /
+  // FIID-SEG-MAP) rather than treat it as an 8/16-byte ISO wire bitmap.
+  const segSpec = effectiveSpec.some(b => b && typeof b === 'object' && 'read-segment-fields' in b);
+
   const ctx = {
     bytes, cursor: 0, fields: [], fieldsById: {},
-    tokens: null, resolvedBindings, item, parseSpecUsed,
+    tokens: null, resolvedBindings, item, parseSpecUsed, segSpec,
     segMapOverride: opts?.segMapOverride ?? null,
     // format + original (pre-EBCDIC) bytes so TYPE BINARY fields render exactly
     // like the legacy parser (format-dependent decode; integer from raw bytes).

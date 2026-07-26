@@ -8004,9 +8004,18 @@ function doParseNetardLog(text, opts = {}) {
             // binding was used regardless (the user's explicit choice). Render
             // it as an amber warning line (⚠ chip + amber text); the guidance
             // lives in the hover tooltip, no extra sentence in the popup.
+            // One line per distinct (spec, DDL, score) — identical warnings from
+            // multiple records collapse into a single line with a record count.
+            const _bwGroups = new Map();
             for (const w of _boundWarnings) {
+              const k = `${w.label}|${w.ddl}|${w.pct}`;
+              const g = _bwGroups.get(k);
+              if (g) g.count++; else _bwGroups.set(k, { ...w, count: 1 });
+            }
+            for (const w of _bwGroups.values()) {
               _ppSteps.push({
-                label: `${w.label} — bound DDL ${w.ddl.split('/').pop()} matched at ${w.pct}%`,
+                label: `${w.label} — bound DDL ${w.ddl.split('/').pop()} matched at ${w.pct}%`
+                  + (w.count > 1 ? ` (${w.count} records)` : ''),
                 done: true, icon: '⚠', iconColor: '#f39c12', labelColor: '#f39c12',
                 tooltip: 'Score below 95% — verify the DDL binding is correct.',
               });
@@ -9668,6 +9677,7 @@ function renderFieldTable(msg) {
           case 'ascii': case 'text': _out = _meFmtText(_f);          break;
           case 'ebcdic':             _out = _meFmtEbcdic(_f);         break;
           case 'gmt-ts':             _out = _meFmtJulianTs(_f);       break;
+          case 'bitmap':             _out = _meFmtBitmap(_f);         break;
         }
         if (_out != null) { _f.displayValue = String(_out); _f.displayOverride = _o.display; }
       }
@@ -13536,7 +13546,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.348';
+const APP_VERSION  = '1.1.2.353';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14433,7 +14443,7 @@ const _TUT_STEPS = [
   {
     target: '#ddlScopePath', prefer: 'bottom',
     title: 'Manual DDL Override',
-    body: 'Click any DDL node in the tree to make it the active scope \u2014 the path is shown here.\n\nWith a scope selected, pressing \u25b6 Parse forces that exact DDL instead of auto-detecting. Useful when you know exactly which definition applies.',
+    body: 'Click any DDL node in the tree to make it the active scope \u2014 the path is shown here.\n\nWith a scope selected, pressing \u25b6 Parse forces that exact DDL: no identification, no recognizers and no parse-spec run \u2014 the input is parsed strictly per the selected DDL, element by element, once. Works for messages and FUP COPY file records alike.',
   },
   {
     target: '#settingsBtn', prefer: 'left',
@@ -17964,6 +17974,8 @@ const _FM_HELP = {
       ['ascii',    'PIC X(5)',       '4100427F43',                   'A[00]B[7f]C',          'A.B.C',                          'raw bytes as printable ASCII, non-printable → "."'],
       ['ebcdic',   'PIC X(5)',       'C8C5D3D3D6',                   '[c8][c5][d3][d3][d6]', 'HELLO',                          'raw bytes decoded through the EBCDIC table'],
       ['gmt-ts',   'TYPE BINARY 64', '02F35F58D95C2240',             '[02][f3]_X[d9]\\"@',   '2025-07-04 14:30:25.000000 GMT', '8-byte JULIANTIMESTAMP rendered in GMT'],
+      ['bitmap',   'TYPE BINARY 32', 'C0400000',                     '[c0][40][00][00]',     '1100 0000 0100 0000 0000 0000 0000 0000', 'raw bytes as 0/1 bits, grouped every 4 — bit0 leftmost'],
+      ['bitmap',   'PIC X',          '30',                           '0',                    '0011 0000',                      'any type — the RAW bytes are rendered, not the decoded value'],
     ],
   },
   'Data Type & Display': {
@@ -18060,7 +18072,7 @@ function _meFoSetByField(fieldId, key, val) {
 // DDLs (thousands of rows) rendering two live selects per row up-front froze
 // the editor open for seconds.
 const _ME_TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-ascii','hex-ebcdic'];
-const _ME_DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts'];
+const _ME_DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts','bitmap'];
 
 function _meFoFakeHtml(cur, defLabel) {
   const shown = cur || defLabel || '';
@@ -19312,6 +19324,14 @@ function _meFmtEbcdic(f) {
   }).join('');
 }
 
+// Display 'bitmap' — render the RAW bytes as a 0/1 bit string grouped every
+// 4 bits (C0400000 → "1100 0000 0100 0000 0000 0000 0000 0000"). Bit order
+// matches the wire: MSB of the first byte first (bit0 leftmost).
+function _meFmtBitmap(f) {
+  if (!f.rawHex) return String(f.value ?? '');
+  return f.rawHex.split('').map(h => parseInt(h, 16).toString(2).padStart(4, '0')).join(' ');
+}
+
 // Display 'gmt-ts' — decode the RAW bytes as a NonStop JULIANTIMESTAMP (64-bit
 // big-endian microseconds since the Julian-day epoch) and render as GMT date/time.
 // Unix epoch (1970-01-01 00:00 GMT) = Julian day 2440588 = 210866803200000000 µs,
@@ -19351,6 +19371,7 @@ function _meApplyDisplayOverride(f, def, ctx) {
     case 'text':     out = _meFmtText(f); break;
     case 'ebcdic':   out = _meFmtEbcdic(f); break;
     case 'gmt-ts':   out = _meFmtJulianTs(f); break;
+    case 'bitmap':   out = _meFmtBitmap(f); break;
     default: return;
   }
   if (out !== undefined && out !== null) {
@@ -20190,16 +20211,43 @@ function _meExecReadSegMapFromFile(attrs, ctx) {
     for (let b = 0; b < 8; b++)
       if (raw[i] & (0x80 >> b)) set.add(i * 8 + b);   // big-endian, bit0 = leftmost
   const segs = [...set].sort((x, y) => x - y);
-  const f = {
-    id: label, segSet: set,
-    description: `segment map (read from file @${off}) — SEGs present: ${segs.join(', ') || 'none'}`,
-    valueLength: 0,
+  // The map is a REAL field in the record — no top-of-list synthetic row.
+  // read-segment-fields surfaces it at its true position: the map field's own
+  // row gets the SEGs-present annotation, and a REDEFINES map (SEG-MAP over
+  // SEG-MAP-R) is inserted as an overlay row right after the bytes it re-views.
+  const info = {
+    id: label, segSet: set, valueLength: 0,
     value: raw.map(x => x.toString(16).toUpperCase().padStart(2, '0')).join(''), rawHex: '',
-    startByte: ctx.cursor, endByte: ctx.cursor - 1,
+    description: `segment map (read from file @${off}) — SEGs present: ${segs.join(', ') || 'none'}`,
   };
-  ctx.fields.push(f);
-  ctx.fieldsById[label] = f;
-  ctx.segMap = f;
+  ctx.fieldsById[label] = info;
+  ctx.segMap = info;
+  ctx._segMapFromFile = { label, defId: canon(def.id), off, end: off + len - 1, isRedef: !!def.isRedefines, info };
+}
+
+// Surface a file-read segment map at its true position in the results — called
+// by the segment walk after each field row is pushed.
+function _meSegMapPlaceRow(def, f, ctx) {
+  const p = ctx._segMapFromFile;
+  if (!p) return;
+  const canon = s => String(s).replace(/\[\d+\]/g, '');
+  if (canon(def.id) === p.defId) {
+    // The map field itself was read (e.g. FIID-SEG-MAP) — annotate its row.
+    f.description = p.info.description;
+    f.segSet = p.info.segSet;
+    ctx._segMapFromFile = null;
+    return;
+  }
+  if (p.isRedef && f.endByte != null && f.endByte >= p.end) {
+    // REDEFINES map — overlay row right after the field(s) covering its bytes.
+    ctx.fields.push({
+      id: p.label, description: p.info.description,
+      valueLength: p.end - p.off + 1, value: p.info.value, rawHex: '',
+      startByte: p.off, endByte: p.end,
+      isRedefines: true,
+    });
+    ctx._segMapFromFile = null;
+  }
 }
 
 function _meExecSegMap(attrs, ctx) {
@@ -20281,6 +20329,7 @@ function _meExecSegmentFields(attrs, ctx) {
       _meApplyDisplayOverride(f, def, ctx);
       ctx.fields.push(f);
       ctx.fieldsById[def.id] = f;
+      _meSegMapPlaceRow(def, f, ctx);
     }
     return f;
   };
@@ -20303,6 +20352,15 @@ function _meExecSegmentFields(attrs, ctx) {
       }
     }
     if (truncated) break;
+  }
+  // A file-read map that never found its anchor (e.g. truncated SEG0) is
+  // still surfaced, at its declared position.
+  if (ctx._segMapFromFile) {
+    const p = ctx._segMapFromFile;
+    ctx.fields.push({ id: p.label, description: p.info.description,
+      valueLength: p.end - p.off + 1, value: p.info.value, rawHex: '',
+      startByte: p.off, endByte: p.end, isRedefines: p.isRedef || undefined });
+    ctx._segMapFromFile = null;
   }
   // Length reconciliation: leftover bytes mean the map is missing a segment
   // (or the payload holds more than the DDL declares).
@@ -21029,7 +21087,7 @@ function _meSave() {
             <ol style="padding-left:18px;margin:0">
               <li>Write or load a <strong>DDL definition</strong> in the top-left panel</li>
               <li>Select a <strong>Volume / Subvolume / DDL</strong> in the tree to set the parse scope</li>
-              <li>Paste or drop a <strong>message</strong> in the Message Input panel</li>
+              <li>Paste or drop a <strong>message or file capture</strong> (NETARD / FUP COPY) in the Message Input panel</li>
               <li>Click <strong>▶ Parse</strong> — results appear in the bottom panels</li>
             </ol>
             <br>
@@ -21089,6 +21147,7 @@ function _meSave() {
               <li><strong>Format selector</strong> (<em>Auto</em> dropdown) — override auto-detection by selecting a specific format; the dropdown turns amber when a format is forced</li>
               <li>ISO timestamp prefixes (<code>YYYY-MM-DD HH:MM:SS</code>) are automatically stripped and displayed separately</li>
               <li>NETARD capture files are supported (multi-record, multi-message); a <strong>Line Width</strong> control appears in the header for NETARD input</li>
+              <li><strong>Files parse too</strong> — paste or drop a FUP COPY capture (<code>$VOL.SUBVOL.FILE&nbsp;&nbsp;RECORD n</code> headers); each record is split out and parsed like a message, matched against File detection types by its wrapper filename</li>
               <li>Drop any text or capture file onto the panel to load it</li>
               <li><strong>✕ Clear</strong> button — clears all input and resets the parser</li>
               <li>Use <strong>&lt; &gt;</strong> arrows in the header to navigate between messages when multiple are loaded</li>
@@ -21096,19 +21155,20 @@ function _meSave() {
             </ul>
           </div></div>
 
-          <!-- 4b. Message Detection & DDL Matching -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Detection &amp; DDL Matching <span class="h-sub-arrow">+</span></div>
+          <!-- 4b. Message & File Detection & DDL Matching -->
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message &amp; File Detection · DDL Matching <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
-            <p style="margin:0 0 6px"><strong>Detection is configurable.</strong> Open <strong>Settings → Data Detection → ⊞ Data Editor</strong> (expand the Data Detection section) to define message types. Each type carries an ordered list of <strong>recognizers</strong> — byte-level conditions such as a <code>literal</code> at an offset, an <code>mti</code> pattern, <code>min-length</code>/<code>max-length</code>, a <code>numeric</code>/<code>regex</code> field, a <code>bitmap</code>, or a <code>source</code>/<code>destination</code>/<code>filename</code> match.</p>
+            <p style="margin:0 0 6px"><strong>Detection is configurable — for messages AND files.</strong> Open <strong>Settings → Data Detection → ⊞ Data Editor</strong> (expand the Data Detection section) to define message and file types. Each type carries an ordered list of <strong>recognizers</strong> — byte-level conditions such as a <code>literal</code> at an offset, an <code>mti</code> pattern, <code>min-length</code>/<code>max-length</code>, a <code>numeric</code>/<code>regex</code> field, a <code>bitmap</code>, or a <code>source</code>/<code>destination</code>/<code>filename</code> match.</p>
             <ul style="padding-left:16px;margin:0 0 8px;font-size:10.5px">
               <li><strong>All</strong> recognizers of a type must pass for it to match (first failing one short-circuits).</li>
               <li>Types are tried in <strong>sidebar order</strong>; the <strong>first</strong> whose recognizers all pass wins.</li>
+              <li><strong>File types</strong> (kind <em>file</em>) match FUP COPY records by their wrapper filename (<code>$VOL.SUBVOL.FILE</code>) via the <code>filename</code> recognizer; records without a wrapper filename never consult them, so they can't shadow message types.</li>
               <li>Each type can also carry <strong>DDL bindings</strong>, a <strong>parse spec</strong>, a DE map, and field overrides.</li>
-              <li>Built-in defaults cover ISO 8583, STM, PSTM, Base24 and NDC; edit or add your own. A message no type recognizes shows <em>Unknown</em> — click <em>Data Detection</em> in the results to define a rule.</li>
+              <li>Built-in defaults cover ISO 8583, STM, PSTM, Base24, NDC and a Segmented File template; edit or add your own. A message no type recognizes shows <em>Unknown</em> — click <em>Data Detection</em> in the results to define a rule.</li>
             </ul>
             <p style="margin:8px 0 4px"><strong>When ▶ Parse runs:</strong></p>
             <ol style="padding-left:18px;margin:0">
-              <li style="margin-bottom:6px"><strong>Manual override</strong> — if a single DDL node is selected in the tree <em>and</em> the input is one message, a dialog offers to use that DDL exclusively (the <span style="font-family:var(--font-mono);font-size:10px;background:var(--bg-input);padding:1px 3px;border-radius:2px">USER</span> badge shows in results).</li>
+              <li style="margin-bottom:6px"><strong>Manual override</strong> — if a DDL node is selected in the tree (single message, or a FUP COPY file capture), that DDL is used exclusively: <em>no identification, no recognizers, no parse-spec run</em>. The input is parsed strictly per the selected DDL, element by element, once. The <span style="font-family:var(--font-mono);font-size:10px;background:var(--bg-input);padding:1px 3px;border-radius:2px">USER</span> badge shows in results and the progress overlay prints the amber <em>Manual override mode — Identify · Recognizers · Parse-specs — not used</em> notice.</li>
               <li style="margin-bottom:6px"><strong>Detection → bound DDL.</strong> The recognizers run. If a type matches <em>and</em> it has a DDL binding, that bound DDL is used directly — compiled only if its content changed, then scored once. If the bound DDL scores below <strong>95%</strong>, an amber <span style="color:#f39c12">⚠</span> line flags it so you can verify the binding is right.</li>
               <li style="margin-bottom:6px"><strong>DDL scoring.</strong> When nothing matches, or a matched type has no binding, candidate DDLs are compiled and scored. The score blends <em>accuracy</em> — per-byte type validity, with hard errors weighted 1.0 and soft type mismatches 0.7 — and <em>coverage</em> (bytes consumed ÷ message length), so a DDL that both fits the bytes and explains most of the message wins:
                 <ul style="padding-left:14px;margin:4px 0 0;font-size:10.5px">
@@ -21121,6 +21181,21 @@ function _meSave() {
             <p style="margin:6px 0 0;color:var(--text-dim);font-size:10.5px">The parse-progress overlay shows each step live — detection, any compilation (<em>Compiling 1 of N</em>), and scoring — so long DDL trees don't look frozen.</p>
           </div></div>
 
+          <!-- 4c. Segmented Files (Base24) -->
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Segmented Files (Base24) <span class="h-sub-arrow">+</span></div>
+          <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 6px">A segmented file's DEFINITION declares only <code>SEGn TYPE xxx-SEG</code> entries; the record on disk holds <strong>only the segments marked present</strong> by a 32-bit segment map (bit 0 = leftmost = SEG0, increasing left→right). The map can come from <strong>within the actual file</strong> or as an <strong>attribute on the parse-spec</strong>:</p>
+            <ul style="padding-left:16px;margin:0 0 8px;font-size:10.5px">
+              <li><strong>From the file — Base24 &lt; 6.0:</strong> SEG0's header carries the live map (<code>SEG-MAP</code>, REDEFINES over SEG-MAP-R). Just name the field — it is read from the record at its DDL position:<br><code>{ "read-bitmap": { "field": "SEG-MAP" } }</code></li>
+              <li><strong>From the file — Base24 6.0 IDF:</strong> the per-file <code>SEG-MAP</code> is zeroed and the real map is the IDF's <code>FIID-SEG-MAP</code> — also physically in the record:<br><code>{ "read-bitmap": { "field": "FIID-SEG-MAP" } }</code></li>
+              <li><strong>On the parse-spec — Base24 6.0 non-IDF:</strong> the map is NOT in the record (it lives on the institution's IDF), so declare it with <code>bits</code>/<code>value</code>:<br><code>{ "read-bitmap": { "field": "FIID-SEG-MAP", "bits": 32, "value": "C4180000" } }</code></li>
+              <li>The <strong>SEG-MAP input</strong> at parse time overrides all of the above, ad-hoc (hex like <code>C4180000</code> or 0/1 bits).</li>
+              <li>An <strong>all-zeros</strong> in-file map is the 6.0 signal "use the IDF map" — it is reported as an error, never silently read as empty.</li>
+            </ul>
+            <p style="margin:0 0 6px;font-size:10.5px">A <code>{ "read-segment-fields": "…" }</code> block then walks the DDL's top-level <code>SEGn</code> fields in declaration order, reading only the present segments (absent ones consume nothing). The map is shown at its true position in the results; leftover bytes after the last mapped segment are flagged. Tip: the <strong>bitmap</strong> Display override renders any field's raw bytes as 0/1 groups (<code>C0400000</code> → <code>1100 0000 0100 0000 …</code>).</p>
+            <p style="margin:0;color:var(--text-dim);font-size:10.5px">Manual override on a segmented file walks the full DDL once (all segments assumed present) — type a map in the SEG-MAP bar to parse only the present segments.</p>
+          </div></div>
+
           <!-- 5. Message Formats -->
           <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Formats <span class="h-sub-arrow">+</span></div>
           <div class="h-sub-body"><div class="h-sub-body-inner">
@@ -21131,6 +21206,7 @@ function _meSave() {
               <li><strong>Tandem dump</strong> — <code>0000: F0 F2 .. |0200|</code></li>
               <li><strong>ASCII raw</strong> — character bytes interpreted as-is</li>
               <li><strong>NETARD capture</strong> — multi-record files with packet headers; sub-formats (HEX, DUMP, OCT, EBCDIC, ASCII) are detected per-record</li>
+              <li><strong>FUP COPY capture</strong> — file records with <code>$VOL.SUBVOL.FILE&nbsp;&nbsp;RECORD n&nbsp;&nbsp;KEY n</code> headers and hex or ASCII data lines — each record parses as a file record</li>
             </ul>
           </div></div>
 
@@ -21143,7 +21219,7 @@ function _meSave() {
               <li><kbd>↑ ↓</kbd> — move field selection up / down</li>
               <li><strong>Filter bar</strong> — type to narrow results by field ID or value</li>
               <li><strong>Columns</strong> dropdown — show or hide Field, Type / Description, Length, Value, Trk</li>
-              <li><strong>Type / Description</strong> column — shows the field's DDL type (or HEADING). When a field has an override configured for its message type it reads <span style="font-family:var(--font-mono);font-size:10px"><span style="color:var(--text-dim)">newtype</span> ↩ <span style="color:rgba(88,166,255,.9)">original</span></span> (redefine-style, e.g. <span style="font-family:var(--font-mono);font-size:10px">uint-be ↩ TYPE BINARY 16</span>) plus <span style="font-family:var(--font-mono);font-size:10px">as DISPLAY</span> when a display override (amount, datetime, hex, ascii, ebcdic, gmt-ts) is set — and the Value column shows the converted result.</li>
+              <li><strong>Type / Description</strong> column — shows the field's DDL type (or HEADING). When a field has an override configured for its message type it reads <span style="font-family:var(--font-mono);font-size:10px"><span style="color:var(--text-dim)">newtype</span> ↩ <span style="color:rgba(88,166,255,.9)">original</span></span> (redefine-style, e.g. <span style="font-family:var(--font-mono);font-size:10px">uint-be ↩ TYPE BINARY 16</span>) plus <span style="font-family:var(--font-mono);font-size:10px">as DISPLAY</span> when a display override (amount, datetime, hex, ascii, ebcdic, gmt-ts, bitmap) is set — and the Value column shows the converted result.</li>
               <li><strong>Raw Hex</strong> column appears automatically when the Raw Message panel is collapsed</li>
               <li>Drag any <strong>column header edge</strong> to resize that column</li>
               <li><strong>Hide Redef</strong> button — toggle visibility of REDEFINES fields</li>

@@ -1154,6 +1154,36 @@ test('gmt-ts display decodes a NonStop JULIANTIMESTAMP (BINARY 64) to GMT', () =
      '2024-06-15 12:30:45.000000 GMT', 'JULIANTIMESTAMP → GMT date/time');
 });
 
+test('bitmap display renders raw bytes as 0/1 bits grouped every 4', () => {
+  S.ddlTree = { VOL: { SV: { 'BMDDL': `
+    DEF REC.
+      02 SEG-MAP TYPE BINARY 32.
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const item = {
+    ddl_bindings: ['VOL/SV/BMDDL/REC'],
+    field_overrides: [{ field: 'SEG-MAP', display: 'bitmap' }],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+  };
+  const ctx = meExecParseSpec(item, Uint8Array.from([0xC0, 0x40, 0x00, 0x00]));
+  const f = ctx.fields.find(x => x.id === 'SEG-MAP');
+  eq(f.displayValue, '1100 0000 0100 0000 0000 0000 0000 0000', 'C0400000 → bit string, 4-bit groups');
+  eq(f.displayOverride, 'bitmap', 'display override marker set');
+  // Any type, not just BINARY — the RAW bytes are rendered: PIC X "0" = 0x30.
+  S.ddlTree = { VOL: { SV: { 'BMX': `
+    DEF REC.
+      02 FLAG PIC X.
+    END REC.
+  ` } } };
+  const ctx2 = meExecParseSpec({
+    ddl_bindings: ['VOL/SV/BMX/REC'],
+    field_overrides: [{ field: 'FLAG', display: 'bitmap' }],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+  }, Uint8Array.from([0x30]));
+  eq(ctx2.fields.find(x => x.id === 'FLAG').displayValue, '0011 0000', 'PIC X ASCII "0" (0x30) → "0011 0000"');
+});
+
 test('field_overrides match ALL occurrences of a nested OCCURS field (occurrence-independent)', () => {
   S.ddlTree = { VOL: { SV: { 'FOCC': `
     DEF REC.
@@ -2435,9 +2465,16 @@ test('file-read: SEG-MAP read from the record (Base24 <6.0) drives segment selec
   eq(ctx.fields.some(f => f.error), false, 'no errors');
   const map = ctx.fieldsById['SEG-MAP'];
   eq(map.value, 'C0100000', 'map echoed as hex from the file bytes');
-  eq(map.valueLength, 0, 'peek — the map consumes no bytes of its own');
   eq([...map.segSet].sort((a, b) => a - b).join(','), '0,1,11', 'segSet decoded from the record');
   eq(map.description.includes('read from file'), true, 'labelled read-from-file');
+  // REDEFINES map — surfaced as an overlay row AT ITS POSITION (after the
+  // SEG-MAP-R words covering bytes 2-5), never as element 1 of the results.
+  const row = ctx.fields.find(f => f.id === 'SEG-MAP');
+  eq(!!row, true, 'SEG-MAP row present in the results');
+  eq(ctx.fields.indexOf(row), 3, 'placed right after SEG-MAP-R.RW (LGTH, LW, RW, SEG-MAP)');
+  eq(row.startByte, 2, 'row carries the real start offset');
+  eq(row.endByte, 5, 'row carries the real end offset');
+  eq(row.isRedefines, true, 'overlay row is marked REDEFINES');
   const segsRead = [...new Set(ctx.fields.filter(f => !f.error && /^SEG\d+/.test(f.id)).map(f => f.id.match(/^SEG(\d+)/)[1]))];
   deepEq(segsRead, ['0', '1', '11'], 'SEG5 skipped (bit clear)');
   eq(ctx.fieldsById['SEG1'].value, 'CCC', 'SEG1 payload');
@@ -2451,6 +2488,13 @@ test('file-read: FIID-SEG-MAP read from the record (6.0 IDF) drives segment sele
   const ctx = meExecParseSpec(fileMapItem('FIID-SEG-MAP'), bytes, { format: 'hex', rawBytes: bytes });
   eq(ctx.fields.some(f => f.error), false, 'no errors');
   eq(ctx.fieldsById['FIID-SEG-MAP'].value, 'C0100000', 'map read from the FIID-SEG-MAP field bytes');
+  // Plain field map — its own row (at its position) carries the annotation;
+  // no extra synthetic row is emitted.
+  const row = ctx.fields.find(f => f.id === 'SEG0.FIID-SEG-MAP');
+  eq(row.description.includes('SEGs present: 0, 1, 11'), true, 'field row annotated with the decoded map');
+  eq([...row.segSet].join(','), '0,1,11', 'segSet attached to the field row');
+  eq(ctx.fields.filter(f => /FIID-SEG-MAP/.test(f.id)).length, 1, 'no duplicate map row');
+  eq(ctx.fields.findIndex(f => f.id === 'SEG0.FIID-SEG-MAP'), 3, 'row sits at its declared position (after LGTH, LW, RW)');
   eq(ctx.fieldsById['SEG1'].value, 'CCC', 'SEG1 payload');
   eq(ctx.fieldsById['SEG11'].value, 'XX', 'SEG11 payload');
 });

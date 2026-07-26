@@ -2467,14 +2467,21 @@ test('file-read: SEG-MAP read from the record (Base24 <6.0) drives segment selec
   eq(map.value, 'C0100000', 'map echoed as hex from the file bytes');
   eq([...map.segSet].sort((a, b) => a - b).join(','), '0,1,11', 'segSet decoded from the record');
   eq(map.description.includes('read from file'), true, 'labelled read-from-file');
-  // REDEFINES map — surfaced as an overlay row AT ITS POSITION (after the
-  // SEG-MAP-R words covering bytes 2-5), never as element 1 of the results.
-  const row = ctx.fields.find(f => f.id === 'SEG-MAP');
-  eq(!!row, true, 'SEG-MAP row present in the results');
+  // REDEFINES map — the DDL's OWN field row (SEG0.SEG-MAP), emitted as an
+  // overlay at its declared position, never as element 1 of the results.
+  const row = ctx.fields.find(f => f.id === 'SEG0.SEG-MAP');
+  eq(!!row, true, 'SEG0.SEG-MAP row present exactly as the DDL declares it');
   eq(ctx.fields.indexOf(row), 3, 'placed right after SEG-MAP-R.RW (LGTH, LW, RW, SEG-MAP)');
   eq(row.startByte, 2, 'row carries the real start offset');
   eq(row.endByte, 5, 'row carries the real end offset');
   eq(row.isRedefines, true, 'overlay row is marked REDEFINES');
+  eq(row.description.includes('SEGs present: 0, 1, 11'), true, 'map annotation on the DDL field row');
+  // Display overrides reach the REDEFINES row like any other field.
+  const ctxB = meExecParseSpec({ ...fileMapItem('SEG-MAP'),
+    field_overrides: [{ field: 'SEG0.SEG-MAP', display: 'bitmap' }] },
+    bytes, { format: 'hex', rawBytes: bytes });
+  eq(ctxB.fields.find(f => f.id === 'SEG0.SEG-MAP').displayValue,
+     '1100 0000 0001 0000 0000 0000 0000 0000', 'bitmap display override applies to the SEG-MAP overlay row');
   const segsRead = [...new Set(ctx.fields.filter(f => !f.error && /^SEG\d+/.test(f.id)).map(f => f.id.match(/^SEG(\d+)/)[1]))];
   deepEq(segsRead, ['0', '1', '11'], 'SEG5 skipped (bit clear)');
   eq(ctx.fieldsById['SEG1'].value, 'CCC', 'SEG1 payload');
@@ -2494,7 +2501,7 @@ test('file-read: FIID-SEG-MAP read from the record (6.0 IDF) drives segment sele
   eq(row.description.includes('SEGs present: 0, 1, 11'), true, 'field row annotated with the decoded map');
   eq([...row.segSet].join(','), '0,1,11', 'segSet attached to the field row');
   eq(ctx.fields.filter(f => /FIID-SEG-MAP/.test(f.id)).length, 1, 'no duplicate map row');
-  eq(ctx.fields.findIndex(f => f.id === 'SEG0.FIID-SEG-MAP'), 3, 'row sits at its declared position (after LGTH, LW, RW)');
+  eq(ctx.fields.findIndex(f => f.id === 'SEG0.FIID-SEG-MAP'), 4, 'row sits at its declared position (after LGTH, LW, RW, SEG-MAP overlay)');
   eq(ctx.fieldsById['SEG1'].value, 'CCC', 'SEG1 payload');
   eq(ctx.fieldsById['SEG11'].value, 'XX', 'SEG11 payload');
 });

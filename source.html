@@ -683,6 +683,10 @@ input[type="text"]:focus { border-color: var(--accent); }
 .rec-meta-pipe { color: var(--border); margin: 0 2px; }
 .rec-meta-route { color: var(--text); }
 .rec-meta-time  { color: var(--text-dim); }
+/* Parse provenance: which parser ran, and coverage when it fell short */
+.rec-meta-by    { color: var(--text-dim); }
+.rec-meta-short { color: #e6a817; cursor: help; }
+body.light .rec-meta-short { color: #8a6000; }
 
 /* ---- Token area rows ---- */
 tr.tkn-area-hdr { cursor: pointer; user-select: none; }
@@ -1140,6 +1144,11 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .dr-spec-item:last-child { border-bottom:none; }
 .dr-spec-group { padding:5px 8px 2px; font-size:calc(var(--sz-mono) - 2px); font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-dim); border-bottom:2px solid var(--border); }
 .dr-spec-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; border:1px solid rgba(255,255,255,.2); }
+/* Missing-configuration badges — surface gaps in the entity lists rather than
+   only at parse time (no recognizer / no parse spec / no DDL binding). */
+.me-gap-badge { font-size: var(--sz-badge); padding: 0 4px; border-radius: 8px;
+  background: rgba(230,168,23,0.18); color: #e6a817; flex-shrink: 0; margin-left: 2px;
+  font-weight: 700; white-space: nowrap; cursor: help; }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-spec-type { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; width:36px; text-align:right; }
 .dr-spec-vol { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; }
@@ -7806,6 +7815,7 @@ function doParseNetardLog(text, opts = {}) {
               source: rec.source, sourceDet: rec.sourceDet, dest: rec.dest, destDet: rec.destDet,
               timestamp: rec.time, msgType, fields, ddlPath, defName, tokens,
               noMatchDDL: !fields.length,
+              parsedBy: 'manual override',
               _segScopeKey: segKey,
             });
           }
@@ -7900,7 +7910,7 @@ function doParseNetardLog(text, opts = {}) {
                 // was scored once) in the pre-pass. Honour it directly, never
                 // prompt; a weak score only raises a warning.
                 if (_pd.bound) {
-                  parsed.push({ ..._base, msgType, fields: _pd.bound.fields, ddlPath: _pd.bound.ddlPath, defName: _pd.bound.defName, tokens: null, noMatchDDL: !_pd.bound.fields.length });
+                  parsed.push({ ..._base, msgType, fields: _pd.bound.fields, ddlPath: _pd.bound.ddlPath, defName: _pd.bound.defName, tokens: null, noMatchDDL: !_pd.bound.fields.length, parsedBy: _pd.bound.viaEngine ? `parse-spec (${_pd.bound.parseSpecUsed || 'binary'})` : 'DDL walk' });
                   if (_pd.bound.score < 0.95) {
                     _boundWarnings.push({ recNo: rec.recNo, label: msgType.label || msgType.type, ddl: _pd.bound.ddlPath, pct: Math.round(_pd.bound.score * 100) });
                   }
@@ -7953,7 +7963,8 @@ function doParseNetardLog(text, opts = {}) {
                   const _ps = _meParseWithChosenBinding(msgType, match, parseBytes,
                     { format: S.inputFormat, rawBytes: bytes });
                   parsed.push({ ..._base, msgType, fields: _ps ? _ps.fields : match.fields,
-                    ddlPath: match.ddlPath, defName: match.defName, tokens: null });
+                    ddlPath: match.ddlPath, defName: match.defName, tokens: null,
+                    parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk' });
                 } else {
                   const pidx = parsed.length;
                   parsed.push(null);
@@ -8146,7 +8157,7 @@ function doParseNetardLog(text, opts = {}) {
                 const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
                 const _ps = _meParseWithChosenBinding(d.msgType, match, d.parseBytes,
                   { format: S.inputFormat, rawBytes: d.rawBytes || d.parseBytes });
-                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: _ps ? _ps.fields : match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: null };
+                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: _ps ? _ps.fields : match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: null, parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk' };
               }
               _parseProgressStep('Finalizing\u2026');
               setTimeout(() => _finalizeNetard(), 500);
@@ -8805,7 +8816,7 @@ function doParseMessages() {
                   const _bpp = _bp.split('/');
                   parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
                     fields: _direct.fields, ddlPath: _bpp.slice(0, 3).join('/') || null, defName: _bpp[3] || null,
-                    msgType, tokens: null, byteCharMap,
+                    msgType, tokens: null, byteCharMap, parsedBy: `parse-spec (${_direct.parseSpecUsed || 'binary'})`,
                     charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk });
                   continue;
                 }
@@ -8908,6 +8919,7 @@ function doParseMessages() {
               else if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
               parsed[d.parsedIdx] = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
                 fields, ddlPath, defName, msgType: d.msgType, tokens: null,
+                parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk',
                 byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length, _auditChunk: d.chunk };
             }
             if (deferreds.length > 2) {
@@ -9479,6 +9491,11 @@ function _tipShow(el, text) {
     tip.style.cssText = 'position:fixed;z-index:99999;background:#333;color:#fff;font-size:10px;font-family:sans-serif;padding:2px 7px;border-radius:3px;pointer-events:none;white-space:nowrap;opacity:0;transition:opacity 0.12s';
     document.body.appendChild(tip);
   }
+  // Multi-line tooltips (one warning per line) keep their newlines; single-line
+  // ones stay nowrap so they never wrap mid-phrase.
+  const _multi = /\n/.test(String(text));
+  tip.style.whiteSpace = _multi ? 'pre-line' : 'nowrap';
+  tip.style.textAlign  = 'left';
   tip.textContent = text;
   const r = el.getBoundingClientRect();
   tip.style.opacity = '0'; tip.style.display = 'block';
@@ -9707,6 +9724,32 @@ function renderCurrent() {
 }
 
 function renderFieldTable(msg) {
+  // Provenance for the metadata bar: which parser produced these fields, and
+  // how much of the record they actually account for. "Did it use the parse
+  // spec, and did it consume everything?" should be answerable at a glance.
+  const _provHtml = (() => {
+    const total = msg.recLength || msg.bytes?.length || 0;
+    let consumed = 0;
+    for (const f of (msg.fields || [])) {
+      if (f.error || f.endByte == null) continue;
+      if (f.endByte + 1 > consumed) consumed = f.endByte + 1;
+    }
+    const by = msg.parsedBy
+      ? `<span class="rec-meta-pipe">|</span><span class="rec-meta-by" title="Parser that produced these fields">${esc(msg.parsedBy)}</span>`
+      : '';
+    let bytesTxt = `<span>${total} bytes</span>`;
+    if (total > 0 && consumed > 0) {
+      if (consumed < total) {
+        // Trailing bytes no field accounts for — truncated loop, wrong DDL, or
+        // a section the spec never reads.
+        bytesTxt = `<span class="rec-meta-short" title="${consumed} of ${total} bytes accounted for — ${total - consumed} unparsed">${consumed}/${total} bytes</span>`;
+      } else if (consumed > total) {
+        // Fields claim bytes beyond the record — a length or count read wrong.
+        bytesTxt = `<span class="rec-meta-short" title="Fields extend ${consumed - total} byte(s) past the end of the record">${total} bytes ⚠</span>`;
+      }
+    }
+    return { by, bytesTxt };
+  })();
   // NETARD record metadata bar
   let metaContent = '';
   if (msg.isNetard) {
@@ -9717,15 +9760,17 @@ function renderFieldTable(msg) {
       <span class="rec-meta-route">${esc(msg.source||'?')} → ${esc(msg.dest||'?')}</span>
       <span class="rec-meta-pipe">|</span>
       <span class="rec-meta-time">${esc(msg.time||'')}</span>
+      ${_provHtml.by}
       <span class="rec-meta-pipe">|</span>
-      <span>${msg.recLength} bytes</span>`;
+      ${_provHtml.bytesTxt}`;
   } else if (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') {
     const t   = msg.msgType;
     const ddlName = msg.ddlPath ? (msg.ddlPath.split('/').pop() + (msg.defName ? '/' + msg.defName : '')) : '';
     metaContent = `${_btypeHtml(t.type, t.color)}
       ${ddlName ? `<span class="rec-meta-pipe">|</span><span>${esc(ddlName)}</span>` : ''}
+      ${_provHtml.by}
       <span class="rec-meta-pipe">|</span>
-      <span>${msg.bytes?.length || 0} bytes</span>`;
+      ${_provHtml.bytesTxt}`;
   }
   const _recMetaContent = document.getElementById('recMetaContent');
   if (_recMetaContent) _recMetaContent.innerHTML = metaContent;
@@ -11272,6 +11317,7 @@ function _auditLazyParseNext() {
   else if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
   const msg = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
     fields, ddlPath, defName, msgType: d.msgType, tokens: null,
+    parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk',
     byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length,
     isNetard: true, recNo: d.chunk.recNo, source: d.chunk.source, dest: d.chunk.dest,
     recLength: d.chunk.recLength, time: d.chunk.time };
@@ -13688,7 +13734,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.371';
+const APP_VERSION  = '1.1.2.377';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -14260,7 +14306,8 @@ function renderDetectSpecsList() {
       const label = _escHtml(s.label || s.name || '—');
       const type  = _escHtml(s.name || '');
       const vol   = s.vol ? ` <span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
-      return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span><span class="dr-spec-type">${type}</span></div>`;
+      const gaps = _meSpecGapBadgeHtml(s);
+      return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span>${gaps}<span class="dr-spec-type">${type}</span></div>`;
     };
     const msgs  = specs.filter(s => s.kind !== 'file');
     const files = specs.filter(s => s.kind === 'file');
@@ -15347,7 +15394,18 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     del.textContent = '×';
     del.title = 'Delete';
     del.onclick = e => { e.stopPropagation(); _meDeleteItem('msg', i); };
-    d.append(sw, nm, del);
+    d.append(sw, nm);
+    const _gaps = _meSpecGaps(s);
+    if (_gaps.length) {
+      const g = document.createElement('span');
+      g.className = 'me-gap-badge';
+      g.textContent = `⚠${_gaps.length}`;
+      const _tip = _gaps.map(x => '⚠ ' + x).join('\n');
+      g.onmouseenter = () => _tipShow(g, _tip);
+      g.onmouseleave = () => _tipHide();
+      d.appendChild(g);
+    }
+    d.appendChild(del);
     d.onclick = () => _meSelectItem('msg', i);
     d.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); _meCtxMsg(e, i); };
     d.ondragstart = e => _meSpecDragStart(e, i);
@@ -20711,6 +20769,34 @@ function _meWinningSpec(winner) {
 // run. Rather than silently guessing with a DDL walk, the record is surfaced as
 // a diagnostic naming the type and the missing piece. Legacy-regex matches
 // (no spec object) and file specs are exempt.
+// Missing-configuration gaps for a detection entity, as [label, tooltip] pairs.
+// Rendered as badges in the entity lists so a gap is visible while configuring,
+// not discovered at parse time.
+function _meSpecGaps(s) {
+  if (!s) return [];
+  const gaps = [];
+  if (!((s.recognizers || []).length))
+    gaps.push('No recognizer — this entity can never match anything');
+  if (!(((s.parse_spec_binary || []).length) || ((s.parse_spec_ascii || []).length)))
+    gaps.push('No parse spec — a recognized message cannot be parsed');
+  // File specs resolve their own binding internally (seg-map etc.).
+  if (s.kind !== 'file' && !((s.ddl_bindings || []).filter(Boolean).length))
+    gaps.push('No DDL binding — you will be asked to pick a DDL at parse time');
+  return gaps;
+}
+
+// Same ⚠N badge the DDL tree uses for validation warnings — count on the badge,
+// detail on hover — so a missing-config warning reads identically everywhere.
+function _meSpecGapBadgeHtml(s) {
+  const gaps = _meSpecGaps(s);
+  if (!gaps.length) return '';
+  // Uses the app's own tooltip (immediate, styled) rather than a native title,
+  // which the drawer swallows.
+  // \n must survive as an escape sequence inside the inline JS string literal.
+  const tip = _escHtml(gaps.map(g => '⚠ ' + g).join('\n')).replace(/'/g, '&#39;').replace(/\n/g, '\\n');
+  return `<span class="me-gap-badge" onmouseenter="_tipShow(this,'${tip}')" onmouseleave="_tipHide()">⚠${gaps.length}</span>`;
+}
+
 function _meSpecHasNoParseSpec(winner) {
   if (!winner || !winner.type || winner.type === 'UNKNOWN') return false;
   const spec = _meWinningSpec(winner);
@@ -20747,7 +20833,9 @@ function _meParseWithChosenBinding(winner, chosen, bytes, opts) {
   try {
     const r = _meParseFileWithSpec(use, bytes, opts);
     // A spec that produces nothing usable is worse than the legacy walk.
-    return (r && r.fields && r.fields.some(f => !f.error)) ? r : null;
+    if (!(r && r.fields && r.fields.some(f => !f.error))) return null;
+    r.boundPath = (use.ddl_bindings || []).filter(Boolean)[0] || null;
+    return r;
   } catch (e) {
     console.warn('[parse-spec run]', e);
     return null;
@@ -20792,7 +20880,9 @@ function _meParseFileWithSpec(spec, bytes, opts) {
   }
   const errs = ctx.fields.filter(f => f.error).length;
   const score = ctx.fields.length ? (ctx.fields.length - errs) / ctx.fields.length : 0;
-  return { fields: ctx.fields, score };
+  // parseSpecUsed travels with the result so the Parse Results header can state
+  // which parser produced the fields ("parse-spec (binary)" vs the legacy walk).
+  return { fields: ctx.fields, score, parseSpecUsed: ctx.parseSpecUsed };
 }
 
 // Render the left-hand verdict list of the Test bar: every Data entity in

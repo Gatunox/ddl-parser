@@ -85,6 +85,13 @@ _t.migrateSpec        = window._migrateSpec;
 _t.fmtTestSpecs       = window._fmtTestSpecs;
 _t.meExecParseSpec    = _meExecParseSpec;
 _t.meParseFileWithSpec = _meParseFileWithSpec;
+// Parse-flow routing — which parser a recognized message is sent to.
+_t.meSpecNeedsBinding       = _meSpecNeedsBinding;
+_t.meSpecHasNoParseSpec     = _meSpecHasNoParseSpec;
+_t.meParseWithChosenBinding = _meParseWithChosenBinding;
+_t.meWinningSpec            = _meWinningSpec;
+_t.bestDDLMatch             = bestDDLMatch;
+_t.fmtSpecByName            = window._fmtSpecByName;
 _t.mePsKnownDDLIds    = _mePsKnownDDLIds;
 _t.meFmCountUnresolved = _meFmCountUnresolved;
 _t.meExtractCommentDEs = _meExtractCommentDEs;
@@ -2694,6 +2701,137 @@ test('file-read: the SEG-MAP input still overrides the on-file map', () => {
   eq([...ctx.fieldsById['SEG-MAP'].segSet].join(','), '0', 'override narrows to SEG0');
   const err = ctx.fields.find(f => f.error);
   eq(err?.error?.includes('unparsed byte'), true, 'the un-mapped segments are flagged as leftover');
+});
+
+// ── Parse-flow routing: WHICH parser handles a recognized message ────────────
+// These are integration tests, not unit tests. The costliest bug this codebase
+// has had was not wrong parsing logic — it was the plain-paste flow never
+// calling the parse-spec engine at all, so a spec's `repeat count` block never
+// ran and a legacy heuristic silently produced the fields. Unit tests could not
+// see it. These assert the ROUTING DECISION and count which parser actually
+// executed, so that class of drift fails loudly.
+console.log('\nparse-flow routing (which parser ran)');
+
+const {
+  meSpecNeedsBinding, meSpecHasNoParseSpec, meParseWithChosenBinding,
+  meWinningSpec, fmtSpecByName,
+} = sandbox._t;
+
+// PSTM-shaped DDL matching the real BASE24 layout well enough to exercise the
+// shipped PSTM parse_spec (read-ddl until NUM-SERVICES → repeat → when → tokens).
+const ROUTE_DDL = `DEFINITION PSTM.
+  02 TYP           PIC X(4).
+  02 PROD-ID       PIC X(2).
+  02 USER-FLG      PIC X.
+  02 NUM-SERVICES  TYPE BINARY 16.
+  02 SRVCS         OCCURS 30 TIMES.
+    04 SRVC-CDE    PIC X(2).
+    04 SRVC-DATA   PIC X(10).
+END
+`;
+// 5 services declared, then user data, then the token area.
+function routeBytes() {
+  const b = [], p = s => { for (const c of s) b.push(c.charCodeAt(0)); };
+  p('0210'); p('02'); p('0');          // USER-FLG '0' → skip the user-data branch
+  b.push(0x00, 5);
+  for (const t of ['CK', 'SV', 'CC', 'LN', 'MM']) { p(t); p('SERVICEDAT'); }
+  p('& '); p('TK01');
+  return b;
+}
+// Count which parser executes by intercepting both entry points in the sandbox.
+function withParserCounters(fn) {
+  const origEngine = sandbox._meParseFileWithSpec;
+  const origLegacy = sandbox.bestDDLMatch;
+  const calls = { engine: 0, legacy: 0 };
+  sandbox._meParseFileWithSpec = function (...a) { calls.engine++; return origEngine.apply(this, a); };
+  sandbox.bestDDLMatch        = function (...a) { calls.legacy++; return origLegacy.apply(this, a); };
+  try { return { calls, result: fn() }; }
+  finally { sandbox._meParseFileWithSpec = origEngine; sandbox.bestDDLMatch = origLegacy; }
+}
+const routeSegCount = fields => new Set(fields.filter(f => /^SRVCS/.test(f.id))
+  .map(f => (/\[(\d+)\]/.exec(f.id) || [])[1]).filter(Boolean)).size;
+
+test('routing: classification of the shipped specs (needs-binding / no-parse-spec)', () => {
+  // PSTM ships WITH a parse_spec and WITHOUT a ddl_binding — it must be flagged
+  // as needing one, which is what forces the DDL picker instead of a silent
+  // downgrade to the legacy walk.
+  eq(meSpecNeedsBinding({ type: 'PSTM', label: 'PSTM' }), true, 'PSTM needs a binding');
+  eq(meSpecHasNoParseSpec({ type: 'PSTM', label: 'PSTM' }), false, 'PSTM does have a parse_spec');
+  // ISO 8583 Standard ships bound — it must NOT prompt.
+  eq(meSpecNeedsBinding({ type: 'ISO', label: 'ISO 8583 Standard' }), false, 'bound spec needs nothing');
+  // Base24 Generic ships with recognizers only — recognized but unparseable.
+  eq(meSpecHasNoParseSpec({ type: 'B24', label: 'Base24 Generic' }), true, 'Base24 Generic has no parse_spec');
+  // An unrecognized/legacy-regex winner resolves to no spec at all.
+  eq(meSpecHasNoParseSpec({ type: 'UNKNOWN', label: 'Unknown' }), false, 'UNKNOWN is not a spec');
+  eq(meSpecNeedsBinding({ type: 'UNKNOWN', label: 'Unknown' }), false, 'UNKNOWN never prompts');
+});
+
+test('routing: unbound spec + picked DDL → ENGINE runs the parse_spec, not the legacy walk', () => {
+  // This is the production PSTM scenario: recognized, no binding, user picks a
+  // DDL from the scores popup. The pick must FILL the binding and the spec's
+  // own parse_spec must execute — that is what reads NUM-SERVICES services.
+  S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = routeBytes();
+  const { calls, result } = withParserCounters(() =>
+    meParseWithChosenBinding({ type: 'PSTM', label: 'PSTM' },
+      { ddlPath: 'POS/SV/PSTM', defName: 'PSTM' }, bytes, { format: 'hex', rawBytes: bytes }));
+  eq(!!result, true, 'routing returns an engine result, so the caller uses it');
+  eq(calls.engine >= 1, true, 'the parse-spec engine executed');
+  eq(calls.legacy, 0, 'the legacy DDL walk was NOT used');
+  eq(routeSegCount(result.fields), 5, 'the spec\'s repeat block read exactly NUM-SERVICES services');
+});
+
+test('routing: a spec\'s OWN binding wins and never prompts', () => {
+  // With a binding present the picker answer is irrelevant — passing chosen=null
+  // (what the MATCH short-circuit does) must still parse.
+  S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
+  S.inputFormat = 'hex';
+  const spec = fmtSpecByName('PSTM');
+  const orig = spec.ddl_bindings;
+  spec.ddl_bindings = ['POS/SV/PSTM/PSTM'];
+  try {
+    eq(meSpecNeedsBinding({ type: 'PSTM', label: 'PSTM' }), false, 'a bound spec no longer needs a binding');
+    const bytes = routeBytes();
+    const { calls, result } = withParserCounters(() =>
+      meParseWithChosenBinding({ type: 'PSTM', label: 'PSTM' }, null, bytes, { format: 'hex', rawBytes: bytes }));
+    eq(!!result, true, 'parses with no DDL chosen at all');
+    eq(calls.engine >= 1, true, 'engine executed');
+    eq(calls.legacy, 0, 'legacy not used');
+    eq(routeSegCount(result.fields), 5, 'five services');
+  } finally { spec.ddl_bindings = orig; }
+});
+
+test('routing: falls back to legacy only when there is genuinely nothing to run', () => {
+  S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = routeBytes();
+  // (a) unbound spec and NO DDL chosen → nothing to walk → caller keeps legacy
+  eq(meParseWithChosenBinding({ type: 'PSTM', label: 'PSTM' }, null, bytes, { format: 'hex', rawBytes: bytes }),
+     null, 'unbound + unchosen yields no engine result');
+  // (b) a spec with no parse_spec at all → never routed to the engine
+  eq(meParseWithChosenBinding({ type: 'B24', label: 'Base24 Generic' },
+     { ddlPath: 'POS/SV/PSTM', defName: 'PSTM' }, bytes, { format: 'hex', rawBytes: bytes }),
+     null, 'no parse_spec → no engine result');
+  // (c) an unrecognized message never routes to the engine
+  eq(meParseWithChosenBinding({ type: 'UNKNOWN', label: 'Unknown' },
+     { ddlPath: 'POS/SV/PSTM', defName: 'PSTM' }, bytes, { format: 'hex', rawBytes: bytes }),
+     null, 'UNKNOWN → no engine result');
+});
+
+test('routing: an engine run that yields nothing usable does not displace legacy', () => {
+  // Guard against the opposite failure: routing to the engine and ending up with
+  // an empty/error-only result would be worse than the legacy walk.
+  S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
+  S.inputFormat = 'hex';
+  const spec = fmtSpecByName('PSTM');
+  const orig = spec.ddl_bindings;
+  spec.ddl_bindings = ['POS/SV/NOPE/NOPE'];      // binding that cannot resolve
+  try {
+    const r = meParseWithChosenBinding({ type: 'PSTM', label: 'PSTM' }, null,
+      routeBytes(), { format: 'hex', rawBytes: routeBytes() });
+    eq(r, null, 'unusable engine output is rejected so the caller keeps the legacy result');
+  } finally { spec.ddl_bindings = orig; }
 });
 
 // ── Parse-spec engine ≡ legacy extraction (migration equivalence) ─────────────

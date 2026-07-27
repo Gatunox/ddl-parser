@@ -8793,6 +8793,25 @@ function doParseMessages() {
                 continue;
               }
 
+              // ── MATCH path ──────────────────────────────────────────────
+              // The spec declares its OWN binding and a parse_spec: honour it
+              // directly — no scoring, no prompt (mirrors the NETARD MATCH
+              // path). Passing chosen=null means this only fires when the
+              // spec is genuinely self-bound.
+              {
+                const _direct = _meParseWithChosenBinding(msgType, null, parseBytes,
+                  { format: S.inputFormat, rawBytes: bytes });
+                if (_direct) {
+                  const _bp = (_meWinningSpec(msgType)?.ddl_bindings || []).filter(Boolean)[0] || '';
+                  const _bpp = _bp.split('/');
+                  parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
+                    fields: _direct.fields, ddlPath: _bpp.slice(0, 3).join('/') || null, defName: _bpp[3] || null,
+                    msgType, tokens: null, byteCharMap,
+                    charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk });
+                  continue;
+                }
+              }
+
               // Look up pre-scored candidates for this message type
               const cacheKey   = msgType.type + ':' + (msgType.vol || '');
               const allMatches = typeMatchCache[cacheKey] || [];
@@ -13670,7 +13689,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.365';
+const APP_VERSION  = '1.1.2.366';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

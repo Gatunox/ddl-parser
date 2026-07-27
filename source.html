@@ -4682,8 +4682,9 @@ function _occursShouldSkip(def, bytes, cache, defs) {
 // Handles FIXED, LLVAR, LLLVAR field types.
 // Value renderer for TYPE BINARY fields — SHARED by the legacy flat parser and
 // the parse-spec engine so both render binary fields identically. Format-aware:
-//   ASCII-class (ascii/netard-ascii/netard/fup-ascii) → printable chars, non-
-//     printable shown as [??] (bytes are unreliable in these text formats);
+//   ASCII-class (ascii/netard-ascii/netard/fup-ascii) → printable chars; every
+//     binary (non-printable) byte renders as "." — such a capture carries only
+//     printable characters, so those bytes are not in the source to begin with;
 //   hexascii → raw chars with [hh] for non-printable;
 //   binary-class (hex/tandem-dump/netard-hex/netard-dump/ebcdic) → big-endian
 //     integer (BigInt past 6 bytes).
@@ -4691,7 +4692,7 @@ function _occursShouldSkip(def, bytes, cache, defs) {
 // bytes for char display.
 function _binaryFieldValue(srcB, dispB, fmt) {
   if (fmt === 'ascii' || fmt === 'netard-ascii' || fmt === 'netard' || fmt === 'fup-ascii')
-    return dispB.map(b => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '[??]').join('');
+    return dispB.map(b => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '.').join('');
   if (fmt === 'hexascii')
     return dispB.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : `[${x.toString(16).padStart(2,'0')}]`).join('');
   return srcB.length > 6
@@ -13689,7 +13690,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.366';
+const APP_VERSION  = '1.1.2.367';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19212,7 +19213,7 @@ function _meReadOneFieldFromDef(def, ctx) {
 
   // TYPE BINARY fields render via the shared decoder so the engine matches the
   // legacy flat parser byte-for-byte (integer for binary-class input formats,
-  // printable/[??] for ASCII-class). Uses the ORIGINAL bytes for the integer
+  // printable chars with "." per binary byte for ASCII-class). Uses the ORIGINAL bytes for the integer
   // decode, exactly like legacy (matters for EBCDIC input).
   const isBin = /\bBINARY\b/i.test(def._dataType || def.dataType || '');
   const fmt   = ctx.format || S.inputFormat || '';

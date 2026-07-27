@@ -4605,7 +4605,46 @@ function buildByteCharMap(text, format, textOffset) {
 // e.g. "ACCT.MULT[02].INFO[03].NUM" → "ACCT.MULT.INFO.NUM".
 function _canonFieldId(id) { return String(id).replace(/\[\d+\]/g, ''); }
 
-function _occursShouldSkip(def, bytes, cache) {
+// A COUNT FIELD holds how many occurrences of the following OCCURS group are
+// really present — Base24 PSTM declares "SRVCS OCCURS 30 TIMES" preceded by
+// "NUM-SERVICES TYPE BINARY 16" carrying the actual number. The DDL states the
+// MAXIMUM; only this field states the truth, so it wins over any heuristic.
+// Recognised by position (the field ending exactly where the group starts, at
+// the group's own nesting depth) plus a count-style name.
+const _OCC_CNT_NAME_RE = /^(?:NUM|NBR|CNT|COUNT|QTY|NO)[-_]|[-_](?:NUM|NBR|CNT|COUNT|QTY)$/i;
+
+function _occursCountField(frame, defs) {
+  if (!defs || !defs.length) return null;
+  for (const d of defs) {
+    if (d._occursPath && d._occursPath.length) continue;  // never inside a repeating frame
+    if (d.offset == null || !(d.length > 0)) continue;
+    if (d.offset + d.length !== frame.groupOffset) continue;   // ends where the group starts
+    // Nesting depth is irrelevant — a count field may sit inside a header group
+    // (HDR.NUM-SERVICES) and still govern the group that follows it.
+    if (!_OCC_CNT_NAME_RE.test(String(d.id).split('.').pop())) continue;
+    return d;
+  }
+  return null;
+}
+
+// Decode a count field's bytes: TYPE BINARY → big-endian integer; otherwise the
+// ASCII/EBCDIC digits it displays.
+function _occursCountValue(def, bytes) {
+  const b = Array.from(bytes.slice(def.offset, def.offset + def.length));
+  if (!b.length) return null;
+  if (/\bBINARY\b|\bCOMP\b/i.test(def._dataType || def.dataType || '')) {
+    let n = 0;
+    for (const x of b) n = (n << 8) | x;
+    return n >>> 0;
+  }
+  const asc = b.map(x => {
+    const a = (x >= 0x20 && x < 0x7F) ? x : (_EBCDIC_TO_ASCII?.[x] ?? x);
+    return String.fromCharCode(a);
+  }).join('').trim();
+  return /^\d+$/.test(asc) ? parseInt(asc, 10) : null;
+}
+
+function _occursShouldSkip(def, bytes, cache, defs) {
   const path = def._occursPath;
   if (!path || !path.length) return false;
   let outerDelta = 0, keyPrefix = '';
@@ -4614,11 +4653,19 @@ function _occursShouldSkip(def, bytes, cache) {
     const key = `${keyPrefix}|${fr.group}`;
     let count = cache[key];
     if (count === undefined) {
-      let eyePos = bytes.length;
-      for (let bi = start0; bi < bytes.length - 1; bi++) {
-        if (bytes[bi] === 0x26 && bytes[bi + 1] === 0x20) { eyePos = bi; break; }
+      // 1. A declared count field is authoritative — the DDL's OCCURS n is only a maximum.
+      const cntDef = _occursCountField(fr, defs);
+      const declared = cntDef ? _occursCountValue({ ...cntDef, offset: cntDef.offset + outerDelta }, bytes) : null;
+      if (declared != null) {
+        count = Math.min(fr.max, Math.max(0, declared));
+      } else {
+        // 2. Fallback: measure to the '& ' token eye-catcher (or end of message).
+        let eyePos = bytes.length;
+        for (let bi = start0; bi < bytes.length - 1; bi++) {
+          if (bytes[bi] === 0x26 && bytes[bi + 1] === 0x20) { eyePos = bi; break; }
+        }
+        count = Math.min(fr.max, Math.max(0, Math.floor((eyePos - start0) / fr.childSize)));
       }
-      count = Math.min(fr.max, Math.max(0, Math.floor((eyePos - start0) / fr.childSize)));
       cache[key] = count;
     }
     if (fr.idx >= count) return true;
@@ -4672,7 +4719,7 @@ function parseFlatMessage(bytes, defs, rawBytes) {
 
   for (const def of defs) {
     // OCCURS: drop occurrences beyond the actual count of any enclosing frame.
-    if (def._occursPath && _occursShouldSkip(def, bytes, _occursActual)) continue;
+    if (def._occursPath && _occursShouldSkip(def, bytes, _occursActual, defs)) continue;
 
     const hasExplicit = def.offset !== undefined;
     const fStart = hasExplicit ? def.offset : seqOffset;
@@ -6161,7 +6208,7 @@ function parseMessage(bytes, defs, rawBytes) {
 ]`,
       parse_spec_ascii:[
         {'read-ddl':{until:'NUM-SERVICES'}},
-        {'read-while':{while:{type:'regex',length:2,pattern:'^[A-Za-z*]{2}$'},body:[{read:'SRVCS'}]}},
+        {'read-while':{while:{type:'regex',length:2,pattern:'^[A-Za-z*]{2}$'},max:'NUM-SERVICES',body:[{read:'SRVCS'}]}},
         {when:{field:'USER-FLG',is:'1',then:[
           {'read-fixed':{length:2,as:'USER-DATA.LENGTH'}},
           {'read-until':{sentinels:['0x26','0x20'],eom:true,as:'USER-DATA.BUFFER'}}
@@ -6174,8 +6221,11 @@ function parseMessage(bytes, defs, rawBytes) {
   { "read-ddl": { "until": "NUM-SERVICES" } },
 
   /*  Services loop — ASCII mode
-      We can't trust NUM-SERVICES (it's binary), so we peek the next 2 bytes:
-      if they're letters or '*' we read one more SRVCS, otherwise we stop. */
+      NUM-SERVICES caps the loop at the number the message declares, so trailing
+      data that happens to look like a service tag can never add phantom
+      services. It is binary, though, so in an ASCII capture it may be
+      unreadable — the guard then carries the loop: peek the next 2 bytes and
+      read one more SRVCS only while they are letters or '*'. */
   {
     "read-while": {
       "while": {
@@ -6183,6 +6233,7 @@ function parseMessage(bytes, defs, rawBytes) {
         "length":  2,
         "pattern": "^[A-Za-z*]{2}$",   // service-tag convention
       },
+      "max":  "NUM-SERVICES",
       "body": [ { "read": "SRVCS" } ],
     },
   },
@@ -7504,7 +7555,7 @@ function _parseProgressHide() {
 // label   — step label shown as a new progress step
 // matches — array of { path, defName } candidates (max 15 shown)
 // cb      — called with the chosen match object, or null if cancelled
-function _showProgressPicker(label, matches, cb, msgType = null) {
+function _showProgressPicker(label, matches, cb, msgType = null, force = false) {
   _parseProgressStep(label);
   if (matches.length === 0) {
     // Nothing to pick — treat as cancelled so caller can continue
@@ -7512,7 +7563,10 @@ function _showProgressPicker(label, matches, cb, msgType = null) {
     cb({ match: null, saveRule: false });
     return;
   }
-  if (matches.length === 1) {
+  // A single candidate is normally auto-selected. `force` keeps the picker up
+  // so a spec whose DDL binding is MISSING is always confirmed by the user —
+  // the pick fills that binding, so it must be a conscious choice.
+  if (matches.length === 1 && !force) {
     _parseProgressDoneLast();
     cb({ match: matches[0], saveRule: false });
     return;
@@ -7828,6 +7882,20 @@ function doParseNetardLog(text, opts = {}) {
               _detectTraces.push({ recNo: rec.recNo, source: rec.source, winner: msgType, trace: _pd.det.trace || [], legacy: !!_pd.det.legacy });
               let fields = [], ddlPath = null, defName = null;
               if (!fields.length) {
+                // ── Recognized, but the spec defines no parse_spec ───────────
+                // Parsing is defined by the spec — with none there is nothing to
+                // run, so report it instead of guessing with a DDL walk.
+                if (_meSpecHasNoParseSpec(msgType)) {
+                  parsed.push({ ..._base, msgType, fields: [], ddlPath: null, tokens: [], noParseSpec: true,
+                    _diag: {
+                      fmt: rec.netardFmt || 'standard',
+                      byteCount: parseBytes.length,
+                      bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
+                      isEbcdic: _isEbcdic, ebcdicDens: Math.round(_ebcdicDens * 100),
+                      typeLabel: msgType.label || msgType.type,
+                    } });
+                  continue;
+                }
                 // ── MATCH path ───────────────────────────────────────────────
                 // The detected format declared a DDL binding that resolved (and
                 // was scored once) in the pre-pass. Honour it directly, never
@@ -7876,16 +7944,21 @@ function doParseNetardLog(text, opts = {}) {
                   .sort((a, b) => b.score - a.score);
                 if (allMatches.length === 0) {
                   parsed.push({ ..._base, msgType, fields: [], ddlPath: null, tokens: [], noMatchDDL: true });
-                } else if (allMatches.length === 1 || sessionMappings[msgType.type]) {
+                } else if ((allMatches.length === 1 && !_meSpecNeedsBinding(msgType)) || sessionMappings[msgType.type]) {
                   const sm    = sessionMappings[msgType.type];
                   const match = sm
                     ? (allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || allMatches[0])
                     : allMatches[0];
-                  parsed.push({ ..._base, msgType, fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: null });
+                  // The picked DDL fills the spec's missing binding — run its
+                  // parse_spec rather than the legacy fields scoring produced.
+                  const _ps = _meParseWithChosenBinding(msgType, match, parseBytes,
+                    { format: S.inputFormat, rawBytes: bytes });
+                  parsed.push({ ..._base, msgType, fields: _ps ? _ps.fields : match.fields,
+                    ddlPath: match.ddlPath, defName: match.defName, tokens: null });
                 } else {
                   const pidx = parsed.length;
                   parsed.push(null);
-                  deferreds.push({ parsedIdx: pidx, parseBytes, rec, base: _base, msgType, allMatches });
+                  deferreds.push({ parsedIdx: pidx, parseBytes, rawBytes: bytes, rec, base: _base, msgType, allMatches });
                   if (!_typeSeen.has(msgType.type)) {
                     _typeSeen.add(msgType.type);
                     typePickerQueue.push({ msgType, allMatches });
@@ -8059,8 +8132,9 @@ function doParseNetardLog(text, opts = {}) {
               flash(`Loaded ${records.length} record(s) \u2014 ${summary}`);
               const unkRecs = S.messages.filter(m => m.unknownType).map(m => `#${m.recNo}`).join(', ');
               if (unkRecs) setTimeout(() => flash(`Record(s) ${unkRecs}: unknown type \u2014 create Data Detection rules to recognize them.`, 'warn'), 300);
+              // No toast for noParseSpec \u2014 the Parse Results panel states it.
               // Amber toast when any records have no matching DDL
-              const noMatchCount = S.messages.filter(m => m.noMatchDDL && !m.unknownType).length;
+              const noMatchCount = S.messages.filter(m => m.noMatchDDL && !m.unknownType && !m.noParseSpec).length;
               if (noMatchCount) setTimeout(() => flash(`${noMatchCount} record${noMatchCount !== 1 ? 's' : ''} \u2014 no matching DDL found.`, 'warn'), 400);
               _parseProgressDoneLast();
               setTimeout(() => _parseProgressHide(), 700);
@@ -8071,7 +8145,9 @@ function doParseNetardLog(text, opts = {}) {
                 const sm = sessionMappings[d.msgType.type];
                 if (!sm) continue; // type was cancelled — leave slot null (filtered in finalize)
                 const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
-                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: null };
+                const _ps = _meParseWithChosenBinding(d.msgType, match, d.parseBytes,
+                  { format: S.inputFormat, rawBytes: d.rawBytes || d.parseBytes });
+                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: _ps ? _ps.fields : match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: null };
               }
               _parseProgressStep('Finalizing\u2026');
               setTimeout(() => _finalizeNetard(), 500);
@@ -8091,7 +8167,7 @@ function doParseNetardLog(text, opts = {}) {
                 }
                 sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
                 _showNetardTypePickers(idx + 1);
-              }, msgType);
+              }, msgType, _meSpecNeedsBinding(msgType));
             }
             setTimeout(() => _showNetardTypePickers(0), 300);
           }, 300);
@@ -8702,6 +8778,21 @@ function doParseMessages() {
                 continue;
               }
 
+              // Recognized, but the spec defines no parse_spec — nothing to run.
+              if (_meSpecHasNoParseSpec(msgType)) {
+                parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
+                  fields: [], ddlPath: null, msgType, tokens: [], byteCharMap,
+                  charStart, charEnd: charStart + chunkStr.length, noParseSpec: true, _auditChunk: chunk,
+                  _diag: {
+                    isNetard: false,
+                    fmt: S.inputFormat,
+                    byteCount: bytes.length,
+                    bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
+                    typeLabel: msgType.label || msgType.type,
+                  } });
+                continue;
+              }
+
               // Look up pre-scored candidates for this message type
               const cacheKey   = msgType.type + ':' + (msgType.vol || '');
               const allMatches = typeMatchCache[cacheKey] || [];
@@ -8773,8 +8864,9 @@ function doParseMessages() {
             } else if (unkIdxs.length) {
               setTimeout(() => flash(`Message(s) at position(s) ${unkIdxs.join(', ')}: unknown type \u2014 create Data Detection rules to recognize them.`, 'warn'), 300);
             }
+            // No toast for noParseSpec \u2014 the Parse Results panel states it.
             // Amber toast when any message has no matching DDL
-            const noMatchCount = finalParsed.filter(m => m.noMatchDDL && !m.unknownType).length;
+            const noMatchCount = finalParsed.filter(m => m.noMatchDDL && !m.unknownType && !m.noParseSpec).length;
             if (noMatchCount) setTimeout(() => flash(`${noMatchCount} message${noMatchCount !== 1 ? 's' : ''} \u2014 no matching DDL found.`, 'warn'), 400);
             _parseProgressDoneLast();
             setTimeout(() => _parseProgressHide(), 700);
@@ -8790,7 +8882,12 @@ function doParseMessages() {
               const chosen = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
               const cand   = allCompiled.find(c => c.path === chosen.ddlPath && (c.defName ?? null) === (chosen.defName ?? null));
               let fields = [], ddlPath = chosen.ddlPath, defName = chosen.defName;
-              if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
+              // The picked DDL fills the spec's missing binding — its parse_spec
+              // runs; only fall back to the legacy walk when there is none.
+              const _ps = _meParseWithChosenBinding(d.msgType, chosen, d.bytes,
+                { format: S.inputFormat, rawBytes: d.rawBytes || d.bytes });
+              if (_ps) fields = _ps.fields;
+              else if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
               parsed[d.parsedIdx] = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
                 fields, ddlPath, defName, msgType: d.msgType, tokens: null,
                 byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length, _auditChunk: d.chunk };
@@ -8822,7 +8919,7 @@ function doParseMessages() {
               }
               sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
               _showTypePickers(idx + 1);
-            }, msgType);
+            }, msgType, _meSpecNeedsBinding(msgType));
           }
 
           setTimeout(() => _showTypePickers(0), 300);
@@ -9841,8 +9938,25 @@ function renderFieldTable(msg) {
         </tr></thead>
         <tbody>${rows}</tbody>
        </table></div>`
-    : `<div class="empty-st${(msg.noMatchDDL || msg.unknownType) ? ' empty-st-warn' : ''}">
-        <div>${msg.unknownType ? 'Unknown message type — auto-detection not possible.' : (msg.isNetard && msg.noMatchDDL) ? 'No matching DDL for this record.' : msg.noMatchDDL ? 'No matching DDL for this message.' : msg.isNetard ? 'Record extracted — no DDL applied yet.' : 'No fields parsed.'}</div>
+    : `<div class="empty-st${(msg.noMatchDDL || msg.unknownType || msg.noParseSpec) ? ' empty-st-warn' : ''}">
+        <div>${msg.noParseSpec ? `${_escH(msg._diag?.typeLabel || msg.msgType?.label || msg.msgType?.type || 'Message')} — no parse specification defined — parse not possible.` : msg.unknownType ? 'Unknown message type — auto-detection not possible.' : (msg.isNetard && msg.noMatchDDL) ? 'No matching DDL for this record.' : msg.noMatchDDL ? 'No matching DDL for this message.' : msg.isNetard ? 'Record extracted — no DDL applied yet.' : 'No fields parsed.'}</div>
+        ${msg.noParseSpec && msg._diag ? (() => {
+          const d = msg._diag;
+          const fmtLabel = { hex:'HEX', 'tandem-dump':'HEXASCII', octal:'OCTAL', ebcdic:'EBCDIC', ascii:'ASCII', standard:'Standard' }[d.fmt] || (d.fmt || '').toUpperCase();
+          const ok  = s => `<span class="diag-ok">✓</span> ${s}`;
+          const fail= s => `<span class="diag-fail">✗</span> ${s}`;
+          const inf = s => `<span class="diag-info">—</span> ${s}`;
+          const rows = [
+            `<tr><td>1. Format</td><td>${ok(d.isNetard !== false ? `NETARD ${fmtLabel}` : (fmtLabel || 'AUTO'))}</td></tr>`,
+            `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
+          ];
+          if (d.isNetard !== false)
+            rows.push(`<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected — F0–F9 density: ${d.ebcdicDens}% (&gt;30%)`) : inf(`not detected — F0–F9 density: ${d.ebcdicDens}% (≤30%)`)}</td></tr>`);
+          const n = rows.length + 1;
+          rows.push(`<tr><td>${n}. Msg type</td><td>${ok(`recognized as <code>${_escH(d.typeLabel)}</code>`)}</td></tr>`);
+          rows.push(`<tr><td>${n + 1}. Parse spec</td><td>${fail(`none defined for <code>${_escH(d.typeLabel)}</code>`)}</td></tr>`);
+          return `<table class="diag-table">${rows.join('')}</table>`;
+        })() : ''}
         ${msg.unknownType && msg._diag ? (() => {
           const d = msg._diag;
           const fmtLabel = { hex:'HEX', 'tandem-dump':'HEXASCII', octal:'OCTAL', ebcdic:'EBCDIC', ascii:'ASCII', standard:'Standard' }[d.fmt] || (d.fmt || '').toUpperCase();
@@ -9870,7 +9984,8 @@ function renderFieldTable(msg) {
           }
           return `<table class="diag-table">${rows.join('')}</table>`;
         })() : ''}
-        <div style="margin-top:8px">${msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule to recognize this message.` : 'Create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule for this message, or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.')
+        <div style="margin-top:8px">${msg.noParseSpec ? `${msg.recNo ? `Record #${msg.recNo}: define` : 'Define'} a <strong>Parse Spec</strong> for <strong>${_escH(msg._diag?.typeLabel || '')}</strong> in the <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Editor</span> — or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.`
+            : msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule to recognize this message.` : 'Create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule for this message, or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.')
             : (msg.isNetard && msg.noMatchDDL) ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again to apply it to this record.'
             : msg.noMatchDDL  ? 'Load a matching DDL or use Manual Override: select a DDL in the tree and press <strong>▶ Parse</strong>.'
             : msg.isNetard    ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again.'
@@ -11133,7 +11248,10 @@ function _auditLazyParseNext() {
   const chosen = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
   const cand   = _lazyAllCompiled?.find(c => c.path === chosen.ddlPath && (c.defName ?? null) === (chosen.defName ?? null));
   let fields = [], ddlPath = chosen.ddlPath, defName = chosen.defName;
-  if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
+  const _ps = _meParseWithChosenBinding(d.msgType, chosen, d.bytes,
+    { format: S.inputFormat, rawBytes: d.rawBytes || d.bytes });
+  if (_ps) fields = _ps.fields;
+  else if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
   const msg = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
     fields, ddlPath, defName, msgType: d.msgType, tokens: null,
     byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length,
@@ -13552,7 +13670,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.357';
+const APP_VERSION  = '1.1.2.365';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19140,7 +19258,7 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
   // OCCURS actual-count cache — nested-aware, keyed per (outer-context, group).
   const _occursActual = {};
   for (const def of resolved.defs) {
-    if (def._occursPath && _occursShouldSkip(def, ctx.bytes, _occursActual)) continue;
+    if (def._occursPath && _occursShouldSkip(def, ctx.bytes, _occursActual, resolved.defs)) continue;
     // Always read each field so the byte cursor stays aligned and so
     // later parse_spec blocks (when / repeat / read-tlv) can reference
     // any field id, even one the user filtered out of the emit list.
@@ -20113,7 +20231,16 @@ function _meExecReadWhile(attrs, ctx) {
   while (ctx.cursor < ctx.bytes.length) {
     if (!_meGuardMatches(attrs.while, ctx)) break;
     const before = ctx.cursor;
+    const fieldsBefore = ctx.fields.length;
     for (const b of attrs.body) _meExecBlock(b, ctx);
+    // An iteration that runs off the end of the message never really existed —
+    // the guard just matched trailing data that happens to look like another
+    // element. Roll it back so it can't invent fields past the payload.
+    if (ctx.cursor > ctx.bytes.length) {
+      ctx.fields.length = fieldsBefore;
+      ctx.cursor = before;
+      break;
+    }
     iters++;
     if (ctx.cursor === before) {
       ctx.fields.push({ id: 'read-while', error: 'Body did not advance cursor — aborting to avoid infinite loop' });
@@ -20539,6 +20666,58 @@ function _meWinningSpec(winner) {
   return winner.kind === 'file'
     ? window._fmtFileSpecByName(winner.type)
     : window._fmtSpecByName(winner.type);
+}
+
+// A matched spec that carries a parse_spec but declares NO DDL binding can't
+// run it — read-ddl has nothing to walk. Rather than silently downgrading to
+// the legacy flat walk, the DDL the user picks from the scores popup FILLS the
+// missing binding and the spec's own parse_spec then runs normally.
+// A message recognized by a Data Detection spec that defines NO parse_spec
+// cannot be parsed: the spec IS the parsing definition, so there is nothing to
+// run. Rather than silently guessing with a DDL walk, the record is surfaced as
+// a diagnostic naming the type and the missing piece. Legacy-regex matches
+// (no spec object) and file specs are exempt.
+function _meSpecHasNoParseSpec(winner) {
+  if (!winner || !winner.type || winner.type === 'UNKNOWN') return false;
+  const spec = _meWinningSpec(winner);
+  if (!spec || spec.kind === 'file') return false;
+  return !(((spec.parse_spec_binary || []).length) || ((spec.parse_spec_ascii || []).length));
+}
+
+function _meSpecNeedsBinding(winner) {
+  const spec = _meWinningSpec(winner);
+  if (!spec || spec.kind === 'file') return false;
+  const hasPS = ((spec.parse_spec_binary || []).length || (spec.parse_spec_ascii || []).length) > 0;
+  const hasBind = (spec.ddl_bindings || []).filter(Boolean).length > 0;
+  return hasPS && !hasBind;
+}
+
+// Run the matched spec's parse_spec for a message. Every parse path except the
+// manual DDL override goes through here, so a recognized message is parsed by
+// its OWN spec rather than the legacy DDL walk. Binding precedence:
+//   1. the spec's declared ddl_bindings (explicit — always wins)
+//   2. otherwise the DDL picked from the scores popup, which fills the gap
+// Returns { fields, score }, or null when the spec has no parse_spec (or no
+// usable binding), in which case the caller keeps the legacy result.
+function _meParseWithChosenBinding(winner, chosen, bytes, opts) {
+  const spec = _meWinningSpec(winner);
+  if (!spec) return null;
+  const hasPS = ((spec.parse_spec_binary || []).length || (spec.parse_spec_ascii || []).length) > 0;
+  if (!hasPS) return null;
+  let use = spec;
+  if (!(spec.ddl_bindings || []).filter(Boolean).length) {
+    if (!chosen?.ddlPath) return null;
+    const path = chosen.defName ? `${chosen.ddlPath}/${chosen.defName}` : chosen.ddlPath;
+    use = { ...spec, ddl_bindings: [path] };
+  }
+  try {
+    const r = _meParseFileWithSpec(use, bytes, opts);
+    // A spec that produces nothing usable is worse than the legacy walk.
+    return (r && r.fields && r.fields.some(f => !f.error)) ? r : null;
+  } catch (e) {
+    console.warn('[parse-spec run]', e);
+    return null;
+  }
 }
 
 // Detect a segmented-file DEFINITION inside a manually selected scope path
@@ -21016,10 +21195,10 @@ function _meSave() {
         </div>
 
         <div class="settings-row">
-          <span class="settings-lbl">Close Parse Steps</span>
+          <span class="settings-lbl">Auto-close parse steps pop-up?</span>
           <div class="settings-pill">
-            <button class="btn"          id="keepParseLogOn"  onclick="setKeepParseLog(true)"  title="Keep parse log open until dismissed">Off</button>
-            <button class="btn s-active" id="keepParseLogOff" onclick="setKeepParseLog(false)" title="Auto-close parse log when done">On</button>
+            <button class="btn s-active" id="keepParseLogOff" onclick="setKeepParseLog(false)" title="Close the parse steps pop-up automatically when parsing finishes (default)">Yes</button>
+            <button class="btn"          id="keepParseLogOn"  onclick="setKeepParseLog(true)"  title="Keep the parse steps pop-up open until you dismiss it">No</button>
           </div>
         </div>
 

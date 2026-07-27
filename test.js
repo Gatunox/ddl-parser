@@ -1154,6 +1154,102 @@ test('gmt-ts display decodes a NonStop JULIANTIMESTAMP (BINARY 64) to GMT', () =
      '2024-06-15 12:30:45.000000 GMT', 'JULIANTIMESTAMP → GMT date/time');
 });
 
+// ── PSTM-style OCCURS: the declared count field wins over any heuristic ──────
+const PSTM_DDL = `DEF PSTM.
+  02 TYP          PIC X(4).
+  02 USER-FLG     PIC X.
+  02 NUM-SERVICES PIC 9(2).
+  02 SRVCS        OCCURS 30 TIMES.
+    04 TAG        PIC X(2).
+    04 VAL        PIC X(3).
+  END
+END
+`;
+// 5 services (5 bytes each) then trailing data that LOOKS like more services.
+const pstmBytes = (n, trailing) => {
+  const tags = ['CK', 'SV', 'CC', 'LN', 'MM', 'AA', 'BB'];
+  let s = '0210' + '1' + String(n).padStart(2, '0');
+  for (let i = 0; i < n; i++) s += tags[i] + String(i + 1).padStart(3, '0');
+  return [...(s + trailing)].map(c => c.charCodeAt(0));
+};
+
+test('OCCURS count field (NUM-SERVICES) bounds the DDL walk, not the trailing data', () => {
+  S.ddlTree = { VOL: { SV: { PSTM: PSTM_DDL } } };
+  S.inputFormat = 'hex';
+  // Trailing user data is long and letter-heavy — the old '& ' distance
+  // heuristic inflated the count from 5 to 8+ and ate all of it.
+  const bytes = pstmBytes(5, 'USERDATAHEREANDMORE& TK01');
+  const item = { ddl_bindings: ['VOL/SV/PSTM/PSTM'], parse_spec_binary: [{ 'read-ddl': 'ANY' }] };
+  const ctx = meExecParseSpec(item, Uint8Array.from(bytes), { format: 'hex', rawBytes: bytes });
+  const occ = new Set(ctx.fields.filter(f => /^SRVCS/.test(f.id))
+    .map(f => (/\[(\d+)\]/.exec(f.id) || [])[1]).filter(Boolean));
+  eq(occ.size, 5, 'exactly NUM-SERVICES occurrences read, not 30 and not the heuristic count');
+  const svcEnd = 4 + 1 + 2 + 5 * 5;
+  eq(ctx.fields.filter(f => /^SRVCS/.test(f.id)).every(f => f.endByte < svcEnd), true,
+     'no service row reaches past the services region');
+});
+
+test('[REGRESSION] OCCURS count field governs even when read-ddl "until" never matches', () => {
+  // The default PSTM spec says until:"NUM-SERVICES". When the DDL nests that
+  // field (HDR.NUM-SERVICES) the id never matches, so read-ddl walks the WHOLE
+  // definition — which used to emit all 30 declared services and swallow the
+  // user data and token area behind them.
+  S.ddlTree = { VOL: { SV: { PSTM: `DEF PSTM.
+  02 TYP          PIC X(4).
+  02 USER-FLG     PIC X.
+  02 HDR.
+    04 NUM-SERVICES PIC 9(2).
+  02 SRVCS        OCCURS 30 TIMES.
+    04 TAG        PIC X(2).
+    04 VAL        PIC X(3).
+  END
+END
+` } } };
+  S.inputFormat = 'hex';
+  const bytes = pstmBytes(5, 'U'.repeat(60) + '& TK01');
+  const item = { ddl_bindings: ['VOL/SV/PSTM/PSTM'], parse_spec_binary: [
+    { 'read-ddl': { until: 'NUM-SERVICES' } },       // never matches — field is HDR.NUM-SERVICES
+    { repeat: { count: 'HDR.NUM-SERVICES', body: [{ read: 'SRVCS' }] } },
+  ] };
+  const ctx = meExecParseSpec(item, Uint8Array.from(bytes), { format: 'hex', rawBytes: bytes });
+  const occ = new Set(ctx.fields.filter(f => /^SRVCS/.test(f.id))
+    .map(f => (/\[(\d+)\]/.exec(f.id) || [])[1]).filter(Boolean));
+  eq(occ.size, 5, 'nested count field still bounds the walk to 5, not the declared 30');
+});
+
+test('read-while: max resolves from a count field, capping a guard that would over-read', () => {
+  S.ddlTree = { VOL: { SV: { PSTM: PSTM_DDL } } };
+  S.inputFormat = 'ascii';
+  const bytes = pstmBytes(5, 'USERDATAHERE& TK01');
+  const spec = max => ({ ddl_bindings: ['VOL/SV/PSTM/PSTM'], parse_spec_binary: [
+    { 'read-ddl': { until: 'NUM-SERVICES' } },
+    { 'read-while': { while: { type: 'regex', length: 2, pattern: '^[A-Za-z*]{2}$' },
+                      ...(max ? { max } : {}), body: [{ read: 'SRVCS' }] } },
+  ] });
+  const count = ctx => new Set(ctx.fields.filter(f => /^SRVCS/.test(f.id))
+    .map(f => (/\[(\d+)\]/.exec(f.id) || [])[1]).filter(Boolean)).size;
+  const loose = meExecParseSpec(spec(null), Uint8Array.from(bytes), { format: 'ascii', rawBytes: bytes });
+  eq(count(loose) > 5, true, 'guard alone keeps matching letter-ish trailing data');
+  const capped = meExecParseSpec(spec('NUM-SERVICES'), Uint8Array.from(bytes), { format: 'ascii', rawBytes: bytes });
+  eq(count(capped), 5, 'max: "NUM-SERVICES" stops the loop at the declared count');
+});
+
+test('read-while: an iteration running past the message end is rolled back', () => {
+  S.ddlTree = { VOL: { SV: { PSTM: PSTM_DDL } } };
+  S.inputFormat = 'ascii';
+  // Trailing 'ABCDE' is letter-ish but only 5 bytes — the guard matches, yet a
+  // full 5-byte service straddles the end on the following iteration.
+  const bytes = pstmBytes(5, 'ABCDEFG');
+  const item = { ddl_bindings: ['VOL/SV/PSTM/PSTM'], parse_spec_binary: [
+    { 'read-ddl': { until: 'NUM-SERVICES' } },
+    { 'read-while': { while: { type: 'regex', length: 2, pattern: '^[A-Za-z*]{2}$' }, body: [{ read: 'SRVCS' }] } },
+  ] };
+  const ctx = meExecParseSpec(item, Uint8Array.from(bytes), { format: 'ascii', rawBytes: bytes });
+  eq(ctx.cursor <= bytes.length, true, 'cursor never runs past the payload');
+  eq(ctx.fields.every(f => f.endByte == null || f.endByte < bytes.length), true,
+     'no field claims bytes beyond the message');
+});
+
 test('bitmap display renders raw bytes as 0/1 bits grouped every 4', () => {
   S.ddlTree = { VOL: { SV: { 'BMDDL': `
     DEF REC.

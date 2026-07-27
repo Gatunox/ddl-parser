@@ -6209,7 +6209,7 @@ function parseMessage(bytes, defs, rawBytes) {
 ]`,
       parse_spec_ascii:[
         {'read-ddl':{until:'NUM-SERVICES'}},
-        {'read-while':{while:{type:'regex',length:2,pattern:'^[A-Za-z*]{2}$'},max:'NUM-SERVICES',body:[{read:'SRVCS'}]}},
+        {'read-while':{while:{type:'regex',length:2,pattern:'^[A-Za-z*]{2}$'},body:[{read:'SRVCS'}]}},
         {when:{field:'USER-FLG',is:'1',then:[
           {'read-fixed':{length:2,as:'USER-DATA.LENGTH'}},
           {'read-until':{sentinels:['0x26','0x20'],eom:true,as:'USER-DATA.BUFFER'}}
@@ -6222,11 +6222,10 @@ function parseMessage(bytes, defs, rawBytes) {
   { "read-ddl": { "until": "NUM-SERVICES" } },
 
   /*  Services loop — ASCII mode
-      NUM-SERVICES caps the loop at the number the message declares, so trailing
-      data that happens to look like a service tag can never add phantom
-      services. It is binary, though, so in an ASCII capture it may be
-      unreadable — the guard then carries the loop: peek the next 2 bytes and
-      read one more SRVCS only while they are letters or '*'. */
+      No "max": NUM-SERVICES is TYPE BINARY 16, not ASCII — do not use max with
+      ASCII input if the field is not ASCII. The guard carries the loop: peek
+      the next 2 bytes and read one more SRVCS only while they are letters
+      or '*'. */
   {
     "read-while": {
       "while": {
@@ -6234,7 +6233,6 @@ function parseMessage(bytes, defs, rawBytes) {
         "length":  2,
         "pattern": "^[A-Za-z*]{2}$",   // service-tag convention
       },
-      "max":  "NUM-SERVICES",
       "body": [ { "read": "SRVCS" } ],
     },
   },
@@ -13690,7 +13688,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.368';
+const APP_VERSION  = '1.1.2.371';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15877,18 +15875,17 @@ const _PS_HELP = {
       'You <b>can\'t trust</b> a declared count field (binary counter in an ASCII-mode message).',
       'You\'re iterating as long as the next bytes <b>match a pattern</b> (regex, character class, or literal marker).',
       'The loop has a <b>natural structural terminator</b> rather than a known count.',
-      'You want a <b>safety cap</b> (<code>max</code>) on iterations while still relying on the guard for the primary termination.',
+      'You want an optional <b>safety cap</b> (<code>max</code>) on iterations while still relying on the guard for the primary termination.',
     ],
     attrs: [
       ['while', 'object',         true,  'Guard predicate at cursor. type: alphabetic | numeric | alphanumeric | ascii | regex | literal. length: bytes to read for the check. encoding: ascii | ebcdic (default ascii). pattern: regex string (when type=regex). value: exact string (when type=literal).'],
       ['body',  '[blocks]',       true,  'Blocks to execute each iteration. Must advance the cursor.'],
-      ['max',   'int | field-id', false, 'Safety cap on iterations. Literal int, or id of a previously-read field whose parsed value is used. If the field is missing or non-numeric (e.g. binary in ASCII mode), no cap is applied — guard + hard cap still bound the loop.'],
+      ['max',   'int | field-id', false, 'Optional safety cap on iterations — a literal int, or the id of a previously-read field. <b>Do not use max with ASCII input if the field is not ASCII.</b>'],
     ],
     examples: [
-      ['PSTM ASCII services (2-letter peek)',
+      ['PSTM ASCII services (2-letter peek — no max: NUM-SERVICES is not ASCII)',
        [{"read-while": {
          "while": {"type":"regex","length":2,"pattern":"^[A-Za-z*]{2}$"},
-         "max": "NUM-SERVICES",
          "body": [{"read":"SRVCS"}]
        }}]
       ],

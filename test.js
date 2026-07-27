@@ -1250,6 +1250,55 @@ test('read-while: an iteration running past the message end is rolled back', () 
      'no field claims bytes beyond the message');
 });
 
+test('[REGRESSION] read-fixed refuses a length that overruns the payload', () => {
+  // PSTM shape: USER-FLG='1' but the record carries NO user data — the token
+  // eye-catcher "& " sits where the length would be. Read as a 2-byte length
+  // that is 0x2620 = 9760, which used to run the cursor ~9.7k bytes past the
+  // end of a 23-byte message, silently, destroying the token area.
+  S.ddlTree = { VOL: { SV: { PS: `DEF PSTM.
+  02 TYP          PIC X(4).
+  02 USER-FLG     PIC X.
+END
+` } } };
+  S.inputFormat = 'hex';
+  const bytes = [...'0210' + '1' + '& TK01'].map(c => c.charCodeAt(0));
+  const item = { ddl_bindings: ['VOL/SV/PS/PSTM'], parse_spec_binary: [
+    { 'read-ddl': 'ANY' },
+    { when: { field: 'USER-FLG', is: '1', then: [
+      { 'read-fixed': { length: 2, as: 'UD.LEN' } },
+      { 'read-fixed': { length: 'UD.LEN', as: 'UD.BUF' } } ] } },
+  ] };
+  const ctx = meExecParseSpec(item, Uint8Array.from(bytes), { format: 'hex', rawBytes: bytes });
+  eq(ctx.cursor <= bytes.length, true, 'cursor never runs past the payload');
+  const err = ctx.fields.find(f => f.error && /exceeds the/.test(f.error));
+  eq(!!err, true, 'the impossible length is reported instead of silently consumed');
+  eq(ctx.fields.some(f => f.id === 'UD.BUF' && !f.error), false, 'no phantom buffer field is emitted');
+});
+
+test('[REGRESSION] read-length-prefix refuses a prefix longer than the payload', () => {
+  S.ddlTree = { VOL: { SV: { LP: `DEF R.
+  02 HDR PIC X(2).
+END
+` } } };
+  S.inputFormat = 'hex';
+  // uint16 prefix 0x2620 (9760) with only a few bytes behind it
+  const bytes = [0x41, 0x42, 0x26, 0x20, 0x54, 0x4B];
+  const item = { ddl_bindings: ['VOL/SV/LP/R'], parse_spec_binary: [
+    { 'read-ddl': 'ANY' },
+    { 'read-length-prefix': { prefix: 'uint16-be', as: 'BUF' } },
+  ] };
+  const ctx = meExecParseSpec(item, Uint8Array.from(bytes), { format: 'hex', rawBytes: bytes });
+  eq(ctx.cursor <= bytes.length, true, 'cursor stays inside the payload');
+  eq(ctx.fields.some(f => f.error && /only \d+ remain/.test(f.error)), true, 'over-long prefix reported');
+  // eom:true is an explicit clamp and must still be allowed to truncate quietly
+  const eomItem = { ...item, parse_spec_binary: [
+    { 'read-ddl': 'ANY' },
+    { 'read-length-prefix': { prefix: 'uint16-be', as: 'BUF', eom: true } },
+  ] };
+  const eomCtx = meExecParseSpec(eomItem, Uint8Array.from(bytes), { format: 'hex', rawBytes: bytes });
+  eq(eomCtx.fields.some(f => f.id === 'BUF' && !f.error), true, 'eom:true still clamps to end without erroring');
+});
+
 test('bitmap display renders raw bytes as 0/1 bits grouped every 4', () => {
   S.ddlTree = { VOL: { SV: { 'BMDDL': `
     DEF REC.

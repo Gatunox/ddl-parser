@@ -13690,7 +13690,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.367';
+const APP_VERSION  = '1.1.2.368';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19743,10 +19743,20 @@ function _meExecReadFixed(attrs, ctx) {
     ctx.fields.push({ id: attrs.as || 'read-fixed', error: `Cannot resolve length: ${attrs.length}` });
     return;
   }
-  const start  = ctx.cursor;
+  const start = ctx.cursor;
+  const id    = attrs.as || 'read-fixed';
+  // A length that overruns the payload is never real — it means the length
+  // field itself was read from the wrong bytes (e.g. a PSTM USER-DATA length
+  // taken from the "& " token eye-catcher when the record carries no user
+  // data). Report it and leave the cursor put, so the blocks that follow still
+  // see the bytes instead of parsing from far past the end.
+  const remaining = ctx.bytes.length - start;
+  if (len > remaining) {
+    ctx.fields.push({ id, error: `length ${len} exceeds the ${remaining} byte(s) left in the message — the length field was probably read from the wrong position` });
+    return;
+  }
   const fBytes = Array.from(ctx.bytes.slice(start, start + len));
   ctx.cursor   = start + len;
-  const id = attrs.as || 'read-fixed';
   const f  = _meMakeSyntheticField(id, fBytes, start, start + len - 1, ctx);
   ctx.fields.push(f);
   ctx.fieldsById[id] = f;
@@ -19825,6 +19835,13 @@ function _meExecReadLengthPrefix(attrs, ctx) {
     }
   }
   if (attrs.eom) dataEnd = Math.min(dataEnd, ctx.bytes.length);
+  // Without an explicit eom clamp, a prefix longer than the payload means the
+  // prefix was read from the wrong bytes — same failure as read-fixed.
+  else if (dataEnd > ctx.bytes.length) {
+    ctx.fields.push({ id: attrs.as || 'LEN-DATA',
+      error: `length prefix says ${dataLen} bytes but only ${ctx.bytes.length - dataStart} remain — the prefix was probably read from the wrong position` });
+    return;
+  }
   const fBytes = Array.from(ctx.bytes.slice(dataStart, dataEnd));
   ctx.cursor = dataEnd;
   const id = attrs.as || 'LEN-DATA';

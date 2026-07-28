@@ -1982,8 +1982,8 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
           <span id="segMapBar" style="display:none;align-items:center;gap:5px;flex-shrink:0">
             <span style="font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);letter-spacing:0.04em">SEG-MAP</span>
             <input type="text" id="segMapInput" class="res-filter-input" style="width:140px"
-              title="Ad-hoc segment map override (hex or binary). Blank = use the value stored in the spec. Enter or blur re-parses."
-              onkeydown="if(event.key==='Enter')_segMapApply()" onchange="_segMapApply()">
+              title="Ad-hoc segment map override (hex or binary). Blank = use the value stored in the spec. Press ▶ Parse to apply it."
+              oninput="_segMapApply()">
           </span>
           <span style="flex:1"></span>
           <button class="btn" id="exportBtn" onclick="openMsgExportModal()" style="display:none;flex-shrink:0" title="Export messages">Export</button>
@@ -7548,6 +7548,11 @@ function _parseProgressDismiss() {
 function _parseProgressHide() {
   const allDone = _ppSteps.length > 0 && _ppSteps.every(s => s.done);
   if (P.keepParseLog && allDone && !_parseAborted) {
+    // The log stays up for reading, but the picker is a pending QUESTION — with
+    // parsing finished there is nothing left to pick, and leaving it visible
+    // keeps its keyboard trap armed over the whole app.
+    const pp = document.getElementById('ppPicker');
+    if (pp) { pp.innerHTML = ''; pp.classList.add('hidden'); }
     const ppClose = document.getElementById('ppCloseBtn');
     if (ppClose) {
       ppClose.classList.remove('hidden');
@@ -9083,6 +9088,8 @@ function _parseBtnClick() {
 
 // Apply the inline SEG-MAP override and re-parse the current input.
 // Blank input clears the override (the spec's stored value takes effect).
+// Record the ad-hoc segment map. It is applied on the next parse — typing here
+// never re-parses on its own; ▶ Parse is the only thing that starts a parse.
 function _segMapApply() {
   const bar = document.getElementById('segMapBar');
   const inp = document.getElementById('segMapInput');
@@ -9090,9 +9097,8 @@ function _segMapApply() {
   const spec = bar.dataset.spec;
   if (!spec) return;
   const v = inp.value.trim();
-  if ((_segMapOverrides[spec] ?? '') === v) return;   // unchanged — no reparse
+  if ((_segMapOverrides[spec] ?? '') === v) return;   // unchanged
   if (v) _segMapOverrides[spec] = v; else delete _segMapOverrides[spec];
-  _parseBtnClick();
 }
 function _clearBtnClick() {
   if (document.body.classList.contains('audit-active')) auditCloseMode();
@@ -12777,8 +12783,10 @@ function saveDDL() {
         return;
       }
       const unresMsg = saveUnresolved?.length ? ` — ${saveUnresolved.length} unresolved type ref${saveUnresolved.length > 1 ? 's' : ''}` : '';
-      flash(`✓ Saved: ${vol}/${sv}/${fn}${unresMsg}`);
-      if (S.isParsed && document.getElementById('msgInput').value.trim()) doParseMessages();
+      // Saving a DDL never re-parses. Parsing is always an explicit user action
+      // (▶ Parse / P) — an edit must not silently replace the results on screen.
+      flash(`✓ Saved: ${vol}/${sv}/${fn}${unresMsg}`
+        + (S.isParsed ? ' — press ▶ Parse to apply it to the current message' : ''));
     };
     if (existingEntry === undefined || isUnsavedNew) {
       doWrite();
@@ -13734,7 +13742,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.378';
+const APP_VERSION  = '1.1.2.381';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15008,10 +15016,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // === DDL-picker popup: keyboard navigation + focus trap ===
+    // The trap must never reach a text field. It swallows every plain keystroke
+    // (exempting Ctrl/Cmd), so if the overlay is left open — e.g. auto-close is
+    // off — typing anywhere else in the app silently does nothing while paste
+    // still works. Skip it entirely when the user is typing into an input.
     {
+      const _tTag = document.activeElement?.tagName;
+      const _typing = _tTag === 'INPUT' || _tTag === 'TEXTAREA' || document.activeElement?.isContentEditable;
       const _ppo = document.getElementById('parseProgressOverlay');
       const _pp  = document.getElementById('ppPicker');
-      if (_ppo && !_ppo.classList.contains('hidden') && _pp && !_pp.classList.contains('hidden')) {
+      if (!_typing && _ppo && !_ppo.classList.contains('hidden') && _pp && !_pp.classList.contains('hidden')) {
         if (e.key === 'Escape') { /* fall through — global Escape calls _abortParse */ }
         else if (e.key === 'Tab') {
           const focusable = [..._ppo.querySelectorAll('button')].filter(b => b.offsetParent !== null);

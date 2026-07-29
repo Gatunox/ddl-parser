@@ -8,7 +8,28 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partially done
 
 ---
 
-## 1. [ ] Merge the two parse flows
+## 1. [~] Merge the two parse flows — *decision layer done v1.1.2.392*
+
+**Done so far.** The routing DECISION is now shared: `_parseVerdict` is the one
+place a recognized message is classified (`unknown` / `no-spec` / `parsed` /
+`needs-ddl`), called by the NETARD, FUP and plain-paste flows alike. The
+detection summary is shared too (`_ppDetectDetails`), so a message pasted as raw
+text reports the same "Matched as X" as the record it came from. File specs were
+folded into the same rules as message specs — an unbound file now prompts for a
+DDL instead of being special-cased.
+
+Two bugs surfaced while merging: the record flow crashed (`null.split`) whenever
+a bound-DDL warning fired for a spec with no DDL path, stalling the parse
+silently after detection; and the plain flow never showed its detection result.
+
+**Still to do.** The two functions keep separate ORCHESTRATION — scoring loops,
+picker queues, deferred handling and result assembly, roughly 1200 lines across
+`doParseNetardLog` and `doParseMessages`. Lower risk now that the decision is
+centralised and the routing tests are in place, but a separate piece of work.
+
+---
+
+## 1b. [ ] (original problem statement, kept for context)
 
 **Problem.** The NETARD flow and the plain-paste flow are near-duplicate
 implementations of the same pipeline, and they had silently drifted:

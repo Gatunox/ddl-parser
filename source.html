@@ -4351,7 +4351,11 @@ function isHexAsciiLine(line) {
 // Scans the first valid HEXASCII line in the text and measures its hex: prefix.
 function hexAsciiStartCol(text) {
   for (const line of text.split('\n')) {
-    if (!isHexAsciiLine(line)) continue;
+    // Both dump shapes carry an "OFFSET: " prefix that is NOT data: the 4-char
+    // "[ascii]" form and the Raw Message panel's "hh hh … |ascii|" form. Miss
+    // the second and its offset digits get mapped as bytes, shifting every
+    // highlight in Message Input.
+    if (!isHexAsciiLine(line) && !isRawDumpLine(line)) continue;
     const t = line.trimStart();
     const body = t.replace(/^[0-9A-Fa-f]+:\s*/, '');
     return t.length - body.length;   // 0 if no prefix, else length of "A0: "
@@ -7581,6 +7585,89 @@ function _parseProgressDismiss() {
   if (ppClose) ppClose.classList.add('hidden');
 }
 
+// Detection summary for the parse overlay, shared by every flow so a message
+// pasted as raw text reports the same "Matched as X" as the NETARD record it
+// came from. `noun` is "record" or "message".
+// Returns detail rows: a header count, one line per matched spec, and one line
+// per distinct near-miss (spec + the recognizer it stopped on).
+function _ppDetectDetails(traces, noun) {
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const plural = n => n !== 1 ? 's' : '';
+  const total = traces.length;
+  let matched = 0, unknown = 0;
+  const matchByLabel = new Map();
+  const nearMissByMode = new Map();
+  for (const tr of traces) {
+    const w = tr.winner;
+    if (w && w.type !== 'UNKNOWN') {
+      matched++;
+      const key = w.label || w.type;
+      const cur = matchByLabel.get(key) || { color: w.color || 'var(--accent)', count: 0 };
+      cur.count++; matchByLabel.set(key, cur);
+    } else {
+      unknown++;
+      let best = null;
+      for (const t of (tr.trace || []).filter(x => !x.passed)) {
+        if (!best || t.failAt > best.failAt) best = t;
+      }
+      if (best) {
+        const r = (best.recognizers || [])[best.failAt] || {};
+        const recogLbl = r.id ? `${r.type} [${r.id}]` : (r.type || '(none)');
+        const key = best.failAt === 0 ? '__no_match__' : `${best.name}|${best.failAt}|${recogLbl}`;
+        const cur = nearMissByMode.get(key) || {
+          specLabel: best.label, color: best.color || 'var(--text-dim)',
+          recogLbl, recogIdx: best.failAt, passed: best.failAt,
+          total: (best.recognizers || []).length, count: 0,
+        };
+        cur.count++; nearMissByMode.set(key, cur);
+      }
+    }
+  }
+  const details = [{
+    html: `<b>${total}</b> ${noun}${plural(total)} evaluated — `
+        + `<span style="color:var(--success)">${matched} matched</span>`
+        + (unknown ? ` &nbsp;·&nbsp; <span style="color:#f39c12">${unknown} Unmatched</span>` : ''),
+    color: 'var(--text)',
+  }];
+  for (const [label, info] of [...matchByLabel.entries()].sort((a, b) => b[1].count - a[1].count)) {
+    details.push({
+      html: `&nbsp;&nbsp;&nbsp;&nbsp;✓ Matched as <span style="color:${info.color};font-weight:600">${esc(label)}</span>`
+          + ` &nbsp;<span style="opacity:0.7">(${info.count} ${noun}${plural(info.count)})</span>`,
+      color: 'var(--text-dim)',
+    });
+  }
+  if (unknown) {
+    const failRows = [...nearMissByMode.values()].sort((a, b) => b.count - a.count);
+    for (const info of failRows.slice(0, 10)) {
+      details.push({
+        html: info.passed === 0
+          ? `&nbsp;&nbsp;&nbsp;&nbsp;✗ <span style="color:#f39c12">Unmatched</span>`
+              + ` &nbsp;<span style="opacity:0.7">(${info.count} ${noun}${plural(info.count)})</span>`
+          : `&nbsp;&nbsp;&nbsp;&nbsp;✗ Closest match <span style="color:${info.color}">${esc(info.specLabel)}</span>`
+              + ` — passed ${info.passed}/${info.total}, stopped at #${info.recogIdx + 1} (<span style="color:#f39c12">${esc(info.recogLbl)}</span>)`
+              + ` &nbsp;<span style="opacity:0.7">(${info.count} ${noun}${plural(info.count)})</span>`,
+        color: 'var(--text-dim)',
+      });
+    }
+    if (failRows.length > 10) {
+      const more = failRows.length - 10;
+      details.push({ html: `&nbsp;&nbsp;&nbsp;&nbsp;<span style="opacity:0.6">… and ${more} more near-miss pattern${plural(more)}</span>`,
+                     color: 'var(--text-dim)' });
+    }
+  }
+  return details;
+}
+
+// Attach a detection summary to a named progress step, if that step exists.
+function _ppSetDetectDetails(stepLabel, traces, noun) {
+  try {
+    const step = _ppSteps.find(s => s.label === stepLabel);
+    if (!step || !traces || !traces.length) return;
+    step.details = _ppDetectDetails(traces, noun);
+    _parseProgressRender();
+  } catch (e) { console.warn('[detection summary]', e); }
+}
+
 function _parseProgressHide() {
   const allDone = _ppSteps.length > 0 && _ppSteps.every(s => s.done);
   if (P.keepParseLog && allDone && !_parseAborted) {
@@ -8023,112 +8110,10 @@ function doParseNetardLog(text, opts = {}) {
               console.warn('[NETARD scoring] DDL(s) with errors (skipped):', _ddlErrors);
               setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check console for details.`, 'warn'), 350);
             }
-            // Build a compact histogram of detection results and attach it to
-            // the "Detecting record types" step. Scales to many records: we
-            // show one line per matched spec (with count) and one line per
-            // unique failure mode (spec + recognizer index), never one line
-            // per record.
-            try {
-              const detectStep = _ppSteps.find(s => s.label === 'Detecting record types');
-              if (detectStep) {
-                const total   = _detectTraces.length;
-                let matched   = 0, unknown = 0;
-                const matchByLabel = new Map();   // 'STM' \u2192 { color, count }
-                // For UNKNOWN records, group by the CLOSEST-MISS spec
-                // (highest failAt = most recognizers passed before failing).
-                // This avoids enumerating every spec that rejected the record
-                // (which is all of them \u2014 useless noise) and instead surfaces
-                // the spec the user is most likely to be trying to define.
-                const nearMissByMode = new Map();
-                for (const tr of _detectTraces) {
-                  const w = tr.winner;
-                  if (w && w.type !== 'UNKNOWN') {
-                    matched++;
-                    const key = w.label || w.type;
-                    const cur = matchByLabel.get(key) || { color: w.color || 'var(--accent)', count: 0 };
-                    cur.count++;
-                    matchByLabel.set(key, cur);
-                  } else {
-                    unknown++;
-                    // Pick the closest-miss spec for this single record.
-                    let best = null;
-                    for (const t of tr.trace.filter(x => !x.passed)) {
-                      if (!best || t.failAt > best.failAt) best = t;
-                    }
-                    if (best) {
-                      const r = best.recognizers[best.failAt] || {};
-                      const recogLbl = r.id ? `${r.type} [${r.id}]` : (r.type || '(none)');
-                      // passed===0 means every spec failed at its first
-                      // recognizer — no near-miss exists. Coalesce all such
-                      // records into a single "No Match" bucket.
-                      const isNoMatch = best.failAt === 0;
-                      const key = isNoMatch ? '__no_match__' : `${best.name}|${best.failAt}|${recogLbl}`;
-                      const cur = nearMissByMode.get(key) || {
-                        specLabel: best.label, color: best.color || 'var(--text-dim)',
-                        recogLbl, recogIdx: best.failAt,
-                        passed: best.failAt, total: best.recognizers.length,
-                        count: 0,
-                      };
-                      cur.count++;
-                      nearMissByMode.set(key, cur);
-                    }
-                  }
-                }
-                const details = [];
-                // Header summary
-                details.push({
-                  html: `<b>${total}</b> record${total !== 1 ? 's' : ''} evaluated \u2014 `
-                      + `<span style="color:var(--success)">${matched} matched</span>`
-                      + (unknown ? ` &nbsp;\u00b7&nbsp; <span style="color:#f39c12">${unknown} Unmatched</span>` : ''),
-                  color: 'var(--text)',
-                });
-                // Matched specs (descending count). Wording: "Matched as <spec>"
-                // \u2014 record type is the spec that won.
-                if (matched) {
-                  const matchedRows = [...matchByLabel.entries()]
-                    .sort((a, b) => b[1].count - a[1].count);
-                  for (const [label, info] of matchedRows) {
-                    details.push({
-                      html: `&nbsp;&nbsp;&nbsp;&nbsp;\u2713 Matched as <span style="color:${info.color};font-weight:600">${esc(label)}</span>`
-                          + ` &nbsp;<span style="opacity:0.7">(${info.count} record${info.count !== 1 ? 's' : ''})</span>`,
-                      color: 'var(--text-dim)',
-                    });
-                  }
-                }
-                // Near-miss breakdown for UNKNOWN records (descending count,
-                // cap at 10). For each unknown record we already chose the
-                // spec that got closest to matching (highest failAt); here we
-                // group by that (spec, failure-point) tuple so users see the
-                // most common near-miss patterns instead of every spec that
-                // happened to reject (which is all of them \u2014 useless noise).
-                if (unknown) {
-                  const failRows = [...nearMissByMode.values()]
-                    .sort((a, b) => b.count - a.count);
-                  const shown = failRows.slice(0, 10);
-                  for (const info of shown) {
-                    // Zero recognizers passed = no spec got off the ground.
-                    // "Closest match X \u2014 passed 0/N" is misleading, so we
-                    // simplify to "No Match" for that case.
-                    const lineHtml = info.passed === 0
-                      ? `&nbsp;&nbsp;&nbsp;&nbsp;\u2717 <span style="color:#f39c12">Unmatched</span>`
-                          + ` &nbsp;<span style="opacity:0.7">(${info.count} record${info.count !== 1 ? 's' : ''})</span>`
-                      : `&nbsp;&nbsp;&nbsp;&nbsp;\u2717 Closest match <span style="color:${info.color}">${esc(info.specLabel)}</span>`
-                          + ` \u2014 passed ${info.passed}/${info.total}, stopped at #${info.recogIdx + 1} (<span style="color:#f39c12">${esc(info.recogLbl)}</span>)`
-                          + ` &nbsp;<span style="opacity:0.7">(${info.count} record${info.count !== 1 ? 's' : ''})</span>`;
-                    details.push({ html: lineHtml, color: 'var(--text-dim)' });
-                  }
-                  if (failRows.length > shown.length) {
-                    const moreCnt = failRows.length - shown.length;
-                    details.push({
-                      html: `&nbsp;&nbsp;&nbsp;&nbsp;<span style="opacity:0.6">\u2026 and ${moreCnt} more near-miss pattern${moreCnt !== 1 ? 's' : ''}</span>`,
-                      color: 'var(--text-dim)',
-                    });
-                  }
-                }
-                detectStep.details = details;
-                _parseProgressRender();
-              }
-            } catch (e) { console.warn('[detection trace render] ', e); }
+            // Detection histogram — shared with the plain-paste flow so both
+            // report identically (one line per matched spec, one per distinct
+            // near-miss; never one line per record).
+            _ppSetDetectDetails('Detecting record types', _detectTraces, 'record');
             if (_scoreStep) _parseProgressDoneLast();
             // Flag bound DDLs that were honoured but scored below 95% — the
             // binding was used regardless (the user's explicit choice). Render
@@ -8144,7 +8129,9 @@ function doParseNetardLog(text, opts = {}) {
             }
             for (const w of _bwGroups.values()) {
               _ppSteps.push({
-                label: `${w.label} — bound DDL ${w.ddl.split('/').pop()} matched at ${w.pct}%`
+                // ddl is null when the spec resolves its own binding (file
+                // specs) — name the spec instead of crashing on a null path.
+                label: `${w.label} — ${w.ddl ? `bound DDL ${String(w.ddl).split('/').pop()}` : 'no DDL bound'} matched at ${w.pct}%`
                   + (w.count > 1 ? ` (${w.count} records)` : ''),
                 done: true, icon: '⚠', iconColor: '#f39c12', labelColor: '#f39c12',
                 tooltip: 'Score below 95% — verify the DDL binding is correct.',
@@ -8300,19 +8287,16 @@ function doParseNetardLog(text, opts = {}) {
             // Its bound DDL is authoritative — we score only that binding, never
             // the whole candidate pool. Message specs need an explicit binding;
             // file specs resolve theirs internally (seg-map etc.).
-            const _spec = _meWinningSpec(d.winner);
-            const _hasPS   = _spec && ((_spec.parse_spec_binary || []).length || (_spec.parse_spec_ascii || []).length);
-            const _hasBind = _spec && (_spec.ddl_bindings || []).filter(Boolean).length > 0;
-            if (_spec && _hasPS && (_spec.kind === 'file' || _hasBind)) {
-              // Per-record input format (same mapping _finalizeNetard applies) so
-              // BINARY fields decode correctly; original bytes for the decode.
-              const _fmt = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[d.rec.netardFmt] || (opts.fmtDefault || 'netard');
-              const r  = _meParseFileWithSpec(_spec, d.dec.parseBytes, { format: _fmt, rawBytes: d.dec.bytes });
-              const bp = (_spec.ddl_bindings || []).filter(Boolean)[0] || d.bindPath || '';
-              const parts = bp.split('/');
-              bound = { ddlPath: parts.slice(0, 3).join('/') || null, defName: parts[3] || null,
-                        fields: r.fields, score: r.score, viaEngine: true };
-            } else if (d.bindPath) {
+            // Per-record input format (same mapping _finalizeNetard applies) so
+            // BINARY fields decode correctly; original bytes for the decode.
+            const _fmt = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[d.rec.netardFmt] || (opts.fmtDefault || 'netard');
+            // Shared routing decision — identical to the plain-paste flow.
+            const _v = _parseVerdict(d.winner, d.dec.parseBytes, { format: _fmt, rawBytes: d.dec.bytes });
+            if (_v.kind === 'parsed') {
+              bound = { ddlPath: _v.ddlPath || (d.bindPath || '').split('/').slice(0, 3).join('/') || null,
+                        defName: _v.defName, fields: _v.fields, score: _v.score,
+                        viaEngine: true, parseSpecUsed: _v.parseSpecUsed };
+            } else if (_v.kind === 'no-spec' && d.bindPath) {
               // Recognized + bound, but NO parse_spec → legacy extraction of that
               // one binding (still scores only the bind, per the resolution rules).
               const resolved = _boundDDLCache.defs[d.bindPath];
@@ -8702,6 +8686,7 @@ function doParseMessages() {
   document.getElementById('msgInput').readOnly = true;
 
   // Step 0 — informational: detecting message types
+  const _p23Traces = [];   // detection traces, summarized on the step above
   _parseProgressStep('Detecting message types');
   setTimeout(() => {
     if (_parseAborted) return;
@@ -8805,6 +8790,7 @@ function doParseMessages() {
             // Trace form: same winner, plus per-spec results so the diagnostic
             // can report how far each recognizer got instead of guessing.
             const _detTrace = detectMsgTypeTrace(detectStr);
+            _p23Traces.push(_detTrace);   // fed to the shared detection summary
             let msgType = _detTrace.winner;
 
             // Auto-detect via volume-hierarchy scoring (DDLMM routing removed).
@@ -8836,11 +8822,12 @@ function doParseMessages() {
                 continue;
               }
 
-              // Recognized, but the spec defines no parse_spec — nothing to run.
-              if (_meSpecHasNoParseSpec(msgType)) {
-                parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
-                  fields: [], ddlPath: null, msgType, tokens: [], byteCharMap,
-                  charStart, charEnd: charStart + chunkStr.length, noParseSpec: true, _auditChunk: chunk,
+              // Shared routing decision — identical to the record flow.
+              const _base = { bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
+                msgType, byteCharMap, charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk };
+              const _v = _parseVerdict(msgType, parseBytes, { format: S.inputFormat, rawBytes: bytes });
+              if (_v.kind === 'no-spec') {
+                parsed.push({ ..._base, fields: [], ddlPath: null, tokens: [], noParseSpec: true,
                   _diag: {
                     isNetard: false,
                     fmt: S.inputFormat,
@@ -8850,24 +8837,10 @@ function doParseMessages() {
                   } });
                 continue;
               }
-
-              // ── MATCH path ──────────────────────────────────────────────
-              // The spec declares its OWN binding and a parse_spec: honour it
-              // directly — no scoring, no prompt (mirrors the NETARD MATCH
-              // path). Passing chosen=null means this only fires when the
-              // spec is genuinely self-bound.
-              {
-                const _direct = _meParseWithChosenBinding(msgType, null, parseBytes,
-                  { format: S.inputFormat, rawBytes: bytes });
-                if (_direct) {
-                  const _bp = (_meWinningSpec(msgType)?.ddl_bindings || []).filter(Boolean)[0] || '';
-                  const _bpp = _bp.split('/');
-                  parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
-                    fields: _direct.fields, ddlPath: _bpp.slice(0, 3).join('/') || null, defName: _bpp[3] || null,
-                    msgType, tokens: null, byteCharMap, parsedBy: `parse-spec (${_direct.parseSpecUsed || 'binary'})`,
-                    charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk });
-                  continue;
-                }
+              if (_v.kind === 'parsed') {
+                parsed.push({ ..._base, fields: _v.fields, ddlPath: _v.ddlPath, defName: _v.defName,
+                  tokens: null, parsedBy: _v.parsedBy });
+                continue;
               }
 
               // Look up pre-scored candidates for this message type
@@ -8891,6 +8864,9 @@ function doParseMessages() {
             }
           }
 
+          // Same detection summary the NETARD flow shows \u2014 a message pasted as
+          // raw text reports the same "Matched as X" as the record it came from.
+          _ppSetDetectDetails('Detecting message types', _p23Traces, 'message');
           if (_ddlErrors.length) {
             console.warn('[P2/P3 scoring] DDL(s) with errors (skipped):', _ddlErrors);
             setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check console for details.`, 'warn'), 350);
@@ -13799,7 +13775,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.388';
+const APP_VERSION  = '1.1.2.392';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20890,6 +20866,33 @@ function _meWinningSpec(winner) {
     : window._fmtSpecByName(winner.type);
 }
 
+// ── The single routing decision for a recognized message ────────────────────
+// NETARD records, FUP records and plain-pasted messages all reach parsing
+// through here, so the flows cannot drift apart again. (Manual DDL override is
+// the one deliberate exception and never calls this.)
+//
+// `chosen` is the DDL picked from the scores popup, when one has been picked.
+// Verdicts:
+//   { kind:'unknown'  }                                  no spec matched, or no volume
+//   { kind:'no-spec'  }                                  matched, but the spec has no parse_spec
+//   { kind:'parsed', fields, ddlPath, defName, parsedBy } done — engine ran
+//   { kind:'needs-ddl' }                                  needs a DDL (scoring / picker)
+function _parseVerdict(winner, parseBytes, opts) {
+  if (!winner || !winner.type || winner.type === 'UNKNOWN' || !winner.vol) return { kind: 'unknown' };
+  if (_meSpecHasNoParseSpec(winner)) return { kind: 'no-spec' };
+  const r = _meParseWithChosenBinding(winner, opts?.chosen || null, parseBytes,
+    { format: opts?.format, rawBytes: opts?.rawBytes });
+  if (r) {
+    const bp = (r.boundPath || '').split('/');
+    return { kind: 'parsed', fields: r.fields, score: r.score,
+             parseSpecUsed: r.parseSpecUsed || 'binary',
+             ddlPath: bp.slice(0, 3).join('/') || opts?.chosen?.ddlPath || null,
+             defName: bp[3] || opts?.chosen?.defName || null,
+             parsedBy: `parse-spec (${r.parseSpecUsed || 'binary'})` };
+  }
+  return { kind: 'needs-ddl' };
+}
+
 // A matched spec that carries a parse_spec but declares NO DDL binding can't
 // run it — read-ddl has nothing to walk. Rather than silently downgrading to
 // the legacy flat walk, the DDL the user picks from the scores popup FILLS the
@@ -20913,8 +20916,7 @@ function _meSpecGaps(s) {
   // usable but rarely what was intended — say so rather than let it surprise.
   if (s.kind !== 'file' && !String(s.vol || '').trim())
     gaps.push('No volume — BASE is assumed; set one to search the right DDLs');
-  // File specs resolve their own binding internally (seg-map etc.).
-  if (s.kind !== 'file' && !((s.ddl_bindings || []).filter(Boolean).length))
+  if (!((s.ddl_bindings || []).filter(Boolean).length))
     gaps.push('No DDL binding — you will be asked to pick a DDL at parse time');
   return gaps;
 }
@@ -20940,7 +20942,7 @@ function _meSpecHasNoParseSpec(winner) {
 
 function _meSpecNeedsBinding(winner) {
   const spec = _meWinningSpec(winner);
-  if (!spec || spec.kind === 'file') return false;
+  if (!spec) return false;
   const hasPS = ((spec.parse_spec_binary || []).length || (spec.parse_spec_ascii || []).length) > 0;
   const hasBind = (spec.ddl_bindings || []).filter(Boolean).length > 0;
   return hasPS && !hasBind;

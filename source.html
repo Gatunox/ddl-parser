@@ -4327,6 +4327,18 @@ function _quickNetardSubFmt(text) {
 //   optional(digits:)  XXXX XXXX ... [content]
 // where groups are exactly 4 hex chars separated by single spaces,
 // followed by 1 space then [content], and content.length === group_count * 2.
+// A line of the Raw Message panel's own dump format:
+//   000000: 30 32 31 30 30 31 3F 3F  33 36 30 30 30 30 30 30  |021001??36000000|
+// Offset (with its colon), space-separated hex byte pairs, then an optional
+// |ascii| column. The colon is what lets extractBytes tell the offset apart
+// from data — without it "000000" is read as three more bytes.
+function isRawDumpLine(line) {
+  const t = String(line == null ? '' : line).trim();
+  if (!t) return false;
+  const m = t.match(/^[0-9A-Fa-f]{2,8}:\s+((?:[0-9A-Fa-f]{2}\s+)+[0-9A-Fa-f]{2})\s*(\|[^|]*\|)?$/);
+  return !!m;
+}
+
 function isHexAsciiLine(line) {
   const t = line.trim();
   const body = t.replace(/^[0-9A-Fa-f]+:\s*/, '');
@@ -4360,6 +4372,13 @@ function detectFormat(text) {
   }
   const t = text.trim();
   const lines = t.split('\n').filter(l => l.trim());
+
+  // Our own Raw Message dump: "OFFSET: hh hh …  |ascii|". Recognised up front
+  // so a dump copied out of the Raw panel can be pasted straight back in —
+  // extractBytes('tandem-dump') already strips the offset and the |ascii|
+  // column, but only when the offset carries its colon.
+  if (isRawDumpLine(lines[0]) || lines.filter(isRawDumpLine).length >= Math.max(1, lines.length * 0.6))
+    return 'tandem-dump';
 
   // First-line priority: if first line is HEXASCII, assume whole file is
   if (lines.length > 0 && isHexAsciiLine(lines[0])) return 'tandem-dump';
@@ -10195,7 +10214,9 @@ function copyRawToClipboard() {
     const hex2 = rowB.slice(8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
     const hexPart = (hex1 + (rowB.length > 8 ? '  ' + hex2 : '')).padEnd(48);
     const ascii = rowB.map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
-    lines.push(`${addr}  ${hexPart}  |${ascii}|`);
+    // "ADDR:" — the colon marks the offset so a copied dump can be pasted back
+    // into Message Input and parsed; without it the offset reads as data.
+    lines.push(`${addr}: ${hexPart}  |${ascii}|`);
   }
   const text = lines.join('\n');
   if (navigator.clipboard && window.isSecureContext) {
@@ -13778,7 +13799,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.387';
+const APP_VERSION  = '1.1.2.388';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -10,47 +10,49 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partially done
 
 ## 1. [~] Merge the two parse flows — *decision layer done v1.1.2.392*
 
-**Done so far.** The routing DECISION is now shared: `_parseVerdict` is the one
-place a recognized message is classified (`unknown` / `no-spec` / `parsed` /
-`needs-ddl`), called by the NETARD, FUP and plain-paste flows alike. The
-detection summary is shared too (`_ppDetectDetails`), so a message pasted as raw
-text reports the same "Matched as X" as the record it came from. File specs were
-folded into the same rules as message specs — an unbound file now prompts for a
-DDL instead of being special-cased.
-
-Two bugs surfaced while merging: the record flow crashed (`null.split`) whenever
-a bound-DDL warning fired for a spec with no DDL path, stalling the parse
-silently after detection; and the plain flow never showed its detection result.
-
-**Still to do.** The two functions keep separate ORCHESTRATION — scoring loops,
-picker queues, deferred handling and result assembly, roughly 1200 lines across
-`doParseNetardLog` and `doParseMessages`. Lower risk now that the decision is
-centralised and the routing tests are in place, but a separate piece of work.
-
----
-
-## 1b. [ ] (original problem statement, kept for context)
-
-**Problem.** The NETARD flow and the plain-paste flow are near-duplicate
-implementations of the same pipeline, and they had silently drifted:
+**Problem.** The NETARD flow and the plain-paste flow were near-duplicate
+implementations of the same pipeline, and they kept silently drifting:
 
 - the plain-paste flow never called the parse-spec engine **at all** — detection
   was spec-driven but parsing always fell through to the legacy DDL walk;
-- it also lacked the "bound spec → parse directly, never prompt" short-circuit
-  that the NETARD flow had, so a bound spec could raise a DDL picker whose answer
-  was then ignored, and a spec with a binding could report *"no matching DDL"*.
+- it lacked the "bound spec → parse directly, never prompt" short-circuit that
+  the NETARD flow had, so a bound spec could raise a DDL picker whose answer was
+  then ignored, and a spec with a binding could report *"no matching DDL"*;
+- it never reported what detection matched, while NETARD did.
 
 **Why it matters.** This is the root cause of the PSTM "all 30 services" report —
 not the OCCURS logic. `repeat count: NUM-SERVICES` was correct the whole time; it
-simply never executed. Fixing it required applying the same conceptual change at
-four separate call sites (v1.1.2.361 / .366).
+simply never executed. Every fix had to be applied twice, at four call sites
+(v1.1.2.361 / .366).
 
 **Shape of the fix.** One pipeline — `extract bytes → detect → resolve spec →
 parse → render` — where the input format decides **only how bytes are extracted**.
 Manual DDL override stays the single deliberate exception.
 
-**Risk.** Large refactor of the main parse path. Do it behind the routing tests
-(item 2, now in place) and migrate one flow at a time.
+### Done — the routing DECISION is shared (v1.1.2.392)
+
+`_parseVerdict` is now the one place a recognized message is classified —
+`unknown` / `no-spec` / `parsed` / `needs-ddl` — and the NETARD, FUP and
+plain-paste flows all call it. `_ppDetectDetails` shares the detection summary,
+so a message pasted as raw text reports the same "Matched as X" as the record it
+came from. File specs were folded into the same rules as message specs: an
+unbound file prompts for a DDL instead of being special-cased, which removed
+three special cases rather than adding one.
+
+Two bugs surfaced while merging: the record flow crashed (`null.split`) whenever
+a bound-DDL warning fired for a spec with no DDL path, stalling the parse
+silently after detection; and the engine score was not carried through, so the
+below-95% warning could not report a real figure.
+
+### Remaining — the ORCHESTRATION is still duplicated
+
+`doParseNetardLog` and `doParseMessages` keep their own scoring loops, picker
+queues, deferred handling and result assembly — roughly 1200 lines. Lower risk
+now that the decision is centralised and the routing tests (item 2) are in
+place, but a separate piece of work.
+
+**Risk.** Large refactor of the main parse path. Migrate one flow at a time,
+behind the routing tests.
 
 ---
 

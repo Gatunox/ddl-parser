@@ -5723,8 +5723,11 @@ function parseMessage(bytes, defs, rawBytes) {
     const items = Array.isArray(value) ? value : [value];
     const out = [];
     for (const item of items) {
-      if (typeof item === 'string') {
-        out.push(item);
+      // Numbers are accepted as text: a value typed as 4354 or 99 used to be
+      // stored as a number and dropped here, leaving the recognizer with no
+      // patterns — it then never matched, with nothing to indicate why.
+      if (typeof item === 'string' || typeof item === 'number') {
+        out.push(String(item));
       } else if (item && typeof item === 'object' && item.from != null && item.to != null) {
         const { from, to } = item;
         if (from.length !== to.length) continue; // reject mixed-length ranges
@@ -6030,7 +6033,18 @@ function parseMessage(bytes, defs, rawBytes) {
 
   function _compileRecognizer(r) {
     const c = { ...r };
-    if (r.type === 'literal') c._patterns = _expandLiteral(r.value ?? []);
+    // Encoding is matched case-sensitively downstream — normalize it so a value
+    // entered as "HEX" or "ASCII" behaves the same as the lowercase form.
+    if (typeof c.encoding === 'string') c.encoding = c.encoding.toLowerCase();
+    if (r.type === 'literal') {
+      c._patterns = _expandLiteral(r.value ?? []);
+      // Hex literals are normally copied straight out of a dump — "43 54",
+      // "43-54", "0x4354". Reduce them to bare hex digits (keeping "?"
+      // wildcards) so every one of those spellings matches.
+      if (c.encoding === 'hex')
+        c._patterns = c._patterns.map(p =>
+          String(p).replace(/0[xX]/g, '').replace(/[^0-9a-fA-F?]/g, ''));
+    }
     if (r.type === 'regex' && r.pattern) {
       try { c._re = new RegExp(r.pattern); } catch(e) { c._re = null; }
     }
@@ -8766,7 +8780,10 @@ function doParseMessages() {
             const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic' || S.inputFormat === 'hex')
               ? bytes.map(b => String.fromCharCode(b)).join('')   // RAW bytes
               : chunkStr;
-            let msgType = detectMsgType(detectStr);
+            // Trace form: same winner, plus per-spec results so the diagnostic
+            // can report how far each recognizer got instead of guessing.
+            const _detTrace = detectMsgTypeTrace(detectStr);
+            let msgType = _detTrace.winner;
 
             // Auto-detect via volume-hierarchy scoring (DDLMM routing removed).
             {
@@ -8781,7 +8798,11 @@ function doParseMessages() {
                   fmt: S.inputFormat,
                   byteCount: bytes.length,
                   bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
-                  decodedMTI: detectStr.slice(0, 4),
+                  // Show exactly the leading bytes the recognizers inspect —
+                  // not a fixed 4-byte window, which had nothing to do with the
+                  // rules actually being evaluated.
+                  decodedMTI: detectStr.slice(0, _diagRecogSpan(_detTrace.trace) || 4),
+                  closest: _diagClosest(_detTrace.trace),
                   msgTypeDetected: !!msgType.type && msgType.type !== 'UNKNOWN',
                   msgTypeLabel: msgType.type || null,
                   volResolved: false,
@@ -10032,6 +10053,14 @@ function renderFieldTable(msg) {
           const ok  = s => `<span class="diag-ok">✓</span> ${s}`;
           const fail= s => `<span class="diag-fail">✗</span> ${s}`;
           const inf = s => `<span class="diag-info">—</span> ${s}`;
+          // The first bytes are shown as text, but a header like 43 54 00 13 is
+          // mostly non-printable — rendering those raw produced a stray "?"/box
+          // with no way to tell WHICH byte it was. Show printable characters as
+          // themselves and every other byte as its hex value.
+          const prn = s => String(s ?? '').split('').map(ch => {
+            const c = ch.charCodeAt(0);
+            return (c >= 0x20 && c < 0x7F) ? ch : `[${c.toString(16).padStart(2, '0').toUpperCase()}]`;
+          }).join('');
           let rows;
           if (d.isNetard !== false) {
             // NETARD path
@@ -10039,7 +10068,8 @@ function renderFieldTable(msg) {
               `<tr><td>1. Format</td><td>${ok(`NETARD ${fmtLabel}`)}</td></tr>`,
               `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
               `<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected — F0–F9 density: ${d.ebcdicDens}% (&gt;30%)`) : inf(`not detected — F0–F9 density: ${d.ebcdicDens}% (≤30%)`)}</td></tr>`,
-              `<tr><td>4. Msg type</td><td>${fail(`no pattern matched <code>${_escH(d.decodedMTI)}</code>`)}</td></tr>`,
+              `<tr><td>4. Msg type</td><td>${fail(`no detection matched <code>${_escH(prn(d.decodedMTI))}</code>`)
+                    + (d.closest ? `<div style="margin-top:2px;padding-left:18px;opacity:0.75">closest <b>${_escH(d.closest.label)}</b> — ${d.closest.passedCount}/${d.closest.total} recognizers passed, stopped at #${(d.closest.failAt ?? 0) + 1}</div>` : '')}</td></tr>`,
               `<tr><td>5. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
             ];
           } else {
@@ -10047,7 +10077,10 @@ function renderFieldTable(msg) {
             rows = [
               `<tr><td>1. Format</td><td>${ok(fmtLabel || 'AUTO')}</td></tr>`,
               `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
-              `<tr><td>3. Msg type</td><td>${d.msgTypeDetected ? inf(`detected <code>${_escH(d.msgTypeLabel)}</code> but no vol resolved`) : fail(`no pattern matched <code>${_escH(d.decodedMTI)}</code>`)}</td></tr>`,
+              `<tr><td>3. Msg type</td><td>${d.msgTypeDetected
+                  ? inf(`detected <code>${_escH(d.msgTypeLabel)}</code> but no vol resolved`)
+                  : fail(`no detection matched <code>${_escH(prn(d.decodedMTI))}</code>`)
+                    + (d.closest ? `<div style="margin-top:2px;padding-left:18px;opacity:0.75">closest <b>${_escH(d.closest.label)}</b> — ${d.closest.passedCount}/${d.closest.total} recognizers passed, stopped at #${(d.closest.failAt ?? 0) + 1}</div>` : '')}</td></tr>`,
               `<tr><td>4. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
             ];
           }
@@ -13742,7 +13775,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.381';
+const APP_VERSION  = '1.1.2.384';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18782,6 +18815,44 @@ function _meRecForm(r, idx) {
 </div>`;
 }
 
+// The spec that got FURTHEST before failing — the one the user most likely
+// meant. Ties go to the first in detection order. When every spec failed on its
+// very first recognizer nothing is "closest" — they all got equally nowhere —
+// so this returns null rather than singling one out arbitrarily.
+function _diagClosest(trace) {
+  let best = null;
+  for (const t of (trace || [])) {
+    if (t.passed) continue;
+    const got = t.failAt == null ? 0 : t.failAt;      // recognizers that passed
+    if (!best || got > best.passedCount)
+      best = { name: t.name, label: t.label, passedCount: got, total: (t.recognizers || []).length, failAt: t.failAt };
+  }
+  return (best && best.passedCount > 0) ? best : null;
+}
+
+// How many leading bytes the detection recognizers actually examine, taken from
+// the rules themselves (max offset + length) rather than a hardcoded window.
+// Uses the closest-matching spec when there is one, else the widest span of any
+// spec, so the diagnostic shows the bytes that were really under test.
+function _diagRecogSpan(trace) {
+  const specOf = n => (typeof window._fmtSpecByName === 'function' ? window._fmtSpecByName(n) : null);
+  const spanOf = spec => {
+    let span = 0;
+    for (const r of (spec?.recognizers || [])) {
+      const len = _meRecByteLen(r);
+      if (len == null) continue;
+      const end = (Number(r.offset) || 0) + len;
+      if (end > span) span = end;
+    }
+    return span;
+  };
+  const closest = _diagClosest(trace);
+  if (closest) { const s = spanOf(specOf(closest.name)); if (s > 0) return s; }
+  let widest = 0;
+  for (const t of (trace || [])) { const s = spanOf(specOf(t.name)); if (s > widest) widest = s; }
+  return widest;
+}
+
 function _meRecByteLen(r) {
   if (!r) return null;
   const t = r.type;
@@ -18972,7 +19043,15 @@ function _meRecRead(idx) {
   switch (type) {
     case 'literal': {
       const raw = gv('value');
-      let val; try { val = JSON.parse(raw); } catch(e) { val = raw; }
+      // JSON is accepted so a value can be a list ["06","07"] or a {from,to}
+      // range — but ONLY when it parses to a list/object or quoted string.
+      // A bare hex literal like 4354 is also valid JSON (the number 4354) and
+      // used to be stored as a number, which the matcher silently discards.
+      let val = raw;
+      try {
+        const p = JSON.parse(raw);
+        if (typeof p === 'string' || Array.isArray(p) || (p && typeof p === 'object')) val = p;
+      } catch (e) { /* plain text — keep as typed */ }
       return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: val, ...r_id };
     }
     case 'binary':

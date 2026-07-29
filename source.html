@@ -6530,8 +6530,11 @@ function parseMessage(bytes, defs, rawBytes) {
       // invalid, and one with nothing to parse (no binding, no parse spec)
       // is inert — skipped outright either way.
       if (spec.kind === 'file' && (spec._fileNoName || spec._fileInert || !(ctx && ctx.filename))) continue;
+      // A spec with no volume configured falls back to BASE. New entities are
+      // created with vol:'' — without this a perfectly good match resolved no
+      // DDL pool and the record was reported as UNKNOWN.
       if (spec._fns.every(fn => fn(bytes, ctx))) {
-        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean), encoding: _specEncoding(spec) };
+        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || 'BASE', color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean), encoding: _specEncoding(spec) };
       }
     }
     return null;
@@ -6561,7 +6564,7 @@ function parseMessage(bytes, defs, rawBytes) {
         passed, failAt,
       });
       if (passed) {
-        winner = { type: spec.name, label: spec.label || spec.name, vol: spec.vol || null, color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean), encoding: _specEncoding(spec) };
+        winner = { type: spec.name, label: spec.label || spec.name, vol: spec.vol || 'BASE', color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean), encoding: _specEncoding(spec) };
         break;
       }
     }
@@ -13775,7 +13778,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.384';
+const APP_VERSION  = '1.1.2.386';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18502,7 +18505,7 @@ function _meFileWarnsRefresh() {
 
 function _meHtmlRecs(item) {
   const recs = item.recognizers || [];
-  const _TYPE_LABEL = { uint8:'uint8 / byte', uint16:'uint16 / word', uint32:'uint32 / dword' };
+  const _TYPE_LABEL = { ..._REC_TYPE_LABEL, uint8:'uint8 / byte', uint16:'uint16 / word', uint32:'uint32 / dword' };
   const recHelpOpen = !!(_meState && _meState.recHelpOpen);
   let h = `<div class="me-ps-help${recHelpOpen ? ' open' : ''}" id="me-rec-help" style="margin-bottom:8px">${_meRecHelpHtml()}</div>`;
   h += `<div id="me-file-warns">${_meFileWarnsHtml(item)}</div>`;
@@ -18548,6 +18551,17 @@ function _meHtmlRecs(item) {
   }
   return h;
 }
+
+// Recognizers that take NO value — they only assert that the bytes at an
+// offset are of a given class. Named isXxx so the list makes plain which rules
+// compare against a value and which merely check a type.
+const _REC_TYPE_LABEL = {
+  binary:'isBinary', ascii:'isAscii', ebcdic:'isEbcdic',
+  numeric:'isNumeric', alphabetic:'isAlphabetic', alphanumeric:'isAlphanumeric',
+};
+// Display name for a recognizer type; the stored type string is unchanged, so
+// existing specs keep working.
+function _recTypeLabel(t) { return _REC_TYPE_LABEL[t] || t; }
 
 function _meRecSum(r) {
   const esc = s => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -18728,12 +18742,12 @@ A specific pattern requires the message to carry a filename. If absent the recog
 // types, with the existing _REC_HELP HTML rendered as the detail.
 const _REC_HELP_META = [
   ['literal',        'Match exact bytes at a fixed offset',                            'offset, encoding, value'],
-  ['binary',         'Non-ASCII presence check over a byte range',                     'offset, length'],
-  ['ascii',          'Printable ASCII check over a byte range',                        'offset, length'],
-  ['ebcdic',         'Printable EBCDIC check over a byte range',                       'offset, length'],
-  ['numeric',        'Digit-only check (ASCII or EBCDIC)',                             'offset, length, encoding'],
-  ['alphabetic',     'Letters-only check (ASCII or EBCDIC)',                           'offset, length, encoding'],
-  ['alphanumeric',   'Letters + digits check (ASCII or EBCDIC)',                       'offset, length, encoding'],
+  ['isBinary',       'Non-ASCII presence check over a byte range (no value)',          'offset, length'],
+  ['isAscii',        'Printable ASCII check over a byte range (no value)',             'offset, length'],
+  ['isEbcdic',       'Printable EBCDIC check over a byte range (no value)',            'offset, length'],
+  ['isNumeric',      'Digit-only check, no value compared',                            'offset, length, encoding'],
+  ['isAlphabetic',   'Letters-only check, no value compared',                          'offset, length, encoding'],
+  ['isAlphanumeric', 'Letters + digits check, no value compared',                      'offset, length, encoding'],
   ['uint8',          'Single byte check at offset (eq / min / max / mask)',            'offset, mask, eq, min, max'],
   ['uint16',         '2-byte integer check (be/le, eq / min / max)',                   'offset, endian, eq, min, max'],
   ['uint32',         '4-byte integer check (be/le, eq / min / max)',                   'offset, endian, eq, min, max'],
@@ -18788,9 +18802,9 @@ function _meToggleRecListHelp() {
 function _meRecForm(r, idx) {
   const _ALIAS = { byte:'uint8', word:'uint16', dword:'uint32', 'length-prefix':'length-payload', 'flag-prefix':'flag-payload' };
   const types = [
-    ['literal','literal'], ['binary','binary'], ['ascii','ascii'], ['ebcdic','ebcdic'],
+    ['literal','literal'], ['binary','isBinary'], ['ascii','isAscii'], ['ebcdic','isEbcdic'],
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
-    ['numeric','numeric'], ['alphabetic','alphabetic'], ['alphanumeric','alphanumeric'],
+    ['numeric','isNumeric'], ['alphabetic','isAlphabetic'], ['alphanumeric','isAlphanumeric'],
     ['min-length','min-length'], ['max-length','max-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
     ['hex-density','hex-density'], ['oct-density','oct-density'],
     ['length-payload','length-payload'], ['flag-payload','flag-payload'],
@@ -20872,6 +20886,10 @@ function _meSpecGaps(s) {
     gaps.push('No recognizer — this entity can never match anything');
   if (!(((s.parse_spec_binary || []).length) || ((s.parse_spec_ascii || []).length)))
     gaps.push('No parse spec — a recognized message cannot be parsed');
+  // Volume selects which DDLs are searched. Unset falls back to BASE, which is
+  // usable but rarely what was intended — say so rather than let it surprise.
+  if (s.kind !== 'file' && !String(s.vol || '').trim())
+    gaps.push('No volume — BASE is assumed; set one to search the right DDLs');
   // File specs resolve their own binding internally (seg-map etc.).
   if (s.kind !== 'file' && !((s.ddl_bindings || []).filter(Boolean).length))
     gaps.push('No DDL binding — you will be asked to pick a DDL at parse time');

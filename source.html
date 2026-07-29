@@ -13778,7 +13778,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.386';
+const APP_VERSION  = '1.1.2.387';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18763,7 +18763,7 @@ const _REC_HELP_META = [
   ['source',         'Match the source process name (wildcards $ # *)',                'pattern'],
   ['destination',    'Match the destination process name (wildcards $ # *)',           'pattern'],
   ['filename',       'Match the source filename $VOL.SUBVOL.FILE (wildcards * ? #)',   'pattern'],
-];
+].sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
 
 function _meRecHelpHtml() {
   const rows = _REC_HELP_META.map(([type, purpose, attrs]) =>
@@ -18809,7 +18809,9 @@ function _meRecForm(r, idx) {
     ['hex-density','hex-density'], ['oct-density','oct-density'],
     ['length-payload','length-payload'], ['flag-payload','flag-payload'],
     ['source','source'], ['destination','destination'], ['filename','filename'],
-  ];
+    // Listed alphabetically by the name shown, so the dropdown and the "?"
+    // reference read in the same order.
+  ].sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }));
   const cur = r ? (_ALIAS[r.type] || r.type) : 'literal';
   const typeSel = `<div class="me-rf-fld"><div class="me-lbl">Type</div>
     <select class="me-sel" style="width:150px" id="me-rt-${idx}" onchange="_meRecTypeChange(${idx},this.value)">

@@ -21,19 +21,32 @@ const domStub = new Proxy({}, {
   apply: () => domStub,
   construct: () => domStub,
 });
-const domEl = new Proxy({}, {
+// Tests that need a real element for one specific id register it here; every other
+// id still gets the catch-all proxy.
+const elStubs = Object.create(null);
+const auditTrace = [];
+
+// The target is a function so the stub is both callable (el.focus()) and chainable
+// (document.body.classList.add). Returning a bare arrow for unknown keys — as this
+// did originally — breaks any chain of two or more property reads. Assigned values
+// are kept in a side store so the function's own props (name, length, call) never
+// leak through as element properties.
+const domElStore = new Map();
+const domEl = new Proxy(function () {}, {
   get: (target, k) => {
-    if (k in target) return target[k];
+    if (domElStore.has(k)) return domElStore.get(k);
     if (k === 'addEventListener') return () => {};
     if (k === 'removeEventListener') return () => {};
-    if (k === 'getElementById') return () => domEl;
+    if (k === 'getElementById') return id => elStubs[id] || domEl;
     if (k === 'querySelectorAll') return () => [];
     if (k === 'classList') return { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false };
     if (k === 'style') return {};
-    if (typeof k === 'string') return () => domEl;
+    if (k === 'toString' || k === Symbol.toPrimitive) return () => '';
     return domEl;
   },
-  set: (target, k, v) => { target[k] = v; return true; },
+  set: (target, k, v) => { domElStore.set(k, v); return true; },
+  apply: () => domEl,
+  construct: () => domEl,
 });
 const storage = {
   _data: {},
@@ -55,6 +68,17 @@ const sandbox = vm.createContext({
   localStorage: storage,
   navigator: { clipboard: { writeText: () => Promise.resolve() } },
   location: { reload: () => {} },
+  // renderFieldTable measures a column once; nothing under test reads the result.
+  getComputedStyle: () => new Proxy({}, { get: () => '' }),
+  // Enough of the Worker plumbing for _auditBeginLoad to run to completion, with
+  // an ordering trace so a test can assert what happened before the scan started.
+  Blob: function () {},
+  URL: { createObjectURL: () => 'blob:stub', revokeObjectURL: () => {} },
+  Worker: function () {
+    auditTrace.push('worker-created');
+    return { postMessage: () => auditTrace.push('postMessage'), terminate: () => {},
+             onmessage: null, onerror: null };
+  },
   // Test export slot
   _t: {},
 });
@@ -107,6 +131,13 @@ _t.meFmtText          = _meFmtText;
 _t.meFmtEbcdic        = _meFmtEbcdic;
 _t.S                  = S;
 _t.P                  = P;
+// Render-time application of a spec's field_overrides, and the type converter it
+// calls. renderFieldTable mutates the fields it is given, so the override
+// behaviour is observable without inspecting the HTML it returns.
+_t.renderFieldTable   = renderFieldTable;
+_t.meReadApplyTypeOverride = _meReadApplyTypeOverride;
+_t.setSpecLookup      = fn => { window._fmtSpecByName = fn; };
+_t.auditBeginLoad     = _auditBeginLoad;
 `;
 
 try {
@@ -124,6 +155,7 @@ const {
   stripJsonc, migrateSpec, fmtTestSpecs,
   meExecParseSpec, meParseFileWithSpec, mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
+  renderFieldTable, meReadApplyTypeOverride, setSpecLookup, auditBeginLoad,
 } = sandbox._t;
 
 // ── Test harness ────────────────────────────────────────────────────────────
@@ -2926,6 +2958,194 @@ END
       eq(engine[i].value ?? '', legacy[i].value ?? '', `[${fmt}] ${legacy[i].id} value`);
     }
   }
+});
+
+// ── Manual override: no spec config, and provenance says so ───────────────────
+// Regression cover for v1.1.2.397–.404. Manual override parses strictly per the
+// selected DDL and prints "Identify · Recognizers · Parse-specs — not used", but
+// specs are looked up by NAME and manual override labels the message with the
+// DDL's DEF name — so a DEF sharing a name with a spec (BASE/STM/DDLFSTM/STM vs
+// the "STM" spec) silently inherited that spec's field_overrides at render time.
+// Shipped broken twice: the first fix flagged only 2 of the 3 assembly sites.
+
+const OVR_SPEC = { name: 'STM', field_overrides: [{ field: 'TYP', type: 'binary' }] };
+function ovrMsg(manual) {
+  return {
+    msgType: { type: 'STM', label: 'STM' }, manualOverride: manual,
+    bytes: [], raw: '', tokens: [],
+    fields: [{ id: 'TYP', name: 'TYP', dataType: 'PIC 9(4)', offset: 0, length: 4,
+               value: '0210', rawHex: '30323130', rawBytes: [0x30, 0x32, 0x31, 0x30] }],
+  };
+}
+
+console.log('\nmanual override — spec field_overrides must not leak into rendering');
+
+test('manual override: a same-named spec does NOT override the field', () => {
+  setSpecLookup(() => OVR_SPEC);
+  const m = ovrMsg(true);
+  renderFieldTable(m);
+  const typ = m.fields[0];
+  eq(typ.value, '0210', 'value stays as the DDL parsed it');
+  eq(typ.typeOverride, undefined, 'no type override recorded');
+  eq(typ.dataType, 'PIC 9(4)', 'declared type untouched');
+});
+
+test('normal parse: the same spec DOES override the field (guard is not too wide)', () => {
+  setSpecLookup(() => OVR_SPEC);
+  const m = ovrMsg(false);
+  renderFieldTable(m);
+  const typ = m.fields[0];
+  eq(typ.value, '0x30323130', 'converted by the binary override');
+  eq(typ.typeOverride, 'binary', 'override recorded');
+  eq(typ.dataType, 'PIC 9(4)', 'declared type preserved alongside the override');
+});
+
+test('manual override: a display override is skipped too, not just the type', () => {
+  setSpecLookup(() => ({ name: 'STM', field_overrides: [{ field: 'TYP', display: 'amount' }] }));
+  const m = ovrMsg(true);
+  renderFieldTable(m);
+  eq(m.fields[0].displayOverride, undefined, 'no display override applied');
+  eq(m.fields[0].displayValue, undefined, 'no formatted value produced');
+  setSpecLookup(() => null);
+});
+
+// Structural tripwire for the mistake that shipped: a manual-override path added
+// without the flag. Every "Manual override mode" progress step must be followed by
+// a message assembly that marks the message AND records its provenance.
+test('every manual-override path flags the message and sets parsedBy', () => {
+  const STEP = '_parseProgressStep(`Manual override mode';
+  const idxs = [];
+  for (let i = html.indexOf(STEP); i !== -1; i = html.indexOf(STEP, i + 1)) idxs.push(i);
+  assert.ok(idxs.length >= 3,
+    `expected at least 3 manual-override sites, found ${idxs.length} — did the notice text change?`);
+  idxs.forEach((start, n) => {
+    const region = html.slice(start, idxs[n + 1] ?? start + 9000);
+    const line   = html.slice(0, start).split('\n').length;
+    assert.ok(region.includes('manualOverride: true'),
+      `manual-override site at source.html:${line} does not set manualOverride: true — ` +
+      `its message will inherit a same-named spec's field_overrides`);
+    assert.ok(region.includes("parsedBy: 'manual override'"),
+      `manual-override site at source.html:${line} does not set parsedBy — ` +
+      `the Parse Results provenance field renders empty instead of "manual override"`);
+  });
+});
+
+test('the spec lookup that feeds field_overrides is guarded on manualOverride', () => {
+  const i = html.indexOf('window._fmtSpecByName(msg.msgType.type)');
+  assert.ok(i !== -1, 'spec lookup not found — was it renamed?');
+  const stmt = html.slice(html.lastIndexOf('const _msgSpec', i), i);
+  assert.ok(stmt.includes('!msg.manualOverride'),
+    'the _msgSpec lookup must be skipped in manual override mode');
+});
+
+// ── Type overrides: hex family, and the declared type survives ────────────────
+// v1.1.2.394–.395. Renamed with no aliases at the user's request; hex-char is the
+// TAL binary^hexchar conversion (00 13 -> "0013"), which nothing else provided.
+
+console.log('\ntype overrides — hex family');
+
+test('hex-char renders raw bytes as hex characters (TAL binary^hexchar)', () => {
+  eq(meReadApplyTypeOverride({ rawHex: '0013' }, 'hex-char').value, '0013', '00 13 -> "0013"');
+  eq(meReadApplyTypeOverride({ rawHex: '4354' }, 'hex-char').value, '4354', '43 54 -> "4354"');
+});
+
+test('hex-ascii-decimal reads hex digits held as ASCII text', () => {
+  eq(meReadApplyTypeOverride({ rawHex: '30304646' }, 'hex-ascii-decimal').value, '255', '"00FF" -> 255');
+});
+
+test('hex-ebcdic-decimal reads hex digits held as EBCDIC text', () => {
+  eq(meReadApplyTypeOverride({ rawHex: 'F0F0C6C6' }, 'hex-ebcdic-decimal').value, '255', '"00FF" -> 255');
+});
+
+test('the old hex names are gone — no aliases, no silent fallback', () => {
+  for (const dead of ['hex-ascii', 'hex-ebcdic', 'hex-decimal']) {
+    eq(meReadApplyTypeOverride({ rawHex: '30304646' }, dead).value, undefined,
+       `"${dead}" must not convert`);
+  }
+});
+
+test('a type override never replaces the declared DDL type', () => {
+  const out = meReadApplyTypeOverride({ rawHex: '0013' }, 'uint16-be');
+  assert.ok(!('dataType' in out),
+    'returning dataType clobbered the declared type, which is what made the ' +
+    'override column read "binary ↩ binary" instead of "PIC 9(4) ↩ binary"');
+});
+
+// ── Audit: errors belong to the file that produced them ──────────────────────
+// v1.1.2.396. The virtual list builds its spacer once and never wipes siblings,
+// so a scan error stayed visible under the records of the NEXT file opened.
+
+console.log('\naudit — scan errors do not outlive their file');
+
+// Behavioural, not textual: an earlier version of this test only asserted the
+// clearing code was PRESENT, and still passed when the statement was neutered.
+test('_auditBeginLoad removes stale error rows, before the scan starts', () => {
+  auditTrace.length = 0;
+  const removed = [];
+  const selectors = [];
+  const rows = [1, 2, 3].map(n => ({
+    remove: () => { removed.push(n); auditTrace.push('remove-' + n); },
+  }));
+  const own = {
+    querySelectorAll: sel => { selectors.push(sel); return /audit-error-msg/.test(sel) ? rows : []; },
+  };
+  // Only querySelectorAll is real; everything else behaves like the catch-all stub.
+  elStubs.auditRecordList = new Proxy(own, { get: (t, k) => (k in t ? t[k] : domEl[k]) });
+  try {
+    auditBeginLoad({ name: 'next.log', size: 4096 });
+    eq(removed.length, 3, 'every stale error row from the previous file is removed');
+    const started = auditTrace.indexOf('worker-created');
+    const cleared = auditTrace.indexOf('remove-1');
+    assert.ok(cleared !== -1, 'clearing must actually execute, not merely be present');
+    assert.ok(started === -1 || cleared < started,
+      'clearing must precede the worker, so it covers a clean scan and an error alike');
+    assert.ok(selectors.some(s => /audit-error-msg/.test(s) && !s.includes(':scope')),
+      'the selector must not be :scope-limited — nested error rows must clear too');
+  } finally {
+    delete elStubs.auditRecordList;
+  }
+});
+
+// ── The three "X ↩ Y" annotations share one colour scheme ────────────────────
+// v1.1.2.398–.402. Field column, Type/Description and DDL Doc each rendered this
+// pair differently; two stacked opacity over an already-dimmed colour, compounding
+// to roughly .46 and reading as a third, muddier blue.
+
+console.log('\nREDEFINES / override annotations — one scheme in all three panels');
+
+function cssRule(sel) {
+  const i = html.indexOf('\n' + sel + ' ');
+  const j = html.indexOf('\n' + sel + '{');
+  const at = i !== -1 ? i : j;
+  assert.ok(at !== -1, `CSS rule for "${sel}" not found`);
+  return html.slice(at, html.indexOf('}', at) + 1);
+}
+
+test('left of the arrow and the arrow itself are the REDEFINES accent-blue', () => {
+  const BLUE = 'rgba(var(--accent-rgb),.65)';
+  for (const sel of ['.c-ovr-orig', '.c-ovr-arrow', '.c-ovr-as', '.c-redef-mark', '.ddl-doc-redef-note']) {
+    const rule = cssRule(sel).replace(/0\.65/g, '.65').replace(/,\s+/g, ',');
+    assert.ok(rule.includes(BLUE.replace(/,\s+/g, ',')), `${sel} must use ${BLUE}`);
+  }
+});
+
+test('right of the arrow is the column dimmed white in all three panels', () => {
+  for (const sel of ['.c-ovr-new', '.c-redef-tgt', '.ddl-doc-redef-tgt']) {
+    assert.ok(cssRule(sel).includes('var(--text-dim)'), `${sel} must use var(--text-dim)`);
+  }
+});
+
+test('no annotation stacks opacity on top of an already-dimmed colour', () => {
+  for (const sel of ['.c-redef-mark', '.ddl-doc-redef-note', '.c-ovr-orig', '.c-ovr-arrow']) {
+    assert.ok(!/opacity\s*:/.test(cssRule(sel)),
+      `${sel} must not set opacity — it compounds with the rgba alpha`);
+  }
+});
+
+test('the declared type matches a REDEFINES field name in weight, not just colour', () => {
+  assert.ok(/font-weight:\s*700/.test(cssRule('.c-ovr-orig')),
+    '.c-ovr-orig must be 700 like td.c-id, or the same rgba reads as a different blue');
+  assert.ok(/font-weight:\s*700/.test(cssRule('td.c-id')), 'td.c-id is the reference weight');
 });
 
 // ── Summary ───────────────────────────────────────────────────────────────────

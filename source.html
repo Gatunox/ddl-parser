@@ -7883,6 +7883,8 @@ function doParseNetardLog(text, opts = {}) {
             source: rec.source, sourceDet: rec.sourceDet, dest: rec.dest, destDet: rec.destDet,
             timestamp: rec.time, msgType, fields, ddlPath, defName, tokens,
             noMatchDDL: !fields.length,
+            parsedBy: 'manual override',
+            manualOverride: true,
           }];
           S.messages      = parsed;
           S.curIdx        = 0;
@@ -8691,7 +8693,7 @@ function doParseMessages() {
     S.messages      = [{ bytes: parseBytes, raw: chunk.text || chunk, timestamp: chunk.timestamp || null,
       fields: best.fields, ddlPath: best.ddlPath, defName: S.scope.defName || null, byteCharMap,
       charStart, charEnd: charStart + chunkStr.length,
-      tokens: p1Tokens, manualOverride: true,
+      tokens: p1Tokens, manualOverride: true, parsedBy: 'manual override',
       msgType: { type: 'USER', label: 'User' } }];
     S.curIdx = 0; S.isParsed = true; S.selFieldId = null;
     S.trackMode = false; S.trackedFields = new Set();
@@ -13811,7 +13813,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.402';
+const APP_VERSION  = '1.1.2.404';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

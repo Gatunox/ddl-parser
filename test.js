@@ -1068,7 +1068,9 @@ test('field_overrides can reinterpret bound DDL fields and add a display formatt
   const len = ctx.fields.find(x => x.id === 'LEN');
   const txt = ctx.fields.find(x => x.id === 'TXT');
   eq(len.value, '258', 'type override reinterprets bytes as uint16-be');
-  eq(len.dataType, 'uint16-be', 'type override updates dataType');
+  // dataType keeps the DECLARED type — the Type/Description column shows
+  // "<declared> ↩ <override>", so clobbering it lost the original.
+  eq(len.dataType, 'PIC X(2)', 'declared type is preserved, not replaced by the override');
   eq(len.typeOverride, 'uint16-be', 'type override marker set');
   eq(txt.value, 'AB', 'underlying field value stays text');
   eq(txt.displayValue, '0x4142', 'display override exposes hex rendering');
@@ -1393,7 +1395,7 @@ test('inline parse-spec type overrides take precedence over field_overrides', ()
   const ctx = meExecParseSpec(item, Uint8Array.from([0x01, 0x02]));
   const num = ctx.fields.find(x => x.id === 'NUM' && !x.error);
   eq(num.value, '513', 'inline type override wins over UI field override');
-  eq(num.dataType, 'uint16-le', 'effective data type reflects inline override');
+  eq(num.dataType, 'PIC X(2)', 'declared type preserved; the override is recorded separately');
   eq(num.typeOverride, 'uint16-le', 'field records the inline override that was applied');
 });
 

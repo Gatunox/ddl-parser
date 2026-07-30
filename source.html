@@ -9910,7 +9910,7 @@ function renderFieldTable(msg) {
     const _descReal = f.description && f.description.toUpperCase() !== _idLeaf;
     const _origDesc = _descReal ? f.description : (f.dataType || '');
     // Annotate the Description with the field's configured overrides:
-    //   "<new type> < <original>"  (like a REDEFINES pointing back to its target)
+    //   "<declared type> ↩ <override>"  — same arrow the DDL uses for REDEFINES
     // plus " as <DISPLAY>" when a display override is set. Config comes from the
     // spec (_foMap) — the main parse renders declared types, so the field object
     // itself doesn't carry the override markers.
@@ -9920,11 +9920,11 @@ function renderFieldTable(msg) {
     let descHtml, descText;
     if (_tOvr || _dOvr) {
       const _origPart = _tOvr
-        ? `<span class="c-ovr-new">${esc(_tOvr)}</span><span class="c-ovr-arrow"> ↩ </span><span class="c-ovr-orig">${esc(_origDesc)}</span>`
+        ? `<span class="c-ovr-orig">${esc(_origDesc)}</span><span class="c-ovr-arrow"> ↩ </span><span class="c-ovr-new">${esc(_tOvr)}</span>`
         : esc(_origDesc);
       const _asPart = _dOvr ? `<span class="c-ovr-as"> as ${esc(_dOvr.toUpperCase())}</span>` : '';
       descHtml = _origPart + _asPart;
-      descText = (_tOvr ? `${_tOvr} ↩ ${_origDesc}` : _origDesc) + (_dOvr ? ` as ${_dOvr.toUpperCase()}` : '');
+      descText = (_tOvr ? `${_origDesc} ↩ ${_tOvr}` : _origDesc) + (_dOvr ? ` as ${_dOvr.toUpperCase()}` : '');
     } else {
       descHtml = esc(_origDesc);
       descText = _origDesc;
@@ -10779,15 +10779,20 @@ function _auditOnScanError(msg) {
     + '⚠ Scan stopped at offset 0x' + (msg.pos || 0).toString(16).toUpperCase()
     + (msg.recLength != null ? ' — got length=' + msg.recLength : '')
     + '<br><span style="color:var(--text-dim)">'
-    + (partial ? partial.toLocaleString() + ' records found before error. ' : '')
-    + 'Header offsets may be wrong — click ⚙ Configure to adjust.</span></div>';
+    + (partial ? partial.toLocaleString() + ' record' + (partial !== 1 ? 's' : '') + ' found before the error. ' : '')
+    + 'The file may be truncated or use a different header layout.</span></div>';
+  const list = document.getElementById('auditRecordList');
   if (partial) {
     _auditPopulateFilterDrops();
     auditApplyFilter();
-    const list = document.getElementById('auditRecordList');
-    list.insertAdjacentHTML('afterbegin', errHtml);
+    // The error belongs where it happened — AFTER the records that were read
+    // before it. And clear any error left from a previous open: the virtual
+    // list builds its spacer once and never wipes siblings, so appending
+    // blindly stacked one copy per open.
+    list.querySelectorAll(':scope > .audit-error-msg').forEach(el => el.remove());
+    list.insertAdjacentHTML('beforeend', errHtml);
   } else {
-    document.getElementById('auditRecordList').innerHTML = errHtml;
+    list.innerHTML = errHtml;
   }
 }
 
@@ -13775,7 +13780,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.392';
+const APP_VERSION  = '1.1.2.395';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15101,39 +15106,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const ppOverlay = document.getElementById('parseProgressOverlay');
       if (ppOverlay && !ppOverlay.classList.contains('hidden')) { _abortParse(); document.activeElement?.blur(); }
     }
-    if (e.key === ' ' && e.target.closest('#auditRecordList')) { e.preventDefault(); return; }
-
+    // Only the ARROW keys are intercepted. Character shortcuts (1-4 panels,
+    // P parse, X clear, V inspect, Space) were removed: they fired whenever
+    // focus was not in a field, so ordinary typing anywhere else in the app
+    // triggered them.
     // Don't intercept when focus is inside a text input, textarea, or contenteditable (e.g. CodeMirror)
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (document.activeElement?.isContentEditable) return;
-
-    if (e.key === '1') { e.preventDefault(); togglePanel('ddlPanel', 'ddlToggle', 'ddlResizer'); }
-    if (e.key === '2') { e.preventDefault(); togglePanel('msgPanel', 'msgToggle', 'ddlResizer'); }
-    if (e.key === '3') { e.preventDefault(); togglePanel('resPanel', 'resToggle', 'resResizer'); }
-    if (e.key === '4') { e.preventDefault(); togglePanel('rawPanel', 'rawToggle', 'resResizer'); }
-
-    if (e.key === 'p' || e.key === 'P') {
-      e.preventDefault();
-      if (document.body.classList.contains('audit-active')) auditParseSelected();
-      else doParseMessages();
-    }
-
-    if (e.key === 'x' || e.key === 'X') {
-      e.preventDefault();
-      _clearBtnClick();
-    }
-
-    if (e.key === 'v' || e.key === 'V') {
-      const _apEl = document.getElementById('auditPopup');
-      if (_apEl.style.display !== 'none') {
-        e.preventDefault();
-        auditClosePopup();
-      } else if (_auditSt.filtered.length > 0 && _auditSt.selIdx >= 0) {
-        e.preventDefault();
-        auditInspectRecord(_auditSt.selIdx);
-      }
-    }
 
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       if (!S.isParsed || S.messages.length <= 1) return;
@@ -15763,7 +15743,7 @@ const _PS_HELP = {
     ],
     attrs: [
       ['field', 'string', true,  'DDL field ID to read'],
-      ['type',  'string', false, 'Type override. Fixed-size numeric types — <b>uint8</b>/<b>BINARY 8</b> (1 byte), <b>uint16-be</b>/<b>uint16-le</b>/<b>BINARY 16</b> (2), <b>uint32-be</b>/<b>uint32-le</b>/<b>BINARY 32</b> (4), <b>BINARY 64</b> (8) — must match the DDL field\'s declared byte length. Length-flexible types — <b>ascii</b> (render bytes as printable ASCII), <b>ebcdic</b> (translate EBCDIC→ASCII), <b>binary</b> (raw hex dump 0x…), <b>hex-ascii</b> / <b>hex-ebcdic</b> (decode bytes as text, then parse as base-16: "FF" → 255). The same overrides can be set per-field via the Overrides section\'s Data Type dropdown — the inline attr wins when both are present.'],
+      ['type',  'string', false, 'Type override. Fixed-size numeric types — <b>uint8</b>/<b>BINARY 8</b> (1 byte), <b>uint16-be</b>/<b>uint16-le</b>/<b>BINARY 16</b> (2), <b>uint32-be</b>/<b>uint32-le</b>/<b>BINARY 32</b> (4), <b>BINARY 64</b> (8) — must match the DDL field\'s declared byte length. Length-flexible types — <b>ascii</b> (render bytes as printable ASCII), <b>ebcdic</b> (translate EBCDIC→ASCII), <b>binary</b> (raw hex dump 0x…), <b>hex-char</b> (raw bytes as their hex characters, TAL binary^hexchar: 00 13 → "0013"), <b>hex-ascii-decimal</b> / <b>hex-ebcdic-decimal</b> (the field holds hex digits as TEXT — decode that text, then read base-16: "00FF" → 255). The same overrides can be set per-field via the Overrides section\'s Data Type dropdown — the inline attr wins when both are present.'],
     ],
     examples: [
       ['Simple field — read MTI as declared in the DDL',
@@ -16210,7 +16190,7 @@ function _mePsKnownDDLIds(item) {
   return ids;
 }
 
-const _PS_VALID_TYPES_RE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?|ascii|ebcdic|hex-ascii|hex-ebcdic)$/i;
+const _PS_VALID_TYPES_RE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?|ascii|ebcdic|hex-char|hex-ascii-decimal|hex-ebcdic-decimal)$/i;
 
 function _mePsRunLint(item, parsed) {
   const lintEl = document.getElementById('me-ps-lint');
@@ -18196,9 +18176,11 @@ const _FM_HELP = {
       ['ascii',         'PIC X(5)',       '48454C4C4F',       'HELLO',                          'HELLO',    'decode bytes as printable ASCII'],
       ['ascii',         'PIC X(4)',       '4109427F',         'A[09]B[7f]',                     'A.B.',     'non-printable (0x09, 0x7F) → "."'],
       ['ebcdic',        'PIC X(5)',       'C8C5D3D3D6',       '[c8][c5][d3][d3][d6]',           'HELLO',    'EBCDIC "HELLO" bytes decoded to ASCII'],
-      ['hex-ascii',     'PIC X(4)',       '30304646',         '00FF',                           '255',      'ASCII text "00FF" parsed base-16'],
-      ['hex-ascii',     'PIC X(4)',       '31323334',         '1234',                           '4660',     'ASCII text "1234" parsed base-16 = 0x1234'],
-      ['hex-ebcdic',    'PIC X(2)',       'C6C6',             '[c6][c6]',                       '255',      'EBCDIC text "FF" decoded then parsed base-16'],
+      ['hex-char',      'TYPE BINARY 16', '0013',             '19',                             '0013',     'raw bytes as their hex characters (TAL binary^hexchar) — no 0x'],
+      ['hex-char',      'PIC X(2)',       '4354',             'CT',                             '4354',     'works on any bytes, printable or not'],
+      ['hex-ascii-decimal',   'PIC X(4)',       '30304646',         '00FF',                           '255',      'field holds the TEXT "00FF" in ASCII → parsed base-16'],
+      ['hex-ascii-decimal',   'PIC X(4)',       '31323334',         '1234',                           '4660',     'ASCII text "1234" parsed base-16 = 0x1234'],
+      ['hex-ebcdic-decimal', 'PIC X(2)',  'C6C6',             '[c6][c6]',                       '255',      'same, but the hex text arrives in EBCDIC ("FF")'],
     ],
   },
   'Display': {
@@ -18229,7 +18211,7 @@ const _FM_HELP = {
     desc: 'The Data Type override computes the value first, then Display formats the result (e.g. <code>uint-be</code> 0x30 39 → 12345, then <code>amount</code> → 123.45). Exception: the <code>hex</code>, <code>ascii</code> and <code>ebcdic</code> displays read the field\'s <b>raw bytes</b> directly, ignoring the type override — useful for dumping or charset-checking a field regardless of how it is decoded.',
     cols: ['Type ovr', 'Display ovr', 'Declared', 'Raw bytes (hex)', 'Natural value', 'Result', 'Notes'],
     rows: [
-      ['hex-ascii', 'amount',   'PIC X(4)',       '33303339',   '3039',         '123.45',   'hex-ascii → 12345, then amount → 123.45'],
+      ['hex-ascii-decimal','amount',  'PIC X(4)',       '33303339',   '3039',         '123.45',   'hex-ascii-decimal → 12345, then amount → 123.45'],
       ['uint-be',   'amount',   'TYPE BINARY 16', '3039',       '09',           '123.45',   'uint-be → 12345, then amount → 123.45'],
       ['ascii',     'datetime', 'PIC X(6)',       '313433303235', '143025',     '14:30:25', 'ascii → "143025", then datetime → time'],
       ['binary',    'hex',      'PIC X(3)',       'AABBCC',     '[aa][bb][cc]', '0xAABBCC', 'hex display reads raw bytes — ignores the type override'],
@@ -18317,7 +18299,7 @@ function _meFoSetByField(fieldId, key, val) {
 // real <select> materializes on click and is torn down on commit. With huge
 // DDLs (thousands of rows) rendering two live selects per row up-front froze
 // the editor open for seconds.
-const _ME_TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-ascii','hex-ebcdic'];
+const _ME_TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-char','hex-ascii-decimal','hex-ebcdic-decimal'];
 const _ME_DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts','bitmap'];
 
 function _meFoFakeHtml(cur, defLabel) {
@@ -19532,20 +19514,29 @@ function _meReadApplyTypeOverride(f, type) {
       return (a != null && a >= 0x20 && a < 0x7F) ? String.fromCharCode(a) : '.';
     }).join('');
   }
-  // Text-encoded hex digits → integer. Decode the bytes as ASCII or EBCDIC
-  // text first, then parseInt(base 16). Used when the wire carries
-  // human-readable hex pairs (e.g. "FF" → 255) rather than raw binary.
-  else if (/^HEX-ASCII$/i.test(t)) {
+  // hex-char — the raw bytes rendered as their hex characters, TAL's
+  // binary^hexchar: 00 13 → "0013". No 0x prefix (that is `binary`).
+  else if (/^HEX-CHAR$/i.test(t)) {
+    v = bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+  }
+  // hex-ascii-decimal / hex-ebcdic-decimal — the wire carries hex digits written as
+  // TEXT; decode that text (ASCII or EBCDIC) then read it base-16, giving a
+  // decimal. The characters "00FF" → 255, whether they arrive as ASCII
+  // 30 30 46 46 or EBCDIC F0 F0 C6 C6. Raw bytes → decimal is `uint-be`.
+  else if (/^HEX-ASCII-DECIMAL$/i.test(t)) {
     const txt = bytes.map(b => String.fromCharCode(b)).join('').trim();
     const n = parseInt(txt, 16);
     if (!Number.isNaN(n) && /^[0-9A-Fa-f]+$/.test(txt)) v = n;
   }
-  else if (/^HEX-EBCDIC$/i.test(t)) {
+  else if (/^HEX-EBCDIC-DECIMAL$/i.test(t)) {
     const txt = bytes.map(b => String.fromCharCode(_EBCDIC_TO_ASCII[b] ?? b)).join('').trim();
     const n = parseInt(txt, 16);
     if (!Number.isNaN(n) && /^[0-9A-Fa-f]+$/.test(txt)) v = n;
   }
-  return v == null ? {} : { value: String(v), dataType: type, typeOverride: type };
+  // dataType is NOT overwritten: the declared DDL type must survive so the
+  // Type/Description column can show "<declared> ↩ <override>". Only the
+  // value and the override marker change.
+  return v == null ? {} : { value: String(v), typeOverride: type };
 }
 
 // ── Display-override formatters ─────────────────────────────────────────────
@@ -21681,7 +21672,7 @@ function _meSave() {
               <li><kbd>↑ ↓</kbd> — move field selection up / down</li>
               <li><strong>Filter bar</strong> — type to narrow results by field ID or value</li>
               <li><strong>Columns</strong> dropdown — show or hide Field, Type / Description, Length, Value, Trk</li>
-              <li><strong>Type / Description</strong> column — shows the field's DDL type (or HEADING). When a field has an override configured for its message type it reads <span style="font-family:var(--font-mono);font-size:10px"><span style="color:var(--text-dim)">newtype</span> ↩ <span style="color:rgba(88,166,255,.9)">original</span></span> (redefine-style, e.g. <span style="font-family:var(--font-mono);font-size:10px">uint-be ↩ TYPE BINARY 16</span>) plus <span style="font-family:var(--font-mono);font-size:10px">as DISPLAY</span> when a display override (amount, datetime, hex, ascii, ebcdic, gmt-ts, bitmap) is set — and the Value column shows the converted result.</li>
+              <li><strong>Type / Description</strong> column — shows the field's DDL type (or HEADING). When a field has an override configured for its message type it reads <span style="font-family:var(--font-mono);font-size:10px"><span style="color:rgba(88,166,255,.9)">declared</span> ↩ <span style="color:var(--text-dim)">override</span></span> (same arrow the DDL uses for REDEFINES, e.g. <span style="font-family:var(--font-mono);font-size:10px">TYPE BINARY 16 ↩ uint-be</span>) plus <span style="font-family:var(--font-mono);font-size:10px">as DISPLAY</span> when a display override (amount, datetime, hex, ascii, ebcdic, gmt-ts, bitmap) is set — and the Value column shows the converted result.</li>
               <li><strong>Raw Hex</strong> column appears automatically when the Raw Message panel is collapsed</li>
               <li>Drag any <strong>column header edge</strong> to resize that column</li>
               <li><strong>Hide Redef</strong> button — toggle visibility of REDEFINES fields</li>

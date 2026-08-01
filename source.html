@@ -1622,7 +1622,14 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-ps-help-ul li{margin:2px 0;}
 .me-ps-help-ul li b{color:var(--accent);}
 .me-ps-help-ul li code{color:var(--accent2);}
-.me-ps-help-snippet{background:var(--bg-panel);border:1px solid var(--border);border-radius:2px;padding:6px 8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text);white-space:pre;line-height:1.5;overflow-x:auto;}
+.me-ps-help-snippet{background:var(--bg-panel);border:1px solid var(--border);border-radius:2px;padding:6px 28px 6px 8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text);white-space:pre;line-height:1.5;overflow-x:auto;position:relative;}
+/* Copy button on each example. Sits inside the snippet, top-right; the snippet
+   carries extra right padding so it never overlaps the code. Kept visible rather
+   than hover-only — a control you cannot see is a control nobody uses. */
+.me-ps-help-copy{position:absolute;top:3px;right:4px;cursor:pointer;font-size:calc(var(--sz-mono) - 1px);
+  color:var(--text-very-dim);background:var(--bg-panel);border:0;padding:0 3px;line-height:1.4;border-radius:2px;}
+.me-ps-help-copy:hover{color:var(--accent);}
+.me-ps-help-copy.done{color:var(--success,#3fb950);}
 /* ── DDL Bindings + Overrides ── */
 .me-bind-list{display:flex;flex-direction:column;gap:3px;}
 .me-bind-row{display:flex;gap:5px;align-items:center;}
@@ -13877,7 +13884,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.413';
+const APP_VERSION  = '1.1.2.414';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16195,6 +16202,30 @@ function _meHighlightJsonc(text) {
   return html;
 }
 
+// Copy one help example. Uses the same clipboard path as the validation bar, so
+// the insecure-context fallback and the toast behave identically everywhere.
+function _mePsCopyExample(btn) {
+  const text = btn?.dataset?.copy || '';
+  if (!text) return;
+  const done = () => {
+    btn.textContent = '\u2713';
+    btn.classList.add('done');
+    setTimeout(() => { btn.textContent = '\u29c9'; btn.classList.remove('done'); }, 1200);
+  };
+  // The tick must appear on EVERY path. writeText rejects for reasons that have
+  // nothing to do with the copy succeeding — an unfocused document is the common
+  // one — and the fallback below still copies, so skipping the feedback there
+  // made a working click look like a dead button.
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+      .then(()  => { done(); showToast('\u2713 Example copied'); })
+      .catch(() => { _copyFallback(text, '\u2713 Example copied'); done(); });
+  } else {
+    _copyFallback(text, '\u2713 Example copied');
+    done();
+  }
+}
+
 function _mePsHelpSelect(blk) {
   const info = _PS_HELP[blk];
   const det  = document.getElementById('me-ps-help-detail');
@@ -16218,7 +16249,9 @@ function _mePsHelpSelect(blk) {
   const exHtml = info.examples.map(([label, json]) => {
     const text = JSON.stringify(json, null, 2);
     return `<div class="me-ps-help-ex-title">${label}:</div>` +
-      `<pre class="me-ps-help-snippet">${_meHighlightJsonc(text)}</pre>`;
+      `<pre class="me-ps-help-snippet">${_meHighlightJsonc(text)}` +
+      `<button class="me-ps-help-copy" title="Copy this example" data-copy="${_escHtml(text)}"` +
+      ` onclick="_mePsCopyExample(this)">\u29c9</button></pre>`;
   }).join('<div style="height:6px"></div>');
   // "Use when" guidance list — appears between description and attributes.
   const guidanceHtml = Array.isArray(info.useWhen) && info.useWhen.length

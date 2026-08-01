@@ -756,6 +756,43 @@ for (const [label, de] of [
     ], EMV_IN));
 }
 
+// ── 13. Variable-length groups, per length encoding ─────────────────────────
+// The corpus had no VLG group with a BINARY length, so the bug where such a
+// length parsed as zero — collapsing the group and shifting every later field —
+// produced no diff here at all. Covered now.
+
+const DDL_VLG = `DEF MSG.
+  02 BITMAP PIC X(8).
+  02 EMV.
+    04 LEN  PIC X(2).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END MSG.
+`;
+for (const [label, len] of [
+  ['binary 0x0005',      [0x00, 0x05]],
+  ['binary 0x0014 (=20)',[0x00, 0x14]],
+  ['binary 0x0000',      [0x00, 0x00]],
+  ['ascii "05"',         [0x30, 0x35]],
+  ['ascii "20"',         [0x32, 0x30]],
+  ['ascii "99" > payload',[0x39, 0x39]],
+  ['binary 0x7FFF absurd',[0x7F, 0xFF]],
+  ['mixed 0x30 0xFF',    [0x30, 0xFF]],
+]) {
+  kase('vlg/length-encoding', label, () => {
+    S.ddlTree = { V: { S: { D: DDL_VLG } } };
+    S.inputFormat = 'hex';
+    const bytes = [0x40, 0, 0, 0, 0, 0, 0, 0, ...len,
+                   0x41, 0x42, 0x43, 0x44, 0x45, 0x54, 0x41, 0x49, 0x4C];
+    return serCtx(meExecParseSpec({
+      name: 'BASE', type: 'BASE', ddl_bindings: ['V/S/D/MSG'],
+      de_map: [{ field: 'EMV', de: 2 }],
+      parse_spec_binary: [{ 'read-bitmap': { field: 'BITMAP', length: 8 } },
+                          { 'read-bitmap-fields': 'BITMAP' }],
+    }, Uint8Array.from(bytes)));
+  });
+}
+
 // ── Run ─────────────────────────────────────────────────────────────────────
 const results = {};
 const errors  = [];

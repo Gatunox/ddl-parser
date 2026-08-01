@@ -13877,7 +13877,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.408';
+const APP_VERSION  = '1.1.2.409';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20563,12 +20563,41 @@ function _meExecBitmapFields(attrs, ctx) {
         if (!readSeq(bd)) break;   // ran out of bytes
       }
 
-      // Read LEN
+      // Read LEN — in whatever encoding the MESSAGE uses, not always digits.
+      // EBCDIC needs no special case: the whole message is translated to ASCII
+      // before parsing, so an EBCDIC "0028" (F0F0F2F8) arrives here as ASCII
+      // digits. A binary message does not — its length is a plain big-endian
+      // integer, and reading that as characters produced NaN, which "|| 0" then
+      // turned into zero: the group collapsed and every later field shifted,
+      // with nothing reported.
       const lStart = ctx.cursor;
       const lLen   = lenDef.length || 0;
       const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
       const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
-      const N      = parseInt(lValue, 10) || 0;
+      const lenErrs = [];
+      let N;
+      if (lBytes.length && lBytes.every(b => b >= 0x30 && b <= 0x39)) {
+        N = parseInt(lValue, 10);
+      } else if (lBytes.length) {
+        N = lBytes.reduce((a, b) => (a << 8) | b, 0);       // binary, big-endian
+      } else {
+        N = 0;
+        lenErrs.push(`${lenDef.id}: length field is empty — nothing left to read it from`);
+      }
+      // Bound it. Past the end of the message it cannot be right, so stop at the
+      // end rather than reading off it. Past the room the DDL declares for the
+      // payload it is still used — the wire decides the framing — but it is
+      // reported, because that normally means the length was misread.
+      const capacity  = dataDefs.reduce((t, d) => t + (d.length || 0), 0);
+      const available = ctx.bytes.length - (lStart + lLen);
+      if (N > available) {
+        lenErrs.push(`${lenDef.id}: length ${N} runs past the end of the message (${available} byte(s) left) — read as ${
+          lBytes.every(b => b >= 0x30 && b <= 0x39) ? 'digits' : 'a binary integer'}`);
+        N = Math.max(0, available);
+      } else if (capacity && N > capacity) {
+        lenErrs.push(`${lenDef.id}: length ${N} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload`);
+      }
+      for (const e of lenErrs) ctx.fields.push({ id: lenDef.id, error: e });
       ctx.cursor = lStart + lLen;
       const lf = {
         id: lenDef.id, description: lenDef.description,

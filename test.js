@@ -3353,6 +3353,67 @@ test('a tag mapped to a missing element is reported, not silently dropped', () =
   assert.ok(e && e.error.includes('not found in the DDL'), `expected a clear error, got: ${e && e.error}`);
 });
 
+// ── Variable-length groups: the LEN is read in the MESSAGE's encoding ───────
+// It used to be read as characters and parseInt'd, with "|| 0" swallowing the
+// failure — so on a binary message the length came out 0, the group collapsed to
+// nothing, and every field after it shifted, silently.
+
+console.log('\nvariable-length groups — length encoding follows the message');
+
+const VLG_DDL = `DEF MSG.
+  02 BITMAP PIC X(8).
+  02 EMV.
+    04 LEN  PIC X(2).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END MSG.
+`;
+function vlgRun(lenBytes, extraPad = 0) {
+  S.ddlTree = { V: { S: { D: VLG_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = [0x40, 0, 0, 0, 0, 0, 0, 0,       // bitmap, bit 2 set
+                 ...lenBytes,                      // the LEN field
+                 0x41, 0x42, 0x43, 0x44, 0x45,     // 5 payload bytes "ABCDE"
+                 ...new Array(extraPad).fill(0x2E), // room, when a case needs it
+                 0x54, 0x41, 0x49, 0x4C];          // "TAIL"
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/MSG'],
+    de_map: [{ field: 'EMV', de: 2 }],             // DE numbering comes from Overrides
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': 'BITMAP' },
+    ] }, Uint8Array.from(bytes));
+}
+
+test('a BINARY length is read as an integer, not as characters', () => {
+  // 0x00 0x05 — as characters this is "\\x00\\x05", parseInt gives NaN, and the
+  // old "|| 0" turned that into a zero-length group.
+  const ctx = vlgRun([0x00, 0x05]);
+  const data = ctx.fields.find(f => f.id === 'EMV.DATA');
+  assert.ok(data, 'the payload field is emitted');
+  eq(data.value, 'ABCDE', 'five bytes, exactly what the binary length said');
+  eq(data.valueLength, 5, 'not zero — the group did not collapse');
+});
+
+test('an ASCII digit length still works, unchanged', () => {
+  const ctx = vlgRun([0x30, 0x35]);                // "05"
+  eq(ctx.fields.find(f => f.id === 'EMV.DATA').value, 'ABCDE', 'digits still parse as digits');
+});
+
+test('a length past the end of the message is reported, not read off the end', () => {
+  const ctx = vlgRun([0x7F, 0xFF]);                // absurd binary length
+  const err = ctx.fields.find(f => f.error && /runs past the end/.test(f.error));
+  assert.ok(err, `expected a clear error, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  assert.ok(/binary integer/.test(err.error), 'and it says how the length was read');
+});
+
+test('a length beyond the declared payload is flagged but still framed by the wire', () => {
+  // Padded so 25 fits in the message — otherwise it trips the end-of-message
+  // check first and never reaches the capacity comparison.
+  const ctx = vlgRun([0x00, 0x19], 30);           // 25 > DATA's declared 20
+  const err = ctx.fields.find(f => f.error && /exceeds the 20 byte/.test(f.error));
+  assert.ok(err, `expected a capacity warning, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+});
+
 // ── DDL validation: a DEFINITION must declare level-numbered items ──────────
 // HPE DDL Reference Manual: each field or group in a group DEFINITION needs at
 // least a level number and a name. Without them the DEF compiles to zero fields,

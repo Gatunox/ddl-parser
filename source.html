@@ -13877,7 +13877,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.411';
+const APP_VERSION  = '1.1.2.412';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19999,12 +19999,18 @@ function _meExecReadField(attrs, ctx) {
     const occ = _meOccurrenceBuckets(fieldId, ctx);
     if (occ) {
       if (!ctx._occReadNext) ctx._occReadNext = {};
-      const k = ctx._occReadNext[fieldId] || 0;
-      if (k >= occ.length) {
+      // Only a genuinely repeated id consumes occurrences one read at a time.
+      // A plain group has exactly one, and reading it twice is as harmless as
+      // reading a field twice — both now return the same declared bytes. It used
+      // to fail with "All 1 occurrences already read", which described the
+      // machinery rather than anything the user did wrong.
+      const repeated = occ.length > 1;
+      const k = repeated ? (ctx._occReadNext[fieldId] || 0) : 0;
+      if (repeated && k >= occ.length) {
         ctx.fields.push({ id: fieldId, error: `All ${occ.length} occurrences of "${fieldId}" already read` });
         return;
       }
-      ctx._occReadNext[fieldId] = k + 1;
+      if (repeated) ctx._occReadNext[fieldId] = k + 1;
       // With a wire length, the leaves share exactly that many bytes in
       // declaration order — each takes what it declares or what is left,
       // whichever is smaller. Every leaf is still emitted, so the DDL's shape
@@ -20032,7 +20038,13 @@ function _meExecReadField(attrs, ctx) {
           ctx.fieldsById[d.id] = cf;
           continue;
         }
-        const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
+        // Read at the leaf's DECLARED position, exactly as reading a single
+        // field does. A group has a position in the DDL like anything else; it
+        // simply has no compiled record of its own to carry it — only leaves are
+        // compiled, so a group exists as a prefix on its children's names. This
+        // path used to discard those positions and read at the cursor, which
+        // made "read a group" behave unlike "read a field" for no stated reason.
+        const f = _meReadOneFieldFromDef(d, ctx);
         if (!f) return;
         _meApplyTypeOverride(f, d, ctx, typeOverride);
         _meApplyDisplayOverride(f, d, ctx);

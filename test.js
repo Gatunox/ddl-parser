@@ -3431,6 +3431,75 @@ test('a length beyond the declared payload is flagged but still framed by the wi
   assert.ok(err, `expected a capacity warning, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
 });
 
+// ── read: a group reads at its declared position, like a field ──────────────
+// Only LEAVES are compiled, so a group has no record of its own to carry its
+// offset — it exists as a prefix on its children's names. That made "read a
+// group" fall back to the cursor while "read a field" jumped to its declared
+// position, for no stated reason. Both now use the DDL's positions.
+
+console.log('\nread — groups read where the DDL says');
+
+const GRP_DDL = `DEF REC.
+  02 PLAIN-LEAF PIC X(2).
+  02 OCC-LEAF PIC X(2) OCCURS 2 TIMES.
+  02 PLAIN-GRP.
+    04 A PIC X(2).
+    04 B PIC X(2).
+  02 OCC-GRP OCCURS 2 TIMES.
+    04 C PIC X(2).
+END REC.
+`;
+//                     0 1 2 3 4 5 6 7 8 9 …
+const GRP_MSG = 'AABBCCDDEEFFGGHH';
+function grpRun(id, times = 1) {
+  S.ddlTree = { V: { S: { D: GRP_DDL } } };
+  S.inputFormat = 'hex';
+  const blocks = [{ 'read-fixed': { length: 4, as: 'PRE' } }];   // move the cursor off 0
+  for (let i = 0; i < times; i++) blocks.push({ read: id });
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: blocks }, Buffer.from(GRP_MSG));
+}
+
+test('a group reads at its DDL position, not at the cursor', () => {
+  // PLAIN-GRP.A is declared at 6 and B at 8. The cursor is at 4 when the read
+  // happens, so a cursor-relative read would give 4 and 6 instead.
+  const ctx = grpRun('PLAIN-GRP');
+  const a = ctx.fields.find(f => f.id === 'PLAIN-GRP.A');
+  const b = ctx.fields.find(f => f.id === 'PLAIN-GRP.B');
+  eq(a.startByte, 6, 'A at its declared position');
+  eq(b.startByte, 8, 'B at its declared position');
+  eq(a.value, 'DD', 'and therefore the declared bytes');
+});
+
+test('a field and a group behave the same way — both use the DDL', () => {
+  const leaf  = grpRun('PLAIN-LEAF');
+  const group = grpRun('PLAIN-GRP');
+  eq(leaf.fields.find(f => f.id === 'PLAIN-LEAF').startByte, 0, 'field at its declared position');
+  eq(group.fields.find(f => f.id === 'PLAIN-GRP.A').startByte, 6, 'group likewise');
+});
+
+test('re-reading a plain group returns the same bytes, like re-reading a field', () => {
+  const ctx = grpRun('PLAIN-GRP', 2);
+  const hits = ctx.fields.filter(f => f.id === 'PLAIN-GRP.A');
+  eq(hits.length, 2, 'both reads produced the field');
+  eq(hits[0].startByte, hits[1].startByte, 'at the same place');
+  eq(ctx.fields.some(f => f.error), false,
+     'no "All 1 occurrences already read" — that described the machinery, not a user error');
+});
+
+test('a repeated group still advances one occurrence per read', () => {
+  const ctx = grpRun('OCC-GRP', 2);
+  const ids = ctx.fields.map(f => f.id);
+  assert.ok(ids.includes('OCC-GRP[01].C') && ids.includes('OCC-GRP[02].C'),
+    `each read takes the next occurrence, got: ${JSON.stringify(ids)}`);
+});
+
+test('reading a repeated group past its last occurrence still errors', () => {
+  const ctx = grpRun('OCC-GRP', 3);
+  assert.ok(ctx.fields.some(f => f.error && /All 2 occurrences/.test(f.error)),
+    'running out of occurrences is still reported');
+});
+
 // ── read + length_prefix: a length on the wire, absent from the DDL ─────────
 // Once a group's tags are mapped to elements, its LEN leaf holds nothing worth
 // keeping, so the DDL may legitimately omit it. The bytes are still on the wire.

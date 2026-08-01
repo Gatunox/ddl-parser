@@ -9,6 +9,16 @@ Status: **Partially implemented** (`feat/format-detector`)
 
 | Date | Change |
 |------|--------|
+| 2026-08-01 | **Explicit positioning — `at` / `peek` on every block; `read-bitmap` width from the spec.** Blocks could only read where the previous one stopped, so anything the DDL did not describe in sequence was unreachable. `at` takes an absolute byte (0-based, matching DDL Doc and the raw dump) or an anchor relative to a field an earlier block produced (`{"field", "offset", "from": "end"\|"start"}`, negative offsets allowed). Resolved once in the block dispatcher, so it applies to every block type — `skip` included, via its object form. The cursor stays where the positioned read ends; `"peek": true` restores it for an overlay read. An unresolvable position reports why and skips the block rather than reading from a wrong offset. Separately, `read-bitmap` gains `length` (bytes) for a map the message carries but the DDL never declares: the strict field-existence check is waived and the row is synthetic. Because such a map is not ISO 8583, bit 0 no longer doubles the read and bit 1 is kept as data rather than dropped as the secondary-present indicator. See §5.11–5.12. |
+| 2026-08-01 | **Per-bit parsing in `read-bitmap-fields` (`de`), framed by the engine.** `{"de": {"55": [blocks]}}` reads one bit with its own blocks; every other set bit is unchanged. Keys are bit numbers — the DE-to-element relation still comes from the Overrides panel (`de_map`), and an optional `field` overrides it per entry. Names inside an entry resolve **within that element** (`ARQC` → `EMV-ELEMENT.ARQC`); since only leaves are compiled, a group is recognised by the prefix on its children's ids. Crucially the **engine frames the element and the entry only interprets it**: where a DE starts and ends is the same question for every DE and the engine already knows it, honouring the same `var_length_groups` config as the default walk. Blocks run inside that window and the cursor resumes at the boundary whatever they did, so a runaway read is reported and stopped instead of consuming the DEs that follow. A length the *message* states cannot exceed the message and is reported; a size the *DDL* declares is only capacity — a message carrying fewer tags than the DDL has room for is normal — so it is clamped in silence. See §5.14. |
+| 2026-08-01 | **`read-tlv`: BER framing and tags filed into DDL elements.** EMV DE-55 is BER-TLV, not fixed-width: tags are 1 **or** 2 bytes and lengths above 127 use the `81`/`82` long form. A fixed `tag_length` mis-frames the first 1-byte tag (`82`) and every triple after it silently becomes garbage — `"ber": true` parses the real rules. `tags` maps each tag to the element that receives it, filling that subgroup's LEN and DATA leaves; `tag_field`/`length_field`/`value_field` name those leaves when the layout is not EMV, per read-tlv or per tag; `unknown` chooses `emit`/`skip`/`error` for unmapped tags. **Whether the tag itself is stored is read from the DDL** — a subgroup declaring a TAG leaf gets it, one that does not is already identified by its element — so there is deliberately no `store_tag` attribute that could disagree with the DDL. `field` is optional inside a `de` entry, where the element being read is itself the buffer. Fixing this required teaching the resolver to recognise a group by the prefix on its children's ids: only leaves are compiled, so `"field": "ARQC"` matched nothing and every tag→group mapping failed. See §5.15. |
+| 2026-08-01 | **`length_prefix` — a length on the wire that the DDL deliberately omits.** Once a group's tags are mapped to elements, its LEN leaf holds nothing worth keeping, so the DDL may leave it out — but the bytes remain on the wire and nothing could express that. `read` and `de` entries now take `length_prefix` (bytes); the payload is framed by what those bytes say rather than by declared sizes, and the prefix is emitted as its own `<field>.LEN-PREFIX` row. Emitting it is deliberate: consuming bytes without a row is exactly how four bytes of every STM record went missing under `RTE-GRP`. Sub-fields share the window in declaration order; a length past the end of the message is reported and clamped, and bytes no sub-field claims are reported rather than skipped. See §5.13. |
+| 2026-08-01 | **Variable-length group LEN is decoded in the message's own encoding.** The LEN was converted to characters and `parseInt`'d with `\|\| 0` swallowing the failure, so on a **binary** message — where a length is a plain big-endian integer — `parseInt` saw non-digit bytes, returned `NaN`, and the group read **zero** bytes: it collapsed and every field after it shifted, with nothing reported. Now ASCII digits parse as digits and anything else as a big-endian integer, in one rule shared with `length_prefix`. EBCDIC needs no case of its own (the message is translated to ASCII upstream), which makes the breakage narrower than it first appeared: binary only. Bounds replace the silent zero — past the end of the message stops and reports, naming how the length was read; past the payload the DDL declares is still framed by the wire but reported. Auto-detect of the LEN leaf is restricted to **direct children**: scanning every transitive leaf found a grandchild's `LEN` (a nested TLV triple's length) and read the first tag `9F26` as a 40742-byte length. See §8. |
+| 2026-08-01 | **`read` on a group reads at its declared DDL position, like a field.** `read` on a **field** jumped to where the DDL says it lives; `read` on a **group** read at the cursor. Not a rule anyone chose: only **leaves** are compiled into the definition list, so no group has a record of its own to carry an offset (`RQST.SAVE-ACCT` and `RQST` are simply absent from it). With nothing to read a position from, `read` fell through to the occurrence matcher, which discards positions because occurrence 2 of a repeated group cannot use occurrence 1's — and plain groups inherited that. Both forms now use the DDL's positions, and re-reading a non-repeated group returns the same bytes exactly as re-reading a field does, instead of failing with "All 1 occurrences already read" (a message describing the machinery rather than anything the user did). A genuinely repeated id still consumes one occurrence per read and still reports running out. See §5.7. |
+| 2026-08-01 | **DDL validation: two rules from the Reference Manual, both save-blocking.** (1) A DEFINITION whose items carry no level numbers compiles to **zero fields**; it used to save clean and then surface as a bogus "DDL not found" on the binding badge, because `getDDLFromPath` returns null both when a file/DEF is missing and when it compiles to nothing. (2) A group cannot carry a PICTURE or TYPE clause ("a group description cannot have either clause"; "a group's size is the total of the lengths of its member fields"). The second caught a live defect in `BASE/STM/DDLFSTM`: `04 RTE-GRP PIC X(11).` with two `06` items under it, where the parser charged **11 bytes for the group AND 4 more for the children while emitting neither child** — four bytes of every STM record belonged to no field, and nothing reported it because the byte count still added up. Fixed in the DDL by wrapping the children in their own group (`04 SAVE-ACCT.`), which named those bytes without moving any offsets. The binding badge now distinguishes "file missing" / "no such DEF" / "DEF declares no fields" instead of always blaming the path. |
+| 2026-08-01 | **Keyboard: arrows only, everywhere.** The audit-record popup bound `v`/`s`/`p`/`Enter`/`1`–`4` and then called `preventDefault()` on **every** remaining plain keystroke; the DDL-picker overlay did the same with `Tab`/`S`/`Enter`. With either open the keyboard was dead across the whole app and stray letters fired actions. Both are reduced to the arrow keys — records and picker candidates navigate with ↑↓ (and ←→ in the popup, which its buttons already advertised but the handler never bound). The global `Escape` handler is gone too: every menu, modal and overlay it closed has its own visible control, and intercepting keys the user never aimed at this handler is what made typing feel unreliable. Verified with 25 non-arrow keys in both states — none captured. |
+| 2026-08-01 | **Characterization baseline (`baseline.js` + `baseline.golden.json`).** 1472 cases run through the real engine, each one's full output serialized and compared byte-for-byte. Unlike `test.js` it asserts nothing about what is *correct* — it records what the code *does*, so a refactor that shifts one cursor calculation shows up as a diff in every case it touches, including cases nobody thought to write a test for. Recorded on untouched code **before** this branch's features, which is how they were shown to be additive: all 1064 original cases stayed identical. Attribute products are generated from the app's own `_PS_HELP` schema, so a new attribute is covered without editing the corpus; domains mix valid, edge and invalid values (error behaviour is part of the contract) and `undefined` means the attribute is omitted, so each product covers every subset of optional attributes. 64 ordered block pairs cover cursor hand-off. `node baseline.js --update` re-records deliberately, and the diff is reviewed in git. **Caveat worth stating:** "no drift" is not proof — it stayed silent on both the VLG binary-length fix and the group-position fix because no case exercised them. It protects only what it exercises. |
+| 2026-08-01 | **Parse-spec help: worked examples for every new attribute, and a copy control.** The attribute rows shipped with the features but the examples did not, so the panel could say `at` exists without showing what it looks like. Twelve examples added across the affected blocks — absolute/relative/`from: "start"` positioning and a `peek` overlay, a wire length with the DDL's LEN omitted, a bitmap the DDL never declares, the full EMV case end to end, two DEs handled specially while the rest are untouched, and the scoped `read-tlv` form with no `field` — plus "Use when" guidance naming the situation each solves. `at`/`peek` render from one shared definition appended to every block's table rather than being repeated fifteen times. Each snippet carries a copy button holding the **raw** JSON (not the highlighted markup), so a spec can be lifted straight into the editor. All 50 examples are machine-checked: every block type in them is real and every one serializes. |
 | 2026-07-20 | **Test bar format selector → AUTO/HEX/ASCII toggle that auto-detects NETARD and locks itself.** Replaced the `<select>` with a 3-state toggle styled like the parse-spec variant toggle. On every paste/keystroke (`_meTestUpdateFmtState`, `oninput`) the input is checked for a NETARD wrapper (SOURCE/DEST line or a formatted `H-`/hexascii block); if wrapped, a **NETARD** badge shows, the toggles dim and lock (forced to AUTO), reflecting that the format is stripped + auto-detected and the manual choice is irrelevant there. For bare/stripped input the toggles are live and drive `extractBytes` (`hex` un-hexes, `ascii` reads chars, `auto` runs `detectFormat`). `_meRunTest` reads the selection via `_meTestFmt()`. |
 | 2026-07-20 | **Test bar sets the NETARD ruler width before stripping (fixes standard-format records collapsing to one char/line).** `parseNetardLog` clips/pads each standard-format data line to `W = rulerCol − leftMargin`, where `rulerCol` is `S.netardRulerCol` — a global the **Main panel** auto-detects from the longest content line on every input change, but the **Test bar** never set. With it at the default `0`, `W = max(1, 0−7) = 1`, so every data line collapsed to its first character (a real `0210` STM message became `020810…` garbage and failed recognition — the "auto works but sometimes returns junk" symptom). Extracted the Main panel's detection into a shared `_detectNetardRuler(text, isSubFmt)` (longest non-header, non-blank line; trailing `[ascii]` column for hex sub-formats) and call it in `_meRunTest` before `parseNetardLog`. Verified against `test/Message-Tests/Audit_GZ.txt`: a full formatted STM record now recognizes and parses **213 fields** in the Test bar, on both auto and manual formats — matching the main-flow equivalence baseline. |
 | 2026-07-20 | **Test bar: a manual format no longer bypasses the NETARD wrapper-strip.** After the autodetect change, picking a format other than *auto* took the old `extractBytes` path over the *whole* pasted text (SOURCE/DEST/header lines included), so a formatted record's message "started" at the header and recognizers failed at offset 0 — auto worked, ascii/hex didn't. Now a wrapped record (SOURCE/DEST present, or a formatted `H-`/hexascii block → `parseNetardLog` returns source/dest/netardFmt) is stripped+decoded by `parseNetardLog` for **both** auto and manual; the manual format only overrides the label/engine format, never re-adds the wrapper. Only bare stripped input (no wrapper) falls through to `extractBytes` — which also fixes a latent case where bare hex on *auto* wasn't un-hexed. |
@@ -208,19 +218,21 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | Block | Purpose | Key attributes |
 |-------|---------|----------------|
 | `read-ddl` | Read **all fields from the DDL Bindings** in DDL declaration order — no individual field listing needed | `binding` (int index into `ddl_bindings`, default 0) |
-| `read` | Read a single DDL-defined field (offset, length, type from DDL) | `field` (DDL field ID) |
+| `read` | Read a single DDL-defined field (offset, length, type from DDL) | `field` (DDL field ID), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13) |
 | `read-fixed` | Read N bytes inline — no DDL ref needed | `length` (int literal OR field ID ref), `type`, `encoding`, `as` (DDL field ID) |
 | `read-until` | Read bytes until sentinel(s) or EOM | `sentinels` (list of hex bytes), `eom` (bool), `as` (DDL field ID) |
 | `read-length-prefix` | Read length N then N bytes | `prefix` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
-| `read-bitmap` | Read 8 or 16 bytes as bitmap, store result | `field` (DDL field ID), `encoding` (`binary`\|`ascii-hex`) |
-| `bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `de_map`, honouring `var_length_groups` | `bitmap` (ref to prior `read-bitmap` field ID) |
+| `read-bitmap` | Read 8 or 16 bytes as bitmap, store result | `field` (DDL field ID), `encoding` (`binary`\|`ascii-hex`), `length` (explicit width in bytes when the DDL does not declare the map — §5.12) |
+| `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `de_map`, honouring `var_length_groups` | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14) |
 | `skip` | Advance N bytes | `length` (int) |
 | `read-to-end` | Consume remaining bytes | `as` (DDL field ID) |
 | `when` | Branch on a prior field value | `field` (field ID), `is` / `not` (value, list, or range), `then` (block list) |
 | `repeat` | Loop N times — N from a prior field | `count` (field ID), `body` (block list) |
 | `read-while` | Loop body blocks while a guard predicate matches at the cursor; use when iteration count is unknown or unreliable | `while` (guard), `body` (block list), `max` (int \| field id) |
-| `read-tlv` | Parse a DDL buffer field as repeating TLV triples until buffer exhausted | `field` (DDL field ID of the buffer), `tag_length` (bytes per tag), `length_length` (bytes per length), `encoding` (`binary`\|`ascii-hex`) |
+| `read-tlv` | Parse a DDL buffer field as repeating TLV triples until buffer exhausted | `field` (buffer; optional inside a `de` entry), `ber` (BER-TLV framing), `tag_length`/`length_length` (fixed-width form), `encoding`, `tags` (tag → DDL element), `tag_field`/`length_field`/`value_field`, `unknown` — §5.15 |
 | `token-area` | Read tokens from the message (see §5.3) | `tokens` (`"ANY"` \| list), `from`, `until` |
+
+**Every** block additionally accepts `at` and `peek` — see §5.11.
 
 ### 5.2 `read-ddl` — full DDL binding read
 
@@ -339,14 +351,26 @@ Multiple `when` blocks on the same field act as if/else-if. Nested `when` blocks
 
 ### 5.7 `read` on group fields — DDL structure resolution
 
+> *Positional behaviour corrected 2026-08-01.*
+
 `read: FIELD-ID` where FIELD-ID is a group resolves automatically from DDL structure:
 
 | DDL structure of FIELD-ID | Behaviour |
 |--------------------------|-----------|
-| Simple group (sub-fields, no REDEFINES/OCCURS) | Reads all sub-fields sequentially |
-| Group with OCCURS | Reads the OCCURS fields N times (`_occursMax` from DDL) |
+| Simple group (sub-fields, no REDEFINES/OCCURS) | Reads all sub-fields at their **declared DDL positions** |
+| Group with OCCURS | Each `read` consumes the next occurrence, at that occurrence's declared positions |
 | REDEFINES another field | Seeks to redefined field's offset, reads sub-fields from there |
 | REDEFINES + OCCURS | Seeks to redefined offset, reads OCCURS block N times |
+
+Only **leaves** are compiled into the definition list, so a group has no record of
+its own — it exists as a prefix on its children's ids. Until 2026-08-01 that meant
+`read` could find no offset for a group and fell through to the occurrence matcher,
+which discards positions (occurrence 2 cannot use occurrence 1's). Plain groups
+inherited that: `read` on a **field** jumped to its declared position while `read`
+on a **group** read at the cursor. Both now use the DDL's positions, and re-reading
+a non-repeated group returns the same bytes, exactly as re-reading a field does.
+A genuinely repeated id still consumes one occurrence per `read` and still reports
+running out.
 
 No extra parse_spec attributes needed — all behaviour is derived from DDL structure.
 
@@ -504,6 +528,133 @@ parse_spec:
 
 ---
 
+### 5.11 Explicit positioning — `at` / `peek` (every block)
+
+> *Added 2026-08-01.*
+
+Every block reads where the previous one stopped. That stays the default and is
+what every existing spec relies on. `at` overrides it:
+
+| Form | Meaning |
+|------|---------|
+| `"at": 23` | Absolute byte position, **0-based** — matches DDL Doc offsets and the raw dump, so what you read off the screen is what you type |
+| `"at": {"field": "HDR"}` | Immediately after `HDR` ends |
+| `"at": {"field": "HDR", "offset": 10}` | 10 bytes past the end of `HDR` (negative allowed) |
+| `"at": {"field": "HDR", "from": "start", "offset": 4}` | 4 bytes into `HDR`, measured from its first byte |
+
+The anchor must be a field an **earlier** block produced. Resolution is done once
+in the block dispatcher, so it applies to every block type — including `skip`,
+which then needs its object form: `{"skip": {"length": 2, "at": 10}}`.
+
+The cursor **stays** where the positioned read ends, so following blocks continue
+from there. `"peek": true` restores it afterwards, for an overlay read that must
+not disturb the sequence.
+
+A position that cannot be resolved — past the end, negative, an anchor not yet
+read, a bad `from` — reports why and **skips the block**, rather than reading from
+a wrong offset.
+
+### 5.12 `read-bitmap` — explicit width
+
+> *Added 2026-08-01.*
+
+`"length": N` states the map's width in bytes for a bitmap the **message carries
+but the DDL never declares**. The field need not exist in the bound DDL (the
+strict existence check is waived) and the row is synthetic.
+
+Because such a map is by definition not ISO 8583, two ISO-only rules are turned
+off: bit 0 is **not** read as "a secondary bitmap follows" (so the read is never
+silently doubled) and bit 1 is kept as ordinary data instead of being dropped as
+the secondary-present indicator.
+
+`at` and `length` are independent — `at` says *where*, `length` says *how wide*.
+
+### 5.13 `length_prefix` — a length on the wire, absent from the DDL
+
+> *Added 2026-08-01.*
+
+Accepted by `read` and by a `de` entry (§5.14). Once a group's tags are mapped to
+elements its LEN leaf holds nothing worth keeping, so the DDL may legitimately
+omit it — but the bytes are still on the wire, and nothing else could say so.
+
+`"length_prefix": 4` means *four bytes of length sit here*; the payload is then
+framed by what they say instead of by the declared sizes. The prefix is emitted as
+its own row (`<field>.LEN-PREFIX`) — consuming bytes without a row is how four
+bytes of every STM record went missing under `RTE-GRP` (see changelog 2026-08-01).
+
+Sub-fields share the framed window in declaration order, each taking what it
+declares or what remains, whichever is smaller. A length past the end of the
+message is reported and clamped; bytes inside the window that no sub-field claims
+are reported rather than silently skipped.
+
+**Decoding** is the single rule shared with `var_length_groups` (§8): ASCII digits
+parse as digits — which also covers EBCDIC, translated to ASCII upstream — and
+anything else is a big-endian integer.
+
+### 5.14 `read-bitmap-fields` — per-bit parsing (`de`)
+
+> *Added 2026-08-01.*
+
+```jsonc
+{"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
+  "55": {"field": "EMV-ELEMENT", "length_prefix": 2, "blocks": [
+    {"read-tlv": {"ber": true,
+      "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}}}]}}}}
+```
+
+Keys are **bit numbers**. A listed bit is read by its own blocks; every other set
+bit is read exactly as before. The bare array form (`"55": [ … ]`) is shorthand
+for `{"blocks": [ … ]}`.
+
+The DE-to-element relation still comes from the Overrides panel (`de_map`, §7) —
+this only says how that element's bytes are read. An optional `field` overrides
+which element the bit maps to.
+
+**Names inside the entry resolve within that element**, so `ARQC` means
+`EMV-ELEMENT.ARQC`. Only leaves are compiled, so a group is recognised by the
+prefix on its children's ids.
+
+**The engine frames the element, the entry only interprets it.** Where a DE starts
+and ends is the same question for every DE and the engine already knows it — from
+the bitmap walk plus the group's LEN, honouring the same `var_length_groups`
+configuration the default walk uses. The entry's blocks then run inside that
+window and the cursor resumes at the boundary whatever they did, so a block that
+reads too far is reported and stopped instead of consuming the DEs that follow.
+Window precedence: `length_prefix` → the group's VLG LEN → an explicit `length` →
+the element's declared size.
+
+A length the **message** states cannot exceed the message: that is malformed and
+reported. A size the **DDL** declares is only capacity — a message carrying fewer
+tags than the DDL has room for is normal — so it is clamped silently.
+
+### 5.15 `read-tlv` — BER framing and tag → element mapping
+
+> *Extended 2026-08-01.*
+
+`"ber": true` parses EMV BER-TLV: a tag is one byte unless its low five bits are
+all set (`0x1F`), in which case continuation bytes follow while the top bit stays
+set; a length below `0x80` is that byte, `0x8N` means the next N bytes hold the
+length. A fixed `tag_length` mis-frames the first 1-byte tag (e.g. `82`) and every
+triple after it silently becomes garbage — so `ber` is required unless both
+`tag_length` and `length_length` are given.
+
+`tags` files each triple into a DDL element instead of emitting anonymous
+`<buffer>.<tag>` rows:
+
+| Attribute | Meaning |
+|-----------|---------|
+| `tags` | `{"9F26": {"field": "ARQC"}}` — tag → element receiving it |
+| `tag_field` / `length_field` / `value_field` | Leaf names when they are not `TAG`/`TAG-ID`, `LEN`/`LGTH`/`LENGTH`, `DATA`/`VAL`/`VALUE`. Settable per read-tlv or per tag |
+| `unknown` | `emit` (default), `skip`, or `error` for a tag `tags` does not mention |
+
+**Whether the tag itself is stored is read from the DDL**, not stated in the spec:
+a subgroup that declares a TAG leaf receives it; one that does not is already
+identified by its element. There is deliberately no `store_tag` attribute — it
+could only ever disagree with the DDL.
+
+`field` names the buffer and is **optional inside a `de` entry**, where the element
+being read is itself the buffer.
+
 ## 6. DDL Bindings (ddl_bindings)
 
 A Message can reference 1 to N DDL paths. These are the DDLs used for field metadata (names, descriptions, base types, lengths, offsets).
@@ -539,8 +690,25 @@ de_map:
 
 HPE DDL has no LLVAR/LLLVAR type. Variable-length fields are expressed as a group with two sub-fields: `LEN` (PIC 9(2) or PIC 9(3)) and `DATA` (PIC X or PIC 9). Declaring a group in `var_length_groups` tells `bitmap-fields` to:
 1. Read `LEN` sub-field.
-2. Convert `LEN` value to integer N.
+2. Convert `LEN` value to integer N — see *Length decoding* below.
 3. Read exactly N bytes into `DATA` (not the full declared `DATA` length).
+
+**Length decoding** *(corrected 2026-08-01)* — one rule, shared with
+`length_prefix` (§5.13): if every length byte is an ASCII digit the value parses as
+digits, otherwise it is a **big-endian integer**. EBCDIC needs no case of its own
+because the message is translated to ASCII before parsing, so an EBCDIC `"0028"`
+(`F0F0F2F8`) arrives here as digits. Binary messages write lengths as integers, and
+reading those as characters produced `NaN` — which a `|| 0` then turned into zero,
+collapsing the group and shifting every field after it with nothing reported.
+
+Bounds: a length past the end of the message stops at the end and is reported,
+naming how it was read; a length beyond the payload the DDL declares is still used
+— the wire decides the framing — but is reported, because that usually means it
+was misread.
+
+**Auto-detect** applies to **direct children only**. Scanning every transitive leaf
+would find a grandchild's `LEN` — the length of a nested TLV triple, not of the
+group — and read the first tag as a length.
 
 ```yaml
 var_length_groups:

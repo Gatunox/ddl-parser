@@ -86,7 +86,7 @@ Detection is **automatic** — user does nothing extra beyond what they do today
 
 | Mode | Trigger | Behaviour |
 |------|---------|-----------|
-| **Message mode** | Input is NETARD format (log, audit) → always a message. Raw blob where auto-detect returns a known Message type. | Use Message Entity pipeline: recognizers → DDLMM rules → DDL binding → parse_spec |
+| **Message mode** | Input is NETARD format (log, audit) → always a message. Raw blob where auto-detect returns a known Message type. | Use Message Entity pipeline: recognizers → DDL binding → parse_spec |
 | **Chunk mode** | Auto-detect returns UNKNOWN on a raw blob, OR user explicitly selects a DDL (manual override). | Use selected DDL directly. No auto-detection. Scoring against all DDLs if no DDL selected. |
 
 Auto-detect is always attempted first on raw blobs. If it resolves to a known Message → Message mode. If not → require manual override (Chunk mode).
@@ -113,7 +113,6 @@ Message
 
 The `type` short code is the **universal identifier** used everywhere:
 - Badge display on parsed messages
-- DDLMM `TYPE` column references this string directly
 - Scoring / DDL resolution chain
 
 ---
@@ -666,7 +665,7 @@ ddl_bindings:
   - SWITCH/ISO/ISO-AUTH
 ```
 
-When no DDLMM rule matches, scoring is performed **only within the Message's DDL bindings** — not globally across all DDLs.
+Scoring is performed **only within the Message's DDL bindings** — not globally across all DDLs.
 
 ---
 
@@ -741,15 +740,19 @@ Reliability: a field overridden to a binary type (`uint32-be`, `uint16-be`, `bin
 
 ---
 
-## 10. DDLMM Integration
+## 10. DDLMM — decommissioned
 
-DDLMM rules remain **fully independent** from Message definitions. No structural change to DDLMM.
+> *DDLMM was removed; this section is kept so the numbering of later sections is
+> stable. Data Detection (§4) supersedes it entirely.*
 
-- The `TYPE` column in DDLMM rules references the Message `type` short code directly (e.g. `ISO`, `STM`, `HPDH`).
-- Once a Message is defined with `type: HPDH`, that string becomes available in DDLMM rules automatically.
-- The `##` sentinel: remains valid for content/source/dest routing cases. Redundant **only** for the "type-only, no content/source/dest" case — that scenario is now covered by Message DDL bindings natively.
+DDLMM was a separate rule table that routed a record to a DDL by matching source,
+dest and content, with a `TYPE` column naming the message short code and a `##`
+sentinel for type-only rules. Recognizers (§4) do that job now, on the Message
+Entity itself, so routing and the definition of a message live in one place
+instead of two that could disagree.
 
----
+Nothing in the current pipeline evaluates DDLMM rules. The only traces left in
+the code are comments recording where each evaluation step used to be.
 
 ## 11. UI — Message Editor
 
@@ -780,11 +783,11 @@ No nested overlays.
 │                  │                                                    │
 │  [+ New Message] │                                                    │
 │                  │                           [Delete]  [Cancel] [Apply]│
-│  RULES  (DDLMM)  │                                                    │
-│  ─────────────   │                                                    │
-│  01 ISO …        │                                                    │
-│  02 STM …        │                                                    │
-│  [+ New Rule]    │                                                    │
+│                  │                                                    │
+│                  │                                                    │
+│                  │                                                    │
+│                  │                                                    │
+│                  │                                                    │
 └──────────────────┴───────────────────────────────────────────────────┘
 ```
 
@@ -809,7 +812,7 @@ Sidebar messages are sorted by **priority descending**. A priority badge (e.g. `
 **DDL Bindings**
 - List of DDL paths (Volume/Subvolume/DDLName)
 - \[+ Add\] / \[Remove\] per entry
-- Ordered — first binding is the default when no DDLMM rule matches
+- Ordered — the first binding is the default
 
 **Overrides**
 - Three sub-sections, each collapsible:
@@ -973,6 +976,12 @@ For each DDL in the file:
 ## 14. Open items (not yet decided)
 
 - Full parse_spec for each existing message type (ISO ASCII, ISO EBCDIC, BIC ISO, STM, PSTM, NDC, B24).
-- PSTM services loop: current implementation is heuristic (byte-detection based), not count-driven from `NUM-SERVICES`. Decision pending: fix to count-based, or preserve heuristic in parse_spec.
 - Exact format of per-recognizer inline editor UI (attribute fields per type).
-- Auto-migration implementation details (from old regex rules + DDLMM to new schema).
+
+**Settled since:**
+- *PSTM services loop* — decided both ways, by input class. The binary spec is
+  count-driven (`repeat` with `count: NUM-SERVICES`); the ASCII spec stays
+  guard-based (`read-while`), because a `TYPE BINARY` counter cannot be read from
+  an ASCII capture — that is precisely why the ASCII variant exists.
+- *Auto-migration from DDLMM* — moot: DDLMM was decommissioned rather than
+  migrated (§10).

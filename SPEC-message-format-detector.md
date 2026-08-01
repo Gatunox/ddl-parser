@@ -1,7 +1,8 @@
 # Message Format Detector & Message Entity — Design Specification
 
-Branch: `feat/format-detector`  
-Status: **Partially implemented** (`feat/format-detector`)
+Branch: `feat/format-detector` — **merged to `main`**  
+Current work: `feat/parse-spec-positioning-tlv` — parse-spec positioning, per-bit entries, BER TLV (§5.11–5.15)  
+Status: **Partially implemented** — see §14 for what remains
 
 ---
 

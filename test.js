@@ -3656,6 +3656,107 @@ test('a single-line elementary DEFINITION is not flagged', () => {
      'header with its own PIC is complete');
 });
 
+// ── SPEC ↔ code — the design spec must describe the code that exists ────────
+// Every stale section found so far was found by eye: DDLMM after it was
+// decommissioned, recognizer types renamed underneath the table, hex overrides
+// added without documenting them, a UI section describing tabs that are now
+// collapsible sections. Anything mechanically checkable is checked here so the
+// next drift fails the suite instead of waiting to be noticed.
+
+console.log('\nSPEC ↔ code');
+
+const SPEC = fs.readFileSync('./SPEC-message-format-detector.md', 'utf8');
+const specSec = (from, to) => SPEC.slice(SPEC.indexOf(from), to ? SPEC.indexOf(to) : undefined);
+/** Evaluate one literal out of source.html in its own context — sharing one
+ *  throws on the second `const` of the same name. */
+function fromSource(re, expr) {
+  const m = html.match(re);
+  if (!m) return null;
+  const ctx = {}; vm.createContext(ctx);
+  try { vm.runInContext(m[0] + ';out=' + expr, ctx); return ctx.out; } catch (e) { return null; }
+}
+
+test('every parse_spec block type is documented', () => {
+  const blocks = fromSource(/const _PS_KNOWN_BLOCKS = new Set\(\[[\s\S]*?\]\);/, '[..._PS_KNOWN_BLOCKS]');
+  assert.ok(blocks && blocks.length, 'could not read _PS_KNOWN_BLOCKS');
+  deepEq(blocks.filter(b => !SPEC.includes('`' + b + '`')), [], 'blocks missing from the spec');
+});
+
+test('recognizer types and the spec table agree, both directions', () => {
+  const types = fromSource(/const _REC_HELP = \{[\s\S]*?\n\};/, 'Object.keys(_REC_HELP)');
+  assert.ok(types && types.length, 'could not read _REC_HELP');
+  const sec = specSec('### 4.4', '### 4.5');
+  const alias = html.match(/const _ALIAS = \{([^}]*)\}/)[1];
+  const aliasNames = [...alias.matchAll(/'?([a-z0-9-]+)'?\s*:/g)].map(m => m[1]);
+  deepEq(types.filter(t => !sec.includes('`' + t + '`')), [], 'types in code but not in §4.4');
+  const listed = [...new Set([...sec.matchAll(/^\| `([a-z0-9-]+)`/gm)].map(m => m[1]))];
+  deepEq(listed.filter(t => !types.includes(t) && !aliasNames.includes(t)), [],
+         'types in §4.4 that no longer exist (aliases excluded)');
+});
+
+test('every recognizer EVALUATOR has help and a spec row', () => {
+  // _REC_HELP is what the UI shows; _R is what actually runs. Checking only the
+  // former missed renaming an evaluator out from under its documentation.
+  const evals = [...new Set([...html.matchAll(/_R\[(?:'|")([a-z0-9-]+)(?:'|")\]\s*=/g)].map(m => m[1]))];
+  assert.ok(evals.length > 10, `expected the recognizer registry, found ${evals.length}`);
+  const help = fromSource(/const _REC_HELP = \{[\s\S]*?\n\};/, 'Object.keys(_REC_HELP)') || [];
+  // Aliases share an evaluator with their target and are documented in the alias
+  // table rather than getting a help entry of their own.
+  const aliasSrc = html.match(/const _ALIAS = \{([^}]*)\}/)[1];
+  const aliases = [...aliasSrc.matchAll(/'?([a-z0-9-]+)'?\s*:/g)].map(m => m[1]);
+  const own = evals.filter(t => !aliases.includes(t));
+  deepEq(own.filter(t => !help.includes(t)), [], 'evaluators with no help entry');
+  deepEq(evals.filter(t => !SPEC.includes('`' + t + '`')), [], 'evaluators absent from the spec');
+  deepEq(help.filter(t => !evals.includes(t) && !/^(source|destination|filename)$/.test(t)), [],
+         'help entries with no evaluator (routing recognizers excepted — they run elsewhere)');
+});
+
+test('every recognizer alias is in the alias table', () => {
+  const alias = html.match(/const _ALIAS = \{([^}]*)\}/)[1];
+  const pairs = [...alias.matchAll(/'?([a-z0-9-]+)'?\s*:\s*'([a-z0-9-]+)'/g)];
+  const sec = specSec('**Aliases', '#### ISO 8583 semantic');
+  deepEq(pairs.filter(([, , to]) => !sec.includes('`' + to + '`')).map(m => m[1]), [],
+         'aliases missing their target');
+  deepEq(pairs.filter(m => !sec.includes('`' + m[1] + '`')).map(m => m[1]), [], 'aliases missing');
+});
+
+test('field_overrides type and display options are documented (§9)', () => {
+  const types = fromSource(/const _ME_TYPE_OPTS = \[[^\]]*\];/, '_ME_TYPE_OPTS.filter(Boolean)');
+  assert.ok(types && types.length, 'could not read _ME_TYPE_OPTS');
+  const sec = specSec('## 9. Field Overrides', '## 10.');
+  deepEq(types.filter(t => !sec.includes(t)), [], 'type overrides missing from §9');
+  deepEq(['datetime', 'amount', 'hex', 'ascii', 'ebcdic', 'gmt-ts', 'bitmap'].filter(d => !sec.includes(d)), [],
+         'display overrides missing from §9');
+});
+
+test('every localStorage key is documented (§13)', () => {
+  const keys = [...new Set([...html.matchAll(/localStorage\.(?:get|set|remove)Item\(\s*'([^']+)'/g)].map(m => m[1]))];
+  const sec = specSec('## 13. Storage', '### 13.1');
+  deepEq(keys.filter(k => !sec.includes(k)), [], 'storage keys missing from §13');
+});
+
+test('the spec is internally consistent', () => {
+  const refs  = [...new Set([...SPEC.matchAll(/§(\d+(?:\.\d+)?)/g)].map(m => m[1]))];
+  const heads = new Set([...SPEC.matchAll(/^#{2,3} (\d+(?:\.\d+)?)[. ]/gm)].map(m => m[1]));
+  deepEq(refs.filter(r => !heads.has(r)), [], 'cross-references to sections that do not exist');
+  deepEq(SPEC.split('\n').map((l, i) => (/^\|/.test(l) && !/\|\s*$/.test(l)) ? 'line ' + (i + 1) : null).filter(Boolean),
+         [], 'malformed table rows');
+});
+
+test('decommissioned DDLMM is not described as live', () => {
+  const s10 = SPEC.indexOf('## 10. DDLMM — decommissioned'), e10 = SPEC.indexOf('## 11.');
+  assert.ok(s10 > 0, '§10 tombstone missing');
+  const offenders = SPEC.split('\n').map((l, i) => {
+    if (!/DDLMM/.test(l)) return null;
+    if (/^\| 20\d\d-/.test(l)) return null;                    // a changelog row is history
+    if (/§10/.test(l)) return null;                            // a deliberate cross-reference
+    const off = SPEC.split('\n').slice(0, i).join('\n').length;
+    if (off >= s10 - 1 && off < e10) return null;              // §10 itself
+    return 'line ' + (i + 1);
+  }).filter(Boolean);
+  deepEq(offenders, [], 'DDLMM described outside its tombstone');
+});
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

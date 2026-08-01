@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-01 | **The spec is now checked against the code by the test suite.** Every stale section this week was found by eye — DDLMM described as live long after it was decommissioned, recognizer types renamed underneath the table, the hex overrides added without documenting them, §11 describing tabs that are collapsible sections, `priority` badges removed a month earlier, and `min-length`/`max-length` where the **help named the wrong attribute** so a recognizer written from it passed or blocked everything silently. Eight tests in `test.js` now assert the mechanically checkable claims: every parse_spec block type is documented; recognizer **evaluators** (`_R`, what actually runs) each have a help entry and a spec row, and the §4.4 table lists nothing that no longer exists; every alias is in the alias table; §9 lists every `type` and `display` option; §13 lists every localStorage key; no `§` cross-reference dangles and no table row is malformed; and DDLMM appears only in the changelog and its own tombstone. Mutation-verified against eight reintroduced drifts, including renaming an evaluator *without* renaming its help — the case the first version of the check missed, because it read the help table instead of the registry. Also filled from the code: §9 gained the full `type`/`display` option tables (only `binary` and `datetime` had been named), §13 gained seven storage keys, and §4.2 gained the nine spec-object fields it never listed. |
 | 2026-08-01 | **§11 UI rewritten to the UI that exists; recognizer attributes and aliases corrected against the code.** The layout diagram still showed `priority` badges (removed 2026-05-31), had no **Files** list (shipped 2026-07-19) and no **Test** area at all, and described the right panel as *tabs* when it is five collapsible sections on one scrolling page — so a spec can be read end to end and a recognizer seen next to the parse_spec that depends on it. Test area documented: input (a formatted NETARD record works as-is), the AUTO/HEX/ASCII toggles that lock with a NETARD badge when the wrapper determines the format, and ▶ Run reporting per-spec which recognizer failed and where (`failAt`) before parsing with the winner — the reason it beats "detection returned UNKNOWN". Remaining `priority` prose removed from §4.1 and §4.2 (replaced by `kind`). Recognizer attributes fixed where the spec had drifted: `mti` gained `value` (4-char pattern, `#` = any digit), `hex-density`/`oct-density` take `min` + `encoding` (not `min_density`), and the alias table gained `length-prefix` → `length-payload` and `flag-prefix` → `flag-payload`, which are back-compat rather than HPE naming. |
 | 2026-08-01 | **`min-length` / `max-length` accept the attribute their help documented.** The evaluators read `length`; the in-app help said `value`. A recognizer written from the help therefore got `length=0`, so `min-length` passed **every** message and `max-length` blocked **every** message — silently, since a recognizer only returns a boolean. Both now read `length ?? value`, so specs written either way work, and the help names `length` as canonical. Two tests cover both spellings, including that `max-length` with `value` actually rejects an over-long message rather than everything. |
 | 2026-08-01 | **Documented what was only ever in the changelog: segmented files, file specs, and six recognizers.** Segmented-file handling had shipped 2026-07-19 and was described nowhere in the reference sections — `read-segment-fields` was not even listed in the §5.1 block table. New **§5.16** covers it: `read-bitmap`'s three modes (wire / file-read / declared) and how they map onto the three Base24 cases (non-IDF pre-6.0 reads `SEG-MAP` from the record, IDF 6.0 reads `FIID-SEG-MAP` from the record, non-IDF 6.0 supplies the map because its `SEG-MAP` is zeroed); that file-read uses the field's declared TYPE big-endian with bit 0 leftmost, trusts the field name, and treats an all-zeros map as an **error** rather than silently assuming all segments present — that pattern is precisely the 6.0 signal; the SEG-MAP bar override; and what manual override does on a segmented DDL. New **§3.2** documents `kind: 'file'` — file detection is filename-keyed and order-free, a file spec must carry a `filename` recognizer, and one with neither binding nor parse_spec is inert. §4.4 corrected against the code: `length-prefix`→`length-payload`, `flag-prefix`→`flag-payload`, `ebcdic-density` removed (it no longer exists), and `ebcdic` / `source` / `destination` / `filename` added. Recognizer names in the spec and in the code are now verified to match exactly, in both directions. |
@@ -160,6 +161,13 @@ A manually selected DDL still wins over any file spec (manual override, §2).
 |-----------|------|-------|
 | `name` | string | Unique identifier (matches Message `type` short code) |
 | `kind` | string | `'file'` marks a file spec (§3.2); absent/anything else = message spec |
+| `vol` | string | Default volume for DDL resolution |
+| `ddl_bindings` | list | DDL paths (§6) |
+| `parse_spec_binary` / `parse_spec_ascii` | block list | Parse spec per input class (§5) |
+| `parse_spec_binary_source` / `parse_spec_ascii_source` | string | The JSONC the user typed, kept verbatim so comments and formatting survive a round trip (§13.1) |
+| `de_map` | list | DE number anchors (§7) |
+| `var_length_groups` | list | Groups whose length is read at runtime (§8) |
+| `field_overrides` | list | Per-field type/display overrides (§9) |
 | `label` | string | Display name |
 | `color` | string | Badge hex color |
 | `vol` | string | `ATM` \| `POS` \| `SWITCH` \| `BASE` |
@@ -812,8 +820,42 @@ var_length_groups:
 Per-field overrides live on the **Message** definition (not per DDL binding). They apply to all instances of that Message type. If different overrides are needed for a different context, a new Message definition with different DDL bindings should be created.
 
 Each override can set:
-- `type`: how to **consume** the bytes (overrides DDL PIC type). Determines byte count AND interpretation.
-- `display`: how to **format** the value for display (independent of consumption type).
+- `type`: how to **consume** the bytes (overrides the DDL PIC type). Determines byte count AND interpretation.
+- `display`: how to **format** the value for display (independent of the consumption type).
+
+**`type` — how the bytes are read**
+
+| Value | Reads the bytes as |
+|-------|--------------------|
+| `uint-be` / `uint-le` | Unsigned integer, big- or little-endian, width from the DDL field |
+| `binary` | Raw bytes, rendered as `0x…` |
+| `ascii` | ASCII characters |
+| `ebcdic` | EBCDIC characters |
+| `hex-char` | Raw bytes → their hex characters — TAL `binary^hexchar`, so `00 13` reads as `"0013"` |
+| `hex-ascii-decimal` | Hex digits held as **ASCII text** → integer: `30 30 46 46` (`"00FF"`) → `255` |
+| `hex-ebcdic-decimal` | Hex digits held as **EBCDIC text** → integer: `F0 F0 C6 C6` → `255` |
+
+> *2026-07-31 — renamed with no aliases: `hex-ascii` → `hex-ascii-decimal`,
+> `hex-ebcdic` → `hex-ebcdic-decimal`, and `hex-char` added. An override using an
+> old name no longer converts.*
+
+A type override whose width does not match the DDL field is **rejected with a
+warning** rather than applied, so it can never silently consume the wrong number
+of bytes.
+
+**`display` — how the value is shown**
+
+| Value | Renders as |
+|-------|-----------|
+| `datetime` | Formatted date/time |
+| `amount` | Amount with decimal placement |
+| `hex` | Hex string |
+| `ascii` / `ebcdic` | Decoded text |
+| `gmt-ts` | NonStop JULIANTIMESTAMP (64-bit big-endian µs) → `YYYY-MM-DD HH:MM:SS.ffffff GMT`; reads raw bytes, so no type override is needed on a `BINARY 64` field |
+| `bitmap` | Bit positions that are set |
+
+The declared DDL type is **preserved**, never replaced: Parse Results shows
+`declared ↩ override`, plus `as DISPLAY` when a display override is also set.
 
 ```yaml
 field_overrides:
@@ -999,9 +1041,21 @@ Once all messages are migrated and verified:
 
 ## 13. Storage
 
-- Message specs stored in `localStorage` as JSON.
-- YAML is documentation format only — internal representation is always JSON.
-- Key: `up_format_specs` (replaces `up_detect_rules`).
+- Message and file specs are stored in `localStorage` as JSON.
+- YAML is a documentation format only — the internal representation is always JSON.
+
+| Key | Holds |
+|-----|-------|
+| `up_format_specs` | The specs themselves (replaces `up_detect_rules`) |
+| `up_format_default_seen` | Every built-in default label ever offered, so a default the user **deleted** is not resurrected on the next run (§12) |
+| `up_format_sync_ver` | Version marker for the one-time startup reconcile of saved specs against defaults; bumping it re-runs the merge (§12) |
+| `up_me_last_sel` | Last-selected entity in the Data Editor |
+| `up_me_fm_ui` | Per-spec Field Map view state — Collapse All, collapsed groups, Hide Redef, Auto Order + its revert snapshot. Deliberately a side-store keyed `name\|label`, never inside the spec JSON, so exports stay clean |
+| `up_me_fm_col_w` | Field Map column widths |
+| `up_me_sidebar_w` | Data Editor sidebar width |
+| `up_cc_…` | Per-editor column-chooser state (prefix) |
+
+Only `up_format_specs` is exported (§13.2); the rest is local view state.
 
 ### 13.1 Editor input format — JSONC
 
@@ -1102,5 +1156,4 @@ For each DDL in the file:
   count-driven (`repeat` with `count: NUM-SERVICES`); the ASCII spec stays
   guard-based (`read-while`), because a `TYPE BINARY` counter cannot be read from
   an ASCII capture — that is precisely why the ASCII variant exists.
-- *Auto-migration from DDLMM* — moot: DDLMM was decommissioned rather than
-  migrated (§10).
+- *Auto-migration from DDLMM* (§10) — moot: it was decommissioned, not migrated.

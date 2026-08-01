@@ -5975,8 +5975,12 @@ function parseMessage(bytes, defs, rawBytes) {
     return true;
   };
 
-  _R['min-length'] = (bytes, { length=0 }) => bytes.length >= length;
-  _R['max-length'] = (bytes, { length=0 }) => bytes.length <= length;
+  // `value` is accepted as well as `length` because the in-app help documented
+  // `value` while the evaluator only ever read `length`. Anyone who followed the
+  // help got length=0 — min-length then passed everything and max-length blocked
+  // everything, both silently. Reading either keeps those specs working.
+  _R['min-length'] = (bytes, { length, value }) => bytes.length >= (+(length ?? value) || 0);
+  _R['max-length'] = (bytes, { length, value }) => bytes.length <= (+(length ?? value) || 0);
   _R['numeric'] = (bytes, { offset=0, length=1, encoding='ascii' }) => {
     if (offset + length > bytes.length) return false;
     for (let i = offset; i < offset + length; i++) {
@@ -13884,7 +13888,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.418';
+const APP_VERSION  = '1.1.2.419';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18892,11 +18896,11 @@ eq &nbsp;&nbsp;&nbsp;&nbsp;— masked result must equal this (0–255, leave bla
 <div class="me-rh-flds">offset, endian (be/le), eq / min / max (leave blank to skip)</div>`,
 
   'min-length': `<b>Total message length must be at least N bytes.</b> Use as a cheap first guard — reject short buffers before running heavier checks.
-<div class="me-rh-flds">value — minimum byte count</div>
+<div class="me-rh-flds">length — minimum byte count (<code>value</code> also accepted)</div>
 <div class="me-rh-exs"><b>Examples:</b> ISO minimum (MTI + bitmap) → value=20 &nbsp;|&nbsp; NDC minimum → value=4</div>`,
 
   'max-length': `<b>Total message length must be at most N bytes.</b> Fails if the buffer exceeds the limit — use to reject oversized messages before running heavier checks.
-<div class="me-rh-flds">value — maximum byte count</div>
+<div class="me-rh-flds">length — maximum byte count (<code>value</code> also accepted)</div>
 <div class="me-rh-exs"><b>Examples:</b> reject buffers over 4096 bytes → value=4096 &nbsp;|&nbsp; fixed-length NDC cap → value=128</div>`,
 
   'mti': `<b>ISO 8583 MTI match — reads 4 ASCII bytes at offset and validates against ISO 8583 digit rules.</b>

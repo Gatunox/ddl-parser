@@ -10,6 +10,8 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-01 | **§11 UI rewritten to the UI that exists; recognizer attributes and aliases corrected against the code.** The layout diagram still showed `priority` badges (removed 2026-05-31), had no **Files** list (shipped 2026-07-19) and no **Test** area at all, and described the right panel as *tabs* when it is five collapsible sections on one scrolling page — so a spec can be read end to end and a recognizer seen next to the parse_spec that depends on it. Test area documented: input (a formatted NETARD record works as-is), the AUTO/HEX/ASCII toggles that lock with a NETARD badge when the wrapper determines the format, and ▶ Run reporting per-spec which recognizer failed and where (`failAt`) before parsing with the winner — the reason it beats "detection returned UNKNOWN". Remaining `priority` prose removed from §4.1 and §4.2 (replaced by `kind`). Recognizer attributes fixed where the spec had drifted: `mti` gained `value` (4-char pattern, `#` = any digit), `hex-density`/`oct-density` take `min` + `encoding` (not `min_density`), and the alias table gained `length-prefix` → `length-payload` and `flag-prefix` → `flag-payload`, which are back-compat rather than HPE naming. |
+| 2026-08-01 | **`min-length` / `max-length` accept the attribute their help documented.** The evaluators read `length`; the in-app help said `value`. A recognizer written from the help therefore got `length=0`, so `min-length` passed **every** message and `max-length` blocked **every** message — silently, since a recognizer only returns a boolean. Both now read `length ?? value`, so specs written either way work, and the help names `length` as canonical. Two tests cover both spellings, including that `max-length` with `value` actually rejects an over-long message rather than everything. |
 | 2026-08-01 | **Documented what was only ever in the changelog: segmented files, file specs, and six recognizers.** Segmented-file handling had shipped 2026-07-19 and was described nowhere in the reference sections — `read-segment-fields` was not even listed in the §5.1 block table. New **§5.16** covers it: `read-bitmap`'s three modes (wire / file-read / declared) and how they map onto the three Base24 cases (non-IDF pre-6.0 reads `SEG-MAP` from the record, IDF 6.0 reads `FIID-SEG-MAP` from the record, non-IDF 6.0 supplies the map because its `SEG-MAP` is zeroed); that file-read uses the field's declared TYPE big-endian with bit 0 leftmost, trusts the field name, and treats an all-zeros map as an **error** rather than silently assuming all segments present — that pattern is precisely the 6.0 signal; the SEG-MAP bar override; and what manual override does on a segmented DDL. New **§3.2** documents `kind: 'file'` — file detection is filename-keyed and order-free, a file spec must carry a `filename` recognizer, and one with neither binding nor parse_spec is inert. §4.4 corrected against the code: `length-prefix`→`length-payload`, `flag-prefix`→`flag-payload`, `ebcdic-density` removed (it no longer exists), and `ebcdic` / `source` / `destination` / `filename` added. Recognizer names in the spec and in the code are now verified to match exactly, in both directions. |
 | 2026-08-01 | **Explicit positioning — `at` / `peek` on every block; `read-bitmap` width from the spec.** Blocks could only read where the previous one stopped, so anything the DDL did not describe in sequence was unreachable. `at` takes an absolute byte (0-based, matching DDL Doc and the raw dump) or an anchor relative to a field an earlier block produced (`{"field", "offset", "from": "end"\|"start"}`, negative offsets allowed). Resolved once in the block dispatcher, so it applies to every block type — `skip` included, via its object form. The cursor stays where the positioned read ends; `"peek": true` restores it for an overlay read. An unresolvable position reports why and skips the block rather than reading from a wrong offset. Separately, `read-bitmap` gains `length` (bytes) for a map the message carries but the DDL never declares: the strict field-existence check is waived and the row is synthetic. Because such a map is not ISO 8583, bit 0 no longer doubles the read and bit 1 is kept as data rather than dropped as the secondary-present indicator. See §5.11–5.12. |
 | 2026-08-01 | **Per-bit parsing in `read-bitmap-fields` (`de`), framed by the engine.** `{"de": {"55": [blocks]}}` reads one bit with its own blocks; every other set bit is unchanged. Keys are bit numbers — the DE-to-element relation still comes from the Overrides panel (`de_map`), and an optional `field` overrides it per entry. Names inside an entry resolve **within that element** (`ARQC` → `EMV-ELEMENT.ARQC`); since only leaves are compiled, a group is recognised by the prefix on its children's ids. Crucially the **engine frames the element and the entry only interprets it**: where a DE starts and ends is the same question for every DE and the engine already knows it, honouring the same `var_length_groups` config as the default walk. Blocks run inside that window and the cursor resumes at the boundary whatever they did, so a runaway read is reported and stopped instead of consuming the DEs that follow. A length the *message* states cannot exceed the message and is reported; a size the *DDL* declares is only capacity — a message carrying fewer tags than the DDL has room for is normal — so it is clamped in silence. See §5.14. |
@@ -146,7 +148,7 @@ A manually selected DDL still wins over any file spec (manual override, §2).
 
 ### 4.1 Engine behaviour
 
-- All specs sorted by `priority` descending at load time, compiled once.
+- Specs are compiled once at load, in **sidebar order** — that order is authoritative (`priority` was removed 2026-05-31).
 - Per message: iterate specs → run recognizers in order → **first failing recognizer short-circuits that spec**.
 - First spec where **all** recognizers pass → detected Message type.
 - No match → `UNKNOWN`.
@@ -157,7 +159,7 @@ A manually selected DDL still wins over any file spec (manual override, §2).
 | Attribute | Type | Notes |
 |-----------|------|-------|
 | `name` | string | Unique identifier (matches Message `type` short code) |
-| `priority` | int 0–100 | Higher = tested first. Clamped to 0–100. Ties broken by declaration order. Sidebar displays sorted descending |
+| `kind` | string | `'file'` marks a file spec (§3.2); absent/anything else = message spec |
 | `label` | string | Display name |
 | `color` | string | Badge hex color |
 | `vol` | string | `ATM` \| `POS` \| `SWITCH` \| `BASE` |
@@ -199,12 +201,17 @@ A manually selected DDL still wins over any file spec (manual override, §2).
 | `byte` | `uint8` |
 | `word` | `uint16` |
 | `dword` | `uint32` |
+| `length-prefix` | `length-payload` |
+| `flag-prefix` | `flag-payload` |
+
+The last two are **back-compat**, not HPE naming: those recognizers were renamed
+and the old names still evaluate, so existing specs keep working.
 
 #### ISO 8583 semantic
 
 | Type | What it checks | Key attributes |
 |------|---------------|----------------|
-| `mti` | 4-byte MTI is structurally valid | `offset`, `encoding` (`ascii`\|`ebcdic`) |
+| `mti` | 4-byte MTI is structurally valid per ISO 8583 (version / class / function / origin digit sets) | `offset`, `encoding` (`ascii`\|`ebcdic`), `value` — 4-char pattern, `#` = any digit (default `####`) |
 | `bitmap` | 8 or 16 bytes form a plausible bitmap | `offset`, `encoding` (`binary`\|`ascii-hex`\|`ebcdic`), `length` (`8`\|`16`) |
 
 #### Text / pattern
@@ -212,11 +219,11 @@ A manually selected DDL still wins over any file spec (manual override, §2).
 | Type | What it checks | Key attributes |
 |------|---------------|----------------|
 | `regex` | Regex against decoded bytes at offset | `offset`, `length` (bytes to read), `pattern`, `encoding` (`ascii`\|`ebcdic`\|`auto`) |
-| `hex-density` | Fraction of bytes that are ASCII hex chars (`0-9A-Fa-f`) ≥ threshold | `offset`, `length`, `min_density` |
+| `hex-density` | Fraction of bytes that are hex chars (`0-9A-Fa-f`) ≥ threshold | `offset`, `length`, `min` (0.0–1.0), `encoding` (`ascii`\|`ebcdic`) |
 | `source` | Originating process name (from the NETARD wrapper) matches a wildcard pattern — `$` one alphanumeric, `#` one digit, `*` any sequence; anchored both ends | `pattern`, `id` |
 | `destination` | Destination process name, same matching as `source` | `pattern`, `id` |
 | `filename` | Guardian-style `$VOLUME.SUBVOL.FILENAME` matches a wildcard pattern (`*` any sequence, `?` any char, `#` any digit). A specific pattern **fails** when the record carries no filename; `*` always matches. This is what makes a record a candidate for a **file spec** (§3.2) | `pattern`, `id` |
-| `oct-density` | Fraction of bytes that are ASCII octal chars (`0-7`) ≥ threshold | `offset`, `length`, `min_density` |
+| `oct-density` | Fraction of bytes that are octal chars (`0-7`) ≥ threshold | `offset`, `length`, `min` (0.0–1.0), `encoding` (`ascii`\|`ebcdic`) |
 
 ### 4.5 `literal` value forms
 
@@ -850,34 +857,65 @@ No nested overlays.
 
 ### Layout
 
+> *Rewritten 2026-08-01 — the diagram still showed priority badges (removed
+> 2026-05-31), no Files list (shipped 2026-07-19) and no Test area.*
+
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Messages                                     [Import] [Export]  [✕] │
+│  Data Editor                                  [Import] [Export]  [✕] │
 ├──────────────────┬───────────────────────────────────────────────────┤
-│  MESSAGES        │  [ Identity ] [ Recognizers ] [ Parse Spec ]      │
-│  ─────────────   │  [ DDL Bindings ] [ Overrides ]                   │
-│  ▶ 100 iso-ascii │  ─────────────────────────────────────────────    │
-│  ▶  90 bic-iso   │                                                    │
-│  ▶  80 hpdh ←sel │  (active tab content — see tabs below)            │
-│  ▶  50 ebcdic    │                                                    │
-│  ▶   0 custom    │                                                    │
-│                  │                                                    │
-│  [+ New Message] │                                                    │
-│                  │                           [Delete]  [Cancel] [Apply]│
-│                  │                                                    │
-│                  │                                                    │
-│                  │                                                    │
-│                  │                                                    │
-│                  │                                                    │
-└──────────────────┴───────────────────────────────────────────────────┘
+│  MESSAGES   [+]  │  ▾ Identity                                       │
+│  ─────────────   │  ▾ Recognizers                          ⚠2        │
+│    iso-ascii     │  ▸ Parse Spec                                     │
+│    bic-iso       │  ▾ DDL Bindings                          ✓        │
+│    hpdh   ←sel   │  ▾ Overrides                                      │
+│    ebcdic        │                                                   │
+│                  │  (sections are collapsible and all on one page —  │
+│  FILES      [+]  │   not tabs; several are usually open at once)     │
+│  ─────────────   │                                                   │
+│    segmented     │                          [Delete] [Cancel] [Apply]│
+├──────────────────┴───────────────────────────────────────────────────┤
+│  Test  ▾                          AUTO | HEX | ASCII   [▶ Run] [Clear]│
+│  ┌────────────────────┬─────────────────────────────────────────────┐│
+│  │ paste a message …  │  per-recognizer pass/fail, then the parse    ││
+│  │                    │  result for the winning spec                 ││
+│  └────────────────────┴─────────────────────────────────────────────┘│
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-Sidebar messages are sorted by **priority descending**. A priority badge (e.g. `▶ 80 hpdh`) is shown when priority > 0.
+**Sidebar — Messages and Files.** Two independent lists (§3.2). Order is manual
+and authoritative: there is no priority field — it was removed 2026-05-31 because
+two orderings that could disagree is one too many. The Files list needs no
+ordering at all, since file detection is filename-keyed (§3.2). Each entry shows
+a `⚠N` gap badge when the spec is missing a recognizer, a parse_spec or a DDL
+binding; hovering names which.
 
-### Tabs (right panel)
+**Right panel — collapsible sections, not tabs.** Identity, Recognizers, Parse
+Spec, DDL Bindings and Overrides all live on one scrolling page and each collapses
+independently, so a spec can be read end to end without switching context — you
+can see a recognizer and the parse_spec that depends on it at the same time.
+
+**Test area.** A collapsible bar across the bottom, present regardless of which
+section is open, because authoring a recognizer or a parse_spec is a
+try-it-immediately activity.
+
+- **Input** — paste a message; a formatted NETARD record works as-is (wrapper
+  stripped and decoded by the same audit parser the main panel uses).
+- **AUTO / HEX / ASCII** — how to read the input. AUTO detects; the toggles lock
+  themselves and show a **NETARD** badge when the input is a wrapped record, since
+  the format is then determined by the wrapper and a manual choice is irrelevant.
+- **▶ Run** — evaluates every spec in order and reports, per spec, which
+  recognizer passed or failed and where it stopped (`failAt`), then parses with
+  the winning spec and shows the fields.
+
+That last point is what makes it useful: a recognizer that does not fire tells you
+*which* condition failed, rather than only that detection returned UNKNOWN.
+
+### Sections (right panel)
 
 **Identity**
-- Single row: Type code (≤5 chars) | Label (wider) | Vol dropdown | Priority (0–100) | Color picker
+- Type code (≤5 chars) | Label | Volume | Colour. `kind` marks a file spec (§3.2).
+- No priority field — removed 2026-05-31; sidebar order is authoritative.
 
 **Recognizers**
 - Ordered, drag-reorderable list of recognizer rows

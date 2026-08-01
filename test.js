@@ -3148,6 +3148,33 @@ test('the declared type matches a REDEFINES field name in weight, not just colou
   assert.ok(/font-weight:\s*700/.test(cssRule('td.c-id')), 'td.c-id is the reference weight');
 });
 
+// ── min-length / max-length: the attribute the help documented ──────────────
+// The evaluators read `length`; the in-app help said `value`. Anyone following
+// the help got length=0, so min-length passed everything and max-length blocked
+// everything — silently, since a recognizer only returns a boolean.
+
+console.log('\nrecognizers — min-length / max-length');
+
+test('min-length and max-length work with `length`', () => {
+  const b = Buffer.from('ABCDEFGHIJ');            // 10 bytes
+  const pass = n => fmtTestSpecs([{ name: 'X', recognizers: [n] }], b)[0].passed;
+  eq(pass({ type: 'min-length', length: 5 }),  true,  '10 >= 5');
+  eq(pass({ type: 'min-length', length: 20 }), false, '10 >= 20 is false');
+  eq(pass({ type: 'max-length', length: 20 }), true,  '10 <= 20');
+  eq(pass({ type: 'max-length', length: 5 }),  false, '10 <= 5 is false');
+});
+
+test('`value` is accepted too, as the help had documented', () => {
+  const b = Buffer.from('ABCDEFGHIJ');
+  const pass = n => fmtTestSpecs([{ name: 'X', recognizers: [n] }], b)[0].passed;
+  eq(pass({ type: 'min-length', value: 5 }),  true,  'min-length honours value');
+  eq(pass({ type: 'min-length', value: 20 }), false, 'and still discriminates');
+  eq(pass({ type: 'max-length', value: 5 }),  false,
+     'max-length with value=5 must REJECT a 10-byte message — writing it per the ' +
+     'old help silently blocked every message instead');
+  eq(pass({ type: 'max-length', value: 20 }), true, 'and accept within the limit');
+});
+
 // ── Explicit positioning: the "at" attribute ─────────────────────────────────
 // Every block accepts it, resolved once in the dispatcher. Default (absent) must
 // stay exactly as before — the baseline corpus covers that side.

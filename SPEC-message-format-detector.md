@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-01 | **Documented what was only ever in the changelog: segmented files, file specs, and six recognizers.** Segmented-file handling had shipped 2026-07-19 and was described nowhere in the reference sections — `read-segment-fields` was not even listed in the §5.1 block table. New **§5.16** covers it: `read-bitmap`'s three modes (wire / file-read / declared) and how they map onto the three Base24 cases (non-IDF pre-6.0 reads `SEG-MAP` from the record, IDF 6.0 reads `FIID-SEG-MAP` from the record, non-IDF 6.0 supplies the map because its `SEG-MAP` is zeroed); that file-read uses the field's declared TYPE big-endian with bit 0 leftmost, trusts the field name, and treats an all-zeros map as an **error** rather than silently assuming all segments present — that pattern is precisely the 6.0 signal; the SEG-MAP bar override; and what manual override does on a segmented DDL. New **§3.2** documents `kind: 'file'` — file detection is filename-keyed and order-free, a file spec must carry a `filename` recognizer, and one with neither binding nor parse_spec is inert. §4.4 corrected against the code: `length-prefix`→`length-payload`, `flag-prefix`→`flag-payload`, `ebcdic-density` removed (it no longer exists), and `ebcdic` / `source` / `destination` / `filename` added. Recognizer names in the spec and in the code are now verified to match exactly, in both directions. |
 | 2026-08-01 | **Explicit positioning — `at` / `peek` on every block; `read-bitmap` width from the spec.** Blocks could only read where the previous one stopped, so anything the DDL did not describe in sequence was unreachable. `at` takes an absolute byte (0-based, matching DDL Doc and the raw dump) or an anchor relative to a field an earlier block produced (`{"field", "offset", "from": "end"\|"start"}`, negative offsets allowed). Resolved once in the block dispatcher, so it applies to every block type — `skip` included, via its object form. The cursor stays where the positioned read ends; `"peek": true` restores it for an overlay read. An unresolvable position reports why and skips the block rather than reading from a wrong offset. Separately, `read-bitmap` gains `length` (bytes) for a map the message carries but the DDL never declares: the strict field-existence check is waived and the row is synthetic. Because such a map is not ISO 8583, bit 0 no longer doubles the read and bit 1 is kept as data rather than dropped as the secondary-present indicator. See §5.11–5.12. |
 | 2026-08-01 | **Per-bit parsing in `read-bitmap-fields` (`de`), framed by the engine.** `{"de": {"55": [blocks]}}` reads one bit with its own blocks; every other set bit is unchanged. Keys are bit numbers — the DE-to-element relation still comes from the Overrides panel (`de_map`), and an optional `field` overrides it per entry. Names inside an entry resolve **within that element** (`ARQC` → `EMV-ELEMENT.ARQC`); since only leaves are compiled, a group is recognised by the prefix on its children's ids. Crucially the **engine frames the element and the entry only interprets it**: where a DE starts and ends is the same question for every DE and the engine already knows it, honouring the same `var_length_groups` config as the default walk. Blocks run inside that window and the cursor resumes at the boundary whatever they did, so a runaway read is reported and stopped instead of consuming the DEs that follow. A length the *message* states cannot exceed the message and is reported; a size the *DDL* declares is only capacity — a message carrying fewer tags than the DDL has room for is normal — so it is clamped in silence. See §5.14. |
 | 2026-08-01 | **`read-tlv`: BER framing and tags filed into DDL elements.** EMV DE-55 is BER-TLV, not fixed-width: tags are 1 **or** 2 bytes and lengths above 127 use the `81`/`82` long form. A fixed `tag_length` mis-frames the first 1-byte tag (`82`) and every triple after it silently becomes garbage — `"ber": true` parses the real rules. `tags` maps each tag to the element that receives it, filling that subgroup's LEN and DATA leaves; `tag_field`/`length_field`/`value_field` name those leaves when the layout is not EMV, per read-tlv or per tag; `unknown` chooses `emit`/`skip`/`error` for unmapped tags. **Whether the tag itself is stored is read from the DDL** — a subgroup declaring a TAG leaf gets it, one that does not is already identified by its element — so there is deliberately no `store_tag` attribute that could disagree with the DDL. `field` is optional inside a `de` entry, where the element being read is itself the buffer. Fixing this required teaching the resolver to recognise a group by the prefix on its children's ids: only leaves are compiled, so `"field": "ARQC"` matched nothing and every tag→group mapping failed. See §5.15. |
@@ -117,6 +118,30 @@ The `type` short code is the **universal identifier** used everywhere:
 
 ---
 
+### 3.2 Message specs vs file specs (`kind`)
+
+> *Added to the spec 2026-08-01 — behaviour shipped 2026-07-19.*
+
+`kind: 'file'` makes an entity a **file spec**; anything else is a message spec.
+The Data Editor sidebar splits on it.
+
+File detection is **filename-keyed and order-free**: a file spec matches on the
+wrapper filename (`$VOL.SUBVOL.FILE`) via a `filename` recognizer (§4.4) and
+nothing else. A record carrying no filename can therefore never be a file, so file
+specs never sit in front of — or slow down — message lookup, and the Files list
+needs no manual ordering.
+
+Two rules follow:
+
+- a file spec **must** carry a filename recognizer;
+- a file spec with neither a DDL binding nor a parse_spec is **inert** — it can
+  never claim a record. Both conditions are surfaced as live warnings in the
+  editor.
+
+A manually selected DDL still wins over any file spec (manual override, §2).
+
+---
+
 ## 4. Recognizer System (Detection Pipeline)
 
 ### 4.1 Engine behaviour
@@ -155,6 +180,7 @@ The `type` short code is the **universal identifier** used everywhere:
 | `literal` | Exact byte sequence at offset | `offset`, `value`, `encoding` (`ascii`\|`hex`\|`ebcdic`) |
 | `binary` | At least one byte in range is non-printable (< 0x20 or ≥ 0x7F) | `offset`, `length` |
 | `ascii` | All bytes in range are printable ASCII (0x20–0x7E) | `offset`, `length` |
+| `ebcdic` | All bytes in range are valid EBCDIC characters | `offset`, `length` |
 | `numeric` | All bytes in range are ASCII/EBCDIC digits | `offset`, `length`, `encoding` (`ascii`\|`ebcdic`) |
 | `alphabetic` | All bytes in range are ASCII/EBCDIC letters (A–Z, a–z) | `offset`, `length`, `encoding` (`ascii`\|`ebcdic`) |
 | `alphanumeric` | All bytes in range are ASCII/EBCDIC letters or digits | `offset`, `length`, `encoding` (`ascii`\|`ebcdic`) |
@@ -163,8 +189,8 @@ The `type` short code is the **universal identifier** used everywhere:
 | `uint32` | 4-byte integer | `offset`, `endian` (`big`\|`little`), `eq` \| `min`/`max` |
 | `min-length` | Message total length ≥ N | `length` |
 | `max-length` | Message total length ≤ N — fails if message exceeds N bytes | `length` |
-| `length-prefix` | Length field matches actual payload size | `offset`, `encoding` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `body_offset`, `includes_self` (bool) |
-| `flag-prefix` | Flag field indicates actual payload presence | `offset`, `encoding` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `body_offset`, `body_length` |
+| `length-payload` | Length field matches actual payload size | `offset`, `encoding` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `body_offset`, `includes_self` (bool) |
+| `flag-payload` | Flag field indicates actual payload presence | `offset`, `encoding` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `body_offset`, `body_length` |
 
 **Aliases (HPE naming):**
 
@@ -186,8 +212,10 @@ The `type` short code is the **universal identifier** used everywhere:
 | Type | What it checks | Key attributes |
 |------|---------------|----------------|
 | `regex` | Regex against decoded bytes at offset | `offset`, `length` (bytes to read), `pattern`, `encoding` (`ascii`\|`ebcdic`\|`auto`) |
-| `ebcdic-density` | Fraction of bytes in F0–F9 ≥ threshold | `offset`, `length`, `min_density` (0.0–1.0) |
 | `hex-density` | Fraction of bytes that are ASCII hex chars (`0-9A-Fa-f`) ≥ threshold | `offset`, `length`, `min_density` |
+| `source` | Originating process name (from the NETARD wrapper) matches a wildcard pattern — `$` one alphanumeric, `#` one digit, `*` any sequence; anchored both ends | `pattern`, `id` |
+| `destination` | Destination process name, same matching as `source` | `pattern`, `id` |
+| `filename` | Guardian-style `$VOLUME.SUBVOL.FILENAME` matches a wildcard pattern (`*` any sequence, `?` any char, `#` any digit). A specific pattern **fails** when the record carries no filename; `*` always matches. This is what makes a record a candidate for a **file spec** (§3.2) | `pattern`, `id` |
 | `oct-density` | Fraction of bytes that are ASCII octal chars (`0-7`) ≥ threshold | `offset`, `length`, `min_density` |
 
 ### 4.5 `literal` value forms
@@ -224,6 +252,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | `read-length-prefix` | Read length N then N bytes | `prefix` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
 | `read-bitmap` | Read 8 or 16 bytes as bitmap, store result | `field` (DDL field ID), `encoding` (`binary`\|`ascii-hex`), `length` (explicit width in bytes when the DDL does not declare the map — §5.12) |
 | `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `de_map`, honouring `var_length_groups` | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14) |
+| `read-segment-fields` | Read only the segments a prior `read-bitmap` marks present (§5.16) | *(bare string)* — field id of the declared/file-read map, `binding` |
 | `skip` | Advance N bytes | `length` (int) |
 | `read-to-end` | Consume remaining bytes | `as` (DDL field ID) |
 | `when` | Branch on a prior field value | `field` (field ID), `is` / `not` (value, list, or range), `then` (block list) |
@@ -654,6 +683,58 @@ could only ever disagree with the DDL.
 
 `field` names the buffer and is **optional inside a `de` entry**, where the element
 being read is itself the buffer.
+
+### 5.16 Segmented files — `read-bitmap` declared/file-read modes + `read-segment-fields`
+
+> *Added to the spec 2026-08-01 — behaviour shipped 2026-07-19, file-read modes 2026-07-2x.*
+
+A Base24 segmented file stores a record as a set of **segments**, only some of
+which are present. A 32-bit map says which. The DDL declares every segment as a
+top-level field named `SEG0`, `SEG1`, `SEG5`, … — declared segments need not be
+consecutive, and the trailing number is the bit index.
+
+`read-segment-fields` walks those top-level fields and reads only the segments
+whose bit is set, each as its full TYPE-expanded structure **at the cursor** (DDL
+offsets are ignored — they assume every segment is present). A clear bit consumes
+nothing. Top-level fields with no trailing number are always read. Leftover bytes
+after the last mapped segment are flagged, since that usually means the map is
+missing a segment.
+
+**Where the map comes from — `read-bitmap` has three modes:**
+
+| Mode | Triggered by | Behaviour |
+|------|--------------|-----------|
+| **Wire** | neither `bits`/`value` nor a segmented binding | Read from the record at the cursor (§5.1) |
+| **File-read** | a segmented binding, no declared `value` | Read the named field **from the record at its DDL position** — the map is part of the data |
+| **Declared** | `bits` + `value` present, or a parse-time SEG-MAP input | The value comes from the spec or the SEG-MAP bar and **zero record bytes are consumed** |
+
+This covers the three Base24 cases:
+
+| Case | Where the map lives | Spec |
+|------|--------------------|------|
+| Non-IDF, pre-6.0 | `SEG-MAP` **in the record** | file-read mode on `SEG-MAP` |
+| IDF, 6.0 | `FIID-SEG-MAP` **in the record** | file-read mode on `FIID-SEG-MAP` |
+| Non-IDF, 6.0 | not in the record — `SEG-MAP` is zeroed | declared mode: `bits` + `value`, or typed into the SEG-MAP bar |
+
+File-read uses the field's **declared TYPE** (e.g. `BINARY 32`), big-endian, bit 0
+= the leftmost bit of the first byte. `encoding` is not consulted. The field name
+is trusted — there is no auto-detection — and an all-zeros map is an **error**,
+never a silent fallback to "all segments present", because that is exactly the
+6.0 signal that the map lives elsewhere.
+
+A REDEFINES field carrying the map is emitted as an overlay row at its true
+position, so the map is visible where the DDL puts it.
+
+**SEG-MAP bar.** Parse Results shows an inline SEG-MAP input whenever the parse
+used a segmented map — spec-driven or a manually selected segmented DDL. A value
+typed there overrides the map for that parse; blank falls back to the spec's value
+(declared mode) or to the file's own map (file-read).
+
+**Manual override** on a segmented DDL walks the full DDL once, all segments
+assumed present, since no spec is consulted. Typing a map in the SEG-MAP bar is
+what narrows it to the present segments.
+
+---
 
 ## 6. DDL Bindings (ddl_bindings)
 

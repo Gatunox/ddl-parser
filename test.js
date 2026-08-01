@@ -3148,6 +3148,270 @@ test('the declared type matches a REDEFINES field name in weight, not just colou
   assert.ok(/font-weight:\s*700/.test(cssRule('td.c-id')), 'td.c-id is the reference weight');
 });
 
+// ── Explicit positioning: the "at" attribute ─────────────────────────────────
+// Every block accepts it, resolved once in the dispatcher. Default (absent) must
+// stay exactly as before — the baseline corpus covers that side.
+
+console.log('\nparse-spec positioning — "at"');
+
+const AT_MSG = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ01';        // 28 bytes, index 0 = 'A'
+function atRun(blocks) {
+  S.ddlTree = {}; S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: [], parse_spec_binary: blocks },
+                         Buffer.from(AT_MSG));
+}
+const atVal = (ctx, id) => ctx.fields.find(f => f.id === id);
+
+test('absolute "at" counts from 0', () => {
+  const ctx = atRun([{ 'read-fixed': { length: 3, as: 'A', at: 10 } }]);
+  eq(atVal(ctx, 'A').value, 'KLM', 'byte 10 is "K" — 0-based, matching DDL Doc and the raw dump');
+  eq(atVal(ctx, 'A').startByte, 10, 'reported offset is the absolute position');
+});
+
+test('"at" seeks: the next block continues after the positioned read', () => {
+  const ctx = atRun([{ 'read-fixed': { length: 3, as: 'A', at: 10 } },
+                     { 'read-fixed': { length: 2, as: 'B' } }]);
+  eq(atVal(ctx, 'B').value, 'NO', 'continues at 13, not back at 0');
+  eq(ctx.cursor, 15, 'cursor left after the second read');
+});
+
+test('"peek" restores the cursor so sequential flow is undisturbed', () => {
+  const ctx = atRun([{ 'read-fixed': { length: 3, as: 'A' } },
+                     { 'read-fixed': { length: 3, as: 'B', at: 20, peek: true } },
+                     { 'read-fixed': { length: 2, as: 'C' } }]);
+  eq(atVal(ctx, 'B').value, 'UVW', 'peeked read still happens at 20');
+  eq(atVal(ctx, 'C').value, 'DE', 'and the next block carries on from 3, where A ended');
+});
+
+test('relative "at": after a field, with offset and from:start', () => {
+  const after = atRun([{ 'read-fixed': { length: 3, as: 'A' } },
+                       { 'read-fixed': { length: 2, as: 'B', at: { field: 'A' } } }]);
+  eq(atVal(after, 'B').value, 'DE', 'defaults to just past the anchor');
+  const off = atRun([{ 'read-fixed': { length: 2, as: 'A' } },
+                     { 'read-fixed': { length: 2, as: 'B', at: { field: 'A', offset: 5 } } }]);
+  eq(atVal(off, 'B').value, 'HI', 'offset moves on from the anchor end');
+  const start = atRun([{ 'read-fixed': { length: 4, as: 'A' } },
+                       { 'read-fixed': { length: 2, as: 'B', at: { field: 'A', from: 'start', offset: 1 } } }]);
+  eq(atVal(start, 'B').value, 'BC', 'from:start measures from the anchor first byte');
+  const back = atRun([{ 'read-fixed': { length: 4, as: 'A' } },
+                      { 'read-fixed': { length: 2, as: 'B', at: { field: 'A', offset: -3 } } }]);
+  eq(atVal(back, 'B').value, 'BC', 'negative offset reads backwards');
+});
+
+test('"at" works on blocks that are not reads', () => {
+  const sk = atRun([{ skip: { length: 2, at: 10 } }, { 'read-fixed': { length: 3, as: 'A' } }]);
+  eq(atVal(sk, 'A').value, 'MNO', 'skip honours it — proving it is dispatcher-wide, not per block');
+  const te = atRun([{ 'read-to-end': { as: 'R', at: 24 } }]);
+  eq(atVal(te, 'R').value, 'YZ01', 'read-to-end honours it');
+});
+
+test('a bad "at" reports why, instead of reading from a wrong offset', () => {
+  const cases = [
+    [{ 'read-fixed': { length: 2, as: 'A', at: 999 } },                     'past the end'],
+    [{ 'read-fixed': { length: 2, as: 'A', at: -1 } },                      'whole byte position'],
+    [{ 'read-fixed': { length: 2, as: 'A', at: { field: 'GHOST' } } },      'has not been read yet'],
+  ];
+  for (const [blk, needle] of cases) {
+    const ctx = atRun([blk]);
+    const err = ctx.fields.find(f => f.error);
+    assert.ok(err, `expected an error for ${JSON.stringify(blk)}`);
+    assert.ok(err.error.includes(needle), `error should mention "${needle}", got: ${err.error}`);
+    eq(ctx.fields.filter(f => !f.error).length, 0, 'and nothing is read');
+  }
+});
+
+// ── read-bitmap with an explicit width ───────────────────────────────────────
+console.log('\nread-bitmap — width stated by the spec');
+
+test('an explicit length reads a bitmap the DDL never declares', () => {
+  S.ddlTree = { V: { S: { D: `DEF REC.\n  02 PAYLOAD PIC X(4).\nEND REC.\n` } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'WIRE-MAP', length: 4 } }] },
+    Uint8Array.from([0x40, 0x00, 0x00, 0x00, 0x41, 0x42]));
+  const bm = ctx.fields[0];
+  eq(bm.error, undefined, 'no "not found in the bound DDL" — the width waives that check');
+  deepEq(Array.from(bm.bitSet).sort((a, b) => a - b), [2], 'bit 2 set');
+  eq(ctx.cursor, 4, 'consumed exactly the stated width');
+});
+
+test('an explicit width turns off the ISO-only bit rules', () => {
+  S.ddlTree = {}; S.inputFormat = 'hex';
+  const mk = attrs => meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: [],
+    parse_spec_binary: [{ 'read-bitmap': attrs }] },
+    Uint8Array.from([0xC0, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44,
+                     0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC]));
+  const sized = mk({ field: 'M', length: 4 });
+  deepEq(Array.from(sized.bitSet ?? sized.fields[0].bitSet).sort((a, b) => a - b), [1, 2],
+    'bit 1 is real data on a non-ISO map, not the secondary-bitmap flag');
+  eq(sized.cursor, 4, 'and bit 0 does not silently double the read');
+});
+
+// ── read-tlv: BER framing and tag → DDL element mapping ─────────────────────
+console.log('\nread-tlv — BER framing and tag mapping');
+
+const EMV_DDL = `DEF REC.
+  02 BITMAP PIC X(8).
+  02 EMV-ELEMENT.
+    04 ARQC.
+      06 LEN  PIC X(2).
+      06 DATA PIC X(16).
+    04 ATC.
+      06 TAG  PIC X(4).
+      06 LEN  PIC X(2).
+      06 DATA PIC X(16).
+END REC.
+`;
+// 9F26 (2-byte tag) len 08, 9F36 (2-byte tag) len 02, then 82 — a ONE-byte tag.
+const EMV_BYTES = Uint8Array.from([
+  0x40, 0, 0, 0, 0, 0, 0, 0,
+  0x9F, 0x26, 0x08, 1, 2, 3, 4, 5, 6, 7, 8,
+  0x9F, 0x36, 0x02, 0x12, 0x34,
+  0x82, 0x02, 0x58, 0x00,
+]);
+function emvRun(tlvAttrs) {
+  S.ddlTree = { V: { S: { D: EMV_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: {
+          '2': { field: 'EMV-ELEMENT', blocks: [{ 'read-tlv': tlvAttrs }] } } } },
+    ] }, EMV_BYTES);
+}
+
+test('BER framing handles a 1-byte tag after 2-byte tags', () => {
+  const ctx = emvRun({ ber: true, tags: { '9F26': { field: 'ARQC' } }, unknown: 'emit' });
+  const ids = ctx.fields.map(f => f.id);
+  assert.ok(ids.includes('EMV-ELEMENT.ARQC.DATA'), 'the mapped 2-byte tag is filed');
+  assert.ok(ids.some(i => /\.82$/.test(i)),
+    'the 1-byte 82 tag is framed correctly — a fixed tag_length of 2 would swallow it and ' +
+    'mis-frame every triple after it');
+  eq(ctx.fields.some(f => f.error), false, 'and nothing errors');
+});
+
+test('a tag fills its element LEN and DATA leaves', () => {
+  const ctx = emvRun({ ber: true, tags: { '9F26': { field: 'ARQC' } }, unknown: 'skip' });
+  const len  = ctx.fields.find(f => f.id === 'EMV-ELEMENT.ARQC.LEN');
+  const data = ctx.fields.find(f => f.id === 'EMV-ELEMENT.ARQC.DATA');
+  assert.ok(len && data, 'both leaves emitted');
+  eq(data.rawHex, '0102030405060708', 'value bytes land in DATA');
+  eq(data.startByte, 11, 'offsets stay absolute in the message');
+});
+
+test('the DDL decides whether the tag is stored — no store_tag attribute', () => {
+  const ctx = emvRun({ ber: true,
+    tags: { '9F26': { field: 'ARQC' }, '9F36': { field: 'ATC' } }, unknown: 'skip' });
+  const ids = ctx.fields.map(f => f.id);
+  assert.ok(!ids.includes('EMV-ELEMENT.ARQC.TAG'),
+    'ARQC declares no TAG leaf, so the tag is not stored — the element already identifies it');
+  const atcTag = ctx.fields.find(f => f.id === 'EMV-ELEMENT.ATC.TAG');
+  assert.ok(atcTag, 'ATC declares a TAG leaf, so it is stored');
+  eq(atcTag.rawHex, '9F36', 'and it holds the actual tag');
+});
+
+test('names inside a "de" entry resolve within that element', () => {
+  // "ARQC" alone is not a DDL id — only EMV-ELEMENT.ARQC.* exist as leaves, and
+  // the group itself is never compiled, so this only works if the resolver
+  // recognises a group by the prefix on its children.
+  const ctx = emvRun({ ber: true, tags: { '9F26': { field: 'ARQC' } }, unknown: 'skip' });
+  assert.ok(ctx.fields.some(f => f.id === 'EMV-ELEMENT.ARQC.DATA'),
+    'the short name resolved against the DE element');
+});
+
+test('unknown tags follow the stated policy', () => {
+  const emit = emvRun({ ber: true, tags: {}, unknown: 'emit' });
+  assert.ok(emit.fields.some(f => /\.9F26$/.test(f.id)), 'emit keeps unmapped tags as their own rows');
+  const skip = emvRun({ ber: true, tags: {}, unknown: 'skip' });
+  eq(skip.fields.filter(f => /9F26/.test(f.id)).length, 0, 'skip drops them');
+  const err = emvRun({ ber: true, tags: {}, unknown: 'error' });
+  assert.ok(err.fields.some(f => f.error && f.error.includes('not mapped')), 'error flags them');
+});
+
+test('BER long-form lengths (81/82) are decoded, not read as short-form', () => {
+  // A length byte >= 0x80 does not hold the length — its low bits say how many
+  // FOLLOWING bytes do. 0x81 0x0A means 10; misreading it as short-form yields
+  // 129 and frames every later triple wrong. DE-55 above 127 bytes needs this.
+  const ddl = `DEF REC.\n  02 BUF PIC X(32).\n  02 ITEM.\n    04 LEN PIC X(2).\n    04 DATA PIC X(16).\nEND REC.\n`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const body = [0x9F, 0x26, 0x81, 0x0A, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [
+      { 'read-fixed': { length: body.length, as: 'BUF' } },
+      { 'read-tlv': { field: 'BUF', ber: true, tags: { '9F26': { field: 'ITEM' } } } },
+    ] }, Uint8Array.from(body));
+  const data = ctx.fields.find(f => f.id === 'ITEM.DATA');
+  assert.ok(data, 'the triple was filed into its element');
+  eq(data.rawHex, '0102030405060708090A', 'exactly the 10 bytes the long form declared');
+  eq(ctx.fields.some(f => f.error), false, 'and the buffer framed cleanly to its end');
+});
+
+test('a tag mapped to a missing element is reported, not silently dropped', () => {
+  const ctx = emvRun({ ber: true, tags: { '9F26': { field: 'NOT-THERE' } }, unknown: 'skip' });
+  const e = ctx.fields.find(f => f.error);
+  assert.ok(e && e.error.includes('not found in the DDL'), `expected a clear error, got: ${e && e.error}`);
+});
+
+// ── DDL validation: a DEFINITION must declare level-numbered items ──────────
+// HPE DDL Reference Manual: each field or group in a group DEFINITION needs at
+// least a level number and a name. Without them the DEF compiles to zero fields,
+// which used to save clean and then show as "DDL not found" on the binding.
+
+console.log('\nDDL validation — DEFINITION without level numbers');
+
+test('a DEFINITION whose items have no level numbers is an error', () => {
+  const bad = `DEFINITION REQMSG.
+\tSDLC-DEST PIC X(2).
+    SDLC-ORIGIN PIC X(2).
+END.`;
+  const { errors } = validateDDLErrors(bad, new Map());
+  eq(errors.length, 1, 'exactly one error');
+  assert.ok(/REQMSG/.test(errors[0]) && /level number/.test(errors[0]),
+    `error should name the DEF and the cause, got: ${errors[0]}`);
+});
+
+test('the same fields with level numbers are clean', () => {
+  const good = `DEFINITION REQMSG.
+  02 SDLC-DEST PIC X(2).
+  02 SDLC-ORIGIN PIC X(2).
+END.`;
+  eq(validateDDLErrors(good, new Map()).errors.length, 0, 'no error');
+});
+
+test('a group carrying a PICTURE is a blocking error', () => {
+  // The real defect this catches: DDLFSTM had RTE-GRP PIC X(11) with two 06
+  // items under it. The parser charged 11 bytes for the group AND 4 more for the
+  // children, then emitted neither child — 4 bytes of every STM record belonged
+  // to no field at all. Manual: "a group description cannot have either clause".
+  const bad = `DEF REC.
+  02 RTE-GRP PIC X(11).
+    04 FROM-ACCT-TYP PIC X(2).
+    04 TO-ACCT-TYP PIC X(2).
+  02 TAIL PIC X(2).
+END.`;
+  const r = validateDDLErrors(bad, new Map());
+  assert.ok(r.errors.some(e => /cannot have a PICTURE clause/.test(e)),
+    `expected a blocking error, got: ${JSON.stringify(r.errors)}`);
+
+  // The fix — wrap the children in their own group — must be clean.
+  const fixed = `DEF REC.
+  02 RTE-GRP PIC X(11).
+  02 SAVE-ACCT.
+    04 FROM-ACCT-TYP PIC X(2).
+    04 TO-ACCT-TYP PIC X(2).
+  02 TAIL PIC X(2).
+END.`;
+  eq(validateDDLErrors(fixed, new Map()).errors.length, 0,
+     'a real group around the children resolves it');
+});
+
+test('a single-line elementary DEFINITION is not flagged', () => {
+  // It carries its own PICTURE on the header and has no body to number.
+  eq(validateDDLErrors(`DEFINITION AMT PIC 9(8).\nEND.`, new Map()).errors.length, 0,
+     'header with its own PIC is complete');
+});
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

@@ -1629,7 +1629,10 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-bind-inp{flex:1;min-width:0;}
 .me-bind-inp[data-state="missing"]{border-color:#f85149;}
 .me-bind-inp[data-state="ok"]:focus{border-color:var(--accent);}
-.me-bind-status{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;font-size:12px;flex-shrink:0;cursor:help;}
+/* cursor:inherit, not help: the "?" pointer promised an explanation that the
+   native title tooltip took a second to deliver, so the badge read as unhelpful.
+   The reason now comes from the app's own tooltip, like every other badge. */
+.me-bind-status{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;font-size:12px;flex-shrink:0;cursor:inherit;}
 .me-bind-status[data-state=""]{display:none;}
 .me-bind-status[data-state="ok"]{color:var(--success,#3fb950);}
 .me-bind-status[data-state="missing"]{color:#f85149;}
@@ -2939,6 +2942,20 @@ function validateDDLErrors(text, repoTypeRegistry) {
         errors.push(`${ln}Field "${f.name}": has neither PIC nor TYPE clause and is not a group field`);
       }
 
+      // ④b The other half of the same rule, from the HPE DDL Reference Manual:
+      //   a group description cannot carry a PICTURE or TYPE clause. A group's
+      //   size is the total of its members, so a picture on the group both
+      //   contradicts that and hides which bytes the members actually occupy.
+      //   88/89 condition-names and 66 RENAMES are not group descriptions.
+      //   Blocking, because the bytes go missing silently: DDLFSTM declared
+      //   RTE-GRP PIC X(11) with two 06 items under it, and the parser charged
+      //   11 bytes for the group AND 4 more for the children while emitting
+      //   neither child — four bytes of every STM record belonged to no field.
+      //   The fix is a real group (04 SAVE-ACCT.) around the children.
+      if (isGroup && (hasPic || hasType) && f.lvl < 66 && !f.redefines) {
+        errors.push(`${ln}Field "${f.name}": has subordinate items, so it is a group — and a group cannot have a ${hasPic ? 'PICTURE' : 'TYPE'} clause; its size is the total of its members. Either drop the ${hasPic ? 'PICTURE' : 'TYPE'}, or wrap the subordinate items in their own group.`);
+      }
+
       // ⑤ Level-88 condition-name scope check
       if (f.lvl === 88) {
         // Find the last non-88/89/66 field before this one
@@ -3257,7 +3274,54 @@ function validateDDLErrors(text, repoTypeRegistry) {
   // Flush any trailing unclosed definition
   if (inDef) flushSection();
 
+  // A DEFINITION whose body declares no level-numbered items compiles to zero
+  // fields. Nothing downstream could tell that apart from "the DDL is missing":
+  // getDDLFromPath returns null either way, so the binding badge blamed the path
+  // while this validator reported the file clean and let it save. Catch it here,
+  // where the message can say what is actually wrong.
+  for (const d of _ddlDefsWithoutItems(strippedLines)) {
+    errors.push(`DEFINITION ${d.name} (line ${d.line}) declares no fields — item lines need a level number, e.g. "02 ${d.sample || 'FIELD-NAME'} PIC X(2)."`);
+  }
+
   return { errors, warnings, unresolvedTypes: [...unresolvedTypes], deferredChecks };
+}
+
+// Definitions whose body holds statements but none with a level number. A
+// single-line elementary definition ("DEFINITION AMT PIC 9(8).") is not flagged:
+// it declares its own picture on the header line and has no body to number.
+function _ddlDefsWithoutItems(strippedLines) {
+  const out = [];
+  let cur = null;
+  const HEADER = /^\s*(?:DEF|DEFINITION|RECORD)\s+(?:IS\s+)?(\S+)/i;
+  const close = () => {
+    if (cur && !cur.hasLevel && !cur.elementary && cur.bodyLines.length)
+      out.push({ name: cur.name, line: cur.line, sample: cur.bodyLines[0] });
+    cur = null;
+  };
+  strippedLines.forEach((raw, i) => {
+    const line = String(raw);
+    const h = line.match(HEADER);
+    if (h) {
+      close();
+      let name = h[1].replace(/\.$/, '').toUpperCase();
+      if (name === 'IS') {
+        const m2 = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+IS\s+(\S+)/i);
+        if (m2) name = m2[1].replace(/\.$/, '').toUpperCase();
+      }
+      // Header that carries its own PIC/TYPE is a complete elementary definition.
+      cur = { name, line: i + 1, hasLevel: false, bodyLines: [],
+              elementary: /\b(?:PIC|PICTURE|TYPE)\b/i.test(line) };
+      return;
+    }
+    if (!cur) return;
+    if (/^\s*END\b/i.test(line)) { close(); return; }
+    const t = line.trim();
+    if (!t) return;
+    if (/^\d{1,2}\s+\S/.test(t)) { cur.hasLevel = true; return; }
+    cur.bodyLines.push(t.replace(/\s.*$/, '').replace(/\.$/, ''));
+  });
+  close();
+  return out;
 }
 
 // ---- Data-type helpers (used by content validation in bestDDLMatch) ----------
@@ -13813,7 +13877,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.404';
+const APP_VERSION  = '1.1.2.408';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15743,6 +15807,15 @@ function _mePsToggleHelp() {
   if (el) el.classList.toggle('open');
 }
 
+// Understood by EVERY block, resolved once in the dispatcher. Listed in each
+// block's help table so they are discoverable wherever you are looking.
+const _PS_COMMON_ATTRS = [
+  ['at', 'int | {field, offset, from}', false,
+   'WHERE TO READ. Omit it and the block reads where the previous one stopped — the default, and what every existing spec does. <b>Number</b> = an absolute byte position, counting from 0, so <code>"at": 23</code> is the 24th byte. <b>{"field": "HDR"}</b> = immediately after HDR ends; add <code>"offset"</code> to move on from there (negative allowed), and <code>"from": "start"</code> to measure from the field\'s first byte instead of past its last. The anchor must be a field an EARLIER block produced. The cursor stays where the positioned read ends, so following blocks continue from there. On <code>skip</code> use the object form: <code>{"skip": {"length": 2, "at": 10}}</code>.'],
+  ['peek', 'bool', false,
+   'Used with "at": restore the cursor afterwards, so the positioned read does not disturb the sequential flow. Use it for an overlay — reading a field a second way without consuming it.'],
+];
+
 const _PS_HELP = {
   'read-ddl': {
     desc: 'Reads fields from the DDL Binding in declaration order. By default walks every binding ("ANY") and emits every field. Optional attributes let you choose a specific binding, cherry-pick fields by id, or define an inclusive from/until window. The byte cursor always advances through every field so later blocks (when, repeat, read-tlv) can reference any id — the filters only narrow the visible output. Use "ANY" (not null) as the canonical no-filter value.',
@@ -15879,6 +15952,7 @@ const _PS_HELP = {
       ['bits',     'number', false, 'DECLARED SEGMENT-MAP MARKER — map width in bits (32). Presence of bits/value forces declared mode even when a read-segment-fields block follows.'],
       ['value',    'string', false, 'DECLARED SEGMENT MAP — the map value in the chosen encoding: ascii-hex like "C4180000", or ascii-bits like "1100 0100 0000 1000 0000 0000 0000 0000" (spaces ignored). The SEG-MAP input at parse time overrides this ad-hoc.'],
       ['bit0',     '"left"|"right"', false, 'Declared mode: which end of the map is bit 0 / SEG0 — default "left" (leftmost bit). File-read is always left (bit0 = MSB of the first byte).'],
+      ['length',   'int', false, 'WIRE MODE — width in bytes, when the message carries a bitmap the DDL does not declare. The field need not exist in the bound DDL and the row is synthetic. Because the map is then not ISO 8583, bit 0 is NOT treated as "a secondary bitmap follows" and bit 1 is kept as ordinary data. Pair with "at" to read a map that sits at a known position.'],
     ],
     examples: [
       ['Wire: hex-char ISO bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}}]],
@@ -15899,9 +15973,13 @@ const _PS_HELP = {
     ],
     attrs: [
       ['bitmap', 'string', true, 'Field ID of a preceding read-bitmap result'],
+      ['de', '{ "<bit>": [blocks] | {field, blocks} }', false, 'Per-bit parsing. A listed bit is read by ITS OWN blocks instead of the default DDL walk; every other set bit is unchanged. Names inside those blocks resolve within that bit\'s element, so "ARQC" means "EMV-ELEMENT.ARQC". Optional "field" overrides which element the bit maps to; without it the Overrides panel decides, as always. Optional "length" bounds the element when the DDL\'s declared size is not the real one.'],
     ],
     examples: [
       ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}}, {"read-bitmap-fields": "BITMAP"}]],
+      ['DE-55 as EMV TLV, everything else as usual', [{"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
+        "55": [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}}}]
+      }}}]],
     ],
   },
   'read-segment-fields': {
@@ -15928,13 +16006,23 @@ const _PS_HELP = {
       'You want every triple emitted as its own field for inspection / further processing.',
     ],
     attrs: [
-      ['field',         'string',              true, 'DDL buffer field containing the raw TLV bytes'],
-      ['tag_length',    'int',                 true, 'Number of bytes per tag'],
-      ['length_length', 'int',                 true, 'Number of bytes per length field'],
-      ['encoding',      '"binary"|"ascii-hex"', true, 'How tag and length bytes are encoded (ascii-hex = ASCII hex chars in the buffer)'],
+      ['field',         'string',              false, 'DDL buffer field holding the raw TLV bytes. Optional ONLY inside a read-bitmap-fields "de" entry, where the buffer is that element itself.'],
+      ['ber',           'bool',                false, 'BER-TLV framing (EMV). Tags are 1 or 2 bytes, detected from the tag bits; lengths above 127 use the 81/82 long form. Required unless tag_length and length_length are both given — a fixed tag_length mis-frames the first 1-byte tag (e.g. 82) and every triple after it.'],
+      ['tag_length',    'int',                 false, 'Bytes per tag, for fixed-width TLV. Ignored when ber is set.'],
+      ['length_length', 'int',                 false, 'Bytes per length field, for fixed-width TLV. Ignored when ber is set.'],
+      ['encoding',      '"binary"|"ascii-hex"', false, 'How tag and length bytes are encoded (ascii-hex = ASCII hex chars in the buffer)'],
+      ['tags',          '{ "<tag>": {field} }',  false, 'Maps each tag to the DDL element that receives it, e.g. {"9F26": {"field": "ARQC"}}. The element\'s LEN and DATA leaves are filled from the triple. Whether the tag itself is stored is read from the DDL: a subgroup that declares a TAG leaf gets it, one that does not is already identified by the element.'],
+      ['tag_field',     'string',              false, 'Name of the leaf holding the tag, when the DDL does not call it TAG / TAG-ID. Also settable per tag.'],
+      ['length_field',  'string',              false, 'Name of the leaf holding the length, when it is not LEN / LGTH / LENGTH. Also settable per tag.'],
+      ['value_field',   'string',              false, 'Name of the leaf holding the value, when it is not DATA / VAL / VALUE. Also settable per tag.'],
+      ['unknown',       '"emit"|"skip"|"error"', false, 'What to do with a tag that "tags" does not mention — emit it as its own row (default), ignore it, or flag it.'],
     ],
     examples: [
-      ['EMV DE-55', [{"read-tlv": {"field": "DE-55", "tag_length": 2, "length_length": 2, "encoding": "binary"}}]],
+      ['EMV DE-55, fixed width (legacy)', [{"read-tlv": {"field": "DE-55", "tag_length": 2, "length_length": 2, "encoding": "binary"}}]],
+      ['EMV DE-55, BER framing with tags mapped to DDL elements', [{"read-tlv": {"field": "DE-55", "ber": true,
+        "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}, "unknown": "emit"}}]],
+      ['Non-EMV TLV whose leaves are named differently', [{"read-tlv": {"field": "BUF", "ber": true,
+        "tag_field": "T", "length_field": "L", "value_field": "V", "tags": {"01": {"field": "ITEM"}}}}]],
     ],
   },
   'skip': {
@@ -16083,8 +16171,9 @@ function _mePsHelpSelect(blk) {
   document.querySelectorAll('#me-ps-help .me-ps-help-table tbody tr').forEach(tr =>
     tr.classList.toggle('me-ps-sel', tr.dataset.blk === blk)
   );
-  // build attr table
-  const attrRows = info.attrs.map(([name, type, req, desc]) =>
+  // build attr table — every block also accepts the positioning attributes, so
+  // they are appended here rather than repeated fifteen times in _PS_HELP.
+  const attrRows = info.attrs.concat(_PS_COMMON_ATTRS).map(([name, type, req, desc]) =>
     `<tr><td class="me-ps-help-aname">${name}</td>` +
     `<td class="me-ps-help-atype">${_escHtml(type)}</td>` +
     `<td>${req ? '<span class="me-ps-help-req">required</span>' : '<span class="me-ps-help-opt">optional</span>'}</td>` +
@@ -16268,6 +16357,26 @@ function _mePsRunLint(item, parsed) {
         warns.push(`[block ${n}] unknown block type "${type}"`);
         return;
       }
+      // "at" is understood by every block, so it is checked once here rather
+      // than in each case. Only the shape is checked — whether the anchor field
+      // has been read by then depends on runtime order.
+      if (attrs && typeof attrs === 'object' && attrs.at !== undefined) {
+        const at = attrs.at;
+        if (typeof at === 'number') {
+          if (!Number.isInteger(at) || at < 0)
+            warns.push(`[block ${n}] "at": ${JSON.stringify(at)} — must be a whole byte position of 0 or more (0 = first byte)`);
+        } else if (at && typeof at === 'object') {
+          if (!at.field)
+            warns.push(`[block ${n}] "at" needs a "field" anchor, or a plain number for an absolute position`);
+          else checkRef(n, `${type}.at.field`, at.field, false);
+          if (at.offset !== undefined && !Number.isInteger(at.offset))
+            warns.push(`[block ${n}] "at".offset must be a whole number, got ${JSON.stringify(at.offset)}`);
+          if (at.from !== undefined && !/^(end|start)$/i.test(String(at.from)))
+            warns.push(`[block ${n}] "at".from must be "end" or "start", got ${JSON.stringify(at.from)}`);
+        } else {
+          warns.push(`[block ${n}] "at" must be a byte position or a {"field": ...} anchor`);
+        }
+      }
       switch (type) {
         case 'read': {
           const fid = (typeof attrs === 'string') ? attrs : attrs?.field;
@@ -16321,10 +16430,16 @@ function _mePsRunLint(item, parsed) {
                 warns.push(`[block ${n}] read-bitmap (segment map): "${attrs.field}" not found in bound DDLs`);
             } else {
               bitmaps.add(attrs.field);
+              // An explicit "length" states the width in the spec, for a bitmap
+              // the message carries but the DDL never declares — so the
+              // existence check below does not apply.
+              const hasLen = attrs.length !== undefined;
+              if (hasLen && (!Number.isInteger(attrs.length) || attrs.length <= 0))
+                warns.push(`[block ${n}] read-bitmap "length" must be a whole number of bytes above 0, got ${JSON.stringify(attrs.length)}`);
               // Strict: the field must exist in the bound DDLs — top-level
               // short name, or the fully qualified path when nested.
-              if (bindingCount && ddlIds.size && !ddlIds.has(attrs.field))
-                warns.push(`[block ${n}] read-bitmap.field: "${attrs.field}" not found in bound DDLs — use the top-level field name or its fully qualified path`);
+              if (!hasLen && bindingCount && ddlIds.size && !ddlIds.has(attrs.field))
+                warns.push(`[block ${n}] read-bitmap.field: "${attrs.field}" not found in bound DDLs — use the top-level field name, its fully qualified path, or give a "length" if the DDL does not declare the map`);
               if (attrs?.encoding && !/^(binary|hex|ascii-hex)$/i.test(String(attrs.encoding)))
                 warns.push(`[block ${n}] read-bitmap: encoding "${attrs.encoding}" — use "binary" or "hex"`);
             }
@@ -16338,6 +16453,26 @@ function _mePsRunLint(item, parsed) {
           if (!ref) warns.push(`[block ${n}] read-bitmap-fields needs a bitmap field id`);
           else if (!bitmaps.has(ref))
             warns.push(`[block ${n}] read-bitmap-fields: "${ref}" has no preceding wire-mode read-bitmap block`);
+          // Per-bit entries. Keys are bit numbers; the blocks inside are checked
+          // like any other block list, so a bad reference deep in a "de" entry is
+          // reported the same way as one at the top level.
+          const deMapCfg = (attrs && typeof attrs === 'object') ? attrs.de : null;
+          if (deMapCfg != null) {
+            if (typeof deMapCfg !== 'object' || Array.isArray(deMapCfg)) {
+              warns.push(`[block ${n}] read-bitmap-fields "de" must be an object keyed by bit number, e.g. {"55": [ … ]}`);
+            } else {
+              for (const [bit, ent] of Object.entries(deMapCfg)) {
+                if (!/^\d+$/.test(bit) || +bit < 1 || +bit > 128)
+                  warns.push(`[block ${n}] read-bitmap-fields "de" key "${bit}" is not a bit number between 1 and 128`);
+                const blocks = Array.isArray(ent) ? ent : ent?.blocks;
+                if (ent && !Array.isArray(ent) && typeof ent === 'object' && ent.field)
+                  checkRef(`${n}.de.${bit}`, 'de.field', ent.field, false);
+                if (!Array.isArray(blocks) || !blocks.length)
+                  warns.push(`[block ${n}] read-bitmap-fields "de" entry ${bit} has no blocks to run`);
+                else walk(blocks, `${n}.de.${bit}`);
+              }
+            }
+          }
           break;
         }
         case 'read-segment-fields': {
@@ -16363,7 +16498,28 @@ function _mePsRunLint(item, parsed) {
           break;
         }
         case 'read-tlv': {
-          checkRef(n, 'read-tlv.field', attrs?.field);
+          // "field" names a buffer read earlier. It is optional only inside a
+          // read-bitmap-fields "de" entry, where the buffer is the element itself.
+          if (attrs?.field) checkRef(n, 'read-tlv.field', attrs.field);
+          else if (!String(label || '').includes('.de.'))
+            warns.push(`[block ${n}] read-tlv needs a "field" — it is only optional inside a read-bitmap-fields "de" entry`);
+          if (!attrs?.ber && !(attrs?.tag_length && attrs?.length_length))
+            warns.push(`[block ${n}] read-tlv needs "ber": true, or both tag_length and length_length`);
+          if (attrs?.tags != null) {
+            if (typeof attrs.tags !== 'object' || Array.isArray(attrs.tags)) {
+              warns.push(`[block ${n}] read-tlv "tags" must be an object keyed by tag, e.g. {"9F26": {"field": "ARQC"}}`);
+            } else {
+              for (const [tag, m] of Object.entries(attrs.tags)) {
+                if (!/^[0-9A-Fa-f]{2,}$/.test(tag) || tag.length % 2)
+                  warns.push(`[block ${n}] read-tlv tag "${tag}" is not an even-length hex value (e.g. "82", "9F26")`);
+                if (!m || typeof m !== 'object' || !m.field)
+                  warns.push(`[block ${n}] read-tlv tag "${tag}" needs a {"field": …} to file its value into`);
+                else checkRef(`${n}.tags.${tag}`, 'read-tlv.tags.field', m.field, false);
+              }
+            }
+          }
+          if (attrs?.unknown != null && !/^(emit|skip|error)$/i.test(String(attrs.unknown)))
+            warns.push(`[block ${n}] read-tlv "unknown" must be "emit", "skip" or "error"`);
           break;
         }
         case 'when': {
@@ -16659,7 +16815,8 @@ function _meHtmlDDLBindings(item) {
     onfocus="_meBindShowDrop(${i})"
     onblur="_meBindHideDrop()"
     onkeydown="_meBindKeyDown(${i},event)">
-  <span class="me-bind-status" id="me-bind-status-${i}" data-state="${state}" title="${state==='missing'?'DDL not found in repo — import it or fix the path':state==='ok'?'DDL resolved':''}">${state==='missing'?'⚠':state==='ok'?'✓':''}</span>
+  <span class="me-bind-status" id="me-bind-status-${i}" data-state="${state}" data-tip="${esc(_meBindStatusTip(state, b))}"
+        onmouseenter="if(this.dataset.tip)_tipShow(this,this.dataset.tip)" onmouseleave="_tipHide()">${state==='missing'?'⚠':state==='ok'?'✓':''}</span>
   <button class="me-rb del" onclick="_meBindDel(${i})" title="Remove">✕</button>
 </div>`;
   });
@@ -16674,6 +16831,28 @@ function _meBindValidate(path) {
   if (!path || !path.trim()) return '';
   if (typeof getDDLFromPath !== 'function') return '';
   return getDDLFromPath(path.trim()) ? 'ok' : 'missing';
+}
+
+// getDDLFromPath returns null for two very different situations: the file or DEF
+// genuinely is not there, and the DEF is there but compiles to no fields. Telling
+// the user to "fix the path" in the second case sends them to look at the one
+// thing that was already right — so work out which it is and say so.
+function _meBindDiagnose(path) {
+  const p = String(path || '').trim();
+  const parts = p.split('/');
+  if (parts.length < 3)
+    return 'Path needs at least VOLUME/SUBVOL/FILE';
+  const [vol, sv, name, defName] = parts;
+  const content = S.ddlTree?.[vol]?.[sv]?.[name];
+  if (!content)
+    return `No DDL file at ${vol}/${sv}/${name} — import it or fix the path`;
+  if (parts.length >= 4 && typeof parseDEFNames === 'function' && isHPEDDLText(content)) {
+    const defs = parseDEFNames(content);
+    if (!defs.includes(String(defName).toUpperCase()))
+      return `${name} has no DEF named "${defName}" — it defines: ${defs.join(', ') || '(none)'}`;
+    return `DEF "${defName}" declares no fields — open the DDL and check it, the path is correct`;
+  }
+  return 'DDL found but it compiles to no fields — open it and check for errors';
 }
 
 let _meDDLEntriesCache = { treeV: -1, tree: null, entries: null };
@@ -16717,6 +16896,11 @@ function _meBindInput(idx, val) {
 // section re-render (the input keeps focus while typing). Shared by the
 // typing path AND the suggestion-pick path: picking used to skip it, leaving
 // the red border of the last typed (unresolved) prefix on a valid selection.
+function _meBindStatusTip(state, path) {
+  return state === 'missing' ? _meBindDiagnose(path)
+       : state === 'ok'      ? 'DDL resolved' : '';
+}
+
 function _meBindRepaint(idx, val) {
   const state  = _meBindValidate(val);
   const inp    = document.getElementById('me-bind-inp-'    + idx);
@@ -16725,8 +16909,7 @@ function _meBindRepaint(idx, val) {
   if (badge) {
     badge.setAttribute('data-state', state);
     badge.textContent = state === 'missing' ? '⚠' : state === 'ok' ? '✓' : '';
-    badge.title = state === 'missing' ? 'DDL not found in repo — import it or fix the path'
-                : state === 'ok'      ? 'DDL resolved' : '';
+    badge.dataset.tip = _meBindStatusTip(state, val);
   }
 }
 
@@ -20072,11 +20255,21 @@ function _meExecReadBitmap(attrs, ctx) {
     const adhoc = ctx.segMapOverride != null && String(ctx.segMapOverride).trim() !== '';
     return adhoc ? _meExecSegMap(attrs, ctx) : _meExecReadSegMapFromFile(attrs, ctx);
   }
+  // An explicit "length" (bytes) says the map is on the wire but NOT in the DDL:
+  // the width comes from the spec instead of a declared field, so the strict
+  // check below is waived and the row is synthetic. Combine with "at" to read a
+  // bitmap the bound DDL knows nothing about.
+  const explicitLen = attrs.length !== undefined ? attrs.length : null;
+  if (explicitLen !== null && (!Number.isInteger(explicitLen) || explicitLen <= 0)) {
+    ctx.fields.push({ id: attrs.field, error: `read-bitmap "length" must be a whole number of bytes above 0, got ${JSON.stringify(attrs.length)}` });
+    return;
+  }
   // Strict field resolution: when DDL bindings are resolved, the declared
   // field must exist — the short name for a top-level field, or the fully
   // qualified path (e.g. "ISOPSEM.PRI-BIT-MAP" when the bound DDL nests the
   // structure under a group).
-  if ((ctx.resolvedBindings || []).some(r => r?.defs?.length) && !_meFindDefById(attrs.field, ctx)) {
+  if (explicitLen === null &&
+      (ctx.resolvedBindings || []).some(r => r?.defs?.length) && !_meFindDefById(attrs.field, ctx)) {
     ctx.fields.push({ id: attrs.field, error: `Bitmap field "${attrs.field}" not found in the bound DDL — use the top-level field name, or its fully qualified path (e.g. "ISOPSEM.${attrs.field}")` });
     return;
   }
@@ -20086,7 +20279,9 @@ function _meExecReadBitmap(attrs, ctx) {
   // ASCII by the deterministic decode). 'binary' == raw bytes, read from the
   // PRE-decode raw bytes so the message-wide EBCDIC decode can't mangle them.
   const isHexEnc  = encoding === 'ascii-hex' || encoding === 'hex';
-  const baseChunk = isHexEnc ? 16 : 8;
+  // An explicit length is given in BYTES OF THE MESSAGE, so for a hex-character
+  // map it already counts the two characters per byte — no doubling.
+  const baseChunk = explicitLen !== null ? explicitLen : (isHexEnc ? 16 : 8);
   const src       = isHexEnc ? ctx.bytes : (ctx.rawBytes || ctx.bytes);
   const start     = ctx.cursor;
   if (start + baseChunk > src.length) {
@@ -20103,7 +20298,10 @@ function _meExecReadBitmap(attrs, ctx) {
     return Array.from(src.slice(off, off + n));
   };
   const rawPrimary  = toRawBlock(start, baseChunk);
-  const hasSecondary = !!(rawPrimary[0] & 0x80);
+  // Bit 0 marks a secondary bitmap in ISO 8583 only. When the spec states the
+  // width explicitly the map is not ISO, so that bit is an ordinary data bit and
+  // must not silently double the read.
+  const hasSecondary = explicitLen === null && !!(rawPrimary[0] & 0x80);
   let totalBytes = baseChunk;
   let allRaw = rawPrimary;
   if (hasSecondary) {
@@ -20116,7 +20314,9 @@ function _meExecReadBitmap(attrs, ctx) {
     totalBytes = 2 * baseChunk;
   }
   const bitSet = parseBitmap(allRaw);
-  bitSet.delete(1);  // bit 1 is the secondary-present indicator, not a DE
+  // Same reasoning: bit 1 is the secondary-present indicator in ISO 8583 only.
+  // On an explicitly sized map it is a real bit and must be kept.
+  if (explicitLen === null) bitSet.delete(1);
 
   // Primary bitmap row — exactly baseChunk bytes, so Parse Results honors the
   // DDL's declared PIC width (X(8) raw binary / X(16) ascii-hex) instead of a
@@ -20212,6 +20412,64 @@ function _meAutoLLVarLenId(kids) {
   return null;
 }
 
+// A per-bit entry in read-bitmap-fields: either a bare block list, or an object
+// that may also name the element the bit maps to. Keys are bit numbers, so the
+// DE-to-element relation still comes from the Overrides panel as it always has —
+// this only says how that element's bytes are read.
+function _meDeEntryFor(attrs, de) {
+  const map = (attrs && typeof attrs === 'object') ? attrs.de : null;
+  if (!map || typeof map !== 'object') return null;
+  const v = map[String(de)];
+  if (v == null) return null;
+  return Array.isArray(v) ? { blocks: v } : v;
+}
+
+function _meRunDeEntry(de, entry, ovr, ctx) {
+  const scopeDef = ovr.field ? _meFindDefById(ovr.field, ctx) : null;
+  const scopeId  = scopeDef ? scopeDef.id
+                 : ovr.field ? ovr.field
+                 : entry ? (entry.groupId || entry.def?.id || null)
+                 : null;
+  if (!scopeId) {
+    ctx.fields.push({ id: `DE-${de}`, error:
+      `DE ${de} has a "de" entry but no element to read into — map it in Overrides, or give the entry a "field"` });
+    return;
+  }
+  const blocks = Array.isArray(ovr.blocks) ? ovr.blocks : [];
+  if (!blocks.length) {
+    ctx.fields.push({ id: scopeId, error: `DE ${de}: "de" entry has no blocks to run` });
+    return;
+  }
+  const prevScope = ctx._deScope, prevLimit = ctx._deLimit;
+  ctx._deScope = scopeId;
+  // Window for blocks that read "the rest of this element" (read-tlv with no
+  // field). An explicit length wins; otherwise the element's declared size; a
+  // group with no declared size falls back to the end of the message.
+  const declared = ovr.length != null ? +ovr.length : _meDeclaredSize(scopeId, ctx);
+  ctx._deLimit = declared > 0 ? Math.min(ctx.cursor + declared, ctx.bytes.length) : null;
+  try {
+    for (const b of blocks) _meExecBlock(b, ctx);
+  } finally {
+    ctx._deScope = prevScope;
+    ctx._deLimit = prevLimit;
+  }
+}
+
+// Declared byte size of an element: its own length if elementary, otherwise the
+// sum of its non-REDEFINES leaves.
+function _meDeclaredSize(id, ctx) {
+  const defs = _meCollectBindingDefs(ctx.resolvedBindings);
+  const self = defs.find(d => d.id === id);
+  if (self && self.length > 0 && !self.isGroup) return self.length;
+  const prefix = id + '.';
+  let total = 0;
+  for (const d of defs) {
+    if (d.isRedefines || d.isGroup) continue;
+    if (d.id.startsWith(prefix)) total += (d.length || 0);
+  }
+  return total;
+}
+
 function _meExecBitmapFields(attrs, ctx) {
   const bitmapId = (typeof attrs === 'string') ? attrs : attrs?.bitmap;
   if (!bitmapId) {
@@ -20244,6 +20502,13 @@ function _meExecBitmapFields(attrs, ctx) {
 
   for (const de of bits) {
     const entry = deMap[de];
+
+    // A "de" entry replaces the default read for that bit. Its blocks run with
+    // the cursor at the DE's start and names resolved inside the DE's own group,
+    // so "ARQC" means "EMV-ELEMENT.ARQC" without repeating the parent everywhere.
+    const ovr = _meDeEntryFor(attrs, de);
+    if (ovr) { _meRunDeEntry(de, entry, ovr, ctx); continue; }
+
     if (!entry) {
       ctx.fields.push({ id: `DE-${de}`, error: 'No DDL field mapped to this DE' });
       continue;
@@ -20746,7 +21011,54 @@ function _meExecSegmentFields(attrs, ctx) {
 
 // ── Block: read-tlv ─────────────────────────────────────────────────────────
 
+// ── TLV: BER framing ────────────────────────────────────────────────────────
+// EMV DE-55 is BER-TLV, not fixed-width. A tag is one byte unless its low five
+// bits are all set (0x1F), in which case continuation bytes follow while the top
+// bit stays set. A length below 0x80 is that byte; 0x8N means the next N bytes
+// hold the length. Reading such a buffer with a fixed tag_length mis-frames the
+// first 1-byte tag and every triple after it silently becomes garbage.
+function _meBerTag(buf, p) {
+  if (p >= buf.length) return null;
+  let end = p + 1;
+  if ((buf[p] & 0x1F) === 0x1F) {
+    while (end < buf.length && (buf[end] & 0x80)) end++;
+    end++;                                   // the byte that cleared the top bit
+    if (end > buf.length) return null;
+  }
+  return { bytes: buf.slice(p, end), next: end };
+}
+function _meBerLen(buf, p) {
+  if (p >= buf.length) return null;
+  const b = buf[p];
+  if (b < 0x80) return { len: b, next: p + 1 };
+  const n = b & 0x7F;
+  if (n === 0 || p + 1 + n > buf.length) return null;   // indefinite form is not valid here
+  let len = 0;
+  for (let i = 0; i < n; i++) len = (len << 8) | buf[p + 1 + i];
+  return { len, next: p + 1 + n };
+}
+
+// Leaf names inside a mapped subgroup. A spec may name them explicitly, per
+// read-tlv or per tag, because TLV is not only EMV and other layouts use their
+// own words for the three parts.
+const _TLV_DEFAULT_NAMES = {
+  tag_field:    ['TAG', 'TAG-ID', 'TAGID'],
+  length_field: ['LEN', 'LGTH', 'LENGTH'],
+  value_field:  ['DATA', 'VAL', 'VALUE'],
+};
+function _meTlvLeaf(groupId, which, attrs, perTag, defs) {
+  const explicit = (perTag && perTag[which]) || (attrs && attrs[which]) || null;
+  const names    = explicit ? [explicit] : _TLV_DEFAULT_NAMES[which];
+  const prefix   = groupId + '.';
+  for (const nm of names) {
+    const hit = defs.find(d => d.id === prefix + nm);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function _meExecReadTLV(attrs, ctx) {
+  if (attrs && (attrs.tags || attrs.ber)) return _meExecReadTLVMapped(attrs, ctx);
   if (!attrs || !attrs.field) {
     ctx.fields.push({ id: 'read-tlv', error: 'Missing field attribute' });
     return;
@@ -20790,6 +21102,176 @@ function _meExecReadTLV(attrs, ctx) {
   }
 }
 
+// ── Explicit positioning: the "at" attribute, honoured by EVERY block ────────
+// Without it a block reads where the previous one stopped — the default, and
+// what every existing spec relies on. With it the cursor is placed first:
+//
+//   "at": 23                            byte 23 of the message, 0-based
+//   "at": {"field": "HDR"}              immediately after HDR ends
+//   "at": {"field": "HDR", "offset": 10}   10 bytes past the end of HDR
+//   "at": {"field": "HDR", "from": "start", "offset": 4}   4 bytes into HDR
+//
+// The cursor STAYS where the positioned read ends, so following blocks continue
+// from there. Use "peek": true to restore it afterwards, for overlay reads that
+// must not disturb the sequential flow.
+//
+// Returns an error string when the position cannot be resolved; the caller
+// reports it and skips the block rather than reading from a wrong offset.
+function _meResolveAt(at, ctx) {
+  if (typeof at === 'number') {
+    if (!Number.isInteger(at) || at < 0) return { error: `"at" must be a whole byte position of 0 or more, got ${JSON.stringify(at)}` };
+    if (at > ctx.bytes.length) return { error: `"at": ${at} is past the end of the message (${ctx.bytes.length} bytes)` };
+    return { pos: at };
+  }
+  if (at && typeof at === 'object') {
+    const anchorId = at.field;
+    if (!anchorId) return { error: '"at" needs either a byte position or a {"field": ...} anchor' };
+    const anchor = ctx.fieldsById[anchorId];
+    if (!anchor) return { error: `"at" anchor field "${anchorId}" has not been read yet — anchor to a field an EARLIER block produced` };
+    if (anchor.startByte == null) return { error: `"at" anchor field "${anchorId}" has no position (it consumed no bytes)` };
+    const from = String(at.from || 'end').toLowerCase();
+    if (from !== 'end' && from !== 'start') return { error: `"at".from must be "end" or "start", got ${JSON.stringify(at.from)}` };
+    const base = from === 'start' ? anchor.startByte : (anchor.endByte ?? anchor.startByte) + 1;
+    const off  = at.offset ?? 0;
+    if (!Number.isInteger(off)) return { error: `"at".offset must be a whole number, got ${JSON.stringify(at.offset)}` };
+    const pos = base + off;
+    if (pos < 0) return { error: `"at" resolves to byte ${pos}, before the start of the message` };
+    if (pos > ctx.bytes.length) return { error: `"at" resolves to byte ${pos}, past the end of the message (${ctx.bytes.length} bytes)` };
+    return { pos };
+  }
+  return { error: `"at" must be a byte position or a {"field": ...} anchor, got ${JSON.stringify(at)}` };
+}
+
+// A name written inside a read-bitmap-fields "de" entry belongs to that DE's
+// group, so "ARQC" means "EMV-ELEMENT.ARQC". Outside such an entry there is no
+// scope and the name is looked up as declared.
+function _meResolveScopedDef(name, ctx) {
+  if (!name) return null;
+  const candidates = ctx._deScope ? [`${ctx._deScope}.${name}`, name] : [name];
+  for (const id of candidates) {
+    const hit = _meFindDefById(id, ctx);
+    if (hit) return hit;
+  }
+  // Only LEAVES are compiled into defs, so a group — which is exactly what a TLV
+  // tag maps to — exists purely as a prefix on its children's ids. Recognize it
+  // by that prefix and describe it, otherwise every tag→group mapping fails.
+  const defs = _meCollectBindingDefs(ctx.resolvedBindings);
+  for (const id of candidates) {
+    if (defs.some(d => d.id.startsWith(id + '.'))) return { id, isGroup: true };
+  }
+  return null;
+}
+
+// ── Block: read-tlv, mapped form (ber / tags) ───────────────────────────────
+// Walks TAG-LENGTH-VALUE triples and files each one into the DDL element the
+// spec maps it to, instead of emitting anonymous "<buffer>.<tag>" rows. Whether
+// a subgroup keeps the tag is read from the DDL: if it declares a TAG leaf the
+// tag is stored there, if it doesn't the element already identifies the tag and
+// nothing is written. That is one less attribute to state and it cannot
+// disagree with the DDL.
+function _meExecReadTLVMapped(attrs, ctx) {
+  const defs = _meCollectBindingDefs(ctx.resolvedBindings);
+  const ber  = !!attrs.ber;
+  const tagLen = attrs.tag_length || 0;
+  const lenLen = attrs.length_length || 0;
+  if (!ber && (!tagLen || !lenLen)) {
+    ctx.fields.push({ id: 'read-tlv', error: 'read-tlv needs "ber": true, or both tag_length and length_length' });
+    return;
+  }
+
+  // Buffer: a named field (parsed in place, cursor untouched) or — inside a "de"
+  // entry — the bytes from the cursor on, which this block then consumes.
+  let bufBytes, bufBase = null, consumes = false;
+  if (attrs.field) {
+    const buf = ctx.fieldsById[attrs.field];
+    if (!buf || buf.startByte == null) {
+      ctx.fields.push({ id: 'read-tlv', error: `Buffer field '${attrs.field}' not yet read` });
+      return;
+    }
+    bufBytes = Array.from(ctx.bytes.slice(buf.startByte, buf.endByte + 1));
+    bufBase  = buf.startByte;
+  } else {
+    const end = ctx._deLimit != null ? ctx._deLimit : ctx.bytes.length;
+    bufBytes  = Array.from(ctx.bytes.slice(ctx.cursor, end));
+    bufBase   = ctx.cursor;
+    consumes  = true;
+  }
+  if ((attrs.encoding || '') === 'ascii-hex') {
+    const hex = bufBytes.map(b => String.fromCharCode(b)).join('');
+    bufBytes = [];
+    for (let i = 0; i + 1 < hex.length; i += 2) bufBytes.push(parseInt(hex.substr(i, 2), 16) || 0);
+    bufBase = null;                     // decoded bytes no longer map 1:1 to the message
+  }
+
+  const unknown = String(attrs.unknown || 'emit').toLowerCase();
+  const emit = (id, bytes, start, extra) => {
+    const f = bufBase != null && start != null
+      ? _meMakeSyntheticField(id, bytes, bufBase + start, bufBase + start + bytes.length - 1, ctx, extra)
+      : { id, value: _meBytesToStr(bytes), rawHex: _meBytesToHex(bytes), valueLength: bytes.length, ...(extra || {}) };
+    ctx.fields.push(f);
+    ctx.fieldsById[id] = f;
+    return f;
+  };
+
+  let p = 0;
+  while (p < bufBytes.length) {
+    const t = ber ? _meBerTag(bufBytes, p)
+                  : (p + tagLen <= bufBytes.length ? { bytes: bufBytes.slice(p, p + tagLen), next: p + tagLen } : null);
+    if (!t) break;
+    const tagHex = t.bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+    const tagAt  = p;
+    const l = ber ? _meBerLen(bufBytes, t.next)
+                  : (t.next + lenLen <= bufBytes.length
+                      ? { len: bufBytes.slice(t.next, t.next + lenLen).reduce((a, b) => (a << 8) | b, 0), next: t.next + lenLen }
+                      : null);
+    if (!l) {
+      ctx.fields.push({ id: `TLV.${tagHex}`, error: `TLV tag ${tagHex}: length field is truncated` });
+      break;
+    }
+    if (l.next + l.len > bufBytes.length) {
+      ctx.fields.push({ id: `TLV.${tagHex}`, error: `TLV tag ${tagHex}: length ${l.len} runs past the end of the buffer` });
+      break;
+    }
+    const valBytes = bufBytes.slice(l.next, l.next + l.len);
+    const lenBytes = bufBytes.slice(t.next, l.next);
+    const mapped   = attrs.tags && (attrs.tags[tagHex] || attrs.tags[tagHex.toLowerCase()]);
+
+    if (!mapped) {
+      if (unknown === 'error') {
+        ctx.fields.push({ id: `TLV.${tagHex}`, error: `TLV tag ${tagHex} is not mapped to a DDL element` });
+      } else if (unknown !== 'skip') {
+        emit(`${attrs.field || ctx._deScope || 'TLV'}.${tagHex}`, valBytes, l.next,
+             { description: `TLV tag ${tagHex} · length ${l.len}` });
+      }
+      p = l.next + l.len;
+      continue;
+    }
+
+    const groupName = mapped.field;
+    const group = _meResolveScopedDef(groupName, ctx);
+    if (!group) {
+      ctx.fields.push({ id: groupName || `TLV.${tagHex}`,
+        error: `TLV tag ${tagHex}: element "${groupName}" not found in the DDL` });
+      p = l.next + l.len;
+      continue;
+    }
+    const gid     = group.id;
+    const tagLeaf = _meTlvLeaf(gid, 'tag_field',    attrs, mapped, defs);
+    const lenLeaf = _meTlvLeaf(gid, 'length_field', attrs, mapped, defs);
+    const valLeaf = _meTlvLeaf(gid, 'value_field',  attrs, mapped, defs);
+
+    // The DDL decides whether the tag is kept: a subgroup that declares a TAG
+    // leaf gets it, one that doesn't is already identified by the element.
+    if (tagLeaf) emit(tagLeaf.id, t.bytes, tagAt, { def: tagLeaf });
+    if (lenLeaf) emit(lenLeaf.id, lenBytes, t.next, { def: lenLeaf });
+    if (valLeaf) emit(valLeaf.id, valBytes, l.next, { def: valLeaf });
+    else         emit(gid, valBytes, l.next, { def: group, description: `TLV tag ${tagHex}` });
+
+    p = l.next + l.len;
+  }
+  if (consumes) ctx.cursor = Math.min(ctx.cursor + p, ctx.bytes.length);
+}
+
 function _meExecBlock(block, ctx) {
   if (block == null) return;
   if (typeof block === 'string') {
@@ -20803,6 +21285,25 @@ function _meExecBlock(block, ctx) {
   const type  = keys[0];
   const attrs = block[type];
 
+  // Positioning is resolved once, here, so it applies to every block type.
+  let _peekReturn = null;
+  if (attrs && typeof attrs === 'object' && attrs.at !== undefined) {
+    const r = _meResolveAt(attrs.at, ctx);
+    if (r.error) {
+      ctx.fields.push({ id: attrs.field || type, error: r.error });
+      return;
+    }
+    if (attrs.peek) _peekReturn = ctx.cursor;
+    ctx.cursor = r.pos;
+  }
+  try {
+    return _meExecBlockAt(type, attrs, ctx);
+  } finally {
+    if (_peekReturn !== null) ctx.cursor = _peekReturn;
+  }
+}
+
+function _meExecBlockAt(type, attrs, ctx) {
   switch (type) {
     case 'read-ddl':            return _meExecReadDDL(attrs, ctx);
     case 'read':                return _meExecReadField(attrs, ctx);

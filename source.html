@@ -13877,7 +13877,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.412';
+const APP_VERSION  = '1.1.2.413';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15846,6 +15846,7 @@ const _PS_HELP = {
       'You need to read a field <b>before using its value</b> later (as a length for <code>read-fixed</code>, a count for <code>repeat</code>, or a guard for <code>when</code>).',
       'The DDL field is a <b>group</b> with sub-fields you want emitted sequentially.',
       'You want to <b>override the type</b> of a length-compatible field (e.g. read a <code>PIC X(2)</code> as <code>uint16-be</code>).',
+      'The group\'s length is <b>on the wire but not in the DDL</b> — once its tags are mapped to elements a LEN element holds nothing worth keeping, so <code>length_prefix</code> supplies it.',
     ],
     attrs: [
       ['field', 'string', true,  'DDL field ID to read'],
@@ -15863,6 +15864,8 @@ const _PS_HELP = {
         [{"read": {"field": "TIM-OFST", "type": "BINARY 16"}}]],
       ['Type override mismatch (rejected) — PIC X(2) cannot be read as uint32 (4 bytes) — engine emits a warning and skips the override',
         [{"read": {"field": "TIM-OFST", "type": "uint32-be"}}]],
+      ['Length on the wire, absent from the DDL — the 4 length bytes frame the group, and the prefix is emitted as its own row so nothing is consumed invisibly',
+        [{"read": {"field": "XXX-ELEMENT", "length_prefix": 4}}]],
     ],
   },
   'read-fixed': {
@@ -15886,6 +15889,14 @@ const _PS_HELP = {
         [{"read": "DATA-LEN"}, {"read-fixed": {"length": "DATA-LEN", "as": "DATA-BODY"}}]],
       ['EBCDIC chunk — 4 EBCDIC bytes (e.g. ISO 8583 Switch MTI)',
         [{"read-fixed": {"length": 4, "encoding": "ebcdic", "as": "MTI"}}]],
+      ['Absolute position — byte 23, counting from 0 (so the 24th byte)',
+        [{"read-fixed": {"length": 4, "as": "STAN", "at": 23}}]],
+      ['Relative — 10 bytes past where HDR ended',
+        [{"read-fixed": {"length": 2, "as": "FLAGS", "at": {"field": "HDR", "offset": 10}}}]],
+      ['Relative from a field\'s START — 4 bytes into HDR, not after it',
+        [{"read-fixed": {"length": 2, "as": "SUB", "at": {"field": "HDR", "from": "start", "offset": 4}}}]],
+      ['Overlay — read AMOUNT a second way without disturbing the sequence; "peek" puts the cursor back',
+        [{"read-fixed": {"length": 6, "as": "AMOUNT-RAW", "at": {"field": "AMOUNT", "from": "start"}, "peek": true}}]],
     ],
   },
   'read-until': {
@@ -15946,6 +15957,7 @@ const _PS_HELP = {
       'Wire mode — you\'re parsing an <b>ISO 8583</b> (or similar bitmap-based) message and a <code>read-bitmap-fields</code> block follows. The bitmap is <b>binary</b> (8 raw bytes) or <b>hex</b> (16 hex chars); ASCII vs EBCDIC is resolved from the message recognizer, never baked into the spec.',
       'File-read segment map — a <b>Base24 segmented file whose map is in the record</b>: a pre-6.0 file\'s <code>SEG-MAP</code>, or a 6.0 <b>IDF</b>\'s <code>FIID-SEG-MAP</code>. Just name the field — no value, no encoding. A <code>read-segment-fields</code> block follows.',
       'Declared segment map — a 6.0 <b>non-IDF</b> file: its SEG-MAP is zeroed and the real map lives on the IDF, so supply the value here (bits/value) or via the SEG-MAP input. A <code>read-segment-fields</code> block follows.',
+      'The message carries a bitmap the <b>DDL never declares</b> — give it a <code>length</code> and it is read as a synthetic field.',
     ],
     attrs: [
       ['field',    'string', true, 'DDL field ID. Wire mode: the bitmap field. File-read: the SEG-MAP / FIID-SEG-MAP field to read from SEG0. Declared: names the synthetic row and is what read-segment-fields references (e.g. "FIID-SEG-MAP").'],
@@ -15962,6 +15974,10 @@ const _PS_HELP = {
       ['File-read: pre-6.0 file — map read from SEG-MAP in the record', [{"read-bitmap": {"field": "SEG-MAP"}}, {"read-segment-fields": "SEG-MAP"}]],
       ['Declared: 6.0 non-IDF — SEG-MAP zeroed, map supplied (C4180000 = SEG0,1,5,11,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "bits": 32, "value": "C4180000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
       ['Declared: ascii-bits — spaces every 4 for readability (SEG0,1,5,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "encoding": "ascii-bits", "bits": 32, "value": "1100 0100 0000 1000 0000 0000 0000 0000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
+      ['Wire: a map the DDL never declares — width stated by the spec, so the field need not exist in the binding',
+        [{"read-bitmap": {"field": "WIRE-MAP", "length": 8}}]],
+      ['Wire: same, at a known position — "at" says WHERE, "length" says HOW WIDE (they are independent)',
+        [{"read-bitmap": {"field": "WIRE-MAP", "length": 4, "at": 12}}]],
     ],
   },
   'read-bitmap-fields': {
@@ -15971,6 +15987,8 @@ const _PS_HELP = {
       'The Overrides table shows the DE numbers you expect (anchor the first real DE if the defaults are off).',
       'Some DEs are <b>variable-length groups</b> (LEN + payload) — mark them as VLG in Overrides and this block honours the runtime LEN.',
       'Standard ISO 8583 parsing — the canonical way to walk DE fields per the bitmap.',
+      'One DE needs <b>different parsing from the rest</b> (EMV DE-55 as TLV) — put just that bit in <code>de</code>; every other set bit is read exactly as before.',
+      'A DE\'s length is on the wire but its LEN element was left out of the DDL — <code>length_prefix</code> on the entry frames it.',
     ],
     attrs: [
       ['bitmap', 'string', true, 'Field ID of a preceding read-bitmap result'],
@@ -15981,6 +15999,15 @@ const _PS_HELP = {
       ['DE-55 as EMV TLV, everything else as usual', [{"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
         "55": [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}}}]
       }}}]],
+      ['DE-55 into a named element, length taken from the wire — the DDL leaves out the parent LEN because each tag carries its own',
+        [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}},
+         {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
+           "55": {"field": "EMV-ELEMENT", "length_prefix": 2, "blocks": [
+             {"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}, "unknown": "emit"}}]}}}}]],
+      ['Two DEs handled specially, every other set bit read exactly as before',
+        [{"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
+          "48": {"field": "ADDL-DATA", "blocks": [{"read-to-end": {"as": "RAW-48"}}]},
+          "55": [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}}}}]}}}]],
     ],
   },
   'read-segment-fields': {
@@ -16005,6 +16032,8 @@ const _PS_HELP = {
       'The DDL declares the outer buffer but <b>not its inner tags</b>.',
       'Tag width and length-field width are <b>constant</b> across all triples.',
       'You want every triple emitted as its own field for inspection / further processing.',
+      'The buffer is <b>BER-TLV</b> (EMV) — set <code>ber</code>, because a fixed <code>tag_length</code> mis-frames the first 1-byte tag and garbles every triple after it.',
+      'You want each tag <b>filed into its own DDL element</b> rather than emitted as anonymous rows — use <code>tags</code>.',
     ],
     attrs: [
       ['field',         'string',              false, 'DDL buffer field holding the raw TLV bytes. Optional ONLY inside a read-bitmap-fields "de" entry, where the buffer is that element itself.'],
@@ -16024,6 +16053,8 @@ const _PS_HELP = {
         "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}, "unknown": "emit"}}]],
       ['Non-EMV TLV whose leaves are named differently', [{"read-tlv": {"field": "BUF", "ber": true,
         "tag_field": "T", "length_field": "L", "value_field": "V", "tags": {"01": {"field": "ITEM"}}}}]],
+      ['Inside a read-bitmap-fields "de" entry — no "field" needed: the element being read IS the buffer, and short names resolve inside it',
+        [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}}, "unknown": "skip"}}]],
     ],
   },
   'skip': {

@@ -3319,6 +3319,23 @@ test('names inside a "de" entry resolve within that element', () => {
     'the short name resolved against the DE element');
 });
 
+test('a "de" entry cannot read past its element into the next DE', () => {
+  // The window is 4 bytes; the block asks for 12. The engine must stop at the
+  // boundary and say so, rather than let DE-56 be consumed by DE-55's blocks.
+  S.ddlTree = { V: { S: { D: EMV_DDL } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: {
+          '2': { field: 'EMV-ELEMENT', length: 4,
+                 blocks: [{ 'read-fixed': { length: 12, as: 'GREEDY' } }] } } } },
+    ] }, EMV_BYTES);
+  assert.ok(ctx.fields.some(f => f.error && /past the element's length/.test(f.error)),
+    `overrun must be reported, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  eq(ctx.cursor, 12, 'and the cursor resumes at the element boundary (8 + 4), so the next DE lines up');
+});
+
 test('unknown tags follow the stated policy', () => {
   const emit = emvRun({ ber: true, tags: {}, unknown: 'emit' });
   assert.ok(emit.fields.some(f => /\.9F26$/.test(f.id)), 'emit keeps unmapped tags as their own rows');
@@ -3412,6 +3429,76 @@ test('a length beyond the declared payload is flagged but still framed by the wi
   const ctx = vlgRun([0x00, 0x19], 30);           // 25 > DATA's declared 20
   const err = ctx.fields.find(f => f.error && /exceeds the 20 byte/.test(f.error));
   assert.ok(err, `expected a capacity warning, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+});
+
+// ── read + length_prefix: a length on the wire, absent from the DDL ─────────
+// Once a group's tags are mapped to elements, its LEN leaf holds nothing worth
+// keeping, so the DDL may legitimately omit it. The bytes are still on the wire.
+
+console.log('\nread — length_prefix');
+
+const LP_DDL = `DEF REC.
+  02 XXX-ELEMENT.
+    04 DATA PIC X(6).
+  02 TAIL PIC X(4).
+END REC.
+`;
+function lpRun(msg, attrs) {
+  S.ddlTree = { V: { S: { D: LP_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [{ read: attrs }] }, Buffer.from(msg));
+}
+
+test('the wire length frames the payload, and the prefix bytes are shown', () => {
+  const ctx = lpRun('0006ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: 4 });
+  const pre = ctx.fields.find(f => f.id === 'XXX-ELEMENT.LEN-PREFIX');
+  assert.ok(pre, 'the prefix is emitted as its own row — consuming bytes without ' +
+                 'a row is how 4 bytes of every STM record went missing under RTE-GRP');
+  eq(pre.value, '0006', 'and it shows the raw length bytes');
+  eq(ctx.fields.find(f => f.id === 'XXX-ELEMENT.DATA').value, 'ABCDEF', 'payload framed by the wire');
+  eq(ctx.cursor, 10, 'cursor past prefix + payload');
+});
+
+test('a binary length prefix works, using the same rule as VLG', () => {
+  const ctx = lpRun('\x00\x03ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: 2 });
+  eq(ctx.fields.find(f => f.id === 'XXX-ELEMENT.DATA').value, 'ABC',
+     'binary 0x0003 decoded as 3, not as characters');
+});
+
+test('a shorter wire length truncates the payload rather than reading declared size', () => {
+  const ctx = lpRun('0003ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: 4 });
+  const d = ctx.fields.find(f => f.id === 'XXX-ELEMENT.DATA');
+  eq(d.value, 'ABC', 'three bytes, not the declared six');
+  eq(d.valueLength, 3, 'and the length reflects what was actually taken');
+});
+
+test('a length past the end of the message is reported', () => {
+  const ctx = lpRun('9999ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: 4 });
+  assert.ok(ctx.fields.some(f => f.error && /runs past the end/.test(f.error)),
+    'clear error rather than reading off the end');
+});
+
+test('bytes the sub-fields do not claim are reported, not silently skipped', () => {
+  // wire says 9, DATA declares 6 — the leftover 3 must not vanish
+  const ctx = lpRun('0009ABCDEFGHIJKL', { field: 'XXX-ELEMENT', length_prefix: 4 });
+  assert.ok(ctx.fields.some(f => f.error && /not claimed by any sub-field/.test(f.error)),
+    'the unclaimed remainder is surfaced');
+});
+
+test('a bad length_prefix value is rejected', () => {
+  for (const bad of [0, -2, 1.5, 'two']) {
+    const ctx = lpRun('0006ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: bad });
+    assert.ok(ctx.fields.some(f => f.error && /whole number of bytes/.test(f.error)),
+      `expected rejection for ${JSON.stringify(bad)}`);
+  }
+});
+
+test('without length_prefix, read is completely unchanged', () => {
+  const ctx = lpRun('ABCDEFTAIL', 'XXX-ELEMENT');
+  eq(ctx.fields.find(f => f.id === 'XXX-ELEMENT.DATA').value, 'ABCDEF', 'declared sizes');
+  eq(ctx.fields.some(f => /LEN-PREFIX/.test(f.id)), false, 'no prefix row invented');
+  eq(ctx.cursor, 6, 'cursor advanced by the declared size only');
 });
 
 // ── DDL validation: a DEFINITION must declare level-numbered items ──────────

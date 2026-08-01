@@ -13877,7 +13877,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.409';
+const APP_VERSION  = '1.1.2.411';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15849,6 +15849,7 @@ const _PS_HELP = {
     ],
     attrs: [
       ['field', 'string', true,  'DDL field ID to read'],
+      ['length_prefix', 'int', false, 'Bytes of length sitting on the wire but NOT declared in the DDL — for when the group\'s LEN element was deliberately left out. The payload is then framed by what those bytes say instead of by the declared sizes, and the prefix is emitted as its own row so nothing is consumed invisibly. Decoded like every other length: ASCII digits as digits (which also covers EBCDIC, translated upstream), anything else as a big-endian integer.'],
       ['type',  'string', false, 'Type override. Fixed-size numeric types — <b>uint8</b>/<b>BINARY 8</b> (1 byte), <b>uint16-be</b>/<b>uint16-le</b>/<b>BINARY 16</b> (2), <b>uint32-be</b>/<b>uint32-le</b>/<b>BINARY 32</b> (4), <b>BINARY 64</b> (8) — must match the DDL field\'s declared byte length. Length-flexible types — <b>ascii</b> (render bytes as printable ASCII), <b>ebcdic</b> (translate EBCDIC→ASCII), <b>binary</b> (raw hex dump 0x…), <b>hex-char</b> (raw bytes as their hex characters, TAL binary^hexchar: 00 13 → "0013"), <b>hex-ascii-decimal</b> / <b>hex-ebcdic-decimal</b> (the field holds hex digits as TEXT — decode that text, then read base-16: "00FF" → 255). The same overrides can be set per-field via the Overrides section\'s Data Type dropdown — the inline attr wins when both are present.'],
     ],
     examples: [
@@ -16381,6 +16382,9 @@ function _mePsRunLint(item, parsed) {
         case 'read': {
           const fid = (typeof attrs === 'string') ? attrs : attrs?.field;
           checkRef(n, 'read.field', fid, false);
+          if (typeof attrs === 'object' && attrs?.length_prefix !== undefined &&
+              (!Number.isInteger(attrs.length_prefix) || attrs.length_prefix <= 0))
+            warns.push(`[block ${n}] read "length_prefix" must be a whole number of bytes above 0, got ${JSON.stringify(attrs.length_prefix)}`);
           const t = (typeof attrs === 'object') ? attrs?.type : null;
           if (t && !_PS_VALID_TYPES_RE.test(String(t).trim()))
             warns.push(`[block ${n}] read.type: "${t}" is not a recognized type override`);
@@ -19945,6 +19949,43 @@ function _meExecReadField(attrs, ctx) {
     ctx.fields.push({ id: 'read', error: 'Missing field attribute' });
     return;
   }
+  // A length that is ON THE WIRE but deliberately absent from the DDL. Once a
+  // group's tags are mapped to elements its LEN leaf holds nothing worth keeping,
+  // so the DDL may legitimately omit it — but the bytes are still there, and
+  // without this there is no way to say so. The payload is then framed by what
+  // the wire says, not by the DDL's declared sizes.
+  const lenPrefix = (typeof attrs === 'object') ? attrs?.length_prefix : null;
+  let lpWindow = null;
+  if (lenPrefix != null) {
+    if (!Number.isInteger(lenPrefix) || lenPrefix <= 0) {
+      ctx.fields.push({ id: fieldId, error: `read "length_prefix" must be a whole number of bytes above 0, got ${JSON.stringify(lenPrefix)}` });
+      return;
+    }
+    const pStart = ctx.cursor;
+    const pBytes = Array.from(ctx.bytes.slice(pStart, pStart + lenPrefix));
+    const N = _meDecodeLength(pBytes);
+    if (N == null) {
+      ctx.fields.push({ id: fieldId, error: `read "length_prefix": no bytes left to read the ${lenPrefix}-byte length from` });
+      return;
+    }
+    ctx.cursor = pStart + lenPrefix;
+    // Emitted, never swallowed: bytes consumed without a row are exactly how
+    // four bytes of every STM record went missing under RTE-GRP.
+    ctx.fields.push({
+      id: `${fieldId}.LEN-PREFIX`,
+      description: `length prefix (on the wire, not declared in the DDL)`,
+      valueLength: lenPrefix, value: _meBytesToStr(pBytes), rawHex: _meBytesToHex(pBytes),
+      startByte: pStart, endByte: pStart + lenPrefix - 1,
+    });
+    const avail = ctx.bytes.length - ctx.cursor;
+    if (N > avail) {
+      ctx.fields.push({ id: fieldId, error: `read "length_prefix": length ${N} runs past the end of the message (${avail} byte(s) left) — read as ${_meLengthWasDigits(pBytes) ? 'digits' : 'a binary integer'}` });
+      lpWindow = Math.max(0, avail);
+    } else {
+      lpWindow = N;
+    }
+  }
+
   let def = null;
   for (const r of ctx.resolvedBindings) {
     if (!r?.defs) continue;
@@ -19964,7 +20005,33 @@ function _meExecReadField(attrs, ctx) {
         return;
       }
       ctx._occReadNext[fieldId] = k + 1;
+      // With a wire length, the leaves share exactly that many bytes in
+      // declaration order — each takes what it declares or what is left,
+      // whichever is smaller. Every leaf is still emitted, so the DDL's shape
+      // survives in the output even when the message carried fewer bytes.
+      let remaining = lpWindow;
       for (const d of occ[k]) {
+        if (lpWindow != null) {
+          const declared = d.length || 0;
+          const take     = Math.min(declared, Math.max(0, remaining));
+          const cStart   = ctx.cursor;
+          const cBytes   = Array.from(ctx.bytes.slice(cStart, cStart + take));
+          ctx.cursor = cStart + take;
+          remaining -= take;
+          const cf = {
+            id: d.id, description: d.description, dataType: d._dataType,
+            valueLength: take,
+            value:  take > 0 ? _meBytesToStr(cBytes) : '',
+            rawHex: take > 0 ? _meBytesToHex(cBytes) : '',
+            startByte: take > 0 ? cStart : null,
+            endByte:   take > 0 ? cStart + take - 1 : null,
+          };
+          _meApplyTypeOverride(cf, d, ctx, typeOverride);
+          _meApplyDisplayOverride(cf, d, ctx);
+          ctx.fields.push(cf);
+          ctx.fieldsById[d.id] = cf;
+          continue;
+        }
         const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
         if (!f) return;
         _meApplyTypeOverride(f, d, ctx, typeOverride);
@@ -19972,12 +20039,18 @@ function _meExecReadField(attrs, ctx) {
         ctx.fields.push(f);
         ctx.fieldsById[d.id] = f;
       }
+      if (lpWindow != null && remaining > 0) {
+        ctx.fields.push({ id: fieldId, error: `read "length_prefix": ${remaining} byte(s) of the declared ${lpWindow} were not claimed by any sub-field of "${fieldId}"` });
+        ctx.cursor = Math.min(ctx.cursor + remaining, ctx.bytes.length);
+      }
       return;
     }
     ctx.fields.push({ id: fieldId, error: 'Field not found in any DDL binding' });
     return;
   }
-  const f = _meReadOneFieldFromDef(def, ctx);
+  // Elementary field: the wire length wins over the declared width when given.
+  const f = _meReadOneFieldFromDef(
+    lpWindow != null ? { ...def, offset: undefined, length: Math.min(def.length || 0, lpWindow) } : def, ctx);
   if (f) {
     _meApplyTypeOverride(f, def, ctx, typeOverride);
     _meApplyDisplayOverride(f, def, ctx);
@@ -20402,6 +20475,22 @@ function _meBuildDEMap(ctx) {
 // Identical rule to the ISO layout builder (parseHPEDDL, ~line 2597) so the
 // engine's read-bitmap-fields reads variable-length DEs exactly like legacy.
 // Returns the LEN sub-field id, or null when the group isn't LLVAR.
+// ONE rule for every length read off the wire, so VLG groups and read-group's
+// length_prefix cannot decode the same bytes differently. ASCII digits parse as
+// digits — which also covers EBCDIC, since the whole message is translated to
+// ASCII before parsing. Anything else is a big-endian integer, because a binary
+// message writes its lengths as integers, not as text.
+// Returns null when there are no bytes to read; callers decide what that means.
+function _meDecodeLength(bytes) {
+  if (!bytes || !bytes.length) return null;
+  if (bytes.every(b => b >= 0x30 && b <= 0x39)) {
+    const n = parseInt(bytes.map(b => String.fromCharCode(b)).join(''), 10);
+    return Number.isFinite(n) ? n : null;
+  }
+  return bytes.reduce((a, b) => (a << 8) | b, 0);
+}
+const _meLengthWasDigits = bytes => !!(bytes && bytes.length && bytes.every(b => b >= 0x30 && b <= 0x39));
+
 function _meAutoLLVarLenId(kids) {
   if (!kids || kids.length < 2) return null;
   const first = kids[0];
@@ -20440,19 +20529,111 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     ctx.fields.push({ id: scopeId, error: `DE ${de}: "de" entry has no blocks to run` });
     return;
   }
+  // ── Frame the element FIRST, then run the blocks inside that frame ─────────
+  // Where a DE starts and ends is the engine's business — it is the same for
+  // every DE and it already knows how, from the bitmap walk plus the group's
+  // LEN. What a "de" entry replaces is only how the bytes inside are read. Doing
+  // it the other way round would make each entry re-derive its own extent, and
+  // one that got it wrong would eat the DEs that follow.
+  const kids = _meGroupLeaves(scopeId, ctx);
+  let windowLen = null;
+  let fromWire  = false;      // did the length come off the message, or from the DDL?
+
+  if (ovr.length_prefix != null) {
+    // A length on the wire that the DDL does not declare.
+    const lp = +ovr.length_prefix;
+    if (!Number.isInteger(lp) || lp <= 0) {
+      ctx.fields.push({ id: scopeId, error: `DE ${de}: "length_prefix" must be a whole number of bytes above 0, got ${JSON.stringify(ovr.length_prefix)}` });
+      return;
+    }
+    const pStart = ctx.cursor;
+    const pBytes = Array.from(ctx.bytes.slice(pStart, pStart + lp));
+    const N = _meDecodeLength(pBytes);
+    if (N == null) {
+      ctx.fields.push({ id: scopeId, error: `DE ${de}: no bytes left to read the ${lp}-byte length from` });
+      return;
+    }
+    ctx.cursor = pStart + lp;
+    ctx.fields.push({
+      id: `${scopeId}.LEN-PREFIX`, description: 'length prefix (on the wire, not declared in the DDL)',
+      valueLength: lp, value: _meBytesToStr(pBytes), rawHex: _meBytesToHex(pBytes),
+      startByte: pStart, endByte: pStart + lp - 1,
+    });
+    windowLen = N;
+    fromWire  = true;
+  } else {
+    // The DDL declares the length: honour the same VLG configuration the default
+    // DE walk uses, so a group is framed identically whether or not it has a
+    // "de" entry.
+    // Only DIRECT children can be the group's own length. Auto-detect over every
+    // transitive leaf would see EMV-ELEMENT.ARQC.LEN — a grandchild, and the
+    // length of a TLV triple, not of the element — and read the first tag as a
+    // length.
+    const direct = kids.filter(d => !d.id.slice(scopeId.length + 1).includes('.'));
+    const vlg    = _meVlgLenMap(ctx.item);
+    const lenId  = vlg.has(scopeId) ? (vlg.get(scopeId) || direct[0]?.id) : _meAutoLLVarLenId(direct);
+    const lenDef = lenId ? direct.find(k => k.id === lenId) : null;
+    if (lenDef) {
+      const lStart = ctx.cursor;
+      const lLen   = lenDef.length || 0;
+      const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
+      const N      = _meDecodeLength(lBytes);
+      ctx.cursor = lStart + lLen;
+      const lf = {
+        id: lenDef.id, description: lenDef.description, dataType: lenDef._dataType,
+        valueLength: lLen, value: _meBytesToStr(lBytes), rawHex: _meBytesToHex(lBytes),
+        startByte: lStart, endByte: lStart + lLen - 1,
+      };
+      _meApplyTypeOverride(lf, lenDef, ctx, null);
+      ctx.fields.push(lf);
+      ctx.fieldsById[lenDef.id] = lf;
+      windowLen = N == null ? 0 : N;
+      fromWire  = true;
+    } else {
+      windowLen = ovr.length != null ? +ovr.length : _meDeclaredSize(scopeId, ctx);
+    }
+  }
+
+  const start = ctx.cursor;
+  const avail = ctx.bytes.length - start;
+  if (windowLen != null && windowLen > avail) {
+    // A length the MESSAGE stated cannot exceed the message — that is malformed
+    // and worth reporting. A size the DDL declares is only capacity: it says how
+    // much the element could hold, and a message carrying fewer tags than the
+    // DDL has room for is completely normal, so it is clamped in silence.
+    if (fromWire)
+      ctx.fields.push({ id: scopeId, error: `DE ${de}: length ${windowLen} runs past the end of the message (${avail} byte(s) left)` });
+    windowLen = avail;
+  }
+  const end = windowLen != null && windowLen > 0 ? start + windowLen : null;
+
   const prevScope = ctx._deScope, prevLimit = ctx._deLimit;
   ctx._deScope = scopeId;
-  // Window for blocks that read "the rest of this element" (read-tlv with no
-  // field). An explicit length wins; otherwise the element's declared size; a
-  // group with no declared size falls back to the end of the message.
-  const declared = ovr.length != null ? +ovr.length : _meDeclaredSize(scopeId, ctx);
-  ctx._deLimit = declared > 0 ? Math.min(ctx.cursor + declared, ctx.bytes.length) : null;
+  ctx._deLimit = end;
   try {
     for (const b of blocks) _meExecBlock(b, ctx);
   } finally {
     ctx._deScope = prevScope;
     ctx._deLimit = prevLimit;
+    if (end != null) {
+      // The boundary is enforced by the engine, not by the spec author getting
+      // it right: whatever the blocks did, the next DE starts where this one
+      // ends. Overrunning is reported and stops here rather than corrupting
+      // every field that follows.
+      if (ctx.cursor > end) {
+        ctx.fields.push({ id: scopeId, error: `DE ${de}: its blocks read ${ctx.cursor - end} byte(s) past the element's length — the message is malformed, or the length was misread` });
+      }
+      ctx.cursor = end;
+    }
   }
+}
+
+// Leaves under a group, in declaration order. REDEFINES overlays are excluded:
+// they re-view bytes that are already accounted for.
+function _meGroupLeaves(groupId, ctx) {
+  const defs = _meCollectBindingDefs(ctx.resolvedBindings);
+  const prefix = groupId + '.';
+  return defs.filter(d => !d.isRedefines && d.id.startsWith(prefix));
 }
 
 // Declared byte size of an element: its own length if elementary, otherwise the
@@ -20575,12 +20756,8 @@ function _meExecBitmapFields(attrs, ctx) {
       const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
       const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
       const lenErrs = [];
-      let N;
-      if (lBytes.length && lBytes.every(b => b >= 0x30 && b <= 0x39)) {
-        N = parseInt(lValue, 10);
-      } else if (lBytes.length) {
-        N = lBytes.reduce((a, b) => (a << 8) | b, 0);       // binary, big-endian
-      } else {
+      let N = _meDecodeLength(lBytes);
+      if (N == null) {
         N = 0;
         lenErrs.push(`${lenDef.id}: length field is empty — nothing left to read it from`);
       }

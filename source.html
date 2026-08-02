@@ -3524,6 +3524,30 @@ function validateFieldContent(rawBytes, dataType) {
   return true;
 }
 
+// The content class a TYPE OVERRIDE implies, for the value-vs-type check.
+// An override replaces what the field is, so the declared type must not be what
+// its bytes are judged against — that flagged exactly the bytes the new type
+// legitimises, and left every overridden field permanently red.
+// Everything that reads raw bytes (binary, hex-char, the integer widths, EBCDIC,
+// the hex-text decoders) accepts any byte by definition, so it maps to B and the
+// check stands down. Only "ascii" still means "these should be printable".
+function _meOverrideValidationType(type) {
+  return /^ascii$/i.test(String(type || '').trim()) ? 'X' : 'B';
+}
+
+// Does this field's content contradict its type? Non-binary types fail on a byte
+// the type cannot hold (an "X" in a PIC 9). Binary types accept any byte, but a
+// "?" (0x3F) marks a byte lost when the input was captured as ASCII, so those
+// are flagged too. REDEFINES overlays are skipped — they re-view bytes that were
+// already judged where they were read.
+function _meContentLooksWrong(f) {
+  if (!f || f.error || f.isRedefines || !f.rawBytes || !f.rawBytes.length) return false;
+  const valType  = f.typeOverride ? _meOverrideValidationType(f.typeOverride) : (f.dataType || '');
+  const isBinary = normalizeDataType(String(valType).replace(/^\s*TYPE\s+/i, '')) === 'B';
+  return !validateFieldContent(f.rawBytes, valType)
+      || (isBinary && Array.from(f.rawBytes).includes(0x3F));
+}
+
 // Build the set of field IDs that must be skipped for content validation.
 // Rule: if a base field has any REDEFINES sibling with a different normalised
 // data type, the entire group (base + all redefines) is skipped.
@@ -10285,10 +10309,11 @@ function renderFieldTable(msg) {
     // Binary types accept any byte, but a "?" (0x3F) marks a placeholder for a
     // byte lost when the input was captured as ASCII, so binary fields
     // containing "?" are flagged too. REDEFINES overlays are skipped.
-    const _isBinaryType = normalizeDataType((f.dataType || '').replace(/^\s*TYPE\s+/i, '')) === 'B';
-    const _contentBad = !f.error && f.rawBytes && f.rawBytes.length && !f.isRedefines
-      && (!validateFieldContent(f.rawBytes, f.dataType)
-          || (_isBinaryType && Array.from(f.rawBytes).includes(0x3F)));
+    // A type override replaces what the field IS, so the bytes are judged
+    // against the override, not against the type the DDL declares. The declared
+    // type is deliberately kept on the field for the "declared ↩ override"
+    // annotation, which is exactly how it went on being used here.
+    const _contentBad = _meContentLooksWrong(f);
     const ecls   = f.error ? 'c-err' : (_contentBad ? 'c-val c-val-bad' : 'c-val');
     // Prefer the display-override formatted string when available so the
     // user-chosen rendering (datetime/amount/hex/text) actually shows in the
@@ -14188,7 +14213,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.424';
+const APP_VERSION  = '1.1.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16095,6 +16120,19 @@ const _PS_COMMON_ATTRS = [
   ]],
 ];
 
+// Shared by read-ddl and read-bitmap-fields — both walk DDL groups, so both need
+// to know which leaf this DDL calls a length. Written once so the two can never
+// drift apart.
+const _PS_VLG_IDENTIFIER_DESC = [
+  'What <b>this DDL</b> calls the sub-field that holds a group\'s length.',
+  ['<i>omitted</i>', 'Fall back to the built-in names: <code>LEN</code>, <code>LGTH</code>, <code>LENGTH</code>.'],
+  ['<code>"SIZE"</code>', 'Only a leaf named that is a length — matched wherever it sits in the group, so a TAG may come before it.'],
+  ['<code>""</code>', '<b>Off.</b> No group is ever guessed to be variable-length.'],
+  'The empty string is the important one: a group whose first field is honestly called <code>AMT-LEN</code> but is <b>not</b> variable-length was being read as though it were.',
+  'The length\'s <b>width</b> is never assumed — it is whatever the DDL declares for the leaf that matched, so a 1-byte binary length works like an LLLVAR\'s 3.',
+  'Flagging a group by hand in the Overrides panel still wins over all three. This attribute governs the <i>guess</i>, not your explicit choice.',
+];
+
 const _PS_HELP = {
   'read-ddl': {
     desc: [
@@ -16131,6 +16169,7 @@ const _PS_HELP = {
         'Stop emitting after this field — the window\'s upper bound, <b>inclusive</b>.',
         'The walk itself continues to the end of the binding; only the output stops.',
       ]],
+      ['vlg_identifier', 'string', false, _PS_VLG_IDENTIFIER_DESC],
     ],
     examples: [
       // One four-field DDL, walked four ways — the difference between the
@@ -16155,6 +16194,28 @@ const _PS_HELP = {
         def: 'MSG',
         payload: '31 32 30 30 50 31 30 30 30 31 32 33 30 35',
         spec: [{"read-ddl": {"from": "PROD-ID", "until": "AMOUNT"}}] },
+      // The false positive and its cure, on one DDL: AMT-LEN is a code, not a
+      // length, and the group is a plain fixed 8 bytes.
+      { what: 'A <b>false positive</b> — AMT-LEN is just a field name here, but the built-in guess frames AMOUNT by it: AMT-VAL gets 2 bytes and everything after slides',
+        ddl: 'DEFINITION MSG.\n  02 TYP PIC X(4).\n  02 AMOUNT.\n    04 AMT-LEN PIC 9(2).\n    04 AMT-VAL PIC 9(6).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '31 32 30 30 30 32 30 30 30 31 32 33 54 41 49 4C',
+        spec: [{"read-ddl": "ANY"}] },
+      { what: '<b>vlg_identifier</b> <code>""</code> — the guess off: AMT-VAL takes its declared 6 bytes and TAIL lands where it should',
+        ddl: 'DEFINITION MSG.\n  02 TYP PIC X(4).\n  02 AMOUNT.\n    04 AMT-LEN PIC 9(2).\n    04 AMT-VAL PIC 9(6).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '31 32 30 30 30 32 30 30 30 31 32 33 54 41 49 4C',
+        spec: [{"read-ddl": {"vlg_identifier": ""}}] },
+      { what: 'A <b>real</b> variable-length group — LEN says 5, so DATA takes 5 of its declared 20 and TAIL follows on the wire, not where the DDL declares it',
+        ddl: 'DEFINITION MSG.\n  02 TYP PIC X(4).\n  02 EMV.\n    04 LEN PIC 9(2).\n    04 DATA PIC X(20).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '31 32 30 30 30 35 41 42 43 44 45 54 41 49 4C',
+        spec: [{"read-ddl": "ANY"}] },
+      { what: '<b>vlg_identifier</b> naming this DDL\'s own word for a length',
+        ddl: 'DEFINITION MSG.\n  02 TYP PIC X(4).\n  02 EMV.\n    04 SIZE PIC 9(2).\n    04 DATA PIC X(20).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '31 32 30 30 30 35 41 42 43 44 45 54 41 49 4C',
+        spec: [{"read-ddl": {"vlg_identifier": "SIZE"}}] },
       ['All fields then tokens',           [{"read-ddl": "ANY"}, {"token-area": "ANY"}]],
       ['Two bindings (header + body)',     [{"read-ddl": {"binding": 0}}, {"read-ddl": {"binding": 1}}, {"token-area": "ANY"}]],
     ],
@@ -16555,6 +16616,7 @@ const _PS_HELP = {
         'That block decides which bits are set; this one reads the elements those bits point at.',
         'Written as a bare string when it is the only attribute: <code>{"read-bitmap-fields": "BITMAP"}</code>.',
       ]],
+      ['vlg_identifier', 'string', false, _PS_VLG_IDENTIFIER_DESC],
       ['de', '{ "<bit>": [blocks] | {field, blocks} }', false, [
         'Per-bit parsing — a listed bit is read by <b>its own blocks</b> instead of the default DDL walk.',
         'Keys are bit numbers. Two forms:',
@@ -16581,6 +16643,14 @@ const _PS_HELP = {
                {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
                  "2": [{"read-fixed": {"length": 3, "as": "DE2-HEAD"}},
                        {"read-fixed": {"length": 3, "as": "DE2-REST"}}]}}}] },
+      // PAD is DE-1 so the map can leave bit 1 clear — in ISO that bit means "a
+      // secondary bitmap follows", and setting it would read 8 more bytes as map.
+      { what: '<b>vlg_identifier</b> — this DDL calls its length leaf SIZE, so the built-in names would miss it and DE-2 would read its declared 20 bytes',
+        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 EMV.\n    04 SIZE PIC 9(2).\n    04 DATA PIC X(20).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '60 00 00 00 00 00 00 00 30 35 41 42 43 44 45 54 41 49 4C',
+        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+               {"read-bitmap-fields": {"bitmap": "BITMAP", "vlg_identifier": "SIZE"}}] },
       ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}}, {"read-bitmap-fields": "BITMAP"}]],
       ['DE-55 as EMV TLV, everything else as usual', [{"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
         "55": [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}}}]
@@ -18164,6 +18234,7 @@ function _meOverridesPrep(item) {
   // Single source of truth: the bitmap field id (or null). Truthy means the
   // spec uses bitmap-fields, so DE controls / VLG / "----" all key off this.
   const usesBitmapFields = !!_meItemBitmapField(item);
+  const vlgIdentifier    = _meItemVlgIdentifier(item);
   // Sum unresolved-TYPE-ref counts across all bindings so the warning banner
   // reflects the full Field Map (which now combines every binding's defs).
   let unresolved = null;
@@ -18264,7 +18335,7 @@ function _meOverridesPrep(item) {
   <button class="btn btn-sm" id="me-ovl-add-btn" onclick="_meOvlAddFromSelection()" disabled>+ Add Override</button>
 </div>`;
 
-  return { fieldList, ctx: { ea, vlgMap, foByField, usesBitmapFields, leavesByGroup }, chrome };
+  return { fieldList, ctx: { ea, vlgMap, foByField, usesBitmapFields, vlgIdentifier, leavesByGroup }, chrome };
 }
 
 // DE cell — hidden for REDEFINES rows (they overlay other bytes, no DE of
@@ -18325,7 +18396,7 @@ function _meFmEffectiveVlg(groupId, ctx) {
   const all = ctx.leavesByGroup.get(groupId) || [];
   const pre = groupId + '.';
   const direct = all.filter(l => l.id.startsWith(pre) && !l.id.slice(pre.length).includes('.'));
-  const autoId = _meAutoLLVarLenId(direct);
+  const autoId = _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
   if (_meVlgHas(ctx.vlgMap, groupId)) {
     const chosen = _meVlgGet(ctx.vlgMap, groupId);
     return { lenId: chosen || (direct[0] && direct[0].id) || null, autoId, overridden: true };
@@ -18406,30 +18477,30 @@ function _meFmRowHtml(row, ctx, counter) {
   const vlgEligible = isGroup && (row.childCount || 0) >= 2 && !row.isRedef;
   let vlgCell = `<td class="me-fm-vlg"></td>`;
   if (ctx.usesBitmapFields) {
+    // One marker, never a field name — production DDLs have names long enough
+    // to blow this column out, and printing the LEN's name on the group AND
+    // "LEN" on the leaf said the same thing twice, one row apart.
+    const tag = (eff, onGroup) => {
+      const why = eff.overridden
+        ? `Marked as a Variable Length Group — LEN is ${eff.lenId}`
+        : `Variable Length Group detected from the DDL — LEN is ${eff.lenId}`;
+      const drift = (eff.overridden && eff.autoId && eff.autoId !== eff.lenId)
+        ? ` (the DDL implies ${eff.autoId})` : '';
+      const hint = onGroup ? ' — expand the group to see which sub-field it is' : '';
+      return `<td class="me-fm-vlg" title="${ea(why + drift + hint)}">`
+        + `<span class="${eff.overridden ? 'c-ovr-new' : ''}">VLG</span></td>`;
+    };
     if (vlgEligible) {
+      // Collapsed: the LEN leaf is off screen, so the group carries the marker.
+      // Expanded: the leaf carries it, and the group row stays clean.
       const eff = _meFmEffectiveVlg(row.id, ctx);
-      if (eff.lenId) {
-        const shortOf = i => String(i).split('.').pop();
-        // Overridden away from what the DDL implies → the ↩ scheme, same as Type
-        // and DE. Auto-detected and unconfigured → plain, because nothing was
-        // overridden; it is simply what the DDL means.
-        vlgCell = (eff.overridden && eff.autoId && eff.autoId !== eff.lenId)
-          ? `<td class="me-fm-vlg" title="${ea(`LEN overridden to ${eff.lenId}; the DDL implies ${eff.autoId}`)}">`
-            + `<span class="c-ovr-orig">${ea(shortOf(eff.autoId))}</span>`
-            + `<span class="c-ovr-arrow"> ↩ </span>`
-            + `<span class="c-ovr-new">${ea(shortOf(eff.lenId))}</span></td>`
-          : `<td class="me-fm-vlg" title="${ea(eff.overridden
-              ? `Marked as a Variable Length Group — LEN is ${eff.lenId}`
-              : `Variable Length Group detected from the DDL — LEN is ${eff.lenId}`)}">`
-            + `<span class="${eff.overridden ? 'c-ovr-new' : ''}">${ea(shortOf(eff.lenId))}</span></td>`;
-      }
+      const isCollapsed = !!(typeof _meState !== 'undefined' && _meState?.fmCollapsedGroups?.has(row.id));
+      if (eff.lenId && isCollapsed) vlgCell = tag(eff, true);
     } else if (!isGroup && !row.isRedef) {
-      // Mark the leaf itself, so expanding the group shows which one is the LEN.
       const parent = row.id.slice(0, row.id.lastIndexOf('.'));
       if (parent) {
         const eff = _meFmEffectiveVlg(parent, ctx);
-        if (eff.lenId && _meVlgIsLen(eff.lenId, row.id))
-          vlgCell = `<td class="me-fm-vlg" title="This sub-field is the group's LEN">LEN</td>`;
+        if (eff.lenId && _meVlgIsLen(eff.lenId, row.id)) vlgCell = tag(eff, false);
       }
     }
   }
@@ -18553,6 +18624,7 @@ function _meFmRenderWindow(force) {
   v.ctx.foByField = new Map();
   { const all = _meOvAll(item); for (const id in all) v.ctx.foByField.set(id, all[id]); }
   v.ctx.vlgMap = _meVlgLenMap(item);
+  v.ctx.vlgIdentifier = _meItemVlgIdentifier(item);
   const collapsed = _meState?.fmCollapsedGroups || new Set();
   const spacer = px => `<tr class="me-fm-spacer" style="height:${px}px"><td colspan="8"></td></tr>`;
   let html = start > 0 ? spacer(start * rowH) : '';
@@ -18669,6 +18741,7 @@ function _meFmPatchDECells() {
   const fieldList = _meResolveDEFieldList(item);
   if (!fieldList) return false;
   _meFmVirt.ctx.usesBitmapFields = !!_meItemBitmapField(item);
+  _meFmVirt.ctx.vlgIdentifier    = _meItemVlgIdentifier(item);
   _meFmVirtRefresh(fieldList);
   return true;
 }
@@ -18706,6 +18779,29 @@ function _meSpecBitmapField(spec) {
 function _meItemBitmapField(item) {
   return _meSpecBitmapField(item?.parse_spec_binary)
       || _meSpecBitmapField(item?.parse_spec_ascii);
+}
+
+// The spec's vlg_identifier, so the Field Map's VLG column shows what the PARSE
+// will do. Returns undefined when no block sets it (use the built-in names) and
+// "" when one switches the guess off — the two are not interchangeable.
+function _meSpecVlgIdentifier(spec) {
+  if (!Array.isArray(spec)) return undefined;
+  for (const block of spec) {
+    if (!block || typeof block !== 'object') continue;
+    for (const k of ['read-ddl', 'read-bitmap-fields']) {
+      const v = block[k];
+      if (v && typeof v === 'object' && v.vlg_identifier !== undefined) return String(v.vlg_identifier);
+    }
+    const nested = _meSpecVlgIdentifier(block.when?.then)
+                ?? _meSpecVlgIdentifier(block.repeat?.body)
+                ?? _meSpecVlgIdentifier(block['read-while']?.body);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+}
+function _meItemVlgIdentifier(item) {
+  return _meSpecVlgIdentifier(item?.parse_spec_binary)
+      ?? _meSpecVlgIdentifier(item?.parse_spec_ascii);
 }
 
 // Count DDL fields that have size 0 (unresolved TYPE references etc.).
@@ -19348,7 +19444,9 @@ function _meFmLoadColWidths() {
 // made the default depend on which DDL happened to be bound, so no two resets
 // agreed. FIELD is absent on purpose: it takes whatever is left, which is what
 // keeps the layout right at any panel width.
-const _ME_FM_DEFAULT_COLW = { num: 45, off: 92, len: 63, dt: 229, de: 95, vlg: 88 };
+// Recorded from the laid-out table, not guessed — "Reset columns" returns to
+// exactly this. fld is absent on purpose: it absorbs whatever width is left.
+const _ME_FM_DEFAULT_COLW = { num: 45, off: 84, len: 65, dt: 237, de: 102, vlg: 45 };
 
 function _meFmFitCols() {
   const widths = _meFmLoadColWidths();
@@ -21055,19 +21153,58 @@ function _meReadOneFieldFromDef(def, ctx) {
 //   from/until name DDL field ids defining an inclusive emission window.
 //   Cherry-pick (fields=[...]) takes precedence over from/until.
 function _meReadDDLAttrs(attrs) {
-  if (attrs == null || attrs === 'ANY')
-    return { binding: 'ANY', fields: 'ANY', from: null, until: null };
-  if (typeof attrs === 'number')
-    return { binding: attrs, fields: 'ANY', from: null, until: null };
+  const bare = { binding: 'ANY', fields: 'ANY', from: null, until: null, vlgIdentifier: undefined };
+  if (attrs == null || attrs === 'ANY') return bare;
+  if (typeof attrs === 'number')        return { ...bare, binding: attrs };
   if (typeof attrs === 'object') {
     return {
       binding: attrs.binding === undefined ? 'ANY' : attrs.binding,
       fields:  attrs.fields  ?? 'ANY',
       from:    attrs.from    || null,
       until:   attrs.until   || null,
+      // undefined = built-in names; "" = auto-detect off. Never `|| null`.
+      vlgIdentifier: attrs.vlg_identifier === undefined ? undefined : String(attrs.vlg_identifier),
     };
   }
-  return { binding: 'ANY', fields: 'ANY', from: null, until: null };
+  return bare;
+}
+
+// Variable-length groups inside a read-ddl walk. Returns start-index → the run
+// of leaves that group owns, so the walk can hand the whole group to
+// _meVlgReadGroup instead of reading each leaf at its declared length.
+//
+// A group qualifies when the Overrides panel flagged it, or when the auto-detect
+// recognises its length leaf. Only DIRECT children are considered for the LEN —
+// a grandchild's LEN is the length of something inside the group, not of it.
+// OCCURS frames are left alone: their repetition is handled by the walk itself.
+function _meDDLVlgRuns(defs, ctx) {
+  const runs   = new Map();
+  const vlgMap = _meVlgLenMap(ctx.item);
+  const claimed = new Set();
+  for (let i = 0; i < defs.length; i++) {
+    const parts = defs[i].id.split('.');
+    // Shallowest ancestor first: an outer group that declares its own LEN frames
+    // everything inside it, including any nested group.
+    for (let depth = 1; depth < parts.length; depth++) {
+      const gid = parts.slice(0, depth).join('.');
+      if (claimed.has(gid)) break;
+      const pre = gid + '.';
+      if (i > 0 && defs[i - 1].id.startsWith(pre)) break;   // not the group's first leaf
+      let j = i;
+      while (j < defs.length && defs[j].id.startsWith(pre)) j++;
+      const leaves = defs.slice(i, j).filter(d => !d.isRedefines && !(d._occursPath && d._occursPath.length));
+      if (leaves.length < 2 || leaves.length !== j - i) continue;
+      const direct = leaves.filter(d => !d.id.slice(pre.length).includes('.'));
+      const lenId  = _meVlgHas(vlgMap, gid)
+        ? (_meVlgGet(vlgMap, gid) || direct[0]?.id || null)
+        : _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
+      if (!lenId) continue;
+      claimed.add(gid);
+      runs.set(i, { groupId: gid, end: j, leaves, lenId });
+      break;
+    }
+  }
+  return runs;
 }
 
 function _meReadDDLBinding(idx, fields, from, until, ctx) {
@@ -21082,7 +21219,36 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
 
   // OCCURS actual-count cache — nested-aware, keyed per (outer-context, group).
   const _occursActual = {};
-  for (const def of resolved.defs) {
+  const vlgRuns = _meDDLVlgRuns(resolved.defs, ctx);
+  for (let di = 0; di < resolved.defs.length; di++) {
+    const def = resolved.defs[di];
+
+    // A variable-length group is read as a unit: LEN first, then that many bytes
+    // spread over the leaves after it. What it consumes rarely matches what the
+    // DDL declares, so the difference is added to ovShift — the same running
+    // correction a "bytes" override uses — and every later declared offset moves
+    // with it.
+    const run = vlgRuns.get(di);
+    if (run) {
+      const before   = ctx.cursor;
+      const declared = run.leaves.reduce((t, d) => t + (d.length || 0), 0);
+      const rows     = _meVlgReadGroup(run.groupId, run.leaves, run.lenId, ctx);
+      ctx.ovShift = (ctx.ovShift || 0) + ((ctx.cursor - before) - declared);
+      for (const r of rows) {
+        let emit;
+        if      (allMode) emit = true;
+        else if (picks)   emit = picks.has(r.id);
+        else {
+          if (!started && r.id === from) started = true;
+          emit = started;
+        }
+        if (emit) ctx.fields.push(r);
+      }
+      di = run.end - 1;
+      if (until && run.leaves.some(d => d.id === until)) break;
+      continue;
+    }
+
     if (def._occursPath && _occursShouldSkip(def, ctx.bytes, _occursActual, resolved.defs)) continue;
     // Always read each field so the byte cursor stays aligned and so
     // later parse_spec blocks (when / repeat / read-tlv) can reference
@@ -21112,7 +21278,7 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
 }
 
 function _meExecReadDDL(attrs, ctx) {
-  const { binding, fields, from, until } = _meReadDDLAttrs(attrs);
+  const { binding, fields, from, until, vlgIdentifier } = _meReadDDLAttrs(attrs);
   const bindings = binding === 'ANY'
     ? ctx.resolvedBindings.map((r, i) => r?.defs?.length ? i : -1).filter(i => i >= 0)
     : [binding];
@@ -21120,7 +21286,9 @@ function _meExecReadDDL(attrs, ctx) {
     ctx.fields.push({ id: 'read-ddl', error: 'No DDL bindings available' });
     return;
   }
+  ctx.vlgIdentifier = vlgIdentifier;
   for (const idx of bindings) _meReadDDLBinding(idx, fields, from, until, ctx);
+  ctx.vlgIdentifier = undefined;   // scoped to this block, not to the whole parse
 }
 
 // Required byte length for a "read" block's type override. Returns null for
@@ -21973,13 +22141,39 @@ function _meDecodeLength(bytes) {
 }
 const _meLengthWasDigits = bytes => !!(bytes && bytes.length && bytes.every(b => b >= 0x30 && b <= 0x39));
 
-function _meAutoLLVarLenId(kids) {
+// The names a leaf may carry to mean "this holds the group's length", when the
+// spec has not said which name ITS DDL uses.
+const _VLG_DEFAULT_NAMES = ['LEN', 'LGTH', 'LENGTH'];
+const _meVlgLeafName = d => String(d.id).split('.').pop().toUpperCase();
+
+// `identifier` is the spec's vlg_identifier attribute. Three states, and the
+// difference between the last two is the whole reason it exists:
+//   null / undefined  — not set: fall back to the built-in names
+//   "SOME-NAME"       — this DDL calls its length leaf that, and only that
+//   ""                — auto-detect OFF: a group named …-LEN that is NOT
+//                       variable-length must not be read as though it were
+// An explicit per-group flag in the Overrides panel still wins over all three:
+// that is the user pointing at one group by hand.
+function _meVlgNameMatcher(identifier) {
+  const names = (identifier != null && identifier !== '')
+    ? [String(identifier).toUpperCase()]
+    : _VLG_DEFAULT_NAMES;
+  return new RegExp(`(?:^|[-_])(?:${names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`);
+}
+
+// Which leaf carries this group's length, or null when it is not a VLG.
+// The LEN's WIDTH is never assumed — it is whatever the DDL declares for the
+// leaf that matched, so a 1-byte binary length works exactly like an LLLVAR's 3.
+function _meAutoLLVarLenId(kids, identifier) {
+  if (identifier === '') return null;              // auto-detect switched off
   if (!kids || kids.length < 2) return null;
-  const first = kids[0];
-  const nm = String(first.id).split('.').pop().toUpperCase();
-  const L = first.length;
-  if (/(?:^|[-_])(?:LEN|LGTH|LENGTH)$/.test(nm) && (L === 2 || L === 3 || L === 4))
-    return first.id;
+  const re = _meVlgNameMatcher(identifier);
+  // A named identifier is the user telling us where the length is, so it is
+  // matched wherever it sits — a DDL may put a TAG in front of its LEN. The
+  // fallback stays first-leaf-only, which is the legacy LLVAR shape and what
+  // parseHPEDDL's isLLVar looks for.
+  const scan = identifier ? kids.slice(0, -1) : kids.slice(0, 1);
+  for (const k of scan) if (re.test(_meVlgLeafName(k))) return k.id;
   return null;
 }
 
@@ -22053,7 +22247,8 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     // length.
     const direct = kids.filter(d => !d.id.slice(scopeId.length + 1).includes('.'));
     const vlg    = _meVlgLenMap(ctx.item);
-    const lenId  = _meVlgHas(vlg, scopeId) ? (_meVlgGet(vlg, scopeId) || direct[0]?.id) : _meAutoLLVarLenId(direct);
+    const lenId  = _meVlgHas(vlg, scopeId) ? (_meVlgGet(vlg, scopeId) || direct[0]?.id)
+                                           : _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
     const lenDef = lenId ? direct.find(k => _meVlgIsLen(lenId, k.id)) : null;
     if (lenDef) {
       const lStart = ctx.cursor;
@@ -22133,6 +22328,100 @@ function _meDeclaredSize(id, ctx) {
   return total;
 }
 
+// Read one variable-length group: the sub-fields BEFORE the LEN read at their
+// declared fixed length; the LEN is read in whatever encoding the message uses;
+// the sub-fields AFTER it share a buffer of N bytes, filled in declaration order
+// (each takes min(declared, remaining), and every child is emitted even when it
+// took 0 bytes so the DDL's shape survives in the output).
+//
+// Returns the rows to emit rather than pushing them, so a caller that filters
+// its output (read-ddl's fields / from / until) can decide what to show. Cursor
+// and fieldsById are still updated here — those are parse state, not output.
+function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
+  const out = [];
+  if (kids.length < 2)
+    return [{ id: groupId, error: 'VLG: group needs a LEN sub-field plus at least one payload sub-field' }];
+
+  let lenIdx = cfgLenId ? kids.findIndex(k => k.id === cfgLenId) : 0;
+  if (lenIdx < 0) lenIdx = 0;      // configured field no longer present → first
+  const beforeDefs = kids.slice(0, lenIdx);
+  const lenDef     = kids[lenIdx];
+  const dataDefs   = kids.slice(lenIdx + 1);
+
+  for (const bd of beforeDefs) {
+    const f = _meReadOneFieldFromDef({ ...bd, offset: undefined }, ctx);
+    if (!f) break;                 // ran out of bytes
+    _meApplyTypeOverride(f, bd, ctx, null);
+    _meApplyDisplayOverride(f, bd, ctx);
+    out.push(f);
+    ctx.fieldsById[bd.id] = f;
+  }
+
+  // EBCDIC needs no special case: the whole message is translated to ASCII
+  // before parsing, so an EBCDIC "0028" (F0F0F2F8) arrives here as ASCII digits.
+  // A binary message does not — its length is a plain big-endian integer, and
+  // reading that as characters produced NaN, which "|| 0" turned into zero: the
+  // group collapsed and every later field shifted, with nothing reported.
+  const lStart = ctx.cursor;
+  const lLen   = lenDef.length || 0;
+  const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
+  const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
+  const lenErrs = [];
+  let N = _meDecodeLength(lBytes);
+  if (N == null) {
+    N = 0;
+    lenErrs.push(`${lenDef.id}: length field is empty — nothing left to read it from`);
+  }
+  // Bound it. Past the end of the message it cannot be right, so stop at the end
+  // rather than reading off it. Past the room the DDL declares for the payload it
+  // is still used — the wire decides the framing — but it is reported, because
+  // that normally means the length was misread.
+  const capacity  = dataDefs.reduce((t, d) => t + (d.length || 0), 0);
+  const available = ctx.bytes.length - (lStart + lLen);
+  if (N > available) {
+    lenErrs.push(`${lenDef.id}: length ${N} runs past the end of the message (${available} byte(s) left) — read as ${
+      lBytes.every(b => b >= 0x30 && b <= 0x39) ? 'digits' : 'a binary integer'}`);
+    N = Math.max(0, available);
+  } else if (capacity && N > capacity) {
+    lenErrs.push(`${lenDef.id}: length ${N} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload`);
+  }
+  for (const e of lenErrs) out.push({ id: lenDef.id, error: e });
+  ctx.cursor = lStart + lLen;
+  const lf = {
+    id: lenDef.id, description: lenDef.description,
+    dataType: lenDef._dataType, valueLength: lLen,
+    value: _meBytesToStr(lBytes), rawHex: _meBytesToHex(lBytes),
+    startByte: lStart, endByte: lStart + lLen - 1,
+  };
+  _meApplyTypeOverride(lf, lenDef, ctx, null);
+  _meApplyDisplayOverride(lf, lenDef, ctx);
+  out.push(lf);
+  ctx.fieldsById[lenDef.id] = lf;
+
+  let remaining = N;
+  for (const childDef of dataDefs) {
+    const declared = childDef.length || 0;
+    const take     = Math.min(declared, remaining);
+    const cStart   = ctx.cursor;
+    const cBytes   = Array.from(ctx.bytes.slice(cStart, cStart + take));
+    ctx.cursor = cStart + take;
+    remaining -= take;
+    const cf = {
+      id: childDef.id, description: childDef.description,
+      dataType: childDef._dataType, valueLength: take, lenPrefix: lValue,
+      value:  take > 0 ? _meBytesToStr(cBytes) : '',
+      rawHex: take > 0 ? _meBytesToHex(cBytes) : '',
+      startByte: take > 0 ? cStart : null,
+      endByte:   take > 0 ? cStart + take - 1 : null,
+    };
+    _meApplyTypeOverride(cf, childDef, ctx, null);
+    _meApplyDisplayOverride(cf, childDef, ctx);
+    out.push(cf);
+    ctx.fieldsById[childDef.id] = cf;
+  }
+  return out;
+}
+
 function _meExecBitmapFields(attrs, ctx) {
   const bitmapId = (typeof attrs === 'string') ? attrs : attrs?.bitmap;
   if (!bitmapId) {
@@ -22146,6 +22435,10 @@ function _meExecBitmapFields(attrs, ctx) {
   }
   const deMap = _meBuildDEMap(ctx);
   const varGroups = _meVlgLenMap(ctx.item);   // groupId → LEN leaf id (or null = first leaf)
+  // undefined = use the built-in names; "" = auto-detect off. The two must stay
+  // distinguishable, so this cannot collapse to `|| null`.
+  ctx.vlgIdentifier = (attrs && typeof attrs === 'object' && attrs.vlg_identifier !== undefined)
+    ? String(attrs.vlg_identifier) : undefined;
   const bits = Array.from(bmField.bitSet).sort((a, b) => a - b);
 
   // Bitmap-present fields are sequential on the wire: each present DE starts
@@ -22190,107 +22483,22 @@ function _meExecBitmapFields(attrs, ctx) {
       continue;
     }
 
-    // Variable-length group: either the user flagged it (var_length_groups) or
-    // it's an implicit LLVAR/LLLVAR — a group whose first sub-field is a
-    // *-LEN/LGTH/LENGTH of 2/3/4 digits. The auto-detect uses the SAME rule as
-    // the ISO layout builder (parseHPEDDL) so the engine reads LLVAR DEs
-    // exactly like the legacy parser: read LEN, then that many DATA bytes.
+    // Variable-length group: either the user flagged it in Overrides, or the
+    // auto-detect recognised its length leaf (`vlg_identifier`, else the
+    // built-in names). Only DIRECT children can be the group's own length —
+    // scanning every transitive leaf would see a grandchild's LEN, which is the
+    // length of something inside the group, not of the group.
+    const directKids = kids.filter(d => !d.id.slice(groupId.length + 1).includes('.'));
     let isVarGroup = false, cfgLenId;
     if (_meVlgHas(varGroups, groupId)) { isVarGroup = true; cfgLenId = _meVlgGet(varGroups, groupId); }
     else {
-      const autoLenId = _meAutoLLVarLenId(kids);
+      const autoLenId = _meAutoLLVarLenId(directKids, ctx.vlgIdentifier);
       if (autoLenId) { isVarGroup = true; cfgLenId = autoLenId; }
     }
 
     if (isVarGroup) {
-      // VLG group — one sub-field holds a numeric LEN (ASCII digits). Sub-fields
-      // BEFORE it read at their declared fixed length; the sub-fields AFTER it
-      // share a buffer of N bytes filled in declaration order (each gets
-      // min(child.length, remaining) bytes; every child is emitted even if it
-      // consumed 0 bytes, to keep DDL shape in the output). The LEN field is
-      // user-selected in Overrides (the configured leaf id); a null/missing
-      // selection falls back to the first sub-field (legacy behaviour).
-      if (kids.length < 2) {
-        ctx.fields.push({ id: groupId, error: 'VLG: group needs a LEN sub-field plus at least one payload sub-field' });
-        continue;
-      }
-      const lenId  = cfgLenId;
-      let   lenIdx = lenId ? kids.findIndex(k => k.id === lenId) : 0;
-      if (lenIdx < 0) lenIdx = 0;   // configured field no longer present → first
-      const beforeDefs = kids.slice(0, lenIdx);
-      const lenDef     = kids[lenIdx];
-      const dataDefs   = kids.slice(lenIdx + 1);
-
-      // Fields before the LEN read at their declared fixed length, sequentially.
-      for (const bd of beforeDefs) {
-        if (!readSeq(bd)) break;   // ran out of bytes
-      }
-
-      // Read LEN — in whatever encoding the MESSAGE uses, not always digits.
-      // EBCDIC needs no special case: the whole message is translated to ASCII
-      // before parsing, so an EBCDIC "0028" (F0F0F2F8) arrives here as ASCII
-      // digits. A binary message does not — its length is a plain big-endian
-      // integer, and reading that as characters produced NaN, which "|| 0" then
-      // turned into zero: the group collapsed and every later field shifted,
-      // with nothing reported.
-      const lStart = ctx.cursor;
-      const lLen   = lenDef.length || 0;
-      const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
-      const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
-      const lenErrs = [];
-      let N = _meDecodeLength(lBytes);
-      if (N == null) {
-        N = 0;
-        lenErrs.push(`${lenDef.id}: length field is empty — nothing left to read it from`);
-      }
-      // Bound it. Past the end of the message it cannot be right, so stop at the
-      // end rather than reading off it. Past the room the DDL declares for the
-      // payload it is still used — the wire decides the framing — but it is
-      // reported, because that normally means the length was misread.
-      const capacity  = dataDefs.reduce((t, d) => t + (d.length || 0), 0);
-      const available = ctx.bytes.length - (lStart + lLen);
-      if (N > available) {
-        lenErrs.push(`${lenDef.id}: length ${N} runs past the end of the message (${available} byte(s) left) — read as ${
-          lBytes.every(b => b >= 0x30 && b <= 0x39) ? 'digits' : 'a binary integer'}`);
-        N = Math.max(0, available);
-      } else if (capacity && N > capacity) {
-        lenErrs.push(`${lenDef.id}: length ${N} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload`);
-      }
-      for (const e of lenErrs) ctx.fields.push({ id: lenDef.id, error: e });
-      ctx.cursor = lStart + lLen;
-      const lf = {
-        id: lenDef.id, description: lenDef.description,
-        dataType: lenDef._dataType, valueLength: lLen,
-        value: _meBytesToStr(lBytes), rawHex: _meBytesToHex(lBytes),
-        startByte: lStart, endByte: lStart + lLen - 1,
-      };
-      _meApplyTypeOverride(lf, lenDef, ctx, null);
-      _meApplyDisplayOverride(lf, lenDef, ctx);
-      ctx.fields.push(lf);
-      ctx.fieldsById[lenDef.id] = lf;
-
-      // Distribute N bytes across the remaining children, in declaration order
-      let remaining = N;
-      for (const childDef of dataDefs) {
-        const declared = childDef.length || 0;
-        const take     = Math.min(declared, remaining);
-        const cStart   = ctx.cursor;
-        const cBytes   = Array.from(ctx.bytes.slice(cStart, cStart + take));
-        ctx.cursor = cStart + take;
-        remaining -= take;
-        const cf = {
-          id: childDef.id, description: childDef.description,
-          dataType: childDef._dataType, valueLength: take, lenPrefix: lValue,
-          value:  take > 0 ? _meBytesToStr(cBytes) : '',
-          rawHex: take > 0 ? _meBytesToHex(cBytes) : '',
-          startByte: take > 0 ? cStart : null,
-          endByte:   take > 0 ? cStart + take - 1 : null,
-        };
-        _meApplyTypeOverride(cf, childDef, ctx, null);
-        _meApplyDisplayOverride(cf, childDef, ctx);
-        ctx.fields.push(cf);
-        ctx.fieldsById[childDef.id] = cf;
-      }
+      const rows = _meVlgReadGroup(groupId, kids, cfgLenId, ctx);
+      for (const r of rows) ctx.fields.push(r);
     } else {
       // Fixed group — read every leaf sequentially.
       for (const kid of kids) {
@@ -22298,6 +22506,7 @@ function _meExecBitmapFields(attrs, ctx) {
       }
     }
   }
+  ctx.vlgIdentifier = undefined;   // scoped to this block, not to the whole parse
 }
 
 // ── Block: when ─────────────────────────────────────────────────────────────

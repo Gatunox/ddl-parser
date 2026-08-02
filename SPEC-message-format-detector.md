@@ -257,13 +257,13 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 
 | Block | Purpose | Key attributes |
 |-------|---------|----------------|
-| `read-ddl` | Read **all fields from the DDL Bindings** in DDL declaration order — no individual field listing needed | `binding` (int index into `ddl_bindings`, or `"ANY"`), `fields`, `from`, `until` — §5.2 |
+| `read-ddl` | Read **all fields from the DDL Bindings** in DDL declaration order — no individual field listing needed | `binding` (int index into `ddl_bindings`, or `"ANY"`), `fields`, `from`, `until` — §5.2; `vlg_identifier` — §8 |
 | `read` | Read a single DDL-defined field (offset, length, type from DDL) | `field` (DDL field ID), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13) |
 | `read-fixed` | Read N bytes inline — no DDL ref needed | `length` (int literal OR field ID ref), `type`, `encoding`, `as` (DDL field ID) |
 | `read-until` | Read bytes until sentinel(s) or EOM | `sentinels` (list of hex bytes), `eom` (bool), `as` (DDL field ID) |
 | `read-length-prefix` | Read length N then N bytes | `prefix` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
 | `read-bitmap` | Read 8 or 16 bytes as bitmap, store result | `field` (DDL field ID), `encoding` (`binary`\|`ascii-hex`), `length` (explicit width in bytes when the DDL does not declare the map — §5.12) |
-| `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `overrides[…].de` (§7), honouring `overrides[…].vlg` (§8) | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14) |
+| `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `overrides[…].de` (§7), honouring `overrides[…].vlg` (§8) | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14), `vlg_identifier` (§8) |
 | `read-segment-fields` | Read only the segments a prior `read-bitmap` marks present (§5.16) | *(bare string)* or `map` — field id of the declared/file-read map, `binding` |
 | `skip` | Advance N bytes | `length` (int) |
 | `read-to-end` | Consume remaining bytes | `as` (DDL field ID) |
@@ -294,6 +294,7 @@ Use this for messages where:
 | `fields`  | `"ANY"` \| array of field ids | `"ANY"` | Cherry-pick: list of DDL field ids to emit. `"ANY"` emits all. |
 | `from`    | field id | — | Inclusive lower bound: emission starts at this field. |
 | `until`   | field id | — | Inclusive upper bound: emission stops after this field. |
+| `vlg_identifier` | string | *(built-in names)* | Which leaf name means "this holds the group's length". `""` switches the guess off entirely — see §8. |
 
 The byte cursor always advances through every field in declaration order so that later parse_spec blocks (`when`, `repeat`, `read-tlv`) can reference any field id — `fields` / `from` / `until` only filter what is emitted to the output.
 
@@ -854,7 +855,37 @@ was misread.
 
 **Auto-detect** applies to **direct children only**. Scanning every transitive leaf
 would find a grandchild's `LEN` — the length of a nested TLV triple, not of the
-group — and read the first tag as a length.
+group — and read the first tag as a length. A grandchild `LEN` still frames *its
+own* group; it just never frames the group above it.
+
+**Which leaf is the length — `vlg_identifier`** *(added 2026-08-02)*
+
+The auto-detect used to hardcode the names `LEN` / `LGTH` / `LENGTH` and a 2–4 byte
+width. Both are assumptions about someone else's DDL, so both are now settable per
+spec, on the blocks that walk DDL groups — `read-ddl` and `read-bitmap-fields`:
+
+| `vlg_identifier` | Meaning |
+|------------------|---------|
+| *omitted* | Fall back to the built-in names `LEN`, `LGTH`, `LENGTH`. |
+| `"SIZE"` | Only a leaf named that is a length. Matched **wherever it sits** in the group, so a TAG may precede it. |
+| `""` | **Off.** No group is ever guessed to be variable-length. |
+
+The empty string is the point of the attribute: a group whose first field is
+honestly called `AMT-LEN` but is **not** variable-length was being framed by it,
+and everything after it slid.
+
+The LEN's **width** is never assumed — it is whatever the DDL declares for the leaf
+that matched, so a 1-byte binary length works exactly like an LLLVAR's 3.
+
+Precedence is unchanged: an explicit `overrides[…].vlg` flag wins over all three.
+`vlg_identifier` governs the *guess*, not the user's own choice.
+
+**`read-ddl` honours variable-length groups** *(added 2026-08-02)* — it previously
+read every field at its declared length, so an LLVAR group read its `DATA` at the
+DDL's maximum and every field after it was wrong. A group read this way rarely
+consumes what the DDL declares, so the difference is added to the same running
+`ovShift` correction a `bytes` override uses (§9.0) and every later declared offset
+moves with it. OCCURS frames are left to the walk's own repetition handling.
 
 ```json
 "overrides": {

@@ -112,6 +112,11 @@ _t.psCommonAttrs      = _PS_COMMON_ATTRS;
 _t.psCommonExamples   = _PS_COMMON_EXAMPLES;
 _t.mePsHelpExAttrs    = _mePsHelpExAttrs;
 _t.mePsHelpRunExample = _mePsHelpRunExample;
+_t.meItemVlgIdentifier = _meItemVlgIdentifier;
+_t.meContentLooksWrong = _meContentLooksWrong;
+_t.meFmRowHtml         = _meFmRowHtml;
+_t.meState             = () => _meState;
+_t.setMeState          = v => { _meState = v; };
 _t.fmtTestSpecs       = window._fmtTestSpecs;
 _t.meExecParseSpec    = _meExecParseSpec;
 _t.meParseFileWithSpec = _meParseFileWithSpec;
@@ -160,6 +165,9 @@ const {
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
   stripJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample,
+  meItemVlgIdentifier,
+  meContentLooksWrong,
+  meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
@@ -3293,6 +3301,58 @@ test('normal parse: the same spec DOES override the field (guard is not too wide
   eq(typ.dataType, 'PIC 9(4)', 'declared type preserved alongside the override');
 });
 
+// ── An overridden field is judged by the override, not by the DDL ───────────
+// The declared type is deliberately kept on the field so the Type column can
+// show "declared ↩ override". The content-vs-type check went on reading it, so
+// every field whose override made its bytes legal stayed red anyway.
+
+console.log('\ncontent validation follows the type override');
+
+// PIC 9(4) — declared digits — holding bytes that are NOT digits. Exactly the
+// case someone overrides the type to explain.
+function ovrBadBytesMsg(type) {
+  return {
+    msgType: { type: 'STM', label: 'STM' }, manualOverride: false,
+    bytes: [], raw: '', tokens: [],
+    fields: [{ id: 'TYP', name: 'TYP', dataType: 'PIC 9(4)', offset: 0, length: 4,
+               value: '', rawHex: '00131A2B', rawBytes: [0x00, 0x13, 0x1A, 0x2B] }],
+  };
+}
+// renderFieldTable writes to the DOM rather than returning markup, so the rule
+// itself is the unit under test — renderFieldTable is still run first, because
+// that is what puts the override onto the field.
+function ovrRendered(spec) {
+  setSpecLookup(() => spec);
+  const m = ovrBadBytesMsg();
+  renderFieldTable(m);
+  setSpecLookup(() => null);
+  return m.fields[0];
+}
+
+test('without an override, non-digit bytes in a PIC 9 are still flagged', () => {
+  assert.ok(meContentLooksWrong(ovrRendered(null)), 'the check still does its job');
+});
+
+test('a hex-char override stops the field being painted red', () => {
+  const f = ovrRendered({ name: 'STM', field_overrides: [{ field: 'TYP', type: 'hex-char' }] });
+  eq(f.typeOverride, 'hex-char', 'the override was applied');
+  eq(f.dataType, 'PIC 9(4)', 'and the declared type is still there for the annotation');
+  assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
+});
+
+test('an ascii override still expects printable bytes', () => {
+  // ascii maps to X, not to B: overriding to ascii is a claim ABOUT the bytes,
+  // so a control byte is still worth flagging.
+  const f = ovrRendered({ name: 'STM', field_overrides: [{ field: 'TYP', type: 'ascii' }] });
+  eq(f.typeOverride, 'ascii', 'the override was applied');
+  assert.ok(meContentLooksWrong(f), '0x00 is not printable ASCII');
+});
+
+test('a REDEFINES overlay is never flagged', () => {
+  assert.ok(!meContentLooksWrong({ dataType: 'PIC 9(4)', isRedefines: true, rawBytes: [0x00] }),
+     'it re-views bytes already judged where they were read');
+});
+
 test('manual override: a display override is skipped too, not just the type', () => {
   setSpecLookup(() => ({ name: 'STM', field_overrides: [{ field: 'TYP', display: 'amount' }] }));
   const m = ovrMsg(true);
@@ -3749,6 +3809,187 @@ test('a length beyond the declared payload is flagged but still framed by the wi
   const ctx = vlgRun([0x00, 0x19], 30);           // 25 > DATA's declared 20
   const err = ctx.fields.find(f => f.error && /exceeds the 20 byte/.test(f.error));
   assert.ok(err, `expected a capacity warning, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+});
+
+// ── vlg_identifier: which leaf means "length", per DDL ──────────────────────
+// The auto-detect used to hardcode LEN/LGTH/LENGTH and a 2–4 byte width. Both
+// are wrong for someone else's DDL: a group whose first field is legitimately
+// called AMT-LEN but is NOT variable-length was read as though it were, and a
+// 1-byte binary length was never recognised at all.
+
+console.log('\nvlg_identifier — the length leaf is named by the spec');
+
+const VLGID_DDL = `DEFINITION MSG.
+  02 TYP PIC X(4).
+  02 EMV.
+    04 LEN PIC 9(2).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END
+`;
+// "1200" + "05" + "ABCDE" + "TAIL" — the group carries 5 of its declared 20.
+function vlgIdBytes() {
+  const b = [];
+  for (const c of '1200' + '05' + 'ABCDE' + 'TAIL') b.push(c.charCodeAt(0));
+  return b;
+}
+function vlgIdRun(attrs, ddl = VLGID_DDL, item = {}) {
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'], ...item,
+    parse_spec_binary: [{ 'read-ddl': attrs }] }, vlgIdBytes());
+}
+const vlgIdField = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
+
+test('read-ddl reads a variable-length group as one, and the rest of the record follows', () => {
+  const ctx = vlgIdRun('ANY');
+  eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCDE', 'DATA is framed by LEN, not by its declared 20');
+  // The proof that ovShift did its job: TAIL is 15 bytes earlier than declared.
+  eq(vlgIdField(ctx, 'TAIL').value, 'TAIL', 'the field after the group still lands on its bytes');
+  eq(vlgIdField(ctx, 'TAIL').startByte, 11, 'and at the position the WIRE puts it, not the DDL');
+});
+
+test('vlg_identifier names the length leaf', () => {
+  const ctx = vlgIdRun({ vlg_identifier: 'LEN' });
+  eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCDE', 'named leaf matches, group is variable-length');
+  eq(vlgIdField(ctx, 'TAIL').startByte, 11, 'and the tail follows');
+});
+
+test('vlg_identifier that matches nothing leaves the group fixed-length', () => {
+  const ctx = vlgIdRun({ vlg_identifier: 'SIZE' });
+  eq(vlgIdField(ctx, 'EMV.DATA').valueLength, 9, 'DATA takes its declared width (bounded by the message)');
+  assert.ok(!vlgIdField(ctx, 'TAIL'), 'so TAIL is swallowed — this DDL simply has no SIZE leaf');
+});
+
+test('vlg_identifier "" switches auto-detect off entirely', () => {
+  // The whole point: a group whose first field is called LEN but which is NOT
+  // variable-length must not be read as though it were.
+  const ctx = vlgIdRun({ vlg_identifier: '' });
+  eq(vlgIdField(ctx, 'EMV.DATA').valueLength, 9, 'no auto-detect, so DATA reads at its declared length');
+  assert.ok(!vlgIdField(ctx, 'TAIL'), 'and nothing is reframed');
+});
+
+test('an explicit Overrides flag still wins when auto-detect is off', () => {
+  // "" disables the GUESS. Pointing at a group by hand is not a guess.
+  const ctx = vlgIdRun({ vlg_identifier: '' }, VLGID_DDL,
+    { overrides: { 'EMV': { vlg: 'EMV.LEN' } } });
+  eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCDE', 'the hand-flagged group is still variable-length');
+  eq(vlgIdField(ctx, 'TAIL').startByte, 11, 'and the tail follows');
+});
+
+test('the LEN width comes from the DDL, not from a hardcoded 2/3/4', () => {
+  // A 5-digit length: the old rule ignored anything outside 2-4 bytes, so this
+  // group was silently read at its declared width.
+  const ddl = `DEFINITION MSG.
+  02 TYP PIC X(4).
+  02 EMV.
+    04 LEN PIC 9(5).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of '1200' + '00005' + 'ABCDE' + 'TAIL') b.push(c.charCodeAt(0));
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, b);
+  eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCDE', 'a 5-byte length is a length like any other');
+  eq(vlgIdField(ctx, 'TAIL').value, 'TAIL', 'and the record still lines up');
+});
+
+test('a grandchild LEN frames its own group, never the group above it', () => {
+  // EMV.ARQC.LEN is the length of the triple INSIDE the element. ARQC being
+  // variable-length is correct; EMV being framed by it is not — that would eat
+  // EMV's other children, which the LEN says nothing about.
+  const ddl = `DEFINITION MSG.
+  02 TYP PIC X(4).
+  02 EMV.
+    04 ARQC.
+      06 LEN PIC 9(2).
+      06 DATA PIC X(4).
+    04 EXTRA PIC X(3).
+  02 TAIL PIC X(4).
+END
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of '1200' + '02' + 'WX' + 'YZA' + 'TAIL') b.push(c.charCodeAt(0));
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, b);
+  eq(vlgIdField(ctx, 'EMV.ARQC.DATA').value, 'WX', 'ARQC is framed by its own LEN');
+  // If EMV had been framed by ARQC.LEN, its 2 bytes would be spent on DATA and
+  // EXTRA would come out empty, dragging TAIL forward.
+  eq(vlgIdField(ctx, 'EMV.EXTRA').value, 'YZA', 'EMV\'s other child keeps its declared bytes');
+  eq(vlgIdField(ctx, 'TAIL').value, 'TAIL', 'and the record still lines up');
+});
+
+test('read-bitmap-fields honours vlg_identifier too', () => {
+  // PAD is DE-1 so the map can leave bit 1 clear — in ISO that bit means "a
+  // secondary bitmap follows", and setting it reads 8 more bytes as a map.
+  const ddl = `DEFINITION MSG.
+  02 BITMAP PIC X(8).
+  02 PAD PIC X(1).
+  02 EMV.
+    04 SIZE PIC 9(2).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [0x60, 0, 0, 0, 0, 0, 0, 0];                 // bits 2 and 3 → EMV, TAIL
+  for (const c of '05' + 'ABCDE' + 'TAIL') b.push(c.charCodeAt(0));
+  const spec = vid => meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+      { 'read-bitmap-fields': vid === undefined ? 'BITMAP' : { bitmap: 'BITMAP', vlg_identifier: vid } },
+    ] }, b);
+  eq(vlgIdField(spec('SIZE'), 'EMV.DATA').value, 'ABCDE', 'SIZE is this DDL\'s name for a length');
+  eq(vlgIdField(spec(undefined), 'EMV.DATA').valueLength, 9,
+     'without it the built-in names do not match SIZE, so the group is fixed');
+});
+
+test('the VLG marker appears exactly once — on the group when collapsed, on the LEN when open', () => {
+  // It used to print the LEN's field NAME on the group row and "LEN" on the leaf:
+  // the same fact twice, and production field names are long enough to blow the
+  // column out.
+  const ctx = { ea: s => String(s), vlgMap: new Map(), foByField: new Map(),
+    usesBitmapFields: true, vlgIdentifier: undefined,
+    leavesByGroup: new Map([['EMV', [{ id: 'EMV.LEN', length: 2 }, { id: 'EMV.DATA', length: 20 }]]]) };
+  const grp  = { id: 'EMV', isGroup: true, childCount: 2, length: 22, offset: 0 };
+  const len  = { id: 'EMV.LEN',  length: 2,  offset: 0 };
+  const data = { id: 'EMV.DATA', length: 20, offset: 2 };
+  const cell = row => ((meFmRowHtml(row, ctx, { n: 0 })
+    .match(/<td class="me-fm-vlg"[^>]*>(.*?)<\/td>/) || [, ''])[1]).replace(/<[^>]+>/g, '').trim();
+
+  const saved = meState();
+  try {
+    setMeState({ fmCollapsedGroups: new Set(['EMV']) });
+    eq(cell(grp), 'VLG', 'collapsed: the group carries it, because the leaf is off screen');
+    setMeState({ fmCollapsedGroups: new Set() });
+    eq(cell(grp),  '',    'expanded: the group row stays clean');
+    eq(cell(len),  'VLG', 'expanded: the LEN leaf carries it');
+    eq(cell(data), '',    'and no other leaf does');
+  } finally { setMeState(saved); }
+});
+
+test('the Field Map reads vlg_identifier off the spec, and "" survives the trip', () => {
+  // The VLG column has to show what the PARSE will do. `undefined` (use the
+  // built-in names) and `""` (guess off) mean opposite things, so a `|| null`
+  // anywhere on this path would silently re-enable the guess in the panel.
+  eq(meItemVlgIdentifier({ parse_spec_binary: [{ 'read-ddl': 'ANY' }] }), undefined,
+     'no attribute → built-in names');
+  eq(meItemVlgIdentifier({ parse_spec_binary: [{ 'read-ddl': { vlg_identifier: '' } }] }), '',
+     'empty string survives as an empty string, not as "unset"');
+  eq(meItemVlgIdentifier({ parse_spec_binary: [{ 'read-bitmap-fields': { bitmap: 'B', vlg_identifier: 'SIZE' } }] }),
+     'SIZE', 'read-bitmap-fields carries it too');
+  eq(meItemVlgIdentifier({ parse_spec_binary: [
+       { when: { field: 'F', is: '1', then: [{ 'read-ddl': { vlg_identifier: 'SZ' } }] } }] }),
+     'SZ', 'found inside a nested block');
+  eq(meItemVlgIdentifier({ parse_spec_ascii: [{ 'read-ddl': { vlg_identifier: 'SZ' } }] }), 'SZ',
+     'the ASCII spec counts as well');
 });
 
 // ── read: a group reads at its declared position, like a field ──────────────

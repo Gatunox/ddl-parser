@@ -128,9 +128,18 @@ the fields and how much of the record they account for:
     PSTM | PSTM/PSTM | DDL walk            | 214 bytes        legacy fallback
     PSTM | PSTM/PSTM | manual override     | 214 bytes        scope-selected
 
-`parsedBy` is set on every parse path; coverage is computed from the fields, so
-it needs no plumbing. No new UI — the existing bar, and it persists (unlike the
-progress overlay).
+Coverage is computed from the fields, so it needs no plumbing. No new UI — the
+existing bar, and it persists (unlike the progress overlay).
+
+**Correction (v1.1.2.404).** This item originally claimed "`parsedBy` is set on
+every parse path". It was not. Every automatic path had it, but two of the three
+**manual override** paths did not — the single-record NETARD override
+(`opts.showOverride`) and the non-NETARD override (`_runP1Parse`). Only the FUP
+COPY path (`opts.forceScopeAll`) set it. So the provenance field rendered **empty**
+in exactly the mode where it matters most, since manual override has no spec name
+to fall back on. Both were fixed in v1.1.2.404 along with the `manualOverride`
+flag, and a test now asserts every "Manual override mode" site sets both, naming
+the offending `source.html:LINE` when one does not.
 
 ---
 

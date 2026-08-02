@@ -106,6 +106,17 @@ _t.hexAsciiStartCol   = hexAsciiStartCol;
 _t.extractBytes       = extractBytes;
 _t.stripJsonc         = _stripJsonc;
 _t.migrateSpec        = window._migrateSpec;
+_t.migrateOverrides   = window._migrateSpecOverrides;
+_t.psHelp             = _PS_HELP;
+_t.psCommonAttrs      = _PS_COMMON_ATTRS;
+_t.psCommonExamples   = _PS_COMMON_EXAMPLES;
+_t.mePsHelpExAttrs    = _mePsHelpExAttrs;
+_t.mePsHelpRunExample = _mePsHelpRunExample;
+_t.meItemVlgIdentifier = _meItemVlgIdentifier;
+_t.meContentLooksWrong = _meContentLooksWrong;
+_t.meFmRowHtml         = _meFmRowHtml;
+_t.meState             = () => _meState;
+_t.setMeState          = v => { _meState = v; };
 _t.fmtTestSpecs       = window._fmtTestSpecs;
 _t.meExecParseSpec    = _meExecParseSpec;
 _t.meParseFileWithSpec = _meParseFileWithSpec;
@@ -152,11 +163,31 @@ const {
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
-  stripJsonc, migrateSpec, fmtTestSpecs,
-  meExecParseSpec, meParseFileWithSpec, mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
+  stripJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
+  psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample,
+  meItemVlgIdentifier,
+  meContentLooksWrong,
+  meFmRowHtml, meState, setMeState,
+  meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
+  mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
-  renderFieldTable, meReadApplyTypeOverride, setSpecLookup, auditBeginLoad,
+  meWalkDEFields: _rawWalkDEFields,
+  renderFieldTable, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
+
+// A spec reaches the engine only after the app has loaded it, and loading folds
+// de_map / var_length_groups / field_overrides into `overrides`. Folding at the
+// door here models that, and keeps the legacy shapes under test — that is the
+// half of the collapse that can actually lose a user's saved config.
+//
+// Deliberately migrateOverrides, NOT migrateSpec: the latter also renames
+// parse-spec blocks and normalizes legacy type names, which several tests feed
+// on purpose to prove those paths. The fold is idempotent, so a test that
+// migrates its own literal is unaffected.
+const meExecParseSpec     = (item, ...rest) => _rawExecParseSpec(migrateOverrides(item), ...rest);
+const meParseFileWithSpec = (item, ...rest) => _rawParseFileWithSpec(migrateOverrides(item), ...rest);
+const setSpecLookup       = fn => _rawSetSpecLookup((...a) => migrateOverrides(fn(...a)));
+const meWalkDEFields      = (defs, item, ...rest) => _rawWalkDEFields(defs, migrateOverrides(item), ...rest);
 
 // ── Test harness ────────────────────────────────────────────────────────────
 let passed = 0, failed = 0;
@@ -1080,6 +1111,251 @@ test('read-length-prefix decodes bcd2 prefixes and read-while max can come from 
   eq(ctx.cursor, 8, 'cursor stops after max-limited iterations');
 });
 
+// ── One DE anchor renumbers everything after it ──────────────────────────────
+// The BIC case: the DDL declares DE-64 then DE-66, because DE-65 does not exist.
+// Anchoring the ONE field that breaks the run must renumber the whole tail —
+// having to override every element afterwards would make the feature useless.
+console.log('\nDE anchors — one override, the rest follow');
+
+const DE_GAP_DDL = `DEF REC.
+  02 BMP PIC X(8).
+  02 F62 PIC X(2).
+  02 F63 PIC X(2).
+  02 F64 PIC X(2).
+  02 F66 PIC X(2).
+  02 F67 PIC X(2).
+  02 F68 PIC X(2).
+END REC.
+`;
+const deRows = overrides => {
+  S.ddlTree = { V: { S: { D: DE_GAP_DDL } } };
+  const item = { ddl_bindings: ['V/S/D/REC'], overrides,
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', length: 8 } },
+                        { 'read-bitmap-fields': 'BMP' }] };
+  const defs = sandbox._t.meCollectBindingDefs([getDDLFromPath('V/S/D/REC')]);
+  const rows = meWalkDEFields(defs, item);
+  const out = {};
+  for (const r of rows) if (/^F\d+$/.test(r.id)) out[r.id] = r;
+  return out;
+};
+
+test('anchoring one field renumbers every element after it', () => {
+  const r = deRows({ F62: { de: 62 } });
+  deepEq([r.F62.de, r.F63.de, r.F64.de], [62, 63, 64], 'the run continues from the anchor');
+  eq(r.F66.de, 65, 'and keeps counting straight through the gap — hence the second anchor');
+  eq(r.F68.de, 67, 'tail follows');
+});
+
+test('a second anchor closes the DE-65 gap without touching any other field', () => {
+  const r = deRows({ F62: { de: 62 }, F66: { de: 66 } });
+  deepEq([r.F62.de, r.F63.de, r.F64.de], [62, 63, 64], 'unchanged before the gap');
+  deepEq([r.F66.de, r.F67.de, r.F68.de], [66, 67, 68],
+    'everything after the second anchor renumbers on its own — no per-field overrides');
+});
+
+test('an anchored row is marked, and carries the DE it replaced', () => {
+  const r = deRows({ F62: { de: 62 }, F66: { de: 66 } });
+  eq(r.F66.anchored, true, 'F66 is flagged as anchored');
+  eq(r.F66.naturalDE, 65, 'and reports the 65 it would otherwise have been');
+  eq(r.F67.anchored, false, 'a field that merely follows on is NOT flagged');
+  eq(r.F67.naturalDE, null, 'and has nothing to report');
+});
+
+// ── Badges never change the mouse cursor ─────────────────────────────────────
+// Reported three times: hovering a badge turned the pointer into "?", which
+// reads as broken or disabled. A badge is an annotation, not its own control —
+// it inherits whatever cursor its row has.
+console.log('\nbadges — no cursor:help anywhere');
+
+test('no rule in the app sets cursor:help', () => {
+  const src = require('fs').readFileSync('./source.html', 'utf8');
+  // Comments are blanked first — the rule is written down next to the CSS it
+  // governs, and the words explaining it are not a violation of it. Newlines
+  // are preserved so reported line numbers still point at the real source.
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .replace(/^\s*\/\/.*$/gm, m => m.replace(/[^\n]/g, ' '));
+  const hits = code.split('\n')
+    .map((l, i) => ({ n: i + 1, l }))
+    .filter(x => /cursor\s*:\s*help/.test(x.l))
+    .map(x => `${x.n}: ${x.l.trim().slice(0, 80)}`);
+  eq(hits.join('\n'), '', 'cursor:help must not appear — badges inherit the row cursor');
+});
+
+// ── "bytes": narrow what the TYPE reads, without moving the field ────────────
+console.log('\noverrides — "bytes" narrows the type\'s view of a field');
+
+const DDL_BYTES = `DEF REC.
+  02 MSGTYPE PIC X(4).
+  02 TAIL PIC X(2).
+END REC.
+`;
+// MSGTYPE holds 02 00 30 20; the MTI is the first two bytes.
+const bytesCase = (ovr, extra) => {
+  S.ddlTree = { V: { S: { D: DDL_BYTES } } };
+  S.inputFormat = 'hex';
+  const overrides = Object.assign({}, extra);
+  if (ovr && Object.keys(ovr).length) overrides.MSGTYPE = ovr;
+  return meExecParseSpec(
+    { ddl_bindings: ['V/S/D/REC'], overrides,
+      parse_spec_binary: [{ 'read-ddl': 'ANY' }] },
+    Uint8Array.from([0x02, 0x00, 0x30, 0x20, 0x41, 0x42]));
+};
+
+test('hex-char on a PIC X(4) renders all 4 bytes — the behaviour "bytes" exists to correct', () => {
+  const f = bytesCase({ type: 'hex-char' }).fields.find(x => x.id === 'MSGTYPE');
+  eq(f.value, '02003020', 'all four bytes rendered as 8 hex characters');
+});
+
+test('"bytes": 2 makes the field 2 bytes — it is read as if the DDL said PIC X(2)', () => {
+  const ctx = bytesCase({ type: 'hex-char', bytes: 2 });
+  const f = ctx.fields.find(x => x.id === 'MSGTYPE');
+  eq(f.value, '0200', 'only the MTI');
+  eq(f.endByte - f.startByte + 1, 2, 'the field itself is now 2 bytes, not 4');
+});
+
+test('"bytes" alone re-sizes the field, with no type override at all', () => {
+  const f = bytesCase({ bytes: 2 }).fields.find(x => x.id === 'MSGTYPE');
+  eq(f.endByte - f.startByte + 1, 2, 'length override applies on its own');
+  eq(f.rawHex, '0200', 'and only those bytes are read');
+});
+
+test('"bytes" LARGER than declared is legitimate — the DDL understated the field', () => {
+  // MSGTYPE is PIC X(4) at offset 0; asking for 5 reads one byte into TAIL.
+  const f = bytesCase({ bytes: 5 }).fields.find(x => x.id === 'MSGTYPE');
+  eq(f.endByte - f.startByte + 1, 5, 'field grew past its declared 4 bytes');
+  eq(f.rawHex, '0200302041', 'and read the fifth byte, which belongs to TAIL');
+});
+
+test('growth is still bounded by the message — it cannot read past the end', () => {
+  // TAIL is PIC X(2) at offset 4 and the message is 6 bytes, so there is nothing
+  // to grow into. Reading stops at the end rather than inventing bytes.
+  const f = bytesCase({}, { TAIL: { bytes: 9 } }).fields.find(x => x.id === 'TAIL');
+  eq(f.rawHex.length / 2, 2, 'clamped to the 2 bytes that exist');
+});
+
+test('shrinking a field frees its leftover bytes for the NEXT field to read', () => {
+  // MSGTYPE is PIC X(4) holding 02 00 30 20; cut it to 2 and the 30 20 that
+  // frees must reach TAIL, not be skipped because the DDL says TAIL starts at 4.
+  const ctx = bytesCase({ type: 'hex-char', bytes: 2 });
+  const tail = ctx.fields.find(x => x.id === 'TAIL');
+  eq(tail.startByte, 2, 'TAIL moved up to where MSGTYPE now ends');
+  eq(tail.rawHex, '3020', 'and reads the two bytes MSGTYPE gave back');
+});
+
+test('growing a field pushes the ones after it along', () => {
+  const ctx = bytesCase({ bytes: 5 });
+  const tail = ctx.fields.find(x => x.id === 'TAIL');
+  eq(tail.startByte, 5, 'TAIL starts one byte later than declared');
+});
+
+test('with no bytes override, every field sits exactly where the DDL declares', () => {
+  const ctx = bytesCase({ type: 'hex-char' });
+  const tail = ctx.fields.find(x => x.id === 'TAIL');
+  eq(tail.startByte, 4, 'unchanged');
+  eq(tail.value, 'AB', 'and reads its declared bytes');
+});
+
+test('the type sees the overridden length, so a fixed-width type can now fit', () => {
+  eq(bytesCase({ type: 'uint16-be', bytes: 2 }).fields.find(x => x.id === 'MSGTYPE' && !x.error).value,
+     '512', '0x0200 = 512, no length-mismatch error');
+});
+
+test('an explicit "bytes" outranks the size a fixed-width type would imply', () => {
+  // uint16-be would make the field 2; "bytes": 3 says 3, and the user's explicit
+  // number wins. No error either way — an override is never ignored.
+  const ctx = bytesCase({ type: 'uint16-be', bytes: 3 });
+  const f = ctx.fields.find(x => x.id === 'MSGTYPE' && !x.error);
+  eq(ctx.fields.some(x => x.id === 'MSGTYPE' && x.error), false, 'no error row');
+  eq(f.endByte - f.startByte + 1, 3, '"bytes" set the length, not the type');
+  eq(f.value, '512', 'uint16-be still decodes from the head of those bytes');
+});
+
+test('a fixed-width type alone sets the length, like editing the DDL to that type', () => {
+  const ctx = bytesCase({ type: 'uint16-be' });          // MSGTYPE is PIC X(4)
+  const f = ctx.fields.find(x => x.id === 'MSGTYPE' && !x.error);
+  eq(f.endByte - f.startByte + 1, 2, 'uint16-be makes it 2 bytes');
+  const tail = ctx.fields.find(x => x.id === 'TAIL');
+  eq(tail.startByte, 2, 'and TAIL moves up to follow it');
+});
+
+test('display runs after the length and type, on the overridden bytes', () => {
+  const f = bytesCase({ type: 'hex-char', bytes: 2, display: 'hex' }).fields.find(x => x.id === 'MSGTYPE');
+  eq(f.value, '0200', 'type applied to the 2 overridden bytes');
+  // 0x0200, not 0x02003020 — the formatter saw the overridden length.
+  eq(f.displayValue, '0x0200', 'display formatted those same bytes, not the declared 4');
+});
+
+// ── Overrides collapse: de_map + var_length_groups + field_overrides → one map ──
+// The three arrays became a single `overrides` map keyed by canonical field id.
+// These lock the fold itself: everything else in this file exercises it only
+// indirectly, through the door-migration the harness applies.
+console.log('\noverrides — the three arrays fold into one map');
+
+test('the fold moves every array into overrides and removes the arrays', () => {
+  const spec = migrateOverrides({
+    field_overrides: [{ field: 'A', type: 'uint-be', display: 'hex' }],
+    de_map: [{ field: 'B', de: 7 }],
+    var_length_groups: [{ group: 'G', len: 'G.LEN' }],
+  });
+  deepEq(spec.overrides.A, { type: 'uint-be', display: 'hex' }, 'type + display land on one entry');
+  eq(spec.overrides.B.de, 7, 'DE anchor lands on its field');
+  eq(spec.overrides.G.vlg, 'G.LEN', 'explicit LEN leaf is kept');
+  eq('field_overrides' in spec, false, 'field_overrides removed');
+  eq('de_map' in spec, false, 'de_map removed');
+  eq('var_length_groups' in spec, false, 'var_length_groups removed');
+});
+
+test('one field carrying all four kinds of override collapses to a single entry', () => {
+  const spec = migrateOverrides({
+    field_overrides: [{ field: 'F', type: 'ascii', display: 'hex' }],
+    de_map: [{ field: 'F', de: 3 }],
+    var_length_groups: [{ group: 'F', len: null }],
+  });
+  eq(Object.keys(spec.overrides).length, 1, 'one key, not three');
+  deepEq(spec.overrides.F, { type: 'ascii', display: 'hex', de: 3, vlg: true }, 'all four merged');
+});
+
+test('VLG len null and the legacy bare-string entry both mean "first leaf"', () => {
+  const a = migrateOverrides({ var_length_groups: [{ group: 'G', len: null }] });
+  const b = migrateOverrides({ var_length_groups: ['G'] });
+  eq(a.overrides.G.vlg, true, '{group, len:null} → true');
+  eq(b.overrides.G.vlg, true, 'legacy bare string → true');
+});
+
+test('occurrence indices are stripped from every key, and from the LEN leaf', () => {
+  const spec = migrateOverrides({
+    field_overrides: [{ field: 'M[02].N', type: 'binary' }],
+    de_map: [{ field: 'TOP[01]', de: 4 }],
+    var_length_groups: [{ group: 'G[01]', len: 'G[01].LEN' }],
+  });
+  eq(spec.overrides['M.N'].type, 'binary', 'field id canonicalized');
+  eq(spec.overrides['TOP'].de, 4, 'DE anchor id canonicalized');
+  eq(spec.overrides['G'].vlg, 'G.LEN', 'group AND its LEN leaf canonicalized');
+});
+
+test('entries that carry nothing are dropped rather than left as noise', () => {
+  const spec = migrateOverrides({ field_overrides: [{ field: 'EMPTY' }, { field: 'REAL', type: 'ascii' }] });
+  eq('EMPTY' in spec.overrides, false, 'an entry with no settings is not stored');
+  eq(spec.overrides.REAL.type, 'ascii', 'a real entry survives');
+});
+
+test('the fold is idempotent and never clobbers an already-migrated map', () => {
+  const once  = migrateOverrides({ de_map: [{ field: 'A', de: 2 }] });
+  const twice = migrateOverrides(JSON.parse(JSON.stringify(once)));
+  // Compared as JSON: objects built inside the VM sandbox and objects built
+  // here have different Object prototypes, which deepStrictEqual counts as a
+  // difference even when every key and value matches.
+  eq(JSON.stringify(twice.overrides), JSON.stringify(once.overrides), 'running it again changes nothing');
+  const mixed = migrateOverrides({ overrides: { A: { type: 'ascii' } }, de_map: [{ field: 'A', de: 9 }] });
+  deepEq(mixed.overrides.A, { type: 'ascii', de: 9 }, 'an old array merges INTO an existing entry');
+});
+
+test('a spec with no override config of any kind gets an empty map, not junk', () => {
+  const spec = migrateOverrides({ name: 'X' });
+  deepEq(spec.overrides, {}, 'empty map');
+});
+
 test('field_overrides can reinterpret bound DDL fields and add a display formatter', () => {
   S.ddlTree = { VOL: { SV: { 'OVRDDL': `
     DEF REC.
@@ -1156,7 +1432,7 @@ test('uint-be / uint-le are size-adaptive (width = field length) and migrate fro
     ],
     parse_spec_binary: [{ 'read-ddl': 'ANY' }],
   });
-  eq(item.field_overrides.find(o => o.field === 'L2').type, 'uint-le', 'legacy uint16-le migrated to uint-le');
+  eq(item.overrides['L2'].type, 'uint-le', 'legacy uint16-le migrated to uint-le');
   const ctx = meExecParseSpec(item, Uint8Array.from([
     0xFF,                                     // B1 → 255
     0x01, 0xF4,                               // B2 → 500
@@ -1392,24 +1668,49 @@ test('field_overrides match ALL occurrences of a nested OCCURS field (occurrence
   eq(nums.every(f => f.typeOverride === 'uint-be'), true, 'each occurrence carries the override marker');
 });
 
-test('field_overrides reject incompatible lengths without replacing the parsed field', () => {
+// BEHAVIOUR CHANGE: a stored override used to be REJECTED when its type needed
+// more bytes than the DDL declared — an error row, original value untouched.
+// An override is now an edit to the DDL, so it always wins: the type states the
+// field's size, the field is read at that size, and the rest of the record
+// shifts. Nothing is silently ignored.
+test('a stored type override that needs more bytes RESIZES the field instead of erroring', () => {
   S.ddlTree = { VOL: { SV: { 'BADOVR': `
     DEF REC.
       02 ONE PIC X(1).
+      02 TWO PIC X(1).
+      02 THREE PIC X(1).
     END REC.
   ` } } };
   S.inputFormat = 'hex';
   const item = {
     ddl_bindings: ['VOL/SV/BADOVR/REC'],
-    field_overrides: [{ field: 'ONE', type: 'uint16-be' }],
+    overrides: { ONE: { type: 'uint16-be' } },   // 2 bytes, on a 1-byte field
     parse_spec_binary: [{ 'read-ddl': 'ANY' }],
   };
-  const ctx = meExecParseSpec(item, Buffer.from('A'));
-  const parsed = ctx.fields.find(x => x.id === 'ONE' && !x.error);
+  const ctx = meExecParseSpec(item, Uint8Array.from([0x01, 0x02, 0x03]));
+  const one = ctx.fields.find(x => x.id === 'ONE' && !x.error);
+  eq(ctx.fields.some(x => x.id === 'ONE' && x.error), false, 'no "override ignored" row');
+  eq(one.value, '258', '0x0102 decoded as uint16-be — the override was honoured');
+  eq(one.typeOverride, 'uint16-be', 'and marked as overridden');
+  eq(one.endByte - one.startByte + 1, 2, 'the field took the 2 bytes its type needs');
+  const two = ctx.fields.find(x => x.id === 'TWO' && !x.error);
+  eq(two.startByte, 2, 'TWO shifted along, exactly as if the DDL had declared 2 bytes');
+});
+
+test('an INLINE parse-spec type is still length-checked — it never re-sizes a field', () => {
+  S.ddlTree = { VOL: { SV: { 'INLBAD': `
+    DEF REC.
+      02 ONE PIC X(1).
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({
+    ddl_bindings: ['VOL/SV/INLBAD/REC'],
+    parse_spec_binary: [{ read: { field: 'ONE', type: 'uint16-be' } }],
+  }, Buffer.from('A'));
   const err = ctx.fields.find(x => x.id === 'ONE' && x.error);
-  eq(parsed.value, 'A', 'original parsed field remains visible');
-  assert.ok(!parsed.typeOverride, 'invalid override is not applied');
-  assert.ok(err.error.includes('override ignored'), 'mismatch emits warning row');
+  assert.ok(err && err.error.includes('override ignored'),
+    'an inline type is part of the traversal, not a DDL edit, so it must still fit');
 });
 
 test('inline parse-spec type overrides take precedence over field_overrides', () => {
@@ -1488,7 +1789,7 @@ test('DE numbering starts after the bitmap field and skips REDEFINES, matching t
   };
   // UI walker view: HDR and BMP unnumbered; PAN group anchored to DE-2
   // (terminal, owns its leaves); ALT-VIEW (REDEFINES) skipped; AMT = DE-3.
-  const rows = sandbox._t.meWalkDEFields(
+  const rows = meWalkDEFields(
     sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/ISODDL/REC')]), item);
   const rowDE = id => rows.find(r => r.id === id)?.de ?? null;
   eq(rowDE('HDR'), null, 'header field carries no DE');
@@ -1526,7 +1827,7 @@ test('a REDEFINES child group does not split its parent\'s DE (DATA-ELEMENT-37 c
       { 'read-bitmap-fields': 'BMP' },
     ],
   };
-  const rows = sandbox._t.meWalkDEFields(
+  const rows = meWalkDEFields(
     sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/D37DDL/REC')]), item);
   const row = id => rows.find(r => r.id === id);
   eq(row('DATA-ELEMENT-37')?.de, 1, 'group owns the DE (terminal despite the redef child)');
@@ -1549,7 +1850,7 @@ test('[REGRESSION] DE walker expands every nested OCCURS occurrence; DE only on 
     END REC.
   ` } } };
   const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/NESTDDL/REC')]);
-  const rows = sandbox._t.meWalkDEFields(defs, { ddl_bindings: ['VOL/SV/NESTDDL/REC'] });
+  const rows = meWalkDEFields(defs, { ddl_bindings: ['VOL/SV/NESTDDL/REC'] });
   const ids = rows.map(r => r.id);
   // Full expansion: every occurrence is its own row.
   eq(ids.filter(id => /\.NUM$/.test(id)).length, 10, '2 (MULT) × 5 (INFO) = 10 NUM rows shown');
@@ -1580,7 +1881,7 @@ test('a composite element (nested sub-groups) consumes exactly ONE DE', () => {
     ddl_bindings: ['VOL/SV/COMP/ISOMSG'], de_map: [],
     parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'BMP' }],
   };
-  const rows = sandbox._t.meWalkDEFields(
+  const rows = meWalkDEFields(
     sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/COMP/ISOMSG')]), item);
   const de = id => rows.find(r => r.id === id)?.de ?? null;
   eq(de('DATA-ELEMENT-62'), 1, 'composite element owns one DE');
@@ -1925,14 +2226,14 @@ test('DE numbering caps at 128; an anchor pulls the sequence back into range', (
   });
   const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/BIG/BIGISO')]);
   // Natural: fields 129/140 exceed the 128-bit bitmap → no DE, flagged overflow.
-  let rows = sandbox._t.meWalkDEFields(defs, mkItem([]));
+  let rows = meWalkDEFields(defs, mkItem([]));
   const row = (rs, id) => rs.find(r => r.id === id);
   eq(row(rows, 'FLD-128').de, 128, 'DE-128 still assigned');
   eq(row(rows, 'FLD-129').de, null, 'DE-129 does not exist');
   eq(row(rows, 'FLD-129').deOverflow, true, 'overflow flagged');
   eq(row(rows, 'FLD-129').deSeq, 129, 'uncapped sequence kept for Auto Order');
   // Anchoring FLD-100 back to DE-60 brings the tail into range again.
-  rows = sandbox._t.meWalkDEFields(defs, mkItem([{ field: 'FLD-100', de: 60 }]));
+  rows = meWalkDEFields(defs, mkItem([{ field: 'FLD-100', de: 60 }]));
   eq(row(rows, 'FLD-100').de, 60, 'anchor applied');
   eq(row(rows, 'FLD-129').de, 89, 'post-anchor field back inside 1-128');
   eq(row(rows, 'FLD-140').de, 100, 'tail numbered normally after the anchor');
@@ -2006,7 +2307,7 @@ END
   deepEq([...roots].sort(), ['DATA-ELEMENT-2', 'DATA-ELEMENT-44', 'DATA-ELEMENT-53', 'PBIT-MAP'],
     'field list holds only the bound DEF');
   // 2. DE rows: one per top-level element of the bound DEF, nothing else.
-  const rows = sandbox._t.meWalkDEFields(sandbox._t.meCollectBindingDefs([r]), item);
+  const rows = meWalkDEFields(sandbox._t.meCollectBindingDefs([r]), item);
   deepEq(rows.filter(x => x.de !== null).map(x => `${x.id}=DE-${x.de}`),
     ['DATA-ELEMENT-2=DE-1', 'DATA-ELEMENT-44=DE-2', 'DATA-ELEMENT-53=DE-3'],
     'exactly one DE per top-level element of the bound DEF');
@@ -2117,7 +2418,7 @@ END
     'both FILLERs survive the id+offset dedup');
   const item = { ddl_bindings: ['VOL/SV/Z/ZOO3'], de_map: [],
     parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'BMP' }] };
-  const rows = sandbox._t.meWalkDEFields(merged, item);
+  const rows = meWalkDEFields(merged, item);
   // FILLER is padding: it neither owns nor advances the DE counter.
   deepEq(rows.filter(r => r.de !== null).map(r => `${r.id}=DE-${r.de}`),
     ['A=DE-1', 'B=DE-2', 'C=DE-3', 'D=DE-4'],
@@ -3000,6 +3301,58 @@ test('normal parse: the same spec DOES override the field (guard is not too wide
   eq(typ.dataType, 'PIC 9(4)', 'declared type preserved alongside the override');
 });
 
+// ── An overridden field is judged by the override, not by the DDL ───────────
+// The declared type is deliberately kept on the field so the Type column can
+// show "declared ↩ override". The content-vs-type check went on reading it, so
+// every field whose override made its bytes legal stayed red anyway.
+
+console.log('\ncontent validation follows the type override');
+
+// PIC 9(4) — declared digits — holding bytes that are NOT digits. Exactly the
+// case someone overrides the type to explain.
+function ovrBadBytesMsg(type) {
+  return {
+    msgType: { type: 'STM', label: 'STM' }, manualOverride: false,
+    bytes: [], raw: '', tokens: [],
+    fields: [{ id: 'TYP', name: 'TYP', dataType: 'PIC 9(4)', offset: 0, length: 4,
+               value: '', rawHex: '00131A2B', rawBytes: [0x00, 0x13, 0x1A, 0x2B] }],
+  };
+}
+// renderFieldTable writes to the DOM rather than returning markup, so the rule
+// itself is the unit under test — renderFieldTable is still run first, because
+// that is what puts the override onto the field.
+function ovrRendered(spec) {
+  setSpecLookup(() => spec);
+  const m = ovrBadBytesMsg();
+  renderFieldTable(m);
+  setSpecLookup(() => null);
+  return m.fields[0];
+}
+
+test('without an override, non-digit bytes in a PIC 9 are still flagged', () => {
+  assert.ok(meContentLooksWrong(ovrRendered(null)), 'the check still does its job');
+});
+
+test('a hex-char override stops the field being painted red', () => {
+  const f = ovrRendered({ name: 'STM', field_overrides: [{ field: 'TYP', type: 'hex-char' }] });
+  eq(f.typeOverride, 'hex-char', 'the override was applied');
+  eq(f.dataType, 'PIC 9(4)', 'and the declared type is still there for the annotation');
+  assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
+});
+
+test('an ascii override still expects printable bytes', () => {
+  // ascii maps to X, not to B: overriding to ascii is a claim ABOUT the bytes,
+  // so a control byte is still worth flagging.
+  const f = ovrRendered({ name: 'STM', field_overrides: [{ field: 'TYP', type: 'ascii' }] });
+  eq(f.typeOverride, 'ascii', 'the override was applied');
+  assert.ok(meContentLooksWrong(f), '0x00 is not printable ASCII');
+});
+
+test('a REDEFINES overlay is never flagged', () => {
+  assert.ok(!meContentLooksWrong({ dataType: 'PIC 9(4)', isRedefines: true, rawBytes: [0x00] }),
+     'it re-views bytes already judged where they were read');
+});
+
 test('manual override: a display override is skipped too, not just the type', () => {
   setSpecLookup(() => ({ name: 'STM', field_overrides: [{ field: 'TYP', display: 'amount' }] }));
   const m = ovrMsg(true);
@@ -3146,6 +3499,996 @@ test('the declared type matches a REDEFINES field name in weight, not just colou
   assert.ok(/font-weight:\s*700/.test(cssRule('.c-ovr-orig')),
     '.c-ovr-orig must be 700 like td.c-id, or the same rgba reads as a different blue');
   assert.ok(/font-weight:\s*700/.test(cssRule('td.c-id')), 'td.c-id is the reference weight');
+});
+
+// ── min-length / max-length: the attribute the help documented ──────────────
+// The evaluators read `length`; the in-app help said `value`. Anyone following
+// the help got length=0, so min-length passed everything and max-length blocked
+// everything — silently, since a recognizer only returns a boolean.
+
+console.log('\nrecognizers — min-length / max-length');
+
+test('min-length and max-length work with `length`', () => {
+  const b = Buffer.from('ABCDEFGHIJ');            // 10 bytes
+  const pass = n => fmtTestSpecs([{ name: 'X', recognizers: [n] }], b)[0].passed;
+  eq(pass({ type: 'min-length', length: 5 }),  true,  '10 >= 5');
+  eq(pass({ type: 'min-length', length: 20 }), false, '10 >= 20 is false');
+  eq(pass({ type: 'max-length', length: 20 }), true,  '10 <= 20');
+  eq(pass({ type: 'max-length', length: 5 }),  false, '10 <= 5 is false');
+});
+
+test('`value` is accepted too, as the help had documented', () => {
+  const b = Buffer.from('ABCDEFGHIJ');
+  const pass = n => fmtTestSpecs([{ name: 'X', recognizers: [n] }], b)[0].passed;
+  eq(pass({ type: 'min-length', value: 5 }),  true,  'min-length honours value');
+  eq(pass({ type: 'min-length', value: 20 }), false, 'and still discriminates');
+  eq(pass({ type: 'max-length', value: 5 }),  false,
+     'max-length with value=5 must REJECT a 10-byte message — writing it per the ' +
+     'old help silently blocked every message instead');
+  eq(pass({ type: 'max-length', value: 20 }), true, 'and accept within the limit');
+});
+
+// ── Explicit positioning: the "at" attribute ─────────────────────────────────
+// Every block accepts it, resolved once in the dispatcher. Default (absent) must
+// stay exactly as before — the baseline corpus covers that side.
+
+console.log('\nparse-spec positioning — "at"');
+
+const AT_MSG = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ01';        // 28 bytes, index 0 = 'A'
+function atRun(blocks) {
+  S.ddlTree = {}; S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: [], parse_spec_binary: blocks },
+                         Buffer.from(AT_MSG));
+}
+const atVal = (ctx, id) => ctx.fields.find(f => f.id === id);
+
+test('absolute "at" counts from 0', () => {
+  const ctx = atRun([{ 'read-fixed': { length: 3, as: 'A', at: 10 } }]);
+  eq(atVal(ctx, 'A').value, 'KLM', 'byte 10 is "K" — 0-based, matching DDL Doc and the raw dump');
+  eq(atVal(ctx, 'A').startByte, 10, 'reported offset is the absolute position');
+});
+
+test('"at" seeks: the next block continues after the positioned read', () => {
+  const ctx = atRun([{ 'read-fixed': { length: 3, as: 'A', at: 10 } },
+                     { 'read-fixed': { length: 2, as: 'B' } }]);
+  eq(atVal(ctx, 'B').value, 'NO', 'continues at 13, not back at 0');
+  eq(ctx.cursor, 15, 'cursor left after the second read');
+});
+
+test('"peek" restores the cursor so sequential flow is undisturbed', () => {
+  const ctx = atRun([{ 'read-fixed': { length: 3, as: 'A' } },
+                     { 'read-fixed': { length: 3, as: 'B', at: 20, peek: true } },
+                     { 'read-fixed': { length: 2, as: 'C' } }]);
+  eq(atVal(ctx, 'B').value, 'UVW', 'peeked read still happens at 20');
+  eq(atVal(ctx, 'C').value, 'DE', 'and the next block carries on from 3, where A ended');
+});
+
+test('relative "at": after a field, with offset and from:start', () => {
+  const after = atRun([{ 'read-fixed': { length: 3, as: 'A' } },
+                       { 'read-fixed': { length: 2, as: 'B', at: { field: 'A' } } }]);
+  eq(atVal(after, 'B').value, 'DE', 'defaults to just past the anchor');
+  const off = atRun([{ 'read-fixed': { length: 2, as: 'A' } },
+                     { 'read-fixed': { length: 2, as: 'B', at: { field: 'A', offset: 5 } } }]);
+  eq(atVal(off, 'B').value, 'HI', 'offset moves on from the anchor end');
+  const start = atRun([{ 'read-fixed': { length: 4, as: 'A' } },
+                       { 'read-fixed': { length: 2, as: 'B', at: { field: 'A', from: 'start', offset: 1 } } }]);
+  eq(atVal(start, 'B').value, 'BC', 'from:start measures from the anchor first byte');
+  const back = atRun([{ 'read-fixed': { length: 4, as: 'A' } },
+                      { 'read-fixed': { length: 2, as: 'B', at: { field: 'A', offset: -3 } } }]);
+  eq(atVal(back, 'B').value, 'BC', 'negative offset reads backwards');
+});
+
+test('"at" works on blocks that are not reads', () => {
+  const sk = atRun([{ skip: { length: 2, at: 10 } }, { 'read-fixed': { length: 3, as: 'A' } }]);
+  eq(atVal(sk, 'A').value, 'MNO', 'skip honours it — proving it is dispatcher-wide, not per block');
+  const te = atRun([{ 'read-to-end': { as: 'R', at: 24 } }]);
+  eq(atVal(te, 'R').value, 'YZ01', 'read-to-end honours it');
+});
+
+test('a bad "at" reports why, instead of reading from a wrong offset', () => {
+  const cases = [
+    [{ 'read-fixed': { length: 2, as: 'A', at: 999 } },                     'past the end'],
+    [{ 'read-fixed': { length: 2, as: 'A', at: -1 } },                      'whole byte position'],
+    [{ 'read-fixed': { length: 2, as: 'A', at: { field: 'GHOST' } } },      'has not been read yet'],
+  ];
+  for (const [blk, needle] of cases) {
+    const ctx = atRun([blk]);
+    const err = ctx.fields.find(f => f.error);
+    assert.ok(err, `expected an error for ${JSON.stringify(blk)}`);
+    assert.ok(err.error.includes(needle), `error should mention "${needle}", got: ${err.error}`);
+    eq(ctx.fields.filter(f => !f.error).length, 0, 'and nothing is read');
+  }
+});
+
+// ── read-bitmap with an explicit width ───────────────────────────────────────
+console.log('\nread-bitmap — width stated by the spec');
+
+test('an explicit length reads a bitmap the DDL never declares', () => {
+  S.ddlTree = { V: { S: { D: `DEF REC.\n  02 PAYLOAD PIC X(4).\nEND REC.\n` } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [{ 'read-bitmap': { field: 'WIRE-MAP', length: 4 } }] },
+    Uint8Array.from([0x40, 0x00, 0x00, 0x00, 0x41, 0x42]));
+  const bm = ctx.fields[0];
+  eq(bm.error, undefined, 'no "not found in the bound DDL" — the width waives that check');
+  deepEq(Array.from(bm.bitSet).sort((a, b) => a - b), [2], 'bit 2 set');
+  eq(ctx.cursor, 4, 'consumed exactly the stated width');
+});
+
+test('an explicit width turns off the ISO-only bit rules', () => {
+  S.ddlTree = {}; S.inputFormat = 'hex';
+  const mk = attrs => meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: [],
+    parse_spec_binary: [{ 'read-bitmap': attrs }] },
+    Uint8Array.from([0xC0, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44,
+                     0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC]));
+  const sized = mk({ field: 'M', length: 4 });
+  deepEq(Array.from(sized.bitSet ?? sized.fields[0].bitSet).sort((a, b) => a - b), [1, 2],
+    'bit 1 is real data on a non-ISO map, not the secondary-bitmap flag');
+  eq(sized.cursor, 4, 'and bit 0 does not silently double the read');
+});
+
+// ── read-tlv: BER framing and tag → DDL element mapping ─────────────────────
+console.log('\nread-tlv — BER framing and tag mapping');
+
+const EMV_DDL = `DEF REC.
+  02 BITMAP PIC X(8).
+  02 EMV-ELEMENT.
+    04 ARQC.
+      06 LEN  PIC X(2).
+      06 DATA PIC X(16).
+    04 ATC.
+      06 TAG  PIC X(4).
+      06 LEN  PIC X(2).
+      06 DATA PIC X(16).
+END REC.
+`;
+// 9F26 (2-byte tag) len 08, 9F36 (2-byte tag) len 02, then 82 — a ONE-byte tag.
+const EMV_BYTES = Uint8Array.from([
+  0x40, 0, 0, 0, 0, 0, 0, 0,
+  0x9F, 0x26, 0x08, 1, 2, 3, 4, 5, 6, 7, 8,
+  0x9F, 0x36, 0x02, 0x12, 0x34,
+  0x82, 0x02, 0x58, 0x00,
+]);
+function emvRun(tlvAttrs) {
+  S.ddlTree = { V: { S: { D: EMV_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: {
+          '2': { field: 'EMV-ELEMENT', blocks: [{ 'read-tlv': tlvAttrs }] } } } },
+    ] }, EMV_BYTES);
+}
+
+test('BER framing handles a 1-byte tag after 2-byte tags', () => {
+  const ctx = emvRun({ ber: true, tags: { '9F26': { field: 'ARQC' } }, unknown: 'emit' });
+  const ids = ctx.fields.map(f => f.id);
+  assert.ok(ids.includes('EMV-ELEMENT.ARQC.DATA'), 'the mapped 2-byte tag is filed');
+  assert.ok(ids.some(i => /\.82$/.test(i)),
+    'the 1-byte 82 tag is framed correctly — a fixed tag_length of 2 would swallow it and ' +
+    'mis-frame every triple after it');
+  eq(ctx.fields.some(f => f.error), false, 'and nothing errors');
+});
+
+test('a tag fills its element LEN and DATA leaves', () => {
+  const ctx = emvRun({ ber: true, tags: { '9F26': { field: 'ARQC' } }, unknown: 'skip' });
+  const len  = ctx.fields.find(f => f.id === 'EMV-ELEMENT.ARQC.LEN');
+  const data = ctx.fields.find(f => f.id === 'EMV-ELEMENT.ARQC.DATA');
+  assert.ok(len && data, 'both leaves emitted');
+  eq(data.rawHex, '0102030405060708', 'value bytes land in DATA');
+  eq(data.startByte, 11, 'offsets stay absolute in the message');
+});
+
+test('the DDL decides whether the tag is stored — no store_tag attribute', () => {
+  const ctx = emvRun({ ber: true,
+    tags: { '9F26': { field: 'ARQC' }, '9F36': { field: 'ATC' } }, unknown: 'skip' });
+  const ids = ctx.fields.map(f => f.id);
+  assert.ok(!ids.includes('EMV-ELEMENT.ARQC.TAG'),
+    'ARQC declares no TAG leaf, so the tag is not stored — the element already identifies it');
+  const atcTag = ctx.fields.find(f => f.id === 'EMV-ELEMENT.ATC.TAG');
+  assert.ok(atcTag, 'ATC declares a TAG leaf, so it is stored');
+  eq(atcTag.rawHex, '9F36', 'and it holds the actual tag');
+});
+
+test('names inside a "de" entry resolve within that element', () => {
+  // "ARQC" alone is not a DDL id — only EMV-ELEMENT.ARQC.* exist as leaves, and
+  // the group itself is never compiled, so this only works if the resolver
+  // recognises a group by the prefix on its children.
+  const ctx = emvRun({ ber: true, tags: { '9F26': { field: 'ARQC' } }, unknown: 'skip' });
+  assert.ok(ctx.fields.some(f => f.id === 'EMV-ELEMENT.ARQC.DATA'),
+    'the short name resolved against the DE element');
+});
+
+test('a "de" entry cannot read past its element into the next DE', () => {
+  // The window is 4 bytes; the block asks for 12. The engine must stop at the
+  // boundary and say so, rather than let DE-56 be consumed by DE-55's blocks.
+  S.ddlTree = { V: { S: { D: EMV_DDL } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: {
+          '2': { field: 'EMV-ELEMENT', length: 4,
+                 blocks: [{ 'read-fixed': { length: 12, as: 'GREEDY' } }] } } } },
+    ] }, EMV_BYTES);
+  assert.ok(ctx.fields.some(f => f.error && /past the element's length/.test(f.error)),
+    `overrun must be reported, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  eq(ctx.cursor, 12, 'and the cursor resumes at the element boundary (8 + 4), so the next DE lines up');
+});
+
+test('unknown tags follow the stated policy', () => {
+  const emit = emvRun({ ber: true, tags: {}, unknown: 'emit' });
+  assert.ok(emit.fields.some(f => /\.9F26$/.test(f.id)), 'emit keeps unmapped tags as their own rows');
+  const skip = emvRun({ ber: true, tags: {}, unknown: 'skip' });
+  eq(skip.fields.filter(f => /9F26/.test(f.id)).length, 0, 'skip drops them');
+  const err = emvRun({ ber: true, tags: {}, unknown: 'error' });
+  assert.ok(err.fields.some(f => f.error && f.error.includes('not mapped')), 'error flags them');
+});
+
+test('BER long-form lengths (81/82) are decoded, not read as short-form', () => {
+  // A length byte >= 0x80 does not hold the length — its low bits say how many
+  // FOLLOWING bytes do. 0x81 0x0A means 10; misreading it as short-form yields
+  // 129 and frames every later triple wrong. DE-55 above 127 bytes needs this.
+  const ddl = `DEF REC.\n  02 BUF PIC X(32).\n  02 ITEM.\n    04 LEN PIC X(2).\n    04 DATA PIC X(16).\nEND REC.\n`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const body = [0x9F, 0x26, 0x81, 0x0A, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [
+      { 'read-fixed': { length: body.length, as: 'BUF' } },
+      { 'read-tlv': { field: 'BUF', ber: true, tags: { '9F26': { field: 'ITEM' } } } },
+    ] }, Uint8Array.from(body));
+  const data = ctx.fields.find(f => f.id === 'ITEM.DATA');
+  assert.ok(data, 'the triple was filed into its element');
+  eq(data.rawHex, '0102030405060708090A', 'exactly the 10 bytes the long form declared');
+  eq(ctx.fields.some(f => f.error), false, 'and the buffer framed cleanly to its end');
+});
+
+test('a tag mapped to a missing element is reported, not silently dropped', () => {
+  const ctx = emvRun({ ber: true, tags: { '9F26': { field: 'NOT-THERE' } }, unknown: 'skip' });
+  const e = ctx.fields.find(f => f.error);
+  assert.ok(e && e.error.includes('not found in the DDL'), `expected a clear error, got: ${e && e.error}`);
+});
+
+// ── Variable-length groups: the LEN is read in the MESSAGE's encoding ───────
+// It used to be read as characters and parseInt'd, with "|| 0" swallowing the
+// failure — so on a binary message the length came out 0, the group collapsed to
+// nothing, and every field after it shifted, silently.
+
+console.log('\nvariable-length groups — length encoding follows the message');
+
+const VLG_DDL = `DEF MSG.
+  02 BITMAP PIC X(8).
+  02 EMV.
+    04 LEN  PIC X(2).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END MSG.
+`;
+function vlgRun(lenBytes, extraPad = 0) {
+  S.ddlTree = { V: { S: { D: VLG_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = [0x40, 0, 0, 0, 0, 0, 0, 0,       // bitmap, bit 2 set
+                 ...lenBytes,                      // the LEN field
+                 0x41, 0x42, 0x43, 0x44, 0x45,     // 5 payload bytes "ABCDE"
+                 ...new Array(extraPad).fill(0x2E), // room, when a case needs it
+                 0x54, 0x41, 0x49, 0x4C];          // "TAIL"
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/MSG'],
+    de_map: [{ field: 'EMV', de: 2 }],             // DE numbering comes from Overrides
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': 'BITMAP' },
+    ] }, Uint8Array.from(bytes));
+}
+
+test('a BINARY length is read as an integer, not as characters', () => {
+  // 0x00 0x05 — as characters this is "\\x00\\x05", parseInt gives NaN, and the
+  // old "|| 0" turned that into a zero-length group.
+  const ctx = vlgRun([0x00, 0x05]);
+  const data = ctx.fields.find(f => f.id === 'EMV.DATA');
+  assert.ok(data, 'the payload field is emitted');
+  eq(data.value, 'ABCDE', 'five bytes, exactly what the binary length said');
+  eq(data.valueLength, 5, 'not zero — the group did not collapse');
+});
+
+test('an ASCII digit length still works, unchanged', () => {
+  const ctx = vlgRun([0x30, 0x35]);                // "05"
+  eq(ctx.fields.find(f => f.id === 'EMV.DATA').value, 'ABCDE', 'digits still parse as digits');
+});
+
+test('a length past the end of the message is reported, not read off the end', () => {
+  const ctx = vlgRun([0x7F, 0xFF]);                // absurd binary length
+  const err = ctx.fields.find(f => f.error && /runs past the end/.test(f.error));
+  assert.ok(err, `expected a clear error, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  assert.ok(/binary integer/.test(err.error), 'and it says how the length was read');
+});
+
+test('a length beyond the declared payload is flagged but still framed by the wire', () => {
+  // Padded so 25 fits in the message — otherwise it trips the end-of-message
+  // check first and never reaches the capacity comparison.
+  const ctx = vlgRun([0x00, 0x19], 30);           // 25 > DATA's declared 20
+  const err = ctx.fields.find(f => f.error && /exceeds the 20 byte/.test(f.error));
+  assert.ok(err, `expected a capacity warning, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+});
+
+// ── vlg_identifier: which leaf means "length", per DDL ──────────────────────
+// The auto-detect used to hardcode LEN/LGTH/LENGTH and a 2–4 byte width. Both
+// are wrong for someone else's DDL: a group whose first field is legitimately
+// called AMT-LEN but is NOT variable-length was read as though it were, and a
+// 1-byte binary length was never recognised at all.
+
+console.log('\nvlg_identifier — the length leaf is named by the spec');
+
+const VLGID_DDL = `DEFINITION MSG.
+  02 TYP PIC X(4).
+  02 EMV.
+    04 LEN PIC 9(2).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END
+`;
+// "1200" + "05" + "ABCDE" + "TAIL" — the group carries 5 of its declared 20.
+function vlgIdBytes() {
+  const b = [];
+  for (const c of '1200' + '05' + 'ABCDE' + 'TAIL') b.push(c.charCodeAt(0));
+  return b;
+}
+function vlgIdRun(attrs, ddl = VLGID_DDL, item = {}) {
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'], ...item,
+    parse_spec_binary: [{ 'read-ddl': attrs }] }, vlgIdBytes());
+}
+const vlgIdField = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
+
+test('read-ddl reads a variable-length group as one, and the rest of the record follows', () => {
+  const ctx = vlgIdRun('ANY');
+  eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCDE', 'DATA is framed by LEN, not by its declared 20');
+  // The proof that ovShift did its job: TAIL is 15 bytes earlier than declared.
+  eq(vlgIdField(ctx, 'TAIL').value, 'TAIL', 'the field after the group still lands on its bytes');
+  eq(vlgIdField(ctx, 'TAIL').startByte, 11, 'and at the position the WIRE puts it, not the DDL');
+});
+
+test('vlg_identifier names the length leaf', () => {
+  const ctx = vlgIdRun({ vlg_identifier: 'LEN' });
+  eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCDE', 'named leaf matches, group is variable-length');
+  eq(vlgIdField(ctx, 'TAIL').startByte, 11, 'and the tail follows');
+});
+
+test('vlg_identifier that matches nothing leaves the group fixed-length', () => {
+  const ctx = vlgIdRun({ vlg_identifier: 'SIZE' });
+  eq(vlgIdField(ctx, 'EMV.DATA').valueLength, 9, 'DATA takes its declared width (bounded by the message)');
+  assert.ok(!vlgIdField(ctx, 'TAIL'), 'so TAIL is swallowed — this DDL simply has no SIZE leaf');
+});
+
+test('vlg_identifier "" switches auto-detect off entirely', () => {
+  // The whole point: a group whose first field is called LEN but which is NOT
+  // variable-length must not be read as though it were.
+  const ctx = vlgIdRun({ vlg_identifier: '' });
+  eq(vlgIdField(ctx, 'EMV.DATA').valueLength, 9, 'no auto-detect, so DATA reads at its declared length');
+  assert.ok(!vlgIdField(ctx, 'TAIL'), 'and nothing is reframed');
+});
+
+test('an explicit Overrides flag still wins when auto-detect is off', () => {
+  // "" disables the GUESS. Pointing at a group by hand is not a guess.
+  const ctx = vlgIdRun({ vlg_identifier: '' }, VLGID_DDL,
+    { overrides: { 'EMV': { vlg: 'EMV.LEN' } } });
+  eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCDE', 'the hand-flagged group is still variable-length');
+  eq(vlgIdField(ctx, 'TAIL').startByte, 11, 'and the tail follows');
+});
+
+test('the LEN width comes from the DDL, not from a hardcoded 2/3/4', () => {
+  // A 5-digit length: the old rule ignored anything outside 2-4 bytes, so this
+  // group was silently read at its declared width.
+  const ddl = `DEFINITION MSG.
+  02 TYP PIC X(4).
+  02 EMV.
+    04 LEN PIC 9(5).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of '1200' + '00005' + 'ABCDE' + 'TAIL') b.push(c.charCodeAt(0));
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, b);
+  eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCDE', 'a 5-byte length is a length like any other');
+  eq(vlgIdField(ctx, 'TAIL').value, 'TAIL', 'and the record still lines up');
+});
+
+test('a grandchild LEN frames its own group, never the group above it', () => {
+  // EMV.ARQC.LEN is the length of the triple INSIDE the element. ARQC being
+  // variable-length is correct; EMV being framed by it is not — that would eat
+  // EMV's other children, which the LEN says nothing about.
+  const ddl = `DEFINITION MSG.
+  02 TYP PIC X(4).
+  02 EMV.
+    04 ARQC.
+      06 LEN PIC 9(2).
+      06 DATA PIC X(4).
+    04 EXTRA PIC X(3).
+  02 TAIL PIC X(4).
+END
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of '1200' + '02' + 'WX' + 'YZA' + 'TAIL') b.push(c.charCodeAt(0));
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, b);
+  eq(vlgIdField(ctx, 'EMV.ARQC.DATA').value, 'WX', 'ARQC is framed by its own LEN');
+  // If EMV had been framed by ARQC.LEN, its 2 bytes would be spent on DATA and
+  // EXTRA would come out empty, dragging TAIL forward.
+  eq(vlgIdField(ctx, 'EMV.EXTRA').value, 'YZA', 'EMV\'s other child keeps its declared bytes');
+  eq(vlgIdField(ctx, 'TAIL').value, 'TAIL', 'and the record still lines up');
+});
+
+test('read-bitmap-fields honours vlg_identifier too', () => {
+  // PAD is DE-1 so the map can leave bit 1 clear — in ISO that bit means "a
+  // secondary bitmap follows", and setting it reads 8 more bytes as a map.
+  const ddl = `DEFINITION MSG.
+  02 BITMAP PIC X(8).
+  02 PAD PIC X(1).
+  02 EMV.
+    04 SIZE PIC 9(2).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [0x60, 0, 0, 0, 0, 0, 0, 0];                 // bits 2 and 3 → EMV, TAIL
+  for (const c of '05' + 'ABCDE' + 'TAIL') b.push(c.charCodeAt(0));
+  const spec = vid => meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+      { 'read-bitmap-fields': vid === undefined ? 'BITMAP' : { bitmap: 'BITMAP', vlg_identifier: vid } },
+    ] }, b);
+  eq(vlgIdField(spec('SIZE'), 'EMV.DATA').value, 'ABCDE', 'SIZE is this DDL\'s name for a length');
+  eq(vlgIdField(spec(undefined), 'EMV.DATA').valueLength, 9,
+     'without it the built-in names do not match SIZE, so the group is fixed');
+});
+
+test('the VLG marker appears exactly once — on the group when collapsed, on the LEN when open', () => {
+  // It used to print the LEN's field NAME on the group row and "LEN" on the leaf:
+  // the same fact twice, and production field names are long enough to blow the
+  // column out.
+  const ctx = { ea: s => String(s), vlgMap: new Map(), foByField: new Map(),
+    usesBitmapFields: true, vlgIdentifier: undefined,
+    leavesByGroup: new Map([['EMV', [{ id: 'EMV.LEN', length: 2 }, { id: 'EMV.DATA', length: 20 }]]]) };
+  const grp  = { id: 'EMV', isGroup: true, childCount: 2, length: 22, offset: 0 };
+  const len  = { id: 'EMV.LEN',  length: 2,  offset: 0 };
+  const data = { id: 'EMV.DATA', length: 20, offset: 2 };
+  const cell = row => ((meFmRowHtml(row, ctx, { n: 0 })
+    .match(/<td class="me-fm-vlg"[^>]*>(.*?)<\/td>/) || [, ''])[1]).replace(/<[^>]+>/g, '').trim();
+
+  const saved = meState();
+  try {
+    setMeState({ fmCollapsedGroups: new Set(['EMV']) });
+    eq(cell(grp), 'VLG', 'collapsed: the group carries it, because the leaf is off screen');
+    setMeState({ fmCollapsedGroups: new Set() });
+    eq(cell(grp),  '',    'expanded: the group row stays clean');
+    eq(cell(len),  'VLG', 'expanded: the LEN leaf carries it');
+    eq(cell(data), '',    'and no other leaf does');
+  } finally { setMeState(saved); }
+});
+
+test('the Field Map reads vlg_identifier off the spec, and "" survives the trip', () => {
+  // The VLG column has to show what the PARSE will do. `undefined` (use the
+  // built-in names) and `""` (guess off) mean opposite things, so a `|| null`
+  // anywhere on this path would silently re-enable the guess in the panel.
+  eq(meItemVlgIdentifier({ parse_spec_binary: [{ 'read-ddl': 'ANY' }] }), undefined,
+     'no attribute → built-in names');
+  eq(meItemVlgIdentifier({ parse_spec_binary: [{ 'read-ddl': { vlg_identifier: '' } }] }), '',
+     'empty string survives as an empty string, not as "unset"');
+  eq(meItemVlgIdentifier({ parse_spec_binary: [{ 'read-bitmap-fields': { bitmap: 'B', vlg_identifier: 'SIZE' } }] }),
+     'SIZE', 'read-bitmap-fields carries it too');
+  eq(meItemVlgIdentifier({ parse_spec_binary: [
+       { when: { field: 'F', is: '1', then: [{ 'read-ddl': { vlg_identifier: 'SZ' } }] } }] }),
+     'SZ', 'found inside a nested block');
+  eq(meItemVlgIdentifier({ parse_spec_ascii: [{ 'read-ddl': { vlg_identifier: 'SZ' } }] }), 'SZ',
+     'the ASCII spec counts as well');
+});
+
+// ── read: a group reads at its declared position, like a field ──────────────
+// Only LEAVES are compiled, so a group has no record of its own to carry its
+// offset — it exists as a prefix on its children's names. That made "read a
+// group" fall back to the cursor while "read a field" jumped to its declared
+// position, for no stated reason. Both now use the DDL's positions.
+
+console.log('\nread — groups read where the DDL says');
+
+const GRP_DDL = `DEF REC.
+  02 PLAIN-LEAF PIC X(2).
+  02 OCC-LEAF PIC X(2) OCCURS 2 TIMES.
+  02 PLAIN-GRP.
+    04 A PIC X(2).
+    04 B PIC X(2).
+  02 OCC-GRP OCCURS 2 TIMES.
+    04 C PIC X(2).
+END REC.
+`;
+//                     0 1 2 3 4 5 6 7 8 9 …
+const GRP_MSG = 'AABBCCDDEEFFGGHH';
+function grpRun(id, times = 1) {
+  S.ddlTree = { V: { S: { D: GRP_DDL } } };
+  S.inputFormat = 'hex';
+  const blocks = [{ 'read-fixed': { length: 4, as: 'PRE' } }];   // move the cursor off 0
+  for (let i = 0; i < times; i++) blocks.push({ read: id });
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: blocks }, Buffer.from(GRP_MSG));
+}
+
+test('a group reads at the CURSOR, not at its declared DDL position', () => {
+  // The DDL supplies structure — how many sub-fields and how wide. The cursor
+  // supplies position. PLAIN-GRP.A is declared at 6, but the cursor is at 4 when
+  // the read happens, so it reads at 4. `at` is how you jump to a position.
+  const ctx = grpRun('PLAIN-GRP');
+  const a = ctx.fields.find(f => f.id === 'PLAIN-GRP.A');
+  const b = ctx.fields.find(f => f.id === 'PLAIN-GRP.B');
+  eq(a.startByte, 4, 'A read where the cursor was');
+  eq(b.startByte, 6, 'B follows it');
+  eq(a.value, 'CC', 'and therefore the bytes under the cursor');
+});
+
+test('a field and a group behave the same way — both follow the cursor', () => {
+  const leaf  = grpRun('PLAIN-LEAF');
+  const group = grpRun('PLAIN-GRP');
+  eq(leaf.fields.find(f => f.id === 'PLAIN-LEAF').startByte, 4, 'field at the cursor');
+  eq(group.fields.find(f => f.id === 'PLAIN-GRP.A').startByte, 4, 'group likewise');
+});
+
+test('skip moves the cursor and the following reads honour it', () => {
+  // The reported bug: `{"skip": {"length": 9}}` then three reads returned bytes
+  // 0-1, 2-3, 4-7 — every read jumped to its declared DDL offset and the skip
+  // did nothing, which made the block inert wherever it mattered.
+  S.ddlTree = { V: { S: { D: `DEF REQMSG.
+  02 SDLC-DEST   PIC X(2).
+  02 SDLC-ORIGIN PIC X(2).
+  02 MSGTYPE     PIC X(4).
+END REQMSG.
+` } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([
+    0x43,0x54,0x00,0x13,0x00,0x00,0x00,0x00, 0x60,        // 9 bytes to step over
+    0x00,0x01, 0x51,0xB8, 0x02,0x00,0x30,0x20]);
+  const ctx = meExecParseSpec({ name:'X', type:'X', ddl_bindings:['V/S/D/REQMSG'],
+    parse_spec_binary: [
+      { skip: { length: 9 } },
+      { read: 'SDLC-DEST' }, { read: 'SDLC-ORIGIN' }, { read: 'MSGTYPE' },
+    ] }, bytes);
+  const at = id => ctx.fields.find(f => f.id === id);
+  eq(at('SDLC-DEST').startByte,   9,  'first read starts where skip left the cursor');
+  eq(at('SDLC-DEST').rawHex,      '0001', 'not the DDL-declared bytes 43 54 ("CT")');
+  eq(at('SDLC-ORIGIN').startByte, 11, 'and the rest follow sequentially');
+  eq(at('MSGTYPE').startByte,     13, '');
+  eq(at('MSGTYPE').rawHex,        '02003020', '');
+});
+
+test('reading a plain group twice advances — it does not error or repeat', () => {
+  // Reads follow the cursor, so a second read takes the NEXT bytes. What must
+  // not happen is the old "All 1 occurrences already read" error, which reported
+  // the occurrence machinery rather than anything the user did wrong.
+  const ctx = grpRun('PLAIN-GRP', 2);
+  const hits = ctx.fields.filter(f => f.id === 'PLAIN-GRP.A');
+  eq(hits.length, 2, 'both reads produced the field');
+  eq(hits[0].startByte, 4, 'first read at the cursor');
+  eq(hits[1].startByte, 8, 'second read continues after the first');
+  eq(ctx.fields.some(f => f.error), false, 'and neither errors');
+});
+
+test('a repeated group still advances one occurrence per read', () => {
+  const ctx = grpRun('OCC-GRP', 2);
+  const ids = ctx.fields.map(f => f.id);
+  assert.ok(ids.includes('OCC-GRP[01].C') && ids.includes('OCC-GRP[02].C'),
+    `each read takes the next occurrence, got: ${JSON.stringify(ids)}`);
+});
+
+test('reading a repeated group past its last occurrence still errors', () => {
+  const ctx = grpRun('OCC-GRP', 3);
+  assert.ok(ctx.fields.some(f => f.error && /All 2 occurrences/.test(f.error)),
+    'running out of occurrences is still reported');
+});
+
+// ── read + length_prefix: a length on the wire, absent from the DDL ─────────
+// Once a group's tags are mapped to elements, its LEN leaf holds nothing worth
+// keeping, so the DDL may legitimately omit it. The bytes are still on the wire.
+
+console.log('\nread — length_prefix');
+
+const LP_DDL = `DEF REC.
+  02 XXX-ELEMENT.
+    04 DATA PIC X(6).
+  02 TAIL PIC X(4).
+END REC.
+`;
+function lpRun(msg, attrs) {
+  S.ddlTree = { V: { S: { D: LP_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [{ read: attrs }] }, Buffer.from(msg));
+}
+
+test('the wire length frames the payload, and the prefix bytes are shown', () => {
+  const ctx = lpRun('0006ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: 4 });
+  const pre = ctx.fields.find(f => f.id === 'XXX-ELEMENT.LEN-PREFIX');
+  assert.ok(pre, 'the prefix is emitted as its own row — consuming bytes without ' +
+                 'a row is how 4 bytes of every STM record went missing under RTE-GRP');
+  eq(pre.value, '0006', 'and it shows the raw length bytes');
+  eq(ctx.fields.find(f => f.id === 'XXX-ELEMENT.DATA').value, 'ABCDEF', 'payload framed by the wire');
+  eq(ctx.cursor, 10, 'cursor past prefix + payload');
+});
+
+test('a binary length prefix works, using the same rule as VLG', () => {
+  const ctx = lpRun('\x00\x03ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: 2 });
+  eq(ctx.fields.find(f => f.id === 'XXX-ELEMENT.DATA').value, 'ABC',
+     'binary 0x0003 decoded as 3, not as characters');
+});
+
+test('a shorter wire length truncates the payload rather than reading declared size', () => {
+  const ctx = lpRun('0003ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: 4 });
+  const d = ctx.fields.find(f => f.id === 'XXX-ELEMENT.DATA');
+  eq(d.value, 'ABC', 'three bytes, not the declared six');
+  eq(d.valueLength, 3, 'and the length reflects what was actually taken');
+});
+
+test('a length past the end of the message is reported', () => {
+  const ctx = lpRun('9999ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: 4 });
+  assert.ok(ctx.fields.some(f => f.error && /runs past the end/.test(f.error)),
+    'clear error rather than reading off the end');
+});
+
+test('bytes the sub-fields do not claim are reported, not silently skipped', () => {
+  // wire says 9, DATA declares 6 — the leftover 3 must not vanish
+  const ctx = lpRun('0009ABCDEFGHIJKL', { field: 'XXX-ELEMENT', length_prefix: 4 });
+  assert.ok(ctx.fields.some(f => f.error && /not claimed by any sub-field/.test(f.error)),
+    'the unclaimed remainder is surfaced');
+});
+
+test('a bad length_prefix value is rejected', () => {
+  for (const bad of [0, -2, 1.5, 'two']) {
+    const ctx = lpRun('0006ABCDEFTAIL', { field: 'XXX-ELEMENT', length_prefix: bad });
+    assert.ok(ctx.fields.some(f => f.error && /whole number of bytes/.test(f.error)),
+      `expected rejection for ${JSON.stringify(bad)}`);
+  }
+});
+
+test('without length_prefix, read is completely unchanged', () => {
+  const ctx = lpRun('ABCDEFTAIL', 'XXX-ELEMENT');
+  eq(ctx.fields.find(f => f.id === 'XXX-ELEMENT.DATA').value, 'ABCDEF', 'declared sizes');
+  eq(ctx.fields.some(f => /LEN-PREFIX/.test(f.id)), false, 'no prefix row invented');
+  eq(ctx.cursor, 6, 'cursor advanced by the declared size only');
+});
+
+// ── DDL validation: a DEFINITION must declare level-numbered items ──────────
+// HPE DDL Reference Manual: each field or group in a group DEFINITION needs at
+// least a level number and a name. Without them the DEF compiles to zero fields,
+// which used to save clean and then show as "DDL not found" on the binding.
+
+console.log('\nDDL validation — DEFINITION without level numbers');
+
+test('a DEFINITION whose items have no level numbers is an error', () => {
+  const bad = `DEFINITION REQMSG.
+\tSDLC-DEST PIC X(2).
+    SDLC-ORIGIN PIC X(2).
+END.`;
+  const { errors } = validateDDLErrors(bad, new Map());
+  eq(errors.length, 1, 'exactly one error');
+  assert.ok(/REQMSG/.test(errors[0]) && /level number/.test(errors[0]),
+    `error should name the DEF and the cause, got: ${errors[0]}`);
+});
+
+test('the same fields with level numbers are clean', () => {
+  const good = `DEFINITION REQMSG.
+  02 SDLC-DEST PIC X(2).
+  02 SDLC-ORIGIN PIC X(2).
+END.`;
+  eq(validateDDLErrors(good, new Map()).errors.length, 0, 'no error');
+});
+
+test('a group carrying a PICTURE is a blocking error', () => {
+  // The real defect this catches: DDLFSTM had RTE-GRP PIC X(11) with two 06
+  // items under it. The parser charged 11 bytes for the group AND 4 more for the
+  // children, then emitted neither child — 4 bytes of every STM record belonged
+  // to no field at all. Manual: "a group description cannot have either clause".
+  const bad = `DEF REC.
+  02 RTE-GRP PIC X(11).
+    04 FROM-ACCT-TYP PIC X(2).
+    04 TO-ACCT-TYP PIC X(2).
+  02 TAIL PIC X(2).
+END.`;
+  const r = validateDDLErrors(bad, new Map());
+  assert.ok(r.errors.some(e => /cannot have a PICTURE clause/.test(e)),
+    `expected a blocking error, got: ${JSON.stringify(r.errors)}`);
+
+  // The fix — wrap the children in their own group — must be clean.
+  const fixed = `DEF REC.
+  02 RTE-GRP PIC X(11).
+  02 SAVE-ACCT.
+    04 FROM-ACCT-TYP PIC X(2).
+    04 TO-ACCT-TYP PIC X(2).
+  02 TAIL PIC X(2).
+END.`;
+  eq(validateDDLErrors(fixed, new Map()).errors.length, 0,
+     'a real group around the children resolves it');
+});
+
+test('a single-line elementary DEFINITION is not flagged', () => {
+  // It carries its own PICTURE on the header and has no body to number.
+  eq(validateDDLErrors(`DEFINITION AMT PIC 9(8).\nEND.`, new Map()).errors.length, 0,
+     'header with its own PIC is complete');
+});
+
+// ── Parse-spec help ↔ engine — the panel is the manual, so it must not lie ───
+// Two failure modes, both of which had happened before these tests existed:
+// an attribute documented with no example anywhere (27 of 33 at one point), and
+// an attribute documented that the block never reads (read-fixed's type and
+// encoding were inert for months). Neither is visible by reading the help.
+
+console.log('\nParse-spec help ↔ engine');
+
+// Which function actually implements each block. Where a block delegates by
+// mode, every function it can reach is listed — the claim under test is "this
+// attribute is read SOMEWHERE in the code path this block dispatches to".
+const PS_EXEC_FNS = {
+  'read-ddl':            ['_meExecReadDDL'],
+  'read':                ['_meExecReadField'],
+  'read-fixed':          ['_meExecReadFixed'],
+  'read-until':          ['_meExecReadUntil'],
+  'read-length-prefix':  ['_meExecReadLengthPrefix'],
+  'read-to-end':         ['_meExecReadToEnd'],
+  'read-bitmap':         ['_meExecReadBitmap', '_meExecSegMap', '_meExecReadSegMapFromFile'],
+  'read-bitmap-fields':  ['_meExecBitmapFields'],
+  'read-segment-fields': ['_meExecSegmentFields'],
+  'read-tlv':            ['_meExecReadTLV', '_meExecReadTLVMapped'],
+  'skip':                ['_meExecBlockAt'],
+  'when':                ['_meExecWhen'],
+  'repeat':              ['_meExecRepeat'],
+  'read-while':          ['_meExecReadWhile'],
+  'token-area':          ['_meExecTokenArea'],
+};
+
+const APP_SRC = match[1];
+function psFnSource(name) {
+  const i = APP_SRC.indexOf(`\nfunction ${name}(`);
+  assert.ok(i >= 0, `function ${name} not found in source.html`);
+  const j = APP_SRC.indexOf('\nfunction ', i + 1);
+  return APP_SRC.slice(i, j < 0 ? APP_SRC.length : j);
+}
+
+// The exec function plus one level of the helpers it calls: several blocks read
+// their attributes through a normalizer (_meReadDDLAttrs and friends), so the
+// literal attribute name never appears in the exec function itself.
+function psBlockSource(blk) {
+  const seen = new Set(PS_EXEC_FNS[blk]);
+  let src = '';
+  for (const fn of PS_EXEC_FNS[blk]) {
+    const s = psFnSource(fn);
+    src += '\n' + s;
+    for (const m of s.matchAll(/\b(_me[A-Za-z0-9]+)\s*\(/g))
+      if (!seen.has(m[1]) && APP_SRC.includes(`\nfunction ${m[1]}(`)) {
+        seen.add(m[1]);
+        src += '\n' + psFnSource(m[1]);
+      }
+  }
+  return src;
+}
+
+// An attribute counts as read when it is taken off an attrs-like object: a
+// property access, a quoted key, or a destructuring binding. A bare word match
+// would not do — "type" and "encoding" both appear all over read-fixed's
+// neighbourhood, and they were inert for months while doing so.
+const psReadsAttr = (src, name) => new RegExp(
+  `\\b(attrs|a)\\??\\.\\s*${name}\\b` +   // attrs.name / attrs?.name / a.name (the normalized alias)
+  `|['"]${name}['"]` +                    // attrs['name'], or a key in a returned object
+  `|[{,]\\s*${name}\\s*[,}]`              // const { name, … } = …
+).test(src);
+
+test('every block in the help table has a known implementation', () => {
+  deepEq(Object.keys(psHelp).filter(b => !PS_EXEC_FNS[b]), [], 'documented blocks with no exec mapping');
+  deepEq(Object.keys(PS_EXEC_FNS).filter(b => !psHelp[b]), [], 'implemented blocks with no help entry');
+});
+
+test('every documented attribute has at least one example', () => {
+  const commonNames = psCommonAttrs.map(a => a[0]);
+  const gaps = [];
+  for (const [blk, info] of Object.entries(psHelp))
+    for (const [name] of info.attrs)
+      // Same fallback the panel uses: a block's own examples first, then the
+      // shared positioning examples for the attributes every block accepts.
+      if (!info.examples.some(ex => mePsHelpExAttrs(ex).has(name)) &&
+          !(commonNames.includes(name) && psCommonExamples.some(ex => mePsHelpExAttrs(ex).has(name))))
+        gaps.push(`${blk}.${name}`);
+  deepEq(gaps, [], 'documented attributes with no example');
+});
+
+test('the shared positioning attributes have shared examples', () => {
+  deepEq(psCommonAttrs.map(a => a[0]).filter(n =>
+    !psCommonExamples.some(ex => mePsHelpExAttrs(ex).has(n))), [], 'common attrs with no example');
+});
+
+test('every documented attribute is actually read by its block', () => {
+  const inert = [];
+  for (const [blk, info] of Object.entries(psHelp)) {
+    const src = psBlockSource(blk);
+    for (const [name] of info.attrs) {
+      // The bare-string form has no key to look for; it is a typeof check.
+      if (name === '(bare string)') { assert.ok(/typeof attrs === 'string'/.test(src),
+        `${blk} documents the bare-string form but never checks for it`); continue; }
+      if (!psReadsAttr(src, name)) inert.push(`${blk}.${name}`);
+    }
+  }
+  deepEq(inert, [], 'documented attributes the block never reads');
+});
+
+test('every example the help ships actually parses as a spec', () => {
+  const bad = [];
+  for (const [blk, info] of Object.entries(psHelp))
+    for (const ex of info.examples) {
+      const spec = Array.isArray(ex) ? ex[1] : ex.spec;
+      if (!Array.isArray(spec) || !spec.length) { bad.push(`${blk}: not a block list`); continue; }
+      // A payload means the panel EXECUTES it — it must be whole hex bytes.
+      if (!Array.isArray(ex) && ex.payload && !/^([0-9A-Fa-f]{2}\s*)+$/.test(ex.payload))
+        bad.push(`${blk}: payload is not hex bytes`);
+    }
+  deepEq(bad, [], 'malformed help examples');
+});
+
+test('no attribute description is one dense paragraph', () => {
+  // The panel renders a string description as a single block of prose. Every
+  // description is a list of lines (or [form, meaning] pairs) so it renders as
+  // bullets or a table — the one change that made this panel readable.
+  const prose = [];
+  for (const [blk, info] of Object.entries(psHelp))
+    for (const [name, , , desc] of info.attrs)
+      if (!Array.isArray(desc)) prose.push(`${blk}.${name}`);
+  for (const [name, , , desc] of psCommonAttrs)
+    if (!Array.isArray(desc)) prose.push(`(common).${name}`);
+  deepEq(prose, [], 'attribute descriptions still written as one paragraph');
+});
+
+test('no block description is a wall of prose', () => {
+  // Same rule as the attributes: past a couple of sentences a description has to
+  // be a lead line plus bullets, or nobody gets to the end of it.
+  const walls = Object.entries(psHelp)
+    .filter(([, info]) => typeof info.desc === 'string' && info.desc.length > 300)
+    .map(([blk, info]) => `${blk} (${info.desc.length} chars)`);
+  deepEq(walls, [], 'block descriptions still written as one long paragraph');
+});
+
+test('every block has at least one example that is actually run', () => {
+  // A payload-carrying example is executed by the panel, so its Result table is
+  // the engine's own output. A block with only prose examples is documentation
+  // that nothing checks.
+  deepEq(Object.entries(psHelp)
+    .filter(([, info]) => !info.examples.some(ex => !Array.isArray(ex) && ex.payload))
+    .map(([blk]) => blk), [], 'blocks with no executable example');
+});
+
+test('every executable example produces the fields it claims to', () => {
+  // The panel RUNS these against their own payloads, so a broken one is not a
+  // stale sentence — it is an error table under a heading that promises a result.
+  const bad = [];
+  for (const [blk, info] of Object.entries(psHelp).concat([['(shared)', { examples: psCommonExamples }]]))
+    for (const ex of info.examples) {
+      if (Array.isArray(ex) || !ex.payload) continue;
+      const ctx = mePsHelpRunExample(ex);
+      const errs = (ctx.fields || []).filter(f => f.error);
+      if (ex.expectError) {
+        if (!errs.length) bad.push(`${blk}: "${ex.what}" was meant to show an error and did not`);
+        continue;
+      }
+      if (errs.length) bad.push(`${blk}: "${ex.what}" → ${errs.map(e => e.error).join(' | ')}`);
+      else if (!(ctx.fields || []).length) bad.push(`${blk}: "${ex.what}" produced no fields`);
+      // token-area fills ctx.tokens, not ctx.fields — a silently empty token
+      // area would still have passed the check above.
+      else if (JSON.stringify(ex.spec).includes('token-area') && !(ctx.tokens || []).length)
+        bad.push(`${blk}: "${ex.what}" selected no tokens`);
+    }
+  deepEq(bad, [], 'help examples that do not run');
+});
+
+// ── SPEC ↔ code — the design spec must describe the code that exists ────────
+// Every stale section found so far was found by eye: DDLMM after it was
+// decommissioned, recognizer types renamed underneath the table, hex overrides
+// added without documenting them, a UI section describing tabs that are now
+// collapsible sections. Anything mechanically checkable is checked here so the
+// next drift fails the suite instead of waiting to be noticed.
+
+console.log('\nSPEC ↔ code');
+
+const SPEC = fs.readFileSync('./SPEC-message-format-detector.md', 'utf8');
+const specSec = (from, to) => SPEC.slice(SPEC.indexOf(from), to ? SPEC.indexOf(to) : undefined);
+/** Evaluate one literal out of source.html in its own context — sharing one
+ *  throws on the second `const` of the same name. */
+function fromSource(re, expr) {
+  const m = html.match(re);
+  if (!m) return null;
+  const ctx = {}; vm.createContext(ctx);
+  try { vm.runInContext(m[0] + ';out=' + expr, ctx); return ctx.out; } catch (e) { return null; }
+}
+
+test('every parse_spec block type is documented', () => {
+  const blocks = fromSource(/const _PS_KNOWN_BLOCKS = new Set\(\[[\s\S]*?\]\);/, '[..._PS_KNOWN_BLOCKS]');
+  assert.ok(blocks && blocks.length, 'could not read _PS_KNOWN_BLOCKS');
+  deepEq(blocks.filter(b => !SPEC.includes('`' + b + '`')), [], 'blocks missing from the spec');
+});
+
+test('recognizer types and the spec table agree, both directions', () => {
+  const types = fromSource(/const _REC_HELP = \{[\s\S]*?\n\};/, 'Object.keys(_REC_HELP)');
+  assert.ok(types && types.length, 'could not read _REC_HELP');
+  const sec = specSec('### 4.4', '### 4.5');
+  const alias = html.match(/const _ALIAS = \{([^}]*)\}/)[1];
+  const aliasNames = [...alias.matchAll(/'?([a-z0-9-]+)'?\s*:/g)].map(m => m[1]);
+  deepEq(types.filter(t => !sec.includes('`' + t + '`')), [], 'types in code but not in §4.4');
+  const listed = [...new Set([...sec.matchAll(/^\| `([a-z0-9-]+)`/gm)].map(m => m[1]))];
+  deepEq(listed.filter(t => !types.includes(t) && !aliasNames.includes(t)), [],
+         'types in §4.4 that no longer exist (aliases excluded)');
+});
+
+test('every recognizer EVALUATOR has help and a spec row', () => {
+  // _REC_HELP is what the UI shows; _R is what actually runs. Checking only the
+  // former missed renaming an evaluator out from under its documentation.
+  const evals = [...new Set([...html.matchAll(/_R\[(?:'|")([a-z0-9-]+)(?:'|")\]\s*=/g)].map(m => m[1]))];
+  assert.ok(evals.length > 10, `expected the recognizer registry, found ${evals.length}`);
+  const help = fromSource(/const _REC_HELP = \{[\s\S]*?\n\};/, 'Object.keys(_REC_HELP)') || [];
+  // Aliases share an evaluator with their target and are documented in the alias
+  // table rather than getting a help entry of their own.
+  const aliasSrc = html.match(/const _ALIAS = \{([^}]*)\}/)[1];
+  const aliases = [...aliasSrc.matchAll(/'?([a-z0-9-]+)'?\s*:/g)].map(m => m[1]);
+  const own = evals.filter(t => !aliases.includes(t));
+  deepEq(own.filter(t => !help.includes(t)), [], 'evaluators with no help entry');
+  deepEq(evals.filter(t => !SPEC.includes('`' + t + '`')), [], 'evaluators absent from the spec');
+  deepEq(help.filter(t => !evals.includes(t) && !/^(source|destination|filename)$/.test(t)), [],
+         'help entries with no evaluator (routing recognizers excepted — they run elsewhere)');
+});
+
+test('every recognizer alias is in the alias table', () => {
+  const alias = html.match(/const _ALIAS = \{([^}]*)\}/)[1];
+  const pairs = [...alias.matchAll(/'?([a-z0-9-]+)'?\s*:\s*'([a-z0-9-]+)'/g)];
+  const sec = specSec('**Aliases', '#### ISO 8583 semantic');
+  deepEq(pairs.filter(([, , to]) => !sec.includes('`' + to + '`')).map(m => m[1]), [],
+         'aliases missing their target');
+  deepEq(pairs.filter(m => !sec.includes('`' + m[1] + '`')).map(m => m[1]), [], 'aliases missing');
+});
+
+test('field_overrides type and display options are documented (§9)', () => {
+  const types = fromSource(/const _ME_TYPE_OPTS = \[[^\]]*\];/, '_ME_TYPE_OPTS.filter(Boolean)');
+  assert.ok(types && types.length, 'could not read _ME_TYPE_OPTS');
+  const sec = specSec('## 9. Field Overrides', '## 10.');
+  deepEq(types.filter(t => !sec.includes(t)), [], 'type overrides missing from §9');
+  deepEq(['datetime', 'amount', 'hex', 'ascii', 'ebcdic', 'gmt-ts', 'bitmap'].filter(d => !sec.includes(d)), [],
+         'display overrides missing from §9');
+});
+
+test('every localStorage key is documented (§13)', () => {
+  const keys = [...new Set([...html.matchAll(/localStorage\.(?:get|set|remove)Item\(\s*'([^']+)'/g)].map(m => m[1]))];
+  const sec = specSec('## 13. Storage', '### 13.1');
+  deepEq(keys.filter(k => !sec.includes(k)), [], 'storage keys missing from §13');
+});
+
+test('the spec is internally consistent', () => {
+  const refs  = [...new Set([...SPEC.matchAll(/§(\d+(?:\.\d+)?)/g)].map(m => m[1]))];
+  const heads = new Set([...SPEC.matchAll(/^#{2,3} (\d+(?:\.\d+)?)[. ]/gm)].map(m => m[1]));
+  deepEq(refs.filter(r => !heads.has(r)), [], 'cross-references to sections that do not exist');
+  deepEq(SPEC.split('\n').map((l, i) => (/^\|/.test(l) && !/\|\s*$/.test(l)) ? 'line ' + (i + 1) : null).filter(Boolean),
+         [], 'malformed table rows');
+});
+
+test('decommissioned DDLMM is not described as live', () => {
+  const s10 = SPEC.indexOf('## 10. DDLMM — decommissioned'), e10 = SPEC.indexOf('## 11.');
+  assert.ok(s10 > 0, '§10 tombstone missing');
+  const offenders = SPEC.split('\n').map((l, i) => {
+    if (!/DDLMM/.test(l)) return null;
+    if (/^\| 20\d\d-/.test(l)) return null;                    // a changelog row is history
+    if (/§10/.test(l)) return null;                            // a deliberate cross-reference
+    const off = SPEC.split('\n').slice(0, i).join('\n').length;
+    if (off >= s10 - 1 && off < e10) return null;              // §10 itself
+    return 'line ' + (i + 1);
+  }).filter(Boolean);
+  deepEq(offenders, [], 'DDLMM described outside its tombstone');
 });
 
 // ── Summary ───────────────────────────────────────────────────────────────────

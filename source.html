@@ -14213,7 +14213,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.3.1';
+const APP_VERSION  = '1.1.3.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16725,7 +16725,14 @@ const _PS_HELP = {
     ],
   },
   'read-tlv': {
-    desc: 'Parses a DDL buffer field as repeating TAG+LENGTH+VALUE triples until the buffer is exhausted or fewer bytes remain than tag_length. Used for EMV DE-55 and similar TLV structures.',
+    desc: [
+      'Parses a DDL buffer field as repeating TAG + LENGTH + VALUE triples, until the buffer runs out.',
+      '<b>Where each triple ends up is the thing to know about this block:</b>',
+      'Without <code>tags</code>, <b>the DDL is never consulted.</b> Each triple becomes an invented row named <code>&lt;buffer&gt;.&lt;tag&gt;</code> — <code>DE-48.0002</code> — carrying the raw value and nothing else: no data type, no description.',
+      'It does <b>not</b> look for a DDL element named after the tag. There is no matching by name; if you want a triple in a real element you have to say so.',
+      'With <code>tags</code>, the triple is filed into the element you name, filling its TAG / LEN / DATA leaves, and the row carries everything the DDL says about it.',
+      'The two mix freely: tags you map go to their elements, tags you do not are still emitted as invented rows (or skipped, or flagged — see <code>unknown</code>).',
+    ],
     useWhen: [
       'You have a <b>TLV-encoded buffer field</b> — EMV DE-55, ICC data, similar nested structures.',
       'The DDL declares the outer buffer but <b>not its inner tags</b>.',
@@ -16763,8 +16770,11 @@ const _PS_HELP = {
         'Only <code>ascii-hex</code> decodes the buffer, so only there do the result rows lose their byte positions — nothing in the message maps 1:1 to a decoded byte.',
       ]],
       ['tags', '{ "<tag>": {field} }', false, [
-        'Files each tag into a DDL element instead of emitting it as an anonymous row.',
+        'Files a tag into a DDL element. <b>This is the only way a triple reaches the DDL.</b>',
         ['<code>{"9F26": {"field": "ARQC"}}</code>', 'Tag 9F26 fills the ARQC element.'],
+        ['<code>{"0002": {"field": "CARD-TYPE"}}</code>', 'The same in <code>ascii</code> mode — the key is the tag\'s <b>characters</b>.'],
+        ['<i>omitted</i>', 'Every triple becomes an invented <code>&lt;buffer&gt;.&lt;tag&gt;</code> row instead, with no type and no description.'],
+        'Leaving it out does <b>not</b> mean "match the tag to an element of the same name" — no such lookup happens. The mapping is only ever the one you write here.',
         'The element\'s LEN and DATA leaves are filled from the triple.',
         'Whether the tag itself is stored is read from the DDL: a subgroup declaring a TAG leaf gets it; one that does not is already identified by the element it lives in.',
       ]],
@@ -16781,9 +16791,9 @@ const _PS_HELP = {
         'Settable per tag as well.',
       ]],
       ['unknown', '"emit" | "skip" | "error"', false, [
-        'What to do with a tag <code>tags</code> does not mention.',
-        ['<code>emit</code>',  'Show it as its own row. The default — nothing disappears silently.'],
-        ['<code>skip</code>',  'Consume it and move on.'],
+        'What to do with a tag <code>tags</code> does not mention — which, with no <code>tags</code> at all, means <b>every</b> tag.',
+        ['<code>emit</code>',  'Show it as an invented <code>&lt;buffer&gt;.&lt;tag&gt;</code> row. The default — nothing disappears silently.'],
+        ['<code>skip</code>',  'Consume it and move on. The bytes are still crossed; the triple just never appears.'],
         ['<code>error</code>', 'Flag it, for a buffer whose tag set is supposed to be closed.'],
       ]],
     ],
@@ -16805,13 +16815,13 @@ const _PS_HELP = {
       // The shape production ISO 8583 carries for text sub-elements. Neither of
       // the other two modes can read it: binary wants a big-endian length,
       // ascii-hex would decode "HELLO" as though it were hex.
-      { what: '<b>encoding</b> ascii — a text tag, a <b>decimal</b> length, and a text value: <code>0002 0005 HELLO</code>',
+      { what: 'No <b>tags</b> — every triple becomes an invented <code>DE-48.&lt;tag&gt;</code> row. The DDL is never consulted, and the tag is <b>not</b> looked up as an element name',
         ddl: 'DEFINITION MSG.\n  02 DE-48 PIC X(25).\nEND\n',
         def: 'MSG',
         payload: '30 30 30 32 30 30 30 35 48 45 4C 4C 4F 30 30 30 33 30 30 30 34 56 49 53 41',
         spec: [{"read": "DE-48"},
                {"read-tlv": {"field": "DE-48", "encoding": "ascii", "tag_length": 4, "length_length": 4}}] },
-      { what: '<b>encoding</b> ascii with <b>tags</b> — tag 0002 filed into a named element, its TAG/LEN/DATA leaves filled; 0003 is unmapped so it stays a plain row',
+      { what: 'The same buffer with <b>tags</b> — 0002 is filed into CARD-TYPE and its TAG / LEN / DATA leaves are filled; 0003 is not mapped, so it stays an invented row',
         ddl: 'DEFINITION MSG.\n  02 DE-48 PIC X(25).\n  02 CARD-TYPE.\n    04 TAG  PIC X(4).\n    04 LEN  PIC X(4).\n    04 DATA PIC X(5).\nEND\n',
         def: 'MSG',
         payload: '30 30 30 32 30 30 30 35 48 45 4C 4C 4F 30 30 30 33 30 30 30 34 56 49 53 41',

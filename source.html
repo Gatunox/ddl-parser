@@ -14213,7 +14213,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.3.0';
+const APP_VERSION  = '1.1.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16754,10 +16754,13 @@ const _PS_HELP = {
         'Bytes per length field, for fixed-width TLV.',
         'Ignored when <code>ber</code> is set.',
       ]],
-      ['encoding', '"binary" | "ascii-hex"', false, [
-        'How the tag and length bytes are written in the buffer.',
-        ['<code>binary</code>',    'Raw bytes — tag <code>9F26</code> is the two bytes <code>9F 26</code>. The default.'],
-        ['<code>ascii-hex</code>', 'Hex <i>characters</i> — tag <code>9F26</code> is the four bytes <code>"9F26"</code>.'],
+      ['encoding', '"binary" | "ascii" | "ascii-hex"', false, [
+        'How the tag and length are written in the buffer.',
+        ['<code>binary</code>',    'Raw bytes — tag <code>9F26</code> is the two bytes <code>9F 26</code>, and the length is a big-endian integer. The default.'],
+        ['<code>ascii</code>',     'Text throughout — tag <code>"0002"</code>, length <code>"0005"</code> as <b>decimal digits</b>, then five characters of value, read as text.'],
+        ['<code>ascii-hex</code>', 'Hex <i>characters</i> — the whole buffer is hex text and is decoded before framing, so <code>"9F26"</code> becomes the two bytes <code>9F 26</code>.'],
+        'In <code>ascii</code> mode <code>tag_length</code> and <code>length_length</code> count <b>characters</b>; in <code>ascii-hex</code> they count <b>decoded bytes</b>, so four hex characters are 2.',
+        'Only <code>ascii-hex</code> decodes the buffer, so only there do the result rows lose their byte positions — nothing in the message maps 1:1 to a decoded byte.',
       ]],
       ['tags', '{ "<tag>": {field} }', false, [
         'Files each tag into a DDL element instead of emitting it as an anonymous row.',
@@ -16799,6 +16802,22 @@ const _PS_HELP = {
         payload: '9F 26 04 11 22 33 44 9F 36 02 00 01',
         spec: [{"read": "DE-55"},
                {"read-tlv": {"field": "DE-55", "ber": true, "unknown": "emit"}}] },
+      // The shape production ISO 8583 carries for text sub-elements. Neither of
+      // the other two modes can read it: binary wants a big-endian length,
+      // ascii-hex would decode "HELLO" as though it were hex.
+      { what: '<b>encoding</b> ascii — a text tag, a <b>decimal</b> length, and a text value: <code>0002 0005 HELLO</code>',
+        ddl: 'DEFINITION MSG.\n  02 DE-48 PIC X(25).\nEND\n',
+        def: 'MSG',
+        payload: '30 30 30 32 30 30 30 35 48 45 4C 4C 4F 30 30 30 33 30 30 30 34 56 49 53 41',
+        spec: [{"read": "DE-48"},
+               {"read-tlv": {"field": "DE-48", "encoding": "ascii", "tag_length": 4, "length_length": 4}}] },
+      { what: '<b>encoding</b> ascii with <b>tags</b> — tag 0002 filed into a named element, its TAG/LEN/DATA leaves filled; 0003 is unmapped so it stays a plain row',
+        ddl: 'DEFINITION MSG.\n  02 DE-48 PIC X(25).\n  02 CARD-TYPE.\n    04 TAG  PIC X(4).\n    04 LEN  PIC X(4).\n    04 DATA PIC X(5).\nEND\n',
+        def: 'MSG',
+        payload: '30 30 30 32 30 30 30 35 48 45 4C 4C 4F 30 30 30 33 30 30 30 34 56 49 53 41',
+        spec: [{"read": "DE-48"},
+               {"read-tlv": {"field": "DE-48", "encoding": "ascii", "tag_length": 4, "length_length": 4,
+                             "tags": {"0002": {"field": "CARD-TYPE"}}, "unknown": "emit"}}] },
       { what: '<b>encoding</b> ascii-hex — the buffer holds the hex as TEXT ("9F2604…"), twice as many bytes for the same triples',
         ddl: 'DEFINITION MSG.\n  02 DE-55 PIC X(24).\nEND\n',
         def: 'MSG',
@@ -22914,6 +22933,31 @@ function _meExecSegmentFields(attrs, ctx) {
 // bit stays set. A length below 0x80 is that byte; 0x8N means the next N bytes
 // hold the length. Reading such a buffer with a fixed tag_length mis-frames the
 // first 1-byte tag and every triple after it silently becomes garbage.
+// ASCII TLV — the shape production ISO 8583 uses for text sub-elements:
+// "0002" "0005" "HELLO" — a fixed-width tag and a fixed-width DECIMAL length,
+// both written as characters, followed by that many characters of value.
+// Nothing is decoded, so tag_length / length_length count CHARACTERS and every
+// offset still maps 1:1 onto the message.
+const _meTlvIsAscii = enc => /^ascii$/i.test(String(enc || '').trim());
+const _meTlvChars   = bytes => bytes.map(b => String.fromCharCode(b)).join('');
+// The key a tag is known by: its characters in ASCII mode, its hex in every
+// other. This is what `tags` is matched against, so the two must agree or a
+// mapping silently never fires.
+// A fixed-width TLV length. ASCII mode reads DECIMAL CHARACTERS ("0005" is
+// five); every other mode reads the bytes as a big-endian integer. Returns null
+// when ASCII digits are not digits at all — a silent 0 there would collapse the
+// value and shift every triple after it, which is exactly how the VLG length bug
+// behaved before it was reported.
+function _meTlvFixedLen(bytes, ascii) {
+  if (!ascii) return bytes.reduce((a, b) => (a << 8) | b, 0);
+  const txt = _meTlvChars(bytes).trim();
+  if (!/^\d+$/.test(txt)) return null;
+  return parseInt(txt, 10);
+}
+const _meTlvTagKey  = (bytes, ascii) => ascii
+  ? _meTlvChars(bytes)
+  : bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+
 function _meBerTag(buf, p) {
   if (p >= buf.length) return null;
   let end = p + 1;
@@ -22972,30 +23016,44 @@ function _meExecReadTLV(attrs, ctx) {
     return;
   }
   const encoding = attrs.encoding || 'binary';
+  const ascii    = _meTlvIsAscii(encoding);
   let bufBytes = Array.from(ctx.bytes.slice(buf.startByte, buf.endByte + 1));
+  // Where each triple sits in the MESSAGE. ascii-hex decodes the buffer, so its
+  // bytes no longer map 1:1 and there is no honest position to report.
+  let bufBase = buf.startByte;
   if (encoding === 'ascii-hex') {
     const hex = bufBytes.map(b => String.fromCharCode(b)).join('');
     bufBytes = [];
     for (let i = 0; i + 1 < hex.length; i += 2) bufBytes.push(parseInt(hex.substr(i, 2), 16) || 0);
+    bufBase = null;
   }
   let p = 0;
   while (p + tagLen + lenLen <= bufBytes.length) {
     const tagBytes = bufBytes.slice(p, p + tagLen);
-    const tag      = tagBytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+    const tag      = _meTlvTagKey(tagBytes, ascii);
     p += tagLen;
-    let L = 0;
-    for (let i = 0; i < lenLen; i++) L = (L << 8) | bufBytes[p + i];
+    const L = _meTlvFixedLen(bufBytes.slice(p, p + lenLen), ascii);
+    if (L == null) {
+      ctx.fields.push({ id: `${attrs.field}.${tag}`,
+        error: `TLV tag ${tag}: length "${_meTlvChars(bufBytes.slice(p, p + lenLen))}" is not a decimal number` });
+      break;
+    }
     p += lenLen;
     if (p + L > bufBytes.length) break;
     const valBytes = bufBytes.slice(p, p + L);
+    const valAt    = p;
     p += L;
-    ctx.fields.push({
+    const row = {
       id: `${attrs.field}.${tag}`,
       description: `TLV tag ${tag} · length ${L}`,
       valueLength: L,
       value:  _meBytesToStr(valBytes),
       rawHex: _meBytesToHex(valBytes),
-    });
+    };
+    // Byte positions, so the row can be lined up against the raw dump — the BER
+    // path always reported them and this one never did.
+    if (bufBase != null) { row.startByte = bufBase + valAt; row.endByte = bufBase + valAt + L - 1; }
+    ctx.fields.push(row);
   }
 }
 
@@ -23069,6 +23127,7 @@ function _meResolveScopedDef(name, ctx) {
 function _meExecReadTLVMapped(attrs, ctx) {
   const defs = _meCollectBindingDefs(ctx.resolvedBindings);
   const ber  = !!attrs.ber;
+  const ascii = _meTlvIsAscii(attrs.encoding);
   const tagLen = attrs.tag_length || 0;
   const lenLen = attrs.length_length || 0;
   if (!ber && (!tagLen || !lenLen)) {
@@ -23115,30 +23174,34 @@ function _meExecReadTLVMapped(attrs, ctx) {
     const t = ber ? _meBerTag(bufBytes, p)
                   : (p + tagLen <= bufBytes.length ? { bytes: bufBytes.slice(p, p + tagLen), next: p + tagLen } : null);
     if (!t) break;
-    const tagHex = t.bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+    const tagKey = _meTlvTagKey(t.bytes, ascii);
     const tagAt  = p;
     const l = ber ? _meBerLen(bufBytes, t.next)
                   : (t.next + lenLen <= bufBytes.length
-                      ? { len: bufBytes.slice(t.next, t.next + lenLen).reduce((a, b) => (a << 8) | b, 0), next: t.next + lenLen }
+                      ? { len: _meTlvFixedLen(bufBytes.slice(t.next, t.next + lenLen), ascii), next: t.next + lenLen }
                       : null);
+    if (l && l.len == null) {
+      ctx.fields.push({ id: `TLV.${tagKey}`, error: `TLV tag ${tagKey}: length "${_meTlvChars(bufBytes.slice(t.next, t.next + lenLen))}" is not a decimal number` });
+      break;
+    }
     if (!l) {
-      ctx.fields.push({ id: `TLV.${tagHex}`, error: `TLV tag ${tagHex}: length field is truncated` });
+      ctx.fields.push({ id: `TLV.${tagKey}`, error: `TLV tag ${tagKey}: length field is truncated` });
       break;
     }
     if (l.next + l.len > bufBytes.length) {
-      ctx.fields.push({ id: `TLV.${tagHex}`, error: `TLV tag ${tagHex}: length ${l.len} runs past the end of the buffer` });
+      ctx.fields.push({ id: `TLV.${tagKey}`, error: `TLV tag ${tagKey}: length ${l.len} runs past the end of the buffer` });
       break;
     }
     const valBytes = bufBytes.slice(l.next, l.next + l.len);
     const lenBytes = bufBytes.slice(t.next, l.next);
-    const mapped   = attrs.tags && (attrs.tags[tagHex] || attrs.tags[tagHex.toLowerCase()]);
+    const mapped   = attrs.tags && (attrs.tags[tagKey] || attrs.tags[tagKey.toLowerCase()]);
 
     if (!mapped) {
       if (unknown === 'error') {
-        ctx.fields.push({ id: `TLV.${tagHex}`, error: `TLV tag ${tagHex} is not mapped to a DDL element` });
+        ctx.fields.push({ id: `TLV.${tagKey}`, error: `TLV tag ${tagKey} is not mapped to a DDL element` });
       } else if (unknown !== 'skip') {
-        emit(`${attrs.field || ctx._deScope || 'TLV'}.${tagHex}`, valBytes, l.next,
-             { description: `TLV tag ${tagHex} · length ${l.len}` });
+        emit(`${attrs.field || ctx._deScope || 'TLV'}.${tagKey}`, valBytes, l.next,
+             { description: `TLV tag ${tagKey} · length ${l.len}` });
       }
       p = l.next + l.len;
       continue;
@@ -23147,8 +23210,8 @@ function _meExecReadTLVMapped(attrs, ctx) {
     const groupName = mapped.field;
     const group = _meResolveScopedDef(groupName, ctx);
     if (!group) {
-      ctx.fields.push({ id: groupName || `TLV.${tagHex}`,
-        error: `TLV tag ${tagHex}: element "${groupName}" not found in the DDL` });
+      ctx.fields.push({ id: groupName || `TLV.${tagKey}`,
+        error: `TLV tag ${tagKey}: element "${groupName}" not found in the DDL` });
       p = l.next + l.len;
       continue;
     }
@@ -23162,7 +23225,7 @@ function _meExecReadTLVMapped(attrs, ctx) {
     if (tagLeaf) emit(tagLeaf.id, t.bytes, tagAt, { def: tagLeaf });
     if (lenLeaf) emit(lenLeaf.id, lenBytes, t.next, { def: lenLeaf });
     if (valLeaf) emit(valLeaf.id, valBytes, l.next, { def: valLeaf });
-    else         emit(gid, valBytes, l.next, { def: group, description: `TLV tag ${tagHex}` });
+    else         emit(gid, valBytes, l.next, { def: group, description: `TLV tag ${tagKey}` });
 
     p = l.next + l.len;
   }

@@ -3627,6 +3627,98 @@ test('an explicit width turns off the ISO-only bit rules', () => {
   eq(sized.cursor, 4, 'and bit 0 does not silently double the read');
 });
 
+// ── read-tlv: ASCII TLV — the shape production ISO 8583 actually carries ────
+// "0002" "0005" "HELLO": a fixed-width tag and a fixed-width DECIMAL length,
+// both written as characters, then that many characters of value. Neither
+// existing mode fits — "binary" reads big-endian lengths, and "ascii-hex"
+// hex-decodes the whole buffer, which turns HELLO into garbage.
+
+console.log('\nread-tlv — ASCII TLV (text tag, decimal length, text value)');
+
+const ATLV_DDL = `DEFINITION MSG.
+  02 DE-48 PIC X(25).
+  02 CARD-TYPE.
+    04 TAG  PIC X(4).
+    04 LEN  PIC X(4).
+    04 DATA PIC X(5).
+END
+`;
+// "0002" "0005" "HELLO" "0003" "0004" "VISA"  = 28 chars
+const ATLV_BUF = '0002' + '0005' + 'HELLO' + '0003' + '0004' + 'VISA';
+function atlvRun(tlvAttrs) {
+  S.ddlTree = { V: { S: { D: ATLV_DDL } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of ATLV_BUF) b.push(c.charCodeAt(0));
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ read: 'DE-48' }, { 'read-tlv': tlvAttrs }] }, b);
+}
+const atlvField = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
+
+test('an ASCII TLV buffer frames on characters and a decimal length', () => {
+  const ctx = atlvRun({ field: 'DE-48', encoding: 'ascii', tag_length: 4, length_length: 4 });
+  eq(atlvField(ctx, 'DE-48.0002').value, 'HELLO', 'the value is text, read as-is');
+  eq(atlvField(ctx, 'DE-48.0003').value, 'VISA',  'and the second triple follows it');
+});
+
+test('the tag is known by its characters, not by a hex rendering of them', () => {
+  // "0002" as hex would be "30303032" — a key no one would ever write in a spec.
+  const ctx = atlvRun({ field: 'DE-48', encoding: 'ascii', tag_length: 4, length_length: 4 });
+  assert.ok(atlvField(ctx, 'DE-48.0002'), 'the row is named for the tag the message carries');
+  assert.ok(!ctx.fields.some(f => /30303032/.test(f.id)), 'not for its bytes');
+});
+
+test('the length is decimal characters, not a big-endian integer', () => {
+  // "0005" as big-endian bytes is 0x30303035 — astronomically wrong. The old
+  // modes had no way to say "these four characters are the number five".
+  const ctx = atlvRun({ field: 'DE-48', encoding: 'ascii', tag_length: 4, length_length: 4 });
+  eq(atlvField(ctx, 'DE-48.0002').valueLength, 5, 'five characters, because "0005" says five');
+});
+
+test('ASCII TLV rows report where they sit in the message', () => {
+  // Nothing is decoded in this mode, so offsets map 1:1 and there is no excuse
+  // for a blank Bytes column.
+  const ctx = atlvRun({ field: 'DE-48', encoding: 'ascii', tag_length: 4, length_length: 4 });
+  const f = atlvField(ctx, 'DE-48.0002');
+  eq(f.startByte, 8,  'HELLO starts after the 4-char tag and 4-char length');
+  eq(f.endByte,  12,  'and runs five characters');
+});
+
+test('a non-numeric length is reported, not silently read as zero', () => {
+  const ctx = atlvRun({ field: 'DE-48', encoding: 'ascii', tag_length: 4, length_length: 2 });
+  const err = ctx.fields.find(f => f.error && /not a decimal number/.test(f.error));
+  assert.ok(err, `expected a clear error, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+});
+
+test('tags maps an ASCII tag into its DDL element', () => {
+  // The half of the block that would have silently done nothing if the tag key
+  // were still built as hex: no error, just anonymous rows and no mapping.
+  const ctx = atlvRun({ field: 'DE-48', encoding: 'ascii', tag_length: 4, length_length: 4,
+                        tags: { '0002': { field: 'CARD-TYPE' } }, unknown: 'emit' });
+  eq(atlvField(ctx, 'CARD-TYPE.DATA').value, 'HELLO', 'the value lands in the named element');
+  eq(atlvField(ctx, 'CARD-TYPE.TAG').value,  '0002',  'and the DDL declares a TAG leaf, so it is kept');
+  eq(atlvField(ctx, 'CARD-TYPE.LEN').value,  '0005',  'as is the length');
+  assert.ok(atlvField(ctx, 'DE-48.0003'), 'the unmapped tag is still emitted');
+});
+
+// ── read-tlv: fixed-width rows carry byte positions, like BER ───────────────
+
+test('fixed-width TLV rows report byte positions, exactly as the BER path does', () => {
+  // The values always parsed; only WHERE they came from was missing, so the
+  // Bytes column was blank and a tag could not be found in the raw dump.
+  const ddl = 'DEFINITION MSG.\n  02 BUF PIC X(12).\nEND\n';
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [0x9F,0x26,0x04,0x11,0x22,0x33,0x44,0x9F,0x36,0x02,0x00,0x01];
+  const run = attrs => meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ read: 'BUF' }, { 'read-tlv': attrs }] }, b);
+  const fixed = run({ field: 'BUF', tag_length: 2, length_length: 1, encoding: 'binary' });
+  const ber   = run({ field: 'BUF', ber: true });
+  const pos = (ctx, id) => { const f = ctx.fields.find(x => x.id === id); return [f.startByte, f.endByte]; };
+  deepEq(pos(fixed, 'BUF.9F26'), [3, 6], 'fixed-width now knows where the value is');
+  deepEq(pos(fixed, 'BUF.9F26'), pos(ber, 'BUF.9F26'), 'and agrees with BER on the same bytes');
+});
+
 // ── read-tlv: BER framing and tag → DDL element mapping ─────────────────────
 console.log('\nread-tlv — BER framing and tag mapping');
 

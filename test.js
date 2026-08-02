@@ -3487,31 +3487,62 @@ function grpRun(id, times = 1) {
     parse_spec_binary: blocks }, Buffer.from(GRP_MSG));
 }
 
-test('a group reads at its DDL position, not at the cursor', () => {
-  // PLAIN-GRP.A is declared at 6 and B at 8. The cursor is at 4 when the read
-  // happens, so a cursor-relative read would give 4 and 6 instead.
+test('a group reads at the CURSOR, not at its declared DDL position', () => {
+  // The DDL supplies structure — how many sub-fields and how wide. The cursor
+  // supplies position. PLAIN-GRP.A is declared at 6, but the cursor is at 4 when
+  // the read happens, so it reads at 4. `at` is how you jump to a position.
   const ctx = grpRun('PLAIN-GRP');
   const a = ctx.fields.find(f => f.id === 'PLAIN-GRP.A');
   const b = ctx.fields.find(f => f.id === 'PLAIN-GRP.B');
-  eq(a.startByte, 6, 'A at its declared position');
-  eq(b.startByte, 8, 'B at its declared position');
-  eq(a.value, 'DD', 'and therefore the declared bytes');
+  eq(a.startByte, 4, 'A read where the cursor was');
+  eq(b.startByte, 6, 'B follows it');
+  eq(a.value, 'CC', 'and therefore the bytes under the cursor');
 });
 
-test('a field and a group behave the same way — both use the DDL', () => {
+test('a field and a group behave the same way — both follow the cursor', () => {
   const leaf  = grpRun('PLAIN-LEAF');
   const group = grpRun('PLAIN-GRP');
-  eq(leaf.fields.find(f => f.id === 'PLAIN-LEAF').startByte, 0, 'field at its declared position');
-  eq(group.fields.find(f => f.id === 'PLAIN-GRP.A').startByte, 6, 'group likewise');
+  eq(leaf.fields.find(f => f.id === 'PLAIN-LEAF').startByte, 4, 'field at the cursor');
+  eq(group.fields.find(f => f.id === 'PLAIN-GRP.A').startByte, 4, 'group likewise');
 });
 
-test('re-reading a plain group returns the same bytes, like re-reading a field', () => {
+test('skip moves the cursor and the following reads honour it', () => {
+  // The reported bug: `{"skip": {"length": 9}}` then three reads returned bytes
+  // 0-1, 2-3, 4-7 — every read jumped to its declared DDL offset and the skip
+  // did nothing, which made the block inert wherever it mattered.
+  S.ddlTree = { V: { S: { D: `DEF REQMSG.
+  02 SDLC-DEST   PIC X(2).
+  02 SDLC-ORIGIN PIC X(2).
+  02 MSGTYPE     PIC X(4).
+END REQMSG.
+` } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([
+    0x43,0x54,0x00,0x13,0x00,0x00,0x00,0x00, 0x60,        // 9 bytes to step over
+    0x00,0x01, 0x51,0xB8, 0x02,0x00,0x30,0x20]);
+  const ctx = meExecParseSpec({ name:'X', type:'X', ddl_bindings:['V/S/D/REQMSG'],
+    parse_spec_binary: [
+      { skip: { length: 9 } },
+      { read: 'SDLC-DEST' }, { read: 'SDLC-ORIGIN' }, { read: 'MSGTYPE' },
+    ] }, bytes);
+  const at = id => ctx.fields.find(f => f.id === id);
+  eq(at('SDLC-DEST').startByte,   9,  'first read starts where skip left the cursor');
+  eq(at('SDLC-DEST').rawHex,      '0001', 'not the DDL-declared bytes 43 54 ("CT")');
+  eq(at('SDLC-ORIGIN').startByte, 11, 'and the rest follow sequentially');
+  eq(at('MSGTYPE').startByte,     13, '');
+  eq(at('MSGTYPE').rawHex,        '02003020', '');
+});
+
+test('reading a plain group twice advances — it does not error or repeat', () => {
+  // Reads follow the cursor, so a second read takes the NEXT bytes. What must
+  // not happen is the old "All 1 occurrences already read" error, which reported
+  // the occurrence machinery rather than anything the user did wrong.
   const ctx = grpRun('PLAIN-GRP', 2);
   const hits = ctx.fields.filter(f => f.id === 'PLAIN-GRP.A');
   eq(hits.length, 2, 'both reads produced the field');
-  eq(hits[0].startByte, hits[1].startByte, 'at the same place');
-  eq(ctx.fields.some(f => f.error), false,
-     'no "All 1 occurrences already read" — that described the machinery, not a user error');
+  eq(hits[0].startByte, 4, 'first read at the cursor');
+  eq(hits[1].startByte, 8, 'second read continues after the first');
+  eq(ctx.fields.some(f => f.error), false, 'and neither errors');
 });
 
 test('a repeated group still advances one occurrence per read', () => {

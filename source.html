@@ -13888,7 +13888,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.2.420';
+const APP_VERSION  = '1.1.2.422';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15816,7 +15816,7 @@ const _PS_HELP = {
       'The group\'s length is <b>on the wire but not in the DDL</b> — once its tags are mapped to elements a LEN element holds nothing worth keeping, so <code>length_prefix</code> supplies it.',
     ],
     attrs: [
-      ['field', 'string', true,  'DDL field ID to read'],
+      ['field', 'string', true,  'DDL field ID to read. The DDL gives the <b>structure</b> (length, type, sub-fields); the read happens at the <b>cursor</b>, not at the field\'s declared offset — use <code>at</code> to place it explicitly.'],
       ['length_prefix', 'int', false, 'Bytes of length sitting on the wire but NOT declared in the DDL — for when the group\'s LEN element was deliberately left out. The payload is then framed by what those bytes say instead of by the declared sizes, and the prefix is emitted as its own row so nothing is consumed invisibly. Decoded like every other length: ASCII digits as digits (which also covers EBCDIC, translated upstream), anything else as a big-endian integer.'],
       ['type',  'string', false, 'Type override. Fixed-size numeric types — <b>uint8</b>/<b>BINARY 8</b> (1 byte), <b>uint16-be</b>/<b>uint16-le</b>/<b>BINARY 16</b> (2), <b>uint32-be</b>/<b>uint32-le</b>/<b>BINARY 32</b> (4), <b>BINARY 64</b> (8) — must match the DDL field\'s declared byte length. Length-flexible types — <b>ascii</b> (render bytes as printable ASCII), <b>ebcdic</b> (translate EBCDIC→ASCII), <b>binary</b> (raw hex dump 0x…), <b>hex-char</b> (raw bytes as their hex characters, TAL binary^hexchar: 00 13 → "0013"), <b>hex-ascii-decimal</b> / <b>hex-ebcdic-decimal</b> (the field holds hex digits as TEXT — decode that text, then read base-16: "00FF" → 255). The same overrides can be set per-field via the Overrides section\'s Data Type dropdown — the inline attr wins when both are present.'],
     ],
@@ -20062,13 +20062,10 @@ function _meExecReadField(attrs, ctx) {
           ctx.fieldsById[d.id] = cf;
           continue;
         }
-        // Read at the leaf's DECLARED position, exactly as reading a single
-        // field does. A group has a position in the DDL like anything else; it
-        // simply has no compiled record of its own to carry it — only leaves are
-        // compiled, so a group exists as a prefix on its children's names. This
-        // path used to discard those positions and read at the cursor, which
-        // made "read a group" behave unlike "read a field" for no stated reason.
-        const f = _meReadOneFieldFromDef(d, ctx);
+        // Same rule as a single field: follow the cursor, not the declared
+        // offset. (v1.1.2.412 made this read at declared positions to match
+        // leaves; leaves now follow the cursor, so both agree again.)
+        const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
         if (!f) return;
         _meApplyTypeOverride(f, d, ctx, typeOverride);
         _meApplyDisplayOverride(f, d, ctx);
@@ -20085,8 +20082,14 @@ function _meExecReadField(attrs, ctx) {
     return;
   }
   // Elementary field: the wire length wins over the declared width when given.
+  // Reads follow the CURSOR, never the field's declared DDL offset. The DDL
+  // supplies structure — length, type, sub-fields — and the cursor supplies
+  // position; `at` overrides position explicitly. Reading at declared offsets
+  // made `skip` inert: skip 9 moved the cursor and the next read jumped back to
+  // offset 0 anyway, so a spec could not step over a header the DDL omits.
   const f = _meReadOneFieldFromDef(
-    lpWindow != null ? { ...def, offset: undefined, length: Math.min(def.length || 0, lpWindow) } : def, ctx);
+    { ...def, offset: undefined,
+      ...(lpWindow != null ? { length: Math.min(def.length || 0, lpWindow) } : {}) }, ctx);
   if (f) {
     _meApplyTypeOverride(f, def, ctx, typeOverride);
     _meApplyDisplayOverride(f, def, ctx);

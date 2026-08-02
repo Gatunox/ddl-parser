@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-01 | **`read` follows the cursor, not the field's declared DDL offset — `skip` was inert.** Reported: `[{"skip": {"length": 9}}, {"read": "SDLC-DEST"}, …]` returned bytes 0-1, 2-3, 4-7. The skip moved the cursor correctly; every `read` then jumped to its own declared DDL offset and ignored it, so the block could never step over a header the DDL does not describe. The rule is now one sentence: **the DDL supplies structure — length, type, sub-fields — the cursor supplies position, and `at` (§5.11) overrides position explicitly.** Reading a field in the middle without listing what precedes it is what `at` exists for. This also reverts v1.1.2.412, which had made `read` on a *group* use declared offsets to match leaves; leaves now follow the cursor, so both agree again — and reading the same non-repeated group twice advances instead of repeating. REDEFINES keeps its seek, since an overlay is by definition a second view of bytes another field covers. 10 baseline cases moved, all the same shape: a `read` that was the only block, previously jumping to its declared offset. See §5.7. |
 | 2026-08-01 | **The spec is now checked against the code by the test suite.** Every stale section this week was found by eye — DDLMM described as live long after it was decommissioned, recognizer types renamed underneath the table, the hex overrides added without documenting them, §11 describing tabs that are collapsible sections, `priority` badges removed a month earlier, and `min-length`/`max-length` where the **help named the wrong attribute** so a recognizer written from it passed or blocked everything silently. Eight tests in `test.js` now assert the mechanically checkable claims: every parse_spec block type is documented; recognizer **evaluators** (`_R`, what actually runs) each have a help entry and a spec row, and the §4.4 table lists nothing that no longer exists; every alias is in the alias table; §9 lists every `type` and `display` option; §13 lists every localStorage key; no `§` cross-reference dangles and no table row is malformed; and DDLMM appears only in the changelog and its own tombstone. Mutation-verified against eight reintroduced drifts, including renaming an evaluator *without* renaming its help — the case the first version of the check missed, because it read the help table instead of the registry. Also filled from the code: §9 gained the full `type`/`display` option tables (only `binary` and `datetime` had been named), §13 gained seven storage keys, and §4.2 gained the nine spec-object fields it never listed. |
 | 2026-08-01 | **§11 UI rewritten to the UI that exists; recognizer attributes and aliases corrected against the code.** The layout diagram still showed `priority` badges (removed 2026-05-31), had no **Files** list (shipped 2026-07-19) and no **Test** area at all, and described the right panel as *tabs* when it is five collapsible sections on one scrolling page — so a spec can be read end to end and a recognizer seen next to the parse_spec that depends on it. Test area documented: input (a formatted NETARD record works as-is), the AUTO/HEX/ASCII toggles that lock with a NETARD badge when the wrapper determines the format, and ▶ Run reporting per-spec which recognizer failed and where (`failAt`) before parsing with the winner — the reason it beats "detection returned UNKNOWN". Remaining `priority` prose removed from §4.1 and §4.2 (replaced by `kind`). Recognizer attributes fixed where the spec had drifted: `mti` gained `value` (4-char pattern, `#` = any digit), `hex-density`/`oct-density` take `min` + `encoding` (not `min_density`), and the alias table gained `length-prefix` → `length-payload` and `flag-prefix` → `flag-payload`, which are back-compat rather than HPE naming. |
 | 2026-08-01 | **`min-length` / `max-length` accept the attribute their help documented.** The evaluators read `length`; the in-app help said `value`. A recognizer written from the help therefore got `length=0`, so `min-length` passed **every** message and `max-length` blocked **every** message — silently, since a recognizer only returns a boolean. Both now read `length ?? value`, so specs written either way work, and the help names `length` as canonical. Two tests cover both spellings, including that `max-length` with `value` actually rejects an over-long message rather than everything. |
@@ -393,30 +394,41 @@ when: FIELD-ID
 
 Multiple `when` blocks on the same field act as if/else-if. Nested `when` blocks are supported.
 
-### 5.7 `read` on group fields — DDL structure resolution
+### 5.7 `read` — the DDL gives structure, the cursor gives position
 
-> *Positional behaviour corrected 2026-08-01.*
+> *Settled 2026-08-01.*
 
-`read: FIELD-ID` where FIELD-ID is a group resolves automatically from DDL structure:
+**The DDL supplies structure — length, type, sub-fields. The cursor supplies
+position. `at` (§5.11) overrides position explicitly.** A field's declared offset
+is never used to place a read.
+
+This is what makes `skip` mean anything. A spec stepping over a header the DDL
+does not describe:
+
+```jsonc
+[{"skip": {"length": 9}}, {"read": "SDLC-DEST"}, {"read": "SDLC-ORIGIN"}]
+```
+
+reads `SDLC-DEST` at byte 9. Until 2026-08-01 every `read` jumped to its declared
+DDL offset instead, so the skip moved the cursor and the next read ignored it —
+the block was inert exactly where it was needed. Reading a field in the middle
+without listing what precedes it is what `at` is for.
+
+`read` on a **group** resolves its structure from the DDL and reads it at the
+cursor, the same as a single field:
 
 | DDL structure of FIELD-ID | Behaviour |
 |--------------------------|-----------|
-| Simple group (sub-fields, no REDEFINES/OCCURS) | Reads all sub-fields at their **declared DDL positions** |
-| Group with OCCURS | Each `read` consumes the next occurrence, at that occurrence's declared positions |
-| REDEFINES another field | Seeks to redefined field's offset, reads sub-fields from there |
-| REDEFINES + OCCURS | Seeks to redefined offset, reads OCCURS block N times |
+| Simple group (sub-fields, no REDEFINES/OCCURS) | Reads all sub-fields sequentially from the cursor |
+| Group with OCCURS | Each `read` consumes the next occurrence, sequentially |
+| REDEFINES another field | Seeks to the redefined field's offset, reads sub-fields from there |
+| REDEFINES + OCCURS | Seeks to the redefined offset, reads the OCCURS block N times |
 
-Only **leaves** are compiled into the definition list, so a group has no record of
-its own — it exists as a prefix on its children's ids. Until 2026-08-01 that meant
-`read` could find no offset for a group and fell through to the occurrence matcher,
-which discards positions (occurrence 2 cannot use occurrence 1's). Plain groups
-inherited that: `read` on a **field** jumped to its declared position while `read`
-on a **group** read at the cursor. Both now use the DDL's positions, and re-reading
-a non-repeated group returns the same bytes, exactly as re-reading a field does.
-A genuinely repeated id still consumes one occurrence per `read` and still reports
-running out.
+REDEFINES keeps its seek: an overlay is *defined* as a second view of bytes
+another field already covers, so its position is the point of it.
 
-No extra parse_spec attributes needed — all behaviour is derived from DDL structure.
+Reading the same non-repeated group twice therefore advances — the second read
+takes the next bytes — rather than repeating or reporting "all occurrences read".
 
 ### 5.8 `read-while` — guard-bounded loop
 

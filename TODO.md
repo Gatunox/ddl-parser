@@ -143,6 +143,30 @@ the offending `source.html:LINE` when one does not.
 
 ---
 
+## 8. [ ] `read-tlv`: fall back to an element whose name matches the tag
+
+**Problem.** Without `tags`, `read-tlv` consults the DDL not at all. It invents a
+row `<buffer>.<tag>` holding the raw value — no data type, no description, nothing
+from the DDL. Every tag→element relation has to be written out by hand, even when
+the DDL already declares an element by that name.
+
+**Shape of the fix.** When `tags` does not mention a tag, try resolving the tag
+itself as an element id (the same scoped lookup `tags` uses). Fall back to the
+synthetic row only when no such element exists, so nothing that works today
+changes. `unknown: "skip"`/`"error"` keep their current meanings.
+
+**Why it is parked, honestly.** It would rarely fire on the DDLs we actually have.
+Tags in production are hex values — binary or ASCII — while element names are
+descriptive (`CARD-TYPE`, not `0002`), so most specs need the explicit map
+regardless. Worth doing when a DDL that *does* name elements after its tags shows
+up; costs nothing when it doesn't, since the fallback simply never matches.
+
+Raised 2026-08-02 while adding `encoding: "ascii"` (§5.15) — the expectation that
+a bare `read-tlv` already did this is a reasonable one to have, which is its own
+argument for either implementing it or saying so in the help.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

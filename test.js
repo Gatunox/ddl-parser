@@ -106,6 +106,12 @@ _t.hexAsciiStartCol   = hexAsciiStartCol;
 _t.extractBytes       = extractBytes;
 _t.stripJsonc         = _stripJsonc;
 _t.migrateSpec        = window._migrateSpec;
+_t.migrateOverrides   = window._migrateSpecOverrides;
+_t.psHelp             = _PS_HELP;
+_t.psCommonAttrs      = _PS_COMMON_ATTRS;
+_t.psCommonExamples   = _PS_COMMON_EXAMPLES;
+_t.mePsHelpExAttrs    = _mePsHelpExAttrs;
+_t.mePsHelpRunExample = _mePsHelpRunExample;
 _t.fmtTestSpecs       = window._fmtTestSpecs;
 _t.meExecParseSpec    = _meExecParseSpec;
 _t.meParseFileWithSpec = _meParseFileWithSpec;
@@ -152,11 +158,28 @@ const {
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
-  stripJsonc, migrateSpec, fmtTestSpecs,
-  meExecParseSpec, meParseFileWithSpec, mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
+  stripJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
+  psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample,
+  meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
+  mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
-  renderFieldTable, meReadApplyTypeOverride, setSpecLookup, auditBeginLoad,
+  meWalkDEFields: _rawWalkDEFields,
+  renderFieldTable, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
+
+// A spec reaches the engine only after the app has loaded it, and loading folds
+// de_map / var_length_groups / field_overrides into `overrides`. Folding at the
+// door here models that, and keeps the legacy shapes under test — that is the
+// half of the collapse that can actually lose a user's saved config.
+//
+// Deliberately migrateOverrides, NOT migrateSpec: the latter also renames
+// parse-spec blocks and normalizes legacy type names, which several tests feed
+// on purpose to prove those paths. The fold is idempotent, so a test that
+// migrates its own literal is unaffected.
+const meExecParseSpec     = (item, ...rest) => _rawExecParseSpec(migrateOverrides(item), ...rest);
+const meParseFileWithSpec = (item, ...rest) => _rawParseFileWithSpec(migrateOverrides(item), ...rest);
+const setSpecLookup       = fn => _rawSetSpecLookup((...a) => migrateOverrides(fn(...a)));
+const meWalkDEFields      = (defs, item, ...rest) => _rawWalkDEFields(defs, migrateOverrides(item), ...rest);
 
 // ── Test harness ────────────────────────────────────────────────────────────
 let passed = 0, failed = 0;
@@ -1080,6 +1103,251 @@ test('read-length-prefix decodes bcd2 prefixes and read-while max can come from 
   eq(ctx.cursor, 8, 'cursor stops after max-limited iterations');
 });
 
+// ── One DE anchor renumbers everything after it ──────────────────────────────
+// The BIC case: the DDL declares DE-64 then DE-66, because DE-65 does not exist.
+// Anchoring the ONE field that breaks the run must renumber the whole tail —
+// having to override every element afterwards would make the feature useless.
+console.log('\nDE anchors — one override, the rest follow');
+
+const DE_GAP_DDL = `DEF REC.
+  02 BMP PIC X(8).
+  02 F62 PIC X(2).
+  02 F63 PIC X(2).
+  02 F64 PIC X(2).
+  02 F66 PIC X(2).
+  02 F67 PIC X(2).
+  02 F68 PIC X(2).
+END REC.
+`;
+const deRows = overrides => {
+  S.ddlTree = { V: { S: { D: DE_GAP_DDL } } };
+  const item = { ddl_bindings: ['V/S/D/REC'], overrides,
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', length: 8 } },
+                        { 'read-bitmap-fields': 'BMP' }] };
+  const defs = sandbox._t.meCollectBindingDefs([getDDLFromPath('V/S/D/REC')]);
+  const rows = meWalkDEFields(defs, item);
+  const out = {};
+  for (const r of rows) if (/^F\d+$/.test(r.id)) out[r.id] = r;
+  return out;
+};
+
+test('anchoring one field renumbers every element after it', () => {
+  const r = deRows({ F62: { de: 62 } });
+  deepEq([r.F62.de, r.F63.de, r.F64.de], [62, 63, 64], 'the run continues from the anchor');
+  eq(r.F66.de, 65, 'and keeps counting straight through the gap — hence the second anchor');
+  eq(r.F68.de, 67, 'tail follows');
+});
+
+test('a second anchor closes the DE-65 gap without touching any other field', () => {
+  const r = deRows({ F62: { de: 62 }, F66: { de: 66 } });
+  deepEq([r.F62.de, r.F63.de, r.F64.de], [62, 63, 64], 'unchanged before the gap');
+  deepEq([r.F66.de, r.F67.de, r.F68.de], [66, 67, 68],
+    'everything after the second anchor renumbers on its own — no per-field overrides');
+});
+
+test('an anchored row is marked, and carries the DE it replaced', () => {
+  const r = deRows({ F62: { de: 62 }, F66: { de: 66 } });
+  eq(r.F66.anchored, true, 'F66 is flagged as anchored');
+  eq(r.F66.naturalDE, 65, 'and reports the 65 it would otherwise have been');
+  eq(r.F67.anchored, false, 'a field that merely follows on is NOT flagged');
+  eq(r.F67.naturalDE, null, 'and has nothing to report');
+});
+
+// ── Badges never change the mouse cursor ─────────────────────────────────────
+// Reported three times: hovering a badge turned the pointer into "?", which
+// reads as broken or disabled. A badge is an annotation, not its own control —
+// it inherits whatever cursor its row has.
+console.log('\nbadges — no cursor:help anywhere');
+
+test('no rule in the app sets cursor:help', () => {
+  const src = require('fs').readFileSync('./source.html', 'utf8');
+  // Comments are blanked first — the rule is written down next to the CSS it
+  // governs, and the words explaining it are not a violation of it. Newlines
+  // are preserved so reported line numbers still point at the real source.
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .replace(/^\s*\/\/.*$/gm, m => m.replace(/[^\n]/g, ' '));
+  const hits = code.split('\n')
+    .map((l, i) => ({ n: i + 1, l }))
+    .filter(x => /cursor\s*:\s*help/.test(x.l))
+    .map(x => `${x.n}: ${x.l.trim().slice(0, 80)}`);
+  eq(hits.join('\n'), '', 'cursor:help must not appear — badges inherit the row cursor');
+});
+
+// ── "bytes": narrow what the TYPE reads, without moving the field ────────────
+console.log('\noverrides — "bytes" narrows the type\'s view of a field');
+
+const DDL_BYTES = `DEF REC.
+  02 MSGTYPE PIC X(4).
+  02 TAIL PIC X(2).
+END REC.
+`;
+// MSGTYPE holds 02 00 30 20; the MTI is the first two bytes.
+const bytesCase = (ovr, extra) => {
+  S.ddlTree = { V: { S: { D: DDL_BYTES } } };
+  S.inputFormat = 'hex';
+  const overrides = Object.assign({}, extra);
+  if (ovr && Object.keys(ovr).length) overrides.MSGTYPE = ovr;
+  return meExecParseSpec(
+    { ddl_bindings: ['V/S/D/REC'], overrides,
+      parse_spec_binary: [{ 'read-ddl': 'ANY' }] },
+    Uint8Array.from([0x02, 0x00, 0x30, 0x20, 0x41, 0x42]));
+};
+
+test('hex-char on a PIC X(4) renders all 4 bytes — the behaviour "bytes" exists to correct', () => {
+  const f = bytesCase({ type: 'hex-char' }).fields.find(x => x.id === 'MSGTYPE');
+  eq(f.value, '02003020', 'all four bytes rendered as 8 hex characters');
+});
+
+test('"bytes": 2 makes the field 2 bytes — it is read as if the DDL said PIC X(2)', () => {
+  const ctx = bytesCase({ type: 'hex-char', bytes: 2 });
+  const f = ctx.fields.find(x => x.id === 'MSGTYPE');
+  eq(f.value, '0200', 'only the MTI');
+  eq(f.endByte - f.startByte + 1, 2, 'the field itself is now 2 bytes, not 4');
+});
+
+test('"bytes" alone re-sizes the field, with no type override at all', () => {
+  const f = bytesCase({ bytes: 2 }).fields.find(x => x.id === 'MSGTYPE');
+  eq(f.endByte - f.startByte + 1, 2, 'length override applies on its own');
+  eq(f.rawHex, '0200', 'and only those bytes are read');
+});
+
+test('"bytes" LARGER than declared is legitimate — the DDL understated the field', () => {
+  // MSGTYPE is PIC X(4) at offset 0; asking for 5 reads one byte into TAIL.
+  const f = bytesCase({ bytes: 5 }).fields.find(x => x.id === 'MSGTYPE');
+  eq(f.endByte - f.startByte + 1, 5, 'field grew past its declared 4 bytes');
+  eq(f.rawHex, '0200302041', 'and read the fifth byte, which belongs to TAIL');
+});
+
+test('growth is still bounded by the message — it cannot read past the end', () => {
+  // TAIL is PIC X(2) at offset 4 and the message is 6 bytes, so there is nothing
+  // to grow into. Reading stops at the end rather than inventing bytes.
+  const f = bytesCase({}, { TAIL: { bytes: 9 } }).fields.find(x => x.id === 'TAIL');
+  eq(f.rawHex.length / 2, 2, 'clamped to the 2 bytes that exist');
+});
+
+test('shrinking a field frees its leftover bytes for the NEXT field to read', () => {
+  // MSGTYPE is PIC X(4) holding 02 00 30 20; cut it to 2 and the 30 20 that
+  // frees must reach TAIL, not be skipped because the DDL says TAIL starts at 4.
+  const ctx = bytesCase({ type: 'hex-char', bytes: 2 });
+  const tail = ctx.fields.find(x => x.id === 'TAIL');
+  eq(tail.startByte, 2, 'TAIL moved up to where MSGTYPE now ends');
+  eq(tail.rawHex, '3020', 'and reads the two bytes MSGTYPE gave back');
+});
+
+test('growing a field pushes the ones after it along', () => {
+  const ctx = bytesCase({ bytes: 5 });
+  const tail = ctx.fields.find(x => x.id === 'TAIL');
+  eq(tail.startByte, 5, 'TAIL starts one byte later than declared');
+});
+
+test('with no bytes override, every field sits exactly where the DDL declares', () => {
+  const ctx = bytesCase({ type: 'hex-char' });
+  const tail = ctx.fields.find(x => x.id === 'TAIL');
+  eq(tail.startByte, 4, 'unchanged');
+  eq(tail.value, 'AB', 'and reads its declared bytes');
+});
+
+test('the type sees the overridden length, so a fixed-width type can now fit', () => {
+  eq(bytesCase({ type: 'uint16-be', bytes: 2 }).fields.find(x => x.id === 'MSGTYPE' && !x.error).value,
+     '512', '0x0200 = 512, no length-mismatch error');
+});
+
+test('an explicit "bytes" outranks the size a fixed-width type would imply', () => {
+  // uint16-be would make the field 2; "bytes": 3 says 3, and the user's explicit
+  // number wins. No error either way — an override is never ignored.
+  const ctx = bytesCase({ type: 'uint16-be', bytes: 3 });
+  const f = ctx.fields.find(x => x.id === 'MSGTYPE' && !x.error);
+  eq(ctx.fields.some(x => x.id === 'MSGTYPE' && x.error), false, 'no error row');
+  eq(f.endByte - f.startByte + 1, 3, '"bytes" set the length, not the type');
+  eq(f.value, '512', 'uint16-be still decodes from the head of those bytes');
+});
+
+test('a fixed-width type alone sets the length, like editing the DDL to that type', () => {
+  const ctx = bytesCase({ type: 'uint16-be' });          // MSGTYPE is PIC X(4)
+  const f = ctx.fields.find(x => x.id === 'MSGTYPE' && !x.error);
+  eq(f.endByte - f.startByte + 1, 2, 'uint16-be makes it 2 bytes');
+  const tail = ctx.fields.find(x => x.id === 'TAIL');
+  eq(tail.startByte, 2, 'and TAIL moves up to follow it');
+});
+
+test('display runs after the length and type, on the overridden bytes', () => {
+  const f = bytesCase({ type: 'hex-char', bytes: 2, display: 'hex' }).fields.find(x => x.id === 'MSGTYPE');
+  eq(f.value, '0200', 'type applied to the 2 overridden bytes');
+  // 0x0200, not 0x02003020 — the formatter saw the overridden length.
+  eq(f.displayValue, '0x0200', 'display formatted those same bytes, not the declared 4');
+});
+
+// ── Overrides collapse: de_map + var_length_groups + field_overrides → one map ──
+// The three arrays became a single `overrides` map keyed by canonical field id.
+// These lock the fold itself: everything else in this file exercises it only
+// indirectly, through the door-migration the harness applies.
+console.log('\noverrides — the three arrays fold into one map');
+
+test('the fold moves every array into overrides and removes the arrays', () => {
+  const spec = migrateOverrides({
+    field_overrides: [{ field: 'A', type: 'uint-be', display: 'hex' }],
+    de_map: [{ field: 'B', de: 7 }],
+    var_length_groups: [{ group: 'G', len: 'G.LEN' }],
+  });
+  deepEq(spec.overrides.A, { type: 'uint-be', display: 'hex' }, 'type + display land on one entry');
+  eq(spec.overrides.B.de, 7, 'DE anchor lands on its field');
+  eq(spec.overrides.G.vlg, 'G.LEN', 'explicit LEN leaf is kept');
+  eq('field_overrides' in spec, false, 'field_overrides removed');
+  eq('de_map' in spec, false, 'de_map removed');
+  eq('var_length_groups' in spec, false, 'var_length_groups removed');
+});
+
+test('one field carrying all four kinds of override collapses to a single entry', () => {
+  const spec = migrateOverrides({
+    field_overrides: [{ field: 'F', type: 'ascii', display: 'hex' }],
+    de_map: [{ field: 'F', de: 3 }],
+    var_length_groups: [{ group: 'F', len: null }],
+  });
+  eq(Object.keys(spec.overrides).length, 1, 'one key, not three');
+  deepEq(spec.overrides.F, { type: 'ascii', display: 'hex', de: 3, vlg: true }, 'all four merged');
+});
+
+test('VLG len null and the legacy bare-string entry both mean "first leaf"', () => {
+  const a = migrateOverrides({ var_length_groups: [{ group: 'G', len: null }] });
+  const b = migrateOverrides({ var_length_groups: ['G'] });
+  eq(a.overrides.G.vlg, true, '{group, len:null} → true');
+  eq(b.overrides.G.vlg, true, 'legacy bare string → true');
+});
+
+test('occurrence indices are stripped from every key, and from the LEN leaf', () => {
+  const spec = migrateOverrides({
+    field_overrides: [{ field: 'M[02].N', type: 'binary' }],
+    de_map: [{ field: 'TOP[01]', de: 4 }],
+    var_length_groups: [{ group: 'G[01]', len: 'G[01].LEN' }],
+  });
+  eq(spec.overrides['M.N'].type, 'binary', 'field id canonicalized');
+  eq(spec.overrides['TOP'].de, 4, 'DE anchor id canonicalized');
+  eq(spec.overrides['G'].vlg, 'G.LEN', 'group AND its LEN leaf canonicalized');
+});
+
+test('entries that carry nothing are dropped rather than left as noise', () => {
+  const spec = migrateOverrides({ field_overrides: [{ field: 'EMPTY' }, { field: 'REAL', type: 'ascii' }] });
+  eq('EMPTY' in spec.overrides, false, 'an entry with no settings is not stored');
+  eq(spec.overrides.REAL.type, 'ascii', 'a real entry survives');
+});
+
+test('the fold is idempotent and never clobbers an already-migrated map', () => {
+  const once  = migrateOverrides({ de_map: [{ field: 'A', de: 2 }] });
+  const twice = migrateOverrides(JSON.parse(JSON.stringify(once)));
+  // Compared as JSON: objects built inside the VM sandbox and objects built
+  // here have different Object prototypes, which deepStrictEqual counts as a
+  // difference even when every key and value matches.
+  eq(JSON.stringify(twice.overrides), JSON.stringify(once.overrides), 'running it again changes nothing');
+  const mixed = migrateOverrides({ overrides: { A: { type: 'ascii' } }, de_map: [{ field: 'A', de: 9 }] });
+  deepEq(mixed.overrides.A, { type: 'ascii', de: 9 }, 'an old array merges INTO an existing entry');
+});
+
+test('a spec with no override config of any kind gets an empty map, not junk', () => {
+  const spec = migrateOverrides({ name: 'X' });
+  deepEq(spec.overrides, {}, 'empty map');
+});
+
 test('field_overrides can reinterpret bound DDL fields and add a display formatter', () => {
   S.ddlTree = { VOL: { SV: { 'OVRDDL': `
     DEF REC.
@@ -1156,7 +1424,7 @@ test('uint-be / uint-le are size-adaptive (width = field length) and migrate fro
     ],
     parse_spec_binary: [{ 'read-ddl': 'ANY' }],
   });
-  eq(item.field_overrides.find(o => o.field === 'L2').type, 'uint-le', 'legacy uint16-le migrated to uint-le');
+  eq(item.overrides['L2'].type, 'uint-le', 'legacy uint16-le migrated to uint-le');
   const ctx = meExecParseSpec(item, Uint8Array.from([
     0xFF,                                     // B1 → 255
     0x01, 0xF4,                               // B2 → 500
@@ -1392,24 +1660,49 @@ test('field_overrides match ALL occurrences of a nested OCCURS field (occurrence
   eq(nums.every(f => f.typeOverride === 'uint-be'), true, 'each occurrence carries the override marker');
 });
 
-test('field_overrides reject incompatible lengths without replacing the parsed field', () => {
+// BEHAVIOUR CHANGE: a stored override used to be REJECTED when its type needed
+// more bytes than the DDL declared — an error row, original value untouched.
+// An override is now an edit to the DDL, so it always wins: the type states the
+// field's size, the field is read at that size, and the rest of the record
+// shifts. Nothing is silently ignored.
+test('a stored type override that needs more bytes RESIZES the field instead of erroring', () => {
   S.ddlTree = { VOL: { SV: { 'BADOVR': `
     DEF REC.
       02 ONE PIC X(1).
+      02 TWO PIC X(1).
+      02 THREE PIC X(1).
     END REC.
   ` } } };
   S.inputFormat = 'hex';
   const item = {
     ddl_bindings: ['VOL/SV/BADOVR/REC'],
-    field_overrides: [{ field: 'ONE', type: 'uint16-be' }],
+    overrides: { ONE: { type: 'uint16-be' } },   // 2 bytes, on a 1-byte field
     parse_spec_binary: [{ 'read-ddl': 'ANY' }],
   };
-  const ctx = meExecParseSpec(item, Buffer.from('A'));
-  const parsed = ctx.fields.find(x => x.id === 'ONE' && !x.error);
+  const ctx = meExecParseSpec(item, Uint8Array.from([0x01, 0x02, 0x03]));
+  const one = ctx.fields.find(x => x.id === 'ONE' && !x.error);
+  eq(ctx.fields.some(x => x.id === 'ONE' && x.error), false, 'no "override ignored" row');
+  eq(one.value, '258', '0x0102 decoded as uint16-be — the override was honoured');
+  eq(one.typeOverride, 'uint16-be', 'and marked as overridden');
+  eq(one.endByte - one.startByte + 1, 2, 'the field took the 2 bytes its type needs');
+  const two = ctx.fields.find(x => x.id === 'TWO' && !x.error);
+  eq(two.startByte, 2, 'TWO shifted along, exactly as if the DDL had declared 2 bytes');
+});
+
+test('an INLINE parse-spec type is still length-checked — it never re-sizes a field', () => {
+  S.ddlTree = { VOL: { SV: { 'INLBAD': `
+    DEF REC.
+      02 ONE PIC X(1).
+    END REC.
+  ` } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({
+    ddl_bindings: ['VOL/SV/INLBAD/REC'],
+    parse_spec_binary: [{ read: { field: 'ONE', type: 'uint16-be' } }],
+  }, Buffer.from('A'));
   const err = ctx.fields.find(x => x.id === 'ONE' && x.error);
-  eq(parsed.value, 'A', 'original parsed field remains visible');
-  assert.ok(!parsed.typeOverride, 'invalid override is not applied');
-  assert.ok(err.error.includes('override ignored'), 'mismatch emits warning row');
+  assert.ok(err && err.error.includes('override ignored'),
+    'an inline type is part of the traversal, not a DDL edit, so it must still fit');
 });
 
 test('inline parse-spec type overrides take precedence over field_overrides', () => {
@@ -1488,7 +1781,7 @@ test('DE numbering starts after the bitmap field and skips REDEFINES, matching t
   };
   // UI walker view: HDR and BMP unnumbered; PAN group anchored to DE-2
   // (terminal, owns its leaves); ALT-VIEW (REDEFINES) skipped; AMT = DE-3.
-  const rows = sandbox._t.meWalkDEFields(
+  const rows = meWalkDEFields(
     sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/ISODDL/REC')]), item);
   const rowDE = id => rows.find(r => r.id === id)?.de ?? null;
   eq(rowDE('HDR'), null, 'header field carries no DE');
@@ -1526,7 +1819,7 @@ test('a REDEFINES child group does not split its parent\'s DE (DATA-ELEMENT-37 c
       { 'read-bitmap-fields': 'BMP' },
     ],
   };
-  const rows = sandbox._t.meWalkDEFields(
+  const rows = meWalkDEFields(
     sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/D37DDL/REC')]), item);
   const row = id => rows.find(r => r.id === id);
   eq(row('DATA-ELEMENT-37')?.de, 1, 'group owns the DE (terminal despite the redef child)');
@@ -1549,7 +1842,7 @@ test('[REGRESSION] DE walker expands every nested OCCURS occurrence; DE only on 
     END REC.
   ` } } };
   const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/NESTDDL/REC')]);
-  const rows = sandbox._t.meWalkDEFields(defs, { ddl_bindings: ['VOL/SV/NESTDDL/REC'] });
+  const rows = meWalkDEFields(defs, { ddl_bindings: ['VOL/SV/NESTDDL/REC'] });
   const ids = rows.map(r => r.id);
   // Full expansion: every occurrence is its own row.
   eq(ids.filter(id => /\.NUM$/.test(id)).length, 10, '2 (MULT) × 5 (INFO) = 10 NUM rows shown');
@@ -1580,7 +1873,7 @@ test('a composite element (nested sub-groups) consumes exactly ONE DE', () => {
     ddl_bindings: ['VOL/SV/COMP/ISOMSG'], de_map: [],
     parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'BMP' }],
   };
-  const rows = sandbox._t.meWalkDEFields(
+  const rows = meWalkDEFields(
     sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/COMP/ISOMSG')]), item);
   const de = id => rows.find(r => r.id === id)?.de ?? null;
   eq(de('DATA-ELEMENT-62'), 1, 'composite element owns one DE');
@@ -1925,14 +2218,14 @@ test('DE numbering caps at 128; an anchor pulls the sequence back into range', (
   });
   const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/BIG/BIGISO')]);
   // Natural: fields 129/140 exceed the 128-bit bitmap → no DE, flagged overflow.
-  let rows = sandbox._t.meWalkDEFields(defs, mkItem([]));
+  let rows = meWalkDEFields(defs, mkItem([]));
   const row = (rs, id) => rs.find(r => r.id === id);
   eq(row(rows, 'FLD-128').de, 128, 'DE-128 still assigned');
   eq(row(rows, 'FLD-129').de, null, 'DE-129 does not exist');
   eq(row(rows, 'FLD-129').deOverflow, true, 'overflow flagged');
   eq(row(rows, 'FLD-129').deSeq, 129, 'uncapped sequence kept for Auto Order');
   // Anchoring FLD-100 back to DE-60 brings the tail into range again.
-  rows = sandbox._t.meWalkDEFields(defs, mkItem([{ field: 'FLD-100', de: 60 }]));
+  rows = meWalkDEFields(defs, mkItem([{ field: 'FLD-100', de: 60 }]));
   eq(row(rows, 'FLD-100').de, 60, 'anchor applied');
   eq(row(rows, 'FLD-129').de, 89, 'post-anchor field back inside 1-128');
   eq(row(rows, 'FLD-140').de, 100, 'tail numbered normally after the anchor');
@@ -2006,7 +2299,7 @@ END
   deepEq([...roots].sort(), ['DATA-ELEMENT-2', 'DATA-ELEMENT-44', 'DATA-ELEMENT-53', 'PBIT-MAP'],
     'field list holds only the bound DEF');
   // 2. DE rows: one per top-level element of the bound DEF, nothing else.
-  const rows = sandbox._t.meWalkDEFields(sandbox._t.meCollectBindingDefs([r]), item);
+  const rows = meWalkDEFields(sandbox._t.meCollectBindingDefs([r]), item);
   deepEq(rows.filter(x => x.de !== null).map(x => `${x.id}=DE-${x.de}`),
     ['DATA-ELEMENT-2=DE-1', 'DATA-ELEMENT-44=DE-2', 'DATA-ELEMENT-53=DE-3'],
     'exactly one DE per top-level element of the bound DEF');
@@ -2117,7 +2410,7 @@ END
     'both FILLERs survive the id+offset dedup');
   const item = { ddl_bindings: ['VOL/SV/Z/ZOO3'], de_map: [],
     parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'BMP' }] };
-  const rows = sandbox._t.meWalkDEFields(merged, item);
+  const rows = meWalkDEFields(merged, item);
   // FILLER is padding: it neither owns nor advances the DE counter.
   deepEq(rows.filter(r => r.de !== null).map(r => `${r.id}=DE-${r.de}`),
     ['A=DE-1', 'B=DE-2', 'C=DE-3', 'D=DE-4'],
@@ -3685,6 +3978,175 @@ test('a single-line elementary DEFINITION is not flagged', () => {
   // It carries its own PICTURE on the header and has no body to number.
   eq(validateDDLErrors(`DEFINITION AMT PIC 9(8).\nEND.`, new Map()).errors.length, 0,
      'header with its own PIC is complete');
+});
+
+// ── Parse-spec help ↔ engine — the panel is the manual, so it must not lie ───
+// Two failure modes, both of which had happened before these tests existed:
+// an attribute documented with no example anywhere (27 of 33 at one point), and
+// an attribute documented that the block never reads (read-fixed's type and
+// encoding were inert for months). Neither is visible by reading the help.
+
+console.log('\nParse-spec help ↔ engine');
+
+// Which function actually implements each block. Where a block delegates by
+// mode, every function it can reach is listed — the claim under test is "this
+// attribute is read SOMEWHERE in the code path this block dispatches to".
+const PS_EXEC_FNS = {
+  'read-ddl':            ['_meExecReadDDL'],
+  'read':                ['_meExecReadField'],
+  'read-fixed':          ['_meExecReadFixed'],
+  'read-until':          ['_meExecReadUntil'],
+  'read-length-prefix':  ['_meExecReadLengthPrefix'],
+  'read-to-end':         ['_meExecReadToEnd'],
+  'read-bitmap':         ['_meExecReadBitmap', '_meExecSegMap', '_meExecReadSegMapFromFile'],
+  'read-bitmap-fields':  ['_meExecBitmapFields'],
+  'read-segment-fields': ['_meExecSegmentFields'],
+  'read-tlv':            ['_meExecReadTLV', '_meExecReadTLVMapped'],
+  'skip':                ['_meExecBlockAt'],
+  'when':                ['_meExecWhen'],
+  'repeat':              ['_meExecRepeat'],
+  'read-while':          ['_meExecReadWhile'],
+  'token-area':          ['_meExecTokenArea'],
+};
+
+const APP_SRC = match[1];
+function psFnSource(name) {
+  const i = APP_SRC.indexOf(`\nfunction ${name}(`);
+  assert.ok(i >= 0, `function ${name} not found in source.html`);
+  const j = APP_SRC.indexOf('\nfunction ', i + 1);
+  return APP_SRC.slice(i, j < 0 ? APP_SRC.length : j);
+}
+
+// The exec function plus one level of the helpers it calls: several blocks read
+// their attributes through a normalizer (_meReadDDLAttrs and friends), so the
+// literal attribute name never appears in the exec function itself.
+function psBlockSource(blk) {
+  const seen = new Set(PS_EXEC_FNS[blk]);
+  let src = '';
+  for (const fn of PS_EXEC_FNS[blk]) {
+    const s = psFnSource(fn);
+    src += '\n' + s;
+    for (const m of s.matchAll(/\b(_me[A-Za-z0-9]+)\s*\(/g))
+      if (!seen.has(m[1]) && APP_SRC.includes(`\nfunction ${m[1]}(`)) {
+        seen.add(m[1]);
+        src += '\n' + psFnSource(m[1]);
+      }
+  }
+  return src;
+}
+
+// An attribute counts as read when it is taken off an attrs-like object: a
+// property access, a quoted key, or a destructuring binding. A bare word match
+// would not do — "type" and "encoding" both appear all over read-fixed's
+// neighbourhood, and they were inert for months while doing so.
+const psReadsAttr = (src, name) => new RegExp(
+  `\\b(attrs|a)\\??\\.\\s*${name}\\b` +   // attrs.name / attrs?.name / a.name (the normalized alias)
+  `|['"]${name}['"]` +                    // attrs['name'], or a key in a returned object
+  `|[{,]\\s*${name}\\s*[,}]`              // const { name, … } = …
+).test(src);
+
+test('every block in the help table has a known implementation', () => {
+  deepEq(Object.keys(psHelp).filter(b => !PS_EXEC_FNS[b]), [], 'documented blocks with no exec mapping');
+  deepEq(Object.keys(PS_EXEC_FNS).filter(b => !psHelp[b]), [], 'implemented blocks with no help entry');
+});
+
+test('every documented attribute has at least one example', () => {
+  const commonNames = psCommonAttrs.map(a => a[0]);
+  const gaps = [];
+  for (const [blk, info] of Object.entries(psHelp))
+    for (const [name] of info.attrs)
+      // Same fallback the panel uses: a block's own examples first, then the
+      // shared positioning examples for the attributes every block accepts.
+      if (!info.examples.some(ex => mePsHelpExAttrs(ex).has(name)) &&
+          !(commonNames.includes(name) && psCommonExamples.some(ex => mePsHelpExAttrs(ex).has(name))))
+        gaps.push(`${blk}.${name}`);
+  deepEq(gaps, [], 'documented attributes with no example');
+});
+
+test('the shared positioning attributes have shared examples', () => {
+  deepEq(psCommonAttrs.map(a => a[0]).filter(n =>
+    !psCommonExamples.some(ex => mePsHelpExAttrs(ex).has(n))), [], 'common attrs with no example');
+});
+
+test('every documented attribute is actually read by its block', () => {
+  const inert = [];
+  for (const [blk, info] of Object.entries(psHelp)) {
+    const src = psBlockSource(blk);
+    for (const [name] of info.attrs) {
+      // The bare-string form has no key to look for; it is a typeof check.
+      if (name === '(bare string)') { assert.ok(/typeof attrs === 'string'/.test(src),
+        `${blk} documents the bare-string form but never checks for it`); continue; }
+      if (!psReadsAttr(src, name)) inert.push(`${blk}.${name}`);
+    }
+  }
+  deepEq(inert, [], 'documented attributes the block never reads');
+});
+
+test('every example the help ships actually parses as a spec', () => {
+  const bad = [];
+  for (const [blk, info] of Object.entries(psHelp))
+    for (const ex of info.examples) {
+      const spec = Array.isArray(ex) ? ex[1] : ex.spec;
+      if (!Array.isArray(spec) || !spec.length) { bad.push(`${blk}: not a block list`); continue; }
+      // A payload means the panel EXECUTES it — it must be whole hex bytes.
+      if (!Array.isArray(ex) && ex.payload && !/^([0-9A-Fa-f]{2}\s*)+$/.test(ex.payload))
+        bad.push(`${blk}: payload is not hex bytes`);
+    }
+  deepEq(bad, [], 'malformed help examples');
+});
+
+test('no attribute description is one dense paragraph', () => {
+  // The panel renders a string description as a single block of prose. Every
+  // description is a list of lines (or [form, meaning] pairs) so it renders as
+  // bullets or a table — the one change that made this panel readable.
+  const prose = [];
+  for (const [blk, info] of Object.entries(psHelp))
+    for (const [name, , , desc] of info.attrs)
+      if (!Array.isArray(desc)) prose.push(`${blk}.${name}`);
+  for (const [name, , , desc] of psCommonAttrs)
+    if (!Array.isArray(desc)) prose.push(`(common).${name}`);
+  deepEq(prose, [], 'attribute descriptions still written as one paragraph');
+});
+
+test('no block description is a wall of prose', () => {
+  // Same rule as the attributes: past a couple of sentences a description has to
+  // be a lead line plus bullets, or nobody gets to the end of it.
+  const walls = Object.entries(psHelp)
+    .filter(([, info]) => typeof info.desc === 'string' && info.desc.length > 300)
+    .map(([blk, info]) => `${blk} (${info.desc.length} chars)`);
+  deepEq(walls, [], 'block descriptions still written as one long paragraph');
+});
+
+test('every block has at least one example that is actually run', () => {
+  // A payload-carrying example is executed by the panel, so its Result table is
+  // the engine's own output. A block with only prose examples is documentation
+  // that nothing checks.
+  deepEq(Object.entries(psHelp)
+    .filter(([, info]) => !info.examples.some(ex => !Array.isArray(ex) && ex.payload))
+    .map(([blk]) => blk), [], 'blocks with no executable example');
+});
+
+test('every executable example produces the fields it claims to', () => {
+  // The panel RUNS these against their own payloads, so a broken one is not a
+  // stale sentence — it is an error table under a heading that promises a result.
+  const bad = [];
+  for (const [blk, info] of Object.entries(psHelp).concat([['(shared)', { examples: psCommonExamples }]]))
+    for (const ex of info.examples) {
+      if (Array.isArray(ex) || !ex.payload) continue;
+      const ctx = mePsHelpRunExample(ex);
+      const errs = (ctx.fields || []).filter(f => f.error);
+      if (ex.expectError) {
+        if (!errs.length) bad.push(`${blk}: "${ex.what}" was meant to show an error and did not`);
+        continue;
+      }
+      if (errs.length) bad.push(`${blk}: "${ex.what}" → ${errs.map(e => e.error).join(' | ')}`);
+      else if (!(ctx.fields || []).length) bad.push(`${blk}: "${ex.what}" produced no fields`);
+      // token-area fills ctx.tokens, not ctx.fields — a silently empty token
+      // area would still have passed the check above.
+      else if (JSON.stringify(ex.spec).includes('token-area') && !(ctx.tokens || []).length)
+        bad.push(`${blk}: "${ex.what}" selected no tokens`);
+    }
+  deepEq(bad, [], 'help examples that do not run');
 });
 
 // ── SPEC ↔ code — the design spec must describe the code that exists ────────

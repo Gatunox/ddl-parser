@@ -81,6 +81,7 @@ const sandbox = vm.createContext({
 try {
   vm.runInContext(match[1] + `
     _t.meExecParseSpec  = _meExecParseSpec;
+    _t.migrateOverrides = window._migrateSpecOverrides;
     _t.parseHPEDDL      = parseHPEDDL;
     _t.buildDDLDocFields= buildDDLDocFields;
     _t.parseFlatMessage = parseFlatMessage;
@@ -96,9 +97,17 @@ try {
 }
 
 const {
-  meExecParseSpec, parseHPEDDL, buildDDLDocFields, parseFlatMessage,
+  meExecParseSpec: _rawExecParseSpec, parseHPEDDL, buildDDLDocFields, parseFlatMessage,
   detectFormat, extractBytes, buildRepoTypeRegistry, buildRepoSectionRegistry, S,
+  migrateOverrides,
 } = sandbox._t;
+
+// Cases below are written with de_map / var_length_groups / field_overrides —
+// the shape a spec has on disk. The app folds those into `overrides` when it
+// loads a spec, so the harness folds them at the door too. Without this the
+// golden would appear to drift purely because the corpus speaks the old shape,
+// and re-recording would silently bless a real loss of DE anchors.
+const meExecParseSpec = (item, ...rest) => _rawExecParseSpec(migrateOverrides(item), ...rest);
 
 // ── Serialization ───────────────────────────────────────────────────────────
 // Field shape is captured in full. Anything that drifts — an offset, a value, a

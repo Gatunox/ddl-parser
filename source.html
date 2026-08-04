@@ -4917,6 +4917,41 @@ function _meOvAll(item) {
 function _meOvGet(item, fieldId) {
   return _meOvAll(item)[_canonFieldId(fieldId)] || null;
 }
+
+// A block may carry its own `overrides` map, in the same shape as the stored one,
+// so a spec can be self-contained and a diff shows what changed. Canonicalised
+// once per block, since every field read then looks itself up here.
+function _meOvNormalizeInline(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
+  const out = {};
+  for (const k in map) {
+    const v = map[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) out[_canonFieldId(k)] = v;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+// The override in effect for a field: the block's inline entry laid OVER the
+// stored one, key by key. Per-key rather than whole-entry, so an inline
+// {"bytes": 2} does not silently discard a display override set in the panel.
+// Inline wins — the same precedence a `read` block's inline `type` already has.
+function _meOvEffective(ctx, fieldId) {
+  const base = _meOvGet(ctx.item, fieldId);
+  const inl  = ctx.blockOverrides ? ctx.blockOverrides[_canonFieldId(fieldId)] : null;
+  if (!inl) return base;
+  return base ? { ...base, ...inl } : inl;
+}
+
+// The item the DE walker should see: `de` anchors and `vlg` flags live in the
+// same map, and both are consumed from an ITEM rather than from ctx. Returns the
+// item untouched when the block declares no overrides, so the common path keeps
+// its identity (the walker's callers cache on it).
+function _meOvMergedItem(ctx) {
+  if (!ctx.blockOverrides) return ctx.item;
+  const merged = { ...(_meOvAll(ctx.item)) };
+  for (const id in ctx.blockOverrides) merged[id] = { ...(merged[id] || {}), ...ctx.blockOverrides[id] };
+  return { ...ctx.item, overrides: merged };
+}
 // Set one key; a null/''/undefined value clears it, and an entry that ends up
 // empty is removed so "does this field have an override" stays a plain lookup.
 function _meOvSet(item, fieldId, key, val) {
@@ -14213,7 +14248,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.3.2';
+const APP_VERSION  = '1.1.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16133,6 +16168,21 @@ const _PS_VLG_IDENTIFIER_DESC = [
   'Flagging a group by hand in the Overrides panel still wins over all three. This attribute governs the <i>guess</i>, not your explicit choice.',
 ];
 
+// Shared by read-ddl and read-bitmap-fields — both walk DDL fields, so both can
+// carry the overrides those fields need. Written once so the two cannot drift.
+const _PS_OVERRIDES_DESC = [
+  'Overrides carried <b>by the spec itself</b>, in the same shape the Overrides panel stores.',
+  ['<code>{"MSGTYPE": {"type": "hex-char"}}</code>', 'Read that field as hex characters.'],
+  ['<code>{"MSGTYPE": {"bytes": 2}}</code>',         'Re-size it — the bytes it frees go to the next field, exactly as in the panel.'],
+  ['<code>{"DE-64": {"de": 66}}</code>',             'Anchor a Data Element number; the ones after it follow.'],
+  ['<code>{"TRACK2": {"vlg": true}}</code>',         'Mark a group variable-length.'],
+  'Same keys as the panel: <code>type</code>, <code>bytes</code>, <code>display</code>, <code>de</code>, <code>vlg</code>.',
+  '<b>Inline wins</b> over the panel — the same precedence a <code>read</code> block\'s inline <code>type</code> already has.',
+  'The merge is per <b>key</b>, not per field: an inline <code>bytes</code> does not discard a <code>display</code> set in the panel.',
+  'Scoped to the block that declares it. The next block does not inherit it.',
+  'Use it to make a spec self-contained — it travels with the spec, and a diff shows what changed.',
+];
+
 const _PS_HELP = {
   'read-ddl': {
     desc: [
@@ -16170,6 +16220,7 @@ const _PS_HELP = {
         'The walk itself continues to the end of the binding; only the output stops.',
       ]],
       ['vlg_identifier', 'string', false, _PS_VLG_IDENTIFIER_DESC],
+      ['overrides', '{ "<field>": {…} }', false, _PS_OVERRIDES_DESC],
     ],
     examples: [
       // One four-field DDL, walked four ways — the difference between the
@@ -16216,6 +16267,18 @@ const _PS_HELP = {
         def: 'MSG',
         payload: '31 32 30 30 30 35 41 42 43 44 45 54 41 49 4C',
         spec: [{"read-ddl": {"vlg_identifier": "SIZE"}}] },
+      // Inline overrides: the same map the Overrides panel stores, carried by the
+      // spec so it travels with it.
+      { what: '<b>overrides</b> — the spec carries its own: MSGTYPE read as hex characters, nothing configured in the panel',
+        ddl: 'DEFINITION MSG.\n  02 MSGTYPE PIC X(4).\n  02 TRACE   PIC X(6).\nEND\n',
+        def: 'MSG',
+        payload: '31 32 30 30 30 30 30 31 32 33',
+        spec: [{"read-ddl": {"overrides": {"MSGTYPE": {"type": "hex-char"}}}}] },
+      { what: '<b>overrides</b> with <code>bytes</code> — MSGTYPE re-sized to 2, and the bytes it frees belong to TRACE, which now starts at byte 2',
+        ddl: 'DEFINITION MSG.\n  02 MSGTYPE PIC X(4).\n  02 TRACE   PIC X(6).\nEND\n',
+        def: 'MSG',
+        payload: '31 32 30 30 30 30 30 31 32 33',
+        spec: [{"read-ddl": {"overrides": {"MSGTYPE": {"bytes": 2}}}}] },
       ['All fields then tokens',           [{"read-ddl": "ANY"}, {"token-area": "ANY"}]],
       ['Two bindings (header + body)',     [{"read-ddl": {"binding": 0}}, {"read-ddl": {"binding": 1}}, {"token-area": "ANY"}]],
     ],
@@ -16617,6 +16680,7 @@ const _PS_HELP = {
         'Written as a bare string when it is the only attribute: <code>{"read-bitmap-fields": "BITMAP"}</code>.',
       ]],
       ['vlg_identifier', 'string', false, _PS_VLG_IDENTIFIER_DESC],
+      ['overrides', '{ "<field>": {…} }', false, _PS_OVERRIDES_DESC],
       ['de', '{ "<bit>": [blocks] | {field, blocks} }', false, [
         'Per-bit parsing — a listed bit is read by <b>its own blocks</b> instead of the default DDL walk.',
         'Keys are bit numbers. Two forms:',
@@ -16651,6 +16715,13 @@ const _PS_HELP = {
         payload: '60 00 00 00 00 00 00 00 30 35 41 42 43 44 45 54 41 49 4C',
         spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
                {"read-bitmap-fields": {"bitmap": "BITMAP", "vlg_identifier": "SIZE"}}] },
+      { what: '<b>overrides</b> — carried by the block: DE-A anchored to 2 (so DE-B follows at 3) and read as hex characters, with nothing set in the panel',
+        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 DE-A PIC X(4).\n  02 DE-B PIC X(6).\nEND\n',
+        def: 'MSG',
+        payload: '60 00 00 00 00 00 00 00 41 42 43 44 31 32 33 34 35 36',
+        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+               {"read-bitmap-fields": {"bitmap": "BITMAP",
+                 "overrides": {"DE-A": {"de": 2, "type": "hex-char"}}}}] },
       ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}}, {"read-bitmap-fields": "BITMAP"}]],
       ['DE-55 as EMV TLV, everything else as usual', [{"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
         "55": [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}}}]
@@ -21113,7 +21184,7 @@ function _meReadOneFieldFromDef(def, ctx) {
   // offset, and counting its delta again would shift the rest of the record
   // twice over.
   {
-    const _ovLen = _meOvEffectiveLen(_meOvGet(ctx.item, def.id));
+    const _ovLen = _meOvEffectiveLen(_meOvEffective(ctx, def.id));
     if (_ovLen !== null && _ovLen !== (def.length || 0)) {
       if (!ctx._ovShiftSeen) ctx._ovShiftSeen = new Set();
       if (!ctx._ovShiftSeen.has(def.id)) {
@@ -21182,7 +21253,7 @@ function _meReadOneFieldFromDef(def, ctx) {
 //   from/until name DDL field ids defining an inclusive emission window.
 //   Cherry-pick (fields=[...]) takes precedence over from/until.
 function _meReadDDLAttrs(attrs) {
-  const bare = { binding: 'ANY', fields: 'ANY', from: null, until: null, vlgIdentifier: undefined };
+  const bare = { binding: 'ANY', fields: 'ANY', from: null, until: null, vlgIdentifier: undefined, overrides: null };
   if (attrs == null || attrs === 'ANY') return bare;
   if (typeof attrs === 'number')        return { ...bare, binding: attrs };
   if (typeof attrs === 'object') {
@@ -21193,6 +21264,7 @@ function _meReadDDLAttrs(attrs) {
       until:   attrs.until   || null,
       // undefined = built-in names; "" = auto-detect off. Never `|| null`.
       vlgIdentifier: attrs.vlg_identifier === undefined ? undefined : String(attrs.vlg_identifier),
+      overrides: _meOvNormalizeInline(attrs.overrides),
     };
   }
   return bare;
@@ -21208,7 +21280,7 @@ function _meReadDDLAttrs(attrs) {
 // OCCURS frames are left alone: their repetition is handled by the walk itself.
 function _meDDLVlgRuns(defs, ctx) {
   const runs   = new Map();
-  const vlgMap = _meVlgLenMap(ctx.item);
+  const vlgMap = _meVlgLenMap(_meOvMergedItem(ctx));
   const claimed = new Set();
   for (let i = 0; i < defs.length; i++) {
     const parts = defs[i].id.split('.');
@@ -21307,7 +21379,7 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
 }
 
 function _meExecReadDDL(attrs, ctx) {
-  const { binding, fields, from, until, vlgIdentifier } = _meReadDDLAttrs(attrs);
+  const { binding, fields, from, until, vlgIdentifier, overrides } = _meReadDDLAttrs(attrs);
   const bindings = binding === 'ANY'
     ? ctx.resolvedBindings.map((r, i) => r?.defs?.length ? i : -1).filter(i => i >= 0)
     : [binding];
@@ -21315,9 +21387,14 @@ function _meExecReadDDL(attrs, ctx) {
     ctx.fields.push({ id: 'read-ddl', error: 'No DDL bindings available' });
     return;
   }
-  ctx.vlgIdentifier = vlgIdentifier;
+  const _prevVlg = ctx.vlgIdentifier, _prevOvr = ctx.blockOverrides;
+  ctx.vlgIdentifier  = vlgIdentifier;
+  ctx.blockOverrides = overrides;
   for (const idx of bindings) _meReadDDLBinding(idx, fields, from, until, ctx);
-  ctx.vlgIdentifier = undefined;   // scoped to this block, not to the whole parse
+  // Restored, not cleared: a nested block would otherwise wipe the enclosing
+  // block's attributes on its way out.
+  ctx.vlgIdentifier  = _prevVlg;
+  ctx.blockOverrides = _prevOvr;
 }
 
 // Required byte length for a "read" block's type override. Returns null for
@@ -21518,7 +21595,7 @@ function _meFmtJulianTs(f) {
 // hints). Errored fields and fields with no override are left alone.
 function _meApplyDisplayOverride(f, def, ctx) {
   if (!f || f.error) return;
-  const fo = _meOvGet(ctx.item, def.id);
+  const fo = _meOvEffective(ctx, def.id);
   const disp = fo?.display;
   if (!disp) return;
   let out;
@@ -21546,7 +21623,7 @@ function _meApplyDisplayOverride(f, def, ctx) {
 // so the inline syntax and the UI dropdown produce identical results.
 function _meApplyTypeOverride(f, def, ctx, inlineType) {
   let typeOverride = inlineType || null;
-  if (!typeOverride) typeOverride = _meOvGet(ctx.item, def.id)?.type || null;
+  if (!typeOverride) typeOverride = _meOvEffective(ctx, def.id)?.type || null;
   if (!typeOverride) return;
   // No length check any more. An override is an edit to the DDL: the field was
   // already READ at the length the override implies (_meOvEffectiveLen), so by
@@ -22127,7 +22204,7 @@ function _meBuildDEMap(ctx) {
   //                          leaf defs under it, in declaration order
   const defs = _meCollectBindingDefs(ctx.resolvedBindings);
   if (!defs.length) return {};
-  const rows = _meWalkDEFields(defs, ctx.item);
+  const rows = _meWalkDEFields(defs, _meOvMergedItem(ctx));
   const defById = new Map(defs.map(d => [d.id, d]));
   const map = {};
   for (const row of rows) {
@@ -22275,7 +22352,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     // length of a TLV triple, not of the element — and read the first tag as a
     // length.
     const direct = kids.filter(d => !d.id.slice(scopeId.length + 1).includes('.'));
-    const vlg    = _meVlgLenMap(ctx.item);
+    const vlg    = _meVlgLenMap(_meOvMergedItem(ctx));
     const lenId  = _meVlgHas(vlg, scopeId) ? (_meVlgGet(vlg, scopeId) || direct[0]?.id)
                                            : _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
     const lenDef = lenId ? direct.find(k => _meVlgIsLen(lenId, k.id)) : null;
@@ -22462,12 +22539,16 @@ function _meExecBitmapFields(attrs, ctx) {
     ctx.fields.push({ id: 'read-bitmap-fields', error: `No bitset found for bitmap '${bitmapId}' — run read-bitmap first` });
     return;
   }
-  const deMap = _meBuildDEMap(ctx);
-  const varGroups = _meVlgLenMap(ctx.item);   // groupId → LEN leaf id (or null = first leaf)
+  // Block attributes first: both of these change what the DE map and the VLG
+  // lookup below produce, so nothing may be computed before they are in place.
   // undefined = use the built-in names; "" = auto-detect off. The two must stay
   // distinguishable, so this cannot collapse to `|| null`.
   ctx.vlgIdentifier = (attrs && typeof attrs === 'object' && attrs.vlg_identifier !== undefined)
     ? String(attrs.vlg_identifier) : undefined;
+  ctx.blockOverrides = _meOvNormalizeInline(attrs && typeof attrs === 'object' ? attrs.overrides : null);
+
+  const deMap     = _meBuildDEMap(ctx);
+  const varGroups = _meVlgLenMap(_meOvMergedItem(ctx));   // groupId → LEN leaf id (or null = first leaf)
   const bits = Array.from(bmField.bitSet).sort((a, b) => a - b);
 
   // Bitmap-present fields are sequential on the wire: each present DE starts
@@ -22535,7 +22616,8 @@ function _meExecBitmapFields(attrs, ctx) {
       }
     }
   }
-  ctx.vlgIdentifier = undefined;   // scoped to this block, not to the whole parse
+  ctx.vlgIdentifier  = undefined;   // scoped to this block, not to the whole parse
+  ctx.blockOverrides = undefined;
 }
 
 // ── Block: when ─────────────────────────────────────────────────────────────

@@ -3903,6 +3903,91 @@ test('a length beyond the declared payload is flagged but still framed by the wi
   assert.ok(err, `expected a capacity warning, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
 });
 
+// ── Inline overrides: a spec can carry its own ──────────────────────────────
+// The Overrides panel stores them on the item, which is invisible in the spec
+// and does not travel with it. A block may now carry the same map inline, so a
+// spec is self-contained and a diff shows what changed. Inline wins — the same
+// precedence a `read` block's inline `type` already had.
+
+console.log('\ninline overrides on a parse-spec block');
+
+const INL_DDL = `DEFINITION MSG.
+  02 MSGTYPE PIC X(4).
+  02 TRACE   PIC X(6).
+END
+`;
+function inlRun(spec, item = {}) {
+  S.ddlTree = { V: { S: { D: INL_DDL } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of '1200' + '000123') b.push(c.charCodeAt(0));
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'], ...item,
+    parse_spec_binary: spec }, b);
+}
+const inlF = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
+
+test('a read-ddl block can carry its own overrides', () => {
+  const ctx = inlRun([{ 'read-ddl': { overrides: { MSGTYPE: { type: 'hex-char' } } } }]);
+  eq(inlF(ctx, 'MSGTYPE').value, '31323030', 'the inline type override was applied');
+  eq(inlF(ctx, 'MSGTYPE').typeOverride, 'hex-char', 'and recorded as an override');
+  eq(inlF(ctx, 'TRACE').value, '000123', 'a field it does not mention is untouched');
+});
+
+test('inline overrides beat the stored ones', () => {
+  const ctx = inlRun([{ 'read-ddl': { overrides: { MSGTYPE: { type: 'hex-char' } } } }],
+                     { overrides: { MSGTYPE: { type: 'binary' } } });
+  eq(inlF(ctx, 'MSGTYPE').typeOverride, 'hex-char', 'the spec wins over the panel');
+});
+
+test('the merge is per key, so an inline override does not discard the rest', () => {
+  // Inline says how to read it; the panel says how to display it. Both apply —
+  // whole-entry replacement would silently drop the display override.
+  const ctx = inlRun([{ 'read-ddl': { overrides: { MSGTYPE: { bytes: 2 } } } }],
+                     { overrides: { MSGTYPE: { display: 'hex' } } });
+  eq(inlF(ctx, 'MSGTYPE').valueLength, 2, 'the inline bytes override re-sized the field');
+  eq(inlF(ctx, 'MSGTYPE').displayOverride, 'hex', 'and the stored display override survived');
+});
+
+test('an inline bytes override re-lays out the record, like a stored one', () => {
+  const ctx = inlRun([{ 'read-ddl': { overrides: { MSGTYPE: { bytes: 2 } } } }]);
+  eq(inlF(ctx, 'MSGTYPE').value, '12', 'MSGTYPE takes 2 of its declared 4');
+  eq(inlF(ctx, 'TRACE').startByte, 2, 'and the bytes it freed belong to the next field');
+});
+
+test('inline overrides are scoped to their block', () => {
+  const ctx = inlRun([
+    { 'read-ddl': { fields: ['MSGTYPE'], overrides: { MSGTYPE: { type: 'hex-char' } } } },
+    { 'read-ddl': { fields: ['MSGTYPE'] } },
+  ]);
+  const rows = ctx.fields.filter(f => f.id === 'MSGTYPE');
+  eq(rows[0].typeOverride, 'hex-char', 'the block that declares them gets them');
+  eq(rows[1].typeOverride, undefined,  'the next block does not inherit them');
+});
+
+test('read-bitmap-fields takes inline overrides too, including DE anchors', () => {
+  const ddl = `DEFINITION MSG.
+  02 BITMAP PIC X(8).
+  02 DE-A PIC X(4).
+  02 DE-B PIC X(6).
+END
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [0x60, 0, 0, 0, 0, 0, 0, 0];      // bits 2 and 3
+  for (const c of 'ABCD' + '123456') b.push(c.charCodeAt(0));
+  // Without an anchor DE-A is 1 and DE-B is 2, so bit 2 would find DE-B and bit 3
+  // nothing at all. The inline anchor renumbers DE-A to 2, shifting DE-B to 3.
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP',
+          overrides: { 'DE-A': { de: 2, type: 'hex-char' } } } },
+    ] }, b);
+  eq(inlF(ctx, 'DE-A').value, '41424344', 'the inline type override applied inside the bitmap walk');
+  eq(inlF(ctx, 'DE-A').typeOverride, 'hex-char', 'and is recorded');
+  assert.ok(inlF(ctx, 'DE-B'), 'the inline DE anchor renumbered the tail, so bit 4 resolved');
+});
+
 // ── vlg_identifier: which leaf means "length", per DDL ──────────────────────
 // The auto-detect used to hardcode LEN/LGTH/LENGTH and a 2–4 byte width. Both
 // are wrong for someone else's DDL: a group whose first field is legitimately

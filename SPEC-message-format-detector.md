@@ -260,13 +260,13 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 
 | Block | Purpose | Key attributes |
 |-------|---------|----------------|
-| `read-ddl` | Read **all fields from the DDL Bindings** in DDL declaration order — no individual field listing needed | `binding` (int index into `ddl_bindings`, or `"ANY"`), `fields`, `from`, `until` — §5.2; `vlg_identifier` — §8 |
+| `read-ddl` | Read **all fields from the DDL Bindings** in DDL declaration order — no individual field listing needed | `binding` (int index into `ddl_bindings`, or `"ANY"`), `fields`, `from`, `until` — §5.2; `vlg_identifier` — §8; `overrides` — §8.1 |
 | `read` | Read a single DDL-defined field (offset, length, type from DDL) | `field` (DDL field ID), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13) |
 | `read-fixed` | Read N bytes inline — no DDL ref needed | `length` (int literal OR field ID ref), `type`, `encoding`, `as` (DDL field ID) |
 | `read-until` | Read bytes until sentinel(s) or EOM | `sentinels` (list of hex bytes), `eom` (bool), `as` (DDL field ID) |
 | `read-length-prefix` | Read length N then N bytes | `prefix` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
 | `read-bitmap` | Read 8 or 16 bytes as bitmap, store result | `field` (DDL field ID), `encoding` (`binary`\|`ascii-hex`), `length` (explicit width in bytes when the DDL does not declare the map — §5.12) |
-| `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `overrides[…].de` (§7), honouring `overrides[…].vlg` (§8) | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14), `vlg_identifier` (§8) |
+| `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `overrides[…].de` (§7), honouring `overrides[…].vlg` (§8) | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14), `vlg_identifier` (§8), `overrides` (§8.1) |
 | `read-segment-fields` | Read only the segments a prior `read-bitmap` marks present (§5.16) | *(bare string)* or `map` — field id of the declared/file-read map, `binding` |
 | `skip` | Advance N bytes | `length` (int) |
 | `read-to-end` | Consume remaining bytes | `as` (DDL field ID) |
@@ -926,6 +926,39 @@ moves with it. OCCURS frames are left to the walk's own repetition handling.
   "DE-45": { "vlg": "DE-45.LGTH" }       // Track 1 — LEN named explicitly
 }
 ```
+
+---
+
+### 8.1 Inline overrides on a block (`overrides`) *(added 2026-08-03)*
+
+`read-ddl` and `read-bitmap-fields` accept an `overrides` attribute in the **same
+shape** as the stored map (§7–§9), so a spec can carry its own:
+
+```json
+{"read-ddl": {"overrides": {"MSGTYPE": {"type": "hex-char", "bytes": 2}}}}
+{"read-bitmap-fields": {"bitmap": "PRI-BIT-MAP",
+                        "overrides": {"DE-64": {"de": 66}}}}
+```
+
+All five keys work — `type`, `bytes`, `display`, `de`, `vlg` — because the block's
+map is merged into the item before the DE walker and the VLG lookup run, not just
+at field-read time.
+
+**Precedence: inline wins**, the same rule a `read` block's inline `type` already
+followed. The merge is per **key**, not per field: an inline `{"bytes": 2}` does
+not discard a `{"display": "hex"}` set in the panel.
+
+**Scope** is the declaring block. The next block does not inherit it, and a nested
+block restores the enclosing block's map on the way out rather than clearing it.
+
+`item.overrides` cannot be replaced by this: overrides are also applied at render
+time for manual-override and DDL-walk parses, which have no parse_spec at all. The
+two are layered, not alternatives.
+
+> **Not yet built:** nothing syncs the two. The panel neither displays nor edits a
+> block's inline overrides, so a spec carrying them shows a panel that does not
+> match what the parse uses. Projecting the stored map into the spec on save, and
+> extracting it back, is the intended next step.
 
 ---
 

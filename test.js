@@ -4105,6 +4105,28 @@ test('an inline bytes override re-lays out the record, like a stored one', () =>
   eq(inlF(ctx, 'TRACE').startByte, 2, 'and the bytes it freed belong to the next field');
 });
 
+test('an inline display override formats the value', () => {
+  // display is applied by a different helper from type/bytes, so "the map is
+  // merged" does not by itself prove this path reads the inline entry.
+  const ddl = `DEFINITION MSG.
+  02 STAMP PIC X(6).
+  02 AMT   PIC 9(8).
+END
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of '143005' + '00012345') b.push(c.charCodeAt(0));
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ 'read-ddl': { overrides: {
+      STAMP: { display: 'datetime' }, AMT: { display: 'amount' } } } }] }, b);
+  const f = id => ctx.fields.find(x => x.id === id);
+  eq(f('STAMP').displayValue, '14:30:05', 'datetime formatting applied from the spec');
+  eq(f('STAMP').value, '143005', 'and the underlying value is untouched');
+  eq(f('AMT').displayValue, '123.45', 'amount too');
+  eq(f('AMT').displayOverride, 'amount', 'and the override is recorded for the hover hint');
+});
+
 test('inline overrides are scoped to their block', () => {
   const ctx = inlRun([
     { 'read-ddl': { fields: ['MSGTYPE'], overrides: { MSGTYPE: { type: 'hex-char' } } } },

@@ -14251,7 +14251,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.4.1';
+const APP_VERSION  = '1.1.4.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18451,9 +18451,14 @@ function _meOverridesPrep(item) {
     : '';
   // The parse spec names a bitmap field that doesn't exist in any binding —
   // every row would show an empty DE with no hint why. Surface the mismatch.
+  // A spec that declares the map's own width (`length`, or `bits`/`value`) means
+  // the field is synthetic ON PURPOSE — its absence from the DDL is the whole
+  // point, DE numbering starts after the last field read before the block, and
+  // warning about it was telling the user to fix something that was correct.
   const _bmpField = _meItemBitmapField(item);
-  if (_bmpField && !fieldList.some(r => r.id === _bmpField)) {
-    warnHtml += `<div class="me-fm-warn">⚠ Parse spec references bitmap field "${ea(_bmpField)}" but no bound DDL field has that id — DE numbering can't start. Fix the {"read-bitmap-fields"} value or the binding.</div>`;
+  if (_bmpField && !fieldList.some(r => r.id === _bmpField)
+      && !_meItemBitmapIsSynthetic(item, _bmpField)) {
+    warnHtml += `<div class="me-fm-warn">⚠ Parse spec references bitmap field "${ea(_bmpField)}" but no bound DDL field has that id, and the read-bitmap block states no width. Fix the field name or the binding — or give read-bitmap a "length" if the DDL does not declare the map.</div>`;
   }
 
   const fmHelpOpen = !!(_meState && _meState.fmHelpOpen);
@@ -18998,6 +19003,25 @@ function _meSpecDEStartAfter(spec) {
   }
   return null;   // no read-bitmap-fields block — the caller keeps legacy numbering
 }
+// Does the spec state the bitmap's width itself? `length` (a wire map the DDL
+// never declares) or `bits`/`value` (a declared segment map) both mean the field
+// is synthetic ON PURPOSE, so its absence from the DDL is not a mistake.
+function _meSpecBitmapIsSynthetic(spec, field) {
+  if (!Array.isArray(spec)) return false;
+  for (const block of spec) {
+    if (!block || typeof block !== 'object') continue;
+    const a = block['read-bitmap'];
+    if (!a || typeof a !== 'object') continue;
+    if (field && a.field !== field) continue;
+    if (a.length !== undefined || a.bits !== undefined || a.value !== undefined) return true;
+  }
+  return false;
+}
+function _meItemBitmapIsSynthetic(item, field) {
+  return _meSpecBitmapIsSynthetic(item?.parse_spec_binary, field)
+      || _meSpecBitmapIsSynthetic(item?.parse_spec_ascii,  field);
+}
+
 function _meItemDEStartAfter(item) {
   const b = _meSpecDEStartAfter(item?.parse_spec_binary);
   return b !== null ? b : _meSpecDEStartAfter(item?.parse_spec_ascii);

@@ -115,6 +115,7 @@ _t.mePsHelpRunExample = _mePsHelpRunExample;
 _t.meItemVlgIdentifier = _meItemVlgIdentifier;
 _t.meContentLooksWrong = _meContentLooksWrong;
 _t.mePsLintWarns       = _mePsLintWarns;
+_t.meItemBitmapIsSynthetic = _meItemBitmapIsSynthetic;
 _t.fmtDefaultSpecs     = window._fmtDefaultSpecs;
 _t.meFmRowHtml         = _meFmRowHtml;
 _t.meState             = () => _meState;
@@ -168,7 +169,7 @@ const {
   stripJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample,
   meItemVlgIdentifier,
-  meContentLooksWrong, mePsLintWarns, fmtDefaultSpecs,
+  meContentLooksWrong, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
@@ -3969,6 +3970,21 @@ test('a bitmap that IS in the DDL still anchors on itself', () => {
   eq(deOf(rows, 'PAN-LEN'), 1, 'numbering starts after the bitmap, as before');
 });
 
+test('a spec that states the map width is not warned about a missing DDL field', () => {
+  // The Field Map banner said "DE numbering can't start" — which is now simply
+  // untrue, and it told the user to fix a spec that was correct. A declared
+  // width means the field is synthetic ON PURPOSE.
+  const bmp = { field: 'PRI-BIT-MAP', encoding: 'binary' };
+  eq(meItemBitmapIsSynthetic({ parse_spec_binary: [{ 'read-bitmap': { ...bmp, length: 16 } }] }, 'PRI-BIT-MAP'),
+     true, 'a wire map with an explicit length');
+  eq(meItemBitmapIsSynthetic({ parse_spec_binary: [{ 'read-bitmap': { field: 'SEG-MAP', bits: 32, value: 'C4180000' } }] }, 'SEG-MAP'),
+     true, 'a declared segment map');
+  eq(meItemBitmapIsSynthetic({ parse_spec_binary: [{ 'read-bitmap': bmp }] }, 'PRI-BIT-MAP'),
+     false, 'no width stated — the field really should be in the DDL');
+  eq(meItemBitmapIsSynthetic({ parse_spec_binary: [{ 'read-bitmap': { ...bmp, length: 16 } }] }, 'OTHER-MAP'),
+     false, 'and the width must belong to the field being asked about');
+});
+
 test('a synthetic bitmap with nothing read before it makes every field a DE', () => {
   const rows = nobmpRows([
     { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary', length: 16 } },
@@ -4705,6 +4721,15 @@ test('every executable example produces the fields it claims to', () => {
 // ── Saving an override refreshes the ROW LIST, not just the rendering ───────
 
 console.log('\noverride save refreshes the field list');
+
+test('the Field Map banner is guarded by the synthetic-bitmap check', () => {
+  // The helper being right is only half of it — the banner has to consult it.
+  // Source tripwire because the banner is rendered HTML inside a large builder.
+  const src = psFnSource('_meOverridesPrep');
+  assert.ok(/no bound DDL field has that id/.test(src), 'the banner still lives here');
+  assert.ok(/_meItemBitmapIsSynthetic\(item, _bmpField\)/.test(src),
+    'the banner must not fire when the spec states the map width itself');
+});
 
 test('the override save path rebuilds the field list', () => {
   // A de / vlg / bytes override changes the rows themselves — DE numbers,

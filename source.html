@@ -7032,6 +7032,9 @@ function parseMessage(bytes, defs, rawBytes) {
     return { winner, trace };
   }
 
+  // Exposed for the lint's own tests: the shipped specs are the corpus that
+  // proves a new rule does not fire false positives on real specs.
+  window._fmtDefaultSpecs = () => JSON.parse(JSON.stringify(_DEFAULT_FMT_SPECS));
   window._fmtTestSpecs = function(rawSpecs, bytes, ctx) {
     const results = [];
     for (const spec of rawSpecs) {
@@ -14248,7 +14251,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.4.0';
+const APP_VERSION  = '1.1.4.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17551,11 +17554,66 @@ function _mePsKnownDDLIds(item) {
   return ids;
 }
 
-const _PS_VALID_TYPES_RE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?|ascii|ebcdic|hex-char|hex-ascii-decimal|hex-ebcdic-decimal)$/i;
+// Attribute names a block accepts, read off the help table so the two cannot
+// disagree — the help IS the schema. A few names the engine reads but the help
+// deliberately does not document are allowed explicitly rather than silently:
+// listing them here is the record that they were considered.
+const _PS_UNDOCUMENTED_ATTRS = {
+  // read-bitmap resolves `a.field || a.label` — `label` is a legacy alias kept
+  // for specs written before the attribute was named `field`.
+  'read-bitmap': ['label'],
+};
+const _mePsAllowedAttrsCache = new Map();
+function _mePsAllowedAttrs(type) {
+  if (_mePsAllowedAttrsCache.has(type)) return _mePsAllowedAttrsCache.get(type);
+  const info = _PS_HELP[type];
+  const set = new Set();
+  for (const [name] of (info?.attrs || [])) if (name !== '(bare string)') set.add(name);
+  for (const [name] of _PS_COMMON_ATTRS) set.add(name);
+  for (const name of (_PS_UNDOCUMENTED_ATTRS[type] || [])) set.add(name);
+  _mePsAllowedAttrsCache.set(type, set);
+  return set;
+}
 
+// "lenth" → "length". Cheap Levenshtein, only ever run over the handful of
+// attribute names one block has, and only when something is already wrong.
+function _mePsNearestAttr(name, allowed) {
+  const dist = (a, b) => {
+    const m = a.length, n = b.length;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++)
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[n];
+  };
+  let best = null, bestD = Infinity;
+  for (const cand of allowed) {
+    const d = dist(name.toLowerCase(), cand.toLowerCase());
+    if (d < bestD) { bestD = d; best = cand; }
+  }
+  // Two edits on a short name is already a stretch; beyond that the suggestion
+  // is noise and the bare "not an attribute" message is clearer on its own.
+  return bestD <= 2 ? best : null;
+}
+
+const _PS_VALID_TYPES_RE =/^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?|ascii|ebcdic|hex-char|hex-ascii-decimal|hex-ebcdic-decimal)$/i;
+
+// Rendering is separate from the checking so the rules are testable — the old
+// shape bailed out when the DOM element was absent, which is every test run.
 function _mePsRunLint(item, parsed) {
   const lintEl = document.getElementById('me-ps-lint');
   if (!lintEl) return;
+  const warns = _mePsLintWarns(item, parsed);
+  lintEl.innerHTML = warns.length
+    ? warns.slice(0, 8).map(w => `<div class="me-ps-lint-row">⚠ ${_escHtml(w)}</div>`).join('')
+      + (warns.length > 8 ? `<div class="me-ps-lint-row">… and ${warns.length - 8} more</div>` : '')
+    : '';
+}
+
+function _mePsLintWarns(item, parsed) {
   const blockTypes = new Set(Object.keys(_PS_HELP));
   const ddlIds = _mePsKnownDDLIds(item);
   const bindingCount = (item.ddl_bindings || []).filter(Boolean).length;
@@ -17595,6 +17653,27 @@ function _mePsRunLint(item, parsed) {
       if (!blockTypes.has(type)) {
         warns.push(`[block ${n}] unknown block type "${type}"`);
         return;
+      }
+      // The engine takes keys[0] as the block type and ignores every other key
+      // on the object, so a comma landing outside the braces — {"read-bitmap":
+      // {…}, "length": 16} — is silently inert. It parses, it lints clean, and
+      // the attribute simply never applies.
+      if (keys.length > 1) {
+        const stray = keys.slice(1);
+        warns.push(`[block ${n}] ${stray.map(k => `"${k}"`).join(', ')} ${stray.length > 1 ? 'are' : 'is'}`
+          + ` outside the block and will be ignored — attributes belong inside "${type}": { … }`);
+      }
+      // Attribute names, checked against the help table. A typo used to be
+      // inert in exactly the same way: "lenth" is not read by anything, so the
+      // block ran with the attribute unset and said nothing.
+      if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
+        const allowed = _mePsAllowedAttrs(type);
+        for (const k of Object.keys(attrs)) {
+          if (allowed.has(k)) continue;
+          const near = _mePsNearestAttr(k, allowed);
+          warns.push(`[block ${n}] "${k}" is not an attribute of ${type}`
+            + (near ? ` — did you mean "${near}"?` : ''));
+        }
       }
       // "at" is understood by every block, so it is checked once here rather
       // than in each case. Only the shape is checked — whether the anchor field
@@ -17783,11 +17862,7 @@ function _mePsRunLint(item, parsed) {
     });
   };
   walk(parsed, '');
-
-  lintEl.innerHTML = warns.length
-    ? warns.slice(0, 8).map(w => `<div class="me-ps-lint-row">⚠ ${_escHtml(w)}</div>`).join('')
-      + (warns.length > 8 ? `<div class="me-ps-lint-row">… and ${warns.length - 8} more</div>` : '')
-    : '';
+  return warns;
 }
 
 // Re-indent JSONC source preserving // and /* */ comments and trailing
@@ -18899,6 +18974,35 @@ function _meSpecVlgIdentifier(spec) {
   }
   return undefined;
 }
+// The last DDL field a block reads BEFORE the read-bitmap-fields block. Needed
+// when the bitmap itself is not in the DDL — `read-bitmap` with a `length` states
+// the width in the spec precisely because the map is not declared, so there is no
+// def to hang "numbering starts after this" on. The field read just before it is.
+function _meSpecDEStartAfter(spec) {
+  if (!Array.isArray(spec)) return null;
+  let last = null;
+  for (const block of spec) {
+    if (!block || typeof block !== 'object') continue;
+    const type = Object.keys(block)[0];
+    if (type === 'read-bitmap-fields') return last;      // stop at the block itself
+    const attrs = block[type];
+    if (type === 'read') {
+      const f = (typeof attrs === 'string') ? attrs : attrs?.field;
+      if (f) last = f;
+    } else if (type === 'read-ddl' && attrs && typeof attrs === 'object' && attrs.until) {
+      last = attrs.until;
+    }
+    // read-bitmap is deliberately NOT an anchor here: when its field IS declared
+    // in the DDL the caller anchors on that def directly and never asks, and when
+    // it is not, anchoring on an id no def carries is exactly the bug.
+  }
+  return null;   // no read-bitmap-fields block — the caller keeps legacy numbering
+}
+function _meItemDEStartAfter(item) {
+  const b = _meSpecDEStartAfter(item?.parse_spec_binary);
+  return b !== null ? b : _meSpecDEStartAfter(item?.parse_spec_ascii);
+}
+
 function _meItemVlgIdentifier(item) {
   return _meSpecVlgIdentifier(item?.parse_spec_binary)
       ?? _meSpecVlgIdentifier(item?.parse_spec_ascii);
@@ -19092,6 +19196,16 @@ function _meWalkDEFields(defs, item) {
   // the bitmap field itself aren't DEs. If the spec has no read-bitmap-fields
   // block we fall back to numbering from the first field (legacy behaviour).
   const bitmapField = _meItemBitmapField(item);
+  // The bitmap is normally a DDL field, and numbering starts on the one after it.
+  // But `read-bitmap` with a `length` describes a map the DDL never declares, so
+  // that id is in no def and the old flag never flipped — leaving EVERY field
+  // without a DE, which is why a phantom bitmap field had to be added to the DDL
+  // to make the Overrides table work at all. When the id is absent, numbering
+  // starts after the last field the spec reads before the bitmap-fields block.
+  const _bmpInDefs = !!bitmapField &&
+    defs.some(d => d.id === bitmapField || d.id.startsWith(bitmapField + '.'));
+  const deAnchorField = !bitmapField ? null
+    : (_bmpInDefs ? bitmapField : (_meItemDEStartAfter(item) || null));
   // Compute a group's total byte length by summing every transitive leaf
   // under it. Cached so each prefix is visited at most once.
   const groupLengthCache = new Map();
@@ -19109,7 +19223,9 @@ function _meWalkDEFields(defs, item) {
   const emitted = new Set();
   const out = [];
   let currentDE = 1;
-  let pastBitmap = !bitmapField;   // true straight away when there's no bitmap declared
+  // No anchor at all — no bitmap block, or a synthetic bitmap with nothing read
+  // before it — means every field from the first is a data element.
+  let pastBitmap = !deAnchorField;
   // REDEFINES overlays existing bytes, so it never advances the DE counter
   // and never owns a DE number. A bitmap message carries AT MOST 128 data
   // elements (128 bitmap bits) — the running sequence keeps counting
@@ -19136,8 +19252,8 @@ function _meWalkDEFields(defs, item) {
     const de  = (seq !== null && seq <= 128) ? seq : null;
     out.push({ id, de, deSeq: seq, deOverflow: seq !== null && seq > 128, anchored: isAnchor, naturalDE, ...extras });
     if (pastBitmap) currentDE++;
-    // The bitmap field itself stays null; numbering kicks in on the NEXT def.
-    if (bitmapField && id === bitmapField) pastBitmap = true;
+    // The anchor itself stays null; numbering kicks in on the NEXT def.
+    if (deAnchorField && id === deAnchorField) pastBitmap = true;
   };
 
   for (const def of defs) {
@@ -20215,7 +20331,11 @@ function _meOvlSave() {
   _meSetDirty();
   _meOvlRefresh();
   _mePsOvrRefresh();
-  if (_meFmVirt) _meFmRenderWindow(true);
+  // A `de`, `vlg` or `bytes` override changes the ROW LIST itself — DE numbers,
+  // offsets and lengths of every field after it — not merely how a row draws.
+  // Re-rendering the window from the CACHED list showed the old values until the
+  // editor was closed and reopened, which is what rebuilt the list.
+  if (!_meFmPatchDECells() && _meFmVirt) _meFmRenderWindow(true);
 }
 
 // ── Click-to-edit override cells ──────────────────────────────────────────

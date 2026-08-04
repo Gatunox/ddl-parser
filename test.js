@@ -114,6 +114,8 @@ _t.mePsHelpExAttrs    = _mePsHelpExAttrs;
 _t.mePsHelpRunExample = _mePsHelpRunExample;
 _t.meItemVlgIdentifier = _meItemVlgIdentifier;
 _t.meContentLooksWrong = _meContentLooksWrong;
+_t.mePsLintWarns       = _mePsLintWarns;
+_t.fmtDefaultSpecs     = window._fmtDefaultSpecs;
 _t.meFmRowHtml         = _meFmRowHtml;
 _t.meState             = () => _meState;
 _t.setMeState          = v => { _meState = v; };
@@ -166,7 +168,7 @@ const {
   stripJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample,
   meItemVlgIdentifier,
-  meContentLooksWrong,
+  meContentLooksWrong, mePsLintWarns, fmtDefaultSpecs,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
@@ -3903,6 +3905,139 @@ test('a length beyond the declared payload is flagged but still framed by the wi
   assert.ok(err, `expected a capacity warning, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
 });
 
+// ── A bitmap the DDL does not declare still numbers the DEs ─────────────────
+// `read-bitmap` with a `length` states the map's width in the spec precisely
+// because the DDL does not declare it. But DE numbering only began on the field
+// AFTER a def whose id equalled the bitmap field — an id that, by definition,
+// does not exist here. So no field was ever assigned a DE, the Overrides table
+// showed nothing, and the only way to get it working was to add a phantom
+// `02 PRI-BIT-MAP TYPE BINARY 16.` to the DDL.
+
+console.log('\nDE numbering when the bitmap is not in the DDL');
+
+const NOBMP_DDL = `DEFINITION REQMSG.
+    02 SDLC-DEST PIC X(2).
+    02 SDLC-ORIGIN PIC X(2).
+    02 MSGTYPE PIC X(4).
+    02 PAN-LEN PIC X(2).
+    02 PAN PIC X(16).
+    02 TRACE PIC X(6).
+END.
+`;
+function nobmpRows(spec) {
+  S.ddlTree = { V: { S: { D: NOBMP_DDL } } };
+  const item = { ddl_bindings: ['V/S/D/REQMSG'], parse_spec_binary: spec };
+  const defs = getDDLFromPath('V/S/D/REQMSG').defs;
+  return meWalkDEFields(defs, item);
+}
+const deOf = (rows, id) => (rows.find(r => r.id === id) || {}).de;
+
+test('a synthetic bitmap numbers DEs from after the last field read before it', () => {
+  const rows = nobmpRows([
+    { read: 'MSGTYPE' },
+    { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary', length: 16 } },
+    { 'read-bitmap-fields': 'PRI-BIT-MAP' },
+  ]);
+  eq(deOf(rows, 'MSGTYPE'), null, 'the field the spec read before the bitmap is not a DE');
+  eq(deOf(rows, 'PAN-LEN'), 1, 'numbering starts on the one after it');
+  eq(deOf(rows, 'PAN'),     2, 'and continues');
+  eq(deOf(rows, 'TRACE'),   3, 'to the end');
+});
+
+test('the fields before the anchor carry no DE at all', () => {
+  const rows = nobmpRows([
+    { read: 'MSGTYPE' },
+    { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary', length: 16 } },
+    { 'read-bitmap-fields': 'PRI-BIT-MAP' },
+  ]);
+  eq(deOf(rows, 'SDLC-DEST'), null, 'header fields are not data elements');
+  eq(deOf(rows, 'SDLC-ORIGIN'), null, 'nor is the second');
+});
+
+test('a bitmap that IS in the DDL still anchors on itself', () => {
+  // The behaviour that already worked must not move.
+  const ddl = NOBMP_DDL.replace('    02 PAN-LEN', '    02 PRI-BIT-MAP TYPE BINARY 16.\n    02 PAN-LEN');
+  S.ddlTree = { V: { S: { D: ddl } } };
+  const defs = getDDLFromPath('V/S/D/REQMSG').defs;
+  const rows = meWalkDEFields(defs, { ddl_bindings: ['V/S/D/REQMSG'], parse_spec_binary: [
+    { read: 'MSGTYPE' },
+    { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary' } },
+    { 'read-bitmap-fields': 'PRI-BIT-MAP' },
+  ] });
+  eq(deOf(rows, 'MSGTYPE'), null, 'still not a DE');
+  eq(deOf(rows, 'PRI-BIT-MAP'), null, 'the bitmap itself is not a DE');
+  eq(deOf(rows, 'PAN-LEN'), 1, 'numbering starts after the bitmap, as before');
+});
+
+test('a synthetic bitmap with nothing read before it makes every field a DE', () => {
+  const rows = nobmpRows([
+    { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary', length: 16 } },
+    { 'read-bitmap-fields': 'PRI-BIT-MAP' },
+  ]);
+  eq(deOf(rows, 'SDLC-DEST'), 1, 'there is nothing to start after, so numbering starts at the first field');
+  eq(deOf(rows, 'SDLC-ORIGIN'), 2, 'and runs on');
+});
+
+// ── Parse-spec lint: an inert spec must not look clean ──────────────────────
+// The engine takes keys[0] as the block type and ignores every other key, and
+// reads attributes by exact name. So a comma outside the braces, or a typo in an
+// attribute, parses fine, lints clean, and simply never applies — the block runs
+// with the attribute unset and says nothing.
+
+console.log('\nparse-spec lint — stray keys and unknown attributes');
+
+const lintOf = spec => mePsLintWarns({ ddl_bindings: [] }, spec);
+const lintHas = (spec, re) => lintOf(spec).some(w => re.test(w));
+
+test('a key outside the block object is reported, not ignored', () => {
+  const spec = [{ 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary' }, length: 16 }];
+  assert.ok(lintHas(spec, /"length" is outside the block/),
+    `expected a stray-key warning, got: ${JSON.stringify(lintOf(spec))}`);
+});
+
+test('several stray keys are reported together, in the plural', () => {
+  const spec = [{ 'read-bitmap': { field: 'B' }, length: 16, peek: true }];
+  assert.ok(lintHas(spec, /"length", "peek" are outside the block/),
+    `got: ${JSON.stringify(lintOf(spec))}`);
+});
+
+test('a misspelled attribute is reported, with the name it probably meant', () => {
+  const spec = [{ 'read-bitmap': { field: 'B', encoding: 'binary', lenth: 16 } }];
+  assert.ok(lintHas(spec, /"lenth" is not an attribute of read-bitmap.*did you mean "length"/),
+    `got: ${JSON.stringify(lintOf(spec))}`);
+});
+
+test('an attribute far from any real one is reported without a wrong guess', () => {
+  const spec = [{ 'read-fixed': { length: 2, wibbleflorp: 1 } }];
+  const w = lintOf(spec).find(x => /wibbleflorp/.test(x));
+  assert.ok(w, 'reported');
+  assert.ok(!/did you mean/.test(w), `no misleading suggestion: ${w}`);
+});
+
+test('the shared positioning attributes are accepted on every block', () => {
+  // at / peek are not in any block's own attribute list — they are appended to
+  // every block. A naive check would flag them on all fifteen.
+  for (const blk of Object.keys(psHelp)) {
+    const spec = [{ [blk]: { at: 4, peek: true } }];
+    deepEq(lintOf(spec).filter(w => /is not an attribute/.test(w)), [],
+      `${blk} rejected at/peek`);
+  }
+});
+
+test('every spec the app ships lints clean of attribute complaints', () => {
+  // The corpus that proves the rule does not fire on real specs — including the
+  // legacy names the help does not document.
+  const bad = [];
+  for (const spec of fmtDefaultSpecs()) {
+    for (const key of ['parse_spec_binary', 'parse_spec_ascii']) {
+      if (!Array.isArray(spec[key])) continue;
+      for (const w of mePsLintWarns({ ddl_bindings: spec.ddl_bindings || [] }, spec[key]))
+        if (/is not an attribute|outside the block/.test(w)) bad.push(`${spec.name}/${key}: ${w}`);
+    }
+  }
+  deepEq(bad, [], 'shipped specs tripping the new lint rules');
+});
+
 // ── Inline overrides: a spec can carry its own ──────────────────────────────
 // The Overrides panel stores them on the item, which is invisible in the spec
 // and does not travel with it. A block may now carry the same map inline, so a
@@ -4565,6 +4700,36 @@ test('every executable example produces the fields it claims to', () => {
         bad.push(`${blk}: "${ex.what}" selected no tokens`);
     }
   deepEq(bad, [], 'help examples that do not run');
+});
+
+// ── Saving an override refreshes the ROW LIST, not just the rendering ───────
+
+console.log('\noverride save refreshes the field list');
+
+test('the override save path rebuilds the field list', () => {
+  // A de / vlg / bytes override changes the rows themselves — DE numbers,
+  // offsets, lengths — so re-rendering the window from the cached list showed
+  // stale values until the editor was closed and reopened. This is a source
+  // tripwire because the fix is a call, and the render path needs a live DOM.
+  const src = psFnSource('_meOvlSave');
+  assert.ok(/_meFmPatchDECells\(\)/.test(src),
+    '_meOvlSave must recompute the field list, not only re-render the window');
+});
+
+test('a de override does change what the field list reports', () => {
+  // The other half: the list rebuild is only worth calling because the walker
+  // genuinely produces different numbers once the override is stored.
+  S.ddlTree = { V: { S: { D: NOBMP_DDL } } };
+  const defs = getDDLFromPath('V/S/D/REQMSG').defs;
+  const spec = [{ read: 'MSGTYPE' },
+                { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary', length: 16 } },
+                { 'read-bitmap-fields': 'PRI-BIT-MAP' }];
+  const before = meWalkDEFields(defs, { ddl_bindings: ['V/S/D/REQMSG'], parse_spec_binary: spec });
+  const after  = meWalkDEFields(defs, { ddl_bindings: ['V/S/D/REQMSG'], parse_spec_binary: spec,
+                                        overrides: { PAN: { de: 5 } } });
+  eq(deOf(before, 'PAN'), 2, 'PAN is DE 2 by default');
+  eq(deOf(after,  'PAN'), 5, 'the anchor moves it');
+  eq(deOf(after,  'TRACE'), 6, 'and the tail follows it');
 });
 
 // ── SPEC ↔ code — the design spec must describe the code that exists ────────

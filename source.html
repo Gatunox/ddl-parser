@@ -14252,7 +14252,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.5.0';
+const APP_VERSION  = '1.1.5.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16646,6 +16646,16 @@ const _PS_HELP = {
       { what: 'Wire, <b>field</b> + <b>length</b> — a map the DDL never declares: the spec states its width and the row is synthetic',
         payload: '50 00 00 00 41 42',
         spec: [{"read-bitmap": {"field": "WIRE-MAP", "length": 4}}] },
+      // A synthetic row takes overrides like any other — it did not until
+      // 2026-08-03, which made this the one field nothing could be applied to.
+      { what: 'A <b>synthetic</b> map with an <b>override</b> on it — 16 bytes the DDL never declares, displayed as the bit numbers that are set instead of as binary digits',
+        payload: '05 80 20 82 1A 54 01 10 00 00 00 01 00 00 00 33',
+        spec: [{"read-bitmap": {"field": "PRI-BIT-MAP", "encoding": "binary", "length": 16,
+                 "overrides": {"PRI-BIT-MAP": {"display": "bitmap-list"}}}}] },
+      { what: 'The same map without the override, for contrast — every bit is there, but you would have to count columns to find DE 19',
+        payload: '05 80 20 82 1A 54 01 10 00 00 00 01 00 00 00 33',
+        spec: [{"read-bitmap": {"field": "PRI-BIT-MAP", "encoding": "binary", "length": 16,
+                 "overrides": {"PRI-BIT-MAP": {"display": "bitmap"}}}}] },
       ['File-read: 6.0 IDF — map read from FIID-SEG-MAP in the record', [{"read-bitmap": {"field": "FIID-SEG-MAP"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
       ['File-read: pre-6.0 file — map read from SEG-MAP in the record', [{"read-bitmap": {"field": "SEG-MAP"}}, {"read-segment-fields": "SEG-MAP"}]],
       ['Declared: 6.0 non-IDF — SEG-MAP zeroed, map supplied (C4180000 = SEG0,1,5,11,12)', [{"read-bitmap": {"field": "FIID-SEG-MAP", "bits": 32, "value": "C4180000"}}, {"read-segment-fields": "FIID-SEG-MAP"}]],
@@ -17345,7 +17355,13 @@ function _mePsHelpExampleHtml(ex) {
         + `<td>${_escHtml(f.rawHex || '')}</td>`
         // A synthetic row (a declared segment map) carries its meaning in the
         // description — without it the bit0 examples show two identical values.
-        + `<td>${_escHtml(String(f.value ?? ''))}`
+        // A display override produces displayValue and leaves value alone, so a
+        // table showing only `value` rendered every display example as though
+        // nothing had happened. Show both, in the same "as DISPLAY" form the
+        // Parse Results table uses.
+        + `<td>${_escHtml(String(f.displayValue != null ? f.displayValue : (f.value ?? '')))}`
+        + (f.displayValue != null
+            ? `<div class="me-ps-help-dim">${_escHtml(String(f.value ?? ''))} as ${_escHtml(f.displayOverride || '')}</div>` : '')
         + (f.description ? `<div class="me-ps-help-dim">${_escHtml(f.description)}</div>` : '')
         + `</td></tr>`).join('');
     out += `<div class="me-ps-ex-lbl">Result <span class="me-ps-help-dim">— produced by running the spec above</span></div>`
@@ -21744,7 +21760,9 @@ function _meFmtBitmapList(f) {
   }
   if (!bits.length) return 'no bits set';
   bits.sort((a, b) => a - b);
-  return `${bits.length} set — ${bits.join(', ')}`;
+  // No count: the row's own description already says how many are set, and
+  // repeating it pushed the numbers — the only thing here worth reading — right.
+  return `Bits — ${bits.join(', ')}`;
 }
 
 // Display 'gmt-ts' — decode the RAW bytes as a NonStop JULIANTIMESTAMP (64-bit

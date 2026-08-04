@@ -112,6 +112,7 @@ _t.psCommonAttrs      = _PS_COMMON_ATTRS;
 _t.psCommonExamples   = _PS_COMMON_EXAMPLES;
 _t.mePsHelpExAttrs    = _mePsHelpExAttrs;
 _t.mePsHelpRunExample = _mePsHelpRunExample;
+_t.mePsHelpExampleHtml = _mePsHelpExampleHtml;
 _t.meItemVlgIdentifier = _meItemVlgIdentifier;
 _t.meContentLooksWrong = _meContentLooksWrong;
 _t.mePsLintWarns       = _mePsLintWarns;
@@ -167,7 +168,7 @@ const {
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
   stripJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
-  psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample,
+  psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
@@ -4157,7 +4158,7 @@ function bmplRun(inline) {
   if (!inline) item.overrides = { 'PRI-BIT-MAP': { display: 'bitmap-list' } };
   return meExecParseSpec(item, BMPL_BYTES).fields.find(f => f.id === 'PRI-BIT-MAP');
 }
-const BMPL_EXPECT = '19 set — 6, 8, 9, 19, 25, 31, 36, 37, 39, 42, 44, 46, 56, 60, 96, 123, 124, 127, 128';
+const BMPL_EXPECT = 'Bits — 6, 8, 9, 19, 25, 31, 36, 37, 39, 42, 44, 46, 56, 60, 96, 123, 124, 127, 128';
 
 test('a display override reaches a read-bitmap row at all', () => {
   // read-bitmap never applied type or display overrides — it built the row and
@@ -4181,7 +4182,7 @@ test('the same override works carried inline on the read-bitmap block', () => {
 test('bitmap-list leaves the raw value alone', () => {
   const f = bmplRun(false);
   eq(f.rawHex, '058020821A5401100000000100000033', 'the bytes are untouched');
-  assert.ok(!/\d+ set/.test(f.value), 'and so is the parsed value — this is a DISPLAY');
+  assert.ok(!/^Bits —/.test(f.value), 'and so is the parsed value — this is a DISPLAY');
 });
 
 test('bitmap-list uses the engine bitset, not a re-reading of the hex', () => {
@@ -4201,7 +4202,7 @@ test('bitmap-list uses the engine bitset, not a re-reading of the hex', () => {
     parse_spec_binary: [{ 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } }] }, bytes)
     .fields.find(x => x.id === 'BITMAP');
   assert.ok(/^C0/.test(f.rawHex), 'the raw bytes do carry bit 1');
-  eq(f.displayValue, '1 set — 2', 'but bit 1 is the secondary indicator, not a DE, so it is not listed');
+  eq(f.displayValue, 'Bits — 2', 'but bit 1 is the secondary indicator, not a DE, so it is not listed');
 });
 
 test('an empty map says so rather than printing nothing', () => {
@@ -4804,6 +4805,29 @@ test('every block has at least one example that is actually run', () => {
   deepEq(Object.entries(psHelp)
     .filter(([, info]) => !info.examples.some(ex => !Array.isArray(ex) && ex.payload))
     .map(([blk]) => blk), [], 'blocks with no executable example');
+});
+
+test('an example that sets a display override renders the FORMATTED value', () => {
+  // A display override leaves `value` alone and adds `displayValue`. The result
+  // table rendered only `value`, so every display example showed exactly what it
+  // would have shown with no override at all — demonstrating nothing.
+  const ex = psHelp['read-ddl'].examples.find(e =>
+    !Array.isArray(e) && e.payload && /"display"/.test(JSON.stringify(e.spec)));
+  assert.ok(ex, 'read-ddl still ships a display example');
+  const html = mePsHelpExampleHtml(ex);
+  assert.ok(/14:30:05/.test(html), `the formatted value is shown: ${html.slice(-400)}`);
+  assert.ok(/143005/.test(html) && /as datetime/.test(html),
+    'alongside the raw value and the override that produced it');
+});
+
+test('the synthetic-bitmap override case is demonstrated, not just described', () => {
+  // The case that motivated the whole feature: a map the DDL never declares,
+  // carrying an override. It had five examples of overrides on DDL fields and
+  // none on a synthetic one.
+  const ex = psHelp['read-bitmap'].examples.find(e =>
+    !Array.isArray(e) && /"length"/.test(JSON.stringify(e.spec)) && /"overrides"/.test(JSON.stringify(e.spec)));
+  assert.ok(ex, 'read-bitmap ships a synthetic-map override example');
+  assert.ok(/bitmap-list/.test(mePsHelpExampleHtml(ex)), 'and it runs');
 });
 
 test('every executable example produces the fields it claims to', () => {

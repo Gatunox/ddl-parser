@@ -1041,7 +1041,7 @@ of bytes.
 | `ascii` / `ebcdic` | Decoded text |
 | `gmt-ts` | NonStop JULIANTIMESTAMP (64-bit big-endian µs) → `YYYY-MM-DD HH:MM:SS.ffffff GMT`; reads raw bytes, so no type override is needed on a `BINARY 64` field |
 | `bitmap` | The map rendered as binary digits — `0010 0110 …` |
-| `bitmap-list` | *(added 2026-08-03)* The same map read out as the bit NUMBERS that are set — `18 set — 2, 3, 5, 11, …`. Nobody counts columns across 16 bytes to discover DE 11 is present. Prefers the engine's own bitset, which is exactly what `read-bitmap-fields` walks, so it reflects the ISO rule that bit 1 is the secondary-bitmap indicator on a wire map but real data on an explicitly sized one |
+| `bitmap-list` | *(added 2026-08-03)* The same map read out as the bit NUMBERS that are set — `Bits — 2, 3, 5, 11, …` (no count: the row's description already states it). Nobody counts columns across 16 bytes to discover DE 11 is present. Prefers the engine's own bitset, which is exactly what `read-bitmap-fields` walks, so it reflects the ISO rule that bit 1 is the secondary-bitmap indicator on a wire map but real data on an explicitly sized one |
 
 A `read-bitmap` row accepts both, and every other override — see §5.12.
 

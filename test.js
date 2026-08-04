@@ -4127,6 +4127,95 @@ END
   eq(f('AMT').displayOverride, 'amount', 'and the override is recorded for the hover hint');
 });
 
+// ── bitmap-list: the map read out as numbers ────────────────────────────────
+// A 16-byte map rendered as "0010 0110 …" is faithful and useless — nobody
+// counts columns to discover DE 11 is present. And a read-bitmap row was the one
+// field that accepted no override at all, which is the row where this is worth
+// the most.
+
+const BMPL_DDL = `DEFINITION REQMSG.
+    02 SDLC-DEST PIC X(2).
+    02 SDLC-ORIGIN PIC X(2).
+    02 MSGTYPE PIC X(4).
+    02 PAN-LEN PIC X(2).
+    02 PAN PIC X(16).
+    02 TRACE PIC X(6).
+END.
+`;
+// The reported record, verbatim.
+const BMPL_BYTES = (`43 54 00 13 00 00 00 00 60 00 01 51 B8 02 00 30
+  20 05 80 20 82 1A 54 01 10 00 00 00 01 00 00 00
+  33 34 35 36 37 38 39 31 31 32 33 34 35 36 37 38`).replace(/\s+/g, '').match(/../g).map(h => parseInt(h, 16));
+function bmplRun(inline) {
+  S.ddlTree = { V: { S: { D: BMPL_DDL } } };
+  S.inputFormat = 'hex';
+  const bmp = { field: 'PRI-BIT-MAP', encoding: 'binary', length: 16 };
+  if (inline) bmp.overrides = { 'PRI-BIT-MAP': { display: 'bitmap-list' } };
+  const item = { name: 'X', ddl_bindings: ['V/S/D/REQMSG'], parse_spec_binary: [
+    { skip: { length: 9 } }, { read: 'SDLC-DEST' }, { read: 'SDLC-ORIGIN' },
+    { read: 'MSGTYPE' }, { 'read-bitmap': bmp } ] };
+  if (!inline) item.overrides = { 'PRI-BIT-MAP': { display: 'bitmap-list' } };
+  return meExecParseSpec(item, BMPL_BYTES).fields.find(f => f.id === 'PRI-BIT-MAP');
+}
+const BMPL_EXPECT = '19 set — 6, 8, 9, 19, 25, 31, 36, 37, 39, 42, 44, 46, 56, 60, 96, 123, 124, 127, 128';
+
+test('a display override reaches a read-bitmap row at all', () => {
+  // read-bitmap never applied type or display overrides — it built the row and
+  // pushed it. So this was not "bitmap-list is missing", it was "no override of
+  // any kind works here".
+  const f = bmplRun(false);
+  eq(f.displayOverride, 'bitmap-list', 'the override was applied to the bitmap row');
+});
+
+test('bitmap-list reads the map out as the bit numbers that are set', () => {
+  eq(bmplRun(false).displayValue, BMPL_EXPECT, 'from the Overrides panel');
+});
+
+test('the same override works carried inline on the read-bitmap block', () => {
+  // Inline overrides were wired into read-ddl and read-bitmap-fields only, so
+  // the one block this display exists for silently ignored them. They are now
+  // resolved in the dispatcher, for every block.
+  eq(bmplRun(true).displayValue, BMPL_EXPECT, 'from the spec itself');
+});
+
+test('bitmap-list leaves the raw value alone', () => {
+  const f = bmplRun(false);
+  eq(f.rawHex, '058020821A5401100000000100000033', 'the bytes are untouched');
+  assert.ok(!/\d+ set/.test(f.value), 'and so is the parsed value — this is a DISPLAY');
+});
+
+test('bitmap-list uses the engine bitset, not a re-reading of the hex', () => {
+  // The case where the two disagree: on an ISO WIRE map, bit 1 means "a
+  // secondary bitmap follows" and is not a data element, so the engine drops it.
+  // Re-deriving from the raw hex would list it and claim a DE that will never be
+  // read. (On an explicitly sized map bit 1 IS data and is kept — which is
+  // exactly why this rule is not worth re-implementing in a formatter.)
+  const ddl = 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 DE-2 PIC X(2).\nEND\n';
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const bytes = [0xC0, 0, 0, 0, 0, 0, 0, 0,     // primary: bits 1 and 2 set
+                 0, 0, 0, 0, 0, 0, 0, 0,        // secondary: empty
+                 0x41, 0x42];
+  const f = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    overrides: { BITMAP: { display: 'bitmap-list' } },
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } }] }, bytes)
+    .fields.find(x => x.id === 'BITMAP');
+  assert.ok(/^C0/.test(f.rawHex), 'the raw bytes do carry bit 1');
+  eq(f.displayValue, '1 set — 2', 'but bit 1 is the secondary indicator, not a DE, so it is not listed');
+});
+
+test('an empty map says so rather than printing nothing', () => {
+  eq(meContentLooksWrong({ dataType: '', rawBytes: [] }), false, 'sanity');
+  S.ddlTree = { V: { S: { D: BMPL_DDL } } };
+  S.inputFormat = 'hex';
+  const zeros = new Array(25).fill(0x30);
+  const f = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/REQMSG'],
+    overrides: { 'PRI-BIT-MAP': { display: 'bitmap-list' } },
+    parse_spec_binary: [{ 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary', length: 2,
+      overrides: {} } }] }, [0x00, 0x00, ...zeros]).fields.find(x => x.id === 'PRI-BIT-MAP');
+  eq(f.displayValue, 'no bits set', 'an all-zero map is stated, not blank');
+});
+
 test('inline overrides are scoped to their block', () => {
   const ctx = inlRun([
     { 'read-ddl': { fields: ['MSGTYPE'], overrides: { MSGTYPE: { type: 'hex-char' } } } },
@@ -4848,8 +4937,12 @@ test('field_overrides type and display options are documented (§9)', () => {
   assert.ok(types && types.length, 'could not read _ME_TYPE_OPTS');
   const sec = specSec('## 9. Field Overrides', '## 10.');
   deepEq(types.filter(t => !sec.includes(t)), [], 'type overrides missing from §9');
-  deepEq(['datetime', 'amount', 'hex', 'ascii', 'ebcdic', 'gmt-ts', 'bitmap'].filter(d => !sec.includes(d)), [],
-         'display overrides missing from §9');
+  // Read from source, like the types above. This was a hardcoded list, so it
+  // could never fail: a new display option was documented only if someone
+  // remembered to edit the test as well, which is not a guard at all.
+  const disps = fromSource(/const _ME_DISP_OPTS = \[[^\]]*\];/, '_ME_DISP_OPTS.filter(Boolean)');
+  assert.ok(disps && disps.length, 'could not read _ME_DISP_OPTS');
+  deepEq(disps.filter(d => !sec.includes(d)), [], 'display overrides missing from §9');
 });
 
 test('every localStorage key is documented (§13)', () => {

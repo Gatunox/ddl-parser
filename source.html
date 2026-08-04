@@ -10330,6 +10330,7 @@ function renderFieldTable(msg) {
           case 'ebcdic':             _out = _meFmtEbcdic(_f);         break;
           case 'gmt-ts':             _out = _meFmtJulianTs(_f);       break;
           case 'bitmap':             _out = _meFmtBitmap(_f);         break;
+          case 'bitmap-list':        _out = _meFmtBitmapList(_f);     break;
         }
         if (_out != null) { _f.displayValue = String(_out); _f.displayOverride = _o.display; }
       }
@@ -14251,7 +14252,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.4.3';
+const APP_VERSION  = '1.1.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16136,9 +16137,25 @@ function _mePsToggleHelp() {
   if (el) el.classList.toggle('open');
 }
 
+// Understood by EVERY block, like at/peek — resolved once in the dispatcher, so
+// a read-bitmap row can carry a display override just as a read-ddl walk can.
+const _PS_OVERRIDES_DESC = [
+  'Overrides carried <b>by the spec itself</b>, in the same shape the Overrides panel stores.',
+  ['<code>{"MSGTYPE": {"type": "hex-char"}}</code>', 'Read that field as hex characters.'],
+  ['<code>{"MSGTYPE": {"bytes": 2}}</code>',         'Re-size it — the bytes it frees go to the next field, exactly as in the panel.'],
+  ['<code>{"DE-64": {"de": 66}}</code>',             'Anchor a Data Element number; the ones after it follow.'],
+  ['<code>{"TRACK2": {"vlg": true}}</code>',         'Mark a group variable-length.'],
+  'Same keys as the panel: <code>type</code>, <code>bytes</code>, <code>display</code>, <code>de</code>, <code>vlg</code>.',
+  '<b>Inline wins</b> over the panel — the same precedence a <code>read</code> block\'s inline <code>type</code> already has.',
+  'The merge is per <b>key</b>, not per field: an inline <code>bytes</code> does not discard a <code>display</code> set in the panel.',
+  'Scoped to the block that declares it. The next block does not inherit it.',
+  'Use it to make a spec self-contained — it travels with the spec, and a diff shows what changed.',
+];
+
 // Understood by EVERY block, resolved once in the dispatcher. Listed in each
 // block's help table so they are discoverable wherever you are looking.
 const _PS_COMMON_ATTRS = [
+  ['overrides', '{ "<field>": {…} }', false, _PS_OVERRIDES_DESC],
   ['at', 'int | {field, offset, from}', false, [
     'Where to read. Omit it and the block reads where the previous one stopped.',
     ['<i>omitted</i>',        'Continue from the cursor. The default, and what every existing spec does.'],
@@ -16171,20 +16188,6 @@ const _PS_VLG_IDENTIFIER_DESC = [
   'Flagging a group by hand in the Overrides panel still wins over all three. This attribute governs the <i>guess</i>, not your explicit choice.',
 ];
 
-// Shared by read-ddl and read-bitmap-fields — both walk DDL fields, so both can
-// carry the overrides those fields need. Written once so the two cannot drift.
-const _PS_OVERRIDES_DESC = [
-  'Overrides carried <b>by the spec itself</b>, in the same shape the Overrides panel stores.',
-  ['<code>{"MSGTYPE": {"type": "hex-char"}}</code>', 'Read that field as hex characters.'],
-  ['<code>{"MSGTYPE": {"bytes": 2}}</code>',         'Re-size it — the bytes it frees go to the next field, exactly as in the panel.'],
-  ['<code>{"DE-64": {"de": 66}}</code>',             'Anchor a Data Element number; the ones after it follow.'],
-  ['<code>{"TRACK2": {"vlg": true}}</code>',         'Mark a group variable-length.'],
-  'Same keys as the panel: <code>type</code>, <code>bytes</code>, <code>display</code>, <code>de</code>, <code>vlg</code>.',
-  '<b>Inline wins</b> over the panel — the same precedence a <code>read</code> block\'s inline <code>type</code> already has.',
-  'The merge is per <b>key</b>, not per field: an inline <code>bytes</code> does not discard a <code>display</code> set in the panel.',
-  'Scoped to the block that declares it. The next block does not inherit it.',
-  'Use it to make a spec self-contained — it travels with the spec, and a diff shows what changed.',
-];
 
 const _PS_HELP = {
   'read-ddl': {
@@ -16223,7 +16226,6 @@ const _PS_HELP = {
         'The walk itself continues to the end of the binding; only the output stops.',
       ]],
       ['vlg_identifier', 'string', false, _PS_VLG_IDENTIFIER_DESC],
-      ['overrides', '{ "<field>": {…} }', false, _PS_OVERRIDES_DESC],
     ],
     examples: [
       // One four-field DDL, walked four ways — the difference between the
@@ -16689,7 +16691,6 @@ const _PS_HELP = {
         'Written as a bare string when it is the only attribute: <code>{"read-bitmap-fields": "BITMAP"}</code>.',
       ]],
       ['vlg_identifier', 'string', false, _PS_VLG_IDENTIFIER_DESC],
-      ['overrides', '{ "<field>": {…} }', false, _PS_OVERRIDES_DESC],
       ['de', '{ "<bit>": [blocks] | {field, blocks} }', false, [
         'Per-bit parsing — a listed bit is read by <b>its own blocks</b> instead of the default DDL walk.',
         'Keys are bit numbers. Two forms:',
@@ -17247,6 +17248,12 @@ function _mePsCopyExample(btn) {
 // either attribute on any block falls back to these when that block has none of
 // its own — which is what left 27 of the 33 documented attributes exampleless.
 const _PS_COMMON_EXAMPLES = [
+  { what: '<b>overrides</b> — carried by the block itself, so the spec is self-contained: STAMP formatted as a time, AMT as an amount',
+    ddl: 'DEFINITION MSG.\n  02 STAMP PIC X(6).\n  02 AMT   PIC 9(8).\nEND\n',
+    def: 'MSG',
+    payload: '31 34 33 30 30 35 30 30 30 31 32 33 34 35',
+    spec: [{"read-ddl": {"overrides": {"STAMP": {"display": "datetime"},
+                                       "AMT":   {"display": "amount"}}}}] },
   { what: '<b>at</b>, absolute — read at byte 3 instead of continuing from the cursor',
     payload: '00 00 00 41 42 43 44',
     spec: [{"read-fixed": {"length": 4, "as": "STAN", "at": 3}}] },
@@ -20374,7 +20381,7 @@ function _meOvlSave() {
 // DDLs (thousands of rows) rendering two live selects per row up-front froze
 // the editor open for seconds.
 const _ME_TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-char','hex-ascii-decimal','hex-ebcdic-decimal'];
-const _ME_DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts','bitmap'];
+const _ME_DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts','bitmap','bitmap-list'];
 
 // ── Identity Tab ──────────────────────────────────────────────────────────
 
@@ -21537,14 +21544,12 @@ function _meExecReadDDL(attrs, ctx) {
     ctx.fields.push({ id: 'read-ddl', error: 'No DDL bindings available' });
     return;
   }
-  const _prevVlg = ctx.vlgIdentifier, _prevOvr = ctx.blockOverrides;
-  ctx.vlgIdentifier  = vlgIdentifier;
-  ctx.blockOverrides = overrides;
+  // blockOverrides is set by the dispatcher for every block; only the VLG name
+  // is read-ddl's own. Restored, not cleared, for the same nesting reason.
+  const _prevVlg = ctx.vlgIdentifier;
+  ctx.vlgIdentifier = vlgIdentifier;
   for (const idx of bindings) _meReadDDLBinding(idx, fields, from, until, ctx);
-  // Restored, not cleared: a nested block would otherwise wipe the enclosing
-  // block's attributes on its way out.
-  ctx.vlgIdentifier  = _prevVlg;
-  ctx.blockOverrides = _prevOvr;
+  ctx.vlgIdentifier = _prevVlg;
 }
 
 // Required byte length for a "read" block's type override. Returns null for
@@ -21718,6 +21723,30 @@ function _meFmtBitmap(f) {
   return f.rawHex.split('').map(h => parseInt(h, 16).toString(2).padStart(4, '0')).join(' ');
 }
 
+// Display 'bitmap-list' — the same map as `bitmap`, read out as the bit NUMBERS
+// that are set. "0010 0110 …" is faithful but nobody counts columns across 16
+// bytes to find out that DE 11 is present; this says so.
+// Prefers the engine's own bitSet, which is what read-bitmap-fields will walk —
+// notably it drops bit 1 on an ISO map (the secondary-bitmap indicator, not a
+// data element) but keeps it on an explicitly sized one, which is not a rule
+// worth re-deriving here and getting subtly wrong.
+function _meFmtBitmapList(f) {
+  let bits;
+  if (f.bitSet instanceof Set) {
+    bits = [...f.bitSet];
+  } else {
+    bits = [];
+    const bytes = (f.rawHex || '').match(/.{1,2}/g) || [];
+    bytes.forEach((h, i) => {
+      const b = parseInt(h, 16);
+      for (let k = 0; k < 8; k++) if (b & (0x80 >> k)) bits.push(i * 8 + k + 1);
+    });
+  }
+  if (!bits.length) return 'no bits set';
+  bits.sort((a, b) => a - b);
+  return `${bits.length} set — ${bits.join(', ')}`;
+}
+
 // Display 'gmt-ts' — decode the RAW bytes as a NonStop JULIANTIMESTAMP (64-bit
 // big-endian microseconds since the Julian-day epoch) and render as GMT date/time.
 // Unix epoch (1970-01-01 00:00 GMT) = Julian day 2440588 = 210866803200000000 µs,
@@ -21758,6 +21787,7 @@ function _meApplyDisplayOverride(f, def, ctx) {
     case 'ebcdic':   out = _meFmtEbcdic(f); break;
     case 'gmt-ts':   out = _meFmtJulianTs(f); break;
     case 'bitmap':   out = _meFmtBitmap(f); break;
+    case 'bitmap-list': out = _meFmtBitmapList(f); break;
     default: return;
   }
   if (out !== undefined && out !== null) {
@@ -22305,6 +22335,12 @@ function _meExecReadBitmap(attrs, ctx) {
   const pf = _meMakeSyntheticField(attrs.field, priBytes, start, start + baseChunk - 1, ctx,
     { description: `bitmap (${bitSet.size} DEs set)` });
   pf.bitSet = bitSet;
+  // Overrides apply here like anywhere else. They never did — a bitmap row was
+  // the one field you could not put a display on, which is the row where
+  // "bitmap-list" is worth the most. bitSet is set FIRST so the formatter can
+  // read the engine's own bits rather than re-deriving them from the hex.
+  _meApplyTypeOverride(pf, { id: attrs.field }, ctx, null);
+  _meApplyDisplayOverride(pf, { id: attrs.field }, ctx);
   ctx.fields.push(pf);
   ctx.fieldsById[attrs.field] = pf;
 
@@ -22317,6 +22353,8 @@ function _meExecReadBitmap(attrs, ctx) {
     const secBytes = Array.from(src.slice(secStart, secStart + baseChunk));
     const sf = _meMakeSyntheticField(secName, secBytes, secStart, secStart + baseChunk - 1, ctx,
       { description: 'secondary bitmap' });
+    _meApplyTypeOverride(sf, { id: secName }, ctx, null);
+    _meApplyDisplayOverride(sf, { id: secName }, ctx);
     ctx.fields.push(sf);
     ctx.fieldsById[secName] = sf;
   }
@@ -22695,7 +22733,6 @@ function _meExecBitmapFields(attrs, ctx) {
   // distinguishable, so this cannot collapse to `|| null`.
   ctx.vlgIdentifier = (attrs && typeof attrs === 'object' && attrs.vlg_identifier !== undefined)
     ? String(attrs.vlg_identifier) : undefined;
-  ctx.blockOverrides = _meOvNormalizeInline(attrs && typeof attrs === 'object' ? attrs.overrides : null);
 
   const deMap     = _meBuildDEMap(ctx);
   const varGroups = _meVlgLenMap(_meOvMergedItem(ctx));   // groupId → LEN leaf id (or null = first leaf)
@@ -22767,7 +22804,6 @@ function _meExecBitmapFields(attrs, ctx) {
     }
   }
   ctx.vlgIdentifier  = undefined;   // scoped to this block, not to the whole parse
-  ctx.blockOverrides = undefined;
 }
 
 // ── Block: when ─────────────────────────────────────────────────────────────
@@ -23487,12 +23523,22 @@ function _meExecBlock(block, ctx) {
   const type  = keys[0];
   const attrs = block[type];
 
+  // Inline overrides are resolved once, here, so ANY block honours them — the
+  // per-block wiring covered read-ddl and read-bitmap-fields and silently missed
+  // read-bitmap, which is the row a "bitmap-list" display is worth most on.
+  // Saved and restored rather than cleared, so a nested block does not wipe the
+  // enclosing block's map on its way out.
+  const _prevOvr = ctx.blockOverrides;
+  if (attrs && typeof attrs === 'object' && attrs.overrides !== undefined)
+    ctx.blockOverrides = _meOvNormalizeInline(attrs.overrides);
+
   // Positioning is resolved once, here, so it applies to every block type.
   let _peekReturn = null;
   if (attrs && typeof attrs === 'object' && attrs.at !== undefined) {
     const r = _meResolveAt(attrs.at, ctx);
     if (r.error) {
       ctx.fields.push({ id: attrs.field || type, error: r.error });
+      ctx.blockOverrides = _prevOvr;
       return;
     }
     if (attrs.peek) _peekReturn = ctx.cursor;
@@ -23502,6 +23548,7 @@ function _meExecBlock(block, ctx) {
     return _meExecBlockAt(type, attrs, ctx);
   } finally {
     if (_peekReturn !== null) ctx.cursor = _peekReturn;
+    ctx.blockOverrides = _prevOvr;
   }
 }
 

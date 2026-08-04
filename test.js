@@ -115,6 +115,7 @@ _t.mePsHelpRunExample = _mePsHelpRunExample;
 _t.mePsHelpExampleHtml = _mePsHelpExampleHtml;
 _t.meItemVlgIdentifier = _meItemVlgIdentifier;
 _t.meContentLooksWrong = _meContentLooksWrong;
+_t.meFieldOvrAnnotation = _meFieldOvrAnnotation;
 _t.mePsLintWarns       = _mePsLintWarns;
 _t.meItemBitmapIsSynthetic = _meItemBitmapIsSynthetic;
 _t.fmtDefaultSpecs     = window._fmtDefaultSpecs;
@@ -170,7 +171,7 @@ const {
   stripJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
-  meContentLooksWrong, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
+  meContentLooksWrong, meFieldOvrAnnotation, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
@@ -3352,6 +3353,36 @@ test('an ascii override still expects printable bytes', () => {
   assert.ok(meContentLooksWrong(f), '0x00 is not printable ASCII');
 });
 
+// ── The row annotation describes what was APPLIED, not what was configured ──
+// The "↩ type as DISPLAY" annotation and its tooltip were built only from the
+// spec's stored overrides map. An override carried INLINE in the parse-spec has
+// no entry there, so a bitmap displayed as "bitmap-list" from the spec rendered
+// the formatted value with nothing saying why it looked like that.
+
+console.log('\nrow annotation follows the applied override');
+
+test('an override applied by the engine annotates the row', () => {
+  const f = { id: 'PRI-BIT-MAP', displayOverride: 'bitmap-list' };
+  deepEq(meFieldOvrAnnotation(f, null), { type: null, display: 'bitmap-list' },
+    'the field records what was applied — the stored map never saw it');
+});
+
+test('the stored map still annotates when the field carries nothing', () => {
+  // The render-time path: a legacy/manual parse where overrides are applied by
+  // the renderer, so the field has not been through the engine.
+  const f = { id: 'TYP' };
+  deepEq(meFieldOvrAnnotation(f, { type: 'hex-char', display: 'hex' }),
+    { type: 'hex-char', display: 'hex' }, 'falls back to the configured map');
+});
+
+test('what was applied wins over what was configured', () => {
+  // Inline beats the panel in the engine, so the annotation has to agree —
+  // otherwise the row would name an override that did not run.
+  const f = { id: 'TYP', typeOverride: 'hex-char' };
+  eq(meFieldOvrAnnotation(f, { type: 'binary' }).type, 'hex-char',
+    'the row names the override that actually ran');
+});
+
 test('a REDEFINES overlay is never flagged', () => {
   assert.ok(!meContentLooksWrong({ dataType: 'PIC 9(4)', isRedefines: true, rawBytes: [0x00] }),
      'it re-views bytes already judged where they were read');
@@ -4873,6 +4904,16 @@ test('a syntax error marks the editor frame, not just the message line', () => {
   // And the frame has a rule to respond with, one that survives focus.
   assert.ok(/\.me-ps-cm\[data-state="err"\][^{]*:focus-within\{border-color:#f85149;\}/.test(html),
     'the red border wins while the editor is focused — which is when you are typing the mistake');
+});
+
+test('renderFieldTable annotates through the applied-override helper', () => {
+  // The helper being right is only half of it: the row builder has to consult it
+  // rather than reading the stored map directly, which is what it used to do.
+  const src = psFnSource('renderFieldTable');
+  assert.ok(/_meFieldOvrAnnotation\(f,/.test(src),
+    'the row annotation must come from what was applied, not only from the spec map');
+  assert.ok(!/_fo\s*&&\s*_fo\.type/.test(src),
+    'no direct read of the stored map for the annotation');
 });
 
 test('the Field Map banner is guarded by the synthetic-bitmap check', () => {

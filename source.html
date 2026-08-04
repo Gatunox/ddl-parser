@@ -10198,6 +10198,21 @@ function renderCurrent() {
   }
 }
 
+// Which overrides to ANNOTATE a row with. The field itself records what was
+// actually applied (typeOverride / displayOverride, set by the read path); the
+// spec's stored map records what was configured in the panel. Preferring the
+// field is what makes an override carried INLINE in the parse-spec annotate at
+// all — the stored map has no entry for it, so a bitmap displayed as
+// "bitmap-list" from the spec showed the formatted value with nothing saying
+// why. Falls back to the map for the render-time path, where the field has not
+// been through the engine.
+function _meFieldOvrAnnotation(f, fo) {
+  return {
+    type:    (f && f.typeOverride)    || (fo && fo.type)    || null,
+    display: (f && f.displayOverride) || (fo && fo.display) || null,
+  };
+}
+
 function renderFieldTable(msg) {
   // Provenance for the metadata bar: which parser produced these fields, and
   // how much of the record they actually account for. "Did it use the parse
@@ -10382,9 +10397,8 @@ function renderFieldTable(msg) {
     // plus " as <DISPLAY>" when a display override is set. Config comes from the
     // spec (_foMap) — the main parse renders declared types, so the field object
     // itself doesn't carry the override markers.
-    const _fo   = _foMap[_canonFieldId(f.id)] || null;
-    const _tOvr = _fo && _fo.type    ? _fo.type    : null;
-    const _dOvr = _fo && _fo.display ? _fo.display : null;
+    const _ann  = _meFieldOvrAnnotation(f, _foMap[_canonFieldId(f.id)] || null);
+    const _tOvr = _ann.type, _dOvr = _ann.display;
     let descHtml, descText;
     if (_tOvr || _dOvr) {
       const _origPart = _tOvr
@@ -14257,7 +14271,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.5.3';
+const APP_VERSION  = '1.1.5.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

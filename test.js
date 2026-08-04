@@ -4857,6 +4857,24 @@ test('every executable example produces the fields it claims to', () => {
 
 console.log('\noverride save refreshes the field list');
 
+test('a syntax error marks the editor frame, not just the message line', () => {
+  // A one-line message under a 220px editor is easy to scroll past — the report
+  // was "spec syntax error is very subtle". Both call sites that set the message
+  // must also set the frame, so they go through one helper.
+  const src = psFnSource('_mePsSetErr');
+  assert.ok(/data-state', 'err'/.test(src) && /removeAttribute\('data-state'\)/.test(src),
+    '_mePsSetErr sets and clears the error state on the editor host');
+  for (const fn of ['_mePsChange', '_mePsFmt']) {
+    const body = psFnSource(fn);
+    assert.ok(!/errEl\.textContent/.test(body),
+      `${fn} must not set the message directly — the frame would not follow`);
+    assert.ok(/_mePsSetErr\(/.test(body), `${fn} routes through _mePsSetErr`);
+  }
+  // And the frame has a rule to respond with, one that survives focus.
+  assert.ok(/\.me-ps-cm\[data-state="err"\][^{]*:focus-within\{border-color:#f85149;\}/.test(html),
+    'the red border wins while the editor is focused — which is when you are typing the mistake');
+});
+
 test('the Field Map banner is guarded by the synthetic-bitmap check', () => {
   // The helper being right is only half of it — the banner has to consult it.
   // Source tripwire because the banner is rendered HTML inside a large builder.

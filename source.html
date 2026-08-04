@@ -1582,6 +1582,11 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 /* CodeMirror host for the Parse Spec editor (replaces the textarea) */
 .me-ps-cm{flex:none;width:100%;min-height:220px;resize:vertical;overflow:hidden;background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;box-sizing:border-box;display:flex;flex-direction:column;}
 .me-ps-cm:focus-within{border-color:var(--accent);}
+/* Syntax error — the same red border the DDL binding uses for a missing path.
+   A one-line message under a 220px editor is easy to miss; the frame is not.
+   Listed after :focus-within so it wins while the editor is focused, which is
+   exactly when you are typing the mistake. */
+.me-ps-cm[data-state="err"],.me-ps-cm[data-state="err"]:focus-within{border-color:#f85149;}
 .me-ps-cm .cm-editor{background:var(--bg-deep)!important;color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);line-height:1.5;tab-size:2;flex:1;min-height:0;}
 .me-ps-cm .cm-scroller{overflow:auto;}
 .me-ps-cm .cm-content{padding:6px 0!important;caret-color:var(--text);}
@@ -14252,7 +14257,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.5.2';
+const APP_VERSION  = '1.1.5.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17510,9 +17515,18 @@ function _stripJsonc(src) {
   return out.replace(/,(\s*[}\]])/g, '$1');
 }
 
+// The error message and the frame are set together — two call sites used to set
+// only the text, and a subtle syntax error in a tall editor is easy to scroll
+// past.
+function _mePsSetErr(msg) {
+  const errEl = document.getElementById('me-ps-err');
+  if (errEl) errEl.textContent = msg ? '\u26a0 ' + msg : '';
+  const host = document.getElementById('me-ps-ta-host');
+  if (host) { if (msg) host.setAttribute('data-state', 'err'); else host.removeAttribute('data-state'); }
+}
+
 function _mePsChange(val) {
   const item = _meCurItem();
-  const errEl = document.getElementById('me-ps-err');
   if (!item) return;
   const { spec: specField, src: srcField } = _mePsFieldsForVariant(_mePsActiveVariant());
   try {
@@ -17521,12 +17535,12 @@ function _mePsChange(val) {
     if (!Array.isArray(parsed)) throw new Error('top-level value must be an array');
     item[specField] = parsed;
     item[srcField]  = val;   // preserve comments + trailing commas
-    if (errEl) errEl.textContent = '';
+    _mePsSetErr('');
     _meSetDirty();
     _mePsScheduleLint(item, parsed);
     _meFileWarnsRefresh();
   } catch(e) {
-    if (errEl) errEl.textContent = '⚠ ' + e.message;
+    _mePsSetErr(e.message);
     // Syntax broken — semantic lint would be noise; clear it.
     const lintEl = document.getElementById('me-ps-lint');
     if (lintEl) lintEl.innerHTML = '';
@@ -18181,7 +18195,6 @@ function _formatJsonc(src) {
 
 function _mePsFmt() {
   if (!_mePsCM) return;
-  const errEl = document.getElementById('me-ps-err');
   const current = _mePsCM.state.doc.toString();
   try {
     JSON.parse(_stripJsonc(current || '[]'));   // validate
@@ -18191,9 +18204,9 @@ function _mePsFmt() {
     _mePsCM.dispatch({
       changes: { from: 0, to: _mePsCM.state.doc.length, insert: formatted },
     });
-    if (errEl) errEl.textContent = '';
+    _mePsSetErr('');
   } catch (e) {
-    if (errEl) errEl.textContent = '⚠ ' + e.message;
+    _mePsSetErr(e.message);
   }
 }
 

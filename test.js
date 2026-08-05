@@ -4055,6 +4055,25 @@ test('every action the handler implements is present as a button', () => {
     .filter(a => !inMarkup.has(a)), [], 'actions with no button');
 });
 
+test('the panel keeps the overrides list AND gains the two panes', () => {
+  // The list is not replaced by the bar — it is the at-a-glance summary of what
+  // is configured. The panes are new: what was written, and what it means.
+  const html = ovPanelHtml();
+  assert.ok(/id="me-ovl-list"/.test(html), 'the existing overrides list is still there');
+  assert.ok(/id="me-fm-json"/.test(html),  'the written-overrides pane');
+  assert.ok(/id="me-fm-notes"/.test(html), 'and the plain-words pane');
+});
+
+test('the action bar wraps rather than overflowing a narrow panel', () => {
+  // It was laid out against a full-width prototype page and ran off the side of
+  // the real panel, which is a fraction of that width.
+  const css = html.match(/\.me-fm-bar\{[^}]*\}/)[0];
+  assert.ok(/flex-wrap:\s*wrap/.test(css), 'the bar wraps');
+  const seg = html.match(/\.me-fm-seg \.btn\{[^}]*\}/)[0];
+  const min = +(seg.match(/min-width:(\d+)px/) || [])[1];
+  assert.ok(min > 0 && min <= 70, `uniform but panel-sized, got ${min}px`);
+});
+
 test('the bar sits above the table, not after it', () => {
   const html = ovPanelHtml();
   assert.ok(html.indexOf('me-fm-bar') < html.indexOf('me-fm-table-wrap'),

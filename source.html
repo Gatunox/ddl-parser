@@ -1696,7 +1696,7 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
 /* Selection action bar — segmented groups, so related actions share one outline
    and the eye sees three groups rather than nine loose pills of random width. */
-.me-fm-bar{display:flex;align-items:center;gap:6px;height:26px;margin:6px 0;padding:0 2px;}
+.me-fm-bar{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;margin:6px 0;padding:0 2px;}
 .me-fm-bar .me-fm-cnt{color:var(--accent);font-weight:700;min-width:78px;font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-bar .me-fm-cnt.none{color:var(--text-very-dim);}
 .me-fm-bar .me-fm-gsep{width:2px;height:15px;background:var(--border);margin:0 3px;}
@@ -1704,8 +1704,10 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-g .me-fm-glbl{color:var(--text-very-dim);text-transform:uppercase;letter-spacing:.06em;
   font-size:calc(var(--sz-mono) - 2px);margin-right:5px;}
 .me-fm-seg{display:flex;border:2px solid var(--border);border-radius:9px;overflow:hidden;}
-.me-fm-seg .btn{border:0;border-radius:0;min-width:82px;height:18px;text-align:center;
-  border-right:2px solid var(--border);padding:0 6px;}
+/* Uniform inside a group, but narrow enough that four groups fit a side panel.
+   82px was measured against a full-width prototype page. */
+.me-fm-seg .btn{border:0;border-radius:0;min-width:66px;height:18px;text-align:center;
+  border-right:2px solid var(--border);padding:0 7px;white-space:nowrap;}
 .me-fm-seg .btn:last-child{border-right:0;}
 .me-fm-seg .btn:hover{background:rgba(var(--accent-rgb),.16);color:var(--accent);}
 .me-fm-bar .btn.dis{opacity:.3;pointer-events:none;}
@@ -1714,7 +1716,7 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-table tbody tr.me-fm-row-multi td{color:var(--text);}
 /* Inline editor for the actions that need a value — anchored under the button
    that opened it. prompt() is blocked in some hosts, and would be wrong here. */
-.me-fm-ed{position:absolute;z-index:60;display:none;align-items:center;gap:6px;background:var(--bg-panel);
+.me-fm-ed{position:fixed;z-index:60;display:none;align-items:center;gap:6px;background:var(--bg-panel);
   border:2px solid rgba(var(--accent-rgb),.55);border-radius:2px;padding:5px 7px;}
 .me-fm-ed.on{display:flex;}
 .me-fm-ed label{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);}
@@ -1725,6 +1727,17 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-vlg-src{color:var(--accent);font-weight:700;}
 .me-fm-len-dep{color:var(--ok,#3fb950);}
 .me-fm-de-excl{color:var(--text-very-dim);}
+/* What was written, and what the rules made of it. The table shows the EFFECT;
+   these say it in words and in the stored shape, which is what makes an override
+   set three days ago legible. */
+.me-fm-panes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:stretch;}
+.me-fm-pane{display:flex;flex-direction:column;min-height:0;}
+.me-fm-pane-h{font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-transform:uppercase;
+  letter-spacing:.04em;margin-bottom:4px;}
+.me-fm-pane pre{margin:0;flex:1;background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;
+  padding:7px 9px;color:var(--text-dim);overflow:auto;min-height:58px;max-height:190px;line-height:1.45;
+  font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);white-space:pre-wrap;}
+.me-fm-note-dim{color:var(--text-very-dim);}
 /* Recessed surface — the read-only table has to read as a different material
    from the editable panel above it. A black overlay rather than a fixed colour,
    so it darkens whatever the theme's background is. */
@@ -14308,7 +14321,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.7.2';
+const APP_VERSION  = '1.1.7.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18614,7 +18627,7 @@ function _meOverridesPrep(item) {
   </span></span>
   <span class="me-fm-gsep"></span>
   <span class="me-fm-g"><span class="me-fm-seg">
-    <button class="btn btn-sm" data-fmact="selall" title="Select every row the filter is showing">Select shown</button>
+    <button class="btn btn-sm" data-fmact="selall" title="Select every row the filter is currently showing">Shown</button>
     <button class="btn btn-sm" data-fmact="clear" title="Remove every override on the selected fields">Clear</button>
     <button class="btn btn-sm" data-fmact="reset" title="Remove EVERY override, on every field">Reset</button>
   </span></span>
@@ -18639,6 +18652,10 @@ function _meOverridesPrep(item) {
     </tr></thead>
     <tbody></tbody>
   </table>
+</div>
+<div class="me-fm-panes">
+  <div class="me-fm-pane"><div class="me-fm-pane-h">Overrides written</div><pre id="me-fm-json"></pre></div>
+  <div class="me-fm-pane"><div class="me-fm-pane-h">What the rules did</div><pre id="me-fm-notes"></pre></div>
 </div>
 <div class="me-ovl-foot">
   <span class="me-ovl-hint" id="me-ovl-hint">Select a field above, then add an override for it.</span>
@@ -20332,9 +20349,11 @@ function _meFmEdOpen(act) {
   const btn = document.querySelector(`#me-fm-bar [data-fmact="${act}"]`);
   if (btn) {
     const r = btn.getBoundingClientRect();
-    ed.style.top  = (window.scrollY + r.bottom + 5) + 'px';
+    // Viewport coordinates: the editor is position:fixed, so page scroll offsets
+    // would push it off screen inside a scrolling panel.
+    ed.style.top  = (r.bottom + 5) + 'px';
     // Clamped, or a button near the right edge opens a panel off screen.
-    ed.style.left = Math.max(8, Math.min(window.scrollX + r.left, window.innerWidth - (ed.offsetWidth || 240) - 12)) + 'px';
+    ed.style.left = Math.max(8, Math.min(r.left, window.innerWidth - (ed.offsetWidth || 240) - 12)) + 'px';
   }
   (cfg.kind === 'num' ? num : sel).focus();
 }
@@ -20358,6 +20377,40 @@ function _meFmEdCommit() {
   _meFmAfterAct();
 }
 
+// The two panes: the map as stored, and what the rules made of it in words.
+// The table shows the effect; neither of these repeats it — one says what was
+// WRITTEN, the other says what each entry MEANS, which is what makes an override
+// legible weeks later.
+function _meFmNotesRefresh() {
+  const jsonEl = document.getElementById('me-fm-json');
+  const noteEl = document.getElementById('me-fm-notes');
+  if (!jsonEl && !noteEl) return;
+  const item = _meCurItem();
+  const all  = item ? _meOvAll(item) : {};
+  const ids  = Object.keys(all);
+  if (jsonEl) jsonEl.innerHTML = ids.length
+    ? _escHtml(JSON.stringify({ overrides: all }, null, 2))
+    : '<span class="me-fm-note-dim">Nothing overridden — select a field and act.</span>';
+  if (!noteEl) return;
+  const notes = [];
+  for (const id of ids) {
+    const o = all[id];
+    if (o.de === false)      notes.push(`${id}: not a data element — the counter does not advance, so the fields after it keep their numbers`);
+    if (o.de === true)       notes.push(`${id}: forced in as a data element, though the default rule says no`);
+    if (o.de === 'children') notes.push(`${id}: not a data element; its immediate children each take one`);
+    if (typeof o.de === 'number' || (typeof o.de === 'string' && /^\d+$/.test(o.de)))
+      notes.push(`${id}: anchored at DE ${o.de} — every element after it renumbers from here`);
+    if (o.vlg === true)      notes.push(`${id}: length source — the NEXT field is sized by its value`);
+    else if (o.vlg)          notes.push(`${id}: variable-length group — its LEN is ${o.vlg}`);
+    if (o.bytes)             notes.push(`${id}: read as ${o.bytes} bytes instead of the declared length — everything after it shifts`);
+    if (o.type)              notes.push(`${id}: read as ${o.type}`);
+    if (o.display)           notes.push(`${id}: shown as ${o.display}`);
+  }
+  noteEl.innerHTML = notes.length
+    ? notes.map(n => '<span class="me-fm-note-dim">\u2022</span> ' + _escHtml(n)).join('\n')
+    : '<span class="me-fm-note-dim">Every field follows the default rules.</span>';
+}
+
 function _meFmAfterAct() {
   const item = _meCurItem();
   if (item) { const all = _meOvAll(item); for (const k in all) if (!Object.keys(all[k]).length) delete all[k]; }
@@ -20367,6 +20420,7 @@ function _meFmAfterAct() {
   if (!_meFmPatchDECells() && _meFmVirt) _meFmRenderWindow(true);
   _meFmSyncMultiClasses();
   _meFmBarRefresh();
+  _meFmNotesRefresh();
 }
 
 function _meFmAct(act) {
@@ -20505,6 +20559,7 @@ function _meOvlRefresh() {
       : 'Select a field above, then add an override for it.';
   }
   _meOvlRenderEditor();
+  _meFmNotesRefresh();
 }
 
 function _meOvlAddFromSelection() {

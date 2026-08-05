@@ -14308,7 +14308,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.7.0';
+const APP_VERSION  = '1.1.7.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16200,8 +16200,13 @@ const _PS_OVERRIDES_DESC = [
   ['<code>{"MSGTYPE": {"type": "hex-char"}}</code>', 'Read that field as hex characters.'],
   ['<code>{"MSGTYPE": {"bytes": 2}}</code>',         'Re-size it — the bytes it frees go to the next field, exactly as in the panel.'],
   ['<code>{"DE-64": {"de": 66}}</code>',             'Anchor a Data Element number; the ones after it follow.'],
-  ['<code>{"TRACK2": {"vlg": true}}</code>',         'Mark a group variable-length.'],
+  ['<code>{"PAD-1": {"de": false}}</code>',          'Not a data element — and the counter does <b>not</b> advance, so the tail closes up rather than leaving a hole.'],
+  ['<code>{"FIELD-XX": {"de": true}}</code>',        'Is one, even where the default says no — a nested field, or one named like padding.'],
+  ['<code>{"ADDITIONA": {"de": "children"}}</code>', 'The group yields; its <b>immediate children</b> each take a DE. One entry instead of marking the parent and every child.'],
+  ['<code>{"PAN-LEN": {"vlg": true}}</code>',        'This field\'s value is the <b>next</b> field\'s length. Several per level is fine — each binds only to its own successor.'],
+  ['<code>{"TRACK2": {"vlg": true}}</code>',         'On a <i>group</i> the same key keeps its older meaning: the LEN is a sub-field, found by <code>vlg_identifier</code> or the built-in names.'],
   'Same keys as the panel: <code>type</code>, <code>bytes</code>, <code>display</code>, <code>de</code>, <code>vlg</code>.',
+  'By default a data element is a <b>top-level</b> row that is not called FILLER. The <code>de</code> forms above override that per field, so a DDL can exclude its own padding and put an element on a nested field.',
   '<b>Inline wins</b> over the panel — the same precedence a <code>read</code> block\'s inline <code>type</code> already has.',
   'The merge is per <b>key</b>, not per field: an inline <code>bytes</code> does not discard a <code>display</code> set in the panel.',
   'Scoped to the block that declares it. The next block does not inherit it.',

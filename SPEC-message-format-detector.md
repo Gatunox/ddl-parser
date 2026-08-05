@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-04 | **Which fields are data elements, and what counts as a length, are now choices rather than compiled-in rules.** Two restrictions were limiting real DDLs. (1) A DE was a **top-level** row whose name was not literally `FILLER`, so a DDL could not exclude its own alignment padding under any other name — the field consumed a number regardless — and a DE could never sit on a nested field, which is exactly where one reported DDL puts them (04-level `FIELD-XX` / `FIELD-YY` inside a group). The default is unchanged but now overridable on the same `de` key: `false` excludes **without advancing the counter**, so the tail closes up rather than leaving a hole; `true` includes where the default says no, reaching inside a terminal group; `"children"` makes a group yield to its immediate children — one entry instead of marking the parent and every child. Fixed first because everything else misfired without it: `_meOvDeAnchors` read any non-null `de` as an anchor via `+v \|\| 1`, and `+false` is 0, `+true` is 1, `+"children"` is NaN — all three would have anchored numbering at DE 1. (2) VLG required the length and its payload **wrapped in a group**, and a group could carry exactly one, so a flat `PAN-LEN` then `PAN` could not be expressed and two lengths at one level had nowhere to go. `vlg: true` now works on **any field** and means "the next field's length comes from this one" — the general rule of which the group form is a special case. Implemented in `_meReadOneFieldFromDef`, the one reader every path shares, so `read-ddl`, the bitmap walk and `de` entries cannot drift apart; the re-layout rides the same `ovShift` a `bytes` override uses. Group forms are untouched. UI: a selection action bar with segmented groups, multi-select by ⌘/ctrl-click (shift is deliberately not a modifier — it collides with the browser's text-drag selection), bulk selection via filter + "Select shown", inline editors rather than `prompt()` (blocked outright in some hosts, which makes a button look dead), and Reset arming itself before it fires. The Field Map shows all three DE forms and a plain-field VLG, with the selection form folded into the DE cell signature — all three render differently but all have `de === null`, so a patch-only repaint kept showing the previous one. See §7.1, §8.0. |
 | 2026-08-02 | **`read-tlv` gains `encoding: "ascii"` — the TLV shape production ISO 8583 actually carries — and fixed-width rows finally report where they are.** A live buffer looks like `0002 0005 HELLO 0003 0004 VISA`: a 4-character tag, a 4-character **decimal** length, then that many characters of value as text. Neither existing mode could read it. `binary` reads the length as a big-endian integer, so `"0005"` is `0x30303035`; `ascii-hex` hex-decodes the whole buffer before framing, which turns `HELLO` into garbage and also makes `tag_length`/`length_length` count decoded bytes rather than characters. The new mode decodes nothing: the widths count characters, the length parses as decimal, and the value is text. A length whose characters are not digits is **reported** rather than read as zero — the silent zero is precisely how the VLG length bug behaved (§8). The tag is keyed by **its characters**, so `tags` is written `{"0002": {"field": "CARD-TYPE"}}`; keying it by a hex rendering (`"30303032"`) would be unwritable, and a key mismatch fails silently, leaving unmapped rows and no error. Separately, the fixed-width path had **never** set `startByte`/`endByte` in any mode while the BER path always did, so the same buffer showed a populated Bytes column with `ber: true` and a blank one with `tag_length`/`length_length` — the values were right, but a tag could not be lined up against the raw dump. Positions are now reported wherever they are honest, which is `binary` and `ascii`; `ascii-hex` omits them rather than guessing, since no decoded byte corresponds to one message byte. 9 baseline cases moved, all the same shape: fixed-width TLV rows gaining positions, with values and hex unchanged. See §5.15. |
 | 2026-08-02 | **Which leaf means "length" is no longer hardcoded — `vlg_identifier`; `read-ddl` honours variable-length groups.** The VLG auto-detect assumed the names `LEN` / `LGTH` / `LENGTH` and a 2-4 byte width. Both are assumptions about someone else's DDL. `vlg_identifier` on `read-ddl` and `read-bitmap-fields` now says which name **this** DDL uses; omitted keeps the built-in names, a name matches only that one (and **wherever it sits** in the group, so a TAG may precede it), and `""` switches the guess **off** — the case that motivated it, a group whose first field is honestly called `AMT-LEN` but is not variable-length, was being framed by it and everything after it slid. The LEN's **width** now comes from the DDL definition of whichever leaf matched, so a 1-byte binary length works like an LLLVAR's 3; the old 2-4 gate silently ignored both. An explicit `overrides[…].vlg` still wins: the attribute governs the *guess*, not the user's choice. Separately `read-ddl` read every field at its declared length, so an LLVAR group read its DATA at the DDL's **maximum** and every field after it was wrong; the group is now read as a unit and the difference between what it consumed and what the DDL declares feeds the same running `ovShift` correction a `bytes` override uses. The VLG read is extracted into one helper shared with `read-bitmap-fields`, returning rows so `read-ddl`'s `fields`/`from`/`until` filters still apply. Auto-detect is aligned on **direct children** at all three call sites — the main group path had scanned every leaf at any depth, so a grandchild's LEN could frame the group above it (a grandchild LEN still frames its own group, just never its parent). The Field Map reads `vlg_identifier` off the spec so the VLG column shows what the parse will do, with `undefined` and `""` kept distinct end to end. **Content validation now follows the type override:** the declared type is deliberately kept on the field for the "declared ↩ override" annotation, and the content-vs-type check was still reading it — so a field whose override made its bytes legal stayed painted red. Bytes are judged against the override; only `ascii` still requires printable bytes, since overriding to ASCII is a claim *about* the bytes. UI: the VLG column shows one `VLG` marker instead of the LEN's field name (on the group when collapsed, on the LEN leaf when expanded) — production field names are long enough to blow the column out, and the old form printed the same fact twice one row apart. See §8. |
 | 2026-08-02 | **One `overrides` map; `bytes` re-sizes a field; parse-spec help reworked into executable examples.** `de_map`, `var_length_groups` and `field_overrides` were three parallel arrays keyed by field id, folded at load into a single `overrides` map (legacy shapes still migrate, including bare-string `var_length_groups`). New `bytes` override re-sizes a field: an override stands in for an edit to the DDL, so it **always** wins, and the bytes it frees or claims re-lay out the rest of the record through a running `ovShift` counted once per field id so a REDEFINES cannot double-shift. Effective length is `bytes` → a fixed-width type's size → the DDL's declared length. The Overrides panel was rebuilt (column chooser, row count, resizable columns, VLG pill, column-click highlight) and a DE anchor now renumbers the tail without an explicit override on every element. `read-fixed`'s `type` and `encoding` were documented from the start and **ignored by the engine** — now implemented through the same converter a field type override uses, with `bcd` reported as unimplemented rather than silently dropped; 104 `combo/read-fixed` baseline cases had been recording the inert behaviour and were re-recorded. Help: every attribute description is lines or a form-by-form table rather than one paragraph, selecting an attribute narrows the examples to the ones that use it, and **every block ships at least one example the panel executes** — payload bytes, the spec, and the result the engine actually produced, so a documented result cannot drift from the code. Six enforcement tests keep it honest: every documented attribute has an example and is actually read by its block, every block has an executable example that runs clean, no description is a wall of prose, and the help table and the dispatcher agree in both directions. The attribute check matches `attrs.x` / a quoted key / a destructuring binding rather than a bare word — `type` and `encoding` sat inert for months while those words appeared all around them. See §5.4, §7, §8, §9. |
@@ -862,7 +863,7 @@ from the last anchor.
 
 ---
 
-## 8. Variable Length Groups (`overrides[…].vlg`)
+## 8. Variable Length (`overrides[…].vlg`)
 
 HPE DDL has no LLVAR/LLLVAR type. Variable-length fields are expressed as a group with two sub-fields: `LEN` (PIC 9(2) or PIC 9(3)) and `DATA` (PIC X or PIC 9).
 
@@ -884,6 +885,29 @@ Bounds: a length past the end of the message stops at the end and is reported,
 naming how it was read; a length beyond the payload the DDL declares is still used
 — the wire decides the framing — but is reported, because that usually means it
 was misread.
+
+### 8.0 A length field sizes the field after it *(added 2026-08-04)*
+
+`vlg: true` on **any field** means the next field's length comes from this
+field's value:
+
+```json
+"overrides": { "PAN-LEN": { "vlg": true }, "AMT-LEN": { "vlg": true } }
+```
+
+That is the general rule. A **VLG group** is the same idea with the length and
+its payload wrapped in a group — all the older code could express, so a flat
+`PAN-LEN` then `PAN` could not be described at all, and a group could carry
+exactly **one** length. Several markers at one level are fine; each binds only to
+its own successor.
+
+Implemented in `_meReadOneFieldFromDef`, the single reader every path goes
+through, so `read-ddl`, the bitmap walk and `de` entries share one rule rather
+than three copies. What the marker frees or claims shifts the rest of the record
+through the same running `ovShift` a `bytes` override uses (§9.0), counted once
+per field id so a REDEFINES re-read cannot double-shift.
+
+The group forms are unchanged — not migrated, not reinterpreted.
 
 **Auto-detect** applies to **direct children only**. Scanning every transitive leaf
 would find a grandchild's `LEN` — the length of a nested TLV triple, not of the
@@ -959,6 +983,25 @@ two are layered, not alternatives.
 > block's inline overrides, so a spec carrying them shows a panel that does not
 > match what the parse uses. Projecting the stored map into the spec on save, and
 > extracting it back, is the intended next step.
+
+---
+
+### 7.1 Which fields are data elements *(added 2026-08-04)*
+
+By default a data element is a **top-level** row whose name is not literally
+`FILLER`. That was compiled in as policy, so a DDL could not exclude its own
+padding under any other name, and a DE could never sit on a nested field. It is
+now a default, overridable on the same `de` key:
+
+| `de` | Meaning |
+|------|---------|
+| *(number)* | Anchor — renumber from here. Unchanged. |
+| `false` | **Not** a data element, and the counter does **not** advance, so the fields after it keep their numbers instead of leaving a hole. |
+| `true` | **Is** one, even where the default says no — a nested field, or one named like padding. Reaches inside a terminal group. |
+| `"children"` | The group yields; its **immediate children** each take a DE. One entry instead of marking the parent and every child by hand. |
+
+Only a **number** anchors. `+false` is 0, `+true` is 1 and `+"children"` is NaN,
+so the previous `+v || 1` coercion would have read all three as "anchor at DE 1".
 
 ---
 

@@ -14322,7 +14322,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.9.0';
+const APP_VERSION  = '1.1.9.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16159,11 +16159,10 @@ function _meHtmlParseSpec(item) {
       <button class="me-ps-variant-tgl ${binCls}" data-variant="binary" onclick="_mePsSwitchVariant('binary')" title="Binary Input — the default variant; used for hex / tandem-dump / ebcdic / netard-hex / etc.">Binary <span class="me-ps-vtgl-n">(${binCount})</span></button>
       <button class="me-ps-variant-tgl ${ascCls}" data-variant="ascii" onclick="_mePsSwitchVariant('ascii')" title="ASCII Input — used for ASCII-class input (ascii, netard-ascii, netard, fup-ascii); when empty it falls back to the Binary spec.">ASCII <span class="me-ps-vtgl-n">(${ascCount})</span></button>
     </div>
-    <div class="me-ps-variants" style="margin-left:auto" title="What Format produces: one line per block, or one line per attribute">
+    <div class="me-ps-variants" style="margin-left:auto" title="Re-format the spec: one line per block, or one line per attribute. Comments and trailing commas are preserved.">
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? ' on' : ''}" onclick="_mePsSetFmtMode('compact')">Compact</button>
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? '' : ' on'}" onclick="_mePsSetFmtMode('expanded')">Expanded</button>
     </div>
-    <button class="btn btn-sm" onclick="_mePsFmt()" title="Format — re-indent JSONC, preserving // and /* */ comments and trailing commas" aria-label="Format"><span class="me-ps-fmt-ico"></span></button>
     <button class="btn btn-sm" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
   <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
@@ -18212,6 +18211,47 @@ function _mePsMountCM(item) {
   return _mePsCM;
 }
 
+// Expanded form: one attribute per line. The counterpart to _compactJsonc —
+// without it, switching back to Expanded did nothing at all, because _formatJsonc
+// only re-indents the lines it is given and never splits one.
+//
+// Breaks after every structural { [ , and before every } ], leaving strings and
+// comments untouched. A trailing // comment stays on the line it annotates: the
+// break after a comma is deferred until the comment has been copied, or the note
+// would silently migrate to the NEXT element.
+function _expandJsonc(src) {
+  const out = [];
+  let i = 0;
+  const n = src.length;
+  const copyComment = () => {
+    if (src[i] === '/' && src[i + 1] === '/') { const e = src.indexOf('\n', i); const j = e < 0 ? n : e; out.push(src.slice(i, j)); i = j; return true; }
+    if (src[i] === '/' && src[i + 1] === '*') { const e = src.indexOf('*/', i + 2); const j = e < 0 ? n : e + 2; out.push(src.slice(i, j)); i = j; return true; }
+    return false;
+  };
+  while (i < n) {
+    const c = src[i];
+    if (c === '"') {
+      const start = i++;
+      while (i < n) { if (src[i] === '\\') { i += 2; continue; } if (src[i] === '"') { i++; break; } i++; }
+      out.push(src.slice(start, i)); continue;
+    }
+    if (copyComment()) continue;
+    if (c === '{' || c === '[') { out.push(c, '\n'); i++; continue; }
+    if (c === '}' || c === ']') { out.push('\n', c); i++; continue; }
+    if (c === ',') {
+      out.push(c); i++;
+      // Keep a same-line trailing comment with the element it belongs to.
+      let j = i; while (j < n && (src[j] === ' ' || src[j] === '\t')) j++;
+      if (src[j] === '/' && (src[j + 1] === '/' || src[j + 1] === '*')) { out.push(' '); i = j; copyComment(); }
+      out.push('\n'); continue;
+    }
+    if (c === '\n' || c === ' ' || c === '\t') { out.push(c); i++; continue; }
+    out.push(c); i++;
+  }
+  // Collapse the blank lines the breaks inevitably create, then indent.
+  return _formatJsonc(out.join('').replace(/\n[ \t]*\n+/g, '\n'));
+}
+
 // Compact form: each top-level block on ONE line. The expanded form puts every
 // attribute on its own line, which is unreadable at fifteen blocks — you cannot
 // see the sequence for the punctuation.
@@ -18345,7 +18385,9 @@ function _mePsFmt() {
   const current = _mePsCM.state.doc.toString();
   try {
     JSON.parse(_stripJsonc(current || '[]'));   // validate
-    const expanded  = _formatJsonc(current || '');
+    // Always normalise to the expanded shape first: the source may already be
+    // compact, and _formatJsonc alone cannot undo that.
+    const expanded  = _expandJsonc(current || '');
     const formatted = _mePsFmtMode() === 'compact' ? _compactJsonc(expanded) : expanded;
     // Dispatch the formatted text — the CM updateListener calls _mePsChange
     // which writes both the parsed array and the source field on the item.

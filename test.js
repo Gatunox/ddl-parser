@@ -110,6 +110,7 @@ _t.extractBytes       = extractBytes;
 _t.stripJsonc         = _stripJsonc;
 _t.formatJsonc        = _formatJsonc;
 _t.compactJsonc       = _compactJsonc;
+_t.expandJsonc        = _expandJsonc;
 _t.migrateSpec        = window._migrateSpec;
 _t.migrateOverrides   = window._migrateSpecOverrides;
 _t.psHelp             = _PS_HELP;
@@ -174,7 +175,7 @@ const {
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
-  stripJsonc, formatJsonc, compactJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
+  stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
@@ -4303,6 +4304,51 @@ test('a block containing a comment is left expanded', () => {
 test('compacting never changes what the spec means', () => {
   const out = compactJsonc(formatJsonc(FMT_SRC));
   deepEq(JSON.parse(stripJsonc(out)), JSON.parse(stripJsonc(FMT_SRC)), 'same data');
+});
+
+test('expanded actually expands an already-compact spec', () => {
+  // _formatJsonc only re-indents the lines it is GIVEN; it never splits one. So
+  // without an expander, switching back to Expanded on a compact spec did
+  // nothing at all — the button looked dead.
+  const compactSrc = '[\n  { "skip": { "length": 9 } },\n  { "read": "A" }\n]';
+  const out = expandJsonc(compactSrc);
+  assert.ok(out.split('\n').length > compactSrc.split('\n').length,
+    `expected more lines, got:\n${out}`);
+  assert.ok(/^ *"length": 9,?$/m.test(out), 'each attribute on its own line');
+});
+
+test('the Format control expands before it decides, and the button is gone', () => {
+  // _formatJsonc only re-indents the lines it is given, so formatting a spec
+  // that is ALREADY compact must expand it first or "Expanded" does nothing.
+  // Tested on the CALLER: the helper being right proved nothing here.
+  const src = psFnSource('_mePsFmt');
+  assert.ok(/_expandJsonc\(current/.test(src), '_mePsFmt normalises via _expandJsonc');
+  assert.ok(/_compactJsonc\(expanded\)/.test(src), 'and compacts from that');
+  // The pill applies the format, so a separate Format button is a second way to
+  // do the same thing.
+  assert.ok(!/aria-label="Format"/.test(html), 'the redundant Format button is gone');
+  assert.ok(/_mePsSetFmtMode\('compact'\)/.test(html) && /_mePsSetFmtMode\('expanded'\)/.test(html),
+    'both pill options are present');
+});
+
+test('expand and compact are inverses, and neither changes the data', () => {
+  const compactSrc = '[\n  { "skip": { "length": 9 } },\n  { "read": "A" }\n]';
+  const round = compactJsonc(expandJsonc(compactSrc));
+  eq(round.trim(), compactSrc.trim(), 'compact(expand(x)) returns x');
+  deepEq(JSON.parse(stripJsonc(round)), JSON.parse(stripJsonc(compactSrc)), 'same data');
+});
+
+test('expanding keeps a trailing comment with the element it annotates', () => {
+  // Breaking after the comma before copying the comment would move the note
+  // onto the NEXT block, silently reassigning what it describes.
+  const src = '[\n  { "read": "A" }, // about A\n  { "read": "B" }\n]';
+  const out = expandJsonc(src);
+  const noteLine = out.split('\n').find(l => /about A/.test(l));
+  assert.ok(noteLine, 'the comment survives');
+  // It must still sit ON the line that closes A. Breaking after the comma first
+  // would put it alone on the next line, which reads as a note about B.
+  assert.ok(/\},\s*\/\/ about A/.test(noteLine),
+    `the note must stay attached to A's closing line, got: ${JSON.stringify(noteLine)}`);
 });
 
 test('a brace inside a string does not fool the scanner', () => {

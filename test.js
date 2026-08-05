@@ -4064,6 +4064,49 @@ test('what the Field Map shows for a length is what the engine reads', () => {
   eq(read, shown, 'the parse reads exactly what the Field Map advertises');
 });
 
+// ── The length decode follows the declared type, not the byte values ────────
+// Reported: LEN bytes 0x37 0x45 decoded as 14149 (correct), and the SAME field
+// trimmed to one byte decoded as 7 instead of 55. Nothing about the field
+// changed except its width — 0x37 alone is the ASCII digit "7", so it fell down
+// the other side of a guess made from byte values. The hex-char override says
+// which it is, and the decoder was not reading it.
+
+console.log('\nlength decode honours a type override');
+
+test('a single 0x37 under hex-char is 55, not the digit 7', () => {
+  const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { bytes: 1, type: 'hex-char' } });
+  const len = ctx.fields.find(f => f.id === 'EMV.LEN');
+  eq(len.valueLength, 1, 'one byte, per the override');
+  // 55 exceeds DATA's declared 20, so the payload is capped there — the proof
+  // that 55 (not 7) was decoded is the capacity complaint naming it.
+  assert.ok(/length 55 /.test(len.issue || ''),
+    `the byte decoded as 55, got: ${JSON.stringify(len.issue)}`);
+});
+
+test('without the override the same byte is still read as the digit 7', () => {
+  // Discriminating half: if the type were ignored again, both cases give 7.
+  const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { bytes: 1 } });
+  eq(ctx.fields.find(f => f.id === 'EMV.DATA').valueLength, 7,
+     'the byte-value guess still applies when nothing declares the type');
+});
+
+test('two bytes decode the same with or without hex-char', () => {
+  // 0x45 is not a digit, so the guess already chose binary. The override must
+  // agree with it rather than change a case that was right.
+  const plain = vlgRun([0x37, 0x45], 60);
+  const typed = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'hex-char' } });
+  const iss = f => (f.fields.find(x => x.id === 'EMV.LEN').issue || '').replace(/^EMV\.LEN: /, '');
+  assert.ok(/length 14149 /.test(iss(plain)), `0x3745 = 14149, got: ${iss(plain)}`);
+  eq(iss(typed), iss(plain), 'the override changes nothing here');
+});
+
+test('the "read as" wording follows the branch actually taken', () => {
+  const ctx = vlgRun([0x37], 60, { 'EMV.LEN': { bytes: 1, type: 'hex-char' } });
+  const issue = ctx.fields.find(f => f.id === 'EMV.LEN').issue || '';
+  assert.ok(!/read as digits/.test(issue),
+    `must not claim digits for bytes forced through as an integer: ${issue}`);
+});
+
 // ── Which fields ARE data elements is now a choice, not a hardcoded rule ────
 // The predicate was "top-level, and not literally named FILLER". So a DDL could
 // not exclude its own padding under any other name, and a DE could never sit on

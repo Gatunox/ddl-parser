@@ -4099,7 +4099,7 @@ test('a leaf inside a terminal group still shows the DE it belongs to', () => {
   const ctx = { ea: s => String(s), usesBitmapFields: true, foByField: new Map() };
   const cell = meFmDeCellHtml({ id: 'G.X.DATA', de: null, ownerDE: 9, ownerId: 'G',
                                 underTerminal: true }, ctx);
-  assert.ok(/>9</.test(cell), `the number is drawn, got: ${cell}`);
+  assert.ok(/>DE 9</.test(cell), `drawn in the same "DE n" form as an owned row, got: ${cell}`);
   assert.ok(/me-fm-de-owned/.test(cell), 'as a derived one');
 });
 
@@ -4110,7 +4110,7 @@ test('the DE cell renders a derived number distinctly from an owned one', () => 
   const owned   = meFmDeCellHtml({ id: 'ADDITIONA', de: 9, isGroup: true }, ctx);
   const derivedCell = meFmDeCellHtml({ id: 'ADDITIONA.FIELD-XX', de: null, ownerDE: 9,
                                        ownerId: 'ADDITIONA' }, ctx);
-  assert.ok(/>9</.test(derivedCell), 'the number is shown');
+  assert.ok(/>DE 9</.test(derivedCell), 'shown as "DE 9", the same form an owned row uses');
   assert.ok(/me-fm-de-owned/.test(derivedCell), 'with the derived class');
   assert.ok(!/me-fm-de-owned/.test(owned), 'which the owning row does not carry');
   assert.ok(/Part of DE 9, owned by ADDITIONA/.test(derivedCell), 'and a tooltip saying whose it is');

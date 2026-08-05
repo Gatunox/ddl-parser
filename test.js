@@ -4116,10 +4116,22 @@ test('the DE cell renders a derived number distinctly from an owned one', () => 
 
   // The class has to keep DIMMING the text — that fade is the only thing telling
   // an inherited number apart from one the row owns, now that both read "DE n".
-  const rule = html.match(/\.me-fm-de-owned\{([^}]*)\}/);  // CSS, so `html` not APP_SRC
-  assert.ok(rule, '.me-fm-de-owned still has a rule');
-  const alpha = rule[1].match(/rgba\(.*,\s*([0-9.]+)\s*\)/);
-  assert.ok(alpha && +alpha[1] < 0.45, `it fades the text, got: ${rule[1]}`);
+  const css = html;  // the fade is CSS, so `html` and not APP_SRC
+  const ownedRule = css.match(/([^\s{}]*\.me-fm-de-owned)\{([^}]*)\}/);
+  assert.ok(ownedRule, '.me-fm-de-owned still has a rule');
+  assert.ok(/rgba?\(/.test(ownedRule[2]), `it sets a colour, got: ${ownedRule[2]}`);
+
+  // ...and that colour has to WIN. `.me-fm-de{color:...}` sits ~70 lines below
+  // it; as a lone class the owned rule lost the cascade to that later rule of
+  // equal weight and rendered nothing, so four rounds of tuning its alpha
+  // changed the value in the file and never the pixels on screen.
+  const baseIdx  = css.indexOf('.me-fm-de{');
+  const ownedIdx = css.indexOf(ownedRule[0]);
+  const baseSets = /\.me-fm-de\{[^}]*color:/.test(css);
+  const classes  = (ownedRule[1].match(/\./g) || []).length;
+  assert.ok(!baseSets || classes > 1 || ownedIdx > baseIdx,
+    `.me-fm-de-owned must out-specify or follow .me-fm-de, else it never renders `
+    + `(selector "${ownedRule[1]}", ${classes} class(es), at ${ownedIdx} vs base at ${baseIdx})`);
   assert.ok(/Part of DE 9, owned by ADDITIONA/.test(derivedCell), 'and a tooltip saying whose it is');
 });
 

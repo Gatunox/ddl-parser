@@ -4137,6 +4137,10 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
   const seg = html.match(/\.me-fm-seg \.btn\{[^}]*\}/)[0];
   const min = +(seg.match(/min-width:(\d+)px/) || [])[1];
   assert.ok(min > 0 && min <= 70, `uniform but panel-sized, got ${min}px`);
+  // And it uses the width it has: packed left, the groups huddled in the first
+  // third of the bar with the rest of the panel empty beside them.
+  assert.ok(/justify-content:\s*space-between/.test(css),
+    'the groups spread across the bar rather than bunching to the left');
 });
 
 test('the bar sits above the table, not after it', () => {

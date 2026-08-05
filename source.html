@@ -1699,7 +1699,8 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
 /* Selection action bar — segmented groups, so related actions share one outline
    and the eye sees three groups rather than nine loose pills of random width. */
-.me-fm-bar{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;margin:9px 0;padding:0 2px;}
+.me-fm-bar{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;
+  flex-wrap:wrap;margin:9px 0;padding:0 2px;}
 .me-fm-bar .me-fm-cnt{color:var(--accent);font-weight:700;min-width:78px;font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-bar .me-fm-cnt.none{color:var(--text-very-dim);}
 .me-fm-bar .me-fm-gsep{width:2px;height:15px;background:var(--border);margin:0;}
@@ -14317,7 +14318,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.8.4';
+const APP_VERSION  = '1.1.8.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18610,12 +18611,10 @@ function _meOverridesPrep(item) {
     <button class="btn btn-sm" data-fmact="de-kids" title="This group is not a DE; its immediate children each are">Children</button>
     <button class="btn btn-sm" data-fmact="de-anchor" title="Set this field's DE number; every field after it follows">Number…</button>
   </span></span>
-  <span class="me-fm-gsep"></span>
   <span class="me-fm-g"><span class="me-fm-glbl">Length</span><span class="me-fm-seg">
     <button class="btn btn-sm" data-fmact="vlg" title="This field's value is the NEXT field's length">VLG</button>
     <button class="btn btn-sm" data-fmact="bytes" title="Read this many bytes instead of the declared length">Bytes…</button>
   </span></span>
-  <span class="me-fm-gsep"></span>
   <span class="me-fm-g"><span class="me-fm-glbl">Read</span><span class="me-fm-seg">
     <button class="btn btn-sm" data-fmact="type" title="Interpret the bytes as this type">Type…</button>
     <button class="btn btn-sm" data-fmact="display" title="Format the value for display">Display…</button>

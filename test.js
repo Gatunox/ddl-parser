@@ -5198,6 +5198,12 @@ test('the override apply path rebuilds the field list', () => {
     'the apply path must recompute the field list, not only re-render the window');
   assert.ok(/_meFmNotesRefresh\(\)/.test(src),
     'and refresh the panes, or they narrate the previous state');
+  // REMOVING an override changes the rows just as much as adding one — deleting
+  // an anchor has to put the natural numbering back. The ✕ had kept the old
+  // re-render-from-cache call and left the table showing the overridden values.
+  const del = psFnSource('_meOvlDelete');
+  assert.ok(/_meFmAfterAct\(\)/.test(del), 'the ✕ goes through the same funnel');
+  assert.ok(!/_meFmRenderWindow/.test(del), 'and not through a cached re-render');
 });
 
 test('a de override does change what the field list reports', () => {

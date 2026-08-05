@@ -14314,7 +14314,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.8.1';
+const APP_VERSION  = '1.1.8.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20520,10 +20520,12 @@ function _meOvlRefresh() {
 function _meOvlDelete(id) {
   const item = _meCurItem(); if (!item) return;
   _meOvDelete(item, id);
-  _meSetDirty();
-  _meOvlRefresh();
-  _mePsOvrRefresh();
-  if (_meFmVirt) _meFmRenderWindow(true);
+  // Through the same funnel every bar action uses. Re-rendering the window from
+  // the CACHED row list left the DE numbers, offsets and lengths at the values
+  // they had while the override existed — so removing an anchor did not put the
+  // natural numbering back until the panel was reopened.
+  _meFmMultiSel.delete(id);
+  _meFmAfterAct();
 }
 
 // The row the draft refers to, so the editor can show what the DDL declares and

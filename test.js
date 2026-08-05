@@ -4003,10 +4003,15 @@ test('de:"children" hands the DE to the group\'s immediate children', () => {
   eq(deAt(r, 'SOME'), 7, 'numbering continues past the group');
 });
 
-test('de:true forces a field in that the default rule excludes', () => {
+test('de:true forces a field in, and its group yields', () => {
+  // Changed deliberately 2026-08-05: this used to assert the group kept its own
+  // DE. It cannot — ADDITIONA being one element while FIELD-YY inside it is
+  // another is a contradiction, and the table showed both.
   const r = deselRows({ 'ADDITIONA.FIELD-YY': { de: true } });
-  eq(deAt(r, 'ADDITIONA.FIELD-YY'), 6, 'a nested field can be a data element');
-  eq(deAt(r, 'ADDITIONA'), 5, 'without disturbing the group that contains it');
+  eq(deAt(r, 'ADDITIONA'), null, 'the group can no longer be a single element');
+  eq(deAt(r, 'ADDITIONA.FIELD-XX'), 5, 'so its siblings own DEs too');
+  eq(deAt(r, 'ADDITIONA.FIELD-YY'), 6, 'and the named field owns one');
+  eq(deAt(r, 'SOME'), 7, 'the tail continues from there');
 });
 
 test('an anchor number still works', () => {
@@ -4061,8 +4066,41 @@ test('children numbers its children, and each owns its own', () => {
 test('a row that owns a DE never derives one', () => {
   const r = deselRows({ 'ADDITIONA.FIELD-YY': { de: 30 } });
   eq(deAt(r, 'ADDITIONA.FIELD-YY'), 30, 'owns 30');
-  eq(derived(r, 'ADDITIONA.FIELD-YY'), undefined, 'so it does not also derive the group number');
-  eq(derived(r, 'ADDITIONA.FIELD-XX'), 5, 'while its sibling still derives');
+  eq(derived(r, 'ADDITIONA.FIELD-YY'), undefined, 'so it does not also derive a group number');
+  // The sibling OWNS one now rather than deriving: numbering FIELD-YY made the
+  // group yield, which promotes every immediate child.
+  eq(deAt(r, 'ADDITIONA.FIELD-XX'), 5, 'the sibling owns its own');
+  eq(derived(r, 'ADDITIONA.FIELD-XX.DATA'), 5, 'and ITS leaf derives from it');
+});
+
+test('numbering something inside a group makes the group yield', () => {
+  // Reported: anchoring FIELD-XX to 11 left ADDITIONA owning its DE, so FIELD-YY
+  // still derived the group number and the tail numbered from the wrong place.
+  const r = deselRows({ 'ADDITIONA.FIELD-XX': { de: 11 } });
+  eq(deAt(r, 'ADDITIONA'), null, 'the group yields');
+  eq(deAt(r, 'ADDITIONA.FIELD-XX'), 11, 'the numbered field owns it');
+  eq(derived(r, 'ADDITIONA.FIELD-XX.DATA'), 11, 'its leaf belongs to 11');
+  eq(deAt(r, 'ADDITIONA.FIELD-YY'), 12, 'the sibling is promoted and follows');
+  eq(derived(r, 'ADDITIONA.FIELD-YY.DATA'), 12, 'with its own leaf');
+  eq(deAt(r, 'SOME'), 13, 'and the tail continues');
+});
+
+test('the "was" number reflects what the row would have shown', () => {
+  // It reported the raw counter, which is not what was on screen: the row was
+  // displaying the number it DERIVED from its group.
+  const r = deselRows({ 'ADDITIONA.FIELD-XX': { de: 11 } });
+  const row = r.find(x => x.id === 'ADDITIONA.FIELD-XX');
+  eq(row.naturalDE, 5, 'the slot the group would have occupied, not the counter past it');
+});
+
+test('a leaf inside a terminal group still shows the DE it belongs to', () => {
+  // It had the number all along — the cell returned early for underTerminal rows
+  // and never drew it, so the deepest rows rendered blank.
+  const ctx = { ea: s => String(s), usesBitmapFields: true, foByField: new Map() };
+  const cell = meFmDeCellHtml({ id: 'G.X.DATA', de: null, ownerDE: 9, ownerId: 'G',
+                                underTerminal: true }, ctx);
+  assert.ok(/>9</.test(cell), `the number is drawn, got: ${cell}`);
+  assert.ok(/me-fm-de-owned/.test(cell), 'as a derived one');
 });
 
 test('the DE cell renders a derived number distinctly from an owned one', () => {

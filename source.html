@@ -14324,7 +14324,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.1.1';
+const APP_VERSION  = '1.2.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18796,6 +18796,12 @@ function _meFmDeCellHtml(row, ctx) {
   const ea  = ctx.ea;
   const id  = ea(row.id);
   const sig = _meFmDeSig(row, ctx.usesBitmapFields, ctx.foByField.get(_canonFieldId(row.id))?.de);
+  // A row inside a terminal group owns no DE, but it still BELONGS to one — and
+  // that is the only thing worth saying about it. The early return skipped the
+  // whole block, so the number was computed and then never drawn.
+  if (ctx.usesBitmapFields && row.underTerminal && !row.isRedef && row.ownerDE != null)
+    return `<td class="me-fm-de me-fm-de-owned" data-sig="${sig}o${row.ownerDE}"`
+         + ` title="${ea(`Part of DE ${row.ownerDE}, owned by ${row.ownerId} — bit ${row.ownerDE} reads this field as part of that element.`)}">${row.ownerDE}</td>`;
   if (ctx.usesBitmapFields && !row.underTerminal && !row.isRedef) {
     if (row.de === null) {
       // Deliberately excluded, or handed to its children. Both are choices the
@@ -19543,6 +19549,22 @@ function _meWalkDEFields(defs, item) {
     if (_ovAll[id].de !== 'children') continue;
     for (const kid of (childrenByPrefix.get(id) || [])) promoted.add(kid);
   }
+  // An explicit DE on something INSIDE a group means the group can no longer be
+  // a single element containing it — you cannot have ADDITIONA be DE 7 while
+  // FIELD-XX inside it is DE 11. The group yields and its immediate children
+  // each own one: the same shape as "children", reached implicitly.
+  const yielded = new Set();
+  for (const id in _ovAll) {
+    const sel = _ovAll[id].de;
+    if (!(sel === true || _meDeIsAnchor(sel))) continue;
+    const parts = _canonFieldId(id).split('.');
+    for (let d = 1; d < parts.length; d++) {
+      const anc = parts.slice(0, d).join('.');
+      if (!childrenByPrefix.has(anc)) continue;
+      yielded.add(anc);
+      for (const kid of (childrenByPrefix.get(anc) || [])) promoted.add(kid);
+    }
+  }
   // The DEFAULT predicate, unchanged — everything above only overrides it.
   const defaultEligible = id =>
     _isRepOcc(id) && !id.includes('.') && _canonFieldId(id) !== 'FILLER';
@@ -19551,6 +19573,7 @@ function _meWalkDEFields(defs, item) {
     if (sel === false)      return false;
     if (sel === 'children') return false;   // the group yields to its children
     if (sel === true)       return true;
+    if (yielded.has(id))    return false;   // something inside it is numbered
     // A NUMBER is also a statement that this field is a data element — you
     // cannot number something that is not one. Without this, anchoring a field
     // the default rule excludes (a nested one, or a child of an excluded group)

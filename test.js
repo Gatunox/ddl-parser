@@ -4113,6 +4113,13 @@ test('the DE cell renders a derived number distinctly from an owned one', () => 
   assert.ok(/>DE 9</.test(derivedCell), 'shown as "DE 9", the same form an owned row uses');
   assert.ok(/me-fm-de-owned/.test(derivedCell), 'with the derived class');
   assert.ok(!/me-fm-de-owned/.test(owned), 'which the owning row does not carry');
+
+  // The class has to keep DIMMING the text — that fade is the only thing telling
+  // an inherited number apart from one the row owns, now that both read "DE n".
+  const rule = html.match(/\.me-fm-de-owned\{([^}]*)\}/);  // CSS, so `html` not APP_SRC
+  assert.ok(rule, '.me-fm-de-owned still has a rule');
+  const alpha = rule[1].match(/rgba\(.*,\s*([0-9.]+)\s*\)/);
+  assert.ok(alpha && +alpha[1] < 0.45, `it fades the text, got: ${rule[1]}`);
   assert.ok(/Part of DE 9, owned by ADDITIONA/.test(derivedCell), 'and a tooltip saying whose it is');
 });
 

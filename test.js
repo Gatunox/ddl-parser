@@ -4051,8 +4051,13 @@ test('the rendered Overrides panel contains the action bar', () => {
 test('every action the handler implements is present as a button', () => {
   const html = ovPanelHtml();
   const inMarkup = new Set([...html.matchAll(/data-fmact="([^"]+)"/g)].map(m => m[1]));
-  deepEq(['de-off','de-on','de-kids','de-anchor','vlg','bytes','type','display','selall','clear','reset']
+  deepEq(['de-off','de-on','de-kids','de-anchor','vlg','bytes','type','display']
     .filter(a => !inMarkup.has(a)), [], 'actions with no button');
+  // And nothing left over: a button whose action the handler dropped is a dead
+  // control, which is how the whole bar shipped unreachable in the first place.
+  deepEq([...inMarkup].filter(a =>
+    !['de-off','de-on','de-kids','de-anchor','vlg','bytes','type','display'].includes(a)),
+    [], 'buttons with no handler');
 });
 
 test('the panel keeps the overrides list AND gains the two panes', () => {

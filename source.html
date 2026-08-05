@@ -14321,7 +14321,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.7.3';
+const APP_VERSION  = '1.1.7.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18625,12 +18625,6 @@ function _meOverridesPrep(item) {
     <button class="btn btn-sm" data-fmact="type" title="Interpret the bytes as this type">Type…</button>
     <button class="btn btn-sm" data-fmact="display" title="Format the value for display">Display…</button>
   </span></span>
-  <span class="me-fm-gsep"></span>
-  <span class="me-fm-g"><span class="me-fm-seg">
-    <button class="btn btn-sm" data-fmact="selall" title="Select every row the filter is currently showing">Shown</button>
-    <button class="btn btn-sm" data-fmact="clear" title="Remove every override on the selected fields">Clear</button>
-    <button class="btn btn-sm" data-fmact="reset" title="Remove EVERY override, on every field">Reset</button>
-  </span></span>
 </div>
 <div class="me-fm-ed" id="me-fm-ed">
   <label id="me-fm-ed-lbl"></label>
@@ -20427,25 +20421,6 @@ function _meFmAct(act) {
   const item = _meCurItem(); if (!item) return;
   if (_ME_FM_ED[act]) return _meFmEdOpen(act);
   const all = _meOvAll(item);
-  if (act === 'selall') {
-    _meFmMultiSel = new Set((_meFmVirt?.visible || []).map(r => r.id));
-    _meFmSyncMultiClasses(); _meFmBarRefresh(); return;
-  }
-  if (act === 'reset') {
-    const n = Object.keys(all).length;
-    if (!n) { _meFlash('No overrides to reset', 'warn'); return; }
-    if (!_meFmResetArmed) {                    // two-step, not a native confirm()
-      _meFmResetArmed = true;
-      const b = document.querySelector('#me-fm-bar [data-fmact="reset"]');
-      if (b) { b.textContent = `Reset ${n}?`; b.classList.add('btn-accent-on'); }
-      setTimeout(_meFmResetDisarm, 4000);
-      return;
-    }
-    _meFmResetDisarm();
-    for (const k in all) delete all[k];
-    _meFmMultiSel = new Set();
-    return _meFmAfterAct();
-  }
   for (const qn of _meFmMultiSel) {
     const k = _canonFieldId(qn);
     const o = all[k] || (all[k] = {});
@@ -20454,23 +20429,15 @@ function _meFmAct(act) {
       case 'de-on':   o.de = true; break;
       case 'de-kids': o.de = 'children'; break;
       case 'vlg':     o.vlg = true; break;
-      case 'clear':   delete all[k]; break;
     }
   }
   _meFmAfterAct();
 }
-let _meFmResetArmed = false;
-function _meFmResetDisarm() {
-  _meFmResetArmed = false;
-  const b = document.querySelector('#me-fm-bar [data-fmact="reset"]');
-  if (b) { b.textContent = 'Reset'; b.classList.remove('btn-accent-on'); }
-}
-
 // Delegated once — the bar is re-rendered with the panel, so per-button
 // handlers would be re-bound every refresh.
 document.addEventListener('click', e => {
   const b = e.target.closest?.('#me-fm-bar [data-fmact]');
-  if (b) { if (b.dataset.fmact !== 'reset') _meFmResetDisarm(); _meFmAct(b.dataset.fmact); return; }
+  if (b) { _meFmAct(b.dataset.fmact); return; }
   const ed = document.getElementById('me-fm-ed');
   if (_meFmEdAct && ed && !ed.contains(e.target)) { _meFmEdClose(); }
 });
@@ -20504,8 +20471,9 @@ function _meFmBarRefresh() {
   cnt.textContent = n ? `${n} selected` : 'no selection';
   cnt.classList.toggle('none', n === 0);
   document.querySelectorAll('#me-fm-bar [data-fmact]').forEach(b => {
-    const global = b.dataset.fmact === 'reset' || b.dataset.fmact === 'selall';
-    b.classList.toggle('dis', !global && n === 0);
+    // Every action now acts on the selection — removing an override is the
+    // existing list's ✕, and there is no global action left in the bar.
+    b.classList.toggle('dis', n === 0);
   });
 }
 

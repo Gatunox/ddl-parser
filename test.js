@@ -4174,6 +4174,15 @@ test('the old per-field editor is gone, and nothing references it', () => {
     assert.ok(!new RegExp('function ' + fn + '\\b').test(html), `${fn} still defined`);
 });
 
+test('the list header does not repeat the section title', () => {
+  // The section is already called Overrides; the list inside it said so again.
+  const html2 = ovPanelHtml();
+  const hdr = (html2.match(/<div class="me-ovl-hdr">[\s\S]*?<\/div>/) || [''])[0];
+  assert.ok(/id="me-ovl-count"/.test(hdr), 'the count is still there');
+  assert.ok(!/>\s*Overrides\s*</.test(hdr) && !/Overrides\s+<span/.test(hdr),
+    `the redundant label is gone, got: ${hdr}`);
+});
+
 test('the panel keeps the overrides list AND gains the two panes', () => {
   // The list is not replaced by the bar — it is the at-a-glance summary of what
   // is configured. The panes are new: what was written, and what it means.

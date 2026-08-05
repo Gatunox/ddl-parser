@@ -10445,7 +10445,7 @@ function renderFieldTable(msg) {
     const errLine = _rowMsg
       ? `${f.error ? '' : '<br>'}<span class="c-row-err">${esc(_rowMsg)}</span>` : '';
     const totalLen = f.valueLength !== undefined
-      ? f.valueLength + (f.lenPrefix ? f.lenPrefix.length : 0) : undefined;
+      ? f.valueLength + ((f.lenPrefix && !f.lenPrefixOwnRow) ? f.lenPrefix.length : 0) : undefined;
     const lenCell    = totalLen !== undefined ? String(totalLen) : '';
     const prefixHtml = f.lenPrefix ? `<span class="c-vlen">${esc(f.lenPrefix)}</span>` : '';
     const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
@@ -14333,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.3.3';
+const APP_VERSION  = '1.2.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23174,6 +23174,12 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   out.push(lf);
   ctx.fieldsById[lenDef.id] = lf;
 
+  // What the LEN row ENDS UP showing, not the raw characters captured above.
+  // The children borrow this for display, and rendering the same byte two ways
+  // one row apart — "37" on the LEN, "7" on the payload — is just wrong: the
+  // raw string never went through the type override the LEN row did.
+  const lShown = lf.displayValue != null ? lf.displayValue : lf.value;
+
   let remaining = N;
   for (const childDef of dataDefs) {
     const declared = _meEffLen(childDef, ctx);
@@ -23184,7 +23190,12 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
     remaining -= take;
     const cf = {
       id: childDef.id, description: childDef.description,
-      dataType: childDef._dataType, valueLength: take, lenPrefix: lValue,
+      dataType: childDef._dataType, valueLength: take, lenPrefix: lShown,
+      // The LEN has its OWN row here, already displayed and already counted.
+      // LLVAR's prefix does not — it is part of that field's bytes, so it counts
+      // toward its length. Counting this one would bill the same byte twice, and
+      // counting the STRING would bill "37" as two bytes for one.
+      lenPrefixOwnRow: true,
       value:  take > 0 ? _meBytesToStr(cBytes) : '',
       rawHex: take > 0 ? _meBytesToHex(cBytes) : '',
       startByte: take > 0 ? cStart : null,

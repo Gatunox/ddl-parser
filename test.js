@@ -4112,6 +4112,45 @@ test('the "read as" wording follows the branch actually taken', () => {
     `must not claim digits for bytes forced through as an integer: ${issue}`);
 });
 
+// ── The payload's borrowed LEN must match the LEN's own row ─────────────────
+// Reported from a hex-char LEN: the LEN row showed "37" and the payload row
+// showed "7" for the same byte, one line apart. The children borrowed `lValue`,
+// captured as raw characters BEFORE the type override was applied to the LEN
+// row, so the override reached one rendering of that byte and not the other.
+
+console.log('\nthe payload shows the LEN the way the LEN row does');
+
+test('a hex-char LEN is prefixed to the payload as "37", not as "7"', () => {
+  const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { bytes: 1, type: 'hex-char' } });
+  const len  = ctx.fields.find(f => f.id === 'EMV.LEN');
+  const data = ctx.fields.find(f => f.id === 'EMV.DATA');
+  eq(len.value, '37', 'the LEN row shows its hex spelling');
+  eq(data.lenPrefix, len.value, 'and the payload borrows exactly that');
+});
+
+test('the borrowed prefix does not bill the LEN byte to the payload', () => {
+  // The LEN has its own row, already 1 byte in its own LEN column. Counting it
+  // again on the payload double-bills the byte; counting the STRING bills "37"
+  // as two bytes for one.
+  const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { bytes: 1, type: 'hex-char' } });
+  const data = ctx.fields.find(f => f.id === 'EMV.DATA');
+  const html = renderRows([data]);
+  const lenCell = html.match(/<td class="c-len">(\d*)<\/td>/);
+  assert.ok(lenCell, 'the row has a LEN cell');
+  eq(lenCell[1], String(data.valueLength), 'the LEN column is the payload alone');
+  assert.ok(html.includes('>37<'), 'while the prefix is still shown beside the value');
+});
+
+test('an LLVAR prefix IS still counted — it belongs to that field', () => {
+  // The discriminating half. LLVAR's prefix is part of the field's own bytes and
+  // has no row of its own, so dropping it from every length would be the same
+  // bug pointed the other way.
+  const html = renderRows([{ id: 'PAN', dataType: 'LLVAR', valueLength: 5,
+                             value: 'ABCDE', lenPrefix: '05' }]);
+  const lenCell = html.match(/<td class="c-len">(\d*)<\/td>/);
+  eq(lenCell[1], '7', 'five payload bytes plus the two-character prefix');
+});
+
 // ── Which fields ARE data elements is now a choice, not a hardcoded rule ────
 // The predicate was "top-level, and not literally named FILLER". So a DDL could
 // not exclude its own padding under any other name, and a DE could never sit on

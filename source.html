@@ -14333,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.3.0';
+const APP_VERSION  = '1.2.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22879,6 +22879,15 @@ function _meBuildDEMap(ctx) {
 // ASCII before parsing. Anything else is a big-endian integer, because a binary
 // message writes its lengths as integers, not as text.
 // Returns null when there are no bytes to read; callers decide what that means.
+// How many bytes a def occupies once its "bytes"/type override is taken into
+// account. `_meReadOneFieldFromDef` has always honoured this; the VLG group path
+// builds its LEN and payload rows by hand and read `def.length` directly, so an
+// override set on either was shown in the Field Map and ignored by the parse.
+function _meEffLen(def, ctx) {
+  const o = _meOvEffectiveLen(_meOvEffective(ctx, def.id));
+  return o !== null ? o : (def.length || 0);
+}
+
 function _meDecodeLength(bytes) {
   if (!bytes || !bytes.length) return null;
   if (bytes.every(b => b >= 0x30 && b <= 0x39)) {
@@ -23000,7 +23009,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     const lenDef = lenId ? direct.find(k => _meVlgIsLen(lenId, k.id)) : null;
     if (lenDef) {
       const lStart = ctx.cursor;
-      const lLen   = lenDef.length || 0;
+      const lLen   = _meEffLen(lenDef, ctx);
       const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
       const N      = _meDecodeLength(lBytes);
       ctx.cursor = lStart + lLen;
@@ -23111,7 +23120,7 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   // reading that as characters produced NaN, which "|| 0" turned into zero: the
   // group collapsed and every later field shifted, with nothing reported.
   const lStart = ctx.cursor;
-  const lLen   = lenDef.length || 0;
+  const lLen   = _meEffLen(lenDef, ctx);
   const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
   const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
   const lenErrs = [];
@@ -23154,7 +23163,7 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
 
   let remaining = N;
   for (const childDef of dataDefs) {
-    const declared = childDef.length || 0;
+    const declared = _meEffLen(childDef, ctx);
     const take     = Math.min(declared, remaining);
     const cStart   = ctx.cursor;
     const cBytes   = Array.from(ctx.bytes.slice(cStart, cStart + take));

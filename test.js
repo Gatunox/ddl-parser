@@ -163,6 +163,7 @@ _t.P                  = P;
 // behaviour is observable without inspecting the HTML it returns.
 _t.renderFieldTable   = renderFieldTable;
 _t.meTestFieldTable   = _meTestFieldTable;
+_t.meOvEffectiveLen   = _meOvEffectiveLen;
 _t.meReadApplyTypeOverride = _meReadApplyTypeOverride;
 _t.setSpecLookup      = fn => { window._fmtSpecByName = fn; };
 _t.auditBeginLoad     = _auditBeginLoad;
@@ -190,7 +191,7 @@ const {
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
   meWalkDEFields: _rawWalkDEFields,
-  renderFieldTable, meTestFieldTable, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
+  renderFieldTable, meTestFieldTable, meOvEffectiveLen, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
 
 // A spec reaches the engine only after the app has loaded it, and loading folds
@@ -3905,7 +3906,7 @@ const VLG_DDL = `DEF MSG.
   02 TAIL PIC X(4).
 END MSG.
 `;
-function vlgRun(lenBytes, extraPad = 0) {
+function vlgRun(lenBytes, extraPad = 0, overrides = undefined) {
   S.ddlTree = { V: { S: { D: VLG_DDL } } };
   S.inputFormat = 'hex';
   const bytes = [0x40, 0, 0, 0, 0, 0, 0, 0,       // bitmap, bit 2 set
@@ -3915,6 +3916,7 @@ function vlgRun(lenBytes, extraPad = 0) {
                  0x54, 0x41, 0x49, 0x4C];          // "TAIL"
   return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/MSG'],
     de_map: [{ field: 'EMV', de: 2 }],             // DE numbering comes from Overrides
+    ...(overrides ? { overrides } : {}),
     parse_spec_binary: [
       { 'read-bitmap': { field: 'BITMAP', length: 8 } },
       { 'read-bitmap-fields': 'BITMAP' },
@@ -4018,6 +4020,48 @@ test('the Test panel and Parse Results report the same problems', () => {
     assert.ok(main.includes(msg),  `Parse Results states: ${msg}`);
     assert.ok(panel.includes(msg), `the Test panel states: ${msg}`);
   }
+});
+
+// ── A "bytes" override has to reach the VLG group's own rows ────────────────
+// Reported from the Field Map: TRACK2.LEN declared PIC 9(2), overridden to 1
+// byte, and the Field Map's LEN column said 1 while Parse Results kept saying 2.
+// The two views read the length from different places. _meReadOneFieldFromDef
+// has always honoured the override, but the VLG path builds its LEN and payload
+// rows BY HAND off `def.length`, so the override was displayed and never applied.
+
+console.log('\nVLG group rows honour a bytes override');
+
+test('a bytes override on the LEN changes what the parse reads, not just the display', () => {
+  // One byte, 0x05, followed by a byte the declared 2-wide LEN would have eaten.
+  const ctx = vlgRun([0x05, 0x41], 0, { 'EMV.LEN': { bytes: 1 } });
+  const len = ctx.fields.find(f => f.id === 'EMV.LEN');
+  eq(len.valueLength, 1, 'the LEN occupies one byte, as the override says');
+  const data = ctx.fields.find(f => f.id === 'EMV.DATA');
+  eq(data.startByte, 9, 'so the payload starts one byte earlier');
+  eq(data.valueLength, 5, 'and the length decoded from that single byte is 5');
+});
+
+test('without the override the same bytes read the declared two', () => {
+  // The discriminating half: identical input, no override. If the override were
+  // being ignored again both cases would land here and the pair would still pass.
+  const ctx = vlgRun([0x05, 0x41]);
+  eq(ctx.fields.find(f => f.id === 'EMV.LEN').valueLength, 2, 'declared width');
+  eq(ctx.fields.find(f => f.id === 'EMV.DATA').startByte, 10, 'payload one byte later');
+});
+
+test('a bytes override on a payload sub-field caps it at the override', () => {
+  const ctx = vlgRun([0x30, 0x35], 0, { 'EMV.DATA': { bytes: 3 } });
+  eq(ctx.fields.find(f => f.id === 'EMV.DATA').valueLength, 3,
+     'three bytes, not the 5 the wire length offered nor the 20 declared');
+});
+
+test('what the Field Map shows for a length is what the engine reads', () => {
+  // The bug the user actually saw: two surfaces, two answers. Both must come
+  // from the same effective length.
+  const ov = { 'EMV.LEN': { bytes: 1 } };
+  const shown = meOvEffectiveLen(ov['EMV.LEN']);
+  const read  = vlgRun([0x05, 0x41], 0, ov).fields.find(f => f.id === 'EMV.LEN').valueLength;
+  eq(read, shown, 'the parse reads exactly what the Field Map advertises');
 });
 
 // ── Which fields ARE data elements is now a choice, not a hardcoded rule ────

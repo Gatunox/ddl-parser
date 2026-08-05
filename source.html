@@ -1694,6 +1694,37 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
 .me-fm-filter{flex:1;min-width:0;height:22px;padding:0 8px;border:2px solid var(--border);border-radius:2px;background:var(--bg-deep);color:var(--text);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
+/* Selection action bar — segmented groups, so related actions share one outline
+   and the eye sees three groups rather than nine loose pills of random width. */
+.me-fm-bar{display:flex;align-items:center;gap:6px;height:26px;margin:6px 0;padding:0 2px;}
+.me-fm-bar .me-fm-cnt{color:var(--accent);font-weight:700;min-width:78px;font-size:calc(var(--sz-mono) - 1px);}
+.me-fm-bar .me-fm-cnt.none{color:var(--text-very-dim);}
+.me-fm-bar .me-fm-gsep{width:2px;height:15px;background:var(--border);margin:0 3px;}
+.me-fm-g{display:flex;align-items:center;}
+.me-fm-g .me-fm-glbl{color:var(--text-very-dim);text-transform:uppercase;letter-spacing:.06em;
+  font-size:calc(var(--sz-mono) - 2px);margin-right:5px;}
+.me-fm-seg{display:flex;border:2px solid var(--border);border-radius:9px;overflow:hidden;}
+.me-fm-seg .btn{border:0;border-radius:0;min-width:82px;height:18px;text-align:center;
+  border-right:2px solid var(--border);padding:0 6px;}
+.me-fm-seg .btn:last-child{border-right:0;}
+.me-fm-seg .btn:hover{background:rgba(var(--accent-rgb),.16);color:var(--accent);}
+.me-fm-bar .btn.dis{opacity:.3;pointer-events:none;}
+.me-fm-table tbody tr.me-fm-row-multi{background:rgba(var(--accent-rgb),0.18);
+  box-shadow:inset 3px 0 0 var(--accent);}
+.me-fm-table tbody tr.me-fm-row-multi td{color:var(--text);}
+/* Inline editor for the actions that need a value — anchored under the button
+   that opened it. prompt() is blocked in some hosts, and would be wrong here. */
+.me-fm-ed{position:absolute;z-index:60;display:none;align-items:center;gap:6px;background:var(--bg-panel);
+  border:2px solid rgba(var(--accent-rgb),.55);border-radius:2px;padding:5px 7px;}
+.me-fm-ed.on{display:flex;}
+.me-fm-ed label{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);}
+.me-fm-ed input,.me-fm-ed select{height:19px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);
+  background:var(--bg-deep);color:var(--text);border:2px solid var(--accent);border-radius:2px;padding:0 5px;outline:none;}
+.me-fm-ed input{width:58px;}
+/* A field whose value sizes the next one, and the field that depends on it. */
+.me-fm-vlg-src{color:var(--accent);font-weight:700;}
+.me-fm-len-dep{color:var(--ok,#3fb950);}
+.me-fm-de-excl{color:var(--text-very-dim);}
 /* Recessed surface — the read-only table has to read as a different material
    from the editable panel above it. A black overlay rather than a fixed colour,
    so it darkens whatever the theme's background is. */
@@ -14277,7 +14308,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.6.1';
+const APP_VERSION  = '1.1.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18582,9 +18613,14 @@ function _meOverridesPrep(item) {
 
 // DE cell — hidden for REDEFINES rows (they overlay other bytes, no DE of
 // their own). data-sig lets _meFmPatchDECells skip unchanged cells.
-function _meFmDeSig(row, usesBitmapFields) {
+function _meFmDeSig(row, usesBitmapFields, sel) {
   if (!(usesBitmapFields && !row.underTerminal && !row.isRedef)) return 'x';
-  if (row.de === null) return row.deOverflow ? 'o' : 'n';
+  // The selection form is part of the signature: "no DE by default", "excluded
+  // on purpose" and "handed to its children" all render differently but all have
+  // de === null, so without this a patch-only repaint would keep showing the old
+  // one after the override changed.
+  if (row.de === null) return (row.deOverflow ? 'o' : 'n')
+    + (sel === false ? 'X' : sel === 'children' ? 'C' : '');
   // naturalDE is part of the signature: anchoring an EARLIER field changes what
   // a later anchored row "would otherwise be", and without this the ↩ note would
   // keep a stale number after a patch-only repaint.
@@ -18593,9 +18629,20 @@ function _meFmDeSig(row, usesBitmapFields) {
 function _meFmDeCellHtml(row, ctx) {
   const ea  = ctx.ea;
   const id  = ea(row.id);
-  const sig = _meFmDeSig(row, ctx.usesBitmapFields);
+  const sig = _meFmDeSig(row, ctx.usesBitmapFields, ctx.foByField.get(_canonFieldId(row.id))?.de);
   if (ctx.usesBitmapFields && !row.underTerminal && !row.isRedef) {
     if (row.de === null) {
+      // Deliberately excluded, or handed to its children. Both are choices the
+      // user made, so they must read differently from "the default rule says
+      // this row is not an element" — otherwise the table cannot show that the
+      // override took, and the action bar would write into a void.
+      const _sel = ctx.foByField.get(_canonFieldId(row.id))?.de;
+      if (_sel === false)
+        return `<td class="me-fm-de me-fm-de-excl" data-sig="${sig}"`
+             + ` title="Excluded by an override — not a data element, and the counter does not advance, so the fields after it keep their numbers.">—</td>`;
+      if (_sel === 'children')
+        return `<td class="me-fm-de me-fm-de-excl" data-sig="${sig}"`
+             + ` title="This group is not a data element; its immediate children each take one.">children</td>`;
       // No DE: nested sub-structure, a pre-bitmap header field, or the
       // sequence passed DE-128 (a bitmap message has at most 128 elements).
       const tip = row.deOverflow
@@ -18732,7 +18779,13 @@ function _meFmRowHtml(row, ctx, counter) {
       return `<td class="me-fm-vlg" title="${ea(why + drift + hint)}">`
         + `<span class="${eff.overridden ? 'c-ovr-new' : ''}">VLG</span></td>`;
     };
-    if (vlgEligible) {
+    // A plain field marked as a length source — the general rule, which needs no
+    // group at all. Checked first: this is an explicit choice, not a deduction.
+    const _selfVlg = ctx.foByField.get(_canonFieldId(row.id))?.vlg === true;
+    if (_selfVlg && !isGroup) {
+      vlgCell = `<td class="me-fm-vlg" title="${ea('This field\'s value is the next field\'s length')}">`
+              + `<span class="me-fm-vlg-src">VLG</span></td>`;
+    } else if (vlgEligible) {
       // Collapsed: the LEN leaf is off screen, so the group carries the marker.
       // Expanded: the leaf carries it, and the group row stays clean.
       const eff = _meFmEffectiveVlg(row.id, ctx);
@@ -18797,7 +18850,7 @@ function _meFmRowHtml(row, ctx, counter) {
     ? `<span class="c-ovr-as"> as </span><span class="c-ovr-new">${ea(String(foEntry.display).toUpperCase())}</span>`
     : '';
   const dtCell = `<td class="me-fm-dt${overrideBadLen ? ' me-fm-dt-bad' : ''}">${typePart}${asPart}${warnIcon}</td>`;
-  return `<tr class="${trCls}" ${dataAttrs} onclick="_meOvlRowClick('${id}')">${numCell}${fieldCell}${offCell}${lenCell}${dtCell}${deCell}${vlgCell}</tr>`;
+  return `<tr class="${trCls}" ${dataAttrs} onclick="_meOvlRowClick('${id}', event)">${numCell}${fieldCell}${offCell}${lenCell}${dtCell}${deCell}${vlgCell}</tr>`;
 }
 
 // Synchronous full build — kept for small DDLs and non-staged callers.
@@ -20129,6 +20182,11 @@ function _meFmToggleHelp() {
 // draft are module state rather than per-item storage — they are a cursor, not
 // a setting, and must not survive a save.
 let _meOvlSel   = null;   // qualified id of the selected reference row
+// Rows acted on together. Plain click replaces it, ⌘/ctrl-click adds or removes.
+// Shift is deliberately NOT a modifier: it collides with the browser's own
+// text-drag selection across rows, and two additive modifiers with different
+// rules read as unpredictable.
+let _meFmMultiSel = new Set();
 let _meOvlDraft = null;   // canonical id currently open in the editor
 
 // Row count for the reference table. Stored inside the existing column-visibility
@@ -20182,16 +20240,182 @@ function _meFmApplyColHighlight(i) {
      .forEach(el => el.classList.add('me-fm-colhi'));
 }
 
-function _meOvlRowClick(qn) {
-  _meOvlSel = qn;
+function _meOvlRowClick(qn, ev) {
+  const add = !!(ev && (ev.metaKey || ev.ctrlKey));
+  if (add) {
+    if (_meFmMultiSel.has(qn)) _meFmMultiSel.delete(qn); else _meFmMultiSel.add(qn);
+  } else {
+    _meFmMultiSel = new Set([qn]);
+  }
+  _meOvlSel = _meFmMultiSel.has(qn) ? qn : null;
   // Selecting a different field abandons an unsaved draft for another one —
   // silently, because the draft is a copy of what is already stored until Save.
   if (_meOvlDraft && _meOvlDraft !== _canonFieldId(qn)) _meOvlDraft = null;
   document.querySelectorAll('.me-fm-table tbody tr.me-fm-row-sel')
     .forEach(tr => tr.classList.remove('me-fm-row-sel'));
   const tr = document.querySelector(`.me-fm-table tbody tr[data-qn="${CSS.escape(qn)}"]`);
-  if (tr) tr.classList.add('me-fm-row-sel');
+  if (tr && _meOvlSel) tr.classList.add('me-fm-row-sel');
+  _meFmSyncMultiClasses();
+  _meFmBarRefresh();
   _meOvlRefresh();
+}
+
+// ── Selection actions ───────────────────────────────────────────────────────
+// Every action writes the same `overrides` map the panel and the parse-spec use,
+// so there is one storage shape and one set of rules behind all three surfaces.
+const _ME_FM_ED = {
+  'de-anchor': { label: 'DE number',  kind: 'num', def: '66',
+                 set: (o, v) => { o.de = Math.max(1, Math.min(128, +v)); } },
+  'bytes':     { label: 'Read bytes', kind: 'num', def: '2',
+                 set: (o, v) => { o.bytes = +v; } },
+  'type':      { label: 'Read as', kind: 'sel', def: 'hex-char',
+                 opts: () => _ME_TYPE_OPTS.filter(Boolean), set: (o, v) => { o.type = v; } },
+  'display':   { label: 'Show as', kind: 'sel', def: 'bitmap-list',
+                 opts: () => _ME_DISP_OPTS.filter(Boolean), set: (o, v) => { o.display = v; } },
+};
+let _meFmEdAct = null;
+
+function _meFmEdClose() {
+  _meFmEdAct = null;
+  document.getElementById('me-fm-ed')?.classList.remove('on');
+}
+function _meFmEdOpen(act) {
+  const cfg = _ME_FM_ED[act], ed = document.getElementById('me-fm-ed');
+  if (!cfg || !ed) return;
+  _meFmEdAct = act;
+  document.getElementById('me-fm-ed-lbl').textContent = cfg.label;
+  const num = document.getElementById('me-fm-ed-num'), sel = document.getElementById('me-fm-ed-sel');
+  num.style.display = cfg.kind === 'num' ? '' : 'none';
+  sel.style.display = cfg.kind === 'sel' ? '' : 'none';
+  // Lazy: the option lists are declared further down the file, so reading them
+  // at module-init time threw before anything rendered.
+  if (cfg.kind === 'sel') { sel.innerHTML = cfg.opts().map(o => `<option>${_escHtml(o)}</option>`).join(''); sel.value = cfg.def; }
+  else num.value = cfg.def;
+  ed.classList.add('on');
+  const btn = document.querySelector(`#me-fm-bar [data-fmact="${act}"]`);
+  if (btn) {
+    const r = btn.getBoundingClientRect();
+    ed.style.top  = (window.scrollY + r.bottom + 5) + 'px';
+    // Clamped, or a button near the right edge opens a panel off screen.
+    ed.style.left = Math.max(8, Math.min(window.scrollX + r.left, window.innerWidth - (ed.offsetWidth || 240) - 12)) + 'px';
+  }
+  (cfg.kind === 'num' ? num : sel).focus();
+}
+function _meFmEdCommit() {
+  const cfg = _ME_FM_ED[_meFmEdAct];
+  if (!cfg) return;
+  let v;
+  if (cfg.kind === 'num') {
+    v = document.getElementById('me-fm-ed-num').value.trim();
+    // A blank or non-numeric value used to be stopped by the spinner; there is
+    // no spinner, so it is stopped here rather than writing NaN into the map.
+    if (!/^[0-9]+$/.test(v)) { document.getElementById('me-fm-ed-num').focus(); return; }
+  } else v = document.getElementById('me-fm-ed-sel').value;
+  const item = _meCurItem(); if (!item) return;
+  const all = _meOvAll(item);
+  for (const qn of _meFmMultiSel) {
+    const k = _canonFieldId(qn);
+    cfg.set(all[k] || (all[k] = {}), v);
+  }
+  _meFmEdClose();
+  _meFmAfterAct();
+}
+
+function _meFmAfterAct() {
+  const item = _meCurItem();
+  if (item) { const all = _meOvAll(item); for (const k in all) if (!Object.keys(all[k]).length) delete all[k]; }
+  _meSetDirty();
+  _meOvlRefresh();
+  _mePsOvrRefresh();
+  if (!_meFmPatchDECells() && _meFmVirt) _meFmRenderWindow(true);
+  _meFmSyncMultiClasses();
+  _meFmBarRefresh();
+}
+
+function _meFmAct(act) {
+  const item = _meCurItem(); if (!item) return;
+  if (_ME_FM_ED[act]) return _meFmEdOpen(act);
+  const all = _meOvAll(item);
+  if (act === 'selall') {
+    _meFmMultiSel = new Set((_meFmVirt?.visible || []).map(r => r.id));
+    _meFmSyncMultiClasses(); _meFmBarRefresh(); return;
+  }
+  if (act === 'reset') {
+    const n = Object.keys(all).length;
+    if (!n) { _meFlash('No overrides to reset', 'warn'); return; }
+    if (!_meFmResetArmed) {                    // two-step, not a native confirm()
+      _meFmResetArmed = true;
+      const b = document.querySelector('#me-fm-bar [data-fmact="reset"]');
+      if (b) { b.textContent = `Reset ${n}?`; b.classList.add('btn-accent-on'); }
+      setTimeout(_meFmResetDisarm, 4000);
+      return;
+    }
+    _meFmResetDisarm();
+    for (const k in all) delete all[k];
+    _meFmMultiSel = new Set();
+    return _meFmAfterAct();
+  }
+  for (const qn of _meFmMultiSel) {
+    const k = _canonFieldId(qn);
+    const o = all[k] || (all[k] = {});
+    switch (act) {
+      case 'de-off':  o.de = false; break;
+      case 'de-on':   o.de = true; break;
+      case 'de-kids': o.de = 'children'; break;
+      case 'vlg':     o.vlg = true; break;
+      case 'clear':   delete all[k]; break;
+    }
+  }
+  _meFmAfterAct();
+}
+let _meFmResetArmed = false;
+function _meFmResetDisarm() {
+  _meFmResetArmed = false;
+  const b = document.querySelector('#me-fm-bar [data-fmact="reset"]');
+  if (b) { b.textContent = 'Reset'; b.classList.remove('btn-accent-on'); }
+}
+
+// Delegated once — the bar is re-rendered with the panel, so per-button
+// handlers would be re-bound every refresh.
+document.addEventListener('click', e => {
+  const b = e.target.closest?.('#me-fm-bar [data-fmact]');
+  if (b) { if (b.dataset.fmact !== 'reset') _meFmResetDisarm(); _meFmAct(b.dataset.fmact); return; }
+  const ed = document.getElementById('me-fm-ed');
+  if (_meFmEdAct && ed && !ed.contains(e.target)) { _meFmEdClose(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _meFmEdAct) _meFmEdClose();
+});
+document.addEventListener('click', e => {
+  if (e.target?.id === 'me-fm-ed-ok') _meFmEdCommit();
+  if (e.target?.id === 'me-fm-ed-cancel') _meFmEdClose();
+});
+document.addEventListener('input', e => {
+  if (e.target?.id !== 'me-fm-ed-num') return;
+  const clean = e.target.value.replace(/[^0-9]/g, '');
+  if (clean !== e.target.value) e.target.value = clean;
+});
+document.addEventListener('keydown', e => {
+  if (e.target?.id === 'me-fm-ed-num' && e.key === 'Enter') _meFmEdCommit();
+});
+
+function _meFmSyncMultiClasses() {
+  document.querySelectorAll('.me-fm-table tbody tr[data-qn]').forEach(tr =>
+    tr.classList.toggle('me-fm-row-multi', _meFmMultiSel.has(tr.dataset.qn)));
+}
+
+// Only the global Reset stays live with nothing selected — it is the one action
+// that does not need a selection, and it is exactly then that you want it.
+function _meFmBarRefresh() {
+  const cnt = document.getElementById('me-fm-cnt');
+  if (!cnt) return;
+  const n = _meFmMultiSel.size;
+  cnt.textContent = n ? `${n} selected` : 'no selection';
+  cnt.classList.toggle('none', n === 0);
+  document.querySelectorAll('#me-fm-bar [data-fmact]').forEach(b => {
+    const global = b.dataset.fmact === 'reset' || b.dataset.fmact === 'selall';
+    b.classList.toggle('dis', !global && n === 0);
+  });
 }
 
 // One chip per configured key, so the list says what each override DOES

@@ -1731,6 +1731,8 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-vlg-src{color:var(--accent);font-weight:700;}
 .me-fm-len-dep{color:var(--ok,#3fb950);}
 .me-fm-de-excl{color:var(--text-very-dim);}
+/* Derived from the owning group, not owned — dimmer than an assigned DE. */
+.me-fm-de-owned{color:rgba(var(--accent-rgb),0.45);}
 /* What was written, and what the rules made of it. The table shows the EFFECT;
    these say it in words and in the stored shape, which is what makes an override
    set three days ago legible. */
@@ -14322,7 +14324,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.0.1';
+const APP_VERSION  = '1.2.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18807,6 +18809,13 @@ function _meFmDeCellHtml(row, ctx) {
       if (_sel === 'children')
         return `<td class="me-fm-de me-fm-de-excl" data-sig="${sig}"`
              + ` title="This group is not a data element; its immediate children each take one.">children</td>`;
+      // Part of a group that owns a DE: bit N reads every leaf under it, so
+      // these rows DO belong to a data element — they simply do not own one.
+      // Shown dimmed and without the ↩ form, which is reserved for a number a
+      // row owns.
+      if (row.ownerDE != null)
+        return `<td class="me-fm-de me-fm-de-owned" data-sig="${sig}o${row.ownerDE}"`
+             + ` title="${ea(`Part of DE ${row.ownerDE}, owned by ${row.ownerId} — bit ${row.ownerDE} reads this field as part of that element.`)}">${row.ownerDE}</td>`;
       // No DE: nested sub-structure, a pre-bitmap header field, or the
       // sequence passed DE-128 (a bitmap message has at most 128 elements).
       const tip = row.deOverflow
@@ -19645,6 +19654,21 @@ function _meWalkDEFields(defs, item) {
     } else {
       out.push({ id: def.id, de: null, anchored: false, isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, offset });
     }
+  }
+  // A group that owns a DE owns it for everything inside it: bit N reads every
+  // leaf under that group. The rows below it rendered blank, so the membership
+  // was invisible — you could not see that FIELD-XX and FIELD-YY are both DE 9.
+  // Marked as DERIVED, not assigned: they carry no DE of their own and the
+  // counter never advanced for them.
+  for (let i = 0; i < out.length; i++) {
+    const owner = out[i];
+    if (owner.de == null || !owner.isGroup) continue;
+    const pre = owner.id + '.';
+    for (let j = i + 1; j < out.length && out[j].id.startsWith(pre); j++)
+      if (out[j].de == null && out[j].ownerDE == null) {
+        out[j].ownerDE = owner.de;
+        out[j].ownerId = owner.id;
+      }
   }
   return out;
 }

@@ -4063,6 +4063,28 @@ test('every action the handler implements is present as a button', () => {
     [], 'buttons with no handler');
 });
 
+test('no CSS rule is left with a dangling selector list', () => {
+  // Removing dead editor CSS matched the LAST line of a multi-line rule — the
+  // one carrying the braces — and left the earlier selector lines behind. CSS
+  // then merged them into the following rule, so ".me-ovl-sub" and four other
+  // classes silently inherited the panel header's border, background and
+  // padding. That is how "N fields configured" turned into a boxed chip.
+  const css = html.slice(html.indexOf('<style'), html.indexOf('</style>'));
+  const dangling = [];
+  for (const line of css.split('\n')) {
+    const t = line.trim();
+    // A line of selectors ending in a comma must be continued by more selectors
+    // or a brace — a blank line after it means the rule body was deleted.
+    if (/^[.#a-zA-Z][^{}]*,\s*$/.test(t)) dangling.push(t.slice(0, 60));
+  }
+  // Continuation lines are fine; what is not is one followed by a BLANK line.
+  const lines = css.split('\n');
+  const broken = lines.filter((l, i) =>
+    /^[.#a-zA-Z][^{}]*,\s*$/.test(l.trim()) && (lines[i + 1] || '').trim() === '')
+    .map(l => l.trim().slice(0, 60));
+  deepEq(broken, [], 'selector lists with no rule body');
+});
+
 test('the value editors open on the field, not on a constant', () => {
   // "Why does DE number always start at 66?" — because it was a placeholder
   // copied from a worked example. A default that ignores the field is noise you

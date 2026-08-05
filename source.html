@@ -1696,13 +1696,13 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
 /* Selection action bar — segmented groups, so related actions share one outline
    and the eye sees three groups rather than nine loose pills of random width. */
-.me-fm-bar{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;margin:6px 0;padding:0 2px;}
+.me-fm-bar{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;margin:9px 0;padding:0 2px;}
 .me-fm-bar .me-fm-cnt{color:var(--accent);font-weight:700;min-width:78px;font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-bar .me-fm-cnt.none{color:var(--text-very-dim);}
-.me-fm-bar .me-fm-gsep{width:2px;height:15px;background:var(--border);margin:0 3px;}
+.me-fm-bar .me-fm-gsep{width:2px;height:15px;background:var(--border);margin:0;}
 .me-fm-g{display:flex;align-items:center;}
 .me-fm-g .me-fm-glbl{color:var(--text-very-dim);text-transform:uppercase;letter-spacing:.06em;
-  font-size:calc(var(--sz-mono) - 2px);margin-right:5px;}
+  font-size:calc(var(--sz-mono) - 2px);margin-right:8px;}
 .me-fm-seg{display:flex;border:2px solid var(--border);border-radius:9px;overflow:hidden;}
 /* Uniform inside a group, but narrow enough that four groups fit a side panel.
    82px was measured against a full-width prototype page. */
@@ -1871,13 +1871,13 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
    DDL field. Left unset they inherited the UI sans face, which at the same 11px
    renders visibly larger and wider than the mono used one panel above.
    Buttons are deliberately excluded — they are sans throughout the app. */
-.me-ovl-hdr,.me-ovl-sub,.me-ovl-name,.me-ovl-chip,.me-ovl-ro,.me-ovl-empty,
-.me-ovl-edit-name,.me-ovl-edit-orig,.me-ovl-err,
-
+.me-ovl-hdr,.me-ovl-sub,.me-ovl-name,.me-ovl-chip,.me-ovl-ro,
+.me-ovl-empty{font-family:var(--font-mono);}
 .me-ovl-hdr{display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--bg-deep);
   border:2px solid var(--border);border-bottom:0;border-radius:2px 2px 0 0;font-weight:700;
   font-size:calc(var(--sz-mono) - 1px);}
-.me-ovl-hdr .me-ovl-sub{color:var(--text-very-dim);font-weight:400;}
+.me-ovl-hdr .me-ovl-sub{color:var(--text-very-dim);font-weight:400;background:none;
+  border:0;padding:0;font-size:calc(var(--sz-mono) - 1px);}
 .me-ovl-list{border:2px solid var(--border);border-radius:0 0 2px 2px;max-height:180px;overflow:auto;
   background:var(--bg-panel);margin-bottom:8px;}
 .me-ovl-row{display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;
@@ -14314,7 +14314,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.8.2';
+const APP_VERSION  = '1.1.8.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

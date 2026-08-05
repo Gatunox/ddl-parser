@@ -14333,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.4.1';
+const APP_VERSION  = '1.2.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19445,18 +19445,22 @@ function _meWalkDEFields(defs, item) {
     let shift = 0;
     const seen = new Set();
     defs = defs.map(d => {
-      const eff = _meOvEffectiveLen(_ovAll[_canonFieldId(d.id)]);
+      // Wire bytes, not the number as written: a hex-char length counts
+      // characters, so PIC X(4) as hex-char is 2 bytes here exactly as it is in
+      // the parse. Reading these from different places is what made the Field
+      // Map say 1 while Parse Results said 2.
+      const eff = _meWireLen(_ovAll[_canonFieldId(d.id)], d.length);
       const start = (d.offset || 0) + shift;
-      if (eff !== null && eff !== (d.length || 0) && !seen.has(d.id)) {
+      if (eff !== (d.length || 0) && !seen.has(d.id)) {
         seen.add(d.id);
         shift += eff - (d.length || 0);
       }
       // _declaredLen is kept so the table can show "declared ↩ effective" — the
       // rebuilt def carries only the effective one, and without this the LEN
       // column could not say whether a number came from the DDL or an override.
-      return (eff !== null && eff !== (d.length || 0)) || start !== d.offset
-        ? { ...d, offset: start, length: eff !== null ? eff : d.length,
-            _declaredLen: (eff !== null && eff !== (d.length || 0)) ? (d.length || 0) : undefined }
+      return eff !== (d.length || 0) || start !== d.offset
+        ? { ...d, offset: start, length: eff,
+            _declaredLen: eff !== (d.length || 0) ? (d.length || 0) : undefined }
         : d;
     });
   }
@@ -21765,14 +21769,22 @@ function _meReadOneFieldFromDef(def, ctx) {
   // offset, and counting its delta again would shift the rest of the record
   // twice over.
   {
-    const _ovLen = _meOvEffectiveLen(_meOvEffective(ctx, def.id));
-    if (_ovLen !== null && _ovLen !== (def.length || 0)) {
+    const _eff   = _meOvEffective(ctx, def.id);
+    const _ovLen = _meOvEffectiveLen(_eff);
+    // The number the user wrote, in the type's own units...
+    const _want  = _ovLen !== null ? _ovLen : (def.length || 0);
+    // ...and what that costs on the wire. Both causes — an explicit "bytes" and
+    // a hex-char length in characters — end up as one byte count, so there is
+    // one shift to account for rather than two that could disagree.
+    const _bytes = _meLenIsChars(_eff?.type) ? _meCharsToBytes(_want) : _want;
+    if (_meLenIsChars(_eff?.type)) ctx._charLen = (ctx._charLen || {}), ctx._charLen[def.id] = _want;
+    if (_bytes !== (def.length || 0)) {
       if (!ctx._ovShiftSeen) ctx._ovShiftSeen = new Set();
       if (!ctx._ovShiftSeen.has(def.id)) {
         ctx._ovShiftSeen.add(def.id);
-        ctx.ovShift = (ctx.ovShift || 0) + (_ovLen - (def.length || 0));
+        ctx.ovShift = (ctx.ovShift || 0) + (_bytes - (def.length || 0));
       }
-      len = _ovLen;
+      len = _bytes;
     }
   }
 
@@ -22259,6 +22271,11 @@ function _meApplyTypeOverride(f, def, ctx, inlineType) {
   let typeOverride = inlineType || null;
   if (!typeOverride) typeOverride = _meOvEffective(ctx, def.id)?.type || null;
   if (!typeOverride) return;
+  // A hex-char length is a character count, and an odd one spends a whole byte
+  // to show half of it: 1 character of 0x37 is "3". The trailing nibble is the
+  // field's own padding — fields still start on byte boundaries, so it is
+  // dropped rather than handed to whatever comes next.
+  const _trimChars = _meLenIsChars(typeOverride) ? ctx?._charLen?.[def.id] : null;
   // No length check any more. An override is an edit to the DDL: the field was
   // already READ at the length the override implies (_meOvEffectiveLen), so by
   // the time the type is applied the bytes in hand are the right ones. The old
@@ -22269,6 +22286,10 @@ function _meApplyTypeOverride(f, def, ctx, inlineType) {
   // An INLINE parse-spec type is the exception: it is not part of the stored
   // override, so it did not participate in the length decision and must still
   // be checked against the bytes actually read.
+  const _applyTrim = () => {
+    if (_trimChars != null && typeof f.value === 'string' && f.value.length > _trimChars)
+      f.value = f.value.slice(0, _trimChars);
+  };
   if (inlineType) {
     const required = _meReadTypeByteLen(inlineType);
     const actual   = f.rawHex ? f.rawHex.length / 2 : (def.length || 0);
@@ -22281,6 +22302,7 @@ function _meApplyTypeOverride(f, def, ctx, inlineType) {
     }
   }
   Object.assign(f, _meReadApplyTypeOverride(f, typeOverride));
+  _applyTrim();
 }
 
 // Occurrence buckets for a canonical field id. OCCURS fields/groups are
@@ -22883,9 +22905,21 @@ function _meBuildDEMap(ctx) {
 // account. `_meReadOneFieldFromDef` has always honoured this; the VLG group path
 // builds its LEN and payload rows by hand and read `def.length` directly, so an
 // override set on either was shown in the Field Map and ignored by the parse.
+// hex-char renders one byte as TWO characters, so a length written for a
+// hex-char field counts characters, not bytes: PIC X(4) as hex-char is "0200" —
+// four characters off two wire bytes. Every other type is 1:1 and unaffected.
+// An odd count spends a whole byte and shows half of it; that trailing nibble is
+// the field's own padding, which is how packed data is written.
+const _meLenIsChars = t => /^hex-char$/i.test(String(t || '').trim());
+const _meCharsToBytes = n => Math.ceil((n || 0) / 2);
+
+function _meWireLen(ovr, declaredLen) {
+  const o = _meOvEffectiveLen(ovr);
+  const n = o !== null ? o : (declaredLen || 0);
+  return _meLenIsChars(ovr?.type) ? _meCharsToBytes(n) : n;
+}
 function _meEffLen(def, ctx) {
-  const o = _meOvEffectiveLen(_meOvEffective(ctx, def.id));
-  return o !== null ? o : (def.length || 0);
+  return _meWireLen(_meOvEffective(ctx, def.id), def.length);
 }
 
 // Types that say "these bytes ARE a number" — read them as one, whatever they
@@ -23161,6 +23195,13 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   const lenErrs = [];
   const lType = _meOvEffective(ctx, lenDef.id)?.type;
   let N = _meDecodeLength(lBytes, lType);
+  // A hex-char LEN counts CHARACTERS — 37 means 37 characters of payload, which
+  // is 19 wire bytes. Converted here, once, so the bounds below and every child
+  // after stay byte-based. `Nwritten` is what the message says, because that is
+  // the number the user can see in the LEN's own value.
+  const Nwritten = N;
+  const lenInChars = _meLenIsChars(lType);
+  if (N != null && lenInChars) N = _meCharsToBytes(N);
   if (N == null) {
     N = 0;
     lenErrs.push(lBytes.length
@@ -23171,14 +23212,14 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   // rather than reading off it. Past the room the DDL declares for the payload it
   // is still used — the wire decides the framing — but it is reported, because
   // that normally means the length was misread.
-  const capacity  = dataDefs.reduce((t, d) => t + (d.length || 0), 0);
+  const capacity  = dataDefs.reduce((t, d) => t + _meEffLen(d, ctx), 0);
   const available = ctx.bytes.length - (lStart + lLen);
   if (N > available) {
-    lenErrs.push(`${lenDef.id}: length ${N} runs past the end of the message (${available} byte(s) left) — read as ${
+    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` character(s) = ${N} byte(s)` : ''} runs past the end of the message (${available} byte(s) left) — read as ${
       _meLengthReadAs(lBytes, lType)}`);
     N = Math.max(0, available);
   } else if (capacity && N > capacity) {
-    lenErrs.push(`${lenDef.id}: length ${N} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload`);
+    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` character(s) = ${N} byte(s)` : ''} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload`);
   }
   ctx.cursor = lStart + lLen;
   // The complaint belongs ON the LEN field, not beside it. Pushing it as its own

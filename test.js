@@ -1221,45 +1221,59 @@ const bytesCase = (ovr, extra) => {
     Uint8Array.from([0x02, 0x00, 0x30, 0x20, 0x41, 0x42]));
 };
 
-test('hex-char on a PIC X(4) renders all 4 bytes — the behaviour "bytes" exists to correct', () => {
-  const f = bytesCase({ type: 'hex-char' }).fields.find(x => x.id === 'MSGTYPE');
-  eq(f.value, '02003020', 'all four bytes rendered as 8 hex characters');
+
+// CHANGED ON PURPOSE (v1.2.5.0). These asserted that a length is always a BYTE
+// count, so hex-char on PIC X(4) read four bytes and rendered eight characters —
+// and the only way to get the four characters you wanted was to hand-set
+// bytes:2. hex-char renders two characters per byte, so its lengths now count
+// characters: PIC X(4) as hex-char is "0200" off two wire bytes. Types that are
+// 1:1 are untouched, and a field with no type override cannot move at all.
+
+test('hex-char on a PIC X(4) is FOUR CHARACTERS — two wire bytes', () => {
+  const ctx = bytesCase({ type: 'hex-char' });
+  const f = ctx.fields.find(x => x.id === 'MSGTYPE');
+  eq(f.value, '0200', 'the four characters the DDL asked for');
+  eq(f.rawHex.length / 2, 2, 'off two wire bytes, with no bytes override needed');
+  eq(ctx.fields.find(x => x.id === 'TAIL').startByte, 2, 'and TAIL moves up to meet it');
 });
 
-test('"bytes": 2 makes the field 2 bytes — it is read as if the DDL said PIC X(2)', () => {
+test('a field with NO type override is not touched by any of this', () => {
+  // The guard the old test was really providing. Nothing about character
+  // counting may reach a field that never asked for it.
+  const ctx = bytesCase({});
+  const f = ctx.fields.find(x => x.id === 'MSGTYPE');
+  eq(f.rawHex, '02003020', 'all four declared bytes');
+  eq(ctx.fields.find(x => x.id === 'TAIL').startByte, 4, 'TAIL exactly where the DDL puts it');
+});
+
+test('"bytes" on a hex-char field is a CHARACTER count too', () => {
+  // 2 characters of 0x02 0x00 is "02" — one wire byte. Under the old rule this
+  // same override meant two bytes; that is the migration, and it is deliberate.
   const ctx = bytesCase({ type: 'hex-char', bytes: 2 });
   const f = ctx.fields.find(x => x.id === 'MSGTYPE');
-  eq(f.value, '0200', 'only the MTI');
-  eq(f.endByte - f.startByte + 1, 2, 'the field itself is now 2 bytes, not 4');
+  eq(f.value, '02', 'two characters');
+  eq(f.rawHex, '02', 'one wire byte');
 });
 
-test('"bytes" alone re-sizes the field, with no type override at all', () => {
-  const f = bytesCase({ bytes: 2 }).fields.find(x => x.id === 'MSGTYPE');
-  eq(f.endByte - f.startByte + 1, 2, 'length override applies on its own');
-  eq(f.rawHex, '0200', 'and only those bytes are read');
-});
-
-test('"bytes" LARGER than declared is legitimate — the DDL understated the field', () => {
-  // MSGTYPE is PIC X(4) at offset 0; asking for 5 reads one byte into TAIL.
-  const f = bytesCase({ bytes: 5 }).fields.find(x => x.id === 'MSGTYPE');
-  eq(f.endByte - f.startByte + 1, 5, 'field grew past its declared 4 bytes');
-  eq(f.rawHex, '0200302041', 'and read the fifth byte, which belongs to TAIL');
-});
-
-test('growth is still bounded by the message — it cannot read past the end', () => {
-  // TAIL is PIC X(2) at offset 4 and the message is 6 bytes, so there is nothing
-  // to grow into. Reading stops at the end rather than inventing bytes.
-  const f = bytesCase({}, { TAIL: { bytes: 9 } }).fields.find(x => x.id === 'TAIL');
-  eq(f.rawHex.length / 2, 2, 'clamped to the 2 bytes that exist');
+test('an ODD character count shows half a byte and drops the padding nibble', () => {
+  // 1 character of 0x02 is "0". The byte is still spent — fields start on byte
+  // boundaries — so the trailing nibble is this field's padding, not the next
+  // field's first character.
+  const ctx = bytesCase({ type: 'hex-char', bytes: 1 });
+  const f = ctx.fields.find(x => x.id === 'MSGTYPE');
+  eq(f.value, '0', 'one character');
+  eq(f.rawHex, '02', 'one whole byte consumed');
+  eq(ctx.fields.find(x => x.id === 'TAIL').startByte, 1, 'the next field starts after it');
 });
 
 test('shrinking a field frees its leftover bytes for the NEXT field to read', () => {
-  // MSGTYPE is PIC X(4) holding 02 00 30 20; cut it to 2 and the 30 20 that
-  // frees must reach TAIL, not be skipped because the DDL says TAIL starts at 4.
+  // MSGTYPE is PIC X(4) holding 02 00 30 20; two characters of hex-char cut it
+  // to one byte, and the three that frees must reach TAIL rather than being
+  // skipped because the DDL says TAIL starts at 4.
   const ctx = bytesCase({ type: 'hex-char', bytes: 2 });
   const tail = ctx.fields.find(x => x.id === 'TAIL');
-  eq(tail.startByte, 2, 'TAIL moved up to where MSGTYPE now ends');
-  eq(tail.rawHex, '3020', 'and reads the two bytes MSGTYPE gave back');
+  eq(tail.startByte, 1, 'TAIL moved up to where MSGTYPE now ends');
+  eq(tail.rawHex, '0030', 'and reads the two bytes it finds there');
 });
 
 test('growing a field pushes the ones after it along', () => {
@@ -1268,10 +1282,14 @@ test('growing a field pushes the ones after it along', () => {
   eq(tail.startByte, 5, 'TAIL starts one byte later than declared');
 });
 
-test('with no bytes override, every field sits exactly where the DDL declares', () => {
-  const ctx = bytesCase({ type: 'hex-char' });
+// CHANGED ON PURPOSE (v1.2.5.0). This read "no BYTES override" but supplied a
+// hex-char TYPE override, and a hex-char type now implies a width of its own.
+// The guarantee it was really protecting — a field nobody overrode cannot move —
+// is asserted directly above by 'a field with NO type override is not touched'.
+test('a 1:1 type override still leaves every field exactly where the DDL declares', () => {
+  const ctx = bytesCase({ type: 'ascii' });
   const tail = ctx.fields.find(x => x.id === 'TAIL');
-  eq(tail.startByte, 4, 'unchanged');
+  eq(tail.startByte, 4, 'unchanged — ascii is one character per byte');
   eq(tail.value, 'AB', 'and reads its declared bytes');
 });
 
@@ -1299,10 +1317,11 @@ test('a fixed-width type alone sets the length, like editing the DDL to that typ
 });
 
 test('display runs after the length and type, on the overridden bytes', () => {
+  // CHANGED ON PURPOSE (v1.2.5.0): "bytes": 2 on a hex-char field is now two
+  // CHARACTERS — one wire byte — so the formatter sees that one byte.
   const f = bytesCase({ type: 'hex-char', bytes: 2, display: 'hex' }).fields.find(x => x.id === 'MSGTYPE');
-  eq(f.value, '0200', 'type applied to the 2 overridden bytes');
-  // 0x0200, not 0x02003020 — the formatter saw the overridden length.
-  eq(f.displayValue, '0x0200', 'display formatted those same bytes, not the declared 4');
+  eq(f.value, '02', 'type applied to the one byte two characters buy');
+  eq(f.displayValue, '0x02', 'display formatted that same byte, not the declared 4');
 });
 
 // ── Overrides collapse: de_map + var_length_groups + field_overrides → one map ──
@@ -4064,6 +4083,25 @@ test('what the Field Map shows for a length is what the engine reads', () => {
   eq(read, shown, 'the parse reads exactly what the Field Map advertises');
 });
 
+test('the Field Map re-lays out a hex-char field the same way the engine does', () => {
+  // Both surfaces have to spend the same bytes. The Field Map used the number as
+  // WRITTEN while the engine converted it, which is the disagreement that
+  // started this whole thread — the table said one width, the parse used another.
+  S.ddlTree = { V: { S: { D: DDL_BYTES } } };
+  const defs = getDDLFromPath('V/S/D/REC').defs;
+  const rows = meWalkDEFields(defs,
+    { ddl_bindings: ['V/S/D/REC'], overrides: { MSGTYPE: { type: 'hex-char' } } });
+  const msg  = rows.find(r => r.id === 'MSGTYPE');
+  const tail = rows.find(r => r.id === 'TAIL');
+  eq(msg.length, 2, 'four characters of hex-char cost two bytes in the Field Map too');
+  eq(msg.declaredLen, 4, 'and it still reports what the DDL declared');
+  eq(tail.offset, 2, 'so TAIL is re-laid out to where the parse will read it');
+  // The engine, on the same override.
+  const parsed = bytesCase({ type: 'hex-char' });
+  eq(parsed.fields.find(f => f.id === 'TAIL').startByte, tail.offset,
+     'the two surfaces agree on where TAIL starts');
+});
+
 // ── The length decode follows the declared type, not the byte values ────────
 // Reported: LEN bytes 0x37 0x45 decoded as 14149 (correct), and the SAME field
 // trimmed to one byte decoded as 7 instead of 55. Nothing about the field
@@ -4080,15 +4118,17 @@ console.log('\nlength decode honours a type override');
 // value IS the hex characters, so the length is 37 — and uint8/uint16-be/binary
 // are how you ask for the numeric conversion.
 
-test('a single 0x37 under hex-char is 37 — the characters the row shows', () => {
-  const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { bytes: 1, type: 'hex-char' } });
-  const len = ctx.fields.find(f => f.id === 'EMV.LEN');
-  eq(len.valueLength, 1, 'one byte, per the override');
+test('a hex-char LEN of "37" is 37 CHARACTERS — 19 wire bytes', () => {
+  // EMV.LEN is PIC X(2): two characters of hex-char, so ONE wire byte, read
+  // without any bytes override at all. It shows "37", and 37 characters of
+  // payload is ceil(37/2) = 19 bytes.
+  const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'hex-char' } });
+  const len  = ctx.fields.find(f => f.id === 'EMV.LEN');
+  const data = ctx.fields.find(f => f.id === 'EMV.DATA');
+  eq(len.valueLength, 1, 'two characters cost one wire byte');
   eq(len.value, '37', 'shown as its hex spelling');
-  // 37 exceeds DATA's declared 20, so the payload caps there — the complaint
-  // naming 37 is the proof that 37, not 55 and not 7, was the length used.
-  assert.ok(/length 37 /.test(len.issue || ''),
-    `the length is the value you can see, got: ${JSON.stringify(len.issue)}`);
+  eq(data.valueLength, 19, '37 characters of payload = 19 wire bytes');
+  eq(data.startByte, len.endByte + 1, 'and it starts right after the LEN');
 });
 
 test('uint8 on the same byte is 55 — that is the type that converts', () => {
@@ -4105,15 +4145,15 @@ test('without the override the same byte is still read as the digit 7', () => {
      'the byte-value guess still applies when nothing declares the type');
 });
 
-test('two bytes: hex-char reads 3745, uint16-be reads 14149', () => {
-  // Same bytes, three answers, and each override has to produce its own. The
-  // undeclared case guesses binary here because 0x45 is not a digit — which is
-  // how 3745 could ever have looked like 14149.
+test('four characters of hex-char read two bytes: 3745', () => {
+  // CHANGED ON PURPOSE (v1.2.5.0): reading TWO wire bytes as hex-char now takes
+  // FOUR characters. The declared PIC X(2) buys two characters — one byte — so
+  // the width has to be asked for in the same units the type counts in.
   const iss = c => (c.fields.find(x => x.id === 'EMV.LEN').issue || '');
-  assert.ok(/length 3745 /.test(iss(vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'hex-char' } }))),
+  assert.ok(/length 3745 character/.test(iss(vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'hex-char', bytes: 4 } }))),
     'hex-char: the characters "3745"');
   assert.ok(/length 14149 /.test(iss(vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'uint16-be' } }))),
-    'uint16-be: the number 0x3745');
+    'uint16-be: the number 0x3745, and its length is already in bytes');
   assert.ok(/length 14149 /.test(iss(vlgRun([0x37, 0x45], 60))),
     'undeclared: the old guess, unchanged');
 });
@@ -4911,10 +4951,25 @@ function inlRun(spec, item = {}) {
 const inlF = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
 
 test('a read-ddl block can carry its own overrides', () => {
+  // CHANGED ON PURPOSE (v1.2.5.0): hex-char counts characters wherever it is
+  // declared, inline included — MSGTYPE's declared 4 buys 4 characters off 2
+  // wire bytes. An inline override that behaved differently from a stored one
+  // would be the same override meaning two things.
   const ctx = inlRun([{ 'read-ddl': { overrides: { MSGTYPE: { type: 'hex-char' } } } }]);
-  eq(inlF(ctx, 'MSGTYPE').value, '31323030', 'the inline type override was applied');
+  eq(inlF(ctx, 'MSGTYPE').value, '3132', 'the inline type override was applied, in characters');
   eq(inlF(ctx, 'MSGTYPE').typeOverride, 'hex-char', 'and recorded as an override');
-  eq(inlF(ctx, 'TRACE').value, '000123', 'a field it does not mention is untouched');
+  // TRACE carries no override of its own — that is what "does not mention" has
+  // to mean here. Its POSITION legitimately moves, because MSGTYPE giving back
+  // two bytes is the same re-layout any narrowing override causes.
+  eq(inlF(ctx, 'TRACE').typeOverride, undefined, 'a field it does not mention gets no override');
+  eq(inlF(ctx, 'TRACE').value, '000001', 'it reads from where MSGTYPE now ends');
+});
+
+test('an inline override that changes nothing leaves every position alone', () => {
+  // The discriminating half of the above: without a width-changing type, TRACE
+  // must sit exactly where the DDL puts it.
+  const ctx = inlRun([{ 'read-ddl': { overrides: { MSGTYPE: { type: 'ascii' } } } }]);
+  eq(inlF(ctx, 'TRACE').value, '000123', 'unmoved');
 });
 
 test('inline overrides beat the stored ones', () => {
@@ -5078,7 +5133,8 @@ END
       { 'read-bitmap-fields': { bitmap: 'BITMAP',
           overrides: { 'DE-A': { de: 2, type: 'hex-char' } } } },
     ] }, b);
-  eq(inlF(ctx, 'DE-A').value, '41424344', 'the inline type override applied inside the bitmap walk');
+  // CHANGED ON PURPOSE (v1.2.5.0): four characters of hex-char, two wire bytes.
+  eq(inlF(ctx, 'DE-A').value, '4142', 'the inline type override applied inside the bitmap walk');
   eq(inlF(ctx, 'DE-A').typeOverride, 'hex-char', 'and is recorded');
   assert.ok(inlF(ctx, 'DE-B'), 'the inline DE anchor renumbered the tail, so bit 4 resolved');
 });

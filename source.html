@@ -14322,7 +14322,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.0.0';
+const APP_VERSION  = '1.2.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19542,6 +19542,11 @@ function _meWalkDEFields(defs, item) {
     if (sel === false)      return false;
     if (sel === 'children') return false;   // the group yields to its children
     if (sel === true)       return true;
+    // A NUMBER is also a statement that this field is a data element — you
+    // cannot number something that is not one. Without this, anchoring a field
+    // the default rule excludes (a nested one, or a child of an excluded group)
+    // stored an override the table then ignored.
+    if (_meDeIsAnchor(sel)) return true;
     if (promoted.has(id))   return true;
     return defaultEligible(id);
   };
@@ -19632,7 +19637,7 @@ function _meWalkDEFields(defs, item) {
     // An explicit de:true reaches INSIDE a terminal group as well — that is the
     // point of it, and refusing would leave nested fields unreachable exactly
     // where the default rule already said no.
-    const forced = deSel(def.id) === true || promoted.has(def.id);
+    const forced = deSel(def.id) === true || _meDeIsAnchor(deSel(def.id)) || promoted.has(def.id);
     if (!forced && (underTerminal || !isDE(def.id))) {
       out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal, isRedef, redefTarget, dataType, length, declaredLen, offset });
     } else if (_isRepOcc(def.id)) {

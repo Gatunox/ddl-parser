@@ -4024,6 +4024,20 @@ test('a selection form is never read as an anchor', () => {
   eq(deAt(r, 'SOME'), 7, 'and the tail is undisturbed');
 });
 
+test('a DE number makes the field a data element, wherever it sits', () => {
+  // Reported: FIELD-XX had a DE, anchoring it to 14 was accepted into the list,
+  // and the table ignored it. You cannot number something that is not a data
+  // element, so a number has to say that it IS one — the code treated it purely
+  // as "renumber from here" and left eligibility to the default rule.
+  eq(deAt(deselRows({ 'ADDITIONA.FIELD-XX': { de: 14 } }), 'ADDITIONA.FIELD-XX'), 14,
+     'a nested field the default rule excludes');
+  eq(deAt(deselRows({ 'ADDITIONA': { de: false }, 'ADDITIONA.FIELD-XX': { de: 14 } }), 'ADDITIONA.FIELD-XX'), 14,
+     'even below a group that was excluded');
+  const both = deselRows({ 'ADDITIONA': { de: 'children' }, 'ADDITIONA.FIELD-XX': { de: 14 } });
+  eq(deAt(both, 'ADDITIONA.FIELD-XX'), 14, 'and it wins over the promoted number');
+  eq(deAt(both, 'ADDITIONA.FIELD-YY'), 15, 'with the tail following from it');
+});
+
 test('exclusion and promotion combine, in declaration order', () => {
   const r = deselRows({ 'PAD-1': { de: false }, 'ADDITIONA': { de: 'children' } });
   eq(deAt(r, 'TRACE'), 3, 'the exclusion closes the gap');

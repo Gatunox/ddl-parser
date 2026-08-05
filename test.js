@@ -4077,8 +4077,13 @@ test('a single 0x37 under hex-char is 55, not the digit 7', () => {
   const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { bytes: 1, type: 'hex-char' } });
   const len = ctx.fields.find(f => f.id === 'EMV.LEN');
   eq(len.valueLength, 1, 'one byte, per the override');
+  // The two halves the user stated as one rule: hex-char SHOWS the byte as its
+  // hex spelling, and because this is a length, that spelling is read as hex to
+  // get how many bytes to take. Display "37", length 0x37 = 55. Asserted
+  // together — showing "37" while reading 7, or showing "55", are both wrong.
+  eq(len.value, '37', 'the value reads as its hex spelling');
   // 55 exceeds DATA's declared 20, so the payload is capped there — the proof
-  // that 55 (not 7) was decoded is the capacity complaint naming it.
+  // that 55 (not 7, and not 37 decimal) was decoded is the complaint naming it.
   assert.ok(/length 55 /.test(len.issue || ''),
     `the byte decoded as 55, got: ${JSON.stringify(len.issue)}`);
 });

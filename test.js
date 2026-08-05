@@ -4119,7 +4119,7 @@ test('the DE cell renders a derived number distinctly from an owned one', () => 
   const css = html;  // the fade is CSS, so `html` and not APP_SRC
   const ownedRule = css.match(/([^\s{}]*\.me-fm-de-owned)\{([^}]*)\}/);
   assert.ok(ownedRule, '.me-fm-de-owned still has a rule');
-  assert.ok(/rgba?\(/.test(ownedRule[2]), `it sets a colour, got: ${ownedRule[2]}`);
+  assert.ok(/opacity\s*:|rgba?\(/.test(ownedRule[2]), `it fades the text, got: ${ownedRule[2]}`);
 
   // ...and that colour has to WIN. `.me-fm-de{color:...}` sits ~70 lines below
   // it; as a lone class the owned rule lost the cascade to that later rule of

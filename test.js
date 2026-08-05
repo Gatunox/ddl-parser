@@ -13,6 +13,9 @@ const assert = require('assert');
 const html  = fs.readFileSync('./source.html', 'utf8');
 const match = html.match(/<script id="app">([\s\S]*?)<\/script>/);
 if (!match) { console.error('FATAL: <script id="app"> not found in source.html'); process.exit(1); }
+// The app's own source text. Declared here, beside `html`, because several
+// source-level tripwires live above the section that used to declare it.
+const APP_SRC = match[1];
 
 // DOM stubs — pure logic functions never call these; they are only used inside
 // UI handlers which are never invoked during tests.
@@ -4060,6 +4063,21 @@ test('every action the handler implements is present as a button', () => {
     [], 'buttons with no handler');
 });
 
+test('the value editors open on the field, not on a constant', () => {
+  // "Why does DE number always start at 66?" — because it was a placeholder
+  // copied from a worked example. A default that ignores the field is noise you
+  // have to clear before you can type.
+  const src = psFnSource('_meFmSelRow') + psFnSource('_meFmSelOvr');
+  assert.ok(/_meFmMultiSel\.values\(\)\.next\(\)\.value/.test(src),
+    'the defaults read the selected row');
+  const cfg = html.slice(html.indexOf('const _ME_FM_ED'), html.indexOf('let _meFmEdAct'));
+  assert.ok(!/def:\s*'66'/.test(cfg) && !/def:\s*'2'/.test(cfg),
+    'no hardcoded DE number or byte count');
+  for (const act of ['de-anchor', 'bytes', 'type', 'display'])
+    assert.ok(new RegExp(`'${act}':[\\s\\S]{0,220}?def: \\(\\) =>`).test(cfg),
+      `${act} computes its default from the selection`);
+});
+
 test('the old per-field editor is gone, and nothing references it', () => {
   // The action bar replaced it. Leaving the editor in place would mean two ways
   // to set the same override, in two places, with different controls.
@@ -4965,7 +4983,6 @@ const PS_EXEC_FNS = {
   'token-area':          ['_meExecTokenArea'],
 };
 
-const APP_SRC = match[1];
 function psFnSource(name) {
   const i = APP_SRC.indexOf(`\nfunction ${name}(`);
   assert.ok(i >= 0, `function ${name} not found in source.html`);

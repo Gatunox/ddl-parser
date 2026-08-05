@@ -14314,7 +14314,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.8.0';
+const APP_VERSION  = '1.1.8.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20297,16 +20297,36 @@ function _meOvlRowClick(qn, ev) {
 // Every action writes the same `overrides` map the panel and the parse-spec use,
 // so there is one storage shape and one set of rules behind all three surfaces.
 const _ME_FM_ED = {
-  'de-anchor': { label: 'DE number',  kind: 'num', def: '66',
+  // Defaults come from the FIELD, not from a constant: 66 was a placeholder
+  // carried over from a worked example, and 2 is no more meaningful. Opening
+  // the editor on the value already in effect means the number you see is the
+  // one you are changing.
+  'de-anchor': { label: 'DE number',  kind: 'num',
+                 def: () => String(_meFmSelRow()?.de ?? ''),
                  set: (o, v) => { o.de = Math.max(1, Math.min(128, +v)); } },
-  'bytes':     { label: 'Read bytes', kind: 'num', def: '2',
+  'bytes':     { label: 'Read bytes', kind: 'num',
+                 def: () => String(_meFmSelRow()?.length ?? ''),
                  set: (o, v) => { o.bytes = +v; } },
-  'type':      { label: 'Read as', kind: 'sel', def: 'hex-char',
+  'type':      { label: 'Read as', kind: 'sel',
+                 def: () => _meFmSelOvr()?.type || 'hex-char',
                  opts: () => _ME_TYPE_OPTS.filter(Boolean), set: (o, v) => { o.type = v; } },
-  'display':   { label: 'Show as', kind: 'sel', def: 'bitmap-list',
+  'display':   { label: 'Show as', kind: 'sel',
+                 def: () => _meFmSelOvr()?.display || 'bitmap-list',
                  opts: () => _ME_DISP_OPTS.filter(Boolean), set: (o, v) => { o.display = v; } },
 };
 let _meFmEdAct = null;
+// The first selected row, and its stored override — what the editors open on.
+function _meFmSelRow() {
+  const first = _meFmMultiSel.values().next().value;
+  if (!first) return null;
+  return (_meFmVirt?.all || []).find(r => r.id === first) || null;
+}
+function _meFmSelOvr() {
+  const first = _meFmMultiSel.values().next().value;
+  const item = _meCurItem();
+  return (first && item) ? _meOvGet(item, first) : null;
+}
+const _meFmEdDef = cfg => (typeof cfg.def === 'function' ? cfg.def() : cfg.def);
 
 function _meFmEdClose() {
   _meFmEdAct = null;
@@ -20322,8 +20342,8 @@ function _meFmEdOpen(act) {
   sel.style.display = cfg.kind === 'sel' ? '' : 'none';
   // Lazy: the option lists are declared further down the file, so reading them
   // at module-init time threw before anything rendered.
-  if (cfg.kind === 'sel') { sel.innerHTML = cfg.opts().map(o => `<option>${_escHtml(o)}</option>`).join(''); sel.value = cfg.def; }
-  else num.value = cfg.def;
+  if (cfg.kind === 'sel') { sel.innerHTML = cfg.opts().map(o => `<option>${_escHtml(o)}</option>`).join(''); sel.value = _meFmEdDef(cfg); }
+  else num.value = _meFmEdDef(cfg);
   ed.classList.add('on');
   const btn = document.querySelector(`#me-fm-bar [data-fmact="${act}"]`);
   if (btn) {

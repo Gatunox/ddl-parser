@@ -1882,7 +1882,11 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
   font-size:calc(var(--sz-mono) - 1px);}
 .me-ovl-hdr .me-ovl-sub{color:var(--text-very-dim);font-weight:400;background:none;
   border:0;padding:0;font-size:calc(var(--sz-mono) - 1px);}
-.me-ovl-list{border:2px solid var(--border);border-radius:0 0 2px 2px;max-height:180px;overflow:auto;scrollbar-gutter:stable;
+/* No reserved gutter here, deliberately: the rows have a background, so an
+   always-reserved 12px strip reads as a gap on every row. The list is short
+   and rarely scrolls, and when it does the shift is contained to it — unlike
+   the panel and the field table, which keep their gutters. */
+.me-ovl-list{border:2px solid var(--border);border-radius:0 0 2px 2px;max-height:180px;overflow:auto;
   background:var(--bg-panel);margin-bottom:8px;}
 .me-ovl-row{display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;
   border-bottom:2px solid var(--border);}
@@ -14318,7 +14322,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.8.6';
+const APP_VERSION  = '1.1.8.7';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

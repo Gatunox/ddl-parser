@@ -4068,9 +4068,13 @@ test('every scrolling surface in the panel reserves its scrollbar gutter', () =>
   // max-height, and jumps back when it shrinks.
   const css = html.slice(html.indexOf('<style'), html.indexOf('</style>'));
   const rule = sel => (css.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{[^}]*\\}')) || [''])[0];
-  const missing = ['.me-tab-body', '.me-fm-table-wrap', '.me-ovl-list', '.me-fm-pane pre']
+  const missing = ['.me-tab-body', '.me-fm-table-wrap', '.me-fm-pane pre']
     .filter(sel => !/scrollbar-gutter:\s*stable/.test(rule(sel)));
   deepEq(missing, [], 'scrolling containers with no reserved gutter');
+  // The overrides list is the deliberate exception: its rows have a background,
+  // so a permanently reserved strip reads as a gap on every one of them.
+  assert.ok(!/scrollbar-gutter/.test(rule('.me-ovl-list')),
+    'the overrides list must NOT reserve a gutter');
 });
 
 test('no CSS rule is left with a dangling selector list', () => {

@@ -1872,8 +1872,8 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
    renders visibly larger and wider than the mono used one panel above.
    Buttons are deliberately excluded — they are sans throughout the app. */
 .me-ovl-hdr,.me-ovl-sub,.me-ovl-name,.me-ovl-chip,.me-ovl-ro,.me-ovl-empty,
-.me-ovl-edit-name,.me-ovl-edit-orig,.me-ovl-hint,.me-ovl-err,
-.me-ovl-f label,.me-ovl-json label{font-family:var(--font-mono);}
+.me-ovl-edit-name,.me-ovl-edit-orig,.me-ovl-err,
+
 .me-ovl-hdr{display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--bg-deep);
   border:2px solid var(--border);border-bottom:0;border-radius:2px 2px 0 0;font-weight:700;
   font-size:calc(var(--sz-mono) - 1px);}
@@ -1894,36 +1894,29 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
 /* Editor — one field at a time, so the controls can be full-size and labelled. */
 /* A band, not a box: top and bottom rules in the accent, edge to edge, so the
    editor reads as an open drawer between the list and the reference table. */
-.me-ovl-edit{border:0;border-top:2px solid var(--accent);border-bottom:2px solid var(--accent);
-  border-radius:0;background:rgba(var(--accent-rgb),0.06);padding:9px 10px;margin-bottom:8px;
-  font-size:calc(var(--sz-mono) - 1px);}
-.me-ovl-edit-top{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
-.me-ovl-edit-name{font-weight:700;color:var(--accent);}
-.me-ovl-edit-orig{color:var(--text-very-dim);font-size:calc(var(--sz-mono) - 2px);}
-.me-ovl-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
-.me-ovl-grid.grp{grid-template-columns:repeat(5,minmax(0,1fr));}
-.me-ovl-f label{display:block;color:var(--text-dim);font-size:calc(var(--sz-mono) - 3px);margin-bottom:2px;}
+
+
+
+
+
+
+
 /* max-width:none is load-bearing: the global `select` rule caps every select at
    140px, so width:100% alone left these at 140 in a 238px column. */
-.me-ovl-f select,.me-ovl-f input{width:100%;max-width:none;height:24px;background:var(--bg-panel);
-  border:2px solid var(--border);border-radius:3px;color:var(--text);padding:3px 5px;
-  font-family:var(--font-mono);font-size:calc(var(--sz-mono) - 1px);box-sizing:border-box;}
-.me-ovl-f select.set,.me-ovl-f input.set{border-color:var(--accent);color:var(--accent);}
-.me-ovl-f select:focus,.me-ovl-f input:focus{outline:none;border-color:var(--accent);}
+
+
+
 .me-ovl-vlg-row{display:flex;align-items:center;gap:6px;}
 .me-ovl-vlg-row select{flex:1;min-width:0;}
-.me-ovl-json{margin-top:7px;}
-.me-ovl-json label{display:block;color:var(--text-dim);font-size:calc(var(--sz-mono) - 3px);margin-bottom:2px;}
+
+
 #me-ovl-json{width:100%;background:var(--bg-deep);border:2px solid var(--border);border-radius:2px;
   color:var(--text);padding:4px 6px;font-family:var(--font-mono);font-size:calc(var(--sz-mono) - 1px);
   line-height:1.5;resize:none;overflow:hidden;outline:none;box-sizing:border-box;}
 #me-ovl-json:focus{border-color:var(--accent);}
 #me-ovl-json.bad{border-color:#f85149;background:rgba(248,81,73,0.07);}
-.me-ovl-err{color:#f85149;font-size:calc(var(--sz-mono) - 2px);min-height:14px;margin-top:2px;}
+
 /* Reference footer — the Add button lives with the list it acts on. */
-.me-ovl-foot{display:flex;align-items:center;gap:8px;padding:5px 2px 0;}
-.me-ovl-hint{color:var(--text-very-dim);font-size:calc(var(--sz-mono) - 2px);flex:1;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .me-ovl-ro{border:2px solid #2f3947;color:var(--text-very-dim);border-radius:9px;padding:0 6px;
   font-size:calc(var(--sz-mono) - 3px);font-weight:400;}
 /* Reference rows: selection, and the whole-row tint for a field that carries an
@@ -14321,7 +14314,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.7.4';
+const APP_VERSION  = '1.1.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18583,7 +18576,6 @@ function _meOverridesPrep(item) {
   const chrome = bodyRows => warnHtml + helpHtml + `
 <div class="me-ovl-hdr">Overrides <span class="me-ovl-sub" id="me-ovl-count"></span></div>
 <div class="me-ovl-list" id="me-ovl-list"></div>
-<div id="me-ovl-edit-host"></div>
 <div class="me-fm-toolbar">
   <span class="me-ovl-ro" title="This table is the picker — every field the DDL declares. Configuration lives in the Overrides list above.">REFERENCE · READ-ONLY</span>
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
@@ -18651,10 +18643,7 @@ function _meOverridesPrep(item) {
   <div class="me-fm-pane"><div class="me-fm-pane-h">Overrides written</div><pre id="me-fm-json"></pre></div>
   <div class="me-fm-pane"><div class="me-fm-pane-h">What the rules did</div><pre id="me-fm-notes"></pre></div>
 </div>
-<div class="me-ovl-foot">
-  <span class="me-ovl-hint" id="me-ovl-hint">Select a field above, then add an override for it.</span>
-  <button class="btn btn-sm" id="me-ovl-add-btn" onclick="_meOvlAddFromSelection()" disabled>+ Add Override</button>
-</div>`;
+`;
 
   return { fieldList, ctx: { ea, vlgMap, foByField, usesBitmapFields, vlgIdentifier, leavesByGroup }, chrome };
 }
@@ -20235,7 +20224,6 @@ let _meOvlSel   = null;   // qualified id of the selected reference row
 // text-drag selection across rows, and two additive modifiers with different
 // rules read as unpredictable.
 let _meFmMultiSel = new Set();
-let _meOvlDraft = null;   // canonical id currently open in the editor
 
 // Row count for the reference table. Stored inside the existing column-visibility
 // object so no new localStorage key is introduced. Empty = the CSS default (62vh).
@@ -20296,9 +20284,6 @@ function _meOvlRowClick(qn, ev) {
     _meFmMultiSel = new Set([qn]);
   }
   _meOvlSel = _meFmMultiSel.has(qn) ? qn : null;
-  // Selecting a different field abandons an unsaved draft for another one —
-  // silently, because the draft is a copy of what is already stored until Save.
-  if (_meOvlDraft && _meOvlDraft !== _canonFieldId(qn)) _meOvlDraft = null;
   document.querySelectorAll('.me-fm-table tbody tr.me-fm-row-sel')
     .forEach(tr => tr.classList.remove('me-fm-row-sel'));
   const tr = document.querySelector(`.me-fm-table tbody tr[data-qn="${CSS.escape(qn)}"]`);
@@ -20500,50 +20485,21 @@ function _meOvlRefresh() {
     ? `${ids.length} field${ids.length !== 1 ? 's' : ''} configured`
     : 'none — every field parses exactly as the DDL declares it';
   listEl.innerHTML = ids.length ? ids.map(id => `
-    <div class="me-ovl-row${_meOvlDraft === id ? ' sel' : ''}" onclick="_meOvlEdit('${_meOvEsc(id)}')">
+    <div class="me-ovl-row${_meFmMultiSel.has(id) ? ' sel' : ''}" onclick="_meOvlRowClick('${_meOvEsc(id)}', event)"
+         title="Select this field in the table below, then use the action bar">
       <span class="me-ovl-name">${_meOvEsc(id)}</span>
       <span class="me-ovl-chips">${_meOvlChips(all[id]).map(t => `<span class="me-ovl-chip">${t}</span>`).join('')}</span>
       <button class="me-rb del" title="Remove this override"
               onclick="event.stopPropagation();_meOvlDelete('${_meOvEsc(id)}')">✕</button>
     </div>`).join('')
-    : `<div class="me-ovl-empty">No overrides.<br>Pick a field in the reference list below and press <b>+ Add Override</b>.</div>`;
+    : `<div class="me-ovl-empty">No overrides.<br>Select a field in the list below and use the action bar.</div>`;
 
-  // Footer: what is selected, and whether adding is possible.
-  const btn  = document.getElementById('me-ovl-add-btn');
-  const hint = document.getElementById('me-ovl-hint');
-  const row  = _meOvlSel ? (_meFmVirt?.all || []).find(r => r.id === _meOvlSel) : null;
-  const canon = _meOvlSel ? _canonFieldId(_meOvlSel) : null;
-  const isFiller = canon && canon.split('.').pop() === 'FILLER';
-  if (btn) {
-    btn.disabled = !row || isFiller || !!_meOvlDraft;
-    btn.classList.toggle('btn-accent-on', !btn.disabled);
-    btn.textContent = (canon && all[canon]) ? '✎ Edit Override' : '+ Add Override';
-  }
-  if (hint) {
-    hint.textContent = _meOvlDraft ? `Editing ${_meOvlDraft} — save or cancel first.`
-      : isFiller ? 'FILLER is padding and cannot be referenced — no override possible.'
-      : row ? `${row.id} · @${row.offset ?? '?'} · ${row.dataType || 'group'} · ${row.length || 0} bytes`
-              + (all[canon] ? ' — already has an override' : '')
-      : 'Select a field above, then add an override for it.';
-  }
-  _meOvlRenderEditor();
   _meFmNotesRefresh();
 }
 
-function _meOvlAddFromSelection() {
-  if (!_meOvlSel) return;
-  _meOvlDraft = _canonFieldId(_meOvlSel);
-  _meOvlRefresh();
-}
-function _meOvlEdit(id) {
-  _meOvlDraft = id;
-  _meOvlRefresh();
-}
-function _meOvlCancel() { _meOvlDraft = null; _meOvlRefresh(); }
 function _meOvlDelete(id) {
   const item = _meCurItem(); if (!item) return;
   _meOvDelete(item, id);
-  if (_meOvlDraft === id) _meOvlDraft = null;
   _meSetDirty();
   _meOvlRefresh();
   _mePsOvrRefresh();
@@ -20552,186 +20508,11 @@ function _meOvlDelete(id) {
 
 // The row the draft refers to, so the editor can show what the DDL declares and
 // offer the group's own leaves as LEN candidates.
-function _meOvlDraftRow() {
-  const all = _meFmVirt?.all || [];
-  return all.find(r => _canonFieldId(r.id) === _meOvlDraft) || null;
-}
-function _meOvlDraftLeaves() {
-  const row = _meOvlDraftRow();
-  if (!row || !row.isGroup) return [];
-  const all = _meFmVirt?.all || [];
-  const pre = row.id + '.';
-  return all.filter(r => !r.isGroup && !r.isRedef && r.id.startsWith(pre)
-                      && !r.id.slice(pre.length).includes('.'));
-}
 
-function _meOvlRenderEditor() {
-  const host = document.getElementById('me-ovl-edit-host');
-  if (!host) return;
-  if (!_meOvlDraft) { host.innerHTML = ''; return; }
-  const item = _meCurItem();
-  const o    = _meOvAll(item)[_meOvlDraft] || {};
-  const row  = _meOvlDraftRow();
-  const ea   = _meOvEsc;
-  const leaves = _meOvlDraftLeaves();
-  // DE and VLG are always offered. They are only EXECUTED by read-bitmap-fields,
-  // but a spec is often configured before its parse spec is written, and hiding
-  // them made them look unsupported. The reference table still blanks those
-  // columns without a bitmap block — that is about density, not availability.
-  const isGrp = !!(row && row.isGroup) && leaves.length >= 2;
-  const sel = (id, list, v) => `<select id="${id}" class="${v ? 'set' : ''}">` +
-    list.map(t => `<option ${((v || '') === t) ? 'selected' : ''}>${ea(t)}</option>`).join('') + `</select>`;
-  const vlgLeaf = typeof o.vlg === 'string' ? o.vlg : (leaves[0] && _canonFieldId(leaves[0].id));
-  host.innerHTML = `<div class="me-ovl-edit">
-  <div class="me-ovl-edit-top">
-    <span class="me-ovl-edit-name">${ea(_meOvlDraft)}</span>
-    <span class="me-ovl-edit-orig">${row
-      ? `DDL: @${row.offset ?? '?'} · ${ea(row.dataType || 'group')} · ${row.length || 0} bytes`
-        + (leaves.length ? ' · declares ' + leaves.map(l => ea(l.id.split('.').pop())).join(', ') : '')
-      : 'not present in the bound DDL'}</span>
-    <span style="flex:1"></span>
-    <button class="btn btn-sm btn-accent-on" onclick="_meOvlSave()">Save</button>
-    <button class="btn btn-sm" onclick="_meOvlCancel()">Cancel</button>
-    <button class="btn btn-sm" onclick="_meFmToggleHelp()" title="What these fields mean">?</button>
-  </div>
-  <div class="me-ovl-grid${isGrp ? ' grp' : ''}">
-    <div class="me-ovl-f"><label>DATA TYPE</label>${sel('me-ovl-type', _ME_TYPE_OPTS, o.type)}</div>
-    <div class="me-ovl-f"><label>BYTES</label>
-      <input id="me-ovl-bytes" class="${o.bytes ? 'set' : ''}" placeholder="${row ? row.length || '' : ''}"
-             value="${o.bytes ?? ''}" title="Read only this many bytes with the type above. The field still spans its declared length."></div>
-    <div class="me-ovl-f"><label>DISPLAY</label>${sel('me-ovl-disp', _ME_DISP_OPTS, o.display)}</div>
-    <div class="me-ovl-f"><label>DE</label>
-      <input id="me-ovl-de" class="${o.de != null ? 'set' : ''}" placeholder="${row && row.de != null ? row.de : '—'}"
-             value="${o.de ?? ''}" title="Anchor DE numbering at this field (executed by read-bitmap-fields)"></div>
-    ${isGrp ? `<div class="me-ovl-f"><label>VARIABLE LENGTH</label>
-      <div class="me-ovl-vlg-row">
-        <button type="button" id="me-ovl-vlg-on" class="me-vlg-tgl${o.vlg ? ' on' : ''}"
-                onclick="_meOvlToggleVlg()" title="Mark this group as a Variable Length Group">VLG</button>
-        <select id="me-ovl-vlg" class="${o.vlg ? 'set' : ''}" ${o.vlg ? '' : 'disabled'}
-                onchange="_meOvlSyncJson()" title="Which declared element holds the length">
-          ${leaves.map(l => { const c = _canonFieldId(l.id); const n = c.split('.').pop();
-            return `<option value="${ea(c)}" ${vlgLeaf === c ? 'selected' : ''}>${ea(n)}</option>`; }).join('')}
-        </select>
-      </div></div>` : ''}
-  </div>
-  <div class="me-ovl-json">
-    <label>THIS FIELD AS TEXT — edit here or in the controls above, whichever is quicker</label>
-    <textarea id="me-ovl-json" spellcheck="false" oninput="_meOvlJsonInput()" onblur="_meOvlSyncJson()"></textarea>
-    <div class="me-ovl-err" id="me-ovl-err"></div>
-  </div>
-</div>`;
-  ['me-ovl-type', 'me-ovl-bytes', 'me-ovl-disp', 'me-ovl-de'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', () => {
-      el.classList.toggle('set', !!el.value);
-      _meOvlSyncJson();
-    });
-  });
-  _meOvlSyncJson();
-}
 
 // Read the controls into the override object the map stores.
-function _meOvlFromControls() {
-  const g = id => document.getElementById(id);
-  const o = {};
-  const t = g('me-ovl-type')?.value, d = g('me-ovl-disp')?.value;
-  const b = (g('me-ovl-bytes')?.value || '').trim();
-  if (t) o.type = t;
-  if (b && +b > 0) o.bytes = +b;
-  if (d) o.display = d;
-  // A control the editor didn't render (DE and VLG are hidden without a
-  // bitmap-fields block) must carry its stored value through untouched —
-  // otherwise editing a type would quietly delete a DE anchor.
-  const stored = (_meCurItem() && _meOvAll(_meCurItem())[_meOvlDraft]) || {};
-  if (g('me-ovl-de')) {
-    const de = (g('me-ovl-de').value || '').trim();
-    if (de !== '' && !Number.isNaN(+de)) o.de = Math.max(1, Math.min(128, +de));
-  } else if (stored.de != null) o.de = stored.de;
-  if (g('me-ovl-vlg-on')) {
-    if (g('me-ovl-vlg-on').classList.contains('on')) {
-      const leaves = _meOvlDraftLeaves();
-      const picked = g('me-ovl-vlg')?.value;
-      // The first leaf is the engine's own default, so storing it as an explicit
-      // choice would be noise — `true` says "VLG, LEN auto".
-      o.vlg = (picked && leaves[0] && picked !== _canonFieldId(leaves[0].id)) ? picked : true;
-    }
-  } else if (stored.vlg) o.vlg = stored.vlg;
-  return o;
-}
-function _meOvlToControls(o) {
-  const g = id => document.getElementById(id);
-  const set = (id, v) => { const el = g(id); if (!el) return;
-    el.value = v == null ? '' : v; el.classList.toggle('set', !!el.value); };
-  set('me-ovl-type', o.type || '');
-  set('me-ovl-bytes', o.bytes ?? '');
-  set('me-ovl-disp', o.display || '');
-  set('me-ovl-de', o.de ?? '');
-  const tgl = g('me-ovl-vlg-on'), selEl = g('me-ovl-vlg');
-  if (tgl && selEl) {
-    tgl.classList.toggle('on', !!o.vlg);
-    selEl.disabled = !o.vlg;
-    selEl.classList.toggle('set', !!o.vlg);
-    if (typeof o.vlg === 'string') selEl.value = o.vlg;
-  }
-}
-function _meOvlToggleVlg() {
-  const tgl = document.getElementById('me-ovl-vlg-on'), selEl = document.getElementById('me-ovl-vlg');
-  if (!tgl) return;
-  const on = tgl.classList.toggle('on');
-  if (selEl) { selEl.disabled = !on; selEl.classList.toggle('set', on); }
-  _meOvlSyncJson();
-}
 // Controls → text. Skipped while the textarea has focus so typing isn't fought.
-function _meOvlSyncJson() {
-  const ta = document.getElementById('me-ovl-json');
-  if (!ta) return;
-  if (document.activeElement !== ta)
-    ta.value = JSON.stringify({ [_meOvlDraft]: _meOvlFromControls() }, null, 2);
-  ta.classList.remove('bad');
-  const err = document.getElementById('me-ovl-err'); if (err) err.textContent = '';
-  // Grow to the content: an override is a handful of lines and scrolling inside
-  // a fixed box defeats the point of showing the text at all. box-sizing is
-  // border-box, so the borders scrollHeight omits have to be added back.
-  ta.style.height = 'auto';
-  const cs = getComputedStyle(ta);
-  ta.style.height = (ta.scrollHeight + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth)) + 'px';
-}
 // Text → controls.
-function _meOvlJsonInput() {
-  const ta = document.getElementById('me-ovl-json'), err = document.getElementById('me-ovl-err');
-  if (!ta) return;
-  ta.style.height = 'auto';
-  const cs = getComputedStyle(ta);
-  ta.style.height = (ta.scrollHeight + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth)) + 'px';
-  try {
-    const parsed = JSON.parse(ta.value);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('expected an object');
-    const o = (parsed[_meOvlDraft] !== undefined) ? parsed[_meOvlDraft] : parsed;
-    if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error('expected an object of settings');
-    const bad = Object.keys(o).filter(k => !['type', 'bytes', 'display', 'de', 'vlg'].includes(k));
-    _meOvlToControls(o);
-    ta.classList.remove('bad');
-    if (err) err.textContent = bad.length ? '⚠ unknown key: ' + bad.join(', ') : '';
-  } catch (e) {
-    ta.classList.add('bad');
-    if (err) err.textContent = '⚠ ' + e.message;
-  }
-}
-function _meOvlSave() {
-  const item = _meCurItem(); if (!item || !_meOvlDraft) return;
-  const o = _meOvlFromControls();
-  const all = _meOvAll(item);
-  if (Object.keys(o).length) all[_meOvlDraft] = o; else delete all[_meOvlDraft];
-  _meOvlDraft = null;
-  _meSetDirty();
-  _meOvlRefresh();
-  _mePsOvrRefresh();
-  // A `de`, `vlg` or `bytes` override changes the ROW LIST itself — DE numbers,
-  // offsets and lengths of every field after it — not merely how a row draws.
-  // Re-rendering the window from the CACHED list showed the old values until the
-  // editor was closed and reopened, which is what rebuilt the list.
-  if (!_meFmPatchDECells() && _meFmVirt) _meFmRenderWindow(true);
-}
 
 // ── Click-to-edit override cells ──────────────────────────────────────────
 // The Field Map renders a lightweight fake-select span per override cell; a

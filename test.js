@@ -4060,6 +4060,16 @@ test('every action the handler implements is present as a button', () => {
     [], 'buttons with no handler');
 });
 
+test('the old per-field editor is gone, and nothing references it', () => {
+  // The action bar replaced it. Leaving the editor in place would mean two ways
+  // to set the same override, in two places, with different controls.
+  const html = ovPanelHtml();
+  for (const gone of ['me-ovl-add-btn', 'me-ovl-edit-host', 'me-ovl-json', 'me-ovl-hint'])
+    assert.ok(!html.includes(gone), `${gone} still rendered`);
+  for (const fn of ['_meOvlSave', '_meOvlRenderEditor', '_meOvlFromControls', '_meOvlAddFromSelection'])
+    assert.ok(!new RegExp('function ' + fn + '\\b').test(html), `${fn} still defined`);
+});
+
 test('the panel keeps the overrides list AND gains the two panes', () => {
   // The list is not replaced by the bar — it is the at-a-glance summary of what
   // is configured. The panes are new: what was written, and what it means.
@@ -5159,14 +5169,18 @@ test('the Field Map banner is guarded by the synthetic-bitmap check', () => {
     'the banner must not fire when the spec states the map width itself');
 });
 
-test('the override save path rebuilds the field list', () => {
+test('the override apply path rebuilds the field list', () => {
   // A de / vlg / bytes override changes the rows themselves — DE numbers,
   // offsets, lengths — so re-rendering the window from the cached list showed
-  // stale values until the editor was closed and reopened. This is a source
-  // tripwire because the fix is a call, and the render path needs a live DOM.
-  const src = psFnSource('_meOvlSave');
+  // stale values until the panel was closed and reopened. A source tripwire
+  // because the fix is a call, and the render path needs a live DOM.
+  // (_meOvlSave was the old per-field editor's save; the action bar replaced it
+  // with _meFmAfterAct, which every action funnels through.)
+  const src = psFnSource('_meFmAfterAct');
   assert.ok(/_meFmPatchDECells\(\)/.test(src),
-    '_meOvlSave must recompute the field list, not only re-render the window');
+    'the apply path must recompute the field list, not only re-render the window');
+  assert.ok(/_meFmNotesRefresh\(\)/.test(src),
+    'and refresh the panes, or they narrate the previous state');
 });
 
 test('a de override does change what the field list reports', () => {

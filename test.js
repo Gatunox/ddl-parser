@@ -116,6 +116,7 @@ _t.mePsHelpExampleHtml = _mePsHelpExampleHtml;
 _t.meItemVlgIdentifier = _meItemVlgIdentifier;
 _t.meContentLooksWrong = _meContentLooksWrong;
 _t.meFieldOvrAnnotation = _meFieldOvrAnnotation;
+_t.meHtmlOverrides     = _meHtmlOverrides;
 _t.mePsLintWarns       = _mePsLintWarns;
 _t.meItemBitmapIsSynthetic = _meItemBitmapIsSynthetic;
 _t.fmtDefaultSpecs     = window._fmtDefaultSpecs;
@@ -171,7 +172,7 @@ const {
   stripJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
-  meContentLooksWrong, meFieldOvrAnnotation, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
+  meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
@@ -4019,6 +4020,45 @@ test('exclusion and promotion combine, in declaration order', () => {
   eq(deAt(r, 'ADDITIONA.FIELD-XX'), 4, 'and the promoted children pick up from there');
   eq(deAt(r, 'ADDITIONA.FIELD-YY'), 5, 'in order');
   eq(deAt(r, 'SOME'), 6, 'with the tail continuing');
+});
+
+// ── The action bar has to be in the RENDERED panel, not just in the file ────
+// It was added to the wrong template — a .replace() whose target string did not
+// exist, so it silently did nothing. The CSS and the handlers shipped; the
+// markup did not, and grepping the source for the class name "proved" it was
+// there. Only rendering proves it.
+
+console.log('\nOverrides panel — the action bar is rendered');
+
+function ovPanelHtml() {
+  S.ddlTree = { V: { S: { D: `DEFINITION REQMSG.
+    02 MSGTYPE PIC X(4).
+    02 PAN-LEN PIC X(2).
+    02 PAN PIC X(16).
+END.
+` } } };
+  return meHtmlOverrides({ name: 'X', ddl_bindings: ['V/S/D/REQMSG'], overrides: {},
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BM', encoding: 'binary', length: 8 } },
+                        { 'read-bitmap-fields': 'BM' }] });
+}
+
+test('the rendered Overrides panel contains the action bar', () => {
+  const html = ovPanelHtml();
+  assert.ok(/id="me-fm-bar"/.test(html), 'the bar is in the rendered markup');
+  assert.ok(/id="me-fm-ed"/.test(html),  'and so is its inline editor');
+});
+
+test('every action the handler implements is present as a button', () => {
+  const html = ovPanelHtml();
+  const inMarkup = new Set([...html.matchAll(/data-fmact="([^"]+)"/g)].map(m => m[1]));
+  deepEq(['de-off','de-on','de-kids','de-anchor','vlg','bytes','type','display','selall','clear','reset']
+    .filter(a => !inMarkup.has(a)), [], 'actions with no button');
+});
+
+test('the bar sits above the table, not after it', () => {
+  const html = ovPanelHtml();
+  assert.ok(html.indexOf('me-fm-bar') < html.indexOf('me-fm-table-wrap'),
+    'the bar precedes the field table');
 });
 
 // ── A bitmap the DDL does not declare still numbers the DEs ─────────────────

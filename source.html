@@ -14308,7 +14308,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.7.1';
+const APP_VERSION  = '1.1.7.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18593,6 +18593,38 @@ function _meOverridesPrep(item) {
                 title="Put every column back to its default width">Reset</button></div>
     </div>
   </div>
+</div>
+<div class="me-fm-bar" id="me-fm-bar">
+  <span class="me-fm-cnt none" id="me-fm-cnt">no selection</span>
+  <span class="me-fm-g"><span class="me-fm-glbl">DE</span><span class="me-fm-seg">
+    <button class="btn btn-sm" data-fmact="de-off" title="Not a data element — the counter does not advance, so the fields after it keep their numbers">Exclude</button>
+    <button class="btn btn-sm" data-fmact="de-on" title="A data element even where the default rule says no — a nested field, or one named like padding">Include</button>
+    <button class="btn btn-sm" data-fmact="de-kids" title="This group is not a DE; its immediate children each are">Children</button>
+    <button class="btn btn-sm" data-fmact="de-anchor" title="Set this field's DE number; every field after it follows">Number…</button>
+  </span></span>
+  <span class="me-fm-gsep"></span>
+  <span class="me-fm-g"><span class="me-fm-glbl">Length</span><span class="me-fm-seg">
+    <button class="btn btn-sm" data-fmact="vlg" title="This field's value is the NEXT field's length">VLG</button>
+    <button class="btn btn-sm" data-fmact="bytes" title="Read this many bytes instead of the declared length">Bytes…</button>
+  </span></span>
+  <span class="me-fm-gsep"></span>
+  <span class="me-fm-g"><span class="me-fm-glbl">Read</span><span class="me-fm-seg">
+    <button class="btn btn-sm" data-fmact="type" title="Interpret the bytes as this type">Type…</button>
+    <button class="btn btn-sm" data-fmact="display" title="Format the value for display">Display…</button>
+  </span></span>
+  <span class="me-fm-gsep"></span>
+  <span class="me-fm-g"><span class="me-fm-seg">
+    <button class="btn btn-sm" data-fmact="selall" title="Select every row the filter is showing">Select shown</button>
+    <button class="btn btn-sm" data-fmact="clear" title="Remove every override on the selected fields">Clear</button>
+    <button class="btn btn-sm" data-fmact="reset" title="Remove EVERY override, on every field">Reset</button>
+  </span></span>
+</div>
+<div class="me-fm-ed" id="me-fm-ed">
+  <label id="me-fm-ed-lbl"></label>
+  <input id="me-fm-ed-num" type="text" inputmode="numeric" autocomplete="off" spellcheck="false">
+  <select id="me-fm-ed-sel" style="display:none"></select>
+  <button class="btn btn-sm" id="me-fm-ed-ok">Apply</button>
+  <button class="btn btn-sm" id="me-fm-ed-cancel">Cancel</button>
 </div>
 <div class="me-fm-table-wrap">
   <table class="me-fm-table">

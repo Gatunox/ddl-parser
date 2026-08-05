@@ -4099,6 +4099,25 @@ test('no CSS rule is left with a dangling selector list', () => {
   deepEq(broken, [], 'selector lists with no rule body');
 });
 
+test('a bytes value equal to the declared length stores no override', () => {
+  // Reported: typing the length the field already has added an entry to the
+  // overrides list while the table stayed identical — because there was nothing
+  // to change. An entry that has no effect on the parse is a lie about it.
+  const cfg = html.slice(html.indexOf('const _ME_FM_ED'), html.indexOf('let _meFmEdAct'));
+  const bytes = cfg.slice(cfg.indexOf("'bytes':"), cfg.indexOf("'type':"));
+  assert.ok(/noop:\s*\(row, v\) =>/.test(bytes), 'bytes declares a no-op test');
+  assert.ok(/declaredLen\s*\?\?\s*row\?\.length/.test(bytes),
+    'compared against the DECLARED length, not the effective one');
+  assert.ok(/clear:\s*o\s*=>\s*\{\s*delete o\.bytes/.test(bytes),
+    'and setting it back to declared removes an existing override');
+  // The commit path has to consult it, per field — a multi-selection can hold
+  // fields of different declared widths.
+  const commit = psFnSource('_meFmEdCommit');
+  assert.ok(/cfg\.noop\(rowsById\.get\(qn\), v\)/.test(commit),
+    'the no-op test is applied per selected field');
+  assert.ok(/_meFlash\(/.test(commit), 'and it says so rather than doing nothing silently');
+});
+
 test('the value editors open on the field, not on a constant', () => {
   // "Why does DE number always start at 66?" — because it was a placeholder
   // copied from a worked example. A default that ignores the field is noise you

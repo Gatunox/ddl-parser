@@ -14322,7 +14322,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.8.7';
+const APP_VERSION  = '1.1.8.8';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20312,7 +20312,12 @@ const _ME_FM_ED = {
                  set: (o, v) => { o.de = Math.max(1, Math.min(128, +v)); } },
   'bytes':     { label: 'Read bytes', kind: 'num',
                  def: () => String(_meFmSelRow()?.length ?? ''),
-                 set: (o, v) => { o.bytes = +v; } },
+                 // Setting it BACK to the declared length removes the override
+                 // rather than storing one that changes nothing: an entry in the
+                 // list with no effect on the table is a lie about the parse.
+                 noop: (row, v) => +v === (row?.declaredLen ?? row?.length),
+                 set: (o, v) => { o.bytes = +v; },
+                 clear: o => { delete o.bytes; } },
   'type':      { label: 'Read as', kind: 'sel',
                  def: () => _meFmSelOvr()?.type || 'hex-char',
                  opts: () => _ME_TYPE_OPTS.filter(Boolean), set: (o, v) => { o.type = v; } },
@@ -20374,10 +20379,22 @@ function _meFmEdCommit() {
   } else v = document.getElementById('me-fm-ed-sel').value;
   const item = _meCurItem(); if (!item) return;
   const all = _meOvAll(item);
+  const rowsById = new Map((_meFmVirt?.all || []).map(r => [r.id, r]));
+  let noops = 0;
   for (const qn of _meFmMultiSel) {
     const k = _canonFieldId(qn);
+    // Judged per field: a multi-selection can hold fields of different declared
+    // widths, so the same typed value is a no-op for some and not for others.
+    if (cfg.noop && cfg.noop(rowsById.get(qn), v)) {
+      noops++;
+      if (all[k] && cfg.clear) cfg.clear(all[k]);   // and it undoes an existing one
+      continue;
+    }
     cfg.set(all[k] || (all[k] = {}), v);
   }
+  if (noops) _meFlash(noops === 1
+    ? 'That is already the declared length — no override stored'
+    : `${noops} fields already read that many bytes — no override stored`, 'warn');
   _meFmEdClose();
   _meFmAfterAct();
 }

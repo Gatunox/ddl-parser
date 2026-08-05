@@ -1288,6 +1288,8 @@ Once all messages are migrated and verified:
 | `up_me_last_sel` | Last-selected entity in the Data Editor |
 | `up_me_fm_ui` | Per-spec Field Map view state — Collapse All, collapsed groups, Hide Redef, Auto Order + its revert snapshot. Deliberately a side-store keyed `name\|label`, never inside the spec JSON, so exports stay clean |
 | `up_me_fm_col_w` | Field Map column widths |
+| `up_me_fm_colvis` | Field Map column visibility — which columns the ⚙ chooser is showing |
+| `up_me_ps_fmt` | Parse-spec **Format** shape — `compact` (one line per block) or `expanded` (one line per attribute). A reading preference, so it persists. |
 | `up_me_sidebar_w` | Data Editor sidebar width |
 | `up_cc_…` | Per-editor column-chooser state (prefix) |
 

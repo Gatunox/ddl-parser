@@ -108,6 +108,8 @@ _t.isHexAsciiLine     = isHexAsciiLine;
 _t.hexAsciiStartCol   = hexAsciiStartCol;
 _t.extractBytes       = extractBytes;
 _t.stripJsonc         = _stripJsonc;
+_t.formatJsonc        = _formatJsonc;
+_t.compactJsonc       = _compactJsonc;
 _t.migrateSpec        = window._migrateSpec;
 _t.migrateOverrides   = window._migrateSpecOverrides;
 _t.psHelp             = _PS_HELP;
@@ -172,7 +174,7 @@ const {
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
-  stripJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
+  stripJsonc, formatJsonc, compactJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
@@ -4260,6 +4262,56 @@ test('a synthetic bitmap with nothing read before it makes every field a DE', ()
   eq(deOf(rows, 'SDLC-ORIGIN'), 2, 'and runs on');
 });
 
+// ── Compact formatting: one line per block ─────────────────────────────────
+// The expanded form puts every attribute on its own line, which is unreadable
+// at fifteen blocks — the sequence disappears into punctuation.
+
+console.log('\nparse-spec Format — compact mode');
+
+const FMT_SRC = `[
+  {
+    "skip": { "length": 9 }
+  },
+  // a note above a block
+  {
+    "read": "SDLC-DEST"
+  },
+  {
+    // a note INSIDE a block
+    "read": "SDLC-ORIGIN"
+  }
+]`;
+
+test('compact puts each block on one line', () => {
+  const out = compactJsonc(formatJsonc(FMT_SRC));
+  assert.ok(/^  \{ "skip": \{ "length": 9 \} \},$/m.test(out), `got:\n${out}`);
+  assert.ok(/^  \{ "read": "SDLC-DEST" \},$/m.test(out), `got:\n${out}`);
+});
+
+test('a comment above a block survives', () => {
+  assert.ok(/\/\/ a note above a block/.test(compactJsonc(formatJsonc(FMT_SRC))), 'kept');
+});
+
+test('a block containing a comment is left expanded', () => {
+  // Collapsing it would pull the rest of the block onto a // line and swallow
+  // it. A formatter that eats comments is worse than one that indents badly.
+  const out = compactJsonc(formatJsonc(FMT_SRC));
+  assert.ok(!/\/\/ a note INSIDE a block.*"read"/.test(out), 'not collapsed onto the comment line');
+  assert.ok(/\/\/ a note INSIDE a block\n/.test(out), 'the comment still owns its line');
+});
+
+test('compacting never changes what the spec means', () => {
+  const out = compactJsonc(formatJsonc(FMT_SRC));
+  deepEq(JSON.parse(stripJsonc(out)), JSON.parse(stripJsonc(FMT_SRC)), 'same data');
+});
+
+test('a brace inside a string does not fool the scanner', () => {
+  const src = '[\n  {\n    "read-fixed": { "as": "A}B", "length": 2 }\n  }\n]';
+  const out = compactJsonc(formatJsonc(src));
+  deepEq(JSON.parse(stripJsonc(out)), JSON.parse(stripJsonc(src)), 'same data');
+  assert.ok(/"as": "A\}B"/.test(out), 'the string is intact');
+});
+
 // ── Parse-spec lint: an inert spec must not look clean ──────────────────────
 // The engine takes keys[0] as the block type and ignores every other key, and
 // reads attributes by exact name. So a comma outside the braces, or a typo in an
@@ -5359,7 +5411,13 @@ test('field_overrides type and display options are documented (§9)', () => {
 });
 
 test('every localStorage key is documented (§13)', () => {
-  const keys = [...new Set([...html.matchAll(/localStorage\.(?:get|set|remove)Item\(\s*'([^']+)'/g)].map(m => m[1]))];
+  // Both spellings: a literal at the call site, and the `const X_KEY = 'up_…'`
+  // form. The regex only saw the first, so a key held in a constant — which is
+  // the tidier way to write it — escaped the guard entirely.
+  const keys = [...new Set([
+    ...[...html.matchAll(/localStorage\.(?:get|set|remove)Item\(\s*'([^']+)'/g)].map(m => m[1]),
+    ...[...html.matchAll(/const\s+_[A-Z0-9_]*KEY\s*=\s*'(up_[^']+)'/g)].map(m => m[1]),
+  ])];
   const sec = specSec('## 13. Storage', '### 13.1');
   deepEq(keys.filter(k => !sec.includes(k)), [], 'storage keys missing from §13');
 });

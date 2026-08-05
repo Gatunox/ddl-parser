@@ -14322,7 +14322,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.8.8';
+const APP_VERSION  = '1.1.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16159,7 +16159,11 @@ function _meHtmlParseSpec(item) {
       <button class="me-ps-variant-tgl ${binCls}" data-variant="binary" onclick="_mePsSwitchVariant('binary')" title="Binary Input — the default variant; used for hex / tandem-dump / ebcdic / netard-hex / etc.">Binary <span class="me-ps-vtgl-n">(${binCount})</span></button>
       <button class="me-ps-variant-tgl ${ascCls}" data-variant="ascii" onclick="_mePsSwitchVariant('ascii')" title="ASCII Input — used for ASCII-class input (ascii, netard-ascii, netard, fup-ascii); when empty it falls back to the Binary spec.">ASCII <span class="me-ps-vtgl-n">(${ascCount})</span></button>
     </div>
-    <button class="btn btn-sm" style="margin-left:auto" onclick="_mePsFmt()" title="Format — re-indent JSONC, preserving // and /* */ comments and trailing commas" aria-label="Format"><span class="me-ps-fmt-ico"></span></button>
+    <div class="me-ps-variants" style="margin-left:auto" title="What Format produces: one line per block, or one line per attribute">
+      <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? ' on' : ''}" onclick="_mePsSetFmtMode('compact')">Compact</button>
+      <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? '' : ' on'}" onclick="_mePsSetFmtMode('expanded')">Expanded</button>
+    </div>
+    <button class="btn btn-sm" onclick="_mePsFmt()" title="Format — re-indent JSONC, preserving // and /* */ comments and trailing commas" aria-label="Format"><span class="me-ps-fmt-ico"></span></button>
     <button class="btn btn-sm" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
   <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
@@ -18208,6 +18212,64 @@ function _mePsMountCM(item) {
   return _mePsCM;
 }
 
+// Compact form: each top-level block on ONE line. The expanded form puts every
+// attribute on its own line, which is unreadable at fifteen blocks — you cannot
+// see the sequence for the punctuation.
+//
+// A block is only collapsed when it contains NO comment. Collapsing one would
+// either swallow the rest of the line into a // comment or destroy the author's
+// note, and a formatter that eats comments is worse than one that indents badly.
+function _compactJsonc(src) {
+  const out = [];
+  let i = 0, depth = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    // Strings and comments are copied verbatim — the scanner must not read
+    // brackets inside them as structure.
+    if (c === '"') {
+      const start = i++;
+      while (i < n) { if (src[i] === '\\') { i += 2; continue; } if (src[i] === '"') { i++; break; } i++; }
+      out.push(src.slice(start, i)); continue;
+    }
+    if (c === '/' && src[i + 1] === '/') { const e = src.indexOf('\n', i); const j = e < 0 ? n : e; out.push(src.slice(i, j)); i = j; continue; }
+    if (c === '/' && src[i + 1] === '*') { const e = src.indexOf('*/', i + 2); const j = e < 0 ? n : e + 2; out.push(src.slice(i, j)); i = j; continue; }
+    if (c === '[') { depth++; out.push(c); i++; continue; }
+    if (c === ']') { depth--; out.push(c); i++; continue; }
+    if (c === '{' && depth === 1) {
+      const span = _jsoncObjectSpan(src, i);
+      if (span) {
+        const body = src.slice(i, span);
+        if (!/\/\/|\/\*/.test(body)) {
+          // Whitespace runs to one space, and no space just inside the braces of
+          // the innermost objects — "{ "read": "MSGTYPE" }" reads best.
+          out.push(body.replace(/\s+/g, ' ').replace(/\{ +/g, '{ ').replace(/ +\}/g, ' }'));
+          i = span; continue;
+        }
+      }
+      out.push(c); i++; continue;
+    }
+    out.push(c); i++;
+  }
+  return out.join('');
+}
+
+// The index just past the object opening at `from`, or null if unbalanced.
+function _jsoncObjectSpan(src, from) {
+  let i = from, d = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    if (c === '"') { i++; while (i < n) { if (src[i] === '\\') { i += 2; continue; } if (src[i] === '"') { i++; break; } i++; } continue; }
+    if (c === '/' && src[i + 1] === '/') { const e = src.indexOf('\n', i); i = e < 0 ? n : e; continue; }
+    if (c === '/' && src[i + 1] === '*') { const e = src.indexOf('*/', i + 2); i = e < 0 ? n : e + 2; continue; }
+    if (c === '{') d++;
+    else if (c === '}') { d--; if (d === 0) return i + 1; }
+    i++;
+  }
+  return null;
+}
+
 function _formatJsonc(src) {
   const lines = src.split('\n');
   let depth = 0;
@@ -18263,12 +18325,28 @@ function _formatJsonc(src) {
   return out.join('\n');
 }
 
+// Which shape Format produces. Persisted: it is a reading preference, and having
+// to re-pick it every session is the kind of friction that stops people using
+// Format at all.
+const _ME_PS_FMT_KEY = 'up_me_ps_fmt';
+function _mePsFmtMode() {
+  try { return localStorage.getItem(_ME_PS_FMT_KEY) === 'compact' ? 'compact' : 'expanded'; }
+  catch (_) { return 'expanded'; }
+}
+function _mePsSetFmtMode(mode) {
+  try { localStorage.setItem(_ME_PS_FMT_KEY, mode === 'compact' ? 'compact' : 'expanded'); } catch (_) {}
+  document.querySelectorAll('.me-ps-toolbar .me-ps-variants .me-ps-variant-tgl').forEach(b =>
+    b.classList.toggle('on', b.textContent.trim().toLowerCase() === mode));
+  _mePsFmt();     // the choice IS the action — re-format straight away
+}
+
 function _mePsFmt() {
   if (!_mePsCM) return;
   const current = _mePsCM.state.doc.toString();
   try {
     JSON.parse(_stripJsonc(current || '[]'));   // validate
-    const formatted = _formatJsonc(current || '');
+    const expanded  = _formatJsonc(current || '');
+    const formatted = _mePsFmtMode() === 'compact' ? _compactJsonc(expanded) : expanded;
     // Dispatch the formatted text — the CM updateListener calls _mePsChange
     // which writes both the parsed array and the source field on the item.
     _mePsCM.dispatch({

@@ -124,6 +124,7 @@ _t.meContentLooksWrong = _meContentLooksWrong;
 _t.meFieldOvrAnnotation = _meFieldOvrAnnotation;
 _t.meOvlChips          = _meOvlChips;
 _t.meFmExpandTargets   = _meFmExpandTargets;
+_t.meFmDeCellHtml      = _meFmDeCellHtml;
 _t.setFmVirt           = v => { _meFmVirt = v; };
 _t.meHtmlOverrides     = _meHtmlOverrides;
 _t.mePsLintWarns       = _mePsLintWarns;
@@ -182,7 +183,7 @@ const {
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
-  meFmExpandTargets, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
+  meFmExpandTargets, meFmDeCellHtml, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
@@ -4022,6 +4023,69 @@ test('a selection form is never read as an anchor', () => {
   const r = deselRows({ 'ADDITIONA.FIELD-YY': { de: true } });
   eq(deAt(r, 'ADDITIONA.FIELD-YY'), 6, 'it takes its place in the sequence, it does not restart it');
   eq(deAt(r, 'SOME'), 7, 'and the tail is undisturbed');
+});
+
+// ── A group's DE belongs to everything inside it ───────────────────────────
+// Bit N reads every leaf under the group that owns DE N, so those rows DO belong
+// to a data element — they just do not own one. They rendered blank, which made
+// the membership invisible.
+
+const derived = (rows, id) => { const r = rows.find(x => x.id === id) || {}; return r.ownerDE; };
+
+test('descendants of a DE-owning group carry that number', () => {
+  const r = deselRows();                       // no overrides at all
+  eq(deAt(r, 'ADDITIONA'), 5, 'the group owns the DE');
+  eq(derived(r, 'ADDITIONA.FIELD-XX'), 5, 'its child derives it');
+  eq(derived(r, 'ADDITIONA.FIELD-XX.DATA'), 5, 'and so does the grandchild');
+  eq(deAt(r, 'ADDITIONA.FIELD-XX'), null, 'but neither OWNS a DE');
+});
+
+test('a deliberate number on a group applies to everything inside it', () => {
+  const r = deselRows({ ADDITIONA: { de: 9 } });
+  eq(deAt(r, 'ADDITIONA'), 9, 'the group is DE 9');
+  eq(derived(r, 'ADDITIONA.FIELD-XX'), 9, 'FIELD-XX is part of DE 9');
+  eq(derived(r, 'ADDITIONA.FIELD-YY'), 9, 'and so is FIELD-YY — the same number, not 10');
+  eq(deAt(r, 'SOME'), 10, 'the counter advanced once for the group');
+});
+
+test('children numbers its children, and each owns its own', () => {
+  // The other reading: ignore the group, number what is inside it in sequence.
+  const r = deselRows({ ADDITIONA: { de: 'children' } });
+  eq(deAt(r, 'ADDITIONA'), null, 'the group owns nothing');
+  eq(deAt(r, 'ADDITIONA.FIELD-XX'), 5, 'the children own theirs');
+  eq(deAt(r, 'ADDITIONA.FIELD-YY'), 6, 'in sequence');
+  eq(derived(r, 'ADDITIONA.FIELD-XX'), undefined, 'an owner never derives');
+  eq(derived(r, 'ADDITIONA.FIELD-XX.DATA'), 5, 'but ITS leaf derives from it');
+});
+
+test('a row that owns a DE never derives one', () => {
+  const r = deselRows({ 'ADDITIONA.FIELD-YY': { de: 30 } });
+  eq(deAt(r, 'ADDITIONA.FIELD-YY'), 30, 'owns 30');
+  eq(derived(r, 'ADDITIONA.FIELD-YY'), undefined, 'so it does not also derive the group number');
+  eq(derived(r, 'ADDITIONA.FIELD-XX'), 5, 'while its sibling still derives');
+});
+
+test('the DE cell renders a derived number distinctly from an owned one', () => {
+  // Same digit, different meaning: one row owns the element, the other is part
+  // of it. Rendering them identically would be worse than rendering nothing.
+  const ctx = { ea: s => String(s), usesBitmapFields: true, foByField: new Map() };
+  const owned   = meFmDeCellHtml({ id: 'ADDITIONA', de: 9, isGroup: true }, ctx);
+  const derivedCell = meFmDeCellHtml({ id: 'ADDITIONA.FIELD-XX', de: null, ownerDE: 9,
+                                       ownerId: 'ADDITIONA' }, ctx);
+  assert.ok(/>9</.test(derivedCell), 'the number is shown');
+  assert.ok(/me-fm-de-owned/.test(derivedCell), 'with the derived class');
+  assert.ok(!/me-fm-de-owned/.test(owned), 'which the owning row does not carry');
+  assert.ok(/Part of DE 9, owned by ADDITIONA/.test(derivedCell), 'and a tooltip saying whose it is');
+});
+
+test('the derived number is part of the DE cell signature', () => {
+  // All these rows have de === null, so without the owner in the signature a
+  // patch-only repaint would keep showing the previous group's number.
+  const ctx = { ea: s => String(s), usesBitmapFields: true, foByField: new Map() };
+  const a = meFmDeCellHtml({ id: 'X.A', de: null, ownerDE: 9,  ownerId: 'X' }, ctx);
+  const b = meFmDeCellHtml({ id: 'X.A', de: null, ownerDE: 10, ownerId: 'X' }, ctx);
+  const sig = h => (h.match(/data-sig="([^"]*)"/) || [])[1];
+  assert.ok(sig(a) !== sig(b), `signatures must differ, got ${sig(a)} and ${sig(b)}`);
 });
 
 test('a DE number makes the field a data element, wherever it sits', () => {

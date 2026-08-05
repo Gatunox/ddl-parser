@@ -4365,6 +4365,93 @@ END
   assert.ok(inlF(ctx, 'DE-B'), 'the inline DE anchor renumbered the tail, so bit 4 resolved');
 });
 
+// ── VLG on any field, not only on a group ───────────────────────────────────
+// The old rule needed the length and its payload wrapped in a group, and a group
+// could carry exactly one. A flat "PAN-LEN then PAN" could not be expressed at
+// all, and neither could two lengths at the same level.
+
+console.log('\nVLG on a plain field');
+
+const LEAFVLG_DDL = `DEFINITION REQMSG.
+    02 MSGTYPE PIC X(4).
+    02 PAN-LEN PIC X(2).
+    02 PAN PIC X(16).
+    02 AMT-LEN PIC X(2).
+    02 AMT PIC X(12).
+    02 TRACE PIC X(6).
+END.
+`;
+// "1200" · "06" · "411111" (6 of PAN's declared 16) · "04" · "9999" (4 of 12) · "TRACE1"
+function leafVlgRun(overrides) {
+  S.ddlTree = { V: { S: { D: LEAFVLG_DDL } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of '1200' + '06' + '411111' + '04' + '9999' + 'TRACE1') b.push(c.charCodeAt(0));
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/REQMSG'], overrides: overrides || {},
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, b);
+}
+const lv = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
+
+test('a VLG field sizes the field that follows it', () => {
+  const ctx = leafVlgRun({ 'PAN-LEN': { vlg: true } });
+  eq(lv(ctx, 'PAN-LEN').value, '06',     'the length field reads normally');
+  eq(lv(ctx, 'PAN').value,     '411111', 'and PAN takes 6 of its declared 16');
+});
+
+test('the bytes it frees belong to whatever comes next', () => {
+  const ctx = leafVlgRun({ 'PAN-LEN': { vlg: true } });
+  eq(lv(ctx, 'PAN').startByte, 6,  'PAN starts after the length');
+  eq(lv(ctx, 'AMT-LEN').startByte, 12, 'and the next field follows the WIRE, not the DDL');
+});
+
+test('many VLG fields at one level, each sizing only its own successor', () => {
+  // A group could carry one length. This is the case that could not be
+  // expressed before: two independent length/payload pairs, side by side.
+  const ctx = leafVlgRun({ 'PAN-LEN': { vlg: true }, 'AMT-LEN': { vlg: true } });
+  eq(lv(ctx, 'PAN').value, '411111', 'the first pair');
+  eq(lv(ctx, 'AMT').value, '9999',   'the second pair');
+  eq(lv(ctx, 'TRACE').value, 'TRACE1', 'and the record still lines up at the end');
+});
+
+test('without the marker nothing changes', () => {
+  const ctx = leafVlgRun({});
+  eq(lv(ctx, 'PAN').valueLength, 16, 'PAN reads its declared width');
+  assert.ok(!lv(ctx, 'TRACE'), 'and the record runs off the end, as it did before');
+});
+
+test('a length of zero collapses the next field without consuming bytes', () => {
+  S.ddlTree = { V: { S: { D: LEAFVLG_DDL } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of '1200' + '00' + '04' + '9999' + 'TRACE1') b.push(c.charCodeAt(0));
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/REQMSG'],
+    overrides: { 'PAN-LEN': { vlg: true }, 'AMT-LEN': { vlg: true } },
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, b);
+  eq(lv(ctx, 'PAN').valueLength, 0, 'PAN is present but empty');
+  eq(lv(ctx, 'AMT').value, '9999', 'and the field after it is unaffected');
+});
+
+test('a group VLG still means what it always meant', () => {
+  // The group form is not migrated or reinterpreted — it is the same rule with
+  // the pair wrapped, so both must keep working side by side.
+  const ddl = `DEFINITION MSG.
+  02 MSGTYPE PIC X(4).
+  02 EMV.
+    04 LEN PIC 9(2).
+    04 DATA PIC X(20).
+  02 TAIL PIC X(4).
+END
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const b = [];
+  for (const c of '1200' + '05' + 'ABCDE' + 'TAIL') b.push(c.charCodeAt(0));
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, b);
+  eq(lv(ctx, 'EMV.DATA').value, 'ABCDE', 'the group form still frames its payload');
+  eq(lv(ctx, 'TAIL').value, 'TAIL', 'and the tail follows');
+});
+
 // ── vlg_identifier: which leaf means "length", per DDL ──────────────────────
 // The auto-detect used to hardcode LEN/LGTH/LENGTH and a 2–4 byte width. Both
 // are wrong for someone else's DDL: a group whose first field is legitimately

@@ -14277,7 +14277,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.6.0';
+const APP_VERSION  = '1.1.6.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21426,6 +21426,26 @@ function _meReadOneFieldFromDef(def, ctx) {
     }
   }
 
+  // A VLG marker on the PREVIOUS field states this field's real length. That is
+  // the general rule: a length field sizes its successor. A VLG group is the
+  // same idea with the pair wrapped in a group, which is all the old code could
+  // express — so a plain "PAN-LEN then PAN" could not be described at all.
+  // Whatever it frees or claims shifts the rest of the record, exactly as a
+  // "bytes" override does, counted once per field id so a REDEFINES re-read
+  // cannot double-shift.
+  if (ctx.vlgPending != null) {
+    const _want = ctx.vlgPending;
+    ctx.vlgPending = null;
+    if (_want !== (len || 0)) {
+      if (!ctx._vlgShiftSeen) ctx._vlgShiftSeen = new Set();
+      if (!ctx._vlgShiftSeen.has(def.id)) {
+        ctx._vlgShiftSeen.add(def.id);
+        ctx.ovShift = (ctx.ovShift || 0) + (_want - (len || 0));
+      }
+      len = _want;
+    }
+  }
+
   if (def.type === 'LLVAR') {
     lenPrefix = Array.from(ctx.bytes.slice(fStart, fStart + 2)).map(b => String.fromCharCode(b)).join('');
     len = parseInt(lenPrefix, 10) || 0;
@@ -21449,6 +21469,14 @@ function _meReadOneFieldFromDef(def, ctx) {
   // legacy flat parser byte-for-byte (integer for binary-class input formats,
   // printable chars with "." per binary byte for ASCII-class). Uses the ORIGINAL bytes for the integer
   // decode, exactly like legacy (matters for EBCDIC input).
+  // Marked as a length source: decode what was just read and hand it to the next
+  // field. Several per level is fine — each arms only its own successor, unlike
+  // a group, which could carry exactly one.
+  if (_meOvEffective(ctx, def.id)?.vlg === true) {
+    const _n = _meDecodeLength(fBytes);
+    ctx.vlgPending = _n == null ? 0 : Math.max(0, _n);
+  }
+
   const isBin = /\bBINARY\b/i.test(def._dataType || def.dataType || '');
   const fmt   = ctx.format || S.inputFormat || '';
   const srcB  = (isBin && ctx.rawBytes) ? Array.from(ctx.rawBytes.slice(dataStart, dataStart + len)) : fBytes;

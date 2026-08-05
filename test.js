@@ -162,6 +162,7 @@ _t.P                  = P;
 // calls. renderFieldTable mutates the fields it is given, so the override
 // behaviour is observable without inspecting the HTML it returns.
 _t.renderFieldTable   = renderFieldTable;
+_t.meTestFieldTable   = _meTestFieldTable;
 _t.meReadApplyTypeOverride = _meReadApplyTypeOverride;
 _t.setSpecLookup      = fn => { window._fmtSpecByName = fn; };
 _t.auditBeginLoad     = _auditBeginLoad;
@@ -189,7 +190,7 @@ const {
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
   meWalkDEFields: _rawWalkDEFields,
-  renderFieldTable, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
+  renderFieldTable, meTestFieldTable, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
 
 // A spec reaches the engine only after the app has loaded it, and loading folds
@@ -3935,19 +3936,88 @@ test('an ASCII digit length still works, unchanged', () => {
   eq(ctx.fields.find(f => f.id === 'EMV.DATA').value, 'ABCDE', 'digits still parse as digits');
 });
 
+// CHANGED ON PURPOSE (v1.2.3.0). Both of these asserted the complaint arrived as
+// its own row with `f.error`. That row carried the LEN's id, so Parse Results
+// listed the LEN twice — once blank, once real — which is the duplicate that was
+// reported. The complaint now rides ON the LEN field as `issue`, so the
+// assertions moved with it and gained the count check that pins the fix.
+function vlgLenRows(ctx) { return ctx.fields.filter(f => f.id === 'EMV.LEN'); }
+
 test('a length past the end of the message is reported, not read off the end', () => {
   const ctx = vlgRun([0x7F, 0xFF]);                // absurd binary length
-  const err = ctx.fields.find(f => f.error && /runs past the end/.test(f.error));
-  assert.ok(err, `expected a clear error, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
-  assert.ok(/binary integer/.test(err.error), 'and it says how the length was read');
+  const rows = vlgLenRows(ctx);
+  eq(rows.length, 1, `the LEN is ONE row, never a field plus an error row: ${JSON.stringify(rows)}`);
+  assert.ok(/runs past the end/.test(rows[0].issue || ''),
+    `expected the complaint on the field, got: ${JSON.stringify(rows[0])}`);
+  assert.ok(/binary integer/.test(rows[0].issue), 'and it says how the length was read');
+  assert.ok(rows[0].value !== undefined, 'the field still carries what it read');
 });
 
 test('a length beyond the declared payload is flagged but still framed by the wire', () => {
   // Padded so 25 fits in the message — otherwise it trips the end-of-message
   // check first and never reaches the capacity comparison.
   const ctx = vlgRun([0x00, 0x19], 30);           // 25 > DATA's declared 20
-  const err = ctx.fields.find(f => f.error && /exceeds the 20 byte/.test(f.error));
-  assert.ok(err, `expected a capacity warning, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  const rows = vlgLenRows(ctx);
+  eq(rows.length, 1, 'still one row');
+  assert.ok(/exceeds the 20 byte/.test(rows[0].issue || ''),
+    `expected a capacity warning on the field, got: ${JSON.stringify(rows[0])}`);
+});
+
+// ── The error text has to REACH the screen ──────────────────────────────────
+// Parse Results never printed one. `f.error` only ever set a CSS class on a cell
+// whose content was undefined, so every engine complaint — a bad VLG length, a
+// DE with no DDL field — rendered as a row with an id and four empty columns.
+// Nothing tested it because the parse-spec Test panel DOES print errors, so the
+// same field list looked correct there while the main table swallowed it.
+
+console.log('\nParse Results renders the error text');
+
+// renderFieldTable writes into #resContainer, so capture that one element.
+function renderRows(fields) {
+  let html = '';
+  elStubs.resContainer = new Proxy({}, {
+    get: (t, k) => k === 'classList' ? { add: () => {}, remove: () => {}, contains: () => false }
+                 : k === 'innerHTML' ? html : (() => {}),
+    set: (t, k, v) => { if (k === 'innerHTML') html = String(v); return true; },
+  });
+  try {
+    renderFieldTable({ msgType: { type: 'STM', label: 'STM' }, manualOverride: true,
+                       bytes: [], raw: '', tokens: [], fields });
+  } finally { delete elStubs.resContainer; }
+  return html;
+}
+
+test('a standalone error row prints its message instead of a blank line', () => {
+  const html = renderRows([{ id: 'DE-22', error: 'No DDL field mapped to this DE' }]);
+  assert.ok(/No DDL field mapped to this DE/.test(html),
+    `the text is in the table, got: ${html.slice(0, 400)}`);
+});
+
+test('a field that parsed but has an issue shows both its value and the problem', () => {
+  const html = renderRows([{
+    id: 'TRACK2.LEN', dataType: 'PIC 9(2)', valueLength: 2, value: '\u0001\u0010',
+    rawHex: '0110', startByte: 14, endByte: 15,
+    issue: 'TRACK2.LEN: length 272 runs past the end of the message',
+  }]);
+  assert.ok(/length 272 runs past the end/.test(html), 'the problem is stated');
+  assert.ok(/0110/.test(html), 'and the field still shows what it read');
+  eq((html.match(/data-fid="TRACK2\.LEN"/g) || []).length, 1, 'on ONE row, not two');
+});
+
+test('the Test panel and Parse Results report the same problems', () => {
+  // Two renderers over one field list. They disagreed for the whole history of
+  // the app: Test printed errors, Parse Results dropped them.
+  const fields = [
+    { id: 'DE-22', error: 'No DDL field mapped to this DE' },
+    { id: 'EMV.LEN', dataType: 'PIC 9(2)', value: '05', rawHex: '3035',
+      issue: 'EMV.LEN: length 5 exceeds the 3 byte(s) EMV declares for its payload' },
+  ];
+  const main = renderRows(fields);
+  const panel = meTestFieldTable(fields);
+  for (const msg of ['No DDL field mapped to this DE', 'exceeds the 3 byte(s)']) {
+    assert.ok(main.includes(msg),  `Parse Results states: ${msg}`);
+    assert.ok(panel.includes(msg), `the Test panel states: ${msg}`);
+  }
 });
 
 // ── Which fields ARE data elements is now a choice, not a hardcoded rule ────

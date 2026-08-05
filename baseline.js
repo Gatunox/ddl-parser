@@ -19,7 +19,7 @@
  * git, so behaviour changes become visible in code review instead of silent.
  *
  * Recorded per case: every field's id, byte span, length, value, declared type,
- * override state and error, plus the final cursor. Cursor position is captured
+ * override state, error and issue, plus the final cursor. Cursor position is captured
  * deliberately — sequential reads are the thing most likely to break when
  * explicit positioning is added.
  */
@@ -128,6 +128,7 @@ function serField(f) {
   if (f.isRedefines)           o.redef   = true;
   if (f.bitSet)                o.bits    = Array.from(f.bitSet).sort((a, b) => a - b);
   if (f.error)                 o.error   = clip(f.error);
+  if (f.issue)                 o.issue   = clip(f.issue);
   return o;
 }
 function serCtx(ctx) {

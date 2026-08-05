@@ -825,6 +825,7 @@ td.c-val.c-val-bad { color: #f85149; }
 td.c-len  { color: var(--text-dim); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 td.c-raw  { color: #6e7681; word-break: break-all; }
 td.c-err  { color: var(--accent2); }
+.c-row-err { color: var(--accent2); font-size: 10px; }
 .c-vlen   { color: var(--warning); font-weight: 700; }
 .trk-chk  { cursor: pointer; accent-color: var(--accent); color-scheme: dark; width: 12px; height: 12px; display: block; margin: auto; }
 body.light .trk-chk { color-scheme: light; }
@@ -10426,7 +10427,7 @@ function renderFieldTable(msg) {
     // type is deliberately kept on the field for the "declared ↩ override"
     // annotation, which is exactly how it went on being used here.
     const _contentBad = _meContentLooksWrong(f);
-    const ecls   = f.error ? 'c-err' : (_contentBad ? 'c-val c-val-bad' : 'c-val');
+    const ecls   = (f.error || f.issue) ? 'c-err' : (_contentBad ? 'c-val c-val-bad' : 'c-val');
     // Prefer the display-override formatted string when available so the
     // user-chosen rendering (datetime/amount/hex/text) actually shows in the
     // output. The raw `f.value` is kept in the tooltip via data-tip.
@@ -10435,6 +10436,14 @@ function renderFieldTable(msg) {
     const rHex   = (P.rawHexTruncate !== false) && _rFull.length > 22 ? _rFull.slice(0,22)+'…' : _rFull;
     const trk    = S.trackedFields.has(fid) ? 'checked' : '';
     const det    = f.detail ? `<br><span style="color:var(--text-dim);font-size:10px">${esc(f.detail)}</span>` : '';
+    // A row's error text. Parse Results has never printed one: `error` only ever
+    // set a class on a cell whose content was undefined, so an engine complaint
+    // rendered as a blank line. Standalone error rows (a DE with no DDL field)
+    // show it as their whole description; a field that parsed but has a problem
+    // shows it under the description, like `detail`.
+    const _rowMsg = f.error || f.issue;
+    const errLine = _rowMsg
+      ? `${f.error ? '' : '<br>'}<span class="c-row-err">${esc(_rowMsg)}</span>` : '';
     const totalLen = f.valueLength !== undefined
       ? f.valueLength + (f.lenPrefix ? f.lenPrefix.length : 0) : undefined;
     const lenCell    = totalLen !== undefined ? String(totalLen) : '';
@@ -10486,7 +10495,7 @@ function renderFieldTable(msg) {
       onmouseleave="clearHover()">
       <td class="c-num">${_rowNum}</td>
       <td class="c-id">${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
-      <td class="c-desc" title="${esc(descTip)}">${descHtml}${det}</td>
+      <td class="c-desc" title="${esc(descTip)}">${descHtml}${errLine}${det}</td>
       <td class="c-len">${lenCell}</td>
       <td class="${ecls}" data-tip="${esc(f.value)}">${prefixHtml}${esc(val)}</td>
       <td class="c-raw" data-tip="${esc(f.rawHex||'')}">${rHex}</td>
@@ -14324,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.2.7';
+const APP_VERSION  = '1.2.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23124,13 +23133,19 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   } else if (capacity && N > capacity) {
     lenErrs.push(`${lenDef.id}: length ${N} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload`);
   }
-  for (const e of lenErrs) out.push({ id: lenDef.id, error: e });
   ctx.cursor = lStart + lLen;
+  // The complaint belongs ON the LEN field, not beside it. Pushing it as its own
+  // row produced two rows with the same id — the field, and a second one holding
+  // only an error the table never printed, which read as the field duplicated.
+  // `issue` and not `error`: `error` means "this row is not a field" and gates
+  // the byte map, the override pass and the coverage count, none of which should
+  // skip a field that was read successfully and merely disagrees with its length.
   const lf = {
     id: lenDef.id, description: lenDef.description,
     dataType: lenDef._dataType, valueLength: lLen,
     value: _meBytesToStr(lBytes), rawHex: _meBytesToHex(lBytes),
     startByte: lStart, endByte: lStart + lLen - 1,
+    ...(lenErrs.length ? { issue: lenErrs.join(' · ') } : {}),
   };
   _meApplyTypeOverride(lf, lenDef, ctx, null);
   _meApplyDisplayOverride(lf, lenDef, ctx);
@@ -24233,7 +24248,7 @@ function _meParseFileWithSpec(spec, bytes, opts) {
   for (const f of ctx.fields) {
     if (!f.rawBytes) f.rawBytes = f.rawHex ? f.rawHex.match(/.{2}/g).map(h => parseInt(h, 16)) : [];
   }
-  const errs = ctx.fields.filter(f => f.error).length;
+  const errs = ctx.fields.filter(f => f.error || f.issue).length;
   const score = ctx.fields.length ? (ctx.fields.length - errs) / ctx.fields.length : 0;
   // parseSpecUsed travels with the result so the Parse Results header can state
   // which parser produced the fields ("parse-spec (binary)" vs the legacy walk).
@@ -24477,7 +24492,7 @@ function _meRunTest() {
   const ctx = _meExecParseSpec(item, parseBytes,
     { rawBytes, format: engineFmt, segMapOverride: document.getElementById('me-test-segmap')?.value || null });
   const fieldCount = ctx.fields.filter(f => !f.error).length;
-  const errCount   = ctx.fields.filter(f =>  f.error).length;
+  const errCount   = ctx.fields.filter(f =>  f.error || f.issue).length;
   const fieldHtml  = ctx.fields.length
     ? _meTestFieldTable(ctx.fields)
     : '<div class="me-test-note">parse_spec produced no fields.</div>';
@@ -24535,9 +24550,10 @@ function _meTestFieldTable(fields) {
     const desc  = f.description ? _escHtml(f.description.slice(0, 30)) : '';
     const brange = f.startByte != null ? `${f.startByte}–${f.endByte}` : '';
     const hex   = f.rawHex ? `<span class="me-test-fhex">${_escHtml(f.rawHex.slice(0,40))}</span>` : '';
+    const iss   = f.issue ? `<div class="me-test-ferr">${_escHtml(f.issue)}</div>` : '';
     return `<tr>` +
       `<td class="me-test-fid">${_escHtml(f.id||'')}</td>` +
-      `<td class="me-test-fdesc">${desc}</td>` +
+      `<td class="me-test-fdesc">${desc}${iss}</td>` +
       `<td class="me-test-fval">${val}</td>` +
       `<td class="me-test-fhex">${hex}</td>` +
       `<td class="me-test-flen">${f.valueLength ?? ''}</td>` +

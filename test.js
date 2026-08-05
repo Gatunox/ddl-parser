@@ -122,6 +122,7 @@ _t.mePsHelpExampleHtml = _mePsHelpExampleHtml;
 _t.meItemVlgIdentifier = _meItemVlgIdentifier;
 _t.meContentLooksWrong = _meContentLooksWrong;
 _t.meFieldOvrAnnotation = _meFieldOvrAnnotation;
+_t.meOvlChips          = _meOvlChips;
 _t.meHtmlOverrides     = _meHtmlOverrides;
 _t.mePsLintWarns       = _mePsLintWarns;
 _t.meItemBitmapIsSynthetic = _meItemBitmapIsSynthetic;
@@ -178,7 +179,7 @@ const {
   stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
-  meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
+  meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
@@ -4119,6 +4120,33 @@ test('a bytes value equal to the declared length stores no override', () => {
   assert.ok(/cfg\.noop\(rowsById\.get\(qn\), v\)/.test(commit),
     'the no-op test is applied per selected field');
   assert.ok(/_meFlash\(/.test(commit), 'and it says so rather than doing nothing silently');
+});
+
+test('the overrides list labels every de form, not just numbers', () => {
+  // The de key carries four different things and only one is a number, so
+  // string concatenation produced "DE-false" and "DE-children" in the list.
+  deepEq(meOvlChips({ de: 7 }),          ['DE-7'],             'an anchor');
+  deepEq(meOvlChips({ de: false }),      ['not a DE'],         'excluded');
+  deepEq(meOvlChips({ de: true }),       ['is a DE'],          'forced in');
+  deepEq(meOvlChips({ de: 'children' }), ['DEs on children'],  'yielded to children');
+});
+
+test('the overrides list distinguishes the two vlg readings', () => {
+  // true on a leaf means "sizes the next field"; a string on a group names the
+  // LEN sub-field. One chip for both said nothing about which.
+  deepEq(meOvlChips({ vlg: true }),          ['length source'], 'a leaf length source');
+  deepEq(meOvlChips({ vlg: 'EMV.LEN' }),     ['VLG → LEN'],     'a group naming its LEN');
+});
+
+test('the DE-clear button clears the list and the panes, not only the table', () => {
+  // It refreshed the table alone, so the list went on showing DE chips for
+  // overrides that no longer existed.
+  const src = psFnSource('_meFmClearDEs');
+  assert.ok(/_meFmAfterAct\(\)/.test(src), 'goes through the shared refresh funnel');
+  assert.ok(!/_meFmPatchDECells\(\)/.test(src), 'not the table-only path');
+  // And it counts what it will actually remove — every de form, not just anchors.
+  assert.ok(/all\[id\]\.de !== undefined/.test(src),
+    'the count covers the selection forms too, not only anchors');
 });
 
 test('the value editors open on the field, not on a constant', () => {

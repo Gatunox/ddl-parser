@@ -14322,7 +14322,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.9.1';
+const APP_VERSION  = '1.1.9.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19944,13 +19944,20 @@ function _meVlgAncestor(id, vlgMap) {
 // ── Clear all DE overrides ───────────────────────────────────────────────────
 function _meFmClearDEs() {
   const item = _meCurItem(); if (!item) return;
-  const n = _meOvDeList(item).length;
+  // Count what will ACTUALLY be cleared. _meOvDeList only reports anchors, but
+  // the clear below removes every `de` key — including the selection forms
+  // false / true / "children" — so the old count under-reported and the message
+  // disagreed with what happened.
+  const all = _meOvAll(item);
+  const n = Object.keys(all).filter(id => all[id].de !== undefined).length;
   _meOvSetDeList(item, []);
   _meAutoOrderSnap.delete(item);
   _meFmUiSave(item, { autoOrder: false, autoOrderSnap: null });
   document.getElementById('me-fm-auto-btn')?.classList.remove('btn-accent-on');
-  _meSetDirty();
-  if (!_meFmPatchDECells()) _meRenderRight();
+  // Through the shared funnel: this used to refresh only the TABLE, so the
+  // overrides list went on showing DE chips for overrides that no longer
+  // existed, and the panes narrated the previous state.
+  _meFmAfterAct();
   _meFlash(n ? `Cleared ${n} DE override${n !== 1 ? 's' : ''} — back to the natural order` : 'No DE overrides to clear');
 }
 
@@ -20632,8 +20639,16 @@ function _meOvlChips(o) {
   if (o.type)         c.push(_meOvEsc(o.type));
   if (o.bytes)        c.push(o.bytes + ' bytes');
   if (o.display)      c.push('as ' + _meOvEsc(o.display));
-  if (o.de != null)   c.push('DE-' + o.de);
-  if (o.vlg)          c.push('VLG' + (typeof o.vlg === 'string' ? ' → ' + _meOvEsc(o.vlg.split('.').pop()) : ''));
+  // The de key carries four different things, and only one of them is a number.
+  // "DE-false" and "DE-children" are what string concatenation produced.
+  if (o.de === false)       c.push('not a DE');
+  else if (o.de === true)   c.push('is a DE');
+  else if (o.de === 'children') c.push('DEs on children');
+  else if (o.de != null)    c.push('DE-' + o.de);
+  // vlg:true on a LEAF means "sizes the next field"; on a group it still names
+  // the LEN sub-field. Same key, two readings — say which one this is.
+  if (o.vlg === true)  c.push('length source');
+  else if (o.vlg)      c.push('VLG → ' + _meOvEsc(String(o.vlg).split('.').pop()));
   return c;
 }
 

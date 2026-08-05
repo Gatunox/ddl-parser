@@ -123,6 +123,8 @@ _t.meItemVlgIdentifier = _meItemVlgIdentifier;
 _t.meContentLooksWrong = _meContentLooksWrong;
 _t.meFieldOvrAnnotation = _meFieldOvrAnnotation;
 _t.meOvlChips          = _meOvlChips;
+_t.meFmExpandTargets   = _meFmExpandTargets;
+_t.setFmVirt           = v => { _meFmVirt = v; };
 _t.meHtmlOverrides     = _meHtmlOverrides;
 _t.mePsLintWarns       = _mePsLintWarns;
 _t.meItemBitmapIsSynthetic = _meItemBitmapIsSynthetic;
@@ -179,7 +181,8 @@ const {
   stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
-  meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
+  meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
+  meFmExpandTargets, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
@@ -4172,6 +4175,68 @@ test('the old per-field editor is gone, and nothing references it', () => {
     assert.ok(!html.includes(gone), `${gone} still rendered`);
   for (const fn of ['_meOvlSave', '_meOvlRenderEditor', '_meOvlFromControls', '_meOvlAddFromSelection'])
     assert.ok(!new RegExp('function ' + fn + '\\b').test(html), `${fn} still defined`);
+});
+
+// ── A group action lands on the leaves it contains ─────────────────────────
+// Only leaves are compiled, so "ADDITIONA" exists as a prefix and nothing else.
+// An override stored there is read by nothing: it shows in the list, changes no
+// byte, and silently does nothing.
+
+console.log('\ngroup actions expand to leaves');
+
+const EXP_ROWS = [
+  { id: 'MSGTYPE', isGroup: false },
+  { id: 'ADDITIONA', isGroup: true },
+  { id: 'ADDITIONA.FIELD-XX', isGroup: true },
+  { id: 'ADDITIONA.FIELD-XX.DATA', isGroup: false },
+  { id: 'ADDITIONA.FIELD-YY', isGroup: true },
+  { id: 'ADDITIONA.FIELD-YY.DATA', isGroup: false },
+  { id: 'ADDITIONA.OLD', isGroup: false, isRedef: true },
+];
+
+test('type and bytes on a group land on every leaf inside it', () => {
+  setFmVirt({ all: EXP_ROWS });
+  deepEq(meFmExpandTargets('ADDITIONA', 'type'),
+    ['ADDITIONA.FIELD-XX.DATA', 'ADDITIONA.FIELD-YY.DATA'], 'both leaves');
+  deepEq(meFmExpandTargets('ADDITIONA', 'bytes'),
+    ['ADDITIONA.FIELD-XX.DATA', 'ADDITIONA.FIELD-YY.DATA'], 'and for bytes');
+});
+
+test('a REDEFINES leaf is never a target', () => {
+  setFmVirt({ all: EXP_ROWS });
+  assert.ok(!meFmExpandTargets('ADDITIONA', 'type').includes('ADDITIONA.OLD'),
+    'an overlay re-views bytes another field already owns');
+});
+
+test('vlg on a group marks only the FIRST leaf', () => {
+  // A length marks ONE field; what it sizes is whatever follows it. Marking
+  // every leaf would make each one a length for the next.
+  setFmVirt({ all: EXP_ROWS });
+  deepEq(meFmExpandTargets('ADDITIONA', 'vlg'), ['ADDITIONA.FIELD-XX.DATA'], 'first leaf only');
+  deepEq(meFmExpandTargets('ADDITIONA.FIELD-XX', 'vlg'), ['ADDITIONA.FIELD-XX.DATA'],
+    'and a nested group resolves to its own first leaf');
+});
+
+test('DE forms stay on the group, where numbering actually lives', () => {
+  setFmVirt({ all: EXP_ROWS });
+  for (const act of ['de-off', 'de-on', 'de-kids', 'de-anchor'])
+    deepEq(meFmExpandTargets('ADDITIONA', act), ['ADDITIONA'], act + ' is group-level');
+});
+
+test('a leaf is never expanded', () => {
+  setFmVirt({ all: EXP_ROWS });
+  deepEq(meFmExpandTargets('MSGTYPE', 'type'), ['MSGTYPE'], 'left alone');
+});
+
+test('the target expansion is what the actions actually use', () => {
+  // The helper being right proves nothing if the action loops still walk the
+  // raw selection — which is what they did before.
+  for (const fn of ['_meFmAct', '_meFmEdCommit']) {
+    const src = psFnSource(fn);
+    assert.ok(/_meFmActionTargets\(/.test(src), fn + ' expands its targets');
+    assert.ok(!/for \(const qn of _meFmMultiSel\)/.test(src),
+      fn + ' must not loop the raw selection');
+  }
 });
 
 test('the list header does not repeat the section title', () => {

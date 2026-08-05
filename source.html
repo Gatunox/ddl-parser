@@ -14322,7 +14322,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.9.3';
+const APP_VERSION  = '1.2.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20508,8 +20508,9 @@ function _meFmEdCommit() {
   const item = _meCurItem(); if (!item) return;
   const all = _meOvAll(item);
   const rowsById = new Map((_meFmVirt?.all || []).map(r => [r.id, r]));
+  const targets = _meFmActionTargets(_meFmEdAct);
   let noops = 0;
-  for (const qn of _meFmMultiSel) {
+  for (const qn of targets) {
     const k = _canonFieldId(qn);
     // Judged per field: a multi-selection can hold fields of different declared
     // widths, so the same typed value is a no-op for some and not for others.
@@ -20523,6 +20524,7 @@ function _meFmEdCommit() {
   if (noops) _meFlash(noops === 1
     ? 'That is already the declared length — no override stored'
     : `${noops} fields already read that many bytes — no override stored`, 'warn');
+  else _meFmNoteExpansion(_meFmEdAct, targets);
   _meFmEdClose();
   _meFmAfterAct();
 }
@@ -20561,6 +20563,17 @@ function _meFmNotesRefresh() {
     : '<span class="me-fm-note-dim">Every field follows the default rules.</span>';
 }
 
+// A group action lands on its leaves, so the list gains entries the user did not
+// name. Unexplained, that reads as the panel doing something random.
+function _meFmNoteExpansion(act, targets) {
+  const groups = [...(_meFmMultiSel || [])].filter(qn =>
+    (_meFmVirt?.all || []).some(r => r.id === qn && r.isGroup));
+  if (!groups.length || String(act).startsWith('de-')) return;
+  const named = targets.filter(t => !_meFmMultiSel.has(t)).length;
+  if (!named) return;
+  _meFlash(`A group has no bytes of its own — applied to ${named} field${named !== 1 ? 's' : ''} inside it`);
+}
+
 function _meFmAfterAct() {
   const item = _meCurItem();
   if (item) { const all = _meOvAll(item); for (const k in all) if (!Object.keys(all[k]).length) delete all[k]; }
@@ -20573,11 +20586,40 @@ function _meFmAfterAct() {
   _meFmNotesRefresh();
 }
 
+// A group has no record of its own — only LEAVES are compiled, so `RTE` exists
+// merely as a prefix on `RTE.STAT` and friends. An override stored on a group id
+// is therefore read by nothing: it appears in the list, changes no byte, and
+// silently does nothing. Expand it to the leaves the group actually contains.
+//
+//   type / bytes / display  -> every leaf under the group
+//   vlg                     -> the FIRST leaf only; a length marks one field,
+//                              and what it sizes is whatever follows
+//   de-*                    -> the group itself, which is where DE numbering
+//                              genuinely lives (exclude / include / children)
+function _meFmExpandTargets(qn, act) {
+  const rows = _meFmVirt?.all || [];
+  const row  = rows.find(r => r.id === qn);
+  if (!row || !row.isGroup) return [qn];
+  if (String(act).startsWith('de-')) return [qn];
+  const pre = qn + '.';
+  const leaves = rows.filter(r => !r.isGroup && !r.isRedef && r.id.startsWith(pre));
+  if (!leaves.length) return [qn];
+  return act === 'vlg' ? [leaves[0].id] : leaves.map(r => r.id);
+}
+// Every selected row expanded, de-duplicated, in table order.
+function _meFmActionTargets(act) {
+  const out = [];
+  for (const qn of _meFmMultiSel)
+    for (const t of _meFmExpandTargets(qn, act)) if (!out.includes(t)) out.push(t);
+  return out;
+}
+
 function _meFmAct(act) {
   const item = _meCurItem(); if (!item) return;
   if (_ME_FM_ED[act]) return _meFmEdOpen(act);
   const all = _meOvAll(item);
-  for (const qn of _meFmMultiSel) {
+  const targets = _meFmActionTargets(act);
+  for (const qn of targets) {
     const k = _canonFieldId(qn);
     const o = all[k] || (all[k] = {});
     switch (act) {
@@ -20587,6 +20629,7 @@ function _meFmAct(act) {
       case 'vlg':     o.vlg = true; break;
     }
   }
+  _meFmNoteExpansion(act, targets);
   _meFmAfterAct();
 }
 // Delegated once — the bar is re-rendered with the panel, so per-button

@@ -4983,17 +4983,23 @@ function _meOvEffectiveLen(ovr) {
   return t !== null ? t : null;
 }
 // Derived views, in the shapes the existing consumers already expect.
+// Only a NUMBER anchors. The same `de` key now also carries the SELECTION forms
+// — false / true / "children" — and the old coercion turned every one of them
+// into an anchor at DE 1: +false is 0 (then `|| 1`), +true is 1, +"children" is
+// NaN (then `|| 1`).
+const _meDeIsAnchor = v => typeof v === 'number'
+  || (typeof v === 'string' && /^\d+$/.test(v.trim()));
 function _meOvDeAnchors(item) {
   const m = new Map();
   const all = _meOvAll(item);
-  for (const id in all) if (all[id].de != null) m.set(id, +all[id].de || 1);
+  for (const id in all) if (_meDeIsAnchor(all[id].de)) m.set(id, Math.max(1, +all[id].de));
   return m;
 }
 // DE anchors as a sparse [{field, de}] array — the shape Auto Order snapshots
 // and restores, and what _meComputeAutoOrderAnchors produces.
 function _meOvDeList(item) {
   const all = _meOvAll(item), out = [];
-  for (const id in all) if (all[id].de != null) out.push({ field: id, de: +all[id].de || 1 });
+  for (const id in all) if (_meDeIsAnchor(all[id].de)) out.push({ field: id, de: Math.max(1, +all[id].de) });
   return out;
 }
 function _meOvSetDeList(item, list) {
@@ -14271,7 +14277,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.1.5.4';
+const APP_VERSION  = '1.1.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19300,6 +19306,29 @@ function _meWalkDEFields(defs, item) {
     groupLengthCache.set(prefix, sum);
     return sum;
   };
+  // Which rows ARE data elements. The default — a top-level, non-FILLER row —
+  // was compiled in as policy, so a DDL could not exclude its own padding, and a
+  // DE could never sit on a nested field. It is now a default with three
+  // overrides on the same `de` key: false excludes, true includes, "children"
+  // hands the DE to the group's immediate children.
+  const deSel = id => _ovAll[_canonFieldId(id)]?.de;
+  const promoted = new Set();
+  for (const id in _ovAll) {
+    if (_ovAll[id].de !== 'children') continue;
+    for (const kid of (childrenByPrefix.get(id) || [])) promoted.add(kid);
+  }
+  // The DEFAULT predicate, unchanged — everything above only overrides it.
+  const defaultEligible = id =>
+    _isRepOcc(id) && !id.includes('.') && _canonFieldId(id) !== 'FILLER';
+  const isDE = id => {
+    const sel = deSel(id);
+    if (sel === false)      return false;
+    if (sel === 'children') return false;   // the group yields to its children
+    if (sel === true)       return true;
+    if (promoted.has(id))   return true;
+    return defaultEligible(id);
+  };
+
   const emitted = new Set();
   const out = [];
   let currentDE = 1;
@@ -19368,8 +19397,7 @@ function _meWalkDEFields(defs, item) {
       // element — it must never draw its own number (composite elements were
       // burning 2-3 DEs each, inflating a ~127-element record to 325 "DEs").
       // FILLER is padding: it neither owns NOR advances the DE counter.
-      if (_isRepOcc(prefix) && !prefix.includes('.') && _canonFieldId(prefix) !== 'FILLER')
-        assignDE(prefix, _gextras);
+      if (isDE(prefix)) assignDE(prefix, _gextras);
       else out.push({ id: prefix, de: null, anchored: false, ..._gextras });
     }
 
@@ -19384,8 +19412,11 @@ function _meWalkDEFields(defs, item) {
     // Only TOP-LEVEL leaves own a DE (see the group emit above) — any nested
     // leaf is part of its top-level element's data. FILLER is padding and
     // neither owns nor advances the counter.
-    const topLevel = !def.id.includes('.') && _canonFieldId(def.id) !== 'FILLER';
-    if (underTerminal || !topLevel) {
+    // An explicit de:true reaches INSIDE a terminal group as well — that is the
+    // point of it, and refusing would leave nested fields unreachable exactly
+    // where the default rule already said no.
+    const forced = deSel(def.id) === true || promoted.has(def.id);
+    if (!forced && (underTerminal || !isDE(def.id))) {
       out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal, isRedef, redefTarget, dataType, length, declaredLen, offset });
     } else if (_isRepOcc(def.id)) {
       assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, offset });

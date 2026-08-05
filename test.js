@@ -3938,6 +3938,89 @@ test('a length beyond the declared payload is flagged but still framed by the wi
   assert.ok(err, `expected a capacity warning, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
 });
 
+// ── Which fields ARE data elements is now a choice, not a hardcoded rule ────
+// The predicate was "top-level, and not literally named FILLER". So a DDL could
+// not exclude its own padding under any other name, and a DE could never sit on
+// a nested field — both of which real DDLs need.
+
+console.log('\nDE selection — exclude, include, children');
+
+const DESEL_DDL = `DEFINITION REQMSG.
+    02 SDLC-DEST PIC X(2).
+    02 MSGTYPE PIC X(4).
+    02 PAD-1 PIC X(4).
+    02 TRACE PIC X(6).
+    02 ADDITIONA.
+      04 FIELD-XX.
+        06 DATA PIC X(3).
+      04 FIELD-YY.
+        06 DATA PIC X(3).
+    02 SOME PIC X(2).
+END.
+`;
+function deselRows(overrides) {
+  S.ddlTree = { V: { S: { D: DESEL_DDL } } };
+  const defs = getDDLFromPath('V/S/D/REQMSG').defs;
+  return meWalkDEFields(defs, { ddl_bindings: ['V/S/D/REQMSG'], overrides: overrides || {} });
+}
+const deAt = (rows, id) => (rows.find(r => r.id === id) || {}).de;
+
+test('the default rule is unchanged when nothing is overridden', () => {
+  const r = deselRows();
+  eq(deAt(r, 'SDLC-DEST'), 1, 'top-level fields number from 1');
+  eq(deAt(r, 'PAD-1'),     3, 'padding under any name still counts by default');
+  eq(deAt(r, 'ADDITIONA'), 5, 'a top-level group owns one DE');
+  eq(deAt(r, 'ADDITIONA.FIELD-XX'), null, 'and its children own none');
+});
+
+test('de:false excludes a field AND does not advance the counter', () => {
+  // The counter not advancing is the point: an excluded field must not leave a
+  // hole, or every DE after it is one too high.
+  const r = deselRows({ 'PAD-1': { de: false } });
+  eq(deAt(r, 'PAD-1'),  null, 'the padding is not a data element');
+  eq(deAt(r, 'TRACE'),  3,    'and the next field takes the number it vacated');
+  eq(deAt(r, 'SOME'),   5,    'the tail closes up all the way down');
+});
+
+test('de:"children" hands the DE to the group\'s immediate children', () => {
+  const r = deselRows({ 'ADDITIONA': { de: 'children' } });
+  eq(deAt(r, 'ADDITIONA'),           null, 'the group itself is not a DE');
+  eq(deAt(r, 'ADDITIONA.FIELD-XX'),  5,    'its first child is');
+  eq(deAt(r, 'ADDITIONA.FIELD-YY'),  6,    'and its second');
+  eq(deAt(r, 'ADDITIONA.FIELD-XX.DATA'), null, 'but not the grandchildren');
+  eq(deAt(r, 'SOME'), 7, 'numbering continues past the group');
+});
+
+test('de:true forces a field in that the default rule excludes', () => {
+  const r = deselRows({ 'ADDITIONA.FIELD-YY': { de: true } });
+  eq(deAt(r, 'ADDITIONA.FIELD-YY'), 6, 'a nested field can be a data element');
+  eq(deAt(r, 'ADDITIONA'), 5, 'without disturbing the group that contains it');
+});
+
+test('an anchor number still works', () => {
+  const r = deselRows({ 'TRACE': { de: 66 } });
+  eq(deAt(r, 'TRACE'), 66, 'the anchor lands');
+  eq(deAt(r, 'ADDITIONA'), 67, 'and the tail follows it');
+});
+
+test('a selection form is never read as an anchor', () => {
+  // +true is 1, so the old coercion turned de:true into "anchor at DE 1" and the
+  // forced-in field renumbered the whole tail from 1.
+  // (de:false and de:"children" make a row ineligible, so a bogus anchor on
+  // them can never fire — only the de:true form can prove this, and it does.)
+  const r = deselRows({ 'ADDITIONA.FIELD-YY': { de: true } });
+  eq(deAt(r, 'ADDITIONA.FIELD-YY'), 6, 'it takes its place in the sequence, it does not restart it');
+  eq(deAt(r, 'SOME'), 7, 'and the tail is undisturbed');
+});
+
+test('exclusion and promotion combine, in declaration order', () => {
+  const r = deselRows({ 'PAD-1': { de: false }, 'ADDITIONA': { de: 'children' } });
+  eq(deAt(r, 'TRACE'), 3, 'the exclusion closes the gap');
+  eq(deAt(r, 'ADDITIONA.FIELD-XX'), 4, 'and the promoted children pick up from there');
+  eq(deAt(r, 'ADDITIONA.FIELD-YY'), 5, 'in order');
+  eq(deAt(r, 'SOME'), 6, 'with the tail continuing');
+});
+
 // ── A bitmap the DDL does not declare still numbers the DEs ─────────────────
 // `read-bitmap` with a `length` states the map's width in the spec precisely
 // because the DDL does not declare it. But DE numbering only began on the field

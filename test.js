@@ -4073,36 +4073,59 @@ test('what the Field Map shows for a length is what the engine reads', () => {
 
 console.log('\nlength decode honours a type override');
 
-test('a single 0x37 under hex-char is 55, not the digit 7', () => {
+// CHANGED ON PURPOSE (v1.2.4.1). These asserted hex-char meant "read the bytes as
+// a number" — 0x37 → 55. That made hex-char answer two different questions at
+// once, and the LEN column then disagreed with the value column by design: the
+// row showed "37" and the parse used 55. hex-char now means what it says — the
+// value IS the hex characters, so the length is 37 — and uint8/uint16-be/binary
+// are how you ask for the numeric conversion.
+
+test('a single 0x37 under hex-char is 37 — the characters the row shows', () => {
   const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { bytes: 1, type: 'hex-char' } });
   const len = ctx.fields.find(f => f.id === 'EMV.LEN');
   eq(len.valueLength, 1, 'one byte, per the override');
-  // The two halves the user stated as one rule: hex-char SHOWS the byte as its
-  // hex spelling, and because this is a length, that spelling is read as hex to
-  // get how many bytes to take. Display "37", length 0x37 = 55. Asserted
-  // together — showing "37" while reading 7, or showing "55", are both wrong.
-  eq(len.value, '37', 'the value reads as its hex spelling');
-  // 55 exceeds DATA's declared 20, so the payload is capped there — the proof
-  // that 55 (not 7, and not 37 decimal) was decoded is the complaint naming it.
-  assert.ok(/length 55 /.test(len.issue || ''),
-    `the byte decoded as 55, got: ${JSON.stringify(len.issue)}`);
+  eq(len.value, '37', 'shown as its hex spelling');
+  // 37 exceeds DATA's declared 20, so the payload caps there — the complaint
+  // naming 37 is the proof that 37, not 55 and not 7, was the length used.
+  assert.ok(/length 37 /.test(len.issue || ''),
+    `the length is the value you can see, got: ${JSON.stringify(len.issue)}`);
+});
+
+test('uint8 on the same byte is 55 — that is the type that converts', () => {
+  // The other half of the rule: asking for the numeric reading still gets it.
+  const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { bytes: 1, type: 'uint8' } });
+  assert.ok(/length 55 /.test(ctx.fields.find(f => f.id === 'EMV.LEN').issue || ''),
+    'uint8 reads the byte as a number');
 });
 
 test('without the override the same byte is still read as the digit 7', () => {
-  // Discriminating half: if the type were ignored again, both cases give 7.
+  // Discriminating half: if the type were ignored again, every case gives 7.
   const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { bytes: 1 } });
   eq(ctx.fields.find(f => f.id === 'EMV.DATA').valueLength, 7,
      'the byte-value guess still applies when nothing declares the type');
 });
 
-test('two bytes decode the same with or without hex-char', () => {
-  // 0x45 is not a digit, so the guess already chose binary. The override must
-  // agree with it rather than change a case that was right.
-  const plain = vlgRun([0x37, 0x45], 60);
-  const typed = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'hex-char' } });
-  const iss = f => (f.fields.find(x => x.id === 'EMV.LEN').issue || '').replace(/^EMV\.LEN: /, '');
-  assert.ok(/length 14149 /.test(iss(plain)), `0x3745 = 14149, got: ${iss(plain)}`);
-  eq(iss(typed), iss(plain), 'the override changes nothing here');
+test('two bytes: hex-char reads 3745, uint16-be reads 14149', () => {
+  // Same bytes, three answers, and each override has to produce its own. The
+  // undeclared case guesses binary here because 0x45 is not a digit — which is
+  // how 3745 could ever have looked like 14149.
+  const iss = c => (c.fields.find(x => x.id === 'EMV.LEN').issue || '');
+  assert.ok(/length 3745 /.test(iss(vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'hex-char' } }))),
+    'hex-char: the characters "3745"');
+  assert.ok(/length 14149 /.test(iss(vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'uint16-be' } }))),
+    'uint16-be: the number 0x3745');
+  assert.ok(/length 14149 /.test(iss(vlgRun([0x37, 0x45], 60))),
+    'undeclared: the old guess, unchanged');
+});
+
+test('hex characters that are not decimal are reported, not silently misread', () => {
+  // 0x4E spells "4e". parseInt("4e", 10) is 4 — a plausible length from bytes
+  // that cannot be a hex-char number at all.
+  const ctx = vlgRun([0x4E], 60, { 'EMV.LEN': { bytes: 1, type: 'hex-char' } });
+  const len = ctx.fields.find(f => f.id === 'EMV.LEN');
+  assert.ok(/"4e" is not a decimal number/.test(len.issue || ''),
+    `expected the a-f complaint, got: ${JSON.stringify(len.issue)}`);
+  assert.ok(!/is empty/.test(len.issue), 'and not the "no bytes left" message');
 });
 
 test('the "read as" wording follows the branch actually taken', () => {

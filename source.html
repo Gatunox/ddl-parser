@@ -14333,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.4.0';
+const APP_VERSION  = '1.2.4.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22894,11 +22894,28 @@ function _meEffLen(def, ctx) {
 // bytes 0x37 0x45 decoded as 14149 (0x45 is not a digit, so binary won) while
 // the same field trimmed to one byte decoded as 7. A type override is the user
 // stating which it is, so it settles the question instead of being ignored.
-const _ME_LEN_INT_TYPE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?|hex-char)$/i;
+const _ME_LEN_INT_TYPE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?)$/i;
 const _meLenTypeIsInt = t => !!t && _ME_LEN_INT_TYPE.test(String(t).trim());
+const _meLenTypeIsHexChar = t => /^hex-char$/i.test(String(t || '').trim());
+const _meHexSpelling = bytes => bytes.map(b => b.toString(16).padStart(2, '0')).join('');
 
+// Three readings of the same bytes, and the type override picks one:
+//   hex-char  the value IS the hex characters — 0x37 shows "37" and means 37.
+//             A BCD length reads this way, and it keeps the LEN column agreeing
+//             with the value column instead of disagreeing with it by design.
+//   uint*/binary/byte/word/dword  the bytes as a number — 0x37 means 55.
+//   nothing declared  the old guess: every byte an ASCII digit reads as digits,
+//             otherwise a big-endian integer.
+// Returns null when there is nothing to read OR the bytes cannot be read the way
+// the type says; callers tell the two apart by whether any bytes were supplied.
 function _meDecodeLength(bytes, type) {
   if (!bytes || !bytes.length) return null;
+  if (_meLenTypeIsHexChar(type)) {
+    const hex = _meHexSpelling(bytes);
+    if (!/^[0-9]+$/.test(hex)) return null;   // an a-f nibble is not a decimal number
+    const n = parseInt(hex, 10);
+    return Number.isFinite(n) ? n : null;
+  }
   if (!_meLenTypeIsInt(type) && bytes.every(b => b >= 0x30 && b <= 0x39)) {
     const n = parseInt(bytes.map(b => String.fromCharCode(b)).join(''), 10);
     return Number.isFinite(n) ? n : null;
@@ -22908,7 +22925,13 @@ function _meDecodeLength(bytes, type) {
 // Which branch the decode actually took, so the error message cannot claim
 // "read as digits" for bytes a type override forced through as an integer.
 const _meLengthWasDigits = (bytes, type) => !!(bytes && bytes.length)
-  && !_meLenTypeIsInt(type) && bytes.every(b => b >= 0x30 && b <= 0x39);
+  && !_meLenTypeIsInt(type) && !_meLenTypeIsHexChar(type)
+  && bytes.every(b => b >= 0x30 && b <= 0x39);
+// How the number was arrived at, for the message that reports an implausible one.
+const _meLengthReadAs = (bytes, type) =>
+    _meLenTypeIsHexChar(type)          ? 'hex characters'
+  : _meLengthWasDigits(bytes, type)    ? 'digits'
+  :                                      'a binary integer';
 
 // The names a leaf may carry to mean "this holds the group's length", when the
 // spec has not said which name ITS DDL uses.
@@ -23140,7 +23163,9 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   let N = _meDecodeLength(lBytes, lType);
   if (N == null) {
     N = 0;
-    lenErrs.push(`${lenDef.id}: length field is empty — nothing left to read it from`);
+    lenErrs.push(lBytes.length
+      ? `${lenDef.id}: "${_meHexSpelling(lBytes)}" is not a decimal number — hex-char reads the hex characters as the length, so a-f cannot appear in one`
+      : `${lenDef.id}: length field is empty — nothing left to read it from`);
   }
   // Bound it. Past the end of the message it cannot be right, so stop at the end
   // rather than reading off it. Past the room the DDL declares for the payload it
@@ -23150,7 +23175,7 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   const available = ctx.bytes.length - (lStart + lLen);
   if (N > available) {
     lenErrs.push(`${lenDef.id}: length ${N} runs past the end of the message (${available} byte(s) left) — read as ${
-      _meLengthWasDigits(lBytes, lType) ? 'digits' : 'a binary integer'}`);
+      _meLengthReadAs(lBytes, lType)}`);
     N = Math.max(0, available);
   } else if (capacity && N > capacity) {
     lenErrs.push(`${lenDef.id}: length ${N} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload`);

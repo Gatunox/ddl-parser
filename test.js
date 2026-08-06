@@ -4559,6 +4559,7 @@ test('the DE-clear button clears the list and the panes, not only the table', ()
     'the count covers the selection forms too, not only anchors');
 });
 
+
 test('the value editors open on the field, not on a constant', () => {
   // "Why does DE number always start at 66?" — because it was a placeholder
   // copied from a worked example. A default that ignores the field is noise you
@@ -4599,6 +4600,18 @@ test('the bytes editor opens on the number that was typed in, not the wire width
   const cfg = html.slice(html.indexOf("'bytes':"), html.indexOf("'type':"));
   assert.ok(/o\?\.bytes \?\? r\?\.declaredLen \?\? r\?\.length/.test(cfg),
     `the stored override wins, then the declared number, then the width: ${cfg}`);
+});
+
+test('a length override is labelled in the unit it counts', () => {
+  // Reported: SDLC-DEST PIC X(2) with hex-char and a 4 override showed a chip
+  // reading "4 bytes" and a LEN column reading 2, so a working override looked
+  // like it had done nothing. The number was characters the whole time.
+  eq(meOvlChips({ type: 'hex-char', bytes: 4 }).find(c => /4/.test(c)), '4 chars',
+     'a hex-char width is chips-labelled as characters');
+  eq(meOvlChips({ bytes: 4 }).find(c => /4/.test(c)), '4 bytes',
+     'and everything else still says bytes');
+  eq(meOvlChips({ type: 'ascii', bytes: 4 }).find(c => /4/.test(c)), '4 bytes',
+     'including a 1:1 type override');
 });
 
 test('the old per-field editor is gone, and nothing references it', () => {

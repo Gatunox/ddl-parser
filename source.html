@@ -14333,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.5.1';
+const APP_VERSION  = '1.2.5.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20503,7 +20503,7 @@ const _ME_FM_ED = {
   'de-anchor': { label: 'DE number',  kind: 'num',
                  def: () => String(_meFmSelRow()?.de ?? ''),
                  set: (o, v) => { o.de = Math.max(1, Math.min(128, +v)); } },
-  'bytes':     { label: 'Read bytes', kind: 'num',
+  'bytes':     { label: () => _meLenIsChars(_meFmSelOvr()?.type) ? 'Read characters' : 'Read bytes', kind: 'num',
                  // In the FIELD'S units, which is what was typed in: a hex-char
                  // length counts characters, so a field showing 2 wire bytes
                  // offers 4 here. Showing the byte count would ask the user to
@@ -20547,7 +20547,8 @@ function _meFmEdOpen(act) {
   const cfg = _ME_FM_ED[act], ed = document.getElementById('me-fm-ed');
   if (!cfg || !ed) return;
   _meFmEdAct = act;
-  document.getElementById('me-fm-ed-lbl').textContent = cfg.label;
+  document.getElementById('me-fm-ed-lbl').textContent =
+    typeof cfg.label === 'function' ? cfg.label() : cfg.label;
   const num = document.getElementById('me-fm-ed-num'), sel = document.getElementById('me-fm-ed-sel');
   num.style.display = cfg.kind === 'num' ? '' : 'none';
   sel.style.display = cfg.kind === 'sel' ? '' : 'none';
@@ -20763,7 +20764,7 @@ function _meFmBarRefresh() {
 function _meOvlChips(o) {
   const c = [];
   if (o.type)         c.push(_meOvEsc(o.type));
-  if (o.bytes)        c.push(o.bytes + ' bytes');
+  if (o.bytes)        c.push(o.bytes + (_meLenIsChars(o.type) ? ' chars' : ' bytes'));
   if (o.display)      c.push('as ' + _meOvEsc(o.display));
   // The de key carries four different things, and only one of them is a number.
   // "DE-false" and "DE-children" are what string concatenation produced.

@@ -621,6 +621,10 @@ input[type="text"]:focus { border-color: var(--accent); }
 /* A button that stays pressed while whatever it opened is open. Same treatment
    as :hover so an active toggle and a hovered button read as one language. */
 .btn.btn-on { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+/* An icon-only button. ⚙ and ✕ have different advance widths in the font, so
+   equal padding still leaves two different-sized buttons sitting side by side —
+   the width has to be fixed, not inherited from the glyph. */
+.btn.btn-ico { min-width: 30px; padding-left: 0; padding-right: 0; }
 .settings-btn-20 { height: 20px !important; min-height: 20px !important; max-height: 20px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; line-height: 16px !important; box-sizing: content-box !important; padding-top: 0 !important; padding-bottom: 0 !important; }
 .btn:focus-visible { outline: none; border-color: var(--accent); }
 #settingsBtn:hover { border-color: var(--accent) !important; color: var(--accent) !important; background: rgba(var(--accent-rgb),0.1) !important; }
@@ -14433,7 +14437,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.3.1.3';
+const APP_VERSION  = '1.3.1.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24888,10 +24892,10 @@ function _meSave() {
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <button class="btn btn-sm btn-primary" onclick="doMsgExport()">⬇ Download</button>
         <div style="position:relative;display:inline-flex">
-          <button class="btn btn-sm" id="exp-cols-btn" onclick="_expToggleColsDlg()" title="Choose which columns the file carries">⚙</button>
+          <button class="btn btn-sm btn-ico" id="exp-cols-btn" onclick="_expToggleColsDlg()" title="Choose which columns the file carries">⚙</button>
           <div id="exp-cols-dlg" class="audit-cfg-dialog exp-cols-h"></div>
         </div>
-        <button class="btn btn-sm" onclick="closeMsgExportModal()">✕</button>
+        <button class="btn btn-sm btn-ico" onclick="closeMsgExportModal()">✕</button>
       </div>
     </div>
     <div class="ddl-doc-body" id="exportBody"></div>

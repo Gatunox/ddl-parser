@@ -4860,8 +4860,14 @@ test('the cog becomes the close button while the chooser is open', () => {
   const cog   = html.match(/<button[^>]*id="exp-cols-btn"[^>]*>/)[0];
   const close = html.match(/<button[^>]*onclick="closeMsgExportModal\(\)"[^>]*>/)[0];
   const cls = b => (b.match(/class="([^"]*)"/) || [, ''])[1];
-  eq(cls(cog), cls(close), 'the cog and the close button carry the same classes');
+  eq(cls(cog), cls(close).replace('btn-primary ', ''), 'the cog and the close button carry the same classes');
   assert.ok(!/style="[^"]*padding/.test(cog), `and no padding override: ${cog}`);
+  // Equal padding is not equal width: ⚙ and ✕ are different sizes in the font,
+  // so the button width has to be fixed rather than left to the glyph.
+  assert.ok(/btn-ico/.test(cls(cog)) && /btn-ico/.test(cls(close)),
+    'both are icon buttons');
+  assert.ok(/\.btn\.btn-ico\s*\{[^}]*min-width/.test(html),
+    'and that class fixes their width');
   const render = psFnSource('_expRenderColsDlg');
   assert.ok(!/audit-cfg-hdr/.test(render), `the row carries no header of its own: ${render}`);
   // Dead CSS is how a rule ends up styling the wrong thing later.

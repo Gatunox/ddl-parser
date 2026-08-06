@@ -4684,6 +4684,30 @@ test('the row numbers are right-justified and the header is not', () => {
     'so it inherits the centred header rule');
 });
 
+test('both tables share ONE column-highlight implementation', () => {
+  // Copying the Field Map's behaviour into Parse Results by duplicating it is
+  // how the two would drift — which is the shape of most of what broke today.
+  const src = psFnSource('_meInitColHighlight') + psFnSource('_meApplyColHighlight');
+  assert.ok(/sel \+ ' thead'/.test(src), 'the implementation takes a table selector');
+  assert.ok(/\.me-fm-resizer,\.th-resize/.test(src),
+    "and opts out of BOTH tables' resize handles, so dragging is not selecting");
+  assert.ok(/_meColHi\.set\(sel/.test(src) && /_meColHi\.get\(sel/.test(src),
+    'each table remembers its own column');
+  // Parse Results replaces its innerHTML every render, so the binding has to be
+  // re-established there or the header goes dead after the first parse.
+  assert.ok(/_meInitColHighlight\('#resContainer table'\)/.test(APP_SRC),
+    'Parse Results re-binds after each render');
+});
+
+test('the Parse Results header matches the Field Map header', () => {
+  const th = html.match(/\nthead th \{([^}]*)\}/);
+  assert.ok(th, 'the rule exists');
+  assert.ok(/padding:\s*4px 10px/.test(th[1]), `same height, got: ${th[1]}`);
+  assert.ok(/cursor:\s*pointer/.test(th[1]), 'and reads as clickable');
+  // Project rule: every border is 2px.
+  assert.ok(/border-bottom:\s*2px/.test(th[1]), 'with a 2px rule, like every other border');
+});
+
 test('a hex-char field with no width override shows its declared number', () => {
   // Discriminating half: nothing overridden means nothing to annotate, so a bare
   // number here proves the ↩ above came from the override and not from hex-char.

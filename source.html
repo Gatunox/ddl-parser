@@ -763,9 +763,12 @@ thead th {
   position: sticky; top: 0; z-index: 1;
   background: var(--bg-panel);
   color: var(--text-very-dim);
-  padding: 2px 8px;
+  /* Matches the Field Map's header: same height, same 2px rule, same click-to-
+     light-the-column, so the two tables you switch between read as one thing. */
+  padding: 4px 10px;
+  cursor: pointer;
   text-align: left;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--border);
   font-weight: 700;
   white-space: nowrap;
   font-size: calc(var(--sz-mono) - 1px);
@@ -10642,6 +10645,7 @@ function renderFieldTable(msg) {
   document.getElementById('resContainer').innerHTML = tableOrEmpty;
   initColResize();
   _applyColWidths();
+  _meInitColHighlight('#resContainer table');
 
   // Always show filter and Hide Redef when a message is active; redef button is visually inert when no redefines present
   const _filterIn  = document.getElementById('resFilterInput');
@@ -14332,7 +14336,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.7.2';
+const APP_VERSION  = '1.2.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20498,28 +20502,37 @@ function _meFmApplyRowCount() {
 // Clicking a header lights its whole column, so a column's extent is obvious
 // once the widths have been dragged around. Bound on the thead, not per-th, so
 // it survives the header being rebuilt; the resize handles opt out.
-let _meFmColHi = 0;
-function _meFmInitColHighlight() {
-  const thead = document.querySelector('.me-fm-table thead');
+// Per TABLE, so Parse Results and the Field Map each remember their own column
+// without one clearing the other. Parse Results rebuilds its innerHTML on every
+// render, which drops the binding with the old thead — hence re-binding after
+// each render, and re-applying the remembered column.
+const _meColHi = new Map();
+function _meInitColHighlight(sel = '.me-fm-table') {
+  const thead = document.querySelector(sel + ' thead');
   if (!thead || thead._colHiBound) return;
   thead._colHiBound = true;
   thead.addEventListener('click', e => {
-    if (e.target.closest('.me-fm-resizer')) return;   // dragging is not selecting
+    // Dragging is not selecting. Both tables carry a resize handle, under
+    // different class names.
+    if (e.target.closest('.me-fm-resizer,.th-resize')) return;
     const th = e.target.closest('th'); if (!th) return;
     const i = [...th.parentNode.children].indexOf(th) + 1;
-    _meFmApplyColHighlight(_meFmColHi === i ? 0 : i);
+    _meApplyColHighlight(sel, _meColHi.get(sel) === i ? 0 : i);
   });
-  if (_meFmColHi) _meFmApplyColHighlight(_meFmColHi);
+  const cur = _meColHi.get(sel);
+  if (cur) _meApplyColHighlight(sel, cur);
 }
-function _meFmApplyColHighlight(i) {
-  _meFmColHi = i;
-  const tbl = document.querySelector('.me-fm-table');
+function _meApplyColHighlight(sel, i) {
+  _meColHi.set(sel, i);
+  const tbl = document.querySelector(sel);
   if (!tbl) return;
   tbl.querySelectorAll('.me-fm-colhi').forEach(el => el.classList.remove('me-fm-colhi'));
   if (!i) return;
   tbl.querySelectorAll(`thead th:nth-child(${i}), tbody td:nth-child(${i})`)
      .forEach(el => el.classList.add('me-fm-colhi'));
 }
+const _meFmInitColHighlight  = () => _meInitColHighlight('.me-fm-table');
+const _meFmApplyColHighlight = i => _meApplyColHighlight('.me-fm-table', i);
 
 function _meOvlRowClick(qn, ev) {
   const add = !!(ev && (ev.metaKey || ev.ctrlKey));

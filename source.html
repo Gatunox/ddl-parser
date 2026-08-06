@@ -6479,6 +6479,11 @@ function parseMessage(bytes, defs, rawBytes) {
   // `value` while the evaluator only ever read `length`. Anyone who followed the
   // help got length=0 — min-length then passed everything and max-length blocked
   // everything, both silently. Reading either keeps those specs working.
+  // STRICT, as the names say. The inclusive pair they replace is kept below so a
+  // spec that has not been through the migration still behaves as it always did —
+  // silently changing a boundary by one byte would be worse than an old name.
+  _R['greater-than'] = (bytes, { length, value }) => bytes.length >  (+(length ?? value) || 0);
+  _R['less-than']    = (bytes, { length, value }) => bytes.length <  (+(length ?? value) || 0);
   _R['min-length'] = (bytes, { length, value }) => bytes.length >= (+(length ?? value) || 0);
   _R['max-length'] = (bytes, { length, value }) => bytes.length <= (+(length ?? value) || 0);
   _R['numeric'] = (bytes, { offset=0, length=1, encoding='ascii' }) => {
@@ -6721,7 +6726,7 @@ function parseMessage(bytes, defs, rawBytes) {
 
   const _DEFAULT_FMT_SPECS = [
     { name:'ISO', label:'ISO 8583 Standard', color:'#f5f910', vol:'SWITCH',
-      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'####'},{type:'min-length',value:23}],
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'####'},{type:'greater-than',value:22}],
       ddl_bindings:['SWITCH/1987/Standard ISO'],
       parse_spec_binary:[
         {'read-ddl':{binding:0,from:'ISO_PFX',until:'MTI'}},
@@ -6744,7 +6749,7 @@ function parseMessage(bytes, defs, rawBytes) {
   { "read-bitmap-fields": "BMP" }
 ]` },
     { name:'ISO', label:'ISO 8583 BIC', color:'#ffbb00', vol:'SWITCH',
-      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'min-length',value:23}],
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'greater-than',value:22}],
       ddl_bindings:['BASE/DDL/ISOPSEM/ISOPSEM','BASE/DDL/ISOSSEM/ISOSSEM'],
       parse_spec_binary:[
         {'read-ddl':{binding:0,from:'STRT-OF-TXT',until:'TYP'}},
@@ -6771,7 +6776,7 @@ function parseMessage(bytes, defs, rawBytes) {
   { "read-bitmap-fields": "PRI-BIT-MAP" }
 ]` },
     { name:'ISO', label:'ISO 8583 Switch', color:'#c59102', vol:'SWITCH',
-      recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'uint16',offset:4,endian:'be',min:0,max:65535},{type:'uint16',offset:6,endian:'be',min:0,max:65535},{type:'uint16',offset:8,endian:'be',min:0,max:65535},{type:'uint16',offset:10,endian:'be',min:0,max:65535},{type:'min-length',value:23}],
+      recognizers:[{type:'mti',offset:0,encoding:'ebcdic',value:'####'},{type:'uint16',offset:4,endian:'be',min:0,max:65535},{type:'uint16',offset:6,endian:'be',min:0,max:65535},{type:'uint16',offset:8,endian:'be',min:0,max:65535},{type:'uint16',offset:10,endian:'be',min:0,max:65535},{type:'greater-than',value:22}],
       parse_spec_binary:[
         {'read':'TYP'},
         {'read-bitmap':{field:'PBIT-MAP',encoding:'binary'}},
@@ -6795,7 +6800,7 @@ function parseMessage(bytes, defs, rawBytes) {
   { "read-bitmap-fields": "PBIT-MAP" }
 ]` },
     { name:'STM', label:'STM', color:'#1eff00', vol:'ATM',
-      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'01'},{type:'min-length',value:873}],
+      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'01'},{type:'greater-than',value:872}],
       parse_spec_binary:[
         {'read-ddl':{binding:0}},
         {'token-area':'ANY'}
@@ -6809,7 +6814,7 @@ function parseMessage(bytes, defs, rawBytes) {
   { "token-area": "ANY" }
 ]` },
     { name:'PSTM', label:'PSTM', color:'#00aaff', vol:'POS',
-      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'02'},{type:'min-length',value:873}],
+      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'02'},{type:'greater-than',value:872}],
       parse_spec_binary:[
         {'read-ddl':{until:'NUM-SERVICES'}},
         {repeat:{count:'NUM-SERVICES',body:[{read:'SRVCS'}]}},
@@ -7123,6 +7128,18 @@ function parseMessage(bytes, defs, rawBytes) {
           if (/^uint(16|32|64)-le$/.test(t))                          fo.type = 'uint-le';
           else if (/^uint(8|16|32|64)(-be)?$|^byte$|^word$|^dword$/.test(t)) fo.type = 'uint-be';
         }
+      }
+    }
+    // min-length/max-length were inclusive; greater-than/less-than are strict.
+    // Shifting the value by one keeps the SAME test, so a recognizer written
+    // before the rename matches exactly the inputs it always did.
+    if (Array.isArray(spec.recognizers)) {
+      for (const r of spec.recognizers) {
+        if (!r || typeof r !== 'object') continue;
+        const n = +(r.length ?? r.value);
+        if (!Number.isFinite(n)) continue;
+        if (r.type === 'min-length') { r.type = 'greater-than'; r.value = n - 1; delete r.length; }
+        else if (r.type === 'max-length') { r.type = 'less-than'; r.value = n + 1; delete r.length; }
       }
     }
     _migrateSpecOverrides(spec);
@@ -14484,7 +14501,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.4.0.0';
+const APP_VERSION  = '1.5.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21222,6 +21239,8 @@ function _meRecSum(r) {
       const p = [r.endian||'be']; if(r.eq!==undefined)p.push(`= ${r.eq}`); if(r.min!==undefined)p.push(`>= ${r.min}`); if(r.max!==undefined)p.push(`<= ${r.max}`);
       return wrap(`@${r.offset} ${p.join(' ')}`);
     }
+    case 'greater-than': return wrap(`> ${r.value} bytes`);
+    case 'less-than':    return wrap(`< ${r.value} bytes`);
     case 'min-length':  return wrap(`≥ ${r.value} bytes`);
     case 'max-length':  return wrap(`≤ ${r.value} bytes`);
     case 'mti':         return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${esc(r.value)}`);
@@ -21298,13 +21317,37 @@ eq &nbsp;&nbsp;&nbsp;&nbsp;— masked result must equal this (0–255, leave bla
   'dword': `<b>Alias for uint32.</b> 4-byte integer check.
 <div class="me-rh-flds">offset, endian (be/le), eq / min / max (leave blank to skip)</div>`,
 
-  'min-length': `<b>Total message length must be at least N bytes.</b> Use as a cheap first guard — reject short buffers before running heavier checks.
-<div class="me-rh-flds">length — minimum byte count (<code>value</code> also accepted)</div>
-<div class="me-rh-exs"><b>Examples:</b> ISO minimum (MTI + bitmap) → value=20 &nbsp;|&nbsp; NDC minimum → value=4</div>`,
+  'greater-than': `<b>Decoded byte count must be strictly greater than N.</b> Use as a cheap first guard — reject short buffers before running heavier checks. Strictly greater: <code>&gt; 22</code> passes 23 bytes and rejects 22.
+<div class="me-rh-flds">value — the byte count to exceed (<code>length</code> also accepted)</div>
+<div class="me-rh-flds"><b>What counts as a byte:</b> the DECODED byte count, never the number of characters you pasted. The input format decides the conversion:
+<table class="me-rh-tbl"><tr><th>Format</th><th>Conversion</th><th>Example paste</th><th>Bytes</th></tr>
+<tr><td>ASCII</td><td>1 character = 1 byte</td><td><code>0200</code></td><td>4</td></tr>
+<tr><td>HEX</td><td>2 hex characters = 1 byte; spaces and newlines ignored</td><td><code>02 00</code> or <code>0200</code></td><td>2</td></tr>
+<tr><td>HEXASCII</td><td>hex pairs only — the address prefix and the <code>[…]</code>/<code>|…|</code> text column are stripped first</td><td><code>000000  02 00  |..|</code></td><td>2</td></tr>
+<tr><td>EBCDIC</td><td>2 hex characters = 1 byte, then translated to ASCII — the count is unchanged</td><td><code>F0F2</code></td><td>2</td></tr>
+<tr><td>OCT</td><td>1 whitespace-separated octal token = 1 byte</td><td><code>060 062</code></td><td>2</td></tr>
+</table>
+So a 940-character HEX paste is <b>470 bytes</b>, and a rule of <code>&lt; 900</code> passes it — the comparison never sees the 940.</div>
+<div class="me-rh-exs"><b>Examples:</b> ISO minimum (MTI + bitmap) → value=19 (needs 20+) &nbsp;|&nbsp; NDC minimum → value=3 (needs 4+)</div>`,
 
-  'max-length': `<b>Total message length must be at most N bytes.</b> Fails if the buffer exceeds the limit — use to reject oversized messages before running heavier checks.
-<div class="me-rh-flds">length — maximum byte count (<code>value</code> also accepted)</div>
-<div class="me-rh-exs"><b>Examples:</b> reject buffers over 4096 bytes → value=4096 &nbsp;|&nbsp; fixed-length NDC cap → value=128</div>`,
+  'less-than': `<b>Decoded byte count must be strictly less than N.</b> Use to reject oversized buffers before running heavier checks, and to separate two message forms that share a literal. Strictly less: <code>&lt; 470</code> rejects 470 bytes and passes 469.
+<div class="me-rh-flds">value — the byte count to stay under (<code>length</code> also accepted)</div>
+<div class="me-rh-flds"><b>What counts as a byte:</b> the DECODED byte count, never the number of characters you pasted. The input format decides the conversion:
+<table class="me-rh-tbl"><tr><th>Format</th><th>Conversion</th><th>Example paste</th><th>Bytes</th></tr>
+<tr><td>ASCII</td><td>1 character = 1 byte</td><td><code>0200</code></td><td>4</td></tr>
+<tr><td>HEX</td><td>2 hex characters = 1 byte; spaces and newlines ignored</td><td><code>02 00</code> or <code>0200</code></td><td>2</td></tr>
+<tr><td>HEXASCII</td><td>hex pairs only — the address prefix and the <code>[…]</code>/<code>|…|</code> text column are stripped first</td><td><code>000000  02 00  |..|</code></td><td>2</td></tr>
+<tr><td>EBCDIC</td><td>2 hex characters = 1 byte, then translated to ASCII — the count is unchanged</td><td><code>F0F2</code></td><td>2</td></tr>
+<tr><td>OCT</td><td>1 whitespace-separated octal token = 1 byte</td><td><code>060 062</code></td><td>2</td></tr>
+</table>
+So a 940-character HEX paste is <b>470 bytes</b>, and a rule of <code>&lt; 900</code> passes it — the comparison never sees the 940.</div>
+<div class="me-rh-exs"><b>Examples:</b> reject buffers of 4096 bytes or more → value=4096 &nbsp;|&nbsp; two forms sharing one literal: put <code>&lt; 471</code> on the short form and <code>&gt; 470</code> on the long one, so they cannot both match and match ORDER stops mattering</div>`,
+
+  'min-length': `<b>Legacy — inclusive (≥ N).</b> Replaced by <code>greater-than</code>, which is strict. Kept so a spec written before the rename still behaves exactly as it did; stored specs are migrated automatically (<code>min-length N</code> → <code>greater-than N−1</code>, the same test).
+<div class="me-rh-flds">value — minimum byte count, inclusive</div>`,
+
+  'max-length': `<b>Legacy — inclusive (≤ N).</b> Replaced by <code>less-than</code>, which is strict. Kept so a spec written before the rename still behaves exactly as it did; stored specs are migrated automatically (<code>max-length N</code> → <code>less-than N+1</code>, the same test).
+<div class="me-rh-flds">value — maximum byte count, inclusive</div>`,
 
   'mti': `<b>ISO 8583 MTI match — reads 4 ASCII bytes at offset and validates against ISO 8583 digit rules.</b>
 <div class="me-rh-flds">offset — byte position of MTI (0 for plain ISO, 3 if "ISO" text prefix)<br>value &nbsp;— 4-char pattern: use a specific digit for exact match, or <b>#</b> to allow any valid digit for that position</div>
@@ -21377,8 +21420,8 @@ const _REC_HELP_META = [
   ['uint8',          'Single byte check at offset (eq / min / max / mask)',            'offset, mask, eq, min, max'],
   ['uint16',         '2-byte integer check (be/le, eq / min / max)',                   'offset, endian, eq, min, max'],
   ['uint32',         '4-byte integer check (be/le, eq / min / max)',                   'offset, endian, eq, min, max'],
-  ['min-length',     'Total message length must be at least N bytes',                  'value'],
-  ['max-length',     'Total message length must be at most N bytes',                   'value'],
+  ['greater-than',   'Decoded byte count must be strictly greater than N',            'value'],
+  ['less-than',      'Decoded byte count must be strictly less than N',               'value'],
   ['mti',            'ISO 8583 MTI match — 4 ASCII bytes with digit rules',            'offset, value'],
   ['bitmap',         'Check a specific ISO 8583 DE bit is on/off',                     'offset, bit, value'],
   ['regex',          'JavaScript regex against ASCII bytes',                           'pattern'],
@@ -21431,7 +21474,7 @@ function _meRecForm(r, idx) {
     ['literal','literal'], ['binary','isBinary'], ['ascii','isAscii'], ['ebcdic','isEbcdic'],
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
     ['numeric','isNumeric'], ['alphabetic','isAlphabetic'], ['alphanumeric','isAlphanumeric'],
-    ['min-length','min-length'], ['max-length','max-length'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
+    ['greater-than','greater-than'], ['less-than','less-than'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],
     ['hex-density','hex-density'], ['oct-density','oct-density'],
     ['length-payload','length-payload'], ['flag-payload','flag-payload'],
     ['source','source'], ['destination','destination'], ['filename','filename'],
@@ -21614,10 +21657,14 @@ function _meRecFields(r, id) {
           id="me-rv-${k}-${id}" value="${v!==undefined?v:''}"></div>`; };
       return offF() + endf('endian') + onf('eq','Eq') + onf('min','Min') + onf('max','Max');
     }
+    case 'greater-than':
+      return nf('value','Bytes >',1,null,1);
+    case 'less-than':
+      return nf('value','Bytes <',1,null,1);
     case 'min-length':
-      return nf('value','Min Bytes',1,null,1);
+      return nf('value','Min Bytes (legacy ≥)',1,null,1);
     case 'max-length':
-      return nf('value','Max Bytes',1,null,1);
+      return nf('value','Max Bytes (legacy ≤)',1,null,1);
     case 'mti': {
       const enc = r.encoding || 'ascii';
       return offF() + encSel('encoding',['ascii','ebcdic'],enc) + tf('value','MTI Pattern','e.g. 0200');
@@ -21715,6 +21762,8 @@ function _meRecRead(idx) {
       const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
       return { type, offset:ni('offset'), endian:gv('endian')||'be', eq:oi('eq'), min:oi('min'), max:oi('max'), ...r_id };
     }
+    case 'greater-than':
+    case 'less-than':
     case 'min-length':
     case 'max-length': return { type, value: ni('value', 1), ...r_id };
     case 'mti':        return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', value: gv('value'), ...r_id };

@@ -198,8 +198,28 @@ A manually selected DDL still wins over any file spec (manual override, §2).
 | `uint8` | Single byte value or range | `offset`, `eq` \| `min`/`max`, `mask` |
 | `uint16` | 2-byte integer | `offset`, `endian` (`big`\|`little`), `eq` \| `min`/`max` |
 | `uint32` | 4-byte integer | `offset`, `endian` (`big`\|`little`), `eq` \| `min`/`max` |
-| `min-length` | Message total length ≥ N | `length` |
-| `max-length` | Message total length ≤ N — fails if message exceeds N bytes | `length` |
+| `greater-than` | Decoded byte count **strictly** > N. `> 22` passes 23 bytes, rejects 22 | `value` (`length` also accepted) |
+| `less-than` | Decoded byte count **strictly** < N. `< 470` rejects 470 bytes, passes 469 | `value` (`length` also accepted) |
+| `min-length` | **Legacy, inclusive (≥ N).** Superseded by `greater-than`; kept so a spec written before the rename still behaves identically. Stored specs migrate as `min-length N` → `greater-than N−1` | `length` |
+| `max-length` | **Legacy, inclusive (≤ N).** Superseded by `less-than`. Migrates as `max-length N` → `less-than N+1` | `length` |
+
+**What counts as a byte.** Both length rules compare the **decoded** byte count, never the number of
+characters pasted. The input format decides the conversion:
+
+| Input format | Conversion | Example paste | Bytes |
+|---|---|---|---|
+| ASCII | 1 character = 1 byte | `0200` | 4 |
+| HEX | 2 hex characters = 1 byte; whitespace and newlines ignored | `02 00` or `0200` | 2 |
+| HEXASCII (tandem dump) | hex pairs only — the address prefix and the `[…]`/`|…|` text column are stripped first | `000000  02 00  \|..\|` | 2 |
+| EBCDIC | 2 hex characters = 1 byte, then translated to ASCII — count unchanged | `F0F2` | 2 |
+| OCT | 1 whitespace-separated octal token = 1 byte | `060 062` | 2 |
+
+So a 940-character HEX paste is **470 bytes**, and `< 900` passes it — the comparison never sees 940.
+
+**Separating two forms that share a literal.** Give the short form `less-than S+1` and the long form
+`greater-than S`, where S is the short form's byte size. The two are then mutually exclusive, so match
+**order stops mattering** — relying on order means whichever entry comes first wins every input both
+can claim.
 | `length-payload` | Length field matches actual payload size | `offset`, `encoding` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `body_offset`, `includes_self` (bool) |
 | `flag-payload` | Flag field indicates actual payload presence | `offset`, `encoding` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `body_offset`, `body_length` |
 

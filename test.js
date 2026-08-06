@@ -3598,6 +3598,86 @@ test('`value` is accepted too, as the help had documented', () => {
   eq(pass({ type: 'max-length', value: 20 }), true, 'and accept within the limit');
 });
 
+// ── greater-than / less-than: strict, and named for what they do ─────────────
+// Reported after two TDE forms sharing one literal both matched a 470-byte
+// payload: `max-length 900` passed it, because 940 pasted HEX characters are 470
+// bytes and 470 <= 900. The rule was right and the name was vague — "max-length"
+// says nothing about the comparison or the unit.
+
+console.log('\nrecognizers — greater-than / less-than are strict');
+
+test('the comparison is STRICT, unlike the pair it replaces', () => {
+  const b = Buffer.from('ABCDEFGHIJ');            // 10 bytes
+  const pass = n => fmtTestSpecs([{ name: 'X', recognizers: [n] }], b)[0].passed;
+  eq(pass({ type: 'greater-than', value: 9 }),  true,  '10 > 9');
+  eq(pass({ type: 'greater-than', value: 10 }), false, '10 > 10 is false — strict');
+  eq(pass({ type: 'less-than',    value: 11 }), true,  '10 < 11');
+  eq(pass({ type: 'less-than',    value: 10 }), false, '10 < 10 is false — strict');
+  // The boundary is the whole point of the rename: the legacy pair includes it.
+  eq(pass({ type: 'min-length', value: 10 }), true,  'legacy ≥ includes 10');
+  eq(pass({ type: 'max-length', value: 10 }), true,  'legacy ≤ includes 10');
+});
+
+test('`length` is accepted as well as `value`', () => {
+  const b = Buffer.from('ABCDEFGHIJ');
+  const pass = n => fmtTestSpecs([{ name: 'X', recognizers: [n] }], b)[0].passed;
+  eq(pass({ type: 'greater-than', length: 9 }),  true,  'greater-than honours length');
+  eq(pass({ type: 'less-than',    length: 11 }), true,  'less-than honours length');
+});
+
+test('migration shifts the value so the SAME inputs still match', () => {
+  // A spec written before the rename must not change which messages it accepts.
+  // min-length 23 (>= 23) is exactly greater-than 22 (> 22).
+  const spec = { name: 'X', recognizers: [
+    { type: 'min-length', value: 23 },
+    { type: 'max-length', length: 900 },
+  ] };
+  migrateSpec(spec);
+  eq(spec.recognizers[0].type,  'greater-than', 'min-length becomes greater-than');
+  eq(spec.recognizers[0].value, 22,             'and 23 becomes 22 — the same test');
+  eq(spec.recognizers[1].type,  'less-than',    'max-length becomes less-than');
+  eq(spec.recognizers[1].value, 901,            'and 900 becomes 901 — the same test');
+  eq(spec.recognizers[1].length, undefined,     'the old attribute is cleared');
+
+  // Proven by behaviour at the boundary, not just by the numbers.
+  const at = (n, r) => fmtTestSpecs([{ name: 'X', recognizers: [r] }],
+                                    Buffer.alloc(n, 0x41))[0].passed;
+  eq(at(23, { type: 'min-length', value: 23 }), at(23, spec.recognizers[0]),
+     'a 23-byte message is judged identically before and after migration');
+  eq(at(22, { type: 'min-length', value: 23 }), at(22, spec.recognizers[0]),
+     'and so is a 22-byte one');
+  eq(at(900, { type: 'max-length', length: 900 }), at(900, spec.recognizers[1]),
+     'a 900-byte message is judged identically');
+});
+
+test('the shipped recognizers moved with their values', () => {
+  // The five in-app specs used min-length 23 / 873. If the id changed without the
+  // value, every one of them would have started rejecting messages exactly at its
+  // boundary — silently, because a recognizer only returns a boolean.
+  assert.ok(!/type:'min-length'/.test(APP_SRC) && !/type:'max-length'/.test(APP_SRC),
+    'no shipped spec still uses the legacy ids');
+  const shipped = [...APP_SRC.matchAll(/type:'greater-than',value:(\d+)/g)].map(m => +m[1]);
+  assert.deepStrictEqual(shipped.sort((a, b) => a - b), [22, 22, 22, 872, 872],
+    `values shifted by one, got: ${shipped}`);
+});
+
+test('two forms sharing a literal can be made mutually exclusive', () => {
+  // The reported situation: same literal, different sizes, order deciding the
+  // winner. With a strict pair either side of the boundary, order cannot matter.
+  const lit = { type: 'literal', offset: 0, encoding: 'ascii', value: 'TDE' };
+  const short = { name: 'SHORT', recognizers: [lit, { type: 'less-than', value: 471 }] };
+  const long  = { name: 'LONG',  recognizers: [lit, { type: 'greater-than', value: 470 }] };
+  const body = n => { const b = Buffer.alloc(n, 0x41); b.write('TDE', 0); return b; };
+  const won = (n, order) => {
+    const w = fmtTestSpecs(order, body(n)).find(r => r.passed);
+    return w ? w.spec.name : null;
+  };
+  eq(won(470, [long, short]), 'SHORT', '470 bytes is the short form');
+  eq(won(470, [short, long]), 'SHORT', 'whatever the order');
+  eq(won(600, [long, short]), 'LONG',  '600 bytes is the long form');
+  eq(won(600, [short, long]), 'LONG',  'whatever the order');
+});
+
 // ── Explicit positioning: the "at" attribute ─────────────────────────────────
 // Every block accepts it, resolved once in the dispatcher. Default (absent) must
 // stay exactly as before — the baseline corpus covers that side.

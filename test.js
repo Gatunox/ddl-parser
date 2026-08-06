@@ -4850,6 +4850,13 @@ test('the cog becomes the close button while the chooser is open', () => {
   assert.ok(/textContent = open \? '✕' : '⚙'/.test(fn), 'and swaps the glyph with it');
   assert.ok(/exp-cols-btn/.test(fn) && /id="exp-cols-btn"/.test(html),
     'against a button it can actually find');
+  // It sits beside the modal's own ✕ and turns INTO one, so it has to be the
+  // same size: same classes, and no padding override narrowing it.
+  const cog   = html.match(/<button[^>]*id="exp-cols-btn"[^>]*>/)[0];
+  const close = html.match(/<button[^>]*onclick="closeMsgExportModal\(\)"[^>]*>/)[0];
+  const cls = b => (b.match(/class="([^"]*)"/) || [, ''])[1];
+  eq(cls(cog), cls(close), 'the cog and the close button carry the same classes');
+  assert.ok(!/style="[^"]*padding/.test(cog), `and no padding override: ${cog}`);
   const render = psFnSource('_expRenderColsDlg');
   assert.ok(!/audit-cfg-hdr/.test(render), `the row carries no header of its own: ${render}`);
   // Dead CSS is how a rule ends up styling the wrong thing later.

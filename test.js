@@ -4570,8 +4570,35 @@ test('the value editors open on the field, not on a constant', () => {
   assert.ok(!/def:\s*'66'/.test(cfg) && !/def:\s*'2'/.test(cfg),
     'no hardcoded DE number or byte count');
   for (const act of ['de-anchor', 'bytes', 'type', 'display'])
-    assert.ok(new RegExp(`'${act}':[\\s\\S]{0,220}?def: \\(\\) =>`).test(cfg),
+    assert.ok(new RegExp(`'${act}':[\\s\\S]{0,500}?def: \\(\\) =>`).test(cfg),
       `${act} computes its default from the selection`);
+});
+
+test('typing the declared length back REMOVES the override, and does not warn', () => {
+  // Reported: with bytes:2 stored, typing 4 was refused with "already declared
+  // as 4". The clear did run, but the warning fired anyway, so removing an
+  // override was indistinguishable from being told no. The no-op case has to be
+  // "there was nothing here to undo", not "the number matches".
+  const src = psFnSource('_meFmEdCommit');
+  assert.ok(/cfg\.has\(all\[k\]\)/.test(src),
+    'the commit asks whether an override was actually there');
+  assert.ok(/cleared\+\+/.test(src) && /noops\+\+/.test(src),
+    'and counts a removal separately from a no-op');
+  // The two messages must not be the same one: removing an override is not a
+  // refusal, so it cannot flash 'warn'.
+  const removed = src.slice(src.indexOf('if (cleared)'), src.indexOf('if (noops)'));
+  assert.ok(/'ok'/.test(removed), `a removal reports success, got: ${removed}`);
+  assert.ok(!/no override stored/.test(removed), 'and does not claim nothing was stored');
+  // An emptied entry is deleted rather than left as {} in the overrides list.
+  assert.ok(/delete all\[k\]/.test(src), 'an entry with nothing left in it is removed');
+});
+
+test('the bytes editor opens on the number that was typed in, not the wire width', () => {
+  // A hex-char field showing 2 wire bytes was written as 4 characters. Offering
+  // 2 would ask the user to re-type a number in units they never used.
+  const cfg = html.slice(html.indexOf("'bytes':"), html.indexOf("'type':"));
+  assert.ok(/o\?\.bytes \?\? r\?\.declaredLen \?\? r\?\.length/.test(cfg),
+    `the stored override wins, then the declared number, then the width: ${cfg}`);
 });
 
 test('the old per-field editor is gone, and nothing references it', () => {

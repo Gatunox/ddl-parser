@@ -14333,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.5.0';
+const APP_VERSION  = '1.2.5.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20504,12 +20504,19 @@ const _ME_FM_ED = {
                  def: () => String(_meFmSelRow()?.de ?? ''),
                  set: (o, v) => { o.de = Math.max(1, Math.min(128, +v)); } },
   'bytes':     { label: 'Read bytes', kind: 'num',
-                 def: () => String(_meFmSelRow()?.length ?? ''),
+                 // In the FIELD'S units, which is what was typed in: a hex-char
+                 // length counts characters, so a field showing 2 wire bytes
+                 // offers 4 here. Showing the byte count would ask the user to
+                 // re-type a number in a unit they never used.
+                 def: () => { const r = _meFmSelRow();
+                              const o = r ? _meOvGet(_meCurItem(), r.id) : null;
+                              return String(o?.bytes ?? r?.declaredLen ?? r?.length ?? ''); },
                  // Setting it BACK to the declared length removes the override
                  // rather than storing one that changes nothing: an entry in the
                  // list with no effect on the table is a lie about the parse.
                  noop: (row, v) => +v === (row?.declaredLen ?? row?.length),
                  set: (o, v) => { o.bytes = +v; },
+                 has: o => o.bytes != null,
                  clear: o => { delete o.bytes; } },
   'type':      { label: 'Read as', kind: 'sel',
                  def: () => _meFmSelOvr()?.type || 'hex-char',
@@ -20574,18 +20581,28 @@ function _meFmEdCommit() {
   const all = _meOvAll(item);
   const rowsById = new Map((_meFmVirt?.all || []).map(r => [r.id, r]));
   const targets = _meFmActionTargets(_meFmEdAct);
-  let noops = 0;
+  let noops = 0, cleared = 0;
   for (const qn of targets) {
     const k = _canonFieldId(qn);
     // Judged per field: a multi-selection can hold fields of different declared
     // widths, so the same typed value is a no-op for some and not for others.
     if (cfg.noop && cfg.noop(rowsById.get(qn), v)) {
-      noops++;
-      if (all[k] && cfg.clear) cfg.clear(all[k]);   // and it undoes an existing one
+      // Typing the declared length back is how you UNDO an override — it is only
+      // a no-op when there was nothing there to undo. Warning either way made
+      // removing one look like it had been refused.
+      const had = all[k] && cfg.clear && cfg.has ? cfg.has(all[k]) : false;
+      if (had) {
+        cfg.clear(all[k]);
+        if (!Object.keys(all[k]).length) delete all[k];   // no ghost entry in the list
+        cleared++;
+      } else noops++;
       continue;
     }
     cfg.set(all[k] || (all[k] = {}), v);
   }
+  if (cleared) _meFlash(cleared === 1
+    ? 'Override removed — the field reads its declared length again'
+    : `${cleared} overrides removed — those fields read their declared lengths again`, 'ok');
   if (noops) _meFlash(noops === 1
     ? 'That is already the declared length — no override stored'
     : `${noops} fields already read that many bytes — no override stored`, 'warn');

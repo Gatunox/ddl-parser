@@ -4847,7 +4847,12 @@ test('the cog becomes the close button while the chooser is open', () => {
   // own — two controls one centimetre apart that did the same thing.
   const fn = psFnSource('_expToggleColsDlg');
   assert.ok(/classList\.toggle\('open'\)/.test(fn), 'it toggles the row');
-  assert.ok(/textContent = open \? '✕' : '⚙'/.test(fn), 'and swaps the glyph with it');
+  // CHANGED ON PURPOSE (v1.3.1.3). This asserted the glyph swapped to ✕, which
+  // made the cog read as a second close button beside the modal's own. It stays
+  // a cog and lights up instead, the way a toggle does.
+  assert.ok(/classList\.toggle\('btn-on', open\)/.test(fn), 'and lights the button with it');
+  assert.ok(/\.btn\.btn-on\s*\{[^}]*border-color:\s*var\(--accent\)/.test(html),
+    'against a rule that actually marks it active');
   assert.ok(/exp-cols-btn/.test(fn) && /id="exp-cols-btn"/.test(html),
     'against a button it can actually find');
   // It sits beside the modal's own ✕ and turns INTO one, so it has to be the

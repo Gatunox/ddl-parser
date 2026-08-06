@@ -4657,7 +4657,7 @@ test('the Field Map puts Type/Len before Bytes, and the cells follow the header'
 test('the length columns are named for what they hold, in both tables', () => {
   // "Len" said nothing about which unit. The Field Map's number is the type's
   // own — characters for hex-char — and the byte column is wire bytes.
-  assert.ok(/data-col="dt"[^>]*>Type\/Len</.test(html), 'Field Map: Type/Len');
+  assert.ok(/data-col="dt"[^>]*>Type-Len</.test(html), 'Field Map: Type-Len');
   assert.ok(/data-col="len"[^>]*>Bytes</.test(html),    'Field Map: Bytes');
   assert.ok(/class="th-len"[^>]*>Bytes</.test(html),    'Parse Results: Bytes');
   assert.ok(/class="th-desc"[^>]*>Type-Len \/ Description</.test(html),
@@ -4665,7 +4665,7 @@ test('the length columns are named for what they hold, in both tables', () => {
   assert.ok(!/data-col="len"[^>]*>Len</.test(html) && !/class="th-len"[^>]*>Len</.test(html),
     'and nothing still says a bare "Len"');
   const menu = html.slice(html.indexOf("['num', '#']"), html.indexOf("['num', '#']") + 200);
-  assert.ok(/'dt', 'Type\/Len'/.test(menu) && /'len', 'Bytes'/.test(menu),
+  assert.ok(/'dt', 'Type-Len'/.test(menu) && /'len', 'Bytes'/.test(menu),
     `the column menu uses the same names: ${menu}`);
 });
 

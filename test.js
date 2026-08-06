@@ -4805,6 +4805,14 @@ test('the export column chooser lays out in a row, and wins the cascade', () => 
   // rules today ended up silently losing.
   assert.ok(/id="exp-cols-dlg" class="audit-cfg-dialog exp-cols-h"/.test(html),
     'the dialog carries the horizontal class');
+  // The row hangs from the cog, so where the cog sits decides how much of the
+  // modal it has to span: between Download and ✕ keeps it near the right edge.
+  const _m = html.indexOf('id="msgExportOverlay"');
+  const hdr = html.slice(_m, html.indexOf('id="exportBody"', _m));
+  const order = [hdr.indexOf('doMsgExport()'), hdr.indexOf('_expToggleColsDlg()'),
+                 hdr.lastIndexOf('closeMsgExportModal()')];
+  assert.ok(_m > 0 && order.every(i => i >= 0) && order[0] < order[1] && order[1] < order[2],
+    `Download, then the cog, then close — got offsets ${order}`);
   const rule = html.match(/\.audit-cfg-dialog\.exp-cols-h\.open\s*\{([^}]*)\}/);
   assert.ok(rule && /display:flex/.test(rule[1]), `it lays out in a row: ${rule && rule[1]}`);
   const mine  = (rule[0].match(/\./g) || []).length;

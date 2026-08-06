@@ -4701,6 +4701,25 @@ test('both tables share ONE column-highlight implementation', () => {
     'Parse Results re-binds after each render');
 });
 
+test('every _me* symbol the app references is actually declared', () => {
+  // Deleting `_meFmColHi` while one line still read it left the Field Map's
+  // column highlight dead, and the whole suite stayed green: the reference sits
+  // inside a function the tests never call, so nothing threw. A ReferenceError
+  // in a UI handler is invisible to a suite that tests logic.
+  const declared = new Set();
+  for (const m of APP_SRC.matchAll(/(?:function|class)\s+(_me[A-Za-z0-9_$]*)/g)) declared.add(m[1]);
+  // const/let/var take a comma-separated LIST — `let a = 1, b = 2` declares both.
+  for (const m of APP_SRC.matchAll(/(?:const|let|var)\s+([^;\n]+)/g))
+    for (const n of m[1].matchAll(/(?<![.\w$])(_me[A-Za-z0-9_$]*)\s*(?:[=,]|$)/g)) declared.add(n[1]);
+  for (const m of APP_SRC.matchAll(/(_me[A-Za-z0-9_$]*)\s*[:=]\s*(?:function|\()/g)) declared.add(m[1]);
+
+  const used = new Set();
+  for (const m of APP_SRC.matchAll(/(?<![.\w$])(_me[A-Za-z0-9_$]*)/g)) used.add(m[1]);
+  const missing = [...used].filter(n => !declared.has(n)).sort();
+  assert.deepStrictEqual(missing, [],
+    `referenced but never declared — a rename or deletion left these behind: ${missing.join(', ')}`);
+});
+
 test('the Parse Results header matches the Field Map header', () => {
   const th = html.match(/\nthead th \{([^}]*)\}/);
   assert.ok(th, 'the rule exists');

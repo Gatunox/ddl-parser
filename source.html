@@ -14336,7 +14336,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.8.2';
+const APP_VERSION  = '1.2.8.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19142,7 +19142,7 @@ function _meFmRenderWindow(force) {
   }
   // Row selection is baked into the row HTML, but the column highlight is a
   // class on individual cells — it has to be re-applied to each new window.
-  if (_meFmColHi) _meFmApplyColHighlight(_meFmColHi);
+  if (_meFmColHiCur()) _meFmApplyColHighlight(_meFmColHiCur());
 }
 
 // Refresh the virtual list from a (re)computed field list — used after DE
@@ -20533,6 +20533,7 @@ function _meApplyColHighlight(sel, i) {
 }
 const _meFmInitColHighlight  = () => _meInitColHighlight('.me-fm-table');
 const _meFmApplyColHighlight = i => _meApplyColHighlight('.me-fm-table', i);
+const _meFmColHiCur          = () => _meColHi.get('.me-fm-table') || 0;
 
 function _meOvlRowClick(qn, ev) {
   const add = !!(ev && (ev.metaKey || ev.ctrlKey));

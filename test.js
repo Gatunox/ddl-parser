@@ -4814,6 +4814,21 @@ test('the export column chooser lays out in a row, and wins the cascade', () => 
     `${mine} classes must beat the block rule's ${theirs}, whatever the order`);
 });
 
+test('no border is 1px — the project uses 2px everywhere', () => {
+  // A standing rule that lived only in review comments, so hairlines kept
+  // arriving one at a time: 52 of them across modals, panels, tables and
+  // inline styles. Enforced here so the next one fails instead of accumulating.
+  const hits = [...html.matchAll(/border(?:-top|-right|-bottom|-left|-width)?\s*:\s*1px/g)]
+    .map(m => {
+      const line = html.slice(0, m.index).split('\n').length;
+      return `line ${line}: ${html.slice(m.index, m.index + 48).split('\n')[0]}`;
+    });
+  assert.deepStrictEqual(hits, [], `1px borders found:\n${hits.join('\n')}`);
+  // border-radius is a corner, not a border — it must NOT be caught by this.
+  assert.ok(/border-radius\s*:\s*1px/.test(html),
+    'the guard leaves border-radius alone (there is still one in the source)');
+});
+
 test('the Parse Results header matches the Field Map header', () => {
   const th = html.match(/\nthead th \{([^}]*)\}/);
   assert.ok(th, 'the rule exists');

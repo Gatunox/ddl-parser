@@ -4157,6 +4157,95 @@ test('the Test panel and Parse Results report the same problems', () => {
 // table rows are per-occurrence (GRP[01].A). Identical for an ordinary field,
 // never equal for OCCURS, so raw id comparison worked everywhere else.
 
+// ── read-ddl from/until: resolve the name, and say when it is ambiguous ─────
+// Reported: `{"read-ddl": {"binding": 0, "until": "<field>"}}` read the whole DDL.
+// The walk compares `def.id === until`, so ONLY a fully-qualified id matched — a
+// leaf name or an occurrence-stripped one silently matched nothing. The lint said
+// nothing either, because its id set contains canonical forms and group prefixes
+// that the walk cannot match.
+
+console.log('\nread-ddl from/until resolve the way every other reference does');
+
+const UNTIL_DDL = `DEF R.
+  02 AA PIC X(2).
+  02 BB PIC X(2).
+  02 GROUP.
+    04 AA PIC X(6).
+    04 BB PIC X(6).
+  02 REP OCCURS 3 TIMES.
+    04 DD PIC X(2).
+  02 ZZ PIC X(2).
+END R.
+`;
+function untilRun(attrs) {
+  S.ddlTree = { V: { S: { D: UNTIL_DDL } } };
+  S.inputFormat = 'hex';
+  const b = Uint8Array.from(Array.from({ length: 40 }, (_, i) => 0x41 + (i % 26)));
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: [{ 'read-ddl': { binding: 0, ...attrs } }] }, b)
+    .fields.filter(f => !f.error).map(f => f.id);
+}
+
+test('a fully-qualified id still stops exactly where it did', () => {
+  eq(untilRun({ until: 'GROUP.BB' }).join(' '), 'AA BB GROUP.AA GROUP.BB', 'unchanged');
+});
+
+test('a leaf name that exists only nested still resolves', () => {
+  // "DD" is not an id at any level — only REP[01..03].DD are. Under the old
+  // exact-id matching this read the entire DDL and said nothing.
+  const ids = untilRun({ until: 'DD' });
+  eq(ids[ids.length - 1], 'REP[03].DD', `stops at the nested field, got: ${ids.join(' ')}`);
+  assert.ok(!ids.includes('ZZ'), 'and does not run to the end');
+  // "BB" is ALSO a top-level id, so the exact match wins outright.
+  eq(untilRun({ until: 'BB' }).join(' '), 'AA BB', 'an exact id is never overridden');
+});
+
+test('an occurrence-stripped name covers the whole array', () => {
+  // `until` takes the LAST match, so REP.DD means "through the array" — the same
+  // reading as naming a group. Use REP[01].DD to stop inside it.
+  const ids = untilRun({ until: 'REP.DD' });
+  eq(ids[ids.length - 1], 'REP[03].DD', 'stops after the last occurrence');
+  assert.ok(!ids.includes('ZZ'), 'rather than reading past the array');
+  eq(untilRun({ until: 'REP[01].DD' }).pop(), 'REP[01].DD', 'an exact id still stops inside');
+});
+
+test('naming a GROUP as until includes the whole group', () => {
+  // "through GROUP" is the natural reading, so its LAST leaf ends the window.
+  eq(untilRun({ until: 'GROUP' }).join(' '), 'AA BB GROUP.AA GROUP.BB',
+     'the group is read in full, then it stops');
+});
+
+test('an unmatched name still reads everything, as it must', () => {
+  // Nothing to stop at — the lint is what tells the user, not a silent truncation.
+  assert.ok(untilRun({ until: 'NOSUCHFIELD' }).includes('ZZ'), 'no accidental stop');
+});
+
+test('the lint warns that an ambiguous name resolves to the first match', () => {
+  S.ddlTree = { V: { S: { D: UNTIL_DDL } } };
+  const item = { ddl_bindings: ['V/S/D/R'] };
+  const spec = [{ 'read-ddl': { binding: 0, until: 'BB' } }];
+  const w = mePsLintWarns(item, spec).join('\n');
+  assert.ok(/until.*"BB".*matches 2 fields/.test(w), `states the ambiguity: ${w}`);
+  assert.ok(/"BB" is used/.test(w), `and names the winner the walk will use: ${w}`);
+  assert.ok(/GROUP\.BB/.test(w), 'while listing the other candidate, which is the point');
+  // The warning must agree with the engine — assert against the actual parse.
+  eq(untilRun({ until: 'BB' }).pop(), 'BB', 'exact id wins outright for the walk');
+  // Discriminating: an unambiguous name must NOT be warned about.
+  const w2 = mePsLintWarns(item, [{ 'read-ddl': { binding: 0, until: 'GROUP.BB' } }]).join('\n');
+  assert.ok(!/matches \d+ fields/.test(w2), `qualified name is quiet: ${w2}`);
+});
+
+test('the lint warns when "fields" makes from/until dead', () => {
+  S.ddlTree = { V: { S: { D: UNTIL_DDL } } };
+  const item = { ddl_bindings: ['V/S/D/R'] };
+  const w = mePsLintWarns(item, [{ 'read-ddl': { binding: 0, fields: ['AA'], until: 'BB' } }]).join('\n');
+  assert.ok(/"until" has no effect while "fields" is set/.test(w),
+    `the dead attribute is named: ${w}`);
+  // Discriminating: without `fields`, until is live and must not be flagged.
+  const w2 = mePsLintWarns(item, [{ 'read-ddl': { binding: 0, until: 'BB' } }]).join('\n');
+  assert.ok(!/no effect while/.test(w2), `not flagged when it does work: ${w2}`);
+});
+
 console.log('\nthe overrides list and the table agree about OCCURS ids');
 
 const OCCSEL_DDL = `DEF R.

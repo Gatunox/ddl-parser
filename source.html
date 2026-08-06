@@ -14501,7 +14501,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.5.1.0';
+const APP_VERSION  = '1.6.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17927,6 +17927,37 @@ function _mePsLintWarns(item, parsed) {
   const segSpec = Array.isArray(parsed) &&
     parsed.some(b => b && typeof b === 'object' && 'read-segment-fields' in b);
 
+  // How many DDL fields a reference could mean. A fully-qualified id means one;
+  // a leaf name can mean several — `BB` matches both the 02-level BB and
+  // GROUP.BB — and an OCCURS canonical form matches every occurrence.
+  const _bindingDefs = () => {
+    const out = [];
+    for (const path of (item.ddl_bindings || [])) {
+      if (!path) continue;
+      const r = (typeof getDDLFromPath === 'function') ? getDDLFromPath(path) : null;
+      for (const d of (r?.defs || [])) out.push(d);
+    }
+    return out;
+  };
+  // Every field a reference could mean. A qualified id means exactly one; a leaf
+  // name can mean several (BB matches the 02-level BB and GROUP.BB), and an
+  // occurrence-stripped name matches every occurrence.
+  const refMatches = (defs, id) => defs
+    .filter(d => d.id === id || _canonFieldId(d.id) === id || _leaf(d.id) === id)
+    .map(d => d.id);
+  // Reports the winner by asking the ENGINE'S resolver, so the warning cannot
+  // claim one field while the walk stops at another.
+  const checkAmbiguous = (n, attr, id, edge) => {
+    if (typeof id !== 'string' || !id) return;
+    const defs = _bindingDefs();
+    const hits = refMatches(defs, id);
+    if (hits.length < 2) return;
+    const winner = _meResolveDefRef(defs, id, edge);
+    warns.push(`[block ${n}] ${attr}: "${id}" matches ${hits.length} fields `
+      + `(${hits.slice(0, 3).join(', ')}${hits.length > 3 ? ', …' : ''}) — `
+      + `"${winner}" is used. Write the qualified name to pick another.`);
+  };
+
   const checkRef = (n, attr, id, allowSynthetic = true) => {
     if (typeof id !== 'string' || !id) return;
     if (allowSynthetic ? known(id) : ddlIds.has(id)) return;
@@ -18019,6 +18050,18 @@ function _mePsLintWarns(item, parsed) {
             checkRef(n, 'read-ddl.until', attrs.until, false);
             if (Array.isArray(attrs.fields))
               for (const f of attrs.fields) checkRef(n, 'read-ddl.fields', f, false);
+            // A name that fits more than one field resolves to the FIRST — say so,
+            // rather than letting the walk stop somewhere the author did not mean.
+            checkAmbiguous(n, 'read-ddl.from',  attrs.from,  'first');
+            checkAmbiguous(n, 'read-ddl.until', attrs.until, 'last');
+            // `fields` is an explicit emit list, so the window attributes never run.
+            // Two attributes that each look configured, one of which does nothing.
+            if (Array.isArray(attrs.fields)) {
+              const dead = ['from', 'until'].filter(a => attrs[a]);
+              if (dead.length) warns.push(`[block ${n}] read-ddl: "${dead.join('" and "')}" `
+                + `${dead.length > 1 ? 'have' : 'has'} no effect while "fields" is set — `
+                + `fields already lists exactly what to emit. Remove one or the other.`);
+            }
           }
           break;
         }
@@ -22230,12 +22273,38 @@ function _meDDLVlgRuns(defs, ctx) {
   return runs;
 }
 
+// Resolve a `from`/`until` reference to the def id the walk will actually see.
+// The walk compares `def.id === ref`, so only a fully-qualified id ever matched:
+// a leaf name (BB) or an occurrence-stripped one (REP.DD) silently matched
+// nothing and the block read the whole DDL. Both forms are accepted everywhere
+// else — the lint's own id set contains them — so both are resolved here.
+//
+// One rule: the window is as inclusive as the name allows. `from` takes the
+// FIRST field a name matches, `until` takes the LAST — so naming a group, or an
+// OCCURS field without its label, covers the whole thing. An exact id always wins
+// outright, and the lint warns whenever a name could mean more than one field,
+// naming the winner by calling this very function.
+function _meResolveDefRef(defs, ref, edge) {
+  if (!ref) return null;
+  if (defs.some(d => d.id === ref)) return ref;                       // exact
+  const leaf = id => String(id).split('.').pop();
+  const pick = list => list.length
+    ? (edge === 'last' ? list[list.length - 1].id : list[0].id) : null;
+  return pick(defs.filter(d => _canonFieldId(d.id) === ref))          // REP.DD
+      || pick(defs.filter(d => d.id.startsWith(ref + '.')
+                            || _canonFieldId(d.id).startsWith(ref + '.')))  // a group
+      || pick(defs.filter(d => leaf(d.id) === ref))                   // BB
+      || ref;                                                          // unmatched
+}
+
 function _meReadDDLBinding(idx, fields, from, until, ctx) {
   const resolved = ctx.resolvedBindings[idx];
   if (!resolved?.defs?.length) {
     ctx.fields.push({ id: 'read-ddl', error: `Binding ${idx}: could not resolve ${ctx.item.ddl_bindings?.[idx] || '(none)'}` });
     return;
   }
+  from  = _meResolveDefRef(resolved.defs, from,  'first');
+  until = _meResolveDefRef(resolved.defs, until, 'last');
   const picks   = Array.isArray(fields) ? new Set(fields) : null;
   const allMode = !picks && !from && !until;
   let started   = !from;

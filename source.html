@@ -4457,6 +4457,7 @@ function openMsgExportModal() {
     </table>`;
   const expFlt = document.getElementById('expFilterInput');
   if (expFlt) { expFlt.value = ''; }
+  _expRenderColsDlg();
   document.getElementById('msgExportOverlay').classList.remove('hidden');
 }
 
@@ -4485,6 +4486,117 @@ function filterExpTable() {
   });
 }
 
+// ── Export column config ────────────────────────────────────────────────────
+// Which columns the text export carries. Stored, because it is a preference
+// about the OUTPUT, not about this one download.
+const _EXP_COLS_KEY = 'up_msg_export_cols';
+const _EXP_COLS = [
+  ['field', 'Field'],
+  ['desc',  'Description'],
+  ['value', 'Value'],
+  ['hex',   'Raw Hex'],
+];
+function _expHiddenCols() {
+  try { return JSON.parse(localStorage.getItem(_EXP_COLS_KEY)) || {}; } catch (_) { return {}; }
+}
+function _expToggleCol(key) {
+  const h = _expHiddenCols();
+  h[key] = !h[key];
+  // Never let the last one go — an export with no columns is an empty file.
+  if (_EXP_COLS.every(([k]) => h[k])) { h[key] = false; flash('Keep at least one column', 'warn'); }
+  try { localStorage.setItem(_EXP_COLS_KEY, JSON.stringify(h)); } catch (_) {}
+  _expRenderColsDlg();
+}
+function _expToggleColsDlg() {
+  document.getElementById('exp-cols-dlg')?.classList.toggle('open');
+}
+function _expRenderColsDlg() {
+  const dlg = document.getElementById('exp-cols-dlg');
+  if (!dlg) return;
+  const h = _expHiddenCols();
+  dlg.innerHTML = `<div class="audit-cfg-hdr"><span>Columns</span>`
+    + `<button class="btn" onclick="_expToggleColsDlg()" style="padding:1px 7px;font-size:13px">✕</button></div>`
+    + _EXP_COLS.map(([k, label]) =>
+        `<div class="audit-cfg-row"><label>${label}</label>`
+        + `<input type="checkbox" class="trk-chk" ${h[k] ? '' : 'checked'}`
+        + ` onchange="_expToggleCol('${k}')"></div>`).join('');
+}
+
+// ── The exported text ───────────────────────────────────────────────────────
+// Kept pure — messages in, text out — so the layout can be tested without a DOM
+// and without downloading a file.
+//
+// Widths come from the CONTENT, capped at _EXP_MAX_COL. A cell longer than its
+// column wraps instead of being cut: every continuation line sits under the same
+// column, and the lines that did fit hold their place with spaces so the columns
+// below still line up. A wrapped line ends with ¬ so a break is never mistaken
+// for the value itself.
+const _EXP_MAX_COL = 48;
+const _EXP_GUTTER  = '  ';
+const _EXP_CONT    = '¬';
+
+function _expWrapCell(text, w) {
+  const str = String(text ?? '');
+  if (str.length <= w) return [str];
+  const room = Math.max(1, w - 2);            // room for ' ¬'
+  const out = [];
+  for (let i = 0; i < str.length; i += room) out.push(str.slice(i, i + room));
+  return out.map((chunk, i) => i < out.length - 1 ? chunk.padEnd(room) + ' ' + _EXP_CONT : chunk);
+}
+
+function _expMsgLines(msg, idx) {
+  const lines = [];
+  const type   = msg.msgType?.type || '';
+  const proc   = msg.typeDesc || _netardTypeLabel(msg.typeCode);
+  const origin = msg.isNetard ? (msg.source || '') : (msg.ddlPath || '');
+  const dest   = msg.isNetard ? (msg.dest || '') : '';
+  const route  = dest ? `${origin} → ${dest}` : origin;
+  const time   = msg.time || msg.timestamp || '';
+  const size   = msg.isNetard ? msg.recLength : (msg.bytes?.length || 0);
+  const mti    = _msgMti(msg);
+  const hdr    = [
+    msg.isNetard ? `Rec #${msg.recNo}` : `Msg #${idx + 1}`,
+    type, proc, route, time, `${size} bytes`, mti ? `MTI: ${mti}` : ''
+  ].filter(Boolean).join('  |  ');
+
+  const hidden = _expHiddenCols();
+  const cols   = _EXP_COLS.filter(([k]) => !hidden[k]);
+  const cell   = (f, k) => k === 'field' ? f.id
+                         : k === 'desc'  ? f.description
+                         : k === 'value' ? (f.displayValue != null ? f.displayValue : f.value)
+                         :                 f.rawHex;
+  const rows = (msg.fields || []).map(f => cols.map(([k]) => String(cell(f, k) ?? '')));
+
+  // Width per column: the widest thing in it, header included, capped.
+  const width = cols.map(([, label], i) =>
+    Math.min(_EXP_MAX_COL, Math.max(label.length, ...rows.map(r => r[i].length), 1)));
+
+  const layout = cells => {
+    const wrapped = cells.map((c, i) => _expWrapCell(c, width[i]));
+    const height  = Math.max(...wrapped.map(w => w.length));
+    const out = [];
+    for (let ln = 0; ln < height; ln++)
+      out.push(wrapped.map((w, i) => (w[ln] || '').padEnd(width[i])).join(_EXP_GUTTER).replace(/\s+$/, ''));
+    return out;
+  };
+
+  // The rule spans the WHOLE line, header or table, whichever is wider.
+  const tableW = width.reduce((a, b) => a + b, 0) + _EXP_GUTTER.length * (width.length - 1);
+  const ruleW  = Math.max(hdr.length, msg.fields?.length ? tableW : 0);
+  const SEP    = '='.repeat(ruleW);
+
+  lines.push(SEP, hdr, SEP);
+  if (msg.fields?.length) {
+    lines.push(...layout(cols.map(([, label]) => label)));
+    lines.push('-'.repeat(ruleW));
+    for (const r of rows) lines.push(...layout(r));
+  } else {
+    lines.push('(no fields parsed)');
+  }
+  lines.push('');
+  return lines;
+}
+
 function doMsgExport() {
   const selected = [...document.querySelectorAll('.exp-chk')]
     .filter(cb => cb.checked)
@@ -4493,43 +4605,7 @@ function doMsgExport() {
   if (!selected.length) { flash('Select at least one message to export', 'warn'); return; }
 
   const lines = [];
-
-  for (const idx of selected) {
-    const msg = S.messages[idx];
-
-    // Header line
-    const type  = msg.msgType?.type || '';
-    const proc  = msg.typeDesc || _netardTypeLabel(msg.typeCode);
-    const origin = msg.isNetard ? (msg.source || '') : (msg.ddlPath || '');
-    const dest   = msg.isNetard ? (msg.dest || '') : '';
-    const route  = dest ? `${origin} → ${dest}` : origin;
-    const time  = msg.time || msg.timestamp || '';
-    const size  = msg.isNetard ? msg.recLength : (msg.bytes?.length || 0);
-    const mti   = _msgMti(msg);
-    const hdr   = [
-      msg.isNetard ? `Rec #${msg.recNo}` : `Msg #${idx + 1}`,
-      type, proc, route, time, `${size} bytes`, mti ? `MTI: ${mti}` : ''
-    ].filter(Boolean).join('  |  ');
-    const SEP = '='.repeat(hdr.length);
-    lines.push(SEP);
-    lines.push(hdr);
-    lines.push(SEP);
-
-    // Field table
-    if (msg.fields?.length) {
-      const COL = [10, 32, 26, 20];
-      const pad  = (s, n) => String(s ?? '').slice(0, n).padEnd(n);
-      const padE = (s, n) => { const str = String(s ?? ''); return str.length >= n ? str.slice(0, n - 2) + '… ' : str.padEnd(n); };
-      lines.push(pad('Field', COL[0]) + pad('Description', COL[1]) + pad('Value', COL[2]) + 'Raw Hex');
-      lines.push('-'.repeat(SEP.length));
-      for (const f of msg.fields) {
-        lines.push(pad(f.id, COL[0]) + padE(f.description, COL[1]) + pad(f.value, COL[2]) + (f.rawHex || ''));
-      }
-    } else {
-      lines.push('(no fields parsed)');
-    }
-    lines.push('');
-  }
+  for (const idx of selected) lines.push(..._expMsgLines(S.messages[idx], idx));
 
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
   const url  = URL.createObjectURL(blob);
@@ -14336,7 +14412,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.8.3';
+const APP_VERSION  = '1.2.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24789,6 +24865,10 @@ function _meSave() {
       <span class="ddl-doc-title">Export Messages</span>
       <input id="expFilterInput" placeholder="Filter messages…" oninput="filterExpTable()" autocomplete="off">
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <div style="position:relative;display:inline-flex">
+          <button class="btn btn-sm" onclick="_expToggleColsDlg()" title="Choose which columns the file carries" style="padding:0 6px">⚙</button>
+          <div id="exp-cols-dlg" class="audit-cfg-dialog"></div>
+        </div>
         <button class="btn btn-sm btn-primary" onclick="doMsgExport()">⬇ Download</button>
         <button class="btn btn-sm" onclick="closeMsgExportModal()">✕</button>
       </div>

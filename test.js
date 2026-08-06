@@ -164,6 +164,8 @@ _t.P                  = P;
 _t.renderFieldTable   = renderFieldTable;
 _t.meTestFieldTable   = _meTestFieldTable;
 _t.meOvEffectiveLen   = _meOvEffectiveLen;
+_t.expMsgLines        = _expMsgLines;
+_t.expWrapCell        = _expWrapCell;
 _t.meReadApplyTypeOverride = _meReadApplyTypeOverride;
 _t.setSpecLookup      = fn => { window._fmtSpecByName = fn; };
 _t.auditBeginLoad     = _auditBeginLoad;
@@ -191,7 +193,7 @@ const {
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
   meWalkDEFields: _rawWalkDEFields,
-  renderFieldTable, meTestFieldTable, meOvEffectiveLen, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
+  renderFieldTable, meTestFieldTable, meOvEffectiveLen, expMsgLines, expWrapCell, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
 
 // A spec reaches the engine only after the app has loaded it, and loading folds
@@ -4718,6 +4720,82 @@ test('every _me* symbol the app references is actually declared', () => {
   const missing = [...used].filter(n => !declared.has(n)).sort();
   assert.deepStrictEqual(missing, [],
     `referenced but never declared — a rename or deletion left these behind: ${missing.join(', ')}`);
+});
+
+// ── The text export lines up ────────────────────────────────────────────────
+// The old writer padded with `.slice(0, n).padEnd(n)`, so a value exactly as
+// long as its column kept no trailing space and ran straight into the next one:
+// "SDLC-ORIGISDLC-ORIGIN". Anything longer was cut. Widths now come from the
+// content, capped, and what does not fit wraps instead of colliding or vanishing.
+
+console.log('\nthe text export lines up');
+
+const expMsg = fields => ({ msgType: { type: 'HPDH' }, ddlPath: 'HPDHDDLS/REQMSG',
+                            bytes: { length: 64 }, fields });
+
+test('a cell that fills its column still keeps the gutter', () => {
+  const lines = expMsgLines(expMsg([
+    { id: 'SDLC-ORIGIN', description: 'SDLC-ORIGIN', value: '51B8', rawHex: '51B8' },
+    { id: 'A',           description: 'B',           value: 'C',    rawHex: 'D' },
+  ]), 0);
+  const row = lines.find(l => /^SDLC-ORIGIN/.test(l));
+  assert.ok(/^SDLC-ORIGIN\s\s+SDLC-ORIGIN/.test(row),
+    `the two columns are separated, got: ${JSON.stringify(row)}`);
+});
+
+test('nothing is silently truncated — long content wraps and is marked', () => {
+  const long = '4500000001000000333435363738393131323334353637383931313233343536373839';
+  const lines = expMsgLines(expMsg([{ id: 'PAN', description: 'PAN', value: long, rawHex: 'AA' }]), 0);
+  const joined = lines.join('\n');
+  // Every character survives, in order, once the wrap marks and padding are out.
+  // Read the VALUE column out by its own boundaries — reassembling the whole
+  // line would splice Raw Hex into the middle of it, which is exactly the
+  // alignment this test is here to prove.
+  const head  = lines.find(l => /^Field\s/.test(l));
+  const from  = head.indexOf('Value');
+  const to    = head.indexOf('Raw Hex');
+  const body  = lines.slice(lines.findIndex(l => /^-+$/.test(l)) + 1);
+  const back  = body.map(l => l.slice(from, to).replace(/\s*¬\s*$/, '').trim()).join('');
+  eq(back, long, `the whole value survives the wrap, got:\n${joined}`);
+  assert.ok(/¬/.test(joined), 'and a break is marked, never mistaken for the value');
+});
+
+test('a wrapped cell does not disturb the columns beside it', () => {
+  const long = 'x'.repeat(120);
+  const lines = expMsgLines(expMsg([
+    { id: 'PAN', description: long, value: 'V', rawHex: 'H' },
+    { id: 'NEXT', description: 'D', value: 'V2', rawHex: 'H2' },
+  ]), 0);
+  const body = lines.slice(lines.findIndex(l => /^-+$/.test(l)) + 1).filter(Boolean);
+  const at = l => l.indexOf('V2');
+  const nextRow = body.find(l => /^NEXT/.test(l));
+  // Every line is at most one full table width — no line runs long.
+  const rule = lines.find(l => /^=+$/.test(l)).length;
+  for (const l of lines) assert.ok(l.length <= rule, `line within the rule: ${l.length} > ${rule}`);
+  assert.ok(at(nextRow) > 0, 'the row after a wrapped one still has its columns');
+});
+
+test('the rule spans the whole table, not just the header', () => {
+  const lines = expMsgLines(expMsg([
+    { id: 'F'.repeat(40), description: 'D'.repeat(40), value: 'V'.repeat(40), rawHex: 'H'.repeat(40) },
+  ]), 0);
+  const rule = lines.find(l => /^=+$/.test(l));
+  const widest = Math.max(...lines.map(l => l.length));
+  eq(rule.length, widest, 'the ==== line is as wide as the widest content line');
+  assert.ok(lines.some(l => /^-+$/.test(l) && l.length === rule.length),
+    'and the ---- under the header matches it');
+});
+
+test('the columns the user turned off do not appear', () => {
+  const f = [{ id: 'A', description: 'DESC', value: 'VAL', rawHex: 'BEEF' }];
+  const on = expMsgLines(expMsg(f), 0).join('\n');
+  assert.ok(/DESC/.test(on) && /BEEF/.test(on), 'both present by default');
+  storage.setItem('up_msg_export_cols', JSON.stringify({ desc: true, hex: true }));
+  try {
+    const off = expMsgLines(expMsg(f), 0).join('\n');
+    assert.ok(!/DESC/.test(off) && !/BEEF/.test(off), 'hidden columns are gone');
+    assert.ok(/VAL/.test(off), 'and the remaining ones still print');
+  } finally { storage.removeItem('up_msg_export_cols'); }
 });
 
 test('the Parse Results header matches the Field Map header', () => {

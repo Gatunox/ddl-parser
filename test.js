@@ -4798,6 +4798,22 @@ test('the columns the user turned off do not appear', () => {
   } finally { storage.removeItem('up_msg_export_cols'); }
 });
 
+test('the export column chooser lays out in a row, and wins the cascade', () => {
+  // Stacked, four checkboxes make a tall column of single words that overhangs
+  // the modal. The horizontal rule has to out-specify `.audit-cfg-dialog.open
+  // {display:block}` — matching it and relying on source order is how two
+  // rules today ended up silently losing.
+  assert.ok(/id="exp-cols-dlg" class="audit-cfg-dialog exp-cols-h"/.test(html),
+    'the dialog carries the horizontal class');
+  const rule = html.match(/\.audit-cfg-dialog\.exp-cols-h\.open\s*\{([^}]*)\}/);
+  assert.ok(rule && /display:flex/.test(rule[1]), `it lays out in a row: ${rule && rule[1]}`);
+  const mine  = (rule[0].match(/\./g) || []).length;
+  const base  = html.match(/([^\s{}]*\.audit-cfg-dialog\.open)\s*\{[^}]*display:block/);
+  const theirs = base ? (base[1].match(/\./g) || []).length : 0;
+  assert.ok(mine > theirs,
+    `${mine} classes must beat the block rule's ${theirs}, whatever the order`);
+});
+
 test('the Parse Results header matches the Field Map header', () => {
   const th = html.match(/\nthead th \{([^}]*)\}/);
   assert.ok(th, 'the rule exists');

@@ -1260,6 +1260,16 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .audit-cfg-row input:focus { outline:none; border-color:var(--accent); }
 .audit-cfg-row select { -webkit-appearance:none; appearance:none; background:var(--bg-panel); border:2px solid var(--border); color:var(--text); font-family:var(--font-mono); font-size:var(--sz-mono); padding:2px 20px 2px 4px; border-radius:2px; min-width:calc(var(--sz-mono) * 5); height:calc(var(--sz-mono) + 8px); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 5px center; }
 .audit-cfg-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+/* The export chooser is four checkboxes — stacked, it is a tall column holding
+   one word per row, and it overhangs the modal. Laid out in a row it fits on the
+   header line. Three classes so it beats `.audit-cfg-dialog.open{display:block}`
+   on specificity rather than on source order. */
+.audit-cfg-dialog.exp-cols-h { right:0; padding:8px 12px; min-width:0; white-space:nowrap; }
+.audit-cfg-dialog.exp-cols-h.open { display:flex; align-items:center; gap:16px; }
+.audit-cfg-dialog.exp-cols-h .audit-cfg-hdr {
+  margin:0; padding:0 12px 0 0; gap:10px;
+  border-bottom:none; border-right:2px solid var(--border); }
+.audit-cfg-dialog.exp-cols-h .audit-cfg-row { margin-bottom:0; gap:6px; }
 body.light .audit-record-row:hover { background:rgba(var(--accent-rgb),0.08); }
 body.light .audit-cfg-dialog { box-shadow:0 6px 20px rgba(0,0,0,0.18); }
 body.light .audit-filter-bar select, body.light .audit-filter-bar input[type=text] { background:#fff; }
@@ -14412,7 +14422,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.9.0';
+const APP_VERSION  = '1.2.9.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24867,7 +24877,7 @@ function _meSave() {
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <div style="position:relative;display:inline-flex">
           <button class="btn btn-sm" onclick="_expToggleColsDlg()" title="Choose which columns the file carries" style="padding:0 6px">⚙</button>
-          <div id="exp-cols-dlg" class="audit-cfg-dialog"></div>
+          <div id="exp-cols-dlg" class="audit-cfg-dialog exp-cols-h"></div>
         </div>
         <button class="btn btn-sm btn-primary" onclick="doMsgExport()">⬇ Download</button>
         <button class="btn btn-sm" onclick="closeMsgExportModal()">✕</button>

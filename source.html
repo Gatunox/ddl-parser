@@ -5230,32 +5230,68 @@ function _occursCountValue(def, bytes) {
   return /^\d+$/.test(asc) ? parseInt(asc, 10) : null;
 }
 
-function _occursShouldSkip(def, bytes, cache, defs) {
+// How wide one occurrence of `frame.group` really is, and where the array really
+// starts, once size-changing overrides are taken into account. The frame carries
+// the DDL's DECLARED numbers; a hex-char field is half its declared width and a
+// "bytes" override can be anything, so measuring the array in declared bytes
+// counts the wrong number of occurrences. `effLen` is supplied by the parse-spec
+// engine (which knows the overrides); the legacy flat parser passes nothing and
+// gets the declared numbers exactly as before.
+function _occursFrameSizes(frame, defs, effLen) {
+  if (!effLen) return { childSize: frame.childSize, groupOffset: frame.groupOffset };
+  let childDelta = 0, beforeDelta = 0;
+  for (const d of defs || []) {
+    if (!(d.length > 0)) continue;
+    const delta = effLen(d) - d.length;
+    if (!delta) continue;
+    const inThisGroup = (d._occursPath || []).some(f => f.group === frame.group);
+    if (inThisGroup) {
+      // One occurrence's worth: count each distinct leaf once, at index 0.
+      if ((d._occursPath || []).every(f => f.idx === 0)) childDelta += delta;
+    } else if (d.offset != null && d.offset < frame.groupOffset) {
+      beforeDelta += delta;                      // sits ahead of the array
+    }
+  }
+  return {
+    childSize:   Math.max(1, frame.childSize + childDelta),
+    groupOffset: Math.max(0, frame.groupOffset + beforeDelta),
+  };
+}
+
+function _occursShouldSkip(def, bytes, cache, defs, effLen) {
   const path = def._occursPath;
   if (!path || !path.length) return false;
   let outerDelta = 0, keyPrefix = '';
   for (const fr of path) {
-    const start0 = fr.groupOffset + outerDelta;   // byte start of occurrence 0 in this context
+    const sz = _occursFrameSizes(fr, defs, effLen);
+    const start0 = sz.groupOffset + outerDelta;  // byte start of occurrence 0 in this context
     const key = `${keyPrefix}|${fr.group}`;
     let count = cache[key];
     if (count === undefined) {
-      // 1. A declared count field is authoritative — the DDL's OCCURS n is only a maximum.
+      // 1. A declared count field is authoritative — OCCURS DEPENDING ON really varies.
       const cntDef = _occursCountField(fr, defs);
       const declared = cntDef ? _occursCountValue({ ...cntDef, offset: cntDef.offset + outerDelta }, bytes) : null;
       if (declared != null) {
         count = Math.min(fr.max, Math.max(0, declared));
       } else {
-        // 2. Fallback: measure to the '& ' token eye-catcher (or end of message).
-        let eyePos = bytes.length;
+        // 2. Otherwise OCCURS n TIMES means n. It is a fixed array, not a maximum.
+        //    A '& ' token found INSIDE the array's span still ends it early — that
+        //    is positive evidence. What is gone is shortening the array by dividing
+        //    the remaining message length by the child size: absence of evidence is
+        //    not evidence, and with any size-changing override that division was
+        //    measuring in the wrong unit anyway.
+        let eyePos = -1;
         for (let bi = start0; bi < bytes.length - 1; bi++) {
           if (bytes[bi] === 0x26 && bytes[bi + 1] === 0x20) { eyePos = bi; break; }
         }
-        count = Math.min(fr.max, Math.max(0, Math.floor((eyePos - start0) / fr.childSize)));
+        count = eyePos >= 0
+          ? Math.min(fr.max, Math.max(0, Math.floor((eyePos - start0) / sz.childSize)))
+          : fr.max;
       }
       cache[key] = count;
     }
     if (fr.idx >= count) return true;
-    outerDelta += fr.idx * fr.childSize;
+    outerDelta += fr.idx * sz.childSize;
     keyPrefix = `${key}[${fr.idx}]`;
   }
   return false;
@@ -14448,7 +14484,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.3.1.6';
+const APP_VERSION  = '1.4.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22161,12 +22197,22 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
       continue;
     }
 
-    if (def._occursPath && _occursShouldSkip(def, ctx.bytes, _occursActual, resolved.defs)) continue;
+    if (def._occursPath && _occursShouldSkip(def, ctx.bytes, _occursActual, resolved.defs, d => _meEffLen(d, ctx))) continue;
     // Always read each field so the byte cursor stays aligned and so
     // later parse_spec blocks (when / repeat / read-tlv) can reference
     // any field id, even one the user filtered out of the emit list.
     const f = _meReadOneFieldFromDef(def, ctx);
     if (!f) {
+      // Say so, once. A field that cannot be read used to vanish without a word,
+      // so a record truncated mid-way looked exactly like a shorter record — and
+      // with OCCURS it looked like the array simply had fewer occurrences.
+      if (!ctx._ddlShort) {
+        ctx._ddlShort = true;
+        const want = def.offset != null ? def.offset + (ctx.ovShift || 0) : ctx.cursor;
+        ctx.fields.push({ id: def.id,
+          error: `starts at byte ${want} but the message is ${ctx.bytes.length} byte(s) — `
+               + `this field and everything after it could not be read` });
+      }
       if (def.offset === undefined) break;   // sequential and ran out
       continue;                              // explicit and out of range — skip
     }

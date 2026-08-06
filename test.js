@@ -4050,6 +4050,126 @@ test('the Test panel and Parse Results report the same problems', () => {
 // has always honoured the override, but the VLG path builds its LEN and payload
 // rows BY HAND off `def.length`, so the override was displayed and never applied.
 
+// ── OCCURS is a fixed count, measured in EFFECTIVE bytes ────────────────────
+// Reported: a DDL with `02 GRP OCCURS 4 TIMES` containing PIC X(16) + PIC X(8),
+// both overridden to hex-char, showed only GRP[01] in Parse Results while the raw
+// data plainly held all four. Two defects stacked:
+//
+//   1. _occursShouldSkip measured the array in DECLARED bytes — groupOffset 24 and
+//      childSize 24, where the hex-char overrides make the real numbers 12 and 12.
+//   2. With no count field it INVENTED a count by dividing the remaining message
+//      length by the child size: min(4, floor((51-24)/24)) = 1. OCCURS 4 TIMES
+//      already said 4.
+//
+// 32 tests touched OCCURS and none of them set a size-changing override, which is
+// how both survived: with no override, declared == effective and the division
+// lands on the right answer for any full-length message.
+
+console.log('\nOCCURS: a fixed count, measured in effective bytes');
+
+const OCC_DDL = `DEF R.
+  02 DUMMY PIC X(16).
+  02 B PIC X(8).
+  02 GRP OCCURS 4 TIMES.
+    04 A PIC X(16).
+    04 B PIC X(8).
+END R.
+`;
+// 51 bytes, exactly as reported: enough for three whole occurrences at the
+// effective 12 bytes each (12 header + 36), three bytes short of a fourth.
+function occRun(overrides, len = 51) {
+  S.ddlTree = { V: { S: { D: OCC_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Array.from({ length: len }, (_, i) => i & 0xff);
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    ...(overrides ? { overrides } : {}),
+    parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, Uint8Array.from(bytes));
+}
+const HEXCHAR_ALL = { DUMMY: { type: 'hex-char' }, B: { type: 'hex-char' },
+                      'GRP.A': { type: 'hex-char' }, 'GRP.B': { type: 'hex-char' } };
+const occIds = ctx => ctx.fields.filter(f => !f.error).map(f => f.id);
+
+test('every declared occurrence is read, not a count guessed from the length', () => {
+  const ids = occIds(occRun(HEXCHAR_ALL));
+  for (const n of ['01', '02', '03']) {
+    assert.ok(ids.includes(`GRP[${n}].A`), `GRP[${n}].A is read, got: ${ids.join(', ')}`);
+    assert.ok(ids.includes(`GRP[${n}].B`), `GRP[${n}].B is read`);
+  }
+});
+
+test('the occurrences sit at the EFFECTIVE stride, not the declared one', () => {
+  const ctx = occRun(HEXCHAR_ALL);
+  const at = id => (ctx.fields.find(f => f.id === id) || {}).startByte;
+  eq(at('GRP[01].A'), 12, 'the array starts after a 12-byte header, not 24');
+  eq(at('GRP[02].A'), 24, 'stride is 12 effective bytes, not 24 declared');
+  eq(at('GRP[03].A'), 36, 'and it keeps holding');
+});
+
+test('a fourth occurrence the message cannot hold is REPORTED, not dropped', () => {
+  // 51 bytes cannot supply 12 + 4x12 = 60. Silence here is what made the bug look
+  // like "the array only has one occurrence".
+  const ctx = occRun(HEXCHAR_ALL);
+  const err = ctx.fields.find(f => f.error && /could not be read/.test(f.error));
+  assert.ok(err, `the shortfall is stated, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  assert.ok(/GRP\[04\]/.test(err.id), `naming the field that ran out: ${err.id}`);
+});
+
+test('a message long enough yields all four, with nothing reported', () => {
+  const ctx = occRun(HEXCHAR_ALL, 60);
+  const ids = occIds(ctx);
+  eq(ids.filter(i => /^GRP\[\d+\]\.A$/.test(i)).length, 4, 'four occurrences');
+  eq(ctx.fields.filter(f => f.error).length, 0, 'and no complaint');
+});
+
+test('without overrides the declared stride is still used', () => {
+  // The discriminating half: effective == declared when nothing is overridden, so
+  // a fix that ignored overrides entirely would pass the tests above and fail here.
+  const ctx = occRun(null, 120);
+  const at = id => (ctx.fields.find(f => f.id === id) || {}).startByte;
+  eq(at('GRP[01].A'), 24, 'array starts at the declared 24');
+  eq(at('GRP[02].A'), 48, 'declared stride of 24');
+  eq(occIds(ctx).filter(i => /^GRP\[\d+\]\.A$/.test(i)).length, 4, 'all four');
+});
+
+test('an eye-catcher ends the array early, measured in EFFECTIVE bytes', () => {
+  // The only path that still divides: a real '& ' token in the bytes. It has to
+  // divide by the EFFECTIVE stride. Declared, this same token computes
+  // floor((36-24)/24) = 0 and every occurrence disappears; effective, it is
+  // floor((36-12)/12) = 2.
+  //
+  // Without this test the effective-size half of the fix is invisible: with the
+  // count authoritative, nothing else consults childSize for a single-level
+  // OCCURS, so reverting it passed the whole suite.
+  S.ddlTree = { V: { S: { D: OCC_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Array.from({ length: 60 }, (_, i) => (i & 0xff) || 1);
+  bytes[36] = 0x26; bytes[37] = 0x20;              // '& ' after two occurrences
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    overrides: HEXCHAR_ALL,
+    parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, Uint8Array.from(bytes));
+  const ids = ctx.fields.filter(f => !f.error).map(f => f.id);
+  eq(ids.filter(i => /^GRP\[\d+\]\.A$/.test(i)).length, 2,
+     `the token ends it after two occurrences, got: ${ids.join(', ')}`);
+});
+
+test('a declared count field still wins over OCCURS n', () => {
+  // OCCURS DEPENDING ON genuinely varies — that path must not be flattened to n.
+  S.ddlTree = { V: { S: { D: `DEF R.
+  02 NUM-GRP PIC 9(2).
+  02 GRP OCCURS 4 TIMES.
+    04 A PIC X(4).
+END R.
+` } } };
+  S.inputFormat = 'hex';
+  const bytes = [0x30, 0x32];                       // "02" — two occurrences
+  for (let i = 0; i < 16; i++) bytes.push(0x41 + i);
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, Uint8Array.from(bytes));
+  const ids = ctx.fields.filter(f => !f.error).map(f => f.id);
+  eq(ids.filter(i => /^GRP\[\d+\]\.A$/.test(i)).length, 2,
+     `the count field says 2, so 2 — got: ${ids.join(', ')}`);
+});
+
 console.log('\nVLG group rows honour a bytes override');
 
 test('a bytes override on the LEN changes what the parse reads, not just the display', () => {

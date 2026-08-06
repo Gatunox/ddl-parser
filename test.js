@@ -4853,6 +4853,19 @@ test('the cog becomes the close button while the chooser is open', () => {
   assert.ok(/classList\.toggle\('btn-on', open\)/.test(fn), 'and lights the button with it');
   assert.ok(/\.btn\.btn-on\s*\{[^}]*border-color:\s*var\(--accent\)/.test(html),
     'against a rule that actually marks it active');
+  // The modal behind the row dims, the way the page dims behind the modal.
+  assert.ok(/classList\.toggle\('cfg-dim', open\)/.test(fn), 'and dims the modal behind it');
+  const dim = html.match(/\.ddl-doc-modal\.cfg-dim::after\s*\{([^}]*)\}/);
+  assert.ok(dim, 'there is a scrim rule');
+  assert.ok(/position:absolute/.test(dim[1]) && /inset:0/.test(dim[1]), 'covering the modal');
+  assert.ok(/pointer-events:none/.test(dim[1]), 'without swallowing clicks');
+  // A scrim above the thing it is meant to sit behind would hide the row.
+  const z = +(dim[1].match(/z-index:(\d+)/) || [])[1];
+  const dz = +(html.match(/\.audit-cfg-dialog\s*\{[^}]*z-index:(\d+)/) || [])[1];
+  assert.ok(z && dz && z < dz, `scrim ${z} must sit under the dialog ${dz}`);
+  // ::after is positioned against the modal, so the modal has to be its origin.
+  assert.ok(/\.ddl-doc-modal \{[^}]*position: relative/.test(html),
+    'and the modal is the positioning origin');
   assert.ok(/exp-cols-btn/.test(fn) && /id="exp-cols-btn"/.test(html),
     'against a button it can actually find');
   // It sits beside the modal's own ✕ and turns INTO one, so it has to be the

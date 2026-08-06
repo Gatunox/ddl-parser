@@ -443,7 +443,13 @@ body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);
 .tree-cnt { font-size: var(--sz-badge); padding: 0 4px; border-radius: 8px; background: rgba(var(--accent-rgb),0.12); color: var(--accent); flex-shrink: 0; margin-left: 2px; }
 
 /* ===== DDL DOC MODAL ===== */
-.ddl-doc-modal { background: var(--bg-panel); border: 2px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; width: min(960px, 96vw); max-height: 88vh; box-shadow: 0 8px 40px rgba(0,0,0,0.7); overflow: hidden; }
+.ddl-doc-modal { position: relative; background: var(--bg-panel); border: 2px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; width: min(960px, 96vw); max-height: 88vh; box-shadow: 0 8px 40px rgba(0,0,0,0.7); overflow: hidden; }
+/* While a chooser is open, the modal behind it dims — the same move the page
+   makes when the modal itself opens, one level in. No z-index on the modal, so
+   the scrim (150) still sits under the dialog (200); pointer-events:none so it
+   dims without swallowing a click. */
+.ddl-doc-modal.cfg-dim::after { content:''; position:absolute; inset:0; z-index:150;
+  background:rgba(0,0,0,0.55); pointer-events:none; }
 .ddl-doc-hdr   { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 10px 16px; border-bottom: 2px solid var(--border); flex-shrink: 0; }
 .ddl-doc-title { font-size: 12px; font-weight: 700; color: var(--text); font-family: var(--font-mono); }
 .ddl-doc-body  { overflow: auto; flex: 1; padding: 0; }
@@ -4530,6 +4536,7 @@ function _expToggleColsDlg() {
   // need to carry a title bar and an ✕ of its own just to be dismissible.
   const btn = document.getElementById('exp-cols-btn');
   if (btn) btn.classList.toggle('btn-on', open);
+  dlg.closest('.ddl-doc-modal')?.classList.toggle('cfg-dim', open);
 }
 function _expRenderColsDlg() {
   const dlg = document.getElementById('exp-cols-dlg');
@@ -14437,7 +14444,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.3.1.4';
+const APP_VERSION  = '1.3.1.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

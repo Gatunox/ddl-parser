@@ -4842,6 +4842,20 @@ test('the export column chooser lays out in a row, and wins the cascade', () => 
     `${mine} classes must beat the block rule's ${theirs}, whatever the order`);
 });
 
+test('the cog becomes the close button while the chooser is open', () => {
+  // With the cog doing the closing, the row needs no title bar and no ✕ of its
+  // own — two controls one centimetre apart that did the same thing.
+  const fn = psFnSource('_expToggleColsDlg');
+  assert.ok(/classList\.toggle\('open'\)/.test(fn), 'it toggles the row');
+  assert.ok(/textContent = open \? '✕' : '⚙'/.test(fn), 'and swaps the glyph with it');
+  assert.ok(/exp-cols-btn/.test(fn) && /id="exp-cols-btn"/.test(html),
+    'against a button it can actually find');
+  const render = psFnSource('_expRenderColsDlg');
+  assert.ok(!/audit-cfg-hdr/.test(render), `the row carries no header of its own: ${render}`);
+  // Dead CSS is how a rule ends up styling the wrong thing later.
+  assert.ok(!/exp-cols-h .audit-cfg-hdr/.test(html), 'and no rule is left styling one');
+});
+
 test('no border is 1px — the project uses 2px everywhere', () => {
   // A standing rule that lived only in review comments, so hairlines kept
   // arriving one at a time: 52 of them across modals, panels, tables and

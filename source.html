@@ -14333,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.6.0';
+const APP_VERSION  = '1.2.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19620,6 +19620,13 @@ function _meWalkDEFields(defs, item) {
   const emitted = new Set();
   const out = [];
   let currentDE = 1;
+  // A leaf marked as a length source and the field it sizes are ONE data
+  // element, exactly as a VLG group is: the group form has always been a single
+  // element holding LEN + payload, and marking the pair by hand does not make it
+  // two. The LEN owns the number; the field after it derives it, the same shape
+  // a group's children already use.
+  const vlgSrc = id => _ovAll[_canonFieldId(id)]?.vlg === true;
+  let vlgOwner = null;   // { id, de } while the sized field is still to come
   // No anchor at all — no bitmap block, or a synthetic bitmap with nothing read
   // before it — means every field from the first is a data element.
   let pastBitmap = !deAnchorField;
@@ -19706,12 +19713,29 @@ function _meWalkDEFields(defs, item) {
     // point of it, and refusing would leave nested fields unreachable exactly
     // where the default rule already said no.
     const forced = deSel(def.id) === true || _meDeIsAnchor(deSel(def.id)) || promoted.has(def.id);
+    // The field a length source sizes: it is part of that element, so it takes
+    // no number of its own and shows the owner's.
+    if (vlgOwner && !isRedef && !underTerminal) {
+      const _own = vlgOwner; vlgOwner = null;
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal,
+                 isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars,
+                 offset, ownerDE: _own.de, ownerId: _own.id });
+      emitted.add(def.id);
+      continue;
+    }
     if (!forced && (underTerminal || !isDE(def.id))) {
       out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars, offset });
     } else if (_isRepOcc(def.id)) {
       assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars, offset });
     } else {
       out.push({ id: def.id, de: null, anchored: false, isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars, offset });
+    }
+    // Arm the pairing AFTER this row has its number, so the field that follows
+    // can derive it. Only a length source that actually owns a DE can own the
+    // pair — one excluded from the numbering has no number to share.
+    if (vlgSrc(def.id) && !isRedef) {
+      const _r = out[out.length - 1];
+      vlgOwner = (_r && _r.id === def.id && _r.de != null) ? { id: def.id, de: _r.de } : null;
     }
   }
   // A group that owns a DE owns it for everything inside it: bit N reads every
@@ -22928,6 +22952,17 @@ function _meBuildDEMap(ctx) {
       map[row.de] = { def: defById.get(row.id) };
     }
   }
+  // A leaf length source and the field it sizes are one element, so the bit that
+  // selects it has to read BOTH — otherwise the numbering says "one element"
+  // while the parse reads only its LEN and the payload is never emitted. Same
+  // relationship a group DE has with its kids, reached without a group.
+  for (const row of rows) {
+    if (row.isGroup || row.ownerDE == null) continue;
+    const owner = map[row.ownerDE];
+    if (!owner || !owner.def) continue;
+    const d = defById.get(row.id);
+    if (d) (owner.with || (owner.with = [])).push(d);
+  }
   return map;
 }
 
@@ -23369,7 +23404,8 @@ function _meExecBitmapFields(attrs, ctx) {
 
     // ── Elementary DE ───────────────────────────────────────────────────────
     if (entry.def) {
-      readSeq(entry.def);
+      if (readSeq(entry.def))
+        for (const extra of (entry.with || [])) if (!readSeq(extra)) break;
       continue;
     }
 

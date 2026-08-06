@@ -4560,6 +4560,7 @@ test('the DE-clear button clears the list and the panes, not only the table', ()
 });
 
 
+
 test('the value editors open on the field, not on a constant', () => {
   // "Why does DE number always start at 66?" — because it was a placeholder
   // copied from a worked example. A default that ignores the field is noise you
@@ -4648,6 +4649,80 @@ test('a hex-char field with no width override shows its declared number', () => 
     .find(r => r.id === 'MSGTYPE');
   eq(row.lenWritten, undefined, 'no width was written');
   eq(row.length, 2, 'though four declared characters do cost two wire bytes');
+});
+
+// ── A leaf length source and the field it sizes are ONE data element ────────
+// Reported: PAN-LEN marked as a length source took DE 3 and PAN took DE 4, so
+// the pair spent two numbers. A VLG GROUP has always been a single element
+// holding LEN + payload; marking the same pair by hand does not make it two.
+
+console.log('\na leaf VLG pair is one data element');
+
+const VLGPAIR_DDL = `DEF R.
+  02 A PIC X(2).
+  02 PAN-LEN PIC X(1).
+  02 PAN PIC X(8).
+  02 TRACE PIC X(6).
+END R.
+`;
+const vlgPairRows = overrides => {
+  S.ddlTree = { V: { S: { D: VLGPAIR_DDL } } };
+  return meWalkDEFields(getDDLFromPath('V/S/D/R').defs,
+    { ddl_bindings: ['V/S/D/R'], overrides });
+};
+const at = (rows, id) => rows.find(r => r.id === id) || {};
+
+test('the sized field derives the length source\'s DE instead of taking its own', () => {
+  const rows = vlgPairRows({ 'PAN-LEN': { vlg: true } });
+  eq(at(rows, 'PAN-LEN').de, 2, 'the length source owns the number');
+  eq(at(rows, 'PAN').de, null, 'the field it sizes owns none');
+  eq(at(rows, 'PAN').ownerDE, 2, 'and derives its owner\'s');
+  eq(at(rows, 'PAN').ownerId, 'PAN-LEN', 'naming who it belongs to');
+});
+
+test('everything after the pair renumbers, because one number was freed', () => {
+  eq(at(vlgPairRows({ 'PAN-LEN': { vlg: true } }), 'TRACE').de, 3, 'TRACE moves up');
+  // Discriminating half: without the VLG the pair spends two numbers, so a
+  // change that did nothing would leave TRACE at 4 in both.
+  eq(at(vlgPairRows({}), 'TRACE').de, 4, 'and stays at 4 when nothing is paired');
+  eq(at(vlgPairRows({}), 'PAN').de, 3, 'with PAN owning its own DE');
+});
+
+test('a length source that owns no DE cannot own a pair', () => {
+  // Excluded from the numbering, so there is no number to share — PAN must go
+  // back to owning its own rather than deriving a null.
+  const rows = vlgPairRows({ 'PAN-LEN': { vlg: true, de: false } });
+  eq(at(rows, 'PAN-LEN').de, null, 'the source is not a DE');
+  eq(at(rows, 'PAN').ownerDE, undefined, 'so nothing is derived');
+  eq(at(rows, 'PAN').de, 2, 'and PAN owns a number of its own');
+});
+
+test('the bit that selects the pair reads BOTH fields', () => {
+  // The engine half. If the DE map carried only the LEN, the numbering would say
+  // "one element" while the parse emitted only its length and dropped the
+  // payload entirely.
+  S.ddlTree = { V: { S: { D: `DEF M.
+  02 BITMAP PIC X(8).
+  02 PAN-LEN PIC X(1).
+  02 PAN PIC X(8).
+END M.
+` } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/M'],
+      overrides: { 'PAN-LEN': { vlg: true } },
+      parse_spec_binary: [
+        { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+        { 'read-bitmap-fields': 'BITMAP' },
+      ] },
+    Uint8Array.from([0x80, 0, 0, 0, 0, 0, 0, 0,        // bit 1 — PAN-LEN, the first
+                                                       // element after the bitmap
+                     0x35,                              // PAN-LEN = "5"
+                     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48]));
+  const len = ctx.fields.find(f => f.id === 'PAN-LEN');
+  const pan = ctx.fields.find(f => f.id === 'PAN');
+  assert.ok(len, 'the length source is emitted');
+  assert.ok(pan, 'and so is the field it sizes, on the same bit');
+  eq(pan.valueLength, 5, 'sized by the length source, not by its declared 8');
 });
 
 test('the old per-field editor is gone, and nothing references it', () => {

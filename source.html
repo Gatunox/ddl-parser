@@ -14501,7 +14501,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.5.0.0';
+const APP_VERSION  = '1.5.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20702,16 +20702,15 @@ const _meFmColHiCur          = () => _meColHi.get('.me-fm-table') || 0;
 
 function _meOvlRowClick(qn, ev) {
   const add = !!(ev && (ev.metaKey || ev.ctrlKey));
-  if (add) {
-    if (_meFmMultiSel.has(qn)) _meFmMultiSel.delete(qn); else _meFmMultiSel.add(qn);
-  } else {
-    _meFmMultiSel = new Set([qn]);
-  }
-  _meOvlSel = _meFmMultiSel.has(qn) ? qn : null;
+  // A click in the overrides LIST arrives as a canonical id, which is not a row
+  // id for an OCCURS field — so resolve it to the rows it actually governs.
+  const targets = _meRowsForOverride(qn);
+  _meFmMultiSel = _meNextSelection(qn, add, _meFmMultiSel);
+  _meOvlSel = _meFmMultiSel.has(targets[0]) ? targets[0] : null;
   document.querySelectorAll('.me-fm-table tbody tr.me-fm-row-sel')
     .forEach(tr => tr.classList.remove('me-fm-row-sel'));
-  const tr = document.querySelector(`.me-fm-table tbody tr[data-qn="${CSS.escape(qn)}"]`);
-  if (tr && _meOvlSel) tr.classList.add('me-fm-row-sel');
+  const tr = _meOvlSel && document.querySelector(`.me-fm-table tbody tr[data-qn="${CSS.escape(_meOvlSel)}"]`);
+  if (tr) tr.classList.add('me-fm-row-sel');
   _meFmSyncMultiClasses();
   _meFmBarRefresh();
   _meOvlRefresh();
@@ -21004,6 +21003,33 @@ function _meOvlChips(o) {
   return c;
 }
 
+// Override keys are CANONICAL — GRP.A, with the [NN] occurrence label stripped —
+// while table rows are per-occurrence — GRP[01].A. The two are identical for an
+// ordinary field, which is why comparing them raw worked everywhere except OCCURS:
+// selecting GRP[01].A highlighted no rule, and clicking the rule highlighted no
+// row, because neither id exists on the other side.
+const _meCanonSet = ids => new Set([...ids].map(_canonFieldId));
+function _meSelCanon() { return _meCanonSet(_meFmMultiSel); }
+// What the selection becomes when `qn` is clicked. Pure, so the id-matching rule
+// can be tested without a DOM — the bug it fixes was entirely about which ids
+// compare equal.
+function _meNextSelection(qn, add, cur) {
+  const targets = _meRowsForOverride(qn);
+  if (!add) return new Set(targets);
+  const next = new Set(cur);
+  const on = targets.every(t => next.has(t));
+  for (const t of targets) { if (on) next.delete(t); else next.add(t); }
+  return next;
+}
+// Every row the given override governs. For an ordinary field that is the row
+// itself; for an OCCURS field it is every occurrence, which is also the truth the
+// table should show — one rule really does drive all four.
+function _meRowsForOverride(qn) {
+  const canon = _canonFieldId(qn);
+  const rows  = (_meFmVirt?.all || []).filter(r => _canonFieldId(r.id) === canon);
+  return rows.length ? rows.map(r => r.id) : [qn];
+}
+
 function _meOvlRefresh() {
   const item = _meCurItem();
   const listEl = document.getElementById('me-ovl-list');
@@ -21015,7 +21041,7 @@ function _meOvlRefresh() {
     ? `${ids.length} field${ids.length !== 1 ? 's' : ''} configured`
     : 'none — every field parses exactly as the DDL declares it';
   listEl.innerHTML = ids.length ? ids.map(id => `
-    <div class="me-ovl-row${_meFmMultiSel.has(id) ? ' sel' : ''}" onclick="_meOvlRowClick('${_meOvEsc(id)}', event)"
+    <div class="me-ovl-row${_meSelCanon().has(id) ? ' sel' : ''}" onclick="_meOvlRowClick('${_meOvEsc(id)}', event)"
          title="Select this field in the table below, then use the action bar">
       <span class="me-ovl-name">${_meOvEsc(id)}</span>
       <span class="me-ovl-chips">${_meOvlChips(all[id]).map(t => `<span class="me-ovl-chip">${t}</span>`).join('')}</span>

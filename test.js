@@ -51,6 +51,7 @@ const domEl = new Proxy(function () {}, {
   apply: () => domEl,
   construct: () => domEl,
 });
+const CSS = { escape: v => String(v).replace(/[^\w-]/g, c => '\\' + c) };
 const storage = {
   _data: {},
   getItem(k) { return Object.prototype.hasOwnProperty.call(this._data, k) ? this._data[k] : null; },
@@ -60,7 +61,7 @@ const storage = {
 
 const sandbox = vm.createContext({
   // Core JS globals
-  console, setTimeout: () => {}, clearTimeout: () => {}, setInterval: () => {},
+  console, CSS, setTimeout: () => {}, clearTimeout: () => {}, setInterval: () => {},
   clearInterval: () => {}, requestAnimationFrame: () => {}, cancelAnimationFrame: () => {},
   parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent,
   Math, JSON, Array, Object, Map, Set, WeakMap, WeakSet, RegExp, Uint8Array,
@@ -164,6 +165,9 @@ _t.P                  = P;
 _t.renderFieldTable   = renderFieldTable;
 _t.meTestFieldTable   = _meTestFieldTable;
 _t.meOvEffectiveLen   = _meOvEffectiveLen;
+_t.meCanonSet         = _meCanonSet;
+_t.meRowsForOverride  = _meRowsForOverride;
+_t.meNextSelection    = _meNextSelection;
 _t.expMsgLines        = _expMsgLines;
 _t.expWrapCell        = _expWrapCell;
 _t.meReadApplyTypeOverride = _meReadApplyTypeOverride;
@@ -193,7 +197,8 @@ const {
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
   meWalkDEFields: _rawWalkDEFields,
-  renderFieldTable, meTestFieldTable, meOvEffectiveLen, expMsgLines, expWrapCell, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
+  renderFieldTable, meTestFieldTable, meOvEffectiveLen, expMsgLines, expWrapCell,
+  meCanonSet, meRowsForOverride, meNextSelection, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
 
 // A spec reaches the engine only after the app has loaded it, and loading folds
@@ -4144,6 +4149,57 @@ test('the Test panel and Parse Results report the same problems', () => {
 // 32 tests touched OCCURS and none of them set a size-changing override, which is
 // how both survived: with no override, declared == effective and the division
 // lands on the right answer for any full-length message.
+
+// ── The overrides list and the table must agree about OCCURS ids ────────────
+// Reported: applying an override from GRP[01].A correctly wrote ONE rule that
+// governs all four occurrences — but then selecting that row highlighted no rule,
+// and clicking the rule highlighted no row. Override keys are canonical (GRP.A);
+// table rows are per-occurrence (GRP[01].A). Identical for an ordinary field,
+// never equal for OCCURS, so raw id comparison worked everywhere else.
+
+console.log('\nthe overrides list and the table agree about OCCURS ids');
+
+const OCCSEL_DDL = `DEF R.
+  02 PLAIN PIC X(4).
+  02 GRP OCCURS 4 TIMES.
+    04 A PIC X(6).
+END R.
+`;
+function occSelRows() {
+  S.ddlTree = { V: { S: { D: OCCSEL_DDL } } };
+  return meWalkDEFields(getDDLFromPath('V/S/D/R').defs,
+    { ddl_bindings: ['V/S/D/R'], overrides: {} });
+}
+
+test('selecting one occurrence matches the rule that governs it', () => {
+  // This is the comparison the list does to decide which rule to light up.
+  const canon = meCanonSet(['GRP[01].A']);
+  assert.ok(canon.has('GRP.A'),
+    `GRP[01].A must match the rule GRP.A, got: ${[...canon]}`);
+  // The discriminating half: an ordinary field still matches itself, and only it.
+  const plain = meCanonSet(['PLAIN']);
+  assert.ok(plain.has('PLAIN'), 'an ordinary field is unaffected');
+  assert.ok(!plain.has('GRP.A'), 'and does not match an unrelated rule');
+});
+
+test('clicking the rule selects every occurrence it drives', () => {
+  setFmVirt({ all: occSelRows() });
+  eq(meRowsForOverride('GRP.A').join(','), 'GRP[01].A,GRP[02].A,GRP[03].A,GRP[04].A',
+     'one rule resolves to all four rows');
+  const sel = [...meNextSelection('GRP.A', false, new Set())].sort();
+  eq(sel.join(','), 'GRP[01].A,GRP[02].A,GRP[03].A,GRP[04].A',
+     `the table selects all four, got: ${sel}`);
+  // Cmd-click toggles the whole group off again rather than half of it.
+  const off = meNextSelection('GRP.A', true, new Set(sel));
+  eq(off.size, 0, 'toggling with the group already selected clears all four');
+});
+
+test('a rule for a field with no rows still resolves to itself', () => {
+  // A stale override left behind after a DDL edit must not vanish from the list or
+  // throw — it resolves to its own id and simply matches nothing in the table.
+  setFmVirt({ all: occSelRows() });
+  eq(meRowsForOverride('GONE.FIELD').join(','), 'GONE.FIELD', 'falls back to the id itself');
+});
 
 console.log('\nOCCURS: a fixed count, measured in effective bytes');
 

@@ -83,6 +83,11 @@ v1.1.2.371).
 error instead of a guess. Applies to `repeat.count`, `read-while.max`,
 `read-fixed.length`, `read-length-prefix`.
 
+**Narrowed 2026-08-05.** A type override now decides the decode for a VLG LEN —
+`hex-char` reads the hex characters, `uint*` reads a number (v1.2.3.2 /
+v1.2.4.1). What remains is the case with NO override at all, plus the other four
+call sites listed above. See also item 9, which closes `ascii`.
+
 ---
 
 ## 4. [ ] Give `when` a byte-peek guard
@@ -164,6 +169,40 @@ up; costs nothing when it doesn't, since the fallback simply never matches.
 Raised 2026-08-02 while adding `encoding: "ascii"` (§5.15) — the expectation that
 a bare `read-tlv` already did this is a reasonable one to have, which is its own
 argument for either implementing it or saying so in the help.
+
+---
+
+## 9. [ ] Make an `ascii` LEN strict, like `hex-char` and `uint*` now are
+
+**Problem.** `_meDecodeLength` (`source.html:22891`) only treats a type as binding
+for `hex-char` and the integer widths. Declaring a LEN as `ascii` still runs the
+old byte-value guess: every byte a digit reads as digits, anything else falls
+through to a big-endian integer. An `ascii` LEN holding `0x01` returns 1 instead
+of reporting that those bytes are not ASCII digits.
+
+**Why it matters.** It is the last surviving branch of the guess that produced
+the `0x37 → 7` bug (v1.2.3.2 / v1.2.4.1). The user now reaches for `ascii`
+deliberately — it is the override that yields the character reading — so it is
+the one most likely to be handed bytes that disprove it.
+
+**Shape of the fix.** `ascii` forces the digit branch; non-digit bytes become an
+`issue` on the field, worded like the hex-char one ("…is not a decimal number").
+Roughly twenty minutes with a regression test. Raised 2026-08-05.
+
+---
+
+## 10. [ ] Write up the 2026-08-05 rules in SPEC-message-format-detector.md
+
+Three behaviour changes shipped that day with nothing in the spec:
+
+- a `hex-char` length counts CHARACTERS; wire bytes = `ceil(chars / 2)`, and an
+  odd count spends a whole byte and shows half of it (v1.2.5.0)
+- an engine complaint about a field that parsed rides on the field as `issue`
+  instead of becoming its own row, and Parse Results prints it (v1.2.3.0)
+- a leaf length source and the field it sizes are ONE data element, like a VLG
+  group (v1.2.7.0)
+
+Parked only because a dated changelog entry needs the user's go-ahead first.
 
 ---
 

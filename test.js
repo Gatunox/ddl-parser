@@ -4614,6 +4614,42 @@ test('a length override is labelled in the unit it counts', () => {
      'including a 1:1 type override');
 });
 
+test('a hex-char width override is visible in the LEN column', () => {
+  // Reported: PIC X(2) widened to 4 characters showed a bare "2" — identical to
+  // no override at all — because 4 characters IS 2 wire bytes and the column
+  // compared bytes against the DDL's number. The same override on any other
+  // type showed "2 ↩ 4". Compared in the unit it is written in, it shows.
+  S.ddlTree = { V: { S: { D: DDL_BYTES } } };
+  const rowsFor = ov => meWalkDEFields(getDDLFromPath('V/S/D/REC').defs,
+    { ddl_bindings: ['V/S/D/REC'], overrides: { TAIL: ov } }).find(r => r.id === 'TAIL');
+
+  const hex = rowsFor({ type: 'hex-char', bytes: 4 });
+  eq(hex.length, 2, 'still two wire bytes');
+  eq(hex.lenWritten, 4, 'but the override is four characters');
+  eq(hex.declaredLen, 2, 'against a declared two');
+  const rowCtx = { ea: x => String(x), vlgMap: new Map(), foByField: new Map(),
+                   usesBitmapFields: false, leavesByGroup: new Map() };
+  const lenCell = (meFmRowHtml(hex, rowCtx, { n: 0 })
+    .match(/<td class="me-fm-len"[^>]*>(.*?)<\/td>/) || [, ''])[1];
+  assert.ok(/↩/.test(lenCell), `the LEN column annotates it, got: ${lenCell}`);
+  assert.ok(/>2</.test(lenCell) && /4/.test(lenCell), 'declared 2 ↩ written 4');
+
+  const plain = rowsFor({ bytes: 4 });
+  eq(plain.lenWritten, 4, 'a plain bytes override is unchanged');
+  eq(plain.length, 4, 'and its wire width IS the number written');
+});
+
+test('a hex-char field with no width override shows its declared number', () => {
+  // Discriminating half: nothing overridden means nothing to annotate, so a bare
+  // number here proves the ↩ above came from the override and not from hex-char.
+  S.ddlTree = { V: { S: { D: DDL_BYTES } } };
+  const row = meWalkDEFields(getDDLFromPath('V/S/D/REC').defs,
+    { ddl_bindings: ['V/S/D/REC'], overrides: { MSGTYPE: { type: 'hex-char' } } })
+    .find(r => r.id === 'MSGTYPE');
+  eq(row.lenWritten, undefined, 'no width was written');
+  eq(row.length, 2, 'though four declared characters do cost two wire bytes');
+});
+
 test('the old per-field editor is gone, and nothing references it', () => {
   // The action bar replaced it. Leaving the editor in place would mean two ways
   // to set the same override, in two places, with different controls.

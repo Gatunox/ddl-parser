@@ -14333,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.5.2';
+const APP_VERSION  = '1.2.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19002,12 +19002,21 @@ function _meFmRowHtml(row, ctx, counter) {
   // override re-sizes the field it annotates HERE, in the same "declared ↩ in
   // effect" form as Type and DE. Without this a bytes-only override was
   // completely invisible: the column just showed a different number.
-  const lenCell = (row.declaredLen != null && row.declaredLen !== (row.length || 0))
-    ? `<td class="me-fm-len" title="${ea(`DDL declares ${row.declaredLen} bytes; the override reads ${row.length}`)}">`
+  // Shown in the unit the length is WRITTEN in — characters for a hex-char
+  // field, bytes for everything else — because that is the number the override
+  // holds and the one the editor takes back. The wire width is always in the
+  // title, and the OFFSET column beside this one carries it too.
+  const _lenEff  = row.lenWritten != null ? row.lenWritten : (row.length || 0);
+  const _lenUnit = row.lenInChars ? 'characters' : 'bytes';
+  const _lenTip  = row.lenInChars
+    ? `${_lenEff} ${_lenUnit} = ${row.length || 0} wire byte(s)`
+    : '';
+  const lenCell = (row.declaredLen != null && row.declaredLen !== _lenEff)
+    ? `<td class="me-fm-len" title="${ea(`DDL declares ${row.declaredLen} ${_lenUnit}; the override reads ${_lenEff}${row.lenInChars ? ` (${row.length || 0} wire byte(s))` : ''}`)}">`
       + `<span class="c-ovr-orig">${row.declaredLen}</span>`
       + `<span class="c-ovr-arrow"> ↩ </span>`
-      + `<span class="c-ovr-new">${row.length || 0}</span></td>`
-    : `<td class="me-fm-len">${row.length || 0}</td>`;
+      + `<span class="c-ovr-new">${_lenEff}</span></td>`
+    : `<td class="me-fm-len"${_lenTip ? ` title="${ea(_lenTip)}"` : ''}>${_lenEff}</td>`;
   // Data Type column — for elementary fields, a dropdown whose default
   // entry is the DDL-declared type (empty value = no override). For
   // groups (and REDEFINES wrappers), the cell stays a plain label.
@@ -19458,9 +19467,21 @@ function _meWalkDEFields(defs, item) {
       // _declaredLen is kept so the table can show "declared ↩ effective" — the
       // rebuilt def carries only the effective one, and without this the LEN
       // column could not say whether a number came from the DDL or an override.
-      return eff !== (d.length || 0) || start !== d.offset
+      // What the user wrote, in the unit they wrote it in. Comparing a hex-char
+      // override (characters) against the DDL number (also characters) is the
+      // only way an override that lands on the same BYTE width stays visible:
+      // PIC X(2) widened to 4 characters is still 2 wire bytes, and reporting
+      // "2 vs 2" made a working override look like it had done nothing.
+      const ovr     = _ovAll[_canonFieldId(d.id)];
+      const inChars = _meLenIsChars(ovr?.type);
+      const o       = _meOvEffectiveLen(ovr);
+      const written = o !== null ? o : (d.length || 0);
+      return eff !== (d.length || 0) || written !== (d.length || 0) || start !== d.offset
         ? { ...d, offset: start, length: eff,
-            _declaredLen: eff !== (d.length || 0) ? (d.length || 0) : undefined }
+            _lenWritten:  written !== (d.length || 0) ? written : undefined,
+            _lenInChars:  inChars || undefined,
+            _declaredLen: (eff !== (d.length || 0) || written !== (d.length || 0))
+                            ? (d.length || 0) : undefined }
         : d;
     });
   }
@@ -19675,6 +19696,8 @@ function _meWalkDEFields(defs, item) {
     const dataType = dtypeByField.get(def.id) || '';
     const length = def.length || 0;
     const declaredLen = def._declaredLen;
+    const lenWritten  = def._lenWritten;
+    const lenInChars  = def._lenInChars;
     const offset = def.offset;
     // Only TOP-LEVEL leaves own a DE (see the group emit above) — any nested
     // leaf is part of its top-level element's data. FILLER is padding and
@@ -19684,11 +19707,11 @@ function _meWalkDEFields(defs, item) {
     // where the default rule already said no.
     const forced = deSel(def.id) === true || _meDeIsAnchor(deSel(def.id)) || promoted.has(def.id);
     if (!forced && (underTerminal || !isDE(def.id))) {
-      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal, isRedef, redefTarget, dataType, length, declaredLen, offset });
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars, offset });
     } else if (_isRepOcc(def.id)) {
-      assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, offset });
+      assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars, offset });
     } else {
-      out.push({ id: def.id, de: null, anchored: false, isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, offset });
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars, offset });
     }
   }
   // A group that owns a DE owns it for everything inside it: bit N reads every

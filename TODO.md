@@ -206,6 +206,33 @@ Parked only because a dated changelog entry needs the user's go-ahead first.
 
 ---
 
+## 11. [ ] GitHub Pages: one deployment at a time — do not push in bursts
+
+**Problem.** The repo publishes to TWO places: Vercel (`ddl-parser.gu2.dev`, the
+`vercel --prod` step) and GitHub Pages (`gatunox.github.io/ddl-parser`, triggered
+automatically by every push to `main`). Vercel tolerates overlapping deploys.
+Pages does not — it runs strictly one at a time and rejects the rest:
+
+    Deployment request failed for <sha> due to in progress deployment.
+    Please cancel <earlier sha> first or wait for it to complete.
+
+**What happened 2026-08-06.** Three pushes in seven minutes (v1.3.1.4, .5, .6)
+each started a Pages deployment while the previous was still running. The first
+wedged in `deployment_queued` and never finished, every later one was rejected,
+and the site sat on v1.3.0.1 while Vercel was current. The wedged run could not
+be cancelled or re-run from the Actions UI.
+
+**Shape of the fix.** Batch the work: one push per session rather than one per
+change, and let a Pages deployment reach a terminal state before pushing again.
+When it does wedge, the reset is Settings → Pages → Branch → `None` → Save, then
+set it back — that tears down the pipeline and releases the queue.
+
+**Note.** The `build` job's warnings (`punycode` deprecation, Node 20 on
+`actions/checkout@v4`) come from GitHub's own generated workflow — there is no
+`.github/workflows` file in this repo to pin. They are noise, not the cause.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

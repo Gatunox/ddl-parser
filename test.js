@@ -4667,6 +4667,23 @@ test('the length columns are named for what they hold, in both tables', () => {
     `the column menu uses the same names: ${menu}`);
 });
 
+test('the row numbers are right-justified and the header is not', () => {
+  // Two rules set text-align on the same cell — `td.me-fm-num{left}` beat
+  // `.me-fm-num{right}` on specificity, so the column read left while the CSS
+  // said right. Only one rule may own it.
+  const aligns = [...html.matchAll(/([^{}\n]*\bme-fm-num\b[^{}\n]*)\{([^}]*)\}/g)]
+    .filter(m => /text-align/.test(m[2]))
+    .map(m => [m[1].trim(), (m[2].match(/text-align:\s*(\w+)/) || [])[1]]);
+  eq(aligns.length, 1, `exactly one rule aligns the cell, got: ${JSON.stringify(aligns)}`);
+  eq(aligns[0][1], 'right', 'and it right-justifies');
+  // The header keeps the table's centred default — the ask was the text, not
+  // the title.
+  const th = html.match(/\.me-fm-th-num\{([^}]*)\}/);
+  assert.ok(th && !/text-align/.test(th[1]), `the header sets no alignment: ${th && th[1]}`);
+  assert.ok(/\.me-fm-table th\{[^}]*text-align:center/.test(html),
+    'so it inherits the centred header rule');
+});
+
 test('a hex-char field with no width override shows its declared number', () => {
   // Discriminating half: nothing overridden means nothing to annotate, so a bare
   // number here proves the ↩ above came from the override and not from hex-char.

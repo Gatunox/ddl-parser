@@ -4863,6 +4863,13 @@ test('the cog becomes the close button while the chooser is open', () => {
   const z = +(dim[1].match(/z-index:(\d+)/) || [])[1];
   const dz = +(html.match(/\.audit-cfg-dialog\s*\{[^}]*z-index:(\d+)/) || [])[1];
   assert.ok(z && dz && z < dz, `scrim ${z} must sit under the dialog ${dz}`);
+  // ...and under the button that opened it. Dimming that one hides the way back
+  // out, which is the only control still worth clicking while the row is up.
+  const lift = html.match(/\.ddl-doc-modal\.cfg-dim \.btn\.btn-on\s*\{([^}]*)\}/);
+  assert.ok(lift, 'the active toggle is lifted out of the scrim');
+  const lz = +(lift[1].match(/z-index:\s*(\d+)/) || [])[1];
+  assert.ok(/position:\s*relative/.test(lift[1]), 'it is positioned, or z-index does nothing');
+  assert.ok(lz > z, `the button (${lz}) sits above the scrim (${z})`);
   // ::after is positioned against the modal, so the modal has to be its origin.
   assert.ok(/\.ddl-doc-modal \{[^}]*position: relative/.test(html),
     'and the modal is the positioning origin');

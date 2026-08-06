@@ -450,6 +450,10 @@ body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);
    dims without swallowing a click. */
 .ddl-doc-modal.cfg-dim::after { content:''; position:absolute; inset:0; z-index:150;
   background:rgba(0,0,0,0.55); pointer-events:none; }
+/* The control that opened the row stays out of the scrim — it is the way back
+   out, so dimming it hides the one thing still worth clicking. Lifted only
+   while the modal is dimmed, so an active toggle elsewhere is unaffected. */
+.ddl-doc-modal.cfg-dim .btn.btn-on { position: relative; z-index: 200; }
 .ddl-doc-hdr   { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 10px 16px; border-bottom: 2px solid var(--border); flex-shrink: 0; }
 .ddl-doc-title { font-size: 12px; font-weight: 700; color: var(--text); font-family: var(--font-mono); }
 .ddl-doc-body  { overflow: auto; flex: 1; padding: 0; }
@@ -14444,7 +14448,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.3.1.5';
+const APP_VERSION  = '1.3.1.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

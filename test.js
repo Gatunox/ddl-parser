@@ -4798,6 +4798,26 @@ test('the columns the user turned off do not appear', () => {
   } finally { storage.removeItem('up_msg_export_cols'); }
 });
 
+test('the export carries the Bytes column, counted like the LEN column', () => {
+  // The chooser shipped with Field / Description / Value / Raw Hex and no width
+  // at all, so the file could not answer "how many bytes was that" — the one
+  // question the table beside it answers.
+  const lines = expMsgLines(expMsg([
+    { id: 'A',   description: 'D', valueLength: 4, value: 'ABCD', rawHex: '41424344' },
+    // An LLVAR prefix belongs to its field, so it counts...
+    { id: 'PAN', description: 'D', valueLength: 5, value: 'ABCDE', rawHex: 'AA', lenPrefix: '05' },
+    // ...but a VLG group's LEN has its own row and must not be billed twice.
+    { id: 'EMV.DATA', description: 'D', valueLength: 5, value: 'ABCDE', rawHex: 'AA',
+      lenPrefix: '37', lenPrefixOwnRow: true },
+  ]), 0);
+  const head = lines.find(l => /^Field\s/.test(l));
+  assert.ok(/Bytes/.test(head), `the column is there: ${head}`);
+  const col = l => l.slice(head.indexOf('Bytes'), head.indexOf('Value')).trim();
+  eq(col(lines.find(l => /^A\s/.test(l))),        '4', 'its own width');
+  eq(col(lines.find(l => /^PAN\s/.test(l))),      '7', 'plus an LLVAR prefix that belongs to it');
+  eq(col(lines.find(l => /^EMV.DATA/.test(l))),   '5', 'but not a LEN that has its own row');
+});
+
 test('the export column chooser lays out in a row, and wins the cascade', () => {
   // Stacked, four checkboxes make a tall column of single words that overhangs
   // the modal. The horizontal rule has to out-specify `.audit-cfg-dialog.open

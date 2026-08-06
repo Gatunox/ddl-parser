@@ -4503,6 +4503,7 @@ const _EXP_COLS_KEY = 'up_msg_export_cols';
 const _EXP_COLS = [
   ['field', 'Field'],
   ['desc',  'Description'],
+  ['bytes', 'Bytes'],
   ['value', 'Value'],
   ['hex',   'Raw Hex'],
 ];
@@ -4571,8 +4572,14 @@ function _expMsgLines(msg, idx) {
 
   const hidden = _expHiddenCols();
   const cols   = _EXP_COLS.filter(([k]) => !hidden[k]);
+  // Bytes is what the LEN column shows: the field's own width, plus an LLVAR
+  // prefix that belongs to it — but never a VLG group's LEN, which has its own
+  // row and would otherwise be billed twice.
+  const bytesOf = f => f.valueLength === undefined ? ''
+    : String(f.valueLength + ((f.lenPrefix && !f.lenPrefixOwnRow) ? f.lenPrefix.length : 0));
   const cell   = (f, k) => k === 'field' ? f.id
                          : k === 'desc'  ? f.description
+                         : k === 'bytes' ? bytesOf(f)
                          : k === 'value' ? (f.displayValue != null ? f.displayValue : f.value)
                          :                 f.rawHex;
   const rows = (msg.fields || []).map(f => cols.map(([k]) => String(cell(f, k) ?? '')));
@@ -14422,7 +14429,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.3.0.1';
+const APP_VERSION  = '1.3.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

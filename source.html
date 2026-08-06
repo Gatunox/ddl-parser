@@ -10567,7 +10567,7 @@ function renderFieldTable(msg) {
           <th class="th-num" style="width:28px;text-align:right">#</th>
           <th class="th-id" style="width:140px">Field<span class="th-resize"></span></th>
           <th class="th-desc" style="width:220px">Type / Description<span class="th-resize"></span></th>
-          <th class="th-len" style="width:44px">Len<span class="th-resize"></span></th>
+          <th class="th-len" style="width:44px" title="Wire bytes the field occupies">Bytes<span class="th-resize"></span></th>
           <th class="th-val">Value<span class="th-resize"></span></th>
           <th class="th-raw" style="width:120px">Raw Hex<span class="th-resize"></span></th>
           <th class="th-trk" style="width:36px" title="Track field">Trk</th>
@@ -14333,7 +14333,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.2.7.0';
+const APP_VERSION  = '1.2.7.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18769,8 +18769,8 @@ function _meOverridesPrep(item) {
       <th class="me-fm-th-num" data-col="num">#<div class="me-fm-resizer" data-col="num"></div></th>
       <th class="me-fm-th-fld" data-col="fld">Field<div class="me-fm-resizer" data-col="fld"></div></th>
       <th class="me-fm-th-off" data-col="off" title="Byte offset within the DDL record (dec + hex)">Offset<div class="me-fm-resizer" data-col="off"></div></th>
-      <th class="me-fm-th-len" data-col="len" title="Byte length">Len<div class="me-fm-resizer" data-col="len"></div></th>
-      <th class="me-fm-th-dt"  data-col="dt" title="DDL-declared type, and any override applied to it">Type<div class="me-fm-resizer" data-col="dt"></div></th>
+      <th class="me-fm-th-dt"  data-col="dt" title="DDL-declared type and length, and any override applied to them">Type/Len<div class="me-fm-resizer" data-col="dt"></div></th>
+      <th class="me-fm-th-len" data-col="len" title="Wire bytes the field occupies">Bytes<div class="me-fm-resizer" data-col="len"></div></th>
       <th class="me-fm-th-de"  data-col="de" title="ISO 8583 data element number">DE${usesBitmapFields ? '<button class="me-rb me-de-clear me-de-clear-all" onclick="event.stopPropagation();_meFmClearDEs()" title="Clear ALL DE overrides — every field returns to the natural ordinal sequence">↺</button>' : ''}<div class="me-fm-resizer" data-col="de"></div></th>
       <th class="me-fm-th-vlg" data-col="vlg" title="Variable Length Group">VLG<div class="me-fm-resizer" data-col="vlg"></div></th>
     </tr></thead>
@@ -19047,7 +19047,7 @@ function _meFmRowHtml(row, ctx, counter) {
     ? `<span class="c-ovr-as"> as </span><span class="c-ovr-new">${ea(String(foEntry.display).toUpperCase())}</span>`
     : '';
   const dtCell = `<td class="me-fm-dt${overrideBadLen ? ' me-fm-dt-bad' : ''}">${typePart}${asPart}${warnIcon}</td>`;
-  return `<tr class="${trCls}" ${dataAttrs} onclick="_meOvlRowClick('${id}', event)">${numCell}${fieldCell}${offCell}${lenCell}${dtCell}${deCell}${vlgCell}</tr>`;
+  return `<tr class="${trCls}" ${dataAttrs} onclick="_meOvlRowClick('${id}', event)">${numCell}${fieldCell}${offCell}${dtCell}${lenCell}${deCell}${vlgCell}</tr>`;
 }
 
 // Synchronous full build — kept for small DDLs and non-staged callers.
@@ -20013,7 +20013,7 @@ function _meFmUiSaveCollapse(item) {
 
 // ── Field Map column visibility ──────────────────────────────────────────────
 const _ME_FM_COLS = [
-  ['num', '#'], ['off', 'Offset'], ['len', 'Len'], ['dt', 'Type'],
+  ['num', '#'], ['off', 'Offset'], ['dt', 'Type/Len'], ['len', 'Bytes'],
   ['de', 'DE'], ['vlg', 'VLG'],
 ];   // Field column is always visible
 const _ME_FM_COLVIS_KEY = 'up_me_fm_colvis';

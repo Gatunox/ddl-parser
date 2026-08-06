@@ -4640,6 +4640,33 @@ test('a hex-char width override is visible in the LEN column', () => {
   eq(plain.length, 4, 'and its wire width IS the number written');
 });
 
+test('the Field Map puts Type/Len before Bytes, and the cells follow the header', () => {
+  // A header order that does not match the cell order is the kind of thing that
+  // looks fine until a column is hidden and everything shifts one to the left.
+  const _h = APP_SRC.indexOf('me-fm-th-num');
+  const head = APP_SRC.slice(_h, APP_SRC.indexOf('</thead>', _h));
+  const order = [...head.matchAll(/data-col="(\w+)"/g)].map(m => m[1])
+    .filter((v, i, a) => a.indexOf(v) === i);   // each col appears twice: th + resizer
+  eq(order.join(','), 'num,fld,off,dt,len,de,vlg', 'header order');
+  const row = psFnSource('_meFmRowHtml');
+  const cells = row.slice(row.lastIndexOf('return `<tr'));
+  const cellOrder = [...cells.matchAll(/\$\{(\w+)Cell\}/g)].map(m => m[1]);
+  eq(cellOrder.join(','), 'num,field,off,dt,len,de,vlg', 'cells match it');
+});
+
+test('the length columns are named for what they hold, in both tables', () => {
+  // "Len" said nothing about which unit. The Field Map's number is the type's
+  // own — characters for hex-char — and the byte column is wire bytes.
+  assert.ok(/data-col="dt"[^>]*>Type\/Len</.test(html), 'Field Map: Type/Len');
+  assert.ok(/data-col="len"[^>]*>Bytes</.test(html),    'Field Map: Bytes');
+  assert.ok(/class="th-len"[^>]*>Bytes</.test(html),    'Parse Results: Bytes');
+  assert.ok(!/data-col="len"[^>]*>Len</.test(html) && !/class="th-len"[^>]*>Len</.test(html),
+    'and nothing still says a bare "Len"');
+  const menu = html.slice(html.indexOf("['num', '#']"), html.indexOf("['num', '#']") + 200);
+  assert.ok(/'dt', 'Type\/Len'/.test(menu) && /'len', 'Bytes'/.test(menu),
+    `the column menu uses the same names: ${menu}`);
+});
+
 test('a hex-char field with no width override shows its declared number', () => {
   // Discriminating half: nothing overridden means nothing to annotate, so a bare
   // number here proves the ↩ above came from the override and not from hex-char.

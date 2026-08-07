@@ -4249,6 +4249,21 @@ test('the override parse reads the ARMED ddl, not the selected one', () => {
   eq(sel, 'V/S/D', 'while the selection still drives the editor');
 });
 
+test('the armed marker survives the cascade and does not rely on text colour', () => {
+  // First attempt coloured the ROW; .tree-ddl-lbl / .tree-def-lbl set their own
+  // colour and won, so only the ▶ glyph changed — the same specificity trap that
+  // hid the DE fade and the row-number alignment.
+  assert.ok(/\.tree-node\.tree-ovr \.tree-ddl-lbl/.test(html), 'the DDL label is targeted');
+  assert.ok(/\.tree-node\.tree-ovr \.tree-def-lbl/.test(html), 'and the DEF label');
+  // Selection sets those labels to the accent — an armed row must stay amber.
+  assert.ok(/\.tree-node\.tree-ovr\.tree-sel \.tree-def-lbl/.test(html),
+    'and selection cannot repaint it');
+  // Three palettes: text colour alone is not enough, so it also tints and bars.
+  const row = html.match(/\.tree-node\.tree-ovr \{[^}]*\}/)[0];
+  assert.ok(/background:/.test(row), `it tints the row: ${row}`);
+  assert.ok(/box-shadow:\s*inset/.test(row), 'and carries a solid left bar');
+});
+
 test('every override decision asks the armed scope, not the tree selection', () => {
   // Source tripwire: three call sites decided this independently, all by testing
   // S.scope.type. One of them left behind would bring the trap back for that flow.

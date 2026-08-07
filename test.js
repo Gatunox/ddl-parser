@@ -4255,21 +4255,24 @@ test('the span agrees with what was actually read', () => {
 
 test('an impossible length is REPORTED, not silently clamped', () => {
   const { ctx, len } = hangRun(HANG_OVR, 'GROUP[01].BB');
-  const err = ctx.fields.find(f => f.error && /runs past the end/.test(f.error));
-  assert.ok(err, `the length is called out, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  // It rides ON the length source as `issue` — a separate row under the same id
+  // is the duplicate the group path was fixed for.
+  const err = ctx.fields.find(f => f.issue && /runs past the end/.test(f.issue));
+  assert.ok(err, `the length is called out, got: ${JSON.stringify(ctx.fields.map(f => f.issue || f.error).filter(Boolean))}`);
   assert.ok(/GROUP\[01\]\.AA/.test(err.id), `naming the length source: ${err.id}`);
-  const left = +(err.error.match(/\((\d+) byte\(s\) left\)/) || [])[1];
+  eq(ctx.fields.filter(f => f.id === err.id).length, 1, 'and it is ONE row, not two');
+  const left = +(err.issue.match(/\((\d+) byte\(s\) left\)/) || [])[1];
   assert.ok(left > 0 && left < len,
-    `it reports what remains (${left}) of a ${len}-byte message: ${err.error}`);
+    `it reports what remains (${left}) of a ${len}-byte message: ${err.issue}`);
 });
 
 test('a hex-char length source counts characters, as it does in a group', () => {
   // 0x12 0x23 spells "1223" → 1223 characters → 612 wire bytes. Still impossible
   // here, but it must be converted before it is judged, not after.
   const { ctx } = hangRun(HANG_OVR, 'GROUP[01].BB');
-  const err = ctx.fields.find(f => f.error && /runs past the end/.test(f.error));
-  assert.ok(/character\(s\) = \d+ byte\(s\)/.test(err.error),
-    `the message states both units: ${err.error}`);
+  const err = ctx.fields.find(f => f.issue && /runs past the end/.test(f.issue));
+  assert.ok(/character\(s\) = \d+ byte\(s\)/.test(err.issue),
+    `the message states both units: ${err.issue}`);
 });
 
 test('hovering a field with an absurd span does not lock the tab', () => {
@@ -4294,6 +4297,89 @@ test('hovering a field with an absurd span does not lock the tab', () => {
     S.messages = saved.m; S.curIdx = saved.i;
     S.selFieldId = saved.sel; S.hoverFieldId = saved.hov;
   }
+});
+
+// ── The declared size is the MAXIMUM, not a default to discard ──────────────
+// Stated directly: PAN is PIC X(19) because 19 is the most it can ever be. The
+// LEN says how much of it is used — 08 reads 8, 16 reads 16 — but 99 cannot read
+// 99. The DDL's size is a hard cap on a variable-length element.
+
+console.log('\na length source is capped by the declared size');
+
+function panRun(lenByte, panPic = 19, msgLen = 60) {
+  S.ddlTree = { V: { S: { D: `DEF R.
+  02 PAN-LEN PIC X(2).
+  02 PAN PIC X(${panPic}).
+  02 TAIL PIC X(2).
+END R.
+` } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([
+    ...String(lenByte).padStart(2, '0').split('').map(c => c.charCodeAt(0)),
+    ...Array.from({ length: msgLen }, (_, i) => 0x41 + (i % 26)),
+  ]);
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    overrides: { 'PAN-LEN': { vlg: true } },
+    parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, bytes);
+  return { ctx, pan: ctx.fields.find(f => f.id === 'PAN'),
+           errs: ctx.fields.filter(f => f.error || f.issue) };
+}
+
+test('a length below the declared size is used exactly', () => {
+  eq(panRun('08').pan.valueLength, 8,  'LEN 08 reads 8');
+  eq(panRun('16').pan.valueLength, 16, 'LEN 16 reads 16');
+  eq(panRun('08').errs.length, 0, 'and nothing is reported');
+});
+
+test('a length ABOVE the declared size is capped at the declared size', () => {
+  const { pan, errs } = panRun('99');
+  eq(pan.valueLength, 19, `PIC X(19) can never read 99 — got ${pan.valueLength}`);
+  const capped = errs.find(e => /declares at most 19/.test(e.issue || e.error));
+  assert.ok(capped, `and it says so, got: ${JSON.stringify(errs)}`);
+  assert.ok(/read as 19/.test(capped.issue), 'naming what it actually read');
+  eq(errs.filter(e => e.id === 'PAN').length, 1, 'on ONE PAN row, not a second one');
+});
+
+test('the cap does not swallow the field that follows', () => {
+  // Capping must not leave the cursor where the bogus length pointed, or every
+  // later field shifts by 80 bytes.
+  const { ctx } = panRun('99');
+  const tail = ctx.fields.find(f => f.id === 'TAIL');
+  eq(tail.startByte, 2 + 19, `TAIL follows the capped PAN, got ${tail.startByte}`);
+});
+
+test('the cap is the DECLARED size, so a different PIC caps differently', () => {
+  // Discriminating: a fixed cap of 19 would pass the test above by accident.
+  eq(panRun('99', 8).pan.valueLength,  8,  'PIC X(8) caps at 8');
+  eq(panRun('99', 30).pan.valueLength, 30, 'PIC X(30) caps at 30');
+});
+
+test('a VLG GROUP is capped by the group\'s total declared payload', () => {
+  // Same rule one level up: a group's declared size is the most it can hold, so a
+  // LEN above it is bad data. The group path used to report the overrun and then
+  // use the wire value anyway — "the wire decides the framing" — which is the
+  // opposite policy to the leaf form it is the group version of.
+  S.ddlTree = { V: { S: { D: `DEF R.
+  02 EMV.
+    04 LEN PIC X(2).
+    04 DATA PIC X(12).
+  02 TAIL PIC X(2).
+END R.
+` } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([0x39, 0x39,                       // LEN = "99"
+    ...Array.from({ length: 120 }, (_, i) => 0x41 + (i % 26))]);
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    overrides: { 'EMV': { vlg: 'EMV.LEN' } },
+    parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, bytes);
+  const data = ctx.fields.find(f => f.id === 'EMV.DATA');
+  eq(data.valueLength, 12, `the group declares 12 for its payload — got ${data.valueLength}`);
+  const said = ctx.fields.find(f => (f.issue || f.error || '').includes('declares for its payload'));
+  assert.ok(said, 'and the overrun is reported');
+  assert.ok(/read as 12/.test(said.issue || said.error), 'naming what it actually read');
+  // The field after the group must not be pushed out by the bogus length.
+  const tail = ctx.fields.find(f => f.id === 'TAIL');
+  assert.ok(tail && tail.startByte === 2 + 12, `TAIL follows the capped group, got ${tail && tail.startByte}`);
 });
 
 test('a DECLARED length longer than the message does not inflate the span', () => {
@@ -5432,6 +5518,7 @@ test('the DE-clear button clears the list and the panes, not only the table', ()
   assert.ok(/all\[id\]\.de !== undefined/.test(src),
     'the count covers the selection forms too, not only anchors');
 });
+
 
 
 

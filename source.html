@@ -14620,7 +14620,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.9.0.0';
+const APP_VERSION  = '1.9.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22221,6 +22221,10 @@ function _meReadOneFieldFromDef(def, ctx) {
   let len = def.length;
   let lenPrefix = null;
   let dataStart = fStart;
+  // A complaint about THIS field rides on it as `issue` — pushing it as its own
+  // row would put two rows under one id, which is the duplicate the group path
+  // was fixed for in v1.2.3.0.
+  let _issue = null;
 
   // A "bytes" override REPLACES the declared length — the field is read as if
   // the DDL had said that size, and the type and display then work on those
@@ -22258,8 +22262,22 @@ function _meReadOneFieldFromDef(def, ctx) {
   // "bytes" override does, counted once per field id so a REDEFINES re-read
   // cannot double-shift.
   if (ctx.vlgPending != null) {
-    const _want = ctx.vlgPending;
+    let _want = ctx.vlgPending;
     ctx.vlgPending = null;
+    // The DDL's size is the MAXIMUM this element can ever be, not a default to be
+    // discarded: PAN PIC X(19) sized by PAN-LEN reads 8 when the LEN says 08 and
+    // 16 when it says 16 — and still 19 when it says 99. A wire length above the
+    // declared size is bad data, so it is capped and reported rather than used.
+    const _cap = len || 0;
+    if (_cap > 0 && _want > _cap) {
+      if (!ctx._vlgCapSeen) ctx._vlgCapSeen = new Set();
+      if (!ctx._vlgCapSeen.has(def.id)) {
+        ctx._vlgCapSeen.add(def.id);
+        _issue = `${def.id}: length source says ${_want}, but "${def.id}" declares at most `
+               + `${_cap} byte(s) — read as ${_cap}`;
+      }
+      _want = _cap;
+    }
     if (_want !== (len || 0)) {
       if (!ctx._vlgShiftSeen) ctx._vlgShiftSeen = new Set();
       if (!ctx._vlgShiftSeen.has(def.id)) {
@@ -22311,10 +22329,9 @@ function _meReadOneFieldFromDef(def, ctx) {
     // when the highlight walked it.
     const _avail = ctx.bytes.length - fEnd;
     if (_n > _avail) {
-      ctx.fields.push({ id: def.id,
-        error: `${def.id}: length ${_written}${_inChars ? ` character(s) = ${_n} byte(s)` : ''} `
+      _issue = `${def.id}: length ${_written}${_inChars ? ` character(s) = ${_n} byte(s)` : ''} `
              + `runs past the end of the message (${_avail} byte(s) left) — read as `
-             + `${_meLengthReadAs(fBytes, _lt)}` });
+             + `${_meLengthReadAs(fBytes, _lt)}`;
       _n = Math.max(0, _avail);
     }
     ctx.vlgPending = _n;
@@ -22344,6 +22361,7 @@ function _meReadOneFieldFromDef(def, ctx) {
     endByte: fStart + Math.max(0, fBytes.length) - 1 + (dataStart - fStart),
     isRedefines: def.isRedefines || false,
     redefTarget: def.redefTarget || null,
+    ...(_issue ? { issue: _issue } : {}),
     unreliable: binUnreliable || undefined,
     maskInRaw:  binUnreliable || undefined,
   };
@@ -23751,7 +23769,7 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
       _meLengthReadAs(lBytes, lType)}`);
     N = Math.max(0, available);
   } else if (capacity && N > capacity) {
-    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` character(s) = ${N} byte(s)` : ''} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload`);
+    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` character(s) = ${N} byte(s)` : ''} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload — read as ${capacity}`);
   }
   ctx.cursor = lStart + lLen;
   // The complaint belongs ON the LEN field, not beside it. Pushing it as its own

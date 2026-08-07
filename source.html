@@ -1727,12 +1727,14 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
 /* Selection action bar — segmented groups, so related actions share one outline
    and the eye sees three groups rather than nine loose pills of random width. */
-.me-fm-bar{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;
+.me-fm-bar{display:flex;align-items:center;justify-content:space-evenly;gap:10px 16px;
   flex-wrap:wrap;margin:9px 0;padding:0 2px;}
 .me-fm-bar .me-fm-cnt{color:var(--accent);font-weight:700;min-width:78px;font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-bar .me-fm-cnt.none{color:var(--text-very-dim);}
 .me-fm-bar .me-fm-gsep{width:2px;height:15px;background:var(--border);margin:0;}
-.me-fm-g{display:flex;align-items:center;}
+/* Each group takes an equal share of the bar, so the buttons distribute across
+   the full width instead of bunching at one end. */
+.me-fm-g{display:flex;align-items:center;justify-content:center;flex:1 1 0;}
 .me-fm-g .me-fm-glbl{color:var(--text-very-dim);text-transform:uppercase;letter-spacing:.06em;
   font-size:calc(var(--sz-mono) - 2px);margin-right:8px;}
 .me-fm-seg{display:flex;border:2px solid var(--border);border-radius:9px;overflow:hidden;}
@@ -1954,8 +1956,13 @@ body.light .me-fm-redef td{color:rgba(var(--accent-rgb),0.75);}
 #me-ovl-json.bad{border-color:#f85149;background:rgba(248,81,73,0.07);}
 
 /* Reference footer — the Add button lives with the list it acts on. */
-.me-ovl-ro{border:2px solid #2f3947;color:var(--text-very-dim);border-radius:9px;padding:0 6px;
-  font-size:calc(var(--sz-mono) - 3px);font-weight:400;}
+/* The pill states what the table IS and how much of it is selected — one control
+   instead of a static label plus a count span, which frees that width for the
+   action groups. Blue while something is selected, the same signal the count
+   carried before. */
+.me-ovl-ro{border:2px solid var(--accent);color:var(--accent);border-radius:9px;padding:0 6px;
+  font-size:calc(var(--sz-mono) - 3px);font-weight:700;white-space:nowrap;}
+.me-ovl-ro.none{border-color:#2f3947;color:var(--text-very-dim);font-weight:400;}
 /* Reference rows: selection, and the whole-row tint for a field that carries an
    override — a marker in one column was missed when scanning thousands of rows. */
 .me-fm-table tbody tr{cursor:pointer;}
@@ -14512,7 +14519,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.6.1.0';
+const APP_VERSION  = '1.6.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18939,7 +18946,7 @@ function _meOverridesPrep(item) {
 <div class="me-ovl-hdr"><span class="me-ovl-sub" id="me-ovl-count"></span></div>
 <div class="me-ovl-list" id="me-ovl-list"></div>
 <div class="me-fm-toolbar">
-  <span class="me-ovl-ro" title="This table is the picker — every field the DDL declares. Configuration lives in the Overrides list above.">REFERENCE · READ-ONLY</span>
+  <span class="me-ovl-ro none" id="me-fm-cnt" title="This table is the picker — every field the DDL declares. Configuration lives in the Overrides list above.">no selection · READ-ONLY</span>
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
   ${usesBitmapFields ? `<button class="btn btn-sm${autoOn ? ' btn-accent-on' : ''}" id="me-fm-auto-btn" onclick="_meFmAutoOrder()" title="Anchor each DE from the 'Bit map position = NN' comment above its declaration in the bound DDL files. Toggle: press again to revert to the order before Auto Order.">Auto Order</button>` : ''}
   <button class="btn btn-sm" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
@@ -18962,7 +18969,6 @@ function _meOverridesPrep(item) {
   </div>
 </div>
 <div class="me-fm-bar" id="me-fm-bar">
-  <span class="me-fm-cnt none" id="me-fm-cnt">no selection</span>
   <span class="me-fm-g"><span class="me-fm-glbl">DataElement</span><span class="me-fm-seg">
     <button class="btn btn-sm" data-fmact="de-off" title="Not a data element — the counter does not advance, so the fields after it keep their numbers">Exclude</button>
     <button class="btn btn-sm" data-fmact="de-on" title="A data element even where the default rule says no — a nested field, or one named like padding">Include</button>
@@ -21028,7 +21034,7 @@ function _meFmBarRefresh() {
   const cnt = document.getElementById('me-fm-cnt');
   if (!cnt) return;
   const n = _meFmMultiSel.size;
-  cnt.textContent = n ? `${n} selected` : 'no selection';
+  cnt.textContent = `${n ? `${n} selected` : 'no selection'} · READ-ONLY`;
   cnt.classList.toggle('none', n === 0);
   document.querySelectorAll('#me-fm-bar [data-fmact]').forEach(b => {
     // Every action now acts on the selection — removing an override is the

@@ -5550,8 +5550,33 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
   assert.ok(min > 0 && min <= 70, `uniform but panel-sized, got ${min}px`);
   // And it uses the width it has: packed left, the groups huddled in the first
   // third of the bar with the rest of the panel empty beside them.
-  assert.ok(/justify-content:\s*space-between/.test(css),
-    'the groups spread across the bar rather than bunching to the left');
+  //
+  // CHANGED ON PURPOSE (v1.6.2.0): this named the literal `space-between`. The
+  // bar now also gives each GROUP an equal share, which spreads the buttons
+  // themselves rather than only the gaps between them. Asserted as the intent so
+  // the next layout change is judged on whether it still distributes.
+  const grp = html.match(/\.me-fm-g\{[^}]*\}/)[0];
+  const spreads = /justify-content:\s*space-(between|evenly|around)/.test(css)
+               || /flex:\s*1 1 0/.test(grp);
+  assert.ok(spreads,
+    `the groups spread across the bar rather than bunching to the left: ${css} | ${grp}`);
+});
+
+test('the selection count lives on the reference pill, not a separate span', () => {
+  // Asked for: fold the count into the READ-ONLY pill and give the width back to
+  // the action groups. Two elements saying different halves of one fact, side by
+  // side, with the bar short of room.
+  assert.ok(/id="me-fm-cnt"[^>]*class="me-ovl-ro|class="me-ovl-ro[^"]*"[^>]*id="me-fm-cnt"/.test(html),
+    'the pill IS the count element');
+  assert.ok(!/class="me-fm-cnt/.test(html), 'and the old count span is gone');
+  const fn = psFnSource('_meFmBarRefresh');
+  assert.ok(/READ-ONLY/.test(fn), 'the refresher keeps the READ-ONLY wording');
+  assert.ok(/selected/.test(fn) && /no selection/.test(fn), 'and states the count');
+  // Blue while something is selected — the signal the count carried before.
+  const pill = html.match(/\.me-ovl-ro\{[^}]*\}/)[0];
+  const none = html.match(/\.me-ovl-ro\.none\{[^}]*\}/)[0];
+  assert.ok(/color:var\(--accent\)/.test(pill), `selected state is accent: ${pill}`);
+  assert.ok(/var\(--text-very-dim\)/.test(none), `and dim with nothing selected: ${none}`);
 });
 
 test('the bar sits above the table, not after it', () => {

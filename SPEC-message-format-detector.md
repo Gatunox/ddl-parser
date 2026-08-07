@@ -282,7 +282,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | Block | Purpose | Key attributes |
 |-------|---------|----------------|
 | `read-ddl` | Read **all fields from the DDL Bindings** in DDL declaration order — no individual field listing needed | `binding` (int index into `ddl_bindings`, or `"ANY"`), `fields`, `from`, `until` — §5.2; `vlg_identifier` — §8; `overrides` — §8.1 |
-| `read` | Read a single DDL-defined field (offset, length, type from DDL) | `field` (DDL field ID), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13) |
+| `read` | Read a single DDL-defined field, **or a window of them from the cursor** | `field` (DDL field ID), `from`/`until` (walk a range at the cursor — `from` required, `until` inclusive), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13) |
 | `read-fixed` | Read N bytes inline — no DDL ref needed | `length` (int literal OR field ID ref), `type`, `encoding`, `as` (DDL field ID) |
 | `read-until` | Read bytes until sentinel(s) or EOM | `sentinels` (list of hex bytes), `eom` (bool), `as` (DDL field ID) |
 | `read-length-prefix` | Read length N then N bytes | `prefix` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |

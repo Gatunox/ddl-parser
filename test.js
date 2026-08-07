@@ -4304,6 +4304,92 @@ test('hovering a field with an absurd span does not lock the tab', () => {
 // LEN says how much of it is used — 08 reads 8, 16 reads 16 — but 99 cannot read
 // 99. The DDL's size is a hard cap on a variable-length element.
 
+// ── read { from, until }: keep going where the last block stopped ───────────
+// Reported: after `repeat` ran 2 of a declared OCCURS 8, continuing with read-ddl
+// put the next field 96 bytes too far — read-ddl positions at DECLARED offsets,
+// which assume all 8 occurrences exist. `read` follows the cursor but takes one
+// field at a time, and read-to-end returns a single blob rather than DDL fields.
+// So there was no way to say "keep walking the DDL from here".
+
+console.log('\nread {from, until} continues from the cursor');
+
+const WIN_DDL = `DEF R.
+  02 AA PIC X(2).
+  02 SIZE PIC X(8).
+  02 GROUP OCCURS 8 TIMES.
+    04 GA PIC X(2).
+  02 MORE PIC X(2).
+  02 WHAT PIC X(2).
+  02 SOME PIC X(2).
+END R.
+`;
+function winRun(tail, count = '00000002') {
+  S.ddlTree = { V: { S: { D: WIN_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([
+    0x41, 0x42,                                        // AA
+    ...count.split('').map(c => c.charCodeAt(0)),       // SIZE
+    ...Array.from({ length: 8 * 2 }, (_, i) => 0x61 + i),
+    0x4d, 0x4d, 0x57, 0x57, 0x53, 0x53,                // MORE WHAT SOME
+  ]);
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: [
+      { read: 'AA' }, { read: 'SIZE' },
+      { repeat: { count: 'SIZE', body: [ { read: 'GROUP' } ] } },
+      ...tail,
+    ] }, bytes);
+}
+const winAt = (ctx, id) => (ctx.fields.find(f => f.id === id) || {}).startByte;
+
+test('the window starts where the repeat stopped', () => {
+  // AA(2) + SIZE(8) + 2 occurrences x 2 = 14.
+  const ctx = winRun([{ read: { from: 'MORE' } }]);
+  eq(winAt(ctx, 'MORE'), 14, `MORE follows the 2 occurrences read, got ${winAt(ctx, 'MORE')}`);
+  eq(winAt(ctx, 'WHAT'), 16, 'and the rest follow it');
+  eq(winAt(ctx, 'SOME'), 18, 'to the end of the DDL');
+});
+
+test('read-ddl still positions at the DECLARED offsets — unchanged', () => {
+  // The discriminating half, and the reason this is a new block rather than a
+  // change to read-ddl: six recorded cases depend on read-ddl restarting.
+  const ctx = winRun([{ 'read-ddl': { binding: 0, from: 'MORE' } }]);
+  eq(winAt(ctx, 'MORE'), 26, `declared position: 2 + 8 + 8x2 = 26, got ${winAt(ctx, 'MORE')}`);
+});
+
+test('until bounds the window, inclusively', () => {
+  const ctx = winRun([{ read: { from: 'MORE', until: 'WHAT' } }]);
+  eq(winAt(ctx, 'WHAT'), 16, 'WHAT is included');
+  eq(winAt(ctx, 'SOME'), undefined, 'and SOME is not read');
+});
+
+test('a leaf or group name resolves, as it does in read-ddl', () => {
+  const ctx = winRun([{ read: { from: 'GROUP' } }]);
+  assert.ok(winAt(ctx, 'MORE') != null, 'the window ran to the end');
+  const gas = ctx.fields.filter(f => f.id === 'GROUP[01].GA');
+  eq(gas.length, 2, 'the repeat read it once and the window read it again');
+  eq(gas[gas.length - 1].startByte, 14,
+     `the window read at the cursor, not the declared 10 — got ${gas[gas.length - 1].startByte}`);
+});
+
+test('until without from is refused rather than reading everything', () => {
+  const ctx = winRun([{ read: { until: 'WHAT' } }]);
+  const err = ctx.fields.find(f => f.error && /needs a "from"/.test(f.error));
+  assert.ok(err, `it says so, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  eq(winAt(ctx, 'MORE'), undefined, 'and nothing was read');
+});
+
+test('a name that matches nothing is reported, not silently skipped', () => {
+  const ctx = winRun([{ read: { from: 'NOSUCH' } }]);
+  assert.ok(ctx.fields.find(f => f.error && /not found in the bound DDL/.test(f.error)),
+    'the unknown name is named');
+});
+
+test('a backwards window is refused', () => {
+  const ctx = winRun([{ read: { from: 'SOME', until: 'MORE' } }]);
+  assert.ok(ctx.fields.find(f => f.error && /comes before/.test(f.error)),
+    'an empty window is called out rather than silently doing nothing');
+});
+
 console.log('\na length source is capped by the declared size');
 
 function panRun(lenByte, panPic = 19, msgLen = 60) {
@@ -5518,6 +5604,7 @@ test('the DE-clear button clears the list and the panes, not only the table', ()
   assert.ok(/all\[id\]\.de !== undefined/.test(src),
     'the count covers the selection forms too, not only anchors');
 });
+
 
 
 

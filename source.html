@@ -11173,7 +11173,12 @@ function _buildInputHLRanges() {
     const f = findField(msg, fid);
     if (!f) return;
     let run = null, asciiRun = null;
-    for (let b = f.startByte; b <= f.endByte; b++) {
+    // Bounded by the MAP, not by what the field claims. A field whose endByte
+    // runs past the message — a large "bytes" override, or a length read off the
+    // wire — otherwise loops until the tab stops responding, on hover.
+    const _first = Math.max(0, f.startByte | 0);
+    const _last  = Math.min(f.endByte | 0, msg.byteCharMap.length - 1);
+    for (let b = _first; b <= _last; b++) {
       const bc = msg.byteCharMap[b];
       if (!bc) {
         if (run)      { ranges.push({ ...run,      color }); run      = null; }
@@ -11208,7 +11213,9 @@ function _buildAuditPopupHLRanges() {
     const f = findField(msg, fid);
     if (!f) return;
     let run = null;
-    for (let b = f.startByte; b <= f.endByte; b++) {
+    const _first = Math.max(0, f.startByte | 0);
+    const _last  = Math.min(f.endByte | 0, _auditPopupByteCharMap.length - 1);
+    for (let b = _first; b <= _last; b++) {
       const bc = _auditPopupByteCharMap[b];
       if (!bc) { if (run) { ranges.push({ ...run, color }); run = null; } continue; }
       if (!run) run = { s: bc.s, e: bc.e };
@@ -14613,7 +14620,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.8.2.0';
+const APP_VERSION  = '1.9.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19275,7 +19282,7 @@ function _meFmRowHtml(row, ctx, counter) {
   // so leaving those blank told the user nothing was happening when it was.
   const vlgEligible = isGroup && (row.childCount || 0) >= 2 && !row.isRedef;
   let vlgCell = `<td class="me-fm-vlg"></td>`;
-  if (ctx.usesBitmapFields) {
+  {
     // One marker, never a field name — production DDLs have names long enough
     // to blow this column out, and printing the LEN's name on the group AND
     // "LEN" on the leaf said the same thing twice, one row apart.
@@ -22290,8 +22297,27 @@ function _meReadOneFieldFromDef(def, ctx) {
   // field. Several per level is fine — each arms only its own successor, unlike
   // a group, which could carry exactly one.
   if (_meOvEffective(ctx, def.id)?.vlg === true) {
-    const _n = _meDecodeLength(fBytes, _meOvEffective(ctx, def.id)?.type);
-    ctx.vlgPending = _n == null ? 0 : Math.max(0, _n);
+    const _lt = _meOvEffective(ctx, def.id)?.type;
+    let _n = _meDecodeLength(fBytes, _lt);
+    _n = _n == null ? 0 : Math.max(0, _n);
+    // A hex-char length counts CHARACTERS, exactly as it does in a VLG group —
+    // the leaf form skipped this and was not even consistent with its own group
+    // version. Reported in the unit it was written in.
+    const _written = _n, _inChars = _meLenIsChars(_lt);
+    if (_inChars) _n = _meCharsToBytes(_n);
+    // A length longer than the message left cannot be right. The group path has
+    // always said so; the leaf path said nothing, so a wire value like 24,252,626
+    // silently became a field spanning 24 million bytes — enough to lock the tab
+    // when the highlight walked it.
+    const _avail = ctx.bytes.length - fEnd;
+    if (_n > _avail) {
+      ctx.fields.push({ id: def.id,
+        error: `${def.id}: length ${_written}${_inChars ? ` character(s) = ${_n} byte(s)` : ''} `
+             + `runs past the end of the message (${_avail} byte(s) left) — read as `
+             + `${_meLengthReadAs(fBytes, _lt)}` });
+      _n = Math.max(0, _avail);
+    }
+    ctx.vlgPending = _n;
   }
 
   const isBin = /\bBINARY\b/i.test(def._dataType || def.dataType || '');
@@ -22311,7 +22337,11 @@ function _meReadOneFieldFromDef(def, ctx) {
     rawHex: _meBytesToHex(fBytes),
     rawBytes: fBytes,
     startByte: fStart,
-    endByte: fEnd - 1,
+    // What was actually READ. fEnd comes from the declared or overridden length,
+    // which can exceed the message; fBytes is already clamped by the slice, so
+    // deriving the end from it keeps the span, the value and the coverage telling
+    // the same story.
+    endByte: fStart + Math.max(0, fBytes.length) - 1 + (dataStart - fStart),
     isRedefines: def.isRedefines || false,
     redefTarget: def.redefTarget || null,
     unreliable: binUnreliable || undefined,

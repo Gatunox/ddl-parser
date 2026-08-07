@@ -168,6 +168,7 @@ _t.meOvEffectiveLen   = _meOvEffectiveLen;
 _t.meCanonSet         = _meCanonSet;
 _t.netardExtractBytes = _netardExtractBytes;
 _t.isParseOverride    = isParseOverride;
+_t.buildInputHLRanges = _buildInputHLRanges;
 _t.parseOverrideScope = parseOverrideScope;
 _t.toggleParseOverride= toggleParseOverride;
 _t.getDDLsForScope    = getDDLsForScope;
@@ -206,7 +207,7 @@ const {
   meWalkDEFields: _rawWalkDEFields,
   renderFieldTable, meTestFieldTable, meOvEffectiveLen, expMsgLines, expWrapCell,
   meCanonSet, meVlgLenMap, meRowsForOverride, meNextSelection,
-  netardExtractBytes, detectNetardFmt, isParseOverride, parseOverrideScope,
+  netardExtractBytes, detectNetardFmt, buildInputHLRanges, isParseOverride, parseOverrideScope,
   toggleParseOverride, getDDLsForScope, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
 
@@ -4189,6 +4190,163 @@ test('the Test panel and Parse Results report the same problems', () => {
 // Parse ignored the parse spec until the selection was cleared by hand. One
 // gesture was doing two unrelated jobs, and the one you did not mean won.
 
+// ── A length source cannot make a field longer than the message ────────────
+// Reported: with an error on screen, hovering a parsed field locked the tab.
+// GROUP.AA is a length source read as hex-char, so its bytes spell "24252626…"
+// and — by the hex-char rule — that IS the number. The next field then claimed
+// bytes 28..24,252,654, and the highlight walked every one of them on hover.
+//
+// Three defects met here: the leaf VLG path never bounded the length (the GROUP
+// path always had), it ignored the character/byte unit its own group form uses,
+// and endByte was derived from the DECLARED length rather than what was read —
+// so the span outran the message even when the value did not.
+
+console.log('\na length source cannot outrun the message');
+
+const HANG_DDL = `DEFINITION REQMSG.
+    02 AA PIC X(8).
+    02 BB PIC X(8).
+    02 SIZE PIC X(8).
+    02 GROUP OCCURS 8 TIMES.
+       04 AA PIC X(8).
+       04 BB PIC X(8).
+    02 MORE PIC X(8).
+    02 WHAT PIC X(8).
+    02 SOME PIC X(8).
+    02 FIELD PIC X(8).
+END.
+`;
+const HANG_HEX = '0001020304050607000000021223141516171819202122232425262728293031323334353637'
+               + '3839404142434445464748495021223141516171819202122232425262728293031323334'
+               + '35363738394041424344454647484950';
+function hangRun(overrides, until) {
+  S.ddlTree = { V: { S: { D: HANG_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from((HANG_HEX.match(/../g) || []).map(h => parseInt(h, 16)));
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/REQMSG'], overrides,
+    parse_spec_binary: [{ 'read-ddl': { binding: 0, ...(until ? { until } : {}) } }] }, bytes);
+  return { ctx, len: bytes.length };
+}
+// The reported configuration: AA is the length source, both hex-char.
+const HANG_OVR = { 'GROUP.AA': { type: 'hex-char', vlg: true },
+                   'GROUP.BB': { type: 'hex-char' } };
+
+test('no field claims a byte the message does not have', () => {
+  const { ctx, len } = hangRun(HANG_OVR, 'GROUP[01].BB');
+  for (const f of ctx.fields) {
+    if (f.error || f.startByte == null) continue;
+    assert.ok(f.endByte < len,
+      `${f.id} ends at ${f.endByte} in a ${len}-byte message — a hover would walk every one`);
+    assert.ok(f.endByte >= f.startByte - 1, `${f.id} has a sane span`);
+  }
+});
+
+test('the span agrees with what was actually read', () => {
+  // endByte came from the DECLARED length; valueLength from the clamped slice.
+  // When they disagree the highlight walks bytes that were never read.
+  const { ctx } = hangRun(HANG_OVR, 'GROUP[01].BB');
+  for (const f of ctx.fields) {
+    if (f.error || f.startByte == null || f.valueLength == null) continue;
+    const span = f.endByte - f.startByte + 1;
+    const want = f.valueLength + (f.lenPrefix && !f.lenPrefixOwnRow ? f.lenPrefix.length : 0);
+    eq(span, want, `${f.id}: span ${span} vs ${want} bytes read`);
+  }
+});
+
+test('an impossible length is REPORTED, not silently clamped', () => {
+  const { ctx, len } = hangRun(HANG_OVR, 'GROUP[01].BB');
+  const err = ctx.fields.find(f => f.error && /runs past the end/.test(f.error));
+  assert.ok(err, `the length is called out, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  assert.ok(/GROUP\[01\]\.AA/.test(err.id), `naming the length source: ${err.id}`);
+  const left = +(err.error.match(/\((\d+) byte\(s\) left\)/) || [])[1];
+  assert.ok(left > 0 && left < len,
+    `it reports what remains (${left}) of a ${len}-byte message: ${err.error}`);
+});
+
+test('a hex-char length source counts characters, as it does in a group', () => {
+  // 0x12 0x23 spells "1223" → 1223 characters → 612 wire bytes. Still impossible
+  // here, but it must be converted before it is judged, not after.
+  const { ctx } = hangRun(HANG_OVR, 'GROUP[01].BB');
+  const err = ctx.fields.find(f => f.error && /runs past the end/.test(f.error));
+  assert.ok(/character\(s\) = \d+ byte\(s\)/.test(err.error),
+    `the message states both units: ${err.error}`);
+});
+
+test('hovering a field with an absurd span does not lock the tab', () => {
+  // The reported symptom. Without the clamp this produces the SAME ranges — it
+  // just walks every claimed byte to get there, so only elapsed time can catch
+  // it. Bounded by the map this is 64 iterations; unbounded it is two billion,
+  // which is the difference between instant and a locked tab.
+  const map = Array.from({ length: 64 }, (_, i) => ({ s: i, e: i + 1 }));
+  const fld = { id: 'RUNAWAY', startByte: 0, endByte: 2000000000, value: '', rawHex: '' };
+  const saved = { m: S.messages, i: S.curIdx, sel: S.selFieldId, hov: S.hoverFieldId };
+  try {
+    S.messages = [{ fields: [fld], byteCharMap: map }];
+    S.curIdx = 0; S.selFieldId = 'RUNAWAY'; S.hoverFieldId = null;
+    const t0 = Date.now();
+    const ranges = buildInputHLRanges();
+    const ms = Date.now() - t0;
+    assert.ok(ms < 1000, `bounded by the map, not the claim — took ${ms}ms`);
+    assert.ok(ranges.length > 0, 'and it still highlights what exists');
+    for (const r of ranges)
+      assert.ok(r.e <= map.length, `range ends inside the map, got ${r.e}`);
+  } finally {
+    S.messages = saved.m; S.curIdx = saved.i;
+    S.selFieldId = saved.sel; S.hoverFieldId = saved.hov;
+  }
+});
+
+test('a DECLARED length longer than the message does not inflate the span', () => {
+  // Independent of any length source: the DDL alone can declare more than the
+  // message holds. endByte came from the declared length while valueLength came
+  // from the clamped slice, so the span outran the data with no override in play.
+  S.ddlTree = { V: { S: { D: 'DEF R.\n  02 BIG PIC X(200).\nEND R.\n' } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] },
+    Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
+  const f = ctx.fields.find(x => x.id === 'BIG');
+  eq(f.valueLength, 10, 'ten bytes were read');
+  eq(f.endByte, 9, `and the span ends at 9, not 199 — got ${f.endByte}`);
+});
+
+test('a hex-char length source converts characters to bytes before sizing', () => {
+  // 0x10 spells "10" → 10 CHARACTERS → 5 wire bytes. Without the conversion the
+  // next field takes 10, which is the group form's rule ignored by the leaf form.
+  S.ddlTree = { V: { S: { D: `DEF R.
+  02 LEN PIC X(1).
+  02 DATA PIC X(20).
+END R.
+` } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([0x10, ...Array.from({ length: 20 }, (_, i) => i + 1)]);
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    overrides: { LEN: { type: 'hex-char', vlg: true } },
+    parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, bytes);
+  const data = ctx.fields.find(f => f.id === 'DATA');
+  eq(data.valueLength, 5, `10 characters is 5 bytes, got ${data.valueLength}`);
+  eq(ctx.fields.filter(f => f.error).length, 0, 'and it fits, so nothing is reported');
+});
+
+test('a length that FITS is still honoured — the clamp is not a cap on everything', () => {
+  // The discriminating half: a plain (non-hex-char) length source whose value is
+  // small must size the next field exactly, with no complaint.
+  S.ddlTree = { V: { S: { D: `DEF R.
+  02 LEN PIC X(1).
+  02 DATA PIC X(20).
+  02 TAIL PIC X(2).
+END R.
+` } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([0x05, 1, 2, 3, 4, 5, 0x54, 0x4C]);
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    overrides: { LEN: { vlg: true } },
+    parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, bytes);
+  const data = ctx.fields.find(f => f.id === 'DATA');
+  eq(data.valueLength, 5, 'the wire length is used');
+  eq(ctx.fields.filter(f => f.error).length, 0, 'and nothing is reported');
+});
+
 console.log('\nmanual override is armed deliberately');
 
 function ovrReset() {
@@ -4566,6 +4724,26 @@ for (const shape of MTX_ROWS) {
     });
   }
 }
+
+test('the VLG marker shows without read-bitmap-fields', () => {
+  // Reported: a plain read-ddl spec applied the length-source override — the walk
+  // honours it — but the table stayed blank, because the whole VLG cell was gated
+  // on usesBitmapFields. That gate dated from when VLG existed only inside
+  // read-bitmap-fields; _meDDLVlgRuns and the pending length made it stale.
+  const { rows, ctx } = mtxCtx({ 'GRP.AA': { vlg: true } });
+  ctx.usesBitmapFields = false;                  // a plain read-ddl spec
+  const cell = mtxCell(meFmRowHtml(rows.find(r => r.id === 'GRP.AA'), ctx, { n: 0 }), 'vlg');
+  assert.ok(/VLG/.test(cell), `the marker shows anyway, got "${cell}"`);
+});
+
+test('DE controls stay gated on read-bitmap-fields', () => {
+  // The discriminating half: DE numbers only mean something with a bitmap, so
+  // ungating everything would have been the wrong fix.
+  const { rows, ctx } = mtxCtx({ HDR: { de: 7 } });
+  ctx.usesBitmapFields = false;
+  const cell = mtxCell(meFmRowHtml(rows.find(r => r.id === 'HDR'), ctx, { n: 0 }), 'de');
+  assert.ok(!/\b7\b/.test(cell), `no DE number without a bitmap, got "${cell}"`);
+});
 
 test('an override keyed with an occurrence label is normalised on load', () => {
   // The reported case: VLG stored as REP[01].CC. Every reader canonicalises the
@@ -5254,6 +5432,7 @@ test('the DE-clear button clears the list and the panes, not only the table', ()
   assert.ok(/all\[id\]\.de !== undefined/.test(src),
     'the count covers the selection forms too, not only anchors');
 });
+
 
 
 

@@ -845,6 +845,10 @@ td.c-val.c-val-bad { color: #f85149; }
 td.c-len  { color: var(--text-dim); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 td.c-raw  { color: #6e7681; word-break: break-all; }
 td.c-err  { color: var(--accent2); }
+/* A DDL armed for manual override. Amber, matching the "Manual override mode"
+   step in the parse progress panel — the same state, said in two places. */
+.tree-node.tree-ovr { color: #e6a817; font-weight: 700; }
+.tree-node.tree-ovr::after { content: ' ▶'; opacity: .85; }
 .c-row-err { color: var(--accent2); font-size: 10px; }
 .c-vlen   { color: var(--warning); font-weight: 700; }
 .trk-chk  { cursor: pointer; accent-color: var(--accent); color-scheme: dark; width: 12px; height: 12px; display: block; margin: auto; }
@@ -2332,6 +2336,15 @@ const S = {
   ddlValidationResults: {}, // { 'vol/sv/name': { errors, warnings, deferredChecks } }
   seenTypes:    new Set(),  // message types seen this session (suppresses repeat first-encounter prompts)
   excl:         new Set(),  // excluded vol/sv/file paths (uppercase keys, persisted in up_excl)
+  // The DDL explicitly armed for manual override, or null. Selecting a node in
+  // the tree used to arm this implicitly, so opening a DDL to edit it silently
+  // made every Parse an override — the exact trap hit while authoring a DDL
+  // field by field. Arming is now a deliberate act from the context menu, the
+  // mirror of "Exclude from auto-detect".
+  //
+  // NOT persisted: an override left armed from a previous session would recreate
+  // the same surprise, with nothing on screen having caused it.
+  parseOverride: null,      // { type:'ddl'|'def', vol, sv, name, defName? } | null
   deOverrides:  {},         // { 'VOL/SV/FILE/DEFNAME': { '0': deNum, '5': deNum, ... } } — persisted in de_overrides
   netardRulerCol: 0,  // total column position of the ruler (left-margin + data width); set on input change
   asciiRulerCol:  0,  // auto-detected data width for ASCII format (after margin strip); set on input change
@@ -8539,9 +8552,10 @@ function doParseNetardLog(text, opts = {}) {
 
     // ── Manual override on single record: mirror non-NETARD P1 parse exactly ──
     if (opts.showOverride) {
-      const p1Path = (S.scope.type === 'def' && S.scope.defName)
-        ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}/${S.scope.defName}`
-        : `${S.scope.vol}/${S.scope.sv}/${S.scope.name}`;
+      const _po = parseOverrideScope() || S.scope;
+      const p1Path = (_po.type === 'def' && _po.defName)
+        ? `${_po.vol}/${_po.sv}/${_po.name}/${_po.defName}`
+        : `${_po.vol}/${_po.sv}/${_po.name}`;
       _parseProgressStep(`Manual override mode \u2014 ${p1Path}`,
         'Identify \u00b7 Recognizers \u00b7 Parse-specs \u2014 not used',
         '#e6a817', '#e6a817');
@@ -8594,9 +8608,10 @@ function doParseNetardLog(text, opts = {}) {
 
     // ── FUP COPY: force selected scope for all records, no auto-detect ──
     if (opts.forceScopeAll) {
-      const p1Path = (S.scope.type === 'def' && S.scope.defName)
-        ? `${S.scope.vol}/${S.scope.sv}/${S.scope.name}/${S.scope.defName}`
-        : `${S.scope.vol}/${S.scope.sv}/${S.scope.name}`;
+      const _po = parseOverrideScope() || S.scope;
+      const p1Path = (_po.type === 'def' && _po.defName)
+        ? `${_po.vol}/${_po.sv}/${_po.name}/${_po.defName}`
+        : `${_po.vol}/${_po.sv}/${_po.name}`;
       _parseProgressStep(`Manual override mode — ${p1Path}`,
         'Identify · Recognizers · Parse-specs — not used',
         '#e6a817', '#e6a817');
@@ -9240,8 +9255,8 @@ function doParseMessages() {
   // FILE specs (filename recognizer + parse spec / binding) claim their
   // records via detection; when neither applies, ask the user.
   if (!S.forcedFormat && isFupCopyLog(msgText)) {
-    const _hasScope = S.scope?.type === 'ddl' || S.scope?.type === 'def';
-    if (_hasScope) { doFupCopyLog(msgText, { forceScopeAll: true }); return; }
+    const _ovr = parseOverrideScope();
+    if (_ovr) { doFupCopyLog(msgText, { forceScopeAll: true }); return; }
     const _fupRecs = parseFupCopyLog(msgText);
     const _anyFileSpec = _fupRecs.some(r => detectMsgType(r.rawMsg, { filename: r.filePath })?.kind === 'file');
     if (_anyFileSpec) { doFupCopyLog(msgText); return; }
@@ -9252,9 +9267,9 @@ function doParseMessages() {
   // NETARD audit log — handle separately (DDL optional, uses own priority chain)
   if (!S.forcedFormat && isNetardLog(msgText)) {
     const _nRecs = parseNetardLog(msgText);
-    const _hasScope = S.scope?.type === 'ddl' || S.scope?.type === 'def';
-    const _ignoreOverride = _hasScope && _nRecs.length > 1;
-    const _showOverride   = _hasScope && _nRecs.length === 1;
+    const _ovr = parseOverrideScope();
+    const _ignoreOverride = !!_ovr && _nRecs.length > 1;
+    const _showOverride   = !!_ovr && _nRecs.length === 1;
     doParseNetardLog(msgText, { ignoreOverride: _ignoreOverride, showOverride: _showOverride });
     return;
   }
@@ -9274,8 +9289,9 @@ function doParseMessages() {
 
   // ── Priority 1: single message + explicit DDL selected ─────────────────
   // Show progress overlay and run parse directly — skipping auto-detect.
-  if (S.scope?.type === 'ddl' || S.scope?.type === 'def') {
-    const p1Path = `${S.scope.vol}/${S.scope.sv}/${S.scope.name}`;
+  if (parseOverrideScope()) {
+    const _o = parseOverrideScope();
+    const p1Path = `${_o.vol}/${_o.sv}/${_o.name}`;
     _parseProgressShow();
     _parseProgressStep(`Manual override mode \u2014 ${p1Path}`,
       'Identify \u00b7 Recognizers \u00b7 Parse-specs \u2014 not used',
@@ -9293,7 +9309,8 @@ function doParseMessages() {
   }
 
   function _runP1Parse(chunk, msgText) {
-    const ddlContents = getDDLsForScope();
+    const _ovr = parseOverrideScope();
+    const ddlContents = getDDLsForScope(_ovr);
     if (!ddlContents.length) { flash('Selected DDL is empty.', 'warn'); return; }
 
     const parseTypeReg = buildRepoTypeRegistry();
@@ -9323,10 +9340,10 @@ function doParseMessages() {
     const candidates = [];
     for (const { path, content } of ddlContents) {
       if (isHPEDDLText(content)) {
-        if (S.scope.type === 'def' && S.scope.defName) {
+        if (_ovr && _ovr.type === 'def' && _ovr.defName) {
           // Specific DEF selected — compile only that one
-          const defs = parseHPEDDL(content, parseTypeReg, parseSecReg, S.scope.defName);
-          applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${S.scope.defName}`.toUpperCase()]);
+          const defs = parseHPEDDL(content, parseTypeReg, parseSecReg, _ovr.defName);
+          applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${_ovr.defName}`.toUpperCase()]);
           if (defs.length) candidates.push({ path, defs });
         } else {
           // Whole DDL file selected — compile each DEF separately so bestDDLMatch can score them
@@ -9378,7 +9395,7 @@ function doParseMessages() {
       ? bytes.map(b => String.fromCharCode(b)).join('') : chunkStr;   // detect on RAW bytes (encoding-aware recognizers)
     const p1Tokens = extractTokensFromMessage(best.fields, parseBytes, detectMsgType(p1DetectStr).type, best.ddlPath);
     S.messages      = [{ bytes: parseBytes, raw: chunk.text || chunk, timestamp: chunk.timestamp || null,
-      fields: best.fields, ddlPath: best.ddlPath, defName: S.scope.defName || null, byteCharMap,
+      fields: best.fields, ddlPath: best.ddlPath, defName: (_ovr && _ovr.defName) || null, byteCharMap,
       charStart, charEnd: charStart + chunkStr.length,
       tokens: p1Tokens, manualOverride: true, parsedBy: 'manual override',
       msgType: { type: 'USER', label: 'User' } }];
@@ -12348,9 +12365,12 @@ function updateBadges() {
 // ============================================================
 // DDL TREE MANAGEMENT
 // ============================================================
-function getDDLsForScope() {
-  if (!S.scope) return [];
-  const { type, vol, sv, name } = S.scope;
+// `scope` defaults to the tree selection; the override parse passes the ARMED
+// scope, so what parses no longer depends on what happens to be selected.
+function getDDLsForScope(scope) {
+  const _s = scope || S.scope;
+  if (!_s) return [];
+  const { type, vol, sv, name } = _s;
   const tree = S.ddlTree;
   const results = [];
   if (type === 'vol') {
@@ -12544,7 +12564,7 @@ function renderDDLTree() {
             const fileBadges = tknBadge + typeBadge + exclBadge + (!showDefSubNodes || !fileExp ? unresBadge + errBadge + warnBadge : '') + defCntBadge;
             const fileDblClick = showDefSubNodes && !fq && !isPending
               ? `ondblclick="event.stopPropagation();toggleTreeExp('${esc(fileKey)}')"` : '';
-            html += `<div class="tree-node${dSel}${dAnc}${pendCls}${fileExclCls}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick} ${fileDblClick}>
+            html += `<div class="tree-node${dSel}${dAnc}${pendCls}${fileExclCls}${isParseOverride(vol, sv, d) ? ' tree-ovr' : ''}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick} ${fileDblClick}>
               ${fileCaret}
               <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${fileBadges}
             </div>`;
@@ -12575,7 +12595,7 @@ function renderDDLTree() {
                 const defExclCls = defExcl ? ' tree-excl-node' : '';
                 const defExclBadge = defExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
                 const defBadges = defExclBadge + _dUnresBadge + _dErrBadge + _dWarnBadge;
-                html += `<div class="tree-node${defSel}${defExclCls}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
+                html += `<div class="tree-node${defSel}${defExclCls}${isParseOverride(vol, sv, d, defName) ? ' tree-ovr' : ''}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
                   <span class="tree-caret" style="visibility:hidden">−</span>
                   <span class="tree-def-lbl" title="Jump to DEF ${esc(defName)} in ${esc(d)}">${hi(defName)}</span>${defTknBadge}${defBadges}
                 </div>`;
@@ -13292,6 +13312,36 @@ function _cascadeInclude(vol, sv, name, defName, excludingKey) {
         if (dn.toUpperCase() !== defName.toUpperCase()) S.excl.add(_exclKey(vol, sv, name, dn));
   }
 }
+// ── Manual override: the DDL armed for parsing ──────────────────────────────
+// Mirrors the exclusion vocabulary: "Exclude from auto-detect" keeps a DDL out of
+// detection; this puts one deliberately in charge of it.
+function _ovrKey(vol, sv, name, defName) {
+  return [vol, sv, name, defName].filter(Boolean).join('/').toUpperCase();
+}
+function isParseOverride(vol, sv, name, defName) {
+  const o = S.parseOverride;
+  if (!o) return false;
+  return _ovrKey(o.vol, o.sv, o.name, o.defName) === _ovrKey(vol, sv, name, defName);
+}
+// The armed scope, or null. Every "should this parse be an override" test asks
+// this — there is one answer, in one place.
+function parseOverrideScope() {
+  const o = S.parseOverride;
+  if (!o) return null;
+  // The DDL may have been deleted or renamed since it was armed.
+  if (!S.ddlTree?.[o.vol]?.[o.sv]?.[o.name]) { S.parseOverride = null; return null; }
+  return o;
+}
+function toggleParseOverride(type, vol, sv, name, defName) {
+  const on = isParseOverride(vol, sv, name, defName);
+  S.parseOverride = on ? null : { type, vol, sv, name, defName: defName || null };
+  const path = [vol, sv, name, defName].filter(Boolean).join('/');
+  flash(on ? `Override off — parsing follows the parse spec again`
+           : `Override on — every Parse uses ${path}`, on ? 'ok' : 'warn');
+  if (typeof renderTree === 'function') renderTree();
+  if (typeof syncParseBtn === 'function') syncParseBtn();
+}
+
 function toggleExclusion(vol, sv, name, defName) {
   const key = _exclKey(vol, sv, name, defName);
   const wasDirectlyExcluded = S.excl.has(key);
@@ -13724,6 +13774,15 @@ function buildCtxMenu(e) {
       items.push({ icon: '⬆', label: 'Export…', fn: () => ctxExport(vol, sv, name) });
       items.push({ separator: true });
       items.push({ icon: '✎', label: 'Rename…',    fn: () => ctxRenameDdl(vol, sv, name) });
+      items.push({ separator: true });
+      // The opposite of "Exclude … from parsing": one DDL put deliberately in
+      // charge. Selecting a node no longer does this on its own, so opening a DDL
+      // to edit it cannot turn every Parse into an override.
+      items.push({ icon: isParseOverride(vol, sv, name, t === 'def' ? defName : null) ? '◉' : '▶',
+        label: isParseOverride(vol, sv, name, t === 'def' ? defName : null)
+          ? 'Stop using for parsing (override)'
+          : 'Use for parsing (override)',
+        fn: () => toggleParseOverride(t, vol, sv, name, t === 'def' ? defName : null) });
       items.push({ separator: true });
       if (t === 'def' && defName) {
         items.push({ icon: isExcluded(vol, sv, name, defName) ? '◎' : '⊘', label: isExcluded(vol, sv, name, defName) ? 'Include DEF in parsing' : 'Exclude DEF from parsing', fn: () => toggleExclusion(vol, sv, name, defName) });
@@ -14539,7 +14598,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.7.0.0';
+const APP_VERSION  = '1.8.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

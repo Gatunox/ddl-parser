@@ -167,6 +167,10 @@ _t.meTestFieldTable   = _meTestFieldTable;
 _t.meOvEffectiveLen   = _meOvEffectiveLen;
 _t.meCanonSet         = _meCanonSet;
 _t.netardExtractBytes = _netardExtractBytes;
+_t.isParseOverride    = isParseOverride;
+_t.parseOverrideScope = parseOverrideScope;
+_t.toggleParseOverride= toggleParseOverride;
+_t.getDDLsForScope    = getDDLsForScope;
 _t.detectNetardFmt    = _detectNetardFmt;
 _t.meVlgLenMap        = _meVlgLenMap;
 _t.meRowsForOverride  = _meRowsForOverride;
@@ -202,7 +206,8 @@ const {
   meWalkDEFields: _rawWalkDEFields,
   renderFieldTable, meTestFieldTable, meOvEffectiveLen, expMsgLines, expWrapCell,
   meCanonSet, meVlgLenMap, meRowsForOverride, meNextSelection,
-  netardExtractBytes, detectNetardFmt, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
+  netardExtractBytes, detectNetardFmt, isParseOverride, parseOverrideScope,
+  toggleParseOverride, getDDLsForScope, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
 
 // A spec reaches the engine only after the app has loaded it, and loading folds
@@ -4177,6 +4182,83 @@ test('the Test panel and Parse Results report the same problems', () => {
 // Samples are the ones from test/Message-Tests/Message Formats.txt, inlined
 // because test/ is gitignored (TODO item 5) and a test may not depend on a file
 // that exists on one machine.
+
+// ── Manual override is armed deliberately, not by selecting a DDL ───────────
+// Reported as a design flaw, not a bug: authoring a DDL field by field meant the
+// DDL was selected in the tree, and selecting it WAS arming override — so every
+// Parse ignored the parse spec until the selection was cleared by hand. One
+// gesture was doing two unrelated jobs, and the one you did not mean won.
+
+console.log('\nmanual override is armed deliberately');
+
+function ovrReset() {
+  S.ddlTree = { V: { S: { D: 'DEF R.\n  02 AA PIC X(2).\nEND R.\n' },
+                     T: { U: 'DEF Q.\n  02 BB PIC X(2).\nEND Q.\n' } } };
+  S.parseOverride = null;
+  S.scope = null;
+}
+
+test('selecting a DDL does not arm override', () => {
+  ovrReset();
+  S.scope = { type: 'ddl', vol: 'V', sv: 'S', name: 'D' };
+  eq(parseOverrideScope(), null, 'a selected DDL is not an armed one');
+});
+
+test('arming is explicit, and names the DDL it armed', () => {
+  ovrReset();
+  toggleParseOverride('ddl', 'V', 'S', 'D');
+  const o = parseOverrideScope();
+  assert.ok(o, 'armed');
+  eq(`${o.vol}/${o.sv}/${o.name}`, 'V/S/D', 'the armed path');
+  assert.ok(isParseOverride('V', 'S', 'D'), 'and the tree can mark it');
+  assert.ok(!isParseOverride('V', 'T', 'U'), 'without marking any other');
+});
+
+test('arming the same DDL again disarms it', () => {
+  ovrReset();
+  toggleParseOverride('ddl', 'V', 'S', 'D');
+  toggleParseOverride('ddl', 'V', 'S', 'D');
+  eq(parseOverrideScope(), null, 'toggled off');
+});
+
+test('arming a second DDL replaces the first — only one is ever in charge', () => {
+  ovrReset();
+  toggleParseOverride('ddl', 'V', 'S', 'D');
+  toggleParseOverride('ddl', 'V', 'T', 'U');
+  eq(parseOverrideScope().name, 'U', 'the newer one');
+  assert.ok(!isParseOverride('V', 'S', 'D'), 'and the older is released');
+});
+
+test('an armed DDL that no longer exists disarms itself', () => {
+  // Deleting or renaming the armed DDL must not leave a parse pointed at nothing.
+  ovrReset();
+  toggleParseOverride('ddl', 'V', 'S', 'D');
+  delete S.ddlTree.V.S.D;
+  eq(parseOverrideScope(), null, 'it releases rather than pointing at a gap');
+  eq(S.parseOverride, null, 'and clears the stored value');
+});
+
+test('the override parse reads the ARMED ddl, not the selected one', () => {
+  // The whole point: what parses no longer depends on what is open in the editor.
+  ovrReset();
+  toggleParseOverride('ddl', 'V', 'T', 'U');       // armed
+  S.scope = { type: 'ddl', vol: 'V', sv: 'S', name: 'D' };   // merely selected
+  const armed = getDDLsForScope(parseOverrideScope()).map(x => x.path).join(',');
+  eq(armed, 'V/T/U', 'the armed DDL is what parses');
+  const sel = getDDLsForScope().map(x => x.path).join(',');
+  eq(sel, 'V/S/D', 'while the selection still drives the editor');
+});
+
+test('every override decision asks the armed scope, not the tree selection', () => {
+  // Source tripwire: three call sites decided this independently, all by testing
+  // S.scope.type. One of them left behind would bring the trap back for that flow.
+  const dispatch = APP_SRC.slice(APP_SRC.indexOf('isFupCopyLog(msgText)'),
+                                 APP_SRC.indexOf('function _runP1Parse'));
+  assert.ok(!/S\.scope\?\.type === 'ddl'/.test(dispatch),
+    `no dispatch path arms override from the selection:\n${dispatch.slice(0, 400)}`);
+  eq((dispatch.match(/parseOverrideScope\(\)/g) || []).length >= 3, true,
+     'all three flows ask the same question');
+});
 
 console.log('\nNETARD formats map each byte to its own characters');
 

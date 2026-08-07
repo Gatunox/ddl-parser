@@ -4249,6 +4249,32 @@ test('the override parse reads the ARMED ddl, not the selected one', () => {
   eq(sel, 'V/S/D', 'while the selection still drives the editor');
 });
 
+test('nothing still tells the user that SELECTING a DDL overrides', () => {
+  // The help and four hints all said "select a DDL in the tree and press Parse".
+  // That instruction is now wrong, and it is the exact habit that caused the
+  // false positives — documentation that teaches the trap.
+  const stale = [...html.matchAll(/select a DDL[\s\S]{0,90}?(manual override|▶ Parse)/gi)].map(m => m[0]);
+  assert.deepStrictEqual(stale.map(String), [],
+    `these still describe the old behaviour:\n${stale.join('\n')}`);
+  // And the new gesture is named where the old one was.
+  assert.ok((html.match(/Use for parsing \(override\)/g) || []).length >= 4,
+    'the arming gesture is named in the help and the hints');
+});
+
+test('arming repaints the tree immediately, via a function that exists', () => {
+  // The marker appeared only after a later click: the toggle called renderTree(),
+  // which does not exist — the renderer is renderDDLTree — and the `typeof`
+  // guard turned that typo into silence rather than an error.
+  const fn = psFnSource('toggleParseOverride');
+  const calls = [...fn.matchAll(/typeof (\w+) === 'function'\)\s*(\w+)\(/g)];
+  assert.ok(calls.length >= 2, `it refreshes the surfaces: ${fn}`);
+  for (const [, guarded, called] of calls) {
+    eq(guarded, called, 'the guard checks the same name it calls');
+    assert.ok(new RegExp(`function ${called}\\b`).test(APP_SRC),
+      `${called}() is a real function — a guarded call to a missing one is silent`);
+  }
+});
+
 test('the armed marker survives the cascade and does not rely on text colour', () => {
   // First attempt coloured the ROW; .tree-ddl-lbl / .tree-def-lbl set their own
   // colour and won, so only the ▶ glyph changed — the same specificity trap that

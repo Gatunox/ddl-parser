@@ -9275,7 +9275,7 @@ function doParseMessages() {
     const _fupRecs = parseFupCopyLog(msgText);
     const _anyFileSpec = _fupRecs.some(r => detectMsgType(r.rawMsg, { filename: r.filePath })?.kind === 'file');
     if (_anyFileSpec) { doFupCopyLog(msgText); return; }
-    flash('FUP COPY: select a DDL to parse this file — or define a File detection for it in the Data Editor', 'error');
+    flash('FUP COPY: right-click a DDL and choose "Use for parsing (override)" — or define a File detection for it in the Data Editor', 'error');
     return;
   }
 
@@ -9654,7 +9654,7 @@ function doParseMessages() {
             // Warn about unknown-type messages that could not be auto-detected
             const unkIdxs = finalParsed.map((m, i) => m.unknownType ? i + 1 : null).filter(Boolean);
             if (unkIdxs.length === 1 && finalParsed.length === 1) {
-              setTimeout(() => flash('Unknown message type \u2014 create a Data Detection rule or select a DDL in the tree and press \u25b6 Parse for manual override.', 'warn'), 300);
+              setTimeout(() => flash('Unknown message type \u2014 create a Data Detection rule, or right-click a DDL in the tree and choose "Use for parsing (override)".', 'warn'), 300);
             } else if (unkIdxs.length) {
               setTimeout(() => flash(`Message(s) at position(s) ${unkIdxs.join(', ')}: unknown type \u2014 create Data Detection rules to recognize them.`, 'warn'), 300);
             }
@@ -10869,11 +10869,11 @@ function renderFieldTable(msg) {
           }
           return `<table class="diag-table">${rows.join('')}</table>`;
         })() : ''}
-        <div style="margin-top:8px">${msg.noParseSpec ? `${msg.recNo ? `Record #${msg.recNo}: define` : 'Define'} a <strong>Parse Spec</strong> for <strong>${_escH(msg._diag?.typeLabel || '')}</strong> in the <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Editor</span> — or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.`
-            : msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule to recognize this message.` : 'Create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule for this message, or select a DDL in the tree and press <strong>▶ Parse</strong> for manual override.')
-            : (msg.isNetard && msg.noMatchDDL) ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again to apply it to this record.'
-            : msg.noMatchDDL  ? 'Load a matching DDL or use Manual Override: select a DDL in the tree and press <strong>▶ Parse</strong>.'
-            : msg.isNetard    ? 'Select a DDL scope in the tree and click <strong>▶ Parse</strong> again.'
+        <div style="margin-top:8px">${msg.noParseSpec ? `${msg.recNo ? `Record #${msg.recNo}: define` : 'Define'} a <strong>Parse Spec</strong> for <strong>${_escH(msg._diag?.typeLabel || '')}</strong> in the <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Editor</span> — or right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.`
+            : msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule to recognize this message.` : 'Create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule for this message, or right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.')
+            : (msg.isNetard && msg.noMatchDDL) ? 'right-click a DDL in the tree and choose <strong>Use for parsing (override)</strong>, then click <strong>▶ Parse</strong> again to apply it to this record.'
+            : msg.noMatchDDL  ? 'Load a matching DDL, or use manual override: right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.'
+            : msg.isNetard    ? 'right-click a DDL in the tree and choose <strong>Use for parsing (override)</strong>, then click <strong>▶ Parse</strong> again.'
             : 'Check your DDL definition.'}</div>
        </div>`;
 
@@ -13353,7 +13353,7 @@ function toggleParseOverride(type, vol, sv, name, defName) {
   const path = [vol, sv, name, defName].filter(Boolean).join('/');
   flash(on ? `Override off — parsing follows the parse spec again`
            : `Override on — every Parse uses ${path}`, on ? 'ok' : 'warn');
-  if (typeof renderTree === 'function') renderTree();
+  if (typeof renderDDLTree === 'function') renderDDLTree();
   if (typeof syncParseBtn === 'function') syncParseBtn();
 }
 
@@ -14613,7 +14613,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.8.1.0';
+const APP_VERSION  = '1.8.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25471,7 +25471,7 @@ function _meSave() {
             </ul>
             <p style="margin:8px 0 4px"><strong>When ▶ Parse runs:</strong></p>
             <ol style="padding-left:18px;margin:0">
-              <li style="margin-bottom:6px"><strong>Manual override</strong> — if a DDL node is selected in the tree (single message, or a FUP COPY file capture), that DDL is used exclusively: <em>no identification, no recognizers, no parse-spec run</em>. The input is parsed strictly per the selected DDL, element by element, once. The <span style="font-family:var(--font-mono);font-size:10px;background:var(--bg-input);padding:1px 3px;border-radius:2px">USER</span> badge shows in results and the progress overlay prints the amber <em>Manual override mode — Identify · Recognizers · Parse-specs — not used</em> notice.</li>
+              <li style="margin-bottom:6px"><strong>Manual override</strong> — a DDL is used for parsing only when you <strong>arm</strong> it: right-click the DDL or DEF in the tree and choose <strong>Use for parsing (override)</strong>. The armed node turns amber with a <span style="color:#e6a817">▶</span>; right-click again (or arm another) to release it. Merely <em>selecting</em> a DDL does not arm anything, so a DDL open for editing never changes what Parse does. Arming is not remembered across reloads. While armed (single message, or a FUP COPY file capture), that DDL is used exclusively: <em>no identification, no recognizers, no parse-spec run</em>. The input is parsed strictly per the selected DDL, element by element, once. The <span style="font-family:var(--font-mono);font-size:10px;background:var(--bg-input);padding:1px 3px;border-radius:2px">USER</span> badge shows in results and the progress overlay prints the amber <em>Manual override mode — Identify · Recognizers · Parse-specs — not used</em> notice.</li>
               <li style="margin-bottom:6px"><strong>Detection → bound DDL.</strong> The recognizers run. If a type matches <em>and</em> it has a DDL binding, that bound DDL is used directly — compiled only if its content changed, then scored once. If the bound DDL scores below <strong>95%</strong>, an amber <span style="color:#f39c12">⚠</span> line flags it so you can verify the binding is right.</li>
               <li style="margin-bottom:6px"><strong>DDL scoring.</strong> When nothing matches, or a matched type has no binding, candidate DDLs are compiled and scored. The score blends <em>accuracy</em> — per-byte type validity, with hard errors weighted 1.0 and soft type mismatches 0.7 — and <em>coverage</em> (bytes consumed ÷ message length), so a DDL that both fits the bytes and explains most of the message wins:
                 <ul style="padding-left:14px;margin:4px 0 0;font-size:10.5px">

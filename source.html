@@ -7162,6 +7162,17 @@ function parseMessage(bytes, defs, rawBytes) {
     if (!spec || typeof spec !== 'object') return spec;
     if (!spec.overrides || typeof spec.overrides !== 'object' || Array.isArray(spec.overrides))
       spec.overrides = {};
+    // Keys are CANONICAL — GRP.AA, not GRP[01].AA. Every reader canonicalises the
+    // row id before looking one up, so a key that kept its occurrence label is
+    // found by nobody: the table shows no marker AND the parse ignores it, while
+    // the overrides list still displays it as configured. Normalise on load, so a
+    // hand-edited or imported map behaves like one the action bar wrote.
+    for (const id of Object.keys(spec.overrides)) {
+      const canon = _canonFieldId(id);
+      if (canon === id) continue;
+      spec.overrides[canon] = Object.assign({}, spec.overrides[canon], spec.overrides[id]);
+      delete spec.overrides[id];
+    }
     const _ovEnt = id => (spec.overrides[id] || (spec.overrides[id] = {}));
     if (Array.isArray(spec.field_overrides)) {
       for (const fo of spec.field_overrides) {
@@ -14501,7 +14512,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.6.0.0';
+const APP_VERSION  = '1.6.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19181,7 +19192,7 @@ function _meFmRowHtml(row, ctx, counter) {
     // A plain field marked as a length source — the general rule, which needs no
     // group at all. Checked first: this is an explicit choice, not a deduction.
     const _selfVlg = ctx.foByField.get(_canonFieldId(row.id))?.vlg === true;
-    if (_selfVlg && !isGroup) {
+    if (_selfVlg) {
       vlgCell = `<td class="me-fm-vlg" title="${ea('This field\'s value is the next field\'s length')}">`
               + `<span class="me-fm-vlg-src">VLG</span></td>`;
     } else if (vlgEligible) {

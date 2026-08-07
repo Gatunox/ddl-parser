@@ -166,6 +166,7 @@ _t.renderFieldTable   = renderFieldTable;
 _t.meTestFieldTable   = _meTestFieldTable;
 _t.meOvEffectiveLen   = _meOvEffectiveLen;
 _t.meCanonSet         = _meCanonSet;
+_t.meVlgLenMap        = _meVlgLenMap;
 _t.meRowsForOverride  = _meRowsForOverride;
 _t.meNextSelection    = _meNextSelection;
 _t.expMsgLines        = _expMsgLines;
@@ -198,7 +199,7 @@ const {
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
   meWalkDEFields: _rawWalkDEFields,
   renderFieldTable, meTestFieldTable, meOvEffectiveLen, expMsgLines, expWrapCell,
-  meCanonSet, meRowsForOverride, meNextSelection, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
+  meCanonSet, meVlgLenMap, meRowsForOverride, meNextSelection, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
 
 // A spec reaches the engine only after the app has loaded it, and loading folds
@@ -4246,6 +4247,106 @@ test('the lint warns when "fields" makes from/until dead', () => {
   assert.ok(!/no effect while/.test(w2), `not flagged when it does work: ${w2}`);
 });
 
+// ── EVERY override kind, on EVERY row shape, across all three surfaces ──────
+// Asked directly: why is there no test that walks all the overrides and checks
+// they behave? There wasn't one, and that is why the same defect kept arriving in
+// a new costume — canonical key vs occurrence-labelled row id broke the DE cell,
+// then the list highlight, then the VLG marker, each reported separately.
+//
+// This is the matrix. For each override kind it asserts the three surfaces agree:
+// the stored key, the table cell, and the parse. A regression in any one of them
+// fails here rather than being found by hand weeks later.
+
+console.log('\nevery override kind, on every row shape');
+
+const MTX_DDL = `DEF R.
+  02 HDR PIC X(4).
+  02 GRP.
+    04 AA PIC X(2).
+    04 BB PIC X(4).
+  02 REP OCCURS 2 TIMES.
+    04 CC PIC X(2).
+    04 DD PIC X(4).
+END R.
+`;
+// One plain field, one field inside a plain group, one inside an OCCURS group —
+// the three id shapes that exist. The last is the one that kept breaking.
+const MTX_ROWS = [
+  { label: 'plain field',    row: 'HDR',         key: 'HDR' },
+  { label: 'in a group',     row: 'GRP.AA',      key: 'GRP.AA' },
+  { label: 'in an OCCURS',   row: 'REP[01].CC',  key: 'REP.CC' },
+  { label: 'OCCURS group',   row: 'REP[01]',     key: 'REP' },
+];
+function mtxCtx(overrides) {
+  S.ddlTree = { V: { S: { D: MTX_DDL } } };
+  const item = { ddl_bindings: ['V/S/D/R'], overrides };
+  const rows = meWalkDEFields(getDDLFromPath('V/S/D/R').defs, item);
+  const fo = new Map();
+  for (const id in overrides) fo.set(id, overrides[id]);
+  return { rows, item,
+    ctx: { ea: x => String(x), vlgMap: meVlgLenMap(item), foByField: fo,
+           usesBitmapFields: true, leavesByGroup: new Map() } };
+}
+const mtxCell = (html, col) => {
+  const m = html.match(new RegExp(`<td class="me-fm-${col}[^"]*"[^>]*>(.*?)</td>`));
+  return m ? m[1].replace(/<[^>]+>/g, '').trim() : '(no cell)';
+};
+
+// Each kind: what to store, which column should show it, and what the cell must contain.
+const MTX_KINDS = [
+  { kind: 'type',    ovr: { type: 'hex-char' },  col: 'dt',  want: /hex-char/ },
+  { kind: 'display', ovr: { display: 'hex' },    col: 'dt',  want: /HEX/ },
+  { kind: 'bytes',   ovr: { bytes: 6 },          col: 'len', want: /6/ },
+  { kind: 'de',      ovr: { de: 7 },             col: 'de',  want: /7/ },
+  { kind: 'vlg',     ovr: { vlg: true },         col: 'vlg', want: /VLG/ },
+  { kind: 'de:false',    ovr: { de: false },      col: 'de',  want: /—/,        only: ['plain field', 'OCCURS group'] },
+  { kind: 'de:children', ovr: { de: 'children' }, col: 'de',  want: /children/, only: ['plain field', 'OCCURS group'] },
+];
+
+for (const shape of MTX_ROWS) {
+  for (const k of MTX_KINDS) {
+    if (k.only && !k.only.includes(shape.label)) continue;
+    test(`${k.kind} on a ${shape.label} shows in the table`, () => {
+      const { rows, ctx } = mtxCtx({ [shape.key]: k.ovr });
+      const row = rows.find(r => r.id === shape.row);
+      assert.ok(row, `the row exists: ${shape.row}`);
+      const html = meFmRowHtml(row, ctx, { n: 0 });
+      const cell = mtxCell(html, k.col);
+      assert.ok(k.want.test(cell),
+        `${shape.row} ${k.kind} → ${k.col} cell should match ${k.want}, got "${cell}"`);
+      assert.ok(/me-fm-has-ovr/.test(html), 'and the row is marked as overridden');
+    });
+  }
+}
+
+test('an override keyed with an occurrence label is normalised on load', () => {
+  // The reported case: VLG stored as REP[01].CC. Every reader canonicalises the
+  // ROW id but not the KEY, so nothing found it — the list showed it, the table
+  // did not, and the parse ignored it entirely.
+  const spec = { name: 'X', overrides: { 'REP[01].CC': { vlg: true } } };
+  migrateSpec(spec);
+  assert.deepStrictEqual(Object.keys(spec.overrides), ['REP.CC'],
+    `the key loses its occurrence label: ${JSON.stringify(spec.overrides)}`);
+  eq(spec.overrides['REP.CC'].vlg, true, 'and keeps what it configured');
+
+  // Proven through the surface that was wrong: the marker now renders.
+  const { rows, ctx } = mtxCtx(spec.overrides);
+  const cell = mtxCell(meFmRowHtml(rows.find(r => r.id === 'REP[01].CC'), ctx, { n: 0 }), 'vlg');
+  assert.ok(/VLG/.test(cell), `the table shows it, got "${cell}"`);
+});
+
+test('normalising a key MERGES rather than discarding', () => {
+  // Both forms present: neither setting may be lost.
+  const spec = { name: 'X', overrides: {
+    'REP.CC':     { type: 'hex-char' },
+    'REP[01].CC': { vlg: true },
+  } };
+  migrateSpec(spec);
+  assert.deepStrictEqual(Object.keys(spec.overrides), ['REP.CC'], 'one key survives');
+  eq(spec.overrides['REP.CC'].type, 'hex-char', 'the canonical entry is kept');
+  eq(spec.overrides['REP.CC'].vlg, true,        'and the labelled one is folded in');
+});
+
 console.log('\nthe overrides list and the table agree about OCCURS ids');
 
 const OCCSEL_DDL = `DEF R.
@@ -4905,6 +5006,7 @@ test('the DE-clear button clears the list and the panes, not only the table', ()
   assert.ok(/all\[id\]\.de !== undefined/.test(src),
     'the count covers the selection forms too, not only anchors');
 });
+
 
 
 

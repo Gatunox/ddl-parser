@@ -166,6 +166,8 @@ _t.renderFieldTable   = renderFieldTable;
 _t.meTestFieldTable   = _meTestFieldTable;
 _t.meOvEffectiveLen   = _meOvEffectiveLen;
 _t.meCanonSet         = _meCanonSet;
+_t.netardExtractBytes = _netardExtractBytes;
+_t.detectNetardFmt    = _detectNetardFmt;
 _t.meVlgLenMap        = _meVlgLenMap;
 _t.meRowsForOverride  = _meRowsForOverride;
 _t.meNextSelection    = _meNextSelection;
@@ -199,7 +201,8 @@ const {
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
   meWalkDEFields: _rawWalkDEFields,
   renderFieldTable, meTestFieldTable, meOvEffectiveLen, expMsgLines, expWrapCell,
-  meCanonSet, meVlgLenMap, meRowsForOverride, meNextSelection, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
+  meCanonSet, meVlgLenMap, meRowsForOverride, meNextSelection,
+  netardExtractBytes, detectNetardFmt, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
 } = sandbox._t;
 
 // A spec reaches the engine only after the app has loaded it, and loading folds
@@ -4165,6 +4168,128 @@ test('the Test panel and Parse Results report the same problems', () => {
 // nothing either, because its id set contains canonical forms and group prefixes
 // that the walk cannot match.
 
+// ── NETARD formats: every byte knows which characters produced it ───────────
+// Reported: highlighting a field in the Message Input pane was wrong for
+// NETARD-HEX / -ASCII / -EBCDIC / -OCTAL, and right for plain NETARD and
+// -HEXASCII. Only the hexascii branch tracked columns; every other branch pushed
+// bytes with no position, so the map fell back to "highlight the whole line".
+//
+// Samples are the ones from test/Message-Tests/Message Formats.txt, inlined
+// because test/ is gitignored (TODO item 5) and a test may not depend on a file
+// that exists on one machine.
+
+console.log('\nNETARD formats map each byte to its own characters');
+
+const netMk = ls => ls.map((content, i) => ({ content, charStart: i * 100, indent: 7 }));
+const NET_SAMPLES = {
+  hex: netMk([
+    'H-     0: F0 F8    F0 F0    82 20    00 00    80 00    00 00    04 00',
+    '       7: 00 00    00 00    00 00    F0 F3    F2 F0    F0 F8    F2 F2',
+    '      16: F0 F6    F0 F1    F0 F3    F8 F1    F1 F0    F9 F0    F0 F0',
+    '      25: F0 F0    F1 F2    F0 F5    F2 F7    F0 --',
+  ]),
+  octal: netMk([
+    '0-    0: 170370   170360   101040   000000   100000   000000   02200',
+    '      7: 000000   000000   000000   170363   171360   170370   171362',
+  ]),
+  ascii: netMk([
+    'A-    0:   p   x    p   p  STX      NUL NUL  NUL NUL  NUL NUL  EOT NUL',
+    '      7: NUL NUL  NUL NUL  NUL NUL    p   s    r   p    p   x    r   q',
+  ]),
+  ebcdic: netMk([
+    'E-    0:   0  8     0  0     b DS   NULNUL   80NUL   NULNUL    PFNUL',
+    '      7: NULNUL   NULNUL   NULNUL     0  3    2  0     0  8     2  1',
+  ]),
+};
+
+for (const fmt of Object.keys(NET_SAMPLES)) {
+  test(`${fmt}: every byte maps to characters, not to the whole line`, () => {
+    const r = netardExtractBytes(NET_SAMPLES[fmt], fmt);
+    assert.ok(r.bytes.length > 0, 'bytes were extracted');
+    const noCol = r.byteCol.filter(c => c < 0).length;
+    eq(noCol, 0, `${noCol} of ${r.bytes.length} bytes fell back to a whole-line highlight`);
+  });
+
+  test(`${fmt}: each span sits inside its line and is non-empty`, () => {
+    const r = netardExtractBytes(NET_SAMPLES[fmt], fmt);
+    for (let i = 0; i < r.bytes.length; i++) {
+      const line = NET_SAMPLES[fmt][r.lineIdx[i]].content;
+      const c = r.byteCol[i], w = r.byteWid[i];
+      assert.ok(w > 0, `byte ${i} has a width`);
+      assert.ok(c >= 0 && c + w <= line.length,
+        `byte ${i} span [${c},${c + w}) is inside a ${line.length}-char line`);
+      assert.ok(line.slice(c, c + w).trim() !== '',
+        `byte ${i} points at real text, got "${line.slice(c, c + w)}"`);
+    }
+  });
+}
+
+test('hex: the span is exactly the two characters of that byte', () => {
+  // The strongest form: re-read the text the map points at and get the byte back.
+  const r = netardExtractBytes(NET_SAMPLES.hex, 'hex');
+  for (let i = 0; i < r.bytes.length; i++) {
+    const line = NET_SAMPLES.hex[r.lineIdx[i]].content;
+    const txt  = line.slice(r.byteCol[i], r.byteCol[i] + r.byteWid[i]);
+    eq(parseInt(txt, 16), r.bytes[i], `byte ${i}: "${txt}" re-reads as itself`);
+  }
+});
+
+test('octal: a word span re-reads as the PAIR of bytes it produced', () => {
+  const r = netardExtractBytes(NET_SAMPLES.octal, 'octal');
+  for (let i = 0; i + 1 < r.bytes.length; i += 2) {
+    const line = NET_SAMPLES.octal[r.lineIdx[i]].content;
+    const txt  = line.slice(r.byteCol[i], r.byteCol[i] + r.byteWid[i]);
+    eq(r.byteCol[i], r.byteCol[i + 1], `bytes ${i}/${i + 1} share the word's characters`);
+    const v = parseInt(txt, 8);
+    eq((v >> 8) & 0xff, r.bytes[i],     `high byte of "${txt}"`);
+    eq(v & 0xff,        r.bytes[i + 1], `low byte of "${txt}"`);
+  }
+});
+
+test('a COMBINED H-/A-/E- record still maps each byte to its hex characters', () => {
+  // The multi-format shape from the samples file: three renderings interleaved,
+  // prefixes only on the first group. A single-format sample never reaches this
+  // branch, so dropping its columns passed the whole suite.
+  const rows = netMk([
+    'H-    0:  F0 F8    F0 F0    82 20    00 00    80 00    00 00    04 00',
+    'A-         p   x    p   p  STX      NUL NUL  NUL NUL  NUL NUL  EOT NUL',
+    'E-         0  8     0  0     b DS   NULNUL    80NUL   NULNUL    PFNUL',
+    '      7:  00 00    00 00    00 00    F0 F3    F2 F0    F0 F8    F2 F2',
+    '          NUL NUL  NUL NUL  NUL NUL   p   s    r   p    p   x    r   r',
+    '          NULNUL   NULNUL   NULNUL    0  3     2  0     0  8     2  2',
+  ]);
+  eq(detectNetardFmt(rows.map(r => r.content)), 'hex', 'the H- rows drive it');
+  const r = netardExtractBytes(rows, 'hex');
+  eq(r.byteCol.filter(c => c < 0).length, 0, 'no byte falls back to a whole-line highlight');
+  for (let i = 0; i < r.bytes.length; i++) {
+    const txt = rows[r.lineIdx[i]].content.slice(r.byteCol[i], r.byteCol[i] + r.byteWid[i]);
+    eq(parseInt(txt, 16), r.bytes[i], `byte ${i}: "${txt}" re-reads as itself`);
+  }
+  // And only the H- rows contributed — the A-/E- rows are the same bytes again.
+  const hexOnly = netardExtractBytes(NET_SAMPLES.hex, 'hex').bytes.slice(0, r.bytes.length);
+  assert.deepStrictEqual(r.bytes, hexOnly, 'the combined record decodes to the same bytes');
+});
+
+test('the char map uses each byte\'s own width, not a hardcoded 2', () => {
+  // The map is built inline in parseNetardLog, so this is a source check: an
+  // octal word is 6 characters and a control name 1..3, and assuming 2 would
+  // highlight a fragment of each.
+  const flush = APP_SRC.slice(APP_SRC.indexOf('Precise: map to the characters'),
+                              APP_SRC.indexOf('Fallback: highlight the entire'));
+  assert.ok(/byteWid\[i\]/.test(flush), `the entry width comes from byteWid: ${flush}`);
+  assert.ok(!/e: s \+ 2\b/.test(flush), 'and is not a hardcoded 2');
+});
+
+test('the four formats agree on the bytes they describe', () => {
+  // hex, octal and ebcdic are three renderings of one record — they must decode
+  // to the same bytes, which is what makes the column checks meaningful.
+  const b = f => netardExtractBytes(NET_SAMPLES[f], f).bytes.slice(0, 8);
+  const asHex = a => a.map(x => x.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+  eq(asHex(b('hex')),    'F0 F8 F0 F0 82 20 00 00', 'hex');
+  eq(asHex(b('octal')),  asHex(b('hex')),           'octal agrees');
+  eq(asHex(b('ebcdic')), asHex(b('hex')),           'ebcdic agrees');
+});
+
 console.log('\nread-ddl from/until resolve the way every other reference does');
 
 const UNTIL_DDL = `DEF R.
@@ -5006,6 +5131,7 @@ test('the DE-clear button clears the list and the panes, not only the table', ()
   assert.ok(/all\[id\]\.de !== undefined/.test(src),
     'the count covers the selection forms too, not only anchors');
 });
+
 
 
 

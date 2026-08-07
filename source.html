@@ -7472,24 +7472,32 @@ function _detectNetardFmt(lines) {
 }
 
 // Parse whitespace-delimited 2-hex-char tokens; stop at '--'
+// Each tokenizer returns {v, c, w} per byte — value, and the column/width of the
+// text that produced it, relative to the data string handed in. Without the
+// position the highlight can only light the whole line, which is what every
+// NETARD format except HEXASCII did.
 function _netardHexTokens(data) {
-  const bytes = [];
-  for (const t of data.split(/\s+/)) {
+  const out = [];
+  for (const m of data.matchAll(/\S+/g)) {
+    const t = m[0];
     if (t === '--' || t === '-') break;
-    if (/^[0-9A-Fa-f]{2}$/.test(t)) bytes.push(parseInt(t, 16));
+    if (/^[0-9A-Fa-f]{2}$/.test(t)) out.push({ v: parseInt(t, 16), c: m.index, w: 2 });
   }
-  return bytes;
+  return out;
 }
 
 // Convert octal token strings to bytes (byteMode=true → 3-digit each, else word=6-digit)
+// `toks` is [{t, c}] — token text and its column. A word-mode token yields TWO
+// bytes, and both point at the same 6 characters: that IS the text they came from.
 function _netardOctalTokens(toks, byteMode) {
-  const bytes = [];
-  for (const t of toks) {
+  const out = [];
+  for (const { t, c } of toks) {
     const v = parseInt(t, 8);
-    if (byteMode) { bytes.push(v & 0xFF); }
-    else          { bytes.push((v >> 8) & 0xFF); bytes.push(v & 0xFF); }
+    if (byteMode) out.push({ v: v & 0xFF, c, w: t.length });
+    else { out.push({ v: (v >> 8) & 0xFF, c, w: t.length });
+           out.push({ v: v & 0xFF,        c, w: t.length }); }
   }
-  return bytes;
+  return out;
 }
 
 // Parse A- / E- character-representation data back to raw bytes
@@ -7506,13 +7514,13 @@ function _netardCtrlData(data, ctrlMap, isEbcdic) {
       let found = false;
       for (const k of keys) {
         if (data.slice(i, i + k.length).toUpperCase() === k) {
-          bytes.push(ctrlMap[k]); i += k.length; found = true; break;
+          bytes.push({ v: ctrlMap[k], c: i, w: k.length }); i += k.length; found = true; break;
         }
       }
       if (found) continue;
       // Bare 2-hex-char token for non-standard bytes (e.g. "80", "3E")
       if (i + 2 <= data.length && /^[0-9A-Fa-f]{2}$/.test(data.slice(i, i + 2))) {
-        bytes.push(parseInt(data.slice(i, i + 2), 16)); i += 2; continue;
+        bytes.push({ v: parseInt(data.slice(i, i + 2), 16), c: i, w: 2 }); i += 2; continue;
       }
     } else {
       // A- format: longest-match with word-boundary guard (names are space-separated)
@@ -7521,7 +7529,7 @@ function _netardCtrlData(data, ctrlMap, isEbcdic) {
         if (data.slice(i, i + k.length).toUpperCase() === k) {
           const after = data[i + k.length];
           if (!after || !/[A-Za-z0-9]/.test(after)) {
-            bytes.push(ctrlMap[k]); i += k.length; found = true; break;
+            bytes.push({ v: ctrlMap[k], c: i, w: k.length }); i += k.length; found = true; break;
           }
         }
       }
@@ -7529,7 +7537,7 @@ function _netardCtrlData(data, ctrlMap, isEbcdic) {
     }
     // Single printable character
     const ch = data.charCodeAt(i);
-    bytes.push(isEbcdic ? (_ASCII_TO_EBCDIC[ch] ?? 0x3F) : (ch & 0xFF));
+    bytes.push({ v: isEbcdic ? (_ASCII_TO_EBCDIC[ch] ?? 0x3F) : (ch & 0xFF), c: i, w: 1 });
     i++;
   }
   return bytes;
@@ -7539,20 +7547,26 @@ function _netardCtrlData(data, ctrlMap, isEbcdic) {
 // fmtLines: [{ content, charStart, indent }, ...]
 // Returns { bytes: number[], lineIdx: number[] }
 function _netardExtractBytes(fmtLines, fmt) {
-  const bytes = [], lineIdx = [], byteCol = [];
-  // col=-1 → fall back to full-line range in bcm; ≥0 → precise 2-char hex position
-  const add = (bs, li, cols) => {
-    for (let k = 0; k < bs.length; k++) {
-      bytes.push(bs[k]); lineIdx.push(li);
-      byteCol.push(cols ? cols[k] : -1);
+  const bytes = [], lineIdx = [], byteCol = [], byteWid = [];
+  // col=-1 → fall back to the whole-line range in bcm; ≥0 → the exact characters
+  // that produced the byte, `byteWid` wide. Items are {v,c,w}; plain numbers are
+  // still accepted and land on the fallback.
+  const add = (items, li, dataOff = 0) => {
+    for (const it of items) {
+      if (typeof it === 'number') { bytes.push(it); lineIdx.push(li); byteCol.push(-1); byteWid.push(0); }
+      else { bytes.push(it.v); lineIdx.push(li); byteCol.push(dataOff + it.c); byteWid.push(it.w); }
     }
   };
   const lines = fmtLines.map(f => f.content);
-  const _afterColon = (s, fbRe) => {
+  // Returns the data AND where it starts in the line, so a column measured inside
+  // the data can be turned into a column inside the line.
+  const _afterColonAt = (s, fbRe) => {
     const ci = s.indexOf(':');
-    if (ci >= 0) { let p = ci + 1; while (p < s.length && s[p] === ' ') p++; return s.slice(p); }
-    return fbRe ? s.replace(fbRe, '') : s;
+    if (ci >= 0) { let p = ci + 1; while (p < s.length && s[p] === ' ') p++; return { text: s.slice(p), off: p }; }
+    if (fbRe) { const m = s.match(fbRe); return m ? { text: s.slice(m[0].length), off: m[0].length } : { text: s, off: 0 }; }
+    return { text: s, off: 0 };
   };
+  const _afterColon = (s, fbRe) => _afterColonAt(s, fbRe).text;
 
   if (fmt === 'hex') {
     // Detect the initial labeled block to find pattern width and H- position.
@@ -7569,11 +7583,11 @@ function _netardExtractBytes(fmtLines, fmt) {
 
     if (width > 1 && hPos >= 0) {
       // ── Multi-format: extract only H- rows ───────────────────────────────
-      add(_netardHexTokens(_afterColon(lines[hPos], /^H-\s+/i)), hPos);
+      { const d = _afterColonAt(lines[hPos], /^H-\s+/i); add(_netardHexTokens(d.text), hPos, d.off); }
       for (let g = width; g < lines.length; g += width) {
         const li = g + hPos;
         if (li >= lines.length) break;
-        add(_netardHexTokens(_afterColon(lines[li])), li);
+        { const d = _afterColonAt(lines[li]); add(_netardHexTokens(d.text), li, d.off); }
       }
     } else {
       // ── Single H- format: original logic ─────────────────────────────────
@@ -7582,13 +7596,14 @@ function _netardExtractBytes(fmtLines, fmt) {
         const l = lines[i];
         if (/^H-\s/i.test(l)) {
           active = true;
-          add(_netardHexTokens(_afterColon(l, /^H-\s+/i)), i);
+          { const d = _afterColonAt(l, /^H-\s+/i); add(_netardHexTokens(d.text), i, d.off); }
         } else if (/^[A-Za-z]-\s/i.test(l)) {
           /* other format prefix — skip */
         } else if (active && l.includes(':')) {
-          const data = _afterColon(l);
+          const d = _afterColonAt(l);
+          const data = d.text;
           if (/^[0-9A-Fa-f]{2}[\s-]/.test(data) || /^[0-9A-Fa-f]{2}$/.test(data.split(/\s/)[0])) {
-            add(_netardHexTokens(data), i);
+            add(_netardHexTokens(data), i, d.off);
           }
         }
       }
@@ -7622,15 +7637,19 @@ function _netardExtractBytes(fmtLines, fmt) {
     let active = false, byteMode = null;
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
+      // Tokens carry their column. The '--' end marker is blanked in place rather
+      // than removed, so every remaining column still matches the printed line.
+      const octToks = str => [...str.replace(/-/g, ' ').matchAll(/[0-7]{3,6}/g)]
+        .map(m => ({ t: m[0], c: m.index }));
       if (/^0-\s/i.test(l)) {
         active = true;
-        const data = _afterColon(l, /^0-\s+/i).replace(/--+/g, ' ').trimStart();
-        const toks = data.split(/\s+/).filter(t => /^[0-7]{3,6}$/.test(t));
-        if (byteMode === null && toks.length) byteMode = toks[0].length <= 3;
-        add(_netardOctalTokens(toks, byteMode), i);
+        const d = _afterColonAt(l, /^0-\s+/i);
+        const toks = octToks(d.text);
+        if (byteMode === null && toks.length) byteMode = toks[0].t.length <= 3;
+        add(_netardOctalTokens(toks, byteMode), i, d.off);
       } else if (active && l.includes(':')) {
-        const data = _afterColon(l).replace(/--+/g, ' ').trimStart();
-        add(_netardOctalTokens(data.split(/\s+/).filter(t => /^[0-7]{3,6}$/.test(t)), byteMode), i);
+        const d = _afterColonAt(l);
+        add(_netardOctalTokens(octToks(d.text), byteMode), i, d.off);
       } else if (/^[A-Za-z]-\s/i.test(l)) { active = false; }
     }
   } else {
@@ -7644,15 +7663,15 @@ function _netardExtractBytes(fmtLines, fmt) {
       const l = lines[i];
       if (pfxRe.test(l)) {
         active = true;
-        add(_netardCtrlData(_afterColon(l, pfxFbRe), ctrl, isEbcdic), i);
+        { const d = _afterColonAt(l, pfxFbRe); add(_netardCtrlData(d.text, ctrl, isEbcdic), i, d.off); }
       } else if (active && l.includes(':')) {
-        add(_netardCtrlData(_afterColon(l), ctrl, isEbcdic), i);
+        { const d = _afterColonAt(l); add(_netardCtrlData(d.text, ctrl, isEbcdic), i, d.off); }
       } else if (/^[A-Za-z]-\s/i.test(l)) {
         if (!pfxRe.test(l)) active = false;
       }
     }
   }
-  return { bytes, lineIdx, byteCol };
+  return { bytes, lineIdx, byteCol, byteWid };
 }
 
 function isNetardLog(text) {
@@ -7823,7 +7842,7 @@ function parseNetardLog(text) {
       // ── Formatted output (H-, A-, E-, 0-, HEXASCII) ─────────────────────────
       const fmt = _detectNetardFmt(cur._fmtLines.map(f => f.content));
       cur.netardFmt = fmt;
-      const { bytes, lineIdx, byteCol } = _netardExtractBytes(cur._fmtLines, fmt);
+      const { bytes, lineIdx, byteCol, byteWid } = _netardExtractBytes(cur._fmtLines, fmt);
       rawMsg = bytes.map(b => String.fromCharCode(b)).join('');
       // Compute each byte's 0-based index within its line (bytes are pushed L→R per line)
       const lineByteCnt = new Map();
@@ -7836,9 +7855,10 @@ function parseNetardLog(text) {
         if (li !== undefined && li < cur._fmtLines.length) {
           const fl = cur._fmtLines[li];
           if (byteCol[i] >= 0) {
-            // Precise: map to the 2-char hex representation of this byte
+            // Precise: map to the characters that produced this byte — 2 for hex,
+            // 3 or 6 for octal, 1..3 for a control name like NUL.
             const s = fl.charStart + fl.indent + byteCol[i];
-            const entry = { s, e: s + 2 };
+            const entry = { s, e: s + (byteWid[i] || 2) };
             // Also map to the ASCII bracket character [N] for hexascii lines
             const bracketOff = fl.content.indexOf('[');
             if (bracketOff >= 0) {
@@ -14519,7 +14539,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.6.2.0';
+const APP_VERSION  = '1.7.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -4311,6 +4311,87 @@ test('hovering a field with an absurd span does not lock the tab', () => {
 // field at a time, and read-to-end returns a single blob rather than DDL fields.
 // So there was no way to say "keep walking the DDL from here".
 
+// ── repeat: OCCURS is the ceiling, and the count cannot be negative ─────────
+// Reported: a SIZE holding 01000000 asked for sixteen million iterations. Each
+// one past the last occurrence pushed an error row, so the tab stopped responding
+// before the parse could finish being wrong. A count read off the wire is data,
+// and data can be wrong — the DDL says how many occurrences exist.
+
+console.log('\nrepeat is bounded by the OCCURS it reads');
+
+const REP_DDL = `DEF R.
+  02 SIZE PIC X(8).
+  02 GRP OCCURS 3 TIMES.
+    04 GA PIC X(2).
+  02 TAIL PIC X(2).
+END R.
+`;
+function repRun(sizeText) {
+  S.ddlTree = { V: { S: { D: REP_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([
+    ...sizeText.padEnd(8, '0').slice(0, 8).split('').map(c => c.charCodeAt(0)),
+    ...Array.from({ length: 3 * 2 }, (_, i) => 0x61 + i),
+    0x54, 0x4c,
+  ]);
+  const t0 = Date.now();
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: [{ read: 'SIZE' },
+                        { repeat: { count: 'SIZE', body: [{ read: 'GRP' }] } }] }, bytes);
+  return { ctx, ms: Date.now() - t0,
+           reads: ctx.fields.filter(f => /^GRP/.test(f.id) && !f.error).length,
+           errs: ctx.fields.filter(f => f.error) };
+}
+
+
+test('a count within the declared OCCURS runs exactly that many times', () => {
+  eq(repRun('00000002').reads, 2, 'SIZE 2 reads two occurrences');
+  eq(repRun('00000002').errs.length, 0, 'and says nothing');
+  eq(repRun('00000003').reads, 3, 'SIZE 3 reads all three');
+});
+
+test('a count ABOVE the declared OCCURS is capped and reported', () => {
+  const { reads, errs } = repRun('01000000');           // the reported value
+  eq(reads, 3, `OCCURS 3 is the ceiling — got ${reads} reads`);
+  const err = errs.find(e => /OCCURS is the ceiling/.test(e.error));
+  assert.ok(err, `it says so, got: ${JSON.stringify(errs)}`);
+  assert.ok(/read as 3/.test(err.error), 'naming what it actually did');
+});
+
+test('sixteen million iterations do not lock the tab', () => {
+  // The reported symptom. Unbounded this pushes an error row per iteration.
+  const { ms } = repRun('01000000');
+  assert.ok(ms < 1000, `bounded, so it finishes at once — took ${ms}ms`);
+});
+
+test('a negative count reads nothing, and says why', () => {
+  const { reads, errs } = repRun('-0000002');
+  eq(reads, 0, 'nothing is read');
+  assert.ok(errs.some(e => /SIZE/.test(e.error)), `and the count field is named: ${JSON.stringify(errs)}`);
+  // Defensive: the loop already runs zero times for a negative N, so this guard
+  // exists to SAY so. No decoder yields a negative today, so assert the CONDITION
+  // as well as the wording — checking the message alone survives gutting the test.
+  const fn = psFnSource('_meExecRepeat');
+  assert.ok(/N < 0/.test(fn), 'the negative case is actually tested for');
+  assert.ok(/cannot be negative/.test(fn), 'and reported rather than passed over');
+});
+
+test('with no OCCURS to bound it, the message length is the ceiling', () => {
+  // The discriminating half: a body that reads a plain field has no occurrences,
+  // so the OCCURS rule cannot apply — but a runaway count must still be bounded.
+  S.ddlTree = { V: { S: { D: 'DEF R.\n  02 SIZE PIC X(8).\n  02 ONE PIC X(2).\nEND R.\n' } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([...'01000000'.split('').map(c => c.charCodeAt(0)), 0x41, 0x42]);
+  const t0 = Date.now();
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: [{ read: 'SIZE' },
+                        { repeat: { count: 'SIZE', body: [{ skip: { length: 1 } }] } }] }, bytes);
+  const ms = Date.now() - t0;
+  assert.ok(ms < 1000, `still bounded — took ${ms}ms`);
+  assert.ok(ctx.fields.find(f => f.error && /byte\(s\) in the message/.test(f.error)),
+    'and the ceiling it used is stated');
+});
+
 console.log('\nread {from, until} continues from the cursor');
 
 const WIN_DDL = `DEF R.

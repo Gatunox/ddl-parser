@@ -14620,7 +14620,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.10.0.0';
+const APP_VERSION  = '1.10.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24050,12 +24050,52 @@ function _meExecRepeat(attrs, ctx) {
     ctx.fields.push({ id: 'repeat', error: `Count field '${attrs.count}' not yet read` });
     return;
   }
-  const N = _meFieldAsInt(f);
-  if (N == null) {
+  const N0 = _meFieldAsInt(f);
+  if (N0 == null) {
     ctx.fields.push({ id: 'repeat', error: `Count field '${attrs.count}' has no decodable numeric value` });
     return;
   }
   const body = Array.isArray(attrs.body) ? attrs.body : [];
+
+  // ── Bound the loop ────────────────────────────────────────────────────────
+  // A count read off the wire is data, and data can be wrong: a SIZE holding
+  // 01000000 asked for sixteen million iterations, each one pushing an error row
+  // once the occurrences ran out. The tab stopped responding before the parse
+  // could finish being wrong.
+  //
+  // OCCURS n is the ceiling: the body cannot consume more occurrences than the
+  // DDL declares, so a count above that is bad data, not a longer array.
+  let N = N0;
+  if (!Number.isFinite(N) || N < 0) {
+    ctx.fields.push({ id: 'repeat',
+      error: `Count field '${attrs.count}' is ${N0} — a repeat count cannot be negative; read as 0` });
+    N = 0;
+  }
+  // The most occurrences any field the body reads actually has.
+  let maxOcc = 0;
+  for (const b of body) {
+    if (!b || typeof b !== 'object') continue;
+    const a = b['read'];
+    const fid = (typeof a === 'string') ? a : a?.field;
+    if (!fid) continue;
+    const occ = _meOccurrenceBuckets(fid, ctx);
+    if (occ) maxOcc = Math.max(maxOcc, occ.length);
+  }
+  if (maxOcc > 0 && N > maxOcc) {
+    ctx.fields.push({ id: 'repeat',
+      error: `Count field '${attrs.count}' says ${N}, but the body reads at most ${maxOcc} `
+           + `occurrence(s) — the DDL's OCCURS is the ceiling; read as ${maxOcc}` });
+    N = maxOcc;
+  } else if (maxOcc === 0 && N > ctx.bytes.length) {
+    // No OCCURS to bound it: a loop still cannot usefully run more times than the
+    // message has bytes, and this is the difference between a wrong answer and a
+    // locked tab.
+    ctx.fields.push({ id: 'repeat',
+      error: `Count field '${attrs.count}' says ${N}, more than the ${ctx.bytes.length} `
+           + `byte(s) in the message; read as ${ctx.bytes.length}` });
+    N = ctx.bytes.length;
+  }
+
   for (let i = 0; i < N; i++) {
     for (const b of body) _meExecBlock(b, ctx);
   }

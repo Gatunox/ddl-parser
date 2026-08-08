@@ -255,37 +255,36 @@ Parked only because a dated changelog entry needs the user's go-ahead first.
 
 ---
 
-## 11. [ ] GitHub Pages: one deployment at a time — do not push in bursts
+## 11. [x] GitHub Pages wedge — *not a defect: it was a GitHub outage*
 
-**Problem.** The repo publishes to TWO places: Vercel (`ddl-parser.gu2.dev`, the
-`vercel --prod` step) and GitHub Pages (`gatunox.github.io/ddl-parser`, triggered
-automatically by every push to `main`). Vercel tolerates overlapping deploys.
-Pages does not — it runs strictly one at a time and rejects the rest:
+**Closed 2026-08-08.** Nothing to do here. This was written as a rule about push
+cadence — "one deployment at a time, do not push in bursts" — and that diagnosis
+was wrong.
+
+**What actually happened 2026-08-06.** Three pushes in seven minutes each started
+a Pages deployment; the first wedged in `deployment_queued` and never finished,
+every later one was rejected, and the site sat on an old version while Vercel was
+current:
 
     Deployment request failed for <sha> due to in progress deployment.
     Please cancel <earlier sha> first or wait for it to complete.
 
-**What happened 2026-08-06.** Three pushes in seven minutes (v1.3.1.4, .5, .6)
-each started a Pages deployment while the previous was still running. The first
-wedged in `deployment_queued` and never finished, every later one was rejected,
-and the site sat on v1.3.0.1 while Vercel was current. The wedged run could not
-be cancelled or re-run from the Actions UI.
+Cadence fit that occurrence, so it became the explanation. Then the same wedge
+reproduced **on a brand-new repo with a single push**, during a GitHub-wide
+incident affecting Actions and Pages. One push cannot collide with itself. The
+outage explains both, and pushing in bursts has been fine every time since.
 
-**Shape of the fix.** Batch the work: one push per session rather than one per
-change, and let a Pages deployment reach a terminal state before pushing again.
-When it does wedge, the reset is Settings → Pages → Branch → `None` → Save, then
-set it back — that tears down the pipeline and releases the queue.
+**Worth keeping, as operations rather than backlog:**
 
-**Note.** The `build` job's warnings (`punycode` deprecation, Node 20 on
-`actions/checkout@v4`) come from GitHub's own generated workflow — there is no
-`.github/workflows` file in this repo to pin. They are noise, not the cause.
-
-**Correction, 2026-08-07.** The heading above is stated with more confidence
-than the evidence supports. The same wedge later reproduced on a brand-new repo
-with a single push, during a GitHub-wide incident affecting Actions and Pages.
-Push cadence was a guess that fit the first occurrence; the outage explains both.
-Treat the batching advice as harmless hygiene, not a diagnosis — and check
-githubstatus.com before theorising about the repo.
+- If Pages wedges, the reset is Settings → Pages → Branch → `None` → Save, then
+  set it back. That tears down the pipeline and releases the queue; a wedged run
+  cannot be cancelled or re-run from the Actions UI.
+- Check githubstatus.com **before** theorising about the repo. Three wrong
+  diagnoses were made here — push cadence, `{{` Liquid syntax, and edge caching
+  — while the real cause was on the status page the whole time.
+- The `build` job's warnings (`punycode` deprecation, Node 20 on
+  `actions/checkout@v4`) come from GitHub's own generated workflow. There is no
+  `.github/workflows` file in this repo to pin. Noise, not a cause.
 
 ---
 

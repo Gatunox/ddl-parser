@@ -14742,7 +14742,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.13.0.0';
+const APP_VERSION  = '1.13.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23702,20 +23702,49 @@ function _meEffLen(def, ctx) {
 // bytes 0x37 0x45 decoded as 14149 (0x45 is not a digit, so binary won) while
 // the same field trimmed to one byte decoded as 7. A type override is the user
 // stating which it is, so it settles the question instead of being ignored.
-const _ME_LEN_INT_TYPE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?)$/i;
+// `uint-be` / `uint-le` carry no width: the field's own bytes are the width.
+// They were missing from this pattern, so selecting either on a LEN fell through
+// to the guess — and -le was never honoured anywhere, since the decode below was
+// unconditionally big-endian. A little-endian 19 (13 00) read as 4864.
+const _ME_LEN_INT_TYPE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|uint(-be|-le)?|binary(\s*(8|16|32|64))?)$/i;
 const _meLenTypeIsInt = t => !!t && _ME_LEN_INT_TYPE.test(String(t).trim());
+const _meLenTypeIsLE  = t => /-le$/i.test(String(t || '').trim());
 const _meLenTypeIsHexChar = t => /^hex-char$/i.test(String(t || '').trim());
 const _meHexSpelling = bytes => bytes.map(b => b.toString(16).padStart(2, '0')).join('');
 
-// Three readings of the same bytes, and the type override picks one:
-//   hex-char  the value IS the hex characters — 0x37 shows "37" and means 37.
-//             A BCD length reads this way, and it keeps the LEN column agreeing
-//             with the value column instead of disagreeing with it by design.
-//   uint*/binary/byte/word/dword  the bytes as a number — 0x37 means 55.
-//   nothing declared  the old guess: every byte an ASCII digit reads as digits,
-//             otherwise a big-endian integer.
+// The readings of the same bytes, and the type override picks one. The Data
+// Editor offers nine types and every one of them means something specific here;
+// until v1.13.1.0 only hex-char and the integer widths were honoured, so
+// ascii, ebcdic, hex-ascii-decimal and hex-ebcdic-decimal were byte-for-byte
+// identical to declaring nothing at all. An EBCDIC length F1 F9 — "19" on the
+// box — decoded as 61945 whichever of the four you picked.
+//
+//   ascii               the bytes are the characters 0-9        "19"     → 19
+//   ebcdic              the same, in EBCDIC (F0-F9)             F1 F9    → 19
+//   hex-char            the value IS the hex spelling           0x37     → 37
+//                       A BCD length reads this way, and it keeps the LEN column
+//                       agreeing with the value column rather than disagreeing
+//                       with it by design.
+//   hex-ascii-decimal   ASCII text OF hex digits, read base-16  "00FF"   → 255
+//   hex-ebcdic-decimal  the same text in EBCDIC                 C6 C6    → 255
+//   uint*/binary/…      the bytes as a number                   0x37     → 55
+//   nothing declared    the old guess: every byte an ASCII digit reads as
+//                       digits, otherwise a big-endian integer.
+//
+// A declared type is a statement about the data, so bytes that contradict it are
+// reported, never quietly re-read some other way — a wrong length that looks
+// plausible sends every field after it to the wrong offset, and the damage
+// surfaces far from its cause.
 // Returns null when there is nothing to read OR the bytes cannot be read the way
 // the type says; callers tell the two apart by whether any bytes were supplied.
+const _meLenTypeIsAscii  = t => /^ascii$/i.test(String(t || '').trim());
+const _meLenTypeIsEbcdic = t => /^ebcdic$/i.test(String(t || '').trim());
+const _meLenTypeIsHexText = t => /^hex-(ascii|ebcdic)-decimal$/i.test(String(t || '').trim());
+// EBCDIC F0-F9 are the digits; the shared table covers the letters for the
+// hex-text readings, so nothing here re-implements the mapping.
+const _meEbcdicChar = b => String.fromCharCode(_EBCDIC_TO_ASCII[b] ?? b);
+const _meAsciiChar  = b => String.fromCharCode(b);
+
 function _meDecodeLength(bytes, type) {
   if (!bytes || !bytes.length) return null;
   if (_meLenTypeIsHexChar(type)) {
@@ -23724,20 +23753,41 @@ function _meDecodeLength(bytes, type) {
     const n = parseInt(hex, 10);
     return Number.isFinite(n) ? n : null;
   }
+  // "these bytes are decimal digits, written as text" — in one encoding or the
+  // other. Anything that is not a digit in that encoding disproves the type.
+  if (_meLenTypeIsAscii(type) || _meLenTypeIsEbcdic(type)) {
+    const chr = _meLenTypeIsEbcdic(type) ? _meEbcdicChar : _meAsciiChar;
+    const txt = bytes.map(chr).join('');
+    if (!/^[0-9]+$/.test(txt)) return null;
+    const n = parseInt(txt, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+  // "these bytes are the TEXT of a hex number" — decode the text, then base-16.
+  if (_meLenTypeIsHexText(type)) {
+    const chr = /ebcdic/i.test(String(type)) ? _meEbcdicChar : _meAsciiChar;
+    const txt = bytes.map(chr).join('');
+    if (!/^[0-9A-Fa-f]+$/.test(txt)) return null;
+    const n = parseInt(txt, 16);
+    return Number.isFinite(n) ? n : null;
+  }
   if (!_meLenTypeIsInt(type) && bytes.every(b => b >= 0x30 && b <= 0x39)) {
     const n = parseInt(bytes.map(b => String.fromCharCode(b)).join(''), 10);
     return Number.isFinite(n) ? n : null;
   }
-  return bytes.reduce((a, b) => (a << 8) | b, 0);
+  const ordered = _meLenTypeIsLE(type) ? [...bytes].reverse() : bytes;
+  return ordered.reduce((a, b) => (a << 8) | b, 0);
 }
 // Which branch the decode actually took, so the error message cannot claim
 // "read as digits" for bytes a type override forced through as an integer.
 const _meLengthWasDigits = (bytes, type) => !!(bytes && bytes.length)
-  && !_meLenTypeIsInt(type) && !_meLenTypeIsHexChar(type)
-  && bytes.every(b => b >= 0x30 && b <= 0x39);
+  && (_meLenTypeIsAscii(type) || _meLenTypeIsEbcdic(type)
+      || (!_meLenTypeIsInt(type) && !_meLenTypeIsHexChar(type) && !_meLenTypeIsHexText(type)
+          && bytes.every(b => b >= 0x30 && b <= 0x39)));
 // How the number was arrived at, for the message that reports an implausible one.
 const _meLengthReadAs = (bytes, type) =>
     _meLenTypeIsHexChar(type)          ? 'hex characters'
+  : _meLenTypeIsEbcdic(type)           ? 'EBCDIC digits'
+  : _meLenTypeIsHexText(type)          ? 'hex text'
   : _meLengthWasDigits(bytes, type)    ? 'digits'
   :                                      'a binary integer';
 

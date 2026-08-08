@@ -132,17 +132,59 @@ Base24 seg-map variants — are still single-copy.
 
 ---
 
-## 6. [ ] Bump `APP_VERSION` from the build script
+## 6. [x] Never ship an unbumped version — *done 2026-08-08*
 
-It is edited by hand in `source.html` on every commit and is the only thing
-distinguishing one deploy from another — easy to forget, and nothing catches it.
+`APP_VERSION` is hand-edited in `source.html` and is the only thing
+distinguishing one deploy from another.
 
 **It happened, 2026-08-07.** Three commits shipped as v1.11.0.0, v1.11.0.1 and
-v1.12.0.0 with `APP_VERSION` still reading `1.10.1.0`; the user found it by
-looking at their own preview. A tripwire now compares `APP_VERSION` against the
-version in HEAD's commit subject (`test.js`, "release —"), so a mismatch fails
-the suite before a push can carry it — but that is a net under the hand edit,
-not the fix. Deriving the version at build time still removes the step.
+v1.12.0.0 with the constant still reading `1.10.1.0`; the user found it by
+looking at their own preview.
+
+### Why "derive it from the build script" was the wrong ask
+
+The original title was *Bump `APP_VERSION` from the build script*. It cannot be
+done, for two reasons:
+
+1. **The level is a judgement.** Whether a change is a fix or a feature is about
+   what it *means*, and no script reads that off a diff.
+2. **The build runs before the commit**, so it cannot even consult the commit
+   message to infer one.
+
+An `npm run bump` command was considered and rejected for a better reason, which
+the user pointed out: the person who forgets to edit the constant is the same
+person who would forget to run the command. It relocates the problem.
+
+### What shipped instead — a gate in a step nothing can skip
+
+`build.js` refuses to build when `source.html` has changed since the last commit
+and `APP_VERSION` has not. Every change goes through the build, so it fires
+without anyone having to remember it. It does **not** pick the level; it only
+refuses to let the question go unasked.
+
+Verified on three cases: a plain rebuild passes, a forgotten bump blocks, a
+proper bump passes. The **first version of it failed open** — `git show` on a
+1.3 MB file exceeded Node's 1 MB default buffer, and the resulting ENOBUFS
+landed in the `catch`, so the check could never fire under any circumstances. A
+check that silently cannot fail is worse than none, because it is believed.
+`maxBuffer` is now set explicitly.
+
+The pre-existing test comparing `APP_VERSION` against the version in HEAD's
+commit subject stays as a second net, one commit later.
+
+### The convention — agreed with the user 2026-08-08
+
+| segment | in `1 . 13 . 3 . 1` | moves when |
+|---|---|---|
+| 1 major | `1` | a full app overhaul — once, and the user decides |
+| 2 minor | `13` | a new body of work / release theme |
+| 3 patch | `3` | a distinct change within that theme |
+| 4 build | `1` | a follow-up fix to the change immediately before it |
+
+Commits touching only tooling, tests or docs need no bump — the gate keys on
+`source.html`, so it stays quiet for them.
+
+**The level is proposed and agreed before committing, not chosen afterwards.**
 
 ---
 

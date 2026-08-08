@@ -61,6 +61,46 @@ const cmBundle = fs.readFileSync(CM_OUT, 'utf8');
 // ── read source ────────────────────────────────────────────────────────────
 let html = fs.readFileSync(SRC, 'utf8');
 
+// ── the version cannot be forgotten ────────────────────────────────────────
+// APP_VERSION is hand-edited and is the only thing distinguishing one deploy
+// from another. Three commits shipped as v1.11.0.0, v1.11.0.1 and v1.12.0.0
+// with it still reading 1.10.1.0, and the user found it by looking at their own
+// preview.
+//
+// A `npm run bump` command would not have helped: whoever forgets to edit the
+// constant is the same person who would forget to run the command. This gate
+// lives inside the build instead — the one step no change can skip — so it
+// fires without anyone having to remember it.
+//
+// It does NOT pick the level. Major/minor/patch is a judgement about what the
+// change means, and no script can read that off a diff. It only refuses to let
+// the question go unasked.
+(function assertVersionBumped() {
+  const verOf = s => (s.match(/const APP_VERSION\s*=\s*'([^']+)'/) || [])[1] || null;
+  const mine = verOf(html);
+  if (!mine) return;                                   // no constant — nothing to check
+  let committed;
+  try {
+    // maxBuffer matters: source.html is well over Node's 1 MB default, and the
+    // ENOBUFS that causes lands in the catch below — so the first version of
+    // this gate failed OPEN and could never have fired. A check that cannot
+    // fail is worse than no check, because it is believed.
+    committed = execSync('git show HEAD:source.html',
+      { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore','pipe','ignore'] });
+  } catch { return; }                                  // no git, no HEAD, or untracked — skip
+  const theirs = verOf(committed);
+  if (!theirs || theirs !== mine) return;              // version moved — that is the point
+  // Same version. Fine if nothing else moved either; the version line is blanked
+  // on both sides so an identical file is recognised as identical.
+  const strip = s => s.replace(/const APP_VERSION\s*=\s*'[^']+';/, '');
+  if (strip(html) === strip(committed)) return;        // a plain rebuild
+  console.error(`\n  source.html has changed since the last commit, but APP_VERSION is still ${mine}.`);
+  console.error('  Bump it in source.html and build again. Levels: 2 = new body of work,');
+  console.error('  3 = a distinct change within it, 4 = a follow-up fix to the last one.');
+  console.error('  Agree the level before committing. (Nothing was written; see TODO item 6.)\n');
+  process.exit(1);
+})();
+
 // Inline the CM bundle: replace the <script src="codemirror.bundle.js"> tag
 html = html.replace(
   /<script src="codemirror\.bundle\.js"><\/script>/,

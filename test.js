@@ -3142,7 +3142,7 @@ test('both scoring passes read the cached per-chunk facts', () => {
   const scoring = fn.slice(fn.indexOf('function _startP23Scoring'));
   assert.ok(!/for \(const chunk of chunks\)/.test(scoring),
     'neither pass re-walks the raw chunks');
-  eq((scoring.match(/for \(const ci of _chunkInfo\)/g) || []).length, 2,
+  assert.ok((scoring.match(/for \(const ci of _chunkInfo\)/g) || []).length >= 2,
      'both passes read the cache');
 });
 
@@ -3163,6 +3163,43 @@ test('every field the loops read off the cache is actually put there', () => {
   const missing = [...used].filter(k => !pushed.has(k));
   assert.deepStrictEqual(missing, [],
     `read off the cache but never put there: ${missing.join(', ')}`);
+});
+
+test('compiling and scoring happen only when a chunk needs a DDL', () => {
+  // Scoring exists to fill a MISSING binding — only the `needs-ddl` verdict
+  // consults it. A spec that binds its own DDL resolves it with getDDLFromPath,
+  // so compiling every candidate in three subvolumes and scoring 35 of them
+  // answered a question nobody asked, on every parse.
+  const fn = psFnSource('doParseMessages');
+  assert.ok(/const _needScore = _chunkInfo\.some\(ci => ci\.verdict\.kind === 'needs-ddl'\)/.test(fn),
+    'the condition is the verdict, not a guess');
+  const gate = fn.indexOf('const _needScore');
+  const compile = fn.indexOf('if (useCache)', gate);
+  const bail = fn.indexOf('if (!_needScore)', gate);
+  assert.ok(bail > 0 && bail < compile,
+    'and it short-circuits BEFORE the compile path, not after');
+  // The scoring step must not announce itself when there is nothing to score.
+  assert.ok(/if \(compiledByVol\) _parseProgressStep\(`Scoring/.test(fn),
+    'the Scoring step is announced only when candidates were compiled');
+});
+
+test('the verdict is computed once, not again in the main loop', () => {
+  // The verdict IS the parse for a spec-bound message. Computing it in the
+  // Parsing step and again in the loop would parse every message twice — the
+  // duplication this change exists to remove.
+  const fn = psFnSource('doParseMessages');
+  eq((fn.match(/_parseVerdict\(/g) || []).length, 1, 'one verdict call in the dispatcher');
+  assert.ok(/const _v = ci\.verdict;/.test(fn), 'and the loop reads the cached one');
+});
+
+test('the panel steps are declared in the order the work happens', () => {
+  const fn = psFnSource('doParseMessages');
+  const at = needle => fn.indexOf(needle);
+  const detect = at("_parseProgressStep('Detecting message types')");
+  const parse  = fn.indexOf("_parseProgressStep('Parsing", at("_parseProgressStep('Detecting message types')"));
+  const gate   = at('const _needScore');
+  assert.ok(detect > 0 && parse > detect, 'Detecting comes before Parsing');
+  assert.ok(gate > parse, 'and the compile/score decision is made after Parsing');
 });
 
 console.log('\nparse-flow routing (which parser ran)');

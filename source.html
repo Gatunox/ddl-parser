@@ -8393,6 +8393,17 @@ function _ppDetectDetails(traces, noun) {
 }
 
 // Attach a detection summary to a named progress step, if that step exists.
+// Plain sub-lines under a step. `details` already accepts strings; the detection
+// summary has its own builder, and everything else just wants to say a sentence.
+function _ppSetStepNote(stepLabel, lines) {
+  try {
+    const step = _ppSteps.find(s => s.label === stepLabel);
+    if (!step || !lines || !lines.length) return;
+    step.details = lines;
+    _parseProgressRender();
+  } catch (e) { console.warn('[step note]', e); }
+}
+
 function _ppSetDetectDetails(stepLabel, traces, noun) {
   try {
     const step = _ppSteps.find(s => s.label === stepLabel);
@@ -9473,11 +9484,13 @@ function doParseMessages() {
       const _repoSecReg = buildRepoSectionRegistry();
       const useCache = _ddlCompileCache.version === _ddlTreeVersion;
 
+      // compiledByVol === null → nothing needed a DDL, so there is nothing to
+      // score; the main loop below runs on the verdicts already computed.
       function _startP23Scoring(compiledByVol) {
-        const allCompiled = Object.values(compiledByVol).flat()
-          .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
+        const allCompiled = compiledByVol ? Object.values(compiledByVol).flat()
+          .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); }) : [];
 
-        if (!allCompiled.length) {
+        if (compiledByVol && !allCompiled.length) {
           _parseProgressHide();
           flash('No DDL definitions found. Add a DDL to the tree or select one explicitly.', 'warn');
           document.getElementById('msgInput').readOnly = false;
@@ -9485,7 +9498,7 @@ function doParseMessages() {
           return;
         }
 
-        _parseProgressStep(`Scoring ${allCompiled.length} candidate${allCompiled.length !== 1 ? 's' : ''}\u2026`);
+        if (compiledByVol) _parseProgressStep(`Scoring ${allCompiled.length} candidate${allCompiled.length !== 1 ? 's' : ''}\u2026`);
 
         setTimeout(() => {
           if (_parseAborted) return;
@@ -9561,7 +9574,7 @@ function doParseMessages() {
               // Shared routing decision — identical to the record flow.
               const _base = { bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
                 msgType, byteCharMap, charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk };
-              const _v = _parseVerdict(msgType, parseBytes, { format: S.inputFormat, rawBytes: bytes });
+              const _v = ci.verdict;
               if (_v.kind === 'no-spec') {
                 parsed.push({ ..._base, fields: [], ddlPath: null, tokens: [], noParseSpec: true,
                   _diag: {
@@ -9712,6 +9725,47 @@ function doParseMessages() {
           setTimeout(() => _showTypePickers(0), 300);
         }, 300);
       }
+
+      // ── Parse each chunk through its own spec, once ───────────────────────
+      // The verdict IS the parse for a spec that binds its DDL, so it happens
+      // here rather than inside the scoring step — and it decides whether
+      // scoring is needed at all. Only `needs-ddl` consults the scores: the
+      // picker fills a binding the spec is missing. A spec that binds its DDL
+      // resolves it directly (getDDLFromPath), so compiling and scoring every
+      // candidate answers a question nobody asked.
+      _parseProgressStep('Parsing\u2026');
+      for (const ci of _chunkInfo) {
+        ci.verdict = ci.msgType.vol
+          ? _parseVerdict(ci.msgType, ci.parseBytes, { format: S.inputFormat, rawBytes: ci.bytes })
+          : { kind: 'unknown' };
+      }
+      {
+        // Say what happened, and for the parsed ones WHICH DDL did it — the
+        // question this step exists to answer.
+        const _byKind = {};
+        for (const ci of _chunkInfo) (_byKind[ci.verdict.kind] || (_byKind[ci.verdict.kind] = [])).push(ci);
+        const _say = { parsed: 'parsed', 'needs-ddl': 'need a DDL',
+                       'no-spec': 'no parse spec', unknown: 'unrecognised' };
+        const _lines = [];
+        for (const [kind, list] of Object.entries(_byKind)) {
+          let line = `${list.length} ${_say[kind] || kind}`;
+          if (kind === 'parsed') {
+            const paths = [...new Set(list
+              .map(ci => [ci.verdict.ddlPath, ci.verdict.defName].filter(Boolean).join('/'))
+              .filter(Boolean))];
+            if (paths.length === 1)      line += ` \u2014 ${paths[0]}`;
+            else if (paths.length > 1)   line += ` \u2014 ${paths.length} DDLs`;
+          }
+          _lines.push(line);
+        }
+        _ppSetStepNote('Parsing\u2026', _lines);
+      }
+      _parseProgressDoneLast();
+
+      // Scoring exists to fill a MISSING binding. With none missing there is
+      // nothing to compile and nothing to score.
+      const _needScore = _chunkInfo.some(ci => ci.verdict.kind === 'needs-ddl');
+      if (!_needScore) { _startP23Scoring(null); return; }
 
       if (useCache) {
         const _nSvs = Object.keys(_ddlCompileCache.svEntries || {}).length;

@@ -247,7 +247,7 @@ githubstatus.com before theorising about the repo.
 
 ---
 
-## 12. [ ] The scoring body cannot be reached by any test
+## 12. [x] The scoring body cannot be reached by any test — *done v1.12.2.0*
 
 **Problem.** Everything inside `_startP23Scoring` runs in a `setTimeout`
 callback, and `test.js` stubs `setTimeout` to a no-op. So the entire pre-scoring
@@ -264,6 +264,30 @@ function will be invisible in exactly the same way.
 tests drain) for a small number of end-to-end parse tests, and assert on the
 `parsed[]` array the function builds. The DOM stubs already tolerate being
 called; the timer stub is the only thing standing in the way.
+
+### Done (v1.12.2.0)
+
+`setTimeout` queues instead of dropping, and `pumpTimers()` drains the queue in
+scheduled-delay order — including callbacks scheduled by callbacks, which the
+per-DDL compile loop needs. Nothing runs until a test asks, so the 510 tests
+that predate this behave exactly as before.
+
+Two end-to-end tests drive `doParseMessages` the way a click does and assert on
+`S.messages`. Both were verified by reintroducing the defect they exist for:
+
+- a spec that binds its own DDL → v1.12.0.2's dereference of the compile map
+  that was never built; **0 messages instead of 1**
+- an unrecognised message → v1.11.0.0's out-of-scope `detectStr` / `detTrace`;
+  **0 messages instead of 1**
+
+One sandbox gap surfaced doing it: in a browser `window.X = fn` also creates the
+global `X`, and top-level code depends on that (`detectMsgTypeTrace` calls the
+bare `_fmtDetectTrace`, which only escapes its block via `window`). The stub
+window never did, so the first honest run threw `ReferenceError`. Eleven such
+exports are bridged in the harness.
+
+**Still not covered.** The deferred-DDL picker queue needs a user choice, so the
+`needs-ddl` path stops at the prompt rather than running to completion.
 
 ---
 

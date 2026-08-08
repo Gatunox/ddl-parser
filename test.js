@@ -59,9 +59,48 @@ const storage = {
   removeItem(k) { delete this._data[k]; },
 };
 
+// ── Timers: queued, not dropped ──────────────────────────────────────────────
+// setTimeout used to be `() => {}`. That keeps tests synchronous, and it also
+// makes every callback behind a yield UNREACHABLE — which is the whole parse
+// path, because each step paints the progress panel and then yields so the
+// browser can show it before blocking. A plain TypeError inside the scoring
+// callback passed 498 tests that way (v1.12.0.2).
+//
+// Callbacks are queued instead of dropped. Nothing runs until a test calls
+// pumpTimers(), so every existing test behaves exactly as before; a test that
+// wants the real thing drains the queue and gets the code that ships.
+const _timerQ = [];
+let _timerSeq = 0;
+function _schedule(fn, ms) {
+  if (typeof fn !== 'function') return 0;
+  _timerQ.push({ id: ++_timerSeq, fn, ms: +ms || 0, seq: _timerSeq });
+  return _timerSeq;
+}
+function _unschedule(id) {
+  const i = _timerQ.findIndex(t => t.id === id);
+  if (i >= 0) _timerQ.splice(i, 1);
+}
+// Drains in scheduled-delay order, the way a real event loop would, and keeps
+// draining what those callbacks schedule — the compile loop re-arms itself once
+// per DDL, so a single pass would stop after one.
+function pumpTimers(maxCallbacks = 20000) {
+  let ran = 0;
+  while (_timerQ.length) {
+    if (++ran > maxCallbacks) throw new Error(`pumpTimers: over ${maxCallbacks} callbacks — runaway timer loop`);
+    let next = 0;
+    for (let i = 1; i < _timerQ.length; i++)
+      if (_timerQ[i].ms < _timerQ[next].ms ||
+         (_timerQ[i].ms === _timerQ[next].ms && _timerQ[i].seq < _timerQ[next].seq)) next = i;
+    const t = _timerQ.splice(next, 1)[0];
+    t.fn();
+  }
+  return ran;
+}
+function resetTimers() { _timerQ.length = 0; }
+
 const sandbox = vm.createContext({
   // Core JS globals
-  console, CSS, setTimeout: () => {}, clearTimeout: () => {}, setInterval: () => {},
+  console, CSS, setTimeout: _schedule, clearTimeout: _unschedule, setInterval: () => {},
   clearInterval: () => {}, requestAnimationFrame: () => {}, cancelAnimationFrame: () => {},
   parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent,
   Math, JSON, Array, Object, Map, Set, WeakMap, WeakSet, RegExp, Uint8Array,
@@ -182,6 +221,24 @@ _t.expWrapCell        = _expWrapCell;
 _t.meReadApplyTypeOverride = _meReadApplyTypeOverride;
 _t.setSpecLookup      = fn => { window._fmtSpecByName = fn; };
 _t.auditBeginLoad     = _auditBeginLoad;
+// The orchestration itself, reachable now that setTimeout queues instead of
+// dropping. Everything above this line is a piece of the parse; this is the
+// parse — the function whose scoring callback shipped a TypeError past 498
+// tests because nothing could execute it.
+_t.doParseMessages    = doParseMessages;
+_t.detectMsgType      = detectMsgType;
+// In a browser, \`window.X = fn\` also creates the global \`X\`, and top-level code
+// relies on that — detectMsgTypeTrace calls the bare identifier _fmtDetectTrace,
+// which is declared inside a block and only escapes via window. The sandbox's
+// window is a stub, so that binding never appeared and the call threw
+// ReferenceError the moment a test drove the real parse. Bridged here, so the
+// sandbox models the one browser behaviour this code depends on.
+for (const k of ['_fmtDetect','_fmtDetectTrace','_fmtSpecByName','_fmtSpecByLabel',
+                 '_fmtFileSpecByName','_fmtGetData','_fmtTestSpecs','_specEncoding',
+                 '_migrateSpec','_migrateSpecOverrides','_detectOrderIdxs']) {
+  const v = window[k];
+  if (typeof v !== 'undefined' && v !== null) globalThis[k] = v;
+}
 `;
 
 try {
@@ -3401,6 +3458,76 @@ test('verdicts: only needs-ddl requires the compiled candidate map', () => {
   const nd = parseVerdict({ type: 'PSTM', label: 'PSTM', vol: 'POS' }, bytes, o);
   eq(nd.kind, 'needs-ddl', 'the one kind that scores');
   eq(nd.fields, undefined, 'and it produced no fields of its own');
+});
+
+// ── The parse, end to end, with the timers actually running ──────────────────
+// Everything else in this file tests a piece. This runs doParseMessages the way
+// a click does — through the progress steps, the compile decision, the scoring
+// gate and finalize — by draining the timer queue instead of dropping it.
+// It is the test that would have caught v1.12.0.2, where a matched message
+// walked into a compile map that was never built.
+const asHex = bytes => bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+
+function runParse(msgText, { format = 'hex' } = {}) {
+  resetTimers();
+  const input = { value: msgText, readOnly: false, style: {}, classList:
+    { add(){}, remove(){}, toggle(){}, contains(){ return false; } } };
+  const prevStub = elStubs.msgInput;
+  elStubs.msgInput = input;
+  const S = sandbox._t.S;
+  const prevFmt = S.inputFormat;
+  S.inputFormat = format;
+  try {
+    sandbox._t.doParseMessages();
+    const callbacks = pumpTimers();
+    return { messages: S.messages || [], isParsed: !!S.isParsed, callbacks };
+  } finally {
+    if (prevStub === undefined) delete elStubs.msgInput; else elStubs.msgInput = prevStub;
+    S.inputFormat = prevFmt;
+  }
+}
+
+test('end to end: a spec that binds its own DDL parses without any scoring', () => {
+  // The v1.12.0.2 path exactly: recognized, binding present, so nothing needs a
+  // DDL and the compile pass is skipped. The bug was that the pre-scoring pass
+  // ran anyway and indexed the map that was never built.
+  const S = sandbox._t.S;
+  S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
+  const spec = fmtSpecByName('PSTM');
+  const orig = spec.ddl_bindings;
+  spec.ddl_bindings = ['POS/SV/PSTM/PSTM'];
+  try {
+    const r = runParse(asHex(routeBytes()));
+    assert.ok(r.callbacks > 0, 'the timer queue actually ran — a 0 here means this tests nothing');
+    eq(r.messages.length, 1, 'one message came out the far end');
+    const m = r.messages[0];
+    eq(m.msgType?.type, 'PSTM', 'recognized as PSTM');
+    assert.ok(/parse-spec/.test(m.parsedBy || ''), `the engine produced it, not a guess: ${m.parsedBy}`);
+    assert.ok((m.fields || []).length > 0, 'with fields');
+    eq(routeSegCount(m.fields), 5, 'and the repeat block read exactly NUM-SERVICES services');
+  } finally { spec.ddl_bindings = orig; }
+});
+
+test('end to end: an unrecognised message reaches its diagnostic instead of throwing', () => {
+  // The other regression this session (v1.11.0.0): the unknown-type diagnostic
+  // read detectStr and _detTrace, which had just stopped being in scope. It
+  // threw ReferenceError in front of the user on the one path whose whole job is
+  // explaining why nothing matched — and 497 tests passed, because no test ever
+  // walked an unrecognised message through the real parse.
+  const S = sandbox._t.S;
+  S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
+  const bytes = [];
+  for (let i = 0; i < 40; i++) bytes.push(0xC7);      // matches no shipped recognizer
+  const r = runParse(asHex(bytes));
+  assert.ok(r.callbacks > 0, 'the timer queue ran');
+  eq(r.messages.length, 1, 'the message survives as a diagnostic rather than vanishing');
+  const m = r.messages[0];
+  eq(m.unknownType, true, 'flagged as an unrecognised type');
+  assert.ok(m._diag, 'and it carries the diagnostic the panel renders');
+  // These two are the exact fields that went out of scope.
+  assert.ok(typeof m._diag.decodedMTI === 'string',
+    'decodedMTI is derived from the detection string that was nearly lost');
+  assert.ok('closest' in m._diag, 'and the closest-spec explanation is present');
 });
 
 test('routing: an engine run that yields nothing usable does not displace legacy', () => {

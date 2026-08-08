@@ -14742,7 +14742,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.13.2.0';
+const APP_VERSION  = '1.13.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23112,7 +23112,7 @@ function _meExecReadField(attrs, ctx) {
     }
     const pStart = ctx.cursor;
     const pBytes = Array.from(ctx.bytes.slice(pStart, pStart + lenPrefix));
-    const N = _meDecodeLength(pBytes, null, ctx.lenEnc);
+    const N = _meDecodeLength(pBytes, null, _meLenEncFor(attrs, ctx));
     if (N == null) {
       ctx.fields.push({ id: fieldId, error: `read "length_prefix": no bytes left to read the ${lenPrefix}-byte length from` });
       return;
@@ -23716,6 +23716,29 @@ function _meSpecEncodingInfo(spec) {
   if (!r) return { enc: 'ascii', declared: false };
   return { enc: String(r.encoding).toLowerCase() === 'ebcdic' ? 'ebcdic' : 'ascii', declared: true };
 }
+// Which encoding an UNDECLARED length is read in. Full order of precedence:
+//   1 the field's own type override   — settled before this is consulted
+//   2 the block's "encoding" attribute — nearest the bytes, so it outranks
+//   3 the spec's recognizers
+//   4 ASCII, and _meLenEncSuspicion says so rather than leaving it silent
+function _meLenEncFor(attrs, ctx) {
+  const e = String((attrs && attrs.encoding) || '').trim().toLowerCase();
+  if (e === 'ascii' || e === 'ebcdic') return { enc: e, declared: true };
+  return ctx && ctx.lenEnc;
+}
+// Nothing anywhere declared an encoding, the assumed one could not read these
+// bytes as digits — but the OTHER one can. The length that came out is a binary
+// integer nobody chose, and the fix is one field in the recognizer, so say so.
+// Deliberately narrow: silent whenever an encoding was stated, or the bytes are
+// not digits either way (an ordinary binary length, which is fine).
+function _meLenEncSuspicion(bytes, type, enc) {
+  if (String(type || '').trim()) return null;
+  if (!enc || enc.declared) return null;
+  if (_meDecodeLength(bytes, enc.enc) !== null) return null;
+  const other = enc.enc === 'ebcdic' ? 'ascii' : 'ebcdic';
+  const asOther = _meDecodeLength(bytes, other);
+  return asOther === null ? null : { other, value: asOther };
+}
 
 const _ME_LEN_INT_TYPE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|uint(-be|-le)?|binary(\s*(8|16|32|64))?)$/i;
 const _meLenTypeIsInt = t => !!t && _ME_LEN_INT_TYPE.test(String(t).trim());
@@ -23899,7 +23922,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     }
     const pStart = ctx.cursor;
     const pBytes = Array.from(ctx.bytes.slice(pStart, pStart + lp));
-    const N = _meDecodeLength(pBytes, null, ctx.lenEnc);
+    const N = _meDecodeLength(pBytes, null, _meLenEncFor(entry, ctx));
     if (N == null) {
       ctx.fields.push({ id: scopeId, error: `DE ${de}: no bytes left to read the ${lp}-byte length from` });
       return;
@@ -23929,7 +23952,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
       const lStart = ctx.cursor;
       const lLen   = _meEffLen(lenDef, ctx);
       const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
-      const N      = _meDecodeLength(lBytes, _meOvEffective(ctx, lenDef.id)?.type, ctx.lenEnc);
+      const N      = _meDecodeLength(lBytes, _meOvEffective(ctx, lenDef.id)?.type, _meLenEncFor(entry, ctx));
       ctx.cursor = lStart + lLen;
       const lf = {
         id: lenDef.id, description: lenDef.description, dataType: lenDef._dataType,
@@ -24032,8 +24055,11 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
     ctx.fieldsById[bd.id] = f;
   }
 
-  // EBCDIC needs no special case: the whole message is translated to ASCII
-  // before parsing, so an EBCDIC "0028" (F0F0F2F8) arrives here as ASCII digits.
+  // EBCDIC needs no special case WHEN the input format is ebcdic: extractBytes
+  // translates the whole message to ASCII first, so an EBCDIC "0028" (F0F0F2F8)
+  // arrives here as ASCII digits. It is untranslated for every other format, so
+  // the same message captured as a hex or NETARD dump arrives as F0F0F2F8 — and
+  // that is what _meDecodeLength's encoding argument is for.
   // A binary message does not — its length is a plain big-endian integer, and
   // reading that as characters produced NaN, which "|| 0" turned into zero: the
   // group collapsed and every later field shifted, with nothing reported.
@@ -24051,6 +24077,13 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   const Nwritten = N;
   const lenInChars = _meLenIsChars(lType);
   if (N != null && lenInChars) N = _meCharsToBytes(N);
+  // Nothing declared an encoding and these bytes are digits in the other one.
+  // The number above is a binary integer nobody chose, so name the one field
+  // that would settle it rather than letting the assumption pass in silence.
+  const _sus = _meLenEncSuspicion(lBytes, lType, ctx.lenEnc);
+  if (_sus) lenErrs.push(`${lenDef.id}: no encoding is declared, so these bytes were read as `
+    + `a binary integer (${N}) — as ${_sus.other.toUpperCase()} digits they read ${_sus.value}. `
+    + `Set the encoding on the spec's recognizer, or override this field's type.`);
   if (N == null) {
     N = 0;
     lenErrs.push(lBytes.length

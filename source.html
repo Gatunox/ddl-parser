@@ -444,16 +444,18 @@ body.light #ddlValidationBar.vbar-unresolved { background: rgba(180,120,0,0.04);
 
 /* ===== DDL DOC MODAL ===== */
 .ddl-doc-modal { position: relative; background: var(--bg-panel); border: 2px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; width: min(960px, 96vw); max-height: 88vh; box-shadow: 0 8px 40px rgba(0,0,0,0.7); overflow: hidden; }
-/* While a chooser is open, the modal behind it dims — the same move the page
-   makes when the modal itself opens, one level in. No z-index on the modal, so
-   the scrim (150) still sits under the dialog (200); pointer-events:none so it
-   dims without swallowing a click. */
-.ddl-doc-modal.cfg-dim::after { content:''; position:absolute; inset:0; z-index:150;
+/* While a chooser is open, whatever holds it dims — the same move the page
+   makes when a modal opens, one level in. Written against the class alone, not
+   against a host, so the export modal and the Parse Results panel dim from one
+   definition instead of two that can drift. The scrim (150) sits under the
+   dialog (200); pointer-events:none so it dims without swallowing a click. */
+.cfg-dim { position: relative; }
+.cfg-dim::after { content:''; position:absolute; inset:0; z-index:150;
   background:rgba(0,0,0,0.55); pointer-events:none; }
-/* The control that opened the row stays out of the scrim — it is the way back
-   out, so dimming it hides the one thing still worth clicking. Lifted only
-   while the modal is dimmed, so an active toggle elsewhere is unaffected. */
-.ddl-doc-modal.cfg-dim .btn.btn-on { position: relative; z-index: 200; }
+/* The control that opened the chooser stays out of the scrim — it is the way
+   back out, so dimming it hides the one thing still worth clicking. Lifted only
+   while the host is dimmed, so an active toggle elsewhere is unaffected. */
+.cfg-dim .btn.btn-on { position: relative; z-index: 200; }
 .ddl-doc-hdr   { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 10px 16px; border-bottom: 2px solid var(--border); flex-shrink: 0; }
 .ddl-doc-title { font-size: 12px; font-weight: 700; color: var(--text); font-family: var(--font-mono); }
 .ddl-doc-body  { overflow: auto; flex: 1; padding: 0; }
@@ -12270,7 +12272,14 @@ function auditToggleCfgDialog() {
   dlg.classList.toggle('open');
 }
 function toggleColCfgDialog() {
-  document.getElementById('colCfgDialog').classList.toggle('open');
+  const dlg = document.getElementById('colCfgDialog');
+  if (!dlg) return;
+  const open = dlg.classList.toggle('open');
+  // Same three moves the export chooser makes: light the cog, dim what is
+  // behind the dialog, and leave the cog lit above the scrim as the way out.
+  const btn = document.getElementById('colCfgBtn');
+  if (btn) btn.classList.toggle('btn-on', open);
+  dlg.closest('.panel')?.classList.toggle('cfg-dim', open);
 }
 function toggleResColVisibility(col) {
   const isHidden = document.getElementById('resContainer').classList.contains('hide-' + col);
@@ -14699,7 +14708,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.12.1.0';
+const APP_VERSION  = '1.12.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

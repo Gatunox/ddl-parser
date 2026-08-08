@@ -6218,8 +6218,16 @@ test('the cog becomes the close button while the chooser is open', () => {
     'against a rule that actually marks it active');
   // The modal behind the row dims, the way the page dims behind the modal.
   assert.ok(/classList\.toggle\('cfg-dim', open\)/.test(fn), 'and dims the modal behind it');
-  const dim = html.match(/\.ddl-doc-modal\.cfg-dim::after\s*\{([^}]*)\}/);
+  // CHANGED ON PURPOSE (v1.12.1.1). The scrim was written against
+  // .ddl-doc-modal; it is written against .cfg-dim alone now, so the export
+  // modal and the Parse Results panel dim from ONE definition. Two copies of
+  // this is exactly how a fix lands on one surface and not the other.
+  const dim = html.match(/(?:^|\n)\.cfg-dim::after\s*\{([^}]*)\}/);
   assert.ok(dim, 'there is a scrim rule');
+  // A host that is not a positioning origin puts the scrim somewhere else
+  // entirely — .panel is static until this class lands on it.
+  assert.ok(/(?:^|\n)\.cfg-dim \{[^}]*position:\s*relative/.test(html),
+    'and the class makes its host the origin');
   assert.ok(/position:absolute/.test(dim[1]) && /inset:0/.test(dim[1]), 'covering the modal');
   assert.ok(/pointer-events:none/.test(dim[1]), 'without swallowing clicks');
   // A scrim above the thing it is meant to sit behind would hide the row.
@@ -6228,7 +6236,7 @@ test('the cog becomes the close button while the chooser is open', () => {
   assert.ok(z && dz && z < dz, `scrim ${z} must sit under the dialog ${dz}`);
   // ...and under the button that opened it. Dimming that one hides the way back
   // out, which is the only control still worth clicking while the row is up.
-  const lift = html.match(/\.ddl-doc-modal\.cfg-dim \.btn\.btn-on\s*\{([^}]*)\}/);
+  const lift = html.match(/(?:^|\n)\.cfg-dim \.btn\.btn-on\s*\{([^}]*)\}/);
   assert.ok(lift, 'the active toggle is lifted out of the scrim');
   const lz = +(lift[1].match(/z-index:\s*(\d+)/) || [])[1];
   assert.ok(/position:\s*relative/.test(lift[1]), 'it is positioned, or z-index does nothing');
@@ -6260,6 +6268,25 @@ test('the cog becomes the close button while the chooser is open', () => {
   assert.ok(/audit-cfg-hdr/.test(render), `it carries the standard header: ${render}`);
   assert.ok(/<span>Columns<\/span>/.test(render), 'titled the same way as the others');
   assert.ok(/_expToggleColsDlg\(\)/.test(render), 'and its ✕ closes the same toggle the cog does');
+});
+
+test('the Parse Results chooser dims its panel the same way', () => {
+  // Reported: pressing this cog opened the chooser with nothing behind it
+  // dimmed, so it read as part of the panel rather than as something modal
+  // over it — while the export chooser one panel away did dim. Same three
+  // moves, or it is not the same control.
+  const fn = psFnSource('toggleColCfgDialog');
+  assert.ok(/classList\.toggle\('open'\)/.test(fn), 'it opens the chooser');
+  assert.ok(/classList\.toggle\('btn-on', open\)/.test(fn), 'lights the cog');
+  assert.ok(/classList\.toggle\('cfg-dim', open\)/.test(fn), 'and dims what is behind it');
+  assert.ok(/closest\('\.panel'\)/.test(fn), 'against the panel that holds it');
+  // .panel is static and clips; the scrim only lands correctly because the
+  // .cfg-dim class makes its host an origin. Pinned in the export test too —
+  // this one fails if the panel stops being the host it is applied to.
+  assert.ok(/\.panel \{[^}]*overflow: hidden/.test(html),
+    'the panel clips, so a mispositioned scrim would vanish rather than look wrong');
+  // Both cogs must resolve to buttons that exist.
+  assert.ok(/id="colCfgBtn"/.test(html), 'the cog it lights is real');
 });
 
 test('no border is 1px — the project uses 2px everywhere', () => {

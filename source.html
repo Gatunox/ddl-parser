@@ -9428,9 +9428,41 @@ function doParseMessages() {
 
   // Step 0 — informational: detecting message types
   const _p23Traces = [];   // detection traces, summarized on the step above
+  // Per-chunk facts, computed ONCE. Byte extraction, the EBCDIC heuristic and
+  // detection used to run twice — once to pick a representative for scoring and
+  // again in the main loop — so every chunk was decoded and detected twice for
+  // one answer. detectMsgTypeTrace is a strict superset of detectMsgType (same
+  // spec order, same short-circuits, same winner; it also records why each spec
+  // failed), so the trace form serves both.
+  const _chunkInfo = [];
   _parseProgressStep('Detecting message types');
   setTimeout(() => {
     if (_parseAborted) return;
+    for (const chunk of chunks) {
+      const chunkStr = typeof chunk === 'object' ? chunk.text : String(chunk);
+      const bytes    = extractBytes(chunk, S.inputFormat);
+      if (!bytes.length) continue;
+      let parseBytes = bytes;
+      if (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex') {
+        let _f09 = 0;
+        for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
+        const _mtiEbcdic = bytes.length >= 4 &&
+          bytes[0] >= 0xF0 && bytes[0] <= 0xF9 && bytes[1] >= 0xF0 && bytes[1] <= 0xF9 &&
+          bytes[2] >= 0xF0 && bytes[2] <= 0xF9 && bytes[3] >= 0xF0 && bytes[3] <= 0xF9;
+        if (_f09 / bytes.length > 0.30 || _mtiEbcdic) parseBytes = bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
+      }
+      // For hex-based formats the raw text is not the message — type patterns
+      // must match the decoded bytes.
+      const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic' || S.inputFormat === 'hex')
+        ? bytes.map(b => String.fromCharCode(b)).join('') : chunkStr;
+      const detTrace = detectMsgTypeTrace(detectStr);
+      _p23Traces.push(detTrace);
+      _chunkInfo.push({ chunk, chunkStr, bytes, parseBytes, msgType: detTrace.winner });
+    }
+    // The summary belongs WITH the tick: it used to be back-filled onto this
+    // step three steps later, so the panel showed a finished step with nothing
+    // under it while its work had not yet run.
+    _ppSetDetectDetails('Detecting message types', _p23Traces, 'message');
     _parseProgressDoneLast();
     // (DDLMM evaluation step removed — Data Detection supersedes it.)
     setTimeout(() => {
@@ -9468,19 +9500,8 @@ function doParseMessages() {
           const typeMatchCache = {};
           {
             const longestByType = {};
-            for (const chunk of chunks) {
-              const chunkStr = typeof chunk === 'object' ? chunk.text : String(chunk);
-              const bytes    = extractBytes(chunk, S.inputFormat);
-              if (!bytes.length) continue;
-              let parseBytes = bytes;
-              if (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex') {
-                let _f09 = 0; for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
-                const _mtiEbcdic = bytes.length >= 4 && bytes[0]>=0xF0&&bytes[0]<=0xF9&&bytes[1]>=0xF0&&bytes[1]<=0xF9&&bytes[2]>=0xF0&&bytes[2]<=0xF9&&bytes[3]>=0xF0&&bytes[3]<=0xF9;
-                if (bytes.length > 0 && (_f09/bytes.length > 0.30 || _mtiEbcdic)) parseBytes = bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
-              }
-              const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic' || S.inputFormat === 'hex')
-                ? bytes.map(b => String.fromCharCode(b)).join('') : chunkStr;   // RAW bytes
-              const msgType = detectMsgType(detectStr);
+            for (const ci of _chunkInfo) {
+              const { bytes, parseBytes, msgType } = ci;
               if (!msgType.vol) continue;
               // DDLMM pre-filter removed — Data Detection supersedes it.
               const key = msgType.type + ':' + msgType.vol;
@@ -9504,35 +9525,9 @@ function doParseMessages() {
               }).filter(m => m.score > 0).sort((a, b) => b.score - a.score);
             }
           }
-          for (const chunk of chunks) {
-            const chunkStr    = typeof chunk === 'object' ? chunk.text : String(chunk);
-            const bytes       = extractBytes(chunk, S.inputFormat);
-            if (!bytes.length) continue;
-
-            // EBCDIC detection for hex-based formats (tandem-dump / hex carry raw bytes)
-            let parseBytes = bytes;
-            if (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex') {
-              let _f09 = 0;
-              for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
-              const _mtiEbcdic = bytes.length >= 4 &&
-                bytes[0] >= 0xF0 && bytes[0] <= 0xF9 &&
-                bytes[1] >= 0xF0 && bytes[1] <= 0xF9 &&
-                bytes[2] >= 0xF0 && bytes[2] <= 0xF9 &&
-                bytes[3] >= 0xF0 && bytes[3] <= 0xF9;
-              if (bytes.length > 0 && (_f09 / bytes.length > 0.30 || _mtiEbcdic)) {
-                parseBytes = bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
-              }
-            }
-
-            // For hex-based formats the raw text is not the message — type patterns must match decoded bytes
-            const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic' || S.inputFormat === 'hex')
-              ? bytes.map(b => String.fromCharCode(b)).join('')   // RAW bytes
-              : chunkStr;
-            // Trace form: same winner, plus per-spec results so the diagnostic
-            // can report how far each recognizer got instead of guessing.
-            const _detTrace = detectMsgTypeTrace(detectStr);
-            _p23Traces.push(_detTrace);   // fed to the shared detection summary
-            let msgType = _detTrace.winner;
+          for (const ci of _chunkInfo) {
+            const { chunk, chunkStr, bytes, parseBytes } = ci;
+            let msgType = ci.msgType;
 
             // Auto-detect via volume-hierarchy scoring (DDLMM routing removed).
             {
@@ -9605,9 +9600,6 @@ function doParseMessages() {
             }
           }
 
-          // Same detection summary the NETARD flow shows \u2014 a message pasted as
-          // raw text reports the same "Matched as X" as the record it came from.
-          _ppSetDetectDetails('Detecting message types', _p23Traces, 'message');
           if (_ddlErrors.length) {
             console.warn('[P2/P3 scoring] DDL(s) with errors (skipped):', _ddlErrors);
             setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check console for details.`, 'warn'), 350);

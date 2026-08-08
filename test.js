@@ -3100,6 +3100,52 @@ test('file-read: the SEG-MAP input still overrides the on-file map', () => {
 // ran and a legacy heuristic silently produced the fields. Unit tests could not
 // see it. These assert the ROUTING DECISION and count which parser actually
 // executed, so that class of drift fails loudly.
+// ── The parse dispatcher does each chunk's work once, and ticks honestly ────
+// Watching a slow parse showed the panel jump from "Detecting message types" to
+// "Retrieving DDL definitions" with nothing between them, and the detection
+// summary appearing three steps later. The step was ticked immediately because
+// it is informational — the actual detection ran inside the SCORING step, twice:
+// once to pick a representative for scoring and again in the main loop. Every
+// chunk was byte-extracted, EBCDIC-scanned and detected twice for one answer.
+
+console.log('\nthe parse dispatcher does each chunk once');
+
+test('the dispatcher detects each chunk once, not once per pass', () => {
+  const fn = psFnSource('doParseMessages');
+  const dispatcher = fn.slice(fn.indexOf('Detecting message types'));
+  // One detection call, and it is the trace form — a strict superset of
+  // detectMsgType (same spec order, same short-circuits, same winner) so one
+  // call serves both the scoring representative and the main loop.
+  eq((dispatcher.match(/detectMsgTypeTrace\(/g) || []).length, 1, 'one trace detection');
+  eq((dispatcher.match(/[^a-zA-Z]detectMsgType\(/g) || []).length, 0,
+     'and no second, plain detection');
+  // Byte extraction and the EBCDIC scan travel with it.
+  eq((dispatcher.match(/extractBytes\(chunk/g) || []).length, 1, 'one byte extraction');
+  eq((dispatcher.match(/_f09 = 0/g) || []).length, 1, 'one EBCDIC scan');
+});
+
+test('the detection summary is attached with the tick, not back-filled', () => {
+  const fn = psFnSource('doParseMessages');
+  const i = fn.indexOf('Detecting message types');
+  const summary = fn.indexOf("_ppSetDetectDetails('Detecting message types'", i);
+  const tick    = fn.indexOf('_parseProgressDoneLast()', i);
+  assert.ok(summary > 0 && tick > 0, 'both are present');
+  assert.ok(summary < tick,
+    'the summary is set BEFORE the step is ticked, so a finished step is never empty');
+  // Exactly one place sets it — the old code set it again three steps later.
+  eq((fn.match(/_ppSetDetectDetails\('Detecting message types'/g) || []).length, 1,
+     'and it is set once');
+});
+
+test('both scoring passes read the cached per-chunk facts', () => {
+  const fn = psFnSource('doParseMessages');
+  const scoring = fn.slice(fn.indexOf('function _startP23Scoring'));
+  assert.ok(!/for \(const chunk of chunks\)/.test(scoring),
+    'neither pass re-walks the raw chunks');
+  eq((scoring.match(/for \(const ci of _chunkInfo\)/g) || []).length, 2,
+     'both passes read the cache');
+});
+
 console.log('\nparse-flow routing (which parser ran)');
 
 const {

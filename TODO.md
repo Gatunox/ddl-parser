@@ -113,6 +113,14 @@ legacy hardcodes.
 exist only on one machine. Track them (they can still be excluded from the
 release bundle).
 
+**Wider as of 2026-08-07.** `test.js`, `baseline.js` and `baseline.golden.json`
+were untracked by request and now live only on this machine too — 512 tests and
+1472 recorded baseline cases with no copy anywhere else. `npm test` fails on a
+fresh clone. Nothing was deleted locally and the history still contains them, so
+this is recoverable; it is recorded here so the exposure is visible rather than
+discovered after a disk failure. A local backup outside the repo would close it
+without putting anything back in the public repo.
+
 ---
 
 ## 6. [ ] Bump `APP_VERSION` from the build script

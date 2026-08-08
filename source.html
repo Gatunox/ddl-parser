@@ -1739,7 +1739,26 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
 .me-ps-help-atype{color:var(--text-dim);white-space:normal;word-break:break-word;min-width:80px;}
 .me-ps-help-req{color:#f85149;font-size:calc(var(--sz-mono) - 3px);}
 .me-ps-help-opt{color:var(--text-dim);font-size:calc(var(--sz-mono) - 3px);}
-.me-ps-help-ex-title{color:var(--text-dim);font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);margin-bottom:4px;margin-top:6px;}
+/* One example = one card. They used to be a flat run of divs separated by a
+   10px spacer, so with several on screen a Payload/Spec/Result trio ran
+   straight into the next one and the whole panel read as a single long
+   example. The border is what says where one ends. */
+.me-ps-help-ex{border:2px solid var(--border);border-left:2px solid var(--accent);border-radius:4px;
+  background:rgba(255,255,255,.02);padding:8px 10px 10px;margin:10px 0;}
+body.light .me-ps-help-ex{background:rgba(0,0,0,.02);}
+/* The heading has to win against everything inside the card — a dim, smaller
+   line was quieter than the labels it was supposed to introduce. */
+.me-ps-help-ex-title{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+  font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);
+  margin:0 0 8px;padding-bottom:6px;border-bottom:2px solid var(--border);}
+.me-ps-ex-num{flex-shrink:0;font-size:calc(var(--sz-mono) - 2px);font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--accent);
+  background:rgba(var(--accent-rgb),.12);border:2px solid var(--accent);
+  border-radius:3px;padding:1px 6px;}
+.me-ps-ex-what{min-width:0;}
+/* The first label inside a card no longer needs to push away from a heading
+   that now has its own bottom border. */
+.me-ps-help-ex .me-ps-ex-lbl:first-of-type{margin-top:0;}
 .me-ps-help-section{margin:8px 0 10px;}
 .me-ps-help-section-title{color:var(--text-dim);font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);font-weight:700;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;}
 .me-ps-help-ul{margin:0;padding-left:18px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text);line-height:1.5;}
@@ -2224,7 +2243,7 @@ th.me-fm-colhi{color:var(--accent);}
                 <input type="text" id="auditFltCount" placeholder="max" style="width:calc(var(--sz-mono) * 5)" oninput="auditApplyFilter()">
               </div>
               <div style="flex:1"></div>
-              <button class="btn" style="padding:0 6px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleCfgDialog()" title="Configure">⚙</button>
+              <button class="btn" id="auditCfgBtn" style="padding:0 6px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleCfgDialog()" title="Configure">⚙</button>
               <!-- Config dialog (floats below cfg bar) -->
               <div id="auditCfgDialog" class="audit-cfg-dialog">
                 <div class="audit-cfg-hdr">
@@ -12303,7 +12322,13 @@ function auditCloseMode() {
 
 function auditToggleCfgDialog() {
   const dlg = document.getElementById('auditCfgDialog');
-  dlg.classList.toggle('open');
+  if (!dlg) return;
+  const open = dlg.classList.toggle('open');
+  // The last of the four choosers to make the same three moves: light the cog,
+  // dim the host, and leave the cog above the scrim as the way back out.
+  const btn = document.getElementById('auditCfgBtn');
+  if (btn) btn.classList.toggle('btn-on', open);
+  dlg.closest('.panel')?.classList.toggle('cfg-dim', open);
 }
 function toggleColCfgDialog() {
   const dlg = document.getElementById('colCfgDialog');
@@ -14742,7 +14767,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.13.3.1';
+const APP_VERSION  = '1.13.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17852,10 +17877,14 @@ function _mePsHelpRunExample(ex) {
 
 // Payload → spec → what the block consumed. Mirrors the Data Type help's
 // declared/raw/value chain, which is the shape people already read here.
-function _mePsHelpExampleHtml(ex) {
+// `i` arrives from the .map that renders the list, so the number is the one the
+// reader is looking at — not a count baked into the data.
+function _mePsHelpExampleHtml(ex, i) {
   const e = _mePsHelpNormEx(ex);
   const text = JSON.stringify(e.spec, null, 2);
-  let out = `<div class="me-ps-help-ex-title">${e.what}</div>`;
+  let out = `<div class="me-ps-help-ex"><div class="me-ps-help-ex-title">`
+    + (Number.isInteger(i) ? `<span class="me-ps-ex-num">Example ${i + 1}</span>` : '')
+    + `<span class="me-ps-ex-what">${e.what}</span></div>`;
   if (e.payload) {
     const bytes = e.payload.replace(/\s+/g, '').match(/../g) || [];
     out += `<div class="me-ps-ex-lbl">Payload</div><div class="me-ps-ex-bytes">`
@@ -17900,7 +17929,7 @@ function _mePsHelpExampleHtml(ex) {
         + `</tbody></table>`;
     out += `<div class="me-ps-help-dim" style="margin-top:3px">cursor ends at byte ${ctx.cursor}</div>`;
   }
-  return out;
+  return out + `</div>`;
 }
 
 // Selecting an attribute narrows the examples to the ones that use it.
@@ -17973,7 +18002,8 @@ function _mePsHelpSelect(blk) {
       + ` <button class="btn btn-sm" onclick="_mePsHelpAttr('${blk}','${_mePsHelpAttrSel}')">show all</button></div>`
     : '';
   const exHtml = exHead + sharedNote + (shown.length
-    ? shown.map(_mePsHelpExampleHtml).join('<div style="height:10px"></div>')
+    // No spacer div: each example is a card now and carries its own margin.
+    ? shown.map((ex, i) => _mePsHelpExampleHtml(ex, i)).join('')
     : `<div class="me-ps-help-dim">No example uses <b>${_mePsHelpAttrSel}</b> yet.</div>`);
   // "Use when" guidance list — appears between description and attributes.
   const guidanceHtml = Array.isArray(info.useWhen) && info.useWhen.length

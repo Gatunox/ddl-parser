@@ -6624,6 +6624,7 @@ const CHOOSERS = [
   { fn: '_expToggleColsDlg',  btn: 'exp-cols-btn',   host: '.ddl-doc-modal', where: 'the export modal' },
   { fn: 'toggleColCfgDialog', btn: 'colCfgBtn',      host: '.panel',         where: 'the Parse Results panel' },
   { fn: '_meFmToggleColsDlg', btn: 'me-fm-cols-btn', host: '.me-shell',      where: 'the Data Editor' },
+  { fn: 'auditToggleCfgDialog', btn: 'auditCfgBtn',  host: '.panel',         where: 'the audit browser' },
 ];
 for (const c of CHOOSERS) {
   test(`${c.where}: its cog lights, and what is behind the chooser dims`, () => {
@@ -6636,6 +6637,28 @@ for (const c of CHOOSERS) {
     assert.ok(html.includes(`id="${c.btn}"`), `${c.btn} exists in the markup`);
   });
 }
+
+test('each help example is a bounded, numbered card', () => {
+  // Reported: "it seems one long example". read-fixed alone ships ten, and they
+  // were a flat run of divs joined by a 10px spacer — a Payload/Spec/Result trio
+  // ran straight into the next one with nothing marking the boundary.
+  const fn = psFnSource('_mePsHelpExampleHtml');
+  assert.ok(/class="me-ps-help-ex"/.test(fn), 'each example opens a card');
+  assert.ok(/return out \+ `<\/div>`/.test(fn), 'and closes it — an unclosed card nests the rest inside it');
+  assert.ok(/Example \$\{i \+ 1\}/.test(fn), 'numbered from the render index, not the data');
+  // The number must come from the list, or every card reads "Example 1".
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/shown\.map\(\(ex, i\) => _mePsHelpExampleHtml\(ex, i\)\)/.test(src),
+    'the index is actually passed');
+  assert.ok(!/join\('<div style="height:10px"><\/div>'\)/.test(src),
+    'the spacer is gone — the card carries its own margin');
+  // A border is what says where one ends; colour alone would not survive a theme.
+  const card = src.match(/\.me-ps-help-ex\{([^}]*)\}/);
+  assert.ok(card && /border:2px solid/.test(card[1]), `the card is bounded: ${card && card[1]}`);
+  const title = src.match(/\.me-ps-help-ex-title\{([^}]*)\}/);
+  assert.ok(title && /border-bottom:2px solid/.test(title[1]),
+    'and the heading is separated from the body it introduces');
+});
 
 test('the dim hosts all clip, so a mispositioned scrim would vanish silently', () => {
   // .panel and .me-shell are static until .cfg-dim lands on them, and both hide

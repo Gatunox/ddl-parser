@@ -398,7 +398,7 @@ exports are bridged in the harness.
 
 ---
 
-## 13. [ ] The audit panel's cog does not dim its host
+## 13. [x] The audit panel's cog does not dim its host — *done v1.13.4.0*
 
 The last of the four column choosers. The other three — export modal, Parse
 Results, Data Editor — all light the cog, dim the host and lift the cog above
@@ -410,7 +410,7 @@ no absolutely-positioned descendant of the host resolves above it.
 
 ---
 
-## 14. [ ] Unreproduced: the export chooser closed once on its own
+## 14. [x] Unreproduced: the export chooser closed once on its own — *closed 2026-08-08*
 
 While verifying v1.12.1.0 the export column chooser was observed closed after
 two programmatic toggle clicks, with nothing in the code path that closes it.
@@ -419,6 +419,12 @@ not reproduce it, and no outside-click or document-level handler touches that
 dialog. Recorded rather than dismissed: if it shuts unprompted during normal
 use, that is a real signal and this note is the second data point. Suspect the
 probe rather than the app until a user sees it.
+
+**Closed 2026-08-08.** The user has never hit it: *"14 can be closed i never
+faced that issue myselft"*. It was observed once, from a programmatic probe,
+and never reproduced across nine further clicks including a real mouse click.
+Recorded and closed rather than left open as a permanent maybe — if it happens
+to a person, this entry is the second data point.
 
 ---
 

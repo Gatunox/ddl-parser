@@ -6142,28 +6142,67 @@ test('the export carries the Bytes column, counted like the LEN column', () => {
   eq(col(lines.find(l => /^EMV.DATA/.test(l))),   '5', 'but not a LEN that has its own row');
 });
 
-test('the export column chooser lays out in a row, and wins the cascade', () => {
-  // Stacked, four checkboxes make a tall column of single words that overhangs
-  // the modal. The horizontal rule has to out-specify `.audit-cfg-dialog.open
-  // {display:block}` — matching it and relying on source order is how two
-  // rules today ended up silently losing.
-  assert.ok(/id="exp-cols-dlg" class="audit-cfg-dialog exp-cols-h"/.test(html),
-    'the dialog carries the horizontal class');
-  // The row hangs from the cog, so where the cog sits decides how much of the
-  // modal it has to span: between Download and ✕ keeps it near the right edge.
+test('the export column chooser is anchored to the viewport, not to the modal', () => {
+  // CHANGED ON PURPOSE (v1.12.1.0). This asserted the chooser laid out as a
+  // horizontal strip, which was a workaround, not a design: .ddl-doc-modal
+  // clips (overflow:hidden) and is only as tall as its message list, so a
+  // dropdown positioned against it was cut off whenever the list was short.
+  // Flattening it survived the clip at the cost of looking like nothing else in
+  // the app. Anchoring it to the cog removes the constraint instead — measured
+  // on a live page, the viewport had 784px below the cog where the modal had
+  // 198 and shrinking.
+  assert.ok(/id="exp-cols-dlg" class="audit-cfg-dialog cfg-anchored"/.test(html),
+    'the dialog is anchored, not absolutely positioned inside the modal');
+  const rule = html.match(/\.audit-cfg-dialog\.cfg-anchored\s*\{([^}]*)\}/);
+  assert.ok(rule && /position:\s*fixed/.test(rule[1]),
+    `fixed is what escapes the clip: ${rule && rule[1]}`);
+  // position:fixed only escapes if the base rule's offsets stop applying.
+  assert.ok(/top:\s*auto/.test(rule[1]) && /right:\s*auto/.test(rule[1]),
+    `the absolute offsets must be released: ${rule[1]}`);
+  // No rule may lay it out as a row again.
+  assert.ok(!/exp-cols-h/.test(html), 'the horizontal workaround is gone');
+  // The cog sits between Download and ✕, so the chooser opens near the right edge.
   const _m = html.indexOf('id="msgExportOverlay"');
   const hdr = html.slice(_m, html.indexOf('id="exportBody"', _m));
   const order = [hdr.indexOf('doMsgExport()'), hdr.indexOf('_expToggleColsDlg()'),
                  hdr.lastIndexOf('closeMsgExportModal()')];
   assert.ok(_m > 0 && order.every(i => i >= 0) && order[0] < order[1] && order[1] < order[2],
     `Download, then the cog, then close — got offsets ${order}`);
-  const rule = html.match(/\.audit-cfg-dialog\.exp-cols-h\.open\s*\{([^}]*)\}/);
-  assert.ok(rule && /display:flex/.test(rule[1]), `it lays out in a row: ${rule && rule[1]}`);
-  const mine  = (rule[0].match(/\./g) || []).length;
-  const base  = html.match(/([^\s{}]*\.audit-cfg-dialog\.open)\s*\{[^}]*display:block/);
-  const theirs = base ? (base[1].match(/\./g) || []).length : 0;
-  assert.ok(mine > theirs,
-    `${mine} classes must beat the block rule's ${theirs}, whatever the order`);
+});
+
+test('the chooser is placed from the cog, and flips rather than leave the screen', () => {
+  const fn = psFnSource('_expPlaceColsDlg');
+  assert.ok(/getElementById\('exp-cols-btn'\)/.test(fn), 'it measures the cog');
+  assert.ok(/getBoundingClientRect\(\)/.test(fn), 'and places against a real rect');
+  assert.ok(/window\.innerHeight/.test(fn) && /window\.innerWidth/.test(fn),
+    'bounded by the viewport in both axes');
+  // The flip is the whole point: without it a cog near the bottom reproduces the
+  // original bug against the screen edge instead of the modal edge.
+  assert.ok(/a\.top\s*-\s*M\s*-\s*d\.height/.test(fn),
+    `it flips above the cog when it will not fit below: ${fn}`);
+  // Opening must place it; a stale left/top from a previous open is a popover
+  // sitting somewhere the cog no longer is.
+  assert.ok(/if \(open\) _expPlaceColsDlg\(\)/.test(psFnSource('_expToggleColsDlg')),
+    'opening places it');
+  // Toggling a column re-renders and changes nothing about size here, but the
+  // header row means a re-render CAN change height — re-place after it.
+  assert.ok(/_expPlaceColsDlg\(\)/.test(psFnSource('_expRenderColsDlg')),
+    're-rendering re-places it');
+});
+
+test('the export chooser uses the same rows as every other column chooser', () => {
+  // This is the actual complaint: checkboxes in a strip, where the rest of the
+  // app uses a labelled row with a panel-toggle. Pin the shape against the two
+  // choosers it must match.
+  const render = psFnSource('_expRenderColsDlg');
+  assert.ok(/audit-cfg-row/.test(render), 'labelled rows');
+  assert.ok(/panel-toggle/.test(render), 'with a panel-toggle, not a checkbox');
+  assert.ok(!/type="checkbox"/.test(render), `and no checkbox left behind: ${render}`);
+  // is-collapsed is what the other two use to mean "this column is hidden".
+  assert.ok(/is-collapsed/.test(render), 'hidden columns read as collapsed');
+  // The same markup the Parse Results chooser ships inline.
+  assert.ok(/<div class="audit-cfg-row"><label>Field<\/label><button class="panel-toggle"/.test(html),
+    'the reference chooser still has that shape');
 });
 
 test('the cog becomes the close button while the chooser is open', () => {
@@ -6212,10 +6251,15 @@ test('the cog becomes the close button while the chooser is open', () => {
     'both are icon buttons');
   assert.ok(/\.btn\.btn-ico\s*\{[^}]*min-width/.test(html),
     'and that class fixes their width');
+  // CHANGED ON PURPOSE (v1.12.1.0). This asserted the chooser carried NO header,
+  // which was right while it was a one-line strip — a title bar and an ✕ on a
+  // single row of checkboxes was chrome with nothing to title. Back in its
+  // normal vertical form it takes the normal header, because that is what the
+  // Parse Results and Field Map choosers have and consistency is the point.
   const render = psFnSource('_expRenderColsDlg');
-  assert.ok(!/audit-cfg-hdr/.test(render), `the row carries no header of its own: ${render}`);
-  // Dead CSS is how a rule ends up styling the wrong thing later.
-  assert.ok(!/exp-cols-h .audit-cfg-hdr/.test(html), 'and no rule is left styling one');
+  assert.ok(/audit-cfg-hdr/.test(render), `it carries the standard header: ${render}`);
+  assert.ok(/<span>Columns<\/span>/.test(render), 'titled the same way as the others');
+  assert.ok(/_expToggleColsDlg\(\)/.test(render), 'and its ✕ closes the same toggle the cog does');
 });
 
 test('no border is 1px — the project uses 2px everywhere', () => {

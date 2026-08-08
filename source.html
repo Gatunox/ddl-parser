@@ -1296,13 +1296,14 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .audit-cfg-row input:focus { outline:none; border-color:var(--accent); }
 .audit-cfg-row select { -webkit-appearance:none; appearance:none; background:var(--bg-panel); border:2px solid var(--border); color:var(--text); font-family:var(--font-mono); font-size:var(--sz-mono); padding:2px 20px 2px 4px; border-radius:2px; min-width:calc(var(--sz-mono) * 5); height:calc(var(--sz-mono) + 8px); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 5px center; }
 .audit-cfg-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; padding-bottom:6px; border-bottom:2px solid var(--border); }
-/* The export chooser is four checkboxes — stacked, it is a tall column holding
-   one word per row, and it overhangs the modal. Laid out in a row it fits on the
-   header line. Three classes so it beats `.audit-cfg-dialog.open{display:block}`
-   on specificity rather than on source order. */
-.audit-cfg-dialog.exp-cols-h { right:0; padding:8px 12px; min-width:0; white-space:nowrap; }
-.audit-cfg-dialog.exp-cols-h.open { display:flex; align-items:center; gap:16px; }
-.audit-cfg-dialog.exp-cols-h .audit-cfg-row { margin-bottom:0; gap:6px; }
+/* A chooser inside a modal cannot be positioned against it: .ddl-doc-modal
+   clips (overflow:hidden) and is only as tall as its message list, so with a
+   short list the dropdown was cut off. It had been flattened into a horizontal
+   strip to survive that, which is why the export chooser stopped looking like
+   every other one in the app. Anchored to the viewport it borrows no space from
+   the modal and the rows go back to being the same vertical list. Placement is
+   set inline by _expPlaceColsDlg, the way showCtxMenu places the tree menu. */
+.audit-cfg-dialog.cfg-anchored { position:fixed; top:auto; right:auto; }
 body.light .audit-record-row:hover { background:rgba(var(--accent-rgb),0.08); }
 body.light .audit-cfg-dialog { box-shadow:0 6px 20px rgba(0,0,0,0.18); }
 body.light .audit-filter-bar select, body.light .audit-filter-bar input[type=text] { background:#fff; }
@@ -4571,20 +4572,42 @@ function _expToggleColsDlg() {
   const dlg = document.getElementById('exp-cols-dlg');
   if (!dlg) return;
   const open = dlg.classList.toggle('open');
-  // The cog becomes the close button while the row is up, so the row does not
-  // need to carry a title bar and an ✕ of its own just to be dismissible.
   const btn = document.getElementById('exp-cols-btn');
   if (btn) btn.classList.toggle('btn-on', open);
   dlg.closest('.ddl-doc-modal')?.classList.toggle('cfg-dim', open);
+  if (open) _expPlaceColsDlg();
+}
+// Anchored to the cog rather than to the modal, so how much room the chooser
+// gets no longer depends on how many messages are being exported. Same shape as
+// showCtxMenu: place, measure, flip if it would leave the viewport.
+function _expPlaceColsDlg() {
+  const dlg = document.getElementById('exp-cols-dlg');
+  const btn = document.getElementById('exp-cols-btn');
+  if (!dlg || !btn) return;
+  const a = btn.getBoundingClientRect();
+  dlg.style.left = '0px';
+  dlg.style.top  = '0px';
+  const d = dlg.getBoundingClientRect();
+  const M = 4;
+  let left = Math.min(Math.max(M, a.right - d.width), window.innerWidth  - M - d.width);
+  let top  = a.bottom + M;
+  if (top + d.height > window.innerHeight - M) top = Math.max(M, a.top - M - d.height);
+  dlg.style.left = Math.max(M, left) + 'px';
+  dlg.style.top  = top + 'px';
 }
 function _expRenderColsDlg() {
   const dlg = document.getElementById('exp-cols-dlg');
   if (!dlg) return;
   const h = _expHiddenCols();
-  dlg.innerHTML = _EXP_COLS.map(([k, label]) =>
+  // Identical to the Parse Results and Field Map choosers — same header, same
+  // rows, same panel-toggle, where is-collapsed means the column is hidden.
+  dlg.innerHTML = `<div class="audit-cfg-hdr"><span>Columns</span>`
+      + `<button class="btn" onclick="_expToggleColsDlg()" style="padding:1px 7px;font-size:13px">✕</button></div>`
+      + _EXP_COLS.map(([k, label]) =>
         `<div class="audit-cfg-row"><label>${label}</label>`
-        + `<input type="checkbox" class="trk-chk" ${h[k] ? '' : 'checked'}`
-        + ` onchange="_expToggleCol('${k}')"></div>`).join('');
+        + `<button class="panel-toggle${h[k] ? ' is-collapsed' : ''}"`
+        + ` onclick="_expToggleCol('${k}')">−</button></div>`).join('');
+  if (dlg.classList.contains('open')) _expPlaceColsDlg();
 }
 
 // ── The exported text ───────────────────────────────────────────────────────
@@ -14676,7 +14699,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.12.0.3';
+const APP_VERSION  = '1.12.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25444,7 +25467,7 @@ function _meSave() {
         <button class="btn btn-sm btn-primary" onclick="doMsgExport()">⬇ Download</button>
         <div style="position:relative;display:inline-flex">
           <button class="btn btn-sm btn-ico" id="exp-cols-btn" onclick="_expToggleColsDlg()" title="Choose which columns the file carries">⚙</button>
-          <div id="exp-cols-dlg" class="audit-cfg-dialog exp-cols-h"></div>
+          <div id="exp-cols-dlg" class="audit-cfg-dialog cfg-anchored"></div>
         </div>
         <button class="btn btn-sm btn-ico" onclick="closeMsgExportModal()">✕</button>
       </div>

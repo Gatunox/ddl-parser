@@ -6270,23 +6270,39 @@ test('the cog becomes the close button while the chooser is open', () => {
   assert.ok(/_expToggleColsDlg\(\)/.test(render), 'and its ✕ closes the same toggle the cog does');
 });
 
-test('the Parse Results chooser dims its panel the same way', () => {
-  // Reported: pressing this cog opened the chooser with nothing behind it
-  // dimmed, so it read as part of the panel rather than as something modal
-  // over it — while the export chooser one panel away did dim. Same three
-  // moves, or it is not the same control.
-  const fn = psFnSource('toggleColCfgDialog');
-  assert.ok(/classList\.toggle\('open'\)/.test(fn), 'it opens the chooser');
-  assert.ok(/classList\.toggle\('btn-on', open\)/.test(fn), 'lights the cog');
-  assert.ok(/classList\.toggle\('cfg-dim', open\)/.test(fn), 'and dims what is behind it');
-  assert.ok(/closest\('\.panel'\)/.test(fn), 'against the panel that holds it');
-  // .panel is static and clips; the scrim only lands correctly because the
-  // .cfg-dim class makes its host an origin. Pinned in the export test too —
-  // this one fails if the panel stops being the host it is applied to.
-  assert.ok(/\.panel \{[^}]*overflow: hidden/.test(html),
-    'the panel clips, so a mispositioned scrim would vanish rather than look wrong');
-  // Both cogs must resolve to buttons that exist.
-  assert.ok(/id="colCfgBtn"/.test(html), 'the cog it lights is real');
+// Every cog that opens a column chooser behaves identically. Reported twice, one
+// surface at a time: the Parse Results cog opened with nothing dimmed while the
+// export cog one panel away did dim, then the Data Editor cog turned out to have
+// the same gap. A table, so the next chooser is added to a list that already
+// fails when it does not conform.
+const CHOOSERS = [
+  { fn: '_expToggleColsDlg',  btn: 'exp-cols-btn',   host: '.ddl-doc-modal', where: 'the export modal' },
+  { fn: 'toggleColCfgDialog', btn: 'colCfgBtn',      host: '.panel',         where: 'the Parse Results panel' },
+  { fn: '_meFmToggleColsDlg', btn: 'me-fm-cols-btn', host: '.me-shell',      where: 'the Data Editor' },
+];
+for (const c of CHOOSERS) {
+  test(`${c.where}: its cog lights, and what is behind the chooser dims`, () => {
+    const fn = psFnSource(c.fn);
+    assert.ok(/classList\.toggle\('open'\)/.test(fn), 'it opens the chooser');
+    assert.ok(/classList\.toggle\('btn-on', open\)/.test(fn), 'lights the cog');
+    assert.ok(/classList\.toggle\('cfg-dim', open\)/.test(fn), 'and dims what is behind it');
+    assert.ok(fn.includes(`closest('${c.host}')`), `against ${c.host}`);
+    // A cog it cannot find is a toggle that silently never lights.
+    assert.ok(html.includes(`id="${c.btn}"`), `${c.btn} exists in the markup`);
+  });
+}
+
+test('the dim hosts all clip, so a mispositioned scrim would vanish silently', () => {
+  // .panel and .me-shell are static until .cfg-dim lands on them, and both hide
+  // their overflow. A scrim that resolved against an ancestor further up would
+  // be clipped away entirely rather than look wrong — which is why the class
+  // carries position:relative rather than each host declaring it.
+  for (const sel of ['.panel', '.me-shell']) {
+    const rule = new RegExp(sel.replace('.', '\\.') + '\\s*\\{([^}]*)\\}');
+    const m = html.match(rule);
+    assert.ok(m, `${sel} rule not found`);
+    assert.ok(/overflow\s*:\s*hidden/.test(m[1]), `${sel} clips: ${m[1].slice(0, 60)}`);
+  }
 });
 
 test('no border is 1px — the project uses 2px everywhere', () => {

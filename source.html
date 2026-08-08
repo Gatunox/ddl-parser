@@ -14708,7 +14708,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.12.1.1';
+const APP_VERSION  = '1.12.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19176,7 +19176,7 @@ function _meOverridesPrep(item) {
   <button class="btn btn-sm" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
   <button class="btn btn-sm" id="me-fm-hide-redef-btn" onclick="_meFmToggleHideRedef()" title="Hide / show REDEFINES rows">Hide Redef</button>
   <div style="position:relative;display:inline-flex">
-    <button class="btn btn-sm" onclick="_meFmToggleColsDlg()" title="Columns and row count" style="padding:0 6px">⚙</button>
+    <button class="btn btn-sm" id="me-fm-cols-btn" onclick="_meFmToggleColsDlg()" title="Columns and row count" style="padding:0 6px">⚙</button>
     <div id="me-fm-cols-dlg" class="audit-cfg-dialog">
       <div class="audit-cfg-hdr"><span>Columns</span><button class="btn" onclick="_meFmToggleColsDlg()" style="padding:1px 7px;font-size:13px">✕</button></div>
       ${colsRows}
@@ -20491,7 +20491,14 @@ function _meFmApplyColVis() {
   }
 }
 function _meFmToggleColsDlg() {
-  document.getElementById('me-fm-cols-dlg')?.classList.toggle('open');
+  const dlg = document.getElementById('me-fm-cols-dlg');
+  if (!dlg) return;
+  const open = dlg.classList.toggle('open');
+  // The same three moves the export and Parse Results choosers make: light the
+  // cog, dim the host, leave the cog above the scrim as the way back out.
+  const btn = document.getElementById('me-fm-cols-btn');
+  if (btn) btn.classList.toggle('btn-on', open);
+  dlg.closest('.me-shell')?.classList.toggle('cfg-dim', open);
 }
 
 // ── VLG toggles ──────────────────────────────────────────────────────────────

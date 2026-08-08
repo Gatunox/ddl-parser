@@ -7701,6 +7701,36 @@ test('decommissioned DDLMM is not described as live', () => {
   deepEq(offenders, [], 'DDLMM described outside its tombstone');
 });
 
+// ── APP_VERSION keeps up with the commits ────────────────────────────────────
+// Three commits in a row (v1.11.0.0, v1.11.0.1, v1.12.0.0) shipped with
+// APP_VERSION still reading 1.10.1.0, so the running app under-reported itself
+// and the user could not tell whether their copy had the fix. Nothing in the
+// suite noticed, because the version is a string no test read. Now the last
+// commit's own subject line is the witness: whatever version it claims, the
+// source must carry at least that.
+console.log('\nrelease — APP_VERSION matches what the last commit claimed');
+
+test('APP_VERSION is not behind the version in HEAD\'s subject line', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const m   = src.match(/const APP_VERSION\s*=\s*'([0-9.]+)'/);
+  assert.ok(m, 'APP_VERSION not found in source.html');
+
+  let subject;
+  try {
+    subject = require('child_process')
+      .execSync('git log -1 --format=%s', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch { return; }                       // no git here — nothing to check against
+
+  const claimed = subject.match(/\(v([0-9]+(?:\.[0-9]+){3})\)/);
+  if (!claimed) return;                     // a commit that names no version makes no claim
+
+  const num = v => v.split('.').map(Number);
+  const [a, b] = [num(m[1]), num(claimed[1])];
+  const cmp = a.reduce((r, n, i) => r !== 0 ? r : n - b[i], 0);
+  assert.ok(cmp >= 0,
+    `APP_VERSION is ${m[1]} but the last commit shipped as ${claimed[1]} — bump it in source.html and rebuild`);
+});
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

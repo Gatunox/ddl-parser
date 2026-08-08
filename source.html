@@ -8858,7 +8858,7 @@ function doParseNetardLog(text, opts = {}) {
             }
             if (_ddlErrors.length) {
               console.warn('[NETARD scoring] DDL(s) with errors (skipped):', _ddlErrors);
-              setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check console for details.`, 'warn'), 350);
+              setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check the browser console for details.`, 'warn'), 350);
             }
             // Detection histogram — shared with the plain-paste flow so both
             // report identically (one line per matched spec, one per distinct
@@ -8893,7 +8893,7 @@ function doParseNetardLog(text, opts = {}) {
               _parseProgressHide();
               document.getElementById('msgInput').readOnly = false;
               syncParseBtn();
-              flash('Scoring failed unexpectedly \u2014 check console for details.', 'error');
+              flash('Scoring failed unexpectedly \u2014 check the browser console for details.', 'error');
               return;
             }
             function _finalizeNetard() {
@@ -9487,10 +9487,17 @@ function doParseMessages() {
       // compiledByVol === null → nothing needed a DDL, so there is nothing to
       // score; the main loop below runs on the verdicts already computed.
       function _startP23Scoring(compiledByVol) {
-        const allCompiled = compiledByVol ? Object.values(compiledByVol).flat()
+        // The null argument is unpacked once, here, and never touched again.
+        // Spreading `compiledByVol ?` guards through the body left one deref
+        // unguarded \u2014 a matched message skipped compiling, then the pre-scoring
+        // pass indexed the map that was never built and the parse died.
+        const _scoring = !!compiledByVol;   // false \u2192 nothing needed a DDL
+        const _pool    = compiledByVol || {};
+
+        const allCompiled = _scoring ? Object.values(_pool).flat()
           .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); }) : [];
 
-        if (compiledByVol && !allCompiled.length) {
+        if (_scoring && !allCompiled.length) {
           _parseProgressHide();
           flash('No DDL definitions found. Add a DDL to the tree or select one explicitly.', 'warn');
           document.getElementById('msgInput').readOnly = false;
@@ -9498,7 +9505,7 @@ function doParseMessages() {
           return;
         }
 
-        if (compiledByVol) _parseProgressStep(`Scoring ${allCompiled.length} candidate${allCompiled.length !== 1 ? 's' : ''}\u2026`);
+        if (_scoring) _parseProgressStep(`Scoring ${allCompiled.length} candidate${allCompiled.length !== 1 ? 's' : ''}\u2026`);
 
         setTimeout(() => {
           if (_parseAborted) return;
@@ -9511,7 +9518,10 @@ function doParseMessages() {
           try {
           // ── Pre-scoring: score one representative per type against all DDLs ──
           const typeMatchCache = {};
-          {
+          // Only a 'needs-ddl' chunk ever reads this cache, and _scoring is false
+          // exactly when no chunk came back that way — so scoring a matched
+          // message is not just wasted work, it is work with no reader.
+          if (_scoring) {
             const longestByType = {};
             for (const ci of _chunkInfo) {
               const { bytes, parseBytes, msgType } = ci;
@@ -9522,7 +9532,7 @@ function doParseMessages() {
                 longestByType[key] = { parseBytes, bytes, byteLen: bytes.length, msgType };
             }
             for (const [key, rep] of Object.entries(longestByType)) {
-              const pool = volSearchChain(rep.msgType.vol).flatMap(v => compiledByVol[v] || [])
+              const pool = volSearchChain(rep.msgType.vol).flatMap(v => _pool[v] || [])
                 .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
               typeMatchCache[key] = pool.map(c => {
                 try {
@@ -9615,7 +9625,7 @@ function doParseMessages() {
 
           if (_ddlErrors.length) {
             console.warn('[P2/P3 scoring] DDL(s) with errors (skipped):', _ddlErrors);
-            setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check console for details.`, 'warn'), 350);
+            setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check the browser console for details.`, 'warn'), 350);
           }
           _parseProgressDoneLast();
           } catch (err) {
@@ -9623,7 +9633,7 @@ function doParseMessages() {
             _parseProgressHide();
             document.getElementById('msgInput').readOnly = false;
             syncParseBtn();
-            flash('Scoring failed unexpectedly \u2014 check console for details.', 'error');
+            flash('Scoring failed unexpectedly \u2014 check the browser console for details.', 'error');
             return;
           }
 
@@ -14666,7 +14676,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.12.0.1';
+const APP_VERSION  = '1.12.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

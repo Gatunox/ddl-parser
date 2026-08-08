@@ -3179,8 +3179,42 @@ test('compiling and scoring happen only when a chunk needs a DDL', () => {
   assert.ok(bail > 0 && bail < compile,
     'and it short-circuits BEFORE the compile path, not after');
   // The scoring step must not announce itself when there is nothing to score.
-  assert.ok(/if \(compiledByVol\) _parseProgressStep\(`Scoring/.test(fn),
+  assert.ok(/if \(_scoring\) _parseProgressStep\(`Scoring/.test(fn),
     'the Scoring step is announced only when candidates were compiled');
+});
+
+test('the "nothing to score" argument is unpacked once, never dereferenced', () => {
+  // The gate above was right, and I still broke every matched message with it.
+  // `null` meant "nothing needed a DDL", and I guarded three of the four places
+  // that touched it — the fourth was the pre-scoring pool, which indexes the map
+  // for any chunk that HAS a volume, i.e. every message that matched. A message
+  // that parsed cleanly a minute earlier died with
+  //   TypeError: Cannot read properties of null (reading 'BASE')
+  // and the suite stayed green, because the whole scoring body lives inside a
+  // setTimeout the sandbox stubs to a no-op. Nothing here can execute it, so the
+  // rule is enforced on the text: the null is unpacked at the top and the body
+  // reads _scoring / _pool, which are safe by construction.
+  const fn = psFnSource('doParseMessages');
+  const at = fn.indexOf('function _startP23Scoring(');
+  assert.ok(at >= 0, '_startP23Scoring not found');
+  let depth = 0, end = at;
+  for (let i = fn.indexOf('{', at); i < fn.length; i++) {
+    if (fn[i] === '{') depth++;
+    else if (fn[i] === '}' && --depth === 0) { end = i; break; }
+  }
+  const body = fn.slice(at, end + 1);
+  assert.ok(/const _scoring = !!compiledByVol;/.test(body), 'the flag is unpacked');
+  assert.ok(/const _pool\s*=\s*compiledByVol \|\| \{\};/.test(body), 'the map is unpacked');
+
+  const stray = body.split('\n')
+    .map(l => l.replace(/\/\/.*$/, ''))          // the rule is explained in comments
+    .filter(l => /compiledByVol/.test(l))
+    .map(l => l.trim())
+    .filter(l => !/^function _startP23Scoring\(compiledByVol\) \{$/.test(l)
+              && !/^const _scoring = !!compiledByVol;$/.test(l)
+              && !/^const _pool\s*=\s*compiledByVol \|\| \{\};$/.test(l));
+  deepEq(stray, [],
+    'compiledByVol may only be unpacked — the body must read _scoring / _pool');
 });
 
 test('the verdict is computed once, not again in the main loop', () => {

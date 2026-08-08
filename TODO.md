@@ -85,8 +85,15 @@ error instead of a guess. Applies to `repeat.count`, `read-while.max`,
 
 **Narrowed 2026-08-05.** A type override now decides the decode for a VLG LEN —
 `hex-char` reads the hex characters, `uint*` reads a number (v1.2.3.2 /
-v1.2.4.1). What remains is the case with NO override at all, plus the other four
-call sites listed above. See also item 9, which closes `ascii`.
+v1.2.4.1).
+
+**Narrowed again 2026-08-08 (item 9).** The no-override case is closed *for a
+LEN*: it now follows override → parse-spec block encoding → recognizer → ASCII,
+and says so when it assumed. `_meFieldAsInt` itself is UNCHANGED — the
+decimal-then-hex guess is still exactly as written above, and still runs at
+`repeat.count`, `read-while.max` and `read-fixed.length`. That is what is
+left of this item, and it is the dangerous half: those references decide how
+many times a block repeats.
 
 ---
 
@@ -187,7 +194,7 @@ argument for either implementing it or saying so in the help.
 
 ---
 
-## 9. [ ] Make an `ascii` LEN strict, like `hex-char` and `uint*` now are
+## 9. [x] Make an `ascii` LEN strict — *done v1.13.1.0 → v1.13.3.1*
 
 **Problem.** `_meDecodeLength` (`source.html:22891`) only treats a type as binding
 for `hex-char` and the integer widths. Declaring a LEN as `ascii` still runs the
@@ -203,6 +210,33 @@ the one most likely to be handed bytes that disprove it.
 **Shape of the fix.** `ascii` forces the digit branch; non-digit bytes become an
 `issue` on the field, worded like the hex-char one ("…is not a decimal number").
 Roughly twenty minutes with a regression test. Raised 2026-08-05.
+
+### Done (v1.13.1.0 → v1.13.3.1) — and it was four bugs, not one
+
+The estimate was wrong because the premise was. The Data Editor offers NINE
+types and the length decoder honoured TWO. `ascii`, `ebcdic`,
+`hex-ascii-decimal` and `hex-ebcdic-decimal` were byte-for-byte identical to
+declaring nothing at all. The one that mattered was EBCDIC: F1 F9 is "19" on
+the box and decoded as **61945** whichever of the four you picked — a length
+that sends every later field to the wrong offset.
+
+Writing the "is every offered type handled" test found two more, neither looked
+for: `uint-be` / `uint-le` carry no width and were absent from the integer
+pattern, so they fell through to the guess; and the decode was unconditionally
+big-endian, so **little-endian was offered everywhere and honoured nowhere** — a
+little-endian 19 read as 4864.
+
+The full precedence now runs override → parse-spec block `"encoding"` →
+recognizer → ASCII-and-say-so. The block level already existed and read-fixed
+had honoured it since 2026-08-02; the LEN paths never looked at it.
+
+One design correction came out of it. "No override → read it as the spec's
+encoding" was two questions, and the spec can only answer one: *text or binary?*
+it cannot (PIC X(2) does not say, and a binary length in a character field is
+ordinary on Base24 — eight tests failed on exactly that shape), but *if text,
+ASCII or EBCDIC?* it can. So the spec's encoding is tried as text first and the
+integer reading stays as the fallback. The guess that is gone is the one that
+let byte VALUES pick the encoding.
 
 ---
 
@@ -299,6 +333,30 @@ exports are bridged in the harness.
 
 ---
 
+## 13. [ ] The audit panel's cog does not dim its host
+
+The last of the four column choosers. The other three — export modal, Parse
+Results, Data Editor — all light the cog, dim the host and lift the cog above
+the scrim; `auditCfgDialog`'s toggle still only flips `.open`. Now that the
+scrim rules are written against `.cfg-dim` alone and the three toggles are a
+table in test.js ("its cog lights, and what is behind the chooser dims"), this
+is one line plus a row in that table. Check first, as the other two did, that
+no absolutely-positioned descendant of the host resolves above it.
+
+---
+
+## 14. [ ] Unreproduced: the export chooser closed once on its own
+
+While verifying v1.12.1.0 the export column chooser was observed closed after
+two programmatic toggle clicks, with nothing in the code path that closes it.
+Nine further clicks — including a real mouse click through the browser — did
+not reproduce it, and no outside-click or document-level handler touches that
+dialog. Recorded rather than dismissed: if it shuts unprompted during normal
+use, that is a real signal and this note is the second data point. Suspect the
+probe rather than the app until a user sees it.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.
@@ -324,24 +382,3 @@ exports are bridged in the harness.
 
 ---
 
-## 13. [ ] The audit panel's cog does not dim its host
-
-The last of the four column choosers. The other three — export modal, Parse
-Results, Data Editor — all light the cog, dim the host and lift the cog above
-the scrim; `auditCfgDialog`'s toggle still only flips `.open`. Now that the
-scrim rules are written against `.cfg-dim` alone and the three toggles are a
-table in test.js ("its cog lights, and what is behind the chooser dims"), this
-is one line plus a row in that table. Check first, as the other two did, that
-no absolutely-positioned descendant of the host resolves above it.
-
----
-
-## 14. [ ] Unreproduced: the export chooser closed once on its own
-
-While verifying v1.12.1.0 the export column chooser was observed closed after
-two programmatic toggle clicks, with nothing in the code path that closes it.
-Nine further clicks — including a real mouse click through the browser — did
-not reproduce it, and no outside-click or document-level handler touches that
-dialog. Recorded rather than dismissed: if it shuts unprompted during normal
-use, that is a real signal and this note is the second data point. Suspect the
-probe rather than the app until a user sees it.

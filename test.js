@@ -141,6 +141,7 @@ _t.meParseFileWithSpec = _meParseFileWithSpec;
 _t.meSpecNeedsBinding       = _meSpecNeedsBinding;
 _t.meSpecHasNoParseSpec     = _meSpecHasNoParseSpec;
 _t.meParseWithChosenBinding = _meParseWithChosenBinding;
+_t.parseVerdict             = _parseVerdict;
 _t.meWinningSpec            = _meWinningSpec;
 _t.bestDDLMatch             = bestDDLMatch;
 _t.fmtSpecByName            = window._fmtSpecByName;
@@ -3240,7 +3241,7 @@ console.log('\nparse-flow routing (which parser ran)');
 
 const {
   meSpecNeedsBinding, meSpecHasNoParseSpec, meParseWithChosenBinding,
-  meWinningSpec, fmtSpecByName,
+  meWinningSpec, fmtSpecByName, parseVerdict,
 } = sandbox._t;
 
 // PSTM-shaped DDL matching the real BASE24 layout well enough to exercise the
@@ -3343,6 +3344,63 @@ test('routing: falls back to legacy only when there is genuinely nothing to run'
   eq(meParseWithChosenBinding({ type: 'UNKNOWN', label: 'Unknown' },
      { ddlPath: 'POS/SV/PSTM', defName: 'PSTM' }, bytes, { format: 'hex', rawBytes: bytes }),
      null, 'UNKNOWN → no engine result');
+});
+
+// ── The four verdicts, all four exercised ────────────────────────────────────
+// v1.12.0.0 made compiling and scoring conditional on the verdict, and the only
+// thing testing that condition was a regex over the source. Every piece feeding
+// _parseVerdict was covered; the verdict itself was not, so "which kinds reach
+// the picker" was an assumption. It is a table now.
+test('verdicts: every kind is produced by the case that should produce it', () => {
+  S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = routeBytes();
+  const o = { format: 'hex', rawBytes: bytes };
+
+  // No spec matched at all — nothing to score against, no volume to search.
+  eq(parseVerdict({ type: 'UNKNOWN', label: 'Unknown', vol: 'POS' }, bytes, o).kind,
+     'unknown', 'UNKNOWN → unknown');
+  // Recognized, but the spec declares no volume: still nothing to search.
+  eq(parseVerdict({ type: 'PSTM', label: 'PSTM' }, bytes, o).kind,
+     'unknown', 'no volume → unknown');
+  // Recognized by a spec that carries recognizers only. There IS a DDL walk that
+  // could parse this, so the diagnostic is a policy choice, not a limitation —
+  // see the note on _meSpecHasNoParseSpec.
+  eq(parseVerdict({ type: 'B24', label: 'Base24 Generic', vol: 'POS' }, bytes, o).kind,
+     'no-spec', 'recognizers but no parse_spec → no-spec');
+  // Recognized, has a parse_spec, no binding and nothing picked → the picker.
+  eq(parseVerdict({ type: 'PSTM', label: 'PSTM', vol: 'POS' }, bytes, o).kind,
+     'needs-ddl', 'parse_spec with no binding → needs-ddl');
+  // Same spec once a DDL is picked → it parses.
+  const v = parseVerdict({ type: 'PSTM', label: 'PSTM', vol: 'POS' }, bytes,
+    { ...o, chosen: { ddlPath: 'POS/SV/PSTM', defName: 'PSTM' } });
+  eq(v.kind, 'parsed', 'a picked DDL fills the binding → parsed');
+  eq(routeSegCount(v.fields), 5, 'and the fields are the spec\'s, not a guess');
+});
+
+test('verdicts: only needs-ddl requires the compiled candidate map', () => {
+  // The gate in doParseMessages compiles nothing unless some chunk came back
+  // needs-ddl. That is only safe if no OTHER kind consults a score — which is
+  // what this pins. I got the inverse of this wrong once already: the pool pass
+  // skipped chunks with no volume, so every MATCHED message walked into a map
+  // that was never built.
+  S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = routeBytes();
+  const o = { format: 'hex', rawBytes: bytes };
+  const kinds = [
+    parseVerdict({ type: 'UNKNOWN', label: 'Unknown', vol: 'POS' }, bytes, o),
+    parseVerdict({ type: 'B24', label: 'Base24 Generic', vol: 'POS' }, bytes, o),
+    parseVerdict({ type: 'PSTM', label: 'PSTM', vol: 'POS' }, bytes,
+      { ...o, chosen: { ddlPath: 'POS/SV/PSTM', defName: 'PSTM' } }),
+  ].map(v => v.kind);
+  deepEq(kinds.filter(k => k === 'needs-ddl'), [],
+    'nothing but a missing binding asks for candidates');
+  // And the verdict that DOES need one carries no fields — there is nothing to
+  // render until the user picks.
+  const nd = parseVerdict({ type: 'PSTM', label: 'PSTM', vol: 'POS' }, bytes, o);
+  eq(nd.kind, 'needs-ddl', 'the one kind that scores');
+  eq(nd.fields, undefined, 'and it produced no fields of its own');
 });
 
 test('routing: an engine run that yields nothing usable does not displace legacy', () => {

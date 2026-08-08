@@ -14767,7 +14767,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.13.4.0';
+const APP_VERSION  = '1.13.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19564,7 +19564,32 @@ function _meFmRowHtml(row, ctx, counter) {
     ? `<span class="c-ovr-as"> as </span><span class="c-ovr-new">${ea(String(foEntry.display).toUpperCase())}</span>`
     : '';
   const dtCell = `<td class="me-fm-dt${overrideBadLen ? ' me-fm-dt-bad' : ''}">${typePart}${asPart}${warnIcon}</td>`;
-  return `<tr class="${trCls}" ${dataAttrs} onclick="_meOvlRowClick('${id}', event)">${numCell}${fieldCell}${offCell}${dtCell}${lenCell}${deCell}${vlgCell}</tr>`;
+  return `<tr class="${trCls}" ${dataAttrs} onclick="_meOvlRowClick('${id}', event)"`
+    + ` ondblclick="_meFmCopyFieldName('${id}', event)"`
+    + ` title="Double-click to copy the field name">${numCell}${fieldCell}${offCell}${dtCell}${lenCell}${deCell}${vlgCell}</tr>`;
+}
+
+// Double-click a Field Map row to copy its name, so it can be pasted straight
+// into a parse spec. The CANONICAL id is copied, not the row label: a parse spec
+// references `GROUP.AA`, and the `GROUP[01].AA` shown in the table would not
+// resolve — pasting it would fail in a way that looks like the spec's fault.
+// The toast states exactly what landed on the clipboard, so the difference is
+// visible rather than surprising.
+function _meFmCopyFieldName(qn, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const name = _canonFieldId(qn);
+  // execCommand rather than navigator.clipboard: it works from a user gesture
+  // regardless of focus, which is what copyFieldToClipboard already relies on.
+  const ta = document.createElement('textarea');
+  ta.value = name;
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  document.body.removeChild(ta);
+  showToast(ok ? `Field name ${name} copied to the clipboard`
+                : `${name} — copy failed`);
 }
 
 // Synchronous full build — kept for small DDLs and non-staged callers.

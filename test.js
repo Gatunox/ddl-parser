@@ -6638,6 +6638,33 @@ for (const c of CHOOSERS) {
   });
 }
 
+test('double-clicking a Field Map row copies a name a parse spec can use', () => {
+  // Requested so a field name can be pasted straight into a parse spec. The
+  // subtlety is WHICH name: the table shows GROUP[01].AA, but a parse spec
+  // references GROUP.AA — pasting the row label would fail in a way that looks
+  // like the spec's fault rather than a bad paste.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/ondblclick="_meFmCopyFieldName\('\$\{id\}', event\)"/.test(src),
+    'every row carries the handler');
+  assert.ok(/title="Double-click to copy the field name"/.test(src),
+    'and says so, since a double-click is not discoverable on its own');
+  const fn = psFnSource('_meFmCopyFieldName');
+  assert.ok(/_canonFieldId\(qn\)/.test(fn),
+    `the CANONICAL id is copied, not the row label: ${fn.slice(0, 200)}`);
+  assert.ok(/showToast\(/.test(fn), 'and the app toast confirms it');
+  // The toast must name what actually landed on the clipboard — reporting the
+  // row label while copying something else is worse than saying nothing.
+  assert.ok(/copied to the clipboard/.test(fn) && /\$\{name\}/.test(fn),
+    'naming the copied value, not the id it was derived from');
+  // Failure has to be distinguishable; execCommand can return false.
+  assert.ok(/copy failed/.test(fn), 'a failed copy does not claim success');
+  // Selecting the row must not also happen twice and fight the copy.
+  assert.ok(/stopPropagation\(\)/.test(fn), 'the dblclick does not re-enter the row click');
+  // Called from an inline attribute, so it has to survive the build as a global.
+  assert.ok(/renameGlobals:\s*false/.test(fs.readFileSync('./build.js', 'utf8')),
+    'top-level names are preserved by the obfuscator');
+});
+
 test('each help example is a bounded, numbered card', () => {
   // Reported: "it seems one long example". read-fixed alone ships ten, and they
   // were a flat run of divs joined by a 10px spacer — a Payload/Spec/Result trio

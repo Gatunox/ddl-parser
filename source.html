@@ -7309,11 +7309,11 @@ function parseMessage(bytes, defs, rawBytes) {
   // the MTI recognizer's encoding wins; else the first recognizer that declares
   // one; else 'ascii'. Single source of truth for how digit / text / hex fields
   // decode, so encoding never needs a separate parse_spec.
-  function _specEncoding(spec) {
-    const recs = (spec && spec.recognizers) || [];
-    const r = recs.find(x => x.type === 'mti' && x.encoding) || recs.find(x => x.encoding);
-    return (r && r.encoding === 'ebcdic') ? 'ebcdic' : 'ascii';
-  }
+  // Delegates, so the rule for "what encoding is this spec in" lives in exactly
+  // one place. The length decoder needs the same answer plus whether it was
+  // actually stated, and two functions reading the same recognizers is how the
+  // two surfaces end up disagreeing.
+  function _specEncoding(spec) { return _meSpecEncodingInfo(spec).enc; }
 
   function _fmtDetect(bytes, ctx) {
     for (const spec of _fmtSpecs) {
@@ -14742,7 +14742,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.13.1.0';
+const APP_VERSION  = '1.13.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22480,7 +22480,7 @@ function _meReadOneFieldFromDef(def, ctx) {
   // a group, which could carry exactly one.
   if (_meOvEffective(ctx, def.id)?.vlg === true) {
     const _lt = _meOvEffective(ctx, def.id)?.type;
-    let _n = _meDecodeLength(fBytes, _lt);
+    let _n = _meDecodeLength(fBytes, _lt, ctx.lenEnc);
     _n = _n == null ? 0 : Math.max(0, _n);
     // A hex-char length counts CHARACTERS, exactly as it does in a VLG group —
     // the leaf form skipped this and was not even consistent with its own group
@@ -23112,7 +23112,7 @@ function _meExecReadField(attrs, ctx) {
     }
     const pStart = ctx.cursor;
     const pBytes = Array.from(ctx.bytes.slice(pStart, pStart + lenPrefix));
-    const N = _meDecodeLength(pBytes);
+    const N = _meDecodeLength(pBytes, null, ctx.lenEnc);
     if (N == null) {
       ctx.fields.push({ id: fieldId, error: `read "length_prefix": no bytes left to read the ${lenPrefix}-byte length from` });
       return;
@@ -23706,6 +23706,17 @@ function _meEffLen(def, ctx) {
 // They were missing from this pattern, so selecting either on a LEN fell through
 // to the guess — and -le was never honoured anywhere, since the decode below was
 // unconditionally big-endian. A little-endian 19 (13 00) read as 4864.
+// What encoding a spec is written in, and — separately — whether its
+// recognizers ever said so. An undeclared LEN is read in the spec's encoding
+// rather than guessed from byte values, so "we assumed" has to be
+// distinguishable from "it was stated", or the assumption is invisible.
+function _meSpecEncodingInfo(spec) {
+  const recs = (spec && spec.recognizers) || [];
+  const r = recs.find(x => x.type === 'mti' && x.encoding) || recs.find(x => x.encoding);
+  if (!r) return { enc: 'ascii', declared: false };
+  return { enc: String(r.encoding).toLowerCase() === 'ebcdic' ? 'ebcdic' : 'ascii', declared: true };
+}
+
 const _ME_LEN_INT_TYPE = /^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|uint(-be|-le)?|binary(\s*(8|16|32|64))?)$/i;
 const _meLenTypeIsInt = t => !!t && _ME_LEN_INT_TYPE.test(String(t).trim());
 const _meLenTypeIsLE  = t => /-le$/i.test(String(t || '').trim());
@@ -23745,8 +23756,22 @@ const _meLenTypeIsHexText = t => /^hex-(ascii|ebcdic)-decimal$/i.test(String(t |
 const _meEbcdicChar = b => String.fromCharCode(_EBCDIC_TO_ASCII[b] ?? b);
 const _meAsciiChar  = b => String.fromCharCode(b);
 
-function _meDecodeLength(bytes, type) {
+function _meDecodeLength(bytes, type, enc) {
   if (!bytes || !bytes.length) return null;
+  // Nothing declared on the field. Two different questions hide here, and only
+  // one of them the spec can answer:
+  //   is this text or binary?      PIC X(2) genuinely does not say. A binary
+  //                                length in a character field is ordinary on
+  //                                Base24, so this stays a fallback.
+  //   if text, ASCII or EBCDIC?    the recognizer knows, and byte values must
+  //                                not decide it — that is what read an EBCDIC
+  //                                F1 F9 as 61945 rather than 19.
+  // So: try the spec's encoding as text; only if the bytes are not digits in
+  // that encoding does it fall through to the integer reading below.
+  if (!String(type || '').trim() && enc && enc.enc) {
+    const asText = _meDecodeLength(bytes, enc.enc === 'ebcdic' ? 'ebcdic' : 'ascii');
+    if (asText !== null) return asText;
+  }
   if (_meLenTypeIsHexChar(type)) {
     const hex = _meHexSpelling(bytes);
     if (!/^[0-9]+$/.test(hex)) return null;   // an a-f nibble is not a decimal number
@@ -23874,7 +23899,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     }
     const pStart = ctx.cursor;
     const pBytes = Array.from(ctx.bytes.slice(pStart, pStart + lp));
-    const N = _meDecodeLength(pBytes);
+    const N = _meDecodeLength(pBytes, null, ctx.lenEnc);
     if (N == null) {
       ctx.fields.push({ id: scopeId, error: `DE ${de}: no bytes left to read the ${lp}-byte length from` });
       return;
@@ -23904,7 +23929,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
       const lStart = ctx.cursor;
       const lLen   = _meEffLen(lenDef, ctx);
       const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
-      const N      = _meDecodeLength(lBytes, _meOvEffective(ctx, lenDef.id)?.type);
+      const N      = _meDecodeLength(lBytes, _meOvEffective(ctx, lenDef.id)?.type, ctx.lenEnc);
       ctx.cursor = lStart + lLen;
       const lf = {
         id: lenDef.id, description: lenDef.description, dataType: lenDef._dataType,
@@ -24018,7 +24043,7 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
   const lenErrs = [];
   const lType = _meOvEffective(ctx, lenDef.id)?.type;
-  let N = _meDecodeLength(lBytes, lType);
+  let N = _meDecodeLength(lBytes, lType, ctx.lenEnc);
   // A hex-char LEN counts CHARACTERS — 37 means 37 characters of payload, which
   // is 19 wire bytes. Converted here, once, so the bounds below and every child
   // after stay byte-based. `Nwritten` is what the message says, because that is
@@ -25039,6 +25064,10 @@ function _meExecParseSpec(item, bytes, opts) {
     // like the legacy parser (format-dependent decode; integer from raw bytes).
     format: opts?.format ?? S.inputFormat ?? '',
     rawBytes: opts?.rawBytes ?? null,
+    // How to read a LEN that carries no type override. NOT ctx.format — that is
+    // how the text was pasted (hex, tandem dump), and a message pasted as hex
+    // can carry EBCDIC content. The spec's own recognizers are what know.
+    lenEnc: _meSpecEncodingInfo(item),
   };
   for (const block of effectiveSpec) _meExecBlock(block, ctx);
   return ctx;

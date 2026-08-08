@@ -9457,7 +9457,7 @@ function doParseMessages() {
         ? bytes.map(b => String.fromCharCode(b)).join('') : chunkStr;
       const detTrace = detectMsgTypeTrace(detectStr);
       _p23Traces.push(detTrace);
-      _chunkInfo.push({ chunk, chunkStr, bytes, parseBytes, msgType: detTrace.winner });
+      _chunkInfo.push({ chunk, chunkStr, bytes, parseBytes, detectStr, detTrace, msgType: detTrace.winner });
     }
     // The summary belongs WITH the tick: it used to be back-filled onto this
     // step three steps later, so the panel showed a finished step with nothing
@@ -9526,7 +9526,7 @@ function doParseMessages() {
             }
           }
           for (const ci of _chunkInfo) {
-            const { chunk, chunkStr, bytes, parseBytes } = ci;
+            const { chunk, chunkStr, bytes, parseBytes, detectStr, detTrace: _detTrace } = ci;
             let msgType = ci.msgType;
 
             // Auto-detect via volume-hierarchy scoring (DDLMM routing removed).

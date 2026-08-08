@@ -3146,6 +3146,25 @@ test('both scoring passes read the cached per-chunk facts', () => {
      'both passes read the cache');
 });
 
+test('every field the loops read off the cache is actually put there', () => {
+  // I broke this while writing the cache: the unknown-type diagnostic still read
+  // `detectStr` and `_detTrace`, which had been locals of the loop the cache
+  // replaced. Nothing failed, because no test walks an unrecognised message —
+  // it would have thrown in front of a user instead.
+  const fn = psFnSource('doParseMessages');
+  const seg = fn.slice(fn.indexOf('const _chunkInfo = []'));
+  const lit = /_chunkInfo\.push\(\{([\s\S]*?)\}\);/.exec(seg);
+  assert.ok(lit, 'the cache is populated in one place');
+  const pushed = new Set(lit[1].split(',').map(p => p.split(':')[0].trim()).filter(Boolean));
+  const used = new Set();
+  for (const m of seg.matchAll(/const \{([^}]*)\}\s*=\s*ci;/g))
+    for (const part of m[1].split(',')) used.add(part.split(':')[0].trim());
+  assert.ok(used.size > 0, 'the loops destructure from the cache');
+  const missing = [...used].filter(k => !pushed.has(k));
+  assert.deepStrictEqual(missing, [],
+    `read off the cache but never put there: ${missing.join(', ')}`);
+});
+
 console.log('\nparse-flow routing (which parser ran)');
 
 const {

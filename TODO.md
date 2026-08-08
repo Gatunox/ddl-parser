@@ -120,13 +120,15 @@ legacy hardcodes.
 exist only on one machine. Track them (they can still be excluded from the
 release bundle).
 
-**Wider as of 2026-08-07.** `test.js`, `baseline.js` and `baseline.golden.json`
-were untracked by request and now live only on this machine too — 512 tests and
-1472 recorded baseline cases with no copy anywhere else. `npm test` fails on a
-fresh clone. Nothing was deleted locally and the history still contains them, so
-this is recoverable; it is recorded here so the exposure is visible rather than
-discovered after a disk failure. A local backup outside the repo would close it
-without putting anything back in the public repo.
+**Untracked 2026-08-07, put back 2026-08-08.** `test.js`, `baseline.js` and
+`baseline.golden.json` were removed from the repo by request and spent a day
+existing only on this machine — 528 tests and 1472 baseline cases with no copy
+anywhere. They are tracked again, so `npm test` works on a fresh clone and the
+harness survives this laptop.
+
+What is still open is the original item: `test/` remains gitignored, so the
+segmented-file DDLs and generated samples — the reproduction for all three
+Base24 seg-map variants — are still single-copy.
 
 ---
 

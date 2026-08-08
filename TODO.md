@@ -120,6 +120,13 @@ release bundle).
 It is edited by hand in `source.html` on every commit and is the only thing
 distinguishing one deploy from another — easy to forget, and nothing catches it.
 
+**It happened, 2026-08-07.** Three commits shipped as v1.11.0.0, v1.11.0.1 and
+v1.12.0.0 with `APP_VERSION` still reading `1.10.1.0`; the user found it by
+looking at their own preview. A tripwire now compares `APP_VERSION` against the
+version in HEAD's commit subject (`test.js`, "release —"), so a mismatch fails
+the suite before a push can carry it — but that is a net under the hand edit,
+not the fix. Deriving the version at build time still removes the step.
+
 ---
 
 ## 7. [x] Show parse provenance in the UI — *done v1.1.2.375*
@@ -230,6 +237,33 @@ set it back — that tears down the pipeline and releases the queue.
 **Note.** The `build` job's warnings (`punycode` deprecation, Node 20 on
 `actions/checkout@v4`) come from GitHub's own generated workflow — there is no
 `.github/workflows` file in this repo to pin. They are noise, not the cause.
+
+**Correction, 2026-08-07.** The heading above is stated with more confidence
+than the evidence supports. The same wedge later reproduced on a brand-new repo
+with a single push, during a GitHub-wide incident affecting Actions and Pages.
+Push cadence was a guess that fit the first occurrence; the outage explains both.
+Treat the batching advice as harmless hygiene, not a diagnosis — and check
+githubstatus.com before theorising about the repo.
+
+---
+
+## 12. [ ] The scoring body cannot be reached by any test
+
+**Problem.** Everything inside `_startP23Scoring` runs in a `setTimeout`
+callback, and `test.js` stubs `setTimeout` to a no-op. So the entire pre-scoring
+pass, the per-chunk assembly, the deferred-DDL picker queue and `_finalizeParse`
+are unexecutable from the suite. The tests that cover them read the *source
+text* instead — which catches shapes, not behaviour.
+
+**Why it matters.** v1.12.0.2 was a plain `TypeError` on the most ordinary path
+in the app — parse a message that matches a spec — and 498 tests passed over it.
+A source-text tripwire now pins that one line, but the next mistake in that
+function will be invisible in exactly the same way.
+
+**Shape of the fix.** Give the sandbox a real `setTimeout` (or a manual pump the
+tests drain) for a small number of end-to-end parse tests, and assert on the
+`parsed[]` array the function builds. The DOM stubs already tolerate being
+called; the timer stub is the only thing standing in the way.
 
 ---
 

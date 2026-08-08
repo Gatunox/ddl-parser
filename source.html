@@ -1,8 +1,37 @@
 <!DOCTYPE html>
+<!--
+  DDL Parser — NonStop / Base24 / ISO 8583 message analysis
+  Copyright (C) 2026 Gatunox
+
+  This program is free software: you can redistribute it and/or modify it under
+  the terms of the GNU Affero General Public License as published by the Free
+  Software Foundation, either version 3 of the License, or (at your option) any
+  later version.
+
+  This program is distributed in the hope that it will be useful, but WITHOUT
+  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+  FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more
+  details.
+
+  You should have received a copy of the GNU Affero General Public License along
+  with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+  Source: https://github.com/Gatunox/ddl-parser
+  A commercial license, for use without the AGPL's source obligations, is
+  available from ddl-parser@gu2.dev
+
+  NOTE TO ANYONE EDITING THE BUILD: this notice lives outside <script> on
+  purpose. build.js obfuscates the script block with compact:true, which strips
+  every comment inside it — a banner placed in the JS would not survive into
+  index.html.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="Gatunox">
+<meta name="copyright" content="Copyright (C) 2026 Gatunox — AGPL-3.0-or-later">
+<link rel="license" href="https://www.gnu.org/licenses/agpl-3.0.txt">
 <title>DDL Parser — NonStop / Base24 / ISO8583</title>
 <style>
 /* ===== RESET & BASE ===== */
@@ -1189,6 +1218,11 @@ body.light .trk-chk { color-scheme: light; }
   padding: 1px 5px; border-radius: 3px;
   font-family: var(--mono); font-size: 10px;
 }
+/* The drawer had no links at all until the licence section, so an <a> fell
+   through to the browser default #0000EE — measured 1.84:1 against the panel,
+   which is unreadable and not a colour this app uses anywhere. */
+.settings-drawer a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.settings-drawer a:hover { color: var(--accent2); }
 .settings-help .h-sub { margin-top: 6px; font-size: calc(var(--sz-mono) - 1px); font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; }
 .settings-help .h-sub-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 5px 7px; margin: 3px -7px 0; border-radius: 4px; transition: background 0.1s, color 0.1s; }
 .settings-help .h-sub-toggle:hover { background: rgba(255,255,255,0.05); color: var(--text); }
@@ -14708,7 +14742,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.12.2.0';
+const APP_VERSION  = '1.13.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25874,6 +25908,36 @@ function _meSave() {
             </ul>
           </div></div>
 
+          <!-- AGPL §13: a version reached over a network must offer its users
+               the source. The FSF's guidance is a source link in the interface —
+               that is what the links below are, not decoration. -->
+          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Licence &amp; Copyright <span class="h-sub-arrow">+</span></div>
+          <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 8px">DDL Parser is <strong>Copyright © 2026 Gatunox</strong>, released under the
+              <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU Affero General Public License, version 3</a>.</p>
+            <p style="margin:0 0 4px;font-weight:700">What you may do:</p>
+            <ul style="padding-left:16px;margin:0 0 8px">
+              <li>Use it for anything, including at work and commercially</li>
+              <li>Read the source, change it, and share your changes</li>
+            </ul>
+            <p style="margin:0 0 4px;font-weight:700">What you must do in return:</p>
+            <ul style="padding-left:16px;margin:0 0 8px">
+              <li>Keep the copyright notice and say what you changed</li>
+              <li>Release any version you distribute under the <strong>same licence</strong>, with its complete source</li>
+              <li>Do the same if you only <strong>host it for other people</strong> — this is the part that makes the AGPL different from the ordinary GPL. Putting a modified copy behind a URL counts as giving it out, so its users are owed the source</li>
+            </ul>
+            <p style="margin:0 0 8px">Source code:
+              <a href="https://github.com/Gatunox/ddl-parser" target="_blank" rel="noopener noreferrer">github.com/Gatunox/ddl-parser</a></p>
+            <div style="margin:0 0 8px;padding:6px 8px;background:var(--bg-input);border-radius:4px;line-height:1.7">
+              <strong>Need different terms?</strong><br>
+              To build on this in a closed-source product, or to run a modified
+              version as a service without publishing your changes, a commercial
+              licence is available — the copyright holder can grant what the AGPL
+              cannot. Write to <a href="mailto:ddl-parser@gu2.dev">ddl-parser@gu2.dev</a>.
+            </div>
+            <p style="margin:0;color:var(--text-dim)">This program comes with <strong>absolutely no warranty</strong>, to the extent permitted by law. See sections 15 and 16 of the licence.</p>
+          </div></div>
+
         </div>
         </div><!-- end collapsible body -->
       </div>
@@ -25904,6 +25968,11 @@ function _meSave() {
           <br><br>
           <span class="about-tag" style="background:rgba(var(--accent-rgb),0.12);color:var(--accent);border:2px solid var(--accent)">Single file App</span>
           <span class="about-tag" style="background:rgba(var(--accent-rgb),0.12);color:var(--accent);border:2px solid var(--accent)">100% offline</span>
+          <br><br>
+          <!-- One line only — the terms live in Help › Licence &amp; Copyright. -->
+          Copyright © 2026 <strong>Gatunox</strong> ·
+          <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">AGPL v3</a> ·
+          <a href="https://github.com/Gatunox/ddl-parser" target="_blank" rel="noopener noreferrer">source</a>
         </div>
       </div>
 

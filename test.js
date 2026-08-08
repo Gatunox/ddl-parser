@@ -7793,6 +7793,47 @@ test('decommissioned DDLMM is not described as live', () => {
   deepEq(offenders, [], 'DDLMM described outside its tombstone');
 });
 
+// ── The diagnostic table colours the line, not the glyph ─────────────────────
+// The ✓/✗/— was inside the coloured span and the sentence was outside it, so
+// every line inherited the container's orange !important and the only coloured
+// thing on screen was a tick a few pixels wide. A reader could not tell which
+// steps had passed without reading each one.
+console.log('\ndiagnostic table — status colours the whole line');
+
+test('every diag row wraps its text in the status span, not just the marker', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const defs = src.split('\n')
+    .map((l, i) => ({ n: i + 1, l: l.trim() }))
+    .filter(x => /^const (ok|fail|inf)\s*=\s*s =>/.test(x.l));
+  assert.ok(defs.length >= 6, `expected the diag helpers, found ${defs.length}`);
+  const stray = defs.filter(x => !/^const \w+\s*=\s*s => `<span class="diag-\w+">.+ \$\{s\}<\/span>`;$/.test(x.l))
+                    .map(x => `line ${x.n}: ${x.l}`);
+  deepEq(stray, [], 'the status span must close AFTER ${s}, so the sentence is coloured too');
+});
+
+test('the diag panels do not drift apart', () => {
+  // Two panels define the same three helpers. They were identical when this was
+  // written; if one is fixed and the other is not, the bug half-survives.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const byName = {};
+  for (const l of src.split('\n').map(s => s.trim())) {
+    const m = /^const (ok|fail|inf)\s*=\s*s =>(.*)$/.exec(l);
+    if (m) (byName[m[1]] || (byName[m[1]] = new Set())).add(m[2]);
+  }
+  for (const [name, forms] of Object.entries(byName))
+    eq(forms.size, 1, `${name}() is defined ${forms.size} different ways`);
+});
+
+test('success is the palette colour, not a hard-coded green', () => {
+  // #4caf80 was picked for the dark theme and never revisited; the light palette
+  // defines --success as a much darker green for a reason.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const rule = /\.diag-ok\s*\{([^}]*)\}/.exec(src);
+  assert.ok(rule, '.diag-ok rule not found');
+  assert.ok(/color:\s*var\(--success\)/.test(rule[1]),
+    `.diag-ok must use var(--success), got: ${rule[1].trim()}`);
+});
+
 // ── APP_VERSION keeps up with the commits ────────────────────────────────────
 // Three commits in a row (v1.11.0.0, v1.11.0.1, v1.12.0.0) shipped with
 // APP_VERSION still reading 1.10.1.0, so the running app under-reported itself

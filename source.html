@@ -994,7 +994,7 @@ body.light .trk-chk { color-scheme: light; }
 .diag-table { margin-top: 10px; border-collapse: collapse; font-size: var(--sz-mono); text-align: left; }
 .diag-table td { padding: 2px 8px; }
 .diag-table td:first-child { color: var(--text-dim); white-space: nowrap; }
-.diag-ok  { color: #4caf80; }
+.diag-ok  { color: var(--success); }
 .diag-fail{ color: var(--warning); }
 .diag-info{ color: var(--text-dim); }
 #flash-container {
@@ -10872,9 +10872,9 @@ function renderFieldTable(msg) {
         ${msg.noParseSpec && msg._diag ? (() => {
           const d = msg._diag;
           const fmtLabel = { hex:'HEX', 'tandem-dump':'HEXASCII', octal:'OCTAL', ebcdic:'EBCDIC', ascii:'ASCII', standard:'Standard' }[d.fmt] || (d.fmt || '').toUpperCase();
-          const ok  = s => `<span class="diag-ok">✓</span> ${s}`;
-          const fail= s => `<span class="diag-fail">✗</span> ${s}`;
-          const inf = s => `<span class="diag-info">—</span> ${s}`;
+          const ok  = s => `<span class="diag-ok">✓ ${s}</span>`;
+          const fail= s => `<span class="diag-fail">✗ ${s}</span>`;
+          const inf = s => `<span class="diag-info">— ${s}</span>`;
           const rows = [
             `<tr><td>1. Format</td><td>${ok(d.isNetard !== false ? `NETARD ${fmtLabel}` : (fmtLabel || 'AUTO'))}</td></tr>`,
             `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
@@ -10889,9 +10889,9 @@ function renderFieldTable(msg) {
         ${msg.unknownType && msg._diag ? (() => {
           const d = msg._diag;
           const fmtLabel = { hex:'HEX', 'tandem-dump':'HEXASCII', octal:'OCTAL', ebcdic:'EBCDIC', ascii:'ASCII', standard:'Standard' }[d.fmt] || (d.fmt || '').toUpperCase();
-          const ok  = s => `<span class="diag-ok">✓</span> ${s}`;
-          const fail= s => `<span class="diag-fail">✗</span> ${s}`;
-          const inf = s => `<span class="diag-info">—</span> ${s}`;
+          const ok  = s => `<span class="diag-ok">✓ ${s}</span>`;
+          const fail= s => `<span class="diag-fail">✗ ${s}</span>`;
+          const inf = s => `<span class="diag-info">— ${s}</span>`;
           // The first bytes are shown as text, but a header like 43 54 00 13 is
           // mostly non-printable — rendering those raw produced a stray "?"/box
           // with no way to tell WHICH byte it was. Show printable characters as
@@ -14676,7 +14676,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.12.0.2';
+const APP_VERSION  = '1.12.0.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-08 | **Every type the Data Editor offers now decodes a length, and an undeclared length follows the spec rather than the byte values.** The dropdown offered nine types; the length decoder honoured two. `ascii`, `ebcdic`, `hex-ascii-decimal` and `hex-ebcdic-decimal` were byte-for-byte identical to declaring nothing — the decoder read byte VALUES and decided for itself. The consequence on a NonStop system: an EBCDIC length `F1 F9`, which is `"19"` typed on the box, decoded as **61945** whichever of the four was chosen, and a length that wrong sends every field after it to the wrong offset. Two more of the same kind surfaced while testing it: `uint-be` / `uint-le` carry no width and were missing from the integer pattern, so they fell through to the guess; and the decode was unconditionally big-endian, so **little-endian was offered everywhere and honoured nowhere** — a little-endian 19 read as 4864. Precedence is now override → block `"encoding"` → recognizer → ASCII-and-say-so; the block level already existed and `read-fixed` had honoured it since 2026-08-02, but the length paths never looked at it. One design point is worth recording: "no override → read it as the spec's encoding" is **two** questions, and the spec answers only the second. *Text or binary?* it cannot — `PIC X(2)` does not say and a binary length in a character field is ordinary on Base24 — so that stays a fallback; *if text, ASCII or EBCDIC?* it can, and byte values no longer get a vote. The §8 claim that EBCDIC needs no special case because the message is translated first was true only for input format `ebcdic`; a hex or NETARD capture arrives untranslated, which is why this was never noticed. All 1472 baseline cases unchanged — nothing that worked has moved. See §8. |
 | 2026-08-04 | **Which fields are data elements, and what counts as a length, are now choices rather than compiled-in rules.** Two restrictions were limiting real DDLs. (1) A DE was a **top-level** row whose name was not literally `FILLER`, so a DDL could not exclude its own alignment padding under any other name — the field consumed a number regardless — and a DE could never sit on a nested field, which is exactly where one reported DDL puts them (04-level `FIELD-XX` / `FIELD-YY` inside a group). The default is unchanged but now overridable on the same `de` key: `false` excludes **without advancing the counter**, so the tail closes up rather than leaving a hole; `true` includes where the default says no, reaching inside a terminal group; `"children"` makes a group yield to its immediate children — one entry instead of marking the parent and every child. Fixed first because everything else misfired without it: `_meOvDeAnchors` read any non-null `de` as an anchor via `+v \|\| 1`, and `+false` is 0, `+true` is 1, `+"children"` is NaN — all three would have anchored numbering at DE 1. (2) VLG required the length and its payload **wrapped in a group**, and a group could carry exactly one, so a flat `PAN-LEN` then `PAN` could not be expressed and two lengths at one level had nowhere to go. `vlg: true` now works on **any field** and means "the next field's length comes from this one" — the general rule of which the group form is a special case. Implemented in `_meReadOneFieldFromDef`, the one reader every path shares, so `read-ddl`, the bitmap walk and `de` entries cannot drift apart; the re-layout rides the same `ovShift` a `bytes` override uses. Group forms are untouched. UI: a selection action bar with segmented groups, multi-select by ⌘/ctrl-click (shift is deliberately not a modifier — it collides with the browser's text-drag selection), bulk selection via filter + "Select shown", inline editors rather than `prompt()` (blocked outright in some hosts, which makes a button look dead), and Reset arming itself before it fires. The Field Map shows all three DE forms and a plain-field VLG, with the selection form folded into the DE cell signature — all three render differently but all have `de === null`, so a patch-only repaint kept showing the previous one. See §7.1, §8.0. |
 | 2026-08-02 | **`read-tlv` gains `encoding: "ascii"` — the TLV shape production ISO 8583 actually carries — and fixed-width rows finally report where they are.** A live buffer looks like `0002 0005 HELLO 0003 0004 VISA`: a 4-character tag, a 4-character **decimal** length, then that many characters of value as text. Neither existing mode could read it. `binary` reads the length as a big-endian integer, so `"0005"` is `0x30303035`; `ascii-hex` hex-decodes the whole buffer before framing, which turns `HELLO` into garbage and also makes `tag_length`/`length_length` count decoded bytes rather than characters. The new mode decodes nothing: the widths count characters, the length parses as decimal, and the value is text. A length whose characters are not digits is **reported** rather than read as zero — the silent zero is precisely how the VLG length bug behaved (§8). The tag is keyed by **its characters**, so `tags` is written `{"0002": {"field": "CARD-TYPE"}}`; keying it by a hex rendering (`"30303032"`) would be unwritable, and a key mismatch fails silently, leaving unmapped rows and no error. Separately, the fixed-width path had **never** set `startByte`/`endByte` in any mode while the BER path always did, so the same buffer showed a populated Bytes column with `ber: true` and a blank one with `tag_length`/`length_length` — the values were right, but a tag could not be lined up against the raw dump. Positions are now reported wherever they are honest, which is `binary` and `ascii`; `ascii-hex` omits them rather than guessing, since no decoded byte corresponds to one message byte. 9 baseline cases moved, all the same shape: fixed-width TLV rows gaining positions, with values and hex unchanged. See §5.15. |
 | 2026-08-02 | **Which leaf means "length" is no longer hardcoded — `vlg_identifier`; `read-ddl` honours variable-length groups.** The VLG auto-detect assumed the names `LEN` / `LGTH` / `LENGTH` and a 2-4 byte width. Both are assumptions about someone else's DDL. `vlg_identifier` on `read-ddl` and `read-bitmap-fields` now says which name **this** DDL uses; omitted keeps the built-in names, a name matches only that one (and **wherever it sits** in the group, so a TAG may precede it), and `""` switches the guess **off** — the case that motivated it, a group whose first field is honestly called `AMT-LEN` but is not variable-length, was being framed by it and everything after it slid. The LEN's **width** now comes from the DDL definition of whichever leaf matched, so a 1-byte binary length works like an LLLVAR's 3; the old 2-4 gate silently ignored both. An explicit `overrides[…].vlg` still wins: the attribute governs the *guess*, not the user's choice. Separately `read-ddl` read every field at its declared length, so an LLVAR group read its DATA at the DDL's **maximum** and every field after it was wrong; the group is now read as a unit and the difference between what it consumed and what the DDL declares feeds the same running `ovShift` correction a `bytes` override uses. The VLG read is extracted into one helper shared with `read-bitmap-fields`, returning rows so `read-ddl`'s `fields`/`from`/`until` filters still apply. Auto-detect is aligned on **direct children** at all three call sites — the main group path had scanned every leaf at any depth, so a grandchild's LEN could frame the group above it (a grandchild LEN still frames its own group, just never its parent). The Field Map reads `vlg_identifier` off the spec so the VLG column shows what the parse will do, with `undefined` and `""` kept distinct end to end. **Content validation now follows the type override:** the declared type is deliberately kept on the field for the "declared ↩ override" annotation, and the content-vs-type check was still reading it — so a field whose override made its bytes legal stayed painted red. Bytes are judged against the override; only `ascii` still requires printable bytes, since overriding to ASCII is a claim *about* the bytes. UI: the VLG column shows one `VLG` marker instead of the LEN's field name (on the group when collapsed, on the LEN leaf when expanded) — production field names are long enough to blow the column out, and the old form printed the same fact twice one row apart. See §8. |
@@ -893,18 +894,81 @@ auto-detect; `"vlg": "TRACK2.LGTH"` names the LEN leaf explicitly. Marking a gro
 2. Convert `LEN` value to integer N — see *Length decoding* below.
 3. Read exactly N bytes into `DATA` (not the full declared `DATA` length).
 
-**Length decoding** *(corrected 2026-08-01)* — one rule, shared with
-`length_prefix` (§5.13): if every length byte is an ASCII digit the value parses as
-digits, otherwise it is a **big-endian integer**. EBCDIC needs no case of its own
-because the message is translated to ASCII before parsing, so an EBCDIC `"0028"`
-(`F0F0F2F8`) arrives here as digits. Binary messages write lengths as integers, and
-reading those as characters produced `NaN` — which a `|| 0` then turned into zero,
-collapsing the group and shifting every field after it with nothing reported.
+**Length decoding** *(rewritten 2026-08-08)* — one rule, shared with
+`length_prefix` (§5.13). Four sources are consulted **in order**, and the first
+one that speaks decides:
+
+| # | source | where it is written |
+|---|--------|---------------------|
+| 1 | the field's **type override** | `overrides[…].type` (§9) |
+| 2 | the **block's** encoding | `"encoding": "ascii" \| "ebcdic"` on the parse-spec block |
+| 3 | the **recognizer's** encoding | `recognizers[…].encoding` on the spec that matched (§4) |
+| 4 | **ASCII**, and it says so | reported on the field — see *Assumed encoding* below |
+
+A declared type is a **statement about the data**, so bytes that contradict it
+are reported rather than quietly re-read some other way. Every type the Data
+Editor offers decodes a length:
+
+| type | bytes | reads as |
+|------|-------|----------|
+| `ascii` | `31 39` — the characters `"19"` | 19 |
+| `ebcdic` | `F1 F9` — `"19"` in EBCDIC | 19 |
+| `hex-char` | `00 13` | 13 — the hex **spelling** is the number |
+| `hex-ascii-decimal` | `"00FF"` as ASCII text | 255 — text of a hex number, base-16 |
+| `hex-ebcdic-decimal` | `C6 C6` — `"FF"` in EBCDIC | 255 |
+| `uint-be` / `uint16-be` … | `00 13` | 19 — width from the field when unstated |
+| `uint-le` / `uint16-le` … | `13 00` | 19 — **little-endian is honoured** |
+
+**Nothing declared.** Two questions hide here and levels 2-3 answer only the
+second:
+
+- *Text or binary?* — `PIC X(2)` genuinely does not say, and a binary length
+  inside a character field is ordinary on Base24. This stays a fallback.
+- *If text, ASCII or EBCDIC?* — the block or the recognizer knows, and **byte
+  values must never decide it.**
+
+So the encoding from level 2 or 3 is tried **as text first**; only bytes that are
+not digits in that encoding fall through to the big-endian integer reading.
+Binary messages write lengths as integers, and reading those as characters
+produced `NaN` — which a `|| 0` then turned into zero, collapsing the group and
+shifting every field after it with nothing reported.
+
+**Assumed encoding.** When nothing at levels 1-3 states one, ASCII is assumed.
+That assumption is reported on the LEN field, but **only where it changed the
+answer**: nothing declared an encoding, ASCII could not read the bytes as digits,
+and the other encoding can. Then the number that came out is a binary integer
+nobody chose, and the message names both the value the other encoding would have
+given and the one field that settles it. An ordinary binary length stays silent,
+because it is not a mistake.
+
+> **Superseded.** Until 2026-08-08 this section read: *"if every length byte is
+> an ASCII digit the value parses as digits, otherwise it is a big-endian
+> integer. EBCDIC needs no case of its own because the message is translated to
+> ASCII before parsing."* The translation claim holds **only when the input
+> format is `ebcdic`** (§2). The same message captured as a hex or NETARD dump
+> arrives untranslated, so an EBCDIC `"19"` reached the decoder as `F1 F9`, was
+> not made of ASCII digits, and read as **61945**.
+
+**Lengths in characters.** A `hex-char` length counts **characters, not bytes** —
+`37` means 37 characters of payload, which is 19 wire bytes (§9). The conversion
+happens once, at the length, so every bound and every child after it stays
+byte-based. The number reported back to the user is what the message says, since
+that is the number visible in the LEN's own value.
 
 Bounds: a length past the end of the message stops at the end and is reported,
 naming how it was read; a length beyond the payload the DDL declares is still used
 — the wire decides the framing — but is reported, because that usually means it
-was misread.
+was misread. A `repeat` driven by a length is additionally bounded by the group's
+`OCCURS`: the DDL's declared count is the ceiling, so a corrupt size cannot spin
+the parse for millions of iterations.
+
+**How a complaint is reported** *(added 2026-08-08)* — a problem with a field
+rides **on that field** as `issue`; it is never pushed as a row of its own.
+Pushing it separately produced two rows carrying the same id — the real field and
+a second, blank one — which is exactly the duplicate `TRACK2.LEN` that was
+reported. `error` is different and means *this row is not a field at all*: it
+gates the byte map, the render-time override pass and the coverage count, so a
+real field with a complaint must never carry it.
 
 ### 8.0 A length field sizes the field after it *(added 2026-08-04)*
 

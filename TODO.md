@@ -242,7 +242,7 @@ let byte VALUES pick the encoding.
 
 ---
 
-## 10. [ ] Write up the 2026-08-05 rules in SPEC-message-format-detector.md
+## 10. [x] Write up the session rules in SPEC — *done 2026-08-08*
 
 Three behaviour changes shipped that day with nothing in the spec:
 
@@ -254,6 +254,28 @@ Three behaviour changes shipped that day with nothing in the spec:
   group (v1.2.7.0)
 
 Parked only because a dated changelog entry needs the user's go-ahead first.
+
+---
+
+### Done 2026-08-08
+
+§8 *Length decoding* rewritten — it was actively wrong, not merely incomplete.
+It documented the byte-sniff as the rule and asserted `EBCDIC needs no case of
+its own because the message is translated to ASCII before parsing`, which holds
+only for input format `ebcdic`. That sentence is why the EBCDIC bug went
+unnoticed. Now: the four-level precedence table, every type with a worked
+example, the text-vs-binary distinction, the assumed-encoding report, the
+hex-char character unit, and the superseded text quoted so the old claim is
+findable rather than erased.
+
+Also added: how a complaint is reported (`issue` rides on the field,
+`error` means the row is not a field) — the rule behind the duplicate
+`TRACK2.LEN` — and the OCCURS ceiling on a length-driven `repeat`.
+
+Already present, checked rather than assumed: `greater-than` / `less-than`
+with the legacy migration (§4.4), and `vlg: true` on any field (§8.0).
+
+Changelog entry dated 2026-08-08. The eight spec-vs-code enforcement tests pass.
 
 ---
 

@@ -289,3 +289,27 @@ called; the timer stub is the only thing standing in the way.
 - [ ] Revisit usability properly: walk a real task end-to-end in the browser
       (e.g. "trace field X across 500 records", "onboard a new message type")
       and report friction, rather than inferring from the DOM.
+
+---
+
+## 13. [ ] The audit panel's cog does not dim its host
+
+The last of the four column choosers. The other three — export modal, Parse
+Results, Data Editor — all light the cog, dim the host and lift the cog above
+the scrim; `auditCfgDialog`'s toggle still only flips `.open`. Now that the
+scrim rules are written against `.cfg-dim` alone and the three toggles are a
+table in test.js ("its cog lights, and what is behind the chooser dims"), this
+is one line plus a row in that table. Check first, as the other two did, that
+no absolutely-positioned descendant of the host resolves above it.
+
+---
+
+## 14. [ ] Unreproduced: the export chooser closed once on its own
+
+While verifying v1.12.1.0 the export column chooser was observed closed after
+two programmatic toggle clicks, with nothing in the code path that closes it.
+Nine further clicks — including a real mouse click through the browser — did
+not reproduce it, and no outside-click or document-level handler touches that
+dialog. Recorded rather than dismissed: if it shuts unprompted during normal
+use, that is a real signal and this note is the second data point. Suspect the
+probe rather than the app until a user sees it.

@@ -4099,10 +4099,13 @@ function cssRule(sel) {
 }
 
 test('left of the arrow and the arrow itself are the REDEFINES accent-blue', () => {
-  const BLUE = 'rgba(var(--accent-rgb),.65)';
+  // Pinned to the token, not the literal it used to hold. The point of this
+  // test is that all five carry the SAME colour; --redef-fg is that colour, and
+  // it now differs per theme (light needs a stronger alpha to stay legible),
+  // which a hardcoded rgba could not express.
   for (const sel of ['.c-ovr-orig', '.c-ovr-arrow', '.c-ovr-as', '.c-redef-mark', '.ddl-doc-redef-note']) {
-    const rule = cssRule(sel).replace(/0\.65/g, '.65').replace(/,\s+/g, ',');
-    assert.ok(rule.includes(BLUE.replace(/,\s+/g, ',')), `${sel} must use ${BLUE}`);
+    assert.ok(/color:\s*var\(--redef-fg\)/.test(cssRule(sel)),
+      `${sel} must use var(--redef-fg), got: ${cssRule(sel).trim().slice(0, 70)}`);
   }
 });
 
@@ -7004,9 +7007,9 @@ test('each help example is a bounded, numbered card', () => {
     'the spacer is gone — the card carries its own margin');
   // A border is what says where one ends; colour alone would not survive a theme.
   const card = src.match(/\.me-ps-help-ex\{([^}]*)\}/);
-  assert.ok(card && /border:2px solid/.test(card[1]), `the card is bounded: ${card && card[1]}`);
+  assert.ok(card && /border:\s*var\(--bw\) solid/.test(card[1]), `the card is bounded: ${card && card[1]}`);
   const title = src.match(/\.me-ps-help-ex-title\{([^}]*)\}/);
-  assert.ok(title && /border-bottom:2px solid/.test(title[1]),
+  assert.ok(title && /border-bottom:\s*var\(--bw\) solid/.test(title[1]),
     'and the heading is separated from the body it introduces');
 });
 
@@ -7023,28 +7026,40 @@ test('the dim hosts all clip, so a mispositioned scrim would vanish silently', (
   }
 });
 
-test('no border is 1px — the project uses 2px everywhere', () => {
-  // A standing rule that lived only in review comments, so hairlines kept
-  // arriving one at a time: 52 of them across modals, panels, tables and
-  // inline styles. Enforced here so the next one fails instead of accumulating.
-  const hits = [...html.matchAll(/border(?:-top|-right|-bottom|-left|-width)?\s*:\s*1px/g)]
+test('no border declares a literal width — every one goes through --bw', () => {
+  // Was: "no border is 1px — the project uses 2px everywhere". The 2px rule was
+  // retired on 2026-08-09 when the theme overhaul adopted 1px hairlines, so
+  // pinning the width here would now fight the design language. The rule the
+  // original test was really protecting — borders are deliberate and uniform,
+  // not chosen ad hoc per component — survives by pinning the TOKEN instead.
+  // Change --bw once and every border follows; that is the property worth having.
+  // A transparent border is layout padding (the scrollbar thumb insets its
+  // track that way), not a visible rule — width there is geometry, not theme.
+  const hits = [...html.matchAll(/border(?:-top|-right|-bottom|-left|-width)?\s*:\s*(?:[0-9.]+px|thin|medium|thick)(?![^;]*transparent)/g)]
     .map(m => {
       const line = html.slice(0, m.index).split('\n').length;
       return `line ${line}: ${html.slice(m.index, m.index + 48).split('\n')[0]}`;
     });
-  assert.deepStrictEqual(hits, [], `1px borders found:\n${hits.join('\n')}`);
+  assert.deepStrictEqual(hits, [], `borders with a literal width:\n${hits.join('\n')}`);
   // border-radius is a corner, not a border — it must NOT be caught by this.
-  assert.ok(/border-radius\s*:\s*1px/.test(html),
-    'the guard leaves border-radius alone (there is still one in the source)');
+  assert.ok(/border-radius/.test(html),
+    'the guard leaves border-radius alone (there are still radii in the source)');
 });
 
 test('the Parse Results header matches the Field Map header', () => {
   const th = html.match(/\nthead th \{([^}]*)\}/);
   assert.ok(th, 'the rule exists');
-  assert.ok(/padding:\s*4px 10px/.test(th[1]), `same height, got: ${th[1]}`);
+  // Pinned against the Field Map header rather than a literal padding: the two
+  // are meant to read as one thing, so what matters is that they move together.
+  // A literal here meant density could not reach either without failing.
+  const fm = html.match(/\n\.me-fm-table th\{([^}]*)\}/);
+  assert.ok(fm, 'the Field Map header rule exists');
+  const pad = r => (r.match(/padding:\s*([^;]+)/) || [])[1];
+  eq(pad(th[1]), pad(fm[1]), 'same padding as the Field Map header');
+  assert.ok(/var\(--row-py\)/.test(pad(th[1]) || ''), 'and it follows the density scale');
   assert.ok(/cursor:\s*pointer/.test(th[1]), 'and reads as clickable');
-  // Project rule: every border is 2px.
-  assert.ok(/border-bottom:\s*2px/.test(th[1]), 'with a 2px rule, like every other border');
+  // Project rule: borders go through --bw, never a literal width.
+  assert.ok(/border-bottom:\s*var\(--bw\)/.test(th[1]), 'with a --bw rule, like every other border');
 });
 
 test('a hex-char field with no width override shows its declared number', () => {
@@ -8639,6 +8654,207 @@ test('success is the palette colour, not a hard-coded green', () => {
     `.diag-ok must use var(--success), got: ${rule[1].trim()}`);
 });
 
+// ── The theme system: a theme must stay DATA, never a patch ─────────────────
+// Dark used to live in :root and light re-patched it in 90 `body.light` rules.
+// Two things went wrong with that, and each test below pins one of them.
+
+console.log('\ntheme system — themes are data, not patches');
+
+test('data-theme is on <html> in the markup, not applied by script', () => {
+  // It selects the Layer 3 token block. If it is not present before scripts
+  // run, the very first paint has no tokens at all and renders unstyled — and
+  // if scripts never run, it stays that way.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/<html[^>]*\sdata-theme="(dark|light)"/.test(src),
+    '<html> must carry a default data-theme attribute');
+});
+
+test('there are no body.light rules at all', () => {
+  // Started at 90. Each was a hand-written light-mode value for one component,
+  // which is what made a third theme impractical: every new theme needed its
+  // own 90. All are gone — each became a token both themes supply — and the
+  // `light` class on <body> went with the last of them. A new one appearing
+  // means someone patched a component instead of adding a token, and the theme
+  // stops being data again.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [...css.matchAll(/body\.light[^{]*\{/g)].map(m => m[0].trim());
+  eq(rules.length, 0, `body.light rules found: ${rules.join(' | ')}`);
+  // and nothing sets the class either
+  assert.ok(!/classList\.(toggle|add)\(\s*['"]light['"]/.test(src),
+    'nothing should still be applying a `light` class');
+});
+
+test('every token used is defined in BOTH themes, or in neither', () => {
+  // A token defined only in dark silently falls through to dark's value in
+  // light — which looks like "light theme is broken" and is invisible in code
+  // review. Light and dark are peers; neither is a base for the other.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const grab = sel => {
+    const i = css.indexOf(sel);
+    assert.ok(i >= 0, `${sel} block not found`);
+    const body = css.slice(i + sel.length, css.indexOf('\n}', i));
+    return new Set((body.match(/^\s*(--[a-z0-9-]+)\s*:/gim) || [])
+      .map(d => d.trim().replace(/\s*:$/, '')));
+  };
+  const dark = grab('[data-theme="dark"] {');
+  const light = grab('[data-theme="light"] {');
+  const onlyDark = [...dark].filter(t => !light.has(t));
+  const onlyLight = [...light].filter(t => !dark.has(t));
+  eq(onlyDark.length, 0, `defined only in dark: ${onlyDark.join(', ')}`);
+  eq(onlyLight.length, 0, `defined only in light: ${onlyLight.join(', ')}`);
+});
+
+test('no component rule paints a background with a hex literal', () => {
+  // How the dark title bars survived into the light theme: `.panel-header` set
+  // `background:#1c2128` with no body.light counterpart, so light inherited a
+  // dark value. Nothing flagged it — a literal with no override is invisible
+  // until someone looks at the running app in the other theme. A hex background
+  // outside a theme block is that bug waiting to happen.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  let css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+               .replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const blk of ['[data-theme="dark"] {', '[data-theme="light"] {']) {
+    const i = css.indexOf(blk);
+    css = css.slice(0, i) + css.slice(css.indexOf('\n}', i));   // literals are legal in a theme
+  }
+  // The accent swatches deliberately paint the colour they represent.
+  const ALLOW = /^#eggAccent/;
+  const bad = [];
+  for (const m of css.matchAll(/^([^{}\n][^{}]*)\{([^}]*)\}/gm)) {
+    const sel = m[1].trim().replace(/\s+/g, ' ');
+    if (ALLOW.test(sel)) continue;
+    if (/(^|[\s,])background(-color)?\s*:\s*[^;]*#[0-9a-fA-F]{3,6}/.test(m[2]))
+      bad.push(sel.slice(0, 60));
+  }
+  eq(bad.length, 0, `hex background outside a theme block: ${bad.join(' | ')}`);
+});
+
+test('no two hue slots collide in either theme', () => {
+  // The slots were seeded from whichever badge happened to define each colour
+  // first, so one badge's quirk became the whole slot's. Two consequences shipped
+  // before this caught them: gray inherited a near-white border from the EBCDIC
+  // badge, and in LIGHT theme teal was byte-identical to green while violet
+  // shared purple's background — which made every FUP badge indistinguishable
+  // from its non-FUP counterpart. Colliding on bg AND fg means two different
+  // message types render the same chip.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  for (const theme of ['dark', 'light']) {
+    const i = css.indexOf(`[data-theme="${theme}"] {`);
+    const body = css.slice(i, css.indexOf('\n}', i));
+    const slots = {};
+    for (const m of body.matchAll(/--h-([a-z]+)-(bg|fg|bd)\s*:\s*([^;]+);/g))
+      (slots[m[1]] ||= {})[m[2]] = m[3].trim();
+    const names = Object.keys(slots);
+    assert.ok(names.length >= 10, `${theme}: expected the hue slots, got ${names.length}`);
+    const seen = new Map();
+    for (const n of names) {
+      const key = `${slots[n].bg}|${slots[n].fg}`;
+      assert.ok(!seen.has(key), `${theme}: slot "${n}" is identical to "${seen.get(key)}" (${key})`);
+      seen.set(key, n);
+    }
+  }
+});
+
+test('the vertical panel title stays scoped to collapsed panels', () => {
+  // An edit anchored on `.panel-title {` matched the tail of
+  // `.panel.collapsed .panel-header .panel-title {` and split that selector,
+  // leaving writing-mode:vertical-rl on a bare `.panel-title` rule — every
+  // panel title rendered sideways while expanded. Nothing threw and no test
+  // noticed; it was visible only on screen. `.panel-title` is a SUFFIX of the
+  // collapsed selector, so any anchor on it is unsafe.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  // Walk back from each declaration to its selector. An earlier version of this
+  // test iterated whole rules with a regex that consumed the previous rule's
+  // closing brace, so every second rule was skipped — including this one, and
+  // it passed while the bug was present.
+  let found = 0;
+  for (const m of css.matchAll(/writing-mode\s*:\s*vertical/g)) {
+    const before = css.slice(0, m.index);
+    const open   = before.lastIndexOf('{');
+    const prev   = Math.max(before.lastIndexOf('}', open), before.lastIndexOf('{', open - 1));
+    const sel    = before.slice(prev + 1, open).trim().replace(/\s+/g, ' ');
+    found++;
+    assert.ok(/\.collapsed/.test(sel),
+      `vertical writing-mode must be scoped to a collapsed panel, found on: "${sel}"`);
+  }
+  assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
+});
+
+test('controls border with --bw-ctl, containers with --bw', () => {
+  // Two width tokens on purpose, not by accident. At devicePixelRatio 1 a 1px
+  // border on a TEXT-sized box lands on a fractional pixel and antialiases into
+  // two shades — a visibly two-tone edge. Buttons and badges are sized by their
+  // text, so their widths are inherently fractional; containers are not, and
+  // land clean. Snapping containers to whole pixels was tried and reverted: it
+  // left every button fractional anyway and corrupted saved split ratios on
+  // resize. Collapsing these two tokens into one brings the artifact back.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(/--bw:\s*1px/.test(css), '--bw is the container hairline');
+  assert.ok(/--bw-ctl:\s*2px/.test(css), '--bw-ctl is the control width');
+  const rule = sel => {
+    const m = new RegExp('(?:^|\\n)' + sel.replace(/[.#]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(css);
+    return m && m[1];
+  };
+  const btn = rule('.btn');
+  assert.ok(btn, '.btn rule found');
+  assert.ok(/border:\s*var\(--bw-ctl\)/.test(btn), `.btn must use --bw-ctl, got: ${btn.trim().slice(0, 90)}`);
+  const panel = rule('.panel');
+  assert.ok(panel, '.panel rule found');
+  assert.ok(/border:\s*var\(--bw\)/.test(panel), `.panel must use --bw, got: ${panel.trim().slice(0, 90)}`);
+});
+
+test('the density block is declared after both theme blocks', () => {
+  // [data-theme] and [data-density] are both attribute selectors on <html>, so
+  // they carry equal specificity and SOURCE ORDER breaks the tie. Declared
+  // before the themes, `--shadow-card:none` in compact silently lost to the
+  // theme's own value and compact kept its drop shadows — nothing errors, the
+  // rule just never applies. Order is load-bearing, so it is pinned here.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const dark    = css.indexOf('[data-theme="dark"] {');
+  const light   = css.indexOf('[data-theme="light"] {');
+  const density = css.indexOf('[data-density="compact"] {');
+  assert.ok(dark >= 0 && light >= 0 && density >= 0, 'all three blocks exist');
+  assert.ok(density > dark && density > light,
+    'the density block must come after both theme blocks, or its shape tokens lose the tie');
+});
+
+test('density moves shape and spacing only, never colour', () => {
+  // A density that also shifted colours would be a second theme wearing another
+  // name, and the two would drift: switching to compact would silently restyle
+  // the palette. Keeping it to geometry is what lets theme × density compose.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const i = css.indexOf('[data-density="compact"] {');
+  const body = css.slice(i, css.indexOf('\n}', i));
+  // Fails closed: an unrecognised token counts as a colour until it is listed
+  // here, so adding a colour to the density block cannot slip through by
+  // simply not matching the pattern.
+  const SHAPE = /^--(r-|sp-|row-|gap|bw|shadow-)|^--[a-z-]+-[hw]$/;
+  const bad = (body.match(/^\s*--[a-z0-9-]+/gim) || [])
+    .map(t => t.trim()).filter(t => !SHAPE.test(t.replace(/^--/, '--')));
+  eq(bad.length, 0, `density must not set colour tokens: ${bad.join(', ')}`);
+});
+
+test('_eggSetAccent writes the accent to one element, not two', () => {
+  // The double-write was a symptom, not a fix. Once no theme block redefines
+  // --accent on a descendant, one write to <html> reaches everything. If this
+  // regrows a loop over [documentElement, body], the specificity bug is back.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const fn = /function _eggSetAccent\([^)]*\)\s*\{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(fn, '_eggSetAccent not found');
+assert.ok(!/document\.body/.test(fn[1]),
+  '_eggSetAccent must not touch document.body — write only to <html>');
+});
+
 // ── A help panel nothing can open is a help panel that does not exist ────────
 // _meFmToggleHelp was defined, correct, and referenced by nothing: the "?" button
 // in the Overrides toolbar had been lost, so the column reference was
@@ -8653,6 +8869,22 @@ test('every help toggle is wired to a button in the markup', () => {
   const orphans = toggles.filter(fn => !new RegExp(`onclick="${fn}\\(`).test(html));
   deepEq(orphans, [],
     'defined but nothing calls them — the control that opened the panel is gone');
+});
+
+test('help section toggles are buttons, not clickable divs', () => {
+  // They were <div onclick>, which no keyboard can reach — the help sections
+  // were mouse-only. As <button> they are focusable and activate on Enter or
+  // Space for free. This also puts them inside the control border rule, which
+  // is how the 1px indicator was spotted in the first place.
+  const divToggles = [...html.matchAll(/<div[^>]*class="[^"]*h-sub-toggle[^"]*"/g)];
+  eq(divToggles.length, 0, `${divToggles.length} help toggles are still <div onclick>`);
+  const btnToggles = [...html.matchAll(/<button[^>]*class="[^"]*h-sub-toggle[^"]*"/g)];
+  assert.ok(btnToggles.length >= 10,
+    `expected the help toggles as buttons, found ${btnToggles.length}`);
+  // A button inside a form-less page defaults to type=submit; without this they
+  // would be fine here but wrong the moment one ends up inside a <form>.
+  for (const m of btnToggles)
+    assert.ok(/type="button"/.test(m[0]), `missing type="button": ${m[0].slice(0, 70)}`);
 });
 
 test('the Overrides column reference has its "?" button', () => {

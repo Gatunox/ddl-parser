@@ -444,6 +444,49 @@ to a person, this entry is the second data point.
 
 ---
 
+## 15. [x] Theme system — *done v1.16.0.1, branch `feat/theme-system`*
+
+**Problem.** A theme was a *patch set*, not a data set: dark lived in `:root`
+and light re-patched it in **90 `body.light` rules**, so a third or user-defined
+theme needed its own 90. Alongside that, 106 hardcoded hex and 144 rgba literals
+bypassed the token layer entirely.
+
+**Done.** Three layers — primitives → semantics → themes — where a theme is one
+flat block of assignments under `[data-theme]` on `<html>`. Light and dark share
+100% of the component CSS.
+
+  body.light rules      90 → **0** (the `light` class went with the last one)
+  badge definitions     written twice → **11 shared hue slots**
+  borders               `--bw` 1px containers · `--bw-ctl` 2px controls
+  density               a user setting: Comfort / Compact, `[data-density]`
+  accent                free colour picker + luminance-based contrast
+  tests                 545 → **556**
+
+**The bugs this surfaced, none of them cosmetic:**
+
+- `_eggSetAccent` wrote every variable to *both* `<html>` and `<body>` because
+  `body.light` redefined `--accent` on a descendant of the element being
+  overridden. Moving `data-theme` to `<html>` fixed it; one write now.
+- Panel title bars stayed dark in light theme — a literal `#1c2128` with no
+  light counterpart, invisible until someone looked at the running app.
+- In light theme the `teal` and `green` hue slots were byte-identical, so every
+  FUP badge rendered the same chip as its non-FUP counterpart. Information loss,
+  not decoration.
+- Help section toggles were `<div onclick>` — unreachable by keyboard entirely.
+
+**The one thing that did NOT work — do not retry it.** Snapping panel splits to
+whole pixels in JS, to stop 1px borders straddling a device pixel. It fixes
+containers, leaves every button fractional anyway because the fraction
+originates *inside* a text-sized box, and corrupts saved split ratios on resize
+(a 50/50 split became 69/31 with no way back). Built, tested, reverted. The
+working answer is `--bw-ctl: 2px` on controls, which is what the project's
+original "always 2px" rule had been protecting all along — see
+`feedback_borders` in memory.
+
+**Reference implementation.** `_theme-proto.html` at the repo root.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

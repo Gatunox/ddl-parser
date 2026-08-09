@@ -8762,6 +8762,31 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
 
+test('controls border with --bw-ctl, containers with --bw', () => {
+  // Two width tokens on purpose, not by accident. At devicePixelRatio 1 a 1px
+  // border on a TEXT-sized box lands on a fractional pixel and antialiases into
+  // two shades — a visibly two-tone edge. Buttons and badges are sized by their
+  // text, so their widths are inherently fractional; containers are not, and
+  // land clean. Snapping containers to whole pixels was tried and reverted: it
+  // left every button fractional anyway and corrupted saved split ratios on
+  // resize. Collapsing these two tokens into one brings the artifact back.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(/--bw:\s*1px/.test(css), '--bw is the container hairline');
+  assert.ok(/--bw-ctl:\s*2px/.test(css), '--bw-ctl is the control width');
+  const rule = sel => {
+    const m = new RegExp('(?:^|\\n)' + sel.replace(/[.#]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(css);
+    return m && m[1];
+  };
+  const btn = rule('.btn');
+  assert.ok(btn, '.btn rule found');
+  assert.ok(/border:\s*var\(--bw-ctl\)/.test(btn), `.btn must use --bw-ctl, got: ${btn.trim().slice(0, 90)}`);
+  const panel = rule('.panel');
+  assert.ok(panel, '.panel rule found');
+  assert.ok(/border:\s*var\(--bw\)/.test(panel), `.panel must use --bw, got: ${panel.trim().slice(0, 90)}`);
+});
+
 test('the density block is declared after both theme blocks', () => {
   // [data-theme] and [data-density] are both attribute selectors on <html>, so
   // they carry equal specificity and SOURCE ORDER breaks the tie. Declared

@@ -7004,9 +7004,9 @@ test('each help example is a bounded, numbered card', () => {
     'the spacer is gone — the card carries its own margin');
   // A border is what says where one ends; colour alone would not survive a theme.
   const card = src.match(/\.me-ps-help-ex\{([^}]*)\}/);
-  assert.ok(card && /border:2px solid/.test(card[1]), `the card is bounded: ${card && card[1]}`);
+  assert.ok(card && /border:\s*var\(--bw\) solid/.test(card[1]), `the card is bounded: ${card && card[1]}`);
   const title = src.match(/\.me-ps-help-ex-title\{([^}]*)\}/);
-  assert.ok(title && /border-bottom:2px solid/.test(title[1]),
+  assert.ok(title && /border-bottom:\s*var\(--bw\) solid/.test(title[1]),
     'and the heading is separated from the body it introduces');
 });
 
@@ -7023,19 +7023,24 @@ test('the dim hosts all clip, so a mispositioned scrim would vanish silently', (
   }
 });
 
-test('no border is 1px — the project uses 2px everywhere', () => {
-  // A standing rule that lived only in review comments, so hairlines kept
-  // arriving one at a time: 52 of them across modals, panels, tables and
-  // inline styles. Enforced here so the next one fails instead of accumulating.
-  const hits = [...html.matchAll(/border(?:-top|-right|-bottom|-left|-width)?\s*:\s*1px/g)]
+test('no border declares a literal width — every one goes through --bw', () => {
+  // Was: "no border is 1px — the project uses 2px everywhere". The 2px rule was
+  // retired on 2026-08-09 when the theme overhaul adopted 1px hairlines, so
+  // pinning the width here would now fight the design language. The rule the
+  // original test was really protecting — borders are deliberate and uniform,
+  // not chosen ad hoc per component — survives by pinning the TOKEN instead.
+  // Change --bw once and every border follows; that is the property worth having.
+  // A transparent border is layout padding (the scrollbar thumb insets its
+  // track that way), not a visible rule — width there is geometry, not theme.
+  const hits = [...html.matchAll(/border(?:-top|-right|-bottom|-left|-width)?\s*:\s*(?:[0-9.]+px|thin|medium|thick)(?![^;]*transparent)/g)]
     .map(m => {
       const line = html.slice(0, m.index).split('\n').length;
       return `line ${line}: ${html.slice(m.index, m.index + 48).split('\n')[0]}`;
     });
-  assert.deepStrictEqual(hits, [], `1px borders found:\n${hits.join('\n')}`);
+  assert.deepStrictEqual(hits, [], `borders with a literal width:\n${hits.join('\n')}`);
   // border-radius is a corner, not a border — it must NOT be caught by this.
-  assert.ok(/border-radius\s*:\s*1px/.test(html),
-    'the guard leaves border-radius alone (there is still one in the source)');
+  assert.ok(/border-radius/.test(html),
+    'the guard leaves border-radius alone (there are still radii in the source)');
 });
 
 test('the Parse Results header matches the Field Map header', () => {
@@ -7043,8 +7048,8 @@ test('the Parse Results header matches the Field Map header', () => {
   assert.ok(th, 'the rule exists');
   assert.ok(/padding:\s*4px 10px/.test(th[1]), `same height, got: ${th[1]}`);
   assert.ok(/cursor:\s*pointer/.test(th[1]), 'and reads as clickable');
-  // Project rule: every border is 2px.
-  assert.ok(/border-bottom:\s*2px/.test(th[1]), 'with a 2px rule, like every other border');
+  // Project rule: borders go through --bw, never a literal width.
+  assert.ok(/border-bottom:\s*var\(--bw\)/.test(th[1]), 'with a --bw rule, like every other border');
 });
 
 test('a hex-char field with no width override shows its declared number', () => {

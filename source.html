@@ -937,6 +937,11 @@ input[type="text"]:focus { border-color: var(--accent); }
    box that does not contain the glyph, and the icon reads as sitting high —
    most visible in compact, where the box is smallest. Letting it take a normal
    line box means the thing being centred is the thing you see. */
+.accent-picker { width: 34px; height: var(--ctl-h); padding: 0; cursor: pointer;
+  background: var(--surface-raised); border: var(--bw-ctl) solid var(--border);
+  border-radius: var(--r-sm); box-sizing: border-box; }
+.accent-picker::-webkit-color-swatch-wrapper { padding: 2px; }
+.accent-picker::-webkit-color-swatch { border: none; border-radius: calc(var(--r-sm) - 2px); }
 .btn-ico { font-size: 0.85em; display: inline-flex; align-items: center; }
 /* Badge slot beside a panel title. Empty by default and collapsed by :empty,
    so a panel with no type badge keeps its title flush against the header. */
@@ -1498,8 +1503,6 @@ td.c-err  { color: var(--accent2); }
 .settings-pill-accent { border: none !important; gap: 4px; background: transparent; overflow: visible; }
 .settings-pill-accent .btn { border-radius: var(--r-md) !important; border: none !important; box-shadow: none !important; }
 .settings-pill-accent .btn:hover { border: none !important; box-shadow: none !important; }
-.theme-toggle-btn { cursor: pointer; transition: color 0.15s; }
-.theme-toggle-btn:hover { color: var(--accent); }
 #eggAccentDefault:not(.s-active):hover { background: #58a6ff !important; color: #000 !important; }
 #eggAccentOrange:not(.s-active):hover  { background: #f0883e !important; color: #000 !important; }
 #eggAccentGreen:not(.s-active):hover   { background: #3fb950 !important; color: #000 !important; }
@@ -13382,28 +13385,68 @@ const _EGG_PALETTES = {
   green:  { accent: '#3fb950',   hover: 'rgba(63,185,80,0.25)',     accentRgb: '63,185,80'    },
 };
 
+// A custom accent is one write to <html>, and the derived values come with it
+// so nothing can drift: the hover/active tints are the same hue at a fixed
+// alpha, and --on-accent is chosen by relative luminance so text on a filled
+// accent button stays legible whatever colour is picked. Without that last
+// part a light accent gives white-on-yellow.
+function _accentVars(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  const r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255;
+  const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return {
+    accent: '#' + m[1].toLowerCase(),
+    accentRgb: `${r},${g},${b}`,
+    hover: `rgba(${r},${g},${b},0.25)`,
+    onAccent: L > 0.6 ? '#000000' : '#ffffff',
+  };
+}
+
 function _eggSetAccent(color, save = true) {
-  const p = _EGG_PALETTES[color] || _EGG_PALETTES.blue;
+  // `color` is either a named preset or a #rrggbb the user picked.
+  const p = _EGG_PALETTES[color] ? _EGG_PALETTES[color] : _accentVars(color);
   // One element, not two. Both theme blocks now sit on <html>, so an inline
   // style here out-specifies whichever is active. This used to have to write
   // <body> as well, because body.light redefined --accent on a descendant of
   // the element being overridden and shadowed it.
   const el = document.documentElement;
-  if (p.accent) {
+  if (p && p.accent) {
     el.style.setProperty('--accent',     p.accent);
     el.style.setProperty('--hl-hover',   p.hover);
     el.style.setProperty('--hl-active',  p.hover);
     el.style.setProperty('--accent-rgb', p.accentRgb);
+    // Presets predate --on-accent and carry no contrast value; let the theme's
+    // own choice stand for those rather than guessing one.
+    if (p.onAccent) el.style.setProperty('--on-accent', p.onAccent);
+    else el.style.removeProperty('--on-accent');
   } else {
-    el.style.removeProperty('--accent');
-    el.style.removeProperty('--hl-hover');
-    el.style.removeProperty('--hl-active');
-    el.style.removeProperty('--accent-rgb');
+    ['--accent','--hl-hover','--hl-active','--accent-rgb','--on-accent']
+      .forEach(v => el.style.removeProperty(v));
+    color = 'blue';
   }
   _eggAccent = color;
   if (save) { P.accent = color; savePrefs(); }
   _syncEggAccentUI();
+  _syncAccentPickerUI();
 }
+
+// The picker shows the accent actually in force: a custom one if set, otherwise
+// whatever the active THEME defines, so it never displays a colour that is not
+// on screen.
+function _syncAccentPickerUI() {
+  const inp = document.getElementById('accentPicker');
+  if (!inp) return;
+  const cur = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const m = /^#([0-9a-f]{6})$/i.exec(cur);
+  if (m) inp.value = '#' + m[1].toLowerCase();
+  const rst = document.getElementById('accentResetBtn');
+  if (rst) rst.classList.toggle('hidden', !P.accent || P.accent === 'blue');
+}
+
+function setAccentColor(hex) { _eggSetAccent(hex); }
+function resetAccentColor()  { _eggSetAccent('blue'); }
 
 function _syncEggAccentUI() {
   const row = document.getElementById('eggAccentRow');
@@ -15167,7 +15210,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.15.2';
+const APP_VERSION  = '1.16.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15372,8 +15415,7 @@ function applyPrefs(updateUI = true) {
   if (updateUI) {
     const lbl = document.getElementById('szLabel');
     if (lbl) lbl.textContent = P.monoSize + 'px';
-    const tb = document.getElementById('themeToggleBtn');
-    if (tb) tb.textContent = P.theme === 'dark' ? 'Light Theme' : 'Dark Theme';
+    _syncThemeUI();
     _lwUpdateDisplay();
   }
   // Restore egg / accent state
@@ -15732,6 +15774,7 @@ function openSettings() {
   const lbl = document.getElementById('szLabel');
   if (lbl) lbl.textContent = P.monoSize + 'px';
   _syncDensityUI();
+  _syncAccentPickerUI();
   _lwUpdateDisplay();
   ['dark','light'].forEach(t => {
     const b = document.getElementById('theme_' + t);
@@ -15783,9 +15826,22 @@ function renderDetectSpecsList() {
   }
 }
 
+// openSettings has always looked for #theme_dark / #theme_light; until now
+// nothing had those ids, so the loop found nothing and the single
+// "Light Theme" label carried the state by rewriting its own text.
+function _syncThemeUI() {
+  ['dark','light'].forEach(t => {
+    const b = document.getElementById('theme_' + t);
+    if (b) b.classList.toggle('s-active', (P.theme === 'light' ? 'light' : 'dark') === t);
+  });
+}
+
 function setTheme(t) {
   P.theme = t;
   savePrefs(); applyPrefs();
+  // With no custom accent the picker shows the THEME's accent, which just
+  // changed underneath it.
+  _syncAccentPickerUI();
 }
 
 function adjustFontSize(delta) {
@@ -26290,7 +26346,11 @@ function _meSave() {
         <div class="settings-stitle" id="eggTrigger">Appearance</div>
 
         <div class="settings-row">
-          <span class="settings-lbl theme-toggle-btn" id="themeToggleBtn" onclick="setTheme(P.theme === 'dark' ? 'light' : 'dark')">Light Theme</span>
+          <span class="settings-lbl">Theme</span>
+          <div class="settings-pill">
+            <button class="btn" id="theme_dark"  onclick="setTheme('dark')"  title="Dark theme">Dark</button>
+            <button class="btn" id="theme_light" onclick="setTheme('light')" title="Light theme">Light</button>
+          </div>
         </div>
 
         <div class="settings-row">
@@ -26299,6 +26359,16 @@ function _meSave() {
             <button class="btn" onclick="adjustFontSize(-1)" style="padding:2px 8px;font-size:12px" title="Decrease font size">A−</button>
             <span class="sz-label" id="szLabel">11px</span>
             <button class="btn" onclick="adjustFontSize(1)"  style="padding:2px 8px;font-size:14px" title="Increase font size">A+</button>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <span class="settings-lbl">Accent</span>
+          <div class="flex-row" style="gap:6px;align-items:center">
+            <input type="color" id="accentPicker" class="accent-picker"
+                   oninput="setAccentColor(this.value)" title="Pick an accent colour">
+            <button class="btn hidden" id="accentResetBtn" onclick="resetAccentColor()"
+                    style="padding:2px 8px;font-size:11px" title="Back to the theme's own accent">Reset</button>
           </div>
         </div>
 

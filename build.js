@@ -33,7 +33,7 @@ const RESERVED = [
   'nextMsg', 'onColPickerChange', 'onFmtForceChange', 'onMsgChange',
   'openFeedbackMail', 'openMsgExportModal', 'openSettings', 'prevMsg',
   'resetLayout', 'saveDDL', 'selectDDLMM', 'selectField', 'selectScope',
-  'setDensity', 'setPanelDefaultToggle', 'setRawHexTruncate', 'setTheme',
+  'resetAccentColor', 'setAccentColor', 'setDensity', 'setPanelDefaultToggle', 'setRawHexTruncate', 'setTheme',
   'showDDLDoc',
   'toggleHelpSub', 'toggleHideRedefines', 'togglePanel',
   'toggleSettingsSection', 'toggleTokenArea', 'toggleTrack', 'toggleTrackMode',

@@ -6638,6 +6638,43 @@ for (const c of CHOOSERS) {
   });
 }
 
+test('the two overrides clear each other, in BOTH directions', () => {
+  // Reported: arming an entity override cleared the DDL one, but arming a DDL
+  // override left the entity one live. Both could then be armed at once — two
+  // answers to one question, with only one of them visible in the tree.
+  const ent = psFnSource('toggleSpecOverride');
+  const ddl = psFnSource('toggleParseOverride');
+  assert.ok(/S\.parseOverride = null/.test(ent), 'arming an entity clears the DDL override');
+  assert.ok(/S\.specOverride = null/.test(ddl), 'arming a DDL clears the entity override');
+  // Silently dropping the other one is its own bug — say so.
+  assert.ok(/was cleared/.test(ent) && /was cleared/.test(ddl), 'both say what they cleared');
+  // And each has to repaint the surface the other one owns, or the stale
+  // marker sits there claiming an override that is gone.
+  assert.ok(/renderDDLTree/.test(ent), 'the entity toggle repaints the tree');
+  assert.ok(/_meRenderSidebar/.test(ddl), 'the DDL toggle repaints the sidebar');
+});
+
+test('both overrides look like the same feature', () => {
+  // The first version marked an armed entity with a blue ⊙, which read as
+  // "selected" and looked like a different feature from the tree's amber ▶.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const item = (src.match(/\.me-item-forced\{([^}]*)\}/) || [])[1] || '';
+  const tree = (src.match(/\.tree-node\.tree-ovr \{([^}]*)\}/) || [])[1] || '';
+  assert.ok(item && tree, 'both rules found');
+  for (const [what, css] of [['entity', item], ['tree', tree]]) {
+    assert.ok(/#e6a817/.test(css), `${what} uses the shared amber`);
+    assert.ok(/rgba\(230,168,23/.test(css), `${what} tints the row the same way`);
+  }
+  assert.ok(!/⊙/.test(src), 'the odd-one-out dot is gone');
+  // The marker sits beside the NAME on both, not at the end of the row.
+  assert.ok(/\.me-item-forced \.me-item-name::after\{content:'▶'/.test(src),
+    'entity: ▶ after the name');
+  assert.ok(/\.tree-node\.tree-ovr \.tree-ddl-lbl::after,\s*\n\.tree-node\.tree-ovr \.tree-def-lbl::after \{ content: '▶'/.test(src),
+    'tree: ▶ after the label, not on the row');
+  assert.ok(!/\.tree-node\.tree-ovr::after/.test(src),
+    'and the old row-level marker is removed, or both would render');
+});
+
 test('the entity override forces one spec and skips its recognizers', () => {
   // "Use this and this only". Distinct from the DDL-tree override, which yields
   // a natural walk: forcing an ENTITY brings its parse spec, its binding AND

@@ -893,8 +893,13 @@ td.c-err  { color: var(--accent2); }
 /* Selection must not repaint an armed row back to the accent colour. */
 .tree-node.tree-ovr.tree-sel .tree-ddl-lbl,
 .tree-node.tree-ovr.tree-sel .tree-def-lbl { color: #e6a817; }
-.tree-node.tree-ovr::after { content: '▶'; margin-left: 4px; color: #e6a817;
-  font-size: 9px; opacity: 1; }
+/* The ▶ sits beside the NAME, not at the end of the row. On the row it landed
+   after every trailing element — badges, counts — so on a node that carried
+   them the marker drifted far from the thing it marks. The Data Editor's armed
+   item puts its ▶ right after the name for the same reason. */
+.tree-node.tree-ovr .tree-ddl-lbl::after,
+.tree-node.tree-ovr .tree-def-lbl::after { content: '▶'; margin-left: 4px;
+  color: #e6a817; font-size: 9px; opacity: 1; }
 .c-row-err { color: var(--accent2); font-size: 10px; }
 .c-vlen   { color: var(--warning); font-weight: 700; }
 .trk-chk  { cursor: pointer; accent-color: var(--accent); color-scheme: dark; width: 12px; height: 12px; display: block; margin: auto; }
@@ -1525,13 +1530,15 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .me-sidebar-add:hover{border-color:var(--accent);color:var(--accent);}
 .me-item-list{flex:1;overflow-y:auto;min-height:0;}
 .me-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:26px;cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom:2px solid var(--border);box-sizing:border-box;}
-/* Armed parsing override. Deliberately loud — while this is on, every message
-   parses as this entity and its recognizers are not consulted, so it must not
-   be mistakable for "selected". Not colour alone: the ⊙ marker carries it too,
-   for the same reason links get an underline. */
-.me-item-forced{background:rgba(var(--accent-rgb),.14);box-shadow:inset 3px 0 0 0 var(--accent);}
-.me-item-forced .me-item-name{color:var(--accent);font-weight:700;}
-.me-item-forced .me-item-name::after{content:' ⊙';letter-spacing:.04em;}
+/* Armed parsing override — deliberately the SAME treatment as the DDL tree's
+   (.tree-ovr): amber #e6a817, a ▶ beside the name, an inset bar and a tinted
+   row. Two overrides that do the same kind of thing must not look like two
+   different features; the first version of this used a blue dot and read as
+   "selected". Not colour alone — the ▶ carries it too. */
+.me-item-forced{background:rgba(230,168,23,0.16);box-shadow:inset 3px 0 0 #e6a817;}
+.me-item-forced:hover{background:rgba(230,168,23,0.24);}
+.me-item-forced .me-item-name{color:#e6a817;font-weight:700;}
+.me-item-forced .me-item-name::after{content:'▶';margin-left:4px;font-size:9px;}
 .me-item.dragging{cursor:grabbing;opacity:.4;}
 .me-item.drop-before{box-shadow:0 -2px 0 0 var(--accent);}
 .me-item.drop-after{box-shadow:0 2px 0 0 var(--accent);}
@@ -13567,8 +13574,18 @@ function toggleParseOverride(type, vol, sv, name, defName) {
   const on = isParseOverride(vol, sv, name, defName);
   S.parseOverride = on ? null : { type, vol, sv, name, defName: defName || null };
   const path = [vol, sv, name, defName].filter(Boolean).join('/');
+  // Symmetry matters here. Arming an entity override already cleared this one;
+  // arming this did NOT clear the entity, so both could be live at once —
+  // two answers to one question, with only one of them visible in the tree.
+  let _also = '';
+  if (!on && S.specOverride) {
+    S.specOverride = null;
+    _also = ' — the entity override was cleared';
+    if (typeof _meRenderSidebar === 'function' && document.getElementById('me-msg-list'))
+      _meRenderSidebar();
+  }
   flash(on ? `Override off — parsing follows the parse spec again`
-           : `Override on — every Parse uses ${path}`, on ? 'ok' : 'warn');
+           : `Override on — every Parse uses ${path}${_also}`, on ? 'ok' : 'warn');
   if (typeof renderDDLTree === 'function') renderDDLTree();
   if (typeof syncParseBtn === 'function') syncParseBtn();
 }
@@ -14829,7 +14846,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.14.1.0';
+const APP_VERSION  = '1.14.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22490,7 +22507,9 @@ function _meDeleteItem(section, idx) {
 function _meCtxMsg(e, idx) {
   const msg = _meState?.specs?.[idx];
   showCtxMenu(e.clientX, e.clientY, [
-    { icon: '⊙', label: isSpecOverride(msg?.label || msg?.name)
+    // Same icons the DDL tree's menu uses for the same action — ◉ armed, ▶ not.
+    { icon: isSpecOverride(msg?.label || msg?.name) ? '◉' : '▶',
+      label: isSpecOverride(msg?.label || msg?.name)
         ? 'Clear parsing override' : 'Use for parsing (override)',
       fn: () => toggleSpecOverride(idx) },
     { separator: true },

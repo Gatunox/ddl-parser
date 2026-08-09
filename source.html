@@ -1558,8 +1558,6 @@ body.light .me-item:hover{background:rgba(0,0,0,.04);}
 .me-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
 .me-item-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0;border:2px solid rgba(255,255,255,.2);}
 .me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.me-item-del{background:transparent;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1;margin-left:2px;}
-.me-item-del:hover{color:#f85149;}
 .me-empty{padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-align:center;}
 .me-right{display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;position:relative;}
 /* Editor-scoped toasts — the main-page #flash-container sits BELOW the editor
@@ -14881,7 +14879,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.14.1.3';
+const APP_VERSION  = '1.14.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16429,6 +16427,7 @@ function _meRenderSidebar() {
   _meRenderSpecList('me-msg-list',   s => s.kind !== 'file' && s.kind !== 'other', 'No messages defined', null);
   _meRenderSpecList('me-other-list', s => s.kind === 'other', 'Nothing here yet', 'other');
   _meRenderSpecList('me-file-list',  s => s.kind === 'file', 'No file detections defined', 'file');
+  _meSyncDelBtn();
 }
 
 function _meRenderSpecList(contId, match, emptyMsg, kind) {
@@ -16485,11 +16484,6 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     const nm = document.createElement('span');
     nm.className = 'me-item-name';
     nm.textContent = s.label || s.name || '(unnamed)';
-    const del = document.createElement('button');
-    del.className = 'me-item-del';
-    del.textContent = '×';
-    del.title = 'Delete';
-    del.onclick = e => { e.stopPropagation(); _meDeleteItem('msg', i); };
     d.append(sw, nm);
     const _gaps = _meSpecGaps(s);
     if (_gaps.length) {
@@ -16501,7 +16495,11 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
       g.onmouseleave = () => _tipHide();
       d.appendChild(g);
     }
-    d.appendChild(del);
+    // No per-row delete. It was a ~10px × sitting immediately beside a badge and
+    // the row's own click target, so the most destructive action in the list was
+    // also the easiest to hit by accident and the hardest to hit on purpose.
+    // Deleting is now a labelled button in the header, acting on the selected
+    // entity — same confirmation, just somewhere you mean to go.
     d.onclick = () => _meSelectItem('msg', i);
     d.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); _meCtxMsg(e, i); };
     d.ondragstart = e => _meSpecDragStart(e, i);
@@ -16517,7 +16515,6 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
 // Same model as the recognizer rows: each item is HTML5-draggable, the drop
 // position (before/after) is decided by mouse Y in the target's halves.
 function _meSpecDragStart(e, idx) {
-  if (e.target.closest('.me-item-del')) { e.preventDefault(); return; }
   _meState._dragSpecIdx = idx;
   e.dataTransfer.effectAllowed = 'move';
   try { e.dataTransfer.setData('text/plain', String(idx)); } catch(_) {}
@@ -22529,6 +22526,27 @@ function _meSetKind(idx, kind) {
 }
 const _meKindOf = s => s?.kind === 'file' ? 'file' : s?.kind === 'other' ? 'other' : 'msg';
 
+// The header Delete acts on whatever is selected, so it has to say what that is
+// and refuse when there is nothing — a Delete button that looks live and does
+// nothing is worse than one that is visibly unavailable.
+function _meDeleteSelected() {
+  const idx = _meState?.selIdx;
+  const s = (_meState?.section === 'msg' && idx >= 0) ? _meState.specs[idx] : null;
+  if (!s) { _meFlash('Select an entity in the list first, then press Delete', 'warn'); return; }
+  _meDeleteItem('msg', idx);
+}
+
+// Reflects the current selection onto the header button.
+function _meSyncDelBtn() {
+  const b = document.getElementById('me-del-btn');
+  if (!b) return;
+  const idx = _meState?.selIdx;
+  const s = (_meState?.section === 'msg' && idx >= 0) ? _meState.specs[idx] : null;
+  b.disabled = !s;
+  b.title = s ? `Delete "${s.label || s.name}" and everything in it`
+              : 'Select an entity in the list to delete it';
+}
+
 function _meDeleteItem(section, idx) {
   const itemName = _meState.specs[idx]?.name || 'message';
   showPrompt(`Type DELETE to remove "${itemName}" and all its contents:`, '', val => {
@@ -26457,6 +26475,7 @@ function _meSave() {
         <div class="me-header">
           <span class="me-header-title" id="me-header-title">Data Editor</span>
           <span class="me-header-hint" style="color:var(--text-dim);font-size:calc(var(--sz-mono) - 2px);margin-right:8px">Right-click the Data list for Import / Export</span>
+          <button class="btn btn-sm btn-danger" id="me-del-btn" onclick="_meDeleteSelected()">Delete</button>
           <button class="btn btn-sm" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
         </div>
         <div class="me-tab-body" id="me-tab-body"></div>

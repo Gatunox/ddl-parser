@@ -6674,6 +6674,32 @@ test('the two overrides clear each other, in BOTH directions', () => {
   assert.ok(/_meRenderSidebar/.test(ddl), 'the DDL toggle repaints the sidebar');
 });
 
+test('deleting an entity is a labelled button, not a 10px × in every row', () => {
+  // The per-row × sat immediately beside a gap badge and the row's own click
+  // target, so the most destructive action in the list was the easiest to hit
+  // by accident and the hardest to hit on purpose.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(!/me-item-del/.test(src),
+    'the per-row × is gone — markup, styling and the drag guard that existed only for it');
+  assert.ok(/id="me-del-btn"[^>]*onclick="_meDeleteSelected\(\)"/.test(src),
+    'a labelled Delete sits in the header');
+  assert.ok(/>Delete</.test(src), 'and it says Delete, not a glyph');
+
+  const fn = psFnSource('_meDeleteSelected');
+  assert.ok(/_meDeleteItem\('msg', idx\)/.test(fn), 'it routes to the same delete');
+  // Acting on nothing is the failure mode of a selection-driven button.
+  assert.ok(/Select an entity in the list first/.test(fn),
+    'with nothing selected it says so rather than doing nothing');
+  // The confirmation is unchanged — this moved the control, not the safety.
+  assert.ok(/Type DELETE to remove/.test(src), 'the typed confirmation still stands');
+  // Disabled state has to track selection, or a live-looking button does nothing.
+  const sync = psFnSource('_meSyncDelBtn');
+  assert.ok(/b\.disabled = !s/.test(sync), 'the button disables when nothing is selected');
+  assert.ok(/b\.title = s \?/.test(sync), 'and names what it would delete');
+  assert.ok(/_meSyncDelBtn\(\);/.test(src.replace(/function _meSyncDelBtn[\s\S]*?\n\}/, '')),
+    'and the sidebar render keeps it in sync');
+});
+
 test('the armed row wins over selection and hover, on specificity', () => {
   // Reported: an armed Message row did not turn orange, and hovering it made it
   // DARKER. Two specificity losses: `.me-item.active` (two classes) repainted

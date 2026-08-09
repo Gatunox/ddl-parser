@@ -80,6 +80,7 @@
   --row-py: 5px;    /* vertical padding on every list row */
   --app-header-h: 44px;
   --ctl-h: 24px;      /* every control in a panel header is this tall */
+  --panel-collapsed-w: calc(var(--ctl-h) + var(--sp-2) * 2);   /* toggle + breathing room */
   --row-h: 26px;      /* data-table row height — the density you feel most */
   --gap: 10px;      /* space between panel cards; also the resizer width   */
 }
@@ -246,6 +247,7 @@
   --row-py: 2px;
   --app-header-h: 30px;
   --ctl-h: 19px;
+  --panel-collapsed-w: calc(var(--ctl-h) + var(--sp-2) * 2);
   --row-h: 18px;
   --gap: 2px;
   --panel-header-h: 27px;
@@ -389,7 +391,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
 .panel > * { transition: opacity 0.15s ease; }
 .panel.panel-fading > * { opacity: 0; }
 .panel.collapsed {
-  flex: 0 0 28px !important;
+  flex: 0 0 var(--panel-collapsed-w) !important;
   min-width: 0;
 }
 .top-row .panel.collapsed    { background: var(--bg-deep); }
@@ -407,7 +409,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
   height: 100%;
 }
 .panel.collapsed .panel-header > *:not(.panel-toggle):not(.panel-title) { display: none !important; }
-.panel.collapsed .panel-header .panel-toggle { order: -1; align-self: center; padding: 0; width: 20px; height: 20px; }
+.panel.collapsed .panel-header .panel-toggle { order: -1; align-self: center; padding: 0; width: var(--ctl-h); height: var(--ctl-h); }
 .panel.collapsed .panel-header .panel-title {
   display: flex !important;
   writing-mode: vertical-rl;
@@ -15136,7 +15138,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.8.1';
+const APP_VERSION  = '1.15.8.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -6638,6 +6638,47 @@ for (const c of CHOOSERS) {
   });
 }
 
+test('the toast sits above every overlay in the app', () => {
+  // It was 20000 — below the Data Editor (21000), the export and DDL-doc modals
+  // (25000), the context menu (26000) and Settings (30000). So a toast raised
+  // from inside any of them rendered BEHIND it and was never seen. Twelve
+  // showToast call sites were affected, not just the new one; the copy worked
+  // and looked like it had not.
+  //
+  // Computed, not hardcoded: adding an overlay above the toast fails this.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const toastRule = (src.match(/#toast \{[\s\S]*?\}/) || [''])[0];
+  assert.ok(toastRule, '#toast rule not found');
+  const toastZ = +(toastRule.match(/z-index:\s*(\d+)/) || [])[1];
+  assert.ok(toastZ, 'the toast declares a z-index');
+  const others = [...src.replace(toastRule, '').matchAll(/z-?index\s*:\s*(\d+)/gi)].map(m => +m[1]);
+  const max = Math.max(...others);
+  assert.ok(toastZ > max,
+    `the toast (${toastZ}) must outrank every other z-index (highest is ${max}) — `
+    + 'a notice nobody can see is worse than none');
+});
+
+test('.nojekyll exists — markdown must not be run through Liquid', () => {
+  // Six consecutive Pages deployments failed at "Build with Jekyll" because a
+  // TODO entry contained a literal {{ inside backticks. Liquid runs BEFORE
+  // markdown, so backticks protect nothing, and an unclosed {{ is a syntax
+  // error that kills the build. The repo serves a static index.html and has no
+  // Jekyll content, so .nojekyll removes the whole class of failure.
+  assert.ok(fs.existsSync('./.nojekyll'),
+    '.nojekyll is missing — Pages will run Liquid over every .md file again');
+  // If it is ever removed, this is what would break. Named so the next person
+  // sees the connection rather than rediscovering it from a red build.
+  const liquid = ['TODO.md', 'README.md', 'SPEC-message-format-detector.md']
+    .filter(f => fs.existsSync(f))
+    .map(f => ({ f, n: (fs.readFileSync(f, 'utf8').match(/\{\{|\{%/g) || []).length }))
+    .filter(x => x.n);
+  if (liquid.length) {
+    assert.ok(fs.existsSync('./.nojekyll'),
+      `these files contain Liquid-hostile sequences and depend on .nojekyll: `
+      + liquid.map(x => `${x.f} (${x.n})`).join(', '));
+  }
+});
+
 test('double-clicking a Field Map row copies a name a parse spec can use', () => {
   // Requested so a field name can be pasted straight into a parse spec. The
   // subtlety is WHICH name: the table shows GROUP[01].AA, but a parse spec

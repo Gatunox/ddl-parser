@@ -907,7 +907,14 @@ body.light .trk-chk { color-scheme: light; }
   border-radius: 5px; box-shadow: 0 4px 18px rgba(0,0,0,0.5);
   white-space: nowrap; pointer-events: none;
   opacity: 0; transition: opacity 0.18s;
-  z-index: 20000;
+  /* Above EVERYTHING. At 20000 this sat below every overlay in the app — the
+     Data Editor (21000), the export and DDL-doc modals (25000), the context
+     menu (26000) and Settings (30000) — so a toast raised from inside any of
+     them rendered behind it and was never seen. It reported success into a
+     void, which is worse than silence: the copy worked and looked like it had
+     not. A toast is a transient notice about what just happened; nothing has a
+     reason to cover it. */
+  z-index: 100000;
 }
 #toast.toast-show { opacity: 1; }
 
@@ -14767,7 +14774,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.13.5.0';
+const APP_VERSION  = '1.13.5.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

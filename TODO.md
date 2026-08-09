@@ -352,6 +352,22 @@ outage explains both, and pushing in bursts has been fine every time since.
   `actions/checkout@v4`) come from GitHub's own generated workflow. There is no
   `.github/workflows` file in this repo to pin. Noise, not a cause.
 
+**And then it happened for real, 2026-08-08.** Six consecutive Pages
+deployments failed at the *Build with Jekyll* step. Cause: this very entry. The
+sentence listing \`{{\` Liquid syntax as one of the *wrong* diagnoses put a
+literal \`{{\` into TODO.md, and Jekyll runs Liquid **before** markdown, so the
+backticks around it protect nothing. An unclosed \`{{\` is a Liquid syntax
+error, the build dies, and the deploy never runs.
+
+Fixed by adding **\`.nojekyll\`** at the repo root. The repo serves a static
+\`index.html\` and has no Jekyll content, so the whole Liquid pass was pure
+risk. This removes the class of failure, not just this instance — any future
+\`{{\` or \`{%\` in any markdown file is now inert.
+
+Diagnosis note, since this entry is partly about bad diagnoses: the boundary was
+found from the run list rather than guessed. \`fa6e70e\` succeeded at 22:36,
+\`b942810\` failed at 22:38, and that commit touched TODO.md and nothing else.
+
 ---
 
 ## 12. [x] The scoring body cannot be reached by any test — *done v1.12.2.0*

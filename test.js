@@ -6638,6 +6638,46 @@ for (const c of CHOOSERS) {
   });
 }
 
+test('greater-than and less-than read as opposites, and say which is which', () => {
+  // Reported: greater-than 407 accepted a 470-byte message, which is correct —
+  // but the description being read at the time was less-than's, because the
+  // help panel did not follow the type being edited. Both entries now lead with
+  // MINIMUM / MAXIMUM and point at each other, so landing on the wrong one is
+  // self-correcting.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const entry = t => (src.match(new RegExp(`'${t}': \`([\\s\\S]*?)\`,\\n`)) || [])[1] || '';
+  const gt = entry('greater-than'), lt = entry('less-than');
+  assert.ok(gt && lt, 'both help entries found');
+  assert.ok(/MINIMUM/.test(gt), 'greater-than leads with MINIMUM');
+  assert.ok(/MAXIMUM/.test(lt), 'less-than leads with MAXIMUM');
+  assert.ok(/<b>longer<\/b>/.test(gt) && /<b>shorter<\/b>/.test(lt),
+    'each says which direction it accepts');
+  // Each must name the other, so picking the wrong one is recoverable in place.
+  assert.ok(/less-than/.test(gt), 'greater-than points at less-than');
+  assert.ok(/greater-than/.test(lt), 'less-than points at greater-than');
+  // The off-by-one is the real trap: both are strict.
+  assert.ok(/N = X − 1/.test(gt), 'greater-than gives the at-least conversion');
+  assert.ok(/N = X \+ 1/.test(lt), 'less-than gives the up-to conversion');
+  // And the evaluators must still be what the help claims.
+  assert.ok(/_R\['greater-than'\][^\n]*bytes\.length >  \(/.test(src), 'greater-than is >');
+  assert.ok(/_R\['less-than'\][^\n]*bytes\.length <  \(/.test(src), 'less-than is <');
+});
+
+test('the recognizer help follows the type being edited', () => {
+  // The panel kept showing whatever was last clicked, so a greater-than rule
+  // could be written while reading less-than's description — which says the
+  // opposite thing about the same number. That is what happened.
+  const fn = psFnSource('_meRecTypeChange');
+  assert.ok(/_meRecHelpSelect\(newType\)/.test(fn), 'changing the type moves the help');
+  assert.ok(/recHelpOpen/.test(fn), 'only when the help is actually open');
+  // The selection must also survive a re-render, as the Field Map help does.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/recHelpSel: null/.test(src), 'the selection is real state');
+  assert.ok(/_meState\.recHelpSel = type/.test(src), 'set when a row is clicked');
+  assert.ok(/_meState\.recHelpOpen && _meState\.recHelpSel[\s\S]{0,180}_meRecHelpSelect\(_meState\.recHelpSel\)/.test(src),
+    'and restored after the render that would otherwise blank it');
+});
+
 test('the toast sits above every overlay in the app', () => {
   // It was 20000 — below the Data Editor (21000), the export and DDL-doc modals
   // (25000), the context menu (26000) and Settings (30000). So a toast raised

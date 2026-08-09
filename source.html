@@ -14774,7 +14774,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.13.5.1';
+const APP_VERSION  = '1.13.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16184,6 +16184,7 @@ function openMsgEditor() {
     pend:     {},
     dirty:    false,
     recHelpOpen: false,
+    recHelpSel: null,               // recognizer help row currently expanded
     fmCollapsedGroups: new Set(),   // group qualnames currently collapsed (Field Map)
     fmHideRedef: false,
     fmFilter: '',
@@ -20829,6 +20830,12 @@ function _meFmReapplyState() {
       && document.getElementById('me-fm-help')) {
     _meFmHelpSelect(_meState.fmHelpSel);
   }
+  // Same for the recognizer help, which lost its detail on every render.
+  if (_meState.recHelpOpen && _meState.recHelpSel
+      && typeof _meRecHelpSelect === 'function'
+      && document.getElementById('me-rec-help-detail')) {
+    _meRecHelpSelect(_meState.recHelpSel);
+  }
 }
 function _meFmToggleGroup(tr) {
   if (!tr || !_meState) return;
@@ -21731,7 +21738,11 @@ eq &nbsp;&nbsp;&nbsp;&nbsp;— masked result must equal this (0–255, leave bla
   'dword': `<b>Alias for uint32.</b> 4-byte integer check.
 <div class="me-rh-flds">offset, endian (be/le), eq / min / max (leave blank to skip)</div>`,
 
-  'greater-than': `<b>Decoded byte count must be strictly greater than N.</b> Use as a cheap first guard — reject short buffers before running heavier checks. Strictly greater: <code>&gt; 22</code> passes 23 bytes and rejects 22.
+  'greater-than': `<b>A MINIMUM size.</b> Passes when the message is <b>longer</b> than N. Rejects N itself, and everything shorter.
+<table class="me-rh-tbl"><tr><th>Rule</th><th>406 bytes</th><th>407 bytes</th><th>408 bytes</th><th>470 bytes</th></tr>
+<tr><td><code>greater-than 407</code></td><td>reject</td><td>reject</td><td><b>pass</b></td><td><b>pass</b></td></tr></table>
+<div class="me-rh-flds"><b>To require at least X bytes, set N = X − 1.</b> At least 470 → <code>value 469</code>.</div>
+<div class="me-rh-flds"><b>Not what you want?</b> If you mean "reject anything <b>bigger</b> than X", that is <b>less-than</b>. This rule does the opposite — a large message always passes it.</div>
 <div class="me-rh-flds">value — the byte count to exceed (<code>length</code> also accepted)</div>
 <div class="me-rh-flds"><b>What counts as a byte:</b> the DECODED byte count, never the number of characters you pasted. The input format decides the conversion:
 <table class="me-rh-tbl"><tr><th>Format</th><th>Conversion</th><th>Example paste</th><th>Bytes</th></tr>
@@ -21744,7 +21755,12 @@ eq &nbsp;&nbsp;&nbsp;&nbsp;— masked result must equal this (0–255, leave bla
 So a 940-character HEX paste is <b>470 bytes</b>, and a rule of <code>&lt; 900</code> passes it — the comparison never sees the 940.</div>
 <div class="me-rh-exs"><b>Examples:</b> ISO minimum (MTI + bitmap) → value=19 (needs 20+) &nbsp;|&nbsp; NDC minimum → value=3 (needs 4+)</div>`,
 
-  'less-than': `<b>Decoded byte count must be strictly less than N.</b> Use to reject oversized buffers before running heavier checks, and to separate two message forms that share a literal. Strictly less: <code>&lt; 470</code> rejects 470 bytes and passes 469.
+  'less-than': `<b>A MAXIMUM size.</b> Passes when the message is <b>shorter</b> than N. Rejects N itself, and everything longer.
+<table class="me-rh-tbl"><tr><th>Rule</th><th>406 bytes</th><th>407 bytes</th><th>408 bytes</th><th>470 bytes</th></tr>
+<tr><td><code>less-than 408</code></td><td><b>pass</b></td><td><b>pass</b></td><td>reject</td><td>reject</td></tr></table>
+<div class="me-rh-flds"><b>To allow up to X bytes, set N = X + 1.</b> Up to 407 → <code>value 408</code>.</div>
+<div class="me-rh-flds"><b>Not what you want?</b> If you mean "reject anything <b>smaller</b> than X", that is <b>greater-than</b>.</div>
+<div class="me-rh-flds">Also useful to separate two message forms that share a literal: give the short form <code>less-than S+1</code> and the long form <code>greater-than S</code>.</div>
 <div class="me-rh-flds">value — the byte count to stay under (<code>length</code> also accepted)</div>
 <div class="me-rh-flds"><b>What counts as a byte:</b> the DECODED byte count, never the number of characters you pasted. The input format decides the conversion:
 <table class="me-rh-tbl"><tr><th>Format</th><th>Conversion</th><th>Example paste</th><th>Bytes</th></tr>
@@ -21865,6 +21881,9 @@ function _meRecHelpSelect(type) {
   const det = document.getElementById('me-rec-help-detail');
   const html = _REC_HELP[type];
   if (!det || !html) return;
+  // Remembered, so a re-render does not blank the detail — the Field Map help
+  // has always done this and the recognizer help never did.
+  if (_meState) _meState.recHelpSel = type;
   document.querySelectorAll('#me-rec-help .me-ps-help-table tbody tr').forEach(tr =>
     tr.classList.toggle('me-ps-sel', tr.dataset.rec === type)
   );
@@ -22223,6 +22242,16 @@ function _meRecTypeChange(idx, newType) {
   if (!_meState.pend) _meState.pend = {};
   _meState.pend[idx] = { type: newType };
   _meRenderRight();
+  // Move the open help to the type now being edited. Without this the panel
+  // keeps showing whatever was last clicked, so a `greater-than` rule could be
+  // written while reading `less-than`'s description — which says the opposite
+  // thing about the same number. Reported exactly that way: "greater-than 407,
+  // 470 bytes, message accepted; the description says it will not pass".
+  // Re-selected after the render, since that replaces the detail element.
+  if (_meState.recHelpOpen && _REC_HELP[newType]) {
+    _meState.recHelpSel = newType;
+    _meRecHelpSelect(newType);
+  }
 }
 
 function _meRecSave(idx) {

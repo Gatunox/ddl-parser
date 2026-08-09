@@ -123,6 +123,10 @@
   --vbar-unr-bg: rgba(230,168,23,0.06); --vbar-unr-bd: rgba(230,168,23,0.20); --vbar-unr-fg: #c8a030;
   /* elevation */
   --danger: #f85149;
+  --surface-raised: #21262d;
+  --border-strong: rgba(255,255,255,0.16);
+  --surface-hover: rgba(255,255,255,0.06);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.40);
   --shadow-card: 0 1px 2px rgba(0,0,0,.30), 0 4px 14px -4px rgba(0,0,0,.35);
   --accent-hover: #79b8ff;
   --on-accent: #000000;
@@ -191,6 +195,10 @@
   --vbar-wrn-bg: rgba(180,120,0,0.06);  --vbar-wrn-bd: rgba(180,120,0,0.20);  --vbar-wrn-fg: #8a6000;
   --vbar-unr-bg: rgba(180,120,0,0.04);  --vbar-unr-bd: rgba(180,120,0,0.16);  --vbar-unr-fg: #7a5500;
   --danger: #cf222e;
+  --surface-raised: #f6f8fa;
+  --border-strong: rgba(0,0,0,0.18);
+  --surface-hover: rgba(0,0,0,0.04);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.06);
   --shadow-card: 0 1px 2px rgba(0,0,0,.05), 0 4px 14px -6px rgba(0,0,0,.10);
   --accent-hover: #0860ca;
   --on-accent: #ffffff;
@@ -416,8 +424,8 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .panel-title {
   font-size: var(--sz-mono);
   font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 0.03em;
+  color: var(--text);
+  letter-spacing: -0.01em;
   white-space: nowrap;
   flex: none;
   width: var(--tree-w, 170px);
@@ -457,10 +465,13 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .settings-row .panel-toggle { width: 26px; height: 20px; border: var(--bw) solid var(--border); border-radius: var(--r-sm); padding: 0; align-self: auto; box-sizing: border-box; }
 .settings-row .panel-toggle:hover { box-shadow: none; border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
 .settings-row .panel-toggle.is-collapsed { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
-.panel-header .btn { padding: 0 10px !important; border: none !important; border-radius: 0 !important; background: transparent !important; color: var(--text-dim) !important; font-weight: normal !important; align-self: stretch !important; }
-.panel-header .flex-row { align-self: stretch; display: flex; align-items: stretch; gap: 4px; padding: 0 4px; }
+/* Header buttons used to be full-height borderless strips, which read as
+   toolbar segments rather than buttons and left Parse stretched beside them.
+   They are ordinary buttons now, vertically centred and sized by content. */
+.panel-header .btn { padding: 3px 10px !important; border: var(--bw) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text) !important; font-weight: 600 !important; align-self: center !important; flex: 0 0 auto !important; }
+.panel-header .flex-row { align-self: center; display: flex; align-items: center; gap: 6px; padding: 0 6px; }
 .panel-header > span:not(.panel-title) { display: flex; align-items: center; padding: 0 4px; }
-.panel-header .btn:hover { background: rgba(var(--accent-rgb),0.12) !important; color: var(--accent) !important; box-shadow: inset 0 0 0 var(--bw) var(--accent) !important; }
+.panel-header .btn:hover { background: var(--surface-hover) !important; border-color: var(--border-strong) !important; color: var(--text) !important; box-shadow: none !important; }
 #parseBtn { display:inline-flex !important; align-items:center !important; justify-content:center !important; align-self:center !important; }
 #msgClearBtn { min-width:calc(var(--sz-mono) * 5.5); text-align:center; }
 #parseBtn.btn-primary { background: var(--accent) !important; color: var(--on-accent) !important; border: var(--bw) solid var(--accent) !important; border-radius: var(--r-sm) !important; }
@@ -505,9 +516,20 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
   border: var(--bw) solid var(--border); border-radius: var(--r-md);
   margin: var(--sp-2) 0 var(--sp-2) var(--sp-2); }
 #ddlTree         { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
-.tree-search-wrap { width: 100%; border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--bg-deep); box-sizing: border-box; padding: 0; min-height: var(--panel-header-h, 27px); }
-input.tree-search, #treeSearch { flex: 1; min-width: 0; border-radius: calc(var(--r-md) - var(--bw)) 0 0 0; padding: 2px 22px 2px 5px; font-size: calc(var(--sz-mono) - 0.5px); background: var(--bg-deep); border: none; border-radius: 0; color: var(--text); outline: none; font-family: var(--mono); box-sizing: border-box; }
-input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) var(--accent); border-radius: calc(var(--r-md) - var(--bw)) 0 0 0; }
+/* The tree is a card, so it carries its own header — title plus a live count.
+   The rounded top corners belong to whichever element is FIRST inside the
+   card; they moved here from the search wrap when this header was added. */
+.tree-hdr { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 0 var(--sp-2); min-height: var(--panel-header-h, 27px); flex-shrink: 0;
+  background: var(--surface-header); border-bottom: var(--bw) solid var(--border);
+  border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0; }
+.tree-hdr-title { font-size: var(--sz-mono); font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.tree-hdr-count { font-size: var(--sz-badge); font-weight: 700; padding: 1px 8px; flex-shrink: 0;
+  border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--h-gray-fg);
+  border: var(--bw) solid var(--h-gray-bd); }
+.tree-search-wrap { width: 100%; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--bg-deep); box-sizing: border-box; padding: 0; min-height: var(--panel-header-h, 27px); }
+input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 2px 22px 2px 5px; font-size: calc(var(--sz-mono) - 0.5px); background: var(--bg-deep); border: none; border-radius: 0; color: var(--text); outline: none; font-family: var(--mono); box-sizing: border-box; }
+input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) var(--accent); }
 .tree-search::placeholder { color: var(--text-dim); }
 .tree-search-clear { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: 9px; color: var(--text-dim); cursor: pointer; display: none; line-height: 1; padding: 2px; }
 .tree-search-clear:hover { color: var(--text); }
@@ -820,18 +842,19 @@ input[type="text"]:focus { border-color: var(--accent); }
 
 /* ===== BUTTONS ===== */
 .btn {
-  background: transparent;
-  color: var(--text-dim);
+  background: var(--surface-raised);
+  color: var(--text);
   border: var(--bw) solid var(--border);
-  padding: 2px 9px;
+  padding: 3px 12px;
   border-radius: var(--r-sm);
   font-size: var(--sz-mono);
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.1s;
   flex-shrink: 0;
 }
-.btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+.btn:hover { border-color: var(--border-strong); color: var(--text); background: var(--surface-hover); }
 /* A button that stays pressed while whatever it opened is open. Same treatment
    as :hover so an active toggle and a hovered button read as one language. */
 .btn.btn-on { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
@@ -1404,9 +1427,12 @@ body.light .trk-chk { color-scheme: light; }
 }
 .settings-row:last-child { margin-bottom: 0; }
 .settings-lbl { font-size: var(--sz-mono); color: var(--text); }
-.settings-pill { display: flex; border: var(--bw) solid var(--border); border-radius: var(--r-md); overflow: hidden; }
-.settings-pill .btn { border: none; border-radius: 0; padding: 3px 12px; font-size: 11px; }
-.settings-pill .btn.s-active { background: var(--accent); color: #000; font-weight: 700; border: none; }
+/* A sunken track with a raised active segment — the active option looks
+   lifted out of the group rather than painted over it. */
+.settings-pill { display: flex; gap: 2px; padding: 2px; background: var(--bg-input); border: var(--bw) solid var(--border); border-radius: var(--r-sm); }
+.settings-pill .btn { border: none; background: transparent; color: var(--text-dim); border-radius: calc(var(--r-sm) - 2px); padding: 3px 12px; font-size: 11px; }
+.settings-pill .btn:hover { background: transparent; color: var(--text); border: none; }
+.settings-pill .btn.s-active { background: var(--bg-panel); color: var(--accent); font-weight: 700; border: none; box-shadow: var(--shadow-sm); }
 /* Accent colour picker — no outer border, colour preview on hover */
 .settings-pill-accent { border: none !important; gap: 4px; background: transparent; overflow: visible; }
 .settings-pill-accent .btn { border-radius: var(--r-md) !important; border: none !important; box-shadow: none !important; }
@@ -2299,6 +2325,10 @@ th.me-fm-colhi{color:var(--accent);}
       </div>
       <div class="ddl-pane-split">
         <div class="ddl-tree-pane" id="ddlTreePane">
+          <div class="tree-hdr">
+            <span class="tree-hdr-title">DDL Tree</span>
+            <span class="tree-hdr-count" id="ddlTreeCount">0</span>
+          </div>
           <div class="tree-search-wrap">
             <input id="treeSearch" class="tree-search" type="text" placeholder="Filter DDLs…"
               oninput="filterDDLTree(this.value)"
@@ -12798,8 +12828,21 @@ function filterDDLTree(val) {
   renderDDLTree();
 }
 
+// Total DDLs across every volume/subvolume. Derived at render time rather than
+// maintained as a counter — a counter drifts the moment one call site forgets it.
+function _syncTreeCount(tree) {
+  const el = document.getElementById('ddlTreeCount');
+  if (!el) return;
+  let n = 0;
+  for (const vol of Object.keys(tree || {}))
+    for (const sv of Object.keys(tree[vol] || {}))
+      n += Object.keys(tree[vol][sv] || {}).length;
+  el.textContent = n.toLocaleString();
+}
+
 function renderDDLTree() {
   const tree = S.ddlTree;
+  _syncTreeCount(tree);
   const sc   = S.scope;
   const fq   = S.treeFilter.toLowerCase();   // filter query ('' = no filter)
   const vols = Object.keys(tree).sort();
@@ -15052,7 +15095,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.4.0';
+const APP_VERSION  = '1.15.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -444,57 +444,46 @@ to a person, this entry is the second data point.
 
 ---
 
-## 15. [~] Theme system — *prototype done 2026-08-09, blocked on two decisions*
+## 15. [x] Theme system — *done v1.16.0.1, branch `feat/theme-system`*
 
-**Problem.** A theme is currently a *patch set*, not a data set. Dark lives in
-`:root`; light re-patches it in **90 `body.light` rules**. A third theme needs a
-third set of 90 rules, and a user-defined theme needs 90 rules a user cannot
-write. Alongside that, **106 distinct hardcoded hex** and **144 `rgb()/rgba()`
-literals** in the CSS block (plus **31 hex in JS/templates**) bypass the token
-layer entirely. The tokenized foundation is otherwise good — 1,112 `var()` uses.
+**Problem.** A theme was a *patch set*, not a data set: dark lived in `:root`
+and light re-patched it in **90 `body.light` rules**, so a third or user-defined
+theme needed its own 90. Alongside that, 106 hardcoded hex and 144 rgba literals
+bypassed the token layer entirely.
 
-**Prototype.** `_theme-proto.html` on branch `feat/theme-system` (commit
-`aff4416`). Three layers — primitives → semantics → themes — where a theme is
-one flat block of assignments. Light and dark there share 100% of the component
-CSS and **zero** override rules. Verified in-browser across dark/light,
-comfortable/compact and 2px/1px.
+**Done.** Three layers — primitives → semantics → themes — where a theme is one
+flat block of assignments under `[data-theme]` on `<html>`. Light and dark share
+100% of the component CSS.
 
-Two findings to carry into the real change:
+  body.light rules      90 → **0** (the `light` class went with the last one)
+  badge definitions     written twice → **11 shared hue slots**
+  borders               `--bw` 1px containers · `--bw-ctl` 2px controls
+  density               a user setting: Comfort / Compact, `[data-density]`
+  accent                free colour picker + luminance-based contrast
+  tests                 545 → **556**
 
-- The 15 badge types, 7 message types and 5 tree badges all repeat the same
-  `bg/fg/border` triplet and collapse to **11 shared hue slots** (33 values per
-  theme, instead of writing every badge twice).
-- `_eggSetAccent` (source.html:13129) writes every variable to **both** `<html>`
-  and `<body>` because `body.light` redefines `--accent` at higher specificity.
-  Root cause: the theme attribute sits on a *descendant* of the element carrying
-  the override, so the theme re-declaration shadows it. Moving the attribute to
-  `<html>` fixes it outright — one write then propagates. Confirmed by
-  reproducing the original bug in the prototype first, then fixing it.
+**The bugs this surfaced, none of them cosmetic:**
 
-### Decided 2026-08-09 — these are settled, do not reopen
+- `_eggSetAccent` wrote every variable to *both* `<html>` and `<body>` because
+  `body.light` redefined `--accent` on a descendant of the element being
+  overridden. Moving `data-theme` to `<html>` fixed it; one write now.
+- Panel title bars stayed dark in light theme — a literal `#1c2128` with no
+  light counterpart, invisible until someone looked at the running app.
+- In light theme the `teal` and `green` hue slots were byte-identical, so every
+  FUP badge rendered the same chip as its non-FUP counterpart. Information loss,
+  not decoration.
+- Help section toggles were `<div onclick>` — unreachable by keyboard entirely.
 
-- **Border width: 1px hairlines** (`--bw:1px`). This deliberately supersedes the
-  standing *always 2px, never 1px* rule for the new design language. Confirmed
-  twice — the chosen option's preview stated "227 borders → 1px hairlines", then
-  a capture of the prototype toolbar with `1px` active: *"i just give you the
-  capture of what i want"*.
-- **Density: comfortable.** The inspiration aesthetic, not today's compact. The
-  density cost at ~4,388 Field Map rows on the production machine is accepted.
-  It remains a token knob (`[data-density]`) and can be retuned later without
-  touching component CSS.
-- **Default base: light.** Set via `data-theme` on `<html>`.
-- **Dark stays fully supported** — it is not a fallback. Light and dark are equal
-  data blocks sharing 100% of the component CSS; both verified rendering at the
-  chosen 1px + comfortable settings.
+**The one thing that did NOT work — do not retry it.** Snapping panel splits to
+whole pixels in JS, to stop 1px borders straddling a device pixel. It fixes
+containers, leaves every button fractional anyway because the fraction
+originates *inside* a text-sized box, and corrupts saved split ratios on resize
+(a 50/50 split became 69/31 with no way back). Built, tested, reverted. The
+working answer is `--bw-ctl: 2px` on controls, which is what the project's
+original "always 2px" rule had been protecting all along — see
+`feedback_borders` in memory.
 
-### Remaining — the migration into `source.html` has not started
-
-Define the three layers → replace the 106 hex
-and 144 rgba literals with semantics → delete the 90 `body.light` rules → rewire
-`setTheme` / `_eggSetAccent` to `<html>` → add the accent picker (base + accent,
-with the luminance-based contrast guarantee the prototype already implements).
-Fold the 31 JS-side colors and the 53 CodeMirror rules into the same pass, with
-screenshot comparisons at each step.
+**Reference implementation.** `_theme-proto.html` at the repo root.
 
 ---
 

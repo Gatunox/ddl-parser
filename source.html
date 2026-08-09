@@ -79,6 +79,7 @@
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
   --row-py: 5px;    /* vertical padding on every list row */
   --app-header-h: 44px;
+  --ctl-h: 24px;      /* every control in a panel header is this tall */
   --gap: 10px;      /* space between panel cards; also the resizer width   */
 }
 
@@ -243,6 +244,7 @@
   --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 10px;
   --row-py: 2px;
   --app-header-h: 30px;
+  --ctl-h: 19px;
   --gap: 2px;
   --panel-header-h: 27px;
   --shadow-card: none;
@@ -426,7 +428,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  padding: 0;
+  padding: 0 var(--sp-2) 0 0;
   background: var(--surface-header);
   border-bottom: var(--bw) solid var(--border);
   border-radius: calc(var(--r-lg) - var(--bw)) calc(var(--r-lg) - var(--bw)) 0 0;
@@ -460,21 +462,21 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
 
 /* Panel visibility toggle button */
 .panel-toggle {
-  background: transparent;
+  background: var(--surface-raised);
   color: var(--text-dim);
-  border: none;
-  width: auto; height: auto;
-  border-radius: 0;
+  border: var(--bw) solid var(--border);
+  width: var(--ctl-h); height: var(--ctl-h);
+  border-radius: var(--r-sm);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   transition: all 0.1s;
-  padding: 0 8px;
-  align-self: stretch;
+  padding: 0;
+  align-self: center;
 }
-.panel-toggle:hover { background: rgba(var(--accent-rgb),0.12); color: var(--accent); box-shadow: inset 0 0 0 var(--bw) var(--accent); }
+.panel-toggle:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--text); box-shadow: none; }
 .panel-toggle.is-collapsed { color: var(--warning); }
 .panel-toggle.is-collapsed:hover { background: rgba(230,168,23,0.12); box-shadow: inset 0 0 0 var(--bw) var(--warning); }
 .settings-row .panel-toggle { width: 26px; height: 20px; border: var(--bw) solid var(--border); border-radius: var(--r-sm); padding: 0; align-self: auto; box-sizing: border-box; }
@@ -483,7 +485,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
 /* Header buttons used to be full-height borderless strips, which read as
    toolbar segments rather than buttons and left Parse stretched beside them.
    They are ordinary buttons now, vertically centred and sized by content. */
-.panel-header .btn { padding: 3px 10px !important; border: var(--bw) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text) !important; font-weight: 600 !important; align-self: center !important; flex: 0 0 auto !important; }
+.panel-header .btn { padding: 0 10px !important; height: var(--ctl-h) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; border: var(--bw) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text) !important; font-weight: 600 !important; align-self: center !important; flex: 0 0 auto !important; }
 .panel-header .flex-row { align-self: center; display: flex; align-items: center; gap: 6px; padding: 0 6px; }
 .panel-header > span:not(.panel-title) { display: flex; align-items: center; padding: 0 4px; }
 .panel-header .btn:hover { background: var(--surface-hover) !important; border-color: var(--border-strong) !important; color: var(--text) !important; box-shadow: none !important; }
@@ -15111,7 +15113,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.6.0';
+const APP_VERSION  = '1.15.6.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

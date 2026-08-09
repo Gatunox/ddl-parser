@@ -35,7 +35,7 @@ const RESERVED = [
   'resetLayout', 'saveDDL', 'selectDDLMM', 'selectField', 'selectScope',
   'resetAccentColor', 'setAccentColor', 'setDensity', 'setPanelDefaultToggle', 'setRawHexTruncate', 'setTheme',
   'showDDLDoc',
-  'toggleHelpSub', 'toggleHideRedefines', 'togglePanel',
+  'toggleHelpSub', 'toggleHideRedefines', 'toggleMissingRefs', 'togglePanel',
   'toggleSettingsSection', 'toggleTokenArea', 'toggleTrack', 'toggleTrackMode',
   'toggleTreeExp', 'updateDDLEditorState', 'updateDDLHighlight',
   'updateDDLValidationBar',

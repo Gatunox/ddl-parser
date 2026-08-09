@@ -688,7 +688,13 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .tree-pending .tree-ddl-lbl { color: #e6a817; font-style: italic; }
 .tree-def-lbl { color: var(--text-dim); padding-left: 30px; flex: 1; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .tree-staging-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; border-top: var(--bw) solid var(--border); margin-top: 4px; }
-.tree-missref-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: #e6a817; letter-spacing: 0.05em; text-transform: uppercase; border-top: var(--bw) solid var(--border); margin-top: 4px; }
+.tree-missref-hdr { display: flex; align-items: center; gap: 2px; width: 100%; cursor: pointer;
+  padding: 6px 8px 4px 5px; font-size: 10px; font-weight: 700; color: var(--warn-text);
+  letter-spacing: 0.05em; text-transform: uppercase; text-align: left;
+  border: none; border-top: var(--bw) solid var(--border); margin-top: 4px;
+  background: transparent; font-family: inherit; }
+.tree-missref-hdr:hover { background: rgba(230,168,23,0.10); }
+.tree-missref-hdr:focus-visible { outline: var(--bw-ctl) solid var(--accent); outline-offset: -2px; }
 .tree-missref-item .tree-ddl-lbl { color: #e6a817; font-style: italic; padding-left: 0; }
 .tree-missref-item:hover { background: rgba(230,168,23,0.10); }
 .tree-unres-badge  { font-size: var(--sz-badge); padding: 0 4px; border-radius: var(--r-pill); background: rgba(230,168,23,0.18); color: #e6a817; flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
@@ -13064,7 +13070,7 @@ function renderDDLTree() {
             const unresCount  = unresResult?.unresolvedWarnings?.length || unresPaths?.length || 0;
             const unresTypes  = unresPaths?.join(', ') || '';
             const unresBadge  = unresCount
-              ? `<span class="tree-unres-badge" title="⚠ ${unresCount} unresolved type ref${unresCount > 1 ? 's' : ''}${unresTypes ? ': ' + unresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{updateDDLValidationBar('${esc(vol)}/${esc(sv)}/${esc(d)}',true);document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${unresCount}</span>`
+              ? `<span class="tree-unres-badge" title="⚠ ${unresCount} unresolved type ref${unresCount > 1 ? 's' : ''}${unresTypes ? ': ' + unresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');S.treeExp.delete(_MISSREF_KEY);setTimeout(()=>{updateDDLValidationBar('${esc(vol)}/${esc(sv)}/${esc(d)}',true);renderDDLTree();document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${unresCount}</span>`
               : '';
             const valResult  = S.ddlValidationResults[fileKey];
             const errBadge   = valResult?.errors?.length
@@ -13102,7 +13108,7 @@ function renderDDLTree() {
                 const _dUnresCount = _dr?.unresolvedWarnings?.length || _durPaths?.length || 0;
                 const _dUnresTypes = _durPaths?.join(', ') || '';
                 const _dUnresBadge = _dUnresCount
-                  ? `<span class="tree-unres-badge" title="⚠ ${_dUnresCount} unresolved type ref${_dUnresCount > 1 ? 's' : ''}${_dUnresTypes ? ': ' + _dUnresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${_dUnresCount}</span>`
+                  ? `<span class="tree-unres-badge" title="⚠ ${_dUnresCount} unresolved type ref${_dUnresCount > 1 ? 's' : ''}${_dUnresTypes ? ': ' + _dUnresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');S.treeExp.delete(_MISSREF_KEY);setTimeout(()=>{renderDDLTree();document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${_dUnresCount}</span>`
                   : '';
                 const _dErrBadge  = _dr?.errors?.length
                   ? `<span class="tree-error-badge" title="${esc((_dr.errors).map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${_dr.errors.length}</span>`
@@ -13155,18 +13161,43 @@ function renderDDLTree() {
   }
   const missingNames = Object.keys(allMissing).sort();
   if (missingNames.length > 0) {
-    html += `<div class="tree-missref-hdr">${missingNames.length} — Missing References</div>`;
-    for (const typeName of missingNames) {
-      const refs = allMissing[typeName];
-      const tip  = `Referenced by:\n${refs.join('\n')}\n\nClick to create a stub definition`;
-      html += `<div class="tree-node tree-missref-item" title="${esc(tip)}" onclick="createMissingRefStub('${esc(typeName)}')">
-        <span class="tree-caret" style="visibility:hidden">−</span>
-        <span class="tree-ddl-lbl">${esc(typeName)}</span>
-      </div>`;
+    // Collapsed state is stored INVERTED — the key is present when the section
+    // is shut. Everywhere else in the tree, presence means expanded and the
+    // default is collapsed; here the default has to stay open, because this
+    // section only appears when something is wrong and the ⚠N badge scrolls
+    // people to it.
+    const _mrShut = S.treeExp.has(_MISSREF_KEY);
+    html += `<button type="button" class="tree-missref-hdr" onclick="toggleMissingRefs()"
+      title="${_mrShut ? 'Show' : 'Hide'} the unresolved type references"
+      aria-expanded="${!_mrShut}">
+      <span class="tree-caret">${_mrShut ? '+' : '−'}</span>
+      <span>${missingNames.length} — Missing References</span>
+    </button>`;
+    if (!_mrShut) {
+      for (const typeName of missingNames) {
+        const refs = allMissing[typeName];
+        const tip  = `Referenced by:\n${refs.join('\n')}\n\nClick to create a stub definition`;
+        html += `<div class="tree-node tree-missref-item" title="${esc(tip)}" onclick="createMissingRefStub('${esc(typeName)}')">
+          <span class="tree-caret" style="visibility:hidden">−</span>
+          <span class="tree-ddl-lbl">${esc(typeName)}</span>
+        </div>`;
+      }
     }
   }
 
   document.getElementById('ddlTree').innerHTML = html;
+}
+
+// Reserved key in the Set it shares with volume/subvolume names. A colon
+// cannot appear in either, so this cannot collide. Note S.treeExp is saved but
+// deliberately never restored — the tree starts fully collapsed on reload — so
+// collapsing this section lasts the session, exactly like every other node.
+const _MISSREF_KEY = '::missing-refs';
+
+function toggleMissingRefs() {
+  S.treeExp.has(_MISSREF_KEY) ? S.treeExp.delete(_MISSREF_KEY) : S.treeExp.add(_MISSREF_KEY);
+  saveTreeExp();
+  renderDDLTree();
 }
 
 function toggleTreeExp(key) {
@@ -15210,7 +15241,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.16.0.1';
+const APP_VERSION  = '1.16.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

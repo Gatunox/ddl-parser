@@ -5156,25 +5156,45 @@ test('selecting a DDL does not arm override', () => {
 
 test('arming is explicit, and names the DDL it armed', () => {
   ovrReset();
-  toggleParseOverride('ddl', 'V', 'S', 'D');
+  toggleParseOverride('def', 'V', 'S', 'D', 'R');
   const o = parseOverrideScope();
   assert.ok(o, 'armed');
   eq(`${o.vol}/${o.sv}/${o.name}`, 'V/S/D', 'the armed path');
-  assert.ok(isParseOverride('V', 'S', 'D'), 'and the tree can mark it');
-  assert.ok(!isParseOverride('V', 'T', 'U'), 'without marking any other');
+  // CHANGED ON PURPOSE (v1.14.1.2). These armed the FILE. A file that holds
+  // definitions is a container, not a parse unit — "parse everything as this
+  // file" has no meaning when it holds four of them — so the override targets
+  // a DEFINITION now. Exclusion still belongs on the file, where it is a bulk
+  // action over everything inside.
+  assert.ok(isParseOverride('V', 'S', 'D', 'R'), 'the tree marks the armed definition');
+  assert.ok(!isParseOverride('V', 'S', 'D'), 'and not the file that contains it');
+  assert.ok(!isParseOverride('V', 'T', 'U', 'Q'), 'without marking any other');
+});
+
+test('a file that holds definitions cannot be the override target', () => {
+  // Reported: a file was armed, which cannot be parsed as one thing.
+  ovrReset();
+  toggleParseOverride('ddl', 'V', 'S', 'D');      // the fixture file holds DEF R
+  eq(parseOverrideScope(), null, 'armed on a file with definitions, it does not stand');
+  // A FLAT ddl (simple ISO format, no DEF sections) has nothing else to pick,
+  // so there the file itself is the parse unit and must still work.
+  S.ddlTree = { V: { S: { FLAT: 'MTI FIXED 4 "Message Type"\n' } } };
+  S.parseOverride = null;
+  toggleParseOverride('ddl', 'V', 'S', 'FLAT');
+  const o = parseOverrideScope();
+  assert.ok(o && o.name === 'FLAT', 'a flat DDL can still be armed as a file');
 });
 
 test('arming the same DDL again disarms it', () => {
   ovrReset();
-  toggleParseOverride('ddl', 'V', 'S', 'D');
-  toggleParseOverride('ddl', 'V', 'S', 'D');
+  toggleParseOverride('def', 'V', 'S', 'D', 'R');
+  toggleParseOverride('def', 'V', 'S', 'D', 'R');
   eq(parseOverrideScope(), null, 'toggled off');
 });
 
 test('arming a second DDL replaces the first — only one is ever in charge', () => {
   ovrReset();
-  toggleParseOverride('ddl', 'V', 'S', 'D');
-  toggleParseOverride('ddl', 'V', 'T', 'U');
+  toggleParseOverride('def', 'V', 'S', 'D', 'R');
+  toggleParseOverride('def', 'V', 'T', 'U', 'Q');
   eq(parseOverrideScope().name, 'U', 'the newer one');
   assert.ok(!isParseOverride('V', 'S', 'D'), 'and the older is released');
 });
@@ -5182,7 +5202,7 @@ test('arming a second DDL replaces the first — only one is ever in charge', ()
 test('an armed DDL that no longer exists disarms itself', () => {
   // Deleting or renaming the armed DDL must not leave a parse pointed at nothing.
   ovrReset();
-  toggleParseOverride('ddl', 'V', 'S', 'D');
+  toggleParseOverride('def', 'V', 'S', 'D', 'R');
   delete S.ddlTree.V.S.D;
   eq(parseOverrideScope(), null, 'it releases rather than pointing at a gap');
   eq(S.parseOverride, null, 'and clears the stored value');
@@ -5191,7 +5211,7 @@ test('an armed DDL that no longer exists disarms itself', () => {
 test('the override parse reads the ARMED ddl, not the selected one', () => {
   // The whole point: what parses no longer depends on what is open in the editor.
   ovrReset();
-  toggleParseOverride('ddl', 'V', 'T', 'U');       // armed
+  toggleParseOverride('def', 'V', 'T', 'U', 'Q');       // armed
   S.scope = { type: 'ddl', vol: 'V', sv: 'S', name: 'D' };   // merely selected
   const armed = getDDLsForScope(parseOverrideScope()).map(x => x.path).join(',');
   eq(armed, 'V/T/U', 'the armed DDL is what parses');

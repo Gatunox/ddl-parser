@@ -13563,11 +13563,26 @@ function isParseOverride(vol, sv, name, defName) {
 }
 // The armed scope, or null. Every "should this parse be an override" test asks
 // this — there is one answer, in one place.
+// Does this DDL file contain DEF sections? Same test the tree uses to decide
+// whether to render DEF sub-nodes, so the menu and the tree cannot disagree
+// about what is selectable. A flat DDL (simple ISO format) has none.
+function _ddlFileHasDefs(vol, sv, name) {
+  try {
+    const text = S.ddlTree?.[vol]?.[sv]?.[name];
+    if (typeof text !== 'string') return false;
+    return isHPEDDLText(text) && parseDEFNames(text).length >= 1;
+  } catch (e) { return false; }
+}
+
 function parseOverrideScope() {
   const o = S.parseOverride;
   if (!o) return null;
   // The DDL may have been deleted or renamed since it was armed.
   if (!S.ddlTree?.[o.vol]?.[o.sv]?.[o.name]) { S.parseOverride = null; return null; }
+  // A file that HOLDS definitions is a container, not a parse unit — the rule
+  // is enforced here as well as in the menu, so an override armed before the
+  // file gained definitions cannot survive as "parse everything as this file".
+  if (o.type === 'ddl' && _ddlFileHasDefs(o.vol, o.sv, o.name)) { S.parseOverride = null; return null; }
   return o;
 }
 function toggleParseOverride(type, vol, sv, name, defName) {
@@ -14026,6 +14041,15 @@ function buildCtxMenu(e) {
       // The opposite of "Exclude … from parsing": one DDL put deliberately in
       // charge. Selecting a node no longer does this on its own, so opening a DDL
       // to edit it cannot turn every Parse into an override.
+      //
+      // A DEFINITION is what gets overridden — a file is a container, and
+      // "parse everything as this file" has no meaning when it holds four of
+      // them. Exclusion is different and still belongs on the file, because
+      // there it is a bulk action over everything inside.
+      //
+      // The exception is a flat DDL (simple ISO format, no DEF sections): it
+      // has no definitions to pick, so the file itself IS the parse unit.
+      if (t === 'def' || !_ddlFileHasDefs(vol, sv, name))
       items.push({ icon: isParseOverride(vol, sv, name, t === 'def' ? defName : null) ? '◉' : '▶',
         label: isParseOverride(vol, sv, name, t === 'def' ? defName : null)
           ? 'Stop using for parsing (override)'
@@ -14846,7 +14870,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.14.1.1';
+const APP_VERSION  = '1.14.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

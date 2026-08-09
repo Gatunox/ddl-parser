@@ -8639,6 +8639,101 @@ test('success is the palette colour, not a hard-coded green', () => {
     `.diag-ok must use var(--success), got: ${rule[1].trim()}`);
 });
 
+// ── The theme system: a theme must stay DATA, never a patch ─────────────────
+// Dark used to live in :root and light re-patched it in 90 `body.light` rules.
+// Two things went wrong with that, and each test below pins one of them.
+
+console.log('\ntheme system — themes are data, not patches');
+
+test('data-theme is on <html> in the markup, not applied by script', () => {
+  // It selects the Layer 3 token block. If it is not present before scripts
+  // run, the very first paint has no tokens at all and renders unstyled — and
+  // if scripts never run, it stays that way.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/<html[^>]*\sdata-theme="(dark|light)"/.test(src),
+    '<html> must carry a default data-theme attribute');
+});
+
+test('no body.light rule redefines a theme token', () => {
+  // THE bug this whole migration exists to kill. While `body.light` redefined
+  // --accent, it out-specified any custom accent written to <html>, because it
+  // matched a DESCENDANT of the element carrying the override. _eggSetAccent
+  // papered over it by writing every variable to both elements. Put a token
+  // back into a body.light block and the double-write becomes necessary again.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // Strip comments first: prose explaining the migration mentions body.light
+  // right before the light token block, and an un-stripped scan walks straight
+  // from the comment into that block and reports every token as an offender.
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  const offenders = [];
+  const re = /body\.light[^{]*\{([^}]*)\}/g;
+  let m;
+  while ((m = re.exec(css))) {
+    const decls = m[1].match(/--[a-z0-9-]+\s*:/gi);
+    if (decls) offenders.push(decls.join(' '));
+  }
+  eq(offenders.length, 0,
+    `body.light must not declare custom properties — found: ${offenders.join(' | ')}`);
+});
+
+test('every token used is defined in BOTH themes, or in neither', () => {
+  // A token defined only in dark silently falls through to dark's value in
+  // light — which looks like "light theme is broken" and is invisible in code
+  // review. Light and dark are peers; neither is a base for the other.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const grab = sel => {
+    const i = css.indexOf(sel);
+    assert.ok(i >= 0, `${sel} block not found`);
+    const body = css.slice(i + sel.length, css.indexOf('\n}', i));
+    return new Set((body.match(/^\s*(--[a-z0-9-]+)\s*:/gim) || [])
+      .map(d => d.trim().replace(/\s*:$/, '')));
+  };
+  const dark = grab('[data-theme="dark"] {');
+  const light = grab('[data-theme="light"] {');
+  const onlyDark = [...dark].filter(t => !light.has(t));
+  const onlyLight = [...light].filter(t => !dark.has(t));
+  eq(onlyDark.length, 0, `defined only in dark: ${onlyDark.join(', ')}`);
+  eq(onlyLight.length, 0, `defined only in light: ${onlyLight.join(', ')}`);
+});
+
+test('no component rule paints a background with a hex literal', () => {
+  // How the dark title bars survived into the light theme: `.panel-header` set
+  // `background:#1c2128` with no body.light counterpart, so light inherited a
+  // dark value. Nothing flagged it — a literal with no override is invisible
+  // until someone looks at the running app in the other theme. A hex background
+  // outside a theme block is that bug waiting to happen.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  let css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+               .replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const blk of ['[data-theme="dark"] {', '[data-theme="light"] {']) {
+    const i = css.indexOf(blk);
+    css = css.slice(0, i) + css.slice(css.indexOf('\n}', i));   // literals are legal in a theme
+  }
+  // The accent swatches deliberately paint the colour they represent.
+  const ALLOW = /^#eggAccent/;
+  const bad = [];
+  for (const m of css.matchAll(/^([^{}\n][^{}]*)\{([^}]*)\}/gm)) {
+    const sel = m[1].trim().replace(/\s+/g, ' ');
+    if (ALLOW.test(sel)) continue;
+    if (/(^|[\s,])background(-color)?\s*:\s*[^;]*#[0-9a-fA-F]{3,6}/.test(m[2]))
+      bad.push(sel.slice(0, 60));
+  }
+  eq(bad.length, 0, `hex background outside a theme block: ${bad.join(' | ')}`);
+});
+
+test('_eggSetAccent writes the accent to one element, not two', () => {
+  // The double-write was a symptom, not a fix. Once no theme block redefines
+  // --accent on a descendant, one write to <html> reaches everything. If this
+  // regrows a loop over [documentElement, body], the specificity bug is back.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const fn = /function _eggSetAccent\([^)]*\)\s*\{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(fn, '_eggSetAccent not found');
+assert.ok(!/document\.body/.test(fn[1]),
+  '_eggSetAccent must not touch document.body — write only to <html>');
+});
+
 // ── A help panel nothing can open is a help panel that does not exist ────────
 // _meFmToggleHelp was defined, correct, and referenced by nothing: the "?" button
 // in the Overrides toolbar had been lost, so the column reference was

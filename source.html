@@ -1736,6 +1736,12 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
    message; each list scrolls internally once the sidebar runs out of height
    (Files never takes more than half). */
 #me-sect-msgs{flex:0 1 auto;}
+/* Other needs the override too. Without it, it alone kept .me-sidebar-sect's
+   flex:1 and absorbed every spare pixel, holding Files against the bottom of
+   the sidebar instead of letting it follow the list above. Invisible while
+   the rows were a fixed height; switching to compact shrank Messages and grew
+   that slack by the same amount, which is what made the gap obvious. */
+#me-sect-other{flex:0 1 auto;}
 #me-sect-files{flex:0 1 auto;max-height:50%;}
 .me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;min-height:var(--app-header-h);box-sizing:border-box;background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
 .me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
@@ -15138,7 +15144,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.9.0';
+const APP_VERSION  = '1.15.9.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

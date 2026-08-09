@@ -152,6 +152,7 @@
   --h-teal-bg:#0f1d1a;   --h-teal-fg:#34d399;   --h-teal-bd:#34d399;
   --h-violet-bg:#1a0f1a; --h-violet-fg:#a78bfa; --h-violet-bd:#a78bfa;
   --h-locked-bg:#2a1a1a; --h-locked-fg:var(--accent2); --h-locked-bd:var(--accent2);
+  --scrim: rgba(0,0,0,0.65);
   --shadow-menu: 0 6px 20px rgba(0,0,0,0.55);
   --shadow-modal: 0 8px 32px rgba(0,0,0,0.6);
   --shadow-drawer: -8px 0 28px rgba(0,0,0,0.55);
@@ -221,6 +222,7 @@
   --h-teal-bg:#d1fae5;   --h-teal-fg:#065f46;   --h-teal-bd:#34d399;
   --h-violet-bg:#ede9ff; --h-violet-fg:#5b21b6; --h-violet-bd:#a78bfa;
   --h-locked-bg:#fde8e8; --h-locked-fg:var(--accent2); --h-locked-bd:var(--accent2);
+  --scrim: rgba(0,0,0,0.45);
   --shadow-menu: 0 6px 20px rgba(0,0,0,0.18);
   --shadow-modal: 0 8px 32px rgba(0,0,0,0.18);
   --shadow-drawer: -8px 0 28px rgba(0,0,0,0.15);
@@ -1723,9 +1725,9 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .tut-skip:hover { color: var(--text); }
 
 /* ── Message Editor ──────────────────────────────────────────────────────── */
-.me-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:21000;display:flex;align-items:center;justify-content:center;}
+.me-overlay{position:fixed;inset:0;background:var(--scrim);z-index:21000;display:flex;align-items:center;justify-content:center;}
 .me-overlay.hidden{display:none;}
-.me-shell{display:flex;flex-direction:column;width:92vw;height:82vh;max-width:1400px;overflow:hidden;background:var(--bg-panel);border: var(--bw) solid var(--border);border-radius:var(--r-md);box-shadow:0 8px 40px rgba(0,0,0,0.7);}
+.me-shell{display:flex;flex-direction:column;width:92vw;height:82vh;max-width:1400px;overflow:hidden;background:var(--bg-deep);border: var(--bw) solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-modal);}
 .me-main{display:flex;flex:1;min-height:0;overflow:hidden;}
 .me-sidebar{width:343px;flex-shrink:0;border-right: var(--bw) solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
 .me-sidebar-sect{display:flex;flex-direction:column;flex:1;min-height:60px;overflow:hidden;}
@@ -1735,12 +1737,12 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
    (Files never takes more than half). */
 #me-sect-msgs{flex:0 1 auto;}
 #me-sect-files{flex:0 1 auto;max-height:50%;}
-.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;min-height:36px;box-sizing:border-box;background:var(--bg-deep);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
+.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;min-height:var(--app-header-h);box-sizing:border-box;background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
 .me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
-.me-sidebar-add{background:transparent;border: var(--bw) solid var(--border);border-radius:var(--r-sm);color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
-.me-sidebar-add:hover{border-color:var(--accent);color:var(--accent);}
+.me-sidebar-add{background:var(--surface-raised);border: var(--bw) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
+.me-sidebar-add:hover{border-color:var(--border-strong);color:var(--text);background:var(--surface-hover);}
 .me-item-list{flex:1;overflow-y:auto;min-height:0;}
-.me-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:26px;cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;}
+.me-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:var(--row-h);cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;}
 /* Armed parsing override — deliberately the SAME treatment as the DDL tree's
    (.tree-ovr): amber #e6a817, a ▶ beside the name, an inset bar and a tinted
    row. Two overrides that do the same kind of thing must not look like two
@@ -1764,8 +1766,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .me-item.dragging{cursor:grabbing;opacity:.4;}
 .me-item.drop-before{box-shadow:0 -2px 0 0 var(--accent);}
 .me-item.drop-after{box-shadow:0 2px 0 0 var(--accent);}
-.me-item:hover{background:rgba(255,255,255,.04);}
-body.light .me-item:hover{background:rgba(0,0,0,.04);}
+.me-item:hover{background:var(--surface-hover);}
 .me-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
 .me-item-swatch{width:10px;height:10px;border-radius:var(--r-sm);flex-shrink:0;border: var(--bw) solid rgba(255,255,255,.2);}
 .me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -1775,24 +1776,26 @@ body.light .me-item:hover{background:rgba(0,0,0,.04);}
    overlay (z-index), so its toasts are hidden behind the popup. These render
    inside the right panel instead. */
 #me-flash-container{position:absolute;bottom:52px;right:14px;z-index:50;display:flex;flex-direction:column;gap:6px;align-items:flex-end;max-width:70%;pointer-events:none;}
-.me-flash{pointer-events:auto;padding:7px 34px 7px 14px;border-radius:var(--r-md);font-size:12px;font-family:var(--mono);background:var(--success);color:#000;position:relative;box-shadow:0 4px 16px rgba(0,0,0,0.5);}
-.me-flash.warn{background:var(--warning);color:#000;}
+.me-flash{pointer-events:auto;padding:7px 34px 7px 14px;border-radius:var(--r-md);font-size:12px;font-family:var(--mono);background:var(--success);color:var(--on-accent);position:relative;box-shadow:var(--shadow-menu);}
+.me-flash.warn{background:var(--warning);color:var(--on-accent);}
 .me-flash-x{position:absolute;top:50%;right:10px;transform:translateY(-50%);font-size:13px;line-height:1;opacity:.6;cursor:pointer;}
 .me-flash-x:hover{opacity:1;}
-.me-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px 6px 14px;border-bottom: var(--bw) solid var(--border);background:var(--bg-deep);flex-shrink:0;}
+.me-header{display:flex;align-items:center;justify-content:space-between;padding:0 10px 0 14px;min-height:var(--app-header-h);border-bottom: var(--bw) solid var(--border);background:var(--surface-header);flex-shrink:0;}
 .me-header-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.me-section{border-bottom: var(--bw) solid var(--border);}
-.me-section:last-child{border-bottom:none;}
-.me-section-hdr{display:flex;align-items:center;justify-content:space-between;padding:7px 14px;cursor:pointer;user-select:none;font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);background:var(--bg-deep);}
-.me-section-hdr:hover{background:rgba(255,255,255,.05);}
-body.light .me-section-hdr:hover{background:rgba(0,0,0,.04);}
+/* Each section is a card, matching the Settings drawer: the editor body is
+   the page and sections sit on it, rather than being divided by a rule. */
+.me-section{background:var(--bg-panel);border: var(--bw) solid var(--border);border-radius:var(--r-md);
+  box-shadow:var(--shadow-card);margin:0 var(--sp-3) var(--sp-3);overflow:hidden;}
+.me-section:last-child{margin-bottom:0;}
+.me-section-hdr{display:flex;align-items:center;justify-content:space-between;padding:var(--row-py) 14px;min-height:var(--panel-header-h);cursor:pointer;user-select:none;font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);background:var(--surface-header);}
+.me-section-hdr:hover{background:var(--surface-hover);}
 .me-section-arrow,.me-section-arr{font-size:8px;color:var(--text-dim);}
 .me-section-body{padding:14px;display:none;}
 .me-section-body.open{display:block;}
 /* Gutter reserved, like #ddlTree / .tbl-wrap / .settings-body: without it the
    whole panel shifts sideways the moment content grows enough to need a
    scrollbar, and back again when it does not. */
-.me-tab-body{flex:1;overflow-y:auto;padding:0;min-height:0;scrollbar-gutter:stable;}
+.me-tab-body{flex:1;overflow-y:auto;padding:var(--sp-3) 0;min-height:0;scrollbar-gutter:stable;background:var(--bg-deep);}
 .me-no-sel{padding:20px;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);text-align:center;}
 .me-stub{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 .me-stub-h{font-size:calc(var(--sz-mono) + 2px);color:var(--text);margin-bottom:8px;}
@@ -1818,8 +1821,7 @@ input.me-inp{width:100%;}
 .me-rec-row.drop-after{box-shadow:0 2px 0 0 var(--accent);}
 .me-rec-head{display:flex;align-items:center;gap:6px;padding:4px 7px;cursor:grab;user-select:none;}
 .me-rec-row.dragging .me-rec-head{cursor:grabbing;}
-.me-rec-head:hover{background:rgba(255,255,255,.04);}
-body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
+.me-rec-head:hover{background:var(--surface-hover);}
 .me-rec-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:transparent;border: var(--bw) solid var(--border);}
 .me-rec-dot.pass{background:var(--success);border-color:var(--success);}
 .me-rec-dot.fail{background:var(--danger);border-color:var(--danger);}
@@ -1844,7 +1846,7 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-rf-fld.grow{flex:1;min-width:80px;}
 .me-rf-btns{display:flex;gap:4px;margin-top:2px;}
 .me-rf-btnrow{display:flex;justify-content:flex-end;gap:6px;}
-.me-footer{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:8px 14px;border-top: var(--bw) solid var(--border);background:var(--bg-deep);flex-shrink:0;}
+.me-footer{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:var(--sp-2) 14px;border-top: var(--bw) solid var(--border);background:var(--surface-header);flex-shrink:0;}
 .me-status{flex:1;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 .me-test-bar{border-top: var(--bw) solid var(--border);flex-shrink:0;background:var(--bg-panel);}
 .me-test-hdr{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;background:var(--bg-deep);font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);user-select:none;border-bottom: var(--bw) solid var(--border);}
@@ -1857,8 +1859,7 @@ body.light .me-rec-head:hover{background:rgba(0,0,0,.04);}
 .me-test-list{width:343px;flex-shrink:0;border-right: var(--bw) solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
 .me-test-list-body{flex:1;overflow-y:auto;min-height:0;}
 .me-test-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:26px;cursor:pointer;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;}
-.me-test-item:hover{background:rgba(255,255,255,.04);}
-body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
+.me-test-item:hover{background:var(--surface-hover);}
 .me-test-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
 .me-test-item .me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .me-test-win{font-size:9px;font-weight:700;color:#3fb950;border: var(--bw) solid #3fb950;border-radius:var(--r-sm);padding:0 4px;flex-shrink:0;}
@@ -1985,8 +1986,7 @@ body.light .me-test-item:hover{background:rgba(0,0,0,.04);}
    straight into the next one and the whole panel read as a single long
    example. The border is what says where one ends. */
 .me-ps-help-ex{border: var(--bw) solid var(--border);border-left: var(--bw) solid var(--accent);border-radius:var(--r-md);
-  background:rgba(255,255,255,.02);padding:8px 10px 10px;margin:10px 0;}
-body.light .me-ps-help-ex{background:rgba(0,0,0,.02);}
+  background:var(--tint-row);padding:8px 10px 10px;margin:10px 0;}
 /* The heading has to win against everything inside the card — a dim, smaller
    line was quieter than the labels it was supposed to introduce. */
 .me-ps-help-ex-title{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
@@ -15138,7 +15138,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.8.3';
+const APP_VERSION  = '1.15.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

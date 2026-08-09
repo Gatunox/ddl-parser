@@ -80,6 +80,7 @@
   --row-py: 5px;    /* vertical padding on every list row */
   --app-header-h: 44px;
   --ctl-h: 24px;      /* every control in a panel header is this tall */
+  --row-h: 26px;      /* data-table row height — the density you feel most */
   --gap: 10px;      /* space between panel cards; also the resizer width   */
 }
 
@@ -245,6 +246,7 @@
   --row-py: 2px;
   --app-header-h: 30px;
   --ctl-h: 19px;
+  --row-h: 18px;
   --gap: 2px;
   --panel-header-h: 27px;
   --shadow-card: none;
@@ -485,7 +487,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
 /* Header buttons used to be full-height borderless strips, which read as
    toolbar segments rather than buttons and left Parse stretched beside them.
    They are ordinary buttons now, vertically centred and sized by content. */
-.panel-header .btn { padding: 0 10px !important; height: var(--ctl-h) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; border: var(--bw) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text) !important; font-weight: 600 !important; align-self: center !important; flex: 0 0 auto !important; }
+.panel-header .btn { padding: 0 10px !important; height: var(--ctl-h) !important; display: inline-flex; align-items: center !important; justify-content: center !important; border: var(--bw) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text) !important; font-weight: 600 !important; align-self: center !important; flex: 0 0 auto !important; }
 .panel-header .flex-row { align-self: center; display: flex; align-items: center; gap: 6px; padding: 0 6px; }
 .panel-header > span:not(.panel-title) { display: flex; align-items: center; padding: 0 4px; }
 .panel-header .btn:hover { background: var(--surface-hover) !important; border-color: var(--border-strong) !important; color: var(--text) !important; box-shadow: none !important; }
@@ -1037,7 +1039,7 @@ thead th {
   color: var(--text-very-dim);
   /* Matches the Field Map's header: same height, same 2px rule, same click-to-
      light-the-column, so the two tables you switch between read as one thing. */
-  padding: 4px 10px;
+  padding: var(--row-py) 10px;
   cursor: pointer;
   text-align: left;
   border-bottom: var(--bw) solid var(--border);
@@ -1089,7 +1091,7 @@ body.light .c-redef-mark { color: rgba(var(--accent-rgb),0.75); }
 .c-ovr-as    { color: rgba(var(--accent-rgb),.65); }
 body.light .c-ovr-arrow, body.light .c-ovr-orig,
 body.light .c-ovr-as { color: rgba(var(--accent-rgb),.75); }
-tbody td { padding: 0 6px; height: 16px; vertical-align: middle; font-size: var(--sz-mono); line-height: 16px; overflow: hidden; text-overflow: ellipsis; }
+tbody td { padding: 0 6px; height: var(--row-h); vertical-align: middle; font-size: var(--sz-mono); line-height: var(--row-h); overflow: hidden; text-overflow: ellipsis; }
 td.c-num { color: var(--text-very-dim); text-align: right; min-width: 28px; padding-right: 8px; font-variant-numeric: tabular-nums; user-select: none; }
 td.c-id   { color: var(--text); font-weight: 700; white-space: nowrap; }
 td.c-desc { color: var(--text-dim); }
@@ -2098,7 +2100,7 @@ body.light .me-ps-help-ex{background:rgba(0,0,0,.02);}
    made every row 4px taller than the design. Relative, so it still tracks the
    app's font-size setting. */
 .me-fm-table td,.me-fm-table th{font-size:calc(var(--sz-mono) - 1px);line-height:1.25;}
-.me-fm-table th{position:sticky;top:0;background:#0b0f15;color:var(--text-dim);font-weight:700;text-align:center;padding:4px 10px;border-bottom: var(--bw) solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-size:calc(var(--sz-mono) - 1px);z-index:1;white-space:nowrap;box-sizing:border-box;}
+.me-fm-table th{position:sticky;top:0;background:var(--fm-head-bg);color:var(--text-dim);font-weight:700;text-align:center;padding:var(--row-py) 10px;border-bottom: var(--bw) solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-size:calc(var(--sz-mono) - 1px);z-index:1;white-space:nowrap;box-sizing:border-box;}
 body.light .me-fm-table th{background:var(--bg-deep);}
 .me-fm-th-num{width:36px;}
 .me-fm-th-fld{width:280px;}
@@ -2125,7 +2127,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* Read-only info cells (#, offset, length, data type label) are dimmed; the
    field NAME carries full text color so it stands out. Interactive cells
    (dropdowns, DE pills) set their own colors and aren't affected. */
-.me-fm-table td{padding:3px 10px;border-bottom: var(--bw) solid rgba(255,255,255,0.04);color:var(--text-dim);white-space:nowrap;vertical-align:middle;box-sizing:border-box;}
+.me-fm-table td{padding:0 10px;height:var(--row-h);border-bottom: var(--bw) solid rgba(255,255,255,0.04);color:var(--text-dim);white-space:nowrap;vertical-align:middle;box-sizing:border-box;}
 .me-fm-table td .me-fm-name{color:var(--text);}
 body.light .me-fm-table td{border-bottom-color:rgba(0,0,0,0.06);}
 /* Thin vertical separators between columns — keeps the eye on column edges
@@ -15113,7 +15115,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.6.1';
+const APP_VERSION  = '1.15.7.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

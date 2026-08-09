@@ -7046,7 +7046,14 @@ test('no border declares a literal width — every one goes through --bw', () =>
 test('the Parse Results header matches the Field Map header', () => {
   const th = html.match(/\nthead th \{([^}]*)\}/);
   assert.ok(th, 'the rule exists');
-  assert.ok(/padding:\s*4px 10px/.test(th[1]), `same height, got: ${th[1]}`);
+  // Pinned against the Field Map header rather than a literal padding: the two
+  // are meant to read as one thing, so what matters is that they move together.
+  // A literal here meant density could not reach either without failing.
+  const fm = html.match(/\n\.me-fm-table th\{([^}]*)\}/);
+  assert.ok(fm, 'the Field Map header rule exists');
+  const pad = r => (r.match(/padding:\s*([^;]+)/) || [])[1];
+  eq(pad(th[1]), pad(fm[1]), 'same padding as the Field Map header');
+  assert.ok(/var\(--row-py\)/.test(pad(th[1]) || ''), 'and it follows the density scale');
   assert.ok(/cursor:\s*pointer/.test(th[1]), 'and reads as clickable');
   // Project rule: borders go through --bw, never a literal width.
   assert.ok(/border-bottom:\s*var\(--bw\)/.test(th[1]), 'with a --bw rule, like every other border');

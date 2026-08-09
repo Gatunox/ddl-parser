@@ -444,6 +444,55 @@ to a person, this entry is the second data point.
 
 ---
 
+## 15. [~] Theme system — *prototype done 2026-08-09, blocked on two decisions*
+
+**Problem.** A theme is currently a *patch set*, not a data set. Dark lives in
+`:root`; light re-patches it in **90 `body.light` rules**. A third theme needs a
+third set of 90 rules, and a user-defined theme needs 90 rules a user cannot
+write. Alongside that, **106 distinct hardcoded hex** and **144 `rgb()/rgba()`
+literals** in the CSS block (plus **31 hex in JS/templates**) bypass the token
+layer entirely. The tokenized foundation is otherwise good — 1,112 `var()` uses.
+
+**Prototype.** `_theme-proto.html` on branch `feat/theme-system` (commit
+`aff4416`). Three layers — primitives → semantics → themes — where a theme is
+one flat block of assignments. Light and dark there share 100% of the component
+CSS and **zero** override rules. Verified in-browser across dark/light,
+comfortable/compact and 2px/1px.
+
+Two findings to carry into the real change:
+
+- The 15 badge types, 7 message types and 5 tree badges all repeat the same
+  `bg/fg/border` triplet and collapse to **11 shared hue slots** (33 values per
+  theme, instead of writing every badge twice).
+- `_eggSetAccent` (source.html:13129) writes every variable to **both** `<html>`
+  and `<body>` because `body.light` redefines `--accent` at higher specificity.
+  Root cause: the theme attribute sits on a *descendant* of the element carrying
+  the override, so the theme re-declaration shadows it. Moving the attribute to
+  `<html>` fixes it outright — one write then propagates. Confirmed by
+  reproducing the original bug in the prototype first, then fixing it.
+
+### Blocked — needs a decision before any of this touches `source.html`
+
+1. **Border width.** The chosen "full inspiration overhaul" converts 227 borders
+   from 2px to 1px hairlines, which contradicts the standing *always 2px, never
+   1px* rule. The prototype ships **2px as the default** with 1px behind the
+   `Borders` switch, deliberately not overriding a durable preference on the
+   strength of a preview caption. Flip it and pick the baseline.
+2. **Density.** `Comfortable` is the inspiration aesthetic; `Compact` is today's
+   density on the new token base. Judge it on the Parse Results table at ~4,388
+   Field Map rows on the production machine, not at prototype scale. Density is
+   now a token knob, so the architecture can ship first and density be tuned
+   later without touching component CSS.
+
+**Migration shape once decided.** Define the three layers → replace the 106 hex
+and 144 rgba literals with semantics → delete the 90 `body.light` rules → rewire
+`setTheme` / `_eggSetAccent` to `<html>` → add the accent picker (base + accent,
+with the luminance-based contrast guarantee the prototype already implements).
+Fold the 31 JS-side colors and the 53 CodeMirror rules into the same pass, with
+screenshot comparisons at each step.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

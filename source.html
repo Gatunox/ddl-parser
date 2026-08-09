@@ -488,7 +488,13 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 
 /* ===== DDL TREE PANE ===== */
 .ddl-pane-split  { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
-.ddl-tree-pane   { width: 170px; flex-shrink: 0; overflow-y: hidden; overflow-x: hidden; background: var(--bg-deep); border-right: var(--bw) solid var(--border); display: flex; flex-direction: column; }
+/* The tree is a card inside the DDL panel, not a bordered-off column. Margin
+   (not padding on the parent) so the resizer still measures the pane itself —
+   the drag handler sets this element's width directly. */
+.ddl-tree-pane   { width: 170px; flex-shrink: 0; overflow: hidden;
+  background: var(--bg-deep); display: flex; flex-direction: column;
+  border: var(--bw) solid var(--border); border-radius: var(--r-md);
+  margin: var(--sp-2) 0 var(--sp-2) var(--sp-2); }
 #ddlTree         { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
 .tree-search-wrap { width: 100%; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--bg-deep); box-sizing: border-box; padding: 0; min-height: var(--panel-header-h, 27px); }
 input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 2px 22px 2px 5px; font-size: calc(var(--sz-mono) - 0.5px); background: var(--bg-deep); border: none; border-radius: 0; color: var(--text); outline: none; font-family: var(--mono); box-sizing: border-box; }
@@ -1342,7 +1348,7 @@ body.light .trk-chk { color-scheme: light; }
 .settings-scrim  { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
 .settings-drawer {
   position: relative; z-index: 1; width: calc(231px + var(--sz-mono) * 11); max-width: 92vw;
-  background: var(--bg-panel); border-left: var(--bw) solid var(--border);
+  background: var(--bg-deep); border-left: var(--bw) solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
   box-shadow: var(--shadow-drawer);
   animation: drawerIn 0.18s ease;
@@ -1354,9 +1360,20 @@ body.light .trk-chk { color-scheme: light; }
   display: flex; align-items: center; gap: 8px; flex-shrink: 0;
 }
 .settings-hdr-title { font-size: calc(var(--sz-mono) + 2px); font-weight: 700; color: var(--accent); flex: 1; }
-.settings-body { flex: 1; overflow-y: scroll; scrollbar-gutter: stable; padding-bottom: 16px; }
-.settings-section { border-bottom: var(--bw) solid var(--border); padding: 12px 14px; }
-.settings-section:last-child { border-bottom: none; }
+.settings-body { flex: 1; overflow-y: scroll; scrollbar-gutter: stable; padding: var(--sp-3) 0 var(--sp-4); }
+/* Each section is its own card: the drawer is the page, sections sit on it.
+   A divider line said "these are separate"; a card says it and also gives the
+   section a surface, which is what makes the drawer read as structured rather
+   than as one long scroll. */
+.settings-section {
+  background: var(--bg-panel);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--sp-3) var(--sp-4);
+  margin: 0 var(--sp-3) var(--sp-3);
+}
+.settings-section:last-child { margin-bottom: 0; }
 .settings-stitle {
   font-size: calc(var(--sz-mono) - 1px); font-weight: 700; color: var(--text-dim);
   text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;
@@ -15026,7 +15043,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.2.0';
+const APP_VERSION  = '1.15.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

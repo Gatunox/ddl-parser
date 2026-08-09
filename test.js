@@ -6674,6 +6674,31 @@ test('the two overrides clear each other, in BOTH directions', () => {
   assert.ok(/_meRenderSidebar/.test(ddl), 'the DDL toggle repaints the sidebar');
 });
 
+test('every destructive action asks the same way', () => {
+  // The DDL tree asked for YES; the Data Editor asked for DELETE. Same gesture,
+  // two words, and they differed on the verb (delete vs remove) and on whether
+  // case mattered too. Worse, the DELETE ones matched exactly, so typing
+  // "delete" did nothing at all — a silent no-op reads as a broken dialog.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(!/Type YES/.test(code), 'nothing asks for YES any more');
+  // Exactly one place builds the sentence and checks the answer.
+  const helper = psFnSource('confirmDelete');
+  assert.ok(/Type \$\{DELETE_WORD\} to remove \$\{phrase\}/.test(helper),
+    'one sentence, built once');
+  assert.ok(/\.trim\(\)\.toUpperCase\(\) !== DELETE_WORD/.test(helper),
+    'trimmed and case-insensitive, so "delete" is not a silent no-op');
+  // And every destructive path goes through it rather than rolling its own.
+  const callers = (code.match(/confirmDelete\(/g) || []).length;
+  assert.ok(callers >= 4, `expected the helper plus its call sites, found ${callers}`);
+  // Everywhere EXCEPT the helper itself, which is the one place allowed to.
+  const outside = code.replace(helper, '');
+  assert.ok(!/showPrompt\(`?['"]?Type /.test(outside),
+    'no call site rolls its own typed confirmation');
+  for (const fn of ['deleteScope', '_meDelRec', '_meDeleteItem'])
+    assert.ok(/confirmDelete\(/.test(psFnSource(fn)), `${fn} uses the shared confirmation`);
+});
+
 test('the Delete button is red, and its fill is readable', () => {
   // Destructive is RED — #f85149, the red the app already uses for errors and
   // the bug-report button. It shipped as --accent2 orange, which is a warning
@@ -6719,7 +6744,11 @@ test('deleting an entity is a labelled button, not a 10px × in every row', () =
   assert.ok(/Select an entity in the list first/.test(fn),
     'with nothing selected it says so rather than doing nothing');
   // The confirmation is unchanged — this moved the control, not the safety.
-  assert.ok(/Type DELETE to remove/.test(src), 'the typed confirmation still stands');
+  // Asserted against the helper, not the sentence: after the confirmations were
+  // unified the literal only survived inside a COMMENT, and this check went on
+  // passing against it.
+  assert.ok(/confirmDelete\(/.test(psFnSource('_meDeleteItem')),
+    'it still goes through the typed confirmation');
   // Disabled state has to track selection, or a live-looking button does nothing.
   const sync = psFnSource('_meSyncDelBtn');
   assert.ok(/b\.disabled = !s/.test(sync), 'the button disables when nothing is selected');

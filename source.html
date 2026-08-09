@@ -12991,6 +12991,26 @@ function selectScope(type, vol, sv, name, defName) {
 let _modalCb   = null;
 let _closeModal = null;   // set during DOMContentLoaded
 
+// One typed confirmation for every destructive action in the app. There were
+// three, and they disagreed on the word (YES vs DELETE), the verb (delete vs
+// remove) and whether case mattered — so the same gesture felt like a different
+// app depending on what you were deleting.
+//
+// DELETE, not YES: it is the word two of the three already used, and it is the
+// one you cannot type reflexively. Case-insensitive and trimmed, because the
+// exact-match versions did nothing at all when you typed "delete" — a silent
+// no-op reads as a broken dialog, not as a safeguard.
+//
+// `phrase` completes "Type DELETE to remove ___:", so callers control how the
+// target is named while the fixed part stays identical everywhere.
+const DELETE_WORD = 'DELETE';
+function confirmDelete(phrase, onConfirm) {
+  showPrompt(`Type ${DELETE_WORD} to remove ${phrase}:`, '', ans => {
+    if (String(ans || '').trim().toUpperCase() !== DELETE_WORD) return;
+    onConfirm();
+  });
+}
+
 function showPrompt(label, defaultVal, cb) {
   const overlay = document.getElementById('modalOverlay');
   document.getElementById('modalLabel').textContent = label;
@@ -13961,10 +13981,7 @@ function deleteScope() {
   if (isUnsavedPlaceholder) { doDelete(); return; }
 
   const labels = { vol: `volume "${sc.vol}"`, sv: `subvolume "${sc.sv}"`, ddl: `file "${sc.name}"`, def: `file "${sc.name}"` };
-  showPrompt(`Type YES to delete ${labels[sc.type] || `"${sc.name}"`} and all its contents:`, '', ans => {
-    if ((ans || '').toUpperCase() !== 'YES') return;
-    doDelete();
-  });
+  confirmDelete(`the ${labels[sc.type] || `"${sc.name}"`} and everything in it`, doDelete);
 }
 
 // ============================================================
@@ -14890,7 +14907,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.14.2.2';
+const APP_VERSION  = '1.14.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22405,8 +22422,7 @@ function _meRecCancel(idx) {
 }
 
 function _meDelRec(idx) {
-  showPrompt('Type DELETE to remove this recognizer:', '', val => {
-    if (val !== 'DELETE') return;
+  confirmDelete('this recognizer', () => {
     const item = _meCurItem();
     if (!item || !item.recognizers) return;
     item.recognizers.splice(idx, 1);
@@ -22559,9 +22575,13 @@ function _meSyncDelBtn() {
 }
 
 function _meDeleteItem(section, idx) {
-  const itemName = _meState.specs[idx]?.name || 'message';
-  showPrompt(`Type DELETE to remove "${itemName}" and all its contents:`, '', val => {
-    if (val !== 'DELETE') return;
+  const s = _meState.specs[idx];
+  const itemName = s?.label || s?.name || 'entity';
+  // Name the KIND too. With three lists in the sidebar, a bare name does not
+  // say whether you are about to remove a message, a structure or a file
+  // detection — and the DDL tree's prompt has always named what it was.
+  const kind = s?.kind === 'file' ? 'file detection' : s?.kind === 'other' ? 'structure' : 'message';
+  confirmDelete(`the ${kind} "${itemName}" and everything in it`, () => {
     _meState.specs.splice(idx, 1);
     if (_meState.section === 'msg')
       _meState.selIdx = Math.min(_meState.selIdx, _meState.specs.length - 1);

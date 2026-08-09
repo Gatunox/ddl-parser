@@ -1525,6 +1525,13 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .me-sidebar-add:hover{border-color:var(--accent);color:var(--accent);}
 .me-item-list{flex:1;overflow-y:auto;min-height:0;}
 .me-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:26px;cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom:2px solid var(--border);box-sizing:border-box;}
+/* Armed parsing override. Deliberately loud — while this is on, every message
+   parses as this entity and its recognizers are not consulted, so it must not
+   be mistakable for "selected". Not colour alone: the ⊙ marker carries it too,
+   for the same reason links get an underline. */
+.me-item-forced{background:rgba(var(--accent-rgb),.14);box-shadow:inset 3px 0 0 0 var(--accent);}
+.me-item-forced .me-item-name{color:var(--accent);font-weight:700;}
+.me-item-forced .me-item-name::after{content:' ⊙';letter-spacing:.04em;}
 .me-item.dragging{cursor:grabbing;opacity:.4;}
 .me-item.drop-before{box-shadow:0 -2px 0 0 var(--accent);}
 .me-item.drop-after{box-shadow:0 2px 0 0 var(--accent);}
@@ -2422,6 +2429,11 @@ const S = {
   //
   // NOT persisted: an override left armed from a previous session would recreate
   // the same surprise, with nothing on screen having caused it.
+  // Force ONE Data entity for every parse, recognizers skipped. Session-only,
+  // like parseOverride — armed deliberately, never persisted, so reopening the
+  // app is always back to normal detection. Keyed by label, which is unique;
+  // `name` is not (Standard / BIC / Switch all share "ISO").
+  specOverride: null,       // { label } | null
   parseOverride: null,      // { type:'ddl'|'def', vol, sv, name, defName? } | null
   deOverrides:  {},         // { 'VOL/SV/FILE/DEFNAME': { '0': deNum, '5': deNum, ... } } — persisted in de_overrides
   netardRulerCol: 0,  // total column position of the ruler (left-margin + data width); set on input change
@@ -7349,7 +7361,32 @@ function parseMessage(bytes, defs, rawBytes) {
   // two surfaces end up disagreeing.
   function _specEncoding(spec) { return _meSpecEncodingInfo(spec).enc; }
 
+  // The shape both detect paths return for a winning spec. Extracted so a
+  // forced spec cannot come back subtly different from a detected one.
+  function _specWinner(spec) {
+    return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || 'BASE',
+             color: spec.color || '', kind: spec.kind || null,
+             ddl_bindings: (spec.ddl_bindings || []).filter(Boolean),
+             encoding: _specEncoding(spec) };
+  }
+
+  // "Use this and this only" — the entity override. Unlike the DDL override,
+  // which yields a natural walk, forcing an ENTITY brings its parse spec, its
+  // binding and its field overrides. Recognizers are skipped deliberately: the
+  // user has already decided, so a failing recognizer must not veto them.
+  // Session-only, and it never touches recognizers or list order, so other
+  // messages keep detecting exactly as before.
+  function _specOverrideSpec() {
+    const o = typeof S !== 'undefined' && S.specOverride;
+    if (!o) return null;
+    const hit = _fmtSpecs.find(s => (s.label || s.name) === o.label);
+    if (!hit) { S.specOverride = null; return null; }   // renamed or deleted
+    return hit;
+  }
+
   function _fmtDetect(bytes, ctx) {
+    const forced = _specOverrideSpec();
+    if (forced) return _specWinner(forced);
     for (const spec of _fmtSpecs) {
       // File specs are keyed by wrapper filename — a record without one
       // can never be a file; a file spec without a filename recognizer is
@@ -7360,7 +7397,7 @@ function parseMessage(bytes, defs, rawBytes) {
       // created with vol:'' — without this a perfectly good match resolved no
       // DDL pool and the record was reported as UNKNOWN.
       if (spec._fns.every(fn => fn(bytes, ctx))) {
-        return { type: spec.name, label: spec.label || spec.name, vol: spec.vol || 'BASE', color: spec.color || '', kind: spec.kind || null, ddl_bindings: (spec.ddl_bindings || []).filter(Boolean), encoding: _specEncoding(spec) };
+        return _specWinner(spec);
       }
     }
     return null;
@@ -7373,6 +7410,16 @@ function parseMessage(bytes, defs, rawBytes) {
   function _fmtDetectTrace(bytes, ctx) {
     const trace = [];
     let winner = null;
+    // Forced: report it as forced rather than showing an empty evaluation, so
+    // the progress panel cannot read as "nothing was checked and this won".
+    const _forced = _specOverrideSpec();
+    if (_forced) {
+      const w = _specWinner(_forced);
+      return { winner: w, forced: true,
+               trace: [{ label: w.label, name: w.type, passed: true, forced: true,
+                         passedCount: 0, total: 0, failAt: null,
+                         note: 'forced by override — recognizers not evaluated' }] };
+    }
     for (const spec of _fmtSpecs) {
       // Same rule as _fmtDetect: file specs only exist for records that
       // carry a wrapper filename, must themselves carry a filename
@@ -14782,7 +14829,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.14.0.0';
+const APP_VERSION  = '1.14.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16369,10 +16416,15 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     const s = _meState.specs[i];
     const active = _meState.section === 'msg' && _meState.selIdx === i;
     const d = document.createElement('div');
-    d.className = 'me-item' + (active ? ' active' : '');
+    const forced = isSpecOverride(s.label || s.name);
+    d.className = 'me-item' + (active ? ' active' : '') + (forced ? ' me-item-forced' : '');
     d.setAttribute('draggable', 'true');
     d.dataset.idx = String(i);
-    d.title = kind === 'file'
+    // An armed override you cannot see is the same defect as a toast behind a
+    // modal: the app behaves differently and nothing says why.
+    d.title = forced
+      ? 'PARSING OVERRIDE — every message parses as this entity, recognizers skipped. Right-click to clear.'
+      : kind === 'file'
       ? 'Detected by filename ($VOL.SUBVOL.FILE) — order doesn’t matter. Drag to Messages to convert.'
       : 'Drag to reorder';
     const sw = document.createElement('span');
@@ -22387,6 +22439,30 @@ function _meAddFile() {
 
 // Move a spec between the Messages / Other / Files lists. Was a two-way flip,
 // which cannot express three destinations — the menu now names the target.
+// "Use for parsing (override)" on a Data entity. The DDL-tree override gives a
+// natural walk; this one forces the ENTITY, so its parse spec, binding and
+// field overrides all apply — which is the reason to want it.
+function toggleSpecOverride(idx) {
+  const s = _meState?.specs?.[idx];
+  if (!s) return;
+  const label = s.label || s.name;
+  const on = S.specOverride && S.specOverride.label === label;
+  S.specOverride = on ? null : { label };
+  // Arming this and a DDL override at once would be two answers to one
+  // question. The entity is the more specific of the two, so it wins and the
+  // other is cleared, out loud.
+  if (!on && S.parseOverride) {
+    S.parseOverride = null;
+    if (typeof renderDDLTree === 'function') renderDDLTree();
+    flash(`Entity override "${label}" — the DDL override was cleared`, 'warn');
+  } else {
+    flash(on ? `Entity override cleared — detection is back to normal`
+             : `Every message will parse as "${label}" until you clear it`, on ? undefined : 'warn');
+  }
+  _meRenderSidebar();
+}
+const isSpecOverride = label => !!(S.specOverride && S.specOverride.label === label);
+
 function _meSetKind(idx, kind) {
   const s = _meState.specs[idx];
   if (!s) return;
@@ -22414,6 +22490,10 @@ function _meDeleteItem(section, idx) {
 function _meCtxMsg(e, idx) {
   const msg = _meState?.specs?.[idx];
   showCtxMenu(e.clientX, e.clientY, [
+    { icon: '⊙', label: isSpecOverride(msg?.label || msg?.name)
+        ? 'Clear parsing override' : 'Use for parsing (override)',
+      fn: () => toggleSpecOverride(idx) },
+    { separator: true },
     { icon: '⧉', label: 'Duplicate', fn: () => _meDupItem(idx) },
     ...(_meKindOf(msg) !== 'msg'   ? [{ icon: '⇄', label: 'Move to Messages', fn: () => _meSetKind(idx, null) }]    : []),
     ...(_meKindOf(msg) !== 'other' ? [{ icon: '⇄', label: 'Move to Other',    fn: () => _meSetKind(idx, 'other') }] : []),

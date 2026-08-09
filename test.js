@@ -6638,6 +6638,38 @@ for (const c of CHOOSERS) {
   });
 }
 
+test('the entity override forces one spec and skips its recognizers', () => {
+  // "Use this and this only". Distinct from the DDL-tree override, which yields
+  // a natural walk: forcing an ENTITY brings its parse spec, its binding AND
+  // its field overrides, which is the reason to want it. Recognizers are
+  // skipped on purpose — the user has already decided, so a failing recognizer
+  // must not veto them.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/specOverride: null/.test(src), 'the state exists');
+  // Session-only: persisting it would leave the app forcing a spec after a
+  // restart with nothing on screen explaining why.
+  assert.ok(!/localStorage[^\n]*specOverride/.test(src), 'and is never persisted');
+  // Both detection paths must honour it, or the progress panel and the parse
+  // disagree about what matched.
+  assert.ok(/function _fmtDetect\(bytes, ctx\) \{\s*\n\s*const forced = _specOverrideSpec\(\);/.test(src),
+    '_fmtDetect short-circuits on it');
+  assert.ok(/const _forced = _specOverrideSpec\(\);/.test(src), '_fmtDetectTrace too');
+  assert.ok(/recognizers not evaluated/.test(src),
+    'and the trace says so, rather than showing an empty evaluation');
+  // Keyed by label, because name is not unique — Standard / BIC / Switch are all "ISO".
+  assert.ok(/\(s\.label \|\| s\.name\) === o\.label/.test(src), 'resolved by label, not name');
+  // A deleted or renamed entity must not leave the app forcing a ghost.
+  assert.ok(/if \(!hit\) \{ S\.specOverride = null; return null; \}/.test(src),
+    'a stale override clears itself');
+  // Both winner shapes come from one place, so a forced spec cannot come back
+  // subtly different from a detected one.
+  assert.ok(/function _specWinner\(spec\)/.test(src), 'one winner shape');
+  eq((src.match(/return _specWinner\(/g) || []).length >= 2, true, 'used by both paths');
+  // Armed state has to be visible — an invisible override is the toast bug again.
+  assert.ok(/me-item-forced/.test(src), 'the armed row is marked');
+  assert.ok(/PARSING OVERRIDE/.test(src), 'and says what it does on hover');
+});
+
 test('"Other" entities are ranked after every message, so the sidebar cannot lie', () => {
   // A third sidebar group for structures that are neither a message nor a file
   // (a TDE, say). They are recognized from BYTES like a message, so they share

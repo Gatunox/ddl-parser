@@ -6674,6 +6674,34 @@ test('the two overrides clear each other, in BOTH directions', () => {
   assert.ok(/_meRenderSidebar/.test(ddl), 'the DDL toggle repaints the sidebar');
 });
 
+test('the Delete button is red, and its fill is readable', () => {
+  // Destructive is RED — #f85149, the red the app already uses for errors and
+  // the bug-report button. It shipped as --accent2 orange, which is a warning
+  // colour: it reads as "careful", not "this removes something". The old
+  // btn-danger hover also tinted the background with the BLUE accent behind
+  // orange text, which belonged to neither.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const decls = css => Object.fromEntries((css || '').split(';')
+    .map(d => d.trim().replace(/\s*!important$/, ''))
+    .filter(Boolean)
+    .map(d => { const i = d.indexOf(':'); return [d.slice(0, i).trim(), d.slice(i + 1).trim()]; }));
+  const mine = decls((src.match(/\.btn-danger:hover \{([^}]*)\}/) || [])[1]);
+  const ref  = decls((src.match(/\.btn-feedback-bug:hover \{([^}]*)\}/) || [])[1]);
+  assert.ok(Object.keys(mine).length && Object.keys(ref).length, 'both hover rules found');
+  // Same treatment as Report a Bug, declaration for declaration. Pinned against
+  // the reference rather than against literal colours, so restyling one moves
+  // the other or fails.
+  for (const k of ['color', 'background', 'border-color'])
+    eq(mine[k], ref[k], `${k} matches the Report a Bug button`);
+  assert.ok(/#f85149/.test(mine.color), 'and that colour is the app red');
+  // At rest it is a plain button, like its reference — a destructive control
+  // that shouts before you go near it trains people to ignore it.
+  assert.ok(!/\.btn-danger \{/.test(src), 'no resting override; plain until hovered');
+  // The orange it shipped as, and the blue tint the old rule used, are both out.
+  assert.ok(!/accent2|accent-rgb/.test(JSON.stringify(mine)),
+    'neither the warning orange nor the blue accent');
+});
+
 test('deleting an entity is a labelled button, not a 10px × in every row', () => {
   // The per-row × sat immediately beside a gap badge and the row's own click
   // target, so the most destructive action in the list was the easiest to hit

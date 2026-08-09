@@ -559,11 +559,18 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .tree-search-clear:hover { color: var(--text); }
 .tree-search-clear.visible { display: block; }
 .tree-match-hi { background: rgba(230,168,23,0.35); border-radius: var(--r-sm); }
-.ddl-editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+/* The editor is a card sitting beside the tree card inside the DDL panel.
+   Margin, not parent padding, for the same reason as .ddl-tree-pane: the
+   resizer sets the TREE's width directly, so any inset has to live on the
+   panes themselves or the drag measures a box it does not move. */
+.ddl-editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0;
+  background: var(--bg-panel);
+  border: var(--bw) solid var(--border); border-radius: var(--r-md);
+  margin: var(--sp-2) var(--sp-2) var(--sp-2) 0; overflow: hidden; }
 /* ── DDL syntax-highlight overlay + line-number gutter ── */
 .ddl-hl-wrap        { flex: 1; min-height: 0; display: flex; flex-direction: row; overflow: hidden; }
 .ddl-gutter         { width: 44px; flex-shrink: 0; overflow: hidden; position: relative;
-  background: var(--bg-panel); border-right: var(--bw) solid var(--border-hair); }
+  background: var(--bg-deep); border-right: var(--bw) solid var(--border-hair); }
 #ddlGutterInner     { position: absolute; top: 0; right: 0; left: 0;
   padding: 8px 6px 8px 0; text-align: right;
   font-family: var(--font-mono); font-size: var(--sz-mono); line-height: 1.3;
@@ -1021,14 +1028,15 @@ tr.row-filter-hide  { display: none; }
 .panel.collapsed #rawCfgBar { display:none !important; }
 #rawCfgBar:hover { background: var(--tint-bar); cursor: default; }
 #ddlCfgBar {
-  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
+  display:flex; align-items:center; gap:8px; padding:0 var(--sp-2); flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap;
-  min-height:calc(var(--sz-mono) + 14px);
+  background:var(--surface-header); color:var(--text); flex-wrap:nowrap;
+  min-height:var(--panel-header-h);
+  border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0;
 }
 .panel.collapsed #ddlCfgBar { display:none !important; }
-#ddlCfgBar .btn { background:none; border: var(--bw) solid var(--border); color:var(--text-dim); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 6px; border-radius:var(--r-sm); cursor:pointer; height:calc(var(--sz-mono) + 8px); display:inline-flex; align-items:center; justify-content:center; }
-#ddlCfgBar .btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+#ddlCfgBar .btn { background:var(--surface-raised); border: var(--bw) solid var(--border); color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 10px; border-radius:var(--r-sm); cursor:pointer; height:var(--ctl-h); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+#ddlCfgBar .btn:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text); background:var(--surface-hover); }
 #ddlCfgBar .btn:disabled { opacity:0.35; cursor:default; }
 #resCfgControls {
   display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
@@ -1747,7 +1755,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
 .me-sidebar-add{background:var(--surface-raised);border: var(--bw) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
 .me-sidebar-add:hover{border-color:var(--border-strong);color:var(--text);background:var(--surface-hover);}
-.me-item-list{flex:1;overflow-y:auto;min-height:0;}
+.me-item-list{flex:1;overflow-y:auto;min-height:var(--row-h);}
 .me-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:var(--row-h);cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;}
 /* Armed parsing override — deliberately the SAME treatment as the DDL tree's
    (.tree-ovr): amber #e6a817, a ▶ beside the name, an inset bar and a tinted
@@ -1776,7 +1784,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .me-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
 .me-item-swatch{width:10px;height:10px;border-radius:var(--r-sm);flex-shrink:0;border: var(--bw) solid rgba(255,255,255,.2);}
 .me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.me-empty{padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-align:center;}
+.me-empty{pointer-events:none;padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-align:center;}
 .me-right{display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;position:relative;}
 /* Editor-scoped toasts — the main-page #flash-container sits BELOW the editor
    overlay (z-index), so its toasts are hidden behind the popup. These render
@@ -1854,8 +1862,11 @@ input.me-inp{width:100%;}
 .me-rf-btnrow{display:flex;justify-content:flex-end;gap:6px;}
 .me-footer{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:var(--sp-2) 14px;border-top: var(--bw) solid var(--border);background:var(--surface-header);flex-shrink:0;}
 .me-status{flex:1;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
-.me-test-bar{border-top: var(--bw) solid var(--border);flex-shrink:0;background:var(--bg-panel);}
-.me-test-hdr{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;background:var(--bg-deep);font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);user-select:none;border-bottom: var(--bw) solid var(--border);}
+/* Test is a card like every other section of the editor, not a bare bar
+   welded to the bottom edge. */
+.me-test-bar{flex-shrink:0;background:var(--bg-panel);border: var(--bw) solid var(--border);
+  border-radius:var(--r-md);box-shadow:var(--shadow-card);margin:0 var(--sp-3) var(--sp-3);overflow:hidden;}
+.me-test-hdr{display:flex;align-items:center;gap:8px;padding:var(--row-py) 12px;min-height:var(--panel-header-h);cursor:pointer;background:var(--surface-header);font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);user-select:none;border-bottom: var(--bw) solid var(--border);}
 .me-test-hdr:hover{color:var(--text);}
 .me-test-title{font-weight:bold;color:var(--text);}
 .me-test-summary{font-size:var(--sz-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
@@ -1864,7 +1875,7 @@ input.me-inp{width:100%;}
 .me-test-body{display:flex;align-items:stretch;height:364px;}
 .me-test-list{width:343px;flex-shrink:0;border-right: var(--bw) solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
 .me-test-list-body{flex:1;overflow-y:auto;min-height:0;}
-.me-test-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:26px;cursor:pointer;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;}
+.me-test-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:var(--row-h);cursor:pointer;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;}
 .me-test-item:hover{background:var(--surface-hover);}
 .me-test-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
 .me-test-item .me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -15144,7 +15155,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.9.1';
+const APP_VERSION  = '1.15.10.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -8735,6 +8735,33 @@ test('no component rule paints a background with a hex literal', () => {
   eq(bad.length, 0, `hex background outside a theme block: ${bad.join(' | ')}`);
 });
 
+test('the vertical panel title stays scoped to collapsed panels', () => {
+  // An edit anchored on `.panel-title {` matched the tail of
+  // `.panel.collapsed .panel-header .panel-title {` and split that selector,
+  // leaving writing-mode:vertical-rl on a bare `.panel-title` rule — every
+  // panel title rendered sideways while expanded. Nothing threw and no test
+  // noticed; it was visible only on screen. `.panel-title` is a SUFFIX of the
+  // collapsed selector, so any anchor on it is unsafe.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  // Walk back from each declaration to its selector. An earlier version of this
+  // test iterated whole rules with a regex that consumed the previous rule's
+  // closing brace, so every second rule was skipped — including this one, and
+  // it passed while the bug was present.
+  let found = 0;
+  for (const m of css.matchAll(/writing-mode\s*:\s*vertical/g)) {
+    const before = css.slice(0, m.index);
+    const open   = before.lastIndexOf('{');
+    const prev   = Math.max(before.lastIndexOf('}', open), before.lastIndexOf('{', open - 1));
+    const sel    = before.slice(prev + 1, open).trim().replace(/\s+/g, ' ');
+    found++;
+    assert.ok(/\.collapsed/.test(sel),
+      `vertical writing-mode must be scoped to a collapsed panel, found on: "${sel}"`);
+  }
+  assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
+});
+
 test('the density block is declared after both theme blocks', () => {
   // [data-theme] and [data-density] are both attribute selectors on <html>, so
   // they carry equal specificity and SOURCE ORDER breaks the tie. Declared

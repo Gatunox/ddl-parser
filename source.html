@@ -487,7 +487,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
 /* Header buttons used to be full-height borderless strips, which read as
    toolbar segments rather than buttons and left Parse stretched beside them.
    They are ordinary buttons now, vertically centred and sized by content. */
-.panel-header .btn { padding: 0 10px !important; height: var(--ctl-h) !important; display: inline-flex; align-items: center !important; justify-content: center !important; border: var(--bw) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text) !important; font-weight: 600 !important; align-self: center !important; flex: 0 0 auto !important; }
+.panel-header .btn { padding: 0 10px !important; height: var(--ctl-h) !important; font-size: calc(var(--sz-mono) - 1px); display: inline-flex; align-items: center !important; justify-content: center !important; border: var(--bw) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text) !important; font-weight: 600 !important; align-self: center !important; flex: 0 0 auto !important; }
 .panel-header .flex-row { align-self: center; display: flex; align-items: center; gap: 6px; padding: 0 6px; }
 .panel-header > span:not(.panel-title) { display: flex; align-items: center; padding: 0 4px; }
 .panel-header .btn:hover { background: var(--surface-hover) !important; border-color: var(--border-strong) !important; color: var(--text) !important; box-shadow: none !important; }
@@ -902,6 +902,14 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btn-danger:focus-visible { outline: none; border-color: #f85149; }
 .btn-active { border-color: var(--warning); color: var(--warning); }
 .btn-active:hover { background: var(--warning); color: #000; border-color: var(--warning); }
+
+/* Icon inside a button: a colour emoji renders larger than the text beside it
+   at the same font-size, so it has to be scaled down relative to the label. */
+.btn-ico { font-size: 0.85em; line-height: 1; }
+/* Badge slot beside a panel title. Empty by default and collapsed by :empty,
+   so a panel with no type badge keeps its title flush against the header. */
+.pt-badge { display: flex; align-items: center; flex-shrink: 0; margin-left: var(--sp-2); }
+.pt-badge:empty { display: none; }
 
 /* ===== BADGES ===== */
 #fmtBadge, #cntBadge { display: flex; align-items: center; gap: 4px; }
@@ -2395,7 +2403,7 @@ th.me-fm-colhi{color:var(--accent);}
         <div class="flex-row">
           <span id="auditStats" class="audit-stats" style="display:none"></span>
           <input type="file" id="auditFileInput" style="display:none" onchange="onAuditFileOpen(this)">
-          <button class="btn" id="auditOpenBtn" onclick="openAuditFileDialog()" title="Open binary audit file">📂 Audit</button>
+          <button class="btn" id="auditOpenBtn" onclick="openAuditFileDialog()" title="Open binary audit file"><span class="btn-ico">📂</span> Audit</button>
           <button class="btn btn-primary" id="parseBtn" onclick="_parseBtnClick()" style="min-width:calc(var(--sz-mono)*13);padding:0 8px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">▶ Parse</button>
           <button class="btn" id="msgClearBtn" onclick="_clearBtnClick()">✕ Clear</button>
         </div>
@@ -2537,7 +2545,9 @@ th.me-fm-colhi{color:var(--accent);}
     <!-- PARSE RESULTS PANEL -->
     <div class="panel" id="resPanel">
       <div class="panel-header">
-        <span class="panel-title" id="resPanelTitle" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;cursor:pointer">Parse Results</span>
+        <span class="panel-title" id="resPanelTitle" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;cursor:pointer">Parse Results</span>
+        <span id="resTypeBadge" class="pt-badge"></span>
+        <span style="flex:1;min-width:0"></span>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
       </div>
@@ -4746,6 +4756,14 @@ function _btypeStyle(color) {
   const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
   return `background:rgba(${r},${g},${b},0.18);color:${color};border: var(--bw) solid ${color}`;
 }
+// The badge lives in the panel header while its message data lives in the meta
+// row, so it has to be cleared on the same paths that clear that row — a badge
+// left behind would label the next message with the previous one's type.
+function _setResTypeBadge(html) {
+  const el = document.getElementById('resTypeBadge');
+  if (el) el.innerHTML = html || '';
+}
+
 function _btypeHtml(type, color) {
   if (!type) return '';
   const st = _btypeStyle(color);
@@ -10810,6 +10828,7 @@ function _clearResultsOnly() {
   if (_cfgBar) _cfgBar.style.display = 'none';
   const _recMetaC = document.getElementById('recMetaContent');
   if (_recMetaC) _recMetaC.innerHTML = '';   // clear only the content, keep the nested msgNav
+  _setResTypeBadge('');
   const _recMeta = document.getElementById('recMetaRow');
   if (_recMeta) _recMeta.style.display = 'none';
   document.getElementById('resPanelTitle').textContent = 'Parse Results';
@@ -10848,6 +10867,7 @@ function clearAll() {
   if (_cfgBar3) _cfgBar3.style.display = 'none';
   const _recMetaC3 = document.getElementById('recMetaContent');
   if (_recMetaC3) _recMetaC3.innerHTML = '';   // clear only the content, keep the nested msgNav
+  _setResTypeBadge('');
   const _recMeta3 = document.getElementById('recMetaRow');
   if (_recMeta3) _recMeta3.style.display = 'none';
   document.getElementById('resPanelTitle').textContent = 'Parse Results';
@@ -10952,8 +10972,8 @@ function renderFieldTable(msg) {
   if (msg.isNetard) {
     const t   = msg.msgType || { type:'UNKNOWN' };
     const recLabel = [msg.recNo != null ? `Rec #${msg.recNo}` : '', msg.typeDesc || ''].filter(Boolean).join(' · ');
-    metaContent = `${_btypeHtml(t.type, t.color)}
-      ${recLabel ? `<span class="rec-meta-route">${esc(recLabel)}</span><span class="rec-meta-pipe">|</span>` : ''}
+    _setResTypeBadge(_btypeHtml(t.type, t.color));
+    metaContent = `${recLabel ? `<span class="rec-meta-route">${esc(recLabel)}</span><span class="rec-meta-pipe">|</span>` : ''}
       <span class="rec-meta-route">${esc(msg.source||'?')} → ${esc(msg.dest||'?')}</span>
       <span class="rec-meta-pipe">|</span>
       <span class="rec-meta-time">${esc(msg.time||'')}</span>
@@ -10963,12 +10983,13 @@ function renderFieldTable(msg) {
   } else if (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') {
     const t   = msg.msgType;
     const ddlName = msg.ddlPath ? (msg.ddlPath.split('/').pop() + (msg.defName ? '/' + msg.defName : '')) : '';
-    metaContent = `${_btypeHtml(t.type, t.color)}
-      ${ddlName ? `<span class="rec-meta-pipe">|</span><span>${esc(ddlName)}</span>` : ''}
+    _setResTypeBadge(_btypeHtml(t.type, t.color));
+    metaContent = `${ddlName ? `<span>${esc(ddlName)}</span>` : ''}
       ${_provHtml.by}
       <span class="rec-meta-pipe">|</span>
       ${_provHtml.bytesTxt}`;
   }
+  if (!metaContent) _setResTypeBadge('');
   const _recMetaContent = document.getElementById('recMetaContent');
   if (_recMetaContent) _recMetaContent.innerHTML = metaContent;
   const _recMetaRow = document.getElementById('recMetaRow');
@@ -15115,7 +15136,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.7.1';
+const APP_VERSION  = '1.15.8.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

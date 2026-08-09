@@ -78,6 +78,7 @@
   /* ── density (comfortable) ──────────────────────────────────────────── */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
   --row-py: 5px;    /* vertical padding on every list row */
+  --app-header-h: 44px;
   --gap: 10px;      /* space between panel cards; also the resizer width   */
 }
 
@@ -241,6 +242,7 @@
   --r-sm: 2px; --r-md: 3px; --r-lg: 4px;
   --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 10px;
   --row-py: 2px;
+  --app-header-h: 30px;
   --gap: 2px;
   --panel-header-h: 27px;
   --shadow-card: none;
@@ -281,14 +283,27 @@ body {
 /* ===== HEADER ===== */
 header {
   background: var(--bg-panel);
-  border-bottom: var(--bw) solid var(--accent);
-  padding: 6px 16px;
+  /* A subtle rule, not an accent bar. The accent belongs to state — selection,
+     focus, the primary action — and a full-width blue line under the header
+     spent it on decoration. */
+  border-bottom: var(--bw) solid var(--border);
+  padding: 0 var(--sp-4);
+  min-height: var(--app-header-h);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-3);
   flex-shrink: 0;
 }
-header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-weight: 700; letter-spacing: 0.03em; }
+header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weight: 700;
+  letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--sp-2); }
+/* The brand mark carries the accent so the wordmark does not have to. */
+.brand-mark {
+  width: 24px; height: 24px; flex-shrink: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent); color: var(--on-accent);
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 800; line-height: 1;
+}
 .header-sub { color: var(--text-dim); font-size: var(--sz-mono); margin-left: 4px; }
 
 /* ===== LAYOUT ===== */
@@ -2306,7 +2321,7 @@ th.me-fm-colhi{color:var(--accent);}
 <body>
 
 <header>
-  <h1 id="appLogo">⬡ DDL Parser</h1>
+  <h1 id="appLogo"><span class="brand-mark" aria-hidden="true">D</span>DDL Parser</h1>
   <span class="header-sub" style="flex:1">NonStop / Base24 / ISO8583 — multi-message analysis with field tracking</span>
   <button class="btn" id="settingsBtn" onclick="openSettings()" title="Settings"
     style="font-size:28px;line-height:1;padding:0 6px;border-color:transparent;color:var(--text-dim)">⚙</button>
@@ -15096,7 +15111,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.5.1';
+const APP_VERSION  = '1.15.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

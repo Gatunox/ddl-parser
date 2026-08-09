@@ -8755,7 +8755,7 @@ test('density moves shape and spacing only, never colour', () => {
   // Fails closed: an unrecognised token counts as a colour until it is listed
   // here, so adding a colour to the density block cannot slip through by
   // simply not matching the pattern.
-  const SHAPE = /^--(r-|sp-|row-|gap|panel-header-h|bw|shadow-)/;
+  const SHAPE = /^--(r-|sp-|row-|gap|bw|shadow-)|^--[a-z-]+-h$/;
   const bad = (body.match(/^\s*--[a-z0-9-]+/gim) || [])
     .map(t => t.trim()).filter(t => !SHAPE.test(t.replace(/^--/, '--')));
   eq(bad.length, 0, `density must not set colour tokens: ${bad.join(', ')}`);

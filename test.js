@@ -8732,6 +8732,33 @@ test('no component rule paints a background with a hex literal', () => {
   eq(bad.length, 0, `hex background outside a theme block: ${bad.join(' | ')}`);
 });
 
+test('no two hue slots collide in either theme', () => {
+  // The slots were seeded from whichever badge happened to define each colour
+  // first, so one badge's quirk became the whole slot's. Two consequences shipped
+  // before this caught them: gray inherited a near-white border from the EBCDIC
+  // badge, and in LIGHT theme teal was byte-identical to green while violet
+  // shared purple's background — which made every FUP badge indistinguishable
+  // from its non-FUP counterpart. Colliding on bg AND fg means two different
+  // message types render the same chip.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  for (const theme of ['dark', 'light']) {
+    const i = css.indexOf(`[data-theme="${theme}"] {`);
+    const body = css.slice(i, css.indexOf('\n}', i));
+    const slots = {};
+    for (const m of body.matchAll(/--h-([a-z]+)-(bg|fg|bd)\s*:\s*([^;]+);/g))
+      (slots[m[1]] ||= {})[m[2]] = m[3].trim();
+    const names = Object.keys(slots);
+    assert.ok(names.length >= 10, `${theme}: expected the hue slots, got ${names.length}`);
+    const seen = new Map();
+    for (const n of names) {
+      const key = `${slots[n].bg}|${slots[n].fg}`;
+      assert.ok(!seen.has(key), `${theme}: slot "${n}" is identical to "${seen.get(key)}" (${key})`);
+      seen.set(key, n);
+    }
+  }
+});
+
 test('the vertical panel title stays scoped to collapsed panels', () => {
   // An edit anchored on `.panel-title {` matched the tail of
   // `.panel.collapsed .panel-header .panel-title {` and split that selector,

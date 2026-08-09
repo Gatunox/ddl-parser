@@ -164,7 +164,7 @@
   --h-sky-bg:#001a2e;    --h-sky-fg:#38bdf8;    --h-sky-bd:#38bdf8;
   --h-gray-bg:#232c37;   --h-gray-fg:#9aa5b1;   --h-gray-bd:#4d5b6a;
   --h-teal-bg:#0f1d1a;   --h-teal-fg:#34d399;   --h-teal-bd:#34d399;
-  --h-violet-bg:#1a0f1a; --h-violet-fg:#a78bfa; --h-violet-bd:#a78bfa;
+  --h-violet-bg:#1d1840; --h-violet-fg:#b3a6ff; --h-violet-bd:#9482ff;
   --h-locked-bg:#2a1a1a; --h-locked-fg:var(--accent2); --h-locked-bd:var(--accent2);
   --scrim: rgba(0,0,0,0.65);
   --shadow-menu: 0 6px 20px rgba(0,0,0,0.55);
@@ -237,8 +237,8 @@
   --h-blue-bg:#ddf4ff;   --h-blue-fg:var(--accent); --h-blue-bd:var(--accent);
   --h-sky-bg:#e0f2fe;    --h-sky-fg:#0369a1;    --h-sky-bd:#38bdf8;
   --h-gray-bg:#eaeef2;   --h-gray-fg:#5b6673;   --h-gray-bd:#c3ccd6;
-  --h-teal-bg:#d1fae5;   --h-teal-fg:#065f46;   --h-teal-bd:#34d399;
-  --h-violet-bg:#ede9ff; --h-violet-fg:#5b21b6; --h-violet-bd:#a78bfa;
+  --h-teal-bg:#ccfbf1;   --h-teal-fg:#115e56;   --h-teal-bd:#14b8a6;
+  --h-violet-bg:#e7e3ff; --h-violet-fg:#43349c; --h-violet-bd:#9482ff;
   --h-locked-bg:#fde8e8; --h-locked-fg:var(--accent2); --h-locked-bd:var(--accent2);
   --scrim: rgba(0,0,0,0.45);
   --shadow-menu: 0 6px 20px rgba(0,0,0,0.18);
@@ -932,7 +932,12 @@ input[type="text"]:focus { border-color: var(--accent); }
 
 /* Icon inside a button: a colour emoji renders larger than the text beside it
    at the same font-size, so it has to be scaled down relative to the label. */
-.btn-ico { font-size: 0.85em; line-height: 1; }
+/* No line-height clamp: at 1 the box is shorter than the emoji glyph, which is
+   drawn from its own baseline and so pokes out of the top. Flex then centres a
+   box that does not contain the glyph, and the icon reads as sitting high —
+   most visible in compact, where the box is smallest. Letting it take a normal
+   line box means the thing being centred is the thing you see. */
+.btn-ico { font-size: 0.85em; display: inline-flex; align-items: center; }
 /* Badge slot beside a panel title. Empty by default and collapsed by :empty,
    so a panel with no type badge keeps its title flush against the header. */
 .pt-badge { display: flex; align-items: center; flex-shrink: 0; margin-left: var(--sp-1); }
@@ -1535,7 +1540,7 @@ td.c-err  { color: var(--accent2); }
 .dr-spec-dot { width:10px; height:10px; border-radius:var(--r-sm); flex-shrink:0; border: var(--bw-ctl) solid rgba(255,255,255,.2); }
 /* Missing-configuration badges — surface gaps in the entity lists rather than
    only at parse time (no recognizer / no parse spec / no DDL binding). */
-.me-gap-badge { font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill);
+.me-gap-badge { font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--h-amber-bd);
   background: rgba(230,168,23,0.18); color: #e6a817; flex-shrink: 0; margin-left: 2px;
   font-weight: 700; white-space: nowrap; cursor: inherit; }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1870,10 +1875,11 @@ input.me-inp{width:100%;}
 .me-rf-btns{display:flex;gap:4px;margin-top:2px;}
 .me-rf-btnrow{display:flex;justify-content:flex-end;gap:6px;}
 .me-status{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
-/* Test is a card like every other section of the editor, not a bare bar
-   welded to the bottom edge. */
-.me-test-bar{flex-shrink:0;background:var(--bg-panel);border: var(--bw) solid var(--border);
-  border-radius:var(--r-md);box-shadow:var(--shadow-card);margin:0 var(--sp-3) var(--sp-3);overflow:hidden;}
+/* Not a card. Test is a region of the dialog, like the title bar, so it
+   spans edge to edge and is separated by a rule. The cards are its two
+   halves inside — Detection and the runner. A card wrapping cards reads as
+   a box in a box and buys nothing. */
+.me-test-bar{flex-shrink:0;background:var(--bg-deep);border-top: var(--bw) solid var(--border);}
 .me-test-hdr{display:flex;align-items:center;gap:8px;padding:var(--row-py) 12px;min-height:var(--panel-header-h);cursor:pointer;background:var(--surface-header);font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);user-select:none;border-bottom: var(--bw) solid var(--border);}
 .me-test-hdr:hover{color:var(--text);}
 .me-test-title{font-weight:bold;color:var(--text);}
@@ -15161,7 +15167,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.15.0';
+const APP_VERSION  = '1.15.15.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

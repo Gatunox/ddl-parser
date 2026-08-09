@@ -8834,6 +8834,18 @@ test('controls border with --bw-ctl, containers with --bw', () => {
   const panel = rule('.panel');
   assert.ok(panel, '.panel rule found');
   assert.ok(/border:\s*var\(--bw\)/.test(panel), `.panel must use --bw, got: ${panel.trim().slice(0, 90)}`);
+
+  // Badges are INDICATORS, not controls, and take the hairline. Their ends are
+  // 999px curves, so only the top and bottom runs are straight — and those land
+  // on arbitrary fractions (.64, .92) rather than the .5 that centring inside a
+  // bordered box produces for buttons. An arbitrary fraction is one strong line
+  // plus a faint one, which reads as a soft edge; .5 is two equal ghosts, which
+  // reads as a doubled border. That is the whole reason the split exists.
+  // .badge itself carries no border — the colour variants do.
+  const badge = rule('.badge-hex');
+  assert.ok(badge, '.badge-hex rule found');
+  assert.ok(/border:\s*var\(--bw\)\s/.test(badge),
+    `.badge-hex must use --bw, got: ${badge.trim().slice(0, 90)}`);
 });
 
 test('the density block is declared after both theme blocks', () => {

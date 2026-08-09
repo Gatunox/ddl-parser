@@ -1535,10 +1535,21 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
    row. Two overrides that do the same kind of thing must not look like two
    different features; the first version of this used a blue dot and read as
    "selected". Not colour alone — the ▶ carries it too. */
-.me-item-forced{background:rgba(230,168,23,0.16);box-shadow:inset 3px 0 0 #e6a817;}
-.me-item-forced:hover{background:rgba(230,168,23,0.24);}
-.me-item-forced .me-item-name{color:#e6a817;font-weight:700;}
-.me-item-forced .me-item-name::after{content:'▶';margin-left:4px;font-size:9px;}
+/* Every selector here is deliberately over-specified, the way .tree-ovr is.
+   Written as a single class this lost twice: `.me-item.active` (two classes)
+   repainted an armed row back to the accent blue, and `.me-item:hover` — same
+   weight, declared later — replaced the brighter orange with a dull white
+   wash, so hovering an armed row made it DARKER instead of lighter. Beating
+   them on specificity rather than on source order means moving these lines
+   cannot silently break them again. */
+.me-item.me-item-forced{background:rgba(230,168,23,0.16);box-shadow:inset 3px 0 0 #e6a817;}
+.me-item.me-item-forced:hover{background:rgba(230,168,23,0.24);}
+/* Armed AND selected: still orange. Selection must not outrank an override —
+   the tree makes the same exception for .tree-ovr.tree-sel. */
+.me-item.me-item-forced.active{background:rgba(230,168,23,0.16);color:#e6a817;}
+.me-item.me-item-forced.active:hover{background:rgba(230,168,23,0.24);}
+.me-item.me-item-forced .me-item-name{color:#e6a817;font-weight:700;}
+.me-item.me-item-forced .me-item-name::after{content:'▶';margin-left:4px;font-size:9px;}
 .me-item.dragging{cursor:grabbing;opacity:.4;}
 .me-item.drop-before{box-shadow:0 -2px 0 0 var(--accent);}
 .me-item.drop-after{box-shadow:0 2px 0 0 var(--accent);}
@@ -14870,7 +14881,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.14.1.2';
+const APP_VERSION  = '1.14.1.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22492,13 +22503,18 @@ function toggleSpecOverride(idx) {
   // Arming this and a DDL override at once would be two answers to one
   // question. The entity is the more specific of the two, so it wins and the
   // other is cleared, out loud.
+  // _meFlash, not flash: this is raised from inside the Data Editor, and the
+  // global one anchors to the page, so the notice landed outside the modal it
+  // belongs to. _meFlash renders into the editor's own container, stays until
+  // dismissed, and falls back to the global flash when that container is
+  // absent — so a call from anywhere else still says something.
   if (!on && S.parseOverride) {
     S.parseOverride = null;
     if (typeof renderDDLTree === 'function') renderDDLTree();
-    flash(`Entity override "${label}" — the DDL override was cleared`, 'warn');
+    _meFlash(`Every message will parse as "${label}" until you clear it — the DDL override was cleared`, 'warn');
   } else {
-    flash(on ? `Entity override cleared — detection is back to normal`
-             : `Every message will parse as "${label}" until you clear it`, on ? undefined : 'warn');
+    _meFlash(on ? `Entity override cleared — detection is back to normal`
+                : `Every message will parse as "${label}" until you clear it`, on ? undefined : 'warn');
   }
   _meRenderSidebar();
 }

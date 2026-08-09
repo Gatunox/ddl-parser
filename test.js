@@ -6674,6 +6674,37 @@ test('the two overrides clear each other, in BOTH directions', () => {
   assert.ok(/_meRenderSidebar/.test(ddl), 'the DDL toggle repaints the sidebar');
 });
 
+test('the armed row wins over selection and hover, on specificity', () => {
+  // Reported: an armed Message row did not turn orange, and hovering it made it
+  // DARKER. Two specificity losses: `.me-item.active` (two classes) repainted
+  // it accent-blue, and `.me-item:hover` — same weight, declared later —
+  // replaced the brighter orange with a white wash. Source order was doing the
+  // work, so moving these lines would have broken them again.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // Classes AND pseudo-classes both count toward specificity.
+  const weight = sel => (sel.match(/[.:]/g) || []).length;
+  const rules = {};
+  for (const m of src.matchAll(/^(\.me-item[^\s{][^{]*)\{([^}]*)\}/gm)) rules[m[1].trim()] = m[2];
+  const armed = Object.keys(rules).filter(k => /me-item-forced/.test(k));
+  assert.ok(armed.length >= 4, `expected the armed rules, found ${armed.length}`);
+  // Each competing pair, armed vs plain. Equal weight is a FAILURE here — that
+  // is the state the bug was in, decided only by which line came last.
+  for (const [a, b] of [['.me-item.me-item-forced.active', '.me-item.active'],
+                        ['.me-item.me-item-forced:hover', '.me-item:hover']]) {
+    assert.ok(rules[a], `${a} exists`);
+    assert.ok(weight(a) > weight(b),
+      `${a} (${weight(a)}) must out-weigh ${b} (${weight(b)}) — equal weight leaves it to source order`);
+  }
+  // Armed AND selected must still read as armed.
+  assert.ok(rules['.me-item.me-item-forced.active'], 'the armed+selected case is handled');
+  assert.ok(/rgba\(230,168,23,0\.16\)/.test(rules['.me-item.me-item-forced.active']),
+    'and stays orange rather than reverting to accent');
+  // Hover brightens; it must never be the darker of the two.
+  const base  = /0\.16/.test(rules['.me-item.me-item-forced'] || '');
+  const hover = /0\.24/.test(rules['.me-item.me-item-forced:hover'] || '');
+  assert.ok(base && hover, 'hover is the brighter value, matching the tree');
+});
+
 test('both overrides look like the same feature', () => {
   // The first version marked an armed entity with a blue ⊙, which read as
   // "selected" and looked like a different feature from the tree's amber ▶.

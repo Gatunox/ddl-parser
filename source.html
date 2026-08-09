@@ -77,6 +77,7 @@
 
   /* ── density (comfortable) ──────────────────────────────────────────── */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --row-py: 5px;    /* vertical padding on every list row */
   --gap: 10px;      /* space between panel cards; also the resizer width   */
 }
 
@@ -231,6 +232,7 @@
 [data-density="compact"] {
   --r-sm: 2px; --r-md: 3px; --r-lg: 4px;
   --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 10px;
+  --row-py: 2px;
   --gap: 2px;
   --panel-header-h: 27px;
   --shadow-card: none;
@@ -300,6 +302,10 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
 .bottom-row { flex: 1 1 50%; padding-bottom: var(--gap); }
 
 /* ===== RESIZE HANDLES ===== */
+/* Inert, not hidden: display:none removed the gutter entirely, so collapsing
+   one panel made its neighbour butt against the next card with no gap. */
+.resizer-v.inert, .resizer-h.inert { pointer-events: none; cursor: default; }
+.resizer-v.inert::after, .resizer-h.inert::after { display: none; }
 .resizer-v {
   flex-shrink: 0;
   height: var(--resizer-size);
@@ -316,7 +322,10 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
   left: 0; right: 0;
   top: -4px; bottom: -4px;
 }
-.resizer-v:hover, .resizer-v.dragging { background: linear-gradient(to bottom, transparent 40%, rgba(var(--accent-rgb),.55) 40% 60%, transparent 60%); }
+/* No hover highlight: the gutter is empty space between cards, and a line
+   drawn there reads as a seam joining them rather than a handle. The
+   row-resize cursor is the affordance. */
+.resizer-v.dragging, .resizer-h.dragging { background: var(--resizer-bg); }
 
 .resizer-h {
   flex-shrink: 0;
@@ -333,7 +342,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--accent); font-we
   top: 0; bottom: 0;
   left: -4px; right: -4px;
 }
-.resizer-h:hover, .resizer-h.dragging { background: linear-gradient(to right, transparent 40%, rgba(var(--accent-rgb),.55) 40% 60%, transparent 60%); }
+
 
 /* ===== PANEL ===== */
 .panel {
@@ -496,9 +505,9 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
   border: var(--bw) solid var(--border); border-radius: var(--r-md);
   margin: var(--sp-2) 0 var(--sp-2) var(--sp-2); }
 #ddlTree         { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
-.tree-search-wrap { width: 100%; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--bg-deep); box-sizing: border-box; padding: 0; min-height: var(--panel-header-h, 27px); }
-input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 2px 22px 2px 5px; font-size: calc(var(--sz-mono) - 0.5px); background: var(--bg-deep); border: none; border-radius: 0; color: var(--text); outline: none; font-family: var(--mono); box-sizing: border-box; }
-input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) var(--accent); }
+.tree-search-wrap { width: 100%; border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--bg-deep); box-sizing: border-box; padding: 0; min-height: var(--panel-header-h, 27px); }
+input.tree-search, #treeSearch { flex: 1; min-width: 0; border-radius: calc(var(--r-md) - var(--bw)) 0 0 0; padding: 2px 22px 2px 5px; font-size: calc(var(--sz-mono) - 0.5px); background: var(--bg-deep); border: none; border-radius: 0; color: var(--text); outline: none; font-family: var(--mono); box-sizing: border-box; }
+input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) var(--accent); border-radius: calc(var(--r-md) - var(--bw)) 0 0 0; }
 .tree-search::placeholder { color: var(--text-dim); }
 .tree-search-clear { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: 9px; color: var(--text-dim); cursor: pointer; display: none; line-height: 1; padding: 2px; }
 .tree-search-clear:hover { color: var(--text); }
@@ -575,7 +584,7 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .ddl-search-nav-x { font-size: calc(var(--sz-mono) - 3px); }
 .ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 .ddl-search-controls.hidden { display: none; }
-.tree-node { padding: 3px 20px 3px 5px; margin-right: -20px; cursor: pointer; font-size: calc(var(--sz-mono) - 0.5px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; }
+.tree-node { padding: var(--row-py) 20px var(--row-py) 5px; margin-right: -20px; cursor: pointer; font-size: calc(var(--sz-mono) - 0.5px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; }
 .tree-node:hover  { background: rgba(var(--accent-rgb),0.08); }
 .tree-node.tree-sel { background: rgba(var(--accent-rgb),0.18); }
 .tree-caret { font-size: 11px; width: 10px; flex-shrink: 0; color: var(--text-dim); display: inline-block; text-align: center; line-height: 1; }
@@ -1432,7 +1441,7 @@ body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
 .about-ver { font-size: calc(var(--sz-mono) + 9px); font-weight: 700; color: var(--accent); }
 .dr-spec-list { display:flex; flex-direction:column; margin-bottom:2px; }
 .dr-specs-empty { color:var(--text-dim); font-size:calc(var(--sz-mono) - 2px); padding:4px 0 6px; }
-.dr-spec-item { display:flex; align-items:center; gap:5px; padding:4px 8px; border-bottom: var(--bw) solid var(--border); font-size:var(--sz-mono); color:var(--text); }
+.dr-spec-item { display:flex; align-items:center; gap:5px; padding:var(--row-py) 8px; border-bottom: var(--bw) solid var(--border); font-size:var(--sz-mono); color:var(--text); }
 .dr-spec-item:last-child { border-bottom:none; }
 .dr-spec-group { padding:5px 8px 2px; font-size:calc(var(--sz-mono) - 2px); font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-dim); border-bottom: var(--bw) solid var(--border); }
 .dr-spec-dot { width:10px; height:10px; border-radius:var(--r-sm); flex-shrink:0; border: var(--bw) solid rgba(255,255,255,.2); }
@@ -2856,7 +2865,7 @@ function togglePanel(panelId, btnId, resizerId) {
       btn.textContent = '+';
       btn.classList.add('is-collapsed');
       btn.title = 'Show panel';
-      if (resizer) resizer.style.display = 'none';
+      if (resizer) resizer.classList.add('inert');   // keep the gutter, drop the drag
       if (panelId === 'rawPanel') _syncRawHexCol();
 
       // Step 3 — wait for flex animation to finish, then fade in vertical title
@@ -2887,7 +2896,7 @@ function togglePanel(panelId, btnId, resizerId) {
       btn.textContent = '−';
       btn.classList.remove('is-collapsed');
       btn.title = 'Hide panel';
-      if (resizer) resizer.style.display = '';
+      if (resizer) resizer.classList.remove('inert');
       if (panelId === 'rawPanel') _syncRawHexCol();
 
       // Step 3 — wait for flex animation to finish, then fade in expanded content
@@ -15043,7 +15052,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.3.0';
+const APP_VERSION  = '1.15.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

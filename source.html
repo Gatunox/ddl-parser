@@ -213,6 +213,29 @@
   --shadow-drawer: -8px 0 28px rgba(0,0,0,0.15);
   --shadow-popup: -4px 0 14px rgba(0,0,0,0.15);
 }
+
+/* ═══ Density ══════════════════════════════════════════════════════════════
+   Orthogonal to colour: [data-density] on <html>, same as [data-theme], so the
+   two compose freely (compact light, comfortable dark, …). Comfortable is the
+   :root default above; compact restores the pre-overhaul information density
+   for users working thousands of Field Map rows on modest hardware.
+
+   Only spacing and shape are touched — never colour. A density that also moved
+   colours would be a second theme wearing a different name.
+
+   ORDER MATTERS: this block must stay AFTER both theme blocks. [data-theme]
+   and [data-density] are both attribute selectors on <html>, so they have
+   equal specificity and source order breaks the tie. Placed before them,
+   --shadow-card:none below silently lost to the theme's value and compact
+   kept its drop shadows. */
+[data-density="compact"] {
+  --r-sm: 2px; --r-md: 3px; --r-lg: 4px;
+  --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 10px;
+  --gap: 2px;
+  --panel-header-h: 27px;
+  --shadow-card: none;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: var(--bg-deep);
@@ -15003,7 +15026,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.1.0';
+const APP_VERSION  = '1.15.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15054,7 +15077,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
+  theme: 'dark', density: 'comfortable', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences
@@ -15200,9 +15223,12 @@ function applyPrefs(updateUI = true) {
   // drives the shrinking set of `body.light .foo` component patches, and goes
   // away with the last of them.
   document.documentElement.setAttribute('data-theme', P.theme === 'light' ? 'light' : 'dark');
+  document.documentElement.setAttribute('data-density', P.density === 'compact' ? 'compact' : 'comfortable');
   document.body.classList.toggle('light', P.theme === 'light');
   document.documentElement.style.setProperty('--sz-mono', P.monoSize + 'px');
-  const _headerH = 34 + Math.floor((P.monoSize - 12) / 3);   // 34px = comfortable density baseline
+  // Base comes from the active density block so the two cannot drift apart.
+  const _hBase = P.density === 'compact' ? 27 : 34;
+  const _headerH = _hBase + Math.floor((P.monoSize - 12) / 3);
   document.documentElement.style.setProperty('--panel-header-h', _headerH + 'px');
   if (updateUI) {
     const lbl = document.getElementById('szLabel');
@@ -15237,6 +15263,20 @@ function _syncRawHexTruncateUI() {
   const btnF = document.getElementById('rawHexTruncOff');
   if (btnT) btnT.classList.toggle('s-active',  P.rawHexTruncate !== false);
   if (btnF) btnF.classList.toggle('s-active',  P.rawHexTruncate === false);
+}
+
+function _syncDensityUI() {
+  const btnCo = document.getElementById('densityComfort');
+  const btnCp = document.getElementById('densityCompact');
+  if (btnCo) btnCo.classList.toggle('s-active', P.density !== 'compact');
+  if (btnCp) btnCp.classList.toggle('s-active', P.density === 'compact');
+}
+
+function setDensity(val) {
+  P.density = val === 'compact' ? 'compact' : 'comfortable';
+  savePrefs();
+  applyPrefs();
+  _syncDensityUI();
 }
 
 function setRawHexTruncate(val) {
@@ -15552,6 +15592,7 @@ function openSettings() {
   // Sync control states to current prefs
   const lbl = document.getElementById('szLabel');
   if (lbl) lbl.textContent = P.monoSize + 'px';
+  _syncDensityUI();
   _lwUpdateDisplay();
   ['dark','light'].forEach(t => {
     const b = document.getElementById('theme_' + t);
@@ -26119,6 +26160,14 @@ function _meSave() {
             <button class="btn" onclick="adjustFontSize(-1)" style="padding:2px 8px;font-size:12px" title="Decrease font size">A−</button>
             <span class="sz-label" id="szLabel">11px</span>
             <button class="btn" onclick="adjustFontSize(1)"  style="padding:2px 8px;font-size:14px" title="Increase font size">A+</button>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <span class="settings-lbl">Density</span>
+          <div class="settings-pill">
+            <button class="btn s-active" id="densityComfort" onclick="setDensity('comfortable')" title="Roomier spacing and larger radii">Comfort</button>
+            <button class="btn"          id="densityCompact" onclick="setDensity('compact')"     title="Tighter rows — more data per screen">Compact</button>
           </div>
         </div>
 

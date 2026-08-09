@@ -8728,6 +8728,36 @@ test('no component rule paints a background with a hex literal', () => {
   eq(bad.length, 0, `hex background outside a theme block: ${bad.join(' | ')}`);
 });
 
+test('the density block is declared after both theme blocks', () => {
+  // [data-theme] and [data-density] are both attribute selectors on <html>, so
+  // they carry equal specificity and SOURCE ORDER breaks the tie. Declared
+  // before the themes, `--shadow-card:none` in compact silently lost to the
+  // theme's own value and compact kept its drop shadows — nothing errors, the
+  // rule just never applies. Order is load-bearing, so it is pinned here.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const dark    = css.indexOf('[data-theme="dark"] {');
+  const light   = css.indexOf('[data-theme="light"] {');
+  const density = css.indexOf('[data-density="compact"] {');
+  assert.ok(dark >= 0 && light >= 0 && density >= 0, 'all three blocks exist');
+  assert.ok(density > dark && density > light,
+    'the density block must come after both theme blocks, or its shape tokens lose the tie');
+});
+
+test('density moves shape and spacing only, never colour', () => {
+  // A density that also shifted colours would be a second theme wearing another
+  // name, and the two would drift: switching to compact would silently restyle
+  // the palette. Keeping it to geometry is what lets theme × density compose.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const i = css.indexOf('[data-density="compact"] {');
+  const body = css.slice(i, css.indexOf('\n}', i));
+  const SHAPE = /^--(r-|sp-|gap|panel-header-h|bw|shadow-)/;
+  const bad = (body.match(/^\s*--[a-z0-9-]+/gim) || [])
+    .map(t => t.trim()).filter(t => !SHAPE.test(t.replace(/^--/, '--')));
+  eq(bad.length, 0, `density must not set colour tokens: ${bad.join(', ')}`);
+});
+
 test('_eggSetAccent writes the accent to one element, not two', () => {
   // The double-write was a symptom, not a fix. Once no theme block redefines
   // --accent on a descendant, one write to <html> reaches everything. If this

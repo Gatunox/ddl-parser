@@ -966,7 +966,12 @@ input[type="text"]:focus { border-color: var(--accent); }
 .tree-type-badge.tbtype-ndc  { background:rgba(247,129,102,0.18); color:var(--accent2); border: var(--bw) solid var(--accent2); }
 .tree-type-badge.tbtype-b24  { background:rgba(148,130,255,0.18); color:#9482ff;        border: var(--bw) solid #9482ff; }
 /* ---- per-message type badges (shown in rec-meta bar) ---- */
-.btype { font-size: var(--sz-mono); font-weight: 700; padding: 1px 8px; border-radius: var(--r-pill); letter-spacing: 0.04em; display:inline-block; }
+/* Height is set by line-height, not by padding + whatever line-height:normal
+   happens to compute to — that was making a 19px pill sit proud of a table
+   row. Tied to --sz-mono so it still tracks the font-size setting. */
+.btype { font-size: calc(var(--sz-mono) - 1px); font-weight: 700; padding: 0 8px;
+  line-height: calc(var(--sz-mono) + 2px); border-radius: var(--r-pill);
+  letter-spacing: 0.04em; display: inline-block; vertical-align: middle; }
 .btype-stm     { background:rgba(0,200,212,0.18);   color:#00c8d4; border: var(--bw) solid #00c8d4; }
 .btype-pstm    { background:rgba(92,214,92,0.18);   color:#5cd65c; border: var(--bw) solid #5cd65c; }
 .btype-ndc     { background:rgba(255,107,53,0.22);  color:#ff6b35; border: var(--bw) solid #ff6b35; }
@@ -15161,7 +15166,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.12.0';
+const APP_VERSION  = '1.15.12.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

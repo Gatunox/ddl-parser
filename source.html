@@ -7072,10 +7072,18 @@ function parseMessage(bytes, defs, rawBytes) {
   // filename ($VOL.SUBVOL.FILE) and are never consulted for records that
   // don't carry one, so they can't sit in front of (or slow down) message
   // lookups. The msgs/files split below only separates the two groups.
+  // "Other" entities are recognized from bytes exactly like messages, so they
+  // share this ranking — but they are drawn in their own sidebar box, and a box
+  // that hides precedence lies about it. They are therefore tried AFTER every
+  // message rather than interleaved, so the sidebar reads top to bottom as the
+  // order detection actually uses: Messages, then Other, then Files.
   function _detectOrderIdxs(specs) {
-    const msgs = [], files = [];
-    (specs || []).forEach((s, i) => ((s && s.kind === 'file') ? files : msgs).push(i));
-    return msgs.concat(files);
+    const msgs = [], other = [], files = [];
+    (specs || []).forEach((s, i) => {
+      const k = s && s.kind;
+      (k === 'file' ? files : k === 'other' ? other : msgs).push(i);
+    });
+    return msgs.concat(other, files);
   }
 
   function _fmtLoad() {
@@ -14774,7 +14782,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.13.6.0';
+const APP_VERSION  = '1.14.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15349,10 +15357,16 @@ function renderDetectSpecsList() {
       const gaps = _meSpecGapBadgeHtml(s);
       return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span>${gaps}<span class="dr-spec-type">${type}</span></div>`;
     };
-    const msgs  = specs.filter(s => s.kind !== 'file');
+    // Same three groups as the Data Editor sidebar, in the same order detection
+    // uses — a heading only appears when there is more than one group to tell
+    // apart, so a plain list of messages stays a plain list.
+    const msgs  = specs.filter(s => s.kind !== 'file' && s.kind !== 'other');
+    const other = specs.filter(s => s.kind === 'other');
     const files = specs.filter(s => s.kind === 'file');
-    el.innerHTML = (files.length ? `<div class="dr-spec-group">Messages</div>` : '')
+    const grouped = (other.length ? 1 : 0) + (files.length ? 1 : 0) > 0;
+    el.innerHTML = (grouped && msgs.length ? `<div class="dr-spec-group">Messages</div>` : '')
       + msgs.map(row).join('')
+      + (other.length ? `<div class="dr-spec-group">Other</div>` + other.map(row).join('') : '')
       + (files.length ? `<div class="dr-spec-group">Files</div>` + files.map(row).join('') : '');
   }
   // The section is expanded by default with a fixed inline max-height —
@@ -16313,8 +16327,9 @@ function _meRenderSidebar() {
   // Two lists over ONE specs array: kind === 'file' renders in Files,
   // everything else in Messages. Items carry their REAL array index, so
   // selection / delete / drag splices keep working unchanged.
-  _meRenderSpecList('me-msg-list',  s => s.kind !== 'file', 'No messages defined', null);
-  _meRenderSpecList('me-file-list', s => s.kind === 'file', 'No file detections defined', 'file');
+  _meRenderSpecList('me-msg-list',   s => s.kind !== 'file' && s.kind !== 'other', 'No messages defined', null);
+  _meRenderSpecList('me-other-list', s => s.kind === 'other', 'Nothing here yet', 'other');
+  _meRenderSpecList('me-file-list',  s => s.kind === 'file', 'No file detections defined', 'file');
 }
 
 function _meRenderSpecList(contId, match, emptyMsg, kind) {
@@ -16449,7 +16464,7 @@ function _meSpecDrop(e, targetIdx) {
 }
 function _meSpecDragEnd(_e) {
   _meState._dragSpecIdx = null;
-  document.querySelectorAll('#me-msg-list .me-item, #me-file-list .me-item').forEach(r => {
+  document.querySelectorAll('#me-msg-list .me-item, #me-other-list .me-item, #me-file-list .me-item').forEach(r => {
     r.classList.remove('dragging', 'drop-before', 'drop-after');
   });
 }
@@ -16463,10 +16478,12 @@ function _meSpecDropOnList(kind) {
   if (src == null) return;
   const s = _meState.specs[src];
   if (!s) return;
-  const srcKind = s.kind === 'file' ? 'file' : null;
-  if (kind === 'file') {
-    if (srcKind === 'file') return;            // already a file — nothing to do
-    s.kind = 'file';
+  const srcKind = s.kind === 'file' ? 'file' : s.kind === 'other' ? 'other' : null;
+  if (kind === srcKind) return;                // already in this list
+  if (kind === 'file' || kind === 'other') {
+    // Files match by filename and have no rank; Other is ranked but always
+    // after every message, so neither needs repositioning in the array.
+    s.kind = kind;
   } else {
     delete s.kind;
     const [moved] = _meState.specs.splice(src, 1);
@@ -22351,6 +22368,15 @@ function _meAddMsg() {
   _meSelectItem('msg', _meState.specs.length - 1);
 }
 
+function _meAddOther() {
+  // Recognized from bytes exactly like a message, so no seeded recognizer —
+  // what identifies a structure is entirely the user's call.
+  _meState.specs.push({ name: 'NEW', label: 'New Structure', color: '#888888', vol: '',
+                        kind: 'other', recognizers: [] });
+  _meSetDirty();
+  _meSelectItem('msg', _meState.specs.length - 1);
+}
+
 function _meAddFile() {
   // File detections match on the wrapper filename, so seed one filename recognizer.
   _meState.specs.push({ name: 'NEWFILE', label: 'New File', color: '#888888', vol: '', kind: 'file',
@@ -22359,14 +22385,16 @@ function _meAddFile() {
   _meSelectItem('msg', _meState.specs.length - 1);
 }
 
-// Flip a spec between the Messages and Files lists.
-function _meMoveKind(idx) {
+// Move a spec between the Messages / Other / Files lists. Was a two-way flip,
+// which cannot express three destinations — the menu now names the target.
+function _meSetKind(idx, kind) {
   const s = _meState.specs[idx];
   if (!s) return;
-  if (s.kind === 'file') delete s.kind; else s.kind = 'file';
+  if (kind) s.kind = kind; else delete s.kind;
   _meSetDirty();
   _meRenderSidebar();
 }
+const _meKindOf = s => s?.kind === 'file' ? 'file' : s?.kind === 'other' ? 'other' : 'msg';
 
 function _meDeleteItem(section, idx) {
   const itemName = _meState.specs[idx]?.name || 'message';
@@ -22387,7 +22415,9 @@ function _meCtxMsg(e, idx) {
   const msg = _meState?.specs?.[idx];
   showCtxMenu(e.clientX, e.clientY, [
     { icon: '⧉', label: 'Duplicate', fn: () => _meDupItem(idx) },
-    { icon: '⇄', label: msg?.kind === 'file' ? 'Move to Messages' : 'Move to Files', fn: () => _meMoveKind(idx) },
+    ...(_meKindOf(msg) !== 'msg'   ? [{ icon: '⇄', label: 'Move to Messages', fn: () => _meSetKind(idx, null) }]    : []),
+    ...(_meKindOf(msg) !== 'other' ? [{ icon: '⇄', label: 'Move to Other',    fn: () => _meSetKind(idx, 'other') }] : []),
+    ...(_meKindOf(msg) !== 'file'  ? [{ icon: '⇄', label: 'Move to Files',    fn: () => _meSetKind(idx, 'file') }]  : []),
     { separator: true },
     { icon: '⬆', label: `Export "${msg?.name || msg?.label || 'item'}"…`, fn: () => _ctxMsgExport(idx, msg?.name) },
     { icon: '⬆', label: 'Export All Data…', fn: () => _ctxExportAllMsgs() },
@@ -26263,6 +26293,13 @@ function _meSave() {
             <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
           </div>
           <div class="me-item-list" id="me-msg-list"></div>
+        </div>
+        <div class="me-sidebar-sect" id="me-sect-other">
+          <div class="me-sidebar-hdr">
+            <span class="me-sidebar-title" title="Structures that are neither a whole message nor a file — recognized from bytes like a message, but tried after every message">Other</span>
+            <button class="me-sidebar-add" onclick="_meAddOther()">+ New</button>
+          </div>
+          <div class="me-item-list" id="me-other-list"></div>
         </div>
         <div class="me-sidebar-sect" id="me-sect-files">
           <div class="me-sidebar-hdr">

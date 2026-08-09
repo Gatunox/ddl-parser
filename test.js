@@ -6638,6 +6638,45 @@ for (const c of CHOOSERS) {
   });
 }
 
+test('"Other" entities are ranked after every message, so the sidebar cannot lie', () => {
+  // A third sidebar group for structures that are neither a message nor a file
+  // (a TDE, say). They are recognized from BYTES like a message, so they share
+  // detection rank — and drawing them in a separate box while interleaving them
+  // in that rank would hide which one wins. Tried after every message instead,
+  // so the sidebar top-to-bottom IS the order detection uses.
+  const order = sandbox._detectOrderIdxs || null;
+  const specs = [{ name: 'A' }, { name: 'B', kind: 'other' }, { name: 'C' },
+                 { name: 'D', kind: 'file' }, { name: 'E', kind: 'other' }];
+  if (order) {
+    deepEq(order(specs).map(i => specs[i].name), ['A','C','B','E','D'],
+      'messages, then other, then files — each group in array order');
+  }
+  // Source-level, since the function is module-private in some builds.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const fn = (src.match(/function _detectOrderIdxs[\s\S]*?\n  \}/) || [''])[0];
+  assert.ok(/const msgs = \[\], other = \[\], files = \[\]/.test(fn), 'three buckets');
+  assert.ok(/return msgs\.concat\(other, files\)/.test(fn),
+    `messages first, other next, files last: ${fn.slice(-120)}`);
+});
+
+test('the three sidebar lists exist and nothing still assumes two', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  for (const id of ['me-msg-list', 'me-other-list', 'me-file-list'])
+    assert.ok(src.includes(`id="${id}"`), `${id} is in the markup`);
+  // The Messages filter must exclude BOTH other kinds, or an Other entity
+  // appears in two lists at once.
+  assert.ok(/s => s\.kind !== 'file' && s\.kind !== 'other'/.test(src),
+    'the Messages list excludes other and file');
+  // Drag cleanup has to cover the new list or a half-dragged row keeps its class.
+  assert.ok(/#me-msg-list \.me-item, #me-other-list \.me-item, #me-file-list \.me-item/.test(src),
+    'drag-end clears all three lists');
+  // A two-way flip cannot express three destinations.
+  assert.ok(!/_meMoveKind/.test(src), 'the old two-way kind flip is gone');
+  assert.ok(/Move to Messages/.test(src) && /Move to Other/.test(src) && /Move to Files/.test(src),
+    'the menu names each destination');
+  assert.ok(/kind: 'other'/.test(src), '_meAddOther creates the right kind');
+});
+
 test('greater-than and less-than read as opposites, and say which is which', () => {
   // Reported: greater-than 407 accepted a 470-byte message, which is correct —
   // but the description being read at the time was less-than's, because the

@@ -8847,6 +8847,22 @@ test('every help toggle is wired to a button in the markup', () => {
     'defined but nothing calls them — the control that opened the panel is gone');
 });
 
+test('help section toggles are buttons, not clickable divs', () => {
+  // They were <div onclick>, which no keyboard can reach — the help sections
+  // were mouse-only. As <button> they are focusable and activate on Enter or
+  // Space for free. This also puts them inside the control border rule, which
+  // is how the 1px indicator was spotted in the first place.
+  const divToggles = [...html.matchAll(/<div[^>]*class="[^"]*h-sub-toggle[^"]*"/g)];
+  eq(divToggles.length, 0, `${divToggles.length} help toggles are still <div onclick>`);
+  const btnToggles = [...html.matchAll(/<button[^>]*class="[^"]*h-sub-toggle[^"]*"/g)];
+  assert.ok(btnToggles.length >= 10,
+    `expected the help toggles as buttons, found ${btnToggles.length}`);
+  // A button inside a form-less page defaults to type=submit; without this they
+  // would be fine here but wrong the moment one ends up inside a <form>.
+  for (const m of btnToggles)
+    assert.ok(/type="button"/.test(m[0]), `missing type="button": ${m[0].slice(0, 70)}`);
+});
+
 test('the Overrides column reference has its "?" button', () => {
   // Named specifically, because this is the one that went missing and the
   // generic check above would pass again the moment someone deletes the

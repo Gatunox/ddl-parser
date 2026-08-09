@@ -1511,10 +1511,17 @@ body.light .trk-chk { color-scheme: light; }
 .settings-drawer a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .settings-drawer a:hover { color: var(--accent2); }
 .settings-help .h-sub { margin-top: 6px; font-size: calc(var(--sz-mono) - 1px); font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; }
-.settings-help .h-sub-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 5px 7px; margin: 3px -7px 0; border-radius: var(--r-md); transition: background 0.1s, color 0.1s; }
+/* A real <button>, not a div with onclick: these were unreachable by keyboard
+   entirely. The button chrome is reset here so the row keeps looking like a
+   heading — the visible control is the +/- indicator beside it. */
+.settings-help .h-sub-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 5px 7px; margin: 3px -7px 0; border-radius: var(--r-md); transition: background 0.1s, color 0.1s;
+  width: calc(100% + 14px); background: transparent; border: none; font: inherit;
+  font-size: calc(var(--sz-mono) - 1px); font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; text-align: left; color: var(--text-dim); }
+.settings-help .h-sub-toggle:focus-visible { outline: var(--bw-ctl) solid var(--accent); outline-offset: -2px; }
 .settings-help .h-sub-toggle:hover { background: rgba(255,255,255,0.05); color: var(--text); }
 body.light .settings-help .h-sub-toggle:hover { background: rgba(0,0,0,0.05); }
-.settings-help .h-sub-arrow { background: transparent; color: var(--text-dim); border: var(--bw) solid var(--border); width: 26px; height: 20px; border-radius: var(--r-sm); font-size: calc(var(--sz-mono) + 2px); line-height: 1; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.1s; padding: 0; pointer-events: none; box-sizing: border-box; }
+.settings-help .h-sub-arrow { background: transparent; color: var(--text-dim); border: var(--bw-ctl) solid var(--border); width: 26px; height: 20px; border-radius: var(--r-sm); font-size: calc(var(--sz-mono) + 2px); line-height: 1; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.1s; padding: 0; pointer-events: none; box-sizing: border-box; }
 .settings-help .h-sub-toggle.open .h-sub-arrow { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
 .settings-help .h-sub-body { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
 .settings-help .h-sub-body.open { max-height: 1200px; overflow-y: auto; }
@@ -15176,7 +15183,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.13.2';
+const APP_VERSION  = '1.15.14.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -26419,7 +26426,7 @@ function _meSave() {
         <div class="settings-help">
 
           <!-- 1. Getting Started -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Getting Started <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Getting Started <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ol style="padding-left:18px;margin:0">
               <li>Write or load a <strong>DDL definition</strong> in the top-left panel</li>
@@ -26437,7 +26444,7 @@ function _meSave() {
           </div></div>
 
           <!-- 2. DDL Definition -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Definition <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Definition <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <div style="margin:0 0 6px;padding:6px 8px;background:var(--bg-input);border-radius:var(--r-md);font-family:var(--mono);font-size:10px;line-height:1.8">
               <span style="color:var(--text-dim)">* comment line</span><br>
@@ -26461,7 +26468,7 @@ function _meSave() {
           </div></div>
 
           <!-- 3. DDL Tree -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Tree <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Tree <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li><strong>Filter box</strong> — type to narrow volumes / subvolumes / DDLs by name; <kbd>Esc</kbd> to clear</li>
@@ -26476,7 +26483,7 @@ function _meSave() {
           </div></div>
 
           <!-- 4. Message Input -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Input <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Input <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Paste one or more messages — separate them with a <strong>blank line</strong></li>
@@ -26493,7 +26500,7 @@ function _meSave() {
           </div></div>
 
           <!-- 4b. Message & File Detection & DDL Matching -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message &amp; File Detection · DDL Matching <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message &amp; File Detection · DDL Matching <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <p style="margin:0 0 6px"><strong>Detection is configurable — for messages AND files.</strong> Open <strong>Settings → Data Detection → ⊞ Data Editor</strong> (expand the Data Detection section) to define message and file types. Each type carries an ordered list of <strong>recognizers</strong> — byte-level conditions such as a <code>literal</code> at an offset, an <code>mti</code> pattern, <code>min-length</code>/<code>max-length</code>, a <code>numeric</code>/<code>regex</code> field, a <code>bitmap</code>, or a <code>source</code>/<code>destination</code>/<code>filename</code> match.</p>
             <ul style="padding-left:16px;margin:0 0 8px;font-size:10.5px">
@@ -26519,7 +26526,7 @@ function _meSave() {
           </div></div>
 
           <!-- 4c. Segmented Files (Base24) -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Segmented Files (Base24) <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Segmented Files (Base24) <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <p style="margin:0 0 6px">A segmented file's DEFINITION declares only <code>SEGn TYPE xxx-SEG</code> entries; the record on disk holds <strong>only the segments marked present</strong> by a 32-bit segment map (bit 0 = leftmost = SEG0, increasing left→right). The map can come from <strong>within the actual file</strong> or as an <strong>attribute on the parse-spec</strong>:</p>
             <ul style="padding-left:16px;margin:0 0 8px;font-size:10.5px">
@@ -26534,7 +26541,7 @@ function _meSave() {
           </div></div>
 
           <!-- 5. Message Formats -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Formats <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Formats <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <p style="margin:0 0 6px">The format is auto-detected on each parse. Separate multiple messages with one or more <strong>blank lines</strong>.</p>
             <ul style="padding-left:16px;margin:0">
@@ -26548,7 +26555,7 @@ function _meSave() {
           </div></div>
 
           <!-- 6. Parse Results -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Parse Results <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Parse Results <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Click a row → highlights that field's bytes in the Raw hex dump and selects it (accent background)</li>
@@ -26569,7 +26576,7 @@ function _meSave() {
           </div></div>
 
           <!-- 7. Track Mode -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Track Mode <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Track Mode <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ol style="padding-left:16px;margin:0">
               <li>Check <strong>Trk</strong> on any fields you want to compare</li>
@@ -26584,7 +26591,7 @@ function _meSave() {
           </div></div>
 
           <!-- 8. Export / Import -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Export / Import <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Export / Import <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <p style="margin:0 0 4px;font-weight:700">DDL Definitions:</p>
             <ul style="padding-left:16px;margin:0 0 8px">
@@ -26599,7 +26606,7 @@ function _meSave() {
           </div></div>
 
           <!-- 9. Layout -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Layout <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Layout <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Drag any <strong>splitter bar</strong> to resize panels horizontally or vertically</li>
@@ -26613,7 +26620,7 @@ function _meSave() {
           </div></div>
 
           <!-- 10. Token Maps -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Token Maps <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Token Maps <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <p style="margin:0 0 6px">Token maps link a 2-character token ID to the DDL name used to parse its data. Store them as DDL files inside the tree — the parser auto-detects them by their format.</p>
             <p style="margin:0 0 4px;font-weight:700">Supported formats:</p>
@@ -26633,7 +26640,7 @@ function _meSave() {
           <!-- AGPL §13: a version reached over a network must offer its users
                the source. The FSF's guidance is a source link in the interface —
                that is what the links below are, not decoration. -->
-          <div class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Licence &amp; Copyright <span class="h-sub-arrow">+</span></div>
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Licence &amp; Copyright <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <p style="margin:0 0 8px">DDL Parser is <strong>Copyright © 2026 Gatunox</strong>, released under the
               <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU Affero General Public License, version 3</a>.</p>

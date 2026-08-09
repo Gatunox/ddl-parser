@@ -471,20 +471,25 @@ Two findings to carry into the real change:
   `<html>` fixes it outright — one write then propagates. Confirmed by
   reproducing the original bug in the prototype first, then fixing it.
 
-### Blocked — needs a decision before any of this touches `source.html`
+### Decided 2026-08-09 — these are settled, do not reopen
 
-1. **Border width.** The chosen "full inspiration overhaul" converts 227 borders
-   from 2px to 1px hairlines, which contradicts the standing *always 2px, never
-   1px* rule. The prototype ships **2px as the default** with 1px behind the
-   `Borders` switch, deliberately not overriding a durable preference on the
-   strength of a preview caption. Flip it and pick the baseline.
-2. **Density.** `Comfortable` is the inspiration aesthetic; `Compact` is today's
-   density on the new token base. Judge it on the Parse Results table at ~4,388
-   Field Map rows on the production machine, not at prototype scale. Density is
-   now a token knob, so the architecture can ship first and density be tuned
-   later without touching component CSS.
+- **Border width: 1px hairlines** (`--bw:1px`). This deliberately supersedes the
+  standing *always 2px, never 1px* rule for the new design language. Confirmed
+  twice — the chosen option's preview stated "227 borders → 1px hairlines", then
+  a capture of the prototype toolbar with `1px` active: *"i just give you the
+  capture of what i want"*.
+- **Density: comfortable.** The inspiration aesthetic, not today's compact. The
+  density cost at ~4,388 Field Map rows on the production machine is accepted.
+  It remains a token knob (`[data-density]`) and can be retuned later without
+  touching component CSS.
+- **Default base: light.** Set via `data-theme` on `<html>`.
+- **Dark stays fully supported** — it is not a fallback. Light and dark are equal
+  data blocks sharing 100% of the component CSS; both verified rendering at the
+  chosen 1px + comfortable settings.
 
-**Migration shape once decided.** Define the three layers → replace the 106 hex
+### Remaining — the migration into `source.html` has not started
+
+Define the three layers → replace the 106 hex
 and 144 rgba literals with semantics → delete the 90 `body.light` rules → rewire
 `setTheme` / `_eggSetAccent` to `<html>` → add the accent picker (base + accent,
 with the luminance-based contrast guarantee the prototype already implements).

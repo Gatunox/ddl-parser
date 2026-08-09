@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark" data-density="comfortable" data-border="standard">
+<html lang="en" data-theme="light" data-density="comfortable" data-border="hairline">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -31,7 +31,10 @@
 
   /* shape + motion — the knobs the overhaul actually turns */
   --r-sm:6px; --r-md:10px; --r-lg:14px; --r-pill:999px;
-  --bw:2px;                       /* border width — see density switch */
+  /* 1px hairlines are the chosen baseline. This deliberately supersedes the
+     long-standing "always 2px, never 1px" rule — confirmed twice, so the rule
+     is retired for the new design language rather than quietly broken. */
+  --bw:1px;
   --shadow-sm:0 1px 2px rgba(0,0,0,.06);
   --shadow-md:0 4px 12px -2px rgba(0,0,0,.10), 0 2px 4px -2px rgba(0,0,0,.06);
   --shadow-lg:0 12px 32px -8px rgba(0,0,0,.16), 0 4px 8px -4px rgba(0,0,0,.08);
@@ -264,8 +267,8 @@ tbody tr:last-child td{border-bottom:none}
   <div class="ctl-group">
     <span class="ctl-label">Base</span>
     <div class="seg" id="segTheme">
-      <button data-t="dark" class="on">Dark</button>
-      <button data-t="light">Light</button>
+      <button data-t="dark">Dark</button>
+      <button data-t="light" class="on">Light</button>
     </div>
   </div>
   <div class="ctl-group">
@@ -283,8 +286,8 @@ tbody tr:last-child td{border-bottom:none}
   <div class="ctl-group">
     <span class="ctl-label">Borders</span>
     <div class="seg" id="segBorder">
-      <button data-b="standard" class="on">2px</button>
-      <button data-b="hairline">1px</button>
+      <button data-b="standard">2px</button>
+      <button data-b="hairline" class="on">1px</button>
     </div>
   </div>
 </div>

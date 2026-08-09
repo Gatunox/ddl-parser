@@ -1799,7 +1799,7 @@ body.light .cm-host .cm-gutters { border-right-color: rgba(0,0,0,0.08); }
 .me-flash.warn{background:var(--warning);color:var(--on-accent);}
 .me-flash-x{position:absolute;top:50%;right:10px;transform:translateY(-50%);font-size:13px;line-height:1;opacity:.6;cursor:pointer;}
 .me-flash-x:hover{opacity:1;}
-.me-header{display:flex;align-items:center;justify-content:space-between;padding:0 10px 0 14px;min-height:var(--app-header-h);border-bottom: var(--bw) solid var(--border);background:var(--surface-header);flex-shrink:0;}
+.me-header{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-2);padding:0 10px 0 14px;min-height:var(--app-header-h);border-bottom: var(--bw) solid var(--border);background:var(--surface-header);flex-shrink:0;}
 .me-header-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* Each section is a card, matching the Settings drawer: the editor body is
    the page and sections sit on it, rather than being divided by a rule. */
@@ -1865,8 +1865,7 @@ input.me-inp{width:100%;}
 .me-rf-fld.grow{flex:1;min-width:80px;}
 .me-rf-btns{display:flex;gap:4px;margin-top:2px;}
 .me-rf-btnrow{display:flex;justify-content:flex-end;gap:6px;}
-.me-footer{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:var(--sp-2) 14px;border-top: var(--bw) solid var(--border);background:var(--surface-header);flex-shrink:0;}
-.me-status{flex:1;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
+.me-status{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 /* Test is a card like every other section of the editor, not a bare bar
    welded to the bottom edge. */
 .me-test-bar{flex-shrink:0;background:var(--bg-panel);border: var(--bw) solid var(--border);
@@ -15162,7 +15161,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.15.11.0';
+const APP_VERSION  = '1.15.12.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -26764,7 +26763,10 @@ function _meSave() {
          pane only. -->
     <div class="me-header">
       <span class="me-header-title" id="me-header-title">Data Editor</span>
-      <button class="btn btn-sm btn-danger" id="me-del-btn" style="margin-right:10px" onclick="_meDeleteSelected()">Delete</button>
+      <span class="me-status" id="me-status"></span>
+      <button class="btn btn-sm btn-danger" id="me-del-btn" onclick="_meDeleteSelected()">Delete</button>
+      <button class="btn btn-sm" onclick="closeMsgEditor()">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
       <button class="btn btn-sm" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
     </div>
 
@@ -26801,11 +26803,6 @@ function _meSave() {
       <div class="me-right">
         <div class="me-tab-body" id="me-tab-body"></div>
         <div id="me-flash-container"></div>
-        <div class="me-footer">
-          <span class="me-status" id="me-status"></span>
-          <button class="btn" onclick="closeMsgEditor()">Cancel</button>
-          <button class="btn btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
-        </div>
       </div>
     </div>
 

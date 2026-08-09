@@ -4099,10 +4099,13 @@ function cssRule(sel) {
 }
 
 test('left of the arrow and the arrow itself are the REDEFINES accent-blue', () => {
-  const BLUE = 'rgba(var(--accent-rgb),.65)';
+  // Pinned to the token, not the literal it used to hold. The point of this
+  // test is that all five carry the SAME colour; --redef-fg is that colour, and
+  // it now differs per theme (light needs a stronger alpha to stay legible),
+  // which a hardcoded rgba could not express.
   for (const sel of ['.c-ovr-orig', '.c-ovr-arrow', '.c-ovr-as', '.c-redef-mark', '.ddl-doc-redef-note']) {
-    const rule = cssRule(sel).replace(/0\.65/g, '.65').replace(/,\s+/g, ',');
-    assert.ok(rule.includes(BLUE.replace(/,\s+/g, ',')), `${sel} must use ${BLUE}`);
+    assert.ok(/color:\s*var\(--redef-fg\)/.test(cssRule(sel)),
+      `${sel} must use var(--redef-fg), got: ${cssRule(sel).trim().slice(0, 70)}`);
   }
 });
 
@@ -8666,27 +8669,21 @@ test('data-theme is on <html> in the markup, not applied by script', () => {
     '<html> must carry a default data-theme attribute');
 });
 
-test('no body.light rule redefines a theme token', () => {
-  // THE bug this whole migration exists to kill. While `body.light` redefined
-  // --accent, it out-specified any custom accent written to <html>, because it
-  // matched a DESCENDANT of the element carrying the override. _eggSetAccent
-  // papered over it by writing every variable to both elements. Put a token
-  // back into a body.light block and the double-write becomes necessary again.
+test('there are no body.light rules at all', () => {
+  // Started at 90. Each was a hand-written light-mode value for one component,
+  // which is what made a third theme impractical: every new theme needed its
+  // own 90. All are gone — each became a token both themes supply — and the
+  // `light` class on <body> went with the last of them. A new one appearing
+  // means someone patched a component instead of adding a token, and the theme
+  // stops being data again.
   const src = fs.readFileSync('./source.html', 'utf8');
-  // Strip comments first: prose explaining the migration mentions body.light
-  // right before the light token block, and an un-stripped scan walks straight
-  // from the comment into that block and reports every token as an offender.
   const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
                  .replace(/\/\*[\s\S]*?\*\//g, '');
-  const offenders = [];
-  const re = /body\.light[^{]*\{([^}]*)\}/g;
-  let m;
-  while ((m = re.exec(css))) {
-    const decls = m[1].match(/--[a-z0-9-]+\s*:/gi);
-    if (decls) offenders.push(decls.join(' '));
-  }
-  eq(offenders.length, 0,
-    `body.light must not declare custom properties — found: ${offenders.join(' | ')}`);
+  const rules = [...css.matchAll(/body\.light[^{]*\{/g)].map(m => m[0].trim());
+  eq(rules.length, 0, `body.light rules found: ${rules.join(' | ')}`);
+  // and nothing sets the class either
+  assert.ok(!/classList\.(toggle|add)\(\s*['"]light['"]/.test(src),
+    'nothing should still be applying a `light` class');
 });
 
 test('every token used is defined in BOTH themes, or in neither', () => {

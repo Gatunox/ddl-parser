@@ -8669,6 +8669,31 @@ test('data-theme is on <html> in the markup, not applied by script', () => {
     '<html> must carry a default data-theme attribute');
 });
 
+test('picking a volume never discards unsaved editor content', () => {
+  // Reported: type a definition with nothing selected, get told to pick a
+  // volume, pick one — and the definition is gone. The prompt was impossible to
+  // satisfy. The container branch cleared unconditionally, and the DDL branch's
+  // unsaved-changes guard only ran when a file had been opened, so content
+  // typed from scratch was invisible to both.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const fn = /function selectScope\([^)]*\)\s*\{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(fn, 'selectScope not found');
+  const body = fn[1];
+  assert.ok(/if \(!S\.stagingActive && !_ddlEditorDirty\(\)\)/.test(body),
+    'the vol/sv branch must not clear the editor while it holds unsaved work');
+  assert.ok(!/S\.editorBaseline !== null\)\s*\{[\s\S]{0,200}isDifferentFile/.test(body),
+    'the unsaved-changes guard must not require a previously opened file');
+
+  // And the discard path must not re-enter. Setting the baseline to null used
+  // to bypass the guard on the second call; once the guard also covers
+  // typed-from-scratch content, null reads as "clean is empty", the editor
+  // still looks dirty, and the confirm reopens forever.
+  assert.ok(!/if \(ok\) \{ S\.editorBaseline = null; selectScope\(/.test(body),
+    'discarding must not null the baseline — it re-triggers the same confirm');
+  assert.ok(/S\.editorBaseline = document\.getElementById\('ddlEditor'\)\.value;/.test(body),
+    'discarding marks the buffer clean so the retry gets through');
+});
+
 test('there are no body.light rules at all', () => {
   // Started at 90. Each was a hand-written light-mode value for one component,
   // which is what made a third theme impractical: every new theme needed its

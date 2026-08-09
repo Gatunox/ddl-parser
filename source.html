@@ -13206,6 +13206,17 @@ function toggleTreeExp(key) {
   renderDDLTree();
 }
 
+// Unsaved editor content, whether or not a file was ever loaded. The baseline
+// is null when nothing has been opened — which is exactly the case where
+// someone typed a definition before choosing where to put it, so treating null
+// as "clean" is what silently threw that work away.
+function _ddlEditorDirty() {
+  const ed = document.getElementById('ddlEditor');
+  if (!ed) return false;
+  const base = S.editorBaseline === null ? '' : S.editorBaseline;
+  return ed.value !== base;
+}
+
 function selectScope(type, vol, sv, name, defName) {
   // When staging, DDL/DEF clicks only set destination vol/sv — never overwrite editor or editorBaseline
   if (S.stagingActive && (type === 'ddl' || type === 'def')) {
@@ -13219,15 +13230,22 @@ function selectScope(type, vol, sv, name, defName) {
     return;
   }
   // Guard: warn before navigating to a different file with unsaved editor changes
-  if (!S.stagingActive && (type === 'ddl' || type === 'def') && S.editorBaseline !== null) {
-    const cur = document.getElementById('ddlEditor').value;
+  if (!S.stagingActive && (type === 'ddl' || type === 'def')) {
     const curFile  = S.scope?.name;
     const destFile = name;
     const isDifferentFile = (S.scope?.type !== 'ddl' && S.scope?.type !== 'def')
                          || S.scope?.vol !== vol || S.scope?.sv !== sv || curFile !== destFile;
-    if (isDifferentFile && cur !== S.editorBaseline) {
+    if (isDifferentFile && _ddlEditorDirty()) {
       showConfirm('You have unsaved changes. Discard and continue?', ok => {
-        if (ok) { S.editorBaseline = null; selectScope(type, vol, sv, name, defName); }
+        if (!ok) return;
+        // Mark the buffer clean, do NOT null the baseline. Nulling used to work
+        // only because the old guard required a non-null baseline to run at all;
+        // now that it also covers typed-from-scratch content, null reads as
+        // "clean is empty" and the editor still looks dirty — so this re-entered
+        // and re-prompted forever. selectScope overwrites the baseline with the
+        // file it loads a moment later anyway.
+        S.editorBaseline = document.getElementById('ddlEditor').value;
+        selectScope(type, vol, sv, name, defName);
       });
       return;
     }
@@ -13268,8 +13286,12 @@ function selectScope(type, vol, sv, name, defName) {
     const label = type === 'vol' ? vol : `${vol} / ${sv}`;
     document.getElementById('ddlScopePath').textContent =
       `${label}  —  ${ddls.length} DDL${ddls.length !== 1 ? 's' : ''} in scope`;
-    // Clear the editor when navigating to a vol/sv with no staged content pending
-    if (!S.stagingActive) {
+    // Clearing here is a convenience — it drops the file you navigated away
+    // from. It must never drop UNSAVED work: picking a volume is how you answer
+    // "select a volume/subvolume first", so wiping the definition you just
+    // typed makes that prompt impossible to satisfy. Only the DDL/DEF path
+    // replaces dirty content, and it asks first.
+    if (!S.stagingActive && !_ddlEditorDirty()) {
       document.getElementById('ddlEditor').value = '';
       S.editorBaseline = null;
     }
@@ -15241,7 +15263,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.16.1.3';
+const APP_VERSION  = '1.16.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

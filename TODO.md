@@ -487,6 +487,32 @@ original "always 2px" rule had been protecting all along — see
 
 ---
 
+## 16. Loose ends from the theme work — *noted 2026-08-09*
+
+Three things spotted while fixing other bugs on `main` at v1.20.2.3. None were
+in scope at the time; none are urgent.
+
+- [ ] **`#expFilterInput` hardcodes `font-size:12px`** (`source.html` ~line 791).
+      The export modal's filter box does not follow Small / Medium / Large.
+      Every neighbouring control scales — `.me-fm-filter` right beside it uses
+      `calc(var(--sz-mono) - 1px)`. One-line change to `var(--sz-mono)`, but it
+      wants an eyeball at all three sizes: the box sits in a flex header and
+      growing the text may reflow the row.
+- [ ] **The Message Entity ruler may have the stale-metric bug** (`source.html`
+      ~line 26037). v1.20.2.1 fixed the Main panel's Line Width marker, which was
+      placed from CodeMirror's cached `defaultCharacterWidth` on the same tick as
+      the font change and so landed a whole step short. The Message Entity panel
+      detects its ruler column through its own path and was never checked.
+      Reproduce the same way: load a NETARD message, note the marker position,
+      switch font size, and compare against `pad + col * charW`.
+- [ ] **`.btn-sm` is a dead class** — 43 usages in markup, zero CSS rules
+      anywhere. Either it lost its rule in the theme migration and icon buttons
+      have been rendering full-size since, or it was always decorative. Decide
+      which: give it a rule, or strip it from the markup. Do not delete blind —
+      check `git log -S` first for what it used to do.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

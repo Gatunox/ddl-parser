@@ -593,7 +593,7 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 2px 22px 2px 5px; font-size: calc(var(--sz-mono) - 0.5px); background: var(--bg-deep); border: none; border-radius: 0; color: var(--text); outline: none; font-family: var(--mono); box-sizing: border-box; }
 input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) var(--accent); }
 .tree-search::placeholder { color: var(--text-dim); }
-.tree-search-clear { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: 9px; color: var(--text-dim); cursor: pointer; display: none; line-height: 1; padding: 2px; }
+.tree-search-clear { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: calc(var(--sz-mono) - 2px); color: var(--text-dim); cursor: pointer; display: none; line-height: 1; padding: 2px; }
 .tree-search-clear:hover { color: var(--text); }
 .tree-search-clear.visible { display: block; }
 .tree-match-hi { background: rgba(230,168,23,0.35); border-radius: var(--r-sm); }
@@ -678,7 +678,7 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .tree-node { padding: var(--row-py) 20px var(--row-py) 5px; margin-right: -20px; cursor: pointer; font-family: var(--font-mono); font-size: var(--sz-mono); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; line-height: calc(var(--sz-mono) + 4px); }
 .tree-node:hover  { background: rgba(var(--accent-rgb),0.08); }
 .tree-node.tree-sel { background: rgba(var(--accent-rgb),0.18); }
-.tree-caret { font-size: 11px; width: 10px; flex-shrink: 0; color: var(--text-dim); display: inline-block; text-align: center; line-height: 1; }
+.tree-caret { font-size: calc(var(--sz-mono) - 1px); width: 10px; flex-shrink: 0; color: var(--text-dim); display: inline-block; text-align: center; line-height: 1; }
 .tree-vol-lbl { color: var(--text); font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-sv-lbl  { color: var(--text);     padding-left: 0px;  flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree-sv-lbl::before  { content: '└\00a0'; color: var(--text-dim); font-weight: 400; }
@@ -707,9 +707,9 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 }
 .tree-pending .tree-ddl-lbl { color: #e6a817; font-style: italic; }
 .tree-def-lbl { color: var(--text-dim); padding-left: 30px; flex: 1; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.tree-staging-hdr { padding: 6px 8px 2px; font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; border-top: var(--bw) solid var(--border); margin-top: 4px; }
+.tree-staging-hdr { padding: 6px 8px 2px; font-size: calc(var(--sz-mono) - 2px); font-weight: 700; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; border-top: var(--bw) solid var(--border); margin-top: 4px; }
 .tree-missref-hdr { display: flex; align-items: center; gap: 2px; width: 100%; cursor: pointer;
-  padding: 6px 8px 4px 5px; font-size: 10px; font-weight: 700; color: var(--warn-text);
+  padding: 6px 8px 4px 5px; font-size: calc(var(--sz-mono) - 2px); font-weight: 700; color: var(--warn-text);
   letter-spacing: 0.05em; text-transform: uppercase; text-align: left;
   border: none; border-top: var(--bw) solid var(--border); margin-top: 4px;
   background: transparent; font-family: inherit; }
@@ -968,7 +968,7 @@ input[type="text"]:focus { border-color: var(--accent); }
   border-radius: var(--r-sm); box-sizing: border-box; }
 .accent-picker::-webkit-color-swatch-wrapper { padding: 2px; }
 .accent-picker::-webkit-color-swatch { border: none; border-radius: calc(var(--r-sm) - 2px); }
-.btn-ico { font-size: 0.85em; display: inline-flex; align-items: center; }
+.btn-ico { font-size: calc(var(--sz-mono) - 2px); display: inline-flex; align-items: center; line-height: 1; }
 /* Badge slot beside a panel title. Empty by default and collapsed by :empty,
    so a panel with no type badge keeps its title flush against the header. */
 .pt-badge { display: flex; align-items: center; flex-shrink: 0; margin-left: var(--sp-1); }
@@ -1220,7 +1220,7 @@ td.c-err  { color: var(--accent2); }
    item puts its ▶ right after the name for the same reason. */
 .tree-node.tree-ovr .tree-ddl-lbl::after,
 .tree-node.tree-ovr .tree-def-lbl::after { content: '▶'; margin-left: 4px;
-  color: #e6a817; font-size: 9px; opacity: 1; }
+  color: var(--warning); vertical-align: 0.107em; opacity: 1; }
 .c-row-err { color: var(--accent2); font-size: 10px; }
 .c-vlen   { color: var(--warning); font-weight: 700; }
 .trk-chk  { cursor: pointer; accent-color: var(--accent); color-scheme: var(--color-scheme); width: 12px; height: 12px; display: block; margin: auto; }
@@ -1840,8 +1840,8 @@ td.c-err  { color: var(--accent2); }
    the tree makes the same exception for .tree-ovr.tree-sel. */
 .me-item.me-item-forced.active{background:rgba(230,168,23,0.16);color:#e6a817;}
 .me-item.me-item-forced.active:hover{background:rgba(230,168,23,0.24);}
-.me-item.me-item-forced .me-item-name{color:#e6a817;font-weight:700;}
-.me-item.me-item-forced .me-item-name::after{content:'▶';margin-left:4px;font-size:9px;}
+.me-item.me-item-forced .me-item-name{color:var(--warning);font-weight:700;}
+.me-item.me-item-forced .me-item-name::after{content:'▶';margin-left:4px;vertical-align:0.107em;}
 .me-item.dragging{cursor:grabbing;opacity:.4;}
 .me-item.drop-before{box-shadow:0 -2px 0 0 var(--accent);}
 .me-item.drop-after{box-shadow:0 2px 0 0 var(--accent);}
@@ -15305,7 +15305,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.18.0.1';
+const APP_VERSION  = '1.18.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

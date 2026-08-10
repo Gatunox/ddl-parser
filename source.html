@@ -951,11 +951,18 @@ input[type="text"]:focus { border-color: var(--accent); }
    also tinted the background with the BLUE accent behind orange text, which
    belonged to neither. This class has one consumer, so fixing it here rather
    than overriding it per-button keeps the name honest. */
-/* Exactly the Report a Bug treatment: a plain button at rest, red only on
-   hover, with a 15% tint rather than a solid fill. A destructive control that
-   is already shouting before you go near it trains people to ignore it — and
-   the header is where it lives, next to Close. */
-.btn-danger:hover { color: var(--danger); background: var(--surface-hover); border-color: var(--border-strong); }
+/* Red at rest, not only on hover. These two carried the opposite rule — plain
+   until hovered, on the reasoning that a control already shouting before you go
+   near it trains people to ignore it. Overruled deliberately on 2026-08-10: the
+   Erase All Data button had been given a resting red border inline, so the app
+   was making both arguments at once and a destructive button's appearance
+   depended on which one you happened to be looking at. One treatment, applied
+   from the class rather than per-button.
+   Hover keeps the red rather than swapping the border to grey — the old hover
+   assumed a grey resting state, and against a red one it read as the button
+   going INERT when you reached for it. */
+.btn-danger, .btn-feedback-bug { border-color: var(--danger); color: var(--danger); }
+.btn-danger:hover { color: var(--danger); background: var(--surface-hover); border-color: var(--danger); }
 .btn-danger:focus-visible { outline: none; border-color: var(--accent); }
 .btn-active { border-color: var(--warning); color: var(--warning); }
 .btn-active:hover { background: var(--warning); color: #000; border-color: var(--warning); }
@@ -1590,7 +1597,9 @@ td.c-err  { color: var(--accent2); }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-spec-type { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; width:36px; text-align:right; }
 .dr-spec-vol { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; }
-.btn-feedback-bug:hover { color: var(--danger) !important; background: var(--surface-hover) !important; border-color: var(--border-strong) !important; }
+/* Border stays --danger on hover; see the .btn-danger block. The !important is
+   inherited from when this fought .settings-btn-20, not a new claim. */
+.btn-feedback-bug:hover { color: var(--danger) !important; background: var(--surface-hover) !important; border-color: var(--danger) !important; }
 .about-sub { font-size: calc(var(--sz-mono) - 0.5px); color: var(--text-dim); line-height: 1.7; margin-top: 4px; }
 .about-tag { display: inline-block; padding: 1px 7px; border-radius: var(--r-sm); font-size: calc(var(--sz-mono) - 1px); font-weight: 700; margin: 3px 2px 0; }
 
@@ -15247,7 +15256,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.0.0';
+const APP_VERSION  = '1.21.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

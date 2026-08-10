@@ -94,11 +94,10 @@
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
   --row-py: 5px;    /* vertical padding on every list row */
   --app-header-h: 44px;
-  --ctl-h: 24px;      /* every control in a panel header is this tall */
+  --ctl-h: calc(var(--sz-mono) + 12px);   /* tracks the font, like everything
+                                              else it sits beside */
   --panel-collapsed-w: calc(var(--ctl-h) + var(--sp-2) * 2);   /* toggle + breathing room */
   --row-h: 26px;      /* data-table row height — the density you feel most */
-  --badge-h: 16px;    /* EVEN, like --row-h: (row - badge) must stay even or
-                         centring lands on .5 and a 1px edge splits in two */
   --gap: 10px;      /* space between panel cards; also the resizer width   */
 }
 
@@ -274,6 +273,12 @@
    badges no longer do (their heights are even tokens now), so on a display
    where the split is not visible — any HiDPI screen — the hairline is the
    better look and this turns it on. */
+/* Three attempts were made to render 1px crisply: snapping panel splits to
+   whole pixels, adding the border back to container min-heights, and giving
+   rows and badges even fixed heights. Each fixed one layer and broke another
+   — the last one stopped badges growing with the font, because a height that
+   cannot be fractional also cannot track type. The artifact is a property of
+   the display, so it is a preference, not a bug to engineer away. */
 [data-border="hairline"] { --bw-ctl: 1px; }
 
 [data-density="compact"] {
@@ -281,10 +286,9 @@
   --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 10px;
   --row-py: 2px;
   --app-header-h: 30px;
-  --ctl-h: 19px;
+  --ctl-h: calc(var(--sz-mono) + 7px);
   --panel-collapsed-w: calc(var(--ctl-h) + var(--sp-2) * 2);
   --row-h: 18px;
-  --badge-h: 12px;
   --gap: 2px;
   --panel-header-h: 27px;
   --shadow-card: none;
@@ -330,7 +334,7 @@ header {
      spent it on decoration. */
   border-bottom: var(--bw) solid var(--border);
   padding: 0 var(--sp-4);
-  min-height: calc(var(--app-header-h) + var(--bw));
+  min-height: var(--app-header-h);
   display: flex;
   align-items: center;
   gap: var(--sp-3);
@@ -476,7 +480,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
   gap: 0;
   flex-wrap: nowrap;
   min-width: 0;
-  min-height: calc(var(--panel-header-h, 27px) + var(--bw));
+  min-height: var(--panel-header-h, 27px);
 }
 .panel-title {
   font-size: var(--sz-mono);
@@ -671,7 +675,7 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .ddl-search-nav-x { font-size: calc(var(--sz-mono) - 3px); }
 .ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 .ddl-search-controls.hidden { display: none; }
-.tree-node { height: var(--row-h); padding: 0 20px 0 5px; margin-right: -20px; cursor: pointer; font-family: var(--font-mono); font-size: calc(var(--sz-mono) - 0.5px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; }
+.tree-node { padding: var(--row-py) 20px var(--row-py) 5px; margin-right: -20px; cursor: pointer; font-family: var(--font-mono); font-size: calc(var(--sz-mono) - 0.5px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; }
 .tree-node:hover  { background: rgba(var(--accent-rgb),0.08); }
 .tree-node.tree-sel { background: rgba(var(--accent-rgb),0.18); }
 .tree-caret { font-size: 11px; width: 10px; flex-shrink: 0; color: var(--text-dim); display: inline-block; text-align: center; line-height: 1; }
@@ -970,17 +974,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 .pt-badge { display: flex; align-items: center; flex-shrink: 0; margin-left: var(--sp-1); }
 .pt-badge:empty { display: none; }
 
-/* Heights come from a token, not from a line box. A font-derived height is
-   fractional and its parity against the row changes as the font size steps,
-   so no single arrangement stays crisp — which is what defeated the first two
-   attempts at 1px. */
-.badge, .btype, .tree-type-badge, .tree-tkn-id, .tree-tkn-map, .tree-excl-badge,
-.tree-cnt, .tree-hdr-count, .me-gap-badge, .tree-unres-badge, .tree-warn-badge,
-.tree-error-badge {
-  height: var(--badge-h); display: inline-flex; align-items: center;
-  justify-content: center; line-height: 1; box-sizing: border-box;
-}
-
 /* ===== BADGES ===== */
 #fmtBadge, #cntBadge { display: flex; align-items: center; gap: 4px; }
 .badge {
@@ -1087,7 +1080,7 @@ tr.row-filter-hide  { display: none; }
   display:none; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
   background:rgba(255,255,255,0.05); color:var(--text-dim); flex-wrap:wrap;
-  font-family:var(--font-mono); min-height:calc(var(--panel-header-h) + var(--bw));
+  font-family:var(--font-mono); min-height:calc(var(--sz-mono) + 14px);
 }
 .panel.collapsed #rawCfgBar { display:none !important; }
 #rawCfgBar:hover { background: var(--tint-bar); cursor: default; }
@@ -15290,7 +15283,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.16.5.0';
+const APP_VERSION  = '1.16.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15491,10 +15484,7 @@ function applyPrefs(updateUI = true) {
   document.documentElement.style.setProperty('--sz-mono', P.monoSize + 'px');
   // Base comes from the active density block so the two cannot drift apart.
   const _hBase = P.density === 'compact' ? 27 : 34;
-  // Steps by TWO, so the header's parity against --ctl-h is the same at every
-  // font size. A one-pixel step flipped it on alternate sizes, which is why
-  // controls looked crisp at 12px and split at 11px.
-  const _headerH = _hBase + 2 * Math.floor((P.monoSize - 12) / 6);
+  const _headerH = _hBase + Math.floor((P.monoSize - 12) / 3);
   document.documentElement.style.setProperty('--panel-header-h', _headerH + 'px');
   if (updateUI) {
     const lbl = document.getElementById('szLabel');

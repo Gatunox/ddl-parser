@@ -275,14 +275,6 @@
    badges no longer do (their heights are even tokens now), so on a display
    where the split is not visible — any HiDPI screen — the hairline is the
    better look and this turns it on. */
-/* Three attempts were made to render 1px crisply: snapping panel splits to
-   whole pixels, adding the border back to container min-heights, and giving
-   rows and badges even fixed heights. Each fixed one layer and broke another
-   — the last one stopped badges growing with the font, because a height that
-   cannot be fractional also cannot track type. The artifact is a property of
-   the display, so it is a preference, not a bug to engineer away. */
-[data-border="hairline"] { --bw-ctl: 1px; }
-
 [data-density="compact"] {
   --r-sm: 2px; --r-md: 3px; --r-lg: 4px;
   --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 10px;
@@ -15169,7 +15161,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.19.2.1';
+const APP_VERSION  = '1.20.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15220,7 +15212,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', density: 'comfortable', border: 'standard', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
+  theme: 'dark', density: 'comfortable', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences
@@ -15366,7 +15358,6 @@ function applyPrefs(updateUI = true) {
   // component patch is gone, so the class it drove went with it.
   document.documentElement.setAttribute('data-theme', P.theme === 'light' ? 'light' : 'dark');
   document.documentElement.setAttribute('data-density', P.density === 'compact' ? 'compact' : 'comfortable');
-  document.documentElement.setAttribute('data-border', P.border === 'hairline' ? 'hairline' : 'standard');
   document.documentElement.style.setProperty('--sz-mono', P.monoSize + 'px');
   // Base comes from the active density block so the two cannot drift apart.
   const _hBase = P.density === 'compact' ? 27 : 34;
@@ -15416,20 +15407,6 @@ function _syncDensityUI() {
   const btnCp = document.getElementById('densityCompact');
   if (btnCo) btnCo.classList.toggle('s-active', P.density !== 'compact');
   if (btnCp) btnCp.classList.toggle('s-active', P.density === 'compact');
-}
-
-function _syncBorderUI() {
-  const b2 = document.getElementById('border_standard');
-  const b1 = document.getElementById('border_hairline');
-  if (b2) b2.classList.toggle('s-active', P.border !== 'hairline');
-  if (b1) b1.classList.toggle('s-active', P.border === 'hairline');
-}
-
-function setBorderWidth(val) {
-  P.border = val === 'hairline' ? 'hairline' : 'standard';
-  savePrefs();
-  applyPrefs();
-  _syncBorderUI();
 }
 
 function setDensity(val) {
@@ -15756,7 +15733,6 @@ function openSettings() {
   // Sync control states to current prefs
   _syncFontUI();
   _syncDensityUI();
-  _syncBorderUI();
   _syncAccentPickerUI();
   _lwUpdateDisplay();
   ['dark','light'].forEach(t => {
@@ -26380,14 +26356,6 @@ function _meSave() {
           <div class="settings-pill">
             <button class="btn s-active" id="densityComfort" onclick="setDensity('comfortable')" title="Roomier spacing and larger radii">Comfort</button>
             <button class="btn"          id="densityCompact" onclick="setDensity('compact')"     title="Tighter rows — more data per screen">Compact</button>
-          </div>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-lbl">Borders</span>
-          <div class="settings-pill">
-            <button class="btn s-active" id="border_standard" onclick="setBorderWidth('standard')" title="2px — crisp on a standard-density display">2px</button>
-            <button class="btn"          id="border_hairline" onclick="setBorderWidth('hairline')" title="1px hairlines — best on a HiDPI display">1px</button>
           </div>
         </div>
 

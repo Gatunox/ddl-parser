@@ -78,7 +78,12 @@
      button fractional, and corrupted saved split ratios on resize). Two device
      pixels absorb the half-pixel without either edge going translucent, which
      is why the project's long-standing 2px rule existed. Panels, cards and
-     rules stay on --bw: they are container-sized and land clean. */
+     rules stay on --bw: they are container-sized and land clean.
+
+     Badges were tried at 1px and reverted: in THIS layout 21 of 24 badge tops
+     land on fractional pixels (the prototype's land on whole ones), so the
+     same border renders differently in the two. Everything with a visible
+     border gets 2px — controls and indicators alike. */
   --bw-ctl: 2px;
   --r-sm: 6px;      /* controls: buttons, inputs, selects, small chips     */
   --r-md: 10px;     /* dialogs, menus, tiles                              */
@@ -92,6 +97,8 @@
   --ctl-h: 24px;      /* every control in a panel header is this tall */
   --panel-collapsed-w: calc(var(--ctl-h) + var(--sp-2) * 2);   /* toggle + breathing room */
   --row-h: 26px;      /* data-table row height — the density you feel most */
+  --badge-h: 16px;    /* EVEN, like --row-h: (row - badge) must stay even or
+                         centring lands on .5 and a 1px edge splits in two */
   --gap: 10px;      /* space between panel cards; also the resizer width   */
 }
 
@@ -261,6 +268,14 @@
    equal specificity and source order breaks the tie. Placed before them,
    --shadow-card:none below silently lost to the theme's value and compact
    kept its drop shadows. */
+/* Border width is the user's call, as in the prototype. --bw-ctl is 2px by
+   default because most controls still centre inside font-derived containers
+   and land on half pixels, where a 1px edge splits into two faint lines. The
+   badges no longer do (their heights are even tokens now), so on a display
+   where the split is not visible — any HiDPI screen — the hairline is the
+   better look and this turns it on. */
+[data-border="hairline"] { --bw-ctl: 1px; }
+
 [data-density="compact"] {
   --r-sm: 2px; --r-md: 3px; --r-lg: 4px;
   --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 10px;
@@ -269,6 +284,7 @@
   --ctl-h: 19px;
   --panel-collapsed-w: calc(var(--ctl-h) + var(--sp-2) * 2);
   --row-h: 18px;
+  --badge-h: 12px;
   --gap: 2px;
   --panel-header-h: 27px;
   --shadow-card: none;
@@ -314,7 +330,7 @@ header {
      spent it on decoration. */
   border-bottom: var(--bw) solid var(--border);
   padding: 0 var(--sp-4);
-  min-height: var(--app-header-h);
+  min-height: calc(var(--app-header-h) + var(--bw));
   display: flex;
   align-items: center;
   gap: var(--sp-3);
@@ -460,7 +476,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
   gap: 0;
   flex-wrap: nowrap;
   min-width: 0;
-  min-height: var(--panel-header-h, 27px);
+  min-height: calc(var(--panel-header-h, 27px) + var(--bw));
 }
 .panel-title {
   font-size: var(--sz-mono);
@@ -568,7 +584,7 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 .tree-hdr-count { font-size: var(--sz-badge); font-weight: 700; padding: 2px 10px; flex-shrink: 0;
   min-width: 38px; text-align: center;   /* so "9" is still a pill, not a circle */
   border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--h-gray-fg);
-  border: var(--bw) solid var(--h-gray-bd); }
+  border: var(--bw-ctl) solid var(--h-gray-bd); }
 .tree-search-wrap { width: 100%; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--bg-deep); box-sizing: border-box; padding: 0; min-height: var(--panel-header-h, 27px); }
 input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 2px 22px 2px 5px; font-size: calc(var(--sz-mono) - 0.5px); background: var(--bg-deep); border: none; border-radius: 0; color: var(--text); outline: none; font-family: var(--mono); box-sizing: border-box; }
 input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) var(--accent); }
@@ -655,7 +671,7 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .ddl-search-nav-x { font-size: calc(var(--sz-mono) - 3px); }
 .ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 .ddl-search-controls.hidden { display: none; }
-.tree-node { padding: var(--row-py) 20px var(--row-py) 5px; margin-right: -20px; cursor: pointer; font-family: var(--font-mono); font-size: calc(var(--sz-mono) - 0.5px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; }
+.tree-node { height: var(--row-h); padding: 0 20px 0 5px; margin-right: -20px; cursor: pointer; font-family: var(--font-mono); font-size: calc(var(--sz-mono) - 0.5px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; }
 .tree-node:hover  { background: rgba(var(--accent-rgb),0.08); }
 .tree-node.tree-sel { background: rgba(var(--accent-rgb),0.18); }
 .tree-caret { font-size: 11px; width: 10px; flex-shrink: 0; color: var(--text-dim); display: inline-block; text-align: center; line-height: 1; }
@@ -954,6 +970,17 @@ input[type="text"]:focus { border-color: var(--accent); }
 .pt-badge { display: flex; align-items: center; flex-shrink: 0; margin-left: var(--sp-1); }
 .pt-badge:empty { display: none; }
 
+/* Heights come from a token, not from a line box. A font-derived height is
+   fractional and its parity against the row changes as the font size steps,
+   so no single arrangement stays crisp — which is what defeated the first two
+   attempts at 1px. */
+.badge, .btype, .tree-type-badge, .tree-tkn-id, .tree-tkn-map, .tree-excl-badge,
+.tree-cnt, .tree-hdr-count, .me-gap-badge, .tree-unres-badge, .tree-warn-badge,
+.tree-error-badge {
+  height: var(--badge-h); display: inline-flex; align-items: center;
+  justify-content: center; line-height: 1; box-sizing: border-box;
+}
+
 /* ===== BADGES ===== */
 #fmtBadge, #cntBadge { display: flex; align-items: center; gap: 4px; }
 .badge {
@@ -969,34 +996,34 @@ input[type="text"]:focus { border-color: var(--accent); }
   letter-spacing: 0.05em;
   flex-shrink: 0;
 }
-.badge-hex { background: var(--h-purple-bg); color: var(--h-purple-fg); border: var(--bw) solid var(--h-purple-bd); }
-.badge-ebcdic { background: var(--h-amber-bg); color: var(--h-amber-fg); border: var(--bw) solid var(--h-amber-bd); }
-.badge-oct { background: var(--h-green-bg); color: var(--h-green-fg); border: var(--bw) solid var(--h-green-bd); }
-.badge-ascii { background: var(--h-cyan-bg); color: var(--h-cyan-fg); border: var(--bw) solid var(--h-cyan-bd); }
-.badge-dump { background: var(--h-rose-bg); color: var(--h-rose-fg); border: var(--bw) solid var(--h-rose-bd); }
-.badge-count { background: var(--h-blue-bg); color: var(--h-blue-fg); border: var(--bw) solid var(--h-blue-bd); }
-.badge-netard { background: var(--h-sky-bg); color: var(--h-sky-fg); border: var(--bw) solid var(--h-sky-bd); }
-.badge-netard-hex { background: var(--h-purple-bg); color: var(--h-purple-fg); border: var(--bw) solid var(--h-purple-bd); }
-.badge-netard-dump  { background: var(--h-sky-bg); color: var(--h-rose-fg); border: var(--bw) solid var(--h-sky-bd); }
-.badge-netard-oct { background: var(--h-green-bg); color: var(--h-green-fg); border: var(--bw) solid var(--h-green-bd); }
-.badge-netard-ebcdic { background: var(--h-gray-bg); color: var(--h-gray-fg); border: var(--bw) solid var(--h-gray-bd); }
-.badge-netard-ascii { background: var(--h-cyan-bg); color: var(--h-cyan-fg); border: var(--bw) solid var(--h-cyan-bd); }
-.badge-fup-hex { background: var(--h-teal-bg); color: var(--h-teal-fg); border: var(--bw) solid var(--h-teal-bd); }
-.badge-fup-ascii { background: var(--h-violet-bg); color: var(--h-violet-fg); border: var(--bw) solid var(--h-violet-bd); }
-.badge-locked { background: var(--h-locked-bg); color: var(--h-locked-fg); border: var(--bw) solid var(--h-locked-bd); }
+.badge-hex { background: var(--h-purple-bg); color: var(--h-purple-fg); border: var(--bw-ctl) solid var(--h-purple-bd); }
+.badge-ebcdic { background: var(--h-amber-bg); color: var(--h-amber-fg); border: var(--bw-ctl) solid var(--h-amber-bd); }
+.badge-oct { background: var(--h-green-bg); color: var(--h-green-fg); border: var(--bw-ctl) solid var(--h-green-bd); }
+.badge-ascii { background: var(--h-cyan-bg); color: var(--h-cyan-fg); border: var(--bw-ctl) solid var(--h-cyan-bd); }
+.badge-dump { background: var(--h-rose-bg); color: var(--h-rose-fg); border: var(--bw-ctl) solid var(--h-rose-bd); }
+.badge-count { background: var(--h-blue-bg); color: var(--h-blue-fg); border: var(--bw-ctl) solid var(--h-blue-bd); }
+.badge-netard { background: var(--h-sky-bg); color: var(--h-sky-fg); border: var(--bw-ctl) solid var(--h-sky-bd); }
+.badge-netard-hex { background: var(--h-purple-bg); color: var(--h-purple-fg); border: var(--bw-ctl) solid var(--h-purple-bd); }
+.badge-netard-dump  { background: var(--h-sky-bg); color: var(--h-rose-fg); border: var(--bw-ctl) solid var(--h-sky-bd); }
+.badge-netard-oct { background: var(--h-green-bg); color: var(--h-green-fg); border: var(--bw-ctl) solid var(--h-green-bd); }
+.badge-netard-ebcdic { background: var(--h-gray-bg); color: var(--h-gray-fg); border: var(--bw-ctl) solid var(--h-gray-bd); }
+.badge-netard-ascii { background: var(--h-cyan-bg); color: var(--h-cyan-fg); border: var(--bw-ctl) solid var(--h-cyan-bd); }
+.badge-fup-hex { background: var(--h-teal-bg); color: var(--h-teal-fg); border: var(--bw-ctl) solid var(--h-teal-bd); }
+.badge-fup-ascii { background: var(--h-violet-bg); color: var(--h-violet-fg); border: var(--bw-ctl) solid var(--h-violet-bd); }
+.badge-locked { background: var(--h-locked-bg); color: var(--h-locked-fg); border: var(--bw-ctl) solid var(--h-locked-bd); }
 /* ---- token map tree badges ---- */
 .tree-dirty .tree-ddl-lbl { color: var(--warning) !important; }
 .tree-dirty .tree-def-lbl { color: var(--warning) !important; }
-.tree-tkn-map  { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius: var(--r-pill); margin-left:5px; background:rgba(20,184,166,0.18); color:#2dd4bf; border: var(--bw) solid #2dd4bf; letter-spacing:0.05em; flex-shrink:0; }
-.tree-excl-badge { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius: var(--r-pill); margin-left:5px; background:rgba(156,163,175,0.10); color:#6b7280; border: var(--bw) solid #6b7280; letter-spacing:0.05em; flex-shrink:0; }
+.tree-tkn-map  { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius: var(--r-pill); margin-left:5px; background:rgba(20,184,166,0.18); color:#2dd4bf; border: var(--bw-ctl) solid #2dd4bf; letter-spacing:0.05em; flex-shrink:0; }
+.tree-excl-badge { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius: var(--r-pill); margin-left:5px; background:rgba(156,163,175,0.10); color:#6b7280; border: var(--bw-ctl) solid #6b7280; letter-spacing:0.05em; flex-shrink:0; }
 .tree-excl-node .tree-vol-lbl, .tree-excl-node .tree-sv-lbl, .tree-excl-node .tree-ddl-lbl, .tree-excl-node .tree-def-lbl { opacity:0.4; }
-.tree-tkn-id   { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius: var(--r-pill); margin-left:5px; background:rgba(148,130,255,0.18); color:#9482ff; border: var(--bw) solid #9482ff; letter-spacing:0.05em; flex-shrink:0; }
+.tree-tkn-id   { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius: var(--r-pill); margin-left:5px; background:rgba(148,130,255,0.18); color:#9482ff; border: var(--bw-ctl) solid #9482ff; letter-spacing:0.05em; flex-shrink:0; }
 .tree-type-badge { display:inline-block; font-size:var(--sz-badge); font-weight:700; padding:0 4px; border-radius: var(--r-pill); margin-left:5px; letter-spacing:0.05em; flex-shrink:0; }
-.tree-type-badge.tbtype-iso  { background:rgba(210,153,34,0.18);  color:var(--warning); border: var(--bw) solid var(--warning); }
-.tree-type-badge.tbtype-stm  { background:rgba(var(--accent-rgb),0.18);  color:var(--accent);  border: var(--bw) solid var(--accent);  }
-.tree-type-badge.tbtype-pstm { background:rgba(63,185,80,0.18);   color:var(--success); border: var(--bw) solid var(--success); }
-.tree-type-badge.tbtype-ndc  { background:rgba(247,129,102,0.18); color:var(--accent2); border: var(--bw) solid var(--accent2); }
-.tree-type-badge.tbtype-b24  { background:rgba(148,130,255,0.18); color:#9482ff;        border: var(--bw) solid #9482ff; }
+.tree-type-badge.tbtype-iso  { background:rgba(210,153,34,0.18);  color:var(--warning); border: var(--bw-ctl) solid var(--warning); }
+.tree-type-badge.tbtype-stm  { background:rgba(var(--accent-rgb),0.18);  color:var(--accent);  border: var(--bw-ctl) solid var(--accent);  }
+.tree-type-badge.tbtype-pstm { background:rgba(63,185,80,0.18);   color:var(--success); border: var(--bw-ctl) solid var(--success); }
+.tree-type-badge.tbtype-ndc  { background:rgba(247,129,102,0.18); color:var(--accent2); border: var(--bw-ctl) solid var(--accent2); }
+.tree-type-badge.tbtype-b24  { background:rgba(148,130,255,0.18); color:#9482ff;        border: var(--bw-ctl) solid #9482ff; }
 /* ---- per-message type badges (shown in rec-meta bar) ---- */
 /* Height is set by line-height, not by padding + whatever line-height:normal
    happens to compute to — that was making a 19px pill sit proud of a table
@@ -1004,13 +1031,13 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btype { font-size: calc(var(--sz-mono) - 1px); font-weight: 700; padding: 0 8px;
   line-height: calc(var(--sz-mono) + 2px); border-radius: var(--r-pill);
   letter-spacing: 0.04em; display: inline-block; vertical-align: middle; }
-.btype-stm     { background:rgba(0,200,212,0.18);   color:#00c8d4; border: var(--bw) solid #00c8d4; }
-.btype-pstm    { background:rgba(92,214,92,0.18);   color:#5cd65c; border: var(--bw) solid #5cd65c; }
-.btype-ndc     { background:rgba(255,107,53,0.22);  color:#ff6b35; border: var(--bw) solid #ff6b35; }
-.btype-iso     { background:rgba(245,197,66,0.20);  color:#f5c542; border: var(--bw) solid #f5c542; }
-.btype-b24     { background:rgba(164,123,255,0.20); color:#a47bff; border: var(--bw) solid #a47bff; }
-.btype-unknown { background:rgba(139,148,158,0.15); color:#8b949e; border: var(--bw) solid #8b949e; }
-.btype-user    { background:rgba(80,200,120,0.15);  color:#50c878; border: var(--bw) solid #50c878; }
+.btype-stm     { background:rgba(0,200,212,0.18);   color:#00c8d4; border: var(--bw-ctl) solid #00c8d4; }
+.btype-pstm    { background:rgba(92,214,92,0.18);   color:#5cd65c; border: var(--bw-ctl) solid #5cd65c; }
+.btype-ndc     { background:rgba(255,107,53,0.22);  color:#ff6b35; border: var(--bw-ctl) solid #ff6b35; }
+.btype-iso     { background:rgba(245,197,66,0.20);  color:#f5c542; border: var(--bw-ctl) solid #f5c542; }
+.btype-b24     { background:rgba(164,123,255,0.20); color:#a47bff; border: var(--bw-ctl) solid #a47bff; }
+.btype-unknown { background:rgba(139,148,158,0.15); color:#8b949e; border: var(--bw-ctl) solid #8b949e; }
+.btype-user    { background:rgba(80,200,120,0.15);  color:#50c878; border: var(--bw-ctl) solid #50c878; }
 
 /* ---- NETARD record metadata bar (top of parse results) ---- */
 .rec-meta {
@@ -1060,7 +1087,7 @@ tr.row-filter-hide  { display: none; }
   display:none; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
   background:rgba(255,255,255,0.05); color:var(--text-dim); flex-wrap:wrap;
-  font-family:var(--font-mono); min-height:calc(var(--sz-mono) + 14px);
+  font-family:var(--font-mono); min-height:calc(var(--panel-header-h) + var(--bw));
 }
 .panel.collapsed #rawCfgBar { display:none !important; }
 #rawCfgBar:hover { background: var(--tint-bar); cursor: default; }
@@ -1130,7 +1157,7 @@ tbody tr.row-unreliable td { background: rgba(var(--accent-rgb),0.07); }
 .c-redef-mark { font-size: 10px; color: var(--redef-fg); }
 .c-redef-tgt  { color: var(--text-dim); font-weight: 600; }
 .c-de-badge { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--accent);
-              background: rgba(var(--accent-rgb),.12); border: var(--bw) solid var(--accent);
+              background: rgba(var(--accent-rgb),.12); border: var(--bw-ctl) solid var(--accent);
               border-radius: var(--r-sm); padding: 1px 5px; vertical-align: middle; letter-spacing: .3px; }
 /* Override annotation in the Type / Description column: "<declared> ↩ <override> as <DISPLAY>".
    The declared type it points back FROM, the ↩ arrow and the display read in the
@@ -1546,10 +1573,10 @@ td.c-err  { color: var(--accent2); }
 .dr-spec-item { display:flex; align-items:center; gap:5px; padding:var(--row-py) 8px; border-bottom: var(--bw) solid var(--border); font-size:var(--sz-mono); color:var(--text); }
 .dr-spec-item:last-child { border-bottom:none; }
 .dr-spec-group { padding:5px 8px 2px; font-size:calc(var(--sz-mono) - 2px); font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-dim); border-bottom: var(--bw) solid var(--border); }
-.dr-spec-dot { width:10px; height:10px; border-radius:var(--r-sm); flex-shrink:0; border: var(--bw) solid rgba(255,255,255,.2); }
+.dr-spec-dot { width:10px; height:10px; border-radius:var(--r-sm); flex-shrink:0; border: var(--bw-ctl) solid rgba(255,255,255,.2); }
 /* Missing-configuration badges — surface gaps in the entity lists rather than
    only at parse time (no recognizer / no parse spec / no DDL binding). */
-.me-gap-badge { font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill); border: var(--bw) solid var(--h-amber-bd);
+.me-gap-badge { font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--h-amber-bd);
   background: rgba(230,168,23,0.18); color: #e6a817; flex-shrink: 0; margin-left: 2px;
   font-weight: 700; white-space: nowrap; cursor: inherit; }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1607,7 +1634,7 @@ td.c-err  { color: var(--accent2); }
 .ar-no-msg { color:var(--text-very-dim,var(--text-dim)); font-style:italic; }
 .ac-idx   { min-width:calc(var(--sz-mono) * 4); text-align:right; padding-right:6px; color:var(--text-dim); flex-shrink:0; }
 .ac-badge { width:calc(var(--sz-mono) * 3.8); flex-shrink:0; padding-right:4px; display:flex; align-items:center; }
-.audit-record-row .btype { font-size:calc(var(--sz-mono) - 2px); padding:2px 3px 0; border-width: var(--bw); line-height:1; display:inline-block; vertical-align:middle; }
+.audit-record-row .btype { font-size:calc(var(--sz-mono) - 2px); padding:2px 3px 0; border-width: var(--bw-ctl); line-height:1; display:inline-block; vertical-align:middle; }
 .ac-len   { min-width:calc(var(--sz-mono) * 3.8); text-align:right; padding-right:8px; color:var(--success); flex-shrink:0; }
 .ac-ts    { width:calc(var(--sz-mono) * 14); color:var(--text); padding-right:8px; flex-shrink:0; overflow:hidden; }
 .ac-onode { min-width:calc(var(--sz-mono) * 6); color:var(--text-dim); padding-right:4px; flex-shrink:0; }
@@ -1805,7 +1832,7 @@ td.c-err  { color: var(--accent2); }
 .me-item.drop-after{box-shadow:0 2px 0 0 var(--accent);}
 .me-item:hover{background:var(--surface-hover);}
 .me-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
-.me-item-swatch{width:10px;height:10px;border-radius:var(--r-sm);flex-shrink:0;border: var(--bw) solid rgba(255,255,255,.2);}
+.me-item-swatch{width:10px;height:10px;border-radius:var(--r-sm);flex-shrink:0;border: var(--bw-ctl) solid rgba(255,255,255,.2);}
 .me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .me-empty{pointer-events:none;padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-align:center;}
 .me-right{display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;position:relative;}
@@ -1847,7 +1874,7 @@ input.me-inp{width:100%;}
 .me-sel{box-sizing:border-box;background:var(--bg-deep);border: var(--bw) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 4px;outline:none;cursor:pointer;}
 .me-sel:focus{border-color:var(--accent);}
 .me-color-row{display:flex;gap:6px;align-items:center;}
-.me-swatch{width:22px;height:22px;border-radius:var(--r-sm);border: var(--bw) solid var(--border);cursor:pointer;flex-shrink:0;padding:0;-webkit-appearance:none;appearance:none;}
+.me-swatch{width:22px;height:22px;border-radius:var(--r-sm);border: var(--bw-ctl) solid var(--border);cursor:pointer;flex-shrink:0;padding:0;-webkit-appearance:none;appearance:none;}
 .me-swatch::-webkit-color-swatch-wrapper{padding:0;}
 .me-swatch::-webkit-color-swatch{border:none;border-radius:var(--r-sm);}
 .me-swatch::-moz-color-swatch{border:none;}
@@ -1859,7 +1886,7 @@ input.me-inp{width:100%;}
 .me-rec-head{display:flex;align-items:center;gap:6px;padding:4px 7px;cursor:grab;user-select:none;}
 .me-rec-row.dragging .me-rec-head{cursor:grabbing;}
 .me-rec-head:hover{background:var(--surface-hover);}
-.me-rec-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:transparent;border: var(--bw) solid var(--border);}
+.me-rec-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:transparent;border: var(--bw-ctl) solid var(--border);}
 .me-rec-dot.pass{background:var(--success);border-color:var(--success);}
 .me-rec-dot.fail{background:var(--danger);border-color:var(--danger);}
 .me-rec-dot.skip{background:transparent;border-color:var(--text-dim);opacity:.5;}
@@ -2218,7 +2245,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-fm-table .me-de-pill,.me-fm-table .me-vlg-tgl,.me-fm-table .me-vlg-len{height:15px;min-width:0;}
 /* Reused DE controls */
 .me-de-nudge{width:22px;height:20px;padding:0;flex-shrink:0;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
-.me-de-pill{display:inline-flex;align-items:center;justify-content:center;min-width:54px;height:20px;padding:0 8px;border: var(--bw) solid var(--border);border-radius:var(--r-sm);background:var(--bg-deep);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);cursor:pointer;flex-shrink:0;user-select:none;}
+.me-de-pill{display:inline-flex;align-items:center;justify-content:center;min-width:54px;height:20px;padding:0 8px;border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);background:var(--bg-deep);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);cursor:pointer;flex-shrink:0;user-select:none;}
 .me-de-pill:hover{border-color:var(--accent);color:var(--accent);}
 .me-de-pill.anchored{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.07);}
 .me-de-edit-inp{width:46px;height:16px;padding:0 2px;border:0;background:transparent;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--accent);text-align:center;outline:none;}
@@ -2279,7 +2306,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ovl-row.sel{background:rgba(var(--accent-rgb),0.12);box-shadow:inset 3px 0 0 var(--accent);}
 .me-ovl-name{font-weight:700;color:var(--accent);min-width:180px;font-size:calc(var(--sz-mono) - 1px);}
 .me-ovl-chips{flex:1;display:flex;gap:5px;flex-wrap:wrap;}
-.me-ovl-chip{border: var(--bw) solid rgba(var(--accent-rgb),0.55);color:var(--accent);border-radius:var(--r-sm);
+.me-ovl-chip{border: var(--bw-ctl) solid rgba(var(--accent-rgb),0.55);color:var(--accent);border-radius:var(--r-sm);
   padding:0 5px;font-size:calc(var(--sz-mono) - 3px);white-space:nowrap;}
 .me-ovl-empty{padding:12px;text-align:center;color:var(--text-very-dim);
   font-size:calc(var(--sz-mono) - 1px);line-height:1.6;}
@@ -4794,7 +4821,7 @@ function _btypeStyle(color) {
   if (!color) return '';
   const h = color.replace('#','');
   const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
-  return `background:rgba(${r},${g},${b},0.18);color:${color};border: var(--bw) solid ${color}`;
+  return `background:rgba(${r},${g},${b},0.18);color:${color};border: var(--bw-ctl) solid ${color}`;
 }
 // The badge lives in the panel header while its message data lives in the meta
 // row, so it has to be cleared on the same paths that clear that row — a badge
@@ -15263,7 +15290,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.16.4.0';
+const APP_VERSION  = '1.16.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15314,7 +15341,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', density: 'comfortable', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
+  theme: 'dark', density: 'comfortable', border: 'standard', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences
@@ -15460,10 +15487,14 @@ function applyPrefs(updateUI = true) {
   // component patch is gone, so the class it drove went with it.
   document.documentElement.setAttribute('data-theme', P.theme === 'light' ? 'light' : 'dark');
   document.documentElement.setAttribute('data-density', P.density === 'compact' ? 'compact' : 'comfortable');
+  document.documentElement.setAttribute('data-border', P.border === 'hairline' ? 'hairline' : 'standard');
   document.documentElement.style.setProperty('--sz-mono', P.monoSize + 'px');
   // Base comes from the active density block so the two cannot drift apart.
   const _hBase = P.density === 'compact' ? 27 : 34;
-  const _headerH = _hBase + Math.floor((P.monoSize - 12) / 3);
+  // Steps by TWO, so the header's parity against --ctl-h is the same at every
+  // font size. A one-pixel step flipped it on alternate sizes, which is why
+  // controls looked crisp at 12px and split at 11px.
+  const _headerH = _hBase + 2 * Math.floor((P.monoSize - 12) / 6);
   document.documentElement.style.setProperty('--panel-header-h', _headerH + 'px');
   if (updateUI) {
     const lbl = document.getElementById('szLabel');
@@ -15504,6 +15535,20 @@ function _syncDensityUI() {
   const btnCp = document.getElementById('densityCompact');
   if (btnCo) btnCo.classList.toggle('s-active', P.density !== 'compact');
   if (btnCp) btnCp.classList.toggle('s-active', P.density === 'compact');
+}
+
+function _syncBorderUI() {
+  const b2 = document.getElementById('border_standard');
+  const b1 = document.getElementById('border_hairline');
+  if (b2) b2.classList.toggle('s-active', P.border !== 'hairline');
+  if (b1) b1.classList.toggle('s-active', P.border === 'hairline');
+}
+
+function setBorderWidth(val) {
+  P.border = val === 'hairline' ? 'hairline' : 'standard';
+  savePrefs();
+  applyPrefs();
+  _syncBorderUI();
 }
 
 function setDensity(val) {
@@ -15827,6 +15872,7 @@ function openSettings() {
   const lbl = document.getElementById('szLabel');
   if (lbl) lbl.textContent = P.monoSize + 'px';
   _syncDensityUI();
+  _syncBorderUI();
   _syncAccentPickerUI();
   _lwUpdateDisplay();
   ['dark','light'].forEach(t => {
@@ -26433,6 +26479,14 @@ function _meSave() {
           </div>
         </div>
 
+        <div class="settings-row">
+          <span class="settings-lbl">Borders</span>
+          <div class="settings-pill">
+            <button class="btn s-active" id="border_standard" onclick="setBorderWidth('standard')" title="2px — crisp on a standard-density display">2px</button>
+            <button class="btn"          id="border_hairline" onclick="setBorderWidth('hairline')" title="1px hairlines — best on a HiDPI display">1px</button>
+          </div>
+        </div>
+
         <div class="settings-row" id="rawHexTruncRow">
           <span class="settings-lbl">Raw Hex</span>
           <div class="settings-pill">
@@ -26800,8 +26854,8 @@ function _meSave() {
           All data stays <strong>in your browser</strong> — nothing is sent to any server.<br>
           DDL definitions are persisted in <code>localStorage</code>.
           <br><br>
-          <span class="about-tag" style="background:rgba(var(--accent-rgb),0.12);color:var(--accent);border: var(--bw) solid var(--accent)">Single file App</span>
-          <span class="about-tag" style="background:rgba(var(--accent-rgb),0.12);color:var(--accent);border: var(--bw) solid var(--accent)">100% offline</span>
+          <span class="about-tag" style="background:rgba(var(--accent-rgb),0.12);color:var(--accent);border: var(--bw-ctl) solid var(--accent)">Single file App</span>
+          <span class="about-tag" style="background:rgba(var(--accent-rgb),0.12);color:var(--accent);border: var(--bw-ctl) solid var(--accent)">100% offline</span>
           <br><br>
           <!-- One line only — the terms live in Help › Licence &amp; Copyright. -->
           Copyright © 2026 <strong>Gatunox</strong> ·

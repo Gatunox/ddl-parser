@@ -54,7 +54,7 @@
    data-theme lives on <html>, NOT <body>. This is load-bearing: a custom
    accent is written to <html>, and if the theme block matched a DESCENDANT
    of the element carrying that override it would shadow it — which is exactly
-   why _eggSetAccent used to setProperty on both <html> and <body>.
+   why the accent used to be written to both <html> and <body>.
    ═══════════════════════════════════════════════════════════════════════════ */
 :root {
   /* ── typography + geometry (theme-independent) ── */
@@ -1255,28 +1255,8 @@ td.c-err  { color: var(--accent2); }
 
 #appLogo { cursor: default; user-select: none; }
 
-/* Easter egg — DEADC0DE flood */
-@keyframes eggRowIn {
-  from { opacity: 0; transform: translateX(-24px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-@keyframes eggPanelPulse {
-  0%,100% { box-shadow: 0 0 0 2px rgba(255,50,0,0),   0 0  0px 0px rgba(255,40,0,0); }
-  50%     { box-shadow: 0 0 0 2px rgba(255,80,0,0.95), 0 0 22px 5px rgba(255,40,0,0.28); }
-}
-@keyframes eggHeaderPulse {
-  0%,100% { background: var(--bg-deep); }
-  50%     { background: rgba(110,15,0,0.65); }
-}
-#resPanel.egg-flood { animation: eggPanelPulse 0.75s ease-in-out infinite; }
-#resPanel.egg-flood > .panel-header { animation: eggHeaderPulse 0.75s ease-in-out infinite; }
 #rawPanel > .panel-header { cursor: default; }
 #rawPanel > .panel-header:hover { background: var(--surface-header); }
-.egg-row {
-  font-family: var(--mono); padding: 1px 10px; white-space: nowrap;
-  animation: eggRowIn 0.18s ease-out forwards;
-  border-bottom: var(--bw) solid rgba(255,60,0,0.12);
-}
 /* Column visibility toggles */
 #resContainer.hide-id   td.c-id,   #resContainer.hide-id   th.th-id   { display: none; }
 #resContainer.hide-desc td.c-desc, #resContainer.hide-desc th.th-desc { display: none; }
@@ -1551,9 +1531,6 @@ td.c-err  { color: var(--accent2); }
 .settings-pill-accent { border: none !important; gap: 4px; background: transparent; overflow: visible; }
 .settings-pill-accent .btn { border-radius: var(--r-md) !important; border: none !important; box-shadow: none !important; }
 .settings-pill-accent .btn:hover { border: none !important; box-shadow: none !important; }
-#eggAccentDefault:not(.s-active):hover { background: #58a6ff !important; color: #000 !important; }
-#eggAccentOrange:not(.s-active):hover  { background: #f0883e !important; color: #000 !important; }
-#eggAccentGreen:not(.s-active):hover   { background: #3fb950 !important; color: #000 !important; }
 .sz-label { font-size: 12px; color: var(--text); min-width: 38px; text-align: center; }
 .settings-help { font-size: calc(var(--sz-mono) - 0.5px); line-height: 1.7; color: var(--text-dim); }
 .settings-help strong { color: var(--text); }
@@ -1582,7 +1559,8 @@ td.c-err  { color: var(--accent2); }
 .settings-help .h-sub-body { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
 .settings-help .h-sub-body.open { max-height: 1200px; overflow-y: auto; }
 .settings-help .h-sub-body-inner { padding: 4px 0 8px; }
-.about-ver { font-size: calc(var(--sz-mono) + 9px); font-weight: 700; color: var(--accent); }
+.about-ver { display: flex; align-items: center; gap: var(--sp-2);
+  font-size: calc(var(--sz-mono) + 9px); font-weight: 700; color: var(--text); }
 .dr-spec-list { display:flex; flex-direction:column; margin-bottom:2px; }
 .dr-specs-empty { color:var(--text-dim); font-size:calc(var(--sz-mono) - 2px); padding:4px 0 6px; }
 .dr-spec-item { display:flex; align-items:center; gap:5px; padding:var(--row-py) 8px; border-bottom: var(--bw) solid var(--border); font-size:var(--sz-mono); color:var(--text); }
@@ -9734,7 +9712,6 @@ function doParseMessages() {
   S.seenTypes.clear();
   const msgText = document.getElementById('msgInput').value;
   if (!msgText.trim()) { flash('Please enter a message to parse.', 'warn'); return; }
-  if (/DEADC0DE/i.test(msgText.replace(/\s/g, ''))) { triggerDeadC0DE(); return; }
 
   // FUP COPY dump — file records. A manually selected DDL is ALWAYS the
   // override (Priority 1, same as everywhere else). With nothing selected,
@@ -13414,77 +13391,7 @@ function showToast(msg, ms = 2200) {
   _toastTimer = setTimeout(() => el.classList.remove('toast-show'), ms);
 }
 
-// ---- Easter egg — DEADC0DE in message input floods the results panel ----
-function triggerDeadC0DE() {
-  const panel     = document.getElementById('resPanel');
-  const container = document.getElementById('resContainer');
-  const title     = document.getElementById('resPanelTitle');
 
-  // Make sure parse panel is visible
-  if (panel.classList.contains('collapsed')) {
-    document.getElementById('resToggle').click();
-  }
-
-  title.textContent = '☠  Y O U   S H A L L   N O T   P A R S E';
-  container.innerHTML = '<div id="eggFlood" style="padding:6px 0"></div>';
-  panel.classList.add('egg-flood');
-
-  // Unlock Green accent option in Settings and auto-switch to it
-  _eggDeadFound = true;
-  P.eggDeadFound = true; P.eggDiscovered = true; savePrefs();
-  _eggSetAccent('green');
-
-  const flood  = document.getElementById('eggFlood');
-  const FIRE   = ['#3fb950','#56d364','#2ea043','#1a7f37','#4bca64','#26a641','#73d893'];
-  const SIZES  = ['11px','12px','13px','14px','15px','11px','13px','12px'];
-  const TEXTS  = [
-    'you shall not parse!',
-    'YOU SHALL NOT PARSE!',
-    'y o u  s h a l l  n o t  p a r s e !',
-    '>>> YOU SHALL NOT PARSE! <<<',
-    '☠  you shall not parse!  ☠',
-  ];
-
-  let i = 0;
-  const interval = setInterval(() => {
-    if (i >= 100) {
-      clearInterval(interval);
-      setTimeout(() => {
-        panel.classList.remove('egg-flood');
-        title.textContent = 'Parse Results';
-      }, 800);
-      return;
-    }
-    const row  = document.createElement('div');
-    row.className = 'egg-row';
-    row.style.color     = FIRE[i % FIRE.length];
-    row.style.fontSize  = SIZES[i % SIZES.length];
-    row.style.fontWeight = (i % 9 === 0) ? '700' : '400';
-    row.style.fontStyle  = (i % 13 === 0) ? 'italic' : 'normal';
-    row.style.letterSpacing = (i % 5 === 0) ? '0.08em' : '';
-    row.textContent = TEXTS[i % TEXTS.length];
-    flood.appendChild(row);
-    container.scrollTop = container.scrollHeight;
-    i++;
-  }, 28);
-}
-
-// ---- Easter egg — accent colour swap ----
-let _eggAccent     = 'blue';   // 'blue' | 'orange' | 'green'
-let _eggDiscovered = false;    // egg #1 found — unlocks Orange option
-let _eggDeadFound  = false;    // egg #2 found — unlocks Green option
-
-const _EGG_PALETTES = {
-  blue:   { accent: null,        hover: null,                        accentRgb: null           },   // null = remove (restore CSS default)
-  orange: { accent: '#f0883e',   hover: 'rgba(240,136,62,0.25)',    accentRgb: '240,136,62'   },
-  green:  { accent: '#3fb950',   hover: 'rgba(63,185,80,0.25)',     accentRgb: '63,185,80'    },
-};
-
-// A custom accent is one write to <html>, and the derived values come with it
-// so nothing can drift: the hover/active tints are the same hue at a fixed
-// alpha, and --on-accent is chosen by relative luminance so text on a filled
-// accent button stays legible whatever colour is picked. Without that last
-// part a light accent gives white-on-yellow.
 function _accentVars(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
   if (!m) return null;
@@ -13499,31 +13406,28 @@ function _accentVars(hex) {
   };
 }
 
-function _eggSetAccent(color, save = true) {
-  // `color` is either a named preset or a #rrggbb the user picked.
-  const p = _EGG_PALETTES[color] ? _EGG_PALETTES[color] : _accentVars(color);
-  // One element, not two. Both theme blocks now sit on <html>, so an inline
-  // style here out-specifies whichever is active. This used to have to write
-  // <body> as well, because body.light redefined --accent on a descendant of
-  // the element being overridden and shadowed it.
+// A custom accent is one write to <html>. Both theme blocks sit there too, so
+// an inline style out-specifies whichever is active — this used to have to
+// write <body> as well, because body.light redefined --accent on a descendant
+// of the element being overridden and shadowed it.
+function _applyAccent(value, save = true) {
   const el = document.documentElement;
-  if (p && p.accent) {
-    el.style.setProperty('--accent',     p.accent);
-    el.style.setProperty('--hl-hover',   p.hover);
-    el.style.setProperty('--hl-active',  p.hover);
-    el.style.setProperty('--accent-rgb', p.accentRgb);
-    // Presets predate --on-accent and carry no contrast value; let the theme's
-    // own choice stand for those rather than guessing one.
-    if (p.onAccent) el.style.setProperty('--on-accent', p.onAccent);
-    else el.style.removeProperty('--on-accent');
+  const v  = _accentVars(value);
+  if (v) {
+    el.style.setProperty('--accent',     v.accent);
+    el.style.setProperty('--hl-hover',   v.hover);
+    el.style.setProperty('--hl-active',  v.hover);
+    el.style.setProperty('--accent-rgb', v.accentRgb);
+    el.style.setProperty('--on-accent',  v.onAccent);
   } else {
+    // Anything unparseable falls back to the theme's own accent. That includes
+    // the old named presets a saved pref may still hold from when the accent
+    // was an easter egg rather than a setting.
     ['--accent','--hl-hover','--hl-active','--accent-rgb','--on-accent']
-      .forEach(v => el.style.removeProperty(v));
-    color = 'blue';
+      .forEach(x => el.style.removeProperty(x));
+    value = null;
   }
-  _eggAccent = color;
-  if (save) { P.accent = color; savePrefs(); }
-  _syncEggAccentUI();
+  if (save) { P.accent = value; savePrefs(); }
   _syncAccentPickerUI();
 }
 
@@ -13537,54 +13441,12 @@ function _syncAccentPickerUI() {
   const m = /^#([0-9a-f]{6})$/i.exec(cur);
   if (m) inp.value = '#' + m[1].toLowerCase();
   const rst = document.getElementById('accentResetBtn');
-  if (rst) rst.classList.toggle('hidden', !P.accent || P.accent === 'blue');
+  if (rst) rst.classList.toggle('hidden', !P.accent);
 }
 
-function setAccentColor(hex) { _eggSetAccent(hex); }
-function resetAccentColor()  { _eggSetAccent('blue'); }
+function setAccentColor(hex) { _applyAccent(hex); }
+function resetAccentColor()  { _applyAccent(null); }
 
-function _syncEggAccentUI() {
-  const row = document.getElementById('eggAccentRow');
-  if (!row) return;
-  // Show the row once any egg has been discovered
-  if (_eggDiscovered) row.classList.remove('hidden');
-  // Show / hide Green button based on egg #2
-  const btnGrn = document.getElementById('eggAccentGreen');
-  if (btnGrn) btnGrn.classList.toggle('hidden', !_eggDeadFound);
-  // Sync active states on all three pill buttons
-  ['eggAccentDefault','eggAccentOrange','eggAccentGreen'].forEach(id => {
-    const btn = document.getElementById(id);
-    if (btn) btn.classList.toggle('s-active',
-      (id === 'eggAccentDefault' && _eggAccent === 'blue')   ||
-      (id === 'eggAccentOrange'  && _eggAccent === 'orange') ||
-      (id === 'eggAccentGreen'   && _eggAccent === 'green')
-    );
-  });
-}
-
-// ---- Easter egg — triple-click "Appearance" label inside Settings ----
-;(function() {
-  let _eggClicks = 0, _eggTimer = null;
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('#eggTrigger')) { _eggClicks = 0; return; }
-    _eggClicks++;
-    clearTimeout(_eggTimer);
-    if (_eggClicks >= 3) {
-      _eggClicks = 0;
-      _eggDiscovered = true;   // unlock the Accent Color toggle permanently
-      P.eggDiscovered = true; savePrefs();
-      closeSettings();
-      const built = new Date(document.lastModified);
-      const ds = built.getFullYear() > 2000
-        ? built.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })
-        : 'build unknown';
-      _eggSetAccent('orange');
-      showToast(`🥚 You found it — built ${ds}`, 3500);
-    } else {
-      _eggTimer = setTimeout(() => { _eggClicks = 0; }, 500);
-    }
-  });
-})();
 
 // ---- Copy field row to clipboard on double-click ----
 function copyFieldToClipboard(fid) {
@@ -15305,7 +15167,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.18.1.1';
+const APP_VERSION  = '1.19.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15523,11 +15385,7 @@ function applyPrefs(updateUI = true) {
     _syncFontUI();
     _lwUpdateDisplay();
   }
-  // Restore egg / accent state
-  if (P.eggDiscovered) _eggDiscovered = true;
-  if (P.eggDeadFound)  _eggDeadFound  = true;
-  if (P.accent && P.accent !== 'blue') _eggSetAccent(P.accent, false);
-  else _syncEggAccentUI();
+  if (P.accent) _applyAccent(P.accent, false);
   // Sync raw hex truncate button (always — needed on startup to reflect saved pref)
   _syncRawHexTruncateUI();
   _syncKeepParseLogUI();
@@ -15892,7 +15750,6 @@ function adjustLineWidth(delta) {
 
 function openSettings() {
   document.getElementById('settingsOverlay').classList.remove('hidden');
-  _syncEggAccentUI();
   renderDetectSpecsList();
   // Sync control states to current prefs
   _syncFontUI();
@@ -26487,7 +26344,7 @@ function _meSave() {
 
       <!-- ── APPEARANCE ──────────────────────────────── -->
       <div class="settings-section">
-        <div class="settings-stitle" id="eggTrigger">Appearance</div>
+        <div class="settings-stitle">Appearance</div>
 
         <div class="settings-row">
           <span class="settings-lbl">Theme</span>
@@ -26548,13 +26405,6 @@ function _meSave() {
           </div>
         </div>
 
-        <div class="settings-row hidden" id="eggAccentRow">
-          <span class="settings-lbl">Accent Color</span>
-          <div class="settings-pill settings-pill-accent">
-            <button class="btn s-active" id="eggAccentDefault" onclick="_eggSetAccent('blue')"   style="min-width:58px;text-align:center">Blue</button>
-            <button class="btn"          id="eggAccentOrange"  onclick="_eggSetAccent('orange')" style="min-width:58px;text-align:center">Orange</button>
-            <button class="btn hidden"   id="eggAccentGreen"   onclick="_eggSetAccent('green')"  style="min-width:58px;text-align:center">Green</button>
-          </div>
         </div>
       </div>
 
@@ -26890,7 +26740,7 @@ function _meSave() {
       <!-- ── ABOUT ───────────────────────────────────── -->
       <div class="settings-section">
         <div class="settings-stitle">About</div>
-        <div class="about-ver">⬡ DDL Parser <span style="font-size:13px;font-weight:400;color:var(--text-dim)">v<span id="appVerLabel"></span></span></div>
+        <div class="about-ver"><span class="brand-mark" aria-hidden="true">D</span>DDL Parser <span style="font-size:13px;font-weight:400;color:var(--text-dim)">v<span id="appVerLabel"></span></span></div>
         <div class="about-sub">
           A self-contained, single-file tool for parsing and analysing<br>
           <strong>HP NonStop / Tandem</strong> &nbsp;·&nbsp; <strong>Base24</strong> &nbsp;·&nbsp; <strong>ISO 8583</strong><br>

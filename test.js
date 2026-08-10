@@ -8887,15 +8887,17 @@ test('density moves shape and spacing only, never colour', () => {
   eq(bad.length, 0, `density must not set colour tokens: ${bad.join(', ')}`);
 });
 
-test('_eggSetAccent writes the accent to one element, not two', () => {
+test('the accent is written to one element, not two', () => {
   // The double-write was a symptom, not a fix. Once no theme block redefines
   // --accent on a descendant, one write to <html> reaches everything. If this
   // regrows a loop over [documentElement, body], the specificity bug is back.
   const src = fs.readFileSync('./source.html', 'utf8');
-  const fn = /function _eggSetAccent\([^)]*\)\s*\{([\s\S]*?)\n\}/.exec(src);
-  assert.ok(fn, '_eggSetAccent not found');
-assert.ok(!/document\.body/.test(fn[1]),
-  '_eggSetAccent must not touch document.body — write only to <html>');
+  // Renamed from _eggSetAccent when the accent stopped being an easter egg and
+  // became a setting; the invariant it guards is unchanged.
+  const fn = /function _applyAccent\([^)]*\)\s*\{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(fn, '_applyAccent not found');
+  assert.ok(!/document\.body/.test(fn[1]),
+    '_applyAccent must not touch document.body — write only to <html>');
 });
 
 // ── A help panel nothing can open is a help panel that does not exist ────────

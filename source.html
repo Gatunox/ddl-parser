@@ -576,8 +576,14 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 /* The tree is a card inside the DDL panel, not a bordered-off column. Margin
    (not padding on the parent) so the resizer still measures the pane itself —
    the drag handler sets this element's width directly. */
+/* Same surface as .ddl-editor-pane beside it. On --bg-deep this card sat a
+   shade darker than its sibling, and because every border is 7% WHITE and
+   therefore translucent, the darker backdrop also dragged its outline down —
+   rgb(30,34,39) against the editor's rgb(38,43,49), a 27% luminance gap from an
+   identical declaration. Two cards of the same kind, side by side in one panel,
+   now share one surface and one rendered edge. */
 .ddl-tree-pane   { width: 170px; flex-shrink: 0; overflow: hidden;
-  background: var(--bg-deep); display: flex; flex-direction: column;
+  background: var(--bg-panel); display: flex; flex-direction: column;
   border: var(--bw) solid var(--border); border-radius: var(--r-md);
   margin: var(--sp-2) 0 var(--sp-2) var(--sp-2); }
 #ddlTree         { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
@@ -15366,7 +15372,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.3.0';
+const APP_VERSION  = '1.21.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -8847,6 +8847,28 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
 
+// ── "Not found in bound DDLs" needs bound DDLs to be true ───────────────────
+console.log('\nparse-spec lint — no bindings is one problem, not many');
+
+test('field references are not reported missing when nothing is bound', () => {
+  // With no binding, ddlIds is empty, so every reference "was not found" — and
+  // the panel filled with red about fields that are probably fine, all caused by
+  // the single fact the user already knows and that read-ddl states on its own
+  // line. The sibling checks (read-bitmap.field, seg-map) always guarded on
+  // bindingCount && ddlIds.size; checkRef did not.
+  const lint = sandbox._t.mePsLintWarns;
+  const spec = [{ read: { field: 'TYP' } },
+                { 'read-ddl': { binding: 0, from: 'ISO_PFX', until: 'MTI' } }];
+
+  const unbound = lint({ label: 'X', ddl_bindings: [], parse_spec_binary: spec }, spec);
+  assert.ok(!unbound.some(w => /not found in bound DDLs/.test(w)),
+    `nothing is bound, so nothing can be "not found" — got: ${JSON.stringify(unbound)}`);
+  assert.ok(unbound.some(w => /no DDL bindings/.test(w)),
+    'the one real problem must still be reported');
+  assert.strictEqual(unbound.length, 1,
+    `one cause should read as one warning — got: ${JSON.stringify(unbound)}`);
+});
+
 // ── An armed entity override has to be visible wherever it changes behaviour ─
 console.log('\nentity override — the app must say when it is on');
 

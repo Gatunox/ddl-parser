@@ -15271,7 +15271,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.0.8';
+const APP_VERSION  = '1.21.0.9';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18888,6 +18888,15 @@ function _mePsLintWarns(item, parsed) {
   const checkRef = (n, attr, id, allowSynthetic = true) => {
     if (typeof id !== 'string' || !id) return;
     if (allowSynthetic ? known(id) : ddlIds.has(id)) return;
+    // "Not found in bound DDLs" is only true if there were bound DDLs to search.
+    // With nothing bound, ddlIds is empty and EVERY reference reported missing —
+    // a page of red about fields that are probably fine, caused by one thing the
+    // user already knows: no binding yet. read-ddl already says that once, and
+    // the two sibling checks below (read-bitmap.field, seg-map) have always
+    // guarded on bindingCount && ddlIds.size; this one was missed.
+    // A synthetic id declared by an earlier block is still checkable without a
+    // binding, so only the DDL-backed half is suppressed.
+    if (!bindingCount || !ddlIds.size) return;
     warns.push(`[block ${n}] ${attr}: "${id}" not found in ${allowSynthetic ? 'bound DDLs or earlier blocks' : 'bound DDLs'}`);
   };
 

@@ -8701,6 +8701,33 @@ test('picking a volume never discards unsaved editor content', () => {
     'discarding marks the buffer clean so the retry gets through');
 });
 
+test('every settings section lives inside the settings body', () => {
+  // Removing the easter-egg accent row took one </div> too many, which closed
+  // .settings-body early. Seven sections became siblings of it instead of
+  // children — the drawer rendered with a large blank gap and everything below
+  // Appearance sat outside the scroll container. Nothing threw and every test
+  // passed; only looking at it revealed the break. Div nesting is checked here
+  // because a mismatched tag is invisible to a CSS or behaviour assertion.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const start = src.indexOf('<div class="settings-body">');
+  assert.ok(start >= 0, '.settings-body not found');
+  // Walk div open/close tags from the body's start until it closes.
+  let depth = 0, end = -1;
+  const re = /<div\b[^>]*>|<\/div>/g;
+  re.lastIndex = start;
+  let m;
+  while ((m = re.exec(src))) {
+    depth += m[0] === '</div>' ? -1 : 1;
+    if (depth === 0) { end = m.index; break; }
+  }
+  assert.ok(end > start, '.settings-body never closes');
+  const inside = src.slice(start, end);
+  const total  = (src.match(/<div class="settings-section"[^>]*>/g) || []).length;
+  const within = (inside.match(/<div class="settings-section"[^>]*>/g) || []).length;
+  assert.ok(total >= 6, `expected the settings sections, found ${total}`);
+  eq(within, total, `${total - within} settings-section(s) fell outside .settings-body`);
+});
+
 test('there are no body.light rules at all', () => {
   // Started at 90. Each was a hand-written light-mode value for one component,
   // which is what made a third theme impractical: every new theme needed its

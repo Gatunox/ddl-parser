@@ -8847,6 +8847,29 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
 
+// ── Expand all / collapse all must not sweep in the inverted key ────────────
+console.log('\ntree — expand all leaves the inverted key alone');
+
+test('expand-all never touches the missing-refs key', () => {
+  // S.treeExp holds node keys where PRESENT = expanded, plus one key,
+  // '::missing-refs', where PRESENT = COLLAPSED. Sweeping every key in the Set
+  // would collapse Missing refs on "expand all" and open it on "collapse all" —
+  // backwards on both. _treeExpandableKeys builds its list from the DDL tree,
+  // so the inverted key cannot get in by construction rather than by filtering.
+  const fn = /function _treeExpandableKeys\(\)\s*\{([\s\S]*?)\n\}/.exec(APP_SRC);
+  assert.ok(fn, '_treeExpandableKeys not found');
+  assert.ok(!/_MISSREF_KEY/.test(fn[1]),
+    'the key list must be built from the tree, never from the Set');
+  assert.ok(/S\.ddlTree/.test(fn[1]), 'it is derived from the DDL tree');
+
+  const toggle = /function toggleTreeExpandAll\(\)\s*\{([\s\S]*?)\n\}/.exec(APP_SRC);
+  assert.ok(toggle, 'toggleTreeExpandAll not found');
+  assert.ok(!/treeExp\.clear\(\)/.test(toggle[1]),
+    'clearing the Set would take the inverted key with it — remove keys individually');
+  assert.ok(/_treeExpandableKeys\(\)/.test(toggle[1]),
+    'it must operate on the derived list');
+});
+
 // ── "Not found in bound DDLs" needs bound DDLs to be true ───────────────────
 console.log('\nparse-spec lint — no bindings is one problem, not many');
 

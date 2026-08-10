@@ -15163,7 +15163,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.20.2.0';
+const APP_VERSION  = '1.20.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15378,7 +15378,16 @@ function applyPrefs(updateUI = true) {
   if (updateUI) {
     _syncThemeUI();
     _syncFontUI();
-    _lwUpdateDisplay();
+    // The ruler is placed from CodeMirror's cached character width, which only
+    // refreshes on its own measure cycle. Reading it here returns the width of
+    // the font we just replaced, so the marker lands a whole step short — 75
+    // columns of 12px metrics under a 14px font is ~90px, about 11 columns.
+    // Place it once CM has re-measured.
+    if (window._msgInputCM) {
+      window._msgInputCM.requestMeasure({ read: () => null, write: () => _lwUpdateDisplay() });
+    } else {
+      _lwUpdateDisplay();
+    }
   }
   if (P.accent) _applyAccent(P.accent, false);
   // Sync raw hex truncate button (always — needed on startup to reflect saved pref)

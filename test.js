@@ -8897,6 +8897,37 @@ test('the density block is declared after both theme blocks', () => {
     'the density block must come after both theme blocks, or its shape tokens lose the tie');
 });
 
+test('a font change places the ruler after CodeMirror re-measures, not before', () => {
+  // The Line Width ruler is positioned from view.defaultCharacterWidth, which
+  // CodeMirror caches and only refreshes during its own measure cycle. applyPrefs
+  // changed --sz-mono and then called _lwUpdateDisplay() on the same tick, so the
+  // marker was placed with the OLD font's character width: on a 75-column NETARD
+  // log, medium -> large put it 90px (about 11 columns) short of the last column.
+  //
+  // The +/- stepper hid this for months — 1px per click kept the marker roughly
+  // one small step behind — and the three-way toggle exposed it by jumping up to
+  // 4px at once. The fix is ordering, not arithmetic, so it is pinned here.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const fn = /function applyPrefs\([^)]*\)\s*\{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(fn, 'applyPrefs not found');
+  const body = fn[1];
+  const calls = [...body.matchAll(/_lwUpdateDisplay\(\)/g)].map(m => m.index);
+  assert.ok(calls.length > 0, 'applyPrefs must still place the ruler');
+  for (const at of calls) {
+    // Every placement must sit inside a requestMeasure callback, or fall on the
+    // no-editor branch where there is no cached width to be stale.
+    const before = body.slice(0, at);
+    const guarded = /requestMeasure\(\{[^}]*write:\s*\(\)\s*=>\s*$/.test(before.trimEnd() + ' ')
+      || /requestMeasure\(\{[\s\S]{0,120}$/.test(before);
+    const elseBranch = /\}\s*else\s*\{\s*$/.test(before);
+    assert.ok(guarded || elseBranch,
+      'applyPrefs must not call _lwUpdateDisplay() synchronously — CodeMirror still ' +
+      'reports the previous font\'s character width, so the ruler lands short');
+  }
+  assert.ok(/_msgInputCM\.requestMeasure\(/.test(body),
+    'applyPrefs must defer the ruler through _msgInputCM.requestMeasure');
+});
+
 test('density moves shape and spacing only, never colour', () => {
   // A density that also shifted colours would be a second theme wearing another
   // name, and the two would drift: switching to compact would silently restyle

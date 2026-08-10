@@ -1950,7 +1950,18 @@ td.c-err  { color: var(--accent2); }
 .me-section:last-child{margin-bottom:0;}
 .me-section-hdr{display:flex;align-items:center;justify-content:space-between;padding:var(--row-py) 14px;min-height:var(--panel-header-h);cursor:pointer;user-select:none;font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);background:var(--surface-header);}
 .me-section-hdr:hover{background:var(--surface-hover);}
-.me-section-arrow,.me-section-arr{font-size:8px;color:var(--text-dim);}
+/* Same control as the Settings section toggles (.stitle-toggle): a bordered
+   + / − box, not a bare 8px glyph. Two collapsible-section patterns that behave
+   identically should not look like two different features.
+   Purely presentational — the whole .me-section-hdr row stays the click target,
+   so this is a span rather than a button and the row's handler fires once. */
+.me-section-arrow,.me-section-arr{
+  background: transparent; color: var(--text-dim); border: var(--bw-ctl) solid var(--border);
+  width: 26px; height: 20px; padding: 0; border-radius: var(--r-sm);
+  font-size: calc(var(--sz-mono) + 2px); line-height: 1; box-sizing: border-box; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center; transition: all 0.1s; }
+.me-section-hdr:hover .me-section-arr,
+.me-test-hdr:hover .me-section-arr { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
 .me-section-body{padding:14px;display:none;}
 .me-section-body.open{display:block;}
 /* Gutter reserved, like #ddlTree / .tbl-wrap / .settings-body: without it the
@@ -15378,7 +15389,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.3.2';
+const APP_VERSION  = '1.21.3.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17275,7 +17286,7 @@ function _meRenderRight() {
     const loading = key === 'overrides' ? _ME_SECT_LOADING_DET : _ME_SECT_LOADING;
     return `<div class="me-section">
   <div class="me-section-hdr" onclick="_meSectionToggle('${key}')">
-    <span>${title}</span><span class="me-section-arr">${open ? '&#9650;' : '&#9660;'}</span>
+    <span>${title}</span><span class="me-section-arr">${open ? '−' : '+'}</span>
   </div>
   <div class="me-section-body${open ? ' open' : ''}" id="me-sect-body-${key}">${open ? loading : ''}</div>
 </div>`;
@@ -23339,7 +23350,7 @@ function _meToggleTest() {
   if (!body) return;
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : '';
-  if (arr) arr.innerHTML = open ? '&#9660;' : '&#9650;';
+  if (arr) arr.textContent = open ? '+' : '−';   // + = will open, − = will close
 }
 
 // ============================================================
@@ -27241,7 +27252,7 @@ function _meSave() {
       <div class="me-test-hdr" onclick="_meToggleTest()">
         <span class="me-test-title">Test</span>
         <span style="flex:1"></span>
-        <span class="me-section-arr" id="me-test-arr">&#9660;</span>
+        <span class="me-section-arr" id="me-test-arr">+</span>
       </div>
       <div class="me-test-body" id="me-test-body" style="display:none">
         <!-- Left: per-entity detection verdicts, mirroring the Data sidebar -->

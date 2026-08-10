@@ -6721,7 +6721,14 @@ test('the Delete button is red, and its fill is readable', () => {
   // the other or fails.
   for (const k of ['color', 'background', 'border-color'])
     eq(mine[k], ref[k], `${k} matches the Report a Bug button`);
-  assert.ok(/#f85149/.test(mine.color), 'and that colour is the app red');
+  // The token, not the literal it used to hold: --danger is the app red and
+  // carries a different value per theme (light needs a darker one to stay
+  // legible on white), which a hardcoded hex could not express.
+  assert.ok(/var\(--danger\)/.test(mine.color), `and that colour is the app red, got: ${mine.color}`);
+  // Red is on the LABEL only now — no tinted fill, no red outline — so the
+  // colour reads as a property of the text rather than a filled alarm.
+  assert.ok(!/rgba\(248,\s*81,\s*73/.test(mine.background || ''),
+    `no red fill on hover, got: ${mine.background}`);
   // At rest it is a plain button, like its reference — a destructive control
   // that shouts before you go near it trains people to ignore it.
   assert.ok(!/\.btn-danger \{/.test(src), 'no resting override; plain until hovered');

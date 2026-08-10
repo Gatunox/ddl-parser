@@ -951,8 +951,8 @@ input[type="text"]:focus { border-color: var(--accent); }
    hover, with a 15% tint rather than a solid fill. A destructive control that
    is already shouting before you go near it trains people to ignore it — and
    the header is where it lives, next to Close. */
-.btn-danger:hover { color: #f85149; background: rgba(248,81,73,0.15); border-color: #f85149; }
-.btn-danger:focus-visible { outline: none; border-color: #f85149; }
+.btn-danger:hover { color: var(--danger); background: var(--surface-hover); border-color: var(--border-strong); }
+.btn-danger:focus-visible { outline: none; border-color: var(--accent); }
 .btn-active { border-color: var(--warning); color: var(--warning); }
 .btn-active:hover { background: var(--warning); color: #000; border-color: var(--warning); }
 
@@ -1585,7 +1585,7 @@ td.c-err  { color: var(--accent2); }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-spec-type { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; width:36px; text-align:right; }
 .dr-spec-vol { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; }
-.btn-feedback-bug:hover { color: #f85149 !important; background: rgba(248,81,73,0.15) !important; border-color: #f85149 !important; }
+.btn-feedback-bug:hover { color: var(--danger) !important; background: var(--surface-hover) !important; border-color: var(--border-strong) !important; }
 .about-sub { font-size: calc(var(--sz-mono) - 0.5px); color: var(--text-dim); line-height: 1.7; margin-top: 4px; }
 .about-tag { display: inline-block; padding: 1px 7px; border-radius: var(--r-sm); font-size: calc(var(--sz-mono) - 1px); font-weight: 700; margin: 3px 2px 0; }
 
@@ -2336,7 +2336,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
   color:var(--text);padding:4px 6px;font-family:var(--font-mono);font-size:calc(var(--sz-mono) - 1px);
   line-height:1.5;resize:none;overflow:hidden;outline:none;box-sizing:border-box;}
 #me-ovl-json:focus{border-color:var(--accent);}
-#me-ovl-json.bad{border-color:#f85149;background:rgba(248,81,73,0.07);}
+#me-ovl-json.bad{border-color:var(--danger);}
 
 /* Reference footer — the Add button lives with the list it acts on. */
 /* The pill states what the table IS and how much of it is selected — one control
@@ -2357,8 +2357,8 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    badge alone sits at the end of one column and is easy to scroll straight past
    in a list of thousands. Declared after .me-fm-has-ovr so a broken override
    overrides the plain "configured" tint. */
-.me-fm-table tbody tr.me-fm-row-err td{background:rgba(248,81,73,0.14);color:#f8a29d;}
-.me-fm-table tbody tr.me-fm-row-err:hover td{background:rgba(248,81,73,0.22);}
+.me-fm-table tbody tr.me-fm-row-err td{color:var(--danger);}
+.me-fm-table tbody tr.me-fm-row-err:hover td{background:var(--surface-hover);}
 .me-fm-table tbody tr.me-fm-row-warn td{background:rgba(230,168,23,0.13);color:#e6c07b;}
 .me-fm-table tbody tr.me-fm-row-warn:hover td{background:rgba(230,168,23,0.20);}
 .me-fm-table tbody tr.me-fm-row-sel td{background:rgba(var(--accent-rgb),0.18);color:var(--text);}
@@ -15294,7 +15294,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.17.1.2';
+const APP_VERSION  = '1.17.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

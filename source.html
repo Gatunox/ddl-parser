@@ -15262,7 +15262,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.0.6';
+const APP_VERSION  = '1.21.0.7';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22230,7 +22230,6 @@ function _meHtmlRecs(item) {
   const _TYPE_LABEL = { ..._REC_TYPE_LABEL, uint8:'uint8 / byte', uint16:'uint16 / word', uint32:'uint32 / dword' };
   const recHelpOpen = !!(_meState && _meState.recHelpOpen);
   let h = `<div class="me-ps-help${recHelpOpen ? ' open' : ''}" id="me-rec-help" style="margin-bottom:8px">${_meRecHelpHtml()}</div>`;
-  h += `<div id="me-file-warns">${_meFileWarnsHtml(item)}</div>`;
   h += '<div class="me-rec-list">';
   if (!recs.length) h += '<div class="me-empty">No recognizers yet.</div>';
   // Last Test-run verdict per recognizer (pass / fail / skip) — set by
@@ -22263,6 +22262,12 @@ function _meHtmlRecs(item) {
 </div>`;
   });
   h += '</div>';
+  // Warnings sit BELOW the recognizer list, not above it. Above, every
+  // appearance or disappearance pushed the whole section — the recognizers, the
+  // Parse Spec and the DDL Bindings input — down the page. Below, the only thing
+  // it can move is itself and the sections after it, and nothing the user is
+  // pointing at when the warning changes is above it.
+  h += `<div id="me-file-warns" style="margin-top:8px">${_meFileWarnsHtml(item)}</div>`;
   h += `<div style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
     <button class="btn btn-sm" onclick="_meNewRec()">+ Add Recognizer</button>
     <button class="btn btn-sm" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>

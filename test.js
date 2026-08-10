@@ -8951,22 +8951,46 @@ test('the parse overlay announces an armed entity override', () => {
 // ── Import identity: the bug that ate two messages out of three ─────────────
 console.log('\nimport — a bundle must arrive intact');
 
-test('spec identity is the label, never the type code', () => {
-  // `name` is the badge's type code and is NOT unique — the shipped defaults
-  // carry three specs named ISO and three named B24. Keying on it made three
-  // incoming ISO messages collapse onto one slot.
+test('spec identity is the type code AND the label together', () => {
+  // Neither field identifies an entity on its own. `name` is the badge's type
+  // code and is shared — the shipped defaults carry three called ISO and three
+  // called B24 — so keying on it collapsed three incoming ISO messages onto one
+  // slot. The label alone was the first fix; the rule is the PAIR, so changing
+  // either field makes it a different entity.
   const specKey = sandbox._t.specKey;
-  const a = { name: 'ISO', label: 'ISO 8583 Standard' };
-  const b = { name: 'ISO', label: 'ISO 8583 BIC' };
-  assert.notStrictEqual(specKey(a), specKey(b),
-    'two specs sharing a type code must not share an identity');
+  const std = { name: 'ISO', label: 'ISO 8583 Standard' };
+  const bic = { name: 'ISO', label: 'ISO 8583 BIC' };
+  assert.notStrictEqual(specKey(std), specKey(bic),
+    'same type code, different label — different entities');
+  assert.notStrictEqual(specKey({ name: 'ISO', label: 'X' }), specKey({ name: 'I2', label: 'X' }),
+    'same label, different type code — different entities');
+  assert.strictEqual(specKey({ name: 'ISO', label: 'X' }), specKey({ name: 'ISO', label: 'X' }),
+    'same pair — one entity');
+
   // Case and padding are noise: a near-miss that imports as "new" leaves the
   // user reconciling a duplicate by hand, which is the other half of the bug.
-  assert.strictEqual(specKey({ label: 'ISO 8583 BIC' }), specKey({ label: '  iso 8583 bic ' }));
-  // name is the fallback for a spec that has no label at all, not the key.
-  assert.strictEqual(specKey({ name: 'MYMSG' }), 'MYMSG');
-  assert.strictEqual(specKey({ name: 'MYMSG', label: 'My Message' }), 'MY MESSAGE');
-  assert.strictEqual(specKey({}), '');
+  assert.strictEqual(specKey({ name: 'iso', label: '  iso 8583 bic ' }), specKey(bic));
+
+  // The separator must not be forgeable out of the fields themselves, or
+  // "AB" + "C" and "A" + "BC" would key alike.
+  assert.notStrictEqual(specKey({ name: 'AB', label: 'C' }), specKey({ name: 'A', label: 'BC' }));
+
+  // No label falls back to the type, so an unlabelled spec still keys by
+  // something rather than by the separator alone.
+  assert.strictEqual(specKey({ name: 'MYMSG' }), specKey({ name: 'MYMSG', label: 'MYMSG' }));
+});
+
+test('adding entities never seeds a duplicate identity', () => {
+  // + New seeded every message as NEW / "New Message", so pressing it twice
+  // produced two entities the app cannot tell apart. _meUniqueLabel walks the
+  // label until the type+label pair is free.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  for (const fn of ['_meAddMsg', '_meAddOther', '_meAddFile']) {
+    const m = new RegExp('function ' + fn + '\\(\\)\\s*\\{([\\s\\S]*?)\\n\\}').exec(src);
+    assert.ok(m, fn + ' not found');
+    assert.ok(/_meUniqueLabel\(/.test(m[1]),
+      fn + ' must seed a label that is not already taken');
+  }
 });
 
 test('the default specs really do collide on name but not on label', () => {

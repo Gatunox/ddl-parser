@@ -14702,14 +14702,19 @@ function _exportGetSpecs() {
 }
 
 // Open the unified Export modal. Pre-check args:
-//   { ddls: Set<"vol/sv/name">, specs: Set<"name-upper">, allDDLs: bool, allSpecs: bool }
+//   { ddls: Set<"vol/sv/name">, specs: Set<_specKey>, allDDLs: bool, allSpecs: bool }
 function ctxExport(vol, sv, name) {
   _openBundleExport({ vol, sv, name });
 }
 
 function _ctxMsgExport(msgIdx, msgName) {
+  // Keyed by the spec's full identity, not by its type code. `name` is the type
+  // code and is shared — three defaults are called ISO — so pre-checking on it
+  // ticked every ISO message when you asked to export one of them.
   const set = new Set();
-  if (msgName) set.add(String(msgName).toUpperCase());
+  const spec = _exportGetSpecs()[msgIdx];
+  if (spec) set.add(_specKey(spec));
+  else if (msgName) set.add(_specKey({ name: msgName }));
   _openBundleExport({ specs: set, allDDLs: false });
 }
 
@@ -14746,7 +14751,7 @@ function _openBundleExport(opts) {
       const nm    = s.name  || s.label || '(unnamed)';
       const lbl   = s.label || '';
       const volS  = s.vol   || '';
-      const isChk = preCheckSpecs.has(String(s.name || '').toUpperCase());
+      const isChk = preCheckSpecs.has(_specKey(s));
       return `<div class="pick-row pick-ddl">
         <input type="checkbox" class="pick-spec-cb" data-idx="${i}" data-name="${esc(String(s.name||''))}" id="pcms_${i}" ${isChk?'checked':''}>
         <label for="pcms_${i}">
@@ -14997,7 +15002,39 @@ function _handleImportFile(e) {
 // is the same message to a human, and a "duplicate" that has to be reconciled
 // by hand is the failure mode this is trying to avoid.
 function _specKey(s) {
-  return String((s && (s.label || s.name)) || '').trim().toUpperCase();
+  const type  = String((s && s.name)  || '').trim().toUpperCase();
+  const label = String((s && s.label) || '').trim().toUpperCase();
+  // \u0000 as the separator, not a space: a label may contain spaces, so with a
+  // space "AB" + "C" and "A" + "BC" would both key as "AB C" and read as one
+  // entity. A NUL cannot be typed into either field, so the join is unambiguous.
+  // No label falls back to the type, so an unlabelled spec is still keyed by
+  // something rather than by the separator alone.
+  return type + '\u0000' + (label || type);
+}
+
+// Every spec sharing another's identity. Returns a Set of indices, so callers
+// can flag both sides of a clash rather than blaming whichever came second.
+function _meDupKeyIdxs(specs) {
+  const seen = new Map(), dup = new Set();
+  (specs || []).forEach((s, i) => {
+    const k = _specKey(s);
+    if (seen.has(k)) { dup.add(seen.get(k)); dup.add(i); }
+    else seen.set(k, i);
+  });
+  return dup;
+}
+
+// A label that does not collide with an existing type+label pair. "New Message"
+// becomes "New Message 2", then 3 — so pressing + New twice cannot produce two
+// entities the app considers the same one.
+function _meUniqueLabel(specs, type, label) {
+  const taken = new Set((specs || []).map(_specKey));
+  if (!taken.has(_specKey({ name: type, label }))) return label;
+  for (let n = 2; n < 500; n++) {
+    const candidate = `${label} ${n}`;
+    if (!taken.has(_specKey({ name: type, label: candidate }))) return candidate;
+  }
+  return label;
 }
 
 function _normalizeImportFile(raw) {
@@ -15410,7 +15447,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.3.8';
+const APP_VERSION  = '1.21.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22326,8 +22363,32 @@ function _meHtmlId(item) {
       </div>
     </div>
   </div>
+  <div id="me-id-warn" class="me-warn-inline" style="margin-top:6px">${_meIdWarnHtml(item)}</div>
 </div>`;
   }
+}
+
+// Type code + label is the identity of an entity, so a second entity carrying
+// the same pair is indistinguishable from the first — import merges them, the
+// export pre-check ticks both, and an armed override cannot say which it means.
+// Flagged rather than blocked: the collision usually exists for a keystroke
+// while a label is being retyped, and refusing input mid-edit is worse than
+// saying so.
+function _meIdWarnHtml(item) {
+  if (!item || !_meState || !Array.isArray(_meState.specs)) return '';
+  const key = _specKey(item);
+  const clashes = _meState.specs.filter(s => s !== item && _specKey(s) === key).length;
+  if (!clashes) return '';
+  return _meWarnChip('Duplicate type code + label',
+    'Another entity already uses this exact type code and label. They are the same identity to the app: an import cannot tell them apart, exporting one pre-selects both, and a parsing override cannot name just one. Change the type code or the label.');
+}
+
+// Repaint just the identity warning. _meField cannot re-render the whole card —
+// that would destroy the input being typed into — so this patches in place, the
+// way _meFileWarnsRefresh does for the other cards.
+function _meIdWarnRefresh() {
+  const el = document.getElementById('me-id-warn');
+  if (el) el.innerHTML = _meIdWarnHtml(_meCurItem());
 }
 
 function _meField(field, value) {
@@ -22336,6 +22397,7 @@ function _meField(field, value) {
   item[field] = value;
   _meSetDirty();
   if (field === 'name' || field === 'label' || field === 'color') _meRenderSidebar();
+  if (field === 'name' || field === 'label') _meIdWarnRefresh();
 }
 
 // ── Recognizers Tab ───────────────────────────────────────────────────────
@@ -23208,7 +23270,8 @@ function _meRecDragEnd(_e) {
 }
 
 function _meAddMsg() {
-  _meState.specs.push({ name: 'NEW', label: 'New Message', color: '#888888', vol: '', recognizers: [] });
+  _meState.specs.push({ name: 'NEW', label: _meUniqueLabel(_meState.specs, 'NEW', 'New Message'),
+                        color: '#888888', vol: '', recognizers: [] });
   _meSetDirty();
   _meSelectItem('msg', _meState.specs.length - 1);
 }
@@ -23216,15 +23279,16 @@ function _meAddMsg() {
 function _meAddOther() {
   // Recognized from bytes exactly like a message, so no seeded recognizer —
   // what identifies a structure is entirely the user's call.
-  _meState.specs.push({ name: 'NEW', label: 'New Structure', color: '#888888', vol: '',
-                        kind: 'other', recognizers: [] });
+  _meState.specs.push({ name: 'NEW', label: _meUniqueLabel(_meState.specs, 'NEW', 'New Structure'),
+                        color: '#888888', vol: '', kind: 'other', recognizers: [] });
   _meSetDirty();
   _meSelectItem('msg', _meState.specs.length - 1);
 }
 
 function _meAddFile() {
   // File detections match on the wrapper filename, so seed one filename recognizer.
-  _meState.specs.push({ name: 'NEWFILE', label: 'New File', color: '#888888', vol: '', kind: 'file',
+  _meState.specs.push({ name: 'NEWFILE', label: _meUniqueLabel(_meState.specs, 'NEWFILE', 'New File'),
+                        color: '#888888', vol: '', kind: 'file',
                         recognizers: [{ type: 'filename', pattern: '' }] });
   _meSetDirty();
   _meSelectItem('msg', _meState.specs.length - 1);

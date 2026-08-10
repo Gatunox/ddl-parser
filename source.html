@@ -15271,7 +15271,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.0.9';
+const APP_VERSION  = '1.21.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17237,6 +17237,7 @@ function _meHtmlParseSpec(item) {
       <button class="me-ps-variant-tgl ${binCls}" data-variant="binary" onclick="_mePsSwitchVariant('binary')" title="Binary Input — the default variant; used for hex / tandem-dump / ebcdic / netard-hex / etc.">Binary <span class="me-ps-vtgl-n">(${binCount})</span></button>
       <button class="me-ps-variant-tgl ${ascCls}" data-variant="ascii" onclick="_mePsSwitchVariant('ascii')" title="ASCII Input — used for ASCII-class input (ascii, netard-ascii, netard, fup-ascii); when empty it falls back to the Binary spec.">ASCII <span class="me-ps-vtgl-n">(${ascCount})</span></button>
     </div>
+    <div id="me-spec-warns" class="me-warn-inline" style="margin-left:12px">${_meSpecWarnsHtml(item)}</div>
     <div class="me-ps-variants" style="margin-left:auto" title="Re-format the spec: one line per block, or one line per attribute. Comments and trailing commas are preserved.">
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? ' on' : ''}" onclick="_mePsSetFmtMode('compact')">Compact</button>
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? '' : ' on'}" onclick="_mePsSetFmtMode('expanded')">Expanded</button>
@@ -22193,44 +22194,57 @@ function _meField(field, value) {
 // against — without one, records fall back to slow candidate scoring + the
 // DDL picker at parse time, so we nudge the user to bind a DDL.
 const _PS_NEEDS_BINDING = /read-ddl|read-bitmap-fields|read-segment-fields|(?<![\w-])read\b/;
-// Rendered inline in the Recognizers footer, beside + Add Recognizer. Each
-// warning is a SHORT label carrying its full explanation on the title, so the
-// row is one line tall whether a warning is showing or not — a warning that
-// changes height moves every section below it, which is what made typing a
-// binding path shove the input around. The long text is not lost, just hovered.
-function _meFileWarnsHtml(item) {
+// Warnings are split by the card that OWNS the problem, not by where the code
+// happened to grow. A missing filename recognizer is a recognizer problem; a
+// missing binding is a parse-spec problem — it is the spec that needs the DDL,
+// so that is the card to say it on. They used to render together under
+// Recognizers, which put "No DDL binding" on a card that has nothing to do with
+// bindings.
+//
+// Each is a SHORT label carrying its full explanation on the title, rendered
+// inline in a row that already exists, so the card is the same height whether a
+// warning is showing or not — a warning that changes height moves every section
+// below it, which is what made typing a binding path shove the input around.
+function _meWarnChip(short, full) {
+  return `<span class="me-warn-chip" title="${_escHtml(full)}">⚠ ${_escHtml(short)}</span>`;
+}
+
+// Recognizers card: only what the recognizer list itself can fix.
+function _meRecWarnsHtml(item) {
+  if (!item || item.kind !== 'file') return '';
+  if ((item.recognizers || []).some(r => r.type === 'filename')) return '';
+  return _meWarnChip('Needs a filename recognizer',
+    'File detections must carry a filename recognizer ($VOL.SUBVOL.FILE) — add one, or this entity can never match.');
+}
+
+// Parse Spec card: the spec needs a DDL to read from, so the spec says so.
+function _meSpecWarnsHtml(item) {
   if (!item) return '';
   const hasBind = (item.ddl_bindings || []).filter(Boolean).length > 0;
   const hasSpec = (item.parse_spec_binary || []).length > 0 || (item.parse_spec_ascii || []).length > 0;
-  const chip = (short, full) => `<span class="me-warn-chip" title="${_escHtml(full)}">⚠ ${_escHtml(short)}</span>`;
 
-  // ── Message detections ────────────────────────────────────────────────────
   if (item.kind !== 'file') {
     if (!hasSpec || hasBind) return '';
     // Parse spec present but no binding — only warn if the spec actually reads DDL.
     const specStr = JSON.stringify(item.parse_spec_binary || []) + JSON.stringify(item.parse_spec_ascii || []);
     if (!_PS_NEEDS_BINDING.test(specStr)) return '';
-    return chip('No DDL binding',
+    return _meWarnChip('No DDL binding',
       "This message's parse spec reads DDL fields, but no DDL is bound. At parse time it will fall back to scoring every candidate DDL and prompting you to pick one. Add the DDL in DDL Bindings to parse it directly.");
   }
 
-  // ── File detections ───────────────────────────────────────────────────────
-  let h = '';
-  if (!(item.recognizers || []).some(r => r.type === 'filename')) {
-    h += chip('Needs a filename recognizer',
-      'File detections must carry a filename recognizer ($VOL.SUBVOL.FILE) — add one, or this entity can never match.');
-  }
   if (!hasBind && !hasSpec) {
-    h += chip('Inert — no binding, no parse spec',
+    return _meWarnChip('Inert — no binding, no parse spec',
       'This file entity has no DDL binding and no parse spec, so it will never claim records. It needs both: a binding (the file\'s DDL) and a parse spec (how to read it).');
-  } else if (!hasBind) {
-    h += chip('No DDL binding',
+  }
+  if (!hasBind) {
+    return _meWarnChip('No DDL binding',
       'The parse spec has no DDL to read from (read-ddl / segment-fields will fail at parse time). Add the file\'s DDL in DDL Bindings.');
-  } else if (!hasSpec) {
-    h += chip('No parse spec',
+  }
+  if (!hasSpec) {
+    return _meWarnChip('No parse spec',
       'Records will parse as a full DDL walk, every field and segment assumed present. Segmented files need a read-bitmap (bits/value) + read-segment-fields parse spec.');
   }
-  return h;
+  return '';
 }
 
 // Patch the warnings in place. Binding-path and parse-spec edits update the
@@ -22250,8 +22264,11 @@ function _meFileWarnsRefresh() {
   // (parse-spec edits) is unaffected — none of them can be focused here.
   const active = document.activeElement;
   if (active && active.classList && active.classList.contains('me-bind-inp')) return;
-  const el = document.getElementById('me-file-warns');
-  if (el) el.innerHTML = _meFileWarnsHtml(_meCurItem());
+  const item = _meCurItem();
+  const rec  = document.getElementById('me-file-warns');
+  if (rec) rec.innerHTML = _meRecWarnsHtml(item);
+  const spec = document.getElementById('me-spec-warns');
+  if (spec) spec.innerHTML = _meSpecWarnsHtml(item);
 }
 
 function _meHtmlRecs(item) {
@@ -22298,7 +22315,7 @@ function _meHtmlRecs(item) {
   // space the row already reserves, so the section's height does not depend on
   // whether a warning is showing.
   h += `<div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:8px">
-    <div id="me-file-warns" class="me-warn-inline">${_meFileWarnsHtml(item)}</div>
+    <div id="me-file-warns" class="me-warn-inline">${_meRecWarnsHtml(item)}</div>
     <button class="btn btn-sm" onclick="_meNewRec()">+ Add Recognizer</button>
     <button class="btn btn-sm" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>
   </div>`;

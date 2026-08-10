@@ -9100,11 +9100,18 @@ test('controls border with --bw-ctl, containers with --bw', () => {
   // fixed 300px box lands on whole pixels — the user overruled it: a card that
   // reads as a dialog should carry the same edge as one, and the rule is
   // "controls and anything that looks like one", not a pixel-geometry argument.
+  //
+  // Identified by BEHAVIOUR as well as by name. Name-matching alone missed
+  // .me-sel, .me-rb, .me-vlg-len, .audit-sd-op and .audit-dt-copy button — all
+  // real controls whose class names abbreviate past the words being looked for
+  // ("sel" is not "select"). A rule that sets cursor:pointer or appearance:none
+  // is a control whatever it happens to be called.
   const CONTROLish = /input|textarea|select|filter|search|toast|pill|chip/i;
+  const behavesLikeControl = d => /cursor:\s*pointer/.test(d) || /appearance:\s*none/.test(d);
   const offenders = [];
   for (const m of css.matchAll(/(^|\n)([^{}\n]+)\{([^}]*)\}/g)) {
     const [, , selector, decls] = m;
-    if (!CONTROLish.test(selector)) continue;
+    if (!CONTROLish.test(selector) && !behavesLikeControl(decls)) continue;
     // A transparent border paints nothing, so the artifact cannot appear there;
     // #fmtForceSelect uses one purely to reserve layout space.
     if (/border:\s*var\(--bw\)\s+solid\s+(?!transparent)/.test(decls)) {

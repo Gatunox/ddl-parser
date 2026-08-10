@@ -603,9 +603,19 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
   min-width: 38px; text-align: center;   /* so "9" is still a pill, not a circle */
   border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--h-gray-fg);
   border: var(--bw-ctl) solid var(--h-gray-bd); }
-.tree-search-wrap { width: 100%; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--bg-deep); box-sizing: border-box; padding: 0; min-height: var(--panel-header-h, 27px); }
-input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 2px 22px 2px 5px; font-size: var(--sz-mono); background: var(--bg-deep); border: none; border-radius: 0; color: var(--text); outline: none; font-family: var(--font-tree); box-sizing: border-box; }
-input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) var(--accent); }
+.tree-search-wrap { width: 100%; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--bg-deep); box-sizing: border-box; padding: 0 var(--sp-1); min-height: var(--panel-header-h, 27px); }
+/* Matched to .ddl-search-input, the search field in the pane beside it: a
+   rounded box with a transparent border at rest that turns accent on focus.
+   This one used to be full-bleed — no radius, no border, an inset ring on focus
+   — so two search fields sitting side by side in the same panel were visibly
+   two different controls. The border is transparent rather than absent so
+   focusing changes a colour and never a size, which would nudge the row. */
+input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 2px 22px 2px 6px; font-size: var(--sz-mono);
+  background: transparent; border: var(--bw-ctl) solid transparent; border-radius: var(--r-sm);
+  -webkit-appearance: none; appearance: none; box-shadow: none;
+  color: var(--text); outline: none; font-family: var(--mono); box-sizing: border-box;
+  height: calc(var(--sz-mono) + 8px); align-self: center; }
+input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .tree-search::placeholder { color: var(--text-dim); }
 .tree-search-clear { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: calc(var(--sz-mono) - 2px); color: var(--text-dim); cursor: pointer; display: none; line-height: 1; padding: 2px; }
 .tree-search-clear:hover { color: var(--text); }
@@ -2486,7 +2496,7 @@ th.me-fm-colhi{color:var(--accent);}
             <span class="tree-hdr-count" id="ddlTreeCount">0</span>
           </div>
           <div class="tree-search-wrap">
-            <input id="treeSearch" class="tree-search" type="text" placeholder="Filter DDLs…"
+            <input id="treeSearch" class="tree-search" type="text" placeholder="Search"
               oninput="filterDDLTree(this.value)"
               onkeydown="if(event.key==='Escape'){this.value='';filterDDLTree('');}"
               autocomplete="off" spellcheck="false"/>
@@ -15332,7 +15342,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.2.0';
+const APP_VERSION  = '1.21.2.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

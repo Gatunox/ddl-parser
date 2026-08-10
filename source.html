@@ -14776,6 +14776,28 @@ function _handleImportFile(e) {
 //   - v2.0 bundle (passthrough)
 //   - v1.0 'ddl-export' (DDL-only)
 //   - v1.0 'msg-specs-export' (Messages-only)
+// The identity of a message spec, for matching an incoming one against what is
+// already here.
+//
+// NOT `name`. name is the TYPE CODE that shows in the badge — ISO, B24, STM —
+// and it is not unique: the built-in defaults ship three specs named ISO and
+// three named B24. Keying a Map on it collapses them onto one slot, so
+// importing three ISO messages overwrote the same entry three times: two
+// vanished without a word and the survivor landed on top of a different
+// message, taking its bindings with it. That was reported as "messages missing
+// even though they are in the file" and "bindings not assigned".
+//
+// `label` is what the rest of the app already treats as identity —
+// _fmtSyncDefaults matches defaults on `label || name`, up_me_last_sel stores a
+// label, and the editor sidebar lists labels. Import was the odd one out.
+//
+// Trimmed and upper-cased because a label that differs only in case or padding
+// is the same message to a human, and a "duplicate" that has to be reconciled
+// by hand is the failure mode this is trying to avoid.
+function _specKey(s) {
+  return String((s && (s.label || s.name)) || '').trim().toUpperCase();
+}
+
 function _normalizeImportFile(raw) {
   if (!raw || typeof raw !== 'object') return null;
   let bundle = null;
@@ -14843,7 +14865,7 @@ function _showImportPreview(data) {
   // ── Messages preview (may be empty) ──
   const incomingSpecs  = Array.isArray(data.specs) ? data.specs : [];
   const existingSpecs  = _exportGetSpecs();
-  const existingByName = new Map(existingSpecs.map(s => [(s.name || '').toUpperCase(), s]));
+  const existingByName = new Map(existingSpecs.map(s => [_specKey(s), s]));
 
   // Set of DDL paths available after import — current tree ∪ paths in this file
   const availablePaths = new Set();
@@ -14862,7 +14884,7 @@ function _showImportPreview(data) {
   const msgRows = incomingSpecs.map((s, i) => {
     const nm    = s.name  || s.label || '(unnamed)';
     const lbl   = s.label || '';
-    const isOver = existingByName.has(String(s.name || '').toUpperCase());
+    const isOver = existingByName.has(_specKey(s));
     if (isOver) conflictsMsg++;
     // Check DDL bindings — flag any that won't be available after import
     const missing = (s.ddl_bindings || []).map(p => {
@@ -14969,7 +14991,12 @@ function confirmImport() {
     }
     saveDeOverrides();
   }
-  if (ddlCount) { saveTree(); buildUnresolvedRefs(); renderDDLTree(); }
+  // buildTokenMap is not optional here. Token IDs are derived from the DDL text
+  // itself — buildTokenMap rescans the tree for files that look like token maps
+  // — so freshly imported token maps only produce badges once it re-runs. Every
+  // other path that writes to the tree pairs it with saveTree; import did not,
+  // so DDLs arrived and their token badges did not.
+  if (ddlCount) { saveTree(); buildTokenMap(); buildUnresolvedRefs(); renderDDLTree(); }
 
   // ── Message specs import ──
   const incomingSpecs = Array.isArray(_importData.specs) ? _importData.specs : [];
@@ -14989,11 +15016,13 @@ function confirmImport() {
     const editorOpen = !!_meOverlay && !_meOverlay.classList.contains('hidden')
       && (typeof _meState !== 'undefined' && _meState && Array.isArray(_meState.specs));
     const currentSpecs = editorOpen ? _meState.specs : (_fmtGetData().specs || []);
-    const byName = new Map(currentSpecs.map((s, i) => [(s.name || '').toUpperCase(), i]));
+    // Keyed by _specKey (label), not name — see the note on _specKey. A Map on
+    // name put every incoming ISO on one slot and ate the rest.
+    const byKey = new Map(currentSpecs.map((s, i) => [_specKey(s), i]));
     for (const s of pickedSpecs) {
-      const k = (s.name || '').toUpperCase();
-      if (byName.has(k)) { currentSpecs[byName.get(k)] = s; specOverwritten++; }
-      else               { currentSpecs.push(s); byName.set(k, currentSpecs.length - 1); specAdded++; }
+      const k = _specKey(s);
+      if (byKey.has(k)) { currentSpecs[byKey.get(k)] = s; specOverwritten++; }
+      else              { currentSpecs.push(s); byKey.set(k, currentSpecs.length - 1); specAdded++; }
     }
     if (editorOpen) {
       _meState.specs = currentSpecs;
@@ -15179,7 +15208,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.20.3.0';
+const APP_VERSION  = '1.20.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

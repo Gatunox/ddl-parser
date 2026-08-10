@@ -231,6 +231,7 @@ _t.auditBeginLoad     = _auditBeginLoad;
 // parse — the function whose scoring callback shipped a TypeError past 498
 // tests because nothing could execute it.
 _t.doParseMessages    = doParseMessages;
+_t.specKey            = _specKey;
 _t.detectMsgType      = detectMsgType;
 // In a browser, \`window.X = fn\` also creates the global \`X\`, and top-level code
 // relies on that — detectMsgTypeTrace calls the bare identifier _fmtDetectTrace,
@@ -8843,6 +8844,57 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
       `vertical writing-mode must be scoped to a collapsed panel, found on: "${sel}"`);
   }
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
+});
+
+// ── Import identity: the bug that ate two messages out of three ─────────────
+console.log('\nimport — a bundle must arrive intact');
+
+test('spec identity is the label, never the type code', () => {
+  // `name` is the badge's type code and is NOT unique — the shipped defaults
+  // carry three specs named ISO and three named B24. Keying on it made three
+  // incoming ISO messages collapse onto one slot.
+  const specKey = sandbox._t.specKey;
+  const a = { name: 'ISO', label: 'ISO 8583 Standard' };
+  const b = { name: 'ISO', label: 'ISO 8583 BIC' };
+  assert.notStrictEqual(specKey(a), specKey(b),
+    'two specs sharing a type code must not share an identity');
+  // Case and padding are noise: a near-miss that imports as "new" leaves the
+  // user reconciling a duplicate by hand, which is the other half of the bug.
+  assert.strictEqual(specKey({ label: 'ISO 8583 BIC' }), specKey({ label: '  iso 8583 bic ' }));
+  // name is the fallback for a spec that has no label at all, not the key.
+  assert.strictEqual(specKey({ name: 'MYMSG' }), 'MYMSG');
+  assert.strictEqual(specKey({ name: 'MYMSG', label: 'My Message' }), 'MY MESSAGE');
+  assert.strictEqual(specKey({}), '');
+});
+
+test('the default specs really do collide on name but not on label', () => {
+  // The premise of the test above, checked against the shipped data rather than
+  // assumed — if the defaults ever stopped colliding, the test would go quietly
+  // vacuous and stop guarding anything.
+  const specKey = sandbox._t.specKey;
+  const defaults = sandbox._t.fmtDefaultSpecs();
+  assert.ok(Array.isArray(defaults) && defaults.length, 'defaults load');
+  const names  = defaults.map(s => String(s.name || '').toUpperCase());
+  const labels = defaults.map(specKey);
+  assert.ok(names.length !== new Set(names).size,
+    'the defaults are expected to share type codes — that is why name cannot be the key');
+  assert.strictEqual(labels.length, new Set(labels).size,
+    'labels must stay unique across the defaults, or import has no safe key at all');
+});
+
+test('import merges on identity, and rebuilds the token map', () => {
+  // Both halves of the reported bug, pinned at the source. confirmImport must
+  // not key a Map on `name`, and it must re-run buildTokenMap: token IDs are
+  // derived from the imported DDL text, so badges stay missing until it does.
+  const fn = /function confirmImport\(\)\s*\{([\s\S]*?)\n\}/.exec(APP_SRC);
+  assert.ok(fn, 'confirmImport not found');
+  const body = fn[1];
+  assert.ok(!/new Map\(currentSpecs\.map\(\(s, i\) => \[\(s\.name/.test(body),
+    'confirmImport must not key specs by name — that collapses ISO/B24 onto one slot');
+  assert.ok(/_specKey\(/.test(body),
+    'confirmImport must merge on _specKey');
+  assert.ok(/buildTokenMap\(\)/.test(body),
+    'confirmImport must rebuild the token map, or imported token DDLs show no badge');
 });
 
 test('a dialog outranks every surface that can raise one', () => {

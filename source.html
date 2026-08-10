@@ -1977,6 +1977,15 @@ input.me-inp{width:100%;}
 .me-test-err{color:#f85149;}
 .me-test-note{color:var(--text-dim);font-style:italic;}
 .me-test-warn{color:var(--warning);margin-top:4px;}
+/* Inline form, for the footer row beside + Add Recognizer. One line, clipped
+   with an ellipsis, full text on the title — so the row's height is the same
+   whether a warning is present or not and nothing below it moves when one
+   appears. min-width:0 is what actually lets a flex child shrink and ellipsise
+   instead of forcing the row wider. */
+.me-warn-inline{flex:1;min-width:0;display:flex;gap:10px;align-items:center;overflow:hidden;}
+/* No cursor:help — a badge is an annotation, not a control, and the "?" pointer
+   reads as broken. Pinned by a test; reported three times before that. */
+.me-warn-inline .me-warn-chip{color:var(--warning);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .me-test-section{margin-bottom:8px;}
 .me-test-section:last-child{margin-bottom:0;}
 .me-test-sec-hdr{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom: var(--bw) solid var(--border);margin-bottom:4px;color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
@@ -15262,7 +15271,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.0.7';
+const APP_VERSION  = '1.21.0.8';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22175,10 +22184,16 @@ function _meField(field, value) {
 // against — without one, records fall back to slow candidate scoring + the
 // DDL picker at parse time, so we nudge the user to bind a DDL.
 const _PS_NEEDS_BINDING = /read-ddl|read-bitmap-fields|read-segment-fields|(?<![\w-])read\b/;
+// Rendered inline in the Recognizers footer, beside + Add Recognizer. Each
+// warning is a SHORT label carrying its full explanation on the title, so the
+// row is one line tall whether a warning is showing or not — a warning that
+// changes height moves every section below it, which is what made typing a
+// binding path shove the input around. The long text is not lost, just hovered.
 function _meFileWarnsHtml(item) {
   if (!item) return '';
   const hasBind = (item.ddl_bindings || []).filter(Boolean).length > 0;
   const hasSpec = (item.parse_spec_binary || []).length > 0 || (item.parse_spec_ascii || []).length > 0;
+  const chip = (short, full) => `<span class="me-warn-chip" title="${_escHtml(full)}">⚠ ${_escHtml(short)}</span>`;
 
   // ── Message detections ────────────────────────────────────────────────────
   if (item.kind !== 'file') {
@@ -22186,20 +22201,25 @@ function _meFileWarnsHtml(item) {
     // Parse spec present but no binding — only warn if the spec actually reads DDL.
     const specStr = JSON.stringify(item.parse_spec_binary || []) + JSON.stringify(item.parse_spec_ascii || []);
     if (!_PS_NEEDS_BINDING.test(specStr)) return '';
-    return `<div class="me-test-warn" style="margin:0 0 8px">⚠ No DDL binding — this message's parse spec reads DDL fields, but no DDL is bound. At parse time it will fall back to scoring every candidate DDL and prompting you to pick one. Add the DDL in DDL Bindings to parse it directly.</div>`;
+    return chip('No DDL binding',
+      "This message's parse spec reads DDL fields, but no DDL is bound. At parse time it will fall back to scoring every candidate DDL and prompting you to pick one. Add the DDL in DDL Bindings to parse it directly.");
   }
 
   // ── File detections ───────────────────────────────────────────────────────
   let h = '';
   if (!(item.recognizers || []).some(r => r.type === 'filename')) {
-    h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ File detections must carry a filename recognizer ($VOL.SUBVOL.FILE) — add one, or this entity can never match.</div>`;
+    h += chip('Needs a filename recognizer',
+      'File detections must carry a filename recognizer ($VOL.SUBVOL.FILE) — add one, or this entity can never match.');
   }
   if (!hasBind && !hasSpec) {
-    h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ Inert — this file entity has no DDL binding and no parse spec, so it will never claim records. It needs both: a binding (the file's DDL) and a parse spec (how to read it).</div>`;
+    h += chip('Inert — no binding, no parse spec',
+      'This file entity has no DDL binding and no parse spec, so it will never claim records. It needs both: a binding (the file\'s DDL) and a parse spec (how to read it).');
   } else if (!hasBind) {
-    h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ No DDL binding — the parse spec has no DDL to read from (read-ddl / segment-fields will fail at parse time). Add the file's DDL in DDL Bindings.</div>`;
+    h += chip('No DDL binding',
+      'The parse spec has no DDL to read from (read-ddl / segment-fields will fail at parse time). Add the file\'s DDL in DDL Bindings.');
   } else if (!hasSpec) {
-    h += `<div class="me-test-warn" style="margin:0 0 8px">⚠ No parse spec — records will parse as a full DDL walk, every field and segment assumed present. Segmented files need a read-bitmap (bits/value) + read-segment-fields parse spec.</div>`;
+    h += chip('No parse spec',
+      'Records will parse as a full DDL walk, every field and segment assumed present. Segmented files need a read-bitmap (bits/value) + read-segment-fields parse spec.');
   }
   return h;
 }
@@ -22262,13 +22282,14 @@ function _meHtmlRecs(item) {
 </div>`;
   });
   h += '</div>';
-  // Warnings sit BELOW the recognizer list, not above it. Above, every
-  // appearance or disappearance pushed the whole section — the recognizers, the
-  // Parse Spec and the DDL Bindings input — down the page. Below, the only thing
-  // it can move is itself and the sections after it, and nothing the user is
-  // pointing at when the warning changes is above it.
-  h += `<div id="me-file-warns" style="margin-top:8px">${_meFileWarnsHtml(item)}</div>`;
-  h += `<div style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
+  // Warnings live INSIDE the footer row, left of the buttons — not stacked above
+  // it. On its own line the block had a height, so appearing or disappearing
+  // moved the Parse Spec and the DDL Bindings input below it; typing a binding
+  // path shoved the field under the cursor. Sharing the button row, it occupies
+  // space the row already reserves, so the section's height does not depend on
+  // whether a warning is showing.
+  h += `<div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:8px">
+    <div id="me-file-warns" class="me-warn-inline">${_meFileWarnsHtml(item)}</div>
     <button class="btn btn-sm" onclick="_meNewRec()">+ Add Recognizer</button>
     <button class="btn btn-sm" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>
   </div>`;

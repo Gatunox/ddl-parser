@@ -8845,6 +8845,32 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
 
+test('the amber collapsed ring stays on panel headers', () => {
+  // .panel-toggle.is-collapsed:hover paints an inset amber ring, which reads as
+  // "this panel is collapsed". The same button markup is reused in the config
+  // dialogs, where is-collapsed means "this column is on" — and there the ring
+  // is just a yellow outline nobody asked for.
+  //
+  // Every one of these selectors weighs three class-level components, so the
+  // later rule wins only the properties it NAMES. .settings-row already reset
+  // box-shadow for this reason; .audit-cfg-row did not, so the ring leaked into
+  // the columns editor. Any future context that restyles the toggle must reset
+  // it too, so the requirement is checked for all of them rather than by name.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  const base = /(^|\n)\.panel-toggle\.is-collapsed:hover\s*\{([^}]*)\}/.exec(css);
+  assert.ok(base && /box-shadow:\s*inset/.test(base[2]),
+    'the panel header still needs its amber ring — that is the intended signal');
+
+  const missing = [];
+  for (const m of css.matchAll(/(^|\n)([^{}\n]*\s\.panel-toggle:hover)\s*\{([^}]*)\}/g)) {
+    if (!/box-shadow:\s*none/.test(m[3])) missing.push(m[2].trim());
+  }
+  deepEq(missing, [],
+    'a scoped .panel-toggle:hover must reset box-shadow or the amber ring leaks through');
+});
+
 test('an icon button centres its glyph inside its fixed width', () => {
   // .btn.btn-ico pins the width at 30px and zeroes the horizontal padding so ⚙
   // and ✕ — different advance widths — come out the same size. That only works

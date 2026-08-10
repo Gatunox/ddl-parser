@@ -1647,7 +1647,12 @@ td.c-err  { color: var(--accent2); }
 }
 .audit-cfg-section { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); margin:8px 0 6px; padding-top:8px; border-top: var(--bw) solid var(--border); }
 .audit-cfg-row .panel-toggle { width:26px; height:calc(var(--sz-mono) + 8px); border: var(--bw-ctl) solid var(--border); border-radius:var(--r-sm); padding:0; align-self:auto; box-sizing:border-box; font-size:var(--sz-mono); background:transparent; color:var(--text-dim); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
-.audit-cfg-row .panel-toggle:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
+/* box-shadow:none is the point of this rule, as it is in .settings-row above.
+   .panel-toggle.is-collapsed:hover paints an amber inset ring for a collapsed
+   PANEL; here the same class only means "column is on". Both selectors weigh
+   three classes, so this one wins the properties it names and the ring survives
+   in the ones it does not — a yellow outline on every selected column button. */
+.audit-cfg-row .panel-toggle:hover { box-shadow: none; border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
 .audit-cfg-row .panel-toggle.is-collapsed { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
 .audit-cfg-dialog.open { display:block; }
 .audit-cfg-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
@@ -15166,7 +15171,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.20.2.2';
+const APP_VERSION  = '1.20.2.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -675,7 +675,7 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .ddl-search-nav-x { font-size: calc(var(--sz-mono) - 3px); }
 .ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 .ddl-search-controls.hidden { display: none; }
-.tree-node { padding: var(--row-py) 20px var(--row-py) 5px; margin-right: -20px; cursor: pointer; font-family: var(--font-mono); font-size: calc(var(--sz-mono) - 0.5px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; }
+.tree-node { padding: var(--row-py) 20px var(--row-py) 5px; margin-right: -20px; cursor: pointer; font-family: var(--font-mono); font-size: calc(var(--sz-mono) - 1px); display: flex; align-items: center; gap: 2px; white-space: nowrap; user-select: none; line-height: calc(var(--sz-mono) + 4px); }
 .tree-node:hover  { background: rgba(var(--accent-rgb),0.08); }
 .tree-node.tree-sel { background: rgba(var(--accent-rgb),0.18); }
 .tree-caret { font-size: 11px; width: 10px; flex-shrink: 0; color: var(--text-dim); display: inline-block; text-align: center; line-height: 1; }
@@ -973,6 +973,16 @@ input[type="text"]:focus { border-color: var(--accent); }
    so a panel with no type badge keeps its title flush against the header. */
 .pt-badge { display: flex; align-items: center; flex-shrink: 0; margin-left: var(--sp-1); }
 .pt-badge:empty { display: none; }
+
+/* An explicit line box, in pixels rather than a ratio: --sz-badge is a whole
+   number, so +4px keeps the height whole at every font size. A unitless
+   line-height would reintroduce fractions the moment the ratio did not divide
+   evenly. */
+.btype, .tree-type-badge, .tree-tkn-id, .tree-tkn-map, .tree-excl-badge,
+.tree-cnt, .tree-hdr-count, .me-gap-badge, .tree-unres-badge,
+.tree-warn-badge, .tree-error-badge {
+  line-height: calc(var(--sz-badge) + 4px);
+}
 
 /* ===== BADGES ===== */
 #fmtBadge, #cntBadge { display: flex; align-items: center; gap: 4px; }
@@ -15283,7 +15293,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.16.6.0';
+const APP_VERSION  = '1.16.7.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15486,6 +15496,16 @@ function applyPrefs(updateUI = true) {
   const _hBase = P.density === 'compact' ? 27 : 34;
   const _headerH = _hBase + Math.floor((P.monoSize - 12) / 3);
   document.documentElement.style.setProperty('--panel-header-h', _headerH + 'px');
+  // Whole pixels: the CSS form of this divides by 3 and lands on thirds, which
+  // gives a fractional line box and puts every badge on a half pixel.
+  //
+  // Then nudged so (row line box - badge line box) stays EVEN. Both are their
+  // font plus 4px, so the difference is monoSize - szBadge; when that is odd the
+  // badge centres on a half pixel inside its row. This was the last one — it
+  // was why 11px and 13px still split while 9, 12, 15 and 18 were clean.
+  let _szBadge = Math.round(9 + (P.monoSize - 9) / 3);
+  if ((P.monoSize - _szBadge) % 2 !== 0) _szBadge -= 1;
+  document.documentElement.style.setProperty('--sz-badge', _szBadge + 'px');
   if (updateUI) {
     const lbl = document.getElementById('szLabel');
     if (lbl) lbl.textContent = P.monoSize + 'px';

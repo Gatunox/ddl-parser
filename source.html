@@ -15262,7 +15262,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.0.4';
+const APP_VERSION  = '1.21.0.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19699,6 +19699,13 @@ function _meBindHideDrop() {
     const drop = document.getElementById('me-ddl-drop');
     if (drop) drop.style.display = 'none';
     _meDropEntries = []; _meDropBindIdx = -1; _meDropFocusIdx = -1;
+    // Focus has left the binding input, so the verdicts held back during typing
+    // are now worth showing — evaluated against the finished path rather than a
+    // half-typed prefix. Inside the same timeout the dropdown uses, so a click
+    // on a suggestion resolves before anything is judged. Skipped when focus
+    // moved to ANOTHER binding input: the user is still editing bindings and
+    // the reflow would land under the cursor again.
+    if (!_meBindHasFocus()) _meBindDeferredRefresh();
   }, 120);
 }
 
@@ -19749,11 +19756,33 @@ function _meBindPick(idx, path) {
   _meDropEntries = []; _meDropBindIdx = -1; _meDropFocusIdx = -1;
 }
 
+// True while the user is inside a binding input. Both the file-warnings block
+// and the Parse Spec lint render ABOVE the bindings, so refreshing either
+// mid-keystroke pushes the input — and the suggestion dropdown pinned to it —
+// down the page under the cursor.
+function _meBindHasFocus() {
+  const a = document.activeElement;
+  return !!(a && a.classList && a.classList.contains('me-bind-inp'));
+}
+
+// Both deferred refreshes, run once focus has left the bindings.
+function _meBindDeferredRefresh() {
+  const item = _meCurItem(); if (!item) return;
+  const { spec: specField } = _mePsFieldsForVariant(_mePsActiveVariant());
+  if (Array.isArray(item[specField])) _mePsScheduleLint(item, item[specField]);
+  _meFileWarnsRefresh();
+}
+
 function _meBindSet(idx, val) {
   const item = _meCurItem(); if (!item) return;
   if (!item.ddl_bindings) item.ddl_bindings = [];
   item.ddl_bindings[idx] = val;
   _meSetDirty();
+  // Both of these are held back while the input has focus and replayed on blur.
+  // The lint matters as much as the warning here: typing a path swaps "read-ddl:
+  // no DDL bindings" for the longer "not found in bound DDLs" lines, which wrap
+  // differently — measured as a 13px downward shove of the input mid-word.
+  if (_meBindHasFocus()) return;
   // Bindings feed the Parse Spec lint's known-id set — re-lint so stale
   // "not found in bound DDLs" warnings clear/appear as the binding changes.
   // (Cache key covers binding paths + DDL content; no-op when the parse_spec
@@ -22179,6 +22208,19 @@ function _meFileWarnsHtml(item) {
 // item WITHOUT a full right-panel re-render (that would steal input focus /
 // destroy the CodeMirror editor mid-keystroke) — so they call this instead.
 function _meFileWarnsRefresh() {
+  // Not while a binding input has focus. The warnings block sits ABOVE the
+  // bindings, so appearing or disappearing mid-keystroke pushed the input —
+  // and the suggestion dropdown anchored to it — down the page under the
+  // cursor. Worse, the warning it was toggling is "no DDL binding", which is
+  // guaranteed to flip while someone types a path: half-typed prefixes do not
+  // resolve, so the block appeared on the first character and vanished on the
+  // last, reflowing the section twice per edit.
+  //
+  // Deferred, not dropped: _meBindHideDrop re-runs this on blur, so the
+  // verdict is re-evaluated against the finished value. Every other caller
+  // (parse-spec edits) is unaffected — none of them can be focused here.
+  const active = document.activeElement;
+  if (active && active.classList && active.classList.contains('me-bind-inp')) return;
   const el = document.getElementById('me-file-warns');
   if (el) el.innerHTML = _meFileWarnsHtml(_meCurItem());
 }

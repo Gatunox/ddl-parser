@@ -1526,6 +1526,12 @@ td.c-err  { color: var(--accent2); }
   text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;
   display: flex; align-items: center; justify-content: space-between; cursor: default;
 }
+/* Collapsed, the title has nothing beneath it, so its 10px bottom margin was
+   pure dead space: 13px above the title against 23px below, in a card whose own
+   padding is a symmetric 12/12. Dropping it makes the collapsed card read as one
+   centred row. The margin returns the moment the section opens, where it is
+   doing real work separating the title from the body. */
+.settings-stitle.collapsed { margin-bottom: 0; }
 .settings-stitle .stitle-toggle {
   background: transparent; color: var(--text-dim); border: var(--bw-ctl) solid var(--border);
   width: 26px; height: 20px; border-radius: var(--r-sm); font-size: calc(var(--sz-mono) + 2px); line-height: 1; box-sizing: border-box;
@@ -15271,7 +15277,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.1.0';
+const APP_VERSION  = '1.21.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

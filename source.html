@@ -524,8 +524,8 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
 .panel-toggle.is-collapsed { color: var(--warning); }
 .panel-toggle.is-collapsed:hover { background: rgba(230,168,23,0.12); box-shadow: inset 0 0 0 var(--bw-ctl) var(--warning); }
 .settings-row .panel-toggle { width: 26px; height: 20px; border: var(--bw-ctl) solid var(--border); border-radius: var(--r-sm); padding: 0; align-self: auto; box-sizing: border-box; }
-.settings-row .panel-toggle:hover { box-shadow: none; border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
-.settings-row .panel-toggle.is-collapsed { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+.settings-row .panel-toggle:hover { box-shadow: none; border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
+.settings-row .panel-toggle.is-collapsed { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
 /* Header buttons used to be full-height borderless strips, which read as
    toolbar segments rather than buttons and left Parse stretched beside them.
    They are ordinary buttons now, vertically centred and sized by content. */
@@ -548,7 +548,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
 }
 #msgCfgBar select { background:var(--bg-panel); border: var(--bw-ctl) solid var(--border); color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 4px; border-radius:var(--r-sm); height:calc(var(--sz-mono) + 8px); }
 #msgCfgBar select:focus { outline:none; border-color:var(--accent); }
-#msgCfgBar select:hover { border-color:var(--accent); color:var(--accent); }
+#msgCfgBar select:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); }
 #msgCfgBar select.fmt-forced { color:var(--warning); border-color:var(--warning); }
 body.audit-active #msgCfgBar, .panel.collapsed #msgCfgBar { display:none !important; }
 body.audit-active #auditStats { display: flex !important; align-items: center; padding: 0 6px 0 4px; border-right: var(--bw) solid var(--border); font-size: var(--sz-mono); color: var(--text-dim); font-family: var(--font-mono); }
@@ -1111,9 +1111,9 @@ tr.row-filter-hide  { display: none; }
   background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap; position:relative;
 }
 #resCfgControls .btn { background:none; border: var(--bw-ctl) solid var(--border); color:var(--text-dim); font-family:var(--font-mono); font-size:var(--sz-mono); padding:0 8px; height:calc(var(--sz-mono) + 8px); border-radius:var(--r-sm); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
-#resCfgControls .btn:hover { border-color:var(--accent); color:var(--text); }
+#resCfgControls .btn:hover { border-color: var(--h-gray-bd); color:var(--text); }
 #resCfgControls select { background:var(--bg-panel); border: var(--bw-ctl) solid var(--border); color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 4px; border-radius:var(--r-sm); height:calc(var(--sz-mono) + 8px); align-self:auto; }
-#resCfgControls select:hover { border-color:var(--accent); color:var(--accent); }
+#resCfgControls select:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); }
 #resCfgControls select:focus { outline:none; border-color:var(--accent); }
 
 /* ===== RESULTS TABLE ===== */
@@ -1152,15 +1152,15 @@ tbody tr:hover td { background: var(--hl-hover); }
 tbody tr.row-sel td { background: rgba(var(--accent-rgb),0.18) !important; color: var(--hl-text) !important; }
 tbody tr.row-redef td.c-id { color: rgba(var(--accent-rgb),0.65); }
 tbody tr.row-unreliable td { background: rgba(var(--accent-rgb),0.07); }
-.unreliable-badge { font-size:9px; font-weight:700; color:var(--accent); margin-left:6px;
+.unreliable-badge { font-size:9px; font-weight:700; color: var(--h-gray-fg); margin-left:6px;
                     text-transform:uppercase; vertical-align:middle; letter-spacing:.3px; }
 /* "FIELD ↩ TARGET" in the Field column — same scheme as the override annotation and
    as DDL Doc: the arrow in accent-blue, the name it points TO in dimmed white. The
    opacity:0.7 that used to sit here compounded with the 0.65 alpha to roughly .46. */
 .c-redef-mark { font-size: 10px; color: var(--redef-fg); }
 .c-redef-tgt  { color: var(--text-dim); font-weight: 600; }
-.c-de-badge { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--accent);
-              background: rgba(var(--accent-rgb),.12); border: var(--bw-ctl) solid var(--accent);
+.c-de-badge { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--h-gray-fg);
+              background: var(--h-gray-bg); border: var(--bw-ctl) solid var(--accent);
               border-radius: var(--r-sm); padding: 1px 5px; vertical-align: middle; letter-spacing: .3px; }
 /* Override annotation in the Type / Description column: "<declared> ↩ <override> as <DISPLAY>".
    The declared type it points back FROM, the ↩ arrow and the display read in the
@@ -1335,7 +1335,7 @@ td.c-err  { color: var(--accent2); }
 .msg-ctr  { color: var(--text-dim); font-size: var(--sz-mono); white-space: nowrap; padding: 0 4px; text-align: center; }
 /* Prev/next nav buttons: borderless until hovered (2px kept, just transparent). */
 .msg-nav .btn { border-color: transparent; }
-.msg-nav .btn:hover { border-color: var(--accent); }
+.msg-nav .btn:hover { border-color: var(--h-gray-bd); }
 .empty-st {
   display: flex; align-items: center; justify-content: center;
   flex: 1; color: var(--text-dim); font-size: var(--sz-mono);
@@ -1519,8 +1519,8 @@ td.c-err  { color: var(--accent2); }
   cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   transition: all 0.1s; padding: 0;
 }
-.settings-stitle .stitle-toggle:hover { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
-.settings-stitle.collapsed .stitle-toggle { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+.settings-stitle .stitle-toggle:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
+.settings-stitle.collapsed .stitle-toggle { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
 .settings-collapsible-body { overflow: hidden; transition: max-height 0.2s ease; }
 .settings-collapsible-body.collapsed { max-height: 0 !important; }
 .settings-row {
@@ -1566,7 +1566,7 @@ td.c-err  { color: var(--accent2); }
 .settings-help .h-sub-toggle:focus-visible { outline: var(--bw-ctl) solid var(--accent); outline-offset: -2px; }
 .settings-help .h-sub-toggle:hover { background: var(--surface-hover); color: var(--text); }
 .settings-help .h-sub-arrow { background: transparent; color: var(--text-dim); border: var(--bw-ctl) solid var(--border); width: 26px; height: 20px; border-radius: var(--r-sm); font-size: calc(var(--sz-mono) + 2px); line-height: 1; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.1s; padding: 0; pointer-events: none; box-sizing: border-box; }
-.settings-help .h-sub-toggle.open .h-sub-arrow { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+.settings-help .h-sub-toggle.open .h-sub-arrow { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
 .settings-help .h-sub-body { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
 .settings-help .h-sub-body.open { max-height: 1200px; overflow-y: auto; }
 .settings-help .h-sub-body-inner { padding: 4px 0 8px; }
@@ -1658,8 +1658,8 @@ td.c-err  { color: var(--accent2); }
 }
 .audit-cfg-section { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); margin:8px 0 6px; padding-top:8px; border-top: var(--bw) solid var(--border); }
 .audit-cfg-row .panel-toggle { width:26px; height:calc(var(--sz-mono) + 8px); border: var(--bw-ctl) solid var(--border); border-radius:var(--r-sm); padding:0; align-self:auto; box-sizing:border-box; font-size:var(--sz-mono); background:transparent; color:var(--text-dim); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
-.audit-cfg-row .panel-toggle:hover { border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),0.1); }
-.audit-cfg-row .panel-toggle.is-collapsed { border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),0.1); }
+.audit-cfg-row .panel-toggle:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
+.audit-cfg-row .panel-toggle.is-collapsed { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
 .audit-cfg-dialog.open { display:block; }
 .audit-cfg-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
 .audit-cfg-row label { color:var(--text-dim); }
@@ -2131,7 +2131,7 @@ input.me-inp{width:100%;}
 .me-fm-seg .btn{border:0;border-radius:0;min-width:66px;height:18px;text-align:center;
   border-right: var(--bw-ctl) solid var(--border);padding:0 7px;white-space:nowrap;}
 .me-fm-seg .btn:last-child{border-right:0;}
-.me-fm-seg .btn:hover{background:rgba(var(--accent-rgb),.16);color:var(--accent);}
+.me-fm-seg .btn:hover{background: var(--h-gray-bg);color: var(--h-gray-fg);}
 .me-fm-bar .btn.dis{opacity:.3;pointer-events:none;}
 .me-fm-table tbody tr.me-fm-row-multi{background:rgba(var(--accent-rgb),0.18);
   box-shadow:inset 3px 0 0 var(--accent);}
@@ -2249,7 +2249,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* Reused DE controls */
 .me-de-nudge{width:22px;height:20px;padding:0;flex-shrink:0;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
 .me-de-pill{display:inline-flex;align-items:center;justify-content:center;min-width:54px;height:20px;padding:0 8px;border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);background:var(--bg-deep);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);cursor:pointer;flex-shrink:0;user-select:none;}
-.me-de-pill:hover{border-color:var(--accent);color:var(--accent);}
+.me-de-pill:hover{border-color: var(--h-gray-bd);color: var(--h-gray-fg);}
 .me-de-pill.anchored{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.07);}
 .me-de-edit-inp{width:46px;height:16px;padding:0 2px;border:0;background:transparent;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--accent);text-align:center;outline:none;}
 /* Nudge chevrons and ↺ clear buttons sit borderless until hovered — the 2px
@@ -2264,7 +2264,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-fo-sel:has(option:checked:not([value=""])){color:var(--accent);}
 /* VLG toggles — group pill marks the group as a VLG; leaf pill marks the LEN */
 .me-vlg-tgl{height:18px;padding:0 8px;font-size:9px;font-family:var(--mono);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-lg);background:transparent;color:var(--text-dim);cursor:pointer;letter-spacing:.04em;}
-.me-vlg-tgl:hover{color:var(--accent);border-color:var(--accent);}
+.me-vlg-tgl:hover{color: var(--h-gray-fg);border-color: var(--h-gray-bd);}
 .me-vlg-tgl.on{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
 .me-vlg-len{height:16px;padding:0 7px;font-size:9px;font-family:var(--mono);border: var(--bw) solid var(--border);border-radius:var(--r-lg);background:transparent;color:var(--text-very-dim,var(--text-dim));cursor:pointer;letter-spacing:.04em;}
 .me-vlg-len:hover{color:var(--accent);border-color:var(--accent);}
@@ -2273,7 +2273,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    Empty + unselected = dim; has-content (in use) = accent text; selected = accent border+bg. */
 .me-ps-variants{display:inline-flex;gap:6px;}
 .me-ps-variant-tgl{height:24px;padding:0 12px;font-size:11px;font-family:var(--mono);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-lg);background:transparent;color:var(--text-very-dim,var(--text-dim));cursor:pointer;letter-spacing:.04em;white-space:nowrap;}
-.me-ps-variant-tgl:hover{color:var(--accent);border-color:var(--accent);}
+.me-ps-variant-tgl:hover{color: var(--h-gray-fg);border-color: var(--h-gray-bd);}
 .me-ps-variant-tgl.in-use{color:var(--accent);}
 .me-ps-variant-tgl.on{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
 .me-ps-variant-tgl .me-ps-vtgl-n{opacity:0.7;font-weight:400;}
@@ -2309,7 +2309,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ovl-row.sel{background:rgba(var(--accent-rgb),0.12);box-shadow:inset 3px 0 0 var(--accent);}
 .me-ovl-name{font-weight:700;color:var(--accent);min-width:180px;font-size:calc(var(--sz-mono) - 1px);}
 .me-ovl-chips{flex:1;display:flex;gap:5px;flex-wrap:wrap;}
-.me-ovl-chip{border: var(--bw-ctl) solid rgba(var(--accent-rgb),0.55);color:var(--accent);border-radius:var(--r-sm);
+.me-ovl-chip{border: var(--bw-ctl) solid var(--h-gray-bd);color: var(--h-gray-fg);border-radius:var(--r-sm);
   padding:0 5px;font-size:calc(var(--sz-mono) - 3px);white-space:nowrap;}
 .me-ovl-empty{padding:12px;text-align:center;color:var(--text-very-dim);
   font-size:calc(var(--sz-mono) - 1px);line-height:1.6;}
@@ -15294,7 +15294,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.17.1.0';
+const APP_VERSION  = '1.17.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -26865,8 +26865,8 @@ function _meSave() {
           All data stays <strong>in your browser</strong> — nothing is sent to any server.<br>
           DDL definitions are persisted in <code>localStorage</code>.
           <br><br>
-          <span class="about-tag" style="background:rgba(var(--accent-rgb),0.12);color:var(--accent);border: var(--bw-ctl) solid var(--accent)">Single file App</span>
-          <span class="about-tag" style="background:rgba(var(--accent-rgb),0.12);color:var(--accent);border: var(--bw-ctl) solid var(--accent)">100% offline</span>
+          <span class="about-tag" style="background:var(--h-gray-bg);color:var(--h-gray-fg);border: var(--bw-ctl) solid var(--h-gray-bd)">Single file App</span>
+          <span class="about-tag" style="background:var(--h-gray-bg);color:var(--h-gray-fg);border: var(--bw-ctl) solid var(--h-gray-bd)">100% offline</span>
           <br><br>
           <!-- One line only — the terms live in Help › Licence &amp; Copyright. -->
           Copyright © 2026 <strong>Gatunox</strong> ·

@@ -487,29 +487,26 @@ original "always 2px" rule had been protecting all along — see
 
 ---
 
-## 16. Loose ends from the theme work — *noted 2026-08-09*
+## 16. [x] Loose ends from the theme work — *done v1.21.4.1*
 
-Three things spotted while fixing other bugs on `main` at v1.20.2.3. None were
-in scope at the time; none are urgent.
-
-- [ ] **`#expFilterInput` hardcodes `font-size:12px`** (`source.html` ~line 791).
-      The export modal's filter box does not follow Small / Medium / Large.
-      Every neighbouring control scales — `.me-fm-filter` right beside it uses
-      `calc(var(--sz-mono) - 1px)`. One-line change to `var(--sz-mono)`, but it
-      wants an eyeball at all three sizes: the box sits in a flex header and
-      growing the text may reflow the row.
-- [ ] **The Message Entity ruler may have the stale-metric bug** (`source.html`
-      ~line 26037). v1.20.2.1 fixed the Main panel's Line Width marker, which was
-      placed from CodeMirror's cached `defaultCharacterWidth` on the same tick as
-      the font change and so landed a whole step short. The Message Entity panel
-      detects its ruler column through its own path and was never checked.
-      Reproduce the same way: load a NETARD message, note the marker position,
-      switch font size, and compare against `pad + col * charW`.
-- [ ] **`.btn-sm` is a dead class** — 43 usages in markup, zero CSS rules
-      anywhere. Either it lost its rule in the theme migration and icon buttons
-      have been rendering full-size since, or it was always decorative. Decide
-      which: give it a rule, or strip it from the markup. Do not delete blind —
-      check `git log -S` first for what it used to do.
+- [x] **`#expFilterInput` hardcoded `font-size:12px`** — now `var(--sz-mono)`.
+      Measured across Small/Medium/Large: 10 / 12 / 14px.
+- [x] **The toast hardcoded 12px too** — same fix, same measurements.
+- [x] **The Message Entity ruler** — *no bug existed.* The premise was wrong: the
+      ME panel draws no ruler at all. `#lwColMarker` is injected into the main
+      message-input editor only; the ME side calls `_detectNetardRuler` purely to
+      pick a clip width for parsing, with no pixel positioning, so the stale
+      `defaultCharacterWidth` bug fixed in v1.20.2.1 cannot occur there.
+      It did surface a real one, now fixed: that path SET `S.netardRulerCol`,
+      which is the main panel's ruler column, and left it set — so running a Test
+      in the Data Editor silently moved the Message Input panel's ruler to
+      whatever width the test snippet had. Snapshotted and restored in a
+      `finally`. Verified: main column 75, Test run, still 75.
+- [x] **`.btn-sm` was dead** — 44 usages, and `git log -S` over the last 40
+      commits found no CSS rule for it at any point, so it never did anything.
+      Stripped from the markup rather than given a rule: inventing one now would
+      restyle 44 buttons that already look correct. Buttons verified unchanged
+      after removal (1px border, 6px radius, same padding).
 
 ---
 

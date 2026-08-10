@@ -9311,7 +9311,7 @@ test('the Overrides column reference has its "?" button', () => {
   const tb = html.slice(html.indexOf('<div class="me-fm-toolbar">'),
                         html.indexOf('</div>', html.indexOf('me-fm-cols-dlg')));
   assert.ok(/me-fm-help-btn/.test(tb), 'inside the Field Map toolbar');
-  assert.ok(/class="btn btn-sm"[^>]*id="me-fm-help-btn"/.test(html),
+  assert.ok(/class="btn"[^>]*id="me-fm-help-btn"/.test(html),
     'and carries the same classes as its siblings');
 });
 

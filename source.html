@@ -860,7 +860,9 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .exp-tbl th { position:sticky; top:0; background:var(--bg-deep); color:var(--text-dim); font-weight:600; text-align:left; padding:4px 6px; border-bottom: var(--bw) solid var(--border); white-space:nowrap; z-index:1; }
 .exp-tbl th:first-child { width:28px; text-align:center; }
 .exp-tbl th .th-label { display:block; font-size:10px; color:var(--text-dim); }
-#expFilterInput { flex:1; min-width:0; margin:0 10px; background:var(--bg-input,var(--bg)); border: var(--bw-ctl) solid var(--border); border-radius:var(--r-md); color:var(--text); font-size:12px; font-family:var(--mono); padding:3px 8px; outline:none; }
+/* font-size follows the app's setting like every other control. It was a hard
+   12px, so this field alone ignored Small / Medium / Large. */
+#expFilterInput { flex:1; min-width:0; margin:0 10px; background:var(--bg-input,var(--bg)); border: var(--bw-ctl) solid var(--border); border-radius:var(--r-md); color:var(--text); font-size:var(--sz-mono); font-family:var(--mono); padding:3px 8px; outline:none; }
 #expFilterInput:focus { border-color:var(--accent); }
 #expFilterInput::placeholder { color:var(--text-dim); opacity:0.5; }
 .exp-tbl td { padding:3px 8px; border-bottom: var(--bw) solid rgba(255,255,255,0.04); color:var(--text); white-space:nowrap; overflow:hidden; max-width:200px; text-overflow:ellipsis; }
@@ -1308,7 +1310,8 @@ td.c-err  { color: var(--accent2); }
      translateX(-50%), so an odd content width lands its edges on half pixels by
      construction — exactly the two-tone hairline this token exists to avoid. */
   background: var(--bg-panel); border: var(--bw-ctl) solid var(--accent);
-  color: var(--text); font-size: 12px; padding: 7px 16px;
+  /* --sz-mono, not a hard 12px: the toast ignored the font-size setting. */
+  color: var(--text); font-size: var(--sz-mono); padding: 7px 16px;
   border-radius: var(--r-md); box-shadow: 0 4px 18px rgba(0,0,0,0.5);
   white-space: nowrap; pointer-events: none;
   opacity: 0; transition: opacity 0.18s;
@@ -9055,11 +9058,11 @@ function _showProgressPicker(label, matches, cb, msgType = null, force = false) 
   pp.innerHTML =
     `<div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 4px 21px">` +
       `<span style="font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim)">Select DDL definition for: ${_typeTag}</span>` +
-      `<button class="btn btn-sm pp-skip-btn" style="font-family:var(--mono);font-size:var(--sz-mono)">Skip</button>` +
+      `<button class="btn pp-skip-btn" style="font-family:var(--mono);font-size:var(--sz-mono)">Skip</button>` +
     `</div>` +
     `<div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;padding:2px 4px 2px 2px">` +
     shown.map((m, i) =>
-      `<button class="btn btn-sm" data-ppi="${i}" style="text-align:left;font-family:var(--mono);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.path)}">${esc(m.defName)} <span style="color:var(--text-dim);font-size:0.9em">${esc(m.path)}</span> <span style="color:var(--warning);font-size:0.9em">${m.score != null ? Math.round(m.score * 100) + '%' : ''}</span></button>`
+      `<button class="btn" data-ppi="${i}" style="text-align:left;font-family:var(--mono);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.path)}">${esc(m.defName)} <span style="color:var(--text-dim);font-size:0.9em">${esc(m.path)}</span> <span style="color:var(--warning);font-size:0.9em">${m.score != null ? Math.round(m.score * 100) + '%' : ''}</span></button>`
     ).join('') +
     `</div>`;
   pp.querySelector('.pp-skip-btn')?.addEventListener('click', () => {
@@ -15447,7 +15450,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.4.0';
+const APP_VERSION  = '1.21.4.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17432,7 +17435,7 @@ function _meHtmlParseSpec(item) {
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? ' on' : ''}" onclick="_mePsSetFmtMode('compact')">Compact</button>
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? '' : ' on'}" onclick="_mePsSetFmtMode('expanded')">Expanded</button>
     </div>
-    <button class="btn btn-sm" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
+    <button class="btn" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
   <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
   <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
@@ -18823,7 +18826,7 @@ function _mePsHelpSelect(blk) {
   }
   const exHead = _mePsHelpAttrSel
     ? `<div class="me-ps-help-section-title">Examples using <span class="me-ps-help-aname">${_mePsHelpAttrSel}</span>`
-      + ` <button class="btn btn-sm" onclick="_mePsHelpAttr('${blk}','${_mePsHelpAttrSel}')">show all</button></div>`
+      + ` <button class="btn" onclick="_mePsHelpAttr('${blk}','${_mePsHelpAttrSel}')">show all</button></div>`
     : '';
   const exHtml = exHead + sharedNote + (shown.length
     // No spacer div: each example is a card now and carries its own margin.
@@ -19784,7 +19787,7 @@ function _meHtmlDDLBindings(item) {
 </div>`;
   });
   h += `</div>
-<div style="display:flex;justify-content:flex-end"><button class="btn btn-sm" onclick="_meBindAdd()" style="margin-top:6px">+ Add Binding</button></div>`;
+<div style="display:flex;justify-content:flex-end"><button class="btn" onclick="_meBindAdd()" style="margin-top:6px">+ Add Binding</button></div>`;
   return h;
 }
 
@@ -20098,12 +20101,12 @@ function _meOverridesPrep(item) {
 <div class="me-fm-toolbar">
   <span class="me-ovl-ro none" id="me-fm-cnt" title="This table is the picker — every field the DDL declares. Configuration lives in the Overrides list above.">no selection · READ-ONLY</span>
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
-  ${usesBitmapFields ? `<button class="btn btn-sm${autoOn ? ' btn-accent-on' : ''}" id="me-fm-auto-btn" onclick="_meFmAutoOrder()" title="Anchor each DE from the 'Bit map position = NN' comment above its declaration in the bound DDL files. Toggle: press again to revert to the order before Auto Order.">Auto Order</button>` : ''}
-  <button class="btn btn-sm" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
-  <button class="btn btn-sm" id="me-fm-hide-redef-btn" onclick="_meFmToggleHideRedef()" title="Hide / show REDEFINES rows">Hide Redef</button>
-  <button class="btn btn-sm" id="me-fm-help-btn" onclick="_meFmToggleHelp()" title="Column reference">?</button>
+  ${usesBitmapFields ? `<button class="btn${autoOn ? ' btn-accent-on' : ''}" id="me-fm-auto-btn" onclick="_meFmAutoOrder()" title="Anchor each DE from the 'Bit map position = NN' comment above its declaration in the bound DDL files. Toggle: press again to revert to the order before Auto Order.">Auto Order</button>` : ''}
+  <button class="btn" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
+  <button class="btn" id="me-fm-hide-redef-btn" onclick="_meFmToggleHideRedef()" title="Hide / show REDEFINES rows">Hide Redef</button>
+  <button class="btn" id="me-fm-help-btn" onclick="_meFmToggleHelp()" title="Column reference">?</button>
   <div style="position:relative;display:inline-flex">
-    <button class="btn btn-sm" id="me-fm-cols-btn" onclick="_meFmToggleColsDlg()" title="Columns and row count" style="padding:0 6px">⚙</button>
+    <button class="btn" id="me-fm-cols-btn" onclick="_meFmToggleColsDlg()" title="Columns and row count" style="padding:0 6px">⚙</button>
     <div id="me-fm-cols-dlg" class="audit-cfg-dialog">
       <div class="audit-cfg-hdr"><span>Columns</span><button class="btn" onclick="_meFmToggleColsDlg()" style="padding:1px 7px;font-size:13px">✕</button></div>
       ${colsRows}
@@ -20114,33 +20117,33 @@ function _meOverridesPrep(item) {
                oninput="_meFmSetRowCount(this.value)"></div>
       <div class="audit-cfg-section">WIDTHS</div>
       <div class="audit-cfg-row"><label>Column widths</label>
-        <button class="btn btn-sm" onclick="_meFmResetCols()"
+        <button class="btn" onclick="_meFmResetCols()"
                 title="Put every column back to its default width">Reset</button></div>
     </div>
   </div>
 </div>
 <div class="me-fm-bar" id="me-fm-bar">
   <span class="me-fm-g"><span class="me-fm-glbl">DataElement</span><span class="me-fm-seg">
-    <button class="btn btn-sm" data-fmact="de-off" title="Not a data element — the counter does not advance, so the fields after it keep their numbers">Exclude</button>
-    <button class="btn btn-sm" data-fmact="de-on" title="A data element even where the default rule says no — a nested field, or one named like padding">Include</button>
-    <button class="btn btn-sm" data-fmact="de-kids" title="This group is not a DE; its immediate children each are">Children</button>
-    <button class="btn btn-sm" data-fmact="de-anchor" title="Set this field's DE number; every field after it follows">Number…</button>
+    <button class="btn" data-fmact="de-off" title="Not a data element — the counter does not advance, so the fields after it keep their numbers">Exclude</button>
+    <button class="btn" data-fmact="de-on" title="A data element even where the default rule says no — a nested field, or one named like padding">Include</button>
+    <button class="btn" data-fmact="de-kids" title="This group is not a DE; its immediate children each are">Children</button>
+    <button class="btn" data-fmact="de-anchor" title="Set this field's DE number; every field after it follows">Number…</button>
   </span></span>
   <span class="me-fm-g"><span class="me-fm-glbl">Length</span><span class="me-fm-seg">
-    <button class="btn btn-sm" data-fmact="vlg" title="This field's value is the NEXT field's length">VLG</button>
-    <button class="btn btn-sm" data-fmact="bytes" title="Read this many bytes instead of the declared length">Bytes…</button>
+    <button class="btn" data-fmact="vlg" title="This field's value is the NEXT field's length">VLG</button>
+    <button class="btn" data-fmact="bytes" title="Read this many bytes instead of the declared length">Bytes…</button>
   </span></span>
   <span class="me-fm-g"><span class="me-fm-glbl">Read</span><span class="me-fm-seg">
-    <button class="btn btn-sm" data-fmact="type" title="Interpret the bytes as this type">Type…</button>
-    <button class="btn btn-sm" data-fmact="display" title="Format the value for display">Display…</button>
+    <button class="btn" data-fmact="type" title="Interpret the bytes as this type">Type…</button>
+    <button class="btn" data-fmact="display" title="Format the value for display">Display…</button>
   </span></span>
 </div>
 <div class="me-fm-ed" id="me-fm-ed">
   <label id="me-fm-ed-lbl"></label>
   <input id="me-fm-ed-num" type="text" inputmode="numeric" autocomplete="off" spellcheck="false">
   <select id="me-fm-ed-sel" style="display:none"></select>
-  <button class="btn btn-sm" id="me-fm-ed-ok">Apply</button>
-  <button class="btn btn-sm" id="me-fm-ed-cancel">Cancel</button>
+  <button class="btn" id="me-fm-ed-ok">Apply</button>
+  <button class="btn" id="me-fm-ed-cancel">Cancel</button>
 </div>
 <div class="me-fm-table-wrap">
   <table class="me-fm-table">
@@ -22531,8 +22534,8 @@ function _meHtmlRecs(item) {
   // whether a warning is showing.
   h += `<div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:8px">
     <div id="me-file-warns" class="me-warn-inline">${_meRecWarnsHtml(item)}</div>
-    <button class="btn btn-sm" onclick="_meNewRec()">+ Add Recognizer</button>
-    <button class="btn btn-sm" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>
+    <button class="btn" onclick="_meNewRec()">+ Add Recognizer</button>
+    <button class="btn" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>
   </div>`;
   if (_meState.editRec === -2) {
     const newRec = (_meState.pend && _meState.pend[-2] !== undefined) ? _meState.pend[-2] : { type: 'literal' };
@@ -22845,8 +22848,8 @@ function _meRecForm(r, idx) {
       ${types.map(([v,l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}
     </select></div>`;
   const btns = `<div class="me-rf-btnrow">
-    <button class="btn btn-sm" onclick="_meRecCancel(${idx})">Cancel</button>
-    <button class="btn btn-sm btn-primary" onclick="_meRecSave(${idx})">&#x2713; Apply</button>
+    <button class="btn" onclick="_meRecCancel(${idx})">Cancel</button>
+    <button class="btn btn-primary" onclick="_meRecSave(${idx})">&#x2713; Apply</button>
   </div>`;
   const ea = v => (v == null ? '' : String(v)).replace(/"/g, '&quot;');
   const idFld = `<div class="me-rf-fld"><div class="me-lbl">ID</div>
@@ -26501,6 +26504,11 @@ function _meRunTest() {
   //   the engine reads binary fields from rawBytes and text/hex from parseBytes.
   const _FMT_MAP = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' };
   let bytes, rawBytes, parseBytes, inputFmt, engineFmt, msgEnc;
+  // S.netardRulerCol is the MAIN panel's ruler column, and the block below has
+  // to set it because parseNetardLog reads it from there. Left set, a Test run
+  // in this editor silently moved the Message Input panel's ruler to whatever
+  // width the test snippet happened to have. Snapshot it and put it back.
+  const _rulerColBefore = S.netardRulerCol;
   try {
     // Auto-detect the NETARD ruler width from the input — same as the Main panel
     // does on every input change — so parseNetardLog clips/pads standard-format
@@ -26535,6 +26543,8 @@ function _meRunTest() {
     out.innerHTML = `<div class="me-test-err">Input error: ${e.message}</div>`;
     if (summ) { summ.textContent = '⚠ input error'; summ.style.color='#f85149'; }
     return;
+  } finally {
+    S.netardRulerCol = _rulerColBefore;
   }
 
   const parts = [];
@@ -26722,12 +26732,12 @@ function _meSave() {
       <span class="ddl-doc-title">Export Messages</span>
       <input id="expFilterInput" placeholder="Filter messages…" oninput="filterExpTable()" autocomplete="off">
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-        <button class="btn btn-sm btn-primary" onclick="doMsgExport()">⬇ Download</button>
+        <button class="btn btn-primary" onclick="doMsgExport()">⬇ Download</button>
         <div style="position:relative;display:inline-flex">
-          <button class="btn btn-sm btn-ico" id="exp-cols-btn" onclick="_expToggleColsDlg()" title="Choose which columns the file carries">⚙</button>
+          <button class="btn btn-ico" id="exp-cols-btn" onclick="_expToggleColsDlg()" title="Choose which columns the file carries">⚙</button>
           <div id="exp-cols-dlg" class="audit-cfg-dialog cfg-anchored"></div>
         </div>
-        <button class="btn btn-sm btn-ico" onclick="closeMsgExportModal()">✕</button>
+        <button class="btn btn-ico" onclick="closeMsgExportModal()">✕</button>
       </div>
     </div>
     <div class="ddl-doc-body" id="exportBody"></div>
@@ -26741,10 +26751,10 @@ function _meSave() {
       <span id="ddlDocTitle" class="ddl-doc-title"></span>
       <div style="display:flex;gap:6px;align-items:center">
         <input type="text" id="ddlDocFilterInput" class="res-filter-input" placeholder="Filter fields…" title="Filter DDL Doc" oninput="filterDDLDoc(this.value)">
-        <button class="btn btn-sm" id="ddlDocCollapseAllBtn" data-state="expanded" onclick="toggleDDLDocCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
-        <button class="btn btn-sm" id="ddlDocHideRedefBtn" onclick="toggleDDLDocHideRedef()" title="Hide/show REDEFINES fields">Hide Redef</button>
-        <button class="btn btn-sm" onclick="copyDDLDoc()" title="Copy as text">⎘ Copy</button>
-        <button class="btn btn-sm" onclick="closeDDLDoc()">✕</button>
+        <button class="btn" id="ddlDocCollapseAllBtn" data-state="expanded" onclick="toggleDDLDocCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
+        <button class="btn" id="ddlDocHideRedefBtn" onclick="toggleDDLDocHideRedef()" title="Hide/show REDEFINES fields">Hide Redef</button>
+        <button class="btn" onclick="copyDDLDoc()" title="Copy as text">⎘ Copy</button>
+        <button class="btn" onclick="closeDDLDoc()">✕</button>
       </div>
     </div>
     <div class="ddl-doc-body" id="ddlDocBody"></div>
@@ -26883,7 +26893,7 @@ function _meSave() {
         <div class="settings-collapsible-body" style="max-height:500px">
           <div class="dr-spec-list" id="detectSpecsList"></div>
           <div class="settings-row" style="margin-top:8px">
-            <button class="btn btn-sm settings-btn-20" style="flex:1" onclick="openMsgEditor()" title="Open the Data Editor to define byte-level recognizers and parse specs">⊞ Data Editor</button>
+            <button class="btn settings-btn-20" style="flex:1" onclick="openMsgEditor()" title="Open the Data Editor to define byte-level recognizers and parse specs">⊞ Data Editor</button>
           </div>
         </div>
       </div>
@@ -26896,7 +26906,7 @@ function _meSave() {
         </div>
         <div class="settings-row">
           <span class="settings-lbl">Reset</span>
-          <button class="btn btn-sm settings-btn-20" style="flex:0 0 148px" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
+          <button class="btn settings-btn-20" style="flex:0 0 148px" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
         </div>
       </div>
 
@@ -26908,7 +26918,7 @@ function _meSave() {
         </div>
         <div class="settings-row">
           <span class="settings-lbl">Erase</span>
-          <button class="btn btn-sm btn-danger settings-btn-20" style="flex:0 0 148px" onclick="resetAllData()" title="Remove every DDL, message definition, override and setting stored in this browser">⚠ Erase All Data</button>
+          <button class="btn btn-danger settings-btn-20" style="flex:0 0 148px" onclick="resetAllData()" title="Remove every DDL, message definition, override and setting stored in this browser">⚠ Erase All Data</button>
         </div>
       </div>
 
@@ -26917,7 +26927,7 @@ function _meSave() {
         <div class="settings-stitle">Tutorial</div>
         <div class="settings-row">
           <span class="settings-lbl">Guided tour of key features</span>
-          <button class="btn btn-sm settings-btn-20" style="flex:0 0 148px" onclick="showTutorial();closeSettings();">&#x25b6; Launch</button>
+          <button class="btn settings-btn-20" style="flex:0 0 148px" onclick="showTutorial();closeSettings();">&#x25b6; Launch</button>
         </div>
       </div>
 
@@ -27272,8 +27282,8 @@ function _meSave() {
   <div class="tut-body"     id="tutBody"></div>
   <div class="tut-nav">
     <button class="tut-skip" id="tutSkip">Skip tutorial</button>
-    <button class="btn btn-sm" id="tutPrev">&#x2190; Back</button>
-    <button class="btn btn-sm" id="tutNext">Next &#x2192;</button>
+    <button class="btn" id="tutPrev">&#x2190; Back</button>
+    <button class="btn" id="tutNext">Next &#x2192;</button>
   </div>
 </div>
 
@@ -27290,10 +27300,10 @@ function _meSave() {
     <div class="me-header">
       <span class="me-header-title" id="me-header-title">Data Editor</span>
       <span class="me-status" id="me-status"></span>
-      <button class="btn btn-sm btn-danger" id="me-del-btn" onclick="_meDeleteSelected()">Delete</button>
-      <button class="btn btn-sm" onclick="closeMsgEditor()">Cancel</button>
-      <button class="btn btn-sm btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
-      <button class="btn btn-sm" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
+      <button class="btn btn-danger" id="me-del-btn" onclick="_meDeleteSelected()">Delete</button>
+      <button class="btn" onclick="closeMsgEditor()">Cancel</button>
+      <button class="btn btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
+      <button class="btn" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
     </div>
 
     <div class="me-main">
@@ -27359,8 +27369,8 @@ function _meSave() {
             <input id="me-test-segmap" class="me-inp" style="display:none;width:210px"
               placeholder="SEG-MAP (hex or binary)"
               title="Ad-hoc segment map for this test — overrides the value stored in the spec's seg-map block. Hex (8 chars for 32 bits) or binary digits.">
-            <button class="btn btn-primary btn-sm" onclick="_meRunTest()">&#x25B6; Run</button>
-            <button class="btn btn-sm" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
+            <button class="btn btn-primary" onclick="_meRunTest()">&#x25B6; Run</button>
+            <button class="btn" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
           </div>
           <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…" oninput="_meTestUpdateFmtState()"></textarea>
           <div id="me-test-out" class="me-test-out"></div>

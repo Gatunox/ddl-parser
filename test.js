@@ -9026,18 +9026,25 @@ test('an icon button centres its glyph inside its fixed width', () => {
 });
 
 test('controls border with --bw-ctl, containers with --bw', () => {
-  // Two width tokens on purpose, not by accident. At devicePixelRatio 1 a 1px
-  // border on a TEXT-sized box lands on a fractional pixel and antialiases into
-  // two shades — a visibly two-tone edge. Buttons and badges are sized by their
-  // text, so their widths are inherently fractional; containers are not, and
-  // land clean. Snapping containers to whole pixels was tried and reverted: it
-  // left every button fractional anyway and corrupted saved split ratios on
-  // resize. Collapsing these two tokens into one brings the artifact back.
+  // Two width tokens on purpose. The split used to be defensive — --bw-ctl was
+  // 2px to hide a two-tone edge on 1px coloured borders — and that turned out
+  // not to be a CSS problem at all: the machine seeing it drove a TV over HDMI
+  // with a subsampled chroma format, which averages colour across neighbouring
+  // pixels and erases a 1px coloured line while leaving luminance-only greys
+  // intact. Proven by elimination on one button (border, box-shadow and outline
+  // all wrong at 1px on a whole-pixel box at dpr 1) and fixed by a display
+  // setting, not a stylesheet.
+  //
+  // So the split is now structural: containers vs controls, same value today.
+  // The widths are deliberately NOT pinned to specific pixel counts here —
+  // pinning 2px is what this test used to do, and it would have to be edited
+  // every time the design moves. What must not rot is that every control goes
+  // through one token and every container through the other.
   const src = fs.readFileSync('./source.html', 'utf8');
   const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
                  .replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.ok(/--bw:\s*1px/.test(css), '--bw is the container hairline');
-  assert.ok(/--bw-ctl:\s*2px/.test(css), '--bw-ctl is the control width');
+  assert.ok(/--bw:\s*\d+px/.test(css), '--bw is declared');
+  assert.ok(/--bw-ctl:\s*\d+px/.test(css), '--bw-ctl is declared');
   const rule = sel => {
     const m = new RegExp('(?:^|\\n)' + sel.replace(/[.#]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(css);
     return m && m[1];

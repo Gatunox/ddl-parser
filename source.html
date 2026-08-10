@@ -694,7 +694,9 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 #rawPanel .panel-title { width: auto; }
 #msgPanel .panel-title { width: auto; padding-right: 0; }
 /* DDL editor search bar */
-.ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 4px; padding: 0 0 0 4px; overflow: hidden; }
+/* position:relative so the search controls can be pinned to the field's right
+   end instead of competing with it for width. */
+.ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 4px; padding: 0 0 0 4px; overflow: hidden; position: relative; }
 .ddl-search-lbl { font-size: var(--sz-mono); color: var(--text-dim); opacity: 0.7; user-select: none; flex-shrink: 0; padding-right: 2px; font-family: var(--font-mono); display: flex; align-items: center; }
 .ddl-search-input { flex: 1; min-width: 0; background: var(--bg-input); border: var(--bw-ctl) solid var(--bg-input) !important; border-radius: var(--r-sm); -webkit-appearance: none; appearance: none; color: var(--text); font-family: var(--mono); font-size: var(--sz-mono); padding: 2px 6px; outline: none; box-shadow: none; }
 .ddl-search-input:focus { border-color: var(--accent) !important; }
@@ -708,7 +710,18 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    are the same control doing the same job in the same panel. Was -3px against
    the tree's -2px: 9px vs 10px, a 5.42px glyph next to a 7.63px one. */
 .ddl-search-nav-x { font-size: calc(var(--sz-mono) - 2px); }
-.ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
+/* Overlaid on the field's right end, not laid out beside it. As a flex sibling
+   these controls claimed their 80px from the input the moment a query existed —
+   the field went 156px to 72px on the first keystroke, less than half, while
+   you were typing in it. Absolute keeps the input's box fixed; the padding
+   below stops the text running underneath. */
+.ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0;
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+/* The right padding that keeps typed text clear of the controls is set from JS,
+   not here: the controls are 80px at "0 / 0" but 110px at "128 / 999", and a
+   fixed reservation lets the text slide under the wider one. See
+   _ddlSrchReserveCtrlSpace. Left-aligned text means growing that padding never
+   moves what is already typed. */
 .ddl-search-controls.hidden { display: none; }
 .tree-node { padding: var(--row-py-tree) 20px var(--row-py-tree) 8px; margin-right: -20px; cursor: pointer; font-family: var(--font-tree); font-size: var(--sz-mono); display: flex; align-items: center; gap: 5px; white-space: nowrap; user-select: none; line-height: calc(var(--sz-mono) + 4px); }
 .tree-node:hover  { background: rgba(var(--accent-rgb),0.08); }
@@ -15353,7 +15366,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.2.5';
+const APP_VERSION  = '1.21.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15891,6 +15904,18 @@ function _ddlUpdateLinesBg() {
   bg.style.transform = `translateY(${-ta.scrollTop}px)`;
 }
 
+// Reserve exactly as much right padding as the overlaid controls actually
+// occupy. Measured rather than guessed: the strip is 80px showing "0 / 0" and
+// 110px showing "128 / 999", so any constant is wrong for one of them — too
+// small and the typed text runs underneath, too large and the field is short
+// for no reason. Called wherever the count text changes.
+function _ddlSrchReserveCtrlSpace() {
+  const inp = document.getElementById('ddlSearchInput');
+  const ctl = document.getElementById('ddlSearchControls');
+  if (!inp || !ctl) return;
+  inp.style.paddingRight = ctl.classList.contains('hidden') ? '' : (ctl.offsetWidth + 8) + 'px';
+}
+
 function ddlSearchUpdate() {
   const q = document.getElementById('ddlSearchInput').value;
   const ta = document.getElementById('ddlEditor');
@@ -15898,13 +15923,13 @@ function ddlSearchUpdate() {
   const ctrlEl = document.getElementById('ddlSearchControls');
   _ddlSrchMatches = []; _ddlSrchIdx = -1;
   const bar = document.getElementById('ddlSearchBar');
-  if (!q) { countEl.textContent = ''; ctrlEl.classList.add('hidden'); bar.classList.remove('has-query'); _ddlUpdateLinesBg(); return; }
+  if (!q) { countEl.textContent = ''; ctrlEl.classList.add('hidden'); bar.classList.remove('has-query'); _ddlSrchReserveCtrlSpace(); _ddlUpdateLinesBg(); return; }
   ctrlEl.classList.remove('hidden'); bar.classList.add('has-query');
   const text = ta.value, lower = text.toLowerCase(), ql = q.toLowerCase();
   let pos = 0;
   while ((pos = lower.indexOf(ql, pos)) !== -1) { _ddlSrchMatches.push(pos); pos++; }
   if (_ddlSrchMatches.length) { _ddlSrchIdx = 0; _ddlSrchShow(false); }
-  else { countEl.textContent = '0 / 0'; _ddlUpdateLinesBg(); _ddlSrchUpdateCurMark(); }
+  else { countEl.textContent = '0 / 0'; _ddlSrchReserveCtrlSpace(); _ddlUpdateLinesBg(); _ddlSrchUpdateCurMark(); }
 }
 
 function _ddlSrchShow(moveFocus) {
@@ -15928,6 +15953,7 @@ function _ddlSrchShow(moveFocus) {
   }
   document.getElementById('ddlSearchCount').textContent =
     `${_ddlSrchIdx + 1} / ${_ddlSrchMatches.length}`;
+  _ddlSrchReserveCtrlSpace();
   _ddlUpdateLinesBg();
   _ddlSrchUpdateCurMark();
 }
@@ -15949,6 +15975,7 @@ function ddlSearchClear() {
   document.getElementById('ddlSearchCount').textContent = '';
   document.getElementById('ddlSearchControls').classList.add('hidden');
   document.getElementById('ddlSearchBar').classList.remove('has-query');
+  _ddlSrchReserveCtrlSpace();   // controls gone → give the padding back
   _ddlSrchMatches = []; _ddlSrchIdx = -1;
   _ddlUpdateLinesBg();
   _ddlSrchUpdateCurMark();

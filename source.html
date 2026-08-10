@@ -609,7 +609,13 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
   min-width: 38px; text-align: center;   /* so "9" is still a pill, not a circle */
   border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--h-gray-fg);
   border: var(--bw-ctl) solid var(--h-gray-bd); }
-.tree-search-wrap { width: 100%; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--bg-deep); box-sizing: border-box; padding: 0 var(--sp-1); min-height: var(--panel-header-h, 27px); }
+/* --surface-header, like the .tree-hdr above it and like #ddlCfgBar, the
+   editor's equivalent bar. It was --bg-deep, which was invisible while the whole
+   pane was --bg-deep; once the card moved to --bg-panel the strip was left as a
+   dark band across the top of the tree. Title row + search row now read as one
+   header block, with the list below on the card's own surface — the same shape
+   the editor pane has. */
+.tree-search-wrap { width: 100%; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; position: relative; display: flex; align-items: stretch; background: var(--surface-header); box-sizing: border-box; padding: 0 var(--sp-1); min-height: var(--panel-header-h, 27px); }
 /* Matched to .ddl-search-input, the search field in the pane beside it: a
    rounded box with a transparent border at rest that turns accent on focus.
    This one used to be full-bleed — no radius, no border, an inset ring on focus
@@ -15372,7 +15378,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.3.1';
+const APP_VERSION  = '1.21.3.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

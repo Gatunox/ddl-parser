@@ -1792,11 +1792,18 @@ td.c-err  { color: var(--accent2); }
   z-index: 20000; pointer-events: all;
   transition: top .22s ease, left .22s ease;
 }
-.tut-progress { font-family: var(--mono); font-size: var(--sz-mono); color: var(--text-dim); }
-.tut-title    { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent); }
-.tut-body     { font-family: var(--mono); font-size: var(--sz-mono); color: var(--text); line-height: 1.6; }
+/* Whole-pixel line boxes, not multipliers. The card's width, padding and gap are
+   all integers, but its HEIGHT is text-derived: line-height 1.6 on a 12px font
+   is 19.2px, and the three rules with no line-height at all fell back to
+   fractional font metrics. The card measured 307.875 tall, so three edges landed
+   clean and the bottom sat on a half pixel — which is why only this element
+   still looked wrong once everything moved to 1px. --sz-mono is always a whole
+   number (10/12/14), so these calcs stay whole at every font size. */
+.tut-progress { font-family: var(--mono); font-size: var(--sz-mono); line-height: calc(var(--sz-mono) + 4px); color: var(--text-dim); }
+.tut-title    { font-family: var(--mono); font-size: 12px; line-height: 16px; font-weight: 700; color: var(--accent); }
+.tut-body     { font-family: var(--mono); font-size: var(--sz-mono); color: var(--text); line-height: calc(var(--sz-mono) + 8px); }
 .tut-nav      { display: flex; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 4px; }
-.tut-skip     { margin-right: auto; font-family: var(--mono); font-size: var(--sz-mono); color: var(--text-dim); background: none; border: none; cursor: pointer; padding: 0; text-decoration: underline; }
+.tut-skip     { margin-right: auto; font-family: var(--mono); font-size: var(--sz-mono); line-height: calc(var(--sz-mono) + 4px); color: var(--text-dim); background: none; border: none; cursor: pointer; padding: 0; text-decoration: underline; }
 .tut-skip:hover { color: var(--text); }
 
 /* ── Message Editor ──────────────────────────────────────────────────────── */
@@ -15256,7 +15263,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.0.1';
+const APP_VERSION  = '1.21.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

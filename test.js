@@ -8954,6 +8954,26 @@ test('import merges on identity, and rebuilds the token map', () => {
     'confirmImport must rebuild the token map, or imported token DDLs show no badge');
 });
 
+test('the tutorial card measures in whole pixels', () => {
+  // Its width, padding and gap are integers, but the HEIGHT is text-derived, so
+  // a unitless line-height leaks a fraction into it: 1.6 on a 12px font is
+  // 19.2px, and rules with no line-height fall back to fractional font metrics.
+  // The card measured 307.875 tall — three edges clean, the bottom on a half
+  // pixel — and it was the last element still looking wrong after the app moved
+  // to 1px. --sz-mono is always whole (10/12/14), so calc() off it stays whole.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const sel of ['.tut-progress', '.tut-title', '.tut-body', '.tut-skip']) {
+    const m = new RegExp(sel.replace('.', '\\.') + '\\s*\\{([^}]*)\\}').exec(css);
+    assert.ok(m, `${sel} rule found`);
+    const lh = /line-height:\s*([^;]+)/.exec(m[1]);
+    assert.ok(lh, `${sel} must declare a line-height, or it inherits a fractional font metric`);
+    assert.ok(!/^\s*[\d.]+\s*$/.test(lh[1]),
+      `${sel} must not use a unitless multiplier — got line-height: ${lh[1].trim()}`);
+  }
+});
+
 test('a dialog outranks every surface that can raise one', () => {
   // .modal-overlay carries the prompt/confirm box, the export and DDL-doc
   // modals and the parse-progress box. At 25000 it sat UNDER .settings-overlay

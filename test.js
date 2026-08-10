@@ -8845,6 +8845,34 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
 
+test('a dialog outranks every surface that can raise one', () => {
+  // .modal-overlay carries the prompt/confirm box, the export and DDL-doc
+  // modals and the parse-progress box. At 25000 it sat UNDER .settings-overlay
+  // (30000), so "Erase All Data" — a prompt raised from Settings — appeared over
+  // the dimmed main page, read as disabled, and could not be clicked at all.
+  // Neither the export nor the import opener closes Settings first, so the same
+  // trap was waiting for them. A dialog has to outrank anything that opens it.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  const zOf = sel => {
+    const m = new RegExp(sel.replace(/[.#]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(css);
+    const z = m && /z-index:\s*(\d+)/.exec(m[1]);
+    return z ? +z[1] : null;
+  };
+  const modal = zOf('.modal-overlay');
+  const settings = zOf('.settings-overlay');
+  const editor = zOf('.me-overlay');
+  const toast = zOf('#toast');
+  assert.ok(modal && settings && editor && toast, 'all four layers declare a z-index');
+  assert.ok(modal > settings,
+    `a dialog must sit above the settings drawer — modal ${modal} vs settings ${settings}`);
+  assert.ok(modal > editor,
+    `a dialog must sit above the Data Editor — modal ${modal} vs editor ${editor}`);
+  assert.ok(toast > modal,
+    `the toast must clear the dialog it reports on — toast ${toast} vs modal ${modal}`);
+});
+
 test('the amber collapsed ring stays on panel headers', () => {
   // .panel-toggle.is-collapsed:hover paints an inset amber ring, which reads as
   // "this panel is collapsed". The same button markup is reused in the config
@@ -8932,8 +8960,10 @@ test('controls border with --bw-ctl, containers with --bw', () => {
   // behave like them. #toast was the one that got away — a text-sized pill
   // centred with translateX(-50%), which puts its edges on half pixels whenever
   // the content width is odd, so it drew the two-tone edge more reliably than
-  // any button. Containers with a declared width are fine at the hairline and
-  // are not swept: #tutorialCard is a fixed 300px box and stays on --bw.
+  // any button. #tutorialCard was left on --bw at first on the grounds that a
+  // fixed 300px box lands on whole pixels — the user overruled it: a card that
+  // reads as a dialog should carry the same edge as one, and the rule is
+  // "controls and anything that looks like one", not a pixel-geometry argument.
   const CONTROLish = /input|textarea|select|filter|search|toast|pill|chip/i;
   const offenders = [];
   for (const m of css.matchAll(/(^|\n)([^{}\n]+)\{([^}]*)\}/g)) {

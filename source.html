@@ -1400,7 +1400,12 @@ td.c-err  { color: var(--accent2); }
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.65);
   display: flex; align-items: center; justify-content: center;
-  z-index: 25000;
+  /* Above the settings drawer (30000). At 25000 a prompt raised from Settings —
+     Erase All Data being the obvious one — rendered UNDER the drawer: it landed
+     over the dimmed main page, looked disabled, and swallowed its own clicks.
+     A confirmation is a global interrupt; it has to outrank whatever raised it.
+     Still below the toast (100000), which must clear everything. */
+  z-index: 40000;
 }
 .modal-overlay.hidden { display: none; }
 .modal-box {
@@ -1763,7 +1768,7 @@ td.c-err  { color: var(--accent2); }
 }
 #tutorialCard {
   position: fixed; width: 300px;
-  background: var(--bg-panel); border: var(--bw) solid var(--accent); border-radius: var(--r-lg);
+  background: var(--bg-panel); border: var(--bw-ctl) solid var(--accent); border-radius: var(--r-lg);
   padding: 16px 18px 14px;
   display: flex; flex-direction: column; gap: 10px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.6);
@@ -15174,7 +15179,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.20.2.4';
+const APP_VERSION  = '1.20.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15363,6 +15368,43 @@ function resetLayout() {
   P.monoSize = _DEF_PREFS.monoSize;
   savePrefs();
   applyPrefs(true);
+}
+
+// ── Erase every trace of this app from the browser ─────────────────────────
+// Deliberately NOT a list of keys to remove. A list goes stale the moment a
+// store is added and a reset that quietly misses one is worse than no reset at
+// all — it leaves the user believing they are on a clean install while old
+// state is still deciding behaviour. Clearing the whole origin cannot rot.
+// Goes through confirmDelete like every other destructive action: this is the
+// most destructive one in the app, so it is the last place that should invent
+// its own gesture. A click-through OK is not enough when the target is
+// everything the user has ever built here.
+function resetAllData() {
+  confirmDelete('ALL local data — every DDL, message definition, binding, override and setting. This cannot be undone', _resetAllDataNow);
+}
+
+function _resetAllDataNow() {
+  // Close our own handle first: an open connection makes deleteDatabase fire
+  // onblocked instead of onsuccess, and the delete then waits forever.
+  try { if (_appKVDB) { _appKVDB.close(); _appKVDB = null; } } catch(e) {}
+  try { localStorage.clear(); }   catch(e) {}
+  try { sessionStorage.clear(); } catch(e) {}
+
+  let done = false;
+  const reload = () => { if (!done) { done = true; location.reload(); } };
+
+  const dbs = ['ddl-parser-kv', 'ddl-parser-cache'];
+  let left = dbs.length;
+  const one = () => { if (--left <= 0) reload(); };
+  for (const name of dbs) {
+    let req;
+    try { req = indexedDB.deleteDatabase(name); } catch(e) { one(); continue; }
+    req.onsuccess = one; req.onerror = one; req.onblocked = one;
+  }
+  // A blocked delete can fire no handler at all in some browsers. Reload
+  // regardless: localStorage is already gone, and the databases are dropped on
+  // the next load when nothing holds them open.
+  setTimeout(reload, 1500);
 }
 
 function applyPrefs(updateUI = true) {
@@ -26449,6 +26491,18 @@ function _meSave() {
         <div class="settings-row">
           <span class="settings-lbl">Reset</span>
           <button class="btn btn-sm settings-btn-20" style="flex:0 0 148px" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
+        </div>
+      </div>
+
+      <!-- ── LOCAL DATA ─────────────────────────────────── -->
+      <div class="settings-section">
+        <div class="settings-stitle">Local Data</div>
+        <div class="settings-row">
+          <span class="settings-lbl" style="color:var(--text-dim);font-size:11px">Everything you create lives in this browser only — nothing is sent to a server</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-lbl">Erase</span>
+          <button class="btn btn-sm settings-btn-20" style="flex:0 0 148px;border-color:var(--danger);color:var(--danger)" onclick="resetAllData()" title="Remove every DDL, message definition, override and setting stored in this browser">⚠ Erase All Data</button>
         </div>
       </div>
 

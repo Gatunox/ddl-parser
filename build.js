@@ -32,7 +32,7 @@ const RESERVED = [
   'jumpTo', 'loadStagedDef', 'lwCancel', 'lwCommit', 'lwStartEdit', 'lwStep',
   'nextMsg', 'onColPickerChange', 'onFmtForceChange', 'onMsgChange',
   'openFeedbackMail', 'openMsgExportModal', 'openSettings', 'prevMsg',
-  'resetLayout', 'saveDDL', 'selectDDLMM', 'selectField', 'selectScope',
+  'resetLayout', 'resetAllData', 'saveDDL', 'selectDDLMM', 'selectField', 'selectScope',
   'resetAccentColor', 'setAccentColor', 'setFontSize', 'setDensity', 'setPanelDefaultToggle', 'setRawHexTruncate', 'setTheme',
   'showDDLDoc',
   'toggleHelpSub', 'toggleHideRedefines', 'toggleMissingRefs', 'togglePanel',

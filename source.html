@@ -2407,6 +2407,46 @@ th.me-fm-colhi{color:var(--accent);}
 .btn-accent-on{border-color:var(--accent);color:var(--accent);background:rgba(var(--accent-rgb),0.10);}
 .me-ov-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);margin-bottom:3px;}
 .me-ov-hint{font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);margin-bottom:6px;line-height:1.4;}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PROBE — one button, deliberately not shipped anywhere else.
+
+   #resetAllBtn (Settings → Local Data → Erase All Data) carries a 1px edge and
+   the font-smoothing overrides, so the 1px question can be judged on a display
+   that is not this one. Every other control in the app stays on --bw-ctl (2px).
+
+   Why it is worth a probe rather than a decision: on the dev machine 1px was
+   rejected three times over — as `border`, as `box-shadow: inset`, and as
+   `outline` — on a box measured x 1576.00 y 1169.00 w 174.00 h 22.00, every
+   edge whole-pixel at dpr 1. With no fractional position to blur across and the
+   rasterisation path swapped three ways, no CSS explanation survives. The
+   leading theory is now the display itself: that machine drives a TV over HDMI,
+   and chroma subsampling (4:2:0/4:2:2) averages colour across neighbouring
+   pixels, which is precisely what erases a 1px COLOURED line while leaving a
+   2px one and any greyscale hairline intact. If that is right, this button
+   looks correct on a normal monitor and wrong on the TV, and no stylesheet can
+   fix the TV.
+
+   Border — the box-shadow ring: drawn by the shadow rasteriser rather than the
+   border rasteriser. The border is kept but transparent so the box keeps the
+   geometry of a 1px border; background-clip stops the fill bleeding under the
+   rounded corners. --bw is the 1px token, so no literal width is introduced.
+
+   Text — the smoothing overrides. The other two text suggestions are dropped on
+   purpose: this button carries no transform, so there is nothing to make
+   integer, and forcing a GPU layer with translateZ(0) is what degrades text
+   rasterisation in the first place. Its font-size (--sz-mono) and line-height
+   (16px) are already whole pixels, so the integer-metrics advice is satisfied
+   without hardcoding a size that would stop honouring Small/Medium/Large.
+   ════════════════════════════════════════════════════════════════════════ */
+#resetAllBtn {
+  border: var(--bw) solid transparent;
+  box-shadow: inset 0 0 0 var(--bw) var(--danger);
+  background-clip: padding-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
 </style>
 </head>
 <body>
@@ -15239,7 +15279,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.20.3.2';
+const APP_VERSION  = '1.20.3.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -26574,7 +26614,7 @@ function _meSave() {
         </div>
         <div class="settings-row">
           <span class="settings-lbl">Erase</span>
-          <button class="btn btn-sm settings-btn-20" style="flex:0 0 148px;border-color:var(--danger);color:var(--danger)" onclick="resetAllData()" title="Remove every DDL, message definition, override and setting stored in this browser">⚠ Erase All Data</button>
+          <button class="btn btn-sm settings-btn-20" id="resetAllBtn" style="flex:0 0 148px;color:var(--danger)" onclick="resetAllData()" title="Remove every DDL, message definition, override and setting stored in this browser">⚠ Erase All Data</button>
         </div>
       </div>
 

@@ -15305,7 +15305,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.17.4.0';
+const APP_VERSION  = '1.18.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15519,9 +15519,8 @@ function applyPrefs(updateUI = true) {
   if ((P.monoSize - _szBadge) % 2 !== 0) _szBadge -= 1;
   document.documentElement.style.setProperty('--sz-badge', _szBadge + 'px');
   if (updateUI) {
-    const lbl = document.getElementById('szLabel');
-    if (lbl) lbl.textContent = P.monoSize + 'px';
     _syncThemeUI();
+    _syncFontUI();
     _lwUpdateDisplay();
   }
   // Restore egg / accent state
@@ -15575,9 +15574,14 @@ function setBorderWidth(val) {
 
 function setDensity(val) {
   P.density = val === 'compact' ? 'compact' : 'comfortable';
+  // Each density carries the type size that suits it — Comfort is roomy so it
+  // gets Large, Compact is for fitting more on screen so it gets Small. Picking
+  // a size afterwards overrides this; nothing here locks the pair together.
+  P.monoSize = _FONT_STEPS[P.density === 'compact' ? 'small' : 'large'];
   savePrefs();
   applyPrefs();
   _syncDensityUI();
+  _syncFontUI();
 }
 
 function setRawHexTruncate(val) {
@@ -15891,8 +15895,7 @@ function openSettings() {
   _syncEggAccentUI();
   renderDetectSpecsList();
   // Sync control states to current prefs
-  const lbl = document.getElementById('szLabel');
-  if (lbl) lbl.textContent = P.monoSize + 'px';
+  _syncFontUI();
   _syncDensityUI();
   _syncBorderUI();
   _syncAccentPickerUI();
@@ -15965,9 +15968,29 @@ function setTheme(t) {
   _syncAccentPickerUI();
 }
 
-function adjustFontSize(delta) {
-  P.monoSize = Math.min(18, Math.max(9, P.monoSize + delta));
+// Three named sizes rather than a stepper. P.monoSize stays the pixel value —
+// everything derives from it, and a saved layout from before this keeps working
+// even if it holds a size that is not one of the three.
+const _FONT_STEPS = { small: 10, medium: 12, large: 14 };
+
+function _fontStepName(px) {
+  return Object.keys(_FONT_STEPS).find(k => _FONT_STEPS[k] === px) || null;
+}
+
+function _syncFontUI() {
+  const cur = _fontStepName(P.monoSize);
+  for (const k of Object.keys(_FONT_STEPS)) {
+    const b = document.getElementById('font_' + k);
+    if (b) b.classList.toggle('s-active', k === cur);
+  }
+}
+
+function setFontSize(name) {
+  const px = _FONT_STEPS[name];
+  if (!px) return;
+  P.monoSize = px;
   savePrefs(); applyPrefs();
+  _syncFontUI();
 }
 
 // Panel IDs → [toggleBtnId, resizerId]
@@ -26476,10 +26499,10 @@ function _meSave() {
 
         <div class="settings-row">
           <span class="settings-lbl">Font Size</span>
-          <div class="flex-row" style="gap:4px">
-            <button class="btn" onclick="adjustFontSize(-1)" style="padding:2px 8px;font-size:12px" title="Decrease font size">A−</button>
-            <span class="sz-label" id="szLabel">11px</span>
-            <button class="btn" onclick="adjustFontSize(1)"  style="padding:2px 8px;font-size:14px" title="Increase font size">A+</button>
+          <div class="settings-pill">
+            <button class="btn" id="font_small"  onclick="setFontSize('small')"  title="10px">Small</button>
+            <button class="btn" id="font_medium" onclick="setFontSize('medium')" title="12px">Medium</button>
+            <button class="btn" id="font_large"  onclick="setFontSize('large')"  title="14px">Large</button>
           </div>
         </div>
 

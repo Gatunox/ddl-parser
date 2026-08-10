@@ -8845,6 +8845,23 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
 
+test('an icon button centres its glyph inside its fixed width', () => {
+  // .btn.btn-ico pins the width at 30px and zeroes the horizontal padding so ⚙
+  // and ✕ — different advance widths — come out the same size. That only works
+  // if the flex box also centres: without justify-content the glyph sits at
+  // flex-start, measured 2px from the left edge and 22px from the right, about
+  // 10px off centre in a box built to look square.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const m = /(^|\n)\.btn-ico\s*\{([^}]*)\}/.exec(css);
+  assert.ok(m, '.btn-ico rule not found');
+  const decls = m[2];
+  assert.ok(/display:\s*inline-flex/.test(decls), '.btn-ico must be a flex box');
+  assert.ok(/justify-content:\s*center/.test(decls),
+    '.btn-ico fixes its width and drops its padding, so it must centre its glyph — ' +
+    `got: ${decls.trim().slice(0, 120)}`);
+});
+
 test('controls border with --bw-ctl, containers with --bw', () => {
   // Two width tokens on purpose, not by accident. At devicePixelRatio 1 a 1px
   // border on a TEXT-sized box lands on a fractional pixel and antialiases into
@@ -8879,6 +8896,25 @@ test('controls border with --bw-ctl, containers with --bw', () => {
   assert.ok(badge, '.badge-hex rule found');
   assert.ok(/border:\s*var\(--bw-ctl\)\s/.test(badge),
     `.badge-hex must use --bw-ctl, got: ${badge.trim().slice(0, 90)}`);
+
+  // Text inputs are controls too, and they were the gap: the export modal's
+  // filter box and the Field Map filter both shipped at --bw while every button
+  // beside them sat at --bw-ctl, so they drew the two-tone edge the token exists
+  // to prevent. Checking .btn and .badge alone did not catch it, so every rule
+  // that borders a visible input is swept here rather than named one by one.
+  const CONTROLish = /input|textarea|select|filter|search/i;
+  const offenders = [];
+  for (const m of css.matchAll(/(^|\n)([^{}\n]+)\{([^}]*)\}/g)) {
+    const [, , selector, decls] = m;
+    if (!CONTROLish.test(selector)) continue;
+    // A transparent border paints nothing, so the artifact cannot appear there;
+    // #fmtForceSelect uses one purely to reserve layout space.
+    if (/border:\s*var\(--bw\)\s+solid\s+(?!transparent)/.test(decls)) {
+      offenders.push(selector.trim());
+    }
+  }
+  deepEq(offenders, [],
+    'these controls border at the container hairline — text-sized boxes need --bw-ctl');
 });
 
 test('the density block is declared after both theme blocks', () => {

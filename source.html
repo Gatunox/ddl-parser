@@ -788,7 +788,7 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .exp-tbl th { position:sticky; top:0; background:var(--bg-deep); color:var(--text-dim); font-weight:600; text-align:left; padding:4px 6px; border-bottom: var(--bw) solid var(--border); white-space:nowrap; z-index:1; }
 .exp-tbl th:first-child { width:28px; text-align:center; }
 .exp-tbl th .th-label { display:block; font-size:10px; color:var(--text-dim); }
-#expFilterInput { flex:1; min-width:0; margin:0 10px; background:var(--bg-input,var(--bg)); border: var(--bw) solid var(--border); border-radius:var(--r-md); color:var(--text); font-size:12px; font-family:var(--mono); padding:3px 8px; outline:none; }
+#expFilterInput { flex:1; min-width:0; margin:0 10px; background:var(--bg-input,var(--bg)); border: var(--bw-ctl) solid var(--border); border-radius:var(--r-md); color:var(--text); font-size:12px; font-family:var(--mono); padding:3px 8px; outline:none; }
 #expFilterInput:focus { border-color:var(--accent); }
 #expFilterInput::placeholder { color:var(--text-dim); opacity:0.5; }
 .exp-tbl td { padding:3px 8px; border-bottom: var(--bw) solid rgba(255,255,255,0.04); color:var(--text); white-space:nowrap; overflow:hidden; max-width:200px; text-overflow:ellipsis; }
@@ -964,7 +964,10 @@ input[type="text"]:focus { border-color: var(--accent); }
   border-radius: var(--r-sm); box-sizing: border-box; }
 .accent-picker::-webkit-color-swatch-wrapper { padding: 2px; }
 .accent-picker::-webkit-color-swatch { border: none; border-radius: calc(var(--r-sm) - 2px); }
-.btn-ico { font-size: calc(var(--sz-mono) - 2px); display: inline-flex; align-items: center; line-height: 1; }
+/* justify-content is not optional here: .btn.btn-ico fixes the width at 30px and
+   zeroes the horizontal padding, so without it the glyph sits at flex-start and
+   ends up ~10px left of centre in a box built to be square-ish. */
+.btn-ico { font-size: calc(var(--sz-mono) - 2px); display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 /* Badge slot beside a panel title. Empty by default and collapsed by :empty,
    so a panel with no type badge keeps its title flush against the header. */
 .pt-badge { display: flex; align-items: center; flex-shrink: 0; margin-left: var(--sp-1); }
@@ -2097,7 +2100,7 @@ input.me-inp{width:100%;}
 /* Field Map — table layout patterned after DDL Doc */
 .me-fm-warn{padding:6px 10px;margin-bottom:6px;border: var(--bw) solid var(--warning);border-radius:var(--r-sm);background:rgba(255,193,7,0.08);color:var(--warning);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);line-height:1.4;}
 .me-fm-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
-.me-fm-filter{flex:1;min-width:0;height:22px;padding:0 8px;border: var(--bw) solid var(--border);border-radius:var(--r-sm);background:var(--bg-deep);color:var(--text);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
+.me-fm-filter{flex:1;min-width:0;height:22px;padding:0 8px;border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);background:var(--bg-deep);color:var(--text);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
 /* Selection action bar — segmented groups, so related actions share one outline
    and the eye sees three groups rather than nine loose pills of random width. */
@@ -15163,7 +15166,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.20.2.1';
+const APP_VERSION  = '1.20.2.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

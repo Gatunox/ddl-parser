@@ -719,9 +719,9 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .tree-missref-hdr:focus-visible { outline: var(--bw-ctl) solid var(--accent); outline-offset: -2px; }
 .tree-missref-item .tree-ddl-lbl { color: #e6a817; font-style: italic; padding-left: 0; }
 .tree-missref-item:hover { background: rgba(230,168,23,0.10); }
-.tree-unres-badge  { font-size: var(--sz-badge); padding: 2px 4px; border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--warning); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
-.tree-warn-badge   { font-size: var(--sz-badge); padding: 2px 4px; border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--warning); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
-.tree-error-badge  { font-size: var(--sz-badge); padding: 2px 4px; border-radius: var(--r-pill); background: var(--h-gray-bg);  color: var(--danger); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
+.tree-unres-badge  { font-size: var(--sz-badge); padding: 2px 4px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--warning); background: var(--h-gray-bg); color: var(--warning); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
+.tree-warn-badge   { font-size: var(--sz-badge); padding: 2px 4px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--warning); background: var(--h-gray-bg); color: var(--warning); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
+.tree-error-badge  { font-size: var(--sz-badge); padding: 2px 4px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--danger); background: var(--h-gray-bg);  color: var(--danger); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
 /* ---- DDL inline validation bar ---- */
 #ddlValidationBar { display: none; flex-shrink: 0; height: calc(var(--sz-mono) + 15px); padding: 0 8px;
   border-bottom: var(--bw) solid; align-items: center; gap: 4px; font-size: var(--sz-mono); overflow: hidden; }
@@ -1571,7 +1571,7 @@ td.c-err  { color: var(--accent2); }
 .dr-spec-dot { width:10px; height:10px; border-radius:var(--r-sm); flex-shrink:0; border: var(--bw-ctl) solid rgba(255,255,255,.2); }
 /* Missing-configuration badges — surface gaps in the entity lists rather than
    only at parse time (no recognizer / no parse spec / no DDL binding). */
-.me-gap-badge { font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--h-gray-bd);
+.me-gap-badge { font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--warning);
   background: var(--h-gray-bg); color: var(--warning); flex-shrink: 0; margin-left: 2px;
   font-weight: 700; white-space: nowrap; cursor: inherit; }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -15169,7 +15169,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.19.2.0';
+const APP_VERSION  = '1.19.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

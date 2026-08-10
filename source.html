@@ -617,7 +617,15 @@ input.tree-search, #treeSearch { flex: 1; min-width: 0; padding: 2px 22px 2px 6p
   height: calc(var(--sz-mono) + 8px); align-self: center; }
 input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .tree-search::placeholder { color: var(--text-dim); }
-.tree-search-clear { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: calc(var(--sz-mono) - 2px); color: var(--text-dim); cursor: pointer; display: none; line-height: 1; padding: 2px; }
+/* Offset from the INPUT's edge, not the wrap's. It is positioned against the
+   wrap, so the wrap's own padding has to be added back — with a bare 5px the ✕
+   ended up 1px inside the field's border, touching it. Expressed as the padding
+   plus the gap so the two cannot drift apart again. */
+/* font-family is explicit because this span inherits from the PANEL, which is
+   the app's sans stack — so the ✕ rendered in a different typeface from the
+   identical ✕ in the editor's search, and matching their font-size alone still
+   left a 7.63px glyph beside a 6.03px one. */
+.tree-search-clear { font-family: var(--mono); position: absolute; right: calc(var(--sp-1) + 7px); top: 50%; transform: translateY(-50%); font-size: calc(var(--sz-mono) - 2px); color: var(--text-dim); cursor: pointer; display: none; line-height: 1; padding: 2px; }
 .tree-search-clear:hover { color: var(--text); }
 .tree-search-clear.visible { display: block; }
 .tree-match-hi { background: rgba(230,168,23,0.35); border-radius: var(--r-sm); }
@@ -696,7 +704,10 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .ddl-search-count { font-size: var(--sz-mono); color: var(--text-dim); font-family: var(--font-mono); flex-shrink: 0; min-width: 3em; text-align: center; display: flex; align-items: center; justify-content: center; }
 .ddl-search-nav { cursor: pointer; opacity: 0.55; padding: 0 4px; user-select: none; line-height: 1; font-family: var(--font-mono); font-size: var(--sz-mono); display: flex; align-items: center; }
 .ddl-search-nav:hover { opacity: 1; color: var(--accent); }
-.ddl-search-nav-x { font-size: calc(var(--sz-mono) - 3px); }
+/* Same size as .tree-search-clear, the ✕ in the tree's search beside it — they
+   are the same control doing the same job in the same panel. Was -3px against
+   the tree's -2px: 9px vs 10px, a 5.42px glyph next to a 7.63px one. */
+.ddl-search-nav-x { font-size: calc(var(--sz-mono) - 2px); }
 .ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 .ddl-search-controls.hidden { display: none; }
 .tree-node { padding: var(--row-py-tree) 20px var(--row-py-tree) 8px; margin-right: -20px; cursor: pointer; font-family: var(--font-tree); font-size: var(--sz-mono); display: flex; align-items: center; gap: 5px; white-space: nowrap; user-select: none; line-height: calc(var(--sz-mono) + 4px); }
@@ -15342,7 +15353,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.2.2';
+const APP_VERSION  = '1.21.2.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

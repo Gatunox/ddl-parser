@@ -8928,7 +8928,13 @@ test('controls border with --bw-ctl, containers with --bw', () => {
   // beside them sat at --bw-ctl, so they drew the two-tone edge the token exists
   // to prevent. Checking .btn and .badge alone did not catch it, so every rule
   // that borders a visible input is swept here rather than named one by one.
-  const CONTROLish = /input|textarea|select|filter|search/i;
+  // Anything sized by its own text: controls, and the pill-shaped notices that
+  // behave like them. #toast was the one that got away — a text-sized pill
+  // centred with translateX(-50%), which puts its edges on half pixels whenever
+  // the content width is odd, so it drew the two-tone edge more reliably than
+  // any button. Containers with a declared width are fine at the hairline and
+  // are not swept: #tutorialCard is a fixed 300px box and stays on --bw.
+  const CONTROLish = /input|textarea|select|filter|search|toast|pill|chip/i;
   const offenders = [];
   for (const m of css.matchAll(/(^|\n)([^{}\n]+)\{([^}]*)\}/g)) {
     const [, , selector, decls] = m;

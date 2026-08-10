@@ -1226,7 +1226,10 @@ td.c-err  { color: var(--accent2); }
 /* Toast notification */
 #toast {
   position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
-  background: var(--bg-panel); border: var(--bw) solid var(--accent);
+  /* --bw-ctl, not --bw: the toast is a text-sized pill centred with
+     translateX(-50%), so an odd content width lands its edges on half pixels by
+     construction — exactly the two-tone hairline this token exists to avoid. */
+  background: var(--bg-panel); border: var(--bw-ctl) solid var(--accent);
   color: var(--text); font-size: 12px; padding: 7px 16px;
   border-radius: var(--r-md); box-shadow: 0 4px 18px rgba(0,0,0,0.5);
   white-space: nowrap; pointer-events: none;
@@ -15171,7 +15174,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.20.2.3';
+const APP_VERSION  = '1.20.2.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

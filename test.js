@@ -232,6 +232,7 @@ _t.auditBeginLoad     = _auditBeginLoad;
 // tests because nothing could execute it.
 _t.doParseMessages    = doParseMessages;
 _t.specKey            = _specKey;
+_t.ppDetectDetails    = _ppDetectDetails;
 _t.detectMsgType      = detectMsgType;
 // In a browser, \`window.X = fn\` also creates the global \`X\`, and top-level code
 // relies on that — detectMsgTypeTrace calls the bare identifier _fmtDetectTrace,
@@ -8844,6 +8845,62 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
       `vertical writing-mode must be scoped to a collapsed panel, found on: "${sel}"`);
   }
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
+});
+
+// ── An armed entity override has to be visible wherever it changes behaviour ─
+console.log('\nentity override — the app must say when it is on');
+
+test('the detection summary does not claim a forced run was evaluated', () => {
+  // A forced trace carries ONE row and that row is `passed`, so the near-miss
+  // loop dropped it and the summary printed "N evaluated — N matched". Nothing
+  // was evaluated: _fmtDetect short-circuits to the forced spec before any
+  // recognizer runs. The panel was describing work that did not happen.
+  const details = sandbox._t.ppDetectDetails;
+  const strip = rows => rows.map(d => String(d.html).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim());
+  const winner = { type: 'ISO', label: 'ISO 8583 BIC', color: '#e6a817' };
+
+  const forced = strip(details([{ winner, forced: true, trace: [{ label: 'ISO 8583 BIC', passed: true, forced: true }] }], 'message'));
+  assert.ok(/forced by entity override/i.test(forced[0]), `forced header, got: ${forced[0]}`);
+  assert.ok(/not evaluated/i.test(forced[0]), 'the forced header must say recognizers did not run');
+  assert.ok(!/evaluated —/.test(forced[0]), 'it must not read as a normal evaluation');
+  assert.ok(/Forced as/.test(forced[1]), `forced verb, got: ${forced[1]}`);
+
+  // The ordinary path is untouched — the wording only changes when forced.
+  const normal = strip(details([{ winner, trace: [] }], 'message'));
+  assert.ok(/evaluated/.test(normal[0]) && /matched/.test(normal[0]), `normal header, got: ${normal[0]}`);
+  assert.ok(/Matched as/.test(normal[1]), `normal verb, got: ${normal[1]}`);
+});
+
+test('an armed entity override shows in Settings, not only in the editor', () => {
+  // The Data Editor marked it (me-item-forced) and Settings → Data Detection
+  // did not, so the same fact about the same entity was visible in one list and
+  // invisible in the other. Both must read from isSpecOverride.
+  const list = /function renderDetectSpecsList\(\)\s*\{([\s\S]*?)\n\}/.exec(APP_SRC);
+  assert.ok(list, 'renderDetectSpecsList not found');
+  assert.ok(/isSpecOverride\(/.test(list[1]),
+    'the Settings list must consult isSpecOverride, or an armed override is invisible there');
+  const css = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.dr-spec-item\.dr-spec-forced\s*\{/.test(css),
+    'the armed row needs its own treatment');
+  const toggle = /function toggleSpecOverride\(idx\)\s*\{([\s\S]*?)\n\}/.exec(APP_SRC);
+  assert.ok(toggle, 'toggleSpecOverride not found');
+  assert.ok(/renderDetectSpecsList\(\)/.test(toggle[1]),
+    'toggling the override must refresh the Settings list, as it already refreshes the tree');
+});
+
+test('the parse overlay announces an armed entity override', () => {
+  // The DDL override prints an amber "Manual override mode" step. The entity
+  // override printed nothing and the run looked like a normal detection.
+  assert.ok(/Entity override — \$\{_armedSpec\}/.test(APP_SRC),
+    'the parse flow must emit an override step when S.specOverride is armed');
+  // Wording matters: the DDL override also skips the parse-spec, this one does
+  // not — the forced entity's parse-spec and bindings still run. A notice that
+  // overstates what was skipped is its own bug.
+  const step = /Entity override — \$\{_armedSpec\}`,\s*'([^']*)'/.exec(APP_SRC);
+  assert.ok(step, 'override step sub-label not found');
+  assert.ok(!/Parse-specs/i.test(step[1]),
+    `an entity override does not skip parse-specs — got: ${step[1]}`);
+  assert.ok(/Recognizers/i.test(step[1]), `it does skip recognizers — got: ${step[1]}`);
 });
 
 // ── Import identity: the bug that ate two messages out of three ─────────────

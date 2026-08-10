@@ -1832,6 +1832,13 @@ td.c-err  { color: var(--accent2); }
 .me-item.me-item-forced.active:hover{background:rgba(230,168,23,0.24);}
 .me-item.me-item-forced .me-item-name{color:var(--warning);font-weight:700;}
 .me-item.me-item-forced .me-item-name::after{content:'▶';margin-left:4px;vertical-align:0.107em;}
+/* The same armed-override treatment on the Settings → Data Detection row. It is
+   the same fact about the same entity, so it gets the same amber, the same
+   inset bar and the same ▶ — an override visible in one list and invisible in
+   the other reads as two different features, or as a bug. */
+.dr-spec-item.dr-spec-forced{background:rgba(230,168,23,0.16);box-shadow:inset 3px 0 0 #e6a817;}
+.dr-spec-item.dr-spec-forced .dr-spec-name{color:var(--warning);font-weight:700;}
+.dr-spec-item.dr-spec-forced .dr-spec-name::after{content:'▶';margin-left:4px;vertical-align:0.107em;}
 .me-item.dragging{cursor:grabbing;opacity:.4;}
 .me-item.drop-before{box-shadow:0 -2px 0 0 var(--accent);}
 .me-item.drop-after{box-shadow:0 2px 0 0 var(--accent);}
@@ -8807,15 +8814,23 @@ function _ppDetectDetails(traces, noun) {
       }
     }
   }
+  // A forced trace carries one row and it is `passed`, so the near-miss loop
+  // above drops it and the summary read exactly like a real detection:
+  // "N evaluated — N matched". Nothing was evaluated. Say so.
+  const forcedAll = total > 0 && traces.every(t => t && t.forced);
   const details = [{
-    html: `<b>${total}</b> ${noun}${plural(total)} evaluated — `
-        + `<span style="color:var(--success)">${matched} matched</span>`
-        + (unknown ? ` &nbsp;·&nbsp; <span style="color:#f39c12">${unknown} Unmatched</span>` : ''),
+    html: forcedAll
+        ? `<b>${total}</b> ${noun}${plural(total)} — `
+          + `<span style="color:#e6a817">forced by entity override</span>`
+          + ` &nbsp;<span style="opacity:0.7">recognizers not evaluated</span>`
+        : `<b>${total}</b> ${noun}${plural(total)} evaluated — `
+          + `<span style="color:var(--success)">${matched} matched</span>`
+          + (unknown ? ` &nbsp;·&nbsp; <span style="color:#f39c12">${unknown} Unmatched</span>` : ''),
     color: 'var(--text)',
   }];
   for (const [label, info] of [...matchByLabel.entries()].sort((a, b) => b[1].count - a[1].count)) {
     details.push({
-      html: `&nbsp;&nbsp;&nbsp;&nbsp;✓ Matched as <span style="color:${info.color};font-weight:600">${esc(label)}</span>`
+      html: `&nbsp;&nbsp;&nbsp;&nbsp;${forcedAll ? '▶ Forced as' : '✓ Matched as'} <span style="color:${info.color};font-weight:600">${esc(label)}</span>`
           + ` &nbsp;<span style="opacity:0.7">(${info.count} ${noun}${plural(info.count)})</span>`,
       color: 'var(--text-dim)',
     });
@@ -9895,6 +9910,22 @@ function doParseMessages() {
   // spec order, same short-circuits, same winner; it also records why each spec
   // failed), so the trace form serves both.
   const _chunkInfo = [];
+  // An armed ENTITY override says so out loud, the way an armed DDL override
+  // does at Priority 1. Without this the panel printed "Detecting message
+  // types" and its usual summary while _fmtDetect had already short-circuited
+  // to the forced spec — the run looked identical to a real detection.
+  //
+  // Deliberately NOT the DDL override's wording: that one skips the parse-spec
+  // too and parses straight off the DDL. This skips recognizers only — the
+  // forced entity's parse-spec and DDL bindings still run — and a notice that
+  // overstates what was skipped is its own bug.
+  const _armedSpec = S.specOverride && S.specOverride.label;
+  if (_armedSpec) {
+    _parseProgressStep(`Entity override — ${_armedSpec}`,
+      'Recognizers — not evaluated · every message parses as this entity',
+      '#e6a817', '#e6a817');
+    _parseProgressDoneLast();
+  }
   _parseProgressStep('Detecting message types');
   setTimeout(() => {
     if (_parseAborted) return;
@@ -15208,7 +15239,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.20.3.1';
+const APP_VERSION  = '1.20.3.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15856,7 +15887,14 @@ function renderDetectSpecsList() {
       const type  = _escHtml(s.name || '');
       const vol   = s.vol ? ` <span class="dr-spec-vol">${_escHtml(s.vol)}</span>` : '';
       const gaps = _meSpecGapBadgeHtml(s);
-      return `<div class="dr-spec-item"><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span>${gaps}<span class="dr-spec-type">${type}</span></div>`;
+      // Same source of truth the Data Editor sidebar uses, so the two lists
+      // cannot disagree about whether an override is armed.
+      const forced = isSpecOverride(s.label || s.name);
+      const fCls = forced ? ' dr-spec-forced' : '';
+      const fTtl = forced
+        ? ' title="PARSING OVERRIDE — every message parses as this entity, recognizers skipped. Clear it from the Data Editor."'
+        : '';
+      return `<div class="dr-spec-item${fCls}"${fTtl}><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span>${gaps}<span class="dr-spec-type">${type}</span></div>`;
     };
     // Same three groups as the Data Editor sidebar, in the same order detection
     // uses — a heading only appears when there is more than one group to tell
@@ -22950,6 +22988,11 @@ function toggleSpecOverride(idx) {
                 : `Every message will parse as "${label}" until you clear it`, on ? undefined : 'warn');
   }
   _meRenderSidebar();
+  // Settings is closed while the editor is open, so reopening it would re-render
+  // anyway — but the DDL branch above refreshes its list on the same event, and
+  // a state change that only some of its views hear about is how the two lists
+  // came to disagree in the first place.
+  if (typeof renderDetectSpecsList === 'function') renderDetectSpecsList();
 }
 const isSpecOverride = label => !!(S.specOverride && S.specOverride.label === label);
 

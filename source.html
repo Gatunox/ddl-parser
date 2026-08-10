@@ -1652,7 +1652,16 @@ td.c-err  { color: var(--accent2); }
 .dr-spec-dot { width:10px; height:10px; border-radius:var(--r-sm); flex-shrink:0; border: var(--bw-ctl) solid rgba(255,255,255,.2); }
 /* Missing-configuration badges — surface gaps in the entity lists rather than
    only at parse time (no recognizer / no parse spec / no DDL binding). */
-.me-gap-badge { font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--warning);
+/* font-family is declared, not inherited. This badge appears in two lists whose
+   rows set different stacks — Settings → Data Detection inherits the body sans,
+   the Data Editor sidebar sets mono — so the same "⚠2" rendered with a sans
+   digit in one place and a mono digit in the other, beside an identical emoji
+   triangle. The number looked out of proportion with the ⚠ in the Data Editor
+   for that reason alone, not because of its size.
+   The sans stack matches body's, which is what the correct-looking one was
+   already getting. No token exists for it. */
+.me-gap-badge { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--warning);
   background: var(--h-gray-bg); color: var(--warning); flex-shrink: 0; margin-left: 2px;
   font-weight: 700; white-space: nowrap; cursor: inherit; }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1923,7 +1932,11 @@ td.c-err  { color: var(--accent2); }
    the other reads as two different features, or as a bug. */
 .dr-spec-item.dr-spec-forced{background:rgba(230,168,23,0.16);box-shadow:inset 3px 0 0 #e6a817;}
 .dr-spec-item.dr-spec-forced .dr-spec-name{color:var(--warning);font-weight:700;}
-.dr-spec-item.dr-spec-forced .dr-spec-name::after{content:'▶';margin-left:4px;vertical-align:0.107em;}
+/* The ▶ is emitted in the markup between the name and the volume, not as a
+   ::after on .dr-spec-name — that span WRAPS the volume, so the pseudo-element
+   landed after it and read "STM ATM ▶" instead of "STM ▶ ATM". The marker
+   belongs to the entity, so it sits against the entity's name. */
+.dr-spec-forced-mark{color:var(--warning);margin-left:4px;vertical-align:0.107em;}
 .me-item.dragging{cursor:grabbing;opacity:.4;}
 .me-item.drop-before{box-shadow:0 -2px 0 0 var(--accent);}
 .me-item.drop-after{box-shadow:0 2px 0 0 var(--accent);}
@@ -15389,7 +15402,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.3.4';
+const APP_VERSION  = '1.21.3.7';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16058,7 +16071,7 @@ function renderDetectSpecsList() {
       const fTtl = forced
         ? ' title="PARSING OVERRIDE — every message parses as this entity, recognizers skipped. Clear it from the Data Editor."'
         : '';
-      return `<div class="dr-spec-item${fCls}"${fTtl}><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${vol}</span>${gaps}<span class="dr-spec-type">${type}</span></div>`;
+      return `<div class="dr-spec-item${fCls}"${fTtl}><span class="dr-spec-dot" style="background:${color}"></span><span class="dr-spec-name">${label}${forced ? '<span class="dr-spec-forced-mark">▶</span>' : ''}${vol}</span>${gaps}<span class="dr-spec-type">${type}</span></div>`;
     };
     // Same three groups as the Data Editor sidebar, in the same order detection
     // uses — a heading only appears when there is more than one group to tell

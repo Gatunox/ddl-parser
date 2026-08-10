@@ -529,7 +529,7 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
 /* Header buttons used to be full-height borderless strips, which read as
    toolbar segments rather than buttons and left Parse stretched beside them.
    They are ordinary buttons now, vertically centred and sized by content. */
-.panel-header .btn { padding: 0 10px !important; height: var(--ctl-h) !important; font-size: calc(var(--sz-mono) - 1px); display: inline-flex; align-items: center !important; justify-content: center !important; border: var(--bw-ctl) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text) !important; font-weight: 600 !important; align-self: center !important; flex: 0 0 auto !important; }
+.panel-header .btn { padding: 0 10px !important; height: var(--ctl-h) !important; font-size: calc(var(--sz-mono) - 1px); display: inline-flex; align-items: center !important; justify-content: center !important; border: var(--bw-ctl) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text-dim) !important; font-weight: 400 !important; align-self: center !important; flex: 0 0 auto !important; }
 .panel-header .flex-row { align-self: center; display: flex; align-items: center; gap: 6px; padding: 0 6px; }
 .panel-header > span:not(.panel-title) { display: flex; align-items: center; padding: 0 4px; }
 .panel-header .btn:hover { background: var(--surface-hover) !important; border-color: var(--border-strong) !important; color: var(--text) !important; box-shadow: none !important; }
@@ -717,9 +717,9 @@ input.tree-search:focus, #treeSearch:focus { box-shadow: inset 0 0 0 var(--bw) v
 .tree-missref-hdr:focus-visible { outline: var(--bw-ctl) solid var(--accent); outline-offset: -2px; }
 .tree-missref-item .tree-ddl-lbl { color: #e6a817; font-style: italic; padding-left: 0; }
 .tree-missref-item:hover { background: rgba(230,168,23,0.10); }
-.tree-unres-badge  { font-size: var(--sz-badge); padding: 0 4px; border-radius: var(--r-pill); background: rgba(230,168,23,0.18); color: #e6a817; flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
-.tree-warn-badge   { font-size: var(--sz-badge); padding: 0 4px; border-radius: var(--r-pill); background: rgba(230,168,23,0.18); color: #e6a817; flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
-.tree-error-badge  { font-size: var(--sz-badge); padding: 0 4px; border-radius: var(--r-pill); background: rgba(220,50,50,0.18);  color: #f07070; flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
+.tree-unres-badge  { font-size: var(--sz-badge); padding: 0 4px; border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--h-gray-fg); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
+.tree-warn-badge   { font-size: var(--sz-badge); padding: 0 4px; border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--h-gray-fg); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
+.tree-error-badge  { font-size: var(--sz-badge); padding: 0 4px; border-radius: var(--r-pill); background: var(--h-gray-bg);  color: var(--h-gray-fg); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
 /* ---- DDL inline validation bar ---- */
 #ddlValidationBar { display: none; flex-shrink: 0; height: calc(var(--sz-mono) + 15px); padding: 0 8px;
   border-bottom: var(--bw) solid; align-items: center; gap: 4px; font-size: var(--sz-mono); overflow: hidden; }
@@ -916,12 +916,12 @@ input[type="text"]:focus { border-color: var(--accent); }
 /* ===== BUTTONS ===== */
 .btn {
   background: var(--surface-raised);
-  color: var(--text);
+  color: var(--text-dim);
   border: var(--bw-ctl) solid var(--border);
   padding: 3px 12px;
   border-radius: var(--r-sm);
   font-size: var(--sz-mono);
-  font-weight: 600;
+  font-weight: 400;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.1s;
@@ -1102,7 +1102,7 @@ tr.row-filter-hide  { display: none; }
   border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0;
 }
 .panel.collapsed #ddlCfgBar { display:none !important; }
-#ddlCfgBar .btn { background:var(--surface-raised); border: var(--bw-ctl) solid var(--border); color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 10px; border-radius:var(--r-sm); cursor:pointer; height:var(--ctl-h); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+#ddlCfgBar .btn { background:var(--surface-raised); border: var(--bw-ctl) solid var(--border); color:var(--text-dim); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 10px; border-radius:var(--r-sm); cursor:pointer; height:var(--ctl-h); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
 #ddlCfgBar .btn:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text); background:var(--surface-hover); }
 #ddlCfgBar .btn:disabled { opacity:0.35; cursor:default; }
 #resCfgControls {
@@ -1579,8 +1579,8 @@ td.c-err  { color: var(--accent2); }
 .dr-spec-dot { width:10px; height:10px; border-radius:var(--r-sm); flex-shrink:0; border: var(--bw-ctl) solid rgba(255,255,255,.2); }
 /* Missing-configuration badges — surface gaps in the entity lists rather than
    only at parse time (no recognizer / no parse spec / no DDL binding). */
-.me-gap-badge { font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--h-amber-bd);
-  background: rgba(230,168,23,0.18); color: #e6a817; flex-shrink: 0; margin-left: 2px;
+.me-gap-badge { font-size: var(--sz-badge); padding: 0 6px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--h-gray-bd);
+  background: var(--h-gray-bg); color: var(--h-gray-fg); flex-shrink: 0; margin-left: 2px;
   font-weight: 700; white-space: nowrap; cursor: inherit; }
 .dr-spec-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-spec-type { font-size:9px; color:var(--text-dim); flex-shrink:0; opacity:.7; width:36px; text-align:right; }
@@ -1806,7 +1806,7 @@ td.c-err  { color: var(--accent2); }
    The sidebar's own copy sits flush in a square column and must not. */
 .me-test-list .me-sidebar-hdr{border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0;}
 .me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
-.me-sidebar-add{background:var(--surface-raised);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
+.me-sidebar-add{background:var(--surface-raised);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
 .me-sidebar-add:hover{border-color:var(--border-strong);color:var(--text);background:var(--surface-hover);}
 .me-item-list{flex:1;overflow-y:auto;min-height:var(--row-h);}
 .me-item{display:flex;align-items:center;gap:5px;padding:0 8px;min-height:var(--row-h);cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;}
@@ -15294,7 +15294,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.17.0.1';
+const APP_VERSION  = '1.17.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

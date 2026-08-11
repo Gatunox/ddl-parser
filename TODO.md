@@ -560,10 +560,33 @@ A new block type names a DDL field as filterable:
   { "token-area": "ANY" }
 ],
 [
+  // Fixed-position field: the string form is enough.
   { "add-filter": "TYP" },
-  { "add-filter": "TRA-CDE" }
+
+  // Bitmap-dependent field: pin the map, and the offset follows from it.
+  { "add-filter": { "field": "TRAN-CDE",
+                    "read-bitmap": { "field": "PRI-BIT-MAP", "bits": 32, "value": "C4180000" } } }
 ]
 ```
+
+Read as: *extract TRAN-CDE only from records whose PRI-BIT-MAP is exactly
+C4180000* — because that value pins the DE layout, which is what makes
+TRAN-CDE's offset knowable without walking the record. A record with any other
+bitmap does not match, and is not displayed.
+
+The string / object duality is already how the language works elsewhere —
+`{ "token-area": "ANY" }` beside `{ "read-bitmap": { ... } }` — so a bare
+`"TYP"` for the simple case and an object when a map must be pinned needs no new
+convention.
+
+*Note on the shape:* the obvious way to write this,
+`{ "add-filter": "TRAN-CDE", { "read-bitmap": ... } }`, is not valid JSON — an
+object cannot carry a bare string and an unkeyed object. Hence `field` as a named
+attribute.
+
+*Consequence:* one `add-filter` block pins one bitmap. Filtering the same field
+across several layouts means one block per bitmap value. Worth watching, since it
+grows with the number of message variants; not a blocker.
 
 Block dispatch is a `switch` (`source.html:26163`), so adding the type is
 mechanical. The work is not in the block, it is in what happens at save.

@@ -10512,8 +10512,28 @@ function syncParseBtn() {
   if (bar) bar.style.display = (hasInput || S.isParsed) ? 'flex' : 'none';
 }
 
+// Above this many records, ask before starting. The number is deliberately far
+// below what a fast machine copes with: the point is not "this will fail", it is
+// "you may not have meant to ask for this, and on a slower machine you will be
+// waiting". The parse currently runs the per-record loop synchronously, so until
+// that is chunked the tab cannot paint or accept a Cancel while it works.
+const _PARSE_WARN_RECORDS = 2000;
+
 function _parseBtnClick() {
-  if (document.body.classList.contains('audit-active')) auditParseAll();
+  const inAudit = document.body.classList.contains('audit-active');
+  const n = inAudit ? (_auditSt.filtered || []).length : 0;
+  if (n > _PARSE_WARN_RECORDS) {
+    showConfirmHTML(
+      `<b>Parse ${n.toLocaleString()} records?</b><br><br>` +
+      `That is a lot to work through at once. On a slower machine this can take ` +
+      `a long time, and the page will not respond while it runs.<br><br>` +
+      `Narrowing the filter first — by date, source, destination or message type — ` +
+      `parses a smaller set and is usually what you want.`,
+      ok => { if (ok) auditParseAll(); }
+    );
+    return;
+  }
+  if (inAudit) auditParseAll();
   else doParseMessages();
 }
 
@@ -15455,7 +15475,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.4.6';
+const APP_VERSION  = '1.21.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

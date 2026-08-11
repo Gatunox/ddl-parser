@@ -8847,6 +8847,32 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
 
+// ── The compiled-DDL cache must outlive a release ───────────────────────────
+console.log('\ncompiled-DDL cache — keyed on the compiler, not the app');
+
+test('the compiled cache is not invalidated by APP_VERSION', () => {
+  // It used to be. Every release therefore threw away the whole cache and the
+  // next parse recompiled every definition — ~300 of them, counted one by one
+  // in the progress overlay — for releases that only moved a badge or resized a
+  // button. Compiled output must not outlive its COMPILER; it has no reason to
+  // die with an unrelated UI fix.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/const DDL_COMPILER_VERSION\s*=\s*\d+/.test(src),
+    'a compiler version must exist to key the cache on');
+
+  const put = /store\.put\(\{\s*svk[\s\S]{0,220}?\}\)/.exec(src);
+  assert.ok(put, 'cache write not found');
+  assert.ok(/compilerVersion:\s*DDL_COMPILER_VERSION/.test(put[0]),
+    'the entry must record the compiler version');
+
+  const gate = /if \(stored\.hash === _svHash\(vol, svName\)[^)]*\)/.exec(src);
+  assert.ok(gate, 'cache restore gate not found');
+  assert.ok(/stored\.compilerVersion === DDL_COMPILER_VERSION/.test(gate[0]),
+    'the restore gate must compare the COMPILER version');
+  assert.ok(!/stored\.appVersion === APP_VERSION/.test(gate[0]),
+    'keying the gate on APP_VERSION makes every release a full recompile');
+});
+
 // ── Expand all / collapse all must not sweep in the inverted key ────────────
 console.log('\ntree — expand all leaves the inverted key alone');
 

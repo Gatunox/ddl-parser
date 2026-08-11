@@ -8729,6 +8729,25 @@ function _openCacheDB() {
     } catch(e) { resolve(); }
   });
 }
+// What the compiled-DDL cache is keyed on, INSTEAD of APP_VERSION.
+//
+// It used to key on APP_VERSION, which meant every release threw the whole
+// cache away and the next parse recompiled every definition — ~300 of them on
+// the user's tree, counted one by one in the progress overlay, for a release
+// that only moved a badge or resized a button. The intent was right (compiled
+// output must not outlive the compiler that produced it) but the version was
+// wrong: APP_VERSION changes for anything at all.
+//
+// BUMP THIS when a change would alter what the compiler emits or how the cached
+// shape is read back:
+//   - the DDL parser (parseHPEDDL / parseDDLSections / field or type resolution)
+//   - buildRepoTypeRegistry / buildRepoSectionRegistry
+//   - the ISO layout builder (_hpeIsoLayout), including what is stripped before
+//     storing and rebuilt on restore
+//   - the shape of the entries put into the store
+// Do NOT bump it for UI, styling, or anything that cannot change a compile.
+const DDL_COMPILER_VERSION = 1;
+
 function _persistCompiledCache(compiledBySv) {
   if (!_compiledCacheDB) return;
   // Delete stale (hash-mismatched) entries
@@ -8744,7 +8763,9 @@ function _persistCompiledCache(compiledBySv) {
       const iso = e.defs._hpeIsoLayout;
       return iso ? { ...e, _hpeIsoLayout: { ...iso, deByBit: undefined } } : e;
     });
-    store.put({ svk, hash: _svHash(vol, sv), appVersion: APP_VERSION, data });
+    // appVersion is recorded for diagnostics only — compilerVersion is the gate.
+    store.put({ svk, hash: _svHash(vol, sv),
+                compilerVersion: DDL_COMPILER_VERSION, appVersion: APP_VERSION, data });
   }
   tx.onerror = e => {
     console.warn('[DDL cache] IDB write error', e.target?.error);
@@ -8780,7 +8801,7 @@ async function _restoreCompiledCache() {
       }
       const stored = storedMap.get(svk) || null;
       if (!stored) { _cacheRestoreStats.noEntry++; _cacheRestoreStats.noEntrySvs.push(svk); continue; }
-      if (stored.hash === _svHash(vol, svName) && stored.appVersion === APP_VERSION) {
+      if (stored.hash === _svHash(vol, svName) && stored.compilerVersion === DDL_COMPILER_VERSION) {
         _cacheRestoreStats.hit++; _cacheRestoreStats.hitSvs.push(svk);
         bySv[svk] = stored.data.map(e => {
           if (e._hpeIsoLayout) {
@@ -15484,7 +15505,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.5.2';
+const APP_VERSION  = '1.21.5.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

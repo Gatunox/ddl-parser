@@ -545,39 +545,83 @@ Deliberately deferred rather than rushed.
 
 ## 18. [ ] Custom filters for the Audit — match on message CONTENT
 
-**Asked for 2026-08-10.** The Audit filter today is fixed-field and header-only:
-Source and Dest (with an OR/AND toggle between them), Rec# range, Date range,
-Time range — all ANDed. That is enough to cut a 200,000-record file to 14,171
-and no further, because nothing in the header says *what the message was*.
+**Asked for and designed 2026-08-10.** The Audit filter today is fixed-field and
+header-only: Source and Dest (with an OR/AND toggle), Rec# range, Date range,
+Time range — all ANDed. Enough to cut a 200,000-record file to 14,171 and no
+further, because nothing in the header says *what the message was*.
 
-**What is wanted.** Filter on fields inside the record — MTI, PAN, amount,
-response code, any DDL field — ANDed on top of the existing header filters
-rather than replacing them or introducing OR/NOT grouping.
+### Declaring a filter — in the parse spec
 
-**Why it is harder than the current filters.** Everything the UI filters on today
-comes from `_auditSt.index`, built once by the worker in a single pass and cheap
-to re-filter in memory. A content filter cannot: each record has to be sliced out
-of the file and decoded before the predicate can be tested, so re-filtering costs
-a full-file pass, not an array scan.
+A new block type names a DDL field as filterable:
 
-**The good news — the pass already exists.** `_AUDIT_WORKER_SRC` is a Web Worker
-that already walks the whole file off the main thread, reads each record's header
-(`recNo`, `source`, `dest`, `destTypeNum`, timestamps) into `index`, and posts
-`progress` every 2,000 records. A content predicate belongs in that same walk: it
-already has the bytes in hand at the right offset (`AUDIT_HDR_CFG.msgPayloadOffset`),
-already reports progress, and already keeps the UI responsive.
+```
+[
+  { "read-ddl": { "binding": 0 } },
+  { "token-area": "ANY" }
+],
+[
+  { "add-filter": "TYP" },
+  { "add-filter": "TRA-CDE" }
+]
+```
 
-**Shape of the fix.** Extend the worker's scan to evaluate an optional content
-predicate per record and record the verdict in the index entry, so the existing
-in-memory filter path keeps working unchanged. Decide how the predicate is
-expressed — the parse-spec recognizers are the obvious vocabulary, since the app
-already has `literal @0 = "0200"`, `mti`, `isNumeric` and friends, and reusing
-them avoids inventing a second matching language.
+Block dispatch is a `switch` (`source.html:26163`), so adding the type is
+mechanical. The work is not in the block, it is in what happens at save.
 
-**Relationship to item 17.** Both are about not melting an ordinary notebook on a
-large file, and both point at the same place. Item 17 chunks the PARSE; this
-chunks the SEARCH. Doing 17 first is likely to make this one easier, since the
-batching and cancel machinery is shared.
+### The design decision that makes it viable — resolve the OFFSET at save time
+
+Reading `TYP` normally means running `read-ddl`, which walks the DDL from the
+start. Filtering on it that way would mean **parsing all 200,000 records to
+decide which ones to show** — slower than the parse that item 17 exists to make
+survivable.
+
+So on save, each declared field is resolved to a concrete **offset and length**
+and stored with the filter. Filtering is then a byte compare at a known position
+— no detection, no DDL walk, no parse — which the existing audit worker can do
+inside the single pass it already makes over the file
+(`_AUDIT_WORKER_SRC`, which already reads each record's header into the index and
+posts progress every 2,000 records).
+
+**Consequence to enforce:** this only works for fields at a *static* offset —
+before any variable-length element (LLVAR, bitmap-driven DEs, the token area).
+`add-filter` must refuse a field it cannot locate statically, or mark it as slow,
+rather than letting the cost be discovered at 200k records.
+
+### Identity and naming
+
+A filter is identified by the entity's identity plus the field:
+**REC-TYPE + NAME + FIELD** — type code and label being the entity identity
+settled in v1.21.4.0, with the field appended so one entity can expose several
+filters. Display as `ISO 8583 BIC · TYP` rather than a mashed
+`ISO-ISO-8583-BIC-TYP`; it scans better in a list.
+
+*Known consequence:* renaming an entity changes its identity and therefore
+invalidates saved selections that reference it. Accepted — renames are rare and
+the duplicate-identity warning already discourages churn — but it is the same
+shape as the import bug fixed in v1.20.3.1, so if selections are ever persisted
+across sessions this is where they will break.
+
+### Semantics
+
+- **ANDed** with the existing header filters; no OR/NOT grouping.
+- **A record that does not carry the field fails the filter**, exactly like any
+  other filter — it does not make the cut and is not displayed. That is what
+  keeps a mixed-entity file predictable.
+- Operators: **equals, contains, range** as the minimum. Equality alone is
+  unusable for amounts and dates.
+
+### UI
+
+The Audit bar gains a custom-filter control. It opens a popup listing every
+available filter; the user picks the ones they want and gives each a value. The
+bar then shows a summary — "2 custom filters" — with the detail on hover, so the
+bar stays compact.
+
+### Relationship to item 17
+
+Both are about not melting an ordinary notebook on a large file, and both land in
+the same place. Item 17 chunks the PARSE; this chunks the SEARCH. Doing 17 first
+likely makes this easier, since the batching and cancel machinery is shared.
 
 ---
 

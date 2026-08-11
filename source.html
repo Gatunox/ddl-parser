@@ -999,6 +999,15 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btn.btn-ico { min-width: 30px; padding-left: 0; padding-right: 0; }
 .settings-btn-20 { height: 20px !important; min-height: 20px !important; max-height: 20px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; line-height: 16px !important; box-sizing: content-box !important; padding-top: 0 !important; padding-bottom: 0 !important; }
 .btn:focus-visible { outline: none; border-color: var(--accent); }
+/* Was an inline style, which a density rule could not override without
+   !important. The box is font-driven — height is font-size x line-height 1 plus
+   the 1px border each side — so 28px made a 30px control. Right in the 44px
+   comfortable header, where it leaves ~7px of air; wrong in the 31px compact
+   one, where it left 0 above and 1 below and the gear looked wedged into the
+   bar. 19px gives a 21px box, centred with a whole 4px above and below inside the
+   header's content area — 18px looked similar but landed on a half pixel. */
+#settingsBtn { font-size: 28px; line-height: 1; padding: 0 6px; border-color: transparent; color: var(--text-dim); }
+[data-density="compact"] #settingsBtn { font-size: 19px; }
 #settingsBtn:hover { border-color: var(--accent) !important; color: var(--accent) !important; background: rgba(var(--accent-rgb),0.1) !important; }
 .btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
@@ -2540,8 +2549,7 @@ th.me-fm-colhi{color:var(--accent);}
 <header>
   <h1 id="appLogo"><span class="brand-mark" aria-hidden="true">D</span>DDL Parser</h1>
   <span class="header-sub" style="flex:1">NonStop / Base24 / ISO8583 — multi-message analysis with field tracking</span>
-  <button class="btn" id="settingsBtn" onclick="openSettings()" title="Settings"
-    style="font-size:28px;line-height:1;padding:0 6px;border-color:transparent;color:var(--text-dim)">⚙</button>
+  <button class="btn" id="settingsBtn" onclick="openSettings()" title="Settings">⚙</button>
 </header>
 
 <div class="main-layout" id="mainLayout">
@@ -15447,7 +15455,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.4.3';
+const APP_VERSION  = '1.21.4.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

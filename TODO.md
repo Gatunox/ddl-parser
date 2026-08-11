@@ -591,8 +591,22 @@ the offset is CONSTANT, only that it is reachable without a full parse:
    **the filter carries the bitmap value as part of its definition**. That pins
    the layout, and every DE's offset follows from it. A record whose bitmap
    differs simply does not match, which is the same rule as any other filter: no
-   field, no cut. (This is the user's design; an earlier draft of this item
-   wrongly proposed refusing these fields outright.)
+   field, no cut.
+
+   This needs no new syntax: it is `read-bitmap`'s existing DECLARED mode, the
+   one segmented files already use for a 6.0 non-IDF file whose map lives on the
+   IDF rather than in the record —
+
+   ```
+   { "read-bitmap": { "field": "FIID-SEG-MAP", "bits": 32, "value": "C4180000" } }
+   ```
+
+   `bits` + `value` present means declared: it consumes no payload and supplies
+   the map instead of reading it. A filter that pins a bitmap is the same
+   statement about a different map. (An earlier draft of this item wrongly
+   proposed refusing bitmap-dependent fields outright — that was mine, and it
+   would have excluded exactly the fields worth filtering on: response codes,
+   amounts, PAN.)
 3. **Fields after a variable-length element** (LLVAR / VLG) — the offset varies
    per record, but it is reached by reading each length prefix and hopping, which
    is a handful of reads rather than a DDL walk.

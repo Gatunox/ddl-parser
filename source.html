@@ -10081,7 +10081,16 @@ function doParseMessages() {
       // must match the decoded bytes.
       const detectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'ebcdic' || S.inputFormat === 'hex')
         ? bytes.map(b => String.fromCharCode(b)).join('') : chunkStr;
-      const detTrace = detectMsgTypeTrace(detectStr);
+      // Metadata recognizers (source / destination / filename) match fields on
+      // the record WRAPPER, not the bytes, and _meta refuses to guess when the
+      // field is missing — so passing no context made every such recognizer
+      // fail here. An audit batch chunk carries source and dest (see
+      // _auditBatchPayloads); a bare pasted chunk is a string and carries
+      // neither, which is correctly nothing to match against.
+      const _chunkCtx = (chunk && typeof chunk === 'object')
+        ? { source: chunk.source, dest: chunk.dest, filename: chunk.filename || null }
+        : null;
+      const detTrace = detectMsgTypeTrace(detectStr, _chunkCtx);
       _p23Traces.push(detTrace);
       _chunkInfo.push({ chunk, chunkStr, bytes, parseBytes, detectStr, detTrace, msgType: detTrace.winner });
     }
@@ -15475,7 +15484,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.5.0';
+const APP_VERSION  = '1.21.5.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -26529,6 +26538,14 @@ function _meRunTest() {
   //   the engine reads binary fields from rawBytes and text/hex from parseBytes.
   const _FMT_MAP = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' };
   let bytes, rawBytes, parseBytes, inputFmt, engineFmt, msgEnc;
+  // Detection context for the metadata recognizers (source / destination /
+  // filename). They match fields on the record WRAPPER, not the bytes, and
+  // _meta returns false when the field is missing rather than guessing — so
+  // without this every source and destination recognizer failed in the Test
+  // panel no matter what pattern was written. Declared out here because `rec`
+  // below lives inside the try, and is shadowed later by a recognizer named
+  // `rec`.
+  let testCtx = null;
   // S.netardRulerCol is the MAIN panel's ruler column, and the block below has
   // to set it because parseNetardLog reads it from there. Left set, a Test run
   // in this editor silently moved the Message Input panel's ruler to whatever
@@ -26552,6 +26569,9 @@ function _meRunTest() {
     const rec  = (recs && recs.length && recs[0].rawMsg && recs[0].rawMsg.length
                   && (recs[0].source || recs[0].dest || recs[0].netardFmt)) ? recs[0] : null;
     if (rec) {
+      // The wrapper the panel just parsed IS the metadata the recognizers need;
+      // the real record path passes exactly this at the detectMsgTypeTrace call.
+      testCtx   = { source: rec.source, dest: rec.dest };
       rawBytes  = Array.from(rec.rawMsg, c => c.charCodeAt(0) & 0xFF);
       inputFmt  = fmtSel === 'auto' ? (rec.netardFmt || 'standard') : fmtSel;
       engineFmt = _FMT_MAP[inputFmt] || 'netard';
@@ -26582,7 +26602,7 @@ function _meRunTest() {
     `<div style="font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);word-break:break-all">${_escHtml(dumpBytes)}${dumpMore}</div></div>`);
 
   // ── 1. Recognition ──────────────────────────────────────────────────────────
-  const recResult = _fmtTestSpecs([item], bytes)[0];
+  const recResult = _fmtTestSpecs([item], bytes, testCtx)[0];
   const recPassed = recResult?.passed ?? false;
   // Persist the verdict and repaint the per-recognizer dots in the
   // Recognizers section without a full re-render.
@@ -26622,7 +26642,7 @@ function _meRunTest() {
     // Evaluate every entity independently — _fmtTestSpecs over the whole list
     // stops at the first match (mirroring real detection), but the verdict
     // list is a diagnostic: it must show which entities WOULD pass.
-    const all = _meState.specs.map(s => _fmtTestSpecs([s], bytes)[0]);
+    const all = _meState.specs.map(s => _fmtTestSpecs([s], bytes, testCtx)[0]);
     // Real detection walks Messages in list order; file specs are keyed by
     // the wrapper filename, which pasted test input doesn't carry — so they
     // can never win here and are excluded from the winner computation.

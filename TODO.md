@@ -510,6 +510,39 @@ original "always 2px" rule had been protecting all along — see
 
 ---
 
+## 17. [ ] Chunk the large-record parse so the tab stays alive
+
+**Reported 2026-08-10.** A 200,000-record audit file filtered to 14,171 parses
+fine on an M4 Mac mini and is punishing on an ordinary notebook. The guardrail
+shipped in v1.21.5.0 (ask above 2,000 records) buys the user a choice; it does
+not make the work cheaper. This item is the work.
+
+**Three separate costs, not one.**
+
+1. **The per-record loops are synchronous.** `for (const rec of records)` at
+   roughly `source.html:9122` and `:9269` runs to completion with no yield.
+   `_parseAborted` is checked only between STAGES — the `setTimeout` boundaries
+   in the progress overlay — so during the record loop the tab cannot paint and
+   **Cancel cannot fire**. This is what the user experiences as a freeze, and it
+   is why the new confirm has to say "the page will not respond".
+2. **`auditParseAll` reads every selected record up front:**
+   `await Promise.all(rows.map(r => file.slice(...).arrayBuffer()))`. All 14k
+   slices are resident simultaneously before any parsing starts.
+3. **Then it hex-encodes all of them** into strings, roughly doubling the bytes
+   held, still before the parse begins. Memory peaks before the work starts.
+
+**Shape of the fix.** Process in batches of ~200: slice, encode and parse a
+batch, then yield to the event loop. That gives a live progress count, a Cancel
+that actually works, and a flat memory profile instead of a spike — the progress
+overlay already assumes this shape.
+
+**Risk.** It is a change to `doParseMessages`, which item 1 above already flags
+as ~1200 lines of orchestration duplicated between the NETARD and plain-paste
+flows. Do it behind the parse-flow routing tests (item 2), one flow at a time.
+Deliberately deferred rather than rushed.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

@@ -1075,6 +1075,18 @@ input[type="text"]:focus { border-color: var(--accent); }
    line-height, so the even value is what balances it. Measured, both ways. */
 .tree-hdr-count { line-height: calc(var(--sz-badge) + 4px); }
 
+/* The badges that switched to the SANS stack want +4, not +5. The +5 above was
+   measured when every badge was mono; a sans text box is a pixel shorter at the
+   same size, so those badges inherited a line box a pixel too tall and sat 2/3
+   instead of centred — introduced by the font change in v1.21.3.7/.8, and
+   visible in BOTH densities, not just compact.
+   Measured across small / medium / large, in comfort and compact: these four go
+   2/3 to 2/2 and lose the extra pixel, while .tree-cnt and the rest stay on +5
+   where they are already centred. Two fonts, two line boxes. */
+.me-gap-badge, .tree-unres-badge, .tree-warn-badge, .tree-error-badge {
+  line-height: calc(var(--sz-badge) + 4px);
+}
+
 /* ===== BADGES ===== */
 #fmtBadge, #cntBadge { display: flex; align-items: center; gap: 4px; }
 .badge {
@@ -15450,7 +15462,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.4.1';
+const APP_VERSION  = '1.21.4.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -543,6 +543,44 @@ Deliberately deferred rather than rushed.
 
 ---
 
+## 18. [ ] Custom filters for the Audit — match on message CONTENT
+
+**Asked for 2026-08-10.** The Audit filter today is fixed-field and header-only:
+Source and Dest (with an OR/AND toggle between them), Rec# range, Date range,
+Time range — all ANDed. That is enough to cut a 200,000-record file to 14,171
+and no further, because nothing in the header says *what the message was*.
+
+**What is wanted.** Filter on fields inside the record — MTI, PAN, amount,
+response code, any DDL field — ANDed on top of the existing header filters
+rather than replacing them or introducing OR/NOT grouping.
+
+**Why it is harder than the current filters.** Everything the UI filters on today
+comes from `_auditSt.index`, built once by the worker in a single pass and cheap
+to re-filter in memory. A content filter cannot: each record has to be sliced out
+of the file and decoded before the predicate can be tested, so re-filtering costs
+a full-file pass, not an array scan.
+
+**The good news — the pass already exists.** `_AUDIT_WORKER_SRC` is a Web Worker
+that already walks the whole file off the main thread, reads each record's header
+(`recNo`, `source`, `dest`, `destTypeNum`, timestamps) into `index`, and posts
+`progress` every 2,000 records. A content predicate belongs in that same walk: it
+already has the bytes in hand at the right offset (`AUDIT_HDR_CFG.msgPayloadOffset`),
+already reports progress, and already keeps the UI responsive.
+
+**Shape of the fix.** Extend the worker's scan to evaluate an optional content
+predicate per record and record the verdict in the index entry, so the existing
+in-memory filter path keeps working unchanged. Decide how the predicate is
+expressed — the parse-spec recognizers are the obvious vocabulary, since the app
+already has `literal @0 = "0200"`, `mti`, `isNumeric` and friends, and reusing
+them avoids inventing a second matching language.
+
+**Relationship to item 17.** Both are about not melting an ordinary notebook on a
+large file, and both point at the same place. Item 17 chunks the PARSE; this
+chunks the SEARCH. Doing 17 first is likely to make this one easier, since the
+batching and cancel machinery is shared.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

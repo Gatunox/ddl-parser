@@ -469,6 +469,12 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
   min-height: 0;
 }
 #ddlPanel.collapsed .panel-title { min-width: 0; }
+/* The 180° rotation flips the flex axis with it, so flex-start above is the
+   BOTTOM of the rail — which is where this title sat while the other three
+   started at the top. Parse Results only escapes it by accident: its title
+   carries an inline flex:0 1 auto for the expanded header's ellipsis, and a
+   content-sized box has no free space to distribute either way. */
+#ddlPanel.collapsed .panel-header .panel-title { justify-content: flex-end; }
 #msgPanel.collapsed .panel-header .panel-title,
 #rawPanel.collapsed .panel-header .panel-title { transform: none; }
 
@@ -15579,7 +15585,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.7.0';
+const APP_VERSION  = '1.21.7.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

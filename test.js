@@ -9268,6 +9268,51 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
 
+test('every collapsed panel title starts at the TOP of its rail', () => {
+  // Reported: minimising DDL Definition dropped its title to the bottom of the
+  // rail while Parse Results kept its at the top. Same rule, different result —
+  // because `transform: rotate(180deg)` rotates the flex axis along with the
+  // box, so the shared `justify-content: flex-start` means the BOTTOM for a
+  // rotated title. Parse Results only escaped it by accident: its title carries
+  // an inline `flex: 0 1 auto` for the expanded header's ellipsis, and a
+  // content-sized box has no free space to place at either end.
+  //
+  // So a rotated title has to say flex-END to sit at the top. Every panel is
+  // checked, not just the one that was reported — the next panel added is the
+  // one that would inherit this silently.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  const panels = [...src.matchAll(/<div class="panel" id="(\w+)">/g)].map(m => m[1]);
+  assert.ok(panels.length >= 4, `expected the four panels, found ${panels.length}`);
+
+  // Every rule as (selector, body). The delimiter is never consumed — matching
+  // on the previous rule's closing brace is what made the test above pass while
+  // its bug was live, and it would have skipped every second rule here too.
+  const RULES = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .map(m => [m[1].trim().replace(/\s+/g, ' '), m[2]]);
+  // Which titles the stylesheet un-rotates, and which it anchors at the far end.
+  const declares = (id, prop, val) => RULES.some(([sel, body]) =>
+    sel.includes(`#${id}.collapsed`) && sel.includes('.panel-title') &&
+    new RegExp(`${prop}\\s*:\\s*${val}\\b`).test(body));
+  const base = /\.panel\.collapsed \.panel-header \.panel-title \{([^}]*)\}/.exec(css);
+  assert.ok(base, 'the collapsed title rule is gone');
+  assert.ok(/transform\s*:\s*rotate\(180deg\)/.test(base[1]),
+    'the base rule still rotates, which is what flips the axis');
+  assert.ok(/justify-content\s*:\s*flex-start/.test(base[1]),
+    'and still anchors at flex-start, which the rotation turns into the bottom');
+
+  const bottomAnchored = panels.filter(id => {
+    if (declares(id, 'transform', 'none')) return false;        // reads top-down: flex-start IS the top
+    if (declares(id, 'justify-content', 'flex-end')) return false; // rotated, and says so
+    // A content-sized title box cannot be pushed to either end.
+    const tag = new RegExp(`id="${id}Title"[^>]*style="[^"]*flex\\s*:\\s*0 1 auto`).test(src);
+    return !tag;
+  });
+  deepEq(bottomAnchored, [],
+    'collapsed panels whose title is rotated but still anchored at flex-start, so it sits at the bottom');
+});
+
 // ── The compiled-DDL cache must outlive a release ───────────────────────────
 console.log('\ncompiled-DDL cache — keyed on the compiler, not the app');
 

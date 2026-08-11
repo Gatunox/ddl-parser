@@ -8691,15 +8691,22 @@ function _strHash(s) {
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
   return (h >>> 0).toString(36);
 }
-function _svHash(vol, sv) {
+// Hash of ONE file's content. The compiled cache is keyed on this, not on
+// _svHash: a subvolume like BASE/DDL holds most of a 300-definition tree, so
+// hashing the whole subvolume meant editing one file recompiled every file in
+// it. The compiled entries were always per-file ({ path, defName, defs }); only
+// the key and the hash were per-subvolume.
+function _fileHash(vol, sv, file) {
   const vTree = S.ddlTree[vol] || S.ddlTree[vol.toLowerCase()] || S.ddlTree[vol.toUpperCase()];
-  if (!vTree) return '0';
-  const svTree = vTree[sv] || vTree[sv.toLowerCase()] || vTree[sv.toUpperCase()];
-  if (!svTree) return '0';
-  // Sort keys so insertion-order differences across sessions don't bust the cache
-  const sorted = Object.fromEntries(Object.keys(svTree).sort().map(k => [k, svTree[k]]));
-  return _strHash(JSON.stringify(sorted));
+  const svTree = vTree && (vTree[sv] || vTree[sv.toLowerCase()] || vTree[sv.toUpperCase()]);
+  const content = svTree && (svTree[file] ?? svTree[file.toUpperCase()]);
+  return content == null ? '0' : _strHash(String(content));
 }
+// 'VOL/SV/FILE', upper-cased — the cache key and the id used throughout.
+function _fileKey(vol, sv, file) {
+  return `${vol}/${sv}/${file}`.toUpperCase();
+}
+
 function getDDLsForSv(vol, sv) {
   const vTree = S.ddlTree[vol];
   if (!vTree) return [];
@@ -8710,11 +8717,14 @@ function getDDLsForSv(vol, sv) {
 function _openCacheDB() {
   return new Promise(resolve => {
     try {
-      const req = indexedDB.open('ddl-parser-cache', 2);
+      // v3: keyed per FILE ('fk') rather than per subvolume. The upgrade drops
+      // the old store — one final full compile re-stamps every file, and from
+      // then on only a file that actually changed is recompiled.
+      const req = indexedDB.open('ddl-parser-cache', 3);
       req.onupgradeneeded = e => {
         const db = e.target.result;
         if (db.objectStoreNames.contains('compiled')) db.deleteObjectStore('compiled');
-        db.createObjectStore('compiled', { keyPath: 'svk' });
+        db.createObjectStore('compiled', { keyPath: 'fk' });
       };
       req.onsuccess = e => {
         _compiledCacheDB = e.target.result;
@@ -8748,23 +8758,24 @@ function _openCacheDB() {
 // Do NOT bump it for UI, styling, or anything that cannot change a compile.
 const DDL_COMPILER_VERSION = 1;
 
-function _persistCompiledCache(compiledBySv) {
+// Takes a map of FILE key -> compiled entries for that file.
+function _persistCompiledCache(compiledByFile) {
   if (!_compiledCacheDB) return;
-  // Delete stale (hash-mismatched) entries
-  if (_cacheRestoreStats.missSvs?.length) {
+  // Drop entries whose file no longer hashes the same — they were recompiled.
+  if (_cacheRestoreStats.missFiles?.length) {
     const dtx = _compiledCacheDB.transaction('compiled', 'readwrite');
-    for (const svk of _cacheRestoreStats.missSvs) dtx.objectStore('compiled').delete(svk);
+    for (const fk of _cacheRestoreStats.missFiles) dtx.objectStore('compiled').delete(fk);
   }
   const tx = _compiledCacheDB.transaction('compiled', 'readwrite');
   const store = tx.objectStore('compiled');
-  for (const [svk, entries] of Object.entries(compiledBySv)) {
-    const [vol, sv] = svk.split('/');
+  for (const [fk, entries] of Object.entries(compiledByFile)) {
+    const [vol, sv, file] = fk.split('/');
     const data = entries.map(e => {
       const iso = e.defs._hpeIsoLayout;
       return iso ? { ...e, _hpeIsoLayout: { ...iso, deByBit: undefined } } : e;
     });
     // appVersion is recorded for diagnostics only — compilerVersion is the gate.
-    store.put({ svk, hash: _svHash(vol, sv),
+    store.put({ fk, hash: _fileHash(vol, sv, file),
                 compilerVersion: DDL_COMPILER_VERSION, appVersion: APP_VERSION, data });
   }
   tx.onerror = e => {
@@ -8773,9 +8784,9 @@ function _persistCompiledCache(compiledBySv) {
   };
 }
 async function _restoreCompiledCache() {
-  const bySv = {};
-  const byVol = {};
-  _cacheRestoreStats = { hit: 0, miss: 0, noEntry: 0, hitSvs: [], missSvs: [], noEntrySvs: [] };
+  const byFile = {};
+  const byVol  = {};
+  _cacheRestoreStats = { hit: 0, miss: 0, noEntry: 0, hitFiles: [], missFiles: [], noEntryFiles: [] };
   if (!_compiledCacheDB) return;
   // Read all stored entries in one IDB transaction
   const allStored = await new Promise(resolve => {
@@ -8784,26 +8795,33 @@ async function _restoreCompiledCache() {
     req.onsuccess = () => resolve(req.result || []);
     req.onerror  = () => resolve([]);
   });
-  const storedMap = new Map(allStored.map(r => [r.svk, r]));
+  const storedMap = new Map(allStored.map(r => [r.fk, r]));
   for (const vol of Object.keys(S.ddlTree)) {
     const svMap = S.ddlTree[vol];
     if (!svMap) continue;
     for (const svName of Object.keys(svMap)) {
       const svTree = svMap[svName];
-      // Skip empty subvolumes — nothing to compile, nothing to cache
       if (!svTree || !Object.keys(svTree).length) continue;
       const svk = `${vol.toUpperCase()}/${svName.toUpperCase()}`;
-      // Skip excluded SVs and evict their IDB entry
+      // An excluded subvolume evicts every file it holds.
       if (S.excl && S.excl.has(svk)) {
         const dtx = _compiledCacheDB.transaction('compiled', 'readwrite');
-        dtx.objectStore('compiled').delete(svk);
+        for (const f of Object.keys(svTree)) dtx.objectStore('compiled').delete(_fileKey(vol, svName, f));
         continue;
       }
-      const stored = storedMap.get(svk) || null;
-      if (!stored) { _cacheRestoreStats.noEntry++; _cacheRestoreStats.noEntrySvs.push(svk); continue; }
-      if (stored.hash === _svHash(vol, svName) && stored.compilerVersion === DDL_COMPILER_VERSION) {
-        _cacheRestoreStats.hit++; _cacheRestoreStats.hitSvs.push(svk);
-        bySv[svk] = stored.data.map(e => {
+      // Decided per FILE: one edited file costs one recompile, not a subvolume.
+      for (const file of Object.keys(svTree)) {
+        const fk = _fileKey(vol, svName, file);
+        const stored = storedMap.get(fk) || null;
+        if (!stored) { _cacheRestoreStats.noEntry++; _cacheRestoreStats.noEntryFiles.push(fk); continue; }
+        if (stored.hash !== _fileHash(vol, svName, file) ||
+            stored.compilerVersion !== DDL_COMPILER_VERSION) {
+          _cacheRestoreStats.miss++; _cacheRestoreStats.missFiles.push(fk);
+          console.info('[DDL cache] Changed since last compile:', fk, '— will recompile');
+          continue;
+        }
+        _cacheRestoreStats.hit++; _cacheRestoreStats.hitFiles.push(fk);
+        byFile[fk] = stored.data.map(e => {
           if (e._hpeIsoLayout) {
             // Re-attach layout to the defs array and rebuild the Map that can't survive JSON.
             e.defs._hpeIsoLayout = e._hpeIsoLayout;
@@ -8815,21 +8833,18 @@ async function _restoreCompiledCache() {
           return e;
         });
         const vk = vol.toUpperCase();
-        (byVol[vk] || (byVol[vk] = [])).push(...bySv[svk]);
-      } else {
-        _cacheRestoreStats.miss++; _cacheRestoreStats.missSvs.push(svk);
-        console.info('[DDL cache] Hash mismatch for', svk, '— will recompile');
+        (byVol[vk] || (byVol[vk] = [])).push(...byFile[fk]);
       }
     }
   }
-  if (Object.keys(bySv).length) {
-    const svHashes = {};
-    for (const svk of Object.keys(bySv)) {
-      const [v, s] = svk.split('/');
-      svHashes[svk] = _svHash(v, s);
+  if (Object.keys(byFile).length) {
+    const fileHashes = {};
+    for (const fk of Object.keys(byFile)) {
+      const [v, sv, f] = fk.split('/');
+      fileHashes[fk] = _fileHash(v, sv, f);
     }
-    // version stays -1 so per-sv path always runs on the first parse of each session
-    _ddlCompileCache = { version: -1, byVol, svHashes, svEntries: bySv };
+    // version stays -1 so the per-file path always runs on the first parse of each session
+    _ddlCompileCache = { version: -1, byVol, fileHashes, fileEntries: byFile };
   }
 }
 
@@ -8837,8 +8852,10 @@ function _parseProgressDoneLast() {
   if (_ppSteps.length) { _ppSteps[_ppSteps.length - 1].done = true; _parseProgressRender(); }
 }
 function _cacheStampNote() {
-  const { hitSvs = [], missSvs = [], noEntrySvs = [] } = _cacheRestoreStats;
-  console.info('[DDL cache] hit:', hitSvs, '| miss:', missSvs, '| no-entry:', noEntrySvs);
+  const { hitFiles = [], missFiles = [], noEntryFiles = [] } = _cacheRestoreStats;
+  console.info('[DDL cache] reused', hitFiles.length, 'file(s) · recompiling',
+               missFiles.length, 'changed ·', noEntryFiles.length, 'never compiled',
+               { reused: hitFiles, changed: missFiles, new: noEntryFiles });
 }
 
 function _parseProgressShow() {
@@ -9685,32 +9702,34 @@ function doParseNetardLog(text, opts = {}) {
           // (which will short-circuit every record on its binding).
           _startNetardScoring({}, _preDet);
         } else if (useCache) {
-          const _nSvs = Object.keys(_ddlCompileCache.svEntries || {}).length;
-          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
+          const _nSvs = Object.keys(_ddlCompileCache.fileEntries || {}).length;
+          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
           _parseProgressDoneLast();
           _cacheStampNote();
           _startNetardScoring(_ddlCompileCache.byVol, _preDet);
         } else {
-          // Per-subvolume cache check: reuse subvolumes whose content hash still matches
-          const _cachedSvs = {};
-          if (_ddlCompileCache.svEntries && _ddlCompileCache.svHashes) {
-            for (const [svk, entries] of Object.entries(_ddlCompileCache.svEntries)) {
-              const [v, s] = svk.split('/');
-              if (_ddlCompileCache.svHashes[svk] === _svHash(v, s)) _cachedSvs[svk] = entries;
+          // Per-FILE cache check: reuse every file whose content hash still
+          // matches, so an edit costs one recompile rather than its whole
+          // subvolume — BASE/DDL alone is most of a 300-definition tree.
+          const _cachedFiles = {};
+          if (_ddlCompileCache.fileEntries && _ddlCompileCache.fileHashes) {
+            for (const [fk, entries] of Object.entries(_ddlCompileCache.fileEntries)) {
+              const [v, sv, f] = fk.split('/');
+              if (_ddlCompileCache.fileHashes[fk] === _fileHash(v, sv, f)) _cachedFiles[fk] = entries;
             }
           }
-          const compiledBySv = { ..._cachedSvs };
-          // Collect DEF tasks — only for subvolumes not served by cache
+          const compiledByFile = { ..._cachedFiles };
+          // Collect DEF tasks — only for files not served by cache
           const _nTasks = [];
           for (const vol of Object.keys(S.ddlTree)) {
             if (isExcluded(vol)) continue;
             for (const sv of Object.keys(S.ddlTree[vol] || {})) {
               if (isExcluded(vol, sv)) continue;
-              const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
-              if (_cachedSvs[svk]) continue;
               for (const { path, content } of getDDLsForSv(vol, sv)) {
-                if (S.tokenMap[path.split('/').pop().toUpperCase()]) continue;
-                if (isExcluded(vol, sv, path.split('/').pop())) continue;
+                const file = path.split('/').pop();
+                if (S.tokenMap[file.toUpperCase()]) continue;
+                if (isExcluded(vol, sv, file)) continue;
+                if (_cachedFiles[_fileKey(vol, sv, file)]) continue;
                 if (isHPEDDLText(content)) {
                   for (const dn of parseDEFNames(content)) _nTasks.push({ vol, sv, path, content, defName: dn });
                 } else {
@@ -9721,27 +9740,27 @@ function doParseNetardLog(text, opts = {}) {
           }
           function _commitNetardCache() {
             const compiledByVol = {};
-            for (const [svk, entries] of Object.entries(compiledBySv)) {
-              const vk = svk.split('/')[0];
+            for (const [fk, entries] of Object.entries(compiledByFile)) {
+              const vk = fk.split('/')[0];
               (compiledByVol[vk] || (compiledByVol[vk] = [])).push(...entries);
             }
-            const svHashes = Object.assign({}, _ddlCompileCache.svHashes || {});
-            for (const svk of Object.keys(compiledBySv)) {
-              const [v, s] = svk.split('/');
-              svHashes[svk] = _svHash(v, s);
+            const fileHashes = Object.assign({}, _ddlCompileCache.fileHashes || {});
+            for (const fk of Object.keys(compiledByFile)) {
+              const [v, sv, f] = fk.split('/');
+              fileHashes[fk] = _fileHash(v, sv, f);
             }
-            _ddlCompileCache = { version: _ddlTreeVersion, byVol: compiledByVol, svHashes, svEntries: compiledBySv };
-            _persistCompiledCache(compiledBySv);
+            _ddlCompileCache = { version: _ddlTreeVersion, byVol: compiledByVol, fileHashes, fileEntries: compiledByFile };
+            _persistCompiledCache(compiledByFile);
           }
           if (!_nTasks.length) {
-            const _nSvs = Object.keys(_cachedSvs).length;
-            _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
+            const _nSvs = Object.keys(_cachedFiles).length;
+            _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
             _commitNetardCache();
             _parseProgressDoneLast();
             _cacheStampNote();
             _startNetardScoring(_ddlCompileCache.byVol, _preDet);
           } else {
-          const _nCached = Object.keys(_cachedSvs).length;
+          const _nCached = Object.keys(_cachedFiles).length;
           if (_nCached > 0) {
             _parseProgressStep(`Retrieving DDL definitions from ${_nCached} subvolume${_nCached !== 1 ? 's' : ''}\u2026`);
             _parseProgressDoneLast();
@@ -9765,8 +9784,8 @@ function doParseNetardLog(text, opts = {}) {
               : parseDDL(content, _netardReg, _netardSecReg);
             if (defName) applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
             if (defs.length > 1 && !/(?:TKN|TKNX)$/i.test(defName || path.split('/').pop())) {
-              const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
-              (compiledBySv[svk] || (compiledBySv[svk] = [])).push({ path, defName, defs });
+              const fk = _fileKey(vol, sv, path.split('/').pop());
+              (compiledByFile[fk] || (compiledByFile[fk] = [])).push({ path, defName, defs });
             }
             _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 ${_nti} of ${_nTasks.length}`);
             setTimeout(_netardCompileNext, 0);
@@ -10423,32 +10442,32 @@ function doParseMessages() {
       if (!_needScore) { _startP23Scoring(null); return; }
 
       if (useCache) {
-        const _nSvs = Object.keys(_ddlCompileCache.svEntries || {}).length;
-        _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
+        const _nSvs = Object.keys(_ddlCompileCache.fileEntries || {}).length;
+        _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
         _parseProgressDoneLast();
         _cacheStampNote();
         _startP23Scoring(_ddlCompileCache.byVol);
       } else {
-        // Per-subvolume cache check: reuse subvolumes whose content hash still matches
-        const _cachedSvs = {};
-        if (_ddlCompileCache.svEntries && _ddlCompileCache.svHashes) {
-          for (const [svk, entries] of Object.entries(_ddlCompileCache.svEntries)) {
-            const [v, s] = svk.split('/');
-            if (_ddlCompileCache.svHashes[svk] === _svHash(v, s)) _cachedSvs[svk] = entries;
+        // Per-FILE cache check — see the matching block in the NETARD flow.
+        const _cachedFiles = {};
+        if (_ddlCompileCache.fileEntries && _ddlCompileCache.fileHashes) {
+          for (const [fk, entries] of Object.entries(_ddlCompileCache.fileEntries)) {
+            const [v, sv, f] = fk.split('/');
+            if (_ddlCompileCache.fileHashes[fk] === _fileHash(v, sv, f)) _cachedFiles[fk] = entries;
           }
         }
-        const compiledBySv = { ..._cachedSvs };
-        // Collect DEF tasks — only for subvolumes not served by cache
+        const compiledByFile = { ..._cachedFiles };
+        // Collect DEF tasks — only for files not served by cache
         const _tasks = [];
         for (const vol of Object.keys(S.ddlTree)) {
           if (isExcluded(vol)) continue;
           for (const sv of Object.keys(S.ddlTree[vol] || {})) {
             if (isExcluded(vol, sv)) continue;
-            const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
-            if (_cachedSvs[svk]) continue;
             for (const { path, content } of getDDLsForSv(vol, sv)) {
-              if (S.tokenMap[path.split('/').pop().toUpperCase()]) continue;
-              if (isExcluded(vol, sv, path.split('/').pop())) continue;
+              const file = path.split('/').pop();
+              if (S.tokenMap[file.toUpperCase()]) continue;
+              if (isExcluded(vol, sv, file)) continue;
+              if (_cachedFiles[_fileKey(vol, sv, file)]) continue;
               if (isHPEDDLText(content)) {
                 for (const dn of parseDEFNames(content)) _tasks.push({ vol, sv, path, content, defName: dn });
               } else {
@@ -10459,27 +10478,27 @@ function doParseMessages() {
         }
         function _commitP23Cache() {
           const compiledByVol = {};
-          for (const [svk, entries] of Object.entries(compiledBySv)) {
-            const vk = svk.split('/')[0];
+          for (const [fk, entries] of Object.entries(compiledByFile)) {
+            const vk = fk.split('/')[0];
             (compiledByVol[vk] || (compiledByVol[vk] = [])).push(...entries);
           }
-          const svHashes = Object.assign({}, _ddlCompileCache.svHashes || {});
-          for (const svk of Object.keys(compiledBySv)) {
-            const [v, s] = svk.split('/');
-            svHashes[svk] = _svHash(v, s);
+          const fileHashes = Object.assign({}, _ddlCompileCache.fileHashes || {});
+          for (const fk of Object.keys(compiledByFile)) {
+            const [v, sv, f] = fk.split('/');
+            fileHashes[fk] = _fileHash(v, sv, f);
           }
-          _ddlCompileCache = { version: _ddlTreeVersion, byVol: compiledByVol, svHashes, svEntries: compiledBySv };
-          _persistCompiledCache(compiledBySv);
+          _ddlCompileCache = { version: _ddlTreeVersion, byVol: compiledByVol, fileHashes, fileEntries: compiledByFile };
+          _persistCompiledCache(compiledByFile);
         }
         if (!_tasks.length) {
-          const _nSvs = Object.keys(_cachedSvs).length;
-          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} subvolume${_nSvs !== 1 ? 's' : ''}\u2026`);
+          const _nSvs = Object.keys(_cachedFiles).length;
+          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
           _commitP23Cache();
           _parseProgressDoneLast();
           _cacheStampNote();
           _startP23Scoring(_ddlCompileCache.byVol);
         } else {
-          const _p23Cached = Object.keys(_cachedSvs).length;
+          const _p23Cached = Object.keys(_cachedFiles).length;
           if (_p23Cached > 0) {
             _parseProgressStep(`Retrieving DDL definitions from ${_p23Cached} subvolume${_p23Cached !== 1 ? 's' : ''}\u2026`);
             _parseProgressDoneLast();
@@ -10503,8 +10522,8 @@ function doParseMessages() {
               : parseDDL(content, _repoReg, _repoSecReg);
             if (defName) applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
             if (defs.length > 1 && !/(?:TKN|TKNX)$/i.test(defName || path.split('/').pop())) {
-              const svk = `${vol.toUpperCase()}/${sv.toUpperCase()}`;
-              (compiledBySv[svk] || (compiledBySv[svk] = [])).push({ path, defName, defs });
+              const fk = _fileKey(vol, sv, path.split('/').pop());
+              (compiledByFile[fk] || (compiledByFile[fk] = [])).push({ path, defName, defs });
             }
             _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 ${_ti} of ${_tasks.length}`);
             setTimeout(_compileNext, 0);
@@ -15505,7 +15524,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.5.3';
+const APP_VERSION  = '1.21.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

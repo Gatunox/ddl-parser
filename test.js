@@ -8850,27 +8850,39 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
 // ── The compiled-DDL cache must outlive a release ───────────────────────────
 console.log('\ncompiled-DDL cache — keyed on the compiler, not the app');
 
-test('the compiled cache is not invalidated by APP_VERSION', () => {
-  // It used to be. Every release therefore threw away the whole cache and the
-  // next parse recompiled every definition — ~300 of them, counted one by one
-  // in the progress overlay — for releases that only moved a badge or resized a
-  // button. Compiled output must not outlive its COMPILER; it has no reason to
-  // die with an unrelated UI fix.
+test('the compiled cache is keyed per FILE, and survives a release', () => {
+  // Two separate regressions live here.
+  //
+  // 1) It used to be gated on APP_VERSION, so every release threw the whole
+  //    cache away and the next parse recompiled every definition.
+  // 2) It was stored and hashed per SUBVOLUME. BASE/DDL alone holds most of a
+  //    300-definition tree, so editing one file recompiled every file beside
+  //    it — even though the compiled entries were always per-file
+  //    ({ path, defName, defs }); only the key and the hash were coarse.
   const src = fs.readFileSync('./source.html', 'utf8');
+
   assert.ok(/const DDL_COMPILER_VERSION\s*=\s*\d+/.test(src),
     'a compiler version must exist to key the cache on');
+  assert.ok(/function _fileHash\(vol, sv, file\)/.test(src),
+    'a per-file hash must exist — a subvolume hash cannot express one changed file');
 
-  const put = /store\.put\(\{\s*svk[\s\S]{0,220}?\}\)/.exec(src);
-  assert.ok(put, 'cache write not found');
+  const put = /store\.put\(\{\s*fk[\s\S]{0,240}?\}\)/.exec(src);
+  assert.ok(put, 'cache write not found, or no longer keyed by file');
   assert.ok(/compilerVersion:\s*DDL_COMPILER_VERSION/.test(put[0]),
     'the entry must record the compiler version');
+  assert.ok(/hash:\s*_fileHash\(/.test(put[0]),
+    'the entry must be hashed on the FILE, not the subvolume');
 
-  const gate = /if \(stored\.hash === _svHash\(vol, svName\)[^)]*\)/.exec(src);
-  assert.ok(gate, 'cache restore gate not found');
-  assert.ok(/stored\.compilerVersion === DDL_COMPILER_VERSION/.test(gate[0]),
+  const gate = /if \(stored\.hash !== _fileHash\([\s\S]{0,140}?\)\s*\{/.exec(src);
+  assert.ok(gate, 'per-file restore gate not found');
+  assert.ok(/stored\.compilerVersion !== DDL_COMPILER_VERSION/.test(gate[0]),
     'the restore gate must compare the COMPILER version');
-  assert.ok(!/stored\.appVersion === APP_VERSION/.test(gate[0]),
-    'keying the gate on APP_VERSION makes every release a full recompile');
+  assert.ok(!/stored\.appVersion === APP_VERSION/.test(src),
+    'keying on APP_VERSION makes every release a full recompile');
+
+  // The coarse hash is gone entirely — leaving it invites a caller back.
+  assert.ok(!/function _svHash\(/.test(src),
+    '_svHash should be removed once nothing decides reuse per subvolume');
 });
 
 // ── Expand all / collapse all must not sweep in the inverted key ────────────

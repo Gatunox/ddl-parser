@@ -174,6 +174,14 @@ _t.meFmRowHtml         = _meFmRowHtml;
 _t.meState             = () => _meState;
 _t.setMeState          = v => { _meState = v; };
 _t.fmtTestSpecs       = window._fmtTestSpecs;
+// The recognizer reference: the index, one example card, and the runner that
+// produces an example's verdict. Rendered here so a documented example that
+// stopped being true fails the build instead of misinforming the panel.
+_t.recHelp             = _REC_HELP;
+_t.meRecHelpHtml       = _meRecHelpHtml;
+_t.meRecHelpRun        = _meRecHelpRun;
+_t.meRecHelpExampleHtml = _meRecHelpExampleHtml;
+_t.meRecByteLen        = _meRecByteLen;
 _t.meExecParseSpec    = _meExecParseSpec;
 _t.meParseFileWithSpec = _meParseFileWithSpec;
 // Parse-flow routing — which parser a recognized message is sent to.
@@ -1032,6 +1040,409 @@ test('metadata recognizers reject specific patterns when context is missing', ()
   }], bytes, {});
   assert.ok(!results[0].passed, 'specific source pattern fails without ctx.source');
   eq(results[0].failAt, 0, 'missing metadata fails at first recognizer');
+});
+
+// ── every recognizer, every attribute ───────────────────────────────────────
+// A sweep, not a sample. Each recognizer is exercised on its own, across every
+// attribute it accepts and every boundary it has: the value that passes, the one
+// next to it that must not, the range that runs off the end of the message, and
+// the malformed input. Four defects lived behind the old thin coverage — all of
+// them SILENT, because a recognizer that misreads its own attribute does not
+// throw, it just quietly matches the wrong messages.
+console.log('\nrecognizers — full attribute sweep');
+
+// The reference data as the app holds it. Read from the live sandbox rather than
+// re-parsed out of the file, so a test can never pass against a stale copy.
+const recHelpObj = () => sandbox._t.recHelp;
+
+// One recognizer, one payload. Hex in, verdict out — the same entry point the
+// Test panel and the help examples use, so nothing here tests a private path.
+const recHex = h => (String(h).replace(/\s+/g, '').match(/../g) || []).map(b => parseInt(b, 16));
+const rec1 = (r, payload, ctx) =>
+  fmtTestSpecs([{ name: 'T', recognizers: [r] }], recHex(payload), ctx)[0].passed;
+
+// [label, recognizer, payload hex, expected]  — ctx-driven rules use recCtxCases.
+const RECOGNIZER_CASES = [
+  // literal — encodings, wildcards, lists, ranges, bounds
+  ['literal ascii exact',            { type: 'literal', offset: 0, value: 'ISO' }, '49 53 4F 30', true],
+  ['literal ascii mismatch',         { type: 'literal', offset: 0, value: 'ISO' }, '42 32 34 30', false],
+  ['literal runs past the end',      { type: 'literal', offset: 0, value: 'ISO' }, '49 53', false],
+  ['literal at an offset',           { type: 'literal', offset: 4, value: '02' }, '30 32 30 30 30 32', true],
+  ['literal # digit wildcard',       { type: 'literal', offset: 0, value: '0###' }, '30 32 30 30', true],
+  ['literal # rejects a letter',     { type: 'literal', offset: 0, value: '0###' }, '30 32 41 30', false],
+  ['literal ? any byte',             { type: 'literal', offset: 0, value: '0?00' }, '30 58 30 30', true],
+  ['literal OR list, first',         { type: 'literal', offset: 0, value: ['06', '07'] }, '30 36', true],
+  ['literal OR list, second',        { type: 'literal', offset: 0, value: ['06', '07'] }, '30 37', true],
+  ['literal OR list, neither',       { type: 'literal', offset: 0, value: ['06', '07'] }, '30 38', false],
+  ['literal range lower bound',      { type: 'literal', offset: 0, value: [{ from: '01', to: '04' }] }, '30 31', true],
+  ['literal range upper bound',      { type: 'literal', offset: 0, value: [{ from: '01', to: '04' }] }, '30 34', true],
+  ['literal range just past',        { type: 'literal', offset: 0, value: [{ from: '01', to: '04' }] }, '30 35', false],
+  ['literal alpha range',            { type: 'literal', offset: 0, value: [{ from: 'A', to: 'C' }] }, '42', true],
+  ['literal range + loose value',    { type: 'literal', offset: 0, value: [{ from: '0', to: '4' }, '8'] }, '38', true],
+  ['literal mixed-length range dropped', { type: 'literal', offset: 0, value: [{ from: '9', to: '10' }] }, '39', false],
+  ['literal empty list matches nothing', { type: 'literal', offset: 0, value: [] }, '41', false],
+  ['literal bare number read as text',   { type: 'literal', offset: 0, value: 4354 }, '34 33 35 34', true],
+  ['literal ebcdic',                 { type: 'literal', offset: 0, encoding: 'ebcdic', value: 'ISO' }, 'C9 E2 D6', true],
+  ['literal ebcdic rejects ascii',   { type: 'literal', offset: 0, encoding: 'ebcdic', value: 'ISO' }, '49 53 4F', false],
+  ['literal encoding case-folded',   { type: 'literal', offset: 0, encoding: 'HEX', value: '43' }, '43', true],
+  ['literal hex spaced as pasted',   { type: 'literal', offset: 0, encoding: 'hex', value: '43 54' }, '43 54', true],
+  ['literal hex 0x-prefixed',        { type: 'literal', offset: 0, encoding: 'hex', value: '0x4354' }, '43 54', true],
+
+  // isBinary / isAscii / isEbcdic — what KIND of data sits there
+  ['isBinary finds one raw byte',    { type: 'binary', offset: 0, length: 4 }, '41 00 42 43', true],
+  ['isBinary on clean text',         { type: 'binary', offset: 0, length: 4 }, '41 42 43 44', false],
+  ['isBinary past the end',          { type: 'binary', offset: 0, length: 9 }, '41 42', false],
+  ['isAscii all printable',          { type: 'ascii', offset: 0, length: 4 }, '41 42 43 44', true],
+  ['isAscii rejects a NUL',          { type: 'ascii', offset: 0, length: 4 }, '41 00 42 43', false],
+  ['isAscii rejects 0x7F',           { type: 'ascii', offset: 0, length: 1 }, '7F', false],
+  ['isAscii accepts a space',        { type: 'ascii', offset: 0, length: 1 }, '20', true],
+  ['isAscii past the end',           { type: 'ascii', offset: 0, length: 9 }, '41 42', false],
+  ['isEbcdic on EBCDIC letters',     { type: 'ebcdic', offset: 0, length: 3 }, 'C1 C2 C3', true],
+  ['isEbcdic rejects ASCII',         { type: 'ebcdic', offset: 0, length: 3 }, '41 42 43', false],
+  ['isEbcdic rejects the I–J gap',   { type: 'ebcdic', offset: 0, length: 1 }, 'CA', false],
+
+  // isNumeric / isAlphabetic / isAlphanumeric, both character sets
+  ['isNumeric ascii',                { type: 'numeric', offset: 0, length: 3 }, '31 32 33', true],
+  ['isNumeric rejects a letter',     { type: 'numeric', offset: 0, length: 3 }, '31 32 41', false],
+  ['isNumeric ebcdic',               { type: 'numeric', offset: 0, length: 3, encoding: 'ebcdic' }, 'F1 F2 F3', true],
+  ['isNumeric ebcdic rejects ascii', { type: 'numeric', offset: 0, length: 3, encoding: 'ebcdic' }, '31 32 33', false],
+  ['isAlphabetic both cases',        { type: 'alphabetic', offset: 0, length: 3 }, '61 62 43', true],
+  ['isAlphabetic rejects a digit',   { type: 'alphabetic', offset: 0, length: 3 }, '61 62 31', false],
+  ['isAlphabetic ebcdic',            { type: 'alphabetic', offset: 0, length: 2, encoding: 'ebcdic' }, 'C1 81', true],
+  ['isAlphanumeric mixed',           { type: 'alphanumeric', offset: 0, length: 3 }, '61 31 43', true],
+  ['isAlphanumeric rejects a dash',  { type: 'alphanumeric', offset: 0, length: 3 }, '61 2D 43', false],
+  ['isAlphanumeric ebcdic',          { type: 'alphanumeric', offset: 0, length: 2, encoding: 'ebcdic' }, 'C1 F1', true],
+
+  // uint8 — eq / min / max / mask, and the absent-condition case
+  ['uint8 eq',                       { type: 'uint8', offset: 0, eq: 2 }, '02', true],
+  ['uint8 eq mismatch',              { type: 'uint8', offset: 0, eq: 2 }, '03', false],
+  ['uint8 min/max lower bound',      { type: 'uint8', offset: 0, min: 96, max: 111 }, '60', true],
+  ['uint8 min/max upper bound',      { type: 'uint8', offset: 0, min: 96, max: 111 }, '6F', true],
+  ['uint8 min/max just past',        { type: 'uint8', offset: 0, min: 96, max: 111 }, '70', false],
+  ['uint8 no conditions = exists',   { type: 'uint8', offset: 0 }, '01', true],
+  ['uint8 past the end',             { type: 'uint8', offset: 5, eq: 1 }, '01', false],
+
+  // uint16 / uint32 — the byte order, both spellings, and the bounds
+  ['uint16 be',                      { type: 'uint16', offset: 0, endian: 'be', eq: 0x0102 }, '01 02', true],
+  ['uint16 be is not le',            { type: 'uint16', offset: 0, endian: 'be', eq: 0x0201 }, '01 02', false],
+  ['uint16 le',                      { type: 'uint16', offset: 0, endian: 'le', eq: 0x0201 }, '01 02', true],
+  ['uint16 defaults to be',          { type: 'uint16', offset: 0, eq: 0x0102 }, '01 02', true],
+  ['uint16 min rejects zero',        { type: 'uint16', offset: 0, endian: 'be', min: 1 }, '00 00', false],
+  ['uint16 max',                     { type: 'uint16', offset: 0, endian: 'be', max: 4096 }, '20 00', false],
+  ['uint16 truncated',               { type: 'uint16', offset: 0, endian: 'be', eq: 1 }, '00', false],
+  ['uint32 be',                      { type: 'uint32', offset: 0, endian: 'be', eq: 0x12345678 }, '12 34 56 78', true],
+  ['uint32 le',                      { type: 'uint32', offset: 0, endian: 'le', eq: 0x12345678 }, '78 56 34 12', true],
+  ['uint32 defaults to be',          { type: 'uint32', offset: 0, eq: 0x12345678 }, '12 34 56 78', true],
+  ['uint32 is unsigned',             { type: 'uint32', offset: 0, endian: 'be', eq: 4294967295 }, 'FF FF FF FF', true],
+  ['uint32 truncated',               { type: 'uint32', offset: 0, eq: 1 }, '00 00 00', false],
+
+  // length rules — strict on both sides, and the legacy inclusive pair
+  ['greater-than is strict',         { type: 'greater-than', value: 5 }, '41 42 43 44 45', false],
+  ['greater-than one over',          { type: 'greater-than', value: 5 }, '41 42 43 44 45 46', true],
+  ['greater-than accepts length attr', { type: 'greater-than', length: 5 }, '41 42 43 44 45 46', true],
+  ['less-than is strict',            { type: 'less-than', value: 5 }, '41 42 43 44 45', false],
+  ['less-than one under',            { type: 'less-than', value: 5 }, '41 42 43 44', true],
+  ['min-length is inclusive',        { type: 'min-length', value: 5 }, '41 42 43 44 45', true],
+  ['max-length is inclusive',        { type: 'max-length', value: 5 }, '41 42 43 44 45', true],
+
+  // mti — the ISO digit rules, not just four digits
+  ['mti any valid',                  { type: 'mti', offset: 0, value: '####' }, '30 32 30 30', true],
+  ['mti rejects reserved class 0',   { type: 'mti', offset: 0, value: '####' }, '30 30 30 30', false],
+  ['mti rejects version 3',          { type: 'mti', offset: 0, value: '####' }, '33 32 30 30', false],
+  ['mti rejects function 5',         { type: 'mti', offset: 0, value: '####' }, '30 32 35 30', false],
+  ['mti rejects origin 6',           { type: 'mti', offset: 0, value: '####' }, '30 32 30 36', false],
+  ['mti rejects a non-digit',        { type: 'mti', offset: 0, value: '####' }, '30 32 58 30', false],
+  ['mti exact',                      { type: 'mti', offset: 0, value: '0200' }, '30 32 30 30', true],
+  ['mti family pattern',             { type: 'mti', offset: 0, value: '01##' }, '30 31 31 30', true],
+  ['mti family rejects other class', { type: 'mti', offset: 0, value: '01##' }, '30 32 30 30', false],
+  ['mti at an offset',               { type: 'mti', offset: 3, value: '####' }, '49 53 4F 30 32 30 30', true],
+  ['mti ebcdic',                     { type: 'mti', offset: 0, encoding: 'ebcdic', value: '####' }, 'F0 F2 F0 F0', true],
+  ['mti truncated',                  { type: 'mti', offset: 0, value: '####' }, '30 32 30', false],
+
+  // bitmap — DE numbering across bytes, both halves, all three encodings
+  ['bitmap DE1 clear',               { type: 'bitmap', offset: 0, bit: 1, value: 0 }, '42 10 00 00 00 00 00 00', true],
+  ['bitmap DE2 set',                 { type: 'bitmap', offset: 0, bit: 2, value: 1 }, '42 10 00 00 00 00 00 00', true],
+  ['bitmap DE2 clear on 0x02',       { type: 'bitmap', offset: 0, bit: 2, value: 1 }, '02 10 00 00 00 00 00 00', false],
+  ['bitmap DE7 set',                 { type: 'bitmap', offset: 0, bit: 7, value: 1 }, '42 10 00 00 00 00 00 00', true],
+  ['bitmap DE12 in the second byte', { type: 'bitmap', offset: 0, bit: 12, value: 1 }, '42 10 00 00 00 00 00 00', true],
+  ['bitmap value 0 means absent',    { type: 'bitmap', offset: 0, bit: 12, value: 0 }, '42 10 00 00 00 00 00 00', false],
+  ['bitmap value defaults to 1',     { type: 'bitmap', offset: 0, bit: 2 }, '42 10 00 00 00 00 00 00', true],
+  ['bitmap at an offset',            { type: 'bitmap', offset: 4, bit: 2, value: 1 }, '00 00 00 00 40 00 00 00 00 00 00 00', true],
+  ['bitmap DE65 in the secondary',   { type: 'bitmap', offset: 0, bit: 65, value: 1 }, '42 10 00 00 00 00 00 00 80 00 00 00 00 00 00 00', true],
+  ['bitmap DE65 with no secondary',  { type: 'bitmap', offset: 0, bit: 65, value: 0 }, '42 10 00 00 00 00 00 00', false],
+  ['bitmap bit 0 is out of range',   { type: 'bitmap', offset: 0, bit: 0, value: 1 }, '42 10 00 00 00 00 00 00', false],
+  ['bitmap bit 129 is out of range', { type: 'bitmap', offset: 0, bit: 129, value: 1 }, '42 10 00 00 00 00 00 00', false],
+  ['bitmap ascii-hex DE2',           { type: 'bitmap', offset: 0, encoding: 'ascii-hex', bit: 2, value: 1 }, '34 32 31 30 30 30 30 30 30 30 30 30 30 30 30 30', true],
+  ['bitmap ascii-hex DE12',          { type: 'bitmap', offset: 0, encoding: 'ascii-hex', bit: 12, value: 1 }, '34 32 31 30 30 30 30 30 30 30 30 30 30 30 30 30', true],
+  ['bitmap ascii-hex lower case',    { type: 'bitmap', offset: 0, encoding: 'ascii-hex', bit: 2, value: 1 }, '34 61 31 30 30 30 30 30 30 30 30 30 30 30 30 30', true],
+  ['bitmap ascii-hex non-hex',       { type: 'bitmap', offset: 0, encoding: 'ascii-hex', bit: 2, value: 1 }, '5A 5A 31 30 30 30 30 30 30 30 30 30 30 30 30 30', false],
+  ['bitmap ebcdic DE2',              { type: 'bitmap', offset: 0, encoding: 'ebcdic', bit: 2, value: 1 }, 'F4 F2 F1 F0 F0 F0 F0 F0 F0 F0 F0 F0 F0 F0 F0 F0', true],
+  ['bitmap presence, no bit named',  { type: 'bitmap', offset: 0 }, '42 10 00 00 00 00 00 00', true],
+  ['bitmap presence, too short',     { type: 'bitmap', offset: 0, length: 8 }, '42 10 00', false],
+  ['bitmap presence, hex text',      { type: 'bitmap', offset: 0, encoding: 'ascii-hex' }, '34 32 31 30 30 30 30 30 30 30 30 30 30 30 30 30', true],
+  ['bitmap presence rejects text',   { type: 'bitmap', offset: 0, encoding: 'ascii-hex' }, '4E 4F 54 48 45 58 41 54 41 4C 4C 30 30 30 30 30', false],
+
+  // regex — anchoring, the window, the character set, and a broken pattern
+  ['regex anchored',                 { type: 'regex', pattern: '^ISO' }, '49 53 4F 30', true],
+  ['regex anchored elsewhere',       { type: 'regex', pattern: '^ISO' }, '42 32 34 49 53 4F', false],
+  ['regex unanchored',               { type: 'regex', pattern: 'ISO' }, '42 32 34 49 53 4F', true],
+  ['regex with a window',            { type: 'regex', offset: 3, length: 4, pattern: '^[0-9]{4}$' }, '49 53 4F 30 32 30 30 41 42', true],
+  ['regex window excludes the rest', { type: 'regex', offset: 3, length: 4, pattern: '^[0-9]{4}$' }, '49 53 4F 30 32 41 30 41 42', false],
+  ['regex ebcdic',                   { type: 'regex', encoding: 'ebcdic', pattern: '^ISO' }, 'C9 E2 D6', true],
+  ['regex offset past the end',      { type: 'regex', offset: 9, pattern: '.' }, '41 42', false],
+  ['regex that does not compile',    { type: 'regex', pattern: '([a' }, '41 42', false],
+
+  // density — thresholds, both character sets, and the empty range
+  ['hex-density all hex',            { type: 'hex-density', offset: 0, length: 8, min: 1 }, '44 45 41 44 42 45 45 46', true],
+  ['hex-density one stray char',     { type: 'hex-density', offset: 0, length: 8, min: 1 }, '44 45 41 44 42 45 45 5A', false],
+  ['hex-density tolerant threshold', { type: 'hex-density', offset: 0, length: 8, min: 0.75 }, '44 45 41 44 2D 42 45 46', true],
+  ['hex-density below threshold',    { type: 'hex-density', offset: 0, length: 8, min: 0.75 }, '44 45 41 44 5A 5A 5A 5A', false],
+  ['hex-density ebcdic',             { type: 'hex-density', offset: 0, length: 4, min: 1, encoding: 'ebcdic' }, 'C1 C2 F0 F9', true],
+  ['hex-density empty range',        { type: 'hex-density', offset: 0, length: 0, min: 0.5 }, '41 42', false],
+  ['hex-density rejects raw bytes',  { type: 'hex-density', offset: 0, length: 2, min: 1 }, '82 83', false],
+  ['oct-density all octal',          { type: 'oct-density', offset: 0, length: 4, min: 1 }, '30 31 32 33', true],
+  ['oct-density rejects 8 and 9',    { type: 'oct-density', offset: 0, length: 4, min: 1 }, '30 31 38 39', false],
+  ['oct-density ebcdic',             { type: 'oct-density', offset: 0, length: 2, min: 1, encoding: 'ebcdic' }, 'F0 F7', true],
+
+  // length-payload — it checks the payload FITS, which is not the same as equals
+  ['length-payload exact',           { type: 'length-payload', offset: 0, encoding: 'uint16-be', body_offset: 2 }, '00 03 41 42 43', true],
+  ['length-payload short still fits',{ type: 'length-payload', offset: 0, encoding: 'uint16-be', body_offset: 2 }, '00 01 41 42 43', true],
+  ['length-payload overruns',        { type: 'length-payload', offset: 0, encoding: 'uint16-be', body_offset: 2 }, '00 09 41 42 43', false],
+  ['length-payload header truncated',{ type: 'length-payload', offset: 0, encoding: 'uint16-be', body_offset: 2 }, '00', false],
+  ['length-payload includes_self',   { type: 'length-payload', offset: 0, encoding: 'uint16-be', body_offset: 2, includes_self: true }, '00 05 41 42 43', true],
+  ['length-payload includes_self over', { type: 'length-payload', offset: 0, encoding: 'uint16-be', body_offset: 2, includes_self: true }, '00 0B 41 42 43', false],
+  ['length-payload uint16-le',       { type: 'length-payload', offset: 0, encoding: 'uint16-le', body_offset: 2 }, '03 00 41 42 43', true],
+  ['length-payload uint8',           { type: 'length-payload', offset: 0, encoding: 'uint8', body_offset: 1 }, '03 41 42 43', true],
+  ['length-payload bcd2',            { type: 'length-payload', offset: 0, encoding: 'bcd2', body_offset: 2 }, '00 03 41 42 43', true],
+  ['length-payload bcd2 overruns',   { type: 'length-payload', offset: 0, encoding: 'bcd2', body_offset: 2 }, '00 09 41 42 43', false],
+  ['length-payload unknown encoding',{ type: 'length-payload', offset: 0, encoding: 'nope', body_offset: 2 }, '00 03 41 42 43', false],
+  ['length-prefix is the same rule', { type: 'length-prefix', offset: 0, encoding: 'uint16-be', body_offset: 2 }, '00 03 41 42 43', true],
+
+  // flag-payload — non-zero, plus the optional size check
+  ['flag-payload non-zero',          { type: 'flag-payload', offset: 0, encoding: 'uint8' }, '01 41 42', true],
+  ['flag-payload any non-zero',      { type: 'flag-payload', offset: 0, encoding: 'uint8' }, 'FF 41 42', true],
+  ['flag-payload zero',              { type: 'flag-payload', offset: 0, encoding: 'uint8' }, '00 41 42', false],
+  ['flag-payload body fits',         { type: 'flag-payload', offset: 0, encoding: 'uint8', body_offset: 1, body_length: 4 }, '01 41 42 43 44', true],
+  ['flag-payload body overruns',     { type: 'flag-payload', offset: 0, encoding: 'uint8', body_offset: 1, body_length: 4 }, '01 41 42', false],
+  ['flag-payload truncated',         { type: 'flag-payload', offset: 0, encoding: 'uint16-be' }, '01', false],
+  ['flag-prefix is the same rule',   { type: 'flag-prefix', offset: 0, encoding: 'uint8' }, '01 41', true],
+
+  // an unregistered type must never claim a message
+  ['an unknown type matches nothing', { type: 'not-a-recognizer' }, '41 42', false],
+];
+
+test('every recognizer behaves as documented, at every boundary it has', () => {
+  const wrong = RECOGNIZER_CASES
+    .filter(([, r, payload, want]) => rec1(r, payload) !== want)
+    .map(([label]) => label);
+  deepEq(wrong, [], 'recognizers whose verdict does not match the documented one');
+  assert.ok(RECOGNIZER_CASES.length > 130,
+    `expected a sweep, found ${RECOGNIZER_CASES.length} cases`);
+});
+
+// [label, recognizer, ctx, expected] — these read the record wrapper, not bytes.
+const RECOGNIZER_CTX_CASES = [
+  ['source exact',                { type: 'source', pattern: 'PIA^A910' }, { source: 'PIA^A910' }, true],
+  ['source mismatch',             { type: 'source', pattern: 'PIA^A910' }, { source: 'PIA^B910' }, false],
+  ['source $ is one alphanum',    { type: 'source', pattern: 'PIA^$910' }, { source: 'PIA^B910' }, true],
+  ['source $ is not two',         { type: 'source', pattern: 'PIA^$910' }, { source: 'PIA^AB910' }, false],
+  ['source # is one digit',       { type: 'source', pattern: 'ACQ##' }, { source: 'ACQ42' }, true],
+  ['source # rejects a letter',   { type: 'source', pattern: 'ACQ##' }, { source: 'ACQAB' }, false],
+  ['source * spans anything',     { type: 'source', pattern: 'PIA*' }, { source: 'PIA^A910' }, true],
+  ['source is anchored',          { type: 'source', pattern: 'ACQ' }, { source: 'ACQ1' }, false],
+  ['source is case-insensitive',  { type: 'source', pattern: 'acq1' }, { source: 'ACQ1' }, true],
+  ['source ^ is literal',         { type: 'source', pattern: 'PIA^A910' }, { source: 'PIAXA910' }, false],
+  ['source catch-all with no ctx', { type: 'source', pattern: '*' }, null, true],
+  ['source empty pattern is catch-all', { type: 'source', pattern: '' }, null, true],
+  ['source specific with no ctx',  { type: 'source', pattern: 'ACQ1' }, null, false],
+  ['source specific, field absent', { type: 'source', pattern: 'ACQ1' }, {}, false],
+  ['destination reads dest',       { type: 'destination', pattern: 'SW1' }, { dest: 'SW1' }, true],
+  ['destination reads destination', { type: 'destination', pattern: 'SW1' }, { destination: 'SW1' }, true],
+  ['destination ignores source',   { type: 'destination', pattern: 'SW1' }, { source: 'SW1' }, false],
+  ['filename exact',               { type: 'filename', pattern: '$ATM.AUDIT.LOG' }, { filename: '$ATM.AUDIT.LOG' }, true],
+  ['filename is anchored',         { type: 'filename', pattern: '$ATM.AUDIT.LOG' }, { filename: '$ATM.AUDIT.LOG1' }, false],
+  ['filename dots are literal',    { type: 'filename', pattern: '$ATM.AUDIT.LOG' }, { filename: '$ATMXAUDITXLOG' }, false],
+  ['filename $ is literal',        { type: 'filename', pattern: '$ATM.AUDIT.LOG' }, { filename: 'XATM.AUDIT.LOG' }, false],
+  ['filename * in a component',    { type: 'filename', pattern: '$ATM.AUDIT.*' }, { filename: '$ATM.AUDIT.LOG42' }, true],
+  ['filename * stays in subvol',   { type: 'filename', pattern: '$ATM.AUDIT.*' }, { filename: '$ATM.OTHER.LOG' }, false],
+  ['filename ? is one character',  { type: 'filename', pattern: '$A.B.C?' }, { filename: '$A.B.CX' }, true],
+  ['filename # is one digit',      { type: 'filename', pattern: '*.NETARD.LOG##' }, { filename: '$D.NETARD.LOG42' }, true],
+  ['filename # rejects letters',   { type: 'filename', pattern: '*.NETARD.LOG##' }, { filename: '$D.NETARD.LOGAB' }, false],
+  ['filename is case-insensitive', { type: 'filename', pattern: '$atm.audit.log' }, { filename: '$ATM.AUDIT.LOG' }, true],
+];
+
+test('metadata recognizers read the record wrapper, and refuse to guess', () => {
+  const wrong = RECOGNIZER_CTX_CASES
+    .filter(([, r, ctx, want]) => rec1(r, '41 42', ctx) !== want)
+    .map(([label]) => label);
+  deepEq(wrong, [], 'metadata recognizers whose verdict is wrong');
+});
+
+// ── the four silent defects, each pinned by the case that exposed it ─────────
+
+test('uint16 and uint32 read "be" as BIG-endian, which is what everything writes', () => {
+  // The evaluator tested `endian === 'big'`, so 'be' — written by the recognizer
+  // form, by the in-app help and by the shipped Base24 POS spec — fell through to
+  // LITTLE-endian. Nothing threw; the rule just compared a byte-swapped number.
+  assert.ok(rec1({ type: 'uint16', offset: 0, endian: 'be', eq: 258 }, '01 02'),
+    '"be" on 01 02 is 258');
+  assert.ok(!rec1({ type: 'uint16', offset: 0, endian: 'be', eq: 513 }, '01 02'),
+    '"be" must not produce the little-endian reading');
+  assert.ok(rec1({ type: 'uint32', offset: 0, endian: 'be', eq: 0x01020304 }, '01 02 03 04'),
+    'and the same for uint32');
+  // 'big'/'little' still work, so a hand-written spec using the SPEC's older
+  // spelling keeps its meaning.
+  assert.ok(rec1({ type: 'uint16', offset: 0, endian: 'big', eq: 258 }, '01 02'), '"big" still means big');
+  assert.ok(rec1({ type: 'uint16', offset: 0, endian: 'little', eq: 513 }, '01 02'), '"little" still means little');
+  // The form only ever offers be/le, so those are the values that must be right.
+  const endf = html.match(/const endf = k => \{[\s\S]*?\};/)[0];
+  assert.ok(/'be'/.test(endf) && />be</.test(endf) && />le</.test(endf),
+    'the form writes be/le, which is why the evaluator has to read them');
+});
+
+test('bitmap tests the DE bit it names, instead of only checking a bitmap is there', () => {
+  // `bit` and `value` were accepted by the form, stored in the spec, printed in
+  // the recognizer row — and never read. The rule returned `offset + length <=
+  // bytes.length`, so "DE 2 is on" passed on a message where DE 2 was off, and
+  // "DE 2 is off" passed on the same bytes. Every bitmap rule was a no-op.
+  const on = '42 10 00 00 00 00 00 00';   // byte 0 = 0100 0010 → DE 2, DE 7
+  const off = '02 10 00 00 00 00 00 00';  // the same bitmap without DE 2
+  assert.ok(rec1({ type: 'bitmap', offset: 0, bit: 2, value: 1 }, on), 'DE 2 set');
+  assert.ok(!rec1({ type: 'bitmap', offset: 0, bit: 2, value: 1 }, off), 'DE 2 clear must not match');
+  assert.ok(!rec1({ type: 'bitmap', offset: 0, bit: 2, value: 0 }, on),
+    'and the two values must disagree on the same bytes');
+  assert.ok(rec1({ type: 'bitmap', offset: 0, bit: 2, value: 0 }, off), 'value 0 matches an absent DE');
+  // Naming no bit keeps the presence check the hex-text forms have always done.
+  assert.ok(rec1({ type: 'bitmap', offset: 0 }, on), 'no bit named — presence only');
+  assert.ok(!rec1({ type: 'bitmap', offset: 0, length: 8 }, '42 10'), 'presence still needs the bytes');
+});
+
+test('a uint8 mask is read as hex, because a mask is a bit pattern', () => {
+  // It went through Number(), where 'F0' is NaN and `v &= NaN` is 0 — so the
+  // documented form masked the byte away to nothing and compared that. The help
+  // example was `mask=F0 eq=96`, which could never have passed.
+  assert.ok(rec1({ type: 'uint8', offset: 0, mask: 'F0', eq: 96 }, '67'), '0x67 AND F0 = 0x60');
+  assert.ok(rec1({ type: 'uint8', offset: 0, mask: 'f0', eq: 96 }, '67'), 'lower case too');
+  assert.ok(rec1({ type: 'uint8', offset: 0, mask: '0xF0', eq: 96 }, '67'), 'a 0x prefix is accepted');
+  assert.ok(rec1({ type: 'uint8', offset: 0, mask: '0F', eq: 7 }, '67'), 'the low nibble');
+  assert.ok(rec1({ type: 'uint8', offset: 0, mask: '80', eq: 128 }, 'F0'), 'a single flag bit');
+  assert.ok(!rec1({ type: 'uint8', offset: 0, mask: '80', eq: 128 }, '70'), 'and its absence');
+  // Digits-only masks are hex as well — there is no second, decimal reading.
+  assert.ok(rec1({ type: 'uint8', offset: 0, mask: '10', eq: 16 }, '77'), '"10" is hex 0x10 = 16');
+  // A mask that is not hex leaves the rule unevaluable, and it must not fall
+  // back to zero — zero would have made `eq: 0` match every byte in the file.
+  assert.ok(!rec1({ type: 'uint8', offset: 0, mask: 'ZZ', eq: 0 }, '67'), 'garbage matches nothing');
+  assert.ok(!rec1({ type: 'uint8', offset: 0, mask: '', eq: 0 }, '67'), 'and so does an empty mask');
+});
+
+test('a "?" in a hex literal masks a nibble, not nothing', () => {
+  // Only '??' was a wildcard. A lone '?' survived compilation and then went
+  // through parseInt('4?', 16), which is 4 — so the rule silently tested for the
+  // byte 0x04 and matched nothing anyone expected.
+  assert.ok(rec1({ type: 'literal', offset: 0, encoding: 'hex', value: '6?' }, '60'), 'low nibble free');
+  assert.ok(rec1({ type: 'literal', offset: 0, encoding: 'hex', value: '6?' }, '6F'), 'across the range');
+  assert.ok(!rec1({ type: 'literal', offset: 0, encoding: 'hex', value: '6?' }, '70'), 'high nibble fixed');
+  assert.ok(rec1({ type: 'literal', offset: 0, encoding: 'hex', value: '?3' }, '43'), 'high nibble free');
+  assert.ok(!rec1({ type: 'literal', offset: 0, encoding: 'hex', value: '?3' }, '44'), 'low nibble fixed');
+  assert.ok(rec1({ type: 'literal', offset: 0, encoding: 'hex', value: '??' }, '43'), 'a whole byte still free');
+  assert.ok(rec1({ type: 'literal', offset: 0, encoding: 'hex', value: 'F0?8' }, 'F0 C8'), 'across two bytes');
+  assert.ok(rec1({ type: 'literal', offset: 0, encoding: 'hex', value: 'F0F8' }, 'F0 F8'), 'exact hex unaffected');
+  assert.ok(!rec1({ type: 'literal', offset: 0, encoding: 'hex', value: 'F0F8' }, 'F0 F9'), 'and still rejects');
+});
+
+// ── the recognizer reference ────────────────────────────────────────────────
+
+test('every recognizer the form offers has a reference entry, and every entry is reachable', () => {
+  // The index used to be a hand-written table keyed by DISPLAY name — isBinary
+  // where the help was keyed binary — so six of the twenty-two rows rendered,
+  // highlighted on hover, and did nothing when clicked. The index is derived now,
+  // which is what makes that class of mismatch impossible rather than fixed.
+  const help = recHelpObj();
+  const types = psFnSource('_meRecForm').match(/const types = \[([\s\S]*?)\]\.sort/)[1];
+  const offered = [...types.matchAll(/\['([a-z0-9-]+)'/g)].map(m => m[1]);
+  assert.ok(offered.length > 15, `expected the type dropdown, found ${offered.length}`);
+  deepEq(offered.filter(t => !help[t]), [], 'types the form offers with no reference entry');
+  // Every row the index renders must resolve — that is the bug, stated directly.
+  const idx = sandbox._t.meRecHelpHtml();
+  const rows = [...idx.matchAll(/data-rec="([a-z0-9-]+)"/g)].map(m => m[1]);
+  assert.ok(rows.length > 15, `expected an index, found ${rows.length} rows`);
+  deepEq(rows.filter(t => !help[t]), [], 'index rows whose detail does not exist');
+  // …and the visible rows are exactly the non-hidden entries.
+  deepEq(rows.slice().sort(), Object.keys(help).filter(t => !help[t].hidden).sort(),
+    'the index and the reference are the same set');
+});
+
+test('every reference entry is structured, and its examples are RUN', () => {
+  const help = recHelpObj();
+  for (const [type, info] of Object.entries(help)) {
+    assert.ok(Array.isArray(info.desc) && info.desc.length, `${type}: no description`);
+    assert.ok(Array.isArray(info.attrs), `${type}: no attribute table`);
+    assert.ok(Array.isArray(info.useWhen) && info.useWhen.length, `${type}: no guidance`);
+    if (info.hidden) continue;
+    assert.ok(info.examples.length, `${type}: a visible entry with no example`);
+    for (const [i, ex] of info.examples.entries()) {
+      const where = `${type} example ${i + 1}`;
+      assert.ok(ex.what && ex.rec && ex.rec.type, `${where}: incomplete`);
+      eq(ex.rec.type, type, `${where}: demonstrates the wrong recognizer`);
+      assert.ok((ex.cases || []).length >= 2, `${where}: needs a contrast, not one case`);
+      // Every attribute an example names must be one the reference documents —
+      // an example that quietly uses an undocumented attribute is how the help
+      // and the evaluator drift apart in the first place.
+      const documented = new Set(info.attrs.map(a => a[0]).concat(['type', 'id']));
+      const undocumented = Object.keys(ex.rec).filter(k => !documented.has(k));
+      deepEq(undocumented, [], `${where}: uses attributes the table does not list`);
+    }
+  }
+});
+
+test('a reference example that stopped being true fails here, not silently in the panel', () => {
+  // The verdict column is produced by running the rule. That is the whole point:
+  // the old help SAID bitmap tested a bit and said it for as long as anyone cared
+  // to read it. This asserts the panel can still run every example without
+  // throwing, and that each one still shows the contrast it was written for.
+  const help = recHelpObj();
+  let ran = 0;
+  for (const [type, info] of Object.entries(help)) {
+    for (const [i, ex] of (info.examples || []).entries()) {
+      const verdicts = ex.cases.map(c => {
+        ran++;
+        return sandbox._t.meRecHelpRun(ex.rec, c);
+      });
+      // A catch-all pattern is the one honest exception: it demonstrates that
+      // the rule passes in situations where every other rule would not.
+      const isCatchAll = ex.rec.pattern === '*' || ex.rec.pattern === '';
+      if (!isCatchAll)
+        assert.ok(new Set(verdicts).size > 1,
+          `${type} example ${i + 1}: every case returns ${verdicts[0]}, so it shows nothing`);
+      // And the card itself must render.
+      const card = sandbox._t.meRecHelpExampleHtml(ex, i);
+      assert.ok(/Verdict/.test(card) && /me-rec-ex-(yes|no)/.test(card),
+        `${type} example ${i + 1}: the card has no verdict`);
+    }
+  }
+  assert.ok(ran > 100, `expected the examples to be exercised, ran ${ran} cases`);
+});
+
+test('the recognizer reference and the Parse Spec reference are the same panel', () => {
+  // "Not only look and feel" — they share the stylesheet classes, the attribute
+  // table, the clickable filter and the description renderer. Sharing the last
+  // one is what stops the two drifting into rendering identical data differently.
+  const recSel = psFnSource('_meRecHelpSelect');
+  const psSel  = psFnSource('_mePsHelpSelect');
+  for (const cls of ['me-ps-help-atbl', 'me-ps-help-aname', 'me-ps-help-atype',
+                     'me-ps-attr-row', 'me-ps-help-section-title', 'me-ps-help-detail-title']) {
+    assert.ok(recSel.includes(cls), `the recognizer panel is missing ${cls}`);
+    assert.ok(psSel.includes(cls), `the parse spec panel is missing ${cls}`);
+  }
+  assert.ok(/_meHelpDescHtml\(/.test(recSel) && /_meHelpDescHtml\(/.test(psSel),
+    'both render attribute descriptions through the one shared function');
+  assert.ok(!/const descHtml = /.test(psSel),
+    'and the parse spec panel no longer keeps a private copy of it');
+  // Both example cards use the same card, label and snippet markup.
+  const recEx = psFnSource('_meRecHelpExampleHtml');
+  assert.ok(/me-ps-help-ex/.test(recEx) && /me-ps-ex-num/.test(recEx) &&
+            /me-ps-help-snippet/.test(recEx) && /_mePsCopyExample/.test(recEx),
+    'recognizer examples are the same card, and copy the same way');
 });
 
 // ── fixture-driven validation ───────────────────────────────────────────────
@@ -6899,7 +7310,17 @@ test('greater-than and less-than read as opposites, and say which is which', () 
   // MINIMUM / MAXIMUM and point at each other, so landing on the wrong one is
   // self-correcting.
   const src = fs.readFileSync('./source.html', 'utf8');
-  const entry = t => (src.match(new RegExp(`'${t}': \`([\\s\\S]*?)\`,\\n`)) || [])[1] || '';
+  // _REC_HELP entries are structured objects (desc / useWhen / attrs / examples),
+  // so the wording lives across several fields. Evaluate the literal and search
+  // the whole entry rather than one template string.
+  const helpObj = (() => {
+    const m = src.match(/const _REC_HELP = \{[\s\S]*?\n\};/);
+    if (!m) return null;
+    const ctx = {}; vm.createContext(ctx);
+    try { vm.runInContext(m[0] + ';out=_REC_HELP', ctx); return ctx.out; } catch (e) { return null; }
+  })();
+  assert.ok(helpObj, 'could not read _REC_HELP');
+  const entry = t => JSON.stringify(helpObj[t] || '');
   const gt = entry('greater-than'), lt = entry('less-than');
   assert.ok(gt && lt, 'both help entries found');
   assert.ok(/MINIMUM/.test(gt), 'greater-than leads with MINIMUM');

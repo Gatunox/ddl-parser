@@ -2037,10 +2037,10 @@ input.me-inp{width:100%;}
 .me-rb[disabled]{opacity:.3;cursor:default;}
 .me-rec-form{border-top: var(--bw) solid var(--border);background:var(--bg-deep);padding:8px;display:none;flex-direction:column;gap:8px;}
 .me-rec-form.open{display:flex;}
-.me-rec-help{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);background:rgba(255,255,255,.03);border: var(--bw) solid var(--border);border-radius:var(--r-sm);padding:8px 12px;line-height:1.6;}
-.me-rec-help b{color:var(--text);}
-.me-rec-help .me-rh-flds{margin:4px 0 4px 8px;}
-.me-rec-help .me-rh-exs{margin-top:4px;}
+/* The verdict column of a recognizer help example. Both values are produced by
+   running the rule, so the colour is reporting a result, not decorating a claim. */
+.me-rec-ex-yes{color:var(--success,#3fb950);white-space:nowrap;}
+.me-rec-ex-no{color:#f85149;white-space:nowrap;}
 .me-rf-row{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;}
 .me-rf-fld{display:flex;flex-direction:column;gap:3px;}
 .me-off-auto{font-size:10px;color:var(--accent);cursor:pointer;opacity:.75;white-space:nowrap;}
@@ -6888,6 +6888,50 @@ function parseMessage(bytes, defs, rawBytes) {
     return Number(v);
   }
 
+  // A mask is a per-byte AND against a bit pattern, so it is ALWAYS hex — the
+  // help, the field placeholder and every example say so. It used to go through
+  // _hn, where Number('F0') is NaN and `v &= NaN` is 0: the documented form
+  // masked everything away, silently. Kept separate from _hn so eq/min/max,
+  // which are decimal, are unaffected. Returns null when the text is not hex —
+  // a rule we cannot evaluate must not match rather than match on a zero.
+  function _maskVal(v) {
+    const s = String(v).trim().replace(/^0[xX]/, '').replace(/\s+/g, '');
+    return /^[0-9a-fA-F]+$/.test(s) ? parseInt(s, 16) : null;
+  }
+
+  // Endianness is written 'be'/'le' by the recognizer form, by the in-app help
+  // and by the shipped specs. Testing for 'big' meant every one of those read
+  // LITTLE-endian, quietly byte-swapping the value before comparing it.
+  const _isLE = e => e === 'le' || e === 'little';
+
+  // One hex CHARACTER → its nibble, in whichever character set the bitmap is
+  // written in. null when the byte is not a hex digit at all.
+  function _hexNib(b, enc) {
+    if (enc === 'ebcdic') {
+      if (b >= 0xF0 && b <= 0xF9) return b - 0xF0;
+      if (b >= 0xC1 && b <= 0xC6) return b - 0xC1 + 10;
+      if (b >= 0x81 && b <= 0x86) return b - 0x81 + 10;
+      return null;
+    }
+    if (b >= 0x30 && b <= 0x39) return b - 0x30;
+    if (b >= 0x41 && b <= 0x46) return b - 0x41 + 10;
+    if (b >= 0x61 && b <= 0x66) return b - 0x61 + 10;
+    return null;
+  }
+
+  // Byte n OF THE BITMAP, which is not byte n of the message unless the bitmap
+  // is binary — a hex-text bitmap spends two characters on each one.
+  function _bmByte(bytes, offset, enc, n) {
+    if (enc === 'binary') {
+      const i = offset + n;
+      return i < bytes.length ? bytes[i] : null;
+    }
+    const i = offset + n * 2;
+    if (i + 2 > bytes.length) return null;
+    const hi = _hexNib(bytes[i], enc), lo = _hexNib(bytes[i + 1], enc);
+    return (hi === null || lo === null) ? null : (hi << 4) | lo;
+  }
+
   function _lenFieldSize(enc) {
     if (enc === 'uint8')                      return 1;
     if (enc === 'uint16-be' || enc === 'uint16-le') return 2;
@@ -6965,8 +7009,12 @@ function parseMessage(bytes, defs, rawBytes) {
         let ok = true;
         for (let i = 0; i < byteLen && ok; i++) {
           const c1 = pat[i*2], c2 = pat[i*2+1] || '0';
-          if (c1 === '?' && c2 === '?') continue;
-          if (bytes[offset+i] !== parseInt(c1+c2, 16)) ok = false;
+          // Nibble by nibble, so a "?" masks HALF a byte. Only "??" used to be
+          // a wildcard; a lone one survived compilation and then went through
+          // parseInt('4?',16), which is 4 — the rule quietly tested for 0x04.
+          const b = bytes[offset+i];
+          if (c1 !== '?' && (b >> 4)   !== parseInt(c1, 16)) ok = false;
+          if (c2 !== '?' && (b & 0x0F) !== parseInt(c2, 16)) ok = false;
         }
         if (ok) return true;
         continue;
@@ -7031,28 +7079,32 @@ function parseMessage(bytes, defs, rawBytes) {
   _R['uint8'] = _R['byte'] = (bytes, { offset=0, eq, min, max, mask }) => {
     if (offset >= bytes.length) return false;
     let v = bytes[offset];
-    if (mask !== undefined) v &= _hn(mask);
+    if (mask !== undefined) {
+      const m = _maskVal(mask);
+      if (m === null) return false;
+      v &= m;
+    }
     if (eq  !== undefined && v !== _hn(eq))  return false;
     if (min !== undefined && v <  _hn(min))  return false;
     if (max !== undefined && v >  _hn(max))  return false;
     return true;
   };
 
-  _R['uint16'] = _R['word'] = (bytes, { offset=0, endian='big', eq, min, max }) => {
+  _R['uint16'] = _R['word'] = (bytes, { offset=0, endian='be', eq, min, max }) => {
     if (offset+2 > bytes.length) return false;
-    const v = endian === 'big' ? (bytes[offset]<<8)|bytes[offset+1]
-                               : bytes[offset]|(bytes[offset+1]<<8);
+    const v = _isLE(endian) ? bytes[offset]|(bytes[offset+1]<<8)
+                            : (bytes[offset]<<8)|bytes[offset+1];
     if (eq  !== undefined && v !== _hn(eq))  return false;
     if (min !== undefined && v <  _hn(min))  return false;
     if (max !== undefined && v >  _hn(max))  return false;
     return true;
   };
 
-  _R['uint32'] = _R['dword'] = (bytes, { offset=0, endian='big', eq, min, max }) => {
+  _R['uint32'] = _R['dword'] = (bytes, { offset=0, endian='be', eq, min, max }) => {
     if (offset+4 > bytes.length) return false;
-    const v = endian === 'big'
-      ? (((bytes[offset]<<24)|(bytes[offset+1]<<16)|(bytes[offset+2]<<8)|bytes[offset+3])>>>0)
-      : ((bytes[offset]|(bytes[offset+1]<<8)|(bytes[offset+2]<<16)|(bytes[offset+3]<<24))>>>0);
+    const v = _isLE(endian)
+      ? ((bytes[offset]|(bytes[offset+1]<<8)|(bytes[offset+2]<<16)|(bytes[offset+3]<<24))>>>0)
+      : (((bytes[offset]<<24)|(bytes[offset+1]<<16)|(bytes[offset+2]<<8)|bytes[offset+3])>>>0);
     if (eq  !== undefined && v !== _hn(eq))  return false;
     if (min !== undefined && v <  _hn(min))  return false;
     if (max !== undefined && v >  _hn(max))  return false;
@@ -7140,24 +7192,27 @@ function parseMessage(bytes, defs, rawBytes) {
     return true;
   };
 
-  _R['bitmap'] = (bytes, { offset=0, encoding='binary', length=8 }) => {
-    if (encoding === 'ascii-hex') {
-      if (offset+16 > bytes.length) return false;
-      for (let i = offset; i < offset+16; i++) {
-        const b = bytes[i];
-        if (!((b>=0x30&&b<=0x39)||(b>=0x41&&b<=0x46)||(b>=0x61&&b<=0x66))) return false;
-      }
+  // The `bit` / `value` pair was accepted, stored and displayed but never read:
+  // the rule only ever asserted that a bitmap was PRESENT, so "DE 2 is on"
+  // passed just as happily on a message where DE 2 was off. Naming a bit now
+  // tests that bit. Naming none keeps the presence check, which is the only
+  // thing the hex-text forms could ever do and is still worth asserting.
+  _R['bitmap'] = (bytes, { offset=0, encoding='binary', length=8, bit, value=1 }) => {
+    const enc = (encoding === 'ascii-hex' || encoding === 'ebcdic') ? encoding : 'binary';
+    if (bit === undefined || bit === null || bit === '') {
+      if (enc === 'binary') return offset + length <= bytes.length;
+      if (offset + 16 > bytes.length) return false;
+      for (let i = offset; i < offset + 16; i++) if (_hexNib(bytes[i], enc) === null) return false;
       return true;
     }
-    if (encoding === 'ebcdic') {
-      if (offset+16 > bytes.length) return false;
-      for (let i = offset; i < offset+16; i++) {
-        const b = bytes[i];
-        if (!((b>=0xF0&&b<=0xF9)||(b>=0xC1&&b<=0xC6)||(b>=0x81&&b<=0x86))) return false;
-      }
-      return true;
-    }
-    return offset+length <= bytes.length;
+    const n = _hn(bit);
+    if (!(n >= 1 && n <= 128)) return false;
+    // DE n lives in bit (n-1) counting from the HIGH bit of the first byte:
+    // DE 1 is 0x80 of byte 0, DE 2 is 0x40, DE 9 is 0x80 of byte 1.
+    const b = _bmByte(bytes, offset, enc, (n - 1) >> 3);
+    if (b === null) return false;
+    const on = (b & (0x80 >> ((n - 1) & 7))) !== 0;
+    return on === (_hn(value) !== 0);
   };
 
   _R['regex'] = (bytes, { offset=0, length, encoding='ascii', _re }) => {
@@ -15524,7 +15579,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.6.0';
+const APP_VERSION  = '1.21.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18833,6 +18888,21 @@ function _mePsHelpExampleHtml(ex, i) {
   return out + `</div>`;
 }
 
+// One attribute description, rendered. Three shapes, in rising structure:
+//   'text'                  — legacy single paragraph
+//   ['line', 'line']        — short bullets
+//   [['form', 'meaning']]   — a form-by-form table
+// Shared by the Parse Spec help and the Recognizer help, so the two panels
+// cannot drift into rendering the same data two different ways.
+function _meHelpDescHtml(d) {
+  if (!Array.isArray(d)) return d;
+  if (d.some(x => Array.isArray(x)))
+    return `<table class="me-ps-form-tbl">${d.map(x => Array.isArray(x)
+      ? `<tr><td class="me-ps-form-k">${x[0]}</td><td>${x[1]}</td></tr>`
+      : `<tr><td colspan="2" class="me-ps-form-note">${x}</td></tr>`).join('')}</table>`;
+  return `<ul class="me-ps-help-ul me-ps-attr-ul">${d.map(x => `<li>${x}</li>`).join('')}</ul>`;
+}
+
 // Selecting an attribute narrows the examples to the ones that use it.
 let _mePsHelpAttrSel = null;
 function _mePsHelpAttr(blk, name) {
@@ -18858,14 +18928,6 @@ function _mePsHelpSelect(blk) {
   //   ['line', 'line']        — short bullets
   //   [['form', 'meaning']]   — a form-by-form table, for attributes like `at`
   //                             that accept several shapes with different rules
-  const descHtml = d => {
-    if (!Array.isArray(d)) return d;
-    if (d.some(x => Array.isArray(x)))
-      return `<table class="me-ps-form-tbl">${d.map(x => Array.isArray(x)
-        ? `<tr><td class="me-ps-form-k">${x[0]}</td><td>${x[1]}</td></tr>`
-        : `<tr><td colspan="2" class="me-ps-form-note">${x}</td></tr>`).join('')}</table>`;
-    return `<ul class="me-ps-help-ul me-ps-attr-ul">${d.map(x => `<li>${x}</li>`).join('')}</ul>`;
-  };
   const attrRows = info.attrs.concat(_PS_COMMON_ATTRS).map(([name, type, req, desc]) => {
     const sel = _mePsHelpAttrSel === name ? ' me-ps-sel' : '';
     return `<tr class="me-ps-attr-row${sel}" data-attr="${name}"` +
@@ -18873,7 +18935,7 @@ function _mePsHelpSelect(blk) {
     `<td class="me-ps-help-aname">${name}</td>` +
     `<td class="me-ps-help-atype">${_escHtml(type)}</td>` +
     `<td>${req ? '<span class="me-ps-help-req">required</span>' : '<span class="me-ps-help-opt">optional</span>'}</td>` +
-    `<td>${descHtml(desc)}</td></tr>`;
+    `<td>${_meHelpDescHtml(desc)}</td></tr>`;
   }).join('');
   const attrTbl = info.attrs.length
     ? `<table class="me-ps-help-atbl"><thead><tr><th>Attribute</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${attrRows}</tbody></table>`
@@ -22679,219 +22741,1145 @@ function _meRecSum(r) {
   }
 }
 
+// Recognizer reference. Same shape as _PS_HELP, and rendered by the same
+// machinery: a lead sentence plus bullets, a "Use when" list, an attribute
+// table you can click to filter, and worked examples.
+//
+// An example is RUN. Its verdict column is what the engine returned for that
+// recognizer against those bytes — not a sentence claiming what it would do.
+// The old help was prose, and prose is how `bitmap` came to document a bit test
+// it never performed and `uint8` came to show a mask that masked everything to
+// zero. Every entry here pairs a payload that matches with one that does not,
+// because the boundary is the part worth reading.
+//
+// Self-contained by design: the SPEC-↔-code tests evaluate this literal on its
+// own, so nothing in it may reference an identifier declared elsewhere.
 const _REC_HELP = {
-  'literal': `<b>Matches exact bytes at a fixed offset.</b>
-<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position from message start<br>encoding — how to interpret value and compare bytes: <b>ascii</b> (default), <b>hex</b> (value is hex pairs e.g. F0F8), <b>ebcdic</b> (compare in EBCDIC space)<br>value &nbsp;&nbsp;&nbsp;&nbsp;— what to match (see forms below)<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label shown in the recognizer row (for readability only)</div>
-Value forms:<br>
-&nbsp;exact string &nbsp;&nbsp;&nbsp;<b>"ISO"</b> — bytes must equal these chars<br>
-&nbsp;wildcard &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>"0###"</b> — # matches any digit 0–9, ? matches any single byte<br>
-&nbsp;OR list &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>["0200","0100","0800"]</b> — any of these exact values<br>
-&nbsp;range &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>[{"from":"1","to":"9"}]</b> — all values from…to inclusive<br>
-&nbsp;mixed &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>[{"from":"0","to":"4"},"8","9"]</b> — range + extra values
-<div class="me-rh-exs"><b>Examples:</b> ISO text prefix (ascii) → offset=0 encoding=ascii value="ISO" &nbsp;|&nbsp; EBCDIC header → offset=0 encoding=ebcdic value="ISO" &nbsp;|&nbsp; raw binary marker → offset=0 encoding=hex value="F0F8" &nbsp;|&nbsp; POS product code → offset=4 value="02"</div>`,
+  'literal': {
+    desc: [
+      'Matches exact bytes at a fixed offset.',
+      'The workhorse — most message types are told apart by a constant somewhere near the front.',
+      'The comparison is byte for byte, so <b>length matters</b>: a 3-character value tests 3 bytes and no more.',
+      'Runs out of bytes before the value ends? That is a <b>no match</b>, never a partial one.',
+    ],
+    useWhen: [
+      'A message carries a fixed marker — a protocol prefix, a product code, a record type.',
+      'You want to accept a small set of values at one position (<code>["06","07"]</code>) or a contiguous run of them (a range).',
+      'You know the bytes but not every character — <code>#</code> takes any digit, <code>?</code> takes anything.',
+      'Prefer this over <code>regex</code> whenever the test is positional: it is faster and it states the offset out loud.',
+    ],
+    attrs: [
+      ['offset', 'int', false, [
+        'Byte position to compare at, counting from 0.',
+        'Defaults to 0 — the first byte of the message.',
+      ]],
+      ['encoding', '"ascii" | "hex" | "ebcdic"', false, [
+        'How to read <code>value</code>, and which character space to compare in.',
+        ['<code>"ascii"</code>',  'The default. <code>"ISO"</code> tests the bytes 49 53 4F.'],
+        ['<code>"hex"</code>',    'The value is hex pairs: <code>"F0F8"</code> tests two bytes. Spaces, dashes and a <code>0x</code> prefix are all stripped, so a value pasted straight out of a dump works.'],
+        ['<code>"ebcdic"</code>', 'The value is still typed as text; each message byte is translated out of EBCDIC before it is compared. <code>"ISO"</code> tests C9 E2 D6.'],
+      ]],
+      ['value', 'string | number | array', true, [
+        'What to match. Five forms:',
+        ['<code>"ISO"</code>',                 'Exact — the bytes must equal these characters.'],
+        ['<code>"0###"</code>',                '<code>#</code> takes any digit 0–9, <code>?</code> takes any single byte.'],
+        ['<code>["0200","0100"]</code>',       'A list — any one of them matching is a match.'],
+        ['<code>[{"from":"01","to":"04"}]</code>', 'A range, both ends included. Both sides must be the same length or the range is dropped.'],
+        ['<code>[{"from":"0","to":"4"},"8"]</code>', 'Mixed — a range plus extra loose values.'],
+        'In <b>hex</b> encoding <code>?</code> is a <b>nibble</b>: <code>"6?"</code> takes 60–6F, <code>"??"</code> takes any byte.',
+        'A bare number is accepted and read as text, so <code>4354</code> and <code>"4354"</code> behave the same.',
+      ]],
+    ],
+    examples: [
+      { what: 'An <b>ASCII prefix</b> — the plainest form there is',
+        rec: { type: 'literal', offset: 0, encoding: 'ascii', value: 'ISO' },
+        cases: [
+          { payload: '49 53 4F 30 32 30 30', note: '"ISO0200" — the prefix is there' },
+          { payload: '42 32 34 30 32 30 30', note: '"B240200" — a different prefix' },
+          { payload: '49 53', note: '"IS" — the message ends mid-value' },
+        ] },
+      { what: '<b>Wildcards</b> — <code>#</code> for a digit, <code>?</code> for anything',
+        rec: { type: 'literal', offset: 0, encoding: 'ascii', value: '0###' },
+        cases: [
+          { payload: '30 32 30 30', note: '"0200" — leading 0, then three digits' },
+          { payload: '30 32 41 30', note: '"02A0" — A is not a digit' },
+          { payload: '31 32 30 30', note: '"1200" — the fixed 0 does not match' },
+        ] },
+      { what: 'An <b>OR list</b> at an offset — either value is accepted',
+        rec: { type: 'literal', offset: 2, encoding: 'ascii', value: ['06', '07'] },
+        cases: [
+          { payload: '39 39 30 36', note: '"9906"' },
+          { payload: '39 39 30 37', note: '"9907"' },
+          { payload: '39 39 30 38', note: '"9908" — not in the list' },
+        ] },
+      { what: 'A <b>range</b>, both ends included',
+        rec: { type: 'literal', offset: 0, encoding: 'ascii', value: [{ from: '01', to: '04' }] },
+        cases: [
+          { payload: '30 31', note: '"01" — the lower bound' },
+          { payload: '30 34', note: '"04" — the upper bound' },
+          { payload: '30 35', note: '"05" — just past it' },
+        ] },
+      { what: '<b>Hex</b>, with <code>?</code> as a nibble — any TPDU byte in 60–6F',
+        rec: { type: 'literal', offset: 0, encoding: 'hex', value: '6?' },
+        cases: [
+          { payload: '60 00', note: '0x60' },
+          { payload: '6F 00', note: '0x6F' },
+          { payload: '70 00', note: '0x70 — the high nibble is fixed' },
+        ] },
+      { what: '<b>EBCDIC</b> — the value is typed as text, the bytes are compared in EBCDIC',
+        rec: { type: 'literal', offset: 0, encoding: 'ebcdic', value: 'ISO' },
+        cases: [
+          { payload: 'C9 E2 D6', note: '"ISO" in EBCDIC' },
+          { payload: '49 53 4F', note: '"ISO" in ASCII — same text, wrong encoding' },
+        ] },
+    ],
+  },
 
-  'binary': `<b>Non-ASCII presence check over a byte range.</b> Returns true if at least one byte in the scanned region is outside printable ASCII (i.e. &lt; 0x20 or ≥ 0x7F). Use this to confirm a field contains raw binary data rather than text.
-<div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
-<div class="me-rh-exs"><b>Examples:</b> bitmap at offset 2 is 8 bytes → offset=2 length=8 &nbsp;|&nbsp; single binary header byte → offset=0 length=1</div>`,
+  'binary': {
+    desc: [
+      'Passes when <b>at least one</b> byte in the range is outside printable ASCII.',
+      'Outside printable means below 0x20 or 0x7F and above.',
+      'It is a presence test, not an all-or-nothing one — a single raw byte among text is enough.',
+      'Compares nothing. It asks what <i>kind</i> of data sits there, never which value.',
+    ],
+    useWhen: [
+      'Two message forms carry the same field, one as raw bytes and one as hex text, and you need to tell them apart.',
+      'A binary bitmap or a length prefix should sit at a known offset and you want to confirm it is not text.',
+      'Pair it with <code>isAscii</code> on the same range in the competing spec, so exactly one of the two can win.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the scan starts. Defaults to 0.']],
+      ['length', 'int', false, [
+        'How many bytes to scan. Defaults to 1.',
+        'The whole range must be inside the message — a scan that runs off the end is a no match, not a short scan.',
+      ]],
+    ],
+    examples: [
+      { what: 'An 8-byte <b>binary bitmap</b> after a 2-byte header',
+        rec: { type: 'binary', offset: 2, length: 8 },
+        cases: [
+          { payload: '30 32 42 10 00 00 00 00 00 00', note: 'raw bitmap bytes — 0x00 is not printable' },
+          { payload: '30 32 34 32 31 30 30 30 30 30', note: 'the same bitmap as hex TEXT "4210000000"' },
+          { payload: '30 32 42 10', note: 'the range runs past the end' },
+        ] },
+      { what: 'One byte — is the very first byte raw?',
+        rec: { type: 'binary', offset: 0, length: 1 },
+        cases: [
+          { payload: '02 30 30', note: '0x02 STX' },
+          { payload: '30 30 30', note: '"000" — all printable' },
+        ] },
+    ],
+  },
 
-  'ascii': `<b>Printable ASCII check over a byte range.</b> Returns true if <b>every</b> byte in the scanned region is within the printable ASCII range (0x20–0x7E). Use this to confirm a field contains plain text with no binary bytes.
-<div class="me-rh-flds">offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
-<div class="me-rh-exs"><b>Examples:</b> 4-byte ASCII message type → offset=0 length=4 &nbsp;|&nbsp; confirm 16-byte text field is clean ASCII → offset=4 length=16</div>`,
+  'ascii': {
+    desc: [
+      'Passes when <b>every</b> byte in the range is printable ASCII (0x20–0x7E).',
+      'The mirror image of <code>isBinary</code>: that one needs a single raw byte, this one forbids them all.',
+      'Space counts as printable. Tab, CR, LF and NUL do not.',
+    ],
+    useWhen: [
+      'A field must be clean text before a later rule tries to read a value out of it.',
+      'You are separating a text-encoded variant of a message from its binary twin.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the scan starts. Defaults to 0.']],
+      ['length', 'int', false, ['How many bytes to scan. Defaults to 1. A range past the end of the message is a no match.']],
+    ],
+    examples: [
+      { what: 'A 4-byte message type must be text',
+        rec: { type: 'ascii', offset: 0, length: 4 },
+        cases: [
+          { payload: '30 32 30 30 41 42', note: '"0200AB"' },
+          { payload: '30 32 00 30 41 42', note: 'a NUL in the middle' },
+          { payload: '30 32 30', note: 'only 3 bytes to scan' },
+        ] },
+    ],
+  },
 
-  'ebcdic': `<b>Printable EBCDIC check over a byte range.</b> Returns true if <b>every</b> byte is a recognised printable EBCDIC character. Unlike ASCII, printable EBCDIC values are spread across multiple non-contiguous ranges:
-<div class="me-rh-flds">0x40 — space<br>0x4C–0x4F — &lt; ( + |<br>0x50 — &amp;<br>0x5B–0x61 — $ * ) ; ¬ - /<br>0x6B–0x6F — , % _ &gt; ?<br>0x70, 0x79–0x7F — ° &#x60; : # @ ' = "<br>0x81–0x89 — a–i &nbsp;|&nbsp; 0x91–0x99 — j–r &nbsp;|&nbsp; 0xA2–0xA9 — s–z<br>0xC1–0xC9 — A–I &nbsp;|&nbsp; 0xD1–0xD9 — J–R &nbsp;|&nbsp; 0xE2–0xE9 — S–Z<br>0xF0–0xF9 — 0–9<br><br>offset — byte position where the scan starts<br>length — number of bytes to scan (default 1)</div>
-<div class="me-rh-exs"><b>Examples:</b> 4-byte EBCDIC message type → offset=0 length=4 &nbsp;|&nbsp; confirm 16-byte EBCDIC text field → offset=4 length=16</div>`,
+  'ebcdic': {
+    desc: [
+      'Passes when <b>every</b> byte in the range is a printable EBCDIC character.',
+      'Printable EBCDIC is not one contiguous run the way ASCII is — the accepted bytes are: 0x40 space; 0x4C–0x4F <code>&lt; ( + |</code>; 0x50 <code>&amp;</code>; 0x5B–0x61 <code>$ * ) ; &not; - /</code>; 0x6B–0x6F <code>, % _ &gt; ?</code>; 0x70; 0x79–0x7F; 0x81–0x89 <code>a–i</code>; 0x91–0x99 <code>j–r</code>; 0xA2–0xA9 <code>s–z</code>; 0xC1–0xC9 <code>A–I</code>; 0xD1–0xD9 <code>J–R</code>; 0xE2–0xE9 <code>S–Z</code>; 0xF0–0xF9 <code>0–9</code>.',
+      'The gaps are real: 0xCA sits between I and J and is <b>not</b> a letter.',
+    ],
+    useWhen: [
+      'The message comes off a host that writes EBCDIC and you want to confirm it before decoding.',
+      'ASCII and EBCDIC variants of one message type have to be told apart — this rule and <code>isAscii</code> disagree on the same bytes.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the scan starts. Defaults to 0.']],
+      ['length', 'int', false, ['How many bytes to scan. Defaults to 1.']],
+    ],
+    examples: [
+      { what: 'A 4-byte EBCDIC message type',
+        rec: { type: 'ebcdic', offset: 0, length: 4 },
+        cases: [
+          { payload: 'F0 F2 F0 F0', note: '"0200" in EBCDIC' },
+          { payload: '30 32 30 30', note: '"0200" in ASCII — 0x30 is not printable EBCDIC' },
+          { payload: 'F0 F2 CA F0', note: '0xCA falls in the gap between I and J' },
+        ] },
+    ],
+  },
 
-  'numeric': `<b>Digit-only check over a byte range.</b> Returns true if <b>every</b> byte is a digit character. Supports ASCII and EBCDIC.
-<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position where the scan starts<br>length &nbsp;&nbsp;&nbsp;— number of bytes to scan (default 1)<br>encoding — <b>ascii</b> (default): 0–9 → 0x30–0x39 &nbsp;|&nbsp; <b>ebcdic</b>: 0–9 → 0xF0–0xF9</div>
-<div class="me-rh-exs"><b>Examples:</b> 9-digit BIC field (ASCII) → offset=3 length=9 &nbsp;|&nbsp; EBCDIC amount field → offset=10 length=12 encoding=ebcdic</div>`,
+  'numeric': {
+    desc: [
+      'Passes when <b>every</b> byte in the range is a digit character.',
+      'Digit CHARACTERS, not a number: this tests the bytes 30–39 (or F0–F9), never the value they spell.',
+      'To compare a value, use <code>uint8</code> / <code>uint16</code>, or <code>literal</code> with <code>#</code> wildcards.',
+    ],
+    useWhen: [
+      'A fixed-width numeric field — a BIN, an amount, a STAN — sits at a known offset.',
+      'You want to reject a neighbouring message type whose bytes at that offset are letters or binary.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the scan starts. Defaults to 0.']],
+      ['length', 'int', false, ['How many bytes to scan. Defaults to 1.']],
+      ['encoding', '"ascii" | "ebcdic"', false, [
+        ['<code>"ascii"</code>',  'The default. Digits are 0x30–0x39.'],
+        ['<code>"ebcdic"</code>', 'Digits are 0xF0–0xF9.'],
+      ]],
+    ],
+    examples: [
+      { what: 'A 9-digit field after a 3-byte prefix',
+        rec: { type: 'numeric', offset: 3, length: 9 },
+        cases: [
+          { payload: '49 53 4F 30 31 32 33 34 35 36 37 38', note: '"ISO" then "012345678"' },
+          { payload: '49 53 4F 30 31 32 33 34 35 36 37 41', note: 'the last character is "A"' },
+        ] },
+      { what: 'The same test on an <b>EBCDIC</b> message',
+        rec: { type: 'numeric', offset: 0, length: 4, encoding: 'ebcdic' },
+        cases: [
+          { payload: 'F0 F2 F0 F0', note: '"0200" in EBCDIC' },
+          { payload: '30 32 30 30', note: '"0200" in ASCII' },
+        ] },
+    ],
+  },
 
-  'alphabetic': `<b>Letters-only check over a byte range.</b> Returns true if <b>every</b> byte is a letter (A–Z or a–z). Supports ASCII and EBCDIC.
-<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position where the scan starts<br>length &nbsp;&nbsp;&nbsp;— number of bytes to scan (default 1)<br>encoding — <b>ascii</b> (default): A–Z 0x41–0x5A, a–z 0x61–0x7A &nbsp;|&nbsp; <b>ebcdic</b>: A–I 0xC1–0xC9, J–R 0xD1–0xD9, S–Z 0xE2–0xE9, a–i 0x81–0x89, j–r 0x91–0x99, s–z 0xA2–0xA9</div>
-<div class="me-rh-exs"><b>Examples:</b> 3-letter currency code → offset=5 length=3 &nbsp;|&nbsp; EBCDIC name field → offset=0 length=20 encoding=ebcdic</div>`,
+  'alphabetic': {
+    desc: [
+      'Passes when <b>every</b> byte in the range is a letter.',
+      'Both cases count. Digits, spaces and punctuation do not.',
+    ],
+    useWhen: [
+      'A field is letters by definition — a currency code, a country code, a process name.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the scan starts. Defaults to 0.']],
+      ['length', 'int', false, ['How many bytes to scan. Defaults to 1.']],
+      ['encoding', '"ascii" | "ebcdic"', false, [
+        ['<code>"ascii"</code>',  'The default. A–Z 0x41–0x5A, a–z 0x61–0x7A.'],
+        ['<code>"ebcdic"</code>', 'A–I 0xC1–0xC9, J–R 0xD1–0xD9, S–Z 0xE2–0xE9, and the lower-case runs at 0x81, 0x91 and 0xA2.'],
+      ]],
+    ],
+    examples: [
+      { what: 'A 3-letter currency code',
+        rec: { type: 'alphabetic', offset: 0, length: 3 },
+        cases: [
+          { payload: '55 53 44', note: '"USD"' },
+          { payload: '38 34 30', note: '"840" — the numeric code for the same currency' },
+        ] },
+    ],
+  },
 
-  'alphanumeric': `<b>Letters and digits check over a byte range.</b> Returns true if <b>every</b> byte is a letter (A–Z, a–z) or digit (0–9). Supports ASCII and EBCDIC.
-<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;— byte position where the scan starts<br>length &nbsp;&nbsp;&nbsp;— number of bytes to scan (default 1)<br>encoding — <b>ascii</b> (default): 0–9 0x30–0x39, A–Z 0x41–0x5A, a–z 0x61–0x7A &nbsp;|&nbsp; <b>ebcdic</b>: same ranges as numeric + alphabetic combined</div>
-<div class="me-rh-exs"><b>Examples:</b> 6-char terminal ID → offset=0 length=6 &nbsp;|&nbsp; EBCDIC account number → offset=2 length=16 encoding=ebcdic</div>`,
+  'alphanumeric': {
+    desc: [
+      'Passes when <b>every</b> byte in the range is a letter or a digit.',
+      'Letters and digits only — a space, a dash or a dot fails it.',
+    ],
+    useWhen: [
+      'A terminal id, card acceptor id or account number that may mix letters and digits.',
+      'You want something looser than <code>isNumeric</code> but still a guarantee the field is not binary.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the scan starts. Defaults to 0.']],
+      ['length', 'int', false, ['How many bytes to scan. Defaults to 1.']],
+      ['encoding', '"ascii" | "ebcdic"', false, ['The digit and letter ranges of <code>isNumeric</code> and <code>isAlphabetic</code> combined.']],
+    ],
+    examples: [
+      { what: 'A 6-character terminal id',
+        rec: { type: 'alphanumeric', offset: 0, length: 6 },
+        cases: [
+          { payload: '54 45 52 4D 30 31', note: '"TERM01"' },
+          { payload: '54 45 52 4D 2D 31', note: '"TERM-1" — the dash fails' },
+        ] },
+    ],
+  },
 
-  'uint8': `<b>Single byte check at offset.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound. All set conditions must pass.
-<div class="me-rh-flds">offset — byte position from message start<br>mask &nbsp;&nbsp;— optional hex bitmask (0–FF). The engine does <b>byte AND mask</b> before comparing. Use this to isolate specific bits:<br>
-&nbsp;&nbsp;F0 → keeps top 4 bits (high nibble), zeroes bottom 4 — e.g. 0x67 AND F0 = 0x60<br>
-&nbsp;&nbsp;0F → keeps bottom 4 bits (low nibble)<br>
-&nbsp;&nbsp;80 → keeps only the high bit (on/off check)<br>
-&nbsp;&nbsp;FF → keeps all bits (same as no mask)<br>
-eq &nbsp;&nbsp;&nbsp;&nbsp;— masked result must equal this (0–255, leave blank to skip)<br>min &nbsp;&nbsp;&nbsp;— masked result must be ≥ this (leave blank to skip)<br>max &nbsp;&nbsp;&nbsp;— masked result must be ≤ this (leave blank to skip)<br>id &nbsp;&nbsp;&nbsp;&nbsp;— optional label shown in the row</div>
-<div class="me-rh-exs"><b>Examples:</b> TPDU range 0x60–0x6F → min=96 max=111 &nbsp;|&nbsp; same using mask → mask=F0 eq=96 &nbsp;|&nbsp; exact STX byte → eq=2 &nbsp;|&nbsp; high bit set → mask=80 eq=128</div>`,
+  'uint8': {
+    desc: [
+      'Reads one byte and compares it.',
+      'Set any of <code>eq</code>, <code>min</code> and <code>max</code>; every one you set must pass, and every one you leave blank is skipped.',
+      'Set none of them and the rule only asserts the byte <b>exists</b>.',
+      '<code>mask</code> is applied first, so all three compare the <i>masked</i> value.',
+    ],
+    useWhen: [
+      'A header byte carries a small enumerated value — a TPDU identifier, a record type, an STX.',
+      'Only part of a byte matters: a mask isolates the nibble or the flag bit and the comparison ignores the rest.',
+      'You want a numeric range at a single position, which <code>literal</code> cannot express.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Byte position, counting from 0. Defaults to 0.']],
+      ['mask', 'hex string', false, [
+        'A bit pattern ANDed with the byte before it is compared. <b>Always read as hex</b> — that is what a mask is.',
+        ['<code>F0</code>', 'Keeps the high nibble: 0x67 becomes 0x60 (96).'],
+        ['<code>0F</code>', 'Keeps the low nibble: 0x67 becomes 0x07 (7).'],
+        ['<code>80</code>', 'Keeps the top bit alone — an on/off test.'],
+        ['<code>FF</code>', 'Keeps everything, the same as no mask at all.'],
+        'A <code>0x</code> prefix is accepted. Anything that is not hex leaves the rule unevaluable, and it matches nothing.',
+        'Careful: <code>10</code> is hex, so it is 16, not ten.',
+      ]],
+      ['eq',  'int', false, ['The masked value must equal this. 0–255.']],
+      ['min', 'int', false, ['The masked value must be at least this.']],
+      ['max', 'int', false, ['The masked value must be at most this.']],
+    ],
+    examples: [
+      { what: 'An exact byte — <b>STX</b> at the front',
+        rec: { type: 'uint8', offset: 0, eq: 2 },
+        cases: [
+          { payload: '02 30 30', note: '0x02' },
+          { payload: '03 30 30', note: '0x03 ETX' },
+          { payload: '', note: 'nothing to read' },
+        ] },
+      { what: 'A <b>range</b> — any TPDU byte from 0x60 to 0x6F',
+        rec: { type: 'uint8', offset: 0, min: 96, max: 111 },
+        cases: [
+          { payload: '60', note: '0x60 = 96, the lower bound' },
+          { payload: '6F', note: '0x6F = 111, the upper bound' },
+          { payload: '70', note: '0x70 = 112' },
+        ] },
+      { what: 'The same test with a <b>mask</b> — keep the high nibble, require 6',
+        rec: { type: 'uint8', offset: 0, mask: 'F0', eq: 96 },
+        cases: [
+          { payload: '67', note: '0x67 AND F0 = 0x60 = 96' },
+          { payload: '6F', note: '0x6F AND F0 = 0x60 = 96' },
+          { payload: '70', note: '0x70 AND F0 = 0x70 = 112' },
+        ] },
+      { what: 'A single <b>flag bit</b> — is the top bit set?',
+        rec: { type: 'uint8', offset: 0, mask: '80', eq: 128 },
+        cases: [
+          { payload: 'F0', note: '0xF0 AND 80 = 0x80' },
+          { payload: '70', note: '0x70 AND 80 = 0x00' },
+        ] },
+    ],
+  },
 
-  'byte': `<b>Alias for uint8.</b> Single byte check at offset.
-<div class="me-rh-flds">offset, mask (optional hex), eq / min / max (0–255, leave blank to skip)</div>`,
+  'uint16': {
+    desc: [
+      'Reads two bytes as one unsigned integer and compares it.',
+      'Set any of <code>eq</code>, <code>min</code> and <code>max</code>; each one you set must pass.',
+      '<b>Byte order is the whole game here.</b> The same two bytes are two different numbers depending on <code>endian</code>, so an endianness that does not match the wire compares against a number the message never contained.',
+    ],
+    useWhen: [
+      'A binary length or count field sits in the header and you want to bound it.',
+      'A 2-byte protocol version or type code has to equal a specific value.',
+      'You want to reject an empty or absurd length before anything tries to trust it.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Position of the first byte. Defaults to 0.']],
+      ['endian', '"be" | "le"', false, [
+        'Which byte carries the high half.',
+        ['<code>"be"</code>', 'Big-endian, network order — the default. Bytes 01 02 are 258.'],
+        ['<code>"le"</code>', 'Little-endian. The same bytes 01 02 are 513.'],
+      ]],
+      ['eq',  'int', false, ['Must equal this. 0–65535.']],
+      ['min', 'int', false, ['Must be at least this.']],
+      ['max', 'int', false, ['Must be at most this.']],
+    ],
+    examples: [
+      { what: '<b>Big-endian</b> — the default, and network order',
+        rec: { type: 'uint16', offset: 0, endian: 'be', eq: 258 },
+        cases: [
+          { payload: '01 02', note: '0x0102 = 258' },
+          { payload: '02 01', note: '0x0201 = 513' },
+        ] },
+      { what: '<b>Little-endian</b> — the same two bytes, the other way round',
+        rec: { type: 'uint16', offset: 0, endian: 'le', eq: 258 },
+        cases: [
+          { payload: '02 01', note: 'read low byte first: 258' },
+          { payload: '01 02', note: 'read low byte first: 513' },
+        ] },
+      { what: 'A <b>bounded length</b> — non-zero and no larger than the buffer allows',
+        rec: { type: 'uint16', offset: 0, endian: 'be', min: 1, max: 4096 },
+        cases: [
+          { payload: '00 33', note: '51' },
+          { payload: '00 00', note: '0 — below min' },
+          { payload: '20 00', note: '8192 — above max' },
+        ] },
+    ],
+  },
 
-  'uint16': `<b>2-byte integer check.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound.
-<div class="me-rh-flds">offset — first byte position<br>endian — be (big-endian, network order) or le (little-endian)<br>eq &nbsp;&nbsp;&nbsp;&nbsp;— value must equal this (0–65535)<br>min &nbsp;&nbsp;&nbsp;— value must be ≥ this<br>max &nbsp;&nbsp;&nbsp;— value must be ≤ this</div>
-<div class="me-rh-exs"><b>Examples:</b> length field = 51 → eq=51 &nbsp;|&nbsp; non-zero length → min=1 &nbsp;|&nbsp; at most 4096 bytes → max=4096 &nbsp;|&nbsp; range 100–200 → min=100 max=200</div>`,
+  'uint32': {
+    desc: [
+      'Reads four bytes as one unsigned integer and compares it.',
+      'Unsigned throughout: FF FF FF FF is 4 294 967 295, never −1.',
+      'Byte order matters exactly as it does for <code>uint16</code>.',
+    ],
+    useWhen: [
+      'A 4-byte length, sequence number or timestamp sits at a fixed offset.',
+      'A 32-bit magic number identifies the format.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Position of the first byte. Defaults to 0.']],
+      ['endian', '"be" | "le"', false, ['<code>"be"</code> is the default. <code>"le"</code> reverses the four bytes.']],
+      ['eq',  'int', false, ['Must equal this. 0–4 294 967 295.']],
+      ['min', 'int', false, ['Must be at least this.']],
+      ['max', 'int', false, ['Must be at most this.']],
+    ],
+    examples: [
+      { what: 'A 32-bit <b>magic number</b>',
+        rec: { type: 'uint32', offset: 0, endian: 'be', eq: 305419896 },
+        cases: [
+          { payload: '12 34 56 78', note: '0x12345678' },
+          { payload: '78 56 34 12', note: 'the same bytes little-endian' },
+        ] },
+      { what: 'A <b>non-zero</b> 4-byte field',
+        rec: { type: 'uint32', offset: 4, endian: 'be', min: 1 },
+        cases: [
+          { payload: '00 00 00 00 00 00 00 09', note: '9' },
+          { payload: '00 00 00 00 00 00 00 00', note: '0' },
+        ] },
+    ],
+  },
 
-  'word': `<b>Alias for uint16.</b> 2-byte integer check.
-<div class="me-rh-flds">offset, endian (be/le), eq / min / max (0–65535, leave blank to skip)</div>`,
+  'greater-than': {
+    desc: [
+      'A MINIMUM size. Passes when the message is <b>longer</b> than N.',
+      'Strict: it rejects N itself, and everything shorter.',
+      'To require at least X bytes, set N = X − 1. At least 470 → <code>value 469</code>.',
+      '<b>Not what you want?</b> If you mean "reject anything <b>bigger</b> than X", that is <code>less-than</code>. This rule does the opposite — a large message always passes it.',
+      'The count is the <b>decoded</b> byte count, never the number of characters you pasted: ASCII is 1 character per byte, HEX and EBCDIC are 2 hex characters per byte, HEXASCII strips the address prefix and the text column first, and OCT is one whitespace-separated octal token per byte. So a 940-character HEX paste is 470 bytes, and a rule of <code>&lt; 900</code> passes it.',
+    ],
+    useWhen: [
+      'A message type has a floor below which it cannot be well-formed — an ISO 8583 message needs an MTI and a bitmap before anything else.',
+      'Two forms share a leading literal and differ only in size. Give the long one <code>greater-than S</code> and the short one <code>less-than S+1</code>; then neither can match the other and detection order stops mattering.',
+    ],
+    attrs: [
+      ['value', 'int', true, [
+        'The byte count to exceed.',
+        '<code>length</code> is accepted as a spelling of the same attribute.',
+      ]],
+    ],
+    examples: [
+      { what: 'The <b>boundary</b>, three bytes either side of it',
+        rec: { type: 'greater-than', value: 5 },
+        cases: [
+          { payload: '41 42 43 44', note: '4 bytes — shorter' },
+          { payload: '41 42 43 44 45', note: '5 bytes — equal, and rejected' },
+          { payload: '41 42 43 44 45 46', note: '6 bytes — longer' },
+        ] },
+      { what: 'An <b>ISO 8583 minimum</b>: 4-byte MTI plus a 16-character bitmap needs 20 bytes, so N is 19',
+        rec: { type: 'greater-than', value: 19 },
+        cases: [
+          { payload: '30 32 30 30 34 32 31 30 30 30 30 30 30 30 30 30 30 30 30 30', note: '20 bytes' },
+          { payload: '30 32 30 30 34 32 31 30 30 30 30 30 30 30 30 30 30 30 30', note: '19 bytes' },
+        ] },
+    ],
+  },
 
-  'uint32': `<b>4-byte integer check.</b> Set <b>eq</b> for exact match, <b>min</b>/<b>max</b> for a range — leave blank to skip that bound.
-<div class="me-rh-flds">offset — first byte position<br>endian — be or le<br>eq / min / max — 0–4 294 967 295, leave blank to skip</div>
-<div class="me-rh-exs"><b>Examples:</b> non-zero → min=1 &nbsp;|&nbsp; specific value → eq=305419896</div>`,
+  'less-than': {
+    desc: [
+      'A MAXIMUM size. Passes when the message is <b>shorter</b> than N.',
+      'Strict: it rejects N itself, and everything longer.',
+      'To allow up to X bytes, set N = X + 1. Up to 407 → <code>value 408</code>.',
+      '<b>Not what you want?</b> If you mean "reject anything <b>smaller</b> than X", that is <code>greater-than</code>.',
+      'The count is the <b>decoded</b> byte count, never the number of characters you pasted: ASCII is 1 character per byte, HEX and EBCDIC are 2 hex characters per byte, HEXASCII strips the address prefix and the text column first, and OCT is one whitespace-separated octal token per byte.',
+    ],
+    useWhen: [
+      'A short form of a message must not be claimed by the spec written for the long form.',
+      'You want to reject an oversized buffer before the parse tries to walk it.',
+    ],
+    attrs: [
+      ['value', 'int', true, [
+        'The byte count to stay under.',
+        '<code>length</code> is accepted as a spelling of the same attribute.',
+      ]],
+    ],
+    examples: [
+      { what: 'The <b>boundary</b>, three bytes either side of it',
+        rec: { type: 'less-than', value: 5 },
+        cases: [
+          { payload: '41 42 43 44', note: '4 bytes — shorter' },
+          { payload: '41 42 43 44 45', note: '5 bytes — equal, and rejected' },
+          { payload: '41 42 43 44 45 46', note: '6 bytes — longer' },
+        ] },
+    ],
+  },
 
-  'dword': `<b>Alias for uint32.</b> 4-byte integer check.
-<div class="me-rh-flds">offset, endian (be/le), eq / min / max (leave blank to skip)</div>`,
+  'min-length': {
+    hidden: true,
+    desc: [
+      'Legacy — inclusive (≥ N).',
+      'Replaced by <code>greater-than</code>, which is strict. Kept so a spec written before the rename behaves exactly as it always did.',
+      'Stored specs are migrated automatically: <code>min-length N</code> becomes <code>greater-than N−1</code>, which is the same test.',
+    ],
+    useWhen: ['Never, in a new spec. Write <code>greater-than</code>.'],
+    attrs: [['value', 'int', true, ['Minimum byte count, inclusive.']]],
+    examples: [
+      { what: 'Inclusive at the boundary — this is the whole difference from <code>greater-than</code>',
+        rec: { type: 'min-length', value: 5 },
+        cases: [
+          { payload: '41 42 43 44 45', note: '5 bytes — accepted, where greater-than 5 would reject' },
+          { payload: '41 42 43 44', note: '4 bytes' },
+        ] },
+    ],
+  },
 
-  'greater-than': `<b>A MINIMUM size.</b> Passes when the message is <b>longer</b> than N. Rejects N itself, and everything shorter.
-<table class="me-rh-tbl"><tr><th>Rule</th><th>406 bytes</th><th>407 bytes</th><th>408 bytes</th><th>470 bytes</th></tr>
-<tr><td><code>greater-than 407</code></td><td>reject</td><td>reject</td><td><b>pass</b></td><td><b>pass</b></td></tr></table>
-<div class="me-rh-flds"><b>To require at least X bytes, set N = X − 1.</b> At least 470 → <code>value 469</code>.</div>
-<div class="me-rh-flds"><b>Not what you want?</b> If you mean "reject anything <b>bigger</b> than X", that is <b>less-than</b>. This rule does the opposite — a large message always passes it.</div>
-<div class="me-rh-flds">value — the byte count to exceed (<code>length</code> also accepted)</div>
-<div class="me-rh-flds"><b>What counts as a byte:</b> the DECODED byte count, never the number of characters you pasted. The input format decides the conversion:
-<table class="me-rh-tbl"><tr><th>Format</th><th>Conversion</th><th>Example paste</th><th>Bytes</th></tr>
-<tr><td>ASCII</td><td>1 character = 1 byte</td><td><code>0200</code></td><td>4</td></tr>
-<tr><td>HEX</td><td>2 hex characters = 1 byte; spaces and newlines ignored</td><td><code>02 00</code> or <code>0200</code></td><td>2</td></tr>
-<tr><td>HEXASCII</td><td>hex pairs only — the address prefix and the <code>[…]</code>/<code>|…|</code> text column are stripped first</td><td><code>000000  02 00  |..|</code></td><td>2</td></tr>
-<tr><td>EBCDIC</td><td>2 hex characters = 1 byte, then translated to ASCII — the count is unchanged</td><td><code>F0F2</code></td><td>2</td></tr>
-<tr><td>OCT</td><td>1 whitespace-separated octal token = 1 byte</td><td><code>060 062</code></td><td>2</td></tr>
-</table>
-So a 940-character HEX paste is <b>470 bytes</b>, and a rule of <code>&lt; 900</code> passes it — the comparison never sees the 940.</div>
-<div class="me-rh-exs"><b>Examples:</b> ISO minimum (MTI + bitmap) → value=19 (needs 20+) &nbsp;|&nbsp; NDC minimum → value=3 (needs 4+)</div>`,
+  'max-length': {
+    hidden: true,
+    desc: [
+      'Legacy — inclusive (≤ N).',
+      'Replaced by <code>less-than</code>, which is strict.',
+      'Stored specs are migrated automatically: <code>max-length N</code> becomes <code>less-than N+1</code>.',
+    ],
+    useWhen: ['Never, in a new spec. Write <code>less-than</code>.'],
+    attrs: [['value', 'int', true, ['Maximum byte count, inclusive.']]],
+    examples: [
+      { what: 'Inclusive at the boundary',
+        rec: { type: 'max-length', value: 5 },
+        cases: [
+          { payload: '41 42 43 44 45', note: '5 bytes — accepted, where less-than 5 would reject' },
+          { payload: '41 42 43 44 45 46', note: '6 bytes' },
+        ] },
+    ],
+  },
 
-  'less-than': `<b>A MAXIMUM size.</b> Passes when the message is <b>shorter</b> than N. Rejects N itself, and everything longer.
-<table class="me-rh-tbl"><tr><th>Rule</th><th>406 bytes</th><th>407 bytes</th><th>408 bytes</th><th>470 bytes</th></tr>
-<tr><td><code>less-than 408</code></td><td><b>pass</b></td><td><b>pass</b></td><td>reject</td><td>reject</td></tr></table>
-<div class="me-rh-flds"><b>To allow up to X bytes, set N = X + 1.</b> Up to 407 → <code>value 408</code>.</div>
-<div class="me-rh-flds"><b>Not what you want?</b> If you mean "reject anything <b>smaller</b> than X", that is <b>greater-than</b>.</div>
-<div class="me-rh-flds">Also useful to separate two message forms that share a literal: give the short form <code>less-than S+1</code> and the long form <code>greater-than S</code>.</div>
-<div class="me-rh-flds">value — the byte count to stay under (<code>length</code> also accepted)</div>
-<div class="me-rh-flds"><b>What counts as a byte:</b> the DECODED byte count, never the number of characters you pasted. The input format decides the conversion:
-<table class="me-rh-tbl"><tr><th>Format</th><th>Conversion</th><th>Example paste</th><th>Bytes</th></tr>
-<tr><td>ASCII</td><td>1 character = 1 byte</td><td><code>0200</code></td><td>4</td></tr>
-<tr><td>HEX</td><td>2 hex characters = 1 byte; spaces and newlines ignored</td><td><code>02 00</code> or <code>0200</code></td><td>2</td></tr>
-<tr><td>HEXASCII</td><td>hex pairs only — the address prefix and the <code>[…]</code>/<code>|…|</code> text column are stripped first</td><td><code>000000  02 00  |..|</code></td><td>2</td></tr>
-<tr><td>EBCDIC</td><td>2 hex characters = 1 byte, then translated to ASCII — the count is unchanged</td><td><code>F0F2</code></td><td>2</td></tr>
-<tr><td>OCT</td><td>1 whitespace-separated octal token = 1 byte</td><td><code>060 062</code></td><td>2</td></tr>
-</table>
-So a 940-character HEX paste is <b>470 bytes</b>, and a rule of <code>&lt; 900</code> passes it — the comparison never sees the 940.</div>
-<div class="me-rh-exs"><b>Examples:</b> reject buffers of 4096 bytes or more → value=4096 &nbsp;|&nbsp; two forms sharing one literal: put <code>&lt; 471</code> on the short form and <code>&gt; 470</code> on the long one, so they cannot both match and match ORDER stops mattering</div>`,
+  'mti': {
+    desc: [
+      'Reads a 4-digit ISO 8583 message type indicator and checks it against the standard\'s own digit rules.',
+      'More than a <code>literal</code>: each of the four positions has a set of digits ISO defines as legal, and a digit outside that set fails even where your pattern said <code>#</code>.',
+      'Position 1, version: 0 = 1987, 1 = 1993, 2 = 2003, 9 = private.',
+      'Position 2, class: 1 Authorization, 2 Financial, 3 File, 4 Reversal, 5 Reconciliation, 6 Administrative, 7 Fee, 8 Network. 0 is reserved and always fails.',
+      'Position 3, function: 0 Request, 1 Response, 2 Advice, 3 Advice response, 4 Notification, 8 Acknowledgement, 9 Negative acknowledgement.',
+      'Position 4, origin: 0 Acquirer, 1 Acquirer repeat, 2 Issuer, 3 Issuer repeat, 4 Other, 5 Other repeat.',
+    ],
+    useWhen: [
+      'The message is ISO 8583 or close enough to borrow its numbering.',
+      'You want "any valid MTI" as a cheap, strong filter — <code>####</code> rejects far more than four digits would.',
+      'You want a family rather than one type: <code>01##</code> is every authorization message.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the MTI starts. 0 for a plain ISO message, 3 when an "ISO" text prefix comes first.']],
+      ['encoding', '"ascii" | "ebcdic"', false, ['<code>"ascii"</code> is the default — digits 0x30–0x39. <code>"ebcdic"</code> reads 0xF0–0xF9.']],
+      ['value', 'string', false, [
+        'A 4-character pattern. Defaults to <code>####</code>.',
+        ['<code>#</code>', 'Any digit ISO allows in that position.'],
+        ['a digit', 'Exactly that digit.'],
+        'A pattern that is not 4 characters long is ignored and <code>####</code> is used instead.',
+      ]],
+    ],
+    examples: [
+      { what: '<b>Any valid MTI</b> — and how much that rejects',
+        rec: { type: 'mti', offset: 0, value: '####' },
+        cases: [
+          { payload: '30 32 30 30', note: '"0200" financial request' },
+          { payload: '30 30 30 30', note: '"0000" — class 0 is reserved' },
+          { payload: '33 32 30 30', note: '"3200" — 3 is not a version' },
+          { payload: '30 32 35 30', note: '"0250" — 5 is not a function' },
+          { payload: '30 32 30 36', note: '"0206" — 6 is not an origin' },
+          { payload: '30 32 58 30', note: '"02X0" — not a digit at all' },
+        ] },
+      { what: 'A <b>family</b> — every authorization message, whatever its function and origin',
+        rec: { type: 'mti', offset: 0, value: '01##' },
+        cases: [
+          { payload: '30 31 30 30', note: '"0100" authorization request' },
+          { payload: '30 31 31 30', note: '"0110" authorization response' },
+          { payload: '30 32 30 30', note: '"0200" — financial, not authorization' },
+        ] },
+      { what: 'After an <b>"ISO" prefix</b> — the MTI starts at byte 3',
+        rec: { type: 'mti', offset: 3, value: '####' },
+        cases: [
+          { payload: '49 53 4F 30 32 30 30', note: '"ISO0200"' },
+          { payload: '30 32 30 30 30 30 30', note: 'no prefix, so byte 3 is the wrong place' },
+        ] },
+      { what: 'On an <b>EBCDIC</b> message',
+        rec: { type: 'mti', offset: 0, encoding: 'ebcdic', value: '####' },
+        cases: [
+          { payload: 'F0 F2 F0 F0', note: '"0200" in EBCDIC' },
+          { payload: '30 32 30 30', note: '"0200" in ASCII' },
+        ] },
+    ],
+  },
 
-  'min-length': `<b>Legacy — inclusive (≥ N).</b> Replaced by <code>greater-than</code>, which is strict. Kept so a spec written before the rename still behaves exactly as it did; stored specs are migrated automatically (<code>min-length N</code> → <code>greater-than N−1</code>, the same test).
-<div class="me-rh-flds">value — minimum byte count, inclusive</div>`,
+  'bitmap': {
+    desc: [
+      'Tests whether a specific ISO 8583 data element is present in the bitmap.',
+      'DE <i>n</i> is bit <i>n</i>−1 counting from the <b>high</b> bit of the first byte: DE 1 is 0x80 of byte 0, DE 2 is 0x40, DE 9 is 0x80 of byte 1.',
+      'DE 65 and above live in the secondary bitmap, the eight bytes that follow — so the rule needs 16 bytes of bitmap to reach them.',
+      'Leave <code>bit</code> out and the rule only asserts a bitmap of the right shape is <b>present</b>. That is the one thing the hex-text forms could always do.',
+    ],
+    useWhen: [
+      'Two message types share an MTI and differ by which data elements they carry.',
+      'A mandatory DE must be present before a spec claims the message.',
+      'You want to reject a message that sets DE 1, meaning a secondary bitmap you are not equipped to read.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the bitmap starts. Defaults to 0.']],
+      ['encoding', '"binary" | "ascii-hex" | "ebcdic"', false, [
+        'How the bitmap is written on the wire — this decides how many message bytes one bitmap byte takes.',
+        ['<code>"binary"</code>',   'The default. 8 raw bytes; bitmap byte n is message byte offset+n.'],
+        ['<code>"ascii-hex"</code>', '16 ASCII hex characters; bitmap byte n is two characters at offset+2n. Upper or lower case.'],
+        ['<code>"ebcdic"</code>',   'The same 16 characters written in EBCDIC.'],
+      ]],
+      ['bit', 'int 1–128', false, [
+        'Which data element to test.',
+        'Out of range, or past the end of the bitmap present in the message, is a no match.',
+        'Omit it to fall back to the presence check.',
+      ]],
+      ['value', '0 | 1', false, [
+        'What the bit must be. Defaults to 1.',
+        ['<code>1</code>', 'The DE must be present.'],
+        ['<code>0</code>', 'The DE must be absent.'],
+      ]],
+      ['length', 'int', false, ['Bytes the presence check requires when no <code>bit</code> is named and the bitmap is binary. Defaults to 8.']],
+    ],
+    examples: [
+      { what: 'A <b>binary</b> bitmap — byte 0 is 0x42, which is 0100&nbsp;0010, so DE 2 and DE 7 are the ones set',
+        rec: { type: 'bitmap', offset: 0, bit: 2, value: 1 },
+        cases: [
+          { payload: '42 10 00 00 00 00 00 00', note: 'DE 2 is the 0x40 bit — set' },
+          { payload: '02 10 00 00 00 00 00 00', note: 'the same bitmap without DE 2' },
+        ] },
+      { what: 'The <b>second byte</b> — DE 12 is 0x10 of byte 1',
+        rec: { type: 'bitmap', offset: 0, bit: 12, value: 1 },
+        cases: [
+          { payload: '42 10 00 00 00 00 00 00', note: 'byte 1 is 0x10 = 0001 0000' },
+          { payload: '42 00 00 00 00 00 00 00', note: 'byte 1 is empty' },
+        ] },
+      { what: 'Testing for <b>absence</b> — reject anything that announces a secondary bitmap',
+        rec: { type: 'bitmap', offset: 0, bit: 1, value: 0 },
+        cases: [
+          { payload: '42 10 00 00 00 00 00 00', note: 'DE 1 clear — no secondary bitmap' },
+          { payload: 'C2 10 00 00 00 00 00 00', note: 'DE 1 set — a secondary bitmap follows' },
+        ] },
+      { what: 'A bitmap written as <b>hex text</b>, which is 16 characters rather than 8 bytes',
+        rec: { type: 'bitmap', offset: 0, encoding: 'ascii-hex', bit: 2, value: 1 },
+        cases: [
+          { payload: '34 32 31 30 30 30 30 30 30 30 30 30 30 30 30 30', note: '"4210000000000000"' },
+          { payload: '30 32 31 30 30 30 30 30 30 30 30 30 30 30 30 30', note: '"0210000000000000" — DE 2 clear' },
+        ] },
+      { what: 'No <code>bit</code> — a <b>presence</b> check, and all it can tell you',
+        rec: { type: 'bitmap', offset: 0, encoding: 'ascii-hex' },
+        cases: [
+          { payload: '34 32 31 30 30 30 30 30 30 30 30 30 30 30 30 30', note: '16 hex characters' },
+          { payload: '4E 4F 54 48 45 58 41 54 41 4C 4C 30 30 30 30 30', note: '"NOTHEXATALL00000"' },
+        ] },
+    ],
+  },
 
-  'max-length': `<b>Legacy — inclusive (≤ N).</b> Replaced by <code>less-than</code>, which is strict. Kept so a spec written before the rename still behaves exactly as it did; stored specs are migrated automatically (<code>max-length N</code> → <code>less-than N+1</code>, the same test).
-<div class="me-rh-flds">value — maximum byte count, inclusive</div>`,
+  'regex': {
+    desc: [
+      'Matches a JavaScript regular expression against the bytes, read as characters.',
+      'Write the pattern bare — no surrounding slashes, no flags.',
+      'The match is <b>unanchored</b> unless you anchor it yourself with <code>^</code>.',
+      'A pattern that does not compile never matches, and says nothing about why — prefer <code>literal</code> whenever the test is a fixed string at a fixed offset.',
+    ],
+    useWhen: [
+      'The condition is a genuine alternation or character class that <code>literal</code>\'s wildcards cannot express.',
+      'A marker can appear anywhere in the message rather than at a known offset.',
+      'You are matching text that includes a control character, which is awkward to type as a literal.',
+    ],
+    attrs: [
+      ['pattern', 'string', true, ['A JavaScript regular expression, without delimiters.']],
+      ['offset', 'int', false, ['Where the text handed to the regex starts. Defaults to 0, and an offset at or past the end of the message is a no match.']],
+      ['length', 'int', false, [
+        'How many bytes to hand over. Omit it and the rest of the message is used.',
+        'Bounding the window is what makes <code>^…$</code> mean "this field is exactly that".',
+      ]],
+      ['encoding', '"ascii" | "ebcdic"', false, ['<code>"ebcdic"</code> translates each byte out of EBCDIC before the regex sees it, so the pattern is written in plain text either way.']],
+    ],
+    examples: [
+      { what: 'An <b>anchored prefix</b>',
+        rec: { type: 'regex', pattern: '^ISO' },
+        cases: [
+          { payload: '49 53 4F 30 32 30 30', note: '"ISO0200"' },
+          { payload: '42 32 34 49 53 4F', note: '"B24ISO" — present, but not at the front' },
+        ] },
+      { what: '<b>Unanchored</b> — the same text found anywhere',
+        rec: { type: 'regex', pattern: 'ISO' },
+        cases: [
+          { payload: '42 32 34 49 53 4F', note: '"B24ISO"' },
+          { payload: '42 32 34 30 32 30 30', note: '"B240200"' },
+        ] },
+      { what: 'A <b>character class</b> — a Base24 POS message type',
+        rec: { type: 'regex', pattern: '^0[1-9][012489][012345]02' },
+        cases: [
+          { payload: '30 32 30 30 30 32', note: '"020002"' },
+          { payload: '30 32 30 30 30 31', note: '"020001" — the trailing 02 is missing' },
+        ] },
+      { what: '<b>offset</b> and <b>length</b> — a window, so <code>$</code> means the end of the FIELD',
+        rec: { type: 'regex', offset: 3, length: 4, pattern: '^[0-9]{4}$' },
+        cases: [
+          { payload: '49 53 4F 30 32 30 30 41 42', note: '"ISO" then "0200" then "AB" — the window is just the four digits' },
+          { payload: '49 53 4F 30 32 41 30 41 42', note: '"02A0" in the window' },
+        ] },
+      { what: 'On an <b>EBCDIC</b> message — the pattern stays plain text',
+        rec: { type: 'regex', encoding: 'ebcdic', pattern: '^ISO' },
+        cases: [
+          { payload: 'C9 E2 D6 F0 F2', note: '"ISO02" in EBCDIC' },
+          { payload: '49 53 4F 30 32', note: '"ISO02" in ASCII' },
+        ] },
+    ],
+  },
 
-  'mti': `<b>ISO 8583 MTI match — reads 4 ASCII bytes at offset and validates against ISO 8583 digit rules.</b>
-<div class="me-rh-flds">offset — byte position of MTI (0 for plain ISO, 3 if "ISO" text prefix)<br>value &nbsp;— 4-char pattern: use a specific digit for exact match, or <b>#</b> to allow any valid digit for that position</div>
-<b>Valid digits per position:</b>
-<div class="me-rh-flds">
-pos 1 (version): 0=1987 &nbsp;1=1993 &nbsp;2=2003 &nbsp;9=private<br>
-pos 2 (class): &nbsp;1=Auth &nbsp;2=Financial &nbsp;3=File &nbsp;4=Reversal &nbsp;5=Reconciliation &nbsp;6=Admin &nbsp;7=Fee &nbsp;8=Network<br>
-pos 3 (function): 0=Request &nbsp;1=Response &nbsp;2=Advice &nbsp;3=Advice Resp &nbsp;4=Notification &nbsp;8=Ack &nbsp;9=Nack<br>
-pos 4 (origin): &nbsp;0=Acquirer &nbsp;1=Acq Repeat &nbsp;2=Issuer &nbsp;3=Iss Repeat &nbsp;4=Other &nbsp;5=Other Repeat
-</div>
-<div class="me-rh-exs"><b>Examples:</b> any valid MTI → #### &nbsp;|&nbsp; financial request → 0200 &nbsp;|&nbsp; any auth msg → 01## &nbsp;|&nbsp; any 1993 version → 1###</div>`,
+  'hex-density': {
+    desc: [
+      'Passes when the fraction of bytes in the range that are hex CHARACTERS meets a threshold.',
+      'Hex characters are 0–9 A–F a–f: 0x30–0x39, 0x41–0x46 and 0x61–0x66 in ASCII; 0xF0–0xF9, 0xC1–0xC6 and 0x81–0x86 in EBCDIC.',
+      'A raw byte such as 0x82 is <b>not</b> a hex character. This rule is about text that spells hex, not about binary data.',
+      'A fraction, so it tolerates a field that is mostly hex with a separator or two — which is exactly what a fixed threshold buys you over <code>isNumeric</code>.',
+      'An empty range is a no match, never a vacuous pass.',
+    ],
+    useWhen: [
+      'A bitmap or a key block arrives as hex text and you want to confirm the shape without pinning the value.',
+      'A message has been through a dump utility and the payload is hex characters rather than bytes.',
+      'You want a tolerant test — set <code>min</code> below 1.0 and a stray separator will not fail it.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the range starts. Defaults to 0.']],
+      ['length', 'int', false, ['How many bytes to scan. Omit it and the rest of the message is scanned. A length past the end is clamped, not rejected.']],
+      ['min', 'float 0.0–1.0', false, ['The fraction that must qualify. Defaults to 0.8. <code>1</code> demands every byte.']],
+      ['encoding', '"ascii" | "ebcdic"', false, ['Which character set the hex digits are written in. Defaults to ascii.']],
+    ],
+    examples: [
+      { what: '<b>Every</b> byte must be a hex character',
+        rec: { type: 'hex-density', offset: 0, length: 16, min: 1 },
+        cases: [
+          { payload: '34 32 31 30 30 30 30 30 30 30 30 30 30 30 30 30', note: '"4210000000000000"' },
+          { payload: '34 32 31 30 30 30 30 30 30 30 30 30 30 30 30 5A', note: 'the last character is "Z"' },
+        ] },
+      { what: 'A <b>tolerant</b> threshold — three quarters is enough',
+        rec: { type: 'hex-density', offset: 0, length: 8, min: 0.75 },
+        cases: [
+          { payload: '44 45 41 44 42 45 45 46', note: '"DEADBEEF" — all eight' },
+          { payload: '44 45 41 44 2D 42 45 46', note: '"DEAD-BEF" — seven of eight' },
+          { payload: '44 45 41 44 5A 5A 5A 5A', note: '"DEADZZZZ" — four of eight' },
+        ] },
+      { what: 'On an <b>EBCDIC</b> dump',
+        rec: { type: 'hex-density', offset: 0, length: 4, min: 1, encoding: 'ebcdic' },
+        cases: [
+          { payload: 'C1 C2 F0 F9', note: '"AB09" in EBCDIC' },
+          { payload: '41 42 30 39', note: '"AB09" in ASCII' },
+        ] },
+    ],
+  },
 
-  'bitmap': `<b>Checks whether a specific ISO 8583 DE bit is on or off in the bitmap.</b>
-<div class="me-rh-flds">offset — byte position where bitmap starts<br>bit &nbsp;&nbsp;— DE number 1–128<br>value — 1 (bit on / DE present) or 0 (bit off / DE absent)</div>
-<div class="me-rh-exs"><b>Examples:</b> PAN present → bit=2 value=1 &nbsp;|&nbsp; secondary bitmap present → bit=1 value=1</div>`,
+  'oct-density': {
+    desc: [
+      'Passes when the fraction of bytes in the range that are octal CHARACTERS meets a threshold.',
+      'Octal characters are 0–7: 0x30–0x37 in ASCII, 0xF0–0xF7 in EBCDIC.',
+      '8 and 9 do not count, which is the only thing separating this from <code>hex-density</code> on a numeric field.',
+      'An empty range is a no match.',
+    ],
+    useWhen: [
+      'The input came from an octal dump utility, which is still how some NonStop tools print a buffer.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the range starts. Defaults to 0.']],
+      ['length', 'int', false, ['How many bytes to scan. Omit it and the rest of the message is scanned.']],
+      ['min', 'float 0.0–1.0', false, ['The fraction that must qualify. Defaults to 0.8.']],
+      ['encoding', '"ascii" | "ebcdic"', false, ['Which character set the digits are written in. Defaults to ascii.']],
+    ],
+    examples: [
+      { what: 'Octal digits only — <b>8 and 9 fail</b>',
+        rec: { type: 'oct-density', offset: 0, length: 4, min: 1 },
+        cases: [
+          { payload: '30 31 32 33', note: '"0123"' },
+          { payload: '30 31 38 39', note: '"0189"' },
+        ] },
+    ],
+  },
 
-  'regex': `<b>JavaScript regex matched against ASCII bytes.</b> Good for complex patterns that literal/wildcard can't express.
-<div class="me-rh-flds">pattern — any JavaScript regular expression (no surrounding /.../ needed)</div>
-<div class="me-rh-exs"><b>Examples:</b> Base24 POS → ^0[1-9][012489][012345]02 &nbsp;|&nbsp; ISO prefix → ^ISO &nbsp;|&nbsp; NDC class → ^[12][0-9A-Z]</div>`,
+  'length-payload': {
+    desc: [
+      'Reads a length field and checks the payload it declares <b>fits</b> inside the message.',
+      'Fits, not equals. A declared length shorter than what is actually there passes — the rule is a sanity check on the header, not a proof the message is exactly the size it claims.',
+      'A declared length that would run off the end is a no match, which is the case worth catching.',
+      'Truncated so the length field itself cannot be read? Also a no match.',
+    ],
+    useWhen: [
+      'A framed protocol puts a length in front of the body and you want to reject a frame whose header is nonsense.',
+      'Two message types share a prefix but count their length differently — one including the length bytes, one not.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the length field starts. Defaults to 0.']],
+      ['encoding', '"uint8" | "uint16-be" | "uint16-le" | "bcd2"', false, [
+        'How the length field itself is encoded.',
+        ['<code>"uint8"</code>',     'One byte.'],
+        ['<code>"uint16-be"</code>', 'Two bytes, big-endian. The default.'],
+        ['<code>"uint16-le"</code>', 'Two bytes, little-endian.'],
+        ['<code>"bcd2"</code>',      'Two BCD bytes — four decimal digits, one per nibble.'],
+        'Anything else leaves the length unreadable, and the rule matches nothing.',
+      ]],
+      ['body_offset', 'int', false, [
+        'Where the payload begins. Shown as "Payload @" in the form.',
+        'Omit it and the payload is assumed to start immediately after the length field.',
+      ]],
+      ['includes_self', 'bool', false, [
+        'Whether the declared length counts the length field\'s own bytes.',
+        ['<code>false</code>', 'The default. The number is the payload alone.'],
+        ['<code>true</code>',  'The number covers the length bytes too, so they are subtracted before the check.'],
+      ]],
+    ],
+    examples: [
+      { what: 'A <b>2-byte big-endian</b> length in front of the body',
+        rec: { type: 'length-payload', offset: 0, encoding: 'uint16-be', body_offset: 2 },
+        cases: [
+          { payload: '00 03 41 42 43', note: 'declares 3, and 3 follow' },
+          { payload: '00 01 41 42 43', note: 'declares 1 — short, but it fits' },
+          { payload: '00 09 41 42 43', note: 'declares 9 — runs off the end' },
+          { payload: '00', note: 'the length field itself is truncated' },
+        ] },
+      { what: '<b>includes_self</b> — the declared length covers its own two bytes',
+        rec: { type: 'length-payload', offset: 0, encoding: 'uint16-be', body_offset: 2, includes_self: true },
+        cases: [
+          { payload: '00 05 41 42 43', note: 'declares 5 = 2 length + 3 payload' },
+          { payload: '00 03 41 42 43', note: 'declares 3, so only 1 byte of payload — still fits' },
+          { payload: '00 0B 41 42 43', note: 'declares 11, so 9 of payload — too many' },
+        ] },
+      { what: 'A <b>BCD</b> length — each nibble is a decimal digit, so 0x00 0x03 is three',
+        rec: { type: 'length-payload', offset: 0, encoding: 'bcd2', body_offset: 2 },
+        cases: [
+          { payload: '00 03 41 42 43', note: 'BCD 0003' },
+          { payload: '00 09 41 42 43', note: 'BCD 0009 — runs off the end' },
+        ] },
+      { what: 'A <b>single-byte</b> length',
+        rec: { type: 'length-payload', offset: 0, encoding: 'uint8', body_offset: 1 },
+        cases: [
+          { payload: '03 41 42 43', note: 'declares 3' },
+          { payload: '09 41 42 43', note: 'declares 9' },
+        ] },
+    ],
+  },
 
-  'hex-density': `<b>Fraction of bytes that are hex chars must meet the threshold.</b>
-ASCII: 0–9, A–F, a–f (0x30–0x39, 0x41–0x46, 0x61–0x66).
-EBCDIC: 0–9, A–F, a–f (0xF0–0xF9, 0xC1–0xC6, 0x81–0x86).
-Note: binary bytes (e.g. 0x82) are NOT hex chars.
-<div class="me-rh-flds">encoding — ASCII or EBCDIC &nbsp; min — 0.0–1.0</div>
-<div class="me-rh-exs"><b>Example:</b> hex-dump bitmap → encoding=ebcdic, min=0.8</div>`,
+  'flag-payload': {
+    desc: [
+      'Reads a flag or type field and checks it is <b>non-zero</b>, which is how these protocols say "a payload follows".',
+      'Only zero fails. Any other value passes, whatever it means.',
+      'Give both <code>body_offset</code> and <code>body_length</code> and it also checks that payload fits; give neither and the non-zero test stands alone.',
+    ],
+    useWhen: [
+      'A header carries an optional-section marker and you want to claim only the messages that have the section.',
+      'A type byte is zero on a variant you want a different spec to handle.',
+    ],
+    attrs: [
+      ['offset', 'int', false, ['Where the flag field starts. Defaults to 0.']],
+      ['encoding', '"uint8" | "uint16-be" | "uint16-le" | "bcd2"', false, ['How the flag field is encoded. Defaults to <code>uint8</code>.']],
+      ['body_offset', 'int', false, ['Where the payload begins. Only used together with <code>body_length</code>.']],
+      ['body_length', 'int', false, ['How big the payload is expected to be. Together with <code>body_offset</code>, the rule checks it fits.']],
+    ],
+    examples: [
+      { what: '<b>Non-zero</b>, and nothing else',
+        rec: { type: 'flag-payload', offset: 0, encoding: 'uint8' },
+        cases: [
+          { payload: '01 41 42', note: 'flag 1' },
+          { payload: 'FF 41 42', note: 'flag 255 — any non-zero value' },
+          { payload: '00 41 42', note: 'flag 0' },
+        ] },
+      { what: 'With a <b>payload size</b> to validate as well',
+        rec: { type: 'flag-payload', offset: 0, encoding: 'uint8', body_offset: 1, body_length: 4 },
+        cases: [
+          { payload: '01 41 42 43 44', note: 'flag set, and 4 bytes follow' },
+          { payload: '01 41 42', note: 'flag set, but only 2 bytes follow' },
+        ] },
+    ],
+  },
 
-  'oct-density': `<b>Fraction of bytes that are octal chars must meet the threshold.</b>
-ASCII: 0–7 (0x30–0x37).
-EBCDIC: 0–7 (0xF0–0xF7).
-Note: binary bytes outside the range are NOT counted.
-<div class="me-rh-flds">encoding — ASCII or EBCDIC &nbsp; min — 0.0–1.0</div>
-<div class="me-rh-exs"><b>Example:</b> octal-dump format → encoding=ascii, min=0.7</div>`,
+  'source': {
+    desc: [
+      'Matches the message\'s <b>source process</b> against a wildcard pattern.',
+      'This one does not look at the bytes at all. It reads the source recorded on the record wrapper — the originating process name the NETARD AUDIT parser captured.',
+      'The comparison is anchored at both ends and case-insensitive, so <code>ACQ</code> does not match <code>ACQ1</code>.',
+      'A specific pattern on a message that carries <b>no</b> source is a no match: a condition that cannot be checked is never claimed as passed.',
+      '<code>*</code> on its own, or an empty pattern, is a catch-all and always passes — including when there is no source at all.',
+    ],
+    useWhen: [
+      'Two message types are byte-identical and only the endpoints tell them apart.',
+      'One acquirer or node needs its own entity while everything else keeps the shared one.',
+      'Put it <b>after</b> the byte rules in the list. It is the cheapest rule to fail on and the most specific, so the diagnostics read better when the byte-level checks have already passed.',
+    ],
+    attrs: [
+      ['pattern', 'string', true, [
+        'The process name to match. Wildcards:',
+        ['<code>$</code>', 'One alphanumeric character.'],
+        ['<code>#</code>', 'One digit.'],
+        ['<code>*</code>', 'Any sequence, including none.'],
+        'Everything else is literal — including <code>^</code>, which is part of many process names.',
+      ]],
+    ],
+    examples: [
+      { what: 'An <b>exact</b> process name',
+        rec: { type: 'source', pattern: 'PIA^A910' },
+        cases: [
+          { ctx: { source: 'PIA^A910' }, note: 'the acquirer it names' },
+          { ctx: { source: 'PIA^B910' }, note: 'a different node' },
+          { ctx: {}, note: 'a message with no source recorded' },
+        ] },
+      { what: '<b>$</b> — one alphanumeric, so any node running that process',
+        rec: { type: 'source', pattern: 'PIA^$910' },
+        cases: [
+          { ctx: { source: 'PIA^A910' }, note: 'node A' },
+          { ctx: { source: 'PIA^B910' }, note: 'node B' },
+          { ctx: { source: 'PIA^AB910' }, note: 'two characters where one was allowed' },
+        ] },
+      { what: '<b>#</b> — one digit each, so ACQ00 through ACQ99',
+        rec: { type: 'source', pattern: 'ACQ##' },
+        cases: [
+          { ctx: { source: 'ACQ42' }, note: 'two digits' },
+          { ctx: { source: 'ACQ4' }, note: 'one digit — the pattern is anchored' },
+          { ctx: { source: 'ACQAB' }, note: 'letters where digits were required' },
+        ] },
+      { what: '<b>*</b> — a catch-all that passes even with nothing to check',
+        rec: { type: 'source', pattern: '*' },
+        cases: [
+          { ctx: { source: 'ANYTHING' }, note: 'any source' },
+          { ctx: {}, note: 'no source recorded' },
+        ] },
+    ],
+  },
 
-  'length-payload': `<b>Reads a length field and verifies the declared value matches the actual payload size.</b>
-<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— byte position of the length field<br>encoding &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— how the length field is encoded: <b>uint8</b> (1 byte), <b>uint16-be</b> (2 bytes big-endian), <b>uint16-le</b> (2 bytes little-endian), <b>bcd2</b> (2 BCD bytes = 4 decimal digits)<br>payload offset — byte where the payload begins (after header/length bytes)<br>incl. self &nbsp;&nbsp;&nbsp;— Yes if the length value counts the length field bytes themselves, No if it counts only the payload<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
-<div class="me-rh-exs"><b>Examples:</b> 2-byte BE length, payload starts at 2 → encoding=uint16-be payload@=2 incl.self=No &nbsp;|&nbsp; BCD length counting itself, payload at 2 → encoding=bcd2 payload@=2 incl.self=Yes &nbsp;|&nbsp; 1-byte length, payload at 1 → encoding=uint8 payload@=1 incl.self=No</div>`,
+  'destination': {
+    desc: [
+      'Matches the message\'s <b>destination process</b> against a wildcard pattern.',
+      'Identical to <code>source</code> in every respect but which field it reads.',
+      'Anchored, case-insensitive, and strict about a missing field: a specific pattern with no destination recorded is a no match.',
+    ],
+    useWhen: [
+      'A request and its response carry the same bytes and are told apart by direction — pair this with <code>source</code> on the two entities.',
+      'Traffic to one switch or interchange needs its own entity.',
+    ],
+    attrs: [
+      ['pattern', 'string', true, [
+        'The process name to match. Wildcards:',
+        ['<code>$</code>', 'One alphanumeric character.'],
+        ['<code>#</code>', 'One digit.'],
+        ['<code>*</code>', 'Any sequence, including none.'],
+      ]],
+    ],
+    examples: [
+      { what: 'An <b>exact</b> destination',
+        rec: { type: 'destination', pattern: 'PIA^SWITCH' },
+        cases: [
+          { ctx: { dest: 'PIA^SWITCH' }, note: 'the switch it names' },
+          { ctx: { dest: 'PIA^A910' }, note: 'somewhere else' },
+        ] },
+      { what: 'A <b>direction pair</b> — this rule and its mirror on the response entity',
+        rec: { type: 'destination', pattern: 'PI$^SWITCH' },
+        cases: [
+          { ctx: { source: 'PIA^A910', dest: 'PIA^SWITCH' }, note: 'inbound to the switch' },
+          { ctx: { source: 'PIA^SWITCH', dest: 'PIA^A910' }, note: 'the response, going the other way' },
+        ] },
+    ],
+  },
 
-  'flag-payload': `<b>Reads a flag/type field and checks it is non-zero — confirming a payload follows.</b> Optionally validates the payload fits within the message.
-<div class="me-rh-flds">offset &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— byte position of the flag field<br>encoding &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— <b>uint8</b> (1 byte), <b>uint16-be</b>, <b>uint16-le</b>, <b>bcd2</b><br>payload offset — byte where the payload begins<br>payload length — expected payload size in bytes (0 = skip size check)<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
-<div class="me-rh-exs"><b>Examples:</b> TPDU flag non-zero, 20-byte payload at offset 5 → offset=0 encoding=uint8 payload@=5 payload len=20 &nbsp;|&nbsp; 2-byte flag, payload at 2 → encoding=uint16-be payload@=2</div>`,
+  'filename': {
+    desc: [
+      'Matches the file the record came from against a Guardian-style wildcard pattern.',
+      'Names follow the NonStop convention <code>$VOLUME.SUBVOL.FILENAME</code>. The <code>$</code> and the <code>.</code> are <b>literal</b> here — they are the volume prefix and the component separators, not wildcards.',
+      'Case-insensitive and anchored at both ends.',
+      'A file entity is keyed by this rule: without one it can never match, whatever else its recognizer list says.',
+    ],
+    useWhen: [
+      'You are parsing FUP COPY output or another file dump rather than a message trace.',
+      'Several files share a record layout and one entity should claim all of them — <code>$ATM.AUDIT.*</code>.',
+      'Two versions of the same file need different entities: give both the filename rule and add a content rule to tell the versions apart.',
+    ],
+    attrs: [
+      ['pattern', 'string', true, [
+        'The file name to match. Wildcards:',
+        ['<code>*</code>', 'Any sequence, including none.'],
+        ['<code>?</code>', 'Any single character.'],
+        ['<code>#</code>', 'Any single digit.'],
+        'Note the difference from <code>source</code>: here <code>$</code> is literal and <code>?</code> is a wildcard.',
+      ]],
+    ],
+    examples: [
+      { what: 'One <b>exact</b> file',
+        rec: { type: 'filename', pattern: '$ATM.AUDIT.LOG' },
+        cases: [
+          { ctx: { filename: '$ATM.AUDIT.LOG' }, note: 'the file it names' },
+          { ctx: { filename: '$ATM.AUDIT.LOG1' }, note: 'a longer name — the pattern is anchored' },
+          { ctx: { filename: '$ATMXAUDITXLOG' }, note: 'the dots are literal separators' },
+        ] },
+      { what: 'Every file in a <b>subvolume</b>',
+        rec: { type: 'filename', pattern: '$ATM.AUDIT.*' },
+        cases: [
+          { ctx: { filename: '$ATM.AUDIT.LOG' }, note: 'one file' },
+          { ctx: { filename: '$ATM.AUDIT.LOG42' }, note: 'another' },
+          { ctx: { filename: '$ATM.OTHER.LOG' }, note: 'a different subvolume' },
+        ] },
+      { what: '<b>#</b> — numbered logs, on any volume',
+        rec: { type: 'filename', pattern: '*.NETARD.LOG##' },
+        cases: [
+          { ctx: { filename: '$DATA.NETARD.LOG42' }, note: 'two digits' },
+          { ctx: { filename: '$DATA.NETARD.LOG4' }, note: 'one digit' },
+          { ctx: { filename: '$DATA.NETARD.LOGAB' }, note: 'letters' },
+        ] },
+    ],
+  },
 
-  'source': `<b>Match the message's <i>source process</i> against a wildcard pattern.</b> Source is the originating process name as captured by the NETARD AUDIT parser (16-byte ASCII process identifier — e.g. <code>PIA^A910</code>, <code>ACQ23</code>). Wildcards: <b>$</b> matches a single alphanumeric character, <b>#</b> matches a single digit, <b>*</b> matches any sequence. Anchored at both ends.
-<div class="me-rh-flds">pattern — e.g. <b>PIA^$910</b> or <b>*</b> for catch-all<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
-A specific pattern requires the message to carry a source field. If the field is missing the recognizer fails (no false positives). <b>*</b> always matches.
-<div class="me-rh-exs"><b>Examples:</b> exact acquirer → <code>PIA^A910</code> &nbsp;|&nbsp; any acquirer node → <code>PIA^$910</code> &nbsp;|&nbsp; numbered acquirers ACQ00–ACQ99 → <code>ACQ##</code> &nbsp;|&nbsp; any PIA process → <code>PIA*</code> &nbsp;|&nbsp; catch-all → <code>*</code></div>`,
-
-  'destination': `<b>Match the message's <i>destination process</i> against a wildcard pattern.</b> Destination is the receiving process name as captured by the NETARD AUDIT parser. Wildcards: <b>$</b> single alphanum, <b>#</b> single digit, <b>*</b> any sequence.
-<div class="me-rh-flds">pattern — e.g. <b>PI$^SWITCH</b> or <b>*</b> for catch-all<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
-A specific pattern requires the message to carry a destination field. If the field is missing the recognizer fails. <b>*</b> always matches.
-<div class="me-rh-exs"><b>Examples:</b> exact switch → <code>PIA^SWITCH</code> &nbsp;|&nbsp; switch on any node → <code>PI$^SWITCH</code> &nbsp;|&nbsp; any process on a node → <code>PIA^*</code> &nbsp;|&nbsp; catch-all → <code>*</code></div>`,
-
-  'filename': `<b>Match the message's source file against a Guardian-style wildcard pattern.</b> Filename uses the Tandem / NonStop convention <code>$VOLUME.SUBVOL.FILENAME</code> — volume starts with a literal <code>$</code>, components are 1–8 alphanumeric characters separated by literal <code>.</code>. Wildcards: <b>*</b> any sequence, <b>?</b> any single character, <b>#</b> any single digit.
-<div class="me-rh-flds">pattern — e.g. <b>$VOL.SUBVOL.FILE</b> or <b>*</b> for catch-all<br>id &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— optional label</div>
-A specific pattern requires the message to carry a filename. If absent the recognizer fails. <b>*</b> always matches.
-<div class="me-rh-exs"><b>Examples:</b> exact audit file → <code>$ATM.AUDIT.LOG</code> &nbsp;|&nbsp; any file in subvol → <code>$ATM.AUDIT.*</code> &nbsp;|&nbsp; numbered NETARD logs → <code>*.NETARD.LOG##</code> &nbsp;|&nbsp; catch-all → <code>*</code></div>`,
+  'byte':  { hidden: true, desc: ['An alias for <code>uint8</code>.', 'Same evaluator, same attributes. Stored specs keep the spelling they were written with; the form shows it as "uint8 / byte".'],
+             useWhen: ['Never in a new spec — pick <code>uint8</code>.'], attrs: [], examples: [] },
+  'word':  { hidden: true, desc: ['An alias for <code>uint16</code>.', 'Same evaluator, same attributes.'],
+             useWhen: ['Never in a new spec — pick <code>uint16</code>.'], attrs: [], examples: [] },
+  'dword': { hidden: true, desc: ['An alias for <code>uint32</code>.', 'Same evaluator, same attributes.'],
+             useWhen: ['Never in a new spec — pick <code>uint32</code>.'], attrs: [], examples: [] },
 };
 
-// Recognizers section "?" — opens an inline reference panel that mirrors the
-// Parse Spec help (same .me-ps-help* styling): clickable rows of recognizer
-// types, with the existing _REC_HELP HTML rendered as the detail.
-const _REC_HELP_META = [
-  ['literal',        'Match exact bytes at a fixed offset',                            'offset, encoding, value'],
-  ['isBinary',       'Non-ASCII presence check over a byte range (no value)',          'offset, length'],
-  ['isAscii',        'Printable ASCII check over a byte range (no value)',             'offset, length'],
-  ['isEbcdic',       'Printable EBCDIC check over a byte range (no value)',            'offset, length'],
-  ['isNumeric',      'Digit-only check, no value compared',                            'offset, length, encoding'],
-  ['isAlphabetic',   'Letters-only check, no value compared',                          'offset, length, encoding'],
-  ['isAlphanumeric', 'Letters + digits check, no value compared',                      'offset, length, encoding'],
-  ['uint8',          'Single byte check at offset (eq / min / max / mask)',            'offset, mask, eq, min, max'],
-  ['uint16',         '2-byte integer check (be/le, eq / min / max)',                   'offset, endian, eq, min, max'],
-  ['uint32',         '4-byte integer check (be/le, eq / min / max)',                   'offset, endian, eq, min, max'],
-  ['greater-than',   'Decoded byte count must be strictly greater than N',            'value'],
-  ['less-than',      'Decoded byte count must be strictly less than N',               'value'],
-  ['mti',            'ISO 8583 MTI match — 4 ASCII bytes with digit rules',            'offset, value'],
-  ['bitmap',         'Check a specific ISO 8583 DE bit is on/off',                     'offset, bit, value'],
-  ['regex',          'JavaScript regex against ASCII bytes',                           'pattern'],
-  ['hex-density',    'Fraction of bytes that are hex chars must meet a threshold',     'encoding, min'],
-  ['oct-density',    'Fraction of bytes that are octal chars must meet a threshold',   'encoding, min'],
-  ['length-payload', 'Read a length field and verify it matches actual payload size',  'offset, encoding, payload offset, incl. self'],
-  ['flag-payload',   'Read a flag field, check non-zero, optionally validate payload', 'offset, encoding, payload offset, payload length'],
-  ['source',         'Match the source process name (wildcards $ # *)',                'pattern'],
-  ['destination',    'Match the destination process name (wildcards $ # *)',           'pattern'],
-  ['filename',       'Match the source filename $VOL.SUBVOL.FILE (wildcards * ? #)',   'pattern'],
-].sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+// Every recognizer accepts these, so they are appended to each type's own
+// attribute table rather than repeated twenty-two times above.
+const _REC_COMMON_ATTRS = [
+  ['id', 'string', false, [
+    'A label shown in the recognizer row, for readability only.',
+    'It has no effect on matching. Use it when a list of rules would otherwise be a column of offsets.',
+  ]],
+];
 
+// Recognizers section "?" — an inline reference with the same structure and the
+// same styling as the Parse Spec help: an index you click, then a detail pane
+// with the description, an attribute table that filters the examples, and the
+// examples themselves.
+//
+// The index is DERIVED from _REC_HELP. It used to be a hand-written table keyed
+// by display name — `isBinary` where the help was keyed `binary` — so six of the
+// twenty-two rows looked clickable and did nothing at all.
 function _meRecHelpHtml() {
-  const rows = _REC_HELP_META.map(([type, purpose, attrs]) =>
-    `<tr onclick="_meRecHelpSelect('${type}')" data-rec="${type}">` +
-    `<td class="me-ps-help-block">${type}</td>` +
-    `<td>${purpose}</td>` +
-    `<td class="me-ps-help-dim">${attrs}</td></tr>`
-  ).join('');
+  const rows = Object.keys(_REC_HELP)
+    .filter(t => !_REC_HELP[t].hidden)
+    .sort((a, b) => _recTypeLabel(a).localeCompare(_recTypeLabel(b), undefined, { sensitivity: 'base' }))
+    .map(t => {
+      const info  = _REC_HELP[t];
+      const attrs = info.attrs.length ? info.attrs.map(a => a[0]).slice(0, 4).join(', ') : '(none)';
+      const lead  = Array.isArray(info.desc) ? info.desc[0] : info.desc;
+      return `<tr onclick="_meRecHelpSelect('${t}')" data-rec="${t}">` +
+        `<td class="me-ps-help-block">${_recTypeLabel(t)}</td>` +
+        `<td>${lead}</td>` +
+        `<td class="me-ps-help-dim">${attrs}</td></tr>`;
+    }).join('');
   const thead = '<tr><th>Recognizer</th><th>Purpose</th><th>Attributes</th></tr>';
   return `<div class="me-ps-help-tbl-wrap"><table class="me-ps-help-table">` +
     `<thead>${thead}</thead><tbody>${rows}</tbody></table></div>` +
     `<div class="me-ps-help-detail" id="me-rec-help-detail"></div>`;
 }
 
+// Which attributes an example demonstrates, read off the recognizer itself so
+// the two can never disagree — the same trick _mePsHelpExAttrs plays.
+function _meRecHelpExAttrs(ex) {
+  return new Set(Object.keys((ex && ex.rec) || {}).filter(k => k !== 'type'));
+}
+
+// Run one case through the real detection engine. Nothing is described here
+// that the engine did not just do.
+function _meRecHelpRun(rec, c) {
+  try {
+    const bytes = (String(c.payload || '').replace(/\s+/g, '').match(/../g) || [])
+      .map(b => parseInt(b, 16));
+    const res = _fmtTestSpecs([{ name: 'HELP', recognizers: [rec] }], bytes, c.ctx || null);
+    return !!(res && res[0] && res[0].passed);
+  } catch (e) { return false; }
+}
+
+// The byte span a rule inspects, taken from the rule itself. Length rules and
+// the metadata rules read no fixed window, and say so by returning nothing.
+function _meRecHelpSpan(rec) {
+  const len = _meRecByteLen(rec);
+  if (len == null || !(len > 0) || rec.offset == null) return '';
+  const off = rec.offset || 0;
+  return `${off}–${off + len - 1}`;
+}
+
+function _meRecHelpExampleHtml(ex, i) {
+  const text = JSON.stringify(ex.rec, null, 2);
+  const span = _meRecHelpSpan(ex.rec);
+  let out = `<div class="me-ps-help-ex"><div class="me-ps-help-ex-title">`
+    + (Number.isInteger(i) ? `<span class="me-ps-ex-num">Example ${i + 1}</span>` : '')
+    + `<span class="me-ps-ex-what">${ex.what}</span></div>`;
+  out += `<div class="me-ps-ex-lbl">Recognizer</div>`
+    + `<pre class="me-ps-help-snippet">${_meHighlightJsonc(text)}`
+    + `<button class="me-ps-help-copy" title="Copy this example" data-copy="${_escHtml(text)}"`
+    + ` onclick="_mePsCopyExample(this)">⧉</button></pre>`;
+  const rows = (ex.cases || []).map(c => {
+    const passed = _meRecHelpRun(ex.rec, c);
+    let input = '';
+    if (c.payload) {
+      const bs = c.payload.replace(/\s+/g, '').match(/../g) || [];
+      input += `<div class="me-ps-ex-bytes">`
+        + bs.map(b => `<span>${b.toUpperCase()}</span>`).join('') + `</div>`;
+    } else if (!c.ctx) {
+      input += `<span class="me-ps-help-dim">(empty)</span>`;
+    }
+    if (c.ctx) {
+      const ks = Object.keys(c.ctx);
+      input += ks.length
+        ? `<div>${ks.map(k => `<span class="me-ps-help-aname">${_escHtml(k)}</span> = ${_escHtml(String(c.ctx[k]))}`).join('<br>')}</div>`
+        : `<span class="me-ps-help-dim">(no context)</span>`;
+    }
+    return `<tr><td>${input}</td><td>${c.note || ''}</td>`
+      + `<td class="${passed ? 'me-rec-ex-yes' : 'me-rec-ex-no'}">${passed ? 'match' : 'no match'}</td></tr>`;
+  }).join('');
+  out += `<div class="me-ps-ex-lbl">Result <span class="me-ps-help-dim">— produced by running the recognizer above`
+    + (span ? `, which reads bytes ${span}` : '') + `</span></div>`
+    + `<table class="me-ps-help-atbl"><thead><tr><th>Input</th><th></th><th>Verdict</th></tr></thead>`
+    + `<tbody>${rows || '<tr><td colspan="3">(no cases)</td></tr>'}</tbody></table>`;
+  return out + `</div>`;
+}
+
+// Selecting an attribute narrows the examples to the ones that use it.
+let _meRecHelpAttrSel = null;
+function _meRecHelpAttr(type, name) {
+  _meRecHelpAttrSel = (_meRecHelpAttrSel === name) ? null : name;
+  _meRecHelpSelect(type);
+}
+
 function _meRecHelpSelect(type) {
-  const det = document.getElementById('me-rec-help-detail');
-  const html = _REC_HELP[type];
-  if (!det || !html) return;
+  const info = _REC_HELP[type];
+  const det  = document.getElementById('me-rec-help-detail');
+  if (!info || !det) return;
   // Remembered, so a re-render does not blank the detail — the Field Map help
   // has always done this and the recognizer help never did.
   if (_meState) _meState.recHelpSel = type;
   document.querySelectorAll('#me-rec-help .me-ps-help-table tbody tr').forEach(tr =>
     tr.classList.toggle('me-ps-sel', tr.dataset.rec === type)
   );
+  const attrRows = info.attrs.concat(_REC_COMMON_ATTRS).map(([name, atype, req, desc]) => {
+    const sel = _meRecHelpAttrSel === name ? ' me-ps-sel' : '';
+    return `<tr class="me-ps-attr-row${sel}" data-attr="${name}"` +
+      ` onclick="_meRecHelpAttr('${type}','${name}')" title="Show only the examples that use ${name}">` +
+      `<td class="me-ps-help-aname">${name}</td>` +
+      `<td class="me-ps-help-atype">${_escHtml(atype)}</td>` +
+      `<td>${req ? '<span class="me-ps-help-req">required</span>' : '<span class="me-ps-help-opt">optional</span>'}</td>` +
+      `<td>${_meHelpDescHtml(desc)}</td></tr>`;
+  }).join('');
+  const attrTbl = info.attrs.length
+    ? `<table class="me-ps-help-atbl"><thead><tr><th>Attribute</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${attrRows}</tbody></table>`
+    : `<p class="me-ps-help-dim" style="margin:0 0 8px">No attributes.</p>`;
+  const shown = _meRecHelpAttrSel
+    ? (info.examples || []).filter(ex => _meRecHelpExAttrs(ex).has(_meRecHelpAttrSel))
+    : (info.examples || []);
+  const exHead = _meRecHelpAttrSel
+    ? `<div class="me-ps-help-section-title">Examples using <span class="me-ps-help-aname">${_meRecHelpAttrSel}</span>`
+      + ` <button class="btn" onclick="_meRecHelpAttr('${type}','${_meRecHelpAttrSel}')">show all</button></div>`
+    : '';
+  const exHtml = exHead + (shown.length
+    ? shown.map((ex, i) => _meRecHelpExampleHtml(ex, i)).join('')
+    : `<div class="me-ps-help-dim">No example uses <b>${_meRecHelpAttrSel || ''}</b> yet.</div>`);
+  const guidanceHtml = Array.isArray(info.useWhen) && info.useWhen.length
+    ? `<div class="me-ps-help-section">
+         <div class="me-ps-help-section-title">Use when</div>
+         <ul class="me-ps-help-ul">${info.useWhen.map(b => `<li>${b}</li>`).join('')}</ul>
+       </div>`
+    : '';
+  const descBody = Array.isArray(info.desc)
+    ? `${info.desc[0]}<ul class="me-ps-help-ul">${info.desc.slice(1).map(x => `<li>${x}</li>`).join('')}</ul>`
+    : info.desc;
+  // The stored type is what a spec file contains; the label is what the form
+  // calls it. Show both when they differ, so a spec read in a text editor and
+  // the same rule read in the UI are recognisably the same thing.
+  const title = _recTypeLabel(type) === type ? type
+    : `${_recTypeLabel(type)} <span class="me-ps-help-dim">(stored as "${type}")</span>`;
   det.innerHTML =
-    `<div class="me-ps-help-detail-title">${type}</div>` +
-    `<div class="me-rec-help" style="background:transparent;border:none;padding:0">${html}</div>`;
+    `<div class="me-ps-help-detail-title">${title}</div>` +
+    `<div class="me-ps-help-detail-desc">${descBody}</div>` +
+    guidanceHtml + attrTbl + exHtml;
   det.classList.add('open');
 }
 

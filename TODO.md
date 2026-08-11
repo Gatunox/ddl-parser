@@ -582,10 +582,23 @@ inside the single pass it already makes over the file
 (`_AUDIT_WORKER_SRC`, which already reads each record's header into the index and
 posts progress every 2,000 records).
 
-**Consequence to enforce:** this only works for fields at a *static* offset —
-before any variable-length element (LLVAR, bitmap-driven DEs, the token area).
-`add-filter` must refuse a field it cannot locate statically, or mark it as slow,
-rather than letting the cost be discovered at 200k records.
+**What "resolvable" means — three tiers, not one.** The requirement is not that
+the offset is CONSTANT, only that it is reachable without a full parse:
+
+1. **Fixed-position fields** — offset known outright from the DDL declaration
+   order and PIC sizes. One byte compare.
+2. **Fields after a bitmap** — the offset depends on which DEs are present, so
+   **the filter carries the bitmap value as part of its definition**. That pins
+   the layout, and every DE's offset follows from it. A record whose bitmap
+   differs simply does not match, which is the same rule as any other filter: no
+   field, no cut. (This is the user's design; an earlier draft of this item
+   wrongly proposed refusing these fields outright.)
+3. **Fields after a variable-length element** (LLVAR / VLG) — the offset varies
+   per record, but it is reached by reading each length prefix and hopping, which
+   is a handful of reads rather than a DDL walk.
+
+What must still be refused, or flagged as slow, is anything that cannot be
+reached by one of those three — not "anything that is not at a constant offset".
 
 ### Identity and naming
 

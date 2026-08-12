@@ -8273,26 +8273,38 @@ function _netardExtractBytes(fmtLines, fmt) {
   };
   const _afterColon = (s, fbRe) => _afterColonAt(s, fbRe).text;
 
-  if (fmt === 'hex') {
-    // Detect the initial labeled block to find pattern width and H- position.
-    // In combined formats (H+E, E+H, H+E+A, etc.) the first N consecutive lines
-    // each carry a format prefix (H-, E-, A-, 0-). After that, groups of N lines
-    // repeat in the same order without prefixes. H- may be at any position 0..N-1.
-    let hPos = -1, width = 0;
+  // The rows that belong to ONE rendering of a combined record.
+  //
+  // NETARD prints combined output interleaved: the first N lines each carry a
+  // format prefix (H- A- E- 0-), and after that groups of N lines repeat in the
+  // same order with no prefix at all. Picking out one rendering means striding
+  // by N from that rendering's own position — anything else lands on a
+  // neighbour's continuation line.
+  //
+  // Only the hex branch knew this. On a combined record with no H- row the other
+  // branches read each other's lines: an A-/E- record had its EBCDIC continued
+  // from the ASCII row, so the glyph names "p s r p" were decoded as EBCDIC and
+  // became 97 A2 99 97. Returns null when this is not an interleaved block, and
+  // the caller keeps its single-format walk.
+  const _fmtRowIdxs = ownRe => {
+    let pos = -1, width = 0;
     for (let i = 0; i < lines.length; i++) {
-      if (/^[HAEO0]-/i.test(lines[i])) {
-        if (/^H-/i.test(lines[i]) && hPos < 0) hPos = i;
-        width++;
-      } else break;
+      if (/^[HAEO0]-/i.test(lines[i])) { if (ownRe.test(lines[i]) && pos < 0) pos = i; width++; }
+      else break;
     }
+    if (!(width > 1 && pos >= 0)) return null;
+    const out = [];
+    for (let g = 0; g + pos < lines.length; g += width) out.push(g + pos);
+    return out;
+  };
 
-    if (width > 1 && hPos >= 0) {
+  if (fmt === 'hex') {
+    const idxs = _fmtRowIdxs(/^H-/i);
+    if (idxs) {
       // ── Multi-format: extract only H- rows ───────────────────────────────
-      { const d = _afterColonAt(lines[hPos], /^H-\s+/i); add(_netardHexTokens(d.text), hPos, d.off); }
-      for (let g = width; g < lines.length; g += width) {
-        const li = g + hPos;
-        if (li >= lines.length) break;
-        { const d = _afterColonAt(lines[li]); add(_netardHexTokens(d.text), li, d.off); }
+      for (const li of idxs) {
+        const d = _afterColonAt(lines[li], li === idxs[0] ? /^H-\s+/i : undefined);
+        add(_netardHexTokens(d.text), li, d.off);
       }
     } else {
       // ── Single H- format: original logic ─────────────────────────────────
@@ -8344,12 +8356,22 @@ function _netardExtractBytes(fmtLines, fmt) {
     }
   } else if (fmt === 'octal') {
     let active = false, byteMode = null;
+    // Tokens carry their column. The '--' end marker is blanked in place rather
+    // than removed, so every remaining column still matches the printed line.
+    const octToks = str => [...str.replace(/-/g, ' ').matchAll(/[0-7]{3,6}/g)]
+      .map(m => ({ t: m[0], c: m.index }));
+    const oIdxs = _fmtRowIdxs(/^0-/i);
+    if (oIdxs) {
+      for (const li of oIdxs) {
+        const d = _afterColonAt(lines[li], li === oIdxs[0] ? /^0-\s+/i : undefined);
+        const toks = octToks(d.text);
+        if (byteMode === null && toks.length) byteMode = toks[0].t.length <= 3;
+        add(_netardOctalTokens(toks, byteMode), li, d.off);
+      }
+      return { bytes, lineIdx, byteCol, byteWid };
+    }
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
-      // Tokens carry their column. The '--' end marker is blanked in place rather
-      // than removed, so every remaining column still matches the printed line.
-      const octToks = str => [...str.replace(/-/g, ' ').matchAll(/[0-7]{3,6}/g)]
-        .map(m => ({ t: m[0], c: m.index }));
       if (/^0-\s/i.test(l)) {
         active = true;
         const d = _afterColonAt(l, /^0-\s+/i);
@@ -8367,6 +8389,14 @@ function _netardExtractBytes(fmtLines, fmt) {
     const pfxRe    = isEbcdic ? /^E-\s/i : /^A-\s/i;
     const pfxFbRe  = isEbcdic ? /^E-\s+/i : /^A-\s+/i;
     const ctrl     = isEbcdic ? _EBCDIC_CTRL : _ASCII_CTRL;
+    const cIdxs = _fmtRowIdxs(pfxRe);
+    if (cIdxs) {
+      for (const li of cIdxs) {
+        const d = _afterColonAt(lines[li], li === cIdxs[0] ? pfxFbRe : undefined);
+        add(_netardCtrlData(d.text, ctrl, isEbcdic), li, d.off);
+      }
+      return { bytes, lineIdx, byteCol, byteWid };
+    }
     let active = false;
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
@@ -15659,7 +15689,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.8.1';
+const APP_VERSION  = '1.21.8.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

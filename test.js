@@ -5895,6 +5895,63 @@ test('a COMBINED H-/A-/E- record still maps each byte to its hex characters', ()
   assert.deepStrictEqual(r.bytes, hexOnly, 'the combined record decodes to the same bytes');
 });
 
+test('a COMBINED record with no H- row reads its OWN rows, not its neighbour\'s', () => {
+  // The samples file carries three combined records: A-/E-, H-/E-, and
+  // H-/A-/E-. Only the hex branch knew that combined output is INTERLEAVED —
+  // first N prefixed lines, then groups of N repeating in the same order — so
+  // the two with an H- row were fine and the A-/E- one was not.
+  //
+  // Reading it as EBCDIC took row 1 (the real E-) and then row 2, which is the
+  // ASCII continuation: the glyph names "p s r p" were decoded as EBCDIC and
+  // came out 97 A2 99 97. Reading it as ASCII stopped after row 0 — 13 bytes of
+  // 51 — because row 1's E- prefix cleared the active flag.
+  const rows = netMk([
+    'A-    0:   p   x    p   p  STX      NUL NUL  NUL NUL  NUL NUL  EOT NUL',
+    'E-         0  8     0  0     b DS   NULNUL    80NUL   NULNUL    PFNUL',
+    '      7: NUL NUL  NUL NUL  NUL NUL    p   s    r   p    p   x    r   r',
+    '         NULNUL   NULNUL   NULNUL     0  3     2  0     0  8     2  2',
+  ]);
+  const eb = netardExtractBytes(rows, 'ebcdic');
+  deepEq([...new Set(eb.lineIdx)], [1, 3], 'EBCDIC reads the E- row and ITS continuation');
+  const asc = netardExtractBytes(rows, 'ascii');
+  deepEq([...new Set(asc.lineIdx)], [0, 2], 'ASCII reads the A- row and ITS continuation');
+  // Both renderings describe one message, so the EBCDIC one must agree with the
+  // H- rendering of the same record byte for byte.
+  // Array.from: these come from the VM sandbox, so they carry ITS Array
+  // prototype and deepStrictEqual would reject them against a local array on
+  // identity alone, whatever the numbers said.
+  const ref = Array.from(netardExtractBytes(NET_SAMPLES.hex, 'hex').bytes);
+  const n = Math.min(eb.bytes.length, ref.length);
+  assert.ok(n >= 28, `expected both continuation rows to be read, got ${eb.bytes.length} bytes`);
+  deepEq(eb.bytes.slice(0, n), ref.slice(0, n), 'the EBCDIC rendering decodes to the same message');
+  // The ASCII rendering is lossy — NETARD strips the high bit — so it cannot
+  // equal the wire bytes. It must still cover the record, not stop at row 0.
+  assert.ok(asc.bytes.length >= 27, `ASCII stopped after ${asc.bytes.length} bytes`);
+  eq(asc.bytes[0], ref[0] & 0x7f, 'and it is the high-bit-stripped form of the same byte');
+});
+
+test('an octal rendering inside a combined record reads its own rows too', () => {
+  // CONSTRUCTED, not captured: the samples file has no combined record carrying
+  // a 0- row, so this applies the documented interleave rule — N prefixed lines,
+  // then groups of N in the same order — to the file's real H- and 0- samples.
+  // Without it the octal branch would keep the same defect the other two had,
+  // with nothing to reveal it.
+  const rows = netMk([
+    'H-    0: F0 F8    F0 F0    82 20    00 00    80 00    00 00    04 00',
+    '0-       170370   170360   101040   000000   100000   000000   002000',
+    '      7: 00 00    00 00    00 00    F0 F3    F2 F0    F0 F8    F2 F2',
+    '         000000   000000   000000   170363   171360   170370   171362',
+  ]);
+  const oct = netardExtractBytes(rows, 'octal');
+  deepEq([...new Set(oct.lineIdx)], [1, 3], 'octal reads the 0- row and ITS continuation');
+  const hex = netardExtractBytes(rows, 'hex');
+  deepEq([...new Set(hex.lineIdx)], [0, 2], 'and hex still reads only its own');
+  const n = Math.min(oct.bytes.length, hex.bytes.length);
+  assert.ok(n >= 28, `both continuation rows must be read, got ${oct.bytes.length}/${hex.bytes.length}`);
+  deepEq(oct.bytes.slice(0, n), Array.from(hex.bytes).slice(0, n),
+    'the two renderings of one record decode to the same bytes');
+});
+
 test('the char map uses each byte\'s own width, not a hardcoded 2', () => {
   // The map is built inline in parseNetardLog, so this is a source check: an
   // octal word is 6 characters and a control name 1..3, and assuming 2 would

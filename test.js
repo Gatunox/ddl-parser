@@ -147,6 +147,7 @@ _t.detectFormat       = detectFormat;
 _t.isHexAsciiLine     = isHexAsciiLine;
 _t.hexAsciiStartCol   = hexAsciiStartCol;
 _t.extractBytes       = extractBytes;
+_t.buildByteCharMap   = buildByteCharMap;
 _t.stripJsonc         = _stripJsonc;
 _t.formatJsonc        = _formatJsonc;
 _t.compactJsonc       = _compactJsonc;
@@ -940,6 +941,73 @@ test('recognizes HEXASCII/Tandem dump lines and start column', () => {
   eq(hexAsciiStartCol(text), 6, 'start column includes address prefix after trimStart');
   eq(detectFormat(text), 'tandem-dump', 'format');
   deepEq(extractBytes(text, 'tandem-dump'), [0x30, 0x31, 0x32, 0x33], 'bytes');
+});
+
+// A real dump, pasted on its own. Right-aligned addresses, the ASCII column
+// held in one place by variable padding, and a short final line — the shape
+// every one of these tests used to be written without.
+const HEXASCII_DUMP = [
+  '              0: F0F8 F0F0 8220 0000 8000 0000 0400 0000  [..... ..........]',
+  '             16: 0000 0000 F0F3 F2F0 F0F8 F2F0 F1F9 F0F1  [................]',
+  '             32: F0F3 F7F6 F1F0 F9F0 F0F0 F0F0 F1F2 F0F5  [................]',
+  '             48: F2F7 F0                                  [...]',
+].join('\n');
+
+test('a HEXASCII line is recognised however wide its padding is', () => {
+  // The gap before the ASCII column is padding that keeps the bracket in one
+  // place, so it is one space on a full line and thirty-four on a short one.
+  // Requiring exactly one space rejected every line of every real dump, and the
+  // text then fell through to plain 'ascii' — bytes and highlighting both wrong.
+  for (const line of HEXASCII_DUMP.split('\n'))
+    assert.ok(isHexAsciiLine(line), `not recognised: ${JSON.stringify(line.slice(0, 30))}…`);
+  eq(detectFormat(HEXASCII_DUMP), 'tandem-dump', 'and the file is a dump, not ascii');
+  // Still strict about the things that make it a dump.
+  assert.ok(!isHexAsciiLine('   0: F0F8 F0F0  [xxx]'), 'ASCII column must match the byte count');
+  assert.ok(!isHexAsciiLine('   0: F0F8 F0F0'), 'no ASCII column at all is not this format');
+  assert.ok(!isHexAsciiLine('just some text here'), 'prose is not a dump line');
+});
+
+test('every byte of a pasted HEXASCII dump maps to its own characters', () => {
+  const bytes = extractBytes(HEXASCII_DUMP, 'tandem-dump');
+  const map   = sandbox._t.buildByteCharMap(HEXASCII_DUMP, 'tandem-dump', 0);
+  eq(bytes.length, 51, 'the record is 51 bytes');
+  eq(map.length, bytes.length, 'and every one of them is mapped — including the last, odd one');
+  for (let i = 0; i < bytes.length; i++) {
+    const txt = HEXASCII_DUMP.slice(map[i].s, map[i].e);
+    eq(txt.length, 2, `byte ${i} spans two characters, not "${txt}"`);
+    eq(parseInt(txt, 16), bytes[i], `byte ${i}: "${txt}" re-reads as itself`);
+    // The ASCII column is mapped too, one character per byte.
+    assert.ok(map[i].ascii, `byte ${i} has no ASCII column entry`);
+    eq(map[i].ascii.e - map[i].ascii.s, 1, `byte ${i} maps to one ASCII character`);
+  }
+  // The address is never data. Byte 16 opens line 2, whose address is "16".
+  const line2 = HEXASCII_DUMP.split('\n')[1];
+  const at16  = HEXASCII_DUMP.slice(map[16].s, map[16].e);
+  eq(at16, '00', 'byte 16 is the data at the start of line 2');
+  assert.ok(map[16].s > HEXASCII_DUMP.indexOf(line2) + line2.indexOf(':'),
+    'and it sits past that line\'s own colon, not the first line\'s');
+});
+
+test('each dump line is measured by its OWN address, not the first line\'s', () => {
+  // The address column is right-aligned, so a measurement taken once at the top
+  // of the file is wrong for every line whose address is a different width. On
+  // an ordinary dump the two errors cancel — the group scan re-finds the hex at
+  // a correspondingly later index — which is why this went unnoticed. It stops
+  // cancelling as soon as the leftover is itself a pair of hex digits: here the
+  // first line's "0:" is three characters and the second's "10000:" is seven, so
+  // a file-wide measurement leaves "00" in front of the data and invents a byte
+  // that is not in the record.
+  const wide = [
+    '        0: 4142 4344  [ABCD]',
+    '    10000: 4546 4748  [EFGH]',
+  ].join('\n');
+  const bytes = extractBytes(wide, 'tandem-dump');
+  const map   = sandbox._t.buildByteCharMap(wide, 'tandem-dump', 0);
+  deepEq(bytes, [0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48], 'eight bytes, no phantom');
+  eq(map.length, bytes.length, 'and no phantom entry in the map either');
+  for (let i = 0; i < bytes.length; i++)
+    eq(parseInt(wide.slice(map[i].s, map[i].e), 16), bytes[i],
+       `byte ${i} points at the characters that produced it`);
 });
 
 test('detects ASCII ISO before hex-ratio heuristic', () => {
@@ -5709,6 +5777,18 @@ const NET_SAMPLES = {
     'E-    0:   0  8     0  0     b DS   NULNUL   80NUL   NULNUL    PFNUL',
     '      7: NULNUL   NULNUL   NULNUL     0  3    2  0     0  8     2  1',
   ]),
+  // The format the loop below used to skip, because this key was not here.
+  // Not built with netMk: the address column is RIGHT-aligned, so the parser
+  // hands each line a different `indent` and every content starts at the first
+  // address digit. Flattening that to one indent would hide the very thing that
+  // was broken. These are the values parseNetardLog produces for the HEXASCII
+  // record in test/Message-Tests/Message Formats.txt.
+  hexascii: [
+    { content: '0: F0F8 F0F0 8220 0000 8000 0000 0400 0000  [..... ..........]',  charStart: 0,   indent: 14 },
+    { content: '16: 0000 0000 F0F3 F2F0 F0F8 F2F0 F1F9 F0F1  [................]', charStart: 100, indent: 13 },
+    { content: '32: F0F3 F7F6 F1F0 F9F0 F0F0 F0F0 F1F2 F0F5  [................]', charStart: 200, indent: 13 },
+    { content: '48: F2F7 F0                                  [...]',              charStart: 300, indent: 13 },
+  ],
 };
 
 for (const fmt of Object.keys(NET_SAMPLES)) {
@@ -5741,6 +5821,42 @@ test('hex: the span is exactly the two characters of that byte', () => {
     const txt  = line.slice(r.byteCol[i], r.byteCol[i] + r.byteWid[i]);
     eq(parseInt(txt, 16), r.bytes[i], `byte ${i}: "${txt}" re-reads as itself`);
   }
+});
+
+test('hexascii: the span is exactly the two characters of that byte', () => {
+  // Reported: highlighting a HEXASCII record lit whole dump lines — address
+  // column, padding and all — instead of the two characters of the byte.
+  // _netardExtractBytes built the columns and then passed them as `dataOff`,
+  // which is a single number, while pushing bare byte values; `add` reads a
+  // position only off a {v,c,w} item, so every byte took the no-position path.
+  const r = netardExtractBytes(NET_SAMPLES.hexascii, 'hexascii');
+  eq(r.bytes.length, 51, 'all 51 bytes, including the odd one on the short line');
+  for (let i = 0; i < r.bytes.length; i++) {
+    const line = NET_SAMPLES.hexascii[r.lineIdx[i]].content;
+    const txt  = line.slice(r.byteCol[i], r.byteCol[i] + r.byteWid[i]);
+    eq(r.byteWid[i], 2, `byte ${i} is two characters wide`);
+    eq(parseInt(txt, 16), r.bytes[i], `byte ${i}: "${txt}" re-reads as itself`);
+  }
+  // The address digits are never data. Byte 16 opens the second line, whose
+  // address is "16" — the two characters that a shifted map would claim.
+  const l2 = NET_SAMPLES.hexascii[r.lineIdx[16]].content;
+  eq(l2.slice(r.byteCol[16], r.byteCol[16] + 2), '00', 'byte 16 is the data, not the address');
+  assert.ok(r.byteCol[16] > l2.indexOf(':'), 'and it sits past the colon');
+});
+
+test('every NETARD sub-format the detector can return has a sample', () => {
+  // hexascii was excluded from the loop above for as long as the loop existed —
+  // not by a passing assertion but by the absence of a key, on the strength of a
+  // comment that said hexascii was the one branch already tracking columns. It
+  // was the one branch that was not. A format with no sample is not covered, and
+  // nothing said so.
+  const returned = [...html.matchAll(/'netard-(\w+)'/g)].map(m => m[1])
+    .filter(f => f !== 'ruler');
+  const known = new Set(['hex', 'dump', 'oct', 'ebcdic', 'ascii']);
+  // Map the detector's names onto _netardExtractBytes's own vocabulary.
+  const asFmt = { hex: 'hex', dump: 'hexascii', oct: 'octal', ebcdic: 'ebcdic', ascii: 'ascii' };
+  const missing = [...new Set(returned)].filter(f => known.has(f) && !NET_SAMPLES[asFmt[f]]);
+  deepEq(missing, [], 'NETARD sub-formats with no sample, so no column coverage');
 });
 
 test('octal: a word span re-reads as the PAIR of bytes it produced', () => {

@@ -5372,9 +5372,16 @@ function isRawDumpLine(line) {
 function isHexAsciiLine(line) {
   const t = line.trim();
   const body = t.replace(/^[0-9A-Fa-f]+:\s*/, '');
-  const m = body.match(/^([0-9A-Fa-f]{4}(?:\s[0-9A-Fa-f]{4})*) \[(.+)\]$/);
+  // Groups of 4 hex chars, and a final group of 2 when the record ends on an
+  // odd byte. The gap before the ASCII column is PADDING that keeps the bracket
+  // in one column, so it is one space on a full line and many on a short one —
+  // insisting on exactly one space rejected every line of a real dump, which
+  // then fell through to plain 'ascii' detection.
+  const m = body.match(/^([0-9A-Fa-f]{4}(?:\s[0-9A-Fa-f]{4})*(?:\s[0-9A-Fa-f]{2})?)\s+\[(.+)\]$/);
   if (!m) return false;
-  return m[2].length === m[1].split(' ').length * 2;
+  // Count bytes, not groups: the short final group carries one, not two.
+  const nBytes = m[1].split(/\s+/).reduce((n, g) => n + g.length / 2, 0);
+  return m[2].length === nBytes;
 }
 
 // Return the number of chars to skip after trimStart() to reach first hex digit.
@@ -5609,7 +5616,6 @@ function buildByteCharMap(text, format, textOffset) {
     }
 
   } else if (format === 'tandem-dump') {
-    const startCol = hexAsciiStartCol(text);
     let pos = off;
     for (const line of text.split('\n')) {
       const lineStart = pos;
@@ -5617,17 +5623,25 @@ function buildByteCharMap(text, format, textOffset) {
       const t = line.trim();
       if (!t) continue;
       const trimOff = lineStart + (line.length - line.trimStart().length);
-      let body = t.slice(startCol);
-      let bodyOff = trimOff + startCol;
+      // THIS line's address width, not the first line's. The address column is
+      // right-aligned, so once the leading spaces are gone "0: " and "16: " are
+      // different widths — one measurement taken from the top of the file
+      // cannot serve every line below it.
+      const startCol = hexAsciiStartCol(line);
+      const body = t.slice(startCol);
+      const bodyOff = trimOff + startCol;
       // Find ASCII bracket
       const bracketIdx = body.indexOf('[');
       const hexPart = bracketIdx >= 0 ? body.slice(0, bracketIdx).trimEnd() : body.replace(/\|.*$/, '').trimEnd();
       if (isHexAsciiLine(line)) {
         // New HEXASCII format: 4-char groups → build map entries with .ascii sub-ranges
         let lineByteIdx = 0;
-        for (const m of hexPart.matchAll(/[0-9A-Fa-f]{4}/g)) {
+        // A group is 4 hex chars, or 2 when the record ends on an odd byte.
+        // Matching only 4 silently dropped that last byte, leaving it with no
+        // highlight at all — the one byte at the end of every odd-length record.
+        for (const m of hexPart.matchAll(/[0-9A-Fa-f]{4}|[0-9A-Fa-f]{2}(?![0-9A-Fa-f])/g)) {
           const grpOff = bodyOff + m.index;
-          for (let b = 0; b < 2; b++) {
+          for (let b = 0; b < m[0].length / 2; b++) {
             const hexStart = grpOff + b * 2;
             const entry = { s: hexStart, e: hexStart + 2 };
             if (bracketIdx >= 0) {
@@ -8315,12 +8329,16 @@ function _netardExtractBytes(fmtLines, fmt) {
         if (!tok) { pos++; continue; }
         const t = tok[0];
         if (t.length % 2 !== 0) { pos += t.length; continue; }
-        const bs = [], cols = [];
-        for (let j = 0; j < t.length; j += 2) {
-          bs.push(parseInt(t.slice(j, j + 2), 16));
-          cols.push(pos + j);
-        }
-        add(bs, i, cols);
+        // `add` reads a position only from a {v,c,w} item; a plain number means
+        // "no position", which is the whole-line fallback. This branch computed
+        // the columns correctly and then threw them away — it passed them as
+        // `dataOff`, which is a single number, and pushed bare byte values. So
+        // every byte of every hexascii record mapped to its entire dump line,
+        // address column and padding included.
+        const items = [];
+        for (let j = 0; j < t.length; j += 2)
+          items.push({ v: parseInt(t.slice(j, j + 2), 16), c: pos + j, w: 2 });
+        add(items, i);
         pos += t.length;
       }
     }
@@ -15641,7 +15659,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.8.0';
+const APP_VERSION  = '1.21.8.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

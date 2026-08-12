@@ -4354,6 +4354,50 @@ function ovrMsg(manual) {
   };
 }
 
+test('a row\'s error FLAG is not printed as the word "true"', () => {
+  // Reported from a real parse: "Bit 7 — no definition in DDLtrue". `error`
+  // carries a message on parse-spec rows and is a bare boolean on the bitmap
+  // ones, and the renderer printed whatever it held, glued to the description.
+  // renderFieldTable writes into #resContainer and returns nothing, so the
+  // markup has to be captured rather than read off a return value.
+  const prev = elStubs.resContainer;
+  const sink = { _h: '', set innerHTML(v) { this._h = String(v); }, get innerHTML() { return this._h; },
+    classList: { add(){}, remove(){}, toggle(){}, contains: () => false },
+    style: {}, querySelector: () => null, querySelectorAll: () => [] };
+  elStubs.resContainer = sink;
+  const render = f => {
+    sink._h = '';
+    renderFieldTable({
+      ...ovrMsg(true),
+      fields: [{ id: 'X', name: 'X', dataType: 'PIC X(2)', offset: 0, length: 2,
+                 value: 'v', rawHex: '4142', rawBytes: [0x41, 0x42],
+                 description: 'Bit 7 — no definition in DDL', ...f }],
+    });
+    return sink.innerHTML;
+  };
+  try {
+    const flag = render({ error: true });
+    assert.ok(/Bit 7 — no definition in DDL/.test(flag), 'the description still renders');
+    assert.ok(!/DDLtrue/.test(flag), 'the boolean flag leaked into the description');
+    assert.ok(!/c-row-err/.test(flag), 'a flag is not a row message');
+    assert.ok(/c-err/.test(flag), 'but the row is still marked as an error');
+    // A real message must still print — the fix must not silence the useful case.
+    const msg = render({ error: 'binding 0 could not be resolved' });
+    assert.ok(/binding 0 could not be resolved/.test(msg), 'a string error still shows');
+    assert.ok(/c-row-err/.test(msg), 'and it shows in the row-error style');
+    // `issue` is always a message, and keeps the break that separates it.
+    const iss = render({ issue: 'length ran past the message' });
+    assert.ok(/<br><span class="c-row-err">length ran past the message/.test(iss),
+      'an issue still renders under the description');
+    // Flag plus issue: the issue is the text, the flag stays invisible.
+    const both = render({ error: true, issue: 'real problem' });
+    assert.ok(/real problem/.test(both) && !/true<\/span>/.test(both),
+      'a flag alongside a real issue shows the issue, not the flag');
+  } finally {
+    if (prev === undefined) delete elStubs.resContainer; else elStubs.resContainer = prev;
+  }
+});
+
 console.log('\nmanual override — spec field_overrides must not leak into rendering');
 
 test('manual override: a same-named spec does NOT override the field', () => {

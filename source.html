@@ -11540,9 +11540,15 @@ function renderFieldTable(msg) {
     // rendered as a blank line. Standalone error rows (a DE with no DDL field)
     // show it as their whole description; a field that parsed but has a problem
     // shows it under the description, like `detail`.
-    const _rowMsg = f.error || f.issue;
+    // `error` carries a MESSAGE on parse-spec rows and is a bare FLAG on the
+    // bitmap ones (`error: true`), which the class above also reads. Printing
+    // whatever it holds put the word "true" flush against the description —
+    // "Bit 7 — no definition in DDLtrue". Only a string is text.
+    const _errMsg   = typeof f.error === 'string' ? f.error : '';
+    const _issueMsg = typeof f.issue === 'string' ? f.issue : '';
+    const _rowMsg   = _errMsg || _issueMsg;
     const errLine = _rowMsg
-      ? `${f.error ? '' : '<br>'}<span class="c-row-err">${esc(_rowMsg)}</span>` : '';
+      ? `${_errMsg ? '' : '<br>'}<span class="c-row-err">${esc(_rowMsg)}</span>` : '';
     const totalLen = f.valueLength !== undefined
       ? f.valueLength + ((f.lenPrefix && !f.lenPrefixOwnRow) ? f.lenPrefix.length : 0) : undefined;
     const lenCell    = totalLen !== undefined ? String(totalLen) : '';
@@ -15689,7 +15695,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.8.2';
+const APP_VERSION  = '1.21.8.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

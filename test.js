@@ -9268,6 +9268,90 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
 
+test('the audit record detail is a resizable pane, not a floating popup', () => {
+  // It was position:absolute at a fixed 220px, pinned to the bottom of the
+  // record list — so it covered the last rows and no drag could change it.
+  // It is a sibling in the same flex column now, sized like #ddlTreePane: the
+  // drag handler writes the element's own height, so the pane must not be
+  // absolutely positioned and must not grow on its own.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'))
+                 .replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = /\.audit-popup\s*\{([^}]*)\}/.exec(css);
+  assert.ok(rule, '.audit-popup rule is gone');
+  assert.ok(!/position\s*:\s*absolute/.test(rule[1]), 'the pane must not float over the list');
+  assert.ok(!/z-index/.test(rule[1]), 'an in-flow pane needs no stacking order');
+  assert.ok(/flex\s*:\s*none/.test(rule[1]), 'the pane carries its own size, so it must not flex');
+  assert.ok(/height\s*:\s*\d+px/.test(rule[1]), 'and it needs a default height to start from');
+  // The list has to be able to give the space back. A flex item defaults to
+  // min-height:auto, which floors it at its content height.
+  const list = /\.audit-record-list\s*\{([^}]*)\}/.exec(css);
+  assert.ok(list && /min-height\s*:\s*0/.test(list[1]),
+    'the record list must be allowed to shrink, or the pane is pushed off the bottom');
+  // Markup: the gutter sits between the list and the pane, in that order.
+  const iList = src.indexOf('id="auditRecordList"');
+  const iRez  = src.indexOf('id="auditDetailResizer"');
+  const iPane = src.indexOf('id="auditPopup"');
+  assert.ok(iRez > 0, 'no resizer between the list and the detail');
+  assert.ok(iList < iRez && iRez < iPane, 'the resizer must sit between the two, in DOM order');
+  assert.ok(/id="auditDetailResizer"[^>]*class="resizer-v"|class="resizer-v"[^>]*id="auditDetailResizer"/.test(src),
+    'a stacked split takes the horizontal bar (.resizer-v), the one that drags on Y');
+});
+
+test('the audit detail pane and its resizer are opened and closed together', () => {
+  // Five places read or wrote the pane's display directly. A handle left behind
+  // by a closed pane is a gutter you can drag with nothing on the far side of
+  // it — so both now go through one setter, and nothing else touches display.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const setter = psFnSource('_auditSetDetailOpen');
+  // Looking an element up is not moving it — the first version of this test
+  // asserted only that both ids appeared, and passed with the resizer's
+  // assignment deleted and its lookup left behind.
+  for (const [id, what] of [['auditPopup', 'pane'], ['auditDetailResizer', 'resizer']]) {
+    const v = new RegExp(`const (\\w+)\\s*=\\s*document\\.getElementById\\('${id}'\\)`).exec(setter);
+    assert.ok(v, `the setter does not look up the ${what}`);
+    assert.ok(new RegExp(`\\b${v[1]}\\.style\\.display\\s*=`).test(setter),
+      `the setter looks up the ${what} but never moves it`);
+  }
+  // No stragglers. Every lookup of the pane must live in a function that owns
+  // it — the two display helpers, the drag, and the three layout functions that
+  // read its height. Anywhere else is a place the resizer can drift out of sync.
+  const OWNERS = ['_auditDetailOpen', '_auditSetDetailOpen', 'initAuditDetailResizer',
+                  'saveLayout', 'loadLayout', 'resetLayout'];
+  const count = s => [...s.matchAll(/getElementById\('auditPopup'\)/g)].length;
+  const total   = count(src);
+  const inOwner = OWNERS.reduce((n, f) => n + count(psFnSource(f)), 0);
+  eq(inOwner, total, `every #auditPopup lookup must sit in one of: ${OWNERS.join(', ')}`);
+  // And display is written in exactly one of them.
+  const writers = OWNERS.filter(f => /style\.display\s*=/.test(psFnSource(f)));
+  deepEq(writers, ['_auditSetDetailOpen'], 'only the setter may write the pane display');
+  // And the close button still closes it, which is the one way this pane
+  // differs from the tree pane it is modelled on.
+  assert.ok(/onclick="auditClosePopup\(\)"/.test(src), 'the ✕ still closes the pane');
+  assert.ok(/_auditSetDetailOpen\(false\)/.test(psFnSource('auditClosePopup')),
+    'and closing goes through the setter, so the resizer goes with it');
+});
+
+test('the audit detail height survives a reload, and a layout reset', () => {
+  // Same round trip the tree pane width takes, and through the same key — a
+  // pane you can resize but that forgets on reload is worse than a fixed one.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/layout\.auditDetailHeight = auditPane\.style\.height/.test(psFnSource('saveLayout')),
+    'saveLayout does not record the height');
+  assert.ok(/auditPane\.style\.height = layout\.auditDetailHeight/.test(psFnSource('loadLayout')),
+    'loadLayout does not restore it');
+  assert.ok(/auditPane\.style\.height = ''/.test(psFnSource('resetLayout')),
+    'resetLayout leaves the pane at whatever it was dragged to');
+  // It rides in up_layout, so §13 gains no key it would have to document.
+  assert.ok(!/up_audit[a-z_]*/.test(src), 'the height must not take a storage key of its own');
+  // The drag must end in a save, or the height is only remembered until reload.
+  const rez = psFnSource('initAuditDetailResizer');
+  assert.ok(/saveLayout\(\)/.test(rez), 'the drag never persists what it changed');
+  assert.ok(/startH - \(ev\.clientY - startY\)/.test(rez),
+    'the pane grows UPWARD — dragging the gutter down must shrink it');
+  assert.ok(/Math\.max\(_AUDIT_DETAIL_MIN, Math\.min\(maxH/.test(rez), 'the drag is unclamped');
+});
+
 test('every collapsed panel title starts at the TOP of its rail', () => {
   // Reported: minimising DDL Definition dropped its title to the bottom of the
   // rail while Parse Results kept its at the top. Same rule, different result —

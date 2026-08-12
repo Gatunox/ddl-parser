@@ -1731,7 +1731,10 @@ td.c-err  { color: var(--accent2); }
   color:var(--text-very-dim); font-family:var(--font-mono); background:rgba(var(--accent-rgb),0.07);
   user-select:none;
 }
-.audit-record-list { flex:1; overflow-y:auto; }
+/* min-height:0 so the list can actually yield space to the detail pane below
+   it. A flex item defaults to min-height:auto, which floors it at its content
+   height — the list would have pushed the pane off the bottom instead. */
+.audit-record-list { flex:1; min-height:0; overflow-y:auto; }
 .audit-record-row {
   display:flex; flex-direction:column; padding:2px 8px 3px;
   border-bottom: var(--bw) solid rgba(255,255,255,0.03);
@@ -1790,12 +1793,17 @@ td.c-err  { color: var(--accent2); }
    the modal and the rows go back to being the same vertical list. Placement is
    set inline by _expPlaceColsDlg, the way showCtxMenu places the tree menu. */
 .audit-cfg-dialog.cfg-anchored { position:fixed; top:auto; right:auto; }
-/* Record detail popup */
+/* Record detail — a PANE below the record list, not a popup floating over it.
+   It was absolutely positioned at a fixed 220px, so it covered the bottom of
+   the list and could not be resized. Now it is a sibling in the same flex
+   column with a .resizer-v above it, the way #ddlTreePane sits beside the
+   editor: the drag handler sets this element's height directly, so the height
+   has to be on the element and the pane must not grow on its own.
+   The one difference from the tree pane is that this one can be closed. */
 .audit-popup {
-  position:absolute; left:0; right:0; bottom:0; height:220px;
+  flex: none; height: 220px; min-height: 0;
   background:var(--bg-panel); border-top: var(--bw) solid var(--accent);
-  display:flex; flex-direction:column; z-index:20;
-  box-shadow: var(--shadow-popup);
+  display:flex; flex-direction:column;
 }
 .audit-popup-hdr {
   display:flex; align-items:center; gap:6px; padding:4px 8px; flex-shrink:0;
@@ -2736,7 +2744,9 @@ th.me-fm-colhi{color:var(--accent);}
             </div>
             <!-- Record list -->
             <div id="auditRecordList" class="audit-record-list"></div>
-            <!-- Record detail popup (single-click) -->
+            <!-- Record detail pane (single-click). Shown and hidden together
+                 with its resizer by _auditSetDetailOpen — never separately. -->
+            <div class="resizer-v" id="auditDetailResizer" style="display:none"></div>
             <div id="auditPopup" class="audit-popup" style="display:none">
               <div class="audit-popup-hdr" ondblclick="auditCopyDumpToClipboard(event)" title="Double-click to copy dump to clipboard">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
@@ -12818,7 +12828,7 @@ function _auditApplyDump(u8, rec, recno) {
 
 function auditInspectRecord(filteredIdx) {
   const prev = _auditSt.selIdx;
-  const popupOpen = document.getElementById('auditPopup').style.display !== 'none';
+  const popupOpen = _auditDetailOpen();
   if (filteredIdx === prev && popupOpen) {
     auditClosePopup();
     _auditSt.selIdx = -1;
@@ -12835,7 +12845,7 @@ function auditInspectRecord(filteredIdx) {
     _auditApplyDump(new Uint8Array(buf), rec, recno);
     document.getElementById('auditPopupTitle').textContent =
       'Record ' + recno + ' — ' + rec.length + ' B — ' + _auditFmtTs(rec.tsBytes);
-    document.getElementById('auditPopup').style.display = 'flex';
+    _auditSetDetailOpen(true);
     requestAnimationFrame(_auditSyncToggleWidth);
     _auditSt._inspectBuf = buf;
   });
@@ -12856,10 +12866,56 @@ function auditNavPopup(delta) {
   auditInspectRecord(next);
 }
 
+// The detail pane and its resizer are one thing. Five places used to read or
+// write the pane's display directly; a handle left behind by a pane that had
+// closed would be a gutter you could drag with nothing on the other side of it.
+function _auditDetailOpen() {
+  const p = document.getElementById('auditPopup');
+  return !!p && p.style.display !== 'none';
+}
+function _auditSetDetailOpen(open) {
+  const pane = document.getElementById('auditPopup');
+  const rez  = document.getElementById('auditDetailResizer');
+  if (pane) pane.style.display = open ? 'flex'  : 'none';
+  if (rez)  rez.style.display  = open ? 'block' : 'none';
+}
+
 function auditClosePopup() {
-  document.getElementById('auditPopup').style.display = 'none';
+  _auditSetDetailOpen(false);
   _auditSt._inspectBuf = null;
   _auditPopupByteCharMap = null;
+}
+
+// Drag the gutter between the record list and the detail pane. Mirrors
+// initTreePaneResizer, on the other axis: the pane carries the size, the list
+// takes whatever is left, and the result goes through saveLayout.
+const _AUDIT_DETAIL_MIN = 80;
+function initAuditDetailResizer() {
+  const rez  = document.getElementById('auditDetailResizer');
+  const pane = document.getElementById('auditPopup');
+  if (!rez || !pane) return;
+  rez.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const startY = e.clientY, startH = pane.offsetHeight;
+    const host   = document.getElementById('auditBrowserReady');
+    // Leave the list a usable window whatever the browser is sized to, rather
+    // than a fixed ceiling that is wrong on both a laptop and a 4K screen.
+    const maxH = Math.max(_AUDIT_DETAIL_MIN, (host ? host.clientHeight : 600) - 120);
+    rez.classList.add('dragging');
+    const onMove = ev => {
+      // Dragging DOWN shrinks the pane, so the delta is subtracted.
+      pane.style.height =
+        Math.max(_AUDIT_DETAIL_MIN, Math.min(maxH, startH - (ev.clientY - startY))) + 'px';
+    };
+    const onUp = () => {
+      rez.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      saveLayout();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
 }
 
 function auditCopyDumpToClipboard(e) {
@@ -12887,7 +12943,7 @@ function auditToggleDumpMode() {
 
 function _auditSyncToggleWidth() {
   const btn = document.getElementById('auditDumpToggle');
-  if (!btn || document.getElementById('auditPopup')?.style.display === 'none') return;
+  if (!btn || !_auditDetailOpen()) return;
   btn.style.minWidth = '';
   const saved = btn.textContent;
   btn.textContent = 'ASCII'; const aw = btn.getBoundingClientRect().width;
@@ -15585,7 +15641,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.7.1';
+const APP_VERSION  = '1.21.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -15675,6 +15731,11 @@ function saveLayout() {
     // Tree pane width
     const treePane = document.getElementById('ddlTreePane');
     if (treePane && treePane.style.width) layout.treePaneWidth = treePane.style.width;
+    // Audit record-detail pane height. Rides in up_layout beside the tree pane
+    // rather than taking a storage key of its own — it is the same kind of
+    // thing, and §13 has one fewer key to stay honest about.
+    const auditPane = document.getElementById('auditPopup');
+    if (auditPane && auditPane.style.height) layout.auditDetailHeight = auditPane.style.height;
     // Hidden columns
     const container = document.getElementById('resContainer');
     if (container) {
@@ -15717,6 +15778,11 @@ function loadLayout() {
       const treePane = document.getElementById('ddlTreePane');
       if (treePane) { treePane.style.width = layout.treePaneWidth; requestAnimationFrame(_syncTreeW); }
     }
+    // Audit record-detail pane height
+    if (layout.auditDetailHeight) {
+      const auditPane = document.getElementById('auditPopup');
+      if (auditPane) auditPane.style.height = layout.auditDetailHeight;
+    }
     // Hidden columns
     if (Array.isArray(layout.hiddenCols)) {
       const container = document.getElementById('resContainer');
@@ -15755,6 +15821,9 @@ function resetLayout() {
   // Reset tree pane width to CSS default (170px)
   const treePane = document.getElementById('ddlTreePane');
   if (treePane) { treePane.style.width = ''; requestAnimationFrame(_syncTreeW); }
+  // Reset audit detail pane height to CSS default (220px)
+  const auditPane = document.getElementById('auditPopup');
+  if (auditPane) auditPane.style.height = '';
   // Show all columns
   const container = document.getElementById('resContainer');
   if (container) {
@@ -16968,8 +17037,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // whole app and stray letters fired actions. Arrows move between records.
     // Nothing else is touched.
     {
-      const _ap = document.getElementById('auditPopup');
-      if (_ap && _ap.style.display !== 'none') {
+      if (_auditDetailOpen()) {
         if (e.key === 'ArrowUp'   || e.key === 'ArrowLeft')  { e.preventDefault(); auditNavPopup(-1); return; }
         if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); auditNavPopup(1);  return; }
         return;
@@ -17075,6 +17143,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTree();
     _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
     initTreePaneResizer();
+    initAuditDetailResizer();
     initDropZones();
     _syncOverlayScroll();
     updateDDLEditorState();

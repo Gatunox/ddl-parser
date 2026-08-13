@@ -169,6 +169,7 @@ _t.meFmDeCellHtml      = _meFmDeCellHtml;
 _t.setFmVirt           = v => { _meFmVirt = v; };
 _t.meHtmlOverrides     = _meHtmlOverrides;
 _t.mePsLintWarns       = _mePsLintWarns;
+_t.mePsMatchBracket    = _mePsMatchBracket;
 _t.meItemBitmapIsSynthetic = _meItemBitmapIsSynthetic;
 _t.fmtDefaultSpecs     = window._fmtDefaultSpecs;
 _t.meFmRowHtml         = _meFmRowHtml;
@@ -5780,6 +5781,79 @@ test('a flat LEN + one leaf is unchanged — a leaf is a group of one', () => {
   eq(panRun('08').pan.valueLength, 8,  'LEN 08 still reads 8');
   eq(panRun('16').pan.valueLength, 16, 'LEN 16 still reads 16');
   eq(panRun('99').pan.valueLength, 19, 'and 99 is still capped at the declared 19');
+});
+
+// ── Bracket matching in the parse-spec editor ──────────────────────────────
+console.log('\nparse-spec bracket matching');
+
+const brk = (text, pos) => sandbox._t.mePsMatchBracket(text, pos);
+const brkPair = (text, pos) => { const m = brk(text, pos); return m ? [m.a, m.b] : null; };
+
+test('a bracket matches its partner from either side of it', () => {
+  const t = '[{"a":1}]';
+  deepEq(brkPair(t, 0), [0, 8], 'cursor ON the opening bracket');
+  deepEq(brkPair(t, 8), [8, 0], 'and on the closing one, looking back');
+  // The character AT the cursor wins over the one before it, which is how an
+  // editor behaves: at index 1 the cursor is sitting on the inner brace.
+  deepEq(brkPair(t, 1), [1, 7], 'the character at the cursor takes precedence');
+  // Past the last character there is nothing at the cursor, so it looks back —
+  // this is the "just after a bracket" case that matters in practice.
+  deepEq(brkPair(t, 9), [8, 0], 'just past a closing bracket still matches it');
+  deepEq(brkPair(t, 2), [1, 7], 'the inner pair, from inside it');
+});
+
+test('nesting is counted, not just the next bracket of the same kind', () => {
+  //          0123456789...
+  const t = '[[[]]]';
+  deepEq(brkPair(t, 0), [0, 5], 'outermost');
+  deepEq(brkPair(t, 1), [1, 4], 'middle');
+  deepEq(brkPair(t, 2), [2, 3], 'innermost');
+});
+
+test('the two bracket kinds do not pair with each other', () => {
+  const t = '{"a":[1,2]}';
+  deepEq(brkPair(t, 0), [0, 10], 'the brace pairs with the brace');
+  deepEq(brkPair(t, 5), [5, 9],  'and the bracket with the bracket');
+});
+
+test('a bracket inside a string or a comment is text, not structure', () => {
+  // The reason this is JSONC-aware rather than a plain scan.
+  const t = '{"a":"}"}';
+  deepEq(brkPair(t, 0), [0, 8], 'the } inside the string is skipped');
+  eq(brk(t, 6), null, 'and it matches nothing itself');
+  const c = '[ // ]\n]';
+  deepEq(brkPair(c, 0), [0, 7], 'a ] in a line comment is skipped');
+  const b = '[ /* ] */ ]';
+  deepEq(brkPair(b, 0), [0, 10], 'and in a block comment');
+});
+
+test('an unmatched bracket highlights nothing rather than guessing', () => {
+  eq(brk('[{"a":1}', 0), null, 'no closing bracket');
+  eq(brk('}', 0), null, 'a stray closer');
+  eq(brk('', 0), null, 'an empty document');
+});
+
+test('a position that is not a bracket matches nothing', () => {
+  const t = '[{"a":1}]';
+  eq(brk(t, 4), null, 'inside a key');
+  eq(brk(t, 6), null, 'on a value');
+});
+
+test('it works on a realistic nested parse spec', () => {
+  const t = JSON.stringify([
+    { 'read-ddl': { until: 'DE-54' } },
+    { 'read-tlv': { field: 'DE-55', len: 'F.LEN', tags: { '9F26': { field: 'ARQC' } } } },
+  ], null, 2);
+  const open = t.indexOf('[');
+  const m = brk(t, open);
+  assert.ok(m, 'the outermost bracket matches');
+  eq(t[m.b], ']', 'with a closing bracket');
+  eq(m.b, t.length - 1, 'the last character of the document');
+  // The tags object, deep inside, resolves to its own partner.
+  const tagsAt = t.indexOf('{', t.indexOf('"tags"'));
+  const tm = brk(t, tagsAt);
+  assert.ok(tm && t[tm.b] === '}', 'and so does a deeply nested one');
+  assert.ok(tm.b < t.length - 2, 'closing before the outer brackets');
 });
 
 console.log('\na length source is capped by the declared size');

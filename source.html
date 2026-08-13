@@ -683,6 +683,11 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 /* highlight token colours — NO font-weight changes (overlay technique requires
    uniform glyph advance widths; bold synthesis shifts widths and misaligns cursor) */
 .hl-comment      { color: #6a8a7a; }
+/* Bracket matching in the parse-spec editor. A ring, not a fill: these brackets
+   already carry syntax colour, and swapping the background would read as a
+   different token type rather than as "here is the partner". */
+.cm-ps-bracket   { outline: var(--bw-ctl) solid var(--accent); outline-offset: 1px;
+                   border-radius: 2px; background: rgba(var(--accent-rgb), 0.18); }
 .hl-cmd          { color: #8878c0; font-style: italic; }   /* ?Section ?Page etc — compiler directives, ignored by parser */
 .hl-kw           { color: var(--accent); }
 .hl-kw-reserved  { color: #e06c75; }          /* HPE DDL reserved keywords */
@@ -15715,7 +15720,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.10.1';
+const APP_VERSION  = '1.21.11.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19810,6 +19815,63 @@ function _mePsUnmountCM() {
 // exactly the JSONC the user typed, so nothing can go stale and nothing has to
 // be rewritten when an override changes.
 const _ME_PS_OVR_BLOCKS = /"(read-ddl|read-bitmap-fields|read-segment-fields)"/;
+// ── Bracket matching ────────────────────────────────────────────────────────
+// A deeply nested parse spec is hard to read because the block a bracket closes
+// can be forty lines away. Put the cursor on a bracket and its partner lights up.
+//
+// Written here rather than pulled from @codemirror/language: the bundle does not
+// ship bracketMatching, and a JSONC-aware match is a dozen lines given the
+// tokenizer already says which brackets are inside a string or a comment.
+
+// Bytes of the document that are string or comment content. A bracket in there
+// is text, not structure — "{" inside a description must not pair with anything.
+function _mePsMaskedPositions(text) {
+  const masked = new Uint8Array(text.length);
+  for (const t of _tokenizeJsonc(text)) {
+    if (t.cls === 'hl-val') continue;                 // numbers/true/false — no brackets
+    for (let i = t.from; i < t.to; i++) masked[i] = 1;
+  }
+  return masked;
+}
+
+// The bracket at `pos` (or immediately before it, so it works on either side of
+// one) and its partner. Returns null when there is no bracket there, or when it
+// is unmatched — an unmatched bracket highlights nothing rather than guessing.
+function _mePsMatchBracket(text, pos) {
+  const PAIR = { '{': '}', '[': ']', '}': '{', ']': '[' };
+  const masked = _mePsMaskedPositions(text);
+  let at = -1;
+  for (const p of [pos, pos - 1]) {
+    if (p >= 0 && p < text.length && !masked[p] && PAIR[text[p]]) { at = p; break; }
+  }
+  if (at < 0) return null;
+  const ch = text[at], want = PAIR[ch], forward = ch === '{' || ch === '[';
+  let depth = 0;
+  for (let i = at; forward ? i < text.length : i >= 0; i += forward ? 1 : -1) {
+    if (masked[i]) continue;
+    if (text[i] === ch) depth++;
+    else if (text[i] === want && !--depth) return { a: at, b: i };
+  }
+  return null;
+}
+
+function _mePsBracketExtension() {
+  const { ViewPlugin, Decoration, EditorView } = window.CM;
+  const mark = Decoration.mark({ class: 'cm-ps-bracket' });
+  const build = view => {
+    const sel = view.state.selection.main;
+    if (!sel.empty) return Decoration.none;
+    const m = _mePsMatchBracket(view.state.doc.toString(), sel.head);
+    if (!m) return Decoration.none;
+    const [lo, hi] = m.a < m.b ? [m.a, m.b] : [m.b, m.a];
+    return Decoration.set([mark.range(lo, lo + 1), mark.range(hi, hi + 1)]);
+  };
+  return ViewPlugin.fromClass(class {
+    constructor(view) { this.decorations = build(view); }
+    update(u) { if (u.docChanged || u.selectionSet) this.decorations = build(u.view); }
+  }, { decorations: v => v.decorations });
+}
+
 function _mePsOvrDecoExtension() {
   const { ViewPlugin, Decoration, RangeSetBuilder } = window.CM;
   const build = view => {
@@ -19881,6 +19943,7 @@ function _mePsMountCM(item) {
         placeholder('[ ]  // empty parse_spec — falls back to read-ddl ANY + token-area ANY'),
         _jsoncHighlightExtension(),
         _mePsOvrDecoExtension(),
+        _mePsBracketExtension(),
         EditorView.updateListener.of(u => {
           if (u.docChanged) _mePsChange(u.state.doc.toString());
         }),

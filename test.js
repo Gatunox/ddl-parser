@@ -5245,6 +5245,85 @@ test('a tag mapped to a missing element is reported, not silently dropped', () =
 // bytes[cursor] !== 0x26 — an eye-catcher check the spec language could not
 // express. Without it a branch consumes "& " as a 2-byte length (0x2620 = 9760)
 // and runs the cursor thousands of bytes past the end.
+// ── token-area ─────────────────────────────────────────────────────────────
+// The weakest block: covered only by help examples and baseline combos, with no
+// test asserting what it actually picks out. It fills ctx.tokens (never
+// ctx.fields), so an empty result looks exactly like a block that did nothing.
+console.log('\ntoken-area — cherry-picking the token area');
+
+// Binary (STM/PSTM) token area:
+//   "& " | count(2,BE) = tokens+1 | size(2,BE) incl. the "& " | then per token:
+//   "! " | id(2 ASCII) | size(2,BE) | data
+const TOK_AREA = [
+  0x26, 0x20, 0x00, 0x04, 0x00, 0x20,             // & , count 4 (=3 tokens), size 32
+  0x21, 0x20, 0x41, 0x41, 0x00, 0x03, 0x31, 0x31, 0x31,   // ! AA len 3 "111"
+  0x21, 0x20, 0x42, 0x42, 0x00, 0x02, 0x32, 0x32,         // ! BB len 2 "22"
+  0x21, 0x20, 0x43, 0x43, 0x00, 0x04, 0x33, 0x33, 0x33, 0x33, // ! CC len 4 "3333"
+];
+const TOK_DDL = 'DEF R.\n  02 HDR PIC X(4).\nEND R.\n';
+function tokRun(spec, { area = TOK_AREA, type = 'STM' } = {}) {
+  S.ddlTree = { V: { S: { D: TOK_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([0x48, 0x44, 0x52, 0x21, ...area]);
+  const ctx = meExecParseSpec({ name: 'X', type, ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: spec }, bytes);
+  return { ctx, tokens: (ctx.tokens || []).map(t => t.id),
+           fieldIds: ctx.fields.map(f => f.id) };
+}
+const TOK_SPEC = extra => [{ 'read-ddl': 'ANY' }, extra];
+
+test('ANY picks up every token in the area', () => {
+  const r = tokRun(TOK_SPEC('token-area'));
+  deepEq(r.tokens, ['AA', 'BB', 'CC'], 'all three, in wire order');
+});
+
+test('token-area fills ctx.tokens and never ctx.fields', () => {
+  // The reason an empty result is invisible: it contributes no rows at all.
+  const r = tokRun(TOK_SPEC('token-area'));
+  assert.ok(r.tokens.length > 0, 'tokens were produced');
+  assert.ok(!r.fieldIds.some(id => ['AA', 'BB', 'CC'].includes(id)),
+    `no token became a field row, got: ${JSON.stringify(r.fieldIds)}`);
+});
+
+test('a list cherry-picks by id, and ignores order and unknown ids', () => {
+  const r = tokRun(TOK_SPEC({ 'token-area': { tokens: ['CC', 'AA'] } }));
+  deepEq(r.tokens, ['AA', 'CC'], 'wire order is kept, not the order asked for');
+  const miss = tokRun(TOK_SPEC({ 'token-area': { tokens: ['ZZ'] } }));
+  deepEq(miss.tokens, [], 'an id that is not there yields nothing, not an error');
+});
+
+test('from / until is an inclusive window over the tokens', () => {
+  deepEq(tokRun(TOK_SPEC({ 'token-area': { from: 'BB' } })).tokens, ['BB', 'CC'], 'from is inclusive');
+  deepEq(tokRun(TOK_SPEC({ 'token-area': { until: 'BB' } })).tokens, ['AA', 'BB'], 'until is inclusive');
+  deepEq(tokRun(TOK_SPEC({ 'token-area': { from: 'BB', until: 'BB' } })).tokens, ['BB'], 'both, one token wide');
+  deepEq(tokRun(TOK_SPEC({ 'token-area': { from: 'ZZ' } })).tokens, [],
+    'a start that never appears yields nothing');
+});
+
+test('no eye-catcher means no token area, and no error', () => {
+  // "& " is what says the area is there at all. Without it the block is a no-op,
+  // which is correct — but it is also indistinguishable from a broken one.
+  const noEye = TOK_AREA.slice(); noEye[0] = 0x41;
+  const r = tokRun(TOK_SPEC('token-area'), { area: noEye });
+  deepEq(r.tokens, [], 'nothing extracted');
+  eq(r.ctx.fields.filter(f => typeof f.error === 'string').length, 0, 'and nothing reported');
+});
+
+test('the message type decides where the area is looked for', () => {
+  // STM/PSTM: straight after the last field. An unrelated type has no rule, so
+  // the same bytes yield nothing.
+  deepEq(tokRun(TOK_SPEC('token-area'), { type: 'STM' }).tokens, ['AA', 'BB', 'CC'], 'STM finds it');
+  deepEq(tokRun(TOK_SPEC('token-area'), { type: 'NDC' }).tokens, [], 'an unrelated type does not');
+});
+
+test('the token carries its data, not just its id', () => {
+  const r = tokRun(TOK_SPEC('token-area'));
+  const aa = (r.ctx.tokens || []).find(t => t.id === 'AA');
+  assert.ok(aa, 'AA is present');
+  eq(Array.from(aa.rawBytes || []).map(b => String.fromCharCode(b)).join(''), '111',
+     'with the three bytes its size declares');
+});
+
 console.log('\nwhen — byte guards at the cursor');
 
 function whenRun(spec, bytes) {

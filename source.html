@@ -6124,6 +6124,15 @@ function findTokenDDL(ddlName, preferredVol, isISO) {
 // instead of relying on the binary size, it scans forward for the next '! ' eye-catcher
 // to bound each token's data — the same technique humans use when visually inspecting
 // a STM/PSTM message in NETADRD.
+// Characters out of a byte buffer. Array.from FIRST, because `bytes` may be a
+// Uint8Array and its .map returns a Uint8Array — String.fromCharCode's result
+// coerces straight back to a number, so every id read this way became "00".
+// The same trap is recorded against _mePsHexToBytes in the tests; this is the
+// live one, and it silently unnamed every token when the buffer was typed.
+function _tokChars(bytes, from, len) {
+  return Array.from(bytes.slice(from, from + len)).map(b => String.fromCharCode(b)).join('');
+}
+
 function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
   const bToHex = b => b.map(x => x.toString(16).padStart(2,'0').toUpperCase()).join('');
   const bToStr = b => b.map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : `[${x.toString(16).padStart(2,'0')}]`).join('');
@@ -6142,8 +6151,8 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
     totalSize  = (bytes[offset] << 8) | bytes[offset+1]; offset += 2;
   } else {
     if (offset + 10 > bytes.length) return null;
-    tokenCount = parseInt(bytes.slice(offset,   offset+5 ).map(b=>String.fromCharCode(b)).join(''), 10);
-    totalSize  = parseInt(bytes.slice(offset+5, offset+10).map(b=>String.fromCharCode(b)).join(''), 10);
+    tokenCount = parseInt(_tokChars(bytes, offset, 5), 10);
+    totalSize  = parseInt(_tokChars(bytes, offset + 5, 5), 10);
     offset += 10;
   }
 
@@ -6166,7 +6175,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
 
     // Token ID comes first (2 bytes ASCII), then size, then data
     if (offset + 2 > bytes.length) break;
-    const tokenId = bytes.slice(offset, offset+2).map(b => String.fromCharCode(b)).join('').toUpperCase();
+    const tokenId = _tokChars(bytes, offset, 2).toUpperCase();
     offset += 2;
 
     let dataBytes;
@@ -6193,7 +6202,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       }
     } else {
       if (offset + 5 > bytes.length) break;
-      const dataSize = parseInt(bytes.slice(offset, offset+5).map(b=>String.fromCharCode(b)).join(''), 10);
+      const dataSize = parseInt(_tokChars(bytes, offset, 5), 10);
       offset += 5;
       dataStart = offset;
       dataBytes = bytes.slice(offset, offset + dataSize);
@@ -15724,7 +15733,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.13.0';
+const APP_VERSION  = '1.21.13.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

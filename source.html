@@ -15715,7 +15715,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.9.0';
+const APP_VERSION  = '1.21.10.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18489,6 +18489,16 @@ const _PS_HELP = {
         'Optional in <b>one</b> place only: inside a <code>read-bitmap-fields</code> <code>de</code> entry, where the element being read <i>is</i> the buffer.',
         'Everywhere else it is required — without it the block has no bytes to walk.',
       ]],
+      ['len', 'string | int | object', false, [
+        'The buffer carries its own LENGTH in front of the tags — read it, emit it, and frame the TLV walk by it.',
+        ['<code>"len": "F55.F55-LEN"</code>', 'The element holding it, by its <b>full id</b> — the same rule <code>tags</code> follows. Its <b>declared size</b> says how many bytes to read, and its own type / count overrides say how to decode them.'],
+        ['<code>"len": 2</code>',        'Read 2 bytes at offset 0 of the buffer. A binary integer unless you say otherwise.'],
+        ['<code>{"field": "LEN-55"}</code>', 'The same as the string form, written out.'],
+        ['<code>{"bytes": 2, "type": "ascii", "count": "digits"}</code>', 'A decode stated for the numeric form.'],
+        'With <code>len</code> the block reads the buffer <b>itself</b>, from the cursor, and <b>consumes</b> what it reads — so <code>field</code> may name a <b>group</b>, which it cannot otherwise: only leaves are in the results for <code>field</code> to find.',
+        'The length is <b>always emitted</b> as a row. A length consumed but never shown leaves a hole in the byte coverage that reads like a parse error.',
+        'Without <code>len</code> nothing changes: <code>field</code> re-reads a buffer an earlier block already crossed, and the cursor stays where it was.',
+      ]],
       ['ber', 'bool', false, [
         'BER-TLV framing, which is what EMV uses.',
         ['<code>true</code>',  'Tags are 1 or 2 bytes, detected from the tag bits; lengths above 127 use the 81 / 82 long form.'],
@@ -18554,6 +18564,13 @@ const _PS_HELP = {
         payload: '9F 26 04 11 22 33 44 9F 36 02 00 01',
         spec: [{"read": "DE-55"},
                {"read-tlv": {"field": "DE-55", "ber": true, "unknown": "emit"}}] },
+      { what: '<b>len</b> — the buffer states its own length, so the block reads the GROUP itself and the field after it lands correctly',
+        ddl: 'DEFINITION MSG.\n  02 F55.\n    04 F55-LEN PIC X(2).\n    04 F55-DATA.\n      06 ARQC.\n        08 TAG PIC X(2).\n        08 LEN PIC X(1).\n        08 VALUE PIC X(4).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '00 07 9F 26 04 01 02 03 04 54 41 49 4C',
+        spec: [{"read-tlv": {"field": "F55", "len": "F55.F55-LEN", "ber": true,
+                             "tags": {"9F26": {"field": "F55.F55-DATA.ARQC"}}, "unknown": "skip"}},
+               {"read-fixed": {"length": 4, "as": "TAIL"}}] },
       // The shape production ISO 8583 carries for text sub-elements. Neither of
       // the other two modes can read it: binary wants a big-endian length,
       // ascii-hex would decode "HELLO" as though it were hex.
@@ -19591,6 +19608,23 @@ function _mePsLintWarns(item, parsed) {
             warns.push(`[block ${n}] read-tlv needs a "field" — it is only optional inside a read-bitmap-fields "de" entry`);
           if (!attrs?.ber && !(attrs?.tag_length && attrs?.length_length))
             warns.push(`[block ${n}] read-tlv needs "ber": true, or both tag_length and length_length`);
+          // "len" — the buffer carries its own length in front of the tags.
+          if (attrs?.len != null) {
+            const L = attrs.len;
+            if (typeof L === 'string') checkRef(n, 'read-tlv.len', L);
+            else if (typeof L === 'number') {
+              if (!(L > 0) || L !== Math.floor(L))
+                warns.push(`[block ${n}] read-tlv "len": ${JSON.stringify(L)} is not a whole number of bytes`);
+            } else if (L && typeof L === 'object' && !Array.isArray(L)) {
+              if (L.field != null) checkRef(n, 'read-tlv.len.field', L.field);
+              else if (!(L.bytes > 0))
+                warns.push(`[block ${n}] read-tlv "len" object needs a "field" or a "bytes" count`);
+              if (L.count != null && !/^(bytes|digits)$/i.test(String(L.count)))
+                warns.push(`[block ${n}] read-tlv "len" count must be "bytes" or "digits", got ${JSON.stringify(L.count)}`);
+            } else {
+              warns.push(`[block ${n}] read-tlv "len" must be a field name, a byte count, or an object`);
+            }
+          }
           if (attrs?.tags != null) {
             if (typeof attrs.tags !== 'object' || Array.isArray(attrs.tags)) {
               warns.push(`[block ${n}] read-tlv "tags" must be an object keyed by tag, e.g. {"9F26": {"field": "ARQC"}}`);
@@ -27271,6 +27305,49 @@ function _meResolveScopedDef(name, ctx) {
 // tag is stored there, if it doesn't the element already identifies the tag and
 // nothing is written. That is one less attribute to state and it cannot
 // disagree with the DDL.
+// The `len` attribute: a TLV buffer that carries its own length in front of the
+// tags. Three forms, so the common cases stay short:
+//
+//   "len": "LEN-55"                       the element holding it — its DECLARED
+//                                         size says how many bytes to read, and
+//                                         its own type override / count say how
+//                                         to decode them
+//   "len": 4                              read 4 bytes at offset 0; a binary
+//                                         integer unless told otherwise
+//   "len": { "field": "LEN-55" }          the same two, written out, so a
+//   "len": { "bytes": 4, "type": "ascii", "count": "digits" }   decode can be
+//                                         stated for the numeric form too
+//
+// Returns null when there is no `len`, or an object describing what to read.
+// A bad `len` returns an error string rather than guessing — a mis-framed TLV
+// buffer produces confident nonsense, which is worse than nothing.
+function _meTlvLenSpec(attrs, ctx) {
+  const raw = attrs && attrs.len;
+  if (raw == null || raw === '') return null;
+  const o = (typeof raw === 'object' && !Array.isArray(raw)) ? raw : null;
+  const name  = o ? o.field : (typeof raw === 'string' ? raw : null);
+  let   nBytes = o ? +o.bytes : (typeof raw === 'number' ? raw : NaN);
+  let   type   = o ? o.type  : undefined;
+  let   count  = o ? o.count : undefined;
+  let   def    = null, id = null;
+
+  if (name) {
+    def = _meResolveScopedDef(name, ctx);
+    if (!def) return { error: `read-tlv "len": element "${name}" not found in the DDL` };
+    if (def.isGroup) return { error: `read-tlv "len": "${name}" is a group — name the leaf that holds the length` };
+    id = def.id;
+    if (!Number.isFinite(nBytes) || nBytes <= 0) nBytes = def.length || 0;
+    // The element's own overrides decide the decode, exactly as they do when the
+    // same field sizes a group — one rule for "how is a length read", not two.
+    const ovr = _meOvEffective(ctx, id);
+    if (type  === undefined) type  = ovr?.type;
+    if (count === undefined) count = ovr?.count;
+  }
+  if (!Number.isFinite(nBytes) || nBytes <= 0)
+    return { error: 'read-tlv "len" needs a field with a declared size, or a byte count' };
+  return { id: id || null, def, bytes: nBytes, type: type || null, count: count || null };
+}
+
 function _meExecReadTLVMapped(attrs, ctx) {
   const defs = _meCollectBindingDefs(ctx.resolvedBindings);
   const ber  = !!attrs.ber;
@@ -27285,7 +27362,14 @@ function _meExecReadTLVMapped(attrs, ctx) {
   // Buffer: a named field (parsed in place, cursor untouched) or — inside a "de"
   // entry — the bytes from the cursor on, which this block then consumes.
   let bufBytes, bufBase = null, consumes = false;
-  if (attrs.field) {
+  const lenSpec = _meTlvLenSpec(attrs, ctx);
+  if (lenSpec && lenSpec.error) {
+    ctx.fields.push({ id: 'read-tlv', error: lenSpec.error });
+    return;
+  }
+  if (attrs.field && !lenSpec) {
+    // Re-read a buffer an earlier block already crossed. The cursor stays put —
+    // those bytes are behind it, and moving it would skip them twice.
     const buf = ctx.fieldsById[attrs.field];
     if (!buf || buf.startByte == null) {
       ctx.fields.push({ id: 'read-tlv', error: `Buffer field '${attrs.field}' not yet read` });
@@ -27294,10 +27378,52 @@ function _meExecReadTLVMapped(attrs, ctx) {
     bufBytes = Array.from(ctx.bytes.slice(buf.startByte, buf.endByte + 1));
     bufBase  = buf.startByte;
   } else {
+    // With `len`, the block reads the buffer ITSELF, from the cursor: the length
+    // in front of the tags is what frames it, so nothing needs to have read it
+    // first. That is the case a DDL like FIELD-55 { LEN-55, DATA-55 { … } } has —
+    // the buffer is a GROUP, and a group is never in fieldsById to be named.
     const end = ctx._deLimit != null ? ctx._deLimit : ctx.bytes.length;
     bufBytes  = Array.from(ctx.bytes.slice(ctx.cursor, end));
     bufBase   = ctx.cursor;
     consumes  = true;
+  }
+
+  // The length, read off the front of the buffer and ALWAYS emitted — a length
+  // consumed but never shown leaves a hole in the byte coverage that reads like
+  // a parse error.
+  let lenUsed = 0;
+  if (lenSpec) {
+    const lb = bufBytes.slice(0, lenSpec.bytes);
+    if (lb.length < lenSpec.bytes) {
+      ctx.fields.push({ id: lenSpec.id || 'read-tlv',
+        error: `read-tlv "len": needs ${lenSpec.bytes} byte(s) but only ${lb.length} remain` });
+      return;
+    }
+    let n = _meDecodeLength(lb, lenSpec.type, ctx.lenEnc);
+    if (n == null) {
+      ctx.fields.push({ id: lenSpec.id || 'read-tlv',
+        error: `read-tlv "len": "${_meHexSpelling(lb)}" is not a length` });
+      return;
+    }
+    if (String(lenSpec.count || '').toLowerCase() === 'digits') n = _meCharsToBytes(n);
+    const lenId = lenSpec.id || `${attrs.field || ctx._deScope || 'TLV'}.LEN`;
+    const f = bufBase != null
+      ? _meMakeSyntheticField(lenId, lb, bufBase, bufBase + lb.length - 1, ctx,
+          { def: lenSpec.def, description: `TLV buffer length — ${n} byte(s) of tags follow` })
+      : { id: lenId, value: _meBytesToStr(lb), rawHex: _meBytesToHex(lb), valueLength: lb.length };
+    ctx.fields.push(f);
+    ctx.fieldsById[lenId] = f;
+    lenUsed = lenSpec.bytes;
+    // The tags occupy exactly what the length says — no more, whatever the DDL
+    // declares, and no less.
+    const avail = bufBytes.length - lenUsed;
+    if (n > avail) {
+      ctx.fields.push({ id: lenId,
+        error: `read-tlv "len": ${n} byte(s) of tags declared but only ${avail} remain — reading ${avail}` });
+      n = avail;
+    }
+    bufBytes = bufBytes.slice(lenUsed, lenUsed + n);
+    if (bufBase != null) bufBase += lenUsed;
   }
   if ((attrs.encoding || '') === 'ascii-hex') {
     const hex = bufBytes.map(b => String.fromCharCode(b)).join('');
@@ -27376,7 +27502,9 @@ function _meExecReadTLVMapped(attrs, ctx) {
 
     p = l.next + l.len;
   }
-  if (consumes) ctx.cursor = Math.min(ctx.cursor + p, ctx.bytes.length);
+  // `p` is an offset into the TAGS, which start after the length — so the bytes
+  // this block crossed are the length plus however far the walk got.
+  if (consumes) ctx.cursor = Math.min(ctx.cursor + lenUsed + p, ctx.bytes.length);
 }
 
 function _meExecBlock(block, ctx) {

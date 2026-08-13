@@ -4892,6 +4892,134 @@ test('an explicit width turns off the ISO-only bit rules', () => {
 // existing mode fits — "binary" reads big-endian lengths, and "ascii-hex"
 // hex-decodes the whole buffer, which turns HELLO into garbage.
 
+// ── read-tlv "len": a TLV buffer that carries its own length ────────────────
+// Reported from production. The DDL declares the buffer as a GROUP —
+//   FIELD-55 { LEN-55, DATA-55 { ARQC{TAG,LEN,VALUE}, ATC{…} } }
+// — and read-tlv's `field` could only name a LEAF, because fieldsById holds
+// leaves only. Every attempt got "Buffer field 'FIELD-55' not yet read", the
+// LEN row never appeared, and the field after DE-55 landed at the DDL's declared
+// offset instead of after the length the message actually states.
+console.log('\nread-tlv — a buffer that carries its own length');
+
+const TLV_LEN_DDL = `DEF MSG.
+  02 MTI PIC X(4).
+  02 FIELD-55.
+    04 LEN-55 PIC X(2).
+    04 DATA-55.
+      06 ARQC.
+        08 TAG   PIC X(2).
+        08 LEN   PIC X(1).
+        08 VALUE PIC X(8).
+      06 ATC.
+        08 TAG   PIC X(2).
+        08 LEN   PIC X(1).
+        08 VALUE PIC X(2).
+  02 AFTER PIC X(4).
+END MSG.
+`;
+// 22 bytes of BER triples: 9F26/8 and 9F36/2 are mapped, 9F10/3 is not.
+const TLV_PAYLOAD = [0x9F,0x26,0x08, 1,2,3,4,5,6,7,8,
+                     0x9F,0x36,0x02, 0x00,0x01,
+                     0x9F,0x10,0x03, 0xAA,0xBB,0xCC];
+const TLV_BYTES = [0x30,0x32,0x30,0x30, 0x00, TLV_PAYLOAD.length, ...TLV_PAYLOAD,
+                   0x54,0x41,0x49,0x4C];
+const TLV_TAGS = { '9F26': { field: 'FIELD-55.DATA-55.ARQC' },
+                   '9F36': { field: 'FIELD-55.DATA-55.ATC' } };
+function tlvLenRun(len, unknown = 'skip', extra) {
+  S.ddlTree = { V: { S: { D: TLV_LEN_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'], ...(extra || {}),
+    parse_spec_binary: [
+      { 'read-ddl': { until: 'MTI' } },
+      { 'read-tlv': { field: 'FIELD-55', len, ber: true, tags: TLV_TAGS, unknown } },
+      { 'read-fixed': { length: 4, as: 'AFTER' } },
+    ] }, Uint8Array.from(TLV_BYTES));
+}
+const tlvF = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
+
+test('read-tlv "len" reads a GROUP buffer, which `field` alone cannot', () => {
+  const ctx = tlvLenRun('FIELD-55.LEN-55');
+  eq(ctx.fields.filter(f => typeof f.error === 'string').length, 0,
+     `no errors, got: ${ctx.fields.filter(f => f.error).map(f => f.error).join(' | ')}`);
+  // The length row is emitted — its absence was the original complaint, and a
+  // consumed-but-unshown length leaves a hole in the byte coverage.
+  const len = tlvF(ctx, 'FIELD-55.LEN-55');
+  assert.ok(len, 'the LEN element is emitted');
+  eq(len.startByte, 4, 'at its own bytes');
+  eq(len.rawHex.toUpperCase(), '0016', 'holding the 22 it states');
+});
+
+test('the mapped tags fill their fully-qualified DDL elements', () => {
+  const ctx = tlvLenRun('FIELD-55.LEN-55');
+  eq(tlvF(ctx, 'FIELD-55.DATA-55.ARQC.TAG').rawHex.toUpperCase(), '9F26', 'ARQC tag');
+  eq(tlvF(ctx, 'FIELD-55.DATA-55.ARQC.LEN').rawHex.toUpperCase(), '08', 'ARQC length');
+  eq(tlvF(ctx, 'FIELD-55.DATA-55.ARQC.VALUE').rawHex.toUpperCase(), '0102030405060708', 'ARQC value');
+  eq(tlvF(ctx, 'FIELD-55.DATA-55.ATC.VALUE').rawHex.toUpperCase(), '0001', 'ATC value');
+});
+
+test('the field AFTER the buffer starts where the LENGTH says, not where the DDL does', () => {
+  // The whole point. The DDL declares DATA-55 as 16 bytes; the message says 22.
+  // Before this, AFTER read from the declared offset 22 and got the tail of the
+  // last TLV triple.
+  const ctx = tlvLenRun('FIELD-55.LEN-55');
+  const after = tlvF(ctx, 'AFTER');
+  eq(after.startByte, 28, 'four bytes past the 22 the length states');
+  eq(after.rawHex.toUpperCase(), '5441494C', 'which is "TAIL", not TLV leftovers');
+  eq(ctx.cursor, 32, 'and the cursor crossed the length AND the tags');
+});
+
+test('"len" takes a byte count as well as a field name', () => {
+  const byName = tlvLenRun('FIELD-55.LEN-55');
+  const byNum  = tlvLenRun(2);
+  eq(tlvF(byNum, 'AFTER').startByte, tlvF(byName, 'AFTER').startByte,
+     'both forms frame the buffer identically');
+  // With no element to fill, the numeric form emits a synthetic row so the byte
+  // coverage still has no hole.
+  const syn = byNum.fields.find(f => f.id === 'FIELD-55.LEN');
+  assert.ok(syn, 'the numeric form emits the length it used');
+  eq(syn.rawHex.toUpperCase(), '0016', 'carrying the bytes it read');
+});
+
+test('unknown tags obey `unknown`, and the walk is bounded by the length', () => {
+  const skipped = tlvLenRun('FIELD-55.LEN-55', 'skip');
+  assert.ok(!skipped.fields.some(f => /9F10/.test(f.id)), 'skip: the unmapped tag is consumed silently');
+  const emitted = tlvLenRun('FIELD-55.LEN-55', 'emit');
+  const inv = emitted.fields.find(f => /9F10/.test(f.id));
+  assert.ok(inv, 'emit: it appears as an invented row');
+  eq(inv.rawHex.toUpperCase(), 'AABBCC', 'with its value');
+  // Either way the field after is unaffected — the length framed the buffer.
+  eq(tlvF(emitted, 'AFTER').startByte, 28, 'and AFTER is unmoved by the choice');
+});
+
+test('a bad "len" is reported, not guessed around', () => {
+  // A mis-framed TLV buffer produces confident nonsense, so a length that cannot
+  // be resolved has to stop rather than fall back to something plausible.
+  const missing = tlvLenRun('NO-SUCH-FIELD');
+  assert.ok(missing.fields.some(f => /not found in the DDL/.test(f.error || '')),
+    'an unknown element is named');
+  const group = tlvLenRun('FIELD-55.DATA-55');
+  assert.ok(group.fields.some(f => /is a group/.test(f.error || '')),
+    'a group is rejected — name the leaf that holds the length');
+});
+
+test('read-tlv without "len" still parses in place, cursor untouched', () => {
+  // The existing contract: `field` names a buffer an earlier block already read,
+  // and re-reading it must not move the cursor past bytes already crossed.
+  S.ddlTree = { V: { S: { D: TLV_LEN_DDL } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [
+      { 'read-fixed': { length: 4, as: 'MTI' } },
+      { 'read-fixed': { length: 2, as: 'L' } },
+      { 'read-fixed': { length: 22, as: 'BUF' } },
+      { 'read-tlv': { field: 'BUF', ber: true, tags: TLV_TAGS, unknown: 'skip' } },
+      { 'read-fixed': { length: 4, as: 'AFTER' } },
+    ] }, Uint8Array.from(TLV_BYTES));
+  eq(tlvF(ctx, 'AFTER').startByte, 28, 'the cursor was already past BUF, and read-tlv left it there');
+  eq(tlvF(ctx, 'FIELD-55.DATA-55.ARQC.VALUE').rawHex.toUpperCase(), '0102030405060708',
+     'and the tags still filed correctly');
+});
+
 console.log('\nread-tlv — ASCII TLV (text tag, decimal length, text value)');
 
 const ATLV_DDL = `DEFINITION MSG.

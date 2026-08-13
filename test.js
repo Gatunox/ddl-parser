@@ -5249,6 +5249,83 @@ test('a tag mapped to a missing element is reported, not silently dropped', () =
 // The weakest block: covered only by help examples and baseline combos, with no
 // test asserting what it actually picks out. It fills ctx.tokens (never
 // ctx.fields), so an empty result looks exactly like a block that did nothing.
+// ── read-until / read-to-end ───────────────────────────────────────────────
+// Both were covered only inside one combined interpreter test, so their edges —
+// sentinel absent, sentinel first, eom, an empty tail — were never asserted.
+console.log('\nread-until / read-to-end — the edges');
+
+function ruRun(spec, bytes) {
+  S.ddlTree = { V: { S: { D: 'DEF R.\n  02 X PIC X(1).\nEND R.\n' } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: spec }, Uint8Array.from(bytes));
+  const g = id => ctx.fields.find(f => f.id === id && !f.error);
+  return { ctx, g, cursor: ctx.cursor,
+           errs: ctx.fields.filter(f => typeof f.error === 'string').map(f => f.error) };
+}
+const AMP = 0x26;                       // "&"
+const ABC_AMP_DEF = [0x41,0x42,0x43, AMP, 0x44,0x45,0x46];
+
+test('read-until stops BEFORE the sentinel and leaves it for the next block', () => {
+  const r = ruRun([{ 'read-until': { sentinels: [AMP], as: 'HEAD' } }], ABC_AMP_DEF);
+  eq(r.g('HEAD').rawHex.toUpperCase(), '414243', 'the three bytes before it');
+  eq(r.cursor, 3, 'and the cursor sits ON the sentinel, not past it');
+  // Which is what lets the next block see it.
+  const r2 = ruRun([{ 'read-until': { sentinels: [AMP], as: 'HEAD' } },
+                    { 'read-fixed': { length: 1, as: 'SENT' } }], ABC_AMP_DEF);
+  eq(r2.g('SENT').rawHex.toUpperCase(), '26', 'the sentinel is still there to read');
+});
+
+test('a sentinel at the very first byte yields an EMPTY field, not a skipped one', () => {
+  const r = ruRun([{ 'read-until': { sentinels: [AMP], as: 'HEAD' } }], [AMP, 0x41]);
+  assert.ok(r.g('HEAD'), 'the field is still emitted');
+  eq(r.g('HEAD').rawHex, '', 'with no bytes');
+  eq(r.cursor, 0, 'and nothing was consumed');
+});
+
+test('a missing sentinel is an ERROR unless eom says otherwise', () => {
+  const strict = ruRun([{ 'read-until': { sentinels: [0x7C], as: 'HEAD' } }], ABC_AMP_DEF);
+  assert.ok(strict.errs.some(e => /Sentinel not found/.test(e)), `got: ${JSON.stringify(strict.errs)}`);
+  assert.ok(!strict.g('HEAD'), 'and nothing is emitted on that path');
+  const lenient = ruRun([{ 'read-until': { sentinels: [0x7C], eom: true, as: 'HEAD' } }], ABC_AMP_DEF);
+  deepEq(lenient.errs, [], 'with eom it is fine');
+  eq(lenient.g('HEAD').rawHex.toUpperCase(), '41424326444546', 'and it takes everything');
+  eq(lenient.cursor, ABC_AMP_DEF.length, 'to the end');
+});
+
+test('the FIRST sentinel wins when several are given', () => {
+  const r = ruRun([{ 'read-until': { sentinels: [0x46, AMP], as: 'HEAD' } }], ABC_AMP_DEF);
+  eq(r.g('HEAD').rawHex.toUpperCase(), '414243', 'stops at the earliest match in the bytes');
+});
+
+test('no sentinels and no eom is refused rather than reading everything', () => {
+  const r = ruRun([{ 'read-until': { as: 'HEAD' } }], ABC_AMP_DEF);
+  assert.ok(r.errs.some(e => /No sentinels or eom/.test(e)), `got: ${JSON.stringify(r.errs)}`);
+  eq(r.cursor, 0, 'and the cursor did not move');
+});
+
+test('read-to-end takes everything left, from wherever the cursor is', () => {
+  const r = ruRun([{ 'read-fixed': { length: 3, as: 'HEAD' } },
+                   { 'read-to-end': { as: 'REST' } }], ABC_AMP_DEF);
+  eq(r.g('REST').rawHex.toUpperCase(), '26444546', 'from the cursor to the end');
+  eq(r.g('REST').startByte, 3, 'starting where the previous block stopped');
+  eq(r.cursor, ABC_AMP_DEF.length, 'and consuming the rest');
+});
+
+test('read-to-end at the end of the message emits an empty field, not nothing', () => {
+  // The discriminating case: a block that emits nothing is indistinguishable
+  // from one that never ran.
+  const r = ruRun([{ 'read-fixed': { length: 7, as: 'ALL' } },
+                   { 'read-to-end': { as: 'REST' } }], ABC_AMP_DEF);
+  assert.ok(r.g('REST'), 'the field is still there');
+  eq(r.g('REST').rawHex, '', 'holding nothing');
+});
+
+test('read-to-end defaults its name to TAIL', () => {
+  const r = ruRun([{ 'read-to-end': {} }], ABC_AMP_DEF);
+  assert.ok(r.g('TAIL'), 'named TAIL when `as` is omitted');
+});
+
 console.log('\ntoken-area — cherry-picking the token area');
 
 // Binary (STM/PSTM) token area:

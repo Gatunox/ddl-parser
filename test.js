@@ -1783,19 +1783,23 @@ const bytesCase = (ovr, extra) => {
 };
 
 
-// CHANGED ON PURPOSE (v1.2.5.0). These asserted that a length is always a BYTE
-// count, so hex-char on PIC X(4) read four bytes and rendered eight characters —
-// and the only way to get the four characters you wanted was to hand-set
-// bytes:2. hex-char renders two characters per byte, so its lengths now count
-// characters: PIC X(4) as hex-char is "0200" off two wire bytes. Types that are
-// 1:1 are untouched, and a field with no type override cannot move at all.
+// CHANGED BACK ON PURPOSE. v1.2.5.0 made a hex-char length count CHARACTERS, so
+// PIC X(4) read two wire bytes. That welded two unrelated things together: how a
+// field is READ, and how WIDE it is. Three problems followed — the DDL's number
+// silently acquired a second unit, the only way back to four bytes was to type 8
+// into a box seeded with 4, and the guard that suppresses a pointless override
+// compared that typed 4 against the declared 4 and discarded it.
+//
+// A type now says only how to read the bytes. Width comes from the DDL or from a
+// `bytes` override, always in bytes. What a VLG length COUNTS moved to its own
+// `count` attribute, which is the one place characters still matter.
 
-test('hex-char on a PIC X(4) is FOUR CHARACTERS — two wire bytes', () => {
+test('hex-char on a PIC X(4) reads all four bytes and renders eight characters', () => {
   const ctx = bytesCase({ type: 'hex-char' });
   const f = ctx.fields.find(x => x.id === 'MSGTYPE');
-  eq(f.value, '0200', 'the four characters the DDL asked for');
-  eq(f.rawHex.length / 2, 2, 'off two wire bytes, with no bytes override needed');
-  eq(ctx.fields.find(x => x.id === 'TAIL').startByte, 2, 'and TAIL moves up to meet it');
+  eq(f.rawHex.length / 2, 4, 'the declared four bytes, untouched by the type');
+  eq(f.value, '02003020', 'rendered as their eight hex characters');
+  eq(ctx.fields.find(x => x.id === 'TAIL').startByte, 4, 'and TAIL stays where the DDL puts it');
 });
 
 test('a field with NO type override is not touched by any of this', () => {
@@ -1807,34 +1811,33 @@ test('a field with NO type override is not touched by any of this', () => {
   eq(ctx.fields.find(x => x.id === 'TAIL').startByte, 4, 'TAIL exactly where the DDL puts it');
 });
 
-test('"bytes" on a hex-char field is a CHARACTER count too', () => {
-  // 2 characters of 0x02 0x00 is "02" — one wire byte. Under the old rule this
-  // same override meant two bytes; that is the migration, and it is deliberate.
+test('"bytes" is a BYTE count, whatever the type says', () => {
+  // The number you type is the number of bytes you get. Under v1.2.5.0 this same
+  // override meant two characters — one wire byte — and that is the reversal.
   const ctx = bytesCase({ type: 'hex-char', bytes: 2 });
   const f = ctx.fields.find(x => x.id === 'MSGTYPE');
-  eq(f.value, '02', 'two characters');
-  eq(f.rawHex, '02', 'one wire byte');
+  eq(f.rawHex, '0200', 'two wire bytes');
+  eq(f.value, '0200', 'shown as the four hex characters they spell');
 });
 
-test('an ODD character count shows half a byte and drops the padding nibble', () => {
-  // 1 character of 0x02 is "0". The byte is still spent — fields start on byte
-  // boundaries — so the trailing nibble is this field's padding, not the next
-  // field's first character.
+test('a one-byte override reads one byte — there is no half character to drop', () => {
+  // v1.2.5.0 read this as ONE CHARACTER and trimmed the value to "0", spending a
+  // whole byte to show half of it. A width is whole bytes now, so the trim is gone.
   const ctx = bytesCase({ type: 'hex-char', bytes: 1 });
   const f = ctx.fields.find(x => x.id === 'MSGTYPE');
-  eq(f.value, '0', 'one character');
   eq(f.rawHex, '02', 'one whole byte consumed');
+  eq(f.value, '02', 'and both of its characters are shown');
   eq(ctx.fields.find(x => x.id === 'TAIL').startByte, 1, 'the next field starts after it');
 });
 
 test('shrinking a field frees its leftover bytes for the NEXT field to read', () => {
-  // MSGTYPE is PIC X(4) holding 02 00 30 20; two characters of hex-char cut it
-  // to one byte, and the three that frees must reach TAIL rather than being
-  // skipped because the DDL says TAIL starts at 4.
+  // MSGTYPE is PIC X(4) holding 02 00 30 20; a two-byte override cuts it to two,
+  // and the two that frees must reach TAIL rather than being skipped because the
+  // DDL says TAIL starts at 4.
   const ctx = bytesCase({ type: 'hex-char', bytes: 2 });
   const tail = ctx.fields.find(x => x.id === 'TAIL');
-  eq(tail.startByte, 1, 'TAIL moved up to where MSGTYPE now ends');
-  eq(tail.rawHex, '0030', 'and reads the two bytes it finds there');
+  eq(tail.startByte, 2, 'TAIL moved up to where MSGTYPE now ends');
+  eq(tail.rawHex, '3020', 'and reads the two bytes it finds there');
 });
 
 test('growing a field pushes the ones after it along', () => {
@@ -1878,11 +1881,11 @@ test('a fixed-width type alone sets the length, like editing the DDL to that typ
 });
 
 test('display runs after the length and type, on the overridden bytes', () => {
-  // CHANGED ON PURPOSE (v1.2.5.0): "bytes": 2 on a hex-char field is now two
-  // CHARACTERS — one wire byte — so the formatter sees that one byte.
+  // "bytes": 2 is two WIRE BYTES, so the formatter sees those two — not the
+  // declared four, and not the one byte the old character rule would have left.
   const f = bytesCase({ type: 'hex-char', bytes: 2, display: 'hex' }).fields.find(x => x.id === 'MSGTYPE');
-  eq(f.value, '02', 'type applied to the one byte two characters buy');
-  eq(f.displayValue, '0x02', 'display formatted that same byte, not the declared 4');
+  eq(f.value, '0200', 'type applied to the two bytes the override asked for');
+  eq(f.displayValue, '0x0200', 'display formatted those same two bytes, not the declared 4');
 });
 
 // ── Overrides collapse: de_map + var_length_groups + field_overrides → one map ──
@@ -1912,7 +1915,31 @@ test('one field carrying all four kinds of override collapses to a single entry'
     var_length_groups: [{ group: 'F', len: null }],
   });
   eq(Object.keys(spec.overrides).length, 1, 'one key, not three');
-  deepEq(spec.overrides.F, { type: 'ascii', display: 'hex', de: 3, vlg: true }, 'all four merged');
+  // `count` is written in by the same pass: what a VLG length counts used to be
+  // inferred from the LEN's type, so a spec from before that attribute existed
+  // has the answer only implicitly. An `ascii` LEN counted bytes, and still does.
+  deepEq(spec.overrides.F,
+    { type: 'ascii', display: 'hex', de: 3, vlg: true, count: 'bytes' }, 'all four merged');
+});
+
+test('migration writes down what a VLG length used to count, without changing it', () => {
+  // The rule it replaces: a hex-char LEN counted hex digits, everything else
+  // counted bytes. Both readings have to survive a spec written before `count`.
+  const hex = migrateOverrides({
+    overrides: { LEN: { type: 'hex-char', vlg: true } } });
+  eq(hex.overrides.LEN.count, 'digits', 'a hex-char length source counted digits');
+  const bin = migrateOverrides({
+    overrides: { LEN: { type: 'uint-be', vlg: true } } });
+  eq(bin.overrides.LEN.count, 'bytes', 'anything else counted bytes');
+  // On a GROUP the type sits on the leaf `vlg` names, not on the group.
+  const grp = migrateOverrides({
+    overrides: { GRP: { vlg: 'GRP.LEN' }, 'GRP.LEN': { type: 'hex-char' } } });
+  eq(grp.overrides.GRP.count, 'digits', 'the leaf it names decides it');
+  // An explicit count is never overwritten, and a non-VLG field never gains one.
+  const kept = migrateOverrides({
+    overrides: { LEN: { type: 'hex-char', vlg: true, count: 'bytes' }, OTHER: { type: 'hex-char' } } });
+  eq(kept.overrides.LEN.count, 'bytes', 'a stated count is left alone');
+  eq(kept.overrides.OTHER.count, undefined, 'and a field that is not a length source gets none');
 });
 
 test('VLG len null and the legacy bare-string entry both mean "first leaf"', () => {
@@ -5295,7 +5322,7 @@ function hangRun(overrides, until) {
   return { ctx, len: bytes.length };
 }
 // The reported configuration: AA is the length source, both hex-char.
-const HANG_OVR = { 'GROUP.AA': { type: 'hex-char', vlg: true },
+const HANG_OVR = { 'GROUP.AA': { type: 'hex-char', vlg: true, count: 'digits' },
                    'GROUP.BB': { type: 'hex-char' } };
 
 test('no field claims a byte the message does not have', () => {
@@ -5333,12 +5360,12 @@ test('an impossible length is REPORTED, not silently clamped', () => {
     `it reports what remains (${left}) of a ${len}-byte message: ${err.issue}`);
 });
 
-test('a hex-char length source counts characters, as it does in a group', () => {
-  // 0x12 0x23 spells "1223" → 1223 characters → 612 wire bytes. Still impossible
+test('a length source counting DIGITS converts before it judges the length', () => {
+  // 0x12 0x23 spells "1223" → 1223 digits → 612 wire bytes. Still impossible
   // here, but it must be converted before it is judged, not after.
   const { ctx } = hangRun(HANG_OVR, 'GROUP[01].BB');
   const err = ctx.fields.find(f => f.issue && /runs past the end/.test(f.issue));
-  assert.ok(/character\(s\) = \d+ byte\(s\)/.test(err.issue),
+  assert.ok(/digit\(s\) = \d+ byte\(s\)/.test(err.issue),
     `the message states both units: ${err.issue}`);
 });
 
@@ -5630,9 +5657,10 @@ test('a DECLARED length longer than the message does not inflate the span', () =
   eq(f.endByte, 9, `and the span ends at 9, not 199 — got ${f.endByte}`);
 });
 
-test('a hex-char length source converts characters to bytes before sizing', () => {
-  // 0x10 spells "10" → 10 CHARACTERS → 5 wire bytes. Without the conversion the
+test('a length source counting DIGITS converts to bytes before sizing', () => {
+  // 0x10 spells "10" → 10 DIGITS → 5 wire bytes. Without the conversion the
   // next field takes 10, which is the group form's rule ignored by the leaf form.
+  // `count` says what the number counts; the type only says how to read it.
   S.ddlTree = { V: { S: { D: `DEF R.
   02 LEN PIC X(1).
   02 DATA PIC X(20).
@@ -5641,10 +5669,10 @@ END R.
   S.inputFormat = 'hex';
   const bytes = Uint8Array.from([0x10, ...Array.from({ length: 20 }, (_, i) => i + 1)]);
   const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
-    overrides: { LEN: { type: 'hex-char', vlg: true } },
+    overrides: { LEN: { type: 'hex-char', vlg: true, count: 'digits' } },
     parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, bytes);
   const data = ctx.fields.find(f => f.id === 'DATA');
-  eq(data.valueLength, 5, `10 characters is 5 bytes, got ${data.valueLength}`);
+  eq(data.valueLength, 5, `10 digits is 5 bytes, got ${data.valueLength}`);
   eq(ctx.fields.filter(f => f.error).length, 0, 'and it fits, so nothing is reported');
 });
 
@@ -6282,12 +6310,17 @@ function occRun(overrides, len = 51) {
     ...(overrides ? { overrides } : {}),
     parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, Uint8Array.from(bytes));
 }
-const HEXCHAR_ALL = { DUMMY: { type: 'hex-char' }, B: { type: 'hex-char' },
-                      'GRP.A': { type: 'hex-char' }, 'GRP.B': { type: 'hex-char' } };
+// Every field halved: a 12-byte header and a 12-byte stride instead of 24/24.
+// This used to be four `hex-char` types, which halved a field as a side effect of
+// its READING. That is gone — a type says how to read bytes, never how many —
+// so the same geometry is now asked for outright. The mechanism under test is
+// unchanged: the array must be measured in EFFECTIVE bytes, not declared ones.
+const HALVED_ALL = { DUMMY: { bytes: 8 }, B: { bytes: 4 },
+                     'GRP.A': { bytes: 8 }, 'GRP.B': { bytes: 4 } };
 const occIds = ctx => ctx.fields.filter(f => !f.error).map(f => f.id);
 
 test('every declared occurrence is read, not a count guessed from the length', () => {
-  const ids = occIds(occRun(HEXCHAR_ALL));
+  const ids = occIds(occRun(HALVED_ALL));
   for (const n of ['01', '02', '03']) {
     assert.ok(ids.includes(`GRP[${n}].A`), `GRP[${n}].A is read, got: ${ids.join(', ')}`);
     assert.ok(ids.includes(`GRP[${n}].B`), `GRP[${n}].B is read`);
@@ -6295,7 +6328,7 @@ test('every declared occurrence is read, not a count guessed from the length', (
 });
 
 test('the occurrences sit at the EFFECTIVE stride, not the declared one', () => {
-  const ctx = occRun(HEXCHAR_ALL);
+  const ctx = occRun(HALVED_ALL);
   const at = id => (ctx.fields.find(f => f.id === id) || {}).startByte;
   eq(at('GRP[01].A'), 12, 'the array starts after a 12-byte header, not 24');
   eq(at('GRP[02].A'), 24, 'stride is 12 effective bytes, not 24 declared');
@@ -6305,14 +6338,14 @@ test('the occurrences sit at the EFFECTIVE stride, not the declared one', () => 
 test('a fourth occurrence the message cannot hold is REPORTED, not dropped', () => {
   // 51 bytes cannot supply 12 + 4x12 = 60. Silence here is what made the bug look
   // like "the array only has one occurrence".
-  const ctx = occRun(HEXCHAR_ALL);
+  const ctx = occRun(HALVED_ALL);
   const err = ctx.fields.find(f => f.error && /could not be read/.test(f.error));
   assert.ok(err, `the shortfall is stated, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
   assert.ok(/GRP\[04\]/.test(err.id), `naming the field that ran out: ${err.id}`);
 });
 
 test('a message long enough yields all four, with nothing reported', () => {
-  const ctx = occRun(HEXCHAR_ALL, 60);
+  const ctx = occRun(HALVED_ALL, 60);
   const ids = occIds(ctx);
   eq(ids.filter(i => /^GRP\[\d+\]\.A$/.test(i)).length, 4, 'four occurrences');
   eq(ctx.fields.filter(f => f.error).length, 0, 'and no complaint');
@@ -6342,7 +6375,7 @@ test('an eye-catcher ends the array early, measured in EFFECTIVE bytes', () => {
   const bytes = Array.from({ length: 60 }, (_, i) => (i & 0xff) || 1);
   bytes[36] = 0x26; bytes[37] = 0x20;              // '& ' after two occurrences
   const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
-    overrides: HEXCHAR_ALL,
+    overrides: HALVED_ALL,
     parse_spec_binary: [{ 'read-ddl': { binding: 0 } }] }, Uint8Array.from(bytes));
   const ids = ctx.fields.filter(f => !f.error).map(f => f.id);
   eq(ids.filter(i => /^GRP\[\d+\]\.A$/.test(i)).length, 2,
@@ -6402,23 +6435,30 @@ test('what the Field Map shows for a length is what the engine reads', () => {
   eq(read, shown, 'the parse reads exactly what the Field Map advertises');
 });
 
-test('the Field Map re-lays out a hex-char field the same way the engine does', () => {
+test('the Field Map and the engine lay out a bytes override the same way', () => {
   // Both surfaces have to spend the same bytes. The Field Map used the number as
   // WRITTEN while the engine converted it, which is the disagreement that
   // started this whole thread — the table said one width, the parse used another.
+  // The lever is a `bytes` override now; a TYPE moves nothing on either surface.
   S.ddlTree = { V: { S: { D: DDL_BYTES } } };
   const defs = getDDLFromPath('V/S/D/REC').defs;
-  const rows = meWalkDEFields(defs,
-    { ddl_bindings: ['V/S/D/REC'], overrides: { MSGTYPE: { type: 'hex-char' } } });
-  const msg  = rows.find(r => r.id === 'MSGTYPE');
-  const tail = rows.find(r => r.id === 'TAIL');
-  eq(msg.length, 2, 'four characters of hex-char cost two bytes in the Field Map too');
+  const rowsFor = ov => meWalkDEFields(getDDLFromPath('V/S/D/REC').defs,
+    { ddl_bindings: ['V/S/D/REC'], overrides: { MSGTYPE: ov } });
+  // A type alone: nothing moves, on either surface.
+  const byType = rowsFor({ type: 'hex-char' });
+  eq(byType.find(r => r.id === 'MSGTYPE').length, 4, 'a type does not resize the Field Map row');
+  eq(byType.find(r => r.id === 'TAIL').offset, 4, 'so TAIL does not move either');
+  eq(bytesCase({ type: 'hex-char' }).fields.find(f => f.id === 'TAIL').startByte, 4,
+     'and the engine agrees');
+  // A width override: both surfaces move together.
+  const byBytes = rowsFor({ type: 'hex-char', bytes: 2 });
+  const msg  = byBytes.find(r => r.id === 'MSGTYPE');
+  const tail = byBytes.find(r => r.id === 'TAIL');
+  eq(msg.length, 2, 'the override width is what the Field Map shows');
   eq(msg.declaredLen, 4, 'and it still reports what the DDL declared');
   eq(tail.offset, 2, 'so TAIL is re-laid out to where the parse will read it');
-  // The engine, on the same override.
-  const parsed = bytesCase({ type: 'hex-char' });
-  eq(parsed.fields.find(f => f.id === 'TAIL').startByte, tail.offset,
-     'the two surfaces agree on where TAIL starts');
+  eq(bytesCase({ type: 'hex-char', bytes: 2 }).fields.find(f => f.id === 'TAIL').startByte,
+     tail.offset, 'the two surfaces agree on where TAIL starts');
 });
 
 // ── The length decode follows the declared type, not the byte values ────────
@@ -6437,17 +6477,137 @@ console.log('\nlength decode honours a type override');
 // value IS the hex characters, so the length is 37 — and uint8/uint16-be/binary
 // are how you ask for the numeric conversion.
 
-test('a hex-char LEN of "37" is 37 CHARACTERS — 19 wire bytes', () => {
-  // EMV.LEN is PIC X(2): two characters of hex-char, so ONE wire byte, read
-  // without any bytes override at all. It shows "37", and 37 characters of
-  // payload is ceil(37/2) = 19 bytes.
-  const ctx = vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'hex-char' } });
+test('a LEN of "37" counting DIGITS is 19 wire bytes of payload', () => {
+  // EMV.LEN is PIC X(2). It used to read ONE byte, because hex-char re-read the
+  // declared 2 as characters — the width moved as a side effect of the reading.
+  // Now the width is asked for: `bytes: 1`. It shows "37", and with `count`
+  // saying digits, 37 digits of payload is ceil(37/2) = 19 bytes.
+  const ctx = vlgRun([0x37, 0x45], 60,
+    { 'EMV.LEN': { type: 'hex-char', bytes: 1, count: 'digits' } });
   const len  = ctx.fields.find(f => f.id === 'EMV.LEN');
   const data = ctx.fields.find(f => f.id === 'EMV.DATA');
-  eq(len.valueLength, 1, 'two characters cost one wire byte');
+  eq(len.valueLength, 1, 'the width comes from the bytes override, not the type');
   eq(len.value, '37', 'shown as its hex spelling');
-  eq(data.valueLength, 19, '37 characters of payload = 19 wire bytes');
+  eq(data.valueLength, 19, '37 digits of payload = 19 wire bytes');
   eq(data.startByte, len.endByte + 1, 'and it starts right after the LEN');
+});
+
+test('ignore suppresses the automatic "-LEN" guess for ONE field', () => {
+  // Reported: a group whose first leaf ends in -LEN is made variable-length by a
+  // built-in rule, and it may not be one. The only off-switch was
+  // vlg_identifier:"" — which turns the guess off for the WHOLE DDL, taking
+  // every genuine LLVAR with it.
+  S.ddlTree = { V: { S: { D: `DEF R.
+  02 AMT.
+    04 AMT-LEN PIC X(2).
+    04 AMT-VAL PIC X(6).
+  02 TAIL PIC X(4).
+END R.
+` } } };
+  S.inputFormat = 'hex';
+  //           A M T - L E N   |  A M T - V A L      |  T A I L
+  const bytes = Uint8Array.from([0x30,0x32, 0x30,0x30,0x30,0x31,0x32,0x33, 0x54,0x41,0x49,0x4C]);
+  const run = ov => meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    ...(ov ? { overrides: ov } : {}), parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, bytes);
+  const at = (ctx, id) => (ctx.fields.find(f => f.id === id) || {}).startByte;
+
+  // The guess fires: AMT-LEN reads "02", so AMT-VAL takes 2 of its declared 6
+  // and TAIL slides up to 4.
+  const guessed = run(null);
+  eq(at(guessed, 'TAIL'), 4, 'the built-in rule frames the group by AMT-LEN');
+
+  // Ignore, and the group is fixed-width again: AMT-VAL takes its declared 6.
+  const ignored = run({ AMT: { vlg: false } });
+  eq(at(ignored, 'TAIL'), 8, 'ignored on the GROUP — TAIL lands where the DDL puts it');
+
+  // The button targets a group's first leaf, so an ignore can land on either id.
+  const onLeaf = run({ 'AMT.AMT-LEN': { vlg: false } });
+  eq(at(onLeaf, 'TAIL'), 8, 'ignored on the LEAF works the same way');
+
+  // Discriminating half: a genuine length source elsewhere is untouched.
+  const still = run({ AMT: { vlg: true, count: 'bytes' } });
+  eq(at(still, 'TAIL'), 4, 'an explicit VLG still frames the group');
+});
+
+test('an ignored field is rendered as a decision, not as an empty cell', () => {
+  // vlg:false is falsy, so every truthiness check treats it as "nothing set".
+  // Without a rendering of its own an ignore looks exactly like a field nobody
+  // touched — you would press it and see no change at all.
+  const chips = meOvlChips({ vlg: false });
+  assert.ok(chips.some(c => /not a length source/i.test(c)),
+    `the overrides list says so, got: ${JSON.stringify(chips)}`);
+  // And the Field Map marks it distinctly from both a source and a blank. The
+  // rule lives in the stylesheet, which is outside <script id="app">.
+  assert.ok(/me-fm-vlg-off/.test(APP_SRC), 'the renderer emits the class');
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const rule = (css.match(/\.me-fm-vlg-off\s*\{([^}]*)\}/) || [, ''])[1];
+  assert.ok(rule, 'the Field Map has a style for a suppressed guess');
+  assert.ok(/line-through/.test(rule),
+    `struck through, so it reads as "this WOULD have been a length source", got: ${rule}`);
+});
+
+test('selecting a field brings its override entry into view', () => {
+  // Reported: click a field that has an override and nothing appears to happen
+  // in the Overrides list. The `sel` class was applied — but the list is capped
+  // at 180px and sorted by id, so the highlighted row was usually below the fold.
+  const fn = psFnSource('_meOvlRefresh');
+  assert.ok(/\.me-ovl-row\.sel/.test(fn), 'it looks for the selected row');
+  assert.ok(/scrollIntoView/.test(fn), 'and scrolls it into view');
+  assert.ok(/block:\s*'nearest'/.test(fn),
+    "'nearest' — an already-visible row must not make the list jump");
+  // The two directions share one handler, so the table drives the list as well.
+  const rowHtml = psFnSource('_meFmRowHtml');
+  assert.ok(/_meOvlRowClick/.test(rowHtml), 'a Field Map row click goes through the same funnel');
+  assert.ok(/_meOvlRefresh\(\)/.test(psFnSource('_meOvlRowClick')), 'which refreshes the list');
+});
+
+test('the VLG button is a picker, and its three options are the three states', () => {
+  // It used to set vlg:true silently, which asked no question at the one moment
+  // the question matters — bytes or digits — and offered no way to say "no".
+  const ed = APP_SRC.slice(APP_SRC.indexOf("'vlg':       {"), APP_SRC.indexOf("'type':      {"));
+  assert.ok(/kind:\s*'sel'/.test(ed), 'it opens the select editor, not a silent toggle');
+  for (const opt of ['bytes', 'digits', 'ignore'])
+    assert.ok(new RegExp(`'${opt}'`).test(ed), `the picker offers ${opt}`);
+  assert.ok(/o\.vlg = false/.test(ed), 'ignore stores an explicit false');
+  assert.ok(/o\.count = v/.test(ed), 'the other two store the unit');
+  // The old silent toggle must be gone, or the button would have two behaviours.
+  const act = psFnSource('_meFmAct');
+  assert.ok(!/case 'vlg'/.test(act), 'no dead toggle branch left behind');
+  assert.ok(/_ME_FM_ED\[act\]/.test(act), 'and the dispatcher routes it to the editor');
+});
+
+test('the unit is INDEPENDENT of how the length was read', () => {
+  // The gap this closes: `count` used to be inferred from the LEN's own type
+  // being hex-char, so "a binary length in front of hex-char data, counting
+  // digits" could not be expressed at all. The type and the unit are now free.
+  const run = (type, count, lenBytes) =>
+    vlgRun(lenBytes, 60, { 'EMV.LEN': { type, bytes: 1, count } })
+      .fields.find(f => f.id === 'EMV.DATA').valueLength;
+  // 0x0C read as a binary integer is 12.
+  eq(run('uint-be', 'bytes',  [0x0C, 0x45]), 12, 'binary length, counting bytes');
+  eq(run('uint-be', 'digits', [0x0C, 0x45]),  6, 'the SAME binary length, counting digits');
+  // 0x12 read as its hex spelling is also 12 — same number, different reading.
+  eq(run('hex-char', 'bytes',  [0x12, 0x45]), 12, 'hex spelling, counting bytes');
+  eq(run('hex-char', 'digits', [0x12, 0x45]),  6, 'hex spelling, counting digits');
+});
+
+test('an absent count means bytes, which is what every non-hex-char LEN did', () => {
+  const n = vlgRun([0x0C, 0x45], 60, { 'EMV.LEN': { type: 'uint-be', bytes: 1 } })
+    .fields.find(f => f.id === 'EMV.DATA').valueLength;
+  eq(n, 12, 'no count stated → bytes');
+});
+
+test('the SAME bytes counted two ways give two payload sizes', () => {
+  // The pair that was impossible before: one reading of the number, two units.
+  // Only `count` differs between these two, and DATA is PIC X(20) so both fit —
+  // no capping to muddy the comparison.
+  const run = count => {
+    const ctx = vlgRun([0x12, 0x45], 60,
+      { 'EMV.LEN': { type: 'hex-char', bytes: 1, count } });
+    return ctx.fields.find(f => f.id === 'EMV.DATA').valueLength;
+  };
+  eq(run('digits'), 6,  '"12" as digits is ceil(12/2) = 6 bytes');
+  eq(run('bytes'), 12, 'the same "12" as bytes is 12');
 });
 
 test('uint8 on the same byte is 55 — that is the type that converts', () => {
@@ -6464,13 +6624,14 @@ test('without the override the same byte is still read as the digit 7', () => {
      'the byte-value guess still applies when nothing declares the type');
 });
 
-test('four characters of hex-char read two bytes: 3745', () => {
-  // CHANGED ON PURPOSE (v1.2.5.0): reading TWO wire bytes as hex-char now takes
-  // FOUR characters. The declared PIC X(2) buys two characters — one byte — so
-  // the width has to be asked for in the same units the type counts in.
+test('two wire bytes read as hex-char spell 3745', () => {
+  // PIC X(2) is two bytes, and hex-char spells them "3745". The width needs no
+  // override at all now — under v1.2.5.0 the same field bought only ONE byte and
+  // you had to ask for 4 to get 2 back.
   const iss = c => (c.fields.find(x => x.id === 'EMV.LEN').issue || '');
-  assert.ok(/length 3745 character/.test(iss(vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'hex-char', bytes: 4 } }))),
-    'hex-char: the characters "3745"');
+  assert.ok(/length 3745 digit/.test(iss(vlgRun([0x37, 0x45], 60,
+      { 'EMV.LEN': { type: 'hex-char', count: 'digits' } }))),
+    'hex-char: the characters "3745", counted as digits');
   assert.ok(/length 14149 /.test(iss(vlgRun([0x37, 0x45], 60, { 'EMV.LEN': { type: 'uint16-be' } }))),
     'uint16-be: the number 0x3745, and its length is already in bytes');
   assert.ok(/length 14149 /.test(iss(vlgRun([0x37, 0x45], 60))),
@@ -6927,37 +7088,39 @@ test('the bytes editor opens on the number that was typed in, not the wire width
     `the stored override wins, then the declared number, then the width: ${cfg}`);
 });
 
-test('a length override is labelled in the unit it counts', () => {
+test('a length override is labelled in bytes, whatever the type', () => {
   // Reported: SDLC-DEST PIC X(2) with hex-char and a 4 override showed a chip
   // reading "4 bytes" and a LEN column reading 2, so a working override looked
-  // like it had done nothing. The number was characters the whole time.
-  eq(meOvlChips({ type: 'hex-char', bytes: 4 }).find(c => /4/.test(c)), '4 chars',
-     'a hex-char width is chips-labelled as characters');
-  eq(meOvlChips({ bytes: 4 }).find(c => /4/.test(c)), '4 bytes',
-     'and everything else still says bytes');
-  eq(meOvlChips({ type: 'ascii', bytes: 4 }).find(c => /4/.test(c)), '4 bytes',
-     'including a 1:1 type override');
+  // like it had done nothing. It was characters against bytes. There is one unit
+  // now, so the chip and the column cannot disagree.
+  for (const ov of [{ type: 'hex-char', bytes: 4 }, { bytes: 4 }, { type: 'ascii', bytes: 4 }])
+    eq(meOvlChips(ov).find(c => /4/.test(c)), '4 bytes',
+       `every type labels a width in bytes, failed on ${JSON.stringify(ov)}`);
 });
 
-test('a hex-char width override is visible in the LEN column', () => {
-  // Reported: PIC X(2) widened to 4 characters showed a bare "2" — identical to
-  // no override at all — because 4 characters IS 2 wire bytes and the column
-  // compared bytes against the DDL's number. The same override on any other
-  // type showed "2 ↩ 4". Compared in the unit it is written in, it shows.
+test('a width override is visible in the LEN column', () => {
+  // The original report: an override that looked like it had done nothing,
+  // because 4 characters IS 2 wire bytes and the column compared bytes against
+  // the DDL's number. Four bytes against a declared two now differ outright.
   S.ddlTree = { V: { S: { D: DDL_BYTES } } };
   const rowsFor = ov => meWalkDEFields(getDDLFromPath('V/S/D/REC').defs,
     { ddl_bindings: ['V/S/D/REC'], overrides: { TAIL: ov } }).find(r => r.id === 'TAIL');
 
   const hex = rowsFor({ type: 'hex-char', bytes: 4 });
-  eq(hex.length, 2, 'still two wire bytes');
-  eq(hex.lenWritten, 4, 'but the override is four characters');
+  eq(hex.length, 4, 'four bytes were asked for and four are read');
+  eq(hex.lenWritten, 4, 'the override is four');
   eq(hex.declaredLen, 2, 'against a declared two');
   const rowCtx = { ea: x => String(x), vlgMap: new Map(), foByField: new Map(),
                    usesBitmapFields: false, leavesByGroup: new Map() };
   const lenCell = (meFmRowHtml(hex, rowCtx, { n: 0 })
     .match(/<td class="me-fm-len"[^>]*>(.*?)<\/td>/) || [, ''])[1];
   assert.ok(/↩/.test(lenCell), `the LEN column annotates it, got: ${lenCell}`);
-  assert.ok(/>2</.test(lenCell) && /4/.test(lenCell), 'declared 2 ↩ written 4');
+  assert.ok(/>2</.test(lenCell) && /4/.test(lenCell), 'declared 2 ↩ effective 4');
+
+  // A type alone changes nothing, so there is nothing to annotate.
+  const typeOnly = rowsFor({ type: 'hex-char' });
+  eq(typeOnly.length, 2, 'the declared width is untouched by the type');
+  eq(typeOnly.lenWritten, undefined, 'and no width was written');
 
   const plain = rowsFor({ bytes: 4 });
   eq(plain.lenWritten, 4, 'a plain bytes override is unchanged');
@@ -7711,13 +7874,13 @@ test('the Parse Results header matches the Field Map header', () => {
 
 test('a hex-char field with no width override shows its declared number', () => {
   // Discriminating half: nothing overridden means nothing to annotate, so a bare
-  // number here proves the ↩ above came from the override and not from hex-char.
+  // number here proves the ↩ above came from the override and not from the type.
   S.ddlTree = { V: { S: { D: DDL_BYTES } } };
   const row = meWalkDEFields(getDDLFromPath('V/S/D/REC').defs,
     { ddl_bindings: ['V/S/D/REC'], overrides: { MSGTYPE: { type: 'hex-char' } } })
     .find(r => r.id === 'MSGTYPE');
   eq(row.lenWritten, undefined, 'no width was written');
-  eq(row.length, 2, 'though four declared characters do cost two wire bytes');
+  eq(row.length, 4, 'and the declared four bytes stand — a type resizes nothing');
 });
 
 // ── A leaf length source and the field it sizes are ONE data element ────────
@@ -8196,25 +8359,22 @@ function inlRun(spec, item = {}) {
 const inlF = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
 
 test('a read-ddl block can carry its own overrides', () => {
-  // CHANGED ON PURPOSE (v1.2.5.0): hex-char counts characters wherever it is
-  // declared, inline included — MSGTYPE's declared 4 buys 4 characters off 2
-  // wire bytes. An inline override that behaved differently from a stored one
-  // would be the same override meaning two things.
+  // An inline override that behaved differently from a stored one would be the
+  // same override meaning two things.
   const ctx = inlRun([{ 'read-ddl': { overrides: { MSGTYPE: { type: 'hex-char' } } } }]);
-  eq(inlF(ctx, 'MSGTYPE').value, '3132', 'the inline type override was applied, in characters');
+  eq(inlF(ctx, 'MSGTYPE').value, '31323030', 'the inline type override was applied to every declared byte');
   eq(inlF(ctx, 'MSGTYPE').typeOverride, 'hex-char', 'and recorded as an override');
-  // TRACE carries no override of its own — that is what "does not mention" has
-  // to mean here. Its POSITION legitimately moves, because MSGTYPE giving back
-  // two bytes is the same re-layout any narrowing override causes.
   eq(inlF(ctx, 'TRACE').typeOverride, undefined, 'a field it does not mention gets no override');
-  eq(inlF(ctx, 'TRACE').value, '000001', 'it reads from where MSGTYPE now ends');
+  eq(inlF(ctx, 'TRACE').value, '000123', 'and does not move — a type resizes nothing');
 });
 
-test('an inline override that changes nothing leaves every position alone', () => {
-  // The discriminating half of the above: without a width-changing type, TRACE
-  // must sit exactly where the DDL puts it.
-  const ctx = inlRun([{ 'read-ddl': { overrides: { MSGTYPE: { type: 'ascii' } } } }]);
-  eq(inlF(ctx, 'TRACE').value, '000123', 'unmoved');
+test('an inline WIDTH override does re-lay out the fields after it', () => {
+  // The discriminating half: a type moves nothing, but a width moves everything
+  // after it. Without this pair, "nothing moved" could mean the inline override
+  // was never applied at all.
+  const ctx = inlRun([{ 'read-ddl': { overrides: { MSGTYPE: { bytes: 2 } } } }]);
+  eq(inlF(ctx, 'MSGTYPE').rawHex.length / 2, 2, 'MSGTYPE gives back two bytes');
+  eq(inlF(ctx, 'TRACE').value, '000001', 'so TRACE reads from where MSGTYPE now ends');
 });
 
 test('inline overrides beat the stored ones', () => {
@@ -8378,8 +8538,8 @@ END
       { 'read-bitmap-fields': { bitmap: 'BITMAP',
           overrides: { 'DE-A': { de: 2, type: 'hex-char' } } } },
     ] }, b);
-  // CHANGED ON PURPOSE (v1.2.5.0): four characters of hex-char, two wire bytes.
-  eq(inlF(ctx, 'DE-A').value, '4142', 'the inline type override applied inside the bitmap walk');
+  // A type renders the bytes; it no longer decides how many there are.
+  eq(inlF(ctx, 'DE-A').value, '41424344', 'the inline type override applied inside the bitmap walk');
   eq(inlF(ctx, 'DE-A').typeOverride, 'hex-char', 'and is recorded');
   assert.ok(inlF(ctx, 'DE-B'), 'the inline DE anchor renumbered the tail, so bit 4 resolved');
 });

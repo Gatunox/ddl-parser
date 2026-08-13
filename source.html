@@ -2305,6 +2305,10 @@ input.me-inp{width:100%;}
 .me-fm-ed input{width:58px;}
 /* A field whose value sizes the next one, and the field that depends on it. */
 .me-fm-vlg-src{color:var(--accent);font-weight:700;}
+/* A suppressed guess. Struck and dimmed so it reads as "this WOULD have been a
+   length source" — a blank cell would be indistinguishable from a field nobody
+   ever touched, which is the whole reason the ignore was hard to trust. */
+.me-fm-vlg-off{color:var(--text-very-dim);text-decoration:line-through;font-weight:700;}
 .me-fm-len-dep{color:var(--ok,#3fb950);}
 .me-fm-de-excl{color:var(--text-very-dim);}
 /* Derived from the owning group, not owned — dimmer than an assigned DE. */
@@ -7880,6 +7884,22 @@ function parseMessage(bytes, defs, rawBytes) {
         _ovEnt(_canonFieldId(group)).vlg = len ? _canonFieldId(len) : true;
       }
       delete spec.var_length_groups;
+    }
+    // What a VLG length COUNTS is its own attribute now. It used to be inferred
+    // from the LEN field's type being hex-char, so a spec written before this
+    // carries the answer implicitly. Write it down, once, exactly as it behaved:
+    // a hex-char LEN counted hex digits, everything else counted bytes.
+    //
+    // The type lives on the LEN LEAF, which for a group is the leaf `vlg` names
+    // (or the group's first leaf when it names none) — not on the group itself.
+    for (const id of Object.keys(spec.overrides)) {
+      const e = spec.overrides[id];
+      if (!e || e.count !== undefined) continue;      // already stated
+      if (e.vlg !== true && typeof e.vlg !== 'string') continue;   // not a length source
+      // vlg:true — the field itself is the length. vlg:"X" — X is.
+      const lenId = e.vlg === true ? id : _canonFieldId(e.vlg);
+      const lenType = spec.overrides[lenId]?.type;
+      e.count = /^hex-char$/i.test(String(lenType || '').trim()) ? 'digits' : 'bytes';
     }
     for (const k of Object.keys(spec.overrides))
       if (!spec.overrides[k] || !Object.keys(spec.overrides[k]).length) delete spec.overrides[k];
@@ -15695,7 +15715,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.8.3';
+const APP_VERSION  = '1.21.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20525,6 +20545,12 @@ function _meFmEffectiveVlg(groupId, ctx) {
     const chosen = _meVlgGet(ctx.vlgMap, groupId);
     return { lenId: chosen || (direct[0] && direct[0].id) || null, autoId, overridden: true };
   }
+  // Explicitly not a length group. `autoId` is still reported so the row can say
+  // WHAT was suppressed — an ignore that rendered as a blank cell would be
+  // indistinguishable from a field nobody ever touched.
+  const ovrOf = id => ctx.foByField?.get(_canonFieldId(id));
+  if (_meVlgIsIgnored(ovrOf, groupId, autoId))
+    return { lenId: null, autoId, overridden: false, ignored: true };
   return { lenId: autoId, autoId, overridden: false };
 }
 
@@ -20616,21 +20642,36 @@ function _meFmRowHtml(row, ctx, counter) {
     };
     // A plain field marked as a length source — the general rule, which needs no
     // group at all. Checked first: this is an explicit choice, not a deduction.
-    const _selfVlg = ctx.foByField.get(_canonFieldId(row.id))?.vlg === true;
+    const _selfOvr = ctx.foByField.get(_canonFieldId(row.id));
+    const _selfVlg = _selfOvr?.vlg === true;
+    // An ignore has to LOOK like a decision. A suppressed guess renders the same
+    // marker struck through, so the row says "this would have been a length
+    // source and is not" instead of going blank — which is what a field nobody
+    // touched already looks like.
+    const ignoredTag = why =>
+      `<td class="me-fm-vlg" title="${ea(why)}">`
+      + `<span class="me-fm-vlg-off">VLG</span></td>`;
     if (_selfVlg) {
       vlgCell = `<td class="me-fm-vlg" title="${ea('This field\'s value is the next field\'s length')}">`
               + `<span class="me-fm-vlg-src">VLG</span></td>`;
+    } else if (_meVlgIgnored(_selfOvr)) {
+      vlgCell = ignoredTag('Marked NOT a length source — the automatic "-LEN" rule is suppressed here');
     } else if (vlgEligible) {
       // Collapsed: the LEN leaf is off screen, so the group carries the marker.
       // Expanded: the leaf carries it, and the group row stays clean.
       const eff = _meFmEffectiveVlg(row.id, ctx);
       const isCollapsed = !!(typeof _meState !== 'undefined' && _meState?.fmCollapsedGroups?.has(row.id));
-      if (eff.lenId && isCollapsed) vlgCell = tag(eff, true);
+      if (eff.ignored && isCollapsed)
+        vlgCell = ignoredTag(`Marked NOT a variable-length group — "${eff.autoId || 'its first leaf'}" `
+                           + `would otherwise have been read as its length`);
+      else if (eff.lenId && isCollapsed) vlgCell = tag(eff, true);
     } else if (!isGroup && !row.isRedef) {
       const parent = row.id.slice(0, row.id.lastIndexOf('.'));
       if (parent) {
         const eff = _meFmEffectiveVlg(parent, ctx);
-        if (eff.lenId && _meVlgIsLen(eff.lenId, row.id)) vlgCell = tag(eff, false);
+        if (eff.ignored && _meVlgIsLen(eff.autoId, row.id))
+          vlgCell = ignoredTag('Marked NOT a length source — this leaf would otherwise have sized its group');
+        else if (eff.lenId && _meVlgIsLen(eff.lenId, row.id)) vlgCell = tag(eff, false);
       }
     }
   }
@@ -20654,12 +20695,11 @@ function _meFmRowHtml(row, ctx, counter) {
   // holds and the one the editor takes back. The wire width is always in the
   // title, and the OFFSET column beside this one carries it too.
   const _lenEff  = row.lenWritten != null ? row.lenWritten : (row.length || 0);
-  const _lenUnit = row.lenInChars ? 'characters' : 'bytes';
-  const _lenTip  = row.lenInChars
-    ? `${_lenEff} ${_lenUnit} = ${row.length || 0} wire byte(s)`
-    : '';
+  // Both numbers are bytes. There was a unit to switch here while a hex-char
+  // type re-read the declared length as characters; there is not any more.
+  const _lenTip  = '';
   const lenCell = (row.declaredLen != null && row.declaredLen !== _lenEff)
-    ? `<td class="me-fm-len" title="${ea(`DDL declares ${row.declaredLen} ${_lenUnit}; the override reads ${_lenEff}${row.lenInChars ? ` (${row.length || 0} wire byte(s))` : ''}`)}">`
+    ? `<td class="me-fm-len" title="${ea(`DDL declares ${row.declaredLen} byte(s); the override reads ${_lenEff}`)}">`
       + `<span class="c-ovr-orig">${row.declaredLen}</span>`
       + `<span class="c-ovr-arrow"> ↩ </span>`
       + `<span class="c-ovr-new">${_lenEff}</span></td>`
@@ -21140,18 +21180,15 @@ function _meWalkDEFields(defs, item) {
       // rebuilt def carries only the effective one, and without this the LEN
       // column could not say whether a number came from the DDL or an override.
       // What the user wrote, in the unit they wrote it in. Comparing a hex-char
-      // override (characters) against the DDL number (also characters) is the
-      // only way an override that lands on the same BYTE width stays visible:
-      // PIC X(2) widened to 4 characters is still 2 wire bytes, and reporting
-      // "2 vs 2" made a working override look like it had done nothing.
+      // Both numbers are BYTES now — the DDL's and the override's — so the two
+      // can be compared directly. They could not be while a hex-char type
+      // silently re-read the declared number as characters.
       const ovr     = _ovAll[_canonFieldId(d.id)];
-      const inChars = _meLenIsChars(ovr?.type);
       const o       = _meOvEffectiveLen(ovr);
       const written = o !== null ? o : (d.length || 0);
       return eff !== (d.length || 0) || written !== (d.length || 0) || start !== d.offset
         ? { ...d, offset: start, length: eff,
             _lenWritten:  written !== (d.length || 0) ? written : undefined,
-            _lenInChars:  inChars || undefined,
             _declaredLen: (eff !== (d.length || 0) || written !== (d.length || 0))
                             ? (d.length || 0) : undefined }
         : d;
@@ -21376,7 +21413,6 @@ function _meWalkDEFields(defs, item) {
     const length = def.length || 0;
     const declaredLen = def._declaredLen;
     const lenWritten  = def._lenWritten;
-    const lenInChars  = def._lenInChars;
     const offset = def.offset;
     // Only TOP-LEVEL leaves own a DE (see the group emit above) — any nested
     // leaf is part of its top-level element's data. FILLER is padding and
@@ -21390,17 +21426,17 @@ function _meWalkDEFields(defs, item) {
     if (vlgOwner && !isRedef && !underTerminal) {
       const _own = vlgOwner; vlgOwner = null;
       out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal,
-                 isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars,
+                 isRedef, redefTarget, dataType, length, declaredLen, lenWritten,
                  offset, ownerDE: _own.de, ownerId: _own.id });
       emitted.add(def.id);
       continue;
     }
     if (!forced && (underTerminal || !isDE(def.id))) {
-      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars, offset });
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, underTerminal, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, offset });
     } else if (_isRepOcc(def.id)) {
-      assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars, offset });
+      assignDE(def.id, { isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, offset });
     } else {
-      out.push({ id: def.id, de: null, anchored: false, isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, lenInChars, offset });
+      out.push({ id: def.id, de: null, anchored: false, isGroup: false, isTerminal: false, underTerminal: false, isRedef, redefTarget, dataType, length, declaredLen, lenWritten, offset });
     }
     // Arm the pairing AFTER this row has its number, so the field that follows
     // can derive it. Only a length source that actually owns a DE can own the
@@ -22244,11 +22280,11 @@ const _ME_FM_ED = {
   'de-anchor': { label: 'DE number',  kind: 'num',
                  def: () => String(_meFmSelRow()?.de ?? ''),
                  set: (o, v) => { o.de = Math.max(1, Math.min(128, +v)); } },
-  'bytes':     { label: () => _meLenIsChars(_meFmSelOvr()?.type) ? 'Read characters' : 'Read bytes', kind: 'num',
-                 // In the FIELD'S units, which is what was typed in: a hex-char
-                 // length counts characters, so a field showing 2 wire bytes
-                 // offers 4 here. Showing the byte count would ask the user to
-                 // re-type a number in a unit they never used.
+  'bytes':     { label: 'Read bytes', kind: 'num',
+                 // Bytes, always. The label used to say "characters" for a
+                 // hex-char field and the box was seeded from a number the DDL
+                 // wrote in bytes — so the value shown was already in the wrong
+                 // unit before anyone touched it.
                  def: () => { const r = _meFmSelRow();
                               const o = r ? _meOvGet(_meCurItem(), r.id) : null;
                               return String(o?.bytes ?? r?.declaredLen ?? r?.length ?? ''); },
@@ -22259,6 +22295,25 @@ const _ME_FM_ED = {
                  set: (o, v) => { o.bytes = +v; },
                  has: o => o.bytes != null,
                  clear: o => { delete o.bytes; } },
+  // VLG is a picker, not a toggle. Arming a length source raises a question that
+  // has to be answered at the same moment — does its number count BYTES of
+  // payload, or hex DIGITS of it? That used to be inferred from the LEN field's
+  // own type being hex-char, which welded two unrelated things together and made
+  // "a binary length in front of hex-char data" inexpressible.
+  //
+  // `ignore` is the third state: the built-in rule makes any group whose first
+  // leaf ends in -LEN variable-length, and until now the only way to say no was
+  // vlg_identifier:"" — which turns the guess off for the entire DDL.
+  'vlg':       { label: 'LEN counts', kind: 'sel',
+                 def: () => { const o = _meFmSelOvr();
+                              return o?.vlg === false ? 'ignore' : (o?.count || 'bytes'); },
+                 opts: () => ['bytes', 'digits', 'ignore'],
+                 set: (o, v) => {
+                   if (v === 'ignore') { o.vlg = false; delete o.count; }
+                   else { o.vlg = true; o.count = v; }
+                 },
+                 has:   o => o.vlg === true || o.vlg === false,
+                 clear: o => { delete o.vlg; delete o.count; } },
   'type':      { label: 'Read as', kind: 'sel',
                  def: () => _meFmSelOvr()?.type || 'hex-char',
                  opts: () => _ME_TYPE_OPTS.filter(Boolean), set: (o, v) => { o.type = v; } },
@@ -22376,8 +22431,10 @@ function _meFmNotesRefresh() {
     if (o.de === 'children') notes.push(`${id}: not a data element; its immediate children each take one`);
     if (typeof o.de === 'number' || (typeof o.de === 'string' && /^\d+$/.test(o.de)))
       notes.push(`${id}: anchored at DE ${o.de} — every element after it renumbers from here`);
-    if (o.vlg === true)      notes.push(`${id}: length source — the NEXT field is sized by its value`);
-    else if (o.vlg)          notes.push(`${id}: variable-length group — its LEN is ${o.vlg}`);
+    const _cnt = o.count === 'digits' ? ' counting hex digits' : ' counting bytes';
+    if (o.vlg === true)      notes.push(`${id}: length source — the NEXT field is sized by its value,${_cnt}`);
+    else if (o.vlg === false) notes.push(`${id}: NOT a length source — the automatic "-LEN" rule is suppressed here`);
+    else if (o.vlg)          notes.push(`${id}: variable-length group — its LEN is ${o.vlg},${_cnt}`);
     if (o.bytes)             notes.push(`${id}: read as ${o.bytes} bytes instead of the declared length — everything after it shifts`);
     if (o.type)              notes.push(`${id}: read as ${o.type}`);
     if (o.display)           notes.push(`${id}: shown as ${o.display}`);
@@ -22450,7 +22507,6 @@ function _meFmAct(act) {
       case 'de-off':  o.de = false; break;
       case 'de-on':   o.de = true; break;
       case 'de-kids': o.de = 'children'; break;
-      case 'vlg':     o.vlg = true; break;
     }
   }
   _meFmNoteExpansion(act, targets);
@@ -22505,7 +22561,7 @@ function _meFmBarRefresh() {
 function _meOvlChips(o) {
   const c = [];
   if (o.type)         c.push(_meOvEsc(o.type));
-  if (o.bytes)        c.push(o.bytes + (_meLenIsChars(o.type) ? ' chars' : ' bytes'));
+  if (o.bytes)        c.push(o.bytes + ' bytes');
   if (o.display)      c.push('as ' + _meOvEsc(o.display));
   // The de key carries four different things, and only one of them is a number.
   // "DE-false" and "DE-children" are what string concatenation produced.
@@ -22515,8 +22571,10 @@ function _meOvlChips(o) {
   else if (o.de != null)    c.push('DE-' + o.de);
   // vlg:true on a LEAF means "sizes the next field"; on a group it still names
   // the LEN sub-field. Same key, two readings — say which one this is.
-  if (o.vlg === true)  c.push('length source');
-  else if (o.vlg)      c.push('VLG → ' + _meOvEsc(String(o.vlg).split('.').pop()));
+  if (o.vlg === true)  c.push('length source' + (o.count ? ` (${o.count})` : ''));
+  else if (o.vlg === false) c.push('not a length source');
+  else if (o.vlg)      c.push('VLG → ' + _meOvEsc(String(o.vlg).split('.').pop())
+                              + (o.count ? ` (${o.count})` : ''));
   return c;
 }
 
@@ -22566,6 +22624,13 @@ function _meOvlRefresh() {
               onclick="event.stopPropagation();_meOvlDelete('${_meOvEsc(id)}')">✕</button>
     </div>`).join('')
     : `<div class="me-ovl-empty">No overrides.<br>Select a field in the list below and use the action bar.</div>`;
+
+  // Bring the selected entry into view. The list is capped at 180px and sorted
+  // by field id, so on a spec with more than a handful of overrides the row that
+  // just got its `sel` highlight was usually below the fold — selecting a field
+  // in the table appeared to do nothing to the list. `block:'nearest'` keeps the
+  // list still when the row is already visible, so this never jumps under you.
+  listEl.querySelector('.me-ovl-row.sel')?.scrollIntoView({ block: 'nearest' });
 
   _meFmNotesRefresh();
 }
@@ -24696,8 +24761,7 @@ function _meReadOneFieldFromDef(def, ctx) {
     // ...and what that costs on the wire. Both causes — an explicit "bytes" and
     // a hex-char length in characters — end up as one byte count, so there is
     // one shift to account for rather than two that could disagree.
-    const _bytes = _meLenIsChars(_eff?.type) ? _meCharsToBytes(_want) : _want;
-    if (_meLenIsChars(_eff?.type)) ctx._charLen = (ctx._charLen || {}), ctx._charLen[def.id] = _want;
+    const _bytes = _want;
     if (_bytes !== (def.length || 0)) {
       if (!ctx._ovShiftSeen) ctx._ovShiftSeen = new Set();
       if (!ctx._ovShiftSeen.has(def.id)) {
@@ -24769,13 +24833,13 @@ function _meReadOneFieldFromDef(def, ctx) {
   // field. Several per level is fine — each arms only its own successor, unlike
   // a group, which could carry exactly one.
   if (_meOvEffective(ctx, def.id)?.vlg === true) {
-    const _lt = _meOvEffective(ctx, def.id)?.type;
+    const _ovr = _meOvEffective(ctx, def.id);
+    const _lt = _ovr?.type;
     let _n = _meDecodeLength(fBytes, _lt, ctx.lenEnc);
     _n = _n == null ? 0 : Math.max(0, _n);
-    // A hex-char length counts CHARACTERS, exactly as it does in a VLG group —
-    // the leaf form skipped this and was not even consistent with its own group
-    // version. Reported in the unit it was written in.
-    const _written = _n, _inChars = _meLenIsChars(_lt);
+    // What the number COUNTS is `count`, not the type it was read with. Reported
+    // in the unit it was written in either way.
+    const _written = _n, _inChars = _meVlgCountsDigits(_ovr);
     if (_inChars) _n = _meCharsToBytes(_n);
     // A length longer than the message left cannot be right. The group path has
     // always said so; the leaf path said nothing, so a wire value like 24,252,626
@@ -24783,7 +24847,7 @@ function _meReadOneFieldFromDef(def, ctx) {
     // when the highlight walked it.
     const _avail = ctx.bytes.length - fEnd;
     if (_n > _avail) {
-      _issue = `${def.id}: length ${_written}${_inChars ? ` character(s) = ${_n} byte(s)` : ''} `
+      _issue = `${def.id}: length ${_written}${_inChars ? ` digit(s) = ${_n} byte(s)` : ''} `
              + `runs past the end of the message (${_avail} byte(s) left) — read as `
              + `${_meLengthReadAs(fBytes, _lt)}`;
       _n = Math.max(0, _avail);
@@ -24874,9 +24938,13 @@ function _meDDLVlgRuns(defs, ctx) {
       const leaves = defs.slice(i, j).filter(d => !d.isRedefines && !(d._occursPath && d._occursPath.length));
       if (leaves.length < 2 || leaves.length !== j - i) continue;
       const direct = leaves.filter(d => !d.id.slice(pre.length).includes('.'));
+      const _auto  = _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
       const lenId  = _meVlgHas(vlgMap, gid)
         ? (_meVlgGet(vlgMap, gid) || direct[0]?.id || null)
-        : _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
+        // An explicit ignore beats the built-in "first leaf ends in -LEN" guess.
+        // Without it the only off-switch was vlg_identifier:"" — which turns the
+        // guess off for the WHOLE DDL, taking every genuine LLVAR with it.
+        : (_meVlgIsIgnored(id => _meOvEffective(ctx, id), gid, _auto) ? null : _auto);
       if (!lenId) continue;
       claimed.add(gid);
       runs.set(i, { groupId: gid, end: j, leaves, lenId });
@@ -25264,11 +25332,9 @@ function _meApplyTypeOverride(f, def, ctx, inlineType) {
   let typeOverride = inlineType || null;
   if (!typeOverride) typeOverride = _meOvEffective(ctx, def.id)?.type || null;
   if (!typeOverride) return;
-  // A hex-char length is a character count, and an odd one spends a whole byte
-  // to show half of it: 1 character of 0x37 is "3". The trailing nibble is the
-  // field's own padding — fields still start on byte boundaries, so it is
-  // dropped rather than handed to whatever comes next.
-  const _trimChars = _meLenIsChars(typeOverride) ? ctx?._charLen?.[def.id] : null;
+  // The odd-nibble trim is gone with the sizing: a field is measured in whole
+  // bytes now, so a hex-char value is always an even number of characters and
+  // there is no half character left over to drop.
   // No length check any more. An override is an edit to the DDL: the field was
   // already READ at the length the override implies (_meOvEffectiveLen), so by
   // the time the type is applied the bytes in hand are the right ones. The old
@@ -25280,8 +25346,6 @@ function _meApplyTypeOverride(f, def, ctx, inlineType) {
   // override, so it did not participate in the length decision and must still
   // be checked against the bytes actually read.
   const _applyTrim = () => {
-    if (_trimChars != null && typeof f.value === 'string' && f.value.length > _trimChars)
-      f.value = f.value.slice(0, _trimChars);
   };
   if (inlineType) {
     const required = _meReadTypeByteLen(inlineType);
@@ -25969,18 +26033,46 @@ function _meBuildDEMap(ctx) {
 // account. `_meReadOneFieldFromDef` has always honoured this; the VLG group path
 // builds its LEN and payload rows by hand and read `def.length` directly, so an
 // override set on either was shown in the Field Map and ignored by the parse.
-// hex-char renders one byte as TWO characters, so a length written for a
-// hex-char field counts characters, not bytes: PIC X(4) as hex-char is "0200" —
-// four characters off two wire bytes. Every other type is 1:1 and unaffected.
-// An odd count spends a whole byte and shows half of it; that trailing nibble is
-// the field's own padding, which is how packed data is written.
-const _meLenIsChars = t => /^hex-char$/i.test(String(t || '').trim());
+// One byte renders as TWO hex characters, so a count of characters is half as
+// many bytes. This is still how a VLG length is counted when its `count` says
+// `digits` — but it is NO LONGER how a field is SIZED.
+//
+// hex-char used to re-read the DDL's declared length as characters, so PIC X(4)
+// silently became 2 wire bytes. Three things went wrong with that. The number in
+// the DDL was written in bytes and got a second meaning it never asked for; the
+// only way back to 4 bytes was to type 8 into a box seeded with 4; and the guard
+// that stops a pointless override compared that typed 4 against the declared 4
+// and threw it away — two different units, judged equal.
+//
+// A field's width now comes from the DDL, or from a `bytes` override the user
+// sets on purpose. The type says how to READ the bytes, never how many there are.
 const _meCharsToBytes = n => Math.ceil((n || 0) / 2);
+
+// What a VLG length's number COUNTS — bytes of payload, or hex digits of it.
+// It used to be inferred from the LEN field's own type: hex-char meant digits,
+// anything else meant bytes. Those are unrelated questions. How the number is
+// ENCODED (binary, ASCII digits, a hex spelling) says nothing about what it
+// counts, so a binary length in front of hex-char data could not be expressed at
+// all, and a hex-char length in front of plain data counted digits whether that
+// was right or not. `count` states it outright.
+//
+// Absent means bytes, which is what every non-hex-char length did before.
+const _meVlgCountsDigits = ovr => String(ovr?.count || '').toLowerCase() === 'digits';
+// An explicit false is "this is NOT a length source" — it suppresses the
+// built-in guess that any group whose first leaf ends in -LEN is variable
+// length. Absent still means "guess"; only a stored false says no.
+const _meVlgIgnored = ovr => ovr?.vlg === false;
+// Marked "ignore" on the group, or on the leaf the guess would have picked.
+// The Field Map targets a group's VLG action at its first leaf, so an ignore can
+// legitimately land on either id; both are honoured rather than making the user
+// know which one the button wrote to.
+function _meVlgIsIgnored(getOvr, groupId, leafId) {
+  return _meVlgIgnored(getOvr(groupId)) || (leafId != null && _meVlgIgnored(getOvr(leafId)));
+}
 
 function _meWireLen(ovr, declaredLen) {
   const o = _meOvEffectiveLen(ovr);
-  const n = o !== null ? o : (declaredLen || 0);
-  return _meLenIsChars(ovr?.type) ? _meCharsToBytes(n) : n;
+  return o !== null ? o : (declaredLen || 0);
 }
 function _meEffLen(def, ctx) {
   return _meWireLen(_meOvEffective(ctx, def.id), def.length);
@@ -26358,14 +26450,19 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   const lBytes = Array.from(ctx.bytes.slice(lStart, lStart + lLen));
   const lValue = lBytes.map(b => String.fromCharCode(b)).join('');
   const lenErrs = [];
-  const lType = _meOvEffective(ctx, lenDef.id)?.type;
+  const lOvr  = _meOvEffective(ctx, lenDef.id);
+  const lType = lOvr?.type;
   let N = _meDecodeLength(lBytes, lType, ctx.lenEnc);
-  // A hex-char LEN counts CHARACTERS — 37 means 37 characters of payload, which
-  // is 19 wire bytes. Converted here, once, so the bounds below and every child
-  // after stay byte-based. `Nwritten` is what the message says, because that is
-  // the number the user can see in the LEN's own value.
+  // `count: digits` means 37 is 37 hex digits of payload — 19 wire bytes.
+  // Converted here, once, so the bounds below and every child after stay
+  // byte-based. `Nwritten` is what the message says, because that is the number
+  // the user can see in the LEN's own value.
+  //
+  // This used to key off the LEN's own type being hex-char, which welded two
+  // unrelated questions together: how the number is encoded, and what it counts.
+  // A binary length in front of hex-char data could not say "digits" at all.
   const Nwritten = N;
-  const lenInChars = _meLenIsChars(lType);
+  const lenInChars = _meVlgCountsDigits(lOvr);
   if (N != null && lenInChars) N = _meCharsToBytes(N);
   // Nothing declared an encoding and these bytes are digits in the other one.
   // The number above is a binary integer nobody chose, so name the one field
@@ -26387,11 +26484,11 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   const capacity  = dataDefs.reduce((t, d) => t + _meEffLen(d, ctx), 0);
   const available = ctx.bytes.length - (lStart + lLen);
   if (N > available) {
-    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` character(s) = ${N} byte(s)` : ''} runs past the end of the message (${available} byte(s) left) — read as ${
+    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` digit(s) = ${N} byte(s)` : ''} runs past the end of the message (${available} byte(s) left) — read as ${
       _meLengthReadAs(lBytes, lType)}`);
     N = Math.max(0, available);
   } else if (capacity && N > capacity) {
-    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` character(s) = ${N} byte(s)` : ''} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload — read as ${capacity}`);
+    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` digit(s) = ${N} byte(s)` : ''} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload — read as ${capacity}`);
   }
   ctx.cursor = lStart + lLen;
   // The complaint belongs ON the LEN field, not beside it. Pushing it as its own

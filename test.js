@@ -5230,6 +5230,265 @@ test('a tag mapped to a missing element is reported, not silently dropped', () =
   assert.ok(e && e.error.includes('not found in the DDL'), `expected a clear error, got: ${e && e.error}`);
 });
 
+// ── read-tlv — every optional parameter, crossed, with expected output ───────
+// Existing tests above pin individual incidents. This matrix is the other half:
+// encoding × framing × tags × unknown × leaf names × len form, each case stating
+// the fields that must come out. A combination that only "runs" is not coverage.
+console.log('\nread-tlv — optional-parameter matrix');
+
+const TLV_MX_DDL = `DEF REC.
+  02 BUF PIC X(64).
+  02 F55.
+    04 F55-LEN PIC X(2).
+    04 F55-DATA PIC X(32).
+  02 STD.
+    04 TAG  PIC X(4).
+    04 LEN  PIC X(2).
+    04 DATA PIC X(16).
+  02 CUSTOM.
+    04 T PIC X(4).
+    04 L PIC X(2).
+    04 V PIC X(16).
+  02 ARQC.
+    04 LEN  PIC X(2).
+    04 DATA PIC X(16).
+  02 TAIL PIC X(4).
+END REC.
+`;
+// Two triples, three encodings of the same logical content:
+//   binary / BER : 9F26/4 → 11223344 , 9F36/2 → 0001
+//   ascii-hex    : those bytes written as hex characters
+//   ascii        : "0002"/"0005"/"HELLO" , "0003"/"0004"/"VISA"
+const TLV_BIN = [0x9F,0x26,0x04,0x11,0x22,0x33,0x44, 0x9F,0x36,0x02,0x00,0x01];
+const TLV_HEX = [...'9F2604112233449F36020001'].map(c => c.charCodeAt(0));
+const TLV_ASC = [...'00020005HELLO00030004VISA'].map(c => c.charCodeAt(0));
+const TLV_LEN = [0x00, TLV_BIN.length, ...TLV_BIN, 0x54,0x41,0x49,0x4C]; // "TAIL"
+
+function tlvMx(attrs, bytes, spec) {
+  S.ddlTree = { V: { S: { D: TLV_MX_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: spec || [
+      { 'read-fixed': { length: bytes.length, as: 'BUF' } },
+      { 'read-tlv': attrs },
+    ] }, Uint8Array.from(bytes));
+}
+const tlvHex = (ctx, id) => {
+  const f = ctx.fields.find(x => x.id === id && !x.error);
+  return f ? (f.rawHex || '').toUpperCase() : undefined;
+};
+const tlvVal = (ctx, id) => {
+  const f = ctx.fields.find(x => x.id === id && !x.error);
+  return f ? f.value : undefined;
+};
+const tlvIds = ctx => ctx.fields.filter(f => f.id !== 'BUF').map(f => f.id);
+const tlvErr = ctx => ctx.fields.filter(f => f.error).map(f => f.error);
+
+// Framing × encoding — unmapped (no tags): every triple is <buffer>.<tag>
+const TLV_UNMAPPED = [
+  { name: 'binary (default encoding)',
+    attrs: { field: 'BUF', tag_length: 2, length_length: 1 },
+    bytes: TLV_BIN, a: 'BUF.9F26', aHex: '11223344', b: 'BUF.9F36', bHex: '0001',
+    aAt: 3, pos: true },
+  { name: 'binary (encoding stated)',
+    attrs: { field: 'BUF', tag_length: 2, length_length: 1, encoding: 'binary' },
+    bytes: TLV_BIN, a: 'BUF.9F26', aHex: '11223344', b: 'BUF.9F36', bHex: '0001',
+    aAt: 3, pos: true },
+  { name: 'ber',
+    attrs: { field: 'BUF', ber: true },
+    bytes: TLV_BIN, a: 'BUF.9F26', aHex: '11223344', b: 'BUF.9F36', bHex: '0001',
+    aAt: 3, pos: true },
+  { name: 'ascii-hex',
+    attrs: { field: 'BUF', tag_length: 2, length_length: 1, encoding: 'ascii-hex' },
+    bytes: TLV_HEX, a: 'BUF.9F26', aHex: '11223344', b: 'BUF.9F36', bHex: '0001',
+    pos: false },
+  { name: 'ascii',
+    attrs: { field: 'BUF', tag_length: 4, length_length: 4, encoding: 'ascii' },
+    bytes: TLV_ASC, a: 'BUF.0002', aHex: '48454C4C4F', b: 'BUF.0003', bHex: '56495341',
+    aAt: 8, pos: true, aVal: 'HELLO', bVal: 'VISA' },
+];
+for (const c of TLV_UNMAPPED) {
+  test(`unmapped ${c.name}: two triples, values and positions`, () => {
+    const ctx = tlvMx(c.attrs, c.bytes);
+    eq(tlvHex(ctx, c.a), c.aHex, `${c.a} value`);
+    eq(tlvHex(ctx, c.b), c.bHex, `${c.b} value`);
+    if (c.aVal) eq(tlvVal(ctx, c.a), c.aVal, `${c.a} text`);
+    if (c.bVal) eq(tlvVal(ctx, c.b), c.bVal, `${c.b} text`);
+    const fa = ctx.fields.find(f => f.id === c.a);
+    if (c.pos) eq(fa.startByte, c.aAt, `${c.a} starts at the value bytes`);
+    else assert.ok(fa.startByte == null, 'ascii-hex has no 1:1 byte position');
+    eq(ctx.fields.some(f => f.error), false, 'clean parse');
+  });
+}
+
+// tags × unknown, for each encoding. First tag mapped, second is the unknown.
+const TLV_MAPPED = [
+  { name: 'binary',
+    attrs: { field: 'BUF', tag_length: 2, length_length: 1, encoding: 'binary',
+             tags: { '9F26': { field: 'ARQC' } } },
+    bytes: TLV_BIN, mapped: 'ARQC.DATA', mappedHex: '11223344',
+    lenId: 'ARQC.LEN', lenHex: '04',
+    unmapped: 'BUF.9F36', unmappedHex: '0001' },
+  { name: 'ber',
+    attrs: { field: 'BUF', ber: true, tags: { '9F26': { field: 'ARQC' } } },
+    bytes: TLV_BIN, mapped: 'ARQC.DATA', mappedHex: '11223344',
+    lenId: 'ARQC.LEN', lenHex: '04',
+    unmapped: 'BUF.9F36', unmappedHex: '0001' },
+  { name: 'ascii-hex',
+    attrs: { field: 'BUF', tag_length: 2, length_length: 1, encoding: 'ascii-hex',
+             tags: { '9F26': { field: 'ARQC' } } },
+    bytes: TLV_HEX, mapped: 'ARQC.DATA', mappedHex: '11223344',
+    lenId: 'ARQC.LEN', lenHex: '04',
+    unmapped: 'BUF.9F36', unmappedHex: '0001' },
+  { name: 'ascii',
+    attrs: { field: 'BUF', tag_length: 4, length_length: 4, encoding: 'ascii',
+             tags: { '0002': { field: 'STD' } } },
+    bytes: TLV_ASC, mapped: 'STD.DATA', mappedHex: '48454C4C4F',
+    lenId: 'STD.LEN', lenHex: '30303035', tagId: 'STD.TAG', tagHex: '30303032',
+    unmapped: 'BUF.0003', unmappedHex: '56495341' },
+];
+for (const c of TLV_MAPPED) {
+  for (const unknown of ['emit', 'skip', 'error']) {
+    test(`mapped ${c.name} + unknown:${unknown}`, () => {
+      const ctx = tlvMx({ ...c.attrs, unknown }, c.bytes);
+      eq(tlvHex(ctx, c.mapped), c.mappedHex, 'mapped value lands in the element');
+      eq(tlvHex(ctx, c.lenId), c.lenHex, 'mapped length leaf is filled');
+      if (c.tagId) eq(tlvHex(ctx, c.tagId), c.tagHex, 'TAG leaf kept when the DDL declares it');
+      if (unknown === 'emit') {
+        eq(tlvHex(ctx, c.unmapped), c.unmappedHex, 'unmapped tag is invented');
+        eq(tlvErr(ctx).length, 0, 'emit is not an error');
+      } else if (unknown === 'skip') {
+        assert.ok(!ctx.fields.some(f => f.id === c.unmapped), 'skip drops the unmapped tag');
+        eq(tlvErr(ctx).length, 0, 'skip is silent');
+      } else {
+        assert.ok(ctx.fields.some(f => f.error && /not mapped/.test(f.error)),
+          `error flags the unmapped tag, got: ${tlvErr(ctx).join(' | ')}`);
+        assert.ok(!ctx.fields.some(f => f.id === c.unmapped && !f.error),
+          'and does not also invent a data row');
+      }
+    });
+  }
+}
+
+// unknown without tags/ber takes the simple path, which always emits — the
+// policy is only honoured once the mapped executor is entered.
+test('unknown:skip without tags or ber is ignored — the simple path always emits', () => {
+  const ctx = tlvMx({ field: 'BUF', tag_length: 2, length_length: 1, unknown: 'skip' }, TLV_BIN);
+  assert.ok(tlvHex(ctx, 'BUF.9F26'), 'still emitted');
+  assert.ok(tlvHex(ctx, 'BUF.9F36'), 'both triples');
+});
+test('unknown:skip with tags:{} enters the mapped path and drops every tag', () => {
+  const ctx = tlvMx({ field: 'BUF', tag_length: 2, length_length: 1, tags: {}, unknown: 'skip' }, TLV_BIN);
+  deepEq(tlvIds(ctx), [], 'nothing invented');
+});
+test('unknown:error with tags:{} flags every tag', () => {
+  const ctx = tlvMx({ field: 'BUF', ber: true, tags: {}, unknown: 'error' }, TLV_BIN);
+  eq(ctx.fields.filter(f => f.error && /not mapped/.test(f.error)).length, 2, 'both tags flagged');
+});
+
+// Custom leaf names — block-level and per-tag. The defaults (TAG/LEN/DATA) must
+// not fire when the spec names T/L/V, and a per-tag name must beat the block.
+test('tag_field / length_field / value_field rename the leaves', () => {
+  const ctx = tlvMx({ field: 'BUF', ber: true, unknown: 'skip',
+    tag_field: 'T', length_field: 'L', value_field: 'V',
+    tags: { '9F26': { field: 'CUSTOM' } } }, TLV_BIN);
+  eq(tlvHex(ctx, 'CUSTOM.T'), '9F26', 'tag leaf');
+  eq(tlvHex(ctx, 'CUSTOM.L'), '04', 'length leaf');
+  eq(tlvHex(ctx, 'CUSTOM.V'), '11223344', 'value leaf');
+  assert.ok(!ctx.fields.some(f => /CUSTOM\.(TAG|LEN|DATA)$/.test(f.id)),
+    'default names are not also filled');
+});
+test('per-tag leaf names beat the block-level names', () => {
+  const ctx = tlvMx({ field: 'BUF', ber: true, unknown: 'skip',
+    tag_field: 'T', length_field: 'L', value_field: 'V',
+    tags: {
+      '9F26': { field: 'CUSTOM', tag_field: 'T', length_field: 'L', value_field: 'V' },
+      '9F36': { field: 'STD' },
+    } }, TLV_BIN);
+  eq(tlvHex(ctx, 'CUSTOM.V'), '11223344', '9F26 uses the per-tag T/L/V');
+  // Block-level T/L/V still apply to 9F36, and STD has TAG/LEN/DATA — so no
+  // matching leaves, and the value is emitted on the group itself.
+  eq(tlvHex(ctx, 'STD'), '0001', '9F36 falls through to the group id');
+  assert.ok(!ctx.fields.some(f => f.id === 'STD.DATA'),
+    'block-level T/L/V prevented the default DATA leaf');
+});
+test('per-tag leaf names can restore the defaults for one tag', () => {
+  const ctx = tlvMx({ field: 'BUF', ber: true, unknown: 'skip',
+    tag_field: 'T', length_field: 'L', value_field: 'V',
+    tags: {
+      '9F26': { field: 'CUSTOM' },
+      '9F36': { field: 'STD', tag_field: 'TAG', length_field: 'LEN', value_field: 'DATA' },
+    } }, TLV_BIN);
+  eq(tlvHex(ctx, 'CUSTOM.V'), '11223344', '9F26 still uses T/L/V');
+  eq(tlvHex(ctx, 'STD.DATA'), '0001', '9F36 uses the per-tag defaults');
+  eq(tlvHex(ctx, 'STD.TAG'), '9F36', 'and keeps the tag');
+});
+
+// len — string / number / {field} / {bytes} all frame the same buffer.
+const TLV_LEN_SPEC = { field: 'F55', ber: true,
+  tags: { '9F26': { field: 'ARQC' } }, unknown: 'skip' };
+const tlvLenSpec = (len) => [
+  { 'read-tlv': { ...TLV_LEN_SPEC, len } },
+  { 'read-fixed': { length: 4, as: 'TAIL' } },
+];
+for (const [label, len] of [
+  ['string field id',        'F55.F55-LEN'],
+  ['number of bytes',        2],
+  ['object {field}',         { field: 'F55.F55-LEN' }],
+  ['object {bytes}',         { bytes: 2 }],
+  ['object {bytes, type}',   { bytes: 2, type: 'uint-be' }],
+]) {
+  test(`len ${label} frames the buffer and the tail follows`, () => {
+    const ctx = tlvMx({ ...TLV_LEN_SPEC, len }, TLV_LEN, tlvLenSpec(len));
+    eq(tlvHex(ctx, 'ARQC.DATA'), '11223344', 'mapped tag inside the framed window');
+    eq(tlvVal(ctx, 'TAIL'), 'TAIL', 'TAIL is the four bytes after the length+tags');
+    const tail = ctx.fields.find(f => f.id === 'TAIL');
+    eq(tail.startByte, 14, '2-byte length + 12-byte tags');
+    eq(ctx.fields.some(f => /9F36/.test(f.id)), false, 'unknown:skip still applies');
+  });
+}
+
+test('a zero-length value is a real triple, not a stop', () => {
+  const bytes = [0x9F,0x26,0x00, 0x9F,0x36,0x02,0x00,0x01];
+  const ctx = tlvMx({ field: 'BUF', tag_length: 2, length_length: 1 }, bytes);
+  eq(tlvHex(ctx, 'BUF.9F26'), '', 'empty value');
+  eq(ctx.fields.find(f => f.id === 'BUF.9F26').valueLength, 0, 'length 0');
+  eq(tlvHex(ctx, 'BUF.9F36'), '0001', 'the next triple still frames');
+});
+
+test('a truncated value: simple path stops, mapped path reports', () => {
+  const bytes = [0x9F,0x26,0x04,0x11,0x22];          // says 4, only 2 remain
+  const simple = tlvMx({ field: 'BUF', tag_length: 2, length_length: 1 }, bytes);
+  assert.ok(!simple.fields.some(f => f.id === 'BUF.9F26'), 'simple path emits nothing for the broken triple');
+  assert.ok(!simple.fields.some(f => f.error), 'and does not say why');
+  const mapped = tlvMx({ field: 'BUF', ber: true, tags: {}, unknown: 'emit' }, bytes);
+  assert.ok(mapped.fields.some(f => f.error && /runs past the end/.test(f.error)),
+    `mapped path names the overrun, got: ${tlvErr(mapped).join(' | ')}`);
+});
+
+test('missing field (and no len / de scope) is reported', () => {
+  const ctx = tlvMx({ tag_length: 2, length_length: 1 }, TLV_BIN);
+  assert.ok(ctx.fields.some(f => /Missing field/.test(f.error || '')),
+    `got: ${tlvErr(ctx).join(' | ')}`);
+});
+test('fixed-width without tag_length / length_length is reported', () => {
+  const ctx = tlvMx({ field: 'BUF' }, TLV_BIN);
+  assert.ok(ctx.fields.some(f => /tag_length and length_length/.test(f.error || '')),
+    `got: ${tlvErr(ctx).join(' | ')}`);
+});
+test('ascii encoding on binary bytes fails the length as non-decimal', () => {
+  const ctx = tlvMx({ field: 'BUF', tag_length: 2, length_length: 1, encoding: 'ascii' }, TLV_BIN);
+  assert.ok(ctx.fields.some(f => /not a decimal number/.test(f.error || '')),
+    `got: ${tlvErr(ctx).join(' | ')}`);
+});
+test('ber + encoding:ascii keys the tag by its characters, so a hex tags map misses', () => {
+  const ctx = tlvMx({ field: 'BUF', ber: true, encoding: 'ascii',
+    tags: { '9F26': { field: 'ARQC' } }, unknown: 'emit' }, TLV_BIN);
+  assert.ok(!tlvHex(ctx, 'ARQC.DATA'), 'the hex key does not match a character key');
+  assert.ok(ctx.fields.some(f => f.id.startsWith('BUF.') && !f.error),
+    'the triple is emitted as an invented row under the character key');
+});
+
 // ── Variable-length groups: the LEN is read in the MESSAGE's encoding ───────
 // It used to be read as characters and parseInt'd, with "|| 0" swallowing the
 // failure — so on a binary message the length came out 0, the group collapsed to

@@ -15715,7 +15715,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.10.0';
+const APP_VERSION  = '1.21.10.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24973,8 +24973,17 @@ function _meDDLVlgRuns(defs, ctx) {
       if (leaves.length < 2 || leaves.length !== j - i) continue;
       const direct = leaves.filter(d => !d.id.slice(pre.length).includes('.'));
       const _auto  = _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
-      const lenId  = _meVlgHas(vlgMap, gid)
-        ? (_meVlgGet(vlgMap, gid) || direct[0]?.id || null)
+      // The VLG button writes its flag to the group's FIRST LEAF, not to the
+      // group — _meFmExpandTargets targets leaves[0]. Only the group was looked
+      // up here, so marking a group through the UI fell through to the leaf rule
+      // instead: the length was handed to the next leaf and capped at ITS size,
+      // which for a nested payload is the first sub-field of the first subgroup.
+      // That produced "TAG declares at most 2" about a field nobody touched, and
+      // the group was never framed at all.
+      const _firstLeafVlg = direct[0] && _meOvEffective(ctx, direct[0].id)?.vlg === true
+        ? direct[0].id : null;
+      const lenId  = _meVlgHas(vlgMap, gid) || _firstLeafVlg
+        ? (_meVlgGet(vlgMap, gid) || _firstLeafVlg || direct[0]?.id || null)
         // An explicit ignore beats the built-in "first leaf ends in -LEN" guess.
         // Without it the only off-switch was vlg_identifier:"" — which turns the
         // guess off for the WHOLE DDL, taking every genuine LLVAR with it.

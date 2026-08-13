@@ -5693,6 +5693,95 @@ test('a backwards window is refused', () => {
     'an empty window is called out rather than silently doing nothing');
 });
 
+// ── A VLG marked through the UI lands on the group's FIRST LEAF ────────────
+// The VLG button targets leaves[0], not the group, so the engine has to accept
+// the flag in either place. It only looked at the group, so a UI-marked group
+// fell through to the leaf rule: the length went to the next LEAF — for a nested
+// payload, the first sub-field of the first subgroup — and was capped at ITS
+// size, reporting "TAG declares at most 2" about a field nobody touched.
+console.log('\na VLG marked on the group or on its first leaf behaves the same');
+
+const VLG_NEST_DDL = `DEF MSG.
+  02 F55.
+    04 F55-LEN PIC X(2).
+    04 F55-DATA.
+      06 G1.
+        08 A PIC X(2).
+        08 B PIC X(6).
+      06 G2.
+        08 C PIC X(2).
+        08 D PIC X(6).
+  02 AFTER PIC X(4).
+END MSG.
+`;
+function vlgNestRun(overrides, lenVal = 16) {
+  S.ddlTree = { V: { S: { D: VLG_NEST_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([
+    (lenVal >> 8) & 0xff, lenVal & 0xff,
+    ...Array.from({ length: 24 }, (_, i) => 0x41 + (i % 26)),
+  ]);
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    ...(overrides ? { overrides } : {}),
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, bytes);
+  return { at: id => (ctx.fields.find(f => f.id === id) || {}).startByte,
+           msgs: ctx.fields.filter(f => f.error || f.issue).map(f => f.error || f.issue),
+           ctx };
+}
+
+test('the three ways of marking a VLG all frame the SAME group', () => {
+  // On the group, on the group naming its leaf, and on the leaf itself — the
+  // last is what the UI writes, and it used to be the one that did not work.
+  const forms = {
+    'on the group':        { F55: { vlg: true } },
+    'group names the leaf':{ F55: { vlg: 'F55.F55-LEN' } },
+    'on the first leaf':   { 'F55.F55-LEN': { vlg: true } },
+  };
+  const ref = vlgNestRun(forms['on the group']);
+  for (const [label, ov] of Object.entries(forms)) {
+    const r = vlgNestRun(ov);
+    eq(r.at('AFTER'), ref.at('AFTER'), `${label}: AFTER lands in the same place`);
+    eq(r.at('F55.F55-DATA.G2.C'), ref.at('F55.F55-DATA.G2.C'), `${label}: and so does the last leaf`);
+  }
+});
+
+test('a length within the declared size is used exactly, across several subgroups', () => {
+  // LEN 16 = exactly what G1+G2 declare, so everything sits where the DDL says.
+  const r = vlgNestRun({ 'F55.F55-LEN': { vlg: true } }, 16);
+  eq(r.at('F55.F55-DATA.G1.A'), 2,  'the first leaf follows the LEN');
+  eq(r.at('F55.F55-DATA.G2.C'), 10, 'the second subgroup follows the first');
+  eq(r.at('AFTER'), 18, 'and AFTER follows the whole group');
+  deepEq(r.msgs, [], 'nothing to report');
+});
+
+test('a length BELOW the declared size stops the group early', () => {
+  // LEN 8 covers G1 only. G2 is declared but the message says it is not there.
+  const r = vlgNestRun({ 'F55.F55-LEN': { vlg: true } }, 8);
+  eq(r.at('F55.F55-DATA.G1.A'), 2, 'G1 is read');
+  eq(r.at('AFTER'), 10, 'and AFTER starts right after the 8 bytes the LEN claims');
+});
+
+test('a length ABOVE the declared size is capped, and names the LEN and the GROUP', () => {
+  // The DDL is a hard cap. What matters as much is WHICH field the complaint
+  // names: the leaf rule used to blame the first sub-field of the first subgroup.
+  // 20 is over the DDL's 16 but inside the message, so the CAPACITY check is the
+  // one that fires — 99 would run past the message end and report that instead.
+  const r = vlgNestRun({ 'F55.F55-LEN': { vlg: true } }, 20);
+  eq(r.at('AFTER'), 18, 'capped at the 16 the DDL declares');
+  eq(r.msgs.length, 1, `one message, got: ${JSON.stringify(r.msgs)}`);
+  assert.ok(/F55-LEN/.test(r.msgs[0]), `it names the LEN, got: ${r.msgs[0]}`);
+  assert.ok(/"F55"/.test(r.msgs[0]), `and the group it frames, got: ${r.msgs[0]}`);
+  assert.ok(!/G1\.A|\bA\b:/.test(r.msgs[0]), `and NOT a leaf inside it: ${r.msgs[0]}`);
+});
+
+test('a flat LEN + one leaf is unchanged — a leaf is a group of one', () => {
+  // The PAN shape, which already worked. It must keep working identically, or
+  // the fix traded one broken flavour for another.
+  eq(panRun('08').pan.valueLength, 8,  'LEN 08 still reads 8');
+  eq(panRun('16').pan.valueLength, 16, 'LEN 16 still reads 16');
+  eq(panRun('99').pan.valueLength, 19, 'and 99 is still capped at the declared 19');
+});
+
 console.log('\na length source is capped by the declared size');
 
 function panRun(lenByte, panPic = 19, msgLen = 60) {

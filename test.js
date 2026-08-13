@@ -5240,6 +5240,114 @@ test('a tag mapped to a missing element is reported, not silently dropped', () =
 // decoded differently depending on what they happened to look like. That is what
 // truncated the PSTM services loop: a TYPE BINARY 16 counter is absent from an
 // ASCII capture, and the occupying bytes rendered as plausible digits.
+// ── `when` can guard on the bytes at the cursor ────────────────────────────
+// TODO item 4. The legacy PSTM parser protects the user-data read with
+// bytes[cursor] !== 0x26 — an eye-catcher check the spec language could not
+// express. Without it a branch consumes "& " as a 2-byte length (0x2620 = 9760)
+// and runs the cursor thousands of bytes past the end.
+console.log('\nwhen — byte guards at the cursor');
+
+function whenRun(spec, bytes) {
+  S.ddlTree = { V: { S: { D: 'DEF R.\n  02 X PIC X(1).\nEND R.\n' } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: spec }, Uint8Array.from(bytes));
+  return { ctx, ids: ctx.fields.map(f => f.id), cursor: ctx.cursor,
+           errs: ctx.fields.filter(f => typeof f.error === 'string').map(f => f.error) };
+}
+// "HDR" then the eye-catcher "& " then some tokens.
+const EYE    = [0x48,0x44,0x52, 0x26,0x20, 0x54,0x4F,0x4B];
+// "HDR" then an ASCII length "04" then four bytes of user data.
+const NO_EYE = [0x48,0x44,0x52, 0x30,0x34, 0x41,0x42,0x43,0x44];
+
+test('not-bytes refuses the branch when the eye-catcher is sitting there', () => {
+  // The whole point: this is the read that used to consume "& " as a length.
+  const spec = [
+    { 'read-fixed': { length: 3, as: 'HDR' } },
+    { when: { 'not-bytes': { type: 'literal', value: '& ' },
+              then: [{ 'read-fixed': { length: 2, as: 'USER-LEN' } }] } },
+  ];
+  const guarded = whenRun(spec, EYE);
+  assert.ok(!guarded.ids.includes('USER-LEN'), 'the branch did not run');
+  eq(guarded.cursor, 3, 'and the cursor did not move past the header');
+  const clear = whenRun(spec, NO_EYE);
+  assert.ok(clear.ids.includes('USER-LEN'), 'with no eye-catcher the branch runs');
+  eq(clear.cursor, 5, 'and consumes the length');
+});
+
+test('the guard is what stops the overrun — without it the read runs away', () => {
+  // Discriminating half. "& " read as a 2-byte ASCII length is not a number, so
+  // the damage shows as the cursor moving into the token area at all.
+  const unguarded = whenRun([
+    { 'read-fixed': { length: 3, as: 'HDR' } },
+    { 'read-fixed': { length: 2, as: 'USER-LEN' } },
+  ], EYE);
+  eq(unguarded.cursor, 5, 'unguarded, the eye-catcher is consumed as a length');
+  const guarded = whenRun([
+    { 'read-fixed': { length: 3, as: 'HDR' } },
+    { when: { 'not-bytes': { type: 'literal', value: '& ' },
+              then: [{ 'read-fixed': { length: 2, as: 'USER-LEN' } }] } },
+  ], EYE);
+  eq(guarded.cursor, 3, 'guarded, those two bytes are left for the token area');
+});
+
+test('bytes runs the branch when the guard DOES match', () => {
+  const r = whenRun([
+    { 'read-fixed': { length: 3, as: 'HDR' } },
+    { when: { bytes: { type: 'literal', value: '& ' },
+              then: [{ 'read-to-end': { as: 'TOKENS' } }] } },
+  ], EYE);
+  assert.ok(r.ids.includes('TOKENS'), 'the token area was read');
+  eq(r.cursor, EYE.length, 'to the end');
+});
+
+test('the guard needs nothing to have been read — no field required', () => {
+  const r = whenRun([
+    { when: { bytes: { type: 'literal', value: 'HDR' },
+              then: [{ 'read-fixed': { length: 3, as: 'H' } }] } },
+  ], EYE);
+  deepEq(r.errs, [], 'no "missing field" error');
+  assert.ok(r.ids.includes('H'), 'and the branch ran on the very first byte');
+});
+
+test('every guard predicate read-while has, when has too', () => {
+  // One predicate shape, not two — a spec must not have to learn which block
+  // supports which type.
+  const cases = [
+    [{ type: 'literal', value: 'HDR' },            true],
+    [{ type: 'literal', value: 'XXX' },            false],
+    [{ type: 'alphabetic', length: 3 },            true],
+    [{ type: 'numeric', length: 3 },               false],
+    [{ type: 'alphanumeric', length: 3 },          true],
+    [{ type: 'ascii', length: 3 },                 true],
+    [{ type: 'regex', pattern: '^HD', length: 3 }, true],
+    [{ type: 'regex', pattern: '^ZZ', length: 3 }, false],
+  ];
+  for (const [g, want] of cases) {
+    const r = whenRun([{ when: { bytes: g, then: [{ 'read-fixed': { length: 1, as: 'HIT' } }] } }], EYE);
+    eq(r.ids.includes('HIT'), want, `${JSON.stringify(g)} should ${want ? '' : 'not '}match`);
+  }
+});
+
+test('a malformed guard is reported, not silently never-matching', () => {
+  const bad = whenRun([{ when: { bytes: 'literal', then: [{ skip: 1 }] } }], EYE);
+  assert.ok(bad.errs.some(e => /must be an object/.test(e)), `got: ${JSON.stringify(bad.errs)}`);
+  // And the lint catches the shapes that would run but never match.
+  const warns = mePsLintWarns({}, [{ when: { bytes: { type: 'nonsense' }, then: [] } }]);
+  assert.ok(warns.some(w => /never match/.test(w)), `lint should flag it, got: ${JSON.stringify(warns)}`);
+});
+
+test('is/not still work, and a byte guard wins over a field', () => {
+  const r = whenRun([
+    { 'read-fixed': { length: 3, as: 'HDR' } },
+    { when: { field: 'HDR', is: 'HDR', then: [{ 'read-fixed': { length: 2, as: 'A' } }] } },
+  ], NO_EYE);
+  assert.ok(r.ids.includes('A'), 'the original form is untouched');
+  const warns = mePsLintWarns({}, [{ 'read-fixed': { length: 3, as: 'HDR' } },
+    { when: { field: 'HDR', bytes: { type: 'ascii', length: 1 }, then: [] } }]);
+  assert.ok(warns.some(w => /byte guard wins/.test(w)), `both given → lint says which, got: ${JSON.stringify(warns)}`);
+});
+
 console.log('\nnumeric references declare their encoding');
 
 const NUMREF_DDL = `DEF R.

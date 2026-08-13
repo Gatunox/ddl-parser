@@ -15724,7 +15724,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.12.0';
+const APP_VERSION  = '1.21.13.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18649,6 +18649,16 @@ const _PS_HELP = {
         'It must have been read by an <b>earlier</b> block; a field read inside <code>then</code> is too late.',
         'The comparison is made against the field\'s parsed <b>value</b>, not its raw bytes.',
       ]],
+      ['bytes', '{type, value, length, pattern, encoding}', false, [
+        'Look at the bytes <b>at the cursor</b> without reading them, and run <code>then</code> when they match.',
+        'Same predicate shape as <code>read-while</code>\'s <code>while</code>: <code>literal</code>, <code>regex</code>, <code>numeric</code>, <code>alphabetic</code>, <code>alphanumeric</code>, <code>ascii</code>.',
+        'Use it instead of <code>field</code> — a byte guard needs nothing to have been read.',
+      ]],
+      ['not-bytes', '{…}', false, [
+        'The same guard, inverted: run <code>then</code> when the bytes at the cursor do <b>not</b> match.',
+        'This is the PSTM eye-catcher guard. Legacy hardcodes <code>bytes[cursor] !== 0x26</code> to refuse reading user data when <code>"&&nbsp;"</code> is sitting there; without it a branch consumes the eye-catcher as a 2-byte length — <code>0x2620</code> is 9760 — and runs the cursor thousands of bytes past the end.',
+        ['<code>{"not-bytes": {"type": "literal", "value": "& "}, "then": [ … ]}</code>', 'Read the user data only when the eye-catcher is not there.'],
+      ]],
       ['is', 'string | [...]', false, [
         'Run <code>then</code> when the value matches.',
         ['<code>"1200"</code>',        'A single value.'],
@@ -18680,6 +18690,23 @@ const _PS_HELP = {
         payload: '31 32 30 30 41 42 43',
         spec: [{"read-fixed": {"length": 4, "as": "MSG-TYPE"}},
                {"when": {"field": "MSG-TYPE", "not": "0800", "then": [{"read-fixed": {"length": 3, "as": "TRAILER"}}]}}] },
+      // The PSTM eye-catcher, both ways round. "& " is 26 20.
+      { what: '<b>bytes</b> — the token area starts with the eye-catcher "&&nbsp;", so read it',
+        payload: '48 44 52 26 20 54 4F 4B',
+        spec: [{"read-fixed": {"length": 3, "as": "HDR"}},
+               {"when": {"bytes": {"type": "literal", "value": "& "},
+                         "then": [{"read-to-end": {"as": "TOKENS"}}]}}] },
+      { what: '<b>not-bytes</b> — read user data ONLY when the eye-catcher is not there. Here it IS, so nothing is read and the cursor stays put',
+        payload: '48 44 52 26 20 54 4F 4B',
+        spec: [{"read-fixed": {"length": 3, "as": "HDR"}},
+               {"when": {"not-bytes": {"type": "literal", "value": "& "},
+                         "then": [{"read-fixed": {"length": 2, "as": "USER-LEN"}}]}}] },
+      { what: '<b>not-bytes</b> on a message with no eye-catcher — the guard passes and the user data is read',
+        payload: '48 44 52 30 34 41 42 43 44',
+        spec: [{"read-fixed": {"length": 3, "as": "HDR"}},
+               {"when": {"not-bytes": {"type": "literal", "value": "& "},
+                         "then": [{"read-fixed": {"length": 2, "as": "USER-LEN"}},
+                                  {"read-fixed": {"length": {"field": "USER-LEN", "as": "ascii"}, "as": "USER-DATA"}}]}}] },
       { what: '<b>not</b> with a list — anything outside the set matches',
         payload: '39 39 5A 5A',
         spec: [{"read-fixed": {"length": 2, "as": "FLAG"}},
@@ -19655,17 +19682,40 @@ function _mePsLintWarns(item, parsed) {
           break;
         }
         case 'when': {
-          checkRef(n, 'when.field', attrs?.field);
+          const _bg = attrs?.bytes !== undefined ? attrs.bytes
+                    : attrs?.['not-bytes'] !== undefined ? attrs['not-bytes'] : undefined;
+          if (_bg !== undefined) {
+            // A byte guard reads the cursor, so there is no field to resolve —
+            // but a guard with no recognised type silently never matches, which
+            // reads as "the branch is dead" rather than "the guard is wrong".
+            if (!_bg || typeof _bg !== 'object')
+              warns.push(`[block ${n}] when "bytes" must be an object, e.g. {"type":"literal","value":"& "}`);
+            else if (!/^(regex|alphabetic|numeric|alphanumeric|ascii|literal)$/.test(String(_bg.type || '')))
+              warns.push(`[block ${n}] when bytes guard type ${JSON.stringify(_bg.type)} is not one of `
+                       + `regex, alphabetic, numeric, alphanumeric, ascii, literal — it would never match`);
+            else if (_bg.type === 'literal' && _bg.value == null)
+              warns.push(`[block ${n}] when bytes guard "literal" needs a "value"`);
+            else if (_bg.type === 'regex' && !_bg.pattern)
+              warns.push(`[block ${n}] when bytes guard "regex" needs a "pattern"`);
+            if (attrs.field !== undefined)
+              warns.push(`[block ${n}] when has both a byte guard and a "field" — the byte guard wins and "field" is ignored`);
+          } else {
+            checkRef(n, 'when.field', attrs?.field);
+          }
           walk(attrs?.then, n);
           break;
         }
         case 'repeat': {
           if (typeof attrs?.count === 'string') checkRef(n, 'repeat.count', attrs.count);
+          else if (attrs?.count && typeof attrs.count === 'object' && attrs.count.field)
+            checkRef(n, 'repeat.count.field', attrs.count.field);
           walk(attrs?.body, n);
           break;
         }
         case 'read-while': {
           if (typeof attrs?.max === 'string') checkRef(n, 'read-while.max', attrs.max);
+          else if (attrs?.max && typeof attrs.max === 'object' && attrs.max.field)
+            checkRef(n, 'read-while.max.field', attrs.max.field);
           walk(attrs?.body, n);
           break;
         }
@@ -26807,18 +26857,40 @@ function _meMatchValue(value, matcher) {
 }
 
 function _meExecWhen(attrs, ctx) {
-  if (!attrs || !attrs.field) {
-    ctx.fields.push({ id: 'when', error: 'Missing field attribute' });
-    return;
-  }
-  const f = ctx.fieldsById[attrs.field];
-  if (!f) {
-    ctx.fields.push({ id: 'when', error: `Field '${attrs.field}' not yet read` });
-    return;
-  }
+  if (!attrs) { ctx.fields.push({ id: 'when', error: 'Missing attributes' }); return; }
+  // Two kinds of condition, and a block uses one or the other:
+  //
+  //   is / not        compare a field ALREADY READ — the original form
+  //   bytes / not-bytes  look at the bytes AT THE CURSOR, without reading them
+  //
+  // The second is what the legacy PSTM parser hardcodes as bytes[cursor] !== 0x26:
+  // it refuses to read user data when the token eye-catcher "& " is sitting
+  // there. A spec could not express that, so a branch would consume the
+  // eye-catcher as a 2-byte length — 0x2620 is 9760 — and run the cursor
+  // thousands of bytes past the end of the message.
+  const guard = attrs.bytes !== undefined ? attrs.bytes
+              : attrs['not-bytes'] !== undefined ? attrs['not-bytes'] : null;
   let matched = false;
-  if (attrs.is !== undefined)        matched =  _meMatchValue(f.value, attrs.is);
-  else if (attrs.not !== undefined)  matched = !_meMatchValue(f.value, attrs.not);
+  if (guard !== null) {
+    if (!guard || typeof guard !== 'object') {
+      ctx.fields.push({ id: 'when', error: 'bytes guard must be an object, e.g. {"type":"literal","value":"& "}' });
+      return;
+    }
+    const hit = _meGuardMatches(guard, ctx);
+    matched = attrs.bytes !== undefined ? hit : !hit;
+  } else {
+    if (!attrs.field) {
+      ctx.fields.push({ id: 'when', error: 'Missing field attribute' });
+      return;
+    }
+    const f = ctx.fieldsById[attrs.field];
+    if (!f) {
+      ctx.fields.push({ id: 'when', error: `Field '${attrs.field}' not yet read` });
+      return;
+    }
+    if (attrs.is !== undefined)        matched =  _meMatchValue(f.value, attrs.is);
+    else if (attrs.not !== undefined)  matched = !_meMatchValue(f.value, attrs.not);
+  }
   if (matched && Array.isArray(attrs.then)) {
     for (const b of attrs.then) _meExecBlock(b, ctx);
   }
@@ -26911,7 +26983,11 @@ function _meGuardDecodeText(slice, encoding) {
 
 function _meGuardMatches(guard, ctx) {
   if (!guard || typeof guard !== 'object') return false;
-  const len = guard.length || 1;
+  // A literal knows its own width. Defaulting to 1 byte meant {"type":"literal",
+  // "value":"& "} compared ONE byte against a two-character string and could
+  // never match — the guard was silently dead unless you also wrote length: 2.
+  const len = guard.length || (guard.type === 'literal' && guard.value != null
+    ? String(guard.value).length : 1);
   if (ctx.cursor + len > ctx.bytes.length) return false;
   const slice = ctx.bytes.slice(ctx.cursor, ctx.cursor + len);
   const text  = _meGuardDecodeText(slice, guard.encoding || 'ascii');

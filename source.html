@@ -7495,7 +7495,7 @@ function parseMessage(bytes, defs, rawBytes) {
       recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'####'},{type:'literal',offset:4,encoding:'ascii',value:'02'},{type:'greater-than',value:872}],
       parse_spec_binary:[
         {'read-ddl':{until:'NUM-SERVICES'}},
-        {repeat:{count:'NUM-SERVICES',body:[{read:'SRVCS'}]}},
+        {repeat:{count:{field:'NUM-SERVICES',as:'uint16-be'},body:[{read:'SRVCS'}]}},
         {when:{field:'USER-FLG',is:'1',then:[
           {'read-fixed':{length:2,as:'USER-DATA.LENGTH'}},
           {'read-fixed':{length:'USER-DATA.LENGTH',as:'USER-DATA.BUFFER'}}
@@ -7510,7 +7510,11 @@ function parseMessage(bytes, defs, rawBytes) {
   /*  Services loop — HEX mode */
   {
     "repeat": {
-      "count": "NUM-SERVICES",
+      // NUM-SERVICES is TYPE BINARY 16. Saying so is the point: without it the
+      // count fell to a decimal-then-hex guess, and on an ASCII capture — where
+      // this counter is absent — the occupying bytes rendered as digits and
+      // silently truncated the services loop.
+      "count": { "field": "NUM-SERVICES", "as": "uint16-be" },
       "body":  [ { "read": "SRVCS" } ]
     }
   },
@@ -15720,7 +15724,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.21.11.0';
+const APP_VERSION  = '1.21.12.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18697,9 +18701,12 @@ const _PS_HELP = {
       'The DDL doesn\'t express this loop natively (it\'s not OCCURS, which <code>read-ddl</code> handles automatically).',
     ],
     attrs: [
-      ['count', 'string', true, [
+      ['count', 'string | {field, as}', true, [
         'The id of an <b>already-read</b> field whose value is the number of iterations.',
-        'The value is decoded as an integer: ASCII digits as digits, otherwise the raw bytes as a big-endian number.',
+        ['<code>"NUM-SERVICES"</code>', 'The field id alone. How to read it as a number is inferred — see below.'],
+        ['<code>{"field": "NUM-SERVICES", "as": "uint16-be"}</code>', 'The decode stated outright. Use this whenever the field is binary.'],
+        'Without <code>as</code>, the field\'s own type override decides; failing that it falls back to a guess — ASCII digits as digits, otherwise the raw bytes as a big-endian number — and <b>says that it guessed</b>.',
+        'That guess is why a <code>TYPE BINARY 16</code> counter, absent from an ASCII capture, once parsed to a plausible unrelated decimal and silently truncated the loop. Declare it and the question never arises.',
         'A field that has not been read yet, or holds nothing numeric, is an error — the loop never runs on a guess.',
         'When the count cannot be trusted (a binary counter in an ASCII message), use <code>read-while</code> instead.',
       ]],
@@ -25773,15 +25780,64 @@ function _meFieldAsInt(f) {
   return null;
 }
 
+// A reference to another field's value, read as a NUMBER. Two forms:
+//
+//   "NUM-SERVICES"                              the field id alone
+//   {"field": "NUM-SERVICES", "as": "uint16-be"} the decode, stated outright
+//
+// Without `as`, the field's own type override decides — the same chain a VLG
+// length follows, so "how is this field read as a number" has one answer rather
+// than one per block. Only when nothing declares anything does it fall back to
+// _meFieldAsInt's decimal-then-hex guess, and then it says that it guessed.
+//
+// That guess is why a BINARY 16 counter absent from an ASCII capture parsed to a
+// plausible unrelated decimal and silently truncated the PSTM services loop.
+// Reporting the assumption does not make it right, but it stops it being silent.
+function _meNumRef(ref, ctx) {
+  const id = (ref && typeof ref === 'object') ? ref.field : ref;
+  if (typeof id !== 'string' || !id)
+    return { error: `'${id}' is not a field name — a count/length/max reference names a field already read` };
+  const f = ctx.fieldsById[id];
+  if (!f) return { id, error: `'${id}' not yet read` };
+  const asked = (ref && typeof ref === 'object') ? ref.as : null;
+  const declared = asked || _meOvEffective(ctx, id)?.type || null;
+  if (declared) {
+    const tmp = { id, rawHex: f.rawHex, rawBytes: f.rawBytes, value: f.value };
+    try { Object.assign(tmp, _meReadApplyTypeOverride(tmp, declared) || {}); } catch (e) {}
+    const n = typeof tmp.value === 'number' ? tmp.value : parseInt(String(tmp.value).replace(/^0x/i, ''), tmp.value && /^0x/i.test(String(tmp.value)) ? 16 : 10);
+    if (Number.isFinite(n)) return { id, n, as: declared };
+    return { id, error: `'${id}' cannot be read as ${declared}` };
+  }
+  const n = _meFieldAsInt(f);
+  if (n == null) return { id, error: `'${id}' has no decodable numeric value` };
+  return { id, n, assumed: true };
+}
+
 function _meResolveLength(lengthAttr, ctx) {
   if (typeof lengthAttr === 'number') return lengthAttr;
-  if (typeof lengthAttr === 'string') {
-    const f = ctx.fieldsById[lengthAttr];
-    if (!f) return null;
-    const n = _meFieldAsInt(f);
-    return n == null ? 0 : n;
+  if (typeof lengthAttr === 'string' || (lengthAttr && typeof lengthAttr === 'object' && lengthAttr.field)) {
+    const r = _meNumRef(lengthAttr, ctx);
+    if (r.error) return null;
+    if (r.assumed) _meNoteNumRefGuess(r, 'length', ctx);
+    return r.n;
   }
   return null;
+}
+
+// One note per field, so a spec that references the same counter in three blocks
+// says so once rather than three times.
+function _meNoteNumRefGuess(r, what, ctx) {
+  if (!ctx._numRefNoted) ctx._numRefNoted = new Set();
+  if (ctx._numRefNoted.has(r.id)) return;
+  ctx._numRefNoted.add(r.id);
+  // ON the field, never as a row of its own: two rows under one id is the
+  // duplicate the group path was fixed for in v1.2.3.0.
+  const row = [...ctx.fields].reverse().find(f => f.id === r.id);
+  if (!row) return;
+  const note = `used as a ${what}, but nothing declares how to read it as a number — `
+             + `read as ${r.n}. Add {"field": "${r.id}", "as": "uint16-be"} (or a type `
+             + `override on the field) to say which.`;
+  row.issue = row.issue ? `${row.issue} · ${note}` : note;
 }
 
 function _meParseSentinels(list) {
@@ -26775,16 +26831,13 @@ function _meExecRepeat(attrs, ctx) {
     ctx.fields.push({ id: 'repeat', error: 'Missing count attribute' });
     return;
   }
-  const f = ctx.fieldsById[attrs.count];
-  if (!f) {
-    ctx.fields.push({ id: 'repeat', error: `Count field '${attrs.count}' not yet read` });
+  const _cr = _meNumRef(attrs.count, ctx);
+  if (_cr.error) {
+    ctx.fields.push({ id: 'repeat', error: `Count field ${_cr.error}` });
     return;
   }
-  const N0 = _meFieldAsInt(f);
-  if (N0 == null) {
-    ctx.fields.push({ id: 'repeat', error: `Count field '${attrs.count}' has no decodable numeric value` });
-    return;
-  }
+  if (_cr.assumed) _meNoteNumRefGuess(_cr, 'repeat count', ctx);
+  const N0 = _cr.n;
   const body = Array.isArray(attrs.body) ? attrs.body : [];
 
   // ── Bound the loop ────────────────────────────────────────────────────────
@@ -26798,7 +26851,7 @@ function _meExecRepeat(attrs, ctx) {
   let N = N0;
   if (!Number.isFinite(N) || N < 0) {
     ctx.fields.push({ id: 'repeat',
-      error: `Count field '${attrs.count}' is ${N0} — a repeat count cannot be negative; read as 0` });
+      error: `Count field '${_cr.id}' is ${N0} — a repeat count cannot be negative; read as 0` });
     N = 0;
   }
   // The most occurrences any field the body reads actually has.
@@ -26813,7 +26866,7 @@ function _meExecRepeat(attrs, ctx) {
   }
   if (maxOcc > 0 && N > maxOcc) {
     ctx.fields.push({ id: 'repeat',
-      error: `Count field '${attrs.count}' says ${N}, but the body reads at most ${maxOcc} `
+      error: `Count field '${_cr.id}' says ${N}, but the body reads at most ${maxOcc} `
            + `occurrence(s) — the DDL's OCCURS is the ceiling; read as ${maxOcc}` });
     N = maxOcc;
   } else if (maxOcc === 0 && N > ctx.bytes.length) {
@@ -26821,7 +26874,7 @@ function _meExecRepeat(attrs, ctx) {
     // message has bytes, and this is the difference between a wrong answer and a
     // locked tab.
     ctx.fields.push({ id: 'repeat',
-      error: `Count field '${attrs.count}' says ${N}, more than the ${ctx.bytes.length} `
+      error: `Count field '${_cr.id}' says ${N}, more than the ${ctx.bytes.length} `
            + `byte(s) in the message; read as ${ctx.bytes.length}` });
     N = ctx.bytes.length;
   }
@@ -26840,10 +26893,11 @@ function _meExecRepeat(attrs, ctx) {
 function _meResolveMaxLimit(maxAttr, ctx) {
   if (maxAttr == null) return null;
   if (typeof maxAttr === 'number') return maxAttr;
-  if (typeof maxAttr === 'string') {
-    const f = ctx.fieldsById[maxAttr];
-    if (!f) return null;
-    return _meFieldAsInt(f);
+  if (typeof maxAttr === 'string' || (maxAttr && typeof maxAttr === 'object' && maxAttr.field)) {
+    const r = _meNumRef(maxAttr, ctx);
+    if (r.error) return null;
+    if (r.assumed) _meNoteNumRefGuess(r, 'loop cap', ctx);
+    return r.n;
   }
   return null;
 }

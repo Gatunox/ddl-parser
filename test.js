@@ -5234,6 +5234,120 @@ test('a tag mapped to a missing element is reported, not silently dropped', () =
 // Existing tests above pin individual incidents. This matrix is the other half:
 // encoding × framing × tags × unknown × leaf names × len form, each case stating
 // the fields that must come out. A combination that only "runs" is not coverage.
+// ── A numeric reference states how it is read ──────────────────────────────
+// TODO item 3. repeat.count, read-while.max and read-fixed.length resolved a
+// field to a number by trying decimal first and hex second — so the same bytes
+// decoded differently depending on what they happened to look like. That is what
+// truncated the PSTM services loop: a TYPE BINARY 16 counter is absent from an
+// ASCII capture, and the occupying bytes rendered as plausible digits.
+console.log('\nnumeric references declare their encoding');
+
+const NUMREF_DDL = `DEF R.
+  02 CNT PIC X(2).
+  02 A PIC X(2).
+  02 B PIC X(2).
+  02 C PIC X(2).
+  02 D PIC X(2).
+END R.
+`;
+function numRefRun(spec, cntBytes) {
+  S.ddlTree = { V: { S: { D: NUMREF_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([...cntBytes, ...Array.from({ length: 8 }, () => 0x41)]);
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+    parse_spec_binary: spec }, bytes);
+  return { ctx, ids: ctx.fields.map(f => f.id),
+           issues: ctx.fields.filter(f => f.issue).map(f => f.issue),
+           errs: ctx.fields.filter(f => typeof f.error === 'string').map(f => f.error) };
+}
+
+test('the bytes that bit PSTM: 0x31 0x32 is 12594 as a number, 12 as text', () => {
+  // A BINARY 16 counter holding 0x3132 IS 12594. Read as ASCII digits the same
+  // bytes say 12. The guess picked one of them by how they happened to look.
+  // Both overrun this short message, so the DISCRIMINATOR is the number each
+  // reading reports — that is what differs, and what used to be decided by luck.
+  const num = numRefRun([
+    { read: 'CNT' },
+    { repeat: { count: { field: 'CNT', as: 'uint16-be' }, body: [{ skip: 1 }] } },
+  ], [0x31, 0x32]);
+  const txt = numRefRun([
+    { read: 'CNT' },
+    { repeat: { count: { field: 'CNT', as: 'ascii' }, body: [{ skip: 1 }] } },
+  ], [0x31, 0x32]);
+  assert.ok(num.errs.some(e => /says 12594/.test(e)),
+    `uint16-be reads 12594, got: ${JSON.stringify(num.errs)}`);
+  assert.ok(!txt.errs.some(e => /says 12594/.test(e)),
+    `ascii must NOT read 12594, got: ${JSON.stringify(txt.errs)}`);
+});
+
+test('an undeclared reference still works, but says it guessed', () => {
+  // Not an error: existing specs rely on the fallback. It just stops being silent.
+  const r = numRefRun([
+    { read: 'CNT' },
+    { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 1, as: 'X' } }] } },
+  ], [0x30, 0x32]);
+  eq(r.errs.length, 0, 'no error — the guess still resolves');
+  assert.ok(r.issues.some(i => /nothing declares how to read it as a number/.test(i)),
+    `it reports the assumption, got: ${JSON.stringify(r.issues)}`);
+  assert.ok(r.issues.some(i => /"as": "uint16-be"/.test(i)), 'and names the fix');
+});
+
+test('the note rides ON the field, never as a second row', () => {
+  // Two rows under one id is the duplicate the group path was fixed for.
+  const r = numRefRun([
+    { read: 'CNT' },
+    { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 1, as: 'X' } }] } },
+  ], [0x30, 0x32]);
+  eq(r.ids.filter(i => i === 'CNT').length, 1, 'one CNT row');
+});
+
+test('a field type override declares it, with no change to the spec', () => {
+  const r = numRefRun([
+    { read: 'CNT' },
+    { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 1, as: 'X' } }] } },
+  ], [0x00, 0x02]);
+  const withOvr = (() => {
+    S.ddlTree = { V: { S: { D: NUMREF_DDL } } };
+    S.inputFormat = 'hex';
+    const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'],
+      overrides: { CNT: { type: 'uint-be' } },
+      parse_spec_binary: [
+        { read: 'CNT' },
+        { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 1, as: 'X' } }] } },
+      ] }, Uint8Array.from([0x00, 0x02, ...Array.from({ length: 8 }, () => 0x41)]));
+    return ctx.fields.filter(f => f.issue).map(f => f.issue);
+  })();
+  assert.ok(r.issues.some(i => /nothing declares/.test(i)), 'undeclared warns');
+  assert.ok(!withOvr.some(i => /nothing declares/.test(i)),
+    `a type override counts as declaring it, got: ${JSON.stringify(withOvr)}`);
+});
+
+test('all three reference sites take the declared form', () => {
+  // repeat.count, read-while.max and read-fixed.length share one resolver, so a
+  // spec cannot have to remember which of them learned the new syntax.
+  for (const spec of [
+    [{ read: 'CNT' }, { repeat: { count: { field: 'CNT', as: 'uint16-be' }, body: [{ skip: 1 }] } }],
+    [{ read: 'CNT' }, { 'read-fixed': { length: { field: 'CNT', as: 'uint16-be' }, as: 'P' } }],
+    [{ read: 'CNT' }, { 'read-while': { max: { field: 'CNT', as: 'uint16-be' },
+                        while: { equals: 'ZZ' }, body: [{ skip: 1 }] } }],
+  ]) {
+    // 0x0002 — a small count under every reading, so nothing overruns and the
+    // only thing under test is that the declared form is accepted at all.
+    const r = numRefRun(spec, [0x00, 0x02]);
+    deepEq(r.errs, [], `the declared form is accepted, got: ${JSON.stringify(r.errs)}`);
+    assert.ok(!r.issues.some(i => /nothing declares/.test(i)),
+      `and does not warn: ${JSON.stringify(r.issues)}`);
+  }
+});
+
+test('the shipped PSTM spec declares its counter', () => {
+  // The one place this is known to have caused a real mis-parse.
+  const pstm = fmtDefaultSpecs().find(s => /PSTM/.test(s.label || s.name));
+  const json = JSON.stringify(pstm.parse_spec_binary || []);
+  assert.ok(/"count":\{"field":"NUM-SERVICES","as":"uint16-be"\}/.test(json),
+    `NUM-SERVICES is TYPE BINARY 16 and must say so, got: ${json}`);
+});
+
 console.log('\nread-tlv — optional-parameter matrix');
 
 const TLV_MX_DDL = `DEF REC.

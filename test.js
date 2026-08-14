@@ -11108,6 +11108,24 @@ test('the results table has real columns: named, sized, draggable', () => {
     'dragging this table\'s column edge would also toggle the column highlight');
   assert.ok(/\.me-test-ftbl-cols th\{[^}]*cursor:\s*pointer/.test(_DE_CSS()),
     'the header does not say it can be clicked');
+
+  // Hover and select use the app's tokens, which are the same ones the message
+  // input paints a highlighted field with. Hovering a row and watching its
+  // bytes light up is ONE gesture; a private tint for the row made it read as
+  // two unrelated things happening at once.
+  const c = _DE_CSS();
+  assert.ok(/\.me-test-ftbl tr:hover td\{background:\s*var\(--hl-hover\)/.test(c),
+    'the row hover invents its own tint instead of using --hl-hover');
+  assert.ok(/\.me-test-ftbl tr\[data-fid\]\.sel td\{[^}]*color:var\(--hl-text\)/.test(c),
+    'a selected row does not take the highlight text colour');
+  // Every column, including the ones deliberately quiet at rest — a row that
+  // lights in four columns of five reads as half-selected.
+  assert.ok(/tr\[data-fid\]\.sel td\.me-test-fhex\{[^}]*color:var\(--hl-text\)/.test(c),
+    'the hex column stays dim while the rest of the row lights');
+  // …which only works because the cell holds the text directly: a child span
+  // repeating the class would keep its own colour.
+  assert.ok(!/<span class="me-test-fhex">/.test(psFnSource('_meTestFieldTable')),
+    'the hex cell wraps its text in a span, which keeps its own colour when the row lights');
 });
 
 test('red means the waterfall rejected it, never "we did not get there"', () => {

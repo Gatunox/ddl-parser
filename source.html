@@ -2164,11 +2164,22 @@ input.me-inp{width:100%;}
 .me-test-resizer:hover,.me-test-resizer.active{background:var(--accent);opacity:.6;}
 .me-test-ftbl td{padding:2px 8px 2px 0;vertical-align:top;border-bottom: var(--bw) solid rgba(255,255,255,.04);line-height:1.4;}
 .me-test-ftbl tr:last-child td{border-bottom:none;}
-.me-test-ftbl tr:hover td{background:rgba(var(--accent-rgb),.06);}
+/* The same pair every other table in the app uses (see `tbody tr:hover td`),
+   which is the same pair the message input paints a highlighted field with.
+   Hovering a row and watching its bytes light up is ONE gesture; two different
+   tints for it read as two different things happening. */
+.me-test-ftbl tr:hover td{background:var(--hl-hover);}
 /* Only rows that can point at bytes are clickable, and a pinned one stays lit
    so the highlight above has something naming it. */
 .me-test-ftbl tr[data-fid]{cursor:pointer;}
-.me-test-ftbl tr[data-fid].sel td{background:rgba(var(--accent-rgb),.16);}
+.me-test-ftbl tr[data-fid].sel td{background:rgba(var(--accent-rgb),0.18);color:var(--hl-text);}
+/* Every column lights, including the ones that are deliberately quiet at
+   rest — a row half-lit reads as a half-selected row. */
+.me-test-ftbl tr:hover td.me-test-fhex,
+.me-test-ftbl tr[data-fid].sel td.me-test-fhex{color:var(--hl-text);opacity:.8;}
+.me-test-ftbl tr[data-fid].sel td.me-test-fid,
+.me-test-ftbl tr[data-fid].sel td.me-test-flen,
+.me-test-ftbl tr[data-fid].sel td.me-test-fbytes{color:var(--hl-text);}
 .me-test-fid{color:var(--accent);white-space:nowrap;}
 /* Inline beside the field name now, not a column of its own. */
 .me-test-fdesc{color:var(--text-dim);opacity:.75;}
@@ -15789,7 +15800,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.8.0';
+const APP_VERSION  = '1.22.8.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28797,7 +28808,10 @@ function _meTestFieldTable(fields) {
     if (f.error) return `<tr><td class="me-test-fid">${_escHtml(f.id||'?')}</td><td colspan="4" class="me-test-ferr">${_escHtml(f.error)}</td></tr>`;
     const val   = f.value != null ? _meTestFmtVal(f.value) : '';
     const brange = f.startByte != null ? `${f.startByte}–${f.endByte}` : '';
-    const hex   = f.rawHex ? `<span class="me-test-fhex">${_escHtml(f.rawHex.slice(0,40))}</span>` : '';
+    // No wrapping span: the cell already carries .me-test-fhex, and a child that
+    // repeats it keeps its own colour when the row is hovered or selected — so
+    // the hex stayed dim while every other column lit up.
+    const hex   = f.rawHex ? _escHtml(f.rawHex.slice(0, 40)) : '';
     const iss   = f.issue ? `<div class="me-test-ferr">${_escHtml(f.issue)}</div>` : '';
     // The description had a column of its own and spent it saying the field's
     // name a second time: a DDL definition with no comment falls back to its

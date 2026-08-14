@@ -11114,21 +11114,28 @@ test('the detection summary does not claim a forced run was evaluated', () => {
   assert.ok(/Matched as/.test(normal[1]), `normal verb, got: ${normal[1]}`);
 });
 
-test('an armed entity override shows in Settings, not only in the editor', () => {
-  // The Data Editor marked it (me-item-forced) and Settings → Data Detection
-  // did not, so the same fact about the same entity was visible in one list and
-  // invisible in the other. Both must read from isSpecOverride.
-  const list = /function renderDetectSpecsList\(\)\s*\{([\s\S]*?)\n\}/.exec(APP_SRC);
-  assert.ok(list, 'renderDetectSpecsList not found');
-  assert.ok(/isSpecOverride\(/.test(list[1]),
-    'the Settings list must consult isSpecOverride, or an armed override is invisible there');
+test('an armed entity override is visible in the list that still exists', () => {
+  // Was: "shows in Settings, not only in the editor" — the Data Editor marked
+  // it and Settings → Data Detection did not, so the same fact was visible in
+  // one list and invisible in the other. Settings no longer carries a second
+  // list (the Data Editor is its own page now), so the rule the original test
+  // protected is the surviving half: an armed override you cannot see is the
+  // defect, and the Entities list is where it has to be seen.
+  assert.ok(!/renderDetectSpecsList/.test(APP_SRC),
+    'the Settings list is back — then it must mark the override too');
+  const list = psFnSource('_meRenderSpecList');
+  assert.ok(/isSpecOverride\(/.test(list),
+    'the Entities list must consult isSpecOverride, or an armed override is invisible');
+  assert.ok(/me-item-forced/.test(list), 'the armed row gets no marking');
   const css = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/\.dr-spec-item\.dr-spec-forced\s*\{/.test(css),
-    'the armed row needs its own treatment');
+  assert.ok(/\.me-item\.me-item-forced\{/.test(css), 'the armed row needs its own treatment');
+  // Colour is not the only carrier: the ▶ says it too.
+  assert.ok(/\.me-item\.me-item-forced \.me-item-name::after\{content:'▶'/.test(css),
+    'the armed row is marked by colour alone');
   const toggle = /function toggleSpecOverride\(idx\)\s*\{([\s\S]*?)\n\}/.exec(APP_SRC);
   assert.ok(toggle, 'toggleSpecOverride not found');
-  assert.ok(/renderDetectSpecsList\(\)/.test(toggle[1]),
-    'toggling the override must refresh the Settings list, as it already refreshes the tree');
+  assert.ok(/_meRenderSidebar\(\)/.test(toggle[1]),
+    'toggling the override must refresh the list it is shown in');
 });
 
 test('the parse overlay announces an armed entity override', () => {

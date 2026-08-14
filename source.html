@@ -15774,7 +15774,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.5.0';
+const APP_VERSION  = '1.22.5.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28346,6 +28346,10 @@ function _meRunTest(opts) {
   //   the engine reads binary fields from rawBytes and text/hex from parseBytes.
   const _FMT_MAP = { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' };
   let bytes, rawBytes, parseBytes, inputFmt, engineFmt, msgEnc;
+  // A NETARD record's byte→character map is built by parseNetardLog while it
+  // strips the wrapper, against the ORIGINAL text — buildByteCharMap below is
+  // explicitly for non-NETARD input and cannot describe a wrapped record.
+  let netardBcm = null;
   // Detection context for the metadata recognizers (source / destination /
   // filename). They match fields on the record WRAPPER, not the bytes, and
   // _meta returns false when the field is missing rather than guessing — so
@@ -28380,6 +28384,7 @@ function _meRunTest(opts) {
       // The wrapper the panel just parsed IS the metadata the recognizers need;
       // the real record path passes exactly this at the detectMsgTypeTrace call.
       testCtx   = { source: rec.source, dest: rec.dest };
+      netardBcm = Array.isArray(rec.byteCharMap) ? rec.byteCharMap : null;
       rawBytes  = Array.from(rec.rawMsg, c => c.charCodeAt(0) & 0xFF);
       inputFmt  = fmtSel ? fmtSel : (rec.netardFmt || 'standard');
       engineFmt = _FMT_MAP[inputFmt] || 'netard';
@@ -28535,7 +28540,7 @@ function _meRunTest(opts) {
   // the same gesture the Message Input panel answers, so a parse can be read
   // against the actual bytes without leaving this panel.
   _meTestFields = ctx.fields;
-  _meTestByteMap = _meTestBuildByteMap(text, inputFmt);
+  _meTestByteMap = netardBcm || _meTestBuildByteMap(text, inputFmt);
   _meTestBindRowHL();
   if (summ) {
     // Same vocabulary as the Detection list: Pass / Fail for the recognizer

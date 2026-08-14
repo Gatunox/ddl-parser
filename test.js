@@ -10979,8 +10979,16 @@ test('a field row lights its own bytes in the Test input', () => {
   assert.ok(/_meTestSelFid === fid \? null : fid/.test(bind), 'a pinned row cannot be unpinned');
   // The map is the Test input's own: the two inputs hold different text.
   const run = psFnSource('_meRunTest');
-  assert.ok(/_meTestByteMap = _meTestBuildByteMap\(text, inputFmt\)/.test(run),
+  assert.ok(/_meTestByteMap = netardBcm \|\| _meTestBuildByteMap\(text, inputFmt\)/.test(run),
     'the byte map is not rebuilt from the text and format the run actually used');
+  // buildByteCharMap says it is for NON-NETARD input, and it is: a wrapped
+  // record's map is built by parseNetardLog as it strips the wrapper. Handing
+  // the wrapped text to buildByteCharMap returned a map for the wrong string,
+  // and hovering a field lit nothing at all.
+  assert.ok(/netardBcm = Array\.isArray\(rec\.byteCharMap\) \? rec\.byteCharMap : null/.test(run),
+    'a NETARD record\'s own byte map is discarded');
+  assert.ok(run.indexOf('netardBcm = Array.isArray') < run.indexOf('_meTestByteMap ='),
+    'the record map is captured after the point it is used');
   assert.ok(!/S\.messages/.test(psFnSource('_meTestHLRanges')),
     'the Test highlight reads the MAIN panel\'s parsed messages');
 });

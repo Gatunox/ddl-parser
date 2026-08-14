@@ -11020,15 +11020,57 @@ test('the results table does not spend a column saying the field name twice', ()
     'a description that says something new is never rendered');
   assert.ok(/\$\{desc\}/.test(tbl), 'the table does not use the folded description');
 
-  // Size and offset must always be reachable: the hex is the one cell that can
-  // be arbitrarily wide, so it is the one that gives way.
+  // Widths come from the header cells now (see the column test below), so no
+  // body cell may declare one — a td width fights table-layout:fixed and the
+  // drag silently does nothing.
   const css = _DE_CSS();
-  const hex = /\.me-test-fhex\{([^}]*)\}/.exec(css);
-  assert.ok(hex && /max-width:\s*0/.test(hex[1]) && /overflow:\s*hidden/.test(hex[1]),
-    'the hex column cannot clip, so it forces the table wider than the panel');
-  for (const c of ['flen', 'fbytes'])
-    assert.ok(new RegExp(`\\.me-test-${c}\\{[^}]*width:\\s*1%`).test(css),
-      `.me-test-${c} does not hold its own width, so it can be squeezed out`);
+  for (const c of ['fid', 'flen', 'fbytes', 'fval', 'fhex'])
+    assert.ok(!new RegExp(`\\.me-test-${c}\\{[^}]*[^-]width:`).test(css),
+      `.me-test-${c} declares a width, which overrides the column it belongs to`);
+});
+
+test('the results table has real columns: named, sized, draggable', () => {
+  // A header per column, generated from one list — a column added to the body
+  // and forgotten in the header would leave the table a cell short and every
+  // width off by one.
+  const cols = /const _ME_TEST_COLS = \[([\s\S]*?)\n\];/.exec(APP_SRC);
+  assert.ok(cols, '_ME_TEST_COLS is gone');
+  const keys = [...cols[1].matchAll(/key: '(\w+)'/g)].map(m => m[1]);
+  deepEq(keys, ['fld', 'len', 'off', 'val', 'hex'], 'the column list does not match the row order');
+  const tbl = psFnSource('_meTestFieldTable');
+  assert.ok(/_ME_TEST_COLS\.map\(/.test(tbl), 'the header is hand-written instead of built from the list');
+  assert.ok(/<thead>/.test(tbl), 'the table has no header row');
+  // Exactly one column absorbs the slack, or the table either leaves a gap or
+  // scrolls sideways.
+  eq([...cols[1].matchAll(/flex: true/g)].length, 1, 'exactly one column must absorb the leftover width');
+  // The last column gets no handle: there is nothing on its right to take from.
+  assert.ok(/i < _ME_TEST_COLS\.length - 1/.test(tbl),
+    'the last column has a resize handle with no neighbour to steal from');
+
+  const css = _DE_CSS();
+  assert.ok(/\.me-test-ftbl-cols\{[^}]*table-layout:\s*fixed/.test(css),
+    'without table-layout:fixed the browser re-fits columns to content and a dragged width lasts one render');
+  // Scoped to the field table: the token table beside it has three columns of
+  // its own and no header to size them from.
+  assert.ok(!/\.me-test-ftbl\{[^}]*table-layout/.test(css),
+    'fixed layout is applied to every .me-test-ftbl, including the token table');
+
+  const init = psFnSource('_meTestInitColResize');
+  assert.ok(/table\.style\.width = ths\.reduce/.test(init),
+    'the table gets no absolute width, so fixed layout scales the other columns as one is dragged');
+  assert.ok(/nextTh\.style\.width = \(nextW  - d\)/.test(init),
+    'the drag does not take the width from the right-hand neighbour');
+  assert.ok(/_ME_TEST_COL_MIN/.test(init), 'a column can be dragged to nothing');
+  assert.ok(/for \(const t of ths\) map\[t\.dataset\.col\] = /.test(init),
+    'only the dragged columns are saved, so the next fit hands the width back');
+  // The panel is resizable in two directions, so the fit has to re-run.
+  assert.ok(/new ResizeObserver/.test(init), 'the columns never re-fit when the panel is resized');
+  assert.ok(/w > 0 && w !== lastW/.test(init), 'the observer refits on every notification, which can loop');
+  // A column dragged to nothing needs a way back, and the reset must be
+  // reachable — not a function nobody calls.
+  assert.ok(/handle\.ondblclick = /.test(init) && /_meTestResetCols\(\)/.test(init),
+    'nothing reaches _meTestResetCols, so a column dragged to nothing stays there');
+  assert.ok(/double-click to reset/.test(html), 'the reset gesture is not discoverable from the handle');
 });
 
 test('red means the waterfall rejected it, never "we did not get there"', () => {

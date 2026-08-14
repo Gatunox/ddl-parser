@@ -11126,6 +11126,20 @@ test('the results table has real columns: named, sized, draggable', () => {
   // repeating the class would keep its own colour.
   assert.ok(!/<span class="me-test-fhex">/.test(psFnSource('_meTestFieldTable')),
     'the hex cell wraps its text in a span, which keeps its own colour when the row lights');
+  // And because nothing in the row is quieted with `opacity`. opacity fades the
+  // whole cell, background included, so the row's translucent tint composited
+  // over a faded box and the hex cell landed on a visibly different colour from
+  // the four beside it (#223144 against #24364D). Quiet by COLOUR here.
+  for (const cls of ['fid', 'flen', 'fbytes', 'fval', 'fhex']) {
+    // Anchored: unanchored, `.me-test-fhex{` also matches inside
+    // `.sel td.me-test-fhex{…}`, and the first hit is that one — so the
+    // base rule's opacity went unread and the check passed on the bug.
+    const rule = new RegExp(`[}\\s]\\.me-test-${cls}\\{([^}]*)\\}`).exec(c);
+    if (rule) assert.ok(!/opacity/.test(rule[1]),
+      `.me-test-${cls} uses opacity, which fades its background out of step with the row`);
+  }
+  assert.ok(!/tr\[data-fid\]\.sel td\.me-test-fhex\{[^}]*opacity/.test(c),
+    'the highlighted hex cell is faded, so it composites to a different colour than the rest of the row');
 });
 
 test('red means the waterfall rejected it, never "we did not get there"', () => {

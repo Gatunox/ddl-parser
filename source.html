@@ -2176,7 +2176,7 @@ input.me-inp{width:100%;}
 /* Every column lights, including the ones that are deliberately quiet at
    rest — a row half-lit reads as a half-selected row. */
 .me-test-ftbl tr:hover td.me-test-fhex,
-.me-test-ftbl tr[data-fid].sel td.me-test-fhex{color:var(--hl-text);opacity:.8;}
+.me-test-ftbl tr[data-fid].sel td.me-test-fhex{color:var(--hl-text);}
 .me-test-ftbl tr[data-fid].sel td.me-test-fid,
 .me-test-ftbl tr[data-fid].sel td.me-test-flen,
 .me-test-ftbl tr[data-fid].sel td.me-test-fbytes{color:var(--hl-text);}
@@ -2186,7 +2186,11 @@ input.me-inp{width:100%;}
 .me-test-fval{color:var(--text);word-break:break-all;}
 .me-test-fbracket{color:var(--text-dim);user-select:none;}
 .me-test-fsp{color:var(--accent);user-select:none;}
-.me-test-fhex{color:var(--text-dim);opacity:.5;white-space:nowrap;font-size:calc(var(--sz-mono) - 2px);}
+/* Quiet by COLOUR, never opacity. opacity fades the whole cell — its
+   background with it — so a highlighted hex cell composited the row's
+   translucent tint over a faded box and landed on a different colour than
+   the four cells beside it (#223144 against #24364D). */
+.me-test-fhex{color:var(--text-very-dim);white-space:nowrap;font-size:calc(var(--sz-mono) - 2px);}
 .me-test-flen{color:var(--text-dim);white-space:nowrap;text-align:right;}
 .me-test-fbytes{color:var(--text-dim);white-space:nowrap;font-size:calc(var(--sz-mono) - 2px);}
 .me-test-ferr{color:#f85149;font-style:italic;}
@@ -15800,7 +15804,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.8.1';
+const APP_VERSION  = '1.22.8.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -15804,7 +15804,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.9.0';
+const APP_VERSION  = '1.22.10.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22081,7 +22081,7 @@ function _meFmToggleColVis(key) {
   try { localStorage.setItem(_ME_FM_COLVIS_KEY, JSON.stringify(h)); } catch (_) {}
   _meFmApplyColVis();
   // Redistribute the freed (or reclaimed) space — FIELD absorbs the leftover.
-  _meFmFitCols();
+  _meColFit(_ME_COLRZ.fm);
 }
 // Pure CSS-class application — no table rebuild needed.
 function _meFmApplyColVis() {
@@ -22154,150 +22154,162 @@ function _meVlgIsLen(lenId, rowId) {
 // Field Map column-width persistence and drag-to-resize on header borders.
 // Widths keyed by data-col attribute, saved per-key to localStorage so the
 // layout survives reloads / item switches.
-const _FM_COL_KEY = 'up_me_fm_col_w';
-let _meFmRO = null;   // ResizeObserver that re-fits columns when the wrap resizes
-function _meFmLoadColWidths() {
-  try { return JSON.parse(localStorage.getItem(_FM_COL_KEY)) || {}; } catch(_) { return {}; }
-}
-// Settle column widths to fill the wrap — the auto-fit that "Reset Column" runs.
-// Every column except FIELD takes its saved or natural content width; FIELD
-// always absorbs the wrap's leftover, so the columns fill the panel with no gap.
-// Bails when the wrap has no width yet (panel not laid out) — the ResizeObserver
-// re-runs this once the panel reaches its real width.
-// The default layout, measured from the panel and pinned here so "Reset widths"
-// always returns to the SAME place. Deriving them from content (as this used to)
-// made the default depend on which DDL happened to be bound, so no two resets
-// agreed. FIELD is absent on purpose: it takes whatever is left, which is what
-// keeps the layout right at any panel width.
-// Recorded from the laid-out table, not guessed — "Reset columns" returns to
-// exactly this. fld is absent on purpose: it absorbs whatever width is left.
+// ── Column widths: one implementation, two tables ───────────────────────────
+// The Field Map and the Data Editor's Test results table both want named
+// columns you can drag, sized to fill their panel, remembered across reloads.
+// They had two copies of that, and the second was written by reading the first.
+// The knobs below are the only places they genuinely differ.
+//
+// Column widths are keyed by the header's data-col attribute.
 const _ME_FM_DEFAULT_COLW = { num: 45, off: 84, len: 65, dt: 237, de: 102, vlg: 45 };
+const _ME_COLRZ = {
+  fm: {
+    table: '.me-fm-table', wrap: '.me-fm-table-wrap', key: 'up_me_fm_col_w',
+    handle: '.me-fm-resizer', flex: 'fld', flexMin: 120, min: 36, pad: 4,
+    // Pinned, not measured: deriving the defaults from content made them depend
+    // on which DDL happened to be bound, so no two "Reset columns" agreed. fld
+    // is absent on purpose — it absorbs whatever is left, which is what keeps
+    // the layout right at any panel width.
+    defaults: () => _ME_FM_DEFAULT_COLW,
+    // The Columns chooser can hide a column. A hidden one measures 0, and that
+    // 0 written back as an inline width sticks when it is shown again.
+    visibleOnly: true,
+    // Persist the two columns the drag touched plus any that had no saved width
+    // yet (so the pin survives a re-render), but never overwrite a width the
+    // user set earlier.
+    saveAll: false,
+  },
+  test: {
+    table: '.me-test-ftbl-cols', wrap: '#me-test-out', key: 'up_me_test_col_w',
+    handle: '.me-test-resizer', flex: 'fld', flexMin: 90, min: 36, pad: 4,
+    defaults: () => Object.fromEntries(
+      _ME_TEST_COLS.filter(c => !c.flex).map(c => [c.key, c.def])),
+    visibleOnly: false,
+    // Persist every column: the flex one's width is derived, so leaving the
+    // others unsaved lets the next fit hand the stolen width straight back.
+    saveAll: true,
+    // No "Reset columns" button beside this table — double-click any edge.
+    resetOnDblClick: true,
+  },
+};
 
-function _meFmFitCols() {
-  const widths = _meFmLoadColWidths();
-  // Hidden columns (Columns chooser) must not take part in the fit — their
-  // 0-width measurement would otherwise be written back as an inline 0px
-  // width that sticks when the column is shown again.
-  const ths = Array.from(document.querySelectorAll('.me-fm-table thead th[data-col]'))
-    .filter(th => getComputedStyle(th).display !== 'none');
-  const table = document.querySelector('.me-fm-table');
-  const wrap  = document.querySelector('.me-fm-table-wrap');
+const _meColLoad = cfg => {
+  try { return JSON.parse(localStorage.getItem(cfg.key)) || {}; } catch(_) { return {}; }
+};
+const _meColSave = (cfg, map) => {
+  try { localStorage.setItem(cfg.key, JSON.stringify(map)); } catch(_) {}
+};
+const _meColThs = cfg => {
+  const all = Array.from(document.querySelectorAll(cfg.table + ' thead th[data-col]'));
+  return cfg.visibleOnly ? all.filter(th => getComputedStyle(th).display !== 'none') : all;
+};
+
+// Settle column widths to fill the wrap — the auto-fit that "Reset columns"
+// runs. Every column but the flex one takes its saved or default width; the
+// flex one absorbs the leftover, so the table fills the panel with no gap and
+// no sideways scroll. Bails when the wrap has no width yet (panel not laid out)
+// — the ResizeObserver re-runs this once it reaches its real width.
+function _meColFit(cfg) {
+  const table = document.querySelector(cfg.table);
+  const wrap  = document.querySelector(cfg.wrap);
+  const ths   = _meColThs(cfg);
   if (!table || !wrap || !ths.length) return;
-  const avail = wrap.clientWidth;
-  if (avail <= 0) return;   // not laid out yet — ResizeObserver will refit later
-  // A saved width wins (the user dragged it); otherwise the pinned default.
-  const naturalW = {};
+  const avail = wrap.clientWidth - cfg.pad;
+  if (avail <= 0) return;
+  const saved = _meColLoad(cfg);
+  const defs  = cfg.defaults() || {};
+  const w = c => saved[c] || defs[c] || 80;
+  let fixed = 0;
+  ths.forEach(th => { if (th.dataset.col !== cfg.flex) fixed += w(th.dataset.col); });
+  const flexW = Math.max(cfg.flexMin, avail - fixed);
   ths.forEach(th => {
-    const c = th.dataset.col;
-    naturalW[c] = widths[c] || _ME_FM_DEFAULT_COLW[c] || 80;
+    th.style.width = (th.dataset.col === cfg.flex ? flexW : w(th.dataset.col)) + 'px';
   });
-  const wrapW = avail - 4;
-  let nonFldSum = 0;
-  ths.forEach(th => { if (th.dataset.col !== 'fld') nonFldSum += naturalW[th.dataset.col]; });
-  const fldW = Math.max(120, wrapW - nonFldSum);
-  ths.forEach(th => {
-    const c = th.dataset.col;
-    th.style.width = (c === 'fld' ? fldW : naturalW[c]) + 'px';
-  });
-  table.style.width = (fldW + nonFldSum) + 'px';
+  table.style.width = (flexW + fixed) + 'px';
 }
-function _meFmSaveColWidth(col, w) {
-  const data = _meFmLoadColWidths();
-  data[col] = w;
-  try { localStorage.setItem(_FM_COL_KEY, JSON.stringify(data)); } catch(_) {}
-}
-// Clear all saved column widths and re-run the auto-fit, so every column
-// returns to its natural content width (FIELD absorbs the leftover). Recovers
-// from a column dragged to zero / off-screen.
-function _meFmResetCols() {
-  try { localStorage.removeItem(_FM_COL_KEY); } catch(_) {}
-  // Drop any inline widths so the auto-fit branch can remeasure from scratch.
-  document.querySelectorAll('.me-fm-table thead th[data-col]').forEach(th => { th.style.width = ''; });
-  const table = document.querySelector('.me-fm-table');
+
+// Clear the saved widths and re-fit, so every column returns to its default.
+// Recovers from a column dragged to nothing or off-screen.
+function _meColReset(cfg) {
+  try { localStorage.removeItem(cfg.key); } catch(_) {}
+  document.querySelectorAll(cfg.table + ' thead th[data-col]').forEach(th => { th.style.width = ''; });
+  const table = document.querySelector(cfg.table);
   if (table) table.style.width = '';
-  _meFmInitColResize();
+  _meColFit(cfg);
 }
-function _meFmInitColResize() {
-  const ths = Array.from(document.querySelectorAll('.me-fm-table thead th[data-col]'));
-  const table = document.querySelector('.me-fm-table');
-  const wrap  = document.querySelector('.me-fm-table-wrap');
-  if (!table || !wrap || !ths.length) return;
 
-  // Step 1: settle column widths now (if the panel is already laid out) AND
-  // re-settle whenever the wrap's width changes. The initial render can run
-  // before the Overrides panel has reached its real width (auto-open / modal
-  // still settling), which would size FIELD too small and leave a gap once the
-  // panel grows. A ResizeObserver re-fits on every real width change, so the
-  // default layout always converges to the same fill as "Reset Column".
-  _meFmFitCols();
+const _meColRO = {};   // per-table ResizeObserver
+function _meColInitResize(cfg) {
+  const table = document.querySelector(cfg.table);
+  const wrap  = document.querySelector(cfg.wrap);
+  if (!table || !wrap) return;
+  // Settle now (if the panel is laid out) and again whenever the wrap's width
+  // changes. The first render can run before the panel has reached its real
+  // width, which would size the flex column too small and leave a gap.
+  _meColFit(cfg);
   if (typeof ResizeObserver !== 'undefined') {
-    if (_meFmRO) _meFmRO.disconnect();
+    if (_meColRO[cfg.key]) _meColRO[cfg.key].disconnect();
     let lastW = wrap.clientWidth;
-    _meFmRO = new ResizeObserver(() => {
+    // Width only: the table's own width edits do not touch the wrap, so this
+    // cannot loop.
+    _meColRO[cfg.key] = new ResizeObserver(() => {
       const w = wrap.clientWidth;
-      // Width-only changes; table-width edits don't affect the wrap, so no loop.
-      if (w > 0 && w !== lastW) { lastW = w; _meFmFitCols(); }
+      if (w > 0 && w !== lastW) { lastW = w; _meColFit(cfg); }
     });
-    _meFmRO.observe(wrap);
+    _meColRO[cfg.key].observe(wrap);
   }
-
-  // Step 2: wire the resize handles in BOTH branches — without this, users
-  // with saved widths from a previous session couldn't drag the column edges
-  // anymore (the binding sat inside the auto-fit branch).
-  document.querySelectorAll('.me-fm-resizer').forEach(handle => {
+  // Wired unconditionally, NOT inside the fit branch above: with that, a user
+  // returning with saved widths could no longer drag a column edge at all.
+  for (const handle of table.querySelectorAll(cfg.handle)) {
+    if (cfg.resetOnDblClick)
+      handle.ondblclick = e => { e.preventDefault(); e.stopPropagation(); _meColReset(cfg); };
     handle.onmousedown = e => {
       e.preventDefault();
       e.stopPropagation();
-      const th = handle.closest('th');
-      const nextTh = th.nextElementSibling;
-      const col = handle.dataset.col;
-      const nextCol = nextTh ? nextTh.dataset.col : null;
-      // Pin EVERY column AND the table itself to current rendered widths.
-      // table-layout:fixed only honors absolute column widths when the table
-      // itself has an absolute width; otherwise the browser fills the
-      // container by scaling columns proportionally, so dragging one column
-      // visibly shifts the rest.
-      const table = document.querySelector('.me-fm-table');
-      const allThs = Array.from(document.querySelectorAll('.me-fm-table thead th[data-col]'));
-      allThs.forEach(t => { t.style.width = Math.round(t.getBoundingClientRect().width) + 'px'; });
-      const totalW = allThs.reduce((s, t) => s + parseInt(t.style.width, 10), 0);
-      table.style.width = totalW + 'px';
+      const th     = handle.closest('th');
+      const nextTh = th && th.nextElementSibling;
+      if (!th || !nextTh) return;
+      // Pin every column AND the table to their rendered widths first:
+      // table-layout:fixed honours absolute column widths only when the table
+      // itself has one; otherwise dragging one column scales all the others.
+      const ths = _meColThs(cfg);
+      ths.forEach(t => { t.style.width = Math.round(t.getBoundingClientRect().width) + 'px'; });
+      table.style.width = ths.reduce((n, t) => n + parseInt(t.style.width, 10), 0) + 'px';
       const startX = e.clientX;
       const startW = th.getBoundingClientRect().width;
-      const nextStartW = nextTh ? nextTh.getBoundingClientRect().width : 0;
-      const MIN = 36;
+      const nextW  = nextTh.getBoundingClientRect().width;
       handle.classList.add('active');
       document.body.classList.add('me-fm-resizing');
-      // Steal width from the right-hand neighbour (Excel-style) so columns
-      // further right stay stationary. Total table width never changes.
+      // Steal from the right-hand neighbour, so columns further right stay put
+      // and the table's total width never changes.
       const onMove = ev => {
-        let delta = ev.clientX - startX;
-        if (delta < -(startW - MIN)) delta = -(startW - MIN);
-        if (nextTh && delta > nextStartW - MIN) delta = nextStartW - MIN;
-        th.style.width = (startW + delta) + 'px';
-        if (nextTh) nextTh.style.width = (nextStartW - delta) + 'px';
+        let d = ev.clientX - startX;
+        d = Math.max(d, -(startW - cfg.min));
+        d = Math.min(d, nextW - cfg.min);
+        th.style.width     = (startW + d) + 'px';
+        nextTh.style.width = (nextW  - d) + 'px';
       };
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         handle.classList.remove('active');
         document.body.classList.remove('me-fm-resizing');
-        // Persist widths for the two affected columns AND any other column
-        // that didn't already have a saved width (so the pin survives a
-        // re-render). Don't overwrite columns the user previously sized.
-        const saved = _meFmLoadColWidths();
-        allThs.forEach(t => {
+        const map = _meColLoad(cfg);
+        for (const t of ths) {
           const c = t.dataset.col;
-          if (c === col || c === nextCol || !(c in saved)) {
-            _meFmSaveColWidth(c, parseInt(t.style.width, 10));
-          }
-        });
+          if (cfg.saveAll || c === th.dataset.col || c === nextTh.dataset.col || !(c in map))
+            map[c] = parseInt(t.style.width, 10);
+        }
+        _meColSave(cfg, map);
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     };
-  });
+  }
 }
+
+const _meFmInitColResize = () => _meColInitResize(_ME_COLRZ.fm);
+const _meFmResetCols     = () => _meColReset(_ME_COLRZ.fm);
 
 function _meFmReapplyState() {
   if (!_meState) return;
@@ -28712,108 +28724,10 @@ const _ME_TEST_COLS = [
   { key: 'val', label: 'VALUE',  def: 190 },
   { key: 'hex', label: 'HEX',    def: 130 },
 ];
-const _ME_TEST_COL_KEY = 'up_me_test_col_w';
-const _ME_TEST_COL_MIN = 36;
-
-function _meTestLoadColW() {
-  try { return JSON.parse(localStorage.getItem(_ME_TEST_COL_KEY)) || {}; } catch(_) { return {}; }
-}
-function _meTestSaveColW(map) {
-  try { localStorage.setItem(_ME_TEST_COL_KEY, JSON.stringify(map)); } catch(_) {}
-}
-// Every column takes its saved or default width; the flex one takes whatever
-// is left, so the table fills the panel with no gap and no sideways scroll.
-// Bails when the panel has no width yet — the observer re-runs this later.
-function _meTestFitCols() {
-  const table = document.querySelector('.me-test-ftbl-cols');
-  const wrap  = document.getElementById('me-test-out');
-  if (!table || !wrap) return;
-  const avail = wrap.clientWidth - 4;
-  if (avail <= 0) return;
-  const saved = _meTestLoadColW();
-  const ths = Array.from(table.querySelectorAll('thead th[data-col]'));
-  if (!ths.length) return;
-  const w = c => saved[c.key] || c.def;
-  const fixed = _ME_TEST_COLS.filter(c => !c.flex).reduce((n, c) => n + w(c), 0);
-  const flexW = Math.max(90, avail - fixed);
-  for (const th of ths) {
-    const c = _ME_TEST_COLS.find(x => x.key === th.dataset.col);
-    if (c) th.style.width = (c.flex ? flexW : w(c)) + 'px';
-  }
-  table.style.width = (flexW + fixed) + 'px';
-}
-function _meTestResetCols() {
-  try { localStorage.removeItem(_ME_TEST_COL_KEY); } catch(_) {}
-  document.querySelectorAll('.me-test-ftbl-cols thead th[data-col]').forEach(th => { th.style.width = ''; });
-  const t = document.querySelector('.me-test-ftbl-cols');
-  if (t) t.style.width = '';
-  _meTestFitCols();
-}
-let _meTestColRO = null;
-function _meTestInitColResize() {
-  const table = document.querySelector('.me-test-ftbl-cols');
-  const wrap  = document.getElementById('me-test-out');
-  if (!table || !wrap) return;
-  _meTestFitCols();
-  // The results panel is resizable in two directions, so its width changes
-  // long after the table is built. Refit on width only — the table's own
-  // width edits do not touch the wrap, so this cannot loop.
-  if (typeof ResizeObserver !== 'undefined') {
-    if (_meTestColRO) _meTestColRO.disconnect();
-    let lastW = wrap.clientWidth;
-    _meTestColRO = new ResizeObserver(() => {
-      const w = wrap.clientWidth;
-      if (w > 0 && w !== lastW) { lastW = w; _meTestFitCols(); }
-    });
-    _meTestColRO.observe(wrap);
-  }
-  for (const handle of table.querySelectorAll('.me-test-resizer')) {
-    // Double-click any edge to put every column back — the way out of a column
-    // dragged to nothing, without spending a button on it.
-    handle.ondblclick = e => { e.preventDefault(); e.stopPropagation(); _meTestResetCols(); };
-    handle.onmousedown = e => {
-      e.preventDefault();
-      e.stopPropagation();
-      const th     = handle.closest('th');
-      const nextTh = th.nextElementSibling;
-      if (!nextTh) return;
-      // Pin every column AND the table to their rendered widths first:
-      // table-layout:fixed only honours absolute column widths when the table
-      // itself has one, otherwise dragging one column scales all the others.
-      const ths = Array.from(table.querySelectorAll('thead th[data-col]'));
-      ths.forEach(t => { t.style.width = Math.round(t.getBoundingClientRect().width) + 'px'; });
-      table.style.width = ths.reduce((n, t) => n + parseInt(t.style.width, 10), 0) + 'px';
-      const startX = e.clientX;
-      const startW = th.getBoundingClientRect().width;
-      const nextW  = nextTh.getBoundingClientRect().width;
-      handle.classList.add('active');
-      document.body.classList.add('me-fm-resizing');
-      // Steal from the right-hand neighbour, so columns further right stay put
-      // and the table's total width never changes.
-      const onMove = ev => {
-        let d = ev.clientX - startX;
-        d = Math.max(d, -(startW - _ME_TEST_COL_MIN));
-        d = Math.min(d, nextW - _ME_TEST_COL_MIN);
-        th.style.width     = (startW + d) + 'px';
-        nextTh.style.width = (nextW  - d) + 'px';
-      };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        handle.classList.remove('active');
-        document.body.classList.remove('me-fm-resizing');
-        // Persist every column, not just the two dragged: the flex column's
-        // width is derived, so leaving the others unsaved would let the next
-        // fit hand the stolen width straight back.
-        const map = _meTestLoadColW();
-        for (const t of ths) map[t.dataset.col] = parseInt(t.style.width, 10);
-        _meTestSaveColW(map);
-      };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    };
-  }
-}
+// Widths, the fit and the drag all live in _ME_COLRZ / _meColInitResize, shared
+// with the Field Map. Only the knobs above and the reset gesture differ.
+const _meTestInitColResize = () => _meColInitResize(_ME_COLRZ.test);
+const _meTestResetCols     = () => _meColReset(_ME_COLRZ.test);
 
 // The description, only when it is not the id said twice. A qualified id ends
 // in its leaf name, and a DDL def with no comment describes itself, so both

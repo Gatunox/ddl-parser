@@ -10734,6 +10734,76 @@ console.log('\nData Editor page — top bar, three columns, one entity list');
 const _DE_CSS = () => html.slice(html.indexOf('<style>'), html.indexOf('</style>'))
                           .replace(/\/\*[\s\S]*?\*\//g, '');
 
+// ── One column-resize implementation, two tables ───────────────────────────
+// Written BEFORE folding the Field Map's resizer and the Test results table's
+// into one helper: the Field Map's had almost no coverage, and a refactor of
+// untested load-bearing code is how a working panel quietly stops working.
+console.log('\ncolumn resize — one implementation, two tables');
+
+const _COLRZ_CFG = () => {
+  const m = /const _ME_COLRZ = \{([\s\S]*?)\n\};/.exec(APP_SRC);
+  assert.ok(m, '_ME_COLRZ is gone');
+  return m[1];
+};
+
+test('both tables resize through the same three functions', () => {
+  // The point of the fold: one place to fix, not two that drift.
+  for (const fn of ['_meColFit', '_meColInitResize', '_meColReset'])
+    assert.ok(APP_SRC.includes(`function ${fn}(`), `${fn} is missing`);
+  // And no second copy left behind.
+  for (const dead of ['_meFmFitCols', '_meTestFitCols', '_meFmLoadColWidths', '_meTestLoadColW'])
+    assert.ok(!APP_SRC.includes(`function ${dead}(`), `${dead} still has its own implementation`);
+  const cfg = _COLRZ_CFG();
+  for (const k of ['fm:', 'test:']) assert.ok(cfg.includes(k), `_ME_COLRZ has no ${k} entry`);
+});
+
+test('the Field Map keeps every behaviour it had before the fold', () => {
+  const cfg = _COLRZ_CFG();
+  const fm = /fm:\s*\{([\s\S]*?)\n  \},/.exec(cfg);
+  assert.ok(fm, 'the Field Map config is gone');
+  for (const [what, re] of [
+    ['its table',   /table:\s*'\.me-fm-table'/],
+    ['its wrap',    /wrap:\s*'\.me-fm-table-wrap'/],
+    ['its key',     /key:\s*'up_me_fm_col_w'/],
+    ['its handle',  /handle:\s*'\.me-fm-resizer'/],
+    ['its pinned defaults', /defaults:\s*\(\) => _ME_FM_DEFAULT_COLW/],
+  ]) assert.ok(re.test(fm[1]), `the Field Map config lost ${what}`);
+  // The Columns chooser can hide a column; a hidden one measures 0 and must not
+  // take part in the fit, or the 0 is written back as an inline width that
+  // sticks when the column is shown again.
+  assert.ok(/visibleOnly:\s*true/.test(fm[1]),
+    'the Field Map must skip hidden columns when fitting');
+  // It deliberately does NOT overwrite a width the user already set.
+  assert.ok(/saveAll:\s*false/.test(fm[1]),
+    'the Field Map must keep its "do not overwrite a column the user sized" rule');
+  // FIELD absorbs the leftover and never drops below its own floor.
+  assert.ok(/flex:\s*'fld'/.test(fm[1]) && /flexMin:\s*120/.test(fm[1]),
+    'the Field Map flex column or its floor changed');
+  // Every caller still goes through the same names.
+  for (const alias of ['_meFmInitColResize', '_meFmResetCols'])
+    assert.ok(APP_SRC.includes(alias), `${alias} is gone — its callers would break`);
+});
+
+test('the shared resizer keeps what each copy had learned', () => {
+  const init = psFnSource('_meColInitResize');
+  // table-layout:fixed only honours column widths when the TABLE has an
+  // absolute width; without this, dragging one column scales all the others.
+  assert.ok(/table\.style\.width = /.test(init), 'the table is not pinned before a drag');
+  // Steal from the right-hand neighbour, so columns further right stay put.
+  assert.ok(/nextTh\.style\.width/.test(init), 'the drag does not take width from the neighbour');
+  assert.ok(/cfg\.min/.test(init), 'a column can be dragged to nothing');
+  // Re-fit when the panel resizes, width-only so it cannot loop.
+  assert.ok(/new ResizeObserver/.test(init), 'the columns never re-fit when the panel resizes');
+  assert.ok(/w > 0 && w !== lastW/.test(init), 'the observer refits on every notification');
+  // Handles are wired whether or not the user has saved widths — the binding
+  // used to sit inside the auto-fit branch, so a returning user could not drag.
+  assert.ok(init.indexOf('_meColFit(cfg)') < init.indexOf('addEventListener'),
+    'the fit and the handle wiring are ordered so one can skip the other');
+  const fit = psFnSource('_meColFit');
+  assert.ok(/if \(avail <= 0\) return/.test(fit),
+    'the fit runs before the panel has a width and writes garbage sizes');
+});
+
 test('import/export is reachable from anywhere in the Entities column', () => {
   // Reported: the bundle actions appeared only when right-clicking an EXISTING
   // entity — the one place you are not looking when the list is empty, or when
@@ -11106,21 +11176,23 @@ test('the results table has real columns: named, sized, draggable', () => {
   assert.ok(!/\.me-test-ftbl\{[^}]*table-layout/.test(css),
     'fixed layout is applied to every .me-test-ftbl, including the token table');
 
-  const init = psFnSource('_meTestInitColResize');
-  assert.ok(/table\.style\.width = ths\.reduce/.test(init),
-    'the table gets no absolute width, so fixed layout scales the other columns as one is dragged');
-  assert.ok(/nextTh\.style\.width = \(nextW  - d\)/.test(init),
-    'the drag does not take the width from the right-hand neighbour');
-  assert.ok(/_ME_TEST_COL_MIN/.test(init), 'a column can be dragged to nothing');
-  assert.ok(/for \(const t of ths\) map\[t\.dataset\.col\] = /.test(init),
-    'only the dragged columns are saved, so the next fit hands the width back');
-  // The panel is resizable in two directions, so the fit has to re-run.
-  assert.ok(/new ResizeObserver/.test(init), 'the columns never re-fit when the panel is resized');
-  assert.ok(/w > 0 && w !== lastW/.test(init), 'the observer refits on every notification, which can loop');
-  // A column dragged to nothing needs a way back, and the reset must be
-  // reachable — not a function nobody calls.
-  assert.ok(/handle\.ondblclick = /.test(init) && /_meTestResetCols\(\)/.test(init),
-    'nothing reaches _meTestResetCols, so a column dragged to nothing stays there');
+  // The drag itself is the shared implementation (see "column resize — one
+  // implementation, two tables"); what is asserted here is that this table is
+  // wired into it, with the knobs this table needs.
+  assert.ok(/const _meTestInitColResize = \(\) => _meColInitResize\(_ME_COLRZ\.test\)/.test(APP_SRC),
+    'the results table does not use the shared resizer');
+  const tcfg = /test:\s*\{([\s\S]*?)\n  \},/.exec(APP_SRC);
+  assert.ok(tcfg, 'the results table has no resizer config');
+  assert.ok(/table:\s*'\.me-test-ftbl-cols'/.test(tcfg[1]) && /wrap:\s*'#me-test-out'/.test(tcfg[1]),
+    'the config points at the wrong table or wrap');
+  assert.ok(/saveAll:\s*true/.test(tcfg[1]),
+    'saving only the dragged columns lets the next fit hand the stolen width back');
+  // A column dragged to nothing needs a way back. This table has no "Reset
+  // columns" button beside it, so the gesture is the only route.
+  assert.ok(/resetOnDblClick:\s*true/.test(tcfg[1]),
+    'a column dragged to nothing stays there — nothing reaches the reset');
+  assert.ok(/handle\.ondblclick/.test(psFnSource('_meColInitResize')),
+    'the shared resizer never honours the double-click reset');
   assert.ok(/double-click to reset/.test(html), 'the reset gesture is not discoverable from the handle');
 
   // Clicking a header lights the column, the same as the Field Map and Parse

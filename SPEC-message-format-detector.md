@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-13 | **The Data Editor is a page, its Test panel is a workspace, and a run answers "which entity" before "what fields".** Test existed to solve a parse without walking back to the Message Input panel, and then handed the user a three-button AUTO/HEX/ASCII toggle over a plain textarea — so the moment the bytes were EBCDIC, octal or a hexascii dump, back they went. It now carries that panel's config bar whole (the same six formats, the detected-format badge, a byte count, the Line Width widget editing the one `P.lineWidth`) and the same CodeMirror input, with per-field byte highlighting on hover and click. **A run now leads with detection over every entity and its winner becomes the selection**, so the fields shown are the fields the app would really have produced; nothing matching means nothing is selected, where before the panel showed the previously-selected entity's parse directly under "no match". The verdict is painted on the entity ROW, and it follows the waterfall: green on the winner, amber on one that would match but is shadowed by it, red only where the walk actually reached and rejected, dimmed past the winner — detection stops at the first match, and red must not claim a rejection that never happened. Two engine faults surfaced doing it. **`token-area` found no tokens in the editor at all**: the block read `ctx.item.type`, but a saved spec stores its type code as `name` and `type` is what detection builds from it, so every run asked with an empty type and `extractTokensFromMessage` — which branches STM/PSTM vs ISO/B24 on exactly that — returned null. Its own tests all passed because the harness hands the item a `type` the real object never has. And the Test input's byte↔character map was rebuilt with `buildByteCharMap`, which says in its own comment that it is for non-NETARD input; a wrapped record's map is built by `parseNetardLog` as it strips the wrapper, so hovering a field on a real capture lit nothing. Structurally: Test moved from a full-width bar carrying its own duplicate entity list, to a right-hand column, to a subpanel of the Entities column — a run annotates that list, and across the page from it the two halves of one action sat at opposite edges of the screen. The Data Editor itself is now a page reached from the top bar, and **Settings' Data Detection section is gone** — a read-only second copy of the same list, with the same armed-override marking to keep in step. Baseline unchanged throughout: 1472 cases identical. See §5.3, §11, §13. |
 | 2026-08-08 | **Every type the Data Editor offers now decodes a length, and an undeclared length follows the spec rather than the byte values.** The dropdown offered nine types; the length decoder honoured two. `ascii`, `ebcdic`, `hex-ascii-decimal` and `hex-ebcdic-decimal` were byte-for-byte identical to declaring nothing — the decoder read byte VALUES and decided for itself. The consequence on a NonStop system: an EBCDIC length `F1 F9`, which is `"19"` typed on the box, decoded as **61945** whichever of the four was chosen, and a length that wrong sends every field after it to the wrong offset. Two more of the same kind surfaced while testing it: `uint-be` / `uint-le` carry no width and were missing from the integer pattern, so they fell through to the guess; and the decode was unconditionally big-endian, so **little-endian was offered everywhere and honoured nowhere** — a little-endian 19 read as 4864. Precedence is now override → block `"encoding"` → recognizer → ASCII-and-say-so; the block level already existed and `read-fixed` had honoured it since 2026-08-02, but the length paths never looked at it. One design point is worth recording: "no override → read it as the spec's encoding" is **two** questions, and the spec answers only the second. *Text or binary?* it cannot — `PIC X(2)` does not say and a binary length in a character field is ordinary on Base24 — so that stays a fallback; *if text, ASCII or EBCDIC?* it can, and byte values no longer get a vote. The §8 claim that EBCDIC needs no special case because the message is translated first was true only for input format `ebcdic`; a hex or NETARD capture arrives untranslated, which is why this was never noticed. All 1472 baseline cases unchanged — nothing that worked has moved. See §8. |
 | 2026-08-04 | **Which fields are data elements, and what counts as a length, are now choices rather than compiled-in rules.** Two restrictions were limiting real DDLs. (1) A DE was a **top-level** row whose name was not literally `FILLER`, so a DDL could not exclude its own alignment padding under any other name — the field consumed a number regardless — and a DE could never sit on a nested field, which is exactly where one reported DDL puts them (04-level `FIELD-XX` / `FIELD-YY` inside a group). The default is unchanged but now overridable on the same `de` key: `false` excludes **without advancing the counter**, so the tail closes up rather than leaving a hole; `true` includes where the default says no, reaching inside a terminal group; `"children"` makes a group yield to its immediate children — one entry instead of marking the parent and every child. Fixed first because everything else misfired without it: `_meOvDeAnchors` read any non-null `de` as an anchor via `+v \|\| 1`, and `+false` is 0, `+true` is 1, `+"children"` is NaN — all three would have anchored numbering at DE 1. (2) VLG required the length and its payload **wrapped in a group**, and a group could carry exactly one, so a flat `PAN-LEN` then `PAN` could not be expressed and two lengths at one level had nowhere to go. `vlg: true` now works on **any field** and means "the next field's length comes from this one" — the general rule of which the group form is a special case. Implemented in `_meReadOneFieldFromDef`, the one reader every path shares, so `read-ddl`, the bitmap walk and `de` entries cannot drift apart; the re-layout rides the same `ovShift` a `bytes` override uses. Group forms are untouched. UI: a selection action bar with segmented groups, multi-select by ⌘/ctrl-click (shift is deliberately not a modifier — it collides with the browser's text-drag selection), bulk selection via filter + "Select shown", inline editors rather than `prompt()` (blocked outright in some hosts, which makes a button look dead), and Reset arming itself before it fires. The Field Map shows all three DE forms and a plain-field VLG, with the selection form folded into the DE cell signature — all three render differently but all have `de === null`, so a patch-only repaint kept showing the previous one. See §7.1, §8.0. |
 | 2026-08-02 | **`read-tlv` gains `encoding: "ascii"` — the TLV shape production ISO 8583 actually carries — and fixed-width rows finally report where they are.** A live buffer looks like `0002 0005 HELLO 0003 0004 VISA`: a 4-character tag, a 4-character **decimal** length, then that many characters of value as text. Neither existing mode could read it. `binary` reads the length as a big-endian integer, so `"0005"` is `0x30303035`; `ascii-hex` hex-decodes the whole buffer before framing, which turns `HELLO` into garbage and also makes `tag_length`/`length_length` count decoded bytes rather than characters. The new mode decodes nothing: the widths count characters, the length parses as decimal, and the value is text. A length whose characters are not digits is **reported** rather than read as zero — the silent zero is precisely how the VLG length bug behaved (§8). The tag is keyed by **its characters**, so `tags` is written `{"0002": {"field": "CARD-TYPE"}}`; keying it by a hex rendering (`"30303032"`) would be unwritable, and a key mismatch fails silently, leaving unmapped rows and no error. Separately, the fixed-width path had **never** set `startByte`/`endByte` in any mode while the BER path always did, so the same buffer showed a populated Bytes column with `ber: true` and a blank one with `tag_length`/`length_length` — the values were right, but a tag could not be lined up against the raw dump. Positions are now reported wherever they are honest, which is `binary` and `ascii`; `ascii-hex` omits them rather than guessing, since no decoded byte corresponds to one message byte. 9 baseline cases moved, all the same shape: fixed-width TLV rows gaining positions, with values and hex unchanged. See §5.15. |
@@ -363,8 +364,15 @@ Emit a contiguous window between two fields:
 ### 5.3 `token-area` — token read with filters
 
 > *Added 2026-05-23 — `tokens`, `from`, `until` attributes; `"ANY"` is the canonical no-filter value.*
+> *2026-08-13 — the type code is read from the spec's `name`, not only `type`.*
 
 Reads the message's token area (tokens are the named 2-byte-prefixed records produced after fixed-section parsing).
+
+**Where the area is depends on the TYPE CODE**, so the block needs it: `STM` /
+`PSTM` put the tokens after the last field, `ISO` / `B24` inside DE-63 or DE-126,
+and anything else has no token area at all. A saved spec stores that code as
+`name`; `type` is what *detection* builds from it. The block reads `type` first,
+then `name`.
 
 **Attributes:**
 
@@ -1201,16 +1209,23 @@ instead of two that could disagree.
 Nothing in the current pipeline evaluates DDLMM rules. The only traces left in
 the code are comments recording where each evaluation step used to be.
 
-## 11. UI — Message Editor
+## 11. UI — Data Editor
 
-Entry point: **Settings panel → Message Detection section → \[Open Message Editor\] button**.
+> *Rewritten 2026-08-13 — it was a modal opened from Settings; it is a page
+> reached from the app's top bar, and Settings no longer mentions it at all.*
+
+Entry point: **⊞ Data Editor** in the app's top bar.
 
 Flow:
-1. User clicks **\[Open Message Editor\]** in Settings.
-2. Settings panel **closes**.
-3. Message Editor modal opens **full width**.
-4. User edits messages / validators / applies.
-5. Message Editor closes → back to normal app.
+1. User clicks **⊞ Data Editor**.
+2. The page opens over the whole viewport — no scrim, no card, nothing behind
+   it to return to except by closing.
+3. User edits entities and tests against real bytes.
+4. Cancel / ✓ Save / ✕ → back to the main app.
+
+**Settings carries no copy of the entity list and no way in.** It did until
+2026-08-13, which meant the same list existed in two places and the same
+override had to be marked in both. One screen, one door.
 
 No nested overlays.
 
@@ -1221,25 +1236,29 @@ No nested overlays.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Data Editor                                  [Import] [Export]  [✕] │
-├──────────────────┬───────────────────────────────────────────────────┤
-│  MESSAGES   [+]  │  ▾ Identity                                       │
-│  ─────────────   │  ▾ Recognizers                          ⚠2        │
-│    iso-ascii     │  ▸ Parse Spec                                     │
-│    bic-iso       │  ▾ DDL Bindings                          ✓        │
-│    hpdh   ←sel   │  ▾ Overrides                                      │
-│    ebcdic        │                                                   │
-│                  │  (sections are collapsible and all on one page —  │
-│  FILES      [+]  │   not tabs; several are usually open at once)     │
-│  ─────────────   │                                                   │
-│    segmented     │                          [Delete] [Cancel] [Apply]│
-├──────────────────┴───────────────────────────────────────────────────┤
-│  Test  ▾                          AUTO | HEX | ASCII   [▶ Run] [Clear]│
-│  ┌────────────────────┬─────────────────────────────────────────────┐│
-│  │ paste a message …  │  per-recognizer pass/fail, then the parse    ││
-│  │                    │  result for the winning spec                 ││
-│  └────────────────────┴─────────────────────────────────────────────┘│
-└──────────────────────────────────────────────────────────────────────┘
+│  Data Editor                        [Delete] [Cancel] [✓ Save]  [✕]  │
+├──────────────────────┬───────────────────────────────────────────────┤
+│  ENTITIES        [−] │  ▾ Identity                                   │
+│  MESSAGES        [+] │  ▾ Recognizers                        ⚠2      │
+│    iso-ascii    red  │  ▸ Parse Spec                                 │
+│    bic-iso    GREEN  │  ▾ DDL Bindings                        ✓      │
+│    hpdh   ←sel WINS  │  ▾ Overrides                                  │
+│    ebcdic     dimmed │                                               │
+│  OTHER           [+] │  (sections are collapsible and all on one     │
+│  FILES           [+] │   page — not tabs; several open at once)      │
+│    segmented  amber  │                                               │
+│ ──── drag to size ── │                                               │
+│  TEST   Wins · 12 f. │                                               │
+│  [AUTO▾] ASCII 49 B  │                                               │
+│           Line Width │                                               │
+│  ┌─────────────────┐ │                                               │
+│  │ paste a message │ │                                               │
+│  └─────────────────┘ │                                               │
+│ ──── drag to size ── │                                               │
+│  Input · Detection · │                                               │
+│  Recognition ·       │                                               │
+│  Parse Spec · Tokens │                                               │
+└──────────────────────┴───────────────────────────────────────────────┘
 ```
 
 **Sidebar — Messages and Files.** Two independent lists (§3.2). Order is manual
@@ -1254,21 +1273,40 @@ Spec, DDL Bindings and Overrides all live on one scrolling page and each collaps
 independently, so a spec can be read end to end without switching context — you
 can see a recognizer and the parse_spec that depends on it at the same time.
 
-**Test area.** A collapsible bar across the bottom, present regardless of which
-section is open, because authoring a recognizer or a parse_spec is a
-try-it-immediately activity.
+**Test.** A subpanel of the Entities column, under the list — because a run
+annotates that list, and across the page from it the two halves of one action
+sat at opposite edges of the screen. Both the column and the subpanel resize and
+collapse; so does the input inside it. It is a *workspace*, not a preview: it
+carries the Message Input panel's config bar whole, so a parse can be solved
+without walking back to the main panel.
 
-- **Input** — paste a message; a formatted NETARD record works as-is (wrapper
-  stripped and decoded by the same audit parser the main panel uses).
-- **AUTO / HEX / ASCII** — how to read the input. AUTO detects; the toggles lock
-  themselves and show a **NETARD** badge when the input is a wrapped record, since
-  the format is then determined by the wrapper and a manual choice is irrelevant.
-- **▶ Run** — evaluates every spec in order and reports, per spec, which
-  recognizer passed or failed and where it stopped (`failAt`), then parses with
-  the winning spec and shows the fields.
+- **Input** — the same CodeMirror editor the main panel uses. A formatted NETARD
+  record works as-is (wrapper stripped and decoded by the same audit parser),
+  and its byte↔character map comes from that parser rather than being rebuilt —
+  `buildByteCharMap` is for non-NETARD input only.
+- **Format bar** — the main panel's `#msgCfgBar`, same six values
+  (AUTO / ASCII / HEXASCII / HEX / EBCDIC / OCT), the detected-format badge, a
+  byte count, and the **Line Width** widget. Both widgets edit the one
+  `P.lineWidth`. The select locks to AUTO and shows a **NETARD** badge when the
+  input is a wrapped record, since the wrapper then determines the format.
+  The Audit file browser is deliberately absent: Test takes messages.
+- **▶ Run** — answers two questions in order. *Which entity is this?* — every
+  entity is evaluated and the verdict is painted on its **row**: green on the
+  winner (badged `WINS`), amber on one that would match but is shadowed by it,
+  red on one the walk reached and rejected, and dimmed on one it never reached,
+  because detection stops at the first match and red must not claim a rejection
+  that never happened. Then *what does that entity make of the bytes?* — the
+  winner **becomes the selection**, so the fields shown are the fields the app
+  would really have produced. No match means nothing is selected. Clicking a row
+  overrides the pick and the re-run leaves it alone.
+- **Results** — Input, Detection, Recognition, Parse Spec and Tokens. The field
+  table has named, resizable columns (FIELD · SIZE · OFFSET · VALUE · HEX);
+  clicking a header lights the column, and hovering or clicking a row lights that
+  field's bytes in the input above.
 
-That last point is what makes it useful: a recognizer that does not fire tells you
-*which* condition failed, rather than only that detection returned UNKNOWN.
+What makes it useful is that a recognizer which does not fire tells you *which*
+condition failed and where it stopped (`failAt`), rather than only that detection
+returned UNKNOWN.
 
 ### Sections (right panel)
 

@@ -2169,7 +2169,7 @@ input.me-inp{width:100%;}
 .me-test-fhex{color:var(--text-dim);opacity:.5;white-space:nowrap;font-size:calc(var(--sz-mono) - 2px);
   width:100%;max-width:0;overflow:hidden;text-overflow:ellipsis;}
 .me-test-flen{color:var(--text-dim);white-space:nowrap;text-align:right;width:1%;}
-.me-test-fbytes{color:var(--text-dim);white-space:nowrap;font-size:calc(var(--sz-mono) - 2px);width:1%;}
+.me-test-fbytes{color:var(--text-dim);white-space:nowrap;font-size:calc(var(--sz-mono) - 2px);width:1%;padding-right:12px;}
 .me-test-ferr{color:#f85149;font-style:italic;}
 .me-test-tok-id{color:var(--accent2);white-space:nowrap;min-width:30px;}
 .me-test-tok-name{color:var(--text-dim);white-space:nowrap;}
@@ -15780,7 +15780,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.6.0';
+const APP_VERSION  = '1.22.6.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28676,12 +28676,15 @@ function _meTestFieldTable(fields) {
     // data-fid drives the input highlight — only on rows that HAVE bytes to
     // point at, so a row with nothing to show never offers the gesture.
     const fid = (f.id != null && f.startByte != null) ? ` data-fid="${_escHtml(String(f.id))}"` : '';
+    // Size and offset sit between the name and the data, not after it: they
+    // describe WHERE the value was read, so they are read on the way to it.
+    // At the far right they were the first thing a narrow panel clipped.
     return `<tr${fid}>` +
       `<td class="me-test-fid">${_escHtml(f.id||'')}${desc}${iss}</td>` +
-      `<td class="me-test-fval">${val}</td>` +
-      `<td class="me-test-fhex">${hex}</td>` +
       `<td class="me-test-flen">${f.valueLength ?? ''}</td>` +
-      `<td class="me-test-fbytes">${brange}</td></tr>`;
+      `<td class="me-test-fbytes">${brange}</td>` +
+      `<td class="me-test-fval">${val}</td>` +
+      `<td class="me-test-fhex">${hex}</td></tr>`;
   });
   return `<table class="me-test-ftbl"><tbody>${rows.join('')}</tbody></table>`;
 }

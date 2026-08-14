@@ -10999,9 +10999,12 @@ test('the results table does not spend a column saying the field name twice', ()
   // describes — so the description column was the name again, and it pushed
   // size and offset off the right edge.
   const tbl = psFnSource('_meTestFieldTable');
+  // Size and offset sit between the name and the data: they say where the
+  // value was read, so they are passed on the way to it — and at the far right
+  // they were the first thing a narrow panel clipped.
   const cells = [...tbl.matchAll(/<td class="me-test-(\w+)"/g)].map(m => m[1]);
-  deepEq(cells, ['fid', 'fid', 'fval', 'fhex', 'flen', 'fbytes'],
-    'the field row is not five columns: name, value, hex, size, offset');
+  deepEq(cells, ['fid', 'fid', 'flen', 'fbytes', 'fval', 'fhex'],
+    'the field row is not five columns in order: name, size, offset, value, hex');
   // The error row spans the rest of the table exactly.
   const span = /<td colspan="(\d+)" class="me-test-ferr"/.exec(tbl);
   assert.ok(span, 'the error row is gone');

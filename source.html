@@ -1920,7 +1920,7 @@ td.c-err  { color: var(--accent2); }
 .me-overlay.hidden{display:none;}
 .me-shell{display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;background:var(--bg-deep);}
 .me-main{display:flex;flex:1;min-height:0;overflow:hidden;}
-.me-sidebar{width:343px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
+.me-sidebar{width:460px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
   background:var(--bg-panel);border: var(--bw) solid var(--border);border-radius:var(--r-md);
   margin:var(--sp-3) 0 var(--sp-3) var(--sp-3);}
 /* Pane header — the collapse control for the two outer columns. Same shape as
@@ -2083,17 +2083,42 @@ input.me-inp{width:100%;}
 .me-rf-btns{display:flex;gap:4px;margin-top:2px;}
 .me-rf-btnrow{display:flex;justify-content:flex-end;gap:6px;}
 .me-status{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
-/* Test is the page's right column — a card like the sidebar, resizable and
-   collapsible. It used to be a full-width bar at the bottom carrying its own
-   copy of the entity list; the verdicts now live on the Entities rows on the
-   left, so the same information is in one place instead of two. */
-.me-test-pane{width:460px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
-  background:var(--bg-panel);border: var(--bw) solid var(--border);border-radius:var(--r-md);
-  margin:var(--sp-3) var(--sp-3) var(--sp-3) 0;}
-.me-test-summary{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:none;max-width:40%;}
+/* Test is a subpanel of Entities — the way the DDL Tree is a subpanel of DDL
+   Definition. It used to be a full-width bar at the bottom carrying its own
+   copy of the entity list, then a column on the far side of the page. Both put
+   the run and the list it annotates at opposite edges of the screen; a run
+   paints the rows immediately above it now. */
+.me-ent-list{flex:1;min-height:60px;display:flex;flex-direction:column;overflow:hidden;}
+.me-test-sub{flex:none;height:420px;min-height:0;display:flex;flex-direction:column;overflow:hidden;
+  border-top: var(--bw) solid var(--border);}
+/* Collapsed, the subpanel is just its header — height:auto so the list above
+   takes the space back rather than leaving a gap where the body was. */
+.me-test-sub.collapsed{height:auto !important;}
+.me-test-sub.collapsed .me-test-main{display:none;}
+.me-sub-hdr{display:flex;align-items:center;gap:var(--sp-2);padding:5px 8px;min-height:var(--app-header-h);box-sizing:border-box;
+  background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
+.me-sub-hdr .me-sidebar-title{color:var(--text);flex:none;}
+.me-test-summary{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}
 .me-test-win{font-size:9px;font-weight:700;color:#3fb950;border: var(--bw) solid #3fb950;border-radius:var(--r-sm);padding:0 4px;flex-shrink:0;}
 .me-test-main{flex:1;min-width:0;min-height:0;padding:8px 12px;display:flex;flex-direction:column;gap:6px;overflow:hidden;}
 .me-test-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+/* Test verdicts paint the ROW, not a 6px dot beside it — the dot was the same
+   size as the colour swatch next to it and read as decoration. Colour never
+   carries a verdict alone: the winner also gets the WINS badge, and a shadowed
+   match says so in the Recognition section. */
+.me-item.tv-fail{background:rgba(248,81,73,.14);}
+.me-item.tv-pass{background:rgba(230,168,23,.16);}
+.me-item.tv-win{background:rgba(63,185,80,.20);}
+.me-item.tv-fail:hover{background:rgba(248,81,73,.22);}
+.me-item.tv-pass:hover{background:rgba(230,168,23,.24);}
+.me-item.tv-win:hover{background:rgba(63,185,80,.28);}
+/* A verdict row that is also selected keeps its verdict colour — the accent
+   text of .me-item.active would read as blue-on-green — so selection moves to
+   an inset bar, the same shape an armed override uses. Forced rows keep their
+   amber bar: it says something the selection does not. */
+.me-item.tv-fail.active:not(.me-item-forced),
+.me-item.tv-pass.active:not(.me-item-forced),
+.me-item.tv-win.active:not(.me-item-forced){color:var(--text);box-shadow:inset 3px 0 0 var(--accent);}
 .me-test-ta{width:100%;min-height:56px;max-height:110px;resize:vertical;font-family:var(--mono);font-size:var(--sz-mono);background:var(--bg-deep);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text);padding:4px 6px;box-sizing:border-box;outline:none;}
 .me-test-ta:focus{border-color:var(--accent);}
 .me-test-out{font-family:var(--mono);font-size:var(--sz-mono);flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:0;}
@@ -15737,7 +15762,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.0.0';
+const APP_VERSION  = '1.22.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17312,71 +17337,82 @@ function openMsgEditor() {
   _meInitSplitter();
 }
 
-// ── Column resizers ─────────────────────────────────────────────────────────
-// Drag a .resizer-h to adjust the column beside it. The sidebar sits LEFT of
-// its splitter so it grows with the mouse; the Test panel sits RIGHT of its
-// own, so it grows as the mouse moves the other way — that sign is the only
-// difference between the two. Widths and collapsed state persist.
-const _ME_SIDEBAR_MIN = 150;
-const _ME_SIDEBAR_MAX = 500;
-const _ME_TEST_MIN    = 260;
-const _ME_TEST_MAX    = 900;
-const _ME_PANES = [
-  { pane: 'me-sidebar',   splitter: 'me-splitter',      key: 'up_me_sidebar_w', min: _ME_SIDEBAR_MIN, max: _ME_SIDEBAR_MAX, sign:  1 },
-  { pane: 'me-test-pane', splitter: 'me-test-splitter', key: 'up_me_test_w',    min: _ME_TEST_MIN,    max: _ME_TEST_MAX,    sign: -1 },
+// ── Resizers ────────────────────────────────────────────────────────────────
+// Two gutters: the vertical one between Entities and the editor drags the
+// column's WIDTH, the horizontal one inside Entities drags the Test subpanel's
+// HEIGHT. Test grows upward, so dragging the gutter down must shrink it — the
+// same relationship the audit detail pane has with its own gutter.
+const _ME_SIDEBAR_MIN = 200;
+const _ME_SIDEBAR_MAX = 900;
+const _ME_TEST_H_MIN  = 120;
+const _ME_RESIZERS = [
+  { el: 'me-sidebar',  gutter: 'me-splitter',      key: 'up_me_sidebar_w', axis: 'x',
+    prop: 'width',  cursor: 'col-resize', min: () => _ME_SIDEBAR_MIN, max: () => _ME_SIDEBAR_MAX },
+  { el: 'me-test-sub', gutter: 'me-test-resizer',  key: 'up_me_test_h',    axis: 'y',
+    prop: 'height', cursor: 'row-resize', min: () => _ME_TEST_H_MIN,
+    // Leave the entity list at least a few rows: a subpanel that can eat the
+    // whole column is a subpanel that can hide what it is annotating.
+    max: () => Math.max(_ME_TEST_H_MIN,
+      (document.getElementById('me-sidebar')?.getBoundingClientRect().height || 0) - 160) },
 ];
 let _meSplitterWired = false;
 function _meInitSplitter() {
-  for (const cfg of _ME_PANES) {
-    const el = document.getElementById(cfg.pane);
+  for (const cfg of _ME_RESIZERS) {
+    const el = document.getElementById(cfg.el);
     if (!el) continue;
-    // Restore saved width
     try {
       const saved = parseInt(localStorage.getItem(cfg.key), 10);
-      if (Number.isFinite(saved)) el.style.width = Math.max(cfg.min, Math.min(cfg.max, saved)) + 'px';
+      if (Number.isFinite(saved)) el.style[cfg.prop] = Math.max(cfg.min(), Math.min(cfg.max(), saved)) + 'px';
     } catch(e) {}
   }
-  // Collapsed state is restored through the same path the toggle uses, so the
-  // button glyph and the splitter's inert flag can never disagree with the pane.
-  for (const which of ['sidebar', 'test']) {
-    let c = false;
-    try { c = localStorage.getItem(_ME_PANE_KEY[which]) === '1'; } catch(e) {}
-    _meSetPaneCollapsed(which, c);
-  }
+  // Collapsed state is restored through the same setters the toggles use, so a
+  // button glyph or an inert gutter can never disagree with its panel.
+  let sbC = false, tsC = false;
+  try {
+    sbC = localStorage.getItem('up_me_sidebar_collapsed') === '1';
+    tsC = localStorage.getItem('up_me_test_collapsed') === '1';
+  } catch(e) {}
+  _meSetSidebarCollapsed(sbC);
+  _meSetTestSubCollapsed(tsC);
   if (_meSplitterWired) return;
   _meSplitterWired = true;
-  let drag = null;   // { cfg, el, startX, startW }
-  for (const cfg of _ME_PANES) {
-    const sp = document.getElementById(cfg.splitter);
-    const el = document.getElementById(cfg.pane);
-    if (!sp || !el) continue;
-    sp.addEventListener('mousedown', e => {
-      drag = { cfg, el, sp, startX: e.clientX, startW: el.getBoundingClientRect().width };
-      sp.classList.add('dragging');
-      document.body.style.cursor = 'col-resize';
+  let drag = null;   // { cfg, el, gut, start, startSize }
+  for (const cfg of _ME_RESIZERS) {
+    const gut = document.getElementById(cfg.gutter);
+    const el  = document.getElementById(cfg.el);
+    if (!gut || !el) continue;
+    gut.addEventListener('mousedown', e => {
+      const r = el.getBoundingClientRect();
+      drag = { cfg, el, gut,
+               start:     cfg.axis === 'x' ? e.clientX : e.clientY,
+               startSize: cfg.axis === 'x' ? r.width   : r.height };
+      gut.classList.add('dragging');
+      document.body.style.cursor = cfg.cursor;
       document.body.style.userSelect = 'none';
       e.preventDefault();
     });
   }
   const endDrag = () => {
     if (!drag) return;
-    const { cfg, el, sp } = drag;
+    const { cfg, el, gut } = drag;
     drag = null;
-    sp.classList.remove('dragging');
+    gut.classList.remove('dragging');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-    try { localStorage.setItem(cfg.key, String(parseInt(el.style.width, 10))); } catch(e) {}
+    try { localStorage.setItem(cfg.key, String(parseInt(el.style[cfg.prop], 10))); } catch(e) {}
   };
   document.addEventListener('mousemove', e => {
     if (!drag) return;
     // A mouseup the document never saw — released outside the window, or eaten
-    // by another handler — used to leave the drag armed, and the column then
+    // by another handler — used to leave the drag armed, and the panel then
     // followed the pointer forever with no button held. e.buttons is the
     // authority on what is actually pressed, so the next move ends the drag.
     if (!(e.buttons & 1)) { endDrag(); return; }
-    const { cfg, el, startX, startW } = drag;
-    const w = Math.max(cfg.min, Math.min(cfg.max, startW + cfg.sign * (e.clientX - startX)));
-    el.style.width = w + 'px';
+    const { cfg, el, start, startSize } = drag;
+    // X grows with the pointer (the column is LEFT of its gutter); Y grows
+    // against it (the subpanel is BELOW its gutter).
+    const d = cfg.axis === 'x' ? (e.clientX - start) : (start - e.clientY);
+    el.style[cfg.prop] = Math.max(cfg.min(), Math.min(cfg.max(), startSize + d)) + 'px';
   });
   document.addEventListener('mouseup', endDrag);
 }
@@ -17508,21 +17544,22 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     nm.className = 'me-item-name';
     nm.textContent = s.label || s.name || '(unnamed)';
     d.append(sw, nm);
-    // Test verdicts, when a test has been run against the current input.
+    // Test verdicts, when a test has been run against the current input. The
+    // row itself carries the verdict — green on the entity detection would
+    // pick, amber on one that matches but is shadowed by it, red on a miss.
     const tr = _meState.testResults;
     if (tr) {
       const passed = !!tr.results[i]?.passed;
-      const dot = document.createElement('span');
-      dot.className = 'me-rec-dot ' + (passed ? 'pass' : 'fail');
-      dot.title = passed
-        ? 'Test: all recognizers passed'
-        : 'Test: failed at recognizer ' + (((tr.results[i]?.failAt) ?? 0) + 1);
-      d.insertBefore(dot, sw);
-      if (i === tr.winnerIdx) {
+      const won    = i === tr.winnerIdx;
+      d.classList.add(won ? 'tv-win' : passed ? 'tv-pass' : 'tv-fail');
+      d.title = (won    ? 'Test: wins detection — first match in the list'
+               : passed ? 'Test: matches, but an entity above it wins'
+               : 'Test: failed at recognizer ' + (((tr.results[i]?.failAt) ?? 0) + 1))
+               + '\n' + d.title;
+      if (won) {
         const win = document.createElement('span');
         win.className = 'me-test-win';
         win.textContent = 'WINS';
-        win.title = 'First match in detection order — this is what detection would pick';
         d.appendChild(win);
       }
     }
@@ -17542,11 +17579,13 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     // Deleting is now a labelled button in the header, acting on the selected
     // entity — same confirmation, just somewhere you mean to go.
     // Selecting a row while a test is live re-runs it, so the Test panel always
-    // shows the entity the sidebar says is selected.
+    // shows the entity the sidebar says is selected. autoSelect:false — the
+    // click is the user overriding detection's pick, so the re-run must not
+    // snap the selection back to the winner.
     d.onclick = () => {
       const live = !!_meState.testResults;
       _meSelectItem('msg', i);
-      if (live) _meRunTest();
+      if (live) _meRunTest({ autoSelect: false });
     };
     d.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); _meCtxMsg(e, i); };
     d.ondragstart = e => _meSpecDragStart(e, i);
@@ -24905,34 +24944,44 @@ function _meDupItem(idx) {
 }
 
 
-// ── Data Editor page: outer column collapse ────────────────────────────────
-// The two outer columns (Entities on the left, Test on the right) collapse to
-// a rail with a vertical title, the same shape the main app's panels use. The
-// middle editor column has no toggle: something has to stay on screen.
-const _ME_PANE_EL = { sidebar: 'me-sidebar', test: 'me-test-pane' };
-const _ME_PANE_SPLIT = { sidebar: 'me-splitter', test: 'me-test-splitter' };
-const _ME_PANE_BTN = { sidebar: 'me-sidebar-toggle', test: 'me-test-toggle' };
-const _ME_PANE_KEY = { sidebar: 'up_me_sidebar_collapsed', test: 'up_me_test_collapsed' };
-
-function _meSetPaneCollapsed(which, collapsed) {
-  const pane = document.getElementById(_ME_PANE_EL[which]);
-  const btn  = document.getElementById(_ME_PANE_BTN[which]);
-  const sp   = document.getElementById(_ME_PANE_SPLIT[which]);
-  if (!pane) return;
-  pane.classList.toggle('collapsed', collapsed);
-  if (sp) sp.classList.toggle('inert', collapsed);
-  if (btn) {
-    btn.textContent = collapsed ? '+' : '−';
-    btn.classList.toggle('is-collapsed', collapsed);
-    btn.title = collapsed ? 'Show panel' : 'Hide panel';
-  }
-  try { localStorage.setItem(_ME_PANE_KEY[which], collapsed ? '1' : '0'); } catch(e) {}
+// ── Data Editor page: collapse ─────────────────────────────────────────────
+// The Entities column collapses to a rail with a vertical title, the same
+// shape the main app's panels use. The editor column has no toggle: something
+// has to stay on screen. Test collapses to its own header inside Entities.
+function _meSetToggleBtn(id, collapsed) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  btn.textContent = collapsed ? '+' : '−';
+  btn.classList.toggle('is-collapsed', collapsed);
+  btn.title = collapsed ? 'Show panel' : 'Hide panel';
 }
 
-function _meTogglePane(which) {
-  const pane = document.getElementById(_ME_PANE_EL[which]);
+function _meSetSidebarCollapsed(collapsed) {
+  const pane = document.getElementById('me-sidebar');
   if (!pane) return;
-  _meSetPaneCollapsed(which, !pane.classList.contains('collapsed'));
+  pane.classList.toggle('collapsed', collapsed);
+  document.getElementById('me-splitter')?.classList.toggle('inert', collapsed);
+  _meSetToggleBtn('me-sidebar-toggle', collapsed);
+  try { localStorage.setItem('up_me_sidebar_collapsed', collapsed ? '1' : '0'); } catch(e) {}
+}
+function _meToggleSidebar() {
+  const pane = document.getElementById('me-sidebar');
+  if (pane) _meSetSidebarCollapsed(!pane.classList.contains('collapsed'));
+}
+
+// The subpanel and its gutter open and close together: a handle left behind by
+// a closed panel is a gutter you can drag with nothing on the far side of it.
+function _meSetTestSubCollapsed(collapsed) {
+  const sub = document.getElementById('me-test-sub');
+  if (!sub) return;
+  sub.classList.toggle('collapsed', collapsed);
+  document.getElementById('me-test-resizer')?.classList.toggle('inert', collapsed);
+  _meSetToggleBtn('me-test-toggle', collapsed);
+  try { localStorage.setItem('up_me_test_collapsed', collapsed ? '1' : '0'); } catch(e) {}
+}
+function _meToggleTestSub() {
+  const sub = document.getElementById('me-test-sub');
+  if (sub) _meSetTestSubCollapsed(!sub.classList.contains('collapsed'));
 }
 
 // ============================================================
@@ -28162,7 +28211,14 @@ function _meTestUpdateFmtState() {
   if (netard) wrap.querySelectorAll('.me-ps-variant-tgl').forEach(b => b.classList.toggle('on', b.dataset.tf === 'auto'));
 }
 
-function _meRunTest() {
+// A run answers two questions in order: WHICH entity is this, and then what
+// does that entity make of the bytes. Detection therefore runs first, over
+// every entity, and its winner becomes the selection — so the parse below is
+// always the parse of the entity the app would really have picked. A run
+// triggered by clicking a row passes autoSelect:false: that click IS the
+// user overriding the pick, and snapping back to the winner would undo it.
+function _meRunTest(opts) {
+  const autoSelect = !opts || opts.autoSelect !== false;
   _meTestUpdateFmtState();
   const inp    = document.getElementById('me-test-input');
   const fmtSel = _meTestFmt();
@@ -28173,12 +28229,6 @@ function _meRunTest() {
 
   const text = inp.value.trim();
   if (!text) { out.innerHTML = ''; if (summ) summ.textContent = ''; return; }
-
-  const item = _meCurItem();
-  if (!item) {
-    out.innerHTML = '<div class="me-test-err">No message entity selected.</div>';
-    return;
-  }
 
   // — decode input bytes — mirror the Message Input pipeline. On "auto", run the
   //   full NETARD audit parser (SOURCE/DEST/H-/hexascii, autodetected) so users
@@ -28231,8 +28281,6 @@ function _meRunTest() {
       engineFmt = _FMT_MAP[inputFmt] || inputFmt;
     }
     if (!rawBytes.length) throw new Error('no bytes could be extracted');
-    msgEnc     = (typeof _specEncoding === 'function') ? _specEncoding(item) : 'ascii';
-    parseBytes = msgEnc === 'ebcdic' ? rawBytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : rawBytes.slice();
     bytes      = rawBytes;                  // recognizers + the input dump run on RAW bytes
   } catch(e) {
     out.innerHTML = `<div class="me-test-err">Input error: ${e.message}</div>`;
@@ -28241,6 +28289,28 @@ function _meRunTest() {
   } finally {
     S.netardRulerCol = _rulerColBefore;
   }
+
+  // ── 1. Detection ────────────────────────────────────────────────────────────
+  // Runs before anything else and over EVERY entity: which entity is this?
+  // _fmtTestSpecs over the whole list stops at the first match (mirroring real
+  // detection), but the row verdicts are a diagnostic — they must show which
+  // entities WOULD pass, not just the one that did.
+  const all = _meState.specs.map(s => _fmtTestSpecs([s], bytes, testCtx)[0]);
+  // Real detection walks Messages in list order; file specs are keyed by the
+  // wrapper filename, which pasted test input doesn't carry — so they can never
+  // win here and are excluded from the winner computation.
+  const order     = _detectOrderIdxs(_meState.specs).filter(i => _meState.specs[i]?.kind !== 'file');
+  const winnerIdx = order.find(i => all[i]?.passed) ?? -1;
+  _meTestRenderList(all, winnerIdx);
+  // The winner IS the selection. Nothing matched means nothing is selected —
+  // showing the previous entity's parse next to "no match" claimed a result
+  // the app would never have produced.
+  if (autoSelect && winnerIdx !== _meState.selIdx) _meSelectItem('msg', winnerIdx);
+
+  const item = _meCurItem();
+  const detWinner = winnerIdx !== -1 && winnerIdx === _meState.selIdx;
+  msgEnc     = (item && typeof _specEncoding === 'function') ? _specEncoding(item) : 'ascii';
+  parseBytes = msgEnc === 'ebcdic' ? rawBytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : rawBytes.slice();
 
   const parts = [];
 
@@ -28251,7 +28321,23 @@ function _meRunTest() {
   parts.push(`<div class="me-test-section"><div class="me-test-sec-hdr"><span>Input</span><span class="me-test-sec-badge" style="background:var(--bg-deep);color:var(--text-dim)">${fmtBadge}</span></div>` +
     `<div style="font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);word-break:break-all">${_escHtml(dumpBytes)}${dumpMore}</div></div>`);
 
-  // ── 1. Recognition ──────────────────────────────────────────────────────────
+  // The verdict, stated before any field table: what would detection pick?
+  const winLabel = winnerIdx !== -1
+    ? _escHtml(_meState.specs[winnerIdx].label || _meState.specs[winnerIdx].name || '?') : '';
+  parts.push(_meTestSection('Detection', winnerIdx !== -1 ? '#3fb950' : '#f85149',
+    winnerIdx !== -1
+      ? `<div class="me-test-pass">✓ ${winLabel} — first match in the Messages list.</div>`
+      : `<div class="me-test-fail">✗ No entity matched these bytes.</div>` +
+        `<div class="me-test-note">Nothing is selected. Pick an entity on the left to see what it would make of the input.</div>`,
+    `${all.filter(r => r?.passed).length} of ${all.length} match`));
+
+  if (!item) {
+    out.innerHTML = parts.join('');
+    if (summ) { summ.textContent = 'No match'; summ.style.color = '#f85149'; }
+    return;
+  }
+
+  // ── 2. Recognition (the selected entity) ────────────────────────────────────
   const recResult = _fmtTestSpecs([item], bytes, testCtx)[0];
   const recPassed = recResult?.passed ?? false;
   // Persist the verdict and repaint the per-recognizer dots in the
@@ -28283,31 +28369,16 @@ function _meRunTest() {
       (rec ? ` (${rec.type}${rec.id ? ' #'+rec.id : ''})` : '') + '</div>';
   }
 
-  // Detection-order check: matching is necessary but not sufficient — the
-  // FIRST matching entity in Data-list order wins detection. Surface
-  // shadowing so a generic spec ranked above this one is never a silent trap.
-  // The same all-entity evaluation also drives the verdict list on the left.
-  let detWinner = false;   // is the selected entity the one detection would pick?
-  if (Array.isArray(_meState?.specs)) {
-    // Evaluate every entity independently — _fmtTestSpecs over the whole list
-    // stops at the first match (mirroring real detection), but the verdict
-    // list is a diagnostic: it must show which entities WOULD pass.
-    const all = _meState.specs.map(s => _fmtTestSpecs([s], bytes, testCtx)[0]);
-    // Real detection walks Messages in list order; file specs are keyed by
-    // the wrapper filename, which pasted test input doesn't carry — so they
-    // can never win here and are excluded from the winner computation.
-    const order = _detectOrderIdxs(_meState.specs).filter(i => _meState.specs[i]?.kind !== 'file');
-    const winnerIdx = order.find(i => all[i]?.passed) ?? -1;
-    detWinner = winnerIdx !== -1 && winnerIdx === _meState.selIdx;
-    _meTestRenderList(all, winnerIdx);
-    if (item.kind === 'file') {
-      recHtml += `<div class="me-test-note">File detection — matches on the wrapper filename ($VOL.SUBVOL.FILE), not on pasted bytes, so it cannot win this test.</div>`;
-    } else if (recPassed && winnerIdx !== -1 && winnerIdx !== _meState.selIdx) {
-      const w = _meState.specs[winnerIdx];
-      recHtml += `<div class="me-test-warn">⚠ Shadowed — “${_escHtml(w.label || w.name || '?')}” (higher in the Messages list) also matches, so detection would pick it instead. Drag this entity above it to win.</div>`;
-    } else if (recPassed && winnerIdx === _meState.selIdx) {
-      recHtml += `<div class="me-test-note">✓ Would win detection — first match in the Messages list.</div>`;
-    }
+  // Matching is necessary but not sufficient — the FIRST matching entity in
+  // Data-list order wins. Surface shadowing so a generic spec ranked above this
+  // one is never a silent trap.
+  if (item.kind === 'file') {
+    recHtml += `<div class="me-test-note">File detection — matches on the wrapper filename ($VOL.SUBVOL.FILE), not on pasted bytes, so it cannot win this test.</div>`;
+  } else if (recPassed && winnerIdx !== -1 && !detWinner) {
+    const w = _meState.specs[winnerIdx];
+    recHtml += `<div class="me-test-warn">⚠ Shadowed — “${_escHtml(w.label || w.name || '?')}” (higher in the Messages list) also matches, so detection would pick it instead. Drag this entity above it to win.</div>`;
+  } else if (recPassed && detWinner) {
+    recHtml += `<div class="me-test-note">✓ Would win detection — first match in the Messages list.</div>`;
   }
   parts.push(_meTestSection('Recognition',
     recPassed ? '#3fb950' : (item.recognizers?.length ? '#f85149' : null),
@@ -29008,28 +29079,61 @@ function _meSave() {
       <div class="me-sidebar me-pane" id="me-sidebar">
         <div class="me-pane-hdr">
           <span class="me-pane-title">Entities</span>
-          <button class="panel-toggle" id="me-sidebar-toggle" onclick="_meTogglePane('sidebar')" title="Hide panel">−</button>
+          <button class="panel-toggle" id="me-sidebar-toggle" onclick="_meToggleSidebar()" title="Hide panel">−</button>
         </div>
-        <div class="me-sidebar-sect" id="me-sect-msgs">
-          <div class="me-sidebar-hdr">
-            <span class="me-sidebar-title">Messages</span>
-            <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
+        <div class="me-ent-list" id="me-ent-list">
+          <div class="me-sidebar-sect" id="me-sect-msgs">
+            <div class="me-sidebar-hdr">
+              <span class="me-sidebar-title">Messages</span>
+              <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
+            </div>
+            <div class="me-item-list" id="me-msg-list"></div>
           </div>
-          <div class="me-item-list" id="me-msg-list"></div>
+          <div class="me-sidebar-sect" id="me-sect-other">
+            <div class="me-sidebar-hdr">
+              <span class="me-sidebar-title" title="Structures that are neither a whole message nor a file — recognized from bytes like a message, but tried after every message">Other</span>
+              <button class="me-sidebar-add" onclick="_meAddOther()">+ New</button>
+            </div>
+            <div class="me-item-list" id="me-other-list"></div>
+          </div>
+          <div class="me-sidebar-sect" id="me-sect-files">
+            <div class="me-sidebar-hdr">
+              <span class="me-sidebar-title">Files</span>
+              <button class="me-sidebar-add" onclick="_meAddFile()">+ New</button>
+            </div>
+            <div class="me-item-list" id="me-file-list"></div>
+          </div>
         </div>
-        <div class="me-sidebar-sect" id="me-sect-other">
-          <div class="me-sidebar-hdr">
-            <span class="me-sidebar-title" title="Structures that are neither a whole message nor a file — recognized from bytes like a message, but tried after every message">Other</span>
-            <button class="me-sidebar-add" onclick="_meAddOther()">+ New</button>
+
+        <!-- ── Test — a subpanel of Entities, not a column of its own ──
+             Testing IS working on this list: a run paints every row with its
+             verdict and selects the winner. Across the page from the list it
+             was annotating, the two halves of one action sat at opposite
+             edges of the screen. -->
+        <div class="resizer-v" id="me-test-resizer" title="Drag to resize the Test panel"></div>
+        <div class="me-test-sub" id="me-test-sub">
+          <div class="me-sub-hdr">
+            <span class="me-sidebar-title">Test</span>
+            <span class="me-test-summary" id="me-test-summary"></span>
+            <button class="btn btn-primary" onclick="_meRunTest()">&#x25B6; Run</button>
+            <button class="btn" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
+            <button class="panel-toggle" id="me-test-toggle" onclick="_meToggleTestSub()" title="Hide panel">−</button>
           </div>
-          <div class="me-item-list" id="me-other-list"></div>
-        </div>
-        <div class="me-sidebar-sect" id="me-sect-files">
-          <div class="me-sidebar-hdr">
-            <span class="me-sidebar-title">Files</span>
-            <button class="me-sidebar-add" onclick="_meAddFile()">+ New</button>
+          <div class="me-test-main" id="me-test-main">
+            <div class="me-test-row">
+              <div class="me-ps-variants" id="me-test-fmt-tgls" title="Input format. Auto-detected on paste; a full NETARD record is stripped automatically (toggles disabled). For bare/stripped input, force how the bytes are read.">
+                <button class="me-ps-variant-tgl on" data-tf="auto"  onclick="_meTestSetFmt('auto')">AUTO</button>
+                <button class="me-ps-variant-tgl"    data-tf="hex"   onclick="_meTestSetFmt('hex')">HEX</button>
+                <button class="me-ps-variant-tgl"    data-tf="ascii" onclick="_meTestSetFmt('ascii')">ASCII</button>
+                <span class="me-test-fmt-badge" id="me-test-fmt-badge">NETARD</span>
+              </div>
+              <input id="me-test-segmap" class="me-inp" style="display:none;width:210px"
+                placeholder="SEG-MAP (hex or binary)"
+                title="Ad-hoc segment map for this test — overrides the value stored in the spec's seg-map block. Hex (8 chars for 32 bits) or binary digits.">
+            </div>
+            <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…" oninput="_meTestUpdateFmtState()"></textarea>
+            <div id="me-test-out" class="me-test-out"></div>
           </div>
-          <div class="me-item-list" id="me-file-list"></div>
         </div>
       </div>
 
@@ -29040,35 +29144,6 @@ function _meSave() {
       <div class="me-right">
         <div class="me-tab-body" id="me-tab-body"></div>
         <div id="me-flash-container"></div>
-      </div>
-
-      <!-- ── Editor / Test splitter ── -->
-      <div class="resizer-h" id="me-test-splitter" title="Drag to resize the Test panel"></div>
-
-      <!-- ── Test panel ── -->
-      <div class="me-test-pane me-pane" id="me-test-pane">
-        <div class="me-pane-hdr">
-          <span class="me-pane-title">Test</span>
-          <span class="me-test-summary" id="me-test-summary"></span>
-          <button class="btn btn-primary" onclick="_meRunTest()">&#x25B6; Run</button>
-          <button class="btn" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
-          <button class="panel-toggle" id="me-test-toggle" onclick="_meTogglePane('test')" title="Hide panel">−</button>
-        </div>
-        <div class="me-test-main">
-          <div class="me-test-row">
-            <div class="me-ps-variants" id="me-test-fmt-tgls" title="Input format. Auto-detected on paste; a full NETARD record is stripped automatically (toggles disabled). For bare/stripped input, force how the bytes are read.">
-              <button class="me-ps-variant-tgl on" data-tf="auto"  onclick="_meTestSetFmt('auto')">AUTO</button>
-              <button class="me-ps-variant-tgl"    data-tf="hex"   onclick="_meTestSetFmt('hex')">HEX</button>
-              <button class="me-ps-variant-tgl"    data-tf="ascii" onclick="_meTestSetFmt('ascii')">ASCII</button>
-              <span class="me-test-fmt-badge" id="me-test-fmt-badge">NETARD</span>
-            </div>
-            <input id="me-test-segmap" class="me-inp" style="display:none;width:210px"
-              placeholder="SEG-MAP (hex or binary)"
-              title="Ad-hoc segment map for this test — overrides the value stored in the spec's seg-map block. Hex (8 chars for 32 bits) or binary digits.">
-          </div>
-          <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…" oninput="_meTestUpdateFmtState()"></textarea>
-          <div id="me-test-out" class="me-test-out"></div>
-        </div>
       </div>
     </div>
 

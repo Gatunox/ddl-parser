@@ -1375,7 +1375,10 @@ Once all messages are migrated and verified:
 | `up_me_fm_colvis` | Field Map column visibility — which columns the ⚙ chooser is showing |
 | `up_msg_export_cols` | Export Messages column selection — which of Field / Description / Value / Raw Hex the text file carries |
 | `up_me_ps_fmt` | Parse-spec **Format** shape — `compact` (one line per block) or `expanded` (one line per attribute). A reading preference, so it persists. |
-| `up_me_sidebar_w` | Data Editor sidebar width |
+| `up_me_sidebar_w` | Data Editor Entities column width |
+| `up_me_sidebar_collapsed` | Data Editor Entities column collapsed to its rail |
+| `up_me_test_h` | Data Editor Test subpanel height |
+| `up_me_test_collapsed` | Data Editor Test subpanel collapsed to its header |
 | `up_cc_…` | Per-editor column-chooser state (prefix) |
 
 Only `up_format_specs` is exported (§13.2); the rest is local view state.

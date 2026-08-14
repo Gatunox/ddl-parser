@@ -10746,20 +10746,33 @@ test('the Data Editor page fills the viewport instead of floating in it', () => 
   assert.ok(/overflow\s*:\s*hidden/.test(shell[1]), 'the shell must still clip');
 });
 
-test('Test is the right column of the page, in DOM order', () => {
-  const main = html.slice(html.indexOf('<div class="me-main">'), html.indexOf('id="msgEditorOverlay"') + 200000);
-  const order = ['id="me-sidebar"', 'id="me-splitter"', 'class="me-right"',
-                 'id="me-test-splitter"', 'id="me-test-pane"'];
+test('Test is a subpanel of Entities, not a panel across the page', () => {
+  // Testing IS working on the entity list: a run paints every row and picks
+  // one. As a bottom bar it carried a duplicate list; as a right-hand column it
+  // sat at the far edge from the list it annotates. It lives in the column now,
+  // under the list, with a gutter between them.
+  const sidebar = html.slice(html.indexOf('id="me-sidebar"'), html.indexOf('id="me-splitter"'));
+  assert.ok(sidebar.length > 500, 'could not isolate the Entities column');
+  const order = ['id="me-ent-list"', 'id="me-sect-files"', 'id="me-test-resizer"', 'id="me-test-sub"'];
   let at = -1;
   for (const needle of order) {
-    const i = main.indexOf(needle);
-    assert.ok(i > 0, `${needle} is not inside .me-main — Test is not a column of the page`);
-    assert.ok(i > at, `${needle} is out of order: the page reads sidebar → editor → test`);
+    const i = sidebar.indexOf(needle);
+    assert.ok(i > 0, `${needle} is not inside the Entities column`);
+    assert.ok(i > at, `${needle} is out of order: the column reads list → gutter → Test`);
     at = i;
   }
-  // The old bottom bar is gone in full, not just hidden.
-  for (const dead of ['me-test-bar', 'me-test-body', 'me-test-arr', 'me-test-list', '_meToggleTest'])
-    assert.ok(!html.includes(dead), `${dead} survived the move — the old Test bar is still wired`);
+  // A stacked split takes the horizontal bar — the one that drags on Y.
+  assert.ok(/id="me-test-resizer"[^>]*class="resizer-v"|class="resizer-v"[^>]*id="me-test-resizer"/.test(html),
+    'the Test gutter must be a .resizer-v, which drags vertically');
+  // The page is two columns: nothing sits to the right of the editor.
+  const main = html.slice(html.indexOf('<div class="me-main">'));
+  const afterRight = main.slice(main.indexOf('class="me-right"'));
+  assert.ok(!/resizer-h/.test(afterRight.slice(0, afterRight.indexOf('</div>\n    </div>'))),
+    'a third column reappeared to the right of the editor');
+  // The old bottom bar and the old right column are gone in full, not hidden.
+  for (const dead of ['me-test-bar', 'me-test-body', 'me-test-arr', 'me-test-list',
+                      'me-test-pane', 'me-test-splitter', '_meToggleTest('])
+    assert.ok(!html.includes(dead), `${dead} survived the move — an older Test layout is still wired`);
 });
 
 test('the entity list is not duplicated — verdicts land on the sidebar', () => {
@@ -10772,11 +10785,26 @@ test('the entity list is not duplicated — verdicts land on the sidebar', () =>
   assert.ok(!/getElementById\('me-test-list-body'\)/.test(html),
     'something still writes to the removed verdict list');
 
-  // The sidebar renderer reads them back: a dot on every row, WINS on the pick.
+  // The sidebar renderer reads them back and paints the ROW — three states, so
+  // an entity that matches but is shadowed is never coloured like a miss.
   const list = psFnSource('_meRenderSpecList');
   assert.ok(/_meState\.testResults/.test(list), 'the sidebar never reads the verdicts');
-  assert.ok(/me-rec-dot/.test(list) && /me-test-win/.test(list),
-    'the sidebar row shows neither the pass/fail dot nor the WINS badge');
+  for (const cls of ['tv-win', 'tv-pass', 'tv-fail'])
+    assert.ok(list.includes(cls), `the row verdict is missing the ${cls} state`);
+  assert.ok(!/me-rec-dot/.test(list), 'the row still adds the old dot beside the swatch');
+  // Colour is never the only carrier — the winner says WINS in words too.
+  assert.ok(/me-test-win/.test(list), 'the winning row has no WINS badge');
+  const css = _DE_CSS();
+  for (const cls of ['tv-win', 'tv-pass', 'tv-fail'])
+    assert.ok(new RegExp(`\\.me-item\\.${cls}\\s*\\{[^}]*background`).test(css),
+      `.me-item.${cls} paints no row background`);
+  // Selected AND coloured: .me-item.active would repaint the row accent-blue on
+  // top of green, so the verdict keeps the background and selection moves to a
+  // bar. Declared after .me-item.active, or it never wins.
+  assert.ok(css.indexOf('.me-item.tv-win{') > css.indexOf('.me-item.active{'),
+    'the verdict colours are declared before .me-item.active, which overrides them');
+  assert.ok(/\.me-item\.tv-win\.active:not\(\.me-item-forced\)\s*\{[^}]*box-shadow:\s*inset/.test(css),
+    'a selected verdict row shows no selection marker');
 
   // A verdict that outlives the recognizer it was computed from is a lie. Every
   // place that drops the per-entity verdict drops the cross-entity one too.
@@ -10786,32 +10814,33 @@ test('the entity list is not duplicated — verdicts land on the sidebar', () =>
     'every recTest reset but the selection one must also clear testResults');
 });
 
-test('both outer columns collapse, and remember it', () => {
-  const setter = psFnSource('_meSetPaneCollapsed');
-  for (const [what, re] of [
-    ['the collapsed class',   /classList\.toggle\('collapsed'/],
-    ['the button glyph',      /textContent = collapsed \?/],
-    ['the splitter inert flag', /classList\.toggle\('inert'/],
-    ['localStorage',          /localStorage\.setItem\(_ME_PANE_KEY/],
-  ]) assert.ok(re.test(setter), `the collapse setter never writes ${what}`);
-
-  // Restoring goes through the same setter, so a restored pane can never
-  // disagree with its button or leave a live gutter with nothing behind it.
-  const init = psFnSource('_meInitSplitter');
-  assert.ok(/_meSetPaneCollapsed\(which, c\)/.test(init),
-    'the restore path sets the class directly instead of going through the setter');
-
-  // Both columns, and only those two — the middle one has to stay on screen.
-  for (const map of ['_ME_PANE_EL', '_ME_PANE_SPLIT', '_ME_PANE_BTN', '_ME_PANE_KEY']) {
-    const m = new RegExp(`const ${map} = \\{([^}]*)\\}`).exec(APP_SRC);
-    assert.ok(m, `${map} is gone`);
-    deepEq([...m[1].matchAll(/(\w+):/g)].map(x => x[1]), ['sidebar', 'test'],
-      `${map} must cover exactly the two outer columns`);
+test('the column and its subpanel both collapse, and remember it', () => {
+  for (const [fn, gutter, key, what] of [
+    ['_meSetSidebarCollapsed', 'me-splitter',     'up_me_sidebar_collapsed', 'Entities column'],
+    ['_meSetTestSubCollapsed', 'me-test-resizer', 'up_me_test_collapsed',    'Test subpanel'],
+  ]) {
+    const setter = psFnSource(fn);
+    assert.ok(/classList\.toggle\('collapsed'/.test(setter), `${what}: no collapsed class`);
+    // A gutter left live by a closed panel is a handle with nothing behind it.
+    assert.ok(new RegExp(`'${gutter}'\\)\\?\\.classList\\.toggle\\('inert'`).test(setter),
+      `${what}: the gutter is not made inert with the panel`);
+    assert.ok(/_meSetToggleBtn\(/.test(setter), `${what}: the button glyph is not updated`);
+    assert.ok(setter.includes(key), `${what}: the state is not persisted`);
   }
-  assert.ok(/id="me-sidebar-toggle"[^>]*onclick="_meTogglePane\('sidebar'\)"/.test(html),
+  // Restoring goes through the same setters, so a restored panel can never
+  // disagree with its button or its gutter.
+  const init = psFnSource('_meInitSplitter');
+  assert.ok(/_meSetSidebarCollapsed\(sbC\)/.test(init) && /_meSetTestSubCollapsed\(tsC\)/.test(init),
+    'the restore path sets the class directly instead of going through the setters');
+  assert.ok(/id="me-sidebar-toggle"[^>]*onclick="_meToggleSidebar\(\)"/.test(html),
     'the Entities column has no collapse button');
-  assert.ok(/id="me-test-toggle"[^>]*onclick="_meTogglePane\('test'\)"/.test(html),
-    'the Test column has no collapse button');
+  assert.ok(/id="me-test-toggle"[^>]*onclick="_meToggleTestSub\(\)"/.test(html),
+    'the Test subpanel has no collapse button');
+  // Collapsed, the subpanel must give its height back — height:auto, not a
+  // hidden body inside a box that still reserves 420px.
+  const css = _DE_CSS();
+  assert.ok(/\.me-test-sub\.collapsed\{[^}]*height:\s*auto\s*!important/.test(css),
+    'a collapsed subpanel leaves a gap where its body was');
 });
 
 test('a collapsed Data Editor rail reads top-down, like every other panel', () => {
@@ -10831,21 +10860,53 @@ test('a collapsed Data Editor rail reads top-down, like every other panel', () =
   }
 });
 
-test('the two columns resize toward each other, and persist', () => {
-  const init = psFnSource('_meInitSplitter');
-  const panes = /const _ME_PANES = \[([\s\S]*?)\];/.exec(APP_SRC);
-  assert.ok(panes, '_ME_PANES is gone');
-  // The sidebar sits LEFT of its gutter and the Test panel RIGHT of its own, so
-  // the same drag has to grow them in opposite directions. One shared sign was
-  // the bug waiting here: dragging the Test gutter left would have shrunk it.
-  assert.ok(/pane: 'me-sidebar'[^\n]*sign:\s*1\b/.test(panes[1]),
-    'the sidebar must grow as the pointer moves right');
-  assert.ok(/pane: 'me-test-pane'[^\n]*sign:\s*-1\b/.test(panes[1]),
-    'the Test panel must grow as the pointer moves LEFT');
-  assert.ok(/startW \+ cfg\.sign \* \(e\.clientX - startX\)/.test(init),
-    'the drag does not apply the per-column direction');
-  assert.ok(/Math\.max\(cfg\.min, Math\.min\(cfg\.max/.test(init), 'the drag is unclamped');
-  assert.ok(/localStorage\.setItem\(cfg\.key/.test(init), 'a width that forgets on reload');
+test('the column resizes on X, the subpanel on Y, and both persist', () => {
+  const init  = psFnSource('_meInitSplitter');
+  const rez = /const _ME_RESIZERS = \[([\s\S]*?)\n\];/.exec(APP_SRC);
+  assert.ok(rez, '_ME_RESIZERS is gone');
+  assert.ok(/el: 'me-sidebar',[^\n]*axis: 'x'/.test(rez[1]),
+    'the Entities column must resize horizontally');
+  assert.ok(/el: 'me-test-sub',[^\n]*axis: 'y'/.test(rez[1]),
+    'the Test subpanel must resize vertically');
+  // The column is LEFT of its gutter so it grows with the pointer; the subpanel
+  // is BELOW its gutter so it grows against it. One shared sign is the bug
+  // waiting here — dragging the Test gutter down would have grown it.
+  assert.ok(/cfg\.axis === 'x' \? \(e\.clientX - start\) : \(start - e\.clientY\)/.test(init),
+    'both axes use the same direction, so one of them resizes backwards');
+  assert.ok(/Math\.max\(cfg\.min\(\), Math\.min\(cfg\.max\(\)/.test(init), 'the drag is unclamped');
+  assert.ok(/localStorage\.setItem\(cfg\.key/.test(init), 'a size that forgets on reload');
+  // The subpanel's ceiling is computed from the live column height: a fixed max
+  // would let it swallow the list it exists to annotate on a short window.
+  assert.ok(/max: \(\) => Math\.max\(_ME_TEST_H_MIN,/.test(rez[1]),
+    'the Test subpanel may grow until nothing of the entity list is left');
+});
+
+test('a run answers "which entity" before it answers "what fields"', () => {
+  const run = psFnSource('_meRunTest');
+  // Detection over EVERY entity, and the section that reports it, must both
+  // come before the parse. Reading the parse of the previously-selected entity
+  // above the verdict that says nothing matched is the confusion being fixed.
+  const iAll    = run.indexOf('_meState.specs.map(s => _fmtTestSpecs');
+  const iDetect = run.indexOf("_meTestSection('Detection'");
+  const iParse  = run.indexOf('_meExecParseSpec(');
+  assert.ok(iAll > 0 && iDetect > 0 && iParse > 0, 'the run no longer has all three stages');
+  assert.ok(iAll < iDetect && iDetect < iParse,
+    'the run must detect, report the verdict, then parse — in that order');
+
+  // The winner becomes the selection; no winner means no selection, so the
+  // panel never shows a parse the app would not have produced.
+  assert.ok(/if \(autoSelect && winnerIdx !== _meState\.selIdx\) _meSelectItem\('msg', winnerIdx\)/.test(run),
+    'the winner is not auto-selected');
+  assert.ok(/const item = _meCurItem\(\);/.test(run) && run.indexOf('const item = _meCurItem();') > iAll,
+    'the selected item is read before detection could have changed it');
+  const bail = run.indexOf('if (!item) {');
+  assert.ok(bail > iDetect && bail < iParse,
+    'with nothing selected the run must stop after the verdict, not skip it');
+
+  // Clicking a row is the user overriding the pick — re-running must not snap
+  // the selection back to the winner.
+  assert.ok(/_meRunTest\(\{ autoSelect: false \}\)/.test(psFnSource('_meRenderSpecList')),
+    'a row click re-runs with auto-select on, so the click is undone immediately');
 });
 
 test('a lost mouseup cannot glue a column to the pointer', () => {

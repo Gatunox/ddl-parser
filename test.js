@@ -10702,6 +10702,170 @@ test('every collapsed panel title starts at the TOP of its rail', () => {
     'collapsed panels whose title is rotated but still anchored at flex-start, so it sits at the bottom');
 });
 
+// ── The Data Editor is a page, not a dialog inside Settings ─────────────────
+console.log('\nData Editor page — top bar, three columns, one entity list');
+
+const _DE_CSS = () => html.slice(html.indexOf('<style>'), html.indexOf('</style>'))
+                          .replace(/\/\*[\s\S]*?\*\//g, '');
+
+test('the Data Editor is reached from the top bar, and only from there', () => {
+  // It used to live two clicks inside Settings: ⚙ → expand Data Detection →
+  // ⊞ Data Editor. It is the app's second screen, not a preference, so it is a
+  // button in the header — and Settings must not keep a second door to it, or
+  // the two entry points drift apart the way two entity lists did.
+  const hdr = /<header>([\s\S]*?)<\/header>/.exec(html);
+  assert.ok(hdr, '<header> not found');
+  assert.ok(/id="dataEditorBtn"[^>]*onclick="openMsgEditor\(\)"/.test(hdr[1]),
+    'the top bar has no button that opens the Data Editor');
+
+  const drawer = html.slice(html.indexOf('id="settingsOverlay"'), html.indexOf('id="msgEditorOverlay"'));
+  assert.ok(drawer.length > 1000, 'could not isolate the settings drawer markup');
+  assert.ok(!/onclick="openMsgEditor\(\)"/.test(drawer),
+    'Settings still opens the Data Editor — one screen, one door');
+
+  // The tutorial pointed at the ⚙ because that was the way in. Following a
+  // stale anchor is how a tour teaches the wrong route.
+  const step = /\{\s*target: '(#[\w-]+)', prefer: '\w+',\s*title: 'Data Editor/.exec(html);
+  assert.ok(step, 'the Data Editor tutorial step is gone');
+  eq(step[1], '#dataEditorBtn', 'the tutorial still points at the old entry point');
+});
+
+test('the Data Editor page fills the viewport instead of floating in it', () => {
+  const css = _DE_CSS();
+  const overlay = /\.me-overlay\s*\{([^}]*)\}/.exec(css);
+  const shell   = /\.me-shell\s*\{([^}]*)\}/.exec(css);
+  assert.ok(overlay && shell, '.me-overlay / .me-shell rules are gone');
+  // A page has nothing to dim: the scrim said "the thing behind this still
+  // matters", and nothing behind it is reachable.
+  assert.ok(!/var\(--scrim\)/.test(overlay[1]), 'a full page must not paint a scrim');
+  for (const prop of ['max-width', 'box-shadow', 'border-radius']) {
+    assert.ok(!new RegExp(prop).test(shell[1]), `the shell still carries a dialog's ${prop}`);
+  }
+  assert.ok(!/\d+vw|\d+vh/.test(shell[1]), 'the shell is still sized as a card inside the viewport');
+  // Pinned by an existing test: .cfg-dim resolves against this box.
+  assert.ok(/overflow\s*:\s*hidden/.test(shell[1]), 'the shell must still clip');
+});
+
+test('Test is the right column of the page, in DOM order', () => {
+  const main = html.slice(html.indexOf('<div class="me-main">'), html.indexOf('id="msgEditorOverlay"') + 200000);
+  const order = ['id="me-sidebar"', 'id="me-splitter"', 'class="me-right"',
+                 'id="me-test-splitter"', 'id="me-test-pane"'];
+  let at = -1;
+  for (const needle of order) {
+    const i = main.indexOf(needle);
+    assert.ok(i > 0, `${needle} is not inside .me-main — Test is not a column of the page`);
+    assert.ok(i > at, `${needle} is out of order: the page reads sidebar → editor → test`);
+    at = i;
+  }
+  // The old bottom bar is gone in full, not just hidden.
+  for (const dead of ['me-test-bar', 'me-test-body', 'me-test-arr', 'me-test-list', '_meToggleTest'])
+    assert.ok(!html.includes(dead), `${dead} survived the move — the old Test bar is still wired`);
+});
+
+test('the entity list is not duplicated — verdicts land on the sidebar', () => {
+  // The Test bar carried its own copy of every entity, in the same order, three
+  // inches from the sidebar that already listed them. Reported as duplication:
+  // the sidebar is the list, a test run only annotates it.
+  const render = psFnSource('_meTestRenderList');
+  assert.ok(/_meState\.testResults\s*=/.test(render), 'the verdicts are not published to state');
+  assert.ok(/_meRenderSidebar\(\)/.test(render), 'the verdicts never reach the sidebar');
+  assert.ok(!/getElementById\('me-test-list-body'\)/.test(html),
+    'something still writes to the removed verdict list');
+
+  // The sidebar renderer reads them back: a dot on every row, WINS on the pick.
+  const list = psFnSource('_meRenderSpecList');
+  assert.ok(/_meState\.testResults/.test(list), 'the sidebar never reads the verdicts');
+  assert.ok(/me-rec-dot/.test(list) && /me-test-win/.test(list),
+    'the sidebar row shows neither the pass/fail dot nor the WINS badge');
+
+  // A verdict that outlives the recognizer it was computed from is a lie. Every
+  // place that drops the per-entity verdict drops the cross-entity one too.
+  const stale = [...APP_SRC.matchAll(/_meState\.recTest = null;([^\n]*\n[^\n]*)/g)]
+    .filter(m => !/testResults = null/.test(m[1]));
+  eq(stale.length, 1,
+    'every recTest reset but the selection one must also clear testResults');
+});
+
+test('both outer columns collapse, and remember it', () => {
+  const setter = psFnSource('_meSetPaneCollapsed');
+  for (const [what, re] of [
+    ['the collapsed class',   /classList\.toggle\('collapsed'/],
+    ['the button glyph',      /textContent = collapsed \?/],
+    ['the splitter inert flag', /classList\.toggle\('inert'/],
+    ['localStorage',          /localStorage\.setItem\(_ME_PANE_KEY/],
+  ]) assert.ok(re.test(setter), `the collapse setter never writes ${what}`);
+
+  // Restoring goes through the same setter, so a restored pane can never
+  // disagree with its button or leave a live gutter with nothing behind it.
+  const init = psFnSource('_meInitSplitter');
+  assert.ok(/_meSetPaneCollapsed\(which, c\)/.test(init),
+    'the restore path sets the class directly instead of going through the setter');
+
+  // Both columns, and only those two — the middle one has to stay on screen.
+  for (const map of ['_ME_PANE_EL', '_ME_PANE_SPLIT', '_ME_PANE_BTN', '_ME_PANE_KEY']) {
+    const m = new RegExp(`const ${map} = \\{([^}]*)\\}`).exec(APP_SRC);
+    assert.ok(m, `${map} is gone`);
+    deepEq([...m[1].matchAll(/(\w+):/g)].map(x => x[1]), ['sidebar', 'test'],
+      `${map} must cover exactly the two outer columns`);
+  }
+  assert.ok(/id="me-sidebar-toggle"[^>]*onclick="_meTogglePane\('sidebar'\)"/.test(html),
+    'the Entities column has no collapse button');
+  assert.ok(/id="me-test-toggle"[^>]*onclick="_meTogglePane\('test'\)"/.test(html),
+    'the Test column has no collapse button');
+});
+
+test('a collapsed Data Editor rail reads top-down, like every other panel', () => {
+  // Same trap the four main panels hit: rotate(180deg) flips the flex axis, so
+  // flex-start is the BOTTOM. The rail is new markup and inherits none of the
+  // #ddlPanel fix, so it needs its own flex-end.
+  const css = _DE_CSS();
+  const rule = /\.me-pane\.collapsed \.me-pane-title\s*\{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'the collapsed rail title rule is gone');
+  assert.ok(/writing-mode\s*:\s*vertical-rl/.test(rule[1]), 'the rail title is not vertical');
+  if (/transform\s*:\s*rotate\(180deg\)/.test(rule[1])) {
+    // The LAST declaration is the one that paints. Matching anywhere in the
+    // rule passes on a flex-end that a later flex-start overrides.
+    const decls = [...rule[1].matchAll(/justify-content\s*:\s*([\w-]+)/g)].map(m => m[1]);
+    eq(decls[decls.length - 1], 'flex-end',
+      'a rotated rail title anchored at flex-start sits at the BOTTOM');
+  }
+});
+
+test('the two columns resize toward each other, and persist', () => {
+  const init = psFnSource('_meInitSplitter');
+  const panes = /const _ME_PANES = \[([\s\S]*?)\];/.exec(APP_SRC);
+  assert.ok(panes, '_ME_PANES is gone');
+  // The sidebar sits LEFT of its gutter and the Test panel RIGHT of its own, so
+  // the same drag has to grow them in opposite directions. One shared sign was
+  // the bug waiting here: dragging the Test gutter left would have shrunk it.
+  assert.ok(/pane: 'me-sidebar'[^\n]*sign:\s*1\b/.test(panes[1]),
+    'the sidebar must grow as the pointer moves right');
+  assert.ok(/pane: 'me-test-pane'[^\n]*sign:\s*-1\b/.test(panes[1]),
+    'the Test panel must grow as the pointer moves LEFT');
+  assert.ok(/startW \+ cfg\.sign \* \(e\.clientX - startX\)/.test(init),
+    'the drag does not apply the per-column direction');
+  assert.ok(/Math\.max\(cfg\.min, Math\.min\(cfg\.max/.test(init), 'the drag is unclamped');
+  assert.ok(/localStorage\.setItem\(cfg\.key/.test(init), 'a width that forgets on reload');
+});
+
+test('a lost mouseup cannot glue a column to the pointer', () => {
+  // Reproduced in the preview: release the button where the document never
+  // sees the mouseup — outside the window, or eaten by another handler — and
+  // the drag stayed armed. Every later mouse MOVE then resized the column,
+  // with no button held, and nothing but a reload stopped it.
+  const init = psFnSource('_meInitSplitter');
+  const move = /addEventListener\('mousemove',([\s\S]*?)\n  \}\);/.exec(init);
+  assert.ok(move, 'the mousemove handler is gone');
+  assert.ok(/e\.buttons/.test(move[1]),
+    'the drag trusts mouseup alone — a move with no button held must end it');
+  assert.ok(/endDrag\(\)/.test(move[1]),
+    'it notices the button is up but does not finish the drag (so no width is saved)');
+  // And the same teardown runs either way — a bail-out that skipped the save
+  // would drop the width the user just dragged to.
+  assert.ok(/addEventListener\('mouseup', endDrag\)/.test(init),
+    'mouseup and the buttons check must run the same teardown');
+});
+
 // ── The compiled-DDL cache must outlive a release ───────────────────────────
 console.log('\ncompiled-DDL cache — keyed on the compiler, not the app');
 

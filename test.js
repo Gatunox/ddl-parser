@@ -10881,6 +10881,86 @@ test('the column resizes on X, the subpanel on Y, and both persist', () => {
     'the Test subpanel may grow until nothing of the entity list is left');
 });
 
+test('the Test input is the Message Input panel, not a lesser copy of it', () => {
+  // The point of Test is solving a parse without walking back to the main
+  // panel. A three-button AUTO/HEX/ASCII toggle sent the user straight back the
+  // moment the bytes were EBCDIC, octal or a hexascii dump.
+  const main = /<select id="fmtForceSelect"[\s\S]*?<\/select>/.exec(html);
+  const test = /<select id="me-test-fmt"[\s\S]*?<\/select>/.exec(html);
+  assert.ok(main && test, 'one of the two format selects is gone');
+  const opts = s => [...s.matchAll(/<option value="([^"]*)">([^<]*)</g)].map(m => m[1] + '=' + m[2]);
+  deepEq(opts(test[0]), opts(main[0]),
+    'the Test format select must offer exactly the main panel\'s formats, same values');
+
+  // Same bar, under the header, as on the main panel — not crammed into it.
+  const sub = html.slice(html.indexOf('id="me-test-sub"'), html.indexOf('id="me-test-out"'));
+  const iHdr = sub.indexOf('class="me-sub-hdr"');
+  const iCfg = sub.indexOf('id="me-test-cfg"');
+  const iCm  = sub.indexOf('id="me-test-input"');
+  assert.ok(iHdr >= 0 && iCfg > iHdr && iCm > iCfg,
+    'the subpanel must read header → config bar → input, like the main panel');
+  // On the id ATTRIBUTE, not a substring of the bar: "me-lw-widget-gone"
+  // contains "me-lw-widget", and a renamed control would have passed.
+  for (const id of ['me-test-fmt', 'me-test-fmt-badge', 'me-test-cnt-badge', 'me-lw-widget'])
+    assert.ok(new RegExp(`id="${id}"`).test(sub.slice(iCfg, iCm)),
+      `${id} is not in the Test config bar`);
+
+  // A real editor, sharing the main input's highlight classes.
+  assert.ok(/id="me-test-input" class="cm-host me-test-cm"/.test(html),
+    'the Test input is not a CodeMirror host');
+  assert.ok(!/me-test-ta/.test(html), 'the old textarea styling survived');
+  const css = _DE_CSS();
+  for (const cls of ['cm-hl-active', 'cm-hl-hover'])
+    assert.ok(new RegExp(`\\.me-test-cm \\.${cls}`).test(css), `the Test input cannot paint ${cls}`);
+
+  // One badge table, not two — the same format must not be named two ways.
+  assert.ok(/const _FMT_BADGE = \{/.test(APP_SRC), 'the badge map is not shared');
+  assert.ok(/const fmtMap = _FMT_BADGE;/.test(psFnSource('updateBadges')),
+    'updateBadges kept a private copy of the badge map');
+  assert.ok(psFnSource('_meTestUpdateFmtState').includes('_FMT_BADGE'),
+    'the Test bar does not use the shared badge map');
+});
+
+test('one Line Width preference, two widgets, no loop between them', () => {
+  // P.lineWidth is a saved preference and belongs to the app, so both bars edit
+  // the same number. The ids differ, so the handlers take a prefix.
+  for (const fn of ['lwStartEdit', 'lwCommit', 'lwCancel']) {
+    const src = psFnSource(fn);
+    assert.ok(new RegExp(`function ${fn}\\(pfx\\)`).test(src), `${fn} cannot address the second widget`);
+    assert.ok(/_lwEls\(pfx\)/.test(src), `${fn} still looks the elements up by fixed id`);
+  }
+  assert.ok(/onclick="lwStartEdit\('me-lw-'\)"/.test(html), 'the Test widget is not wired to its own ids');
+  assert.ok(/onclick="lwStartEdit\(\)"/.test(html), 'the main widget lost its default');
+  // Both displays repaint from one place.
+  const upd = psFnSource('_lwUpdateDisplay');
+  assert.ok(/me-lw-display/.test(upd), 'the Test display is never repainted');
+  // …and the repaint must not come back round: _lwUpdateDisplay calls the Test
+  // sync, so the Test sync must never call _lwUpdateDisplay.
+  assert.ok(!/_lwUpdateDisplay\(/.test(psFnSource('_meLwSync')),
+    'the Line Width sync calls back into the function that calls it');
+});
+
+test('a field row lights its own bytes in the Test input', () => {
+  // The gesture the Message Input panel answers, answered here — otherwise
+  // reading a parse against the actual bytes still means leaving the panel.
+  const tbl = psFnSource('_meTestFieldTable');
+  assert.ok(/data-fid="/.test(tbl), 'field rows carry no id for the highlight to key on');
+  assert.ok(/f\.startByte != null/.test(tbl),
+    'rows with no bytes must not offer a gesture that cannot do anything');
+  const bind = psFnSource('_meTestBindRowHL');
+  for (const [ev, what] of [['onmouseenter', 'hover'], ['onmouseleave', 'hover out'], ['onclick', 'pin']])
+    assert.ok(bind.includes(ev), `no ${what} handler on the field rows`);
+  // Clicking the pinned row again releases it, or the only way to drop a
+  // highlight is to run the test over.
+  assert.ok(/_meTestSelFid === fid \? null : fid/.test(bind), 'a pinned row cannot be unpinned');
+  // The map is the Test input's own: the two inputs hold different text.
+  const run = psFnSource('_meRunTest');
+  assert.ok(/_meTestByteMap = _meTestBuildByteMap\(text, inputFmt\)/.test(run),
+    'the byte map is not rebuilt from the text and format the run actually used');
+  assert.ok(!/S\.messages/.test(psFnSource('_meTestHLRanges')),
+    'the Test highlight reads the MAIN panel\'s parsed messages');
+});
+
 test('a run answers "which entity" before it answers "what fields"', () => {
   const run = psFnSource('_meRunTest');
   // Detection over EVERY entity, and the section that reports it, must both

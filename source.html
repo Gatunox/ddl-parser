@@ -941,7 +941,7 @@ textarea[readonly] { color: var(--ta-ro-fg); cursor: default; background: transp
 }
 .msg-hl-overlay::-webkit-scrollbar { display: none; }  /* Chrome/Safari */
 /* Line-width column marker */
-#lwColMarker {
+#lwColMarker, #me-lw-marker {
   position: absolute;
   top: 0; bottom: 0;
   width: 1px;
@@ -950,7 +950,7 @@ textarea[readonly] { color: var(--ta-ro-fg); cursor: default; background: transp
   pointer-events: none;
   z-index: 2;
 }
-#lwColMarker.hidden { display: none; }
+#lwColMarker.hidden, #me-lw-marker.hidden { display: none; }
 .msg-hl-overlay mark {
   border-radius: var(--r-sm);
   color: #ffffff;   /* highlighted text is full white */
@@ -2102,6 +2102,31 @@ input.me-inp{width:100%;}
 .me-test-win{font-size:9px;font-weight:700;color:#3fb950;border: var(--bw) solid #3fb950;border-radius:var(--r-sm);padding:0 4px;flex-shrink:0;}
 .me-test-main{flex:1;min-width:0;min-height:0;padding:8px 12px;display:flex;flex-direction:column;gap:6px;overflow:hidden;}
 .me-test-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+/* A copy of #msgCfgBar's rule, because it IS that bar in another panel. Kept as
+   its own selector rather than added to #msgCfgBar's: the main panel hides its
+   copy on body.audit-active and .panel.collapsed, neither of which applies here. */
+.me-test-cfg{
+  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
+  border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
+  background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap;
+  position:relative;
+}
+.me-test-sub.collapsed .me-test-cfg{display:none;}
+.me-test-cfg select{background:var(--bg-panel);border: var(--bw-ctl) solid var(--border);color:var(--text);
+  font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);padding:0 4px;border-radius:var(--r-sm);
+  height:calc(var(--sz-mono) + 8px);}
+.me-test-cfg select:focus{outline:none;border-color:var(--accent);}
+.me-test-cfg select:hover{border-color: var(--h-gray-bd);color: var(--h-gray-fg);}
+.me-test-cfg select.fmt-forced{color:var(--warning);border-color:var(--warning);}
+/* Same editor as the Message Input panel, so the same highlight classes apply.
+   It takes a share of the subpanel and the results scroll under it. */
+.me-test-cm{flex:0 0 30%;min-height:80px;background:var(--bg-input);
+  border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);overflow:hidden;}
+.me-test-cm .cm-editor{height:100%;}
+.me-test-cm .cm-content{color:var(--text-dim);}
+.me-test-cm .cm-editor.msg-has-hl .cm-content{color:var(--text-very-dim);}
+.me-test-cm .cm-hl-active{background:var(--hl-active);border-radius:var(--r-sm);color:var(--hl-text);}
+.me-test-cm .cm-hl-hover {background:var(--hl-hover); border-radius:var(--r-sm);color:var(--hl-text);}
 /* Test verdicts paint the ROW, not a 6px dot beside it — the dot was the same
    size as the colour swatch next to it and read as decoration. Colour never
    carries a verdict alone: the winner also gets the WINS badge, and a shadowed
@@ -2119,8 +2144,6 @@ input.me-inp{width:100%;}
 .me-item.tv-fail.active:not(.me-item-forced),
 .me-item.tv-pass.active:not(.me-item-forced),
 .me-item.tv-win.active:not(.me-item-forced){color:var(--text);box-shadow:inset 3px 0 0 var(--accent);}
-.me-test-ta{width:100%;min-height:56px;max-height:110px;resize:vertical;font-family:var(--mono);font-size:var(--sz-mono);background:var(--bg-deep);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text);padding:4px 6px;box-sizing:border-box;outline:none;}
-.me-test-ta:focus{border-color:var(--accent);}
 .me-test-out{font-family:var(--mono);font-size:var(--sz-mono);flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:0;}
 .me-test-pass{color:#3fb950;}
 .me-test-fail{color:var(--text-dim);}
@@ -2144,6 +2167,10 @@ input.me-inp{width:100%;}
 .me-test-ftbl td{padding:2px 8px 2px 0;vertical-align:top;border-bottom: var(--bw) solid rgba(255,255,255,.04);line-height:1.4;}
 .me-test-ftbl tr:last-child td{border-bottom:none;}
 .me-test-ftbl tr:hover td{background:rgba(var(--accent-rgb),.06);}
+/* Only rows that can point at bytes are clickable, and a pinned one stays lit
+   so the highlight above has something naming it. */
+.me-test-ftbl tr[data-fid]{cursor:pointer;}
+.me-test-ftbl tr[data-fid].sel td{background:rgba(var(--accent-rgb),.16);}
 .me-test-fid{color:var(--accent);white-space:nowrap;}
 .me-test-fdesc{color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
 .me-test-fval{color:var(--text);word-break:break-all;}
@@ -2473,9 +2500,6 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ps-variant-tgl.on{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
 .me-ps-variant-tgl .me-ps-vtgl-n{opacity:0.7;font-weight:400;}
 /* Test-bar format toggles: NETARD-wrapped input disables the toggles and shows a badge */
-.me-test-fmt-badge{display:none;height:24px;line-height:20px;padding:0 10px;font-size:10px;font-family:var(--mono);font-weight:700;letter-spacing:.06em;border: var(--bw-ctl) solid #38bdf8;border-radius:var(--r-lg);color:#38bdf8;background:rgba(56,189,248,.12);}
-#me-test-fmt-tgls.netard .me-ps-variant-tgl{opacity:.35;pointer-events:none;}
-#me-test-fmt-tgls.netard .me-test-fmt-badge{display:inline-flex;align-items:center;}
 /* ── Overrides panel: sparse list on top, read-only reference below ─────────
    The list holds ONLY the fields the user has changed. The reference table is
    the picker — it shows every declared field and is not editable, so a field's
@@ -13326,6 +13350,24 @@ function onFmtForceChange() {
   updateBadges();
 }
 
+// Format → [badge class, label]. Module-level because the Data Editor's Test
+// panel shows the same badge for the same format; two copies would drift.
+const _FMT_BADGE = {
+  'hex':              ['badge-hex',          'HEX'],
+  'ebcdic':           ['badge-ebcdic',       'EBCDIC'],
+  'tandem-dump':      ['badge-dump',         'HEXASCII'],
+  'ascii':            ['badge-ascii',        'ASCII'],
+  'oct':              ['badge-oct',          'OCT'],
+  'netard':           ['badge-netard',       'NETARD'],
+  'netard-hex':       ['badge-netard-hex',   'NETARD-HEX'],
+  'netard-dump':      ['badge-netard-dump',  '<span style="color:#38bdf8">NETARD-</span><span style="color:#8b5cf6">HEX</span><span style="color:#06b6d4">ASCII</span>'],
+  'netard-oct':       ['badge-netard-oct',   'NETARD-OCT'],
+  'netard-ebcdic':    ['badge-netard-ebcdic','NETARD-EBCDIC'],
+  'netard-ascii':     ['badge-netard-ascii', 'NETARD-ASCII'],
+  'fup-hex':          ['badge-fup-hex',      'FUPCOPY HEX'],
+  'fup-ascii':        ['badge-fup-ascii',    'FUPCOPY ASCII'],
+};
+
 function updateBadges() {
   const fmtEl = document.getElementById('fmtBadge');
   const cntEl = document.getElementById('cntBadge');
@@ -13333,21 +13375,7 @@ function updateBadges() {
   if (S.forcedFormat) {
     fmtEl.innerHTML = ''; cntEl.innerHTML = '';
   } else {
-    const fmtMap = {
-      'hex':              ['badge-hex',          'HEX'],
-      'ebcdic':           ['badge-ebcdic',       'EBCDIC'],
-      'tandem-dump':      ['badge-dump',         'HEXASCII'],
-      'ascii':            ['badge-ascii',        'ASCII'],
-      'oct':              ['badge-oct',          'OCT'],
-      'netard':           ['badge-netard',       'NETARD'],
-      'netard-hex':       ['badge-netard-hex',   'NETARD-HEX'],
-      'netard-dump':      ['badge-netard-dump',  '<span style="color:#38bdf8">NETARD-</span><span style="color:#8b5cf6">HEX</span><span style="color:#06b6d4">ASCII</span>'],
-      'netard-oct':       ['badge-netard-oct',   'NETARD-OCT'],
-      'netard-ebcdic':    ['badge-netard-ebcdic','NETARD-EBCDIC'],
-      'netard-ascii':     ['badge-netard-ascii', 'NETARD-ASCII'],
-      'fup-hex':          ['badge-fup-hex',      'FUPCOPY HEX'],
-      'fup-ascii':        ['badge-fup-ascii',    'FUPCOPY ASCII'],
-    };
+    const fmtMap = _FMT_BADGE;
     if (S._badgeFmt && fmtMap[S._badgeFmt]) {
       const [cls, lbl] = fmtMap[S._badgeFmt];
       fmtEl.innerHTML = `<span class="badge ${cls}">${lbl}</span>`;
@@ -15762,7 +15790,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.1.0';
+const APP_VERSION  = '1.22.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16107,6 +16135,12 @@ const _LW_PRESETS = [0, ...Array.from({length: (256-68)/4+1}, (_,i) => 68 + i*4)
 function _lwUpdateDisplay() {
   const el = document.getElementById('lwDisplay');
   if (el) el.textContent = P.lineWidth > 0 ? String(P.lineWidth) : 'Auto';
+  // The Test bar shows the same number; it repaints its own ruler from its own
+  // text, which is a different message from the one in the Message Input panel.
+  const meEl = document.getElementById('me-lw-display');
+  if (meEl) meEl.textContent = P.lineWidth > 0 ? String(P.lineWidth) : 'Auto';
+  if (typeof _meTestUpdateFmtState === 'function' && document.getElementById('me-test-fmt'))
+    _meTestUpdateFmtState();
   if (P.lineWidth > 0) {
     _lwUpdateRuler();
   } else {
@@ -16190,9 +16224,19 @@ function _lwSetParsed(on) {
   if (w) w.classList.toggle('parsed', on);
 }
 
-function lwStartEdit() {
-  const display = document.getElementById('lwDisplay');
-  const input   = document.getElementById('lwInput');
+// Two widgets, one preference. The Message Input panel's ids are the default;
+// the Data Editor's Test bar passes 'me-lw-'. P.lineWidth is a saved pref and
+// belongs to the app, not to a panel, so both edit the same number and
+// _lwUpdateDisplay repaints whichever of them exists.
+function _lwEls(pfx = '') {
+  return {
+    display: document.getElementById(pfx ? pfx + 'display' : 'lwDisplay'),
+    input:   document.getElementById(pfx ? pfx + 'input'   : 'lwInput'),
+  };
+}
+
+function lwStartEdit(pfx) {
+  const { display, input } = _lwEls(pfx);
   if (!display || !input) return;
   input.value = P.lineWidth > 0 ? P.lineWidth : '';
   input.placeholder = 'Auto';
@@ -16202,9 +16246,8 @@ function lwStartEdit() {
   input.select();
 }
 
-function lwCommit() {
-  const display = document.getElementById('lwDisplay');
-  const input   = document.getElementById('lwInput');
+function lwCommit(pfx) {
+  const { display, input } = _lwEls(pfx);
   if (!display || !input) return;
   const v = parseInt(input.value, 10);
   if (!isNaN(v) && v >= 16 && v <= 256) {
@@ -16217,9 +16260,8 @@ function lwCommit() {
   savePrefs(); _lwUpdateDisplay();
 }
 
-function lwCancel() {
-  const display = document.getElementById('lwDisplay');
-  const input   = document.getElementById('lwInput');
+function lwCancel(pfx) {
+  const { display, input } = _lwEls(pfx);
   if (!display || !input) return;
   input.classList.add('hidden');
   display.classList.remove('hidden');
@@ -17117,12 +17159,69 @@ document.addEventListener('DOMContentLoaded', () => {
       view.dispatch({ effects: _auditDumpHLEffect.of(Decoration.set(marks)) });
     };
 
+    // Data Editor Test input — the same editor the Message Input panel uses,
+    // so a message can be worked on there without walking back to the main
+    // panel. Its own highlight field: the two inputs hold different text and
+    // the Test one has its own byte map.
+    const _meTestHLEffect = StateEffect.define();
+    const _meTestHLField  = StateField.define({
+      create: () => Decoration.none,
+      update(decs, tr) {
+        for (const e of tr.effects) if (e.is(_meTestHLEffect)) return e.value;
+        return decs.map(tr.changes);
+      },
+      provide: f => EditorView.decorations.from(f),
+    });
+    const meTestEditableComp = new Compartment();
+    window._meTestCM = new EditorView({
+      state: EditorState.create({
+        doc: '',
+        extensions: [
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap]),
+          meTestEditableComp.of(EditorView.editable.of(true)),
+          placeholder('Paste one message here, or drop a file.\n\nAccepted: NETARD audit log · Pure hex · Hex with spaces · Tandem hex dump · ASCII raw bytes'),
+          _meTestHLField,
+          EditorView.updateListener.of(u => { if (u.docChanged) _meTestUpdateFmtState(); }),
+        ],
+      }),
+      parent: document.getElementById('me-test-input'),
+    });
+    // Ruler marker, same as the main input's — Line Width drives both.
+    const _meLwMarker = document.createElement('div');
+    _meLwMarker.id = 'me-lw-marker';
+    _meLwMarker.className = 'hidden';
+    window._meTestCM.dom.appendChild(_meLwMarker);
+    window._meTestHL = (ranges, hasSelection = false) => {
+      const view = window._meTestCM;
+      if (!ranges.length) {
+        view.dom.classList.remove('msg-has-hl');
+        view.dispatch({ effects: _meTestHLEffect.of(Decoration.none) });
+        return;
+      }
+      view.dom.classList.toggle('msg-has-hl', hasSelection);
+      const docLen = view.state.doc.length;
+      const marks  = [];
+      for (const { s, e, color } of ranges) {
+        const from = Math.max(0, Math.min(s, docLen));
+        const to   = Math.max(0, Math.min(e, docLen));
+        if (from < to) marks.push(
+          Decoration.mark({ class: color === 'var(--hl-active)' ? 'cm-hl-active' : 'cm-hl-hover' })
+            .range(from, to)
+        );
+      }
+      marks.sort((a, b) => a.from - b.from || a.to - b.to);
+      view.dispatch({ effects: _meTestHLEffect.of(Decoration.set(marks)) });
+    };
+
     const _origGBI = document.getElementById.bind(document);
     const _ddlProxy = _cmProxy(window._ddlEditorCM, ddlEditableComp, onDDLInput, ddlPlaceholderComp);
     const _msgProxy = _cmProxy(window._msgInputCM,  msgEditableComp, onMsgChange, null, 'msg-parsed');
+    const _meTestProxy = _cmProxy(window._meTestCM, meTestEditableComp, _meTestUpdateFmtState);
     document.getElementById = function(id) {
-      if (id === 'ddlEditor') return _ddlProxy;
-      if (id === 'msgInput')  return _msgProxy;
+      if (id === 'ddlEditor')      return _ddlProxy;
+      if (id === 'msgInput')       return _msgProxy;
+      if (id === 'me-test-input')  return _meTestProxy;
       return _origGBI(id);
     };
   }
@@ -28183,32 +28282,91 @@ function _meTestSyncSegMap() {
   if (blk) el.placeholder = blk.value ? `SEG-MAP (spec: ${blk.value})` : 'SEG-MAP (hex or binary)';
 }
 
-// Test-bar format toggle (AUTO / HEX / ASCII). A full NETARD record (a SOURCE/
-// DEST wrapper or a formatted H-/hexascii block) is stripped + auto-detected by
-// the run, so the manual toggles are disabled and a NETARD badge is shown; the
-// toggles only drive extraction of bare (stripped) input.
+// Test format control — the Message Input panel's select, same six values, so
+// a format that only that panel could force no longer sends the user back to
+// it. A full NETARD record (a SOURCE/DEST wrapper or a formatted H-/hexascii
+// block) is stripped + auto-detected by the run, so the select is locked to
+// AUTO while one is pasted; it only drives extraction of bare input.
 function _meIsNetardWrapped(text) {
   if (!text) return false;
   return /^\s+(SOURCE|DEST)\b/m.test(text)
       || /^\s{3,20}([HAEO0]-[\s\d]|[0-9A-Fa-f]{1,8}:\s)/mi.test(text);
 }
+// '' means AUTO, matching #fmtForceSelect — the values ARE the main panel's.
 function _meTestFmt() {
-  const wrap = document.getElementById('me-test-fmt-tgls');
-  if (!wrap || wrap.classList.contains('netard')) return 'auto';
-  return wrap.querySelector('.me-ps-variant-tgl.on')?.dataset.tf || 'auto';
+  const sel = document.getElementById('me-test-fmt');
+  if (!sel || sel.disabled) return '';
+  return sel.value || '';
 }
-function _meTestSetFmt(f) {
-  const wrap = document.getElementById('me-test-fmt-tgls');
-  if (!wrap || wrap.classList.contains('netard')) return;   // locked while NETARD
-  wrap.querySelectorAll('.me-ps-variant-tgl').forEach(b => b.classList.toggle('on', b.dataset.tf === f));
+function _meTestFmtChange() {
+  const sel = document.getElementById('me-test-fmt');
+  if (sel) sel.classList.toggle('fmt-forced', !!sel.value);
+  _meTestUpdateFmtState();
   _meRunTest();
 }
+// Badges mirror the main panel's rule: shown in AUTO only, because a forced
+// format is already spelled out in the select next to them.
 function _meTestUpdateFmtState() {
-  const wrap = document.getElementById('me-test-fmt-tgls');
-  if (!wrap) return;
-  const netard = _meIsNetardWrapped(document.getElementById('me-test-input')?.value || '');
-  wrap.classList.toggle('netard', netard);
-  if (netard) wrap.querySelectorAll('.me-ps-variant-tgl').forEach(b => b.classList.toggle('on', b.dataset.tf === 'auto'));
+  const sel  = document.getElementById('me-test-fmt');
+  const bEl  = document.getElementById('me-test-fmt-badge');
+  const cEl  = document.getElementById('me-test-cnt-badge');
+  if (!sel) return;
+  const text   = document.getElementById('me-test-input')?.value || '';
+  const netard = _meIsNetardWrapped(text);
+  sel.disabled = netard;
+  if (netard) { sel.value = ''; sel.classList.remove('fmt-forced'); }
+  const forced = _meTestFmt();
+  const fmt    = forced || (text.trim() ? detectFormat(text) : '');
+  if (bEl) bEl.innerHTML = (!forced && fmt && _FMT_BADGE[fmt])
+    ? `<span class="badge ${_FMT_BADGE[fmt][0]}">${_FMT_BADGE[fmt][1]}</span>` : '';
+  if (cEl) {
+    const n = text.trim() ? _meTestByteCount(text, fmt) : 0;
+    cEl.innerHTML = n ? `<span class="badge badge-count">${n} bytes</span>` : '';
+  }
+  _meLwSync(fmt, forced, text);
+}
+// Byte count for the badge. Cheap and best-effort: a malformed paste must show
+// no count, not throw inside an input handler and stop the rest of the sync.
+function _meTestByteCount(text, fmt) {
+  try { return (extractBytes(text, fmt || detectFormat(text)) || []).length; }
+  catch(e) { return 0; }
+}
+
+// Line Width for the Test input — same widget, same P.lineWidth, its own ruler.
+// Visible for the formats where a column actually means something (the NETARD
+// family, ASCII and the hexascii dump), exactly as the main panel decides it.
+// Never calls _lwUpdateDisplay: that function calls back into this one.
+function _meLwSync(fmt, forced, text) {
+  const w = document.getElementById('me-lw-widget');
+  if (!w) return;
+  const f       = forced || fmt || '';
+  const isDump  = f === 'tandem-dump';
+  const isAscii = f === 'ascii';
+  const show    = f.startsWith('netard') || isAscii || isDump;
+  w.classList.toggle('hidden', !show);
+  const marker = document.getElementById('me-lw-marker');
+  if (!marker) return;
+  const at = col => {
+    const view = window._meTestCM;
+    if (!view) { marker.classList.add('hidden'); return; }
+    const gutterW     = view.dom.querySelector('.cm-gutters')?.offsetWidth || 0;
+    const contentPadL = parseFloat(getComputedStyle(view.contentDOM).paddingLeft) || 0;
+    const firstLine   = view.contentDOM.querySelector('.cm-line');
+    const linePadL    = firstLine ? (parseFloat(getComputedStyle(firstLine).paddingLeft) || 0) : 0;
+    marker.style.left = (gutterW + contentPadL + linePadL + col * view.defaultCharacterWidth) + 'px';
+    marker.classList.remove('hidden');
+  };
+  if (!show || !text.trim()) { marker.classList.add('hidden'); return; }
+  if (P.lineWidth > 0) { at(P.lineWidth); return; }
+  // Auto — mark where the width was detected, so "Auto" is not a claim the
+  // user has to take on faith.
+  if (isAscii || isDump) {
+    const { margin, dataWidth } = _detectAsciiLineMetrics(text);
+    if (dataWidth > 0) { at(margin + dataWidth); return; }
+  }
+  const dw = _detectNetardRuler(text, f.startsWith('netard-') || isDump);
+  if (dw > 0) { at(dw); return; }
+  marker.classList.add('hidden');
 }
 
 // A run answers two questions in order: WHICH entity is this, and then what
@@ -28273,10 +28431,10 @@ function _meRunTest(opts) {
       // the real record path passes exactly this at the detectMsgTypeTrace call.
       testCtx   = { source: rec.source, dest: rec.dest };
       rawBytes  = Array.from(rec.rawMsg, c => c.charCodeAt(0) & 0xFF);
-      inputFmt  = fmtSel === 'auto' ? (rec.netardFmt || 'standard') : fmtSel;
+      inputFmt  = fmtSel ? fmtSel : (rec.netardFmt || 'standard');
       engineFmt = _FMT_MAP[inputFmt] || 'netard';
     } else {
-      inputFmt  = fmtSel === 'auto' ? detectFormat(text) : fmtSel;
+      inputFmt  = fmtSel || detectFormat(text);
       rawBytes  = extractBytes(text, inputFmt);
       engineFmt = _FMT_MAP[inputFmt] || inputFmt;
     }
@@ -28417,12 +28575,94 @@ function _meRunTest(opts) {
   }
 
   out.innerHTML = parts.join('');
+  // Hover or click a field row and its bytes light up in the input above —
+  // the same gesture the Message Input panel answers, so a parse can be read
+  // against the actual bytes without leaving this panel.
+  _meTestFields = ctx.fields;
+  _meTestByteMap = _meTestBuildByteMap(text, inputFmt);
+  _meTestBindRowHL();
   if (summ) {
     // Same vocabulary as the Detection list: Pass / Fail for the recognizer
     // outcome, Wins when this entity is the one detection would pick.
     summ.textContent = !recPassed ? 'Fail'
       : `${detWinner ? 'Wins' : 'Pass'} · ${fieldCount} field(s)`;
     summ.style.color = recPassed ? '#3fb950' : '#f85149';
+  }
+}
+
+// ── Test input highlighting ────────────────────────────────────────────────
+// Byte → character span for the text currently in the Test input, plus the
+// fields the last run produced. Same model as the Message Input panel's
+// byteCharMap; kept separate because the two inputs hold different text.
+let _meTestFields  = null;
+let _meTestByteMap = null;
+let _meTestSelFid  = null;
+let _meTestHovFid  = null;
+
+function _meTestBuildByteMap(text, fmt) {
+  // A NETARD wrapper is stripped before the bytes are read, and the map has to
+  // describe the text on screen — so it is built from the same wrapper-aware
+  // path the main panel uses, against the same format the run decoded with.
+  try { return buildByteCharMap(text, fmt, 0); }
+  catch(e) { return null; }
+}
+
+function _meTestHLRanges() {
+  if (!_meTestByteMap?.length || !_meTestFields) return [];
+  const ranges = [];
+  const add = (fid, color) => {
+    if (!fid) return;
+    const f = _meTestFields.find(x => String(x.id) === String(fid));
+    if (!f || f.startByte == null) return;
+    let run = null, asciiRun = null;
+    const first = Math.max(0, f.startByte | 0);
+    const last  = Math.min(f.endByte | 0, _meTestByteMap.length - 1);
+    for (let b = first; b <= last; b++) {
+      const bc = _meTestByteMap[b];
+      if (!bc) {
+        if (run)      { ranges.push({ ...run,      color }); run      = null; }
+        if (asciiRun) { ranges.push({ ...asciiRun, color }); asciiRun = null; }
+        continue;
+      }
+      if (!run) run = { s: bc.s, e: bc.e };
+      else if (bc.s <= run.e) run.e = Math.max(run.e, bc.e);
+      else { ranges.push({ ...run, color }); run = { s: bc.s, e: bc.e }; }
+      if (bc.ascii) {
+        if (!asciiRun) asciiRun = { s: bc.ascii.s, e: bc.ascii.e };
+        else if (bc.ascii.s <= asciiRun.e) asciiRun.e = Math.max(asciiRun.e, bc.ascii.e);
+        else { ranges.push({ ...asciiRun, color }); asciiRun = { s: bc.ascii.s, e: bc.ascii.e }; }
+      }
+    }
+    if (run)      ranges.push({ ...run,      color });
+    if (asciiRun) ranges.push({ ...asciiRun, color });
+  };
+  add(_meTestSelFid, 'var(--hl-active)');
+  if (_meTestHovFid && _meTestHovFid !== _meTestSelFid) add(_meTestHovFid, 'var(--hl-hover)');
+  return ranges;
+}
+
+function _meTestPaintHL() {
+  window._meTestHL?.(_meTestHLRanges(), !!_meTestSelFid);
+}
+
+function _meTestBindRowHL() {
+  const out = document.getElementById('me-test-out');
+  if (!out) return;
+  _meTestSelFid = null;
+  _meTestHovFid = null;
+  _meTestPaintHL();
+  for (const tr of out.querySelectorAll('tr[data-fid]')) {
+    const fid = tr.dataset.fid;
+    tr.onmouseenter = () => { _meTestHovFid = fid; _meTestPaintHL(); };
+    tr.onmouseleave = () => { _meTestHovFid = null; _meTestPaintHL(); };
+    // Click to pin, click again to release — a selection you cannot drop is a
+    // highlight the user has to clear by running the test again.
+    tr.onclick = () => {
+      _meTestSelFid = _meTestSelFid === fid ? null : fid;
+      for (const r of out.querySelectorAll('tr[data-fid]'))
+        r.classList.toggle('sel', r.dataset.fid === _meTestSelFid);
+      _meTestPaintHL();
+    };
   }
 }
 
@@ -28449,7 +28689,10 @@ function _meTestFieldTable(fields) {
     const brange = f.startByte != null ? `${f.startByte}–${f.endByte}` : '';
     const hex   = f.rawHex ? `<span class="me-test-fhex">${_escHtml(f.rawHex.slice(0,40))}</span>` : '';
     const iss   = f.issue ? `<div class="me-test-ferr">${_escHtml(f.issue)}</div>` : '';
-    return `<tr>` +
+    // data-fid drives the input highlight — only on rows that HAVE bytes to
+    // point at, so a row with nothing to show never offers the gesture.
+    const fid = (f.id != null && f.startByte != null) ? ` data-fid="${_escHtml(String(f.id))}"` : '';
+    return `<tr${fid}>` +
       `<td class="me-test-fid">${_escHtml(f.id||'')}</td>` +
       `<td class="me-test-fdesc">${desc}${iss}</td>` +
       `<td class="me-test-fval">${val}</td>` +
@@ -29119,19 +29362,39 @@ function _meSave() {
             <button class="btn" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
             <button class="panel-toggle" id="me-test-toggle" onclick="_meToggleTestSub()" title="Hide panel">−</button>
           </div>
+          <!-- The Message Input panel's config bar, same controls in the same
+               order, under the header exactly as it sits there. The point of
+               Test is to solve a parse without walking back to the main panel;
+               a format only that panel could force sent the user straight back.
+               The one addition is SEG-MAP, which is a per-test override with no
+               equivalent on the main panel. -->
+          <div class="me-test-cfg" id="me-test-cfg">
+            <select id="me-test-fmt" onchange="_meTestFmtChange()" title="Force input format (overrides auto-detect)">
+              <option value="">AUTO</option>
+              <option value="ascii">ASCII</option>
+              <option value="tandem-dump">HEXASCII</option>
+              <option value="hex">HEX</option>
+              <option value="ebcdic">EBCDIC</option>
+              <option value="oct">OCT</option>
+            </select>
+            <span id="me-test-fmt-badge" style="flex-shrink:0;padding:0 4px"></span>
+            <span id="me-test-cnt-badge" style="flex-shrink:0"></span>
+            <input id="me-test-segmap" class="me-inp" style="display:none;width:180px;flex-shrink:0"
+              placeholder="SEG-MAP (hex or binary)"
+              title="Ad-hoc segment map for this test — overrides the value stored in the spec's seg-map block. Hex (8 chars for 32 bits) or binary digits.">
+            <span style="flex:1"></span>
+            <span class="lw-widget hidden" id="me-lw-widget" title="Line width — click value to type, ‹ › to step presets, ↺ to reset">
+              <span class="lw-lbl">Line Width</span>
+              <span class="lw-step" onclick="lwStep(-1)" title="Previous preset">&lt;</span>
+              <span id="me-lw-display" class="lw-val" onclick="lwStartEdit('me-lw-')" title="Click to type a value">Auto</span>
+              <input id="me-lw-input" class="lw-input hidden" type="text" inputmode="numeric" pattern="[0-9]*" size="3" maxlength="3"
+                onblur="lwCommit('me-lw-')" onkeydown="if(event.key==='Enter'){lwCommit('me-lw-');}if(event.key==='Escape'){lwCancel('me-lw-');}"/>
+              <span class="lw-step" onclick="lwStep(1)" title="Next preset">&gt;</span>
+              <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>
+            </span>
+          </div>
           <div class="me-test-main" id="me-test-main">
-            <div class="me-test-row">
-              <div class="me-ps-variants" id="me-test-fmt-tgls" title="Input format. Auto-detected on paste; a full NETARD record is stripped automatically (toggles disabled). For bare/stripped input, force how the bytes are read.">
-                <button class="me-ps-variant-tgl on" data-tf="auto"  onclick="_meTestSetFmt('auto')">AUTO</button>
-                <button class="me-ps-variant-tgl"    data-tf="hex"   onclick="_meTestSetFmt('hex')">HEX</button>
-                <button class="me-ps-variant-tgl"    data-tf="ascii" onclick="_meTestSetFmt('ascii')">ASCII</button>
-                <span class="me-test-fmt-badge" id="me-test-fmt-badge">NETARD</span>
-              </div>
-              <input id="me-test-segmap" class="me-inp" style="display:none;width:210px"
-                placeholder="SEG-MAP (hex or binary)"
-                title="Ad-hoc segment map for this test — overrides the value stored in the spec's seg-map block. Hex (8 chars for 32 bits) or binary digits.">
-            </div>
-            <textarea id="me-test-input" class="me-test-ta" placeholder="Paste message bytes here…" oninput="_meTestUpdateFmtState()"></textarea>
+            <div id="me-test-input" class="cm-host me-test-cm"></div>
             <div id="me-test-out" class="me-test-out"></div>
           </div>
         </div>

@@ -11094,6 +11094,20 @@ test('the results table has real columns: named, sized, draggable', () => {
   assert.ok(/handle\.ondblclick = /.test(init) && /_meTestResetCols\(\)/.test(init),
     'nothing reaches _meTestResetCols, so a column dragged to nothing stays there');
   assert.ok(/double-click to reset/.test(html), 'the reset gesture is not discoverable from the handle');
+
+  // Clicking a header lights the column, the same as the Field Map and Parse
+  // Results — with five resizable columns the boundaries have to be visible to
+  // aim a drag at. Through the SHARED helper, not a third copy of it.
+  const run = psFnSource('_meRunTest');
+  assert.ok(/_meInitColHighlight\('\.me-test-ftbl-cols'\)/.test(run),
+    'the results table has no column highlight');
+  // And the drag handle is not a selection target: the helper has to know this
+  // table's handle by name, or every resize would also toggle the highlight.
+  const hi = psFnSource('_meInitColHighlight');
+  assert.ok(/me-test-resizer/.test(hi),
+    'dragging this table\'s column edge would also toggle the column highlight');
+  assert.ok(/\.me-test-ftbl-cols th\{[^}]*cursor:\s*pointer/.test(_DE_CSS()),
+    'the header does not say it can be clicked');
 });
 
 test('red means the waterfall rejected it, never "we did not get there"', () => {

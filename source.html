@@ -2584,6 +2584,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* Clicking a header lights its whole column. A background-IMAGE so it layers
    over the background-COLOR the row rules set instead of fighting it. */
 .me-fm-table th{cursor:pointer;}
+.me-test-ftbl-cols th{cursor:pointer;}
 /* The class sits ON each cell, not on a wrapper — td.me-fm-colhi, not
    .me-fm-colhi td. A background-IMAGE so it layers over the background-COLOR
    the row rules set (selected row, override row) instead of replacing it. */
@@ -15788,7 +15789,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.7.1';
+const APP_VERSION  = '1.22.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22561,9 +22562,9 @@ function _meInitColHighlight(sel = '.me-fm-table') {
   if (!thead || thead._colHiBound) return;
   thead._colHiBound = true;
   thead.addEventListener('click', e => {
-    // Dragging is not selecting. Both tables carry a resize handle, under
-    // different class names.
-    if (e.target.closest('.me-fm-resizer,.th-resize')) return;
+    // Dragging is not selecting. Each table carries a resize handle, under its
+    // own class name.
+    if (e.target.closest('.me-fm-resizer,.th-resize,.me-test-resizer')) return;
     const th = e.target.closest('th'); if (!th) return;
     const i = [...th.parentNode.children].indexOf(th) + 1;
     _meApplyColHighlight(sel, _meColHi.get(sel) === i ? 0 : i);
@@ -28563,6 +28564,9 @@ function _meRunTest(opts) {
   _meTestByteMap = netardBcm || _meTestBuildByteMap(text, inputFmt);
   _meTestBindRowHL();
   _meTestInitColResize();
+  // Same click-a-header-to-light-the-column as the Field Map and Parse Results:
+  // with five resizable columns the boundaries have to be visible to aim at.
+  _meInitColHighlight('.me-test-ftbl-cols');
   if (summ) {
     // Same vocabulary as the Detection list: Pass / Fail for the recognizer
     // outcome, Wins when this entity is the one detection would pick.

@@ -15804,7 +15804,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.8.2';
+const APP_VERSION  = '1.22.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25005,6 +25005,26 @@ function _meCtxMsg(e, idx) {
   ]);
 }
 
+// Right-click ANYWHERE in the Entities column. The bundle actions were
+// reachable only by right-clicking an existing entity — the one place you are
+// not looking when the list is empty, or when importing is the whole reason you
+// opened the panel. The lists and rows below stop propagation, so their own
+// (richer) menus still win where they apply; this catches the rest: the section
+// headers, the gap under Files, the column header.
+//
+// The Test subpanel is deliberately excluded. Its input needs the browser's own
+// menu — right-click paste is how a message gets in there.
+function _meCtxEntityPanel(e) {
+  if (e.target.closest('#me-test-sub')) return;
+  e.preventDefault(); e.stopPropagation();
+  showCtxMenu(e.clientX, e.clientY, [
+    { icon: '＋', label: 'New Message', fn: () => _meAddMsg() },
+    { separator: true },
+    { icon: '⬆', label: 'Export All Data…', fn: () => _ctxExportAllMsgs() },
+    { icon: '⬇', label: 'Import Bundle…',   fn: () => triggerImport() },
+  ]);
+}
+
 // Right-click on empty area of the Messages / Files list
 function _meCtxMsgEmpty(e, kind) {
   e.preventDefault(); e.stopPropagation();
@@ -29451,7 +29471,7 @@ function _meSave() {
 
     <div class="me-main">
       <!-- ── Sidebar ── -->
-      <div class="me-sidebar me-pane" id="me-sidebar">
+      <div class="me-sidebar me-pane" id="me-sidebar" oncontextmenu="_meCtxEntityPanel(event)">
         <div class="me-pane-hdr">
           <span class="me-pane-title">Entities</span>
           <button class="panel-toggle" id="me-sidebar-toggle" onclick="_meToggleSidebar()" title="Hide panel">−</button>

@@ -10734,6 +10734,34 @@ console.log('\nData Editor page — top bar, three columns, one entity list');
 const _DE_CSS = () => html.slice(html.indexOf('<style>'), html.indexOf('</style>'))
                           .replace(/\/\*[\s\S]*?\*\//g, '');
 
+test('import/export is reachable from anywhere in the Entities column', () => {
+  // Reported: the bundle actions appeared only when right-clicking an EXISTING
+  // entity — the one place you are not looking when the list is empty, or when
+  // importing is the whole reason you opened the panel.
+  assert.ok(/id="me-sidebar"[^>]*oncontextmenu="_meCtxEntityPanel\(event\)"/.test(html),
+    'the Entities column has no context menu of its own');
+  const fn = psFnSource('_meCtxEntityPanel');
+  for (const label of ['Export All Data', 'Import Bundle'])
+    assert.ok(fn.includes(label), `the column menu is missing "${label}"`);
+
+  // The Test subpanel keeps the browser's own menu — right-click paste is how a
+  // message gets into that input, and swallowing it would be a straight loss.
+  assert.ok(/e\.target\.closest\('#me-test-sub'\)\) return;/.test(fn),
+    'the column menu swallows right-click inside the Test input, killing paste');
+  // The guard has to come FIRST: preventDefault before the bail-out would kill
+  // the native menu even though our own never opens.
+  assert.ok(fn.indexOf("closest('#me-test-sub')") < fn.indexOf('preventDefault'),
+    'the native menu is cancelled before the Test-subpanel check runs');
+
+  // The richer per-row and per-list menus still win where they apply, which is
+  // only true while they stop the event reaching the column.
+  for (const f of ['_meCtxMsgEmpty', '_meCtxMsg'])
+    assert.ok(/stopPropagation\(\)/.test(psFnSource(f)) ||
+              new RegExp(`${f}\\(e[^)]*\\)`).test(psFnSource('_meRenderSpecList')) &&
+              /e\.stopPropagation\(\)/.test(psFnSource('_meRenderSpecList')),
+      `${f} does not stop the event, so the column menu replaces it`);
+});
+
 test('the Data Editor is reached from the top bar, and only from there', () => {
   // It used to live two clicks inside Settings: ⚙ → expand Data Detection →
   // ⊞ Data Editor. It is the app's second screen, not a preference, so it is a

@@ -10985,6 +10985,38 @@ test('a field row lights its own bytes in the Test input', () => {
     'the Test highlight reads the MAIN panel\'s parsed messages');
 });
 
+test('red means the waterfall rejected it, never "we did not get there"', () => {
+  // Reported: STM won, and PSTM and everything under it were painted red.
+  // Detection stops at the first match, so those were never evaluated — red
+  // claimed a rejection that never happened. Only rows the walk actually
+  // reaches can fail; past the winner a row is either shadowed (it WOULD have
+  // matched, which is worth saying) or simply not reached.
+  const run = psFnSource('_meRunTest');
+  const reached = /const reached = new Set\(\);\n\s*for \(const i of order\) \{ reached\.add\(i\); if \(i === winnerIdx\) break; \}/.exec(run);
+  assert.ok(reached, 'the run does not compute which entities the waterfall reaches');
+  // It must be built from `order` — the detection walk — not from the raw spec
+  // array, which is a different sequence and includes the file specs.
+  assert.ok(run.indexOf('const order') < run.indexOf('const reached'),
+    'the reached set is built before detection order is known');
+  assert.ok(/_meTestRenderList\(all, winnerIdx, reached\)/.test(run), 'the set never reaches the list');
+  assert.ok(/testResults = \{ results, winnerIdx, reached \}/.test(psFnSource('_meTestRenderList')),
+    'the set is not published to state');
+
+  // Four states on the row, and the order of the ternary is the claim: won →
+  // shadowed → failed → not reached. Testing `reached` before `passed` would
+  // dim a shadowed row and lose the warning.
+  const list = psFnSource('_meRenderSpecList');
+  assert.ok(/won \? 'tv-win' : passed \? 'tv-pass' : reached \? 'tv-fail' : 'tv-skip'/.test(list),
+    'the row verdict does not distinguish "failed" from "not reached"');
+  assert.ok(/tr\.reached instanceof Set \? tr\.reached\.has\(i\) : true/.test(list),
+    'a result without a reached set must not silently dim every row');
+  const css = _DE_CSS();
+  const skip = /\.me-item\.tv-skip\{([^}]*)\}/.exec(css);
+  assert.ok(skip, '.me-item.tv-skip has no rule');
+  assert.ok(!/background/.test(skip[1]),
+    'a not-reached row must not be coloured — every colour here is a claim about a test that ran');
+});
+
 test('a run answers "which entity" before it answers "what fields"', () => {
   const run = psFnSource('_meRunTest');
   // Detection over EVERY entity, and the section that reports it, must both

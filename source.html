@@ -2114,9 +2114,14 @@ input.me-inp{width:100%;}
 .me-item.tv-fail{background:rgba(248,81,73,.14);}
 .me-item.tv-pass{background:rgba(230,168,23,.16);}
 .me-item.tv-win{background:rgba(63,185,80,.20);}
+/* Not reached. Detection stopped above it, so it has no verdict — the row is
+   dimmed rather than coloured, because every colour here is a claim about a
+   test that was run. */
+.me-item.tv-skip{opacity:.45;}
 .me-item.tv-fail:hover{background:rgba(248,81,73,.22);}
 .me-item.tv-pass:hover{background:rgba(230,168,23,.24);}
 .me-item.tv-win:hover{background:rgba(63,185,80,.28);}
+.me-item.tv-skip:hover{opacity:1;}
 /* A verdict row that is also selected keeps its verdict colour — the accent
    text of .me-item.active would read as blue-on-green — so selection moves to
    an inset bar, the same shape an armed override uses. Forced rows keep their
@@ -15769,7 +15774,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.4.0';
+const APP_VERSION  = '1.22.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17588,17 +17593,32 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     nm.className = 'me-item-name';
     nm.textContent = s.label || s.name || '(unnamed)';
     d.append(sw, nm);
-    // Test verdicts, when a test has been run against the current input. The
-    // row itself carries the verdict — green on the entity detection would
-    // pick, amber on one that matches but is shadowed by it, red on a miss.
+    // Test verdicts, when a test has been run against the current input.
+    //
+    // Detection is a waterfall: it walks the list and stops at the first match.
+    // So red can only mean "the waterfall tried this and rejected it" — true
+    // ABOVE the winner, false below it, where nothing was tried at all. Rows
+    // past the winner stay neutral, except ones that WOULD also have matched:
+    // those are shadowed, and saying so is the whole reason Test evaluates
+    // every entity instead of stopping where detection does.
     const tr = _meState.testResults;
     if (tr) {
-      const passed = !!tr.results[i]?.passed;
-      const won    = i === tr.winnerIdx;
-      d.classList.add(won ? 'tv-win' : passed ? 'tv-pass' : 'tv-fail');
-      d.title = (won    ? 'Test: wins detection — first match in the list'
-               : passed ? 'Test: matches, but an entity above it wins'
-               : 'Test: failed at recognizer ' + (((tr.results[i]?.failAt) ?? 0) + 1))
+      const passed  = !!tr.results[i]?.passed;
+      const won     = i === tr.winnerIdx;
+      const reached = tr.reached instanceof Set ? tr.reached.has(i) : true;
+      d.classList.add(won ? 'tv-win' : passed ? 'tv-pass' : reached ? 'tv-fail' : 'tv-skip');
+      // A file spec never enters the walk — it is matched on the wrapper
+      // filename — so "an entity above it wins" would be the wrong reason for
+      // the same amber. Its recognizers passing on bytes is still worth
+      // flagging: it means they are looser than the filename they belong to.
+      d.title = (won     ? 'Test: wins detection — first match in the list'
+               : passed  ? (kind === 'file'
+                            ? 'Test: recognizers match these bytes, but a file detection is chosen by filename — it cannot win a byte test'
+                            : 'Test: would match, but an entity above it wins — unreachable where it sits')
+               : reached ? 'Test: failed at recognizer ' + (((tr.results[i]?.failAt) ?? 0) + 1)
+               : kind === 'file'
+               ? 'Test: not evaluated — a file detection is chosen by filename, not by these bytes'
+               : 'Test: not reached — detection stopped at the winner above')
                + '\n' + d.title;
       if (won) {
         const win = document.createElement('span');
@@ -28164,9 +28184,9 @@ function _meParseFileWithSpec(spec, bytes, opts) {
 // every row and a WINS badge on the first match (= what detection would pick).
 // This used to be a second entity list inside the Test bar, listing the same
 // names in the same order as the sidebar three inches away. One list, annotated.
-function _meTestRenderList(results, winnerIdx) {
+function _meTestRenderList(results, winnerIdx, reached) {
   if (!_meState) return;
-  _meState.testResults = { results, winnerIdx };
+  _meState.testResults = { results, winnerIdx, reached };
   _meRenderSidebar();
 }
 
@@ -28389,7 +28409,13 @@ function _meRunTest(opts) {
   // win here and are excluded from the winner computation.
   const order     = _detectOrderIdxs(_meState.specs).filter(i => _meState.specs[i]?.kind !== 'file');
   const winnerIdx = order.find(i => all[i]?.passed) ?? -1;
-  _meTestRenderList(all, winnerIdx);
+  // Which entities the waterfall would actually have TRIED. It stops at the
+  // first match, so everything after the winner in detection order was never
+  // evaluated — painting those as failures claims a rejection that never
+  // happened. File specs sit outside the walk entirely.
+  const reached = new Set();
+  for (const i of order) { reached.add(i); if (i === winnerIdx) break; }
+  _meTestRenderList(all, winnerIdx, reached);
   // The winner IS the selection. Nothing matched means nothing is selected —
   // showing the previous entity's parse next to "no match" claimed a result
   // the app would never have produced.

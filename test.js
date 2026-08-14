@@ -5354,6 +5354,29 @@ test('ANY picks up every token in the area', () => {
   deepEq(r.tokens, ['AA', 'BB', 'CC'], 'all three, in wire order');
 });
 
+test('the type code is read off the spec, which stores it as `name`', () => {
+  // Reported: a spec with { "token-area": "ANY" } produced no tokens in the
+  // Data Editor, while the same message on the main page showed seven.
+  // extractTokensFromMessage branches on the TYPE CODE — 'STM'/'PSTM' put the
+  // area after the last field, 'ISO'/'B24' inside DE-63/126 — and returns null
+  // for anything else. A saved spec has `name`; `type` is what DETECTION makes
+  // from it ({ type: spec.name, … }), so nothing in the editor ever has one.
+  //
+  // Every other test here passes `type` explicitly, which is precisely why the
+  // fault survived: the harness supplied the field the real object lacks.
+  S.ddlTree = { V: { S: { D: TOK_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([0x48, 0x44, 0x52, 0x21, ...TOK_AREA]);
+  const run = item => (meExecParseSpec(item, bytes).tokens || []).map(t => t.id);
+  const spec = { name: 'STM', ddl_bindings: ['V/S/D/R'], parse_spec_binary: TOK_SPEC('token-area') };
+  deepEq(run(spec), ['AA', 'BB', 'CC'], 'a spec carrying only `name` must still find its tokens');
+  // And a detection result, which carries `type`, keeps working.
+  deepEq(run({ ...spec, type: 'STM', name: 'whatever' }), ['AA', 'BB', 'CC'],
+    '`type` must still win when something upstream provides it');
+  // Neither: no type code, so no area to look in — null, not a guess.
+  deepEq(run({ ...spec, name: '' }), [], 'without a type code it must not guess an area');
+});
+
 test('token-area fills ctx.tokens and never ctx.fields', () => {
   // The reason an empty result is invisible: it contributes no rows at all.
   const r = tokRun(TOK_SPEC('token-area'));

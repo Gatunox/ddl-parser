@@ -15788,7 +15788,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.7.0';
+const APP_VERSION  = '1.22.7.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25968,7 +25968,13 @@ function _meTokenAreaAttrs(attrs) {
 
 function _meExecTokenArea(attrs, ctx) {
   const { tokens, from, until } = _meTokenAreaAttrs(attrs);
-  const msgType = ctx.item.type || '';
+  // extractTokensFromMessage branches on the TYPE CODE — 'ISO'/'B24' put tokens
+  // inside DE-63/126, 'STM'/'PSTM' put them after the last field — and returns
+  // null for anything else. A spec stores that code as `name`; `type` is what
+  // detection produces from it ({ type: spec.name, … }). Reading only `type`
+  // here meant every run in the Data Editor asked for tokens with an empty type
+  // and got none, while the same message on the main page showed them.
+  const msgType = ctx.item.type || ctx.item.name || '';
   const ddlPath = ctx.item.ddl_bindings?.[0] || '';
   const all = extractTokensFromMessage(ctx.fields, ctx.bytes, msgType, ddlPath) || [];
 

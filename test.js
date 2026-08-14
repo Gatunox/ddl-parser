@@ -10315,12 +10315,15 @@ test('field_overrides type and display options are documented (§9)', () => {
 });
 
 test('every localStorage key is documented (§13)', () => {
-  // Both spellings: a literal at the call site, and the `const X_KEY = 'up_…'`
-  // form. The regex only saw the first, so a key held in a constant — which is
-  // the tidier way to write it — escaped the guard entirely.
+  // Three spellings: a literal at the call site, the `const X_KEY = 'up_…'`
+  // form, and a `key:` field in a config table. The regex saw only the first,
+  // so a key held in a constant — the tidier way to write it — escaped the
+  // guard entirely; the table form arrived with the Data Editor's resizers and
+  // escaped it the same way, through `localStorage.setItem(cfg.key, …)`.
   const keys = [...new Set([
     ...[...html.matchAll(/localStorage\.(?:get|set|remove)Item\(\s*'([^']+)'/g)].map(m => m[1]),
     ...[...html.matchAll(/const\s+_[A-Z0-9_]*KEY\s*=\s*'(up_[^']+)'/g)].map(m => m[1]),
+    ...[...html.matchAll(/\bkey:\s*'(up_[^']+)'/g)].map(m => m[1]),
   ])];
   const sec = specSec('## 13. Storage', '### 13.1');
   deepEq(keys.filter(k => !sec.includes(k)), [], 'storage keys missing from §13');
@@ -10860,25 +10863,46 @@ test('a collapsed Data Editor rail reads top-down, like every other panel', () =
   }
 });
 
-test('the column resizes on X, the subpanel on Y, and both persist', () => {
-  const init  = psFnSource('_meInitSplitter');
-  const rez = /const _ME_RESIZERS = \[([\s\S]*?)\n\];/.exec(APP_SRC);
+test('every pane resizes the way its gutter implies, and all of them persist', () => {
+  const init = psFnSource('_meInitSplitter');
+  const rez  = /const _ME_RESIZERS = \[([\s\S]*?)\n\];/.exec(APP_SRC);
   assert.ok(rez, '_ME_RESIZERS is gone');
-  assert.ok(/el: 'me-sidebar',[^\n]*axis: 'x'/.test(rez[1]),
-    'the Entities column must resize horizontally');
-  assert.ok(/el: 'me-test-sub',[^\n]*axis: 'y'/.test(rez[1]),
-    'the Test subpanel must resize vertically');
-  // The column is LEFT of its gutter so it grows with the pointer; the subpanel
-  // is BELOW its gutter so it grows against it. One shared sign is the bug
-  // waiting here — dragging the Test gutter down would have grown it.
-  assert.ok(/cfg\.axis === 'x' \? \(e\.clientX - start\) : \(start - e\.clientY\)/.test(init),
-    'both axes use the same direction, so one of them resizes backwards');
+  // The sign follows from which SIDE of its gutter a pane sits on: panes
+  // declared before their gutter grow with the pointer, after it grow against.
+  // One shared direction is the bug waiting here — the Test subpanel and the
+  // Test input share an axis and must move opposite ways.
+  const EXPECT = [
+    ['me-sidebar',    'x',  1, 'the Entities column, left of its gutter'],
+    ['me-test-sub',   'y', -1, 'the Test subpanel, below its gutter'],
+    ['me-test-input', 'y',  1, 'the Test input, above its gutter'],
+  ];
+  for (const [el, axis, sign, what] of EXPECT) {
+    const row = new RegExp(`el: '${el}',[^\\n]*axis: '(\\w)', sign: (-?1)`).exec(rez[1]);
+    assert.ok(row, `${what}: no resizer entry`);
+    eq(row[1], axis, `${what}: wrong axis`);
+    eq(row[2], String(sign), `${what}: grows the wrong way`);
+  }
+  // DOM order has to agree with the sign, or the entry is a guess that happens
+  // to be right: gutter AFTER the pane means sign 1, BEFORE it means -1.
+  for (const [el, , sign] of EXPECT) {
+    const g = new RegExp(`el: '${el}',\\s*gutter: '([\\w-]+)'`).exec(rez[1]);
+    const iPane = html.indexOf(`id="${el}"`), iGut = html.indexOf(`id="${g[1]}"`);
+    assert.ok(iPane > 0 && iGut > 0, `${el}: pane or gutter missing from the markup`);
+    eq(iGut > iPane, sign === 1, `${el}: DOM order and drag direction disagree`);
+  }
+  assert.ok(/cfg\.sign \* \(\(cfg\.axis === 'x' \? e\.clientX : e\.clientY\) - start\)/.test(init),
+    'the drag does not apply the per-pane direction');
   assert.ok(/Math\.max\(cfg\.min\(\), Math\.min\(cfg\.max\(\)/.test(init), 'the drag is unclamped');
   assert.ok(/localStorage\.setItem\(cfg\.key/.test(init), 'a size that forgets on reload');
-  // The subpanel's ceiling is computed from the live column height: a fixed max
-  // would let it swallow the list it exists to annotate on a short window.
-  assert.ok(/max: \(\) => Math\.max\(_ME_TEST_H_MIN,/.test(rez[1]),
-    'the Test subpanel may grow until nothing of the entity list is left');
+  // Ceilings are measured from live layout — both vertical panes are bounded by
+  // a container that is itself resizable, so a constant would be wrong at one
+  // size or the other. And restore must not apply a ceiling: it runs before the
+  // layout it would measure, and would clamp a good saved size to the minimum.
+  for (const fn of ['_meElH\\(\'me-sidebar\'\\)', '_meElH\\(\'me-test-main\'\\)'])
+    assert.ok(new RegExp(`max: \\(\\) => Math\\.max\\(\\w+, ${fn}`).test(rez[1]),
+      `a vertical pane has a fixed ceiling instead of a measured one`);
+  assert.ok(/= Math\.max\(cfg\.min\(\), saved\) \+ 'px'/.test(init),
+    'restore clamps against a ceiling it cannot measure yet');
 });
 
 test('the Test input is the Message Input panel, not a lesser copy of it', () => {

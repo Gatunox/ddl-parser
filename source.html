@@ -2100,7 +2100,7 @@ input.me-inp{width:100%;}
 .me-test-cfg select.fmt-forced{color:var(--warning);border-color:var(--warning);}
 /* Same editor as the Message Input panel, so the same highlight classes apply.
    It takes a share of the subpanel and the results scroll under it. */
-.me-test-cm{flex:0 0 30%;min-height:80px;background:var(--bg-input);
+.me-test-cm{flex:none;height:30%;min-height:60px;background:var(--bg-input);
   border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);overflow:hidden;}
 .me-test-cm .cm-editor{height:100%;}
 .me-test-cm .cm-content{color:var(--text-dim);}
@@ -15769,7 +15769,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.3.0';
+const APP_VERSION  = '1.22.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17370,31 +17370,46 @@ function openMsgEditor() {
 }
 
 // ── Resizers ────────────────────────────────────────────────────────────────
-// Two gutters: the vertical one between Entities and the editor drags the
-// column's WIDTH, the horizontal one inside Entities drags the Test subpanel's
-// HEIGHT. Test grows upward, so dragging the gutter down must shrink it — the
-// same relationship the audit detail pane has with its own gutter.
+// Three gutters. `sign` is which way the panel grows relative to the pointer,
+// and it follows from which SIDE of its gutter the panel sits on: the Entities
+// column and the Test input are before theirs and grow with the pointer, the
+// Test subpanel is after its own and grows against it.
 const _ME_SIDEBAR_MIN = 200;
 const _ME_SIDEBAR_MAX = 900;
 const _ME_TEST_H_MIN  = 120;
+const _ME_TEST_IN_MIN = 60;
+const _meElH = id => document.getElementById(id)?.getBoundingClientRect().height || 0;
 const _ME_RESIZERS = [
-  { el: 'me-sidebar',  gutter: 'me-splitter',      key: 'up_me_sidebar_w', axis: 'x',
+  { el: 'me-sidebar',  gutter: 'me-splitter',      key: 'up_me_sidebar_w', axis: 'x', sign: 1,
     prop: 'width',  cursor: 'col-resize', min: () => _ME_SIDEBAR_MIN, max: () => _ME_SIDEBAR_MAX },
-  { el: 'me-test-sub', gutter: 'me-test-resizer',  key: 'up_me_test_h',    axis: 'y',
+  { el: 'me-test-sub', gutter: 'me-test-resizer',  key: 'up_me_test_h',    axis: 'y', sign: -1,
     prop: 'height', cursor: 'row-resize', min: () => _ME_TEST_H_MIN,
     // Leave the entity list at least a few rows: a subpanel that can eat the
     // whole column is a subpanel that can hide what it is annotating.
-    max: () => Math.max(_ME_TEST_H_MIN,
-      (document.getElementById('me-sidebar')?.getBoundingClientRect().height || 0) - 160) },
+    max: () => Math.max(_ME_TEST_H_MIN, _meElH('me-sidebar') - 160) },
+  { el: 'me-test-input', gutter: 'me-test-in-resizer', key: 'up_me_test_in_h', axis: 'y', sign: 1,
+    prop: 'height', cursor: 'row-resize', min: () => _ME_TEST_IN_MIN,
+    // Bounded by the panel it lives in, not by a constant: the subpanel is
+    // itself resizable, so a fixed ceiling would either be unreachable in a
+    // tall panel or push the results off the bottom of a short one.
+    max: () => Math.max(_ME_TEST_IN_MIN, _meElH('me-test-main') - 80) },
 ];
 let _meSplitterWired = false;
+// getElementById is overridden for the CodeMirror hosts — it hands back a
+// textarea-shaped proxy with .value and .classList, and no .style or geometry.
+// The resizer needs the real element, and querySelector is not intercepted.
+const _meResizeEl = id => document.querySelector('#' + id);
 function _meInitSplitter() {
   for (const cfg of _ME_RESIZERS) {
-    const el = document.getElementById(cfg.el);
+    const el = _meResizeEl(cfg.el);
     if (!el) continue;
+    // Floor only. The ceiling is measured from the live layout — the Test input
+    // is bounded by a panel that is itself resizable — and a restore that runs
+    // before that layout settles would clamp a good saved size down to the
+    // minimum and then persist it on the next drag.
     try {
       const saved = parseInt(localStorage.getItem(cfg.key), 10);
-      if (Number.isFinite(saved)) el.style[cfg.prop] = Math.max(cfg.min(), Math.min(cfg.max(), saved)) + 'px';
+      if (Number.isFinite(saved)) el.style[cfg.prop] = Math.max(cfg.min(), saved) + 'px';
     } catch(e) {}
   }
   // Collapsed state is restored through the same setters the toggles use, so a
@@ -17411,7 +17426,7 @@ function _meInitSplitter() {
   let drag = null;   // { cfg, el, gut, start, startSize }
   for (const cfg of _ME_RESIZERS) {
     const gut = document.getElementById(cfg.gutter);
-    const el  = document.getElementById(cfg.el);
+    const el  = _meResizeEl(cfg.el);
     if (!gut || !el) continue;
     gut.addEventListener('mousedown', e => {
       const r = el.getBoundingClientRect();
@@ -17441,9 +17456,7 @@ function _meInitSplitter() {
     // authority on what is actually pressed, so the next move ends the drag.
     if (!(e.buttons & 1)) { endDrag(); return; }
     const { cfg, el, start, startSize } = drag;
-    // X grows with the pointer (the column is LEFT of its gutter); Y grows
-    // against it (the subpanel is BELOW its gutter).
-    const d = cfg.axis === 'x' ? (e.clientX - start) : (start - e.clientY);
+    const d = cfg.sign * ((cfg.axis === 'x' ? e.clientX : e.clientY) - start);
     el.style[cfg.prop] = Math.max(cfg.min(), Math.min(cfg.max(), startSize + d)) + 'px';
   });
   document.addEventListener('mouseup', endDrag);
@@ -29298,6 +29311,7 @@ function _meSave() {
           </div>
           <div class="me-test-main" id="me-test-main">
             <div id="me-test-input" class="cm-host me-test-cm"></div>
+            <div class="resizer-v" id="me-test-in-resizer" title="Drag to resize the input"></div>
             <div id="me-test-out" class="me-test-out"></div>
           </div>
         </div>

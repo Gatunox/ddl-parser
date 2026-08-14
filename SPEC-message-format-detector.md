@@ -1378,6 +1378,7 @@ Once all messages are migrated and verified:
 | `up_me_sidebar_w` | Data Editor Entities column width |
 | `up_me_sidebar_collapsed` | Data Editor Entities column collapsed to its rail |
 | `up_me_test_h` | Data Editor Test subpanel height |
+| `up_me_test_in_h` | Data Editor Test input height |
 | `up_me_test_collapsed` | Data Editor Test subpanel collapsed to its header |
 | `up_cc_…` | Per-editor column-chooser state (prefix) |
 

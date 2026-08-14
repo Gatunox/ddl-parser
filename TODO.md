@@ -54,6 +54,21 @@ place, but a separate piece of work.
 **Risk.** Large refactor of the main parse path. Migrate one flow at a time,
 behind the routing tests.
 
+**Measured and deferred 2026-08-13.** `doParseNetardLog` is 654 lines and
+`doParseMessages` is 626. They share 75 of their 107 distinct calls, so about a
+third of each is genuinely different — it is a real merge, not a copy-paste one.
+
+**It fixes no known bug.** Everything the duplication actually broke was the
+DECISION layer, and that is done: the plain-paste flow not calling the engine at
+all, the missing bound-spec short-circuit, the silent detection, and the PSTM
+"all 30 services" report were all fixed when `_parseVerdict` centralised routing
+in v1.1.2.392. What is left is drift risk — the next fix landing in one flow and
+not the other, which is how those bugs happened in the first place.
+
+So this is tidying with a real but future payoff, not a repair. Deferred on that
+basis rather than started at the tail of a session with other work waiting to
+ship. When it is picked up it wants a clean tree and one flow at a time.
+
 ---
 
 ## 2. [x] Integration tests asserting which parser ran — *done v1.1.2.372*

@@ -10993,6 +10993,41 @@ test('a field row lights its own bytes in the Test input', () => {
     'the Test highlight reads the MAIN panel\'s parsed messages');
 });
 
+test('the results table does not spend a column saying the field name twice', () => {
+  // Reported: every row read "TYP  TYP", "RTE.STAT  STAT". A DDL definition
+  // with no comment describes itself, and a qualified id ends in the leaf it
+  // describes — so the description column was the name again, and it pushed
+  // size and offset off the right edge.
+  const tbl = psFnSource('_meTestFieldTable');
+  const cells = [...tbl.matchAll(/<td class="me-test-(\w+)"/g)].map(m => m[1]);
+  deepEq(cells, ['fid', 'fid', 'fval', 'fhex', 'flen', 'fbytes'],
+    'the field row is not five columns: name, value, hex, size, offset');
+  // The error row spans the rest of the table exactly.
+  const span = /<td colspan="(\d+)" class="me-test-ferr"/.exec(tbl);
+  assert.ok(span, 'the error row is gone');
+  eq(span[1], '4', 'the error row no longer spans the remaining columns');
+
+  // The description is not dropped, only folded in — and only when it adds
+  // something. Both halves matter: suppressing it always would lose the ISO
+  // rows that read "Primary Bitmap" or "Bit 19 — no definition in DDL".
+  const helper = psFnSource('_meTestExtraDesc');
+  assert.ok(/d === id \|\| id\.endsWith\('\.' \+ d\)/.test(helper),
+    'the description is suppressed by something other than "it is the id again"');
+  assert.ok(/return ` <span class="me-test-fdesc">/.test(helper),
+    'a description that says something new is never rendered');
+  assert.ok(/\$\{desc\}/.test(tbl), 'the table does not use the folded description');
+
+  // Size and offset must always be reachable: the hex is the one cell that can
+  // be arbitrarily wide, so it is the one that gives way.
+  const css = _DE_CSS();
+  const hex = /\.me-test-fhex\{([^}]*)\}/.exec(css);
+  assert.ok(hex && /max-width:\s*0/.test(hex[1]) && /overflow:\s*hidden/.test(hex[1]),
+    'the hex column cannot clip, so it forces the table wider than the panel');
+  for (const c of ['flen', 'fbytes'])
+    assert.ok(new RegExp(`\\.me-test-${c}\\{[^}]*width:\\s*1%`).test(css),
+      `.me-test-${c} does not hold its own width, so it can be squeezed out`);
+});
+
 test('red means the waterfall rejected it, never "we did not get there"', () => {
   // Reported: STM won, and PSTM and everything under it were painted red.
   // Detection stops at the first match, so those were never evaluated — red

@@ -15891,7 +15891,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.0.5';
+const APP_VERSION  = '1.25.0.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19541,6 +19541,20 @@ const _meHelpContentH = main => !main ? 0 :
     const cs = getComputedStyle(c);
     return h + c.offsetHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom);
   }, 0);
+// The reference's own natural height: its chrome, plus the body's FULL content
+// rather than the height the body is currently clamped to. Summed the same way
+// the pane is, and with the body's padding added explicitly — scrollHeight
+// leaves the BOTTOM padding out, which left the catalogue ten pixels short of
+// fitting and scrolling anyway.
+const _meHelpPanelH = el => {
+  if (!el) return 0;
+  const body = el.querySelector('.help-body');
+  const chrome = [...el.children].reduce((h, c) => h + (c === body ? 0 : c.offsetHeight), 0);
+  if (!body) return chrome;
+  const cs = getComputedStyle(body);
+  return chrome + _meHelpContentH(body)
+       + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+};
 function _meHelpFitHeight(key) {
   const p = _ME_HELP[key];
   const split = document.getElementById(p.splitId);
@@ -19551,12 +19565,17 @@ function _meHelpFitHeight(key) {
   if (!p.isOpen) { split.style.height = ''; return; }
   let saved = null;
   try { saved = parseInt(localStorage.getItem(`up_${p.storageKey}_split_h`), 10); } catch(e) {}
-  // The floor is the same one the drag enforces: never shorter than the content
-  // beside the reference, and never shorter than the reference needs to be read.
-  // A saved height may only make it TALLER — going through it alone let a saved
-  // 320 shrink a section holding twenty recognizers and clip most of them.
-  const floor = Math.max(_meHelpContentH(document.getElementById(p.mainId)), _ME_HELP_OPEN_MIN);
-  const want = Number.isFinite(saved) ? Math.max(floor, saved) : floor;
+  const mainH = _meHelpContentH(document.getElementById(p.mainId));
+  // By DEFAULT the reference is tall enough to show all of itself: a catalogue
+  // you have to scroll to see is a catalogue you cannot scan. So the height is
+  // the taller of the two columns — neither side scrolls unless the window is
+  // too short for it.
+  const dflt = Math.max(mainH, _meHelpPanelH(document.getElementById(p.id)), _ME_HELP_OPEN_MIN);
+  // A dragged height is the exception, and it may go shorter than the reference
+  // — that is a deliberate choice to scroll it. It may NOT go shorter than the
+  // content beside it, which has nothing to reveal by scrolling and would just
+  // lose its last rows.
+  const want = Number.isFinite(saved) ? Math.max(mainH, saved) : dflt;
   split.style.height = Math.min(want, Math.round(window.innerHeight * 0.8)) + 'px';
 }
 function _meHelpSync(key) {

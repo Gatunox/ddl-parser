@@ -10669,20 +10669,33 @@ test('a closed reference costs no height, and an open one is tall enough to read
     'a dragged height is consulted before the closed case, so closing keeps it');
   assert.ok(/if \(!p\.isOpen\) \{ split\.style\.height = ''; return; \}/.test(fit),
     'closing does not give the height back to the content');
-  assert.ok(/Number\.isFinite\(saved\) \? Math\.max\(floor, saved\)/.test(fit),
+  assert.ok(/Number\.isFinite\(saved\) \? Math\.max\(mainH, saved\)/.test(fit),
     'a height dragged for the reference is not honoured when it reopens');
   // …and the restore on mount must not force one either, or the panel is boxed
   // at its last dragged size before anything is opened.
   const init = psFnSource('_meHelpInitSplit');
   assert.ok(/Number\.isFinite\(savedH\) && split\.classList\.contains\('me-hs-fixed'\)/.test(init),
     'a content-sized panel restores a standing height it should not have');
-  // Open, the floor is the SAME one the drag enforces: at least the content
-  // beside the reference, and at least what the reference needs to be read.
-  assert.ok(/const floor = Math\.max\(_meHelpContentH\(document\.getElementById\(p\.mainId\)\), _ME_HELP_OPEN_MIN\)/.test(fit),
-    'the open height is not floored at both the content and the readable minimum');
-  // A saved height may only make it taller. Going through it alone let a saved
-  // 320 shrink a section holding twenty recognizers and clip most of them.
-  assert.ok(/Number\.isFinite\(saved\) \? Math\.max\(floor, saved\) : floor/.test(fit),
+  // By default the split is the TALLER of its two columns, so the reference
+  // shows all of itself — a catalogue you have to scroll to see is one you
+  // cannot scan.
+  assert.ok(/const dflt = Math\.max\(mainH, _meHelpPanelH\(document\.getElementById\(p\.id\)\), _ME_HELP_OPEN_MIN\)/.test(fit),
+    'the default height ignores the reference, so its catalogue opens scrolled');
+  // The reference's own height is its chrome plus the body's FULL content, not
+  // the height the body is currently clamped to — which would just report back
+  // whatever the split already is.
+  const panelH = APP_SRC.slice(APP_SRC.indexOf('const _meHelpPanelH'));
+  const phBody = panelH.slice(0, panelH.indexOf('\n};') + 3);
+  assert.ok(/_meHelpContentH\(body\)/.test(phBody) && !/scrollHeight/.test(phBody),
+    'the reference measures its clamped height, so it can never grow the split');
+  // scrollHeight leaves the BOTTOM padding out, which left the catalogue ten
+  // pixels short of fitting and scrolling anyway. Added explicitly.
+  assert.ok(/paddingTop\)\s*\+ parseFloat\(cs\.paddingBottom\)/.test(phBody),
+    'the body padding is dropped, so the reference fits by all but its padding');
+  // A saved height may go shorter than the reference — a deliberate choice to
+  // scroll it — but never shorter than the content beside it, which has nothing
+  // to reveal by scrolling and would just lose its last rows.
+  assert.ok(/Number\.isFinite\(saved\) \? Math\.max\(mainH, saved\) : dflt/.test(fit),
     'a saved height can shrink the panel below its own content');
   // The Overrides pane is filled AFTER its markup is mounted, so sizing it at
   // mount measured an empty table and settled on the reference's bare minimum.

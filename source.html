@@ -15891,7 +15891,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.0.6';
+const APP_VERSION  = '1.25.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17927,12 +17927,14 @@ function _meRenderRight() {
                done();
              });
   if (isMsg) {
-    html += sect('parse_spec',   'Parse Spec',  (el, done) => {
+    // Bindings before the spec: the spec's blocks name fields the bindings
+    // resolve, so the order down the page is the order the engine reads them in.
+    html += sect('ddl_bindings', 'DDL Bindings', syncFill(() => _meHtmlDDLBindings(item)))
+          + sect('parse_spec',   'Parse Spec',  (el, done) => {
               el.innerHTML = _meHtmlParseSpec(item);
               _mePsMountCM(item);
               done();
             })
-          + sect('ddl_bindings', 'DDL Bindings', syncFill(() => _meHtmlDDLBindings(item)))
           + sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done));
   }
   body.innerHTML = html;

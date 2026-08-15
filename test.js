@@ -8553,6 +8553,30 @@ test('the DDL panel cards sit flush to its edges, apart from the top', () => {
   // the two rules above would be the wrong place to look for it.
   assert.ok(/<div class="resizer-h" id="ddlTreeResizer"><\/div>/.test(html),
     'the gap between the two cards is no longer the resizer');
+
+  // Flush against the panel, a card's border sat on top of the PANEL's own and
+  // read as one thick line. The edges that meet it are dropped; the edges that
+  // face the resizer gap — a real boundary — stay. And only the corner that
+  // still has two borders stays round.
+  const tree = /\.ddl-tree-pane\s*\{[^}]*\}/.exec(css)[0];
+  assert.ok(/border-left: 0; border-bottom: 0;/.test(tree),
+    'the tree card still doubles the panel border on its left and bottom');
+  assert.ok(/border-radius: 0 var\(--r-md\) 0 0;/.test(tree),
+    'the tree card rounds a corner that has no borders left');
+  const ed = /\.ddl-editor-pane\s*\{[^}]*\}/.exec(css)[0];
+  assert.ok(/border-right: 0; border-bottom: 0;/.test(ed),
+    'the editor card still doubles the panel border on its right and bottom');
+  assert.ok(/border-radius: var\(--r-md\) 0 0 0;/.test(ed),
+    'the editor card rounds a corner that has no borders left');
+  // Both KEEP the edge facing the gap between them. Stated as an absence: an
+  // assertion that the zeroed sides are listed still passes when a third side
+  // is zeroed alongside them.
+  assert.ok(!/border-right: 0/.test(tree),
+    'the tree lost the border facing the resizer, where the boundary is real');
+  assert.ok(!/border-left: 0/.test(ed),
+    'the editor lost the border facing the resizer, where the boundary is real');
+  assert.ok(!/border-top: 0/.test(tree) && !/border-top: 0/.test(ed),
+    'a card lost its top border, which meets the panel header and not its edge');
 });
 
 test('the Data Editor header carries the wordmark, with its title centred', () => {

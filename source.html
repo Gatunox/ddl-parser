@@ -15891,7 +15891,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.1.0';
+const APP_VERSION  = '1.25.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16089,10 +16089,55 @@ function resetLayout() {
       if (th) th.style.width = defaults[c] || '';
     });
   }
+  // The Data Editor's own sizes, DERIVED from the registries that own them
+  // rather than listed again here. Reported: Reset Layout left every panel on
+  // that page where it was, because this function was a hand-written list and
+  // the list never learned about them. A list goes stale the moment a resizer
+  // is added — the same reason _eraseAll refuses to keep one.
+  _meResetLayout();
+
   // Reset font size to default
   P.monoSize = _DEF_PREFS.monoSize;
   savePrefs();
   applyPrefs(true);
+}
+
+// Every stored size on the Data Editor page, put back to its default. The keys
+// come from the three registries that write them — _ME_RESIZERS (the sidebar
+// and Test panel drags), _ME_HELP (the three reference splits) and _ME_COLRZ
+// (the resizable tables) — plus the two collapse flags, which are a position
+// too: a collapsed panel is not at its default size.
+function _meResetLayout() {
+  const keys = [
+    ..._ME_RESIZERS.map(r => r.key),
+    ...Object.values(_ME_HELP).flatMap(p => [`up_${p.storageKey}_split_h`,
+                                             `up_${p.storageKey}_help_w`]),
+    ...Object.values(_ME_COLRZ).map(c => c.key),
+    'up_me_sidebar_collapsed', 'up_me_test_collapsed',
+  ];
+  try { keys.forEach(k => localStorage.removeItem(k)); } catch(e) {}
+  // Drop the inline sizes too, so an editor that is open right now shows the
+  // reset instead of it taking effect the next time it is opened. Through
+  // _meResizeEl, not getElementById: that is overridden for the CodeMirror
+  // hosts and hands back a proxy with no .style — me-test-input is one of them.
+  _ME_RESIZERS.forEach(r => {
+    const el = _meResizeEl(r.el);
+    if (el) el.style[r.prop] = '';
+  });
+  Object.values(_ME_HELP).forEach(p => {
+    const split = document.getElementById(p.splitId);
+    if (!split) return;
+    split.style.height = '';
+    split.style.removeProperty('--ps-help-w');
+  });
+  // Through the same setters the toggles use, so a button glyph or an inert
+  // gutter can never disagree with its panel.
+  const overlay = document.getElementById('msgEditorOverlay');
+  if (overlay && !overlay.classList.contains('hidden')) {
+    _meSetSidebarCollapsed(false);
+    _meSetTestSubCollapsed(false);
+    _meRenderRight();
+  }
 }
 
 // ── Erase every trace of this app from the browser ─────────────────────────

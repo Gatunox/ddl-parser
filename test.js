@@ -10601,6 +10601,38 @@ test('the Overrides columns document their options, and only claim their own exa
       assert.ok(!/[&<>"']/.test(name), `${col} has an unusable attribute name: ${name}`);
 });
 
+test('Reset Layout reaches every stored size, including the Data Editor', () => {
+  // Reported: Reset Layout left the Data Editor's panels exactly where they
+  // were. resetLayout was a hand-written list and the list never learned about
+  // them — the same failure _eraseAll refuses to risk by not keeping one.
+  const reset = psFnSource('_meResetLayout');
+  assert.ok(/_meResetLayout\(\);/.test(psFnSource('resetLayout')),
+    'Reset Layout does not touch the Data Editor at all');
+
+  // Derived from the registries that OWN the keys, not listed again. This is
+  // what stops the next resizer being forgotten.
+  assert.ok(/_ME_RESIZERS\.map\(r => r\.key\)/.test(reset),
+    'the sidebar and Test drags are not taken from _ME_RESIZERS');
+  assert.ok(/Object\.values\(_ME_HELP\)\.flatMap\([\s\S]{0,120}_split_h[\s\S]{0,80}_help_w/.test(reset),
+    'the reference splits are not taken from _ME_HELP');
+  assert.ok(/Object\.values\(_ME_COLRZ\)\.map\(c => c\.key\)/.test(reset),
+    'the resizable tables are not taken from _ME_COLRZ');
+  // A collapsed panel is a position too.
+  assert.ok(/'up_me_sidebar_collapsed', 'up_me_test_collapsed'/.test(reset),
+    'a collapsed panel survives the reset');
+
+  // The reset has to show NOW, not the next time the editor is opened.
+  assert.ok(/el\.style\[r\.prop\] = ''/.test(reset) && /split\.style\.height = ''/.test(reset)
+         && /removeProperty\('--ps-help-w'\)/.test(reset),
+    'the inline sizes are left in place, so an open editor ignores the reset');
+  // getElementById is overridden for the CodeMirror hosts and returns a proxy
+  // with no .style — me-test-input is one of them.
+  assert.ok(/_meResizeEl\(r\.el\)/.test(reset),
+    'the resizer elements are fetched through the override, which has no .style');
+  assert.ok(/_meSetSidebarCollapsed\(false\)/.test(reset) && /_meSetTestSubCollapsed\(false\)/.test(reset),
+    'collapse is cleared in storage but not on screen');
+});
+
 test('closing a reference stays closed across a re-render, whichever control closed it', () => {
   // Reported: switching entity re-opened the Recognizer reference on its own.
   // The panels whose markup is rebuilt read their open flag back out of

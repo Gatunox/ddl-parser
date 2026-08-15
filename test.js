@@ -10634,9 +10634,24 @@ test('a closed reference costs no height, and an open one is tall enough to read
   const fit = psFnSource('_meHelpFitHeight');
   assert.ok(/classList\.contains\('me-hs-fixed'\)\) return/.test(fit),
     'it also recomputes the panel that has a standing height of its own');
-  assert.ok(/Number\.isFinite\(saved\)\) return/.test(fit), 'a dragged height is overwritten');
+  // Closing returns the panel to its content unconditionally. Reported twice:
+  // a dragged height was winning here, so a five-row recognizer list sat in a
+  // 966px box with the reference already gone. A dragged height is a preference
+  // about the REFERENCE, and with the reference closed there is nothing for it
+  // to size — so the check for it comes AFTER the closed case, not before.
+  const closed = fit.indexOf("if (!p.isOpen)");
+  const savedCheck = fit.indexOf('localStorage.getItem(`up_${p.storageKey}_split_h`)');
+  assert.ok(closed > -1 && savedCheck > -1 && closed < savedCheck,
+    'a dragged height is consulted before the closed case, so closing keeps it');
   assert.ok(/if \(!p\.isOpen\) \{ split\.style\.height = ''; return; \}/.test(fit),
     'closing does not give the height back to the content');
+  assert.ok(/Number\.isFinite\(saved\) \? Math\.max\(_ME_PS_SPLIT_MIN, saved\)/.test(fit),
+    'a height dragged for the reference is not honoured when it reopens');
+  // …and the restore on mount must not force one either, or the panel is boxed
+  // at its last dragged size before anything is opened.
+  const init = psFnSource('_meHelpInitSplit');
+  assert.ok(/Number\.isFinite\(savedH\) && split\.classList\.contains\('me-hs-fixed'\)/.test(init),
+    'a content-sized panel restores a standing height it should not have');
   assert.ok(/Math\.max\(_ME_HELP_OPEN_MIN, _meHelpContentH\(/.test(fit),
     'the open height is not taken from the content beside the reference');
   // Measured from the pane's CHILDREN. The pane itself is a grid item stretched

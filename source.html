@@ -15891,7 +15891,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.0.1';
+const APP_VERSION  = '1.25.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19539,11 +19539,14 @@ function _meHelpFitHeight(key) {
   const p = _ME_HELP[key];
   const split = document.getElementById(p.splitId);
   if (!split || split.classList.contains('me-hs-fixed')) return;
+  // Closed, the content decides. ALWAYS — a dragged height is a preference
+  // about the reference, and with no reference on screen there is nothing for
+  // it to size. Letting it win here left a five-row list in a 966px box.
+  if (!p.isOpen) { split.style.height = ''; return; }
   let saved = null;
   try { saved = parseInt(localStorage.getItem(`up_${p.storageKey}_split_h`), 10); } catch(e) {}
-  if (Number.isFinite(saved)) return;
-  if (!p.isOpen) { split.style.height = ''; return; }
-  const want = Math.max(_ME_HELP_OPEN_MIN, _meHelpContentH(document.getElementById(p.mainId)));
+  const want = Number.isFinite(saved) ? Math.max(_ME_PS_SPLIT_MIN, saved)
+    : Math.max(_ME_HELP_OPEN_MIN, _meHelpContentH(document.getElementById(p.mainId)));
   split.style.height = Math.min(want, Math.round(window.innerHeight * 0.8)) + 'px';
 }
 function _meHelpSync(key) {
@@ -20780,8 +20783,13 @@ function _meHelpInitSplit(key) {
   if (!split) return;
   const hKey = `up_${p.storageKey}_split_h`, wKey = `up_${p.storageKey}_help_w`;
   try {
+    // Only the pane with a standing height restores one here. A content-sized
+    // panel gets its height from _meHelpFitHeight, which applies the saved value
+    // when the reference is open and none at all when it is closed — restoring
+    // it unconditionally is what left the list boxed at its last dragged size.
     const savedH = parseInt(localStorage.getItem(hKey), 10);
-    if (Number.isFinite(savedH)) split.style.height = Math.max(_ME_PS_SPLIT_MIN, savedH) + 'px';
+    if (Number.isFinite(savedH) && split.classList.contains('me-hs-fixed'))
+      split.style.height = Math.max(_ME_PS_SPLIT_MIN, savedH) + 'px';
     const savedW = parseInt(localStorage.getItem(wKey), 10);
     if (Number.isFinite(savedW)) split.style.setProperty('--ps-help-w', Math.max(_ME_PS_HELP_MIN, savedW) + 'px');
   } catch(e) {}

@@ -3052,7 +3052,7 @@ th.me-fm-colhi{color:var(--accent);}
               <div class="audit-cfg-hdr"><span>Columns</span><button class="btn" onclick="toggleColCfgDialog()" style="padding:1px 7px;font-size:13px">✕</button></div>
               <div class="audit-cfg-row"><label>Field</label><button class="panel-toggle" id="ccol_id" onclick="toggleResColVisibility('id')">−</button></div>
               <div class="audit-cfg-row"><label>Description</label><button class="panel-toggle" id="ccol_desc" onclick="toggleResColVisibility('desc')">−</button></div>
-              <div class="audit-cfg-row"><label>Length</label><button class="panel-toggle" id="ccol_len" onclick="toggleResColVisibility('len')">−</button></div>
+              <div class="audit-cfg-row"><label>Size</label><button class="panel-toggle" id="ccol_len" onclick="toggleResColVisibility('len')">−</button></div>
               <div class="audit-cfg-row"><label>Value</label><button class="panel-toggle" id="ccol_val" onclick="toggleResColVisibility('val')">−</button></div>
               <div class="audit-cfg-row" id="ccol_raw_row"><label>Raw Hex</label><button class="panel-toggle" id="ccol_raw" onclick="toggleResColVisibility('raw')">−</button></div>
               <div class="audit-cfg-row"><label>Trk</label><button class="panel-toggle" id="ccol_trk" onclick="toggleResColVisibility('trk')">−</button></div>
@@ -11906,7 +11906,7 @@ function renderFieldTable(msg) {
           <th class="th-num" style="width:28px;text-align:right">#</th>
           <th class="th-id" style="width:140px">Field<span class="th-resize"></span></th>
           <th class="th-desc" style="width:220px" title="DDL-declared type and length, any override applied to them, and the field's description">Type-Len / Description<span class="th-resize"></span></th>
-          <th class="th-len" style="width:44px" title="Wire bytes the field occupies">Bytes<span class="th-resize"></span></th>
+          <th class="th-len" style="width:44px" title="Size on the wire, in bytes">Size<span class="th-resize"></span></th>
           <th class="th-val">Value<span class="th-resize"></span></th>
           <th class="th-raw" style="width:120px">Raw Hex<span class="th-resize"></span></th>
           <th class="th-trk" style="width:36px" title="Track field">Trk</th>
@@ -15936,7 +15936,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.1.7';
+const APP_VERSION  = '1.25.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21533,7 +21533,7 @@ function _meOverridesPrep(item) {
   </span></span>
   <span class="me-fm-g"><span class="me-fm-glbl">Length</span><span class="me-fm-seg">
     <button class="btn" data-fmact="vlg" title="This field's value is the NEXT field's length">VLG</button>
-    <button class="btn" data-fmact="bytes" title="Read this many bytes instead of the declared length">Bytes…</button>
+    <button class="btn" data-fmact="bytes" title="Read this many bytes instead of the size the DDL declares">Size…</button>
   </span></span>
   <span class="me-fm-g"><span class="me-fm-glbl">Read</span><span class="me-fm-seg">
     <button class="btn" data-fmact="type" title="Interpret the bytes as this type">Type…</button>
@@ -21554,7 +21554,7 @@ function _meOverridesPrep(item) {
       <th class="me-fm-th-fld" data-col="fld">Field<div class="me-fm-resizer" data-col="fld"></div></th>
       <th class="me-fm-th-off" data-col="off" title="Byte offset within the DDL record (dec + hex)">Offset<div class="me-fm-resizer" data-col="off"></div></th>
       <th class="me-fm-th-dt"  data-col="dt" title="DDL-declared type and length, and any override applied to them">Type-Len<div class="me-fm-resizer" data-col="dt"></div></th>
-      <th class="me-fm-th-len" data-col="len" title="Wire bytes the field occupies">Bytes<div class="me-fm-resizer" data-col="len"></div></th>
+      <th class="me-fm-th-len" data-col="len" title="Size on the wire, in bytes">Size<div class="me-fm-resizer" data-col="len"></div></th>
       <th class="me-fm-th-de"  data-col="de" title="ISO 8583 data element number">DE${usesBitmapFields ? '<button class="me-rb me-de-clear me-de-clear-all" onclick="event.stopPropagation();_meFmClearDEs()" title="Clear ALL DE overrides — every field returns to the natural ordinal sequence">↺</button>' : ''}<div class="me-fm-resizer" data-col="de"></div></th>
       <th class="me-fm-th-vlg" data-col="vlg" title="Variable Length Group">VLG<div class="me-fm-resizer" data-col="vlg"></div></th>
     </tr></thead>
@@ -22851,7 +22851,7 @@ function _meFmUiSaveCollapse(item) {
 
 // ── Field Map column visibility ──────────────────────────────────────────────
 const _ME_FM_COLS = [
-  ['num', '#'], ['off', 'Offset'], ['dt', 'Type-Len'], ['len', 'Bytes'],
+  ['num', '#'], ['off', 'Offset'], ['dt', 'Type-Len'], ['len', 'Size'],
   ['de', 'DE'], ['vlg', 'VLG'],
 ];   // Field column is always visible
 const _ME_FM_COLVIS_KEY = 'up_me_fm_colvis';
@@ -23222,19 +23222,21 @@ const _FM_HELP = {
       ['REDEFINES',     'Overlay of an earlier field',           'Shows the overlaid region\'s offset'],
     ],
   },
-  'Length': {
-    purpose: 'Byte length the DDL declares for this field.',
-    desc: 'Read-only column showing how many bytes the field occupies, taken straight from the DDL declaration. Group rows sum their leaf descendants. The length matters when overriding the Data Type — <code>uint-be</code> / <code>uint-le</code> decode exactly this many bytes, and legacy fixed-width overrides (<code>uint16-be</code>, …, from older imports) must match it or the cell shows a red border + ⚠ icon and the override is ignored at parse time.',
+  // Titled Size, matching the column. It read "Length" while the header said
+  // "Bytes" — two names for one thing, and neither was the one on screen.
+  'Size': {
+    purpose: 'Size the DDL declares for this field, in bytes.',
+    desc: 'Read-only column showing how many bytes the field occupies, taken straight from the DDL declaration. Group rows sum their leaf descendants. The size matters when overriding the Data Type — <code>uint-be</code> / <code>uint-le</code> decode exactly this many bytes, and legacy fixed-width overrides (<code>uint16-be</code>, …, from older imports) must match it or the cell shows a red border + ⚠ icon and the override is ignored at parse time.',
     rows: [
-      ['PIC X(3)',  'Elementary field, 3 ASCII chars',              'Length = 3'],
-      ['PIC 9(12)', 'Elementary numeric field, 12 ASCII digits',    'Length = 12'],
-      ['GROUP',     'Synthesized parent (e.g. PAN with LEN+DATA)',  'Length = sum of leaves (2 + 19 = 21)'],
-      ['REDEFINES', 'Overlays existing bytes',                      'Length still shown per the field\'s own declaration'],
+      ['PIC X(3)',  'Elementary field, 3 ASCII chars',              'Size = 3'],
+      ['PIC 9(12)', 'Elementary numeric field, 12 ASCII digits',    'Size = 12'],
+      ['GROUP',     'Synthesized parent (e.g. PAN with LEN+DATA)',  'Size = sum of leaves (2 + 19 = 21)'],
+      ['REDEFINES', 'Overlays existing bytes',                      'Size still shown per the field\'s own declaration'],
     ],
   },
   'Data Type': {
     purpose: 'DDL-declared type, with optional override of how the bytes are interpreted at parse time.',
-    desc: 'The dropdown defaults to the field\'s DDL type (the empty-value entry, e.g. <code>PIC X</code>). Pick a different entry to override the interpretation — the parsed value is recomputed from the raw bytes using the new rule. Every option is length-flexible: <code>uint-be</code> / <code>uint-le</code> take their width from the field\'s <b>Length</b> column (widths over 4 bytes decode via BigInt). Legacy fixed-width overrides (<code>uint16-be</code>, …, from older imports) still validate against the Length — a mismatch shows a red border and ⚠ icon and the override is ignored at parse time.',
+    desc: 'The dropdown defaults to the field\'s DDL type (the empty-value entry, e.g. <code>PIC X</code>). Pick a different entry to override the interpretation — the parsed value is recomputed from the raw bytes using the new rule. Every option is length-flexible: <code>uint-be</code> / <code>uint-le</code> take their width from the field\'s <b>Size</b> column (widths over 4 bytes decode via BigInt). Legacy fixed-width overrides (<code>uint16-be</code>, …, from older imports) still validate against the Size — a mismatch shows a red border and ⚠ icon and the override is ignored at parse time.',
     cols: ['Type ovr', 'Declared', 'Raw bytes (hex)', 'Natural value', 'Result', 'Notes'],
     rows: [
       ['(DDL default)', 'PIC 9(5)',       '3132333435',       '12345',                          '12345',    'honour the DDL\'s declared type'],
@@ -23262,7 +23264,7 @@ const _FM_HELP = {
       ]],
       ['uint-be', 'any width', false, [
         'The bytes are one unsigned integer, most significant byte first.',
-        'The width is the field\'s <b>Length</b> column, not a fixed 2 or 4 — which is why one entry covers BINARY 8 through 64. Over 4 bytes it decodes through BigInt, so a 64-bit value is exact.',
+        'The width is the field\'s <b>Size</b> column, not a fixed 2 or 4 — which is why one entry covers BINARY 8 through 64. Over 4 bytes it decodes through BigInt, so a 64-bit value is exact.',
       ]],
       ['uint-le', 'any width', false, [
         'The same, least significant byte first.',
@@ -23382,7 +23384,7 @@ const _FM_GROUPS = [
   ]},
   { name: 'Read-only, from the DDL', items: [
     ['Offset', 'Where the field starts'],
-    ['Length', 'How many bytes it declares'],
+    ['Size', 'How many bytes it declares'],
   ]},
 ];
 
@@ -23541,7 +23543,7 @@ const _ME_FM_ED = {
   'de-anchor': { label: 'DE number',  kind: 'num',
                  def: () => String(_meFmSelRow()?.de ?? ''),
                  set: (o, v) => { o.de = Math.max(1, Math.min(128, +v)); } },
-  'bytes':     { label: 'Read bytes', kind: 'num',
+  'bytes':     { label: 'Size', kind: 'num',
                  // Bytes, always. The label used to say "characters" for a
                  // hex-char field and the box was seeded from a number the DDL
                  // wrote in bytes — so the value shown was already in the wrong

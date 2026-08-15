@@ -8533,14 +8533,17 @@ test('the length columns are named for what they hold, in both tables', () => {
   // "Len" said nothing about which unit. The Field Map's number is the type's
   // own — characters for hex-char — and the byte column is wire bytes.
   assert.ok(/data-col="dt"[^>]*>Type-Len</.test(html), 'Field Map: Type-Len');
-  assert.ok(/data-col="len"[^>]*>Bytes</.test(html),    'Field Map: Bytes');
-  assert.ok(/class="th-len"[^>]*>Bytes</.test(html),    'Parse Results: Bytes');
+  // Both tables say Size. They were "Bytes" and the help said "Length" — three
+  // names for one column — and the point of this test has always been that the
+  // two tables agree, so they were renamed together.
+  assert.ok(/data-col="len"[^>]*>Size</.test(html),     'Field Map: Size');
+  assert.ok(/class="th-len"[^>]*>Size</.test(html),     'Parse Results: Size');
   assert.ok(/class="th-desc"[^>]*>Type-Len \/ Description</.test(html),
     'Parse Results: Type-Len / Description');
   assert.ok(!/data-col="len"[^>]*>Len</.test(html) && !/class="th-len"[^>]*>Len</.test(html),
     'and nothing still says a bare "Len"');
   const menu = html.slice(html.indexOf("['num', '#']"), html.indexOf("['num', '#']") + 200);
-  assert.ok(/'dt', 'Type-Len'/.test(menu) && /'len', 'Bytes'/.test(menu),
+  assert.ok(/'dt', 'Type-Len'/.test(menu) && /'len', 'Size'/.test(menu),
     `the column menu uses the same names: ${menu}`);
 });
 
@@ -10581,7 +10584,7 @@ test('the Overrides columns document their options, and only claim their own exa
   const withOptions = ['Data Type', 'Display', 'Data Element', 'VLG'];
   for (const col of withOptions)
     assert.ok((fm[col].attrs || []).length, `${col} offers options but documents none`);
-  for (const col of ['Offset', 'Length'])
+  for (const col of ['Offset', 'Size'])
     assert.ok(!(fm[col].attrs || []).length,
       `${col} is read-only from the DDL — it has no options to document`);
 
@@ -10605,6 +10608,30 @@ test('the Overrides columns document their options, and only claim their own exa
   for (const [col, info] of Object.entries(fm))
     for (const [name] of (info.attrs || []))
       assert.ok(!/[&<>"']/.test(name), `${col} has an unusable attribute name: ${name}`);
+});
+
+test('the declared-size column is called Size everywhere it is named', () => {
+  // Reported: it was "Bytes" on the column and the action button, and "Length"
+  // in the help — three names for one column. It is Size on all of them now.
+  const fm = fmHelpObj();
+  assert.ok(fm['Size'] && !fm['Length'], 'the help entry is not titled Size');
+  assert.ok(/>Size<div class="me-fm-resizer" data-col="len">/.test(html),
+    'the Field Map column header is not Size');
+  assert.ok(/data-fmact="bytes"[^>]*>Size…<\/button>/.test(html),
+    'the action-bar button is not Size');
+  assert.ok(/\['len', 'Size'\]/.test(APP_SRC), 'the column chooser is not Size');
+  assert.ok(/'bytes':\s*\{ label: 'Size'/.test(APP_SRC), 'the inline editor is not Size');
+  // Nothing user-facing may still call the column Length or Bytes.
+  for (const [, info] of Object.entries(fm)) {
+    const text = JSON.stringify(info);
+    assert.ok(!/<b>Length<\/b>/.test(text), 'a help entry still points at a "Length" column');
+  }
+  // The STORED key stays `bytes`: it is in saved messages, exports and SPEC §9,
+  // and renaming it is a data migration, not a relabel.
+  assert.ok(/o\.bytes = \+v;/.test(APP_SRC) && /has: o => o\.bytes != null/.test(APP_SRC),
+    'the override key was renamed with the label — that silently breaks saved overrides');
+  assert.ok(/\| `overrides` \| map \|[^|]*`bytes`/.test(fs.readFileSync('./SPEC-message-format-detector.md', 'utf8')),
+    'the spec no longer documents the stored key the code writes');
 });
 
 test('an empty message editor does not open with a horizontal scrollbar', () => {

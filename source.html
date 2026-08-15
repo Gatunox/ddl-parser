@@ -15777,7 +15777,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.23.1.1';
+const APP_VERSION  = '1.23.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17961,8 +17961,6 @@ const _PS_OVERRIDES_DESC = [
 // stated once rather than repeated in thirteen dflts maps.
 const _PS_COMMON_DFLTS = {
   overrides: 'none — the spec\'s stored overrides apply unchanged',
-  at: 'continue from where the previous block stopped',
-  peek: '<code>false</code> — the cursor stays where the positioned read ended',
 };
 
 const _PS_COMMON_ATTRS = [
@@ -18010,7 +18008,6 @@ const _PS_HELP = {
       fields: '<code>"ANY"</code> — every field the binding declares',
       from: 'the binding’s first field',
       until: 'the binding’s last field',
-      vlg_identifier: 'the built-in names <code>LEN</code> / <code>LGTH</code> / <code>LENGTH</code>',
     },
     desc: [
       'Reads fields from the DDL Binding in declaration order.',
@@ -18309,7 +18306,6 @@ const _PS_HELP = {
     // its absence to be inferred, which is only readable if you already know.
     dflts: {
       sentinels: 'none — without <code>eom</code> the block reports rather than reading to the end',
-      eom: '<code>false</code> — a missing sentinel is an error, not "take the rest"',
       as: '<code>"read-until"</code>',
     },
     desc: 'Reads bytes until a sentinel byte is encountered or end-of-message is reached. At least one of sentinels or eom must be set. The sentinel byte itself is not included in the result.',
@@ -18364,7 +18360,6 @@ const _PS_HELP = {
     dflts: {
       as: '<code>"LEN-DATA"</code>',
       sentinels: 'none — the length alone decides where the value ends',
-      eom: '<code>false</code>',
     },
     desc: 'Reads a 1–4 byte length prefix, then reads exactly that many bytes of payload. Useful for LLVAR/LLLVAR-style fields and binary TLV payloads.',
     useWhen: [
@@ -18573,7 +18568,6 @@ const _PS_HELP = {
     // stated: the reference used to describe what an attribute DOES and leave
     // its absence to be inferred, which is only readable if you already know.
     dflts: {
-      vlg_identifier: 'the built-in names <code>LEN</code> / <code>LGTH</code> / <code>LENGTH</code>',
       de: 'none — every present DE is read from its DDL element',
     },
     desc: [
@@ -18729,11 +18723,9 @@ const _PS_HELP = {
     dflts: {
       field: 'none — required, except inside a <code>de</code> entry, where the element being read is the buffer',
       len: 'none — the buffer is framed by the field named in <code>field</code>',
-      ber: '<code>false</code> — then <code>tag_length</code> and <code>length_length</code> are both required',
       tag_length: '<code>0</code> — meaningless without <code>length_length</code>; use <code>ber</code> for EMV',
       length_length: '<code>0</code> — meaningless without <code>tag_length</code>; use <code>ber</code> for EMV',
       encoding: '<code>"binary"</code> — the tag and length are raw bytes',
-      tags: 'none — every triple is emitted as an anonymous <code>&lt;buffer&gt;.&lt;tag&gt;</code> row',
       tag_field: 'the leaf named <code>TAG</code>, <code>TAG-ID</code> or <code>TAGID</code>',
       length_field: 'the leaf named <code>LEN</code>, <code>LGTH</code> or <code>LENGTH</code>',
       value_field: 'the leaf named <code>DATA</code>, <code>VAL</code> or <code>VALUE</code> — else whatever single leaf is left',
@@ -19389,6 +19381,15 @@ function _mePsHelpExampleHtml(ex, i) {
 // `"binary" | "ascii" | "ascii-hex"` was one run of text, and the alternatives
 // are the thing being looked up. Splits only at the TOP level: a `|` inside
 // {…} or […] belongs to that shape, not to the list.
+// Does this description already document what happens when the attribute is
+// left out? A form-by-form table keyed `omitted` is the house style for saying
+// so, and it says it better than a generated line can — in the same table as
+// every other form the attribute accepts.
+function _meDescStatesOmitted(desc) {
+  return Array.isArray(desc)
+      && desc.some(x => Array.isArray(x) && /omitted/i.test(String(x[0])));
+}
+
 function _meHelpTypeHtml(type) {
   const parts = [];
   let depth = 0, cur = '';
@@ -19458,7 +19459,11 @@ function _mePsHelpSelect(blk) {
   const dfltOf = name => (info.dflts && info.dflts[name]) || _PS_COMMON_DFLTS[name] || null;
   const attrRows = info.attrs.concat(_PS_COMMON_ATTRS).map(([name, type, req, desc]) => {
     const sel = _mePsHelpAttrSel === name ? ' me-ps-sel' : '';
-    const d = req ? null : dfltOf(name);
+    // Not when the description already carries an `omitted` row: the generated
+    // line then said the same thing a second time, one line above the row that
+    // says it properly. Reported on `at`, where it appeared three times over —
+    // the lead sentence, the generated line, and the row.
+    const d = (req || _meDescStatesOmitted(desc)) ? null : dfltOf(name);
     const dHtml = d ? `<span class="me-ps-help-dflt"><b>Omitted:</b> ${d}</span>` : '';
     return `<tr class="me-ps-attr-row${sel}" data-attr="${name}"` +
     ` onclick="_mePsHelpAttr('${blk}','${name}')" title="Show only the examples that use ${name}">` +

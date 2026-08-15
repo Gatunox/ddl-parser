@@ -10469,15 +10469,25 @@ test('every OPTIONAL attribute says what happens when it is omitted', () => {
   // surfaced it (`unknown`). Each default here was derived from the block's
   // executor, so a wrong one is a test away from being caught, and a NEW
   // optional attribute cannot ship without stating its own.
-  const missing = [];
+  // Two ways to state it, and they are equivalent: a `dflts` entry, or an
+  // `omitted` row in the attribute's own form-by-form table — the house style,
+  // and better placed, since it sits with every other form the attribute takes.
+  const statesOmitted = desc => Array.isArray(desc)
+    && desc.some(x => Array.isArray(x) && /omitted/i.test(String(x[0])));
+  const missing = [], both = [];
   for (const [blk, info] of Object.entries(psHelp)) {
-    for (const [name, , req] of info.attrs.concat(psCommonAttrs)) {
+    for (const [name, , req, desc] of info.attrs.concat(psCommonAttrs)) {
       if (req) continue;
       const d = (info.dflts && info.dflts[name]) || psCommonDflts[name];
-      if (!d || !String(d).trim()) missing.push(`${blk}.${name}`);
+      const inRow = statesOmitted(desc);
+      if (!inRow && (!d || !String(d).trim())) missing.push(`${blk}.${name}`);
+      // Reported on `at`: the description said it, the generated line repeated
+      // it, and the row said it again — three times in four lines.
+      if (inRow && d) both.push(`${blk}.${name}`);
     }
   }
   deepEq(missing, [], 'optional attributes with no stated default');
+  deepEq(both, [], 'attributes stating their default twice — drop the dflts entry');
 });
 
 test('an attribute type lists its accepted values one per line', () => {
@@ -10518,6 +10528,15 @@ test('a default is only claimed for an attribute that exists', () => {
   deepEq(orphans, [], 'stated defaults for attributes that do not exist');
 });
 
+test('the generated line stands down where the description already says it', () => {
+  const src = psFnSource('_mePsHelpSelect');
+  assert.ok(/_meDescStatesOmitted\(desc\)/.test(src),
+    'the row builder does not check whether the description already states omission');
+  const det = psFnSource('_meDescStatesOmitted');
+  assert.ok(/Array\.isArray\(x\) && \/omitted\/i\.test/.test(det),
+    'it does not look for an `omitted` form row');
+});
+
 test('the reference actually renders the defaults it stores', () => {
   // Storing them and not showing them would be the same gap with more code.
   const src = psFnSource('_mePsHelpSelect');
@@ -10535,8 +10554,8 @@ test('the reference actually renders the defaults it stores', () => {
   assert.ok(/const tail = extra \|\| ''/.test(desc), 'the description renderer ignores the default');
   assert.ok(/!placed && tail/.test(desc), 'the default is not placed with the lead line');
   // …and only for optional ones: "omitted" is meaningless on a required attribute.
-  assert.ok(/const d = req \? null :/.test(src),
-    'a required attribute would be shown a default for being left out');
+  assert.ok(/const d = \(req \|\| _meDescStatesOmitted\(desc\)\) \? null :/.test(src),
+    'a required attribute — or one whose description already says it — would still be given a generated line');
 });
 
 test('every block in the help table has a known implementation', () => {

@@ -15891,7 +15891,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.0.3';
+const APP_VERSION  = '1.25.0.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19533,8 +19533,14 @@ const _ME_HELP_OPEN_MIN = 320;
 // use: it is a grid item stretched to the row, and once the reference is beside
 // it the row is as tall as the reference — so the pane reports the number we are
 // trying to replace.
-const _meHelpContentH = main =>
-  main ? [...main.children].reduce((h, c) => h + c.offsetHeight, 0) : 0;
+// Margins count: offsetHeight leaves them out, and the recognizer footer sits
+// on an 8px one — so the sum came back 8px short of the pane's real content and
+// the drag floor still clipped by exactly that. Erring tall is the safe side.
+const _meHelpContentH = main => !main ? 0 :
+  [...main.children].reduce((h, c) => {
+    const cs = getComputedStyle(c);
+    return h + c.offsetHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom);
+  }, 0);
 function _meHelpFitHeight(key) {
   const p = _ME_HELP[key];
   const split = document.getElementById(p.splitId);
@@ -20802,9 +20808,17 @@ function _meHelpInitSplit(key) {
 
   _mePsDrag(document.getElementById(p.hRzId), 'ns-resize', () => {
     const startH = split.getBoundingClientRect().height;
-    const max = Math.max(_ME_PS_SPLIT_MIN, Math.round(window.innerHeight * 0.8));
+    // A pane that scrolls forever may be dragged to any height — the spec editor
+    // has no natural size to protect. A pane sized by its CONTENT may not be
+    // dragged shorter than that content: there is nothing to reveal by scrolling
+    // it, so the only effect is clipping the last row. With the reference open
+    // the floor also has to clear the height it needs to be readable.
+    const min = split.classList.contains('me-hs-fixed') ? _ME_PS_SPLIT_MIN
+      : Math.max(_meHelpContentH(document.getElementById(p.mainId)),
+                 p.isOpen ? _ME_HELP_OPEN_MIN : 0);
+    const max = Math.max(min, Math.round(window.innerHeight * 0.8));
     return (dx, dy) => {
-      split.style.height = Math.min(max, Math.max(_ME_PS_SPLIT_MIN, startH + dy)) + 'px';
+      split.style.height = Math.min(max, Math.max(min, startH + dy)) + 'px';
     };
   }, () => _mePsSaveSize(hKey, parseInt(split.style.height, 10)));
 

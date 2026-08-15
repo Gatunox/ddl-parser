@@ -10681,11 +10681,27 @@ test('a closed reference costs no height, and an open one is tall enough to read
   // Measured from the pane's CHILDREN. The pane itself is a grid item stretched
   // to the row, and with the reference beside it the row is as tall as the
   // reference — so asking the pane returns the number being replaced.
-  const contentH = APP_SRC.match(/const _meHelpContentH = ([\s\S]*?);\n/);
-  assert.ok(contentH && /main\.children/.test(contentH[1]) && !/scrollHeight/.test(contentH[1]),
+  const contentH = APP_SRC.slice(APP_SRC.indexOf('const _meHelpContentH'));
+  const chBody = contentH.slice(0, contentH.indexOf('\n  }, 0);') + 10);
+  assert.ok(/main\.children/.test(chBody) && !/scrollHeight/.test(chBody),
     'the content height is read off the stretched pane rather than its children');
+  // Margins included: offsetHeight leaves them out, and the recognizer footer
+  // sits on an 8px one — so the floor came out 8px short and still clipped.
+  assert.ok(/marginTop/.test(chBody) && /marginBottom/.test(chBody),
+    'the content height ignores margins, so the drag floor is short by them');
   assert.ok(/_meHelpFitHeight\(key\);/.test(psFnSource('_meHelpSync')),
     'toggling the reference does not resize the split');
+
+  // Reported: the height bar could be dragged BELOW the content, which clips
+  // the last row instead of revealing anything — there is nothing to scroll to
+  // on a pane that is exactly as tall as what it holds. The floor is the global
+  // one only for the pane that scrolls forever.
+  assert.ok(/split\.classList\.contains\('me-hs-fixed'\) \? _ME_PS_SPLIT_MIN/.test(init),
+    'every panel shares one drag floor, so a content-sized one can be dragged into clipping');
+  assert.ok(/Math\.max\(_meHelpContentH\(document\.getElementById\(p\.mainId\)\),\s*\n?\s*p\.isOpen \? _ME_HELP_OPEN_MIN : 0\)/.test(init),
+    'the drag floor is not the content height, and does not clear the open reference');
+  assert.ok(/Math\.min\(max, Math\.max\(min, startH \+ dy\)\)/.test(init),
+    'the drag does not clamp to that floor');
 
   const drag = psFnSource('_mePsDrag');
   assert.ok(/if \(moved\) done\(\);/.test(drag), 'a click with no drag still persists a size');

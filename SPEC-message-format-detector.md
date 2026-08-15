@@ -10,6 +10,8 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-15 | **The conversion records where each byte came from, so there is one algorithm per format instead of two.** Asked, correctly: to draw the Raw panel the app must already turn the text into bytes, so it KNOWS which characters produced each byte — why work it out again? It did. `extractBytes` read the characters and threw the positions away on its first `.trim()`; `buildByteCharMap` then re-parsed the same text to recover them. Two implementations of one fact, per format, that had to agree forever — and they did not: for a dump line `extractBytes` took every hex pair in the region while `buildByteCharMap` matched four-character groups. Same answer on a well-formed line, different the moment one is not. That asymmetry is the whole story of the highlight faults: the **Raw** panel renders the bytes itself and labels each one `data-idx`, so highlighting byte N is a lookup and cannot be off; **Message Input** shows the user's own capture and had to reverse-engineer someone else's layout across NETARD standard, hexascii, hex, octal, EBCDIC, the combined interleaves and FUP — seven reconstructions, each its own chance to be off by one. `extractBytesMapped` now does both in one pass, recording `{s,e}` for each byte as it consumes the characters plus `.ascii` for the dump formats that echo bytes in a bracket column; `extractBytes` wraps it and `buildByteCharMap` returns its map, so neither can drift from the other again. **The bytes did not move — all 1472 baseline cases identical**, which is what that baseline is for. What the merge makes possible is a property the split design could not state: slice a byte's recorded span back out of the text and it must reproduce that byte. Eight cases assert it across the dump forms (hex and decimal offsets, differing label widths, pipe echo columns, an odd trailing byte), hex and octal, verified against eight injected faults including every off-by-one variant and `buildByteCharMap` growing its own parser again. |
+| 2026-08-14 | **`read-tlv` honours its overrides and finds the value leaf by elimination; a variable group's length is auto-detected through a nested payload and stops rendering what the wire never sent.** Five faults from one production Mastercard message, all in the same area. (1) **`read-tlv` was the only read path that never ran the override pass** — nothing it emitted was reinterpreted, so `hex-char` set on every element showed in the Overrides table and changed nothing in the parse. (2) The **value leaf is matched by name** against `DATA`/`VAL`/`VALUE`, so a subgroup of `TAG`/`LEN`/`TAG-DATA` resolved its first two and not its third; the value went to the **group** id and an override on the leaf matched nothing. It is now whatever single leaf is left once tag and length are accounted for. (3) An **unmapped tag** covered only its value, orphaning its own tag and length bytes so the highlight jumped between rows; it spans the whole triple now, with `valueLength` still the value's own length because the engine checks a decimal TLV length against it. (4) **VLG auto-detect counted direct children**, so `ADD-DATA { LGTH, INFO { … } }` — payload in a nested group, hence one direct child — was rejected outright and had to be flagged by hand; the count is now leaves at any depth, while which leaf may *be* the length stays direct-children-only. Four call sites resolve this and all four had to change, or the Field Map column shows one answer while the parse does another. (5) The framed group then **rendered its unreached tail**: two hundred rows of "0 bytes, no value" under a one-byte payload, each printing the group's LEN as its entire value because every child borrows it as a display prefix. A fixed group's empty field is present-and-blank and keeps its row; a variable group's is a field the wire never sent. The LEN has its own row and is no longer reprinted beside the payload — the length column had excluded it on that flag since it was added, the value column and both clipboard helpers had not. See §5.15, §8. |
 | 2026-08-13 | **The Data Editor is a page, its Test panel is a workspace, and a run answers "which entity" before "what fields".** Test existed to solve a parse without walking back to the Message Input panel, and then handed the user a three-button AUTO/HEX/ASCII toggle over a plain textarea — so the moment the bytes were EBCDIC, octal or a hexascii dump, back they went. It now carries that panel's config bar whole (the same six formats, the detected-format badge, a byte count, the Line Width widget editing the one `P.lineWidth`) and the same CodeMirror input, with per-field byte highlighting on hover and click. **A run now leads with detection over every entity and its winner becomes the selection**, so the fields shown are the fields the app would really have produced; nothing matching means nothing is selected, where before the panel showed the previously-selected entity's parse directly under "no match". The verdict is painted on the entity ROW, and it follows the waterfall: green on the winner, amber on one that would match but is shadowed by it, red only where the walk actually reached and rejected, dimmed past the winner — detection stops at the first match, and red must not claim a rejection that never happened. Two engine faults surfaced doing it. **`token-area` found no tokens in the editor at all**: the block read `ctx.item.type`, but a saved spec stores its type code as `name` and `type` is what detection builds from it, so every run asked with an empty type and `extractTokensFromMessage` — which branches STM/PSTM vs ISO/B24 on exactly that — returned null. Its own tests all passed because the harness hands the item a `type` the real object never has. And the Test input's byte↔character map was rebuilt with `buildByteCharMap`, which says in its own comment that it is for non-NETARD input; a wrapped record's map is built by `parseNetardLog` as it strips the wrapper, so hovering a field on a real capture lit nothing. Structurally: Test moved from a full-width bar carrying its own duplicate entity list, to a right-hand column, to a subpanel of the Entities column — a run annotates that list, and across the page from it the two halves of one action sat at opposite edges of the screen. The Data Editor itself is now a page reached from the top bar, and **Settings' Data Detection section is gone** — a read-only second copy of the same list, with the same armed-override marking to keep in step. Baseline unchanged throughout: 1472 cases identical. See §5.3, §11, §13. |
 | 2026-08-08 | **Every type the Data Editor offers now decodes a length, and an undeclared length follows the spec rather than the byte values.** The dropdown offered nine types; the length decoder honoured two. `ascii`, `ebcdic`, `hex-ascii-decimal` and `hex-ebcdic-decimal` were byte-for-byte identical to declaring nothing — the decoder read byte VALUES and decided for itself. The consequence on a NonStop system: an EBCDIC length `F1 F9`, which is `"19"` typed on the box, decoded as **61945** whichever of the four was chosen, and a length that wrong sends every field after it to the wrong offset. Two more of the same kind surfaced while testing it: `uint-be` / `uint-le` carry no width and were missing from the integer pattern, so they fell through to the guess; and the decode was unconditionally big-endian, so **little-endian was offered everywhere and honoured nowhere** — a little-endian 19 read as 4864. Precedence is now override → block `"encoding"` → recognizer → ASCII-and-say-so; the block level already existed and `read-fixed` had honoured it since 2026-08-02, but the length paths never looked at it. One design point is worth recording: "no override → read it as the spec's encoding" is **two** questions, and the spec answers only the second. *Text or binary?* it cannot — `PIC X(2)` does not say and a binary length in a character field is ordinary on Base24 — so that stays a fallback; *if text, ASCII or EBCDIC?* it can, and byte values no longer get a vote. The §8 claim that EBCDIC needs no special case because the message is translated first was true only for input format `ebcdic`; a hex or NETARD capture arrives untranslated, which is why this was never noticed. All 1472 baseline cases unchanged — nothing that worked has moved. See §8. |
 | 2026-08-04 | **Which fields are data elements, and what counts as a length, are now choices rather than compiled-in rules.** Two restrictions were limiting real DDLs. (1) A DE was a **top-level** row whose name was not literally `FILLER`, so a DDL could not exclude its own alignment padding under any other name — the field consumed a number regardless — and a DE could never sit on a nested field, which is exactly where one reported DDL puts them (04-level `FIELD-XX` / `FIELD-YY` inside a group). The default is unchanged but now overridable on the same `de` key: `false` excludes **without advancing the counter**, so the tail closes up rather than leaving a hole; `true` includes where the default says no, reaching inside a terminal group; `"children"` makes a group yield to its immediate children — one entry instead of marking the parent and every child. Fixed first because everything else misfired without it: `_meOvDeAnchors` read any non-null `de` as an anchor via `+v \|\| 1`, and `+false` is 0, `+true` is 1, `+"children"` is NaN — all three would have anchored numbering at DE 1. (2) VLG required the length and its payload **wrapped in a group**, and a group could carry exactly one, so a flat `PAN-LEN` then `PAN` could not be expressed and two lengths at one level had nowhere to go. `vlg: true` now works on **any field** and means "the next field's length comes from this one" — the general rule of which the group form is a special case. Implemented in `_meReadOneFieldFromDef`, the one reader every path shares, so `read-ddl`, the bitmap walk and `de` entries cannot drift apart; the re-layout rides the same `ovShift` a `bytes` override uses. Group forms are untouched. UI: a selection action bar with segmented groups, multi-select by ⌘/ctrl-click (shift is deliberately not a modifier — it collides with the browser's text-drag selection), bulk selection via filter + "Select shown", inline editors rather than `prompt()` (blocked outright in some hosts, which makes a button look dead), and Reset arming itself before it fires. The Field Map shows all three DE forms and a plain-field VLG, with the selection form folded into the DE cell signature — all three render differently but all have `de === null`, so a patch-only repaint kept showing the previous one. See §7.1, §8.0. |
@@ -754,6 +756,34 @@ a subgroup that declares a TAG leaf receives it; one that does not is already
 identified by its element. There is deliberately no `store_tag` attribute — it
 could only ever disagree with the DDL.
 
+**The value leaf is found by elimination when its name is not in the list**
+*(added 2026-08-14)*. A TLV subgroup holds the three parts of one triple, so once
+the tag and the length are accounted for, whatever single leaf is **left** is the
+value — whatever the DDL calls it. Reported against a subgroup of
+`TAG` / `LEN` / `TAG-DATA`: the first two matched by name, the third matched
+nothing, and the value was emitted under the **group** id — so an override set on
+the leaf matched nothing and silently did nothing while the Overrides table said
+it was applied.
+
+Only when exactly one leaf remains; zero or several is not a triple this can
+read, and guessing which one holds the value would be worse than saying so. Depth
+is not filtered: the binding defs are leaves, so a value declared as a group
+appears only as `PAYLOAD.INNER`, never `PAYLOAD`. When nothing resolves, the row
+still lands on the group and its description says so.
+
+**Every row honours its overrides** *(fixed 2026-08-14)*. `read-tlv` was the only
+read path that never ran the type and display override pass, so nothing it
+emitted was reinterpreted — not the mapped values, not the tags, not the lengths,
+nor the buffer length in front of them. Synthetic rows have no DDL def and are
+keyed by the id they are given, so an override on that id works like any other.
+
+**An unmapped tag is one row spanning its whole triple** *(changed 2026-08-14)*.
+It used to cover the value alone, which left its own tag and length bytes
+belonging to no row at all and made the input highlight jump over them between
+rows. `valueLength` deliberately stays the **value's** length: it means that
+everywhere else in the engine — a decimal TLV length is checked against it — so
+only the byte range widened.
+
 `field` names the buffer and is **optional inside a `de` entry**, where the element
 being read is itself the buffer.
 
@@ -1027,6 +1057,36 @@ that matched, so a 1-byte binary length works exactly like an LLLVAR's 3.
 
 Precedence is unchanged: an explicit `overrides[…].vlg` flag wins over all three.
 `vlg_identifier` governs the *guess*, not the user's own choice.
+
+**The payload does not have to be a sibling leaf** *(corrected 2026-08-14)*. The
+guess needs the group to hold something besides the length, and that was counted
+over its **direct children** — so `ADD-DATA { LGTH, INFO { … } }`, whose payload
+is a nested group, had exactly one direct child and was rejected outright. The
+name matched; the shape disqualified it, and a genuine variable-length group had
+to be flagged by hand. The count is now the group's leaves at **any** depth.
+
+What is still direct-children-only is which leaf may *be* the length: a
+grandchild's `LEN` is the length of something inside the group, not of the group
+— the rule set on 2026-08-02. *How many leaves does this group hold* and *which
+leaf may be its length* are two different questions, and only one of them was
+ever answered correctly.
+
+**A variable group's unreached tail is not rendered** *(added 2026-08-14)*. When
+the length is spent the walk stops. A **fixed** group's empty field is a field
+the message contains and left blank, and keeps its row; a variable group's is a
+field the wire never sent. Emitting them anyway put a row of "0 bytes, no value"
+under every remaining leaf — two hundred of them beneath a one-byte payload,
+burying the field that is real. A child the length reaches only **partly** is
+still emitted with the bytes it got: that is the boundary the trim must not
+cross.
+
+**The LEN is not reprinted on its payload** *(corrected 2026-08-14)*. Every child
+borrows the LEN's rendered value so an LLVAR-style prefix can sit beside the
+data. A VLG group's length has its own **row**, so printing it again showed the
+same bytes twice — and on children the length left empty it was the entire value
+column. The length column had excluded it on this same flag since it was added;
+the value column and both clipboard helpers had not. An LLVAR prefix still
+prints and still counts: it has no row of its own.
 
 **`read-ddl` honours variable-length groups** *(added 2026-08-02)* — it previously
 read every field at its declared length, so an LLVAR group read its `DATA` at the

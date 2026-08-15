@@ -10601,6 +10601,30 @@ test('the Overrides columns document their options, and only claim their own exa
       assert.ok(!/[&<>"']/.test(name), `${col} has an unusable attribute name: ${name}`);
 });
 
+test('closing a reference stays closed across a re-render, whichever control closed it', () => {
+  // Reported: switching entity re-opened the Recognizer reference on its own.
+  // The panels whose markup is rebuilt read their open flag back out of
+  // _meState, and there are TWO ways to close one — the toolbar "?" and the
+  // panel's own ✕. Only the first wrote the flag, so a ✕ left it set and the
+  // next render opened the reference again.
+  const toggle = psFnSource('_meHelpToggle');
+  assert.ok(/p\.stateKey && _meState\) _meState\[p\.stateKey\] = p\.isOpen/.test(toggle),
+    'the engine does not record the open flag, so only one of the two controls does');
+  // Both panels that persist must name the key they persist under.
+  for (const [key, want] of [['rec', 'recHelpOpen'], ['fm', 'fmHelpOpen']]) {
+    const cfg = APP_SRC.slice(APP_SRC.indexOf(`key: '${key}'`));
+    assert.ok(new RegExp(`stateKey: '${want}'`).test(cfg.slice(0, cfg.indexOf('\n});'))),
+      `panel ${key} does not declare its persisted flag`);
+  }
+  // …and the ✕ really is the engine's toggle, which is why it had to move there.
+  assert.ok(/onclick="_meHelpToggle\('\$\{p\.key\}'\)" title="Close"/.test(APP_SRC),
+    'the panel close button no longer goes through the engine');
+  // The wrappers must not keep writing it themselves — two writers is how the
+  // two got out of step to begin with.
+  assert.ok(!/_meState\.recHelpOpen = /.test(APP_SRC) && !/_meState\.fmHelpOpen = !/.test(APP_SRC),
+    'a caller still sets the open flag beside the engine');
+});
+
 test('a closed reference costs no height, and an open one is tall enough to read', () => {
   // Reported against the Recognizers panel: five rules in a section reserving a
   // spec editor's 320px, and the reference squeezed into a height dragged for

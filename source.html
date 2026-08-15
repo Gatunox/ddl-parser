@@ -15891,7 +15891,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.0.2';
+const APP_VERSION  = '1.25.0.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19560,6 +19560,12 @@ function _meHelpSync(key) {
 function _meHelpToggle(key) {
   const p = _ME_HELP[key];
   p.isOpen = !p.isOpen;
+  // Recorded HERE, not in the caller. The panels whose markup is rebuilt read
+  // their open flag back out of _meState, and there are two ways to close one —
+  // the toolbar's "?" and the panel's own ✕. Only the first used to write the
+  // flag, so closing with ✕ left it set and the next render — switching entity
+  // is enough — opened the reference again on its own.
+  if (p.stateKey && _meState) _meState[p.stateKey] = p.isOpen;
   _meHelpSync(key);
   if (p.isOpen) _meHelpRender(key);
 }
@@ -23261,7 +23267,7 @@ function _meFmHelpExampleHtml(row, i, info) {
 _meHelpDefine({
   key: 'fm', id: 'me-fm-help', wrapId: 'me-fm-wrap',
   splitId: 'me-fm-split', hRzId: 'me-fm-split-resizer', wRzId: 'me-fm-col-resizer',
-  mainId: 'me-fm-pane',
+  mainId: 'me-fm-pane', stateKey: 'fmHelpOpen',
   title: 'Column reference', plural: 'columns',
   data: _FM_HELP, groups: _FM_GROUPS,
   lead: info => info.purpose,
@@ -23282,8 +23288,7 @@ const _meFmHelpSelect = col => { if (_FM_HELP[col]) _meHelpSelect('fm', col); };
 const _meFmHelpHtml = () => _meHelpHtml('fm');
 function _meFmToggleHelp() {
   if (!_meState) return;
-  _meState.fmHelpOpen = !_meState.fmHelpOpen;
-  _ME_HELP.fm.isOpen = _meState.fmHelpOpen;
+  _meHelpToggle('fm');
   _meRenderRight();
 }
 
@@ -25176,7 +25181,7 @@ function _meRecHelpExampleHtml(ex, i) {
 _meHelpDefine({
   key: 'rec', id: 'me-rec-help', wrapId: 'me-rec-wrap',
   splitId: 'me-rec-split', hRzId: 'me-rec-split-resizer', wRzId: 'me-rec-col-resizer',
-  mainId: 'me-rec-pane',
+  mainId: 'me-rec-pane', stateKey: 'recHelpOpen',
   title: 'Recognizer reference', plural: 'recognizers',
   data: _REC_HELP, groups: _REC_GROUPS,
   starter: _mePsStarter,
@@ -25199,11 +25204,8 @@ _meHelpDefine({
 const _meRecHelpSelect = t => { if (_REC_HELP[t]) _meHelpSelect('rec', t); };
 const _meRecHelpAttr = (t, name) => _meHelpAttr('rec', t, name);
 const _meRecHelpHtml = () => _meHelpHtml('rec');
-const _meToggleRecListHelp = () => {
-  _meHelpToggle('rec');
-  // Persisted so a re-render (combo change, add/delete/move) keeps the panel.
-  if (_meState) _meState.recHelpOpen = _meHelpIsOpen('rec');
-};
+// Both entry points are the one call now: the engine records the flag.
+const _meToggleRecListHelp = () => _meHelpToggle('rec');
 
 function _meRecForm(r, idx) {
   const _ALIAS = _REC_ALIAS;

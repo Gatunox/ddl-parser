@@ -399,6 +399,14 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
    drawn there reads as a seam joining them rather than a handle. The
    row-resize cursor is the affordance. */
 .resizer-v.dragging, .resizer-h.dragging { background: var(--resizer-bg); }
+/* Except this one. It does not separate two cards — it sits INSIDE the Test
+   panel, between the message you typed and the results below it, where nothing
+   else suggests the boundary can be moved. So it lights up like the reference
+   splits do, and for the same reason: a handle you cannot see is a handle
+   nobody finds. */
+#me-test-in-resizer:hover, #me-test-in-resizer.dragging {
+  background: rgba(var(--accent-rgb), 0.45);
+}
 
 .resizer-h {
   flex-shrink: 0;
@@ -15905,7 +15913,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.1.4';
+const APP_VERSION  = '1.25.1.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

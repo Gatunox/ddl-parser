@@ -10607,6 +10607,24 @@ test('the Overrides columns document their options, and only claim their own exa
       assert.ok(!/[&<>"']/.test(name), `${col} has an unusable attribute name: ${name}`);
 });
 
+test('the Test input drag bar shows itself, like the reference splits do', () => {
+  // Reported by pointing at the Parse Spec bar and at the Test editor: this one
+  // was permanently transparent, so nothing said the boundary could be moved.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/#me-test-in-resizer:hover, #me-test-in-resizer\.dragging \{\s*background: rgba\(var\(--accent-rgb\), 0\.45\);/.test(css),
+    'the Test input bar never shows itself, so the resize is undiscoverable');
+  // The bar is right below the editor, which is what makes it read as that
+  // editor's handle rather than as a seam between two cards.
+  assert.ok(/<div id="me-test-input"[^>]*><\/div>\s*\n\s*<div class="resizer-v" id="me-test-in-resizer"/.test(html),
+    'the bar is no longer directly below the Test editor');
+  // The shared class keeps its no-hover rule: everywhere else a resizer-v IS a
+  // gutter between cards, where a line reads as a seam joining them.
+  assert.ok(/No hover highlight: the gutter is empty space between cards/.test(css),
+    'the app-wide gutters have been given a highlight they were argued out of');
+  assert.ok(!/\.resizer-v:hover\s*\{/.test(css),
+    'every card gutter in the app now lights up, not just this one');
+});
+
 test('opening a reference does not throw the page scroll away', () => {
   // Reported: opening the Overrides reference jumped the page to the top. Its
   // toggle rebuilt the whole right column — a leftover from when the help

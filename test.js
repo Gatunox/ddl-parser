@@ -8536,6 +8536,44 @@ test('the Field Map reads name, type, size, then where — and the cells follow 
   eq(menuOrder.join(','), 'num,dt,len,off,de,vlg', 'the chooser follows the table');
 });
 
+test('Parse Results carries an Offset column too, after Size', () => {
+  // The Field Map and the Test panel both say where a field sits; the Parse
+  // Results table was the one that did not, so the byte span you were looking
+  // at had to be read off the Raw panel instead.
+  const _h = html.indexOf('class="res-tbl"');
+  const head = html.slice(_h, html.indexOf('</thead>', _h));
+  // Each th also contains a th-resize handle, which matches the same pattern.
+  const order = [...head.matchAll(/class="th-(\w+)"/g)].map(m => m[1])
+    .filter(c => c !== 'resize');
+  eq(order.join(','), 'num,id,desc,len,off,val,raw,trk', 'Parse Results header order');
+  // The CELLS must follow the header, in the same order — the same failure the
+  // Field Map test guards against, and the one a header-only check misses.
+  const tr = APP_SRC.slice(APP_SRC.indexOf('<td class="c-num">${_rowNum}</td>'));
+  const cells = [...tr.slice(0, tr.indexOf('</tr>')).matchAll(/<td class="(?:\$\{ecls\}|c-(\w+))"/g)]
+    .map(m => m[1] || 'val');
+  eq(cells.join(','), 'num,id,desc,len,off,val,raw,trk', 'Parse Results cells match the header');
+  const rowSrc = APP_SRC.slice(APP_SRC.indexOf('const offCell    = f.startByte'));
+  assert.ok(/f\.startByte \+ ''|\$\{f\.startByte\}\$\{f\.endByte >= f\.startByte \? '–' \+ f\.endByte : ''\}/
+    .test(rowSrc.slice(0, 400)), 'the cell is not the recorded byte span as a range');
+  // The RUNTIME span the parse recorded, not offset+length: inside
+  // bitmap-fields the position moves whenever an earlier DE is absent.
+  assert.ok(/f\.startByte != null/.test(rowSrc.slice(0, 400)) && !/f\.offset/.test(rowSrc.slice(0, 400)),
+    'the offset is computed from a declared layout rather than the parse');
+  // Every enumeration of the results columns has to know about it, or hiding
+  // one column hides a different one.
+  for (const [needle, why] of [
+    ["['id','desc','len','off','val','raw','trk']", 'the width/visibility sync'],
+    ["layout.hiddenCols = ['id','desc','len','off','val','trk']", 'the saved layout'],
+    ["['id','desc','len','off','val','trk'].forEach(c => container.classList.remove", 'Reset Layout'],
+    ["off:'72px'", 'the Reset Layout widths'],
+    [`onclick="toggleResColVisibility('off')"`, 'the column chooser'],
+  ]) assert.ok(html.includes(needle), `${why} does not know about the Offset column`);
+  assert.ok(/#resContainer\.hide-off\s+td\.c-off/.test(html), 'hiding the column does nothing');
+  // The rows that span "the rest of the row" grew with the table.
+  assert.ok(/<td colspan="7"><span id="tknAreaIcon">/.test(html),
+    'the TOKEN AREA header still spans the old column count');
+});
+
 test('the Field Map offset is a byte range, the same form the Test table uses', () => {
   // It printed the start twice — once in decimal, once in hex — and said
   // nothing about how far the field reaches. The Test panel already showed a

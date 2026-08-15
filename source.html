@@ -1318,6 +1318,9 @@ td.c-val  { color: var(--success); word-break: break-all; text-overflow: clip; o
    (e.g. "X" in a PIC 9) or a "?" placeholder in a binary field. */
 td.c-val.c-val-bad { color: #f85149; }
 td.c-len  { color: var(--text-dim); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* A range reads from its low number, so it is aligned left — the same call as
+   the Field Map's offset column, which shows the same fact in the same form. */
+td.c-off  { color: var(--text-dim); text-align: left;  white-space: nowrap; font-variant-numeric: tabular-nums; }
 td.c-raw  { color: #6e7681; word-break: break-all; }
 td.c-err  { color: var(--accent2); }
 /* A DDL armed for manual override. Amber, matching the "Manual override mode"
@@ -1388,6 +1391,7 @@ td.c-err  { color: var(--accent2); }
 #resContainer.hide-id   td.c-id,   #resContainer.hide-id   th.th-id   { display: none; }
 #resContainer.hide-desc td.c-desc, #resContainer.hide-desc th.th-desc { display: none; }
 #resContainer.hide-len  td.c-len,  #resContainer.hide-len  th.th-len  { display: none; }
+#resContainer.hide-off  td.c-off,  #resContainer.hide-off  th.th-off  { display: none; }
 #resContainer.hide-val  td.c-val,  #resContainer.hide-val  td.c-err,  #resContainer.hide-val th.th-val { display: none; }
 #resContainer.hide-raw  td.c-raw,  #resContainer.hide-raw  th.th-raw  { display: none; }
 #resContainer.hide-trk  td.c-trk,  #resContainer.hide-trk  th.th-trk  { display: none; }
@@ -2591,7 +2595,7 @@ tbody tr:hover .me-ps-form-tbl td,
 .me-fm-th-fld{width:280px;}
 .me-fm-th-off{width:90px;}
 .me-fm-th-len{width:60px;}
-.me-fm-off{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);text-align:right;font-variant-numeric:tabular-nums;}
+.me-fm-off{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);text-align:left;font-variant-numeric:tabular-nums;}
 .me-fm-th-dt {width:140px;text-align:left;}
 .me-fm-th-de {width:120px;text-align:center;}
 .me-fm-th-vlg{width:76px;text-align:center;}
@@ -3052,6 +3056,7 @@ th.me-fm-colhi{color:var(--accent);}
               <div class="audit-cfg-row"><label>Field</label><button class="panel-toggle" id="ccol_id" onclick="toggleResColVisibility('id')">−</button></div>
               <div class="audit-cfg-row"><label>Description</label><button class="panel-toggle" id="ccol_desc" onclick="toggleResColVisibility('desc')">−</button></div>
               <div class="audit-cfg-row"><label>Size</label><button class="panel-toggle" id="ccol_len" onclick="toggleResColVisibility('len')">−</button></div>
+              <div class="audit-cfg-row"><label>Offset</label><button class="panel-toggle" id="ccol_off" onclick="toggleResColVisibility('off')">−</button></div>
               <div class="audit-cfg-row"><label>Value</label><button class="panel-toggle" id="ccol_val" onclick="toggleResColVisibility('val')">−</button></div>
               <div class="audit-cfg-row" id="ccol_raw_row"><label>Raw Hex</label><button class="panel-toggle" id="ccol_raw" onclick="toggleResColVisibility('raw')">−</button></div>
               <div class="audit-cfg-row"><label>Trk</label><button class="panel-toggle" id="ccol_trk" onclick="toggleResColVisibility('trk')">−</button></div>
@@ -11778,6 +11783,13 @@ function renderFieldTable(msg) {
     const totalLen = f.valueLength !== undefined
       ? f.valueLength + ((f.lenPrefix && !f.lenPrefixOwnRow) ? f.lenPrefix.length : 0) : undefined;
     const lenCell    = totalLen !== undefined ? String(totalLen) : '';
+    // Where those bytes were, as the range the Test panel and the Field Map both
+    // print. Taken from the span the parse recorded rather than computed from
+    // the length: this is the RUNTIME position, and inside bitmap-fields it
+    // moves whenever an earlier DE is absent — which is exactly the difference
+    // the Overrides column's help warns about.
+    const offCell    = f.startByte != null
+      ? `${f.startByte}${f.endByte >= f.startByte ? '–' + f.endByte : ''}` : '';
     // A VLG group's LEN has a row of its own, so printing it again in front of
     // every payload field showed the same bytes twice — and on the children a
     // one-byte payload left empty, it was the ONLY thing in their value column:
@@ -11835,6 +11847,7 @@ function renderFieldTable(msg) {
       <td class="c-id">${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
       <td class="c-desc" title="${esc(descTip)}">${descHtml}${errLine}${det}</td>
       <td class="c-len">${lenCell}</td>
+      <td class="c-off">${offCell}</td>
       <td class="${ecls}" data-tip="${esc(f.value)}">${prefixHtml}${esc(val)}</td>
       <td class="c-raw" data-tip="${esc(f.rawHex||'')}">${rHex}</td>
       <td class="c-trk" style="text-align:center">
@@ -11851,7 +11864,7 @@ function renderFieldTable(msg) {
     const tknIcon = S.tokenAreaCollapsed ? '▶' : '▼';
     const tknHideCls = S.tokenAreaCollapsed ? ' row-token-hidden' : '';
     rows += `<tr class="tkn-area-hdr" onclick="toggleTokenArea()">
-      <td colspan="6"><span id="tknAreaIcon">${tknIcon}</span> TOKEN AREA &nbsp;·&nbsp; ${count} token${count !== 1 ? 's' : ''}</td>
+      <td colspan="7"><span id="tknAreaIcon">${tknIcon}</span> TOKEN AREA &nbsp;·&nbsp; ${count} token${count !== 1 ? 's' : ''}</td>
     </tr>`;
     for (const tkn of msg.tokens) {
       if (tkn.error) {
@@ -11871,6 +11884,7 @@ function renderFieldTable(msg) {
             <td class="c-id">${esc(tkn.id)}</td>
             <td class="c-desc" colspan="2" style="color:var(--text-dim)" title="${esc(tkn.error || '')}">No definition found — ${esc(tkn.error || `token ${tkn.id}`)}</td>
             <td class="c-len">${tkn.rawBytes.length}</td>
+            <td class="c-off">${tkn.dataStart != null ? tkn.dataStart + (tkn.rawBytes.length ? "–" + (tkn.dataStart + tkn.rawBytes.length - 1) : "") : ""}</td>
             <td class="c-val" style="word-break:break-all" title="${esc(val)}">${esc(val)}</td>
             <td class="c-raw" data-tip="${esc(tknRaw)}">${esc(tknRHex)}</td>
             <td class="c-trk"></td>
@@ -11879,7 +11893,7 @@ function renderFieldTable(msg) {
           // Sentinel — token area detected but structure could not be read
           rows += `<tr class="tkn-body-row${tknHideCls}">
             <td class="c-id" style="color:var(--text-dim)">—</td>
-            <td colspan="5" class="c-err">${esc(tkn.error)}</td>
+            <td colspan="6" class="c-err">${esc(tkn.error)}</td>
           </tr>`;
         }
       } else {
@@ -11892,7 +11906,7 @@ function renderFieldTable(msg) {
           onmouseenter="hoverField('${esc(hfid)}')"
           onmouseleave="clearHover()">
           <td class="c-id">${esc(tkn.id)}</td>
-          <td colspan="5">${esc(ddlLabel)} &nbsp;·&nbsp; ${byteCount} byte${byteCount !== 1 ? 's' : ''}</td>
+          <td colspan="6">${esc(ddlLabel)} &nbsp;·&nbsp; ${byteCount} byte${byteCount !== 1 ? 's' : ''}</td>
         </tr>`;
         rows += makeFieldRows(tkn.fields, tkn.id, `tkn-body-row${tknHideCls}`);
       }
@@ -11906,6 +11920,7 @@ function renderFieldTable(msg) {
           <th class="th-id" style="width:140px">Field<span class="th-resize"></span></th>
           <th class="th-desc" style="width:220px" title="DDL-declared type and length, any override applied to them, and the field's description">Type-Len / Description<span class="th-resize"></span></th>
           <th class="th-len" style="width:44px" title="Size on the wire, in bytes">Size<span class="th-resize"></span></th>
+          <th class="th-off" style="width:72px" title="Bytes this field occupies in the message">Offset<span class="th-resize"></span></th>
           <th class="th-val">Value<span class="th-resize"></span></th>
           <th class="th-raw" style="width:120px">Raw Hex<span class="th-resize"></span></th>
           <th class="th-trk" style="width:36px" title="Track field">Trk</th>
@@ -15935,7 +15950,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.3.0';
+const APP_VERSION  = '1.25.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16033,7 +16048,7 @@ function saveLayout() {
     // Hidden columns
     const container = document.getElementById('resContainer');
     if (container) {
-      layout.hiddenCols = ['id','desc','len','val','trk']
+      layout.hiddenCols = ['id','desc','len','off','val','trk']
         .filter(c => container.classList.contains('hide-' + c));
     }
     // Column header widths
@@ -16051,7 +16066,7 @@ function saveLayout() {
 }
 
 function _syncColPickerCheckmarks(hiddenCols) {
-  ['id','desc','len','val','raw','trk'].forEach(col => {
+  ['id','desc','len','off','val','raw','trk'].forEach(col => {
     const btn = document.getElementById('ccol_' + col);
     if (btn) btn.classList.toggle('is-collapsed', hiddenCols.includes(col));
   });
@@ -16081,7 +16096,7 @@ function loadLayout() {
     if (Array.isArray(layout.hiddenCols)) {
       const container = document.getElementById('resContainer');
       if (container) {
-        ['id','desc','len','val','trk'].forEach(c => container.classList.remove('hide-' + c));
+        ['id','desc','len','off','val','trk'].forEach(c => container.classList.remove('hide-' + c));
         layout.hiddenCols.forEach(c => container.classList.add('hide-' + c));
         _syncColPickerCheckmarks(layout.hiddenCols);
       }
@@ -16127,8 +16142,8 @@ function resetLayout() {
   // Reset column header widths to defaults
   const table = document.querySelector('#resContainer table.res-tbl');
   if (table) {
-    const defaults = { id:'140px', desc:'180px', len:'44px', val:'', trk:'36px' };
-    ['id','desc','len','val','trk'].forEach(c => {
+    const defaults = { id:'140px', desc:'180px', len:'44px', off:'72px', val:'', trk:'36px' };
+    ['id','desc','len','off','val','trk'].forEach(c => {
       const th = table.querySelector('th.th-' + c);
       if (th) th.style.width = defaults[c] || '';
     });

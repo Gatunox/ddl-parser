@@ -10607,6 +10607,25 @@ test('the Overrides columns document their options, and only claim their own exa
       assert.ok(!/[&<>"']/.test(name), `${col} has an unusable attribute name: ${name}`);
 });
 
+test('an empty message editor does not open with a horizontal scrollbar', () => {
+  // Reported: the accepted-formats line was a single 90-character run, wider
+  // than the panel, so an EMPTY editor opened already scrolled sideways — and
+  // that list is the first thing anyone reads there.
+  const holders = [...APP_SRC.matchAll(/placeholder\('([^']*Accepted:[^']*)'\)/g)].map(m => m[1]);
+  eq(holders.length, 2, 'expected the Message Input and Test placeholders');
+  for (const text of holders) {
+    assert.ok(/Accepted:\\n/.test(text),
+      'the format list is still inline with its heading, so it runs long');
+    const longest = Math.max(...text.split('\\n').map(l => l.length));
+    assert.ok(longest <= 48, `a placeholder line is ${longest} characters — it will overflow`);
+    // Every format still named: shortening by dropping one would be a different
+    // fix to a different problem.
+    for (const fmt of ['NETARD audit log', 'Pure hex', 'Hex with spaces',
+                       'Tandem hex dump', 'ASCII raw bytes'])
+      assert.ok(text.includes(fmt), `the placeholder no longer mentions ${fmt}`);
+  }
+});
+
 test('the Test input drag bar shows itself, like the reference splits do', () => {
   // Reported by pointing at the Parse Spec bar and at the Test editor: this one
   // was permanently transparent, so nothing said the boundary could be moved.

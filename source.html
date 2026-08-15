@@ -15936,7 +15936,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.1.6';
+const APP_VERSION  = '1.25.1.7';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17213,7 +17213,8 @@ document.addEventListener('DOMContentLoaded', () => {
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           msgEditableComp.of(EditorView.editable.of(true)),
-          placeholder('Paste one or more messages here, or drop a file.\n\nAccepted: NETARD audit log · Pure hex · Hex with spaces · Tandem hex dump · ASCII raw bytes\n\nThis field locks after Parse is clicked.'),
+          // Same list, same reason — see the Test input's placeholder below.
+          placeholder('Paste one or more messages here, or drop a file.\n\nAccepted:\n  NETARD audit log\n  Pure hex\n  Hex with spaces\n  Tandem hex dump\n  ASCII raw bytes\n\nThis field locks after Parse is clicked.'),
           _msgHLField,
           EditorView.updateListener.of(u => { if (u.docChanged) onMsgChange(); }),
         ],
@@ -17325,7 +17326,11 @@ document.addEventListener('DOMContentLoaded', () => {
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           meTestEditableComp.of(EditorView.editable.of(true)),
-          placeholder('Paste one message here, or drop a file.\n\nAccepted: NETARD audit log · Pure hex · Hex with spaces · Tandem hex dump · ASCII raw bytes'),
+          // One format per line. As a single 90-character run it was wider than
+          // the panel, so an EMPTY editor opened with a horizontal scrollbar —
+          // and the list is the first thing anyone reads here. Broken up, the
+          // longest line is 18 characters and no width can overflow it.
+          placeholder('Paste one message here, or drop a file.\n\nAccepted:\n  NETARD audit log\n  Pure hex\n  Hex with spaces\n  Tandem hex dump\n  ASCII raw bytes'),
           _meTestHLField,
           EditorView.updateListener.of(u => { if (u.docChanged) _meTestUpdateFmtState(); }),
         ],

@@ -63,6 +63,12 @@
   /* DDL tree only — SF Mono named outright, as the prototype does. */
   --font-tree: 'SF Mono', SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
   --resizer-size: var(--gap);
+  /* The visible drag band: one size and one radius for every bar that shows
+     itself on hover, so the Test input's and the three reference splits' read
+     as the same control. Separate from --resizer-size, which is the space a
+     gutter occupies between cards and is a layout measure, not a paint one. */
+  --hs-bar: 6px;
+  --hs-bar-r: 3px;
   --sz-mono: 11px;
   --sz-badge: calc(9px + (var(--sz-mono) - 9px) / 3);
   --panel-header-h: 34px;
@@ -403,8 +409,17 @@ header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weig
    panel, between the message you typed and the results below it, where nothing
    else suggests the boundary can be moved. So it lights up like the reference
    splits do, and for the same reason: a handle you cannot see is a handle
-   nobody finds. */
-#me-test-in-resizer:hover, #me-test-in-resizer.dragging {
+   nobody finds.
+   The BAND is painted inside the element rather than filling it: this bar is as
+   tall as the card gap it occupies (--resizer-size, 10px) and the split bars are
+   6px, so filling it made the same control look like two different ones. The
+   element keeps its full height for the hit area. */
+#me-test-in-resizer::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: var(--hs-bar); transform: translateY(-50%);
+  border-radius: var(--hs-bar-r); transition: background 0.15s;
+}
+#me-test-in-resizer:hover::before, #me-test-in-resizer.dragging::before {
   background: rgba(var(--accent-rgb), 0.45);
 }
 
@@ -2267,7 +2282,8 @@ input.me-inp{width:100%;}
 .me-ps-wrap:not(.nohelp) .me-ps-split{min-height:var(--hs-open-min,320px);}
 .me-ps-wrap.nohelp .me-ps-split{grid-template-columns:minmax(0,1fr);}
 .me-ps-wrap.nohelp .me-ps-help{display:none !important;}
-.me-ps-split-resizer{height:6px;margin:-2px 0 0;cursor:ns-resize;flex-shrink:0;background:transparent;}
+.me-ps-split-resizer{height:var(--hs-bar);margin:-2px 0 0;cursor:ns-resize;flex-shrink:0;
+  background:transparent;border-radius:var(--hs-bar-r);}
 .me-ps-split-resizer:hover,.me-ps-split-resizer.dragging{background:rgba(var(--accent-rgb),0.45);}
 /* The HEIGHT bar stays whether or not the reference is open — the editor is
    just as resizable either way, and a control that comes and goes with an
@@ -2276,8 +2292,15 @@ input.me-inp{width:100%;}
 /* The reference's width is dragged too. A reference column wide enough for one
    block's examples is too wide for another's, and the widest thing in it — a
    raw hex run — has no natural wrap point. */
-.me-ps-col-resizer{grid-column:2;grid-row:1;cursor:ew-resize;background:transparent;}
-.me-ps-col-resizer:hover,.me-ps-col-resizer.dragging{background:rgba(var(--accent-rgb),0.45);}
+/* The width bar paints the same band on its own axis: the grid gives it an 8px
+   column, so the band is centred in it rather than filling it. */
+.me-ps-col-resizer{grid-column:2;grid-row:1;cursor:ew-resize;background:transparent;
+  position:relative;}
+.me-ps-col-resizer::before{content:'';position:absolute;top:0;bottom:0;left:50%;
+  width:var(--hs-bar);transform:translateX(-50%);
+  border-radius:var(--hs-bar-r);transition:background 0.15s;}
+.me-ps-col-resizer:hover::before,.me-ps-col-resizer.dragging::before{
+  background:rgba(var(--accent-rgb),0.45);}
 .me-ps-wrap.nohelp .me-ps-col-resizer{display:none;}
 /* The left half of the split is the spec editor, the recognizer list or the
    Overrides table depending on the panel, so the grid placement is keyed on a
@@ -15913,7 +15936,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.1.5';
+const APP_VERSION  = '1.25.1.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

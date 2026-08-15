@@ -10611,8 +10611,25 @@ test('the Test input drag bar shows itself, like the reference splits do', () =>
   // Reported by pointing at the Parse Spec bar and at the Test editor: this one
   // was permanently transparent, so nothing said the boundary could be moved.
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  assert.ok(/#me-test-in-resizer:hover, #me-test-in-resizer\.dragging \{\s*background: rgba\(var\(--accent-rgb\), 0\.45\);/.test(css),
+  assert.ok(/#me-test-in-resizer:hover::before, #me-test-in-resizer\.dragging::before \{\s*background: rgba\(var\(--accent-rgb\), 0\.45\);/.test(css),
     'the Test input bar never shows itself, so the resize is undiscoverable');
+  // Every bar paints the SAME band. The Test one is as tall as the card gap it
+  // occupies and the split bars are 6px, so filling each element made one
+  // control look like two — the band is painted inside instead.
+  assert.ok(/--hs-bar: 6px;/.test(css) && /--hs-bar-r: 3px;/.test(css),
+    'the drag band has no shared size, so the bars can drift apart again');
+  const tight = css.replace(/\s+/g, '');   // the rules differ in whitespace only
+  for (const [sel, why] of [
+    ['#me-test-in-resizer::before', 'the Test bar'],
+    ['.me-ps-col-resizer::before', 'the width bar'],
+  ]) {
+    const rule = tight.slice(tight.indexOf(sel));
+    const body = rule.slice(0, rule.indexOf('}'));
+    assert.ok(rule.startsWith(sel) && /var\(--hs-bar\)/.test(body) && /var\(--hs-bar-r\)/.test(body),
+      `${why} does not paint the shared band`);
+  }
+  assert.ok(/\.me-ps-split-resizer\{height:var\(--hs-bar\)[^}]*border-radius:var\(--hs-bar-r\)/.test(css),
+    'the height bar is not the shared size, or has square ends');
   // The bar is right below the editor, which is what makes it read as that
   // editor's handle rather than as a seam between two cards.
   assert.ok(/<div id="me-test-input"[^>]*><\/div>\s*\n\s*<div class="resizer-v" id="me-test-in-resizer"/.test(html),

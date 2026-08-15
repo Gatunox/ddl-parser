@@ -10607,6 +10607,23 @@ test('the Overrides columns document their options, and only claim their own exa
       assert.ok(!/[&<>"']/.test(name), `${col} has an unusable attribute name: ${name}`);
 });
 
+test('opening a reference does not throw the page scroll away', () => {
+  // Reported: opening the Overrides reference jumped the page to the top. Its
+  // toggle rebuilt the whole right column — a leftover from when the help
+  // markup was built with the section and there was no other way to show it.
+  // A rebuilt column starts at scrollTop 0.
+  for (const fn of ['_meFmToggleHelp', '_meToggleRecListHelp', '_mePsToggleHelp']) {
+    const src = APP_SRC.slice(APP_SRC.indexOf(`_meFmToggleHelp` === fn ? 'const _meFmToggleHelp' : `const ${fn}`));
+    assert.ok(!/_meRenderRight\(\)/.test(src.slice(0, src.indexOf('\n\n'))),
+      `${fn} re-renders the column, which scrolls the page back to the top`);
+  }
+  // The toggle is enough on its own: it flips both classes and renders the
+  // panel, which is why the other two never jumped.
+  const toggle = psFnSource('_meHelpToggle');
+  assert.ok(/_meHelpSync\(key\)/.test(toggle) && /if \(p\.isOpen\) _meHelpRender\(key\)/.test(toggle),
+    'the toggle does not make the panel appear on its own, so a caller must re-render');
+});
+
 test('the Overrides column has two scrollbars, not three', () => {
   // Reported: the field table scrolled, the pane around it scrolled, and the
   // page scrolled. The first and last earn their bars; the middle one only
@@ -12784,9 +12801,12 @@ test('the accent is written to one element, not two', () => {
 console.log('\nhelp panels — every toggle has a control that calls it');
 
 test('every help toggle is wired to a button in the markup', () => {
-  const toggles = [...APP_SRC.matchAll(/^function (_me\w*Toggle\w*Help|_me\w*Help\w*Toggle)\s*\(/gm)]
-    .map(m => m[1]);
-  assert.ok(toggles.length >= 3, `expected the help toggles, found ${toggles.length}: ${toggles}`);
+  // Both declaration forms: several of these are one-line consts now that the
+  // panels share an engine, and matching only `function` quietly stopped
+  // checking them.
+  const toggles = [...APP_SRC.matchAll(
+    /^(?:function|const) (_me\w*Toggle\w*Help|_me\w*Help\w*Toggle)\s*[(=]/gm)].map(m => m[1]);
+  assert.ok(toggles.length >= 5, `expected the help toggles, found ${toggles.length}: ${toggles}`);
   const orphans = toggles.filter(fn => !new RegExp(`onclick="${fn}\\(`).test(html));
   deepEq(orphans, [],
     'defined but nothing calls them — the control that opened the panel is gone');
@@ -12814,7 +12834,8 @@ test('the Overrides column reference has its "?" button', () => {
   // function along with the button.
   assert.ok(/id="me-fm-help-btn"[^>]*onclick="_meFmToggleHelp\(\)"/.test(html),
     'the ? button is in the Overrides toolbar');
-  assert.ok(/function _meFmToggleHelp\s*\(/.test(APP_SRC), 'and the function it calls exists');
+  assert.ok(/(?:function|const) _meFmToggleHelp\s*[(=]/.test(APP_SRC),
+    'and the function it calls exists');
   // It sits with the other toolbar buttons, matching the two ? buttons elsewhere.
   const tb = html.slice(html.indexOf('<div class="me-fm-toolbar">'),
                         html.indexOf('</div>', html.indexOf('me-fm-cols-dlg')));

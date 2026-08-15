@@ -10688,19 +10688,30 @@ test('a closed reference costs no height, and an open one is tall enough to read
   // open height is computed from the CONTENT beside it, floored at the readable
   // minimum — and a height the user dragged wins over both.
   const fit = psFnSource('_meHelpFitHeight');
-  assert.ok(/classList\.contains\('me-hs-fixed'\)\) return/.test(fit),
-    'it also recomputes the panel that has a standing height of its own');
+  // Reported: the Parse Spec reference opened scrolled while the other two did
+  // not. It was skipped outright for having a standing height — but that height
+  // belongs to the EDITOR, and says nothing about how tall the reference beside
+  // it needs to be. It only excuses the editor from the floor now.
+  assert.ok(!/classList\.contains\('me-hs-fixed'\)\) return/.test(fit),
+    'the panel with a standing height is skipped, so its reference opens scrolled');
+  assert.ok(/const mainH = fixed \? 0 : _meHelpContentH\(/.test(fit),
+    'the editor is being counted into the floor it has no natural size for');
+  // Closed, it keeps its standing height: giving that back to the content means
+  // giving it back to nothing.
+  assert.ok(/split\.style\.height = fixed && Number\.isFinite\(saved\)/.test(fit),
+    'closing the reference throws away a height dragged for the editor');
   // Closing returns the panel to its content unconditionally. Reported twice:
   // a dragged height was winning here, so a five-row recognizer list sat in a
   // 966px box with the reference already gone. A dragged height is a preference
   // about the REFERENCE, and with the reference closed there is nothing for it
   // to size — so the check for it comes AFTER the closed case, not before.
-  const closed = fit.indexOf("if (!p.isOpen)");
-  const savedCheck = fit.indexOf('localStorage.getItem(`up_${p.storageKey}_split_h`)');
-  assert.ok(closed > -1 && savedCheck > -1 && closed < savedCheck,
-    'a dragged height is consulted before the closed case, so closing keeps it');
-  assert.ok(/if \(!p\.isOpen\) \{ split\.style\.height = ''; return; \}/.test(fit),
+  // The closed branch may read the saved height — the editor needs it — but for
+  // a content-sized panel it must clear regardless, which is the `: ''` arm.
+  const closedArm = /if \(!p\.isOpen\) \{[\s\S]*?\n    return;\n  \}/.exec(fit);
+  assert.ok(closedArm && /Number\.isFinite\(saved\)\s*\n?\s*\? Math\.max\(_ME_PS_SPLIT_MIN, saved\) \+ 'px' : ''/.test(closedArm[0]),
     'closing does not give the height back to the content');
+  assert.ok(closedArm && /^\s*split\.style\.height = fixed &&/m.test(closedArm[0]),
+    'a dragged height wins over closing on a panel sized by its content');
   assert.ok(/Number\.isFinite\(saved\) \? Math\.max\(mainH, saved\)/.test(fit),
     'a height dragged for the reference is not honoured when it reopens');
   // …and the restore on mount must not force one either, or the panel is boxed

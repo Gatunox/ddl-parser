@@ -15891,7 +15891,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.1.1';
+const APP_VERSION  = '1.25.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19605,14 +19605,24 @@ const _meHelpPanelH = el => {
 function _meHelpFitHeight(key) {
   const p = _ME_HELP[key];
   const split = document.getElementById(p.splitId);
-  if (!split || split.classList.contains('me-hs-fixed')) return;
-  // Closed, the content decides. ALWAYS — a dragged height is a preference
-  // about the reference, and with no reference on screen there is nothing for
-  // it to size. Letting it win here left a five-row list in a 966px box.
-  if (!p.isOpen) { split.style.height = ''; return; }
+  if (!split) return;
+  // The spec editor scrolls forever and has no natural size, so it keeps a
+  // standing height and contributes nothing to the floor. Every other pane is
+  // sized by what it holds.
+  const fixed = split.classList.contains('me-hs-fixed');
   let saved = null;
   try { saved = parseInt(localStorage.getItem(`up_${p.storageKey}_split_h`), 10); } catch(e) {}
-  const mainH = _meHelpContentH(document.getElementById(p.mainId));
+  if (!p.isOpen) {
+    // Closed, the content decides. ALWAYS — a dragged height is a preference
+    // about the reference, and with no reference on screen there is nothing for
+    // it to size. Letting it win here left a five-row list in a 966px box. The
+    // editor is the exception: it keeps whatever height it was given, because
+    // giving it back to the content means giving it back to nothing.
+    split.style.height = fixed && Number.isFinite(saved)
+      ? Math.max(_ME_PS_SPLIT_MIN, saved) + 'px' : '';
+    return;
+  }
+  const mainH = fixed ? 0 : _meHelpContentH(document.getElementById(p.mainId));
   // By DEFAULT the reference is tall enough to show all of itself: a catalogue
   // you have to scroll to see is a catalogue you cannot scan. So the height is
   // the taller of the two columns — neither side scrolls unless the window is

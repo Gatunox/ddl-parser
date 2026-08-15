@@ -4938,6 +4938,105 @@ function tlvLenRun(len, unknown = 'skip', extra) {
 }
 const tlvF = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
 
+// A TLV subgroup whose value leaf is called something else entirely — the
+// shape that was reported: TAG / LEN / TAG-DATA.
+const TLV_ODD_DDL = `DEF MSG.
+  02 MTI PIC X(4).
+  02 FIELD-55.
+    04 LEN-55 PIC X(2).
+    04 DATA-55.
+      06 ARQC.
+        08 TAG      PIC X(2).
+        08 LEN      PIC X(1).
+        08 TAG-DATA PIC X(8).
+      06 ATC.
+        08 TAG      PIC X(2).
+        08 LEN      PIC X(1).
+        08 TAG-DATA PIC X(2).
+  02 AFTER PIC X(4).
+END MSG.
+`;
+function tlvOddRun(extra) {
+  S.ddlTree = { V: { S: { D: TLV_ODD_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'], ...(extra || {}),
+    parse_spec_binary: [
+      { 'read-ddl': { until: 'MTI' } },
+      { 'read-tlv': { field: 'FIELD-55', len: 'FIELD-55.LEN-55', ber: true, tags: TLV_TAGS, unknown: 'skip' } },
+    ] }, Uint8Array.from(TLV_BYTES));
+}
+
+test('the value leaf is found by elimination when it is not called DATA', () => {
+  // Reported: a group of TAG / LEN / TAG-DATA matched its first two leaves by
+  // name and its third not at all, so the value was emitted under the GROUP id.
+  // An override set on the leaf then matched nothing and silently did nothing —
+  // the Overrides table said hex-char, the parse showed raw.
+  const ctx = tlvOddRun();
+  const v = tlvF(ctx, 'FIELD-55.DATA-55.ARQC.TAG-DATA');
+  assert.ok(v, 'the value landed on the leaf, whatever it is called');
+  eq(v.rawHex.toUpperCase(), '0102030405060708', 'holding the value bytes');
+  assert.ok(!tlvF(ctx, 'FIELD-55.DATA-55.ARQC'), 'and not on the group as well');
+});
+
+test('an override on that leaf now applies, which is the reported symptom', () => {
+  const ctx = tlvOddRun({ overrides: { 'FIELD-55.DATA-55.ARQC.TAG-DATA': { type: 'hex-char' } } });
+  eq(tlvF(ctx, 'FIELD-55.DATA-55.ARQC.TAG-DATA').value, '0102030405060708',
+     'hex-char reaches the value leaf');
+});
+
+test('a value declared as a group resolves to its leaf, not to the parent', () => {
+  // The binding defs are LEAVES: a value declared as a group never appears as
+  // "PAYLOAD", only as "PAYLOAD.INNER". Filtering to direct children dropped the
+  // only candidate there was, and the value fell back to the parent group — the
+  // bug this fix exists to remove, wearing a different hat.
+  const ddl = `DEF MSG.
+  02 MTI PIC X(4).
+  02 FIELD-55.
+    04 LEN-55 PIC X(2).
+    04 DATA-55.
+      06 ARQC.
+        08 TAG PIC X(2).
+        08 LEN PIC X(1).
+        08 PAYLOAD.
+          10 INNER PIC X(8).
+      06 ATC.
+        08 TAG PIC X(2).
+        08 LEN PIC X(1).
+        08 PAYLOAD.
+          10 INNER PIC X(2).
+END MSG.
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [
+      { 'read-ddl': { until: 'MTI' } },
+      { 'read-tlv': { field: 'FIELD-55', len: 'FIELD-55.LEN-55', ber: true, tags: TLV_TAGS, unknown: 'skip' } },
+    ] }, Uint8Array.from(TLV_BYTES));
+  const v = tlvF(ctx, 'FIELD-55.DATA-55.ARQC.PAYLOAD.INNER');
+  assert.ok(v, 'the one leftover leaf is the value, however deep it is declared');
+  eq(v.rawHex.toUpperCase(), '0102030405060708', 'holding the value bytes');
+});
+
+test('a group with no resolvable value leaf says so on the row', () => {
+  // Two leaves, both taken by tag and length: nothing is left to be the value,
+  // so it lands on the group — and the row states that, because an override on
+  // a leaf that was never resolved is invisible otherwise.
+  const ddl = TLV_ODD_DDL.replace(/ {8}08 TAG-DATA PIC X\(8\)\.\n/, '')
+                         .replace(/ {8}08 TAG-DATA PIC X\(2\)\.\n/, '');
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [
+      { 'read-ddl': { until: 'MTI' } },
+      { 'read-tlv': { field: 'FIELD-55', len: 'FIELD-55.LEN-55', ber: true, tags: TLV_TAGS, unknown: 'skip' } },
+    ] }, Uint8Array.from(TLV_BYTES));
+  const g = tlvF(ctx, 'FIELD-55.DATA-55.ARQC');
+  assert.ok(g, 'the value still lands on the group');
+  assert.ok(/no value leaf/.test(g.description || ''),
+    `the row does not say why, got: ${JSON.stringify(g.description)}`);
+});
+
 test('read-tlv honours the Overrides table, like every other read path', () => {
   // Reported: DE-55 parsed as TLV with `hex-char` set on every element in the
   // Overrides table came back RAW. _meExecReadTLVMapped was the only read path

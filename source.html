@@ -15804,7 +15804,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.11.0';
+const APP_VERSION  = '1.22.12.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27641,6 +27641,30 @@ function _meTlvLeaf(groupId, which, attrs, perTag, defs) {
   return null;
 }
 
+// Every leaf under a TLV subgroup, in declaration order. Depth is not filtered:
+// the binding defs are leaves only, so a value declared as a GROUP appears here
+// as its own leaf (PAYLOAD.INNER, never PAYLOAD) and a direct-children filter
+// would drop the one candidate there is.
+function _meTlvChildren(groupId, defs) {
+  const prefix = groupId + '.';
+  return defs.filter(d => d.id.startsWith(prefix));
+}
+
+// The value leaf, when it is not called DATA / VAL / VALUE. A TLV subgroup holds
+// the three parts of one triple, so once the tag and the length are accounted
+// for, whatever single leaf is LEFT is the value — whatever the DDL calls it.
+// Reported: a group of TAG / LEN / TAG-DATA resolved its first two by name and
+// its third not at all, so the value was emitted under the GROUP id and an
+// override set on the leaf matched nothing and silently did nothing.
+//
+// Only when exactly one leaf remains. Zero or several is not a triple this can
+// read, and guessing which one holds the value would be worse than saying so —
+// which is also what keeps a multi-leaf payload group off this path.
+function _meTlvValueLeafByElimination(groupId, defs, taken) {
+  const rest = _meTlvChildren(groupId, defs).filter(d => !taken.includes(d.id));
+  return rest.length === 1 ? rest[0] : null;
+}
+
 function _meExecReadTLV(attrs, ctx) {
   if (attrs && (attrs.tags || attrs.ber)) return _meExecReadTLVMapped(attrs, ctx);
   if (!attrs || !attrs.field) {
@@ -27986,14 +28010,19 @@ function _meExecReadTLVMapped(attrs, ctx) {
     const gid     = group.id;
     const tagLeaf = _meTlvLeaf(gid, 'tag_field',    attrs, mapped, defs);
     const lenLeaf = _meTlvLeaf(gid, 'length_field', attrs, mapped, defs);
-    const valLeaf = _meTlvLeaf(gid, 'value_field',  attrs, mapped, defs);
+    const valLeaf = _meTlvLeaf(gid, 'value_field',  attrs, mapped, defs)
+      || _meTlvValueLeafByElimination(gid, defs, [tagLeaf?.id, lenLeaf?.id].filter(Boolean));
 
     // The DDL decides whether the tag is kept: a subgroup that declares a TAG
     // leaf gets it, one that doesn't is already identified by the element.
     if (tagLeaf) emit(tagLeaf.id, t.bytes, tagAt, { def: tagLeaf });
     if (lenLeaf) emit(lenLeaf.id, lenBytes, t.next, { def: lenLeaf });
     if (valLeaf) emit(valLeaf.id, valBytes, l.next, { def: valLeaf });
-    else         emit(gid, valBytes, l.next, { def: group, description: `TLV tag ${tagKey}` });
+    // No value leaf, by name or by elimination: the row lands on the GROUP, and
+    // it says so — an override set on a leaf this never resolved would otherwise
+    // sit in the Overrides table doing nothing, with no hint why.
+    else emit(gid, valBytes, l.next, { def: group,
+      description: `TLV tag ${tagKey} · no value leaf under ${gid} — value is on the group` });
 
     p = l.next + l.len;
   }

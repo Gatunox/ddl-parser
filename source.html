@@ -15804,7 +15804,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.10.0';
+const APP_VERSION  = '1.22.11.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27672,6 +27672,7 @@ function _meExecReadTLV(attrs, ctx) {
   }
   let p = 0;
   while (p + tagLen + lenLen <= bufBytes.length) {
+    const tagAt    = p;
     const tagBytes = bufBytes.slice(p, p + tagLen);
     const tag      = _meTlvTagKey(tagBytes, ascii);
     p += tagLen;
@@ -27694,9 +27695,17 @@ function _meExecReadTLV(attrs, ctx) {
       rawHex: _meBytesToHex(valBytes),
     };
     // Byte positions, so the row can be lined up against the raw dump — the BER
-    // path always reported them and this one never did.
-    if (bufBase != null) { row.startByte = bufBase + valAt; row.endByte = bufBase + valAt + L - 1; }
+    // path always reported them and this one never did. The span starts at the
+    // TAG: a row covering only the value orphaned its own tag and length bytes,
+    // and the input highlight jumped over them between rows.
+    if (bufBase != null) {
+      row.startByte = bufBase + tagAt;
+      row.endByte   = bufBase + valAt + L - 1;
+    }
+    _meApplyTypeOverride(row, { id: row.id }, ctx, null);
+    _meApplyDisplayOverride(row, { id: row.id }, ctx);
     ctx.fields.push(row);
+    ctx.fieldsById[row.id] = row;
   }
 }
 
@@ -27873,6 +27882,10 @@ function _meExecReadTLVMapped(attrs, ctx) {
       ? _meMakeSyntheticField(lenId, lb, bufBase, bufBase + lb.length - 1, ctx,
           { def: lenSpec.def, description: `TLV buffer length — ${n} byte(s) of tags follow` })
       : { id: lenId, value: _meBytesToStr(lb), rawHex: _meBytesToHex(lb), valueLength: lb.length };
+    if (lenSpec.def) {
+      _meApplyTypeOverride(f, lenSpec.def, ctx, null);
+      _meApplyDisplayOverride(f, lenSpec.def, ctx);
+    }
     ctx.fields.push(f);
     ctx.fieldsById[lenId] = f;
     lenUsed = lenSpec.bytes;
@@ -27895,10 +27908,24 @@ function _meExecReadTLVMapped(attrs, ctx) {
   }
 
   const unknown = String(attrs.unknown || 'emit').toLowerCase();
-  const emit = (id, bytes, start, extra) => {
+  // `span` widens a row's byte RANGE without touching valueLength: that field
+  // means the length of the VALUE everywhere else in the engine (a decimal TLV
+  // length is checked against it), so it stays the value's own length while
+  // start/end cover the whole triple.
+  // Every row this block emits goes through the same override pass every other
+  // read path runs. It did not, and it was the only one: a `hex-char` set in the
+  // Overrides table showed in that table and changed nothing here, so a DE-55
+  // parsed as TLV came back raw while the panel said it had been reinterpreted.
+  // Synthetic rows have no DDL def, so they are keyed by the id they are given —
+  // an override on that id then works like any other.
+  const emit = (id, bytes, start, extra, span) => {
+    const from = start != null ? bufBase + start : null;
     const f = bufBase != null && start != null
-      ? _meMakeSyntheticField(id, bytes, bufBase + start, bufBase + start + bytes.length - 1, ctx, extra)
+      ? _meMakeSyntheticField(id, bytes, from, from + (span || bytes.length) - 1, ctx, extra)
       : { id, value: _meBytesToStr(bytes), rawHex: _meBytesToHex(bytes), valueLength: bytes.length, ...(extra || {}) };
+    const def = (extra && extra.def) || { id };
+    _meApplyTypeOverride(f, def, ctx, null);
+    _meApplyDisplayOverride(f, def, ctx);
     ctx.fields.push(f);
     ctx.fieldsById[id] = f;
     return f;
@@ -27935,8 +27962,14 @@ function _meExecReadTLVMapped(attrs, ctx) {
       if (unknown === 'error') {
         ctx.fields.push({ id: `TLV.${tagKey}`, error: `TLV tag ${tagKey} is not mapped to a DDL element` });
       } else if (unknown !== 'skip') {
-        emit(`${attrs.field || ctx._deScope || 'TLV'}.${tagKey}`, valBytes, l.next,
-             { description: `TLV tag ${tagKey} · length ${l.len}` });
+        // Spans the whole triple, not just the value: an unmapped tag is ONE row,
+        // and a row covering only the data leaves its own tag and length bytes
+        // belonging to nothing — so the input highlight jumped over them on the
+        // way from one row to the next. The value column still shows the data;
+        // the tag and its length are named in the description.
+        emit(`${attrs.field || ctx._deScope || 'TLV'}.${tagKey}`, valBytes, tagAt,
+             { description: `TLV tag ${tagKey} · length ${l.len}` },
+             (l.next + l.len) - tagAt);
       }
       p = l.next + l.len;
       continue;

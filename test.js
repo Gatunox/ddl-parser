@@ -4938,6 +4938,38 @@ function tlvLenRun(len, unknown = 'skip', extra) {
 }
 const tlvF = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
 
+test('read-tlv honours the Overrides table, like every other read path', () => {
+  // Reported: DE-55 parsed as TLV with `hex-char` set on every element in the
+  // Overrides table came back RAW. _meExecReadTLVMapped was the only read path
+  // that never called _meApplyTypeOverride / _meApplyDisplayOverride, so the
+  // panel showed an override it had not applied — the worst kind, because the
+  // table said it had worked.
+  const OV = {};
+  for (const id of ['FIELD-55.LEN-55',
+                    'FIELD-55.DATA-55.ARQC.TAG', 'FIELD-55.DATA-55.ARQC.LEN',
+                    'FIELD-55.DATA-55.ARQC.VALUE'])
+    OV[id] = { type: 'hex-char' };
+  const ctx = tlvLenRun('FIELD-55.LEN-55', 'emit', { overrides: OV });
+  // hex-char renders the bytes as their hex spelling; raw would be _meBytesToStr.
+  eq(tlvF(ctx, 'FIELD-55.DATA-55.ARQC.VALUE').value, '0102030405060708',
+     'the mapped VALUE takes the override — this is the row that was raw');
+  eq(tlvF(ctx, 'FIELD-55.DATA-55.ARQC.TAG').value, '9F26', 'and so does the TAG');
+  eq(tlvF(ctx, 'FIELD-55.DATA-55.ARQC.LEN').value, '08', 'and the LEN');
+  eq(tlvF(ctx, 'FIELD-55.LEN-55').value, '0016', 'and the buffer length in front of them');
+  // A row with no override is untouched — the pass must not invent one.
+  const untouched = tlvF(ctx, 'FIELD-55.DATA-55.ATC.VALUE');
+  assert.ok(untouched.value !== '0001', 'a row with no override must be left alone');
+  eq(untouched.rawHex.toUpperCase(), '0001', 'its bytes are still its bytes');
+});
+
+test('a display override reaches read-tlv rows too', () => {
+  const ctx = tlvLenRun('FIELD-55.LEN-55', 'emit',
+    { overrides: { 'FIELD-55.DATA-55.ARQC.VALUE': { display: 'hex' } } });
+  const f = tlvF(ctx, 'FIELD-55.DATA-55.ARQC.VALUE');
+  assert.ok(f.displayValue, 'no displayValue — the display override never ran');
+  eq(f.displayOverride, 'hex', 'and it records which one');
+});
+
 test('read-tlv "len" reads a GROUP buffer, which `field` alone cannot', () => {
   const ctx = tlvLenRun('FIELD-55.LEN-55');
   eq(ctx.fields.filter(f => typeof f.error === 'string').length, 0,
@@ -5068,8 +5100,13 @@ test('ASCII TLV rows report where they sit in the message', () => {
   // for a blank Bytes column.
   const ctx = atlvRun({ field: 'DE-48', encoding: 'ascii', tag_length: 4, length_length: 4 });
   const f = atlvField(ctx, 'DE-48.0002');
-  eq(f.startByte, 8,  'HELLO starts after the 4-char tag and 4-char length');
-  eq(f.endByte,  12,  'and runs five characters');
+  // The row spans its whole triple — tag, length, value — so the bytes framing
+  // it belong to it rather than to nothing. (Was 8: the value alone.)
+  eq(f.startByte, 0,  'starts at its 4-char tag');
+  eq(f.endByte,  12,  'and runs to the end of its five-character value');
+  // valueLength still means the VALUE — the engine checks a decimal TLV length
+  // against it, so the span must not be smuggled in through it.
+  eq(f.valueLength, 5, 'while its length is still the value\'s');
 });
 
 test('a non-numeric length is reported, not silently read as zero', () => {
@@ -5103,8 +5140,14 @@ test('fixed-width TLV rows report byte positions, exactly as the BER path does',
   const fixed = run({ field: 'BUF', tag_length: 2, length_length: 1, encoding: 'binary' });
   const ber   = run({ field: 'BUF', ber: true });
   const pos = (ctx, id) => { const f = ctx.fields.find(x => x.id === id); return [f.startByte, f.endByte]; };
-  deepEq(pos(fixed, 'BUF.9F26'), [3, 6], 'fixed-width now knows where the value is');
+  // An unmapped tag is ONE row and it spans its whole triple — tag, length and
+  // data — so no byte inside it belongs to nothing and the input highlight does
+  // not jump on the way from one row to the next. (Was [3,6]: the value alone,
+  // which orphaned the 9F26 04 in front of it.)
+  deepEq(pos(fixed, 'BUF.9F26'), [0, 6], 'fixed-width spans the whole triple');
   deepEq(pos(fixed, 'BUF.9F26'), pos(ber, 'BUF.9F26'), 'and agrees with BER on the same bytes');
+  // Contiguous: the next tag starts exactly where this one ends.
+  deepEq(pos(ber, 'BUF.9F36'), [7, 11], 'and the next triple picks up immediately');
 });
 
 // ── read-tlv: BER framing and tag → DDL element mapping ─────────────────────
@@ -5690,15 +5733,15 @@ const TLV_UNMAPPED = [
   { name: 'binary (default encoding)',
     attrs: { field: 'BUF', tag_length: 2, length_length: 1 },
     bytes: TLV_BIN, a: 'BUF.9F26', aHex: '11223344', b: 'BUF.9F36', bHex: '0001',
-    aAt: 3, pos: true },
+    aAt: 0, pos: true },
   { name: 'binary (encoding stated)',
     attrs: { field: 'BUF', tag_length: 2, length_length: 1, encoding: 'binary' },
     bytes: TLV_BIN, a: 'BUF.9F26', aHex: '11223344', b: 'BUF.9F36', bHex: '0001',
-    aAt: 3, pos: true },
+    aAt: 0, pos: true },
   { name: 'ber',
     attrs: { field: 'BUF', ber: true },
     bytes: TLV_BIN, a: 'BUF.9F26', aHex: '11223344', b: 'BUF.9F36', bHex: '0001',
-    aAt: 3, pos: true },
+    aAt: 0, pos: true },
   { name: 'ascii-hex',
     attrs: { field: 'BUF', tag_length: 2, length_length: 1, encoding: 'ascii-hex' },
     bytes: TLV_HEX, a: 'BUF.9F26', aHex: '11223344', b: 'BUF.9F36', bHex: '0001',
@@ -5706,7 +5749,7 @@ const TLV_UNMAPPED = [
   { name: 'ascii',
     attrs: { field: 'BUF', tag_length: 4, length_length: 4, encoding: 'ascii' },
     bytes: TLV_ASC, a: 'BUF.0002', aHex: '48454C4C4F', b: 'BUF.0003', bHex: '56495341',
-    aAt: 8, pos: true, aVal: 'HELLO', bVal: 'VISA' },
+    aAt: 0, pos: true, aVal: 'HELLO', bVal: 'VISA' },
 ];
 for (const c of TLV_UNMAPPED) {
   test(`unmapped ${c.name}: two triples, values and positions`, () => {
@@ -5716,7 +5759,8 @@ for (const c of TLV_UNMAPPED) {
     if (c.aVal) eq(tlvVal(ctx, c.a), c.aVal, `${c.a} text`);
     if (c.bVal) eq(tlvVal(ctx, c.b), c.bVal, `${c.b} text`);
     const fa = ctx.fields.find(f => f.id === c.a);
-    if (c.pos) eq(fa.startByte, c.aAt, `${c.a} starts at the value bytes`);
+    // Starts at its TAG, not at its value: the row covers the whole triple.
+    if (c.pos) eq(fa.startByte, c.aAt, `${c.a} starts at its tag`);
     else assert.ok(fa.startByte == null, 'ascii-hex has no 1:1 byte position');
     eq(ctx.fields.some(f => f.error), false, 'clean parse');
   });

@@ -10535,6 +10535,31 @@ test('the block under the caret is resolved from positions, not from JSON.parse'
     'the innermost enclosing block does not win — a nested read-fixed would report its `when`');
 });
 
+test('opening an attribute leaves it where you clicked it', () => {
+  // Reported: the row expanded but the panel jumped back to the top, so you had
+  // to scroll down and find the attribute you had just opened.
+  const render = psFnSource('_mePsHelpRender');
+  assert.ok(/scrollTop \+=/.test(render), 'the panel scroll is not preserved across a re-render');
+  // Pinning the ROW, not restoring scrollTop: the attribute that closes can sit
+  // above the one that opens, which changes the height above it — a restored
+  // scrollTop would land short by exactly that difference.
+  assert.ok(/getBoundingClientRect\(\)\.top - body\.getBoundingClientRect\(\)\.top/.test(render),
+    'the clicked row is not measured against the panel, so it cannot be pinned');
+  assert.ok(/const to = from && next/.test(render),
+    'a row that was not on screen before is still pinned — switching block would not start at the top');
+
+  assert.ok(/_mePsHelpRender\(`\[data-attr="\$\{name\}"\]`\)/.test(psFnSource('_mePsHelpAttr')),
+    'opening an attribute does not pin its row');
+  // The shared-attribute panel does not exist yet on the click that opens it,
+  // so the chip row is the only thing there is to pin to.
+  assert.ok(/_mePsHelpRender\('\.chips'\)/.test(psFnSource('_mePsHelpCommonToggle')),
+    'toggling a shared attribute does not pin the chip row');
+  // Every other caller is a new document and must start at the top.
+  for (const fn of ['_mePsHelpSelect', '_mePsHelpCatalog', '_mePsHelpFollowCursor'])
+    assert.ok(/_mePsHelpRender\(\);/.test(psFnSource(fn)),
+      `${fn} pins a row, but it is showing a different document`);
+});
+
 test('the reference is resizable on both axes, and nothing it shows is clipped', () => {
   // Reported: the Value column of an example ran off the right edge. Two causes,
   // both fixed here — the column had one fixed width for every block, and a raw

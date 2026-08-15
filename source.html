@@ -15852,7 +15852,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.24.1.0';
+const APP_VERSION  = '1.24.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19333,9 +19333,24 @@ function _mePsHelpHtml() {
     : _mePsHelpCatalogHtml();
 }
 
-function _mePsHelpRender() {
+// Rebuilding the panel's innerHTML throws its scroll away, so opening an
+// attribute used to jump back to the top with the row you clicked somewhere off
+// screen. Pass a selector for the row you clicked and it is pinned instead —
+// left at the same place on screen. Pinning the element rather than restoring
+// scrollTop is what covers the attribute that CLOSES sitting above the one you
+// opened, which changes the height above it. No selector, or a row that was not
+// on screen before, means a new document (another block, the catalogue) and
+// starts at the top.
+function _mePsHelpRender(pin) {
   const el = document.getElementById('me-ps-help');
-  if (el) el.innerHTML = _mePsHelpHtml();
+  if (!el) return;
+  const body = el.querySelector('.help-body');
+  const from = pin && body ? body.querySelector(pin) : null;
+  const was = from && from.getBoundingClientRect().top - body.getBoundingClientRect().top;
+  el.innerHTML = _mePsHelpHtml();
+  const next = el.querySelector('.help-body');
+  const to = from && next ? next.querySelector(pin) : null;
+  if (to) next.scrollTop += (to.getBoundingClientRect().top - next.getBoundingClientRect().top) - was;
 }
 
 function _mePsHelpCatalogHtml() {
@@ -19441,7 +19456,9 @@ function _mePsHelpCatalog() {
 
 function _mePsHelpCommonToggle(name) {
   _mePsHelpCommon = _mePsHelpCommon === name ? null : name;
-  _mePsHelpRender();
+  // The chip row, not the panel that opens under it — the panel does not exist
+  // yet on the click that opens it, so there would be nothing to pin to.
+  _mePsHelpRender('.chips');
 }
 
 // Render JSONC text as static HTML with the same .hl-* token classes the
@@ -19684,7 +19701,7 @@ function _mePsHelpAttr(blk, name) {
   _mePsHelpBlk = blk;
   _mePsHelpView = 'block';
   _mePsHelpAttrOpen = (_mePsHelpAttrOpen === name) ? null : name;
-  _mePsHelpRender();
+  _mePsHelpRender(`[data-attr="${name}"]`);
 }
 
 function _mePsHelpSelect(blk) {

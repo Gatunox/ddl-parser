@@ -10616,6 +10616,15 @@ test('the reference is resizable on both axes, and nothing it shows is clipped',
   assert.ok(/getBoundingClientRect\(\)\.width - _ME_PS_HELP_MIN/.test(init),
     'the reference can be widened until the editor has no width left');
   assert.ok(/startW - dx/.test(init), 'dragging the bar left does not widen the reference');
+  // Reported: at the floor, "declaration" ran out of the catalogue's blurb
+  // column. The floor is that word (68px) still fitting beside the block name:
+  // 12 scrollbar + 24 body padding + 168 name + 8 gap + 16 row padding + 68 = 296.
+  const floor = /const _ME_PS_HELP_MIN\s*=\s*(\d+)/.exec(APP_SRC);
+  assert.ok(floor, '_ME_PS_HELP_MIN is gone');
+  const nameCol = /\.me-ps-help \.blk\{display:grid;grid-template-columns:(\d+)px/.exec(css);
+  assert.ok(nameCol, 'the catalogue row is no longer a fixed name column plus a blurb');
+  assert.ok(Number(floor[1]) >= Number(nameCol[1]) + 128,
+    `a ${nameCol[1]}px name column leaves under 68px for the blurb at a ${floor[1]}px floor`);
 
   // Both bars are one gesture on two axes; the lost-mouseup guard lives once.
   const drag = psFnSource('_mePsDrag');

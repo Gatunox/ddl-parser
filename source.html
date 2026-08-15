@@ -2247,7 +2247,16 @@ input.me-inp{width:100%;}
 .me-ps-split{
   display:grid;grid-template-columns:minmax(0,1fr) 8px minmax(0,var(--ps-help-w,46%));
   grid-template-rows:minmax(0,1fr);
-  height:320px;min-height:180px;max-height:80vh;overflow:hidden;gap:0;align-items:stretch;}
+  min-height:0;max-height:80vh;overflow:hidden;gap:0;align-items:stretch;}
+/* The height belongs to the CONTENT when the reference is closed: a section
+   holding five recognizers should not reserve the height a reference needs.
+   Only the spec editor keeps a standing height, because it is the one pane that
+   scrolls forever and has no natural size to fall back on. */
+.me-hs-fixed{height:320px;min-height:180px;}
+/* Open, the split takes at least the height the reference needs to be readable,
+   whatever the content beside it is. min-height beats an inline height, so a
+   panel dragged short while closed still opens tall enough to read. */
+.me-ps-wrap:not(.nohelp) .me-ps-split{min-height:var(--hs-open-min,320px);}
 .me-ps-wrap.nohelp .me-ps-split{grid-template-columns:minmax(0,1fr);}
 .me-ps-wrap.nohelp .me-ps-help{display:none !important;}
 .me-ps-split-resizer{height:6px;margin:-2px 0 0;cursor:ns-resize;flex-shrink:0;background:transparent;}
@@ -15882,7 +15891,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.0.0';
+const APP_VERSION  = '1.25.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18007,7 +18016,7 @@ function _meHtmlParseSpec(item) {
     </div>
     <button class="btn" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
-  <div class="me-ps-split" id="me-ps-split">
+  <div class="me-ps-split me-hs-fixed" id="me-ps-split">
     <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
     <div class="me-ps-col-resizer" id="me-ps-col-resizer" title="Drag to resize the block reference"></div>
     <div class="me-ps-help${_mePsHelpOpen() ? ' open' : ''}" id="me-ps-help">${_mePsHelpHtml()}</div>
@@ -19513,12 +19522,37 @@ function _meHelpCommonToggle(key, name) {
   _meHelpRender(key, '.chips');
 }
 const _meHelpIsOpen = key => _ME_HELP[key].isOpen;
+// A panel sized by its content has no height of its own to lend the reference.
+// Left on auto the grid row grows to the TALLER column, so opening a 22-entry
+// catalogue made the Recognizers card 963px instead of the reference scrolling
+// inside it. So the height is computed when the reference opens — the content's
+// own height, or the reference's readable minimum, whichever is larger — and
+// dropped again when it closes. A height the user dragged wins over both.
+const _ME_HELP_OPEN_MIN = 320;
+// The pane's OWN height, summed from its children. Asking the pane itself is no
+// use: it is a grid item stretched to the row, and once the reference is beside
+// it the row is as tall as the reference — so the pane reports the number we are
+// trying to replace.
+const _meHelpContentH = main =>
+  main ? [...main.children].reduce((h, c) => h + c.offsetHeight, 0) : 0;
+function _meHelpFitHeight(key) {
+  const p = _ME_HELP[key];
+  const split = document.getElementById(p.splitId);
+  if (!split || split.classList.contains('me-hs-fixed')) return;
+  let saved = null;
+  try { saved = parseInt(localStorage.getItem(`up_${p.storageKey}_split_h`), 10); } catch(e) {}
+  if (Number.isFinite(saved)) return;
+  if (!p.isOpen) { split.style.height = ''; return; }
+  const want = Math.max(_ME_HELP_OPEN_MIN, _meHelpContentH(document.getElementById(p.mainId)));
+  split.style.height = Math.min(want, Math.round(window.innerHeight * 0.8)) + 'px';
+}
 function _meHelpSync(key) {
   const p = _ME_HELP[key];
   const el = document.getElementById(p.id);
   const wrap = document.getElementById(p.wrapId);
   if (el)   el.classList.toggle('open', p.isOpen);
   if (wrap) wrap.classList.toggle('nohelp', !p.isOpen);
+  _meHelpFitHeight(key);
 }
 function _meHelpToggle(key) {
   const p = _ME_HELP[key];
@@ -19547,6 +19581,7 @@ function _meHelpFollowTo(key, id) {
 _meHelpDefine({
   key: 'ps', id: 'me-ps-help', wrapId: 'me-ps-wrap',
   splitId: 'me-ps-split', hRzId: 'me-ps-split-resizer', wRzId: 'me-ps-col-resizer',
+  mainId: 'me-ps-ta-host',
   title: 'Block reference', plural: 'blocks',
   data: _PS_HELP, groups: _PS_GROUPS,
   starter: _mePsStarter,
@@ -20700,6 +20735,7 @@ function _mePsDrag(handle, cursor, begin, done) {
   handle.onmousedown = e => {
     e.preventDefault();
     const x0 = e.clientX, y0 = e.clientY, moveTo = begin();
+    let moved = false;
     handle.classList.add('dragging');
     document.body.style.cursor = cursor;
     document.body.style.userSelect = 'none';
@@ -20708,6 +20744,11 @@ function _mePsDrag(handle, cursor, begin, done) {
       // release the document never saw used to leave the panel following the
       // pointer with no button held.
       if (!(ev.buttons & 1)) return up();
+      // A press that never travels is a click, not a resize. Without this a
+      // stray pixel of movement wrote the CURRENT size to storage, which on a
+      // panel sized by its content silently froze it at whatever it was then.
+      if (!moved && Math.abs(ev.clientX - x0) < 2 && Math.abs(ev.clientY - y0) < 2) return;
+      moved = true;
       moveTo(ev.clientX - x0, ev.clientY - y0);
     };
     const up = () => {
@@ -20716,7 +20757,7 @@ function _mePsDrag(handle, cursor, begin, done) {
       handle.classList.remove('dragging');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      done();
+      if (moved) done();
     };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
@@ -20764,6 +20805,10 @@ function _meHelpInitSplit(key) {
         Math.min(max, Math.max(_ME_PS_HELP_MIN, startW - dx)) + 'px');
     };
   }, () => _mePsSaveSize(wKey, parseInt(split.style.getPropertyValue('--ps-help-w'), 10)));
+
+  // The markup was just rebuilt, so a content-sized panel needs its open height
+  // computed again from the content it now holds.
+  _meHelpFitHeight(key);
 }
 const _mePsInitSplit = () => _meHelpInitSplit('ps');
 
@@ -23208,6 +23253,7 @@ function _meFmHelpExampleHtml(row, i, info) {
 _meHelpDefine({
   key: 'fm', id: 'me-fm-help', wrapId: 'me-fm-wrap',
   splitId: 'me-fm-split', hRzId: 'me-fm-split-resizer', wRzId: 'me-fm-col-resizer',
+  mainId: 'me-fm-pane',
   title: 'Column reference', plural: 'columns',
   data: _FM_HELP, groups: _FM_GROUPS,
   lead: info => info.purpose,
@@ -25122,6 +25168,7 @@ function _meRecHelpExampleHtml(ex, i) {
 _meHelpDefine({
   key: 'rec', id: 'me-rec-help', wrapId: 'me-rec-wrap',
   splitId: 'me-rec-split', hRzId: 'me-rec-split-resizer', wRzId: 'me-rec-col-resizer',
+  mainId: 'me-rec-pane',
   title: 'Recognizer reference', plural: 'recognizers',
   data: _REC_HELP, groups: _REC_GROUPS,
   starter: _mePsStarter,

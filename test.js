@@ -10601,6 +10601,59 @@ test('the Overrides columns document their options, and only claim their own exa
       assert.ok(!/[&<>"']/.test(name), `${col} has an unusable attribute name: ${name}`);
 });
 
+test('a closed reference costs no height, and an open one is tall enough to read', () => {
+  // Reported against the Recognizers panel: five rules in a section reserving a
+  // spec editor's 320px, and the reference squeezed into a height dragged for
+  // the list. Height belongs to the content when the reference is closed.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const split = /\.me-ps-split\{([^}]*)\}/.exec(css);
+  // Anchored: `max-height:80vh` also contains "height:8".
+  assert.ok(split && !/(^|;)\s*height:\s*\d/.test(split[1]),
+    'every split still reserves a standing height, whatever is in it');
+  // The spec editor keeps one: it scrolls forever and has no natural size.
+  assert.ok(/\.me-hs-fixed\{height:320px/.test(css), 'the spec editor lost its standing height');
+  assert.ok(/class="me-ps-split me-hs-fixed" id="me-ps-split"/.test(html),
+    'and it is the spec editor that carries it');
+  for (const id of ['me-rec-split', 'me-fm-split'])
+    assert.ok(!new RegExp(`me-hs-fixed" id="${id}"`).test(html),
+      `${id} reserves a height its content should decide`);
+  // Open, the reference gets a readable minimum. As min-height, so it beats an
+  // inline height dragged while the panel was closed.
+  const open = /\.me-ps-wrap:not\(\.nohelp\) \.me-ps-split\{([^}]*)\}/.exec(css);
+  assert.ok(open && /min-height:var\(--hs-open-min,320px\)/.test(open[1]),
+    'an open reference can still be crushed by a height dragged for the content');
+
+  // A press that never travels must not persist anything. Without the guard a
+  // stray pixel wrote the CURRENT height to storage, which on a content-sized
+  // panel froze it at whatever it happened to be — the auto height, saved as if
+  // it had been chosen.
+  // On auto the grid row grows to the TALLER column, so an open reference made
+  // the card as tall as its own catalogue instead of scrolling inside it. The
+  // open height is computed from the CONTENT beside it, floored at the readable
+  // minimum — and a height the user dragged wins over both.
+  const fit = psFnSource('_meHelpFitHeight');
+  assert.ok(/classList\.contains\('me-hs-fixed'\)\) return/.test(fit),
+    'it also recomputes the panel that has a standing height of its own');
+  assert.ok(/Number\.isFinite\(saved\)\) return/.test(fit), 'a dragged height is overwritten');
+  assert.ok(/if \(!p\.isOpen\) \{ split\.style\.height = ''; return; \}/.test(fit),
+    'closing does not give the height back to the content');
+  assert.ok(/Math\.max\(_ME_HELP_OPEN_MIN, _meHelpContentH\(/.test(fit),
+    'the open height is not taken from the content beside the reference');
+  // Measured from the pane's CHILDREN. The pane itself is a grid item stretched
+  // to the row, and with the reference beside it the row is as tall as the
+  // reference — so asking the pane returns the number being replaced.
+  const contentH = APP_SRC.match(/const _meHelpContentH = ([\s\S]*?);\n/);
+  assert.ok(contentH && /main\.children/.test(contentH[1]) && !/scrollHeight/.test(contentH[1]),
+    'the content height is read off the stretched pane rather than its children');
+  assert.ok(/_meHelpFitHeight\(key\);/.test(psFnSource('_meHelpSync')),
+    'toggling the reference does not resize the split');
+
+  const drag = psFnSource('_mePsDrag');
+  assert.ok(/if \(moved\) done\(\);/.test(drag), 'a click with no drag still persists a size');
+  assert.ok(/Math\.abs\(ev\.clientX - x0\) < 2 && Math\.abs\(ev\.clientY - y0\) < 2\) return/.test(drag),
+    'there is no travel threshold, so one stray pixel counts as a resize');
+});
+
 test('the editor height bar is there whether or not the reference is', () => {
   // The height bar used to be hidden along with the reference, so the editor
   // stopped being resizable for a reason that has nothing to do with it.

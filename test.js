@@ -1499,9 +1499,13 @@ test('the recognizer reference and the Parse Spec reference are the same panel',
   // table, the clickable filter and the description renderer. Sharing the last
   // one is what stops the two drifting into rendering identical data differently.
   const recSel = psFnSource('_meRecHelpSelect');
-  const psSel  = psFnSource('_mePsHelpSelect');
-  for (const cls of ['me-ps-help-atbl', 'me-ps-help-aname', 'me-ps-help-atype',
-                     'me-ps-attr-row', 'me-ps-help-section-title', 'me-ps-help-detail-title']) {
+  const psSel  = psFnSource('_mePsHelpBlockHtml');
+  // The parse-spec panel lists attributes as an ACCORDION now, so the two no
+  // longer share a table — but they must still share the naming, the type and
+  // required/optional treatments, and the description renderer, which is what
+  // stops them rendering identical data two different ways.
+  for (const cls of ['me-ps-help-aname', 'me-ps-help-atype',
+                     'me-ps-help-req', 'me-ps-help-opt']) {
     assert.ok(recSel.includes(cls), `the recognizer panel is missing ${cls}`);
     assert.ok(psSel.includes(cls), `the parse spec panel is missing ${cls}`);
   }
@@ -9168,7 +9172,7 @@ test('each help example is a bounded, numbered card', () => {
   assert.ok(/Example \$\{i \+ 1\}/.test(fn), 'numbered from the render index, not the data');
   // The number must come from the list, or every card reads "Example 1".
   const src = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/shown\.map\(\(ex, i\) => _mePsHelpExampleHtml\(ex, i\)\)/.test(src),
+  assert.ok(/exs\.map\(\(ex, i\) => _mePsHelpExampleHtml\(ex, i\)\)/.test(src),
     'the index is actually passed');
   assert.ok(!/join\('<div style="height:10px"><\/div>'\)/.test(src),
     'the spacer is gone — the card carries its own margin');
@@ -10462,6 +10466,75 @@ const psReadsAttr = (src, name) => new RegExp(
   `|[{,]\\s*${name}\\s*[,}]`              // const { name, … } = …
 ).test(src);
 
+// ── Block reference: catalogue, block view, cursor following ───────────────
+console.log('\nblock reference — grouped catalogue, one block at a time');
+
+test('every block is in the catalogue exactly once', () => {
+  // The catalogue is hand-grouped by what you are trying to do, so it cannot be
+  // derived — which means it can fall behind the implementation. A block missing
+  // from it is unreachable except by cursor, and one listed twice is a taxonomy
+  // that has stopped meaning anything.
+  const g = /const _PS_GROUPS = \[([\s\S]*?)\n\];/.exec(APP_SRC);
+  assert.ok(g, '_PS_GROUPS is gone');
+  const listed = [...g[1].matchAll(/\['([a-z-]+)',/g)].map(m => m[1]);
+  const impl = Object.keys(psHelp).sort();
+  deepEq([...listed].sort(), impl, 'catalogue and implementation disagree');
+  deepEq(listed.filter((x, i) => listed.indexOf(x) !== i), [], 'blocks listed more than once');
+});
+
+test('the block view is built from the entry, not a second set of summaries', () => {
+  // A lead sentence kept separately from the description can disagree with it.
+  // These derive, so they cannot.
+  // Anchored to the START of the expression: `'A block.' || info.desc` still
+  // mentions info.desc, and would have passed a substring check.
+  assert.ok(/const _mePsLead = info => Array\.isArray\(info\.desc\)/.test(APP_SRC),
+    'the lead is not taken straight from the description');
+  const starter = APP_SRC.match(/const _mePsStarter = ([^\n]*)/);
+  assert.ok(starter && /info\.examples/.test(starter[1]), 'the starter is not taken from the examples');
+  // Per-attribute examples go through the same filter the old "show only the
+  // examples using X" used, so an attribute cannot claim one it does not appear in.
+  const forAttr = APP_SRC.match(/const _mePsExamplesFor = ([\s\S]*?);\n/);
+  assert.ok(forAttr && /_mePsHelpExAttrs/.test(forAttr[1]),
+    'per-attribute examples are not filtered by what the example actually uses');
+  const blockHtml = psFnSource('_mePsHelpBlockHtml');
+  assert.ok(/_mePsExamplesFor\(info, name\)/.test(blockHtml), 'the accordion does not filter examples');
+  assert.ok(/const exs = open \?/.test(blockHtml),
+    'examples are built for every attribute, open or not — the dump this replaced');
+});
+
+test('one attribute is open at a time', () => {
+  const fn = psFnSource('_mePsHelpAttr');
+  assert.ok(/_mePsHelpAttrOpen === name\) \? null : name/.test(fn),
+    'opening an attribute does not close the previous one, or cannot be closed again');
+});
+
+test('the reference follows the caret, and knows when not to', () => {
+  const fn = psFnSource('_mePsHelpFollowCursor');
+  assert.ok(/if \(!_mePsHelpIsOpen\) return/.test(fn), 'it re-renders a help panel that is closed');
+  assert.ok(/_mePsHelpView === 'catalog'\) return/.test(fn),
+    'browsing the catalogue would be interrupted by the caret moving');
+  assert.ok(/blk === _mePsHelpBlk\) return/.test(fn),
+    'it re-renders on every keystroke inside the same block');
+  // Wired to selection changes, not only edits — moving the caret is the
+  // gesture. Scoped to the parse-spec editor: another editor carrying the same
+  // line would have satisfied a whole-file search.
+  const mount = psFnSource('_mePsMountCM');
+  assert.ok(/u\.docChanged \|\| u\.selectionSet\) _mePsHelpFollowCursor/.test(mount),
+    'the parse-spec editor does not report caret moves to the reference');
+});
+
+test('the block under the caret is resolved from positions, not from JSON.parse', () => {
+  // JSON.parse gives the structure and throws the positions away, and a second
+  // hand-written scanner is the two-implementations-of-one-fact trap that caused
+  // the byte-map bugs. This reuses the tokenizer's mask — which is also why it
+  // still answers while the spec is mid-edit and does not parse.
+  const fn = psFnSource('_mePsBlockAt');
+  assert.ok(/_mePsMaskedPositions\(text\)/.test(fn), 'it does not reuse the tokenizer mask');
+  assert.ok(!/JSON\.parse/.test(fn), 'it parses the spec a second time');
+  assert.ok(/best === null/.test(fn),
+    'the innermost enclosing block does not win — a nested read-fixed would report its `when`');
+});
+
 test('every OPTIONAL attribute says what happens when it is omitted', () => {
   // Reported: the reference described what each attribute DOES and left its
   // absence to be inferred — readable only if you already knew. It affected
@@ -10502,7 +10575,7 @@ test('an attribute type lists its accepted values one per line', () => {
   for (const ch of ['{', '[']) assert.ok(fn.includes(`'${ch}'`), `depth does not track ${ch}`);
   // And the row actually uses it — checking the helper alone passes with the
   // type cell reverted to printing the raw string.
-  assert.ok(/me-ps-help-atype">\$\{_meHelpTypeHtml\(type\)\}/.test(psFnSource('_mePsHelpSelect')),
+  assert.ok(/me-ps-help-atype">\$\{_meHelpTypeHtml\(type\)\}/.test(psFnSource('_mePsHelpBlockHtml')),
     'the type cell prints the raw string instead of the value list');
 });
 
@@ -10536,7 +10609,7 @@ test('a default is only claimed for an attribute that exists', () => {
 });
 
 test('the generated line stands down where the description already says it', () => {
-  const src = psFnSource('_mePsHelpSelect');
+  const src = psFnSource('_mePsHelpBlockHtml');
   assert.ok(/_meDescStatesOmitted\(desc\)/.test(src),
     'the row builder does not check whether the description already states omission');
   const det = psFnSource('_meDescStatesOmitted');
@@ -10546,7 +10619,7 @@ test('the generated line stands down where the description already says it', () 
 
 test('the reference actually renders the defaults it stores', () => {
   // Storing them and not showing them would be the same gap with more code.
-  const src = psFnSource('_mePsHelpSelect');
+  const src = psFnSource('_mePsHelpBlockHtml');
   assert.ok(/info\.dflts && info\.dflts\[name\]/.test(src) && /_PS_COMMON_DFLTS\[name\]/.test(src),
     'the detail view does not read the stored defaults');
   assert.ok(/Omitted:/.test(src), 'the default is not built into a row at all');
@@ -10561,7 +10634,7 @@ test('the reference actually renders the defaults it stores', () => {
   assert.ok(/const tail = extra \|\| ''/.test(desc), 'the description renderer ignores the default');
   assert.ok(/!placed && tail/.test(desc), 'the default is not placed with the lead line');
   // …and only for optional ones: "omitted" is meaningless on a required attribute.
-  assert.ok(/const d = \(req \|\| _meDescStatesOmitted\(desc\)\) \? null :/.test(src),
+  assert.ok(/\(req \|\| _meDescStatesOmitted\(desc\)\) \? null/.test(src),
     'a required attribute — or one whose description already says it — would still be given a generated line');
 });
 

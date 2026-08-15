@@ -2235,6 +2235,64 @@ input.me-inp{width:100%;}
 .me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
 .me-ps-lint{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--warning);}
 .me-ps-lint-row{padding:1px 0;}
+/* The reference sits BESIDE the spec. It used to open between the toolbar and
+   the editor, pushing the editor down the page every time it was opened — so
+   reading the reference and reading the spec it describes were mutually
+   exclusive. The split has a fixed height with a drag bar under it: the help
+   scrolls inside that height, so opening it never makes the card taller. */
+.me-ps-split{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,42%);
+  grid-template-rows:minmax(0,1fr);
+  height:320px;min-height:180px;max-height:80vh;overflow:hidden;gap:8px;align-items:stretch;}
+.me-ps-wrap.nohelp .me-ps-split{grid-template-columns:minmax(0,1fr);}
+.me-ps-wrap.nohelp .me-ps-help{display:none !important;}
+.me-ps-split-resizer{height:6px;margin:-2px 0 0;cursor:ns-resize;flex-shrink:0;background:transparent;}
+.me-ps-split-resizer:hover,.me-ps-split-resizer.dragging{background:rgba(var(--accent-rgb),0.45);}
+.me-ps-wrap.nohelp .me-ps-split-resizer{display:none;}
+.me-ps-split .me-ps-cm{min-height:0 !important;min-width:0;height:auto;overflow:auto;grid-column:1;grid-row:1;}
+.me-ps-split .me-ps-help.open{
+  min-height:0;min-width:0;height:auto;overflow:hidden;padding:0;
+  display:flex;flex-direction:column;grid-column:2;grid-row:1;}
+/* The help's own chrome, all inside that scrolling column. */
+.me-ps-help .help-hd{display:flex;align-items:center;gap:8px;padding:6px 10px;
+  background:var(--surface-header);border-bottom: var(--bw) solid var(--border);flex-shrink:0;}
+.me-ps-help .help-hd b{font-weight:700;flex:1;}
+.me-ps-help .follow{display:flex;align-items:center;gap:8px;padding:6px 10px;
+  background:rgba(var(--accent-rgb),0.08);border-bottom: var(--bw) solid var(--border);
+  color:var(--text-dim);flex-shrink:0;}
+.me-ps-help .follow strong{color:var(--text);font-weight:700;}
+.me-ps-help .help-body{padding:10px 12px;flex:1 1 0%;min-height:0;min-width:0;
+  overflow-x:hidden;overflow-y:auto;}
+.me-ps-help .crumb{color:var(--text-very-dim);margin-bottom:8px;}
+.me-ps-help .crumb button{border:0;background:none;color:var(--accent);padding:0;font:inherit;cursor:pointer;}
+.me-ps-help .lead{font-size:12px;font-weight:700;color:var(--text);margin:0 0 6px;line-height:1.4;}
+.me-ps-help .g-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--text-very-dim);margin:12px 0 6px;}
+.me-ps-help .g-label:first-child{margin-top:0;}
+.me-ps-help .blk{display:grid;grid-template-columns:168px 1fr;gap:8px;align-items:baseline;
+  padding:6px 8px;border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);
+  background:var(--bg-panel);cursor:pointer;margin-bottom:4px;}
+.me-ps-help .blk:hover{background:var(--surface-hover);}
+.me-ps-help .blk.on{border-color:var(--accent);background:rgba(var(--accent-rgb),0.08);}
+.me-ps-help .blk code{color:var(--accent);}
+.me-ps-help .blk span{color:var(--text-dim);}
+.me-ps-help .need{font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--text-very-dim);margin:12px 0 6px;}
+/* One attribute at a time. The table showed fifteen at once and every example
+   under them, which is why the reference had to be scrolled past to reach the
+   spec it describes. */
+.me-ps-help .attr{border: var(--bw) solid var(--border);border-radius:var(--r-sm);
+  background:var(--bg-panel);margin-bottom:6px;overflow:hidden;}
+.me-ps-help .attr-h{display:flex;align-items:center;gap:8px;padding:7px 9px;cursor:pointer;}
+.me-ps-help .attr-h:hover{background:var(--surface-hover);}
+.me-ps-help .attr.open .attr-h{border-bottom: var(--bw) solid var(--border);
+  background:rgba(var(--accent-rgb),0.06);}
+.me-ps-help .attr-b{display:none;padding:8px 10px 10px;color:var(--text-dim);line-height:1.5;}
+.me-ps-help .attr.open .attr-b{display:block;}
+.me-ps-help .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+.me-ps-help .chip{border: var(--bw-ctl) solid var(--border);background:var(--surface-raised);
+  color:var(--text-dim);border-radius:999px;padding:3px 10px;font:inherit;cursor:pointer;}
+.me-ps-help .chip:hover,.me-ps-help .chip.on{color:var(--accent);border-color:var(--accent);}
 .me-ps-help{background:var(--bg-deep);border: var(--bw) solid var(--border);border-radius:var(--r-sm);padding:10px 12px;display:none;flex-direction:column;gap:8px;}
 .me-ps-help.open{display:flex;}
 /* Worked-example blocks: payload bytes, the spec, and what the engine produced. */
@@ -15785,7 +15843,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.23.1.3';
+const APP_VERSION  = '1.24.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17885,7 +17943,11 @@ function _meHtmlParseSpec(item) {
   const ascCount = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii.length  : 0;
   const binCls = variant === 'binary' ? 'on' : (binCount > 0 ? 'in-use' : '');
   const ascCls = variant === 'ascii'  ? 'on' : (ascCount > 0 ? 'in-use' : '');
-  return `<div class="me-ps-wrap">
+  // `side` puts the help BESIDE the editor instead of between the toolbar and
+  // it, where it used to push the editor down the page every time it opened.
+  // `nohelp` collapses the split back to one column so the editor is full width
+  // when the reference is closed.
+  return `<div class="me-ps-wrap side${_mePsHelpOpen() ? '' : ' nohelp'}" id="me-ps-wrap">
   <div class="me-ps-toolbar">
     <div class="me-ps-variants" id="me-ps-variants">
       <button class="me-ps-variant-tgl ${binCls}" data-variant="binary" onclick="_mePsSwitchVariant('binary')" title="Binary Input — the default variant; used for hex / tandem-dump / ebcdic / netard-hex / etc.">Binary <span class="me-ps-vtgl-n">(${binCount})</span></button>
@@ -17898,8 +17960,11 @@ function _meHtmlParseSpec(item) {
     </div>
     <button class="btn" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
-  <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
-  <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
+  <div class="me-ps-split" id="me-ps-split">
+    <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
+    <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
+  </div>
+  <div class="me-ps-split-resizer" id="me-ps-split-resizer" title="Drag to resize the spec editor"></div>
   <div id="me-ps-err" class="me-ps-err"></div>
   <div id="me-ps-lint" class="me-ps-lint"></div>
 </div>`;
@@ -17938,9 +18003,21 @@ function _mePsRefreshVariantLabels(item) {
   });
 }
 
+// Open state lives on the editor state, not only as a class on the element:
+// the WRAPPER has to know too, so the split can collapse to one column when the
+// reference is closed. Two elements reading one fact.
+let _mePsHelpIsOpen = false;
+const _mePsHelpOpen = () => _mePsHelpIsOpen;
+function _mePsSyncHelpOpen() {
+  const el   = document.getElementById('me-ps-help');
+  const wrap = document.getElementById('me-ps-wrap');
+  if (el)   el.classList.toggle('open', _mePsHelpIsOpen);
+  if (wrap) wrap.classList.toggle('nohelp', !_mePsHelpIsOpen);
+}
 function _mePsToggleHelp() {
-  const el = document.getElementById('me-ps-help');
-  if (el) el.classList.toggle('open');
+  _mePsHelpIsOpen = !_mePsHelpIsOpen;
+  _mePsSyncHelpOpen();
+  if (_mePsHelpIsOpen) _mePsHelpRender();
 }
 
 // Understood by EVERY block, like at/peek — resolved once in the dispatcher, so
@@ -18005,6 +18082,52 @@ const _PS_VLG_IDENTIFIER_DESC = [
   'Flagging a group by hand in the Overrides panel still wins over all three. This attribute governs the <i>guess</i>, not your explicit choice.',
 ];
 
+
+// The block catalogue, grouped by what you are trying to DO. An alphabetical
+// list of fifteen names answers "what is this block called"; nobody opens the
+// reference with that question. Every block appears exactly once — a test keeps
+// the grouping and the implementation in step.
+const _PS_GROUPS = [
+  { name: 'Walk the DDL', items: [
+    ['read-ddl',            'Walk bound fields in declaration order'],
+    ['read',                'One field, or a from/until window'],
+  ]},
+  { name: 'Read raw bytes', items: [
+    ['read-fixed',          'N bytes, no DDL'],
+    ['read-until',          'Until a sentinel or end of message'],
+    ['read-length-prefix',  'A length, then that many bytes'],
+    ['read-to-end',         'Whatever is left'],
+    ['skip',                'Advance the cursor, emit nothing'],
+  ]},
+  { name: 'Maps & nested', items: [
+    ['read-bitmap',         'Wire bitmap, or a declared segment map'],
+    ['read-bitmap-fields',  'The DEs a bitmap marks present'],
+    ['read-segment-fields', 'Only the segments the map sets'],
+    ['read-tlv',            'A tag-length-value buffer'],
+  ]},
+  { name: 'Control', items: [
+    ['when',                'Branch on a field already read'],
+    ['repeat',              'Loop N times from a count'],
+    ['read-while',          'Loop while a guard matches'],
+  ]},
+  { name: 'Tokens', items: [
+    ['token-area',          'Cherry-pick the 2-byte-prefixed tokens'],
+  ]},
+];
+
+// The block view is assembled from the help entry that already exists rather
+// than from a second set of hand-written summaries. A lead sentence that can
+// disagree with the description below it is worse than no lead sentence.
+const _mePsLead = info => Array.isArray(info.desc) ? info.desc[0] : String(info.desc).split('. ')[0] + '.';
+const _mePsRest = info => Array.isArray(info.desc) ? info.desc.slice(1) : [];
+// The starter is the first example unless the entry names another: the first is
+// usually the simplest, but not always the one to copy first.
+const _mePsStarter = info => info.examples[info.starter || 0] || info.examples[0];
+// Which examples use an attribute — the same filter the old "show only the
+// examples that use X" used, so an attribute cannot claim an example it does
+// not appear in.
+const _mePsExamplesFor = (info, attr) =>
+  info.examples.filter(ex => _mePsHelpExAttrs(ex).has(attr));
 
 const _PS_HELP = {
   'read-ddl': {
@@ -19182,23 +19305,133 @@ const _PS_HELP = {
   },
 };
 
+// ── The block reference ─────────────────────────────────────────────────────
+// Two views. The CATALOGUE is every block grouped by what you are trying to do;
+// the BLOCK view is one block, opened to the attribute you are asking about.
+// It used to be a fifteen-row index above a detail pane that printed every
+// attribute and every example at once, which is a lot to scroll past to reach
+// the one line you came for.
+let _mePsHelpView   = 'catalog';   // 'catalog' | 'block'
+let _mePsHelpBlk    = null;        // which block the block view is showing
+let _mePsHelpAttrOpen = null;      // which attribute's accordion is open
+let _mePsHelpCommon = null;        // which shared-attribute chip is expanded
+let _mePsHelpFollow = null;        // block the cursor is inside, or null
+
 function _mePsHelpHtml() {
-  const rows = Object.entries(_PS_HELP)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([blk, info]) => {
-    const firstAttr = info.attrs.length ? info.attrs.map(a => a[0]).slice(0, 3).join(', ') : '(none)';
-    // A description may be one paragraph, or a lead sentence followed by lines.
-    // Either way the index row shows only the lead.
-    const lead = Array.isArray(info.desc) ? info.desc[0] : info.desc.split('.')[0];
-    return `<tr onclick="_mePsHelpSelect('${blk}')" data-blk="${blk}">` +
-      `<td class="me-ps-help-block">${blk}</td>` +
-      `<td>${lead}</td>` +
-      `<td class="me-ps-help-dim">${firstAttr}</td></tr>`;
-  });
-  const thead = '<tr><th>Block</th><th>Purpose</th><th>Attributes</th></tr>';
-  return `<div class="me-ps-help-tbl-wrap"><table class="me-ps-help-table">` +
-    `<thead>${thead}</thead><tbody>${rows.join('')}</tbody></table></div>` +
-    `<div class="me-ps-help-detail" id="me-ps-help-detail"></div>`;
+  return _mePsHelpView === 'block' && _PS_HELP[_mePsHelpBlk]
+    ? _mePsHelpBlockHtml(_mePsHelpBlk)
+    : _mePsHelpCatalogHtml();
+}
+
+function _mePsHelpRender() {
+  const el = document.getElementById('me-ps-help');
+  if (el) el.innerHTML = _mePsHelpHtml();
+}
+
+function _mePsHelpCatalogHtml() {
+  const groups = _PS_GROUPS.map(g =>
+    `<div class="g-label">${g.name}</div>` +
+    g.items.map(([id, blurb]) =>
+      `<div class="blk${id === _mePsHelpBlk ? ' on' : ''}" onclick="_mePsHelpSelect('${id}')">` +
+      `<code>${id}</code><span>${blurb}</span></div>`).join('')
+  ).join('');
+  return `<div class="help-hd"><b>Block reference</b>` +
+    `<button class="btn" onclick="_mePsToggleHelp()" title="Close">&#x2715;</button></div>` +
+    `<div class="help-body">${groups}</div>`;
+}
+
+function _mePsHelpBlockHtml(blk) {
+  const info = _PS_HELP[blk];
+  const starter = _mePsStarter(info);
+  const rest = _mePsRest(info);
+  const attrs = info.attrs.map(([name, type, req, desc]) => {
+    const open = _mePsHelpAttrOpen === name;
+    const d = (req || _meDescStatesOmitted(desc)) ? null
+            : ((info.dflts && info.dflts[name]) || _PS_COMMON_DFLTS[name] || null);
+    const dHtml = d ? `<span class="me-ps-help-dflt"><b>Omitted:</b> ${d}</span>` : '';
+    // Only this attribute's examples, and only while it is open — the point of
+    // opening an attribute is to see it in use, not to re-read the block.
+    const exs = open ? _mePsExamplesFor(info, name) : [];
+    return `<div class="attr${open ? ' open' : ''}" data-attr="${name}">` +
+      `<div class="attr-h" onclick="_mePsHelpAttr('${blk}','${name}')">` +
+        `<code class="me-ps-help-aname">${name}</code>` +
+        `<span class="me-ps-help-atype">${_meHelpTypeHtml(type)}</span>` +
+        `<span style="margin-left:auto" class="${req ? 'me-ps-help-req' : 'me-ps-help-opt'}">` +
+        `${req ? 'required' : 'optional'}</span></div>` +
+      `<div class="attr-b">${_meHelpDescHtml(desc, dHtml)}` +
+        (open && exs.length
+          ? `<div class="need">Example${exs.length > 1 ? 's' : ''} using ${name}</div>` +
+            exs.map((ex, i) => _mePsHelpExampleHtml(ex, i)).join('')
+          : open
+          ? `<div class="me-ps-help-dim" style="margin-top:8px">No example uses this on its own — see the starter above.</div>`
+          : '') +
+      `</div></div>`;
+  }).join('');
+  const chips = _PS_COMMON_ATTRS.map(([name]) =>
+    `<button class="chip${_mePsHelpCommon === name ? ' on' : ''}" ` +
+    `onclick="_mePsHelpCommonToggle('${name}')">${name}</button>`).join('');
+  const commonSlot = _mePsHelpCommon
+    ? _mePsHelpCommonHtml(_mePsHelpCommon) : '';
+  const follow = _mePsHelpFollow === blk
+    ? `<div class="follow">Cursor is on <strong>${blk}</strong> — showing that block.</div>` : '';
+  return `<div class="help-hd"><b>Block reference</b>` +
+      `<button class="btn" onclick="_mePsHelpCatalog()">All blocks</button>` +
+      `<button class="btn" onclick="_mePsToggleHelp()" title="Close">&#x2715;</button></div>` +
+    follow +
+    `<div class="help-body">` +
+      `<div class="crumb"><button onclick="_mePsHelpCatalog()">All blocks</button> / ${blk}</div>` +
+      `<p class="lead">${_mePsLead(info)}</p>` +
+      (rest.length ? `<ul class="me-ps-help-ul">${rest.map(x => `<li>${x}</li>`).join('')}</ul>` : '') +
+      (info.useWhen && info.useWhen.length
+        ? `<div class="need">Use when</div><ul class="me-ps-help-ul">` +
+          info.useWhen.map(x => `<li>${x}</li>`).join('') + `</ul>` : '') +
+      (starter ? `<div class="need">Start with this</div>${_mePsHelpExampleHtml(starter, 0)}` : '') +
+      `<div class="need">Attributes — click one</div>${attrs || '<p class="me-ps-help-dim">No attributes.</p>'}` +
+      `<div class="need">On every block</div><div class="chips">${chips}</div>${commonSlot}` +
+    `</div>`;
+}
+
+// A shared attribute shown against the block you are already reading, so `at`
+// is demonstrated on THIS block rather than on one picked for the manual.
+function _mePsHelpCommonHtml(name) {
+  const [, type, , desc] = _PS_COMMON_ATTRS.find(a => a[0] === name);
+  const d = _PS_COMMON_DFLTS[name];
+  const dHtml = (d && !_meDescStatesOmitted(desc))
+    ? `<span class="me-ps-help-dflt"><b>Omitted:</b> ${d}</span>` : '';
+  return `<div class="attr open" data-attr="${name}" style="margin-top:8px">` +
+    `<div class="attr-h"><code class="me-ps-help-aname">${name}</code>` +
+    `<span class="me-ps-help-atype">${_meHelpTypeHtml(type)}</span>` +
+    `<span style="margin-left:auto" class="me-ps-help-opt">optional</span></div>` +
+    `<div class="attr-b">${_meHelpDescHtml(desc, dHtml)}` +
+    `<div class="me-ps-help-dim" style="margin-top:8px">Understood by every block — ` +
+    `resolved before the block runs, so this reads the same on any of them.</div></div></div>`;
+}
+
+// The reference follows the caret. Only when the block actually CHANGES, and
+// never while the catalogue is open or an attribute is being read — moving the
+// help out from under someone mid-sentence is worse than not following at all.
+function _mePsHelpFollowCursor(state) {
+  if (!_mePsHelpIsOpen) return;
+  const pos = state.selection.main.head;
+  const blk = _mePsBlockAt(state.doc.toString(), pos);
+  if (!blk || blk === _mePsHelpFollow) return;
+  _mePsHelpFollow = blk;
+  if (_mePsHelpView === 'catalog') return;   // browsing the list — leave it alone
+  if (blk === _mePsHelpBlk) return;
+  _mePsHelpBlk = blk;
+  _mePsHelpAttrOpen = null;
+  _mePsHelpRender();
+}
+
+function _mePsHelpCatalog() {
+  _mePsHelpView = 'catalog';
+  _mePsHelpAttrOpen = null;
+  _mePsHelpRender();
+}
+
+function _mePsHelpCommonToggle(name) {
+  _mePsHelpCommon = _mePsHelpCommon === name ? null : name;
+  _mePsHelpRender();
 }
 
 // Render JSONC text as static HTML with the same .hl-* token classes the
@@ -19435,107 +19668,23 @@ function _meHelpDescHtml(d, extra) {
     `<li>${x}${(i === 0 && tail) ? ' ' + tail : ''}</li>`).join('')}</ul>`;
 }
 
-// Selecting an attribute narrows the examples to the ones that use it.
-let _mePsHelpAttrSel = null;
+// Opening an attribute shows that attribute's examples and closes the previous
+// one — one at a time is the whole point of the accordion.
 function _mePsHelpAttr(blk, name) {
-  _mePsHelpAttrSel = (_mePsHelpAttrSel === name) ? null : name;
-  _mePsHelpSelect(blk);
+  _mePsHelpBlk = blk;
+  _mePsHelpView = 'block';
+  _mePsHelpAttrOpen = (_mePsHelpAttrOpen === name) ? null : name;
+  _mePsHelpRender();
 }
 
 function _mePsHelpSelect(blk) {
-  const info = _PS_HELP[blk];
-  const det  = document.getElementById('me-ps-help-detail');
-  if (!info || !det) return;
-  // highlight row
-  document.querySelectorAll('#me-ps-help .me-ps-help-table tbody tr').forEach(tr =>
-    tr.classList.toggle('me-ps-sel', tr.dataset.blk === blk)
-  );
-  // build attr table — every block also accepts the positioning attributes, so
-  // they are appended here rather than repeated fifteen times in _PS_HELP.
-  // A description may be a string (legacy) or an array of short lines. The array
-  // form renders as bullets — one dense paragraph per attribute was the single
-  // biggest reason this panel was hard to read.
-  // Three description shapes, in rising structure:
-  //   'text'                  — legacy single paragraph
-  //   ['line', 'line']        — short bullets
-  //   [['form', 'meaning']]   — a form-by-form table, for attributes like `at`
-  //                             that accept several shapes with different rules
-  // An optional attribute is only half-documented while it says what it DOES
-  // and leaves what happens without it to be inferred. Every one carries its
-  // default, shown under the description rather than in a column of its own —
-  // it is a sentence, not a value, for most of them.
-  const dfltOf = name => (info.dflts && info.dflts[name]) || _PS_COMMON_DFLTS[name] || null;
-  const attrRows = info.attrs.concat(_PS_COMMON_ATTRS).map(([name, type, req, desc]) => {
-    const sel = _mePsHelpAttrSel === name ? ' me-ps-sel' : '';
-    // Not when the description already carries an `omitted` row: the generated
-    // line then said the same thing a second time, one line above the row that
-    // says it properly. Reported on `at`, where it appeared three times over —
-    // the lead sentence, the generated line, and the row.
-    const d = (req || _meDescStatesOmitted(desc)) ? null : dfltOf(name);
-    const dHtml = d ? `<span class="me-ps-help-dflt"><b>Omitted:</b> ${d}</span>` : '';
-    return `<tr class="me-ps-attr-row${sel}" data-attr="${name}"` +
-    ` onclick="_mePsHelpAttr('${blk}','${name}')" title="Show only the examples that use ${name}">` +
-    `<td class="me-ps-help-aname">${name}</td>` +
-    `<td class="me-ps-help-atype">${_meHelpTypeHtml(type)}</td>` +
-    `<td>${req ? '<span class="me-ps-help-req">required</span>' : '<span class="me-ps-help-opt">optional</span>'}</td>` +
-    `<td>${_meHelpDescHtml(desc, dHtml)}</td></tr>`;
-  }).join('');
-  const attrTbl = info.attrs.length
-    ? `<table class="me-ps-help-atbl"><thead><tr><th>Attribute</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${attrRows}</tbody></table>`
-    : `<p class="me-ps-help-dim" style="margin:0 0 8px">No attributes.</p>`;
-  // build examples — JSONC text rendered via the same tokenizer the editor uses
-  // With an attribute selected, show only the examples that actually use it \u2014
-  // the point of clicking an attribute is to see it in use, not to re-read every
-  // example the block has.
-  let shown = _mePsHelpAttrSel
-    ? info.examples.filter(ex => _mePsHelpExAttrs(ex).has(_mePsHelpAttrSel))
-    : info.examples;
-  // Fall back to the shared positioning examples — they apply to every block.
-  // They are written with read-fixed, so SAY SO: otherwise a user reading them
-  // under token-area sees a read-fixed block with no explanation of why.
-  let sharedNote = '';
-  if (_mePsHelpAttrSel && !shown.length) {
-    shown = _PS_COMMON_EXAMPLES.filter(ex => _mePsHelpExAttrs(ex).has(_mePsHelpAttrSel));
-    if (shown.length) sharedNote =
-      `<div class="me-ps-help-shared"><b>${_mePsHelpAttrSel}</b> behaves identically on every block,`
-      + ` including <b>${blk}</b> — it is resolved before the block runs, so there is nothing`
-      + ` block-specific to show. The examples below use <code>read-fixed</code> because it is the`
-      + ` shortest block to demonstrate a position with; substitute <code>${blk}</code> and the`
-      + ` positioning is the same.</div>`;
-  }
-  const exHead = _mePsHelpAttrSel
-    ? `<div class="me-ps-help-section-title">Examples using <span class="me-ps-help-aname">${_mePsHelpAttrSel}</span>`
-      + ` <button class="btn" onclick="_mePsHelpAttr('${blk}','${_mePsHelpAttrSel}')">show all</button></div>`
-    : '';
-  const exHtml = exHead + sharedNote + (shown.length
-    // No spacer div: each example is a card now and carries its own margin.
-    ? shown.map((ex, i) => _mePsHelpExampleHtml(ex, i)).join('')
-    : `<div class="me-ps-help-dim">No example uses <b>${_mePsHelpAttrSel}</b> yet.</div>`);
-  // "Use when" guidance list — appears between description and attributes.
-  const guidanceHtml = Array.isArray(info.useWhen) && info.useWhen.length
-    ? `<div class="me-ps-help-section">
-         <div class="me-ps-help-section-title">Use when</div>
-         <ul class="me-ps-help-ul">${info.useWhen.map(b => `<li>${b}</li>`).join('')}</ul>
-       </div>`
-    : '';
-  // The lead sentence stays prose; anything after it becomes bullets. The three
-  // bitmap blocks each had a 900-character paragraph, which nobody read.
-  const descBody = Array.isArray(info.desc)
-    ? `${info.desc[0]}<ul class="me-ps-help-ul">${info.desc.slice(1).map(x => `<li>${x}</li>`).join('')}</ul>`
-    : info.desc;
-  det.innerHTML =
-    `<div class="me-ps-help-detail-title">${blk}</div>` +
-    `<div class="me-ps-help-detail-desc">${descBody}</div>` +
-    guidanceHtml + attrTbl + exHtml;
-  det.classList.add('open');
+  if (!_PS_HELP[blk]) return;
+  _mePsHelpBlk = blk;
+  _mePsHelpView = 'block';
+  _mePsHelpAttrOpen = null;
+  _mePsHelpCommon = null;
+  _mePsHelpRender();
 }
-
-// ── JSONC preprocessor ─────────────────────────────────────────────────────
-// Accepts JSON with // line comments, /* block */ comments, and trailing
-// commas before } or ]. Walks the source character by character so // or
-// /* sequences inside JSON string literals are NOT treated as comments.
-// Returns plain JSON-parseable text. Storage stays canonical JSON; the raw
-// source (with comments) lives on item.parse_spec_source for round-trip.
 function _stripJsonc(src) {
   let out = '';
   let i = 0;
@@ -20229,6 +20378,59 @@ function _mePsMaskedPositions(text) {
   return masked;
 }
 
+// Which block the caret is inside, by NAME. The spec is an array of one-key
+// objects, so the answer is: find the top-level element containing `pos`, then
+// read its first key.
+//
+// This reuses the tokenizer's mask rather than parsing the JSONC a second time —
+// JSON.parse would give the structure but throws the positions away, and a
+// second hand-written scanner is exactly the two-implementations-of-one-fact
+// trap that produced the byte-map bugs. It is also why an INVALID spec still
+// resolves: the mask does not require the document to parse.
+function _mePsBlockAt(text, pos) {
+  const masked = _mePsMaskedPositions(text);
+  const open = [];          // stack of unclosed `{` offsets
+  let best = null;          // innermost block object containing pos
+  const consider = (from, to) => {
+    if (pos < from || pos > to) return;
+    const key = _mePsFirstKey(text, from, to, masked);
+    // Innermost wins: a read-fixed inside a when's `then` is the block being
+    // edited, and answering "when" there would describe the wrong thing.
+    // An inner brace CLOSES first, so the first hit is the innermost — the
+    // enclosing blocks come later and must not overwrite it.
+    if (key && best === null) best = key;
+  };
+  for (let i = 0; i < text.length; i++) {
+    if (masked[i]) continue;
+    const c = text[i];
+    if (c === '{') open.push(i);
+    else if (c === '}') {
+      const from = open.pop();
+      if (from !== undefined) consider(from, i);
+    }
+  }
+  // Whatever is still open is a block being typed — unterminated, but the caret
+  // is in it, and this is exactly when the reference is most wanted. Innermost
+  // first, to match the rule above.
+  for (let k = open.length - 1; k >= 0; k--) consider(open[k], text.length);
+  return best;
+}
+
+// The first quoted key inside [from,to). The block's type is its only key at
+// that level, and a nested key cannot come first.
+function _mePsFirstKey(text, from, to, masked) {
+  for (let i = from; i < to; i++) {
+    if (text[i] !== '"') continue;
+    // A quote at a masked position is the string's own opening quote — the mask
+    // covers the token, so step in from it rather than skipping it.
+    let j = i + 1;
+    while (j < to && text[j] !== '"') { if (text[j] === '\\') j++; j++; }
+    const key = text.slice(i + 1, j);
+    return _PS_HELP[key] ? key : null;
+  }
+  return null;
+}
+
 // The bracket at `pos` (or immediately before it, so it works on either side of
 // one) and its partner. Returns null when there is no bracket there, or when it
 // is unmatched — an unmatched bracket highlights nothing rather than guessing.
@@ -20341,6 +20543,8 @@ function _mePsMountCM(item) {
         _mePsBracketExtension(),
         EditorView.updateListener.of(u => {
           if (u.docChanged) _mePsChange(u.state.doc.toString());
+          // Follow the caret: moving into a block shows that block's reference.
+          if (u.docChanged || u.selectionSet) _mePsHelpFollowCursor(u.state);
         }),
       ],
     }),
@@ -20349,7 +20553,52 @@ function _mePsMountCM(item) {
   // Lint the freshly mounted content so existing warnings show without
   // requiring an edit first.
   if (Array.isArray(item[specField])) _mePsScheduleLint(item, item[specField]);
+  _mePsInitSplit();
   return _mePsCM;
+}
+
+// The editor/help split is a fixed height so the help can scroll inside it
+// rather than growing the Parse Spec card every time it is opened. The bar
+// under it drags that height, and it persists — an editor you resize on every
+// visit is one that is the wrong size by default.
+const _ME_PS_SPLIT_KEY = 'up_me_ps_split_h';
+const _ME_PS_SPLIT_MIN = 180;
+function _mePsInitSplit() {
+  const split  = document.getElementById('me-ps-split');
+  const handle = document.getElementById('me-ps-split-resizer');
+  if (!split || !handle) return;
+  try {
+    const saved = parseInt(localStorage.getItem(_ME_PS_SPLIT_KEY), 10);
+    if (Number.isFinite(saved)) split.style.height = Math.max(_ME_PS_SPLIT_MIN, saved) + 'px';
+  } catch(e) {}
+  // The markup is rebuilt on every section render, so the handler is bound to
+  // the fresh node each time rather than once at startup.
+  handle.onmousedown = e => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = split.getBoundingClientRect().height;
+    const max = () => Math.max(_ME_PS_SPLIT_MIN, Math.round(window.innerHeight * 0.8));
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    const move = ev => {
+      // The same lost-mouseup guard the Data Editor's own resizers carry: a
+      // release the document never saw used to leave the panel following the
+      // pointer with no button held.
+      if (!(ev.buttons & 1)) return up();
+      split.style.height = Math.min(max(), Math.max(_ME_PS_SPLIT_MIN, startH + (ev.clientY - startY))) + 'px';
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { localStorage.setItem(_ME_PS_SPLIT_KEY, String(parseInt(split.style.height, 10))); } catch(e) {}
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  };
 }
 
 // Expanded form: one attribute per line. The counterpart to _compactJsonc —

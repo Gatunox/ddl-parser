@@ -1510,6 +1510,7 @@ Once all messages are migrated and verified:
 | `up_me_test_in_h` | Data Editor Test input height |
 | `up_me_test_col_w` | Data Editor Test results column widths |
 | `up_me_ps_split_h` | Parse Spec editor / block-reference split height |
+| `up_me_ps_help_w` | Block-reference column width |
 | `up_me_test_collapsed` | Data Editor Test subpanel collapsed to its header |
 | `up_cc_…` | Per-editor column-chooser state (prefix) |
 

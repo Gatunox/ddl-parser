@@ -2241,18 +2241,24 @@ input.me-inp{width:100%;}
    exclusive. The split has a fixed height with a drag bar under it: the help
    scrolls inside that height, so opening it never makes the card taller. */
 .me-ps-split{
-  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,42%);
+  display:grid;grid-template-columns:minmax(0,1fr) 8px minmax(0,var(--ps-help-w,46%));
   grid-template-rows:minmax(0,1fr);
-  height:320px;min-height:180px;max-height:80vh;overflow:hidden;gap:8px;align-items:stretch;}
+  height:320px;min-height:180px;max-height:80vh;overflow:hidden;gap:0;align-items:stretch;}
 .me-ps-wrap.nohelp .me-ps-split{grid-template-columns:minmax(0,1fr);}
 .me-ps-wrap.nohelp .me-ps-help{display:none !important;}
 .me-ps-split-resizer{height:6px;margin:-2px 0 0;cursor:ns-resize;flex-shrink:0;background:transparent;}
 .me-ps-split-resizer:hover,.me-ps-split-resizer.dragging{background:rgba(var(--accent-rgb),0.45);}
 .me-ps-wrap.nohelp .me-ps-split-resizer{display:none;}
+/* The reference's width is dragged too. A reference column wide enough for one
+   block's examples is too wide for another's, and the widest thing in it — a
+   raw hex run — has no natural wrap point. */
+.me-ps-col-resizer{grid-column:2;grid-row:1;cursor:ew-resize;background:transparent;}
+.me-ps-col-resizer:hover,.me-ps-col-resizer.dragging{background:rgba(var(--accent-rgb),0.45);}
+.me-ps-wrap.nohelp .me-ps-col-resizer{display:none;}
 .me-ps-split .me-ps-cm{min-height:0 !important;min-width:0;height:auto;overflow:auto;grid-column:1;grid-row:1;}
 .me-ps-split .me-ps-help.open{
   min-height:0;min-width:0;height:auto;overflow:hidden;padding:0;
-  display:flex;flex-direction:column;grid-column:2;grid-row:1;}
+  display:flex;flex-direction:column;grid-column:3;grid-row:1;}
 /* The help's own chrome, all inside that scrolling column. */
 .me-ps-help .help-hd{display:flex;align-items:center;gap:8px;padding:6px 10px;
   background:var(--surface-header);border-bottom: var(--bw) solid var(--border);flex-shrink:0;}
@@ -2348,7 +2354,10 @@ tbody tr:hover .me-ps-form-tbl td,
 .me-ps-help-detail-desc{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text);margin-bottom:8px;line-height:1.5;}
 .me-ps-help-atbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);margin-bottom:8px;}
 .me-ps-help-atbl th{text-align:left;color:var(--text-dim);font-size:calc(var(--sz-mono) - 2px);padding:0 8px 3px 0;border-bottom: var(--bw) solid var(--border);}
-.me-ps-help-atbl td{padding:3px 8px 3px 0;vertical-align:top;border-bottom: var(--bw) solid rgba(255,255,255,.04);line-height:1.4;}
+/* A raw hex run is one unbreakable word. Left alone it pushed the table past
+   the column and the Value cell was clipped, because the body hides overflow-x
+   so a wide example cannot make the whole reference scroll sideways. */
+.me-ps-help-atbl td{padding:3px 8px 3px 0;vertical-align:top;border-bottom: var(--bw) solid rgba(255,255,255,.04);line-height:1.4;overflow-wrap:anywhere;}
 .me-ps-help-atbl tr:last-child td{border-bottom:none;}
 .me-ps-help-aname{color:var(--accent2);white-space:nowrap;}
 .me-ps-help-atype{color:var(--text-dim);white-space:normal;word-break:break-word;min-width:80px;}
@@ -15843,7 +15852,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.24.0.0';
+const APP_VERSION  = '1.24.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17962,6 +17971,7 @@ function _meHtmlParseSpec(item) {
   </div>
   <div class="me-ps-split" id="me-ps-split">
     <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
+    <div class="me-ps-col-resizer" id="me-ps-col-resizer" title="Drag to resize the block reference"></div>
     <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
   </div>
   <div class="me-ps-split-resizer" id="me-ps-split-resizer" title="Drag to resize the spec editor"></div>
@@ -20562,31 +20572,29 @@ function _mePsMountCM(item) {
 // under it drags that height, and it persists — an editor you resize on every
 // visit is one that is the wrong size by default.
 const _ME_PS_SPLIT_KEY = 'up_me_ps_split_h';
+const _ME_PS_HELP_W_KEY = 'up_me_ps_help_w';
 const _ME_PS_SPLIT_MIN = 180;
-function _mePsInitSplit() {
-  const split  = document.getElementById('me-ps-split');
-  const handle = document.getElementById('me-ps-split-resizer');
-  if (!split || !handle) return;
-  try {
-    const saved = parseInt(localStorage.getItem(_ME_PS_SPLIT_KEY), 10);
-    if (Number.isFinite(saved)) split.style.height = Math.max(_ME_PS_SPLIT_MIN, saved) + 'px';
-  } catch(e) {}
+const _ME_PS_HELP_MIN  = 260;   // and the same floor for the editor beside it
+
+// Both drag bars are the same gesture on different axes, so they are one
+// function: begin() runs at mousedown and returns the mover, which is fed the
+// delta from where the press landed; done() persists whatever it left behind.
+function _mePsDrag(handle, cursor, begin, done) {
+  if (!handle) return;
   // The markup is rebuilt on every section render, so the handler is bound to
   // the fresh node each time rather than once at startup.
   handle.onmousedown = e => {
     e.preventDefault();
-    const startY = e.clientY;
-    const startH = split.getBoundingClientRect().height;
-    const max = () => Math.max(_ME_PS_SPLIT_MIN, Math.round(window.innerHeight * 0.8));
+    const x0 = e.clientX, y0 = e.clientY, moveTo = begin();
     handle.classList.add('dragging');
-    document.body.style.cursor = 'ns-resize';
+    document.body.style.cursor = cursor;
     document.body.style.userSelect = 'none';
     const move = ev => {
       // The same lost-mouseup guard the Data Editor's own resizers carry: a
       // release the document never saw used to leave the panel following the
       // pointer with no button held.
       if (!(ev.buttons & 1)) return up();
-      split.style.height = Math.min(max(), Math.max(_ME_PS_SPLIT_MIN, startH + (ev.clientY - startY))) + 'px';
+      moveTo(ev.clientX - x0, ev.clientY - y0);
     };
     const up = () => {
       document.removeEventListener('mousemove', move);
@@ -20594,11 +20602,49 @@ function _mePsInitSplit() {
       handle.classList.remove('dragging');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      try { localStorage.setItem(_ME_PS_SPLIT_KEY, String(parseInt(split.style.height, 10))); } catch(e) {}
+      done();
     };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
   };
+}
+// A press with no drag leaves the inline size unset, and storing the NaN that
+// parses out of it would poison the next restore.
+const _mePsSaveSize = (key, px) => {
+  if (!Number.isFinite(px)) return;
+  try { localStorage.setItem(key, String(px)); } catch(e) {}
+};
+
+function _mePsInitSplit() {
+  const split = document.getElementById('me-ps-split');
+  const help  = document.getElementById('me-ps-help');
+  if (!split) return;
+  try {
+    const savedH = parseInt(localStorage.getItem(_ME_PS_SPLIT_KEY), 10);
+    if (Number.isFinite(savedH)) split.style.height = Math.max(_ME_PS_SPLIT_MIN, savedH) + 'px';
+    const savedW = parseInt(localStorage.getItem(_ME_PS_HELP_W_KEY), 10);
+    if (Number.isFinite(savedW)) split.style.setProperty('--ps-help-w', Math.max(_ME_PS_HELP_MIN, savedW) + 'px');
+  } catch(e) {}
+
+  _mePsDrag(document.getElementById('me-ps-split-resizer'), 'ns-resize', () => {
+    const startH = split.getBoundingClientRect().height;
+    const max = Math.max(_ME_PS_SPLIT_MIN, Math.round(window.innerHeight * 0.8));
+    return (dx, dy) => {
+      split.style.height = Math.min(max, Math.max(_ME_PS_SPLIT_MIN, startH + dy)) + 'px';
+    };
+  }, () => _mePsSaveSize(_ME_PS_SPLIT_KEY, parseInt(split.style.height, 10)));
+
+  // Dragging left widens the reference, so the delta is subtracted. The ceiling
+  // leaves the editor its own floor — a reference that can eat the whole split
+  // is a reference you have to undo before you can type again.
+  _mePsDrag(document.getElementById('me-ps-col-resizer'), 'ew-resize', () => {
+    const startW = help ? help.getBoundingClientRect().width : 0;
+    const max = Math.max(_ME_PS_HELP_MIN, split.getBoundingClientRect().width - _ME_PS_HELP_MIN);
+    return dx => {
+      split.style.setProperty('--ps-help-w',
+        Math.min(max, Math.max(_ME_PS_HELP_MIN, startW - dx)) + 'px');
+    };
+  }, () => _mePsSaveSize(_ME_PS_HELP_W_KEY, parseInt(split.style.getPropertyValue('--ps-help-w'), 10)));
 }
 
 // Expanded form: one attribute per line. The counterpart to _compactJsonc —

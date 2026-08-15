@@ -10535,6 +10535,45 @@ test('the block under the caret is resolved from positions, not from JSON.parse'
     'the innermost enclosing block does not win — a nested read-fixed would report its `when`');
 });
 
+test('the reference is resizable on both axes, and nothing it shows is clipped', () => {
+  // Reported: the Value column of an example ran off the right edge. Two causes,
+  // both fixed here — the column had one fixed width for every block, and a raw
+  // hex run is one unbreakable word that pushed the table past it. The body
+  // hides overflow-x on purpose (a wide example must not make the whole
+  // reference scroll sideways), so anything too wide was simply cut off.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.me-ps-col-resizer\{[^}]*cursor:ew-resize/.test(css), 'there is no width drag bar');
+  assert.ok(/grid-template-columns:minmax\(0,1fr\) 8px minmax\(0,var\(--ps-help-w,\s*46%\)\)/.test(css),
+    'the reference width is not driven by a variable the drag can set');
+  assert.ok(/\.me-ps-help-atbl td\{[^}]*overflow-wrap:anywhere/.test(css),
+    'a raw hex run can still push the example table past its column');
+  assert.ok(/\.me-ps-wrap\.nohelp \.me-ps-col-resizer\{display:none/.test(css),
+    'the width drag bar survives closing the reference, where there is nothing to drag');
+
+  const init = psFnSource('_mePsInitSplit');
+  // Asserting the read alone would pass on a restore that reads the key and
+  // then ignores it; the saved number has to reach the width.
+  assert.ok(/localStorage\.getItem\(_ME_PS_HELP_W_KEY\)/.test(init),
+    'the saved width is never read back');
+  assert.ok(/Number\.isFinite\(savedW\)\) split\.style\.setProperty\('--ps-help-w', Math\.max\(_ME_PS_HELP_MIN, savedW\)/.test(init),
+    'the dragged width is not restored — a panel you resize on every visit');
+  // The ceiling leaves the editor its own floor, so the reference cannot be
+  // dragged over the whole split and trap you with nowhere to type.
+  assert.ok(/getBoundingClientRect\(\)\.width - _ME_PS_HELP_MIN/.test(init),
+    'the reference can be widened until the editor has no width left');
+  assert.ok(/startW - dx/.test(init), 'dragging the bar left does not widen the reference');
+
+  // Both bars are one gesture on two axes; the lost-mouseup guard lives once.
+  const drag = psFnSource('_mePsDrag');
+  assert.ok(/ev\.buttons & 1/.test(drag), 'the shared drag lost its lost-mouseup guard');
+  assert.ok(!/ev\.buttons & 1/.test(init), 'the drag gesture is implemented twice');
+  // A press with no drag leaves the inline size unset; storing that NaN would
+  // poison the next restore.
+  const save = APP_SRC.match(/const _mePsSaveSize = [\s\S]*?\n\};/);
+  assert.ok(save && /Number\.isFinite\(px\)/.test(save[0]),
+    'an unparsed size can be written to storage');
+});
+
 test('every OPTIONAL attribute says what happens when it is omitted', () => {
   // Reported: the reference described what each attribute DOES and left its
   // absence to be inferred — readable only if you already knew. It affected

@@ -2317,9 +2317,24 @@ input.me-inp{width:100%;}
 .me-ps-attr-row:hover > td{background:rgba(var(--accent-rgb),0.08);}
 .me-ps-attr-row.me-ps-sel > td{background:rgba(var(--accent-rgb),0.16);}
 /* Form-by-form attribute description: the accepted shape on the left, what it
-   means on the right. One paragraph listing every form was unreadable. */
-.me-ps-form-tbl{border-collapse:collapse;width:100%;}
-.me-ps-form-tbl td{padding:1px 0;vertical-align:top;border:0;}
+   means on the right. One paragraph listing every form was unreadable.
+   Reported: the meaning column was squeezed to one character per line. Four in
+   five forms are under 16 characters, but the handful that run to seventy were
+   nowrap, so they took the whole width and left nothing for the text beside
+   them. A grid rather than a table because a table column cannot be capped:
+   fit-content lets the short forms stay narrow — which is the case that matters
+   — and makes the long ones wrap instead of pushing the meaning off the edge. */
+.me-ps-form-tbl{display:grid;grid-template-columns:fit-content(45%) minmax(0,1fr);
+  column-gap:10px;width:100%;}
+.me-ps-form-tbl tbody,.me-ps-form-tbl tr{display:contents;}
+/* The app-wide `tbody td` pins every data-table cell to one --row-h line and
+   hides the overflow. A real table treats that height as a minimum and grows;
+   a grid item takes it literally, so the description came out one line tall
+   with the rest clipped. Undone here, where the cells are prose. */
+.me-ps-form-tbl td{padding:1px 0;border:0;min-width:0;
+  height:auto;line-height:1.45;overflow:visible;white-space:normal;}
+/* colspan means nothing once the rows are display:contents. */
+.me-ps-form-tbl td[colspan]{grid-column:1 / -1;}
 /* The app-wide `tbody tr:hover td` is a DESCENDANT selector, so hovering the
    attribute row painted its own cell once and every cell of this nested table a
    second time — the highlight came out patchy on exactly the attributes whose
@@ -2328,8 +2343,7 @@ input.me-inp{width:100%;}
    independently hoverable; they take the colour of the row they sit in. */
 tbody tr:hover .me-ps-form-tbl td,
 .me-ps-form-tbl tr:hover td{background:transparent;}
-.me-ps-form-k{white-space:nowrap;padding-right:10px!important;color:var(--accent);
-  font-family:var(--font-mono);}
+.me-ps-form-k{color:var(--accent);font-family:var(--font-mono);overflow-wrap:anywhere;}
 /* Same colour as any other description text. These were --text-very-dim, which
    made the lead sentence of every attribute the faintest thing in the row. */
 .me-ps-form-note{padding-top:3px!important;}
@@ -15852,7 +15866,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.24.1.1';
+const APP_VERSION  = '1.24.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

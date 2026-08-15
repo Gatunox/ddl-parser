@@ -10535,6 +10535,35 @@ test('the block under the caret is resolved from positions, not from JSON.parse'
     'the innermost enclosing block does not win — a nested read-fixed would report its `when`');
 });
 
+test('a long form cannot squeeze the meaning beside it off the panel', () => {
+  // Reported: the description column of a form-by-form attribute came out one
+  // character per line. The forms were `white-space:nowrap`, so the six that run
+  // past fifty characters claimed the full width of a narrow reference column.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const k = /\.me-ps-form-k\{([^}]*)\}/.exec(css);
+  assert.ok(k, '.me-ps-form-k is gone');
+  assert.ok(!/nowrap/.test(k[1]), 'a form still refuses to wrap, whatever width it needs');
+  assert.ok(/overflow-wrap:anywhere/.test(k[1]),
+    'a JSON form has no break point, so it can still overflow rather than wrap');
+  // A table column cannot be capped; a grid one can. fit-content keeps the four
+  // in five forms that are short at their natural width — the case that matters —
+  // and only caps the long ones.
+  const t = /\.me-ps-form-tbl\{([^}]*)\}/.exec(css);
+  assert.ok(t && /display:grid/.test(t[1]) && /grid-template-columns:fit-content\(45%\) minmax\(0,1fr\)/.test(t[1]),
+    'the form column is not capped, so one long form takes the whole width');
+  assert.ok(/\.me-ps-form-tbl tbody,\.me-ps-form-tbl tr\{display:contents/.test(css),
+    'the rows still form their own grids, so the columns do not line up');
+  // display:contents drops the rows, and colspan with them.
+  assert.ok(/\.me-ps-form-tbl td\[colspan\]\{grid-column:1 \/ -1/.test(css),
+    'a note row no longer spans both columns');
+  // The app-wide `tbody td` pins cells to one --row-h line and hides the
+  // overflow. A real table treats that as a minimum; a grid item takes it
+  // literally, so the description rendered one line tall with the rest cut off.
+  const td = /\.me-ps-form-tbl td\{([^}]*)\}/.exec(css);
+  assert.ok(td && /height:auto/.test(td[1]) && /overflow:visible/.test(td[1]) && /line-height:1\.45/.test(td[1]),
+    'the description is still held to one clipped row by the app-wide table height');
+});
+
 test('opening an attribute leaves it where you clicked it', () => {
   // Reported: the row expanded but the panel jumped back to the top, so you had
   // to scroll down and find the attribute you had just opened.

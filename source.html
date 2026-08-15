@@ -5540,128 +5540,82 @@ function detectFormat(text) {
 // ============================================================
 // BYTE EXTRACTION
 // ============================================================
-function extractBytes(chunk, format) {
+// Text → bytes, and WHERE each byte came from, in one pass.
+//
+// These used to be two functions: extractBytes produced the bytes, and
+// buildByteCharMap re-parsed the same text afterwards to work out which
+// characters each byte had come from. Two implementations of one fact, per
+// format, that had to agree forever — and they did not: extractBytes took every
+// hex pair in a dump line, buildByteCharMap matched 4-character groups. Every
+// input format was a fresh chance to be off by one, which is why the Raw panel
+// (which renders the bytes itself and simply labels each one) never had a
+// highlight bug and the Message Input panel had dozens.
+//
+// The conversion knows the answer as it reads: record it there. `map[i]` is
+// { s, e } — half-open character offsets in the ORIGINAL text — plus `.ascii`
+// for the dump formats that echo the bytes in a bracket column.
+//
+// `textOffset` is where this chunk starts inside the full textarea, so the
+// offsets are absolute and need no second remapping pass.
+function extractBytesMapped(chunk, format, textOffset) {
   const text = typeof chunk === 'object' ? chunk.text : chunk;
+  const off   = textOffset || 0;
+  const bytes = [];
+  const map   = [];
 
   if (format === 'tandem-dump') {
-    const bytes = [];
+    let pos = off;
     for (const line of text.split('\n')) {
+      const lineStart = pos;
+      pos += line.length + 1;
+      const lead = line.length - line.trimStart().length;
       const t = line.trim();
       if (!t) continue;
-      // Strip optional address prefix: hex-address: or digit-offset:
-      let rest = t.replace(/^(?:[0-9a-fA-F]{2,8}|\d+):\s*/, '');
-      // Strip ASCII bracket column ([ ... ] or | ... |) — handles 1 or more spaces before bracket
+      // Strip the address prefix — hex-address: or digit-offset: — keeping how
+      // many characters went with it, which is the whole point of this rewrite.
+      const pre  = /^(?:[0-9a-fA-F]{2,8}|\d+):\s*/.exec(t);
+      const preN = pre ? pre[0].length : 0;
+      let rest   = t.slice(preN);
+      let restAt = lineStart + lead + preN;
+      // The ASCII echo column ([ … ] or | … |) is not data. Its position is
+      // kept: each byte on the line also lights its own character in there.
+      let asciiAt = -1;
       const bi = rest.indexOf('[');
-      if (bi >= 0) rest = rest.slice(0, bi).trimEnd();
-      rest = rest.replace(/\|[^|]*\|?\s*$/, '');
-      const hbs = rest.match(/[0-9a-fA-F]{2}/g) || [];
-      for (const hb of hbs) bytes.push(parseInt(hb, 16));
+      if (bi >= 0) { asciiAt = restAt + bi + 1; rest = rest.slice(0, bi).trimEnd(); }
+      else {
+        const pi = rest.search(/\|[^|]*\|?\s*$/);
+        if (pi >= 0) { asciiAt = restAt + pi + 1; rest = rest.slice(0, pi).trimEnd(); }
+      }
+      let lineByte = 0;
+      for (const m of rest.matchAll(/[0-9a-fA-F]{2}/g)) {
+        bytes.push(parseInt(m[0], 16));
+        const sAt = restAt + m.index;
+        const entry = { s: sAt, e: sAt + 2 };
+        if (asciiAt >= 0) entry.ascii = { s: asciiAt + lineByte, e: asciiAt + lineByte + 1 };
+        map.push(entry);
+        lineByte++;
+      }
     }
-    return bytes;
+    return { bytes, map };
   }
 
   if (format === 'oct') {
-    const tokens = text.trim().split(/\s+/);
-    return tokens.filter(t => /^[0-7]+$/.test(t)).map(t => parseInt(t, 8) & 0xff);
-  }
-
-  if (format === 'hex' || format === 'hex-partial' || format === 'ebcdic') {
-    let hexStr = '';
-    for (const line of text.split('\n')) {
-      const candidate = line.trim().replace(/\s/g, '');
-      if (/^[0-9a-fA-F]{8,}$/.test(candidate)) {
-        hexStr += candidate;
-      } else {
-        const m = line.match(/(?:[:=]\s*)([0-9a-fA-F\s]{8,})$/);
-        if (m) hexStr += m[1].replace(/\s/g, '');
-      }
-    }
-    if (!hexStr) hexStr = text.replace(/\s/g, '');
-    const bytes = [];
-    for (let i = 0; i + 1 < hexStr.length; i += 2) {
-      const b = parseInt(hexStr.substr(i, 2), 16);
-      bytes.push(format === 'ebcdic' ? (_EBCDIC_TO_ASCII[b] ?? b) : b);
-    }
-    return bytes;
-  }
-
-  // ASCII: split into lines and pad each to the effective data width (trailing spaces = data).
-  // P.lineWidth is the total ruler column (margin+data); S.asciiRulerCol is data width only.
-  const _asciiW = P.lineWidth > 0 ? Math.max(1, P.lineWidth - S.asciiMargin) : S.asciiRulerCol;
-  if (_asciiW > 0) {
-    const W = _asciiW;
-    const lines = text.replace(/\r/g, '').split('\n');
-    let s = 0, e = lines.length;
-    while (s < e && lines[s].trim() === '') s++;
-    while (e > s && lines[e - 1].trim() === '') e--;
-    const bytes = [];
-    for (let li = s; li < e; li++) {
-      const l = lines[li].padEnd(W, ' ');
-      for (let c = 0; c < W; c++) bytes.push(l.charCodeAt(c));
-    }
-    return bytes;
-  }
-  return Array.from(text.trim()).filter(c => c !== '\n' && c !== '\r').map(c => c.charCodeAt(0));
-}
-
-// Build a per-byte map of { s, e } (textarea char positions, half-open) for
-// non-NETARD messages, mirroring exactly what extractBytes() consumes.
-// textOffset = where chunk starts inside the full textarea string.
-function buildByteCharMap(text, format, textOffset) {
-  const off = textOffset || 0;
-  const map = [];
-
-  if (format === 'ascii') {
-    const _asciiW = P.lineWidth > 0 ? Math.max(1, P.lineWidth - S.asciiMargin) : S.asciiRulerCol;
-    if (_asciiW > 0) {
-      const W = _asciiW;
-      const rawLines = text.split('\n');
-      const lines = rawLines.map(l => l.replace(/\r$/, ''));
-      let s = 0, e = lines.length;
-      while (s < e && lines[s].trim() === '') s++;
-      while (e > s && lines[e - 1].trim() === '') e--;
-      // Compute textarea offset of each line start (relative to chunk start)
-      const lineStarts = [];
-      let p = 0;
-      for (let li = 0; li < rawLines.length; li++) { lineStarts.push(p); p += rawLines[li].length + 1; }
-      for (let li = s; li < e; li++) {
-        const lineStart = off + lineStarts[li];
-        const line = lines[li];
-        const eol = line.length > 0 ? { s: lineStart + line.length - 1, e: lineStart + line.length } : null;
-        for (let c = 0; c < W; c++)
-          map.push(c < line.length ? { s: lineStart + c, e: lineStart + c + 1 } : eol);
-      }
-      return map;
-    }
-    const lead = text.length - text.trimStart().length;
-    const str  = text.trim();
-    for (let i = 0; i < str.length; i++) {
-      if (str[i] === '\n' || str[i] === '\r') continue;
-      map.push({ s: off + lead + i, e: off + lead + i + 1 });
-    }
-    return map;
-  }
-
-  if (format === 'oct') {
-    // Each whitespace-separated octal token maps to one byte
     let pos = off;
     for (let i = 0; i < text.length; ) {
       if (/\s/.test(text[i])) { i++; pos++; continue; }
-      const start = pos;
+      const startAt = pos;
       let tok = '';
       while (i < text.length && !/\s/.test(text[i])) { tok += text[i]; i++; pos++; }
-      if (/^[0-7]+$/.test(tok)) map.push({ s: start, e: pos });
+      if (/^[0-7]+$/.test(tok)) { bytes.push(parseInt(tok, 8) & 0xff); map.push({ s: startAt, e: pos }); }
     }
-    return map;
+    return { bytes, map };
   }
 
-  // For hex / tandem-dump: collect ordered positions of each hex digit
-  // that extractBytes() would consume, then pair them into bytes.
-  const hexPos = [];
-
   if (format === 'hex' || format === 'hex-partial' || format === 'ebcdic') {
-    let pos = off;
-    let anyLine = false;
+    // Positions of every hex DIGIT that counts, in order; paired into bytes
+    // below, so a byte's span is its two digits wherever they sit.
+    const digits = [];
+    let pos = off, anyLine = false;
     for (const line of text.split('\n')) {
       const lineStart = pos;
       pos += line.length + 1;
@@ -5669,81 +5623,80 @@ function buildByteCharMap(text, format, textOffset) {
       if (/^[0-9a-fA-F]{8,}$/.test(candidate)) {
         anyLine = true;
         let p = lineStart + (line.length - line.trimStart().length);
-        for (const ch of line.trimStart()) {
-          if (/[0-9a-fA-F]/.test(ch)) hexPos.push(p);
-          p++;
-        }
+        for (const ch of line.trimStart()) { if (/[0-9a-fA-F]/.test(ch)) digits.push(p); p++; }
       } else {
         const m = line.match(/(?:[:=]\s*)([0-9a-fA-F\s]{8,})$/);
         if (m) {
           anyLine = true;
-          const hStart = lineStart + line.lastIndexOf(m[1]);
-          let p = hStart;
-          for (const ch of m[1]) {
-            if (/[0-9a-fA-F]/.test(ch)) hexPos.push(p);
-            p++;
-          }
+          let p = lineStart + line.lastIndexOf(m[1]);
+          for (const ch of m[1]) { if (/[0-9a-fA-F]/.test(ch)) digits.push(p); p++; }
         }
       }
     }
-    // extractBytes fallback: strip all whitespace from full text
+    // extractBytes' own fallback: no line qualified, so strip all whitespace
+    // from the whole text and read that.
     if (!anyLine) {
       let p = off;
-      for (const ch of text) { if (/[0-9a-fA-F]/.test(ch)) hexPos.push(p); p++; }
+      for (const ch of text) { if (/[0-9a-fA-F]/.test(ch)) digits.push(p); p++; }
     }
-
-  } else if (format === 'tandem-dump') {
-    let pos = off;
-    for (const line of text.split('\n')) {
-      const lineStart = pos;
-      pos += line.length + 1;
-      const t = line.trim();
-      if (!t) continue;
-      const trimOff = lineStart + (line.length - line.trimStart().length);
-      // THIS line's address width, not the first line's. The address column is
-      // right-aligned, so once the leading spaces are gone "0: " and "16: " are
-      // different widths — one measurement taken from the top of the file
-      // cannot serve every line below it.
-      const startCol = hexAsciiStartCol(line);
-      const body = t.slice(startCol);
-      const bodyOff = trimOff + startCol;
-      // Find ASCII bracket
-      const bracketIdx = body.indexOf('[');
-      const hexPart = bracketIdx >= 0 ? body.slice(0, bracketIdx).trimEnd() : body.replace(/\|.*$/, '').trimEnd();
-      if (isHexAsciiLine(line)) {
-        // New HEXASCII format: 4-char groups → build map entries with .ascii sub-ranges
-        let lineByteIdx = 0;
-        // A group is 4 hex chars, or 2 when the record ends on an odd byte.
-        // Matching only 4 silently dropped that last byte, leaving it with no
-        // highlight at all — the one byte at the end of every odd-length record.
-        for (const m of hexPart.matchAll(/[0-9A-Fa-f]{4}|[0-9A-Fa-f]{2}(?![0-9A-Fa-f])/g)) {
-          const grpOff = bodyOff + m.index;
-          for (let b = 0; b < m[0].length / 2; b++) {
-            const hexStart = grpOff + b * 2;
-            const entry = { s: hexStart, e: hexStart + 2 };
-            if (bracketIdx >= 0) {
-              const ascStart = bodyOff + bracketIdx + 1 + lineByteIdx;
-              entry.ascii = { s: ascStart, e: ascStart + 1 };
-            }
-            map.push(entry);
-            lineByteIdx++;
-          }
-        }
-      } else {
-        // Old tandem-dump format: 2-char groups, no .ascii
-        let p = bodyOff;
-        for (const ch of hexPart) { if (/[0-9a-fA-F]/.test(ch)) hexPos.push(p); p++; }
-      }
+    for (let d = 0; d * 2 + 1 < digits.length; d++) {
+      const a = digits[d * 2], b = digits[d * 2 + 1];
+      const hi = text[a - off], lo = text[b - off];
+      const v = parseInt(hi + lo, 16);
+      bytes.push(format === 'ebcdic' ? (_EBCDIC_TO_ASCII[v] ?? v) : v);
+      map.push({ s: a, e: b + 1 });
     }
-    // Pair up hexPos for old-format lines
-    for (let b = 0; b * 2 + 1 < hexPos.length; b++)
-      map.push({ s: hexPos[b * 2], e: hexPos[b * 2 + 1] + 1 });
-    return map;
+    return { bytes, map };
   }
 
-  for (let b = 0; b * 2 + 1 < hexPos.length; b++)
-    map.push({ s: hexPos[b * 2], e: hexPos[b * 2 + 1] + 1 });
-  return map;
+  // ASCII: every column up to the ruler width is data, trailing spaces included.
+  // P.lineWidth is the total ruler column (margin+data); S.asciiRulerCol is the
+  // data width alone.
+  const _asciiW = P.lineWidth > 0 ? Math.max(1, P.lineWidth - S.asciiMargin) : S.asciiRulerCol;
+  if (_asciiW > 0) {
+    const W = _asciiW;
+    const rawLines = text.replace(/\r/g, '').split('\n');
+    let s0 = 0, e0 = rawLines.length;
+    while (s0 < e0 && rawLines[s0].trim() === '') s0++;
+    while (e0 > s0 && rawLines[e0 - 1].trim() === '') e0--;
+    const lineStarts = [];
+    let p = 0;
+    for (const l of rawLines) { lineStarts.push(p); p += l.length + 1; }
+    for (let li = s0; li < e0; li++) {
+      const lineStart = off + lineStarts[li];
+      const line = rawLines[li];
+      const padded = line.padEnd(W, ' ');
+      // A padded column has no character of its own; it points at the line end,
+      // so the highlight still lands on the right ROW.
+      const eol = line.length > 0 ? { s: lineStart + line.length - 1, e: lineStart + line.length } : null;
+      for (let c = 0; c < W; c++) {
+        bytes.push(padded.charCodeAt(c));
+        map.push(c < line.length ? { s: lineStart + c, e: lineStart + c + 1 } : eol);
+      }
+    }
+    return { bytes, map };
+  }
+
+  const lead = text.length - text.trimStart().length;
+  const str  = text.trim();
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === '\n' || ch === '\r') continue;
+    bytes.push(ch.charCodeAt(0));
+    map.push({ s: off + lead + i, e: off + lead + i + 1 });
+  }
+  return { bytes, map };
+}
+
+// The bytes alone, for every caller that does not care where they came from.
+function extractBytes(chunk, format) {
+  return extractBytesMapped(chunk, format).bytes;
+}
+
+// The map alone. Kept as a name because several call sites read only this, and
+// it is now guaranteed to agree with the bytes — it is the same pass.
+function buildByteCharMap(text, format, textOffset) {
+  return extractBytesMapped(text, format, textOffset).map;
 }
 
 // Nested-OCCURS actual-count / skip decision. Given an expanded leaf `def` and the
@@ -15815,7 +15768,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.14.0';
+const APP_VERSION  = '1.23.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

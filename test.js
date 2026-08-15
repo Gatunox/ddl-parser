@@ -147,6 +147,7 @@ _t.detectFormat       = detectFormat;
 _t.isHexAsciiLine     = isHexAsciiLine;
 _t.hexAsciiStartCol   = hexAsciiStartCol;
 _t.extractBytes       = extractBytes;
+_t.extractBytesMapped = extractBytesMapped;
 _t.buildByteCharMap   = buildByteCharMap;
 _t.stripJsonc         = _stripJsonc;
 _t.formatJsonc        = _formatJsonc;
@@ -269,7 +270,7 @@ const {
   picSize, typeSize, buildDDLDocFields, expandTypeRefs,
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
-  detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes,
+  detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, extractBytesMapped,
   stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
@@ -5178,6 +5179,89 @@ END REC.
   eq(vlgLgthF(ctx, 'ADD-DATA.INFO.TRAN-CAT-CDE').value, 'R', 'the one payload byte');
   assert.ok(!ctx.fields.some(f => f.id === 'ADD-DATA.INFO.FLAG-GROUP.F1'),
      'and nothing after it inside the group is emitted at all');
+});
+
+// ── The byte map points at the characters the bytes came from ──────────────
+// The Raw panel renders the bytes itself and labels each one, so its highlight
+// cannot be off. Message Input shows the user's own capture and has to say
+// where in THAT text each byte came from — which used to be a second algorithm
+// per format, re-deriving what the conversion already knew. Now it is one pass,
+// and that makes this property checkable: slice the recorded span back out of
+// the text and it must reproduce the byte.
+console.log('\nbyte map — every span reproduces its own byte');
+
+const MAP_CASES = [
+  { name: 'tandem-dump (hex offsets, bracket column)', fmt: 'tandem-dump',
+    text: '       0: 3032 3130 3031 0000 [021001..]\n      10: 3050 3141 2D45 4458 [0P1A-EDX]\n',
+    back: (t, b) => parseInt(t, 16) === b },
+  { name: 'tandem-dump (decimal offsets, differing label widths)', fmt: 'tandem-dump',
+    text: '       0: F0F8 F0F0 8220 0000 [........]\n      16: 0000 0000 F0F4 F2F1 [........]\n' +
+          '     128: F9F0 F7F7 F1F0 F9F0 [........]\n',
+    back: (t, b) => parseInt(t, 16) === b },
+  { name: 'tandem-dump (pipe echo column)', fmt: 'tandem-dump',
+    text: '000000  30 31 32 33  |0123|\n',
+    back: (t, b) => parseInt(t, 16) === b },
+  { name: 'tandem-dump (odd trailing byte)', fmt: 'tandem-dump',
+    text: '       0: 3032 3130 31 [02101]\n',
+    back: (t, b) => parseInt(t, 16) === b },
+  { name: 'hex', fmt: 'hex',
+    text: '3032313030310000\n30503141\n', back: (t, b) => parseInt(t, 16) === b },
+  { name: 'oct', fmt: 'oct',
+    text: '060 061 062  177\n 200\n', back: (t, b) => (parseInt(t, 8) & 0xff) === b },
+];
+
+for (const c of MAP_CASES) {
+  test(`${c.name}: every byte's span reproduces it`, () => {
+    const { bytes, map } = extractBytesMapped(c.text, c.fmt, 0);
+    assert.ok(bytes.length > 0, 'the sample produced no bytes');
+    eq(map.length, bytes.length, 'one map entry per byte');
+    const bad = [];
+    bytes.forEach((b, i) => {
+      const m = map[i];
+      if (!m) { bad.push(`${i}: no span`); return; }
+      const txt = c.text.slice(m.s, m.e);
+      if (!c.back(txt, b)) bad.push(`${i}: span ${m.s}..${m.e} is ${JSON.stringify(txt)}, byte is 0x${b.toString(16)}`);
+    });
+    deepEq(bad, [], 'spans that do not reproduce their byte');
+  });
+}
+
+test('the bytes are unchanged by carrying the map', () => {
+  // The refactor must not move a single byte: extractBytes is now a wrapper, so
+  // anything that reads bytes has to see exactly what it saw before.
+  // Spread both: the engine runs in a vm sandbox, so its Array is a different
+  // realm's and deepStrictEqual compares prototypes.
+  for (const c of MAP_CASES)
+    deepEq([...extractBytes(c.text, c.fmt)], [...extractBytesMapped(c.text, c.fmt, 0).bytes],
+      `${c.name}: the wrapper disagrees with the pass it wraps`);
+});
+
+test('textOffset shifts the spans and nothing else', () => {
+  const c = MAP_CASES[0];
+  const a = extractBytesMapped(c.text, c.fmt, 0);
+  const b = extractBytesMapped(c.text, c.fmt, 1000);
+  deepEq([...a.bytes], [...b.bytes], 'the bytes do not depend on where the chunk sits');
+  deepEq([...b.map].map(m => m.s), [...a.map].map(m => m.s + 1000), 'every span moves by the offset');
+});
+
+test('a dump byte also points at its own character in the echo column', () => {
+  // The bracket column mirrors the bytes, and clicking a field lights both.
+  const { map } = extractBytesMapped(MAP_CASES[0].text, 'tandem-dump', 0);
+  const first = map[0];
+  assert.ok(first.ascii, 'no ascii span on a bracketed dump line');
+  eq(MAP_CASES[0].text.slice(first.ascii.s, first.ascii.e), '0',
+     'and it is that byte\'s own character, not the bracket');
+});
+
+test('buildByteCharMap is the same pass, not a second one', () => {
+  // The whole point: one algorithm per format. If this ever grows its own
+  // implementation again, the two can disagree — which is the bug class that
+  // gave Message Input dozens of highlight faults and Raw none.
+  const src = psFnSource('buildByteCharMap');
+  assert.ok(/extractBytesMapped\(text, format, textOffset\)\.map/.test(src),
+    'buildByteCharMap has stopped delegating and is parsing the text itself');
+  assert.ok(src.split('\n').filter(l => l.trim() && !l.trim().startsWith('//')).length <= 4,
+    'buildByteCharMap is doing more than delegating');
 });
 
 test('read-tlv honours the Overrides table, like every other read path', () => {

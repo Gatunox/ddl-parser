@@ -8515,18 +8515,41 @@ test('a width override is visible in the LEN column', () => {
   eq(plain.length, 4, 'and its wire width IS the number written');
 });
 
-test('the Field Map puts Type/Len before Bytes, and the cells follow the header', () => {
+test('the Field Map reads name, type, size, then where — and the cells follow the header', () => {
   // A header order that does not match the cell order is the kind of thing that
   // looks fine until a column is hidden and everything shifts one to the left.
+  // Offset sits AFTER Size, matching the Test panel's table: size and position
+  // describe the same fact and are read together.
   const _h = APP_SRC.indexOf('me-fm-th-num');
   const head = APP_SRC.slice(_h, APP_SRC.indexOf('</thead>', _h));
   const order = [...head.matchAll(/data-col="(\w+)"/g)].map(m => m[1])
     .filter((v, i, a) => a.indexOf(v) === i);   // each col appears twice: th + resizer
-  eq(order.join(','), 'num,fld,off,dt,len,de,vlg', 'header order');
+  eq(order.join(','), 'num,fld,dt,len,off,de,vlg', 'header order');
   const row = psFnSource('_meFmRowHtml');
   const cells = row.slice(row.lastIndexOf('return `<tr'));
   const cellOrder = [...cells.matchAll(/\$\{(\w+)Cell\}/g)].map(m => m[1]);
-  eq(cellOrder.join(','), 'num,field,off,dt,len,de,vlg', 'cells match it');
+  eq(cellOrder.join(','), 'num,field,dt,len,off,de,vlg', 'cells match it');
+  // The column chooser lists them in the order they appear, or picking one hides
+  // a different column than the one you pointed at.
+  const menu = APP_SRC.slice(APP_SRC.indexOf("['num', '#']"));
+  const menuOrder = [...menu.slice(0, menu.indexOf('];')).matchAll(/\['(\w+)',/g)].map(m => m[1]);
+  eq(menuOrder.join(','), 'num,dt,len,off,de,vlg', 'the chooser follows the table');
+});
+
+test('the Field Map offset is a byte range, the same form the Test table uses', () => {
+  // It printed the start twice — once in decimal, once in hex — and said
+  // nothing about how far the field reaches. The Test panel already showed a
+  // range; this is the same fact in the same shape.
+  const row = psFnSource('_meFmRowHtml');
+  assert.ok(/\$\{row\.offset\}\$\{_offLen > 0 \? '–' \+ \(row\.offset \+ _offLen - 1\) : ''\}/.test(row),
+    'the offset cell is not a range');
+  // The end follows the size IN EFFECT, so a re-sizing override moves it.
+  assert.ok(/const _offLen = row\.lenWritten != null \? row\.lenWritten : \(row\.length \|\| 0\)/.test(row),
+    'the range end ignores an override that re-sizes the field');
+  // A zero-length field keeps the bare start: "4–3" reads like a parse bug.
+  assert.ok(/_offLen > 0 \?/.test(row), 'a zero-length field renders a backwards range');
+  // The hex half is gone, and so is the class that painted it.
+  assert.ok(!/me-fm-off-hex/.test(html), 'the hex offset span is still there, or its CSS is orphaned');
 });
 
 test('the length columns are named for what they hold, in both tables', () => {

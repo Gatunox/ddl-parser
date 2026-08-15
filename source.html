@@ -2592,7 +2592,6 @@ tbody tr:hover .me-ps-form-tbl td,
 .me-fm-th-off{width:90px;}
 .me-fm-th-len{width:60px;}
 .me-fm-off{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);text-align:right;font-variant-numeric:tabular-nums;}
-.me-fm-off-hex{color:var(--text-dim);opacity:.6;font-size:10px;}
 .me-fm-th-dt {width:140px;text-align:left;}
 .me-fm-th-de {width:120px;text-align:center;}
 .me-fm-th-vlg{width:76px;text-align:center;}
@@ -15936,7 +15935,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.2.0';
+const APP_VERSION  = '1.25.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21552,9 +21551,9 @@ function _meOverridesPrep(item) {
     <thead><tr>
       <th class="me-fm-th-num" data-col="num">#<div class="me-fm-resizer" data-col="num"></div></th>
       <th class="me-fm-th-fld" data-col="fld">Field<div class="me-fm-resizer" data-col="fld"></div></th>
-      <th class="me-fm-th-off" data-col="off" title="Byte offset within the DDL record (dec + hex)">Offset<div class="me-fm-resizer" data-col="off"></div></th>
       <th class="me-fm-th-dt"  data-col="dt" title="DDL-declared type and length, and any override applied to them">Type-Len<div class="me-fm-resizer" data-col="dt"></div></th>
       <th class="me-fm-th-len" data-col="len" title="Size on the wire, in bytes">Size<div class="me-fm-resizer" data-col="len"></div></th>
+      <th class="me-fm-th-off" data-col="off" title="Bytes this field occupies within the DDL record">Offset<div class="me-fm-resizer" data-col="off"></div></th>
       <th class="me-fm-th-de"  data-col="de" title="ISO 8583 data element number">DE${usesBitmapFields ? '<button class="me-rb me-de-clear me-de-clear-all" onclick="event.stopPropagation();_meFmClearDEs()" title="Clear ALL DE overrides — every field returns to the natural ordinal sequence">↺</button>' : ''}<div class="me-fm-resizer" data-col="de"></div></th>
       <th class="me-fm-th-vlg" data-col="vlg" title="Variable Length Group">VLG<div class="me-fm-resizer" data-col="vlg"></div></th>
     </tr></thead>
@@ -21807,9 +21806,15 @@ function _meFmRowHtml(row, ctx, counter) {
   // the fallback for full sequential builds.
   const numText = isGroup ? '' : (row._fmNum != null ? row._fmNum : ++counter.n);
   const numCell = `<td class="me-fm-num">${numText}</td>`;
-  // Offset column — DDL-declared byte offset, dec + hex (same as DDL Doc).
+  // Offset column — the byte RANGE the field occupies, the same form the Test
+  // panel's table uses (`0–2`), rather than the start plus a hex repeat of it.
+  // The end comes from the size in effect, so an override that re-sizes a field
+  // moves this column with it. Zero-length fields keep the bare start: `4–3`
+  // reads like a bug in the parse, which is the same reason the parse-spec help
+  // prints an em dash for a synthetic row.
+  const _offLen = row.lenWritten != null ? row.lenWritten : (row.length || 0);
   const offCell = row.offset != null
-    ? `<td class="me-fm-off">${row.offset}<span class="me-fm-off-hex"> 0x${row.offset.toString(16).toUpperCase().padStart(4, '0')}</span></td>`
+    ? `<td class="me-fm-off">${row.offset}${_offLen > 0 ? '–' + (row.offset + _offLen - 1) : ''}</td>`
     : `<td class="me-fm-off"></td>`;
   // Length column — byte size from the DDL (groups sum their leaves). When an
   // override re-sizes the field it annotates HERE, in the same "declared ↩ in
@@ -21861,7 +21866,7 @@ function _meFmRowHtml(row, ctx, counter) {
   const dtCell = `<td class="me-fm-dt${overrideBadLen ? ' me-fm-dt-bad' : ''}">${typePart}${asPart}${warnIcon}</td>`;
   return `<tr class="${trCls}" ${dataAttrs} onclick="_meOvlRowClick('${id}', event)"`
     + ` ondblclick="_meFmCopyFieldName('${id}', event)"`
-    + ` title="Double-click to copy the field name">${numCell}${fieldCell}${offCell}${dtCell}${lenCell}${deCell}${vlgCell}</tr>`;
+    + ` title="Double-click to copy the field name">${numCell}${fieldCell}${dtCell}${lenCell}${offCell}${deCell}${vlgCell}</tr>`;
 }
 
 // Double-click a Field Map row to copy its name, so it can be pasted straight
@@ -22851,7 +22856,7 @@ function _meFmUiSaveCollapse(item) {
 
 // ── Field Map column visibility ──────────────────────────────────────────────
 const _ME_FM_COLS = [
-  ['num', '#'], ['off', 'Offset'], ['dt', 'Type-Len'], ['len', 'Size'],
+  ['num', '#'], ['dt', 'Type-Len'], ['len', 'Size'], ['off', 'Offset'],
   ['de', 'DE'], ['vlg', 'VLG'],
 ];   // Field column is always visible
 const _ME_FM_COLVIS_KEY = 'up_me_fm_colvis';
@@ -23214,12 +23219,12 @@ const _FM_HELP = {
     ],
   },
   'Offset': {
-    purpose: 'Byte offset of the field within the DDL record (dec + hex).',
-    desc: 'Read-only column mirroring DDL Doc. Shows where the field starts when every field is present, per the DDL declaration. Note: inside <code>bitmap-fields</code>, present DEs are read <b>sequentially at the cursor</b>, so the actual wire position can differ whenever an earlier DE is absent — the offset is the DDL\'s static layout, not the runtime position.',
+    purpose: 'The bytes this field occupies within the DDL record.',
+    desc: 'Read-only column mirroring DDL Doc. Shows the byte range the field occupies when every field is present, per the DDL declaration — the same <code>first–last</code> form the Test panel uses. The end follows the size in effect, so an override that re-sizes a field moves it. Note: inside <code>bitmap-fields</code>, present DEs are read <b>sequentially at the cursor</b>, so the actual wire position can differ whenever an earlier DE is absent — the offset is the DDL\'s static layout, not the runtime position.',
     rows: [
-      ['Header field',  'TYP at DDL offset 12',                  '12 0x000C'],
-      ['Group',         'PAN (LEN+DATA) starting at offset 32',  '32 0x0020 — the group shows its first leaf\'s offset'],
-      ['REDEFINES',     'Overlay of an earlier field',           'Shows the overlaid region\'s offset'],
+      ['Header field',  'TYP at DDL offset 12, 4 bytes long',    '12–15'],
+      ['Group',         'PAN (LEN+DATA) starting at offset 32',  '32–52 — the group spans its leaves'],
+      ['REDEFINES',     'Overlay of an earlier field',           'Shows the overlaid region\'s range'],
     ],
   },
   // Titled Size, matching the column. It read "Length" while the header said

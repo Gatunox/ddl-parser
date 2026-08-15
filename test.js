@@ -10480,6 +10480,33 @@ test('every OPTIONAL attribute says what happens when it is omitted', () => {
   deepEq(missing, [], 'optional attributes with no stated default');
 });
 
+test('an attribute type lists its accepted values one per line', () => {
+  // `"binary" | "ascii" | "ascii-hex"` was one run of text, and the alternatives
+  // are exactly what someone opens the reference to find.
+  const fn = psFnSource('_meHelpTypeHtml');
+  assert.ok(/me-ps-type-or/.test(fn), 'the values are not joined by "or"');
+  assert.ok(/<br>/.test(fn), 'the values are not put on separate lines');
+  // Only at the top level: a `|` inside {…} or […] describes that shape, not a
+  // choice between two types, and splitting on it would cut a form in half.
+  assert.ok(/depth === 0/.test(fn), 'a nested "|" would be split as an alternative');
+  for (const ch of ['{', '[']) assert.ok(fn.includes(`'${ch}'`), `depth does not track ${ch}`);
+  // And the row actually uses it — checking the helper alone passes with the
+  // type cell reverted to printing the raw string.
+  assert.ok(/me-ps-help-atype">\$\{_meHelpTypeHtml\(type\)\}/.test(psFnSource('_mePsHelpSelect')),
+    'the type cell prints the raw string instead of the value list');
+});
+
+test('selecting an attribute tints its row once, not twice', () => {
+  // `.me-ps-attr-row:hover td` is a DESCENDANT selector, so it also matched the
+  // cells of the form-by-form table nested inside the description — those rows
+  // took the tint on top of the row's own and the highlight came out patchy.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'))
+                  .replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const sel of ['.me-ps-attr-row:hover', '.me-ps-attr-row.me-ps-sel'])
+    assert.ok(new RegExp(sel.replace(/[.:]/g, '\\$&') + '\\s*>\\s*td\\{').test(css),
+      `${sel} paints descendants, so a nested table is tinted twice`);
+});
+
 test('a default is only claimed for an attribute that exists', () => {
   // The other direction: a dflts entry for an attribute the block does not
   // have is a default for nothing, and it would survive a rename silently.
@@ -10497,11 +10524,16 @@ test('the reference actually renders the defaults it stores', () => {
   assert.ok(/info\.dflts && info\.dflts\[name\]/.test(src) && /_PS_COMMON_DFLTS\[name\]/.test(src),
     'the detail view does not read the stored defaults');
   assert.ok(/Omitted:/.test(src), 'the default is not built into a row at all');
-  // …and the built fragment is actually placed in the row. Checking only that
-  // "Omitted:" appears somewhere passes with the interpolation deleted, because
-  // the string that builds it is still there.
-  assert.ok(/\$\{_meHelpDescHtml\(desc\)\}\$\{dHtml\}/.test(src),
-    'the default is built and then not put in the description cell');
+  // …and the built fragment is actually handed to the description renderer.
+  // Checking only that "Omitted:" appears somewhere passes with the hand-off
+  // deleted, because the string that builds it is still there.
+  assert.ok(/_meHelpDescHtml\(desc, dHtml\)/.test(src),
+    'the default is built and then never given to the description');
+  // It rides with the LEAD sentence: appended after the form-by-form table it
+  // read as a footnote to the last row rather than as part of the meaning.
+  const desc = psFnSource('_meHelpDescHtml');
+  assert.ok(/const tail = extra \|\| ''/.test(desc), 'the description renderer ignores the default');
+  assert.ok(/!placed && tail/.test(desc), 'the default is not placed with the lead line');
   // …and only for optional ones: "omitted" is meaningless on a required attribute.
   assert.ok(/const d = req \? null :/.test(src),
     'a required attribute would be shown a default for being left out');

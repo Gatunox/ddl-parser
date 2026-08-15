@@ -2247,8 +2247,11 @@ input.me-inp{width:100%;}
 .me-ps-ex-err td{color:#f8a29d;}
 /* Attributes are clickable — selecting one filters the examples below. */
 .me-ps-attr-row{cursor:pointer;}
-.me-ps-attr-row:hover td{background:rgba(var(--accent-rgb),0.08);}
-.me-ps-attr-row.me-ps-sel td{background:rgba(var(--accent-rgb),0.16);}
+/* `> td`, not `td`: a descendant selector also matched the cells of the
+   form-by-form table nested INSIDE the description, so those rows took the tint
+   twice and the highlight came out patchy down the row. */
+.me-ps-attr-row:hover > td{background:rgba(var(--accent-rgb),0.08);}
+.me-ps-attr-row.me-ps-sel > td{background:rgba(var(--accent-rgb),0.16);}
 /* Form-by-form attribute description: the accepted shape on the left, what it
    means on the right. One paragraph listing every form was unreadable. */
 .me-ps-form-tbl{border-collapse:collapse;width:100%;}
@@ -2283,8 +2286,12 @@ input.me-inp{width:100%;}
 .me-ps-help-atbl tr:last-child td{border-bottom:none;}
 .me-ps-help-aname{color:var(--accent2);white-space:nowrap;}
 .me-ps-help-atype{color:var(--text-dim);white-space:normal;word-break:break-word;min-width:80px;}
-.me-ps-help-dflt{margin-top:4px;color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);}
+.me-ps-help-dflt{color:var(--text-dim);}
 .me-ps-help-dflt b{color:var(--text);font-weight:600;}
+/* One accepted value per line. A single "a | b | c" run read as one blob and
+   the alternatives were the thing being looked up. */
+.me-ps-help-atype{white-space:normal;}
+.me-ps-type-or{color:var(--text-very-dim);}
 .me-ps-help-req{color:#f85149;font-size:calc(var(--sz-mono) - 3px);}
 .me-ps-help-opt{color:var(--text-dim);font-size:calc(var(--sz-mono) - 3px);}
 /* One example = one card. They used to be a flat run of divs separated by a
@@ -15770,7 +15777,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.23.1.0';
+const APP_VERSION  = '1.23.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19378,13 +19385,45 @@ function _mePsHelpExampleHtml(ex, i) {
 //   [['form', 'meaning']]   — a form-by-form table
 // Shared by the Parse Spec help and the Recognizer help, so the two panels
 // cannot drift into rendering the same data two different ways.
-function _meHelpDescHtml(d) {
-  if (!Array.isArray(d)) return d;
-  if (d.some(x => Array.isArray(x)))
-    return `<table class="me-ps-form-tbl">${d.map(x => Array.isArray(x)
-      ? `<tr><td class="me-ps-form-k">${x[0]}</td><td>${x[1]}</td></tr>`
-      : `<tr><td colspan="2" class="me-ps-form-note">${x}</td></tr>`).join('')}</table>`;
-  return `<ul class="me-ps-help-ul me-ps-attr-ul">${d.map(x => `<li>${x}</li>`).join('')}</ul>`;
+// One accepted value per line, joined by "or". A type like
+// `"binary" | "ascii" | "ascii-hex"` was one run of text, and the alternatives
+// are the thing being looked up. Splits only at the TOP level: a `|` inside
+// {…} or […] belongs to that shape, not to the list.
+function _meHelpTypeHtml(type) {
+  const parts = [];
+  let depth = 0, cur = '';
+  for (const ch of String(type)) {
+    if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') depth--;
+    if (ch === '|' && depth === 0) { parts.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  parts.push(cur);
+  const vals = parts.map(x => x.trim()).filter(Boolean);
+  return vals.map((v, i) => _escHtml(v) +
+    (i < vals.length - 1 ? '<span class="me-ps-type-or"> or</span>' : '')).join('<br>');
+}
+
+// `extra` rides with the LEAD sentence rather than trailing the whole
+// description. Appended after the form-by-form table it read as a footnote to
+// the last row instead of as part of what the attribute means.
+function _meHelpDescHtml(d, extra) {
+  const tail = extra || '';
+  if (!Array.isArray(d)) return d + (tail ? ' ' + tail : '');
+  if (d.some(x => Array.isArray(x))) {
+    // The lead is the first plain string; if the description opens straight
+    // into forms, the default gets a note row of its own at the top.
+    let placed = false;
+    const rows = d.map(x => {
+      if (Array.isArray(x)) return `<tr><td class="me-ps-form-k">${x[0]}</td><td>${x[1]}</td></tr>`;
+      const withTail = (!placed && tail) ? (placed = true, `${x} ${tail}`) : x;
+      return `<tr><td colspan="2" class="me-ps-form-note">${withTail}</td></tr>`;
+    });
+    if (tail && !placed) rows.unshift(`<tr><td colspan="2" class="me-ps-form-note">${tail}</td></tr>`);
+    return `<table class="me-ps-form-tbl">${rows.join('')}</table>`;
+  }
+  return `<ul class="me-ps-help-ul me-ps-attr-ul">${d.map((x, i) =>
+    `<li>${x}${(i === 0 && tail) ? ' ' + tail : ''}</li>`).join('')}</ul>`;
 }
 
 // Selecting an attribute narrows the examples to the ones that use it.
@@ -19420,13 +19459,13 @@ function _mePsHelpSelect(blk) {
   const attrRows = info.attrs.concat(_PS_COMMON_ATTRS).map(([name, type, req, desc]) => {
     const sel = _mePsHelpAttrSel === name ? ' me-ps-sel' : '';
     const d = req ? null : dfltOf(name);
-    const dHtml = d ? `<div class="me-ps-help-dflt"><b>Omitted:</b> ${d}</div>` : '';
+    const dHtml = d ? `<span class="me-ps-help-dflt"><b>Omitted:</b> ${d}</span>` : '';
     return `<tr class="me-ps-attr-row${sel}" data-attr="${name}"` +
     ` onclick="_mePsHelpAttr('${blk}','${name}')" title="Show only the examples that use ${name}">` +
     `<td class="me-ps-help-aname">${name}</td>` +
-    `<td class="me-ps-help-atype">${_escHtml(type)}</td>` +
+    `<td class="me-ps-help-atype">${_meHelpTypeHtml(type)}</td>` +
     `<td>${req ? '<span class="me-ps-help-req">required</span>' : '<span class="me-ps-help-opt">optional</span>'}</td>` +
-    `<td>${_meHelpDescHtml(desc)}${dHtml}</td></tr>`;
+    `<td>${_meHelpDescHtml(desc, dHtml)}</td></tr>`;
   }).join('');
   const attrTbl = info.attrs.length
     ? `<table class="me-ps-help-atbl"><thead><tr><th>Attribute</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${attrRows}</tbody></table>`

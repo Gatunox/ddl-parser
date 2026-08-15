@@ -10515,6 +10515,13 @@ test('selecting an attribute tints its row once, not twice', () => {
   for (const sel of ['.me-ps-attr-row:hover', '.me-ps-attr-row.me-ps-sel'])
     assert.ok(new RegExp(sel.replace(/[.:]/g, '\\$&') + '\\s*>\\s*td\\{').test(css),
       `${sel} paints descendants, so a nested table is tinted twice`);
+  // Scoping this table's OWN rules is not enough: the app-wide
+  // `tbody tr:hover td` is itself a descendant selector, so hovering the
+  // attribute row painted every cell of the nested form table a second time.
+  // That one has to be overridden, and the override has to outrank it — an
+  // extra class does that, an equal-specificity rule would depend on order.
+  assert.ok(/tbody tr:hover \.me-ps-form-tbl td/.test(css),
+    'the app-wide row-hover rule still reaches into the nested form table');
 });
 
 test('a default is only claimed for an attribute that exists', () => {

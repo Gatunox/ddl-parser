@@ -601,7 +601,13 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 #fmtForceSelect.fmt-forced { color: var(--warning); border-color: var(--warning); }
 
 /* ===== DDL TREE PANE ===== */
-.ddl-pane-split  { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
+/* The page's own ground, not the panel's surface. The two panes are cards;
+   what shows between and above them should be what a card sits ON, which is
+   the same thing the Data Editor does with its sections. Visible only in the
+   top strip and the resizer gap now that the cards run flush to the edges —
+   which is exactly the space that was reading as a seam. */
+.ddl-pane-split  { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden;
+  background: var(--bg-deep); }
 /* The tree is a card inside the DDL panel, not a bordered-off column. Margin
    (not padding on the parent) so the resizer still measures the pane itself —
    the drag handler sets this element's width directly. */
@@ -15965,7 +15971,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.5.2';
+const APP_VERSION  = '1.25.5.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

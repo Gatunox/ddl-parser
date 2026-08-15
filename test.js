@@ -8558,12 +8558,20 @@ test('the DDL panel cards sit flush to its edges, apart from the top', () => {
   // read as one thick line. The edges that meet it are dropped; the edges that
   // face the resizer gap — a real boundary — stay. And only the corner that
   // still has two borders stays round.
-  const tree = /\.ddl-tree-pane\s*\{[^}]*\}/.exec(css)[0];
+  // Anchored to a rule BOUNDARY: unanchored, `.ddl-pane-split` also matches
+  // inside `.panel.collapsed .ddl-pane-split{display:none}`, which is the rule
+  // this found first and reported the background missing from.
+  const ruleFor = sel => {
+    const m = new RegExp('(?:^|[};])\\s*' + sel.replace('.', '\\.') + '\\s*\\{[^}]*\\}', 'm').exec(css);
+    assert.ok(m, `${sel} is gone`);
+    return m[0];
+  };
+  const tree = ruleFor('.ddl-tree-pane');
   assert.ok(/border-left: 0; border-bottom: 0;/.test(tree),
     'the tree card still doubles the panel border on its left and bottom');
   assert.ok(/border-radius: 0 var\(--r-md\) 0 0;/.test(tree),
     'the tree card rounds a corner that has no borders left');
-  const ed = /\.ddl-editor-pane\s*\{[^}]*\}/.exec(css)[0];
+  const ed = ruleFor('.ddl-editor-pane');
   assert.ok(/border-right: 0; border-bottom: 0;/.test(ed),
     'the editor card still doubles the panel border on its right and bottom');
   assert.ok(/border-radius: var\(--r-md\) 0 0 0;/.test(ed),
@@ -8577,6 +8585,20 @@ test('the DDL panel cards sit flush to its edges, apart from the top', () => {
     'the editor lost the border facing the resizer, where the boundary is real');
   assert.ok(!/border-top: 0/.test(tree) && !/border-top: 0/.test(ed),
     'a card lost its top border, which meets the panel header and not its edge');
+
+  // What shows between and above the cards is the page's ground, not the
+  // panel's surface — the same relationship the Data Editor's sections have to
+  // its body. On --bg-panel the strip read as a seam joining two halves rather
+  // than as the space two cards sit in.
+  const split = ruleFor('.ddl-pane-split');
+  assert.ok(/background: var\(--bg-deep\)/.test(split),
+    'the space around the cards is the panel surface, so they do not read as cards');
+  // …and the cards themselves keep the panel surface, or there is nothing to
+  // read against it. Tokens, so the light theme reverses the contrast on its own.
+  assert.ok(/background: var\(--bg-panel\)/.test(tree) && /background: var\(--bg-panel\)/.test(ed),
+    'a card no longer sits on its own surface');
+  assert.ok(/--bg-deep: #0d1117;/.test(css) && /--bg-panel: #161b22;/.test(css),
+    'the two grounds are no longer distinct tokens');
 });
 
 test('the Data Editor header carries the wordmark, with its title centred', () => {

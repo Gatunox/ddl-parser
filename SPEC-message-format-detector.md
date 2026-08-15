@@ -1511,6 +1511,10 @@ Once all messages are migrated and verified:
 | `up_me_test_col_w` | Data Editor Test results column widths |
 | `up_me_ps_split_h` | Parse Spec editor / block-reference split height |
 | `up_me_ps_help_w` | Block-reference column width |
+| `up_me_rec_split_h` | Recognizer list / reference split height |
+| `up_me_rec_help_w` | Recognizer-reference column width |
+| `up_me_fm_split_h` | Overrides table / reference split height |
+| `up_me_fm_help_w` | Column-reference width |
 | `up_me_test_collapsed` | Data Editor Test subpanel collapsed to its header |
 | `up_cc_…` | Per-editor column-chooser state (prefix) |
 

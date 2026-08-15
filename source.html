@@ -2262,6 +2262,10 @@ input.me-inp{width:100%;}
 .me-ps-col-resizer{grid-column:2;grid-row:1;cursor:ew-resize;background:transparent;}
 .me-ps-col-resizer:hover,.me-ps-col-resizer.dragging{background:rgba(var(--accent-rgb),0.45);}
 .me-ps-wrap.nohelp .me-ps-col-resizer{display:none;}
+/* The left half of the split is the spec editor, the recognizer list or the
+   Overrides table depending on the panel, so the grid placement is keyed on a
+   class all three carry rather than on the editor's own. */
+.me-ps-split .me-hs-main{min-height:0;min-width:0;height:auto;overflow:auto;grid-column:1;grid-row:1;}
 .me-ps-split .me-ps-cm{min-height:0 !important;min-width:0;height:auto;overflow:auto;grid-column:1;grid-row:1;}
 .me-ps-split .me-ps-help.open{
   min-height:0;min-width:0;height:auto;overflow:hidden;padding:0;
@@ -2342,6 +2346,11 @@ input.me-inp{width:100%;}
   height:auto;line-height:1.45;overflow:visible;white-space:normal;}
 /* colspan means nothing once the rows are display:contents. */
 .me-ps-form-tbl td[colspan]{grid-column:1 / -1;}
+/* A table too wide for the reference column scrolls inside its own box rather
+   than being clipped by the body, which hides overflow-x on purpose. */
+.me-hs-scroll{overflow-x:auto;max-width:100%;}
+.me-hs-scroll .me-ps-help-atbl{width:max-content;min-width:100%;}
+.me-hs-scroll .me-ps-help-atbl td{overflow-wrap:normal;white-space:nowrap;}
 /* The app-wide `tbody tr:hover td` is a DESCENDANT selector, so hovering the
    attribute row painted its own cell once and every cell of this nested table a
    second time — the highlight came out patchy on exactly the attributes whose
@@ -15873,7 +15882,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.24.1.4';
+const APP_VERSION  = '1.25.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17903,7 +17912,11 @@ function _meRenderRight() {
   };
   const syncFill = build => (el, done) => { el.innerHTML = build(); done(); };
   let html = sect('identity',    'Identity',    syncFill(() => _meHtmlId(item)))
-           + sect('recognizers', 'Recognizers', syncFill(() => _meHtmlRecs(item)));
+           + sect('recognizers', 'Recognizers', (el, done) => {
+               el.innerHTML = _meHtmlRecs(item);
+               _meHelpInitSplit('rec');   // the reference beside the list
+               done();
+             });
   if (isMsg) {
     html += sect('parse_spec',   'Parse Spec',  (el, done) => {
               el.innerHTML = _meHtmlParseSpec(item);
@@ -18038,22 +18051,12 @@ function _mePsRefreshVariantLabels(item) {
   });
 }
 
-// Open state lives on the editor state, not only as a class on the element:
-// the WRAPPER has to know too, so the split can collapse to one column when the
-// reference is closed. Two elements reading one fact.
-let _mePsHelpIsOpen = false;
-const _mePsHelpOpen = () => _mePsHelpIsOpen;
-function _mePsSyncHelpOpen() {
-  const el   = document.getElementById('me-ps-help');
-  const wrap = document.getElementById('me-ps-wrap');
-  if (el)   el.classList.toggle('open', _mePsHelpIsOpen);
-  if (wrap) wrap.classList.toggle('nohelp', !_mePsHelpIsOpen);
-}
-function _mePsToggleHelp() {
-  _mePsHelpIsOpen = !_mePsHelpIsOpen;
-  _mePsSyncHelpOpen();
-  if (_mePsHelpIsOpen) _mePsHelpRender();
-}
+// Open state is a fact about the panel, not only a class on the element: the
+// WRAPPER has to know too, so the split can collapse to one column when the
+// reference is closed. Both classes come from the one flag — see _meHelpSync.
+const _mePsHelpOpen   = () => _meHelpIsOpen('ps');
+const _mePsToggleHelp = () => _meHelpToggle('ps');
+const _mePsHelpHtml   = () => _meHelpHtml('ps');
 
 // Understood by EVERY block, like at/peek — resolved once in the dispatcher, so
 // a read-bitmap row can carry a display override just as a read-ddl walk can.
@@ -19340,22 +19343,35 @@ const _PS_HELP = {
   },
 };
 
-// ── The block reference ─────────────────────────────────────────────────────
-// Two views. The CATALOGUE is every block grouped by what you are trying to do;
-// the BLOCK view is one block, opened to the attribute you are asking about.
-// It used to be a fifteen-row index above a detail pane that printed every
-// attribute and every example at once, which is a lot to scroll past to reach
-// the one line you came for.
-let _mePsHelpView   = 'catalog';   // 'catalog' | 'block'
-let _mePsHelpBlk    = null;        // which block the block view is showing
-let _mePsHelpAttrOpen = null;      // which attribute's accordion is open
-let _mePsHelpCommon = null;        // which shared-attribute chip is expanded
-let _mePsHelpFollow = null;        // block the cursor is inside, or null
+// ── The reference panel ─────────────────────────────────────────────────────
+// ONE panel, three callers: the Parse Spec blocks, the Recognizer types and the
+// Overrides columns. All three used to be their own index-table-above-a-detail-
+// pane, drifting apart as each was fixed on its own. Everything that is the same
+// about them lives here — the two views, the accordion, the scroll pinning, the
+// split and its drag bars — and a caller supplies only what is genuinely its
+// own: its data, how its groups are named, and how it renders one example.
+//
+// Two views. The CATALOGUE is every entry grouped by what you are trying to do;
+// the DETAIL view is one entry, opened to the attribute you are asking about.
+// An index above a pane that printed every attribute and every example at once
+// was a lot to scroll past to reach the one line you came for.
+const _ME_HELP = {};
+function _meHelpDefine(cfg) {
+  // `noun` names one entry ("block", "recognizer", "column") and is the only
+  // thing that varies in the chrome; `title` heads the panel.
+  _ME_HELP[cfg.key] = Object.assign({
+    view: 'catalog', sel: null, attrOpen: null, common: null, follow: null,
+    isOpen: false,
+  }, cfg);
+  return _ME_HELP[cfg.key];
+}
+const _meHelpCfg = key => _ME_HELP[key];
+const _meHelpEntry = (p, id) => p.data[id];
 
-function _mePsHelpHtml() {
-  return _mePsHelpView === 'block' && _PS_HELP[_mePsHelpBlk]
-    ? _mePsHelpBlockHtml(_mePsHelpBlk)
-    : _mePsHelpCatalogHtml();
+function _meHelpHtml(key) {
+  const p = _ME_HELP[key];
+  return p.view === 'detail' && _meHelpEntry(p, p.sel)
+    ? _meHelpDetailHtml(p) : _meHelpCatalogHtml(p);
 }
 
 // Rebuilding the panel's innerHTML throws its scroll away, so opening an
@@ -19364,46 +19380,49 @@ function _mePsHelpHtml() {
 // left at the same place on screen. Pinning the element rather than restoring
 // scrollTop is what covers the attribute that CLOSES sitting above the one you
 // opened, which changes the height above it. No selector, or a row that was not
-// on screen before, means a new document (another block, the catalogue) and
+// on screen before, means a new document (another entry, the catalogue) and
 // starts at the top.
-function _mePsHelpRender(pin) {
-  const el = document.getElementById('me-ps-help');
+function _meHelpRender(key, pin) {
+  const p = _ME_HELP[key];
+  const el = document.getElementById(p.id);
   if (!el) return;
   const body = el.querySelector('.help-body');
   const from = pin && body ? body.querySelector(pin) : null;
   const was = from && from.getBoundingClientRect().top - body.getBoundingClientRect().top;
-  el.innerHTML = _mePsHelpHtml();
+  el.innerHTML = _meHelpHtml(key);
   const next = el.querySelector('.help-body');
   const to = from && next ? next.querySelector(pin) : null;
   if (to) next.scrollTop += (to.getBoundingClientRect().top - next.getBoundingClientRect().top) - was;
 }
 
-function _mePsHelpCatalogHtml() {
-  const groups = _PS_GROUPS.map(g =>
+const _meHelpHead = (p, back) =>
+  `<div class="help-hd"><b>${p.title}</b>` +
+  (back ? `<button class="btn" onclick="_meHelpCatalog('${p.key}')">All ${p.plural}</button>` : '') +
+  `<button class="btn" onclick="_meHelpToggle('${p.key}')" title="Close">&#x2715;</button></div>`;
+
+function _meHelpCatalogHtml(p) {
+  const groups = p.groups.map(g =>
     `<div class="g-label">${g.name}</div>` +
     g.items.map(([id, blurb]) =>
-      `<div class="blk${id === _mePsHelpBlk ? ' on' : ''}" onclick="_mePsHelpSelect('${id}')">` +
+      `<div class="blk${id === p.sel ? ' on' : ''}" onclick="_meHelpSelect('${p.key}','${id}')">` +
       `<code>${id}</code><span>${blurb}</span></div>`).join('')
   ).join('');
-  return `<div class="help-hd"><b>Block reference</b>` +
-    `<button class="btn" onclick="_mePsToggleHelp()" title="Close">&#x2715;</button></div>` +
-    `<div class="help-body">${groups}</div>`;
+  return _meHelpHead(p, false) + `<div class="help-body">${groups}</div>`;
 }
 
-function _mePsHelpBlockHtml(blk) {
-  const info = _PS_HELP[blk];
-  const starter = _mePsStarter(info);
-  const rest = _mePsRest(info);
-  const attrs = info.attrs.map(([name, type, req, desc]) => {
-    const open = _mePsHelpAttrOpen === name;
+function _meHelpAttrsHtml(p, id, info) {
+  const attrs = info.attrs || [];
+  if (!attrs.length) return '';
+  const rows = attrs.map(([name, type, req, desc]) => {
+    const open = p.attrOpen === name;
     const d = (req || _meDescStatesOmitted(desc)) ? null
-            : ((info.dflts && info.dflts[name]) || _PS_COMMON_DFLTS[name] || null);
+            : ((info.dflts && info.dflts[name]) || (p.commonDflts && p.commonDflts[name]) || null);
     const dHtml = d ? `<span class="me-ps-help-dflt"><b>Omitted:</b> ${d}</span>` : '';
     // Only this attribute's examples, and only while it is open — the point of
-    // opening an attribute is to see it in use, not to re-read the block.
-    const exs = open ? _mePsExamplesFor(info, name) : [];
+    // opening an attribute is to see it in use, not to re-read the entry.
+    const exs = open ? p.examplesFor(info, name) : [];
     return `<div class="attr${open ? ' open' : ''}" data-attr="${name}">` +
-      `<div class="attr-h" onclick="_mePsHelpAttr('${blk}','${name}')">` +
+      `<div class="attr-h" onclick="_meHelpAttr('${p.key}','${id}','${name}')">` +
         `<code class="me-ps-help-aname">${name}</code>` +
         `<span class="me-ps-help-atype">${_meHelpTypeHtml(type)}</span>` +
         `<span style="margin-left:auto" class="${req ? 'me-ps-help-req' : 'me-ps-help-opt'}">` +
@@ -19411,79 +19430,141 @@ function _mePsHelpBlockHtml(blk) {
       `<div class="attr-b">${_meHelpDescHtml(desc, dHtml)}` +
         (open && exs.length
           ? `<div class="need">Example${exs.length > 1 ? 's' : ''} using ${name}</div>` +
-            exs.map((ex, i) => _mePsHelpExampleHtml(ex, i)).join('')
+            exs.map((ex, i) => p.exampleHtml(ex, i, info)).join('')
           : open
           ? `<div class="me-ps-help-dim" style="margin-top:8px">No example uses this on its own — see the starter above.</div>`
           : '') +
       `</div></div>`;
   }).join('');
-  const chips = _PS_COMMON_ATTRS.map(([name]) =>
-    `<button class="chip${_mePsHelpCommon === name ? ' on' : ''}" ` +
-    `onclick="_mePsHelpCommonToggle('${name}')">${name}</button>`).join('');
-  const commonSlot = _mePsHelpCommon
-    ? _mePsHelpCommonHtml(_mePsHelpCommon) : '';
-  const follow = _mePsHelpFollow === blk
-    ? `<div class="follow">Cursor is on <strong>${blk}</strong> — showing that block.</div>` : '';
-  return `<div class="help-hd"><b>Block reference</b>` +
-      `<button class="btn" onclick="_mePsHelpCatalog()">All blocks</button>` +
-      `<button class="btn" onclick="_mePsToggleHelp()" title="Close">&#x2715;</button></div>` +
-    follow +
+  return `<div class="need">Attributes — click one</div>${rows}`;
+}
+
+// The shared attributes are shown against the entry you are already reading, so
+// `at` is demonstrated on THIS block rather than on one picked for the manual.
+// Only the Parse Spec has them; the other two panels leave `commonAttrs` unset.
+function _meHelpCommonHtml(p) {
+  const chips = p.commonAttrs.map(([name]) =>
+    `<button class="chip${p.common === name ? ' on' : ''}" ` +
+    `onclick="_meHelpCommonToggle('${p.key}','${name}')">${name}</button>`).join('');
+  let slot = '';
+  if (p.common) {
+    const [, type, , desc] = p.commonAttrs.find(a => a[0] === p.common);
+    const d = p.commonDflts[p.common];
+    const dHtml = (d && !_meDescStatesOmitted(desc))
+      ? `<span class="me-ps-help-dflt"><b>Omitted:</b> ${d}</span>` : '';
+    slot = `<div class="attr open" data-attr="${p.common}" style="margin-top:8px">` +
+      `<div class="attr-h"><code class="me-ps-help-aname">${p.common}</code>` +
+      `<span class="me-ps-help-atype">${_meHelpTypeHtml(type)}</span>` +
+      `<span style="margin-left:auto" class="me-ps-help-opt">optional</span></div>` +
+      `<div class="attr-b">${_meHelpDescHtml(desc, dHtml)}` +
+      `<div class="me-ps-help-dim" style="margin-top:8px">${p.commonNote}</div></div></div>`;
+  }
+  return `<div class="need">${p.commonLabel}</div><div class="chips">${chips}</div>${slot}`;
+}
+
+function _meHelpDetailHtml(p) {
+  const id = p.sel, info = _meHelpEntry(p, id);
+  const starter = p.starter ? p.starter(info) : null;
+  // Two of the three datasets carry the description as an array whose first
+  // line is the lead. The Overrides columns carry a `purpose` sentence and a
+  // `desc` paragraph instead, so they override these rather than have the
+  // engine guess where the first sentence of an HTML string ends.
+  const lead = (p.lead || _mePsLead)(info);
+  const rest = (p.rest || _mePsRest)(info);
+  const follow = p.follow === id && p.followNote
+    ? `<div class="follow">${p.followNote(id)}</div>` : '';
+  return _meHelpHead(p, true) + follow +
     `<div class="help-body">` +
-      `<div class="crumb"><button onclick="_mePsHelpCatalog()">All blocks</button> / ${blk}</div>` +
-      `<p class="lead">${_mePsLead(info)}</p>` +
+      `<div class="crumb"><button onclick="_meHelpCatalog('${p.key}')">All ${p.plural}</button> / ${id}</div>` +
+      `<p class="lead">${lead}</p>` +
       (rest.length ? `<ul class="me-ps-help-ul">${rest.map(x => `<li>${x}</li>`).join('')}</ul>` : '') +
       (info.useWhen && info.useWhen.length
         ? `<div class="need">Use when</div><ul class="me-ps-help-ul">` +
           info.useWhen.map(x => `<li>${x}</li>`).join('') + `</ul>` : '') +
-      (starter ? `<div class="need">Start with this</div>${_mePsHelpExampleHtml(starter, 0)}` : '') +
-      `<div class="need">Attributes — click one</div>${attrs || '<p class="me-ps-help-dim">No attributes.</p>'}` +
-      `<div class="need">On every block</div><div class="chips">${chips}</div>${commonSlot}` +
+      (starter ? `<div class="need">Start with this</div>${p.exampleHtml(starter, 0, info)}` : '') +
+      _meHelpAttrsHtml(p, id, info) +
+      (p.extraHtml ? p.extraHtml(info, id) : '') +
+      (p.commonAttrs ? _meHelpCommonHtml(p) : '') +
     `</div>`;
 }
 
-// A shared attribute shown against the block you are already reading, so `at`
-// is demonstrated on THIS block rather than on one picked for the manual.
-function _mePsHelpCommonHtml(name) {
-  const [, type, , desc] = _PS_COMMON_ATTRS.find(a => a[0] === name);
-  const d = _PS_COMMON_DFLTS[name];
-  const dHtml = (d && !_meDescStatesOmitted(desc))
-    ? `<span class="me-ps-help-dflt"><b>Omitted:</b> ${d}</span>` : '';
-  return `<div class="attr open" data-attr="${name}" style="margin-top:8px">` +
-    `<div class="attr-h"><code class="me-ps-help-aname">${name}</code>` +
-    `<span class="me-ps-help-atype">${_meHelpTypeHtml(type)}</span>` +
-    `<span style="margin-left:auto" class="me-ps-help-opt">optional</span></div>` +
-    `<div class="attr-b">${_meHelpDescHtml(desc, dHtml)}` +
-    `<div class="me-ps-help-dim" style="margin-top:8px">Understood by every block — ` +
-    `resolved before the block runs, so this reads the same on any of them.</div></div></div>`;
+function _meHelpSelect(key, id) {
+  const p = _ME_HELP[key];
+  p.sel = id; p.view = 'detail'; p.attrOpen = null;
+  if (p.onSelect) p.onSelect(id);
+  _meHelpRender(key);
 }
-
-// The reference follows the caret. Only when the block actually CHANGES, and
-// never while the catalogue is open or an attribute is being read — moving the
-// help out from under someone mid-sentence is worse than not following at all.
-function _mePsHelpFollowCursor(state) {
-  if (!_mePsHelpIsOpen) return;
-  const pos = state.selection.main.head;
-  const blk = _mePsBlockAt(state.doc.toString(), pos);
-  if (!blk || blk === _mePsHelpFollow) return;
-  _mePsHelpFollow = blk;
-  if (_mePsHelpView === 'catalog') return;   // browsing the list — leave it alone
-  if (blk === _mePsHelpBlk) return;
-  _mePsHelpBlk = blk;
-  _mePsHelpAttrOpen = null;
-  _mePsHelpRender();
+function _meHelpCatalog(key) {
+  const p = _ME_HELP[key];
+  p.view = 'catalog'; p.attrOpen = null;
+  _meHelpRender(key);
 }
-
-function _mePsHelpCatalog() {
-  _mePsHelpView = 'catalog';
-  _mePsHelpAttrOpen = null;
-  _mePsHelpRender();
+function _meHelpAttr(key, id, name) {
+  const p = _ME_HELP[key];
+  p.sel = id; p.view = 'detail';
+  p.attrOpen = (p.attrOpen === name) ? null : name;
+  _meHelpRender(key, `[data-attr="${name}"]`);
 }
-
-function _mePsHelpCommonToggle(name) {
-  _mePsHelpCommon = _mePsHelpCommon === name ? null : name;
+function _meHelpCommonToggle(key, name) {
+  const p = _ME_HELP[key];
+  p.common = p.common === name ? null : name;
   // The chip row, not the panel that opens under it — the panel does not exist
   // yet on the click that opens it, so there would be nothing to pin to.
-  _mePsHelpRender('.chips');
+  _meHelpRender(key, '.chips');
+}
+const _meHelpIsOpen = key => _ME_HELP[key].isOpen;
+function _meHelpSync(key) {
+  const p = _ME_HELP[key];
+  const el = document.getElementById(p.id);
+  const wrap = document.getElementById(p.wrapId);
+  if (el)   el.classList.toggle('open', p.isOpen);
+  if (wrap) wrap.classList.toggle('nohelp', !p.isOpen);
+}
+function _meHelpToggle(key) {
+  const p = _ME_HELP[key];
+  p.isOpen = !p.isOpen;
+  _meHelpSync(key);
+  if (p.isOpen) _meHelpRender(key);
+}
+
+// Follow: the caret in the Parse Spec editor, the row you picked in the
+// Recognizer list. Only when the entry actually CHANGES, and never while the
+// catalogue is open or an attribute is being read — moving the help out from
+// under someone mid-sentence is worse than not following at all.
+function _meHelpFollowTo(key, id) {
+  const p = _ME_HELP[key];
+  if (!p.isOpen) return;
+  if (!id || id === p.follow) return;
+  p.follow = id;
+  if (p.view === 'catalog') return;   // browsing the list — leave it alone
+  if (id === p.sel) return;
+  p.sel = id; p.attrOpen = null;
+  _meHelpRender(key);
+}
+
+// The block reference — the Parse Spec's caller of the panel above. Everything
+// here is what is genuinely its own; the chrome comes from the engine.
+_meHelpDefine({
+  key: 'ps', id: 'me-ps-help', wrapId: 'me-ps-wrap',
+  splitId: 'me-ps-split', hRzId: 'me-ps-split-resizer', wRzId: 'me-ps-col-resizer',
+  title: 'Block reference', plural: 'blocks',
+  data: _PS_HELP, groups: _PS_GROUPS,
+  starter: _mePsStarter,
+  examplesFor: _mePsExamplesFor,
+  exampleHtml: (ex, i) => _mePsHelpExampleHtml(ex, i),
+  commonAttrs: _PS_COMMON_ATTRS, commonDflts: _PS_COMMON_DFLTS,
+  commonLabel: 'On every block',
+  commonNote: 'Understood by every block — resolved before the block runs, so ' +
+              'this reads the same on any of them.',
+  followNote: blk => `Cursor is on <strong>${blk}</strong> — showing that block.`,
+  storageKey: 'me_ps',
+});
+
+// The caret lands in a block; the panel shows that block. Resolving which block
+// reuses the editor's tokenizer mask rather than JSON.parse, so it still answers
+// while the spec is mid-edit and does not parse.
+function _mePsHelpFollowCursor(state) {
+  _meHelpFollowTo('ps', _mePsBlockAt(state.doc.toString(), state.selection.main.head));
 }
 
 // Render JSONC text as static HTML with the same .hl-* token classes the
@@ -19720,23 +19801,10 @@ function _meHelpDescHtml(d, extra) {
     `<li>${x}${(i === 0 && tail) ? ' ' + tail : ''}</li>`).join('')}</ul>`;
 }
 
-// Opening an attribute shows that attribute's examples and closes the previous
-// one — one at a time is the whole point of the accordion.
-function _mePsHelpAttr(blk, name) {
-  _mePsHelpBlk = blk;
-  _mePsHelpView = 'block';
-  _mePsHelpAttrOpen = (_mePsHelpAttrOpen === name) ? null : name;
-  _mePsHelpRender(`[data-attr="${name}"]`);
-}
-
-function _mePsHelpSelect(blk) {
-  if (!_PS_HELP[blk]) return;
-  _mePsHelpBlk = blk;
-  _mePsHelpView = 'block';
-  _mePsHelpAttrOpen = null;
-  _mePsHelpCommon = null;
-  _mePsHelpRender();
-}
+// Kept as names because the saved-state restore and the tests call them; the
+// behaviour is the engine's.
+const _mePsHelpAttr = (blk, name) => _meHelpAttr('ps', blk, name);
+const _mePsHelpSelect = blk => { if (_PS_HELP[blk]) _meHelpSelect('ps', blk); };
 function _stripJsonc(src) {
   let out = '';
   let i = 0;
@@ -20609,12 +20677,11 @@ function _mePsMountCM(item) {
   return _mePsCM;
 }
 
-// The editor/help split is a fixed height so the help can scroll inside it
-// rather than growing the Parse Spec card every time it is opened. The bar
-// under it drags that height, and it persists — an editor you resize on every
-// visit is one that is the wrong size by default.
-const _ME_PS_SPLIT_KEY = 'up_me_ps_split_h';
-const _ME_PS_HELP_W_KEY = 'up_me_ps_help_w';
+// The content/help split is a fixed height so the help can scroll inside it
+// rather than growing the card every time it is opened. The bar under it drags
+// that height, and it persists — a panel you resize on every visit is one that
+// is the wrong size by default. Each panel stores under its own prefix; the
+// keys are built in _meHelpInitSplit from the config's storageKey.
 const _ME_PS_SPLIT_MIN = 180;
 // The floor is the catalogue's longest unbreakable word — "declaration", 68px —
 // still fitting beside the block name, which at 260 it did not:
@@ -20662,37 +20729,43 @@ const _mePsSaveSize = (key, px) => {
   try { localStorage.setItem(key, String(px)); } catch(e) {}
 };
 
-function _mePsInitSplit() {
-  const split = document.getElementById('me-ps-split');
-  const help  = document.getElementById('me-ps-help');
+// One split, three panels. The ids and the storage keys come off the panel's
+// config so the Recognizer and Overrides references drag and persist exactly the
+// way the Parse Spec one does, without a second copy of the arithmetic.
+function _meHelpInitSplit(key) {
+  const p = _ME_HELP[key];
+  const split = document.getElementById(p.splitId);
+  const help  = document.getElementById(p.id);
   if (!split) return;
+  const hKey = `up_${p.storageKey}_split_h`, wKey = `up_${p.storageKey}_help_w`;
   try {
-    const savedH = parseInt(localStorage.getItem(_ME_PS_SPLIT_KEY), 10);
+    const savedH = parseInt(localStorage.getItem(hKey), 10);
     if (Number.isFinite(savedH)) split.style.height = Math.max(_ME_PS_SPLIT_MIN, savedH) + 'px';
-    const savedW = parseInt(localStorage.getItem(_ME_PS_HELP_W_KEY), 10);
+    const savedW = parseInt(localStorage.getItem(wKey), 10);
     if (Number.isFinite(savedW)) split.style.setProperty('--ps-help-w', Math.max(_ME_PS_HELP_MIN, savedW) + 'px');
   } catch(e) {}
 
-  _mePsDrag(document.getElementById('me-ps-split-resizer'), 'ns-resize', () => {
+  _mePsDrag(document.getElementById(p.hRzId), 'ns-resize', () => {
     const startH = split.getBoundingClientRect().height;
     const max = Math.max(_ME_PS_SPLIT_MIN, Math.round(window.innerHeight * 0.8));
     return (dx, dy) => {
       split.style.height = Math.min(max, Math.max(_ME_PS_SPLIT_MIN, startH + dy)) + 'px';
     };
-  }, () => _mePsSaveSize(_ME_PS_SPLIT_KEY, parseInt(split.style.height, 10)));
+  }, () => _mePsSaveSize(hKey, parseInt(split.style.height, 10)));
 
   // Dragging left widens the reference, so the delta is subtracted. The ceiling
-  // leaves the editor its own floor — a reference that can eat the whole split
-  // is a reference you have to undo before you can type again.
-  _mePsDrag(document.getElementById('me-ps-col-resizer'), 'ew-resize', () => {
+  // leaves the content its own floor — a reference that can eat the whole split
+  // is a reference you have to undo before you can work again.
+  _mePsDrag(document.getElementById(p.wRzId), 'ew-resize', () => {
     const startW = help ? help.getBoundingClientRect().width : 0;
     const max = Math.max(_ME_PS_HELP_MIN, split.getBoundingClientRect().width - _ME_PS_HELP_MIN);
     return dx => {
       split.style.setProperty('--ps-help-w',
         Math.min(max, Math.max(_ME_PS_HELP_MIN, startW - dx)) + 'px');
     };
-  }, () => _mePsSaveSize(_ME_PS_HELP_W_KEY, parseInt(split.style.getPropertyValue('--ps-help-w'), 10)));
+  }, () => _mePsSaveSize(wKey, parseInt(split.style.getPropertyValue('--ps-help-w'), 10)));
 }
+const _mePsInitSplit = () => _meHelpInitSplit('ps');
 
 // Expanded form: one attribute per line. The counterpart to _compactJsonc —
 // without it, switching back to Expanded did nothing at all, because _formatJsonc
@@ -21205,15 +21278,22 @@ function _meOverridesPrep(item) {
     warnHtml += `<div class="me-fm-warn">⚠ Parse spec references bitmap field "${ea(_bmpField)}" but no bound DDL field has that id, and the read-bitmap block states no width. Fix the field name or the binding — or give read-bitmap a "length" if the DDL does not declare the map.</div>`;
   }
 
-  const fmHelpOpen = !!(_meState && _meState.fmHelpOpen);
-  const helpHtml = `<div class="me-ps-help${fmHelpOpen ? ' open' : ''}" id="me-fm-help">${_meFmHelpHtml()}</div>`;
+  // The reference sits BESIDE the Field Map, in the same split the other two
+  // panels use. Open comes off the saved state before the markup is built, so
+  // `nohelp` and `open` are the one fact and a re-render cannot leave the column
+  // reserved around a hidden panel.
+  _ME_HELP.fm.isOpen = !!(_meState && _meState.fmHelpOpen);
+  const fmHelpOpen = _meHelpIsOpen('fm');
 
   // chrome(bodyRowsHtml) → full section markup with the given tbody content.
   const autoOn = _meAutoOrderSnap.has(item) || !!_meFmUiState(item).autoOrder;
   const colsRows = _ME_FM_COLS.map(([k, label]) =>
     `<div class="audit-cfg-row"><label>${label}</label><button class="panel-toggle" id="me-fm-ccol-${k}" onclick="_meFmToggleColVis('${k}')">−</button></div>`
   ).join('');
-  const chrome = bodyRows => warnHtml + helpHtml + `
+  const chrome = bodyRows => warnHtml + `
+<div class="me-ps-wrap side${fmHelpOpen ? '' : ' nohelp'}" id="me-fm-wrap">
+<div class="me-ps-split" id="me-fm-split">
+<div class="me-hs-main" id="me-fm-pane">
 <!-- No "Overrides" label: the section header directly above already says it. -->
 <div class="me-ovl-hdr"><span class="me-ovl-sub" id="me-ovl-count"></span></div>
 <div class="me-ovl-list" id="me-ovl-list"></div>
@@ -21281,6 +21361,12 @@ function _meOverridesPrep(item) {
 <div class="me-fm-panes">
   <div class="me-fm-pane"><div class="me-fm-pane-h">Overrides written</div><pre id="me-fm-json"></pre></div>
   <div class="me-fm-pane"><div class="me-fm-pane-h">What the rules did</div><pre id="me-fm-notes"></pre></div>
+</div>
+</div>
+<div class="me-ps-col-resizer" id="me-fm-col-resizer" title="Drag to resize the column reference"></div>
+<div class="me-ps-help${fmHelpOpen ? ' open' : ''}" id="me-fm-help">${_meFmHelpHtml()}</div>
+</div>
+<div class="me-ps-split-resizer" id="me-fm-split-resizer" title="Drag to resize the Overrides panel"></div>
 </div>
 `;
 
@@ -21734,6 +21820,7 @@ function _meFillOverridesSection(el, item, seq, done) {
         : new Set();
       }
       el.innerHTML = `<div class="me-ov-section">` + prep.chrome('') + `</div>`;
+      _meHelpInitSplit('fm');   // the reference beside the Field Map
       const wrap  = el.querySelector('.me-fm-table-wrap');
       const tbody = el.querySelector('.me-fm-table tbody');
       _meFmApplyColVis();
@@ -22830,18 +22917,12 @@ function _meFmReapplyState() {
   if (filterInput && _meState.fmFilter && filterInput.value !== _meState.fmFilter) {
     filterInput.value = _meState.fmFilter;
   }
-  // Restore the help panel's selected-row detail after a re-render.
-  if (_meState.fmHelpOpen && _meState.fmHelpSel
-      && typeof _meFmHelpSelect === 'function'
-      && document.getElementById('me-fm-help')) {
-    _meFmHelpSelect(_meState.fmHelpSel);
-  }
-  // Same for the recognizer help, which lost its detail on every render.
-  if (_meState.recHelpOpen && _meState.recHelpSel
-      && typeof _meRecHelpSelect === 'function'
-      && document.getElementById('me-rec-help-detail')) {
-    _meRecHelpSelect(_meState.recHelpSel);
-  }
+  // The help panels used to need re-selecting here because a render blanked
+  // their detail pane. They render their own view from their own state now, so
+  // there is nothing to restore.
+  // The recognizer help used to need re-selecting here because a render blanked
+  // its detail pane. The panel now renders its own view from its own state, so
+  // there is nothing to restore.
 }
 function _meFmToggleGroup(tr) {
   if (!tr || !_meState) return;
@@ -22887,6 +22968,22 @@ const _FM_HELP = {
       ['Override TYP→DE-3', 'Anchor at TYP shifts everything after', 'TYP=DE-3, RTE.STAT=DE-4, RTE.ORE=DE-5, …'],
       ['Terminal group', 'Group + its leaf children', 'FIELD222=DE-7, FIELD222-A and FIELD222-B have no DE'],
     ],
+    attrs: [
+      // Named rather than drawn: an attribute name is also a DOM selector and a
+      // handler argument, and "&lt; &gt;" survives neither intact.
+      ['nudge', 'the &lt; and &gt; buttons', false, [
+        'Move this field\'s DE number down or up by one.',
+        'Every field after it shifts with it — the number you set is an <b>anchor</b>, not a one-off.',
+      ]],
+      ['DE-N', 'type a number', false, [
+        'Click the number to type one directly, for when the field you are anchoring is a long way from where the count currently is.',
+        'Same anchoring rule: the fields after it re-extrapolate from here.',
+      ]],
+      ['↺', 'clear', false, [
+        'Drop the override and put the field back on the number extrapolated from the anchor before it.',
+        'Not the same as setting it to its original number by hand — a typed number is itself an anchor, and this leaves none.',
+      ]],
+    ],
   },
   'VLG': {
     purpose: 'Variable Length Group — pick the LEN sub-field; distribute it across the rest.',
@@ -22896,6 +22993,17 @@ const _FM_HELP = {
       ['Pick LEN, says 3',  'Same DDL',                     'TAG reads 2 (fixed), VAL gets 1, AUX gets 0 (still emitted, empty)'],
       ['Set to blank',      'Any group',                    'Not a VLG — group reads every leaf at its declared length'],
       ['VLG hidden',        'Spec has no bitmap-fields, or row is a leaf', 'Dropdown doesn\'t render — placeholder column kept for alignment'],
+    ],
+    attrs: [
+      ['a leaf name', 'the sub-field holding LEN', false, [
+        'Pick the sub-field that carries the group\'s length and <code>bitmap-fields</code> reads it as a numeric LEN (ASCII digits).',
+        'Sub-fields <b>before</b> it read at their declared fixed length; sub-fields <b>after</b> it share the N bytes it declares, in declaration order, each capped by its own declared length.',
+        'It does not have to be first — this is what makes TLV layouts (TAG, then LEN, then VALUE) work.',
+      ]],
+      ['(blank)', 'not a VLG', false, [
+        'The default. The group reads every leaf at its declared length.',
+        'Choosing this back is how you undo a guess: an explicit choice here always beats <code>vlg_identifier</code>\'s name-matching.',
+      ]],
     ],
   },
   'Offset': {
@@ -22940,6 +23048,45 @@ const _FM_HELP = {
       ['hex-ascii-decimal',   'PIC X(4)',       '31323334',         '1234',                           '4660',     'ASCII text "1234" parsed base-16 = 0x1234'],
       ['hex-ebcdic-decimal', 'PIC X(2)',  'C6C6',             '[c6][c6]',                       '255',      'same, but the hex text arrives in EBCDIC ("FF")'],
     ],
+    attrs: [
+      ['(DDL default)', 'the empty entry', false, [
+        'Honour the type the DDL declares. This is what the dropdown shows until you change it.',
+        'Picking it again is how an override is removed.',
+      ]],
+      ['uint-be', 'any width', false, [
+        'The bytes are one unsigned integer, most significant byte first.',
+        'The width is the field\'s <b>Length</b> column, not a fixed 2 or 4 — which is why one entry covers BINARY 8 through 64. Over 4 bytes it decodes through BigInt, so a 64-bit value is exact.',
+      ]],
+      ['uint-le', 'any width', false, [
+        'The same, least significant byte first.',
+        'The two differ only in byte order, so the same number reaches you from either wire convention: <code>01F4</code> big-endian and <code>F401</code> little-endian are both 500.',
+      ]],
+      ['binary', 'any width', false, [
+        'Do not decode — show the raw bytes as uppercase hex, prefixed <code>0x</code>.',
+        'Length-flexible, so it is the honest choice for a field you have not identified yet.',
+      ]],
+      ['ascii', 'any width', false, [
+        'Read the bytes as ASCII text.',
+        'Anything outside the printable range renders as <code>.</code> rather than as a control character, so one odd byte cannot disturb the row.',
+      ]],
+      ['ebcdic', 'any width', false, [
+        'Read the bytes through the EBCDIC table into text.',
+        'The one to reach for when a field looks like <code>[c8][c5][d3][d3][d6]</code> and should read HELLO.',
+      ]],
+      ['hex-char', 'any width', false, [
+        'The value IS the hex characters of the raw bytes — TAL\'s <code>binary^hexchar</code>.',
+        'No <code>0x</code> prefix and no charset conversion: <code>0013</code> stays the four characters 0, 0, 1, 3.',
+        'Works on any bytes, printable or not.',
+      ]],
+      ['hex-ascii-decimal', 'any width', false, [
+        'The field holds the <b>text</b> of a hex number in ASCII; parse that text base-16.',
+        'So <code>"00FF"</code> — four ASCII characters — is the number 255, and <code>"1234"</code> is 4660, not one thousand two hundred and thirty-four.',
+      ]],
+      ['hex-ebcdic-decimal', 'any width', false, [
+        'The same, for hex text that arrives in EBCDIC.',
+        'The bytes are translated out of EBCDIC first, then read base-16.',
+      ]],
+    ],
   },
   'Display': {
     purpose: 'Override how the parsed value is formatted in the output panel.',
@@ -22963,6 +23110,40 @@ const _FM_HELP = {
       ['bitmap',   'TYPE BINARY 32', 'C0400000',                     '[c0][40][00][00]',     '1100 0000 0100 0000 0000 0000 0000 0000', 'raw bytes as 0/1 bits, grouped every 4 — bit0 leftmost'],
       ['bitmap',   'PIC X',          '30',                           '0',                    '0011 0000',                      'any type — the RAW bytes are rendered, not the decoded value'],
     ],
+    attrs: [
+      ['datetime', 'digit count decides', false, [
+        'Format a run of digits as a date, a time, or both — the <b>digit count</b> picks which.',
+        ['4',  'MM/DD'],
+        ['6',  'HH:MM:SS if the digits are a valid time; otherwise YYMMDD.'],
+        ['10', 'MM/DD HH:MM:SS'],
+        ['12', 'YYMMDD HH:MM:SS, the YY taken as 20xx.'],
+        ['14', 'YYYYMMDD HH:MM:SS'],
+        'Time is tried before date at 6 digits, which is why <code>143025</code> reads as 14:30:25 and <code>250704</code> as 2025-07-04.',
+      ]],
+      ['amount', 'minor units', false, [
+        'Divide by 100 and show two decimals.',
+        'The sign is read off the value: a trailing <code>D</code> is a debit and comes out negative, a trailing <code>C</code> a credit, and a leading minus works too.',
+      ]],
+      ['hex', 'raw bytes', false, [
+        'The raw bytes as <code>0x</code> + uppercase hex.',
+        'Reads the field\'s bytes directly and <b>ignores any Data Type override</b> — see <b>Data Type &amp; Display</b>.',
+      ]],
+      ['ascii', 'raw bytes', false, [
+        'The raw bytes as printable ASCII, anything else as <code>.</code>',
+        'Also reads the bytes directly, ignoring a Data Type override — useful for checking what charset a field is really in.',
+      ]],
+      ['ebcdic', 'raw bytes', false, [
+        'The raw bytes through the EBCDIC table.',
+        'The third of the three raw-byte displays, so <code>[f1]</code> shows as <code>1</code> however the field is typed.',
+      ]],
+      ['gmt-ts', '8 bytes', false, [
+        'An 8-byte NonStop JULIANTIMESTAMP — microseconds since Julian day 0 — rendered in GMT.',
+      ]],
+      ['bitmap', 'any width', false, [
+        'The raw bytes as 0/1 bits, grouped in fours, bit 0 leftmost.',
+        'Works on any declared type, because it renders the bytes and not the decoded value.',
+      ]],
+    ],
   },
   'Data Type & Display': {
     purpose: 'How a Data Type override and a Display override combine on the same field.',
@@ -22981,51 +23162,75 @@ const _FM_HELP = {
   },
 };
 
-function _meFmHelpHtml() {
-  const rows = Object.entries(_FM_HELP).map(([col, info]) =>
-    `<tr onclick="_meFmHelpSelect('${col}')" data-col="${col}">` +
-      `<td class="me-ps-help-block">${col}</td>` +
-      `<td>${info.purpose}</td>` +
-    `</tr>`).join('');
-  const thead = '<tr><th>Column</th><th>Purpose</th></tr>';
-  return `<div class="me-ps-help-tbl-wrap"><table class="me-ps-help-table">` +
-    `<thead>${thead}</thead><tbody>${rows}</tbody></table></div>` +
-    `<div class="me-ps-help-detail" id="me-fm-help-detail"></div>`;
-}
+// The Overrides columns, grouped by whether you can change them.
+const _FM_GROUPS = [
+  { name: 'Change how a field is read', items: [
+    ['Data Type', 'Reinterpret the bytes'],
+    ['Display', 'Reformat the value'],
+    ['Data Type & Display', 'How the two combine'],
+  ]},
+  { name: 'Change what the parse walks', items: [
+    ['Data Element', 'Which DE number a field answers to'],
+    ['VLG', 'Which sub-field holds a group\'s length'],
+  ]},
+  { name: 'Read-only, from the DDL', items: [
+    ['Offset', 'Where the field starts'],
+    ['Length', 'How many bytes it declares'],
+  ]},
+];
 
-function _meFmHelpSelect(col) {
-  const info = _FM_HELP[col];
-  const det  = document.getElementById('me-fm-help-detail');
-  if (!info || !det) return;
-  if (_meState) _meState.fmHelpSel = col;
-  document.querySelectorAll('#me-fm-help .me-ps-help-table tbody tr').forEach(tr =>
-    tr.classList.toggle('me-ps-sel', tr.dataset.col === col)
-  );
-  // Entries may declare their own column set (`cols`) — e.g. the Data Type /
+// One worked example, rendered as a card. The Overrides entries do not run
+// anything — unlike the other two panels, whose examples are executed — so the
+// card is the row itself under the entry's own column headers.
+function _meFmHelpExampleHtml(row, i, info) {
+  // Entries may declare their own column set (`cols`) — the Data Type and
   // Display tables mirror the Test-Data-Override report layout. Default stays
   // the 3-column Scenario/Setup/Result shape. Override-name columns (headers
   // ending in "ovr") get the accent highlight; default tables highlight col 0.
   const cols = info.cols || ['Scenario', 'Setup', 'Result'];
-  const hl = cols.map((c, i) => info.cols ? / ovr$/.test(c) : i === 0);
-  const exRows = info.rows.map(cells =>
-    `<tr>${cells.map((c, i) => `<td${hl[i] ? ' class="me-ps-help-aname"' : ''}>${c}</td>`).join('')}</tr>`
-  ).join('');
-  const exTbl = info.rows.length
-    ? `<table class="me-ps-help-atbl"><thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${exRows}</tbody></table>`
-    : '';
-  det.innerHTML =
-    `<div class="me-ps-help-detail-title">${col}</div>` +
-    `<div class="me-ps-help-detail-desc">${info.desc}</div>` +
-    exTbl;
-  det.classList.add('open');
+  const hl = cols.map((c, n) => info.cols ? / ovr$/.test(c) : n === 0);
+  // Seven columns of hex do not fit a reference column at any width the drag bar
+  // allows, and the body hides overflow-x so that a wide example cannot make the
+  // whole panel scroll sideways. So this one scrolls inside itself.
+  return `<div class="me-ps-help-ex">` +
+    `<div class="me-ps-help-ex-title"><span class="me-ps-help-ex-n">Example ${i + 1}</span></div>` +
+    `<div class="me-hs-scroll"><table class="me-ps-help-atbl">` +
+    `<thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>` +
+    `<tbody><tr>${row.map((c, n) =>
+      `<td${hl[n] ? ' class="me-ps-help-aname"' : ''}>${c}</td>`).join('')}</tr></tbody>` +
+    `</table></div></div>`;
 }
 
+// The Overrides reference — the third caller. Its entries carry a `purpose`
+// sentence and a `desc` paragraph rather than a description array, and its
+// examples are static rows rather than something to run, so it supplies its own
+// lead, rest and example card. Everything else is the engine's.
+_meHelpDefine({
+  key: 'fm', id: 'me-fm-help', wrapId: 'me-fm-wrap',
+  splitId: 'me-fm-split', hRzId: 'me-fm-split-resizer', wRzId: 'me-fm-col-resizer',
+  title: 'Column reference', plural: 'columns',
+  data: _FM_HELP, groups: _FM_GROUPS,
+  lead: info => info.purpose,
+  rest: info => [info.desc],
+  starter: info => (info.rows || [])[0],
+  // A row demonstrates an option when the option is what the row's first cell
+  // names — the same derive-don't-declare rule the other two panels use, so an
+  // option cannot claim an example it does not appear in.
+  examplesFor: (info, attr) => (info.rows || []).filter(r => r[0] === attr),
+  exampleHtml: _meFmHelpExampleHtml,
+  // Every row, for the columns whose rows are cases rather than options.
+  extraHtml: (info) => (info.attrs && info.attrs.length) || !(info.rows || []).length ? ''
+    : `<div class="need">Worked examples</div>` +
+      info.rows.slice(1).map((r, i) => _meFmHelpExampleHtml(r, i + 1, info)).join(''),
+  storageKey: 'me_fm',
+});
+const _meFmHelpSelect = col => { if (_FM_HELP[col]) _meHelpSelect('fm', col); };
+const _meFmHelpHtml = () => _meHelpHtml('fm');
 function _meFmToggleHelp() {
   if (!_meState) return;
   _meState.fmHelpOpen = !_meState.fmHelpOpen;
+  _ME_HELP.fm.isOpen = _meState.fmHelpOpen;
   _meRenderRight();
-  // If reopening, restore selection
-  if (_meState.fmHelpOpen && _meState.fmHelpSel) _meFmHelpSelect(_meState.fmHelpSel);
 }
 
 // ── Overrides list + editor ─────────────────────────────────────────────────
@@ -23670,8 +23875,14 @@ function _meFileWarnsRefresh() {
 function _meHtmlRecs(item) {
   const recs = item.recognizers || [];
   const _TYPE_LABEL = { ..._REC_TYPE_LABEL, uint8:'uint8 / byte', uint16:'uint16 / word', uint32:'uint32 / dword' };
-  const recHelpOpen = !!(_meState && _meState.recHelpOpen);
-  let h = `<div class="me-ps-help${recHelpOpen ? ' open' : ''}" id="me-rec-help" style="margin-bottom:8px">${_meRecHelpHtml()}</div>`;
+  // The reference sits BESIDE the list, in the same split the Parse Spec uses.
+  // The open flag is restored from the saved state before the markup is built,
+  // so `nohelp` and `open` both come from it and a re-render cannot leave the
+  // column reserved around a hidden panel.
+  _ME_HELP.rec.isOpen = !!(_meState && _meState.recHelpOpen);
+  let h = `<div class="me-ps-wrap side${_meHelpIsOpen('rec') ? '' : ' nohelp'}" id="me-rec-wrap">
+  <div class="me-ps-split" id="me-rec-split">
+    <div class="me-hs-main" id="me-rec-pane">`;
   h += '<div class="me-rec-list">';
   if (!recs.length) h += '<div class="me-empty">No recognizers yet.</div>';
   // Last Test-run verdict per recognizer (pass / fail / skip) — set by
@@ -23719,6 +23930,12 @@ function _meHtmlRecs(item) {
     const newRec = (_meState.pend && _meState.pend[-2] !== undefined) ? _meState.pend[-2] : { type: 'literal' };
     h += `<div class="me-rec-row" style="margin-top:6px">${_meRecForm(newRec, -2)}</div>`;
   }
+  h += `</div>
+    <div class="me-ps-col-resizer" id="me-rec-col-resizer" title="Drag to resize the recognizer reference"></div>
+    <div class="me-ps-help${_meHelpIsOpen('rec') ? ' open' : ''}" id="me-rec-help">${_meRecHelpHtml()}</div>
+  </div>
+  <div class="me-ps-split-resizer" id="me-rec-split-resizer" title="Drag to resize the recognizer list"></div>
+</div>`;
   return h;
 }
 
@@ -23732,6 +23949,11 @@ const _REC_TYPE_LABEL = {
 // Display name for a recognizer type; the stored type string is unchanged, so
 // existing specs keep working.
 function _recTypeLabel(t) { return _REC_TYPE_LABEL[t] || t; }
+// The names a spec file may store that mean a listed type. Used by the form's
+// type dropdown and by the reference's follow, which must land on an entry the
+// catalogue actually lists rather than on a hidden alias.
+const _REC_ALIAS = { byte:'uint8', word:'uint16', dword:'uint32',
+                     'length-prefix':'length-payload', 'flag-prefix':'flag-payload' };
 
 function _meRecSum(r) {
   const esc = s => String(s == null ? '' : s).replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -23794,6 +24016,48 @@ function _meRecSum(r) {
 // zero. Every entry here pairs a payload that matches with one that does not,
 // because the boundary is the part worth reading.
 //
+// The recognizer catalogue, grouped by the QUESTION you are asking of the
+// message rather than alphabetically — twenty-two names in a list answer "what
+// is this rule called", which is not what anyone opens a reference with. The
+// hidden aliases (byte / word / dword, min-length / max-length) are deliberately
+// absent: they resolve to a listed type and having both would read as a choice.
+const _REC_GROUPS = [
+  { name: 'Match exact bytes', items: [
+    ['literal', 'Exact bytes at a fixed offset'],
+    ['mti', 'A 4-digit ISO 8583 message type'],
+    ['regex', 'A pattern anywhere in the message'],
+  ]},
+  { name: 'What the bytes look like', items: [
+    ['ascii', 'Every byte printable ASCII'],
+    ['ebcdic', 'Every byte printable EBCDIC'],
+    ['binary', 'At least one byte is not printable'],
+    ['numeric', 'Digits only'],
+    ['alphabetic', 'Letters only'],
+    ['alphanumeric', 'Letters and digits only'],
+    ['hex-density', 'Mostly hex characters'],
+    ['oct-density', 'Mostly octal digits'],
+  ]},
+  { name: 'Compare a number', items: [
+    ['uint8', 'One byte, compared'],
+    ['uint16', 'Two bytes as one integer'],
+    ['uint32', 'Four bytes as one integer'],
+  ]},
+  { name: 'Message size', items: [
+    ['greater-than', 'Longer than N bytes'],
+    ['less-than', 'Shorter than N bytes'],
+  ]},
+  { name: 'Structure holds together', items: [
+    ['bitmap', 'A data element the bitmap marks present'],
+    ['length-payload', 'A length field that fits the message'],
+    ['flag-payload', 'A flag or type field that is set'],
+  ]},
+  { name: 'Where it came from', items: [
+    ['source', 'The sending process'],
+    ['destination', 'The receiving process'],
+    ['filename', 'The file the record came from'],
+  ]},
+];
+
 // Self-contained by design: the SPEC-↔-code tests evaluate this literal on its
 // own, so nothing in it may reference an identifier declared elsewhere.
 const _REC_HELP = {
@@ -24784,25 +25048,6 @@ const _REC_COMMON_ATTRS = [
 // The index is DERIVED from _REC_HELP. It used to be a hand-written table keyed
 // by display name — `isBinary` where the help was keyed `binary` — so six of the
 // twenty-two rows looked clickable and did nothing at all.
-function _meRecHelpHtml() {
-  const rows = Object.keys(_REC_HELP)
-    .filter(t => !_REC_HELP[t].hidden)
-    .sort((a, b) => _recTypeLabel(a).localeCompare(_recTypeLabel(b), undefined, { sensitivity: 'base' }))
-    .map(t => {
-      const info  = _REC_HELP[t];
-      const attrs = info.attrs.length ? info.attrs.map(a => a[0]).slice(0, 4).join(', ') : '(none)';
-      const lead  = Array.isArray(info.desc) ? info.desc[0] : info.desc;
-      return `<tr onclick="_meRecHelpSelect('${t}')" data-rec="${t}">` +
-        `<td class="me-ps-help-block">${_recTypeLabel(t)}</td>` +
-        `<td>${lead}</td>` +
-        `<td class="me-ps-help-dim">${attrs}</td></tr>`;
-    }).join('');
-  const thead = '<tr><th>Recognizer</th><th>Purpose</th><th>Attributes</th></tr>';
-  return `<div class="me-ps-help-tbl-wrap"><table class="me-ps-help-table">` +
-    `<thead>${thead}</thead><tbody>${rows}</tbody></table></div>` +
-    `<div class="me-ps-help-detail" id="me-rec-help-detail"></div>`;
-}
-
 // Which attributes an example demonstrates, read off the recognizer itself so
 // the two can never disagree — the same trick _mePsHelpExAttrs plays.
 function _meRecHelpExAttrs(ex) {
@@ -24865,76 +25110,48 @@ function _meRecHelpExampleHtml(ex, i) {
   return out + `</div>`;
 }
 
-// Selecting an attribute narrows the examples to the ones that use it.
-let _meRecHelpAttrSel = null;
-function _meRecHelpAttr(type, name) {
-  _meRecHelpAttrSel = (_meRecHelpAttrSel === name) ? null : name;
-  _meRecHelpSelect(type);
-}
-
-function _meRecHelpSelect(type) {
-  const info = _REC_HELP[type];
-  const det  = document.getElementById('me-rec-help-detail');
-  if (!info || !det) return;
-  // Remembered, so a re-render does not blank the detail — the Field Map help
-  // has always done this and the recognizer help never did.
-  if (_meState) _meState.recHelpSel = type;
-  document.querySelectorAll('#me-rec-help .me-ps-help-table tbody tr').forEach(tr =>
-    tr.classList.toggle('me-ps-sel', tr.dataset.rec === type)
-  );
-  const attrRows = info.attrs.concat(_REC_COMMON_ATTRS).map(([name, atype, req, desc]) => {
-    const sel = _meRecHelpAttrSel === name ? ' me-ps-sel' : '';
-    return `<tr class="me-ps-attr-row${sel}" data-attr="${name}"` +
-      ` onclick="_meRecHelpAttr('${type}','${name}')" title="Show only the examples that use ${name}">` +
-      `<td class="me-ps-help-aname">${name}</td>` +
-      `<td class="me-ps-help-atype">${_escHtml(atype)}</td>` +
-      `<td>${req ? '<span class="me-ps-help-req">required</span>' : '<span class="me-ps-help-opt">optional</span>'}</td>` +
-      `<td>${_meHelpDescHtml(desc)}</td></tr>`;
-  }).join('');
-  const attrTbl = info.attrs.length
-    ? `<table class="me-ps-help-atbl"><thead><tr><th>Attribute</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${attrRows}</tbody></table>`
-    : `<p class="me-ps-help-dim" style="margin:0 0 8px">No attributes.</p>`;
-  const shown = _meRecHelpAttrSel
-    ? (info.examples || []).filter(ex => _meRecHelpExAttrs(ex).has(_meRecHelpAttrSel))
-    : (info.examples || []);
-  const exHead = _meRecHelpAttrSel
-    ? `<div class="me-ps-help-section-title">Examples using <span class="me-ps-help-aname">${_meRecHelpAttrSel}</span>`
-      + ` <button class="btn" onclick="_meRecHelpAttr('${type}','${_meRecHelpAttrSel}')">show all</button></div>`
-    : '';
-  const exHtml = exHead + (shown.length
-    ? shown.map((ex, i) => _meRecHelpExampleHtml(ex, i)).join('')
-    : `<div class="me-ps-help-dim">No example uses <b>${_meRecHelpAttrSel || ''}</b> yet.</div>`);
-  const guidanceHtml = Array.isArray(info.useWhen) && info.useWhen.length
-    ? `<div class="me-ps-help-section">
-         <div class="me-ps-help-section-title">Use when</div>
-         <ul class="me-ps-help-ul">${info.useWhen.map(b => `<li>${b}</li>`).join('')}</ul>
-       </div>`
-    : '';
-  const descBody = Array.isArray(info.desc)
-    ? `${info.desc[0]}<ul class="me-ps-help-ul">${info.desc.slice(1).map(x => `<li>${x}</li>`).join('')}</ul>`
-    : info.desc;
+// The recognizer reference — the second caller of the shared panel. What it
+// supplies is only what is its own: its data, its groups, and how one case is
+// run and rendered. The catalogue, the accordion, the split and both drag bars
+// come from the engine, so a fix to any of them lands on all three panels.
+//
+// The shared attributes (offset, and the rest of _REC_COMMON_ATTRS) used to be
+// concatenated onto every type's own list, which put them in the middle of the
+// accordion as though `offset` were specific to `literal`. They are chips under
+// "On every recognizer" now, the way the Parse Spec's at/peek are.
+_meHelpDefine({
+  key: 'rec', id: 'me-rec-help', wrapId: 'me-rec-wrap',
+  splitId: 'me-rec-split', hRzId: 'me-rec-split-resizer', wRzId: 'me-rec-col-resizer',
+  title: 'Recognizer reference', plural: 'recognizers',
+  data: _REC_HELP, groups: _REC_GROUPS,
+  starter: _mePsStarter,
+  examplesFor: (info, attr) =>
+    (info.examples || []).filter(ex => _meRecHelpExAttrs(ex).has(attr)),
+  exampleHtml: (ex, i) => _meRecHelpExampleHtml(ex, i),
+  commonAttrs: _REC_COMMON_ATTRS, commonDflts: {},
+  commonLabel: 'On every recognizer',
+  commonNote: 'Understood by every recognizer — read before the rule runs, so ' +
+              'this means the same on any of them.',
+  followNote: t => `Editing a <strong>${_recTypeLabel(t)}</strong> — showing that recognizer.`,
   // The stored type is what a spec file contains; the label is what the form
   // calls it. Show both when they differ, so a spec read in a text editor and
   // the same rule read in the UI are recognisably the same thing.
-  const title = _recTypeLabel(type) === type ? type
-    : `${_recTypeLabel(type)} <span class="me-ps-help-dim">(stored as "${type}")</span>`;
-  det.innerHTML =
-    `<div class="me-ps-help-detail-title">${title}</div>` +
-    `<div class="me-ps-help-detail-desc">${descBody}</div>` +
-    guidanceHtml + attrTbl + exHtml;
-  det.classList.add('open');
-}
-
-function _meToggleRecListHelp() {
-  const el = document.getElementById('me-rec-help');
-  if (!el) return;
-  el.classList.toggle('open');
-  // Persist so subsequent re-renders (combo change, add/delete/move) keep state.
-  if (_meState) _meState.recHelpOpen = el.classList.contains('open');
-}
+  extraHtml: (info, t) => _recTypeLabel(t) === t ? ''
+    : `<div class="me-ps-help-dim" style="margin-top:8px">The form calls this ` +
+      `<b>${_recTypeLabel(t)}</b>; a spec file stores it as <code>"${t}"</code>.</div>`,
+  storageKey: 'me_rec',
+});
+const _meRecHelpSelect = t => { if (_REC_HELP[t]) _meHelpSelect('rec', t); };
+const _meRecHelpAttr = (t, name) => _meHelpAttr('rec', t, name);
+const _meRecHelpHtml = () => _meHelpHtml('rec');
+const _meToggleRecListHelp = () => {
+  _meHelpToggle('rec');
+  // Persisted so a re-render (combo change, add/delete/move) keeps the panel.
+  if (_meState) _meState.recHelpOpen = _meHelpIsOpen('rec');
+};
 
 function _meRecForm(r, idx) {
-  const _ALIAS = { byte:'uint8', word:'uint16', dword:'uint32', 'length-prefix':'length-payload', 'flag-prefix':'flag-payload' };
+  const _ALIAS = _REC_ALIAS;
   const types = [
     ['literal','literal'], ['binary','isBinary'], ['ascii','isAscii'], ['ebcdic','isEbcdic'],
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
@@ -25261,6 +25478,11 @@ function _meToggleRec(idx) {
     if (_meState.pend) delete _meState.pend[idx];
   } else {
     _meState.editRec = idx;
+    // Opening a row is this panel's equivalent of the caret landing in a block:
+    // the reference follows to the type you are editing. Through the alias map,
+    // so a rule stored as `byte` shows uint8 — the entry the catalogue lists.
+    const rec = ((_meCurItem() || {}).recognizers || [])[idx];
+    if (rec) _meHelpFollowTo('rec', _REC_ALIAS[rec.type] || rec.type);
   }
   _meRenderRight();
 }

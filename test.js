@@ -182,6 +182,7 @@ _t.fmtTestSpecs       = window._fmtTestSpecs;
 // produces an example's verdict. Rendered here so a documented example that
 // stopped being true fails the build instead of misinforming the panel.
 _t.recHelp             = _REC_HELP;
+_t.fmHelp              = _FM_HELP;
 _t.meRecHelpHtml       = _meRecHelpHtml;
 _t.meRecHelpRun        = _meRecHelpRun;
 _t.meRecHelpExampleHtml = _meRecHelpExampleHtml;
@@ -1125,6 +1126,7 @@ console.log('\nrecognizers — full attribute sweep');
 // The reference data as the app holds it. Read from the live sandbox rather than
 // re-parsed out of the file, so a test can never pass against a stale copy.
 const recHelpObj = () => sandbox._t.recHelp;
+const fmHelpObj  = () => sandbox._t.fmHelp;
 
 // One recognizer, one payload. Hex in, verdict out — the same entry point the
 // Test panel and the help examples use, so nothing here tests a private path.
@@ -1433,14 +1435,19 @@ test('every recognizer the form offers has a reference entry, and every entry is
   const offered = [...types.matchAll(/\['([a-z0-9-]+)'/g)].map(m => m[1]);
   assert.ok(offered.length > 15, `expected the type dropdown, found ${offered.length}`);
   deepEq(offered.filter(t => !help[t]), [], 'types the form offers with no reference entry');
-  // Every row the index renders must resolve — that is the bug, stated directly.
-  const idx = sandbox._t.meRecHelpHtml();
-  const rows = [...idx.matchAll(/data-rec="([a-z0-9-]+)"/g)].map(m => m[1]);
-  assert.ok(rows.length > 15, `expected an index, found ${rows.length} rows`);
-  deepEq(rows.filter(t => !help[t]), [], 'index rows whose detail does not exist');
-  // …and the visible rows are exactly the non-hidden entries.
+  // The index is a grouped catalogue now. Same requirement, stated against it:
+  // every row must resolve, and the rows are exactly the non-hidden entries.
+  const g = /const _REC_GROUPS = \[([\s\S]*?)\n\];/.exec(APP_SRC);
+  assert.ok(g, '_REC_GROUPS is gone');
+  const rows = [...g[1].matchAll(/\['([a-z0-9-]+)',/g)].map(m => m[1]);
+  assert.ok(rows.length > 15, `expected a catalogue, found ${rows.length} rows`);
+  deepEq(rows.filter(t => !help[t]), [], 'catalogue rows whose entry does not exist');
   deepEq(rows.slice().sort(), Object.keys(help).filter(t => !help[t].hidden).sort(),
-    'the index and the reference are the same set');
+    'the catalogue and the reference are the same set');
+  deepEq(rows.filter((x, i) => rows.indexOf(x) !== i), [], 'recognizers listed more than once');
+  // The hidden aliases stay out of it: they resolve to a listed type, and
+  // showing both would read as a choice between two different rules.
+  deepEq(rows.filter(t => help[t].hidden), [], 'a hidden alias is in the catalogue');
 });
 
 test('every reference entry is structured, and its examples are RUN', () => {
@@ -1494,26 +1501,40 @@ test('a reference example that stopped being true fails here, not silently in th
   assert.ok(ran > 100, `expected the examples to be exercised, ran ${ran} cases`);
 });
 
-test('the recognizer reference and the Parse Spec reference are the same panel', () => {
-  // "Not only look and feel" — they share the stylesheet classes, the attribute
-  // table, the clickable filter and the description renderer. Sharing the last
-  // one is what stops the two drifting into rendering identical data differently.
-  const recSel = psFnSource('_meRecHelpSelect');
-  const psSel  = psFnSource('_mePsHelpBlockHtml');
-  // The parse-spec panel lists attributes as an ACCORDION now, so the two no
-  // longer share a table — but they must still share the naming, the type and
-  // required/optional treatments, and the description renderer, which is what
-  // stops them rendering identical data two different ways.
-  for (const cls of ['me-ps-help-aname', 'me-ps-help-atype',
-                     'me-ps-help-req', 'me-ps-help-opt']) {
-    assert.ok(recSel.includes(cls), `the recognizer panel is missing ${cls}`);
-    assert.ok(psSel.includes(cls), `the parse spec panel is missing ${cls}`);
+test('the three references are one panel, not three that resemble each other', () => {
+  // They used to be three index-tables-above-a-detail-pane, each fixed on its
+  // own — which is how the Parse Spec one grew a split, a catalogue and an
+  // accordion the other two never got. The chrome is one implementation now and
+  // a panel supplies only what is genuinely its own.
+  const defs = [...APP_SRC.matchAll(/_meHelpDefine\(\{\s*\n\s*key: '(\w+)'/g)].map(m => m[1]);
+  deepEq(defs.sort(), ['fm', 'ps', 'rec'], 'the three panels are not all defined through the engine');
+
+  // Each declares its own data, groups and example renderer — the parts that
+  // genuinely differ — and nothing else may fork.
+  for (const key of ['ps', 'rec', 'fm']) {
+    const cfg = APP_SRC.slice(APP_SRC.indexOf(`key: '${key}'`));
+    const body = cfg.slice(0, cfg.indexOf('\n});'));
+    for (const field of ['data:', 'groups:', 'exampleHtml:', 'examplesFor:', 'storageKey:'])
+      assert.ok(body.includes(field), `panel ${key} does not declare ${field}`);
   }
-  assert.ok(/_meHelpDescHtml\(/.test(recSel) && /_meHelpDescHtml\(/.test(psSel),
-    'both render attribute descriptions through the one shared function');
-  assert.ok(!/const descHtml = /.test(psSel),
-    'and the parse spec panel no longer keeps a private copy of it');
-  // Both example cards use the same card, label and snippet markup.
+
+  // The catalogue, the detail view and the accordion exist once each.
+  for (const fn of ['_meHelpCatalogHtml', '_meHelpDetailHtml', '_meHelpAttrsHtml',
+                    '_meHelpRender', '_meHelpInitSplit']) {
+    const hits = [...APP_SRC.matchAll(new RegExp(`function ${fn}\\b`, 'g'))].length;
+    eq(hits, 1, `${fn} is defined ${hits} times`);
+  }
+  // …and the per-panel renderers that used to hold copies of them are gone.
+  for (const gone of ['_mePsHelpBlockHtml', '_mePsHelpCatalogHtml', '_mePsHelpCommonHtml'])
+    assert.ok(!new RegExp(`function ${gone}\\b`).test(APP_SRC),
+      `${gone} still holds a private copy of the panel chrome`);
+
+  // The example cards still go through the shared description renderer and the
+  // shared naming, which is what stops identical data rendering two ways.
+  const attrs = psFnSource('_meHelpAttrsHtml');
+  for (const cls of ['me-ps-help-aname', 'me-ps-help-atype', 'me-ps-help-req', 'me-ps-help-opt'])
+    assert.ok(attrs.includes(cls), `the shared attribute row is missing ${cls}`);
+  assert.ok(/_meHelpDescHtml\(/.test(attrs), 'descriptions do not go through the shared renderer');
   const recEx = psFnSource('_meRecHelpExampleHtml');
   assert.ok(/me-ps-help-ex/.test(recEx) && /me-ps-ex-num/.test(recEx) &&
             /me-ps-help-snippet/.test(recEx) && /_mePsCopyExample/.test(recEx),
@@ -9086,12 +9107,20 @@ test('the recognizer help follows the type being edited', () => {
   const fn = psFnSource('_meRecTypeChange');
   assert.ok(/_meRecHelpSelect\(newType\)/.test(fn), 'changing the type moves the help');
   assert.ok(/recHelpOpen/.test(fn), 'only when the help is actually open');
-  // The selection must also survive a re-render, as the Field Map help does.
-  const src = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/recHelpSel: null/.test(src), 'the selection is real state');
-  assert.ok(/_meState\.recHelpSel = type/.test(src), 'set when a row is clicked');
-  assert.ok(/_meState\.recHelpOpen && _meState\.recHelpSel[\s\S]{0,180}_meRecHelpSelect\(_meState\.recHelpSel\)/.test(src),
-    'and restored after the render that would otherwise blank it');
+  // Opening a row follows too — this panel's equivalent of the caret landing in
+  // a block. Through the alias map, so a rule stored as `byte` lands on uint8,
+  // which is the entry the catalogue lists.
+  const toggle = psFnSource('_meToggleRec');
+  assert.ok(/_meHelpFollowTo\('rec',\s*_REC_ALIAS\[rec\.type\] \|\| rec\.type\)/.test(toggle),
+    'opening a recognizer row does not move the reference to that type');
+  // The selection used to need restoring after a render because the render
+  // blanked the detail pane. The panel renders its own view from its own state
+  // now, so that hook is gone and must not come back.
+  assert.ok(!/_meRecHelpSelect\(_meState\.recHelpSel\)/.test(APP_SRC),
+    'the panel is being re-selected after a render it no longer loses');
+  // Open state still persists across a render, since the markup is rebuilt.
+  assert.ok(/_ME_HELP\.rec\.isOpen = !!\(_meState && _meState\.recHelpOpen\)/.test(APP_SRC),
+    'the open flag is not restored from the saved state before the markup is built');
 });
 
 test('the toast sits above every overlay in the app', () => {
@@ -9172,7 +9201,9 @@ test('each help example is a bounded, numbered card', () => {
   assert.ok(/Example \$\{i \+ 1\}/.test(fn), 'numbered from the render index, not the data');
   // The number must come from the list, or every card reads "Example 1".
   const src = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/exs\.map\(\(ex, i\) => _mePsHelpExampleHtml\(ex, i\)\)/.test(src),
+  // The accordion is shared by all three panels now, so the index is passed by
+  // the engine to whichever example renderer the panel supplied.
+  assert.ok(/exs\.map\(\(ex, i\) => p\.exampleHtml\(ex, i, info\)\)/.test(src),
     'the index is actually passed');
   assert.ok(!/join\('<div style="height:10px"><\/div>'\)/.test(src),
     'the spacer is gone — the card carries its own margin');
@@ -10496,24 +10527,24 @@ test('the block view is built from the entry, not a second set of summaries', ()
   const forAttr = APP_SRC.match(/const _mePsExamplesFor = ([\s\S]*?);\n/);
   assert.ok(forAttr && /_mePsHelpExAttrs/.test(forAttr[1]),
     'per-attribute examples are not filtered by what the example actually uses');
-  const blockHtml = psFnSource('_mePsHelpBlockHtml');
-  assert.ok(/_mePsExamplesFor\(info, name\)/.test(blockHtml), 'the accordion does not filter examples');
+  const blockHtml = psFnSource('_meHelpAttrsHtml');
+  assert.ok(/p\.examplesFor\(info, name\)/.test(blockHtml), 'the accordion does not filter examples');
   assert.ok(/const exs = open \?/.test(blockHtml),
     'examples are built for every attribute, open or not — the dump this replaced');
 });
 
 test('one attribute is open at a time', () => {
-  const fn = psFnSource('_mePsHelpAttr');
-  assert.ok(/_mePsHelpAttrOpen === name\) \? null : name/.test(fn),
+  const fn = psFnSource('_meHelpAttr');
+  assert.ok(/p\.attrOpen === name\) \? null : name/.test(fn),
     'opening an attribute does not close the previous one, or cannot be closed again');
 });
 
 test('the reference follows the caret, and knows when not to', () => {
-  const fn = psFnSource('_mePsHelpFollowCursor');
-  assert.ok(/if \(!_mePsHelpIsOpen\) return/.test(fn), 'it re-renders a help panel that is closed');
-  assert.ok(/_mePsHelpView === 'catalog'\) return/.test(fn),
+  const fn = psFnSource('_meHelpFollowTo');
+  assert.ok(/if \(!p\.isOpen\) return/.test(fn), 'it re-renders a help panel that is closed');
+  assert.ok(/p\.view === 'catalog'\) return/.test(fn),
     'browsing the catalogue would be interrupted by the caret moving');
-  assert.ok(/blk === _mePsHelpBlk\) return/.test(fn),
+  assert.ok(/id === p\.sel\) return/.test(fn),
     'it re-renders on every keystroke inside the same block');
   // Wired to selection changes, not only edits — moving the caret is the
   // gesture. Scoped to the parse-spec editor: another editor carrying the same
@@ -10533,6 +10564,41 @@ test('the block under the caret is resolved from positions, not from JSON.parse'
   assert.ok(!/JSON\.parse/.test(fn), 'it parses the spec a second time');
   assert.ok(/best === null/.test(fn),
     'the innermost enclosing block does not win — a nested read-fixed would report its `when`');
+});
+
+test('the Overrides columns document their options, and only claim their own examples', () => {
+  // Ported last of the three, and the only one whose entries had no attributes
+  // at all — its detail view was a purpose line and a wall of rows. The columns
+  // that offer options now list them; the ones that are read-only still do not,
+  // which is the honest answer rather than an empty accordion.
+  const fm = fmHelpObj();
+  const withOptions = ['Data Type', 'Display', 'Data Element', 'VLG'];
+  for (const col of withOptions)
+    assert.ok((fm[col].attrs || []).length, `${col} offers options but documents none`);
+  for (const col of ['Offset', 'Length'])
+    assert.ok(!(fm[col].attrs || []).length,
+      `${col} is read-only from the DDL — it has no options to document`);
+
+  // Derived, not declared: an option's examples are the rows whose first cell
+  // names it, so an option cannot claim a row it does not appear in, and a row
+  // cannot go unreachable because someone forgot to list it.
+  const def = APP_SRC.slice(APP_SRC.indexOf("key: 'fm'"));
+  assert.ok(/examplesFor: \(info, attr\) => \(info\.rows \|\| \[\]\)\.filter\(r => r\[0\] === attr\)/
+    .test(def.slice(0, def.indexOf('\n});'))),
+    'the Overrides examples are not filtered by the option the row names');
+  // Every documented option for the two dropdown columns must be a value the
+  // rows actually demonstrate, or the reference describes something unreachable.
+  for (const col of ['Data Type', 'Display']) {
+    const shown = new Set(fm[col].rows.map(r => r[0]));
+    const undemonstrated = fm[col].attrs.map(a => a[0]).filter(n => !shown.has(n));
+    deepEq(undemonstrated, [], `${col} options with no worked example`);
+  }
+  // An attribute name is also a DOM selector and a handler argument, so it may
+  // not carry HTML entities — "&lt; &gt;" survived neither and the row it named
+  // could not be opened.
+  for (const [col, info] of Object.entries(fm))
+    for (const [name] of (info.attrs || []))
+      assert.ok(!/[&<>"']/.test(name), `${col} has an unusable attribute name: ${name}`);
 });
 
 test('the editor height bar is there whether or not the reference is', () => {
@@ -10606,7 +10672,7 @@ test('a long form cannot squeeze the meaning beside it off the panel', () => {
 test('opening an attribute leaves it where you clicked it', () => {
   // Reported: the row expanded but the panel jumped back to the top, so you had
   // to scroll down and find the attribute you had just opened.
-  const render = psFnSource('_mePsHelpRender');
+  const render = psFnSource('_meHelpRender');
   assert.ok(/scrollTop \+=/.test(render), 'the panel scroll is not preserved across a re-render');
   // Pinning the ROW, not restoring scrollTop: the attribute that closes can sit
   // above the one that opens, which changes the height above it — a restored
@@ -10616,15 +10682,15 @@ test('opening an attribute leaves it where you clicked it', () => {
   assert.ok(/const to = from && next/.test(render),
     'a row that was not on screen before is still pinned — switching block would not start at the top');
 
-  assert.ok(/_mePsHelpRender\(`\[data-attr="\$\{name\}"\]`\)/.test(psFnSource('_mePsHelpAttr')),
+  assert.ok(/_meHelpRender\(key, `\[data-attr="\$\{name\}"\]`\)/.test(psFnSource('_meHelpAttr')),
     'opening an attribute does not pin its row');
   // The shared-attribute panel does not exist yet on the click that opens it,
   // so the chip row is the only thing there is to pin to.
-  assert.ok(/_mePsHelpRender\('\.chips'\)/.test(psFnSource('_mePsHelpCommonToggle')),
+  assert.ok(/_meHelpRender\(key, '\.chips'\)/.test(psFnSource('_meHelpCommonToggle')),
     'toggling a shared attribute does not pin the chip row');
   // Every other caller is a new document and must start at the top.
-  for (const fn of ['_mePsHelpSelect', '_mePsHelpCatalog', '_mePsHelpFollowCursor'])
-    assert.ok(/_mePsHelpRender\(\);/.test(psFnSource(fn)),
+  for (const fn of ['_meHelpSelect', '_meHelpCatalog', '_meHelpFollowTo'])
+    assert.ok(/_meHelpRender\(key\);/.test(psFnSource(fn)),
       `${fn} pins a row, but it is showing a different document`);
 });
 
@@ -10643,10 +10709,10 @@ test('the reference is resizable on both axes, and nothing it shows is clipped',
   assert.ok(/\.me-ps-wrap\.nohelp \.me-ps-col-resizer\{display:none/.test(css),
     'the width drag bar survives closing the reference, where there is nothing to drag');
 
-  const init = psFnSource('_mePsInitSplit');
+  const init = psFnSource('_meHelpInitSplit');
   // Asserting the read alone would pass on a restore that reads the key and
   // then ignores it; the saved number has to reach the width.
-  assert.ok(/localStorage\.getItem\(_ME_PS_HELP_W_KEY\)/.test(init),
+  assert.ok(/localStorage\.getItem\(wKey\)/.test(init),
     'the saved width is never read back');
   assert.ok(/Number\.isFinite\(savedW\)\) split\.style\.setProperty\('--ps-help-w', Math\.max\(_ME_PS_HELP_MIN, savedW\)/.test(init),
     'the dragged width is not restored — a panel you resize on every visit');
@@ -10716,7 +10782,7 @@ test('an attribute type lists its accepted values one per line', () => {
   for (const ch of ['{', '[']) assert.ok(fn.includes(`'${ch}'`), `depth does not track ${ch}`);
   // And the row actually uses it — checking the helper alone passes with the
   // type cell reverted to printing the raw string.
-  assert.ok(/me-ps-help-atype">\$\{_meHelpTypeHtml\(type\)\}/.test(psFnSource('_mePsHelpBlockHtml')),
+  assert.ok(/me-ps-help-atype">\$\{_meHelpTypeHtml\(type\)\}/.test(psFnSource('_meHelpAttrsHtml')),
     'the type cell prints the raw string instead of the value list');
 });
 
@@ -10750,7 +10816,7 @@ test('a default is only claimed for an attribute that exists', () => {
 });
 
 test('the generated line stands down where the description already says it', () => {
-  const src = psFnSource('_mePsHelpBlockHtml');
+  const src = psFnSource('_meHelpAttrsHtml');
   assert.ok(/_meDescStatesOmitted\(desc\)/.test(src),
     'the row builder does not check whether the description already states omission');
   const det = psFnSource('_meDescStatesOmitted');
@@ -10760,8 +10826,8 @@ test('the generated line stands down where the description already says it', () 
 
 test('the reference actually renders the defaults it stores', () => {
   // Storing them and not showing them would be the same gap with more code.
-  const src = psFnSource('_mePsHelpBlockHtml');
-  assert.ok(/info\.dflts && info\.dflts\[name\]/.test(src) && /_PS_COMMON_DFLTS\[name\]/.test(src),
+  const src = psFnSource('_meHelpAttrsHtml');
+  assert.ok(/info\.dflts && info\.dflts\[name\]/.test(src) && /p\.commonDflts && p\.commonDflts\[name\]/.test(src),
     'the detail view does not read the stored defaults');
   assert.ok(/Omitted:/.test(src), 'the default is not built into a row at all');
   // …and the built fragment is actually handed to the description renderer.
@@ -11013,7 +11079,7 @@ test('recognizer types and the spec table agree, both directions', () => {
   const types = fromSource(/const _REC_HELP = \{[\s\S]*?\n\};/, 'Object.keys(_REC_HELP)');
   assert.ok(types && types.length, 'could not read _REC_HELP');
   const sec = specSec('### 4.4', '### 4.5');
-  const alias = html.match(/const _ALIAS = \{([^}]*)\}/)[1];
+  const alias = html.match(/const _REC_ALIAS = \{([^}]*)\}/)[1];
   const aliasNames = [...alias.matchAll(/'?([a-z0-9-]+)'?\s*:/g)].map(m => m[1]);
   deepEq(types.filter(t => !sec.includes('`' + t + '`')), [], 'types in code but not in §4.4');
   const listed = [...new Set([...sec.matchAll(/^\| `([a-z0-9-]+)`/gm)].map(m => m[1]))];
@@ -11029,7 +11095,7 @@ test('every recognizer EVALUATOR has help and a spec row', () => {
   const help = fromSource(/const _REC_HELP = \{[\s\S]*?\n\};/, 'Object.keys(_REC_HELP)') || [];
   // Aliases share an evaluator with their target and are documented in the alias
   // table rather than getting a help entry of their own.
-  const aliasSrc = html.match(/const _ALIAS = \{([^}]*)\}/)[1];
+  const aliasSrc = html.match(/const _REC_ALIAS = \{([^}]*)\}/)[1];
   const aliases = [...aliasSrc.matchAll(/'?([a-z0-9-]+)'?\s*:/g)].map(m => m[1]);
   const own = evals.filter(t => !aliases.includes(t));
   deepEq(own.filter(t => !help.includes(t)), [], 'evaluators with no help entry');
@@ -11039,7 +11105,7 @@ test('every recognizer EVALUATOR has help and a spec row', () => {
 });
 
 test('every recognizer alias is in the alias table', () => {
-  const alias = html.match(/const _ALIAS = \{([^}]*)\}/)[1];
+  const alias = html.match(/const _REC_ALIAS = \{([^}]*)\}/)[1];
   const pairs = [...alias.matchAll(/'?([a-z0-9-]+)'?\s*:\s*'([a-z0-9-]+)'/g)];
   const sec = specSec('**Aliases', '#### ISO 8583 semantic');
   deepEq(pairs.filter(([, , to]) => !sec.includes('`' + to + '`')).map(m => m[1]), [],

@@ -10535,6 +10535,45 @@ test('the block under the caret is resolved from positions, not from JSON.parse'
     'the innermost enclosing block does not win — a nested read-fixed would report its `when`');
 });
 
+test('the editor height bar is there whether or not the reference is', () => {
+  // The height bar used to be hidden along with the reference, so the editor
+  // stopped being resizable for a reason that has nothing to do with it.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(!/\.me-ps-wrap\.nohelp \.me-ps-split-resizer\{display:none/.test(css),
+    'closing the reference still takes the editor height bar with it');
+  // The WIDTH bar does go — with the reference closed there is nothing beside
+  // the editor to drag.
+  assert.ok(/\.me-ps-wrap\.nohelp \.me-ps-col-resizer\{display:none/.test(css),
+    'the width bar survives closing the reference, where there is nothing to drag');
+  // An empty error line reserved its row and the flex gap above it.
+  assert.ok(/\.me-ps-err:empty,\.me-ps-lint:empty\{display:none/.test(css),
+    'an empty error line still reserves space under the editor');
+  assert.ok(/\.me-ps-err\{[^}]*min-height:14px/.test(css),
+    'a one-line error can jitter the layout again');
+});
+
+test('a re-render with the reference open does not reserve a column for nothing', () => {
+  // Reported: reopening the section left the editor at half width with empty
+  // space beside it. Two classes drive the split — `nohelp` on the wrap sizes
+  // the grid, `open` on the panel makes it visible — and the markup set only
+  // the first from the flag. The second was added by the live toggle alone, so
+  // ANY re-render while the reference was open produced a reserved 726px column
+  // holding a display:none panel.
+  const sect = APP_SRC.slice(APP_SRC.indexOf('me-ps-wrap side'), APP_SRC.indexOf('me-ps-split-resizer'));
+  assert.ok(/me-ps-wrap side\$\{_mePsHelpOpen\(\) \? '' : ' nohelp'\}/.test(sect),
+    'the wrap no longer takes nohelp from the open flag');
+  assert.ok(/class="me-ps-help\$\{_mePsHelpOpen\(\) \? ' open' : ''\}"/.test(sect),
+    'the panel does not take `open` from the same flag, so a re-render loses it');
+  // Belt and braces: the visibility rule really is keyed on `.open`, which is
+  // what makes the missing class invisible rather than merely unstyled.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // Anchored to the BASE rule: `.me-ps-wrap.nohelp .me-ps-help{display:none}`
+  // also ends in `.me-ps-help{display:none` and satisfied an unanchored check.
+  assert.ok(/\n\.me-ps-help\{[^}]*display:none/.test(css) &&
+            /\.me-ps-split \.me-ps-help\.open\{/.test(css),
+    'the panel is no longer hidden until `open`, so this test no longer proves anything');
+});
+
 test('a long form cannot squeeze the meaning beside it off the panel', () => {
   // Reported: the description column of a form-by-form attribute came out one
   // character per line. The forms were `white-space:nowrap`, so the six that run

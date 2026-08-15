@@ -2234,6 +2234,10 @@ input.me-inp{width:100%;}
 /* JSONC syntax tokens reuse the DDL editor's .hl-* palette directly. */
 .me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
 .me-ps-lint{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--warning);}
+/* min-height keeps a one-line error from jittering the layout, but on a spec
+   with nothing wrong with it that reserved row and the flex gap above it were
+   18px of dead space under the editor. Empty, they take none. */
+.me-ps-err:empty,.me-ps-lint:empty{display:none;}
 .me-ps-lint-row{padding:1px 0;}
 /* The reference sits BESIDE the spec. It used to open between the toolbar and
    the editor, pushing the editor down the page every time it was opened — so
@@ -2248,7 +2252,10 @@ input.me-inp{width:100%;}
 .me-ps-wrap.nohelp .me-ps-help{display:none !important;}
 .me-ps-split-resizer{height:6px;margin:-2px 0 0;cursor:ns-resize;flex-shrink:0;background:transparent;}
 .me-ps-split-resizer:hover,.me-ps-split-resizer.dragging{background:rgba(var(--accent-rgb),0.45);}
-.me-ps-wrap.nohelp .me-ps-split-resizer{display:none;}
+/* The HEIGHT bar stays whether or not the reference is open — the editor is
+   just as resizable either way, and a control that comes and goes with an
+   unrelated panel is one you cannot learn. Only the WIDTH bar goes with it,
+   since with the reference closed there is nothing beside the editor to drag. */
 /* The reference's width is dragged too. A reference column wide enough for one
    block's examples is too wide for another's, and the widest thing in it — a
    raw hex run — has no natural wrap point. */
@@ -15866,7 +15873,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.24.1.3';
+const APP_VERSION  = '1.24.1.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17969,7 +17976,11 @@ function _meHtmlParseSpec(item) {
   // `side` puts the help BESIDE the editor instead of between the toolbar and
   // it, where it used to push the editor down the page every time it opened.
   // `nohelp` collapses the split back to one column so the editor is full width
-  // when the reference is closed.
+  // when the reference is closed. Both classes come from the one flag: `nohelp`
+  // on the wrap sizes the grid, `open` on the panel makes it visible. `open`
+  // used to be added by the live toggle alone, so a re-render with the
+  // reference open kept the column reserved around a display:none panel and the
+  // editor sat at half width beside nothing.
   return `<div class="me-ps-wrap side${_mePsHelpOpen() ? '' : ' nohelp'}" id="me-ps-wrap">
   <div class="me-ps-toolbar">
     <div class="me-ps-variants" id="me-ps-variants">
@@ -17986,7 +17997,7 @@ function _meHtmlParseSpec(item) {
   <div class="me-ps-split" id="me-ps-split">
     <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
     <div class="me-ps-col-resizer" id="me-ps-col-resizer" title="Drag to resize the block reference"></div>
-    <div class="me-ps-help" id="me-ps-help">${_mePsHelpHtml()}</div>
+    <div class="me-ps-help${_mePsHelpOpen() ? ' open' : ''}" id="me-ps-help">${_mePsHelpHtml()}</div>
   </div>
   <div class="me-ps-split-resizer" id="me-ps-split-resizer" title="Drag to resize the spec editor"></div>
   <div id="me-ps-err" class="me-ps-err"></div>

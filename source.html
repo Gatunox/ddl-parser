@@ -15815,7 +15815,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.13.1';
+const APP_VERSION  = '1.22.14.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27014,6 +27014,11 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
 
   let remaining = N;
   for (const childDef of dataDefs) {
+    // The length is spent: the rest of the group is NOT in the message. A fixed
+    // group's empty field is a field that is present and blank, worth a row; a
+    // variable group's is a field the wire never sent. Emitting them anyway put
+    // 200 rows of "0 bytes, no value" under a one-byte payload and buried it.
+    if (remaining <= 0) break;
     const declared = _meEffLen(childDef, ctx);
     const take     = Math.min(declared, remaining);
     const cStart   = ctx.cursor;

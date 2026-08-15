@@ -5087,12 +5087,39 @@ test('a LEN whose payload is a nested group is auto-detected', () => {
   const ctx = vlgLgthRun();
   // The single payload byte goes to the first leaf inside the nested group…
   eq(vlgLgthF(ctx, 'ADD-DATA.INFO.TRAN-CAT-CDE').rawHex.toUpperCase(), 'D9', 'the R, alone');
-  // …and nothing else in the group gets any, because the length said one byte.
-  eq(vlgLgthF(ctx, 'ADD-DATA.INFO.FLAG-GROUP.F1').valueLength, 0, 'F1 reads nothing');
-  eq(vlgLgthF(ctx, 'ADD-DATA.INFO.FLAG-GROUP.F2').valueLength, 0, 'F2 reads nothing');
+  // …and nothing else in the group appears AT ALL, because the length said one
+  // byte. A variable group's unreached tail is not in the message, so it gets no
+  // rows — 200 of them at "0 bytes, no value" buried the one byte that is real.
+  assert.ok(!ctx.fields.some(f => f.id === 'ADD-DATA.INFO.FLAG-GROUP.F1'), 'F1 is not emitted');
+  assert.ok(!ctx.fields.some(f => f.id === 'ADD-DATA.INFO.FLAG-GROUP.F2'), 'F2 is not emitted');
   // The field after the group resumes right after the payload — the symptom was
   // that it did not, because the group had eaten everything.
   eq(vlgLgthF(ctx, 'TRAILER').startByte, 4, 'TRAILER starts immediately after the payload');
+});
+
+test('a child the length only PARTLY covers is still emitted', () => {
+  // The boundary. Dropping the unreached tail must not drop a field the length
+  // reaches into: 3 bytes across children of 2 and 4 means the first is whole,
+  // the second is short, and only the third is absent.
+  S.ddlTree = { V: { S: { D: `DEF MSG.
+  02 G.
+    04 LGTH PIC X(3).
+    04 BODY.
+      06 A PIC X(2).
+      06 B PIC X(4).
+      06 C PIC X(4).
+  02 AFTER PIC X(2).
+END MSG.
+` } } };
+  S.inputFormat = 'hex';
+  //            "003"          A A   B    AFTER
+  const bytes = [0x30,0x30,0x33, 0x41,0x42, 0x43, 0x5A,0x5A];
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, Uint8Array.from(bytes));
+  eq(vlgLgthF(ctx, 'G.BODY.A').valueLength, 2, 'A is whole');
+  eq(vlgLgthF(ctx, 'G.BODY.B').valueLength, 1, 'B gets the one byte the length still had');
+  assert.ok(!ctx.fields.some(f => f.id === 'G.BODY.C'), 'C is never reached, so it is not emitted');
+  eq(vlgLgthF(ctx, 'AFTER').startByte, 6, 'and the next field resumes after the payload');
 });
 
 test('the length is read in the encoding the recognizer declares', () => {
@@ -5149,8 +5176,8 @@ END REC.
       { 'read-bitmap-fields': 'BMP' },
     ] }, msg);
   eq(vlgLgthF(ctx, 'ADD-DATA.INFO.TRAN-CAT-CDE').value, 'R', 'the one payload byte');
-  eq(vlgLgthF(ctx, 'ADD-DATA.INFO.FLAG-GROUP.F1').valueLength, 0,
-     'and nothing after it inside the group');
+  assert.ok(!ctx.fields.some(f => f.id === 'ADD-DATA.INFO.FLAG-GROUP.F1'),
+     'and nothing after it inside the group is emitted at all');
 });
 
 test('read-tlv honours the Overrides table, like every other read path', () => {

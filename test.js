@@ -5037,6 +5037,122 @@ test('a group with no resolvable value leaf says so on the row', () => {
     `the row does not say why, got: ${JSON.stringify(g.description)}`);
 });
 
+// ── VLG auto-detect: a payload that is a nested group ──────────────────────
+// Reported against a Mastercard DE-48: ADD-DATA { LGTH, INFO { … } }. The LEN is
+// named LGTH, which the auto-detect matches — but the group has ONE direct
+// child, and the old guard needed two, so it was never flagged and the group was
+// never framed. Everything after the payload was swallowed.
+const VLG_LGTH_DDL = `DEF MSG.
+  02 ADD-DATA.
+    04 LGTH PIC X(3).
+    04 INFO.
+      06 TRAN-CAT-CDE PIC X(1).
+      06 FLAG-GROUP.
+        08 F1 PIC X(2).
+        08 F2 PIC X(2).
+  02 TRAILER PIC X(4).
+END MSG.
+`;
+// EBCDIC "001", the one payload byte 'R', bytes that are NOT this group's, then
+// the trailer.
+const VLG_LGTH_BYTES = [0xF0,0xF0,0xF1, 0xD9, 0x41,0x42,0x43,0x44, 0x54,0x41,0x49,0x4C];
+function vlgLgthRun(extra) {
+  S.ddlTree = { V: { S: { D: VLG_LGTH_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    recognizers: [{ type: 'mti', encoding: 'ebcdic', value: '####' }], ...(extra || {}),
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, Uint8Array.from(VLG_LGTH_BYTES));
+}
+const vlgLgthF = (ctx, id) => ctx.fields.find(f => f.id === id && !f.error);
+
+test('every auto-detect call site passes the group total, not just the direct kids', () => {
+  // Four call sites resolve a group's LEN: read-ddl's run finder, the DE walk,
+  // the DE-entry path, and the Field Map's VLG column. They must agree, or the
+  // column shows one answer and the parse does another. The count is the whole
+  // fix — a group whose payload is nested has ONE direct child — so a call that
+  // omits it silently reverts to the reported bug.
+  const calls = [...APP_SRC.matchAll(/_meAutoLLVarLenId\(([^)]*)\)/g)]
+    .map(m => m[1].split(',').map(a => a.trim()));
+  assert.ok(calls.length >= 4, `expected every call site, found ${calls.length}`);
+  const short = calls.filter(a => a.length < 3);
+  deepEq(short, [], 'call sites passing fewer than three arguments');
+  // And the third argument is a TOTAL, never the direct-children list it is
+  // meant to correct for.
+  for (const a of calls)
+    assert.ok(!/^direct(Kids)?\.length$/.test(a[2]),
+      `a call site passes ${a[2]} — that is the count the fix exists to stop using`);
+});
+
+test('a LEN whose payload is a nested group is auto-detected', () => {
+  const ctx = vlgLgthRun();
+  // The single payload byte goes to the first leaf inside the nested group…
+  eq(vlgLgthF(ctx, 'ADD-DATA.INFO.TRAN-CAT-CDE').rawHex.toUpperCase(), 'D9', 'the R, alone');
+  // …and nothing else in the group gets any, because the length said one byte.
+  eq(vlgLgthF(ctx, 'ADD-DATA.INFO.FLAG-GROUP.F1').valueLength, 0, 'F1 reads nothing');
+  eq(vlgLgthF(ctx, 'ADD-DATA.INFO.FLAG-GROUP.F2').valueLength, 0, 'F2 reads nothing');
+  // The field after the group resumes right after the payload — the symptom was
+  // that it did not, because the group had eaten everything.
+  eq(vlgLgthF(ctx, 'TRAILER').startByte, 4, 'TRAILER starts immediately after the payload');
+});
+
+test('the length is read in the encoding the recognizer declares', () => {
+  // F0F0F1 is EBCDIC "001". Read as a binary integer it is 15790321 — past the
+  // end of the message, which is then clamped to "everything left".
+  const ctx = vlgLgthRun();
+  const len = vlgLgthF(ctx, 'ADD-DATA.LGTH');
+  assert.ok(!len.issue, `no complaint about the length, got: ${len.issue}`);
+  eq(ctx.fields.filter(f => f.error).length, 0, 'and no errors');
+});
+
+test('auto-detect still needs something to frame', () => {
+  // A group whose only leaf IS the length has no payload. Flagging it would send
+  // it to _meVlgReadGroup, which refuses a group of one and reports it — so the
+  // discriminating check is that NO such complaint appears, not merely that the
+  // next field survives.
+  const ddl = 'DEF MSG.\n  02 G.\n    04 LGTH PIC X(3).\n  02 AFTER PIC X(4).\nEND MSG.\n';
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] },
+    Uint8Array.from([0x30,0x30,0x31, 0x54,0x41,0x49,0x4C]));
+  deepEq(ctx.fields.filter(f => f.error).map(f => f.error), [],
+    'a LEN with nothing to frame must not be treated as a VLG');
+  eq(vlgLgthF(ctx, 'AFTER').rawHex.toUpperCase(), '5441494C', 'AFTER keeps its own bytes');
+});
+
+test('the DE walk auto-detects the same nested-payload group', () => {
+  // The reported path: DE-48 inside read-bitmap-fields, not a plain read-ddl.
+  // The DE walk resolves a group's LEN through its OWN call to the auto-detect,
+  // so the fix has to reach that call site too — it is a separate one.
+  S.ddlTree = { V: { S: { D: `DEF REC.
+  02 BMP PIC X(16).
+  02 PAD PIC X(1).
+  02 ADD-DATA.
+    04 LGTH PIC X(3).
+    04 INFO.
+      06 TRAN-CAT-CDE PIC X(1).
+      06 FLAG-GROUP.
+        08 F1 PIC X(2).
+        08 F2 PIC X(2).
+  02 AFTER PIC X(4).
+END REC.
+` } } };
+  S.inputFormat = 'ascii';
+  // Bit 2 only (bit 1 would claim a secondary bitmap): DE-2 is ADD-DATA. Then
+  // "001" and the single payload byte 'R', with more bytes behind it that the
+  // group must not touch.
+  const msg = Buffer.concat([Buffer.from('4000000000000000'), Buffer.from('001RZZZZZZ')]);
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [],
+    parse_spec_ascii: [
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'read-bitmap-fields': 'BMP' },
+    ] }, msg);
+  eq(vlgLgthF(ctx, 'ADD-DATA.INFO.TRAN-CAT-CDE').value, 'R', 'the one payload byte');
+  eq(vlgLgthF(ctx, 'ADD-DATA.INFO.FLAG-GROUP.F1').valueLength, 0,
+     'and nothing after it inside the group');
+});
+
 test('read-tlv honours the Overrides table, like every other read path', () => {
   // Reported: DE-55 parsed as TLV with `hex-char` set on every element in the
   // Overrides table came back RAW. _meExecReadTLVMapped was the only read path

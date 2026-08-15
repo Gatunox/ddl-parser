@@ -15804,7 +15804,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.12.0';
+const APP_VERSION  = '1.22.13.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20887,7 +20887,9 @@ function _meFmEffectiveVlg(groupId, ctx) {
   const all = ctx.leavesByGroup.get(groupId) || [];
   const pre = groupId + '.';
   const direct = all.filter(l => l.id.startsWith(pre) && !l.id.slice(pre.length).includes('.'));
-  const autoId = _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
+  // `all.length`, not `direct.length`: the payload may be a nested group, and
+  // this column has to say what the engine will do.
+  const autoId = _meAutoLLVarLenId(direct, ctx.vlgIdentifier, all.length);
   if (_meVlgHas(ctx.vlgMap, groupId)) {
     const chosen = _meVlgGet(ctx.vlgMap, groupId);
     return { lenId: chosen || (direct[0] && direct[0].id) || null, autoId, overridden: true };
@@ -25346,7 +25348,7 @@ function _meDDLVlgRuns(defs, ctx) {
       const leaves = defs.slice(i, j).filter(d => !d.isRedefines && !(d._occursPath && d._occursPath.length));
       if (leaves.length < 2 || leaves.length !== j - i) continue;
       const direct = leaves.filter(d => !d.id.slice(pre.length).includes('.'));
-      const _auto  = _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
+      const _auto  = _meAutoLLVarLenId(direct, ctx.vlgIdentifier, leaves.length);
       // The VLG button writes its flag to the group's FIRST LEAF, not to the
       // group — _meFmExpandTargets targets leaves[0]. Only the group was looked
       // up here, so marking a group through the UI fell through to the leaf rule
@@ -26716,15 +26718,27 @@ function _meVlgNameMatcher(identifier) {
 // Which leaf carries this group's length, or null when it is not a VLG.
 // The LEN's WIDTH is never assumed — it is whatever the DDL declares for the
 // leaf that matched, so a 1-byte binary length works exactly like an LLLVAR's 3.
-function _meAutoLLVarLenId(kids, identifier) {
+// `kids` are the group's DIRECT children; `groupLeaves` is how many leaves the
+// group holds in total, at any depth. The two differ exactly when the payload is
+// a nested group — LGTH followed by INFO { … } has ONE direct child — and the
+// old `kids.length < 2` guard rejected that shape outright. The name matched;
+// the shape disqualified it, so a real variable-length group had to be flagged
+// by hand. Reported against a Mastercard DE-48.
+function _meAutoLLVarLenId(kids, identifier, groupLeaves) {
   if (identifier === '') return null;              // auto-detect switched off
-  if (!kids || kids.length < 2) return null;
+  if (!kids || !kids.length) return null;
+  const total = groupLeaves != null ? groupLeaves : kids.length;
+  if (total < 2) return null;                      // a LEN with nothing to frame
   const re = _meVlgNameMatcher(identifier);
   // A named identifier is the user telling us where the length is, so it is
   // matched wherever it sits — a DDL may put a TAG in front of its LEN. The
   // fallback stays first-leaf-only, which is the legacy LLVAR shape and what
   // parseHPEDDL's isLLVar looks for.
-  const scan = identifier ? kids.slice(0, -1) : kids.slice(0, 1);
+  //
+  // The last direct child is excluded only when it could BE the payload. With a
+  // nested payload it cannot be, and dropping it left nothing to scan at all.
+  const nested = kids.length < total;
+  const scan = identifier ? (nested ? kids : kids.slice(0, -1)) : kids.slice(0, 1);
   for (const k of scan) if (re.test(_meVlgLeafName(k))) return k.id;
   return null;
 }
@@ -26800,7 +26814,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     const direct = kids.filter(d => !d.id.slice(scopeId.length + 1).includes('.'));
     const vlg    = _meVlgLenMap(_meOvMergedItem(ctx));
     const lenId  = _meVlgHas(vlg, scopeId) ? (_meVlgGet(vlg, scopeId) || direct[0]?.id)
-                                           : _meAutoLLVarLenId(direct, ctx.vlgIdentifier);
+                                           : _meAutoLLVarLenId(direct, ctx.vlgIdentifier, kids.length);
     const lenDef = lenId ? direct.find(k => _meVlgIsLen(lenId, k.id)) : null;
     if (lenDef) {
       const lStart = ctx.cursor;
@@ -27090,7 +27104,9 @@ function _meExecBitmapFields(attrs, ctx) {
     let isVarGroup = false, cfgLenId;
     if (_meVlgHas(varGroups, groupId)) { isVarGroup = true; cfgLenId = _meVlgGet(varGroups, groupId); }
     else {
-      const autoLenId = _meAutoLLVarLenId(directKids, ctx.vlgIdentifier);
+      // `kids.length`, not `directKids.length`: the payload may be a nested
+      // group, which leaves exactly one direct child — the LEN itself.
+      const autoLenId = _meAutoLLVarLenId(directKids, ctx.vlgIdentifier, kids.length);
       if (autoLenId) { isVarGroup = true; cfgLenId = autoLenId; }
     }
 

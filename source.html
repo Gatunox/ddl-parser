@@ -15891,7 +15891,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.0.4';
+const APP_VERSION  = '1.25.0.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19551,8 +19551,12 @@ function _meHelpFitHeight(key) {
   if (!p.isOpen) { split.style.height = ''; return; }
   let saved = null;
   try { saved = parseInt(localStorage.getItem(`up_${p.storageKey}_split_h`), 10); } catch(e) {}
-  const want = Number.isFinite(saved) ? Math.max(_ME_PS_SPLIT_MIN, saved)
-    : Math.max(_ME_HELP_OPEN_MIN, _meHelpContentH(document.getElementById(p.mainId)));
+  // The floor is the same one the drag enforces: never shorter than the content
+  // beside the reference, and never shorter than the reference needs to be read.
+  // A saved height may only make it TALLER — going through it alone let a saved
+  // 320 shrink a section holding twenty recognizers and clip most of them.
+  const floor = Math.max(_meHelpContentH(document.getElementById(p.mainId)), _ME_HELP_OPEN_MIN);
+  const want = Number.isFinite(saved) ? Math.max(floor, saved) : floor;
   split.style.height = Math.min(want, Math.round(window.innerHeight * 0.8)) + 'px';
 }
 function _meHelpSync(key) {
@@ -21927,6 +21931,10 @@ function _meFillOverridesSection(el, item, seq, done) {
         v._ro.observe(wrap);
       }
       _meFmRenderWindow(true);
+      // Only now does the pane hold its rows. Sizing the split back in
+      // _meHelpInitSplit measured an empty table and settled on the reference's
+      // bare minimum, which then clipped everything that arrived after it.
+      _meHelpFitHeight('fm');
       done();
     }, 0);
   }, 0);

@@ -10669,15 +10669,26 @@ test('a closed reference costs no height, and an open one is tall enough to read
     'a dragged height is consulted before the closed case, so closing keeps it');
   assert.ok(/if \(!p\.isOpen\) \{ split\.style\.height = ''; return; \}/.test(fit),
     'closing does not give the height back to the content');
-  assert.ok(/Number\.isFinite\(saved\) \? Math\.max\(_ME_PS_SPLIT_MIN, saved\)/.test(fit),
+  assert.ok(/Number\.isFinite\(saved\) \? Math\.max\(floor, saved\)/.test(fit),
     'a height dragged for the reference is not honoured when it reopens');
   // …and the restore on mount must not force one either, or the panel is boxed
   // at its last dragged size before anything is opened.
   const init = psFnSource('_meHelpInitSplit');
   assert.ok(/Number\.isFinite\(savedH\) && split\.classList\.contains\('me-hs-fixed'\)/.test(init),
     'a content-sized panel restores a standing height it should not have');
-  assert.ok(/Math\.max\(_ME_HELP_OPEN_MIN, _meHelpContentH\(/.test(fit),
-    'the open height is not taken from the content beside the reference');
+  // Open, the floor is the SAME one the drag enforces: at least the content
+  // beside the reference, and at least what the reference needs to be read.
+  assert.ok(/const floor = Math\.max\(_meHelpContentH\(document\.getElementById\(p\.mainId\)\), _ME_HELP_OPEN_MIN\)/.test(fit),
+    'the open height is not floored at both the content and the readable minimum');
+  // A saved height may only make it taller. Going through it alone let a saved
+  // 320 shrink a section holding twenty recognizers and clip most of them.
+  assert.ok(/Number\.isFinite\(saved\) \? Math\.max\(floor, saved\) : floor/.test(fit),
+    'a saved height can shrink the panel below its own content');
+  // The Overrides pane is filled AFTER its markup is mounted, so sizing it at
+  // mount measured an empty table and settled on the reference's bare minimum.
+  const fill = psFnSource('_meFillOverridesSection');
+  assert.ok(/_meFmRenderWindow\(true\);\s*\n\s*\/\/[\s\S]{0,240}_meHelpFitHeight\('fm'\);/.test(fill),
+    'the Overrides split is not re-sized once its rows are in');
   // Measured from the pane's CHILDREN. The pane itself is a grid item stretched
   // to the row, and with the reference beside it the row is as tall as the
   // reference — so asking the pane returns the number being replaced.

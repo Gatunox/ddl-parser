@@ -2275,6 +2275,20 @@ input.me-inp{width:100%;}
    Overrides table depending on the panel, so the grid placement is keyed on a
    class all three carry rather than on the editor's own. */
 .me-ps-split .me-hs-main{min-height:0;min-width:0;height:auto;overflow:auto;grid-column:1;grid-row:1;}
+/* Three scrollbars down one column — the field table's, the pane's and the
+   page's — where the middle one earned nothing. The table already scrolls; the
+   pane only overflowed because the table took its full height and left the rest
+   of the pane hanging over the edge. Laid out as a column with the table
+   absorbing whatever is left, the pane is exactly as tall as its own box.
+   overflow:auto stays on the pane as a safety valve: at the 80vh cap with a
+   very tall header stack, something has to give and clipping is not it. */
+.me-ps-split #me-fm-pane{display:flex;flex-direction:column;}
+/* The table SHRINKS by the excess — it does not flex from zero. `flex:1 1 0`
+   collapsed it to 2px while the section was still filling and the pane was
+   briefly 246px tall. Everything else in the column holds its size, so the
+   excess lands on the one child that already knows how to scroll. */
+.me-ps-split #me-fm-pane > *{flex-shrink:0;}
+.me-ps-split #me-fm-pane > .me-fm-table-wrap{flex-shrink:1;min-height:120px;}
 .me-ps-split .me-ps-cm{min-height:0 !important;min-width:0;height:auto;overflow:auto;grid-column:1;grid-row:1;}
 .me-ps-split .me-ps-help.open{
   min-height:0;min-width:0;height:auto;overflow:hidden;padding:0;
@@ -15891,7 +15905,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.1.2';
+const APP_VERSION  = '1.25.1.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

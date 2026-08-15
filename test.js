@@ -8343,7 +8343,13 @@ test('every scrolling surface in the panel reserves its scrollbar gutter', () =>
   // Without it the content jumps sideways the moment a list grows past its
   // max-height, and jumps back when it shrinks.
   const css = html.slice(html.indexOf('<style'), html.indexOf('</style>'));
-  const rule = sel => (css.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{[^}]*\\}')) || [''])[0];
+  // Anchored to a rule BOUNDARY. Unanchored it also matched a descendant rule
+  // ending in the same selector — `.me-ps-split #me-fm-pane > .me-fm-table-wrap`
+  // — and reported the gutter missing from a rule that never set widths at all.
+  const rule = sel => {
+    const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return (css.match(new RegExp('(?:^|[};])\\s*' + esc + '\\{[^}]*\\}', 'm')) || [''])[0];
+  };
   const missing = ['.me-tab-body', '.me-fm-table-wrap', '.me-fm-pane pre']
     .filter(sel => !/scrollbar-gutter:\s*stable/.test(rule(sel)));
   deepEq(missing, [], 'scrolling containers with no reserved gutter');
@@ -10599,6 +10605,26 @@ test('the Overrides columns document their options, and only claim their own exa
   for (const [col, info] of Object.entries(fm))
     for (const [name] of (info.attrs || []))
       assert.ok(!/[&<>"']/.test(name), `${col} has an unusable attribute name: ${name}`);
+});
+
+test('the Overrides column has two scrollbars, not three', () => {
+  // Reported: the field table scrolled, the pane around it scrolled, and the
+  // page scrolled. The first and last earn their bars; the middle one only
+  // existed because the table took its full max-height and pushed the rest of
+  // the pane over the edge of the split.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.me-ps-split #me-fm-pane\{display:flex;flex-direction:column;\}/.test(css),
+    'the Overrides pane does not lay its children out as a column');
+  // Shrink-by-the-excess, not flex-from-zero: `flex:1 1 0` collapsed the table
+  // to 2px while the section was still filling and the pane was briefly short.
+  assert.ok(/\.me-ps-split #me-fm-pane > \*\{flex-shrink:0;\}/.test(css),
+    'the pane chrome can shrink too, so the excess is shared rather than absorbed');
+  assert.ok(/\.me-ps-split #me-fm-pane > \.me-fm-table-wrap\{flex-shrink:1;min-height:120px;\}/.test(css),
+    'the table does not take the excess, or can be squeezed to nothing taking it');
+  // The pane keeps overflow:auto deliberately — at the 80vh cap something has
+  // to give, and clipping the table is worse than a bar that rarely appears.
+  assert.ok(/\.me-ps-split \.me-hs-main\{[^}]*overflow:auto/.test(css),
+    'the pane can now clip its content with no way to reach it');
 });
 
 test('Reset Layout reaches every stored size, including the Data Editor', () => {

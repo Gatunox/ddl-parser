@@ -8536,6 +8536,56 @@ test('the Field Map reads name, type, size, then where — and the cells follow 
   eq(menuOrder.join(','), 'num,dt,len,off,de,vlg', 'the chooser follows the table');
 });
 
+test('the DDL panel cards sit flush to its edges, apart from the top', () => {
+  // Both cards already draw a border; a margin outside that border spent a
+  // second line's worth of space on nothing. The top gap stays — it separates
+  // them from the panel header — and so does the gap between them, which
+  // belongs to the resizer and is why removing these margins leaves them apart.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  for (const [sel, why] of [['.ddl-tree-pane', 'the tree'], ['.ddl-editor-pane', 'the editor']]) {
+    const rule = new RegExp(sel.replace('.', '\\.') + '\\s*\\{[^}]*\\}').exec(css);
+    assert.ok(rule, `${sel} is gone`);
+    const m = /margin: ([^;]+);/.exec(rule[0]);
+    assert.ok(m, `${why} pane declares no margin`);
+    eq(m[1].trim(), 'var(--sp-2) 0 0 0', `${why} pane keeps a margin on a side it should not`);
+  }
+  // The between-gap is the resizer's, not a margin — if it ever became one,
+  // the two rules above would be the wrong place to look for it.
+  assert.ok(/<div class="resizer-h" id="ddlTreeResizer"><\/div>/.test(html),
+    'the gap between the two cards is no longer the resizer');
+});
+
+test('the Data Editor header carries the wordmark, with its title centred', () => {
+  // Anchored FORWARD from the markup: `me-header-actions` appears earlier as a
+  // CSS rule, so searching for it from position 0 sliced backwards to nothing.
+  const _s = html.indexOf('<div class="me-header">');
+  const hdr = html.slice(_s, html.indexOf('</div>', html.indexOf('me-header-actions', _s)));
+  // The wordmark is the same markup the page header uses.
+  assert.ok(/<span class="app-logo"><span class="brand-mark" aria-hidden="true">D<\/span>DDL Parser<\/span>/.test(hdr),
+    'the Data Editor header has no wordmark');
+  // A span, not a second <h1>: the page already has one, and this is the same
+  // application rather than a new document.
+  assert.ok(!/<h1/.test(hdr), 'the wordmark was added as a second h1');
+  eq((html.match(/<h1\b/g) || []).length, 1, 'the page has more than one h1');
+
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // Shared, not copied — the look was scoped to `header h1`, which the editor's
+  // header is not.
+  assert.ok(/header h1, \.app-logo \{/.test(css), 'the wordmark styling is duplicated rather than shared');
+  assert.ok(/#appLogo, \.app-logo \{ cursor: default/.test(css),
+    'the editor wordmark is selectable and looks clickable');
+  // Three zones, the outer two sharing the width equally — that is what puts the
+  // title in the middle of the BAR rather than the middle of what the buttons
+  // leave over. justify-content:flex-end would undo it.
+  assert.ok(/\.me-header\{display:flex;align-items:center;gap:/.test(css)
+         && !/\.me-header\{[^}]*justify-content:flex-end/.test(css),
+    'the header still packs everything to one end');
+  assert.ok(/\.me-header \.app-logo,\.me-header-actions\{flex:1 1 0;min-width:0;\}/.test(css),
+    'the outer zones do not take an equal share, so the title is not centred');
+  assert.ok(/\.me-header-title\{[^}]*flex:0 1 auto;text-align:center/.test(css),
+    'the title still stretches instead of sitting in the middle');
+});
+
 test('Parse Results carries an Offset column too, after Size', () => {
   // The Field Map and the Test panel both say where a field sits; the Parse
   // Results table was the one that did not, so the byte span you were looking

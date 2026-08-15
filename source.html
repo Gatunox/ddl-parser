@@ -350,7 +350,7 @@ header {
   gap: var(--sp-3);
   flex-shrink: 0;
 }
-header h1 { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weight: 700;
+header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text); font-weight: 700;
   letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--sp-2); }
 /* The brand mark carries the accent so the wordmark does not have to. */
 .brand-mark {
@@ -614,7 +614,10 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 .ddl-tree-pane   { width: 170px; flex-shrink: 0; overflow: hidden;
   background: var(--bg-panel); display: flex; flex-direction: column;
   border: var(--bw) solid var(--border); border-radius: var(--r-md);
-  margin: var(--sp-2) 0 var(--sp-2) var(--sp-2); }
+  /* Top only. The panel's own edge is already a border, so a margin outside
+     it drew a second one in empty space; the gap BETWEEN the two cards is the
+     resizer's, which is why removing these leaves them apart. */
+  margin: var(--sp-2) 0 0 0; }
 #ddlTree         { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
 /* The tree is a card, so it carries its own header — title plus a live count.
    The rounded top corners belong to whichever element is FIRST inside the
@@ -677,7 +680,7 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .ddl-editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0;
   background: var(--bg-panel);
   border: var(--bw) solid var(--border); border-radius: var(--r-md);
-  margin: var(--sp-2) var(--sp-2) var(--sp-2) 0; overflow: hidden; }
+  margin: var(--sp-2) 0 0 0; overflow: hidden; }
 /* ── DDL syntax-highlight overlay + line-number gutter ── */
 .ddl-hl-wrap        { flex: 1; min-height: 0; display: flex; flex-direction: row; overflow: hidden; }
 .ddl-gutter         { width: 44px; flex-shrink: 0; overflow: hidden; position: relative;
@@ -1383,7 +1386,7 @@ td.c-err  { color: var(--accent2); }
   line-height: 1.5;
 }
 
-#appLogo { cursor: default; user-select: none; }
+#appLogo, .app-logo { cursor: default; user-select: none; }
 
 #rawPanel > .panel-header { cursor: default; }
 #rawPanel > .panel-header:hover { background: var(--surface-header); }
@@ -2013,8 +2016,12 @@ td.c-err  { color: var(--accent2); }
 .me-flash.warn{background:var(--warning);color:var(--on-accent);}
 .me-flash-x{position:absolute;top:50%;right:10px;transform:translateY(-50%);font-size:13px;line-height:1;opacity:.6;cursor:pointer;}
 .me-flash-x:hover{opacity:1;}
-.me-header{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-2);padding:0 10px 0 14px;min-height:var(--app-header-h);border-bottom: var(--bw) solid var(--border);background:var(--surface-header);flex-shrink:0;}
-.me-header-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.me-header{display:flex;align-items:center;gap:var(--sp-2);padding:0 10px 0 14px;min-height:var(--app-header-h);border-bottom: var(--bw) solid var(--border);background:var(--surface-header);flex-shrink:0;}
+/* The two outer zones take an equal share, so the title sits in the middle of
+   the BAR and not in the middle of the space the buttons happen to leave. */
+.me-header .app-logo,.me-header-actions{flex:1 1 0;min-width:0;}
+.me-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-2);}
+.me-header-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);flex:0 1 auto;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* Each section is a card, matching the Settings drawer: the editor body is
    the page and sections sit on it, rather than being divided by a rule. */
 .me-section{background:var(--bg-panel);border: var(--bw) solid var(--border);border-radius:var(--r-md);
@@ -15950,7 +15957,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.4.0';
+const APP_VERSION  = '1.25.5.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -30395,12 +30402,18 @@ function _meSave() {
          it stopped at the sidebar's edge and read as a heading for the content
          pane only. -->
     <div class="me-header">
+      <!-- The wordmark as a span, not a second top-level heading: the page
+           already has one, and this is the same application rather than a new
+           document. -->
+      <span class="app-logo"><span class="brand-mark" aria-hidden="true">D</span>DDL Parser</span>
       <span class="me-header-title" id="me-header-title">Data Editor</span>
-      <span class="me-status" id="me-status"></span>
-      <button class="btn btn-danger" id="me-del-btn" onclick="_meDeleteSelected()">Delete</button>
-      <button class="btn" onclick="closeMsgEditor()">Cancel</button>
-      <button class="btn btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
-      <button class="btn" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
+      <span class="me-header-actions">
+        <span class="me-status" id="me-status"></span>
+        <button class="btn btn-danger" id="me-del-btn" onclick="_meDeleteSelected()">Delete</button>
+        <button class="btn" onclick="closeMsgEditor()">Cancel</button>
+        <button class="btn btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
+        <button class="btn" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
+      </span>
     </div>
 
     <div class="me-main">

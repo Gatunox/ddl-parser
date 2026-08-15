@@ -7891,7 +7891,30 @@ test('the borrowed prefix does not bill the LEN byte to the payload', () => {
   const lenCell = html.match(/<td class="c-len">(\d*)<\/td>/);
   assert.ok(lenCell, 'the row has a LEN cell');
   eq(lenCell[1], String(data.valueLength), 'the LEN column is the payload alone');
-  assert.ok(html.includes('>37<'), 'while the prefix is still shown beside the value');
+  // …and it is not printed beside the value either. Reported 2026-08-14: a
+  // group whose payload is nested hands this prefix to EVERY child, so a
+  // one-byte payload showed "001R" and the fifteen children left empty showed
+  // "001" and nothing else — the LEN's own row repeated down the whole group.
+  // The row above already says it; the value column does not need to.
+  assert.ok(!html.includes('>37<'),
+    'a VLG group LEN must not be reprinted beside its payload — it has its own row');
+});
+
+test('a child the length left empty shows nothing, not the length', () => {
+  // The reported shape: ADDL-DATA { LGTH="001", INFO { TRAN-CAT-CDE, … } }. One
+  // byte of payload, so TRAN-CAT-CDE gets the 'R' and every other leaf gets
+  // zero — and each of those zero-length rows was printing "001", the group's
+  // LEN, as its entire value.
+  const rows = [
+    { id: 'ADDL-DATA.INFO.TRAN-CAT-CDE', valueLength: 1, value: 'R',
+      lenPrefix: '001', lenPrefixOwnRow: true },
+    { id: 'ADDL-DATA.INFO.ECOM-SUB-FLD-42.TAG', valueLength: 0, value: '',
+      lenPrefix: '001', lenPrefixOwnRow: true },
+  ];
+  const html = renderRows(rows);
+  assert.ok(!/>001</.test(html),
+    'the group LEN is reprinted on its payload rows');
+  assert.ok(/>R</.test(html), 'while the payload it did read is still shown');
 });
 
 test('an LLVAR prefix IS still counted — it belongs to that field', () => {
@@ -7902,6 +7925,18 @@ test('an LLVAR prefix IS still counted — it belongs to that field', () => {
                              value: 'ABCDE', lenPrefix: '05' }]);
   const lenCell = html.match(/<td class="c-len">(\d*)<\/td>/);
   eq(lenCell[1], '7', 'five payload bytes plus the two-character prefix');
+  // And it is still SHOWN. Suppressing the prefix for a VLG group must not take
+  // the LLVAR one with it — that one has no row of its own to be read from.
+  assert.ok(/>05</.test(html), 'an LLVAR prefix is still printed beside its value');
+});
+
+test('every place that bills a length applies the same own-row rule', () => {
+  // Three renderers read lenPrefix: the results table, the export, and the
+  // copy-row helper. A VLG group's LEN has its own row and must not be billed
+  // again in any of them — the copy helper was the one that still did.
+  const uses = [...APP_SRC.matchAll(/f\.lenPrefix\s*\?\s*f\.lenPrefix\.length/g)];
+  deepEq(uses.map(m => m[0]), [],
+    'a length calculation counts lenPrefix without checking lenPrefixOwnRow');
 });
 
 // ── Which fields ARE data elements is now a choice, not a hardcoded rule ────

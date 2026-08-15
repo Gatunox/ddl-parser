@@ -11658,7 +11658,14 @@ function renderFieldTable(msg) {
     const totalLen = f.valueLength !== undefined
       ? f.valueLength + ((f.lenPrefix && !f.lenPrefixOwnRow) ? f.lenPrefix.length : 0) : undefined;
     const lenCell    = totalLen !== undefined ? String(totalLen) : '';
-    const prefixHtml = f.lenPrefix ? `<span class="c-vlen">${esc(f.lenPrefix)}</span>` : '';
+    // A VLG group's LEN has a row of its own, so printing it again in front of
+    // every payload field showed the same bytes twice — and on the children a
+    // one-byte payload left empty, it was the ONLY thing in their value column:
+    // "001" repeated down the whole group. The LENGTH column has excluded it on
+    // this same flag since it was added; the value column never did.
+    // An LLVAR prefix (lenPrefixOwnRow unset) still prints: it has no row.
+    const prefixHtml = (f.lenPrefix && !f.lenPrefixOwnRow)
+      ? `<span class="c-vlen">${esc(f.lenPrefix)}</span>` : '';
     const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
     // Use description only when it carries real info (differs from the field's own leaf name).
     // HPE DDL without HEADING sets desc = rawName, making description == field name — show dataType instead.
@@ -14026,8 +14033,10 @@ function copyFieldToClipboard(fid) {
   if (!msg) return;
   const f = msg.fields.find(x => x.id === fid);
   if (!f) return;
+  // Same rule the table and the export use: a VLG group's LEN has its own row
+  // and must not be billed to the field as well.
   const totalLen = f.valueLength !== undefined
-    ? f.valueLength + (f.lenPrefix ? f.lenPrefix.length : 0)
+    ? f.valueLength + ((f.lenPrefix && !f.lenPrefixOwnRow) ? f.lenPrefix.length : 0)
     : '';
   const line = `${f.id}\t${totalLen}\t${f.value}`;
   // Use execCommand fallback — works reliably from user gesture regardless of focus
@@ -14048,8 +14057,10 @@ function copyMsgToClipboard() {
   if (!msg) return;
   const lines = ['Field ID\tDescription\tLen\tValue'];
   (msg.fields || []).forEach(f => {
+    // Same own-row rule as the table, the export and the single-row copy: a VLG
+    // group's LEN has a row of its own and must not be billed here as well.
     const len = f.valueLength !== undefined
-      ? f.valueLength + (f.lenPrefix ? f.lenPrefix.length : 0)
+      ? f.valueLength + ((f.lenPrefix && !f.lenPrefixOwnRow) ? f.lenPrefix.length : 0)
       : '';
     lines.push(`${f.id}\t${f.description || ''}\t${len}\t${f.value || ''}`);
   });
@@ -15804,7 +15815,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.22.13.0';
+const APP_VERSION  = '1.22.13.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

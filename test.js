@@ -8536,6 +8536,29 @@ test('the Field Map reads name, type, size, then where — and the cells follow 
   eq(menuOrder.join(','), 'num,dt,len,off,de,vlg', 'the chooser follows the table');
 });
 
+test('the two main-page editors sit on the panel surface, like the table beside them', () => {
+  // They were --bg-input, a shade darker than the panel, so each read as a well
+  // sunk into its card while the parse table beside them showed the panel
+  // surface straight through — and their own line-number gutter, already on
+  // --bg-panel, sat lighter than the text next to it.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/#ddlEditor \.cm-editor, #msgInput \.cm-editor,\n#msgInput\.cm-host \{ background: var\(--bg-panel\); \}/.test(css),
+    'the main-page editors do not take the panel surface');
+  // The gutter was already there; this is what makes the two agree.
+  assert.ok(/\.cm-host \.cm-gutters \{ background: var\(--bg-panel\)/.test(css),
+    'the gutter no longer shares the surface the editor was matched to');
+  // A token, so the light theme follows without a second rule.
+  assert.ok(/--bg-panel: #161b22;/.test(css) && /--bg-panel: #ffffff;/.test(css),
+    'the surface is no longer a token that both themes define');
+  // NOT the shared .cm-host rule: --bg-input is every input control in the app,
+  // and the Data Editor's editors are one control among several inside a
+  // section, which is where a distinct well still earns its keep.
+  assert.ok(/\.cm-host \.cm-editor \{[^}]*background: var\(--bg-input\)/.test(css),
+    'the change was made on the shared rule, repainting every editor in the app');
+  assert.ok(/\.me-test-cm\{[^}]*background:var\(--bg-input\)/.test(css),
+    "the Data Editor's Test input lost its well");
+});
+
 test('the DDL panel cards sit flush to its edges, apart from the top', () => {
   // Both cards already draw a border; a margin outside that border spent a
   // second line's worth of space on nothing. The top gap stays — it separates

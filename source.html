@@ -1895,7 +1895,15 @@ td.c-err  { color: var(--accent2); }
 #ddlEditor.cm-host { flex: 1; }
 #ddlEditor.cm-host .cm-editor { line-height: 1.3; }
 /* Message input host fills the panel body */
-#msgInput.cm-host { background: var(--bg-input); }
+/* The two main-page editors ARE their panel's body: the parse table beside
+   them shows the panel surface straight through, and the line-number gutter
+   was already on it — so an editor painted --bg-input read as a well sunk
+   into the card, with its own gutter a shade lighter than the text beside it.
+   The Data Editor's editors keep --bg-input: there an editor is one control
+   among several inside a section, which is where a distinct well earns its
+   keep. */
+#ddlEditor .cm-editor, #msgInput .cm-editor,
+#msgInput.cm-host { background: var(--bg-panel); }
 /* Both CM panels: less-bright default text */
 #ddlEditor .cm-content,
 #msgInput .cm-content { color: var(--text-dim); }
@@ -15971,7 +15979,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.5.3';
+const APP_VERSION  = '1.25.5.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

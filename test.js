@@ -156,6 +156,7 @@ _t.expandJsonc        = _expandJsonc;
 _t.migrateSpec        = window._migrateSpec;
 _t.migrateOverrides   = window._migrateSpecOverrides;
 _t.psHelp             = _PS_HELP;
+_t.psCommonDflts      = _PS_COMMON_DFLTS;
 _t.psCommonAttrs      = _PS_COMMON_ATTRS;
 _t.psCommonExamples   = _PS_COMMON_EXAMPLES;
 _t.mePsHelpExAttrs    = _mePsHelpExAttrs;
@@ -271,7 +272,7 @@ const {
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, extractBytesMapped,
-  stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs,
+  stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs, psCommonDflts,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
@@ -10460,6 +10461,51 @@ const psReadsAttr = (src, name) => new RegExp(
   `|['"]${name}['"]` +                    // attrs['name'], or a key in a returned object
   `|[{,]\\s*${name}\\s*[,}]`              // const { name, … } = …
 ).test(src);
+
+test('every OPTIONAL attribute says what happens when it is omitted', () => {
+  // Reported: the reference described what each attribute DOES and left its
+  // absence to be inferred — readable only if you already knew. It affected
+  // nearly every optional attribute in every block, not just the one that
+  // surfaced it (`unknown`). Each default here was derived from the block's
+  // executor, so a wrong one is a test away from being caught, and a NEW
+  // optional attribute cannot ship without stating its own.
+  const missing = [];
+  for (const [blk, info] of Object.entries(psHelp)) {
+    for (const [name, , req] of info.attrs.concat(psCommonAttrs)) {
+      if (req) continue;
+      const d = (info.dflts && info.dflts[name]) || psCommonDflts[name];
+      if (!d || !String(d).trim()) missing.push(`${blk}.${name}`);
+    }
+  }
+  deepEq(missing, [], 'optional attributes with no stated default');
+});
+
+test('a default is only claimed for an attribute that exists', () => {
+  // The other direction: a dflts entry for an attribute the block does not
+  // have is a default for nothing, and it would survive a rename silently.
+  const orphans = [];
+  for (const [blk, info] of Object.entries(psHelp)) {
+    const names = new Set(info.attrs.concat(psCommonAttrs).map(a => a[0]));
+    for (const k of Object.keys(info.dflts || {})) if (!names.has(k)) orphans.push(`${blk}.${k}`);
+  }
+  deepEq(orphans, [], 'stated defaults for attributes that do not exist');
+});
+
+test('the reference actually renders the defaults it stores', () => {
+  // Storing them and not showing them would be the same gap with more code.
+  const src = psFnSource('_mePsHelpSelect');
+  assert.ok(/info\.dflts && info\.dflts\[name\]/.test(src) && /_PS_COMMON_DFLTS\[name\]/.test(src),
+    'the detail view does not read the stored defaults');
+  assert.ok(/Omitted:/.test(src), 'the default is not built into a row at all');
+  // …and the built fragment is actually placed in the row. Checking only that
+  // "Omitted:" appears somewhere passes with the interpolation deleted, because
+  // the string that builds it is still there.
+  assert.ok(/\$\{_meHelpDescHtml\(desc\)\}\$\{dHtml\}/.test(src),
+    'the default is built and then not put in the description cell');
+  // …and only for optional ones: "omitted" is meaningless on a required attribute.
+  assert.ok(/const d = req \? null :/.test(src),
+    'a required attribute would be shown a default for being left out');
+});
 
 test('every block in the help table has a known implementation', () => {
   deepEq(Object.keys(psHelp).filter(b => !PS_EXEC_FNS[b]), [], 'documented blocks with no exec mapping');

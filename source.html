@@ -2283,6 +2283,8 @@ input.me-inp{width:100%;}
 .me-ps-help-atbl tr:last-child td{border-bottom:none;}
 .me-ps-help-aname{color:var(--accent2);white-space:nowrap;}
 .me-ps-help-atype{color:var(--text-dim);white-space:normal;word-break:break-word;min-width:80px;}
+.me-ps-help-dflt{margin-top:4px;color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);}
+.me-ps-help-dflt b{color:var(--text);font-weight:600;}
 .me-ps-help-req{color:#f85149;font-size:calc(var(--sz-mono) - 3px);}
 .me-ps-help-opt{color:var(--text-dim);font-size:calc(var(--sz-mono) - 3px);}
 /* One example = one card. They used to be a flat run of divs separated by a
@@ -15768,7 +15770,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.23.0.0';
+const APP_VERSION  = '1.23.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17948,6 +17950,14 @@ const _PS_OVERRIDES_DESC = [
 
 // Understood by EVERY block, resolved once in the dispatcher. Listed in each
 // block's help table so they are discoverable wherever you are looking.
+// Defaults for the attributes every block shares, so the three of them are
+// stated once rather than repeated in thirteen dflts maps.
+const _PS_COMMON_DFLTS = {
+  overrides: 'none — the spec\'s stored overrides apply unchanged',
+  at: 'continue from where the previous block stopped',
+  peek: '<code>false</code> — the cursor stays where the positioned read ended',
+};
+
 const _PS_COMMON_ATTRS = [
   ['overrides', '{ "<field>": {…} }', false, _PS_OVERRIDES_DESC],
   ['at', 'int | {field, offset, from}', false, [
@@ -17985,6 +17995,16 @@ const _PS_VLG_IDENTIFIER_DESC = [
 
 const _PS_HELP = {
   'read-ddl': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      binding: '<code>"ANY"</code> — every binding, in list order',
+      fields: '<code>"ANY"</code> — every field the binding declares',
+      from: 'the binding’s first field',
+      until: 'the binding’s last field',
+      vlg_identifier: 'the built-in names <code>LEN</code> / <code>LGTH</code> / <code>LENGTH</code>',
+    },
     desc: [
       'Reads fields from the DDL Binding in declaration order.',
       'By default it walks <b>every</b> binding and emits <b>every</b> field.',
@@ -18089,6 +18109,15 @@ const _PS_HELP = {
     ],
   },
   'read': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      from: 'not a window — one field is read',
+      until: 'the same field <code>from</code> names, when only <code>from</code> is given',
+      length_prefix: 'none — the field is read at the length the DDL declares',
+      type: 'none — the field’s own type override, else the DDL’s declared type',
+    },
     desc: [
       'Reads a single DDL-defined field.',
       'Length and type come from the DDL; the read itself happens at the cursor.',
@@ -18193,6 +18222,14 @@ const _PS_HELP = {
     ],
   },
   'read-fixed': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      type: 'none — the bytes are kept as read',
+      encoding: 'the spec’s recognizer encoding, else ASCII',
+      as: '<code>"read-fixed"</code>',
+    },
     desc: 'Reads an exact number of bytes inline, without requiring a DDL field at that offset.',
     useWhen: [
       'The length is a <b>named DDL field</b> (e.g. <code>DATA-LEN PIC 9(2)</code>) — read it with <code>read</code> first, then point <code>read-fixed</code> at it.',
@@ -18260,6 +18297,14 @@ const _PS_HELP = {
     ],
   },
   'read-until': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      sentinels: 'none — without <code>eom</code> the block reports rather than reading to the end',
+      eom: '<code>false</code> — a missing sentinel is an error, not "take the rest"',
+      as: '<code>"read-until"</code>',
+    },
     desc: 'Reads bytes until a sentinel byte is encountered or end-of-message is reached. At least one of sentinels or eom must be set. The sentinel byte itself is not included in the result.',
     useWhen: [
       'The payload boundary is signaled by a <b>terminator byte</b>, not a length.',
@@ -18306,6 +18351,14 @@ const _PS_HELP = {
     ],
   },
   'read-length-prefix': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      as: '<code>"LEN-DATA"</code>',
+      sentinels: 'none — the length alone decides where the value ends',
+      eom: '<code>false</code>',
+    },
     desc: 'Reads a 1–4 byte length prefix, then reads exactly that many bytes of payload. Useful for LLVAR/LLLVAR-style fields and binary TLV payloads.',
     useWhen: [
       'The length is <b>anonymous binary bytes</b> sitting in front of the payload — no DDL field, no name.',
@@ -18359,6 +18412,12 @@ const _PS_HELP = {
     ],
   },
   'read-to-end': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      as: '<code>"TAIL"</code>',
+    },
     desc: 'Consumes all remaining bytes in the message into one field. Typically used as the last block to capture a variable trailing section.',
     useWhen: [
       'The message has a <b>variable-length trailer</b> you want captured as a single chunk.',
@@ -18386,6 +18445,16 @@ const _PS_HELP = {
     ],
   },
   'read-bitmap': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      encoding: '<code>"binary"</code>',
+      bits: 'none — the map is read from the message, not declared',
+      value: 'none — the map is read from the message, not declared',
+      bit0: '<code>"left"</code> — bit 0 is the most significant bit',
+      length: 'none — the width the DDL declares for the field',
+    },
     desc: [
       'Establishes a bitmap for the block that follows — <code>read-bitmap-fields</code> (ISO) or <code>read-segment-fields</code> (segmented file).',
       'It has <b>three modes</b>, chosen by the attributes you set and the block that follows.',
@@ -18493,6 +18562,13 @@ const _PS_HELP = {
     ],
   },
   'read-bitmap-fields': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      vlg_identifier: 'the built-in names <code>LEN</code> / <code>LGTH</code> / <code>LENGTH</code>',
+      de: 'none — every present DE is read from its DDL element',
+    },
     desc: [
       'Reads the DE fields a prior wire-mode <code>read-bitmap</code> marked present.',
       'DE numbering matches the Overrides table exactly: it starts on the field <b>after</b> the bitmap, a group owns one DE (its leaves own none), REDEFINES rows are skipped, and a Data Element anchor re-aligns the counter from that point on.',
@@ -18575,6 +18651,13 @@ const _PS_HELP = {
     ],
   },
   'read-segment-fields': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      map: 'the segment map a previous <code>read-bitmap</code> produced',
+      binding: '<code>"ANY"</code> — every binding, in list order',
+    },
     desc: [
       'Reads only the segments a prior <code>read-bitmap</code> marks present — whether that map was declared in the spec or read from the file.',
       'Walks the bound DDL\'s <b>top-level</b> fields in declaration order and maps each to a bit by the <b>trailing number</b> in its name: SEG0 ↔ bit 0, SEG07 ↔ bit 7, SEG11 ↔ bit 11.',
@@ -18633,6 +18716,22 @@ const _PS_HELP = {
     ],
   },
   'read-tlv': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      field: 'none — required, except inside a <code>de</code> entry, where the element being read is the buffer',
+      len: 'none — the buffer is framed by the field named in <code>field</code>',
+      ber: '<code>false</code> — then <code>tag_length</code> and <code>length_length</code> are both required',
+      tag_length: '<code>0</code> — meaningless without <code>length_length</code>; use <code>ber</code> for EMV',
+      length_length: '<code>0</code> — meaningless without <code>tag_length</code>; use <code>ber</code> for EMV',
+      encoding: '<code>"binary"</code> — the tag and length are raw bytes',
+      tags: 'none — every triple is emitted as an anonymous <code>&lt;buffer&gt;.&lt;tag&gt;</code> row',
+      tag_field: 'the leaf named <code>TAG</code>, <code>TAG-ID</code> or <code>TAGID</code>',
+      length_field: 'the leaf named <code>LEN</code>, <code>LGTH</code> or <code>LENGTH</code>',
+      value_field: 'the leaf named <code>DATA</code>, <code>VAL</code> or <code>VALUE</code> — else whatever single leaf is left',
+      unknown: '<code>"emit"</code> — an unmapped tag still gets a row',
+    },
     desc: [
       'Parses a DDL buffer field as repeating TAG + LENGTH + VALUE triples, until the buffer runs out.',
       '<b>Where each triple ends up is the thing to know about this block:</b>',
@@ -18793,6 +18892,15 @@ const _PS_HELP = {
     ],
   },
   'when': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      bytes: 'none — the test is on a field’s value, not on raw bytes',
+      'not-bytes': 'none — with neither <code>bytes</code> nor <code>not-bytes</code> there is no byte guard',
+      is: 'none — with neither <code>is</code> nor <code>not</code>, the guard is presence alone',
+      not: 'none',
+    },
     desc: 'Executes a list of blocks only when a condition on a previously read field is true. Multiple when blocks referencing the same field act as if / else-if. Nesting is supported.',
     useWhen: [
       'A field\'s value determines whether subsequent bytes are <b>present at all</b> (e.g. a presence flag).',
@@ -18915,6 +19023,12 @@ const _PS_HELP = {
     ],
   },
   'read-while': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      max: 'no limit beyond the group’s own <code>OCCURS</code>',
+    },
     desc: [
       'Loops a body of blocks for as long as a guard matches at the cursor.',
       'Use it when the iteration count is unknown or cannot be trusted — ASCII PSTM, say, where NUM-SERVICES is binary and the only way to know whether another service follows is to look at the next 2 bytes.',
@@ -18998,6 +19112,14 @@ const _PS_HELP = {
     ],
   },
   'token-area': {
+    // What each OPTIONAL attribute does when you leave it out. Every one is
+    // stated: the reference used to describe what an attribute DOES and leave
+    // its absence to be inferred, which is only readable if you already know.
+    dflts: {
+      tokens: '<code>"ANY"</code> — every token in the area',
+      from: 'the first token in the area',
+      until: 'the last token in the area',
+    },
     desc: [
       'Reads the message\'s token area — the named, 2-byte-prefixed records that follow the fixed section.',
       'By default it emits every token.',
@@ -19290,14 +19412,21 @@ function _mePsHelpSelect(blk) {
   //   ['line', 'line']        — short bullets
   //   [['form', 'meaning']]   — a form-by-form table, for attributes like `at`
   //                             that accept several shapes with different rules
+  // An optional attribute is only half-documented while it says what it DOES
+  // and leaves what happens without it to be inferred. Every one carries its
+  // default, shown under the description rather than in a column of its own —
+  // it is a sentence, not a value, for most of them.
+  const dfltOf = name => (info.dflts && info.dflts[name]) || _PS_COMMON_DFLTS[name] || null;
   const attrRows = info.attrs.concat(_PS_COMMON_ATTRS).map(([name, type, req, desc]) => {
     const sel = _mePsHelpAttrSel === name ? ' me-ps-sel' : '';
+    const d = req ? null : dfltOf(name);
+    const dHtml = d ? `<div class="me-ps-help-dflt"><b>Omitted:</b> ${d}</div>` : '';
     return `<tr class="me-ps-attr-row${sel}" data-attr="${name}"` +
     ` onclick="_mePsHelpAttr('${blk}','${name}')" title="Show only the examples that use ${name}">` +
     `<td class="me-ps-help-aname">${name}</td>` +
     `<td class="me-ps-help-atype">${_escHtml(type)}</td>` +
     `<td>${req ? '<span class="me-ps-help-req">required</span>' : '<span class="me-ps-help-opt">optional</span>'}</td>` +
-    `<td>${_meHelpDescHtml(desc)}</td></tr>`;
+    `<td>${_meHelpDescHtml(desc)}${dHtml}</td></tr>`;
   }).join('');
   const attrTbl = info.attrs.length
     ? `<table class="me-ps-help-atbl"><thead><tr><th>Attribute</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${attrRows}</tbody></table>`

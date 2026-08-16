@@ -6438,6 +6438,30 @@ test("a group row carries its children's values combined, shown only on request"
     'no control switches it');
 });
 
+test('every table that has groups uses the same +/- glyph', () => {
+  // A rotated ">" says "there is more this way"; +/- says "this opens and
+  // closes", which is what these do — and what the DDL tree beside them has
+  // always said. The Field Map and the DDL Doc rotated a ">" in the markup and
+  // Parse Results swapped a character in JS: three ways to say one thing.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // One rule, keyed on the collapsed class each table already sets.
+  assert.ok(/\.me-fm-grp-icon::before, \.ddl-grp-icon::before, \.grp-caret::before \{ content: '\\2212'; \}/.test(css),
+    'the three tables do not share one expanded glyph');
+  assert.ok(/\.me-fm-grp-collapsed \.me-fm-grp-icon::before,\n\.ddl-grp-collapsed \.ddl-grp-icon::before,\n\.grp-collapsed \.grp-caret::before \{ content: '\+'; \}/.test(css),
+    'the three tables do not share one collapsed glyph');
+  // The rotation is gone, or the glyph would be drawn on its side.
+  for (const sel of ['.me-fm-grp-icon', '.ddl-grp-icon'])
+    assert.ok(!new RegExp(sel.replace('.', '\\.') + '\\{[^}]*transform: ?rotate').test(css.replace(/\s*\{/g, '{')),
+      `${sel} still rotates its glyph`);
+  // …and no markup carries a glyph of its own to fight with the rule.
+  assert.ok(/<span class="me-fm-grp-icon"[^>]*><\/span>/.test(html), 'the Field Map icon still hardcodes a glyph');
+  assert.ok(/<span class="ddl-grp-icon"[^>]*><\/span>/.test(html), 'the DDL Doc icon still hardcodes a glyph');
+  assert.ok(/<span class="grp-caret"><\/span>/.test(html), 'the Parse Results caret still hardcodes a glyph');
+  // Parse Results no longer maintains the character in JS either.
+  assert.ok(!/car\.textContent = on \? '\+' : '−'/.test(APP_SRC),
+    'Parse Results still writes its glyph by hand, so it can disagree with the CSS');
+});
+
 test('hovering a group row highlights the whole group in both panels', () => {
   // Reported: the one row that stands for a whole group was the one row that
   // highlighted nothing. It is synthetic — there is no field called PAN — so the

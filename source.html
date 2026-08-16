@@ -884,8 +884,8 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .ddl-doc-grp td { background: var(--tint-row); color: var(--text-dim); }
 .ddl-doc-grp:hover td { background: rgba(var(--accent-rgb),0.10) !important; }
 .ddl-grp-hidden { display: none; }
-.ddl-grp-icon { display: inline-block; width: 1em; text-align: center; font-style: normal; margin-left: 0; transition: transform 0.15s; transform: rotate(90deg); cursor: pointer; }
-.ddl-grp-collapsed .ddl-grp-icon { transform: rotate(0deg); color: var(--accent); }
+.ddl-grp-icon { display: inline-block; width: 1em; text-align: center; font-style: normal; margin-left: 0; cursor: pointer; }
+.ddl-grp-collapsed .ddl-grp-icon { color: var(--accent); }
 .ddl-doc-redef td { color: var(--redef-fg); }
 /* "FIELD ↩ TARGET" follows the same scheme as the override annotation in Parse
    Results: everything left of the arrow (the redefining field, coloured by the row
@@ -1417,6 +1417,15 @@ td.c-err  { color: var(--accent2); }
 #resContainer.hide-desc td.c-desc, #resContainer.hide-desc th.th-desc { display: none; }
 #resContainer.hide-len  td.c-len,  #resContainer.hide-len  th.th-len  { display: none; }
 #resContainer.hide-off  td.c-off,  #resContainer.hide-off  th.th-off  { display: none; }
+/* The expand/collapse glyph, for every table that has groups: the Field Map,
+   the DDL Doc and Parse Results. Written once, from the collapsed class each
+   table already sets, so the three cannot come to disagree about which way
+   round they are. Empty elements in the markup — the glyph is this rule's. */
+.me-fm-grp-icon::before, .ddl-grp-icon::before, .grp-caret::before { content: '\2212'; }
+.me-fm-grp-collapsed .me-fm-grp-icon::before,
+.ddl-grp-collapsed .ddl-grp-icon::before,
+.grp-collapsed .grp-caret::before { content: '+'; }
+
 /* ── Parse Results group rows ─────────────────────────────────────────────
    Derived from the qualified ids, so a group reads as what it is: a heading
    over the leaves beneath it. Same surface as the Field Map's group rows. */
@@ -1428,7 +1437,7 @@ td.c-err  { color: var(--accent2); }
    group name 14px right of the fields at the same level, so the one row naming
    the group was the one row out of line with the column. */
 .grp-caret { display: inline-block; width: 10px; margin-left: 4px;
-  color: var(--text-very-dim); font-weight: 400; }
+  text-align: center; color: var(--text-very-dim); font-weight: 400; }
 /* A collapsed group hides its whole subtree — every row naming it as an
    ancestor, at any depth. */
 #resContainer tr.row-grp-hidden { display: none; }
@@ -2698,9 +2707,9 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-fm-grp .me-fm-name{color:var(--text-dim);}
 .me-fm-grp.me-fm-vlg-on .me-fm-name{color:var(--accent);font-weight:700;}
 /* Group icon mirrors DDL Doc: ">" character, rotated 90° when expanded. */
-.me-fm-grp-icon{display:inline-block;width:1em;text-align:center;font-style:normal;margin-left:0;transition:transform 0.15s;transform:rotate(90deg);cursor:pointer;color:var(--text-dim);}
+.me-fm-grp-icon{display:inline-block;width:1em;text-align:center;font-style:normal;margin-left:0;cursor:pointer;color:var(--text-dim);}
 .me-fm-grp-icon:hover{color:var(--accent);}
-.me-fm-grp-collapsed .me-fm-grp-icon{transform:rotate(0deg);color:var(--accent);}
+.me-fm-grp-collapsed .me-fm-grp-icon{color:var(--accent);}
 /* REDEFINES rows */
 .me-fm-redef td{color:var(--redef-fg);}
 .me-fm-redef-note{font-size:10px;opacity:.7;margin-left:4px;}
@@ -5125,7 +5134,7 @@ function showDDLDoc() {
         const grpCls = isRedefRow ? 'ddl-doc-grp ddl-doc-redef' : 'ddl-doc-grp';
         html += `<tr class="${grpCls}" data-qn="${esc(f.qualName)}" data-grp="1" ondblclick="toggleDDLGroup(this)">
           <td class="ddl-doc-hex" style="color:var(--text-dim)"></td>
-          <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span><span class="ddl-grp-icon" onclick="toggleDDLGroup(this.closest('tr'))">></span>${redefNote}</td>
+          <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span><span class="ddl-grp-icon" onclick="toggleDDLGroup(this.closest('tr'))"></span>${redefNote}</td>
           <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
           <td class="ddl-doc-num">${f.size}</td>
           <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
@@ -11845,7 +11854,7 @@ function renderFieldTable(msg) {
       onmouseenter="hoverField('grp::${esc(gid)}')"
       onmouseleave="clearHover()" title="Click to collapse or expand this group">
       <td class="c-num"></td>
-      <td class="c-id"${g.depth ? ` style="padding-left:${4 + g.depth * 12}px"` : ''}>${esc(g.path)}<span class="grp-caret">${coll ? '+' : '−'}</span>${_deBadgeFor(g.deNum)}</td>
+      <td class="c-id"${g.depth ? ` style="padding-left:${4 + g.depth * 12}px"` : ''}>${esc(g.path)}<span class="grp-caret"></span>${_deBadgeFor(g.deNum)}</td>
       <td class="c-desc">GROUP</td>
       <td class="c-len">${size}</td>
       <td class="c-off">${span}</td>
@@ -12366,8 +12375,6 @@ function _resApplyCollapse() {
   document.querySelectorAll('#resContainer tr.res-grp-row').forEach(tr => {
     const on = c.has(tr.dataset.grp || '');
     tr.classList.toggle('grp-collapsed', on);
-    const car = tr.querySelector('.grp-caret');
-    if (car) car.textContent = on ? '+' : '−';
   });
   const btn = document.getElementById('resCollapseBtn');
   const all = [...document.querySelectorAll('#resContainer tr.res-grp-row')];
@@ -16194,7 +16201,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.0.2';
+const APP_VERSION  = '1.26.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21983,7 +21990,7 @@ function _meFmRowHtml(row, ctx, counter) {
   // FIELD cell — group row uses ">" icon (CSS-rotated 90° when expanded)
   // placed flush AFTER the qualName.
   const grpIcon = isGroup
-    ? `<span class="me-fm-grp-icon" onclick="event.stopPropagation();_meFmToggleGroup(this.closest('tr'))">&gt;</span>`
+    ? `<span class="me-fm-grp-icon" onclick="event.stopPropagation();_meFmToggleGroup(this.closest('tr'))"></span>`
     : '';
   // REDEFINES note on any row that is ITSELF a REDEFINES — a redefining
   // group OR an elementary leaf that redefines another field. Leaves that

@@ -8337,6 +8337,23 @@ test('the pills fill the row, and what did not fit is counted', () => {
     'the observer can re-enter its own callback');
 });
 
+test('hovering the ✕ reddens the whole pill, and outranks what would repaint it', () => {
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.me-ovk-pill:has\(\.me-ovk-x:hover\)\{border-color:var\(--danger\);\}/.test(css),
+    'the ✕ reddens only itself — the thing about to be removed is the pill');
+  // Three rules set this border. The :has one has to be BOTH the most specific
+  // and the last, or hovering the ✕ of a selected pill keeps the accent border
+  // and the warning never appears on exactly the pills that matter most.
+  const order = ['.me-ovk-pill:hover{', '.me-ovk-pill.sel{', '.me-ovk-pill:has(.me-ovk-x:hover){'];
+  const at = order.map(sel => css.indexOf(sel));
+  assert.ok(at.every(i => i >= 0), 'one of the three border rules is missing');
+  assert.ok(at[2] > at[0] && at[2] > at[1],
+    'the danger rule is declared before :hover or .sel, so an equal-specificity rule could win');
+  // Specificity: (0,1,0) + :has(.me-ovk-x:hover) = (0,2,0) → (0,3,0), above both (0,2,0).
+  assert.ok(/:has\(\.me-ovk-x:hover\)/.test(css),
+    'the :has argument was simplified and may no longer outrank .sel');
+});
+
 test('the "+N more" chip looks and reads like the toggle it is', () => {
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   // Clicking the chip and clicking the kind label do the same thing, so the chip

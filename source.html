@@ -2900,6 +2900,11 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ovk-x{color:var(--text-very-dim);visibility:hidden;margin-left:1px;}
 .me-ovk-pill:hover .me-ovk-x{visibility:visible;}
 .me-ovk-x:hover{color:var(--danger);}
+/* Hovering the ✕ reddens the WHOLE pill, not just the glyph. The ✕ is a few
+   pixels of a control the width of a field name, and what is about to be
+   removed is the pill — so the pill is what has to answer the pointer.
+   Outranks both :hover and .sel, which would otherwise repaint this border. */
+.me-ovk-pill:has(.me-ovk-x:hover){border-color:var(--danger);}
 
 /* One colour per kind, shared by the index labels and the on-field badges —
    the badge on a row and the row it came from have to be the same colour or
@@ -16389,7 +16394,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.27.1.1';
+const APP_VERSION  = '1.27.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

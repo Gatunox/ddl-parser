@@ -8536,6 +8536,30 @@ test('the Field Map reads name, type, size, then where — and the cells follow 
   eq(menuOrder.join(','), 'num,dt,len,off,de,vlg', 'the chooser follows the table');
 });
 
+test('the accent can be typed, and a half-typed one changes nothing', () => {
+  // The swatch was the only way in, so a colour you already had in hex had to be
+  // matched by eye. A text field beside it takes it directly.
+  assert.ok(/<input type="text" id="accentHex" class="accent-hex"[\s\S]{0,200}oninput="setAccentHex\(this\.value\)"/.test(html),
+    'there is no typed accent field');
+  const fn = psFnSource('setAccentHex');
+  // The important part. _applyAccent treats anything it cannot parse as "back to
+  // the theme's own accent" AND SAVES null — so applying on every keystroke
+  // would clear the stored colour four characters into typing it, and again on
+  // every backspace. Only a complete #rrggbb is applied.
+  assert.ok(/\/\^#\[0-9a-fA-F\]\{6\}\$\/\.test/.test(fn),
+    'the typed value is applied without checking it is a whole colour');
+  assert.ok(/if \(ok\) setAccentColor/.test(fn), 'an incomplete colour still reaches the applier');
+  assert.ok(/classList\.toggle\('pending'/.test(fn),
+    'a half-typed colour gives no sign that it has not been applied');
+  // Both controls show the accent in force, including after Reset — where the
+  // field has to fall back to the theme's own rather than keep what was cleared.
+  const sync = psFnSource('_syncAccentPickerUI');
+  assert.ok(/getElementById\('accentHex'\)/.test(sync), 'the typed field is never synced back');
+  // …but not while it is being typed into, or the caret jumps.
+  assert.ok(/document\.activeElement !== hex/.test(sync),
+    'the field is overwritten while the user is typing in it');
+});
+
 test('the two main-page editors sit on the panel surface, like the table beside them', () => {
   // They were --bg-input, a shade darker than the panel, so each read as a well
   // sunk into its card while the parse table beside them showed the panel

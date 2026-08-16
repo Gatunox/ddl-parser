@@ -1096,6 +1096,14 @@ input[type="text"]:focus { border-color: var(--accent); }
   border-radius: var(--r-sm); box-sizing: border-box; }
 .accent-picker::-webkit-color-swatch-wrapper { padding: 2px; }
 .accent-picker::-webkit-color-swatch { border: none; border-radius: calc(var(--r-sm) - 2px); }
+.accent-hex { width: calc(var(--sz-mono) * 6); height: var(--ctl-h); box-sizing: border-box;
+  background: var(--bg-input); border: var(--bw-ctl) solid var(--border); color: var(--text);
+  font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 6px;
+  border-radius: var(--r-sm); outline: none; }
+.accent-hex:focus { border-color: var(--accent); }
+/* Typed but not yet a colour. Not an error — half of "#1eff00" is just half of
+   it — so the field says "not applied yet" rather than "wrong". */
+.accent-hex.pending { color: var(--text-dim); }
 /* justify-content is not optional here: .btn.btn-ico fixes the width at 30px and
    zeroes the horizontal padding, so without it the glyph sits at flex-start and
    ends up ~10px left of centre in a box built to be square-ish. */
@@ -14183,11 +14191,28 @@ function _syncAccentPickerUI() {
   const cur = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
   const m = /^#([0-9a-f]{6})$/i.exec(cur);
   if (m) inp.value = '#' + m[1].toLowerCase();
+  // The typed field shows the same colour — including after Reset, where it has
+  // to fall back to the theme's own rather than keep the one that was cleared.
+  const hex = document.getElementById('accentHex');
+  if (hex && m && document.activeElement !== hex) {
+    hex.value = '#' + m[1].toLowerCase();
+    hex.classList.remove('pending');
+  }
   const rst = document.getElementById('accentResetBtn');
   if (rst) rst.classList.toggle('hidden', !P.accent);
 }
 
 function setAccentColor(hex) { _applyAccent(hex); }
+// The typed field. Only a COMPLETE #rrggbb is applied: _applyAccent treats
+// anything it cannot parse as "back to the theme's own accent" and saves null,
+// so applying on every keystroke would clear the saved colour four characters
+// into typing it — and clear it again on every backspace.
+function setAccentHex(text) {
+  const inp = document.getElementById('accentHex');
+  const ok  = /^#[0-9a-fA-F]{6}$/.test((text || '').trim());
+  if (inp) inp.classList.toggle('pending', !ok && !!(text || '').trim());
+  if (ok) setAccentColor(text.trim().toLowerCase());
+}
 function resetAccentColor()  { _applyAccent(null); }
 
 
@@ -15979,7 +16004,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.5.4';
+const APP_VERSION  = '1.25.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29964,6 +29989,9 @@ function _meSave() {
           <div class="flex-row" style="gap:6px;align-items:center">
             <input type="color" id="accentPicker" class="accent-picker"
                    oninput="setAccentColor(this.value)" title="Pick an accent colour">
+            <input type="text" id="accentHex" class="accent-hex" placeholder="#rrggbb"
+                   autocomplete="off" spellcheck="false" maxlength="7"
+                   oninput="setAccentHex(this.value)" title="Type an accent colour">
             <button class="btn hidden" id="accentResetBtn" onclick="resetAccentColor()"
                     style="padding:2px 8px;font-size:11px" title="Back to the theme's own accent">Reset</button>
           </div>

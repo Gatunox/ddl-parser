@@ -16432,7 +16432,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.7.6';
+const APP_VERSION  = '1.29.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16648,15 +16648,38 @@ function resetLayout() {
 // and Test panel drags), _ME_HELP (the three reference splits) and _ME_COLRZ
 // (the resizable tables) — plus the two collapse flags, which are a position
 // too: a collapsed panel is not at its default size.
+// The two Data Editor keys that are NOT layout. Everything else under up_me_
+// describes size or shape and goes back to default on a reset.
+const _ME_RESET_KEEP = new Set(['up_me_last_sel', 'up_me_ps_fmt']);
+
 function _meResetLayout() {
-  const keys = [
-    ..._ME_RESIZERS.map(r => r.key),
-    ...Object.values(_ME_HELP).flatMap(p => [`up_${p.storageKey}_split_h`,
-                                             `up_${p.storageKey}_help_w`]),
-    ...Object.values(_ME_COLRZ).map(c => c.key),
-    'up_me_sidebar_collapsed', 'up_me_test_collapsed',
-  ];
-  try { keys.forEach(k => localStorage.removeItem(k)); } catch(e) {}
+  // Stated as "clear every up_me_ key except these", not as a list of keys to
+  // clear. A list goes stale the moment a resizer or a chooser is added — which
+  // is exactly how the Test input height and the Field Map's hidden columns
+  // survived a reset while everything around them was restored. The default is
+  // now "this gets reset"; surviving takes a deliberate entry above.
+  //
+  // up_me_fm_ui is the one mixed key: collapse state and Hide Redef are shape,
+  // but autoOrderSnap is the only way back from an Auto Order — the pre-order DE
+  // map. Resetting the layout must not throw that away, so it is read first and
+  // written back with the shape stripped out.
+  let uiKeep = null;
+  try {
+    const ui = JSON.parse(localStorage.getItem(_ME_FM_UI_KEY) || '{}');
+    for (const k in ui) {
+      const e = ui[k] || {};
+      if (e.autoOrder || e.autoOrderSnap)
+        (uiKeep = uiKeep || {})[k] = { autoOrder: e.autoOrder, autoOrderSnap: e.autoOrderSnap };
+    }
+  } catch(e) {}
+  try {
+    for (const k of Object.keys(localStorage))
+      if (k.startsWith('up_me_') && !_ME_RESET_KEEP.has(k)) localStorage.removeItem(k);
+    if (uiKeep) localStorage.setItem(_ME_FM_UI_KEY, JSON.stringify(uiKeep));
+  } catch(e) {}
+  // Hidden columns are stored, so clearing the key is only half of it — the
+  // open table still carries the hide- classes until it is told.
+  _meFmApplyColVis();
   // Drop the inline sizes too, so an editor that is open right now shows the
   // reset instead of it taking effect the next time it is opened. Through
   // _meResizeEl, not getElementById: that is overridden for the CodeMirror

@@ -43,7 +43,10 @@ const domEl = new Proxy(function () {}, {
     if (k === 'getElementById') return id => elStubs[id] || domEl;
     if (k === 'querySelectorAll') return () => [];
     if (k === 'classList') return { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false };
-    if (k === 'style') return {};
+    // A real CSSStyleDeclaration answers removeProperty/setProperty. Returning a
+    // bare {} made any code that clears a custom property throw in the harness
+    // while working perfectly in the browser — untestable rather than broken.
+    if (k === 'style') return { removeProperty: () => {}, setProperty: () => {}, getPropertyValue: () => '' };
     if (k === 'toString' || k === Symbol.toPrimitive) return () => '';
     return domEl;
   },
@@ -52,12 +55,20 @@ const domEl = new Proxy(function () {}, {
   construct: () => domEl,
 });
 const CSS = { escape: v => String(v).replace(/[^\w-]/g, c => '\\' + c) };
-const storage = {
-  _data: {},
-  getItem(k) { return Object.prototype.hasOwnProperty.call(this._data, k) ? this._data[k] : null; },
-  setItem(k, v) { this._data[k] = String(v); },
-  removeItem(k) { delete this._data[k]; },
-};
+// Keys live as OWN ENUMERABLE properties, exactly as they do on a real Storage
+// object, so `Object.keys(localStorage)` answers with the stored keys. The old
+// stub hid them behind `_data`, which made every sweep-by-prefix untestable —
+// Object.keys returned the method names instead. The methods are defined
+// non-enumerable so they never show up as keys themselves.
+const storage = {};
+Object.defineProperties(storage, {
+  getItem:    { value(k) { return Object.prototype.hasOwnProperty.call(this, k) ? this[k] : null; } },
+  setItem:    { value(k, v) { this[k] = String(v); } },
+  removeItem: { value(k) { delete this[k]; } },
+  clear:      { value() { for (const k of Object.keys(this)) delete this[k]; } },
+  key:        { value(i) { return Object.keys(this)[i] ?? null; } },
+  length:     { get() { return Object.keys(this).length; } },
+});
 
 // ── Timers: queued, not dropped ──────────────────────────────────────────────
 // setTimeout used to be `() => {}`. That keeps tests synchronous, and it also
@@ -168,6 +179,7 @@ _t.meFieldOvrAnnotation = _meFieldOvrAnnotation;
 _t.meOvlChips          = _meOvlChips;
 _t.meOvlChipParts      = _meOvlChipParts;
 _t.meOvKindsOf         = _meOvKindsOf;
+_t.meResetLayout       = _meResetLayout;
 _t.meFmSelWithKind     = _meFmSelWithKind;
 _t.meOvKinds           = _ME_OV_KINDS;
 _t.meOvSet             = _meOvSet;
@@ -283,6 +295,7 @@ const {
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
   meOvlChipParts, meOvKindsOf, meOvKinds, meOvSet, meFmSelWithKind,
+  meResetLayout,
   meFmExpandTargets, meFmDeCellHtml, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
@@ -11850,6 +11863,52 @@ test('the Overrides column has two scrollbars, not three', () => {
     'the pane can now clip its content with no way to reach it');
 });
 
+test('Reset Layout actually clears what it should, and keeps what it must', () => {
+  // Behavioural, because the source-shape checks below cannot see whether the
+  // GUARD is right: a mutant that made the keep-condition `if (false)` passed
+  // every one of them while throwing the Auto Order snapshot away.
+  const store = sandbox.localStorage;
+  const before = { ...store };
+  for (const k of Object.keys(store)) store.removeItem(k);
+  store.setItem('up_me_test_in_h', '90');
+  store.setItem('up_me_fm_colvis', JSON.stringify({ off: true }));
+  store.setItem('up_me_sidebar_w', '300');
+  store.setItem('up_me_test_collapsed', '1');
+  store.setItem('up_me_last_sel', 'msg:3');
+  store.setItem('up_me_ps_fmt', 'compact');
+  store.setItem('up_me_fm_ui', JSON.stringify({
+    'A|A': { collapseMode: 'all', collapsed: ['G'], hideRedef: true,
+             autoOrder: true, autoOrderSnap: { TYP: 7 } },
+    'B|B': { collapseMode: 'list', collapsed: ['H'] },      // shape only — should go entirely
+  }));
+  store.setItem('up_other_page', 'kept');                    // not ours to touch
+
+  // The editor is CLOSED in these tests. Without saying so the stub reports
+  // every element as visible, and the reset tries to re-render a panel that was
+  // never opened.
+  const prevOverlay = elStubs.msgEditorOverlay;
+  elStubs.msgEditorOverlay = { classList: { contains: c => c === 'hidden' } };
+  try { meResetLayout(); }
+  finally {
+    if (prevOverlay === undefined) delete elStubs.msgEditorOverlay;
+    else elStubs.msgEditorOverlay = prevOverlay;
+  }
+
+  const left = Object.keys(store).sort();
+  assert.deepStrictEqual(left, ['up_me_fm_ui', 'up_me_last_sel', 'up_me_ps_fmt', 'up_other_page'],
+    `the reset cleared the wrong set: ${left}`);
+  const ui = JSON.parse(store.getItem('up_me_fm_ui'));
+  assert.deepStrictEqual(Object.keys(ui), ['A|A'], 'an entry with only shape survived');
+  assert.strictEqual(ui['A|A'].autoOrder, true, 'the Auto Order flag was lost');
+  assert.deepStrictEqual(ui['A|A'].autoOrderSnap, { TYP: 7 },
+    'the snapshot that undoes Auto Order was lost');
+  assert.ok(!('collapsed' in ui['A|A']) && !('hideRedef' in ui['A|A']),
+    `shape survived alongside the snapshot: ${JSON.stringify(ui['A|A'])}`);
+
+  for (const k of Object.keys(store)) store.removeItem(k);
+  for (const k in before) store.setItem(k, before[k]);
+});
+
 test('Reset Layout reaches every stored size, including the Data Editor', () => {
   // Reported: Reset Layout left the Data Editor's panels exactly where they
   // were. resetLayout was a hand-written list and the list never learned about
@@ -11858,17 +11917,39 @@ test('Reset Layout reaches every stored size, including the Data Editor', () => 
   assert.ok(/_meResetLayout\(\);/.test(psFnSource('resetLayout')),
     'Reset Layout does not touch the Data Editor at all');
 
-  // Derived from the registries that OWN the keys, not listed again. This is
-  // what stops the next resizer being forgotten.
-  assert.ok(/_ME_RESIZERS\.map\(r => r\.key\)/.test(reset),
-    'the sidebar and Test drags are not taken from _ME_RESIZERS');
-  assert.ok(/Object\.values\(_ME_HELP\)\.flatMap\([\s\S]{0,120}_split_h[\s\S]{0,80}_help_w/.test(reset),
-    'the reference splits are not taken from _ME_HELP');
-  assert.ok(/Object\.values\(_ME_COLRZ\)\.map\(c => c\.key\)/.test(reset),
-    'the resizable tables are not taken from _ME_COLRZ');
-  // A collapsed panel is a position too.
-  assert.ok(/'up_me_sidebar_collapsed', 'up_me_test_collapsed'/.test(reset),
-    'a collapsed panel survives the reset');
+  // CHANGED ON PURPOSE: this used to require the keys be DERIVED from the three
+  // registries. Deriving still missed anything no registry owned — the Test
+  // input height and the Field Map's hidden columns both survived a reset. The
+  // rule is inverted now: everything under up_me_ goes unless it is named as an
+  // exception, so a new resizer or chooser is covered without touching this.
+  assert.ok(/k\.startsWith\('up_me_'\) && !_ME_RESET_KEEP\.has\(k\)/.test(reset),
+    'the reset is a list of keys to clear again, which goes stale');
+  const keep = APP_SRC.match(/const _ME_RESET_KEEP = new Set\(\[([^\]]*)\]\)/);
+  assert.ok(keep, 'there is no declared set of survivors');
+  const kept = keep[1].match(/'[^']+'/g).map(k => k.replace(/'/g, ''));
+  // Only the two that are not layout at all.
+  assert.deepStrictEqual(kept.slice().sort(), ['up_me_last_sel', 'up_me_ps_fmt'],
+    `something that describes size or shape survives the reset: ${kept}`);
+  // The ones that used to survive, named so a regression is obvious.
+  for (const gone of ['up_me_test_in_h', 'up_me_fm_colvis', 'up_me_sidebar_collapsed',
+                      'up_me_test_collapsed', 'up_me_fm_col_w', 'up_me_sidebar_w'])
+    assert.ok(!kept.includes(gone), `${gone} survives Reset Layout`);
+
+  // up_me_fm_ui is mixed: collapse and Hide Redef are shape, but autoOrderSnap
+  // is the only way back from an Auto Order. Resetting the layout must not
+  // throw away the pre-order DE map.
+  // Matched on code shape, not on the word: a comment of mine explaining why the
+  // snapshot survives satisfied a bare /autoOrderSnap/ and the mutant that
+  // deleted the line went unnoticed.
+  assert.ok(/\(uiKeep = uiKeep \|\| \{\}\)\[k\] = \{ autoOrder: e\.autoOrder, autoOrderSnap: e\.autoOrderSnap \};/.test(reset),
+    'Reset Layout discards the snapshot that undoes Auto Order');
+  assert.ok(/if \(uiKeep\) localStorage\.setItem\(_ME_FM_UI_KEY, JSON\.stringify\(uiKeep\)\);/.test(reset),
+    'the kept half is never written back, so it is lost anyway');
+  assert.ok(reset.indexOf('JSON.parse(localStorage.getItem(_ME_FM_UI_KEY)') < reset.indexOf('removeItem(k)'),
+    'the snapshot is read after the sweep has already deleted it');
+  // Clearing the key is only half of it — the open table still carries the
+  // hide- classes until it is told.
+  assert.ok(/_meFmApplyColVis\(\);/.test(reset), 'an open table keeps its hidden columns');
 
   // The reset has to show NOW, not the next time the editor is opened.
   assert.ok(/el\.style\[r\.prop\] = ''/.test(reset) && /split\.style\.height = ''/.test(reset)

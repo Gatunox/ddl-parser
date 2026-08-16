@@ -514,10 +514,13 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   min-height: var(--panel-header-h, 27px);
 }
 .panel-title {
+  /* Mono, like the DDL Doc and Data Editor titles already were. The letter
+     spacing went with it: it was tightening a proportional face, and on a
+     monospace one it only fights the grid. */
+  font-family: var(--mono);
   font-size: var(--sz-mono);
   font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.01em;
   white-space: nowrap;
   flex: none;
   width: var(--tree-w, 170px);
@@ -637,7 +640,7 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
   padding: 0 var(--sp-2); min-height: var(--panel-header-h, 27px); flex-shrink: 0;
   background: var(--surface-header); border-bottom: var(--bw-ctl) solid var(--border);
   border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0; }
-.tree-hdr-title { font-size: var(--sz-mono); font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.tree-hdr-title { font-family: var(--mono); font-size: var(--sz-mono); font-weight: 700; color: var(--text); }
 /* Expand-all / collapse-all. Sits next to the title and takes the remaining
    space so the count pill stays hard right where it has always been. Styled off
    .stitle-toggle rather than reinvented — it is the same gesture on the same
@@ -1062,6 +1065,10 @@ input[type="text"]:focus { border-color: var(--accent); }
   border: var(--bw-ctl) solid var(--border);
   padding: 3px 12px;
   border-radius: var(--r-sm);
+  /* Buttons do not inherit the page font — without this every .btn fell back to
+     the browser's default face, and only the DDL toolbar looked right because it
+     named one for its own children. */
+  font-family: var(--mono);
   font-size: var(--sz-mono);
   font-weight: 400;
   cursor: pointer;
@@ -16273,7 +16280,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.3.2';
+const APP_VERSION  = '1.26.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

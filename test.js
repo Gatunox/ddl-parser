@@ -6498,6 +6498,32 @@ test('the DDL Doc reads like the Parse Results table', () => {
     'the buttons sit on a different ground to the ones they now match');
 });
 
+test('every panel title uses the app font', () => {
+  // The DDL Doc and Data Editor titles were already mono; the four panel titles
+  // and the tree caption were the page's sans, so half the titles in the app
+  // were one face and half the other.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const title = /(?:^|[};])\s*\.panel-title \{[^}]*\}/m.exec(css);
+  assert.ok(title && /font-family: var\(--mono\)/.test(title[0]),
+    'the panel titles take the page font rather than the app mono');
+  assert.ok(/\.tree-hdr-title \{[^}]*font-family: var\(--mono\)/.test(css),
+    'the tree caption does not match the titles beside it');
+  // The negative letter-spacing went with it: it was tightening a proportional
+  // face, and on a monospace one it only fights the grid.
+  assert.ok(title && !/letter-spacing/.test(title[0]),
+    'the title still carries spacing meant for a proportional face');
+});
+
+test('every button uses the app font, not the browser default', () => {
+  // Buttons do not inherit the page font. .btn set every other property and no
+  // family, so all 47 of them fell back to the browser's default face — and only
+  // the DDL toolbar looked right, because it names one for its own children.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const btn = /(?:^|[};])\s*\.btn \{[^}]*\}/m.exec(css);
+  assert.ok(btn && /font-family: var\(--mono\)/.test(btn[0]),
+    'the base button rule names no font, so buttons take the browser default');
+});
+
 test('the DDL tree uses the app font, not one of its own', () => {
   // --font-tree existed for a single rule and only to name the same faces in a
   // different order to --mono: SF Mono first rather than ui-monospace. On this

@@ -600,6 +600,20 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 .lw-widget.parsed .lw-val,
 .lw-widget.parsed .lw-reset { pointer-events: none; opacity: 0.2; cursor: default; }
 .lw-widget.parsed .lw-lbl { opacity: 0.25; }
+/* The lock states the Message Input's read-only fact: dim and open while the
+   text can be edited, accent and shut once a parse has frozen it. Drawn rather
+   than typed because the colour has to be ours — an emoji lock carries its own
+   and ignores `color`. Both shackles ship in the markup and the class picks
+   one, so the state is a class away and never a repaint. Only the shut lock is
+   clickable: an open one has nothing to do. */
+.msg-lock { flex-shrink: 0; padding: 0 5px 0 3px; display: inline-flex; align-items: center;
+  line-height: 1; cursor: default; color: var(--text-very-dim); }
+.msg-lock svg { display: block; width: 13px; height: 13px; }
+.msg-lock .lk-shut { display: none; }
+.msg-lock.locked { color: var(--accent); cursor: pointer; }
+.msg-lock.locked .lk-shut { display: inline; }
+.msg-lock.locked .lk-open { display: none; }
+.msg-lock.locked:hover { opacity: 0.7; }
 #fmtForceSelect:hover { border-color: var(--accent); color: var(--accent); }
 #fmtForceSelect.fmt-forced { color: var(--warning); border-color: var(--warning); }
 
@@ -3019,6 +3033,14 @@ th.me-fm-colhi{color:var(--accent);}
             onblur="lwCommit()" onkeydown="if(event.key==='Enter'){lwCommit();}if(event.key==='Escape'){lwCancel();}"/>
           <span class="lw-step" onclick="lwStep(1)" title="Next preset">&gt;</span>
           <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>
+        </span>
+        <span id="msgLock" class="msg-lock" onclick="toggleMsgLock()" title="The message can be edited">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"
+            stroke-linecap="round" aria-hidden="true">
+            <rect x="1.5" y="6.6" width="9" height="6.6" rx="1.3"/>
+            <path class="lk-open" d="M6.2 6.6V4.4a2.6 2.6 0 0 1 5.2 0v1.2"/>
+            <path class="lk-shut" d="M3.4 6.6V4.4a2.6 2.6 0 0 1 5.2 0v2.2"/>
+          </svg>
         </span>
       </div>
       <div class="panel-body" style="flex-direction:row;position:relative">
@@ -9364,7 +9386,7 @@ function _parseProgressShow() {
 
 function _abortParseCleanup() {
   _parseProgressHide();
-  document.getElementById('msgInput').readOnly = false;
+  _msgLock(false);
   syncParseBtn();
 }
 function _abortParse() {
@@ -9693,7 +9715,7 @@ function doParseNetardLog(text, opts = {}) {
 
   // ── Show progress overlay with informational intro steps, then compile + score ──
   _parseProgressShow();
-  document.getElementById('msgInput').readOnly = true;
+  _msgLock(true);
 
   // Step 0 — record count (informational)
   const _overrideSub = opts.ignoreOverride ? 'ATTENTION: manual override not allowed for multiple messages' : null;
@@ -10021,7 +10043,7 @@ function doParseNetardLog(text, opts = {}) {
             } catch (err) {
               console.error('[NETARD scoring] unexpected error:', err);
               _parseProgressHide();
-              document.getElementById('msgInput').readOnly = false;
+              _msgLock(false);
               syncParseBtn();
               flash('Scoring failed unexpectedly \u2014 check the browser console for details.', 'error');
               return;
@@ -10040,7 +10062,7 @@ function doParseNetardLog(text, opts = {}) {
               S.inputFormat = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[_topFmt] || (opts.fmtDefault || 'netard');
               syncParseBtn();
               _lwSetParsed(true);
-              document.getElementById('msgInput').readOnly = true;
+              _msgLock(true);
               _resolveTokens(S.messages[0]);
               _resolveTokens(S.messages[1]);
               updateBadges(); updateNav(); renderCurrent();
@@ -10560,13 +10582,13 @@ function doParseMessages() {
     S.trackMode = false; S.trackedFields = new Set();
     _syncTrkColVisibility();
     syncParseBtn();
-    document.getElementById('msgInput').readOnly = true;
+    _msgLock(true);
     updateBadges(); updateNav(); renderCurrent();
   }
 
   // ── Auto-detect (async with progress overlay) ────────────────────────────
   _parseProgressShow();
-  document.getElementById('msgInput').readOnly = true;
+  _msgLock(true);
 
   // Step 0 — informational: detecting message types
   const _p23Traces = [];   // detection traces, summarized on the step above
@@ -10656,7 +10678,7 @@ function doParseMessages() {
         if (_scoring && !allCompiled.length) {
           _parseProgressHide();
           flash('No DDL definitions found. Add a DDL to the tree or select one explicitly.', 'warn');
-          document.getElementById('msgInput').readOnly = false;
+          _msgLock(false);
           syncParseBtn();
           return;
         }
@@ -10787,7 +10809,7 @@ function doParseMessages() {
           } catch (err) {
             console.error('[P2/P3 scoring] unexpected error:', err);
             _parseProgressHide();
-            document.getElementById('msgInput').readOnly = false;
+            _msgLock(false);
             syncParseBtn();
             flash('Scoring failed unexpectedly \u2014 check the browser console for details.', 'error');
             return;
@@ -10818,7 +10840,7 @@ function doParseMessages() {
             S.selFieldId = null; S.trackMode = false; S.trackedFields = new Set();
             _syncTrkColVisibility();
             syncParseBtn();
-            document.getElementById('msgInput').readOnly = true;
+            _msgLock(true);
             _resolveTokens(S.messages[0]);
             _resolveTokens(S.messages[1]);
             updateBadges(); updateNav(); renderCurrent();
@@ -11658,7 +11680,7 @@ function _clearResultsOnly() {
 function clearAll() {
   clearInputHL();
   const el = document.getElementById('msgInput');
-  el.readOnly = false;
+  _msgLock(false);
   el.value = '';
   Object.assign(S, { isParsed: false, messages: [], curIdx: 0, inputFormat: null, forcedFormat: null,
     _badgeFmt: null, selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set() });
@@ -13583,7 +13605,7 @@ function auditParseSelected() {
     _auditBatchPayloads = [{ text: hex, recNo: rec.recNo, source: rec.source, dest: rec.dest,
       recLength: rec.messageLen, time: _auditFmtTs(rec.tsBytes) }];
     const msgEl = document.getElementById('msgInput');
-    msgEl.readOnly = false;
+    _msgLock(false);
     msgEl.value   = hex;
     onMsgChange();
     doParseMessages();
@@ -13619,7 +13641,7 @@ async function auditParseAll() {
   })).filter(c => c.text.length > 0);
   if (!_auditBatchPayloads.length) { _auditBatchPayloads = null; return; }
   const msgEl = document.getElementById('msgInput');
-  msgEl.readOnly = false;
+  _msgLock(false);
   msgEl.value   = _auditBatchPayloads[0].text;
   onMsgChange();
   doParseMessages();
@@ -16286,7 +16308,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.4.1';
+const APP_VERSION  = '1.26.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16758,6 +16780,24 @@ function _lwSetVisible(show) {
   const w = document.getElementById('lwWidget');
   if (w) w.classList.toggle('hidden', !show);
   _lwUpdateRuler();
+}
+
+// The Message Input's read-only state and the lock icon are one fact, so one
+// function owns both. Parsing freezes the text on a dozen different paths and
+// clearing or aborting frees it again; if any of them set .readOnly directly
+// the icon would sit there claiming the opposite.
+function _msgLock(locked) {
+  const el = document.getElementById('msgInput');
+  if (el) el.readOnly = locked;
+  const lk = document.getElementById('msgLock');
+  if (!lk) return;
+  lk.classList.toggle('locked', locked);
+  lk.title = locked ? 'Parsed \u2014 click to unlock and edit the message'
+                    : 'The message can be edited';
+}
+
+function toggleMsgLock() {
+  if (document.getElementById('msgInput').readOnly) _msgLock(false);
 }
 
 function _lwSetParsed(on) {

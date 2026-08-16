@@ -6498,6 +6498,44 @@ test('the DDL Doc reads like the Parse Results table', () => {
     'the buttons sit on a different ground to the ones they now match');
 });
 
+test('the Message Input lock is the only writer of its read-only state', () => {
+  // The lock icon reports msgInput.readOnly. Parsing freezes the input on a
+  // dozen paths and clearing or aborting frees it again — if any of them assign
+  // .readOnly directly the icon sits there claiming the opposite.
+  const direct = APP_SRC.match(/^.*\breadOnly\s*=\s*(true|false)\s*;/gm) || [];
+  assert.deepStrictEqual(direct, [],
+    'a read-only assignment bypasses _msgLock:\n' + direct.join('\n'));
+  assert.ok(/function _msgLock\(locked\)\s*\{[^}]*el\.readOnly = locked;/.test(APP_SRC),
+    '_msgLock does not set the read-only state it owns');
+  // Parse locks, clear and abort unlock — the states the user described.
+  assert.ok(APP_SRC.includes('_msgLock(true);'),  'nothing locks the input');
+  assert.ok(APP_SRC.includes('_msgLock(false);'), 'nothing unlocks the input');
+  // Only a shut lock does anything: an open one has nothing to unlock.
+  assert.ok(/function toggleMsgLock\(\)\s*\{\s*if \(document\.getElementById\('msgInput'\)\.readOnly\) _msgLock\(false\);/
+    .test(APP_SRC), 'clicking the open lock is not a no-op');
+});
+
+test('the lock reads dim-and-open, accent-and-shut', () => {
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // Drawn, not typed: an emoji padlock carries its own colour and ignores ours.
+  assert.ok(/<svg viewBox="0 0 14 14"[^>]*stroke="currentColor"/.test(html),
+    'the lock is not drawn in a colour the theme can set');
+  assert.ok(/\.msg-lock \{[^}]*color: var\(--text-very-dim\)/.test(css),
+    'the unlocked lock is not dim');
+  assert.ok(/\.msg-lock\.locked \{[^}]*color: var\(--accent\)/.test(css),
+    'the locked lock is not the accent colour');
+  // One shackle at a time, and they swap together.
+  assert.ok(/\.msg-lock \.lk-shut \{ display: none; \}/.test(css), 'both shackles show when open');
+  assert.ok(/\.msg-lock\.locked \.lk-shut \{ display: inline; \}/.test(css), 'the shut shackle never appears');
+  assert.ok(/\.msg-lock\.locked \.lk-open \{ display: none; \}/.test(css), 'both shackles show when locked');
+  // Only the shut one invites a click.
+  assert.ok(/\.msg-lock \{[^}]*cursor: default/.test(css),   'the open lock looks clickable');
+  assert.ok(/\.msg-lock\.locked \{[^}]*cursor: pointer/.test(css), 'the shut lock does not look clickable');
+  // It lives in the Message Input bar, beside the line-width widget.
+  const bar = html.slice(html.indexOf('<div id="msgCfgBar">'), html.indexOf('<div class="panel-body"', html.indexOf('<div id="msgCfgBar">')));
+  assert.ok(bar.indexOf('id="msgLock"') > bar.indexOf('id="lwWidget"'), 'the lock is not next to the line-width widget');
+});
+
 test('an icon inside a labelled button is spaced from its label', () => {
   // Reported: the folder icon ran into "Audit" while "✕ Clear" had a clear gap.
   // The space IS in the markup — but these buttons are inline-flex, and

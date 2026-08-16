@@ -6426,6 +6426,35 @@ test("a group row carries its children's values combined, shown only on request"
     'no control switches it');
 });
 
+test('hovering a group row highlights the whole group in both panels', () => {
+  // Reported: the one row that stands for a whole group was the one row that
+  // highlighted nothing. It is synthetic — there is no field called PAN — so the
+  // lookup found nothing and both panels stayed dark.
+  const out = renderRows(GRP_FIELDS);
+  assert.ok(/data-fid="grp::PAN"/.test(out), 'the group row carries no field id to hover');
+  assert.ok(/onmouseenter="hoverField\('grp::PAN'\)"/.test(out) && /onmouseleave="clearHover\(\)"/.test(out),
+    'the group row offers no hover gesture');
+
+  // Resolved in findField, NOT in the hover handler: hovering, selecting and the
+  // Message Input overlay each look a field up through it, so putting the group
+  // case anywhere else would have fixed one of the three.
+  const ff = psFnSource('findField');
+  assert.ok(/fid\.startsWith\('grp::'\)/.test(ff), 'findField cannot resolve a group id');
+  // The span comes from the children — the same ones the row's Offset cell is
+  // built from, so the highlight and the number beside it cannot disagree.
+  assert.ok(/Math\.min\(\.\.\.kids\.map\(k => k\.startByte\)\)/.test(ff)
+         && /Math\.max\(\.\.\.kids\.map\(k => k\.endByte\)\)/.test(ff),
+    'the group span is not derived from what it contains');
+  // A token's own table prefixes its rows; a group inside one has to offset by
+  // the token's start like every other field in it does.
+  assert.ok(/base \+ Math\.min/.test(ff), 'a group inside a token highlights the wrong bytes');
+
+  // Both the hover path and the input-overlay path go through it.
+  assert.ok(/findField\(msg, fid\)/.test(psFnSource('hoverField')), 'hover stopped using findField');
+  assert.ok(/findField\(msg, fid\)/.test(psFnSource('_buildInputHLRanges')),
+    'the Message Input overlay stopped using findField');
+});
+
 test('collapsing a group hides its whole subtree, and Collapse All flips its own label', () => {
   const fn = psFnSource('_resApplyCollapse');
   // Hidden by ancestry, so collapsing RTE also hides RTE.SUB and everything

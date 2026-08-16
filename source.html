@@ -11833,9 +11833,14 @@ function renderFieldTable(msg) {
     const under = g.path.split('.').slice(0, -1)
       .map((_, i) => g.path.split('.').slice(0, i + 1).join('.')).join('|');
     const coll  = S.resCollapsedGroups?.has(gid) ? ' grp-collapsed' : '';
+    // data-fid and the hover handlers are what light the group's bytes up in the
+    // Message Input and the Raw panel. Without them the one row that stands for
+    // a whole group was the one row that highlighted nothing.
     return `<tr class="res-grp-row${coll}${extraClass ? ' ' + extraClass : ''}"
-      data-grp="${esc(gid)}"${under ? ` data-under="${esc(under)}"` : ''}
-      onclick="toggleResGroup('${esc(gid)}')" title="Click to collapse or expand this group">
+      data-grp="${esc(gid)}" data-fid="grp::${esc(gid)}"${under ? ` data-under="${esc(under)}"` : ''}
+      onclick="toggleResGroup('${esc(gid)}')"
+      onmouseenter="hoverField('grp::${esc(gid)}')"
+      onmouseleave="clearHover()" title="Click to collapse or expand this group">
       <td class="c-num"></td>
       <td class="c-id" style="padding-left:${4 + g.depth * 12}px"><span class="grp-caret">${coll ? '+' : '−'}</span>${esc(g.path)}${_deBadgeFor(g.deNum)}</td>
       <td class="c-desc">GROUP</td>
@@ -12284,6 +12289,25 @@ function findField(msg, fid) {
     const tkn = msg.tokens?.find(t => t.id === tknId);
     if (!tkn || !tkn.rawBytes?.length || tkn.dataStart === undefined) return null;
     return { startByte: tkn.dataStart, endByte: tkn.dataStart + tkn.rawBytes.length - 1 };
+  }
+  // A group row is synthetic — there is no such field — so its span is read off
+  // the children, the same ones the row's own Offset cell is built from. Done
+  // HERE rather than in the hover handler so selecting, hovering and the input
+  // overlay all resolve a group the one way.
+  if (fid.startsWith('grp::')) {
+    const rest = fid.slice(5);
+    const sp   = rest.indexOf('::');
+    const path = sp >= 0 ? rest.slice(sp + 2) : rest;
+    let list = msg.fields || [], base = 0;
+    if (sp >= 0) {                       // a group inside a token's own table
+      const tkn = msg.tokens?.find(t => t.id === rest.slice(0, sp));
+      if (!tkn || tkn.dataStart === undefined) return null;
+      list = tkn.fields || []; base = tkn.dataStart;
+    }
+    const kids = list.filter(f => String(f.id || '').startsWith(path + '.') && f.startByte != null);
+    if (!kids.length) return null;
+    return { startByte: base + Math.min(...kids.map(k => k.startByte)),
+             endByte:   base + Math.max(...kids.map(k => k.endByte)) };
   }
   const sep = fid.indexOf('::');
   if (sep >= 0) {
@@ -16167,7 +16191,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.0.0';
+const APP_VERSION  = '1.26.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

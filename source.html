@@ -902,7 +902,11 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 /* The offset is a range now, so it reads from its low number like the same
    column in Parse Results and the Field Map. */
 .ddl-doc-tbl td.ddl-doc-off, .ddl-doc-tbl th.ddl-doc-off {
-  text-align: left; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+  text-align: left; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* The dim colour is for the CELLS only. Setting it on the th too overrode the
+   header's own --text-very-dim with the brighter --text-dim, so OFFSET was the
+   one heading lit up. */
+.ddl-doc-tbl td.ddl-doc-off { color: var(--text-dim); }
 .ddl-doc-grp { cursor: default; }
 .ddl-doc-grp td { background: var(--tint-row); color: var(--text-dim); }
 .ddl-doc-grp:hover td { background: rgba(var(--accent-rgb),0.10) !important; }
@@ -1268,6 +1272,13 @@ tr.row-filter-hide  { display: none; }
   border: var(--bw-ctl) solid var(--border); border-radius: var(--r-sm);
   padding: 0 4px; height: calc(var(--sz-mono) + 8px); flex-shrink: 0;
 }
+/* The DDL Doc's filter takes the colour of the bar it sits on rather than the
+   input well every other text box gets — it is a control ON the toolbar, not a
+   field in a form. Transparent rather than naming the bar's colour, so it keeps
+   matching if that ever changes. The class alone loses to the app-wide
+   input[type="text"] rule, which is specificity (0,1,1) against (0,1,0), so the
+   row is named too. */
+.ddl-doc-ctl input.res-filter-input { background: transparent; }
 .res-filter-input:focus { outline: none; border-color: var(--accent); }
 .res-filter-input::placeholder { color: var(--text-dim); opacity: 0.7; }
 #resCfgControls .res-filter-input { background: transparent; border-color: transparent; }
@@ -16264,7 +16275,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.3.0';
+const APP_VERSION  = '1.26.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -6552,6 +6552,23 @@ test('the DDL Doc columns can be dragged and selected, like Parse Results', () =
   assert.ok(/\.ddl-doc-tbl td\.ddl-doc-size, \.ddl-doc-tbl th\.ddl-doc-size \{\s*text-align: right/.test(css),
     'the DDL Doc size column is not right-justified');
   assert.ok(/<td class="ddl-doc-size">\$\{f\.size\}<\/td>/.test(APP_SRC), 'the size cell does not use that class');
+
+  // The filter reads as part of the toolbar, not as a field in a form: it takes
+  // the bar's colour instead of the input well every other text box gets.
+  // Transparent rather than naming the colour, so it keeps matching. The class
+  // alone loses to the app-wide input[type="text"] rule — (0,1,1) beats (0,1,0)
+  // — which is why the row is named too.
+  assert.ok(/\.ddl-doc-ctl input\.res-filter-input \{ background: transparent; \}/.test(css),
+    'the DDL Doc filter is an input well on a toolbar');
+
+  // The dim colour belongs to the offset CELLS. On the th it overrode the
+  // header's own --text-very-dim with the brighter --text-dim, so OFFSET was
+  // the one heading lit up.
+  const offShared = /\.ddl-doc-tbl td\.ddl-doc-off, \.ddl-doc-tbl th\.ddl-doc-off \{([^}]*)\}/.exec(css);
+  assert.ok(offShared && !/color:/.test(offShared[1]),
+    'the offset header takes a colour of its own, so it does not match its row');
+  assert.ok(/\.ddl-doc-tbl td\.ddl-doc-off \{ color: var\(--text-dim\); \}/.test(css),
+    'the offset cells lost their dim colour');
 });
 
 test('every table that has groups uses the same +/- glyph', () => {

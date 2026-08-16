@@ -8517,15 +8517,33 @@ test('the DE picker keeps the expansion rule its four buttons had', () => {
     assert.strictEqual(k.xact, k.act, `${k.label} needs no separate expansion act`);
 });
 
-test('"number…" asks for the number instead of storing nothing', () => {
-  // It is the one DE option carrying a value, and a picker cannot hold one.
+test('"number…" reveals a box to type it in, while you are still choosing', () => {
+  // Reported: "where should I type the number?" — nowhere. It used to open a
+  // second editor on Apply, asking for the value AFTER the choice was made.
+  const sync = psFnSource('_meFmEdSyncNum');
+  assert.ok(/cfg\.withNum && cfg\.withNum\(sel\.value\)/.test(sync),
+    'nothing decides whether an option needs a number');
+  assert.ok(/num\.style\.display = want \? '' : 'none';/.test(sync), 'the box never appears');
+  assert.ok(/_meFmEdSyncNum\(\)/.test(psFnSource('_meFmEdOpen')),
+    'reopening on a number option shows no box');
+  // Changing the option re-decides, or picking "number…" leaves the box hidden.
+  assert.ok(/e\.target\?\.id !== 'me-fm-ed-sel'[\s\S]{0,200}_meFmEdSyncNum\(\)/.test(APP_SRC),
+    'choosing an option does not re-evaluate whether a number is needed');
+  // Commit reads it, and refuses rather than storing a non-number.
   const fn = psFnSource('_meFmEdCommit');
-  assert.ok(/const _defer = cfg\.defer && cfg\.defer\(v\);/.test(fn), 'the commit ignores a deferred option');
-  assert.ok(/if \(_defer\) \{ _meFmEdClose\(\); return _meFmEdOpen\(_defer\); \}/.test(fn),
-    'choosing "number…" falls through and writes whatever the picker had');
+  assert.ok(/if \(cfg\.withNum && cfg\.withNum\(v\)\) \{[\s\S]{0,220}v = nv;/.test(fn),
+    'the typed number is not what gets stored');
+  assert.ok(/if \(!\/\^\[0-9\]\+\$\/\.test\(nv\)\) \{ numEl\.focus\(\); return; \}/.test(fn),
+    'a blank or non-numeric DE number is stored anyway');
+  // The number path IS de-anchor — one definition of what a DE number means.
   const ed = APP_SRC.slice(APP_SRC.indexOf("'de':"), APP_SRC.indexOf("'type':"));
-  assert.ok(/defer: v => v\.startsWith\('number'\) \? 'de-anchor' : null/.test(ed),
-    'the DE picker does not hand "number…" to the numeric editor');
+  assert.ok(/_ME_FM_ED\['de-anchor'\]\.set\(o, v\)/.test(ed),
+    'the picker restates the DE clamp instead of reusing de-anchor');
+  assert.ok(/numDef:  \(\) => _ME_FM_ED\['de-anchor'\]\.def\(\)/.test(ed),
+    'the box seeds from its own rule rather than de-anchor');
+  // Per-open, so the last number does not reappear in the next editor.
+  assert.ok(/me-fm-ed-num'\)\.value = '';/.test(psFnSource('_meFmEdOpen')),
+    'the box carries the previous value into the next open');
 });
 
 test('the kind counts follow the search but not the kind filter', () => {
@@ -9060,7 +9078,7 @@ test('every action button opens an editor, and every kind has one', () => {
   const de = ed.slice(ed.indexOf("'de':"), ed.indexOf("'type':"));
   for (const opt of ['include', 'exclude', 'children'])
     assert.ok(de.includes(`'${opt}'`), `the DE picker lost its ${opt} option`);
-  assert.ok(/defer:/.test(de), 'the DE picker cannot reach the numeric editor');
+  assert.ok(/withNum:/.test(de), 'the DE picker cannot reach the numeric editor');
 });
 
 test('every scrolling surface in the panel reserves its scrollbar gutter', () => {

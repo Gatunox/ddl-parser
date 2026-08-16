@@ -16401,7 +16401,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.2.2';
+const APP_VERSION  = '1.29.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24226,15 +24226,19 @@ const _ME_FM_ED = {
                                    : o?.de === 'children' ? 'children'
                                    : o?.de === true ? 'include' : 'include'; },
                  opts: () => ['include', 'exclude', 'children', 'number\u2026'],
+                 // Picking "number…" reveals the box next to the picker. It used
+                 // to open a second editor on Apply, which asked for the number
+                 // AFTER you had already committed — there was nowhere to type.
+                 withNum: v => v.startsWith('number'),
+                 numDef:  () => _ME_FM_ED['de-anchor'].def(),
                  set: (o, v) => {
-                   if (v === 'exclude')       o.de = false;
+                   // The number path IS de-anchor: same clamp, same meaning,
+                   // stated once.
+                   if (/^\d+$/.test(v))       _ME_FM_ED['de-anchor'].set(o, v);
+                   else if (v === 'exclude')  o.de = false;
                    else if (v === 'children') o.de = 'children';
-                   else if (v === 'include')  o.de = true;
+                   else                       o.de = true;
                  },
-                 // "number…" writes nothing here — _meFmEdCommit reopens the
-                 // numeric editor instead, so the value is asked for before
-                 // anything is stored.
-                 defer: v => v.startsWith('number') ? 'de-anchor' : null,
                  has:   o => o.de !== undefined,
                  clear: o => { delete o.de; } },
   'type':      { label: 'Read as', kind: 'sel',
@@ -24266,6 +24270,7 @@ function _meFmEdOpen(act) {
   const cfg = _ME_FM_ED[act], ed = document.getElementById('me-fm-ed');
   if (!cfg || !ed) return;
   _meFmEdAct = act;
+  document.getElementById('me-fm-ed-num').value = '';
   document.getElementById('me-fm-ed-lbl').textContent =
     typeof cfg.label === 'function' ? cfg.label() : cfg.label;
   const num = document.getElementById('me-fm-ed-num'), sel = document.getElementById('me-fm-ed-sel');
@@ -24273,7 +24278,11 @@ function _meFmEdOpen(act) {
   sel.style.display = cfg.kind === 'sel' ? '' : 'none';
   // Lazy: the option lists are declared further down the file, so reading them
   // at module-init time threw before anything rendered.
-  if (cfg.kind === 'sel') { sel.innerHTML = cfg.opts().map(o => `<option>${_escHtml(o)}</option>`).join(''); sel.value = _meFmEdDef(cfg); }
+  if (cfg.kind === 'sel') {
+    sel.innerHTML = cfg.opts().map(o => `<option>${_escHtml(o)}</option>`).join('');
+    sel.value = _meFmEdDef(cfg);
+    _meFmEdSyncNum();
+  }
   else num.value = _meFmEdDef(cfg);
   ed.classList.add('on');
   const btn = document.querySelector(`#me-fm-bar [data-fmact="${act}"]`);
@@ -24287,20 +24296,43 @@ function _meFmEdOpen(act) {
   }
   (cfg.kind === 'num' ? num : sel).focus();
 }
+// A picker option may need a number as well. The box lives beside the select
+// and appears the moment such an option is chosen, so the value is asked for
+// while the choice is being made rather than after it is committed.
+function _meFmEdSyncNum() {
+  const cfg = _ME_FM_ED[_meFmEdAct];
+  const num = document.getElementById('me-fm-ed-num');
+  const sel = document.getElementById('me-fm-ed-sel');
+  if (!cfg || !num || !sel || cfg.kind !== 'sel') return;
+  const want = !!(cfg.withNum && cfg.withNum(sel.value));
+  num.style.display = want ? '' : 'none';
+  if (want && !num.value) num.value = cfg.numDef ? cfg.numDef() : '';
+}
+document.addEventListener('change', e => {
+  if (e.target?.id !== 'me-fm-ed-sel') return;
+  _meFmEdSyncNum();
+  const num = document.getElementById('me-fm-ed-num');
+  if (num && num.style.display !== 'none') { num.focus(); num.select(); }
+});
+
 function _meFmEdCommit() {
   const cfg = _ME_FM_ED[_meFmEdAct];
   if (!cfg) return;
+  const numEl = document.getElementById('me-fm-ed-num');
   let v;
   if (cfg.kind === 'num') {
-    v = document.getElementById('me-fm-ed-num').value.trim();
+    v = numEl.value.trim();
     // A blank or non-numeric value used to be stopped by the spinner; there is
     // no spinner, so it is stopped here rather than writing NaN into the map.
-    if (!/^[0-9]+$/.test(v)) { document.getElementById('me-fm-ed-num').focus(); return; }
-  } else v = document.getElementById('me-fm-ed-sel').value;
-  // One option needs a value the picker cannot hold. Hand off rather than give
-  // every other choice an unused number box.
-  const _defer = cfg.defer && cfg.defer(v);
-  if (_defer) { _meFmEdClose(); return _meFmEdOpen(_defer); }
+    if (!/^[0-9]+$/.test(v)) { numEl.focus(); return; }
+  } else {
+    v = document.getElementById('me-fm-ed-sel').value;
+    if (cfg.withNum && cfg.withNum(v)) {
+      const nv = numEl.value.trim();
+      if (!/^[0-9]+$/.test(nv)) { numEl.focus(); return; }
+      v = nv;   // the number IS the value from here on
+    }
+  }
   const item = _meCurItem(); if (!item) return;
   const rowsById = new Map((_meFmVirt?.all || []).map(r => [r.id, r]));
   // The action ADDS. A field that already carries this kind is left exactly as

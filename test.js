@@ -10456,7 +10456,15 @@ test('the selection badge heads the bar that acts on it', () => {
   assert.ok(bar.indexOf('id="me-fm-cnt"') < bar.indexOf('me-ovb k-'),
     'the badge comes after the controls it is the subject of');
   const fn = psFnSource('_meFmBarRefresh');
-  assert.ok(/selected/.test(fn) && /no selection/.test(fn), 'it does not state the count');
+  assert.ok(/\$\{n\} of \$\{listed\} selected/.test(fn),
+    'the badge states the selection without the set it was drawn from');
+  // LISTED, not every declared field: with a filter on, the listed set is what
+  // a click can actually reach.
+  assert.ok(/_meFmVirt\.visible \|\| _meFmVirt\.all/.test(fn),
+    'the denominator ignores the filters, so it counts rows you cannot select');
+  // Nothing selected still says how big the set is.
+  assert.ok(/`\$\{listed\} field\$\{listed !== 1 \? 's' : ''\}`/.test(fn),
+    'with nothing selected the badge says nothing about the table');
   // "READ-ONLY" described the TABLE, not the selection, and said what the
   // table's own behaviour already makes plain. Checked on the rendered text,
   // not the source, so a comment mentioning it cannot pass this.

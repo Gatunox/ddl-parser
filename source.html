@@ -16404,7 +16404,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.5.0';
+const APP_VERSION  = '1.29.5.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22103,7 +22103,7 @@ function _meOverridesPrep(item) {
 <div class="me-ps-split" id="me-fm-split">
 <div class="me-hs-main" id="me-fm-pane">
 <div class="me-fm-bar" id="me-fm-bar">
-  <span class="me-ovl-ro none" id="me-fm-cnt" title="The table below is the picker \u2014 select fields there, then act on them here">no selection</span>
+  <span class="me-ovl-ro none" id="me-fm-cnt" title="Fields listed below, and how many you have selected \u2014 pick them in the table, then act on them here">0 fields</span>
   ${_ME_OV_KINDS.map(k => `
   <span class="me-ovb k-${k.id}" data-kind="${k.id}">
     <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="How many of your selected fields already have a ${k.label} override, of every field that does \u2014 click to show only those">0 of 0</button>
@@ -24581,9 +24581,14 @@ function _meFmBarRefresh() {
   const cnt = document.getElementById('me-fm-cnt');
   if (!cnt) return;
   const n = _meFmMultiSel.size;
-  // "READ-ONLY" described the table, not the selection, and repeated something
-  // the table's own behaviour already makes plain.
-  cnt.textContent = n ? `${n} selected` : 'no selection';
+  // Selected out of LISTED, not out of every field the DDL declares: the listed
+  // set is what a click can reach, so it is the honest denominator once a filter
+  // is on. With no filter the two are the same number anyway.
+  // With nothing selected the total still earns its place — it is the size of
+  // what you are looking at.
+  const listed = (_meFmVirt && (_meFmVirt.visible || _meFmVirt.all) || []).length;
+  cnt.textContent = n ? `${n} of ${listed} selected`
+                      : `${listed} field${listed !== 1 ? 's' : ''}`;
   cnt.classList.toggle('none', n === 0);
 
   const all = _meOvAll(_meCurItem());

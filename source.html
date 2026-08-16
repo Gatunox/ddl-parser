@@ -2895,17 +2895,20 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* One text colour, the same one every other button uses. Five kind colours in a
    row was decoration competing with the two things here that DO mean something:
    the accent when a kind is filtering, and the red when the clear can act. */
-.me-ovb-n{font-weight:700;font-variant-numeric:tabular-nums;min-width:2.4em;justify-content:center;}
+/* Wide enough for both numbers at their longest, and equal across the five so
+   the actions line up into a column instead of stepping about as counts change. */
+.me-ovb-n{font-variant-numeric:tabular-nums;min-width:13.5em;justify-content:flex-start;}
 /* Filtering by this kind. The whole group lights, since the whole group is
    about that one kind. */
 .me-ovb.on{border-color:var(--accent);}
 .me-ovb.on .me-ovb-n{background:color-mix(in srgb, var(--accent) 20%, transparent);color:var(--accent);}
-/* Collapsed rather than greyed when there is nothing to clear: five dead ✕
-   glyphs sitting in the bar at rest was most of what made it look busy. It
-   appears only once a selection gives it something to remove. */
-.me-ovb-clr{display:none;}
-.me-ovb-clr:not(:disabled){display:inline-flex;color:var(--danger);}
-.me-ovb-clr:not(:disabled):hover{background:color-mix(in srgb, var(--danger) 18%, transparent);color:var(--danger);}
+/* One clear for the bar, at the far end. Its scope is whatever the table is
+   already showing: a kind filter narrows it to that kind, otherwise it means
+   every kind on the selection. */
+.me-ovb-clrall{margin-left:auto;flex-shrink:0;}
+.me-ovb-clrall:not(:disabled){color:var(--danger);border-color:color-mix(in srgb, var(--danger) 45%, var(--border));}
+.me-ovb-clrall:not(:disabled):hover{background:color-mix(in srgb, var(--danger) 16%, transparent);
+  border-color:var(--danger);color:var(--danger);}
 .me-ovb-cn{font-weight:700;font-variant-numeric:tabular-nums;}
 
 .me-fm-filt{display:inline-flex;gap:4px;flex-shrink:0;}
@@ -16393,7 +16396,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.1.0';
+const APP_VERSION  = '1.29.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22124,10 +22127,10 @@ function _meOverridesPrep(item) {
 <div class="me-fm-bar" id="me-fm-bar">
   ${_ME_OV_KINDS.map(k => `
   <span class="me-ovb k-${k.id}" data-kind="${k.id}">
-    <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="Fields with a ${k.label} override \u2014 click to show only those">0</button>
+    <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="Fields with a ${k.label} override \u2014 click to show only those">Total 0</button>
     <button class="btn me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on the selected fields that do not have one">${k.label}\u2026</button>
-    <button class="btn me-ovb-clr" data-fmclr="${k.id}" title="Remove the ${k.label} override from the selected fields that have one" disabled>\u2715<span class="me-ovb-cn"></span></button>
   </span>`).join('')}
+  <button class="btn me-ovb-clrall" id="me-fm-clr-all" disabled>\u2715 Clear<span class="me-ovb-cn"></span></button>
 </div>
 <div class="me-fm-ed" id="me-fm-ed">
   <label id="me-fm-ed-lbl"></label>
@@ -24456,6 +24459,30 @@ function _meFmSelWithKind(kindId) {
   });
 }
 
+// Every field the clear would touch, and what it would take off each. Scope is
+// the kind filter: with one active the clear belongs to that kind alone, which
+// is the same scope the table is already showing. With none it means all five.
+function _meFmClearScope() {
+  const only = _meState && _meState.fmOvKind;
+  const kinds = only ? _ME_OV_KINDS.filter(k => k.id === only) : _ME_OV_KINDS;
+  const fields = new Set();
+  const hits = [];
+  for (const k of kinds)
+    for (const qn of _meFmSelWithKind(k.id)) { hits.push([qn, k]); fields.add(qn); }
+  return { hits, fields: fields.size, only };
+}
+
+function _meFmClearAll() {
+  const item = _meCurItem();
+  const { hits, fields, only } = _meFmClearScope();
+  if (!item || !hits.length) return;
+  const what = only ? (_ME_OV_KINDS.find(k => k.id === only) || {}).label + ' override' : 'overrides';
+  _meUndoable(`Removed the ${what} \u2014 ${fields} field${fields !== 1 ? 's' : ''}`, () => {
+    for (const [qn, k] of hits) for (const key of k.keys) _meOvSet(item, qn, key, null);
+    _meFmAfterAct();
+  }, 'warn');
+}
+
 // Remove one kind from every selected field that has it. This is the half the
 // bar never had: it could add to a hundred fields at once and offered no way to
 // take it back off them except one pill at a time.
@@ -24475,8 +24502,8 @@ function _meFmClearKind(kindId) {
 document.addEventListener('click', e => {
   const b = e.target.closest?.('#me-fm-bar [data-fmact]');
   if (b) { if (!b.disabled) _meFmAct(b.dataset.fmact); return; }
-  const c = e.target.closest?.('#me-fm-bar [data-fmclr]');
-  if (c) { if (!c.disabled) _meFmClearKind(c.dataset.fmclr); return; }
+  const c = e.target.closest?.('#me-fm-clr-all');
+  if (c) { if (!c.disabled) _meFmClearAll(); return; }
   const f = e.target.closest?.('#me-fm-bar [data-fmfilt]');
   if (f) { _meOvlKindFilter(f.dataset.fmfilt); return; }
   const ed = document.getElementById('me-fm-ed');
@@ -24524,15 +24551,26 @@ function _meFmBarRefresh() {
       (!filt || id.toLowerCase().includes(filt)) &&
       k.keys.some(key => all[id][key] !== undefined)).length;
     const held = n ? _meFmSelWithKind(k.id).length : 0;
-    grp.querySelector('.me-ovb-n').textContent = total;
+    // Both numbers, always: the total says how much of the spec uses this kind,
+    // the selected count says how much of what you are pointing at already does
+    // — which is exactly what decides whether the action or the clear applies.
+    grp.querySelector('.me-ovb-n').textContent = `Total ${total} - Selected ${held}`;
     grp.classList.toggle('on', _meState?.fmOvKind === k.id);
     // The action is only ever "add", so it is dead once every selected field
     // already has this kind.
     const act = grp.querySelector('.me-ovb-act');
     act.disabled = n === 0 || held === _meFmActionTargets(k.act).length;
-    const clr = grp.querySelector('.me-ovb-clr');
-    clr.disabled = held === 0;
-    grp.querySelector('.me-ovb-cn').textContent = held || '';
+  }
+
+  const clrAll = document.getElementById('me-fm-clr-all');
+  if (clrAll) {
+    const { hits, fields, only } = _meFmClearScope();
+    clrAll.disabled = !hits.length;
+    clrAll.querySelector('.me-ovb-cn').textContent = fields ? ` ${fields}` : '';
+    const lbl = only ? (_ME_OV_KINDS.find(k => k.id === only) || {}).label : 'every kind';
+    clrAll.title = hits.length
+      ? `Remove ${lbl === 'every kind' ? 'every override' : 'the ' + lbl + ' override'} from ${fields} selected field${fields !== 1 ? 's' : ''}`
+      : 'Select fields that carry an override to remove it';
   }
 }
 

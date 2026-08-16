@@ -8445,30 +8445,42 @@ test('chip texts have one author, whatever surface shows them', () => {
   assert.ok(/uint16-be/.test(rowHtml), 'the overridden type is not shown on the row at all');
 });
 
-test('each kind is one control: a count that filters, an action, and a clear', () => {
+test('each kind states both numbers, and one clear serves them all', () => {
   const panel = ovPanelHtml();
   for (const k of meOvKinds) {
     assert.ok(new RegExp(`class="me-ovb k-${k.id}" data-kind="${k.id}"`).test(panel),
       `${k.label} has no control in the bar`);
     assert.ok(new RegExp(`data-fmfilt="${k.id}"`).test(panel), `${k.label} count does not filter`);
-    assert.ok(new RegExp(`data-fmclr="${k.id}"`).test(panel), `${k.label} cannot be cleared in bulk`);
     assert.ok(new RegExp(`data-fmact="${k.act}"`).test(panel), `${k.label} cannot be set`);
   }
-  // The clear is the half the old bar never had: it could set a hundred fields
-  // at once and offered no way to take it back off them.
-  const clr = psFnSource('_meFmClearKind');
-  assert.ok(/_meFmSelWithKind\(kindId\)/.test(clr), 'the clear does not ask which selected fields have the kind');
-  assert.ok(/_meOvSet\(item, qn, key, null\)/.test(clr), 'the clear does not remove anything');
-  assert.ok(/\}, 'warn'\);/.test(clr), 'a bulk removal reports itself as green');
-  // Disabled when it would do nothing, and it says how many it would take.
+  assert.ok(!/data-fmclr=/.test(panel), 'the per-kind clears are back alongside the single one');
+  assert.ok(/id="me-fm-clr-all"/.test(panel), 'the bar has no clear');
+
   const bar = psFnSource('_meFmBarRefresh');
-  assert.ok(/clr\.disabled = held === 0;/.test(bar), 'the clear stays live with nothing to clear');
-  // Symmetrically: the action only ever ADDS, so it is dead once every selected
-  // field already carries the kind. Without this it invites a click that has
-  // been made a no-op by design.
+  // Both numbers: the total says how much of the spec uses this kind, the
+  // selected count says how much of what you are pointing at already does —
+  // which is what decides whether the action or the clear is the one that applies.
+  assert.ok(/`Total \$\{total\} - Selected \$\{held\}`/.test(bar),
+    'a control does not state both its total and its selected count');
+  // The action only ever ADDS, so it is dead once every selected field has it.
   assert.ok(/act\.disabled = n === 0 \|\| held === _meFmActionTargets\(k\.act\)\.length;/.test(bar),
     'the action stays live when every selected field already has the kind');
-  assert.ok(/me-ovb-cn'\)\.textContent = held/.test(bar), 'the clear does not say how many it affects');
+  assert.ok(/clrAll\.disabled = !hits\.length;/.test(bar), 'the clear stays live with nothing to clear');
+});
+
+test('the clear takes its scope from the filter the table is already showing', () => {
+  const sc = psFnSource('_meFmClearScope');
+  assert.ok(/const only = _meState && _meState\.fmOvKind;/.test(sc),
+    'the clear ignores the kind filter, so it removes five kinds when the table shows one');
+  assert.ok(/only \? _ME_OV_KINDS\.filter\(k => k\.id === only\) : _ME_OV_KINDS/.test(sc),
+    'the scope is not narrowed to the filtered kind, or not widened to all five without one');
+  assert.ok(/_meFmSelWithKind\(k\.id\)/.test(sc), 'the scope is not limited to the selection');
+  const fn = psFnSource('_meFmClearAll');
+  assert.ok(/_meOvSet\(item, qn, key, null\)/.test(fn), 'the clear removes nothing');
+  assert.ok(/\}, 'warn'\);/.test(fn), 'a bulk removal reports itself as green');
+  // It counts FIELDS, not (field, kind) pairs — clearing three kinds off one
+  // field is one field affected, and saying "3" would overstate it.
+  assert.ok(/fields: fields\.size/.test(sc), 'the clear counts kind-hits rather than fields');
 });
 
 test('the action adds and never overwrites', () => {
@@ -8584,18 +8596,17 @@ test('the bar reads in one voice, with colour reserved for meaning', () => {
   // Accent says "this kind is filtering the table".
   assert.ok(/\.me-ovb\.on\{border-color:var\(--accent\);\}/.test(css), 'a filtering kind is not marked');
   // Red says "this will remove something".
-  assert.ok(/\.me-ovb-clr:not\(:disabled\)\{display:inline-flex;color:var\(--danger\);\}/.test(css),
+  assert.ok(/\.me-ovb-clrall:not\(:disabled\)\{color:var\(--danger\)/.test(css),
     'the clear does not read as destructive');
-  // And it is COLLAPSED, not greyed, when it cannot: five dead ✕ glyphs sitting
-  // in the bar at rest was most of what made it look busy.
-  assert.ok(/\.me-ovb-clr\{display:none;\}/.test(css),
-    'the clear sits in the bar greyed out with nothing to clear');
+  // It sits at the far end, away from the five it applies to.
+  assert.ok(/\.me-ovb-clrall\{margin-left:auto;/.test(css), 'the clear is not pushed to the end of the bar');
   // And the segments are the app's own button rather than a lookalike, which is
   // why they stopped looking pressable in the first place.
   assert.ok(/\.me-ovb>\.btn\{border:0;border-radius:0;/.test(css),
     'the segments restyle a bare button instead of reusing .btn');
-  for (const part of ['n', 'act', 'clr'])
+  for (const part of ['n', 'act'])
     assert.ok(html.includes(`class="btn me-ovb-${part}"`), `the ${part} segment is not a .btn`);
+  assert.ok(html.includes('class="btn me-ovb-clrall"'), 'the clear is not a .btn');
 });
 
 test('a selected field needs no second place to be found', () => {

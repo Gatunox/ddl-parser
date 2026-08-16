@@ -10401,42 +10401,46 @@ test('the panel keeps the two panes', () => {
 });
 
 test('the action bar wraps rather than overflowing a narrow panel', () => {
-  // It was laid out against a full-width prototype page and ran off the side of
-  // the real panel, which is a fraction of that width.
+  // CHANGED ON PURPOSE (v1.29.x): this used to require the groups to SPREAD
+  // across the bar — space-evenly, or an equal flex share each. Five controls
+  // spread over the full panel width read as five unrelated things, so they are
+  // packed left now like the toolbar under them. What has to survive is that
+  // the bar still wraps instead of overflowing a narrow panel.
   const css = html.match(/\.me-fm-bar\{[^}]*\}/)[0];
   assert.ok(/flex-wrap:\s*wrap/.test(css), 'the bar wraps');
-  const seg = html.match(/\.me-fm-seg \.btn\{[^}]*\}/)[0];
-  const min = +(seg.match(/min-width:(\d+)px/) || [])[1];
-  assert.ok(min > 0 && min <= 70, `uniform but panel-sized, got ${min}px`);
-  // And it uses the width it has: packed left, the groups huddled in the first
-  // third of the bar with the rest of the panel empty beside them.
-  //
-  // CHANGED ON PURPOSE (v1.6.2.0): this named the literal `space-between`. The
-  // bar now also gives each GROUP an equal share, which spreads the buttons
-  // themselves rather than only the gaps between them. Asserted as the intent so
-  // the next layout change is judged on whether it still distributes.
-  const grp = html.match(/\.me-fm-g\{[^}]*\}/)[0];
-  const spreads = /justify-content:\s*space-(between|evenly|around)/.test(css)
-               || /flex:\s*1 1 0/.test(grp);
-  assert.ok(spreads,
-    `the groups spread across the bar rather than bunching to the left: ${css} | ${grp}`);
+  assert.ok(/justify-content:\s*flex-start/.test(css), 'the controls are not packed left');
+  // Uniform, panel-sized controls: the count is a fixed readout and the label
+  // a fixed width, so the five line up rather than stepping about as counts change.
+  const n = html.match(/\.me-ovb-n\{[^}]*\}/)[0];
+  const act = html.match(/\.me-ovb-act\{[^}]*\}/)[0];
+  assert.ok(/min-width:[\d.]+em/.test(n) && /min-width:[\d.]+em/.test(act),
+    'the two halves have no settled width, so the bar reflows as numbers change');
+  // The old bar's classes went with it rather than being left behind as CSS
+  // nothing carries.
+  assert.ok(!/\.me-fm-seg|\.me-fm-glbl/.test(html), 'the replaced bar left its styles behind');
 });
 
-test('the selection count lives on the reference pill, not a separate span', () => {
-  // Asked for: fold the count into the READ-ONLY pill and give the width back to
-  // the action groups. Two elements saying different halves of one fact, side by
-  // side, with the bar short of room.
-  assert.ok(/id="me-fm-cnt"[^>]*class="me-ovl-ro|class="me-ovl-ro[^"]*"[^>]*id="me-fm-cnt"/.test(html),
-    'the pill IS the count element');
-  assert.ok(!/class="me-fm-cnt/.test(html), 'and the old count span is gone');
+test('the selection badge heads the bar that acts on it', () => {
+  // Moved out of the filter row: it is the subject the five controls act on,
+  // so it reads at the bar's own height at the head of the bar.
+  const bar = html.slice(html.indexOf('<div class="me-fm-bar" id="me-fm-bar">'),
+                         html.indexOf('<div class="me-fm-toolbar">'));
+  assert.ok(/id="me-fm-cnt"/.test(bar), 'the badge is not in the action bar');
+  assert.ok(bar.indexOf('id="me-fm-cnt"') < bar.indexOf('me-ovb k-'),
+    'the badge comes after the controls it is the subject of');
   const fn = psFnSource('_meFmBarRefresh');
-  assert.ok(/READ-ONLY/.test(fn), 'the refresher keeps the READ-ONLY wording');
-  assert.ok(/selected/.test(fn) && /no selection/.test(fn), 'and states the count');
-  // Blue while something is selected — the signal the count carried before.
+  assert.ok(/selected/.test(fn) && /no selection/.test(fn), 'it does not state the count');
+  // "READ-ONLY" described the TABLE, not the selection, and said what the
+  // table's own behaviour already makes plain. Checked on the rendered text,
+  // not the source, so a comment mentioning it cannot pass this.
+  assert.ok(!/`\$\{n\} selected`[^;]*READ/.test(fn) && !/no selection'[^;]*READ/.test(fn),
+    'the badge still says READ-ONLY');
   const pill = html.match(/\.me-ovl-ro\{[^}]*\}/)[0];
   const none = html.match(/\.me-ovl-ro\.none\{[^}]*\}/)[0];
   assert.ok(/color:var\(--accent\)/.test(pill), `selected state is accent: ${pill}`);
   assert.ok(/var\(--text-very-dim\)/.test(none), `and dim with nothing selected: ${none}`);
+  assert.ok(/height:var\(--ctl-h\)/.test(pill), 'the badge is not the height of the bar it heads');
+  assert.ok(/font-size:var\(--sz-mono\)/.test(pill), 'the badge still reads at a reduced size');
 });
 
 test('the panel reads in the order it is used', () => {

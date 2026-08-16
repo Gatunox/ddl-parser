@@ -2680,16 +2680,8 @@ tbody tr:hover .me-ps-form-tbl td,
 .me-fm-bar .me-fm-gsep{width:2px;height:15px;background:var(--border);margin:0;}
 /* Each group takes an equal share of the bar, so the buttons distribute across
    the full width instead of bunching at one end. */
-.me-fm-g{display:flex;align-items:center;justify-content:center;flex:1 1 0;}
-.me-fm-g .me-fm-glbl{color:var(--text-very-dim);text-transform:uppercase;letter-spacing:.06em;
-  font-size:calc(var(--sz-mono) - 2px);margin-right:8px;}
-.me-fm-seg{display:flex;border: var(--bw) solid var(--border);border-radius:var(--r-lg);overflow:hidden;}
 /* Uniform inside a group, but narrow enough that four groups fit a side panel.
    82px was measured against a full-width prototype page. */
-.me-fm-seg .btn{border:0;border-radius:0;min-width:66px;height:18px;text-align:center;
-  border-right: var(--bw-ctl) solid var(--border);padding:0 7px;white-space:nowrap;}
-.me-fm-seg .btn:last-child{border-right:0;}
-.me-fm-seg .btn:hover{background: var(--h-gray-bg);color: var(--h-gray-fg);}
 .me-fm-bar .btn.dis{opacity:.3;pointer-events:none;}
 .me-fm-table tbody tr.me-fm-row-multi{background:rgba(var(--accent-rgb),0.18);
   box-shadow:inset 3px 0 0 var(--accent);}
@@ -2886,8 +2878,8 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ovb:hover{border-color:var(--border-strong);}
 /* The segments ARE .btn — same ground, same text colour, same hover as every
    other button in the panel. Only the geometry changes: square them off and
-   let the group's own border and radius wrap the set, exactly as .me-fm-seg
-   did for the bar this replaced. */
+   let the group's own border and radius wrap the set, the way the segmented
+   control it replaced did. */
 .me-ovb>.btn{border:0;border-radius:0;height:100%;padding:0 10px;gap:5px;}
 .me-ovb>.btn+.btn{border-left: var(--bw-ctl) solid var(--border);}
 .me-ovb>.btn:hover:not(:disabled){background:var(--surface-hover);color:var(--text);}
@@ -2950,9 +2942,13 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    instead of a static label plus a count span, which frees that width for the
    action groups. Blue while something is selected, the same signal the count
    carried before. */
-.me-ovl-ro{border: var(--bw-ctl) solid var(--accent);color:var(--accent);border-radius:var(--r-lg);padding:0 6px;
-  font-size:calc(var(--sz-mono) - 3px);font-weight:700;white-space:nowrap;}
-.me-ovl-ro.none{border-color:#2f3947;color:var(--text-very-dim);font-weight:400;}
+/* Heads the action bar, so it stands at the bar's own height and reads at full
+   size — it is the subject the five controls act on, not a footnote. */
+.me-ovl-ro{display:inline-flex;align-items:center;height:var(--ctl-h);flex-shrink:0;
+  border: var(--bw-ctl) solid var(--accent);color:var(--accent);border-radius:var(--r-lg);
+  padding:0 12px;font-size:var(--sz-mono);font-weight:700;white-space:nowrap;
+  background:color-mix(in srgb, var(--accent) 12%, transparent);}
+.me-ovl-ro.none{border-color:var(--border);color:var(--text-very-dim);font-weight:400;background:transparent;}
 /* Reference rows: selection, and the whole-row tint for a field that carries an
    override — a marker in one column was missed when scanning thousands of rows. */
 .me-fm-table tbody tr{cursor:pointer;}
@@ -16401,7 +16397,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.4.0';
+const APP_VERSION  = '1.29.4.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22100,6 +22096,7 @@ function _meOverridesPrep(item) {
 <div class="me-ps-split" id="me-fm-split">
 <div class="me-hs-main" id="me-fm-pane">
 <div class="me-fm-bar" id="me-fm-bar">
+  <span class="me-ovl-ro none" id="me-fm-cnt" title="The table below is the picker \u2014 select fields there, then act on them here">no selection</span>
   ${_ME_OV_KINDS.map(k => `
   <span class="me-ovb k-${k.id}" data-kind="${k.id}">
     <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="How many of your selected fields already have a ${k.label} override, of every field that does \u2014 click to show only those">0 of 0</button>
@@ -22108,7 +22105,6 @@ function _meOverridesPrep(item) {
   <button class="btn me-ovb-clrall" id="me-fm-clr-all" disabled>\u2715 Clear<span class="me-ovb-cn"></span></button>
 </div>
 <div class="me-fm-toolbar">
-  <span class="me-ovl-ro none" id="me-fm-cnt" title="This table is the picker — every field the DDL declares. Configuration is applied from the action bar below.">no selection · READ-ONLY</span>
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
   <span class="me-fm-filt">
     <button class="btn btn-accent-on" id="me-fm-all-btn" onclick="_meFmSetOvOnly(false)"
@@ -24573,7 +24569,9 @@ function _meFmBarRefresh() {
   const cnt = document.getElementById('me-fm-cnt');
   if (!cnt) return;
   const n = _meFmMultiSel.size;
-  cnt.textContent = `${n ? `${n} selected` : 'no selection'} · READ-ONLY`;
+  // "READ-ONLY" described the table, not the selection, and repeated something
+  // the table's own behaviour already makes plain.
+  cnt.textContent = n ? `${n} selected` : 'no selection';
   cnt.classList.toggle('none', n === 0);
 
   const all = _meOvAll(_meCurItem());

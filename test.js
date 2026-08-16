@@ -168,8 +168,8 @@ _t.meFieldOvrAnnotation = _meFieldOvrAnnotation;
 _t.meOvlChips          = _meOvlChips;
 _t.meOvlChipParts      = _meOvlChipParts;
 _t.meOvKindsOf         = _meOvKindsOf;
+_t.meFmSelWithKind     = _meFmSelWithKind;
 _t.meOvKinds           = _ME_OV_KINDS;
-_t.meOvPillCand        = _ME_OV_PILL_CAND;
 _t.meOvSet             = _meOvSet;
 _t.meFmExpandTargets   = _meFmExpandTargets;
 _t.meFmDeCellHtml      = _meFmDeCellHtml;
@@ -282,7 +282,7 @@ const {
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
-  meOvlChipParts, meOvKindsOf, meOvKinds, meOvPillCand, meOvSet,
+  meOvlChipParts, meOvKindsOf, meOvKinds, meOvSet, meFmSelWithKind,
   meFmExpandTargets, meFmDeCellHtml, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
@@ -8334,10 +8334,10 @@ test('the undo offer does not outlive the editor session that made it', () => {
 test('the toast colour says what happened, and the Undo reads as a control', () => {
   // Taking configuration away is amber; adding it is green. The colour answers
   // "what just happened" before the words are read.
-  for (const fn of ['_meOvlDropKind', '_meBindDel'])
+  for (const fn of ['_meFmClearKind', '_meBindDel'])
     assert.ok(/\}, 'warn'\);/.test(psFnSource(fn)), `${fn} removes something and reports it as green`);
   assert.ok(/\}, 'warn'\);/.test(psFnSource('_meDelRec')), 'deleting a recognizer reports as green');
-  for (const fn of ['_meBindAdd', '_meFmAct'])
+  for (const fn of ['_meBindAdd', '_meFmEdCommit'])
     assert.ok(!/\}, 'warn'\);/.test(psFnSource(fn)), `${fn} adds or changes and reports it as a removal`);
   assert.ok(/function _meUndoable\(label, run, level\)/.test(psFnSource('_meUndoable')),
     'the level cannot be set per action');
@@ -8380,7 +8380,7 @@ test('undo snapshots BEFORE the change, and refuses when the index went stale', 
 });
 
 test('the structural edits offer an undo; typing does not', () => {
-  for (const fn of ['_meFmAct', '_meOvlDropKind', '_meBindAdd', '_meBindDel'])
+  for (const fn of ['_meFmClearKind', '_meBindAdd', '_meBindDel'])
     assert.ok(/_meUndoable\(/.test(psFnSource(fn)), `${fn} changes configuration with no way back`);
   assert.ok(/_meUndoable\(/.test(psFnSource('_meFmEdCommit')), 'the value editor offers no undo');
   // Text keeps its own undo — the spec editor's history and the browser's for
@@ -8410,13 +8410,16 @@ test('the five kinds are declared once and every surface reads that list', () =>
   const kinds = meOvKinds;
   assert.strictEqual(kinds.map(k => k.id).join(','), 'type,show,size,de,vlg',
     'the kind list changed shape');
-  // The index rows, the on-field badges and the per-kind delete must all come
-  // from _ME_OV_KINDS. A hand-written second list is how the badge on a row and
-  // the row it came from end up disagreeing.
-  assert.ok(/_ME_OV_KINDS\.map\(k =>/.test(psFnSource('_meOvlRefresh')),
-    'the index builds its rows from something other than the kind list');
-  assert.ok(/_ME_OV_KINDS\.find\(/.test(psFnSource('_meOvlDropKind')),
-    'the per-kind delete does not read the kind list');
+  // The bar's five controls, its counts and the per-kind clear must all come
+  // from _ME_OV_KINDS. A hand-written second list is how a control and the
+  // store it edits end up disagreeing.
+  assert.ok(/\$\{_ME_OV_KINDS\.map\(k =>/.test(ovPanelHtml.toString()) ||
+            /_ME_OV_KINDS\.map\(k =>/.test(APP_SRC),
+    'the bar builds its controls from something other than the kind list');
+  assert.ok(/for \(const k of _ME_OV_KINDS\)/.test(psFnSource('_meFmBarRefresh')),
+    'the counts are not driven by the kind list');
+  assert.ok(/_ME_OV_KINDS\.find\(/.test(psFnSource('_meFmClearKind')),
+    'the per-kind clear does not read the kind list');
   // count rides with vlg: removing "length source" must not leave its unit behind.
   assert.strictEqual(kinds.find(k => k.id === 'vlg').keys.join(','), 'vlg,count',
     'removing VLG would strand the count key');
@@ -8432,105 +8435,95 @@ test('chip texts have one author, whatever surface shows them', () => {
     'a chip is tagged with the wrong kind');
   assert.strictEqual(meOvKindsOf(o).join(','), 'type,show,size,de,vlg',
     'kindsOf must report in _ME_OV_KINDS order, not chip order');
-  // The badge on the field is the same builder AND the same words. Asserting the
-  // builder alone was not enough: a mutant kept the call and rendered part.kind,
-  // so every TYPE badge read "type" instead of naming the type.
+  // The row itself carries no badge any more: the ↩ columns say what was
+  // overridden and the bar says how many. A badge repeating it was a third
+  // place for the same fact.
   const { rows, ctx } = mtxCtx({ 'GRP.AA': { type: 'uint16-be' } });
   const rowHtml = meFmRowHtml(rows.find(r => r.id === 'GRP.AA'), ctx, { n: 0 });
-  assert.ok(/<span class="me-fm-on-field">/.test(rowHtml), 'the row carries no badge');
-  assert.ok(/<span class="k k-type"[^>]*>uint16-be<span class="k-x"/.test(rowHtml),
-    `the badge says something other than the chip's own words, got: ${
-      (rowHtml.match(/<span class="me-fm-on-field">[\s\S]*?<\/span><\/span><\/span>/) || [''])[0]}`);
-  // The badge is the pill's twin: same field, same kind, same ✕. Without it the
-  // only way to remove an override was a pill, and the index shows as many
-  // pills as fit — the rest had no delete affordance anywhere.
-  assert.ok(/_meOvlDropKind\('GRP\.AA','type'\)/.test(rowHtml),
-    'the badge cannot remove the override it names');
-  assert.ok(/event\.stopPropagation\(\);_meOvlDropKind/.test(rowHtml),
-    'the ✕ also selects the row, so removing an override moves the selection under you');
-  // CANONICAL id, like every other override key — a per-occurrence id would
-  // address a rule that does not exist for an OCCURS field.
-  assert.ok(!/_meOvlDropKind\('GRP\[/.test(rowHtml), 'the badge deletes by per-occurrence id');
+  assert.ok(!/me-fm-on-field/.test(rowHtml), 'the on-field badges are back');
+  // The ↩ form in the Type column is what remains, and it is still the chip text.
+  assert.ok(/uint16-be/.test(rowHtml), 'the overridden type is not shown on the row at all');
 });
 
-test('the pills fill the row, and what did not fit is counted', () => {
-  // How many pills fit is a fact about the field names and the panel width, so
-  // it is measured, never a constant. The constant that remains is only a
-  // ceiling on how many nodes get built before measuring.
-  assert.ok(meOvPillCand >= 20, `the build ceiling is too low to ever fill a row, got ${meOvPillCand}`);
-  const fn = psFnSource('_meOvlRefresh');
-  assert.ok(/fields\.slice\(0, _ME_OV_PILL_CAND\)/.test(fn), 'the candidate set is unbounded');
-  assert.ok(/_meOvlFitPills\(\)/.test(fn), 'nothing measures the fit');
-
-  const fit = psFnSource('_meOvlFitPills');
-  assert.ok(/box\.scrollWidth > box\.clientWidth/.test(fit), 'the fit is guessed, not measured');
-  assert.ok(/pills\[--shown\]\.classList\.add\('hidden'\)/.test(fit),
-    'overflowing pills are not dropped from the end');
-  // Truncation is honest ONLY if the remainder is stated. total comes from the
-  // full field count, not from how many pills were built.
-  assert.ok(/const total = \+row\.dataset\.n/.test(fit),
-    'the remainder counts from the built pills, so a kind past the build ceiling under-reports');
-  assert.ok(/\+\$\{left\} more/.test(fit), 'nothing says how many did not fit');
-  // The chip occupies room, so it must be measured WITH the pills.
-  assert.ok(fit.indexOf('sayRest()') < fit.indexOf('while (shown > 0'),
-    'the "+N more" chip appears after the fit, so adding it can overflow the row again');
-  // And the fit must be redone when the width it was measured against changes.
-  // Naming ResizeObserver is not using one — the first version of this passed on
-  // a mutant that kept the `typeof ResizeObserver` guard and never constructed it.
-  const watch = psFnSource('_meOvlWatchWidth');
-  assert.ok(/new ResizeObserver\(/.test(watch) && /\.observe\(el\)/.test(watch),
-    'resizing the panel leaves the row fitted to the old width');
-  assert.ok(/if \(inFit\) return;/.test(watch),
-    'the observer can re-enter its own callback');
+test('each kind is one control: a count that filters, an action, and a clear', () => {
+  const panel = ovPanelHtml();
+  for (const k of meOvKinds) {
+    assert.ok(new RegExp(`class="me-ovb k-${k.id}" data-kind="${k.id}"`).test(panel),
+      `${k.label} has no control in the bar`);
+    assert.ok(new RegExp(`data-fmfilt="${k.id}"`).test(panel), `${k.label} count does not filter`);
+    assert.ok(new RegExp(`data-fmclr="${k.id}"`).test(panel), `${k.label} cannot be cleared in bulk`);
+    assert.ok(new RegExp(`data-fmact="${k.act}"`).test(panel), `${k.label} cannot be set`);
+  }
+  // The clear is the half the old bar never had: it could set a hundred fields
+  // at once and offered no way to take it back off them.
+  const clr = psFnSource('_meFmClearKind');
+  assert.ok(/_meFmSelWithKind\(kindId\)/.test(clr), 'the clear does not ask which selected fields have the kind');
+  assert.ok(/_meOvSet\(item, qn, key, null\)/.test(clr), 'the clear does not remove anything');
+  assert.ok(/\}, 'warn'\);/.test(clr), 'a bulk removal reports itself as green');
+  // Disabled when it would do nothing, and it says how many it would take.
+  const bar = psFnSource('_meFmBarRefresh');
+  assert.ok(/clr\.disabled = held === 0;/.test(bar), 'the clear stays live with nothing to clear');
+  // Symmetrically: the action only ever ADDS, so it is dead once every selected
+  // field already carries the kind. Without this it invites a click that has
+  // been made a no-op by design.
+  assert.ok(/act\.disabled = n === 0 \|\| held === _meFmActionTargets\(k\.act\)\.length;/.test(bar),
+    'the action stays live when every selected field already has the kind');
+  assert.ok(/me-ovb-cn'\)\.textContent = held/.test(bar), 'the clear does not say how many it affects');
 });
 
-test('hovering the ✕ reddens the whole pill, and outranks what would repaint it', () => {
-  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  assert.ok(/\.me-ovk-pill:has\(\.me-ovk-x:hover\),\.k:has\(\.k-x:hover\)\{border-color:var\(--danger\);\}/.test(css),
-    'the ✕ reddens only itself — the thing about to be removed is the pill (or the badge)');
-  // Pill and badge are one control in two places, so one set of rules.
-  assert.ok(/\.me-ovk-x,\.k-x\{/.test(css) && /\.me-ovk-pill:hover \.me-ovk-x,\.k:hover \.k-x\{/.test(css),
-    'the badge ✕ is styled separately from the pill ✕ and can drift from it');
-  // Three rules set this border. The :has one has to be BOTH the most specific
-  // and the last, or hovering the ✕ of a selected pill keeps the accent border
-  // and the warning never appears on exactly the pills that matter most.
-  const order = ['.me-ovk-pill:hover{', '.me-ovk-pill.sel{', '.me-ovk-pill:has(.me-ovk-x:hover),'];
-  const at = order.map(sel => css.indexOf(sel));
-  assert.ok(at.every(i => i >= 0), 'one of the three border rules is missing');
-  assert.ok(at[2] > at[0] && at[2] > at[1],
-    'the danger rule is declared before :hover or .sel, so an equal-specificity rule could win');
-  // Specificity: (0,1,0) + :has(.me-ovk-x:hover) = (0,2,0) → (0,3,0), above both (0,2,0).
-  assert.ok(/:has\(\.me-ovk-x:hover\)/.test(css),
-    'the :has argument was simplified and may no longer outrank .sel');
+test('the action adds and never overwrites', () => {
+  // Bulk-setting a type must not quietly rewrite the twelve fields you already
+  // tuned one at a time. Changing one means clearing it first — which is a
+  // button now, so the rule costs nothing.
+  const fn = psFnSource('_meFmEdCommit');
+  assert.ok(/const _held = _kind \? new Set\(_meFmSelWithKind\(_kind\.id\)\) : new Set\(\);/.test(fn),
+    'the commit does not work out which selected fields already have the kind');
+  assert.ok(/_meFmActionTargets\(_meFmEdAct\)\.filter\(qn => !_held\.has\(qn\)\)/.test(fn),
+    'the action writes over fields that already carry this kind');
+  // And it says so rather than looking broken when there is nothing to add.
+  assert.ok(/Every selected field already has a/.test(fn),
+    'setting a kind every selected field already has does nothing, silently');
 });
 
-test('the "+N more" chip looks and reads like the toggle it is', () => {
-  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  // Clicking the chip and clicking the kind label do the same thing, so the chip
-  // has to look switched on when the switch is on — dim while active read as
-  // "nothing happened" next to a row that had visibly changed.
-  assert.ok(/\.me-ovk-more\{[^}]*color:var\(--text-very-dim\)/.test(css), 'the resting chip is not dim');
-  assert.ok(/\.me-ovk-row\.on \.me-ovk-more\{color:var\(--text\);\}/.test(css),
-    'the chip stays dim while its own kind is the filter');
-  const fn = psFnSource('_meOvlRefresh');
-  assert.ok(/_meOvlKindFilter\('\$\{k\.id\}'\)"\s*\n?\s*title=/.test(fn.replace(/\s+/g, m => m.includes('\n') ? '\n' : ' ')) ||
-            /me-ovk-more[\s\S]{0,120}_meOvlKindFilter/.test(fn),
-    'the chip is not the kind filter');
-  // And it must say what a click does NOW, not always "show".
-  assert.ok(/Showing all \$\{fields\.length\} — click to clear/.test(fn),
-    'the chip still offers to "show" what it is already showing');
-  assert.ok(/Show all \$\{fields\.length\} in the table below/.test(fn),
-    'the resting chip does not say what it will do');
+test('the DE picker keeps the expansion rule its four buttons had', () => {
+  // A group owns its DE number; its leaves do not. That rule lived in the
+  // de-* act names, and collapsing four buttons into one picker would have
+  // lost it — targets would expand to the leaves and write the number in the
+  // wrong place.
+  const de = meOvKinds.find(k => k.id === 'de');
+  assert.strictEqual(de.act, 'de', 'the DE control does not open the picker');
+  assert.strictEqual(de.xact, 'de-off', 'DE expands by the leaf rule, not the group rule');
+  const tg = psFnSource('_meFmActionTargets');
+  assert.ok(/const x = _meFmXAct\(act\);/.test(tg) && /_meFmExpandTargets\(qn, x\)/.test(tg),
+    'expansion uses the raw act, so DE expands to leaves');
+  // Every other kind expands by itself — xact only differs where it must.
+  for (const k of meOvKinds.filter(k => k.id !== 'de'))
+    assert.strictEqual(k.xact, k.act, `${k.label} needs no separate expansion act`);
+});
+
+test('"number…" asks for the number instead of storing nothing', () => {
+  // It is the one DE option carrying a value, and a picker cannot hold one.
+  const fn = psFnSource('_meFmEdCommit');
+  assert.ok(/const _defer = cfg\.defer && cfg\.defer\(v\);/.test(fn), 'the commit ignores a deferred option');
+  assert.ok(/if \(_defer\) \{ _meFmEdClose\(\); return _meFmEdOpen\(_defer\); \}/.test(fn),
+    'choosing "number…" falls through and writes whatever the picker had');
+  const ed = APP_SRC.slice(APP_SRC.indexOf("'de':"), APP_SRC.indexOf("'type':"));
+  assert.ok(/defer: v => v\.startsWith\('number'\) \? 'de-anchor' : null/.test(ed),
+    'the DE picker does not hand "number…" to the numeric editor');
 });
 
 test('the kind counts follow the search but not the kind filter', () => {
-  const fn = psFnSource('_meOvlEntries');
-  // Reading fmFilter is not applying it — the first version of this test passed
-  // on a mutant that kept the variable and dropped the .filter() using it.
-  assert.ok(/\.filter\(id => !filt \|\| id\.toLowerCase\(\)\.includes\(filt\)\)/.test(fn),
+  const fn = psFnSource('_meFmBarRefresh');
+  assert.ok(/!filt \|\| id\.toLowerCase\(\)\.includes\(filt\)/.test(fn),
     'the counts ignore the search, so they lie about what a click shows');
-  assert.ok(!/fmOvKind/.test(fn),
-    'the counts obey the kind filter — the other four rows would read 0 and could never be switched back');
+  // The five counts are the switch. If they obeyed the kind filter the other
+  // four would read 0 the moment one was on, and could never be switched back.
+  const totalLine = fn.slice(fn.indexOf('const total ='), fn.indexOf('const held'));
+  assert.ok(!/fmOvKind/.test(totalLine), 'the counts obey the kind filter');
+  // And it counts THAT kind — a count that ignores which keys it is looking for
+  // shows the same number on all five controls.
+  assert.ok(/k\.keys\.some\(key => all\[id\]\[key\] !== undefined\)/.test(totalLine),
+    'the count does not check the kind it belongs to');
 });
 
 test('the pill removes its own kind, not the field', () => {
@@ -8595,23 +8588,24 @@ test('the kind palette reuses the theme colours it already has', () => {
   assert.strictEqual((css.match(/--k-show:/g) || []).length, 2,
     'SHOW is not defined in both themes');
   // Tints follow the token, so light mode is not tinted with the dark hue.
-  assert.ok(/\.k-de[^{]*\{[^}]*background:color-mix\(in srgb, var\(--k-de\) 12%, transparent\)/.test(css),
-    'a badge tint repeats an rgb triple instead of mixing the token');
+  // Worn by the count on each bar control, so a control matches the column it
+  // governs.
+  for (const k of ['type','show','size','de','vlg'])
+    assert.ok(new RegExp(`\\.me-ovb\\.k-${k} \\.me-ovb-n\\{color:var\\(--k-${k}\\)`).test(css),
+      `the ${k.toUpperCase()} control does not wear its kind colour`);
 });
 
-test('the selected override is always in view, without scrolling to it', () => {
-  // This used to need a scrollIntoView: the list was one row per overridden
-  // field, capped at 180px and sorted by id, so the row that just got its `sel`
-  // highlight was usually below the fold. The index is five kind rows and never
-  // scrolls, so the fix is now structural — nothing to scroll TO.
-  const fn = psFnSource('_meOvlRefresh');
-  assert.ok(!/scrollIntoView/.test(fn),
-    'the index is scrolling again — five fixed rows must not need it');
-  assert.ok(/sel\.has\(e\.id\)/.test(fn), 'a pill for the selected field is still marked');
-  // The two directions share one handler, so the table drives the index as well.
+test('a selected field needs no second place to be found', () => {
+  // This used to need a scrollIntoView: the overrides list was one row per
+  // configured field and the selected one was usually below its 180px fold.
+  // There is no list now — the selection lives in the table, and the bar
+  // describes it in place.
+  assert.ok(!/scrollIntoView/.test(psFnSource('_meOvlRefresh')),
+    'the refresh scrolls something — there is nothing left to scroll to');
   const rowHtml = psFnSource('_meFmRowHtml');
-  assert.ok(/_meOvlRowClick/.test(rowHtml), 'a Field Map row click goes through the same funnel');
-  assert.ok(/_meOvlRefresh\(\)/.test(psFnSource('_meOvlRowClick')), 'which refreshes the index');
+  assert.ok(/_meOvlRowClick/.test(rowHtml), 'a Field Map row click goes through the selection funnel');
+  assert.ok(/_meFmBarRefresh\(\)/.test(psFnSource('_meOvlRowClick')),
+    'selecting a row does not refresh the bar, so its counts describe the previous selection');
 });
 
 test('the VLG button is a picker, and its three options are the three states', () => {
@@ -9033,16 +9027,22 @@ test('the rendered Overrides panel contains the action bar', () => {
   assert.ok(/id="me-fm-ed"/.test(html),  'and so is its inline editor');
 });
 
-test('every action the handler implements is present as a button', () => {
-  const html = ovPanelHtml();
-  const inMarkup = new Set([...html.matchAll(/data-fmact="([^"]+)"/g)].map(m => m[1]));
-  deepEq(['de-off','de-on','de-kids','de-anchor','vlg','bytes','type','display']
-    .filter(a => !inMarkup.has(a)), [], 'actions with no button');
-  // And nothing left over: a button whose action the handler dropped is a dead
-  // control, which is how the whole bar shipped unreachable in the first place.
-  deepEq([...inMarkup].filter(a =>
-    !['de-off','de-on','de-kids','de-anchor','vlg','bytes','type','display'].includes(a)),
-    [], 'buttons with no handler');
+test('every action button opens an editor, and every kind has one', () => {
+  const panel = ovPanelHtml();
+  const inMarkup = new Set([...panel.matchAll(/data-fmact="([^"]+)"/g)].map(m => m[1]));
+  // One action per kind, no more: the DataElement group's four buttons are the
+  // DE picker's options now, and de-anchor is what "number…" defers to.
+  deepEq(meOvKinds.map(k => k.act).filter(a => !inMarkup.has(a)), [], 'kinds with no action button');
+  deepEq([...inMarkup].filter(a => !meOvKinds.some(k => k.act === a)), [], 'buttons with no kind');
+  // A button whose act the editor table does not know is a dead control.
+  const ed = APP_SRC.slice(APP_SRC.indexOf('const _ME_FM_ED = {'));
+  for (const a of inMarkup)
+    assert.ok(new RegExp(`'${a}':\\s*\\{`).test(ed), `the ${a} button opens nothing`);
+  // The three DE states survive as picker options rather than as buttons.
+  const de = ed.slice(ed.indexOf("'de':"), ed.indexOf("'type':"));
+  for (const opt of ['include', 'exclude', 'children'])
+    assert.ok(de.includes(`'${opt}'`), `the DE picker lost its ${opt} option`);
+  assert.ok(/defer:/.test(de), 'the DE picker cannot reach the numeric editor');
 });
 
 test('every scrolling surface in the panel reserves its scrollbar gutter', () => {
@@ -10332,7 +10332,7 @@ test('a leaf is never expanded', () => {
 test('the target expansion is what the actions actually use', () => {
   // The helper being right proves nothing if the action loops still walk the
   // raw selection — which is what they did before.
-  for (const fn of ['_meFmAct', '_meFmEdCommit']) {
+  for (const fn of ['_meFmSelWithKind', '_meFmEdCommit']) {
     const src = psFnSource(fn);
     assert.ok(/_meFmActionTargets\(/.test(src), fn + ' expands its targets');
     assert.ok(!/for \(const qn of _meFmMultiSel\)/.test(src),
@@ -10340,20 +10340,18 @@ test('the target expansion is what the actions actually use', () => {
   }
 });
 
-test('the list header does not repeat the section title', () => {
-  // The section is already called Overrides; the list inside it said so again.
-  const html2 = ovPanelHtml();
-  const hdr = (html2.match(/<div class="me-ovl-hdr">[\s\S]*?<\/div>/) || [''])[0];
-  assert.ok(/id="me-ovl-count"/.test(hdr), 'the count is still there');
-  assert.ok(!/>\s*Overrides\s*</.test(hdr) && !/Overrides\s+<span/.test(hdr),
-    `the redundant label is gone, got: ${hdr}`);
+test('the panel says what is configured once, not three times', () => {
+  // It said it in a list, again as a badge on each row, and again in the ↩
+  // columns. The bar counts it and the columns show it; the other two are gone.
+  const panel = ovPanelHtml();
+  assert.ok(!/me-ovl-index|me-ovl-hdr|id="me-ovl-count"/.test(panel), 'the overrides list is back');
+  assert.ok(!/me-fm-on-field/.test(panel), 'the on-field badges are back');
+  assert.ok(/class="me-ovb /.test(panel), 'the bar controls that replaced them are missing');
 });
 
-test('the panel keeps the overrides index AND gains the two panes', () => {
-  // The list is not replaced by the bar — it is the at-a-glance summary of what
-  // is configured. The panes are new: what was written, and what it means.
+test('the panel keeps the two panes', () => {
+  // What was written, and what it means. These outlived the list above them.
   const html = ovPanelHtml();
-  assert.ok(/id="me-ovl-index"/.test(html), 'the overrides index is still there');
   assert.ok(/id="me-fm-json"/.test(html),  'the written-overrides pane');
   assert.ok(/id="me-fm-notes"/.test(html), 'and the plain-words pane');
 });
@@ -11527,8 +11525,11 @@ test('the declared-size column is called Size everywhere it is named', () => {
   assert.ok(fm['Size'] && !fm['Length'], 'the help entry is not titled Size');
   assert.ok(/>Size<div class="me-fm-resizer" data-col="len">/.test(html),
     'the Field Map column header is not Size');
-  assert.ok(/data-fmact="bytes"[^>]*>Size…<\/button>/.test(html),
-    'the action-bar button is not Size');
+  // The action's label now comes from the kind list, which is also what the
+  // count and the clear are built from — one word, one place.
+  const sizeKind = meOvKinds.find(k => k.act === 'bytes');
+  assert.ok(sizeKind && sizeKind.label === 'SIZE',
+    `the action-bar control is not Size, got ${sizeKind && sizeKind.label}`);
   assert.ok(/\['len', 'Size'\]/.test(APP_SRC), 'the column chooser is not Size');
   assert.ok(/'bytes':\s*\{ label: 'Size'/.test(APP_SRC), 'the inline editor is not Size');
   // Nothing user-facing may still call the column Length or Bytes.

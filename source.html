@@ -2891,61 +2891,33 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    virtualized table say it better. */
 .me-ps-undo-pair{display:inline-flex;gap:4px;flex-shrink:0;}
 .me-ps-undo-pair .btn[disabled]{opacity:.35;cursor:default;}
-.me-ovl-ttl{font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-  font-size:calc(var(--sz-mono) - 2px);color:var(--text);}
-.me-ovl-index{border: var(--bw) solid var(--border);border-radius:0 0 var(--r-sm) var(--r-sm);
-  background:var(--bg-panel);margin-bottom:8px;flex-shrink:0;overflow:hidden;}
-.me-ovk-row{display:flex;align-items:flex-start;gap:10px;padding:5px 8px;
-  border-bottom: var(--bw) solid var(--border);}
-.me-ovk-row:last-child{border-bottom:0;}
-.me-ovk-row.on{background:rgba(var(--accent-rgb),.06);}
-.me-ovk-row.dim,.me-ovk-row.empty{opacity:.35;}
-.me-ovk-lab{flex:0 0 52px;margin-top:1px;cursor:pointer;font-family:var(--font-mono);
-  font-size:calc(var(--sz-mono) - 3px);font-weight:700;letter-spacing:.06em;text-align:center;
-  border-radius:var(--r-sm);padding:2px 0;border: var(--bw-ctl) solid;background:transparent;}
-.me-ovk-lab:disabled{cursor:default;}
-.me-ovk-n{min-width:3em;text-align:right;color:var(--text-dim);font-variant-numeric:tabular-nums;}
-.me-ovk-pills{display:flex;flex-wrap:nowrap;gap:5px;flex:1;min-width:0;overflow:hidden;}
-.me-ovk-pill,.me-ovk-more{flex:0 0 auto;}
-.me-ovk-more{cursor:pointer;color:var(--text-very-dim);align-self:center;
-  font-size:calc(var(--sz-mono) - 2px);white-space:nowrap;}
-.me-ovk-more:hover{color:var(--accent);}
-/* Lit while its own kind is the filter. The chip IS that toggle — clicking it
-   and clicking the label do the same thing — so it has to look switched on when
-   the switch is on, and say that a click now clears rather than shows. */
-.me-ovk-row.on .me-ovk-more{color:var(--text);}
-.me-ovk-pill{display:inline-flex;align-items:baseline;gap:5px;cursor:pointer;
-  border: var(--bw-ctl) solid var(--border);border-radius:var(--r-lg);
-  background:var(--bg-deep);padding:1px 8px;font-size:calc(var(--sz-mono) - 2px);}
-.me-ovk-pill:hover{border-color:var(--border-strong);}
-.me-ovk-pill.sel{border-color:var(--accent);background:rgba(var(--accent-rgb),.12);}
-.me-ovk-pill .nm{font-weight:700;color:var(--accent);}
-.me-ovk-pill .val{color:var(--text-dim);}
-/* Kept out of the flow rather than hidden, so revealing it never reflows the
-   pill and moves the target out from under the pointer. */
-.me-ovk-x,.k-x{color:var(--text-very-dim);visibility:hidden;margin-left:1px;cursor:pointer;}
-.me-ovk-pill:hover .me-ovk-x,.k:hover .k-x{visibility:visible;}
-.me-ovk-x:hover,.k-x:hover{color:var(--danger);}
-/* Hovering the ✕ reddens the WHOLE pill, not just the glyph. The ✕ is a few
-   pixels of a control the width of a field name, and what is about to be
-   removed is the pill — so the pill is what has to answer the pointer.
-   Outranks both :hover and .sel, which would otherwise repaint this border. */
-.me-ovk-pill:has(.me-ovk-x:hover),.k:has(.k-x:hover){border-color:var(--danger);}
+/* One control per override kind: how many fields have it (a filter), the action
+   that sets it, and the clear that removes it. Three parts, one group, because
+   they are three things you do to the same one kind — the old bar could add in
+   bulk and had no way at all to remove in bulk. */
+.me-ovb{display:inline-flex;align-items:stretch;border: var(--bw) solid var(--border);
+  border-radius:var(--r-lg);overflow:hidden;flex-shrink:0;}
+.me-ovb>button{background:transparent;border:0;font-family:var(--font-mono);
+  font-size:var(--sz-mono);color:var(--text-dim);cursor:pointer;padding:0 9px;height:20px;
+  display:inline-flex;align-items:center;justify-content:center;}
+.me-ovb>button+button{border-left: var(--bw) solid var(--border);}
+.me-ovb>button:hover:not(:disabled){background:var(--surface-hover);color:var(--text);}
+.me-ovb>button:disabled{opacity:.3;cursor:default;}
+/* The count carries the kind's colour, so the control is identifiable at a
+   glance and matches the column it governs. */
+.me-ovb-n{min-width:3.4em;font-weight:700;}
+.me-ovb.k-type .me-ovb-n{color:var(--k-type);}
+.me-ovb.k-show .me-ovb-n{color:var(--k-show);}
+.me-ovb.k-size .me-ovb-n{color:var(--k-size);}
+.me-ovb.k-de .me-ovb-n{color:var(--k-de);}
+.me-ovb.k-vlg .me-ovb-n{color:var(--k-vlg);}
+.me-ovb.on{border-color:var(--accent);}
+.me-ovb.on .me-ovb-n{background:rgba(var(--accent-rgb),.16);}
+/* Only ever destructive, so it says so the moment it can do anything. */
+.me-ovb-clr:not(:disabled){color:var(--danger);}
+.me-ovb-clr:not(:disabled):hover{background:color-mix(in srgb, var(--danger) 16%, transparent);color:var(--danger);}
+.me-ovb-cn{margin-left:4px;font-weight:700;}
 
-/* One colour per kind, shared by the index labels and the on-field badges —
-   the badge on a row and the row it came from have to be the same colour or
-   neither is a legend for the other. */
-.k{border-radius:var(--r-sm);padding:0 5px;font-size:calc(var(--sz-mono) - 3px);
-  white-space:nowrap;border: var(--bw-ctl) solid;}
-.k-type,.me-ovk-lab.k-type{color:var(--k-type);border-color:var(--k-type);background:color-mix(in srgb, var(--k-type) 12%, transparent);}
-.k-show,.me-ovk-lab.k-show{color:var(--k-show);border-color:var(--k-show);background:color-mix(in srgb, var(--k-show) 12%, transparent);}
-.k-size,.me-ovk-lab.k-size{color:var(--k-size);border-color:var(--k-size);background:color-mix(in srgb, var(--k-size) 12%, transparent);}
-.k-de,.me-ovk-lab.k-de{color:var(--k-de);border-color:var(--k-de);background:color-mix(in srgb, var(--k-de) 12%, transparent);}
-.k-vlg,.me-ovk-lab.k-vlg{color:var(--k-vlg);border-color:var(--k-vlg);background:color-mix(in srgb, var(--k-vlg) 12%, transparent);}
-.me-fm-on-field{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle;}
-/* The ✕ is kept out of the flow rather than hidden, so revealing it never
-   reflows the badge and moves the target out from under the pointer. */
-.k{display:inline-flex;align-items:center;}
 .me-fm-filt{display:inline-flex;gap:4px;flex-shrink:0;}
 
 .me-ovl-empty{padding:12px;text-align:center;color:var(--text-very-dim);
@@ -16431,7 +16403,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.28.2.0';
+const APP_VERSION  = '1.29.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22129,11 +22101,8 @@ function _meOverridesPrep(item) {
 <div class="me-ps-wrap side${fmHelpOpen ? '' : ' nohelp'}" id="me-fm-wrap">
 <div class="me-ps-split" id="me-fm-split">
 <div class="me-hs-main" id="me-fm-pane">
-<!-- No "Overrides" label: the section header directly above already says it. -->
-<div class="me-ovl-hdr"><span class="me-ovl-ttl">In place</span><span class="me-ovl-sub" id="me-ovl-count"></span></div>
-<div class="me-ovl-index" id="me-ovl-index"></div>
 <div class="me-fm-toolbar">
-  <span class="me-ovl-ro none" id="me-fm-cnt" title="This table is the picker — every field the DDL declares. Configuration lives in the Overrides list above.">no selection · READ-ONLY</span>
+  <span class="me-ovl-ro none" id="me-fm-cnt" title="This table is the picker — every field the DDL declares. Configuration is applied from the action bar below.">no selection · READ-ONLY</span>
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
   <span class="me-fm-filt">
     <button class="btn btn-accent-on" id="me-fm-all-btn" onclick="_meFmSetOvOnly(false)"
@@ -22163,20 +22132,12 @@ function _meOverridesPrep(item) {
   </div>
 </div>
 <div class="me-fm-bar" id="me-fm-bar">
-  <span class="me-fm-g"><span class="me-fm-glbl">DataElement</span><span class="me-fm-seg">
-    <button class="btn" data-fmact="de-off" title="Not a data element — the counter does not advance, so the fields after it keep their numbers">Exclude</button>
-    <button class="btn" data-fmact="de-on" title="A data element even where the default rule says no — a nested field, or one named like padding">Include</button>
-    <button class="btn" data-fmact="de-kids" title="This group is not a DE; its immediate children each are">Children</button>
-    <button class="btn" data-fmact="de-anchor" title="Set this field's DE number; every field after it follows">Number…</button>
-  </span></span>
-  <span class="me-fm-g"><span class="me-fm-glbl">Length</span><span class="me-fm-seg">
-    <button class="btn" data-fmact="vlg" title="This field's value is the NEXT field's length">VLG</button>
-    <button class="btn" data-fmact="bytes" title="Read this many bytes instead of the size the DDL declares">Size…</button>
-  </span></span>
-  <span class="me-fm-g"><span class="me-fm-glbl">Read</span><span class="me-fm-seg">
-    <button class="btn" data-fmact="type" title="Interpret the bytes as this type">Type…</button>
-    <button class="btn" data-fmact="display" title="Format the value for display">Display…</button>
-  </span></span>
+  ${_ME_OV_KINDS.map(k => `
+  <span class="me-ovb k-${k.id}" data-kind="${k.id}">
+    <button class="me-ovb-n" data-fmfilt="${k.id}" title="Fields with a ${k.label} override \u2014 click to show only those">0</button>
+    <button class="me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on the selected fields that do not have one">${k.label}\u2026</button>
+    <button class="me-ovb-clr" data-fmclr="${k.id}" title="Remove the ${k.label} override from the selected fields that have one" disabled>\u2715<span class="me-ovb-cn"></span></button>
+  </span>`).join('')}
 </div>
 <div class="me-fm-ed" id="me-fm-ed">
   <label id="me-fm-ed-lbl"></label>
@@ -22379,22 +22340,9 @@ function _meFmRowHtml(row, ctx, counter) {
   // already show the new VALUES; these say which KINDS are in play, which is
   // what you scan for when you are looking for your own configuration in four
   // thousand rows. Same texts as the index pills — one builder, one wording.
-  // Each badge carries the SAME ✕ its pill in the index does. It has to: the
-  // index fits as many pills as the row is wide and counts the rest, so on a
-  // spec with twenty-two TYPE overrides fifteen fields had no delete affordance
-  // anywhere. The table is the surface that can show them all, so it is the
-  // surface that has to be able to remove them.
-  const _ovCanon = _canonFieldId(row.id);
-  const ovBadges = Object.keys(foEntry).length
-    ? `<span class="me-fm-on-field">` + _meOvlChipParts(foEntry).map(part =>
-        `<span class="k k-${part.kind}" title="${ea(part.text)} — click the ✕ to remove it"`
-        + `>${part.text}<span class="k-x" title="Remove this override"`
-        + ` onclick="event.stopPropagation();_meOvlDropKind('${ea(_ovCanon)}','${part.kind}')">✕</span></span>`
-      ).join('') + `</span>`
-    : '';
   const fieldCell = isGroup
-    ? `<td class="me-fm-fld" style="${namePadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))"><span class="me-fm-name">${id}</span>${grpIcon}${redefNote}${ovBadges}</td>`
-    : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span>${redefNote}${ovBadges}</td>`;
+    ? `<td class="me-fm-fld" style="${namePadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))"><span class="me-fm-name">${id}</span>${grpIcon}${redefNote}</td>`
+    : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span>${redefNote}</td>`;
 
   const deCell = _meFmDeCellHtml(row, ctx);
 
@@ -24270,6 +24218,27 @@ const _ME_FM_ED = {
                  },
                  has:   o => o.vlg === true || o.vlg === false,
                  clear: o => { delete o.vlg; delete o.count; } },
+  // The DataElement group was four buttons for one question. As a picker it
+  // asks that question once, in the shape VLG already uses. "number…" is the
+  // only option needing a value, so it hands off to the de-anchor editor
+  // rather than making every other choice carry an unused number box.
+  'de':        { label: 'Data element', kind: 'sel',
+                 def: () => { const o = _meFmSelOvr();
+                              return o?.de === false ? 'exclude'
+                                   : o?.de === 'children' ? 'children'
+                                   : o?.de === true ? 'include' : 'include'; },
+                 opts: () => ['include', 'exclude', 'children', 'number\u2026'],
+                 set: (o, v) => {
+                   if (v === 'exclude')       o.de = false;
+                   else if (v === 'children') o.de = 'children';
+                   else if (v === 'include')  o.de = true;
+                 },
+                 // "number…" writes nothing here — _meFmEdCommit reopens the
+                 // numeric editor instead, so the value is asked for before
+                 // anything is stored.
+                 defer: v => v.startsWith('number') ? 'de-anchor' : null,
+                 has:   o => o.de !== undefined,
+                 clear: o => { delete o.de; } },
   'type':      { label: 'Read as', kind: 'sel',
                  def: () => _meFmSelOvr()?.type || 'hex-char',
                  opts: () => _ME_TYPE_OPTS.filter(Boolean), set: (o, v) => { o.type = v; } },
@@ -24330,9 +24299,24 @@ function _meFmEdCommit() {
     // no spinner, so it is stopped here rather than writing NaN into the map.
     if (!/^[0-9]+$/.test(v)) { document.getElementById('me-fm-ed-num').focus(); return; }
   } else v = document.getElementById('me-fm-ed-sel').value;
+  // One option needs a value the picker cannot hold. Hand off rather than give
+  // every other choice an unused number box.
+  const _defer = cfg.defer && cfg.defer(v);
+  if (_defer) { _meFmEdClose(); return _meFmEdOpen(_defer); }
   const item = _meCurItem(); if (!item) return;
   const rowsById = new Map((_meFmVirt?.all || []).map(r => [r.id, r]));
-  const targets = _meFmActionTargets(_meFmEdAct);
+  // The action ADDS. A field that already carries this kind is left exactly as
+  // it was — bulk-setting a type must not quietly rewrite the twelve fields you
+  // already tuned individually. Changing one means clearing it first, which is
+  // now a button rather than a hunt through the index.
+  const _kind = _ME_OV_KINDS.find(k => k.act === _meFmEdAct);
+  const _held = _kind ? new Set(_meFmSelWithKind(_kind.id)) : new Set();
+  const targets = _meFmActionTargets(_meFmEdAct).filter(qn => !_held.has(qn));
+  if (!targets.length) {
+    _meFmEdClose();
+    _meFlash(`Every selected field already has a ${_kind ? _kind.label : ''} override \u2014 clear it first to change it`, 'warn');
+    return;
+  }
   const _edLabel = `${cfg.label || _meFmEdAct} set to ${v} \u2014 ${targets.length} field${targets.length !== 1 ? 's' : ''}`;
   return _meUndoable(_edLabel, () => {
   const all = _meOvAll(item);
@@ -24448,42 +24432,63 @@ function _meFmExpandTargets(qn, act) {
   if (!leaves.length) return [qn];
   return act === 'vlg' ? [leaves[0].id] : leaves.map(r => r.id);
 }
-// Every selected row expanded, de-duplicated, in table order.
+// Every selected row expanded, de-duplicated, in table order. The act is first
+// resolved to the kind's expansion act: DE is one picker now, but the rule it
+// expands by — the GROUP owns the number, never its leaves — still belongs to
+// the individual de-* actions.
+const _meFmXAct = act => (_ME_OV_KINDS.find(k => k.act === act) || {}).xact || act;
 function _meFmActionTargets(act) {
+  const x = _meFmXAct(act);
   const out = [];
   for (const qn of _meFmMultiSel)
-    for (const t of _meFmExpandTargets(qn, act)) if (!out.includes(t)) out.push(t);
+    for (const t of _meFmExpandTargets(qn, x)) if (!out.includes(t)) out.push(t);
   return out;
 }
 
-const _ME_FM_ACT_SAID = { 'de-off': 'Excluded from DE numbering',
-                          'de-on':  'Included in DE numbering',
-                          'de-kids': 'DE numbering handed to the children' };
+// Every kind opens its editor. The three DE states used to be three buttons
+// writing straight through here; the picker asks once and commits through
+// _meFmEdCommit like every other kind, so this branch has nothing left to do.
 function _meFmAct(act) {
-  const item = _meCurItem(); if (!item) return;
-  if (_ME_FM_ED[act]) return _meFmEdOpen(act);
+  if (_meCurItem() && _ME_FM_ED[act]) _meFmEdOpen(act);
+}
+
+// Which of the SELECTED fields already carry a given kind. The action half sets
+// the kind on the ones that do not; the clear half removes it from the ones that
+// do. Both need the same answer, and it is also the number the clear shows.
+function _meFmSelWithKind(kindId) {
+  const k = _ME_OV_KINDS.find(x => x.id === kindId);
+  const item = _meCurItem();
+  if (!k || !item) return [];
   const all = _meOvAll(item);
-  const targets = _meFmActionTargets(act);
-  const said = `${_ME_FM_ACT_SAID[act] || act} \u2014 ${targets.length} field${targets.length !== 1 ? 's' : ''}`;
-  _meUndoable(said, () => {
-    for (const qn of targets) {
-      const k = _canonFieldId(qn);
-      const o = all[k] || (all[k] = {});
-      switch (act) {
-        case 'de-off':  o.de = false; break;
-        case 'de-on':   o.de = true; break;
-        case 'de-kids': o.de = 'children'; break;
-      }
-    }
-    _meFmNoteExpansion(act, targets);
-    _meFmAfterAct();
+  return _meFmActionTargets(k.act).filter(qn => {
+    const e = all[_canonFieldId(qn)];
+    return !!e && k.keys.some(key => e[key] !== undefined);
   });
 }
+
+// Remove one kind from every selected field that has it. This is the half the
+// bar never had: it could add to a hundred fields at once and offered no way to
+// take it back off them except one pill at a time.
+function _meFmClearKind(kindId) {
+  const k = _ME_OV_KINDS.find(x => x.id === kindId);
+  const item = _meCurItem();
+  const hits = _meFmSelWithKind(kindId);
+  if (!k || !item || !hits.length) return;
+  _meUndoable(`Removed the ${k.label} override \u2014 ${hits.length} field${hits.length !== 1 ? 's' : ''}`, () => {
+    for (const qn of hits) for (const key of k.keys) _meOvSet(item, qn, key, null);
+    _meFmAfterAct();
+  }, 'warn');
+}
+
 // Delegated once — the bar is re-rendered with the panel, so per-button
 // handlers would be re-bound every refresh.
 document.addEventListener('click', e => {
   const b = e.target.closest?.('#me-fm-bar [data-fmact]');
-  if (b) { _meFmAct(b.dataset.fmact); return; }
+  if (b) { if (!b.disabled) _meFmAct(b.dataset.fmact); return; }
+  const c = e.target.closest?.('#me-fm-bar [data-fmclr]');
+  if (c) { if (!c.disabled) _meFmClearKind(c.dataset.fmclr); return; }
+  const f = e.target.closest?.('#me-fm-bar [data-fmfilt]');
+  if (f) { _meOvlKindFilter(f.dataset.fmfilt); return; }
   const ed = document.getElementById('me-fm-ed');
   if (_meFmEdAct && ed && !ed.contains(e.target)) { _meFmEdClose(); }
 });
@@ -24516,11 +24521,29 @@ function _meFmBarRefresh() {
   const n = _meFmMultiSel.size;
   cnt.textContent = `${n ? `${n} selected` : 'no selection'} · READ-ONLY`;
   cnt.classList.toggle('none', n === 0);
-  document.querySelectorAll('#me-fm-bar [data-fmact]').forEach(b => {
-    // Every action now acts on the selection — removing an override is the
-    // existing list's ✕, and there is no global action left in the bar.
-    b.classList.toggle('dis', n === 0);
-  });
+
+  const all = _meOvAll(_meCurItem());
+  const filt = (_meState?.fmFilter || '').toLowerCase();
+  for (const k of _ME_OV_KINDS) {
+    const grp = document.querySelector(`#me-fm-bar .me-ovb[data-kind="${k.id}"]`);
+    if (!grp) continue;
+    // Total: every field with this kind, narrowed by the SEARCH but never by the
+    // kind filter — these five are the switch, and a switch that zeroes the
+    // other four cannot be switched back.
+    const total = Object.keys(all).filter(id =>
+      (!filt || id.toLowerCase().includes(filt)) &&
+      k.keys.some(key => all[id][key] !== undefined)).length;
+    const held = n ? _meFmSelWithKind(k.id).length : 0;
+    grp.querySelector('.me-ovb-n').textContent = total;
+    grp.classList.toggle('on', _meState?.fmOvKind === k.id);
+    // The action is only ever "add", so it is dead once every selected field
+    // already has this kind.
+    const act = grp.querySelector('.me-ovb-act');
+    act.disabled = n === 0 || held === _meFmActionTargets(k.act).length;
+    const clr = grp.querySelector('.me-ovb-clr');
+    clr.disabled = held === 0;
+    grp.querySelector('.me-ovb-cn').textContent = held || '';
+  }
 }
 
 // One chip per configured key, so the list says what each override DOES
@@ -24529,12 +24552,16 @@ function _meFmBarRefresh() {
 // kind filter and the per-kind delete all read this list, so a sixth kind is one
 // entry here rather than five edits scattered around. `keys` is what the stored
 // entry actually holds — `count` rides with `vlg`, so removing VLG takes it too.
+// `act` is the editor the action half opens. `xact` is the act target expansion
+// is judged by — identical except for DE, whose four old buttons became one
+// picker but whose expansion rule (the GROUP owns the number, not its leaves)
+// belongs to the individual de-* actions.
 const _ME_OV_KINDS = [
-  { id: 'type', label: 'TYPE', keys: ['type'],          hint: 'how the bytes are read' },
-  { id: 'show', label: 'SHOW', keys: ['display'],       hint: 'display format only' },
-  { id: 'size', label: 'SIZE', keys: ['bytes'],         hint: 'read this many bytes instead' },
-  { id: 'de',   label: 'DE',   keys: ['de'],            hint: 'data-element numbering' },
-  { id: 'vlg',  label: 'VLG',  keys: ['vlg', 'count'],  hint: 'length source' },
+  { id: 'type', label: 'TYPE', keys: ['type'],          act: 'type',    xact: 'type',    hint: 'how the bytes are read' },
+  { id: 'show', label: 'SHOW', keys: ['display'],       act: 'display', xact: 'display', hint: 'display format only' },
+  { id: 'size', label: 'SIZE', keys: ['bytes'],         act: 'bytes',   xact: 'bytes',   hint: 'read this many bytes instead' },
+  { id: 'de',   label: 'DE',   keys: ['de'],            act: 'de',      xact: 'de-off',  hint: 'data-element numbering' },
+  { id: 'vlg',  label: 'VLG',  keys: ['vlg', 'count'],  act: 'vlg',     xact: 'vlg',     hint: 'length source' },
 ];
 
 // Chip texts, each tagged with the kind that produced it. The flat list below is
@@ -24593,126 +24620,8 @@ function _meRowsForOverride(qn) {
   return rows.length ? rows.map(r => r.id) : [qn];
 }
 
-// How many pills to BUILD before measuring. Not the number shown — that is
-// whatever fits on the row, which depends on the field names and the panel
-// width and so can only be measured. This is just a ceiling on the DOM: no row
-// is ever wide enough for sixty pills, and a kind with four thousand fields
-// must not build four thousand nodes to hide 3,950 of them.
-const _ME_OV_PILL_CAND = 60;
-
-// Fields carrying an override, canonical ids, narrowed by the text filter — the
-// same text the table is filtered by, so the counts describe what a click will
-// actually show. Deliberately NOT narrowed by the kind filter: the five rows are
-// the switch, and a switch that zeroes the other four cannot be switched back.
-function _meOvlEntries() {
-  const all  = _meOvAll(_meCurItem());
-  const filt = (_meState?.fmFilter || '').toLowerCase();
-  return Object.keys(all).sort()
-    .filter(id => !filt || id.toLowerCase().includes(filt))
-    .map(id => ({ id, ovr: all[id] }));
-}
-
-function _meOvlRefresh() {
-  const item = _meCurItem();
-  const idxEl = document.getElementById('me-ovl-index');
-  if (!idxEl || !item) return;
-  const entries = _meOvlEntries();
-  const total   = Object.keys(_meOvAll(item)).length;
-  const sel     = _meSelCanon();
-
-  const cnt = document.getElementById('me-ovl-count');
-  if (cnt) cnt.textContent = !total
-    ? 'none — every field parses exactly as the DDL declares it'
-    : `${total} field${total !== 1 ? 's' : ''} configured`
-      + (entries.length !== total ? ` · ${entries.length} match the filter` : '');
-
-  idxEl.innerHTML = _ME_OV_KINDS.map(k => {
-    const fields = entries.filter(e => _meOvKindsOf(e.ovr).includes(k.id));
-    const on     = _meState?.fmOvKind === k.id;
-    const cls    = [
-      'me-ovk-row',
-      on ? 'on' : '',
-      !fields.length ? 'empty' : '',
-      (_meState?.fmOvKind && !on) ? 'dim' : '',
-    ].filter(Boolean).join(' ');
-    const pills = fields.slice(0, _ME_OV_PILL_CAND).map(e => {
-      const part = _meOvlChipParts(e.ovr).find(p => p.kind === k.id);
-      return `<span class="me-ovk-pill${sel.has(e.id) ? ' sel' : ''}"
-        onclick="_meOvlRowClick('${_meOvEsc(e.id)}', event)"
-        title="Select this field in the table below">
-        <span class="nm">${_meOvEsc(e.id)}</span><span class="val">${part ? part.text : ''}</span>
-        <span class="me-ovk-x" title="Remove this override"
-          onclick="event.stopPropagation();_meOvlDropKind('${_meOvEsc(e.id)}','${k.id}')">✕</span>
-      </span>`;
-    }).join('');
-    // Always built, shown only once something has been dropped. It is the same
-    // filter the label is, so the fields that did not fit are one click away.
-    const more = fields.length
-      ? `<span class="me-ovk-more hidden" onclick="_meOvlKindFilter('${k.id}')"
-          title="${on ? `Showing all ${fields.length} — click to clear`
-                      : `Show all ${fields.length} in the table below`}"></span>` : '';
-    return `<div class="${cls}" data-kind="${k.id}" data-n="${fields.length}">
-      <button class="me-ovk-lab k-${k.id}" onclick="_meOvlKindFilter('${k.id}')"
-        title="${_meOvEsc(k.hint)} — click to show only these fields"${fields.length ? '' : ' disabled'}>${k.label}</button>
-      <span class="me-ovk-n">${fields.length}</span>
-      <div class="me-ovk-pills">${pills}${more}</div>
-    </div>`;
-  }).join('');
-
-  _meOvlFitPills();
-  _meOvlWatchWidth(idxEl);
-  _meFmSyncFiltBtns();
-  _meFmNotesRefresh();
-}
-
-// Pills sit on ONE line per kind. How many fit depends on the field names and on
-// how wide the panel happens to be, so it is measured rather than guessed: the
-// row is built with a bounded candidate set and pills are dropped from the end
-// until it stops overflowing. Whatever is dropped is still counted — a list that
-// simply stops is a list that claims to be the whole set.
-function _meOvlFitPills() {
-  document.querySelectorAll('.me-ovk-row').forEach(row => {
-    const box = row.querySelector('.me-ovk-pills');
-    if (!box || !box.clientWidth) return;
-    const pills = [...box.querySelectorAll('.me-ovk-pill')];
-    const more  = box.querySelector('.me-ovk-more');
-    const total = +row.dataset.n || pills.length;
-    let shown = pills.length;
-    pills.forEach(p => p.classList.remove('hidden'));
-    const sayRest = () => {
-      if (!more) return;
-      const left = total - shown;
-      more.classList.toggle('hidden', left <= 0);
-      more.textContent = left > 0 ? `+${left} more` : '';
-    };
-    sayRest();
-    // The "+N more" chip takes room too, so it is present for every measurement
-    // — otherwise the last pill fits, the chip appears, and the row overflows.
-    while (shown > 0 && box.scrollWidth > box.clientWidth) {
-      pills[--shown].classList.add('hidden');
-      sayRest();
-    }
-  });
-}
-
-// The fit is a function of the panel's width, so it has to be redone when that
-// changes — dragging the splitter or resizing the window, not just re-rendering.
-let _meOvlRO = null;
-function _meOvlWatchWidth(el) {
-  if (_meOvlRO || !el || typeof ResizeObserver === 'undefined') return;
-  let inFit = false;
-  _meOvlRO = new ResizeObserver(() => {
-    // Hiding a pill resizes nothing outside the row, but guard anyway: an
-    // observer that re-enters its own callback is a spin, not a relayout.
-    if (inFit) return;
-    inFit = true;
-    _meOvlFitPills();
-    inFit = false;
-  });
-  _meOvlRO.observe(el);
-}
-
-// The kind rows are a toggle, not a radio: clicking the one already on clears it.
+// The kind filter, now driven by the count on each bar button. Still a toggle,
+// not a radio: clicking the one already on clears it.
 function _meOvlKindFilter(kind) {
   if (!_meState) return;
   _meState.fmOvKind = _meState.fmOvKind === kind ? null : kind;
@@ -24720,16 +24629,14 @@ function _meOvlKindFilter(kind) {
   _meOvlRefresh();
 }
 
-// The pill IS one kind of one field, so its ✕ removes that kind and leaves the
-// field's other overrides alone. _meOvSet drops the entry once its last key goes.
-function _meOvlDropKind(id, kind) {
-  const item = _meCurItem(); if (!item) return;
-  const k = _ME_OV_KINDS.find(x => x.id === kind); if (!k) return;
-  _meUndoable(`Removed the ${k.label} override on ${id}`, () => {
-    for (const key of k.keys) _meOvSet(item, id, key, null);
-    if (!_meOvGet(item, id)) _meFmMultiSel.delete(id);
-    _meFmAfterAct();
-  }, 'warn');
+// The one place that repaints everything the override store feeds: the bar's
+// counts and enabled states, the All/Overridden pair, and the two panes. It was
+// the index's renderer; the index is gone and the bar carries what it said.
+function _meOvlRefresh() {
+  if (!_meCurItem()) return;
+  _meFmBarRefresh();
+  _meFmSyncFiltBtns();
+  _meFmNotesRefresh();
 }
 
 function _meOvlDelete(id) {

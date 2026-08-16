@@ -11765,6 +11765,19 @@ test('an empty message editor does not open with a horizontal scrollbar', () => 
   }
 });
 
+test('the Test input opens tall enough to read what it accepts', () => {
+  // Reported: the placeholder names eight lines of accepted formats and the
+  // panel opened showing about three of them. 30% of the panel gave that only
+  // when the panel was tall.
+  const css = html.match(/\.me-test-cm\{[^}]*\}/)[0];
+  assert.ok(/height:max\(30%, 180px\)/.test(css),
+    `the default can fall below the placeholder on a short panel: ${css}`);
+  // The drag floor is NOT raised with it: shrinking the box once you have
+  // pasted is still yours to do, this only settles where it starts.
+  assert.ok(/min-height:60px/.test(css), 'the drag floor moved with the default');
+  assert.ok(/const _ME_TEST_IN_MIN = 60;/.test(APP_SRC), 'the drag minimum no longer agrees with the CSS floor');
+});
+
 test('the Test input drag bar shows itself, like the reference splits do', () => {
   // Reported by pointing at the Parse Spec bar and at the Test editor: this one
   // was permanently transparent, so nothing said the boundary could be moved.

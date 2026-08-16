@@ -2279,7 +2279,12 @@ input.me-inp{width:100%;}
 .me-test-cfg select.fmt-forced{color:var(--warning);border-color:var(--warning);}
 /* Same editor as the Message Input panel, so the same highlight classes apply.
    It takes a share of the subpanel and the results scroll under it. */
-.me-test-cm{flex:none;height:30%;min-height:60px;background:var(--bg-input);
+/* The default has to show the whole placeholder — eight lines naming every
+   accepted format — with room to spare, or the panel opens telling you half of
+   what it accepts. 30% alone gave that only on a tall panel. min-height stays
+   at the drag floor: dragging it small once you have pasted is still yours to
+   do, this only settles where it starts. */
+.me-test-cm{flex:none;height:max(30%, 180px);min-height:60px;background:var(--bg-input);
   border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);overflow:hidden;}
 .me-test-cm .cm-editor{height:100%;}
 .me-test-cm .cm-content{color:var(--text-dim);}
@@ -16427,7 +16432,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.7.5';
+const APP_VERSION  = '1.29.7.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

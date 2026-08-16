@@ -2901,9 +2901,14 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    row was decoration competing with the two things here that DO mean something:
    the accent when a kind is filtering, and the red when the clear can act. */
 /* The total, and only the total: how many fields this kind reaches, which is
-   what clicking it filters to. Narrow, because four digits is all it ever needs. */
+   what clicking it filters to. Sized for FOUR digits and no wider — a real DDL
+   runs to thousands of fields, and a button that grows with its count makes the
+   whole bar shuffle sideways every time a selection changes. 16px is the
+   button's own padding (the box is border-box); the extra 4 is slack, because
+   `ch` is the advance of "0" and the tabular digits here measure a shade wider
+   — 4ch + 16px left a four-digit count 2px short and it grew anyway. */
 .me-ovb-n{font-size:calc(var(--sz-mono) - 2px);font-variant-numeric:tabular-nums;
-  min-width:2.6em;justify-content:center;color:var(--text-very-dim);padding:0 8px;}
+  min-width:calc(4ch + 20px);justify-content:center;color:var(--text-very-dim);padding:0 8px;}
 /* Brightened once it is describing your selection rather than just the spec. */
 .me-ovb.picked .me-ovb-n{color:var(--text-dim);}
 .me-ovb-act{min-width:6.2em;justify-content:center;}
@@ -16422,7 +16427,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.7.3';
+const APP_VERSION  = '1.29.7.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

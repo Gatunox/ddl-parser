@@ -10535,8 +10535,15 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
   // a fixed width, so the five line up rather than stepping about as counts change.
   const n = html.match(/\.me-ovb-n\{[^}]*\}/)[0];
   const act = html.match(/\.me-ovb-act\{[^}]*\}/)[0];
-  assert.ok(/min-width:[\d.]+em/.test(n) && /min-width:[\d.]+em/.test(act),
+  assert.ok(/min-width:[^;]+/.test(n) && /min-width:[\d.]+em/.test(act),
     'the two halves have no settled width, so the bar reflows as numbers change');
+  // The count is sized for FOUR digits: a real DDL runs to thousands of fields,
+  // and a button that grows with its count shuffles the whole bar sideways
+  // every time a selection changes. ch is exact on a monospaced face; the
+  // padding is added because the box is border-box.
+  assert.ok(/min-width:calc\(4ch \+ 20px\)/.test(n),
+    `the count cannot hold four digits at a settled width: ${n}`);
+  assert.ok(/padding:0 8px/.test(n), 'the padding the min-width accounts for has changed');
   // The old bar's classes went with it rather than being left behind as CSS
   // nothing carries.
   assert.ok(!/\.me-fm-seg|\.me-fm-glbl/.test(html), 'the replaced bar left its styles behind');

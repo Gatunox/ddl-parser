@@ -2110,24 +2110,24 @@ td.c-err  { color: var(--accent2); }
 .me-pane.collapsed .me-pane-title{
   writing-mode:vertical-rl;transform:rotate(180deg);flex:1;display:flex;align-items:center;justify-content:flex-end;
   color:var(--accent);padding:4px 0;min-height:0;}
-.me-sidebar-sect{display:flex;flex-direction:column;flex:1;min-height:60px;overflow:hidden;}
+.me-sidebar-sect{display:flex;flex-direction:column;flex:0 0 auto;}
 .me-sidebar-sect+.me-sidebar-sect{border-top: var(--bw) solid var(--border);}
-/* Both lists are content-sized so the Files header sits right after the last
-   message; each list scrolls internally once the sidebar runs out of height
-   (Files never takes more than half). */
-#me-sect-msgs{flex:0 1 auto;}
-/* Other needs the override too. Without it, it alone kept .me-sidebar-sect's
-   flex:1 and absorbed every spare pixel, holding Files against the bottom of
-   the sidebar instead of letting it follow the list above. Invisible while
-   the rows were a fixed height; switching to compact shrank Messages and grew
-   that slack by the same amount, which is what made the gap obvious. */
-#me-sect-other{flex:0 1 auto;}
+/* Pinned: in one long scroller the header is the only thing saying which
+   section a row belongs to, and it used to be guaranteed on screen by each
+   list having its own viewport. */
+.me-sidebar-hdr{position:sticky;top:0;z-index:2;background:var(--bg-panel);}
+/* One scroller for the three sections, not one each. Three lists sharing the
+   sidebar's height each got a third of it and a scrollbar of its own, so every
+   section clipped at once and none of them could use the space the others were
+   not using. The sections are content-sized now and .me-ent-list scrolls the
+   lot; the two flex overrides that used to referee them are gone with the
+   competition they refereed. */
 #me-sect-files{flex:0 1 auto;max-height:50%;}
 .me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;min-height:var(--app-header-h);box-sizing:border-box;background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
 .me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
 .me-sidebar-add{background:var(--surface-raised);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
 .me-sidebar-add:hover{border-color:var(--border-strong);color:var(--text);background:var(--surface-hover);}
-.me-item-list{flex:1;overflow-y:auto;min-height:var(--row-h);}
+.me-item-list{flex:0 0 auto;}
 .me-item{display:flex;flex-direction:column;align-items:stretch;padding:0 8px;min-height:var(--row-h);cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;}
 /* The identity line carries the row height, so an entity with nothing to warn
    about is exactly as tall as it always was. */
@@ -2275,7 +2275,8 @@ input.me-inp{width:100%;}
    copy of the entity list, then a column on the far side of the page. Both put
    the run and the list it annotates at opposite edges of the screen; a run
    paints the rows immediately above it now. */
-.me-ent-list{flex:1;min-height:60px;display:flex;flex-direction:column;overflow:hidden;}
+.me-ent-list{flex:1;min-height:60px;display:flex;flex-direction:column;
+  overflow-y:auto;scrollbar-gutter:stable;}
 .me-test-sub{flex:none;height:420px;min-height:0;display:flex;flex-direction:column;overflow:hidden;
   border-top: var(--bw) solid var(--border);}
 /* Collapsed, the subpanel is just its header — height:auto so the list above
@@ -16460,7 +16461,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.10.4';
+const APP_VERSION  = '1.29.11.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

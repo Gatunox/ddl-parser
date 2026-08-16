@@ -11866,6 +11866,35 @@ test('the Overrides column has two scrollbars, not three', () => {
     'the pane can now clip its content with no way to reach it');
 });
 
+test('the entity sidebar scrolls once, not three times', () => {
+  // Reported: Messages, Other and Files each clipped, with a scrollbar apiece.
+  // Three lists sharing the sidebar's height each got a third of it and none
+  // could use the space the others were not using.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const rule = sel => {
+    const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return (css.match(new RegExp('(?:^|[};])\\s*' + esc + '\\{[^}]*\\}', 'm')) || [''])[0];
+  };
+  // One scroller, on the container that holds all three.
+  const ent = rule('.me-ent-list');
+  assert.ok(/overflow-y:auto/.test(ent), 'the entity list does not scroll');
+  assert.ok(/scrollbar-gutter:stable/.test(ent),
+    'the one scroller reserves no gutter, so the rows jump sideways as it grows');
+  // And none of the three lists scrolls on its own any more.
+  const list = rule('.me-item-list');
+  assert.ok(!/overflow/.test(list), `a section still scrolls by itself: ${list}`);
+  assert.ok(!/flex:1/.test(list), `a section still competes for height: ${list}`);
+  assert.ok(/flex:0 0 auto/.test(rule('.me-sidebar-sect')),
+    'the sections still divide the sidebar between them');
+  // The two overrides existed only to referee the competition; they went with it.
+  assert.ok(!/#me-sect-msgs\{/.test(css) && !/#me-sect-other\{/.test(css),
+    'the flex overrides that refereed three scrollers are still here');
+  // In one long scroller the header is the only thing saying which section a
+  // row belongs to — each list having its own viewport used to guarantee it.
+  assert.ok(/\.me-sidebar-hdr\{[^}]*position:sticky/.test(css),
+    'the section headers scroll away with their rows');
+});
+
 test('an entity row carries the code every other surface refers it by', () => {
   // Wide enough to span the test-verdict block that sits between the name and
   // the code — a 900-char window stopped short of the append and read as a bug.

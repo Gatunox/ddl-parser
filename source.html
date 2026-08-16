@@ -514,7 +514,7 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   min-height: var(--panel-header-h, 27px);
 }
 .panel-title {
-  /* Mono, like the DDL Doc and Data Editor titles already were. The letter
+  /* Mono, like the DDL Doc and Class Editor titles already were. The letter
      spacing went with it: it was tightening a proportional face, and on a
      monospace one it only fights the grid. */
   font-family: var(--mono);
@@ -620,7 +620,7 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 /* ===== DDL TREE PANE ===== */
 /* The page's own ground, not the panel's surface. The two panes are cards;
    what shows between and above them should be what a card sits ON, which is
-   the same thing the Data Editor does with its sections. Visible only in the
+   the same thing the Class Editor does with its sections. Visible only in the
    top strip and the resizer gap now that the cards run flush to the edges —
    which is exactly the space that was reading as a seam. */
 .ddl-pane-split  { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden;
@@ -1430,7 +1430,7 @@ td.c-err  { color: var(--accent2); }
 .tree-node.tree-ovr.tree-sel .tree-def-lbl { color: #e6a817; }
 /* The ▶ sits beside the NAME, not at the end of the row. On the row it landed
    after every trailing element — badges, counts — so on a node that carried
-   them the marker drifted far from the thing it marks. The Data Editor's armed
+   them the marker drifted far from the thing it marks. The Class Editor's armed
    item puts its ▶ right after the name for the same reason. */
 .tree-node.tree-ovr .tree-ddl-lbl::after,
 .tree-node.tree-ovr .tree-def-lbl::after { content: '▶'; margin-left: 4px;
@@ -1451,7 +1451,7 @@ td.c-err  { color: var(--accent2); }
   white-space: nowrap; pointer-events: none;
   opacity: 0; transition: opacity 0.18s;
   /* Above EVERYTHING. At 20000 this sat below every overlay in the app — the
-     Data Editor (21000), the export and DDL-doc modals (25000), the context
+     Class Editor (21000), the export and DDL-doc modals (25000), the context
      menu (26000) and Settings (30000) — so a toast raised from inside any of
      them rendered behind it and was never seen. It reported success into a
      void, which is worse than silence: the copy worked and looked like it had
@@ -1847,7 +1847,7 @@ td.c-err  { color: var(--accent2); }
    only at parse time (no recognizer / no parse spec / no DDL binding). */
 /* The badge family rule above owns font-family for all of these. It is declared
    there rather than inherited because these pills appear in rows that set
-   different stacks — mono in the Data Editor sidebar, the DDL tree's own — so
+   different stacks — mono in the Class Editor sidebar, the DDL tree's own — so
    the same "⚠2" used to render with a sans digit in one place and a mono digit
    in another, beside an identical emoji triangle. */
 /* Named, not counted — the same pill the ⚠N badge was, saying which gap it is.
@@ -2027,7 +2027,7 @@ td.c-err  { color: var(--accent2); }
    them shows the panel surface straight through, and the line-number gutter
    was already on it — so an editor painted --bg-input read as a well sunk
    into the card, with its own gutter a shade lighter than the text beside it.
-   The Data Editor's editors keep --bg-input: there an editor is one control
+   The Class Editor's editors keep --bg-input: there an editor is one control
    among several inside a section, which is where a distinct well earns its
    keep. */
 #ddlEditor .cm-editor, #msgInput .cm-editor,
@@ -3061,7 +3061,7 @@ th.me-fm-colhi{color:var(--accent);}
 .me-fm-hide-dt .me-fm-dt,.me-fm-hide-dt .me-fm-th-dt{display:none;}
 .me-fm-hide-de .me-fm-de,.me-fm-hide-de .me-fm-th-de{display:none;}
 .me-fm-hide-vlg .me-fm-vlg,.me-fm-hide-vlg .me-fm-th-vlg{display:none;}
-/* Section-load progress bars — staged Data Editor rendering */
+/* Section-load progress bars — staged Class Editor rendering */
 .me-sect-loading{padding:10px 8px;}
 .me-progress{height:8px;border: var(--bw) solid var(--border);border-radius:var(--r-sm);overflow:hidden;background:var(--bg-deep);}
 .me-progress-fill{height:100%;width:0%;background:var(--accent);transition:width .1s linear;}
@@ -3086,7 +3086,7 @@ th.me-fm-colhi{color:var(--accent);}
 <header>
   <h1 id="appLogo"><span class="brand-mark" aria-hidden="true">D</span>DDL Parser</h1>
   <span class="header-sub" style="flex:1">NonStop / Base24 / ISO8583 — multi-message analysis with field tracking</span>
-  <button class="btn" id="dataEditorBtn" onclick="openMsgEditor()" title="Data Editor — message and file detection, parse specs, field overrides">⊞ Data Editor</button>
+  <button class="btn" id="dataEditorBtn" onclick="openMsgEditor()" title="Class Editor — message and file detection, parse specs, field overrides">⊞ Class Editor</button>
   <button class="btn" id="settingsBtn" onclick="openSettings()" title="Settings">⚙</button>
 </header>
 
@@ -9086,7 +9086,7 @@ function _netardTypeLabel(code) {
 // formats (hexascii) a trailing "[ascii]" column marks the data end. parseNetardLog
 // uses this width to clip/pad each standard-format data line — without it the
 // width defaults to 1 and every line collapses to its first character. Shared by
-// the Main panel's input handler and the Data Editor's Test bar.
+// the Main panel's input handler and the Class Editor's Test bar.
 function _detectNetardRuler(text, isSubFmt) {
   const _hdrRe = /^\s{0,6}\d+\s+[0-9A-Za-z]+\s+\d{2}\/\d{2}\/\d{2}/;
   return String(text || '').split('\n')
@@ -10587,7 +10587,7 @@ function doParseMessages() {
     const _fupRecs = parseFupCopyLog(msgText);
     const _anyFileSpec = _fupRecs.some(r => detectMsgType(r.rawMsg, { filename: r.filePath })?.kind === 'file');
     if (_anyFileSpec) { doFupCopyLog(msgText); return; }
-    flash('FUP COPY: right-click a DDL and choose "Use for parsing (override)" — or define a File detection for it in the Data Editor', 'error');
+    flash('FUP COPY: right-click a DDL and choose "Use for parsing (override)" — or define a File detection for it in the Class Editor', 'error');
     return;
   }
 
@@ -12407,7 +12407,7 @@ function renderFieldTable(msg) {
           }
           return `<table class="diag-table">${rows.join('')}</table>`;
         })() : ''}
-        <div style="margin-top:8px">${msg.noParseSpec ? `${msg.recNo ? `Record #${msg.recNo}: define` : 'Define'} a <strong>Parse Spec</strong> for <strong>${_escH(msg._diag?.typeLabel || '')}</strong> in the <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Editor</span> — or right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.`
+        <div style="margin-top:8px">${msg.noParseSpec ? `${msg.recNo ? `Record #${msg.recNo}: define` : 'Define'} a <strong>Parse Spec</strong> for <strong>${_escH(msg._diag?.typeLabel || '')}</strong> in the <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Class Editor</span> — or right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.`
             : msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule to recognize this message.` : 'Create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule for this message, or right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.')
             : (msg.isNetard && msg.noMatchDDL) ? 'right-click a DDL in the tree and choose <strong>Use for parsing (override)</strong>, then click <strong>▶ Parse</strong> again to apply it to this record.'
             : msg.noMatchDDL  ? 'Load a matching DDL, or use manual override: right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.'
@@ -14001,7 +14001,7 @@ function onFmtForceChange() {
   updateBadges();
 }
 
-// Format → [badge class, label]. Module-level because the Data Editor's Test
+// Format → [badge class, label]. Module-level because the Class Editor's Test
 // panel shows the same badge for the same format; two copies would drift.
 const _FMT_BADGE = {
   'hex':              ['badge-hex',          'HEX'],
@@ -16262,7 +16262,7 @@ function confirmImport() {
     .map(s => JSON.parse(JSON.stringify(s)));   // deep clone
   let specAdded = 0, specOverwritten = 0;
   if (pickedSpecs.length) {
-    // "Editor open" must mean the Data Editor is actually VISIBLE — not merely
+    // "Editor open" must mean the Class Editor is actually VISIBLE — not merely
     // that _meState was initialised earlier this session. When the editor is
     // closed, imports persist directly (_fmtSave); staging into the editor's
     // unsaved buffer would silently drop the spec on reload.
@@ -16461,7 +16461,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.11.0';
+const APP_VERSION  = '1.30.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16659,7 +16659,7 @@ function resetLayout() {
       if (th) th.style.width = defaults[c] || '';
     });
   }
-  // The Data Editor's own sizes, DERIVED from the registries that own them
+  // The Class Editor's own sizes, DERIVED from the registries that own them
   // rather than listed again here. Reported: Reset Layout left every panel on
   // that page where it was, because this function was a hand-written list and
   // the list never learned about them. A list goes stale the moment a resizer
@@ -16672,12 +16672,12 @@ function resetLayout() {
   applyPrefs(true);
 }
 
-// Every stored size on the Data Editor page, put back to its default. The keys
+// Every stored size on the Class Editor page, put back to its default. The keys
 // come from the three registries that write them — _ME_RESIZERS (the sidebar
 // and Test panel drags), _ME_HELP (the three reference splits) and _ME_COLRZ
 // (the resizable tables) — plus the two collapse flags, which are a position
 // too: a collapsed panel is not at its default size.
-// The two Data Editor keys that are NOT layout. Everything else under up_me_
+// The two Class Editor keys that are NOT layout. Everything else under up_me_
 // describes size or shape and goes back to default on a reset.
 const _ME_RESET_KEEP = new Set(['up_me_last_sel', 'up_me_ps_fmt']);
 
@@ -16982,7 +16982,7 @@ function _lwSetParsed(on) {
 }
 
 // Two widgets, one preference. The Message Input panel's ids are the default;
-// the Data Editor's Test bar passes 'me-lw-'. P.lineWidth is a saved pref and
+// the Class Editor's Test bar passes 'me-lw-'. P.lineWidth is a saved pref and
 // belongs to the app, not to a panel, so both edit the same number and
 // _lwUpdateDisplay repaints whichever of them exists.
 function _lwEls(pfx = '') {
@@ -17474,7 +17474,7 @@ function esc(s) {
 // level: 'info'/'ok' (green, 10 s) | 'warn' (yellow, 20 s) | 'error' (red, 30 s)
 // All levels show an ✕ so the user can dismiss early.
 // There are two toast implementations because there are two stacking contexts:
-// the page's #flash-container sits at z-index 9999 and the Data Editor overlay
+// the page's #flash-container sits at z-index 9999 and the Class Editor overlay
 // at 21000, so a page toast raised while the editor is open is painted BEHIND
 // it. There is only one idea of "a toast you can act on", though, so the button
 // is built once and both use it.
@@ -17591,8 +17591,8 @@ const _TUT_STEPS = [
   },
   {
     target: '#dataEditorBtn', prefer: 'left',
-    title: 'Data Editor \u2014 Message Detection & Overrides',
-    body: 'Click \u229e Data Editor in the top bar to control how messages are recognized and parsed. It opens as a full page: Entities on the left, the selected entity in the middle, Test on the right \u2014 both side panels resize and collapse.\n\nEach message type has an ordered list of recognizers \u2014 byte-level conditions (a literal at an offset, an MTI pattern, a length, a bitmap, a source/destination) that must all pass to match; the first matching type wins. A type can also carry DDL bindings, a parse spec, and field overrides that reinterpret a field (uint-be/le, ascii, ebcdic, hex) or format its value (amount, date/time, GMT timestamp).\n\nBuilt-in defaults cover ISO 8583, STM, PSTM, Base24 and NDC \u2014 edit them or add your own. The Test panel lets you paste a sample and see exactly what detects and parses.',
+    title: 'Class Editor \u2014 Message Detection & Overrides',
+    body: 'Click \u229e Class Editor in the top bar to control how messages are recognized and parsed. It opens as a full page: Classes on the left, the selected class in the middle, Test on the right \u2014 both side panels resize and collapse.\n\nEach message type has an ordered list of recognizers \u2014 byte-level conditions (a literal at an offset, an MTI pattern, a length, a bitmap, a source/destination) that must all pass to match; the first matching type wins. A type can also carry DDL bindings, a parse spec, and field overrides that reinterpret a field (uint-be/le, ascii, ebcdic, hex) or format its value (amount, date/time, GMT timestamp).\n\nBuilt-in defaults cover ISO 8583, STM, PSTM, Base24 and NDC \u2014 edit them or add your own. The Test panel lets you paste a sample and see exactly what detects and parses.',
   },
   {
     target: '#ddlTreePane', prefer: 'right',
@@ -17897,7 +17897,7 @@ document.addEventListener('DOMContentLoaded', () => {
       view.dispatch({ effects: _auditDumpHLEffect.of(Decoration.set(marks)) });
     };
 
-    // Data Editor Test input — the same editor the Message Input panel uses,
+    // Class Editor Test input — the same editor the Message Input panel uses,
     // so a message can be worked on there without walking back to the main
     // panel. Its own highlight field: the two inputs hold different text and
     // the Test one has its own byte map.
@@ -18319,7 +18319,7 @@ function _meUndoable(label, run, level) {
   const changed = run();
   if (!snap || changed === false) return;
   _meUndoOffer = { snap, idx: _meState.selIdx, nSpecs: _meState.specs.length, label };
-  // _meFlash, not flash: this only ever fires with the Data Editor open, and
+  // _meFlash, not flash: this only ever fires with the Class Editor open, and
   // the page's toast container is BELOW that overlay — the first version put a
   // perfectly working Undo button where nobody could see it.
   _meFlash(label, level || null, { label: '\u21B6 Undo', run: _meUndoApply });
@@ -21607,7 +21607,7 @@ function _mePsDrag(handle, cursor, begin, done) {
     document.body.style.cursor = cursor;
     document.body.style.userSelect = 'none';
     const move = ev => {
-      // The same lost-mouseup guard the Data Editor's own resizers carry: a
+      // The same lost-mouseup guard the Class Editor's own resizers carry: a
       // release the document never saw used to leave the panel following the
       // pointer with no button held.
       if (!(ev.buttons & 1)) return up();
@@ -23374,7 +23374,7 @@ function _meExtractCommentDEs(content, defName) {
 }
 
 // Editor-scoped toast — the main-page flash() renders behind the editor
-// overlay (lower z-index). Same UX, hosted inside the Data Editor.
+// overlay (lower z-index). Same UX, hosted inside the Class Editor.
 function _meFlash(msg, level, action) {
   const c = document.getElementById('me-flash-container');
   if (!c) { flash(msg, level, action); return; }
@@ -23679,7 +23679,7 @@ function _meVlgIsLen(lenId, rowId) {
 // Widths keyed by data-col attribute, saved per-key to localStorage so the
 // layout survives reloads / item switches.
 // ── Column widths: one implementation, two tables ───────────────────────────
-// The Field Map and the Data Editor's Test results table both want named
+// The Field Map and the Class Editor's Test results table both want named
 // columns you can drag, sized to fill their panel, remembered across reloads.
 // They had two copies of that, and the second was written by reading the first.
 // The knobs below are the only places they genuinely differ.
@@ -26858,7 +26858,7 @@ function toggleSpecOverride(idx) {
   // Arming this and a DDL override at once would be two answers to one
   // question. The entity is the more specific of the two, so it wins and the
   // other is cleared, out loud.
-  // _meFlash, not flash: this is raised from inside the Data Editor, and the
+  // _meFlash, not flash: this is raised from inside the Class Editor, and the
   // global one anchors to the page, so the notice landed outside the modal it
   // belongs to. _meFlash renders into the editor's own container, stays until
   // dismissed, and falls back to the global flash when that container is
@@ -26994,7 +26994,7 @@ function _meDupItem(idx) {
 }
 
 
-// ── Data Editor page: collapse ─────────────────────────────────────────────
+// ── Class Editor page: collapse ─────────────────────────────────────────────
 // The Entities column collapses to a rail with a vertical title, the same
 // shape the main app's panels use. The editor column has no toggle: something
 // has to stay on screen. Test collapses to its own header inside Entities.
@@ -27949,7 +27949,7 @@ function _meExecTokenArea(attrs, ctx) {
   // inside DE-63/126, 'STM'/'PSTM' put them after the last field — and returns
   // null for anything else. A spec stores that code as `name`; `type` is what
   // detection produces from it ({ type: spec.name, … }). Reading only `type`
-  // here meant every run in the Data Editor asked for tokens with an empty type
+  // here meant every run in the Class Editor asked for tokens with an empty type
   // and got none, while the same message on the main page showed them.
   const msgType = ctx.item.type || ctx.item.name || '';
   const ddlPath = ctx.item.ddl_bindings?.[0] || '';
@@ -31142,7 +31142,7 @@ function _meSave() {
           <!-- 4b. Message & File Detection & DDL Matching -->
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message &amp; File Detection · DDL Matching <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
-            <p style="margin:0 0 6px"><strong>Detection is configurable — for messages AND files.</strong> Open <strong>⊞ Data Editor</strong> from the top bar to define message and file types. Each type carries an ordered list of <strong>recognizers</strong> — byte-level conditions such as a <code>literal</code> at an offset, an <code>mti</code> pattern, <code>min-length</code>/<code>max-length</code>, a <code>numeric</code>/<code>regex</code> field, a <code>bitmap</code>, or a <code>source</code>/<code>destination</code>/<code>filename</code> match.</p>
+            <p style="margin:0 0 6px"><strong>Detection is configurable — for messages AND files.</strong> Open <strong>⊞ Class Editor</strong> from the top bar to define message and file types. Each type carries an ordered list of <strong>recognizers</strong> — byte-level conditions such as a <code>literal</code> at an offset, an <code>mti</code> pattern, <code>min-length</code>/<code>max-length</code>, a <code>numeric</code>/<code>regex</code> field, a <code>bitmap</code>, or a <code>source</code>/<code>destination</code>/<code>filename</code> match.</p>
             <ul style="padding-left:16px;margin:0 0 8px;font-size:10.5px">
               <li><strong>All</strong> recognizers of a type must pass for it to match (first failing one short-circuits).</li>
               <li>Types are tried in <strong>sidebar order</strong>; the <strong>first</strong> whose recognizers all pass wins.</li>
@@ -31428,7 +31428,7 @@ function _meSave() {
            already has one, and this is the same application rather than a new
            document. -->
       <span class="app-logo"><span class="brand-mark" aria-hidden="true">D</span>DDL Parser</span>
-      <span class="me-header-title" id="me-header-title">Data Editor</span>
+      <span class="me-header-title" id="me-header-title">Class Editor</span>
       <span class="me-header-actions">
         <span class="me-status" id="me-status"></span>
         <button class="btn btn-danger" id="me-del-btn" onclick="_meDeleteSelected()">Delete</button>
@@ -31442,7 +31442,7 @@ function _meSave() {
       <!-- ── Sidebar ── -->
       <div class="me-sidebar me-pane" id="me-sidebar" oncontextmenu="_meCtxEntityPanel(event)">
         <div class="me-pane-hdr">
-          <span class="me-pane-title">Entities</span>
+          <span class="me-pane-title">Classes</span>
           <button class="panel-toggle" id="me-sidebar-toggle" onclick="_meToggleSidebar()" title="Hide panel">−</button>
         </div>
         <div class="me-ent-list" id="me-ent-list">

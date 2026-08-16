@@ -4024,7 +4024,7 @@ test('verdicts: only needs-ddl requires the compiled candidate map', () => {
 });
 
 // ── A LEN reads the way its type says, or not at all ─────────────────────────
-// The Data Editor offers nine types for an override. Until v1.13.1.0 the length
+// The Class Editor offers nine types for an override. Until v1.13.1.0 the length
 // decoder honoured two of them: hex-char and the integer widths. ascii, ebcdic,
 // hex-ascii-decimal and hex-ebcdic-decimal were byte-for-byte identical to
 // declaring nothing — the decoder sniffed the bytes and decided for itself.
@@ -5773,7 +5773,7 @@ test('ANY picks up every token in the area', () => {
 
 test('the type code is read off the spec, which stores it as `name`', () => {
   // Reported: a spec with { "token-area": "ANY" } produced no tokens in the
-  // Data Editor, while the same message on the main page showed seven.
+  // Class Editor, while the same message on the main page showed seven.
   // extractTokensFromMessage branches on the TYPE CODE — 'STM'/'PSTM' put the
   // area after the last field, 'ISO'/'B24' inside DE-63/126 — and returns null
   // for anything else. A saved spec has `name`; `type` is what DETECTION makes
@@ -6575,7 +6575,7 @@ test('an icon inside a labelled button is spaced from its label', () => {
 });
 
 test('every panel title uses the app font', () => {
-  // The DDL Doc and Data Editor titles were already mono; the four panel titles
+  // The DDL Doc and Class Editor titles were already mono; the four panel titles
   // and the tree caption were the page's sans, so half the titles in the app
   // were one face and half the other.
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
@@ -8311,7 +8311,7 @@ test('the toast can carry an action, and an actionable one is reachable', () => 
     assert.ok(/_flashActionBtn\(action,/.test(psFnSource(f)), `${f} builds its own action button`);
 });
 
-test('a toast raised inside the Data Editor uses the editor own toast', () => {
+test('a toast raised inside the Class Editor uses the editor own toast', () => {
   // Reported: no toast on deletion. The button worked; it was painted BEHIND
   // the editor. #flash-container is z-index 9999, the overlay is 21000, so a
   // page toast raised with the editor open is invisible.
@@ -9439,12 +9439,12 @@ test('the two main-page editors sit on the panel surface, like the table beside 
   assert.ok(/--bg-panel: #161b22;/.test(css) && /--bg-panel: #ffffff;/.test(css),
     'the surface is no longer a token that both themes define');
   // NOT the shared .cm-host rule: --bg-input is every input control in the app,
-  // and the Data Editor's editors are one control among several inside a
+  // and the Class Editor's editors are one control among several inside a
   // section, which is where a distinct well still earns its keep.
   assert.ok(/\.cm-host \.cm-editor \{[^}]*background: var\(--bg-input\)/.test(css),
     'the change was made on the shared rule, repainting every editor in the app');
   assert.ok(/\.me-test-cm\{[^}]*background:var\(--bg-input\)/.test(css),
-    "the Data Editor's Test input lost its well");
+    "the Class Editor's Test input lost its well");
 });
 
 test('the DDL panel cards sit flush to its edges, apart from the top', () => {
@@ -9498,7 +9498,7 @@ test('the DDL panel cards sit flush to its edges, apart from the top', () => {
     'a card lost its top border, which meets the panel header and not its edge');
 
   // What shows between and above the cards is the page's ground, not the
-  // panel's surface — the same relationship the Data Editor's sections have to
+  // panel's surface — the same relationship the Class Editor's sections have to
   // its body. On --bg-panel the strip read as a seam joining two halves rather
   // than as the space two cards sit in.
   const split = ruleFor('.ddl-pane-split');
@@ -9512,14 +9512,14 @@ test('the DDL panel cards sit flush to its edges, apart from the top', () => {
     'the two grounds are no longer distinct tokens');
 });
 
-test('the Data Editor header carries the wordmark, with its title centred', () => {
+test('the Class Editor header carries the wordmark, with its title centred', () => {
   // Anchored FORWARD from the markup: `me-header-actions` appears earlier as a
   // CSS rule, so searching for it from position 0 sliced backwards to nothing.
   const _s = html.indexOf('<div class="me-header">');
   const hdr = html.slice(_s, html.indexOf('</div>', html.indexOf('me-header-actions', _s)));
   // The wordmark is the same markup the page header uses.
   assert.ok(/<span class="app-logo"><span class="brand-mark" aria-hidden="true">D<\/span>DDL Parser<\/span>/.test(hdr),
-    'the Data Editor header has no wordmark');
+    'the Class Editor header has no wordmark');
   // A span, not a second <h1>: the page already has one, and this is the same
   // application rather than a new document.
   assert.ok(!/<h1/.test(hdr), 'the wordmark was added as a second h1');
@@ -9892,13 +9892,13 @@ test('the cog becomes the close button while the chooser is open', () => {
 
 // Every cog that opens a column chooser behaves identically. Reported twice, one
 // surface at a time: the Parse Results cog opened with nothing dimmed while the
-// export cog one panel away did dim, then the Data Editor cog turned out to have
+// export cog one panel away did dim, then the Class Editor cog turned out to have
 // the same gap. A table, so the next chooser is added to a list that already
 // fails when it does not conform.
 const CHOOSERS = [
   { fn: '_expToggleColsDlg',  btn: 'exp-cols-btn',   host: '.ddl-doc-modal', where: 'the export modal' },
   { fn: 'toggleColCfgDialog', btn: 'colCfgBtn',      host: '.panel',         where: 'the Parse Results panel' },
-  { fn: '_meFmToggleColsDlg', btn: 'me-fm-cols-btn', host: '.me-shell',      where: 'the Data Editor' },
+  { fn: '_meFmToggleColsDlg', btn: 'me-fm-cols-btn', host: '.me-shell',      where: 'the Class Editor' },
   { fn: 'auditToggleCfgDialog', btn: 'auditCfgBtn',  host: '.panel',         where: 'the audit browser' },
 ];
 for (const c of CHOOSERS) {
@@ -9930,7 +9930,7 @@ test('the two overrides clear each other, in BOTH directions', () => {
 });
 
 test('every destructive action asks the same way', () => {
-  // The DDL tree asked for YES; the Data Editor asked for DELETE. Same gesture,
+  // The DDL tree asked for YES; the Class Editor asked for DELETE. Same gesture,
   // two words, and they differed on the verb (delete vs remove) and on whether
   // case mattered too. Worse, the DELETE ones matched exactly, so typing
   // "delete" did nothing at all — a silent no-op reads as a broken dialog.
@@ -10201,7 +10201,7 @@ test('the recognizer help follows the type being edited', () => {
 });
 
 test('the toast sits above every overlay in the app', () => {
-  // It was 20000 — below the Data Editor (21000), the export and DDL-doc modals
+  // It was 20000 — below the Class Editor (21000), the export and DDL-doc modals
   // (25000), the context menu (26000) and Settings (30000). So a toast raised
   // from inside any of them rendered BEHIND it and was never seen. Twelve
   // showToast call sites were affected, not just the new one; the copy worked
@@ -11866,6 +11866,28 @@ test('the Overrides column has two scrollbars, not three', () => {
     'the pane can now clip its content with no way to reach it');
 });
 
+test('the feature is called the Class Editor everywhere it is named', () => {
+  // A rename that reaches the header and misses the error messages leaves two
+  // names for one thing, and the half that is wrong is the half people meet
+  // when something has gone wrong.
+  assert.ok(!/Data Editor/.test(html), 'the old name survives somewhere in the app');
+  assert.ok(!/Data Editor/.test(fs.readFileSync('./SPEC-message-format-detector.md', 'utf8')),
+    'the spec still calls it the Data Editor');
+  // The places it is named: the top-bar button, the page header, the help
+  // entry, and the two messages that send you there when a parse fails.
+  assert.ok(/>\u229e Class Editor</.test(html), 'the top-bar button');
+  assert.ok(/id="me-header-title">Class Editor</.test(html), 'the page header');
+  assert.ok(/'Class Editor \\u2014 Message Detection & Overrides'/.test(html), 'the help entry');
+  assert.ok(/define a File detection for it in the Class Editor/.test(html),
+    'the FUP COPY error still names the old editor');
+  assert.ok(/openMsgEditor\(\)[^>]*>Class Editor</.test(html),
+    'the no-parse-spec message still names the old editor');
+  // And the pane it opens on.
+  assert.ok(/<span class="me-pane-title">Classes<\/span>/.test(html), 'the pane is not called Classes');
+  assert.ok(/Classes on the left, the selected class in the middle/.test(html),
+    'the help still describes the pane as Entities');
+});
+
 test('the entity sidebar scrolls once, not three times', () => {
   // Reported: Messages, Other and Files each clipped, with a scrollbar apiece.
   // Three lists sharing the sidebar's height each got a third of it and none
@@ -12030,13 +12052,13 @@ test('Reset Layout actually clears what it should, and keeps what it must', () =
   for (const k in before) store.setItem(k, before[k]);
 });
 
-test('Reset Layout reaches every stored size, including the Data Editor', () => {
-  // Reported: Reset Layout left the Data Editor's panels exactly where they
+test('Reset Layout reaches every stored size, including the Class Editor', () => {
+  // Reported: Reset Layout left the Class Editor's panels exactly where they
   // were. resetLayout was a hand-written list and the list never learned about
   // them — the same failure _eraseAll refuses to risk by not keeping one.
   const reset = psFnSource('_meResetLayout');
   assert.ok(/_meResetLayout\(\);/.test(psFnSource('resetLayout')),
-    'Reset Layout does not touch the Data Editor at all');
+    'Reset Layout does not touch the Class Editor at all');
 
   // CHANGED ON PURPOSE: this used to require the keys be DERIVED from the three
   // registries. Deriving still missed anything no registry owned — the Test
@@ -12756,7 +12778,7 @@ test('every localStorage key is documented (§13)', () => {
   // Three spellings: a literal at the call site, the `const X_KEY = 'up_…'`
   // form, and a `key:` field in a config table. The regex saw only the first,
   // so a key held in a constant — the tidier way to write it — escaped the
-  // guard entirely; the table form arrived with the Data Editor's resizers and
+  // guard entirely; the table form arrived with the Class Editor's resizers and
   // escaped it the same way, through `localStorage.setItem(cfg.key, …)`.
   const keys = [...new Set([
     ...[...html.matchAll(/localStorage\.(?:get|set|remove)Item\(\s*'([^']+)'/g)].map(m => m[1]),
@@ -13143,8 +13165,8 @@ test('every collapsed panel title starts at the TOP of its rail', () => {
     'collapsed panels whose title is rotated but still anchored at flex-start, so it sits at the bottom');
 });
 
-// ── The Data Editor is a page, not a dialog inside Settings ─────────────────
-console.log('\nData Editor page — top bar, three columns, one entity list');
+// ── The Class Editor is a page, not a dialog inside Settings ─────────────────
+console.log('\nClass Editor page — top bar, three columns, one entity list');
 
 const _DE_CSS = () => html.slice(html.indexOf('<style>'), html.indexOf('</style>'))
                           .replace(/\/\*[\s\S]*?\*\//g, '');
@@ -13247,29 +13269,29 @@ test('import/export is reachable from anywhere in the Entities column', () => {
       `${f} does not stop the event, so the column menu replaces it`);
 });
 
-test('the Data Editor is reached from the top bar, and only from there', () => {
+test('the Class Editor is reached from the top bar, and only from there', () => {
   // It used to live two clicks inside Settings: ⚙ → expand Data Detection →
-  // ⊞ Data Editor. It is the app's second screen, not a preference, so it is a
+  // ⊞ Class Editor. It is the app's second screen, not a preference, so it is a
   // button in the header — and Settings must not keep a second door to it, or
   // the two entry points drift apart the way two entity lists did.
   const hdr = /<header>([\s\S]*?)<\/header>/.exec(html);
   assert.ok(hdr, '<header> not found');
   assert.ok(/id="dataEditorBtn"[^>]*onclick="openMsgEditor\(\)"/.test(hdr[1]),
-    'the top bar has no button that opens the Data Editor');
+    'the top bar has no button that opens the Class Editor');
 
   const drawer = html.slice(html.indexOf('id="settingsOverlay"'), html.indexOf('id="msgEditorOverlay"'));
   assert.ok(drawer.length > 1000, 'could not isolate the settings drawer markup');
   assert.ok(!/onclick="openMsgEditor\(\)"/.test(drawer),
-    'Settings still opens the Data Editor — one screen, one door');
+    'Settings still opens the Class Editor — one screen, one door');
 
   // The tutorial pointed at the ⚙ because that was the way in. Following a
   // stale anchor is how a tour teaches the wrong route.
-  const step = /\{\s*target: '(#[\w-]+)', prefer: '\w+',\s*title: 'Data Editor/.exec(html);
-  assert.ok(step, 'the Data Editor tutorial step is gone');
+  const step = /\{\s*target: '(#[\w-]+)', prefer: '\w+',\s*title: 'Class Editor/.exec(html);
+  assert.ok(step, 'the Class Editor tutorial step is gone');
   eq(step[1], '#dataEditorBtn', 'the tutorial still points at the old entry point');
 });
 
-test('the Data Editor page fills the viewport instead of floating in it', () => {
+test('the Class Editor page fills the viewport instead of floating in it', () => {
   const css = _DE_CSS();
   const overlay = /\.me-overlay\s*\{([^}]*)\}/.exec(css);
   const shell   = /\.me-shell\s*\{([^}]*)\}/.exec(css);
@@ -13382,7 +13404,7 @@ test('the column and its subpanel both collapse, and remember it', () => {
     'a collapsed subpanel leaves a gap where its body was');
 });
 
-test('a collapsed Data Editor rail reads top-down, like every other panel', () => {
+test('a collapsed Class Editor rail reads top-down, like every other panel', () => {
   // Same trap the four main panels hit: rotate(180deg) flips the flex axis, so
   // flex-start is the BOTTOM. The rail is new markup and inherits none of the
   // #ddlPanel fix, so it needs its own flex-end.
@@ -13843,10 +13865,10 @@ test('the detection summary does not claim a forced run was evaluated', () => {
 });
 
 test('an armed entity override is visible in the list that still exists', () => {
-  // Was: "shows in Settings, not only in the editor" — the Data Editor marked
+  // Was: "shows in Settings, not only in the editor" — the Class Editor marked
   // it and Settings → Data Detection did not, so the same fact was visible in
   // one list and invisible in the other. Settings no longer carries a second
-  // list (the Data Editor is its own page now), so the rule the original test
+  // list (the Class Editor is its own page now), so the rule the original test
   // protected is the surviving half: an armed override you cannot see is the
   // defect, and the Entities list is where it has to be seen.
   assert.ok(!/renderDetectSpecsList/.test(APP_SRC),
@@ -13999,7 +14021,7 @@ test('a dialog outranks every surface that can raise one', () => {
   assert.ok(modal > settings,
     `a dialog must sit above the settings drawer — modal ${modal} vs settings ${settings}`);
   assert.ok(modal > editor,
-    `a dialog must sit above the Data Editor — modal ${modal} vs editor ${editor}`);
+    `a dialog must sit above the Class Editor — modal ${modal} vs editor ${editor}`);
   assert.ok(toast > modal,
     `the toast must clear the dialog it reports on — toast ${toast} vs modal ${modal}`);
 });

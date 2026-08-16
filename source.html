@@ -3142,7 +3142,10 @@ th.me-fm-colhi{color:var(--accent);}
                 <span class="ddl-search-nav ddl-search-nav-x" onclick="ddlSearchClear()" title="Clear search">✕</span>
               </div>
             </div>
-            <span style="flex:1"></span>
+            <!-- No spacer: the search bar is already flex:1, so a second one
+                 here split the free space between them and left the field
+                 stranded mid-bar with a gap either side. It takes the whole run
+                 from the title to the buttons now. -->
             <button class="btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
             <button class="btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
             <button class="btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
@@ -16477,7 +16480,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.2.1';
+const APP_VERSION  = '1.30.2.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

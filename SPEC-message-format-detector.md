@@ -1421,45 +1421,81 @@ returned UNKNOWN.
 - \[+ Add\] / \[Remove\] per entry
 - Ordered — the first binding is the default
 
-**Overrides** *(rewritten 2026-08-16 — kinds are the rows, fields are the badges)*
+**Overrides** *(rewritten 2026-08-16 — one control per kind)*
 
 An override says one of five things about a field, and those five **kinds** are
-the structure of the whole section:
+the structure of the whole section. `_ME_OV_KINDS` is the single list behind the
+bar, the counts, the filters and the clear:
 
-| Kind | Stored keys | Says |
-|---|---|---|
-| TYPE | `type` | how the bytes are read |
-| SHOW | `display` | display format only |
-| SIZE | `bytes` | read this many bytes instead |
-| DE | `de` | data-element numbering |
-| VLG | `vlg`, `count` | length source |
+| Kind | Stored keys | Action | Says |
+|---|---|---|---|
+| TYPE | `type` | picker | how the bytes are read |
+| SHOW | `display` | picker | display format only |
+| SIZE | `bytes` | number | read this many bytes instead |
+| DE | `de` | picker + number | data-element numbering |
+| VLG | `vlg`, `count` | picker | length source |
 
-- **In place** — the index. Five rows, one per kind, *always five*: it cannot
-  grow however many overrides a spec carries. Each row is a filter and a count
-  (`TYPE 22`); clicking the label filters the table to that kind, clicking again
-  clears it. Counts follow the text filter but **not** the kind filter — the five
-  rows are the switch, and a switch that zeroes the other four cannot be switched
-  back.
-  - Fields appear as **pills** (name + that kind's value). How many is *measured*,
-    not a constant: pills are laid out on one line and dropped from the end until
-    the row stops overflowing, and whatever was dropped is stated as `+N more`,
-    which is the same filter the label is. The fit is redone when the panel width
-    changes. A search that narrows the set brings more pills back.
-  - A pill's **✕** (on hover) removes the kind it names, not the field. The entry
-    disappears once its last kind is gone.
-- **Table** — every field the DDL declares; still the picker, still read-only.
-  An overridden row carries its kinds as coloured badges *on the field itself*;
-  rows without one recede to 38%. Hover, selection, a broken override and an
-  unreachable DE all restore full contrast. **All fields / Overridden (N)**
-  switches between the whole DDL and just the configured fields.
-- **Action bar** — DataElement / Length / Read groups; operates on the selection.
-- **Written / What the rules did** — the two panes below the table.
+Top to bottom the panel reads in the order it is used: what you can do to a
+field, then how you find the field, then the fields.
 
-Prior design (superseded): one list row per configured field, each with its
-settings as chips; the field table said nothing about which of its rows were
-configured. On a real spec the list was capped at 180px and sorted by id, so the
-entry you wanted was below the fold, and identity had to be carried by scrolling
-a second list rather than by looking at the field.
+**Action bar** — one control per kind, `[ total | LABEL ]`, plus the selection
+badge at the left and one clear at the right.
+
+- The **badge** states the selection and what it already carries:
+  `3 selected` with `2 TYPE 1 SHOW 0 SIZE 0 DE 0 VLG` small beside it. All five
+  answers in one place, which is why the controls need only their own total.
+- The **total** is every field carrying that kind, narrowed by the text filter
+  but never by the kind filter — the five are the switch, and a switch that
+  zeroes the other four cannot be switched back. Clicking it filters the table
+  to that kind; clicking again clears it. A kind no field uses is not pressable.
+- The **action** ADDS. It sets the kind on the selected fields that do *not*
+  already carry it, and leaves the ones that do exactly as they were — bulk
+  setting a type must not quietly rewrite fields tuned one at a time. To change
+  one, clear it first. The action is dead once every selected field has the kind.
+- The **clear** takes its scope from the filter the table is already showing:
+  with a kind filtering it removes that kind, with none it removes every kind on
+  the selection. It counts fields, not field-kind pairs.
+- **DE** is a picker — `include / exclude / children / number` — in the shape VLG
+  already uses. `number` reveals a box beside the picker, seeded from the field's
+  current DE; the number path is `de-anchor`, so 1..128 is clamped in one place.
+  DE expands to the GROUP, never its leaves (`xact` in the kind list).
+
+**Toolbar** — filter, Overridden toggle, Collapse All, Hide Redef, `?`, columns.
+
+- The **filter** sits over the FIELD column it filters — same position, same
+  width — and follows it through every relayout, because the hook hangs off the
+  column fit that a first render, a drag, a hidden column and a panel resize all
+  pass through.
+- **Overridden (N) / All fields** is one button naming its next state, as
+  Collapse All / Expand All does. Its title names both. Picking a kind stands it
+  down: a kind filter already shows only overridden fields, of one kind.
+
+**Table** — every field the DDL declares; the picker, read-only. Clicking a row
+selects it; clicking it again clears the selection. An override shows in the
+Type-Len / Size / DE / VLG columns in the `declared ↩ override` form; rows
+carrying none recede, with hover, selection, a broken override and an
+unreachable DE all restoring full contrast.
+
+**Written / What the rules did** — the two panes below the table: what was
+stored, and what the rules made of it in words.
+
+**Undo** — every structural edit (override set or cleared, DDL binding added or
+removed, recognizer added, changed, deleted or reordered) raises a toast
+offering `↶ Undo`. One level, deliberately: what was missing is "I just did that
+by accident", not a history. Amber for a removal, green for anything else. The
+offer belongs to one editor session and is dropped when the editor opens or
+closes. Text edits are not wrapped — the spec editor has CodeMirror's own undo
+(`↶ / ↷` in its toolbar, ⌘Z / ⇧⌘Z) and inputs have the browser's.
+
+Prior designs (superseded): first a list with one row per configured field, its
+settings as chips — capped at 180px and sorted by id, so on a real spec the
+entry you wanted was below the fold. Then an "In place" index of five kind rows
+carrying the fields as pills, with the kinds also shown as badges on each field
+row. Both were dropped for the same reason: the panel stated what was configured
+in three places at once, and the pills could only ever show as many fields as
+the row was wide — so a field whose pill did not fit had no way to be edited at
+all. The bar counts it, the columns show it, and the clear reaches every field
+the selection covers.
 
 **Test Bar** (below the tab content area)
 - Collapsible panel. Format selector: Auto / Hex / ASCII.

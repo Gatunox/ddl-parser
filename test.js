@@ -8544,6 +8544,14 @@ test('"number…" reveals a box to type it in, while you are still choosing', ()
   // Per-open, so the last number does not reappear in the next editor.
   assert.ok(/me-fm-ed-num'\)\.value = '';/.test(psFnSource('_meFmEdOpen')),
     'the box carries the previous value into the next open');
+  // And it sits AFTER the picker: it answers the option you just chose, so
+  // reading left to right is the order you fill it in.
+  assert.ok(html.indexOf('id="me-fm-ed-sel"') < html.indexOf('id="me-fm-ed-num"'),
+    'the number box comes before the picker it answers');
+  // No ellipsis on the option — the box appearing beside it says the same thing.
+  assert.ok(/opts: \(\) => \['include', 'exclude', 'children', 'number'\]/.test(
+    APP_SRC.slice(APP_SRC.indexOf("'de':"), APP_SRC.indexOf("'type':"))),
+    'the number option is not plainly named');
 });
 
 test('the kind counts follow the search but not the kind filter', () => {

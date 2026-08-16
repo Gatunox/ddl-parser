@@ -16401,7 +16401,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.3.0';
+const APP_VERSION  = '1.29.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22139,8 +22139,8 @@ function _meOverridesPrep(item) {
 </div>
 <div class="me-fm-ed" id="me-fm-ed">
   <label id="me-fm-ed-lbl"></label>
-  <input id="me-fm-ed-num" type="text" inputmode="numeric" autocomplete="off" spellcheck="false">
   <select id="me-fm-ed-sel" style="display:none"></select>
+  <input id="me-fm-ed-num" type="text" inputmode="numeric" autocomplete="off" spellcheck="false">
   <button class="btn" id="me-fm-ed-ok">Apply</button>
   <button class="btn" id="me-fm-ed-cancel">Cancel</button>
 </div>
@@ -24225,11 +24225,11 @@ const _ME_FM_ED = {
                               return o?.de === false ? 'exclude'
                                    : o?.de === 'children' ? 'children'
                                    : o?.de === true ? 'include' : 'include'; },
-                 opts: () => ['include', 'exclude', 'children', 'number\u2026'],
+                 opts: () => ['include', 'exclude', 'children', 'number'],
                  // Picking "number…" reveals the box next to the picker. It used
                  // to open a second editor on Apply, which asked for the number
                  // AFTER you had already committed — there was nowhere to type.
-                 withNum: v => v.startsWith('number'),
+                 withNum: v => v === 'number',
                  numDef:  () => _ME_FM_ED['de-anchor'].def(),
                  set: (o, v) => {
                    // The number path IS de-anchor: same clamp, same meaning,

@@ -6438,6 +6438,64 @@ test("a group row carries its children's values combined, shown only on request"
     'no control switches it');
 });
 
+test('the DDL Doc reads like the Parse Results table', () => {
+  // Same reading order — name, what it is, how big, where — so switching between
+  // the two does not mean re-learning the columns.
+  const _h = APP_SRC.indexOf("'<th>#</th><th>Fully Qualified Name</th>'");
+  const head = APP_SRC.slice(_h, APP_SRC.indexOf('</tr></thead>', _h));
+  const cols = [...head.matchAll(/<th[^>]*>([^<]+)<\/th>/g)].map(m => m[1]);
+  deepEq(cols, ['#', 'Fully Qualified Name', 'Data Type', 'Occurs', 'Size', 'Offset', 'Description'],
+    'DDL Doc column order');
+
+  // The CELLS follow the header, in both row builders — the group row and the
+  // leaf row are written separately, so they can drift apart on their own.
+  const src = APP_SRC;
+  for (const [anchor, why] of [['<td class="ddl-doc-hex" style="color:var(--text-dim)"></td>', 'group row'],
+                               ['<td class="ddl-doc-hex" style="color:var(--text-dim)">${rowNum}</td>', 'leaf row']]) {
+    const row = src.slice(src.indexOf(anchor), src.indexOf('</tr>', src.indexOf(anchor)));
+    const order = [...row.matchAll(/<td[^>]*>\$\{(?:esc\()?([\w.]+)/g)].map(m => m[1]);
+    assert.ok(order.join(',').includes('f.dataType,occurs,f.size'),
+      `the ${why} does not follow the header: ${order.join(',')}`);
+  }
+
+  // Offset is the byte RANGE, the form Parse Results and the Field Map print —
+  // the old cell repeated the start in hex and said nothing about how far the
+  // field reached, while the Size column beside it held exactly that number.
+  const span = APP_SRC.match(/const _ddlDocSpan = ([^\n]+)/);
+  assert.ok(span && /f\.offset \+ f\.size - 1/.test(span[1]), 'the DDL Doc offset is not a range');
+  assert.ok(/f\.size > 0 \?/.test(span[1]), 'a zero-size field renders a backwards range');
+
+  // The rows that span the table grew with it: seven columns, not the old shape.
+  assert.ok(/<tr class="ddl-doc-sec-hdr"><td colspan="7">/.test(APP_SRC), 'the section header spans the wrong width');
+  assert.ok(/<td colspan="4">Total —/.test(APP_SRC), 'the total row still spans the old column shape');
+
+  // Styling comes from the SAME tokens Parse Results uses, not copied values, so
+  // a density or font change moves both tables together.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const td = /\.ddl-doc-tbl td \{[^}]*\}/.exec(css)[0];
+  assert.ok(/height: var\(--row-h\)/.test(td) && /font-size: var\(--sz-mono\)/.test(td)
+         && /line-height: var\(--row-h\)/.test(td),
+    'the DDL Doc rows do not use the shared row tokens');
+  // The rule between rows and the ellipsis are part of the same borrowed row
+  // treatment — the old table drew a heavier --rule-faint line and let content
+  // run on, so a long name changed the column width instead of trailing off.
+  assert.ok(/border-bottom: var\(--bw\) solid rgba\(255,255,255,0\.04\)/.test(td),
+    'the DDL Doc rows draw a different rule to the table they now match');
+  assert.ok(/text-overflow: ellipsis/.test(td), 'a long value stretches the column instead of trailing off');
+  assert.ok(/\.ddl-doc-tbl tr:hover td \{ background: var\(--hl-hover\); \}/.test(css),
+    'the DDL Doc hover is not the shared one');
+  const th = /\.ddl-doc-tbl th \{[^}]*\}/.exec(css)[0];
+  assert.ok(/text-transform: uppercase/.test(th) && /letter-spacing: 0\.03em/.test(th)
+         && /background: var\(--bg-panel\)/.test(th),
+    'the DDL Doc header is not the shared header treatment');
+
+  // The toolbar joins the panel-header button rule rather than restating it.
+  assert.ok(/\.panel-header \.btn, \.ddl-doc-hdr \.btn \{/.test(css),
+    'the DDL Doc buttons keep a treatment of their own');
+  assert.ok(/\.ddl-doc-hdr\s+\{[^}]*background: var\(--surface-header\)/.test(css),
+    'the buttons sit on a different ground to the ones they now match');
+});
+
 test('every table that has groups uses the same +/- glyph', () => {
   // A rotated ">" says "there is more this way"; +/- says "this opens and
   // closes", which is what these do — and what the DDL tree beside them has

@@ -562,7 +562,9 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
 /* Header buttons used to be full-height borderless strips, which read as
    toolbar segments rather than buttons and left Parse stretched beside them.
    They are ordinary buttons now, vertically centred and sized by content. */
-.panel-header .btn { padding: 0 10px !important; height: var(--ctl-h) !important; font-size: calc(var(--sz-mono) - 1px); display: inline-flex; align-items: center !important; justify-content: center !important; border: var(--bw-ctl) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text-dim) !important; font-weight: 400 !important; align-self: center !important; flex: 0 0 auto !important; }
+/* The DDL Doc's toolbar joins this rule rather than restating it: same height,
+   same border, same surface as the buttons on the Parse Results header. */
+.panel-header .btn, .ddl-doc-hdr .btn { padding: 0 10px !important; height: var(--ctl-h) !important; font-size: calc(var(--sz-mono) - 1px); display: inline-flex; align-items: center !important; justify-content: center !important; border: var(--bw-ctl) solid var(--border) !important; border-radius: var(--r-sm) !important; background: var(--surface-raised) !important; color: var(--text-dim) !important; font-weight: 400 !important; align-self: center !important; flex: 0 0 auto !important; }
 .panel-header .flex-row { align-self: center; display: flex; align-items: center; gap: 6px; padding: 0 6px; }
 .panel-header > span:not(.panel-title) { display: flex; align-items: center; padding: 0 4px; }
 .panel-header .btn:hover { background: var(--surface-hover) !important; border-color: var(--border-strong) !important; color: var(--text) !important; box-shadow: none !important; }
@@ -872,14 +874,29 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    back out, so dimming it hides the one thing still worth clicking. Lifted only
    while the host is dimmed, so an active toggle elsewhere is unaffected. */
 .cfg-dim .btn.btn-on { position: relative; z-index: 200; }
-.ddl-doc-hdr   { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 10px 16px; border-bottom: var(--bw) solid var(--border); flex-shrink: 0; }
+.ddl-doc-hdr   { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-2) 0 16px; min-height: var(--panel-header-h); background: var(--surface-header); border-bottom: var(--bw) solid var(--border); flex-shrink: 0; }
 .ddl-doc-title { font-size: 12px; font-weight: 700; color: var(--text); font-family: var(--font-mono); }
 .ddl-doc-body  { overflow: auto; flex: 1; padding: 0; }
-.ddl-doc-tbl   { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--font-mono); }
-.ddl-doc-tbl th { position: sticky; top: 0; background: var(--bg-deep); color: var(--text-dim); font-weight: 600; text-align: left; padding: 5px 10px; border-bottom: var(--bw) solid var(--border); white-space: nowrap; z-index: 1; }
-.ddl-doc-tbl td { padding: 2px 10px; border-bottom: var(--bw) solid var(--rule-faint); color: var(--text); white-space: nowrap; }
+/* Same tokens the Parse Results table uses — row height, header treatment, hover
+   and rule — so the two tables you switch between read as one thing rather than
+   two that happen to list fields. Written against the tokens, not copied values,
+   so a density or font-size change moves both. */
+.ddl-doc-tbl   { width: 100%; border-collapse: collapse; font-family: var(--font-mono); }
+.ddl-doc-tbl th { position: sticky; top: 0; z-index: 1;
+  background: var(--bg-panel); color: var(--text-very-dim);
+  padding: var(--row-py) 10px; text-align: left;
+  border-bottom: var(--bw) solid var(--border); font-weight: 700; white-space: nowrap;
+  font-size: calc(var(--sz-mono) - 1px); letter-spacing: 0.03em; text-transform: uppercase; }
+.ddl-doc-tbl td { padding: 0 6px; height: var(--row-h); vertical-align: middle;
+  font-size: var(--sz-mono); line-height: var(--row-h);
+  border-bottom: var(--bw) solid rgba(255,255,255,0.04);
+  color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ddl-doc-tbl tr { cursor: default; }
-.ddl-doc-tbl tr:hover td { background: rgba(var(--accent-rgb),0.06); }
+.ddl-doc-tbl tr:hover td { background: var(--hl-hover); }
+/* The offset is a range now, so it reads from its low number like the same
+   column in Parse Results and the Field Map. */
+.ddl-doc-tbl td.ddl-doc-off, .ddl-doc-tbl th.ddl-doc-off {
+  text-align: left; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-dim); }
 .ddl-doc-grp { cursor: default; }
 .ddl-doc-grp td { background: var(--tint-row); color: var(--text-dim); }
 .ddl-doc-grp:hover td { background: rgba(var(--accent-rgb),0.10) !important; }
@@ -5083,11 +5100,17 @@ function showDDLDoc() {
   // Build the full table HTML — elementary fields only, full qualified names
   const hex4 = n => '0x' + n.toString(16).toUpperCase().padStart(4, '0');
 
+  // The byte RANGE, the form Parse Results and the Field Map both print. The
+  // old cell said where a field began and repeated it in hex, saying nothing
+  // about how far it reached — while the Size column beside it held exactly the
+  // number needed. A zero-size field keeps the bare start: "4–3" reads like a
+  // bug in the DDL.
+  const _ddlDocSpan = f => (f.size > 0 ? `${f.offset}–${f.offset + f.size - 1}` : String(f.offset));
   let html = '<table class="ddl-doc-tbl">';
   html += '<thead><tr>'
        + '<th>#</th><th>Fully Qualified Name</th>'
-       + '<th class="ddl-doc-num">Offset</th><th class="ddl-doc-num">Size (bytes)</th>'
-       + '<th class="ddl-doc-num">Occurs</th><th>Data Type</th><th>Description</th>'
+       + '<th>Data Type</th><th class="ddl-doc-num">Occurs</th>'
+       + '<th class="ddl-doc-num">Size</th><th class="ddl-doc-off">Offset</th><th>Description</th>'
        + '</tr></thead><tbody>';
 
   let grandTotal = 0;
@@ -5135,10 +5158,10 @@ function showDDLDoc() {
         html += `<tr class="${grpCls}" data-qn="${esc(f.qualName)}" data-grp="1" ondblclick="toggleDDLGroup(this)">
           <td class="ddl-doc-hex" style="color:var(--text-dim)"></td>
           <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span><span class="ddl-grp-icon" onclick="toggleDDLGroup(this.closest('tr'))"></span>${redefNote}</td>
-          <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
-          <td class="ddl-doc-num">${f.size}</td>
-          <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
           <td>${esc(f.dataType)}</td>
+          <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
+          <td class="ddl-doc-num">${f.size}</td>
+          <td class="ddl-doc-off">${_ddlDocSpan(f)}</td>
           <td style="color:var(--text-dim);font-size:10px">${descTxt}</td>
         </tr>`;
         continue;
@@ -5155,18 +5178,18 @@ function showDDLDoc() {
       html += `<tr${cls} data-qn="${esc(f.qualName)}" data-search="${docSearch}">
         <td class="ddl-doc-hex" style="color:var(--text-dim)">${rowNum}</td>
         <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span>${leafRedefNote}</td>
-        <td class="ddl-doc-num">${f.offset}<span class="ddl-doc-hex"> ${hex4(f.offset)}</span></td>
-        <td class="ddl-doc-num">${f.size}</td>
-        <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
         <td>${esc(f.dataType)}</td>
+        <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
+        <td class="ddl-doc-num">${f.size}</td>
+        <td class="ddl-doc-off">${_ddlDocSpan(f)}</td>
         <td style="color:var(--text-dim);font-size:10px">${descTxt}</td>
       </tr>`;
     }
 
     // Section total row
     html += `<tr class="ddl-doc-foot">
-      <td colspan="2">Total — ${esc(sec.name || 'DEFINITION')}  (${rowNum} fields)</td>
-      <td></td><td class="ddl-doc-num" colspan="4">${totalSize} <span class="ddl-doc-hex">${hex4(totalSize)}</span></td>
+      <td colspan="4">Total — ${esc(sec.name || 'DEFINITION')}  (${rowNum} fields)</td>
+      <td class="ddl-doc-num">${totalSize}</td><td colspan="2"></td>
     </tr>`;
   }
 
@@ -16201,7 +16224,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.1.0';
+const APP_VERSION  = '1.26.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

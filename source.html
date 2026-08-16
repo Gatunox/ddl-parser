@@ -463,6 +463,13 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
 .bottom-row .panel.collapsed { background: var(--bg-panel); }
 .panel.collapsed .panel-body { display: none; }
 .panel.collapsed .ddl-pane-split { display: none; }
+/* The DDL panel's header is not a bar any more — its title and its toggle moved
+   into the editor's own toolbar, which now sits in the row the header had. The
+   element stays because the COLLAPSED state is built entirely out of it: the
+   rotated title, and the button that brings the panel back. Hidden only while
+   expanded, so collapsing behaves exactly as it did. */
+#ddlPanel:not(.collapsed) > .panel-header { display: none; }
+#ddlCfgBar .ddl-cfg-title { flex-shrink: 0; padding-right: 4px; }
 .panel.collapsed .panel-header {
   border-bottom: none;
   border-right: var(--bw) solid var(--border);
@@ -3121,6 +3128,7 @@ th.me-fm-colhi{color:var(--accent);}
         <div class="resizer-h" id="ddlTreeResizer"></div>
         <div class="ddl-editor-pane">
           <div id="ddlCfgBar">
+            <span class="panel-title ddl-cfg-title">DDL Definition</span>
             <div class="ddl-search-bar" id="ddlSearchBar">
               <input id="ddlSearchInput" class="ddl-search-input" type="text" placeholder="Search" autocomplete="off" spellcheck="false"
                 oninput="ddlSearchUpdate()"
@@ -3136,6 +3144,12 @@ th.me-fm-colhi{color:var(--accent);}
             <button class="btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
             <button class="btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
             <button class="btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
+            <!-- Collapses the whole DDL panel, exactly as the header button did:
+                 same call, same arguments, so togglePanel still drives the
+                 header's own button and nothing about collapsing changes. This
+                 one is only ever seen expanded, where the glyph is always −. -->
+            <button class="panel-toggle" id="ddlToggleBar"
+                    onclick="togglePanel('ddlPanel','ddlToggle','ddlResizer')" title="Hide panel">−</button>
           </div>
           <div id="ddlValidationBar"></div>
           <div id="ddlEditor" class="cm-host"></div>
@@ -16461,7 +16475,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.1.0';
+const APP_VERSION  = '1.30.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

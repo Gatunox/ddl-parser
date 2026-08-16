@@ -11866,6 +11866,31 @@ test('the Overrides column has two scrollbars, not three', () => {
     'the pane can now clip its content with no way to reach it');
 });
 
+test('the DDL panel header is only the collapsed strip now', () => {
+  // Asked for: lose the "DDL Definition" bar so the toolbars sit in its row,
+  // without losing the title or the way back from a collapse.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/#ddlPanel:not\(\.collapsed\) > \.panel-header \{ display: none; \}/.test(css),
+    'the header still takes a row while the panel is open');
+  // It must NOT be deleted: the collapsed state is built entirely out of it —
+  // the rotated title and the button that brings the panel back — and #ddlCfgBar
+  // is hidden when collapsed, so a toggle living only there would be a one-way trip.
+  assert.ok(/id="ddlToggle"/.test(html), 'the header toggle is gone, so a collapsed panel cannot reopen');
+  assert.ok(/\.panel\.collapsed #ddlCfgBar \{ display:none !important; \}/.test(css),
+    'the toolbar no longer hides when collapsed — this is why the header must survive');
+
+  // Title before the search, toggle after Clear.
+  const bar = html.slice(html.indexOf('<div id="ddlCfgBar">'), html.indexOf('<div id="ddlValidationBar"'));
+  assert.ok(bar.indexOf('ddl-cfg-title') < bar.indexOf('id="ddlSearchBar"'),
+    'the title does not come before the search bar');
+  assert.ok(bar.indexOf('id="ddlToggleBar"') > bar.indexOf('id="ddlClearBtn"'),
+    'the toggle does not come after Clear');
+  // Same call as the header's, so collapsing is unchanged and togglePanel keeps
+  // driving the button that the collapsed strip shows.
+  assert.ok(/id="ddlToggleBar"[\s\S]{0,120}togglePanel\('ddlPanel','ddlToggle','ddlResizer'\)/.test(bar),
+    'the toolbar toggle collapses something other than the DDL panel');
+});
+
 test('the feature is called the Class Editor everywhere it is named', () => {
   // A rename that reaches the header and misses the error messages leaves two
   // names for one thing, and the half that is wrong is the half people meet

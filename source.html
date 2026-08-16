@@ -16412,7 +16412,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.6.3';
+const APP_VERSION  = '1.29.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22121,12 +22121,8 @@ function _meOverridesPrep(item) {
 </div>
 <div class="me-fm-toolbar">
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
-  <span class="me-fm-filt">
-    <button class="btn btn-accent-on" id="me-fm-all-btn" onclick="_meFmSetOvOnly(false)"
-      title="Every field the DDL declares">All fields</button>
-    <button class="btn" id="me-fm-ovr-btn" onclick="_meFmSetOvOnly(true)"
-      title="Only the fields that carry an override">Overridden (<span id="me-fm-ovr-n">0</span>)</button>
-  </span>
+  <button class="btn" id="me-fm-ovr-btn" onclick="_meFmSetOvOnly(!(_meState \u0026\u0026 _meState.fmOvOnly))"
+    title="Overridden 0 / All fields">Overridden (<span id="me-fm-ovr-n">0</span>)</button>
   ${usesBitmapFields ? `<button class="btn${autoOn ? ' btn-accent-on' : ''}" id="me-fm-auto-btn" onclick="_meFmAutoOrder()" title="Anchor each DE from the 'Bit map position = NN' comment above its declaration in the bound DDL files. Toggle: press again to revert to the order before Auto Order.">Auto Order</button>` : ''}
   <button class="btn" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
   <button class="btn" id="me-fm-hide-redef-btn" onclick="_meFmToggleHideRedef()" title="Hide / show REDEFINES rows">Hide Redef</button>
@@ -23808,14 +23804,21 @@ function _meFmSetOvOnly(on) {
   _meFmReapplyState();
 }
 
-// One of the pair is always lit, and the count follows the store rather than the
-// render that happened to build the button.
+// One button naming what a click will do, the way Collapse All does — two
+// buttons for two states meant one of them was always the state you were
+// already in. The count follows the store rather than the render that happened
+// to build the button.
 function _meFmSyncFiltBtns() {
+  const btn = document.getElementById('me-fm-ovr-btn');
+  if (!btn) return;
   const only = !!(_meState && _meState.fmOvOnly);
-  document.getElementById('me-fm-all-btn')?.classList.toggle('btn-accent-on', !only);
-  document.getElementById('me-fm-ovr-btn')?.classList.toggle('btn-accent-on', only);
-  const n = document.getElementById('me-fm-ovr-n');
-  if (n) n.textContent = Object.keys(_meOvAll(_meCurItem())).length;
+  const total = Object.keys(_meOvAll(_meCurItem())).length;
+  btn.innerHTML = only ? 'All fields' : `Overridden (<span id="me-fm-ovr-n">${total}</span>)`;
+  // The title names BOTH states, so the half you cannot currently see is still
+  // discoverable from the button you can.
+  btn.title = `Overridden ${total} / All fields`;
+  btn.classList.toggle('btn-accent-on', only);
+  btn.disabled = !only && total === 0;
 }
 
 // ── Field Map "?" help ────────────────────────────────────────────────────
@@ -24630,6 +24633,8 @@ function _meFmBarRefresh() {
     grp.classList.toggle('on', _meState?.fmOvKind === k.id);
     // The action is only ever "add", so it is dead once every selected field
     // already has this kind.
+    // Nothing to filter to, so the count is not a button here.
+    grp.querySelector('.me-ovb-n').disabled = total === 0;
     const act = grp.querySelector('.me-ovb-act');
     act.disabled = n === 0 || held === _meFmActionTargets(k.act).length;
   }
@@ -24704,7 +24709,13 @@ function _meSelCanon() { return _meCanonSet(_meFmMultiSel); }
 // compare equal.
 function _meNextSelection(qn, add, cur) {
   const targets = _meRowsForOverride(qn);
-  if (!add) return new Set(targets);
+  if (!add) {
+    // Clicking what is already selected clears it. Without this the only way to
+    // get back to no selection was to pick a different row, so a bar full of
+    // controls aimed at one field could never be aimed at nothing.
+    const same = cur && cur.size === targets.length && targets.every(t => cur.has(t));
+    return same ? new Set() : new Set(targets);
+  }
   const next = new Set(cur);
   const on = targets.every(t => next.has(t));
   for (const t of targets) { if (on) next.delete(t); else next.add(t); }
@@ -24724,6 +24735,9 @@ function _meRowsForOverride(qn) {
 function _meOvlKindFilter(kind) {
   if (!_meState) return;
   _meState.fmOvKind = _meState.fmOvKind === kind ? null : kind;
+  // A kind filter already shows only overridden fields — of one kind. Leaving
+  // Overridden lit alongside it claimed a second filter was doing something.
+  if (_meState.fmOvKind) _meState.fmOvOnly = false;
   _meFmReapplyState();
   _meOvlRefresh();
 }

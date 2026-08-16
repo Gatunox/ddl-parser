@@ -8479,6 +8479,50 @@ test('each kind states both numbers, and one clear serves them all', () => {
   assert.ok(/clrAll\.disabled = !hits\.length;/.test(bar), 'the clear stays live with nothing to clear');
 });
 
+test('clicking the selection again clears it', () => {
+  setFmVirt({ all: occSelRows() });
+  const sel = meNextSelection('GRP.A', false, new Set());
+  eq(sel.size, 4, 'the first click selects every row the rule drives');
+  // Same click again, no modifier: back to nothing. Without this the only way
+  // out of a selection was to pick a different row, so a bar full of controls
+  // aimed at one field could never be aimed at nothing.
+  eq(meNextSelection('GRP.A', false, sel).size, 0, 'clicking the same selection again clears it');
+  // A DIFFERENT row still replaces rather than clears.
+  eq(meNextSelection('GRP.B', false, sel).size > 0, true, 'clicking elsewhere clears everything');
+  // "The same selection" means exactly these rows and no others. A selection
+  // that CONTAINS them plus more must narrow to them, not clear — dropping the
+  // size check makes every superset read as "the same" and wipes the extras.
+  const superset = new Set([...sel, 'MAGIC']);
+  eq(meNextSelection('GRP.A', false, superset).size, 4,
+     'a selection containing these rows and more is treated as the same one');
+  // And a partial overlap replaces too.
+  const partial = new Set([...sel].slice(0, 2));
+  eq(meNextSelection('GRP.A', false, partial).size, 4, 'a partial selection is treated as the same one');
+});
+
+test('a kind with no fields is not a filter you can press', () => {
+  const bar = psFnSource('_meFmBarRefresh');
+  assert.ok(/\.me-ovb-n'\)\.disabled = total === 0;/.test(bar),
+    'a kind no field uses still offers to filter the table to nothing');
+});
+
+test('Overridden is one button naming its next state', () => {
+  // Two buttons for two states meant one of them always named the state you
+  // were already in. It flips like Collapse All / Expand All does.
+  assert.ok(!/id="me-fm-all-btn"/.test(html), 'the separate All fields button is back');
+  const fn = psFnSource('_meFmSyncFiltBtns');
+  assert.ok(/only \? 'All fields' : `Overridden \(/.test(fn), 'the label does not flip with the state');
+  // The title names BOTH states, so the half you cannot see is still discoverable.
+  assert.ok(/btn\.title = `Overridden \$\{total\} \/ All fields`/.test(fn),
+    'the title does not name both states');
+  assert.ok(/btn\.disabled = !only && total === 0;/.test(fn),
+    'it offers to filter to nothing when the spec has no overrides');
+  // A kind filter already shows only overridden fields, of one kind — leaving
+  // this lit beside it claimed a second filter was doing something.
+  assert.ok(/if \(_meState\.fmOvKind\) _meState\.fmOvOnly = false;/.test(psFnSource('_meOvlKindFilter')),
+    'picking a kind leaves the Overridden filter on');
+});
+
 test('the clear takes its scope from the filter the table is already showing', () => {
   const sc = psFnSource('_meFmClearScope');
   assert.ok(/const only = _meState && _meState\.fmOvKind;/.test(sc),

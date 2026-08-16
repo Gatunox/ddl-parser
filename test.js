@@ -8269,6 +8269,72 @@ test('an ignored field is rendered as a decision, not as an empty cell', () => {
 });
 
 // ── Overrides identity: kinds are the rows, fields are the badges ──────────
+// ── Undo: the safeguard the configuration editing never had ────────────────
+test('the toast can carry an action, and an actionable one is reachable', () => {
+  const fn = psFnSource('flash');
+  assert.ok(/function flash\(msg, level, action\)/.test(fn), 'flash takes no action');
+  assert.ok(/action\.run\(\)/.test(fn), 'the button does not run the action');
+  assert.ok(/el\.remove\(\);\s*\n\s*action\.run\(\)/.test(fn),
+    'the toast is not dismissed before the action runs, so a slow undo leaves a dead toast up');
+  // The base .flash is pointer-events:none — an actionable toast MUST opt back in
+  // or its own button cannot be clicked.
+  assert.ok(/\(action \? ' has-act' : ''\)/.test(fn), 'the actionable toast is not marked');
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.flash\.has-act \{[^}]*pointer-events: auto/.test(css),
+    'the undo button sits on a toast that ignores the pointer');
+  // Long enough to notice and decide. The first one written expired unclicked.
+  assert.ok(/action \? 20000/.test(fn), 'an actionable toast dies as fast as a notice');
+  // currentColor: this button rides on green, amber and red toasts alike.
+  assert.ok(/\.flash-act \{[^}]*border: var\(--bw-ctl\) solid currentColor/.test(css),
+    'the action button has a fixed colour that cannot read on every toast');
+});
+
+test('undo snapshots BEFORE the change, and refuses when the index went stale', () => {
+  const fn = psFnSource('_meUndoable');
+  // Every caller mutates the item in place, so holding the reference would hand
+  // undo the already-edited object — the clone has to happen first.
+  // Presence FIRST. Asserting only the ordering passed on a mutant that removed
+  // the clone entirely: indexOf returned -1, and -1 is less than everything.
+  const cloneAt = fn.indexOf('JSON.parse(JSON.stringify(item))');
+  assert.ok(cloneAt >= 0, 'the snapshot is the live item, so undo restores the edited object');
+  assert.ok(cloneAt < fn.indexOf('run()'),
+    'the snapshot is taken after the change, which snapshots the change');
+  assert.ok(/changed === false/.test(fn), 'a caller cannot decline to offer an undo it did not earn');
+  const ap = psFnSource('_meUndoApply');
+  assert.ok(/_meState\.specs\.length !== o\.nSpecs/.test(ap),
+    'undo restores by index without checking the list is the same length — it would overwrite another entity');
+  assert.ok(/_meUndoOffer = null;/.test(ap), 'the offer is not consumed, so undo can be applied twice');
+  assert.ok(ap.indexOf('_meUndoOffer = null') < ap.indexOf('if (!o'),
+    'the offer survives an early return and can be replayed onto a later state');
+});
+
+test('the structural edits offer an undo; typing does not', () => {
+  for (const fn of ['_meFmAct', '_meOvlDropKind', '_meBindAdd', '_meBindDel'])
+    assert.ok(/_meUndoable\(/.test(psFnSource(fn)), `${fn} changes configuration with no way back`);
+  assert.ok(/_meUndoable\(/.test(psFnSource('_meFmEdCommit')), 'the value editor offers no undo');
+  // Text keeps its own undo — the spec editor's history and the browser's for
+  // inputs — so wrapping it would toast on every keystroke.
+  for (const fn of ['_meBindSet', '_meField'])
+    assert.ok(!/_meUndoable\(/.test(psFnSource(fn)), `${fn} toasts on every keystroke`);
+});
+
+test('the parse-spec history is on screen, not just on the keyboard', () => {
+  // ⌘Z always worked here; nothing said so, which for a box people paste
+  // hand-built JSON into is close to not having it.
+  const entry = fs.readFileSync('./codemirror-entry.js', 'utf8');
+  for (const cmd of ['undo', 'redo', 'undoDepth', 'redoDepth'])
+    assert.ok(new RegExp(`^\\s*${cmd},$`, 'm').test(entry), `${cmd} is not exported to window.CM`);
+  assert.ok(/id="me-ps-undo"/.test(html) && /id="me-ps-redo"/.test(html), 'the buttons are missing');
+  // Both start dead and follow the real depth, so a dead button never looks live.
+  const sync = psFnSource('_mePsSyncUndoBtns');
+  assert.ok(/window\.CM\.undoDepth\(st\) === 0/.test(sync) && /window\.CM\.redoDepth\(st\) === 0/.test(sync),
+    'the buttons do not follow the history depth');
+  assert.ok(/_mePsSyncUndoBtns\(\)/.test(psFnSource('_mePsMountCM')),
+    'a freshly mounted editor inherits the previous spec enabled state');
+  assert.ok(/disabled/.test((html.match(/id="me-ps-undo"[^>]*>/) || [''])[0]),
+    'the undo button starts enabled with nothing to undo');
+});
+
 test('the five kinds are declared once and every surface reads that list', () => {
   const kinds = meOvKinds;
   assert.strictEqual(kinds.map(k => k.id).join(','), 'type,show,size,de,vlg',

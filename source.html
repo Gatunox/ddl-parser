@@ -1614,6 +1614,18 @@ td.c-err  { color: var(--accent2); }
 }
 .flash.warn  { background: var(--flash-warn-bg); color: var(--flash-warn-fg); pointer-events: auto; cursor: pointer; padding-right: 46px; position: relative; }
 .flash.error { background: var(--flash-error-bg); color: var(--flash-error-fg); pointer-events: auto; cursor: pointer; padding-right: 46px; position: relative; }
+/* An actionable toast has to be clickable. The base .flash is pointer-events:
+   none so it never blocks the page — only warn/error re-enable it, and an Undo
+   on a plain success toast would have been unreachable. */
+.flash.has-act { pointer-events: auto; cursor: default; padding-right: 46px; position: relative; }
+/* currentColor, not the accent: this button rides on a green, amber or red
+   toast, and one fixed colour cannot read on all three. */
+.flash-act {
+  background: transparent; border: var(--bw-ctl) solid currentColor; color: inherit;
+  font-family: var(--font-mono); font-size: calc(var(--sz-mono) - 1px);
+  border-radius: var(--r-sm); padding: 1px 8px; margin-left: 10px; cursor: pointer;
+}
+.flash-act:hover { background: rgba(0,0,0,0.14); }
 .flash-x {
   position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
   font-size: 13px; line-height: 1; opacity: 0.6;
@@ -2865,6 +2877,8 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    and a count; the fields themselves are pills only while a pill list is still
    a control you can read (see _ME_OV_PILL_MAX) — past that the count and the
    virtualized table say it better. */
+.me-ps-undo-pair{display:inline-flex;gap:4px;flex-shrink:0;}
+.me-ps-undo-pair .btn[disabled]{opacity:.35;cursor:default;}
 .me-ovl-ttl{font-weight:700;letter-spacing:.06em;text-transform:uppercase;
   font-size:calc(var(--sz-mono) - 2px);color:var(--text);}
 .me-ovl-index{border: var(--bw) solid var(--border);border-radius:0 0 var(--r-sm) var(--r-sm);
@@ -16402,7 +16416,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.27.2.0';
+const APP_VERSION  = '1.28.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17391,13 +17405,33 @@ function esc(s) {
 
 // level: 'info'/'ok' (green, 10 s) | 'warn' (yellow, 20 s) | 'error' (red, 30 s)
 // All levels show an ✕ so the user can dismiss early.
-function flash(msg, level) {
+// `action` is optional: { label, run }. A toast that can DO something is how an
+// edit gets taken back — the alternative was a confirm() in front of every
+// change, which asks before you can know whether you were wrong.
+function flash(msg, level, action) {
   const container = document.getElementById('flash-container');
   if (!container) return;
-  const ms = level === 'error' ? 30000 : level === 'warn' ? 20000 : 10000;
+  // An actionable toast is not a notice, it is a decision: you have to see it,
+  // read what changed and choose. Ten seconds is the right life for "saved" and
+  // far too short for "undo this" — the first one written expired before it
+  // could be clicked.
+  const ms = level === 'error' ? 30000 : level === 'warn' ? 20000 : action ? 20000 : 10000;
   const el = document.createElement('div');
-  el.className = 'flash' + (level === 'warn' ? ' warn' : level === 'error' ? ' error' : '');
+  el.className = 'flash' + (level === 'warn' ? ' warn' : level === 'error' ? ' error' : '')
+                         + (action ? ' has-act' : '');
   el.textContent = msg;
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'flash-act';
+    b.textContent = action.label;
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      clearTimeout(timer);
+      el.remove();
+      action.run();
+    });
+    el.appendChild(b);
+  }
   const x = document.createElement('span');
   x.className = 'flash-x'; x.textContent = '✕';
   el.appendChild(x);
@@ -18175,6 +18209,49 @@ function _meSetDirty() {
   if (btn) btn.disabled = false;
 }
 
+// ── One-level undo for the structural edits ─────────────────────────────────
+// Configuring an entity is the most tedious work this app asks for, and unlike
+// deleting one, none of it asked before it changed anything. The toast is that
+// safeguard moved after the fact: the action happens, and for as long as the
+// toast is up it can be taken back.
+//
+// ONE level, deliberately. What was missing is "I just did that by accident",
+// not a history — a deeper stack would have to survive re-renders, entity
+// switches and Save, none of which it could do honestly. Text edits are not
+// wrapped: the spec editor has its own undo and inputs have the browser's.
+let _meUndoOffer = null;   // { snap, idx, nSpecs, label }
+
+function _meUndoable(label, run) {
+  const item = (_meState && _meState.selIdx >= 0) ? _meCurItem() : null;
+  // Cloned BEFORE the change, because every caller mutates the item in place —
+  // holding the reference would hand undo the already-edited object.
+  const snap = item ? JSON.parse(JSON.stringify(item)) : null;
+  // A caller returns false when it decided not to change anything after all —
+  // offering to undo nothing is worse than staying quiet.
+  const changed = run();
+  if (!snap || changed === false) return;
+  _meUndoOffer = { snap, idx: _meState.selIdx, nSpecs: _meState.specs.length, label };
+  flash(label, null, { label: '\u21B6 Undo', run: _meUndoApply });
+}
+
+function _meUndoApply() {
+  const o = _meUndoOffer;
+  _meUndoOffer = null;
+  if (!o || !_meState) return;
+  // The offer addresses an entity by index. If entities were added or removed
+  // in between, that index means something else and restoring would overwrite
+  // a different entity with this one's contents.
+  if (_meState.specs.length !== o.nSpecs || !_meState.specs[o.idx]) {
+    flash('Cannot undo \u2014 the entity list changed since then', 'warn');
+    return;
+  }
+  _meState.specs[o.idx] = o.snap;
+  _meSetDirty();
+  _meRenderSidebar();
+  _meRenderRight();
+  flash('Undone \u2014 ' + o.label.charAt(0).toLowerCase() + o.label.slice(1));
+}
+
 function _meSectionToggle(sec) {
   _meState.sections[sec] = !_meState.sections[sec];
   _meRenderRight();
@@ -18597,6 +18674,12 @@ function _meHtmlParseSpec(item) {
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? ' on' : ''}" onclick="_mePsSetFmtMode('compact')">Compact</button>
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? '' : ' on'}" onclick="_mePsSetFmtMode('expanded')">Expanded</button>
     </div>
+    <span class="me-ps-undo-pair">
+      <button class="btn btn-ico" id="me-ps-undo" onclick="_mePsUndo()"
+        title="Undo the last edit to this spec (\u2318Z)" disabled>\u21B6</button>
+      <button class="btn btn-ico" id="me-ps-redo" onclick="_mePsRedo()"
+        title="Redo (\u21E7\u2318Z)" disabled>\u21B7</button>
+    </span>
     <button class="btn" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
   <div class="me-ps-split me-hs-fixed" id="me-ps-split">
@@ -21301,6 +21384,21 @@ function _mePsOvrRefresh() {
   if (_mePsCM) { try { _mePsCM.dispatch({}); } catch (_) {} }
 }
 
+// The spec editor has always had CodeMirror's history — \u2318Z and \u21E7\u2318Z both
+// worked. Nothing on screen said so, which for a text box people paste
+// hand-built JSON into is the same as not having it. These drive that same
+// history, and report its depth so a dead button never looks live.
+const _mePsUndo = () => { if (_mePsCM) { window.CM.undo(_mePsCM); _mePsCM.focus(); _mePsSyncUndoBtns(); } };
+const _mePsRedo = () => { if (_mePsCM) { window.CM.redo(_mePsCM); _mePsCM.focus(); _mePsSyncUndoBtns(); } };
+function _mePsSyncUndoBtns() {
+  const u = document.getElementById('me-ps-undo');
+  const r = document.getElementById('me-ps-redo');
+  if (!u || !r) return;
+  const st = _mePsCM && _mePsCM.state;
+  u.disabled = !st || window.CM.undoDepth(st) === 0;
+  r.disabled = !st || window.CM.redoDepth(st) === 0;
+}
+
 function _mePsMountCM(item) {
   _mePsUnmountCM();
   const host = document.getElementById('me-ps-ta-host');
@@ -21331,6 +21429,8 @@ function _mePsMountCM(item) {
           if (u.docChanged) _mePsChange(u.state.doc.toString());
           // Follow the caret: moving into a block shows that block's reference.
           if (u.docChanged || u.selectionSet) _mePsHelpFollowCursor(u.state);
+          // Depth changes on ⌘Z too, so this cannot live only in the buttons.
+          if (u.docChanged) _mePsSyncUndoBtns();
         }),
       ],
     }),
@@ -21340,6 +21440,9 @@ function _mePsMountCM(item) {
   // requiring an edit first.
   if (Array.isArray(item[specField])) _mePsScheduleLint(item, item[specField]);
   _mePsInitSplit();
+  // A freshly mounted editor has no history, so both start dead rather than
+  // inheriting the enabled state of whatever spec was open before.
+  _mePsSyncUndoBtns();
   return _mePsCM;
 }
 
@@ -21886,16 +21989,21 @@ function _meBindSet(idx, val) {
 }
 function _meBindAdd() {
   const item = _meCurItem(); if (!item) return;
-  if (!item.ddl_bindings) item.ddl_bindings = [];
-  item.ddl_bindings.push('');
-  _meSetDirty();
-  _meRenderRight();
+  _meUndoable('Added a DDL binding', () => {
+    if (!item.ddl_bindings) item.ddl_bindings = [];
+    item.ddl_bindings.push('');
+    _meSetDirty();
+    _meRenderRight();
+  });
 }
 function _meBindDel(idx) {
   const item = _meCurItem(); if (!item || !item.ddl_bindings) return;
-  item.ddl_bindings.splice(idx, 1);
-  _meSetDirty();
-  _meRenderRight();
+  const gone = item.ddl_bindings[idx] || '(empty)';
+  _meUndoable(`Removed the DDL binding ${gone}`, () => {
+    item.ddl_bindings.splice(idx, 1);
+    _meSetDirty();
+    _meRenderRight();
+  });
 }
 
 // ── Overrides Tab ─────────────────────────────────────────────────────────
@@ -24175,9 +24283,11 @@ function _meFmEdCommit() {
     if (!/^[0-9]+$/.test(v)) { document.getElementById('me-fm-ed-num').focus(); return; }
   } else v = document.getElementById('me-fm-ed-sel').value;
   const item = _meCurItem(); if (!item) return;
-  const all = _meOvAll(item);
   const rowsById = new Map((_meFmVirt?.all || []).map(r => [r.id, r]));
   const targets = _meFmActionTargets(_meFmEdAct);
+  const _edLabel = `${cfg.label || _meFmEdAct} set to ${v} \u2014 ${targets.length} field${targets.length !== 1 ? 's' : ''}`;
+  return _meUndoable(_edLabel, () => {
+  const all = _meOvAll(item);
   let noops = 0, cleared = 0;
   for (const qn of targets) {
     const k = _canonFieldId(qn);
@@ -24206,6 +24316,9 @@ function _meFmEdCommit() {
   else _meFmNoteExpansion(_meFmEdAct, targets);
   _meFmEdClose();
   _meFmAfterAct();
+  // Every target was already reading that value, so nothing was written.
+  return !(noops && !cleared);
+  });
 }
 
 // The two panes: the map as stored, and what the rules made of it in words.
@@ -24295,22 +24408,28 @@ function _meFmActionTargets(act) {
   return out;
 }
 
+const _ME_FM_ACT_SAID = { 'de-off': 'Excluded from DE numbering',
+                          'de-on':  'Included in DE numbering',
+                          'de-kids': 'DE numbering handed to the children' };
 function _meFmAct(act) {
   const item = _meCurItem(); if (!item) return;
   if (_ME_FM_ED[act]) return _meFmEdOpen(act);
   const all = _meOvAll(item);
   const targets = _meFmActionTargets(act);
-  for (const qn of targets) {
-    const k = _canonFieldId(qn);
-    const o = all[k] || (all[k] = {});
-    switch (act) {
-      case 'de-off':  o.de = false; break;
-      case 'de-on':   o.de = true; break;
-      case 'de-kids': o.de = 'children'; break;
+  const said = `${_ME_FM_ACT_SAID[act] || act} \u2014 ${targets.length} field${targets.length !== 1 ? 's' : ''}`;
+  _meUndoable(said, () => {
+    for (const qn of targets) {
+      const k = _canonFieldId(qn);
+      const o = all[k] || (all[k] = {});
+      switch (act) {
+        case 'de-off':  o.de = false; break;
+        case 'de-on':   o.de = true; break;
+        case 'de-kids': o.de = 'children'; break;
+      }
     }
-  }
-  _meFmNoteExpansion(act, targets);
-  _meFmAfterAct();
+    _meFmNoteExpansion(act, targets);
+    _meFmAfterAct();
+  });
 }
 // Delegated once — the bar is re-rendered with the panel, so per-button
 // handlers would be re-bound every refresh.
@@ -24558,9 +24677,11 @@ function _meOvlKindFilter(kind) {
 function _meOvlDropKind(id, kind) {
   const item = _meCurItem(); if (!item) return;
   const k = _ME_OV_KINDS.find(x => x.id === kind); if (!k) return;
-  for (const key of k.keys) _meOvSet(item, id, key, null);
-  if (!_meOvGet(item, id)) _meFmMultiSel.delete(id);
-  _meFmAfterAct();
+  _meUndoable(`Removed the ${k.label} override on ${id}`, () => {
+    for (const key of k.keys) _meOvSet(item, id, key, null);
+    if (!_meOvGet(item, id)) _meFmMultiSel.delete(id);
+    _meFmAfterAct();
+  });
 }
 
 function _meOvlDelete(id) {
@@ -26387,6 +26508,8 @@ function _meRecSave(idx) {
   const item = _meCurItem();
   if (!item) return;
   if (!item.recognizers) item.recognizers = [];
+  _meUndoable(idx === -2 ? `Added the ${rec.type} recognizer`
+                         : `Changed the ${rec.type} recognizer`, () => {
   if (idx === -2) item.recognizers.push(rec);
   else            item.recognizers[idx] = rec;
   _meState.recTest = null;   // recognizer changed — last verdict is stale
@@ -26395,6 +26518,7 @@ function _meRecSave(idx) {
   if (_meState.pend) delete _meState.pend[idx];
   _meSetDirty();
   _meRenderRight();
+  });
 }
 
 function _meRecCancel(idx) {
@@ -26407,6 +26531,8 @@ function _meDelRec(idx) {
   confirmDelete('this recognizer', () => {
     const item = _meCurItem();
     if (!item || !item.recognizers) return;
+    const gone = item.recognizers[idx];
+    _meUndoable(`Deleted the ${gone && gone.type ? gone.type : ''} recognizer`.replace('  ', ' '), () => {
     item.recognizers.splice(idx, 1);
     _meState.recTest = null;
     _meState.testResults = null;
@@ -26414,6 +26540,7 @@ function _meDelRec(idx) {
     _meState.pend    = {};
     _meSetDirty();
     _meRenderRight();
+    });
   });
 }
 
@@ -26458,6 +26585,7 @@ function _meRecDrop(e, targetIdx) {
   _meState._dragRecIdx = null;
   if (!item || !item.recognizers) return;
   if (dst === src) return;
+  _meUndoable('Reordered the recognizers', () => {
   const [moved] = item.recognizers.splice(src, 1);
   item.recognizers.splice(dst, 0, moved);
   _meState.recTest = null;
@@ -26466,6 +26594,7 @@ function _meRecDrop(e, targetIdx) {
   _meState.pend    = {};
   _meSetDirty();
   _meRenderRight();
+  });
 }
 function _meRecDragEnd(_e) {
   _meState._dragRecIdx = null;

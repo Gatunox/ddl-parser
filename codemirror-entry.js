@@ -2,7 +2,7 @@
 import { EditorView, keymap, placeholder, ViewPlugin, Decoration, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
 import { EditorState, Compartment, StateEffect, StateField } from '@codemirror/state';
-import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
+import { history, defaultKeymap, historyKeymap, undo, redo, undoDepth, redoDepth } from '@codemirror/commands';
 
 window.CM = {
   EditorView,
@@ -21,4 +21,10 @@ window.CM = {
   history,
   defaultKeymap,
   historyKeymap,
+  // Exported so a toolbar can drive the same history the keymap does — ⌘Z has
+  // always worked in these editors, it simply had nothing on screen saying so.
+  undo,
+  redo,
+  undoDepth,
+  redoDepth,
 };

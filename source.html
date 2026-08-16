@@ -128,14 +128,6 @@
   --accent: #58a6ff;
   --accent-rgb: 88,166,255;
   --accent2: #f78166;
-  /* The five override kinds. Four of them already have a colour in this palette
-     and reuse it, so a theme change moves the badges with everything else; SHOW
-     is the only kind the palette had no colour for. */
-  --k-type: var(--accent2);
-  --k-show: #b3a6ff;
-  --k-size: var(--warning);
-  --k-de:   var(--accent);
-  --k-vlg:  var(--success);
   --text: #c9d1d9;
   --text-dim: #8b949e;
   --text-very-dim: #4d5561;
@@ -217,14 +209,6 @@
   --accent: #0969da;
   --accent-rgb: 9,105,218;
   --accent2: #cf222e;
-  /* The five override kinds. Four of them already have a colour in this palette
-     and reuse it, so a theme change moves the badges with everything else; SHOW
-     is the only kind the palette had no colour for. */
-  --k-type: var(--accent2);
-  --k-show: #6f42c1;
-  --k-size: var(--warning);
-  --k-de:   var(--accent);
-  --k-vlg:  var(--success);
   --text: #24292f;
   --text-dim: #656d76;
   --text-very-dim: #9ba3ab;
@@ -2687,7 +2671,9 @@ tbody tr:hover .me-ps-form-tbl td,
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
 /* Selection action bar — segmented groups, so related actions share one outline
    and the eye sees three groups rather than nine loose pills of random width. */
-.me-fm-bar{display:flex;align-items:center;justify-content:space-evenly;gap:10px 16px;
+/* Left-aligned, like the toolbar above it. space-evenly scattered five controls
+   across the whole panel width, which read as five unrelated things. */
+.me-fm-bar{display:flex;align-items:center;justify-content:flex-start;gap:6px;
   flex-wrap:wrap;margin:9px 0;padding:0 2px;}
 .me-fm-bar .me-fm-cnt{color:var(--accent);font-weight:700;min-width:78px;font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-bar .me-fm-cnt.none{color:var(--text-very-dim);}
@@ -2893,30 +2879,34 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ps-undo-pair .btn[disabled]{opacity:.35;cursor:default;}
 /* One control per override kind: how many fields have it (a filter), the action
    that sets it, and the clear that removes it. Three parts, one group, because
-   they are three things you do to the same one kind — the old bar could add in
-   bulk and had no way at all to remove in bulk. */
-.me-ovb{display:inline-flex;align-items:stretch;border: var(--bw) solid var(--border);
-  border-radius:var(--r-lg);overflow:hidden;flex-shrink:0;}
-.me-ovb>button{background:transparent;border:0;font-family:var(--font-mono);
-  font-size:var(--sz-mono);color:var(--text-dim);cursor:pointer;padding:0 9px;height:20px;
-  display:inline-flex;align-items:center;justify-content:center;}
-.me-ovb>button+button{border-left: var(--bw) solid var(--border);}
-.me-ovb>button:hover:not(:disabled){background:var(--surface-hover);color:var(--text);}
-.me-ovb>button:disabled{opacity:.3;cursor:default;}
-/* The count carries the kind's colour, so the control is identifiable at a
-   glance and matches the column it governs. */
-.me-ovb-n{min-width:3.4em;font-weight:700;}
-.me-ovb.k-type .me-ovb-n{color:var(--k-type);}
-.me-ovb.k-show .me-ovb-n{color:var(--k-show);}
-.me-ovb.k-size .me-ovb-n{color:var(--k-size);}
-.me-ovb.k-de .me-ovb-n{color:var(--k-de);}
-.me-ovb.k-vlg .me-ovb-n{color:var(--k-vlg);}
+   they are three things you do to the same one kind. */
+.me-ovb{display:inline-flex;align-items:stretch;height:var(--ctl-h);flex-shrink:0;
+  border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);
+  background:var(--surface-raised);overflow:hidden;}
+.me-ovb:hover{border-color:var(--border-strong);}
+/* The segments ARE .btn — same ground, same text colour, same hover as every
+   other button in the panel. Only the geometry changes: square them off and
+   let the group's own border and radius wrap the set, exactly as .me-fm-seg
+   did for the bar this replaced. */
+.me-ovb>.btn{border:0;border-radius:0;height:100%;padding:0 10px;gap:5px;}
+.me-ovb>.btn+.btn{border-left: var(--bw-ctl) solid var(--border);}
+.me-ovb>.btn:hover:not(:disabled){background:var(--surface-hover);color:var(--text);}
+.me-ovb>.btn:disabled{color:var(--text-very-dim);cursor:default;background:var(--surface-raised);}
+/* One text colour, the same one every other button uses. Five kind colours in a
+   row was decoration competing with the two things here that DO mean something:
+   the accent when a kind is filtering, and the red when the clear can act. */
+.me-ovb-n{font-weight:700;font-variant-numeric:tabular-nums;min-width:2.4em;justify-content:center;}
+/* Filtering by this kind. The whole group lights, since the whole group is
+   about that one kind. */
 .me-ovb.on{border-color:var(--accent);}
-.me-ovb.on .me-ovb-n{background:rgba(var(--accent-rgb),.16);}
-/* Only ever destructive, so it says so the moment it can do anything. */
-.me-ovb-clr:not(:disabled){color:var(--danger);}
-.me-ovb-clr:not(:disabled):hover{background:color-mix(in srgb, var(--danger) 16%, transparent);color:var(--danger);}
-.me-ovb-cn{margin-left:4px;font-weight:700;}
+.me-ovb.on .me-ovb-n{background:color-mix(in srgb, var(--accent) 20%, transparent);color:var(--accent);}
+/* Collapsed rather than greyed when there is nothing to clear: five dead ✕
+   glyphs sitting in the bar at rest was most of what made it look busy. It
+   appears only once a selection gives it something to remove. */
+.me-ovb-clr{display:none;}
+.me-ovb-clr:not(:disabled){display:inline-flex;color:var(--danger);}
+.me-ovb-clr:not(:disabled):hover{background:color-mix(in srgb, var(--danger) 18%, transparent);color:var(--danger);}
+.me-ovb-cn{font-weight:700;font-variant-numeric:tabular-nums;}
 
 .me-fm-filt{display:inline-flex;gap:4px;flex-shrink:0;}
 
@@ -16403,7 +16393,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.0.0';
+const APP_VERSION  = '1.29.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22134,9 +22124,9 @@ function _meOverridesPrep(item) {
 <div class="me-fm-bar" id="me-fm-bar">
   ${_ME_OV_KINDS.map(k => `
   <span class="me-ovb k-${k.id}" data-kind="${k.id}">
-    <button class="me-ovb-n" data-fmfilt="${k.id}" title="Fields with a ${k.label} override \u2014 click to show only those">0</button>
-    <button class="me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on the selected fields that do not have one">${k.label}\u2026</button>
-    <button class="me-ovb-clr" data-fmclr="${k.id}" title="Remove the ${k.label} override from the selected fields that have one" disabled>\u2715<span class="me-ovb-cn"></span></button>
+    <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="Fields with a ${k.label} override \u2014 click to show only those">0</button>
+    <button class="btn me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on the selected fields that do not have one">${k.label}\u2026</button>
+    <button class="btn me-ovb-clr" data-fmclr="${k.id}" title="Remove the ${k.label} override from the selected fields that have one" disabled>\u2715<span class="me-ovb-cn"></span></button>
   </span>`).join('')}
 </div>
 <div class="me-fm-ed" id="me-fm-ed">

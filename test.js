@@ -8575,24 +8575,27 @@ test('an untouched row recedes, but nothing with something to say does', () => {
     'nothing applies the quiet class');
 });
 
-test('the kind palette reuses the theme colours it already has', () => {
+test('the bar reads in one voice, with colour reserved for meaning', () => {
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  // Four of the five kinds are colours this app already names. Re-declaring the
-  // hex would freeze the badges out of any future theme change.
-  // BOTH themes, counted — with a bare .test() the light block alone satisfied it
-  // while dark had been frozen to a hex.
-  for (const [k, tok] of [['type','--accent2'],['size','--warning'],['de','--accent'],['vlg','--success']])
-    assert.strictEqual((css.match(new RegExp(`--k-${k}:\\s*var\\(${tok}\\)`, 'g')) || []).length, 2,
-      `--k-${k} is a literal colour instead of ${tok} in one of the two themes`);
-  // Both themes define the one kind the palette had no colour for.
-  assert.strictEqual((css.match(/--k-show:/g) || []).length, 2,
-    'SHOW is not defined in both themes');
-  // Tints follow the token, so light mode is not tinted with the dark hue.
-  // Worn by the count on each bar control, so a control matches the column it
-  // governs.
-  for (const k of ['type','show','size','de','vlg'])
-    assert.ok(new RegExp(`\\.me-ovb\\.k-${k} \\.me-ovb-n\\{color:var\\(--k-${k}\\)`).test(css),
-      `the ${k.toUpperCase()} control does not wear its kind colour`);
+  // The five kind colours are gone, tokens included: they were decoration
+  // competing with the two things here that DO carry meaning.
+  assert.ok(!/--k-type|--k-show|--k-size|--k-de\b|--k-vlg/.test(css),
+    'the per-kind colours are back, or their tokens were left orphaned');
+  // Accent says "this kind is filtering the table".
+  assert.ok(/\.me-ovb\.on\{border-color:var\(--accent\);\}/.test(css), 'a filtering kind is not marked');
+  // Red says "this will remove something".
+  assert.ok(/\.me-ovb-clr:not\(:disabled\)\{display:inline-flex;color:var\(--danger\);\}/.test(css),
+    'the clear does not read as destructive');
+  // And it is COLLAPSED, not greyed, when it cannot: five dead ✕ glyphs sitting
+  // in the bar at rest was most of what made it look busy.
+  assert.ok(/\.me-ovb-clr\{display:none;\}/.test(css),
+    'the clear sits in the bar greyed out with nothing to clear');
+  // And the segments are the app's own button rather than a lookalike, which is
+  // why they stopped looking pressable in the first place.
+  assert.ok(/\.me-ovb>\.btn\{border:0;border-radius:0;/.test(css),
+    'the segments restyle a bare button instead of reusing .btn');
+  for (const part of ['n', 'act', 'clr'])
+    assert.ok(html.includes(`class="btn me-ovb-${part}"`), `the ${part} segment is not a .btn`);
 });
 
 test('a selected field needs no second place to be found', () => {

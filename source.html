@@ -2667,6 +2667,11 @@ tbody tr:hover .me-ps-form-tbl td,
 /* Field Map — table layout patterned after DDL Doc */
 .me-fm-warn{padding:6px 10px;margin-bottom:6px;border: var(--bw) solid var(--warning);border-radius:var(--r-sm);background:rgba(255,193,7,0.08);color:var(--warning);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);line-height:1.4;}
 .me-fm-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+/* The buttons collect at the right, under the action bar's own controls. The
+   filter cannot simply be pushed left by justify-content — its margin-left is
+   computed to sit over the FIELD column — so the first button takes the space
+   instead. */
+#me-fm-ovr-btn{margin-left:auto;}
 /* input.me-fm-filter, not .me-fm-filter: the app-wide input[type="text"] rule
    sets --bg-input at (0,1,1) and outranked a bare class, so the panel colour
    was declared and never painted. */
@@ -16412,7 +16417,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.7.1';
+const APP_VERSION  = '1.29.7.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

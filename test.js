@@ -8702,6 +8702,12 @@ test('the bar reads in one voice, with colour reserved for meaning', () => {
   // Red says "this will remove something".
   assert.ok(/\.me-ovb-clrall:not\(:disabled\)\{color:var\(--danger\)/.test(css),
     'the clear does not read as destructive');
+  // The toolbar's buttons end where the action bar's do, so the two rows share
+  // a right edge. The filter cannot be pushed left by justify-content — its
+  // margin-left is computed to sit over the FIELD column — so the first button
+  // takes the free space instead.
+  assert.ok(/#me-fm-ovr-btn\{margin-left:auto;\}/.test(css),
+    'the toolbar buttons do not collect at the right');
   // Last in a right-packed row, so it lands at the far end without an auto
   // margin — which would have absorbed the free space and split the row in two.
   assert.ok(/\.me-ovb-clrall\{flex-shrink:0;height:var\(--ctl-h\);\}/.test(css),

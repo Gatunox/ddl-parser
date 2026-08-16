@@ -6391,6 +6391,18 @@ test('a group row is derived for every dotted id, including nested ones', () => 
   assert.ok(/data-grp="RTE"[\s\S]*?<td class="c-len">4<\/td>/.test(out), 'RTE is 4 bytes');
   // Leaves name their ancestors so a collapse can find them at any depth.
   assert.ok(/data-under="RTE\|RTE\.SUB"/.test(out), 'a nested leaf lists both ancestors');
+
+  // The name comes FIRST and the caret trails it, so a group lines up with the
+  // fields at its own level. Leading with the caret pushed the name 14px right
+  // and the one row naming the group was the one out of line with the column.
+  assert.ok(/<td class="c-id"[^>]*>PAN<span class="grp-caret">/.test(out),
+    'the caret leads the row again, pushing the group name out of the column');
+  // One indent rule for both kinds of row: depth 0 keeps the cell's own padding.
+  // Two expressions is how a group and a leaf came out 2px apart at the top level.
+  assert.ok(/<td class="c-id">PAN<span/.test(out),
+    'a top-level group forces a padding the leaves beside it do not use');
+  assert.ok(/<td class="c-id" style="padding-left:16px">RTE\.SUB<span/.test(out),
+    'a nested group does not step in with its level');
 });
 
 test('a DE is badged once, on the first row that carries it', () => {

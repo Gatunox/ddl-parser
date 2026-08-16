@@ -1424,7 +1424,10 @@ td.c-err  { color: var(--accent2); }
 #resContainer tr.res-grp-row:hover { background: var(--surface-hover); }
 #resContainer tr.res-grp-row td { font-weight: 600; }
 #resContainer tr.res-grp-row td.c-desc { color: var(--text-very-dim); font-weight: 400; }
-.grp-caret { display: inline-block; width: 10px; margin-right: 4px;
+/* After the name, not before it: leading the row with the caret pushed the
+   group name 14px right of the fields at the same level, so the one row naming
+   the group was the one row out of line with the column. */
+.grp-caret { display: inline-block; width: 10px; margin-left: 4px;
   color: var(--text-very-dim); font-weight: 400; }
 /* A collapsed group hides its whole subtree — every row naming it as an
    ancestor, at any depth. */
@@ -11842,7 +11845,7 @@ function renderFieldTable(msg) {
       onmouseenter="hoverField('grp::${esc(gid)}')"
       onmouseleave="clearHover()" title="Click to collapse or expand this group">
       <td class="c-num"></td>
-      <td class="c-id" style="padding-left:${4 + g.depth * 12}px"><span class="grp-caret">${coll ? '+' : '−'}</span>${esc(g.path)}${_deBadgeFor(g.deNum)}</td>
+      <td class="c-id"${g.depth ? ` style="padding-left:${4 + g.depth * 12}px"` : ''}>${esc(g.path)}<span class="grp-caret">${coll ? '+' : '−'}</span>${_deBadgeFor(g.deNum)}</td>
       <td class="c-desc">GROUP</td>
       <td class="c-len">${size}</td>
       <td class="c-off">${span}</td>
@@ -16191,7 +16194,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.0.1';
+const APP_VERSION  = '1.26.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

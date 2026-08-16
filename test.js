@@ -8285,8 +8285,9 @@ test('the toast can carry an action, and an actionable one is reachable', () => 
     'the undo button sits on a toast that ignores the pointer');
   // Long enough to notice and decide. The first one written expired unclicked.
   assert.ok(/action \? 20000/.test(fn), 'an actionable toast dies as fast as a notice');
-  // currentColor: this button rides on green, amber and red toasts alike.
-  assert.ok(/\.flash-act \{[^}]*border: var\(--bw-ctl\) solid currentColor/.test(css),
+  // Not a fixed colour: this button rides on green, amber and red toasts alike,
+  // so it takes each toast's own pair, inverted.
+  assert.ok(/\.flash-act \{[^}]*border: var\(--bw-ctl\) solid var\(--toast-fg\)/.test(css),
     'the action button has a fixed colour that cannot read on every toast');
   // One button builder for both toasts — the two exist only because there are
   // two stacking contexts, not because they are two different ideas.
@@ -8307,11 +8308,40 @@ test('a toast raised inside the Data Editor uses the editor own toast', () => {
   for (const fn of ['_meUndoable', '_meUndoApply'])
     assert.ok(!/[^_a-zA-Z]flash\(/.test(psFnSource(fn)),
       `${fn} raises a page toast, which the editor overlay covers`);
-  assert.ok(/_meFlash\(label, null, \{ label: '\\u21B6 Undo'|_meFlash\(label, null, \{ label: '↶ Undo'/
+  assert.ok(/_meFlash\(label, level \|\| null, \{ label: '[^']*Undo'/
     .test(psFnSource('_meUndoable')), 'the undo offer does not go through the editor toast');
   // And the editor toast must be able to carry it.
   assert.ok(/function _meFlash\(msg, level, action\)/.test(psFnSource('_meFlash')),
     'the editor toast takes no action');
+});
+
+test('the toast colour says what happened, and the Undo reads as a control', () => {
+  // Taking configuration away is amber; adding it is green. The colour answers
+  // "what just happened" before the words are read.
+  for (const fn of ['_meOvlDropKind', '_meBindDel'])
+    assert.ok(/\}, 'warn'\);/.test(psFnSource(fn)), `${fn} removes something and reports it as green`);
+  assert.ok(/\}, 'warn'\);/.test(psFnSource('_meDelRec')), 'deleting a recognizer reports as green');
+  for (const fn of ['_meBindAdd', '_meFmAct'])
+    assert.ok(!/\}, 'warn'\);/.test(psFnSource(fn)), `${fn} adds or changes and reports it as a removal`);
+  assert.ok(/function _meUndoable\(label, run, level\)/.test(psFnSource('_meUndoable')),
+    'the level cannot be set per action');
+
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // The button is the toast inverted — safe on every variant BECAUSE the
+  // toast's own pair already has to contrast, so its inverse contrasts as much.
+  // NOT currentColor: in `background` it resolves against the element's own
+  // color, which this rule sets to the toast ground — the button painted itself
+  // its own text colour and vanished. Both halves have to be named.
+  assert.ok(/\.flash-act \{[^}]*background: var\(--toast-fg\)/.test(css),
+    'the button no longer inverts its toast');
+  assert.ok(!/\.flash-act \{[^}]*background: currentColor/.test(css),
+    'background: currentColor collapses the inversion — the button is invisible');
+  assert.ok(/\.flash-act \{[^}]*color: var\(--toast-bg\)/.test(css), 'the label does not take the toast ground');
+  // Every variant must declare BOTH, or one half of the button is transparent.
+  for (const sel of ['\\.flash \\{', '\\.flash\\.warn', '\\.flash\\.error', '\\.me-flash\\{', '\\.me-flash\\.warn\\{'])
+    for (const v of ['--toast-bg', '--toast-fg'])
+      assert.ok(new RegExp(`${sel}[^}]*${v}`).test(css),
+        `a toast variant (${sel.replace(/\\\\/g,'')}) declares no ${v}, so the Undo button loses half its colours on it`);
 });
 
 test('undo snapshots BEFORE the change, and refuses when the index went stale', () => {

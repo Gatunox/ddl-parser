@@ -1611,21 +1611,33 @@ td.c-err  { color: var(--accent2); }
 .flash {
   padding: 7px 14px; border-radius: var(--r-md); font-size: 12px;
   pointer-events: none; background: var(--success); color: var(--on-accent);
+  --toast-bg: var(--success); --toast-fg: var(--on-accent);
 }
-.flash.warn  { background: var(--flash-warn-bg); color: var(--flash-warn-fg); pointer-events: auto; cursor: pointer; padding-right: 46px; position: relative; }
-.flash.error { background: var(--flash-error-bg); color: var(--flash-error-fg); pointer-events: auto; cursor: pointer; padding-right: 46px; position: relative; }
+.flash.warn  { background: var(--flash-warn-bg); color: var(--flash-warn-fg); pointer-events: auto; cursor: pointer; padding-right: 46px; position: relative; --toast-bg: var(--flash-warn-bg); --toast-fg: var(--flash-warn-fg); }
+.flash.error { background: var(--flash-error-bg); color: var(--flash-error-fg); pointer-events: auto; cursor: pointer; padding-right: 46px; position: relative; --toast-bg: var(--flash-error-bg); --toast-fg: var(--flash-error-fg); }
 /* An actionable toast has to be clickable. The base .flash is pointer-events:
    none so it never blocks the page — only warn/error re-enable it, and an Undo
    on a plain success toast would have been unreachable. */
 .flash.has-act { pointer-events: auto; cursor: default; padding-right: 46px; position: relative; }
-/* currentColor, not the accent: this button rides on a green, amber or red
-   toast, and one fixed colour cannot read on all three. */
+/* The toast INVERTED: its text colour becomes the button's ground and its
+   background becomes the label. An outline in currentColor was legible but sat
+   quietly in the message; this reads as a control at a glance.
+
+   Inverting rather than picking a colour is what makes it safe on every
+   variant — green, amber and red, in both themes. The toast's own pair already
+   has to contrast, so its inverse contrasts by exactly as much, and no fixed
+   colour has to be checked against five backgrounds. */
+/* Both halves named. `background: currentColor` looked like the inversion and
+   was not: currentColor in `background` resolves against the element's OWN
+   color, which this rule had just set to the toast's ground — so the button
+   painted itself its own text colour and disappeared. */
 .flash-act {
-  background: transparent; border: var(--bw-ctl) solid currentColor; color: inherit;
+  background: var(--toast-fg); border: var(--bw-ctl) solid var(--toast-fg);
+  color: var(--toast-bg); font-weight: 700;
   font-family: var(--font-mono); font-size: calc(var(--sz-mono) - 1px);
   border-radius: var(--r-sm); padding: 1px 8px; margin-left: 10px; cursor: pointer;
 }
-.flash-act:hover { background: rgba(0,0,0,0.14); }
+.flash-act:hover { opacity: 0.82; }
 .flash-x {
   position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
   font-size: 13px; line-height: 1; opacity: 0.6;
@@ -2161,8 +2173,8 @@ td.c-err  { color: var(--accent2); }
    overlay (z-index), so its toasts are hidden behind the popup. These render
    inside the right panel instead. */
 #me-flash-container{position:absolute;bottom:52px;right:14px;z-index:50;display:flex;flex-direction:column;gap:6px;align-items:flex-end;max-width:70%;pointer-events:none;}
-.me-flash{pointer-events:auto;padding:7px 34px 7px 14px;border-radius:var(--r-md);font-size:12px;font-family:var(--mono);background:var(--success);color:var(--on-accent);position:relative;box-shadow:var(--shadow-menu);}
-.me-flash.warn{background:var(--warning);color:var(--on-accent);}
+.me-flash{pointer-events:auto;padding:7px 34px 7px 14px;border-radius:var(--r-md);font-size:12px;font-family:var(--mono);background:var(--success);color:var(--on-accent);position:relative;box-shadow:var(--shadow-menu);--toast-bg:var(--success);--toast-fg:var(--on-accent);}
+.me-flash.warn{background:var(--warning);color:var(--on-accent);--toast-bg:var(--warning);--toast-fg:var(--on-accent);}
 .me-flash-x{position:absolute;top:50%;right:10px;transform:translateY(-50%);font-size:13px;line-height:1;opacity:.6;cursor:pointer;}
 .me-flash-x:hover{opacity:1;}
 .me-header{display:flex;align-items:center;gap:var(--sp-2);padding:0 10px 0 14px;min-height:var(--app-header-h);border-bottom: var(--bw) solid var(--border);background:var(--surface-header);flex-shrink:0;}
@@ -16416,7 +16428,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.28.0.2';
+const APP_VERSION  = '1.28.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18227,7 +18239,10 @@ function _meSetDirty() {
 // wrapped: the spec editor has its own undo and inputs have the browser's.
 let _meUndoOffer = null;   // { snap, idx, nSpecs, label }
 
-function _meUndoable(label, run) {
+// `level` is what the action DID, not how it went: removing configuration is
+// amber and adding it is green, so the colour answers "what just happened"
+// before the words are read.
+function _meUndoable(label, run, level) {
   const item = (_meState && _meState.selIdx >= 0) ? _meCurItem() : null;
   // Cloned BEFORE the change, because every caller mutates the item in place —
   // holding the reference would hand undo the already-edited object.
@@ -18240,7 +18255,7 @@ function _meUndoable(label, run) {
   // _meFlash, not flash: this only ever fires with the Data Editor open, and
   // the page's toast container is BELOW that overlay — the first version put a
   // perfectly working Undo button where nobody could see it.
-  _meFlash(label, null, { label: '\u21B6 Undo', run: _meUndoApply });
+  _meFlash(label, level || null, { label: '\u21B6 Undo', run: _meUndoApply });
 }
 
 function _meUndoApply() {
@@ -22012,7 +22027,7 @@ function _meBindDel(idx) {
     item.ddl_bindings.splice(idx, 1);
     _meSetDirty();
     _meRenderRight();
-  });
+  }, 'warn');
 }
 
 // ── Overrides Tab ─────────────────────────────────────────────────────────
@@ -24691,7 +24706,7 @@ function _meOvlDropKind(id, kind) {
     for (const key of k.keys) _meOvSet(item, id, key, null);
     if (!_meOvGet(item, id)) _meFmMultiSel.delete(id);
     _meFmAfterAct();
-  });
+  }, 'warn');
 }
 
 function _meOvlDelete(id) {
@@ -26550,7 +26565,7 @@ function _meDelRec(idx) {
     _meState.pend    = {};
     _meSetDirty();
     _meRenderRight();
-    });
+    }, 'warn');
   });
 }
 

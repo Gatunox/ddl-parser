@@ -16412,7 +16412,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.7.0';
+const APP_VERSION  = '1.29.7.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23793,13 +23793,18 @@ function _meFmFilter(q) {
   if (!_meState) return;
   _meState.fmFilter = q || '';
   _meFmReapplyState();
-  // The index counts describe the filtered set, so they move with the text.
+  // After the re-render, so the prune reads the rows that are actually listed.
+  _meFmPruneSelection();
+  _meFmSyncMultiClasses();
+  // The bar's counts describe the filtered set, so they move with the text.
   _meOvlRefresh();
 }
 
 function _meFmSetOvOnly(on) {
   if (!_meState) return;
   _meState.fmOvOnly = !!on;
+  // Same hazard as the kind filter, and the same discrete action.
+  _meFmClearSelection();
   _meFmSyncFiltBtns();
   _meFmReapplyState();
 }
@@ -24732,12 +24737,33 @@ function _meRowsForOverride(qn) {
 
 // The kind filter, now driven by the count on each bar button. Still a toggle,
 // not a radio: clicking the one already on clears it.
+// Changing what the table LISTS drops the selection. A row you selected before
+// the filter may not be on screen after it, and the bar would still be aimed at
+// it — one click and the action lands on a field you cannot see.
+function _meFmClearSelection() {
+  _meFmMultiSel = new Set();
+  _meOvlSel = null;
+}
+
+// The text filter runs on every keystroke, so clearing there would throw the
+// selection away letter by letter. It PRUNES instead: whatever is still listed
+// stays selected, and anything that scrolled out of the filter goes. Same
+// guarantee — the bar only ever acts on rows you can see — without the
+// selection evaporating as you type.
+function _meFmPruneSelection() {
+  const listed = new Set((_meFmVirt && _meFmVirt.visible || []).map(r => r.id));
+  if (!listed.size) return;
+  for (const qn of [..._meFmMultiSel]) if (!listed.has(qn)) _meFmMultiSel.delete(qn);
+  if (_meOvlSel && !listed.has(_meOvlSel)) _meOvlSel = null;
+}
+
 function _meOvlKindFilter(kind) {
   if (!_meState) return;
   _meState.fmOvKind = _meState.fmOvKind === kind ? null : kind;
   // A kind filter already shows only overridden fields — of one kind. Leaving
   // Overridden lit alongside it claimed a second filter was doing something.
   if (_meState.fmOvKind) _meState.fmOvOnly = false;
+  _meFmClearSelection();
   _meFmReapplyState();
   _meOvlRefresh();
 }

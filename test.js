@@ -8500,6 +8500,29 @@ test('clicking the selection again clears it', () => {
   eq(meNextSelection('GRP.A', false, partial).size, 4, 'a partial selection is treated as the same one');
 });
 
+test('changing what the table lists never leaves the bar aimed off screen', () => {
+  // Reported: filter by a kind with a row already selected and the bar still
+  // points at it — one click and the action lands on a field you cannot see.
+  for (const fn of ['_meOvlKindFilter', '_meFmSetOvOnly'])
+    assert.ok(/_meFmClearSelection\(\)/.test(psFnSource(fn)),
+      `${fn} changes what is listed and keeps the old selection`);
+  const clr = psFnSource('_meFmClearSelection');
+  assert.ok(/_meFmMultiSel = new Set\(\);/.test(clr) && /_meOvlSel = null;/.test(clr),
+    'the clear leaves one of the two selection states behind');
+
+  // The text filter runs per keystroke, so it PRUNES rather than clears —
+  // otherwise the selection evaporates letter by letter. Same guarantee.
+  const txt = psFnSource('_meFmFilter');
+  assert.ok(/_meFmPruneSelection\(\)/.test(txt), 'typing in the filter can hide a selected row');
+  assert.ok(!/_meFmClearSelection\(\)/.test(txt), 'typing throws the whole selection away');
+  assert.ok(txt.indexOf('_meFmReapplyState()') < txt.indexOf('_meFmPruneSelection()'),
+    'the prune runs before the re-render, so it reads the previous row list');
+  const prune = psFnSource('_meFmPruneSelection');
+  assert.ok(/_meFmVirt\.visible/.test(prune), 'the prune judges against something other than the listed rows');
+  assert.ok(/if \(!listed\.size\) return;/.test(prune),
+    'an empty row list wipes the selection instead of leaving it alone');
+});
+
 test('a kind with no fields is not a filter you can press', () => {
   const bar = psFnSource('_meFmBarRefresh');
   assert.ok(/\.me-ovb-n'\)\.disabled = total === 0;/.test(bar),

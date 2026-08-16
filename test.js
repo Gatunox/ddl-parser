@@ -179,6 +179,7 @@ _t.meFieldOvrAnnotation = _meFieldOvrAnnotation;
 _t.meOvlChips          = _meOvlChips;
 _t.meOvlChipParts      = _meOvlChipParts;
 _t.meOvKindsOf         = _meOvKindsOf;
+_t.meSpecGaps          = _meSpecGaps;
 _t.meResetLayout       = _meResetLayout;
 _t.meFmSelWithKind     = _meFmSelWithKind;
 _t.meOvKinds           = _ME_OV_KINDS;
@@ -295,6 +296,7 @@ const {
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
   meOvlChipParts, meOvKindsOf, meOvKinds, meOvSet, meFmSelWithKind,
+  meSpecGaps,
   meResetLayout,
   meFmExpandTargets, meFmDeCellHtml, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
@@ -11861,6 +11863,43 @@ test('the Overrides column has two scrollbars, not three', () => {
   // to give, and clipping the table is worse than a bar that rarely appears.
   assert.ok(/\.me-ps-split \.me-hs-main\{[^}]*overflow:auto/.test(css),
     'the pane can now clip its content with no way to reach it');
+});
+
+test('a configuration gap names itself instead of being counted', () => {
+  // Reported: the sidebar showed "⚠2" and you had to hover to learn WHICH two,
+  // which is the one thing a warning should never make you ask.
+  const bare = meSpecGaps({ kind: 'msg' });
+  const shorts = bare.map(g => g.short);
+  assert.ok(shorts.includes('No volume') && shorts.includes('No DDL binding'),
+    `the gaps do not name themselves: ${JSON.stringify(bare)}`);
+  // Two words to identify it, a sentence to explain it — the pair is the point.
+  for (const g of bare) {
+    assert.ok(g.short && g.full, `a gap is missing half of itself: ${JSON.stringify(g)}`);
+    assert.ok(g.short.length <= 16, `"${g.short}" is too long to sit on a sidebar row`);
+    assert.ok(!/—/.test(g.short), `"${g.short}" carries its explanation in the label`);
+  }
+  // A complete entity has nothing to say.
+  assert.deepStrictEqual(meSpecGaps({ kind: 'msg', vol: 'BASE', recognizers: [{}],
+    parse_spec_binary: [{}], ddl_bindings: ['A/B/C'] }).length, 0,
+    'a fully configured entity still reports a gap');
+
+  // Rendered as one chip per gap, each with its own sentence on hover, on a
+  // line of its own BELOW the name — beside it they truncated the name they
+  // were warning about.
+  const src = APP_SRC.slice(APP_SRC.indexOf('const _gaps = _meSpecGaps(s);'));
+  assert.ok(/for \(const gap of _gaps\)/.test(src.slice(0, 400)), 'the chips are not rendered per gap');
+  assert.ok(/g\.className = 'me-gap-chip';/.test(src.slice(0, 600)), 'the chips lost their class');
+  assert.ok(/gapLine\.appendChild\(g\);/.test(src.slice(0, 800)),
+    'the chips go back beside the name instead of under it');
+  assert.ok(/\$\{gap\.short\} \\u2014 \$\{gap\.full\}/.test(src.slice(0, 600)),
+    'the chip tooltip does not carry the full explanation');
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.me-item\{[^}]*flex-direction:column/.test(css), 'the row does not stack');
+  // A row with nothing to warn about must stay exactly as tall as before.
+  assert.ok(/\.me-item-main\{[^}]*min-height:calc\(var\(--row-h\) - var\(--bw\)\)/.test(css),
+    'the identity line no longer carries the row height');
+  // The counted badge is gone entirely, not merely unused.
+  assert.ok(!/me-gap-badge/.test(html), 'the ⚠N badge survives somewhere');
 });
 
 test('Reset Layout actually clears what it should, and keeps what it must', () => {

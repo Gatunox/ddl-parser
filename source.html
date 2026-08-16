@@ -128,6 +128,14 @@
   --accent: #58a6ff;
   --accent-rgb: 88,166,255;
   --accent2: #f78166;
+  /* The five override kinds. Four of them already have a colour in this palette
+     and reuse it, so a theme change moves the badges with everything else; SHOW
+     is the only kind the palette had no colour for. */
+  --k-type: var(--accent2);
+  --k-show: #b3a6ff;
+  --k-size: var(--warning);
+  --k-de:   var(--accent);
+  --k-vlg:  var(--success);
   --text: #c9d1d9;
   --text-dim: #8b949e;
   --text-very-dim: #4d5561;
@@ -209,6 +217,14 @@
   --accent: #0969da;
   --accent-rgb: 9,105,218;
   --accent2: #cf222e;
+  /* The five override kinds. Four of them already have a colour in this palette
+     and reuse it, so a theme change moves the badges with everything else; SHOW
+     is the only kind the palette had no colour for. */
+  --k-type: var(--accent2);
+  --k-show: #6f42c1;
+  --k-size: var(--warning);
+  --k-de:   var(--accent);
+  --k-vlg:  var(--success);
   --text: #24292f;
   --text-dim: #656d76;
   --text-very-dim: #9ba3ab;
@@ -2843,6 +2859,54 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ovl-chips{flex:1;display:flex;gap:5px;flex-wrap:wrap;}
 .me-ovl-chip{border: var(--bw-ctl) solid var(--h-gray-bd);color: var(--h-gray-fg);border-radius:var(--r-sm);
   padding:0 5px;font-size:calc(var(--sz-mono) - 3px);white-space:nowrap;}
+/* ── Overrides index ───────────────────────────────────────────────────────
+   The kinds are the rows and there are only five, so this can never grow past
+   its own height however many overrides a spec carries. Each row is a filter
+   and a count; the fields themselves are pills only while a pill list is still
+   a control you can read (see _ME_OV_PILL_MAX) — past that the count and the
+   virtualized table say it better. */
+.me-ovl-ttl{font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  font-size:calc(var(--sz-mono) - 2px);color:var(--text);}
+.me-ovl-index{border: var(--bw) solid var(--border);border-radius:0 0 var(--r-sm) var(--r-sm);
+  background:var(--bg-panel);margin-bottom:8px;flex-shrink:0;overflow:hidden;}
+.me-ovk-row{display:flex;align-items:flex-start;gap:10px;padding:5px 8px;
+  border-bottom: var(--bw) solid var(--border);}
+.me-ovk-row:last-child{border-bottom:0;}
+.me-ovk-row.on{background:rgba(var(--accent-rgb),.06);}
+.me-ovk-row.dim,.me-ovk-row.empty{opacity:.35;}
+.me-ovk-lab{flex:0 0 52px;margin-top:1px;cursor:pointer;font-family:var(--font-mono);
+  font-size:calc(var(--sz-mono) - 3px);font-weight:700;letter-spacing:.06em;text-align:center;
+  border-radius:var(--r-sm);padding:2px 0;border: var(--bw-ctl) solid;background:transparent;}
+.me-ovk-lab:disabled{cursor:default;}
+.me-ovk-n{min-width:3em;text-align:right;color:var(--text-dim);font-variant-numeric:tabular-nums;}
+.me-ovk-pills{display:flex;flex-wrap:wrap;gap:5px;flex:1;min-width:0;}
+.me-ovk-note{color:var(--text-very-dim);}
+.me-ovk-pill{display:inline-flex;align-items:baseline;gap:5px;cursor:pointer;
+  border: var(--bw-ctl) solid var(--border);border-radius:var(--r-lg);
+  background:var(--bg-deep);padding:1px 8px;font-size:calc(var(--sz-mono) - 2px);}
+.me-ovk-pill:hover{border-color:var(--border-strong);}
+.me-ovk-pill.sel{border-color:var(--accent);background:rgba(var(--accent-rgb),.12);}
+.me-ovk-pill .nm{font-weight:700;color:var(--accent);}
+.me-ovk-pill .val{color:var(--text-dim);}
+/* Kept out of the flow rather than hidden, so revealing it never reflows the
+   pill and moves the target out from under the pointer. */
+.me-ovk-x{color:var(--text-very-dim);visibility:hidden;margin-left:1px;}
+.me-ovk-pill:hover .me-ovk-x{visibility:visible;}
+.me-ovk-x:hover{color:var(--danger);}
+
+/* One colour per kind, shared by the index labels and the on-field badges —
+   the badge on a row and the row it came from have to be the same colour or
+   neither is a legend for the other. */
+.k{border-radius:var(--r-sm);padding:0 5px;font-size:calc(var(--sz-mono) - 3px);
+  white-space:nowrap;border: var(--bw-ctl) solid;}
+.k-type,.me-ovk-lab.k-type{color:var(--k-type);border-color:var(--k-type);background:color-mix(in srgb, var(--k-type) 12%, transparent);}
+.k-show,.me-ovk-lab.k-show{color:var(--k-show);border-color:var(--k-show);background:color-mix(in srgb, var(--k-show) 12%, transparent);}
+.k-size,.me-ovk-lab.k-size{color:var(--k-size);border-color:var(--k-size);background:color-mix(in srgb, var(--k-size) 12%, transparent);}
+.k-de,.me-ovk-lab.k-de{color:var(--k-de);border-color:var(--k-de);background:color-mix(in srgb, var(--k-de) 12%, transparent);}
+.k-vlg,.me-ovk-lab.k-vlg{color:var(--k-vlg);border-color:var(--k-vlg);background:color-mix(in srgb, var(--k-vlg) 12%, transparent);}
+.me-fm-on-field{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle;}
+.me-fm-filt{display:inline-flex;gap:4px;flex-shrink:0;}
+
 .me-ovl-empty{padding:12px;text-align:center;color:var(--text-very-dim);
   font-size:calc(var(--sz-mono) - 1px);line-height:1.6;}
 /* Editor — one field at a time, so the controls can be full-size and labelled. */
@@ -2884,7 +2948,17 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* Background only — no forced text colour. The override annotation carries its
    own scheme (in effect = dimmed white, replaced = accent), and tinting the
    whole row accent would drown exactly the distinction it is making. */
-.me-fm-table tbody tr.me-fm-has-ovr td{background:rgba(var(--accent-rgb),0.06);}
+/* The on-field badges say which rows are configured, so the tint that used to
+   say it is gone — with badges AND a tint the overridden rows shout twice while
+   the rest of the table still competes for attention. */
+.me-fm-table tbody tr.me-fm-quiet td{opacity:.38;}
+/* Restored the moment the row has something to say. Selection, a broken
+   override and a DE that can never be reached are all louder than "untouched",
+   so none of them may be dimmed. */
+.me-fm-table tbody tr.me-fm-quiet:hover td,
+.me-fm-table tbody tr.me-fm-quiet.me-fm-row-sel td,
+.me-fm-table tbody tr.me-fm-quiet.me-fm-row-err td,
+.me-fm-table tbody tr.me-fm-quiet.me-fm-row-warn td{opacity:1;}
 /* A broken override tints the whole row red; something to review, orange. The
    badge alone sits at the end of one column and is easy to scroll straight past
    in a list of thousands. Declared after .me-fm-has-ovr so a broken override
@@ -16308,7 +16382,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.5.0';
+const APP_VERSION  = '1.27.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17964,6 +18038,8 @@ function openMsgEditor() {
     fmCollapsedGroups: new Set(),   // group qualnames currently collapsed (Field Map)
     fmHideRedef: false,
     fmFilter: '',
+    fmOvKind: null,                 // Overrides index: the kind row acting as a filter
+    fmOvOnly: false,                // Overrides: All fields vs Overridden only
     fmHelpOpen: false,              // Field Map "?" help panel state
     fmHelpSel:  null                // currently expanded help row id
   };
@@ -21888,11 +21964,17 @@ function _meOverridesPrep(item) {
 <div class="me-ps-split" id="me-fm-split">
 <div class="me-hs-main" id="me-fm-pane">
 <!-- No "Overrides" label: the section header directly above already says it. -->
-<div class="me-ovl-hdr"><span class="me-ovl-sub" id="me-ovl-count"></span></div>
-<div class="me-ovl-list" id="me-ovl-list"></div>
+<div class="me-ovl-hdr"><span class="me-ovl-ttl">In place</span><span class="me-ovl-sub" id="me-ovl-count"></span></div>
+<div class="me-ovl-index" id="me-ovl-index"></div>
 <div class="me-fm-toolbar">
   <span class="me-ovl-ro none" id="me-fm-cnt" title="This table is the picker — every field the DDL declares. Configuration lives in the Overrides list above.">no selection · READ-ONLY</span>
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
+  <span class="me-fm-filt">
+    <button class="btn btn-accent-on" id="me-fm-all-btn" onclick="_meFmSetOvOnly(false)"
+      title="Every field the DDL declares">All fields</button>
+    <button class="btn" id="me-fm-ovr-btn" onclick="_meFmSetOvOnly(true)"
+      title="Only the fields that carry an override">Overridden (<span id="me-fm-ovr-n">0</span>)</button>
+  </span>
   ${usesBitmapFields ? `<button class="btn${autoOn ? ' btn-accent-on' : ''}" id="me-fm-auto-btn" onclick="_meFmAutoOrder()" title="Anchor each DE from the 'Bit map position = NN' comment above its declaration in the bound DDL files. Toggle: press again to revert to the order before Auto Order.">Auto Order</button>` : ''}
   <button class="btn" id="me-fm-collapse-btn" data-state="expanded" onclick="_meFmToggleCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
   <button class="btn" id="me-fm-hide-redef-btn" onclick="_meFmToggleHideRedef()" title="Hide / show REDEFINES rows">Hide Redef</button>
@@ -22102,6 +22184,10 @@ function _meFmRowHtml(row, ctx, counter) {
     row.underTerminal ? 'me-fm-leaf me-fm-under-term' : '',
     _meVlgHas(ctx.vlgMap, row.id) ? 'me-fm-vlg-on' : '',
     ctx.foByField.has(_canonFieldId(row.id)) ? 'me-fm-has-ovr' : '',
+    // The badges carry the identity now, so the rows WITHOUT one recede rather
+    // than the ones with one lighting up. Selection and the error tints override
+    // this — a broken override must not be the faintest thing on screen.
+    ctx.foByField.has(_canonFieldId(row.id)) ? '' : 'me-fm-quiet',
     // Red = the configuration is broken and will NOT run. Orange = it runs, but
     // something needs looking at (a DE past 128 can never be reached).
     overrideBadLen ? 'me-fm-row-err' : '',
@@ -22123,9 +22209,17 @@ function _meFmRowHtml(row, ctx, counter) {
   // inherit the indication via their faded styling without repeating it.
   const redefNote = row.isRedef && row.redefTarget
     ? ` <span class="me-fm-redef-note">↩ ${ea(row.redefTarget)}</span>` : '';
+  // What is overridden, said on the field itself. The Type and Size columns
+  // already show the new VALUES; these say which KINDS are in play, which is
+  // what you scan for when you are looking for your own configuration in four
+  // thousand rows. Same texts as the index pills — one builder, one wording.
+  const ovBadges = Object.keys(foEntry).length
+    ? `<span class="me-fm-on-field">` + _meOvlChipParts(foEntry).map(part =>
+        `<span class="k k-${part.kind}">${part.text}</span>`).join('') + `</span>`
+    : '';
   const fieldCell = isGroup
-    ? `<td class="me-fm-fld" style="${namePadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))"><span class="me-fm-name">${id}</span>${grpIcon}${redefNote}</td>`
-    : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span>${redefNote}</td>`;
+    ? `<td class="me-fm-fld" style="${namePadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))"><span class="me-fm-name">${id}</span>${grpIcon}${redefNote}${ovBadges}</td>`
+    : `<td class="me-fm-fld" style="${namePadL}"><span class="me-fm-name">${id}</span>${redefNote}${ovBadges}</td>`;
 
   const deCell = _meFmDeCellHtml(row, ctx);
 
@@ -22309,10 +22403,18 @@ function _meFmVisibleRows(all) {
   const st        = _meState || {};
   const collapsed = st.fmCollapsedGroups || new Set();
   const filt      = (st.fmFilter || '').toLowerCase();
+  // Read once, not per row: on a 4000-field DDL this is the difference between
+  // one map lookup and four thousand walks of the override store.
+  const ovAll     = (st.fmOvKind || st.fmOvOnly) ? _meOvAll(_meCurItem()) : null;
   const out = [];
   for (const row of all) {
     const qn = row.id;
     let hid = false;
+    if (ovAll) {
+      const o = ovAll[_canonFieldId(qn)];
+      if (!o) hid = true;
+      else if (st.fmOvKind && !_meOvKindsOf(o).includes(st.fmOvKind)) hid = true;
+    }
     if (collapsed.size && qn.includes('.')) {
       const parts = qn.split('.');
       let prefix = '';
@@ -23557,6 +23659,25 @@ function _meFmFilter(q) {
   if (!_meState) return;
   _meState.fmFilter = q || '';
   _meFmReapplyState();
+  // The index counts describe the filtered set, so they move with the text.
+  _meOvlRefresh();
+}
+
+function _meFmSetOvOnly(on) {
+  if (!_meState) return;
+  _meState.fmOvOnly = !!on;
+  _meFmSyncFiltBtns();
+  _meFmReapplyState();
+}
+
+// One of the pair is always lit, and the count follows the store rather than the
+// render that happened to build the button.
+function _meFmSyncFiltBtns() {
+  const only = !!(_meState && _meState.fmOvOnly);
+  document.getElementById('me-fm-all-btn')?.classList.toggle('btn-accent-on', !only);
+  document.getElementById('me-fm-ovr-btn')?.classList.toggle('btn-accent-on', only);
+  const n = document.getElementById('me-fm-ovr-n');
+  if (n) n.textContent = Object.keys(_meOvAll(_meCurItem())).length;
 }
 
 // ── Field Map "?" help ────────────────────────────────────────────────────
@@ -24217,25 +24338,46 @@ function _meFmBarRefresh() {
 
 // One chip per configured key, so the list says what each override DOES
 // without opening it.
-function _meOvlChips(o) {
+// The five things an override can say. The index rows, the on-field badges, the
+// kind filter and the per-kind delete all read this list, so a sixth kind is one
+// entry here rather than five edits scattered around. `keys` is what the stored
+// entry actually holds — `count` rides with `vlg`, so removing VLG takes it too.
+const _ME_OV_KINDS = [
+  { id: 'type', label: 'TYPE', keys: ['type'],          hint: 'how the bytes are read' },
+  { id: 'show', label: 'SHOW', keys: ['display'],       hint: 'display format only' },
+  { id: 'size', label: 'SIZE', keys: ['bytes'],         hint: 'read this many bytes instead' },
+  { id: 'de',   label: 'DE',   keys: ['de'],            hint: 'data-element numbering' },
+  { id: 'vlg',  label: 'VLG',  keys: ['vlg', 'count'],  hint: 'length source' },
+];
+
+// Chip texts, each tagged with the kind that produced it. The flat list below is
+// derived from this one: the texts have to agree between a chip, a badge and an
+// index pill, and the only way they can disagree is by being written twice.
+function _meOvlChipParts(o) {
   const c = [];
-  if (o.type)         c.push(_meOvEsc(o.type));
-  if (o.bytes)        c.push(o.bytes + ' bytes');
-  if (o.display)      c.push('as ' + _meOvEsc(o.display));
+  if (o.type)         c.push({ kind: 'type', text: _meOvEsc(o.type) });
+  if (o.bytes)        c.push({ kind: 'size', text: o.bytes + ' bytes' });
+  if (o.display)      c.push({ kind: 'show', text: 'as ' + _meOvEsc(o.display) });
   // The de key carries four different things, and only one of them is a number.
   // "DE-false" and "DE-children" are what string concatenation produced.
-  if (o.de === false)       c.push('not a DE');
-  else if (o.de === true)   c.push('is a DE');
-  else if (o.de === 'children') c.push('DEs on children');
-  else if (o.de != null)    c.push('DE-' + o.de);
+  if (o.de === false)       c.push({ kind: 'de', text: 'not a DE' });
+  else if (o.de === true)   c.push({ kind: 'de', text: 'is a DE' });
+  else if (o.de === 'children') c.push({ kind: 'de', text: 'DEs on children' });
+  else if (o.de != null)    c.push({ kind: 'de', text: 'DE-' + o.de });
   // vlg:true on a LEAF means "sizes the next field"; on a group it still names
   // the LEN sub-field. Same key, two readings — say which one this is.
-  if (o.vlg === true)  c.push('length source' + (o.count ? ` (${o.count})` : ''));
-  else if (o.vlg === false) c.push('not a length source');
-  else if (o.vlg)      c.push('VLG → ' + _meOvEsc(String(o.vlg).split('.').pop())
-                              + (o.count ? ` (${o.count})` : ''));
+  if (o.vlg === true)  c.push({ kind: 'vlg', text: 'length source' + (o.count ? ` (${o.count})` : '') });
+  else if (o.vlg === false) c.push({ kind: 'vlg', text: 'not a length source' });
+  else if (o.vlg)      c.push({ kind: 'vlg', text: 'VLG → ' + _meOvEsc(String(o.vlg).split('.').pop())
+                              + (o.count ? ` (${o.count})` : '') });
   return c;
 }
+const _meOvlChips = o => _meOvlChipParts(o).map(p => p.text);
+// Which kinds an entry uses, in _ME_OV_KINDS order.
+const _meOvKindsOf = o => {
+  const used = new Set(_meOvlChipParts(o || {}).map(p => p.kind));
+  return _ME_OV_KINDS.filter(k => used.has(k.id)).map(k => k.id);
+};
 
 // Override keys are CANONICAL — GRP.A, with the [NN] occurrence label stripped —
 // while table rows are per-occurrence — GRP[01].A. The two are identical for an
@@ -24264,34 +24406,94 @@ function _meRowsForOverride(qn) {
   return rows.length ? rows.map(r => r.id) : [qn];
 }
 
+// How many fields a kind can name before badges stop being a control. A kind
+// with thousands of fields cannot be a wrap of pills — the count and the filter
+// say everything, and the virtualized table is the only surface that can
+// actually show them. A search that narrows the set brings the pills back.
+const _ME_OV_PILL_MAX = 20;
+
+// Fields carrying an override, canonical ids, narrowed by the text filter — the
+// same text the table is filtered by, so the counts describe what a click will
+// actually show. Deliberately NOT narrowed by the kind filter: the five rows are
+// the switch, and a switch that zeroes the other four cannot be switched back.
+function _meOvlEntries() {
+  const all  = _meOvAll(_meCurItem());
+  const filt = (_meState?.fmFilter || '').toLowerCase();
+  return Object.keys(all).sort()
+    .filter(id => !filt || id.toLowerCase().includes(filt))
+    .map(id => ({ id, ovr: all[id] }));
+}
+
 function _meOvlRefresh() {
   const item = _meCurItem();
-  const listEl = document.getElementById('me-ovl-list');
-  if (!listEl || !item) return;
-  const all  = _meOvAll(item);
-  const ids  = Object.keys(all).sort();
-  const cnt  = document.getElementById('me-ovl-count');
-  if (cnt) cnt.textContent = ids.length
-    ? `${ids.length} field${ids.length !== 1 ? 's' : ''} configured`
-    : 'none — every field parses exactly as the DDL declares it';
-  listEl.innerHTML = ids.length ? ids.map(id => `
-    <div class="me-ovl-row${_meSelCanon().has(id) ? ' sel' : ''}" onclick="_meOvlRowClick('${_meOvEsc(id)}', event)"
-         title="Select this field in the table below, then use the action bar">
-      <span class="me-ovl-name">${_meOvEsc(id)}</span>
-      <span class="me-ovl-chips">${_meOvlChips(all[id]).map(t => `<span class="me-ovl-chip">${t}</span>`).join('')}</span>
-      <button class="me-rb del" title="Remove this override"
-              onclick="event.stopPropagation();_meOvlDelete('${_meOvEsc(id)}')">✕</button>
-    </div>`).join('')
-    : `<div class="me-ovl-empty">No overrides.<br>Select a field in the list below and use the action bar.</div>`;
+  const idxEl = document.getElementById('me-ovl-index');
+  if (!idxEl || !item) return;
+  const entries = _meOvlEntries();
+  const total   = Object.keys(_meOvAll(item)).length;
+  const sel     = _meSelCanon();
 
-  // Bring the selected entry into view. The list is capped at 180px and sorted
-  // by field id, so on a spec with more than a handful of overrides the row that
-  // just got its `sel` highlight was usually below the fold — selecting a field
-  // in the table appeared to do nothing to the list. `block:'nearest'` keeps the
-  // list still when the row is already visible, so this never jumps under you.
-  listEl.querySelector('.me-ovl-row.sel')?.scrollIntoView({ block: 'nearest' });
+  const cnt = document.getElementById('me-ovl-count');
+  if (cnt) cnt.textContent = !total
+    ? 'none — every field parses exactly as the DDL declares it'
+    : `${total} field${total !== 1 ? 's' : ''} configured`
+      + (entries.length !== total ? ` · ${entries.length} match the filter` : '');
 
+  idxEl.innerHTML = _ME_OV_KINDS.map(k => {
+    const fields = entries.filter(e => _meOvKindsOf(e.ovr).includes(k.id));
+    const on     = _meState?.fmOvKind === k.id;
+    const cls    = [
+      'me-ovk-row',
+      on ? 'on' : '',
+      !fields.length ? 'empty' : '',
+      (_meState?.fmOvKind && !on) ? 'dim' : '',
+    ].filter(Boolean).join(' ');
+    // Past the threshold the pills are dropped, not truncated: a partial list
+    // reads as the whole set, and picking which twenty to show would be a lie
+    // about the other thousand.
+    const pills = fields.length && fields.length <= _ME_OV_PILL_MAX
+      ? fields.map(e => {
+          const part = _meOvlChipParts(e.ovr).find(p => p.kind === k.id);
+          return `<span class="me-ovk-pill${sel.has(e.id) ? ' sel' : ''}"
+            onclick="_meOvlRowClick('${_meOvEsc(e.id)}', event)"
+            title="Select this field in the table below">
+            <span class="nm">${_meOvEsc(e.id)}</span><span class="val">${part ? part.text : ''}</span>
+            <span class="me-ovk-x" title="Remove this override"
+              onclick="event.stopPropagation();_meOvlDropKind('${_meOvEsc(e.id)}','${k.id}')">✕</span>
+          </span>`;
+        }).join('')
+      : '';
+    const note = !fields.length ? ''
+      : fields.length > _ME_OV_PILL_MAX
+        ? `<span class="me-ovk-note">too many to name — click ${k.label} to see them in the table</span>`
+        : '';
+    return `<div class="${cls}" data-kind="${k.id}">
+      <button class="me-ovk-lab k-${k.id}" onclick="_meOvlKindFilter('${k.id}')"
+        title="${_meOvEsc(k.hint)} — click to show only these fields"${fields.length ? '' : ' disabled'}>${k.label}</button>
+      <span class="me-ovk-n">${fields.length}</span>
+      <div class="me-ovk-pills">${pills}${note}</div>
+    </div>`;
+  }).join('');
+
+  _meFmSyncFiltBtns();
   _meFmNotesRefresh();
+}
+
+// The kind rows are a toggle, not a radio: clicking the one already on clears it.
+function _meOvlKindFilter(kind) {
+  if (!_meState) return;
+  _meState.fmOvKind = _meState.fmOvKind === kind ? null : kind;
+  _meFmReapplyState();
+  _meOvlRefresh();
+}
+
+// The pill IS one kind of one field, so its ✕ removes that kind and leaves the
+// field's other overrides alone. _meOvSet drops the entry once its last key goes.
+function _meOvlDropKind(id, kind) {
+  const item = _meCurItem(); if (!item) return;
+  const k = _ME_OV_KINDS.find(x => x.id === kind); if (!k) return;
+  for (const key of k.keys) _meOvSet(item, id, key, null);
+  if (!_meOvGet(item, id)) _meFmMultiSel.delete(id);
+  _meFmAfterAct();
 }
 
 function _meOvlDelete(id) {

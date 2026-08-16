@@ -166,6 +166,11 @@ _t.meItemVlgIdentifier = _meItemVlgIdentifier;
 _t.meContentLooksWrong = _meContentLooksWrong;
 _t.meFieldOvrAnnotation = _meFieldOvrAnnotation;
 _t.meOvlChips          = _meOvlChips;
+_t.meOvlChipParts      = _meOvlChipParts;
+_t.meOvKindsOf         = _meOvKindsOf;
+_t.meOvKinds           = _ME_OV_KINDS;
+_t.meOvPillMax         = _ME_OV_PILL_MAX;
+_t.meOvSet             = _meOvSet;
 _t.meFmExpandTargets   = _meFmExpandTargets;
 _t.meFmDeCellHtml      = _meFmDeCellHtml;
 _t.setFmVirt           = v => { _meFmVirt = v; };
@@ -277,6 +282,7 @@ const {
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
+  meOvlChipParts, meOvKindsOf, meOvKinds, meOvPillMax, meOvSet,
   meFmExpandTargets, meFmDeCellHtml, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
@@ -8262,19 +8268,131 @@ test('an ignored field is rendered as a decision, not as an empty cell', () => {
     `struck through, so it reads as "this WOULD have been a length source", got: ${rule}`);
 });
 
-test('selecting a field brings its override entry into view', () => {
-  // Reported: click a field that has an override and nothing appears to happen
-  // in the Overrides list. The `sel` class was applied — but the list is capped
-  // at 180px and sorted by id, so the highlighted row was usually below the fold.
+// ── Overrides identity: kinds are the rows, fields are the badges ──────────
+test('the five kinds are declared once and every surface reads that list', () => {
+  const kinds = meOvKinds;
+  assert.strictEqual(kinds.map(k => k.id).join(','), 'type,show,size,de,vlg',
+    'the kind list changed shape');
+  // The index rows, the on-field badges and the per-kind delete must all come
+  // from _ME_OV_KINDS. A hand-written second list is how the badge on a row and
+  // the row it came from end up disagreeing.
+  assert.ok(/_ME_OV_KINDS\.map\(k =>/.test(psFnSource('_meOvlRefresh')),
+    'the index builds its rows from something other than the kind list');
+  assert.ok(/_ME_OV_KINDS\.find\(/.test(psFnSource('_meOvlDropKind')),
+    'the per-kind delete does not read the kind list');
+  // count rides with vlg: removing "length source" must not leave its unit behind.
+  assert.strictEqual(kinds.find(k => k.id === 'vlg').keys.join(','), 'vlg,count',
+    'removing VLG would strand the count key');
+});
+
+test('chip texts have one author, whatever surface shows them', () => {
+  const o = { type: 'uint16-be', bytes: 2, display: 'amount', de: 55, vlg: true, count: 4 };
+  const parts = meOvlChipParts(o);
+  // The flat list the notes and the tooltip use is DERIVED from the tagged one.
+  assert.strictEqual(meOvlChips(o).join('|'), parts.map(p => p.text).join('|'),
+    'the flat chip list is written separately from the tagged one');
+  assert.strictEqual(parts.map(p => p.kind).join(','), 'type,size,show,de,vlg',
+    'a chip is tagged with the wrong kind');
+  assert.strictEqual(meOvKindsOf(o).join(','), 'type,show,size,de,vlg',
+    'kindsOf must report in _ME_OV_KINDS order, not chip order');
+  // The badge on the field is the same builder AND the same words. Asserting the
+  // builder alone was not enough: a mutant kept the call and rendered part.kind,
+  // so every TYPE badge read "type" instead of naming the type.
+  const { rows, ctx } = mtxCtx({ 'GRP.AA': { type: 'uint16-be' } });
+  const rowHtml = meFmRowHtml(rows.find(r => r.id === 'GRP.AA'), ctx, { n: 0 });
+  assert.ok(/<span class="me-fm-on-field">/.test(rowHtml), 'the row carries no badge');
+  assert.ok(/<span class="k k-type">uint16-be<\/span>/.test(rowHtml),
+    `the badge says something other than the chip's own words, got: ${
+      (rowHtml.match(/<span class="me-fm-on-field">.*?<\/span><\/span>/) || [''])[0]}`);
+});
+
+test('a pill list stops being a control long before it stops being possible', () => {
+  assert.ok(meOvPillMax > 0 && meOvPillMax <= 50,
+    `the threshold is tens, not thousands, got ${meOvPillMax}`);
   const fn = psFnSource('_meOvlRefresh');
-  assert.ok(/\.me-ovl-row\.sel/.test(fn), 'it looks for the selected row');
-  assert.ok(/scrollIntoView/.test(fn), 'and scrolls it into view');
-  assert.ok(/block:\s*'nearest'/.test(fn),
-    "'nearest' — an already-visible row must not make the list jump");
-  // The two directions share one handler, so the table drives the list as well.
+  assert.ok(/fields\.length <= _ME_OV_PILL_MAX/.test(fn), 'the threshold is not applied');
+  // Dropped, not truncated. A partial list reads as the whole set.
+  assert.ok(!/\.slice\(0,\s*_ME_OV_PILL_MAX\)/.test(fn),
+    'the pills are truncated — twenty of a thousand looks like all of them');
+  assert.ok(/too many to name/.test(fn), 'nothing says why the pills are absent');
+});
+
+test('the kind counts follow the search but not the kind filter', () => {
+  const fn = psFnSource('_meOvlEntries');
+  // Reading fmFilter is not applying it — the first version of this test passed
+  // on a mutant that kept the variable and dropped the .filter() using it.
+  assert.ok(/\.filter\(id => !filt \|\| id\.toLowerCase\(\)\.includes\(filt\)\)/.test(fn),
+    'the counts ignore the search, so they lie about what a click shows');
+  assert.ok(!/fmOvKind/.test(fn),
+    'the counts obey the kind filter — the other four rows would read 0 and could never be switched back');
+});
+
+test('the pill removes its own kind, not the field', () => {
+  const item = { overrides: { 'A.B': { type: 'binary', display: 'hex', vlg: true, count: 4 } } };
+  // What _meOvlDropKind does, through the same setter it calls.
+  for (const key of meOvKinds.find(k => k.id === 'vlg').keys) meOvSet(item, 'A.B', key, null);
+  assert.strictEqual(JSON.stringify(item.overrides['A.B']), '{"type":"binary","display":"hex"}',
+    'removing VLG took the other overrides with it, or left count behind');
+  for (const key of ['type','display']) meOvSet(item, 'A.B', key, null);
+  assert.strictEqual(JSON.stringify(item.overrides), '{}', 'the entry survives its last kind');
+});
+
+test('the table filters by kind and by overridden, reading the store once', () => {
+  const fn = psFnSource('_meFmVisibleRows');
+  assert.ok(/const ovAll\s+=/.test(fn) && fn.indexOf('const ovAll') < fn.indexOf('for (const row of all)'),
+    'the override store is read inside the row loop — 4000 rows, 4000 walks');
+  assert.ok(/if \(!o\) hid = true;/.test(fn), 'the overridden-only filter is missing');
+  assert.ok(/st\.fmOvKind && !_meOvKindsOf\(o\)\.includes\(st\.fmOvKind\)/.test(fn),
+    'the kind filter is missing');
+  // Not built at all when neither filter is on, so the common case pays nothing.
+  assert.ok(/\(st\.fmOvKind \|\| st\.fmOvOnly\) \? _meOvAll/.test(fn),
+    'the store is read even when no filter needs it');
+});
+
+test('an untouched row recedes, but nothing with something to say does', () => {
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/tr\.me-fm-quiet td\{opacity:\.38;\}/.test(css), 'non-overridden rows are not dimmed');
+  for (const state of ['me-fm-quiet:hover', 'me-fm-quiet\\.me-fm-row-sel',
+                       'me-fm-quiet\\.me-fm-row-err', 'me-fm-quiet\\.me-fm-row-warn'])
+    assert.ok(new RegExp(`tr\\.${state} td`).test(css),
+      `a ${state.replace(/\\\\/g,'')} row stays dimmed — a broken override must never be the faintest thing on screen`);
+  // The tint that used to mark overridden rows is gone: with badges too they say it twice.
+  assert.ok(!/tr\.me-fm-has-ovr td\{background/.test(css),
+    'the row tint AND the badges both mark the same rows');
+  assert.ok(/_meFmRowHtml/.test(APP_SRC) && /'me-fm-quiet'/.test(psFnSource('_meFmRowHtml')),
+    'nothing applies the quiet class');
+});
+
+test('the kind palette reuses the theme colours it already has', () => {
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // Four of the five kinds are colours this app already names. Re-declaring the
+  // hex would freeze the badges out of any future theme change.
+  // BOTH themes, counted — with a bare .test() the light block alone satisfied it
+  // while dark had been frozen to a hex.
+  for (const [k, tok] of [['type','--accent2'],['size','--warning'],['de','--accent'],['vlg','--success']])
+    assert.strictEqual((css.match(new RegExp(`--k-${k}:\\s*var\\(${tok}\\)`, 'g')) || []).length, 2,
+      `--k-${k} is a literal colour instead of ${tok} in one of the two themes`);
+  // Both themes define the one kind the palette had no colour for.
+  assert.strictEqual((css.match(/--k-show:/g) || []).length, 2,
+    'SHOW is not defined in both themes');
+  // Tints follow the token, so light mode is not tinted with the dark hue.
+  assert.ok(/\.k-de[^{]*\{[^}]*background:color-mix\(in srgb, var\(--k-de\) 12%, transparent\)/.test(css),
+    'a badge tint repeats an rgb triple instead of mixing the token');
+});
+
+test('the selected override is always in view, without scrolling to it', () => {
+  // This used to need a scrollIntoView: the list was one row per overridden
+  // field, capped at 180px and sorted by id, so the row that just got its `sel`
+  // highlight was usually below the fold. The index is five kind rows and never
+  // scrolls, so the fix is now structural — nothing to scroll TO.
+  const fn = psFnSource('_meOvlRefresh');
+  assert.ok(!/scrollIntoView/.test(fn),
+    'the index is scrolling again — five fixed rows must not need it');
+  assert.ok(/sel\.has\(e\.id\)/.test(fn), 'a pill for the selected field is still marked');
+  // The two directions share one handler, so the table drives the index as well.
   const rowHtml = psFnSource('_meFmRowHtml');
   assert.ok(/_meOvlRowClick/.test(rowHtml), 'a Field Map row click goes through the same funnel');
-  assert.ok(/_meOvlRefresh\(\)/.test(psFnSource('_meOvlRowClick')), 'which refreshes the list');
+  assert.ok(/_meOvlRefresh\(\)/.test(psFnSource('_meOvlRowClick')), 'which refreshes the index');
 });
 
 test('the VLG button is a picker, and its three options are the three states', () => {
@@ -10012,11 +10130,11 @@ test('the list header does not repeat the section title', () => {
     `the redundant label is gone, got: ${hdr}`);
 });
 
-test('the panel keeps the overrides list AND gains the two panes', () => {
+test('the panel keeps the overrides index AND gains the two panes', () => {
   // The list is not replaced by the bar — it is the at-a-glance summary of what
   // is configured. The panes are new: what was written, and what it means.
   const html = ovPanelHtml();
-  assert.ok(/id="me-ovl-list"/.test(html), 'the existing overrides list is still there');
+  assert.ok(/id="me-ovl-index"/.test(html), 'the overrides index is still there');
   assert.ok(/id="me-fm-json"/.test(html),  'the written-overrides pane');
   assert.ok(/id="me-fm-notes"/.test(html), 'and the plain-words pane');
 });

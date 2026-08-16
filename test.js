@@ -11866,6 +11866,26 @@ test('the Overrides column has two scrollbars, not three', () => {
     'the pane can now clip its content with no way to reach it');
 });
 
+test('an entity row carries the code every other surface refers it by', () => {
+  // Wide enough to span the test-verdict block that sits between the name and
+  // the code — a 900-char window stopped short of the append and read as a bug.
+  const src = APP_SRC.slice(APP_SRC.indexOf("nm.textContent = s.label || s.name"),
+                            APP_SRC.indexOf("nm.textContent = s.label || s.name") + 3000);
+  // The code sits WITH the name, in one group, so it lands against the label
+  // rather than being pushed to the far edge by the label's own stretch — and
+  // so anything after it still goes right.
+  assert.ok(/title\.append\(tc\);/.test(src), 'the code is not grouped with the name');
+  assert.ok(/`- \$\{_code\}`/.test(src), 'the code is not prefixed');
+  // A freshly created entity has label === code; saying it twice reads as a bug.
+  assert.ok(/_code !== nm\.textContent/.test(src),
+    'an entity whose label IS its code shows the code twice');
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // Inside the pair it is the LABEL that gives way — the code is short, fixed,
+  // and the thing the parse output names.
+  assert.ok(/\.me-item-name\{flex:0 1 auto/.test(css), 'the label grows and pushes the code away');
+  assert.ok(/\.me-item-code\{flex:0 0 auto/.test(css), 'the code can be truncated');
+});
+
 test('a configuration gap names itself instead of being counted', () => {
   // Reported: the sidebar showed "⚠2" and you had to hover to learn WHICH two,
   // which is the one thing a warning should never make you ask.

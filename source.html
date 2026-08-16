@@ -2172,7 +2172,13 @@ td.c-err  { color: var(--accent2); }
 .me-item:hover{background:var(--surface-hover);}
 .me-item.active{background:rgba(var(--accent-rgb),.12);color:var(--accent);}
 .me-item-swatch{width:10px;height:10px;border-radius:var(--r-sm);flex-shrink:0;border: var(--bw-ctl) solid rgba(255,255,255,.2);}
-.me-item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* The pair takes the row; inside it the LABEL is what gives way. The code is
+   short, fixed, and the thing every other surface refers the entity by, so
+   truncating it to keep a few more letters of the label would be the wrong
+   trade. */
+.me-item-title{display:flex;align-items:baseline;gap:5px;flex:1;min-width:0;}
+.me-item-name{flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.me-item-code{flex:0 0 auto;color:var(--text-very-dim);}
 .me-empty{pointer-events:none;padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-align:center;}
 .me-right{display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;position:relative;}
 /* Editor-scoped toasts — the main-page #flash-container sits BELOW the editor
@@ -16454,7 +16460,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.10.2';
+const APP_VERSION  = '1.29.10.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18456,7 +18462,24 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     const nm = document.createElement('span');
     nm.className = 'me-item-name';
     nm.textContent = s.label || s.name || '(unnamed)';
-    main.append(sw, nm);
+    // Name and code travel together in one group, so the code sits against the
+    // name rather than being pushed to the far edge by the name's own stretch —
+    // and so anything after them (the WINS badge) still lands on the right.
+    const title = document.createElement('span');
+    title.className = 'me-item-title';
+    title.append(nm);
+    main.append(sw, title);
+    // The type code after the label, quietly. It is what the parse output and
+    // the recognizers refer to, so a row that shows only the friendly name
+    // makes you open the entity to learn which code it is. Skipped when the
+    // label IS the code, which is what a freshly created entity looks like.
+    const _code = String(s.name || '').trim();
+    if (_code && _code !== nm.textContent) {
+      const tc = document.createElement('span');
+      tc.className = 'me-item-code';
+      tc.textContent = `- ${_code}`;
+      title.append(tc);
+    }
     d.append(main);
     // Test verdicts, when a test has been run against the current input.
     //

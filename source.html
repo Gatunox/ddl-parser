@@ -1417,6 +1417,22 @@ td.c-err  { color: var(--accent2); }
 #resContainer.hide-desc td.c-desc, #resContainer.hide-desc th.th-desc { display: none; }
 #resContainer.hide-len  td.c-len,  #resContainer.hide-len  th.th-len  { display: none; }
 #resContainer.hide-off  td.c-off,  #resContainer.hide-off  th.th-off  { display: none; }
+/* ── Parse Results group rows ─────────────────────────────────────────────
+   Derived from the qualified ids, so a group reads as what it is: a heading
+   over the leaves beneath it. Same surface as the Field Map's group rows. */
+#resContainer tr.res-grp-row { cursor: pointer; background: var(--surface-header); }
+#resContainer tr.res-grp-row:hover { background: var(--surface-hover); }
+#resContainer tr.res-grp-row td { font-weight: 600; }
+#resContainer tr.res-grp-row td.c-desc { color: var(--text-very-dim); font-weight: 400; }
+.grp-caret { display: inline-block; width: 10px; margin-right: 4px;
+  color: var(--text-very-dim); font-weight: 400; }
+/* A collapsed group hides its whole subtree — every row naming it as an
+   ancestor, at any depth. */
+#resContainer tr.row-grp-hidden { display: none; }
+/* The group's combined value is always in the markup; this is what shows it, so
+   the toggle costs no re-render and cannot lose the scroll or the selection. */
+#resContainer .grp-val { display: none; }
+#resContainer.show-grp-data .grp-val { display: inline; }
 #resContainer.hide-val  td.c-val,  #resContainer.hide-val  td.c-err,  #resContainer.hide-val th.th-val { display: none; }
 #resContainer.hide-raw  td.c-raw,  #resContainer.hide-raw  th.th-raw  { display: none; }
 #resContainer.hide-trk  td.c-trk,  #resContainer.hide-trk  th.th-trk  { display: none; }
@@ -3085,6 +3101,8 @@ th.me-fm-colhi{color:var(--accent);}
           </span>
           <span style="flex:1"></span>
           <button class="btn" id="exportBtn" onclick="openMsgExportModal()" style="display:none;flex-shrink:0" title="Export messages">Export</button>
+          <button class="btn" id="resCollapseBtn" onclick="toggleResCollapseAll()" style="display:none;flex-shrink:0;min-width:88px;" title="Collapse or expand every group">Collapse All</button>
+          <button class="btn" id="resGroupDataBtn" onclick="toggleResGroupData()" style="display:none;flex-shrink:0;" title="Show each group's combined value on its group row">Group Data</button>
           <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0;min-width:80px;" title="Hide/show REDEFINES fields">Hide Redef</button>
           <div style="position:relative;display:inline-flex">
             <button class="btn" id="colCfgBtn" onclick="toggleColCfgDialog()" title="Column visibility" style="display:none;padding:0 6px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">⚙</button>
@@ -3161,6 +3179,10 @@ const S = {
   hoverFieldId: null,
   tokenAreaCollapsed: false,
   hideRedefines: false,
+  // Parse Results group rows. Session state, exactly like hideRedefines beside
+  // it: a view of THIS parse, not a setting that should outlive it.
+  resCollapsedGroups: new Set(),
+  resGroupData: false,
   ddlDocHideRedef: false,
   tokenMap: {},      // { "DDL-NAME": "B4", ... } — built from token map files in tree
   unresolvedRefs: {}, // { 'vol/sv/name': ['TYPE-A', 'TYPE-B'] } — types referenced but not found
@@ -11517,6 +11539,8 @@ function _clearResultsOnly() {
   document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
+  ['resCollapseBtn','resGroupDataBtn'].forEach(id => {
+    const b = document.getElementById(id); if (b && b.style) b.style.display = 'none'; });
   const _cfgBar = document.getElementById('resCfgBar');
   if (_cfgBar) _cfgBar.style.display = 'none';
   const _recMetaC = document.getElementById('recMetaContent');
@@ -11556,6 +11580,8 @@ function clearAll() {
   document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
+  ['resCollapseBtn','resGroupDataBtn'].forEach(id => {
+    const b = document.getElementById(id); if (b && b.style) b.style.display = 'none'; });
   const _cfgBar3 = document.getElementById('resCfgBar');
   if (_cfgBar3) _cfgBar3.style.display = 'none';
   const _recMetaC3 = document.getElementById('recMetaContent');
@@ -11780,7 +11806,84 @@ function renderFieldTable(msg) {
   }
 
   let _rowNum = 0;
-  const makeFieldRows = (fieldList, prefix, extraClass = '') => fieldList.map(f => {
+  // Every DE is badged ONCE, on the first row that carries it. Declared out here
+  // so the token tables below share the count — a DE badged in the main list is
+  // not badged again inside a token.
+  const _deSeen = new Set();
+  const _deBadgeFor = de => {
+    if (de == null || _deSeen.has(de)) return '';
+    _deSeen.add(de);
+    return `<span class="c-de-badge" title="ISO 8583 Data Element ${de}">DE-${de}</span>`;
+  };
+  // The group row. Its value is its children's values combined — the same text
+  // shown on the individual elements — and is rendered whether or not it is
+  // wanted, because the toggle that shows it is a CSS class on the container:
+  // re-rendering the whole table to change one column would throw the scroll and
+  // the selection away.
+  const _resGroupRowHtml = (g, prefix, extraClass = '') => {
+    const gid   = prefix ? `${prefix}::${g.path}` : g.path;
+    const kids  = g.kids;
+    const first = kids.find(k => k.startByte != null);
+    const last  = [...kids].reverse().find(k => k.endByte != null);
+    const span  = (first && last && last.endByte >= first.startByte)
+      ? `${first.startByte}–${last.endByte}` : '';
+    const size  = (first && last && last.endByte >= first.startByte)
+      ? (last.endByte - first.startByte + 1) : '';
+    const val   = kids.map(k => String(k.displayValue != null ? k.displayValue : (k.value ?? ''))).join('');
+    const under = g.path.split('.').slice(0, -1)
+      .map((_, i) => g.path.split('.').slice(0, i + 1).join('.')).join('|');
+    const coll  = S.resCollapsedGroups?.has(gid) ? ' grp-collapsed' : '';
+    return `<tr class="res-grp-row${coll}${extraClass ? ' ' + extraClass : ''}"
+      data-grp="${esc(gid)}"${under ? ` data-under="${esc(under)}"` : ''}
+      onclick="toggleResGroup('${esc(gid)}')" title="Click to collapse or expand this group">
+      <td class="c-num"></td>
+      <td class="c-id" style="padding-left:${4 + g.depth * 12}px"><span class="grp-caret">${coll ? '+' : '−'}</span>${esc(g.path)}${_deBadgeFor(g.deNum)}</td>
+      <td class="c-desc">GROUP</td>
+      <td class="c-len">${size}</td>
+      <td class="c-off">${span}</td>
+      <td class="c-val"><span class="grp-val">${esc(val)}</span></td>
+      <td class="c-raw"></td>
+      <td class="c-trk"></td>
+    </tr>`;
+  };
+  // Groups are DERIVED from the qualified ids the parse already produces:
+  // "PAN.LEN" and "PAN.DATA" are the leaves of PAN. Nothing in the field list
+  // declares a group and nothing needs to — the id IS the path, which is the
+  // same convention _canonFieldId and the overrides map already rely on. A
+  // second source of truth for "what is a group" is how the Field Map and the
+  // parse could disagree about one.
+  const _resGroupPlan = fieldList => {
+    const out = [];              // [{grp}|{f}] in render order
+    const open = [];             // group paths currently open, outermost first
+    const groups = new Map();    // path → {path, depth, kids:[], des:Set}
+    for (const f of fieldList) {
+      const parts = String(f.id || '').split('.');
+      const paths = parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('.'));
+      // Close the groups this field is not under, outermost divergence first.
+      while (open.length && !paths.includes(open[open.length - 1])) open.pop();
+      // Open the ones it is under that are not open yet.
+      for (const p of paths) {
+        if (open.includes(p)) continue;
+        const g = { path: p, depth: p.split('.').length - 1, kids: [], des: new Set(), isGrp: true };
+        groups.set(p, g);
+        out.push(g);
+        open.push(p);
+      }
+      // Every open ancestor counts this leaf: a group's value and its DE are
+      // read off what it actually contains, not off a declaration.
+      for (const p of open) { const g = groups.get(p); g.kids.push(f); g.des.add(f.deNum ?? null); }
+      out.push({ f, depth: paths.length, under: paths.slice() });
+    }
+    // A group carries a DE only when everything under it agrees on one. Where
+    // the overrides put the DE on the children instead — "children" mode, or an
+    // exclusion splitting a group — they disagree, the group takes none, and the
+    // badge lands on the first child that has it. Same rule either way.
+    for (const g of groups.values()) g.deNum = (g.des.size === 1 && [...g.des][0] != null) ? [...g.des][0] : null;
+    return out;
+  };
+  const makeFieldRows = (fieldList, prefix, extraClass = '') => _resGroupPlan(fieldList).map(node => {
+    if (node.isGrp) return _resGroupRowHtml(node, prefix, extraClass);
+    const f = node.f;
     _rowNum++;
     const fid    = prefix ? `${prefix}::${f.id}` : f.id;
     const sel    = S.selFieldId === fid ? 'row-sel' : '';
@@ -11868,20 +11971,25 @@ function renderFieldTable(msg) {
     const redefMark  = f.isRedefines
       ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${esc(f.redefTarget || '?')}"> ↩${f.redefTarget ? ` <span class="c-redef-tgt">${esc(f.redefTarget)}</span>` : ''}</span>`
       : '';
-    const deBadge    = f.deNum != null
-      ? `<span class="c-de-badge" title="ISO 8583 Data Element ${f.deNum}">DE-${f.deNum}</span>`
-      : '';
+    // Once only, on the first row that carries this DE. The parse puts deNum on
+    // every leaf of a group, so this used to print "DE-2" down the whole group.
+    const deBadge    = _deBadgeFor(f.deNum);
     const unreliableBadge = f.unreliable
       ? `<span class="unreliable-badge">unreliable</span>` : '';
     const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', f.unreliable ? 'row-unreliable' : '', extraClass].filter(Boolean).join(' ');
     const searchStr = [fid, descText, f.value || '', f.displayValue || ''].join(' ').toLowerCase();
-    return `<tr class="${rowCls}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}" data-raw="${esc((f.rawHex||'').toLowerCase())}"
+    // data-under lists every ancestor group, so collapsing one hides its whole
+    // subtree without the rows needing to know how deep they are.
+    const _under = (node.under || []).map(p => prefix ? `${prefix}::${p}` : p).join('|');
+    const _hid   = (node.under || []).some(p =>
+      S.resCollapsedGroups?.has(prefix ? `${prefix}::${p}` : p)) ? ' row-grp-hidden' : '';
+    return `<tr class="${rowCls}${_hid}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}" data-raw="${esc((f.rawHex||'').toLowerCase())}"${_under ? ` data-under="${esc(_under)}"` : ''}
       onclick="selectField('${esc(fid)}')"
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
       onmouseenter="hoverField('${esc(fid)}')"
       onmouseleave="clearHover()">
       <td class="c-num">${_rowNum}</td>
-      <td class="c-id">${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
+      <td class="c-id"${node.depth ? ` style="padding-left:${4 + node.depth * 12}px"` : ''}>${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
       <td class="c-desc" title="${esc(descTip)}">${descHtml}${errLine}${det}</td>
       <td class="c-len">${lenCell}</td>
       <td class="c-off">${offCell}</td>
@@ -12042,6 +12150,22 @@ function renderFieldTable(msg) {
   if (_redefBtn) { _redefBtn.style.display = 'inline-flex'; }
   // Re-apply hide-redef class if state is active
   if (S.hideRedefines) document.getElementById('resContainer').classList.add('hide-redef');
+  // The group view is not carried by the fresh markup, so it is re-applied here.
+  // Guarded on a real container: the parse itself is exercised headlessly, where
+  // getElementById hands back a stub with no classList and no querySelectorAll.
+  const _rc = document.getElementById('resContainer');
+  if (_rc && _rc.classList) {
+    // Group controls appear only when there is a group to act on.
+    const _hasGrp = !!_rc.querySelector('tr.res-grp-row');
+    for (const id of ['resCollapseBtn', 'resGroupDataBtn']) {
+      const b = document.getElementById(id);
+      if (b && b.style) b.style.display = _hasGrp ? 'inline-flex' : 'none';
+    }
+    _rc.classList.toggle('show-grp-data', S.resGroupData);
+    const _gdBtn = document.getElementById('resGroupDataBtn');
+    if (_gdBtn && _gdBtn.classList) _gdBtn.classList.toggle('btn-accent-on', S.resGroupData);
+    if (_hasGrp) _resApplyCollapse();
+  }
 }
 
 // ============================================================
@@ -12201,6 +12325,45 @@ function filterParsePanel(q) {
     const matches = !query || searchTarget.includes(query);
     tr.classList.toggle('row-filter-hide', !matches);
   });
+}
+
+// Collapsing is a class on the affected rows, not a re-render: rebuilding the
+// table to hide a subtree would throw away the scroll position and the selected
+// field, which is what you were reading when you collapsed the group above it.
+function _resApplyCollapse() {
+  const c = S.resCollapsedGroups;
+  document.querySelectorAll('#resContainer tr[data-under]').forEach(tr => {
+    const under = (tr.dataset.under || '').split('|');
+    tr.classList.toggle('row-grp-hidden', under.some(p => c.has(p)));
+  });
+  document.querySelectorAll('#resContainer tr.res-grp-row').forEach(tr => {
+    const on = c.has(tr.dataset.grp || '');
+    tr.classList.toggle('grp-collapsed', on);
+    const car = tr.querySelector('.grp-caret');
+    if (car) car.textContent = on ? '+' : '−';
+  });
+  const btn = document.getElementById('resCollapseBtn');
+  const all = [...document.querySelectorAll('#resContainer tr.res-grp-row')];
+  if (btn) btn.textContent = (all.length && all.every(tr => c.has(tr.dataset.grp || '')))
+    ? 'Expand All' : 'Collapse All';
+}
+function toggleResGroup(id) {
+  const c = S.resCollapsedGroups;
+  if (c.has(id)) c.delete(id); else c.add(id);
+  _resApplyCollapse();
+}
+function toggleResCollapseAll() {
+  const all = [...document.querySelectorAll('#resContainer tr.res-grp-row')].map(tr => tr.dataset.grp || '');
+  const every = all.length && all.every(id => S.resCollapsedGroups.has(id));
+  S.resCollapsedGroups = new Set(every ? [] : all);
+  _resApplyCollapse();
+}
+// The group row's value is always rendered; this decides whether it shows.
+function toggleResGroupData() {
+  S.resGroupData = !S.resGroupData;
+  document.getElementById('resContainer').classList.toggle('show-grp-data', S.resGroupData);
+  const btn = document.getElementById('resGroupDataBtn');
+  if (btn) btn.classList.toggle('btn-accent-on', S.resGroupData);
 }
 
 function toggleHideRedefines() {
@@ -16004,7 +16167,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.25.6.0';
+const APP_VERSION  = '1.26.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

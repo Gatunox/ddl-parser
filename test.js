@@ -6369,11 +6369,89 @@ test('a length beyond the declared payload is flagged but still framed by the wi
 
 console.log('\nParse Results renders the error text');
 
+// ── Parse Results: group rows, collapsing, and the DE badge ────────────────
+const GRP_FIELDS = [
+  { id:'TYP',       value:'1200', valueLength:4, startByte:0,  endByte:3,  deNum:1 },
+  { id:'PAN.LEN',   value:'19',   valueLength:2, startByte:4,  endByte:5,  deNum:2 },
+  { id:'PAN.DATA',  value:'4390', valueLength:4, startByte:6,  endByte:9,  deNum:2 },
+  { id:'RTE.STAT',  value:'00',   valueLength:2, startByte:10, endByte:11, deNum:3 },
+  { id:'RTE.SUB.A', value:'X',    valueLength:1, startByte:12, endByte:12, deNum:4 },
+  { id:'RTE.SUB.B', value:'Y',    valueLength:1, startByte:13, endByte:13, deNum:5 },
+];
+const grpRows = html => [...html.matchAll(/<tr class="res-grp-row[^"]*"[\s\S]*?data-grp="([^"]+)"/g)].map(m => m[1]);
+
+test('a group row is derived for every dotted id, including nested ones', () => {
+  // The parse emits a FLAT list; "PAN.LEN" and "PAN.DATA" are leaves of PAN only
+  // because the id says so. Deriving it means the table cannot disagree with the
+  // ids the overrides map and the Field Map are already keyed by.
+  const out = renderRows(GRP_FIELDS);
+  deepEq(grpRows(out), ['PAN', 'RTE', 'RTE.SUB'], 'derived group rows');
+  // The group spans its leaves: first start to last end, and the size to match.
+  assert.ok(/data-grp="PAN"[\s\S]*?<td class="c-off">4–9<\/td>/.test(out), 'PAN spans 4–9');
+  assert.ok(/data-grp="RTE"[\s\S]*?<td class="c-len">4<\/td>/.test(out), 'RTE is 4 bytes');
+  // Leaves name their ancestors so a collapse can find them at any depth.
+  assert.ok(/data-under="RTE\|RTE\.SUB"/.test(out), 'a nested leaf lists both ancestors');
+});
+
+test('a DE is badged once, on the first row that carries it', () => {
+  // The parse puts deNum on EVERY leaf of a DE group, so the badge used to run
+  // down the whole group. Once only now — and which row gets it falls out of the
+  // data rather than a rule about groups.
+  const out = renderRows(GRP_FIELDS);
+  const badges = [...out.matchAll(/DE-(\d+)<\/span>/g)].map(m => m[1]);
+  deepEq(badges, ['1', '2', '3', '4', '5'], 'each DE badged exactly once');
+  // PAN's leaves agree on DE-2, so the GROUP takes it and neither leaf repeats.
+  assert.ok(/data-grp="PAN"[\s\S]*?DE-2<\/span>/.test(out), 'the group carries the DE its leaves share');
+  const panLeaf = out.slice(out.indexOf('>PAN.LEN<'), out.indexOf('>PAN.DATA<'));
+  assert.ok(!/c-de-badge/.test(panLeaf), 'a leaf repeats the DE its group already shows');
+  // RTE's children hold DIFFERENT DEs — the override put them on the children —
+  // so the group takes none and each child keeps its own.
+  const rteRow = out.slice(out.indexOf('data-grp="RTE"'), out.indexOf('>RTE.STAT<'));
+  assert.ok(!/c-de-badge/.test(rteRow), 'a group claims a DE its children do not agree on');
+  assert.ok(/RTE\.STAT<\/td>|RTE\.STAT[\s\S]{0,120}DE-3/.test(out), 'the child lost its own DE');
+});
+
+test("a group row carries its children's values combined, shown only on request", () => {
+  const out = renderRows(GRP_FIELDS);
+  // Always rendered — the toggle is a class on the container, so switching it
+  // costs no re-render and cannot lose the scroll or the selected field.
+  assert.ok(/data-grp="PAN"[\s\S]*?<span class="grp-val">194390<\/span>/.test(out),
+    "the group value is not its children's values combined");
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/#resContainer \.grp-val \{ display: none; \}/.test(css),
+    'the combined value shows without being asked for');
+  assert.ok(/#resContainer\.show-grp-data \.grp-val \{ display: inline; \}/.test(css),
+    'there is no class that reveals it');
+  assert.ok(/id="resGroupDataBtn"[^>]*onclick="toggleResGroupData\(\)"/.test(html),
+    'no control switches it');
+});
+
+test('collapsing a group hides its whole subtree, and Collapse All flips its own label', () => {
+  const fn = psFnSource('_resApplyCollapse');
+  // Hidden by ancestry, so collapsing RTE also hides RTE.SUB and everything
+  // under it — a rule about depth would have missed the nested case.
+  assert.ok(/under\.some\(p => c\.has\(p\)\)/.test(fn),
+    'rows are hidden by their own group only, so a nested subtree survives');
+  assert.ok(/classList\.toggle\('row-grp-hidden'/.test(fn), 'nothing is actually hidden');
+  assert.ok(/'Expand All' : 'Collapse All'/.test(fn), 'the button never says what it will do next');
+  // A class, not a re-render — see the group-value test for why that matters.
+  const t = psFnSource('toggleResGroup');
+  assert.ok(/_resApplyCollapse\(\)/.test(t) && !/renderFieldTable/.test(t),
+    'collapsing re-renders the table, throwing away the scroll and the selection');
+  assert.ok(/id="resCollapseBtn"[^>]*onclick="toggleResCollapseAll\(\)"/.test(html),
+    'there is no Collapse All control');
+});
+
+
 // renderFieldTable writes into #resContainer, so capture that one element.
 function renderRows(fields) {
   let html = '';
   elStubs.resContainer = new Proxy({}, {
-    get: (t, k) => k === 'classList' ? { add: () => {}, remove: () => {}, contains: () => false }
+    // toggle included: a real classList has it, and leaving it out made this
+    // double the only "element" in the app without one — which failed the render
+    // rather than the code under test.
+    get: (t, k) => k === 'classList'
+                   ? { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false }
                  : k === 'innerHTML' ? html : (() => {}),
     set: (t, k, v) => { if (k === 'innerHTML') html = String(v); return true; },
   });

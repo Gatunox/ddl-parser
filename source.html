@@ -1174,7 +1174,7 @@ input[type="text"]:focus { border-color: var(--accent); }
    line-height would reintroduce fractions the moment the ratio did not divide
    evenly. */
 .btype, .tree-type-badge, .tree-tkn-id, .tree-tkn-map, .tree-excl-badge,
-.tree-cnt, .tree-hdr-count, .me-gap-chip, .tree-unres-badge,
+.tree-cnt, .tree-hdr-count, .me-gap-chip, .me-fact-chip, .tree-unres-badge,
 .tree-warn-badge, .tree-error-badge {
   /* One font for every badge, declared rather than inherited. The tree ones used
      to take SF Mono from the tree while .badge and .btype elsewhere were already
@@ -2132,8 +2132,20 @@ td.c-err  { color: var(--accent2); }
 /* The identity line carries the row height, so an entity with nothing to warn
    about is exactly as tall as it always was. */
 .me-item-main{display:flex;align-items:center;gap:5px;min-height:calc(var(--row-h) - var(--bw));}
-/* And the gaps sit under it, wrapping rather than pushing the name aside. */
+/* And the gaps sit under it, wrapping rather than pushing the name aside. The
+   line keeps its height when it is empty, so every row in the list is the same
+   size — a mix of one-line and two-line rows reads as ragged, and the eye spends
+   longer on the raggedness than on the warnings. */
 .me-item-gaps{display:flex;flex-wrap:wrap;gap:3px;padding:0 0 3px 15px;}
+/* Holds the line open when there is nothing to say. Hidden, not absent, so it
+   still occupies exactly one chip's height — see the comment where it is made. */
+.me-gap-spacer{visibility:hidden;}
+/* A value the row DOES have, beside the warnings for the ones it does not. Same
+   pill, stated quietly: it is context, not a call to act. */
+.me-fact-chip { font-size: var(--sz-badge); padding: 0 5px; border-radius: var(--r-pill);
+  border: var(--bw-ctl) solid var(--border); background: var(--surface-raised);
+  color: var(--text-dim); flex-shrink: 0; font-weight: 700;
+  white-space: nowrap; cursor: inherit; line-height: 1.5; }
 /* Armed parsing override — deliberately the SAME treatment as the DDL tree's
    (.tree-ovr): amber #e6a817, a ▶ beside the name, an inset bar and a tinted
    row. Two overrides that do the same kind of thing must not look like two
@@ -16442,7 +16454,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.9.0';
+const APP_VERSION  = '1.29.10.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18482,19 +18494,33 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     }
     // One chip per gap, named, rather than a count you have to hover to read.
     // Each keeps its own sentence on hover, through the same tip the badge used.
-    const _gaps = _meSpecGaps(s);
-    const gapLine = _gaps.length ? document.createElement('div') : null;
-    if (gapLine) gapLine.className = 'me-item-gaps';
+    // The second line is rendered whether or not there is anything to put on
+    // it. A list where some rows are one line and some are two reads as ragged,
+    // and the eye spends longer on the raggedness than on the warnings.
+    const _gaps = _meItemNotes(s);
+    const gapLine = document.createElement('div');
+    gapLine.className = 'me-item-gaps';
     for (const gap of _gaps) {
       const g = document.createElement('span');
-      g.className = 'me-gap-chip';
-      g.textContent = `\u26A0 ${gap.short}`;
-      const _tip = `\u26A0 ${gap.short} \u2014 ${gap.full}`;
+      g.className = gap.warn ? 'me-gap-chip' : 'me-fact-chip';
+      g.textContent = gap.warn ? `\u26A0 ${gap.short}` : gap.short;
+      const _tip = gap.warn ? `\u26A0 ${gap.short} \u2014 ${gap.full}` : gap.full;
       g.onmouseenter = () => _tipShow(g, _tip);
       g.onmouseleave = () => _tipHide();
       gapLine.appendChild(g);
     }
-    if (gapLine) d.appendChild(gapLine);
+    // Nothing to warn about: the line still stands, held open by a chip that is
+    // hidden rather than by a number that approximates one. Computing the height
+    // from --sz-badge was 2px short in compact and 3px in comfortable, because a
+    // chip is a line-height plus two borders plus whatever the density does to
+    // them. A chip reserves a chip's height exactly, at any density, for free.
+    if (!_gaps.length) {
+      const spacer = document.createElement('span');
+      spacer.className = 'me-gap-chip me-gap-spacer';
+      spacer.textContent = '\u00a0';
+      gapLine.appendChild(spacer);
+    }
+    d.appendChild(gapLine);
     // No per-row delete. It was a ~10px × sitting immediately beside a badge and
     // the row's own click target, so the most destructive action in the list was
     // also the easiest to hit by accident and the hardest to hit on purpose.
@@ -30104,21 +30130,45 @@ function _parseVerdict(winner, parseBytes, opts) {
 // not discovered at parse time.
 function _meSpecGaps(s) {
   if (!s) return [];
-  // Each gap names itself in two words and explains itself in a sentence. The
-  // pair is the point: a ⚠2 badge made you hover to learn WHICH two, which is
-  // the one thing a warning should never make you ask.
-  const gaps = [];
+  return _meItemNotes(s).filter(n => n.warn);
+}
+
+// What the row says about itself, in a fixed order, each note either a value or
+// the warning that stands in for its absence. Volume and DDL binding always
+// speak: a row that has them says WHICH, a row that lacks them says so. Showing
+// the warning only, and nothing when configured, made a blank line mean two
+// different things — "fine" and "nothing to report here" — and left the reader
+// to guess which.
+function _meItemNotes(s) {
+  if (!s) return [];
+  const notes = [];
   if (!((s.recognizers || []).length))
-    gaps.push({ short: 'No recognizer', full: 'this entity can never match anything' });
+    notes.push({ warn: true, short: 'No recognizer', full: 'this entity can never match anything' });
   if (!(((s.parse_spec_binary || []).length) || ((s.parse_spec_ascii || []).length)))
-    gaps.push({ short: 'No parse spec', full: 'a recognized message cannot be parsed' });
+    notes.push({ warn: true, short: 'No parse spec', full: 'a recognized message cannot be parsed' });
   // Volume selects which DDLs are searched. Unset falls back to BASE, which is
   // usable but rarely what was intended — say so rather than let it surprise.
-  if (s.kind !== 'file' && !String(s.vol || '').trim())
-    gaps.push({ short: 'No volume', full: 'BASE is assumed; set one to search the right DDLs' });
-  if (!((s.ddl_bindings || []).filter(Boolean).length))
-    gaps.push({ short: 'No DDL binding', full: 'you will be asked to pick a DDL at parse time' });
-  return gaps;
+  // A file entity is matched on its wrapper filename, so volume means nothing
+  // to it and it is neither shown nor missed.
+  if (s.kind !== 'file') {
+    const vol = String(s.vol || '').trim();
+    notes.push(vol
+      ? { warn: false, short: `vol: ${vol}`, full: `Volume ${vol} — the DDLs searched at parse time` }
+      : { warn: true, short: 'No volume', full: 'BASE is assumed; set one to search the right DDLs' });
+  }
+  const binds = (s.ddl_bindings || []).filter(Boolean);
+  if (!binds.length)
+    notes.push({ warn: true, short: 'No DDL binding', full: 'you will be asked to pick a DDL at parse time' });
+  else {
+    // The DDL's own name, not the path it lives at — the path is what the
+    // tooltip is for, and three slashes of volume and subvolume would push the
+    // one identifying word off the row.
+    const name = String(binds[0]).split('/').filter(Boolean).pop() || binds[0];
+    notes.push({ warn: false,
+      short: binds.length > 1 ? `ddl: ${name} +${binds.length - 1}` : `ddl: ${name}`,
+      full: binds.length > 1 ? `Bound DDLs:\n${binds.join('\n')}` : `Bound DDL — ${binds[0]}` });
+  }
+  return notes;
 }
 
 // Same ⚠N badge the DDL tree uses for validation warnings — count on the badge,

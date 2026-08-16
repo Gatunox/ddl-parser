@@ -180,6 +180,7 @@ _t.meOvlChips          = _meOvlChips;
 _t.meOvlChipParts      = _meOvlChipParts;
 _t.meOvKindsOf         = _meOvKindsOf;
 _t.meSpecGaps          = _meSpecGaps;
+_t.meItemNotes         = _meItemNotes;
 _t.meResetLayout       = _meResetLayout;
 _t.meFmSelWithKind     = _meFmSelWithKind;
 _t.meOvKinds           = _ME_OV_KINDS;
@@ -11886,13 +11887,39 @@ test('a configuration gap names itself instead of being counted', () => {
   // Rendered as one chip per gap, each with its own sentence on hover, on a
   // line of its own BELOW the name — beside it they truncated the name they
   // were warning about.
-  const src = APP_SRC.slice(APP_SRC.indexOf('const _gaps = _meSpecGaps(s);'));
+  const src = APP_SRC.slice(APP_SRC.indexOf('const _gaps = _meItemNotes(s);'));
   assert.ok(/for \(const gap of _gaps\)/.test(src.slice(0, 400)), 'the chips are not rendered per gap');
-  assert.ok(/g\.className = 'me-gap-chip';/.test(src.slice(0, 600)), 'the chips lost their class');
+  assert.ok(/g\.className = gap\.warn \? 'me-gap-chip' : 'me-fact-chip';/.test(src.slice(0, 700)),
+    'a warning and a value are not told apart');
   assert.ok(/gapLine\.appendChild\(g\);/.test(src.slice(0, 800)),
     'the chips go back beside the name instead of under it');
-  assert.ok(/\$\{gap\.short\} \\u2014 \$\{gap\.full\}/.test(src.slice(0, 600)),
+  assert.ok(/\$\{gap\.short\} \\u2014 \$\{gap\.full\}/.test(src.slice(0, 700)),
     'the chip tooltip does not carry the full explanation');
+
+  // A row states what it HAS as well as what it lacks: volume and DDL binding
+  // always speak. Showing only the warnings made a blank line mean two things —
+  // "fine" and "nothing to report" — and left the reader to guess which.
+  const done = meSpecGaps({ kind: 'msg', vol: 'BASE', recognizers: [{}],
+                            parse_spec_binary: [{}], ddl_bindings: ['TEST/DATA/ISO'] });
+  assert.strictEqual(done.length, 0, 'a fully configured entity still reports a gap');
+  const notes = sandbox._t.meItemNotes({ kind: 'msg', vol: 'TEST', recognizers: [{}],
+    parse_spec_binary: [{}], ddl_bindings: ['TEST/DATA/ISO-0800-FLAT'] });
+  // Labelled, so a bare volume code and a bare DDL name cannot be mistaken for
+  // each other on a row that shows both.
+  assert.strictEqual(notes.map(n => n.short).join('|'), 'vol: TEST|ddl: ISO-0800-FLAT',
+    `a configured row says nothing about itself: ${JSON.stringify(notes)}`);
+  assert.ok(notes.every(n => !n.warn), 'a configured value is styled as a warning');
+  assert.ok(/TEST\/DATA\/ISO-0800-FLAT/.test(notes[1].full),
+    'the binding tooltip drops the path the name came from');
+  // Several bindings collapse to the first plus a count, not a wall of paths.
+  const many = sandbox._t.meItemNotes({ kind: 'msg', vol: 'V', recognizers: [{}],
+    parse_spec_binary: [{}], ddl_bindings: ['A/B/ONE', 'A/B/TWO', 'A/B/THREE'] });
+  assert.strictEqual(many[1].short, 'ddl: ONE +2', `several bindings read badly: ${many[1].short}`);
+  // A file entity is matched on its filename, so volume means nothing to it.
+  const file = sandbox._t.meItemNotes({ kind: 'file', recognizers: [{}],
+    parse_spec_binary: [{}], ddl_bindings: ['A/B/C'] });
+  assert.ok(!file.some(n => /volume/i.test(n.short) || /volume/i.test(n.full)),
+    'a file entity is asked for a volume it cannot use');
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   assert.ok(/\.me-item\{[^}]*flex-direction:column/.test(css), 'the row does not stack');
   // A row with nothing to warn about must stay exactly as tall as before.

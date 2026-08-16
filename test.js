@@ -9447,69 +9447,35 @@ test('the two main-page editors sit on the panel surface, like the table beside 
     "the Class Editor's Test input lost its well");
 });
 
-test('the DDL panel cards sit flush to its edges, apart from the top', () => {
-  // Both cards already draw a border; a margin outside that border spent a
-  // second line's worth of space on nothing. The top gap stays — it separates
-  // them from the panel header — and so does the gap between them, which
-  // belongs to the resizer and is why removing these margins leaves them apart.
+test('the DDL panel is two cards, and draws no outline of its own', () => {
+  // CHANGED ON PURPOSE: this used to require a top margin on each card and a
+  // missing border wherever a card met the PANEL's own. Both existed to live
+  // with things that are gone — the margin cleared the panel header, and the
+  // dropped edges avoided doubling a border the wrapper no longer draws.
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  for (const [sel, why] of [['.ddl-tree-pane', 'the tree'], ['.ddl-editor-pane', 'the editor']]) {
-    const rule = new RegExp(sel.replace('.', '\\.') + '\\s*\\{[^}]*\\}').exec(css);
-    assert.ok(rule, `${sel} is gone`);
-    const m = /margin: ([^;]+);/.exec(rule[0]);
-    assert.ok(m, `${why} pane declares no margin`);
-    eq(m[1].trim(), 'var(--sp-2) 0 0 0', `${why} pane keeps a margin on a side it should not`);
-  }
-  // The between-gap is the resizer's, not a margin — if it ever became one,
-  // the two rules above would be the wrong place to look for it.
-  assert.ok(/<div class="resizer-h" id="ddlTreeResizer"><\/div>/.test(html),
-    'the gap between the two cards is no longer the resizer');
-
-  // Flush against the panel, a card's border sat on top of the PANEL's own and
-  // read as one thick line. The edges that meet it are dropped; the edges that
-  // face the resizer gap — a real boundary — stay. And only the corner that
-  // still has two borders stays round.
-  // Anchored to a rule BOUNDARY: unanchored, `.ddl-pane-split` also matches
-  // inside `.panel.collapsed .ddl-pane-split{display:none}`, which is the rule
-  // this found first and reported the background missing from.
   const ruleFor = sel => {
-    const m = new RegExp('(?:^|[};])\\s*' + sel.replace('.', '\\.') + '\\s*\\{[^}]*\\}', 'm').exec(css);
+    const m = new RegExp('(?:^|[};])\\s*' + sel.replace(/\./g, '\\.') + '\\s*\\{[^}]*\\}', 'm').exec(css);
     assert.ok(m, `${sel} is gone`);
     return m[0];
   };
-  const tree = ruleFor('.ddl-tree-pane');
-  assert.ok(/border-left: 0; border-bottom: 0;/.test(tree),
-    'the tree card still doubles the panel border on its left and bottom');
-  assert.ok(/border-radius: 0 var\(--r-md\) 0 0;/.test(tree),
-    'the tree card rounds a corner that has no borders left');
-  const ed = ruleFor('.ddl-editor-pane');
-  assert.ok(/border-right: 0; border-bottom: 0;/.test(ed),
-    'the editor card still doubles the panel border on its right and bottom');
-  assert.ok(/border-radius: var\(--r-md\) 0 0 0;/.test(ed),
-    'the editor card rounds a corner that has no borders left');
-  // Both KEEP the edge facing the gap between them. Stated as an absence: an
-  // assertion that the zeroed sides are listed still passes when a third side
-  // is zeroed alongside them.
-  assert.ok(!/border-right: 0/.test(tree),
-    'the tree lost the border facing the resizer, where the boundary is real');
-  assert.ok(!/border-left: 0/.test(ed),
-    'the editor lost the border facing the resizer, where the boundary is real');
-  assert.ok(!/border-top: 0/.test(tree) && !/border-top: 0/.test(ed),
-    'a card lost its top border, which meets the panel header and not its edge');
-
-  // What shows between and above the cards is the page's ground, not the
-  // panel's surface — the same relationship the Class Editor's sections have to
-  // its body. On --bg-panel the strip read as a seam joining two halves rather
-  // than as the space two cards sit in.
-  const split = ruleFor('.ddl-pane-split');
-  assert.ok(/background: var\(--bg-deep\)/.test(split),
-    'the space around the cards is the panel surface, so they do not read as cards');
-  // …and the cards themselves keep the panel surface, or there is nothing to
-  // read against it. Tokens, so the light theme reverses the contrast on its own.
-  assert.ok(/background: var\(--bg-panel\)/.test(tree) && /background: var\(--bg-panel\)/.test(ed),
-    'a card no longer sits on its own surface');
-  assert.ok(/--bg-deep: #0d1117;/.test(css) && /--bg-panel: #161b22;/.test(css),
-    'the two grounds are no longer distinct tokens');
+  // The wrapper draws nothing while it is open: two cards that each outline
+  // themselves inside a third outline read as a box in a box.
+  assert.ok(/#ddlPanel:not\(\.collapsed\) \{ border: 0; box-shadow: none; \}/.test(css),
+    'the wrapper still draws a border around cards that draw their own');
+  for (const [sel, why] of [['.ddl-tree-pane', 'the tree'], ['.ddl-editor-pane', 'the editor']]) {
+    const rule = ruleFor(sel);
+    // Whole cards now — every edge, every corner.
+    assert.ok(/border: var\(--bw\) solid var\(--border\); border-radius: var\(--r-md\);/.test(rule),
+      `${why} card does not close itself`);
+    assert.ok(!/border-(left|right|top|bottom): 0/.test(rule),
+      `${why} card still drops an edge that met a border no longer there`);
+    // And no margin: there is no header above them to clear.
+    assert.ok(/margin: 0;/.test(rule), `${why} card still holds a gap open for the removed header`);
+  }
+  // The gap between them is the resizer's, not a margin — if that ever changed,
+  // the rules above would be the wrong place to look for it.
+  assert.ok(/<div class="resizer-h" id="ddlTreeResizer"><\/div>/.test(html),
+    'the gap between the two cards is no longer the resizer');
 });
 
 test('the Class Editor header carries the wordmark, with its title centred', () => {
@@ -11881,10 +11847,14 @@ test('the DDL panel header is only the collapsed strip now', () => {
 
   // Title before the search, toggle after Clear.
   const bar = html.slice(html.indexOf('<div id="ddlCfgBar">'), html.indexOf('<div id="ddlValidationBar"'));
-  assert.ok(bar.indexOf('ddl-cfg-title') < bar.indexOf('id="ddlSearchBar"'),
-    'the title does not come before the search bar');
-  assert.ok(bar.indexOf('id="ddlToggleBar"') > bar.indexOf('id="ddlClearBtn"'),
-    'the toggle does not come after Clear');
+  // PRESENCE before order: indexOf returns -1 for something missing, and -1 is
+  // less than everything — a mutant that deleted the title passed the ordering
+  // check outright.
+  const titleAt = bar.indexOf('ddl-cfg-title'), toggleAt = bar.indexOf('id="ddlToggleBar"');
+  assert.ok(titleAt >= 0, 'the title was lost with the bar it came from');
+  assert.ok(toggleAt >= 0, 'the toggle was lost with the bar it came from');
+  assert.ok(titleAt < bar.indexOf('id="ddlSearchBar"'), 'the title does not come before the search bar');
+  assert.ok(toggleAt > bar.indexOf('id="ddlClearBtn"'), 'the toggle does not come after Clear');
   // Same call as the header's, so collapsing is unchanged and togglePanel keeps
   // driving the button that the collapsed strip shows.
   assert.ok(/id="ddlToggleBar"[\s\S]{0,120}togglePanel\('ddlPanel','ddlToggle','ddlResizer'\)/.test(bar),

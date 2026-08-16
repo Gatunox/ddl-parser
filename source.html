@@ -452,6 +452,10 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-card);
 }
+/* The DDL panel is a wrapper around two cards that each draw their own outline,
+   so its own was a third line around the other two. Gone while it is open; the
+   collapsed strip keeps its border-right, which is all it ever draws. */
+#ddlPanel:not(.collapsed) { border: 0; box-shadow: none; }
 /* Collapse/expand fade sequence */
 .panel > * { transition: opacity 0.15s ease; }
 .panel.panel-fading > * { opacity: 0; }
@@ -647,12 +651,11 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
      lines sat on top of each other and read as one thick edge. The tree keeps
      top and right: right faces the resizer gap, which is a real boundary.
      Only the corner that still has two borders stays round. */
-  border: var(--bw) solid var(--border); border-left: 0; border-bottom: 0;
-  border-radius: 0 var(--r-md) 0 0;
-  /* Top only. The panel's own edge is already a border, so a margin outside
-     it drew a second one in empty space; the gap BETWEEN the two cards is the
-     resizer's, which is why removing these leaves them apart. */
-  margin: var(--sp-2) 0 0 0; }
+  /* A whole card. It used to drop the edges that met the PANEL's border, and
+     carry a top margin to clear the panel header — both are gone now, so the
+     card closes itself and sits flush at the top. */
+  border: var(--bw) solid var(--border); border-radius: var(--r-md);
+  margin: 0; }
 #ddlTree         { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
 /* The tree is a card, so it carries its own header — title plus a live count.
    The rounded top corners belong to whichever element is FIRST inside the
@@ -714,11 +717,10 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    panes themselves or the drag measures a box it does not move. */
 .ddl-editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0;
   background: var(--bg-panel);
-  /* Same rule, mirrored: right and bottom meet the panel's own border, left
-     faces the resizer gap and stays. */
-  border: var(--bw) solid var(--border); border-right: 0; border-bottom: 0;
-  border-radius: var(--r-md) 0 0 0;
-  margin: var(--sp-2) 0 0 0; overflow: hidden; }
+  /* Same rule, mirrored — and the same conclusion now that there is no panel
+     border to meet and no header to clear. */
+  border: var(--bw) solid var(--border); border-radius: var(--r-md);
+  margin: 0; overflow: hidden; }
 /* ── DDL syntax-highlight overlay + line-number gutter ── */
 .ddl-hl-wrap        { flex: 1; min-height: 0; display: flex; flex-direction: row; overflow: hidden; }
 .ddl-gutter         { width: 44px; flex-shrink: 0; overflow: hidden; position: relative;
@@ -16475,7 +16477,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.2.0';
+const APP_VERSION  = '1.30.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

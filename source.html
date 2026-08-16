@@ -9656,7 +9656,7 @@ function _ppDetectDetails(traces, noun) {
   const details = [{
     html: forcedAll
         ? `<b>${total}</b> ${noun}${plural(total)} — `
-          + `<span style="color:#e6a817">forced by entity override</span>`
+          + `<span style="color:#e6a817">forced by class override</span>`
           + ` &nbsp;<span style="opacity:0.7">recognizers not evaluated</span>`
         : `<b>${total}</b> ${noun}${plural(total)} evaluated — `
           + `<span style="color:var(--success)">${matched} matched</span>`
@@ -10759,7 +10759,7 @@ function doParseMessages() {
   const _armedSpec = S.specOverride && S.specOverride.label;
   if (_armedSpec) {
     _parseProgressStep(`Entity override — ${_armedSpec}`,
-      'Recognizers — not evaluated · every message parses as this entity',
+      'Recognizers — not evaluated · every message parses as this class',
       '#e6a817', '#e6a817');
     _parseProgressDoneLast();
   }
@@ -15124,7 +15124,7 @@ function toggleParseOverride(type, vol, sv, name, defName) {
   let _also = '';
   if (!on && S.specOverride) {
     S.specOverride = null;
-    _also = ' — the entity override was cleared';
+    _also = ' — the class override was cleared';
     if (typeof _meRenderSidebar === 'function' && document.getElementById('me-msg-list'))
       _meRenderSidebar();
   }
@@ -16461,7 +16461,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.0.1';
+const APP_VERSION  = '1.30.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18333,7 +18333,7 @@ function _meUndoApply() {
   // in between, that index means something else and restoring would overwrite
   // a different entity with this one's contents.
   if (_meState.specs.length !== o.nSpecs || !_meState.specs[o.idx]) {
-    _meFlash('Cannot undo \u2014 the entity list changed since then', 'warn');
+    _meFlash('Cannot undo \u2014 the class list changed since then', 'warn');
     return;
   }
   _meState.specs[o.idx] = o.snap;
@@ -18448,7 +18448,7 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     // An armed override you cannot see is the same defect as a toast behind a
     // modal: the app behaves differently and nothing says why.
     d.title = forced
-      ? 'PARSING OVERRIDE — every message parses as this entity, recognizers skipped. Right-click to clear.'
+      ? 'PARSING OVERRIDE — every message parses as this class, recognizers skipped. Right-click to clear.'
       : kind === 'file'
       ? 'Detected by filename ($VOL.SUBVOL.FILE) — order doesn’t matter. Drag to Messages to convert.'
       : 'Drag to reorder';
@@ -18503,7 +18503,7 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
       d.title = (won     ? 'Test: wins detection — first match in the list'
                : passed  ? (kind === 'file'
                             ? 'Test: recognizers match these bytes, but a file detection is chosen by filename — it cannot win a byte test'
-                            : 'Test: would match, but an entity above it wins — unreachable where it sits')
+                            : 'Test: would match, but a class above it wins — unreachable where it sits')
                : reached ? 'Test: failed at recognizer ' + (((tr.results[i]?.failAt) ?? 0) + 1)
                : kind === 'file'
                ? 'Test: not evaluated — a file detection is chosen by filename, not by these bytes'
@@ -24938,7 +24938,7 @@ function _meHtmlId(item) {
     <div class="me-fld">
       <div class="me-lbl">Type code</div>
       <input class="me-inp" type="text" maxlength="10" value="${ea(item.name)}"
-        oninput="_meField('name',this.value)" title="Short identifier used as the entity's type label" placeholder="STM">
+        oninput="_meField('name',this.value)" title="Short identifier used as the class's type label" placeholder="STM">
     </div>
     <div class="me-fld">
       <div class="me-lbl">Label</div>
@@ -24978,7 +24978,7 @@ function _meIdWarnHtml(item) {
   const clashes = _meState.specs.filter(s => s !== item && _specKey(s) === key).length;
   if (!clashes) return '';
   return _meWarnChip('Duplicate type code + label',
-    'Another entity already uses this exact type code and label. They are the same identity to the app: an import cannot tell them apart, exporting one pre-selects both, and a parsing override cannot name just one. Change the type code or the label.');
+    'Another class already uses this exact type code and label. They are the same identity to the app: an import cannot tell them apart, exporting one pre-selects both, and a parsing override cannot name just one. Change the type code or the label.');
 }
 
 // Repaint just the identity warning. _meField cannot re-render the whole card —
@@ -25027,7 +25027,7 @@ function _meRecWarnsHtml(item) {
   if (!item || item.kind !== 'file') return '';
   if ((item.recognizers || []).some(r => r.type === 'filename')) return '';
   return _meWarnChip('Needs a filename recognizer',
-    'File detections must carry a filename recognizer ($VOL.SUBVOL.FILE) — add one, or this entity can never match.');
+    'File detections must carry a filename recognizer ($VOL.SUBVOL.FILE) — add one, or this class can never match.');
 }
 
 // Parse Spec card: the spec needs a DDL to read from, so the spec says so.
@@ -25047,7 +25047,7 @@ function _meSpecWarnsHtml(item) {
 
   if (!hasBind && !hasSpec) {
     return _meWarnChip('Inert — no binding, no parse spec',
-      'This file entity has no DDL binding and no parse spec, so it will never claim records. It needs both: a binding (the file\'s DDL) and a parse spec (how to read it).');
+      'This file class has no DDL binding and no parse spec, so it will never claim records. It needs both: a binding (the file\'s DDL) and a parse spec (how to read it).');
   }
   if (!hasBind) {
     return _meWarnChip('No DDL binding',
@@ -26112,7 +26112,7 @@ const _REC_HELP = {
     ],
     useWhen: [
       'Two message types are byte-identical and only the endpoints tell them apart.',
-      'One acquirer or node needs its own entity while everything else keeps the shared one.',
+      'One acquirer or node needs its own class while everything else keeps the shared one.',
       'Put it <b>after</b> the byte rules in the list. It is the cheapest rule to fail on and the most specific, so the diagnostics read better when the byte-level checks have already passed.',
     ],
     attrs: [
@@ -26162,8 +26162,8 @@ const _REC_HELP = {
       'Anchored, case-insensitive, and strict about a missing field: a specific pattern with no destination recorded is a no match.',
     ],
     useWhen: [
-      'A request and its response carry the same bytes and are told apart by direction — pair this with <code>source</code> on the two entities.',
-      'Traffic to one switch or interchange needs its own entity.',
+      'A request and its response carry the same bytes and are told apart by direction — pair this with <code>source</code> on the two classes.',
+      'Traffic to one switch or interchange needs its own class.',
     ],
     attrs: [
       ['pattern', 'string', true, [
@@ -26180,7 +26180,7 @@ const _REC_HELP = {
           { ctx: { dest: 'PIA^SWITCH' }, note: 'the switch it names' },
           { ctx: { dest: 'PIA^A910' }, note: 'somewhere else' },
         ] },
-      { what: 'A <b>direction pair</b> — this rule and its mirror on the response entity',
+      { what: 'A <b>direction pair</b> — this rule and its mirror on the response class',
         rec: { type: 'destination', pattern: 'PI$^SWITCH' },
         cases: [
           { ctx: { source: 'PIA^A910', dest: 'PIA^SWITCH' }, note: 'inbound to the switch' },
@@ -26194,12 +26194,12 @@ const _REC_HELP = {
       'Matches the file the record came from against a Guardian-style wildcard pattern.',
       'Names follow the NonStop convention <code>$VOLUME.SUBVOL.FILENAME</code>. The <code>$</code> and the <code>.</code> are <b>literal</b> here — they are the volume prefix and the component separators, not wildcards.',
       'Case-insensitive and anchored at both ends.',
-      'A file entity is keyed by this rule: without one it can never match, whatever else its recognizer list says.',
+      'A file class is keyed by this rule: without one it can never match, whatever else its recognizer list says.',
     ],
     useWhen: [
       'You are parsing FUP COPY output or another file dump rather than a message trace.',
-      'Several files share a record layout and one entity should claim all of them — <code>$ATM.AUDIT.*</code>.',
-      'Two versions of the same file need different entities: give both the filename rule and add a content rule to tell the versions apart.',
+      'Several files share a record layout and one class should claim all of them — <code>$ATM.AUDIT.*</code>.',
+      'Two versions of the same file need different classes: give both the filename rule and add a content rule to tell the versions apart.',
     ],
     attrs: [
       ['pattern', 'string', true, [
@@ -26890,7 +26890,7 @@ const _meKindOf = s => s?.kind === 'file' ? 'file' : s?.kind === 'other' ? 'othe
 function _meDeleteSelected() {
   const idx = _meState?.selIdx;
   const s = (_meState?.section === 'msg' && idx >= 0) ? _meState.specs[idx] : null;
-  if (!s) { _meFlash('Select an entity in the list first, then press Delete', 'warn'); return; }
+  if (!s) { _meFlash('Select a class in the list first, then press Delete', 'warn'); return; }
   _meDeleteItem('msg', idx);
 }
 
@@ -26902,12 +26902,12 @@ function _meSyncDelBtn() {
   const s = (_meState?.section === 'msg' && idx >= 0) ? _meState.specs[idx] : null;
   b.disabled = !s;
   b.title = s ? `Delete "${s.label || s.name}" and everything in it`
-              : 'Select an entity in the list to delete it';
+              : 'Select a class in the list to delete it';
 }
 
 function _meDeleteItem(section, idx) {
   const s = _meState.specs[idx];
-  const itemName = s?.label || s?.name || 'entity';
+  const itemName = s?.label || s?.name || 'class';
   // Name the KIND too. With three lists in the sidebar, a bare name does not
   // say whether you are about to remove a message, a structure or a file
   // detection — and the DDL tree's prompt has always named what it was.
@@ -30181,7 +30181,7 @@ function _meItemNotes(s) {
       : { warn: true, short: 'No volume', full: 'BASE is assumed; set one to search the right DDLs' });
   }
   if (!((s.recognizers || []).length))
-    notes.push({ warn: true, short: 'No recognizer', full: 'this entity can never match anything' });
+    notes.push({ warn: true, short: 'No recognizer', full: 'this class can never match anything' });
   const binds = (s.ddl_bindings || []).filter(Boolean);
   if (!binds.length)
     notes.push({ warn: true, short: 'No DDL binding', full: 'you will be asked to pick a DDL at parse time' });
@@ -30556,8 +30556,8 @@ function _meRunTest(opts) {
   parts.push(_meTestSection('Detection', winnerIdx !== -1 ? '#3fb950' : '#f85149',
     winnerIdx !== -1
       ? `<div class="me-test-pass">✓ ${winLabel} — first match in the Messages list.</div>`
-      : `<div class="me-test-fail">✗ No entity matched these bytes.</div>` +
-        `<div class="me-test-note">Nothing is selected. Pick an entity on the left to see what it would make of the input.</div>`,
+      : `<div class="me-test-fail">✗ No class matched these bytes.</div>` +
+        `<div class="me-test-note">Nothing is selected. Pick a class on the left to see what it would make of the input.</div>`,
     `${all.filter(r => r?.passed).length} of ${all.length} match`));
 
   if (!item) {

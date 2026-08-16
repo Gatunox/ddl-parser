@@ -10003,7 +10003,7 @@ test('deleting an entity is a labelled button, not a 10px × in every row', () =
   const fn = psFnSource('_meDeleteSelected');
   assert.ok(/_meDeleteItem\('msg', idx\)/.test(fn), 'it routes to the same delete');
   // Acting on nothing is the failure mode of a selection-driven button.
-  assert.ok(/Select an entity in the list first/.test(fn),
+  assert.ok(/Select a class in the list first/.test(fn),
     'with nothing selected it says so rather than doing nothing');
   // The confirmation is unchanged — this moved the control, not the safety.
   // Asserted against the helper, not the sentence: after the confirmations were
@@ -11889,6 +11889,22 @@ test('the feature is called the Class Editor everywhere it is named', () => {
   assert.ok(/>Data<\/span>/.test(html) && !/me-sidebar-title"[^>]*>Other</.test(html),
     'the middle section is still called Other');
   assert.ok(/label: 'Move to Data'/.test(html), 'the move-to menu still says Other');
+
+  // "entity" is the old vocabulary for the same thing. Checked on the strings
+  // the user actually reads — comments still say entity where they describe the
+  // stored `specs` array, which is what it still is.
+  const prose = [];
+  for (const ln of html.split('\n')) {
+    const t = ln.trim();
+    if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) continue;
+    for (const m of ln.matchAll(/(?:title="([^"]*)")|(?:'((?:[^'\\]|\\.)*)')|(?:>([^<>{}]*)<)/g)) {
+      const txt = m[1] || m[2] || m[3] || '';
+      if (txt.length < 400 && /\bentit(y|ies)\b/i.test(txt)) prose.push(txt.trim().slice(0, 80));
+    }
+  }
+  deepEq(prose, [], 'user-visible text still calls a class an entity');
+  // "identity" contains the same letters and must survive the rename.
+  assert.ok(/the same identity to the app/.test(html), 'a word containing "entit" was corrupted');
   assert.ok(/Classes on the left, the selected class in the middle/.test(html),
     'the help still describes the pane as Entities');
 });
@@ -13858,7 +13874,7 @@ test('the detection summary does not claim a forced run was evaluated', () => {
   const winner = { type: 'ISO', label: 'ISO 8583 BIC', color: '#e6a817' };
 
   const forced = strip(details([{ winner, forced: true, trace: [{ label: 'ISO 8583 BIC', passed: true, forced: true }] }], 'message'));
-  assert.ok(/forced by entity override/i.test(forced[0]), `forced header, got: ${forced[0]}`);
+  assert.ok(/forced by class override/i.test(forced[0]), `forced header, got: ${forced[0]}`);
   assert.ok(/not evaluated/i.test(forced[0]), 'the forced header must say recognizers did not run');
   assert.ok(!/evaluated —/.test(forced[0]), 'it must not read as a normal evaluation');
   assert.ok(/Forced as/.test(forced[1]), `forced verb, got: ${forced[1]}`);

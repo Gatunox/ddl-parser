@@ -8337,6 +8337,25 @@ test('the pills fill the row, and what did not fit is counted', () => {
     'the observer can re-enter its own callback');
 });
 
+test('the "+N more" chip looks and reads like the toggle it is', () => {
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // Clicking the chip and clicking the kind label do the same thing, so the chip
+  // has to look switched on when the switch is on — dim while active read as
+  // "nothing happened" next to a row that had visibly changed.
+  assert.ok(/\.me-ovk-more\{[^}]*color:var\(--text-very-dim\)/.test(css), 'the resting chip is not dim');
+  assert.ok(/\.me-ovk-row\.on \.me-ovk-more\{color:var\(--text\);\}/.test(css),
+    'the chip stays dim while its own kind is the filter');
+  const fn = psFnSource('_meOvlRefresh');
+  assert.ok(/_meOvlKindFilter\('\$\{k\.id\}'\)"\s*\n?\s*title=/.test(fn.replace(/\s+/g, m => m.includes('\n') ? '\n' : ' ')) ||
+            /me-ovk-more[\s\S]{0,120}_meOvlKindFilter/.test(fn),
+    'the chip is not the kind filter');
+  // And it must say what a click does NOW, not always "show".
+  assert.ok(/Showing all \$\{fields\.length\} — click to clear/.test(fn),
+    'the chip still offers to "show" what it is already showing');
+  assert.ok(/Show all \$\{fields\.length\} in the table below/.test(fn),
+    'the resting chip does not say what it will do');
+});
+
 test('the kind counts follow the search but not the kind filter', () => {
   const fn = psFnSource('_meOvlEntries');
   // Reading fmFilter is not applying it — the first version of this test passed

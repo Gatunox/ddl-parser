@@ -2884,6 +2884,10 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ovk-more{cursor:pointer;color:var(--text-very-dim);align-self:center;
   font-size:calc(var(--sz-mono) - 2px);white-space:nowrap;}
 .me-ovk-more:hover{color:var(--accent);}
+/* Lit while its own kind is the filter. The chip IS that toggle — clicking it
+   and clicking the label do the same thing — so it has to look switched on when
+   the switch is on, and say that a click now clears rather than shows. */
+.me-ovk-row.on .me-ovk-more{color:var(--text);}
 .me-ovk-pill{display:inline-flex;align-items:baseline;gap:5px;cursor:pointer;
   border: var(--bw-ctl) solid var(--border);border-radius:var(--r-lg);
   background:var(--bg-deep);padding:1px 8px;font-size:calc(var(--sz-mono) - 2px);}
@@ -16385,7 +16389,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.27.1.0';
+const APP_VERSION  = '1.27.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24465,7 +24469,8 @@ function _meOvlRefresh() {
     // filter the label is, so the fields that did not fit are one click away.
     const more = fields.length
       ? `<span class="me-ovk-more hidden" onclick="_meOvlKindFilter('${k.id}')"
-          title="Show all ${fields.length} in the table below"></span>` : '';
+          title="${on ? `Showing all ${fields.length} — click to clear`
+                      : `Show all ${fields.length} in the table below`}"></span>` : '';
     return `<div class="${cls}" data-kind="${k.id}" data-n="${fields.length}">
       <button class="me-ovk-lab k-${k.id}" onclick="_meOvlKindFilter('${k.id}')"
         title="${_meOvEsc(k.hint)} — click to show only these fields"${fields.length ? '' : ' disabled'}>${k.label}</button>

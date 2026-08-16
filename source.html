@@ -2923,14 +2923,14 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ovk-pill .val{color:var(--text-dim);}
 /* Kept out of the flow rather than hidden, so revealing it never reflows the
    pill and moves the target out from under the pointer. */
-.me-ovk-x{color:var(--text-very-dim);visibility:hidden;margin-left:1px;}
-.me-ovk-pill:hover .me-ovk-x{visibility:visible;}
-.me-ovk-x:hover{color:var(--danger);}
+.me-ovk-x,.k-x{color:var(--text-very-dim);visibility:hidden;margin-left:1px;cursor:pointer;}
+.me-ovk-pill:hover .me-ovk-x,.k:hover .k-x{visibility:visible;}
+.me-ovk-x:hover,.k-x:hover{color:var(--danger);}
 /* Hovering the ✕ reddens the WHOLE pill, not just the glyph. The ✕ is a few
    pixels of a control the width of a field name, and what is about to be
    removed is the pill — so the pill is what has to answer the pointer.
    Outranks both :hover and .sel, which would otherwise repaint this border. */
-.me-ovk-pill:has(.me-ovk-x:hover){border-color:var(--danger);}
+.me-ovk-pill:has(.me-ovk-x:hover),.k:has(.k-x:hover){border-color:var(--danger);}
 
 /* One colour per kind, shared by the index labels and the on-field badges —
    the badge on a row and the row it came from have to be the same colour or
@@ -2943,6 +2943,9 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .k-de,.me-ovk-lab.k-de{color:var(--k-de);border-color:var(--k-de);background:color-mix(in srgb, var(--k-de) 12%, transparent);}
 .k-vlg,.me-ovk-lab.k-vlg{color:var(--k-vlg);border-color:var(--k-vlg);background:color-mix(in srgb, var(--k-vlg) 12%, transparent);}
 .me-fm-on-field{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle;}
+/* The ✕ is kept out of the flow rather than hidden, so revealing it never
+   reflows the badge and moves the target out from under the pointer. */
+.k{display:inline-flex;align-items:center;}
 .me-fm-filt{display:inline-flex;gap:4px;flex-shrink:0;}
 
 .me-ovl-empty{padding:12px;text-align:center;color:var(--text-very-dim);
@@ -16428,7 +16431,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.28.1.0';
+const APP_VERSION  = '1.28.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18087,6 +18090,12 @@ function openMsgEditor() {
       if (r.type === 'literal' && typeof r.value === 'number') r.value = String(r.value);
     return specs;
   };
+  // The undo offer belongs to the session that created it. _meUndoOffer is
+  // module-level and used to outlive Cancel: reopening the editor left an offer
+  // holding a snapshot of the PREVIOUS session, and applying it replaced the
+  // current entity wholesale — silently reverting everything done since. A
+  // toast surviving in the (hidden, not destroyed) overlay is enough to reach it.
+  _meUndoOffer = null;
   const specs = _migrateSpecs(JSON.parse(JSON.stringify(data.specs || [])));
   let startIdx = specs.length > 0 ? 0 : -1;
   try {
@@ -18219,6 +18228,11 @@ function _meInitSplitter() {
 
 function closeMsgEditor() {
   document.getElementById('msgEditorOverlay').classList.add('hidden');
+  // Cleared on the way out as well as the way in: the overlay is hidden, not
+  // destroyed, so its toasts — and their Undo buttons — are still in the DOM.
+  _meUndoOffer = null;
+  const fc = document.getElementById('me-flash-container');
+  if (fc) fc.innerHTML = '';
 }
 
 function _meSetDirty() {
@@ -22365,9 +22379,18 @@ function _meFmRowHtml(row, ctx, counter) {
   // already show the new VALUES; these say which KINDS are in play, which is
   // what you scan for when you are looking for your own configuration in four
   // thousand rows. Same texts as the index pills — one builder, one wording.
+  // Each badge carries the SAME ✕ its pill in the index does. It has to: the
+  // index fits as many pills as the row is wide and counts the rest, so on a
+  // spec with twenty-two TYPE overrides fifteen fields had no delete affordance
+  // anywhere. The table is the surface that can show them all, so it is the
+  // surface that has to be able to remove them.
+  const _ovCanon = _canonFieldId(row.id);
   const ovBadges = Object.keys(foEntry).length
     ? `<span class="me-fm-on-field">` + _meOvlChipParts(foEntry).map(part =>
-        `<span class="k k-${part.kind}">${part.text}</span>`).join('') + `</span>`
+        `<span class="k k-${part.kind}" title="${ea(part.text)} — click the ✕ to remove it"`
+        + `>${part.text}<span class="k-x" title="Remove this override"`
+        + ` onclick="event.stopPropagation();_meOvlDropKind('${ea(_ovCanon)}','${part.kind}')">✕</span></span>`
+      ).join('') + `</span>`
     : '';
   const fieldCell = isGroup
     ? `<td class="me-fm-fld" style="${namePadL}" ondblclick="_meFmToggleGroup(this.closest('tr'))"><span class="me-fm-name">${id}</span>${grpIcon}${redefNote}${ovBadges}</td>`

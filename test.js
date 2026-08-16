@@ -8315,6 +8315,22 @@ test('a toast raised inside the Data Editor uses the editor own toast', () => {
     'the editor toast takes no action');
 });
 
+test('the undo offer does not outlive the editor session that made it', () => {
+  // Found by measurement: after Cancel and reopen, _meUndoOffer still held the
+  // previous session's snapshot. Applying it replaced the current entity
+  // wholesale — five overrides vanished because a 30-override snapshot from an
+  // earlier session was written over a 35-override one. The overlay is hidden
+  // rather than destroyed, so a toast with a live Undo button can survive too.
+  const open = APP_SRC.slice(APP_SRC.indexOf('const specs = _migrateSpecs('), 0) ||
+               APP_SRC;
+  assert.ok(/_meUndoOffer = null;\s*\n\s*const specs = _migrateSpecs\(/.test(APP_SRC),
+    'opening the editor keeps the previous session offer');
+  const close = psFnSource('closeMsgEditor');
+  assert.ok(/_meUndoOffer = null;/.test(close), 'closing the editor keeps the offer');
+  assert.ok(/me-flash-container[\s\S]*innerHTML = ''/.test(close),
+    'the toasts survive the close, so their Undo buttons can be pressed on a stale offer');
+});
+
 test('the toast colour says what happened, and the Undo reads as a control', () => {
   // Taking configuration away is amber; adding it is green. The colour answers
   // "what just happened" before the words are read.
@@ -8422,9 +8438,19 @@ test('chip texts have one author, whatever surface shows them', () => {
   const { rows, ctx } = mtxCtx({ 'GRP.AA': { type: 'uint16-be' } });
   const rowHtml = meFmRowHtml(rows.find(r => r.id === 'GRP.AA'), ctx, { n: 0 });
   assert.ok(/<span class="me-fm-on-field">/.test(rowHtml), 'the row carries no badge');
-  assert.ok(/<span class="k k-type">uint16-be<\/span>/.test(rowHtml),
+  assert.ok(/<span class="k k-type"[^>]*>uint16-be<span class="k-x"/.test(rowHtml),
     `the badge says something other than the chip's own words, got: ${
-      (rowHtml.match(/<span class="me-fm-on-field">.*?<\/span><\/span>/) || [''])[0]}`);
+      (rowHtml.match(/<span class="me-fm-on-field">[\s\S]*?<\/span><\/span><\/span>/) || [''])[0]}`);
+  // The badge is the pill's twin: same field, same kind, same ✕. Without it the
+  // only way to remove an override was a pill, and the index shows as many
+  // pills as fit — the rest had no delete affordance anywhere.
+  assert.ok(/_meOvlDropKind\('GRP\.AA','type'\)/.test(rowHtml),
+    'the badge cannot remove the override it names');
+  assert.ok(/event\.stopPropagation\(\);_meOvlDropKind/.test(rowHtml),
+    'the ✕ also selects the row, so removing an override moves the selection under you');
+  // CANONICAL id, like every other override key — a per-occurrence id would
+  // address a rule that does not exist for an OCCURS field.
+  assert.ok(!/_meOvlDropKind\('GRP\[/.test(rowHtml), 'the badge deletes by per-occurrence id');
 });
 
 test('the pills fill the row, and what did not fit is counted', () => {
@@ -8460,12 +8486,15 @@ test('the pills fill the row, and what did not fit is counted', () => {
 
 test('hovering the ✕ reddens the whole pill, and outranks what would repaint it', () => {
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  assert.ok(/\.me-ovk-pill:has\(\.me-ovk-x:hover\)\{border-color:var\(--danger\);\}/.test(css),
-    'the ✕ reddens only itself — the thing about to be removed is the pill');
+  assert.ok(/\.me-ovk-pill:has\(\.me-ovk-x:hover\),\.k:has\(\.k-x:hover\)\{border-color:var\(--danger\);\}/.test(css),
+    'the ✕ reddens only itself — the thing about to be removed is the pill (or the badge)');
+  // Pill and badge are one control in two places, so one set of rules.
+  assert.ok(/\.me-ovk-x,\.k-x\{/.test(css) && /\.me-ovk-pill:hover \.me-ovk-x,\.k:hover \.k-x\{/.test(css),
+    'the badge ✕ is styled separately from the pill ✕ and can drift from it');
   // Three rules set this border. The :has one has to be BOTH the most specific
   // and the last, or hovering the ✕ of a selected pill keeps the accent border
   // and the warning never appears on exactly the pills that matter most.
-  const order = ['.me-ovk-pill:hover{', '.me-ovk-pill.sel{', '.me-ovk-pill:has(.me-ovk-x:hover){'];
+  const order = ['.me-ovk-pill:hover{', '.me-ovk-pill.sel{', '.me-ovk-pill:has(.me-ovk-x:hover),'];
   const at = order.map(sel => css.indexOf(sel));
   assert.ok(at.every(i => i >= 0), 'one of the three border rules is missing');
   assert.ok(at[2] > at[0] && at[2] > at[1],

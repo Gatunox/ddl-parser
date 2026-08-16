@@ -10439,10 +10439,15 @@ test('the selection count lives on the reference pill, not a separate span', () 
   assert.ok(/var\(--text-very-dim\)/.test(none), `and dim with nothing selected: ${none}`);
 });
 
-test('the bar sits above the table, not after it', () => {
+test('the panel reads in the order it is used', () => {
   const html = ovPanelHtml();
-  assert.ok(html.indexOf('me-fm-bar') < html.indexOf('me-fm-table-wrap'),
-    'the bar precedes the field table');
+  // What you can do to a field, then how you find the field, then the fields.
+  // The action bar used to sit under the filter row, which put the controls
+  // furthest from the selection they act on.
+  const at = sel => html.indexOf(sel);
+  assert.ok(at('me-fm-bar') < at('me-fm-toolbar'), 'the action bar is back under the filter row');
+  assert.ok(at('me-fm-toolbar') < at('me-fm-table-wrap'), 'the filter row is not above the table');
+  assert.ok(at('me-fm-bar') < at('me-fm-table-wrap'), 'the bar precedes the field table');
 });
 
 // ── A bitmap the DDL does not declare still numbers the DEs ─────────────────

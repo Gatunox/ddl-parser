@@ -16401,7 +16401,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.3.1';
+const APP_VERSION  = '1.29.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22099,6 +22099,14 @@ function _meOverridesPrep(item) {
 <div class="me-ps-wrap side${fmHelpOpen ? '' : ' nohelp'}" id="me-fm-wrap">
 <div class="me-ps-split" id="me-fm-split">
 <div class="me-hs-main" id="me-fm-pane">
+<div class="me-fm-bar" id="me-fm-bar">
+  ${_ME_OV_KINDS.map(k => `
+  <span class="me-ovb k-${k.id}" data-kind="${k.id}">
+    <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="How many of your selected fields already have a ${k.label} override, of every field that does \u2014 click to show only those">0 of 0</button>
+    <button class="btn me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on the selected fields that do not have one">${k.label}</button>
+  </span>`).join('')}
+  <button class="btn me-ovb-clrall" id="me-fm-clr-all" disabled>\u2715 Clear<span class="me-ovb-cn"></span></button>
+</div>
 <div class="me-fm-toolbar">
   <span class="me-ovl-ro none" id="me-fm-cnt" title="This table is the picker — every field the DDL declares. Configuration is applied from the action bar below.">no selection · READ-ONLY</span>
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
@@ -22128,14 +22136,6 @@ function _meOverridesPrep(item) {
                 title="Put every column back to its default width">Reset</button></div>
     </div>
   </div>
-</div>
-<div class="me-fm-bar" id="me-fm-bar">
-  ${_ME_OV_KINDS.map(k => `
-  <span class="me-ovb k-${k.id}" data-kind="${k.id}">
-    <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="How many of your selected fields already have a ${k.label} override, of every field that does \u2014 click to show only those">0 of 0</button>
-    <button class="btn me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on the selected fields that do not have one">${k.label}</button>
-  </span>`).join('')}
-  <button class="btn me-ovb-clrall" id="me-fm-clr-all" disabled>\u2715 Clear<span class="me-ovb-cn"></span></button>
 </div>
 <div class="me-fm-ed" id="me-fm-ed">
   <label id="me-fm-ed-lbl"></label>

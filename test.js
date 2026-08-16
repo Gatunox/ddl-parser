@@ -8407,11 +8407,24 @@ test('the table filters by kind and by overridden, reading the store once', () =
 
 test('an untouched row recedes, but nothing with something to say does', () => {
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  assert.ok(/tr\.me-fm-quiet td\{opacity:\.38;\}/.test(css), 'non-overridden rows are not dimmed');
-  for (const state of ['me-fm-quiet:hover', 'me-fm-quiet\\.me-fm-row-sel',
-                       'me-fm-quiet\\.me-fm-row-err', 'me-fm-quiet\\.me-fm-row-warn'])
-    assert.ok(new RegExp(`tr\\.${state} td`).test(css),
-      `a ${state.replace(/\\\\/g,'')} row stays dimmed — a broken override must never be the faintest thing on screen`);
+  // Dimmed by COLOUR, never by opacity: opacity on the <td> faded the cell's
+  // backgrounds too, so the column highlight all but vanished over these rows.
+  assert.ok(!/tr\.me-fm-quiet[^{]*\{[^}]*opacity/.test(css),
+    'the quiet row is dimmed with opacity again, which fades the column highlight with it');
+  assert.ok(/tr\.me-fm-quiet[^{]*td\{\s*color:var\(--text-very-dim\);\}/.test(css),
+    'non-overridden rows are not dimmed');
+  assert.ok(/tr\.me-fm-quiet[^{]*td \.me-fm-name\{\s*color:var\(--text-dim\);\}/.test(css),
+    'the field name is dimmed to the same level as the rest, losing the hierarchy');
+  // The exceptions live in :not() on the dim rule itself — one statement of
+  // "unless it has something to say", so a fifth state cannot be added to one
+  // list and forgotten in the other.
+  // BOTH rules, counted. Matching once passed on a mutant that stripped the
+  // exceptions from the cell rule while the name rule still carried them —
+  // every cell but the field name stayed dim on a selected row.
+  for (const state of [':hover', '\\.me-fm-row-sel', '\\.me-fm-row-err', '\\.me-fm-row-warn'])
+    assert.strictEqual(
+      (css.match(new RegExp(`tr\\.me-fm-quiet[^{]*:not\\(${state}\\)`, 'g')) || []).length, 2,
+      `a ${state.replace(/\\\\/g,'')} row stays dimmed in one of the two rules — a broken override must never be the faintest thing on screen`);
   // The tint that used to mark overridden rows is gone: with badges too they say it twice.
   assert.ok(!/tr\.me-fm-has-ovr td\{background/.test(css),
     'the row tint AND the badges both mark the same rows');

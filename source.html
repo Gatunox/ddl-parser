@@ -2962,15 +2962,23 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    whole row accent would drown exactly the distinction it is making. */
 /* The on-field badges say which rows are configured, so the tint that used to
    say it is gone — with badges AND a tint the overridden rows shout twice while
-   the rest of the table still competes for attention. */
-.me-fm-table tbody tr.me-fm-quiet td{opacity:.38;}
-/* Restored the moment the row has something to say. Selection, a broken
-   override and a DE that can never be reached are all louder than "untouched",
-   so none of them may be dimmed. */
-.me-fm-table tbody tr.me-fm-quiet:hover td,
-.me-fm-table tbody tr.me-fm-quiet.me-fm-row-sel td,
-.me-fm-table tbody tr.me-fm-quiet.me-fm-row-err td,
-.me-fm-table tbody tr.me-fm-quiet.me-fm-row-warn td{opacity:1;}
+   the rest of the table still competes for attention.
+
+   The TEXT is dimmed, not the cell. `opacity` on the <td> faded everything the
+   cell painted, the column highlight included — so highlighting a column over
+   untouched rows produced a highlight you could barely see. Colour touches only
+   the glyphs and leaves every background alone.
+
+   Written as one rule with the exceptions in :not(), rather than a dim rule
+   plus four rules undoing it: selection, a broken override and a DE that can
+   never be reached are all louder than "untouched", and stating that once means
+   a fifth state cannot be added to one list and forgotten in the other. */
+.me-fm-table tbody tr.me-fm-quiet:not(:hover):not(.me-fm-row-sel):not(.me-fm-row-err):not(.me-fm-row-warn) td{
+  color:var(--text-very-dim);}
+/* One step down each, so the field name still reads as the brightest thing in
+   its row and the hierarchy survives the dimming. */
+.me-fm-table tbody tr.me-fm-quiet:not(:hover):not(.me-fm-row-sel):not(.me-fm-row-err):not(.me-fm-row-warn) td .me-fm-name{
+  color:var(--text-dim);}
 /* A broken override tints the whole row red; something to review, orange. The
    badge alone sits at the end of one column and is easy to scroll straight past
    in a list of thousands. Declared after .me-fm-has-ovr so a broken override
@@ -16394,7 +16402,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.27.1.2';
+const APP_VERSION  = '1.27.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

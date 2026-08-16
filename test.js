@@ -11873,6 +11873,12 @@ test('a configuration gap names itself instead of being counted', () => {
   const shorts = bare.map(g => g.short);
   assert.ok(shorts.includes('No volume') && shorts.includes('No DDL binding'),
     `the gaps do not name themselves: ${JSON.stringify(bare)}`);
+  // In the order the PAGE asks for them — Identity (vol), Recognizers, DDL
+  // Bindings, Parse Spec — so the row reads as a summary of the sections below
+  // it rather than its own arrangement of the same four facts.
+  assert.strictEqual(shorts.join(' | '),
+    'No volume | No recognizer | No DDL binding | No parse spec',
+    `the row does not follow the page's own order: ${shorts.join(' | ')}`);
   // Two words to identify it, a sentence to explain it — the pair is the point.
   for (const g of bare) {
     assert.ok(g.short && g.full, `a gap is missing half of itself: ${JSON.stringify(g)}`);

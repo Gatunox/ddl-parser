@@ -16454,7 +16454,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.10.1';
+const APP_VERSION  = '1.29.10.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -30142,10 +30142,10 @@ function _meSpecGaps(s) {
 function _meItemNotes(s) {
   if (!s) return [];
   const notes = [];
-  if (!((s.recognizers || []).length))
-    notes.push({ warn: true, short: 'No recognizer', full: 'this entity can never match anything' });
-  if (!(((s.parse_spec_binary || []).length) || ((s.parse_spec_ascii || []).length)))
-    notes.push({ warn: true, short: 'No parse spec', full: 'a recognized message cannot be parsed' });
+  // In the order the page itself asks for them — Identity, Recognizers, DDL
+  // Bindings, Parse Spec — so the row reads as a summary of the sections below
+  // it rather than as its own arrangement of the same four facts.
+  //
   // Volume selects which DDLs are searched. Unset falls back to BASE, which is
   // usable but rarely what was intended — say so rather than let it surprise.
   // A file entity is matched on its wrapper filename, so volume means nothing
@@ -30156,6 +30156,8 @@ function _meItemNotes(s) {
       ? { warn: false, short: `vol: ${vol}`, full: `Volume ${vol} — the DDLs searched at parse time` }
       : { warn: true, short: 'No volume', full: 'BASE is assumed; set one to search the right DDLs' });
   }
+  if (!((s.recognizers || []).length))
+    notes.push({ warn: true, short: 'No recognizer', full: 'this entity can never match anything' });
   const binds = (s.ddl_bindings || []).filter(Boolean);
   if (!binds.length)
     notes.push({ warn: true, short: 'No DDL binding', full: 'you will be asked to pick a DDL at parse time' });
@@ -30168,8 +30170,11 @@ function _meItemNotes(s) {
       short: binds.length > 1 ? `ddl: ${name} +${binds.length - 1}` : `ddl: ${name}`,
       full: binds.length > 1 ? `Bound DDLs:\n${binds.join('\n')}` : `Bound DDL — ${binds[0]}` });
   }
+  if (!(((s.parse_spec_binary || []).length) || ((s.parse_spec_ascii || []).length)))
+    notes.push({ warn: true, short: 'No parse spec', full: 'a recognized message cannot be parsed' });
   return notes;
 }
+
 
 // Same ⚠N badge the DDL tree uses for validation warnings — count on the badge,
 // detail on hover — so a missing-config warning reads identically everywhere.

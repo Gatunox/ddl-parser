@@ -1421,14 +1421,45 @@ returned UNKNOWN.
 - \[+ Add\] / \[Remove\] per entry
 - Ordered — the first binding is the default
 
-**Overrides**
-- Three sub-sections, each collapsible:
-  - **Overrides list** — only the fields that carry config, each with its
-    settings as chips and a ✕ to remove it. Selecting one opens the editor.
-  - **Editor** — Data Type, Bytes, Display, DE, and (on a group) Variable
-    Length, plus that field's JSON. Edit either; the two stay in sync.
-  - **Reference** — read-only, every field the DDL declares. It is the picker:
-    select a row, then **+ Add Override**.
+**Overrides** *(rewritten 2026-08-16 — kinds are the rows, fields are the badges)*
+
+An override says one of five things about a field, and those five **kinds** are
+the structure of the whole section:
+
+| Kind | Stored keys | Says |
+|---|---|---|
+| TYPE | `type` | how the bytes are read |
+| SHOW | `display` | display format only |
+| SIZE | `bytes` | read this many bytes instead |
+| DE | `de` | data-element numbering |
+| VLG | `vlg`, `count` | length source |
+
+- **In place** — the index. Five rows, one per kind, *always five*: it cannot
+  grow however many overrides a spec carries. Each row is a filter and a count
+  (`TYPE 22`); clicking the label filters the table to that kind, clicking again
+  clears it. Counts follow the text filter but **not** the kind filter — the five
+  rows are the switch, and a switch that zeroes the other four cannot be switched
+  back.
+  - Fields appear as **pills** (name + that kind's value). How many is *measured*,
+    not a constant: pills are laid out on one line and dropped from the end until
+    the row stops overflowing, and whatever was dropped is stated as `+N more`,
+    which is the same filter the label is. The fit is redone when the panel width
+    changes. A search that narrows the set brings more pills back.
+  - A pill's **✕** (on hover) removes the kind it names, not the field. The entry
+    disappears once its last kind is gone.
+- **Table** — every field the DDL declares; still the picker, still read-only.
+  An overridden row carries its kinds as coloured badges *on the field itself*;
+  rows without one recede to 38%. Hover, selection, a broken override and an
+  unreachable DE all restore full contrast. **All fields / Overridden (N)**
+  switches between the whole DDL and just the configured fields.
+- **Action bar** — DataElement / Length / Read groups; operates on the selection.
+- **Written / What the rules did** — the two panes below the table.
+
+Prior design (superseded): one list row per configured field, each with its
+settings as chips; the field table said nothing about which of its rows were
+configured. On a real spec the list was capped at 180px and sorted by id, so the
+entry you wanted was below the fold, and identity had to be carried by scrolling
+a second list rather than by looking at the field.
 
 **Test Bar** (below the tab content area)
 - Collapsible panel. Format selector: Auto / Hex / ASCII.

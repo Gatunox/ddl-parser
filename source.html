@@ -2879,8 +2879,11 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
   border-radius:var(--r-sm);padding:2px 0;border: var(--bw-ctl) solid;background:transparent;}
 .me-ovk-lab:disabled{cursor:default;}
 .me-ovk-n{min-width:3em;text-align:right;color:var(--text-dim);font-variant-numeric:tabular-nums;}
-.me-ovk-pills{display:flex;flex-wrap:wrap;gap:5px;flex:1;min-width:0;}
-.me-ovk-note{color:var(--text-very-dim);}
+.me-ovk-pills{display:flex;flex-wrap:nowrap;gap:5px;flex:1;min-width:0;overflow:hidden;}
+.me-ovk-pill,.me-ovk-more{flex:0 0 auto;}
+.me-ovk-more{cursor:pointer;color:var(--text-very-dim);align-self:center;
+  font-size:calc(var(--sz-mono) - 2px);white-space:nowrap;}
+.me-ovk-more:hover{color:var(--accent);}
 .me-ovk-pill{display:inline-flex;align-items:baseline;gap:5px;cursor:pointer;
   border: var(--bw-ctl) solid var(--border);border-radius:var(--r-lg);
   background:var(--bg-deep);padding:1px 8px;font-size:calc(var(--sz-mono) - 2px);}
@@ -16382,7 +16385,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.27.0.0';
+const APP_VERSION  = '1.27.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24406,11 +24409,12 @@ function _meRowsForOverride(qn) {
   return rows.length ? rows.map(r => r.id) : [qn];
 }
 
-// How many fields a kind can name before badges stop being a control. A kind
-// with thousands of fields cannot be a wrap of pills — the count and the filter
-// say everything, and the virtualized table is the only surface that can
-// actually show them. A search that narrows the set brings the pills back.
-const _ME_OV_PILL_MAX = 20;
+// How many pills to BUILD before measuring. Not the number shown — that is
+// whatever fits on the row, which depends on the field names and the panel
+// width and so can only be measured. This is just a ceiling on the DOM: no row
+// is ever wide enough for sixty pills, and a kind with four thousand fields
+// must not build four thousand nodes to hide 3,950 of them.
+const _ME_OV_PILL_CAND = 60;
 
 // Fields carrying an override, canonical ids, narrowed by the text filter — the
 // same text the table is filtered by, so the counts describe what a click will
@@ -24447,35 +24451,80 @@ function _meOvlRefresh() {
       !fields.length ? 'empty' : '',
       (_meState?.fmOvKind && !on) ? 'dim' : '',
     ].filter(Boolean).join(' ');
-    // Past the threshold the pills are dropped, not truncated: a partial list
-    // reads as the whole set, and picking which twenty to show would be a lie
-    // about the other thousand.
-    const pills = fields.length && fields.length <= _ME_OV_PILL_MAX
-      ? fields.map(e => {
-          const part = _meOvlChipParts(e.ovr).find(p => p.kind === k.id);
-          return `<span class="me-ovk-pill${sel.has(e.id) ? ' sel' : ''}"
-            onclick="_meOvlRowClick('${_meOvEsc(e.id)}', event)"
-            title="Select this field in the table below">
-            <span class="nm">${_meOvEsc(e.id)}</span><span class="val">${part ? part.text : ''}</span>
-            <span class="me-ovk-x" title="Remove this override"
-              onclick="event.stopPropagation();_meOvlDropKind('${_meOvEsc(e.id)}','${k.id}')">✕</span>
-          </span>`;
-        }).join('')
-      : '';
-    const note = !fields.length ? ''
-      : fields.length > _ME_OV_PILL_MAX
-        ? `<span class="me-ovk-note">too many to name — click ${k.label} to see them in the table</span>`
-        : '';
-    return `<div class="${cls}" data-kind="${k.id}">
+    const pills = fields.slice(0, _ME_OV_PILL_CAND).map(e => {
+      const part = _meOvlChipParts(e.ovr).find(p => p.kind === k.id);
+      return `<span class="me-ovk-pill${sel.has(e.id) ? ' sel' : ''}"
+        onclick="_meOvlRowClick('${_meOvEsc(e.id)}', event)"
+        title="Select this field in the table below">
+        <span class="nm">${_meOvEsc(e.id)}</span><span class="val">${part ? part.text : ''}</span>
+        <span class="me-ovk-x" title="Remove this override"
+          onclick="event.stopPropagation();_meOvlDropKind('${_meOvEsc(e.id)}','${k.id}')">✕</span>
+      </span>`;
+    }).join('');
+    // Always built, shown only once something has been dropped. It is the same
+    // filter the label is, so the fields that did not fit are one click away.
+    const more = fields.length
+      ? `<span class="me-ovk-more hidden" onclick="_meOvlKindFilter('${k.id}')"
+          title="Show all ${fields.length} in the table below"></span>` : '';
+    return `<div class="${cls}" data-kind="${k.id}" data-n="${fields.length}">
       <button class="me-ovk-lab k-${k.id}" onclick="_meOvlKindFilter('${k.id}')"
         title="${_meOvEsc(k.hint)} — click to show only these fields"${fields.length ? '' : ' disabled'}>${k.label}</button>
       <span class="me-ovk-n">${fields.length}</span>
-      <div class="me-ovk-pills">${pills}${note}</div>
+      <div class="me-ovk-pills">${pills}${more}</div>
     </div>`;
   }).join('');
 
+  _meOvlFitPills();
+  _meOvlWatchWidth(idxEl);
   _meFmSyncFiltBtns();
   _meFmNotesRefresh();
+}
+
+// Pills sit on ONE line per kind. How many fit depends on the field names and on
+// how wide the panel happens to be, so it is measured rather than guessed: the
+// row is built with a bounded candidate set and pills are dropped from the end
+// until it stops overflowing. Whatever is dropped is still counted — a list that
+// simply stops is a list that claims to be the whole set.
+function _meOvlFitPills() {
+  document.querySelectorAll('.me-ovk-row').forEach(row => {
+    const box = row.querySelector('.me-ovk-pills');
+    if (!box || !box.clientWidth) return;
+    const pills = [...box.querySelectorAll('.me-ovk-pill')];
+    const more  = box.querySelector('.me-ovk-more');
+    const total = +row.dataset.n || pills.length;
+    let shown = pills.length;
+    pills.forEach(p => p.classList.remove('hidden'));
+    const sayRest = () => {
+      if (!more) return;
+      const left = total - shown;
+      more.classList.toggle('hidden', left <= 0);
+      more.textContent = left > 0 ? `+${left} more` : '';
+    };
+    sayRest();
+    // The "+N more" chip takes room too, so it is present for every measurement
+    // — otherwise the last pill fits, the chip appears, and the row overflows.
+    while (shown > 0 && box.scrollWidth > box.clientWidth) {
+      pills[--shown].classList.add('hidden');
+      sayRest();
+    }
+  });
+}
+
+// The fit is a function of the panel's width, so it has to be redone when that
+// changes — dragging the splitter or resizing the window, not just re-rendering.
+let _meOvlRO = null;
+function _meOvlWatchWidth(el) {
+  if (_meOvlRO || !el || typeof ResizeObserver === 'undefined') return;
+  let inFit = false;
+  _meOvlRO = new ResizeObserver(() => {
+    // Hiding a pill resizes nothing outside the row, but guard anyway: an
+    // observer that re-enters its own callback is a spin, not a relayout.
+    if (inFit) return;
+    inFit = true;
+    _meOvlFitPills();
+    inFit = false;
+  });
+  _meOvlRO.observe(el);
 }
 
 // The kind rows are a toggle, not a radio: clicking the one already on clears it.

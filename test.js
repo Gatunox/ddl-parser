@@ -169,7 +169,7 @@ _t.meOvlChips          = _meOvlChips;
 _t.meOvlChipParts      = _meOvlChipParts;
 _t.meOvKindsOf         = _meOvKindsOf;
 _t.meOvKinds           = _ME_OV_KINDS;
-_t.meOvPillMax         = _ME_OV_PILL_MAX;
+_t.meOvPillCand        = _ME_OV_PILL_CAND;
 _t.meOvSet             = _meOvSet;
 _t.meFmExpandTargets   = _meFmExpandTargets;
 _t.meFmDeCellHtml      = _meFmDeCellHtml;
@@ -282,7 +282,7 @@ const {
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
-  meOvlChipParts, meOvKindsOf, meOvKinds, meOvPillMax, meOvSet,
+  meOvlChipParts, meOvKindsOf, meOvKinds, meOvPillCand, meOvSet,
   meFmExpandTargets, meFmDeCellHtml, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
@@ -8306,15 +8306,35 @@ test('chip texts have one author, whatever surface shows them', () => {
       (rowHtml.match(/<span class="me-fm-on-field">.*?<\/span><\/span>/) || [''])[0]}`);
 });
 
-test('a pill list stops being a control long before it stops being possible', () => {
-  assert.ok(meOvPillMax > 0 && meOvPillMax <= 50,
-    `the threshold is tens, not thousands, got ${meOvPillMax}`);
+test('the pills fill the row, and what did not fit is counted', () => {
+  // How many pills fit is a fact about the field names and the panel width, so
+  // it is measured, never a constant. The constant that remains is only a
+  // ceiling on how many nodes get built before measuring.
+  assert.ok(meOvPillCand >= 20, `the build ceiling is too low to ever fill a row, got ${meOvPillCand}`);
   const fn = psFnSource('_meOvlRefresh');
-  assert.ok(/fields\.length <= _ME_OV_PILL_MAX/.test(fn), 'the threshold is not applied');
-  // Dropped, not truncated. A partial list reads as the whole set.
-  assert.ok(!/\.slice\(0,\s*_ME_OV_PILL_MAX\)/.test(fn),
-    'the pills are truncated — twenty of a thousand looks like all of them');
-  assert.ok(/too many to name/.test(fn), 'nothing says why the pills are absent');
+  assert.ok(/fields\.slice\(0, _ME_OV_PILL_CAND\)/.test(fn), 'the candidate set is unbounded');
+  assert.ok(/_meOvlFitPills\(\)/.test(fn), 'nothing measures the fit');
+
+  const fit = psFnSource('_meOvlFitPills');
+  assert.ok(/box\.scrollWidth > box\.clientWidth/.test(fit), 'the fit is guessed, not measured');
+  assert.ok(/pills\[--shown\]\.classList\.add\('hidden'\)/.test(fit),
+    'overflowing pills are not dropped from the end');
+  // Truncation is honest ONLY if the remainder is stated. total comes from the
+  // full field count, not from how many pills were built.
+  assert.ok(/const total = \+row\.dataset\.n/.test(fit),
+    'the remainder counts from the built pills, so a kind past the build ceiling under-reports');
+  assert.ok(/\+\$\{left\} more/.test(fit), 'nothing says how many did not fit');
+  // The chip occupies room, so it must be measured WITH the pills.
+  assert.ok(fit.indexOf('sayRest()') < fit.indexOf('while (shown > 0'),
+    'the "+N more" chip appears after the fit, so adding it can overflow the row again');
+  // And the fit must be redone when the width it was measured against changes.
+  // Naming ResizeObserver is not using one — the first version of this passed on
+  // a mutant that kept the `typeof ResizeObserver` guard and never constructed it.
+  const watch = psFnSource('_meOvlWatchWidth');
+  assert.ok(/new ResizeObserver\(/.test(watch) && /\.observe\(el\)/.test(watch),
+    'resizing the panel leaves the row fitted to the old width');
+  assert.ok(/if \(inFit\) return;/.test(watch),
+    'the observer can re-enter its own callback');
 });
 
 test('the kind counts follow the search but not the kind filter', () => {

@@ -2667,13 +2667,16 @@ tbody tr:hover .me-ps-form-tbl td,
 /* Field Map — table layout patterned after DDL Doc */
 .me-fm-warn{padding:6px 10px;margin-bottom:6px;border: var(--bw) solid var(--warning);border-radius:var(--r-sm);background:rgba(255,193,7,0.08);color:var(--warning);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);line-height:1.4;}
 .me-fm-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
-.me-fm-filter{flex:1;min-width:0;height:22px;padding:0 8px;border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);background:var(--bg-deep);color:var(--text);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
+/* input.me-fm-filter, not .me-fm-filter: the app-wide input[type="text"] rule
+   sets --bg-input at (0,1,1) and outranked a bare class, so the panel colour
+   was declared and never painted. */
+input.me-fm-filter{flex:0 0 auto;min-width:0;height:22px;padding:0 8px;border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);background:var(--bg-panel);color:var(--text);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-filter:focus{outline:none;border-color:var(--accent);}
 /* Selection action bar — segmented groups, so related actions share one outline
    and the eye sees three groups rather than nine loose pills of random width. */
-/* Left-aligned, like the toolbar above it. space-evenly scattered five controls
-   across the whole panel width, which read as five unrelated things. */
-.me-fm-bar{display:flex;align-items:center;justify-content:flex-start;gap:6px;
+/* Packed right, so the controls sit over the end of the table rather than over
+   the field names, and the eye meets the selection badge first on its way in. */
+.me-fm-bar{display:flex;align-items:center;justify-content:flex-end;gap:6px;
   flex-wrap:wrap;margin:9px 0;padding:0 2px;}
 .me-fm-bar .me-fm-cnt{color:var(--accent);font-weight:700;min-width:78px;font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-bar .me-fm-cnt.none{color:var(--text-very-dim);}
@@ -2902,11 +2905,10 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* One clear for the bar, at the far end. Its scope is whatever the table is
    already showing: a kind filter narrows it to that kind, otherwise it means
    every kind on the selection. */
-.me-ovb-clrall{margin-left:auto;flex-shrink:0;}
+.me-ovb-clrall{flex-shrink:0;}
 .me-ovb-clrall:not(:disabled){color:var(--danger);border-color:color-mix(in srgb, var(--danger) 45%, var(--border));}
 .me-ovb-clrall:not(:disabled):hover{background:color-mix(in srgb, var(--danger) 16%, transparent);
   border-color:var(--danger);color:var(--danger);}
-.me-ovb-cn{font-weight:700;font-variant-numeric:tabular-nums;}
 
 .me-fm-filt{display:inline-flex;gap:4px;flex-shrink:0;}
 
@@ -2947,7 +2949,7 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-ovl-ro{display:inline-flex;align-items:center;height:var(--ctl-h);flex-shrink:0;
   border: var(--bw-ctl) solid var(--accent);color:var(--accent);border-radius:var(--r-lg);
   padding:0 12px;font-size:var(--sz-mono);font-weight:700;white-space:nowrap;
-  background:color-mix(in srgb, var(--accent) 12%, transparent);}
+  background:color-mix(in srgb, var(--accent) 12%, transparent);margin-right:auto;}
 .me-ovl-ro.none{border-color:var(--border);color:var(--text-very-dim);font-weight:400;background:transparent;}
 /* Reference rows: selection, and the whole-row tint for a field that carries an
    override — a marker in one column was missed when scanning thousands of rows. */
@@ -11226,6 +11228,11 @@ const _syncFilterPos = () =>
   _syncFilterToCol('#resCfgControls', '#resFilterInput', '#resContainer th.th-id');
 const _syncDDLDocFilterPos = () =>
   _syncFilterToCol('#ddlDocControls', '#ddlDocFilterInput', '#ddlDocBody th.ddl-doc-name');
+// The Field Map filter sits over the column it filters, the same way the Parse
+// Results and DDL Doc filters do. Third caller of one positioner rather than a
+// third way of doing it.
+const _meFmSyncFilterPos = () =>
+  _syncFilterToCol('.me-fm-toolbar', '.me-fm-filter', '.me-fm-table th.me-fm-th-fld');
 
 // Drag-to-resize for any table whose headers carry a .th-resize handle. The
 // Parse Results table was the only caller, so the selector and what to do
@@ -16397,7 +16404,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.4.1';
+const APP_VERSION  = '1.29.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22102,7 +22109,7 @@ function _meOverridesPrep(item) {
     <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="How many of your selected fields already have a ${k.label} override, of every field that does \u2014 click to show only those">0 of 0</button>
     <button class="btn me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on the selected fields that do not have one">${k.label}</button>
   </span>`).join('')}
-  <button class="btn me-ovb-clrall" id="me-fm-clr-all" disabled>\u2715 Clear<span class="me-ovb-cn"></span></button>
+  <button class="btn me-ovb-clrall" id="me-fm-clr-all" disabled>\u2715 Clear</button>
 </div>
 <div class="me-fm-toolbar">
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
@@ -23565,6 +23572,7 @@ const _ME_COLRZ = {
   fm: {
     table: '.me-fm-table', wrap: '.me-fm-table-wrap', key: 'up_me_fm_col_w',
     handle: '.me-fm-resizer', flex: 'fld', flexMin: 120, min: 36, pad: 4,
+    after: () => _meFmSyncFilterPos(),
     // Pinned, not measured: deriving the defaults from content made them depend
     // on which DDL happened to be bound, so no two "Reset columns" agreed. fld
     // is absent on purpose — it absorbs whatever is left, which is what keeps
@@ -23625,6 +23633,10 @@ function _meColFit(cfg) {
     th.style.width = (th.dataset.col === cfg.flex ? flexW : w(th.dataset.col)) + 'px';
   });
   table.style.width = (flexW + fixed) + 'px';
+  // Anything anchored to a column follows it from here: the fit is the single
+  // point every path — first render, a drag, hiding a column, resizing the
+  // panel — passes through.
+  if (cfg.after) cfg.after();
 }
 
 // Clear the saved widths and re-fit, so every column returns to its default.
@@ -24605,7 +24617,6 @@ function _meFmBarRefresh() {
   if (clrAll) {
     const { hits, fields, only } = _meFmClearScope();
     clrAll.disabled = !hits.length;
-    clrAll.querySelector('.me-ovb-cn').textContent = fields ? ` ${fields}` : '';
     const lbl = only ? (_ME_OV_KINDS.find(k => k.id === only) || {}).label : 'every kind';
     clrAll.title = hits.length
       ? `Remove ${lbl === 'every kind' ? 'every override' : 'the ' + lbl + ' override'} from ${fields} selected field${fields !== 1 ? 's' : ''}`

@@ -8628,8 +8628,11 @@ test('the bar reads in one voice, with colour reserved for meaning', () => {
   // Red says "this will remove something".
   assert.ok(/\.me-ovb-clrall:not\(:disabled\)\{color:var\(--danger\)/.test(css),
     'the clear does not read as destructive');
-  // It sits at the far end, away from the five it applies to.
-  assert.ok(/\.me-ovb-clrall\{margin-left:auto;/.test(css), 'the clear is not pushed to the end of the bar');
+  // Last in a right-packed row, so it lands at the far end without an auto
+  // margin — which would have absorbed the free space and split the row in two.
+  assert.ok(/\.me-ovb-clrall\{flex-shrink:0;\}/.test(css), 'the clear stretches or carries a stale margin');
+  assert.ok(html.lastIndexOf('me-fm-clr-all') > html.lastIndexOf('me-ovb k-'),
+    'the clear is not the last control in the bar');
   // And the segments are the app's own button rather than a lookalike, which is
   // why they stopped looking pressable in the first place.
   assert.ok(/\.me-ovb>\.btn\{border:0;border-radius:0;/.test(css),
@@ -10408,7 +10411,31 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
   // the bar still wraps instead of overflowing a narrow panel.
   const css = html.match(/\.me-fm-bar\{[^}]*\}/)[0];
   assert.ok(/flex-wrap:\s*wrap/.test(css), 'the bar wraps');
-  assert.ok(/justify-content:\s*flex-start/.test(css), 'the controls are not packed left');
+  assert.ok(/justify-content:\s*flex-end/.test(css), 'the controls are not packed right');
+  // The badge is the subject, not one of the actions, so it holds the left edge
+  // while the actions collect at the right.
+  const pill = html.match(/\.me-ovl-ro\{[^}]*\}/)[0];
+  assert.ok(/margin-right:auto/.test(pill), 'the selection badge drifts right with the actions');
+  // The filter takes the panel's ground, and takes it with enough specificity
+  // to win: the app-wide input[type="text"] rule is (0,1,1), so a bare class
+  // declared the colour and never painted it.
+  assert.ok(/input\.me-fm-filter\{[^}]*background:var\(--bg-panel\)/.test(html),
+    'the filter background is declared too weakly to beat input[type="text"]');
+  // It sits over the column it filters, and keeps sitting there. The fit is the
+  // one point every relayout passes through — first render, a drag, hiding a
+  // column, resizing the panel — so the follow hangs off that rather than off
+  // each of them.
+  assert.ok(/after: \(\) => _meFmSyncFilterPos\(\),/.test(html),
+    'nothing re-places the filter when its column moves');
+  assert.ok(/if \(cfg\.after\) cfg\.after\(\);/.test(psFnSource('_meColFit')),
+    'the fit runs no after-hook, so the follow never fires');
+  assert.ok(/_syncFilterToCol\('\.me-fm-toolbar', '\.me-fm-filter', '\.me-fm-table th\.me-fm-th-fld'\)/.test(html),
+    'the filter is placed by something other than the shared positioner');
+  // flex:1 would fight the width the positioner sets.
+  assert.ok(/input\.me-fm-filter\{flex:0 0 auto/.test(html), 'the filter stretches and ignores its column width');
+  // And the clear carries no number: the count belongs to the kind controls,
+  // which state it already.
+  assert.ok(!/me-ovb-cn/.test(html), 'the clear grew a count back');
   // Uniform, panel-sized controls: the count is a fixed readout and the label
   // a fixed width, so the five line up rather than stepping about as counts change.
   const n = html.match(/\.me-ovb-n\{[^}]*\}/)[0];

@@ -1144,6 +1144,12 @@ input[type="text"]:focus { border-color: var(--accent); }
    zeroes the horizontal padding, so without it the glyph sits at flex-start and
    ends up ~10px left of centre in a box built to be square-ish. */
 .btn-ico { font-size: calc(var(--sz-mono) - 2px); display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+/* An icon BESIDE a label needs the gap set, not typed: these buttons are
+   inline-flex, and whitespace between flex items is discarded — so the space
+   in "<span>icon</span> Audit" never rendered and the two ran together.
+   Matches the 7px a plain "\2715 Clear" gets from its space. Scoped to the
+   child case: on .btn.btn-ico the icon IS the button and has no label. */
+.btn > .btn-ico { margin-right: 7px; }
 /* Badge slot beside a panel title. Empty by default and collapsed by :empty,
    so a panel with no type badge keeps its title flush against the header. */
 .pt-badge { display: flex; align-items: center; flex-shrink: 0; margin-left: var(--sp-1); }
@@ -16280,7 +16286,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.4.0';
+const APP_VERSION  = '1.26.4.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

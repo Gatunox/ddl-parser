@@ -6498,6 +6498,22 @@ test('the DDL Doc reads like the Parse Results table', () => {
     'the buttons sit on a different ground to the ones they now match');
 });
 
+test('an icon inside a labelled button is spaced from its label', () => {
+  // Reported: the folder icon ran into "Audit" while "✕ Clear" had a clear gap.
+  // The space IS in the markup — but these buttons are inline-flex, and
+  // whitespace between flex items is discarded, so it never rendered. The gap
+  // has to be set rather than typed.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.btn > \.btn-ico \{ margin-right: 7px; \}/.test(css),
+    'the icon has no gap from the label beside it');
+  // Scoped to the CHILD case. .btn-ico is also the class for icon-only buttons,
+  // where the icon is the button and has no label to clear — a margin there
+  // would push it off centre in a fixed 30px box.
+  assert.ok(/\.btn\.btn-ico \{ min-width: 30px/.test(css), 'the icon-only button rule is gone');
+  assert.ok(!/^\.btn-ico \{[^}]*margin-right/m.test(css),
+    'the margin is on the shared rule, so icon-only buttons take it too');
+});
+
 test('every panel title uses the app font', () => {
   // The DDL Doc and Data Editor titles were already mono; the four panel titles
   // and the tree caption were the page's sans, so half the titles in the app

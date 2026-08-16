@@ -10137,7 +10137,7 @@ test('the three sidebar lists exist and nothing still assumes two', () => {
     'drag-end clears all three lists');
   // A two-way flip cannot express three destinations.
   assert.ok(!/_meMoveKind/.test(src), 'the old two-way kind flip is gone');
-  assert.ok(/Move to Messages/.test(src) && /Move to Other/.test(src) && /Move to Files/.test(src),
+  assert.ok(/Move to Messages/.test(src) && /Move to Data/.test(src) && /Move to Files/.test(src),
     'the menu names each destination');
   assert.ok(/kind: 'other'/.test(src), '_meAddOther creates the right kind');
 });
@@ -11884,6 +11884,11 @@ test('the feature is called the Class Editor everywhere it is named', () => {
     'the no-parse-spec message still names the old editor');
   // And the pane it opens on.
   assert.ok(/<span class="me-pane-title">Classes<\/span>/.test(html), 'the pane is not called Classes');
+  // The middle section is Data. Renamed on the header AND in the move-to menu,
+  // or the menu offers to move something somewhere the sidebar does not show.
+  assert.ok(/>Data<\/span>/.test(html) && !/me-sidebar-title"[^>]*>Other</.test(html),
+    'the middle section is still called Other');
+  assert.ok(/label: 'Move to Data'/.test(html), 'the move-to menu still says Other');
   assert.ok(/Classes on the left, the selected class in the middle/.test(html),
     'the help still describes the pane as Entities');
 });

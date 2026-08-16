@@ -16461,7 +16461,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.0.0';
+const APP_VERSION  = '1.30.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -26935,7 +26935,7 @@ function _meCtxMsg(e, idx) {
     { separator: true },
     { icon: '⧉', label: 'Duplicate', fn: () => _meDupItem(idx) },
     ...(_meKindOf(msg) !== 'msg'   ? [{ icon: '⇄', label: 'Move to Messages', fn: () => _meSetKind(idx, null) }]    : []),
-    ...(_meKindOf(msg) !== 'other' ? [{ icon: '⇄', label: 'Move to Other',    fn: () => _meSetKind(idx, 'other') }] : []),
+    ...(_meKindOf(msg) !== 'other' ? [{ icon: '⇄', label: 'Move to Data',     fn: () => _meSetKind(idx, 'other') }] : []),
     ...(_meKindOf(msg) !== 'file'  ? [{ icon: '⇄', label: 'Move to Files',    fn: () => _meSetKind(idx, 'file') }]  : []),
     { separator: true },
     { icon: '⬆', label: `Export "${msg?.name || msg?.label || 'item'}"…`, fn: () => _ctxMsgExport(idx, msg?.name) },
@@ -31455,7 +31455,7 @@ function _meSave() {
           </div>
           <div class="me-sidebar-sect" id="me-sect-other">
             <div class="me-sidebar-hdr">
-              <span class="me-sidebar-title" title="Structures that are neither a whole message nor a file — recognized from bytes like a message, but tried after every message">Other</span>
+              <span class="me-sidebar-title" title="Structures that are neither a whole message nor a file — recognized from bytes like a message, but tried after every message">Data</span>
               <button class="me-sidebar-add" onclick="_meAddOther()">+ New</button>
             </div>
             <div class="me-item-list" id="me-other-list"></div>

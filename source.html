@@ -60,8 +60,6 @@
   /* ── typography + geometry (theme-independent) ── */
   --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
   --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
-  /* DDL tree only — SF Mono named outright, as the prototype does. */
-  --font-tree: 'SF Mono', SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
   --resizer-size: var(--gap);
   /* The visible drag band: one size and one radius for every bar that shows
      itself on hover, so the Test input's and the three reference splits' read
@@ -788,7 +786,7 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    _ddlSrchReserveCtrlSpace. Left-aligned text means growing that padding never
    moves what is already typed. */
 .ddl-search-controls.hidden { display: none; }
-.tree-node { padding: var(--row-py-tree) 20px var(--row-py-tree) 8px; margin-right: -20px; cursor: pointer; font-family: var(--font-tree); font-size: var(--sz-mono); display: flex; align-items: center; gap: 5px; white-space: nowrap; user-select: none; line-height: calc(var(--sz-mono) + 4px); }
+.tree-node { padding: var(--row-py-tree) 20px var(--row-py-tree) 8px; margin-right: -20px; cursor: pointer; font-family: var(--mono); font-size: var(--sz-mono); display: flex; align-items: center; gap: 5px; white-space: nowrap; user-select: none; line-height: calc(var(--sz-mono) + 4px); }
 .tree-node:hover  { background: rgba(var(--accent-rgb),0.08); }
 .tree-node.tree-sel { background: rgba(var(--accent-rgb),0.18); }
 .tree-caret { font-size: calc(var(--sz-mono) - 1px); width: 10px; flex-shrink: 0; color: var(--text-dim); display: inline-block; text-align: center; line-height: 1; }
@@ -16275,7 +16273,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.3.1';
+const APP_VERSION  = '1.26.3.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

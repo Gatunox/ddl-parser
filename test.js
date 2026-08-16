@@ -6498,6 +6498,19 @@ test('the DDL Doc reads like the Parse Results table', () => {
     'the buttons sit on a different ground to the ones they now match');
 });
 
+test('the DDL tree uses the app font, not one of its own', () => {
+  // --font-tree existed for a single rule and only to name the same faces in a
+  // different order to --mono: SF Mono first rather than ui-monospace. On this
+  // machine both resolve to SF Mono, so the tree looked almost-but-not-quite
+  // like the panel beside it, and elsewhere they diverge outright. The tree's
+  // own search box was already on --mono, so it did not even agree with itself.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(!/--font-tree/.test(html), 'the tree still carries a font token of its own');
+  const node = /\.tree-node \{[^}]*\}/.exec(css);
+  assert.ok(node && /font-family: var\(--mono\)/.test(node[0]),
+    'the tree nodes do not use the app mono font');
+});
+
 test('the DDL Doc has a title row, and its filter sits over the column it filters', () => {
   // Title on its own row; the controls row below carries the filter and the
   // buttons — the shape Parse Results has, which is what leaves room for the

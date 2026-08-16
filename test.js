@@ -8460,12 +8460,19 @@ test('each kind states both numbers, and one clear serves them all', () => {
   // Both numbers: the total says how much of the spec uses this kind, the
   // selected count says how much of what you are pointing at already does —
   // which is what decides whether the action or the clear is the one that applies.
-  assert.ok(/`\$\{held\} of \$\{total\}`/.test(bar),
-    'a control does not state both its total and its selected count');
-  // Selected FIRST: it is the number that changes as you work, and the one that
-  // decides whether the action or the clear is the half that applies.
-  const line = bar.slice(bar.indexOf('.me-ovb-n\').textContent'));
-  assert.ok(line.indexOf('${held}') < line.indexOf('${total}'), 'the counts read total-first');
+  // The control shows its TOTAL only — the reach of the kind, which is what
+  // clicking it filters to. The per-kind selected counts moved to the pill,
+  // where all five can be read at once instead of across five buttons.
+  assert.ok(/\.me-ovb-n'\)\.textContent = total;/.test(bar),
+    'the control still carries a selected count of its own');
+  assert.ok(/_ME_OV_KINDS\.map\(k => `<i><b>\$\{_meFmSelWithKind\(k\.id\)\.length\}<\/b>\$\{k\.label\}<\/i>`\)/.test(bar),
+    'the pill does not break the selection down by kind');
+  // One pair per kind, all five, in the kind list's own order — so the
+  // breakdown and the five controls beside it read in the same sequence.
+  assert.ok(/\.join\(''\)/.test(bar.slice(bar.indexOf('const brk'), bar.indexOf('cnt.innerHTML'))),
+    'the pairs are punctuated, which costs more width than the numbers themselves');
+  assert.ok(/me-ovl-hd/.test(bar) && /me-ovl-brk/.test(bar),
+    'the headline and the breakdown are not distinguished');
   // The action only ever ADDS, so it is dead once every selected field has it.
   assert.ok(/act\.disabled = n === 0 \|\| held === _meFmActionTargets\(k\.act\)\.length;/.test(bar),
     'the action stays live when every selected field already has the kind');
@@ -8630,7 +8637,8 @@ test('the bar reads in one voice, with colour reserved for meaning', () => {
     'the clear does not read as destructive');
   // Last in a right-packed row, so it lands at the far end without an auto
   // margin — which would have absorbed the free space and split the row in two.
-  assert.ok(/\.me-ovb-clrall\{flex-shrink:0;\}/.test(css), 'the clear stretches or carries a stale margin');
+  assert.ok(/\.me-ovb-clrall\{flex-shrink:0;height:var\(--ctl-h\);\}/.test(css),
+    'the clear stretches, carries a stale margin, or sits a pixel off the row');
   assert.ok(html.lastIndexOf('me-fm-clr-all') > html.lastIndexOf('me-ovb k-'),
     'the clear is not the last control in the bar');
   // And the segments are the app's own button rather than a lookalike, which is
@@ -10456,15 +10464,26 @@ test('the selection badge heads the bar that acts on it', () => {
   assert.ok(bar.indexOf('id="me-fm-cnt"') < bar.indexOf('me-ovb k-'),
     'the badge comes after the controls it is the subject of');
   const fn = psFnSource('_meFmBarRefresh');
-  assert.ok(/\$\{n\} of \$\{listed\} selected/.test(fn),
-    'the badge states the selection without the set it was drawn from');
-  // LISTED, not every declared field: with a filter on, the listed set is what
-  // a click can actually reach.
-  assert.ok(/_meFmVirt\.visible \|\| _meFmVirt\.all/.test(fn),
-    'the denominator ignores the filters, so it counts rows you cannot select');
-  // Nothing selected still says how big the set is.
-  assert.ok(/`\$\{listed\} field\$\{listed !== 1 \? 's' : ''\}`/.test(fn),
-    'with nothing selected the badge says nothing about the table');
+  // The headline is the selection alone. A denominator here competed with the
+  // five totals beside it, which already say how far each kind reaches.
+  assert.ok(/\$\{n\} selected/.test(fn), 'the badge does not state the selection');
+  assert.ok(!/\$\{n\} of /.test(fn), 'the badge carries a denominator again');
+  // The breakdown is a footnote to the headline, not a second statement.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const hd = css.match(/\.me-ovl-hd\{[^}]*\}/)[0];
+  const brk = css.match(/\.me-ovl-brk\{[^}]*\}/)[0];
+  const size = r => (r.match(/font-size:([^;]+)/) || [])[1];
+  assert.ok(size(hd) === 'var(--sz-mono)', `the headline is not full size: ${hd}`);
+  assert.ok(/calc\(var\(--sz-mono\) - \d/.test(size(brk)), `the breakdown is not smaller: ${brk}`);
+  // Checked as an ABSENCE: asserting font-weight:400 was satisfied by a rule
+  // that also carried a later font-weight:700, which is the one that wins.
+  assert.ok(/font-weight:400/.test(brk) && !/font-weight:[5-9]\d\d|bold/.test(brk),
+    `the breakdown competes with the headline: ${brk}`);
+  assert.ok(/color:var\(--text-dim\)/.test(brk) && !/color:var\(--text\)[;}]/.test(brk),
+    `the breakdown is as loud as the headline: ${brk}`);
+  assert.ok(/no selection/.test(fn), 'the empty state says nothing');
+  // No breakdown with nothing selected: five zeroes is noise, not information.
+  assert.ok(/const brk = n/.test(fn), 'the breakdown is built even with nothing selected');
   // "READ-ONLY" described the TABLE, not the selection, and said what the
   // table's own behaviour already makes plain. Checked on the rendered text,
   // not the source, so a comment mentioning it cannot pass this.

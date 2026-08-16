@@ -2883,18 +2883,17 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    other button in the panel. Only the geometry changes: square them off and
    let the group's own border and radius wrap the set, the way the segmented
    control it replaced did. */
-.me-ovb>.btn{border:0;border-radius:0;height:100%;padding:0 10px;gap:5px;}
+.me-ovb>.btn{border:0;border-radius:0;height:100%;padding:0 9px;gap:5px;}
 .me-ovb>.btn+.btn{border-left: var(--bw-ctl) solid var(--border);}
 .me-ovb>.btn:hover:not(:disabled){background:var(--surface-hover);color:var(--text);}
 .me-ovb>.btn:disabled{color:var(--text-very-dim);cursor:default;background:var(--surface-raised);}
 /* One text colour, the same one every other button uses. Five kind colours in a
    row was decoration competing with the two things here that DO mean something:
    the accent when a kind is filtering, and the red when the clear can act. */
-/* The numbers are a readout, not a label: smaller, dimmer, and only as wide as
-   four digits and "of" need. The room goes to the action instead, which is the
-   part you are actually aiming at. */
+/* The total, and only the total: how many fields this kind reaches, which is
+   what clicking it filters to. Narrow, because four digits is all it ever needs. */
 .me-ovb-n{font-size:calc(var(--sz-mono) - 2px);font-variant-numeric:tabular-nums;
-  min-width:5.2em;justify-content:center;color:var(--text-very-dim);padding:0 8px;}
+  min-width:2.6em;justify-content:center;color:var(--text-very-dim);padding:0 8px;}
 /* Brightened once it is describing your selection rather than just the spec. */
 .me-ovb.picked .me-ovb-n{color:var(--text-dim);}
 .me-ovb-act{min-width:6.2em;justify-content:center;}
@@ -2905,7 +2904,9 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* One clear for the bar, at the far end. Its scope is whatever the table is
    already showing: a kind filter narrows it to that kind, otherwise it means
    every kind on the selection. */
-.me-ovb-clrall{flex-shrink:0;}
+/* The same height as the groups it sits beside. .btn's own height is 2px
+   shorter, which left it sitting a pixel low against the row. */
+.me-ovb-clrall{flex-shrink:0;height:var(--ctl-h);}
 .me-ovb-clrall:not(:disabled){color:var(--danger);border-color:color-mix(in srgb, var(--danger) 45%, var(--border));}
 .me-ovb-clrall:not(:disabled):hover{background:color-mix(in srgb, var(--danger) 16%, transparent);
   border-color:var(--danger);color:var(--danger);}
@@ -2948,8 +2949,15 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    size — it is the subject the five controls act on, not a footnote. */
 .me-ovl-ro{display:inline-flex;align-items:center;height:var(--ctl-h);flex-shrink:0;
   border: var(--bw-ctl) solid var(--accent);color:var(--accent);border-radius:var(--r-lg);
-  padding:0 12px;font-size:var(--sz-mono);font-weight:700;white-space:nowrap;
-  background:color-mix(in srgb, var(--accent) 12%, transparent);margin-right:auto;}
+  padding:0 10px;font-size:var(--sz-mono);font-weight:700;white-space:nowrap;
+  background:color-mix(in srgb, var(--accent) 12%, transparent);margin-right:auto;gap:9px;}
+/* The headline reads at the badge's own size; the breakdown is a footnote to
+   it, small and quiet, so the two are one statement rather than two. */
+.me-ovl-hd{font-size:var(--sz-mono);}
+.me-ovl-brk{display:inline-flex;gap:8px;font-size:calc(var(--sz-mono) - 3px);font-weight:400;
+  color:var(--text-dim);font-variant-numeric:tabular-nums;}
+.me-ovl-brk i{display:inline-flex;gap:3px;font-style:normal;}
+.me-ovl-brk b{font-weight:700;color:var(--text);}
 .me-ovl-ro.none{border-color:var(--border);color:var(--text-very-dim);font-weight:400;background:transparent;}
 /* Reference rows: selection, and the whole-row tint for a field that carries an
    override — a marker in one column was missed when scanning thousands of rows. */
@@ -16404,7 +16412,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.5.1';
+const APP_VERSION  = '1.29.6.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22103,7 +22111,7 @@ function _meOverridesPrep(item) {
 <div class="me-ps-split" id="me-fm-split">
 <div class="me-hs-main" id="me-fm-pane">
 <div class="me-fm-bar" id="me-fm-bar">
-  <span class="me-ovl-ro none" id="me-fm-cnt" title="Fields listed below, and how many you have selected \u2014 pick them in the table, then act on them here">0 fields</span>
+  <span class="me-ovl-ro none" id="me-fm-cnt" title="What you have selected, and how much of it already carries each kind of override">0 fields</span>
   ${_ME_OV_KINDS.map(k => `
   <span class="me-ovb k-${k.id}" data-kind="${k.id}">
     <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="How many of your selected fields already have a ${k.label} override, of every field that does \u2014 click to show only those">0 of 0</button>
@@ -24581,14 +24589,20 @@ function _meFmBarRefresh() {
   const cnt = document.getElementById('me-fm-cnt');
   if (!cnt) return;
   const n = _meFmMultiSel.size;
-  // Selected out of LISTED, not out of every field the DDL declares: the listed
-  // set is what a click can reach, so it is the honest denominator once a filter
-  // is on. With no filter the two are the same number anyway.
-  // With nothing selected the total still earns its place — it is the size of
-  // what you are looking at.
-  const listed = (_meFmVirt && (_meFmVirt.visible || _meFmVirt.all) || []).length;
-  cnt.textContent = n ? `${n} of ${listed} selected`
-                      : `${listed} field${listed !== 1 ? 's' : ''}`;
+  // The headline is the selection and nothing else. A denominator here competed
+  // with the five totals sitting beside it, which already say how far each kind
+  // reaches. The breakdown says what the selection is already carrying, kind by
+  // kind — here rather than on each control, so the five buttons stay narrow and
+  // the whole answer is in one place.
+  // Spaced rather than punctuated: five "·" separators cost more width than the
+  // numbers they divide, and the pairs already read as pairs.
+  const brk = n
+    ? _ME_OV_KINDS.map(k => `<i><b>${_meFmSelWithKind(k.id).length}</b>${k.label}</i>`).join('')
+    : '';
+  cnt.innerHTML = n
+    ? `<span class="me-ovl-hd">${n} selected</span>`
+      + `<span class="me-ovl-brk">${brk}</span>`
+    : `<span class="me-ovl-hd">no selection</span>`;
   cnt.classList.toggle('none', n === 0);
 
   const all = _meOvAll(_meCurItem());
@@ -24609,7 +24623,9 @@ function _meFmBarRefresh() {
     // "2 of 22" — of the fields carrying this kind, how many you have selected.
     // Spelling both out cost more width than the label itself and read as a
     // sentence where a number was wanted.
-    grp.querySelector('.me-ovb-n').textContent = `${held} of ${total}`;
+    // Just the total. The selected count moved to the pill, where all five sit
+    // together and can be read at once instead of five buttons wide.
+    grp.querySelector('.me-ovb-n').textContent = total;
     grp.classList.toggle('picked', held > 0);
     grp.classList.toggle('on', _meState?.fmOvKind === k.id);
     // The action is only ever "add", so it is dead once every selected field

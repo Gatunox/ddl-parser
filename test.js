@@ -8271,11 +8271,12 @@ test('an ignored field is rendered as a decision, not as an empty cell', () => {
 // ── Overrides identity: kinds are the rows, fields are the badges ──────────
 // ── Undo: the safeguard the configuration editing never had ────────────────
 test('the toast can carry an action, and an actionable one is reachable', () => {
+  const btn = psFnSource('_flashActionBtn');
+  assert.ok(/action\.run\(\)/.test(btn), 'the button does not run the action');
+  assert.ok(btn.indexOf('dismiss()') < btn.indexOf('action.run()'),
+    'the toast is not dismissed before the action runs, so a slow undo leaves a dead toast up');
   const fn = psFnSource('flash');
   assert.ok(/function flash\(msg, level, action\)/.test(fn), 'flash takes no action');
-  assert.ok(/action\.run\(\)/.test(fn), 'the button does not run the action');
-  assert.ok(/el\.remove\(\);\s*\n\s*action\.run\(\)/.test(fn),
-    'the toast is not dismissed before the action runs, so a slow undo leaves a dead toast up');
   // The base .flash is pointer-events:none — an actionable toast MUST opt back in
   // or its own button cannot be clicked.
   assert.ok(/\(action \? ' has-act' : ''\)/.test(fn), 'the actionable toast is not marked');
@@ -8287,6 +8288,30 @@ test('the toast can carry an action, and an actionable one is reachable', () => 
   // currentColor: this button rides on green, amber and red toasts alike.
   assert.ok(/\.flash-act \{[^}]*border: var\(--bw-ctl\) solid currentColor/.test(css),
     'the action button has a fixed colour that cannot read on every toast');
+  // One button builder for both toasts — the two exist only because there are
+  // two stacking contexts, not because they are two different ideas.
+  for (const f of ['flash', '_meFlash'])
+    assert.ok(/_flashActionBtn\(action,/.test(psFnSource(f)), `${f} builds its own action button`);
+});
+
+test('a toast raised inside the Data Editor uses the editor own toast', () => {
+  // Reported: no toast on deletion. The button worked; it was painted BEHIND
+  // the editor. #flash-container is z-index 9999, the overlay is 21000, so a
+  // page toast raised with the editor open is invisible.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // The editor's own toast container exists FOR this reason, and says so.
+  assert.ok(/#me-flash-container\{/.test(css), 'the editor toast container is gone');
+  assert.ok(/sits BELOW the editor/.test(css),
+    'the comment recording why a second toast container exists is gone');
+  // So everything the undo says must go through it.
+  for (const fn of ['_meUndoable', '_meUndoApply'])
+    assert.ok(!/[^_a-zA-Z]flash\(/.test(psFnSource(fn)),
+      `${fn} raises a page toast, which the editor overlay covers`);
+  assert.ok(/_meFlash\(label, null, \{ label: '\\u21B6 Undo'|_meFlash\(label, null, \{ label: '↶ Undo'/
+    .test(psFnSource('_meUndoable')), 'the undo offer does not go through the editor toast');
+  // And the editor toast must be able to carry it.
+  assert.ok(/function _meFlash\(msg, level, action\)/.test(psFnSource('_meFlash')),
+    'the editor toast takes no action');
 });
 
 test('undo snapshots BEFORE the change, and refuses when the index went stale', () => {

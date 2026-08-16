@@ -16416,7 +16416,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.28.0.1';
+const APP_VERSION  = '1.28.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17405,6 +17405,23 @@ function esc(s) {
 
 // level: 'info'/'ok' (green, 10 s) | 'warn' (yellow, 20 s) | 'error' (red, 30 s)
 // All levels show an ✕ so the user can dismiss early.
+// There are two toast implementations because there are two stacking contexts:
+// the page's #flash-container sits at z-index 9999 and the Data Editor overlay
+// at 21000, so a page toast raised while the editor is open is painted BEHIND
+// it. There is only one idea of "a toast you can act on", though, so the button
+// is built once and both use it.
+function _flashActionBtn(action, dismiss) {
+  const b = document.createElement('button');
+  b.className = 'flash-act';
+  b.textContent = action.label;
+  b.addEventListener('click', e => {
+    e.stopPropagation();
+    dismiss();
+    action.run();
+  });
+  return b;
+}
+
 // `action` is optional: { label, run }. A toast that can DO something is how an
 // edit gets taken back — the alternative was a confirm() in front of every
 // change, which asks before you can know whether you were wrong.
@@ -17420,18 +17437,7 @@ function flash(msg, level, action) {
   el.className = 'flash' + (level === 'warn' ? ' warn' : level === 'error' ? ' error' : '')
                          + (action ? ' has-act' : '');
   el.textContent = msg;
-  if (action) {
-    const b = document.createElement('button');
-    b.className = 'flash-act';
-    b.textContent = action.label;
-    b.addEventListener('click', e => {
-      e.stopPropagation();
-      clearTimeout(timer);
-      el.remove();
-      action.run();
-    });
-    el.appendChild(b);
-  }
+  if (action) el.appendChild(_flashActionBtn(action, () => { clearTimeout(timer); el.remove(); }));
   const x = document.createElement('span');
   x.className = 'flash-x'; x.textContent = '✕';
   el.appendChild(x);
@@ -18231,7 +18237,10 @@ function _meUndoable(label, run) {
   const changed = run();
   if (!snap || changed === false) return;
   _meUndoOffer = { snap, idx: _meState.selIdx, nSpecs: _meState.specs.length, label };
-  flash(label, null, { label: '\u21B6 Undo', run: _meUndoApply });
+  // _meFlash, not flash: this only ever fires with the Data Editor open, and
+  // the page's toast container is BELOW that overlay — the first version put a
+  // perfectly working Undo button where nobody could see it.
+  _meFlash(label, null, { label: '\u21B6 Undo', run: _meUndoApply });
 }
 
 function _meUndoApply() {
@@ -18242,14 +18251,14 @@ function _meUndoApply() {
   // in between, that index means something else and restoring would overwrite
   // a different entity with this one's contents.
   if (_meState.specs.length !== o.nSpecs || !_meState.specs[o.idx]) {
-    flash('Cannot undo \u2014 the entity list changed since then', 'warn');
+    _meFlash('Cannot undo \u2014 the entity list changed since then', 'warn');
     return;
   }
   _meState.specs[o.idx] = o.snap;
   _meSetDirty();
   _meRenderSidebar();
   _meRenderRight();
-  flash('Undone \u2014 ' + o.label.charAt(0).toLowerCase() + o.label.slice(1));
+  _meFlash('Undone \u2014 ' + o.label.charAt(0).toLowerCase() + o.label.slice(1));
 }
 
 function _meSectionToggle(sec) {
@@ -23261,13 +23270,14 @@ function _meExtractCommentDEs(content, defName) {
 
 // Editor-scoped toast — the main-page flash() renders behind the editor
 // overlay (lower z-index). Same UX, hosted inside the Data Editor.
-function _meFlash(msg, level) {
+function _meFlash(msg, level, action) {
   const c = document.getElementById('me-flash-container');
-  if (!c) { flash(msg, level); return; }
-  const ms = level === 'warn' ? 20000 : 10000;
+  if (!c) { flash(msg, level, action); return; }
+  const ms = level === 'warn' ? 20000 : action ? 20000 : 10000;
   const el = document.createElement('div');
   el.className = 'me-flash' + (level === 'warn' ? ' warn' : '');
   el.textContent = msg;
+  if (action) el.appendChild(_flashActionBtn(action, () => { clearTimeout(t); el.remove(); }));
   const x = document.createElement('span');
   x.className = 'me-flash-x'; x.textContent = '✕';
   el.appendChild(x);

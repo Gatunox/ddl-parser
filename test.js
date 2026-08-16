@@ -8615,6 +8615,20 @@ test('"number…" reveals a box to type it in, while you are still choosing', ()
     'the picker restates the DE clamp instead of reusing de-anchor');
   assert.ok(/numDef:  \(\) => _ME_FM_ED\['de-anchor'\]\.def\(\)/.test(ed),
     'the box seeds from its own rule rather than de-anchor');
+  // The panel is one row and stays on screen. Its width is NOT fixed at open
+  // time — this box appears later — so the placement runs again when it does,
+  // or the wider panel hangs off the right edge and the label folds in two.
+  const css2 = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.me-fm-ed\{[^}]*flex-wrap:nowrap/.test(css2), 'the editor can wrap onto a second row');
+  assert.ok(/\.me-fm-ed label\{[^}]*white-space:nowrap/.test(css2), 'the label can fold in two');
+  assert.ok(/\.me-fm-ed>\*\{flex-shrink:0;\}/.test(css2), 'the parts squeeze instead of keeping their size');
+  assert.ok(/\.me-fm-ed\{[^}]*max-width:calc\(100vw - 24px\)/.test(css2), 'the editor can be wider than the screen');
+  assert.ok(/_meFmEdPlace\(\)/.test(psFnSource('_meFmEdSyncNum')),
+    'revealing the box does not re-place the editor, so it can hang off the edge');
+  assert.ok(/_meFmEdPlace\(\)/.test(psFnSource('_meFmEdOpen')), 'the editor is not placed on open');
+  const place = psFnSource('_meFmEdPlace');
+  assert.ok(/Math\.max\(8, Math\.min\(r\.left, window\.innerWidth - \(ed\.offsetWidth \|\| 240\) - 12\)\)/.test(place),
+    'the editor is not clamped into the viewport');
   // Per-open, so the last number does not reappear in the next editor.
   assert.ok(/me-fm-ed-num'\)\.value = '';/.test(psFnSource('_meFmEdOpen')),
     'the box carries the previous value into the next open');

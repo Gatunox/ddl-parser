@@ -2697,9 +2697,14 @@ input.me-fm-filter{flex:0 0 auto;min-width:0;height:22px;padding:0 8px;border: v
 /* Inline editor for the actions that need a value — anchored under the button
    that opened it. prompt() is blocked in some hosts, and would be wrong here. */
 .me-fm-ed{position:fixed;z-index:60;display:none;align-items:center;gap:6px;background:var(--bg-panel);
-  border: var(--bw) solid rgba(var(--accent-rgb),.55);border-radius:var(--r-sm);padding:5px 7px;}
+  border: var(--bw) solid rgba(var(--accent-rgb),.55);border-radius:var(--r-sm);padding:5px 7px;
+  /* One row, always. Its width changes after it opens — picking "number" adds a
+     box — and without this the label folded onto a second line to make room
+     while the panel still ran off the right edge. */
+  flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - 24px);}
 .me-fm-ed.on{display:flex;}
-.me-fm-ed label{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);}
+.me-fm-ed>*{flex-shrink:0;}
+.me-fm-ed label{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);white-space:nowrap;}
 .me-fm-ed input,.me-fm-ed select{height:19px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);
   background:var(--bg-deep);color:var(--text);border: var(--bw-ctl) solid var(--accent);border-radius:var(--r-sm);padding:0 5px;outline:none;}
 .me-fm-ed input{width:58px;}
@@ -16417,7 +16422,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.7.2';
+const APP_VERSION  = '1.29.7.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24295,6 +24300,20 @@ function _meFmEdClose() {
   _meFmEdAct = null;
   document.getElementById('me-fm-ed')?.classList.remove('on');
 }
+// Placed under the button that opened it, then clamped into the viewport. Its
+// WIDTH is not fixed at open time — picking "number" adds a box — so this runs
+// again whenever the contents change, or the wider panel hangs off the edge.
+function _meFmEdPlace() {
+  const ed  = document.getElementById('me-fm-ed');
+  const btn = document.querySelector(`#me-fm-bar [data-fmact="${_meFmEdAct}"]`);
+  if (!ed || !btn) return;
+  const r = btn.getBoundingClientRect();
+  // Viewport coordinates: the editor is position:fixed, so page scroll offsets
+  // would push it off screen inside a scrolling panel.
+  ed.style.top  = (r.bottom + 5) + 'px';
+  ed.style.left = Math.max(8, Math.min(r.left, window.innerWidth - (ed.offsetWidth || 240) - 12)) + 'px';
+}
+
 function _meFmEdOpen(act) {
   const cfg = _ME_FM_ED[act], ed = document.getElementById('me-fm-ed');
   if (!cfg || !ed) return;
@@ -24314,15 +24333,7 @@ function _meFmEdOpen(act) {
   }
   else num.value = _meFmEdDef(cfg);
   ed.classList.add('on');
-  const btn = document.querySelector(`#me-fm-bar [data-fmact="${act}"]`);
-  if (btn) {
-    const r = btn.getBoundingClientRect();
-    // Viewport coordinates: the editor is position:fixed, so page scroll offsets
-    // would push it off screen inside a scrolling panel.
-    ed.style.top  = (r.bottom + 5) + 'px';
-    // Clamped, or a button near the right edge opens a panel off screen.
-    ed.style.left = Math.max(8, Math.min(r.left, window.innerWidth - (ed.offsetWidth || 240) - 12)) + 'px';
-  }
+  _meFmEdPlace();
   (cfg.kind === 'num' ? num : sel).focus();
 }
 // A picker option may need a number as well. The box lives beside the select
@@ -24336,6 +24347,8 @@ function _meFmEdSyncNum() {
   const want = !!(cfg.withNum && cfg.withNum(sel.value));
   num.style.display = want ? '' : 'none';
   if (want && !num.value) num.value = cfg.numDef ? cfg.numDef() : '';
+  // The box just changed the panel's width; put it back inside the viewport.
+  _meFmEdPlace();
 }
 document.addEventListener('change', e => {
   if (e.target?.id !== 'me-fm-ed-sel') return;

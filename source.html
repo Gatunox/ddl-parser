@@ -876,6 +876,12 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .cfg-dim .btn.btn-on { position: relative; z-index: 200; }
 .ddl-doc-hdr   { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-2) 0 16px; min-height: var(--panel-header-h); background: var(--surface-header); border-bottom: var(--bw) solid var(--border); flex-shrink: 0; }
 .ddl-doc-title { font-size: 12px; font-weight: 700; color: var(--text); font-family: var(--font-mono); }
+/* The controls row. Its left padding matches the table's first cell so the
+   filter can be pushed out to sit exactly over the name column. */
+.ddl-doc-ctl   { display: flex; align-items: center; gap: 6px;
+  padding: 0 var(--sp-2) 0 6px; min-height: var(--panel-header-h);
+  background: var(--surface-header); border-bottom: var(--bw) solid var(--border);
+  flex-shrink: 0; }
 .ddl-doc-body  { overflow: auto; flex: 1; padding: 0; }
 /* Same tokens the Parse Results table uses — row height, header treatment, hover
    and rule — so the two tables you switch between read as one thing rather than
@@ -915,6 +921,10 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .ddl-doc-foot td { border-top: var(--bw) solid var(--border); font-weight: 700; color: var(--accent); background: var(--bg-deep); padding: 5px 10px; }
 .ddl-doc-sec-hdr td { background: var(--sec-hdr-bg); color: var(--accent); font-weight: 700; padding: 4px 10px; border-top: var(--bw) solid var(--border); font-style: normal; }
 .ddl-doc-num  { text-align: left; font-variant-numeric: tabular-nums; }
+/* Right, like Size in Parse Results and the Field Map: a column of numbers is
+   compared down its units digit. */
+.ddl-doc-tbl td.ddl-doc-size, .ddl-doc-tbl th.ddl-doc-size {
+  text-align: right; font-variant-numeric: tabular-nums; }
 /* ---- Export modal ---- */
 .exp-tbl { width:100%; border-collapse:collapse; font-size:11px; font-family:var(--font-mono); }
 .exp-tbl th { position:sticky; top:0; background:var(--bg-deep); color:var(--text-dim); font-weight:600; text-align:left; padding:4px 6px; border-bottom: var(--bw) solid var(--border); white-space:nowrap; z-index:1; }
@@ -5108,9 +5118,18 @@ function showDDLDoc() {
   const _ddlDocSpan = f => (f.size > 0 ? `${f.offset}–${f.offset + f.size - 1}` : String(f.offset));
   let html = '<table class="ddl-doc-tbl">';
   html += '<thead><tr>'
-       + '<th>#</th><th>Fully Qualified Name</th>'
-       + '<th>Data Type</th><th class="ddl-doc-num">Occurs</th>'
-       + '<th class="ddl-doc-num">Size</th><th class="ddl-doc-off">Offset</th><th>Description</th>'
+       + ['<th>#</th>',
+          '<th class="ddl-doc-name">Fully Qualified Name</th>',
+          '<th>Data Type</th>',
+          '<th class="ddl-doc-num">Occurs</th>',
+          '<th class="ddl-doc-size">Size</th>',
+          '<th class="ddl-doc-off">Offset</th>',
+          '<th>Description</th>']
+         // The same handle the Parse Results headers carry, so the same
+         // drag code drives both. The last column has none: there is nothing
+         // to its right to give the width to.
+         .map((th, i, a) => i < a.length - 1
+              ? th.replace('</th>', '<span class="th-resize"></span></th>') : th).join('')
        + '</tr></thead><tbody>';
 
   let grandTotal = 0;
@@ -5160,7 +5179,7 @@ function showDDLDoc() {
           <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span><span class="ddl-grp-icon" onclick="toggleDDLGroup(this.closest('tr'))"></span>${redefNote}</td>
           <td>${esc(f.dataType)}</td>
           <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
-          <td class="ddl-doc-num">${f.size}</td>
+          <td class="ddl-doc-size">${f.size}</td>
           <td class="ddl-doc-off">${_ddlDocSpan(f)}</td>
           <td style="color:var(--text-dim);font-size:10px">${descTxt}</td>
         </tr>`;
@@ -5180,7 +5199,7 @@ function showDDLDoc() {
         <td style="${namePadL}"><span style="font-weight:500">${esc(f.qualName)}</span>${leafRedefNote}</td>
         <td>${esc(f.dataType)}</td>
         <td class="ddl-doc-num" style="color:var(--text-dim)">${occurs}</td>
-        <td class="ddl-doc-num">${f.size}</td>
+        <td class="ddl-doc-size">${f.size}</td>
         <td class="ddl-doc-off">${_ddlDocSpan(f)}</td>
         <td style="color:var(--text-dim);font-size:10px">${descTxt}</td>
       </tr>`;
@@ -5189,7 +5208,7 @@ function showDDLDoc() {
     // Section total row
     html += `<tr class="ddl-doc-foot">
       <td colspan="4">Total — ${esc(sec.name || 'DEFINITION')}  (${rowNum} fields)</td>
-      <td class="ddl-doc-num">${totalSize}</td><td colspan="2"></td>
+      <td class="ddl-doc-size">${totalSize}</td><td colspan="2"></td>
     </tr>`;
   }
 
@@ -5205,6 +5224,13 @@ function showDDLDoc() {
   const ddlBody = document.getElementById('ddlDocBody');
   ddlBody.innerHTML = html;
   ddlBody.classList.toggle('hide-redef', !!S.ddlDocHideRedef);
+  // The same column gestures the Parse Results table has: drag a header edge to
+  // resize, click one to light the column. Both are the shared implementations —
+  // the highlight was already parameterised, and the resizer is now.
+  initColResize('#ddlDocBody table.ddl-doc-tbl', _syncDDLDocFilterPos, () => {});
+  _meInitColHighlight('#ddlDocBody table.ddl-doc-tbl');
+  // The filter sits over the column it filters, once the widths are settled.
+  requestAnimationFrame(_syncDDLDocFilterPos);
   const ddlRedefBtn = document.getElementById('ddlDocHideRedefBtn');
   if (ddlRedefBtn) {
     ddlRedefBtn.textContent = S.ddlDocHideRedef ? 'Show Redef' : 'Hide Redef';
@@ -11049,20 +11075,31 @@ function _clearBtnClick() {
   else clearAll();
 }
 
-function _syncFilterPos() {
-  const bar = document.getElementById('resCfgControls');
-  const inp = document.getElementById('resFilterInput');
-  const thId = document.querySelector('#resContainer th.th-id');
-  if (!bar || !inp || !thId || getComputedStyle(thId).display === 'none') return;
+// Sit a filter box exactly over the column it filters. Written once because the
+// DDL Doc wants the same thing over its name column, and a second copy would be
+// a second set of edge cases about hidden columns and bar padding.
+function _syncFilterToCol(barSel, inpSel, thSel) {
+  const bar = document.querySelector(barSel);
+  const inp = document.querySelector(inpSel);
+  const th  = document.querySelector(thSel);
+  if (!bar || !inp || !th || getComputedStyle(th).display === 'none') return;
   const barR = bar.getBoundingClientRect();
-  const thR = thId.getBoundingClientRect();
+  const thR  = th.getBoundingClientRect();
   const padLeft = parseFloat(getComputedStyle(bar).paddingLeft) || 0;
   inp.style.marginLeft = Math.max(0, thR.left - barR.left - padLeft) + 'px';
   inp.style.width = thR.width + 'px';
 }
+const _syncFilterPos = () =>
+  _syncFilterToCol('#resCfgControls', '#resFilterInput', '#resContainer th.th-id');
+const _syncDDLDocFilterPos = () =>
+  _syncFilterToCol('#ddlDocControls', '#ddlDocFilterInput', '#ddlDocBody th.ddl-doc-name');
 
-function initColResize() {
-  const table = document.querySelector('#resContainer table.res-tbl');
+// Drag-to-resize for any table whose headers carry a .th-resize handle. The
+// Parse Results table was the only caller, so the selector and what to do
+// afterwards were baked in; both are arguments now.
+function initColResize(tableSel = '#resContainer table.res-tbl',
+                       onMove = _syncFilterPos, onDone = saveLayout) {
+  const table = document.querySelector(tableSel);
   if (!table) return;
   table.querySelectorAll('thead th .th-resize').forEach(handle => {
     const th = handle.parentElement;
@@ -11073,18 +11110,21 @@ function initColResize() {
       const startW = th.getBoundingClientRect().width;
       handle.classList.add('th-resize-active');
       document.body.style.cursor = 'col-resize';
-      const onMove = ev => {
+      // Named onDrag, not onMove: the callback parameter is called onMove, and a
+      // local of the same name shadowed it — so this called ITSELF, threw on the
+      // first move, and the filter stopped tracking the column in both tables.
+      const onDrag = ev => {
         th.style.width = Math.max(36, startW + ev.clientX - startX) + 'px';
-        _syncFilterPos();
+        onMove();
       };
       const onUp = () => {
         handle.classList.remove('th-resize-active');
         document.body.style.cursor = '';
-        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mousemove', onDrag);
         document.removeEventListener('mouseup', onUp);
-        saveLayout();
+        onDone();
       };
-      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mousemove', onDrag);
       document.addEventListener('mouseup', onUp);
     });
   });
@@ -16224,7 +16264,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.26.2.0';
+const APP_VERSION  = '1.26.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -30130,15 +30170,19 @@ function _meSave() {
 <!-- ===== DDL DOC MODAL ===== -->
 <div class="modal-overlay hidden" id="ddlDocOverlay" onmousedown="if(event.target===this)closeDDLDoc()">
   <div class="ddl-doc-modal">
+    <!-- Title on its own row, controls on the next — the shape Parse Results
+         has, which is what lets the filter sit over the column it filters
+         instead of being crowded in beside the name of the dialog. -->
     <div class="ddl-doc-hdr">
       <span id="ddlDocTitle" class="ddl-doc-title"></span>
-      <div style="display:flex;gap:6px;align-items:center">
-        <input type="text" id="ddlDocFilterInput" class="res-filter-input" placeholder="Filter fields…" title="Filter DDL Doc" oninput="filterDDLDoc(this.value)">
-        <button class="btn" id="ddlDocCollapseAllBtn" data-state="expanded" onclick="toggleDDLDocCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
-        <button class="btn" id="ddlDocHideRedefBtn" onclick="toggleDDLDocHideRedef()" title="Hide/show REDEFINES fields">Hide Redef</button>
-        <button class="btn" onclick="copyDDLDoc()" title="Copy as text">⎘ Copy</button>
-        <button class="btn" onclick="closeDDLDoc()">✕</button>
-      </div>
+      <button class="btn" onclick="closeDDLDoc()" title="Close">✕</button>
+    </div>
+    <div class="ddl-doc-ctl" id="ddlDocControls">
+      <input type="text" id="ddlDocFilterInput" class="res-filter-input" placeholder="Filter fields…" title="Filter DDL Doc" oninput="filterDDLDoc(this.value)">
+      <span style="flex:1"></span>
+      <button class="btn" id="ddlDocCollapseAllBtn" data-state="expanded" onclick="toggleDDLDocCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
+      <button class="btn" id="ddlDocHideRedefBtn" onclick="toggleDDLDocHideRedef()" title="Hide/show REDEFINES fields">Hide Redef</button>
+      <button class="btn" onclick="copyDDLDoc()" title="Copy as text">⎘ Copy</button>
     </div>
     <div class="ddl-doc-body" id="ddlDocBody"></div>
   </div>

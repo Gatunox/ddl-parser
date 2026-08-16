@@ -6441,8 +6441,10 @@ test("a group row carries its children's values combined, shown only on request"
 test('the DDL Doc reads like the Parse Results table', () => {
   // Same reading order — name, what it is, how big, where — so switching between
   // the two does not mean re-learning the columns.
-  const _h = APP_SRC.indexOf("'<th>#</th><th>Fully Qualified Name</th>'");
-  const head = APP_SRC.slice(_h, APP_SRC.indexOf('</tr></thead>', _h));
+  // The headers are built from a list now, so each column can be given the same
+  // resize handle the Parse Results ones carry without writing it out seven times.
+  const _h = APP_SRC.indexOf("'<th>#</th>'");
+  const head = APP_SRC.slice(_h, APP_SRC.indexOf('.join(', _h));
   const cols = [...head.matchAll(/<th[^>]*>([^<]+)<\/th>/g)].map(m => m[1]);
   deepEq(cols, ['#', 'Fully Qualified Name', 'Data Type', 'Occurs', 'Size', 'Offset', 'Description'],
     'DDL Doc column order');
@@ -6494,6 +6496,62 @@ test('the DDL Doc reads like the Parse Results table', () => {
     'the DDL Doc buttons keep a treatment of their own');
   assert.ok(/\.ddl-doc-hdr\s+\{[^}]*background: var\(--surface-header\)/.test(css),
     'the buttons sit on a different ground to the ones they now match');
+});
+
+test('the DDL Doc has a title row, and its filter sits over the column it filters', () => {
+  // Title on its own row; the controls row below carries the filter and the
+  // buttons — the shape Parse Results has, which is what leaves room for the
+  // filter to line up with a column instead of being crowded beside the title.
+  const hdr = html.slice(html.indexOf('<div class="ddl-doc-hdr">'), html.indexOf('id="ddlDocBody"'));
+  assert.ok(/<span id="ddlDocTitle"[^>]*><\/span>\s*\n\s*<button class="btn" onclick="closeDDLDoc\(\)"/.test(hdr),
+    'the title row does not hold the title alone');
+  assert.ok(/<div class="ddl-doc-ctl" id="ddlDocControls">[\s\S]*?ddlDocFilterInput/.test(hdr),
+    'the filter is not on the controls row');
+  for (const b of ['ddlDocCollapseAllBtn', 'ddlDocHideRedefBtn', 'copyDDLDoc'])
+    assert.ok(hdr.slice(hdr.indexOf('ddl-doc-ctl')).includes(b), `${b} is not on the controls row`);
+
+  // One positioner for both tables. A second copy would be a second set of edge
+  // cases about hidden columns and bar padding.
+  const fn = psFnSource('_syncFilterToCol');
+  assert.ok(/thR\.left - barR\.left - padLeft/.test(fn) && /inp\.style\.width = thR\.width/.test(fn),
+    'the filter is not placed over its column');
+  assert.ok(/const _syncFilterPos = \(\) =>\s*\n?\s*_syncFilterToCol\('#resCfgControls'/.test(APP_SRC),
+    'Parse Results no longer goes through the shared positioner');
+  assert.ok(/_syncFilterToCol\('#ddlDocControls', '#ddlDocFilterInput', '#ddlDocBody th\.ddl-doc-name'\)/.test(APP_SRC),
+    'the DDL Doc filter is not aimed at its name column');
+});
+
+test('the DDL Doc columns can be dragged and selected, like Parse Results', () => {
+  // Same two gestures, same two implementations — the highlight was already
+  // parameterised by selector, and the resizer had its table and its
+  // after-effects baked in until now.
+  const init = psFnSource('initColResize');
+  assert.ok(/function initColResize\(tableSel = '#resContainer table\.res-tbl',/.test(APP_SRC),
+    'the resizer is still hardcoded to one table');
+  assert.ok(/onMove = _syncFilterPos, onDone = saveLayout/.test(APP_SRC),
+    'the resizer does not default to what Parse Results needs');
+  // The inner handler must NOT be called onMove: a local of that name shadows
+  // the callback, so it called itself, threw on the first move, and the filter
+  // stopped tracking in BOTH tables.
+  assert.ok(/const onDrag = ev =>/.test(init), 'the drag handler shadows the callback again');
+  assert.ok(!/const onMove = ev =>/.test(init), 'the drag handler shadows the callback again');
+  assert.ok(/removeEventListener\('mousemove', onDrag\)/.test(init), 'the drag listener is never removed');
+
+  // Both gestures wired on the DDL Doc, against the shared implementations.
+  assert.ok(/initColResize\('#ddlDocBody table\.ddl-doc-tbl', _syncDDLDocFilterPos, \(\) => \{\}\)/.test(APP_SRC),
+    'the DDL Doc columns cannot be dragged');
+  assert.ok(/_meInitColHighlight\('#ddlDocBody table\.ddl-doc-tbl'\)/.test(APP_SRC),
+    'the DDL Doc columns cannot be selected');
+  // Every header but the last carries a handle — the last has nothing to its
+  // right to give the width to.
+  assert.ok(/i < a\.length - 1[\s\S]{0,80}th-resize/.test(APP_SRC),
+    'the resize handles are not put on every column but the last');
+
+  // Size reads right, like the same column in Parse Results and the Field Map.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.ddl-doc-tbl td\.ddl-doc-size, \.ddl-doc-tbl th\.ddl-doc-size \{\s*text-align: right/.test(css),
+    'the DDL Doc size column is not right-justified');
+  assert.ok(/<td class="ddl-doc-size">\$\{f\.size\}<\/td>/.test(APP_SRC), 'the size cell does not use that class');
 });
 
 test('every table that has groups uses the same +/- glyph', () => {

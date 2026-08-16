@@ -2895,9 +2895,14 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* One text colour, the same one every other button uses. Five kind colours in a
    row was decoration competing with the two things here that DO mean something:
    the accent when a kind is filtering, and the red when the clear can act. */
-/* Wide enough for both numbers at their longest, and equal across the five so
-   the actions line up into a column instead of stepping about as counts change. */
-.me-ovb-n{font-variant-numeric:tabular-nums;min-width:13.5em;justify-content:flex-start;}
+/* The numbers are a readout, not a label: smaller, dimmer, and only as wide as
+   four digits and "of" need. The room goes to the action instead, which is the
+   part you are actually aiming at. */
+.me-ovb-n{font-size:calc(var(--sz-mono) - 2px);font-variant-numeric:tabular-nums;
+  min-width:5.2em;justify-content:center;color:var(--text-very-dim);padding:0 8px;}
+/* Brightened once it is describing your selection rather than just the spec. */
+.me-ovb.picked .me-ovb-n{color:var(--text-dim);}
+.me-ovb-act{min-width:6.2em;justify-content:center;}
 /* Filtering by this kind. The whole group lights, since the whole group is
    about that one kind. */
 .me-ovb.on{border-color:var(--accent);}
@@ -16396,7 +16401,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.29.2.0';
+const APP_VERSION  = '1.29.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22127,7 +22132,7 @@ function _meOverridesPrep(item) {
 <div class="me-fm-bar" id="me-fm-bar">
   ${_ME_OV_KINDS.map(k => `
   <span class="me-ovb k-${k.id}" data-kind="${k.id}">
-    <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="Fields with a ${k.label} override \u2014 click to show only those">Total 0</button>
+    <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="How many of your selected fields already have a ${k.label} override, of every field that does \u2014 click to show only those">0 of 0</button>
     <button class="btn me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on the selected fields that do not have one">${k.label}\u2026</button>
   </span>`).join('')}
   <button class="btn me-ovb-clrall" id="me-fm-clr-all" disabled>\u2715 Clear<span class="me-ovb-cn"></span></button>
@@ -24554,7 +24559,11 @@ function _meFmBarRefresh() {
     // Both numbers, always: the total says how much of the spec uses this kind,
     // the selected count says how much of what you are pointing at already does
     // — which is exactly what decides whether the action or the clear applies.
-    grp.querySelector('.me-ovb-n').textContent = `Total ${total} - Selected ${held}`;
+    // "2 of 22" — of the fields carrying this kind, how many you have selected.
+    // Spelling both out cost more width than the label itself and read as a
+    // sentence where a number was wanted.
+    grp.querySelector('.me-ovb-n').textContent = `${held} of ${total}`;
+    grp.classList.toggle('picked', held > 0);
     grp.classList.toggle('on', _meState?.fmOvKind === k.id);
     // The action is only ever "add", so it is dead once every selected field
     // already has this kind.

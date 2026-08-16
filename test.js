@@ -8460,8 +8460,12 @@ test('each kind states both numbers, and one clear serves them all', () => {
   // Both numbers: the total says how much of the spec uses this kind, the
   // selected count says how much of what you are pointing at already does —
   // which is what decides whether the action or the clear is the one that applies.
-  assert.ok(/`Total \$\{total\} - Selected \$\{held\}`/.test(bar),
+  assert.ok(/`\$\{held\} of \$\{total\}`/.test(bar),
     'a control does not state both its total and its selected count');
+  // Selected FIRST: it is the number that changes as you work, and the one that
+  // decides whether the action or the clear is the half that applies.
+  const line = bar.slice(bar.indexOf('.me-ovb-n\').textContent'));
+  assert.ok(line.indexOf('${held}') < line.indexOf('${total}'), 'the counts read total-first');
   // The action only ever ADDS, so it is dead once every selected field has it.
   assert.ok(/act\.disabled = n === 0 \|\| held === _meFmActionTargets\(k\.act\)\.length;/.test(bar),
     'the action stays live when every selected field already has the kind');

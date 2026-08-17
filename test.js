@@ -182,6 +182,8 @@ _t.meOvKindsOf         = _meOvKindsOf;
 _t.meSpecGaps          = _meSpecGaps;
 _t.meItemNotes         = _meItemNotes;
 _t.meResetLayout       = _meResetLayout;
+_t.meSectFor           = _meSectFor;
+_t.meSectionToggle     = _meSectionToggle;
 _t.meFmSelWithKind     = _meFmSelWithKind;
 _t.meOvKinds           = _ME_OV_KINDS;
 _t.meOvSet             = _meOvSet;
@@ -298,7 +300,7 @@ const {
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
   meOvlChipParts, meOvKindsOf, meOvKinds, meOvSet, meFmSelWithKind,
   meSpecGaps,
-  meResetLayout,
+  meResetLayout, meSectFor, meSectionToggle,
   meFmExpandTargets, meFmDeCellHtml, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
@@ -12480,6 +12482,84 @@ test('Reset Layout actually clears what it should, and keeps what it must', () =
 
   for (const k of Object.keys(store)) store.removeItem(k);
   for (const k in before) store.setItem(k, before[k]);
+});
+
+// ── Section collapse survives closing the editor ────────────────────────────
+console.log('\nsection collapse is remembered per class');
+
+const _sectStore = () => sandbox.localStorage;
+function withSectStore(fn) {
+  const store = _sectStore();
+  const before = { ...store };
+  try { for (const k of Object.keys(store)) store.removeItem(k); return fn(store); }
+  finally {
+    for (const k of Object.keys(store)) store.removeItem(k);
+    for (const k in before) store.setItem(k, before[k]);
+  }
+}
+
+test('a collapsed section comes back collapsed for that class', () => {
+  withSectStore(store => {
+    store.setItem('up_me_sect', JSON.stringify({ STM: { identity: false } }));
+    const secs = meSectFor({ label: 'STM' }, { identity: true, recognizers: true });
+    eq(secs.identity, false, 'the stored choice wins over the default');
+    eq(secs.recognizers, true, 'a section never toggled keeps its default');
+  });
+});
+
+test('another class is unaffected', () => {
+  withSectStore(store => {
+    store.setItem('up_me_sect', JSON.stringify({ STM: { identity: false } }));
+    eq(meSectFor({ label: 'PSTM' }, { identity: true }).identity, true,
+      'the state is per class, not global');
+  });
+});
+
+test('only toggled sections are stored, so defaults still apply later', () => {
+  // The reason this stores a delta rather than the whole map: a class with no
+  // recognizers opens with that panel collapsed. If the whole map were saved,
+  // adding its first recognizer later would leave the panel shut forever.
+  withSectStore(store => {
+    store.setItem('up_me_sect', JSON.stringify({ STM: { identity: false } }));
+    const grown = meSectFor({ label: 'STM' }, { identity: true, recognizers: true });
+    eq(grown.recognizers, true, 'the content default reaches an untouched section');
+    const saved = JSON.parse(store.getItem('up_me_sect'));
+    deepEq(Object.keys(saved.STM), ['identity'], 'only what was toggled is stored');
+  });
+});
+
+test('toggling writes the choice through to storage', () => {
+  withSectStore(store => {
+    const prev = meState;
+    setMeState({ specs: [{ label: 'STM', name: 'STM' }], section: 'msg', selIdx: 0,
+                 sections: { identity: true } });
+    try {
+      meSectionToggle('identity');
+      const saved = JSON.parse(store.getItem('up_me_sect') || '{}');
+      eq(saved?.STM?.identity, false, 'collapsing is persisted');
+      meSectionToggle('identity');
+      eq(JSON.parse(store.getItem('up_me_sect')).STM.identity, true, 'and re-opening is too');
+    } finally { setMeState(prev); }
+  });
+});
+
+test('the defaults object is never mutated', () => {
+  // _meSelectItem builds the defaults inline, but the non-msg branch passes
+  // _meState.sections itself — spreading rather than assigning keeps a stored
+  // entry from leaking into live state and outliving the class it came from.
+  withSectStore(store => {
+    store.setItem('up_me_sect', JSON.stringify({ STM: { identity: false } }));
+    const defaults = { identity: true };
+    meSectFor({ label: 'STM' }, defaults);
+    eq(defaults.identity, true, 'the caller\'s object is untouched');
+  });
+});
+
+test('Reset Layout clears the remembered sections', () => {
+  const reset = psFnSource('_meResetLayout');
+  assert.ok(/k\.startsWith\('up_me_'\)/.test(reset), 'the sweep is by prefix');
+  assert.ok(!/up_me_sect/.test(String(APP_SRC.match(/_ME_RESET_KEEP = new Set\(\[[^\]]*\]/) || '')),
+    'up_me_sect must NOT be an exception — a reset restores the default layout');
 });
 
 test('Reset Layout reaches every stored size, including the Class Editor', () => {

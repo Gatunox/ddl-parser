@@ -16495,7 +16495,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.6.0';
+const APP_VERSION  = '1.31.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18377,8 +18377,37 @@ function _meUndoApply() {
   _meFlash('Undone \u2014 ' + o.label.charAt(0).toLowerCase() + o.label.slice(1));
 }
 
+// ── Section collapse, remembered per class ─────────────────────────────────
+// Only the sections the user actually toggled are stored. The content-derived
+// defaults in _meSelectItem still decide everything untouched, so a class that
+// later gains its first recognizer still opens that panel — storing the whole
+// map would have frozen every section at whatever the class looked like the day
+// it was first opened.
+// Keyed on `label || name`, the identity the editor already uses for
+// up_me_last_sel, so a class answers to the same name in both.
+const _ME_SECT_KEY = 'up_me_sect';
+const _meSectId = it => (it && (it.label || it.name)) || '';
+function _meSectSaved() {
+  try { return JSON.parse(localStorage.getItem(_ME_SECT_KEY) || '{}') || {}; }
+  catch(e) { return {}; }
+}
+// Saved choices laid OVER the defaults, never replacing them.
+function _meSectFor(item, defaults) {
+  const saved = _meSectSaved()[_meSectId(item)];
+  return saved ? { ...defaults, ...saved } : { ...defaults };
+}
+
 function _meSectionToggle(sec) {
-  _meState.sections[sec] = !_meState.sections[sec];
+  const open = !_meState.sections[sec];
+  _meState.sections[sec] = open;
+  const id = _meSectId(_meCurItem());
+  if (id) {
+    try {
+      const all = _meSectSaved();
+      (all[id] = all[id] || {})[sec] = open;
+      localStorage.setItem(_ME_SECT_KEY, JSON.stringify(all));
+    } catch(e) {}
+  }
   _meRenderRight();
 }
 
@@ -18394,14 +18423,20 @@ function _meSelectItem(section, idx) {
     const it = _meState.specs[idx];
     if (it) {
       const bindings = (it.ddl_bindings || []).filter(Boolean);
-      _meState.sections = {
+      _meState.sections = _meSectFor(it, {
         identity:     true,
         recognizers:  (it.recognizers || []).length > 0,
         parse_spec:   (it.parse_spec_binary || []).length > 0 || (it.parse_spec_ascii || []).length > 0,
         ddl_bindings: bindings.length > 0,
         overrides:    bindings.length > 0 || Object.keys(it.overrides || {}).length > 0,
-      };
+      });
     }
+  } else {
+    // Data and Files have no content heuristic — their sections carry over from
+    // the last selection, as they always have. A class that was collapsed by
+    // hand still comes back collapsed.
+    const it = _meState.specs[idx];
+    if (it) _meState.sections = _meSectFor(it, _meState.sections);
   }
   if (section === 'msg' && idx >= 0 && idx < _meState.specs.length) {
     try { localStorage.setItem('up_me_last_sel', _meState.specs[idx].label || _meState.specs[idx].name || ''); } catch(e) {}

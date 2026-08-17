@@ -1566,6 +1566,7 @@ Once all messages are migrated and verified:
 | `up_format_default_seen` | Every built-in default label ever offered, so a default the user **deleted** is not resurrected on the next run (§12) |
 | `up_format_sync_ver` | Version marker for the one-time startup reconcile of saved specs against defaults; bumping it re-runs the merge (§12) |
 | `up_me_last_sel` | Last-selected entity in the Class Editor |
+| `up_me_sect` | Per-class section collapse in the Class Editor, keyed `label\|name` like `up_me_last_sel`. Stores **only the sections the user toggled**, so the content-derived defaults still open a panel a class has just gained (its first recognizer, its first binding); saving the whole map would freeze every section at whatever the class looked like when it was first opened |
 | `up_me_fm_ui` | Per-spec Field Map view state — Collapse All, collapsed groups, Hide Redef, Auto Order + its revert snapshot. Deliberately a side-store keyed `name\|label`, never inside the spec JSON, so exports stay clean |
 | `up_me_fm_col_w` | Field Map column widths |
 | `up_me_fm_colvis` | Field Map column visibility — which columns the ⚙ chooser is showing |

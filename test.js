@@ -12484,6 +12484,113 @@ test('Reset Layout actually clears what it should, and keeps what it must', () =
   for (const k in before) store.setItem(k, before[k]);
 });
 
+// ── The DE-nn badge under the parse-spec engine ─────────────────────────────
+// Reported: no DE badges anywhere in the results for a spec-parsed message.
+// deNum was written ONLY by the legacy parseHPEISOMessage; the engine's
+// read-bitmap-fields walk never set it, so every spec-parsed row came back
+// deNum: null and _deBadgeFor rendered nothing.
+console.log('\nDE badges on spec-parsed rows');
+
+const DEB_DDL = `DEF REC.
+  02 BITMAP     PIC X(8).
+  02 PAN.
+    04 LEN      PIC X(2).
+    04 DATA     PIC X(19).
+  02 PROC-CODE.
+    04 TRAN     PIC X(2).
+    04 FROM     PIC X(2).
+  02 AMOUNT     PIC X(6).
+END REC.
+`;
+function debRun() {
+  // bits 2, 3 and 4 set. PAN is an LLVAR group, PROC-CODE a plain group,
+  // AMOUNT elementary — the three shapes the walk emits rows from.
+  const bytes = Uint8Array.from([
+    0x70, 0, 0, 0, 0, 0, 0, 0,
+    0x30, 0x34, 0x31, 0x32, 0x33, 0x34,     // PAN: LEN "04" + "1234"
+    0x30, 0x30, 0x30, 0x30,                 // PROC-CODE
+    0x31, 0x32, 0x33, 0x34, 0x35, 0x36,     // AMOUNT
+  ]);
+  S.ddlTree = { V: { S: { D: DEB_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'PAN', de: 2 }, { field: 'PROC-CODE', de: 3 }, { field: 'AMOUNT', de: 4 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': 'BITMAP' },
+    ] }, bytes);
+}
+
+test('every row the DE walk emits carries its DE number', () => {
+  const ctx = debRun();
+  const got = {};
+  for (const f of ctx.fields) if (f.deNum != null) got[f.id] = f.deNum;
+  deepEq(got, {
+    'PAN.LEN': 2, 'PAN.DATA': 2,
+    'PROC-CODE.TRAN': 3, 'PROC-CODE.FROM': 3,
+    'AMOUNT': 4,
+  }, 'all three row shapes — VLG group, plain group, elementary — are stamped');
+});
+
+test('the bitmap itself is not a data element', () => {
+  const ctx = debRun();
+  eq(ctx.fields.find(f => f.id === 'BITMAP')?.deNum ?? null, null,
+    'the bitmap row must stay unbadged — it is what says which DEs are present');
+});
+
+test('a "de" entry\'s rows are stamped too', () => {
+  // The entry replaces the default read, so its rows come from a different path.
+  // A badge that only worked for the default walk would go missing exactly where
+  // the field list is least familiar.
+  S.ddlTree = { V: { S: { D: DEB_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = Uint8Array.from([
+    0x70, 0, 0, 0, 0, 0, 0, 0,
+    0x30, 0x34, 0x31, 0x32, 0x33, 0x34,
+    0x30, 0x30, 0x30, 0x30,
+    0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
+  ]);
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'PAN', de: 2 }, { field: 'PROC-CODE', de: 3 }, { field: 'AMOUNT', de: 4 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: {
+          '4': [{ 'read-fixed': { length: 6, as: 'CUSTOM' } }] } } },
+    ] }, bytes);
+  eq(ctx.fields.find(f => f.id === 'CUSTOM')?.deNum, 4,
+    'a row produced by the entry\'s blocks still knows which bit it came from');
+});
+
+test('the secondary bitmap is DE-1', () => {
+  // It is read by read-bitmap, not by the DE walk — bit 1 is the "secondary
+  // present" indicator and is deleted from the set — so the walk never reaches
+  // it and it was the one DE in the message with no badge.
+  const ddl = `DEF REC.
+  02 PRI-BIT-MAP PIC X(16).
+  02 SEC-BIT-MAP PIC X(16).
+  02 PAN         PIC X(4).
+END REC.
+`;
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  // bit 1 (secondary present) and bit 2, as 16 ascii-hex characters.
+  const bytes = Uint8Array.from([
+    ...'C000000000000000'.split('').map(c => c.charCodeAt(0)),
+    ...'0000000000000000'.split('').map(c => c.charCodeAt(0)),
+    0x31, 0x32, 0x33, 0x34,
+  ]);
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'PAN', de: 2 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'ascii-hex' } },
+      { 'read-bitmap-fields': 'PRI-BIT-MAP' },
+    ] }, bytes);
+  eq(ctx.fields.find(f => f.id === 'SEC-BIT-MAP')?.deNum, 1,
+    'the secondary bitmap IS data element 1, which is how Overrides numbers it');
+  eq(ctx.fields.find(f => f.id === 'PRI-BIT-MAP')?.deNum ?? null, null,
+    'the primary is still not a DE');
+});
+
 // ── A token area that lives INSIDE a DE ─────────────────────────────────────
 // Reported: `{"de": {"63": [{"token-area": "ANY"}]}}` produced nothing at all —
 // no tokens, no error, no lint warning. Three independent reasons, and any one

@@ -16533,7 +16533,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.1.0';
+const APP_VERSION  = '1.32.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28645,6 +28645,12 @@ function _meExecReadBitmap(attrs, ctx) {
     const secBytes = Array.from(src.slice(secStart, secStart + baseChunk));
     const sf = _meMakeSyntheticField(secName, secBytes, secStart, secStart + baseChunk - 1, ctx,
       { description: 'secondary bitmap' });
+    // In ISO 8583 the secondary bitmap IS data element 1 — which is what the
+    // Overrides table numbers it. It is read here rather than by the DE walk
+    // (bit 1 is deleted from the set above, being the "secondary present"
+    // indicator), so the walk never gets to stamp it and the row would be the
+    // one DE in the message with no badge.
+    if (explicitLen === null) sf.deNum = 1;
     _meApplyTypeOverride(sf, { id: secName }, ctx, null);
     _meApplyDisplayOverride(sf, { id: secName }, ctx);
     ctx.fields.push(sf);
@@ -29341,56 +29347,70 @@ function _meExecBitmapFields(attrs, ctx) {
   };
 
   for (const de of bits) {
-    const entry = deMap[de];
+    // Which DE these rows belong to, stamped on whatever the iteration emits.
+    // The results table reads f.deNum to print the DE-nn badge, and only the
+    // legacy parseHPEISOMessage ever set it — so a spec-parsed message showed no
+    // badges at all. Done once here rather than at each of the four places a row
+    // can come from (elementary, VLG group, plain group, a "de" entry's blocks):
+    // a fifth path would otherwise be born unbadged.
+    // In a finally, because the body `continue`s in several places.
+    const _deMark = ctx.fields.length;
+    try {
+      const entry = deMap[de];
 
-    // A "de" entry replaces the default read for that bit. Its blocks run with
-    // the cursor at the DE's start and names resolved inside the DE's own group,
-    // so "ARQC" means "EMV-ELEMENT.ARQC" without repeating the parent everywhere.
-    const ovr = _meDeEntryFor(attrs, de);
-    if (ovr) { _meRunDeEntry(de, entry, ovr, ctx); continue; }
+      // A "de" entry replaces the default read for that bit. Its blocks run with
+      // the cursor at the DE's start and names resolved inside the DE's own group,
+      // so "ARQC" means "EMV-ELEMENT.ARQC" without repeating the parent everywhere.
+      const ovr = _meDeEntryFor(attrs, de);
+      if (ovr) { _meRunDeEntry(de, entry, ovr, ctx); continue; }
 
-    if (!entry) {
-      ctx.fields.push({ id: `DE-${de}`, error: 'No DDL field mapped to this DE' });
-      continue;
-    }
-
-    // ── Elementary DE ───────────────────────────────────────────────────────
-    if (entry.def) {
-      if (readSeq(entry.def))
-        for (const extra of (entry.with || [])) if (!readSeq(extra)) break;
-      continue;
-    }
-
-    // ── Group DE ────────────────────────────────────────────────────────────
-    const { groupId, kids } = entry;
-    if (!kids.length) {
-      ctx.fields.push({ id: groupId, error: 'Group has no readable sub-fields' });
-      continue;
-    }
-
-    // Variable-length group: either the user flagged it in Overrides, or the
-    // auto-detect recognised its length leaf (`vlg_identifier`, else the
-    // built-in names). Only DIRECT children can be the group's own length —
-    // scanning every transitive leaf would see a grandchild's LEN, which is the
-    // length of something inside the group, not of the group.
-    const directKids = kids.filter(d => !d.id.slice(groupId.length + 1).includes('.'));
-    let isVarGroup = false, cfgLenId;
-    if (_meVlgHas(varGroups, groupId)) { isVarGroup = true; cfgLenId = _meVlgGet(varGroups, groupId); }
-    else {
-      // `kids.length`, not `directKids.length`: the payload may be a nested
-      // group, which leaves exactly one direct child — the LEN itself.
-      const autoLenId = _meAutoLLVarLenId(directKids, ctx.vlgIdentifier, kids.length);
-      if (autoLenId) { isVarGroup = true; cfgLenId = autoLenId; }
-    }
-
-    if (isVarGroup) {
-      const rows = _meVlgReadGroup(groupId, kids, cfgLenId, ctx);
-      for (const r of rows) ctx.fields.push(r);
-    } else {
-      // Fixed group — read every leaf sequentially.
-      for (const kid of kids) {
-        if (!readSeq(kid)) break;   // ran out of bytes
+      if (!entry) {
+        ctx.fields.push({ id: `DE-${de}`, error: 'No DDL field mapped to this DE' });
+        continue;
       }
+
+      // ── Elementary DE ───────────────────────────────────────────────────────
+      if (entry.def) {
+        if (readSeq(entry.def))
+          for (const extra of (entry.with || [])) if (!readSeq(extra)) break;
+        continue;
+      }
+
+      // ── Group DE ────────────────────────────────────────────────────────────
+      const { groupId, kids } = entry;
+      if (!kids.length) {
+        ctx.fields.push({ id: groupId, error: 'Group has no readable sub-fields' });
+        continue;
+      }
+
+      // Variable-length group: either the user flagged it in Overrides, or the
+      // auto-detect recognised its length leaf (`vlg_identifier`, else the
+      // built-in names). Only DIRECT children can be the group's own length —
+      // scanning every transitive leaf would see a grandchild's LEN, which is the
+      // length of something inside the group, not of the group.
+      const directKids = kids.filter(d => !d.id.slice(groupId.length + 1).includes('.'));
+      let isVarGroup = false, cfgLenId;
+      if (_meVlgHas(varGroups, groupId)) { isVarGroup = true; cfgLenId = _meVlgGet(varGroups, groupId); }
+      else {
+        // `kids.length`, not `directKids.length`: the payload may be a nested
+        // group, which leaves exactly one direct child — the LEN itself.
+        const autoLenId = _meAutoLLVarLenId(directKids, ctx.vlgIdentifier, kids.length);
+        if (autoLenId) { isVarGroup = true; cfgLenId = autoLenId; }
+      }
+
+      if (isVarGroup) {
+        const rows = _meVlgReadGroup(groupId, kids, cfgLenId, ctx);
+        for (const r of rows) ctx.fields.push(r);
+      } else {
+        // Fixed group — read every leaf sequentially.
+        for (const kid of kids) {
+          if (!readSeq(kid)) break;   // ran out of bytes
+        }
+      }
+    } finally {
+      // Unconditional: nothing between _deMark and here attributes a row to a
+      // different DE, so a guard would be a branch no test could ever reach.
+      for (let i = _deMark; i < ctx.fields.length; i++) ctx.fields[i].deNum = de;
     }
   }
   ctx.vlgIdentifier  = undefined;   // scoped to this block, not to the whole parse

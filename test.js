@@ -12484,6 +12484,39 @@ test('Reset Layout actually clears what it should, and keeps what it must', () =
   for (const k in before) store.setItem(k, before[k]);
 });
 
+// ── The editor is spaced on the page's own scale ────────────────────────────
+console.log('\nClass Editor panel spacing');
+
+test('editor panels are spaced on --gap, the same variable the page uses', () => {
+  // Reported by measurement: 12px vertical and 22px horizontal in the editor
+  // against 10px on the main page. The editor was on --sp-3, a different scale
+  // that also shrinks differently with density, so the two surfaces drifted
+  // apart at every zoom level rather than only at one.
+  for (const sel of ['.me-sidebar', '.me-section', '.me-tab-body']) {
+    const rule = cssRule(sel);
+    const spacing = rule.match(/(?:^|[;{\s])(?:margin|padding)\s*:[^;}]*/g) || [];
+    assert.ok(spacing.length, `${sel} declares no margin/padding to check`);
+    for (const decl of spacing)
+      assert.ok(!/--sp-\d/.test(decl),
+        `${sel} still spaces panels on the editor's own scale: ${decl.trim()}`);
+    assert.ok(spacing.some(d => /var\(--gap\)/.test(d)),
+      `${sel} must space on var(--gap): ${spacing.join(' | ')}`);
+  }
+});
+
+test('a section has no left margin — the splitter already is the gap', () => {
+  // #me-splitter sits between the sidebar and this column and is exactly --gap
+  // wide (--resizer-size: var(--gap)). A left margin here stacked on top of it,
+  // which is the whole 22px: 10 of splitter plus 12 of margin.
+  const m = cssRule('.me-section').match(/margin\s*:\s*([^;}]+)/);
+  assert.ok(m, '.me-section declares no margin');
+  const parts = m[1].trim().split(/\s+/);
+  eq(parts.length, 4, `margin must be four-sided to zero the left: got "${m[1].trim()}"`);
+  eq(parts[3], '0', `the left margin must be 0, got "${parts[3]}"`);
+  assert.ok(/--resizer-size:\s*var\(--gap\)/.test(html),
+    'the splitter must be --gap wide, or zeroing the left margin closes the gap entirely');
+});
+
 // ── Section collapse survives closing the editor ────────────────────────────
 console.log('\nsection collapse is remembered per class');
 

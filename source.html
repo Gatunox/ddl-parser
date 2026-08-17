@@ -2102,7 +2102,7 @@ td.c-err  { color: var(--accent2); }
 .me-main{display:flex;flex:1;min-height:0;overflow:hidden;}
 .me-sidebar{width:460px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
   background:var(--bg-panel);border: var(--bw) solid var(--border);border-radius:var(--r-md);
-  margin:var(--sp-3) 0 var(--sp-3) var(--sp-3);}
+  margin:var(--gap) 0 var(--gap) var(--gap);}
 /* Pane header — the collapse control for the two outer columns. Same shape as
    the main app's .panel-header so a collapsed rail looks the same in both
    places: title rotated up the strip, toggle at the top. */
@@ -2208,9 +2208,21 @@ td.c-err  { color: var(--accent2); }
 .me-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-2);}
 .me-header-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);flex:0 1 auto;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* Each section is a card, matching the Settings drawer: the editor body is
-   the page and sections sit on it, rather than being divided by a rule. */
+   the page and sections sit on it, rather than being divided by a rule.
+   Spaced on --gap, the same variable the main page's panel cards use, so the
+   editor does not sit on its own scale — it was on --sp-3, which made every
+   gap 12px against the page's 10px and scaled differently with density.
+   NO SIDE MARGINS, deliberately — both edges already have their gap:
+     left  — #me-splitter sits between the sidebar and this column and is
+             exactly --gap wide (--resizer-size), which is how two panels are
+             separated everywhere else. A margin here stacked ON TOP of it,
+             which is the whole 22px: 10 of splitter plus 12 of margin.
+     right — .me-tab-body reserves a --gap-wide scrollbar gutter, kept stable so
+             nothing shifts when the scrollbar appears. A margin here stacked on
+             that too and the edge read 20px while the page read 10px.
+   Only the bottom margin is this card's own, and it is the gap BETWEEN cards. */
 .me-section{background:var(--bg-panel);border: var(--bw) solid var(--border);border-radius:var(--r-md);
-  box-shadow:var(--shadow-card);margin:0 var(--sp-3) var(--sp-3);overflow:hidden;}
+  box-shadow:var(--shadow-card);margin:0 0 var(--gap) 0;overflow:hidden;}
 .me-section:last-child{margin-bottom:0;}
 .me-section-hdr{display:flex;align-items:center;justify-content:space-between;padding:var(--row-py) 14px;min-height:var(--panel-header-h);cursor:pointer;user-select:none;font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);background:var(--surface-header);}
 .me-section-hdr:hover{background:var(--surface-hover);}
@@ -2230,7 +2242,7 @@ td.c-err  { color: var(--accent2); }
 /* Gutter reserved, like #ddlTree / .tbl-wrap / .settings-body: without it the
    whole panel shifts sideways the moment content grows enough to need a
    scrollbar, and back again when it does not. */
-.me-tab-body{flex:1;overflow-y:auto;padding:var(--sp-3) 0;min-height:0;scrollbar-gutter:stable;background:var(--bg-deep);}
+.me-tab-body{flex:1;overflow-y:auto;padding:var(--gap) 0;min-height:0;scrollbar-gutter:stable;background:var(--bg-deep);}
 .me-no-sel{padding:20px;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);text-align:center;}
 .me-stub{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 .me-stub-h{font-size:calc(var(--sz-mono) + 2px);color:var(--text);margin-bottom:8px;}
@@ -16495,7 +16507,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.31.0.0';
+const APP_VERSION  = '1.31.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

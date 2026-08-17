@@ -10131,7 +10131,7 @@ function doParseNetardLog(text, opts = {}) {
                 // was scored once) in the pre-pass. Honour it directly, never
                 // prompt; a weak score only raises a warning.
                 if (_pd.bound) {
-                  parsed.push({ ..._base, msgType, fields: _pd.bound.fields, ddlPath: _pd.bound.ddlPath, defName: _pd.bound.defName, tokens: null, noMatchDDL: !_pd.bound.fields.length, parsedBy: _pd.bound.viaEngine ? `parse-spec (${_pd.bound.parseSpecUsed || 'binary'})` : 'DDL walk' });
+                  parsed.push({ ..._base, msgType, fields: _pd.bound.fields, ddlPath: _pd.bound.ddlPath, defName: _pd.bound.defName, tokens: _pd.bound.tokens ?? null, noMatchDDL: !_pd.bound.fields.length, parsedBy: _pd.bound.viaEngine ? `parse-spec (${_pd.bound.parseSpecUsed || 'binary'})` : 'DDL walk' });
                   if (_pd.bound.score < 0.95) {
                     _boundWarnings.push({ recNo: rec.recNo, label: msgType.label || msgType.type, ddl: _pd.bound.ddlPath, pct: Math.round(_pd.bound.score * 100) });
                   }
@@ -10184,7 +10184,7 @@ function doParseNetardLog(text, opts = {}) {
                   const _ps = _meParseWithChosenBinding(msgType, match, parseBytes,
                     { format: S.inputFormat, rawBytes: bytes });
                   parsed.push({ ..._base, msgType, fields: _ps ? _ps.fields : match.fields,
-                    ddlPath: match.ddlPath, defName: match.defName, tokens: null,
+                    ddlPath: match.ddlPath, defName: match.defName, tokens: _ps?.tokens ?? null,
                     parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk' });
                 } else {
                   const pidx = parsed.length;
@@ -10278,7 +10278,7 @@ function doParseNetardLog(text, opts = {}) {
                 const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
                 const _ps = _meParseWithChosenBinding(d.msgType, match, d.parseBytes,
                   { format: S.inputFormat, rawBytes: d.rawBytes || d.parseBytes });
-                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: _ps ? _ps.fields : match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: null, parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk' };
+                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: _ps ? _ps.fields : match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: _ps?.tokens ?? null, parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk' };
               }
               _parseProgressStep('Finalizing\u2026');
               setTimeout(() => _finalizeNetard(), 500);
@@ -10388,7 +10388,7 @@ function doParseNetardLog(text, opts = {}) {
             if (_v.kind === 'parsed') {
               bound = { ddlPath: _v.ddlPath || (d.bindPath || '').split('/').slice(0, 3).join('/') || null,
                         defName: _v.defName, fields: _v.fields, score: _v.score,
-                        viaEngine: true, parseSpecUsed: _v.parseSpecUsed };
+                        viaEngine: true, parseSpecUsed: _v.parseSpecUsed, tokens: _v.tokens ?? null };
             } else if (_v.kind === 'no-spec' && d.bindPath) {
               // Recognized + bound, but NO parse_spec → legacy extraction of that
               // one binding (still scores only the bind, per the resolution rules).
@@ -10967,7 +10967,7 @@ function doParseMessages() {
               }
               if (_v.kind === 'parsed') {
                 parsed.push({ ..._base, fields: _v.fields, ddlPath: _v.ddlPath, defName: _v.defName,
-                  tokens: null, parsedBy: _v.parsedBy });
+                  tokens: _v.tokens ?? null, parsedBy: _v.parsedBy });
                 continue;
               }
 
@@ -11067,7 +11067,7 @@ function doParseMessages() {
               if (_ps) fields = _ps.fields;
               else if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
               parsed[d.parsedIdx] = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
-                fields, ddlPath, defName, msgType: d.msgType, tokens: null,
+                fields, ddlPath, defName, msgType: d.msgType, tokens: _ps?.tokens ?? null,
                 parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk',
                 byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length, _auditChunk: d.chunk };
             }
@@ -12201,7 +12201,7 @@ function renderFieldTable(msg) {
     for (const g of groups.values()) g.deNum = (g.des.size === 1 && [...g.des][0] != null) ? [...g.des][0] : null;
     return out;
   };
-  const makeFieldRows = (fieldList, prefix, extraClass = '') => _resGroupPlan(fieldList).map(node => {
+  const makeFieldRows = (fieldList, prefix, extraClass = '', injectAfter = null) => _resGroupPlan(fieldList).map(node => {
     if (node.isGrp) return _resGroupRowHtml(node, prefix, extraClass);
     const f = node.f;
     _rowNum++;
@@ -12303,6 +12303,9 @@ function renderFieldTable(msg) {
     const _under = (node.under || []).map(p => prefix ? `${prefix}::${p}` : p).join('|');
     const _hid   = (node.under || []).some(p =>
       S.resCollapsedGroups?.has(prefix ? `${prefix}::${p}` : p)) ? ' row-grp-hidden' : '';
+    // A token area read out of THIS field's DE renders straight after it, in
+    // place of the data rows the "de" entry replaced.
+    const _after = (injectAfter && injectAfter[f.id]) || '';
     return `<tr class="${rowCls}${_hid}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}" data-raw="${esc((f.rawHex||'').toLowerCase())}"${_under ? ` data-under="${esc(_under)}"` : ''}
       onclick="selectField('${esc(fid)}')"
       ondblclick="copyFieldToClipboard('${esc(fid)}')"
@@ -12319,19 +12322,22 @@ function renderFieldTable(msg) {
         <input type="checkbox" class="trk-chk" ${trk}
           onclick="event.stopPropagation();toggleTrack('${esc(fid)}',this.checked)"/>
       </td>
-    </tr>`;
+    </tr>` + _after;
   }).join('');
 
-  let rows = makeFieldRows(msg.fields, null);
-
-  if (msg.tokens?.length) {
-    const count = msg.tokens.length;
+  // Tokens read out of a DE belong where that DE's payload would have been:
+  // the entry replaced its data rows, so the area IS the payload. Tokens with no
+  // anchor — a trailing area, the conventional case — still render at the end.
+  const tokenAreaHtml = (toks) => {
+    if (!toks || !toks.length) return '';
+    let out = '';
+    const count = toks.length;
     const tknIcon = S.tokenAreaCollapsed ? '▶' : '▼';
     const tknHideCls = S.tokenAreaCollapsed ? ' row-token-hidden' : '';
-    rows += `<tr class="tkn-area-hdr" onclick="toggleTokenArea()">
+    out += `<tr class="tkn-area-hdr" onclick="toggleTokenArea()">
       <td colspan="7"><span id="tknAreaIcon">${tknIcon}</span> TOKEN AREA &nbsp;·&nbsp; ${count} token${count !== 1 ? 's' : ''}</td>
     </tr>`;
-    for (const tkn of msg.tokens) {
+    for (const tkn of toks) {
       if (tkn.error) {
         if (tkn.id && tkn.rawBytes?.length) {
           // Token parsed from binary but no DDL definition — show raw data as a normal row
@@ -12342,7 +12348,7 @@ function renderFieldTable(msg) {
           const tknRHex = (P.rawHexTruncate !== false) && tknRaw.length > 22 ? tknRaw.slice(0, 22) + '…' : tknRaw;
           const tfid = `tkn::${tkn.id}`;
           const tsel = S.selFieldId === tfid ? ' row-sel' : '';
-          rows += `<tr class="tkn-body-row${tsel}${tknHideCls}" data-fid="${esc(tfid)}" data-search="${esc(('tkn::'+tkn.id+' no definition found').toLowerCase())}"
+          out += `<tr class="tkn-body-row${tsel}${tknHideCls}" data-fid="${esc(tfid)}" data-search="${esc(('tkn::'+tkn.id+' no definition found').toLowerCase())}"
             onclick="selectField('${esc(tfid)}')"
             onmouseenter="hoverField('${esc(tfid)}')"
             onmouseleave="clearHover()">
@@ -12362,7 +12368,7 @@ function renderFieldTable(msg) {
           </tr>`;
         } else {
           // Sentinel — token area detected but structure could not be read
-          rows += `<tr class="tkn-body-row${tknHideCls}">
+          out += `<tr class="tkn-body-row${tknHideCls}">
             <td class="c-id" style="color:var(--text-dim)">—</td>
             <td colspan="6" class="c-err">${esc(tkn.error)}</td>
           </tr>`;
@@ -12372,17 +12378,28 @@ function renderFieldTable(msg) {
         const byteCount = tkn.rawBytes?.length || 0;
         const hfid = `tkn-hdr::${tkn.id}`;
         const hsel = S.selFieldId === hfid ? ' row-sel' : '';
-        rows += `<tr class="tkn-hdr tkn-body-row${tknHideCls}${hsel}" data-fid="${esc(hfid)}" data-search="${esc(('tkn-hdr::'+tkn.id+' '+ddlLabel).toLowerCase())}"
+        out += `<tr class="tkn-hdr tkn-body-row${tknHideCls}${hsel}" data-fid="${esc(hfid)}" data-search="${esc(('tkn-hdr::'+tkn.id+' '+ddlLabel).toLowerCase())}"
           onclick="selectField('${esc(hfid)}')"
           onmouseenter="hoverField('${esc(hfid)}')"
           onmouseleave="clearHover()">
           <td class="c-id">${esc(tkn.id)}</td>
           <td colspan="6">${esc(ddlLabel)} &nbsp;·&nbsp; ${byteCount} byte${byteCount !== 1 ? 's' : ''}</td>
         </tr>`;
-        rows += makeFieldRows(tkn.fields, tkn.id, `tkn-body-row${tknHideCls}`);
+        out += makeFieldRows(tkn.fields, tkn.id, `tkn-body-row${tknHideCls}`);
       }
     }
+    return out;
+  };
+  const _tokByAnchor = new Map(), _tokTrailing = [];
+  for (const t of (msg.tokens || [])) {
+    if (!t.anchorId) { _tokTrailing.push(t); continue; }
+    if (!_tokByAnchor.has(t.anchorId)) _tokByAnchor.set(t.anchorId, []);
+    _tokByAnchor.get(t.anchorId).push(t);
   }
+  const _tokInject = {};
+  for (const [aid, list] of _tokByAnchor) _tokInject[aid] = tokenAreaHtml(list);
+  let rows = makeFieldRows(msg.fields, null, '', _tokInject);
+  rows += tokenAreaHtml(_tokTrailing);
 
   const tableOrEmpty = rows
     ? `<div class="tbl-wrap"><table class="res-tbl">
@@ -13869,7 +13886,7 @@ function _auditLazyParseNext() {
   if (_ps) fields = _ps.fields;
   else if (cand) { try { const r = bestDDLMatch(d.bytes, [cand], d.rawBytes || d.bytes); fields = r.fields; ddlPath = r.ddlPath; } catch(e) {} }
   const msg = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
-    fields, ddlPath, defName, msgType: d.msgType, tokens: null,
+    fields, ddlPath, defName, msgType: d.msgType, tokens: _ps?.tokens ?? null,
     parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk',
     byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length,
     isNetard: true, recNo: d.chunk.recNo, source: d.chunk.source, dest: d.chunk.dest,
@@ -16516,7 +16533,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.0.0';
+const APP_VERSION  = '1.32.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28155,6 +28172,13 @@ function _meTokenAreaInDE(ctx, header, ddlPath) {
     return [];
   }
   const vol = ddlPath ? ddlPath.split('/')[0] : null;
+  // Where these tokens belong in the results table. They ARE this DE's payload,
+  // so they render where its data rows would have been — after the last row the
+  // DE emitted, which is its LEN when the DDL declares one. Without an anchor
+  // they would land in the trailing TOKEN AREA section, detached from the
+  // element they came out of.
+  const anchor = ctx.fields.length ? ctx.fields[ctx.fields.length - 1].id : null;
+  const tag = list => { for (const t of list) { t.deBit = de; t.anchorId = anchor; } return list; };
   let fallback = null;
   for (const isBinary of _meTokenHeaderOrder(ctx, header)) {
     // isISO tracks the text header at both legacy call sites; it selects how a
@@ -28163,10 +28187,10 @@ function _meTokenAreaInDE(ctx, header, ddlPath) {
     if (!got) continue;
     // A detected area with no readable token is what the OTHER shape looks like,
     // so it is only accepted once both have been tried.
-    if (got.some(t => t.id)) { ctx.cursor = Math.min(got.areaEnd ?? limit, limit); return got; }
+    if (got.some(t => t.id)) { ctx.cursor = Math.min(got.areaEnd ?? limit, limit); return tag(got); }
     fallback = fallback || got;
   }
-  if (fallback) { ctx.cursor = Math.min(fallback.areaEnd ?? limit, limit); return fallback; }
+  if (fallback) { ctx.cursor = Math.min(fallback.areaEnd ?? limit, limit); return tag(fallback); }
   ctx.fields.push({ id: `DE-${de}`, error:
     `DE ${de}: a token area starts here but its header could not be read — set "header" to "binary" or "text" on the token-area block` });
   return [];
@@ -30449,7 +30473,7 @@ function _parseVerdict(winner, parseBytes, opts) {
   if (r) {
     const bp = (r.boundPath || '').split('/');
     return { kind: 'parsed', fields: r.fields, score: r.score,
-             parseSpecUsed: r.parseSpecUsed || 'binary',
+             parseSpecUsed: r.parseSpecUsed || 'binary', tokens: r.tokens ?? null,
              ddlPath: bp.slice(0, 3).join('/') || opts?.chosen?.ddlPath || null,
              defName: bp[3] || opts?.chosen?.defName || null,
              parsedBy: `parse-spec (${r.parseSpecUsed || 'binary'})` };
@@ -30604,7 +30628,11 @@ function _meParseFileWithSpec(spec, bytes, opts) {
   const score = ctx.fields.length ? (ctx.fields.length - errs) / ctx.fields.length : 0;
   // parseSpecUsed travels with the result so the Parse Results header can state
   // which parser produced the fields ("parse-spec (binary)" vs the legacy walk).
-  return { fields: ctx.fields, score, parseSpecUsed: ctx.parseSpecUsed };
+  // ctx.tokens travels with the fields. It is null unless a token-area block
+  // ran, and that null is the signal _resolveTokens uses to fall back to the
+  // legacy position-based derivation — so a spec without the block behaves
+  // exactly as before, while one WITH it is believed instead of second-guessed.
+  return { fields: ctx.fields, score, parseSpecUsed: ctx.parseSpecUsed, tokens: ctx.tokens };
 }
 
 // Publish the per-entity verdicts to the Entities sidebar: a pass/fail dot on

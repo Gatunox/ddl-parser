@@ -12538,6 +12538,12 @@ test('a "de" entry reads the token area out of that DE', () => {
     `the DE's own bytes are the area: ${JSON.stringify((ctx.tokens || []).map(t => t.id))}`);
   assert.ok(!ctx.fields.some(f => f.id === 'ADD-DATA.DATA'),
     'and the entry replaced the default read, as any de entry does');
+  // The anchor is what lets the results table put these rows where the DATA row
+  // would have been. Set by the engine, not by the renderer — a hand-built
+  // token in a render test would never prove this end of it.
+  eq(ctx.tokens[0].anchorId, 'ADD-DATA.LEN',
+    'the tokens are anchored to the last row the DE emitted');
+  eq(ctx.tokens[0].deBit, 63, 'and carry the bit they came from');
 });
 
 test('the DEs after it still line up', () => {
@@ -12647,6 +12653,75 @@ test('two token areas in one spec both survive', () => {
     ] }, bytes);
   eq((ctx.tokens || []).map(t => t.id).join(','), 'B4,B4',
     `both areas must be kept: ${JSON.stringify((ctx.tokens || []).map(t => t.id))}`);
+});
+
+test('the engine\'s tokens reach the results panel', () => {
+  // The reported symptom in production: the LEN row appeared, the DATA row was
+  // gone (the entry replaced it, correctly) and there were NO tokens. The Class
+  // Editor Test panel renders ctx.tokens directly, but every main-page path set
+  // `tokens: null` and let _resolveTokens re-derive them — with the very
+  // position-and-type-code rule that cannot see inside a DE. The engine read the
+  // area and the answer was thrown away.
+  const src = psFnSource('_meParseFileWithSpec');
+  assert.ok(/tokens:\s*ctx\.tokens/.test(src),
+    'the engine wrapper must carry ctx.tokens out with the fields');
+  const verdict = psFnSource('_parseVerdict');
+  assert.ok(/tokens:\s*r\.tokens/.test(verdict),
+    '_parseVerdict rebuilds the result object, so it has to forward them too');
+  // null still means "the spec ran no token-area block", which is what makes
+  // _resolveTokens fall back for every spec that never had one.
+  assert.ok(/tokens:\s*null/.test(psFnSource('_meExecParseSpec')),
+    'ctx.tokens starts null so the legacy derivation still applies when unused');
+});
+
+// renderFieldTable writes the table into #resContainer rather than returning it.
+// Registering a real stub for that one id captures the HTML the user would see,
+// which is the only place row ORDER is observable.
+function renderResTable(msg) {
+  const prev = elStubs.resContainer;
+  const cap = { innerHTML: '' };
+  elStubs.resContainer = cap;
+  try { renderFieldTable(msg); } finally {
+    if (prev === undefined) delete elStubs.resContainer; else elStubs.resContainer = prev;
+  }
+  return String(cap.innerHTML || '');
+}
+
+test('a DE token area renders after that DE, not at the end of the table', () => {
+  const tokens = [{ id: 'B4', anchorId: 'ADD-DATA.LEN', deBit: 63, fields: [],
+                    rawBytes: [0x41, 0x42], rawHex: '4142', ddlName: null, ddlPath: null,
+                    error: 'Unknown token ID: B4' }];
+  const msg = {
+    bytes: [], tokens,
+    fields: [
+      { id: 'PAN',          value: '1234', rawHex: '31323334', startByte: 8,  endByte: 11, valueLength: 4 },
+      { id: 'ADD-DATA.LEN', value: '0018', rawHex: '30303138', startByte: 12, endByte: 15, valueLength: 4 },
+      { id: 'TAIL',         value: 'ZZ',   rawHex: '5A5A',     startByte: 34, endByte: 35, valueLength: 2 },
+    ],
+  };
+  const html = renderResTable(msg);
+  const at = s => html.indexOf(s);
+  assert.ok(at('TOKEN AREA') !== -1, 'the token area is rendered at all');
+  assert.ok(at('ADD-DATA.LEN') < at('TOKEN AREA'),
+    'it follows the LEN row — the DE emitted that, and the area is its payload');
+  assert.ok(at('TOKEN AREA') < at('>TAIL<') || at('TOKEN AREA') < at('TAIL'),
+    'and precedes the next DE, rather than falling to the bottom of the table');
+});
+
+test('a trailing token area still renders at the end', () => {
+  // No anchor — the conventional case, and the one every existing spec produces.
+  const msg = {
+    bytes: [],
+    tokens: [{ id: 'B4', fields: [], rawBytes: [0x41], rawHex: '41',
+               ddlName: null, ddlPath: null, error: 'Unknown token ID: B4' }],
+    fields: [
+      { id: 'PAN',  value: '1234', rawHex: '31323334', startByte: 0, endByte: 3, valueLength: 4 },
+      { id: 'TAIL', value: 'ZZ',   rawHex: '5A5A',     startByte: 4, endByte: 5, valueLength: 2 },
+    ],
+  };
+  const html = renderResTable(msg);
+  assert.ok(html.indexOf('TAIL') < html.indexOf('TOKEN AREA'),
+    'an unanchored area stays after every field, as it always has');
 });
 
 test('the lint rejects a header value that is neither shape', () => {

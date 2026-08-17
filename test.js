@@ -12484,6 +12484,179 @@ test('Reset Layout actually clears what it should, and keeps what it must', () =
   for (const k in before) store.setItem(k, before[k]);
 });
 
+// ── A token area that lives INSIDE a DE ─────────────────────────────────────
+// Reported: `{"de": {"63": [{"token-area": "ANY"}]}}` produced nothing at all —
+// no tokens, no error, no lint warning. Three independent reasons, and any one
+// of them was enough: the block consumed no bytes and never looked at the
+// cursor; it re-derived the area's position by searching ctx.fields for an
+// already-emitted DE-63 row, which is exactly the row the entry replaced; and
+// extractTokensFromMessage returns null outright for any type code that is not
+// ISO / B24 / STM / PSTM, so a customized HPDH never got past the first line.
+console.log('\ntoken area inside a DE');
+
+const DETOK_DDL = `DEF REC.
+  02 BITMAP     PIC X(8).
+  02 PAN        PIC X(4).
+  02 ADD-DATA.
+    04 LEN      PIC X(4).
+    04 DATA     PIC X(64).
+  02 TAIL       PIC X(2).
+END REC.
+`;
+const _ch = s => s.split('').map(c => c.charCodeAt(0));
+// "& " + count(2) + totalSize(2); each token "! " + id(2) + size(2) + data
+const DETOK_BIN = [0x26,0x20, 0x00,0x02, 0x00,0x10,
+                 0x21,0x20, 0x42,0x34, 0x00,0x04, 0x41,0x42,0x43,0x44];
+// "& " + count(5) + totalSize(5); each token "! " + id(2) + size(5) + data
+const DETOK_TXT = [0x26,0x20, ..._ch('00002'), ..._ch('00027'),
+                 0x21,0x20, 0x42,0x34, ..._ch('00004'), 0x41,0x42,0x43,0x44];
+
+function tokDeRun(typeCode, area, block) {
+  // The DDL LEN frames DE-63, so TAIL is the witness that the area was consumed
+  // to exactly the right byte.
+  const len = _ch(String(area.length).padStart(4, '0'));
+  const bytes = Uint8Array.from([
+    0x40,0,0,0,0,0,0,0x03,          // bits 2, 63, 64
+    0x31,0x32,0x33,0x34,
+    ...len, ...area,
+    0x5A,0x5A,
+  ]);
+  S.ddlTree = { V: { S: { D: DETOK_DDL } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: typeCode, type: typeCode, ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'PAN', de: 2 }, { field: 'ADD-DATA', de: 63 }, { field: 'TAIL', de: 64 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '63': [block] } } },
+    ] }, bytes);
+  return { ctx, total: bytes.length };
+}
+
+test('a "de" entry reads the token area out of that DE', () => {
+  const { ctx } = tokDeRun('STM', DETOK_BIN, { 'token-area': 'ANY' });
+  eq((ctx.tokens || []).map(t => t.id).join(','), 'B4',
+    `the DE's own bytes are the area: ${JSON.stringify((ctx.tokens || []).map(t => t.id))}`);
+  assert.ok(!ctx.fields.some(f => f.id === 'ADD-DATA.DATA'),
+    'and the entry replaced the default read, as any de entry does');
+});
+
+test('the DEs after it still line up', () => {
+  // The block used to consume nothing at all, so without the DDL LEN framing the
+  // DE this would run straight into DE-64. Asserting the tokens alone would not
+  // notice.
+  const { ctx, total } = tokDeRun('STM', DETOK_BIN, { 'token-area': 'ANY' });
+  const tail = ctx.fields.find(f => f.id === 'TAIL');
+  assert.ok(tail, `DE-64 must still be read: ${JSON.stringify(ctx.fields.map(f => f.id))}`);
+  eq(tail.rawHex, '5A5A', 'on its own bytes');
+  eq(ctx.cursor, total, 'and the message is consumed exactly');
+});
+
+// The token's DATA is what distinguishes a correct header from a mis-read one:
+// both yield a token called B4, because the wrong shape still finds the "! "
+// eyecatcher and the 2-character id. Only the payload differs — reading a text
+// area as binary swallows the size characters and runs to the end of the window.
+const detokData = ctx => (ctx.tokens || []).map(t => `${t.id}:${t.rawHex}`).join(',');
+const DETOK_GOOD = 'B4:41424344';
+
+test('the type code picks the header shape, exactly as it always has', () => {
+  // STM/PSTM write a 2-byte count and size; ISO/B24 write them as 5 characters.
+  // Nothing on the wire says which, so an existing spec must not change meaning.
+  eq(detokData(tokDeRun('STM', DETOK_BIN, { 'token-area': 'ANY' }).ctx), DETOK_GOOD,
+    'STM reads the binary header');
+  eq(detokData(tokDeRun('ISO', DETOK_TXT, { 'token-area': 'ANY' }).ctx), DETOK_GOOD,
+    'ISO reads the text header');
+  // And it DECIDES — it is not a hint that detection may overrule. An STM class
+  // pointed at a text area mis-reads it, which is why `header` exists.
+  eq(detokData(tokDeRun('STM', DETOK_TXT, { 'token-area': 'ANY' }).ctx), 'B4:3030344142434400',
+    'the type code wins over what the bytes would suggest');
+});
+
+test('a type code in neither family tries both shapes', () => {
+  // The reported case: a customized HPDH, where the type code decides nothing.
+  for (const [what, area] of [['binary', DETOK_BIN], ['text', DETOK_TXT]]) {
+    const got = detokData(tokDeRun('HPDH', area, { 'token-area': 'ANY' }).ctx);
+    eq(got, DETOK_GOOD, `HPDH detects the ${what} header`);
+  }
+});
+
+test('"header" forces the shape when the type code is wrong for that DE', () => {
+  eq(detokData(tokDeRun('STM', DETOK_TXT, { 'token-area': { tokens: 'ANY', header: 'text' } }).ctx),
+    DETOK_GOOD, 'an STM class can still read a text-header area');
+  eq(detokData(tokDeRun('ISO', DETOK_BIN, { 'token-area': { tokens: 'ANY', header: 'binary' } }).ctx),
+    DETOK_GOOD, 'and the reverse');
+});
+
+test('a DE framed only by its declared size ends where the area ended', () => {
+  // The DDL LEN in the fixture above frames DE-63 exactly, so the cursor lands
+  // right whether or not the block advanced it. Here the element is a plain
+  // PIC X(40) — capacity, not extent — so the only thing that can put DE-64 in
+  // the right place is token-area consuming what it read.
+  const ddl = `DEF REC.
+  02 BITMAP  PIC X(8).
+  02 PAN     PIC X(4).
+  02 AREA    PIC X(40).
+  02 TAIL    PIC X(2).
+END REC.
+`;
+  const bytes = Uint8Array.from([
+    0x40,0,0,0,0,0,0,0x03,
+    0x31,0x32,0x33,0x34,
+    ...DETOK_BIN,          // 16 bytes, inside a 40-byte declared element
+    0x5A,0x5A,
+  ]);
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'STM', type: 'STM', ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'PAN', de: 2 }, { field: 'AREA', de: 63 }, { field: 'TAIL', de: 64 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '63': [{ 'token-area': 'ANY' }] } } },
+    ] }, bytes);
+  eq(detokData(ctx), DETOK_GOOD, 'the area is read');
+  eq(ctx.fields.find(f => f.id === 'TAIL')?.startByte, 28,
+    'DE-64 starts right after the area (12 + 16), not at the DE start');
+});
+
+test('a DE holding no token area says so instead of going quiet', () => {
+  const noArea = [0x41, 0x42, 0x43, 0x44, 0x45, 0x46];
+  const { ctx } = tokDeRun('STM', noArea, { 'token-area': 'ANY' });
+  const err = ctx.fields.find(f => f.error);
+  assert.ok(err && /eyecatcher/.test(err.error),
+    `silence is what made this hard to diagnose: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+});
+
+test('two token areas in one spec both survive', () => {
+  // ctx.tokens used to be ASSIGNED, so a DE area plus the trailing one an STM
+  // spec normally ends with kept only whichever block ran last.
+  const len = _ch(String(DETOK_BIN.length).padStart(4, '0'));
+  const bytes = Uint8Array.from([
+    0x40,0,0,0,0,0,0,0x03,
+    0x31,0x32,0x33,0x34,
+    ...len, ...DETOK_BIN,
+    0x5A,0x5A,
+    ...DETOK_BIN,            // the trailing area an STM message carries after the fields
+  ]);
+  S.ddlTree = { V: { S: { D: DETOK_DDL } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'STM', type: 'STM', ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'PAN', de: 2 }, { field: 'ADD-DATA', de: 63 }, { field: 'TAIL', de: 64 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '63': [{ 'token-area': 'ANY' }] } } },
+      { 'token-area': 'ANY' },
+    ] }, bytes);
+  eq((ctx.tokens || []).map(t => t.id).join(','), 'B4,B4',
+    `both areas must be kept: ${JSON.stringify((ctx.tokens || []).map(t => t.id))}`);
+});
+
+test('the lint rejects a header value that is neither shape', () => {
+  const item = { name: 'X', type: 'X', ddl_bindings: [] };
+  const w = a => mePsLintWarns(item, [{ 'token-area': a }]).join(' | ');
+  assert.ok(/must be "binary" or "text"/.test(w({ tokens: 'ANY', header: 'ascii' })), 'bad header');
+  eq(w({ tokens: 'ANY', header: 'text' }), '', 'a good one is silent');
+  eq(w('ANY'), '', 'and the bare form stays silent');
+});
+
 // ── The editor is spaced on the page's own scale ────────────────────────────
 console.log('\nClass Editor panel spacing');
 

@@ -6775,14 +6775,23 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
     });
   }
 
+  // Where the area ends, carried on the result so a caller that is READING the
+  // area — a "de" entry, where the cursor must land after it — does not have to
+  // decode the header a second time to find out. A property on the array rather
+  // than a wrapper object: every existing caller keeps treating it as the list
+  // it has always been.
+  const _end = Math.min(areaEnd, bytes.length);
   // Always return something when '& ' was detected — even if no tokens parsed
   if (!tokens.length) {
-    return [{ id: null, fields: [], rawBytes: [], rawHex: '',
+    const empty = [{ id: null, fields: [], rawBytes: [], rawHex: '',
               ddlName: null, ddlPath: null,
               error: tokenMaps.length
                 ? 'Token area detected — no tokens could be parsed'
                 : 'Token area detected — no token definitions loaded' }];
+    empty.areaEnd = _end;
+    return empty;
   }
+  tokens.areaEnd = _end;
   return tokens;
 }
 
@@ -16507,7 +16516,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.31.0.2';
+const APP_VERSION  = '1.32.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20245,6 +20254,13 @@ const _PS_HELP = {
         'Stop emitting after this token id — <b>inclusive</b>.',
         'Pair it with <code>from</code> for a window; use it alone for "everything up to here".',
       ]],
+      ['header', '"binary" | "text"', false, [
+        'How the <b>count and total size</b> after the <code>&amp;&nbsp;</code> eyecatcher are written. Nothing on the wire announces it.',
+        ['<code>"binary"</code>', 'Two 2-byte integers — what STM / PSTM write.'],
+        ['<code>"text"</code>',   'Two 5-character numbers — what ISO / B24 write.'],
+        ['<i>omitted</i>',        'The class\'s <b>type code</b> decides, as it always has: STM / PSTM binary, ISO / B24 text. A type code in neither family tries both and keeps whichever parses.'],
+        'This is not about the input format — hex, EBCDIC, a tandem dump and plain ASCII all reach this block as the same bytes, which is why one spec covers them.',
+      ]],
     ],
     examples: [
       // A real PSTM-style token area on the wire: "& ", a count, a total size,
@@ -20265,6 +20281,18 @@ const _PS_HELP = {
         def: 'MSG', msgType: 'PSTM',
         payload: '31 32 30 30 26 20 00 04 00 1E 21 20 42 34 00 02 41 42 21 20 43 30 00 02 43 44 21 20 46 31 00 02 45 46',
         spec: [{"read-ddl": "ANY"}, {"token-area": {"from": "C0", "until": "F1"}}] },
+      // The same bytes as above, read by a class whose type code is PSTM — so
+      // the header would default to binary. Stating "binary" changes nothing
+      // here, which is the point: it is only needed when the type code does not
+      // match the area, as inside a DE that carries someone else's shape.
+      { what: '<b>header</b> — say how the count and total size after <code>&amp;&nbsp;</code> are written when the type code cannot: <code>binary</code> is two 2-byte integers, <code>text</code> two 5-character numbers',
+        ddl: 'DEFINITION MSG.\n  02 TYP PIC X(4).\nEND\n',
+        def: 'MSG', msgType: 'PSTM',
+        payload: '31 32 30 30 26 20 00 04 00 1E 21 20 42 34 00 02 41 42 21 20 43 30 00 02 43 44 21 20 46 31 00 02 45 46',
+        spec: [{"read-ddl": "ANY"}, {"token-area": {"tokens": "ANY", "header": "binary"}}] },
+      ['Read a DE that carries its own token area — the DE\'s bytes are the area, and the DDL\'s LEN already frames them',
+        [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+         {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {"63": [{"token-area": "ANY"}]}}}]],
       ['Conventional last block — read the fixed section, then the DEs, then whatever tokens follow',
         [{"read": "MTI"}, {"read-bitmap-fields": "BITMAP"}, {"token-area": "ANY"}]],
     ],
@@ -21266,6 +21294,12 @@ function _mePsLintWarns(item, parsed) {
         case 'read-until':
         case 'read-to-end': {
           if (attrs?.as) synthetic.add(attrs.as);
+          break;
+        }
+        case 'token-area': {
+          if (attrs && typeof attrs === 'object' && attrs.header != null
+              && !/^(binary|text)$/i.test(String(attrs.header)))
+            warns.push(`[block ${n}] token-area "header" must be "binary" or "text", got ${JSON.stringify(attrs.header)}`);
           break;
         }
         case 'read-tlv': {
@@ -28072,19 +28106,74 @@ function _meExecReadField(attrs, ctx) {
 //                                     from/until.
 function _meTokenAreaAttrs(attrs) {
   if (attrs == null || attrs === 'ANY')
-    return { tokens: 'ANY', from: null, until: null };
+    return { tokens: 'ANY', from: null, until: null, header: null };
   if (typeof attrs === 'object') {
     return {
       tokens: attrs.tokens ?? 'ANY',
       from:   attrs.from   || null,
       until:  attrs.until  || null,
+      header: attrs.header || null,
     };
   }
-  return { tokens: 'ANY', from: null, until: null };
+  return { tokens: 'ANY', from: null, until: null, header: null };
+}
+
+// Which shape the token area's HEADER uses — the count and total size that
+// follow the "& " eyecatcher. Two forms exist and nothing on the wire announces
+// which: STM/PSTM write two 2-byte integers, ISO/B24 two 5-character numbers.
+// The input format never enters into it — extractBytes has already turned hex,
+// EBCDIC, a tandem dump or plain ASCII into the same byte array, which is why
+// one spec covers all of them.
+//
+// Returns the shapes to TRY, in order. The type code decides as it always has,
+// so an existing spec cannot change behaviour; `header` on the block forces one;
+// and a class whose type code belongs to neither family — a customized HPDH, the
+// case this was reported from — tries both and keeps whichever actually parses.
+const _ME_TOKEN_HEADER = { binary: true, text: false };
+function _meTokenHeaderOrder(ctx, header) {
+  const forced = _ME_TOKEN_HEADER[String(header || '').toLowerCase()];
+  if (forced !== undefined) return [forced];
+  const t = String((ctx.item && (ctx.item.type || ctx.item.name)) || '').toUpperCase();
+  if (t === 'STM' || t === 'PSTM') return [true];
+  if (t === 'ISO' || t === 'B24')  return [false];
+  return [false, true];
+}
+
+// A token area that is simply THE BYTES THIS DE HOLDS. The whole point of a "de"
+// entry is that the cursor is already at the element's first byte and _deLimit
+// at its last, so nothing has to be derived from the message type or from rows
+// the entry itself replaced — which is exactly why the block did nothing here
+// before: extractTokensFromMessage hunts for an already-emitted DE-63 row, and
+// returns null outright for any type code that is not ISO/B24/STM/PSTM.
+function _meTokenAreaInDE(ctx, header, ddlPath) {
+  const start = ctx.cursor;
+  const limit = ctx._deLimit != null ? ctx._deLimit : ctx.bytes.length;
+  const de    = ctx._deBit;
+  if (ctx.bytes[start] !== 0x26 || ctx.bytes[start + 1] !== 0x20) {
+    ctx.fields.push({ id: `DE-${de}`, error:
+      `DE ${de}: no token area at byte ${start} — expected the "& " eyecatcher, found ${_meBytesToHex(Array.from(ctx.bytes.slice(start, start + 2)))}` });
+    return [];
+  }
+  const vol = ddlPath ? ddlPath.split('/')[0] : null;
+  let fallback = null;
+  for (const isBinary of _meTokenHeaderOrder(ctx, header)) {
+    // isISO tracks the text header at both legacy call sites; it selects how a
+    // token's own DDL is looked up, so it must stay tied to the same choice.
+    const got = parseTokenArea(ctx.bytes, start, isBinary, vol, !isBinary);
+    if (!got) continue;
+    // A detected area with no readable token is what the OTHER shape looks like,
+    // so it is only accepted once both have been tried.
+    if (got.some(t => t.id)) { ctx.cursor = Math.min(got.areaEnd ?? limit, limit); return got; }
+    fallback = fallback || got;
+  }
+  if (fallback) { ctx.cursor = Math.min(fallback.areaEnd ?? limit, limit); return fallback; }
+  ctx.fields.push({ id: `DE-${de}`, error:
+    `DE ${de}: a token area starts here but its header could not be read — set "header" to "binary" or "text" on the token-area block` });
+  return [];
 }
 
 function _meExecTokenArea(attrs, ctx) {
-  const { tokens, from, until } = _meTokenAreaAttrs(attrs);
+  const { tokens, from, until, header } = _meTokenAreaAttrs(attrs);
   // extractTokensFromMessage branches on the TYPE CODE — 'ISO'/'B24' put tokens
   // inside DE-63/126, 'STM'/'PSTM' put them after the last field — and returns
   // null for anything else. A spec stores that code as `name`; `type` is what
@@ -28093,13 +28182,21 @@ function _meExecTokenArea(attrs, ctx) {
   // and got none, while the same message on the main page showed them.
   const msgType = ctx.item.type || ctx.item.name || '';
   const ddlPath = ctx.item.ddl_bindings?.[0] || '';
-  const all = extractTokensFromMessage(ctx.fields, ctx.bytes, msgType, ddlPath) || [];
+  // Inside a "de" entry there is nothing to derive: the DE's own bytes ARE the
+  // area, and the cursor is already on them.
+  const all = ctx._deBit != null
+    ? _meTokenAreaInDE(ctx, header, ddlPath)
+    : (extractTokensFromMessage(ctx.fields, ctx.bytes, msgType, ddlPath) || []);
 
-  if (tokens === 'ANY' && !from && !until) { ctx.tokens = all; return; }
+  // Appended, not assigned: a spec may read a token area inside a DE and another
+  // at the end of the message, and the second used to erase the first.
+  const emit = out => { ctx.tokens = (ctx.tokens || []).concat(out); };
+
+  if (tokens === 'ANY' && !from && !until) { emit(all); return; }
 
   if (Array.isArray(tokens)) {
     const picks = new Set(tokens);
-    ctx.tokens = all.filter(t => picks.has(t.id));
+    emit(all.filter(t => picks.has(t.id)));
     return;
   }
 
@@ -28111,7 +28208,7 @@ function _meExecTokenArea(attrs, ctx) {
     if (started) out.push(t);
     if (until && t.id === until) break;
   }
-  ctx.tokens = out;
+  emit(out);
 }
 
 // ── Shared helpers for the remaining blocks ─────────────────────────────────
@@ -28987,14 +29084,16 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
   }
   const end = windowLen != null && windowLen > 0 ? start + windowLen : null;
 
-  const prevScope = ctx._deScope, prevLimit = ctx._deLimit;
+  const prevScope = ctx._deScope, prevLimit = ctx._deLimit, prevBit = ctx._deBit;
   ctx._deScope = scopeId;
   ctx._deLimit = end;
+  ctx._deBit   = de;      // which bit we are inside, for blocks that read the DE itself
   try {
     for (const b of blocks) _meExecBlock(b, ctx);
   } finally {
     ctx._deScope = prevScope;
     ctx._deLimit = prevLimit;
+    ctx._deBit   = prevBit;
     if (end != null) {
       // Overrunning is always reported and always stops here, whatever the
       // window was: reading past the room an element has is malformed either

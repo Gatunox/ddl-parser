@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-17 | **`token-area` inside a `de` entry reads that DE's own bytes.** `{"de": {"63": [{"token-area": "ANY"}]}}` produced nothing at all — no tokens, no error, no lint warning — and three independent reasons were each enough on their own: the block consumed no bytes and never looked at the cursor; it re-derived the area's position by searching the emitted fields for a DE-63 row, which is precisely the row the entry replaced; and `extractTokensFromMessage` returns null outright for any type code that is not ISO/B24/STM/PSTM, so a customized HPDH never got past its first line. Inside an entry none of that derivation applies: the cursor is on the element's first byte and the window is its last, so the area is simply what the DE holds. It **consumes** what it reads, so a DE framed only by a declared size still ends in the right place. `ctx.tokens` is appended to rather than assigned — a DE area plus the trailing one an STM spec normally ends with used to keep only whichever block ran last. The header shape (2-byte counts vs 5-character ones) is chosen by the class's **type code** exactly as before, so no existing spec shifts meaning; a new `header` attribute forces it, and a type code in neither family tries both. A DE with no `&·` there now says so instead of going quiet. See §5.14, §5.18. |
 | 2026-08-17 | **Class Editor: section collapse is remembered per class, and panels sit on the page's 10px gap.** Collapsing Identity or Recognizers lasted until the next selection — the section map was rebuilt from content on every `_meSelectItem`, so closing the editor, or just clicking another class and back, undid it. Stored per class in `up_me_sect` (§13), keyed `label \|\| name` like `up_me_last_sel`. Only the sections the user actually **toggled** are written: the content-derived defaults still decide everything untouched, so a class that later gains its first recognizer still opens that panel, which saving the whole map would have frozen shut. Cleared by Reset Layout like every other stored panel state. Separately, the editor spaced its panels on `--sp-3` while the page uses `--gap` — 12px against 10px, and scaling differently with density (12/6 against 10/2), so the two surfaces disagreed at every zoom level rather than at one. A section card now carries only its **bottom** margin: `#me-splitter` is already `--gap` wide and is what separates the sidebar from that column (10 + 12 = the 22px measured), and the reserved scrollbar gutter does the same on the right. See §11. |
 | 2026-08-17 | **A DDL declared size is capacity, not the DE's extent — and a row with no bytes no longer highlights byte 0.** A `de` entry framed its DE by the element's declared size and then forced the cursor to the end of that frame whatever the blocks read. A declared size says how much an element *can* hold — a message putting less in it is ordinary — so every DE mapped to a roomier element pushed the next one late and the drift compounded. Reported against a customized HPDH: DE-55 mapped to a 138-byte group whose TLV really ran shorter, DE-56 onward all late, DE-58 landing past the end of the message and reporting `Cannot read hex-char prefix at offset 344` for a spec that was correct. The engine's own comment already said a declared size "is only capacity"; only the cursor disagreed. Windows that state the DE's real extent — a length off the wire (`length_prefix`, a VLG LEN) and a `length` written on the entry — still fix where the next DE starts; a declared size no longer does, and the DE ends where its blocks stopped. Reading **past** any window is still reported and still clamped, so a malformed DE cannot corrupt the fields after it. Also: hovering a row that occupies no bytes lit up the **first byte of the message** — `f.startByte \| 0` turned the absent offset of an error row into `0` — so the highlight pointed at bytes with nothing to do with the failure; both highlight builders now ask one predicate whether there is a span at all. See §5.14. |
 | 2026-08-17 | **A length prefix reads in any encoding the app knows.** `read-length-prefix` decoded with a private four-case switch — `uint8`, `uint16-be`, `uint16-le`, `bcd2` — while VLG lengths, `length_prefix` and the Type override column all went through the shared decoder, which has read `hex-char` since it was written. Two implementations of one fact, and the narrower one was the only way to read a length in front of a payload: a 2-byte `00 74` meaning **74** could only be read as 116, which swallowed the rest of the message, and no attribute existed to say otherwise. `prefix` now takes any encoding the Type column offers, plus `bcd2` — the one shape the shared decoder does not know. Names that imply a width keep it, so every saved spec is untouched; the rest state `prefix_len` (1–4), and the lint reports a missing one rather than letting the parse guess. `count` says whether the number means bytes or hex digits — the same word, and the same meaning, it already carries on `read-tlv`'s `len` and on a VLG length. A `de` entry's `length_prefix` gains the same three as an object form, `{bytes, type, count}`; a bare number still means the width alone and still auto-detects. 1472 baseline cases identical, so the four legacy names decode exactly as they did. See §5.17. |
@@ -731,6 +732,14 @@ The DE-to-element relation still comes from the Overrides panel (`overrides[…]
 this only says how that element's bytes are read. An optional `field` overrides
 which element the bit maps to.
 
+**`token-area` inside an entry reads the DE's own bytes** *(2026-08-17)*. At the top
+level the block derives the area's position from the message type — ISO/B24 inside
+DE-63/126, STM/PSTM after the last field — and from the rows already emitted. Inside
+a `de` entry none of that applies: the cursor is on the element's first byte and the
+window is its last, which is the whole point of an entry, so the area is simply what
+this DE holds. It consumes what it reads, so a DE framed only by a declared size
+still ends in the right place. See §5.18 for the header shape.
+
 **A DDL element is not required.** Whether one is needed is the *block's* business,
 and the blocks already say so themselves: `read-length-prefix`, `read-fixed`,
 `read-until` and `read-to-end` name their own output through `as` and need nothing
@@ -961,6 +970,36 @@ spells (`74 digits = 37 bytes`) — that is the number the user can see in the b
 > the only way to read a length in front of a payload: a 2-byte `00 74` meaning 74
 > could only be read as 116, which swallowed the rest of the message, and no
 > attribute existed to say otherwise. Reported against a customized HPDH DE-58.
+
+---
+
+### 5.18 The token-area header — `binary` vs `text`
+
+> *Added 2026-08-17.*
+
+After the `&·` eyecatcher come a **token count** and a **total size**, and they are
+written two different ways with nothing on the wire announcing which:
+
+| | count + size | bytes |
+|---|---|---|
+| STM / PSTM | two 2-byte integers | 4 |
+| ISO / B24 | two 5-character numbers | 10 |
+
+**This is not the input format.** `extractBytes` has already turned hex, EBCDIC, a
+tandem dump or plain ASCII into the same byte array before any block runs, which is
+why one spec reads a message pasted in any of them.
+
+The shape is chosen in this order:
+
+1. **`header`** on the block — `"binary"` or `"text"`. Forces it.
+2. **The class's type code** — STM/PSTM binary, ISO/B24 text. Unchanged from how it
+   has always been decided, so no existing spec can shift meaning.
+3. **Both, in turn** — for a type code in neither family, keeping whichever actually
+   yields tokens. A customized HPDH is the case this was reported from.
+
+The type code **decides**; detection is not allowed to overrule it. An STM class
+pointed at a text-header area therefore mis-reads it, and `header` is how you say so
+— the alternative would be a spec whose meaning changes with its payload.
 
 ---
 

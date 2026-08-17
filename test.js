@@ -12684,6 +12684,73 @@ function tokDeRun(typeCode, area, block) {
   return { ctx, total: bytes.length };
 }
 
+// ISO tokens carry a SPACE between the token header and the payload — `! ` + id
+// + size(5) + " " — and the size counts the payload alone. Reported: the value
+// started with that space, and the highlight covered the wrong byte span.
+// The STM/binary form has no such delimiter.
+const _isoTok = (id, data) => `! ${id}${String(data.length).padStart(5, '0')} ${data}`;
+// t.rawBytes is a Uint8Array: .map() on a typed array coerces the callback's
+// result back to a number, so String.fromCharCode over it yields 0 for every
+// non-digit — and digits survive by coincidence, which is exactly how a broken
+// assertion passes. Array.from first.
+const tokText = t => Array.from(t.rawBytes).map(b => String.fromCharCode(b)).join('');
+function isoArea(toks) {
+  const body = toks.map(([i, d]) => _isoTok(i, d)).join('');
+  return _ch(`& ${String(toks.length + 1).padStart(5, '0')}${String(2 + 10 + body.length).padStart(5, '0')}${body}`);
+}
+
+test('an ISO token\'s payload excludes the header\'s space delimiter', () => {
+  const { ctx } = tokDeRun('ISO', isoArea([['B8', 'ROUTED'], ['P6', '190920']]), { 'token-area': 'ANY' });
+  const got = (ctx.tokens || []).map(t => `${t.id}="${tokText(t)}"`);
+  deepEq(got, ['B8="ROUTED"', 'P6="190920"'],
+    'no leading space, and no character lost off the end');
+});
+
+test('the delimiter is not counted in the payload span', () => {
+  // The highlight is drawn from dataStart for rawBytes.length, so an off-by-one
+  // here is exactly what put the space under the value's highlight.
+  const { ctx } = tokDeRun('ISO', isoArea([['B8', 'ROUTED']]), { 'token-area': 'ANY' });
+  const t = ctx.tokens[0];
+  eq(t.rawBytes.length, 6, 'six payload bytes for a six-character value');
+  // The byte immediately before the payload is the delimiter, and it is NOT in it.
+  eq(t.dataStart - t.headerStart, 10, '"! " + id(2) + size(5) + the space = a 10-byte header');
+});
+
+test('the second ISO token starts where the first ended', () => {
+  // If the delimiter were left inside the payload the size arithmetic would
+  // drift by one per token, so two tokens is the smallest case that shows it.
+  const { ctx } = tokDeRun('ISO', isoArea([['B8', 'ROUTED'], ['P6', '190920']]), { 'token-area': 'ANY' });
+  const [a, b] = ctx.tokens;
+  eq(b.headerStart, a.dataStart + a.rawBytes.length,
+    'the next token begins immediately after the previous payload');
+});
+
+test('an area without the delimiter is read exactly as before', () => {
+  // The skip is guarded on the byte actually being a space, so a text-header
+  // area that does not use the convention cannot be corrupted by it.
+  const noDelim = _ch('& 0000200019! B800006ROUTED');
+  const { ctx } = tokDeRun('ISO', noDelim, { 'token-area': 'ANY' });
+  eq((ctx.tokens || []).map(tokText).join(','),
+    'ROUTED', 'the payload is still read from immediately after the size');
+});
+
+test('the STM binary form has no delimiter and is untouched', () => {
+  const { ctx } = tokDeRun('STM', DETOK_BIN, { 'token-area': 'ANY' });
+  eq((ctx.tokens || []).map(t => `${t.id}:${t.rawHex}`).join(','), 'B4:41424344',
+    'binary tokens keep reading their payload directly after the size');
+});
+
+test('a binary token whose payload STARTS with a space keeps it', () => {
+  // The delimiter belongs to the ISO/text form alone. In the binary form that
+  // byte is data, and a skip applied there would silently eat it — invisible in
+  // any fixture whose payload happens to start with a letter.
+  const area = [0x26,0x20, 0x00,0x02, 0x00,0x10,
+                0x21,0x20, 0x42,0x34, 0x00,0x04, 0x20,0x42,0x43,0x44];  // " BCD"
+  const { ctx } = tokDeRun('STM', area, { 'token-area': 'ANY' });
+  eq((ctx.tokens || []).map(t => t.rawHex).join(''), '20424344',
+    'the leading 20 is part of the value, not a header delimiter');
+});
+
 test('a "de" entry reads the token area out of that DE', () => {
   const { ctx } = tokDeRun('STM', DETOK_BIN, { 'token-area': 'ANY' });
   eq((ctx.tokens || []).map(t => t.id).join(','), 'B4',

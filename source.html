@@ -6744,6 +6744,16 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       if (offset + 5 > bytes.length) break;
       const dataSize = parseInt(_tokChars(bytes, offset, 5), 10);
       offset += 5;
+      // An ISO token puts a single SPACE between its header and its payload. It
+      // terminates the header — `! ` + id + size + " " — and the size counts the
+      // payload alone, so the space must be stepped over before the value
+      // starts. Without this the value began with that space and lost its last
+      // character, and the highlight covered the wrong span by one byte.
+      //
+      // Guarded on the byte really being a space rather than assumed, so an area
+      // that does not carry the delimiter is still read exactly as before. The
+      // STM/binary form below has no delimiter and is untouched.
+      if (bytes[offset] === 0x20) offset += 1;
       dataStart = offset;
       dataBytes = bytes.slice(offset, offset + dataSize);
       offset += dataSize;
@@ -16534,7 +16544,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.3.0';
+const APP_VERSION  = '1.32.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

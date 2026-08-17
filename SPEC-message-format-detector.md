@@ -10,6 +10,10 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-17 | **Class Editor: section collapse is remembered per class, and panels sit on the page's 10px gap.** Collapsing Identity or Recognizers lasted until the next selection — the section map was rebuilt from content on every `_meSelectItem`, so closing the editor, or just clicking another class and back, undid it. Stored per class in `up_me_sect` (§13), keyed `label \|\| name` like `up_me_last_sel`. Only the sections the user actually **toggled** are written: the content-derived defaults still decide everything untouched, so a class that later gains its first recognizer still opens that panel, which saving the whole map would have frozen shut. Cleared by Reset Layout like every other stored panel state. Separately, the editor spaced its panels on `--sp-3` while the page uses `--gap` — 12px against 10px, and scaling differently with density (12/6 against 10/2), so the two surfaces disagreed at every zoom level rather than at one. A section card now carries only its **bottom** margin: `#me-splitter` is already `--gap` wide and is what separates the sidebar from that column (10 + 12 = the 22px measured), and the reserved scrollbar gutter does the same on the right. See §11. |
+| 2026-08-17 | **A DDL declared size is capacity, not the DE's extent — and a row with no bytes no longer highlights byte 0.** A `de` entry framed its DE by the element's declared size and then forced the cursor to the end of that frame whatever the blocks read. A declared size says how much an element *can* hold — a message putting less in it is ordinary — so every DE mapped to a roomier element pushed the next one late and the drift compounded. Reported against a customized HPDH: DE-55 mapped to a 138-byte group whose TLV really ran shorter, DE-56 onward all late, DE-58 landing past the end of the message and reporting `Cannot read hex-char prefix at offset 344` for a spec that was correct. The engine's own comment already said a declared size "is only capacity"; only the cursor disagreed. Windows that state the DE's real extent — a length off the wire (`length_prefix`, a VLG LEN) and a `length` written on the entry — still fix where the next DE starts; a declared size no longer does, and the DE ends where its blocks stopped. Reading **past** any window is still reported and still clamped, so a malformed DE cannot corrupt the fields after it. Also: hovering a row that occupies no bytes lit up the **first byte of the message** — `f.startByte \| 0` turned the absent offset of an error row into `0` — so the highlight pointed at bytes with nothing to do with the failure; both highlight builders now ask one predicate whether there is a span at all. See §5.14. |
+| 2026-08-17 | **A length prefix reads in any encoding the app knows.** `read-length-prefix` decoded with a private four-case switch — `uint8`, `uint16-be`, `uint16-le`, `bcd2` — while VLG lengths, `length_prefix` and the Type override column all went through the shared decoder, which has read `hex-char` since it was written. Two implementations of one fact, and the narrower one was the only way to read a length in front of a payload: a 2-byte `00 74` meaning **74** could only be read as 116, which swallowed the rest of the message, and no attribute existed to say otherwise. `prefix` now takes any encoding the Type column offers, plus `bcd2` — the one shape the shared decoder does not know. Names that imply a width keep it, so every saved spec is untouched; the rest state `prefix_len` (1–4), and the lint reports a missing one rather than letting the parse guess. `count` says whether the number means bytes or hex digits — the same word, and the same meaning, it already carries on `read-tlv`'s `len` and on a VLG length. A `de` entry's `length_prefix` gains the same three as an object form, `{bytes, type, count}`; a bare number still means the width alone and still auto-detects. 1472 baseline cases identical, so the four legacy names decode exactly as they did. See §5.17. |
+| 2026-08-17 | **A `de` entry parses a DE the DDL never declares.** The entry was refused unless the bit mapped to a DDL element, so the one case it is most needed for — a proprietary DE that is on the wire and nowhere in the DDL — could not be parsed at all: the entry was rejected before a single block ran, and because the cursor never moved past the DE, every later DE read from the wrong offset. Whether an element is required is the **block's** business, not the entry's, and the blocks already say so themselves: `read-length-prefix`, `read-fixed`, `read-until` and `read-to-end` name their own output through `as` and need nothing declared — exactly how they behave at the top level of a spec, and a bit must mean the same thing in both places. Blocks that map bytes *onto* declared fields still need one and report it in their own words, naming the element they could not find. With no element the window is whatever the blocks read unless `length_prefix` or `length` frames it, and rows the engine emits itself are named after the bit (`DE-58.LEN-PREFIX`). Every consumer of the DE scope already tolerated its absence, so nothing downstream changed. See §5.14. |
 | 2026-08-15 | **The block reference moved beside the spec, and stopped printing everything at once.** It opened between the toolbar and the editor, pushing the editor down the page, so reading the reference and reading the spec it describes were mutually exclusive; and it printed a fifteen-row index above a pane carrying every attribute and every example the block has — `read-fixed` ships ten — which is a lot to scroll past to reach one line. Now the right column of a fixed-height split with a drag bar beneath it: the reference scrolls inside that height so opening it never makes the card taller, and closing it returns the editor to full width. Two views: a **catalogue** grouped by what you are trying to do, and a **block** view — lead sentence, use-when, ONE starter example, then attributes as an accordion where opening one shows its default, its forms and **only the examples that use it**. Nothing in the block view is separately authored: the lead is the description's first line, the starter is the first example, and the per-attribute examples go through the same filter the old "show only the examples using X" used — a summary kept beside the text it summarises can disagree with it. **The reference follows the caret**, innermost block first, so a `read-fixed` inside a `when`'s `then` reports `read-fixed`. Resolution reuses the editor's tokenizer mask rather than `JSON.parse`: positions are the whole point, a second hand-written scanner is the trap that produced the byte-map bugs (2026-08-15, above), and the mask does not require the document to parse — so the reference still answers while a block is half-typed, which is when it is most wanted. See §11. |
 | 2026-08-15 | **The conversion records where each byte came from, so there is one algorithm per format instead of two.** Asked, correctly: to draw the Raw panel the app must already turn the text into bytes, so it KNOWS which characters produced each byte — why work it out again? It did. `extractBytes` read the characters and threw the positions away on its first `.trim()`; `buildByteCharMap` then re-parsed the same text to recover them. Two implementations of one fact, per format, that had to agree forever — and they did not: for a dump line `extractBytes` took every hex pair in the region while `buildByteCharMap` matched four-character groups. Same answer on a well-formed line, different the moment one is not. That asymmetry is the whole story of the highlight faults: the **Raw** panel renders the bytes itself and labels each one `data-idx`, so highlighting byte N is a lookup and cannot be off; **Message Input** shows the user's own capture and had to reverse-engineer someone else's layout across NETARD standard, hexascii, hex, octal, EBCDIC, the combined interleaves and FUP — seven reconstructions, each its own chance to be off by one. `extractBytesMapped` now does both in one pass, recording `{s,e}` for each byte as it consumes the characters plus `.ascii` for the dump formats that echo bytes in a bracket column; `extractBytes` wraps it and `buildByteCharMap` returns its map, so neither can drift from the other again. **The bytes did not move — all 1472 baseline cases identical**, which is what that baseline is for. What the merge makes possible is a property the split design could not state: slice a byte's recorded span back out of the text and it must reproduce that byte. Eight cases assert it across the dump forms (hex and decimal offsets, differing label widths, pipe echo columns, an odd trailing byte), hex and octal, verified against eight injected faults including every off-by-one variant and `buildByteCharMap` growing its own parser again. |
 | 2026-08-14 | **`read-tlv` honours its overrides and finds the value leaf by elimination; a variable group's length is auto-detected through a nested payload and stops rendering what the wire never sent.** Five faults from one production Mastercard message, all in the same area. (1) **`read-tlv` was the only read path that never ran the override pass** — nothing it emitted was reinterpreted, so `hex-char` set on every element showed in the Overrides table and changed nothing in the parse. (2) The **value leaf is matched by name** against `DATA`/`VAL`/`VALUE`, so a subgroup of `TAG`/`LEN`/`TAG-DATA` resolved its first two and not its third; the value went to the **group** id and an override on the leaf matched nothing. It is now whatever single leaf is left once tag and length are accounted for. (3) An **unmapped tag** covered only its value, orphaning its own tag and length bytes so the highlight jumped between rows; it spans the whole triple now, with `valueLength` still the value's own length because the engine checks a decimal TLV length against it. (4) **VLG auto-detect counted direct children**, so `ADD-DATA { LGTH, INFO { … } }` — payload in a nested group, hence one direct child — was rejected outright and had to be flagged by hand; the count is now leaves at any depth, while which leaf may *be* the length stays direct-children-only. Four call sites resolve this and all four had to change, or the Field Map column shows one answer while the parse does another. (5) The framed group then **rendered its unreached tail**: two hundred rows of "0 bytes, no value" under a one-byte payload, each printing the group's LEN as its entire value because every child borrows it as a display prefix. A fixed group's empty field is present-and-blank and keeps its row; a variable group's is a field the wire never sent. The LEN has its own row and is no longer reprinted beside the payload — the length column had excluded it on that flag since it was added, the value column and both clipboard helpers had not. See §5.15, §8. |
@@ -290,7 +294,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | `read` | Read a single DDL-defined field, **or a window of them from the cursor** | `field` (DDL field ID), `from`/`until` (walk a range at the cursor — `from` required, `until` inclusive), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13) |
 | `read-fixed` | Read N bytes inline — no DDL ref needed | `length` (int literal OR field ID ref), `type`, `encoding`, `as` (DDL field ID) |
 | `read-until` | Read bytes until sentinel(s) or EOM | `sentinels` (list of hex bytes), `eom` (bool), `as` (DDL field ID) |
-| `read-length-prefix` | Read length N then N bytes | `prefix` (`uint8`\|`uint16-be`\|`uint16-le`\|`bcd2`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
+| `read-length-prefix` | Read length N then N bytes | `prefix` (any length encoding — §5.17), `prefix_len` (1–4, when the name implies no width), `count` (`bytes`\|`digits`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
 | `read-bitmap` | Read 8 or 16 bytes as bitmap, store result | `field` (DDL field ID), `encoding` (`binary`\|`ascii-hex`), `length` (explicit width in bytes when the DDL does not declare the map — §5.12) |
 | `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `overrides[…].de` (§7), honouring `overrides[…].vlg` (§8) | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14), `vlg_identifier` (§8), `overrides` (§8.1) |
 | `read-segment-fields` | Read only the segments a prior `read-bitmap` marks present (§5.16) | *(bare string)* or `map` — field id of the declared/file-read map, `binding` |
@@ -696,6 +700,18 @@ are reported rather than silently skipped.
 parse as digits — which also covers EBCDIC, translated to ASCII upstream — and
 anything else is a big-endian integer.
 
+> *Extended 2026-08-17 — the encoding can be stated.* A bare number is the width
+> alone and leaves the rule above to guess, which cannot tell `00 74` meaning 74
+> from the same bytes meaning 116. The object form states all three questions in
+> the same words `read-length-prefix` uses (§5.17):
+>
+> ```jsonc
+> "55": {"length_prefix": {"bytes": 2, "type": "hex-char", "count": "bytes"},
+>        "blocks": [ … ]}
+> ```
+>
+> `"length_prefix": 2` remains valid and still auto-detects.
+
 ### 5.14 `read-bitmap-fields` — per-bit parsing (`de`)
 
 > *Added 2026-08-01.*
@@ -715,6 +731,23 @@ The DE-to-element relation still comes from the Overrides panel (`overrides[…]
 this only says how that element's bytes are read. An optional `field` overrides
 which element the bit maps to.
 
+**A DDL element is not required.** Whether one is needed is the *block's* business,
+and the blocks already say so themselves: `read-length-prefix`, `read-fixed`,
+`read-until` and `read-to-end` name their own output through `as` and need nothing
+declared — exactly how they behave at the top level of a spec, and a bit must mean
+the same thing in both places. Blocks that map bytes *onto* declared fields —
+`read`, `read-ddl`, `read-tlv` with `tags` — still need one and report it in their
+own words, naming the element they could not find. This is the case a `de` entry is
+most needed for: a proprietary DE that is on the wire and nowhere in the DDL. With
+no element, rows the engine emits itself are named after the bit (`DE-58.LEN-PREFIX`),
+and short names inside the blocks resolve against the DDL as a whole.
+
+> *Corrected 2026-08-17.* The entry used to be refused outright when the bit mapped
+> to nothing — before a single block ran — so such a DE could not be parsed at all,
+> and because the cursor never moved past it every later DE read from the wrong
+> offset. Reported against a customized HPDH whose DE-58 carried a proprietary
+> length-prefixed payload.
+
 **Names inside the entry resolve within that element**, so `ARQC` means
 `EMV-ELEMENT.ARQC`. Only leaves are compiled, so a group is recognised by the
 prefix on its children's ids.
@@ -723,14 +756,32 @@ prefix on its children's ids.
 and ends is the same question for every DE and the engine already knows it — from
 the bitmap walk plus the group's LEN, honouring the same `vlg`
 configuration the default walk uses. The entry's blocks then run inside that
-window and the cursor resumes at the boundary whatever they did, so a block that
-reads too far is reported and stopped instead of consuming the DEs that follow.
+window, and a block that reads **too far** is reported and stopped at the boundary
+instead of consuming the DEs that follow — whatever the window was.
 Window precedence: `length_prefix` → the group's VLG LEN → an explicit `length` →
 the element's declared size.
 
 A length the **message** states cannot exceed the message: that is malformed and
 reported. A size the **DDL** declares is only capacity — a message carrying fewer
 tags than the DDL has room for is normal — so it is clamped silently.
+
+**Where the next DE starts depends on which of those the window came from**, and
+the distinction is the whole point of the previous paragraph:
+
+| Window | States | Next DE starts |
+|--------|--------|----------------|
+| `length_prefix`, or the group's VLG LEN | what the DE **is** — the message said so | at the end of the window, whatever the blocks read |
+| an explicit `length` on the entry | what the DE **is** — you said so | at the end of the window, whatever the blocks read |
+| the element's **declared size** | what the element **can hold** | where the blocks actually stopped |
+
+> *Corrected 2026-08-17.* The cursor used to be forced to the end of the window in
+> every case, declared size included. A DE mapped to an element roomier than its
+> contents therefore pushed the next DE late, and the drift compounded: a DE-55
+> mapped to a 138-byte group whose TLV really ran 104 put DE-56 thirty-four bytes
+> late, and by DE-58 the cursor was past the end of the message. Reported as
+> "Cannot read hex-char prefix at offset 344" against a spec that was correct.
+> A declared size is a **ceiling**, never a default extent — the sentence above it
+> already said so, and only the cursor disagreed.
 
 ### 5.15 `read-tlv` — BER framing and tag → element mapping
 
@@ -871,6 +922,45 @@ typed there overrides the map for that parse; blank falls back to the spec's val
 **Manual override** on a segmented DDL walks the full DDL once, all segments
 assumed present, since no spec is consulted. Typing a map in the SEG-MAP bar is
 what narrows it to the present segments.
+
+---
+
+### 5.17 Reading a length off the wire — one vocabulary
+
+> *Added 2026-08-17.*
+
+Every length the engine reads off the wire answers the same three questions, and
+they are now asked in the same words wherever they are asked: **how many bytes** to
+take, **how to decode** them, and **what the number counts**.
+
+| Question | `read-length-prefix` | `length_prefix` (§5.13) | `read-tlv` `len` (§5.15) | A VLG LEN leaf (§8, §9) |
+|----------|----------------------|-------------------------|--------------------------|---------------------|
+| How many bytes | `prefix_len` | `bytes` | `bytes` | the DDL's declared size |
+| How to decode | `prefix` | `type` | `type` | `type` |
+| What it counts | `count` | `count` | `count` | `count` |
+
+**The encodings are the app's, not any one block's** — every name the Overrides
+**Type** column offers reads a length: `uint8` · `uint16-be` · `uint16-le` ·
+`uint-be` · `uint-le` · `binary` · `ascii` · `ebcdic` · `hex-char` ·
+`hex-ascii-decimal` · `hex-ebcdic-decimal`. `read-length-prefix` adds `bcd2`
+(2 bytes of packed BCD), which is the one shape the shared decoder does not know.
+
+**Width.** `uint8` implies 1, `uint16-*` and `bcd2` imply 2, `uint32-*` imply 4.
+Every other name says how the bytes *read*, not how many there are, so it needs an
+explicit width — the lint reports a missing one rather than letting the parse guess.
+
+**`count`.** `bytes` (the default) means 74 is 74 bytes of payload; `digits` means
+74 hex digits, so 37 on the wire. Converted once, at the point of decoding, so every
+bound downstream stays byte-based. The row still reports the number the message
+spells (`74 digits = 37 bytes`) — that is the number the user can see in the bytes.
+
+> *Why this exists.* `read-length-prefix` decoded with a private four-case switch —
+> `uint8`, `uint16-be`, `uint16-le`, `bcd2` — while VLG lengths, `length_prefix` and
+> the Type column all went through the shared decoder, which had read `hex-char`
+> since it was written. Two implementations of one fact, and the narrower one was
+> the only way to read a length in front of a payload: a 2-byte `00 74` meaning 74
+> could only be read as 116, which swallowed the rest of the message, and no
+> attribute existed to say otherwise. Reported against a customized HPDH DE-58.
 
 ---
 
@@ -1333,6 +1423,28 @@ binding; hovering names which.
 Spec, DDL Bindings and Overrides all live on one scrolling page and each collapses
 independently, so a spec can be read end to end without switching context — you
 can see a recognizer and the parse_spec that depends on it at the same time.
+
+Which sections open is decided in two layers *(added 2026-08-17)*. The **default**
+is the class's own content: panels with something in them open, empty ones start
+collapsed, so a class that has never been touched shows what it has. **What the
+user collapses is then remembered per class**, in `up_me_sect` (§13), and survives
+closing the editor. Only sections the user actually toggled are stored, so the
+content default still governs everything else — a class that later gains its first
+recognizer still opens that panel, which storing the whole map would have made
+impossible. Keyed on `label || name`, the identity the editor already uses for
+`up_me_last_sel`; renaming a class therefore returns it to the defaults. Reset
+Layout clears it along with every other stored panel size.
+
+**Panels are spaced on `--gap`** *(corrected 2026-08-17)* — the same variable the
+main page uses for the space between panel cards, and the same width as a resizer.
+The editor had been on `--sp-3`, so its gaps read 12px against the page's 10px and
+scaled differently with density (12/6 against 10/2): the two surfaces disagreed at
+every zoom level, not just one. A section card carries **only a bottom margin**,
+the gap between cards. Its side edges already have theirs and a margin stacked on
+top of them: `#me-splitter` is `--gap` wide and is what separates the sidebar from
+this column (10 + 12 = the 22px that was measured), and `.me-tab-body` reserves a
+`--gap`-wide scrollbar gutter on the right, kept stable so nothing shifts when the
+scrollbar appears — it now holds the scrollbar rather than sitting beside a margin.
 
 **The block reference sits beside the spec** *(rewritten 2026-08-15)*. It used to
 open between the toolbar and the editor, pushing the editor down the page — so

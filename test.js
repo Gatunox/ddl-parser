@@ -5742,6 +5742,132 @@ test('a block that needs an element raises that itself, not the entry', () => {
   eq(ctx.fields.find(f => f.id === 'DE4-TAIL').startByte, 17, 'DE-4 is unaffected');
 });
 
+// ── The length prefix speaks the app's own vocabulary ───────────────────────
+// Reported from the same customized HPDH: a 2-byte DE length of 00 74 meaning
+// 74. read-length-prefix decoded with a private four-case switch — uint8,
+// uint16-be, uint16-le, bcd2 — so those bytes could only read 116, and the
+// message was swallowed whole. Every other length in the engine goes through
+// _meDecodeLength, which has read hex-char all along.
+const LEN_PREFIX_DDL = `DEF REC.
+  02 HDR PIC X(2).
+END REC.
+`;
+function lenPrefixRun(attrs, bytes) {
+  S.ddlTree = { V: { S: { D: LEN_PREFIX_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    parse_spec_binary: [{ 'read-length-prefix': attrs }] }, bytes);
+}
+// 00 74 then 116 bytes — enough that a uint16-be reading SUCCEEDS. A 74-byte
+// message would make both readings fail and the test would pass for the wrong
+// reason: it must distinguish 74 from 116, not "works" from "errors".
+const LEN_74 = Uint8Array.from([0x00, 0x74, ...Array.from({ length: 116 }, () => 0x41)]);
+
+test('a length prefix can be read as hex-char', () => {
+  const ctx = lenPrefixRun({ prefix: 'hex-char', prefix_len: 2, as: 'USER-DATA' }, LEN_74);
+  eq(ctx.fields.filter(f => f.error).length, 0,
+    `nothing may error, got ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  eq(ctx.fields.find(f => f.id === 'USER-DATA').valueLength, 74,
+    '00 74 spells seventy-four');
+});
+
+test('the same bytes still read 116 as uint16-be', () => {
+  // The other half of the pair: hex-char must not become the new guess.
+  const ctx = lenPrefixRun({ prefix: 'uint16-be', as: 'USER-DATA' }, LEN_74);
+  eq(ctx.fields.find(f => f.id === 'USER-DATA').valueLength, 116,
+    'the legacy name keeps its legacy meaning');
+});
+
+test('count digits halves a hex-char length', () => {
+  const ctx = lenPrefixRun({ prefix: 'hex-char', prefix_len: 2, count: 'digits', as: 'USER-DATA' }, LEN_74);
+  const f = ctx.fields.find(f => f.id === 'USER-DATA');
+  eq(f.valueLength, 37, '74 hex digits is 37 wire bytes');
+  eq(f.lenPrefix, '74', 'and the row still reports the number the message spells');
+  assert.ok(/74 digits = 37 bytes/.test(f.description || ''),
+    `the description must show both, got ${JSON.stringify(f.description)}`);
+});
+
+test('every legacy prefix name decodes exactly as it used to', () => {
+  // The four names went through a private switch; they now go through the
+  // shared decoder. bcd2 is the one shape that decoder does not know, so it is
+  // the case most likely to have been lost in the move.
+  const cases = [
+    ['uint8',     [0x03, 0x41, 0x42, 0x43],             3],
+    ['uint16-be', [0x00, 0x04, 0x41, 0x42, 0x43, 0x44], 4],
+    ['uint16-le', [0x04, 0x00, 0x41, 0x42, 0x43, 0x44], 4],
+    ['bcd2',      [0x01, 0x23, ...Array.from({ length: 123 }, () => 0x41)], 123],
+  ];
+  for (const [prefix, bytes, want] of cases) {
+    const ctx = lenPrefixRun({ prefix, as: 'D' }, Uint8Array.from(bytes));
+    eq(ctx.fields.find(f => f.id === 'D')?.valueLength, want, `${prefix} width and value`);
+  }
+});
+
+test('a prefix that does not imply a width says so instead of guessing', () => {
+  const ctx = lenPrefixRun({ prefix: 'hex-char', as: 'USER-DATA' }, LEN_74);
+  const err = ctx.fields.find(f => f.error);
+  assert.ok(err && /prefix_len/.test(err.error),
+    `it must ask for the width, got ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+});
+
+test('the lint catches a bad prefix before the parse does', () => {
+  const item = { name: 'X', type: 'X', ddl_bindings: [] };
+  const w = b => mePsLintWarns(item, [{ 'read-length-prefix': b }]).join(' | ');
+  assert.ok(/does not say how wide/.test(w({ prefix: 'hex-char', as: 'X' })), 'missing width');
+  assert.ok(/is not a length encoding/.test(w({ prefix: 'utf8', prefix_len: 2, as: 'X' })), 'unknown encoding');
+  assert.ok(/must be 1, 2, 3 or 4/.test(w({ prefix: 'hex-char', prefix_len: 9, as: 'X' })), 'width out of range');
+  assert.ok(/must be "bytes" or "digits"/.test(w({ prefix: 'hex-char', prefix_len: 2, count: 'chars', as: 'X' })), 'bad count');
+  // And the valid forms must be silent — a lint that warns on correct specs
+  // trains you to ignore it.
+  eq(w({ prefix: 'uint16-be', as: 'X' }), '', 'legacy form is clean');
+  eq(w({ prefix: 'hex-char', prefix_len: 2, count: 'bytes', as: 'X' }), '', 'new form is clean');
+});
+
+test('a "de" entry\'s length_prefix takes the same vocabulary', () => {
+  // The mirror-image gap: length_prefix stated a width but never a type, so it
+  // auto-detected and read 00 74 as 116 exactly as read-length-prefix did.
+  // 74 bytes of payload, then two bytes that must survive as the next DE.
+  const ddl = `DEF REC.
+  02 BITMAP   PIC X(8).
+  02 DE2-PAN  PIC X(4).
+  02 DE3-BLOB PIC X(4).
+END REC.
+`;
+  // Two bytes of TAIL past the payload, deliberately. Sized exactly to the
+  // payload, a 116-byte misreading would be clamped to what remains and land on
+  // the very same cursor — the test would pass without the frame working at all.
+  const bytes = Uint8Array.from([
+    0x60, 0, 0, 0, 0, 0, 0, 0,
+    0x31, 0x32, 0x33, 0x34,
+    0x00, 0x74, ...Array.from({ length: 74 }, () => 0x41),
+    0x5A, 0x5A,
+  ]);
+  const run = lp => {
+    S.ddlTree = { V: { S: { D: ddl } } };
+    S.inputFormat = 'hex';
+    return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+      de_map: [{ field: 'DE2-PAN', de: 2 }, { field: 'DE3-BLOB', de: 3 }],
+      parse_spec_binary: [
+        { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+        { 'read-bitmap-fields': { bitmap: 'BITMAP', de: {
+            '3': { length_prefix: lp, blocks: [{ 'read-fixed': { length: 74, as: 'BLOB' } }] } } } },
+      ] }, bytes);
+  };
+  const typed = run({ bytes: 2, type: 'hex-char' });
+  eq(typed.fields.find(f => f.id === 'DE3-BLOB.LEN-PREFIX').rawHex, '0074',
+    'the length row is emitted as before');
+  eq(typed.fields.filter(f => f.error).length, 0,
+    `nothing may error, got ${JSON.stringify(typed.fields.filter(f => f.error))}`);
+  eq(typed.cursor, 88, 'the frame is 74 bytes, so the DE ends at 12 + 2 + 74 and the tail survives');
+  // The bare number must keep auto-detecting — old specs depend on it.
+  const bare = run(2);
+  eq(bare.fields.find(f => f.id === 'DE3-BLOB.LEN-PREFIX').rawHex, '0074',
+    'a bare width still reads the same bytes');
+  assert.ok(bare.fields.some(f => /runs past the end/.test(f.error || '')),
+    `and still guesses 116, which overruns — that is the gap this fixes: ${JSON.stringify(bare.fields.filter(f => f.error))}`);
+  eq(bare.cursor, 90, 'eating the tail as it goes');
+});
+
 test('unknown tags follow the stated policy', () => {
   const emit = emvRun({ ber: true, tags: {}, unknown: 'emit' });
   assert.ok(emit.fields.some(f => /\.9F26$/.test(f.id)), 'emit keeps unmapped tags as their own rows');

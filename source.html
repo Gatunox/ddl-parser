@@ -16489,7 +16489,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.4.0';
+const APP_VERSION  = '1.30.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19364,6 +19364,7 @@ const _PS_HELP = {
     // its absence to be inferred, which is only readable if you already know.
     dflts: {
       as: '<code>"LEN-DATA"</code>',
+      count: '<code>"bytes"</code> — the number is a byte count',
       sentinels: 'none — the length alone decides where the value ends',
     },
     desc: 'Reads a 1–4 byte length prefix, then reads exactly that many bytes of payload. Useful for LLVAR/LLLVAR-style fields and binary TLV payloads.',
@@ -19374,12 +19375,26 @@ const _PS_HELP = {
       'You need <b>early termination</b> via sentinels or end-of-message (the declared length might be wrong / lenient).',
     ],
     attrs: [
-      ['prefix', '"uint8" | "uint16-be" | "uint16-le" | "bcd2"', true, [
+      ['prefix', 'length encoding', true, [
         'How the length itself is encoded. These bytes are consumed but not emitted.',
+        'Any encoding the <b>Type</b> column offers reads a length here — <code>hex-char</code>, <code>ascii</code>, <code>ebcdic</code>, <code>hex-ascii-decimal</code>, <code>hex-ebcdic-decimal</code>, the <code>uint</code> family — plus <code>bcd2</code>, which is this block\'s alone.',
         ['<code>uint8</code>',     '1 byte, 0–255.'],
         ['<code>uint16-be</code>', '2 bytes, big-endian — <code>00 05</code> is 5.'],
         ['<code>uint16-le</code>', '2 bytes, little-endian — <code>05 00</code> is 5.'],
         ['<code>bcd2</code>',      '2 bytes of packed BCD — <code>00 05</code> is 5, <code>01 23</code> is 123.'],
+        ['<code>hex-char</code>',  'The bytes\' hex <i>spelling</i>, read as a decimal number — <code>00 74</code> is <b>74</b>, not 116.'],
+        ['<code>ascii</code> / <code>ebcdic</code>', 'The length is written as text digits.'],
+        'Those four at the top carry their own width; every other name needs <code>prefix_len</code>.',
+      ]],
+      ['prefix_len', '1 | 2 | 3 | 4', false, [
+        'How many bytes the length occupies.',
+        'Required whenever <code>prefix</code> does not imply a width — <code>hex-char</code> says how the bytes read, not how many there are.',
+        ['<i>omitted</i>', 'The width implied by the name: <code>uint8</code> 1, <code>uint16-*</code> and <code>bcd2</code> 2, <code>uint32-*</code> 4.'],
+      ]],
+      ['count', '"bytes" | "digits"', false, [
+        'What the number counts. The same word, and the same meaning, as on <code>read-tlv</code>\'s <code>len</code> and on a VLG length.',
+        ['<code>"bytes"</code>',  'The default — 74 means 74 bytes of payload.'],
+        ['<code>"digits"</code>', '74 means 74 hex digits, so <b>37</b> bytes on the wire.'],
       ]],
       ['as', 'string', false, [
         'A name for the payload row — the length bytes are not part of it.',
@@ -19403,6 +19418,14 @@ const _PS_HELP = {
       { what: '<b>prefix</b> uint8 — a single length byte',
         payload: '03 58 59 5A',
         spec: [{"read-length-prefix": {"prefix": "uint8", "as": "TOKEN"}}] },
+      // Reported from a customized HPDH: the length read 116 and swallowed the
+      // message, and there was no way to say the bytes spell their own value.
+      { what: '<b>prefix</b> hex-char with <b>prefix_len</b> — <code>00 06</code> spells six, where uint16-be would read the same bytes as 6 and <code>00 74</code> as 116 instead of 74',
+        payload: '00 06 41 42 43 44 45 46 5A',
+        spec: [{"read-length-prefix": {"prefix": "hex-char", "prefix_len": 2, "as": "USER-DATA"}}] },
+      { what: '<b>count</b> digits — the length counts hex digits, so 06 is three bytes on the wire, not six',
+        payload: '00 06 41 42 43 5A',
+        spec: [{"read-length-prefix": {"prefix": "hex-char", "prefix_len": 2, "count": "digits", "as": "USER-DATA"}}] },
       { what: '<b>prefix</b> bcd2 — packed decimal: 00 04 is four, not 0x0004 read as binary',
         payload: '00 04 41 42 43 44',
         spec: [{"read-length-prefix": {"prefix": "bcd2", "as": "PAYLOAD"}}] },
@@ -19607,7 +19630,8 @@ const _PS_HELP = {
         ['<code>"55": {"field":…, "blocks":[…]}</code>', 'The same, and also say which element the bit maps to.'],
         ['<code>"field"</code>',  'Overrides which element this bit is. Without it the Overrides panel decides, as always.'],
         ['<code>"length"</code>', 'Bounds the element when the DDL\'s declared size is not the real one.'],
-        ['<code>"length_prefix"</code>', 'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it — read this many bytes of length, then frame the element to it. Those bytes are emitted as their own row.'],
+        ['<code>"length_prefix"</code>', 'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it — read this many bytes of length, then frame the element to it. Those bytes are emitted as their own row. This <b>frames</b> the whole entry, so every block in it shares the one window; <code>read-length-prefix</code> instead <b>captures</b> the payload as a single row.'],
+        ['<code>{"bytes": 2, "type": "hex-char"}</code>', 'The same, with the encoding stated. A bare <code>2</code> leaves it to auto-detect, which cannot tell <code>00 74</code> meaning 74 from the same bytes meaning 116. <code>"count": "digits"</code> works here too.'],
         'Every other set bit is read exactly as before — listing one bit changes only that bit.',
         '<b>The DDL need not declare the DE at all.</b> Whether an element is required is the <i>block\'s</i> business, exactly as at the top level of a spec: <code>read-length-prefix</code>, <code>read-fixed</code>, <code>read-until</code> and <code>read-to-end</code> name their own output through <code>as</code> and need nothing declared, so a proprietary DE that appears on the wire and nowhere in the DDL is parsed by describing it here. Blocks that <i>map onto</i> declared fields — <code>read</code>, <code>read-ddl</code>, <code>read-tlv</code> with tags — still need one, and say so themselves.',
         'With no element, rows this block emits itself are named after the bit: <code>DE-58.LEN-PREFIX</code>.',
@@ -21164,8 +21188,28 @@ function _mePsLintWarns(item, parsed) {
           if (attrs?.as) synthetic.add(attrs.as);
           break;
         }
+        case 'read-length-prefix': {
+          if (attrs?.as) synthetic.add(attrs.as);
+          // The prefix vocabulary is the app's, not this block's own — every
+          // name the TYPE override offers reads a length here too. Caught at
+          // lint time because the alternative is a length silently read in the
+          // wrong encoding, which looks like a malformed message.
+          // Asked of the decoder's own predicates rather than a third list of
+          // type names — a list here would drift from the one doing the reading.
+          const p = String(attrs?.prefix || '').trim();
+          const known = /^bcd2$/i.test(p) || _meLenTypeIsInt(p) || _meLenTypeIsHexChar(p)
+                     || _meLenTypeIsAscii(p) || _meLenTypeIsEbcdic(p) || _meLenTypeIsHexText(p);
+          if (p && !known)
+            warns.push(`[block ${n}] read-length-prefix "prefix": "${p}" is not a length encoding — use one of ${_ME_TYPE_OPTS.filter(Boolean).join(', ')}, or bcd2`);
+          if (attrs?.prefix_len != null && !(Number.isInteger(+attrs.prefix_len) && +attrs.prefix_len >= 1 && +attrs.prefix_len <= 4))
+            warns.push(`[block ${n}] read-length-prefix "prefix_len" must be 1, 2, 3 or 4, got ${JSON.stringify(attrs.prefix_len)}`);
+          if (p && attrs?.prefix_len == null && _mePrefixWidth(p, null) == null)
+            warns.push(`[block ${n}] read-length-prefix: "${p}" does not say how wide the length is — add "prefix_len"`);
+          if (attrs?.count != null && !/^(bytes|digits)$/i.test(String(attrs.count)))
+            warns.push(`[block ${n}] read-length-prefix "count" must be "bytes" or "digits", got ${JSON.stringify(attrs.count)}`);
+          break;
+        }
         case 'read-until':
-        case 'read-length-prefix':
         case 'read-to-end': {
           if (attrs?.as) synthetic.add(attrs.as);
           break;
@@ -28205,28 +28249,52 @@ function _meExecReadUntil(attrs, ctx) {
   ctx.fieldsById[id] = f;
 }
 
-// ── Block: read-length-prefix ───────────────────────────────────────────────
-
-function _meReadIntPrefix(bytes, offset, kind) {
-  switch (kind) {
-    case 'uint8':
-      if (offset >= bytes.length) return { len: 0, val: 0 };
-      return { len: 1, val: bytes[offset] };
-    case 'uint16-be':
-      if (offset + 1 >= bytes.length) return { len: 0, val: 0 };
-      return { len: 2, val: (bytes[offset] << 8) | bytes[offset + 1] };
-    case 'uint16-le':
-      if (offset + 1 >= bytes.length) return { len: 0, val: 0 };
-      return { len: 2, val: (bytes[offset + 1] << 8) | bytes[offset] };
-    case 'bcd2': {
-      if (offset + 1 >= bytes.length) return { len: 0, val: 0 };
-      const hi = (bytes[offset]     >> 4) * 1000 + (bytes[offset]     & 0xF) * 100;
-      const lo = (bytes[offset + 1] >> 4) *   10 + (bytes[offset + 1] & 0xF);
-      return { len: 2, val: hi + lo };
-    }
-    default: return { len: 0, val: 0 };
+// ── Reading a length off the wire ───────────────────────────────────────────
+// Three questions, asked the same way everywhere: how many bytes to take, how
+// to decode them, and whether the number counts bytes or hex digits.
+//
+// read-length-prefix used to answer the first two with a private four-case
+// switch — uint8 / uint16-be / uint16-le / bcd2 — while VLG lengths, a "de"
+// entry's length_prefix and the TYPE override column all went through
+// _meDecodeLength, which reads eight encodings including hex-char. So a 2-byte
+// `00 74` could only be read as 116, and the 74 the message actually meant was
+// unsayable. Reported from a customized HPDH DE-58.
+//
+// Widths implied by the legacy names, so those specs keep working untouched.
+// Everything else must state prefix_len, because a name like "hex-char" says
+// how the bytes read, not how many there are.
+const _ME_PREFIX_WIDTH = {
+  uint8: 1, byte: 1,
+  uint16: 2, 'uint16-be': 2, 'uint16-le': 2, word: 2, bcd2: 2,
+  uint32: 4, 'uint32-be': 4, 'uint32-le': 4, dword: 4,
+};
+const _mePrefixWidth = (type, stated) => {
+  const n = stated != null ? +stated : _ME_PREFIX_WIDTH[String(type || '').trim().toLowerCase()];
+  return Number.isInteger(n) && n >= 1 && n <= 4 ? n : null;
+};
+// bcd2 is the one shape _meDecodeLength does not know. It stays here rather
+// than being copied into each caller — the whole point of this function is that
+// there is one answer to "what number do these bytes mean".
+// Returns { bytes, written } — `written` is the number the message actually
+// spells, which is what the user sees in the row, and `bytes` is what every
+// bound downstream is measured in. They differ only under `count: digits`.
+function _meDecodeWireLen(bytes, type, count, enc) {
+  let n;
+  if (/^bcd2$/i.test(String(type || '').trim())) {
+    if (bytes.length < 2) return null;
+    n = (bytes[0] >> 4) * 1000 + (bytes[0] & 0xF) * 100
+      + (bytes[1] >> 4) *   10 + (bytes[1] & 0xF);
+  } else {
+    n = _meDecodeLength(bytes, String(type || '').trim() || null, enc);
   }
+  if (n == null) return null;
+  // `count: digits` — 74 hex digits of payload is 37 wire bytes. Converted once,
+  // here, so every bound downstream stays byte-based.
+  const digits = /^digits$/i.test(String(count || '').trim());
+  return { bytes: digits ? _meCharsToBytes(n) : n, written: n, digits };
 }
+
+// ── Block: read-length-prefix ───────────────────────────────────────────────
 
 function _meExecReadLengthPrefix(attrs, ctx) {
   if (!attrs || !attrs.prefix) {
@@ -28234,11 +28302,24 @@ function _meExecReadLengthPrefix(attrs, ctx) {
     return;
   }
   const start = ctx.cursor;
-  const { len: pLen, val: dataLen } = _meReadIntPrefix(ctx.bytes, start, attrs.prefix);
-  if (pLen === 0) {
+  const pLen  = _mePrefixWidth(attrs.prefix, attrs.prefix_len);
+  if (pLen == null) {
+    ctx.fields.push({ id: attrs.as || 'LEN-DATA',
+      error: `"${attrs.prefix}" does not say how many bytes the length occupies — add "prefix_len" (1-4)` });
+    return;
+  }
+  if (start + pLen > ctx.bytes.length) {
     ctx.fields.push({ id: attrs.as || 'LEN-DATA', error: `Cannot read ${attrs.prefix} prefix at offset ${start}` });
     return;
   }
+  const pBytes = Array.from(ctx.bytes.slice(start, start + pLen));
+  const N      = _meDecodeWireLen(pBytes, attrs.prefix, attrs.count, _meLenEncFor(attrs, ctx));
+  if (N == null) {
+    ctx.fields.push({ id: attrs.as || 'LEN-DATA',
+      error: `length prefix ${_meBytesToHex(pBytes)} is not a number when read as ${attrs.prefix}` });
+    return;
+  }
+  const dataLen   = N.bytes;
   const dataStart = start + pLen;
   let dataEnd = dataStart + dataLen;
   const sentinels = _meParseSentinels(attrs.sentinels);
@@ -28259,9 +28340,9 @@ function _meExecReadLengthPrefix(attrs, ctx) {
   ctx.cursor = dataEnd;
   const id = attrs.as || 'LEN-DATA';
   const f  = _meMakeSyntheticField(id, fBytes, dataStart, dataEnd - 1, ctx, {
-    description: `length-prefix ${attrs.prefix} (${dataLen} bytes)`,
+    description: `length-prefix ${attrs.prefix} (${N.digits ? `${N.written} digits = ${dataLen}` : dataLen} bytes)`,
   });
-  f.lenPrefix = String(dataLen);
+  f.lenPrefix = String(N.written);
   ctx.fields.push(f);
   ctx.fieldsById[id] = f;
 }
@@ -28758,17 +28839,25 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
   let fromWire  = false;      // did the length come off the message, or from the DDL?
 
   if (ovr.length_prefix != null) {
-    // A length on the wire that the DDL does not declare.
-    const lp = +ovr.length_prefix;
+    // A length on the wire that the DDL does not declare. A bare number is the
+    // width alone and leaves the encoding to auto-detect, as it always has; the
+    // object form states the same three things read-length-prefix does, so a
+    // hex-char DE length can be framed here too rather than only captured there.
+    const cfg = (ovr.length_prefix && typeof ovr.length_prefix === 'object')
+      ? ovr.length_prefix : { bytes: ovr.length_prefix };
+    const lp = +cfg.bytes;
     if (!Number.isInteger(lp) || lp <= 0) {
       ctx.fields.push({ id: errId, error: `DE ${de}: "length_prefix" must be a whole number of bytes above 0, got ${JSON.stringify(ovr.length_prefix)}` });
       return;
     }
     const pStart = ctx.cursor;
     const pBytes = Array.from(ctx.bytes.slice(pStart, pStart + lp));
-    const N = _meDecodeLength(pBytes, null, _meLenEncFor(entry, ctx));
-    if (N == null) {
-      ctx.fields.push({ id: errId, error: `DE ${de}: no bytes left to read the ${lp}-byte length from` });
+    const dec = _meDecodeWireLen(pBytes, cfg.type, cfg.count, _meLenEncFor(entry, ctx));
+    const N = dec && dec.bytes;
+    if (dec == null) {
+      ctx.fields.push({ id: errId, error: pBytes.length < lp
+        ? `DE ${de}: no bytes left to read the ${lp}-byte length from`
+        : `DE ${de}: length ${_meBytesToHex(pBytes)} is not a number when read as ${cfg.type}` });
       return;
     }
     ctx.cursor = pStart + lp;

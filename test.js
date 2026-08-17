@@ -9447,6 +9447,31 @@ test('the two main-page editors sit on the panel surface, like the table beside 
     "the Class Editor's Test input lost its well");
 });
 
+test('an unknown-token row lines up with every other row', () => {
+  // Reported: the column highlight lit the WRONG column on rows that say
+  // "No definition found". The row began at c-id — no c-num — and spanned two
+  // columns for the message, so every cell after it sat one place left, and the
+  // highlight selects with td:nth-child.
+  const i = html.indexOf('<tr class="tkn-body-row${tsel}');
+  assert.ok(i > 0, 'the unknown-token row is gone');
+  const row = html.slice(i, html.indexOf('</tr>', i));
+  assert.ok(!/colspan/.test(row), 'the row spans columns again, which shifts the ones after it');
+
+  // Its cells must be the header's columns, in the header's order.
+  const cells = [...row.matchAll(/<td class="(c-[a-z]+)"/g)].map(m => m[1]);
+  const heads = [...html.matchAll(/<th class="th-([a-z]+)"/g)].map(m => 'c-' + m[1]).slice(0, 8);
+  assert.deepStrictEqual(cells, heads,
+    `the row does not match the header column for column:\n  row: ${cells}\n  hdr: ${heads}`);
+
+  // The message reads over two lines instead of spanning two columns — which is
+  // what let the row keep its own FIELD and TYPE-LEN cells.
+  assert.ok(/No definition found<br>/.test(row), 'the message is back on one line');
+  assert.ok(/tkn-nodef-why/.test(row), 'the reason is not on its own line');
+  // The highlight picks by position, which is why the count and order matter.
+  assert.ok(/tbody td:nth-child\(\$\{i\}\)/.test(html),
+    'the column highlight no longer selects by position — this test guards the wrong thing');
+});
+
 test('the DDL panel is two cards, and draws no outline of its own', () => {
   // CHANGED ON PURPOSE: this used to require a top margin on each card and a
   // missing border wherever a card met the PANEL's own. Both existed to live

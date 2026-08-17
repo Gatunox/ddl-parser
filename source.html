@@ -2149,6 +2149,9 @@ td.c-err  { color: var(--accent2); }
 /* Holds the line open when there is nothing to say. Hidden, not absent, so it
    still occupies exactly one chip's height — see the comment where it is made. */
 .me-gap-spacer{visibility:hidden;}
+/* The second line of an unknown-token row: what it is, then why. Dimmer, so the
+   row still reads "No definition found" at a glance. */
+.tkn-nodef-why{color:var(--text-very-dim);}
 /* A value the row DOES have, beside the warnings for the ones it does not. Same
    pill, stated quietly: it is context, not a call to act. */
 .me-fact-chip { font-size: var(--sz-badge); padding: 0 5px; border-radius: var(--r-pill);
@@ -12322,8 +12325,14 @@ function renderFieldTable(msg) {
             onclick="selectField('${esc(tfid)}')"
             onmouseenter="hoverField('${esc(tfid)}')"
             onmouseleave="clearHover()">
+            <!-- Eight cells, like every other row. It used to start at c-id and
+                 span two columns for the message, which shifted every cell after
+                 it one place left — and the column highlight, which selects by
+                 td:nth-child, then lit the wrong column on this row alone. The
+                 message reads over two lines instead of spanning two columns. -->
+            <td class="c-num"></td>
             <td class="c-id">${esc(tkn.id)}</td>
-            <td class="c-desc" colspan="2" style="color:var(--text-dim)" title="${esc(tkn.error || '')}">No definition found — ${esc(tkn.error || `token ${tkn.id}`)}</td>
+            <td class="c-desc" style="color:var(--text-dim)" title="${esc(tkn.error || '')}">No definition found<br><span class="tkn-nodef-why">${esc(tkn.error || `token ${tkn.id}`)}</span></td>
             <td class="c-len">${tkn.rawBytes.length}</td>
             <td class="c-off">${tkn.dataStart != null ? tkn.dataStart + (tkn.rawBytes.length ? "–" + (tkn.dataStart + tkn.rawBytes.length - 1) : "") : ""}</td>
             <td class="c-val" style="word-break:break-all" title="${esc(val)}">${esc(val)}</td>
@@ -16480,7 +16489,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.2.2';
+const APP_VERSION  = '1.30.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

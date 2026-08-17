@@ -16489,7 +16489,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.3.0';
+const APP_VERSION  = '1.30.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19607,8 +19607,11 @@ const _PS_HELP = {
         ['<code>"55": {"field":…, "blocks":[…]}</code>', 'The same, and also say which element the bit maps to.'],
         ['<code>"field"</code>',  'Overrides which element this bit is. Without it the Overrides panel decides, as always.'],
         ['<code>"length"</code>', 'Bounds the element when the DDL\'s declared size is not the real one.'],
+        ['<code>"length_prefix"</code>', 'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it — read this many bytes of length, then frame the element to it. Those bytes are emitted as their own row.'],
         'Every other set bit is read exactly as before — listing one bit changes only that bit.',
-        'Names inside those blocks resolve <b>within that bit\'s element</b>: <code>"ARQC"</code> means <code>"EMV-ELEMENT.ARQC"</code>.',
+        '<b>The DDL need not declare the DE at all.</b> Whether an element is required is the <i>block\'s</i> business, exactly as at the top level of a spec: <code>read-length-prefix</code>, <code>read-fixed</code>, <code>read-until</code> and <code>read-to-end</code> name their own output through <code>as</code> and need nothing declared, so a proprietary DE that appears on the wire and nowhere in the DDL is parsed by describing it here. Blocks that <i>map onto</i> declared fields — <code>read</code>, <code>read-ddl</code>, <code>read-tlv</code> with tags — still need one, and say so themselves.',
+        'With no element, rows this block emits itself are named after the bit: <code>DE-58.LEN-PREFIX</code>.',
+        'Names inside those blocks resolve <b>within that bit\'s element</b>: <code>"ARQC"</code> means <code>"EMV-ELEMENT.ARQC"</code>. With no element they resolve against the DDL as a whole.',
       ]],
     ],
     examples: [
@@ -19626,6 +19629,17 @@ const _PS_HELP = {
                {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
                  "2": [{"read-fixed": {"length": 3, "as": "DE2-HEAD"}},
                        {"read-fixed": {"length": 3, "as": "DE2-REST"}}]}}}] },
+      // The case this exists for: a proprietary DE the DDL never declares. It
+      // used to be unparseable — the entry was refused for having no element
+      // before any of its blocks ran, and the DEs after it read from the wrong
+      // offset.
+      { what: '<b>de</b> on a DE the DDL never declares — bit 3 has no element, so the block describes it end to end: two length bytes, then that many bytes named by <code>as</code>',
+        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 DE-2 PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '60 00 00 00 00 00 00 00 41 42 43 44 00 03 58 59 5A',
+        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+               {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
+                 "3": [{"read-length-prefix": {"prefix": "uint16-be", "as": "USER-DATA"}}]}}}] },
       // PAD is DE-1 so the map can leave bit 1 clear — in ISO that bit means "a
       // secondary bitmap follows", and setting it would read 8 more bytes as map.
       { what: '<b>vlg_identifier</b> — this DDL calls its length leaf SIZE, so the built-in names would miss it and DE-2 would read its declared 20 bytes',
@@ -28716,14 +28730,22 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
                  : ovr.field ? ovr.field
                  : entry ? (entry.groupId || entry.def?.id || null)
                  : null;
-  if (!scopeId) {
-    ctx.fields.push({ id: `DE-${de}`, error:
-      `DE ${de} has a "de" entry but no element to read into — map it in Overrides, or give the entry a "field"` });
-    return;
-  }
+  // A DDL element is NOT required to run an entry. Whether one is needed is the
+  // block's business, and the blocks already say so themselves: `read` and
+  // `read-ddl` map bytes onto declared fields, while `read-length-prefix`,
+  // `read-fixed`, `read-until` and `read-to-end` name their own output through
+  // `as` and need nothing declared — which is exactly how they behave at the top
+  // level of a parse spec. A bit must mean the same thing in both places.
+  // Refusing here made the one case a "de" entry is most needed for — a DE that
+  // is on the wire but absent from the DDL — impossible to parse at all: the
+  // entry was rejected before a single block ran.
+  // `errId` only labels rows this function emits; it is deliberately NOT used as
+  // the scope, because an id no definition answers to would make short names
+  // inside the blocks resolve against a group that does not exist.
+  const errId  = scopeId || `DE-${de}`;
   const blocks = Array.isArray(ovr.blocks) ? ovr.blocks : [];
   if (!blocks.length) {
-    ctx.fields.push({ id: scopeId, error: `DE ${de}: "de" entry has no blocks to run` });
+    ctx.fields.push({ id: errId, error: `DE ${de}: "de" entry has no blocks to run` });
     return;
   }
   // ── Frame the element FIRST, then run the blocks inside that frame ─────────
@@ -28732,7 +28754,6 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
   // LEN. What a "de" entry replaces is only how the bytes inside are read. Doing
   // it the other way round would make each entry re-derive its own extent, and
   // one that got it wrong would eat the DEs that follow.
-  const kids = _meGroupLeaves(scopeId, ctx);
   let windowLen = null;
   let fromWire  = false;      // did the length come off the message, or from the DDL?
 
@@ -28740,25 +28761,25 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     // A length on the wire that the DDL does not declare.
     const lp = +ovr.length_prefix;
     if (!Number.isInteger(lp) || lp <= 0) {
-      ctx.fields.push({ id: scopeId, error: `DE ${de}: "length_prefix" must be a whole number of bytes above 0, got ${JSON.stringify(ovr.length_prefix)}` });
+      ctx.fields.push({ id: errId, error: `DE ${de}: "length_prefix" must be a whole number of bytes above 0, got ${JSON.stringify(ovr.length_prefix)}` });
       return;
     }
     const pStart = ctx.cursor;
     const pBytes = Array.from(ctx.bytes.slice(pStart, pStart + lp));
     const N = _meDecodeLength(pBytes, null, _meLenEncFor(entry, ctx));
     if (N == null) {
-      ctx.fields.push({ id: scopeId, error: `DE ${de}: no bytes left to read the ${lp}-byte length from` });
+      ctx.fields.push({ id: errId, error: `DE ${de}: no bytes left to read the ${lp}-byte length from` });
       return;
     }
     ctx.cursor = pStart + lp;
     ctx.fields.push({
-      id: `${scopeId}.LEN-PREFIX`, description: 'length prefix (on the wire, not declared in the DDL)',
+      id: `${errId}.LEN-PREFIX`, description: 'length prefix (on the wire, not declared in the DDL)',
       valueLength: lp, value: _meBytesToStr(pBytes), rawHex: _meBytesToHex(pBytes),
       startByte: pStart, endByte: pStart + lp - 1,
     });
     windowLen = N;
     fromWire  = true;
-  } else {
+  } else if (scopeId) {
     // The DDL declares the length: honour the same VLG configuration the default
     // DE walk uses, so a group is framed identically whether or not it has a
     // "de" entry.
@@ -28766,6 +28787,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     // transitive leaf would see EMV-ELEMENT.ARQC.LEN — a grandchild, and the
     // length of a TLV triple, not of the element — and read the first tag as a
     // length.
+    const kids   = _meGroupLeaves(scopeId, ctx);
     const direct = kids.filter(d => !d.id.slice(scopeId.length + 1).includes('.'));
     const vlg    = _meVlgLenMap(_meOvMergedItem(ctx));
     const lenId  = _meVlgHas(vlg, scopeId) ? (_meVlgGet(vlg, scopeId) || direct[0]?.id)
@@ -28790,6 +28812,12 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     } else {
       windowLen = ovr.length != null ? +ovr.length : _meDeclaredSize(scopeId, ctx);
     }
+  } else if (ovr.length != null) {
+    // No element, so nothing is declared to measure — but the entry may still
+    // state the extent by hand. Without one the window stays open and the DE
+    // ends wherever its blocks left the cursor, which is the whole point of a
+    // self-describing block like read-length-prefix.
+    windowLen = +ovr.length;
   }
 
   const start = ctx.cursor;
@@ -28800,7 +28828,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     // much the element could hold, and a message carrying fewer tags than the
     // DDL has room for is completely normal, so it is clamped in silence.
     if (fromWire)
-      ctx.fields.push({ id: scopeId, error: `DE ${de}: length ${windowLen} runs past the end of the message (${avail} byte(s) left)` });
+      ctx.fields.push({ id: errId, error: `DE ${de}: length ${windowLen} runs past the end of the message (${avail} byte(s) left)` });
     windowLen = avail;
   }
   const end = windowLen != null && windowLen > 0 ? start + windowLen : null;
@@ -28819,7 +28847,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
       // ends. Overrunning is reported and stops here rather than corrupting
       // every field that follows.
       if (ctx.cursor > end) {
-        ctx.fields.push({ id: scopeId, error: `DE ${de}: its blocks read ${ctx.cursor - end} byte(s) past the element's length — the message is malformed, or the length was misread` });
+        ctx.fields.push({ id: errId, error: `DE ${de}: its blocks read ${ctx.cursor - end} byte(s) past the element's length — the message is malformed, or the length was misread` });
       }
       ctx.cursor = end;
     }

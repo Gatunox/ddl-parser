@@ -5613,6 +5613,135 @@ test('a "de" entry cannot read past its element into the next DE', () => {
   eq(ctx.cursor, 12, 'and the cursor resumes at the element boundary (8 + 4), so the next DE lines up');
 });
 
+// ── A DE that is on the wire but absent from the DDL ────────────────────────
+// Reported from a customized HPDH: DE-55 parsed as TLV, then a proprietary
+// DE-58 the DDL never declares. A "de" entry of read-length-prefix describes it
+// completely — the length is on the wire and "as" names the payload — but the
+// entry was refused before a single block ran, so the DE could not be parsed at
+// all and every DE after it read from the wrong offset.
+//
+// The rule the engine must follow: whether a DDL element is needed is the
+// BLOCK's business, not the entry's. read-length-prefix / read-fixed /
+// read-to-end name their own output and need nothing declared, exactly as they
+// do at the top level of a parse spec. A bit means the same thing in both places.
+const UNMAPPED_DE_DDL = `DEF REC.
+  02 BITMAP     PIC X(8).
+  02 DE2-PAN    PIC X(4).
+  02 DE4-TAIL   PIC X(2).
+END REC.
+`;
+// bits 2, 3 and 4 set. DE-2 = "1234"; DE-3 = a 2-byte length (0003) + AA BB CC,
+// declared nowhere; DE-4 = "ZZ". DE-4 is the witness: it can only land if DE-3
+// consumed exactly its own bytes.
+const UNMAPPED_DE_BYTES = Uint8Array.from([
+  0x70, 0, 0, 0, 0, 0, 0, 0,
+  0x31, 0x32, 0x33, 0x34,
+  0x00, 0x03, 0xAA, 0xBB, 0xCC,
+  0x5A, 0x5A,
+]);
+function unmappedDeRun(deMap, bytes) {
+  S.ddlTree = { V: { S: { D: UNMAPPED_DE_DDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    // DE-3 is deliberately left with no element: 2 and 4 are anchored around it.
+    de_map: [{ field: 'DE2-PAN', de: 2 }, { field: 'DE4-TAIL', de: 4 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: deMap } },
+    ] }, bytes || UNMAPPED_DE_BYTES);
+}
+
+test('a DE absent from the DDL is still refused when nothing says how to read it', () => {
+  const ctx = unmappedDeRun({});
+  const err = ctx.fields.find(f => f.id === 'DE-3');
+  assert.ok(err && /No DDL field mapped/.test(err.error || ''),
+    `an unmapped DE with no "de" entry is still an error, got ${JSON.stringify(ctx.fields.map(f => f.id))}`);
+});
+
+test('a "de" entry parses a DE the DDL never declares', () => {
+  const ctx = unmappedDeRun({
+    '3': [{ 'read-length-prefix': { prefix: 'uint16-be', as: 'CUSTOM-PAYLOAD' } }] });
+  eq(ctx.fields.filter(f => f.error).length, 0,
+    `nothing may error, got ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  const pay = ctx.fields.find(f => f.id === 'CUSTOM-PAYLOAD');
+  assert.ok(pay, `the block's own "as" names the payload, got ${JSON.stringify(ctx.fields.map(f => f.id))}`);
+  eq(pay.rawHex, 'AABBCC', 'and it holds the payload, not the length bytes');
+});
+
+test('the DEs after an undeclared one still line up', () => {
+  // The whole cost of the old refusal: the cursor never moved past DE-3, so
+  // DE-4 read DE-3's length bytes. Asserting the payload alone would not catch
+  // a block that reads the right bytes and leaves the cursor wrong.
+  const ctx = unmappedDeRun({
+    '3': [{ 'read-length-prefix': { prefix: 'uint16-be', as: 'CUSTOM-PAYLOAD' } }] });
+  const tail = ctx.fields.find(f => f.id === 'DE4-TAIL');
+  assert.ok(tail, `DE-4 must still be read, got ${JSON.stringify(ctx.fields.map(f => f.id))}`);
+  eq(tail.rawHex, '5A5A', 'DE-4 lands on its own bytes');
+  eq(tail.startByte, 17, 'at the offset that follows DE-3 exactly');
+  eq(ctx.cursor, 19, 'and the message is consumed to the end');
+});
+
+test('length_prefix frames an undeclared DE and names its rows after the bit', () => {
+  const ctx = unmappedDeRun({
+    '3': { length_prefix: 2, blocks: [{ 'read-fixed': { length: 3, as: 'CUSTOM-PAYLOAD' } }] } });
+  const lp = ctx.fields.find(f => f.id === 'DE-3.LEN-PREFIX');
+  assert.ok(lp, `with no element to name it, the length row falls back to the bit: ${JSON.stringify(ctx.fields.map(f => f.id))}`);
+  eq(lp.rawHex, '0003', 'the length bytes are emitted as their own row');
+  eq(ctx.fields.find(f => f.id === 'CUSTOM-PAYLOAD').rawHex, 'AABBCC', 'and the payload follows it');
+  eq(ctx.fields.filter(f => f.error).length, 0, 'with nothing reported');
+  eq(ctx.fields.find(f => f.id === 'DE4-TAIL').startByte, 17, 'so DE-4 lines up');
+});
+
+test('a block that over-reads an undeclared DE is reported and clamped', () => {
+  // The frame is the engine's, not the block's: read-to-end does not consult the
+  // window (only read-tlv does), so it swallows DE-4 as well. The entry must say
+  // so and put the cursor back, exactly as it does for a DE that IS declared.
+  const ctx = unmappedDeRun({
+    '3': { length_prefix: 2, blocks: [{ 'read-to-end': { as: 'GREEDY' } }] } });
+  eq(ctx.fields.find(f => f.id === 'GREEDY').rawHex, 'AABBCC5A5A', 'the block over-read');
+  assert.ok(ctx.fields.some(f => f.id === 'DE-3' && /past the element's length/.test(f.error || '')),
+    `the overrun is reported against the bit, got ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  eq(ctx.fields.find(f => f.id === 'DE4-TAIL').startByte, 17,
+    'and the cursor is put back, so DE-4 still lands on its own bytes');
+});
+
+test('an explicit length still bounds an undeclared DE', () => {
+  // read-to-end deliberately, not read-fixed: a block that reads its own stated
+  // length would land on the right bytes whether or not the window existed, so
+  // it cannot tell a working frame from a missing one. This one runs to the end
+  // of the message unless the entry stops it.
+  const ctx = unmappedDeRun({
+    '3': { length: 5, blocks: [{ 'read-to-end': { as: 'ALL-OF-IT' } }] } });
+  assert.ok(ctx.fields.some(f => f.id === 'DE-3' && /past the element's length/.test(f.error || '')),
+    `the window must cut the block off, got ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  eq(ctx.fields.find(f => f.id === 'DE4-TAIL').startByte, 17,
+    'the cursor resumes at 12 + 5, so DE-4 lands on its own bytes');
+  eq(ctx.cursor, 19, 'and the message is consumed exactly');
+});
+
+test('a block that needs an element raises that itself, not the entry', () => {
+  // The requirement belongs to the block. read-tlv maps tags onto declared
+  // elements, so it must still complain — but with its own message, naming the
+  // element it could not find, rather than the entry being refused wholesale.
+  // DE-3 is 9F26 02 AA BB here: well-formed BER, so the only thing that can fail
+  // is the element lookup.
+  const bytes = Uint8Array.from([
+    0x70, 0, 0, 0, 0, 0, 0, 0,
+    0x31, 0x32, 0x33, 0x34,
+    0x9F, 0x26, 0x02, 0xAA, 0xBB,
+    0x5A, 0x5A,
+  ]);
+  const ctx = unmappedDeRun({
+    '3': { length: 5, blocks: [{ 'read-tlv': { ber: true, tags: { '9F26': { field: 'NOPE' } } } }] } },
+    bytes);
+  const err = ctx.fields.find(f => f.error);
+  assert.ok(err && /not found in the DDL/.test(err.error),
+    `the block reports the missing element, got ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  assert.ok(!ctx.fields.some(f => /no element to read into/.test(f.error || '')),
+    'and the entry-level refusal is gone');
+  eq(ctx.fields.find(f => f.id === 'DE4-TAIL').startByte, 17, 'DE-4 is unaffected');
+});
+
 test('unknown tags follow the stated policy', () => {
   const emit = emvRun({ ber: true, tags: {}, unknown: 'emit' });
   assert.ok(emit.fields.some(f => /\.9F26$/.test(f.id)), 'emit keeps unmapped tags as their own rows');

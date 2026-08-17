@@ -237,6 +237,7 @@ _t.P                  = P;
 // calls. renderFieldTable mutates the fields it is given, so the override
 // behaviour is observable without inspecting the HTML it returns.
 _t.renderFieldTable   = renderFieldTable;
+_t.escSpaces          = escSpaces;
 _t.meTestFieldTable   = _meTestFieldTable;
 _t.meOvEffectiveLen   = _meOvEffectiveLen;
 _t.meCanonSet         = _meCanonSet;
@@ -307,7 +308,7 @@ const {
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
   meComputeAutoOrderAnchors, getDDLFromPath, S, P,
   meWalkDEFields: _rawWalkDEFields,
-  renderFieldTable, meTestFieldTable, meOvEffectiveLen, expMsgLines, expWrapCell,
+  renderFieldTable, meTestFieldTable, escSpaces, meOvEffectiveLen, expMsgLines, expWrapCell,
   meCanonSet, meVlgLenMap, meRowsForOverride, meNextSelection,
   netardExtractBytes, detectNetardFmt, buildInputHLRanges, isParseOverride, parseOverrideScope,
   toggleParseOverride, getDDLsForScope, meReadApplyTypeOverride, setSpecLookup: _rawSetSpecLookup, auditBeginLoad,
@@ -12482,6 +12483,50 @@ test('Reset Layout actually clears what it should, and keeps what it must', () =
 
   for (const k of Object.keys(store)) store.removeItem(k);
   for (const k in before) store.setItem(k, before[k]);
+});
+
+// ── Padding is visible in the Value column ──────────────────────────────────
+// Reported: TERM0001 padded to its declared 16 bytes is unmistakable in Raw Hex
+// and identical to TERM0001 in the Value column, because a space renders as
+// nothing. The cell is white-space: pre-wrap, so the spaces were always THERE —
+// just invisible, which is worse than absent: the row looks like a shorter field.
+console.log('\nspaces are visible in the Value column');
+
+test('a space renders as a middle dot', () => {
+  eq(escSpaces('AB CD'), 'AB<span class="c-sp" title="space (0x20)">&#xB7;</span>CD',
+    'the space becomes a dot span, the rest is untouched');
+  eq(escSpaces('TERM0001  ').split('c-sp').length - 1, 2, 'one span per space, so they can be counted');
+  eq(escSpaces(''), '', 'empty stays empty');
+  eq(escSpaces(null), '', 'and a missing value does not print "null"');
+});
+
+test('the dot does not weaken escaping', () => {
+  // The old call site was esc(val); if the replacement stopped escaping, a value
+  // carrying markup would render as markup.
+  eq(escSpaces('<b>&"'), '&lt;b&gt;&amp;&quot;', 'every character still goes through esc');
+  assert.ok(!/[<>]/.test(escSpaces('a<b').replace(/<span[^>]*>|<\/span>/g, '')),
+    'no raw angle bracket survives');
+});
+
+test('the class is a parameter, so the Test table reuses one implementation', () => {
+  eq(escSpaces('a b', 'me-test-fsp').includes('class="me-test-fsp"'), true,
+    'the Class Editor keeps its own styling');
+  const src = psFnSource('_meTestFmtVal');
+  assert.ok(/escSpaces\(/.test(src) && !/ch === ' '/.test(src),
+    'and stops carrying its own copy of the loop');
+});
+
+test('a padded value shows its padding in the results table', () => {
+  const msg = { bytes: [], tokens: [], fields: [
+    { id: 'TERM', value: 'TERM0001        ', rawHex: '5445524D30303031' + '20'.repeat(8),
+      startByte: 0, endByte: 15, valueLength: 16 },
+  ] };
+  const html = renderResTable(msg);
+  const cell = html.slice(html.indexOf('TERM0001'), html.indexOf('TERM0001') + 900);
+  eq((cell.match(/class="c-sp"/g) || []).length, 8,
+    'all eight pad bytes are countable in the cell');
+  assert.ok(html.includes('data-tip="TERM0001        "'),
+    'while the tooltip still carries the real characters');
 });
 
 // ── The DE-nn badge under the parse-spec engine ─────────────────────────────

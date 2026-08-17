@@ -1410,6 +1410,7 @@ tbody td { padding: 0 6px; height: var(--row-h); vertical-align: middle; font-si
 td.c-num { color: var(--text-very-dim); text-align: right; min-width: 28px; padding-right: 8px; font-variant-numeric: tabular-nums; user-select: none; }
 td.c-id   { color: var(--text); font-weight: 700; white-space: nowrap; }
 td.c-desc { color: var(--text-dim); }
+.c-sp { opacity: .38; user-select: none; }
 td.c-val  { color: var(--success); word-break: break-all; text-overflow: clip; overflow: visible; white-space: pre-wrap; }
 /* Value whose bytes don't match the field's data type — invalid for the type
    (e.g. "X" in a PIC 9) or a "?" placeholder in a binary field. */
@@ -12161,7 +12162,7 @@ function renderFieldTable(msg) {
       <td class="c-desc">GROUP</td>
       <td class="c-len">${size}</td>
       <td class="c-off">${span}</td>
-      <td class="c-val"><span class="grp-val">${esc(val)}</span></td>
+      <td class="c-val"><span class="grp-val">${escSpaces(val)}</span></td>
       <td class="c-raw"></td>
       <td class="c-trk"></td>
     </tr>`;
@@ -12316,7 +12317,7 @@ function renderFieldTable(msg) {
       <td class="c-desc" title="${esc(descTip)}">${descHtml}${errLine}${det}</td>
       <td class="c-len">${lenCell}</td>
       <td class="c-off">${offCell}</td>
-      <td class="${ecls}" data-tip="${esc(f.value)}">${prefixHtml}${esc(val)}</td>
+      <td class="${ecls}" data-tip="${esc(f.value)}">${prefixHtml}${escSpaces(val)}</td>
       <td class="c-raw" data-tip="${esc(f.rawHex||'')}">${rHex}</td>
       <td class="c-trk" style="text-align:center">
         <input type="checkbox" class="trk-chk" ${trk}
@@ -12362,7 +12363,7 @@ function renderFieldTable(msg) {
             <td class="c-desc" style="color:var(--text-dim)" title="${esc(tkn.error || '')}">No definition found<br><span class="tkn-nodef-why">${esc(tkn.error || `token ${tkn.id}`)}</span></td>
             <td class="c-len">${tkn.rawBytes.length}</td>
             <td class="c-off">${tkn.dataStart != null ? tkn.dataStart + (tkn.rawBytes.length ? "–" + (tkn.dataStart + tkn.rawBytes.length - 1) : "") : ""}</td>
-            <td class="c-val" style="word-break:break-all" title="${esc(val)}">${esc(val)}</td>
+            <td class="c-val" style="word-break:break-all" title="${esc(val)}">${escSpaces(val)}</td>
             <td class="c-raw" data-tip="${esc(tknRaw)}">${esc(tknRHex)}</td>
             <td class="c-trk"></td>
           </tr>`;
@@ -16533,7 +16534,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.2.0';
+const APP_VERSION  = '1.32.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17541,6 +17542,24 @@ function initDropZones() {
 function esc(s) {
   if (s == null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// A space is invisible, so a field padded to its declared width looks like it
+// ends where its text does: TERM0001 followed by eight pad bytes is unmistakable
+// in Raw Hex and identical to TERM0001 in the Value column. Every space is drawn
+// as a middle dot — one character wide in a monospace column, so the padding can
+// be counted against the Size the row already states.
+//
+// A rendering only: the field's value, the row's tooltip, the search index and
+// Export all keep the real character, and user-select:none on the dot keeps a
+// copied value free of the substitute.
+//
+// The Class Editor's Test table has done this since it was written; the main
+// results table — the surface people actually read a parse from — did not.
+function escSpaces(s, cls = 'c-sp') {
+  return String(s ?? '').split('').map(ch =>
+    ch === ' ' ? `<span class="${cls}" title="space (0x20)">&#xB7;</span>` : esc(ch)
+  ).join('');
 }
 
 // level: 'info'/'ok' (green, 10 s) | 'warn' (yellow, 20 s) | 'error' (red, 30 s)
@@ -31114,9 +31133,7 @@ function _meTestSection(title, color, body, badge) {
 
 function _meTestFmtVal(raw) {
   const s = String(raw).slice(0, 120);
-  const inner = s.split('').map(ch =>
-    ch === ' ' ? '<span class="me-test-fsp" title="space (0x20)">&#xB7;</span>' : _escHtml(ch)
-  ).join('');
+  const inner = escSpaces(s, 'me-test-fsp');
   return `<span class="me-test-fbracket">[</span>${inner}<span class="me-test-fbracket">]</span>`;
 }
 

@@ -5717,6 +5717,15 @@ test('an explicit length still bounds an undeclared DE', () => {
   eq(ctx.fields.find(f => f.id === 'DE4-TAIL').startByte, 17,
     'the cursor resumes at 12 + 5, so DE-4 lands on its own bytes');
   eq(ctx.cursor, 19, 'and the message is consumed exactly');
+
+  // The other direction, which over-reading cannot test: a block that reads
+  // LESS than the stated length. "length" says what the DE IS, so the DE still
+  // occupies all 5 and DE-4 still starts at 17 — unlike a DDL declared size,
+  // which is only capacity and must not move the cursor at all.
+  const short = unmappedDeRun({
+    '3': { length: 5, blocks: [{ 'read-fixed': { length: 2, as: 'PART' } }] } });
+  eq(short.fields.find(f => f.id === 'DE4-TAIL').startByte, 17,
+    'a stated length is the extent even when the blocks read only part of it');
 });
 
 test('a block that needs an element raises that itself, not the entry', () => {
@@ -7222,6 +7231,131 @@ test('hovering a field with an absurd span does not lock the tab', () => {
     S.messages = saved.m; S.curIdx = saved.i;
     S.selFieldId = saved.sel; S.hoverFieldId = saved.hov;
   }
+});
+
+test('hovering a row that occupies no bytes highlights none', () => {
+  // Reported: an error row reading "Cannot read hex-char prefix at offset 344"
+  // lit up the FIRST byte of the message on hover. An error carries no offsets,
+  // and `f.startByte | 0` turned the absent one into 0 — so the highlight
+  // pointed at bytes that had nothing to do with the failure.
+  const map = Array.from({ length: 64 }, (_, i) => ({ s: i, e: i + 1 }));
+  const saved = { m: S.messages, i: S.curIdx, sel: S.selFieldId, hov: S.hoverFieldId };
+  try {
+    for (const [what, fld] of [
+      ['an error row',            { id: 'ERR', error: 'Cannot read hex-char prefix at offset 344' }],
+      ['a field that took none',  { id: 'ERR', startByte: null, endByte: null, value: '', rawHex: '' }],
+    ]) {
+      S.messages = [{ fields: [fld], byteCharMap: map }];
+      S.curIdx = 0; S.selFieldId = 'ERR'; S.hoverFieldId = null;
+      deepEq(buildInputHLRanges(), [], `${what} highlights nothing`);
+    }
+    // And a real span still highlights — the guard must not blank the feature.
+    S.messages = [{ fields: [{ id: 'OK', startByte: 2, endByte: 3, value: '', rawHex: '' }], byteCharMap: map }];
+    S.curIdx = 0; S.selFieldId = 'OK';
+    assert.ok(buildInputHLRanges().length > 0, 'a real field still highlights');
+  } finally {
+    S.messages = saved.m; S.curIdx = saved.i;
+    S.selFieldId = saved.sel; S.hoverFieldId = saved.hov;
+  }
+});
+
+// ── A DDL declared size is capacity, not the DE's extent ────────────────────
+// Reported from the customized HPDH: DE-55 mapped to a 138-byte group whose TLV
+// really ran shorter. The "de" entry framed the DE by the DDL's declared size
+// and then forced the cursor to the end of it, so every later DE read late and
+// DE-58 fell off the end of the message entirely. A declared size says how much
+// an element CAN hold; only a length off the wire, or one written by hand, says
+// how much this message put there.
+test('a DE framed only by its declared size ends where its blocks stopped', () => {
+  const ddl = `DEF REC.
+  02 PRI-BIT-MAP  PIC X(8).
+  02 PAN          PIC X(4).
+  02 EMV-DATA     PIC X(40).
+  02 TAIL         PIC X(4).
+END REC.
+`;
+  // DE-3's blocks consume 10 bytes of the 40 the DDL allows. DE-4 follows
+  // immediately — it is the witness, and it used to disappear completely.
+  const bytes = Uint8Array.from([
+    0x70, 0, 0, 0, 0, 0, 0, 0,
+    0x31, 0x32, 0x33, 0x34,
+    0x00, 0x08, ...Array.from({ length: 8 }, () => 0x41),
+    0x54, 0x41, 0x49, 0x4C,
+  ]);
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'PAN', de: 2 }, { field: 'EMV-DATA', de: 3 }, { field: 'TAIL', de: 4 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'PRI-BIT-MAP', de: {
+          '3': [{ 'read-length-prefix': { prefix: 'uint16-be', as: 'USER-DATA' } }] } } },
+    ] }, bytes);
+  const tail = ctx.fields.find(f => f.id === 'TAIL');
+  assert.ok(tail, `DE-4 must still be read, got ${JSON.stringify(ctx.fields.map(f => f.id))}`);
+  eq(tail.startByte, 22, 'it starts where DE-3 actually stopped, not at 12 + 40');
+  eq(tail.rawHex, '5441494C', 'and lands on its own bytes');
+});
+
+test('a stated length outranks the declared size on a mapped DE', () => {
+  // The element declares 40 and the entry says 20. The DDL number is capacity,
+  // the stated one is the extent — so DE-4 starts at 12 + 20 even though the
+  // block inside read only 4 bytes.
+  const ddl = `DEF REC.
+  02 PRI-BIT-MAP  PIC X(8).
+  02 PAN          PIC X(4).
+  02 EMV-DATA     PIC X(40).
+  02 TAIL         PIC X(4).
+END REC.
+`;
+  const bytes = Uint8Array.from([
+    0x70, 0, 0, 0, 0, 0, 0, 0,
+    0x31, 0x32, 0x33, 0x34,
+    ...Array.from({ length: 20 }, () => 0x41),
+    0x54, 0x41, 0x49, 0x4C,
+  ]);
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'PAN', de: 2 }, { field: 'EMV-DATA', de: 3 }, { field: 'TAIL', de: 4 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'PRI-BIT-MAP', de: {
+          '3': { length: 20, blocks: [{ 'read-fixed': { length: 4, as: 'PART' } }] } } } },
+    ] }, bytes);
+  eq(ctx.fields.find(f => f.id === 'TAIL')?.startByte, 32,
+    'DE-4 starts after the stated 20, not after the 4 the block read');
+});
+
+test('a wire length still fixes the extent exactly', () => {
+  // The other half: length_prefix states what the DE IS, so the next DE starts
+  // at the end of it even when the blocks read less. Without this the fix above
+  // would have made every window advisory.
+  const ddl = `DEF REC.
+  02 BITMAP   PIC X(8).
+  02 DE2-PAN  PIC X(4).
+  02 DE3-BLOB PIC X(4).
+  02 DE4-TAIL PIC X(2).
+END REC.
+`;
+  const bytes = Uint8Array.from([
+    0x70, 0, 0, 0, 0, 0, 0, 0,
+    0x31, 0x32, 0x33, 0x34,
+    0x00, 0x0A, ...Array.from({ length: 10 }, () => 0x41),
+    0x5A, 0x5A,
+  ]);
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'DE2-PAN', de: 2 }, { field: 'DE3-BLOB', de: 3 }, { field: 'DE4-TAIL', de: 4 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: {
+          // The wire says 10 bytes; the block deliberately reads only 4 of them.
+          '3': { length_prefix: 2, blocks: [{ 'read-fixed': { length: 4, as: 'PART' } }] } } } },
+    ] }, bytes);
+  eq(ctx.fields.find(f => f.id === 'DE4-TAIL')?.startByte, 24,
+    'DE-4 starts after all 10 wire bytes (12 + 2 + 10), not after the 4 that were read');
 });
 
 // ── The declared size is the MAXIMUM, not a default to discard ──────────────

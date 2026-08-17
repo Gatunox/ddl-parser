@@ -12802,6 +12802,12 @@ function clearHover() {
 
 // ---- Message Input overlay highlighting ----
 // Collects highlight ranges for the selected/hovered field from the byte-char map.
+// A row that occupies no bytes must highlight none. `f.startByte | 0` turns the
+// absent offset of an error row — or of a field that took 0 bytes — into 0, so
+// hovering "Cannot read hex-char prefix at offset 344" lit up the FIRST byte of
+// the message, pointing at bytes that have nothing to do with the failure.
+const _meHasByteSpan = f => f && f.startByte != null && f.endByte != null;
+
 function _buildInputHLRanges() {
   const msg = S.messages?.[S.curIdx];
   if (!msg?.byteCharMap?.length) return [];
@@ -12809,7 +12815,7 @@ function _buildInputHLRanges() {
   const addRange = (fid, color) => {
     if (!fid) return;
     const f = findField(msg, fid);
-    if (!f) return;
+    if (!_meHasByteSpan(f)) return;
     let run = null, asciiRun = null;
     // Bounded by the MAP, not by what the field claims. A field whose endByte
     // runs past the message — a large "bytes" override, or a length read off the
@@ -12849,7 +12855,7 @@ function _buildAuditPopupHLRanges() {
   const addRange = (fid, color) => {
     if (!fid) return;
     const f = findField(msg, fid);
-    if (!f) return;
+    if (!_meHasByteSpan(f)) return;
     let run = null;
     const _first = Math.max(0, f.startByte | 0);
     const _last  = Math.min(f.endByte | 0, _auditPopupByteCharMap.length - 1);
@@ -16489,7 +16495,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.30.5.0';
+const APP_VERSION  = '1.30.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19629,7 +19635,8 @@ const _PS_HELP = {
         ['<code>"55": [blocks]</code>',              'Read bit 55 with those blocks.'],
         ['<code>"55": {"field":…, "blocks":[…]}</code>', 'The same, and also say which element the bit maps to.'],
         ['<code>"field"</code>',  'Overrides which element this bit is. Without it the Overrides panel decides, as always.'],
-        ['<code>"length"</code>', 'Bounds the element when the DDL\'s declared size is not the real one.'],
+        ['<code>"length"</code>', 'Bounds the element when the DDL\'s declared size is not the real one. The DE then occupies exactly this many bytes, so the next one starts at the end of it whatever the blocks read.'],
+        'Where the next DE starts: a length <b>off the wire</b> (<code>length_prefix</code>, or a VLG LEN) and a <code>length</code> you write both state what the DE <i>is</i>, so the DE ends there. The DDL\'s <b>declared size</b> states only what the element <i>can hold</i> — a message putting less in it is ordinary — so the DE ends where its blocks stopped. Reading past any of them is reported and stops at the boundary.',
         ['<code>"length_prefix"</code>', 'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it — read this many bytes of length, then frame the element to it. Those bytes are emitted as their own row. This <b>frames</b> the whole entry, so every block in it shares the one window; <code>read-length-prefix</code> instead <b>captures</b> the payload as a single row.'],
         ['<code>{"bytes": 2, "type": "hex-char"}</code>', 'The same, with the encoding stated. A bare <code>2</code> leaves it to auto-detect, which cannot tell <code>00 74</code> meaning 74 from the same bytes meaning 116. <code>"count": "digits"</code> works here too.'],
         'Every other set bit is read exactly as before — listing one bit changes only that bit.',
@@ -28837,6 +28844,13 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
   // one that got it wrong would eat the DEs that follow.
   let windowLen = null;
   let fromWire  = false;      // did the length come off the message, or from the DDL?
+  // Does the window state the DE's ACTUAL extent, or only the room it could
+  // occupy? A length off the wire and a "length" written by hand both say what
+  // the DE really is, so the next DE starts at the end of it whatever the blocks
+  // read. A DDL declared size says only how much the element can hold — a
+  // message carrying less is completely ordinary — so it must not decide where
+  // the next DE begins.
+  let exact = false;
 
   if (ovr.length_prefix != null) {
     // A length on the wire that the DDL does not declare. A bare number is the
@@ -28868,6 +28882,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     });
     windowLen = N;
     fromWire  = true;
+    exact     = true;
   } else if (scopeId) {
     // The DDL declares the length: honour the same VLG configuration the default
     // DE walk uses, so a group is framed identically whether or not it has a
@@ -28898,8 +28913,10 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
       ctx.fieldsById[lenDef.id] = lf;
       windowLen = N == null ? 0 : N;
       fromWire  = true;
+      exact     = true;
     } else {
       windowLen = ovr.length != null ? +ovr.length : _meDeclaredSize(scopeId, ctx);
+      exact     = ovr.length != null;
     }
   } else if (ovr.length != null) {
     // No element, so nothing is declared to measure — but the entry may still
@@ -28907,6 +28924,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     // ends wherever its blocks left the cursor, which is the whole point of a
     // self-describing block like read-length-prefix.
     windowLen = +ovr.length;
+    exact     = true;
   }
 
   const start = ctx.cursor;
@@ -28931,14 +28949,22 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     ctx._deScope = prevScope;
     ctx._deLimit = prevLimit;
     if (end != null) {
-      // The boundary is enforced by the engine, not by the spec author getting
-      // it right: whatever the blocks did, the next DE starts where this one
-      // ends. Overrunning is reported and stops here rather than corrupting
-      // every field that follows.
+      // Overrunning is always reported and always stops here, whatever the
+      // window was: reading past the room an element has is malformed either
+      // way, and letting it through corrupts every field that follows.
       if (ctx.cursor > end) {
         ctx.fields.push({ id: errId, error: `DE ${de}: its blocks read ${ctx.cursor - end} byte(s) past the element's length — the message is malformed, or the length was misread` });
+        ctx.cursor = end;
+      } else if (exact) {
+        // The window stated the DE's real extent, so the DE occupies all of it
+        // and the next one starts at its end even if the blocks read less.
+        ctx.cursor = end;
       }
-      ctx.cursor = end;
+      // Otherwise the window was the DDL's DECLARED SIZE — capacity, not extent.
+      // The cursor stays where the blocks left it. Forcing it to the capacity
+      // end silently swallowed every DE that followed: a DE-55 declared 138
+      // bytes whose TLV really ran 104 pushed DE-56 thirty-four bytes late, and
+      // the drift compounded until a later DE fell off the end of the message.
     }
   }
 }

@@ -6766,6 +6766,22 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       const entry = findTokenDDL(ddlName, preferredVol, isISO);
       if (entry) {
         fields = parseMessage(dataBytes, entry.defs);
+        // parseMessage walks the token's OWN buffer, so every offset it returns
+        // starts at 0. Rebased onto the message here, because those offsets are
+        // read as message positions everywhere downstream: the Offset column
+        // showed 0–33 for a token sitting at 300, and hovering one of its fields
+        // highlighted the first bytes of the record. An unrecognised token
+        // already reports its true position — the two disagreed only because a
+        // recognised one goes through this second parse.
+        //
+        // endByte is clamped to the token's own last byte: a field declared
+        // wider than the token carries has its declared width in endByte, and
+        // rebasing that unclamped would run the highlight into the NEXT token.
+        const _tokLast = dataStart + dataBytes.length - 1;
+        for (const f of fields) {
+          if (f.startByte != null) f.startByte += dataStart;
+          if (f.endByte   != null) f.endByte = Math.min(f.endByte + dataStart, _tokLast);
+        }
         ddlPath = entry.path;
         resolvedName = ddlName;
       }
@@ -16544,7 +16560,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.4.0';
+const APP_VERSION  = '1.32.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

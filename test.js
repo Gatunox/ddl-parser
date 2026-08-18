@@ -12751,6 +12751,61 @@ test('a binary token whose payload STARTS with a space keeps it', () => {
     'the leading 20 is part of the value, not a header delimiter');
 });
 
+// A token whose id resolves to a DDL is parsed a SECOND time, against its own
+// buffer — so every offset that walk returns starts at 0. Reported: the Offset
+// column showed 0–33 for a token sitting at byte 300, while an UNRECOGNISED
+// token beside it correctly showed 300–316. The same relative offsets drive the
+// hover highlight, so hovering a recognised token's field lit up the start of
+// the record.
+const TOKMAP = '"B8" = TB8TKN\n"P6" = TP6TKN\n';
+const TOKDDL = 'DEF TB8TKN.\n  02 DATA PIC X(34).\nEND TB8TKN.\n';
+
+function isoTokRun(toks) {
+  const area = isoArea(toks);
+  const len  = _ch(String(area.length).padStart(4, '0'));
+  const bytes = Uint8Array.from([
+    0x40,0,0,0,0,0,0,0x03, ...(_ch('1234')),
+    ...len, ...area, 0x5A, 0x5A,
+  ]);
+  S.ddlTree = { V: { S: { D: DETOK_DDL, TOKENMAP: TOKMAP, TB8TKN: TOKDDL } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'ISO', type: 'ISO', ddl_bindings: ['V/S/D/REC'],
+    de_map: [{ field: 'PAN', de: 2 }, { field: 'ADD-DATA', de: 63 }, { field: 'TAIL', de: 64 }],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', length: 8 } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '63': [{ 'token-area': 'ANY' }] } } },
+    ] }, bytes);
+}
+
+test('a recognised token resolves against its DDL', () => {
+  // Guard for the two tests below: if the map or the DDL stopped resolving they
+  // would pass by testing an empty field list.
+  const ctx = isoTokRun([['B8', 'ROUTED']]);
+  const t = ctx.tokens[0];
+  eq(t.ddlName, 'TB8TKN', 'the id resolved through the token map');
+  assert.ok(t.fields.length, 'and produced sub-fields to check');
+});
+
+test('a recognised token\'s fields carry MESSAGE offsets, not buffer offsets', () => {
+  const ctx = isoTokRun([['B8', 'ROUTED']]);
+  const t = ctx.tokens[0];
+  const f = t.fields[0];
+  eq(f.startByte, t.dataStart,
+    `the first field starts where the token's data does (${t.dataStart}), not at 0`);
+  assert.ok(f.startByte > 20, 'and is nowhere near the start of the record');
+});
+
+test('a field declared wider than the token cannot run past it', () => {
+  // TB8TKN declares PIC X(34) but the token carries 6 bytes. Rebasing the
+  // declared end unclamped would put the highlight inside the NEXT token.
+  const ctx = isoTokRun([['B8', 'ROUTED'], ['P6', '190920']]);
+  const [b8, p6] = ctx.tokens;
+  const f = b8.fields[0];
+  eq(f.endByte, b8.dataStart + b8.rawBytes.length - 1,
+    'the field ends at the token\'s last byte');
+  assert.ok(f.endByte < p6.headerStart, 'so it stops short of the next token');
+});
+
 test('a "de" entry reads the token area out of that DE', () => {
   const { ctx } = tokDeRun('STM', DETOK_BIN, { 'token-area': 'ANY' });
   eq((ctx.tokens || []).map(t => t.id).join(','), 'B4',

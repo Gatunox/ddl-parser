@@ -6895,8 +6895,20 @@ test('the DDL Doc has a title row, and its filter sits over the column it filter
   // One positioner for both tables. A second copy would be a second set of edge
   // cases about hidden columns and bar padding.
   const fn = psFnSource('_syncFilterToCol');
-  assert.ok(/thR\.left - barR\.left - padLeft/.test(fn) && /inp\.style\.width = thR\.width/.test(fn),
+  assert.ok(/thR\.left - barR\.left - padLeft/.test(fn),
     'the filter is not placed over its column');
+  assert.ok(/Math\.min\(thR\.width, room\)/.test(fn),
+    'the filter width does not follow its column');
+  // Alignment yields to the controls. A column wider than the bar used to push
+  // the buttons past its right edge — the ? clipped, the column chooser gone —
+  // and nothing scrolled to bring them back.
+  assert.ok(/bar\.clientWidth[\s\S]*?- others/.test(fn),
+    'the width is not bounded by the room the buttons leave');
+  assert.ok(/Math\.max\(_FILTER_MIN_W/.test(fn),
+    'the filter can be squeezed to nothing');
+  // Measured, not assumed: hiding a button has to give its width back.
+  assert.ok(/getComputedStyle\(el\)\.display === 'none'/.test(fn),
+    'hidden controls are still counted against the filter');
   assert.ok(/const _syncFilterPos = \(\) =>\s*\n?\s*_syncFilterToCol\('#resCfgControls'/.test(APP_SRC),
     'Parse Results no longer goes through the shared positioner');
   assert.ok(/_syncFilterToCol\('#ddlDocControls', '#ddlDocFilterInput', '#ddlDocBody th\.ddl-doc-name'\)/.test(APP_SRC),
@@ -14304,6 +14316,14 @@ test('the shared resizer keeps what each copy had learned', () => {
   const fit = psFnSource('_meColFit');
   assert.ok(/if \(avail <= 0\) return/.test(fit),
     'the fit runs before the panel has a width and writes garbage sizes');
+  // Reported: dragging the Field column left the filter at its old width. The
+  // fit calls cfg.after() at every OTHER moment — first render, panel resize,
+  // reset, hiding a column — so the drag was the one path that skipped it.
+  const drag = init.slice(init.indexOf('const onMove = ev =>'), init.indexOf('const onUp'));
+  assert.ok(drag.includes('cfg.after()'),
+    'a drag does not tell what is anchored to the column to follow it');
+  assert.ok(/if \(cfg\.after\) cfg\.after\(\);/.test(fit),
+    'the fit stopped notifying — every non-drag path would now leave it behind');
 });
 
 test('import/export is reachable from anywhere in the Entities column', () => {

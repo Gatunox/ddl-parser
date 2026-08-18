@@ -11340,6 +11340,10 @@ function _clearBtnClick() {
 // Sit a filter box exactly over the column it filters. Written once because the
 // DDL Doc wants the same thing over its name column, and a second copy would be
 // a second set of edge cases about hidden columns and bar padding.
+// The filter never shrinks below this, however little room is left: an input
+// too narrow to show a word typed into it is worse than one that overflows.
+const _FILTER_MIN_W = 90;
+
 function _syncFilterToCol(barSel, inpSel, thSel) {
   const bar = document.querySelector(barSel);
   const inp = document.querySelector(inpSel);
@@ -11347,9 +11351,24 @@ function _syncFilterToCol(barSel, inpSel, thSel) {
   if (!bar || !inp || !th || getComputedStyle(th).display === 'none') return;
   const barR = bar.getBoundingClientRect();
   const thR  = th.getBoundingClientRect();
-  const padLeft = parseFloat(getComputedStyle(bar).paddingLeft) || 0;
-  inp.style.marginLeft = Math.max(0, thR.left - barR.left - padLeft) + 'px';
-  inp.style.width = thR.width + 'px';
+  const cs   = getComputedStyle(bar);
+  const padLeft  = parseFloat(cs.paddingLeft)  || 0;
+  const padRight = parseFloat(cs.paddingRight) || 0;
+  const gap      = parseFloat(cs.columnGap) || parseFloat(cs.gap) || 0;
+  const marginLeft = Math.max(0, thR.left - barR.left - padLeft);
+  // Alignment yields to the controls. Matching a column WIDER than the bar
+  // pushed everything right of the input off the end — the ? clipped and the
+  // column chooser gone entirely, with no scrollbar to reveal them. The buttons
+  // are measured rather than assumed so hiding one gives the room back.
+  let others = 0, gaps = 0;
+  for (const el of bar.children) {
+    if (el === inp || getComputedStyle(el).display === 'none') continue;
+    others += el.getBoundingClientRect().width;
+    gaps++;
+  }
+  const room = bar.clientWidth - padLeft - padRight - marginLeft - others - gap * gaps;
+  inp.style.marginLeft = marginLeft + 'px';
+  inp.style.width = Math.max(_FILTER_MIN_W, Math.min(thR.width, room)) + 'px';
 }
 const _syncFilterPos = () =>
   _syncFilterToCol('#resCfgControls', '#resFilterInput', '#resContainer th.th-id');
@@ -16560,7 +16579,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.5.0';
+const APP_VERSION  = '1.32.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24053,6 +24072,11 @@ function _meColInitResize(cfg) {
         d = Math.min(d, nextW - cfg.min);
         th.style.width     = (startW + d) + 'px';
         nextTh.style.width = (nextW  - d) + 'px';
+        // Anything anchored to a column has to follow it DURING the drag, not
+        // only when the layout is re-fitted. _meColFit calls this at every other
+        // moment — first render, panel resize, reset, hiding a column — so a
+        // drag was the one path that left the filter behind its column.
+        if (cfg.after) cfg.after();
       };
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);

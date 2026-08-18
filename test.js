@@ -12588,12 +12588,25 @@ for (const encoding of ['ascii-hex', 'binary']) {
   });
 }
 
-test('the primary bitmap is unchanged', () => {
-  // It already carried an absolute bitSet, which is why it read correctly — and
-  // it still drops bit 1, the secondary-present indicator, which is not a DE.
+test('the primary bitmap lists only the DEs its own bytes carry', () => {
+  // Eight bytes hold DEs 1-64. The primary's bitSet deliberately holds the
+  // SECONDARY's bits too, because read-bitmap-fields walks it — so the row was
+  // listing 65 and 121 as though its own bytes contained them. Bit 1 stays out:
+  // it is the secondary-present indicator, not a data element.
   const ctx = secBmRun('ascii-hex');
-  eq(ctx.fields.find(f => f.id === 'PRI-BIT-MAP').displayValue, 'Bits — 2, 65, 121',
-    'the primary still reports the whole set it will walk');
+  eq(ctx.fields.find(f => f.id === 'PRI-BIT-MAP').displayValue, 'Bits — 2',
+    'the primary must not claim the secondary map\'s data elements');
+});
+
+test('narrowing the display does not narrow the walk', () => {
+  // The whole reason the primary carries the full set. Scoping the DISPLAY by
+  // filtering bitSet itself would silently stop every DE above 64 from being
+  // read — a far worse bug than the one being fixed.
+  const ctx = secBmRun('ascii-hex');
+  const pri = ctx.fields.find(f => f.id === 'PRI-BIT-MAP');
+  deepEq([...pri.bitSet].sort((a, b) => a - b), [2, 65, 121],
+    'read-bitmap-fields still receives every present DE');
+  deepEq(pri.bitRange, [1, 64], 'and the row knows which of them are its own');
 });
 
 test('a plain field with a bitmap-list display still numbers from 1', () => {

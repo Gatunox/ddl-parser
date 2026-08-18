@@ -16579,7 +16579,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.7.0';
+const APP_VERSION  = '1.32.7.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27865,6 +27865,12 @@ function _meFmtBitmapList(f) {
   let bits;
   if (f.bitSet instanceof Set) {
     bits = [...f.bitSet];
+    // A row shows only the DEs its OWN bytes carry. The primary map's bitSet
+    // holds the secondary's bits too — read-bitmap-fields needs the whole set
+    // to walk — so without this the primary listed DEs 65-128 as if its eight
+    // bytes contained them.
+    if (Array.isArray(f.bitRange))
+      bits = bits.filter(b => b >= f.bitRange[0] && b <= f.bitRange[1]);
   } else {
     bits = [];
     const bytes = (f.rawHex || '').match(/.{1,2}/g) || [];
@@ -28694,9 +28700,16 @@ function _meExecReadBitmap(attrs, ctx) {
   // merged double-width row. It carries the FULL bitset (primary + secondary
   // bits) so read-bitmap-fields still walks every present DE.
   const priBytes = Array.from(src.slice(start, start + baseChunk));
+  // Which DEs THIS row's bytes encode. bitSet is deliberately the whole set —
+  // primary plus secondary — because read-bitmap-fields walks it, but the row
+  // must not DISPLAY bits it does not contain: eight bytes hold DEs 1-64, and a
+  // "bitmap-list" on the primary was listing 65+ as though they were in it.
+  const priLast = rawPrimary.length * 8;
+  const priBits = [...bitSet].filter(b => b <= priLast).length;
   const pf = _meMakeSyntheticField(attrs.field, priBytes, start, start + baseChunk - 1, ctx,
-    { description: `bitmap (${bitSet.size} DEs set)` });
+    { description: `bitmap (${priBits} DEs set)` });
   pf.bitSet = bitSet;
+  pf.bitRange = [1, priLast];
   // Overrides apply here like anywhere else. They never did — a bitmap row was
   // the one field you could not put a display on, which is the row where
   // "bitmap-list" is worth the most. bitSet is set FIRST so the formatter can
@@ -28713,15 +28726,21 @@ function _meExecReadBitmap(attrs, ctx) {
     const secStart = start + baseChunk;
     const secName  = _meSecondaryBitmapName(ctx, attrs.field, baseChunk) || `${attrs.field}-2`;
     const secBytes = Array.from(src.slice(secStart, secStart + baseChunk));
+    // Built before the row so the description can state the count, and passed as
+    // an OPTION like every other synthetic field: assigning .description after
+    // creation would override a description the DDL gives this field, which the
+    // primary row does not do.
+    const secSet = new Set([...parseBitmap(rawSecondary)].map(b => b + rawPrimary.length * 8));
     const sf = _meMakeSyntheticField(secName, secBytes, secStart, secStart + baseChunk - 1, ctx,
-      { description: 'secondary bitmap' });
+      { description: `secondary bitmap (${secSet.size} DEs set)` });
     // The secondary map's own bits, numbered where they actually belong: its
     // bit 1 is DE 65. Without this the row had no bitSet at all, so a
     // "bitmap-list" display fell back to deriving bits from rawHex — which is
     // wrong twice over on an ascii-hex map, because rawHex there is the hex of
     // the ASCII CHARACTERS ("8" = 0x38), not the map. The offset comes from the
     // primary block's own size rather than a hardcoded 64.
-    sf.bitSet = new Set([...parseBitmap(rawSecondary)].map(b => b + rawPrimary.length * 8));
+    sf.bitSet = secSet;
+    sf.bitRange = [rawPrimary.length * 8 + 1, rawPrimary.length * 8 + rawSecondary.length * 8];
     // In ISO 8583 the secondary bitmap IS data element 1 — which is what the
     // Overrides table numbers it. It is read here rather than by the DE walk
     // (bit 1 is deleted from the set above, being the "secondary present"

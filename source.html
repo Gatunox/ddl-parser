@@ -16579,7 +16579,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.6.0';
+const APP_VERSION  = '1.32.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28673,13 +28673,14 @@ function _meExecReadBitmap(attrs, ctx) {
   // must not silently double the read.
   const hasSecondary = explicitLen === null && !!(rawPrimary[0] & 0x80);
   let totalBytes = baseChunk;
+  let rawSecondary = null;   // kept in scope: the secondary ROW needs it too
   let allRaw = rawPrimary;
   if (hasSecondary) {
     if (start + 2 * baseChunk > ctx.bytes.length) {
       ctx.fields.push({ id: attrs.field, error: 'Bitmap claims secondary but message too short' });
       return;
     }
-    const rawSecondary = toRawBlock(start + baseChunk, baseChunk);
+    rawSecondary = toRawBlock(start + baseChunk, baseChunk);
     allRaw = rawPrimary.concat(rawSecondary);
     totalBytes = 2 * baseChunk;
   }
@@ -28714,6 +28715,13 @@ function _meExecReadBitmap(attrs, ctx) {
     const secBytes = Array.from(src.slice(secStart, secStart + baseChunk));
     const sf = _meMakeSyntheticField(secName, secBytes, secStart, secStart + baseChunk - 1, ctx,
       { description: 'secondary bitmap' });
+    // The secondary map's own bits, numbered where they actually belong: its
+    // bit 1 is DE 65. Without this the row had no bitSet at all, so a
+    // "bitmap-list" display fell back to deriving bits from rawHex — which is
+    // wrong twice over on an ascii-hex map, because rawHex there is the hex of
+    // the ASCII CHARACTERS ("8" = 0x38), not the map. The offset comes from the
+    // primary block's own size rather than a hardcoded 64.
+    sf.bitSet = new Set([...parseBitmap(rawSecondary)].map(b => b + rawPrimary.length * 8));
     // In ISO 8583 the secondary bitmap IS data element 1 — which is what the
     // Overrides table numbers it. It is read here rather than by the DE walk
     // (bit 1 is deleted from the set above, being the "secondary present"

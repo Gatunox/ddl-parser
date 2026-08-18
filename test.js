@@ -12541,6 +12541,74 @@ test('a padded value shows its padding in the results table', () => {
     'while the tooltip still carries the real characters');
 });
 
+// ── The secondary bitmap numbers its own bits ───────────────────────────────
+// Reported: a "bitmap-list" display on the PRIMARY map reads correctly, but the
+// same display on the SECONDARY listed 1-64. Its bits are DEs 65-128. The row
+// carried no bitSet, so the formatter fell back to deriving bits from rawHex —
+// wrong twice on an ascii-hex map, where rawHex is the hex of the ASCII
+// CHARACTERS ("8" = 0x38) rather than the map itself.
+console.log('\nsecondary bitmap bit numbering');
+
+function secBmRun(encoding) {
+  const hex = n => n.toString(16).toUpperCase();
+  let v = 0n;
+  for (const b of [65, 121]) v |= 1n << BigInt(128 - b);   // DEs 65 and 121
+  const secHex = v.toString(16).toUpperCase().padStart(16, '0');
+  const priHex = 'C000000000000000';                       // bit 1 (secondary) + bit 2
+  const asChars = s => [...s].map(c => c.charCodeAt(0));
+  const asBytes = s => (s.match(/.{2}/g) || []).map(h => parseInt(h, 16));
+  const wid = encoding === 'ascii-hex' ? 16 : 8;
+  const ddl = `DEF REC.
+  02 PRI-BIT-MAP PIC X(${wid}).
+  02 SEC-BIT-MAP PIC X(${wid}).
+  02 PAN         PIC X(4).
+END REC.
+`;
+  const enc = encoding === 'ascii-hex' ? asChars : (s => asBytes(s));
+  const bytes = Uint8Array.from([...enc(priHex), ...enc(secHex), ...asChars('1234')]);
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    overrides: { 'PRI-BIT-MAP': { display: 'bitmap-list' }, 'SEC-BIT-MAP': { display: 'bitmap-list' } },
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding } },
+      { 'read-bitmap-fields': 'PRI-BIT-MAP' },
+    ] }, bytes);
+}
+
+for (const encoding of ['ascii-hex', 'binary']) {
+  test(`the secondary bitmap lists DEs 65-128 (${encoding})`, () => {
+    // Both encodings, because the offset is taken from the decoded block's size:
+    // an ascii-hex chunk is 16 source bytes but still only 64 bits, so anything
+    // derived from the SOURCE width would shift this map to 129+.
+    const ctx = secBmRun(encoding);
+    const sec = ctx.fields.find(f => f.id === 'SEC-BIT-MAP');
+    eq(sec.displayValue, 'Bits — 65, 121',
+      `the secondary map names its own data elements, got ${JSON.stringify(sec.displayValue)}`);
+  });
+}
+
+test('the primary bitmap is unchanged', () => {
+  // It already carried an absolute bitSet, which is why it read correctly — and
+  // it still drops bit 1, the secondary-present indicator, which is not a DE.
+  const ctx = secBmRun('ascii-hex');
+  eq(ctx.fields.find(f => f.id === 'PRI-BIT-MAP').displayValue, 'Bits — 2, 65, 121',
+    'the primary still reports the whole set it will walk');
+});
+
+test('a plain field with a bitmap-list display still numbers from 1', () => {
+  // The fallback that derives bits from rawHex is correct for an ordinary binary
+  // field — the fix must not have shifted that path too.
+  const ddl = 'DEF R.\n  02 FLAGS PIC X(2).\nEND R.\n';
+  S.ddlTree = { V: { S: { D: ddl } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/R'],
+    overrides: { FLAGS: { display: 'bitmap-list' } },
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, Uint8Array.from([0xC0, 0x00]));
+  eq(ctx.fields.find(f => f.id === 'FLAGS').displayValue, 'Bits — 1, 2',
+    'an ordinary field is still numbered from its own first bit');
+});
+
 // ── The DE-nn badge under the parse-spec engine ─────────────────────────────
 // Reported: no DE badges anywhere in the results for a spec-parsed message.
 // deNum was written ONLY by the legacy parseHPEISOMessage; the engine's

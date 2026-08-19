@@ -1343,10 +1343,18 @@ tr.row-filter-hide  { display: none; }
 #ddlCfgBar .btn { background:var(--surface-raised); border: var(--bw-ctl) solid var(--border); color:var(--text-dim); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 10px; border-radius:var(--r-sm); cursor:pointer; height:var(--ctl-h); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
 #ddlCfgBar .btn:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text); background:var(--surface-hover); }
 #ddlCfgBar .btn:disabled { opacity:0.35; cursor:default; }
+/* justify-content packs the WRAPPED lines right, so buttons pushed onto a second
+   row sit under the first rather than starting back under the filter. The row
+   already wrapped; it just left the overflow hanging on the left, which read as
+   two unrelated groups of controls. The FIRST line is unaffected: the flex:1
+   spacer in the markup has already taken its free space, so there is none for
+   justify-content to move and the filter stays over the ID column the
+   positioner aligned it to. Reported 2026-08-19, same shape as .me-fm-toolbar. */
 #resCfgControls {
   display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap; position:relative;
+  background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap;
+  justify-content:flex-end; position:relative;
 }
 #resCfgControls .btn { background:none; border: var(--bw-ctl) solid var(--border); color:var(--text-dim); font-family:var(--font-mono); font-size:var(--sz-mono); padding:0 8px; height:calc(var(--sz-mono) + 8px); border-radius:var(--r-sm); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
 #resCfgControls .btn:hover { border-color: var(--h-gray-bd); color:var(--text); }
@@ -16671,7 +16679,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.34.3.2';
+const APP_VERSION  = '1.34.3.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

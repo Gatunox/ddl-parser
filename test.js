@@ -7236,6 +7236,19 @@ test('the DDL Doc has a title row, and its filter sits over the column it filter
     'Parse Results no longer goes through the shared positioner');
   assert.ok(/_syncFilterToCol\('#ddlDocControls', '#ddlDocFilterInput', '#ddlDocBody th\.ddl-doc-name'\)/.test(APP_SRC),
     'the DDL Doc filter is not aimed at its name column');
+  // [REGRESSION 2026-08-19] Parse Results already wrapped, but left the buttons
+  // it pushed onto a second row hanging at the LEFT — Hide Redef and the cog
+  // ended at x=151 while the bar's right edge was 548, reading as two unrelated
+  // groups of controls. Same shape, and the same fix, as .me-fm-toolbar.
+  const resBar = (html.match(/#resCfgControls \{[^}]*\}/) || [''])[0];
+  assert.ok(/flex-wrap:wrap/.test(resBar), 'the Parse Results controls cannot wrap');
+  assert.ok(/justify-content:flex-end/.test(resBar),
+    'a wrapped row of Parse Results buttons starts at the left instead of under the first');
+  // The first line is packed by a flex:1 spacer in the markup, which is what
+  // leaves justify-content nothing to move there — without it the filter would
+  // be shoved off the ID column it is aligned to.
+  assert.ok(/<span style="flex:1"><\/span>/.test(html),
+    'the spacer that packs the first line is gone, so justify-content moves the filter');
 });
 
 test('the DDL Doc columns can be dragged and selected, like Parse Results', () => {

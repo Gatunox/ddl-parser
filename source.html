@@ -10838,7 +10838,18 @@ function doParseMessages() {
     if (_parseAborted) return;
     for (const chunk of chunks) {
       const chunkStr = typeof chunk === 'object' ? chunk.text : String(chunk);
-      const bytes    = extractBytes(chunk, S.inputFormat);
+      // With format 'ebcdic', extractBytes TRANSLATES as it decodes, so the wire
+      // would be unrecoverable — a PIN block's C1 has become 41 before any field
+      // exists. The ebcdic branch of extractBytes IS the hex branch plus that
+      // translation, so decoding as hex and translating here yields exactly the
+      // same `bytes` from ONE extraction, and keeps the untransated copy that
+      // everything meaning "as transmitted" needs: a hex-char override, and
+      // TYPE BINARY decoding. Extracting twice would be simpler and is what the
+      // dispatcher's one-extraction-per-chunk guard exists to prevent — these
+      // records are large and the machines reading them are not fast.
+      const _isEbc   = S.inputFormat === 'ebcdic';
+      const wireBytes = extractBytes(chunk, _isEbc ? 'hex' : S.inputFormat);
+      const bytes    = _isEbc ? wireBytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : wireBytes;
       if (!bytes.length) continue;
       let parseBytes = bytes;
       if (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex') {
@@ -10864,7 +10875,7 @@ function doParseMessages() {
         : null;
       const detTrace = detectMsgTypeTrace(detectStr, _chunkCtx);
       _p23Traces.push(detTrace);
-      _chunkInfo.push({ chunk, chunkStr, bytes, parseBytes, detectStr, detTrace, msgType: detTrace.winner });
+      _chunkInfo.push({ chunk, chunkStr, bytes, wireBytes, parseBytes, detectStr, detTrace, msgType: detTrace.winner });
     }
     // The summary belongs WITH the tick: it used to be back-filled onto this
     // step three steps later, so the panel showed a finished step with nothing
@@ -11142,7 +11153,7 @@ function doParseMessages() {
       _parseProgressStep('Parsing\u2026');
       for (const ci of _chunkInfo) {
         ci.verdict = ci.msgType.vol
-          ? _parseVerdict(ci.msgType, ci.parseBytes, { format: S.inputFormat, rawBytes: ci.bytes })
+          ? _parseVerdict(ci.msgType, ci.parseBytes, { format: S.inputFormat, rawBytes: ci.wireBytes || ci.bytes })
           : { kind: 'unknown' };
       }
       {
@@ -16579,7 +16590,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.7.1';
+const APP_VERSION  = '1.32.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27698,7 +27709,7 @@ function _meReadTypeByteLen(type) {
 // Re-interpret the raw bytes of a field as the override type. Returns a
 // partial-update object that's merged into the field result. Leaves the field
 // alone for types that don't impose a fixed interpretation.
-function _meReadApplyTypeOverride(f, type) {
+function _meReadApplyTypeOverride(f, type, wireHex) {
   const t = String(type).toUpperCase().replace(/\s+/g, ' ').trim();
   // The field's bytes are whatever was read for it — a "bytes" override has
   // already changed that length upstream, so the type simply interprets what is
@@ -27742,8 +27753,15 @@ function _meReadApplyTypeOverride(f, type) {
   }
   // hex-char — the raw bytes rendered as their hex characters, TAL's
   // binary^hexchar: 00 13 → "0013". No 0x prefix (that is `binary`).
+  //
+  // "Original hex characters" means the bytes as TRANSMITTED. On an EBCDIC
+  // message every byte is translated to ASCII the moment the text becomes bytes
+  // — before any field exists — so f.rawHex is already the post-translation
+  // value and a PIN block's C1 reads as 41. wireHex is that field's slice of the
+  // untranslated copy, and it is the only thing this override should ever show.
   else if (/^HEX-CHAR$/i.test(t)) {
-    v = bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+    const src = wireHex ? (wireHex.match(/.{1,2}/g) || []).map(h => parseInt(h, 16)) : bytes;
+    v = src.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
   }
   // hex-ascii-decimal / hex-ebcdic-decimal — the wire carries hex digits written as
   // TEXT; decode that text (ASCII or EBCDIC) then read it base-16, giving a
@@ -27940,6 +27958,18 @@ function _meApplyDisplayOverride(f, def, ctx) {
 // (set via the Field Map UI). Length must match — on mismatch an error row is
 // pushed and the override is ignored. Single helper used by every read path
 // so the inline syntax and the UI dropdown produce identical results.
+// A field's own bytes as they arrived on the wire, before the message-wide
+// EBCDIC translation. Null when there is nothing to correct — any other input
+// format, or a field with no byte span — so every caller falls back to the bytes
+// it already had and nothing outside an EBCDIC parse can move.
+function _meWireHex(f, ctx) {
+  const raw = ctx && ctx.rawBytes;
+  if (!raw || f.startByte == null || f.endByte == null) return null;
+  const slice = Array.from(raw.slice(f.startByte, f.endByte + 1));
+  if (!slice.length) return null;
+  return slice.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+}
+
 function _meApplyTypeOverride(f, def, ctx, inlineType) {
   let typeOverride = inlineType || null;
   if (!typeOverride) typeOverride = _meOvEffective(ctx, def.id)?.type || null;
@@ -27970,7 +28000,7 @@ function _meApplyTypeOverride(f, def, ctx, inlineType) {
       return;
     }
   }
-  Object.assign(f, _meReadApplyTypeOverride(f, typeOverride));
+  Object.assign(f, _meReadApplyTypeOverride(f, typeOverride, _meWireHex(f, ctx)));
   _applyTrim();
 }
 

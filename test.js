@@ -12541,6 +12541,86 @@ test('a padded value shows its padding in the results table', () => {
     'while the tooltip still carries the real characters');
 });
 
+// ── hex-char means the ORIGINAL hex characters ──────────────────────────────
+// Reported: an ISO 8583 EBCDIC message whose PIN block is binary on the wire,
+// declared PIC X(8). A hex-char override gave some other value. Nothing was
+// wrong with the override — with format 'ebcdic' every byte is translated to
+// ASCII the moment the text becomes bytes, before any field exists, so C1 had
+// already become 41. hex-char now reads the untranslated copy.
+console.log('\nhex-char reads the wire, not the translation');
+
+const PIN_DDL = `DEF REC.
+  02 MTI       PIC X(4).
+  02 PIN-BLOCK PIC X(8).
+END REC.
+`;
+// EBCDIC "0200" (F0 F2 F0 F0), then a binary PIN block that the EBCDIC table
+// would mangle: C1→41, D5→4E, A7→78.
+const PIN_WIRE = [0xF0,0xF2,0xF0,0xF0, 0x12,0x34,0xC1,0xD5,0x9F,0x00,0xA7,0x5B];
+const PIN_HEX  = PIN_WIRE.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+
+function pinRun(overrides) {
+  S.ddlTree = { V: { S: { D: PIN_DDL } } };
+  S.inputFormat = 'ebcdic';
+  const wire  = extractBytes(PIN_HEX, 'hex');                       // untranslated
+  const bytes = wire.map(b => sandbox._EBCDIC_TO_ASCII?.[b] ?? b);   // what parsing sees
+  return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    overrides, parse_spec_binary: [{ 'read-ddl': 'ANY' }] },
+    Uint8Array.from(extractBytes(PIN_HEX, 'ebcdic')),
+    { format: 'ebcdic', rawBytes: Uint8Array.from(wire) });
+}
+
+test('a hex-char override shows the bytes as transmitted', () => {
+  const ctx = pinRun({ 'PIN-BLOCK': { type: 'hex-char' } });
+  eq(ctx.fields.find(f => f.id === 'PIN-BLOCK').value, '1234C1D59F00A75B',
+    'the wire bytes, not 1294414EA4007824 — which is what the EBCDIC table makes of them');
+});
+
+test('the text fields are still read through the translation', () => {
+  // The translation is not the enemy; it is what makes MTI readable. Only the
+  // override that asks for the original bytes may bypass it.
+  const ctx = pinRun({ 'PIN-BLOCK': { type: 'hex-char' } });
+  eq(ctx.fields.find(f => f.id === 'MTI').value, '0200',
+    'EBCDIC F0F2F0F0 still reads as 0200');
+});
+
+test('without the override nothing changes', () => {
+  const ctx = pinRun({});
+  eq(ctx.fields.find(f => f.id === 'PIN-BLOCK').rawHex, '1294414EA4007824',
+    'an un-overridden field is untouched — the fix reaches only what asks for it');
+});
+
+test('hex-char is unaffected when there is no translation to undo', () => {
+  // Same override on a hex message: rawBytes and bytes are the same array, so
+  // the wire path and the old path must agree.
+  S.ddlTree = { V: { S: { D: PIN_DDL } } };
+  S.inputFormat = 'hex';
+  const b = Uint8Array.from(extractBytes(PIN_HEX, 'hex'));
+  const ctx = meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
+    overrides: { 'PIN-BLOCK': { type: 'hex-char' } },
+    parse_spec_binary: [{ 'read-ddl': 'ANY' }] }, b, { format: 'hex', rawBytes: b });
+  eq(ctx.fields.find(f => f.id === 'PIN-BLOCK').value, '1234C1D59F00A75B',
+    'unchanged for a message that was never translated');
+});
+
+test('the dispatcher keeps the wire bytes without a second extraction', () => {
+  // These records are large and the machines reading them are not fast, so the
+  // one-extraction-per-chunk guard matters. The ebcdic branch of extractBytes is
+  // the hex branch plus the translation, so decoding as hex and translating in
+  // the caller yields the same bytes from one pass.
+  const at  = APP_SRC.indexOf('const _isEbc');
+  assert.ok(at !== -1, 'the ebcdic branch is gone from the dispatcher');
+  // Searched FORWARD from the start: an earlier "let parseBytes = bytes;" lives
+  // in the audit path, and anchoring on it from index 0 slices backwards to ''.
+  const src = APP_SRC.slice(at, APP_SRC.indexOf('let parseBytes = bytes;', at));
+  eq((src.match(/extractBytes\(/g) || []).length, 1,
+    'the chunk is extracted more than once');
+  assert.ok(/_isEbc \? 'hex' : S\.inputFormat/.test(src),
+    'an ebcdic chunk is not decoded untranslated');
+  assert.ok(/_EBCDIC_TO_ASCII/.test(src),
+    'the translated array is no longer derived, so parsing would see wire bytes');
+});
+
 // ── The secondary bitmap numbers its own bits ───────────────────────────────
 // Reported: a "bitmap-list" display on the PRIMARY map reads correctly, but the
 // same display on the SECONDARY listed 1-64. Its bits are DEs 65-128. The row

@@ -12541,6 +12541,43 @@ test('a padded value shows its padding in the results table', () => {
     'while the tooltip still carries the real characters');
 });
 
+// ── Toggling the dump format keeps the parsed state ────────────────────────
+// Reported: after Parse the dump text dims, correctly. Pressing HEX made it
+// bright again, and it only dimmed once a field was selected. _auditDumpLoad
+// strips msg-parsed on every load — it cannot tell a format toggle from a new
+// record — and the toggle never put it back.
+console.log('\naudit dump format toggle');
+
+test('the toggle restores the parsed dim it just wiped', () => {
+  const src = psFnSource('auditToggleDumpMode');
+  assert.ok(/const wasParsed[\s\S]*classList\.contains\('msg-parsed'\)/.test(src),
+    'the toggle does not notice whether the record was parsed');
+  const readAt  = src.indexOf('wasParsed =');
+  const applyAt = src.indexOf('_auditApplyDump(');
+  assert.ok(readAt !== -1 && applyAt !== -1 && readAt < applyAt,
+    'the class is read AFTER the reload that clears it, so it is always false');
+  assert.ok(src.indexOf('_auditDumpSetParsed') > applyAt,
+    'the parsed state is restored before the reload rather than after');
+});
+
+test('the toggle redraws the highlight against the new map', () => {
+  // The byte→char map is rebuilt in the other format, so a selected field's
+  // ranges point at the wrong characters until they are recomputed.
+  const src = psFnSource('auditToggleDumpMode');
+  assert.ok(/renderInputOverlay\(\)/.test(src),
+    'a selected field keeps stale ranges after the format changes');
+  assert.ok(src.indexOf('renderInputOverlay()') > src.indexOf('_auditApplyDump('),
+    'the overlay is redrawn before the map it reads is rebuilt');
+});
+
+test('loading a dump still clears both state classes', () => {
+  // The clear is right — it is the toggle that has to compensate. If the load
+  // stopped clearing, a new record would inherit the previous one's dim.
+  const src = APP_SRC.slice(APP_SRC.indexOf('_auditDumpLoad = text =>'), APP_SRC.indexOf('_auditDumpSetParsed ='));
+  assert.ok(/classList\.remove\('msg-parsed', 'msg-has-hl'\)/.test(src),
+    'a freshly loaded record would keep the previous record\'s parsed dim');
+});
+
 // ── The audit dump's byte map is derived, not counted ──────────────────────
 // Reported: highlighting a field that spans two dump rows lit the right bytes
 // on row 1 and started one character late on row 2 — covering the trailing

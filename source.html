@@ -13895,7 +13895,17 @@ function auditToggleDumpMode() {
   if (!_auditSt._inspectBuf) return;
   const rec = _auditSt.filtered[_auditSt.selIdx];
   if (!rec) return;
+  // _auditDumpLoad clears the dump's state classes — it cannot tell a format
+  // toggle from a different record arriving. Read the one that must survive
+  // BEFORE the reload: msg-parsed is what dims the text to say "this record has
+  // been parsed", and switching ASCII/HEX does not un-parse anything.
+  const wasParsed = !!window._auditDumpCM?.dom.classList.contains('msg-parsed');
   _auditApplyDump(new Uint8Array(_auditSt._inspectBuf), rec, rec.recNo || (_auditSt.selIdx + 1));
+  if (wasParsed) window._auditDumpSetParsed?.();
+  // And redraw the highlight: the byte→char map was just rebuilt in the other
+  // format, so a selected field's old ranges point at the wrong characters.
+  // renderInputOverlay recomputes them from the new map.
+  renderInputOverlay();
 }
 
 function _auditSyncToggleWidth() {
@@ -16622,7 +16632,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.9.2';
+const APP_VERSION  = '1.32.9.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -11323,6 +11323,27 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
     'the filter is placed by something other than the shared positioner');
   // flex:1 would fight the width the positioner sets.
   assert.ok(/input\.me-fm-filter\{flex:0 0 auto/.test(html), 'the filter stretches and ignores its column width');
+  // [REGRESSION 2026-08-19] The row must WRAP, like the action bar under it.
+  // The filter stops shrinking at _FILTER_MIN_W, so on a narrow panel the row
+  // has nothing left to give: the buttons were pushed off the end with no
+  // scrollbar and no second line — "Collapse All" cut mid-word, and Hide Redef,
+  // the help "?" and the column chooser unreachable rather than merely tight.
+  // Measured at a 495px panel: the last control sat 226px past the bar's right
+  // edge; wrapped, the overflow is 0 and the bar is two rows instead of one.
+  assert.ok(/\.me-fm-toolbar\{[^}]*flex-wrap:wrap/.test(html),
+    'the filter row cannot wrap, so its buttons leave the panel with no way back');
+  // Both strips of controls in the section behave the same way — the action bar
+  // has wrapped since it was built, and this row is the one that did not.
+  assert.ok(/\.me-fm-bar\{[^}]*flex-wrap:wrap/.test(html),
+    'the action bar lost its wrapping');
+  // A wrapped line packs RIGHT, under the line above it, rather than starting
+  // back at the field names. The first line is unaffected — #me-fm-ovr-btn's
+  // auto margin has already taken its free space — so the filter stays over its
+  // column, which is what the positioner computed its margin for.
+  assert.ok(/\.me-fm-toolbar\{[^}]*justify-content:flex-end/.test(html),
+    'a wrapped second row of buttons starts at the left instead of under the first');
+  assert.ok(/#me-fm-ovr-btn\{margin-left:auto;\}/.test(html),
+    'nothing packs the first line right, so justify-content moves the filter off its column');
   // And the clear carries no number: the count belongs to the kind controls,
   // which state it already.
   assert.ok(!/me-ovb-cn/.test(html), 'the clear grew a count back');

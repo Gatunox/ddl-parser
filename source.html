@@ -2751,7 +2751,20 @@ tbody tr:hover .me-ps-form-tbl td,
 .me-ov-section:last-child{margin-bottom:0;}
 /* Field Map — table layout patterned after DDL Doc */
 .me-fm-warn{padding:6px 10px;margin-bottom:6px;border: var(--bw) solid var(--warning);border-radius:var(--r-sm);background:rgba(255,193,7,0.08);color:var(--warning);font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);line-height:1.4;}
-.me-fm-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+/* Wraps, exactly as the action bar below it does. Without this the row was the
+   one strip in the panel that could not give: the filter stops shrinking at
+   _FILTER_MIN_W, so on a narrow panel the buttons were pushed off the end with
+   no scrollbar and no second line — "Collapse All" cut mid-word, and Hide Redef,
+   the help "?" and the column chooser gone entirely rather than merely tight.
+   The action bar had carried flex-wrap since it was built; this row predates it
+   and never gained it. Reported 2026-08-19. */
+/* justify-content packs the WRAPPED lines right, so a second row of buttons
+   sits under the first rather than starting back at the field names. The first
+   line is unaffected: the auto margin below already absorbs its free space, so
+   there is none left for justify-content to move, and the filter stays over its
+   column. */
+.me-fm-toolbar{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;
+  gap:6px;margin-bottom:6px;}
 /* The buttons collect at the right, under the action bar's own controls. The
    filter cannot simply be pushed left by justify-content — its margin-left is
    computed to sit over the FIELD column — so the first button takes the space
@@ -16658,7 +16671,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.34.3.0';
+const APP_VERSION  = '1.34.3.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -2725,33 +2725,89 @@ test('[REGRESSION] "children" steps down a level, and stepping is not required',
   eq(de('TAIL'), 4, 'the sequence past the group is wrong');
 });
 
-test('[REGRESSION] a VLG pairing dies at its group boundary', () => {
-  // The guard on its own: a LEN that DOES own a number, whose payload is a
-  // group, must not reach past that group. It used to stay armed — only a plain
-  // leaf consumed it, and leaves inside a terminal group were skipped — so the
-  // next unrelated top-level leaf inherited the LEN's number.
-  S.ddlTree = { VOL: { SV: { 'VLGFLAT': `
-    DEF REC.
-      02 BMP PIC X(16).
-      02 LEN PIC 9(4).
-      02 PAYLOAD.
-        04 ITEM1 PIC X(4).
-        04 ITEM2 PIC X(4).
-      02 TAIL PIC X(4).
-    END REC.
-  ` } } };
-  const rows = meWalkDEFields(
-    sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/VLGFLAT/REC')]),
-    { ddl_bindings: ['VOL/SV/VLGFLAT/REC'],
-      overrides: { 'LEN': { vlg: true } },
-      parse_spec_binary: [
-        { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
-        { 'read-bitmap-fields': 'BMP' },
-      ] });
-  const row = id => rows.find(r => r.id === id);
-  eq(row('LEN')?.de, 1, 'the top-level LEN owns the first number');
-  eq(row('TAIL')?.ownerDE ?? null, null, 'TAIL inherited the LEN\'s number across the group');
-  assert.ok(row('TAIL')?.de != null, 'TAIL lost its own number to a stale pairing');
+test('[REGRESSION] a LEN and the field it sizes are one element, leaf or group', () => {
+  // The four shapes a VLG length can appear in, and the number each row REPORTS
+  // (its own, or the one it derives). Reported 2026-08-18: only the last of the
+  // four was wrong, and it was wrong because a pairing could be consumed by a
+  // plain leaf and by nothing else — so a LEN beside a sibling GROUP read as two
+  // elements where the same LEN beside a plain leaf reads as one.
+  const de = (ddl, overrides) => {
+    S.ddlTree = { VOL: { SV: { 'VLGSHAPE': `DEF REC.\n 02 BMP PIC X(16).\n${ddl}\nEND REC.` } } };
+    const rows = meWalkDEFields(
+      sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/VLGSHAPE/REC')]),
+      { ddl_bindings: ['VOL/SV/VLGSHAPE/REC'], overrides,
+        parse_spec_binary: [
+          { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+          { 'read-bitmap-fields': 'BMP' },
+        ] });
+    return id => { const r = rows.find(x => x.id === id); return r ? (r.de ?? r.ownerDE ?? null) : undefined; };
+  };
+
+  // 1. A LEN beside a plain leaf, at DE level — one element, then the next.
+  let n = de(` 02 LEN PIC 9(4).
+ 02 DATA PIC X(8).
+ 02 TAIL PIC X(4).`, { 'LEN': { de: 10, vlg: true } });
+  eq(n('LEN'), 10, 'the LEN does not own the number');
+  eq(n('DATA'), 10, 'the sized leaf is not part of the LEN\'s element');
+  eq(n('TAIL'), 11, 'the field after the pair does not take the next number');
+
+  // 2. A LEN beside a sibling GROUP, at DE level — the group joins the LEN's
+  //    element exactly as the plain leaf does, rather than drawing its own.
+  n = de(` 02 LEN PIC 9(4).
+ 02 PAYLOAD.
+   04 ITEM1 PIC X(4).
+   04 ITEM2 PIC X(4).
+ 02 TAIL PIC X(4).`, { 'LEN': { de: 10, vlg: true } });
+  eq(n('LEN'), 10, 'the LEN does not own the number');
+  eq(n('PAYLOAD'), 10, 'the sized GROUP draws a number of its own instead of joining the LEN');
+  eq(n('PAYLOAD.ITEM1'), 10, 'a leaf inside the sized group is outside the element');
+  eq(n('PAYLOAD.ITEM2'), 10, 'a leaf inside the sized group is outside the element');
+  eq(n('TAIL'), 11, 'the field after the pair is misnumbered');
+
+  // 3. The LEN INSIDE the group it sizes — the group is one element already, by
+  //    the sibling rule, and the marker changes nothing about the numbering.
+  n = de(` 02 LEN PIC 9(4).
+ 02 PAYLOAD.
+   04 LEN PIC 9(4).
+   04 DATA PIC X(8).
+   04 TAIL PIC X(4).
+ 02 OUTERTAIL PIC X(4).`, { 'LEN': { de: 10 }, 'PAYLOAD.LEN': { vlg: true } });
+  eq(n('PAYLOAD'), 11, 'the group holding the LEN is not one element');
+  for (const id of ['PAYLOAD.LEN', 'PAYLOAD.DATA', 'PAYLOAD.TAIL'])
+    eq(n(id), 11, `${id} is not part of its group's element`);
+  eq(n('OUTERTAIL'), 12, 'the field after the group is misnumbered');
+
+  // 4. Both at once: a LEN inside a group, sizing a group beside it. The whole
+  //    outer group is still one element — including the TAIL past the payload.
+  n = de(` 02 LEN PIC 9(4).
+ 02 PAYLOAD.
+   04 LEN PIC 9(4).
+   04 INNER.
+     06 ITEM1 PIC X(4).
+     06 ITEM2 PIC X(4).
+   04 TAIL PIC X(4).
+ 02 OUTERTAIL PIC X(4).`, { 'LEN': { de: 10 }, 'PAYLOAD.LEN': { vlg: true } });
+  eq(n('PAYLOAD'), 11, 'the group holding the LEN is not one element');
+  for (const id of ['PAYLOAD.LEN', 'PAYLOAD.INNER', 'PAYLOAD.INNER.ITEM1',
+                    'PAYLOAD.INNER.ITEM2', 'PAYLOAD.TAIL'])
+    eq(n(id), 11, `${id} is not part of its group's element`);
+  eq(n('OUTERTAIL'), 12, 'the field after the group is misnumbered');
+
+  // 5. A LEN that is the LAST field in its own scope has nothing to pair with,
+  //    and the pairing must not escape into the next branch of the record. This
+  //    is the shape that makes the scope check load-bearing: without it the
+  //    following TOP-LEVEL group swallows the LEN's number, along with
+  //    everything under it.
+  n = de(` 02 OUTER.
+   04 LEN PIC 9(4).
+ 02 OTHER.
+   04 SUB.
+     06 ITEM PIC X(4).
+ 02 TAIL PIC X(4).`, { 'OUTER': { de: 'children' }, 'OUTER.LEN': { vlg: true } });
+  eq(n('OUTER.LEN'), 1, 'the promoted LEN does not own a number');
+  eq(n('OTHER'), 2, 'the next branch inherited the LEN\'s number instead of taking its own');
+  eq(n('OTHER.SUB.ITEM'), 2, 'a leaf two levels into the next branch took the LEN\'s number');
+  eq(n('TAIL'), 3, 'the sequence after the escaped pairing is wrong');
 });
 
 test('a REDEFINES child group does not split its parent\'s DE (DATA-ELEMENT-37 case)', () => {

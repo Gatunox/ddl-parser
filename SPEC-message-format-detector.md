@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-18 | **The field a VLG length sizes may be a group.** At the level where DEs are assigned, a LEN pairs with the next sibling — but only a plain **leaf** ever consumed that pairing, so the same marker read as one element beside `02 DATA` and as two beside `02 PAYLOAD. { … }`, the group drawing a number of its own and pushing everything after it along. A group now joins the LEN's element exactly as a leaf does, and passes that number down to its own leaves. One sibling and no further: the field after the pair is its own element either way. Inside a group the marker still changes no numbering — the group is one element by the sibling rule already. The pairing stays confined to the LEN's own scope, so a LEN that is the last field there pairs with nothing rather than reaching into the next branch of the record and taking a whole top-level group with it. See §8.0. |
 | 2026-08-18 | **`"children"` yields the groups above it, like every other way of numbering.** An explicit number or `de: true` inside a group makes that group yield — it cannot be one element while something inside it is numbered separately — and `"children"` says exactly the same thing one level down, but was left out of the rule. Stepping down a level at a time hid it, because each step yielded the one above it by hand; mark a deep group while its ancestors stay untouched and the numbering contradicted itself, the top-level group keeping DE 1 while its own grandchild took DE 2 and the leaves under that grandchild reported 1. Marking a deep group now agrees with stepping down through it. See §7.1. |
 | 2026-08-18 | **`de: false` outranks the promotion `"children"` hands out.** A group handing its DE to its children promotes every one of them, and the leaf branch applied promotion as *forced* — which skips the eligibility test, the only place `de: false` is read. So a child of a `"children"` group could not be left out: the exclusion was stored, drawn in the panel, and then overridden by the very promotion that had put the child in reach. Excluding a field is the one answer nothing overrides; *forced* still does its own job of letting `de: true` and a DE number reach a nested field the default rule would refuse. See §7.1. |
 | 2026-08-18 | **A DE number written on a VLG length numbers its group, not the leaf.** A LEN marked `vlg` is part of its group and the GROUP is the data element — which is what the parse already does, where the auto-detect finds the LEN *inside* a group and frames the rest of that group with it. The DE walker did not agree. Numbered on the leaf, the leaf became an element of its own, so its group had to break apart around it and every payload group underneath drew a number too; and the LEN owning a number armed the length→field pairing, which is consumed only by the next plain leaf — a LEN whose payload is a group never meets one — so it stayed armed across two sibling groups and stamped a *later* group's LEN with a number already issued. Anchoring `SUBGROUP1.LEN1` to 60 produced 60, 61, 62, 63 and then handed 60 back out. It now reads 60 for the whole of SUBGROUP1 and 61, 62, 63 for the siblings after it, in the panel and in the parse alike. The pairing is also confined to its own group, so a length that misses its field dies at the boundary instead of drifting into a later element. See §7.1, §8.0. |
@@ -1183,12 +1184,31 @@ their leaves — derives that one number. The next sibling takes the next.
 ```
 
 Numbered on the leaf instead, the leaf became an element of its own: the group
-broke apart around it and each payload group underneath drew a number too. The
-pairing is **confined to the LEN's own group** — a length sizes what follows it
-inside that group, and once the walk leaves, the pairing is dead. It used to stay
-armed (only a plain leaf consumed it, and a LEN whose payload is a group never
-meets one), surviving two sibling groups to stamp a later LEN with a number that
-had already been issued.
+broke apart around it and each payload group underneath drew a number too.
+
+**The field a length sizes may be a group** *(added 2026-08-18)*. At the level
+where DEs are assigned, a LEN pairs with the **next sibling** — and that sibling
+counts whether it is a leaf or a group:
+
+```jsonc
+{ "LEN": { "de": 10, "vlg": true } }
+// 02 LEN. / 02 PAYLOAD. { ITEM1 ITEM2 } / 02 TAIL.
+//   LEN = 10, PAYLOAD and its leaves = 10, TAIL = 11
+```
+
+Only a plain leaf used to consume the pairing, so the same LEN read as **one**
+element beside `02 DATA` and as **two** beside a group. One sibling, no further:
+`TAIL` is its own element either way.
+
+Inside a group the marker changes no numbering at all — the group is already one
+element by the sibling rule, so the LEN, the payload and anything after it in
+that group all carry the group's number.
+
+The pairing is **confined to the LEN's own scope**. A length sizes what follows
+it there; once the walk leaves, the pairing is dead. It used to stay armed —
+only a plain leaf consumed it — and would survive two sibling groups to stamp a
+later LEN with a number already issued. A LEN that is the last field in its scope
+pairs with nothing, rather than reaching into the next branch of the record.
 
 **Auto-detect** applies to **direct children only**. Scanning every transitive leaf
 would find a grandchild's `LEN` — the length of a nested TLV triple, not of the

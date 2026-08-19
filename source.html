@@ -16658,7 +16658,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.34.2.0';
+const APP_VERSION  = '1.34.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23653,6 +23653,19 @@ function _meWalkDEFields(defs, item) {
       // emitted while walking defs in declaration order), so its offset IS
       // the group's start offset — same convention as DDL Doc.
       const _gextras = { isGroup: true, isTerminal, childCount, underTerminal: false, isRedef, redefTarget, dataType: 'GROUP', length: groupLength(prefix), offset: def.offset };
+      // A length sizes the field AFTER it, and that field may be a group. Only a
+      // plain leaf used to consume the pairing, so a LEN sitting beside a
+      // sibling group left the group to draw a number of its own: the length and
+      // the bytes it frames read as two elements where the same LEN beside a
+      // plain leaf reads as one. Same level only — the pairing belongs to the
+      // LEN's own scope, and a group one level down is not what it sized.
+      const _gparent = parts.slice(0, i - 1).join('.');
+      if (vlgOwner && !isRedef && _gparent === vlgOwner.parent) {
+        const _own = vlgOwner; vlgOwner = null;
+        out.push({ id: prefix, de: null, anchored: false, ..._gextras,
+                   ownerDE: _own.de, ownerId: _own.id });
+        continue;
+      }
       // Only TOP-LEVEL rows own a DE: a data element is one 02-level field of
       // the bound definition. A nested group is sub-structure INSIDE an
       // element — it must never draw its own number (composite elements were
@@ -23722,14 +23735,20 @@ function _meWalkDEFields(defs, item) {
   // was invisible — you could not see that FIELD-XX and FIELD-YY are both DE 9.
   // Marked as DERIVED, not assigned: they carry no DE of their own and the
   // counter never advanced for them.
+  // A group that took a preceding LEN's number passes it down the same way — it
+  // reports the number without owning it, and its leaves are just as much part
+  // of that element as the group is.
   for (let i = 0; i < out.length; i++) {
     const owner = out[i];
-    if (owner.de == null || !owner.isGroup) continue;
+    if (!owner.isGroup) continue;
+    const ownNum = owner.de != null ? owner.de : owner.ownerDE;
+    const ownId  = owner.de != null ? owner.id : owner.ownerId;
+    if (ownNum == null) continue;
     const pre = owner.id + '.';
     for (let j = i + 1; j < out.length && out[j].id.startsWith(pre); j++)
       if (out[j].de == null && out[j].ownerDE == null) {
-        out[j].ownerDE = owner.de;
-        out[j].ownerId = owner.id;
+        out[j].ownerDE = ownNum;
+        out[j].ownerId = ownId;
       }
   }
   return out;

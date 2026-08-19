@@ -122,6 +122,11 @@
   --bg-panel: #161b22;
   --bg-input: #0d1117;
   --surface-header: #1c2128;
+  /* Sidebar SECTION bars (Messages / Data / Files) — one level below a pane
+     header, so they read as nested rather than as another panel. A token, not a
+     hex in the rule: component selectors carry no colours here, which is what
+     lets light and dark stay peers. */
+  --surface-subhead: #23282f;
   --border: rgba(255,255,255,0.07);
   --border-hair: rgba(255,255,255,0.06);
   --rule-faint: rgba(255,255,255,0.04);
@@ -203,6 +208,7 @@
   --bg-panel: #ffffff;
   --bg-input: #eef1f3;
   --surface-header: #eef1f3;
+  --surface-subhead: #ffffff;
   --border: rgba(0,0,0,0.08);
   --border-hair: rgba(0,0,0,0.08);
   --rule-faint: rgba(0,0,0,0.06);
@@ -2143,7 +2149,7 @@ td.c-err  { color: var(--accent2); }
    lot; the two flex overrides that used to referee them are gone with the
    competition they refereed. */
 #me-sect-files{flex:0 1 auto;max-height:50%;}
-.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:2px 8px;height:var(--panel-header-h);box-sizing:border-box;background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
+.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:2px 8px;height:var(--panel-header-h);box-sizing:border-box;background:var(--surface-subhead);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
 .me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
 .me-sidebar-add{background:var(--surface-raised);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
 .me-sidebar-add:hover{border-color:var(--border-strong);color:var(--text);background:var(--surface-hover);}
@@ -16600,7 +16606,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.8.1';
+const APP_VERSION  = '1.32.8.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

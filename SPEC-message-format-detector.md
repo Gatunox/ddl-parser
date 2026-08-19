@@ -10,6 +10,15 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-18 | **`"children"` yields the groups above it, like every other way of numbering.** An explicit number or `de: true` inside a group makes that group yield — it cannot be one element while something inside it is numbered separately — and `"children"` says exactly the same thing one level down, but was left out of the rule. Stepping down a level at a time hid it, because each step yielded the one above it by hand; mark a deep group while its ancestors stay untouched and the numbering contradicted itself, the top-level group keeping DE 1 while its own grandchild took DE 2 and the leaves under that grandchild reported 1. Marking a deep group now agrees with stepping down through it. See §7.1. |
+| 2026-08-18 | **`de: false` outranks the promotion `"children"` hands out.** A group handing its DE to its children promotes every one of them, and the leaf branch applied promotion as *forced* — which skips the eligibility test, the only place `de: false` is read. So a child of a `"children"` group could not be left out: the exclusion was stored, drawn in the panel, and then overridden by the very promotion that had put the child in reach. Excluding a field is the one answer nothing overrides; *forced* still does its own job of letting `de: true` and a DE number reach a nested field the default rule would refuse. See §7.1. |
+| 2026-08-18 | **A DE number written on a VLG length numbers its group, not the leaf.** A LEN marked `vlg` is part of its group and the GROUP is the data element — which is what the parse already does, where the auto-detect finds the LEN *inside* a group and frames the rest of that group with it. The DE walker did not agree. Numbered on the leaf, the leaf became an element of its own, so its group had to break apart around it and every payload group underneath drew a number too; and the LEN owning a number armed the length→field pairing, which is consumed only by the next plain leaf — a LEN whose payload is a group never meets one — so it stayed armed across two sibling groups and stamped a *later* group's LEN with a number already issued. Anchoring `SUBGROUP1.LEN1` to 60 produced 60, 61, 62, 63 and then handed 60 back out. It now reads 60 for the whole of SUBGROUP1 and 61, 62, 63 for the siblings after it, in the panel and in the parse alike. The pairing is also confined to its own group, so a length that misses its field dies at the boundary instead of drifting into a later element. See §7.1, §8.0. |
+| 2026-08-18 | **The audit browser's record badge is the Class Editor's answer.** The badge came from a hard-coded pattern table, so a class renamed from `ISO` to `ISO-PEPE` was still labelled `ISO`, in the legacy colour. It now runs the same detection the parse does and reports the winning spec's own type code and colour. The peek is decoded whole rather than truncated to 16 bytes, and copied into a buffer of the record's **declared** length so a `greater-than` recognizer judges the record rather than the sample. No legacy fallback remains in the badge. |
+| 2026-08-18 | **`hex-char` gives the original hex, whatever the message encoding.** On an EBCDIC message every byte is translated at extraction, before any field exists, so a `hex-char` override read the *translated* bytes — a PIN block came back as something else entirely. The override means "give me the bytes as they are on the wire", so it now reads the untranslated copy the dispatcher keeps beside the translated one. One extraction per chunk either way. See §9. |
+| 2026-08-18 | **`bitmap-list` numbers each map from where it starts.** The secondary bitmap listed its bits as 1–64 instead of 65–128, and the primary listed bits above 64 that belong to the secondary. Each bitmap field now carries the range it covers, so a map states the DEs it actually maps. |
+| 2026-08-18 | **A recognised token's fields report message offsets, and an ISO token's payload starts after the header's space.** Token sub-fields were reported at offsets relative to the token, so highlighting pointed at the wrong bytes; they are rebased onto the message and clamped to the token's last byte. Separately, an ISO/text token header is `id(2) + size(5)` followed by a single space before the data — consumed only in the text branch, since STM/PSTM binary headers have no such delimiter. |
+| 2026-08-18 | **The engine's tokens reach the parse panel, and spec-parsed messages carry DE badges.** Tokens found by a `token-area` block were parsed and then never rendered; they now appear where the DATA row would have been, after the LEN row of the DE that holds them. Every row a `de` entry produces is stamped with its DE number, including rows produced by a block that returned early, so the badge column is populated for spec-parsed messages as it always was for the legacy path. |
+| 2026-08-18 | **Overrides bar: a filtered row survives its own clear, and a kind can be re-applied.** Filtering by kind re-tested every row against the store after each action, so clearing an override pulled the row out from under the click that cleared it — and with one row left the list emptied, which zeroed the count and disabled the only button that turns that filter off. Membership is sticky now: a row listed under an override filter stays listed until the filter itself is dropped, and the active kind's count stays clickable at zero. The action also went dead once every selected field carried the kind, so correcting a mistyped value meant clearing it and applying again; it writes over what is there, says how many entries it replaced, and remains one undo step. See §11. |
 | 2026-08-17 | **`token-area` inside a `de` entry reads that DE's own bytes.** `{"de": {"63": [{"token-area": "ANY"}]}}` produced nothing at all — no tokens, no error, no lint warning — and three independent reasons were each enough on their own: the block consumed no bytes and never looked at the cursor; it re-derived the area's position by searching the emitted fields for a DE-63 row, which is precisely the row the entry replaced; and `extractTokensFromMessage` returns null outright for any type code that is not ISO/B24/STM/PSTM, so a customized HPDH never got past its first line. Inside an entry none of that derivation applies: the cursor is on the element's first byte and the window is its last, so the area is simply what the DE holds. It **consumes** what it reads, so a DE framed only by a declared size still ends in the right place. `ctx.tokens` is appended to rather than assigned — a DE area plus the trailing one an STM spec normally ends with used to keep only whichever block ran last. The header shape (2-byte counts vs 5-character ones) is chosen by the class's **type code** exactly as before, so no existing spec shifts meaning; a new `header` attribute forces it, and a type code in neither family tries both. A DE with no `&·` there now says so instead of going quiet. See §5.14, §5.18. |
 | 2026-08-17 | **Class Editor: section collapse is remembered per class, and panels sit on the page's 10px gap.** Collapsing Identity or Recognizers lasted until the next selection — the section map was rebuilt from content on every `_meSelectItem`, so closing the editor, or just clicking another class and back, undid it. Stored per class in `up_me_sect` (§13), keyed `label \|\| name` like `up_me_last_sel`. Only the sections the user actually **toggled** are written: the content-derived defaults still decide everything untouched, so a class that later gains its first recognizer still opens that panel, which saving the whole map would have frozen shut. Cleared by Reset Layout like every other stored panel state. Separately, the editor spaced its panels on `--sp-3` while the page uses `--gap` — 12px against 10px, and scaling differently with density (12/6 against 10/2), so the two surfaces disagreed at every zoom level rather than at one. A section card now carries only its **bottom** margin: `#me-splitter` is already `--gap` wide and is what separates the sidebar from that column (10 + 12 = the 22px measured), and the reserved scrollbar gutter does the same on the right. See §11. |
 | 2026-08-17 | **A DDL declared size is capacity, not the DE's extent — and a row with no bytes no longer highlights byte 0.** A `de` entry framed its DE by the element's declared size and then forced the cursor to the end of that frame whatever the blocks read. A declared size says how much an element *can* hold — a message putting less in it is ordinary — so every DE mapped to a roomier element pushed the next one late and the drift compounded. Reported against a customized HPDH: DE-55 mapped to a 138-byte group whose TLV really ran shorter, DE-56 onward all late, DE-58 landing past the end of the message and reporting `Cannot read hex-char prefix at offset 344` for a spec that was correct. The engine's own comment already said a declared size "is only capacity"; only the cursor disagreed. Windows that state the DE's real extent — a length off the wire (`length_prefix`, a VLG LEN) and a `length` written on the entry — still fix where the next DE starts; a declared size no longer does, and the DE ends where its blocks stopped. Reading **past** any window is still reported and still clamped, so a malformed DE cannot corrupt the fields after it. Also: hovering a row that occupies no bytes lit up the **first byte of the message** — `f.startByte \| 0` turned the absent offset of an error row into `0` — so the highlight pointed at bytes with nothing to do with the failure; both highlight builders now ask one predicate whether there is a span at all. See §5.14. |
@@ -1161,6 +1170,26 @@ per field id so a REDEFINES re-read cannot double-shift.
 
 The group forms are unchanged — not migrated, not reinterpreted.
 
+**A DE number on a length belongs to its group** *(added 2026-08-18)*. A LEN
+marked `vlg` is **part of** its group, and the group is the data element — the
+same thing the parse does, where auto-detect finds the LEN inside a group and
+frames the rest of that group with it. So a DE anchor written on the LEN numbers
+the **group**, and everything inside — the LEN, sibling groups, nested groups,
+their leaves — derives that one number. The next sibling takes the next.
+
+```jsonc
+{ "GRP.SUBGROUP1.LEN1": { "de": 60, "vlg": true } }
+// SUBGROUP1 = DE 60 end to end; SUBGROUP2 = 61; SUBGROUP3 = 62
+```
+
+Numbered on the leaf instead, the leaf became an element of its own: the group
+broke apart around it and each payload group underneath drew a number too. The
+pairing is **confined to the LEN's own group** — a length sizes what follows it
+inside that group, and once the walk leaves, the pairing is dead. It used to stay
+armed (only a plain leaf consumed it, and a LEN whose payload is a group never
+meets one), surviving two sibling groups to stamp a later LEN with a number that
+had already been issued.
+
 **Auto-detect** applies to **direct children only**. Scanning every transitive leaf
 would find a grandchild's `LEN` — the length of a nested TLV triple, not of the
 group — and read the first tag as a length. A grandchild `LEN` still frames *its
@@ -1285,6 +1314,34 @@ now a default, overridable on the same `de` key:
 Only a **number** anchors. `+false` is 0, `+true` is 1 and `+"children"` is NaN,
 so the previous `+v || 1` coercion would have read all three as "anchor at DE 1".
 
+**Reading it as navigation** *(clarified 2026-08-18)*. The four values are one
+small vocabulary for walking a record: **count the siblings**, `false` skips one,
+`"children"` steps down a level. At whatever level you land on, the first element
+takes the number; from there you either leave it, skip it with `false`, or step
+down again. Chaining `"children"` is how you reach any depth.
+
+```jsonc
+// numbers land on TOP.L1A's children; the first of them is skipped
+{ "TOP": {"de": "children"}, "TOP.L1A": {"de": "children"},
+  "TOP.L1A.L2A": {"de": false} }
+```
+
+**Precedence** *(fixed 2026-08-18)*, in order:
+
+1. `false` wins over everything. A group promoting its children cannot number a
+   child that excluded itself — the exclusion used to be overridden by the very
+   promotion that put the child in reach.
+2. `true` and a **number** reach inside a group the default rule would refuse.
+3. Promotion by `"children"` reaches the group's immediate children.
+4. Otherwise the default: a top-level row not named `FILLER`.
+
+**Anything that numbers something inside a group makes that group yield** — a
+number, `true`, or `"children"`. A group cannot be one element while a part of it
+is numbered separately, so the groups above the numbered level give up their own
+numbers and their children each take one. `"children"` was missing from this
+rule, so marking a deep group while its ancestors went untouched numbered both
+ends at once. Marking a deep group and stepping down through it now agree.
+
 ---
 
 ## 9. Field Overrides (`overrides[…].type` / `.bytes` / `.display`)
@@ -1351,6 +1408,14 @@ the Len column reads `4 ↩ 2`, declared then in effect.
 > *2026-07-31 — renamed with no aliases: `hex-ascii` → `hex-ascii-decimal`,
 > `hex-ebcdic` → `hex-ebcdic-decimal`, and `hex-char` added. An override using an
 > old name no longer converts.*
+
+**`hex-char` reads the wire, not the message encoding** *(added 2026-08-18)*. An
+EBCDIC message is translated **at extraction** — every byte, before any field
+exists — so a field read as `hex-char` was giving the hex of the *translated*
+byte. A PIN block declared `PIC X(8)` and overridden to `hex-char` came back as
+something else entirely. `hex-char` means "give me the bytes as they are on the
+wire", in any encoding, so it reads the untranslated copy kept beside the
+translated one. Both come from a single extraction per chunk.
 
 A type override whose width does not match the DDL field is **rejected with a
 warning** rather than applied, so it can never silently consume the wrong number

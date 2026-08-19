@@ -10335,6 +10335,32 @@ test('the Class Editor header carries the wordmark, with its title centred', () 
     'the title still stretches instead of sitting in the middle');
 });
 
+test('[REGRESSION] the results table honours the widths it is given', () => {
+  // Reported 2026-08-19: "mouse icon changes but column does not move". The
+  // drag worked — it wrote 437px onto the FIELD header — but the table was
+  // table-layout:auto, where a th width is a hint the browser re-derives from
+  // content on every render. Measured then: FIELD set to 437px rendered at 358,
+  // and not one of the eight columns matched the width it had been given.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/table\.res-tbl\s*\{[^}]*table-layout:\s*fixed/.test(css),
+    'the results table re-fits columns to content, so a dragged width never lands');
+  // Written as `table.res-tbl`, one token. Fixing this the first time replaced
+  // only the TAIL of that selector and left `table` dangling in front of a
+  // comment, which CSS reads as the descendant selector `table .res-tbl` — a
+  // rule matching nothing, that no test noticed and the page silently ignored.
+  assert.ok(!/table\s+\.res-tbl\s*\{/.test(css),
+    'the rule is a descendant selector (table .res-tbl) and matches no element');
+  // Every column the resizer touches needs a data-col, or it cannot identify
+  // which width to store, and the shared config has to name the table.
+  for (const c of ['num','id','desc','len','off','val','raw','trk'])
+    assert.ok(new RegExp(`data-col="${c}"`).test(html), `the ${c} column carries no data-col`);
+  assert.ok(/table: '#resContainer table\.res-tbl'/.test(html),
+    'Parse Results is not registered with the shared column resizer');
+  // And it goes through the shared implementation, not a second one of its own.
+  assert.ok(/_meColInitResize\(_ME_COLRZ\.res\)/.test(html),
+    'the results table still initialises a resizer of its own');
+});
+
 test('Parse Results carries an Offset column too, after Size', () => {
   // The Field Map and the Test panel both say where a field sits; the Parse
   // Results table was the one that did not, so the byte span you were looking
@@ -10364,7 +10390,10 @@ test('Parse Results carries an Offset column too, after Size', () => {
     ["['id','desc','len','off','val','raw','trk']", 'the width/visibility sync'],
     ["layout.hiddenCols = ['id','desc','len','off','val','trk']", 'the saved layout'],
     ["['id','desc','len','off','val','trk'].forEach(c => container.classList.remove", 'Reset Layout'],
-    ["off:'72px'", 'the Reset Layout widths'],
+    // The widths live in the shared registry now — Reset Layout used to carry a
+    // hand-written copy that had already drifted (desc 180 there against 220 in
+    // the markup), and it is the registry every path reads.
+    ["off: 72", 'the shared column-width registry'],
     [`onclick="toggleResColVisibility('off')"`, 'the column chooser'],
   ]) assert.ok(html.includes(needle), `${why} does not know about the Offset column`);
   assert.ok(/#resContainer\.hide-off\s+td\.c-off/.test(html), 'hiding the column does nothing');

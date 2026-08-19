@@ -1365,7 +1365,16 @@ tr.row-filter-hide  { display: none; }
 /* ===== RESULTS TABLE ===== */
 .tbl-wrap { overflow-y: auto; flex: 1; min-height: 0; scrollbar-gutter: stable; }
 table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: var(--sz-mono); }
-table.res-tbl { width: 100%; }
+/* table-layout:fixed is what makes the th widths authoritative. Without it the
+   browser re-fits every column to content on each render, so a dragged edge
+   moved the inline width and nothing else — the cursor changed, the column did
+   not. Measured before the fix: FIELD set to 437px still rendered at 358, and
+   not one of the eight columns matched the width it was given.
+   No width:100% — with table-layout:fixed that makes column widths
+   PROPORTIONAL rather than absolute, so dragging one would rescale the rest.
+   _meColFit gives the table an explicit width instead — an inline width, which
+   also beats the generic `table { width:100% }` rule above. Reported 2026-08-19. */
+table.res-tbl { table-layout: fixed; }
 thead th {
   position: sticky; top: 0; z-index: 1;
   background: var(--bg-panel);
@@ -11476,6 +11485,9 @@ function initColResize(tableSel = '#resContainer table.res-tbl',
 
 function setResCol(col, visible) {
   document.getElementById('resContainer').classList.toggle('hide-' + col, !visible);
+  // Re-settle: under table-layout:fixed the columns left behind have to take up
+  // the width the hidden one gave back, or the table stops filling the panel.
+  _meColFit(_ME_COLRZ.res);
 }
 
 // ── DDL syntax highlight helpers ─────────────────────────────────────────────
@@ -12508,14 +12520,14 @@ function renderFieldTable(msg) {
   const tableOrEmpty = rows
     ? `<div class="tbl-wrap"><table class="res-tbl">
         <thead><tr>
-          <th class="th-num" style="width:28px;text-align:right">#</th>
-          <th class="th-id" style="width:140px">Field<span class="th-resize"></span></th>
-          <th class="th-desc" style="width:220px" title="DDL-declared type and length, any override applied to them, and the field's description">Type-Len / Description<span class="th-resize"></span></th>
-          <th class="th-len" style="width:44px" title="Size on the wire, in bytes">Size<span class="th-resize"></span></th>
-          <th class="th-off" style="width:72px" title="Bytes this field occupies in the message">Offset<span class="th-resize"></span></th>
-          <th class="th-val">Value<span class="th-resize"></span></th>
-          <th class="th-raw" style="width:120px">Raw Hex<span class="th-resize"></span></th>
-          <th class="th-trk" style="width:36px" title="Track field">Trk</th>
+          <th class="th-num" data-col="num" style="text-align:right">#</th>
+          <th class="th-id" data-col="id">Field<span class="th-resize"></span></th>
+          <th class="th-desc" data-col="desc" title="DDL-declared type and length, any override applied to them, and the field's description">Type-Len / Description<span class="th-resize"></span></th>
+          <th class="th-len" data-col="len" title="Size on the wire, in bytes">Size<span class="th-resize"></span></th>
+          <th class="th-off" data-col="off" title="Bytes this field occupies in the message">Offset<span class="th-resize"></span></th>
+          <th class="th-val" data-col="val">Value<span class="th-resize"></span></th>
+          <th class="th-raw" data-col="raw">Raw Hex<span class="th-resize"></span></th>
+          <th class="th-trk" data-col="trk" title="Track field">Trk</th>
         </tr></thead>
         <tbody>${rows}</tbody>
        </table></div>`
@@ -12586,8 +12598,7 @@ function renderFieldTable(msg) {
        </div>`;
 
   document.getElementById('resContainer').innerHTML = tableOrEmpty;
-  initColResize();
-  _applyColWidths();
+  _meColInitResize(_ME_COLRZ.res);
   _meInitColHighlight('#resContainer table');
 
   // Always show filter and Hide Redef when a message is active; redef button is visually inert when no redefines present
@@ -16679,7 +16690,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.34.3.3';
+const APP_VERSION  = '1.35.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -16756,7 +16767,6 @@ function savePrefs() {
 // ============================================================
 // LAYOUT PERSISTENCE
 // ============================================================
-let _savedColWidths = {};
 
 function saveLayout() {
   try {
@@ -16780,16 +16790,9 @@ function saveLayout() {
       layout.hiddenCols = ['id','desc','len','off','val','trk']
         .filter(c => container.classList.contains('hide-' + c));
     }
-    // Column header widths
-    const table = document.querySelector('#resContainer table.res-tbl');
-    if (table) {
-      const cw = {};
-      ['id','desc','len','val','trk'].forEach(c => {
-        const th = table.querySelector('th.th-' + c);
-        if (th && th.style.width) cw[c] = th.style.width;
-      });
-      if (Object.keys(cw).length) { layout.colWidths = cw; _savedColWidths = { ..._savedColWidths, ...cw }; }
-    }
+    // Column widths are NOT here: _ME_COLRZ.res owns them, under its own key,
+    // the same way the other three tables' widths are owned. This copy could
+    // only ever write widths the auto-layout table then ignored.
     _kvSet('up_layout', JSON.stringify(layout));
   } catch(e) {}
 }
@@ -16830,27 +16833,12 @@ function loadLayout() {
         _syncColPickerCheckmarks(layout.hiddenCols);
       }
     }
-    // Column widths — stored for when the parse table is built
-    if (layout.colWidths && typeof layout.colWidths === 'object') {
-      _savedColWidths = layout.colWidths;
-    }
   } catch(e) {}
 }
 
-function _applyColWidths() {
-  const table = document.querySelector('#resContainer table.res-tbl');
-  if (!table || !Object.keys(_savedColWidths).length) return;
-  ['id','desc','len','val','trk'].forEach(c => {
-    if (_savedColWidths[c]) {
-      const th = table.querySelector('th.th-' + c);
-      if (th) th.style.width = _savedColWidths[c];
-    }
-  });
-}
 
 function resetLayout() {
   _kvDel('up_layout');
-  _savedColWidths = {};
   // Reset panel / row flex to CSS defaults
   ['topRow','bottomRow','ddlPanel','msgPanel','resPanel','rawPanel'].forEach(id => {
     const el = document.getElementById(id);
@@ -16868,15 +16856,9 @@ function resetLayout() {
     ['id','desc','len','val','trk'].forEach(c => container.classList.remove('hide-' + c));
     _syncColPickerCheckmarks([]);
   }
-  // Reset column header widths to defaults
-  const table = document.querySelector('#resContainer table.res-tbl');
-  if (table) {
-    const defaults = { id:'140px', desc:'180px', len:'44px', off:'72px', val:'', trk:'36px' };
-    ['id','desc','len','off','val','trk'].forEach(c => {
-      const th = table.querySelector('th.th-' + c);
-      if (th) th.style.width = defaults[c] || '';
-    });
-  }
+  // Through the registry that owns them, not a fourth hand-written list — this
+  // one had drifted already (desc 180 here against 220 in the markup).
+  _meColReset(_ME_COLRZ.res);
   // The Class Editor's own sizes, DERIVED from the registries that own them
   // rather than listed again here. Reported: Reset Layout left every panel on
   // that page where it was, because this function was a hand-written list and
@@ -24127,7 +24109,27 @@ function _meVlgIsLen(lenId, rowId) {
 //
 // Column widths are keyed by the header's data-col attribute.
 const _ME_FM_DEFAULT_COLW = { num: 45, off: 84, len: 65, dt: 237, de: 102, vlg: 45 };
+// Parse Results defaults, the widths its header markup used to carry inline.
+// `val` is absent on purpose: it is the flex column and absorbs what is left,
+// which is what keeps the table filling the panel at any width.
+const _RES_DEFAULT_COLW = { num: 28, id: 140, desc: 220, len: 44, off: 72, raw: 120, trk: 36 };
+
 const _ME_COLRZ = {
+  // The main results table. It had a resizer of its own that could not work —
+  // the table was table-layout:auto, so every width it wrote was a hint the
+  // browser re-derived from content on the next render. Same config as the
+  // other three tables now, which is one implementation instead of two.
+  res: {
+    table: '#resContainer table.res-tbl', wrap: '#resContainer .tbl-wrap',
+    key: 'up_res_col_w', handle: '.th-resize',
+    flex: 'val', flexMin: 120, min: 36, pad: 4,
+    after: () => _syncFilterPos(),
+    defaults: () => _RES_DEFAULT_COLW,
+    // The column chooser can hide any of them; a hidden th measures 0, and that
+    // 0 written back as a width sticks when it is shown again.
+    visibleOnly: true,
+    saveAll: false,
+  },
   fm: {
     table: '.me-fm-table', wrap: '.me-fm-table-wrap', key: 'up_me_fm_col_w',
     handle: '.me-fm-resizer', flex: 'fld', flexMin: 120, min: 36, pad: 4,

@@ -690,6 +690,65 @@ likely makes this easier, since the batching and cancel machinery is shared.
 
 ---
 
+## 19. [ ] Blocks read past the DE window and are caught afterwards
+
+**Problem.** Inside a `de` entry, `ctx._deLimit` holds the last byte the element
+may reach. Exactly two blocks consult it while reading — `read-tlv` and
+`token-area`. Every other block (`read-fixed`, `read-to-end`, `read-until`,
+`read-ddl`) reads as if the rest of the message were available, and the overrun
+is caught only after the entry's blocks have all run:
+
+```
+if (ctx.cursor > end) { push "read N byte(s) past the element's length"; ctx.cursor = end; }
+```
+
+**Why it matters.** The final cursor is right, so nothing downstream shifts —
+this is a diagnosis problem, not a corruption one, which is why it has stayed
+parked. But the error names the DE rather than the block, so a spec with four
+blocks in one entry says "DE 55 read 30 bytes too far" and leaves the user to
+work out which block did it. Worse for `read-to-end`, whose "end" is the end of
+the MESSAGE: on a DE near the end of a record it can consume everything left,
+succeed, and only then be clawed back — and if the message is short it can throw
+before the clamp ever runs.
+
+**Shape of the fix.** One helper for "how many bytes may I still read here",
+reading `_deLimit` when set and `bytes.length` otherwise — `read-tlv` and
+`token-area` already compute exactly this inline, so it is a third caller rather
+than a new idea. Then each read clamps to it and reports itself by name. The
+after-the-fact overrun check stays as the backstop.
+
+**Risk.** Low, but it touches every read path, so it wants the baseline run and
+a fixture per block type rather than a single case.
+
+---
+
+## 20. [ ] `detectMsgType` still falls back to legacy regexes
+
+**Problem.** `_fmtDetect` (Class Editor specs) runs first and wins whenever a
+spec matches. When none does, both `detectMsgType` and `detectMsgTypeTrace` fall
+through to `MSG_TYPE_MAP`, a table built from `_DEFAULT_DETECT_RULES` at startup.
+
+**Why it matters.** Reported 2026-08-18 against the audit browser: type codes
+renamed from `ISO` to `ISO-PEPE` / `ISO-MDS` / `ISO-KAKE` were still badged
+`ISO`, in the legacy colour, because the badge read that table. The **badge** was
+moved to `_fmtDetect` in v1.33.0.0; the **parse path** was not, so the same
+mislabelling is still reachable there — a message no spec claims gets a type and
+a colour from a hardcoded pattern, and the user has no way to see or edit the
+rule that produced it.
+
+**Shape of the fix.** Decide what an unmatched message should be. Almost
+certainly `UNKNOWN` — the Class Editor is the single place detection is
+configured, and a fallback nobody can see or edit contradicts that. If some
+default coverage is genuinely wanted, the honest form is a set of default
+*specs*, visible and editable in the Class Editor, which is what
+`_fmtDefaultSpecs` already is.
+
+**Risk.** Behavioural: a message currently labelled by the legacy table would
+become UNKNOWN. Needs a look at what `_DEFAULT_DETECT_RULES` still catches that
+no shipped spec does — if the answer is "nothing", this is a deletion.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

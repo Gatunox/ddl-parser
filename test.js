@@ -12541,6 +12541,54 @@ test('a padded value shows its padding in the results table', () => {
     'while the tooltip still carries the real characters');
 });
 
+// ── The audit dump's byte map is derived, not counted ──────────────────────
+// Reported: highlighting a field that spans two dump rows lit the right bytes
+// on row 1 and started one character late on row 2 — covering the trailing
+// space instead of the leading digit. The map used `l * 69` per line, but a
+// full line is 6 + ': ' + 39 hex + '  [' + 16 chars + ']' + newline = 68, so
+// every line after the first drifted one more character right.
+console.log('\naudit dump byte map');
+
+test('the line start comes from the text, not a per-line constant', () => {
+  const src = psFnSource('_auditApplyDump');
+  const at  = src.indexOf('_auditPopupByteCharMap = new Array(pay.length)');
+  assert.ok(at !== -1, 'the hex byte map is gone');
+  const region = src.slice(at, at + 2600);   // must reach the byte-offset line
+  assert.ok(/const lineStart = payloadStart \+ payText\.length/.test(region),
+    'the line start is still computed rather than measured');
+  // Comments stripped first: the fix's own comment quotes the old expression to
+  // explain it, and a naive search finds that instead of live code.
+  const code = region.replace(/\/\/[^\n]*/g, '');
+  assert.ok(!/l \* 69/.test(code), 'the 69-per-line constant is back');
+  assert.ok(!/\bconst l = lineOff \/ 16/.test(code),
+    'the line index it fed is still declared, so something is using it again');
+  // Tie the code to the layout the next two tests verify. Without this the
+  // arithmetic can be checked in isolation and still not be what runs.
+  assert.ok(/lineStart \+ 8 \+ g \* 5 \+ bi \* 2/.test(code),
+    'the byte offset within a line no longer matches the "     0: " prefix, the '
+    + '5-char group stride and the 2-char byte step');
+});
+
+test('a dump line really is 68 characters', () => {
+  // The constant that was wrong, checked against the format that produces it —
+  // so if the dump layout changes, this fails rather than the highlight drifting.
+  const line = String(0).padStart(6) + ': '
+    + Array.from({ length: 8 }, () => 'FFFF').join(' ')
+    + '  [' + 'X'.repeat(16) + ']\n';
+  eq(line.length, 68, 'the dump line length changed — the byte map must follow');
+  eq(line.indexOf('FFFF'), 8, 'the "     0: " prefix is not 8 characters');
+});
+
+test('byte positions step by 5 per group and 2 within it', () => {
+  // "FFFF FFFF" — four hex chars then a space, so group g starts at 8 + g*5 and
+  // the second byte of a group sits 2 further on.
+  const line = String(0).padStart(6) + ': '
+    + Array.from({ length: 8 }, (_, g) => (g === 3 ? 'AABB' : 'FFFF')).join(' ')
+    + '  [' + 'X'.repeat(16) + ']';
+  eq(line.slice(8 + 3 * 5, 8 + 3 * 5 + 2), 'AA', 'group 3 byte 0 is misplaced');
+  eq(line.slice(8 + 3 * 5 + 2, 8 + 3 * 5 + 4), 'BB', 'group 3 byte 1 is misplaced');
+});
+
 // ── An open recogniser is edited, not dragged ──────────────────────────────
 // Reported: with a recogniser expanded, its text inputs could not be selected.
 // draggable="true" on the row means a mousedown anywhere inside it — including

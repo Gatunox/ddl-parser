@@ -13733,7 +13733,6 @@ function _auditApplyDump(u8, rec, recno) {
       _auditPopupByteCharMap = new Array(pay.length);
       for (let lineOff = 0; lineOff < pay.length; lineOff += 16) {
         const n = Math.min(16, pay.length - lineOff);
-        const l = lineOff / 16;
         let hexPart = '';
         for (let g = 0; g < 8; g++) {
           if (g > 0) hexPart += ' ';
@@ -13747,10 +13746,17 @@ function _auditApplyDump(u8, rec, recno) {
           const c = isEbcdic ? (_EBCDIC_TO_ASCII[b] ?? b) : b;
           charStr += (c >= 0x20 && c <= 0x7E) ? String.fromCharCode(c) : '.';
         }
+        // Where this line STARTS, taken from the text already built rather than
+        // from a per-line constant. It was `l * 69`; a full line is 6 + ': ' +
+        // 39 hex + '  [' + 16 chars + ']' + newline = 68, so every line after
+        // the first drifted one character right and the highlight on a field
+        // spanning two rows began a character late on the second — covering the
+        // trailing space instead of the leading digit.
+        const lineStart = payloadStart + payText.length;
         payText += String(lineOff).padStart(6) + ': ' + hexPart + '  [' + charStr + ']\n';
         for (let p = 0; p < n; p++) {
           const g = Math.floor(p / 2), bi = p % 2;
-          const s = payloadStart + l * 69 + 8 + g * 5 + bi * 2;
+          const s = lineStart + 8 + g * 5 + bi * 2;   // 8 = the "     0: " prefix
           _auditPopupByteCharMap[lineOff + p] = { s, e: s + 2 };
         }
       }
@@ -16614,7 +16620,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.9.0';
+const APP_VERSION  = '1.32.9.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

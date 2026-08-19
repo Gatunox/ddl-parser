@@ -1999,7 +1999,9 @@ td.c-err  { color: var(--accent2); }
   display:flex; align-items:center; gap:6px; padding:4px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); background:rgba(var(--accent-rgb),0.07);
 }
-.audit-popup-title { flex:1; font-size:var(--sz-mono); color:var(--accent); font-weight:700; }
+/* --text, like .panel-title, .me-pane-title and .me-header-title. This was the
+   only title-bar text on --accent, which read as a link rather than a heading. */
+.audit-popup-title { flex:1; font-size:var(--sz-mono); color:var(--text); font-weight:700; }
 .audit-popup-body  { flex:1; overflow:hidden; padding:0; font-family:var(--font-mono); font-size:var(--sz-mono); }
 .audit-field-row   { display:flex; flex-direction:column; padding:5px 0; border-bottom: var(--bw) solid rgba(255,255,255,0.05); }
 .audit-field-label { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); margin-bottom:2px; }
@@ -16620,7 +16622,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.9.1';
+const APP_VERSION  = '1.32.9.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -16658,7 +16658,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.34.1.0';
+const APP_VERSION  = '1.34.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23544,10 +23544,16 @@ function _meWalkDEFields(defs, item) {
   // a single element containing it — you cannot have ADDITIONA be DE 7 while
   // FIELD-XX inside it is DE 11. The group yields and its immediate children
   // each own one: the same shape as "children", reached implicitly.
+  // "children" is the same statement one level down — it puts numbers on the
+  // group's children, so every group ABOVE it must yield too. Left out, marking
+  // a deep group while its ancestors went untouched numbered both: the top-level
+  // group kept DE 1 while its own grandchild took DE 2, and the leaves under
+  // that grandchild reported 1. Stepping down a level at a time hid it, because
+  // each step yielded the one above by hand. Reported 2026-08-18.
   const yielded = new Set();
   for (const id in _ovAll) {
     const sel = _ovAll[id].de;
-    if (!(sel === true || _meDeIsAnchor(sel))) continue;
+    if (!(sel === true || sel === 'children' || _meDeIsAnchor(sel))) continue;
     // Ancestors of the ELEMENT the number lands on. Read off the leaf, a number
     // moved up to its group still yielded that group — which is the group the
     // number now belongs to, so it broke apart the element it had just named.

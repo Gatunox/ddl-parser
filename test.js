@@ -2662,6 +2662,69 @@ test('[REGRESSION] ignore outranks the promotion "children" hands out', () => {
   assert.ok(de('SIB2.B2') != null, 'de:true no longer reaches a nested leaf');
 });
 
+test('[REGRESSION] "children" steps down a level, and stepping is not required', () => {
+  // The navigation the panel is actually used for: children walks DOWN one
+  // level, the first element at that level takes the number, and ignore moves
+  // it to the next sibling. Chain it to go deeper.
+  S.ddlTree = { VOL: { SV: { 'DEEPDDL': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 TOP.
+        04 L1A.
+          06 L2A.
+            08 L3A.
+              10 X1 PIC X(4).
+              10 X2 PIC X(4).
+            08 L3B.
+              10 X1 PIC X(4).
+              10 X2 PIC X(4).
+          06 L2B.
+            08 Y1 PIC X(4).
+        04 L1B.
+          06 Z1 PIC X(4).
+      02 TAIL PIC X(4).
+    END REC.
+  ` } } };
+  const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/DEEPDDL/REC')]);
+  const walk = overrides => {
+    const rows = meWalkDEFields(defs, {
+      ddl_bindings: ['VOL/SV/DEEPDDL/REC'], overrides,
+      parse_spec_binary: [
+        { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+        { 'read-bitmap-fields': 'BMP' },
+      ] });
+    return id => rows.find(r => r.id === id)?.de ?? null;
+  };
+
+  // Two steps down: the numbers land on L2A/L2B, and the sibling branch that was
+  // never descended into keeps one number for itself.
+  let de = walk({ 'TOP': { de: 'children' }, 'TOP.L1A': { de: 'children' } });
+  eq(de('TOP'), null, 'a group handing down its DE keeps one');
+  eq(de('TOP.L1A'), null, 'the second step down keeps one too');
+  eq(de('TOP.L1A.L2A'), 1, 'the first element at the level reached does not take the number');
+  eq(de('TOP.L1A.L2B'), 2, 'its sibling does not follow on');
+  eq(de('TOP.L1B'), 3, 'the branch never descended into is not one element');
+  eq(de('TAIL'), 4, 'the sequence does not resume after the whole group');
+
+  // Three steps, then ignore at that level: the number moves to the next sibling.
+  de = walk({ 'TOP': { de: 'children' }, 'TOP.L1A': { de: 'children' },
+              'TOP.L1A.L2A': { de: 'children' }, 'TOP.L1A.L2A.L3A': { de: false } });
+  eq(de('TOP.L1A.L2A.L3A'), null, 'the ignored element at the reached level still takes a number');
+  eq(de('TOP.L1A.L2A.L3B'), 1, 'ignore does not pass the number to the next sibling');
+  eq(de('TOP.L1A.L2B'), 2, 'numbering does not come back up a level afterwards');
+  eq(de('TAIL'), 4, 'the tail of the sequence shifted');
+
+  // Marking a DEEP group without stepping through its ancestors must agree with
+  // stepping through them. It used to number BOTH: TOP kept DE 1 while its own
+  // grandchild took DE 2, and the leaves under that grandchild reported 1.
+  de = walk({ 'TOP.L1A': { de: 'children' } });
+  eq(de('TOP'), null, 'the ancestor of a "children" group still owns a number of its own');
+  eq(de('TOP.L1A.L2A'), 1, 'the promoted level does not start the numbering');
+  eq(de('TOP.L1A.L2B'), 2, 'the promoted siblings do not follow on');
+  eq(de('TOP.L1B'), 3, 'the untouched sibling branch is misnumbered');
+  eq(de('TAIL'), 4, 'the sequence past the group is wrong');
+});
+
 test('[REGRESSION] a VLG pairing dies at its group boundary', () => {
   // The guard on its own: a LEN that DOES own a number, whose payload is a
   // group, must not reach past that group. It used to stay armed — only a plain

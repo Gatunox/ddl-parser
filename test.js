@@ -7055,7 +7055,7 @@ test('the DDL Doc reads like the Parse Results table', () => {
   // the two does not mean re-learning the columns.
   // The headers are built from a list now, so each column can be given the same
   // resize handle the Parse Results ones carry without writing it out seven times.
-  const _h = APP_SRC.indexOf("'<th>#</th>'");
+  const _h = APP_SRC.indexOf(`'<th data-col="num">#</th>'`);
   const head = APP_SRC.slice(_h, APP_SRC.indexOf('.join(', _h));
   const cols = [...head.matchAll(/<th[^>]*>([^<]+)<\/th>/g)].map(m => m[1]);
   deepEq(cols, ['#', 'Fully Qualified Name', 'Data Type', 'Occurs', 'Size', 'Offset', 'Description'],
@@ -7255,21 +7255,28 @@ test('the DDL Doc columns can be dragged and selected, like Parse Results', () =
   // Same two gestures, same two implementations — the highlight was already
   // parameterised by selector, and the resizer had its table and its
   // after-effects baked in until now.
-  const init = psFnSource('initColResize');
-  assert.ok(/function initColResize\(tableSel = '#resContainer table\.res-tbl',/.test(APP_SRC),
-    'the resizer is still hardcoded to one table');
-  assert.ok(/onMove = _syncFilterPos, onDone = saveLayout/.test(APP_SRC),
-    'the resizer does not default to what Parse Results needs');
-  // The inner handler must NOT be called onMove: a local of that name shadows
-  // the callback, so it called itself, threw on the first move, and the filter
-  // stopped tracking in BOTH tables.
-  assert.ok(/const onDrag = ev =>/.test(init), 'the drag handler shadows the callback again');
-  assert.ok(!/const onMove = ev =>/.test(init), 'the drag handler shadows the callback again');
-  assert.ok(/removeEventListener\('mousemove', onDrag\)/.test(init), 'the drag listener is never removed');
+  // [2026-08-19] There is ONE column resizer now. The second implementation
+  // that used to live here drove Parse Results and DDL Doc, and could not work
+  // on either: both tables were table-layout:auto, where the width it wrote was
+  // a hint the browser re-derived from content on the next render.
+  assert.ok(!/function initColResize\(/.test(APP_SRC),
+    'the second column-resize implementation is back');
+  const cfgKeys = (APP_SRC.match(/^\s{2}(res|doc|fm|test):\s*\{/gm) || []).length;
+  eq(cfgKeys, 4, 'the four tables are not all registered with the shared resizer');
 
   // Both gestures wired on the DDL Doc, against the shared implementations.
-  assert.ok(/initColResize\('#ddlDocBody table\.ddl-doc-tbl', _syncDDLDocFilterPos, \(\) => \{\}\)/.test(APP_SRC),
+  assert.ok(/_meColInitResize\(_ME_COLRZ\.doc\)/.test(APP_SRC),
     'the DDL Doc columns cannot be dragged');
+  assert.ok(/table: '#ddlDocBody table\.ddl-doc-tbl'/.test(APP_SRC),
+    'the shared resizer is not aimed at the DDL Doc table');
+  // And the table honours what it is given — the whole point of the move.
+  const cssDoc = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/table\.ddl-doc-tbl\s*\{[^}]*table-layout:\s*fixed/.test(cssDoc),
+    'the DDL Doc table re-fits columns to content, so a dragged width never lands');
+  assert.ok(!/table\s+\.ddl-doc-tbl\s*\{/.test(cssDoc),
+    'the rule is a descendant selector and matches no element');
+  for (const c of ['num','name','type','occurs','size','off','desc'])
+    assert.ok(new RegExp(`data-col="${c}"`).test(html), `the DDL Doc ${c} column carries no data-col`);
   assert.ok(/_meInitColHighlight\('#ddlDocBody table\.ddl-doc-tbl'\)/.test(APP_SRC),
     'the DDL Doc columns cannot be selected');
   // Every header but the last carries a handle — the last has nothing to its

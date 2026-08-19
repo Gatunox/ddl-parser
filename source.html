@@ -917,7 +917,13 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    and rule — so the two tables you switch between read as one thing rather than
    two that happen to list fields. Written against the tokens, not copied values,
    so a density or font-size change moves both. */
-.ddl-doc-tbl   { width: 100%; border-collapse: collapse; font-family: var(--font-mono); }
+/* table-layout:fixed for the same reason Parse Results needs it: without it a
+   dragged width is a hint the browser re-derives from content on every render,
+   so the cursor changes and the column does not move. No width:100% — under
+   fixed layout that makes the widths proportional instead of absolute, and
+   _meColFit sets an explicit inline width that also beats the generic
+   `table { width:100% }` rule. */
+table.ddl-doc-tbl { table-layout: fixed; border-collapse: collapse; font-family: var(--font-mono); }
 .ddl-doc-tbl th { position: sticky; top: 0; z-index: 1;
   background: var(--bg-panel); color: var(--text-very-dim);
   padding: var(--row-py) 10px; text-align: left;
@@ -5408,13 +5414,13 @@ function showDDLDoc() {
   const _ddlDocSpan = f => (f.size > 0 ? `${f.offset}–${f.offset + f.size - 1}` : String(f.offset));
   let html = '<table class="ddl-doc-tbl">';
   html += '<thead><tr>'
-       + ['<th>#</th>',
-          '<th class="ddl-doc-name">Fully Qualified Name</th>',
-          '<th>Data Type</th>',
-          '<th class="ddl-doc-num">Occurs</th>',
-          '<th class="ddl-doc-size">Size</th>',
-          '<th class="ddl-doc-off">Offset</th>',
-          '<th>Description</th>']
+       + ['<th data-col="num">#</th>',
+          '<th class="ddl-doc-name" data-col="name">Fully Qualified Name</th>',
+          '<th data-col="type">Data Type</th>',
+          '<th class="ddl-doc-num" data-col="occurs">Occurs</th>',
+          '<th class="ddl-doc-size" data-col="size">Size</th>',
+          '<th class="ddl-doc-off" data-col="off">Offset</th>',
+          '<th data-col="desc">Description</th>']
          // The same handle the Parse Results headers carry, so the same
          // drag code drives both. The last column has none: there is nothing
          // to its right to give the width to.
@@ -5517,7 +5523,7 @@ function showDDLDoc() {
   // The same column gestures the Parse Results table has: drag a header edge to
   // resize, click one to light the column. Both are the shared implementations —
   // the highlight was already parameterised, and the resizer is now.
-  initColResize('#ddlDocBody table.ddl-doc-tbl', _syncDDLDocFilterPos, () => {});
+  _meColInitResize(_ME_COLRZ.doc);
   _meInitColHighlight('#ddlDocBody table.ddl-doc-tbl');
   // The filter sits over the column it filters, once the widths are settled.
   requestAnimationFrame(_syncDDLDocFilterPos);
@@ -11454,41 +11460,11 @@ const _syncDDLDocFilterPos = () =>
 const _meFmSyncFilterPos = () =>
   _syncFilterToCol('.me-fm-toolbar', '.me-fm-filter', '.me-fm-table th.me-fm-th-fld');
 
-// Drag-to-resize for any table whose headers carry a .th-resize handle. The
-// Parse Results table was the only caller, so the selector and what to do
-// afterwards were baked in; both are arguments now.
-function initColResize(tableSel = '#resContainer table.res-tbl',
-                       onMove = _syncFilterPos, onDone = saveLayout) {
-  const table = document.querySelector(tableSel);
-  if (!table) return;
-  table.querySelectorAll('thead th .th-resize').forEach(handle => {
-    const th = handle.parentElement;
-    handle.addEventListener('mousedown', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      const startX = e.clientX;
-      const startW = th.getBoundingClientRect().width;
-      handle.classList.add('th-resize-active');
-      document.body.style.cursor = 'col-resize';
-      // Named onDrag, not onMove: the callback parameter is called onMove, and a
-      // local of the same name shadowed it — so this called ITSELF, threw on the
-      // first move, and the filter stopped tracking the column in both tables.
-      const onDrag = ev => {
-        th.style.width = Math.max(36, startW + ev.clientX - startX) + 'px';
-        onMove();
-      };
-      const onUp = () => {
-        handle.classList.remove('th-resize-active');
-        document.body.style.cursor = '';
-        document.removeEventListener('mousemove', onDrag);
-        document.removeEventListener('mouseup', onUp);
-        onDone();
-      };
-      document.addEventListener('mousemove', onDrag);
-      document.addEventListener('mouseup', onUp);
-    });
-  });
-}
+// The four tables' column resizing lives in _ME_COLRZ / _meColInitResize.
+// A second implementation used to sit here for Parse Results and DDL Doc,
+// and it could not work on either: both tables were table-layout:auto, where
+// the width it wrote was a hint the browser re-derived from content on the
+// next render. Removed 2026-08-19 with the tables moved across.
 
 function setResCol(col, visible) {
   document.getElementById('resContainer').classList.toggle('hide-' + col, !visible);
@@ -16697,7 +16673,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.35.1.0';
+const APP_VERSION  = '1.35.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24120,6 +24096,9 @@ const _ME_FM_DEFAULT_COLW = { num: 45, off: 84, len: 65, dt: 237, de: 102, vlg: 
 // `val` is absent on purpose: it is the flex column and absorbs what is left,
 // which is what keeps the table filling the panel at any width.
 const _RES_DEFAULT_COLW = { num: 28, id: 140, desc: 220, len: 44, off: 72, raw: 120, trk: 36 };
+// DDL Doc. `desc` is the flex column here — the fully qualified name is the one
+// you scan down, so it keeps a width of its own rather than absorbing the slack.
+const _DDLDOC_DEFAULT_COLW = { num: 44, name: 300, type: 150, occurs: 64, size: 56, off: 90 };
 
 const _ME_COLRZ = {
   // The main results table. It had a resizer of its own that could not work —
@@ -24135,6 +24114,18 @@ const _ME_COLRZ = {
     // The column chooser can hide any of them; a hidden th measures 0, and that
     // 0 written back as a width sticks when it is shown again.
     visibleOnly: true,
+    saveAll: false,
+  },
+  // DDL Doc — the fourth and last table, and the second that could not resize.
+  // It hid none of its columns, so visibleOnly would only cost a getComputedStyle
+  // per header on every fit.
+  doc: {
+    table: '#ddlDocBody table.ddl-doc-tbl', wrap: '#ddlDocBody',
+    key: 'up_ddldoc_col_w', handle: '.th-resize',
+    flex: 'desc', flexMin: 120, min: 36, pad: 4,
+    after: () => _syncDDLDocFilterPos(),
+    defaults: () => _DDLDOC_DEFAULT_COLW,
+    visibleOnly: false,
     saveAll: false,
   },
   fm: {

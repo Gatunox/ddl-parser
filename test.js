@@ -12541,6 +12541,39 @@ test('a padded value shows its padding in the results table', () => {
     'while the tooltip still carries the real characters');
 });
 
+// ── An open recogniser is edited, not dragged ──────────────────────────────
+// Reported: with a recogniser expanded, its text inputs could not be selected.
+// draggable="true" on the row means a mousedown anywhere inside it — including
+// in an input — starts a drag instead of a selection. Reordering is a
+// closed-row gesture, editing an open-row one; they were competing.
+console.log('\nopen recogniser rows are not draggable');
+
+test('the row drops draggable while its form is open', () => {
+  const src = psFnSource('_meHtmlRecs');
+  assert.ok(/draggable="\$\{editing \? 'false' : 'true'\}"/.test(src),
+    'the row is draggable regardless of whether it is being edited');
+  // The flag already existed for rendering the form — the row simply never read it.
+  assert.ok(/const editing\s*=\s*_meState\.editRec === i/.test(src),
+    'the editing flag is gone, so the draggable expression cannot be right');
+});
+
+test('an open row does not offer the grab cursor', () => {
+  // Half a fix is worse: a row that still says "drag me" and then refuses.
+  // `html`, not APP_SRC: APP_SRC is the <script id="app"> body, and this is CSS.
+  assert.ok(/\.me-rec-row\.editing \.me-rec-head\{cursor:pointer;\}/.test(html),
+    'the open row still shows cursor:grab from .me-rec-head');
+  assert.ok(/class="me-rec-row\$\{editing \? ' editing' : ''\}"/.test(psFnSource('_meHtmlRecs')),
+    'nothing marks the open row, so the cursor rule can never match');
+});
+
+test('the drag handlers stay wired for closed rows', () => {
+  // Only the draggable ATTRIBUTE is conditional. Removing the handlers would
+  // break reordering entirely, which is the thing being protected.
+  const src = psFnSource('_meHtmlRecs');
+  for (const h of ['ondragstart', 'ondragover', 'ondrop', 'ondragend'])
+    assert.ok(src.includes(h), `${h} is gone — reordering would stop working`);
+});
+
 // ── hex-char means the ORIGINAL hex characters ──────────────────────────────
 // Reported: an ISO 8583 EBCDIC message whose PIN block is binary on the wire,
 // declared PIC X(8). A hex-char override gave some other value. Nothing was

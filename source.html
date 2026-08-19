@@ -2291,6 +2291,8 @@ input.me-inp{width:100%;}
 .me-rec-row.drop-after{box-shadow:0 2px 0 0 var(--accent);}
 .me-rec-head{display:flex;align-items:center;gap:6px;padding:4px 7px;cursor:grab;user-select:none;}
 .me-rec-row.dragging .me-rec-head{cursor:grabbing;}
+/* An open row cannot be dragged, so it must not offer the grab cursor either. */
+.me-rec-row.editing .me-rec-head{cursor:pointer;}
 .me-rec-head:hover{background:var(--surface-hover);}
 .me-rec-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:transparent;border: var(--bw-ctl) solid var(--border);}
 .me-rec-dot.pass{background:var(--success);border-color:var(--success);}
@@ -16612,7 +16614,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.8.5';
+const APP_VERSION  = '1.32.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25402,13 +25404,18 @@ function _meHtmlRecs(item) {
       else if (i === rt.failAt)       { dotCls = 'fail'; dotTip = 'Failed against the last Test input'; }
       else                            { dotCls = 'skip'; dotTip = 'Not evaluated — an earlier recognizer already failed'; }
     }
-    h += `<div class="me-rec-row" id="me-rr-${i}" draggable="true"
+    // NOT draggable while the form is open. draggable="true" on the row means a
+    // mousedown anywhere inside it — including in a text input — starts a drag
+    // instead of a selection, so the fields in an open recogniser could not be
+    // selected at all. Reordering is a closed-row action; editing is an open-row
+    // one, and they were competing for the same gesture.
+    h += `<div class="me-rec-row${editing ? ' editing' : ''}" id="me-rr-${i}" draggable="${editing ? 'false' : 'true'}"
   ondragstart="_meRecDragStart(event,${i})"
   ondragover="_meRecDragOver(event,${i})"
   ondragleave="_meRecDragLeave(event)"
   ondrop="_meRecDrop(event,${i})"
   ondragend="_meRecDragEnd(event)">
-  <div class="me-rec-head" onclick="_meToggleRec(${i})" title="Drag to reorder">
+  <div class="me-rec-head" onclick="_meToggleRec(${i})" title="${editing ? 'Close to reorder' : 'Drag to reorder'}">
     <span class="me-rec-dot ${dotCls}" id="me-rd-${i}" title="${dotTip}"></span>
     <span class="me-rec-type">${_TYPE_LABEL[r.type] || r.type}</span>
     <span class="me-rec-sum">${_meRecSum(r)}</span>

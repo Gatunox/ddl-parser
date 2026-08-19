@@ -16658,7 +16658,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.33.1.0';
+const APP_VERSION  = '1.34.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23365,7 +23365,9 @@ function _meResolveDEFieldList(item) {
 //     DE-128 — the bitmap has 128 bits
 //   • de_map anchors reset the running counter at the anchored row
 function _meWalkDEFields(defs, item) {
-  const anchors = _meOvDeAnchors(item);
+  // Rebuilt once the group structure is known: a number written on a VLG length
+  // leaf belongs to that leaf's group. See deOwnerOf below.
+  let anchors = _meOvDeAnchors(item);
 
   // An override is an edit to the DDL, so the table has to show the DDL AS
   // OVERRIDDEN — the overridden length, and every later field shifted by the
@@ -23498,7 +23500,41 @@ function _meWalkDEFields(defs, item) {
   // DE could never sit on a nested field. It is now a default with three
   // overrides on the same `de` key: false excludes, true includes, "children"
   // hands the DE to the group's immediate children.
-  const deSel = id => _ovAll[_canonFieldId(id)]?.de;
+  // A VLG length leaf is PART of its group, and the GROUP is the data element —
+  // which is what the parse already does: _meAutoLLVarLenId finds the LEN inside
+  // a group and frames the REST OF THAT GROUP with it. So a DE number written on
+  // the LEN numbers the group, not the leaf.
+  //
+  // Left on the leaf, the leaf became an element of its own. Everything followed
+  // from that: its group had to yield (a group cannot be one element while a
+  // child of it is numbered separately), so each payload group underneath took a
+  // number of its own; and the LEN owning a number armed the LEN→field pairing
+  // below, which found no plain leaf to pair with, stayed armed across two
+  // sibling groups, and stamped a LATER group's LEN with the number — numbering
+  // that ran 60, 61, 62, 63 and then handed 60 back out. Reported 2026-08-18.
+  const deOwnerOf = (id) => {
+    const canon = _canonFieldId(id);
+    if (_ovAll[canon]?.vlg !== true) return canon;
+    const parts = canon.split('.');
+    if (parts.length < 2) return canon;
+    const parent = parts.slice(0, -1).join('.');
+    return childrenByPrefix.has(parent) ? parent : canon;
+  };
+  // The leaves whose number moved up to their group, so the leaf itself stops
+  // reading as anchored — it is inside the element now, not one of its own.
+  const deMoved = new Set();
+  for (const id in _ovAll)
+    if (_meDeIsAnchor(_ovAll[id].de) && deOwnerOf(id) !== _canonFieldId(id)) deMoved.add(_canonFieldId(id));
+  if (deMoved.size) {
+    const moved = new Map();
+    for (const [id, de] of anchors) moved.set(deOwnerOf(id), de);
+    anchors = moved;
+  }
+  const deSel = id => {
+    const canon = _canonFieldId(id);
+    const sel = _ovAll[canon]?.de;
+    return (deMoved.has(canon) && _meDeIsAnchor(sel)) ? undefined : sel;
+  };
   const promoted = new Set();
   for (const id in _ovAll) {
     if (_ovAll[id].de !== 'children') continue;
@@ -23512,7 +23548,10 @@ function _meWalkDEFields(defs, item) {
   for (const id in _ovAll) {
     const sel = _ovAll[id].de;
     if (!(sel === true || _meDeIsAnchor(sel))) continue;
-    const parts = _canonFieldId(id).split('.');
+    // Ancestors of the ELEMENT the number lands on. Read off the leaf, a number
+    // moved up to its group still yielded that group — which is the group the
+    // number now belongs to, so it broke apart the element it had just named.
+    const parts = deOwnerOf(id).split('.');
     for (let d = 1; d < parts.length; d++) {
       const anc = parts.slice(0, d).join('.');
       if (!childrenByPrefix.has(anc)) continue;
@@ -23547,7 +23586,7 @@ function _meWalkDEFields(defs, item) {
   // two. The LEN owns the number; the field after it derives it, the same shape
   // a group's children already use.
   const vlgSrc = id => _ovAll[_canonFieldId(id)]?.vlg === true;
-  let vlgOwner = null;   // { id, de } while the sized field is still to come
+  let vlgOwner = null;   // { id, de, parent } while the sized field is still to come
   // No anchor at all — no bitmap block, or a synthetic bitmap with nothing read
   // before it — means every field from the first is a data element.
   let pastBitmap = !deAnchorField;
@@ -23633,6 +23672,12 @@ function _meWalkDEFields(defs, item) {
     // point of it, and refusing would leave nested fields unreachable exactly
     // where the default rule already said no.
     const forced = deSel(def.id) === true || _meDeIsAnchor(deSel(def.id)) || promoted.has(def.id);
+    // A length sizes what follows it INSIDE ITS OWN GROUP. Once the walk leaves
+    // that group the pairing has missed its field and is dead — it used to stay
+    // armed, because the only thing that consumed it was the next plain leaf and
+    // a LEN whose payload is a GROUP never meets one. Two subgroups later it
+    // would stamp an unrelated LEN with a number already handed out.
+    if (vlgOwner && vlgOwner.parent !== parentPrefix) vlgOwner = null;
     // The field a length source sizes: it is part of that element, so it takes
     // no number of its own and shows the owner's.
     if (vlgOwner && !isRedef && !underTerminal) {
@@ -23655,7 +23700,8 @@ function _meWalkDEFields(defs, item) {
     // pair — one excluded from the numbering has no number to share.
     if (vlgSrc(def.id) && !isRedef) {
       const _r = out[out.length - 1];
-      vlgOwner = (_r && _r.id === def.id && _r.de != null) ? { id: def.id, de: _r.de } : null;
+      vlgOwner = (_r && _r.id === def.id && _r.de != null)
+        ? { id: def.id, de: _r.de, parent: parentPrefix } : null;
     }
   }
   // A group that owns a DE owns it for everything inside it: bit N reads every

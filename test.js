@@ -2491,6 +2491,137 @@ test('DE numbering starts after the bitmap field and skips REDEFINES, matching t
   eq(ctx.fields.find(f => f.id === 'AMT').value, '123', 'second DE follows the group');
 });
 
+test('[REGRESSION] a DE number on a VLG length numbers its GROUP, not the leaf', () => {
+  // Reported 2026-08-18. A LEN marked VLG is part of its group and the GROUP is
+  // the data element — the same thing the parse does, where _meAutoLLVarLenId
+  // frames the rest of the group with the LEN it found inside it. Numbered on
+  // the leaf instead, the leaf became an element of its own and the group broke
+  // apart around it: each payload group underneath drew a number, and the
+  // LEN→field pairing armed with nothing to pair with, survived two sibling
+  // groups and stamped a LATER LEN with a number already issued. Anchoring
+  // SUBGROUP1.LEN1 to 60 produced 60, 61, 62, 63 — and then 60 again.
+  S.ddlTree = { VOL: { SV: { 'VLGDDL': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 GRP.
+        04 SUBGROUP1.
+          06 LEN1 PIC 9(4).
+          06 GROUP1.
+            08 ITEM1 PIC X(4).
+            08 ITEM2 PIC X(4).
+          06 GROUP2.
+            08 ITEM1 PIC X(4).
+            08 ITEM2 PIC X(4).
+        04 SUBGROUP2.
+          06 LEN2 PIC 9(4).
+          06 GROUPA.
+            08 ITEM1 PIC X(4).
+            08 ITEM2 PIC X(4).
+        04 SUBGROUP3.
+          06 LEN3 PIC 9(4).
+          06 GROUP1.
+            08 ITEM1 PIC X(4).
+            08 ITEM2 PIC X(4).
+      02 TAIL PIC X(4).
+    END REC.
+  ` } } };
+  const item = {
+    ddl_bindings: ['VOL/SV/VLGDDL/REC'],
+    overrides: {
+      'GRP.SUBGROUP1.LEN1': { de: 60, vlg: true },
+      'GRP.SUBGROUP2.LEN2': { vlg: true },
+      'GRP.SUBGROUP3.LEN3': { vlg: true },
+    },
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'read-bitmap-fields': 'BMP' },
+    ],
+  };
+  const rows = meWalkDEFields(
+    sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/VLGDDL/REC')]), item);
+  const row = id => rows.find(r => r.id === id);
+  const de  = id => row(id)?.de ?? null;
+  const own = id => row(id)?.ownerDE ?? null;
+
+  // The number lands on the group the LEN sizes, and the LEN sits inside it.
+  eq(de('GRP.SUBGROUP1'), 60, 'the anchored VLG group does not own the number');
+  eq(row('GRP.SUBGROUP1')?.anchored, true, 'the group is not marked as the anchor');
+  eq(de('GRP.SUBGROUP1.LEN1'), null, 'the LEN still takes a number of its own');
+  eq(own('GRP.SUBGROUP1.LEN1'), 60, 'the LEN does not read as part of its group');
+
+  // ONE element end to end: both payload groups derive it, neither draws its own.
+  for (const id of ['GRP.SUBGROUP1.GROUP1', 'GRP.SUBGROUP1.GROUP2']) {
+    eq(de(id), null, `${id} drew a number of its own inside the VLG group`);
+    eq(own(id), 60, `${id} does not derive the group's number`);
+  }
+  eq(own('GRP.SUBGROUP1.GROUP2.ITEM2'), 60, 'the last leaf of the second group is outside the element');
+
+  // The next siblings follow on, one number each.
+  eq(de('GRP.SUBGROUP2'), 61, 'the sibling after the VLG group does not take the next number');
+  eq(de('GRP.SUBGROUP3'), 62, 'numbering does not continue one per sibling');
+  eq(de('TAIL'), 63, 'the field after the whole group is misnumbered');
+
+  // The reported symptom, stated on its own: a later LEN inheriting a number
+  // that was already handed out, three groups back.
+  eq(own('GRP.SUBGROUP2.LEN2'), 61, 'a later LEN inherits the earlier group\'s number');
+  assert.notStrictEqual(own('GRP.SUBGROUP2.LEN2'), 60,
+    'the pairing survived its group and handed 60 back out');
+  // And no number is ever issued twice, nor does the sequence run backwards.
+  const issued = rows.filter(r => r.de != null).map(r => r.de);
+  deepEq(issued, [...issued].sort((a, b) => a - b), 'the DE sequence runs backwards');
+  eq(new Set(issued).size, issued.length, 'a DE number is issued to two different rows');
+
+  // And the ENGINE must read it the same way — the panel and the parse walk the
+  // same function, and it is the parse that this actually broke. Bits 60-63 set
+  // (0x1E in the last of eight bytes); each LEN states the bytes that follow it
+  // inside its own group.
+  S.inputFormat = 'ascii';
+  const msg = '000000000000001E'
+            + '0016' + 'AAAA' + 'BBBB' + 'CCCC' + 'DDDD'
+            + '0008' + 'EEEE' + 'FFFF'
+            + '0008' + 'GGGG' + 'HHHH'
+            + 'ZZZZ';
+  const ctx = meExecParseSpec(item, Buffer.from(msg));
+  eq((ctx.errors || []).length, 0, 'the message does not parse cleanly');
+  eq(ctx.cursor, msg.length, 'the walk does not consume the whole message');
+  const deOf = id => ctx.fields.find(f => f.id === id)?.deNum ?? null;
+  eq(deOf('GRP.SUBGROUP1.LEN1'), 60, 'the parse does not put the LEN on its group\'s DE');
+  eq(deOf('GRP.SUBGROUP1.GROUP2.ITEM2'), 60, 'the far end of the VLG group is on another DE');
+  eq(deOf('GRP.SUBGROUP2.LEN2'), 61, 'the parse hands the next group the wrong number');
+  eq(deOf('TAIL'), 63, 'the field after the group is misnumbered by the parse');
+  eq(ctx.fields.find(f => f.id === 'GRP.SUBGROUP2.GROUPA.ITEM1')?.value, 'EEEE',
+    'the VLG length framed the wrong bytes, so the next group reads shifted');
+});
+
+test('[REGRESSION] a VLG pairing dies at its group boundary', () => {
+  // The guard on its own: a LEN that DOES own a number, whose payload is a
+  // group, must not reach past that group. It used to stay armed — only a plain
+  // leaf consumed it, and leaves inside a terminal group were skipped — so the
+  // next unrelated top-level leaf inherited the LEN's number.
+  S.ddlTree = { VOL: { SV: { 'VLGFLAT': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 LEN PIC 9(4).
+      02 PAYLOAD.
+        04 ITEM1 PIC X(4).
+        04 ITEM2 PIC X(4).
+      02 TAIL PIC X(4).
+    END REC.
+  ` } } };
+  const rows = meWalkDEFields(
+    sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/VLGFLAT/REC')]),
+    { ddl_bindings: ['VOL/SV/VLGFLAT/REC'],
+      overrides: { 'LEN': { vlg: true } },
+      parse_spec_binary: [
+        { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+        { 'read-bitmap-fields': 'BMP' },
+      ] });
+  const row = id => rows.find(r => r.id === id);
+  eq(row('LEN')?.de, 1, 'the top-level LEN owns the first number');
+  eq(row('TAIL')?.ownerDE ?? null, null, 'TAIL inherited the LEN\'s number across the group');
+  assert.ok(row('TAIL')?.de != null, 'TAIL lost its own number to a stale pairing');
+});
+
 test('a REDEFINES child group does not split its parent\'s DE (DATA-ELEMENT-37 case)', () => {
   S.ddlTree = { VOL: { SV: { 'D37DDL': `
     DEF REC.

@@ -2107,7 +2107,17 @@ td.c-err  { color: var(--accent2); }
 /* Pane header — the collapse control for the two outer columns. Same shape as
    the main app's .panel-header so a collapsed rail looks the same in both
    places: title rotated up the strip, toggle at the top. */
-.me-pane-hdr{display:flex;align-items:center;gap:var(--sp-2);padding:5px 8px;min-height:var(--app-header-h);box-sizing:border-box;
+/* Pane, sub-panel and sidebar-section headers are PANEL headers: they take
+   --panel-header-h, the same height .panel-header and .me-section-hdr use. They
+   were on --app-header-h — the height of the app's own title bar.
+   HEIGHT, not min-height, and 2px of vertical padding: these bars carry taller
+   controls than a section header does (a 19px button against a 20px arrow), so
+   with min-height the content set the height and the three bars came out 28, 29
+   and 30 against a section header's 26 — near-misses, which read worse than the
+   original clean mismatch. Fixed height makes them equal; 2px leaves room for
+   the tallest control to fit inside it.
+   .me-header keeps --app-header-h: it IS the editor's title bar. */
+.me-pane-hdr{display:flex;align-items:center;gap:var(--sp-2);padding:2px 8px;height:var(--panel-header-h);box-sizing:border-box;
   background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);
   border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0;}
 .me-pane-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.08em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -2133,7 +2143,7 @@ td.c-err  { color: var(--accent2); }
    lot; the two flex overrides that used to referee them are gone with the
    competition they refereed. */
 #me-sect-files{flex:0 1 auto;max-height:50%;}
-.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;min-height:var(--app-header-h);box-sizing:border-box;background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
+.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:2px 8px;height:var(--panel-header-h);box-sizing:border-box;background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
 .me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
 .me-sidebar-add{background:var(--surface-raised);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
 .me-sidebar-add:hover{border-color:var(--border-strong);color:var(--text);background:var(--surface-hover);}
@@ -2308,7 +2318,7 @@ input.me-inp{width:100%;}
    takes the space back rather than leaving a gap where the body was. */
 .me-test-sub.collapsed{height:auto !important;}
 .me-test-sub.collapsed .me-test-main{display:none;}
-.me-sub-hdr{display:flex;align-items:center;gap:var(--sp-2);padding:5px 8px;min-height:var(--app-header-h);box-sizing:border-box;
+.me-sub-hdr{display:flex;align-items:center;gap:var(--sp-2);padding:2px 8px;height:var(--panel-header-h);box-sizing:border-box;
   background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
 .me-sub-hdr .me-sidebar-title{color:var(--text);flex:none;}
 .me-test-summary{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}
@@ -16590,7 +16600,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.8.0';
+const APP_VERSION  = '1.32.8.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

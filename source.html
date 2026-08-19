@@ -596,7 +596,7 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
 #msgCfgBar {
   display:none; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap;
+  background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
   position:relative;
 }
 #msgCfgBar select { background:var(--bg-panel); border: var(--bw-ctl) solid var(--border); color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 4px; border-radius:var(--r-sm); height:calc(var(--sz-mono) + 8px); }
@@ -783,7 +783,7 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .path-btn:last-child { border-right: none !important; }
 .path-btn:hover  { background: rgba(var(--accent-rgb),0.12) !important; color: var(--accent) !important; box-shadow: inset 0 0 0 var(--bw) var(--accent) !important; }
 .path-btn-dim    { color: var(--text-dim) !important; }
-.path-btn-dim:hover { color: var(--text) !important; background: rgba(255,255,255,0.05) !important; }
+.path-btn-dim:hover { color: var(--text) !important; background: var(--surface-hover) !important; }
 /* Align DDL search bar with the editor gutter (tree pane width - header padding) */
 #ddlPanel .panel-title { min-width: 172px; }
 #rawPanel .panel-title { width: auto; }
@@ -1277,7 +1277,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 .rec-meta {
   display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap;
+  background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
   position:relative; font-family:var(--mono);
 }
 .rec-meta-pipe { color: var(--border); margin: 0 2px; }
@@ -1327,7 +1327,7 @@ tr.row-filter-hide  { display: none; }
 #rawCfgBar {
   display:none; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:rgba(255,255,255,0.05); color:var(--text-dim); flex-wrap:wrap;
+  background:var(--surface-subhead); color:var(--text-dim); flex-wrap:wrap;
   font-family:var(--font-mono); min-height:calc(var(--sz-mono) + 14px);
 }
 .panel.collapsed #rawCfgBar { display:none !important; }
@@ -1353,7 +1353,7 @@ tr.row-filter-hide  { display: none; }
 #resCfgControls {
   display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap;
+  background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
   justify-content:flex-end; position:relative;
 }
 #resCfgControls .btn { background:none; border: var(--bw-ctl) solid var(--border); color:var(--text-dim); font-family:var(--font-mono); font-size:var(--sz-mono); padding:0 8px; height:calc(var(--sz-mono) + 8px); border-radius:var(--r-sm); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
@@ -1901,7 +1901,10 @@ td.c-err  { color: var(--accent2); }
 #auditBrowser { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
 .audit-progress-wrap { padding:20px 16px; display:flex; flex-direction:column; gap:10px; }
 .audit-progress-label { font-size:var(--sz-mono); color:var(--text-dim); }
-.audit-progress-track { height:5px; background:rgba(255,255,255,0.07); border-radius:var(--r-sm); overflow:hidden; }
+/* --border, whose dark value IS this literal — the unfilled part of the track is
+   the same hairline grey as a divider, and in the light theme it has to darken
+   rather than lighten. */
+.audit-progress-track { height:5px; background:var(--border); border-radius:var(--r-sm); overflow:hidden; }
 .audit-progress-fill  { height:100%; background:var(--accent); border-radius:var(--r-sm); transition:width 0.12s linear; width:0%; }
 .audit-progress-count { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); }
 .audit-cfg-bar {
@@ -1910,9 +1913,13 @@ td.c-err  { color: var(--accent2); }
   /* Same surface as the Class Editor's sidebar section bars — both are a strip
      of controls sitting one level under a panel header. Was a literal
      rgba(255,255,255,0.05): a translucent WHITE, which lightens whatever is
-     behind it and so means the opposite thing in the light theme. Five other
-     bars still carry that literal, and there is even a --tint-bar token nobody
-     uses; only this one was asked for. */
+     behind it and so means the opposite thing in the light theme.
+     The other five bars of this shape — #msgCfgBar, .rec-meta, #rawCfgBar,
+     #resCfgControls, .me-test-cfg — carried the same literal and were converted
+     with it (2026-08-19), so every strip of this kind now reads from one token.
+     The literal survives in exactly one place: the --tint-bar definition, which
+     is the theme-correct version of it and is what #fmtForceSelect and the
+     Raw bar's hover use. */
   background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
   position:relative;
 }
@@ -2020,7 +2027,7 @@ td.c-err  { color: var(--accent2); }
    only title-bar text on --accent, which read as a link rather than a heading. */
 .audit-popup-title { flex:1; font-size:var(--sz-mono); color:var(--text); font-weight:700; }
 .audit-popup-body  { flex:1; overflow:hidden; padding:0; font-family:var(--font-mono); font-size:var(--sz-mono); }
-.audit-field-row   { display:flex; flex-direction:column; padding:5px 0; border-bottom: var(--bw) solid rgba(255,255,255,0.05); }
+.audit-field-row   { display:flex; flex-direction:column; padding:5px 0; border-bottom: var(--bw) solid var(--border); }
 .audit-field-label { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); margin-bottom:2px; }
 .audit-field-bytes { color:var(--text-dim); word-break:break-all; line-height:1.7; }
 .audit-field-value { color:var(--text); margin-top:2px; }
@@ -2364,7 +2371,7 @@ input.me-inp{width:100%;}
 .me-test-cfg{
   display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap;
+  background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
   position:relative;
 }
 .me-test-sub.collapsed .me-test-cfg{display:none;}
@@ -16690,7 +16697,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.35.0.1';
+const APP_VERSION  = '1.35.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

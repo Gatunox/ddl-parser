@@ -16110,6 +16110,39 @@ test('density moves shape and spacing only, never colour', () => {
   eq(bad.length, 0, `density must not set colour tokens: ${bad.join(', ')}`);
 });
 
+test('[REGRESSION] no component paints a background in translucent white', () => {
+  // A translucent WHITE lightens whatever is behind it, so it means the opposite
+  // thing in the light theme — the reason six strips of controls and a progress
+  // track read wrong there for months. The rule existed only in a comment beside
+  // the one bar that had been converted, so nothing stopped the other six.
+  // Reported 2026-08-19.
+  //
+  // Scrims are exempt and stay rgba(0,0,0,…): an overlay is meant to DARKEN the
+  // page in both themes, which is the one case where a fixed colour is right.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  // The token blocks are where a literal belongs — that is what defining a
+  // theme means. Everything outside them has to go through a token.
+  let body = '', last = 0;
+  for (const m of css.matchAll(/(?:^|\n)\s*(?::root[^{\n]*|\[data-theme[^{\n]*)\{/g)) {
+    body += css.slice(last, m.index);
+    last = css.indexOf('\n}', m.index) + 2;
+  }
+  body += css.slice(last);
+  const bad = (body.match(/[^;{}\n]*background[^;{}\n]*rgba\(\s*255,\s*255,\s*255[^)]*\)/g) || [])
+    .map(s => s.trim());
+  eq(bad.length, 0,
+    `a background painted in translucent white inverts in the light theme: ${bad.join(' | ')}`);
+  // And the six that were converted read from the shared token, so they cannot
+  // drift apart again.
+  for (const sel of ['#msgCfgBar', '.rec-meta', '#rawCfgBar', '#resCfgControls',
+                     '.me-test-cfg', '.audit-cfg-bar']) {
+    const rule = (css.match(new RegExp(sel.replace(/[.#]/g, '\\$&') + '\\s*\\{[^}]*\\}')) || [''])[0];
+    assert.ok(/background:\s*var\(--surface-subhead\)/.test(rule),
+      `${sel} does not take its surface from the shared token`);
+  }
+});
+
 test('the accent is written to one element, not two', () => {
   // The double-write was a symptom, not a fix. Once no theme block redefines
   // --accent on a descendant, one write to <html> reaches everything. If this

@@ -16658,7 +16658,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.34.0.0';
+const APP_VERSION  = '1.34.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23671,7 +23671,14 @@ function _meWalkDEFields(defs, item) {
     // An explicit de:true reaches INSIDE a terminal group as well — that is the
     // point of it, and refusing would leave nested fields unreachable exactly
     // where the default rule already said no.
-    const forced = deSel(def.id) === true || _meDeIsAnchor(deSel(def.id)) || promoted.has(def.id);
+    // Excluding a field is the one answer nothing overrides. A group handing its
+    // DE to its children promotes every one of them, and promotion came through
+    // here as "forced" — past isDE, which is where de:false is read. So a child
+    // of a "children" group could not be left out: the ignore was stored, shown,
+    // and then ignored itself. Reported 2026-08-18.
+    const _sel = deSel(def.id);
+    const forced = _sel !== false &&
+      (_sel === true || _meDeIsAnchor(_sel) || promoted.has(def.id));
     // A length sizes what follows it INSIDE ITS OWN GROUP. Once the walk leaves
     // that group the pairing has missed its field and is dead — it used to stay
     // armed, because the only thing that consumed it was the next plain leaf and

@@ -2593,6 +2593,75 @@ test('[REGRESSION] a DE number on a VLG length numbers its GROUP, not the leaf',
     'the VLG length framed the wrong bytes, so the next group reads shifted');
 });
 
+test('[REGRESSION] ignore outranks the promotion "children" hands out', () => {
+  // The four states of the vocabulary, side by side, on one DDL of siblings:
+  //   default   — each sibling is one element, its leaves derive it
+  //   ignore    — the sibling takes no number; the NEXT sibling gets it
+  //   children  — the group takes none; its children each take one, the first
+  //               getting the number the group itself would have had
+  //   children + the first child ignored — the SECOND child takes that number
+  // The last one was broken (reported 2026-08-18): "children" promotes every
+  // child, and promotion was applied as `forced`, which skips isDE — the only
+  // place de:false is read. So the ignore was stored, drawn in the panel, and
+  // then overridden by the very promotion that put the child in reach.
+  S.ddlTree = { VOL: { SV: { 'IGNDDL': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 SIB1.
+        04 A1 PIC X(4).
+        04 A2 PIC X(4).
+      02 SIB2.
+        04 B1 PIC X(4).
+        04 B2 PIC X(4).
+        04 B3 PIC X(4).
+      02 SIB3.
+        04 C1 PIC X(4).
+        04 C2 PIC X(4).
+      02 TAIL PIC X(4).
+    END REC.
+  ` } } };
+  const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/IGNDDL/REC')]);
+  const walk = overrides => {
+    const rows = meWalkDEFields(defs, {
+      ddl_bindings: ['VOL/SV/IGNDDL/REC'], overrides,
+      parse_spec_binary: [
+        { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+        { 'read-bitmap-fields': 'BMP' },
+      ] });
+    return id => rows.find(r => r.id === id)?.de ?? null;
+  };
+
+  let de = walk({});
+  eq(de('SIB1'), 1, 'a plain sibling does not own one number');
+  eq(de('SIB2'), 2, 'siblings do not number consecutively');
+  eq(de('SIB2.B1'), null, 'a leaf inside a numbered group takes one of its own');
+  eq(de('TAIL'), 4, 'the sequence does not run to the last sibling');
+
+  de = walk({ 'SIB2': { de: false } });
+  eq(de('SIB2'), null, 'an ignored sibling still owns a number');
+  eq(de('SIB3'), 2, 'an ignored sibling still consumes its number');
+  eq(de('TAIL'), 3, 'the ignore does not give its number back to the sequence');
+
+  de = walk({ 'SIB2': { de: 'children' } });
+  eq(de('SIB2'), null, 'a group handing its DE to its children keeps one');
+  eq(de('SIB2.B1'), 2, 'the first child does not take the number the group would have had');
+  eq(de('SIB2.B2'), 3, 'the remaining children do not follow on');
+  eq(de('SIB3'), 5, 'the next sibling does not resume after the children');
+
+  // The reported case: the promotion must not outrank the child's own ignore.
+  de = walk({ 'SIB2': { de: 'children' }, 'SIB2.B1': { de: false } });
+  eq(de('SIB2.B1'), null, 'a promoted child cannot be ignored — the promotion wins');
+  eq(de('SIB2.B2'), 2, 'the second child does not inherit the ignored one\'s number');
+  eq(de('SIB2.B3'), 3, 'numbering inside the group does not close up behind the ignore');
+  eq(de('SIB3'), 4, 'the ignored child still burns a number for its siblings');
+  eq(de('TAIL'), 5, 'the whole tail of the sequence shifts');
+
+  // An explicit de:true is still honoured where the default rule says no —
+  // that exception is what `forced` exists for, and it must survive the fix.
+  de = walk({ 'SIB2.B2': { de: true } });
+  assert.ok(de('SIB2.B2') != null, 'de:true no longer reaches a nested leaf');
+});
+
 test('[REGRESSION] a VLG pairing dies at its group boundary', () => {
   // The guard on its own: a LEN that DOES own a number, whose payload is a
   // group, must not reach past that group. It used to stay armed — only a plain

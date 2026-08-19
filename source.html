@@ -1890,7 +1890,13 @@ td.c-err  { color: var(--accent2); }
 .audit-cfg-bar {
   display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:rgba(255,255,255,0.05); color:var(--text); flex-wrap:wrap;
+  /* Same surface as the Class Editor's sidebar section bars — both are a strip
+     of controls sitting one level under a panel header. Was a literal
+     rgba(255,255,255,0.05): a translucent WHITE, which lightens whatever is
+     behind it and so means the opposite thing in the light theme. Five other
+     bars still carry that literal, and there is even a --tint-bar token nobody
+     uses; only this one was asked for. */
+  background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
   position:relative;
 }
 .audit-cfg-bar .audit-cfg-field { color:var(--text-dim); }
@@ -16606,7 +16612,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.8.4';
+const APP_VERSION  = '1.32.8.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -16658,7 +16658,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.33.0.0';
+const APP_VERSION  = '1.33.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22563,7 +22563,7 @@ function _meOverridesPrep(item) {
   ${_ME_OV_KINDS.map(k => `
   <span class="me-ovb k-${k.id}" data-kind="${k.id}">
     <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="How many of your selected fields already have a ${k.label} override, of every field that does \u2014 click to show only those">0 of 0</button>
-    <button class="btn me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on the selected fields that do not have one">${k.label}</button>
+    <button class="btn me-ovb-act" data-fmact="${k.id === 'de' ? 'de' : k.act}" title="${k.hint} \u2014 sets it on every selected field, replacing any it already has">${k.label}</button>
   </span>`).join('')}
   <button class="btn me-ovb-clrall" id="me-fm-clr-all" disabled>\u2715 Clear</button>
 </div>
@@ -22982,11 +22982,17 @@ function _meFmVisibleRows(all) {
   // Read once, not per row: on a 4000-field DDL this is the difference between
   // one map lookup and four thousand walks of the override store.
   const ovAll     = (st.fmOvKind || st.fmOvOnly) ? _meOvAll(_meCurItem()) : null;
+  // Membership is STICKY while an override filter is on: a row that has been
+  // listed under it stays listed until the filter itself is turned off.
+  // Without this, clearing an override pulled the row out from under the click
+  // that cleared it — and when it was the last one, the list emptied, which
+  // disabled the button that would have turned the filter off.
+  const pin = ovAll ? (st.fmOvPin || (st.fmOvPin = new Set())) : null;
   const out = [];
   for (const row of all) {
     const qn = row.id;
     let hid = false;
-    if (ovAll) {
+    if (ovAll && !pin.has(qn)) {
       const o = ovAll[_canonFieldId(qn)];
       if (!o) hid = true;
       else if (st.fmOvKind && !_meOvKindsOf(o).includes(st.fmOvKind)) hid = true;
@@ -23001,7 +23007,7 @@ function _meFmVisibleRows(all) {
     }
     if (!hid && st.fmHideRedef && row.isRedef) hid = true;
     if (!hid && filt && !qn.toLowerCase().includes(filt)) hid = true;
-    if (!hid) out.push(row);
+    if (!hid) { out.push(row); if (pin) pin.add(qn); }
   }
   return out;
 }
@@ -23090,6 +23096,8 @@ function _meFillOverridesSection(el, item, seq, done) {
       const ui = _meFmUiState(item);
       if (_meState) {
         _meState.fmHideRedef = !!ui.hideRedef;
+        // Row ids are this item's; a pin from the last one names nothing here.
+        _meState.fmOvPin = null;
         const allGroups = prep.fieldList.filter(r => r.isGroup).map(r => r.id);
         _meState.fmCollapsedGroups =
           ui.collapseMode === 'all'  ? new Set(allGroups.filter(g => !(ui.collapsedExcept || []).includes(g)))
@@ -24256,6 +24264,7 @@ function _meFmFilter(q) {
 function _meFmSetOvOnly(on) {
   if (!_meState) return;
   _meState.fmOvOnly = !!on;
+  _meState.fmOvPin = null;
   // Same hazard as the kind filter, and the same discrete action.
   _meFmClearSelection();
   _meFmSyncFiltBtns();
@@ -24820,22 +24829,19 @@ function _meFmEdCommit() {
   }
   const item = _meCurItem(); if (!item) return;
   const rowsById = new Map((_meFmVirt?.all || []).map(r => [r.id, r]));
-  // The action ADDS. A field that already carries this kind is left exactly as
-  // it was — bulk-setting a type must not quietly rewrite the twelve fields you
-  // already tuned individually. Changing one means clearing it first, which is
-  // now a button rather than a hunt through the index.
+  // The action REPLACES. It used to add only: a field already carrying this
+  // kind was left exactly as it was, so correcting one mistyped value meant
+  // clearing it and applying again. It writes over them now and says how many
+  // it replaced -- the whole commit is one undo step, which is what makes
+  // overwriting safe enough to allow.
   const _kind = _ME_OV_KINDS.find(k => k.act === _meFmEdAct);
   const _held = _kind ? new Set(_meFmSelWithKind(_kind.id)) : new Set();
-  const targets = _meFmActionTargets(_meFmEdAct).filter(qn => !_held.has(qn));
-  if (!targets.length) {
-    _meFmEdClose();
-    _meFlash(`Every selected field already has a ${_kind ? _kind.label : ''} override \u2014 clear it first to change it`, 'warn');
-    return;
-  }
+  const targets = _meFmActionTargets(_meFmEdAct);
+  if (!targets.length) { _meFmEdClose(); return; }
   const _edLabel = `${cfg.label || _meFmEdAct} set to ${v} \u2014 ${targets.length} field${targets.length !== 1 ? 's' : ''}`;
   return _meUndoable(_edLabel, () => {
   const all = _meOvAll(item);
-  let noops = 0, cleared = 0;
+  let noops = 0, cleared = 0, replaced = 0;
   for (const qn of targets) {
     const k = _canonFieldId(qn);
     // Judged per field: a multi-selection can hold fields of different declared
@@ -24852,8 +24858,14 @@ function _meFmEdCommit() {
       } else noops++;
       continue;
     }
+    if (_held.has(qn)) replaced++;
     cfg.set(all[k] || (all[k] = {}), v);
   }
+  // Said out loud, because the fields it overwrote may be ones tuned singly and
+  // long ago — the count is how you notice you selected more than you meant.
+  if (replaced) _meFlash(replaced === 1
+    ? `Replaced the ${_kind ? _kind.label : ''} override on 1 field`
+    : `Replaced the ${_kind ? _kind.label : ''} override on ${replaced} fields`, 'ok');
   if (cleared) _meFlash(cleared === 1
     ? 'Override removed — the field reads its declared length again'
     : `${cleared} overrides removed — those fields read their declared lengths again`, 'ok');
@@ -24967,9 +24979,9 @@ function _meFmAct(act) {
   if (_meCurItem() && _ME_FM_ED[act]) _meFmEdOpen(act);
 }
 
-// Which of the SELECTED fields already carry a given kind. The action half sets
-// the kind on the ones that do not; the clear half removes it from the ones that
-// do. Both need the same answer, and it is also the number the clear shows.
+// Which of the SELECTED fields already carry a given kind. The clear half
+// removes it from exactly these; the action half writes over them and counts
+// them to say so. Both need the same answer, and it is the number the clear shows.
 function _meFmSelWithKind(kindId) {
   const k = _ME_OV_KINDS.find(x => x.id === kindId);
   const item = _meCurItem();
@@ -25097,12 +25109,15 @@ function _meFmBarRefresh() {
     grp.querySelector('.me-ovb-n').textContent = total;
     grp.classList.toggle('picked', held > 0);
     grp.classList.toggle('on', _meState?.fmOvKind === k.id);
-    // The action is only ever "add", so it is dead once every selected field
-    // already has this kind.
-    // Nothing to filter to, so the count is not a button here.
-    grp.querySelector('.me-ovb-n').disabled = total === 0;
+    // Nothing to filter to, so the count is not a button here — UNLESS this
+    // kind is the filter currently on, in which case it is the only way back
+    // out of it and must stay clickable at zero.
+    grp.querySelector('.me-ovb-n').disabled = total === 0 && _meState?.fmOvKind !== k.id;
+    // The action REPLACES what a selected field already carries, so a selection
+    // is all it needs. It used to go dead once every target had this kind,
+    // which made correcting a mistyped value a clear-then-reapply.
     const act = grp.querySelector('.me-ovb-act');
-    act.disabled = n === 0 || held === _meFmActionTargets(k.act).length;
+    act.disabled = n === 0;
   }
 
   const clrAll = document.getElementById('me-fm-clr-all');
@@ -25224,6 +25239,9 @@ function _meOvlKindFilter(kind) {
   // A kind filter already shows only overridden fields — of one kind. Leaving
   // Overridden lit alongside it claimed a second filter was doing something.
   if (_meState.fmOvKind) _meState.fmOvOnly = false;
+  // The sticky set belongs to the filter that built it, so every transition
+  // starts an empty one — including turning the filter off.
+  _meState.fmOvPin = null;
   _meFmClearSelection();
   _meFmReapplyState();
   _meOvlRefresh();

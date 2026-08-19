@@ -196,6 +196,7 @@ _t.mePsMatchBracket    = _mePsMatchBracket;
 _t.meItemBitmapIsSynthetic = _meItemBitmapIsSynthetic;
 _t.fmtDefaultSpecs     = window._fmtDefaultSpecs;
 _t.meFmRowHtml         = _meFmRowHtml;
+_t.meFmVisibleRows     = _meFmVisibleRows;
 _t.meState             = () => _meState;
 _t.setMeState          = v => { _meState = v; };
 _t.fmtTestSpecs       = window._fmtTestSpecs;
@@ -8896,9 +8897,13 @@ test('each kind states both numbers, and one clear serves them all', () => {
     'the pairs are punctuated, which costs more width than the numbers themselves');
   assert.ok(/me-ovl-hd/.test(bar) && /me-ovl-brk/.test(bar),
     'the headline and the breakdown are not distinguished');
-  // The action only ever ADDS, so it is dead once every selected field has it.
-  assert.ok(/act\.disabled = n === 0 \|\| held === _meFmActionTargets\(k\.act\)\.length;/.test(bar),
-    'the action stays live when every selected field already has the kind');
+  // The action REPLACES, so a selection is all it needs. It used to go dead
+  // once every target already had the kind, which made correcting a mistyped
+  // value a clear-then-reapply — reported 2026-08-18.
+  assert.ok(/act\.disabled = n === 0;/.test(bar),
+    'the action needs more than a selection to be live');
+  assert.ok(!/held === _meFmActionTargets/.test(bar),
+    'the action still goes dead once every selected field carries the kind');
   assert.ok(/clrAll\.disabled = !hits\.length;/.test(bar), 'the clear stays live with nothing to clear');
 });
 
@@ -8948,8 +8953,59 @@ test('changing what the table lists never leaves the bar aimed off screen', () =
 
 test('a kind with no fields is not a filter you can press', () => {
   const bar = psFnSource('_meFmBarRefresh');
-  assert.ok(/\.me-ovb-n'\)\.disabled = total === 0;/.test(bar),
+  assert.ok(/\.me-ovb-n'\)\.disabled = total === 0 && _meState\?\.fmOvKind !== k\.id;/.test(bar),
     'a kind no field uses still offers to filter the table to nothing');
+  // ...unless it is the filter currently ON. Reported 2026-08-18: filter to a
+  // kind, clear the last override carrying it, and the count fell to 0 — which
+  // disabled the only button that turns that filter off, with the table stuck.
+  assert.ok(/fmOvKind !== k\.id/.test(bar),
+    'the active kind filter disables itself at zero, trapping the table');
+});
+
+test('an override filter holds its rows until you turn it off', () => {
+  // Reported 2026-08-18: filter to a kind, select a listed row, clear it — and
+  // the row vanished from under the click that cleared it, because the visible
+  // set is recomputed from the store after every action. With one row left the
+  // list emptied entirely.
+  const fn = psFnSource('_meFmVisibleRows');
+  assert.ok(/const pin = ovAll \? \(st\.fmOvPin \|\| \(st\.fmOvPin = new Set\(\)\)\) : null;/.test(fn),
+    'nothing remembers which rows the filter has already listed');
+  assert.ok(/if \(ovAll && !pin\.has\(qn\)\)/.test(fn),
+    'the override gate is applied to rows the filter has already listed');
+  assert.ok(/if \(!hid\) \{ out\.push\(row\); if \(pin\) pin\.add\(qn\); \}/.test(fn),
+    'a listed row is never recorded, so the pin stays empty');
+  // The pin belongs to the filter that built it: every transition starts an
+  // empty one, or turning a filter off and on again would show the old rows.
+  assert.ok(/_meState\.fmOvPin = null;/.test(psFnSource('_meOvlKindFilter')),
+    'the kind filter inherits the previous filter’s rows');
+  assert.ok(/_meState\.fmOvPin = null;/.test(psFnSource('_meFmSetOvOnly')),
+    'the Overridden filter inherits the previous filter’s rows');
+  // Row ids belong to one item; carrying a pin across a switch names nothing.
+  assert.ok(/_meState\.fmOvPin = null;/.test(psFnSource('_meFillOverridesSection')),
+    'a pin from the previous message survives into this one');
+});
+
+test('the pin keeps a cleared row listed, and only under its own filter', () => {
+  // The predicate itself, driven the way the panel drives it.
+  const rows = [{ id: 'A' }, { id: 'B' }, { id: 'C' }];
+  const item = { overrides: { A: { type: 'binary' }, B: { type: 'hex-char' }, C: { display: 'hex' } } };
+  const st = { specs: [item], selIdx: 0, fmOvKind: 'type', fmOvOnly: false,
+               fmFilter: '', fmHideRedef: false, fmCollapsedGroups: new Set(), fmOvPin: null };
+  const vis = () => sandbox._t.meFmVisibleRows(rows).map(r => r.id).join(',');
+  const saved = meState();
+  try {
+    setMeState(st);
+    eq(vis(), 'A,B', 'the TYPE filter lists the two TYPE rows');
+    delete item.overrides.A.type;                       // what the clear does
+    eq(vis(), 'A,B', 'clearing an override pulled the row out of the filtered list');
+    delete item.overrides.B.type;
+    eq(vis(), 'A,B', 'clearing the last one emptied the list');
+    // C never matched, so the pin does not invent it.
+    assert.ok(!vis().includes('C'), 'the pin lists a row the filter never showed');
+    // And the pin dies with the filter: turning it off and on again re-asks.
+    st.fmOvPin = null;
+    eq(vis(), '', 'the rows do not come back after the filter is turned off and on');
+  } finally { setMeState(saved); }
 });
 
 test('Overridden is one button naming its next state', () => {
@@ -8984,18 +9040,24 @@ test('the clear takes its scope from the filter the table is already showing', (
   assert.ok(/fields: fields\.size/.test(sc), 'the clear counts kind-hits rather than fields');
 });
 
-test('the action adds and never overwrites', () => {
-  // Bulk-setting a type must not quietly rewrite the twelve fields you already
-  // tuned one at a time. Changing one means clearing it first — which is a
-  // button now, so the rule costs nothing.
+test('the action overwrites what a field already carries, and counts it', () => {
+  // Reported 2026-08-18: a mistyped value could not be corrected in place —
+  // the commit skipped every field that already had the kind, so fixing one
+  // meant clearing it and applying again. It writes over them now.
   const fn = psFnSource('_meFmEdCommit');
+  assert.ok(/const targets = _meFmActionTargets\(_meFmEdAct\);/.test(fn),
+    'the action still skips fields that already carry this kind');
+  assert.ok(!/\.filter\(qn => !_held\.has\(qn\)\)/.test(fn),
+    'the add-only filter is back on the target list');
+  assert.ok(!/Every selected field already has a/.test(fn),
+    'the commit still refuses when every selected field has the kind');
+  // Overwriting is only safe because it is one undo step and it says how many
+  // fields it took over — the count is how you notice you selected too much.
   assert.ok(/const _held = _kind \? new Set\(_meFmSelWithKind\(_kind\.id\)\) : new Set\(\);/.test(fn),
     'the commit does not work out which selected fields already have the kind');
-  assert.ok(/_meFmActionTargets\(_meFmEdAct\)\.filter\(qn => !_held\.has\(qn\)\)/.test(fn),
-    'the action writes over fields that already carry this kind');
-  // And it says so rather than looking broken when there is nothing to add.
-  assert.ok(/Every selected field already has a/.test(fn),
-    'setting a kind every selected field already has does nothing, silently');
+  assert.ok(/if \(_held\.has\(qn\)\) replaced\+\+;/.test(fn), 'the replacements are not counted');
+  assert.ok(/if \(replaced\) _meFlash\(/.test(fn), 'an overwrite happens silently');
+  assert.ok(/_meUndoable\(/.test(fn), 'an overwrite cannot be undone in one step');
 });
 
 test('the DE picker keeps the expansion rule its four buttons had', () => {

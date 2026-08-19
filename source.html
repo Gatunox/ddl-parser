@@ -13216,13 +13216,34 @@ function _auditDecodePeek(payPeekHex) {
 }
 
 // Detect badge type from payload peek hex string → 'iso'|'stm'|'pstm'|'ndc'|'b24'|null
-function _auditBadgeType(payPeekHex) {
+// The badge is the CLASS EDITOR's answer: a class's own type code and colour,
+// never the legacy regex table. That table only knows ISO / STM / PSTM / B24 /
+// NDC, so three classes renamed ISO-PEPE, ISO-MDS and ISO-KAKE all showed a
+// single hardcoded "ISO" in the legacy palette.
+//
+// Two things had to change before the specs could win at all:
+//
+//   * the whole peek is used. The loop stopped at 32 HEX CHARS — 16 bytes — of a
+//     32-BYTE peek, so any recognizer reading past byte 15 could not be
+//     evaluated (hex-density at offset 16, for one).
+//
+//   * length recognizers see the record's REAL length. `greater-than` measures
+//     the buffer it is handed (bytes.length), and the buffer is a peek, so
+//     `greater-than 872` — and even `greater-than 22` — was false for every
+//     record. The peek is copied into a buffer of the record's declared length
+//     so those rules judge the record rather than the sample. Bytes past the
+//     peek stay zero: a recognizer that reads there cannot be decided from a
+//     peek, and answering "no" is the honest result.
+function _auditBadgeType(payPeekHex, recLength) {
   if (!payPeekHex || payPeekHex.length < 4) return null;
-  let raw = '';
-  for (let i = 0; i < Math.min(payPeekHex.length, 32); i += 2)
-    raw += String.fromCharCode(parseInt(payPeekHex.substr(i, 2), 16));
-  const mt = detectMsgType(raw);
-  return mt.type !== 'UNKNOWN' ? mt.type.toLowerCase() : null;
+  const peek = [];
+  for (let i = 0; i + 1 < payPeekHex.length; i += 2)
+    peek.push(parseInt(payPeekHex.substr(i, 2), 16));
+  if (!peek.length) return null;
+  const buf = new Uint8Array(Math.max(peek.length, +recLength || 0));
+  buf.set(peek, 0);
+  const w = (typeof _fmtDetect === 'function') ? _fmtDetect(buf, null) : null;
+  return w ? { type: w.type, color: w.color || '' } : null;
 }
 
 // Payload preview: bToStr-like rendering of hex peek bytes
@@ -13557,10 +13578,15 @@ function auditApplyFilter() {
 
 function _auditBuildRowHtml(r, absIdx) {
   const peek  = _auditDecodePeek(r.payloadPeek);
-  const badge = _auditBadgeType(peek);
-  const _badgeColor = badge ? (MSG_TYPE_MAP.find(r => r.type.toLowerCase() === badge)?.color || '') : '';
-  const _badgeSt = _btypeStyle(_badgeColor);
-  const badgeHtml = badge ? `<span class="${_badgeSt ? 'btype' : _btypeClass(badge)}"${_badgeSt ? ` style="${_badgeSt}"` : ''}>${badge.toUpperCase()}</span>` : '';
+  const badge = _auditBadgeType(peek, r.messageLen);
+  // Colour comes from the class itself, not from a lookup keyed on the type
+  // name — that lookup only had entries for the five legacy names, so a renamed
+  // class got no colour of its own.
+  const _badgeSt = badge ? _btypeStyle(badge.color) : '';
+  const _label   = badge ? String(badge.type).toUpperCase() : '';
+  const badgeHtml = badge
+    ? `<span class="${_badgeSt ? 'btype' : _btypeClass(badge.type)}"${_badgeSt ? ` style="${_badgeSt}"` : ''}>${_auditEsc(_label)}</span>`
+    : '';
   const fail = r.msgFailure ? String(r.msgFailure) : '';
   return '<div id="aud-row-' + absIdx + '" class="audit-record-row' + (absIdx === _auditSt.selIdx ? ' aud-sel' : '')
     + '" onclick="auditInspectRecord(' + absIdx + ')">'
@@ -16632,7 +16658,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.32.9.3';
+const APP_VERSION  = '1.33.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

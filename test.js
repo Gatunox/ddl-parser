@@ -199,6 +199,9 @@ _t.meFmRowHtml         = _meFmRowHtml;
 _t.meState             = () => _meState;
 _t.setMeState          = v => { _meState = v; };
 _t.fmtTestSpecs       = window._fmtTestSpecs;
+_t.auditBadgeType     = _auditBadgeType;
+_t.fmtSave            = window._fmtSave;
+_t.fmtGetData         = window._fmtGetData;
 // The recognizer reference: the index, one example card, and the runner that
 // produces an example's verdict. Rendered here so a documented example that
 // stopped being true fails the build instead of misinforming the panel.
@@ -295,7 +298,7 @@ const {
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, extractBytesMapped,
-  stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, psHelp, psCommonAttrs, psCommonDflts,
+  stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, auditBadgeType, fmtSave, fmtGetData, psHelp, psCommonAttrs, psCommonDflts,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
@@ -12539,6 +12542,95 @@ test('a padded value shows its padding in the results table', () => {
     'all eight pad bytes are countable in the cell');
   assert.ok(html.includes('data-tip="TERM0001        "'),
     'while the tooltip still carries the real characters');
+});
+
+// ── The audit badge is the Class Editor's answer ───────────────────────────
+// Reported: three classes renamed ISO-PEPE / ISO-MDS / ISO-KAKE all showed a
+// single hardcoded "ISO" in the legacy palette. The badge fell through to the
+// legacy regex table because the specs could never match: only 16 bytes of the
+// 32-byte peek were passed, and `greater-than` measures the buffer it is given,
+// so even `greater-than 22` was false for every record.
+console.log('\naudit badge from the Class Editor');
+
+const BADGE_SPECS = [
+  { name: 'ISO-PEPE', label: 'Pepe', vol: 'SWITCH', color: '#ff0000',
+    recognizers: [{ type: 'literal', offset: 0, encoding: 'ascii', value: 'ISO' },
+                  { type: 'mti', offset: 12, value: '0200' },
+                  // Reads bytes 16-31 — past the 16-byte window the badge used
+                  // to truncate to, and exactly what the real ISO 8583 BIC
+                  // class carries.
+                  { type: 'hex-density', offset: 16, length: 16, min: 1 },
+                  { type: 'greater-than', value: 872 }] },
+  { name: 'ISO-MDS', label: 'Mds', vol: 'SWITCH', color: '#00ff00',
+    recognizers: [{ type: 'literal', offset: 0, encoding: 'ascii', value: 'ISO' },
+                  { type: 'mti', offset: 12, value: '0210' },
+                  { type: 'hex-density', offset: 16, length: 16, min: 1 },
+                  { type: 'greater-than', value: 872 }] },
+];
+// "ISO" + 9 digits + MTI at 12 + hex at 16..31 — the ISOPSEM header shape.
+const badgeHex = (mti, pad) => Array.from('ISO' + '000100001' + mti + 'FE3FE7E00FC08003' + 'X'.repeat(pad))
+  .map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+
+// _fmtSave installs the specs into the detector (and writes only to the
+// harness's localStorage stub). Restored after each test so nothing leaks.
+function withBadgeSpecs(fn) {
+  const before = fmtGetData();
+  fmtSave(BADGE_SPECS);
+  try { return fn(); } finally { fmtSave((before && before.specs) || []); }
+}
+
+test('a renamed class badges under its OWN type code', () => withBadgeSpecs(() => {
+  const full = badgeHex('0200', 900);
+  const b = auditBadgeType(full.slice(0, 64), full.length / 2);   // 32-byte peek
+  eq(b && b.type, 'ISO-PEPE', 'the class name is not reaching the badge');
+}));
+
+test('a recognizer past byte 15 is still evaluated', () => withBadgeSpecs(() => {
+  // The peek is 32 bytes; the badge used to read only the first 16, so
+  // hex-density at offset 16 could never be judged and the spec always lost.
+  const full = badgeHex('0200', 900);
+  eq(auditBadgeType(full.slice(0, 64), full.length / 2)?.type, 'ISO-PEPE',
+    'only half the peek is reaching the detector');
+  // Half a peek must NOT be enough — proves the whole one is what carried it.
+  eq(auditBadgeType(full.slice(0, 32), full.length / 2), null,
+    'the spec matched without the bytes its recognizer reads');
+}));
+
+test('two classes that differ only past byte 12 are told apart', () => withBadgeSpecs(() => {
+  // The old code truncated the peek to 16 bytes, so a recognizer at offset 12
+  // was the last one that could be read at all — and offset 16 never could.
+  const a = badgeHex('0200', 900), c = badgeHex('0210', 900);
+  eq(auditBadgeType(a.slice(0, 64), a.length / 2)?.type, 'ISO-PEPE', 'first class');
+  eq(auditBadgeType(c.slice(0, 64), c.length / 2)?.type, 'ISO-MDS', 'second class');
+}));
+
+test('the badge carries the class colour, not a legacy palette entry', () => withBadgeSpecs(() => {
+  const full = badgeHex('0200', 900);
+  eq(auditBadgeType(full.slice(0, 64), full.length / 2)?.color, '#ff0000',
+    'the colour set on the class is not used');
+}));
+
+test('length recognizers judge the record, not the peek', () => withBadgeSpecs(() => {
+  // greater-than 872 against a 32-byte peek is false however long the record
+  // is. Same peek, two declared lengths: only the long one may badge.
+  const full = badgeHex('0200', 900), peek = full.slice(0, 64);
+  eq(auditBadgeType(peek, full.length / 2)?.type, 'ISO-PEPE', 'a long record matches');
+  eq(auditBadgeType(peek, 100), null, 'a short one must not');
+}));
+
+test('nothing matching gets no badge at all', () => withBadgeSpecs(() => {
+  // No legacy fallback: an unrecognised record is blank rather than guessed.
+  const junk = Array.from('ZZZZnot a message at all zzzz')
+    .map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+  eq(auditBadgeType(junk, 900), null, 'a legacy pattern is still being consulted');
+}));
+
+test('the row uses the class colour and drops the legacy lookup', () => {
+  const src = psFnSource('_auditBuildRowHtml');
+  assert.ok(!/MSG_TYPE_MAP/.test(src), 'the legacy colour table is still consulted');
+  assert.ok(/_btypeStyle\(badge\.color\)/.test(src), 'the class colour is not used');
+  assert.ok(/_auditBadgeType\(peek, r\.messageLen\)/.test(src),
+    'the record length is not passed, so length recognizers cannot be judged');
 });
 
 // ── Toggling the dump format keeps the parsed state ────────────────────────

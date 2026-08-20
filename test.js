@@ -2726,6 +2726,63 @@ test('[REGRESSION] "children" steps down a level, and stepping is not required',
   eq(de('TAIL'), 4, 'the sequence past the group is wrong');
 });
 
+test('[REGRESSION] a VLG length frames the whole element it sizes, not its first field', () => {
+  // Reported 2026-08-19: a LEN of 23 sizing a 23-byte SUBGROUP was spent on that
+  // group's FIRST leaf, so a 12-byte field was reported as too small for 23 —
+  // "length source says 23, but FIELD1 declares at most 12". The frame covers the
+  // next ELEMENT, individual or group, and the warning belongs to that element.
+  S.ddlTree = { VOL: { SV: { 'FRAME': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 GRP.
+        04 LEN1 PIC 9(4).
+        04 SUBGROUP1.
+          06 INNERGROUP1.
+            08 FIELD1 PIC X(12).
+            08 FIELD2 PIC X(10).
+      02 OUTERTAIL PIC X(4).
+    END REC.
+  ` } } };
+  const parse = lenTxt => {
+    const item = migrateOverrides({ ddl_bindings: ['VOL/SV/FRAME/REC'],
+      overrides: { 'GRP': { de: 'children' }, 'GRP.LEN1': { de: 60, vlg: true } },
+      parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+                          { 'read-bitmap-fields': 'BMP' }] });
+    S.inputFormat = 'ascii';
+    return meExecParseSpec(item,
+      Buffer.from('0000000000000018' + lenTxt + 'A'.repeat(12) + 'B'.repeat(10) + 'ZZZZ'));
+  };
+  const warns = ctx => ctx.fields.filter(f => f.warn || f.issue).map(f => f.warn || f.issue);
+
+  // Frame exactly covers the group: both leaves read whole, nothing complains,
+  // and the field after the group lands on its own bytes.
+  let ctx = parse('0022');
+  const at = id => ctx.fields.find(f => f.id === id);
+  eq(at('GRP.SUBGROUP1.INNERGROUP1.FIELD1')?.endByte, 31, 'the first leaf was clamped to the frame');
+  eq(at('GRP.SUBGROUP1.INNERGROUP1.FIELD2')?.endByte, 41, 'the second leaf was not read inside the frame');
+  eq(at('OUTERTAIL')?.value, 'ZZZZ', 'the field after the framed group is misplaced');
+  eq(warns(ctx).length, 0, `a frame that fits its group still complains: ${warns(ctx).join(' | ')}`);
+
+  // Frame longer than the group: ONE warning, and it is about what the frame
+  // sizes — never about the first leaf inside it. 23 against a 22-byte group is
+  // the reported case exactly.
+  ctx = parse('0023');
+  const w = warns(ctx);
+  eq(w.length, 1, `expected one warning about the element, got: ${w.join(' | ')}`);
+  assert.ok(/length source says 23/.test(w[0]), `the warning misstates the frame: ${w[0]}`);
+  assert.ok(/declares at most 22 byte\(s\)/.test(w[0]),
+    `the warning is judged against the first leaf, not the element: ${w[0]}`);
+  assert.ok(!/FIELD1/.test(w[0]), `the warning names a field inside the element: ${w[0]}`);
+  // Still read as the group's own size, so what follows is unaffected.
+  eq(ctx.fields.find(f => f.id === 'OUTERTAIL')?.value, 'ZZZZ',
+    'an over-long frame swallowed the field after the group');
+
+  // The spread is only for a MULTI-field payload — a frame over a single leaf
+  // keeps the plain rule, capped at what that leaf declares.
+  assert.ok(/ctx\.vlgSpread = \(entry\.with \|\| \[\]\)\.length > 1;/.test(APP_SRC),
+    'the frame is spread across fields even when it sizes a single one');
+});
+
 test('[REGRESSION] a REDEFINES inside a VLG payload overlays, it does not consume', () => {
   // Reported 2026-08-19. Two branches build the field list for a DE: a GROUP DE
   // filters REDEFINES out of its kids, and the leaf-DE-plus-VLG-payload branch

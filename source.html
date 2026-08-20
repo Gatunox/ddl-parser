@@ -16735,7 +16735,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.36.1.0';
+const APP_VERSION  = '1.36.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27743,8 +27743,25 @@ function _meReadOneFieldFromDef(def, ctx) {
   // "bytes" override does, counted once per field id so a REDEFINES re-read
   // cannot double-shift.
   if (ctx.vlgPending != null) {
-    let _want = ctx.vlgPending;
-    ctx.vlgPending = null;
+    // The length frames the whole PAYLOAD, which may be several fields — a group,
+    // or a group of groups. It used to be spent on the next field alone, so a LEN
+    // of 23 framing a 23-byte SUBGROUP was judged against its first 12-byte leaf
+    // and reported as too long for it. A field that fits inside what is left
+    // takes its declared width and passes the remainder on; only the field the
+    // frame ends inside is clamped. Reported 2026-08-19.
+    const _capNow = len || 0;
+    let _want = null;
+    if (ctx.vlgSpread && _capNow > 0 && _capNow <= ctx.vlgPending) {
+      // The payload is a GROUP, so the frame covers several fields: this one fits
+      // inside what is left, takes its declared width, and passes the remainder
+      // on. Only set for a multi-field payload — where the frame sizes a single
+      // leaf the cap belongs to that leaf, which is the rule below.
+      ctx.vlgPending -= _capNow;
+    } else {
+      _want = ctx.vlgPending;
+      ctx.vlgPending = null;
+    }
+    if (_want !== null) {
     // The DDL's size is the MAXIMUM this element can ever be, not a default to be
     // discarded: PAN PIC X(19) sized by PAN-LEN reads 8 when the LEN says 08 and
     // 16 when it says 16 — and still 19 when it says 99. A wire length above the
@@ -27766,6 +27783,7 @@ function _meReadOneFieldFromDef(def, ctx) {
         ctx.ovShift = (ctx.ovShift || 0) + (_want - (len || 0));
       }
       len = _want;
+    }
     }
   }
 
@@ -27816,6 +27834,7 @@ function _meReadOneFieldFromDef(def, ctx) {
       _n = Math.max(0, _avail);
     }
     ctx.vlgPending = _n;
+    ctx.vlgFrame   = _n;   // what the frame was, for a report at its far end
   }
 
   const isBin = /\bBINARY\b/i.test(def._dataType || def.dataType || '');
@@ -29860,8 +29879,26 @@ function _meExecBitmapFields(attrs, ctx) {
 
       // ── Elementary DE ───────────────────────────────────────────────────────
       if (entry.def) {
-        if (readSeq(entry.def))
+        if (readSeq(entry.def)) {
+          // A frame over a GROUP covers all of it, so the length is spent across
+          // the group's fields rather than on its first one. A single-field
+          // payload keeps the plain rule: the frame sizes that field, capped at
+          // what it declares.
+          ctx.vlgSpread = (entry.with || []).length > 1;
           for (const extra of (entry.with || [])) if (!readSeq(extra)) break;
+          // The frame is the LEN's, and the payload is everything it covers — so
+          // this is the only place that can tell whether the length overran. Left
+          // to the per-field clamp it was judged against the FIRST field of the
+          // payload, and a 23-byte frame over a 23-byte group was reported as too
+          // long for its 12-byte first leaf. Reported 2026-08-19.
+          if (ctx.vlgSpread && ctx.vlgPending > 0) {
+            const _tot = (entry.with || []).reduce((n, d) => n + (d.length || 0), 0);
+            ctx.fields.push({ id: entry.def.id, warn:
+              `${entry.def.id}: length source says ${ctx.vlgFrame}, but what it sizes `
+              + `declares at most ${_tot} byte(s) — read as ${_tot}` });
+          }
+          ctx.vlgPending = null; ctx.vlgFrame = null; ctx.vlgSpread = false;
+        }
         continue;
       }
 

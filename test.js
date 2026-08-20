@@ -2793,22 +2793,15 @@ test('[REGRESSION] a VLG length frames the whole element it sizes, not its first
   // The payload claimed only 6 bytes, so what follows starts right after them —
   // reading whatever the wire actually holds there, which is the point.
   eq(at('OUTERTAIL')?.startByte, 26, 'the field after a short frame does not start at the frame\'s end');
-  // A frame of ZERO over a payload that declares bytes is not an empty element,
-  // it is a length that could not be read. Framing on it wiped the whole group —
-  // every field 0 bytes at one offset — while the wire still held the data and
-  // the DDL Doc still showed the real layout. The DDL's widths win, and the
-  // length is reported. Reported 2026-08-19.
+  // Exhausted before the payload even starts: every field is absent, none jumps ahead.
   ctx = parse('0000');
-  eq(at('GRP.SUBGROUP1.INNERGROUP1.FIELD1')?.valueLength, 12,
-    'a length of 0 wiped the group instead of falling back to the DDL');
-  eq(at('GRP.SUBGROUP1.INNERGROUP1.FIELD2')?.valueLength, 10, 'the second field was wiped too');
-  assert.ok(warns(ctx).some(w => /length reads 0/.test(w)),
-    `an unusable length is not reported: ${warns(ctx).join(' | ')}`);
+  for (const id of ['GRP.SUBGROUP1.INNERGROUP1.FIELD1', 'GRP.SUBGROUP1.INNERGROUP1.FIELD2'])
+    eq(at(id)?.valueLength, 0, `${id} read bytes from a spent frame`);
 
   // The spread is only for a MULTI-field payload — a frame over a single leaf
   // keeps the plain rule, capped at what that leaf declares.
-  assert.ok(/ctx\.vlgSpread = ctx\.vlgPending != null && \(entry\.with \|\| \[\]\)\.length > 1;/.test(APP_SRC),
-    'the frame is spread across fields even when it sizes a single one, or when it was dropped');
+  assert.ok(/ctx\.vlgSpread = \(entry\.with \|\| \[\]\)\.length > 1;/.test(APP_SRC),
+    'the frame is spread across fields even when it sizes a single one');
 });
 
 test('[REGRESSION] a REDEFINES inside a VLG payload overlays, it does not consume', () => {
@@ -2883,10 +2876,9 @@ test('[REGRESSION] a REDEFINES inside a VLG payload overlays, it does not consum
                         { 'read-bitmap-fields': 'BMP' }] }),
     Buffer.from('0000000000000018' + '0000' + 'AAAABBBB' + 'ZZZZ'));
   const sf = id => short.fields.find(x => x.id === id);
-  eq(sf('GRP.SUBGROUP1.INNERGROUP1.A1')?.valueLength, 4,
-    'a length of 0 wiped the payload instead of falling back to the DDL');
-  eq(sf('GRP.SUBGROUP1.INNERGROUP2.A2')?.valueLength, 2,
-    'the overlay is not drawn over the payload the DDL declares');
+  eq(sf('GRP.SUBGROUP1.INNERGROUP1.A1')?.valueLength, 0, 'the payload read bytes from an empty frame');
+  eq(sf('GRP.SUBGROUP1.INNERGROUP2.A2')?.valueLength, 0,
+    'the overlay holds data while the fields it redefines hold none');
 });
 
 test('[REGRESSION] a group that gave its DE away cannot be handed an anchor', () => {

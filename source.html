@@ -16735,7 +16735,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.36.4.0';
+const APP_VERSION  = '1.36.4.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29936,21 +29936,7 @@ function _meExecBitmapFields(attrs, ctx) {
           // the group's fields rather than on its first one. A single-field
           // payload keeps the plain rule: the frame sizes that field, capped at
           // what it declares.
-          // A frame of ZERO over a payload that declares bytes is not an empty
-          // element, it is a length that could not be read — 0x2C00 through a
-          // hex-char override decodes to nothing usable. Framing on it wiped the
-          // whole group: every field 0 bytes at the same offset, while the wire
-          // still held the data and the DDL Doc still showed the real layout.
-          // The DDL's own widths are the better guide, so the frame is dropped
-          // and the length is reported instead. Reported 2026-08-19.
-          const _payDecl = (entry.with || []).reduce((n, d) => n + (d.length || 0), 0);
-          if (ctx.vlgPending === 0 && _payDecl > 0) {
-            ctx.vlgPending = null;
-            const _n = `${entry.def.id}: length reads 0, which cannot frame `
-              + `${_payDecl} declared byte(s) — read as the DDL declares them`;
-            _lenRow.issue = _lenRow.issue ? `${_lenRow.issue} · ${_n}` : _n;
-          }
-          ctx.vlgSpread = ctx.vlgPending != null && (entry.with || []).length > 1;
+          ctx.vlgSpread = (entry.with || []).length > 1;
           for (const extra of (entry.with || [])) if (!readSeq(extra)) break;
           // The frame is the LEN's, and the payload is everything it covers — so
           // this is the only place that can tell whether the length overran. Left

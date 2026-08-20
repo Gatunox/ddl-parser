@@ -2782,6 +2782,22 @@ test('[REGRESSION] a VLG length frames the whole element it sizes, not its first
   eq(ctx.fields.find(f => f.id === 'OUTERTAIL')?.value, 'ZZZZ',
     'an over-long frame swallowed the field after the group');
 
+  // A frame SHORTER than the group truncates it, in order: the field the frame
+  // ends inside is clamped, and everything after it is absent. It must never run
+  // out on one field and then hand bytes to a LATER one — reported as "in what
+  // universe does a field before another get zero", and caused by the frame being
+  // abandoned once spent instead of governing the whole payload.
+  ctx = parse('0006');
+  eq(at('GRP.SUBGROUP1.INNERGROUP1.FIELD1')?.valueLength, 6, 'the frame did not clamp the field it ends inside');
+  eq(at('GRP.SUBGROUP1.INNERGROUP1.FIELD2')?.valueLength, 0, 'a field past the frame still read bytes');
+  // The payload claimed only 6 bytes, so what follows starts right after them —
+  // reading whatever the wire actually holds there, which is the point.
+  eq(at('OUTERTAIL')?.startByte, 26, 'the field after a short frame does not start at the frame\'s end');
+  // Exhausted before the payload even starts: every field is absent, none jumps ahead.
+  ctx = parse('0000');
+  for (const id of ['GRP.SUBGROUP1.INNERGROUP1.FIELD1', 'GRP.SUBGROUP1.INNERGROUP1.FIELD2'])
+    eq(at(id)?.valueLength, 0, `${id} read bytes from a spent frame`);
+
   // The spread is only for a MULTI-field payload — a frame over a single leaf
   // keeps the plain rule, capped at what that leaf declares.
   assert.ok(/ctx\.vlgSpread = \(entry\.with \|\| \[\]\)\.length > 1;/.test(APP_SRC),
@@ -2838,9 +2854,17 @@ test('[REGRESSION] a REDEFINES inside a VLG payload overlays, it does not consum
   // if the overlay consumed nothing.
   eq(f('OUTERTAIL')?.startByte, 28, 'the field after the overlay is shifted by the overlay\'s width');
   eq(f('OUTERTAIL')?.value, 'ZZZZ', 'the field after the overlay reads the wrong bytes');
-  // The overlay itself is not READ — the same rule the group branch has always
-  // applied. (It is not yet DISPLAYED either; that gap is shared with group DEs.)
-  eq(f('GRP.SUBGROUP1.INNERGROUP2.A2'), undefined, 'the redefinition is read as payload');
+  // The overlay is SHOWN, at the bytes it overlays — the legacy parser has always
+  // emitted these rows and the bitmap path dropped them, so an STM record showed
+  // none of the redefinitions a SEM record showed. Reported 2026-08-19.
+  const r = f('GRP.SUBGROUP1.INNERGROUP2.A2');
+  assert.ok(r, 'the redefinition is not shown at all');
+  eq(r.startByte, f('GRP.SUBGROUP1.INNERGROUP1.A1').startByte,
+    'the overlay is not drawn on the bytes it redefines');
+  eq(r.isRedefines, true, 'the overlay is not flagged, so the table cannot mark it');
+  // Shown, never read: the cursor is put back, so the record advances exactly as
+  // it would without them — OUTERTAIL above is the witness.
+  eq(f('GRP.SUBGROUP1.INNERGROUP2.B2')?.startByte, 22, 'the second overlay leaf is misplaced');
 });
 
 test('[REGRESSION] a group that gave its DE away cannot be handed an anchor', () => {

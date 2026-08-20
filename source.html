@@ -16735,7 +16735,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.36.2.1';
+const APP_VERSION  = '1.36.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27751,13 +27751,18 @@ function _meReadOneFieldFromDef(def, ctx) {
     // frame ends inside is clamped. Reported 2026-08-19.
     const _capNow = len || 0;
     let _want = null;
-    if (ctx.vlgSpread && _capNow > 0 && _capNow <= ctx.vlgPending) {
-      // The payload is a GROUP, so the frame covers several fields: this one fits
-      // inside what is left, takes its declared width, and passes the remainder
-      // on. Only set for a multi-field payload — where the frame sizes a single
-      // leaf the cap belongs to that leaf, which is the rule below.
-      ctx.vlgPending -= _capNow;
+    if (ctx.vlgSpread) {
+      // The payload is a GROUP, so the frame covers all of it. A field that fits
+      // inside what is left takes its declared width and passes the remainder on;
+      // the field the frame ends inside is clamped to it. What follows reads
+      // NOTHING — the frame is the element's whole extent, so a field past its
+      // end is one the wire never sent. Leaving the frame behind at that point
+      // let the next field read its declared width and push the record along.
+      if (_capNow > 0 && _capNow <= ctx.vlgPending) ctx.vlgPending -= _capNow;
+      else { _want = ctx.vlgPending; ctx.vlgPending = 0; }
     } else {
+      // A frame over a single leaf is that leaf's size, capped at what it
+      // declares — the plain "PAN-LEN then PAN" rule.
       _want = ctx.vlgPending;
       ctx.vlgPending = null;
     }
@@ -29226,7 +29231,14 @@ function _meBuildDEMap(ctx) {
     // and the walk ran off the end of the message. The DDL, the DDL Doc and the
     // Field Map all had the offsets right; only the parse did not.
     // Reported 2026-08-19.
-    if (d && !d.isRedefines) (owner.with || (owner.with = [])).push(d);
+    if (!d) continue;
+    // Kept apart, not dropped: a REDEFINES is never READ — it overlays bytes a
+    // sibling has already accounted for — but it is still SHOWN, at the position
+    // it overlays. The legacy parser has always emitted these rows; the
+    // bitmap-fields path dropped them, so an STM record showed none of the
+    // redefinitions a SEM record showed. Reported 2026-08-19.
+    if (d.isRedefines) (owner.redef || (owner.redef = [])).push(d);
+    else               (owner.with  || (owner.with  = [])).push(d);
   }
   return map;
 }
@@ -29653,6 +29665,33 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
   }
 }
 
+// The REDEFINES rows of a DE's payload, drawn where they overlay rather than
+// read in sequence. They consume nothing: the cursor is parked on the overlaid
+// position for the read and put back afterwards, so the record advances exactly
+// as it did without them. Rebased on the payload's ACTUAL start — DDL offsets
+// assume every element is present, which inside a bitmap walk they are not.
+function _meEmitRedefRows(entry, ctx) {
+  const redef = entry.redef, base = (entry.with || [])[0];
+  if (!redef || !redef.length || !base) return;
+  const anchor = ctx.fieldsById[base.id];
+  if (!anchor || anchor.startByte == null) return;
+  const shift = anchor.startByte - (base.offset || 0);
+  const cur = ctx.cursor;
+  for (const d of redef) {
+    const start = (d.offset || 0) + shift;
+    if (start < 0 || start >= ctx.bytes.length) continue;
+    ctx.cursor = start;
+    const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
+    if (!f) continue;
+    _meApplyTypeOverride(f, d, ctx, null);
+    _meApplyDisplayOverride(f, d, ctx);
+    f.isRedefines = true;
+    f.redefTarget = d.redefTarget || null;
+    ctx.fields.push(f);
+  }
+  ctx.cursor = cur;
+}
+
 // Leaves under a group, in declaration order. REDEFINES overlays are excluded:
 // they re-view bytes that are already accounted for.
 function _meGroupLeaves(groupId, ctx) {
@@ -29902,6 +29941,7 @@ function _meExecBitmapFields(attrs, ctx) {
             _lenRow.issue = _lenRow.issue ? `${_lenRow.issue} · ${_note}` : _note;
           }
           ctx.vlgPending = null; ctx.vlgFrame = null; ctx.vlgSpread = false;
+          _meEmitRedefRows(entry, ctx);
         }
         continue;
       }

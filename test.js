@@ -2725,6 +2725,89 @@ test('[REGRESSION] "children" steps down a level, and stepping is not required',
   eq(de('TAIL'), 4, 'the sequence past the group is wrong');
 });
 
+test('[REGRESSION] a group that gave its DE away cannot be handed an anchor', () => {
+  // Reported 2026-08-19. A DE number written on a VLG length is moved onto that
+  // length's GROUP (1.34.0.0) — but if the group carries "children" it has
+  // already given its number away, so the anchor landed on something that could
+  // not hold it and was dropped: the LEN read 56 where the DDL said 60, while
+  // the override sat in the exported JSON looking applied. Four sibling LEN /
+  // payload pairs in one group, nested to the depth production uses.
+  S.ddlTree = { VOL: { SV: { 'VLGCH': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 EMV-GROUP PIC 9(4).
+      02 GRP.
+        04 LEN1 PIC 9(4).
+        04 SUB1.
+          06 ITEM1.
+            08 A PIC X(4).
+            08 B PIC X(4).
+          06 ITEM2.
+            08 A PIC X(4).
+        04 LEN2 PIC 9(4).
+        04 SUB2.
+          06 ITEM1.
+            08 A PIC X(4).
+        04 LEN3 PIC 9(4).
+        04 SUB3.
+          06 ITEM1.
+            08 A PIC X(4).
+        04 LEN4 PIC 9(4).
+        04 SUB4.
+          06 ITEM1.
+            08 A PIC X(4).
+      02 OUTERTAIL PIC X(4).
+    END REC.
+  ` } } };
+  const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/VLGCH/REC')]);
+  const walk = overrides => {
+    const rows = meWalkDEFields(defs, {
+      ddl_bindings: ['VOL/SV/VLGCH/REC'], overrides,
+      parse_spec_binary: [
+        { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+        { 'read-bitmap-fields': 'BMP' },
+      ] });
+    return id => { const r = rows.find(x => x.id === id); return r ? (r.de ?? r.ownerDE ?? null) : undefined; };
+  };
+  const base = { 'EMV-GROUP': { de: 55 }, 'GRP': { de: 'children' } };
+
+  // Untouched: the group owns one number and everything inside derives it, and
+  // the field AFTER it takes the next one — not one per child.
+  let n = walk({ 'EMV-GROUP': { de: 55 } });
+  eq(n('GRP'), 56, 'the group does not own a single number');
+  eq(n('GRP.LEN1'), 56, 'a child of the group draws a number of its own');
+  eq(n('GRP.SUB4.ITEM1.A'), 56, 'a leaf five levels down is outside the element');
+  eq(n('OUTERTAIL'), 57, 'the field after the group is misnumbered');
+
+  // The reported case: children, plus a number on the first LEN.
+  n = walk({ ...base, 'GRP.LEN1': { de: 60, vlg: true } });
+  eq(n('GRP.LEN1'), 60, 'the anchor on the VLG length was dropped');
+  eq(n('GRP.SUB1'), 60, 'the payload does not derive its length\'s number');
+  eq(n('GRP.SUB1.ITEM2.A'), 60, 'a leaf inside the payload is outside the element');
+
+  // All four pairs marked, which is the shape the DDL describes: each LEN owns
+  // one DE and the group it sizes derives it, so the four pairs are 60..63.
+  n = walk({ ...base,
+    'GRP.LEN1': { de: 60, vlg: true }, 'GRP.LEN2': { vlg: true },
+    'GRP.LEN3': { vlg: true }, 'GRP.LEN4': { vlg: true } });
+  for (const [len, sub, de] of [['GRP.LEN1','GRP.SUB1',60], ['GRP.LEN2','GRP.SUB2',61],
+                                ['GRP.LEN3','GRP.SUB3',62], ['GRP.LEN4','GRP.SUB4',63]]) {
+    eq(n(len), de, `${len} does not own DE ${de}`);
+    eq(n(sub), de, `${sub} does not derive DE ${de} from its length`);
+  }
+  eq(n('OUTERTAIL'), 64, 'the field after the four pairs is misnumbered');
+
+  // de:false is the other way a group stands down, and it must behave the same.
+  n = walk({ 'EMV-GROUP': { de: 55 }, 'GRP': { de: false },
+             'GRP.LEN1': { de: 60, vlg: true } });
+  eq(n('GRP.LEN1'), 60, 'the anchor is dropped onto an excluded group');
+  // And with the parent NOT standing down, the number still belongs to the group
+  // — the 1.34.0.0 rule, which this must not undo.
+  n = walk({ 'EMV-GROUP': { de: 55 }, 'GRP.LEN1': { de: 60, vlg: true } });
+  eq(n('GRP'), 60, 'the group no longer takes the number its LEN was given');
+  eq(n('GRP.LEN1'), 60, 'the LEN does not read as part of its group');
+});
+
 test('[REGRESSION] a LEN and the field it sizes are one element, leaf or group', () => {
   // The four shapes a VLG length can appear in, and the number each row REPORTS
   // (its own, or the one it derives). Reported 2026-08-18: only the last of the
@@ -9299,6 +9382,15 @@ test('a kind with no fields is not a filter you can press', () => {
   // disabled the only button that turns that filter off, with the table stuck.
   assert.ok(/fmOvKind !== k\.id/.test(bar),
     'the active kind filter disables itself at zero, trapping the table');
+  // [2026-08-19] And the two states have to LOOK different. The count was drawn
+  // in --text-very-dim whether it could be pressed or not, so a kind with fields
+  // to filter to looked as disabled as one without.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const nRule = (css.match(/\.me-ovb-n\{[^}]*\}/) || [''])[0];
+  assert.ok(/color:var\(--text\)/.test(nRule) && !/--text-very-dim/.test(nRule),
+    'a pressable count is still drawn as dim as a dead one');
+  assert.ok(/\.me-ovb>\.btn:disabled\{[^}]*color:var\(--text-very-dim\)/.test(css),
+    'nothing dims the zero count, so the dead state reads as live');
 });
 
 test('an override filter holds its rows until you turn it off', () => {
@@ -9468,16 +9560,32 @@ test('"number…" reveals a box to type it in, while you are still choosing', ()
 
 test('the kind counts follow the search but not the kind filter', () => {
   const fn = psFnSource('_meFmBarRefresh');
-  assert.ok(/!filt \|\| id\.toLowerCase\(\)\.includes\(filt\)/.test(fn),
+  assert.ok(/if \(filt && !row\.id\.toLowerCase\(\)\.includes\(filt\)\) continue;/.test(fn),
     'the counts ignore the search, so they lie about what a click shows');
-  // The five counts are the switch. If they obeyed the kind filter the other
-  // four would read 0 the moment one was on, and could never be switched back.
-  const totalLine = fn.slice(fn.indexOf('const total ='), fn.indexOf('const held'));
-  assert.ok(!/fmOvKind/.test(totalLine), 'the counts obey the kind filter');
-  // And it counts THAT kind — a count that ignores which keys it is looking for
-  // shows the same number on all five controls.
-  assert.ok(/k\.keys\.some\(key => all\[id\]\[key\] !== undefined\)/.test(totalLine),
+  // [2026-08-19] Counted over the ROWS, not the override map. A canonical id
+  // covers every occurrence of a repeated field, so one map entry can be several
+  // rows; an entry for a field the bound DDL no longer declares is no row at
+  // all; and a row the sticky filter is holding open after its override was
+  // cleared is a row with no entry. All three made the number disagree with the
+  // table by one or two, which is what was reported.
+  assert.ok(/for \(const row of \(_meFmVirt\?\.all \|\| \[\]\)\)/.test(fn),
+    'the counts are taken from the override map again, so they drift from the rows');
+  // One pass for all five kinds, not five passes.
+  eq((fn.match(/for \(const row of/g) || []).length, 1,
+    'the rows are walked more than once to tally five numbers');
+  // It counts THAT kind — a tally that ignores which keys it looks for shows the
+  // same number on all five controls.
+  assert.ok(/k\.keys\.some\(key => o\[key\] !== undefined\)/.test(fn),
     'the count does not check the kind it belongs to');
+  // The five counts are the switch. The tally itself must not consult the kind
+  // filter, or the other four would read 0 the moment one was on and could never
+  // be switched back.
+  const tally = fn.slice(fn.indexOf('const _kindRows'), fn.indexOf('for (const k of _ME_OV_KINDS) {\n    const grp'));
+  assert.ok(!/fmOvKind/.test(tally), 'the tally obeys the kind filter, so the other four zero out');
+  // Only the ACTIVE kind swaps its number for the listed rows, so the count and
+  // the table can never disagree while a filter is on.
+  assert.ok(/_meState\?\.fmOvKind === k\.id && _meFmVirt\s*\n?\s*\? _meFmVirt\.visible\.length/.test(fn),
+    'the active filter\'s count is not read off the rows it is showing');
 });
 
 test('the pill removes its own kind, not the field', () => {

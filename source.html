@@ -3035,10 +3035,13 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    button's own padding (the box is border-box); the extra 4 is slack, because
    `ch` is the advance of "0" and the tabular digits here measure a shade wider
    — 4ch + 16px left a four-digit count 2px short and it grew anyway. */
+/* Full --text, not a dim: a non-zero count is a BUTTON, and it was drawn in
+   --text-very-dim whether it could be pressed or not, so a kind with fields to
+   filter to looked as disabled as one without. The disabled rule on .me-ovb>.btn
+   still dims the zero case, which is the only one that cannot be pressed, so the
+   two states now read apart. Reported 2026-08-19. */
 .me-ovb-n{font-size:calc(var(--sz-mono) - 2px);font-variant-numeric:tabular-nums;
-  min-width:calc(4ch + 20px);justify-content:center;color:var(--text-very-dim);padding:0 8px;}
-/* Brightened once it is describing your selection rather than just the spec. */
-.me-ovb.picked .me-ovb-n{color:var(--text-dim);}
+  min-width:calc(4ch + 20px);justify-content:center;color:var(--text);padding:0 8px;}
 .me-ovb-act{min-width:6.2em;justify-content:center;}
 /* Filtering by this kind. The whole group lights, since the whole group is
    about that one kind. */
@@ -16673,7 +16676,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.35.2.0';
+const APP_VERSION  = '1.35.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23504,7 +23507,16 @@ function _meWalkDEFields(defs, item) {
     const parts = canon.split('.');
     if (parts.length < 2) return canon;
     const parent = parts.slice(0, -1).join('.');
-    return childrenByPrefix.has(parent) ? parent : canon;
+    if (!childrenByPrefix.has(parent)) return canon;
+    // A group that has DECLINED the number cannot be handed it. "children" gives
+    // its number away to its children and `false` excludes it outright, so moving
+    // the anchor there drops it: the LEN read 56 where the DDL said 60, while the
+    // override sat in the export looking applied. When the parent has stood down,
+    // the LEN IS the element at the numbering level and keeps its own number —
+    // its payload still derives it through the pairing below. Reported 2026-08-19.
+    const psel = _ovAll[parent]?.de;
+    if (psel === 'children' || psel === false) return canon;
+    return parent;
   };
   // The leaves whose number moved up to their group, so the leaf itself stops
   // reading as anchored — it is inside the element now, not one of its own.
@@ -25187,15 +25199,34 @@ function _meFmBarRefresh() {
 
   const all = _meOvAll(_meCurItem());
   const filt = (_meState?.fmFilter || '').toLowerCase();
+  // Counted over the ROWS, not over the override map, because the number has to
+  // be the number of rows a click on it shows. Counting map entries drifted from
+  // the table by one or two in every direction: a canonical id covers EVERY
+  // occurrence of a repeated field, so one entry can be several rows; an entry
+  // whose field the bound DDL no longer declares is no row at all; and a row
+  // held by the sticky filter after its override was cleared is a row with no
+  // entry. One pass for all five kinds, so this is cheaper than the five passes
+  // over the map it replaces. Reported 2026-08-19.
+  const _kindRows = Object.create(null);
+  for (const k of _ME_OV_KINDS) _kindRows[k.id] = 0;
+  for (const row of (_meFmVirt?.all || [])) {
+    if (filt && !row.id.toLowerCase().includes(filt)) continue;
+    const o = all[_canonFieldId(row.id)];
+    if (!o) continue;
+    for (const k of _ME_OV_KINDS)
+      if (k.keys.some(key => o[key] !== undefined)) _kindRows[k.id]++;
+  }
   for (const k of _ME_OV_KINDS) {
     const grp = document.querySelector(`#me-fm-bar .me-ovb[data-kind="${k.id}"]`);
     if (!grp) continue;
-    // Total: every field with this kind, narrowed by the SEARCH but never by the
+    // Total: every ROW with this kind, narrowed by the SEARCH but never by the
     // kind filter — these five are the switch, and a switch that zeroes the
-    // other four cannot be switched back.
-    const total = Object.keys(all).filter(id =>
-      (!filt || id.toLowerCase().includes(filt)) &&
-      k.keys.some(key => all[id][key] !== undefined)).length;
+    // other four cannot be switched back. The kind currently filtering reads its
+    // number straight off the listed rows, so the sticky rows it is holding open
+    // are counted too and the number never disagrees with the table.
+    const total = _meState?.fmOvKind === k.id && _meFmVirt
+      ? _meFmVirt.visible.length
+      : _kindRows[k.id];
     const held = n ? _meFmSelWithKind(k.id).length : 0;
     // Both numbers, always: the total says how much of the spec uses this kind,
     // the selected count says how much of what you are pointing at already does

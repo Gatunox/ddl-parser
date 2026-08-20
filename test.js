@@ -187,6 +187,7 @@ _t.meSectionToggle     = _meSectionToggle;
 _t.meFmSelWithKind     = _meFmSelWithKind;
 _t.meOvKinds           = _ME_OV_KINDS;
 _t.meOvSet             = _meOvSet;
+_t.meOvOrder           = _meOvOrder;
 _t.meFmExpandTargets   = _meFmExpandTargets;
 _t.meFmDeCellHtml      = _meFmDeCellHtml;
 _t.setFmVirt           = v => { _meFmVirt = v; };
@@ -10046,6 +10047,43 @@ test('the "was" number reflects what the row would have shown', () => {
   const r = deselRows({ 'ADDITIONA.FIELD-XX': { de: 11 } });
   const row = r.find(x => x.id === 'ADDITIONA.FIELD-XX');
   eq(row.naturalDE, 5, 'the slot the group would have occupied, not the counter past it');
+});
+
+test('[REGRESSION] the overrides map is written in DDL order', () => {
+  // Reported 2026-08-19: an anchor nobody remembered setting could not be found
+  // by eye in an export, because a JSON object keeps the order its keys were
+  // INSERTED — so the map came out in the order overrides happened to be
+  // created, and two exports of one spec could differ for no reason.
+  S.ddlTree = { VOL: { SV: { 'ORD': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 ALPHA PIC X(4).
+      02 GRP.
+        04 LEN1 PIC 9(4).
+        04 SUB1.
+          06 INNER PIC X(4).
+      02 ZULU PIC X(4).
+    END REC.
+  ` } } };
+  const item = { ddl_bindings: ['VOL/SV/ORD/REC'], overrides: {} };
+  // Created in a deliberately scrambled order, with one entry for a field the
+  // DDL does not declare at all.
+  for (const [k, v] of [['ZULU', { de: 9 }], ['GRP.SUB1.INNER', { type: 'binary' }],
+                        ['GONE-FIELD', { de: 5 }], ['ALPHA', { de: 2 }],
+                        ['GRP', { de: 'children' }], ['GRP.LEN1', { vlg: true }]])
+    item.overrides[k] = v;
+  deepEq(Object.keys(sandbox._t.meOvOrder(item)),
+    ['ALPHA', 'GRP', 'GRP.LEN1', 'GRP.SUB1', 'GRP.SUB1.INNER', 'ZULU', 'GONE-FIELD']
+      .filter(k => k !== 'GRP.SUB1'),
+    'the map is not in declaration order, with unknown fields last');
+  // It is the SAME objects, only reordered — nothing is rebuilt or dropped.
+  eq(item.overrides.ZULU.de, 9, 'an entry lost its value in the reorder');
+  eq(Object.keys(item.overrides).length, 6, 'an entry was dropped');
+  // Applied where it matters: after every override action, and before a save.
+  assert.ok(/_meOvOrder\(item\);/.test(psFnSource('_meFmAfterAct')),
+    'the written pane still shows creation order');
+  assert.ok(/_meOvOrder\(s\)/.test(psFnSource('_meSave')),
+    'what lands in storage, and every export from it, is still in creation order');
 });
 
 test('[REGRESSION] an anchor the DDL comments reads apart from one set by hand', () => {

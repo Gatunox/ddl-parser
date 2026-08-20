@@ -6326,6 +6326,44 @@ function _meOvAll(item) {
     item.overrides = {};
   return item.overrides;
 }
+// Rewrite the map in DDL DECLARATION order, in place. A JSON object keeps the
+// order its keys were inserted, so the map came out in the order overrides
+// happened to be created — which made an entry impossible to find by eye in an
+// export, and made two exports of the same spec differ for no reason. Reported
+// 2026-08-19 by someone reading an export to find where a DE anchor had come
+// from, and not finding it. Anything the bound DDLs no longer declare sorts
+// last, alphabetically, so a stale entry stands out instead of hiding mid-file.
+function _meOvOrder(item) {
+  const all = _meOvAll(item);
+  const keys = Object.keys(all);
+  if (keys.length < 2) return all;
+  let rank = null;
+  try {
+    // Paths have to be RESOLVED first — the collector takes bound DDLs, not
+    // path strings, and handed strings it returns nothing and the sort silently
+    // falls back to alphabetical.
+    const defs = _meCollectBindingDefs(
+      (item.ddl_bindings || []).filter(Boolean)
+        .map(p => (typeof getDDLFromPath === 'function') ? getDDLFromPath(p) : null));
+    rank = new Map();
+    let i = 0;
+    for (const d of defs) {
+      // Every ancestor prefix too, so a group entry sorts with its own leaves
+      // rather than after every field the DDL declares.
+      const parts = _canonFieldId(d.id).split('.');
+      for (let n = 1; n <= parts.length; n++) {
+        const p = parts.slice(0, n).join('.');
+        if (!rank.has(p)) rank.set(p, i++);
+      }
+    }
+  } catch (_) { rank = null; }
+  const pos = k => (rank && rank.has(k)) ? rank.get(k) : Infinity;
+  keys.sort((a, b) => (pos(a) - pos(b)) || (a < b ? -1 : a > b ? 1 : 0));
+  const out = {};
+  for (const k of keys) out[k] = all[k];
+  item.overrides = out;
+  return out;
+}
 function _meOvGet(item, fieldId) {
   return _meOvAll(item)[_canonFieldId(fieldId)] || null;
 }
@@ -16697,7 +16735,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.36.0.0';
+const APP_VERSION  = '1.36.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25128,7 +25166,12 @@ function _meFmNoteExpansion(act, targets) {
 
 function _meFmAfterAct() {
   const item = _meCurItem();
-  if (item) { const all = _meOvAll(item); for (const k in all) if (!Object.keys(all[k]).length) delete all[k]; }
+  if (item) {
+    const all = _meOvAll(item); for (const k in all) if (!Object.keys(all[k]).length) delete all[k];
+    // Kept in DDL order from here on, so the written pane and any export read
+    // top-to-bottom like the field list rather than in creation order.
+    _meOvOrder(item);
+  }
   _meSetDirty();
   _meOvlRefresh();
   _mePsOvrRefresh();
@@ -31648,6 +31691,10 @@ function _meTestTokenTable(tokens) {
 }
 
 function _meSave() {
+  // Ordered before it is written, so what lands in storage — and in every export
+  // taken from it — reads in DDL order whatever sequence the overrides were
+  // created in.
+  for (const s of (_meState.specs || [])) if (s && s.overrides) _meOvOrder(s);
   _fmtSave(_meState.specs);
   _meState.dirty = false;
   const btn = document.getElementById('me-save-btn');

@@ -16735,7 +16735,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.36.3.0';
+const APP_VERSION  = '1.36.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29676,12 +29676,24 @@ function _meEmitRedefRows(entry, ctx) {
   const anchor = ctx.fieldsById[base.id];
   if (!anchor || anchor.startByte == null) return;
   const shift = anchor.startByte - (base.offset || 0);
+  // The overlay covers the same bytes the payload did — NO MORE. The frame may
+  // have cut the payload short, or left it empty entirely, and a redefinition of
+  // bytes the wire never sent cannot hold data either: read past that and the
+  // redefinition showed real bytes while the fields it redefines showed none.
+  const payEnd = (entry.with || []).reduce((n, d) => {
+    const r = ctx.fieldsById[d.id];
+    return (r && r.endByte != null && r.endByte >= n) ? r.endByte : n;
+  }, anchor.startByte - 1);
   const cur = ctx.cursor;
   for (const d of redef) {
     const start = (d.offset || 0) + shift;
     if (start < 0 || start >= ctx.bytes.length) continue;
+    const room = payEnd - start + 1;
+    if (room <= 0) { ctx.fields.push({ id: d.id, description: d.description, dataType: d._dataType || d.dataType,
+      valueLength: 0, value: '', rawHex: '', rawBytes: [], startByte: start, endByte: start - 1,
+      isRedefines: true, redefTarget: d.redefTarget || null }); continue; }
     ctx.cursor = start;
-    const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
+    const f = _meReadOneFieldFromDef({ ...d, length: Math.min(d.length || 0, room), offset: undefined }, ctx);
     if (!f) continue;
     _meApplyTypeOverride(f, d, ctx, null);
     _meApplyDisplayOverride(f, d, ctx);

@@ -2865,6 +2865,20 @@ test('[REGRESSION] a REDEFINES inside a VLG payload overlays, it does not consum
   // Shown, never read: the cursor is put back, so the record advances exactly as
   // it would without them — OUTERTAIL above is the witness.
   eq(f('GRP.SUBGROUP1.INNERGROUP2.B2')?.startByte, 22, 'the second overlay leaf is misplaced');
+  // The overlay covers the bytes the payload covered and NO MORE. A frame that
+  // cut the payload short — or left it empty — leaves nothing for a redefinition
+  // of those bytes either; reading past it showed the redefinition holding real
+  // data while the fields it redefines held none. Reported 2026-08-19.
+  const short = meExecParseSpec(migrateOverrides({
+    ddl_bindings: ['VOL/SV/RDF/REC'],
+    overrides: { 'GRP': { de: 'children' }, 'GRP.LEN1': { de: 60, vlg: true } },
+    parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+                        { 'read-bitmap-fields': 'BMP' }] }),
+    Buffer.from('0000000000000018' + '0000' + 'AAAABBBB' + 'ZZZZ'));
+  const sf = id => short.fields.find(x => x.id === id);
+  eq(sf('GRP.SUBGROUP1.INNERGROUP1.A1')?.valueLength, 0, 'the payload read bytes from an empty frame');
+  eq(sf('GRP.SUBGROUP1.INNERGROUP2.A2')?.valueLength, 0,
+    'the overlay holds data while the fields it redefines hold none');
 });
 
 test('[REGRESSION] a group that gave its DE away cannot be handed an anchor', () => {

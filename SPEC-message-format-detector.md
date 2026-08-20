@@ -1038,9 +1038,24 @@ every occurrence of a repeated field:
   "REVERVED_DATA_FLD": { "de": 124 },
   "POS_DATA_FLD":      { "de": 60 },
   "TRACK2":            { "vlg": "TRACK2.LGTH" },
-  "MSGTYPE":           { "type": "hex-char", "bytes": 2, "display": "hex" }
+  "MSGTYPE":           { "type": "hex-char", "bytes": 2, "display": "hex" },
+  "TRAN-CDE":          { "de": 64, "de_src": "auto" }
 }
 ```
+
+**`de_src`** *(added 2026-08-19)* records **who set the number**: `"auto"` when
+Auto Order wrote it from the bound DDL's `Bit map position = NN` comment, absent
+when a person typed it. It rides with `de` the way `count` rides with `vlg` —
+cleared whenever the number is, so a marker can never outlive what it describes,
+and typing a number by hand removes it because the number is yours from then on.
+
+It is stored rather than inferred so it survives an **export and the import that
+reads it back**, and so a duplicated entity carries it. The Overrides table
+colours the two apart: an Auto Order anchor in amber, a hand-set one in the
+accent. Asked for while chasing an anchor nobody remembered setting — the two
+were indistinguishable, both drawn accent-blue. An anchor stored before this
+existed has no marker; the table falls back to comparing the number against the
+DDL's own comment and says in the tooltip that this is an inference.
 
 This replaced three parallel arrays — `de_map`, `var_length_groups` and
 `field_overrides`. A spec saved in the old shape is folded into this one when it

@@ -2914,6 +2914,16 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* DE and VLG are plain text — colour carries the state, no boxes. */
 .me-fm-de{color:var(--text-very-dim,var(--text-dim));}
 .me-fm-de-anchored{color:var(--accent);font-weight:700;}
+/* An anchor that says what the DDL's own "Bit map position = NN" comment says —
+   the number Auto Order writes. Amber, not the accent, so a number you did not
+   type is visibly not one of yours: both rendered accent-blue before, and an
+   anchor nobody remembered setting gave no clue where it came from. The arrow
+   and the "would have been" number move with it, since they are the parts that
+   say an anchor is in play at all. */
+.me-fm-de-fromddl{color:var(--warn-text);}
+.me-fm-de-fromddl .c-ovr-arrow,
+.me-fm-de-fromddl .c-ovr-orig,
+.me-fm-de-fromddl .c-ovr-new{color:var(--warn-text);}
 /* The DE the anchor replaced — same dim treatment as the Type column's "↩". */
 .me-fm-de-was{color:rgba(var(--accent-rgb),0.65);font-weight:400;font-size:calc(var(--sz-mono) - 2px);}
 .me-fm-vlg{color:var(--ok);}
@@ -6399,10 +6409,21 @@ function _meOvDeList(item) {
   for (const id in all) if (_meDeIsAnchor(all[id].de)) out.push({ field: id, de: Math.max(1, +all[id].de) });
   return out;
 }
-function _meOvSetDeList(item, list) {
+// `src` records who wrote these numbers — 'auto' when Auto Order did. It is
+// stored beside the number, so it survives an export and the import that reads
+// it back, and a duplicated entity carries it too. Without it an Auto Order
+// anchor and one typed by hand are the same entry, and the table cannot say
+// which is which — asked for 2026-08-19 while chasing an anchor nobody
+// remembered setting. Cleared alongside `de`, so a stale marker cannot outlive
+// the number it describes.
+function _meOvSetDeList(item, list, src) {
   const all = _meOvAll(item);
-  for (const id in all) delete all[id].de;
-  for (const e of (list || [])) if (e && e.field != null) _meOvSet(item, e.field, 'de', +e.de || 1);
+  for (const id in all) { delete all[id].de; delete all[id].de_src; }
+  for (const e of (list || [])) {
+    if (!e || e.field == null) continue;
+    _meOvSet(item, e.field, 'de', +e.de || 1);
+    if (src) _meOvSet(item, e.field, 'de_src', src);
+  }
   for (const id of Object.keys(all)) if (!Object.keys(all[id]).length) delete all[id];
 }
 // A copy of the overrides map with every DE anchor removed — used to walk the
@@ -16676,7 +16697,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.35.4.0';
+const APP_VERSION  = '1.36.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22614,7 +22635,11 @@ function _meOverridesPrep(item) {
 </div>
 `;
 
-  return { fieldList, ctx: { ea, vlgMap, foByField, usesBitmapFields, vlgIdentifier, leavesByGroup }, chrome };
+  // The DDL's own "Bit map position = NN" comments, so the DE column can say
+  // whether an anchor agrees with the DDL — i.e. whether Auto Order could have
+  // written it — or is one only the user knows about.
+  const commentDE = _meItemCommentDEs(item);
+  return { fieldList, ctx: { ea, vlgMap, foByField, usesBitmapFields, vlgIdentifier, leavesByGroup, commentDE }, chrome };
 }
 
 // DE cell — hidden for REDEFINES rows (they overlay other bytes, no DE of
@@ -22630,11 +22655,35 @@ function _meFmDeSig(row, usesBitmapFields, sel) {
   // naturalDE is part of the signature: anchoring an EARLIER field changes what
   // a later anchored row "would otherwise be", and without this the ↩ note would
   // keep a stale number after a patch-only repaint.
-  return row.de + (row.anchored ? 'a' + (row.naturalDE ?? '') : '');
+  // The DDL-agreement flag rides in the signature too: anchoring a field to the
+  // number its own DDL comment names changes the cell's COLOUR without changing
+  // either number, and a patch-only repaint would keep the old one.
+  return row.de + (row.anchored ? 'a' + (row.naturalDE ?? '') + (row._deSrc || '') : '');
+}
+// Does this row's anchor say the same thing the DDL's comment says? Auto Order
+// writes anchors straight from those comments, so a match means the number could
+// have come from Auto Order rather than from the user. Matched on the LEAF name,
+// which is what _meExtractCommentDEs keys on.
+// Where this row's anchor came from: 'auto' when Auto Order wrote it and said
+// so in the override, 'ddl' when nothing said but the number is the one the
+// bound DDL comments — the best that can be inferred for an anchor stored before
+// the marker existed — and 'hand' otherwise. Only the first survives an export
+// as a fact; the second is a hint, and the tooltips say which is which.
+function _meAnchorSource(row, ctx) {
+  if (!row.anchored || row.de == null) return null;
+  const ovr = ctx && ctx.foByField && ctx.foByField.get(_canonFieldId(row.id));
+  if (ovr && ovr.de_src === 'auto') return 'auto';
+  const m = ctx && ctx.commentDE;
+  if (m && m.size && m.get(_canonFieldId(row.id).split('.').pop()) === row.de) return 'ddl';
+  return 'hand';
 }
 function _meFmDeCellHtml(row, ctx) {
   const ea  = ctx.ea;
   const id  = ea(row.id);
+  // Derived once, before the signature reads it — the signature has no ctx of
+  // its own, and this decides the cell's colour.
+  row._deSrc = _meAnchorSource(row, ctx);
+  row._fromDDL = row._deSrc === 'auto' || row._deSrc === 'ddl';
   const sig = _meFmDeSig(row, ctx.usesBitmapFields, ctx.foByField.get(_canonFieldId(row.id))?.de);
   // A row inside a terminal group owns no DE, but it still BELONGS to one — and
   // that is the only thing worth saying about it. The early return skipped the
@@ -22677,16 +22726,26 @@ function _meFmDeCellHtml(row, ctx) {
     // is not editable any more. An anchored DE is shown in the same "↩ original"
     // form the Type column uses for an overridden type, so one glance says which
     // number was set by hand and which followed on from it.
-    const tip = row.anchored
-      ? `Anchored to DE ${row.de} by an override${row.naturalDE != null ? ` — it would otherwise be DE ${row.naturalDE}` : ''}. Every element after it renumbers from here; edit it in the Overrides list above.`
-      : 'Follows on from the previous element. Anchor it with an override to renumber everything from here.';
+    // An anchor that matches the DDL's own "Bit map position = NN" comment is
+    // one Auto Order could have written; anything else is the user's alone.
+    // They rendered identically, so a number nobody remembers typing gave no
+    // clue where it came from — which is exactly the case this exists for.
+    const fromDDL = row._fromDDL;
+    const _would = row.naturalDE != null ? ` It would otherwise be DE ${row.naturalDE}.` : '';
+    const tip = !row.anchored
+      ? 'Follows on from the previous element. Anchor it with an override to renumber everything from here.'
+      : row._deSrc === 'auto'
+      ? `Anchored to DE ${row.de} by Auto Order, from the bound DDL's "Bit map position" comment — not typed by hand.${_would} Every element after it renumbers from here.`
+      : row._deSrc === 'ddl'
+      ? `Anchored to DE ${row.de}. The bound DDL comments this same number, so Auto Order may have written it — this entry predates the marker that would say so for certain.${_would} Every element after it renumbers from here.`
+      : `Anchored to DE ${row.de} by an override set by hand — the bound DDL does not comment this number.${_would} Every element after it renumbers from here; edit it in the Overrides list above.`;
     // Same "<original> ↩ <in effect>" shape as the Type column.
     const anchoredHtml = (row.anchored && row.naturalDE != null && row.naturalDE !== row.de)
       ? `<span class="c-ovr-orig">DE ${row.naturalDE}</span>`
         + `<span class="c-ovr-arrow"> ↩ </span>`
         + `<span class="c-ovr-new">${row.de}</span>`
       : `DE ${row.de}`;
-    return `<td class="me-fm-de${row.anchored ? ' me-fm-de-anchored' : ''}" data-sig="${sig}" title="${ea(tip)}">${anchoredHtml}</td>`;
+    return `<td class="me-fm-de${row.anchored ? ' me-fm-de-anchored' : ''}${fromDDL ? ' me-fm-de-fromddl' : ''}" data-sig="${sig}" title="${ea(tip)}">${anchoredHtml}</td>`;
   }
   const tip = !ctx.usesBitmapFields ? 'DE controls appear only when the parse spec uses read-bitmap-fields.'
             : row.isRedef           ? 'REDEFINES overlays existing bytes — no DE of its own.'
@@ -23814,6 +23873,31 @@ function _meFlash(msg, level, action) {
 // counter otherwise) gets an anchor — so fields already in the right place
 // stay unanchored (no blue "overridden" border). `rows` is the DE-capable
 // list in order: { id, naturalDE, commentDE|null }. Returns [{field, de}].
+// Every "Bit map position = NN" the bound definitions declare, as
+// field name → DE. Auto Order writes anchors FROM this map, and the DE column
+// reads it to say whether an anchor agrees with the DDL or is the user's alone
+// — which is the difference between a number the app put there and one only you
+// know about. First binding wins, definition-scoped exactly as Auto Order is.
+// Cached per (item, DDL tree version): the scan parses every bound definition,
+// and the DE column would otherwise redo it on each repaint.
+const _meCommentDECache = new WeakMap();
+function _meItemCommentDEs(item) {
+  if (!item) return new Map();
+  const hit = _meCommentDECache.get(item);
+  if (hit && hit.treeV === _ddlTreeVersion && hit.binds === (item.ddl_bindings || []).join(' '))
+    return hit.map;
+  const map = new Map();
+  for (const path of (item.ddl_bindings || [])) {
+    if (!path) continue;
+    const t = _meBindingTargetDef(path, item);
+    if (!t) continue;
+    for (const [k, v] of _meExtractCommentDEs(t.content, t.defName))
+      if (!map.has(k)) map.set(k, v);
+  }
+  _meCommentDECache.set(item, { treeV: _ddlTreeVersion, binds: (item.ddl_bindings || []).join(' '), map });
+  return map;
+}
+
 function _meComputeAutoOrderAnchors(rows) {
   const anchors = [];
   let expected = rows.length ? rows[0].naturalDE : 1;
@@ -23888,15 +23972,13 @@ function _meFmAutoOrder() {
   // resolved as the one declaring the parse spec's bitmap field (fallback:
   // first DEF). Both the comment scan and the eligible-row set use only those
   // definitions' boundaries.
-  const commentDE   = new Map();   // field name → commented DE (first binding wins)
+  const commentDE   = _meItemCommentDEs(item);
   const scopeNames  = new Set();   // field names inside the bound definitions
   const scopeNotes  = [];          // per-binding "scoped to DEF" info for multi-DEF files
   for (const path of (item.ddl_bindings || [])) {
     if (!path) continue;
     const t = _meBindingTargetDef(path, item);
     if (!t) continue;
-    for (const [k, v] of _meExtractCommentDEs(t.content, t.defName))
-      if (!commentDE.has(k)) commentDE.set(k, v);
     for (const n of t.names) scopeNames.add(n);
     if (t.multi) scopeNotes.push(`"${path}" spans ${t.multi} definitions — scoped to ${t.defName}`);
   }
@@ -23951,7 +24033,7 @@ function _meFmAutoOrder() {
   // Snapshot BEFORE overwriting, then apply the minimal anchor set.
   const snap = _meOvDeList(item);
   _meAutoOrderSnap.set(item, snap);
-  _meOvSetDeList(item, _meComputeAutoOrderAnchors(rows));
+  _meOvSetDeList(item, _meComputeAutoOrderAnchors(rows), 'auto');
   _meFmUiSave(item, { autoOrder: true, autoOrderSnap: snap });
   _meSetDirty();
   document.getElementById('me-fm-auto-btn')?.classList.add('btn-accent-on');
@@ -24778,7 +24860,10 @@ const _ME_FM_ED = {
   // one you are changing.
   'de-anchor': { label: 'DE number',  kind: 'num',
                  def: () => String(_meFmSelRow()?.de ?? ''),
-                 set: (o, v) => { o.de = Math.max(1, Math.min(128, +v)); } },
+                 // Typing a number makes it YOURS, whatever wrote it before —
+                 // otherwise editing an Auto Order anchor left it still labelled
+                 // as one, which is the opposite of what the marker is for.
+                 set: (o, v) => { o.de = Math.max(1, Math.min(128, +v)); delete o.de_src; } },
   'bytes':     { label: 'Size', kind: 'num',
                  // Bytes, always. The label used to say "characters" for a
                  // hex-char field and the box was seeded from a number the DDL
@@ -24831,13 +24916,16 @@ const _ME_FM_ED = {
                  set: (o, v) => {
                    // The number path IS de-anchor: same clamp, same meaning,
                    // stated once.
-                   if (/^\d+$/.test(v))       _ME_FM_ED['de-anchor'].set(o, v);
-                   else if (v === 'exclude')  o.de = false;
+                   if (/^\d+$/.test(v))       { _ME_FM_ED['de-anchor'].set(o, v); return; }
+                   // The other three are not numbers at all, so any provenance
+                   // marker describes a number that no longer exists.
+                   delete o.de_src;
+                   if (v === 'exclude')       o.de = false;
                    else if (v === 'children') o.de = 'children';
                    else                       o.de = true;
                  },
                  has:   o => o.de !== undefined,
-                 clear: o => { delete o.de; } },
+                 clear: o => { delete o.de; delete o.de_src; } },
   'type':      { label: 'Read as', kind: 'sel',
                  def: () => _meFmSelOvr()?.type || 'hex-char',
                  opts: () => _ME_TYPE_OPTS.filter(Boolean), set: (o, v) => { o.type = v; } },
@@ -25275,7 +25363,10 @@ const _ME_OV_KINDS = [
   { id: 'type', label: 'TYPE', keys: ['type'],          act: 'type',    xact: 'type',    hint: 'how the bytes are read' },
   { id: 'show', label: 'SHOW', keys: ['display'],       act: 'display', xact: 'display', hint: 'display format only' },
   { id: 'size', label: 'SIZE', keys: ['bytes'],         act: 'bytes',   xact: 'bytes',   hint: 'read this many bytes instead' },
-  { id: 'de',   label: 'DE',   keys: ['de'],            act: 'de',      xact: 'de-off',  hint: 'data-element numbering' },
+  // `de_src` rides with `de`, the way `count` rides with `vlg`: it records WHO
+  // set the number — 'auto' for one Auto Order wrote — so clearing the DE takes
+  // the provenance with it rather than leaving a marker on a number that is gone.
+  { id: 'de',   label: 'DE',   keys: ['de', 'de_src'],  act: 'de',      xact: 'de-off',  hint: 'data-element numbering' },
   { id: 'vlg',  label: 'VLG',  keys: ['vlg', 'count'],  act: 'vlg',     xact: 'vlg',     hint: 'length source' },
 ];
 

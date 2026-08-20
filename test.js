@@ -10048,6 +10048,74 @@ test('the "was" number reflects what the row would have shown', () => {
   eq(row.naturalDE, 5, 'the slot the group would have occupied, not the counter past it');
 });
 
+test('[REGRESSION] an anchor the DDL comments reads apart from one set by hand', () => {
+  // Reported 2026-08-19, chasing an anchor nobody remembered setting: an Auto
+  // Order anchor and a hand-typed one rendered identically, both accent-blue, so
+  // the table could not say where a number came from. An anchor that matches the
+  // bound DDL's own "Bit map position = NN" comment is the one Auto Order writes.
+  const fo = new Map([['AUTOFLD', { de: 40, de_src: 'auto' }], ['HANDFLD', { de: 70 }]]);
+  const ctx = { ea: s => String(s), usesBitmapFields: true, foByField: fo,
+                commentDE: new Map([['OUTERTAIL', 64], ['PAN', 2]]) };
+  const anchored = (id, de, natural) =>
+    meFmDeCellHtml({ id, de, naturalDE: natural, anchored: true }, ctx);
+
+  // 1. The stored marker is the FACT — it rides in the override, so it survives
+  //    an export, the import that reads it back, and a duplicated entity.
+  const auto = anchored('AUTOFLD', 40, 41);
+  assert.ok(/me-fm-de-fromddl/.test(auto), `an Auto Order anchor is not marked, got: ${auto}`);
+  assert.ok(/by Auto Order/.test(auto) && /not typed by hand/.test(auto),
+    'the tip does not say Auto Order wrote it');
+
+  // 2. No marker, but the number is the one the DDL comments — the best that can
+  //    be inferred for an anchor stored before the marker existed. Marked, and
+  //    the tip says it is an inference rather than a fact.
+  const inferred = anchored('OUTERTAIL', 64, 65);
+  assert.ok(/me-fm-de-fromddl/.test(inferred), `an anchor matching the DDL comment is not marked, got: ${inferred}`);
+  assert.ok(/predates the marker/.test(inferred), 'the tip states an inference as a fact');
+
+  // 3. Neither → set by hand.
+  const manual = anchored('HANDFLD', 70, 65);
+  assert.ok(!/me-fm-de-fromddl/.test(manual), `a hand-set anchor is marked as the DDL's, got: ${manual}`);
+  assert.ok(/set by hand/.test(manual), 'the tip does not say the number was set by hand');
+  // A field the DDL comments nothing about is always hand-set.
+  assert.ok(!/me-fm-de-fromddl/.test(anchored('TAIL', 64, 65)),
+    'a field with no comment of its own borrows another field\'s');
+  // All three are still anchored — the mark is added, never swapped in.
+  for (const c of [auto, inferred, manual])
+    assert.ok(/me-fm-de-anchored/.test(c), 'the anchored form was lost');
+
+  // The signature has to carry the source, or a patch-only repaint keeps the old
+  // colour when only the provenance changed.
+  const sig = h => (h.match(/data-sig="([^"]*)"/) || [, ''])[1];
+  assert.notStrictEqual(sig(anchored('OUTERTAIL', 64, 65)), sig(anchored('TAIL', 64, 65)),
+    'the signature ignores the anchor source, so the colour sticks across a repaint');
+  assert.notStrictEqual(sig(auto), sig(anchored('TAIL', 40, 41)),
+    'an Auto Order anchor and a hand-set one share a signature');
+
+  // The marker is stored beside the number and cleared with it — a stale
+  // provenance on a number that is gone would be worse than none.
+  const kinds = meOvKinds.find(k => k.id === 'de');
+  deepEq(kinds.keys, ['de', 'de_src'], 'clearing the DE leaves the provenance behind');
+  assert.ok(/_meOvSetDeList\(item, _meComputeAutoOrderAnchors\(rows\), 'auto'\)/.test(APP_SRC),
+    'Auto Order does not record that it wrote these numbers');
+  const setList = psFnSource('_meOvSetDeList');
+  assert.ok(/delete all\[id\]\.de; delete all\[id\]\.de_src;/.test(setList),
+    'a rewrite leaves the previous provenance markers in place');
+  assert.ok(/if \(src\) _meOvSet\(item, e\.field, 'de_src', src\)/.test(setList),
+    'the source is never written');
+  // Typing a number makes it yours, whatever wrote it before.
+  const edSrc = APP_SRC.slice(APP_SRC.indexOf("'de-anchor':"), APP_SRC.indexOf("'bytes':"));
+  assert.ok(/delete o\.de_src;/.test(edSrc),
+    'editing an Auto Order anchor by hand leaves it labelled as Auto Order\'s');
+
+  // And the colour is a token, distinct from the accent the manual form uses.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.me-fm-de-fromddl\{color:var\(--warn-text\)\}/.test(css.replace(/;\}/g, '}')),
+    'the DDL-anchored form has no colour of its own');
+  assert.ok(/\.me-fm-de-anchored\{color:var\(--accent\)/.test(css),
+    'the hand-set anchor lost its accent');
+});
+
 test('a leaf inside a terminal group still shows the DE it belongs to', () => {
   // It had the number all along — the cell returned early for underTerminal rows
   // and never drew it, so the deepest rows rendered blank.

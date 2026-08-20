@@ -16676,7 +16676,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.35.3.0';
+const APP_VERSION  = '1.35.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29065,7 +29065,15 @@ function _meBuildDEMap(ctx) {
     const owner = map[row.ownerDE];
     if (!owner || !owner.def) continue;
     const d = defById.get(row.id);
-    if (d) (owner.with || (owner.with = [])).push(d);
+    // REDEFINES overlays bytes that a sibling has already accounted for, so it
+    // is never READ — the group branch above has always filtered it out and this
+    // one did not. A payload holding `INNERGROUP2 REDEFINES INNERGROUP1` had both
+    // read in sequence: the redefinition started where the original ENDED rather
+    // than where it began, every field after it shifted by the overlay's width,
+    // and the walk ran off the end of the message. The DDL, the DDL Doc and the
+    // Field Map all had the offsets right; only the parse did not.
+    // Reported 2026-08-19.
+    if (d && !d.isRedefines) (owner.with || (owner.with = [])).push(d);
   }
   return map;
 }

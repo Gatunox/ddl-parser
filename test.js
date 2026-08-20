@@ -2725,6 +2725,61 @@ test('[REGRESSION] "children" steps down a level, and stepping is not required',
   eq(de('TAIL'), 4, 'the sequence past the group is wrong');
 });
 
+test('[REGRESSION] a REDEFINES inside a VLG payload overlays, it does not consume', () => {
+  // Reported 2026-08-19. Two branches build the field list for a DE: a GROUP DE
+  // filters REDEFINES out of its kids, and the leaf-DE-plus-VLG-payload branch
+  // did not. So `INNERGROUP2 REDEFINES INNERGROUP1` was read in SEQUENCE after
+  // the field it redefines: it started where the original ENDED rather than
+  // where it began, every field after it shifted by the overlay's width, and the
+  // walk ran off the end of the message. The DDL, the DDL Doc and the Field Map
+  // all had the offsets right; only the parse did not.
+  S.ddlTree = { VOL: { SV: { 'RDF': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 GRP.
+        04 LEN1 PIC 9(4).
+        04 SUBGROUP1.
+          06 INNERGROUP1.
+            08 A1 PIC X(4).
+            08 B1 PIC X(4).
+          06 INNERGROUP2 REDEFINES INNERGROUP1.
+            08 A2 PIC X(2).
+            08 B2 PIC X(6).
+      02 OUTERTAIL PIC X(4).
+    END REC.
+  ` } } };
+  const defs = sandbox._t.meCollectBindingDefs([sandbox._t.getDDLFromPath('VOL/SV/RDF/REC')]);
+  // The DDL itself has always been right: the overlay starts where the original
+  // starts. That is the fact the parse has to agree with.
+  const off = id => defs.find(d => d.id === id)?.offset;
+  eq(off('GRP.SUBGROUP1.INNERGROUP2.A2'), off('GRP.SUBGROUP1.INNERGROUP1.A1'),
+    'the DDL does not overlay the redefinition on its target');
+
+  const item = migrateOverrides({
+    ddl_bindings: ['VOL/SV/RDF/REC'],
+    overrides: { 'GRP': { de: 'children' }, 'GRP.LEN1': { de: 60, vlg: true } },
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'read-bitmap-fields': 'BMP' },
+    ],
+  });
+  S.inputFormat = 'ascii';
+  // bits 60 and 61 set = 0x18 in the last of eight bytes.
+  const msg = '0000000000000018' + '0008' + 'AAAABBBB' + 'ZZZZ';
+  const ctx = meExecParseSpec(item, Buffer.from(msg));
+  eq((ctx.errors || []).length, 0, 'the message does not parse cleanly');
+  eq(ctx.cursor, msg.length, 'the walk consumed the overlay as if it were payload');
+  const f = id => ctx.fields.find(x => x.id === id);
+  eq(f('GRP.SUBGROUP1.INNERGROUP1.B1')?.endByte, 27, 'the original payload does not end where it should');
+  // The field AFTER the payload is the witness: it lands on its own bytes only
+  // if the overlay consumed nothing.
+  eq(f('OUTERTAIL')?.startByte, 28, 'the field after the overlay is shifted by the overlay\'s width');
+  eq(f('OUTERTAIL')?.value, 'ZZZZ', 'the field after the overlay reads the wrong bytes');
+  // The overlay itself is not READ — the same rule the group branch has always
+  // applied. (It is not yet DISPLAYED either; that gap is shared with group DEs.)
+  eq(f('GRP.SUBGROUP1.INNERGROUP2.A2'), undefined, 'the redefinition is read as payload');
+});
+
 test('[REGRESSION] a group that gave its DE away cannot be handed an anchor', () => {
   // Reported 2026-08-19. A DE number written on a VLG length is moved onto that
   // length's GROUP (1.34.0.0) — but if the group carries "children" it has

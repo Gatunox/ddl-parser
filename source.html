@@ -16735,7 +16735,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.36.2.0';
+const APP_VERSION  = '1.36.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29879,7 +29879,8 @@ function _meExecBitmapFields(attrs, ctx) {
 
       // ── Elementary DE ───────────────────────────────────────────────────────
       if (entry.def) {
-        if (readSeq(entry.def)) {
+        const _lenRow = readSeq(entry.def);
+        if (_lenRow) {
           // A frame over a GROUP covers all of it, so the length is spent across
           // the group's fields rather than on its first one. A single-field
           // payload keeps the plain rule: the frame sizes that field, capped at
@@ -29893,9 +29894,12 @@ function _meExecBitmapFields(attrs, ctx) {
           // long for its 12-byte first leaf. Reported 2026-08-19.
           if (ctx.vlgSpread && ctx.vlgPending > 0) {
             const _tot = (entry.with || []).reduce((n, d) => n + (d.length || 0), 0);
-            ctx.fields.push({ id: entry.def.id, warn:
-              `${entry.def.id}: length source says ${ctx.vlgFrame}, but what it sizes `
-              + `declares at most ${_tot} byte(s) — read as ${_tot}` });
+            // On the LEN's OWN row, as `issue` — the key the results table reads.
+            // A row of its own under a key nothing renders is a warning nobody
+            // ever sees, which is how the first version of this shipped.
+            const _note = `${entry.def.id}: length source says ${ctx.vlgFrame}, but what `
+              + `it sizes declares at most ${_tot} byte(s) — read as ${_tot}`;
+            _lenRow.issue = _lenRow.issue ? `${_lenRow.issue} · ${_note}` : _note;
           }
           ctx.vlgPending = null; ctx.vlgFrame = null; ctx.vlgSpread = false;
         }

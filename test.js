@@ -2752,7 +2752,12 @@ test('[REGRESSION] a VLG length frames the whole element it sizes, not its first
     return meExecParseSpec(item,
       Buffer.from('0000000000000018' + lenTxt + 'A'.repeat(12) + 'B'.repeat(10) + 'ZZZZ'));
   };
-  const warns = ctx => ctx.fields.filter(f => f.warn || f.issue).map(f => f.warn || f.issue);
+  // f.issue is the key the results table renders (c-err / _issueMsg). A warning
+  // under any other key is one nobody ever sees — which is how the first version
+  // of this shipped, reported as "no warning at all".
+  const warns = ctx => ctx.fields.filter(f => f.issue).map(f => f.issue);
+  assert.ok(!/\bwarn:/.test(psFnSource('_meExecBitmapFields')),
+    'the frame warning is pushed under a key the results table does not render');
 
   // Frame exactly covers the group: both leaves read whole, nothing complains,
   // and the field after the group lands on its own bytes.

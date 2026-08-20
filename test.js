@@ -11652,16 +11652,49 @@ const EXP_ROWS = [
 
 test('type and bytes on a group land on every leaf inside it', () => {
   setFmVirt({ all: EXP_ROWS });
+  // Every leaf, redefinitions included — they are another reading of the same
+  // bytes, so a value kind has to reach them too.
   deepEq(meFmExpandTargets('ADDITIONA', 'type'),
-    ['ADDITIONA.FIELD-XX.DATA', 'ADDITIONA.FIELD-YY.DATA'], 'both leaves');
+    ['ADDITIONA.FIELD-XX.DATA', 'ADDITIONA.FIELD-YY.DATA', 'ADDITIONA.OLD'], 'both leaves');
   deepEq(meFmExpandTargets('ADDITIONA', 'bytes'),
-    ['ADDITIONA.FIELD-XX.DATA', 'ADDITIONA.FIELD-YY.DATA'], 'and for bytes');
+    ['ADDITIONA.FIELD-XX.DATA', 'ADDITIONA.FIELD-YY.DATA', 'ADDITIONA.OLD'], 'and for bytes');
 });
 
-test('a REDEFINES leaf is never a target', () => {
+test('[REGRESSION] a REDEFINES shows the DE it belongs to, and cannot be given another', () => {
+  // Reported 2026-08-19: the DE column was blank on redefinitions. They own no
+  // number — a redefinition is an alias for bytes another field owns, so its DE
+  // can never diverge from the element it redefines — but a blank cell hid WHICH
+  // element that was, worst where a redefinition runs to a long list of fields.
+  const ctx = { ea: s => String(s), usesBitmapFields: true, foByField: new Map(), commentDE: new Map() };
+  const cell = meFmDeCellHtml({ id: 'G.SETTLE.RESP', isRedef: true, de: null,
+                                ownerDE: 62, ownerId: 'G.LEN62' }, ctx);
+  assert.ok(/>DE 62</.test(cell), `a redefinition does not show the DE it belongs to, got: ${cell}`);
+  assert.ok(/me-fm-de-owned/.test(cell), 'it is drawn as if it owned the number');
+  assert.ok(/can never be given one of its own/.test(cell), 'the tip does not say the DE cannot diverge');
+  // Nothing anchors onto it: the walker refuses a DE to a REDEFINES row outright.
+  assert.ok(/if \(extras\.isRedef\) \{[\s\S]{0,120}de: null/.test(psFnSource('_meWalkDEFields')),
+    'a REDEFINES row can be assigned a DE of its own');
+  // And a payload numbered by a LEN hands its number down to them — the length
+  // pairing skips redefinitions, so without this the cell had nothing to show.
+  const w = psFnSource('_meWalkDEFields');
+  assert.ok(/if \(r\.ownerDE == null && _lastOwn\)/.test(w),
+    'a redefinition under a LEN-numbered payload is left without a number');
+});
+
+test('[REGRESSION] a REDEFINES leaf takes a value override, but never a length', () => {
+  // Reported 2026-08-19: setting hex-char on a group left the redefinitions
+  // inside it reading the DDL's way, so two rows over the SAME bytes disagreed
+  // about how to read them — right in the first element, wrong in the overlay.
+  // A redefinition is another reading of those bytes, so a value kind has to
+  // reach it; it can still be overridden on its own afterwards, exactly as a DDL
+  // gives a redefinition its own name and type.
   setFmVirt({ all: EXP_ROWS });
-  assert.ok(!meFmExpandTargets('ADDITIONA', 'type').includes('ADDITIONA.OLD'),
-    'an overlay re-views bytes another field already owns');
+  assert.ok(meFmExpandTargets('ADDITIONA', 'type').includes('ADDITIONA.OLD'),
+    'a redefinition is left reading the DDL way while its siblings are overridden');
+  // A LENGTH is the exception — it marks the field that SIZES the payload, and a
+  // redefinition sizes nothing, it overlays what the length already framed.
+  assert.ok(!meFmExpandTargets('ADDITIONA', 'vlg').includes('ADDITIONA.OLD'),
+    'an overlay was marked as the length source');
 });
 
 test('vlg on a group marks only the FIRST leaf', () => {

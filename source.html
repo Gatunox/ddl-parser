@@ -16735,7 +16735,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.36.4.1';
+const APP_VERSION  = '1.37.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22785,6 +22785,14 @@ function _meFmDeCellHtml(row, ctx) {
       : `DE ${row.de}`;
     return `<td class="me-fm-de${row.anchored ? ' me-fm-de-anchored' : ''}${fromDDL ? ' me-fm-de-fromddl' : ''}" data-sig="${sig}" title="${ea(tip)}">${anchoredHtml}</td>`;
   }
+  // A REDEFINES row shows the DE it BELONGS to. It owns no number — it is an
+  // alias for bytes another field already owns, so its DE can never diverge from
+  // the element it redefines — but leaving the cell blank hid which element that
+  // was, which matters most where a redefinition runs to a long list of fields.
+  // Reported 2026-08-19.
+  if (ctx.usesBitmapFields && row.isRedef && row.ownerDE != null)
+    return `<td class="me-fm-de me-fm-de-owned" data-sig="${sig}r${row.ownerDE}"`
+         + ` title="${ea(`Part of DE ${row.ownerDE}, owned by ${row.ownerId} — a REDEFINES is another reading of those same bytes, so it always carries that element's number and can never be given one of its own.`)}"><span class="me-fm-de-inh">DE ${row.ownerDE}</span></td>`;
   const tip = !ctx.usesBitmapFields ? 'DE controls appear only when the parse spec uses read-bitmap-fields.'
             : row.isRedef           ? 'REDEFINES overlays existing bytes — no DE of its own.'
             : row.underTerminal     ? 'No DE here — the terminal group above owns the DE.'
@@ -23845,6 +23853,17 @@ function _meWalkDEFields(defs, item) {
         out[j].ownerDE = ownNum;
         out[j].ownerId = ownId;
       }
+  }
+  // A REDEFINES carries the number of what it redefines. The loop above hands a
+  // group's number down to the rows under it, but a payload numbered by a LEN
+  // gets its number through the length pairing, which skips redefinitions — so
+  // those rows came out blank. They are an alias for bytes another field owns, so
+  // the number is simply the one the preceding non-REDEFINES row carries.
+  let _lastOwn = null;
+  for (const r of out) {
+    if (!r.isRedef) { const n = r.de != null ? r.de : r.ownerDE;
+                      if (n != null) _lastOwn = { de: n, id: r.de != null ? r.id : r.ownerId }; continue; }
+    if (r.ownerDE == null && _lastOwn) { r.ownerDE = _lastOwn.de; r.ownerId = _lastOwn.id; }
   }
   return out;
 }
@@ -25197,9 +25216,21 @@ function _meFmExpandTargets(qn, act) {
   if (!row || !row.isGroup) return [qn];
   if (String(act).startsWith('de-')) return [qn];
   const pre = qn + '.';
-  const leaves = rows.filter(r => !r.isGroup && !r.isRedef && r.id.startsWith(pre));
+  // REDEFINES leaves are INCLUDED for the value kinds. A redefinition is another
+  // reading of the same bytes, so setting a type on a group has to reach it too —
+  // otherwise the group's own leaves showed as hex-char while the redefinition
+  // beside them was still read the DDL's way, and the two disagreed about the
+  // very same bytes. Each can still be overridden on its own afterwards, exactly
+  // as a DDL gives a redefinition its own name and type. Reported 2026-08-19.
+  const leaves = rows.filter(r => !r.isGroup && r.id.startsWith(pre));
   if (!leaves.length) return [qn];
-  return act === 'vlg' ? [leaves[0].id] : leaves.map(r => r.id);
+  // A LENGTH is the one exception: it marks the field that SIZES the payload, and
+  // a redefinition sizes nothing — it overlays what the length already framed.
+  if (act === 'vlg') {
+    const first = leaves.find(r => !r.isRedef);
+    return first ? [first.id] : [qn];
+  }
+  return leaves.map(r => r.id);
 }
 // Every selected row expanded, de-duplicated, in table order. The act is first
 // resolved to the kind's expansion act: DE is one picker now, but the rule it

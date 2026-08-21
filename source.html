@@ -2953,8 +2953,14 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 .me-fm-grp-icon{display:inline-block;width:1em;text-align:center;font-style:normal;margin-left:0;cursor:pointer;color:var(--text-dim);}
 .me-fm-grp-icon:hover{color:var(--accent);}
 .me-fm-grp-collapsed .me-fm-grp-icon{color:var(--accent);}
-/* REDEFINES rows */
+/* REDEFINES rows, in the same accent the other two tables use for them —
+   `.ddl-doc-redef td` in DDL Doc and `tr.row-redef td.c-id` in Parse Results.
+   The row rule alone never reached the FIELD name: that sits in its own span
+   under `.me-fm-table td .me-fm-name`, which outranks it, so the one word you
+   actually read stayed plain while the rest of the row was tinted.
+   Reported 2026-08-20. */
 .me-fm-redef td{color:var(--redef-fg);}
+.me-fm-table tbody tr.me-fm-redef td .me-fm-name{color:var(--redef-fg);}
 .me-fm-redef-note{font-size:10px;opacity:.7;margin-left:4px;}
 /* Hidden by collapse / redef / filter */
 /* In the reference table these are read-only markers, not controls — at their
@@ -3145,11 +3151,11 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    plus four rules undoing it: selection, a broken override and a DE that can
    never be reached are all louder than "untouched", and stating that once means
    a fifth state cannot be added to one list and forgotten in the other. */
-.me-fm-table tbody tr.me-fm-quiet:not(:hover):not(.me-fm-row-sel):not(.me-fm-row-err):not(.me-fm-row-warn) td{
+.me-fm-table tbody tr.me-fm-quiet:not(:hover):not(.me-fm-redef):not(.me-fm-row-sel):not(.me-fm-row-err):not(.me-fm-row-warn) td{
   color:var(--text-very-dim);}
 /* One step down each, so the field name still reads as the brightest thing in
    its row and the hierarchy survives the dimming. */
-.me-fm-table tbody tr.me-fm-quiet:not(:hover):not(.me-fm-row-sel):not(.me-fm-row-err):not(.me-fm-row-warn) td .me-fm-name{
+.me-fm-table tbody tr.me-fm-quiet:not(:hover):not(.me-fm-redef):not(.me-fm-row-sel):not(.me-fm-row-err):not(.me-fm-row-warn) td .me-fm-name{
   color:var(--text-dim);}
 /* A broken override tints the whole row red; something to review, orange. The
    badge alone sits at the end of one column and is easy to scroll straight past
@@ -16767,7 +16773,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.37.2.0';
+const APP_VERSION  = '1.37.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

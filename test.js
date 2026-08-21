@@ -11660,6 +11660,27 @@ test('type and bytes on a group land on every leaf inside it', () => {
     ['ADDITIONA.FIELD-XX.DATA', 'ADDITIONA.FIELD-YY.DATA', 'ADDITIONA.OLD'], 'and for bytes');
 });
 
+test('[REGRESSION] a REDEFINES reads the same in all three tables', () => {
+  // Reported 2026-08-20: redefinitions were tinted in DDL Doc and in Parse
+  // Results but plain in the Overrides table. The row rule was there — it just
+  // never reached the FIELD name, which sits in its own span under
+  // `.me-fm-table td .me-fm-name` and outranks it, so the one word you actually
+  // read stayed default while the rest of the row was tinted.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  for (const [sel, where] of [
+    [/\.ddl-doc-redef td \{ color: var\(--redef-fg\); \}/, 'DDL Doc'],
+    [/tbody tr\.row-redef td\.c-id \{ color: rgba\(var\(--accent-rgb\),0\.65\); \}/, 'Parse Results'],
+    [/\.me-fm-redef td\{color:var\(--redef-fg\);\}/, 'the Overrides table'],
+  ]) assert.ok(sel.test(css), `${where} does not tint its REDEFINES rows`);
+  assert.ok(/\.me-fm-table tbody tr\.me-fm-redef td \.me-fm-name\{color:var\(--redef-fg\);\}/.test(css),
+    'the Overrides field NAME is left in the default colour on a redefinition');
+  // And a redefinition is never dimmed as "nothing to say" — being an overlay is
+  // exactly something to say, and the dimming outranks the tint.
+  const quiet = css.match(/\.me-fm-table tbody tr\.me-fm-quiet[^{]*td \.me-fm-name\{/);
+  assert.ok(quiet && /:not\(\.me-fm-redef\)/.test(quiet[0]),
+    'a quiet REDEFINES row is dimmed over its own tint');
+});
+
 test('[REGRESSION] every column has a handle, and double-click fits it to its content', () => {
   // Reported 2026-08-20: the "#" column could not be resized — it was the one
   // header built without a handle.

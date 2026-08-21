@@ -11660,6 +11660,31 @@ test('type and bytes on a group land on every leaf inside it', () => {
     ['ADDITIONA.FIELD-XX.DATA', 'ADDITIONA.FIELD-YY.DATA', 'ADDITIONA.OLD'], 'and for bytes');
 });
 
+test('[REGRESSION] Parse Results says so when it is describing an earlier message', () => {
+  // Reported 2026-08-20: the input locks on parse, but unlocking it and editing —
+  // or opening an audit file — leaves the results describing a message that has
+  // moved on. Silent, and actively misleading: hovering a row still highlights
+  // bytes, now in different text.
+  assert.ok(/id="resStaleBar"/.test(html), 'there is no stale notice on Parse Results');
+  assert.ok(html.indexOf('id="resStaleBar"') < html.indexOf('id="recMetaRow"'),
+    'the notice sits below the record metadata instead of at the top of the panel');
+  const stale = psFnSource('_resSetStale');
+  // Only when there IS a parse to be stale about — an empty panel must not warn.
+  assert.ok(/querySelector\('#resContainer table\.res-tbl'\)/.test(stale),
+    'an empty results panel warns about a parse that never happened');
+  // Raised by an edit and by opening an audit file; cleared by a fresh render.
+  assert.ok(/_resSetStale\(true\);/.test(psFnSource('onMsgChange')),
+    'editing the message after a parse raises no warning');
+  assert.ok(/audit-active'\);\s*\n\s*if \(typeof _resSetStale === 'function'\) _resSetStale\(true\)/.test(APP_SRC),
+    'opening an audit file leaves the previous parse looking current');
+  assert.ok(/innerHTML = tableOrEmpty;[\s\S]{0,140}_resSetStale\(false\)/.test(APP_SRC),
+    'a fresh parse does not clear the warning');
+  // Warning colours, not decoration — it has to read as a caution.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.res-stale\s*\{[^}]*color:var\(--warn-text\)/.test(css),
+    'the notice is not drawn in the warning colour');
+});
+
 test('[REGRESSION] a REDEFINES shows the DE it belongs to, and cannot be given another', () => {
   // Reported 2026-08-19: the DE column was blank on redefinitions. They own no
   // number — a redefinition is an alias for bytes another field owns, so its DE

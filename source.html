@@ -1356,6 +1356,17 @@ tr.row-filter-hide  { display: none; }
    spacer in the markup has already taken its free space, so there is none for
    justify-content to move and the filter stays over the ID column the
    positioner aligned it to. Reported 2026-08-19, same shape as .me-fm-toolbar. */
+/* The results on screen no longer describe the message in the input. Same strip
+   shape as the bars around it, in the warning colour, because the danger is
+   silent: hovering a row highlights bytes in a message that has moved on.
+   Reported 2026-08-20. */
+.res-stale {
+  display:flex; align-items:center; gap:8px; padding:3px 8px; flex-shrink:0;
+  border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
+  background:color-mix(in srgb, var(--warning) 18%, var(--surface-subhead));
+  color:var(--warn-text); flex-wrap:wrap;
+}
+.res-stale-ico { flex-shrink:0; }
 #resCfgControls {
   display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
@@ -3431,6 +3442,10 @@ th.me-fm-colhi{color:var(--accent);}
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
       </div>
       <div id="resCfgBar">
+        <div class="res-stale" id="resStaleBar" style="display:none">
+          <span class="res-stale-ico">&#9888;</span>
+          <span id="resStaleText">Showing an earlier parse &mdash; the message has changed since. Press Parse to refresh.</span>
+        </div>
         <div class="rec-meta" id="recMetaRow" style="display:none">
           <span id="recMetaContent" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0"></span>
           <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0;margin-left:auto">
@@ -12643,6 +12658,8 @@ function renderFieldTable(msg) {
        </div>`;
 
   document.getElementById('resContainer').innerHTML = tableOrEmpty;
+  // Freshly rendered from the message as it stands, so nothing is stale yet.
+  if (typeof _resSetStale === 'function') _resSetStale(false);
   _meColInitResize(_ME_COLRZ.res);
   _meInitColHighlight('#resContainer table');
 
@@ -13379,6 +13396,7 @@ function _auditBeginLoad(file) {
   const cmHostEl = document.querySelector('#msgPanel .cm-host');
   if (cmHostEl) cmHostEl.style.display = 'none';
   document.body.classList.add('audit-active');
+  if (typeof _resSetStale === 'function') _resSetStale(true);
   const browser = document.getElementById('auditBrowser');
   browser.style.display = 'flex';
 
@@ -14257,7 +14275,21 @@ function updateNav() {
 // ============================================================
 // BADGES
 // ============================================================
+// The results on screen describe the message that was parsed. Editing the input
+// after a parse — or opening an audit file — leaves them describing something
+// else, and the danger is silent: hovering a row still highlights bytes, now in
+// a message that has moved on. Say so until the next parse clears it.
+// Reported 2026-08-20.
+function _resSetStale(on) {
+  const bar = document.getElementById('resStaleBar');
+  if (!bar) return;
+  // Only when there is a parse to be stale ABOUT.
+  const showing = !!document.querySelector('#resContainer table.res-tbl');
+  bar.style.display = (on && showing) ? '' : 'none';
+}
+
 function onMsgChange() {
+  _resSetStale(true);
   const text = document.getElementById('msgInput').value;
   S.inputFormat = S.forcedFormat || detectFormat(text);
   S._badgeFmt   = S.inputFormat;   // frozen for badge — never overwritten by parser
@@ -16735,7 +16767,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.37.0.0';
+const APP_VERSION  = '1.37.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

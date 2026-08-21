@@ -24406,6 +24406,9 @@ function _meColAutoFit(cfg, th) {
   // first attempt left the widest cell still clipped by exactly that badge.
   // table-layout:auto with width:max-content asks each column for the width its
   // content actually wants; everything is put straight back afterwards.
+  // On a VIRTUALISED table (the Field Map) only the rendered rows exist, so the
+  // fit is to what is on screen — which is the honest answer available without
+  // laying out every row of a 4000-field DDL to answer a double-click.
   const prevTL = table.style.tableLayout, prevTW = table.style.width, prevW = th.style.width;
   table.style.tableLayout = 'auto';
   table.style.width = 'max-content';

@@ -7471,6 +7471,14 @@ test('the DDL Doc has a title row, and its filter sits over the column it filter
   // Measured, not assumed: hiding a button has to give its width back.
   assert.ok(/getComputedStyle\(el\)\.display === 'none'/.test(fn),
     'hidden controls are still counted against the filter');
+  // [REGRESSION 2026-08-20] And a button that WRAPPED to another line takes none
+  // of the filter's width. Counting it anyway understated the room and pinned
+  // the filter at its 90px floor, narrower than the column it sits over —
+  // measured on a wrapped bar: filter 90 against a 140px FIELD column.
+  assert.ok(/const inpTop = inp\.offsetTop;/.test(fn),
+    'the filter does not know which row it is on');
+  assert.ok(/if \(el\.offsetTop !== inpTop\) continue;/.test(fn),
+    'controls on another row are still charged against the filter width');
   assert.ok(/const _syncFilterPos = \(\) =>\s*\n?\s*_syncFilterToCol\('#resCfgControls'/.test(APP_SRC),
     'Parse Results no longer goes through the shared positioner');
   assert.ok(/_syncFilterToCol\('#ddlDocControls', '#ddlDocFilterInput', '#ddlDocBody th\.ddl-doc-name'\)/.test(APP_SRC),

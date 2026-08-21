@@ -11527,9 +11527,16 @@ function _syncFilterToCol(barSel, inpSel, thSel) {
   // pushed everything right of the input off the end — the ? clipped and the
   // column chooser gone entirely, with no scrollbar to reveal them. The buttons
   // are measured rather than assumed so hiding one gives the room back.
+  // Only what shares the filter's ROW. These bars wrap now, so a button pushed
+  // onto a second line takes none of the filter's width — counting it anyway
+  // understated the room and pinned the filter at its floor, narrower than the
+  // column it is supposed to sit over. Compared on offsetTop, which is what the
+  // wrap actually changes. Reported 2026-08-20.
+  const inpTop = inp.offsetTop;
   let others = 0, gaps = 0;
   for (const el of bar.children) {
     if (el === inp || getComputedStyle(el).display === 'none') continue;
+    if (el.offsetTop !== inpTop) continue;
     others += el.getBoundingClientRect().width;
     gaps++;
   }
@@ -16777,7 +16784,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.37.3.1';
+const APP_VERSION  = '1.37.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

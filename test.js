@@ -10212,12 +10212,14 @@ test('[REGRESSION] an anchor the DDL comments reads apart from one set by hand',
   assert.ok(/by Auto Order/.test(auto) && /not typed by hand/.test(auto),
     'the tip does not say Auto Order wrote it');
 
-  // 2. No marker, but the number is the one the DDL comments — the best that can
-  //    be inferred for an anchor stored before the marker existed. Marked, and
-  //    the tip says it is an inference rather than a fact.
+  // 2. [REGRESSION 2026-08-20] No marker means HAND-SET, even when the number is
+  //    the one the DDL comments. An earlier version inferred Auto Order from
+  //    that match — but anchors are typed FROM those comments, so every anchor
+  //    came out amber whether Auto Order had been near it or not.
   const inferred = anchored('OUTERTAIL', 64, 65);
-  assert.ok(/me-fm-de-fromddl/.test(inferred), `an anchor matching the DDL comment is not marked, got: ${inferred}`);
-  assert.ok(/predates the marker/.test(inferred), 'the tip states an inference as a fact');
+  assert.ok(!/me-fm-de-fromddl/.test(inferred),
+    `an anchor matching the DDL comment is guessed to be Auto Order's, got: ${inferred}`);
+  assert.ok(/set by hand/.test(inferred), 'the tip does not say the number was set by hand');
 
   // 3. Neither → set by hand.
   const manual = anchored('HANDFLD', 70, 65);
@@ -10229,14 +10231,21 @@ test('[REGRESSION] an anchor the DDL comments reads apart from one set by hand',
   // All three are still anchored — the mark is added, never swapped in.
   for (const c of [auto, inferred, manual])
     assert.ok(/me-fm-de-anchored/.test(c), 'the anchored form was lost');
+  // [REGRESSION 2026-08-20] The amber marks where the anchor CAME FROM: the
+  // number it replaced and the arrow. The number in force is the answer you
+  // read, so it keeps its own colour — tinting it too made the cell one amber
+  // block with nothing standing out.
+  const css0 = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.me-fm-de-fromddl \.c-ovr-arrow,\s*\n?\.me-fm-de-fromddl \.c-ovr-orig\{color:var\(--warn-text\);\}/.test(css0),
+    'the replaced number and the arrow are not the amber pair');
+  assert.ok(/\.me-fm-de-fromddl \.c-ovr-new\{color:var\(--text\);\}/.test(css0),
+    'the number in force is tinted amber along with the rest');
 
   // The signature has to carry the source, or a patch-only repaint keeps the old
   // colour when only the provenance changed.
   const sig = h => (h.match(/data-sig="([^"]*)"/) || [, ''])[1];
-  assert.notStrictEqual(sig(anchored('OUTERTAIL', 64, 65)), sig(anchored('TAIL', 64, 65)),
-    'the signature ignores the anchor source, so the colour sticks across a repaint');
   assert.notStrictEqual(sig(auto), sig(anchored('TAIL', 40, 41)),
-    'an Auto Order anchor and a hand-set one share a signature');
+    'an Auto Order anchor and a hand-set one share a signature, so the colour sticks across a repaint');
 
   // The marker is stored beside the number and cleared with it — a stale
   // provenance on a number that is gone would be worse than none.

@@ -2936,10 +2936,15 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    anchor nobody remembered setting gave no clue where it came from. The arrow
    and the "would have been" number move with it, since they are the parts that
    say an anchor is in play at all. */
-.me-fm-de-fromddl{color:var(--warn-text);}
+/* The number it REPLACED and the arrow, not the number in force. The amber says
+   where this anchor came from; the value itself is the answer you read, and
+   tinting it too made the whole cell one amber block with nothing standing out.
+   Reported 2026-08-20. */
 .me-fm-de-fromddl .c-ovr-arrow,
-.me-fm-de-fromddl .c-ovr-orig,
-.me-fm-de-fromddl .c-ovr-new{color:var(--warn-text);}
+.me-fm-de-fromddl .c-ovr-orig{color:var(--warn-text);}
+.me-fm-de-fromddl .c-ovr-new{color:var(--text);}
+/* No ↩ pair to split — the whole cell is the number, so it carries the mark. */
+.me-fm-de-fromddl{color:var(--warn-text);}
 /* The DE the anchor replaced — same dim treatment as the Type column's "↩". */
 .me-fm-de-was{color:rgba(var(--accent-rgb),0.65);font-weight:400;font-size:calc(var(--sz-mono) - 2px);}
 .me-fm-vlg{color:var(--ok);}
@@ -16784,7 +16789,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.37.4.0';
+const APP_VERSION  = '1.37.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22759,10 +22764,13 @@ function _meFmDeSig(row, usesBitmapFields, sel) {
 function _meAnchorSource(row, ctx) {
   if (!row.anchored || row.de == null) return null;
   const ovr = ctx && ctx.foByField && ctx.foByField.get(_canonFieldId(row.id));
-  if (ovr && ovr.de_src === 'auto') return 'auto';
-  const m = ctx && ctx.commentDE;
-  if (m && m.size && m.get(_canonFieldId(row.id).split('.').pop()) === row.de) return 'ddl';
-  return 'hand';
+  // The STORED marker and nothing else. An earlier version also inferred it by
+  // comparing the number against the DDL's own "Bit map position" comment — but
+  // anchors are typed FROM that comment, so a number set by hand matched it and
+  // every anchor came out amber whether Auto Order had been near it or not.
+  // A guess that fires on the common case is worse than no guess.
+  // Reported 2026-08-20.
+  return (ovr && ovr.de_src === 'auto') ? 'auto' : 'hand';
 }
 function _meFmDeCellHtml(row, ctx) {
   const ea  = ctx.ea;
@@ -22770,7 +22778,7 @@ function _meFmDeCellHtml(row, ctx) {
   // Derived once, before the signature reads it — the signature has no ctx of
   // its own, and this decides the cell's colour.
   row._deSrc = _meAnchorSource(row, ctx);
-  row._fromDDL = row._deSrc === 'auto' || row._deSrc === 'ddl';
+  row._fromDDL = row._deSrc === 'auto';
   const sig = _meFmDeSig(row, ctx.usesBitmapFields, ctx.foByField.get(_canonFieldId(row.id))?.de);
   // A row inside a terminal group owns no DE, but it still BELONGS to one — and
   // that is the only thing worth saying about it. The early return skipped the
@@ -22823,8 +22831,6 @@ function _meFmDeCellHtml(row, ctx) {
       ? 'Follows on from the previous element. Anchor it with an override to renumber everything from here.'
       : row._deSrc === 'auto'
       ? `Anchored to DE ${row.de} by Auto Order, from the bound DDL's "Bit map position" comment — not typed by hand.${_would} Every element after it renumbers from here.`
-      : row._deSrc === 'ddl'
-      ? `Anchored to DE ${row.de}. The bound DDL comments this same number, so Auto Order may have written it — this entry predates the marker that would say so for certain.${_would} Every element after it renumbers from here.`
       : `Anchored to DE ${row.de} by an override set by hand — the bound DDL does not comment this number.${_would} Every element after it renumbers from here; edit it in the Overrides list above.`;
     // Same "<original> ↩ <in effect>" shape as the Type column.
     const anchoredHtml = (row.anchored && row.naturalDE != null && row.naturalDE !== row.de)

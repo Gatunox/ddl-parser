@@ -12580,7 +12580,7 @@ function renderFieldTable(msg) {
   const tableOrEmpty = rows
     ? `<div class="tbl-wrap"><table class="res-tbl">
         <thead><tr>
-          <th class="th-num" data-col="num" style="text-align:right">#</th>
+          <th class="th-num" data-col="num" style="text-align:right">#<span class="th-resize"></span></th>
           <th class="th-id" data-col="id">Field<span class="th-resize"></span></th>
           <th class="th-desc" data-col="desc" title="DDL-declared type and length, any override applied to them, and the field's description">Type-Len / Description<span class="th-resize"></span></th>
           <th class="th-len" data-col="len" title="Size on the wire, in bytes">Size<span class="th-resize"></span></th>
@@ -16767,7 +16767,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.37.1.0';
+const APP_VERSION  = '1.37.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24391,6 +24391,44 @@ function _meColReset(cfg) {
   _meColFit(cfg);
 }
 
+// Double-click an edge: widen that column to the narrowest width that shows its
+// longest value whole. Measured off the rendered text with canvas metrics rather
+// than by letting the browser reflow — under table-layout:fixed the cells are
+// clipped, so there is nothing to measure by shrink-wrapping. The table grows by
+// the same amount, so the columns to the right keep the widths they were given
+// and simply move along. Asked for 2026-08-20.
+function _meColAutoFit(cfg, th) {
+  const table = document.querySelector(cfg.table);
+  if (!table || !th || !th.dataset.col) return;
+  // Measured by letting the browser shrink-wrap the column for one frame, not by
+  // measuring the text: a cell can hold a DE badge, a "↩" override note or any
+  // other child with a box of its own, and text metrics miss all of it — the
+  // first attempt left the widest cell still clipped by exactly that badge.
+  // table-layout:auto with width:max-content asks each column for the width its
+  // content actually wants; everything is put straight back afterwards.
+  const prevTL = table.style.tableLayout, prevTW = table.style.width, prevW = th.style.width;
+  table.style.tableLayout = 'auto';
+  table.style.width = 'max-content';
+  th.style.width = '';
+  const natural = Math.ceil(th.getBoundingClientRect().width);
+  table.style.tableLayout = prevTL;
+  table.style.width = prevTW;
+  th.style.width = prevW;
+
+  const want = Math.max(cfg.min, natural + 2);
+  const had = Math.round(th.getBoundingClientRect().width);
+  if (want === had) return;
+  th.style.width = want + 'px';
+  // The table grows by the same amount, so the columns to the right keep the
+  // widths they were given and simply move along.
+  const tw = parseInt(table.style.width, 10);
+  if (tw) table.style.width = (tw + (want - had)) + 'px';
+  const map = _meColLoad(cfg);
+  map[th.dataset.col] = want;
+  _meColSave(cfg, map);
+  if (cfg.after) cfg.after();
+}
+
 const _meColRO = {};   // per-table ResizeObserver
 function _meColInitResize(cfg) {
   const table = document.querySelector(cfg.table);
@@ -24414,8 +24452,11 @@ function _meColInitResize(cfg) {
   // Wired unconditionally, NOT inside the fit branch above: with that, a user
   // returning with saved widths could no longer drag a column edge at all.
   for (const handle of table.querySelectorAll(cfg.handle)) {
-    if (cfg.resetOnDblClick)
-      handle.ondblclick = e => { e.preventDefault(); e.stopPropagation(); _meColReset(cfg); };
+    handle.ondblclick = e => {
+      e.preventDefault(); e.stopPropagation();
+      if (cfg.resetOnDblClick) _meColReset(cfg);
+      else _meColAutoFit(cfg, handle.closest('th'));
+    };
     handle.onmousedown = e => {
       e.preventDefault();
       e.stopPropagation();

@@ -11660,6 +11660,44 @@ test('type and bytes on a group land on every leaf inside it', () => {
     ['ADDITIONA.FIELD-XX.DATA', 'ADDITIONA.FIELD-YY.DATA', 'ADDITIONA.OLD'], 'and for bytes');
 });
 
+test('[REGRESSION] every column has a handle, and double-click fits it to its content', () => {
+  // Reported 2026-08-20: the "#" column could not be resized — it was the one
+  // header built without a handle.
+  // Searched FORWARD from the header — '</thead>' occurs earlier in the file, so
+  // slicing to its first occurrence gives an empty string that passes nothing.
+  const _h0 = html.indexOf('<th class="th-num"');
+  const head = html.slice(_h0, html.indexOf('</thead>', _h0));
+  for (const c of ['num', 'id', 'desc', 'len', 'off', 'val', 'raw'])
+    assert.ok(new RegExp(`data-col="${c}"[^>]*>[^<]*<span class="th-resize">`).test(head),
+      `the ${c} column has no resize handle`);
+  // The last one has none — there is nothing to its right to take width from.
+  assert.ok(!/data-col="trk"[^>]*>[^<]*<span class="th-resize">/.test(head),
+    'the last column grew a handle, which has nothing to steal from');
+
+  // Double-click fits the column to its widest content.
+  const init = psFnSource('_meColInitResize');
+  assert.ok(/handle\.ondblclick = e => \{/.test(init), 'double-click does nothing');
+  assert.ok(/_meColAutoFit\(cfg, handle\.closest\('th'\)\)/.test(init),
+    'double-click does not fit the column it was aimed at');
+  // The Test table keeps its own meaning for the gesture.
+  assert.ok(/if \(cfg\.resetOnDblClick\) _meColReset\(cfg\);/.test(init),
+    'the Test table lost double-click-to-reset');
+
+  const fit = psFnSource('_meColAutoFit');
+  // Measured by shrink-wrapping, not by measuring text: a cell can hold a DE
+  // badge or an override note — a child with a box of its own — and text metrics
+  // miss it, which left the widest cell still clipped by exactly that badge.
+  assert.ok(/table\.style\.tableLayout = 'auto';/.test(fit) && /max-content/.test(fit),
+    'the fit measures text instead of asking the browser for the content width');
+  // Everything is put back, or the table stops honouring its column widths.
+  assert.ok(/table\.style\.tableLayout = prevTL;/.test(fit), 'table-layout is left on auto');
+  assert.ok(/table\.style\.width = prevTW;/.test(fit), 'the table width is left on max-content');
+  // The table grows by the same amount, so the columns to the right keep theirs.
+  assert.ok(/table\.style\.width = \(tw \+ \(want - had\)\) \+ 'px'/.test(fit),
+    'the fit steals width from the columns to the right instead of growing the table');
+  assert.ok(/_meColSave\(cfg, map\)/.test(fit), 'a fitted width is not remembered');
+});
+
 test('[REGRESSION] Parse Results says so when it is describing an earlier message', () => {
   // Reported 2026-08-20: the input locks on parse, but unlocking it and editing —
   // or opening an audit file — leaves the results describing a message that has

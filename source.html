@@ -949,7 +949,12 @@ table.ddl-doc-tbl { table-layout: fixed; border-collapse: collapse; font-family:
 .ddl-grp-hidden { display: none; }
 .ddl-grp-icon { display: inline-block; width: 1em; text-align: center; font-style: normal; margin-left: 0; cursor: pointer; }
 .ddl-grp-collapsed .ddl-grp-icon { color: var(--accent); }
-.ddl-doc-redef td { color: var(--redef-fg); }
+/* The NAME only, the way Parse Results tints a redefinition
+   (tbody tr.row-redef td.c-id). Tinting every cell made the whole line read as
+   one blue block; the point is to mark WHICH field is an overlay, not to colour
+   its data. The name is the second column — this table's name cell carries no
+   class of its own. Reported 2026-08-20. */
+.ddl-doc-redef td:nth-child(2) { color: var(--redef-fg); }
 /* "FIELD ↩ TARGET" follows the same scheme as the override annotation in Parse
    Results: everything left of the arrow (the redefining field, coloured by the row
    rule above) and the arrow itself in accent-blue, the name it points TO in the
@@ -2959,7 +2964,6 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
    under `.me-fm-table td .me-fm-name`, which outranks it, so the one word you
    actually read stayed plain while the rest of the row was tinted.
    Reported 2026-08-20. */
-.me-fm-redef td{color:var(--redef-fg);}
 .me-fm-table tbody tr.me-fm-redef td .me-fm-name{color:var(--redef-fg);}
 .me-fm-redef-note{font-size:10px;opacity:.7;margin-left:4px;}
 /* Hidden by collapse / redef / filter */
@@ -16773,7 +16777,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.37.3.0';
+const APP_VERSION  = '1.37.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

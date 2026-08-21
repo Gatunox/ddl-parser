@@ -11667,13 +11667,17 @@ test('[REGRESSION] a REDEFINES reads the same in all three tables', () => {
   // `.me-fm-table td .me-fm-name` and outranks it, so the one word you actually
   // read stayed default while the rest of the row was tinted.
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  // The NAME only, in all three. Tinting every cell made the whole line read as
+  // one blue block; the point is to mark WHICH field is an overlay, not to
+  // colour its data. Parse Results is the reference the other two follow.
   for (const [sel, where] of [
-    [/\.ddl-doc-redef td \{ color: var\(--redef-fg\); \}/, 'DDL Doc'],
     [/tbody tr\.row-redef td\.c-id \{ color: rgba\(var\(--accent-rgb\),0\.65\); \}/, 'Parse Results'],
-    [/\.me-fm-redef td\{color:var\(--redef-fg\);\}/, 'the Overrides table'],
-  ]) assert.ok(sel.test(css), `${where} does not tint its REDEFINES rows`);
-  assert.ok(/\.me-fm-table tbody tr\.me-fm-redef td \.me-fm-name\{color:var\(--redef-fg\);\}/.test(css),
-    'the Overrides field NAME is left in the default colour on a redefinition');
+    [/\.ddl-doc-redef td:nth-child\(2\) \{ color: var\(--redef-fg\); \}/, 'DDL Doc'],
+    [/\.me-fm-table tbody tr\.me-fm-redef td \.me-fm-name\{color:var\(--redef-fg\);\}/, 'the Overrides table'],
+  ]) assert.ok(sel.test(css), `${where} does not tint the NAME of a REDEFINES row`);
+  // And none of them tints the whole row.
+  assert.ok(!/\.ddl-doc-redef td \{/.test(css), 'DDL Doc tints every cell of a redefinition');
+  assert.ok(!/\.me-fm-redef td\{color/.test(css), 'the Overrides table tints every cell of a redefinition');
   // And a redefinition is never dimmed as "nothing to say" — being an overlay is
   // exactly something to say, and the dimming outranks the tint.
   const quiet = css.match(/\.me-fm-table tbody tr\.me-fm-quiet[^{]*td \.me-fm-name\{/);

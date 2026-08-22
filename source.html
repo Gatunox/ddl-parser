@@ -163,6 +163,12 @@
   --rule-faint: rgba(255,255,255,0.04);
   --accent: #58a6ff;
   --accent-rgb: 88,166,255;
+  /* The current search match. White text needs a ground dark enough to carry
+     it: dark's soft tint over the editor already is (9.9:1), light's is not —
+     white on that pale blue is 1.5:1 — so light fills solid instead. One
+     foreground, two grounds, both readable. Requested 2026-08-22. */
+  --srch-cur-bg: rgba(var(--accent-rgb), 0.42);
+  --srch-cur-fg: #ffffff;
   --accent2: #f78166;
   --text: #c9d1d9;
   --text-dim: #8b949e;
@@ -255,6 +261,8 @@
   --rule-faint: rgba(0,0,0,0.06);
   --accent: #0969da;
   --accent-rgb: 9,105,218;
+  --srch-cur-bg: rgb(var(--accent-rgb));
+  --srch-cur-fg: #ffffff;
   --accent2: #cf222e;
   --text: #24292f;
   --text-dim: #656d76;
@@ -837,7 +845,12 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    sitting on them. The overlay path got away with it because its span holds
    spaces, not text. A translucent background leaves every glyph at full
    strength in both. Reported 2026-08-22. */
-.ddl-srch-cur { background: rgba(var(--accent-rgb), 0.28); border-radius: var(--r-sm); }
+.ddl-srch-cur { background: var(--srch-cur-bg); border-radius: var(--r-sm); }
+/* The descendants too, and with !important: CodeMirror's syntax spans sit
+   INSIDE this mark, so their own token colour beats anything merely inherited
+   from it — the match would come out white except for the very words that were
+   coloured. The overlay path has no descendants and is unaffected. */
+.ddl-srch-cur, .ddl-srch-cur * { color: var(--srch-cur-fg) !important; }
 /* DDL search — CodeMirror equivalents */
 #ddlEditor .cm-line.ddl-srch-line-hit { background: var(--tint-hit); }
 .ddl-hl-overlay  { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; margin: 0;
@@ -17054,7 +17067,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.24.0';
+const APP_VERSION  = '1.46.25.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

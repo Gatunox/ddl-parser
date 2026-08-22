@@ -14386,8 +14386,23 @@ test('the DDL search opens on a row of its own, not inside the toolbar', () => {
   const cur = (css.match(/\.ddl-srch-cur \{[^}]*\}/) || [''])[0];
   assert.ok(cur, 'the current-match highlight is gone');
   assert.ok(!/opacity/.test(cur), 'the highlight fades the text it is marking');
-  assert.ok(/background:\s*rgba\(var\(--accent-rgb\)/.test(cur),
-    'the highlight is not a translucent ground, so it covers the glyphs');
+  assert.ok(/background:\s*var\(--srch-cur-bg\)/.test(cur),
+    'the highlight is not a ground the theme can choose, so one theme loses');
+  // White text, and the DESCENDANTS with !important: CodeMirror's syntax spans
+  // sit inside this mark, so a merely inherited colour leaves the coloured words
+  // — PIC, TYPE, OCCURS — in their token colour while the rest goes white.
+  assert.ok(/\.ddl-srch-cur, \.ddl-srch-cur \* \{ color: var\(--srch-cur-fg\) !important; \}/.test(css),
+    'the syntax colours inside the match survive, so the match is two-toned');
+  // One foreground, two grounds — because white needs something dark enough to
+  // sit on. Dark's soft tint carries it at 8.03:1; light's would be 1.5:1, so
+  // light fills solid and gets 5.19:1. A shared value breaks one of them.
+  const blk = t => (css.match(new RegExp('\\[data-theme="' + t + '"\\] \\{[\\s\\S]*?\\n\\}')) || [''])[0];
+  assert.ok(/--srch-cur-fg: #ffffff/.test(blk('dark')) && /--srch-cur-fg: #ffffff/.test(blk('light')),
+    'the match text is not white in both themes');
+  assert.ok(/--srch-cur-bg: rgba\(var\(--accent-rgb\), 0\.\d+\)/.test(blk('dark')),
+    'dark: the match is not a tint over the editor');
+  assert.ok(/--srch-cur-bg: rgb\(var\(--accent-rgb\)\)/.test(blk('light')),
+    'light: white text is sitting on a pale tint it cannot be read on');
   const toggle = psFnSource('ddlSearchToggle');
   assert.ok(toggle, 'there is no toggle');
   assert.ok(/ddlSearchClear\(\)/.test(toggle), 'closing the row leaves the query and its highlights behind');

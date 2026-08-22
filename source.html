@@ -183,7 +183,6 @@
   --accent-hover: #79b8ff;
   --on-accent: #000000;
   --scroll-thumb: #3a4049;
-  --sunken-deep: #05080d;
   --flash-warn-bg: #e6a817; --flash-warn-fg: #000000;
   --flash-error-bg: #c0392b; --flash-error-fg: #ffffff;
   /* hue slots — every badge, message-type chip and tree badge draws from these.
@@ -263,7 +262,6 @@
   --accent-hover: #0860ca;
   --on-accent: #ffffff;
   --scroll-thumb: #c3ccd6;
-  --sunken-deep: rgba(0,0,0,0.05);
   --flash-warn-bg: #d97706; --flash-warn-fg: #ffffff;
   --flash-error-bg: #a93226; --flash-error-fg: #ffffff;
   --h-purple-bg:#ede9ff; --h-purple-fg:#6d28d9; --h-purple-bd:#8b5cf6;
@@ -3006,8 +3004,12 @@ input.me-fm-filter{flex:0 0 auto;min-width:0;height:22px;padding:0 8px;border: v
 /* Recessed surface — the read-only table has to read as a different material
    from the editable panel above it. A black overlay rather than a fixed colour,
    so it darkens whatever the theme's background is. */
+/* The field list is something you READ, so it sits on the readout ground like
+   every other read-only surface. It had a token of its own — --sunken-deep,
+   used here and nowhere else — which put it a shade below the page and made the
+   one table in the app that answers to nothing else. */
 .me-fm-table-wrap{border: var(--bw) solid var(--border);border-radius:var(--r-sm);overflow:auto;max-height:62vh;scrollbar-gutter:stable;
-  background:var(--sunken-deep);}
+  background:var(--surface-read);}
 /* Uniform row height — required by the virtualized window's spacer math. */
 .me-fm-table tbody tr{height:21px;}
 .me-fm-table tr.me-fm-spacer{height:auto;}
@@ -16941,7 +16943,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.4.0';
+const APP_VERSION  = '1.46.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

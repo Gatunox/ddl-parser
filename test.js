@@ -11054,6 +11054,20 @@ test('the accent can be typed, and a half-typed one changes nothing', () => {
     'the field is overwritten while the user is typing in it');
 });
 
+test('the Overrides field list sits on the readout ground', () => {
+  // It had a token of its own — --sunken-deep, used here and nowhere else —
+  // which put the one table in the app that answers to nothing else a shade
+  // below the page. It is something you READ, so it takes the readout ground
+  // like every other read-only surface. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const wrap = (css.match(/\n\.me-fm-table-wrap\{[^}]*\}/) || [''])[0];
+  assert.ok(/background:var\(--surface-read\)/.test(wrap),
+    `the field list is not on the readout ground: ${wrap}`);
+  // And the private token is gone with it, rather than left behind unused.
+  assert.ok(!/var\(--sunken-deep\)/.test(css), '--sunken-deep is still referenced');
+});
+
 test('the spec editor has no frame at rest and no resize grabber', () => {
   // The editor fills its card, and the card already has a border — a second one
   // inside it drew a box within a box. The grabber sat in the corner beside the

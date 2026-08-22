@@ -2190,7 +2190,11 @@ td.c-err  { color: var(--accent2); }
 .me-pane-hdr{display:flex;align-items:center;gap:var(--sp-2);padding:2px 8px;height:var(--panel-header-h);box-sizing:border-box;
   background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);
   border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0;}
-.me-pane-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.08em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* Reads like .panel-title, because it is one: the sidebar is a panel. It was
+   uppercased and tracked at a smaller size — a third typography for a heading,
+   next to a page whose headings are all mono-bold at --sz-mono. The tracking
+   was fighting the monospace grid on top of that. Reported 2026-08-22. */
+.me-pane-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .me-pane.collapsed{width:var(--panel-collapsed-w) !important;min-width:0;}
 .me-pane.collapsed > *:not(.me-pane-hdr){display:none !important;}
 .me-pane.collapsed .me-pane-hdr{
@@ -2204,8 +2208,10 @@ td.c-err  { color: var(--accent2); }
 .me-sidebar-sect+.me-sidebar-sect{border-top: var(--bw) solid var(--border);}
 /* Pinned: in one long scroller the header is the only thing saying which
    section a row belongs to, and it used to be guaranteed on screen by each
-   list having its own viewport. */
-.me-sidebar-hdr{position:sticky;top:0;z-index:2;background:var(--bg-panel);}
+   list having its own viewport. It needs an OPAQUE ground so the rows do not
+   show through as they pass under it — the bar's own surface, not the panel's,
+   which is what it painted while it was carrying its own copy of the bar rule. */
+.me-sidebar-hdr{position:sticky;top:0;z-index:2;background:var(--surface-subhead);}
 /* One scroller for the three sections, not one each. Three lists sharing the
    sidebar's height each got a third of it and a scrollbar of its own, so every
    section clipped at once and none of them could use the space the others were
@@ -2213,10 +2219,14 @@ td.c-err  { color: var(--accent2); }
    lot; the two flex overrides that used to referee them are gone with the
    competition they refereed. */
 #me-sect-files{flex:0 1 auto;max-height:50%;}
-.me-sidebar-hdr{display:flex;align-items:center;justify-content:space-between;padding:2px 8px;height:var(--panel-header-h);box-sizing:border-box;background:var(--surface-subhead);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
-.me-sidebar-title{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;}
-.me-sidebar-add{background:var(--surface-raised);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:0 5px;height:18px;cursor:pointer;line-height:1;box-sizing:border-box;}
-.me-sidebar-add:hover{border-color:var(--border-strong);color:var(--text);background:var(--surface-hover);}
+/* A strip of controls under a panel header — which is what .panel-bar is. It
+   carried its own copy of that rule, which is why it was the one strip in the
+   app that never picked up the shared treatment. Its own bits: it is pinned, it
+   holds its header height, and its label and button sit at opposite ends. */
+.me-sidebar-hdr{justify-content:space-between;height:var(--panel-header-h);box-sizing:border-box;}
+/* One level down from the pane title, so dim — the same relationship a bar has
+   to the header above it. Same face and size as every other heading. */
+.me-sidebar-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text-dim);}
 .me-item-list{flex:0 0 auto;}
 .me-item{display:flex;flex-direction:column;align-items:stretch;padding:0 8px;min-height:var(--row-h);cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;}
 /* The identity line carries the row height, so an entity with nothing to warn
@@ -16843,7 +16853,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.41.2.0';
+const APP_VERSION  = '1.41.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -33270,23 +33280,23 @@ function _meSave() {
         </div>
         <div class="me-ent-list" id="me-ent-list">
           <div class="me-sidebar-sect" id="me-sect-msgs">
-            <div class="me-sidebar-hdr">
+            <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title">Messages</span>
-              <button class="me-sidebar-add" onclick="_meAddMsg()">+ New</button>
+              <button class="btn" onclick="_meAddMsg()">+ New</button>
             </div>
             <div class="me-item-list" id="me-msg-list"></div>
           </div>
           <div class="me-sidebar-sect" id="me-sect-other">
-            <div class="me-sidebar-hdr">
+            <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title" title="Structures that are neither a whole message nor a file — recognized from bytes like a message, but tried after every message">Data</span>
-              <button class="me-sidebar-add" onclick="_meAddOther()">+ New</button>
+              <button class="btn" onclick="_meAddOther()">+ New</button>
             </div>
             <div class="me-item-list" id="me-other-list"></div>
           </div>
           <div class="me-sidebar-sect" id="me-sect-files">
-            <div class="me-sidebar-hdr">
+            <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title">Files</span>
-              <button class="me-sidebar-add" onclick="_meAddFile()">+ New</button>
+              <button class="btn" onclick="_meAddFile()">+ New</button>
             </div>
             <div class="me-item-list" id="me-file-list"></div>
           </div>

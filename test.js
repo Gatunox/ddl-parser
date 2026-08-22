@@ -11728,10 +11728,23 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
   assert.ok(/<div class="panel-body pb-edit"/.test(html),      'Message Input is not marked editable');
   assert.ok(/<div class="panel-body pb-read" id="resContainer">/.test(html), 'Parse Results is not marked read-only');
   assert.ok(/<div class="panel-body pb-read">\s*<div id="rawDisplay"/.test(html), 'Raw Message is not marked read-only');
-  // The DDL pane used to paint --bg-panel itself, which would win over the class.
-  const pane = (css.match(/\.ddl-editor-pane \{[^}]*\}/) || [''])[0];
-  assert.ok(!/background: var\(--bg-panel\)/.test(pane),
-    `the DDL pane still paints its own ground, so .pb-edit cannot show: ${pane}`);
+  // A surface that paints its own ground WINS over the class and the marking is
+  // silently lost — which is what both of these used to do.
+  for (const [sel, re] of [['.ddl-editor-pane', /\.ddl-editor-pane \{[^}]*\}/],
+                           ['.me-sidebar',      /\n\.me-sidebar\{[^}]*\}/]]) {
+    const rule = (css.match(re) || [''])[0];
+    assert.ok(rule, `${sel} is gone`);
+    assert.ok(!/background:\s*var\(--bg-panel\)/.test(rule),
+      `${sel} paints its own ground, so its surface class cannot show: ${rule}`);
+  }
+  // The Class Editor classifies every section, and the two boxes that ARE
+  // editable inside a read-only section take the editable ground.
+  assert.ok(/const _ME_SECT_SURFACE = \{/.test(src), 'the editor sections are not classified');
+  for (const box of ['.me-rec-form', '.me-fm-ed']) {
+    const rule = (css.match(new RegExp(box.replace('.', '\\.') + '\\{[^}]*\\}')) || [''])[0];
+    assert.ok(/background:\s*var\(--surface-edit\)/.test(rule),
+      `${box} is the box you type in and does not say so: ${rule}`);
+  }
 });
 
 test('[REGRESSION] a recognizer edit re-renders only the recognizer list', () => {

@@ -2186,8 +2186,11 @@ td.c-err  { color: var(--accent2); }
 .me-overlay.hidden{display:none;}
 .me-shell{display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;background:var(--bg-deep);}
 .me-main{display:flex;flex:1;min-height:0;overflow:hidden;}
+/* No ground of its own — .pb-read gives it one, because the class list is
+   something you read. Painted here it would win over the class, the same way
+   .ddl-editor-pane's did. */
 .me-sidebar{width:460px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
-  background:var(--bg-panel);border: var(--bw) solid var(--border);border-radius:var(--r-md);
+  border: var(--bw) solid var(--border);border-radius:var(--r-md);
   margin:var(--gap) 0 var(--gap) var(--gap);}
 /* Pane header — the collapse control for the two outer columns. Same shape as
    the main app's .panel-header so a collapsed rail looks the same in both
@@ -2353,6 +2356,11 @@ td.c-err  { color: var(--accent2); }
 .me-section-body{padding:0;display:none;}
 .me-section-body.open{display:block;}
 .me-section-pad{padding:14px;}
+/* Two sections ARE their content: a code editor and a table, each with its own
+   frame. Padding around them insets a thing that is already bounded, so the
+   card gets a border, then a gap, then another border. Flush, the editor and
+   the table fill the card the way the main page's panels do. */
+.me-section-flush{padding:0;}
 .me-section{overflow:hidden;}
 /* Three things were wanted here and only one arrangement gives all three: the
    cards must clear the scrollbar, the gap must not change with it, and NOTHING
@@ -2410,7 +2418,10 @@ input.me-inp{width:100%;}
 .me-rb:hover:not([disabled]){border-color:var(--accent);color:var(--accent);}
 .me-rb.del:hover{border-color:#f85149 !important;color:#f85149 !important;}
 .me-rb[disabled]{opacity:.3;cursor:default;}
-.me-rec-form{border-top: var(--bw) solid var(--border);background:var(--bg-deep);padding:8px;display:none;flex-direction:column;gap:8px;}
+/* The one editable thing in a read-only section: the rule you have opened. It
+   takes the editable ground, so the box you type in is marked and the list
+   around it is not. */
+.me-rec-form{border-top: var(--bw) solid var(--border);background:var(--surface-edit);padding:8px;display:none;flex-direction:column;gap:8px;}
 .me-rec-form.open{display:flex;}
 /* The verdict column of a recognizer help example. Both values are produced by
    running the rule, so the colour is reporting a result, not decorating a claim. */
@@ -2933,7 +2944,8 @@ input.me-fm-filter{flex:0 0 auto;min-width:0;height:22px;padding:0 8px;border: v
 .me-fm-table tbody tr.me-fm-row-multi td{color:var(--text);}
 /* Inline editor for the actions that need a value — anchored under the button
    that opened it. prompt() is blocked in some hosts, and would be wrong here. */
-.me-fm-ed{position:fixed;z-index:60;display:none;align-items:center;gap:6px;background:var(--bg-panel);
+/* Same again for the Overrides table: the value editor is the box you type in. */
+.me-fm-ed{position:fixed;z-index:60;display:none;align-items:center;gap:6px;background:var(--surface-edit);
   border: var(--bw) solid rgba(var(--accent-rgb),.55);border-radius:var(--r-sm);padding:5px 7px;
   /* One row, always. Its width changes after it opens — picking "number" adds a
      box — and without this the label folded onto a second line to make room
@@ -16904,7 +16916,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.43.1.0';
+const APP_VERSION  = '1.44.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19178,6 +19190,21 @@ const _mePad = html => `<div class="me-section-pad">${html}</div>`;
 // Falls back to the full render when the section is not on screen — collapsed,
 // or the pane not built yet — which is also exactly what used to happen every
 // time, so the fallback cannot be worse than the old behaviour.
+// Which sections you TYPE INTO, and which you only read — the same distinction
+// the four main panels make, applied to the editor. Declared once here rather
+// than decided at each call site, so a new section has to answer the question.
+//   identity      text inputs
+//   ddl_bindings  path inputs
+//   parse_spec    the code editor
+//   recognizers   a LIST — read, until you open a rule, and then it is the open
+//                 rule's own box that becomes editable, not the section
+//   overrides     a table you click; the value editor is its own box too
+const _ME_SECT_SURFACE = {
+  identity: 'edit', ddl_bindings: 'edit', parse_spec: 'edit',
+  recognizers: 'read', overrides: 'read',
+};
+const _meSectSurface = key => (_ME_SECT_SURFACE[key] === 'edit' ? 'pb-edit' : 'pb-read');
+
 function _meRenderSection(key, fill) {
   const el = document.getElementById('me-sect-body-' + key);
   if (!el || !_meCurItem()) { _meRenderRight(); return; }
@@ -19230,7 +19257,7 @@ function _meRenderRight() {
     <span class="me-section-actions" onclick="event.stopPropagation()">${open && actions ? actions : ''}</span>
     <span class="me-section-arr">${open ? '−' : '+'}</span>
   </div>
-  <div class="me-section-body${open ? ' open' : ''}" id="me-sect-body-${key}">${open ? loading : ''}</div>
+  <div class="me-section-body ${_meSectSurface(key)}${open ? ' open' : ''}" id="me-sect-body-${key}">${open ? loading : ''}</div>
 </div>`;
   };
   const pad = _mePad;
@@ -19341,7 +19368,7 @@ function _meHtmlParseSpec(item) {
     <button class="btn" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
   <div id="psValidationBar" class="vbar"></div>
-  <div class="me-section-pad">
+  <div class="me-section-pad me-section-flush">
   <div class="me-ps-wrap side${_mePsHelpOpen() ? '' : ' nohelp'}" id="me-ps-wrap">
   <div class="me-ps-split me-hs-fixed" id="me-ps-split">
     <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
@@ -23302,7 +23329,7 @@ function _meOverridesPrep(item) {
     </div>
   </div>
 </div>
-<div class="me-section-pad">
+<div class="me-section-pad me-section-flush">
 ${warnHtml}
 <div class="me-ps-wrap side${fmHelpOpen ? '' : ' nohelp'}" id="me-fm-wrap">
 <div class="me-ps-split" id="me-fm-split">
@@ -33373,7 +33400,7 @@ function _meSave() {
 
     <div class="me-main">
       <!-- ── Sidebar ── -->
-      <div class="me-sidebar me-pane" id="me-sidebar" oncontextmenu="_meCtxEntityPanel(event)">
+      <div class="me-sidebar me-pane pb-read" id="me-sidebar" oncontextmenu="_meCtxEntityPanel(event)">
         <div class="me-pane-hdr">
           <span class="me-pane-title">Classes</span>
           <button class="panel-toggle" id="me-sidebar-toggle" onclick="_meToggleSidebar()" title="Hide panel">−</button>
@@ -33447,7 +33474,7 @@ function _meSave() {
               <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>
             </span>
           </div>
-          <div class="me-test-main" id="me-test-main">
+          <div class="me-test-main pb-edit" id="me-test-main">
             <div id="me-test-input" class="cm-host me-test-cm"></div>
             <div class="resizer-v" id="me-test-in-resizer" title="Drag to resize the input"></div>
             <div id="me-test-out" class="me-test-out"></div>

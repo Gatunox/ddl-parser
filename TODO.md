@@ -717,6 +717,14 @@ reading `_deLimit` when set and `bytes.length` otherwise — `read-tlv` and
 than a new idea. Then each read clamps to it and reports itself by name. The
 after-the-fact overrun check stays as the backstop.
 
+**Partly answered, v1.39.0.0.** `read-to-end` gained `end_at: "message" | "field"`,
+so the frame-bounded read is now *writable* — and that was the point, since the
+spec needed a way to say "whatever this element still has". It is **opt-in**: the
+default is still `"message"`, so `read-to-end` without the attribute, and every
+other read path, still runs past the window and is caught afterwards. The helper
+this item describes is still the right shape; `end_at` is a third inline caller,
+not the collapse.
+
 **Risk.** Low, but it touches every read path, so it wants the baseline run and
 a fixture per block type rather than a single case.
 
@@ -746,6 +754,44 @@ default coverage is genuinely wanted, the honest form is a set of default
 **Risk.** Behavioural: a message currently labelled by the legacy table would
 become UNKNOWN. Needs a look at what `_DEFAULT_DETECT_RULES` still catches that
 no shipped spec does — if the answer is "nothing", this is a deletion.
+
+---
+
+## 21. [ ] A numeric reference cannot be an expression
+
+**Problem.** Everywhere a spec takes a number — `read-fixed`'s `length`, `skip`'s
+`length`, `repeat`'s `count`, `read-while`'s `max`, a `de` entry's `length`, every
+`when` comparison — the operand is a literal, one field, or one `{"sizeof"}`.
+There is no way to write a number *derived* from those: no subtraction, no
+addition, no `min`/`max`.
+
+**Why it matters.** Raised 2026-08-22 while solving the 23-over-22 case in a
+spec. The surplus a message carries is `LEN − what the payload declares`, and it
+could not be written: the only way to read those bytes was to name a literal
+count, which is wrong for every other message. The case was solved instead by
+`read-to-end` with `end_at: "field"` — "whatever is left of this element" — which
+sidesteps the arithmetic entirely and is the better answer *for that case*.
+
+So this is not blocking anything today. It will block the first case that needs a
+computed length rather than a remainder: "read `LEN − 4` bytes and leave the
+trailer", "loop `sizeof(TABLE) / sizeof(ROW)` times", "cap at the smaller of the
+two lengths".
+
+**Shape of the fix.** Undecided, and worth resisting until a real case arrives —
+a spec language that grows an expression grammar has stopped being a description
+of a layout. Two shapes that stay small:
+
+- A subtraction on the existing operand object, `{"sizeof": "GRP60", "minus": 4}`
+  or `{"field": "LEN", "minus": {"sizeof": "GRP60"}}` — one operator, resolved in
+  `_meNumRef` where `sizeof` already lives, and no precedence to define.
+- Nothing at all, on the grounds that the remainder forms (`end_at: "field"`,
+  `read-until`, `read-to-end`) cover what a layout actually needs, and a spec that
+  wants arithmetic is usually describing something the DDL should say instead.
+
+**Risk.** None to existing specs — it is additive. The risk is to the language:
+whatever goes in has to be answerable in one place (`_meNumRef`), or every block
+grows its own idea of what a number is, which is the fault this codebase keeps
+paying for.
 
 ---
 

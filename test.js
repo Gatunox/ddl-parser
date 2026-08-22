@@ -167,6 +167,7 @@ _t.expandJsonc        = _expandJsonc;
 _t.migrateSpec        = window._migrateSpec;
 _t.migrateOverrides   = window._migrateSpecOverrides;
 _t.psHelp             = _PS_HELP;
+_t.psExamplesFor      = _mePsExamplesFor;
 _t.psCommonDflts      = _PS_COMMON_DFLTS;
 _t.psCommonAttrs      = _PS_COMMON_ATTRS;
 _t.psCommonExamples   = _PS_COMMON_EXAMPLES;
@@ -300,7 +301,7 @@ const {
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, extractBytesMapped,
-  stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, auditBadgeType, fmtSave, fmtGetData, psHelp, psCommonAttrs, psCommonDflts,
+  stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, auditBadgeType, fmtSave, fmtGetData, psHelp, psExamplesFor, psCommonAttrs, psCommonDflts,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
@@ -15519,6 +15520,29 @@ test('the synthetic-bitmap override case is demonstrated, not just described', (
     !Array.isArray(e) && /"length"/.test(JSON.stringify(e.spec)) && /"overrides"/.test(JSON.stringify(e.spec)));
   assert.ok(ex, 'read-bitmap ships a synthetic-map override example');
   assert.ok(/bitmap-list/.test(mePsHelpExampleHtml(ex)), 'and it runs');
+});
+
+test('the production overflow example is one example, listed by both blocks', () => {
+  // when's `greater_than {sizeof}` and read-to-end's `end_at: "field"` only mean
+  // anything together, so the card belongs in both places — from ONE definition.
+  // Two copies is how the two copies start disagreeing.
+  const of = blk => psHelp[blk].examples.filter(e => !Array.isArray(e) && /end_at/.test(JSON.stringify(e.spec)));
+  const w = of('when'), r = of('read-to-end');
+  eq(w.length, 2, 'when ships the pair');
+  eq(r.length, 2, 'and so does read-to-end');
+  for (let i = 0; i < 2; i++)
+    assert.ok(w[i] === r[i], `card ${i + 1} is the same object, not a copy`);
+  // It demonstrates what it claims: nested payload, surplus captured, TAIL safe.
+  const ids = e => mePsHelpRunExample(e).fields.map(f => f.id);
+  const over = ids(w[0]), exact = ids(w[1]);
+  assert.ok(over.includes('GRP.SUB.ITEM2.B2'), 'the deepest leaf is read — the payload really is nested');
+  assert.ok(over.includes('GRP.OVERFLOW'), 'the surplus byte is captured');
+  assert.ok(!exact.includes('GRP.OVERFLOW'), 'and not captured when the wire agrees');
+  for (const r2 of [over, exact]) assert.ok(r2.includes('TAIL'), 'TAIL lands either way');
+  // And the accordion shows it under both attributes it demonstrates.
+  for (const [blk, attr] of [['when', 'greater_than'], ['read-to-end', 'end_at']])
+    assert.ok(psExamplesFor(psHelp[blk], attr).length >= 2,
+      `${blk}.${attr} claims the example`);
 });
 
 test('the length_mode pair shows the contrast it promises — same bytes, TAIL in two places', () => {

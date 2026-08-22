@@ -16789,7 +16789,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.39.0.0';
+const APP_VERSION  = '1.39.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19358,6 +19358,35 @@ const _mePsStarter = info => info.examples[info.starter || 0] || info.examples[0
 // Which examples use an attribute — the same filter the old "show only the
 // examples that use X" used, so an attribute cannot claim an example it does
 // not appear in.
+// The production shape, and the reason both halves of it exist: a DE whose wire
+// length disagrees with what the DDL declares, on a record whose payload is
+// groups inside groups four levels down. Listed by `when` and by `read-to-end`,
+// because it is one example of two attributes working together and copying it
+// into both lists is how the two copies start disagreeing.
+const _PS_ELEMENT_OVERFLOW_DDL =
+  'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 GRP.\n' +
+  '    04 LEN PIC 9(2).\n    04 SUB.\n      06 ITEM1.\n        08 A1 PIC X(3).\n' +
+  '        08 B1 PIC X(3).\n      06 ITEM2.\n        08 A2 PIC X(2).\n' +
+  '        08 B2 PIC X(2).\n  02 TAIL PIC X(4).\nEND\n';
+const _PS_ELEMENT_OVERFLOW_SPEC = [
+  {"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+  {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
+    "2": {"blocks": [
+      {"read": "GRP.SUB"},
+      {"when": {"field": "GRP.LEN", "greater_than": {"sizeof": "GRP"},
+                "then": [{"read-to-end": {"as": "GRP.OVERFLOW", "end_at": "field"}}]}}]}}}},
+];
+const _PS_ELEMENT_OVERFLOW_EXAMPLES = [
+  { what: '<b>greater_than</b> <code>{"sizeof"}</code> with <b>end_at</b> <code>"field"</code> — the production case, on the shape production has. GRP\'s payload is groups inside groups: ITEM1 declares 3+3, ITEM2 declares 2+2, so the element declares <b>10</b>. The wire says 11. The odd byte is captured as part of DE-2 instead of shifting DE-3',
+    ddl: _PS_ELEMENT_OVERFLOW_DDL, def: 'MSG',
+    payload: '60 00 00 00 00 00 00 00 31 31 41 41 41 42 42 42 43 43 44 44 58 54 41 49 4C',
+    spec: _PS_ELEMENT_OVERFLOW_SPEC },
+  { what: 'The same spec on a message whose length agrees with the DDL — the condition is false, nothing is captured, and TAIL lands in the same place either way. One spec covers both',
+    ddl: _PS_ELEMENT_OVERFLOW_DDL, def: 'MSG',
+    payload: '60 00 00 00 00 00 00 00 31 30 41 41 41 42 42 42 43 43 44 44 54 41 49 4C',
+    spec: _PS_ELEMENT_OVERFLOW_SPEC },
+];
+
 const _mePsExamplesFor = (info, attr) =>
   info.examples.filter(ex => _mePsHelpExAttrs(ex).has(attr));
 
@@ -19836,28 +19865,7 @@ const _PS_HELP = {
       // The production case, end to end: a wire length of 23 over a group whose
       // fields declare 22. The condition and the capture both come from the DDL,
       // so the same spec handles one surplus byte or five.
-      { what: '<b>end_at</b> <code>"field"</code> — inside a <code>de</code> entry: LEN says 23, the group declares 22, and the odd byte is captured as part of DE-60 instead of shifting DE-61',
-        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 GRP.\n    04 LEN PIC 9(2).\n    04 A PIC X(2).\n    04 B PIC X(2).\n  02 TAIL PIC X(4).\nEND\n',
-        def: 'MSG',
-        payload: '60 00 00 00 00 00 00 00 30 35 41 41 42 42 58 54 41 49 4C',
-        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
-               {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
-                 "2": {"blocks": [
-                   {"read": "GRP.A"},
-                   {"read": "GRP.B"},
-                   {"when": {"field": "GRP.LEN", "greater_than": {"sizeof": "GRP"},
-                             "then": [{"read-to-end": {"as": "GRP.OVERFLOW", "end_at": "field"}}]}}]}}}}] },
-      { what: 'The same spec on a message whose length agrees with the DDL — the condition is false, nothing is captured, and TAIL lands in the same place either way',
-        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 GRP.\n    04 LEN PIC 9(2).\n    04 A PIC X(2).\n    04 B PIC X(2).\n  02 TAIL PIC X(4).\nEND\n',
-        def: 'MSG',
-        payload: '60 00 00 00 00 00 00 00 30 34 41 41 42 42 54 41 49 4C',
-        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
-               {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
-                 "2": {"blocks": [
-                   {"read": "GRP.A"},
-                   {"read": "GRP.B"},
-                   {"when": {"field": "GRP.LEN", "greater_than": {"sizeof": "GRP"},
-                             "then": [{"read-to-end": {"as": "GRP.OVERFLOW", "end_at": "field"}}]}}]}}}}] },
+      ..._PS_ELEMENT_OVERFLOW_EXAMPLES,
       { what: '<b>as</b> — two fields read, then everything left over in one row',
         payload: '41 42 43 44 45 46 47',
         spec: [{"read-fixed": {"length": 2, "as": "HDR"}},
@@ -20572,6 +20580,7 @@ const _PS_HELP = {
                {"when": {"field": "MSG-TYPE", "equal": "1200",
                          "then": [{"read-fixed": {"length": 6, "as": "AMOUNT"}}],
                          "else": [{"read-fixed": {"length": 3, "as": "TRAILER"}}]}}] },
+      ..._PS_ELEMENT_OVERFLOW_EXAMPLES,
       { what: 'Nested — a second <code>when</code> inside <code>then</code> is how if / else-if is written',
         payload: '41 31 58 59',
         spec: [{"read-fixed": {"length": 1, "as": "FLAG"}},

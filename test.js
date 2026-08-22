@@ -11093,6 +11093,50 @@ test('a section\'s drag bar spans the card and sits on its bottom edge', () => {
     'the bar overhangs the flush sections by 14px on three sides');
 });
 
+test('an empty Identity warning costs the section no height', () => {
+  // Identity's warn row is a line of its own under the fields, so empty it still
+  // took the form's 16px gap plus its own 6px margin: 36px of bottom air where
+  // every other section shows the 14px of padding. Measured 36 before, 14 after.
+  // Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  assert.ok(/#me-id-warn:empty\{[^}]*display:\s*none/.test(css),
+    'the empty Identity warning still reserves the row it does not fill');
+  // Scoped by id, and it must STAY that way. The other two warn rows share a row
+  // that exists anyway — the footer beside + Add Recognizer, and the Parse Spec
+  // bar — so collapsing those would move controls the moment a warning appeared,
+  // which is the exact thing .me-warn-inline was built to avoid.
+  assert.ok(!/\.me-warn-inline:empty/.test(css),
+    'collapsing every warn row moves the rows that reserve space on purpose');
+});
+
+test('a class in the sidebar is set smaller than the heading that groups it', () => {
+  // Both were var(--sz-mono). Same size, same family, same advance width — and
+  // the entry carries --text against the heading's --text-dim, so an entry
+  // out-ranked the group above it. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  // Read the step off --sz-mono: bare var() is 0, calc(var() - Npx) is -N.
+  const step = sel => {
+    const rule = (css.match(new RegExp('\\' + sel + '\\{[^}]*\\}')) || [''])[0];
+    assert.ok(rule, `no rule for ${sel}`);
+    const fs_ = (rule.match(/font-size:\s*([^;}]+)/) || [])[1];
+    assert.ok(fs_, `${sel} sets no font-size`);
+    const calc = fs_.match(/calc\(\s*var\(--sz-mono\)\s*([-+])\s*(\d+)px/);
+    if (calc) return (calc[1] === '-' ? -1 : 1) * Number(calc[2]);
+    assert.ok(/^var\(--sz-mono\)$/.test(fs_.trim()), `${sel} is off the mono scale: ${fs_}`);
+    return 0;
+  };
+  assert.ok(step('.me-item-title') < step('.me-sidebar-title'),
+    'a class entry is set as large as the heading that groups it');
+  // Sized on the title so the name and the type code move together. A size on
+  // either span alone splits one phrase across two sizes.
+  for (const sel of ['.me-item-name', '.me-item-code']) {
+    const rule = (css.match(new RegExp('\\' + sel + '\\{[^}]*\\}')) || [''])[0];
+    assert.ok(!/font-size/.test(rule), `${sel} sizes itself apart from the phrase it belongs to`);
+  }
+});
+
 test('the Overrides field list sits on the readout ground', () => {
   // It had a token of its own — --sunken-deep, used here and nowhere else —
   // which put the one table in the app that answers to nothing else a shade

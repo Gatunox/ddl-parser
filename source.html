@@ -2296,7 +2296,13 @@ td.c-err  { color: var(--accent2); }
    short, fixed, and the thing every other surface refers the entity by, so
    truncating it to keep a few more letters of the label would be the wrong
    trade. */
-.me-item-title{display:flex;align-items:baseline;gap:5px;flex:1;min-width:0;}
+/* A step under the group heading above it. Both were var(--sz-mono), and equal
+   size plus the column's brightest colour made an entry out-rank the heading
+   that groups it. Sized on the TITLE, not the name, so the name and the type
+   code beside it move together — shrinking only the name would leave "- ISO"
+   the larger half of the same phrase. The chips below carry their own 10px, so
+   the column now steps 12 / 11 / 10 down the row. Reported 2026-08-22. */
+.me-item-title{display:flex;align-items:baseline;gap:5px;flex:1;min-width:0;font-size:calc(var(--sz-mono) - 1px);}
 .me-item-name{flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .me-item-code{flex:0 0 auto;color:var(--text-very-dim);}
 .me-empty{pointer-events:none;padding:8px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--text-dim);text-align:center;}
@@ -2549,6 +2555,15 @@ input.me-inp:focus{border-color:var(--accent);}
 /* No cursor:help — a badge is an annotation, not a control, and the "?" pointer
    reads as broken. Pinned by a test; reported three times before that. */
 .me-warn-inline .me-warn-chip{color:var(--warning);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* The two warn rows above SHARE a row that exists anyway, so an empty one is
+   free. Identity's has no row to share — it is a line of its own under the
+   fields — so empty it still cost the form's 16px gap plus its own 6px margin,
+   and the section carried 36px of bottom air where every other section carries
+   the 14px of padding. Reported 2026-08-22. Collapsing it when empty is safe
+   HERE and not in a shared row: the duplicate-identity chip is rare, and the
+   fields it describes sit ABOVE it, so nothing under the cursor moves when one
+   appears. Scoped by id for that reason — do not widen it to the class. */
+#me-id-warn:empty{display:none;}
 .me-test-section{margin-bottom:8px;}
 .me-test-section:last-child{margin-bottom:0;}
 .me-test-sec-hdr{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom: var(--bw) solid var(--border);margin-bottom:4px;color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
@@ -16961,7 +16976,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.9.0';
+const APP_VERSION  = '1.46.11.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

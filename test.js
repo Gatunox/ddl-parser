@@ -11726,9 +11726,13 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
   }
   // The two that differ per theme are the point: dark raises what you type on,
   // light tints what you only read.
-  assert.ok(/--surface-edit: #212121/.test(block('dark')), 'dark: the editable panels are not raised');
-  assert.ok(/--surface-read: var\(--bg-deep\)/.test(block('dark')),
-    'dark: the readouts are not sunk below the panel, so #212121 alone is barely a difference');
+  assert.ok(/--surface-edit: #161B22/.test(block('dark')),
+    'dark: the editable ground is not the one the editors write on');
+  // Dark does NOT mirror light: the page is #0d1117 and the editable ground is
+  // #161B22, nine levels apart, so a readout placed between them is in a band
+  // the eye cannot separate. It rises above the editable ground instead.
+  assert.ok(/--surface-read: #212121/.test(block('dark')),
+    'dark: the readouts are back in the band between the page and the editable ground');
   assert.ok(/--surface-edit: var\(--bg-panel\)/.test(block('light')), 'light: the editable panels are not the page white');
   assert.ok(/--surface-read: #F6F6F6/.test(block('light')), 'light: the readouts are not tinted');
   // Each panel carries the class, and the classes read their tokens.

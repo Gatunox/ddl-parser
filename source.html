@@ -2102,7 +2102,7 @@ td.c-err  { color: var(--accent2); }
 
 /* ===== CODEMIRROR HOST CONTAINERS ===== */
 .cm-host { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-.cm-host .cm-editor { flex: 1; min-height: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6; background: var(--bg-input); color: var(--text); outline: none; }
+.cm-host .cm-editor { flex: 1; min-height: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6; background: var(--surface-edit); color: var(--text); outline: none; }
 .cm-host .cm-editor.cm-focused { outline: none; }
 .cm-host .cm-scroller { flex: 1; overflow: auto; }
 .cm-host .cm-content { padding: 8px 0; white-space: pre; min-height: 100%; flex: 1; min-width: 0; }
@@ -2118,15 +2118,18 @@ td.c-err  { color: var(--accent2); }
 #ddlEditor.cm-host { flex: 1; }
 #ddlEditor.cm-host .cm-editor { line-height: 1.3; }
 /* Message input host fills the panel body */
-/* The two main-page editors ARE their panel's body: the parse table beside
-   them shows the panel surface straight through, and the line-number gutter
-   was already on it — so an editor painted --bg-input read as a well sunk
-   into the card, with its own gutter a shade lighter than the text beside it.
-   The Class Editor's editors keep --bg-input: there an editor is one control
-   among several inside a section, which is where a distinct well earns its
-   keep. */
-#ddlEditor .cm-editor, #msgInput .cm-editor,
-#msgInput.cm-host { background: var(--bg-panel); }
+/* Every editor in the app is a TYPING SURFACE and takes --surface-edit — the
+   same ground its panel or section has, so the code area and the frame around
+   it are one colour rather than a well sunk into a card.
+   This is the difference between the two kinds of editable thing:
+     an EDITOR you type in   --surface-edit   it is the surface
+     a FIELD you type in     --bg-input       it is a box ON a surface
+   The main editors painted --bg-panel, which is the chrome AROUND a panel, so
+   marking their panel editable changed only the thin frame and the code area
+   stayed the colour it had always been — which is why dark read as barely
+   changed. Reported 2026-08-22. */
+#ddlEditor .cm-editor, #msgInput .cm-editor, #msgInput.cm-host,
+.me-ps-cm .cm-editor, .me-test-cm .cm-editor { background: var(--surface-edit); }
 /* Both CM panels: less-bright default text */
 #ddlEditor .cm-content,
 #msgInput .cm-content { color: var(--text-dim); }
@@ -2145,7 +2148,7 @@ td.c-err  { color: var(--accent2); }
 /* Placeholder — absolute so it doesn't inflate the first line's height */
 .cm-host .cm-placeholder { color: var(--text-dim); opacity: 0.55; display: block; position: absolute; pointer-events: none; }
 /* Line number gutter — match panel background and dim text */
-.cm-host .cm-gutters { background: var(--bg-panel); border-right: none; color: var(--text-very-dim); }
+.cm-host .cm-gutters { background: var(--surface-edit); border-right: none; color: var(--text-very-dim); }
 .cm-host .cm-cursor { border-left-color: var(--text); }
 .cm-host .cm-lineNumbers .cm-gutterElement { padding: 0 6px 0 0; min-width: 36px; text-align: right; font-size: var(--sz-mono); }
 /* ─── Tutorial ──────────────────────────────────────────────────────────────── */
@@ -2387,10 +2390,10 @@ td.c-err  { color: var(--accent2); }
 .me-fld{display:flex;flex-direction:column;gap:3px;min-width:0;}
 .me-fld.grow{flex:1;}
 .me-lbl{font-family:var(--mono);font-size:calc(var(--sz-mono) - 3px);color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;}
-.me-inp{box-sizing:border-box;background:var(--bg-deep);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 5px;outline:none;width:100%;}
+.me-inp{box-sizing:border-box;background:var(--bg-input);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 5px;outline:none;width:100%;}
 input.me-inp{width:100%;}
 .me-inp:focus{border-color:var(--accent);}
-.me-sel{box-sizing:border-box;background:var(--bg-deep);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 4px;outline:none;cursor:pointer;}
+.me-sel{box-sizing:border-box;background:var(--bg-input);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 4px;outline:none;cursor:pointer;}
 .me-sel:focus{border-color:var(--accent);}
 .me-color-row{display:flex;gap:6px;align-items:center;}
 .me-swatch{width:22px;height:22px;border-radius:var(--r-sm);border: var(--bw-ctl) solid var(--border);cursor:pointer;flex-shrink:0;padding:0;-webkit-appearance:none;appearance:none;}
@@ -2480,7 +2483,7 @@ input.me-inp{width:100%;}
    what it accepts. 30% alone gave that only on a tall panel. min-height stays
    at the drag floor: dragging it small once you have pasted is still yours to
    do, this only settles where it starts. */
-.me-test-cm{flex:none;height:max(30%, 180px);min-height:60px;background:var(--bg-input);
+.me-test-cm{flex:none;height:max(30%, 180px);min-height:60px;background:var(--surface-edit);
   border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);overflow:hidden;}
 .me-test-cm .cm-editor{height:100%;}
 .me-test-cm .cm-content{color:var(--text-dim);}
@@ -2604,14 +2607,14 @@ input.me-inp{width:100%;}
 .me-ps-ta::-webkit-resizer{background-color:var(--bg-deep);background-image:linear-gradient(135deg,transparent 0,transparent 45%,var(--text-dim) 45%,var(--text-dim) 55%,transparent 55%,transparent 70%,var(--text-dim) 70%,var(--text-dim) 80%,transparent 80%);}
 .me-ps-ta:focus{border-color:var(--accent);}
 /* CodeMirror host for the Parse Spec editor (replaces the textarea) */
-.me-ps-cm{flex:none;width:100%;min-height:220px;resize:vertical;overflow:hidden;background:var(--bg-deep);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);box-sizing:border-box;display:flex;flex-direction:column;}
+.me-ps-cm{flex:none;width:100%;min-height:220px;resize:vertical;overflow:hidden;background:var(--surface-edit);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);box-sizing:border-box;display:flex;flex-direction:column;}
 .me-ps-cm:focus-within{border-color:var(--accent);}
 /* Syntax error — the same red border the DDL binding uses for a missing path.
    A one-line message under a 220px editor is easy to miss; the frame is not.
    Listed after :focus-within so it wins while the editor is focused, which is
    exactly when you are typing the mistake. */
 .me-ps-cm[data-state="err"],.me-ps-cm[data-state="err"]:focus-within{border-color:#f85149;}
-.me-ps-cm .cm-editor{background:var(--bg-deep)!important;color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);line-height:1.5;tab-size:2;flex:1;min-height:0;}
+.me-ps-cm .cm-editor{background:var(--surface-edit)!important;color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);line-height:1.5;tab-size:2;flex:1;min-height:0;}
 .me-ps-cm .cm-scroller{overflow:auto;}
 .me-ps-cm .cm-content{padding:6px 0!important;caret-color:var(--text);}
 .me-ps-cm .cm-line{padding:0 8px!important;}
@@ -16916,7 +16919,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.44.0.0';
+const APP_VERSION  = '1.44.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

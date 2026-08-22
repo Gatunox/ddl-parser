@@ -11054,27 +11054,34 @@ test('the accent can be typed, and a half-typed one changes nothing', () => {
     'the field is overwritten while the user is typing in it');
 });
 
-test('the two main-page editors sit on the panel surface, like the table beside them', () => {
-  // They were --bg-input, a shade darker than the panel, so each read as a well
-  // sunk into its card while the parse table beside them showed the panel
-  // surface straight through — and their own line-number gutter, already on
-  // --bg-panel, sat lighter than the text next to it.
+test('every editor takes the typing surface, and every field the field ground', () => {
+  // Two kinds of editable thing, and they were not told apart:
+  //   an EDITOR you type in   --surface-edit   it IS the surface
+  //   a FIELD you type in     --bg-input       it is a box ON a surface
+  // The main editors painted --bg-panel — the chrome AROUND a panel — so marking
+  // their panel editable changed only the frame and the code area stayed as it
+  // was, which is why dark read as barely changed. The Class Editor's editors
+  // painted --bg-input, so the same editor was two colours depending on which
+  // screen it was on. Reported 2026-08-22.
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  assert.ok(/#ddlEditor \.cm-editor, #msgInput \.cm-editor,\n#msgInput\.cm-host \{ background: var\(--bg-panel\); \}/.test(css),
-    'the main-page editors do not take the panel surface');
-  // The gutter was already there; this is what makes the two agree.
-  assert.ok(/\.cm-host \.cm-gutters \{ background: var\(--bg-panel\)/.test(css),
+  const rule = re => (css.match(re) || [''])[0];
+  // Every editor, main page and Class Editor alike.
+  assert.ok(/#ddlEditor \.cm-editor, #msgInput \.cm-editor, #msgInput\.cm-host,\n\.me-ps-cm \.cm-editor, \.me-test-cm \.cm-editor \{ background: var\(--surface-edit\); \}/.test(css),
+    'the editors do not share one typing surface');
+  assert.ok(/\.cm-host \.cm-editor \{[^}]*background: var\(--surface-edit\)/.test(css),
+    'an editor with no rule of its own falls back to something else');
+  // The gutter is part of the editor, so it takes the same ground — matched to
+  // --bg-panel it used to sit a shade off the text beside it.
+  assert.ok(/\.cm-host \.cm-gutters \{ background: var\(--surface-edit\)/.test(css),
     'the gutter no longer shares the surface the editor was matched to');
-  // A token, so the light theme follows without a second rule.
-  assert.ok(/--bg-panel: #161b22;/.test(css) && /--bg-panel: #ffffff;/.test(css),
-    'the surface is no longer a token that both themes define');
-  // NOT the shared .cm-host rule: --bg-input is every input control in the app,
-  // and the Class Editor's editors are one control among several inside a
-  // section, which is where a distinct well still earns its keep.
-  assert.ok(/\.cm-host \.cm-editor \{[^}]*background: var\(--bg-input\)/.test(css),
-    'the change was made on the shared rule, repainting every editor in the app');
-  assert.ok(/\.me-test-cm\{[^}]*background:var\(--bg-input\)/.test(css),
-    "the Class Editor's Test input lost its well");
+  // Fields are the other half, and the Class Editor's used --bg-deep — in light
+  // that is #f6f8fa against #eef1f3, two greys for one kind of control.
+  for (const sel of ['.me-inp', '.me-sel'])
+    assert.ok(/background:var\(--bg-input\)/.test(rule(new RegExp('\\' + sel + '\\{[^}]*\\}'))),
+      `${sel} does not use the app's field ground`);
+  // Tokens, so both themes follow without a second rule.
+  assert.ok(/--surface-edit: #212121;/.test(css) && /--surface-edit: var\(--bg-panel\);/.test(css),
+    'the typing surface is not a token both themes define');
 });
 
 test('an unknown-token row lines up with every other row', () => {

@@ -11174,27 +11174,32 @@ test('the spec editor has no frame at rest and no resize grabber', () => {
 
 test('every editor writes on the main panel\'s ground, and every field on the field ground', () => {
   // Two kinds of editable thing, told apart:
-  //   an EDITOR you type in   --bg-panel    it IS the surface
-  //   a FIELD  you type in    --bg-input    it is a box ON a surface
-  // The two main-page editors are the reference: the parse table beside them
-  // shows the panel surface straight through and their gutter is on it too.
+  //   an EDITOR you type in   --surface-edit  it IS the surface
+  //   a FIELD  you type in    --bg-input      it is a box ON a surface
   // The Class Editor's editors were --bg-input, and its Parse Spec forced
   // --bg-deep with !important, so the same editor was three colours depending on
   // the screen. Repainting the MAIN ones to settle that was the wrong way round
   // (1.44.2.0, reverted): it moved the surface people work on to fix someone
   // else's inconsistency. Reported 2026-08-22.
+  // They all named --bg-panel until 1.46.14.0 — the same COLOUR the editable
+  // ground happened to be. When dark swapped its two surfaces the panels moved
+  // and the editors, naming a colour instead of a role, did not. Pinned to the
+  // token now, so an editor cannot come apart from the panel around it again.
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   const rule = re => (css.match(re) || [''])[0];
-  assert.ok(/#ddlEditor \.cm-editor, #msgInput \.cm-editor, #msgInput\.cm-host,\n\.me-ps-cm \.cm-editor, \.me-test-cm \.cm-editor \{ background: var\(--bg-panel\); \}/.test(css),
-    'the editors do not share the main panel\'s ground');
-  assert.ok(/\.cm-host \.cm-editor \{[^}]*background: var\(--bg-panel\)/.test(css),
+  assert.ok(/#ddlEditor \.cm-editor, #msgInput \.cm-editor, #msgInput\.cm-host,\n\.me-ps-cm \.cm-editor, \.me-test-cm \.cm-editor \{ background: var\(--surface-edit\); \}/.test(css),
+    'the editors do not share the editable ground');
+  assert.ok(/\.cm-host \.cm-editor \{[^}]*background: var\(--surface-edit\)/.test(css),
     'an editor with no rule of its own falls back to something else');
   // The gutter is part of the editor and was matched to it deliberately.
-  assert.ok(/\.cm-host \.cm-gutters \{ background: var\(--bg-panel\)/.test(css),
+  assert.ok(/\.cm-host \.cm-gutters \{ background: var\(--surface-edit\)/.test(css),
     'the gutter no longer shares the surface the editor was matched to');
   // The Parse Spec forced its own ground with !important, which beat everything.
-  assert.ok(/\.me-ps-cm \.cm-editor\{background:var\(--bg-panel\)!important/.test(css),
+  assert.ok(/\.me-ps-cm \.cm-editor\{background:var\(--surface-edit\)!important/.test(css),
     'the Parse Spec editor still forces a ground of its own');
+  // No editor surface may name --bg-panel again: that is what came apart.
+  for (const re of [/#ddlEditor \.cm-editor[^\n]*var\(--bg-panel\)/, /\.cm-host \.cm-(editor|gutters)[^\n]*var\(--bg-panel\)/])
+    assert.ok(!re.test(css), 'an editor surface names the panel colour instead of the editable ground');
   // The Class Editor's fields take the same two grounds its panels do: one you
   // can type into is on the editable ground, one you cannot is on the readout.
   for (const sel of ['.me-inp', '.me-sel'])
@@ -11859,14 +11864,28 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
     assert.ok(/--surface-edit:/.test(b), `${theme} does not define --surface-edit`);
     assert.ok(/--surface-read:/.test(b), `${theme} does not define --surface-read`);
   }
-  // The two that differ per theme are the point: dark raises what you type on,
-  // light tints what you only read.
-  assert.ok(/--surface-edit: #161B22/.test(block('dark')),
+  // The two that differ per theme are the point, and so is their DIRECTION.
+  // Light raises what you type on. Dark sinks it, so a typing surface reads as a
+  // recess and the readouts stand above it — swapped on request in 1.46.14.0.
+  // Both stay in the blue-grey family; a neutral grey read as a different
+  // palette rather than a darker one.
+  assert.ok(/--surface-edit: #11161C/.test(block('dark')),
     'dark: the editable ground is not the one the editors write on');
-  // Dark reads like light — readouts BELOW the editable ground — and stays in
-  // the blue-grey family: a neutral grey read as a different palette.
-  assert.ok(/--surface-read: #11161C/.test(block('dark')),
-    'dark: the readouts are not the blue dark below the editable ground');
+  assert.ok(/--surface-read: #161B22/.test(block('dark')),
+    'dark: the readouts do not stand above the ground you type on');
+  // The relationship, not the hexes: the two themes run OPPOSITE ways, and a
+  // later edit that quietly makes them agree is the regression to catch.
+  const lum = h => { const n = h.replace('#', '').match(/../g).map(x => parseInt(x, 16) / 255)
+      .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+    return 0.2126 * n[0] + 0.7152 * n[1] + 0.0722 * n[2]; };
+  const surf = (theme, n) => { const b = block(theme);
+    const v = (b.match(new RegExp('--' + n + ':\\s*([^;/]+)')) || [])[1].trim();
+    const ref = v.match(/^var\(--([\w-]+)\)$/);
+    return ref ? surf(theme, ref[1]) : v; };
+  assert.ok(lum(surf('dark', 'surface-edit')) < lum(surf('dark', 'surface-read')),
+    'dark: the ground you type on no longer sinks below the readouts');
+  assert.ok(lum(surf('light', 'surface-edit')) > lum(surf('light', 'surface-read')),
+    'light: the ground you type on no longer rises above the readouts');
   // And the page ground is untouched. Moving it to make room was a fix nobody
   // asked for, and it changed the ground under the whole app.
   assert.ok(/--bg-deep: #0d1117;/.test(block('dark')), 'dark: the page ground moved');
@@ -11953,7 +11972,10 @@ test('a pane of fields sits BELOW the fields on it, in both themes', () => {
       `${theme}: the form pane is not below the fields standing on it`);
   }
   assert.ok(/--surface-form: #E8ECF0/.test(block('light')), 'light: the form pane is not the requested tint');
-  assert.ok(/--surface-form: #11161C/.test(block('dark')),  'dark: the form pane is not the readout ground');
+  // Dark's form pane was #11161C until the 1.46.14.0 swap handed that colour to
+  // --surface-edit — the pane would have become its own fields — so it drops
+  // again, to the page ground.
+  assert.ok(/--surface-form: #0D1117/.test(block('dark')), 'dark: the form pane is not the page ground');
   assert.ok(/\.pb-form \{ background: var\(--surface-form\); \}/.test(css), '.pb-form does not take its token');
   // The classification decides it, so a new section still has to answer the
   // question — and an editor that FILLS its pane is not a form.

@@ -122,20 +122,24 @@
   --bg-panel: #161b22;
   --bg-input: #0d1117;
   /* Can you type here? The four big panels all sat on --bg-panel, so nothing
-     said which of them take input. Dark reads the same way light does — the
-     editable ground is the lighter one and the readouts sit BELOW it — and it
-     stays in the blue-grey family the whole theme is built from. A neutral grey
-     was tried here and read as a different palette rather than a darker one.
-     Reported 2026-08-22. */
-  --surface-edit: #161B22;
-  --surface-read: #11161C;
+     said which of them take input. Both values stay in the blue-grey family the
+     whole theme is built from — a neutral grey was tried and read as a different
+     palette rather than a darker one.
+     Dark does NOT follow light's direction here. Light raises what you type on;
+     dark sinks it, so a typing surface reads as a recess cut into the app and
+     the readouts stand above it. The two were the other way round until
+     1.46.14.0, when they were swapped on request. Anything that separates
+     itself from one of these moves with them — see --surface-form and
+     --fm-head-bg below, and the editors, which name the token now. */
+  --surface-edit: #11161C;
+  --surface-read: #161B22;
   /* A FORM pane — a section that is a row of fields rather than one big editor.
      Its fields take --surface-edit, so a form on that same ground has nothing
      but borders to show where the boxes are. Dropping the pane one step lifts
-     the fields off it. Separate from --surface-edit because that token is also
-     the main page's DDL Definition and Message Input, which do not move.
-     Requested 2026-08-22. */
-  --surface-form: #11161C;
+     the fields off it. It was #11161C, which the swap above handed to
+     --surface-edit — the pane would have become its own fields — so it drops
+     again, to the page ground. Requested 2026-08-22. */
+  --surface-form: #0D1117;
   --surface-header: #1c2128;
   /* Sidebar SECTION bars (Messages / Data / Files) — one level below a pane
      header, so they read as nested rather than as another panel. A token, not a
@@ -170,8 +174,11 @@
      direction light already had. It used to be a literal #0b0f15 — the one
      surface in the app below the page ground — so dark sank the header while
      light lifted it, and the same table read two different ways depending on
-     the theme. Reported 2026-08-22. */
-  --fm-head-bg: var(--bg-panel);
+     the theme. Reported 2026-08-22.
+     Its rows are --surface-read, which the swap above made #161B22 — the same
+     colour --bg-panel names — so the header would have disappeared into them.
+     --surface-header is the step above a panel and keeps it lifting. */
+  --fm-head-bg: var(--surface-header);
   --hb-masked: #566070;
   --lw-marker: #30363d;
   --str-lit: #c3e88d;
@@ -2114,7 +2121,7 @@ td.c-err  { color: var(--accent2); }
 
 /* ===== CODEMIRROR HOST CONTAINERS ===== */
 .cm-host { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-.cm-host .cm-editor { flex: 1; min-height: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6; background: var(--bg-panel); color: var(--text); outline: none; }
+.cm-host .cm-editor { flex: 1; min-height: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.6; background: var(--surface-edit); color: var(--text); outline: none; }
 .cm-host .cm-editor.cm-focused { outline: none; }
 .cm-host .cm-scroller { flex: 1; overflow: auto; }
 .cm-host .cm-content { padding: 8px 0; white-space: pre; min-height: 100%; flex: 1; min-width: 0; }
@@ -2130,17 +2137,16 @@ td.c-err  { color: var(--accent2); }
 #ddlEditor.cm-host { flex: 1; }
 #ddlEditor.cm-host .cm-editor { line-height: 1.3; }
 /* Message input host fills the panel body */
-/* Every editor in the app writes on the SAME ground, and that ground is the one
-   the two main-page editors have always had: --bg-panel. They are the reference
-   — the parse table beside them shows the panel surface straight through, and
-   their line-number gutter is on it too.
-   Repainting THEM to match the Class Editor was the wrong way round (1.44.2.0):
-   it changed the surface people actually work on to fix an inconsistency that
-   belonged to the other screen. The Class Editor's editors move instead.
+/* Every editor in the app writes on the SAME ground, and it is the EDITABLE
+   ground — the token, not a colour. It used to name --bg-panel, which was the
+   same colour in dark and so looked correct until dark inverted its two
+   surfaces (1.46.14.0): the panels went one way and the editors, naming a
+   colour rather than a role, stayed behind. An editor and the panel around it
+   are one surface, so it reads what the panel reads.
    A FIELD is the other kind of editable thing and keeps --bg-input: it is a box
    ON a surface, not the surface. */
 #ddlEditor .cm-editor, #msgInput .cm-editor, #msgInput.cm-host,
-.me-ps-cm .cm-editor, .me-test-cm .cm-editor { background: var(--bg-panel); }
+.me-ps-cm .cm-editor, .me-test-cm .cm-editor { background: var(--surface-edit); }
 /* Both CM panels: less-bright default text */
 #ddlEditor .cm-content,
 #msgInput .cm-content { color: var(--text-dim); }
@@ -2159,7 +2165,7 @@ td.c-err  { color: var(--accent2); }
 /* Placeholder — absolute so it doesn't inflate the first line's height */
 .cm-host .cm-placeholder { color: var(--text-dim); opacity: 0.55; display: block; position: absolute; pointer-events: none; }
 /* Line number gutter — match panel background and dim text */
-.cm-host .cm-gutters { background: var(--bg-panel); border-right: none; color: var(--text-very-dim); }
+.cm-host .cm-gutters { background: var(--surface-edit); border-right: none; color: var(--text-very-dim); }
 .cm-host .cm-cursor { border-left-color: var(--text); }
 .cm-host .cm-lineNumbers .cm-gutterElement { padding: 0 6px 0 0; min-width: 36px; text-align: right; font-size: var(--sz-mono); }
 /* ─── Tutorial ──────────────────────────────────────────────────────────────── */
@@ -2672,7 +2678,7 @@ input.me-inp:focus{border-color:var(--accent);}
    Listed after :focus-within so it wins while the editor is focused, which is
    exactly when you are typing the mistake. */
 .me-ps-cm[data-state="err"],.me-ps-cm[data-state="err"]:focus-within{border-color:#f85149;}
-.me-ps-cm .cm-editor{background:var(--bg-panel)!important;color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);line-height:1.5;tab-size:2;flex:1;min-height:0;}
+.me-ps-cm .cm-editor{background:var(--surface-edit)!important;color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);line-height:1.5;tab-size:2;flex:1;min-height:0;}
 .me-ps-cm .cm-scroller{overflow:auto;}
 .me-ps-cm .cm-content{padding:6px 0!important;caret-color:var(--text);}
 .me-ps-cm .cm-line{padding:0 8px!important;}
@@ -16991,7 +16997,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.13.0';
+const APP_VERSION  = '1.46.14.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

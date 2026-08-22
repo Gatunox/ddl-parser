@@ -907,22 +907,22 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .tree-warn-badge   { font-size: var(--sz-badge); padding: 0 8px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--warning); background: var(--h-gray-bg); color: var(--warning); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
 .tree-error-badge  { font-size: var(--sz-badge); padding: 0 8px; border-radius: var(--r-pill); border: var(--bw-ctl) solid var(--danger); background: var(--h-gray-bg);  color: var(--danger); flex-shrink: 0; margin-left: 2px; font-weight: 700; cursor: pointer; }
 /* ---- DDL inline validation bar ---- */
-#ddlValidationBar { display: none; flex-shrink: 0; height: calc(var(--sz-mono) + 15px); padding: 0 8px;
+.vbar { display: none; flex-shrink: 0; height: calc(var(--sz-mono) + 15px); padding: 0 8px;
   border-bottom: var(--bw) solid; align-items: center; gap: 4px; font-size: var(--sz-mono); overflow: hidden; }
-#ddlValidationBar.vbar-error      { background: var(--vbar-err-bg); border-color: var(--vbar-err-bd); color: var(--vbar-err-fg); }
-#ddlValidationBar.vbar-warning    { background: var(--vbar-wrn-bg); border-color: var(--vbar-wrn-bd); color: var(--vbar-wrn-fg); }
-#ddlValidationBar.vbar-unresolved { background: var(--vbar-unr-bg); border-color: var(--vbar-unr-bd); color: var(--vbar-unr-fg); }
-#ddlValidationBar .vbar-nav   { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
-#ddlValidationBar .vbar-btn   { background: none; border: none; color: inherit; cursor: pointer; padding: 0 4px; font-size: calc(var(--sz-mono) + 1px); opacity: 0.7; line-height: 1; }
-#ddlValidationBar .vbar-btn:hover { opacity: 1; }
-#ddlValidationBar .vbar-btn:disabled { opacity: 0.25; cursor: default; }
-#ddlValidationBar .vbar-ctr   { font-size: calc(var(--sz-mono) - 1px); color: inherit; opacity: 0.7; white-space: nowrap; padding: 0 2px; }
-#ddlValidationBar .vbar-scope { font-size: calc(var(--sz-mono) - 2px); font-family: var(--font-mono); background: var(--tint-chip); border-radius: var(--r-sm); padding: 0 5px; margin-left: 3px; white-space: nowrap; opacity: 0.85; }
-#ddlValidationBar .vbar-msg   { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#ddlValidationBar .vbar-copy  { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 2px; font-size: calc(var(--sz-mono) + 1px); }
-#ddlValidationBar .vbar-copy:hover  { opacity: 1; }
-#ddlValidationBar .vbar-close { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 2px; font-size: calc(var(--sz-mono) + 1px); }
-#ddlValidationBar .vbar-close:hover { opacity: 1; }
+.vbar.vbar-error      { background: var(--vbar-err-bg); border-color: var(--vbar-err-bd); color: var(--vbar-err-fg); }
+.vbar.vbar-warning    { background: var(--vbar-wrn-bg); border-color: var(--vbar-wrn-bd); color: var(--vbar-wrn-fg); }
+.vbar.vbar-unresolved { background: var(--vbar-unr-bg); border-color: var(--vbar-unr-bd); color: var(--vbar-unr-fg); }
+.vbar .vbar-nav   { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
+.vbar .vbar-btn   { background: none; border: none; color: inherit; cursor: pointer; padding: 0 4px; font-size: calc(var(--sz-mono) + 1px); opacity: 0.7; line-height: 1; }
+.vbar .vbar-btn:hover { opacity: 1; }
+.vbar .vbar-btn:disabled { opacity: 0.25; cursor: default; }
+.vbar .vbar-ctr   { font-size: calc(var(--sz-mono) - 1px); color: inherit; opacity: 0.7; white-space: nowrap; padding: 0 2px; }
+.vbar .vbar-scope { font-size: calc(var(--sz-mono) - 2px); font-family: var(--font-mono); background: var(--tint-chip); border-radius: var(--r-sm); padding: 0 5px; margin-left: 3px; white-space: nowrap; opacity: 0.85; }
+.vbar .vbar-msg   { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vbar .vbar-copy  { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 2px; font-size: calc(var(--sz-mono) + 1px); }
+.vbar .vbar-copy:hover  { opacity: 1; }
+.vbar .vbar-close { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 2px; font-size: calc(var(--sz-mono) + 1px); }
+.vbar .vbar-close:hover { opacity: 1; }
 .tree-node.tree-sel .tree-vol-lbl,
 .tree-node.tree-sel .tree-sv-lbl,
 .tree-node.tree-sel .tree-ddl-lbl,
@@ -2582,15 +2582,6 @@ input.me-inp{width:100%;}
   font-style:italic;margin-left:10px;user-select:none;pointer-events:none;}
 .me-ps-cm::-webkit-scrollbar-corner{background:var(--bg-deep);}
 /* JSONC syntax tokens reuse the DDL editor's .hl-* palette directly. */
-/* The editor's status panel. CodeMirror gives it a border and its own colours
-   by default; here it is the app's bar surface, ruled off from the code above
-   it — the same relationship a .panel-bar has to what it sits under. */
-.cm-editor .cm-panels{background:var(--surface-subhead);color:var(--text);border:0;}
-.cm-editor .cm-panels-bottom{border-top: var(--bw) solid var(--border);}
-.me-ps-status{padding:2px 8px;}
-/* Nothing to say, nothing on screen — otherwise a clean spec carries an empty
-   strip under it for ever. */
-.me-ps-status:has(#me-ps-err:empty):has(#me-ps-lint:empty){display:none;}
 .me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
 .me-ps-lint{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--warning);}
 /* min-height keeps a one-line error from jittering the layout, but on a spec
@@ -3360,7 +3351,7 @@ th.me-fm-colhi{color:var(--accent);}
             <button class="panel-toggle" id="ddlToggleBar"
                     onclick="togglePanel('ddlPanel','ddlToggle','ddlResizer')" title="Hide panel">−</button>
           </div>
-          <div id="ddlValidationBar"></div>
+          <div id="ddlValidationBar" class="vbar"></div>
           <div id="ddlEditor" class="cm-host"></div>
         </div>
       </div>
@@ -11961,10 +11952,16 @@ function updateDDLGutter() {
 }
 
 // ── DDL inline validation bar — navigator state ─────────────────────────────
-let _vbarMsgs  = [];   // [{ icon, text, severity }]
-let _vbarIdx   = 0;
-let _vbarScope = '';   // '' = file-level; 'DEF NAME' = filtered to one definition
-let _vbarPath  = '';   // path key of the file currently shown in the bar
+// Two editors show this bar: the DDL definition and the parse spec. ONE
+// implementation, keyed by which editor it belongs to — a second bar would start
+// as a copy of this one and drift, which is the fault this codebase keeps
+// paying for. The handlers keep their names and take the key as an argument, so
+// nothing new has to be reserved from the obfuscator. Reported 2026-08-22.
+const _VBARS = {
+  ddl: { host: 'ddlValidationBar', msgs: [], idx: 0, scope: '', path: '', jump: true },
+  ps:  { host: 'psValidationBar',  msgs: [], idx: 0, scope: '', path: '', jump: false },
+};
+const _vb = key => _VBARS[key] || _VBARS.ddl;
 let _vbarForce = false; // set true right before a badge-click selection to force-show (and un-dismiss)
 const _vbarDismissed = new Set(); // file keys (vol/sv/name) the user dismissed via ✕ — don't auto-show
 // Group all of a file's defs under one dismiss key so dismissing once suppresses the whole file.
@@ -11972,26 +11969,29 @@ function _vbarFileKey(path) { return String(path || '').split('/').slice(0, 3).j
 // Called from a badge's inline onclick (global scope) to arm a forced show for the next selection.
 function _vbarArm() { _vbarForce = true; }
 
-function _vbarRender() {
-  const bar = document.getElementById('ddlValidationBar');
-  if (!bar || !_vbarMsgs.length) return;
-  const total  = _vbarMsgs.length;
-  const cur    = _vbarMsgs[_vbarIdx];
-  bar.className = cur.severity === 'error' ? 'vbar-error' : cur.severity === 'unresolved' ? 'vbar-unresolved' : 'vbar-warning';
+function _vbarRender(key = 'ddl') {
+  const st  = _vb(key);
+  const bar = document.getElementById(st.host);
+  if (!bar || !st.msgs.length) return;
+  const total = st.msgs.length;
+  const cur   = st.msgs[st.idx];
+  bar.className = 'vbar ' + (cur.severity === 'error' ? 'vbar-error' : cur.severity === 'unresolved' ? 'vbar-unresolved' : 'vbar-warning');
   bar.style.display = 'flex';
   bar.innerHTML =
     `<span class="vbar-nav">` +
-      `<button class="vbar-btn" onclick="_vbarPrev()" ${_vbarIdx === 0 ? 'disabled' : ''}>&lt;</button>` +
-      `<span class="vbar-ctr">${_vbarIdx + 1}&thinsp;/&thinsp;${total}</span>` +
-      `<button class="vbar-btn" onclick="_vbarNext()" ${_vbarIdx === total - 1 ? 'disabled' : ''}>&gt;</button>` +
-      (_vbarScope ? `<span class="vbar-scope" title="Showing issues for this definition only">DEF&nbsp;${_escH(_vbarScope)}</span>` : '') +
+      `<button class="vbar-btn" onclick="_vbarPrev('${key}')" ${st.idx === 0 ? 'disabled' : ''}>&lt;</button>` +
+      `<span class="vbar-ctr">${st.idx + 1}&thinsp;/&thinsp;${total}</span>` +
+      `<button class="vbar-btn" onclick="_vbarNext('${key}')" ${st.idx === total - 1 ? 'disabled' : ''}>&gt;</button>` +
+      (st.scope ? `<span class="vbar-scope" title="Showing issues for this definition only">DEF&nbsp;${_escH(st.scope)}</span>` : '') +
     `</span>` +
-    `<span class="vbar-msg" ondblclick="javascript:_vbarJumpToLine()" style="cursor:pointer;user-select:text" title="Double-click to jump to line">${_escH(cur.text)}</span>` +
-    `<span class="vbar-copy" onclick="_vbarCopyMsg()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>` +
-    `<span class="vbar-close" onclick="_vbarDismiss()" title="Dismiss">✕</span>`;
+    (st.jump
+      ? `<span class="vbar-msg" ondblclick="javascript:_vbarJumpToLine('${key}')" style="cursor:pointer;user-select:text" title="Double-click to jump to line">${_escH(cur.text)}</span>`
+      : `<span class="vbar-msg" style="user-select:text">${_escH(cur.text)}</span>`) +
+    `<span class="vbar-copy" onclick="_vbarCopyMsg('${key}')" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>` +
+    `<span class="vbar-close" onclick="_vbarDismiss('${key}')" title="Dismiss">✕</span>`;
 }
-function _vbarPrev()    { if (_vbarIdx > 0) { _vbarIdx--; _vbarRender(); } }
-function _vbarNext()    { if (_vbarIdx < _vbarMsgs.length - 1) { _vbarIdx++; _vbarRender(); } }
+function _vbarPrev(key = 'ddl') { const st = _vb(key); if (st.idx > 0) { st.idx--; _vbarRender(key); } }
+function _vbarNext(key = 'ddl') { const st = _vb(key); if (st.idx < st.msgs.length - 1) { st.idx++; _vbarRender(key); } }
 function _tipShow(el, text) {
   let tip = document.getElementById('_uiTip');
   if (!tip) {
@@ -12018,8 +12018,9 @@ function _tipHide() {
   const tip = document.getElementById('_uiTip');
   if (tip) { tip.style.opacity = '0'; setTimeout(() => { if (tip.style.opacity === '0') tip.style.display = 'none'; }, 120); }
 }
-function _vbarCopyMsg() {
-  const m = _vbarMsgs[_vbarIdx];
+function _vbarCopyMsg(key = 'ddl') {
+  const st = _vb(key);
+  const m = st.msgs[st.idx];
   if (!m) return;
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(m.text)
@@ -12037,19 +12038,23 @@ function _copyFallback(text, msg) {
   catch(e) { showToast('Copy failed'); }
   document.body.removeChild(ta);
 }
-function _vbarClose() {
-  const bar = document.getElementById('ddlValidationBar');
-  if (bar) { bar.style.display = 'none'; bar.className = ''; bar.innerHTML = ''; }
-  _vbarMsgs = []; _vbarIdx = 0; _vbarScope = '';
+function _vbarClose(key = 'ddl') {
+  const st  = _vb(key);
+  const bar = document.getElementById(st.host);
+  if (bar) { bar.style.display = 'none'; bar.className = 'vbar'; bar.innerHTML = ''; }
+  st.msgs = []; st.idx = 0; st.scope = '';
 }
 // User pressed ✕ — remember this file as dismissed so it won't auto-show again,
 // until the user explicitly clicks its warning/error badge.
-function _vbarDismiss() {
-  if (_vbarPath) _vbarDismissed.add(_vbarFileKey(_vbarPath));
-  _vbarClose();
+function _vbarDismiss(key = 'ddl') {
+  // Only the DDL bar remembers a dismissal: it is keyed by FILE, and the spec
+  // bar belongs to whichever class is open rather than to a file.
+  const st = _vb(key);
+  if (key === 'ddl' && st.path) _vbarDismissed.add(_vbarFileKey(st.path));
+  _vbarClose(key);
 }
-function _vbarJumpToLine() {
-  const msg = _vbarMsgs[_vbarIdx];
+function _vbarJumpToLine(key = 'ddl') {
+  const msg = _vb(key).msgs[_vb(key).idx];
   if (!msg) return;
   const ed = document.getElementById('ddlEditor');
   if (!ed) return;
@@ -12072,7 +12077,7 @@ function updateDDLValidationBar(path, showUnresolved, scopeLabel = '') {
   if (!path) { _vbarClose(); return; }
 
   const forced = _vbarForce; _vbarForce = false;
-  _vbarPath = path;
+  _vb('ddl').path = path;
   const fileKey = _vbarFileKey(path);
   if (forced) {
     _vbarDismissed.delete(fileKey);          // badge click re-enables the bar for this file
@@ -12083,15 +12088,15 @@ function updateDDLValidationBar(path, showUnresolved, scopeLabel = '') {
 
   const result = S.ddlValidationResults[path] || {};
 
-  _vbarMsgs = [
+  _vb('ddl').msgs = [
     ...(result.errors            || []).map(t => ({ icon: '✖', text: t, severity: 'error' })),
     ...(result.warnings          || []).map(t => ({ icon: '⚠', text: t, severity: 'warning' })),
     // Per-field unresolved TYPE warnings — one entry per field (not deduplicated by type name)
     ...(showUnresolved ? (result.unresolvedWarnings || []) : []).map(t => ({ icon: '⬡', text: t, severity: 'unresolved' })),
   ];
-  _vbarIdx   = 0;
-  _vbarScope = scopeLabel;
-  if (!_vbarMsgs.length) { _vbarClose(); return; }
+  _vb('ddl').idx   = 0;
+  _vb('ddl').scope = scopeLabel;
+  if (!_vb('ddl').msgs.length) { _vbarClose(); return; }
   _vbarRender();
 }
 
@@ -15775,11 +15780,11 @@ function saveDDL() {
   const saveTypeReg = buildRepoTypeRegistry(content);
   const { errors: picErrors, warnings: picWarnings, unresolvedTypes: saveUnresolved } = validateDDLErrors(content, saveTypeReg);
   if (picErrors.length) {
-    _vbarMsgs = [
+    _vb('ddl').msgs = [
       ...picErrors.map(t => ({ icon: '✖', text: t, severity: 'error' })),
       ...picWarnings.map(t => ({ icon: '⚠', text: t, severity: 'warning' })),
     ];
-    _vbarIdx = 0; _vbarScope = '';
+    _vb('ddl').idx = 0; _vb('ddl').scope = '';
     _vbarRender();
     flash(`⚠ ${picErrors.length} DDL error${picErrors.length > 1 ? 's' : ''} — ${picErrors[0]}`, 'error');
     return;
@@ -16869,7 +16874,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.42.0.0';
+const APP_VERSION  = '1.42.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19276,6 +19281,7 @@ function _meHtmlParseSpec(item) {
     </span>
     <button class="btn" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
+  <div id="psValidationBar" class="vbar"></div>
   <div class="me-section-pad">
   <div class="me-ps-wrap side${_mePsHelpOpen() ? '' : ' nohelp'}" id="me-ps-wrap">
   <div class="me-ps-split me-hs-fixed" id="me-ps-split">
@@ -21578,9 +21584,28 @@ function _stripJsonc(src) {
 // The error message and the frame are set together — two call sites used to set
 // only the text, and a subtle syntax error in a tall editor is easy to scroll
 // past.
+// The spec editor's messages, shown in the same bar the DDL editor uses. Kept as
+// two lists because they are produced by two passes: a syntax error stops the
+// semantic one, and lint warnings survive an edit that does not break the JSON.
+let _mePsErrMsg = '';
+let _mePsLintMsgs = [];
+function _mePsBarSync() {
+  const st = _vb('ps');
+  const msgs = (_mePsErrMsg ? [{ text: _mePsErrMsg, severity: 'error' }] : [])
+    .concat(_mePsLintMsgs.map(t => ({ text: t, severity: 'warning' })));
+  if (!msgs.length) { _vbarClose('ps'); return; }
+  // Hold the reader's place across a re-lint, so typing does not throw them back
+  // to the first of nine warnings on every keystroke.
+  const wasIdx = st.idx;
+  st.msgs = msgs;
+  st.idx  = Math.min(wasIdx, msgs.length - 1);
+  st.scope = '';
+  _vbarRender('ps');
+}
+
 function _mePsSetErr(msg) {
-  const errEl = document.getElementById('me-ps-err');
-  if (errEl) errEl.textContent = msg ? '\u26a0 ' + msg : '';
+  _mePsErrMsg = msg || '';
+  _mePsBarSync();
   const host = document.getElementById('me-ps-ta-host');
   if (host) { if (msg) host.setAttribute('data-state', 'err'); else host.removeAttribute('data-state'); }
 }
@@ -21600,10 +21625,11 @@ function _mePsChange(val) {
     _mePsScheduleLint(item, parsed);
     _meFileWarnsRefresh();
   } catch(e) {
+    // Syntax broken — semantic lint would be noise; clear it. Set before the
+    // error, so one render shows the final state rather than two showing a
+    // list that is briefly wrong.
+    _mePsLintMsgs = [];
     _mePsSetErr(e.message);
-    // Syntax broken — semantic lint would be noise; clear it.
-    const lintEl = document.getElementById('me-ps-lint');
-    if (lintEl) lintEl.innerHTML = '';
   }
 }
 
@@ -21707,13 +21733,11 @@ const _PS_VALID_TYPES_RE =/^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|d
 // Rendering is separate from the checking so the rules are testable — the old
 // shape bailed out when the DOM element was absent, which is every test run.
 function _mePsRunLint(item, parsed) {
-  const lintEl = document.getElementById('me-ps-lint');
-  if (!lintEl) return;
-  const warns = _mePsLintWarns(item, parsed);
-  lintEl.innerHTML = warns.length
-    ? warns.slice(0, 8).map(w => `<div class="me-ps-lint-row">⚠ ${_escHtml(w)}</div>`).join('')
-      + (warns.length > 8 ? `<div class="me-ps-lint-row">… and ${warns.length - 8} more</div>` : '')
-    : '';
+  // No cap on how many are kept: the bar shows one at a time and pages through
+  // them, so "… and 4 more" — which is what a stacked list needed — would now be
+  // hiding warnings behind a message that cannot be paged to.
+  _mePsLintMsgs = _mePsLintWarns(item, parsed);
+  _mePsBarSync();
 }
 
 function _mePsLintWarns(item, parsed) {
@@ -22492,7 +22516,7 @@ function _mePsMountCM(item) {
   _mePsUnmountCM();
   const host = document.getElementById('me-ps-ta-host');
   if (!host || !window.CM || !item) return null;
-  const { EditorView, EditorState, history, keymap, defaultKeymap, historyKeymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter, showPanel } = window.CM;
+  const { EditorView, EditorState, history, keymap, defaultKeymap, historyKeymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter } = window.CM;
   const { spec: specField, src: srcField } = _mePsFieldsForVariant(_mePsActiveVariant());
   const initial = (typeof item[srcField] === 'string' && item[srcField].trim())
     ? item[srcField]
@@ -22514,19 +22538,6 @@ function _mePsMountCM(item) {
         _jsoncHighlightExtension(),
         _mePsOvrDecoExtension(),
         _mePsBracketExtension(),
-        // The status panel: syntax errors and lint warnings, docked to the
-        // bottom of the editor's own frame. They were two divs under the
-        // editor, outside its border — page content that happened to be about
-        // the editor, floating below it with a gap of their own. Docked, they
-        // read as the editor answering, and they hold the same ids so
-        // everything that writes to them is unchanged. Reported 2026-08-22.
-        showPanel.of(() => {
-          const dom = document.createElement('div');
-          dom.className = 'me-ps-status';
-          dom.innerHTML = '<div id="me-ps-err" class="me-ps-err"></div>'
-                        + '<div id="me-ps-lint" class="me-ps-lint"></div>';
-          return { dom, bottom: true };
-        }),
         EditorView.updateListener.of(u => {
           if (u.docChanged) _mePsChange(u.state.doc.toString());
           // Follow the caret: moving into a block shows that block's reference.

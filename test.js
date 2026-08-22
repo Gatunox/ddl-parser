@@ -11695,32 +11695,38 @@ test('the armed row wins over selection and hover, on specificity', () => {
   assert.ok(base && hover, 'hover is the brighter value, matching the tree');
 });
 
-test('the spec editor\'s errors and warnings are docked inside it', () => {
-  // They were two divs under the editor, outside its border: page content that
-  // happened to be about the editor, floating below it with a gap of its own.
-  // CodeMirror's showPanel docks them to the editor's own frame. Reported
-  // 2026-08-22.
+test('both editors show the SAME validation bar, one implementation', () => {
+  // The spec editor's messages were loose divs under it. Rather than a second
+  // bar, they use the one the DDL editor already has — with < n/m > navigation,
+  // copy and dismiss. A second bar would start as a copy of this one and drift.
+  // Reported 2026-08-22.
   const src = fs.readFileSync('./source.html', 'utf8');
-  const entry = fs.readFileSync('./codemirror-entry.js', 'utf8');
-  assert.ok(/showPanel/.test(entry) && /showPanel,/.test(entry),
-    'the bundle does not export showPanel, so the app cannot dock anything');
-  const mount = psFnSource('_mePsMountCM');
-  assert.ok(/showPanel\.of\(/.test(mount), 'the editor has no status panel');
-  assert.ok(/bottom: true/.test(mount), 'the panel is not docked to the bottom');
-  // Same ids as before, so everything that writes a message is untouched.
-  for (const id of ['me-ps-err', 'me-ps-lint'])
-    assert.ok(new RegExp(`id="${id}"`).test(mount), `${id} is not in the panel`);
-  // And they are no longer emitted as page content beside the editor.
-  const spec = psFnSource('_meHtmlParseSpec');
-  assert.ok(!/id="me-ps-err"|id="me-ps-lint"/.test(spec),
-    'the loose divs are still under the editor');
-  // A spec with nothing wrong with it must not carry an empty strip for ever.
+  assert.ok(/const _VBARS = \{[\s\S]*?ddl:[\s\S]*?ps:/.test(src),
+    'the bar is not keyed by which editor it belongs to');
+  // Both hosts exist and both carry the shared class.
+  for (const id of ['ddlValidationBar', 'psValidationBar']) {
+    const tag = (src.match(new RegExp('<div id="' + id + '"[^>]*>')) || [''])[0];
+    assert.ok(/class="vbar"/.test(tag), `${id} does not use the shared bar: ${tag}`);
+  }
+  // The styling is a class, not an id, or the second bar gets none of it.
   const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
-  assert.ok(/\.me-ps-status:has\(#me-ps-err:empty\):has\(#me-ps-lint:empty\)\{display:none/.test(css),
-    'the panel stays on screen with nothing to say');
-  // It reads as part of the editor, not as CodeMirror's own furniture.
-  assert.ok(/\.cm-editor \.cm-panels\{[^}]*var\(--surface-subhead\)/.test(css),
-    'the panel does not take the app surface');
+  assert.ok(/\n\.vbar \{/.test(css), 'the bar is still styled by id');
+  assert.ok(!/#ddlValidationBar/.test(css), 'an id-scoped rule is left behind');
+  // The handlers keep their names and take the key, so nothing new has to be
+  // reserved from the obfuscator.
+  const render = psFnSource('_vbarRender');
+  for (const fn of ['_vbarPrev', '_vbarNext', '_vbarCopyMsg', '_vbarDismiss'])
+    assert.ok(new RegExp(fn + "\\('\\$\\{key\\}'\\)").test(render),
+      `${fn} is called without saying which bar`);
+  // The spec bar does not offer jump-to-line: its messages name a BLOCK, not a
+  // line, so the gesture would land nowhere.
+  assert.ok(/ps:\s*\{[^}]*jump: false/.test(src), 'the spec bar offers a jump it cannot do');
+  assert.ok(/ddl:\s*\{[^}]*jump: true/.test(src), 'the DDL bar lost its jump-to-line');
+  // Warnings are no longer capped at 8 with "… and N more": the bar pages
+  // through them one at a time, so a hidden remainder could not be reached.
+  const lint = psFnSource('_mePsRunLint');
+  assert.ok(!/slice\(0, 8\)|and \$\{warns\.length - 8\} more/.test(lint),
+    'the spec still truncates its warnings into a message you cannot page to');
 });
 
 test('the class colour is the row\'s left gutter, not a dot on its line', () => {

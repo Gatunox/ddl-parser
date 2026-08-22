@@ -121,6 +121,15 @@
   --bg-deep: #0d1117;
   --bg-panel: #161b22;
   --bg-input: #0d1117;
+  /* Can you type here? The four big panels all sat on --bg-panel, so nothing
+     said which of them take input. The answer differs by theme, because what
+     reads as "editable" does: dark RAISES the editable ones above the panel
+     surface and leaves the readouts on it; light keeps the editable ones white
+     like paper and tints the readouts instead.
+     Both tokens exist in both themes, so a panel names what it IS and the theme
+     decides how loudly to say it. Reported 2026-08-22. */
+  --surface-edit: #212121;
+  --surface-read: var(--bg-panel);
   --surface-header: #1c2128;
   /* Sidebar SECTION bars (Messages / Data / Files) — one level below a pane
      header, so they read as nested rather than as another panel. A token, not a
@@ -207,6 +216,8 @@
   --bg-deep: #f6f8fa;
   --bg-panel: #ffffff;
   --bg-input: #eef1f3;
+  --surface-edit: var(--bg-panel);   /* white, like paper — you write on it */
+  --surface-read: #F6F6F6;           /* tinted — a readout, not a page */
   --surface-header: #eef1f3;
   --surface-subhead: #e7ecf0;
   --border: rgba(0,0,0,0.08);
@@ -554,6 +565,10 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   display: flex;
   flex-direction: column;
 }
+/* A panel says whether you can type into it, and the theme decides how loudly.
+   See --surface-edit / --surface-read. */
+.pb-edit { background: var(--surface-edit); }
+.pb-read { background: var(--surface-read); }
 
 /* Panel visibility toggle button */
 .panel-toggle {
@@ -765,7 +780,7 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    resizer sets the TREE's width directly, so any inset has to live on the
    panes themselves or the drag measures a box it does not move. */
 .ddl-editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0;
-  background: var(--bg-panel);
+  /* The ground comes from .pb-edit — this is a surface you type on. */
   /* Same rule, mirrored — and the same conclusion now that there is no panel
      border to meet and no header to clear. */
   border: var(--bw) solid var(--border); border-radius: var(--r-md);
@@ -3338,7 +3353,7 @@ th.me-fm-colhi{color:var(--accent);}
           <div id="ddlTree"></div>
         </div>
         <div class="resizer-h" id="ddlTreeResizer"></div>
-        <div class="ddl-editor-pane">
+        <div class="ddl-editor-pane pb-edit">
           <div id="ddlCfgBar">
             <span class="panel-title ddl-cfg-title">DDL Definition</span>
             <div class="ddl-search-bar" id="ddlSearchBar">
@@ -3420,7 +3435,7 @@ th.me-fm-colhi{color:var(--accent);}
           </svg>
         </span>
       </div>
-      <div class="panel-body" style="flex-direction:row;position:relative">
+      <div class="panel-body pb-edit" style="flex-direction:row;position:relative">
         <div id="msgGutter" class="msg-gutter" aria-hidden="true"></div>
         <div id="msgInput" class="cm-host" style="flex:1;min-width:0;overflow:hidden"></div>
         <!-- AUDIT BROWSER — shown when a binary audit file is open -->
@@ -3583,7 +3598,7 @@ th.me-fm-colhi{color:var(--accent);}
           </div>
         </div>
       </div>
-      <div class="panel-body" id="resContainer">
+      <div class="panel-body pb-read" id="resContainer">
         <div class="empty-st">
           <div>No messages parsed yet.</div>
           <div>Load a DDL definition and paste a message, then click <strong>Parse</strong>.</div>
@@ -3602,7 +3617,7 @@ th.me-fm-colhi{color:var(--accent);}
       <div id="rawCfgBar" class="panel-bar">
         <span id="rawInfo"></span>
       </div>
-      <div class="panel-body">
+      <div class="panel-body pb-read">
         <div id="rawDisplay" class="hex-dump">
           <span style="color:var(--text-dim)">Raw message bytes will appear here after parsing.</span>
         </div>
@@ -16889,7 +16904,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.42.5.0';
+const APP_VERSION  = '1.43.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

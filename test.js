@@ -11700,6 +11700,39 @@ test('the armed row wins over selection and hover, on specificity', () => {
   assert.ok(base && hover, 'hover is the brighter value, matching the tree');
 });
 
+test('a panel says whether you can type into it, in BOTH themes', () => {
+  // All four big panels sat on --bg-panel, so nothing distinguished the two you
+  // type into from the two you only read. What reads as "editable" differs by
+  // theme, so both tokens are defined in both blocks and each panel names what
+  // it IS rather than naming a colour. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const block = sel => (css.match(new RegExp('\\[data-theme="' + sel + '"\\] \\{[\\s\\S]*?\\n\\}')) || [''])[0];
+  for (const theme of ['dark', 'light']) {
+    const b = block(theme);
+    assert.ok(/--surface-edit:/.test(b), `${theme} does not define --surface-edit`);
+    assert.ok(/--surface-read:/.test(b), `${theme} does not define --surface-read`);
+  }
+  // The two that differ per theme are the point: dark raises what you type on,
+  // light tints what you only read.
+  assert.ok(/--surface-edit: #212121/.test(block('dark')), 'dark: the editable panels are not raised');
+  assert.ok(/--surface-read: var\(--bg-panel\)/.test(block('dark')), 'dark: the readouts left the panel surface');
+  assert.ok(/--surface-edit: var\(--bg-panel\)/.test(block('light')), 'light: the editable panels are not the page white');
+  assert.ok(/--surface-read: #F6F6F6/.test(block('light')), 'light: the readouts are not tinted');
+  // Each panel carries the class, and the classes read their tokens.
+  assert.ok(/\.pb-edit \{ background: var\(--surface-edit\); \}/.test(css), '.pb-edit does not take its token');
+  assert.ok(/\.pb-read \{ background: var\(--surface-read\); \}/.test(css), '.pb-read does not take its token');
+  const html = src;
+  assert.ok(/<div class="ddl-editor-pane pb-edit">/.test(html), 'DDL Definition is not marked editable');
+  assert.ok(/<div class="panel-body pb-edit"/.test(html),      'Message Input is not marked editable');
+  assert.ok(/<div class="panel-body pb-read" id="resContainer">/.test(html), 'Parse Results is not marked read-only');
+  assert.ok(/<div class="panel-body pb-read">\s*<div id="rawDisplay"/.test(html), 'Raw Message is not marked read-only');
+  // The DDL pane used to paint --bg-panel itself, which would win over the class.
+  const pane = (css.match(/\.ddl-editor-pane \{[^}]*\}/) || [''])[0];
+  assert.ok(!/background: var\(--bg-panel\)/.test(pane),
+    `the DDL pane still paints its own ground, so .pb-edit cannot show: ${pane}`);
+});
+
 test('[REGRESSION] a recognizer edit re-renders only the recognizer list', () => {
   // Every recognizer action called _meRenderRight, which rebuilds the WHOLE
   // right pane: CodeMirror torn down and remounted, the Overrides field table

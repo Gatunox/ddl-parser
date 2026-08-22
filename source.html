@@ -1003,13 +1003,23 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    against a host, so the export modal and the Parse Results panel dim from one
    definition instead of two that can drift. The scrim (150) sits under the
    dialog (200); pointer-events:none so it dims without swallowing a click. */
-.cfg-dim { position: relative; }
-.cfg-dim::after { content:''; position:absolute; inset:0; z-index:150;
+/* Two ways in, and the second one is the fix for a real bug. The main page's
+   choosers are static markup, so a class toggled beside them stays in step. The
+   Class Editor's lives INSIDE the Overrides section, which is rebuilt whenever
+   the pane re-renders: the dialog came back closed while .cfg-dim stayed on the
+   shell above it, leaving the editor dimmed with nothing open and no way out but
+   to open the cog again and close it properly. Derived from the dialog's own
+   state, the scrim cannot outlive it. Reported 2026-08-22. */
+.cfg-dim,
+.me-shell:has(.audit-cfg-dialog.open) { position: relative; }
+.cfg-dim::after,
+.me-shell:has(.audit-cfg-dialog.open)::after { content:''; position:absolute; inset:0; z-index:150;
   background:rgba(0,0,0,0.55); pointer-events:none; }
 /* The control that opened the chooser stays out of the scrim — it is the way
    back out, so dimming it hides the one thing still worth clicking. Lifted only
    while the host is dimmed, so an active toggle elsewhere is unaffected. */
-.cfg-dim .btn.btn-on { position: relative; z-index: 200; }
+.cfg-dim .btn.btn-on,
+.me-shell:has(.audit-cfg-dialog.open) .btn.btn-on { position: relative; z-index: 200; }
 .ddl-doc-hdr   { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-2) 0 16px; min-height: var(--panel-header-h); background: var(--surface-header); border-bottom: var(--bw) solid var(--border); flex-shrink: 0; }
 .ddl-doc-title { font-size: 12px; font-weight: 700; color: var(--text); font-family: var(--font-mono); }
 /* The controls row. Its left padding matches the table's first cell so the
@@ -17071,7 +17081,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.26.0';
+const APP_VERSION  = '1.46.27.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25094,7 +25104,9 @@ function _meFmToggleColsDlg() {
   // cog, dim the host, leave the cog above the scrim as the way back out.
   const btn = document.getElementById('me-fm-cols-btn');
   if (btn) btn.classList.toggle('btn-on', open);
-  dlg.closest('.me-shell')?.classList.toggle('cfg-dim', open);
+  // No class on the shell: the scrim reads the dialog's own state (see .cfg-dim
+  // in the stylesheet). A class here is exactly what used to survive the
+  // rebuild that closed the dialog.
 }
 
 // ── VLG toggles ──────────────────────────────────────────────────────────────

@@ -11646,11 +11646,11 @@ test('the cog becomes the close button while the chooser is open', () => {
   // .ddl-doc-modal; it is written against .cfg-dim alone now, so the export
   // modal and the Parse Results panel dim from ONE definition. Two copies of
   // this is exactly how a fix lands on one surface and not the other.
-  const dim = html.match(/(?:^|\n)\.cfg-dim::after\s*\{([^}]*)\}/);
+  const dim = html.match(/(?:^|\n)\.cfg-dim::after,?[^{]*\{([^}]*)\}/);
   assert.ok(dim, 'there is a scrim rule');
   // A host that is not a positioning origin puts the scrim somewhere else
   // entirely — .panel is static until this class lands on it.
-  assert.ok(/(?:^|\n)\.cfg-dim \{[^}]*position:\s*relative/.test(html),
+  assert.ok(/(?:^|\n)\.cfg-dim,?[^{]*\{[^}]*position:\s*relative/.test(html),
     'and the class makes its host the origin');
   assert.ok(/position:absolute/.test(dim[1]) && /inset:0/.test(dim[1]), 'covering the modal');
   assert.ok(/pointer-events:none/.test(dim[1]), 'without swallowing clicks');
@@ -11660,7 +11660,7 @@ test('the cog becomes the close button while the chooser is open', () => {
   assert.ok(z && dz && z < dz, `scrim ${z} must sit under the dialog ${dz}`);
   // ...and under the button that opened it. Dimming that one hides the way back
   // out, which is the only control still worth clicking while the row is up.
-  const lift = html.match(/(?:^|\n)\.cfg-dim \.btn\.btn-on\s*\{([^}]*)\}/);
+  const lift = html.match(/(?:^|\n)\.cfg-dim \.btn\.btn-on,?[^{]*\{([^}]*)\}/);
   assert.ok(lift, 'the active toggle is lifted out of the scrim');
   const lz = +(lift[1].match(/z-index:\s*(\d+)/) || [])[1];
   assert.ok(/position:\s*relative/.test(lift[1]), 'it is positioned, or z-index does nothing');
@@ -11702,8 +11702,10 @@ test('the cog becomes the close button while the chooser is open', () => {
 const CHOOSERS = [
   { fn: '_expToggleColsDlg',  btn: 'exp-cols-btn',   host: '.ddl-doc-modal', where: 'the export modal' },
   { fn: 'toggleColCfgDialog', btn: 'colCfgBtn',      host: '.panel',         where: 'the Parse Results panel' },
-  { fn: '_meFmToggleColsDlg', btn: 'me-fm-cols-btn', host: '.me-shell',      where: 'the Class Editor' },
   { fn: 'auditToggleCfgDialog', btn: 'auditCfgBtn',  host: '.panel',         where: 'the audit browser' },
+  // The Class Editor's is NOT in this list any more — see the test below. Its
+  // dialog is inside markup that gets rebuilt, so a class toggled on the host
+  // outlives the dialog it was tracking.
 ];
 for (const c of CHOOSERS) {
   test(`${c.where}: its cog lights, and what is behind the chooser dims`, () => {
@@ -11716,6 +11718,27 @@ for (const c of CHOOSERS) {
     assert.ok(html.includes(`id="${c.btn}"`), `${c.btn} exists in the markup`);
   });
 }
+
+test('[REGRESSION] the Class Editor scrim cannot outlive the chooser it belongs to', () => {
+  // The other three choosers are static markup, so a class toggled beside them
+  // stays in step with the dialog. This one lives INSIDE the Overrides section,
+  // which is rebuilt whenever the pane re-renders: the dialog came back closed
+  // while .cfg-dim stayed on the shell above it, leaving the editor dimmed with
+  // nothing open — and only re-opening the cog and closing it properly cleared
+  // it. Reported 2026-08-22.
+  const fn = psFnSource('_meFmToggleColsDlg');
+  assert.ok(/classList\.toggle\('open'\)/.test(fn), 'it opens the chooser');
+  assert.ok(/classList\.toggle\('btn-on', open\)/.test(fn), 'lights the cog');
+  assert.ok(!/classList\.toggle\('cfg-dim'/.test(fn),
+    'the scrim is a class again, so a rebuild will strand it on the shell');
+  // Derived from the dialog's own state, which a rebuild cannot leave behind.
+  assert.ok(/\.me-shell:has\(\.audit-cfg-dialog\.open\)/.test(html),
+    'nothing dims the editor behind the chooser at all now');
+  // The cog stays above the scrim here too — it is the way back out.
+  assert.ok(/\.me-shell:has\(\.audit-cfg-dialog\.open\) \.btn\.btn-on \{[^}]*z-index: 200/.test(html),
+    'the cog is dimmed along with everything else, so there is no way out');
+  assert.ok(html.includes('id="me-fm-cols-btn"'), 'me-fm-cols-btn exists in the markup');
+});
 
 test('the two overrides clear each other, in BOTH directions', () => {
   // Reported: arming an entity override cleared the DDL one, but arming a DDL

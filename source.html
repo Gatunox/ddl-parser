@@ -2582,6 +2582,15 @@ input.me-inp{width:100%;}
   font-style:italic;margin-left:10px;user-select:none;pointer-events:none;}
 .me-ps-cm::-webkit-scrollbar-corner{background:var(--bg-deep);}
 /* JSONC syntax tokens reuse the DDL editor's .hl-* palette directly. */
+/* The editor's status panel. CodeMirror gives it a border and its own colours
+   by default; here it is the app's bar surface, ruled off from the code above
+   it — the same relationship a .panel-bar has to what it sits under. */
+.cm-editor .cm-panels{background:var(--surface-subhead);color:var(--text);border:0;}
+.cm-editor .cm-panels-bottom{border-top: var(--bw) solid var(--border);}
+.me-ps-status{padding:2px 8px;}
+/* Nothing to say, nothing on screen — otherwise a clean spec carries an empty
+   strip under it for ever. */
+.me-ps-status:has(#me-ps-err:empty):has(#me-ps-lint:empty){display:none;}
 .me-ps-err{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:#f85149;min-height:14px;}
 .me-ps-lint{font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);color:var(--warning);}
 /* min-height keeps a one-line error from jittering the layout, but on a spec
@@ -16860,7 +16869,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.41.5.0';
+const APP_VERSION  = '1.42.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19275,8 +19284,6 @@ function _meHtmlParseSpec(item) {
     <div class="me-ps-help${_mePsHelpOpen() ? ' open' : ''}" id="me-ps-help">${_mePsHelpHtml()}</div>
   </div>
   <div class="me-ps-split-resizer" id="me-ps-split-resizer" title="Drag to resize the spec editor"></div>
-  <div id="me-ps-err" class="me-ps-err"></div>
-  <div id="me-ps-lint" class="me-ps-lint"></div>
   </div>
   </div>`;
   // Note: ${raw} no longer used here — the CodeMirror editor is mounted by
@@ -22485,7 +22492,7 @@ function _mePsMountCM(item) {
   _mePsUnmountCM();
   const host = document.getElementById('me-ps-ta-host');
   if (!host || !window.CM || !item) return null;
-  const { EditorView, EditorState, history, keymap, defaultKeymap, historyKeymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter } = window.CM;
+  const { EditorView, EditorState, history, keymap, defaultKeymap, historyKeymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter, showPanel } = window.CM;
   const { spec: specField, src: srcField } = _mePsFieldsForVariant(_mePsActiveVariant());
   const initial = (typeof item[srcField] === 'string' && item[srcField].trim())
     ? item[srcField]
@@ -22507,6 +22514,19 @@ function _mePsMountCM(item) {
         _jsoncHighlightExtension(),
         _mePsOvrDecoExtension(),
         _mePsBracketExtension(),
+        // The status panel: syntax errors and lint warnings, docked to the
+        // bottom of the editor's own frame. They were two divs under the
+        // editor, outside its border — page content that happened to be about
+        // the editor, floating below it with a gap of their own. Docked, they
+        // read as the editor answering, and they hold the same ids so
+        // everything that writes to them is unchanged. Reported 2026-08-22.
+        showPanel.of(() => {
+          const dom = document.createElement('div');
+          dom.className = 'me-ps-status';
+          dom.innerHTML = '<div id="me-ps-err" class="me-ps-err"></div>'
+                        + '<div id="me-ps-lint" class="me-ps-lint"></div>';
+          return { dom, bottom: true };
+        }),
         EditorView.updateListener.of(u => {
           if (u.docChanged) _mePsChange(u.state.doc.toString());
           // Follow the caret: moving into a block shows that block's reference.

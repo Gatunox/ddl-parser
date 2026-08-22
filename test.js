@@ -11695,6 +11695,34 @@ test('the armed row wins over selection and hover, on specificity', () => {
   assert.ok(base && hover, 'hover is the brighter value, matching the tree');
 });
 
+test('the spec editor\'s errors and warnings are docked inside it', () => {
+  // They were two divs under the editor, outside its border: page content that
+  // happened to be about the editor, floating below it with a gap of its own.
+  // CodeMirror's showPanel docks them to the editor's own frame. Reported
+  // 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const entry = fs.readFileSync('./codemirror-entry.js', 'utf8');
+  assert.ok(/showPanel/.test(entry) && /showPanel,/.test(entry),
+    'the bundle does not export showPanel, so the app cannot dock anything');
+  const mount = psFnSource('_mePsMountCM');
+  assert.ok(/showPanel\.of\(/.test(mount), 'the editor has no status panel');
+  assert.ok(/bottom: true/.test(mount), 'the panel is not docked to the bottom');
+  // Same ids as before, so everything that writes a message is untouched.
+  for (const id of ['me-ps-err', 'me-ps-lint'])
+    assert.ok(new RegExp(`id="${id}"`).test(mount), `${id} is not in the panel`);
+  // And they are no longer emitted as page content beside the editor.
+  const spec = psFnSource('_meHtmlParseSpec');
+  assert.ok(!/id="me-ps-err"|id="me-ps-lint"/.test(spec),
+    'the loose divs are still under the editor');
+  // A spec with nothing wrong with it must not carry an empty strip for ever.
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  assert.ok(/\.me-ps-status:has\(#me-ps-err:empty\):has\(#me-ps-lint:empty\)\{display:none/.test(css),
+    'the panel stays on screen with nothing to say');
+  // It reads as part of the editor, not as CodeMirror's own furniture.
+  assert.ok(/\.cm-editor \.cm-panels\{[^}]*var\(--surface-subhead\)/.test(css),
+    'the panel does not take the app surface');
+});
+
 test('the class colour is the row\'s left gutter, not a dot on its line', () => {
   // A 10px swatch sat on a line already carrying a name, a type code and up to
   // two warning chips, and a round dot reads as a status light rather than as

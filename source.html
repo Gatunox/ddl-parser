@@ -2339,18 +2339,23 @@ td.c-err  { color: var(--accent2); }
 .me-section-body.open{display:block;}
 .me-section-pad{padding:14px;}
 .me-section{overflow:hidden;}
-/* Gutter reserved, like #ddlTree / .tbl-wrap / .settings-body: without it the
-   whole panel shifts sideways the moment content grows enough to need a
-   scrollbar, and back again when it does not.
-   The gutter was ALSO being counted as the cards' right margin — which works
-   only while it is empty. As soon as there is enough to scroll, the scrollbar
-   fills it and the cards butt straight against the scrollbar with no gap at
-   all, on a column whose left edge has a full --gap of splitter. A reserved
-   gutter is stability, not spacing; the right padding is the spacing, and it
-   holds whether or not a scrollbar is sitting in the gutter.
+/* NO reserved gutter here, unlike #ddlTree / .tbl-wrap / .settings-body — and
+   the reason is the gap, which has to read the same whether or not a scrollbar
+   is on screen.
+   A reserved gutter cannot give you that. Reserved, it is EMPTY when nothing
+   scrolls and FILLED by the scrollbar when something does, so the blank space
+   beside the cards is a gutter's width wider in one state than the other: lean
+   on it for spacing and the cards touch the scrollbar; add padding as well and
+   the unscrolled state is twice as wide. Reported 2026-08-22, both ways round.
+   So: no gutter, and one --gap of padding. The scrollbar takes its width from
+   the content box when it appears, and the padding keeps the cards clear of it,
+   so the blank space is exactly --gap in both states.
+   What that costs is what the gutter was buying: the cards lose --gap of WIDTH
+   when the scrollbar arrives. Their left edge does not move — this is a reflow
+   at the right edge, not the column sliding sideways.
    Right only: the left already has the splitter, and a padding there would
-   stack on it. Reported 2026-08-22. */
-.me-tab-body{flex:1;overflow-y:auto;padding:var(--gap) var(--gap) var(--gap) 0;min-height:0;scrollbar-gutter:stable;background:var(--bg-deep);}
+   stack on it. */
+.me-tab-body{flex:1;overflow-y:auto;padding:var(--gap) var(--gap) var(--gap) 0;min-height:0;background:var(--bg-deep);}
 .me-no-sel{padding:20px;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);text-align:center;}
 .me-stub{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 .me-stub-h{font-size:calc(var(--sz-mono) + 2px);color:var(--text);margin-bottom:8px;}
@@ -16884,7 +16889,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.42.2.0';
+const APP_VERSION  = '1.42.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

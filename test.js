@@ -10838,13 +10838,13 @@ test('every scrolling surface in the panel reserves its scrollbar gutter', () =>
     const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return (css.match(new RegExp('(?:^|[};])\\s*' + esc + '\\{[^}]*\\}', 'm')) || [''])[0];
   };
-  const missing = ['.me-tab-body', '.me-fm-table-wrap', '.me-fm-pane pre']
+  const missing = ['.me-fm-table-wrap', '.me-fm-pane pre']
     .filter(sel => !/scrollbar-gutter:\s*stable/.test(rule(sel)));
   deepEq(missing, [], 'scrolling containers with no reserved gutter');
   // Two deliberate exceptions, for one reason: their rows have a background of
   // their own, so a permanently reserved strip reads as a gap on every row
   // rather than as the edge of the list.
-  for (const sel of ['.me-ovl-list', '.me-ent-list'])
+  for (const sel of ['.me-ovl-list', '.me-ent-list', '.me-tab-body'])
     assert.ok(!/scrollbar-gutter/.test(rule(sel)), `${sel} must NOT reserve a gutter`);
 });
 
@@ -11703,8 +11703,12 @@ test('[REGRESSION] the section cards clear the scrollbar, not just its gutter', 
   const src = fs.readFileSync('./source.html', 'utf8');
   const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
   const body = (css.match(/\n\.me-tab-body\{[^}]*\}/) || [''])[0];
-  assert.ok(/scrollbar-gutter:stable/.test(body),
-    'the gutter is gone, so the whole column shifts when a scrollbar appears');
+  // The gap has to read the SAME whether or not a scrollbar is on screen, and a
+  // reserved gutter cannot do that: it is empty in one state and filled in the
+  // other, so the blank space differs by a gutter's width. No gutter, one --gap
+  // of padding, and the scrollbar takes its width from the content box.
+  assert.ok(!/scrollbar-gutter/.test(body),
+    `a reserved gutter makes the gap wider when nothing is scrolling: ${body}`);
   assert.ok(/padding:var\(--gap\) var\(--gap\) var\(--gap\) 0/.test(body),
     `the cards have no right padding of their own: ${body}`);
   // And the card still owns no side margins — the spacing is the scroller's, so

@@ -11695,6 +11695,27 @@ test('the armed row wins over selection and hover, on specificity', () => {
   assert.ok(base && hover, 'hover is the brighter value, matching the tree');
 });
 
+test('the class colour is the row\'s left gutter, not a dot on its line', () => {
+  // A 10px swatch sat on a line already carrying a name, a type code and up to
+  // two warning chips, and a round dot reads as a status light rather than as
+  // the class's identity. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(!/me-item-swatch/.test(src), 'the swatch is still there');
+  const rule = (src.match(/\n\.me-item\{([^}]*)\}/) || [])[1] || '';
+  assert.ok(/border-left:3px solid var\(--item-color/.test(rule),
+    `the row has no colour gutter: ${rule}`);
+  // The colour reaches it as the row's own property, so nothing else has to.
+  assert.ok(/setProperty\('--item-color', s\.color/.test(src),
+    'the class colour never reaches the row');
+  // The text must not shift: 3px of border wants 3px less padding.
+  assert.ok(/padding:0 8px 0 5px/.test(rule), `the gutter pushed the text right: ${rule}`);
+  // An armed override owns the gutter — it already outranks selection, and two
+  // stripes on one row would be two answers to the same question.
+  const forced = (src.match(/\.me-item\.me-item-forced\{([^}]*)\}/) || [])[1] || '';
+  assert.ok(/border-left-color:#e6a817/.test(forced), `the armed row has no gutter: ${forced}`);
+  assert.ok(!/box-shadow/.test(forced), 'the armed row draws a second stripe');
+});
+
 test('both overrides look like the same feature', () => {
   // The first version marked an armed entity with a blue ⊙, which read as
   // "selected" and looked like a different feature from the tree's amber ▶.

@@ -15457,13 +15457,24 @@ test('a closed reference costs no height, and an open one is tall enough to read
   // Measured from the pane's CHILDREN. The pane itself is a grid item stretched
   // to the row, and with the reference beside it the row is as tall as the
   // reference — so asking the pane returns the number being replaced.
-  const contentH = APP_SRC.slice(APP_SRC.indexOf('const _meHelpContentH'));
-  const chBody = contentH.slice(0, contentH.indexOf('\n  }, 0);') + 10);
-  assert.ok(/main\.children/.test(chBody) && !/scrollHeight/.test(chBody),
+  const contentH = APP_SRC.slice(APP_SRC.indexOf('const _meHelpContentH'),
+                                 APP_SRC.indexOf('// The reference\'s own natural height'));
+  assert.ok(/main\.children/.test(contentH) && !/scrollHeight/.test(contentH),
     'the content height is read off the stretched pane rather than its children');
-  // Margins included: offsetHeight leaves them out, and the recognizer footer
-  // sits on an 8px one — so the floor came out 8px short and still clipped.
-  assert.ok(/marginTop/.test(chBody) && /marginBottom/.test(chBody),
+  // A SPAN from the first child's margin top to the last one's margin bottom,
+  // not a sum. Summing double-counts every pair of adjacent vertical margins,
+  // which COLLAPSE in a block container: the recognizer list's margin-bottom 8
+  // and the warnings row's margin-top 8 made a 160px pane measure 168, and since
+  // this figure is the drag floor, the first attempt to shorten the list snapped
+  // it 8px taller instead. Reported 2026-08-22.
+  assert.ok(/getBoundingClientRect\(\)\.top\s*-\s*parseFloat/.test(contentH)
+         && /getBoundingClientRect\(\)\.bottom\s*\+\s*parseFloat/.test(contentH),
+    'the content height sums margins again, so collapsed pairs are counted twice');
+  assert.ok(!/reduce\(/.test(contentH), 'it is summing children again');
+  // Margins still included — offsetHeight leaves them out, and the recognizer
+  // footer sits on an 8px one, so ignoring them puts the floor 8px short and the
+  // list clips. The span form keeps them and gets collapsing right as well.
+  assert.ok(/marginTop/.test(contentH) && /marginBottom/.test(contentH),
     'the content height ignores margins, so the drag floor is short by them');
   assert.ok(/_meHelpFitHeight\(key\);/.test(psFnSource('_meHelpSync')),
     'toggling the reference does not resize the split');

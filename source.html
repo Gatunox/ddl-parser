@@ -16961,7 +16961,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.8.0';
+const APP_VERSION  = '1.46.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21299,11 +21299,30 @@ const _ME_HELP_OPEN_MIN = 320;
 // Margins count: offsetHeight leaves them out, and the recognizer footer sits
 // on an 8px one — so the sum came back 8px short of the pane's real content and
 // the drag floor still clipped by exactly that. Erring tall is the safe side.
-const _meHelpContentH = main => !main ? 0 :
-  [...main.children].reduce((h, c) => {
-    const cs = getComputedStyle(c);
-    return h + c.offsetHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom);
-  }, 0);
+// How tall the pane's content actually IS — measured as the span from the top of
+// the first child's margin box to the bottom of the last one's.
+//
+// It used to SUM each child's height and margins, which double-counts every pair
+// of adjacent vertical margins: in a block container those COLLAPSE into one.
+// The recognizer list carries margin-bottom 8 and the warnings row under it
+// margin-top 8, so the sum came to 168 for a pane that lays out at 160 — and
+// since this figure is the drag floor, the first attempt to shorten the list
+// snapped it 8px TALLER instead. Reported 2026-08-22 as "it expands when I try
+// to collapse it".
+//
+// A span measures the laid-out result, so collapsing, and anything else the
+// layout does, is already in the number. Rects are viewport-based and not
+// clipped, so this still reports the FULL content height when the pane is
+// clamped — which is what the open-height calculation needs.
+const _meHelpContentH = main => {
+  if (!main) return 0;
+  const kids = [...main.children].filter(c => c.getClientRects().length);
+  if (!kids.length) return 0;
+  const first = kids[0], last = kids[kids.length - 1];
+  const top = first.getBoundingClientRect().top    - parseFloat(getComputedStyle(first).marginTop);
+  const bot = last.getBoundingClientRect().bottom  + parseFloat(getComputedStyle(last).marginBottom);
+  return Math.max(0, bot - top);
+};
 // The reference's own natural height: its chrome, plus the body's FULL content
 // rather than the height the body is currently clamped to. Summed the same way
 // the pane is, and with the body's padding added explicitly — scrollHeight

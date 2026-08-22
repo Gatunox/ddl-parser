@@ -11732,10 +11732,15 @@ test('[REGRESSION] the Class Editor scrim cannot outlive the chooser it belongs 
   assert.ok(!/classList\.toggle\('cfg-dim'/.test(fn),
     'the scrim is a class again, so a rebuild will strand it on the shell');
   // Derived from the dialog's own state, which a rebuild cannot leave behind.
-  assert.ok(/\.me-shell:has\(\.audit-cfg-dialog\.open\)/.test(html),
-    'nothing dims the editor behind the chooser at all now');
+  assert.ok(/\.me-section:has\(\.audit-cfg-dialog\.open\)/.test(html),
+    'nothing dims the card behind the chooser at all now');
+  // And it dims the CARD, not the editor. On the main page this scrim covers the
+  // Parse Results panel the chooser belongs to and nothing else; one card's
+  // control dimming the whole app reads as a modal it is not.
+  assert.ok(!/\.me-shell:has\(\.audit-cfg-dialog/.test(html),
+    'the chooser dims the whole editor rather than the card it belongs to');
   // The cog stays above the scrim here too — it is the way back out.
-  assert.ok(/\.me-shell:has\(\.audit-cfg-dialog\.open\) \.btn\.btn-on \{[^}]*z-index: 200/.test(html),
+  assert.ok(/\.me-section:has\(\.audit-cfg-dialog\.open\) \.btn\.btn-on \{[^}]*z-index: 200/.test(html),
     'the cog is dimmed along with everything else, so there is no way out');
   assert.ok(html.includes('id="me-fm-cols-btn"'), 'me-fm-cols-btn exists in the markup');
 });

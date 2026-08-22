@@ -12083,6 +12083,32 @@ test('[REGRESSION] a recognizer edit re-renders only the recognizer list', () =>
   assert.ok(/const _mePad = html =>/.test(src), '_mePad is not shared');
 });
 
+test('a field is the same box wherever it is in the app', () => {
+  // --bg-input was a ground of its OWN, and in dark it was the page colour — so
+  // a main-page field was a well cut through its panel while a Class Editor
+  // field sat flush on the editable ground. Two ideas of the same control, one
+  // per screen. Requested 2026-08-22: all of them use the Class Editor's.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const block = sel => (css.match(new RegExp('\\[data-theme="' + sel + '"\\] \\{[\\s\\S]*?\\n\\}')) || [''])[0];
+  for (const theme of ['dark', 'light'])
+    assert.ok(/--bg-input: var\(--surface-edit\)/.test(block(theme)),
+      `${theme}: a field has a ground of its own again`);
+  // The other half of the treatment. A field on the editable ground is FLUSH
+  // with an editable panel, so the border is the only thing drawing the box —
+  // and --border (7%) is a rule between areas, not an outline for a control.
+  // Without this the Settings accent field and the prompt modal are white on
+  // white. .me-inp has always used --border-strong; now everything does.
+  for (const sel of ['select', 'input\\[type="text"\\]']) {
+    const rule = (css.match(new RegExp('\\n' + sel + ' \\{[^}]*\\}')) || [''])[0];
+    assert.ok(rule, `the app-wide ${sel} rule is gone`);
+    assert.ok(/border:\s*var\(--bw-ctl\) solid var\(--border-strong\)/.test(rule),
+      `${sel} draws itself with the quiet rule colour, so a flush field vanishes`);
+  }
+  const meInp = (css.match(/\n\.me-inp\{[^}]*\}/) || [''])[0];
+  assert.ok(/var\(--border-strong\)/.test(meInp), '.me-inp is no longer the reference for this');
+});
+
 test('[REGRESSION] a binding edit re-renders only the bindings list', () => {
   // Same fault the recognizer list had: + Add Binding and the ✕ next to a row
   // called _meRenderRight, which rebuilds the WHOLE right pane — CodeMirror torn

@@ -125,7 +125,13 @@
 [data-theme="dark"] {
   --bg-deep: #0d1117;
   --bg-panel: #161b22;
-  --bg-input: #0d1117;
+  /* A field is a field wherever it is. This was a ground of its own — in dark it
+     was the PAGE colour, so a field on the main page was a well cut through its
+     panel while a Class Editor field sat flush on the editable ground. Two ideas
+     of the same control, one per screen. It resolves to the editable ground now,
+     so every field in the app is the box the Class Editor's fields already were.
+     Requested 2026-08-22. */
+  --bg-input: var(--surface-edit);
   /* Can you type here? The four big panels all sat on --bg-panel, so nothing
      said which of them take input. Both values stay in the blue-grey family the
      whole theme is built from — a neutral grey was tried and read as a different
@@ -238,7 +244,7 @@
 [data-theme="light"] {
   --bg-deep: #f6f8fa;
   --bg-panel: #ffffff;
-  --bg-input: #eef1f3;
+  --bg-input: var(--surface-edit);
   --surface-edit: var(--bg-panel);   /* white, like paper — you write on it */
   --surface-read: #F6F6F6;           /* tinted — a readout, not a page */
   --surface-form: #E8ECF0;           /* a pane of fields — the white boxes lift off it */
@@ -1156,10 +1162,17 @@ textarea[readonly] { color: var(--ta-ro-fg); cursor: default; background: transp
 /* Light theme: keep text dark and readable on the semi-transparent highlight */
 
 
+/* A field carries the editable ground, so on an editable panel it is FLUSH with
+   what it sits on and the border is the only thing saying where the box is.
+   --border is 7% white — right for a rule between two areas, far too quiet to
+   draw a control on its own ground; --border-strong is what the app uses when a
+   control has to assert itself, and what .me-inp has always used. Without it the
+   Settings accent field and the prompt modal were white boxes on white panels.
+   Requested 2026-08-22. */
 select {
   background: var(--bg-input);
   color: var(--text);
-  border: var(--bw-ctl) solid var(--border);
+  border: var(--bw-ctl) solid var(--border-strong);
   padding: 3px 6px;
   border-radius: var(--r-sm);
   font-size: var(--sz-mono);
@@ -1171,7 +1184,7 @@ select:focus { border-color: var(--accent); }
 input[type="text"] {
   background: var(--bg-input);
   color: var(--text);
-  border: var(--bw-ctl) solid var(--border);
+  border: var(--bw-ctl) solid var(--border-strong);
   padding: 3px 6px;
   border-radius: var(--r-sm);
   font-size: var(--sz-mono);
@@ -17009,7 +17022,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.19.0';
+const APP_VERSION  = '1.46.20.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

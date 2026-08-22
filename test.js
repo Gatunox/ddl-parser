@@ -11084,6 +11084,21 @@ test('every editor writes on the main panel\'s ground, and every field on the fi
       `${sel} is not on the editable ground`);
   assert.ok(/\.me-inp:disabled, \.me-inp\[readonly\], \.me-sel:disabled\{background:var\(--surface-read\)/.test(css),
     'a field you cannot type into is not on the readout ground');
+  // Flush with its panel by design, so the BORDER is the only thing saying where
+  // the field is — --border at 7% white cannot carry that on its own.
+  for (const sel of ['.me-inp', '.me-sel'])
+    assert.ok(/solid var\(--border-strong\)/.test(rule(new RegExp('\\' + sel + '\\{[^}]*\\}'))),
+      `${sel} is flush with its panel and drawn with a border too faint to see`);
+  // input[type="text"] is (0,1,1) and .me-inp is (0,1,0), so the generic rule
+  // WINS and repaints every text field --bg-input while number fields and
+  // selects keep the class's ground — one form, two colours, and the class looks
+  // applied while doing nothing. Matching the element ties the specificity.
+  assert.ok(/input\.me-inp\{width:100%;background:var\(--surface-edit\);border-color:var\(--border-strong\);\}/.test(css),
+    'text inputs lose to input[type="text"] and paint themselves the page colour');
+  assert.ok(/input\.me-inp:disabled, input\.me-inp\[readonly\]\{background:var\(--surface-read\)/.test(css),
+    'a disabled text input loses to the generic rule too');
+  assert.ok(/input\.me-inp:focus\{border-color:var\(--accent\)/.test(css),
+    'a focused text input loses its accent border to input[type="text"]:focus');
   // --surface-edit stays what it was for: the panel and section GROUNDS, which
   // is what says a surface takes input. It is not the editor's own ground.
   assert.ok(/\.pb-edit \{ background: var\(--surface-edit\); \}/.test(css),
@@ -11732,7 +11747,7 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
     'dark: the editable ground is not the one the editors write on');
   // Dark reads like light — readouts BELOW the editable ground — and stays in
   // the blue-grey family: a neutral grey read as a different palette.
-  assert.ok(/--surface-read: #13181E/.test(block('dark')),
+  assert.ok(/--surface-read: #11161C/.test(block('dark')),
     'dark: the readouts are not the blue dark below the editable ground');
   // And the page ground is untouched. Moving it to make room was a fix nobody
   // asked for, and it changed the ground under the whole app.

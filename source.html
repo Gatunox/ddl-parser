@@ -128,7 +128,7 @@
      was tried here and read as a different palette rather than a darker one.
      Reported 2026-08-22. */
   --surface-edit: #161B22;
-  --surface-read: #13181E;
+  --surface-read: #11161C;
   --surface-header: #1c2128;
   /* Sidebar SECTION bars (Messages / Data / Files) — one level below a pane
      header, so they read as nested rather than as another panel. A token, not a
@@ -2388,16 +2388,28 @@ td.c-err  { color: var(--accent2); }
 .me-fld{display:flex;flex-direction:column;gap:3px;min-width:0;}
 .me-fld.grow{flex:1;}
 .me-lbl{font-family:var(--mono);font-size:calc(var(--sz-mono) - 3px);color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;}
-.me-inp{box-sizing:border-box;background:var(--surface-edit);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 5px;outline:none;width:100%;}
-input.me-inp{width:100%;}
+.me-inp{box-sizing:border-box;background:var(--surface-edit);border: var(--bw-ctl) solid var(--border-strong);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 5px;outline:none;width:100%;}
+/* input[type="text"] is (0,1,1) and .me-inp is (0,1,0), so the generic rule wins
+   and repaints every TEXT field --bg-input while number fields and selects keep
+   the class's ground — one form, two colours. Matching the element here ties the
+   specificity and this rule comes later, so the class wins. The same trap is
+   noted on .res-filter-input a thousand lines up. Reported 2026-08-22. */
+input.me-inp{width:100%;background:var(--surface-edit);border-color:var(--border-strong);}
+input.me-inp:disabled, input.me-inp[readonly]{background:var(--surface-read);}
+input.me-inp:focus{border-color:var(--accent);}
 .me-inp:focus{border-color:var(--accent);}
+/* A field is flush with the panel it sits on — same ground, by design — so its
+   BORDER is the only thing saying where it is. --border is 7% white, which is
+   right for a rule between two areas and far too quiet to draw a control on its
+   own ground. --border-strong is what the app already uses when a control has
+   to assert itself. Reported 2026-08-22. */
 /* The same two grounds the panels use, on the controls inside them: a field you
    can type into is on the editable ground, one you cannot is on the readout
    ground. The border is what separates a field from the surface it sits on —
    they are the same colour on purpose, so a section reads as one surface with
    boxes drawn on it rather than as a panel full of wells. */
 .me-inp:disabled, .me-inp[readonly], .me-sel:disabled{background:var(--surface-read);color:var(--text-dim);cursor:default;}
-.me-sel{box-sizing:border-box;background:var(--surface-edit);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 4px;outline:none;cursor:pointer;}
+.me-sel{box-sizing:border-box;background:var(--surface-edit);border: var(--bw-ctl) solid var(--border-strong);border-radius:var(--r-sm);color:var(--text);font-family:var(--mono);font-size:var(--sz-mono);padding:2px 4px;outline:none;cursor:pointer;}
 .me-sel:focus{border-color:var(--accent);}
 .me-color-row{display:flex;gap:6px;align-items:center;}
 .me-swatch{width:22px;height:22px;border-radius:var(--r-sm);border: var(--bw-ctl) solid var(--border);cursor:pointer;flex-shrink:0;padding:0;-webkit-appearance:none;appearance:none;}
@@ -16923,7 +16935,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.0.0';
+const APP_VERSION  = '1.46.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -14364,6 +14364,13 @@ test('the DDL search opens on a row of its own, not inside the toolbar', () => {
     'the padding-measuring helper survives, so something still overlaps the field');
   // Closing CLEARS: a hidden row holding a live query leaves the editor lit up
   // with highlights and nothing on screen explaining them.
+  // The glyph is sized past the bar's own button rule, and that rule is
+  // #ddlCfgBar .btn — (1,1,0). A bare #ddlSearchBtn is (1,0,0) and loses, which
+  // is exactly what happened first: the ⌕ stayed 11px and still read as a speck.
+  const icoRule = (css.match(/#ddlCfgBar #ddlSearchBtn \{[^}]*\}/) || [''])[0];
+  assert.ok(icoRule, 'the magnifier is back on the bar\'s default button size');
+  assert.ok(/font-size:\s*calc\(var\(--sz-mono\) \+ \d+px\)/.test(icoRule),
+    'the magnifier no longer sizes itself up from the mono scale');
   const toggle = psFnSource('ddlSearchToggle');
   assert.ok(toggle, 'there is no toggle');
   assert.ok(/ddlSearchClear\(\)/.test(toggle), 'closing the row leaves the query and its highlights behind');

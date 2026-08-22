@@ -1442,6 +1442,13 @@ tr.row-filter-hide  { display: none; }
    appeared. Accent border + accent glyph, the way the app marks any armed
    control. */
 #ddlCfgBar .btn.on { border-color:var(--accent); color:var(--accent); }
+/* ⌕ is drawn small inside its em box — at the bar's own button size it reads as
+   a speck beside the word buttons. Sized so the GLYPH matches their cap height
+   rather than their font size: measured 6.6 x 13 against Save's letters at 13.
+   #ddlCfgBar #ddlSearchBtn, not #ddlSearchBtn: the bar's own rule above is
+   (1,1,0) and a bare id is (1,0,0), so the first attempt was overruled and the
+   glyph stayed 11px. The same trap is noted on input.me-inp. */
+#ddlCfgBar #ddlSearchBtn { font-size: calc(var(--sz-mono) + 9px); line-height: 1; padding-bottom: 3px; }
 #ddlCfgBar .btn:disabled { opacity:0.35; cursor:default; }
 /* justify-content packs the WRAPPED lines right, so buttons pushed onto a second
    row sit under the first rather than starting back under the filter. The row
@@ -17035,7 +17042,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.21.0';
+const APP_VERSION  = '1.46.22.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

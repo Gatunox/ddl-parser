@@ -11054,34 +11054,38 @@ test('the accent can be typed, and a half-typed one changes nothing', () => {
     'the field is overwritten while the user is typing in it');
 });
 
-test('every editor takes the typing surface, and every field the field ground', () => {
-  // Two kinds of editable thing, and they were not told apart:
-  //   an EDITOR you type in   --surface-edit   it IS the surface
-  //   a FIELD you type in     --bg-input       it is a box ON a surface
-  // The main editors painted --bg-panel — the chrome AROUND a panel — so marking
-  // their panel editable changed only the frame and the code area stayed as it
-  // was, which is why dark read as barely changed. The Class Editor's editors
-  // painted --bg-input, so the same editor was two colours depending on which
-  // screen it was on. Reported 2026-08-22.
+test('every editor writes on the main panel\'s ground, and every field on the field ground', () => {
+  // Two kinds of editable thing, told apart:
+  //   an EDITOR you type in   --bg-panel    it IS the surface
+  //   a FIELD  you type in    --bg-input    it is a box ON a surface
+  // The two main-page editors are the reference: the parse table beside them
+  // shows the panel surface straight through and their gutter is on it too.
+  // The Class Editor's editors were --bg-input, and its Parse Spec forced
+  // --bg-deep with !important, so the same editor was three colours depending on
+  // the screen. Repainting the MAIN ones to settle that was the wrong way round
+  // (1.44.2.0, reverted): it moved the surface people work on to fix someone
+  // else's inconsistency. Reported 2026-08-22.
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   const rule = re => (css.match(re) || [''])[0];
-  // Every editor, main page and Class Editor alike.
-  assert.ok(/#ddlEditor \.cm-editor, #msgInput \.cm-editor, #msgInput\.cm-host,\n\.me-ps-cm \.cm-editor, \.me-test-cm \.cm-editor \{ background: var\(--surface-edit\); \}/.test(css),
-    'the editors do not share one typing surface');
-  assert.ok(/\.cm-host \.cm-editor \{[^}]*background: var\(--surface-edit\)/.test(css),
+  assert.ok(/#ddlEditor \.cm-editor, #msgInput \.cm-editor, #msgInput\.cm-host,\n\.me-ps-cm \.cm-editor, \.me-test-cm \.cm-editor \{ background: var\(--bg-panel\); \}/.test(css),
+    'the editors do not share the main panel\'s ground');
+  assert.ok(/\.cm-host \.cm-editor \{[^}]*background: var\(--bg-panel\)/.test(css),
     'an editor with no rule of its own falls back to something else');
-  // The gutter is part of the editor, so it takes the same ground — matched to
-  // --bg-panel it used to sit a shade off the text beside it.
-  assert.ok(/\.cm-host \.cm-gutters \{ background: var\(--surface-edit\)/.test(css),
+  // The gutter is part of the editor and was matched to it deliberately.
+  assert.ok(/\.cm-host \.cm-gutters \{ background: var\(--bg-panel\)/.test(css),
     'the gutter no longer shares the surface the editor was matched to');
-  // Fields are the other half, and the Class Editor's used --bg-deep — in light
-  // that is #f6f8fa against #eef1f3, two greys for one kind of control.
+  // The Parse Spec forced its own ground with !important, which beat everything.
+  assert.ok(/\.me-ps-cm \.cm-editor\{background:var\(--bg-panel\)!important/.test(css),
+    'the Parse Spec editor still forces a ground of its own');
+  // Fields are the other half: .me-inp / .me-sel used --bg-deep where every
+  // other field uses --bg-input — in light, #f6f8fa against #eef1f3.
   for (const sel of ['.me-inp', '.me-sel'])
     assert.ok(/background:var\(--bg-input\)/.test(rule(new RegExp('\\' + sel + '\\{[^}]*\\}'))),
       `${sel} does not use the app's field ground`);
-  // Tokens, so both themes follow without a second rule.
-  assert.ok(/--surface-edit: #212121;/.test(css) && /--surface-edit: var\(--bg-panel\);/.test(css),
-    'the typing surface is not a token both themes define');
+  // --surface-edit stays what it was for: the panel and section GROUNDS, which
+  // is what says a surface takes input. It is not the editor's own ground.
+  assert.ok(/\.pb-edit \{ background: var\(--surface-edit\); \}/.test(css),
+    'the editable panels lost their marking');
 });
 
 test('an unknown-token row lines up with every other row', () => {

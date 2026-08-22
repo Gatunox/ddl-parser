@@ -831,7 +831,13 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .ddl-srch-line.hit { background: var(--tint-hit); }
 /* DDL search — current match accent highlight overlay */
 .ddl-srch-cur-layer { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; pointer-events: none; z-index: 0; font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.3; white-space: pre; overflow: visible; color: transparent; }
-.ddl-srch-cur { background: var(--accent); opacity: 0.45; border-radius: var(--r-sm); }
+/* A tint BEHIND the text, never opacity ON it. opacity fades the whole element,
+   and in the CodeMirror path this mark WRAPS the matched text — so the glyphs
+   themselves dropped to 45% and then had to be read through the accent block
+   sitting on them. The overlay path got away with it because its span holds
+   spaces, not text. A translucent background leaves every glyph at full
+   strength in both. Reported 2026-08-22. */
+.ddl-srch-cur { background: rgba(var(--accent-rgb), 0.28); border-radius: var(--r-sm); }
 /* DDL search — CodeMirror equivalents */
 #ddlEditor .cm-line.ddl-srch-line-hit { background: var(--tint-hit); }
 .ddl-hl-overlay  { position: absolute; top: 0; left: 0; bottom: 0; padding: 8px; margin: 0;
@@ -1442,13 +1448,13 @@ tr.row-filter-hide  { display: none; }
    appeared. Accent border + accent glyph, the way the app marks any armed
    control. */
 #ddlCfgBar .btn.on { border-color:var(--accent); color:var(--accent); }
-/* ⌕ is drawn small inside its em box — at the bar's own button size it reads as
-   a speck beside the word buttons. Sized so the GLYPH matches their cap height
-   rather than their font size: measured 6.6 x 13 against Save's letters at 13.
-   #ddlCfgBar #ddlSearchBtn, not #ddlSearchBtn: the bar's own rule above is
-   (1,1,0) and a bare id is (1,0,0), so the first attempt was overruled and the
-   glyph stayed 11px. The same trap is noted on input.me-inp. */
-#ddlCfgBar #ddlSearchBtn { font-size: calc(var(--sz-mono) + 9px); line-height: 1; padding-bottom: 3px; }
+/* Drawn, not typed. It was ⌕ (U+2315), which every font draws small inside its
+   em box — it read as a speck beside Save, and making it bigger meant scaling a
+   character rather than choosing a size. Worse, a machine whose font lacks the
+   codepoint gets a tofu box in a toolbar. This is the same shape the message
+   lock beside it is built from: 14x14 box, currentColor, 1.5 stroke, so it
+   takes the button's colour and the accent when lit, for free. */
+#ddlSearchBtn svg { display: block; width: 14px; height: 14px; }
 #ddlCfgBar .btn:disabled { opacity:0.35; cursor:default; }
 /* justify-content packs the WRAPPED lines right, so buttons pushed onto a second
    row sit under the first rather than starting back under the filter. The row
@@ -3492,7 +3498,13 @@ th.me-fm-colhi{color:var(--accent);}
                  have room. Requested 2026-08-22. -->
             <span style="flex:1"></span>
             <button class="btn btn-ico" id="ddlSearchBtn" onclick="ddlSearchToggle()"
-                    title="Search the DDL definition">⌕</button>
+                    title="Search the DDL definition">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" aria-hidden="true">
+                <circle cx="6.2" cy="6.2" r="4.2"/>
+                <path d="M9.4 9.4L12.4 12.4"/>
+              </svg>
+            </button>
             <button class="btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
             <button class="btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
             <button class="btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
@@ -17042,7 +17054,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.22.0';
+const APP_VERSION  = '1.46.24.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

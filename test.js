@@ -14364,13 +14364,30 @@ test('the DDL search opens on a row of its own, not inside the toolbar', () => {
     'the padding-measuring helper survives, so something still overlaps the field');
   // Closing CLEARS: a hidden row holding a live query leaves the editor lit up
   // with highlights and nothing on screen explaining them.
-  // The glyph is sized past the bar's own button rule, and that rule is
-  // #ddlCfgBar .btn — (1,1,0). A bare #ddlSearchBtn is (1,0,0) and loses, which
-  // is exactly what happened first: the ⌕ stayed 11px and still read as a speck.
-  const icoRule = (css.match(/#ddlCfgBar #ddlSearchBtn \{[^}]*\}/) || [''])[0];
-  assert.ok(icoRule, 'the magnifier is back on the bar\'s default button size');
-  assert.ok(/font-size:\s*calc\(var\(--sz-mono\) \+ \d+px\)/.test(icoRule),
-    'the magnifier no longer sizes itself up from the mono scale');
+  // DRAWN, not typed. It was ⌕ (U+2315), which fonts draw small inside the em
+  // box — a speck beside Save, fixable only by scaling a character, and a tofu
+  // box on any machine whose font lacks the codepoint. It is the same shape the
+  // message lock beside it is built from, so it inherits the button's colour and
+  // the accent when lit instead of needing rules of its own.
+  const icoBtn = (html.match(/<button[^>]*id="ddlSearchBtn"[\s\S]*?<\/button>/) || [''])[0];
+  assert.ok(icoBtn, 'the magnifier button is gone');
+  assert.ok(/<svg[^>]*viewBox="0 0 14 14"/.test(icoBtn), 'the magnifier is not a drawn icon');
+  assert.ok(/stroke="currentColor"/.test(icoBtn), 'the icon cannot take the accent when the row is open');
+  assert.ok(!/[\u2315\u{1F50D}]/u.test(icoBtn), 'a magnifier character survives in the button');
+  assert.ok(/#ddlSearchBtn svg \{[^}]*width: 14px/.test(css), 'the icon has no size of its own');
+  // And the font-size workaround the character needed is gone with it.
+  assert.ok(!/#ddlCfgBar #ddlSearchBtn/.test(css),
+    'the em-box scaling rule survives, so something is still being sized as text');
+  // The current match is a tint BEHIND the text. It used to be the accent at
+  // opacity 0.45, and opacity fades the whole ELEMENT — in the CodeMirror path
+  // that mark WRAPS the matched text, so the glyphs dropped to 45% and then had
+  // to be read through the block sitting on them. Measured on the served page:
+  // 2.2:1 before, 7.08:1 after in dark; 2.25 → 9.72 in light. Reported 2026-08-22.
+  const cur = (css.match(/\.ddl-srch-cur \{[^}]*\}/) || [''])[0];
+  assert.ok(cur, 'the current-match highlight is gone');
+  assert.ok(!/opacity/.test(cur), 'the highlight fades the text it is marking');
+  assert.ok(/background:\s*rgba\(var\(--accent-rgb\)/.test(cur),
+    'the highlight is not a translucent ground, so it covers the glyphs');
   const toggle = psFnSource('ddlSearchToggle');
   assert.ok(toggle, 'there is no toggle');
   assert.ok(/ddlSearchClear\(\)/.test(toggle), 'closing the row leaves the query and its highlights behind');

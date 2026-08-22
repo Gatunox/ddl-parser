@@ -11948,7 +11948,7 @@ test('the Overrides header sits the same way against its rows in both themes', (
     'more than one surface now rides on the table-header ground');
 });
 
-test('a pane of fields sits BELOW the fields on it, in both themes', () => {
+test('a pane of fields stands off the fields on it, whichever way the theme runs', () => {
   // Identity and DDL Bindings are rows of FIELDS, and their fields take
   // --surface-edit — so on that same ground a form showed nothing but borders.
   // The pane drops a step instead. It could not simply reuse --surface-edit's
@@ -11966,16 +11966,17 @@ test('a pane of fields sits BELOW the fields on it, in both themes', () => {
       assert.ok(v, `${theme} does not define --${n}`);
       const ref = v.trim().match(/^var\(--([\w-]+)\)$/);
       return ref ? val(ref[1]) : v.trim(); };
-    // "Below" means below in BOTH themes: light's white fields on a tinted pane,
-    // dark's raised fields on the readout ground. One relationship, two palettes.
-    assert.ok(lum(val('surface-form')) < lum(val('surface-edit')),
-      `${theme}: the form pane is not below the fields standing on it`);
+    const edit = lum(val('surface-edit')), form = lum(val('surface-form'));
+    assert.ok(form !== edit, `${theme}: the form pane IS its own fields`);
+    // WHICH WAY it separates follows the theme, so this cannot be a fixed
+    // direction: light drops the pane below its white fields, dark raises it and
+    // the fields sink into it. Both read as "boxes on a pane" — so the pane
+    // stands off its fields the same way a READOUT does in that theme.
+    assert.ok(Math.sign(form - edit) === Math.sign(lum(val('surface-read')) - edit),
+      `${theme}: the form pane separates from its fields the wrong way for this theme`);
   }
   assert.ok(/--surface-form: #E8ECF0/.test(block('light')), 'light: the form pane is not the requested tint');
-  // Dark's form pane was #11161C until the 1.46.14.0 swap handed that colour to
-  // --surface-edit — the pane would have become its own fields — so it drops
-  // again, to the page ground.
-  assert.ok(/--surface-form: #0D1117/.test(block('dark')), 'dark: the form pane is not the page ground');
+  assert.ok(/--surface-form: #161B22/.test(block('dark')), 'dark: the form pane is not the requested ground');
   assert.ok(/\.pb-form \{ background: var\(--surface-form\); \}/.test(css), '.pb-form does not take its token');
   // The classification decides it, so a new section still has to answer the
   // question — and an editor that FILLS its pane is not a form.

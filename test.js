@@ -11700,6 +11700,32 @@ test('the armed row wins over selection and hover, on specificity', () => {
   assert.ok(base && hover, 'hover is the brighter value, matching the tree');
 });
 
+test('[REGRESSION] a recognizer edit re-renders only the recognizer list', () => {
+  // Every recognizer action called _meRenderRight, which rebuilds the WHOLE
+  // right pane: CodeMirror torn down and remounted, the Overrides field table
+  // rebuilt, every open section refilled a frame at a time behind a loading
+  // skeleton. None of that has anything to do with a recognizer, and pressing
+  // "+ Add Recognizer" a few times makes the page flicker. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  for (const fn of ['_meToggleRec', '_meNewRec', '_meRecTypeChange', '_meRecSave',
+                    '_meRecCancel', '_meDelRec', '_meRecDrop']) {
+    const body = psFnSource(fn);
+    assert.ok(body, `${fn} is gone`);
+    assert.ok(!/_meRenderRight\(\)/.test(body),
+      `${fn} still rebuilds the whole pane — the page flickers on every press`);
+    assert.ok(/_meRenderRecs\(\)/.test(body), `${fn} does not re-render the list it changed`);
+  }
+  // The targeted render falls back to the full one when the section is not on
+  // screen, which is what used to happen every time — so it cannot be worse.
+  const one = psFnSource('_meRenderSection');
+  assert.ok(/_meRenderRight\(\); return;/.test(one),
+    'a collapsed or unbuilt section has no fallback');
+  // And it reuses the same padding wrapper the full render uses, or the section
+  // would come back with its content flush to the card's edges.
+  assert.ok(/_mePad\(/.test(psFnSource('_meRenderRecs')), 'the refill loses the section padding');
+  assert.ok(/const _mePad = html =>/.test(src), '_mePad is not shared');
+});
+
 test('[REGRESSION] the section cards clear the scrollbar, not just its gutter', () => {
   // The reserved gutter was being counted as the cards' right margin. That is a
   // gap only while the gutter is EMPTY — as soon as the column scrolls, the

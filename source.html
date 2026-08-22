@@ -16889,7 +16889,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.42.4.0';
+const APP_VERSION  = '1.42.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19146,6 +19146,37 @@ const _meBindActionsHtml = () =>
 // toggles they sit beside. The header carries nothing for this section.
 const _mePsActionsHtml = () => '';
 
+// What a section fills is padded CONTENT unless it says otherwise — a bar opts
+// out by being emitted beside the pad rather than inside it.
+const _mePad = html => `<div class="me-section-pad">${html}</div>`;
+
+// Re-render ONE section, in place.
+//
+// Every recognizer action — add, delete, save, cancel, change type, expand,
+// reorder — called _meRenderRight, which rebuilds the WHOLE right pane: the
+// CodeMirror editor torn down and remounted, the Overrides field table rebuilt
+// from scratch, and every open section refilled one animation frame at a time
+// behind a loading skeleton. None of that has anything to do with a recognizer.
+// Pressing "+ Add Recognizer" a few times in a row makes the whole page flicker,
+// which is how it was reported (2026-08-22).
+//
+// Falls back to the full render when the section is not on screen — collapsed,
+// or the pane not built yet — which is also exactly what used to happen every
+// time, so the fallback cannot be worse than the old behaviour.
+function _meRenderSection(key, fill) {
+  const el = document.getElementById('me-sect-body-' + key);
+  if (!el || !_meCurItem()) { _meRenderRight(); return; }
+  fill(el, _meCurItem());
+}
+
+// The recognizer list, and nothing else.
+function _meRenderRecs() {
+  _meRenderSection('recognizers', (el, item) => {
+    el.innerHTML = _mePad(_meHtmlRecs(item));
+    _meHelpInitSplit('rec');   // the reference beside the list
+  });
+}
+
 function _meRenderRight() {
   const seq = ++_meRenderSeq;
   // Capture the Field Map scroll position before the rebuild so DE/VLG/type
@@ -19187,9 +19218,7 @@ function _meRenderRight() {
   <div class="me-section-body${open ? ' open' : ''}" id="me-sect-body-${key}">${open ? loading : ''}</div>
 </div>`;
   };
-  // What a section fills is padded CONTENT unless it says otherwise — a bar opts
-  // out by being emitted beside the pad rather than inside it.
-  const pad = html => `<div class="me-section-pad">${html}</div>`;
+  const pad = _mePad;
   const syncFill = build => (el, done) => { el.innerHTML = pad(build()); done(); };
   let html = sect('identity',    'Identity',    syncFill(() => _meHtmlId(item)))
            + sect('recognizers', 'Recognizers', (el, done) => {
@@ -28020,18 +28049,18 @@ function _meToggleRec(idx) {
     const rec = ((_meCurItem() || {}).recognizers || [])[idx];
     if (rec) _meHelpFollowTo('rec', _REC_ALIAS[rec.type] || rec.type);
   }
-  _meRenderRight();
+  _meRenderRecs();
 }
 
 function _meNewRec() {
   _meState.editRec = -2;
-  _meRenderRight();
+  _meRenderRecs();
 }
 
 function _meRecTypeChange(idx, newType) {
   if (!_meState.pend) _meState.pend = {};
   _meState.pend[idx] = { type: newType };
-  _meRenderRight();
+  _meRenderRecs();
   // Move the open help to the type now being edited. Without this the panel
   // keeps showing whatever was last clicked, so a `greater-than` rule could be
   // written while reading `less-than`'s description — which says the opposite
@@ -28059,14 +28088,14 @@ function _meRecSave(idx) {
   _meState.editRec = -1;
   if (_meState.pend) delete _meState.pend[idx];
   _meSetDirty();
-  _meRenderRight();
+  _meRenderRecs();
   });
 }
 
 function _meRecCancel(idx) {
   _meState.editRec = -1;
   if (_meState.pend) delete _meState.pend[idx];
-  _meRenderRight();
+  _meRenderRecs();
 }
 
 function _meDelRec(idx) {
@@ -28081,7 +28110,7 @@ function _meDelRec(idx) {
     _meState.editRec = -1;
     _meState.pend    = {};
     _meSetDirty();
-    _meRenderRight();
+    _meRenderRecs();
     }, 'warn');
   });
 }
@@ -28135,7 +28164,7 @@ function _meRecDrop(e, targetIdx) {
   _meState.editRec = -1;
   _meState.pend    = {};
   _meSetDirty();
-  _meRenderRight();
+  _meRenderRecs();
   });
 }
 function _meRecDragEnd(_e) {

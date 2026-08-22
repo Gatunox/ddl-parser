@@ -2339,23 +2339,23 @@ td.c-err  { color: var(--accent2); }
 .me-section-body.open{display:block;}
 .me-section-pad{padding:14px;}
 .me-section{overflow:hidden;}
-/* NO reserved gutter here, unlike #ddlTree / .tbl-wrap / .settings-body — and
-   the reason is the gap, which has to read the same whether or not a scrollbar
-   is on screen.
-   A reserved gutter cannot give you that. Reserved, it is EMPTY when nothing
-   scrolls and FILLED by the scrollbar when something does, so the blank space
-   beside the cards is a gutter's width wider in one state than the other: lean
-   on it for spacing and the cards touch the scrollbar; add padding as well and
-   the unscrolled state is twice as wide. Reported 2026-08-22, both ways round.
-   So: no gutter, and one --gap of padding. The scrollbar takes its width from
-   the content box when it appears, and the padding keeps the cards clear of it,
-   so the blank space is exactly --gap in both states.
-   What that costs is what the gutter was buying: the cards lose --gap of WIDTH
-   when the scrollbar arrives. Their left edge does not move — this is a reflow
-   at the right edge, not the column sliding sideways.
-   Right only: the left already has the splitter, and a padding there would
-   stack on it. */
-.me-tab-body{flex:1;overflow-y:auto;padding:var(--gap) var(--gap) var(--gap) 0;min-height:0;background:var(--bg-deep);}
+/* Three things were wanted here and only one arrangement gives all three: the
+   cards must clear the scrollbar, the gap must not change with it, and NOTHING
+   may move when a section is collapsed. Reported 2026-08-22 in that order, each
+   report ruling out the previous fix.
+     - Gutter reserved, cards padded  → 20px of blank when idle, 10 when not.
+     - No gutter, cards padded        → gap constant, but the cards change WIDTH
+                                        the moment a collapse stops the column
+                                        scrolling. That is the flicker.
+   The answer is to stop asking the padding to do it. The gutter is reserved, so
+   the content box never changes width and a collapse cannot move anything; and
+   this column's scrollbar is made wider than the app's 10px with its thumb
+   pushed to the OUTER edge, so the reserved strip reads as the cards' margin
+   whether or not a thumb is drawn in it. Idle and scrolling differ by a thumb
+   appearing, not by anything moving. */
+.me-tab-body{flex:1;overflow-y:auto;padding:var(--gap) 0;min-height:0;scrollbar-gutter:stable;background:var(--bg-deep);}
+.me-tab-body::-webkit-scrollbar{width:calc(var(--gap) + 4px);}
+.me-tab-body::-webkit-scrollbar-thumb{border-left-width:var(--gap);border-right-width:2px;}
 .me-no-sel{padding:20px;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);text-align:center;}
 .me-stub{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 .me-stub-h{font-size:calc(var(--sz-mono) + 2px);color:var(--text);margin-bottom:8px;}
@@ -16889,7 +16889,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.42.3.0';
+const APP_VERSION  = '1.42.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

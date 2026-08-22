@@ -10844,8 +10844,13 @@ test('every scrolling surface in the panel reserves its scrollbar gutter', () =>
   // Two deliberate exceptions, for one reason: their rows have a background of
   // their own, so a permanently reserved strip reads as a gap on every row
   // rather than as the edge of the list.
-  for (const sel of ['.me-ovl-list', '.me-ent-list', '.me-tab-body'])
+  for (const sel of ['.me-ovl-list', '.me-ent-list'])
     assert.ok(!/scrollbar-gutter/.test(rule(sel)), `${sel} must NOT reserve a gutter`);
+  // The section column DOES reserve one — a collapse must not move the cards —
+  // and gets its margin from a wider scrollbar whose thumb is pushed outward,
+  // rather than from padding stacked on top of the gutter.
+  assert.ok(/scrollbar-gutter:stable/.test(rule('.me-tab-body')),
+    'collapsing a section changes the column width, and the cards flick sideways');
 });
 
 test('no CSS rule is left with a dangling selector list', () => {
@@ -11703,14 +11708,20 @@ test('[REGRESSION] the section cards clear the scrollbar, not just its gutter', 
   const src = fs.readFileSync('./source.html', 'utf8');
   const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
   const body = (css.match(/\n\.me-tab-body\{[^}]*\}/) || [''])[0];
-  // The gap has to read the SAME whether or not a scrollbar is on screen, and a
-  // reserved gutter cannot do that: it is empty in one state and filled in the
-  // other, so the blank space differs by a gutter's width. No gutter, one --gap
-  // of padding, and the scrollbar takes its width from the content box.
-  assert.ok(!/scrollbar-gutter/.test(body),
-    `a reserved gutter makes the gap wider when nothing is scrolling: ${body}`);
-  assert.ok(/padding:var\(--gap\) var\(--gap\) var\(--gap\) 0/.test(body),
-    `the cards have no right padding of their own: ${body}`);
+  // Three requirements, and only one arrangement satisfies all of them: clear
+  // the scrollbar, keep the gap constant, and never move when a section is
+  // collapsed. The gutter is reserved so the content box cannot change width...
+  assert.ok(/scrollbar-gutter:stable/.test(body),
+    `a collapse changes the column width and the cards flick sideways: ${body}`);
+  // ...and the margin comes from a WIDER scrollbar with its thumb pushed to the
+  // outer edge, not from padding — padding on top of a reserved gutter is what
+  // made the idle state twice as wide.
+  assert.ok(!/padding:var\(--gap\) var\(--gap\)/.test(body),
+    `padding stacked on the gutter makes the idle gap double: ${body}`);
+  assert.ok(/\.me-tab-body::-webkit-scrollbar\{width:calc\(var\(--gap\) \+ 4px\);\}/.test(css),
+    'the column keeps the app-wide scrollbar width, so its thumb sits against the cards');
+  assert.ok(/\.me-tab-body::-webkit-scrollbar-thumb\{border-left-width:var\(--gap\)/.test(css),
+    'the thumb is not pushed away from the cards');
   // And the card still owns no side margins — the spacing is the scroller's, so
   // it applies once rather than once per section.
   const sec = (css.match(/\n\.me-section\{[^}]*\}/) || [''])[0];

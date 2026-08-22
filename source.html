@@ -2399,8 +2399,15 @@ input.me-inp{width:100%;}
    copy of the entity list, then a column on the far side of the page. Both put
    the run and the list it annotates at opposite edges of the screen; a run
    paints the rows immediately above it now. */
+/* No reserved gutter, for the same reason .me-ovl-list has none: these rows
+   carry a background and a rule of their own, so a permanently reserved strip
+   is a column of panel colour running down the right of every one of them —
+   the rows stop short of the edge and nothing lines up. The cost is that the
+   content shifts by the scrollbar's width when the list first becomes
+   scrollable; a strip that is wrong at rest is worse than a shift that happens
+   once. Reported 2026-08-22. */
 .me-ent-list{flex:1;min-height:60px;display:flex;flex-direction:column;
-  overflow-y:auto;scrollbar-gutter:stable;}
+  overflow-y:auto;}
 .me-test-sub{flex:none;height:420px;min-height:0;display:flex;flex-direction:column;overflow:hidden;
   border-top: var(--bw) solid var(--border);}
 /* Collapsed, the subpanel is just its header — height:auto so the list above
@@ -16853,7 +16860,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.41.3.0';
+const APP_VERSION  = '1.41.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

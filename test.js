@@ -10841,10 +10841,11 @@ test('every scrolling surface in the panel reserves its scrollbar gutter', () =>
   const missing = ['.me-tab-body', '.me-fm-table-wrap', '.me-fm-pane pre']
     .filter(sel => !/scrollbar-gutter:\s*stable/.test(rule(sel)));
   deepEq(missing, [], 'scrolling containers with no reserved gutter');
-  // The overrides list is the deliberate exception: its rows have a background,
-  // so a permanently reserved strip reads as a gap on every one of them.
-  assert.ok(!/scrollbar-gutter/.test(rule('.me-ovl-list')),
-    'the overrides list must NOT reserve a gutter');
+  // Two deliberate exceptions, for one reason: their rows have a background of
+  // their own, so a permanently reserved strip reads as a gap on every row
+  // rather than as the edge of the list.
+  for (const sel of ['.me-ovl-list', '.me-ent-list'])
+    assert.ok(!/scrollbar-gutter/.test(rule(sel)), `${sel} must NOT reserve a gutter`);
 });
 
 test('no CSS rule is left with a dangling selector list', () => {
@@ -13863,8 +13864,11 @@ test('the entity sidebar scrolls once, not three times', () => {
   // One scroller, on the container that holds all three.
   const ent = rule('.me-ent-list');
   assert.ok(/overflow-y:auto/.test(ent), 'the entity list does not scroll');
-  assert.ok(/scrollbar-gutter:stable/.test(ent),
-    'the one scroller reserves no gutter, so the rows jump sideways as it grows');
+  // No reserved gutter, deliberately — same call as .me-ovl-list. These rows
+  // have a background and a rule of their own, so a reserved strip is a column
+  // of panel colour down the right of every row. Changed 2026-08-22.
+  assert.ok(!/scrollbar-gutter/.test(ent),
+    'the entity list reserves a gutter again — a strip of panel colour beside every row');
   // And none of the three lists scrolls on its own any more.
   const list = rule('.me-item-list');
   assert.ok(!/overflow/.test(list), `a section still scrolls by itself: ${list}`);

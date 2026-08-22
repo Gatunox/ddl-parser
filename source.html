@@ -2622,7 +2622,9 @@ input.me-inp{width:100%;}
 .me-ps-help .help-body{padding:10px 12px;flex:1 1 0%;min-height:0;min-width:0;
   overflow-x:hidden;overflow-y:auto;}
 .me-ps-help .crumb{color:var(--text-very-dim);margin-bottom:8px;}
-.me-ps-help .crumb button{border:0;background:none;color:var(--accent);padding:0;font:inherit;cursor:pointer;}
+/* The block you are reading is what the accent marks. The trail leading to it
+   stays dim — it is a label, not a control. */
+.me-ps-help .crumb b{color:var(--accent);font-weight:700;}
 .me-ps-help .lead{font-size:12px;font-weight:700;color:var(--text);margin:0 0 6px;line-height:1.4;}
 .me-ps-help .g-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--text-very-dim);margin:12px 0 6px;}
@@ -2740,12 +2742,29 @@ tbody tr:hover .me-ps-form-tbl td,
 .me-ps-type-or{color:var(--text-very-dim);}
 .me-ps-help-req{color:#f85149;font-size:calc(var(--sz-mono) - 3px);}
 .me-ps-help-opt{color:var(--text-dim);font-size:calc(var(--sz-mono) - 3px);}
+/* "required WITH type literal" is neither of the other two, and reading as
+   either one is what left "do I need value?" unanswered. */
+.me-ps-help-cond{color:var(--warn-text);font-size:calc(var(--sz-mono) - 3px);}
+/* A key inside an object-valued attribute. Its own block, its own heading, and
+   a gap from what came before — five of these ran together as one paragraph. */
+.me-ps-sub{border-left: var(--bw) solid var(--border);margin:10px 0 0 2px;padding-left:8px;}
+.me-ps-sub:first-child{margin-top:8px;}
+.me-ps-sub-h{display:flex;align-items:baseline;gap:8px;font-family:var(--mono);
+  font-size:calc(var(--sz-mono) - 1px);padding-bottom:3px;}
+.me-ps-sub-h .me-ps-help-aname{color:var(--accent);font-weight:700;}
+.me-ps-sub-b{margin-left:2px;}
 /* One example = one card. They used to be a flat run of divs separated by a
    10px spacer, so with several on screen a Payload/Spec/Result trio ran
    straight into the next one and the whole panel read as a single long
    example. The border is what says where one ends. */
+/* Selectable — `body` sets user-select:none for the whole app, and each surface
+   that is meant to be READ opts back in. The example cards never did, so the
+   only way to take anything out of one was the copy button, which takes the
+   WHOLE example. Reported from production: most of the time what is wanted is a
+   few lines of it. The card, not just the snippet: the payload bytes and the
+   result rows are as worth copying as the spec. */
 .me-ps-help-ex{border: var(--bw) solid var(--border);border-left: var(--bw) solid var(--accent);border-radius:var(--r-md);
-  background:var(--tint-row);padding:8px 10px 10px;margin:10px 0;}
+  background:var(--tint-row);padding:8px 10px 10px;margin:10px 0;user-select:text;}
 /* The heading has to win against everything inside the card — a dim, smaller
    line was quieter than the labels it was supposed to introduce. */
 .me-ps-help-ex-title{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
@@ -2769,8 +2788,12 @@ tbody tr:hover .me-ps-form-tbl td,
 /* Copy button on each example. Sits inside the snippet, top-right; the snippet
    carries extra right padding so it never overlaps the code. Kept visible rather
    than hover-only — a control you cannot see is a control nobody uses. */
+/* ...but the button itself is not text. It sits INSIDE the snippet, so without
+   this a drag across the block, or a select-all, carries the glyph into the
+   clipboard along with the code. */
 .me-ps-help-copy{position:absolute;top:3px;right:4px;cursor:pointer;font-size:calc(var(--sz-mono) - 1px);
-  color:var(--text-very-dim);background:var(--bg-panel);border:0;padding:0 3px;line-height:1.4;border-radius:var(--r-sm);}
+  color:var(--text-very-dim);background:var(--bg-panel);border:0;padding:0 3px;line-height:1.4;border-radius:var(--r-sm);
+  user-select:none;}
 .me-ps-help-copy:hover{color:var(--accent);}
 .me-ps-help-copy.done{color:var(--success,#3fb950);}
 /* ── DDL Bindings + Overrides ── */
@@ -16789,7 +16812,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.39.1.0';
+const APP_VERSION  = '1.40.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19250,14 +19273,29 @@ const _PS_COMMON_ATTRS = [
   ['overrides', '{ "<field>": {…} }', false, _PS_OVERRIDES_DESC],
   ['at', 'int | {field, offset, from}', false, [
     'Where to read. Omit it and the block reads where the previous one stopped.',
-    ['<i>omitted</i>',        'Continue from the cursor. The default, and what every existing spec does.'],
-    ['<code>23</code>',       'Absolute byte position, counting from 0 — so this is the <b>24th</b> byte.'],
-    ['<code>{"field":"HDR"}</code>', 'Immediately after HDR <b>ends</b>.'],
-    ['<code>"offset": 4</code>',     'Move on 4 bytes from that anchor. Negative moves back.'],
-    ['<code>"from": "start"</code>', 'Measure from the field\'s <b>first</b> byte instead of past its last.'],
-    'The anchor must be a field an EARLIER block produced.',
-    'The cursor stays where the positioned read ends, so following blocks continue from there.',
+    ['<i>omitted</i>',  'Continue from the cursor. The default, and what every existing spec does.'],
+    ['<code>23</code>', 'A byte position, counting from 0 — so this is the <b>24th</b> byte.'],
+    'Or an <b>anchor</b>: a place measured from a field that has already been read. Its three keys are below.',
+    'Either way the cursor stays where the positioned read ends, so the blocks after it continue from there.',
     'On <code>skip</code>, use the object form: <code>{"skip": {"length": 2, "at": 10}}</code>.',
+    _psKey('field', 'string', 'required in the anchor form', [
+      'The field to measure from.',
+      'It must have been read by an <b>earlier</b> block — a field read later does not exist yet, and is reported.',
+      'A field that consumed <b>no</b> bytes has no position to measure from, and is reported too.',
+      ['<code>{"field": "HDR"}</code>', 'Start immediately after HDR <b>ends</b>.'],
+    ]),
+    _psKey('offset', 'int', 'optional', [
+      'Move this many bytes from the anchor.',
+      ['<code>"offset": 4</code>',  'Four bytes further on.'],
+      ['<code>"offset": -2</code>', 'Two bytes back.'],
+      ['<i>omitted</i>', 'No move — sit exactly on the anchor.'],
+    ]),
+    _psKey('from', '"end" | "start"', 'optional', [
+      'Which edge of the anchor field to measure from.',
+      ['<code>"end"</code>',   'Just past its last byte. The default.'],
+      ['<code>"start"</code>', 'Its first byte — for reading the same bytes a second way.'],
+      'Any other word is reported rather than guessed at.',
+    ]),
   ]],
   ['peek', 'bool', false, [
     'Used with <code>at</code>: put the cursor back afterwards.',
@@ -19285,20 +19323,44 @@ const _PS_SIZEOF_DESC = [
 // shape as "same as read-while's" and left the reader to go and look.
 const _PS_GUARD_DESC = [
   'Looks at the bytes <b>at the cursor</b> and <b>consumes nothing</b> — the cursor is exactly where it was afterwards, whatever the answer.',
-  '<b>The window</b> is <code>length</code> bytes from the cursor.',
-  ['<code>"length": 2</code>', 'Look at two bytes.'],
-  ['<code>"length"</code> not given', 'One byte — except <code>literal</code>, which uses its own <code>value</code>\'s length, so <code>{"type":"literal","value":"& "}</code> looks at two.'],
-  'Fewer bytes left than the window means <b>no match</b>. Never an error — running out is a legitimate answer to "is X sitting there".',
-  '<b><code>type</code></b> — six, and each uses a different companion attribute:',
-  ['<code>"literal"</code>', 'The window must equal <code>value</code> exactly. <code>value</code> is used by this type alone.'],
-  ['<code>"regex"</code>', '<code>pattern</code> is tested against the window. <b>Unanchored</b> — it matches anywhere inside, so anchor it yourself with <code>^</code> to mean "starts with". <code>pattern</code> is used by this type alone.'],
-  ['<code>"numeric"</code>', 'Every character in the window is <code>0-9</code>.'],
-  ['<code>"alphabetic"</code>', 'Every character is <code>A-Z</code> or <code>a-z</code>.'],
-  ['<code>"alphanumeric"</code>', 'Every character is a letter or a digit.'],
-  ['<code>"ascii"</code>', 'Every <b>byte</b> in the window is printable ASCII, <code>0x20</code>–<code>0x7E</code>. This one tests the raw bytes, so <code>encoding</code> does not apply to it.'],
-  'The four class types test the <b>whole window</b>, so with the default one-byte window they are asking about a single character. Widen <code>length</code> to ask about more.',
-  ['<code>"encoding"</code>', '<code>ascii</code> (the default) or <code>ebcdic</code> — how the bytes become characters before matching. It decides what <code>literal</code>, <code>regex</code> and the three class types see.'],
-  'A <code>type</code> outside those six never matches, which reads as a dead branch rather than a bad guard — the lint reports it instead.',
+  'Five keys, and only two of them are ever required. Which two depends on <code>type</code>, so read that one first.',
+  _psKey('type',
+    '"literal" | "regex" | "numeric" | "alphabetic" | "alphanumeric" | "ascii"',
+    'required', [
+      'Which question to ask about the bytes.',
+      ['<code>"literal"</code>',      'Are these exact characters here? Needs <code>value</code>.'],
+      ['<code>"regex"</code>',        'Does this pattern match? Needs <code>pattern</code>.'],
+      ['<code>"numeric"</code>',      'Is every character a digit, <code>0</code>–<code>9</code>?'],
+      ['<code>"alphabetic"</code>',   'Is every character a letter?'],
+      ['<code>"alphanumeric"</code>', 'Is every character a letter or a digit?'],
+      ['<code>"ascii"</code>',        'Is every byte printable text, <code>0x20</code>–<code>0x7E</code>?'],
+      'Any other word never matches, so the branch is simply dead. The lint says so.',
+    ]),
+  _psKey('value', 'string', 'required with type "literal"', [
+    'The exact characters to look for.',
+    ['<code>{"type": "literal", "value": "& "}</code>', 'Is there an ampersand and then a space?'],
+    'The <b>only</b> type that reads it. Written beside any other type it does nothing at all — the lint says so rather than leaving you to wonder.',
+  ]),
+  _psKey('length', 'int', 'optional', [
+    'How many bytes to look at. That stretch is called the <b>window</b>.',
+    ['<code>"length": 2</code>', 'Look at two bytes.'],
+    ['<i>omitted</i>', 'One byte — except with <code>"literal"</code>, which looks at as many bytes as <code>value</code> has characters. So <code>{"type":"literal","value":"& "}</code> looks at two without being told to.'],
+    '<code>numeric</code>, <code>alphabetic</code>, <code>alphanumeric</code> and <code>ascii</code> ask their question about <b>every</b> byte in the window. At the default of one byte they are asking about a single character; widen it to ask about more.',
+    'If fewer bytes are left in the message than the window, the answer is <b>no</b>. That is not an error — running out is a real answer to "is X sitting there".',
+  ]),
+  _psKey('pattern', 'string (regex)', 'required with type "regex"', [
+    'The regular expression to test.',
+    'It is <b>not anchored</b>: it matches anywhere inside the window. Start it with <code>^</code> if you mean "the window <i>starts</i> with this".',
+    ['<code>{"type": "regex", "pattern": "^[0-9]", "length": 1}</code>', 'Does the next byte start with a digit?'],
+    'A pattern that will not compile never matches, so the branch goes quietly dead. The lint reports it.',
+    'The <b>only</b> type that reads it — beside any other type it does nothing, and the lint says so.',
+  ]),
+  _psKey('encoding', '"ascii" | "ebcdic"', 'optional', [
+    'How the bytes become characters before the question is asked.',
+    ['<code>"ascii"</code>',  'The default.'],
+    ['<code>"ebcdic"</code>', 'Translate first, then ask — for a message that is EBCDIC on the wire.'],
+    '<code>type: "ascii"</code> is the one type that ignores it, because that question is about the raw bytes and not about characters at all.',
+  ]),
 ];
 
 // Shared by read-ddl and read-bitmap-fields — both walk DDL groups, so both need
@@ -20034,20 +20096,38 @@ const _PS_HELP = {
         'Reach for <code>smart</code> when a production message carries more in an element than the DDL you have declares — otherwise every DE after it is read a few bytes early, and the values look plausible while being wrong.',
         'A message carrying <b>less</b> than the DDL declares is ordinary and unaffected: the payload just ends early in both modes.',
       ]],
-      ['de', '{ "<bit>": [blocks] | {field, blocks} }', false, [
+      ['de', '{ "<bit>": [blocks] | {field, blocks, length, length_prefix} }', false, [
         'Per-bit parsing — a listed bit is read by <b>its own blocks</b> instead of the default DDL walk.',
+        'Every other set bit is read exactly as before. Listing one bit changes only that bit.',
         'Keys are bit numbers. Two forms:',
-        ['<code>"55": [blocks]</code>',              'Read bit 55 with those blocks.'],
-        ['<code>"55": {"field":…, "blocks":[…]}</code>', 'The same, and also say which element the bit maps to.'],
-        ['<code>"field"</code>',  'Overrides which element this bit is. Without it the Overrides panel decides, as always.'],
-        ['<code>"length"</code>', 'Bounds the element when the DDL\'s declared size is not the real one. The DE then occupies exactly this many bytes, so the next one starts at the end of it whatever the blocks read.'],
-        'Where the next DE starts: a length <b>off the wire</b> (<code>length_prefix</code>, or a VLG LEN) and a <code>length</code> you write both state what the DE <i>is</i>, so the DE ends there. The DDL\'s <b>declared size</b> states only what the element <i>can hold</i> — a message putting less in it is ordinary — so the DE ends where its blocks stopped. Reading past any of them is reported and stops at the boundary.',
-        ['<code>"length_prefix"</code>', 'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it — read this many bytes of length, then frame the element to it. Those bytes are emitted as their own row. This <b>frames</b> the whole entry, so every block in it shares the one window; <code>read-length-value</code> instead <b>captures</b> the payload as a single row.'],
-        ['<code>{"bytes": 2, "type": "hex-char"}</code>', 'The same, with the encoding stated. A bare <code>2</code> leaves it to auto-detect, which cannot tell <code>00 74</code> meaning 74 from the same bytes meaning 116. <code>"count": "digits"</code> works here too.'],
-        'Every other set bit is read exactly as before — listing one bit changes only that bit.',
+        ['<code>"55": [blocks]</code>', 'Just the blocks — the short form, when the defaults suit.'],
+        ['<code>"55": {…}</code>',      'The object form, whose four keys are below.'],
         '<b>The DDL need not declare the DE at all.</b> Whether an element is required is the <i>block\'s</i> business, exactly as at the top level of a spec: <code>read-length-value</code>, <code>read-fixed</code>, <code>read-until</code> and <code>read-to-end</code> name their own output through <code>as</code> and need nothing declared, so a proprietary DE that appears on the wire and nowhere in the DDL is parsed by describing it here. Blocks that <i>map onto</i> declared fields — <code>read</code>, <code>read-ddl</code>, <code>read-tlv</code> with tags — still need one, and say so themselves.',
         'With no element, rows this block emits itself are named after the bit: <code>DE-58.LEN-PREFIX</code>.',
-        'Names inside those blocks resolve <b>within that bit\'s element</b>: <code>"ARQC"</code> means <code>"EMV-ELEMENT.ARQC"</code>. With no element they resolve against the DDL as a whole.',
+        'Names inside the blocks resolve <b>within that bit\'s element</b>: <code>"ARQC"</code> means <code>"EMV-ELEMENT.ARQC"</code>. With no element they resolve against the DDL as a whole.',
+        'Where the next DE starts: a length <b>off the wire</b> (<code>length_prefix</code>, or a VLG LEN) and a <code>length</code> you write both state what the DE <i>is</i>, so the DE ends there. The DDL\'s <b>declared size</b> states only what the element <i>can hold</i> — a message putting less in it is ordinary — so the DE ends where its blocks stopped. Reading past any of them is reported and stops at the boundary.',
+        _psKey('field', 'string', 'optional', [
+          'Which element this bit maps to.',
+          ['<i>omitted</i>', 'The Overrides panel decides, as it always has.'],
+          'Use it when the panel\'s answer is not the one you want for this bit.',
+        ]),
+        _psKey('blocks', '[blocks]', 'required in the object form', [
+          'The blocks to run for this bit, in place of the default read.',
+          'They start with the cursor on the element\'s first byte.',
+          'An entry with no blocks is reported — there would be nothing to run.',
+        ]),
+        _psKey('length', 'int | "FIELD-ID" | {sizeof}', 'optional', [
+          'How many bytes this DE occupies, when the DDL\'s declared size is not the real one.',
+          'The DE then occupies <b>exactly</b> this many bytes, so the next one starts at the end of it whatever the blocks read.',
+          ..._PS_SIZEOF_DESC,
+        ]),
+        _psKey('length_prefix', 'int | {bytes, type, count}', 'optional', [
+          'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it.',
+          'Read this many bytes of length first, then frame the element to what they say. Those bytes are emitted as their own row.',
+          ['<code>2</code>', 'Two bytes of length, encoding auto-detected.'],
+          ['<code>{"bytes": 2, "type": "hex-char"}</code>', 'The same, with the encoding stated. Auto-detect cannot tell <code>00 74</code> meaning 74 from the same bytes meaning 116, so state it whenever you know. <code>"count": "digits"</code> works here too.'],
+          'This <b>frames</b> the whole entry, so every block in it shares the one window. <code>read-length-value</code> instead <b>captures</b> the payload as a single row.',
+        ]),
       ]],
     ],
     examples: [
@@ -20413,10 +20493,11 @@ const _PS_HELP = {
         'The same object as <code>read-while</code>\'s <code>while</code> — one predicate, matched by one function.',
       ]],
       ['not-bytes', '{type, value, length, pattern, encoding}', false, [
-        'The same guard, inverted: run <code>then</code> when the bytes at the cursor do <b>not</b> match. Every attribute above behaves identically.',
+        'The same guard, <b>inverted</b>: run <code>then</code> when the bytes at the cursor do <b>not</b> match. Every key below behaves identically.',
         'This is the PSTM eye-catcher guard. Legacy hardcodes <code>bytes[cursor] !== 0x26</code> to refuse reading user data when <code>"&&nbsp;"</code> is sitting there; without it a branch consumes the eye-catcher as a 2-byte length — <code>0x2620</code> is 9760 — and runs the cursor thousands of bytes past the end.',
         ['<code>{"not-bytes": {"type": "literal", "value": "& "}, "then": [ … ]}</code>', 'Read the user data only when the eye-catcher is not there.'],
         'Prefer it over <code>bytes</code> + <code>else</code> when there is only one branch: the guard reads the way the rule is spoken — "unless the eye-catcher is there".',
+        ..._PS_GUARD_DESC.filter(x => x && x.k),
       ]],
       ['equal', 'value | [values] | {field} | {sizeof}', false, [
         'Run <code>then</code> when the value matches. Compared as <b>text</b>.',
@@ -20599,14 +20680,22 @@ const _PS_HELP = {
     ],
     attrs: [
       ['count', 'string | {field, as}', true, [
-        'The id of an <b>already-read</b> field whose value is the number of iterations.',
-        ['<code>"NUM-SERVICES"</code>', 'The field id alone. How to read it as a number is inferred — see below.'],
-        ['<code>{"field": "NUM-SERVICES", "as": "uint16-be"}</code>', 'The decode stated outright. Use this whenever the field is binary.'],
-        'Without <code>as</code>, the field\'s own type override decides; failing that it falls back to a guess — ASCII digits as digits, otherwise the raw bytes as a big-endian number — and <b>says that it guessed</b>.',
-        'That guess is why a <code>TYPE BINARY 16</code> counter, absent from an ASCII capture, once parsed to a plausible unrelated decimal and silently truncated the loop. Declare it and the question never arises.',
+        'How many times to run the body.',
+        ['<code>"NUM-SERVICES"</code>', 'The id of an <b>already-read</b> field. Its value is the number of iterations.'],
         ..._PS_SIZEOF_DESC,
+        'Or the object form, which says how to read that field as a number. Its two keys are below.',
         'A field that has not been read yet, or holds nothing numeric, is an error — the loop never runs on a guess.',
         'When the count cannot be trusted (a binary counter in an ASCII message), use <code>read-while</code> instead.',
+        _psKey('field', 'string', 'required in the object form', [
+          'The already-read field holding the count.',
+          ['<code>{"field": "NUM-SERVICES"}</code>', 'Same field as the bare string form, with room for <code>as</code> beside it.'],
+        ]),
+        _psKey('as', 'length encoding', 'optional', [
+          'How to read that field as a number.',
+          ['<code>"uint16-be"</code>', 'Two binary bytes, big-endian. Use this whenever the field is binary.'],
+          ['<i>omitted</i>', 'The field\'s own <b>Type</b> override decides. With no override either, it <b>guesses</b> — ASCII digits as digits, otherwise the raw bytes as a big-endian number — and says on the row that it guessed.'],
+          'That guess is why a <code>TYPE BINARY 16</code> counter, absent from an ASCII capture, once parsed to a plausible unrelated decimal and silently truncated the loop. State it and the question never arises.',
+        ]),
       ]],
       ['body', '[blocks]', true, [
         'The blocks to run on each pass.',
@@ -20929,7 +21018,12 @@ function _meHelpDetailHtml(p) {
     ? `<div class="follow">${p.followNote(id)}</div>` : '';
   return _meHelpHead(p, true) + follow +
     `<div class="help-body">` +
-      `<div class="crumb"><button onclick="_meHelpCatalog('${p.key}')">All ${p.plural}</button> / ${id}</div>` +
+      // The crumb SAYS where you are; it is not a second way to leave. The header
+      // already carries an "All ${p.plural}" button, so making the same words a
+      // link here was two controls for one action — and it put the accent on the
+      // place you are NOT, leaving the block you are actually reading in plain
+      // text. Now the trail is quiet and the current block is the one marked.
+      `<div class="crumb">All ${p.plural} / <b>${id}</b></div>` +
       `<p class="lead">${lead}</p>` +
       (rest.length ? `<ul class="me-ps-help-ul">${rest.map(x => `<li>${x}</li>`).join('')}</ul>` : '') +
       (info.useWhen && info.useWhen.length
@@ -21310,9 +21404,39 @@ function _meHelpTypeHtml(type) {
 // `extra` rides with the LEAD sentence rather than trailing the whole
 // description. Appended after the form-by-form table it read as a footnote to
 // the last row instead of as part of what the attribute means.
+// A key INSIDE an object-valued attribute — `bytes`'s `type`, `value`, `length`
+// and so on. Rendered as its own titled block rather than as more prose in the
+// same paragraph: the five keys of a guard were one wall of text, in a different
+// order from the signature above them, and nothing said which were required or
+// what happened if you wrote one the type ignores.
+// `req` is a sentence, not a boolean, because "required" is not the only answer:
+// `value` is required WITH one type and ignored by the rest.
+// A function declaration, not a const: the help data is built at the top of the
+// file and this is used inside it, so it has to be hoisted.
+function _psKey(k, type, req, lines) { return { k, type, req, lines }; }
+
+function _meHelpSubHtml(keys) {
+  return keys.map(s => {
+    const cls = /^required$/i.test(s.req) ? 'me-ps-help-req'
+              : /^optional$/i.test(s.req) ? 'me-ps-help-opt' : 'me-ps-help-cond';
+    return `<div class="me-ps-sub">` +
+      `<div class="me-ps-sub-h"><code class="me-ps-help-aname">${s.k}</code>` +
+      `<span class="me-ps-help-atype">${_meHelpTypeHtml(s.type)}</span>` +
+      `<span style="margin-left:auto" class="${cls}">${s.req}</span></div>` +
+      `<div class="me-ps-sub-b">${_meHelpDescHtml(s.lines)}</div></div>`;
+  }).join('');
+}
+
 function _meHelpDescHtml(d, extra) {
   const tail = extra || '';
   if (!Array.isArray(d)) return d + (tail ? ' ' + tail : '');
+  // Keys of an object-valued attribute come after whatever prose introduces
+  // them, each in its own block, in the order the signature lists them.
+  const keys = d.filter(x => x && !Array.isArray(x) && typeof x === 'object' && x.k);
+  if (keys.length) {
+    const rest = d.filter(x => !(x && !Array.isArray(x) && typeof x === 'object' && x.k));
+    return (rest.length ? _meHelpDescHtml(rest, tail) : (tail || '')) + _meHelpSubHtml(keys);
+  }
   if (d.some(x => Array.isArray(x))) {
     // The lead is the first plain string; if the description opens straight
     // into forms, the default gets a note row of its own at the top.
@@ -21538,6 +21662,16 @@ function _mePsLintWarns(item, parsed) {
       warns.push(`[block ${n}] ${blk} ${attr} guard "regex" needs a "pattern"`);
     else if (g.type === 'regex' && !_mePatternCompiles(g.pattern))
       warns.push(`[block ${n}] ${blk} ${attr} guard pattern ${JSON.stringify(g.pattern)} is not a valid regular expression — it would never match`);
+    // A key the chosen type never reads does NOTHING. Silence there is what left
+    // "if I use pattern, what happens?" unanswerable from the panel: the spec
+    // looks configured and the guard ignores half of it.
+    const t = String(g.type || '');
+    if (g.value !== undefined && t && t !== 'literal')
+      warns.push(`[block ${n}] ${blk} ${attr} guard has "value", which only type "literal" reads — with type "${t}" it does nothing`);
+    if (g.pattern !== undefined && t && t !== 'regex')
+      warns.push(`[block ${n}] ${blk} ${attr} guard has "pattern", which only type "regex" reads — with type "${t}" it does nothing`);
+    if (g.encoding !== undefined && t === 'ascii')
+      warns.push(`[block ${n}] ${blk} ${attr} guard has "encoding", which type "ascii" ignores — that type asks about the raw bytes, not about characters`);
     if (g.length !== undefined && !(Number.isInteger(+g.length) && +g.length > 0))
       warns.push(`[block ${n}] ${blk} ${attr} guard "length" must be a whole number of bytes above 0, got ${JSON.stringify(g.length)}`);
     if (g.encoding !== undefined && !/^(ascii|ebcdic)$/i.test(String(g.encoding)))

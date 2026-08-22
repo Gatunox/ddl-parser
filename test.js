@@ -168,6 +168,7 @@ _t.migrateSpec        = window._migrateSpec;
 _t.migrateOverrides   = window._migrateSpecOverrides;
 _t.psHelp             = _PS_HELP;
 _t.psExamplesFor      = _mePsExamplesFor;
+_t.meHelpDescHtml     = _meHelpDescHtml;
 _t.psCommonDflts      = _PS_COMMON_DFLTS;
 _t.psCommonAttrs      = _PS_COMMON_ATTRS;
 _t.psCommonExamples   = _PS_COMMON_EXAMPLES;
@@ -301,7 +302,7 @@ const {
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
   parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, extractBytesMapped,
-  stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, auditBadgeType, fmtSave, fmtGetData, psHelp, psExamplesFor, psCommonAttrs, psCommonDflts,
+  stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, auditBadgeType, fmtSave, fmtGetData, psHelp, psExamplesFor, meHelpDescHtml, psCommonAttrs, psCommonDflts,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
   meItemVlgIdentifier,
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
@@ -6990,6 +6991,23 @@ test('the guard is one predicate, so both blocks that take it are checked alike'
                       [{ when: { 'not-bytes': { type: 'numeric', length: 2 }, then: [] } }],
                       [{ 'read-while': { while: { type: 'regex', pattern: '^[0-9]', length: 1 }, body: [] } }]])
     eq(lint(spec), '', `a correct guard warns about nothing: ${JSON.stringify(spec)}`);
+});
+
+test('a guard key the chosen type ignores is reported, not silently dropped', () => {
+  // Reported 2026-08-22: "if I use pattern, what happens? That is not clear."
+  // The answer is "nothing", and nothing was the one answer the panel could not
+  // give — the spec looked configured while half of it was ignored.
+  const lint = g => mePsLintWarns({ ddl_bindings: [] }, [{ when: { bytes: g, then: [] } }]).join(' | ');
+  assert.ok(/"value", which only type "literal" reads/.test(
+    lint({ type: 'numeric', value: 'AB' })), 'value beside a non-literal type');
+  assert.ok(/"pattern", which only type "regex" reads/.test(
+    lint({ type: 'literal', value: 'AB', pattern: '^A' })), 'pattern beside a non-regex type');
+  assert.ok(/"encoding", which type "ascii" ignores/.test(
+    lint({ type: 'ascii', encoding: 'ebcdic' })), 'encoding beside the raw-byte type');
+  // The pairings that ARE read stay silent.
+  eq(lint({ type: 'literal', value: '& ' }), '', 'literal with value');
+  eq(lint({ type: 'regex', pattern: '^[0-9]' }), '', 'regex with pattern');
+  eq(lint({ type: 'numeric', length: 2, encoding: 'ebcdic' }), '', 'a class type with encoding');
 });
 
 test('the guard window defaults to one byte, and to the literal\'s own width', () => {
@@ -15267,6 +15285,29 @@ test('opening an attribute leaves it where you clicked it', () => {
       `${fn} pins a row, but it is showing a different document`);
 });
 
+test('the crumb says where you are — it is not a second way back', () => {
+  // Reported 2026-08-22: the crumb's "All blocks" was a button doing exactly what
+  // the header's "All blocks" button does, and it wore the accent — so the panel
+  // highlighted the place you are NOT and left the block you are reading in plain
+  // text. The trail is a label now; the current block is what is marked.
+  const detail = psFnSource('_meHelpDetailHtml');
+  const crumb = detail.match(/<div class="crumb">[\s\S]*?<\/div>/);
+  assert.ok(crumb, 'the crumb is gone');
+  assert.ok(!/<button/.test(crumb[0]), `the crumb still holds a control: ${crumb[0]}`);
+  assert.ok(/<b>\$\{id\}<\/b>/.test(crumb[0]), 'the current block is the marked half');
+  // Leaving is still possible — from the header, which is where it belongs.
+  const src0 = fs.readFileSync('./source.html', 'utf8');
+  const head = src0.slice(src0.indexOf('const _meHelpHead ='), src0.indexOf('function _meHelpCatalogHtml'));
+  assert.ok(/_meHelpCatalog\('\$\{p\.key\}'\)/.test(head),
+    'the header keeps the button that goes back to the catalogue');
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  assert.ok(/\.me-ps-help \.crumb b\{[^}]*color:var\(--accent\)/.test(css),
+    'and the accent is on the current block');
+  assert.ok(!/\.me-ps-help \.crumb button\{/.test(css),
+    'the styling for a crumb button is gone with the button');
+});
+
 test('the reference is resizable on both axes, and nothing it shows is clipped', () => {
   // Reported: the Value column of an example ran off the right edge. Two causes,
   // both fixed here — the column had one fixed width for every block, and a raw
@@ -15421,6 +15462,57 @@ test('the reference actually renders the defaults it stores', () => {
 test('every block in the help table has a known implementation', () => {
   deepEq(Object.keys(psHelp).filter(b => !PS_EXEC_FNS[b]), [], 'documented blocks with no exec mapping');
   deepEq(Object.keys(PS_EXEC_FNS).filter(b => !psHelp[b]), [], 'implemented blocks with no help entry');
+});
+
+test('each documented key RENDERS as its own titled block, in order', () => {
+  // The data being right is not enough — the complaint was about the card. Five
+  // keys ran together as one paragraph of prose, so this asserts the rendering:
+  // one block per key, keyword as its heading, requiredness beside it, in the
+  // order the signature lists them.
+  const desc = psHelp['when'].attrs.find(a => a[0] === 'bytes')[3];
+  const html = meHelpDescHtml(desc);
+  const blocks = html.split('<div class="me-ps-sub">').slice(1);
+  eq(blocks.length, 5, 'one block per key');
+  const order = blocks.map(b => (b.match(/me-ps-help-aname">([^<]+)/) || [])[1]);
+  deepEq(order, ['type', 'value', 'length', 'pattern', 'encoding'],
+    'and in the order the signature lists them');
+  // Each block states requiredness, and the conditional ones are marked as
+  // neither required nor optional — that was the unanswered question.
+  const reqs = blocks.map(b => (b.match(/me-ps-help-(req|opt|cond)">([^<]+)/) || [])[2]);
+  eq(reqs[0], 'required', 'type is required');
+  assert.ok(/literal/.test(reqs[1]), `value says which type needs it, got ${reqs[1]}`);
+  eq(reqs[2], 'optional', 'length is optional');
+  assert.ok(/regex/.test(reqs[3]), `pattern says which type needs it, got ${reqs[3]}`);
+  eq(reqs[4], 'optional', 'encoding is optional');
+  assert.ok(/me-ps-help-cond/.test(html),
+    'the conditional ones are styled as neither required nor optional');
+});
+
+test('an attribute whose value is an OBJECT documents its keys, in signature order', () => {
+  // Reported 2026-08-22 against `bytes`: the signature says
+  // {type, value, length, pattern, encoding}, and the description was one wall of
+  // prose in a different order, with nothing saying which keys are required or
+  // what happens if you write one the type ignores. Every attribute shaped like
+  // that has the same problem, so the rule is enforced rather than fixed once.
+  const bad = [];
+  const check = (blk, name, type, desc) => {
+    // Only signatures that LIST keys — `{ "<field>": {…} }` is a map whose keys
+    // are the user's own names, and has nothing fixed to document.
+    const m = String(type).match(/\{([a-z_, |]+)\}/i);
+    if (!m) return;
+    const want = m[1].split(',').map(x => x.trim()).filter(Boolean);
+    if (want.length < 2) return;
+    const got = (Array.isArray(desc) ? desc : []).filter(x => x && x.k).map(x => x.k);
+    if (!got.length) { bad.push(`${blk}.${name}: signature lists ${want.join(', ')} and documents none of them`); return; }
+    if (got.join(',') !== want.join(','))
+      bad.push(`${blk}.${name}: documents ${got.join(', ')} — the signature says ${want.join(', ')}, in that order`);
+    for (const k of (Array.isArray(desc) ? desc : []).filter(x => x && x.k))
+      if (!/required|optional/i.test(String(k.req)))
+        bad.push(`${blk}.${name}.${k.k}: does not say whether it is required`);
+  };
+  for (const [blk, info] of Object.entries(psHelp))
+    for (const [name, type, , desc] of info.attrs.concat(psCommonAttrs)) check(blk, name, type, desc);
+  deepEq([...new Set(bad)], [], 'object-valued attributes that do not document their keys');
 });
 
 test('every documented attribute has at least one example', () => {
@@ -17181,6 +17273,29 @@ test('density moves shape and spacing only, never colour', () => {
   const bad = (body.match(/^\s*--[a-z0-9-]+/gim) || [])
     .map(t => t.trim()).filter(t => !SHAPE.test(t.replace(/^--/, '--')));
   eq(bad.length, 0, `density must not set colour tokens: ${bad.join(', ')}`);
+});
+
+test('[REGRESSION] a help example can be selected — the app defaults to unselectable', () => {
+  // `body { user-select: none }` covers the whole app, and every surface meant to
+  // be READ opts back in. The example cards never did, so the only way to take
+  // anything out of one was the copy button — which takes the whole example, when
+  // most of the time a few lines is what is wanted. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const rule = sel => {
+    const i = css.indexOf(sel + '{');
+    assert.ok(i >= 0, `${sel} is gone`);
+    return css.slice(i, css.indexOf('}', i));
+  };
+  assert.ok(/user-select:\s*text/.test(rule('.me-ps-help-ex')),
+    'the example card opts into selectable text');
+  assert.ok(/user-select:\s*none/.test(rule('.me-ps-help-copy')),
+    'and the copy button opts out — it sits INSIDE the snippet, so a drag across '
+    + 'the block would otherwise carry its glyph into the clipboard');
+  // The card is the unit, not the snippet: the payload bytes and the result rows
+  // are as worth copying as the spec, and they are siblings inside it.
+  assert.ok(/class="me-ps-help-ex"[\s\S]{0,600}me-ps-ex-bytes/.test(src),
+    'the payload bytes really do live inside the card the rule covers');
 });
 
 test('[REGRESSION] no component paints a background in translucent white', () => {

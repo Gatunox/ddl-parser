@@ -11695,6 +11695,24 @@ test('the armed row wins over selection and hover, on specificity', () => {
   assert.ok(base && hover, 'hover is the brighter value, matching the tree');
 });
 
+test('[REGRESSION] the section cards clear the scrollbar, not just its gutter', () => {
+  // The reserved gutter was being counted as the cards' right margin. That is a
+  // gap only while the gutter is EMPTY — as soon as the column scrolls, the
+  // scrollbar fills it and the cards butt straight against the scrollbar, on a
+  // column whose left edge has a full --gap of splitter. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const body = (css.match(/\n\.me-tab-body\{[^}]*\}/) || [''])[0];
+  assert.ok(/scrollbar-gutter:stable/.test(body),
+    'the gutter is gone, so the whole column shifts when a scrollbar appears');
+  assert.ok(/padding:var\(--gap\) var\(--gap\) var\(--gap\) 0/.test(body),
+    `the cards have no right padding of their own: ${body}`);
+  // And the card still owns no side margins — the spacing is the scroller's, so
+  // it applies once rather than once per section.
+  const sec = (css.match(/\n\.me-section\{[^}]*\}/) || [''])[0];
+  assert.ok(/margin:0 0 var\(--gap\) 0/.test(sec), `the card grew a side margin: ${sec}`);
+});
+
 test('both editors show the SAME validation bar, one implementation', () => {
   // The spec editor's messages were loose divs under it. Rather than a second
   // bar, they use the one the DDL editor already has — with < n/m > navigation,

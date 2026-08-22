@@ -2308,9 +2308,11 @@ td.c-err  { color: var(--accent2); }
              exactly --gap wide (--resizer-size), which is how two panels are
              separated everywhere else. A margin here stacked ON TOP of it,
              which is the whole 22px: 10 of splitter plus 12 of margin.
-     right — .me-tab-body reserves a --gap-wide scrollbar gutter, kept stable so
-             nothing shifts when the scrollbar appears. A margin here stacked on
-             that too and the edge read 20px while the page read 10px.
+     right — .me-tab-body pads by --gap. It used to lean on the reserved
+             scrollbar gutter for this, which is a gap only while the gutter is
+             EMPTY: once the column scrolls, the scrollbar fills it and the card
+             touches the scrollbar. The padding is on the scroller rather than
+             on this card so it applies once, not once per section.
    Only the bottom margin is this card's own, and it is the gap BETWEEN cards. */
 .me-section{background:var(--bg-panel);border: var(--bw) solid var(--border);border-radius:var(--r-md);
   box-shadow:var(--shadow-card);margin:0 0 var(--gap) 0;overflow:hidden;}
@@ -2339,8 +2341,16 @@ td.c-err  { color: var(--accent2); }
 .me-section{overflow:hidden;}
 /* Gutter reserved, like #ddlTree / .tbl-wrap / .settings-body: without it the
    whole panel shifts sideways the moment content grows enough to need a
-   scrollbar, and back again when it does not. */
-.me-tab-body{flex:1;overflow-y:auto;padding:var(--gap) 0;min-height:0;scrollbar-gutter:stable;background:var(--bg-deep);}
+   scrollbar, and back again when it does not.
+   The gutter was ALSO being counted as the cards' right margin — which works
+   only while it is empty. As soon as there is enough to scroll, the scrollbar
+   fills it and the cards butt straight against the scrollbar with no gap at
+   all, on a column whose left edge has a full --gap of splitter. A reserved
+   gutter is stability, not spacing; the right padding is the spacing, and it
+   holds whether or not a scrollbar is sitting in the gutter.
+   Right only: the left already has the splitter, and a padding there would
+   stack on it. Reported 2026-08-22. */
+.me-tab-body{flex:1;overflow-y:auto;padding:var(--gap) var(--gap) var(--gap) 0;min-height:0;scrollbar-gutter:stable;background:var(--bg-deep);}
 .me-no-sel{padding:20px;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);text-align:center;}
 .me-stub{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);}
 .me-stub-h{font-size:calc(var(--sz-mono) + 2px);color:var(--text);margin-bottom:8px;}
@@ -16874,7 +16884,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.42.1.0';
+const APP_VERSION  = '1.42.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

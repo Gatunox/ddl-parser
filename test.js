@@ -12083,6 +12083,33 @@ test('[REGRESSION] a recognizer edit re-renders only the recognizer list', () =>
   assert.ok(/const _mePad = html =>/.test(src), '_mePad is not shared');
 });
 
+test('[REGRESSION] a binding edit re-renders only the bindings list', () => {
+  // Same fault the recognizer list had: + Add Binding and the ✕ next to a row
+  // called _meRenderRight, which rebuilds the WHOLE right pane — CodeMirror torn
+  // down and remounted, the Overrides field table rebuilt row by row. On a real
+  // DDL that table is thousands of rows, and none of it depends on a binding
+  // being added. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  for (const fn of ['_meBindAdd', '_meBindDel']) {
+    const body = psFnSource(fn);
+    assert.ok(body, `${fn} is gone`);
+    assert.ok(!/_meRenderRight\(\)/.test(body),
+      `${fn} still rebuilds the whole pane`);
+    assert.ok(/_meRenderBindings\(\)/.test(body), `${fn} does not re-render the list it changed`);
+  }
+  // What the full rebuild was actually being relied on for: two things DO read
+  // the bindings, and a narrower render has to refresh them by name or a stale
+  // "not found in bound DDLs" survives the binding that fixed it.
+  const render = psFnSource('_meRenderBindings');
+  assert.ok(/_meRenderSection\('ddl_bindings'/.test(render), 'it does not target its own section');
+  assert.ok(/_meBindDeferredRefresh\(\)/.test(render),
+    'the lint and the file warnings are left stale by the narrower render');
+  const refresh = psFnSource('_meBindDeferredRefresh');
+  assert.ok(/_mePsScheduleLint\(/.test(refresh) && /_meFileWarnsRefresh\(\)/.test(refresh),
+    'the refresh no longer covers both of the things a binding feeds');
+  assert.ok(/_mePad\(/.test(render), 'the refill loses the section padding');
+});
+
 test('[REGRESSION] the section cards clear the scrollbar, not just its gutter', () => {
   // The reserved gutter was being counted as the cards' right margin. That is a
   // gap only while the gutter is EMPTY — as soon as the column scrolls, the

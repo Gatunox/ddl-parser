@@ -17009,7 +17009,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.18.0';
+const APP_VERSION  = '1.46.19.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19314,6 +19314,20 @@ function _meRenderRecs() {
     el.innerHTML = _mePad(_meHtmlRecs(item));
     _meHelpInitSplit('rec');   // the reference beside the list
   });
+}
+
+// The bindings list, and nothing else — the same treatment recognizers got.
+// Adding or removing a binding rebuilt the whole right pane: CodeMirror torn
+// down and remounted, the Overrides table rebuilt row by row (thousands of them
+// on a real DDL), every open section refilled behind a loading skeleton.
+// The two things that DO depend on a binding are refreshed by name instead:
+// the Parse Spec lint reads bindings for its known-id set, and the file
+// warnings count them. That is what the full rebuild was really being used for.
+function _meRenderBindings() {
+  _meRenderSection('ddl_bindings', (el, item) => {
+    el.innerHTML = _mePad(_meHtmlDDLBindings(item));
+  });
+  _meBindDeferredRefresh();
 }
 
 function _meRenderRight() {
@@ -23329,7 +23343,7 @@ function _meBindAdd() {
     if (!item.ddl_bindings) item.ddl_bindings = [];
     item.ddl_bindings.push('');
     _meSetDirty();
-    _meRenderRight();
+    _meRenderBindings();
   });
 }
 function _meBindDel(idx) {
@@ -23338,7 +23352,7 @@ function _meBindDel(idx) {
   _meUndoable(`Removed the DDL binding ${gone}`, () => {
     item.ddl_bindings.splice(idx, 1);
     _meSetDirty();
-    _meRenderRight();
+    _meRenderBindings();
   }, 'warn');
 }
 

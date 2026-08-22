@@ -11728,11 +11728,13 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
   // light tints what you only read.
   assert.ok(/--surface-edit: #161B22/.test(block('dark')),
     'dark: the editable ground is not the one the editors write on');
-  // Dark does NOT mirror light: the page is #0d1117 and the editable ground is
-  // #161B22, nine levels apart, so a readout placed between them is in a band
-  // the eye cannot separate. It rises above the editable ground instead.
-  assert.ok(/--surface-read: #212121/.test(block('dark')),
-    'dark: the readouts are back in the band between the page and the editable ground');
+  // Dark reads like light — readouts BELOW the editable ground — and stays in
+  // the blue-grey family: a neutral grey read as a different palette.
+  assert.ok(/--surface-read: #11161C/.test(block('dark')),
+    'dark: the readouts are not the blue dark below the editable ground');
+  // And the page ground is untouched. Moving it to make room was a fix nobody
+  // asked for, and it changed the ground under the whole app.
+  assert.ok(/--bg-deep: #0d1117;/.test(block('dark')), 'dark: the page ground moved');
   assert.ok(/--surface-edit: var\(--bg-panel\)/.test(block('light')), 'light: the editable panels are not the page white');
   assert.ok(/--surface-read: #F6F6F6/.test(block('light')), 'light: the readouts are not tinted');
   // Each panel carries the class, and the classes read their tokens.

@@ -12295,7 +12295,7 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
   assert.ok(/justify-content:\s*flex-end/.test(own), 'the controls are not packed right');
   // The badge is the subject, not one of the actions, so it holds the left edge
   // while the actions collect at the right.
-  const pill = html.match(/\.me-ovl-ro\{[^}]*\}/)[0];
+  const pill = html.match(/\n\.me-ovl-ro\{[^}]*\}/)[0];
   assert.ok(/margin-right:auto/.test(pill), 'the selection badge drifts right with the actions');
   // The filter takes the panel's ground, and takes it with enough specificity
   // to win: the app-wide input[type="text"] rule is (0,1,1), so a bare class
@@ -12356,12 +12356,21 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
   assert.ok(!/\.me-fm-seg|\.me-fm-glbl/.test(html), 'the replaced bar left its styles behind');
 });
 
-test('the selection badge heads the bar that acts on it', () => {
-  // Moved out of the filter row: it is the subject the five controls act on,
-  // so it reads at the bar's own height at the head of the bar.
-  const bar = html.slice(html.indexOf('me-fm-bar" id="me-fm-bar">'),
-                         html.indexOf('me-fm-toolbar">'));
-  assert.ok(/id="me-fm-cnt"/.test(bar), 'the badge is not in the action bar');
+test('the selection badge sits beside the section title, like the type badge', () => {
+  // Moved again 2026-08-22, to the section HEADER: it names what the section is
+  // acting on, which is the heading's job — the same place Parse Results keeps
+  // its message-type badge. _meFmBarRefresh finds it by id, so it works wherever
+  // it sits; what has to hold is that it is in the header and not in the bar.
+  assert.ok(/const _meOvBadgeHtml = \(\) =>[\s\S]{0,400}id="me-fm-cnt"/.test(APP_SRC),
+    'the badge markup is gone');
+  assert.ok(/<span class="pt-badge">\$\{open && badge/.test(APP_SRC),
+    'the section header has no slot beside its title for a badge');
+  assert.ok(/sect\('overrides'[\s\S]{0,200}_meOvBadgeHtml\(\)/.test(APP_SRC),
+    'the Overrides section does not pass its badge to the header');
+  // And it is no longer in either bar.
+  const bar = APP_SRC.slice(APP_SRC.indexOf('me-fm-bar" id="me-fm-bar">'),
+                            APP_SRC.indexOf('me-fm-toolbar">'));
+  assert.ok(!/id="me-fm-cnt"/.test(bar), 'the badge is still in the action bar');
   assert.ok(bar.indexOf('id="me-fm-cnt"') < bar.indexOf('me-ovb k-'),
     'the badge comes after the controls it is the subject of');
   const fn = psFnSource('_meFmBarRefresh');
@@ -12390,8 +12399,8 @@ test('the selection badge heads the bar that acts on it', () => {
   // not the source, so a comment mentioning it cannot pass this.
   assert.ok(!/`\$\{n\} selected`[^;]*READ/.test(fn) && !/no selection'[^;]*READ/.test(fn),
     'the badge still says READ-ONLY');
-  const pill = html.match(/\.me-ovl-ro\{[^}]*\}/)[0];
-  const none = html.match(/\.me-ovl-ro\.none\{[^}]*\}/)[0];
+  const pill = html.match(/\n\.me-ovl-ro\{[^}]*\}/)[0];
+  const none = html.match(/\n\.me-ovl-ro\.none\{[^}]*\}/)[0];
   assert.ok(/color:var\(--accent\)/.test(pill), `selected state is accent: ${pill}`);
   assert.ok(/var\(--text-very-dim\)/.test(none), `and dim with nothing selected: ${none}`);
   assert.ok(/height:var\(--ctl-h\)/.test(pill), 'the badge is not the height of the bar it heads');

@@ -626,13 +626,15 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   display:inline-flex; align-items:center; justify-content:center; }
 .panel-bar .me-ovb,
 .panel-bar .me-ovb-clrall,
-.panel-bar .me-ovl-ro,
 .panel-bar .me-fm-filter,
 .panel-bar .res-filter-input,
 .panel-bar .me-ps-variant-tgl { height:var(--bar-ctl-h); box-sizing:border-box; }
-/* The badge is a chip in the strip, not a pill: same corner as every control
-   beside it. */
-.panel-bar .me-ovl-ro { border-radius:var(--r-sm); padding:0 8px; }
+/* Beside a section TITLE, the selection badge reads like Parse Results' type
+   badge: a pill at the header's own scale, not a bar control. */
+.me-section-hdr .me-ovl-ro{height:auto;border-radius:var(--r-pill);
+  padding:0 8px;line-height:calc(var(--sz-mono) + 2px);
+  font-size:calc(var(--sz-mono) - 1px);letter-spacing:0.04em;margin:0;}
+.me-section-hdr .me-ovl-ro.none{border-color:var(--border);color:var(--text-very-dim);background:none;}
 .panel-bar .btn:hover { border-color: var(--h-gray-bd); color:var(--text); }
 .panel-bar select { background:var(--bg-panel); border: var(--bw-ctl) solid var(--border);
   color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono);
@@ -16841,7 +16843,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.41.1.0';
+const APP_VERSION  = '1.41.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19079,6 +19081,13 @@ const _ME_SECT_LOADING =
 const _ME_SECT_LOADING_DET =
   '<div class="me-sect-loading"><div class="me-progress"><div class="me-progress-fill"></div></div></div>';
 
+// The selection badge sits beside the section TITLE, where Parse Results keeps
+// its message-type badge — it names what the section is currently acting on, so
+// it belongs to the heading rather than to the row of controls. Filled by
+// _meFmBarRefresh, which finds it by id.
+const _meOvBadgeHtml = () =>
+  `<span class="me-ovl-ro none" id="me-fm-cnt" title="What you have selected, and how much of it already carries each kind of override"><span class="me-ovl-hd">no selection</span></span>`;
+
 const _meRecActionsHtml = () =>
   `<button class="btn" onclick="_meNewRec()">+ Add Recognizer</button>` +
   `<button class="btn btn-ico" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>`;
@@ -19115,13 +19124,14 @@ function _meRenderRight() {
   // `actions` are the section's own controls, shown in its header the way
   // Message Input shows Audit / Parse / Clear rather than loose in the body.
   // They stop the click that would collapse the section.
-  const sect   = (key, title, fill, actions) => {
+  const sect   = (key, title, fill, actions, badge) => {
     const open = secs[key];
     if (open) stages.push({ key, fill });
     const loading = key === 'overrides' ? _ME_SECT_LOADING_DET : _ME_SECT_LOADING;
     return `<div class="me-section">
   <div class="me-section-hdr" onclick="_meSectionToggle('${key}')">
     <span>${title}</span>
+    <span class="pt-badge">${open && badge ? badge : ''}</span>
     <span class="me-section-actions" onclick="event.stopPropagation()">${open && actions ? actions : ''}</span>
     <span class="me-section-arr">${open ? '−' : '+'}</span>
   </div>
@@ -19148,7 +19158,8 @@ function _meRenderRight() {
               _mePsMountCM(item);
               done();
             }, _mePsActionsHtml())
-          + sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done));
+          + sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done),
+                 '', _meOvBadgeHtml());
   }
   body.innerHTML = html;
 
@@ -23149,7 +23160,6 @@ function _meOverridesPrep(item) {
   // as a different app from the main page. Reported 2026-08-22.
   const chrome = bodyRows => `
 <div class="panel-bar me-fm-bar" id="me-fm-bar">
-  <span class="me-ovl-ro none" id="me-fm-cnt" title="What you have selected, and how much of it already carries each kind of override">0 fields</span>
   ${_ME_OV_KINDS.map(k => `
   <span class="me-ovb k-${k.id}" data-kind="${k.id}">
     <button class="btn me-ovb-n" data-fmfilt="${k.id}" title="How many of your selected fields already have a ${k.label} override, of every field that does \u2014 click to show only those">0 of 0</button>

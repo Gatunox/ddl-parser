@@ -11054,6 +11054,24 @@ test('the accent can be typed, and a half-typed one changes nothing', () => {
     'the field is overwritten while the user is typing in it');
 });
 
+test('a section\'s drag bar spans the card and sits on its bottom edge', () => {
+  // The bar belongs to the CARD, not to the padded content inside it. In the
+  // Recognizers section it was inset 14px at each end and floated 14px above the
+  // card's own edge, so it read as a stray strip rather than the card's handle.
+  // Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const rule = (css.match(/\.me-section-pad:not\(\.me-section-flush\) > \.me-ps-wrap > \.me-ps-split-resizer\{[^}]*\}/) || [''])[0];
+  assert.ok(rule, 'the drag bar no longer breaks out of the padding');
+  for (const side of ['margin-left:-14px', 'margin-right:-14px', 'margin-bottom:-14px'])
+    assert.ok(rule.includes(side), `the bar does not reach that edge: ${side}`);
+  // :not(.me-section-flush) is the load-bearing half — a flush section has NO
+  // padding to cancel, so the same margins push the bar 14px OUTSIDE the card on
+  // three sides. Parse Spec is flush; Recognizers is not.
+  assert.ok(/:not\(\.me-section-flush\)/.test(rule),
+    'the bar overhangs the flush sections by 14px on three sides');
+});
+
 test('the Overrides field list sits on the readout ground', () => {
   // It had a token of its own — --sunken-deep, used here and nowhere else —
   // which put the one table in the app that answers to nothing else a shade

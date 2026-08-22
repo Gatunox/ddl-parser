@@ -2676,6 +2676,16 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-ps-split-resizer{height:var(--hs-bar);margin:-2px 0 0;cursor:ns-resize;flex-shrink:0;
   background:transparent;border-radius:var(--hs-bar-r);}
 .me-ps-split-resizer:hover,.me-ps-split-resizer.dragging{background:rgba(var(--accent-rgb),0.45);}
+/* The drag bar belongs to the CARD, not to the padded content inside it: it
+   spans border to border and sits on the bottom edge, with nothing under it.
+   Inside the padding it was inset 14px at each end and floated 14px above the
+   card's own edge, so it read as a stray strip rather than as the card's
+   handle. Reported 2026-08-22. */
+/* :not(.me-section-flush) — a flush section has NO padding to cancel, so the
+   same negative margins there push the bar 14px outside the card on three
+   sides. The Parse Spec is flush; the Recognizers section is not. */
+.me-section-pad:not(.me-section-flush) > .me-ps-wrap > .me-ps-split-resizer{
+  margin-left:-14px;margin-right:-14px;margin-bottom:-14px;border-radius:0;}
 /* The HEIGHT bar stays whether or not the reference is open — the editor is
    just as resizable either way, and a control that comes and goes with an
    unrelated panel is one you cannot learn. Only the WIDTH bar goes with it,
@@ -16943,7 +16953,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.5.0';
+const APP_VERSION  = '1.46.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

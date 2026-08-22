@@ -11730,7 +11730,7 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
     'dark: the editable ground is not the one the editors write on');
   // Dark reads like light — readouts BELOW the editable ground — and stays in
   // the blue-grey family: a neutral grey read as a different palette.
-  assert.ok(/--surface-read: #11161C/.test(block('dark')),
+  assert.ok(/--surface-read: #13181E/.test(block('dark')),
     'dark: the readouts are not the blue dark below the editable ground');
   // And the page ground is untouched. Moving it to make room was a fix nobody
   // asked for, and it changed the ground under the whole app.

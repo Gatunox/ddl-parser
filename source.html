@@ -129,6 +129,13 @@
      Reported 2026-08-22. */
   --surface-edit: #161B22;
   --surface-read: #11161C;
+  /* A FORM pane — a section that is a row of fields rather than one big editor.
+     Its fields take --surface-edit, so a form on that same ground has nothing
+     but borders to show where the boxes are. Dropping the pane one step lifts
+     the fields off it. Separate from --surface-edit because that token is also
+     the main page's DDL Definition and Message Input, which do not move.
+     Requested 2026-08-22. */
+  --surface-form: #11161C;
   --surface-header: #1c2128;
   /* Sidebar SECTION bars (Messages / Data / Files) — one level below a pane
      header, so they read as nested rather than as another panel. A token, not a
@@ -159,7 +166,12 @@
   --gutter-num: #444d56;
   --input-focus-bg: #0a1020;
   --input-ro-bg: #0b0f18;
-  --fm-head-bg: #0b0f15;
+  /* The pinned header sits one step ABOVE the rows it labels, which is the
+     direction light already had. It used to be a literal #0b0f15 — the one
+     surface in the app below the page ground — so dark sank the header while
+     light lifted it, and the same table read two different ways depending on
+     the theme. Reported 2026-08-22. */
+  --fm-head-bg: var(--bg-panel);
   --hb-masked: #566070;
   --lw-marker: #30363d;
   --str-lit: #c3e88d;
@@ -216,6 +228,7 @@
   --bg-input: #eef1f3;
   --surface-edit: var(--bg-panel);   /* white, like paper — you write on it */
   --surface-read: #F6F6F6;           /* tinted — a readout, not a page */
+  --surface-form: #E8ECF0;           /* a pane of fields — the white boxes lift off it */
   --surface-header: #eef1f3;
   --surface-subhead: #e7ecf0;
   --border: rgba(0,0,0,0.08);
@@ -240,7 +253,7 @@
   --gutter-num: #c8ced4;
   --input-focus-bg: #e8ecf0;
   --input-ro-bg: #f0f2f5;
-  --fm-head-bg: var(--bg-deep);
+  --fm-head-bg: var(--bg-panel);
   --hb-masked: #c8ccd0;
   --lw-marker: #c8cdd5;
   --str-lit: #3a7d0a;
@@ -566,6 +579,8 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
    See --surface-edit / --surface-read. */
 .pb-edit { background: var(--surface-edit); }
 .pb-read { background: var(--surface-read); }
+/* A pane of FIELDS, not one big editor — see --surface-form. */
+.pb-form { background: var(--surface-form); }
 
 /* Panel visibility toggle button */
 .panel-toggle {
@@ -16976,7 +16991,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.11.0';
+const APP_VERSION  = '1.46.13.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19259,11 +19274,15 @@ const _mePad = html => `<div class="me-section-pad">${html}</div>`;
 //   recognizers   a LIST — read, until you open a rule, and then it is the open
 //                 rule's own box that becomes editable, not the section
 //   overrides     a table you click; the value editor is its own box too
+// 'form' is 'edit' with the pane dropped a step: a row of fields on the same
+// ground as the fields themselves shows nothing but borders, where an EDITOR
+// fills its pane and needs no separation. Requested 2026-08-22.
 const _ME_SECT_SURFACE = {
-  identity: 'edit', ddl_bindings: 'edit', parse_spec: 'edit',
+  identity: 'form', ddl_bindings: 'form', parse_spec: 'edit',
   recognizers: 'read', overrides: 'read',
 };
-const _meSectSurface = key => (_ME_SECT_SURFACE[key] === 'edit' ? 'pb-edit' : 'pb-read');
+const _ME_SECT_PB = { edit: 'pb-edit', read: 'pb-read', form: 'pb-form' };
+const _meSectSurface = key => _ME_SECT_PB[_ME_SECT_SURFACE[key]] || 'pb-read';
 
 function _meRenderSection(key, fill) {
   const el = document.getElementById('me-sect-body-' + key);

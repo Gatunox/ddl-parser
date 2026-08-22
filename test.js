@@ -11899,6 +11899,74 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
   }
 });
 
+test('the Overrides header sits the same way against its rows in both themes', () => {
+  // It was a literal #0b0f15 in dark — the one surface in the app BELOW the page
+  // ground — while light pointed at --bg-deep, which in light is ABOVE the rows.
+  // So the same pinned header sank in one theme and lifted in the other.
+  // Reported 2026-08-22; the header lifts in both now. Only .me-fm-table th
+  // reads the token, so the choice is confined to that table.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const block = sel => (css.match(new RegExp('\\[data-theme="' + sel + '"\\] \\{[\\s\\S]*?\\n\\}')) || [''])[0];
+  const lum = h => { const n = h.replace('#', '').match(/../g).map(x => parseInt(x, 16) / 255)
+      .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+    return 0.2126 * n[0] + 0.7152 * n[1] + 0.0722 * n[2]; };
+  for (const theme of ['dark', 'light']) {
+    const b = block(theme);
+    const head = (b.match(/--fm-head-bg:\s*([^;]+);/) || [])[1];
+    assert.ok(head, `${theme} does not define --fm-head-bg`);
+    assert.ok(!/^#/.test(head.trim()),
+      `${theme}: the header names a colour of its own instead of a ground: ${head}`);
+    // Resolve both through the theme block and compare, so this pins the
+    // RELATIONSHIP — header above rows — not the hexes that express it.
+    const val = n => { const v = (b.match(new RegExp('--' + n + ':\\s*([^;]+);')) || [])[1].trim();
+      const ref = v.match(/^var\(--([\w-]+)\)$/);
+      return ref ? val(ref[1]) : v; };
+    assert.ok(lum(val('fm-head-bg')) > lum(val('surface-read')),
+      `${theme}: the header sinks below the rows it labels`);
+  }
+  assert.ok((css.match(/var\(--fm-head-bg\)/g) || []).length === 1,
+    'more than one surface now rides on the table-header ground');
+});
+
+test('a pane of fields sits BELOW the fields on it, in both themes', () => {
+  // Identity and DDL Bindings are rows of FIELDS, and their fields take
+  // --surface-edit — so on that same ground a form showed nothing but borders.
+  // The pane drops a step instead. It could not simply reuse --surface-edit's
+  // neighbours: that token is also the main page's DDL Definition and Message
+  // Input, which do not move. Requested 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const block = sel => (css.match(new RegExp('\\[data-theme="' + sel + '"\\] \\{[\\s\\S]*?\\n\\}')) || [''])[0];
+  const lum = h => { const n = h.replace('#', '').match(/../g).map(x => parseInt(x, 16) / 255)
+      .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+    return 0.2126 * n[0] + 0.7152 * n[1] + 0.0722 * n[2]; };
+  for (const theme of ['dark', 'light']) {
+    const b = block(theme);
+    const val = n => { const v = (b.match(new RegExp('--' + n + ':\\s*([^;/]+)')) || [])[1];
+      assert.ok(v, `${theme} does not define --${n}`);
+      const ref = v.trim().match(/^var\(--([\w-]+)\)$/);
+      return ref ? val(ref[1]) : v.trim(); };
+    // "Below" means below in BOTH themes: light's white fields on a tinted pane,
+    // dark's raised fields on the readout ground. One relationship, two palettes.
+    assert.ok(lum(val('surface-form')) < lum(val('surface-edit')),
+      `${theme}: the form pane is not below the fields standing on it`);
+  }
+  assert.ok(/--surface-form: #E8ECF0/.test(block('light')), 'light: the form pane is not the requested tint');
+  assert.ok(/--surface-form: #11161C/.test(block('dark')),  'dark: the form pane is not the readout ground');
+  assert.ok(/\.pb-form \{ background: var\(--surface-form\); \}/.test(css), '.pb-form does not take its token');
+  // The classification decides it, so a new section still has to answer the
+  // question — and an editor that FILLS its pane is not a form.
+  const map = (src.match(/const _ME_SECT_SURFACE = \{[\s\S]*?\};/) || [''])[0];
+  assert.ok(/identity: 'form'/.test(map) && /ddl_bindings: 'form'/.test(map),
+    'the two field panes are not classified as forms');
+  assert.ok(/parse_spec: 'edit'/.test(map), 'the code editor was dropped a step with the forms');
+  // The main page keeps its own ground. Repainting it was reverted once already.
+  assert.ok(!/pb-form/.test(src.replace(/\.pb-form \{[^}]*\}/, '').replace(map, '')
+              .replace(/_ME_SECT_PB = \{[^}]*\}/, '')),
+    'the form ground leaked onto a panel outside the Class Editor sections');
+});
+
 test('[REGRESSION] a recognizer edit re-renders only the recognizer list', () => {
   // Every recognizer action called _meRenderRight, which rebuilds the WHOLE
   // right pane: CodeMirror torn down and remounted, the Overrides field table

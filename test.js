@@ -11908,14 +11908,19 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
     assert.ok(!/background:\s*var\(--bg-panel\)/.test(rule),
       `${sel} paints its own ground, so its surface class cannot show: ${rule}`);
   }
-  // The Class Editor classifies every section, and the two boxes that ARE
-  // editable inside a read-only section take the editable ground.
+  // The Class Editor classifies every section, and the editable things inside a
+  // read-only one say so — but not both the same way, and the difference is the
+  // point. .me-fm-ed FLOATS over the table, so the editable ground marks it.
+  // .me-rec-form is a row DOCKED in a list: on the editable ground the dark swap
+  // made it the darkest thing on screen and an open rule read as a hole, so it
+  // takes the step above a panel and stands off the list instead. Its own fields
+  // still carry the editable ground. Requested 2026-08-22.
   assert.ok(/const _ME_SECT_SURFACE = \{/.test(src), 'the editor sections are not classified');
-  for (const box of ['.me-rec-form', '.me-fm-ed']) {
-    const rule = (css.match(new RegExp(box.replace('.', '\\.') + '\\{[^}]*\\}')) || [''])[0];
-    assert.ok(/background:\s*var\(--surface-edit\)/.test(rule),
-      `${box} is the box you type in and does not say so: ${rule}`);
-  }
+  const boxRule = box => (css.match(new RegExp(box.replace('.', '\\.') + '\\{[^}]*\\}')) || [''])[0];
+  assert.ok(/background:\s*var\(--surface-edit\)/.test(boxRule('.me-fm-ed')),
+    'the floating value editor is the box you type in and does not say so');
+  assert.ok(/background:\s*var\(--surface-subhead\)/.test(boxRule('.me-rec-form')),
+    'the open rule does not stand off the list it opened from');
 });
 
 test('the Overrides header sits the same way against its rows in both themes', () => {

@@ -2464,9 +2464,15 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-rb.del:hover{border-color:#f85149 !important;color:#f85149 !important;}
 .me-rb[disabled]{opacity:.3;cursor:default;}
 /* The one editable thing in a read-only section: the rule you have opened. It
-   takes the editable ground, so the box you type in is marked and the list
-   around it is not. */
-.me-rec-form{border-top: var(--bw) solid var(--border);background:var(--surface-edit);padding:8px;display:none;flex-direction:column;gap:8px;}
+   used to take the editable ground, which the dark swap made the DARKEST thing
+   on screen — an open rule read as a hole in the list rather than as the row
+   that had opened up. --surface-subhead is the step ABOVE a panel, so the open
+   rule stands off the list it belongs to in both themes; the FIELDS inside it
+   still carry the editable ground, which is what marks them.
+   The Overrides inline editor (.me-fm-ed) stays on the editable ground: it is a
+   popup floating OVER a table, not a row docked inside a list.
+   Requested 2026-08-22. */
+.me-rec-form{border-top: var(--bw) solid var(--border);background:var(--surface-subhead);padding:8px;display:none;flex-direction:column;gap:8px;}
 .me-rec-form.open{display:flex;}
 /* The verdict column of a recognizer help example. Both values are produced by
    running the rule, so the colour is reporting a result, not decorating a claim. */
@@ -16998,7 +17004,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.15.0';
+const APP_VERSION  = '1.46.16.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

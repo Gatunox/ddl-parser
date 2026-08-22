@@ -17009,7 +17009,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.17.0';
+const APP_VERSION  = '1.46.18.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23142,16 +23142,33 @@ function _meDDLEntriesUncached() {
         const content  = tree[vol][sv][fname] || '';
         const path     = vol + '/' + sv + '/' + fname;
         const defNames = isHPEDDLText(content) ? parseDEFNames(content) : [];
+        // `value` is what the field should END UP holding, decided here and
+        // nowhere else. A DEF is addressed as PATH/DEF; a file that declares no
+        // DEFs is addressed by its PATH alone — its defName is a label for the
+        // list, invented from the filename so the row has something to show.
+        // Picking used to paste path + '/' + defName either way, which turned a
+        // resolving 3-part binding into a 4-part one that resolves to nothing.
+        // Reported 2026-08-22.
         if (defNames.length) {
-          for (const dn of defNames) entries.push({ defName: dn, path });
+          for (const dn of defNames) entries.push({ defName: dn, path, value: path + '/' + dn });
         } else {
-          entries.push({ defName: fname.toUpperCase(), path });
+          entries.push({ defName: fname.toUpperCase(), path, value: path });
         }
       }
     }
   }
   return entries;
 }
+
+// A suggestion is matched on the text it would PUT IN THE FIELD, not on its two
+// halves separately. Matching defName and path independently meant a finished
+// binding — PATH/DEF — was a substring of neither, so the list stayed shut for
+// every completed binding and opened only for the path-only kind, which looked
+// like the feature working on some classes and not others. defName stays in the
+// test for the DEF-less case, where it is a label rather than part of the value.
+// Reported 2026-08-22.
+const _meBindEntryMatch = (e, q) =>
+  !q || e.value.toLowerCase().includes(q) || e.defName.toLowerCase().includes(q);
 
 let _meDropEntries = [], _meDropBindIdx = -1, _meDropFocusIdx = -1;
 
@@ -23190,7 +23207,7 @@ function _meBindShowDrop(idx) {
   _meDropFocusIdx  = -1;
   const entries = _meDDLEntries();
   const q = inp.value.toLowerCase();
-  _meDropEntries = entries.filter(e => !q || e.defName.toLowerCase().includes(q) || e.path.toLowerCase().includes(q));
+  _meDropEntries = entries.filter(e => _meBindEntryMatch(e, q));
   // No matches → hide the dropdown entirely (the red validation badge already
   // signals "this path doesn't resolve"; the empty list is noise).
   if (!_meDropEntries.length) {
@@ -23238,7 +23255,7 @@ function _meBindFocusOpt(i) {
 function _meBindPickIdx(entryIdx) {
   const e = _meDropEntries[entryIdx];
   if (!e) return;
-  _meBindPick(_meDropBindIdx, e.path + '/' + e.defName);
+  _meBindPick(_meDropBindIdx, e.value);
 }
 
 function _meBindKeyDown(idx, ev) {

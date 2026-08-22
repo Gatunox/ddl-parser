@@ -274,6 +274,9 @@ _t.auditBeginLoad     = _auditBeginLoad;
 // tests because nothing could execute it.
 _t.doParseMessages    = doParseMessages;
 _t.specKey            = _specKey;
+// The DDL-binding suggestion list: what a suggestion IS, and what matches one.
+_t.meDDLEntries       = _meDDLEntries;
+_t.meBindEntryMatch   = _meBindEntryMatch;
 _t.ppDetectDetails    = _ppDetectDetails;
 _t.detectMsgType      = detectMsgType;
 // In a browser, \`window.X = fn\` also creates the global \`X\`, and top-level code
@@ -313,7 +316,7 @@ const {
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
-  meComputeAutoOrderAnchors, getDDLFromPath, S, P,
+  meComputeAutoOrderAnchors, getDDLFromPath, meDDLEntries, meBindEntryMatch, S, P,
   meWalkDEFields: _rawWalkDEFields,
   renderFieldTable, meTestFieldTable, escSpaces, meOvEffectiveLen, expMsgLines, expWrapCell,
   meCanonSet, meVlgLenMap, meRowsForOverride, meNextSelection,
@@ -11951,6 +11954,65 @@ test('the Overrides header sits the same way against its rows in both themes', (
   }
   assert.ok((css.match(/var\(--fm-head-bg\)/g) || []).length === 1,
     'more than one surface now rides on the table-header ground');
+});
+
+test('a DDL suggestion carries the text that belongs in the field', () => {
+  // Two symptoms, one root: a suggestion was two halves (defName, path) and
+  // every consumer re-joined them its own way. A file that declares no DEFs has
+  // no second half — its defName is a LABEL invented from the filename — so
+  // joining pasted a DEF that does not exist and a resolving binding became a
+  // dead one. Reported 2026-08-22.
+  const { meDDLEntries, meBindEntryMatch, getDDLFromPath } = sandbox._t;
+  const HPE = `
+DEF REC.
+  02 A PIC X(2).
+END REC.
+DEF OTHER.
+  02 B PIC X(2).
+END OTHER.
+`;
+  // A simple (non-HPE) DDL: bound by path alone, exactly like the class that
+  // was reported.
+  const FLAT = 'FIELD_ID TYPE LENGTH "Description"\nMTI X 4 "Message type"\n';
+  const before = S.ddlTree;
+  try {
+    S.ddlTree = { BASE: { DDL: { HPEFILE: HPE } }, SWITCH: { '1987': { 'Standard ISO': FLAT } } };
+    const entries = meDDLEntries();
+    const byLabel = n => entries.find(e => e.defName === n);
+    assert.strictEqual(byLabel('REC').value,   'BASE/DDL/HPEFILE/REC',   'a DEF is not addressed as PATH/DEF');
+    assert.strictEqual(byLabel('OTHER').value, 'BASE/DDL/HPEFILE/OTHER', 'the second DEF of a file is wrong');
+    // The one that broke: the label is the filename, and it must NOT be pasted.
+    const flat = byLabel('STANDARD ISO');
+    assert.ok(flat, 'the DEF-less file is missing from the list');
+    assert.strictEqual(flat.value, 'SWITCH/1987/Standard ISO',
+      'picking a DEF-less file still pastes a DEF name it does not have');
+    // Proven against the resolver rather than by eye: what the pick inserts must
+    // resolve, and the old joined form must not — that is the whole bug.
+    assert.ok(getDDLFromPath(flat.value), 'the pasted binding does not resolve');
+    assert.ok(!getDDLFromPath(flat.path + '/' + flat.defName),
+      'the old joined form resolves too, so this test proves nothing');
+  } finally { S.ddlTree = before; }
+});
+
+test('a finished binding matches its own suggestion', () => {
+  // The list was filtered on defName and path SEPARATELY, and a finished
+  // binding is PATH/DEF — a substring of neither. So it stayed shut for every
+  // completed binding and opened only for the path-only kind, which read as the
+  // feature working on some classes and not others. Reported 2026-08-22.
+  const { meBindEntryMatch } = sandbox._t;
+  const def  = { defName: 'REC', path: 'BASE/DDL/HPEFILE', value: 'BASE/DDL/HPEFILE/REC' };
+  const flat = { defName: 'STANDARD ISO', path: 'SWITCH/1987/Standard ISO', value: 'SWITCH/1987/Standard ISO' };
+  const m = (e, q) => meBindEntryMatch(e, q.toLowerCase());
+  assert.ok(m(def,  def.value.toLowerCase()),  'a completed PATH/DEF binding does not match itself');
+  assert.ok(m(flat, flat.value.toLowerCase()), 'a completed path-only binding does not match itself');
+  // The halves still match, so typing either end of it still finds the entry.
+  assert.ok(m(def, 'rec'),          'typing the DEF name finds nothing');
+  assert.ok(m(def, 'base/ddl'),     'typing the path finds nothing');
+  assert.ok(m(def, 'hpefile/rec'),  'typing across the join finds nothing');
+  // A DEF-less file is found by its label too, which is not part of its value.
+  assert.ok(m(flat, 'standard'),    'the invented label no longer finds its file');
+  assert.ok(!m(def, 'nothing-like-this'), 'the filter matches everything');
+  assert.ok(m(def, ''), 'an empty field hides the whole list');
 });
 
 test('a pane of fields stands off the fields on it, whichever way the theme runs', () => {

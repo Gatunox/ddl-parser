@@ -14325,12 +14325,52 @@ test('the DDL panel header is only the collapsed strip now', () => {
   const titleAt = bar.indexOf('ddl-cfg-title'), toggleAt = bar.indexOf('id="ddlToggleBar"');
   assert.ok(titleAt >= 0, 'the title was lost with the bar it came from');
   assert.ok(toggleAt >= 0, 'the toggle was lost with the bar it came from');
-  assert.ok(titleAt < bar.indexOf('id="ddlSearchBar"'), 'the title does not come before the search bar');
+  assert.ok(titleAt < bar.indexOf('id="ddlSearchBtn"'), 'the title does not come before the search button');
   assert.ok(toggleAt > bar.indexOf('id="ddlClearBtn"'), 'the toggle does not come after Clear');
   // Same call as the header's, so collapsing is unchanged and togglePanel keeps
   // driving the button that the collapsed strip shows.
   assert.ok(/id="ddlToggleBar"[\s\S]{0,120}togglePanel\('ddlPanel','ddlToggle','ddlResizer'\)/.test(bar),
     'the toolbar toggle collapses something other than the DDL panel');
+});
+
+test('the DDL search opens on a row of its own, not inside the toolbar', () => {
+  // One bar was holding a title, a search FIELD, its navigation controls and
+  // four buttons. The controls are 80px at "0 / 0" and 110px at "128 / 999", so
+  // they had to be absolutely positioned over the field's right end with a
+  // JS-measured right padding under them to stop the typed text sliding
+  // beneath — all to buy width that was never there. Requested 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  // The toolbar holds a BUTTON now, and the field lives outside it.
+  const bar = html.slice(html.indexOf('<div id="ddlCfgBar">'), html.indexOf('<div id="ddlSearchRow"'));
+  assert.ok(/id="ddlSearchBtn"[\s\S]{0,160}ddlSearchToggle\(\)/.test(bar),
+    'the toolbar has no button to open the search');
+  assert.ok(!/id="ddlSearchInput"/.test(bar), 'the field is still competing for the toolbar\'s width');
+  // The row is a second bar under the first, the way Message Input carries its
+  // format row, and it costs nothing while closed.
+  const row = html.slice(html.indexOf('<div id="ddlSearchRow"'), html.indexOf('<div id="ddlValidationBar"'));
+  assert.ok(/class="panel-bar ddl-search-row hidden"/.test(html), 'the row is not a bar, or does not start closed');
+  assert.ok(/\.ddl-search-row\.hidden \{ display: none; \}/.test(css), 'a closed row still takes a line');
+  assert.ok(/id="ddlSearchInput"/.test(row) && /id="ddlSearchControls"/.test(row),
+    'the field and its controls did not move to the row together');
+  // A collapsed panel hides its bars — both of them.
+  assert.ok(/\.panel\.collapsed #ddlSearchRow \{ display:none !important; \}/.test(css),
+    'a collapsed DDL panel keeps a stray search bar');
+  // The controls are laid out BESIDE the field now; the overlay and the
+  // measured padding that went with it are gone, not merely unused.
+  const ctl = (css.match(/\.ddl-search-controls \{[^}]*\}/) || [''])[0];
+  assert.ok(!/position:\s*absolute/.test(ctl), 'the controls are still overlaid on the field');
+  assert.ok(!/_ddlSrchReserveCtrlSpace/.test(src),
+    'the padding-measuring helper survives, so something still overlaps the field');
+  // Closing CLEARS: a hidden row holding a live query leaves the editor lit up
+  // with highlights and nothing on screen explaining them.
+  const toggle = psFnSource('ddlSearchToggle');
+  assert.ok(toggle, 'there is no toggle');
+  assert.ok(/ddlSearchClear\(\)/.test(toggle), 'closing the row leaves the query and its highlights behind');
+  assert.ok(/\.focus\(\)/.test(toggle), 'opening the row does not put the cursor in the field');
+  // Esc closes the whole row rather than only emptying the field.
+  assert.ok(/Escape'\)\{ddlSearchToggle\(\);\}/.test(html.replace(/\s+/g, '')),
+    'Escape empties the field but leaves the row open');
 });
 
 test('the feature is called the Class Editor everywhere it is named', () => {

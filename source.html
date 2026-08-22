@@ -878,15 +878,15 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 #rawPanel .panel-title { width: auto; }
 #msgPanel .panel-title { width: auto; padding-right: 0; }
 /* DDL editor search bar */
-/* position:relative so the search controls can be pinned to the field's right
-   end instead of competing with it for width. */
-.ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 4px; padding: 0 0 0 4px; overflow: hidden; position: relative; }
+.ddl-search-bar { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 4px; overflow: hidden; }
 .ddl-search-lbl { font-size: var(--sz-mono); color: var(--text-dim); opacity: 0.7; user-select: none; flex-shrink: 0; padding-right: 2px; font-family: var(--font-mono); display: flex; align-items: center; }
-.ddl-search-input { flex: 1; min-width: 0; background: var(--bg-input); border: var(--bw-ctl) solid var(--bg-input) !important; border-radius: var(--r-sm); -webkit-appearance: none; appearance: none; color: var(--text); font-family: var(--mono); font-size: var(--sz-mono); padding: 2px 6px; outline: none; box-shadow: none; }
+.ddl-search-input { flex: 1; min-width: 0; background: var(--bg-input); border: var(--bw-ctl) solid var(--border-strong) !important; border-radius: var(--r-sm); -webkit-appearance: none; appearance: none; color: var(--text); font-family: var(--mono); font-size: var(--sz-mono); padding: 2px 6px; outline: none; box-shadow: none; }
 .ddl-search-input:focus { border-color: var(--accent) !important; }
 .ddl-search-bar:focus-within, .ddl-search-bar.has-query { box-shadow: none; }
-#ddlCfgBar .ddl-search-input { background: transparent !important; border-color: transparent !important; height: calc(var(--sz-mono) + 8px); }
-#ddlCfgBar .ddl-search-input:focus { border-color: var(--accent) !important; }
+/* On its own row the field is the row: it takes the ground a field takes, and
+   its height matches every other control on a bar. */
+#ddlSearchRow .ddl-search-input { height: var(--bar-ctl-h); }
+.ddl-search-row.hidden { display: none; }
 .ddl-search-count { font-size: var(--sz-mono); color: var(--text-dim); font-family: var(--font-mono); flex-shrink: 0; min-width: 3em; text-align: center; display: flex; align-items: center; justify-content: center; }
 .ddl-search-nav { cursor: pointer; opacity: 0.55; padding: 0 4px; user-select: none; line-height: 1; font-family: var(--font-mono); font-size: var(--sz-mono); display: flex; align-items: center; }
 .ddl-search-nav:hover { opacity: 1; color: var(--accent); }
@@ -894,18 +894,13 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    are the same control doing the same job in the same panel. Was -3px against
    the tree's -2px: 9px vs 10px, a 5.42px glyph next to a 7.63px one. */
 .ddl-search-nav-x { font-size: calc(var(--sz-mono) - 2px); }
-/* Overlaid on the field's right end, not laid out beside it. As a flex sibling
-   these controls claimed their 80px from the input the moment a query existed —
-   the field went 156px to 72px on the first keystroke, less than half, while
-   you were typing in it. Absolute keeps the input's box fixed; the padding
-   below stops the text running underneath. */
-.ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0;
-  position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
-/* The right padding that keeps typed text clear of the controls is set from JS,
-   not here: the controls are 80px at "0 / 0" but 110px at "128 / 999", and a
-   fixed reservation lets the text slide under the wider one. See
-   _ddlSrchReserveCtrlSpace. Left-aligned text means growing that padding never
-   moves what is already typed. */
+/* Laid out BESIDE the field, which is what the second row bought. They used to
+   be absolutely positioned over the field's right end, with a right padding
+   measured from JS on every count change to stop the typed text sliding under
+   them — all of it because one bar had to hold a title, a field, the controls
+   and three buttons. Given a row of their own they are simply the next thing
+   along. Requested 2026-08-22. */
+.ddl-search-controls { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 .ddl-search-controls.hidden { display: none; }
 .tree-node { padding: var(--row-py-tree) 20px var(--row-py-tree) 8px; margin-right: -20px; cursor: pointer; font-family: var(--mono); font-size: var(--sz-mono); display: flex; align-items: center; gap: 5px; white-space: nowrap; user-select: none; line-height: calc(var(--sz-mono) + 4px); }
 .tree-node:hover  { background: rgba(var(--accent-rgb),0.08); }
@@ -1438,8 +1433,15 @@ tr.row-filter-hide  { display: none; }
   border-radius: calc(var(--r-md) - var(--bw)) calc(var(--r-md) - var(--bw)) 0 0;
 }
 .panel.collapsed #ddlCfgBar { display:none !important; }
+/* And the row under it, or a collapsed panel keeps a stray search bar. */
+.panel.collapsed #ddlSearchRow { display:none !important; }
 #ddlCfgBar .btn { background:var(--surface-raised); border: var(--bw-ctl) solid var(--border); color:var(--text-dim); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 10px; border-radius:var(--r-sm); cursor:pointer; height:var(--ctl-h); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
 #ddlCfgBar .btn:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text); background:var(--surface-hover); }
+/* While the search row is open the button that opened it stays lit, so the
+   extra bar is visibly something you turned ON rather than something that
+   appeared. Accent border + accent glyph, the way the app marks any armed
+   control. */
+#ddlCfgBar .btn.on { border-color:var(--accent); color:var(--accent); }
 #ddlCfgBar .btn:disabled { opacity:0.35; cursor:default; }
 /* justify-content packs the WRAPPED lines right, so buttons pushed onto a second
    row sit under the first rather than starting back under the filter. The row
@@ -3474,21 +3476,16 @@ th.me-fm-colhi{color:var(--accent);}
         <div class="ddl-editor-pane pb-edit">
           <div id="ddlCfgBar">
             <span class="panel-title ddl-cfg-title">DDL Definition</span>
-            <div class="ddl-search-bar" id="ddlSearchBar">
-              <input id="ddlSearchInput" class="ddl-search-input" type="text" placeholder="Search" autocomplete="off" spellcheck="false"
-                oninput="ddlSearchUpdate()"
-                onkeydown="if(event.key==='Enter'){ddlSearchNext();}else if(event.key==='Escape'){ddlSearchClear();}"/>
-              <div id="ddlSearchControls" class="ddl-search-controls hidden">
-                <span class="ddl-search-nav" onclick="ddlSearchPrev()" title="Previous match">&lt;</span>
-                <span id="ddlSearchCount" class="ddl-search-count"></span>
-                <span class="ddl-search-nav" onclick="ddlSearchNext()" title="Next match">&gt;</span>
-                <span class="ddl-search-nav ddl-search-nav-x" onclick="ddlSearchClear()" title="Clear search">✕</span>
-              </div>
-            </div>
-            <!-- No spacer: the search bar is already flex:1, so a second one
-                 here split the free space between them and left the field
-                 stranded mid-bar with a gap either side. It takes the whole run
-                 from the title to the buttons now. -->
+            <!-- The search used to live HERE, flex:1 between the title and the
+                 buttons. Its field and its navigation controls were competing
+                 for one bar's width: the controls are 80-110px depending on the
+                 count, and they had to be absolutely positioned over the field's
+                 right end with JS-measured padding under them to stop the typed
+                 text sliding beneath. It opens on a row of its own now, so both
+                 have room. Requested 2026-08-22. -->
+            <span style="flex:1"></span>
+            <button class="btn btn-ico" id="ddlSearchBtn" onclick="ddlSearchToggle()"
+                    title="Search the DDL definition">⌕</button>
             <button class="btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
             <button class="btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
             <button class="btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
@@ -3498,6 +3495,22 @@ th.me-fm-colhi{color:var(--accent);}
                  one is only ever seen expanded, where the glyph is always −. -->
             <button class="panel-toggle" id="ddlToggleBar"
                     onclick="togglePanel('ddlPanel','ddlToggle','ddlResizer')" title="Hide panel">−</button>
+          </div>
+          <!-- A second bar under the first, the way Message Input carries its
+               format row under its header. Hidden until the magnifier is
+               pressed; it takes no height while closed. -->
+          <div id="ddlSearchRow" class="panel-bar ddl-search-row hidden">
+            <div class="ddl-search-bar" id="ddlSearchBar">
+              <input id="ddlSearchInput" class="ddl-search-input" type="text" placeholder="Search the DDL…" autocomplete="off" spellcheck="false"
+                oninput="ddlSearchUpdate()"
+                onkeydown="if(event.key==='Enter'){event.shiftKey?ddlSearchPrev():ddlSearchNext();}else if(event.key==='Escape'){ddlSearchToggle();}"/>
+            </div>
+            <div id="ddlSearchControls" class="ddl-search-controls hidden">
+              <span class="ddl-search-nav" onclick="ddlSearchPrev()" title="Previous match (⇧↵)">&lt;</span>
+              <span id="ddlSearchCount" class="ddl-search-count"></span>
+              <span class="ddl-search-nav" onclick="ddlSearchNext()" title="Next match (↵)">&gt;</span>
+            </div>
+            <button class="btn btn-ico" onclick="ddlSearchToggle()" title="Close search (Esc)">✕</button>
           </div>
           <div id="ddlValidationBar" class="vbar"></div>
           <div id="ddlEditor" class="cm-host"></div>
@@ -17022,7 +17035,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.20.0';
+const APP_VERSION  = '1.46.21.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17644,16 +17657,25 @@ function _ddlUpdateLinesBg() {
   bg.style.transform = `translateY(${-ta.scrollTop}px)`;
 }
 
-// Reserve exactly as much right padding as the overlaid controls actually
-// occupy. Measured rather than guessed: the strip is 80px showing "0 / 0" and
-// 110px showing "128 / 999", so any constant is wrong for one of them — too
-// small and the typed text runs underneath, too large and the field is short
-// for no reason. Called wherever the count text changes.
-function _ddlSrchReserveCtrlSpace() {
-  const inp = document.getElementById('ddlSearchInput');
-  const ctl = document.getElementById('ddlSearchControls');
-  if (!inp || !ctl) return;
-  inp.style.paddingRight = ctl.classList.contains('hidden') ? '' : (ctl.offsetWidth + 8) + 'px';
+// Open or close the search row. Closing CLEARS: a hidden row holding a live
+// query would leave the editor lit up with highlights and no way to see what
+// matched them. Focus goes to the field on open and back to the editor on
+// close, so ⌕ then type, and Esc then keep typing, both work without a click.
+function ddlSearchToggle() {
+  const row = document.getElementById('ddlSearchRow');
+  const btn = document.getElementById('ddlSearchBtn');
+  if (!row) return;
+  const opening = row.classList.contains('hidden');
+  row.classList.toggle('hidden', !opening);
+  if (btn) btn.classList.toggle('on', opening);
+  if (opening) {
+    const inp = document.getElementById('ddlSearchInput');
+    if (inp) { inp.focus(); inp.select(); }
+  } else {
+    ddlSearchClear();
+    const cm = window._ddlEditorCM;
+    if (cm && cm.focus) cm.focus();
+  }
 }
 
 function ddlSearchUpdate() {
@@ -17663,13 +17685,13 @@ function ddlSearchUpdate() {
   const ctrlEl = document.getElementById('ddlSearchControls');
   _ddlSrchMatches = []; _ddlSrchIdx = -1;
   const bar = document.getElementById('ddlSearchBar');
-  if (!q) { countEl.textContent = ''; ctrlEl.classList.add('hidden'); bar.classList.remove('has-query'); _ddlSrchReserveCtrlSpace(); _ddlUpdateLinesBg(); return; }
+  if (!q) { countEl.textContent = ''; ctrlEl.classList.add('hidden'); bar.classList.remove('has-query'); _ddlUpdateLinesBg(); return; }
   ctrlEl.classList.remove('hidden'); bar.classList.add('has-query');
   const text = ta.value, lower = text.toLowerCase(), ql = q.toLowerCase();
   let pos = 0;
   while ((pos = lower.indexOf(ql, pos)) !== -1) { _ddlSrchMatches.push(pos); pos++; }
   if (_ddlSrchMatches.length) { _ddlSrchIdx = 0; _ddlSrchShow(false); }
-  else { countEl.textContent = '0 / 0'; _ddlSrchReserveCtrlSpace(); _ddlUpdateLinesBg(); _ddlSrchUpdateCurMark(); }
+  else { countEl.textContent = '0 / 0'; _ddlUpdateLinesBg(); _ddlSrchUpdateCurMark(); }
 }
 
 function _ddlSrchShow(moveFocus) {
@@ -17693,7 +17715,7 @@ function _ddlSrchShow(moveFocus) {
   }
   document.getElementById('ddlSearchCount').textContent =
     `${_ddlSrchIdx + 1} / ${_ddlSrchMatches.length}`;
-  _ddlSrchReserveCtrlSpace();
+ 
   _ddlUpdateLinesBg();
   _ddlSrchUpdateCurMark();
 }
@@ -17715,7 +17737,6 @@ function ddlSearchClear() {
   document.getElementById('ddlSearchCount').textContent = '';
   document.getElementById('ddlSearchControls').classList.add('hidden');
   document.getElementById('ddlSearchBar').classList.remove('has-query');
-  _ddlSrchReserveCtrlSpace();   // controls gone → give the padding back
   _ddlSrchMatches = []; _ddlSrchIdx = -1;
   _ddlUpdateLinesBg();
   _ddlSrchUpdateCurMark();

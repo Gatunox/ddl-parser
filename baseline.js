@@ -249,9 +249,9 @@ for (const s of ['0x26', '0x00', 'Z']) {
 }
 
 for (const pfx of ['uint8', 'uint16-be', 'uint16-le', 'bcd2']) {
-  kase('cursor/read-length-prefix', `prefix ${pfx}`, () =>
+  kase('cursor/read-length-value', `prefix ${pfx}`, () =>
     runSpec(null, null, [
-      { 'read-length-prefix': { prefix: pfx, as: 'P' } },
+      { 'read-length-value': { length_encoding: pfx, as: 'P' } },
       { 'read-to-end': { as: 'REST' } },
     ], hexOf('00 03 41 42 43 44 45 46 47')));
 }
@@ -291,7 +291,7 @@ for (const [flag, label] of [['1', 'then branch'], ['0', 'else branch']]) {
   kase('cursor/when', label, () =>
     runSpec(null, null, [
       { 'read-fixed': { length: 1, as: 'FLAG' } },
-      { when: { field: 'FLAG', not: '0',
+      { when: { field: 'FLAG', not_equal: '0',
                 then: [{ 'read-fixed': { length: 3, as: 'T' } }],
                 else: [{ 'read-fixed': { length: 1, as: 'E' } }] } },
       { 'read-to-end': { as: 'REST' } },
@@ -317,7 +317,7 @@ kase('errors', 'read-fixed past the end', () =>
   runSpec(null, null, [{ 'read-fixed': { length: 50, as: 'A' } }], 'ABC'));
 
 kase('errors', 'length prefix larger than what remains', () =>
-  runSpec(null, null, [{ 'read-length-prefix': { prefix: 'uint16-be', as: 'P' } }], hexOf('99 99 41 42')));
+  runSpec(null, null, [{ 'read-length-value': { length_encoding: 'uint16-be', as: 'P' } }], hexOf('99 99 41 42')));
 
 kase('errors', 'unknown block type', () =>
   runSpec(null, null, [{ 'read-nothing': { field: 'X' } }], 'ABC'));
@@ -564,8 +564,8 @@ combos('read-until', {
   as:        [undefined, 'U'],
 }, () => ({ input: 'AB&CDZEF' }));
 
-combos('read-length-prefix', {
-  prefix:    [undefined, 'uint8', 'uint16-be', 'uint16-le', 'bcd2'],
+combos('read-length-value', {
+  length_encoding:    [undefined, 'uint8', 'uint16-be', 'uint16-le', 'bcd2'],
   as:        [undefined, 'P'],
   sentinels: [undefined, ['0x26']],
   eom:       [undefined, true],
@@ -607,8 +607,8 @@ combos('skip', { length: [0, 1, 5, 99, -1, 'CNT'] }, () => ({ ...FLAT, before: H
 
 combos('when', {
   field: ['CNT', 'NOPE'],
-  is:    [undefined, '2', ['2', '3']],
-  not:   [undefined, '0', ['0']],
+  equal:    [undefined, '2', ['2', '3']],
+  not_equal:   [undefined, '0', ['0']],
   then:  [[{ 'read-fixed': { length: 2, as: 'T' } }]],
   else:  [undefined, [{ 'read-fixed': { length: 1, as: 'E' } }]],
 }, () => ({ ...FLAT, before: HEAD_CNT }));
@@ -639,7 +639,7 @@ const PAIRABLE = {
   'read-until':         { 'read-until': { sentinels: ['0x26'], eom: true, as: 'U' } },
   'read-to-end':        { 'read-to-end': { as: 'R' } },
   'read-ddl':           { 'read-ddl': 'ANY' },
-  'read-length-prefix': { 'read-length-prefix': { prefix: 'uint8', as: 'P' } },
+  'read-length-value': { 'read-length-value': { length_encoding: 'uint8', as: 'P' } },
   'read-bitmap':        { 'read-bitmap': { field: 'BM', encoding: 'ascii-hex' } },
   'token-area':         { 'token-area': { tokens: 'ANY' } },
 };

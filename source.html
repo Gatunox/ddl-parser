@@ -8241,7 +8241,7 @@ function parseMessage(bytes, defs, rawBytes) {
       parse_spec_binary:[
         {'read-ddl':{until:'NUM-SERVICES'}},
         {repeat:{count:{field:'NUM-SERVICES',as:'uint16-be'},body:[{read:'SRVCS'}]}},
-        {when:{field:'USER-FLG',is:'1',then:[
+        {when:{field:'USER-FLG',equal:'1',then:[
           {'read-fixed':{length:2,as:'USER-DATA.LENGTH'}},
           {'read-fixed':{length:'USER-DATA.LENGTH',as:'USER-DATA.BUFFER'}}
         ]}},
@@ -8268,7 +8268,7 @@ function parseMessage(bytes, defs, rawBytes) {
   {
     "when": {
       "field": "USER-FLG",
-      "is":    "1",
+      "equal": "1",
       "then": [
         { "read-fixed": { "length": 2, "as": "USER-DATA.LENGTH" } },
         { "read-fixed": { "length": "USER-DATA.LENGTH", "as": "USER-DATA.BUFFER" } }
@@ -8282,7 +8282,7 @@ function parseMessage(bytes, defs, rawBytes) {
       parse_spec_ascii:[
         {'read-ddl':{until:'NUM-SERVICES'}},
         {'read-while':{while:{type:'regex',length:2,pattern:'^[A-Za-z*]{2}$'},body:[{read:'SRVCS'}]}},
-        {when:{field:'USER-FLG',is:'1',then:[
+        {when:{field:'USER-FLG',equal:'1',then:[
           {'read-fixed':{length:2,as:'USER-DATA.LENGTH'}},
           {'read-until':{sentinels:['0x26','0x20'],eom:true,as:'USER-DATA.BUFFER'}}
         ]}},
@@ -8315,7 +8315,7 @@ function parseMessage(bytes, defs, rawBytes) {
   {
     "when": {
       "field": "USER-FLG",
-      "is":    "1",
+      "equal": "1",
       "then": [
         { "read-fixed": { "length": 2, "as": "USER-DATA.LENGTH" } },
         {
@@ -16789,7 +16789,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.37.5.0';
+const APP_VERSION  = '1.38.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19267,6 +19267,39 @@ const _PS_COMMON_ATTRS = [
   ]],
 ];
 
+// Accepted wherever a spec takes a NUMBER — read-fixed's length, repeat's count,
+// read-while's max, skip's length, a de entry's length, and every when
+// comparison. Written once and referenced, exactly like `at` and `peek`, so the
+// same sentence cannot drift block to block; resolved once in _meNumRef, so the
+// number is the same in all of them.
+const _PS_SIZEOF_DESC = [
+  ['<code>{"sizeof": "EMV.DATA"}</code>', 'What the <b>DDL declares</b> for an element, in bytes — the element\'s own length when it is a leaf, the sum of its non-REDEFINES leaves when it is a group. Reads no bytes and moves no cursor.'],
+  'An id no bound DDL declares is an <b>error</b>, not a zero — a typo that silently sizes everything to nothing is the one outcome worse than saying so.',
+];
+
+// The guard object — `when`'s `bytes` / `not-bytes` and `read-while`'s `while`
+// are the same predicate, matched by the same function. Written once and
+// referenced from all three, because they had already drifted: read-while called
+// `length` "Required" while the matcher defaults it, and `when` described the
+// shape as "same as read-while's" and left the reader to go and look.
+const _PS_GUARD_DESC = [
+  'Looks at the bytes <b>at the cursor</b> and <b>consumes nothing</b> — the cursor is exactly where it was afterwards, whatever the answer.',
+  '<b>The window</b> is <code>length</code> bytes from the cursor.',
+  ['<code>"length": 2</code>', 'Look at two bytes.'],
+  ['<code>"length"</code> not given', 'One byte — except <code>literal</code>, which uses its own <code>value</code>\'s length, so <code>{"type":"literal","value":"& "}</code> looks at two.'],
+  'Fewer bytes left than the window means <b>no match</b>. Never an error — running out is a legitimate answer to "is X sitting there".',
+  '<b><code>type</code></b> — six, and each uses a different companion attribute:',
+  ['<code>"literal"</code>', 'The window must equal <code>value</code> exactly. <code>value</code> is used by this type alone.'],
+  ['<code>"regex"</code>', '<code>pattern</code> is tested against the window. <b>Unanchored</b> — it matches anywhere inside, so anchor it yourself with <code>^</code> to mean "starts with". <code>pattern</code> is used by this type alone.'],
+  ['<code>"numeric"</code>', 'Every character in the window is <code>0-9</code>.'],
+  ['<code>"alphabetic"</code>', 'Every character is <code>A-Z</code> or <code>a-z</code>.'],
+  ['<code>"alphanumeric"</code>', 'Every character is a letter or a digit.'],
+  ['<code>"ascii"</code>', 'Every <b>byte</b> in the window is printable ASCII, <code>0x20</code>–<code>0x7E</code>. This one tests the raw bytes, so <code>encoding</code> does not apply to it.'],
+  'The four class types test the <b>whole window</b>, so with the default one-byte window they are asking about a single character. Widen <code>length</code> to ask about more.',
+  ['<code>"encoding"</code>', '<code>ascii</code> (the default) or <code>ebcdic</code> — how the bytes become characters before matching. It decides what <code>literal</code>, <code>regex</code> and the three class types see.'],
+  'A <code>type</code> outside those six never matches, which reads as a dead branch rather than a bad guard — the lint reports it instead.',
+];
+
 // Shared by read-ddl and read-bitmap-fields — both walk DDL groups, so both need
 // to know which leaf this DDL calls a length. Written once so the two can never
 // drift apart.
@@ -19293,7 +19326,7 @@ const _PS_GROUPS = [
   { name: 'Read raw bytes', items: [
     ['read-fixed',          'N bytes, no DDL'],
     ['read-until',          'Until a sentinel or end of message'],
-    ['read-length-prefix',  'A length, then that many bytes'],
+    ['read-length-value',   'A length, then that many bytes'],
     ['read-to-end',         'Whatever is left'],
     ['skip',                'Advance the cursor, emit nothing'],
   ]},
@@ -19575,6 +19608,7 @@ const _PS_HELP = {
         'How many bytes to consume, starting at the cursor.',
         'A number is a literal byte count you know at spec time.',
         'A string is the <b>id of a field already read</b> — its value is used as the count, so the size can come off the wire.',
+        ..._PS_SIZEOF_DESC,
         'The cursor advances by exactly this many bytes.',
       ]],
       ['type', '"X" | "9" | "BINARY"', false, [
@@ -19682,7 +19716,7 @@ const _PS_HELP = {
                {"read-fixed": {"length": 2, "as": "TAIL"}}] },
     ],
   },
-  'read-length-prefix': {
+  'read-length-value': {
     // What each OPTIONAL attribute does when you leave it out. Every one is
     // stated: the reference used to describe what an attribute DOES and leave
     // its absence to be inferred, which is only readable if you already know.
@@ -19691,7 +19725,7 @@ const _PS_HELP = {
       count: '<code>"bytes"</code> — the number is a byte count',
       sentinels: 'none — the length alone decides where the value ends',
     },
-    desc: 'Reads a 1–4 byte length prefix, then reads exactly that many bytes of payload. Useful for LLVAR/LLLVAR-style fields and binary TLV payloads.',
+    desc: 'Reads a 1–4 byte length off the wire, then reads exactly that many bytes of payload as one row. The length bytes are consumed, not emitted. Useful for LLVAR/LLLVAR-style fields and binary TLV payloads.',
     useWhen: [
       'The length is <b>anonymous binary bytes</b> sitting in front of the payload — no DDL field, no name.',
       'You want <b>one atomic block</b> instead of <code>read + read-fixed</code>.',
@@ -19699,7 +19733,7 @@ const _PS_HELP = {
       'You need <b>early termination</b> via sentinels or end-of-message (the declared length might be wrong / lenient).',
     ],
     attrs: [
-      ['prefix', 'length encoding', true, [
+      ['length_encoding', 'length encoding', true, [
         'How the length itself is encoded. These bytes are consumed but not emitted.',
         'Any encoding the <b>Type</b> column offers reads a length here — <code>hex-char</code>, <code>ascii</code>, <code>ebcdic</code>, <code>hex-ascii-decimal</code>, <code>hex-ebcdic-decimal</code>, the <code>uint</code> family — plus <code>bcd2</code>, which is this block\'s alone.',
         ['<code>uint8</code>',     '1 byte, 0–255.'],
@@ -19708,11 +19742,11 @@ const _PS_HELP = {
         ['<code>bcd2</code>',      '2 bytes of packed BCD — <code>00 05</code> is 5, <code>01 23</code> is 123.'],
         ['<code>hex-char</code>',  'The bytes\' hex <i>spelling</i>, read as a decimal number — <code>00 74</code> is <b>74</b>, not 116.'],
         ['<code>ascii</code> / <code>ebcdic</code>', 'The length is written as text digits.'],
-        'Those four at the top carry their own width; every other name needs <code>prefix_len</code>.',
+        'Those four at the top carry their own width; every other name needs <code>length_size</code>.',
       ]],
-      ['prefix_len', '1 | 2 | 3 | 4', false, [
+      ['length_size', '1 | 2 | 3 | 4', false, [
         'How many bytes the length occupies.',
-        'Required whenever <code>prefix</code> does not imply a width — <code>hex-char</code> says how the bytes read, not how many there are.',
+        'Required whenever <code>length_encoding</code> does not imply a width — <code>hex-char</code> says how the bytes read, not how many there are.',
         ['<i>omitted</i>', 'The width implied by the name: <code>uint8</code> 1, <code>uint16-*</code> and <code>bcd2</code> 2, <code>uint32-*</code> 4.'],
       ]],
       ['count', '"bytes" | "digits"', false, [
@@ -19732,37 +19766,37 @@ const _PS_HELP = {
       ['eom', 'bool', false, [
         'Clamp the payload to the end of the message.',
         ['<code>true</code>',  'A length that over-reaches is silently trimmed to what remains.'],
-        ['<i>omitted</i>',     'A length that over-reaches is an error — the prefix was read from the wrong bytes.'],
+        ['<i>omitted</i>',     'A length that over-reaches is an error — it was read from the wrong bytes.'],
       ]],
     ],
     examples: [
-      { what: '<b>prefix</b> uint16-be — 2 length bytes say 4, so 4 bytes of payload follow',
+      { what: '<b>length_encoding</b> uint16-be — 2 length bytes say 4, so 4 bytes of payload follow',
         payload: '00 04 41 42 43 44 5A',
-        spec: [{"read-length-prefix": {"prefix": "uint16-be", "as": "USER-DATA"}}] },
-      { what: '<b>prefix</b> uint8 — a single length byte',
+        spec: [{"read-length-value": {"length_encoding": "uint16-be", "as": "USER-DATA"}}] },
+      { what: '<b>length_encoding</b> uint8 — a single length byte',
         payload: '03 58 59 5A',
-        spec: [{"read-length-prefix": {"prefix": "uint8", "as": "TOKEN"}}] },
+        spec: [{"read-length-value": {"length_encoding": "uint8", "as": "TOKEN"}}] },
       // Reported from a customized HPDH: the length read 116 and swallowed the
       // message, and there was no way to say the bytes spell their own value.
-      { what: '<b>prefix</b> hex-char with <b>prefix_len</b> — <code>00 06</code> spells six, where uint16-be would read the same bytes as 6 and <code>00 74</code> as 116 instead of 74',
+      { what: '<b>length_encoding</b> hex-char with <b>length_size</b> — <code>00 06</code> spells six, where uint16-be would read the same bytes as 6 and <code>00 74</code> as 116 instead of 74',
         payload: '00 06 41 42 43 44 45 46 5A',
-        spec: [{"read-length-prefix": {"prefix": "hex-char", "prefix_len": 2, "as": "USER-DATA"}}] },
+        spec: [{"read-length-value": {"length_encoding": "hex-char", "length_size": 2, "as": "USER-DATA"}}] },
       { what: '<b>count</b> digits — the length counts hex digits, so 06 is three bytes on the wire, not six',
         payload: '00 06 41 42 43 5A',
-        spec: [{"read-length-prefix": {"prefix": "hex-char", "prefix_len": 2, "count": "digits", "as": "USER-DATA"}}] },
-      { what: '<b>prefix</b> bcd2 — packed decimal: 00 04 is four, not 0x0004 read as binary',
+        spec: [{"read-length-value": {"length_encoding": "hex-char", "length_size": 2, "count": "digits", "as": "USER-DATA"}}] },
+      { what: '<b>length_encoding</b> bcd2 — packed decimal: 00 04 is four, not 0x0004 read as binary',
         payload: '00 04 41 42 43 44',
-        spec: [{"read-length-prefix": {"prefix": "bcd2", "as": "PAYLOAD"}}] },
+        spec: [{"read-length-value": {"length_encoding": "bcd2", "as": "PAYLOAD"}}] },
       { what: '<b>sentinels</b> cut the payload short — the length says 6, but 0x26 appears after 2',
         payload: '00 06 41 42 26 43 44 45',
-        spec: [{"read-length-prefix": {"prefix": "uint16-be", "as": "PAYLOAD", "sentinels": ["0x26", "0x20"]}}] },
+        spec: [{"read-length-value": {"length_encoding": "uint16-be", "as": "PAYLOAD", "sentinels": ["0x26", "0x20"]}}] },
       { what: '<b>eom</b> — the length claims 9 bytes and only 3 remain, so it is clamped instead of failing',
         payload: '00 09 41 42 43',
-        spec: [{"read-length-prefix": {"prefix": "uint16-be", "as": "PAYLOAD", "eom": true}}] },
-      { what: 'Without <b>eom</b>, that same over-long length is an error — the prefix was read from the wrong position',
+        spec: [{"read-length-value": {"length_encoding": "uint16-be", "as": "PAYLOAD", "eom": true}}] },
+      { what: 'Without <b>eom</b>, that same over-long length is an error — it was read from the wrong position',
         payload: '00 09 41 42 43',
         expectError: true,
-        spec: [{"read-length-prefix": {"prefix": "uint16-be", "as": "PAYLOAD"}}] },
+        spec: [{"read-length-value": {"length_encoding": "uint16-be", "as": "PAYLOAD"}}] },
     ],
   },
   'read-to-end': {
@@ -19921,6 +19955,7 @@ const _PS_HELP = {
     // its absence to be inferred, which is only readable if you already know.
     dflts: {
       de: 'none — every present DE is read from its DDL element',
+      length_mode: '<code>"strict"</code> — a length longer than the DDL declares is reported, and the payload still stops at the declared size',
     },
     desc: [
       'Reads the DE fields a prior wire-mode <code>read-bitmap</code> marked present.',
@@ -19947,6 +19982,13 @@ const _PS_HELP = {
         'Written as a bare string when it is the only attribute: <code>{"read-bitmap-fields": "BITMAP"}</code>.',
       ]],
       ['vlg_identifier', 'string', false, _PS_VLG_IDENTIFIER_DESC],
+      ['length_mode', '"strict" | "smart"', false, [
+        'What to do when a length <b>on the wire</b> is longer than what the DDL declares — a LEN of 23 over a group whose fields add up to 22.',
+        ['<code>"strict"</code>', 'The payload stops at the declared size and the surplus stays in the stream, where the next DE reads it. The LEN row says so. This is how every spec written before this attribute behaves.'],
+        ['<code>"smart"</code>',  'The wire\'s length owns its bytes: the declared fields read as always, the surplus becomes a row of its own named <code>&lt;GROUP&gt;.&lt;unmapped&gt;</code>, and the next DE starts where the length said it would.'],
+        'Reach for <code>smart</code> when a production message carries more in an element than the DDL you have declares — otherwise every DE after it is read a few bytes early, and the values look plausible while being wrong.',
+        'A message carrying <b>less</b> than the DDL declares is ordinary and unaffected: the payload just ends early in both modes.',
+      ]],
       ['de', '{ "<bit>": [blocks] | {field, blocks} }', false, [
         'Per-bit parsing — a listed bit is read by <b>its own blocks</b> instead of the default DDL walk.',
         'Keys are bit numbers. Two forms:',
@@ -19955,10 +19997,10 @@ const _PS_HELP = {
         ['<code>"field"</code>',  'Overrides which element this bit is. Without it the Overrides panel decides, as always.'],
         ['<code>"length"</code>', 'Bounds the element when the DDL\'s declared size is not the real one. The DE then occupies exactly this many bytes, so the next one starts at the end of it whatever the blocks read.'],
         'Where the next DE starts: a length <b>off the wire</b> (<code>length_prefix</code>, or a VLG LEN) and a <code>length</code> you write both state what the DE <i>is</i>, so the DE ends there. The DDL\'s <b>declared size</b> states only what the element <i>can hold</i> — a message putting less in it is ordinary — so the DE ends where its blocks stopped. Reading past any of them is reported and stops at the boundary.',
-        ['<code>"length_prefix"</code>', 'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it — read this many bytes of length, then frame the element to it. Those bytes are emitted as their own row. This <b>frames</b> the whole entry, so every block in it shares the one window; <code>read-length-prefix</code> instead <b>captures</b> the payload as a single row.'],
+        ['<code>"length_prefix"</code>', 'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it — read this many bytes of length, then frame the element to it. Those bytes are emitted as their own row. This <b>frames</b> the whole entry, so every block in it shares the one window; <code>read-length-value</code> instead <b>captures</b> the payload as a single row.'],
         ['<code>{"bytes": 2, "type": "hex-char"}</code>', 'The same, with the encoding stated. A bare <code>2</code> leaves it to auto-detect, which cannot tell <code>00 74</code> meaning 74 from the same bytes meaning 116. <code>"count": "digits"</code> works here too.'],
         'Every other set bit is read exactly as before — listing one bit changes only that bit.',
-        '<b>The DDL need not declare the DE at all.</b> Whether an element is required is the <i>block\'s</i> business, exactly as at the top level of a spec: <code>read-length-prefix</code>, <code>read-fixed</code>, <code>read-until</code> and <code>read-to-end</code> name their own output through <code>as</code> and need nothing declared, so a proprietary DE that appears on the wire and nowhere in the DDL is parsed by describing it here. Blocks that <i>map onto</i> declared fields — <code>read</code>, <code>read-ddl</code>, <code>read-tlv</code> with tags — still need one, and say so themselves.',
+        '<b>The DDL need not declare the DE at all.</b> Whether an element is required is the <i>block\'s</i> business, exactly as at the top level of a spec: <code>read-length-value</code>, <code>read-fixed</code>, <code>read-until</code> and <code>read-to-end</code> name their own output through <code>as</code> and need nothing declared, so a proprietary DE that appears on the wire and nowhere in the DDL is parsed by describing it here. Blocks that <i>map onto</i> declared fields — <code>read</code>, <code>read-ddl</code>, <code>read-tlv</code> with tags — still need one, and say so themselves.',
         'With no element, rows this block emits itself are named after the bit: <code>DE-58.LEN-PREFIX</code>.',
         'Names inside those blocks resolve <b>within that bit\'s element</b>: <code>"ARQC"</code> means <code>"EMV-ELEMENT.ARQC"</code>. With no element they resolve against the DDL as a whole.',
       ]],
@@ -19988,7 +20030,7 @@ const _PS_HELP = {
         payload: '60 00 00 00 00 00 00 00 41 42 43 44 00 03 58 59 5A',
         spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
                {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
-                 "3": [{"read-length-prefix": {"prefix": "uint16-be", "as": "USER-DATA"}}]}}}] },
+                 "3": [{"read-length-value": {"length_encoding": "uint16-be", "as": "USER-DATA"}}]}}}] },
       // PAD is DE-1 so the map can leave bit 1 clear — in ISO that bit means "a
       // secondary bitmap follows", and setting it would read 8 more bytes as map.
       { what: '<b>vlg_identifier</b> — this DDL calls its length leaf SIZE, so the built-in names would miss it and DE-2 would read its declared 20 bytes',
@@ -19997,6 +20039,21 @@ const _PS_HELP = {
         payload: '60 00 00 00 00 00 00 00 30 35 41 42 43 44 45 54 41 49 4C',
         spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
                {"read-bitmap-fields": {"bitmap": "BITMAP", "vlg_identifier": "SIZE"}}] },
+      // The production case: a message carrying one byte more in an element than
+      // the DDL declares for it. Same DDL, same bytes, both modes — the only
+      // difference is where TAIL lands.
+      { what: '<b>length_mode</b> <code>"strict"</code> (the default) — SIZE says 5 but DATA declares 4, so the 5th byte stays in the stream and TAIL reads <code>ETAI</code>: every DE after this one is a byte early',
+        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 EMV.\n    04 SIZE PIC 9(2).\n    04 DATA PIC X(4).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '60 00 00 00 00 00 00 00 30 35 41 42 43 44 45 54 41 49 4C',
+        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+               {"read-bitmap-fields": {"bitmap": "BITMAP", "vlg_identifier": "SIZE"}}] },
+      { what: '<b>length_mode</b> <code>"smart"</code> — the same message: DATA still takes its declared 4, the 5th byte becomes <code>EMV.&lt;unmapped&gt;</code>, and TAIL reads <code>TAIL</code>',
+        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 EMV.\n    04 SIZE PIC 9(2).\n    04 DATA PIC X(4).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '60 00 00 00 00 00 00 00 30 35 41 42 43 44 45 54 41 49 4C',
+        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+               {"read-bitmap-fields": {"bitmap": "BITMAP", "vlg_identifier": "SIZE", "length_mode": "smart"}}] },
       { what: '<b>overrides</b> — carried by the block: DE-A anchored to 2 (so DE-B follows at 3) and read as hex characters, with nothing set in the panel',
         ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 DE-A PIC X(4).\n  02 DE-B PIC X(6).\nEND\n',
         def: 'MSG',
@@ -20243,8 +20300,10 @@ const _PS_HELP = {
       'You want to keep the cursor moving without emitting a field in the output.',
     ],
     attrs: [
-      ['length', 'int', true, [
+      ['length', 'int | "FIELD-ID" | {sizeof}', true, [
         'How many bytes to move the cursor forward.',
+        'A string is the <b>id of a field already read</b> — its value is the distance, so a skip can be sized off the wire.',
+        ..._PS_SIZEOF_DESC,
         'Nothing is captured and no row is emitted — the bytes simply go unread.',
         'A skip past the end of the message stops at the end rather than failing.',
         'Combine with <code>at</code> using the object form: <code>{"skip": {"length": 2, "at": 10}}</code>.',
@@ -20256,6 +20315,11 @@ const _PS_HELP = {
         spec: [{"read-fixed": {"length": 2, "as": "HEAD"}},
                {"skip": {"length": 2}},
                {"read-fixed": {"length": 2, "as": "TAIL"}}] },
+      { what: '<b>length</b> off the wire — the count says 3, so three bytes are skipped and TAIL still lands right',
+        payload: '33 41 42 43 44 45',
+        spec: [{"read-fixed": {"length": 1, "as": "PAD-LEN", "type": "ascii"}},
+               {"skip": {"length": {"field": "PAD-LEN", "as": "ascii"}}},
+               {"read-fixed": {"length": 2, "as": "TAIL"}}] },
     ],
   },
   'when': {
@@ -20265,13 +20329,26 @@ const _PS_HELP = {
     dflts: {
       bytes: 'none — the test is on a field’s value, not on raw bytes',
       'not-bytes': 'none — with neither <code>bytes</code> nor <code>not-bytes</code> there is no byte guard',
-      is: 'none — with neither <code>is</code> nor <code>not</code>, the guard is presence alone',
-      not: 'none',
+      equal: 'none — with no comparison at all the test is <b>presence</b>: the field was read, so <code>then</code> runs',
+      not_equal: 'none',
+      'else': 'none — a false condition reads nothing, and the bytes go to the block after this one',
+      greater_than: 'none',
+      greater_or_equal: 'none',
+      less_than: 'none',
+      less_or_equal: 'none',
     },
-    desc: 'Executes a list of blocks only when a condition on a previously read field is true. Multiple when blocks referencing the same field act as if / else-if. Nesting is supported.',
+    desc: [
+      'Runs one branch or the other, depending on a condition. <code>then</code> when it holds, <code>else</code> when it does not — both from the <b>same cursor</b>, so exactly one of them consumes bytes.',
+      'Two kinds of condition, and a block uses one or the other. <b>On a field</b>: <code>field</code> plus one comparison, testing something an earlier block already read. <b>On the bytes</b>: <code>bytes</code> or <code>not-bytes</code>, testing what is sitting at the cursor without reading it — which needs nothing to have been read.',
+      'One comparison per block. Two is an error, not an <i>and</i>; nest a second <code>when</code> inside <code>then</code>. With <code>field</code> and no comparison at all, the test is <b>presence</b>: it was read, so <code>then</code> runs.',
+      'A condition that cannot be <b>answered</b> — an operand field never read, an element no DDL declares — runs neither branch and says why on a row. Not knowing is not the same as false.',
+      'Several <code>when</code> blocks on the same field read as if / else-if, and nesting is supported.',
+    ],
     useWhen: [
       'A field\'s value determines whether subsequent bytes are <b>present at all</b> (e.g. a presence flag).',
       'You need to <b>branch</b> the parse path on an enumerated value (e.g. <code>MSG-TYPE</code>).',
+      'A length on the wire disagrees with what the DDL declares, and the spec has to notice — <code>greater_than</code> against <code>{"sizeof": …}</code>.',
+      'You must <b>look before you leap</b>: decide whether an optional element is there before a block consumes those bytes as though it were. That is <code>bytes</code> / <code>not-bytes</code>.',
       'You want to apply a different sub-spec for a specific subtype while keeping one shared outer spec.',
       'You\'re combining with <b>nested when</b> blocks to express if / else-if logic on multiple fields.',
     ],
@@ -20280,48 +20357,82 @@ const _PS_HELP = {
         'The field to test — its id, exactly as it appears in the results.',
         'It must have been read by an <b>earlier</b> block; a field read inside <code>then</code> is too late.',
         'The comparison is made against the field\'s parsed <b>value</b>, not its raw bytes.',
+        'With a comparison, this is the <b>left</b> side. With none, the block tests only that the field was read.',
+        'One comparison per block. Two on the same <code>when</code> is an error, not an and — nest a second <code>when</code> inside <code>then</code> for that.',
       ]],
       ['bytes', '{type, value, length, pattern, encoding}', false, [
-        'Look at the bytes <b>at the cursor</b> without reading them, and run <code>then</code> when they match.',
-        'Same predicate shape as <code>read-while</code>\'s <code>while</code>: <code>literal</code>, <code>regex</code>, <code>numeric</code>, <code>alphabetic</code>, <code>alphanumeric</code>, <code>ascii</code>.',
-        'Use it instead of <code>field</code> — a byte guard needs nothing to have been read.',
+        'Ask what is <b>sitting at the cursor</b> — and run <code>then</code> when the answer is yes.',
+        'This is the other kind of condition: <code>field</code> tests something already <b>read</b>, <code>bytes</code> tests something not read yet. Use one or the other, never both — and a byte guard needs nothing to have been read at all, so it works as the very first block of a spec.',
+        'It is how you look before you leap: decide whether an optional element is present before a block consumes it as though it were.',
+        ..._PS_GUARD_DESC,
+        'The same object as <code>read-while</code>\'s <code>while</code> — one predicate, matched by one function.',
       ]],
-      ['not-bytes', '{…}', false, [
-        'The same guard, inverted: run <code>then</code> when the bytes at the cursor do <b>not</b> match.',
+      ['not-bytes', '{type, value, length, pattern, encoding}', false, [
+        'The same guard, inverted: run <code>then</code> when the bytes at the cursor do <b>not</b> match. Every attribute above behaves identically.',
         'This is the PSTM eye-catcher guard. Legacy hardcodes <code>bytes[cursor] !== 0x26</code> to refuse reading user data when <code>"&&nbsp;"</code> is sitting there; without it a branch consumes the eye-catcher as a 2-byte length — <code>0x2620</code> is 9760 — and runs the cursor thousands of bytes past the end.',
         ['<code>{"not-bytes": {"type": "literal", "value": "& "}, "then": [ … ]}</code>', 'Read the user data only when the eye-catcher is not there.'],
+        'Prefer it over <code>bytes</code> + <code>else</code> when there is only one branch: the guard reads the way the rule is spoken — "unless the eye-catcher is there".',
       ]],
-      ['is', 'string | [...]', false, [
-        'Run <code>then</code> when the value matches.',
+      ['equal', 'value | [values] | {field} | {sizeof}', false, [
+        'Run <code>then</code> when the value matches. Compared as <b>text</b>.',
         ['<code>"1200"</code>',        'A single value.'],
         ['<code>["A", "B"]</code>',    'A list — any one of them matches.'],
+        ['<code>{"field": "OTHER"}</code>', 'Another field already read — compare two fields to each other.'],
+        ..._PS_SIZEOF_DESC,
         'Trailing spaces are trimmed before comparing, so a PIC X field padded on the wire still matches.',
+        'Was called <code>is</code>. The old name is not converted — rename it.',
       ]],
-      ['not', 'string | [...]', false, [
+      ['not_equal', 'value | [values] | {field} | {sizeof}', false, [
         'The inverse: run <code>then</code> when the value is <b>anything else</b>.',
         ['<code>"0800"</code>',        'Everything except this value.'],
         ['<code>["A", "B"]</code>',    'Everything except these.'],
-        'Use it for a default branch — one <code>when … is</code> for the special case, one <code>when … not</code> for the rest.',
+        'Use it for a default branch — one <code>when … equal</code> for the special case, one <code>when … not_equal</code> for the rest.',
+        'Was called <code>not</code>. The old name is not converted — rename it.',
+      ]],
+      ['greater_than', 'number | {field} | {sizeof}', false, [
+        'Run <code>then</code> when the field, <b>read as a number</b>, is greater than the operand.',
+        ['<code>22</code>',                     'A literal.'],
+        ['<code>{"field": "MAX-LEN"}</code>',   'Another field already read.'],
+        ..._PS_SIZEOF_DESC,
+        'The question this pair exists for: <b>is the wire carrying more than the DDL has room for?</b>',
+        'Both sides are read as numbers through the same chain everything else uses: an <code>as</code> on the operand, else the field\'s own <b>Type</b> override, else a guess that reports itself on the row. So a <code>hex-char</code> length compares as 74 on both sides, or on neither.',
+        'A side that yields no number is an <b>error row</b> naming which side — never a silent false.',
+        'A list is not accepted here: a range is two operators, or two nested blocks.',
+      ]],
+      ['greater_or_equal', 'number | {field} | {sizeof}', false, [
+        'The same comparison, including equality — "at least this much".',
+      ]],
+      ['less_than', 'number | {field} | {sizeof}', false, [
+        'Run <code>then</code> when the field, read as a number, is less than the operand.',
+        'The short-message case: the wire carried less than the DDL declares.',
+      ]],
+      ['less_or_equal', 'number | {field} | {sizeof}', false, [
+        'The same comparison, including equality — "at most this much".',
       ]],
       ['then', '[blocks]', true, [
         'The blocks to run when the condition holds.',
         'They read from the cursor, so a false condition leaves the cursor untouched and the bytes for a later block.',
         'Nest another <code>when</code> in here to express if / else-if on a second field.',
       ]],
+      ['else', '[blocks]', false, [
+        'The blocks to run when the condition does <b>not</b> hold.',
+        'Both branches read from the same cursor, and exactly one of them runs.',
+        'A condition that cannot be <b>answered</b> — an operand field never read, an element no DDL declares — runs <b>neither</b> branch and reports why. Not knowing is not the same as false.',
+      ]],
     ],
     examples: [
       { what: '<b>is</b> — the flag says "1200", so the guarded read happens',
         payload: '31 32 30 30 30 30 30 31 32 33',
         spec: [{"read-fixed": {"length": 4, "as": "MSG-TYPE"}},
-               {"when": {"field": "MSG-TYPE", "is": "1200", "then": [{"read-fixed": {"length": 6, "as": "AMOUNT"}}]}}] },
+               {"when": {"field": "MSG-TYPE", "equal": "1200", "then": [{"read-fixed": {"length": 6, "as": "AMOUNT"}}]}}] },
       { what: '<b>is</b> not matching — the same spec against an 0800 message: AMOUNT is never read and the cursor does not move',
         payload: '30 38 30 30 30 30 30 31 32 33',
         spec: [{"read-fixed": {"length": 4, "as": "MSG-TYPE"}},
-               {"when": {"field": "MSG-TYPE", "is": "1200", "then": [{"read-fixed": {"length": 6, "as": "AMOUNT"}}]}}] },
+               {"when": {"field": "MSG-TYPE", "equal": "1200", "then": [{"read-fixed": {"length": 6, "as": "AMOUNT"}}]}}] },
       { what: '<b>not</b> — read the trailer for every message EXCEPT a network request (0800)',
         payload: '31 32 30 30 41 42 43',
         spec: [{"read-fixed": {"length": 4, "as": "MSG-TYPE"}},
-               {"when": {"field": "MSG-TYPE", "not": "0800", "then": [{"read-fixed": {"length": 3, "as": "TRAILER"}}]}}] },
+               {"when": {"field": "MSG-TYPE", "not_equal": "0800", "then": [{"read-fixed": {"length": 3, "as": "TRAILER"}}]}}] },
       // The PSTM eye-catcher, both ways round. "& " is 26 20.
       { what: '<b>bytes</b> — the token area starts with the eye-catcher "&&nbsp;", so read it',
         payload: '48 44 52 26 20 54 4F 4B',
@@ -20339,16 +20450,97 @@ const _PS_HELP = {
                {"when": {"not-bytes": {"type": "literal", "value": "& "},
                          "then": [{"read-fixed": {"length": 2, "as": "USER-LEN"}},
                                   {"read-fixed": {"length": {"field": "USER-LEN", "as": "ascii"}, "as": "USER-DATA"}}]}}] },
-      { what: '<b>not</b> with a list — anything outside the set matches',
+      // The guard types, one example each — it shipped with `literal` alone, and
+      // the other five were a list of names with nothing to look at.
+      { what: '<b>bytes</b> <code>numeric</code> — the next byte is a digit, so this record carries a count. The guard looks without consuming, and the read inside <code>then</code> starts on that same byte',
+        payload: '33 41 42 43',
+        spec: [{"when": {"bytes": {"type": "numeric"},
+                         "then": [{"read-fixed": {"length": 1, "as": "COUNT", "type": "ascii"}}]}},
+               {"read-to-end": {"as": "REST"}}] },
+      { what: 'The same spec on a record starting with a letter — the guard fails, nothing inside runs, and REST proves the cursor never moved: it holds all four bytes',
+        payload: '41 41 42 43',
+        spec: [{"when": {"bytes": {"type": "numeric"},
+                         "then": [{"read-fixed": {"length": 1, "as": "COUNT", "type": "ascii"}}]}},
+               {"read-to-end": {"as": "REST"}}] },
+      { what: '<b>bytes</b> <code>length</code> — the class types test the WHOLE window, so a 4-byte window asks whether all four are digits. Here byte 3 is a letter, so it does not match',
+        payload: '31 32 41 34 5A',
+        spec: [{"when": {"bytes": {"type": "numeric", "length": 4},
+                         "then": [{"read-fixed": {"length": 4, "as": "STAN"}}],
+                         "else": [{"read-fixed": {"length": 2, "as": "SHORT"}}]}}] },
+      { what: '<b>bytes</b> <code>regex</code> — unanchored, so this matches a "1" anywhere in the two-byte window',
+        payload: '30 31 41 42',
+        spec: [{"when": {"bytes": {"type": "regex", "pattern": "1", "length": 2},
+                         "then": [{"read-fixed": {"length": 2, "as": "MTI-HEAD"}}]}}] },
+      { what: '<b>bytes</b> <code>ascii</code> — is what follows printable text, or binary? Here it is text, so the text branch runs',
+        payload: '48 49 00 01',
+        spec: [{"when": {"bytes": {"type": "ascii", "length": 2},
+                         "then": [{"read-fixed": {"length": 2, "as": "TEXT"}}],
+                         "else": [{"read-fixed": {"length": 2, "as": "BINARY", "type": "BINARY"}}]}}] },
+      { what: 'The same spec where those two bytes are <b>not</b> printable — <code>ascii</code> fails and the binary branch runs instead',
+        payload: '00 01 48 49',
+        spec: [{"when": {"bytes": {"type": "ascii", "length": 2},
+                         "then": [{"read-fixed": {"length": 2, "as": "TEXT"}}],
+                         "else": [{"read-fixed": {"length": 2, "as": "BINARY", "type": "BINARY"}}]}}] },
+      { what: '<b>not_equal</b> with a list — anything outside the set matches',
         payload: '39 39 5A 5A',
         spec: [{"read-fixed": {"length": 2, "as": "FLAG"}},
-               {"when": {"field": "FLAG", "not": ["10", "20"], "then": [{"read-fixed": {"length": 2, "as": "EXTRA"}}]}}] },
+               {"when": {"field": "FLAG", "not_equal": ["10", "20"], "then": [{"read-fixed": {"length": 2, "as": "EXTRA"}}]}}] },
+      // The production question the comparisons exist for: the wire says one
+      // thing, the DDL declares another, and the spec has to notice.
+      { what: '<b>greater_than</b> <code>{"sizeof"}</code> — LEN says 5 where the DDL declares 4 for DATA, so the branch fires and the surplus is captured instead of shifting what follows',
+        ddl: 'DEFINITION MSG.\n  02 LEN PIC 9(2).\n  02 DATA PIC X(4).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '30 35 41 42 43 44 45 54 41 49 4C',
+        spec: [{"read-fixed": {"length": 2, "as": "LEN", "type": "ascii"}},
+               {"read-fixed": {"length": 4, "as": "DATA"}},
+               {"when": {"field": "LEN", "greater_than": {"sizeof": "DATA"},
+                         "then": [{"read-fixed": {"length": 1, "as": "OVERFLOW"}}]}},
+               {"read-fixed": {"length": 4, "as": "TAIL"}}] },
+      { what: 'The same spec on a message that fits — LEN is 4, the branch does not fire, and TAIL still lands right',
+        ddl: 'DEFINITION MSG.\n  02 LEN PIC 9(2).\n  02 DATA PIC X(4).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '30 34 41 42 43 44 54 41 49 4C',
+        spec: [{"read-fixed": {"length": 2, "as": "LEN", "type": "ascii"}},
+               {"read-fixed": {"length": 4, "as": "DATA"}},
+               {"when": {"field": "LEN", "greater_than": {"sizeof": "DATA"},
+                         "then": [{"read-fixed": {"length": 1, "as": "OVERFLOW"}}]}},
+               {"read-fixed": {"length": 4, "as": "TAIL"}}] },
+      { what: '<b>greater_or_equal</b> — "at least this much": the header claims 3 or more services, so the loop runs',
+        payload: '30 33 41 42 43',
+        spec: [{"read-fixed": {"length": 2, "as": "COUNT", "type": "ascii"}},
+               {"when": {"field": "COUNT", "greater_or_equal": 3,
+                         "then": [{"read-fixed": {"length": 3, "as": "SERVICES"}}]}}] },
+      { what: '<b>less_than</b> <code>{"sizeof"}</code> — the wire carried less than the DDL declares for DATA, so the short-message branch runs',
+        ddl: 'DEFINITION MSG.\n  02 LEN PIC 9(2).\n  02 DATA PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '30 32 41 42',
+        spec: [{"read-fixed": {"length": 2, "as": "LEN", "type": "ascii"}},
+               {"when": {"field": "LEN", "less_than": {"sizeof": "DATA"},
+                         "then": [{"read-to-end": {"as": "SHORT-DATA"}}]}}] },
+      { what: '<b>less_or_equal</b> against another field — two lengths compared to each other, no literals anywhere',
+        payload: '30 33 30 35 41 42 43',
+        spec: [{"read-fixed": {"length": 2, "as": "WANT", "type": "ascii"}},
+               {"read-fixed": {"length": 2, "as": "ROOM", "type": "ascii"}},
+               {"when": {"field": "WANT", "less_or_equal": {"field": "ROOM"},
+                         "then": [{"read-fixed": {"length": 3, "as": "BODY"}}]}}] },
+      { what: '<b>else</b> — the other branch. A 1200 takes AMOUNT; anything else takes the shorter trailer, from the same cursor',
+        payload: '31 32 30 30 30 30 30 31 32 33',
+        spec: [{"read-fixed": {"length": 4, "as": "MSG-TYPE"}},
+               {"when": {"field": "MSG-TYPE", "equal": "1200",
+                         "then": [{"read-fixed": {"length": 6, "as": "AMOUNT"}}],
+                         "else": [{"read-fixed": {"length": 3, "as": "TRAILER"}}]}}] },
+      { what: 'The same spec on an 0800 — the condition is false, so <code>else</code> runs instead and only 3 bytes are taken',
+        payload: '30 38 30 30 30 30 30 31 32 33',
+        spec: [{"read-fixed": {"length": 4, "as": "MSG-TYPE"}},
+               {"when": {"field": "MSG-TYPE", "equal": "1200",
+                         "then": [{"read-fixed": {"length": 6, "as": "AMOUNT"}}],
+                         "else": [{"read-fixed": {"length": 3, "as": "TRAILER"}}]}}] },
       { what: 'Nested — a second <code>when</code> inside <code>then</code> is how if / else-if is written',
         payload: '41 31 58 59',
         spec: [{"read-fixed": {"length": 1, "as": "FLAG"}},
                {"read-fixed": {"length": 1, "as": "SUB-FLAG"}},
-               {"when": {"field": "FLAG", "is": ["A", "B"], "then": [
-                 {"when": {"field": "SUB-FLAG", "is": "1", "then": [{"read-fixed": {"length": 2, "as": "EXTRA"}}]}}]}}] },
+               {"when": {"field": "FLAG", "equal": ["A", "B"], "then": [
+                 {"when": {"field": "SUB-FLAG", "equal": "1", "then": [{"read-fixed": {"length": 2, "as": "EXTRA"}}]}}]}}] },
     ],
   },
   'repeat': {
@@ -20366,6 +20558,7 @@ const _PS_HELP = {
         ['<code>{"field": "NUM-SERVICES", "as": "uint16-be"}</code>', 'The decode stated outright. Use this whenever the field is binary.'],
         'Without <code>as</code>, the field\'s own type override decides; failing that it falls back to a guess — ASCII digits as digits, otherwise the raw bytes as a big-endian number — and <b>says that it guessed</b>.',
         'That guess is why a <code>TYPE BINARY 16</code> counter, absent from an ASCII capture, once parsed to a plausible unrelated decimal and silently truncated the loop. Declare it and the question never arises.',
+        ..._PS_SIZEOF_DESC,
         'A field that has not been read yet, or holds nothing numeric, is an error — the loop never runs on a guess.',
         'When the count cannot be trusted (a binary counter in an ASCII message), use <code>read-while</code> instead.',
       ]],
@@ -20410,13 +20603,9 @@ const _PS_HELP = {
       'You want an optional <b>safety cap</b> (<code>max</code>) on iterations while still relying on the guard for the primary termination.',
     ],
     attrs: [
-      ['while', 'object', true, [
-        'The guard: bytes are looked at (never consumed) at the cursor, and the loop runs while they match.',
-        ['<code>"length"</code>',   'How many bytes to look at. Required.'],
-        ['<code>"type"</code>',     'What to match: <code>alphabetic</code>, <code>numeric</code>, <code>alphanumeric</code>, <code>ascii</code>, <code>regex</code>, or <code>literal</code>.'],
-        ['<code>"pattern"</code>',  'The regex, when <code>type</code> is <code>regex</code>.'],
-        ['<code>"value"</code>',    'The exact string, when <code>type</code> is <code>literal</code>.'],
-        ['<code>"encoding"</code>', '<code>ascii</code> (the default) or <code>ebcdic</code> — how those bytes become characters before matching.'],
+      ['while', '{type, value, length, pattern, encoding}', true, [
+        'The loop runs for as long as this matches.',
+        ..._PS_GUARD_DESC,
         'The check happens before every pass, so a guard that fails immediately runs the body zero times.',
       ]],
       ['body', '[blocks]', true, [
@@ -20427,6 +20616,7 @@ const _PS_HELP = {
         'A safety cap on the number of passes. The guard is still what normally ends the loop.',
         ['<code>99</code>',            'A literal cap.'],
         ['<code>"NUM-ITEMS"</code>',   'The id of a field already read — its value is the cap.'],
+        ..._PS_SIZEOF_DESC,
         'There is a hard cap of 10000 passes regardless, so a runaway spec cannot hang the app.',
         '<b>Do not use a field-id cap when the input is ASCII and the count field is not</b> — that is the exact case <code>read-while</code> exists to avoid.',
       ]],
@@ -21282,6 +21472,31 @@ function _mePsLintWarns(item, parsed) {
   // Qualified ("SEG0.SEG-MAP") and leaf ("SEG-MAP") forms both name the same
   // DDL field — the engine resolves either, so the lint accepts either.
   const knownFieldLeaf = id => ddlIds.has(id) || [...ddlIds].some(k => _leaf(k) === id);
+
+  // `when`'s bytes / not-bytes and `read-while`'s `while` are the SAME predicate,
+  // so they get the same check. A guard with no recognised type, a literal with
+  // no value, or a pattern that will not compile silently never matches — which
+  // reads as a dead branch rather than a broken guard, and read-while's was not
+  // checked at all.
+  const checkGuard = (n, blk, attr, g) => {
+    if (!g || typeof g !== 'object') {
+      warns.push(`[block ${n}] ${blk} "${attr}" must be an object, e.g. {"type":"literal","value":"& "}`);
+      return;
+    }
+    if (!/^(regex|alphabetic|numeric|alphanumeric|ascii|literal)$/.test(String(g.type || '')))
+      warns.push(`[block ${n}] ${blk} ${attr} guard type ${JSON.stringify(g.type)} is not one of `
+               + `regex, alphabetic, numeric, alphanumeric, ascii, literal — it would never match`);
+    else if (g.type === 'literal' && g.value == null)
+      warns.push(`[block ${n}] ${blk} ${attr} guard "literal" needs a "value"`);
+    else if (g.type === 'regex' && !g.pattern)
+      warns.push(`[block ${n}] ${blk} ${attr} guard "regex" needs a "pattern"`);
+    else if (g.type === 'regex' && !_mePatternCompiles(g.pattern))
+      warns.push(`[block ${n}] ${blk} ${attr} guard pattern ${JSON.stringify(g.pattern)} is not a valid regular expression — it would never match`);
+    if (g.length !== undefined && !(Number.isInteger(+g.length) && +g.length > 0))
+      warns.push(`[block ${n}] ${blk} ${attr} guard "length" must be a whole number of bytes above 0, got ${JSON.stringify(g.length)}`);
+    if (g.encoding !== undefined && !/^(ascii|ebcdic)$/i.test(String(g.encoding)))
+      warns.push(`[block ${n}] ${blk} ${attr} guard "encoding" must be "ascii" or "ebcdic", got ${JSON.stringify(g.encoding)}`);
+  };
   // Same flag the engine uses: a top-level read-segment-fields block marks a
   // segmented-file spec, where a no-value read-bitmap READS the map field from
   // the record (SEG-MAP / FIID-SEG-MAP) instead of being an ISO wire bitmap.
@@ -21347,7 +21562,12 @@ function _mePsLintWarns(item, parsed) {
       const type  = keys[0];
       const attrs = block[type];
       if (!blockTypes.has(type)) {
-        warns.push(`[block ${n}] unknown block type "${type}"`);
+        // A name that USED to work says what replaced it. Nothing is converted —
+        // the spec is edited by hand — but "unknown block type" alone leaves the
+        // reader to guess what to edit it to.
+        warns.push(_PS_RENAMED[type]
+          ? `[block ${n}] ${_PS_RENAMED[type]}`
+          : `[block ${n}] unknown block type "${type}"`);
         return;
       }
       // The engine takes keys[0] as the block type and ignores every other key
@@ -21494,6 +21714,9 @@ function _mePsLintWarns(item, parsed) {
           if (!ref) warns.push(`[block ${n}] read-bitmap-fields needs a bitmap field id`);
           else if (!bitmaps.has(ref))
             warns.push(`[block ${n}] read-bitmap-fields: "${ref}" has no preceding wire-mode read-bitmap block`);
+          const lmCfg = (attrs && typeof attrs === 'object') ? attrs.length_mode : undefined;
+          if (lmCfg !== undefined && !/^(strict|smart)$/i.test(String(lmCfg)))
+            warns.push(`[block ${n}] read-bitmap-fields "length_mode" must be "strict" or "smart", got ${JSON.stringify(lmCfg)}`);
           // Per-bit entries. Keys are bit numbers; the blocks inside are checked
           // like any other block list, so a bad reference deep in a "de" entry is
           // reported the same way as one at the top level.
@@ -21532,25 +21755,25 @@ function _mePsLintWarns(item, parsed) {
           if (attrs?.as) synthetic.add(attrs.as);
           break;
         }
-        case 'read-length-prefix': {
+        case 'read-length-value': {
           if (attrs?.as) synthetic.add(attrs.as);
-          // The prefix vocabulary is the app's, not this block's own — every
+          // The length vocabulary is the app's, not this block's own — every
           // name the TYPE override offers reads a length here too. Caught at
           // lint time because the alternative is a length silently read in the
           // wrong encoding, which looks like a malformed message.
           // Asked of the decoder's own predicates rather than a third list of
           // type names — a list here would drift from the one doing the reading.
-          const p = String(attrs?.prefix || '').trim();
+          const p = String(attrs?.length_encoding || '').trim();
           const known = /^bcd2$/i.test(p) || _meLenTypeIsInt(p) || _meLenTypeIsHexChar(p)
                      || _meLenTypeIsAscii(p) || _meLenTypeIsEbcdic(p) || _meLenTypeIsHexText(p);
           if (p && !known)
-            warns.push(`[block ${n}] read-length-prefix "prefix": "${p}" is not a length encoding — use one of ${_ME_TYPE_OPTS.filter(Boolean).join(', ')}, or bcd2`);
-          if (attrs?.prefix_len != null && !(Number.isInteger(+attrs.prefix_len) && +attrs.prefix_len >= 1 && +attrs.prefix_len <= 4))
-            warns.push(`[block ${n}] read-length-prefix "prefix_len" must be 1, 2, 3 or 4, got ${JSON.stringify(attrs.prefix_len)}`);
-          if (p && attrs?.prefix_len == null && _mePrefixWidth(p, null) == null)
-            warns.push(`[block ${n}] read-length-prefix: "${p}" does not say how wide the length is — add "prefix_len"`);
+            warns.push(`[block ${n}] read-length-value "length_encoding": "${p}" is not a length encoding — use one of ${_ME_TYPE_OPTS.filter(Boolean).join(', ')}, or bcd2`);
+          if (attrs?.length_size != null && !(Number.isInteger(+attrs.length_size) && +attrs.length_size >= 1 && +attrs.length_size <= 4))
+            warns.push(`[block ${n}] read-length-value "length_size" must be 1, 2, 3 or 4, got ${JSON.stringify(attrs.length_size)}`);
+          if (p && attrs?.length_size == null && _mePrefixWidth(p, null) == null)
+            warns.push(`[block ${n}] read-length-value: "${p}" does not say how wide the length is — add "length_size"`);
           if (attrs?.count != null && !/^(bytes|digits)$/i.test(String(attrs.count)))
-            warns.push(`[block ${n}] read-length-prefix "count" must be "bytes" or "digits", got ${JSON.stringify(attrs.count)}`);
+            warns.push(`[block ${n}] read-length-value "count" must be "bytes" or "digits", got ${JSON.stringify(attrs.count)}`);
           break;
         }
         case 'read-until':
@@ -21607,27 +21830,44 @@ function _mePsLintWarns(item, parsed) {
           break;
         }
         case 'when': {
-          const _bg = attrs?.bytes !== undefined ? attrs.bytes
-                    : attrs?.['not-bytes'] !== undefined ? attrs['not-bytes'] : undefined;
+          const _bgAttr = attrs?.bytes !== undefined ? 'bytes'
+                        : attrs?.['not-bytes'] !== undefined ? 'not-bytes' : null;
+          const _bg = _bgAttr ? attrs[_bgAttr] : undefined;
           if (_bg !== undefined) {
-            // A byte guard reads the cursor, so there is no field to resolve —
-            // but a guard with no recognised type silently never matches, which
-            // reads as "the branch is dead" rather than "the guard is wrong".
-            if (!_bg || typeof _bg !== 'object')
-              warns.push(`[block ${n}] when "bytes" must be an object, e.g. {"type":"literal","value":"& "}`);
-            else if (!/^(regex|alphabetic|numeric|alphanumeric|ascii|literal)$/.test(String(_bg.type || '')))
-              warns.push(`[block ${n}] when bytes guard type ${JSON.stringify(_bg.type)} is not one of `
-                       + `regex, alphabetic, numeric, alphanumeric, ascii, literal — it would never match`);
-            else if (_bg.type === 'literal' && _bg.value == null)
-              warns.push(`[block ${n}] when bytes guard "literal" needs a "value"`);
-            else if (_bg.type === 'regex' && !_bg.pattern)
-              warns.push(`[block ${n}] when bytes guard "regex" needs a "pattern"`);
+            checkGuard(n, 'when', _bgAttr, _bg);
             if (attrs.field !== undefined)
               warns.push(`[block ${n}] when has both a byte guard and a "field" — the byte guard wins and "field" is ignored`);
           } else {
             checkRef(n, 'when.field', attrs?.field);
+            // The old names. Not converted — the spec is edited by hand — but a
+            // silent no-op is the worst outcome: `is` on its own would read as a
+            // presence test and run `then` unconditionally.
+            for (const [oldName, newName] of [['is', 'equal'], ['not', 'not_equal']])
+              if (attrs?.[oldName] !== undefined)
+                warns.push(`[block ${n}] when "${oldName}" is now "${newName}" — rename it. Nothing is converted automatically.`);
+            const _ops = _ME_WHEN_OPS().filter(o => attrs?.[o] !== undefined);
+            if (_ops.length > 1)
+              warns.push(`[block ${n}] when has ${_ops.join(' and ')} — a block asks one question; nest a second "when" inside "then"`);
+            for (const o of _ops) {
+              const v = attrs[o];
+              if (Array.isArray(v) && _ME_WHEN_NUM().includes(o))
+                warns.push(`[block ${n}] when "${o}" cannot take a list — a list compares only with equal / not_equal`);
+              if (v && typeof v === 'object' && !Array.isArray(v)) {
+                if (v.sizeof !== undefined) {
+                  if (typeof v.sizeof !== 'string' || !v.sizeof)
+                    warns.push(`[block ${n}] when "${o}": "sizeof" must name a DDL element, e.g. {"sizeof": "EMV.DATA"}`);
+                  else if (bindingCount && ddlIds.size && !knownFieldLeaf(v.sizeof) && !ddlIds.has(v.sizeof))
+                    warns.push(`[block ${n}] when "${o}": "sizeof" names "${v.sizeof}", which is not in the bound DDLs`);
+                } else if (typeof v.field !== 'string' || !v.field) {
+                  warns.push(`[block ${n}] when "${o}": an operand object must name a field or an element, e.g. {"field": "MAX-LEN"} or {"sizeof": "EMV.DATA"}`);
+                } else checkRef(`${n}.${o}`, `when.${o}.field`, v.field);
+              }
+            }
           }
+          if (attrs?.else !== undefined && !Array.isArray(attrs.else))
+            warns.push(`[block ${n}] when "else" must be a list of blocks`);
           walk(attrs?.then, n);
+          walk(attrs?.else, n);
           break;
         }
         case 'repeat': {
@@ -21638,6 +21878,7 @@ function _mePsLintWarns(item, parsed) {
           break;
         }
         case 'read-while': {
+          checkGuard(n, 'read-while', 'while', attrs?.while);
           if (typeof attrs?.max === 'string') checkRef(n, 'read-while.max', attrs.max);
           else if (attrs?.max && typeof attrs.max === 'object' && attrs.max.field)
             checkRef(n, 'read-while.max.field', attrs.max.field);
@@ -21667,8 +21908,15 @@ function _mePsLintWarns(item, parsed) {
 // that look like parse_spec block-type keys (read-ddl, read-while, …)
 // get their own class so the spec is visually structured by intent.
 
+// Block names that USED to work. Nothing converts them — a spec written the old
+// way is edited by hand — but the lint says what to edit it to rather than
+// leaving "unknown block type" as the whole answer.
+const _PS_RENAMED = {
+  'read-length-prefix': '"read-length-prefix" is now "read-length-value" — rename the block, and its '
+    + '"prefix" to "length_encoding" and "prefix_len" to "length_size". Nothing is converted automatically.',
+};
 const _PS_KNOWN_BLOCKS = new Set([
-  'read-ddl','read','read-fixed','read-until','read-length-prefix',
+  'read-ddl','read','read-fixed','read-until','read-length-value',
   'read-to-end','read-bitmap','read-bitmap-fields','read-segment-fields','read-tlv',
   'when','repeat','read-while','skip','token-area',
 ]);
@@ -28908,6 +29156,21 @@ function _meFieldAsInt(f) {
 // plausible unrelated decimal and silently truncated the PSTM services loop.
 // Reporting the assumption does not make it right, but it stops it being silent.
 function _meNumRef(ref, ctx) {
+  // `{"sizeof": "ID"}` is not read off the message at all — it is what the DDL
+  // DECLARES for an element, in bytes. Answered here rather than at each call
+  // site so it works everywhere a length, a count or a cap is taken, and reads
+  // the same number in all of them.
+  if (ref && typeof ref === 'object' && ref.sizeof !== undefined) {
+    const sid = ref.sizeof;
+    if (typeof sid !== 'string' || !sid)
+      return { error: '"sizeof" must name a DDL element, e.g. {"sizeof": "EMV.DATA"}' };
+    const def = _meFindDefById(sid, ctx);
+    const n   = _meDeclaredSize(def ? def.id : sid, ctx);
+    // Never 0 by default: a typo silently sizing everything to nothing is the
+    // one outcome worse than saying the element could not be found.
+    if (!def && !n) return { id: sid, error: `"sizeof": no element named '${sid}' in the bound DDLs` };
+    return { id: sid, n };
+  }
   const id = (ref && typeof ref === 'object') ? ref.field : ref;
   if (typeof id !== 'string' || !id)
     return { error: `'${id}' is not a field name — a count/length/max reference names a field already read` };
@@ -28927,11 +29190,16 @@ function _meNumRef(ref, ctx) {
   return { id, n, assumed: true };
 }
 
+// Returns the number, or null. WHY it is null is left on ctx for the caller that
+// reports it: "Cannot resolve length: [object Object]" told the user nothing at
+// all, and the reason — an element no DDL declares, a field not yet read — is
+// already known one call down.
 function _meResolveLength(lengthAttr, ctx) {
+  ctx._lenErr = null;
   if (typeof lengthAttr === 'number') return lengthAttr;
-  if (typeof lengthAttr === 'string' || (lengthAttr && typeof lengthAttr === 'object' && lengthAttr.field)) {
+  if (typeof lengthAttr === 'string' || (lengthAttr && typeof lengthAttr === 'object' && (lengthAttr.field || lengthAttr.sizeof !== undefined))) {
     const r = _meNumRef(lengthAttr, ctx);
-    if (r.error) return null;
+    if (r.error) { ctx._lenErr = r.error; return null; }
     if (r.assumed) _meNoteNumRefGuess(r, 'length', ctx);
     return r.n;
   }
@@ -28975,7 +29243,8 @@ function _meExecReadFixed(attrs, ctx) {
   }
   const len = _meResolveLength(attrs.length, ctx);
   if (len == null) {
-    ctx.fields.push({ id: attrs.as || 'read-fixed', error: `Cannot resolve length: ${attrs.length}` });
+    ctx.fields.push({ id: attrs.as || 'read-fixed',
+      error: ctx._lenErr || `Cannot resolve length: ${JSON.stringify(attrs.length)}` });
     return;
   }
   const start = ctx.cursor;
@@ -29083,29 +29352,29 @@ function _meDecodeWireLen(bytes, type, count, enc) {
   return { bytes: digits ? _meCharsToBytes(n) : n, written: n, digits };
 }
 
-// ── Block: read-length-prefix ───────────────────────────────────────────────
+// ── Block: read-length-value ───────────────────────────────────────────────
 
-function _meExecReadLengthPrefix(attrs, ctx) {
-  if (!attrs || !attrs.prefix) {
-    ctx.fields.push({ id: 'read-length-prefix', error: 'Missing prefix attribute' });
+function _meExecReadLengthValue(attrs, ctx) {
+  if (!attrs || !attrs.length_encoding) {
+    ctx.fields.push({ id: 'read-length-value', error: 'Missing length_encoding attribute' });
     return;
   }
   const start = ctx.cursor;
-  const pLen  = _mePrefixWidth(attrs.prefix, attrs.prefix_len);
+  const pLen  = _mePrefixWidth(attrs.length_encoding, attrs.length_size);
   if (pLen == null) {
     ctx.fields.push({ id: attrs.as || 'LEN-DATA',
-      error: `"${attrs.prefix}" does not say how many bytes the length occupies — add "prefix_len" (1-4)` });
+      error: `"${attrs.length_encoding}" does not say how many bytes the length occupies — add "length_size" (1-4)` });
     return;
   }
   if (start + pLen > ctx.bytes.length) {
-    ctx.fields.push({ id: attrs.as || 'LEN-DATA', error: `Cannot read ${attrs.prefix} prefix at offset ${start}` });
+    ctx.fields.push({ id: attrs.as || 'LEN-DATA', error: `Cannot read the ${attrs.length_encoding} length at offset ${start}` });
     return;
   }
   const pBytes = Array.from(ctx.bytes.slice(start, start + pLen));
-  const N      = _meDecodeWireLen(pBytes, attrs.prefix, attrs.count, _meLenEncFor(attrs, ctx));
+  const N      = _meDecodeWireLen(pBytes, attrs.length_encoding, attrs.count, _meLenEncFor(attrs, ctx));
   if (N == null) {
     ctx.fields.push({ id: attrs.as || 'LEN-DATA',
-      error: `length prefix ${_meBytesToHex(pBytes)} is not a number when read as ${attrs.prefix}` });
+      error: `length ${_meBytesToHex(pBytes)} is not a number when read as ${attrs.length_encoding}` });
     return;
   }
   const dataLen   = N.bytes;
@@ -29122,14 +29391,14 @@ function _meExecReadLengthPrefix(attrs, ctx) {
   // prefix was read from the wrong bytes — same failure as read-fixed.
   else if (dataEnd > ctx.bytes.length) {
     ctx.fields.push({ id: attrs.as || 'LEN-DATA',
-      error: `length prefix says ${dataLen} bytes but only ${ctx.bytes.length - dataStart} remain — the prefix was probably read from the wrong position` });
+      error: `the length says ${dataLen} bytes but only ${ctx.bytes.length - dataStart} remain — it was probably read from the wrong position` });
     return;
   }
   const fBytes = Array.from(ctx.bytes.slice(dataStart, dataEnd));
   ctx.cursor = dataEnd;
   const id = attrs.as || 'LEN-DATA';
   const f  = _meMakeSyntheticField(id, fBytes, dataStart, dataEnd - 1, ctx, {
-    description: `length-prefix ${attrs.prefix} (${N.digits ? `${N.written} digits = ${dataLen}` : dataLen} bytes)`,
+    description: `length ${attrs.length_encoding} (${N.digits ? `${N.written} digits = ${dataLen}` : dataLen} bytes)`,
   });
   f.lenPrefix = String(N.written);
   ctx.fields.push(f);
@@ -29739,15 +30008,15 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
       fromWire  = true;
       exact     = true;
     } else {
-      windowLen = ovr.length != null ? +ovr.length : _meDeclaredSize(scopeId, ctx);
+      windowLen = ovr.length != null ? _meResolveLength(ovr.length, ctx) : _meDeclaredSize(scopeId, ctx);
       exact     = ovr.length != null;
     }
   } else if (ovr.length != null) {
     // No element, so nothing is declared to measure — but the entry may still
     // state the extent by hand. Without one the window stays open and the DE
     // ends wherever its blocks left the cursor, which is the whole point of a
-    // self-describing block like read-length-prefix.
-    windowLen = +ovr.length;
+    // self-describing block like read-length-value.
+    windowLen = _meResolveLength(ovr.length, ctx);
     exact     = true;
   }
 
@@ -29783,7 +30052,10 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
         ctx.cursor = end;
       } else if (exact) {
         // The window stated the DE's real extent, so the DE occupies all of it
-        // and the next one starts at its end even if the blocks read less.
+        // and the next one starts at its end even if the blocks read less. What
+        // the blocks left unread is shown rather than swallowed in `smart`.
+        const _um = _meUnmappedRow(errId, end, ctx);
+        if (_um) ctx.fields.push(_um);
         ctx.cursor = end;
       }
       // Otherwise the window was the DDL's DECLARED SIZE — capacity, not extent.
@@ -29937,7 +30209,8 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
       _meLengthReadAs(lBytes, lType)}`);
     N = Math.max(0, available);
   } else if (capacity && N > capacity) {
-    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` digit(s) = ${N} byte(s)` : ''} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload — read as ${capacity}`);
+    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` digit(s) = ${N} byte(s)` : ''} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload — ${
+      ctx.lenMode === 'smart' ? `the extra ${N - capacity} byte(s) are read as "<unmapped>"` : `read as ${capacity}`}`);
   }
   ctx.cursor = lStart + lLen;
   // The complaint belongs ON the LEN field, not beside it. Pushing it as its own
@@ -29995,7 +30268,53 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
     out.push(cf);
     ctx.fieldsById[childDef.id] = cf;
   }
+  // The payload took what the group declares; the length may have counted more.
+  const _um = _meUnmappedRow(groupId, lStart + lLen + N, ctx);
+  if (_um) out.push(_um);
   return out;
+}
+
+// What the frame sized, named — for the row a `smart` frame's surplus goes into.
+// A single payload field is itself; several of them share a parent, and that
+// parent is the element the length covers. Nothing declared leaves only the bit.
+function _meFrameOwner(entry, de) {
+  const ids = (entry.with || []).map(d => d.id);
+  if (!ids.length)      return `DE-${de}`;
+  if (ids.length === 1) return ids[0];
+  let parts = ids[0].split('.');
+  for (const id of ids.slice(1)) {
+    const p = id.split('.');
+    let i = 0;
+    while (i < parts.length && i < p.length && parts[i] === p[i]) i++;
+    parts = parts.slice(0, i);
+  }
+  return parts.length ? parts.join('.') : `DE-${de}`;
+}
+
+// The bytes a wire length counted that the DDL does not declare — the 23rd byte
+// of a 23-byte LEN over a 22-byte group. In `strict` there is no row and they
+// stay in the stream, which is what every version before this one did: the DE
+// ended where its fields ran out, one byte short of what the wire said, and
+// every DE after it read one byte early. In `smart` they become a row of their
+// own and the cursor lands where the length said it would.
+// Returns the row rather than pushing it — one caller collects rows to return
+// rather than emitting them itself.
+function _meUnmappedRow(owner, frameEnd, ctx) {
+  if (ctx.lenMode !== 'smart') return null;
+  const start = ctx.cursor;
+  const end   = Math.min(frameEnd, ctx.bytes.length);
+  if (!(end > start)) return null;
+  const bytes = Array.from(ctx.bytes.slice(start, end));
+  ctx.cursor  = end;
+  return {
+    id: `${owner}.<unmapped>`,
+    description: 'inside the element’s length, not declared in the DDL',
+    valueLength: bytes.length,
+    value: _meBytesToStr(bytes), rawHex: _meBytesToHex(bytes),
+    startByte: start, endByte: end - 1,
+    issue: `${bytes.length} byte(s) counted by the length that "${owner}" does not declare — `
+         + `read here so the next element starts where the length said it would`,
+  };
 }
 
 function _meExecBitmapFields(attrs, ctx) {
@@ -30015,6 +30334,18 @@ function _meExecBitmapFields(attrs, ctx) {
   // distinguishable, so this cannot collapse to `|| null`.
   ctx.vlgIdentifier = (attrs && typeof attrs === 'object' && attrs.vlg_identifier !== undefined)
     ? String(attrs.vlg_identifier) : undefined;
+
+  // What happens when the wire's length is LONGER than what the DDL declares.
+  // `strict` keeps the payload at the declared size and leaves the surplus in
+  // the stream; `smart` gives those bytes a row and ends the DE where the wire
+  // said. Default `strict`: it is what every spec written so far already means.
+  const _lm = (attrs && typeof attrs === 'object' && attrs.length_mode !== undefined)
+    ? String(attrs.length_mode).toLowerCase() : 'strict';
+  if (_lm !== 'strict' && _lm !== 'smart') {
+    ctx.fields.push({ id: 'read-bitmap-fields',
+      error: `length_mode must be "strict" or "smart", got ${JSON.stringify(attrs.length_mode)} — read as "strict"` });
+  }
+  ctx.lenMode = _lm === 'smart' ? 'smart' : 'strict';
 
   const deMap     = _meBuildDEMap(ctx);
   const varGroups = _meVlgLenMap(_meOvMergedItem(ctx));   // groupId → LEN leaf id (or null = first leaf)
@@ -30062,6 +30393,10 @@ function _meExecBitmapFields(attrs, ctx) {
       if (entry.def) {
         const _lenRow = readSeq(entry.def);
         if (_lenRow) {
+          // Where the frame ends, taken BEFORE the payload is read: the single-leaf
+          // path spends vlgPending during the read, so afterwards there is nothing
+          // left to work it out from.
+          const _frameEnd = ctx.vlgFrame != null ? ctx.cursor + ctx.vlgFrame : null;
           // A frame over a GROUP covers all of it, so the length is spent across
           // the group's fields rather than on its first one. A single-field
           // payload keeps the plain rule: the frame sizes that field, capped at
@@ -30079,8 +30414,13 @@ function _meExecBitmapFields(attrs, ctx) {
             // A row of its own under a key nothing renders is a warning nobody
             // ever sees, which is how the first version of this shipped.
             const _note = `${entry.def.id}: length source says ${ctx.vlgFrame}, but what `
-              + `it sizes declares at most ${_tot} byte(s) — read as ${_tot}`;
+              + `it sizes declares at most ${_tot} byte(s) — ${ctx.lenMode === 'smart'
+                ? `the extra ${ctx.vlgFrame - _tot} byte(s) are read as "<unmapped>"` : `read as ${_tot}`}`;
             _lenRow.issue = _lenRow.issue ? `${_lenRow.issue} · ${_note}` : _note;
+          }
+          if (_frameEnd != null) {
+            const _um = _meUnmappedRow(_meFrameOwner(entry, de), _frameEnd, ctx);
+            if (_um) ctx.fields.push(_um);
           }
           ctx.vlgPending = null; ctx.vlgFrame = null; ctx.vlgSpread = false;
           _meEmitRedefRows(entry, ctx);
@@ -30126,9 +30466,28 @@ function _meExecBitmapFields(attrs, ctx) {
     }
   }
   ctx.vlgIdentifier  = undefined;   // scoped to this block, not to the whole parse
+  ctx.lenMode        = undefined;
 }
 
 // ── Block: when ─────────────────────────────────────────────────────────────
+
+// The six comparisons in ONE place: which of them take numbers, and what each
+// one asks. The lists the lint and the executor work from are derived from it,
+// so a seventh operator is a row here rather than an entry in three lists that
+// have to agree forever. Built once, on first use.
+let _ME_WHEN_CMP_TBL = null;
+function _meWhenCmp() {
+  return _ME_WHEN_CMP_TBL || (_ME_WHEN_CMP_TBL = {
+    'equal':            { numeric: false, test: (a, b) =>  _meMatchValue(a, b) },
+    'not_equal':        { numeric: false, test: (a, b) => !_meMatchValue(a, b) },
+    'greater_than':     { numeric: true,  test: (a, b) => a >  b },
+    'greater_or_equal': { numeric: true,  test: (a, b) => a >= b },
+    'less_than':        { numeric: true,  test: (a, b) => a <  b },
+    'less_or_equal':    { numeric: true,  test: (a, b) => a <= b },
+  });
+}
+const _ME_WHEN_OPS = () => Object.keys(_meWhenCmp());
+const _ME_WHEN_NUM = () => _ME_WHEN_OPS().filter(o => _meWhenCmp()[o].numeric);
 
 function _meMatchValue(value, matcher) {
   if (matcher == null) return false;
@@ -30137,11 +30496,48 @@ function _meMatchValue(value, matcher) {
   return String(matcher).trim() === v;
 }
 
+// One operand grammar for every operator: a literal, a list (equality only), or
+// another field. `{"field": "X"}` is the same reference `read-fixed`'s length
+// and `repeat`'s count already take, read through the same decoder — so "how is
+// this field read as a number" keeps one answer rather than one per block.
+// Returns { text } / { list } for an equality operand and { n } for a numeric
+// one, or { error } naming what could not be resolved.
+function _meWhenOperand(raw, numeric, ctx) {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    // `sizeof` is read by the same helper every length and count uses, so the
+    // number a condition compares against is the number a `read-fixed` would
+    // take — one answer, not one per block.
+    if (raw.sizeof !== undefined) {
+      const r = _meNumRef(raw, ctx);
+      return r.error ? { error: r.error } : (numeric ? { n: r.n } : { text: String(r.n) });
+    }
+    if (typeof raw.field !== 'string' || !raw.field)
+      return { error: `a comparison operand object must name a field, e.g. {"field": "MAX-LEN"} or {"sizeof": "EMV.DATA"}` };
+    if (!numeric) {
+      const f = ctx.fieldsById[raw.field];
+      if (!f) return { error: `Field '${raw.field}' not yet read` };
+      return { text: String(f.value ?? '') };
+    }
+    const r = _meNumRef(raw, ctx);
+    if (r.error) return { error: r.error };
+    if (r.assumed) _meNoteNumRefGuess(r, 'comparison', ctx);
+    return { n: r.n };
+  }
+  if (Array.isArray(raw)) {
+    if (numeric) return { error: 'a list compares only with equal / not_equal — a range is two blocks, or two operators' };
+    return { list: raw };
+  }
+  if (!numeric) return { text: raw };
+  const n = typeof raw === 'number' ? raw : parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(n)) return { error: `${JSON.stringify(raw)} is not a number to compare against` };
+  return { n };
+}
+
 function _meExecWhen(attrs, ctx) {
   if (!attrs) { ctx.fields.push({ id: 'when', error: 'Missing attributes' }); return; }
   // Two kinds of condition, and a block uses one or the other:
   //
-  //   is / not        compare a field ALREADY READ — the original form
+  //   equal / not_equal / greater_than / …   compare a field ALREADY READ
   //   bytes / not-bytes  look at the bytes AT THE CURSOR, without reading them
   //
   // The second is what the legacy PSTM parser hardcodes as bytes[cursor] !== 0x26:
@@ -30169,11 +30565,56 @@ function _meExecWhen(attrs, ctx) {
       ctx.fields.push({ id: 'when', error: `Field '${attrs.field}' not yet read` });
       return;
     }
-    if (attrs.is !== undefined)        matched =  _meMatchValue(f.value, attrs.is);
-    else if (attrs.not !== undefined)  matched = !_meMatchValue(f.value, attrs.not);
+    const ops = _ME_WHEN_OPS().filter(o => attrs[o] !== undefined);
+    if (ops.length > 1) {
+      // Two comparisons on one block have no defined relationship — and silently
+      // honouring the first would make the second look applied when it is not.
+      ctx.fields.push({ id: 'when', error: `${ops.join(' and ')} on one "when" — a block asks one question; nest a second "when" inside "then" for the rest` });
+      return;
+    }
+    const op = ops[0];
+    // The old names, reported rather than ignored. Nothing converts them — the
+    // spec is edited by hand — but silence is the one outcome that must not
+    // happen: with `is` unread the block has no operator at all, which is the
+    // presence test, so `then` would run on every message and the parse would be
+    // confidently wrong instead of visibly broken.
+    if (!op) {
+      for (const [oldName, newName] of [['is', 'equal'], ['not', 'not_equal']])
+        if (attrs[oldName] !== undefined) {
+          ctx.fields.push({ id: 'when', error: `"${oldName}" is now "${newName}" — rename it. Nothing is converted automatically.` });
+          return;
+        }
+    }
+    // No comparison at all is a PRESENCE test: the field was read, so `then`
+    // runs. The reference has said so since it was written; this did not do it —
+    // `matched` stayed false, so a `when` naming a field and comparing nothing
+    // could not fire under any message at all. A block that can never fire is
+    // dead weight in a spec, and the documented reading is the only useful one.
+    if (!op) { matched = true; }
+    else {
+      const cmp = _meWhenCmp()[op];
+      const rhs = _meWhenOperand(attrs[op], cmp.numeric, ctx);
+      if (rhs.error) { ctx.fields.push({ id: 'when', error: `"${op}": ${rhs.error}` }); return; }
+      if (!cmp.numeric) {
+        matched = cmp.test(f.value, rhs.list !== undefined ? rhs.list : rhs.text);
+      } else {
+        // The left side is read as a number by the same chain as the right, so a
+        // hex-char length compares as 74 on both sides or on neither.
+        const lhs = _meNumRef(attrs.field, ctx);
+        if (lhs.error) { ctx.fields.push({ id: 'when', error: `"${op}": ${lhs.error}` }); return; }
+        if (lhs.assumed) _meNoteNumRefGuess(lhs, 'comparison', ctx);
+        matched = cmp.test(lhs.n, rhs.n);
+      }
+    }
   }
-  if (matched && Array.isArray(attrs.then)) {
-    for (const b of attrs.then) _meExecBlock(b, ctx);
+  // `else` was accepted by every spec that wrote it and read by nothing: the key
+  // parsed, linted clean and did nothing at all, so a two-branch condition read
+  // as written while only one branch existed. Both branches read from the same
+  // cursor — exactly one of them runs, and a condition that could not be
+  // ANSWERED returns above without running either.
+  const branch = matched ? attrs.then : attrs.else;
+  if (Array.isArray(branch)) {
+    for (const b of branch) _meExecBlock(b, ctx);
   }
 }
 
@@ -30246,13 +30687,20 @@ function _meExecRepeat(attrs, ctx) {
 function _meResolveMaxLimit(maxAttr, ctx) {
   if (maxAttr == null) return null;
   if (typeof maxAttr === 'number') return maxAttr;
-  if (typeof maxAttr === 'string' || (maxAttr && typeof maxAttr === 'object' && maxAttr.field)) {
+  if (typeof maxAttr === 'string' || (maxAttr && typeof maxAttr === 'object' && (maxAttr.field || maxAttr.sizeof !== undefined))) {
     const r = _meNumRef(maxAttr, ctx);
     if (r.error) return null;
     if (r.assumed) _meNoteNumRefGuess(r, 'loop cap', ctx);
     return r.n;
   }
   return null;
+}
+
+// A pattern that will not compile never matches, which reads as a dead branch
+// rather than a broken guard — the one failure the guard's own comments keep
+// warning about. Asked here so `when` and `read-while` get the same answer.
+function _mePatternCompiles(p) {
+  try { new RegExp(p); return true; } catch { return false; }
 }
 
 function _meGuardDecodeText(slice, encoding) {
@@ -31100,7 +31548,7 @@ function _meExecBlockAt(type, attrs, ctx) {
     case 'read':                return _meExecReadField(attrs, ctx);
     case 'read-fixed':          return _meExecReadFixed(attrs, ctx);
     case 'read-until':          return _meExecReadUntil(attrs, ctx);
-    case 'read-length-prefix':  return _meExecReadLengthPrefix(attrs, ctx);
+    case 'read-length-value':   return _meExecReadLengthValue(attrs, ctx);
     case 'read-to-end':         return _meExecReadToEnd(attrs, ctx);
     case 'read-bitmap':         return _meExecReadBitmap(attrs, ctx);
     case 'read-bitmap-fields':  return _meExecBitmapFields(attrs, ctx);
@@ -31111,7 +31559,9 @@ function _meExecBlockAt(type, attrs, ctx) {
     case 'read-while':          return _meExecReadWhile(attrs, ctx);
     case 'token-area':          return _meExecTokenArea(attrs, ctx);
     case 'skip': {
-      const n = (typeof attrs === 'number') ? attrs : (attrs?.length || 0);
+      // Through the shared resolver, so "skip what this element declares" is
+      // written the same way a read-fixed states its length.
+      const n = (typeof attrs === 'number') ? attrs : (_meResolveLength(attrs?.length, ctx) || 0);
       ctx.cursor = Math.min(ctx.cursor + n, ctx.bytes.length);
       return;
     }

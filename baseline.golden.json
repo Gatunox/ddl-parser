@@ -196,7 +196,7 @@
    }
   ]
  },
- "cursor/read-length-prefix :: prefix uint8": {
+ "cursor/read-length-value :: prefix uint8": {
   "cursor": 9,
   "fields": [
    {
@@ -214,7 +214,7 @@
    }
   ]
  },
- "cursor/read-length-prefix :: prefix uint16-be": {
+ "cursor/read-length-value :: prefix uint16-be": {
   "cursor": 9,
   "fields": [
    {
@@ -233,12 +233,12 @@
    }
   ]
  },
- "cursor/read-length-prefix :: prefix uint16-le": {
+ "cursor/read-length-value :: prefix uint16-le": {
   "cursor": 9,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 768 bytes but only 7 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 768 bytes but only 7 remain — it was probably read from the wrong position"
    },
    {
     "id": "REST",
@@ -249,7 +249,7 @@
    }
   ]
  },
- "cursor/read-length-prefix :: prefix bcd2": {
+ "cursor/read-length-value :: prefix bcd2": {
   "cursor": 9,
   "fields": [
    {
@@ -445,11 +445,18 @@
     "hex": "30"
    },
    {
-    "id": "REST",
+    "id": "E",
     "start": 1,
+    "end": 1,
+    "value": "X",
+    "hex": "58"
+   },
+   {
+    "id": "REST",
+    "start": 2,
     "end": 5,
-    "value": "XYZQQ",
-    "hex": "58595A5151"
+    "value": "YZQQ",
+    "hex": "595A5151"
    }
   ]
  },
@@ -519,7 +526,7 @@
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 39321 bytes but only 2 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 39321 bytes but only 2 remain — it was probably read from the wrong position"
    }
   ]
  },
@@ -7493,7 +7500,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7518,7 +7525,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7543,7 +7550,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7568,7 +7575,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7593,7 +7600,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7618,7 +7625,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7643,7 +7650,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7668,7 +7675,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7693,7 +7700,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7718,7 +7725,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7743,7 +7750,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7768,7 +7775,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7793,7 +7800,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7818,7 +7825,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7843,7 +7850,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7868,7 +7875,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7893,7 +7900,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7918,7 +7925,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7943,7 +7950,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7968,7 +7975,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -7993,7 +8000,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8018,7 +8025,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8043,7 +8050,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8068,7 +8075,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8093,7 +8100,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8118,7 +8125,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8143,7 +8150,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8168,7 +8175,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8193,7 +8200,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8218,7 +8225,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8243,7 +8250,7 @@
    },
    {
     "id": "read-fixed",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -8268,7 +8275,7 @@
    },
    {
     "id": "OUT",
-    "error": "Cannot resolve length: NOPE"
+    "error": "'NOPE' not yet read"
    }
   ]
  },
@@ -9440,79 +9447,79 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=- as=- sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=- as=- sentinels=- eom=-": {
   "cursor": 0,
   "fields": [
    {
-    "id": "read-length-prefix",
-    "error": "Missing prefix attribute"
+    "id": "read-length-value",
+    "error": "Missing length_encoding attribute"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=- as=- sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=- as=- sentinels=- eom=true": {
   "cursor": 0,
   "fields": [
    {
-    "id": "read-length-prefix",
-    "error": "Missing prefix attribute"
+    "id": "read-length-value",
+    "error": "Missing length_encoding attribute"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=- as=- sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=- as=- sentinels=[\"0x26\"] eom=-": {
   "cursor": 0,
   "fields": [
    {
-    "id": "read-length-prefix",
-    "error": "Missing prefix attribute"
+    "id": "read-length-value",
+    "error": "Missing length_encoding attribute"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=- as=- sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=- as=- sentinels=[\"0x26\"] eom=true": {
   "cursor": 0,
   "fields": [
    {
-    "id": "read-length-prefix",
-    "error": "Missing prefix attribute"
+    "id": "read-length-value",
+    "error": "Missing length_encoding attribute"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=- as=\"P\" sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=- as=\"P\" sentinels=- eom=-": {
   "cursor": 0,
   "fields": [
    {
-    "id": "read-length-prefix",
-    "error": "Missing prefix attribute"
+    "id": "read-length-value",
+    "error": "Missing length_encoding attribute"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=- as=\"P\" sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=- as=\"P\" sentinels=- eom=true": {
   "cursor": 0,
   "fields": [
    {
-    "id": "read-length-prefix",
-    "error": "Missing prefix attribute"
+    "id": "read-length-value",
+    "error": "Missing length_encoding attribute"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=- as=\"P\" sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=- as=\"P\" sentinels=[\"0x26\"] eom=-": {
   "cursor": 0,
   "fields": [
    {
-    "id": "read-length-prefix",
-    "error": "Missing prefix attribute"
+    "id": "read-length-value",
+    "error": "Missing length_encoding attribute"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=- as=\"P\" sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=- as=\"P\" sentinels=[\"0x26\"] eom=true": {
   "cursor": 0,
   "fields": [
    {
-    "id": "read-length-prefix",
-    "error": "Missing prefix attribute"
+    "id": "read-length-value",
+    "error": "Missing length_encoding attribute"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint8\" as=- sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint8\" as=- sentinels=- eom=-": {
   "cursor": 1,
   "fields": [
    {
@@ -9523,7 +9530,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint8\" as=- sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint8\" as=- sentinels=- eom=true": {
   "cursor": 1,
   "fields": [
    {
@@ -9534,7 +9541,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint8\" as=- sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint8\" as=- sentinels=[\"0x26\"] eom=-": {
   "cursor": 1,
   "fields": [
    {
@@ -9545,7 +9552,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint8\" as=- sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint8\" as=- sentinels=[\"0x26\"] eom=true": {
   "cursor": 1,
   "fields": [
    {
@@ -9556,7 +9563,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint8\" as=\"P\" sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint8\" as=\"P\" sentinels=- eom=-": {
   "cursor": 1,
   "fields": [
    {
@@ -9567,7 +9574,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint8\" as=\"P\" sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint8\" as=\"P\" sentinels=- eom=true": {
   "cursor": 1,
   "fields": [
    {
@@ -9578,7 +9585,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint8\" as=\"P\" sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint8\" as=\"P\" sentinels=[\"0x26\"] eom=-": {
   "cursor": 1,
   "fields": [
    {
@@ -9589,7 +9596,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint8\" as=\"P\" sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint8\" as=\"P\" sentinels=[\"0x26\"] eom=true": {
   "cursor": 1,
   "fields": [
    {
@@ -9600,7 +9607,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-be\" as=- sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint16-be\" as=- sentinels=- eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9612,7 +9619,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-be\" as=- sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint16-be\" as=- sentinels=- eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -9624,7 +9631,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-be\" as=- sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint16-be\" as=- sentinels=[\"0x26\"] eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9636,7 +9643,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-be\" as=- sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint16-be\" as=- sentinels=[\"0x26\"] eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -9648,7 +9655,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-be\" as=\"P\" sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint16-be\" as=\"P\" sentinels=- eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9660,7 +9667,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-be\" as=\"P\" sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint16-be\" as=\"P\" sentinels=- eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -9672,7 +9679,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-be\" as=\"P\" sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint16-be\" as=\"P\" sentinels=[\"0x26\"] eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9684,7 +9691,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-be\" as=\"P\" sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint16-be\" as=\"P\" sentinels=[\"0x26\"] eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -9696,16 +9703,16 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-le\" as=- sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint16-le\" as=- sentinels=- eom=-": {
   "cursor": 0,
   "fields": [
    {
     "id": "LEN-DATA",
-    "error": "length prefix says 768 bytes but only 7 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 768 bytes but only 7 remain — it was probably read from the wrong position"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-le\" as=- sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint16-le\" as=- sentinels=- eom=true": {
   "cursor": 9,
   "fields": [
    {
@@ -9717,7 +9724,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-le\" as=- sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint16-le\" as=- sentinels=[\"0x26\"] eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9729,7 +9736,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-le\" as=- sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint16-le\" as=- sentinels=[\"0x26\"] eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -9741,16 +9748,16 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-le\" as=\"P\" sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint16-le\" as=\"P\" sentinels=- eom=-": {
   "cursor": 0,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 768 bytes but only 7 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 768 bytes but only 7 remain — it was probably read from the wrong position"
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-le\" as=\"P\" sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint16-le\" as=\"P\" sentinels=- eom=true": {
   "cursor": 9,
   "fields": [
    {
@@ -9762,7 +9769,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-le\" as=\"P\" sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=\"uint16-le\" as=\"P\" sentinels=[\"0x26\"] eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9774,7 +9781,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"uint16-le\" as=\"P\" sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=\"uint16-le\" as=\"P\" sentinels=[\"0x26\"] eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -9786,7 +9793,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"bcd2\" as=- sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=\"bcd2\" as=- sentinels=- eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9798,7 +9805,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"bcd2\" as=- sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=\"bcd2\" as=- sentinels=- eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -9810,7 +9817,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"bcd2\" as=- sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=\"bcd2\" as=- sentinels=[\"0x26\"] eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9822,7 +9829,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"bcd2\" as=- sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=\"bcd2\" as=- sentinels=[\"0x26\"] eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -9834,7 +9841,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"bcd2\" as=\"P\" sentinels=- eom=-": {
+ "combo/read-length-value :: length_encoding=\"bcd2\" as=\"P\" sentinels=- eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9846,7 +9853,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"bcd2\" as=\"P\" sentinels=- eom=true": {
+ "combo/read-length-value :: length_encoding=\"bcd2\" as=\"P\" sentinels=- eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -9858,7 +9865,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"bcd2\" as=\"P\" sentinels=[\"0x26\"] eom=-": {
+ "combo/read-length-value :: length_encoding=\"bcd2\" as=\"P\" sentinels=[\"0x26\"] eom=-": {
   "cursor": 5,
   "fields": [
    {
@@ -9870,7 +9877,7 @@
    }
   ]
  },
- "combo/read-length-prefix :: prefix=\"bcd2\" as=\"P\" sentinels=[\"0x26\"] eom=true": {
+ "combo/read-length-value :: length_encoding=\"bcd2\" as=\"P\" sentinels=[\"0x26\"] eom=true": {
   "cursor": 5,
   "fields": [
    {
@@ -17460,7 +17467,7 @@
   ]
  },
  "combo/skip :: length=\"CNT\"": {
-  "cursor": null,
+  "cursor": 9,
   "fields": [
    {
     "id": "HEAD",
@@ -17476,53 +17483,12 @@
     "end": 2,
     "value": "2",
     "hex": "32",
-    "type": "PIC X(1)"
+    "type": "PIC X(1)",
+    "issue": "used as a length, but nothing declares how to read it as a number — read as 2. Add {\"field\": \"CNT\", \"as\": \"uint16-be\"} (or a type override on the field) to say …"
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=- not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
-  "cursor": 7,
-  "fields": [
-   {
-    "id": "HEAD",
-    "start": 0,
-    "end": 1,
-    "value": "HH",
-    "hex": "4848",
-    "type": "PIC X(2)"
-   },
-   {
-    "id": "CNT",
-    "start": 2,
-    "end": 2,
-    "value": "2",
-    "hex": "32",
-    "type": "PIC X(1)"
-   }
-  ]
- },
- "combo/when :: field=\"CNT\" is=- not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
-  "cursor": 7,
-  "fields": [
-   {
-    "id": "HEAD",
-    "start": 0,
-    "end": 1,
-    "value": "HH",
-    "hex": "4848",
-    "type": "PIC X(2)"
-   },
-   {
-    "id": "CNT",
-    "start": 2,
-    "end": 2,
-    "value": "2",
-    "hex": "32",
-    "type": "PIC X(1)"
-   }
-  ]
- },
- "combo/when :: field=\"CNT\" is=- not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"CNT\" equal=- not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 9,
   "fields": [
    {
@@ -17550,7 +17516,7 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=- not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"CNT\" equal=- not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 9,
   "fields": [
    {
@@ -17578,7 +17544,7 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=- not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"CNT\" equal=- not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 9,
   "fields": [
    {
@@ -17606,7 +17572,7 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=- not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"CNT\" equal=- not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 9,
   "fields": [
    {
@@ -17634,7 +17600,7 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=\"2\" not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"CNT\" equal=- not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 9,
   "fields": [
    {
@@ -17662,7 +17628,7 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=\"2\" not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"CNT\" equal=- not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 9,
   "fields": [
    {
@@ -17690,7 +17656,7 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=\"2\" not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"CNT\" equal=\"2\" not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 9,
   "fields": [
    {
@@ -17718,7 +17684,7 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=\"2\" not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"CNT\" equal=\"2\" not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 9,
   "fields": [
    {
@@ -17746,7 +17712,107 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=\"2\" not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"CNT\" equal=\"2\" not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+  "cursor": 7,
+  "fields": [
+   {
+    "id": "HEAD",
+    "start": 0,
+    "end": 1,
+    "value": "HH",
+    "hex": "4848",
+    "type": "PIC X(2)"
+   },
+   {
+    "id": "CNT",
+    "start": 2,
+    "end": 2,
+    "value": "2",
+    "hex": "32",
+    "type": "PIC X(1)"
+   },
+   {
+    "id": "when",
+    "error": "equal and not_equal on one \"when\" — a block asks one question; nest a second \"when\" inside \"then\" for the rest"
+   }
+  ]
+ },
+ "combo/when :: field=\"CNT\" equal=\"2\" not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+  "cursor": 7,
+  "fields": [
+   {
+    "id": "HEAD",
+    "start": 0,
+    "end": 1,
+    "value": "HH",
+    "hex": "4848",
+    "type": "PIC X(2)"
+   },
+   {
+    "id": "CNT",
+    "start": 2,
+    "end": 2,
+    "value": "2",
+    "hex": "32",
+    "type": "PIC X(1)"
+   },
+   {
+    "id": "when",
+    "error": "equal and not_equal on one \"when\" — a block asks one question; nest a second \"when\" inside \"then\" for the rest"
+   }
+  ]
+ },
+ "combo/when :: field=\"CNT\" equal=\"2\" not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+  "cursor": 7,
+  "fields": [
+   {
+    "id": "HEAD",
+    "start": 0,
+    "end": 1,
+    "value": "HH",
+    "hex": "4848",
+    "type": "PIC X(2)"
+   },
+   {
+    "id": "CNT",
+    "start": 2,
+    "end": 2,
+    "value": "2",
+    "hex": "32",
+    "type": "PIC X(1)"
+   },
+   {
+    "id": "when",
+    "error": "equal and not_equal on one \"when\" — a block asks one question; nest a second \"when\" inside \"then\" for the rest"
+   }
+  ]
+ },
+ "combo/when :: field=\"CNT\" equal=\"2\" not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+  "cursor": 7,
+  "fields": [
+   {
+    "id": "HEAD",
+    "start": 0,
+    "end": 1,
+    "value": "HH",
+    "hex": "4848",
+    "type": "PIC X(2)"
+   },
+   {
+    "id": "CNT",
+    "start": 2,
+    "end": 2,
+    "value": "2",
+    "hex": "32",
+    "type": "PIC X(1)"
+   },
+   {
+    "id": "when",
+    "error": "equal and not_equal on one \"when\" — a block asks one question; nest a second \"when\" inside \"then\" for the rest"
+   }
+  ]
+ },
+ "combo/when :: field=\"CNT\" equal=[\"2\",\"3\"] not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 9,
   "fields": [
    {
@@ -17774,7 +17840,7 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=\"2\" not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"CNT\" equal=[\"2\",\"3\"] not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 9,
   "fields": [
    {
@@ -17802,8 +17868,8 @@
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=[\"2\",\"3\"] not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
-  "cursor": 9,
+ "combo/when :: field=\"CNT\" equal=[\"2\",\"3\"] not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+  "cursor": 7,
   "fields": [
    {
     "id": "HEAD",
@@ -17822,16 +17888,13 @@
     "type": "PIC X(1)"
    },
    {
-    "id": "T",
-    "start": 7,
-    "end": 8,
-    "value": "PA",
-    "hex": "5041"
+    "id": "when",
+    "error": "equal and not_equal on one \"when\" — a block asks one question; nest a second \"when\" inside \"then\" for the rest"
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=[\"2\",\"3\"] not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
-  "cursor": 9,
+ "combo/when :: field=\"CNT\" equal=[\"2\",\"3\"] not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+  "cursor": 7,
   "fields": [
    {
     "id": "HEAD",
@@ -17850,16 +17913,13 @@
     "type": "PIC X(1)"
    },
    {
-    "id": "T",
-    "start": 7,
-    "end": 8,
-    "value": "PA",
-    "hex": "5041"
+    "id": "when",
+    "error": "equal and not_equal on one \"when\" — a block asks one question; nest a second \"when\" inside \"then\" for the rest"
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=[\"2\",\"3\"] not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
-  "cursor": 9,
+ "combo/when :: field=\"CNT\" equal=[\"2\",\"3\"] not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+  "cursor": 7,
   "fields": [
    {
     "id": "HEAD",
@@ -17878,16 +17938,13 @@
     "type": "PIC X(1)"
    },
    {
-    "id": "T",
-    "start": 7,
-    "end": 8,
-    "value": "PA",
-    "hex": "5041"
+    "id": "when",
+    "error": "equal and not_equal on one \"when\" — a block asks one question; nest a second \"when\" inside \"then\" for the rest"
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=[\"2\",\"3\"] not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
-  "cursor": 9,
+ "combo/when :: field=\"CNT\" equal=[\"2\",\"3\"] not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+  "cursor": 7,
   "fields": [
    {
     "id": "HEAD",
@@ -17906,71 +17963,12 @@
     "type": "PIC X(1)"
    },
    {
-    "id": "T",
-    "start": 7,
-    "end": 8,
-    "value": "PA",
-    "hex": "5041"
+    "id": "when",
+    "error": "equal and not_equal on one \"when\" — a block asks one question; nest a second \"when\" inside \"then\" for the rest"
    }
   ]
  },
- "combo/when :: field=\"CNT\" is=[\"2\",\"3\"] not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
-  "cursor": 9,
-  "fields": [
-   {
-    "id": "HEAD",
-    "start": 0,
-    "end": 1,
-    "value": "HH",
-    "hex": "4848",
-    "type": "PIC X(2)"
-   },
-   {
-    "id": "CNT",
-    "start": 2,
-    "end": 2,
-    "value": "2",
-    "hex": "32",
-    "type": "PIC X(1)"
-   },
-   {
-    "id": "T",
-    "start": 7,
-    "end": 8,
-    "value": "PA",
-    "hex": "5041"
-   }
-  ]
- },
- "combo/when :: field=\"CNT\" is=[\"2\",\"3\"] not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
-  "cursor": 9,
-  "fields": [
-   {
-    "id": "HEAD",
-    "start": 0,
-    "end": 1,
-    "value": "HH",
-    "hex": "4848",
-    "type": "PIC X(2)"
-   },
-   {
-    "id": "CNT",
-    "start": 2,
-    "end": 2,
-    "value": "2",
-    "hex": "32",
-    "type": "PIC X(1)"
-   },
-   {
-    "id": "T",
-    "start": 7,
-    "end": 8,
-    "value": "PA",
-    "hex": "5041"
-   }
-  ]
- },
- "combo/when :: field=\"NOPE\" is=- not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"NOPE\" equal=- not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 7,
   "fields": [
    {
@@ -17995,7 +17993,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=- not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"NOPE\" equal=- not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 7,
   "fields": [
    {
@@ -18020,7 +18018,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=- not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"NOPE\" equal=- not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 7,
   "fields": [
    {
@@ -18045,7 +18043,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=- not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"NOPE\" equal=- not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 7,
   "fields": [
    {
@@ -18070,7 +18068,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=- not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"NOPE\" equal=- not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 7,
   "fields": [
    {
@@ -18095,7 +18093,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=- not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"NOPE\" equal=- not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 7,
   "fields": [
    {
@@ -18120,7 +18118,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=\"2\" not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"NOPE\" equal=\"2\" not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 7,
   "fields": [
    {
@@ -18145,7 +18143,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=\"2\" not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"NOPE\" equal=\"2\" not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 7,
   "fields": [
    {
@@ -18170,7 +18168,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=\"2\" not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"NOPE\" equal=\"2\" not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 7,
   "fields": [
    {
@@ -18195,7 +18193,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=\"2\" not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"NOPE\" equal=\"2\" not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 7,
   "fields": [
    {
@@ -18220,7 +18218,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=\"2\" not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"NOPE\" equal=\"2\" not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 7,
   "fields": [
    {
@@ -18245,7 +18243,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=\"2\" not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"NOPE\" equal=\"2\" not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 7,
   "fields": [
    {
@@ -18270,7 +18268,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=[\"2\",\"3\"] not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"NOPE\" equal=[\"2\",\"3\"] not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 7,
   "fields": [
    {
@@ -18295,7 +18293,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=[\"2\",\"3\"] not=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"NOPE\" equal=[\"2\",\"3\"] not_equal=- then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 7,
   "fields": [
    {
@@ -18320,7 +18318,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=[\"2\",\"3\"] not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"NOPE\" equal=[\"2\",\"3\"] not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 7,
   "fields": [
    {
@@ -18345,7 +18343,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=[\"2\",\"3\"] not=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"NOPE\" equal=[\"2\",\"3\"] not_equal=\"0\" then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 7,
   "fields": [
    {
@@ -18370,7 +18368,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=[\"2\",\"3\"] not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
+ "combo/when :: field=\"NOPE\" equal=[\"2\",\"3\"] not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=-": {
   "cursor": 7,
   "fields": [
    {
@@ -18395,7 +18393,7 @@
    }
   ]
  },
- "combo/when :: field=\"NOPE\" is=[\"2\",\"3\"] not=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
+ "combo/when :: field=\"NOPE\" equal=[\"2\",\"3\"] not_equal=[\"0\"] then=[{\"read-fixed\":{\"length\":2,\"as\":\"T\"}}] else=[{\"read-fixed\":{\"length\":1,\"as\":\"E\"}}]": {
   "cursor": 7,
   "fields": [
    {
@@ -19015,7 +19013,7 @@
    }
   ]
  },
- "pair :: read-fixed → read-length-prefix": {
+ "pair :: read-fixed → read-length-value": {
   "cursor": 2,
   "fields": [
    {
@@ -19027,7 +19025,7 @@
    },
    {
     "id": "P",
-    "error": "length prefix says 50 bytes but only 25 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 50 bytes but only 25 remain — it was probably read from the wrong position"
    }
   ]
  },
@@ -19129,12 +19127,12 @@
    }
   ]
  },
- "pair :: skip → read-length-prefix": {
+ "pair :: skip → read-length-value": {
   "cursor": 2,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 50 bytes but only 25 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 50 bytes but only 25 remain — it was probably read from the wrong position"
    }
   ]
  },
@@ -19256,7 +19254,7 @@
    }
   ]
  },
- "pair :: read-until → read-length-prefix": {
+ "pair :: read-until → read-length-value": {
   "cursor": 23,
   "fields": [
    {
@@ -19268,7 +19266,7 @@
    },
    {
     "id": "P",
-    "error": "length prefix says 38 bytes but only 4 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 38 bytes but only 4 remain — it was probably read from the wrong position"
    }
   ]
  },
@@ -19401,7 +19399,7 @@
    }
   ]
  },
- "pair :: read-to-end → read-length-prefix": {
+ "pair :: read-to-end → read-length-value": {
   "cursor": 28,
   "fields": [
    {
@@ -19413,7 +19411,7 @@
    },
    {
     "id": "P",
-    "error": "Cannot read uint8 prefix at offset 28"
+    "error": "Cannot read the uint8 length at offset 28"
    }
   ]
  },
@@ -19636,7 +19634,7 @@
    }
   ]
  },
- "pair :: read-ddl → read-length-prefix": {
+ "pair :: read-ddl → read-length-value": {
   "cursor": 7,
   "fields": [
    {
@@ -19665,7 +19663,7 @@
    },
    {
     "id": "P",
-    "error": "length prefix says 48 bytes but only 20 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 48 bytes but only 20 remain — it was probably read from the wrong position"
    }
   ]
  },
@@ -19732,12 +19730,12 @@
   ],
   "tokens": []
  },
- "pair :: read-length-prefix → read-fixed": {
+ "pair :: read-length-value → read-fixed": {
   "cursor": 2,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    },
    {
     "id": "X",
@@ -19748,21 +19746,21 @@
    }
   ]
  },
- "pair :: read-length-prefix → skip": {
+ "pair :: read-length-value → skip": {
   "cursor": 2,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    }
   ]
  },
- "pair :: read-length-prefix → read-until": {
+ "pair :: read-length-value → read-until": {
   "cursor": 23,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    },
    {
     "id": "U",
@@ -19773,12 +19771,12 @@
    }
   ]
  },
- "pair :: read-length-prefix → read-to-end": {
+ "pair :: read-length-value → read-to-end": {
   "cursor": 28,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    },
    {
     "id": "R",
@@ -19789,12 +19787,12 @@
    }
   ]
  },
- "pair :: read-length-prefix → read-ddl": {
+ "pair :: read-length-value → read-ddl": {
   "cursor": 7,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    },
    {
     "id": "HEAD",
@@ -19822,25 +19820,25 @@
    }
   ]
  },
- "pair :: read-length-prefix → read-length-prefix": {
+ "pair :: read-length-value → read-length-value": {
   "cursor": 0,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    },
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    }
   ]
  },
- "pair :: read-length-prefix → read-bitmap": {
+ "pair :: read-length-value → read-bitmap": {
   "cursor": 0,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    },
    {
     "id": "BM",
@@ -19848,12 +19846,12 @@
    }
   ]
  },
- "pair :: read-length-prefix → token-area": {
+ "pair :: read-length-value → token-area": {
   "cursor": 0,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    }
   ],
   "tokens": []
@@ -19948,7 +19946,7 @@
    }
   ]
  },
- "pair :: read-bitmap → read-length-prefix": {
+ "pair :: read-bitmap → read-length-value": {
   "cursor": 0,
   "fields": [
    {
@@ -19957,7 +19955,7 @@
    },
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    }
   ]
  },
@@ -20058,12 +20056,12 @@
   ],
   "tokens": []
  },
- "pair :: token-area → read-length-prefix": {
+ "pair :: token-area → read-length-value": {
   "cursor": 0,
   "fields": [
    {
     "id": "P",
-    "error": "length prefix says 72 bytes but only 27 remain — the prefix was probably read from the wrong position"
+    "error": "the length says 72 bytes but only 27 remain — it was probably read from the wrong position"
    }
   ],
   "tokens": []

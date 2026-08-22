@@ -1658,7 +1658,7 @@ test('warning-only fixtures stay warnings instead of hard errors', () => {
 
 // ── parse_spec interpreter ──────────────────────────────────────────────────
 console.log('\nparse_spec interpreter');
-test('executes read-ddl filters, repeat, when/not, length refs, read-until, read-to-end, and read-tlv', () => {
+test('executes read-ddl filters, repeat, when/not_equal, length refs, read-until, read-to-end, and read-tlv', () => {
   // The DDL covers only the fixed header — read-ddl walks it and leaves the
   // cursor right after CNT, so the synthetic read-fixed blocks continue from
   // there (cursor always advances through every field read).
@@ -1677,7 +1677,7 @@ test('executes read-ddl filters, repeat, when/not, length refs, read-until, read
       { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 2, as: 'ITEM' } }] } },
       { 'read-fixed': { length: 1, as: 'FLAG' } },
       { 'read-fixed': { length: 1, as: 'LEN' } },
-      { when: { field: 'FLAG', not: '0', then: [{ 'read-fixed': { length: 'LEN', as: 'PAYLOAD' } }] } },
+      { when: { field: 'FLAG', not_equal: '0', then: [{ 'read-fixed': { length: 'LEN', as: 'PAYLOAD' } }] } },
       { 'read-until': { sentinels: ['0x26'], eom: true, as: 'UNTIL-AMP' } },
       { skip: 1 },
       { 'read-to-end': { as: 'REST' } },
@@ -1721,13 +1721,13 @@ test('read-ddl from/until emits an inclusive window but still reads hidden field
   eq(ctx.fieldsById.A.value, 'A', 'hidden prefix field still read into field map');
 });
 
-test('read-length-prefix decodes bcd2 prefixes and read-while max can come from a binary field', () => {
+test('read-length-value decodes bcd2 prefixes and read-while max can come from a binary field', () => {
   S.ddlTree = {};
   S.inputFormat = 'hex';
   const item = {
     ddl_bindings: [],
     parse_spec_binary: [
-      { 'read-length-prefix': { prefix: 'bcd2', as: 'DATA' } },
+      { 'read-length-value': { length_encoding: 'bcd2', as: 'DATA' } },
       { 'read-fixed': { length: 1, as: 'COUNT' } },
       { 'read-while': {
           while: { type: 'alphabetic', length: 1 },
@@ -2265,7 +2265,7 @@ END
   const bytes = [...'0210' + '1' + '& TK01'].map(c => c.charCodeAt(0));
   const item = { ddl_bindings: ['VOL/SV/PS/PSTM'], parse_spec_binary: [
     { 'read-ddl': 'ANY' },
-    { when: { field: 'USER-FLG', is: '1', then: [
+    { when: { field: 'USER-FLG', equal: '1', then: [
       { 'read-fixed': { length: 2, as: 'UD.LEN' } },
       { 'read-fixed': { length: 'UD.LEN', as: 'UD.BUF' } } ] } },
   ] };
@@ -2276,7 +2276,7 @@ END
   eq(ctx.fields.some(f => f.id === 'UD.BUF' && !f.error), false, 'no phantom buffer field is emitted');
 });
 
-test('[REGRESSION] read-length-prefix refuses a prefix longer than the payload', () => {
+test('[REGRESSION] read-length-value refuses a prefix longer than the payload', () => {
   S.ddlTree = { VOL: { SV: { LP: `DEF R.
   02 HDR PIC X(2).
 END
@@ -2286,7 +2286,7 @@ END
   const bytes = [0x41, 0x42, 0x26, 0x20, 0x54, 0x4B];
   const item = { ddl_bindings: ['VOL/SV/LP/R'], parse_spec_binary: [
     { 'read-ddl': 'ANY' },
-    { 'read-length-prefix': { prefix: 'uint16-be', as: 'BUF' } },
+    { 'read-length-value': { length_encoding: 'uint16-be', as: 'BUF' } },
   ] };
   const ctx = meExecParseSpec(item, Uint8Array.from(bytes), { format: 'hex', rawBytes: bytes });
   eq(ctx.cursor <= bytes.length, true, 'cursor stays inside the payload');
@@ -2294,7 +2294,7 @@ END
   // eom:true is an explicit clamp and must still be allowed to truncate quietly
   const eomItem = { ...item, parse_spec_binary: [
     { 'read-ddl': 'ANY' },
-    { 'read-length-prefix': { prefix: 'uint16-be', as: 'BUF', eom: true } },
+    { 'read-length-value': { length_encoding: 'uint16-be', as: 'BUF', eom: true } },
   ] };
   const eomCtx = meExecParseSpec(eomItem, Uint8Array.from(bytes), { format: 'hex', rawBytes: bytes });
   eq(eomCtx.fields.some(f => f.id === 'BUF' && !f.error), true, 'eom:true still clamps to end without erroring');
@@ -6180,13 +6180,13 @@ test('a "de" entry cannot read past its element into the next DE', () => {
 
 // ── A DE that is on the wire but absent from the DDL ────────────────────────
 // Reported from a customized HPDH: DE-55 parsed as TLV, then a proprietary
-// DE-58 the DDL never declares. A "de" entry of read-length-prefix describes it
+// DE-58 the DDL never declares. A "de" entry of read-length-value describes it
 // completely — the length is on the wire and "as" names the payload — but the
 // entry was refused before a single block ran, so the DE could not be parsed at
 // all and every DE after it read from the wrong offset.
 //
 // The rule the engine must follow: whether a DDL element is needed is the
-// BLOCK's business, not the entry's. read-length-prefix / read-fixed /
+// BLOCK's business, not the entry's. read-length-value / read-fixed /
 // read-to-end name their own output and need nothing declared, exactly as they
 // do at the top level of a parse spec. A bit means the same thing in both places.
 const UNMAPPED_DE_DDL = `DEF REC.
@@ -6225,7 +6225,7 @@ test('a DE absent from the DDL is still refused when nothing says how to read it
 
 test('a "de" entry parses a DE the DDL never declares', () => {
   const ctx = unmappedDeRun({
-    '3': [{ 'read-length-prefix': { prefix: 'uint16-be', as: 'CUSTOM-PAYLOAD' } }] });
+    '3': [{ 'read-length-value': { length_encoding: 'uint16-be', as: 'CUSTOM-PAYLOAD' } }] });
   eq(ctx.fields.filter(f => f.error).length, 0,
     `nothing may error, got ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
   const pay = ctx.fields.find(f => f.id === 'CUSTOM-PAYLOAD');
@@ -6238,7 +6238,7 @@ test('the DEs after an undeclared one still line up', () => {
   // DE-4 read DE-3's length bytes. Asserting the payload alone would not catch
   // a block that reads the right bytes and leaves the cursor wrong.
   const ctx = unmappedDeRun({
-    '3': [{ 'read-length-prefix': { prefix: 'uint16-be', as: 'CUSTOM-PAYLOAD' } }] });
+    '3': [{ 'read-length-value': { length_encoding: 'uint16-be', as: 'CUSTOM-PAYLOAD' } }] });
   const tail = ctx.fields.find(f => f.id === 'DE4-TAIL');
   assert.ok(tail, `DE-4 must still be read, got ${JSON.stringify(ctx.fields.map(f => f.id))}`);
   eq(tail.rawHex, '5A5A', 'DE-4 lands on its own bytes');
@@ -6318,7 +6318,7 @@ test('a block that needs an element raises that itself, not the entry', () => {
 
 // ── The length prefix speaks the app's own vocabulary ───────────────────────
 // Reported from the same customized HPDH: a 2-byte DE length of 00 74 meaning
-// 74. read-length-prefix decoded with a private four-case switch — uint8,
+// 74. read-length-value decoded with a private four-case switch — uint8,
 // uint16-be, uint16-le, bcd2 — so those bytes could only read 116, and the
 // message was swallowed whole. Every other length in the engine goes through
 // _meDecodeLength, which has read hex-char all along.
@@ -6330,7 +6330,7 @@ function lenPrefixRun(attrs, bytes) {
   S.ddlTree = { V: { S: { D: LEN_PREFIX_DDL } } };
   S.inputFormat = 'hex';
   return meExecParseSpec({ name: 'X', type: 'X', ddl_bindings: ['V/S/D/REC'],
-    parse_spec_binary: [{ 'read-length-prefix': attrs }] }, bytes);
+    parse_spec_binary: [{ 'read-length-value': attrs }] }, bytes);
 }
 // 00 74 then 116 bytes — enough that a uint16-be reading SUCCEEDS. A 74-byte
 // message would make both readings fail and the test would pass for the wrong
@@ -6338,7 +6338,7 @@ function lenPrefixRun(attrs, bytes) {
 const LEN_74 = Uint8Array.from([0x00, 0x74, ...Array.from({ length: 116 }, () => 0x41)]);
 
 test('a length prefix can be read as hex-char', () => {
-  const ctx = lenPrefixRun({ prefix: 'hex-char', prefix_len: 2, as: 'USER-DATA' }, LEN_74);
+  const ctx = lenPrefixRun({ length_encoding: 'hex-char', length_size: 2, as: 'USER-DATA' }, LEN_74);
   eq(ctx.fields.filter(f => f.error).length, 0,
     `nothing may error, got ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
   eq(ctx.fields.find(f => f.id === 'USER-DATA').valueLength, 74,
@@ -6347,13 +6347,13 @@ test('a length prefix can be read as hex-char', () => {
 
 test('the same bytes still read 116 as uint16-be', () => {
   // The other half of the pair: hex-char must not become the new guess.
-  const ctx = lenPrefixRun({ prefix: 'uint16-be', as: 'USER-DATA' }, LEN_74);
+  const ctx = lenPrefixRun({ length_encoding: 'uint16-be', as: 'USER-DATA' }, LEN_74);
   eq(ctx.fields.find(f => f.id === 'USER-DATA').valueLength, 116,
     'the legacy name keeps its legacy meaning');
 });
 
 test('count digits halves a hex-char length', () => {
-  const ctx = lenPrefixRun({ prefix: 'hex-char', prefix_len: 2, count: 'digits', as: 'USER-DATA' }, LEN_74);
+  const ctx = lenPrefixRun({ length_encoding: 'hex-char', length_size: 2, count: 'digits', as: 'USER-DATA' }, LEN_74);
   const f = ctx.fields.find(f => f.id === 'USER-DATA');
   eq(f.valueLength, 37, '74 hex digits is 37 wire bytes');
   eq(f.lenPrefix, '74', 'and the row still reports the number the message spells');
@@ -6371,35 +6371,53 @@ test('every legacy prefix name decodes exactly as it used to', () => {
     ['uint16-le', [0x04, 0x00, 0x41, 0x42, 0x43, 0x44], 4],
     ['bcd2',      [0x01, 0x23, ...Array.from({ length: 123 }, () => 0x41)], 123],
   ];
-  for (const [prefix, bytes, want] of cases) {
-    const ctx = lenPrefixRun({ prefix, as: 'D' }, Uint8Array.from(bytes));
-    eq(ctx.fields.find(f => f.id === 'D')?.valueLength, want, `${prefix} width and value`);
+  for (const [enc, bytes, want] of cases) {
+    const ctx = lenPrefixRun({ length_encoding: enc, as: 'D' }, Uint8Array.from(bytes));
+    eq(ctx.fields.find(f => f.id === 'D')?.valueLength, want, `${enc} width and value`);
   }
 });
 
 test('a prefix that does not imply a width says so instead of guessing', () => {
-  const ctx = lenPrefixRun({ prefix: 'hex-char', as: 'USER-DATA' }, LEN_74);
+  const ctx = lenPrefixRun({ length_encoding: 'hex-char', as: 'USER-DATA' }, LEN_74);
   const err = ctx.fields.find(f => f.error);
-  assert.ok(err && /prefix_len/.test(err.error),
+  assert.ok(err && /length_size/.test(err.error),
     `it must ask for the width, got ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
 });
 
 test('the lint catches a bad prefix before the parse does', () => {
   const item = { name: 'X', type: 'X', ddl_bindings: [] };
-  const w = b => mePsLintWarns(item, [{ 'read-length-prefix': b }]).join(' | ');
-  assert.ok(/does not say how wide/.test(w({ prefix: 'hex-char', as: 'X' })), 'missing width');
-  assert.ok(/is not a length encoding/.test(w({ prefix: 'utf8', prefix_len: 2, as: 'X' })), 'unknown encoding');
-  assert.ok(/must be 1, 2, 3 or 4/.test(w({ prefix: 'hex-char', prefix_len: 9, as: 'X' })), 'width out of range');
-  assert.ok(/must be "bytes" or "digits"/.test(w({ prefix: 'hex-char', prefix_len: 2, count: 'chars', as: 'X' })), 'bad count');
+  const w = b => mePsLintWarns(item, [{ 'read-length-value': b }]).join(' | ');
+  assert.ok(/does not say how wide/.test(w({ length_encoding: 'hex-char', as: 'X' })), 'missing width');
+  assert.ok(/is not a length encoding/.test(w({ length_encoding: 'utf8', length_size: 2, as: 'X' })), 'unknown encoding');
+  assert.ok(/must be 1, 2, 3 or 4/.test(w({ length_encoding: 'hex-char', length_size: 9, as: 'X' })), 'width out of range');
+  assert.ok(/must be "bytes" or "digits"/.test(w({ length_encoding: 'hex-char', length_size: 2, count: 'chars', as: 'X' })), 'bad count');
   // And the valid forms must be silent — a lint that warns on correct specs
   // trains you to ignore it.
-  eq(w({ prefix: 'uint16-be', as: 'X' }), '', 'legacy form is clean');
-  eq(w({ prefix: 'hex-char', prefix_len: 2, count: 'bytes', as: 'X' }), '', 'new form is clean');
+  eq(w({ length_encoding: 'uint16-be', as: 'X' }), '', 'legacy form is clean');
+  eq(w({ length_encoding: 'hex-char', length_size: 2, count: 'bytes', as: 'X' }), '', 'new form is clean');
+});
+
+test('the old read-length-prefix name is not converted — it is explained', () => {
+  // Deliberately NOT migrated: a spec written the old way is edited by hand.
+  // What the old name must not do is fail as a bare "block not recognized",
+  // which says nothing about what to write instead.
+  const item = { name: 'X', type: 'X', ddl_bindings: [] };
+  const w = mePsLintWarns(item, [{ 'read-length-prefix': { prefix: 'uint16-be', as: 'X' } }]).join(' | ');
+  assert.ok(/is now "read-length-value"/.test(w), `the lint names the replacement, got: ${w}`);
+  assert.ok(/length_encoding/.test(w) && /length_size/.test(w), 'and both renamed attributes');
+  // The engine does not know it at all — no silent alias behind the lint.
+  S.ddlTree = {}; S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: [],
+    parse_spec_binary: [{ 'read-length-prefix': { prefix: 'uint16-be', as: 'X' } }] },
+    Uint8Array.from([0x00, 0x02, 0x41, 0x42]));
+  assert.ok(ctx.fields.some(f => f.error && /not recognized/.test(f.error)),
+    'the block is genuinely gone, not aliased');
+  eq(ctx.cursor, 0, 'and it reads nothing');
 });
 
 test('a "de" entry\'s length_prefix takes the same vocabulary', () => {
   // The mirror-image gap: length_prefix stated a width but never a type, so it
-  // auto-detected and read 00 74 as 116 exactly as read-length-prefix did.
+  // auto-detected and read 00 74 as 116 exactly as read-length-value did.
   // 74 bytes of payload, then two bytes that must survive as the next DE.
   const ddl = `DEF REC.
   02 BITMAP   PIC X(8).
@@ -6685,6 +6703,233 @@ const EYE    = [0x48,0x44,0x52, 0x26,0x20, 0x54,0x4F,0x4B];
 // "HDR" then an ASCII length "04" then four bytes of user data.
 const NO_EYE = [0x48,0x44,0x52, 0x30,0x34, 0x41,0x42,0x43,0x44];
 
+// ── when — the six comparisons ─────────────────────────────────────────────
+// A DE whose wire length disagrees with the DDL could not be TESTED in a spec:
+// `is`/`not` compared text against a literal, so "is this length bigger than
+// what the element declares" had no way to be written. Added 2026-08-21.
+
+// LEN "05" then five bytes, against a DDL declaring four.
+const CMP_DDL = 'DEFINITION MSG.\n  02 LEN PIC 9(2).\n  02 DATA PIC X(4).\nEND\n';
+const cmpRun = (spec, bytes, ddl) => {
+  S.ddlTree = { V: { S: { D: ddl || CMP_DDL } } };
+  S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: spec }, Uint8Array.from(bytes));
+  return { ctx, ids: ctx.fields.map(f => f.id),
+           errs: ctx.fields.filter(f => typeof f.error === 'string').map(f => f.error) };
+};
+const cmpSpec = (op, operand) => [
+  { 'read-fixed': { length: 2, as: 'LEN', type: 'ascii' } },
+  { when: { field: 'LEN', [op]: operand, then: [{ 'read-fixed': { length: 1, as: 'HIT' } }] } },
+];
+const ascii = s => Array.from(s).map(c => c.charCodeAt(0));
+const fires = (op, operand, msg) => cmpRun(cmpSpec(op, operand), ascii(msg || '05ABCDE')).ids.includes('HIT');
+
+test('the four numeric comparisons each ask their own question', () => {
+  // LEN is 5 throughout, so each operator is tested on both sides of its boundary.
+  eq(fires('greater_than', 4),     true,  '5 > 4');
+  eq(fires('greater_than', 5),     false, '5 > 5 is false — greater_than is strict');
+  eq(fires('greater_or_equal', 5), true,  '5 >= 5');
+  eq(fires('greater_or_equal', 6), false, '5 >= 6 is false');
+  eq(fires('less_than', 6),        true,  '5 < 6');
+  eq(fires('less_than', 5),        false, '5 < 5 is false — less_than is strict');
+  eq(fires('less_or_equal', 5),    true,  '5 <= 5');
+  eq(fires('less_or_equal', 4),    false, '5 <= 4 is false');
+});
+
+test('equal and not_equal still compare text, list included', () => {
+  eq(fires('equal', '05'), true,  'a literal matches');
+  eq(fires('equal', '04'), false, 'and a different one does not');
+  eq(fires('equal', ['04', '05']), true,  'a list matches any member');
+  eq(fires('not_equal', ['04', '06']), true, 'not_equal passes outside the set');
+  eq(fires('not_equal', '05'), false, 'and fails on a member');
+});
+
+test('an operand can be another field, or what the DDL declares for an element', () => {
+  // {"sizeof"} is the whole point: DATA declares 4, the wire says 5.
+  eq(fires('greater_than', { sizeof: 'DATA' }), true,
+     'the wire carries more than the element declares');
+  eq(fires('less_or_equal', { sizeof: 'DATA' }), false, 'and not less than it');
+  eq(fires('less_than', { sizeof: 'DATA' }, '03AB'), true,
+     'a short message takes the other branch');
+  // Two fields compared to each other, no literal anywhere.
+  const two = [
+    { 'read-fixed': { length: 2, as: 'WANT', type: 'ascii' } },
+    { 'read-fixed': { length: 2, as: 'ROOM', type: 'ascii' } },
+    { when: { field: 'WANT', less_or_equal: { field: 'ROOM' },
+              then: [{ 'read-fixed': { length: 1, as: 'HIT' } }] } },
+  ];
+  eq(cmpRun(two, ascii('0305X')).ids.includes('HIT'), true,  '3 <= 5');
+  eq(cmpRun(two, ascii('0503X')).ids.includes('HIT'), false, '5 <= 3 is false');
+});
+
+test('a comparison that cannot be answered is an error row, never a silent false', () => {
+  // The failure mode worth guarding: a false condition and a broken condition
+  // look identical from the outside — the branch simply did not run.
+  const noField = cmpRun(cmpSpec('greater_than', { field: 'NOPE' }), ascii('05ABCDE'));
+  assert.ok(noField.errs.some(e => /greater_than/.test(e) && /NOPE/.test(e)),
+    `the missing operand field is named, got ${JSON.stringify(noField.errs)}`);
+  const noElem = cmpRun(cmpSpec('greater_than', { sizeof: 'NOT-A-FIELD' }), ascii('05ABCDE'));
+  assert.ok(noElem.errs.some(e => /sizeof/.test(e) && /NOT-A-FIELD/.test(e)),
+    `an unknown element is named, got ${JSON.stringify(noElem.errs)}`);
+  const listNum = cmpRun(cmpSpec('less_than', ['1', '2']), ascii('05ABCDE'));
+  assert.ok(listNum.errs.some(e => /list compares only with equal/.test(e)),
+    `a list on a numeric operator is refused, got ${JSON.stringify(listNum.errs)}`);
+  for (const r of [noField, noElem, listNum]) eq(r.ids.includes('HIT'), false, 'and the branch does not run');
+});
+
+test('two comparisons on one when is an error, not an implicit and', () => {
+  const ctx = cmpRun([
+    { 'read-fixed': { length: 2, as: 'LEN', type: 'ascii' } },
+    { when: { field: 'LEN', greater_than: 1, less_than: 9,
+              then: [{ 'read-fixed': { length: 1, as: 'HIT' } }] } },
+  ], ascii('05ABCDE'));
+  assert.ok(ctx.errs.some(e => /greater_than and less_than/.test(e)),
+    `both operators are named, got ${JSON.stringify(ctx.errs)}`);
+  eq(ctx.ids.includes('HIT'), false, 'and nothing is read on a guess');
+  assert.ok(mePsLintWarns({ ddl_bindings: [] },
+    [{ when: { field: 'L', greater_than: 1, less_than: 9, then: [] } }])
+      .some(w => /a block asks one question/.test(w)), 'the lint says so first');
+});
+
+test('the old is / not names are not converted — the lint says what to write', () => {
+  // Silence would be the worst outcome here: `is` on its own leaves no operator
+  // at all, which is the presence test, so `then` would run unconditionally.
+  const w = mePsLintWarns({ ddl_bindings: [] },
+    [{ when: { field: 'L', is: '1', then: [] } },
+     { when: { field: 'L', not: '1', then: [] } }]).join(' | ');
+  assert.ok(/"is" is now "equal"/.test(w), `got: ${w}`);
+  assert.ok(/"not" is now "not_equal"/.test(w), `got: ${w}`);
+});
+
+test('with no comparison at all, when is a presence test', () => {
+  // NOT unchanged: the reference has described this since it was written, and
+  // the engine left `matched` false — so a `when` naming a field and comparing
+  // nothing could not fire under any message. Two baseline cases moved on it.
+  eq(cmpRun([
+    { 'read-fixed': { length: 2, as: 'LEN', type: 'ascii' } },
+    { when: { field: 'LEN', then: [{ 'read-fixed': { length: 1, as: 'HIT' } }] } },
+  ], ascii('05ABCDE')).ids.includes('HIT'), true, 'present → the branch runs');
+});
+
+test('the guard is one predicate, so both blocks that take it are checked alike', () => {
+  // when's `bytes` was checked and read-while's `while` was not, though they are
+  // the same object matched by the same function — so a dead guard was reported
+  // in one block and silent in the other.
+  const lint = spec => mePsLintWarns({ ddl_bindings: [] }, spec).join(' | ');
+  const bad = [
+    ['type', { type: 'utf8' },                       /not one of/],
+    ['literal with no value', { type: 'literal' },   /needs a "value"/],
+    ['regex with no pattern', { type: 'regex' },     /needs a "pattern"/],
+    ['uncompilable pattern', { type: 'regex', pattern: '[' }, /not a valid regular expression/],
+    ['zero length', { type: 'ascii', length: 0 },    /"length" must be a whole number/],
+    ['unknown encoding', { type: 'ascii', encoding: 'utf16' }, /"encoding" must be/],
+  ];
+  for (const [what, guard, re] of bad) {
+    assert.ok(re.test(lint([{ when: { bytes: guard, then: [] } }])),   `when.bytes: ${what}`);
+    assert.ok(re.test(lint([{ when: { 'not-bytes': guard, then: [] } }])), `when.not-bytes: ${what}`);
+    assert.ok(re.test(lint([{ 'read-while': { while: guard, body: [] } }])), `read-while.while: ${what}`);
+  }
+  // The message names the attribute actually written, not a canonical one.
+  assert.ok(/not-bytes guard/.test(lint([{ when: { 'not-bytes': { type: 'utf8' }, then: [] } }])),
+    'the warning quotes the key the user typed');
+  // And a valid guard is silent in all three.
+  for (const spec of [[{ when: { bytes: { type: 'literal', value: '& ' }, then: [] } }],
+                      [{ when: { 'not-bytes': { type: 'numeric', length: 2 }, then: [] } }],
+                      [{ 'read-while': { while: { type: 'regex', pattern: '^[0-9]', length: 1 }, body: [] } }]])
+    eq(lint(spec), '', `a correct guard warns about nothing: ${JSON.stringify(spec)}`);
+});
+
+test('the guard window defaults to one byte, and to the literal\'s own width', () => {
+  // The literal default is load-bearing: {"type":"literal","value":"& "} used to
+  // compare ONE byte against a two-character string and could never match.
+  const at = (guard, bytes) => whenRun([
+    { when: { bytes: guard, then: [{ 'read-fixed': { length: 1, as: 'HIT' } }] } },
+  ], bytes).ids.includes('HIT');
+  eq(at({ type: 'literal', value: '& ' }, EYE.slice(3)), true, 'a 2-char literal looks at 2 bytes');
+  eq(at({ type: 'numeric' }, [0x31, 0x41]), true,  'no length → one byte, and "1" is numeric');
+  eq(at({ type: 'numeric', length: 2 }, [0x31, 0x41]), false,
+     'widened to 2, the window is "1A" and the class test covers ALL of it');
+  eq(at({ type: 'numeric', length: 9 }, [0x31, 0x41]), false,
+     'a window longer than what is left never matches — running out is an answer, not an error');
+  eq(whenRun([{ when: { bytes: { type: 'numeric', length: 9 }, then: [] } }], [0x31]).errs.length, 0,
+     'and it is not reported as an error');
+});
+
+test('else runs the other branch — it used to be accepted and ignored', () => {
+  // The key parsed, linted clean and was read by nothing, so a spec with two
+  // branches ran one of them and silently dropped the other.
+  const spec = [
+    { 'read-fixed': { length: 2, as: 'LEN', type: 'ascii' } },
+    { when: { field: 'LEN', equal: '05',
+              then: [{ 'read-fixed': { length: 1, as: 'THEN' } }],
+              else: [{ 'read-fixed': { length: 3, as: 'ELSE' } }] } },
+  ];
+  const hit  = cmpRun(spec, ascii('05ABCDE'));
+  eq(hit.ids.includes('THEN'), true,  'the condition holds, so then runs');
+  eq(hit.ids.includes('ELSE'), false, 'and else does not');
+  eq(hit.ctx.cursor, 3, 'the cursor advances by what then read');
+  const miss = cmpRun(spec, ascii('04ABCDE'));
+  eq(miss.ids.includes('ELSE'), true,  'the condition fails, so else runs');
+  eq(miss.ids.includes('THEN'), false, 'and then does not');
+  eq(miss.ctx.cursor, 5, 'from the SAME cursor — both branches start where the block did');
+});
+
+test('else runs on a false byte guard too, not only on a false comparison', () => {
+  const spec = [
+    { 'read-fixed': { length: 3, as: 'HDR' } },
+    { when: { bytes: { type: 'literal', value: '& ' },
+              then: [{ 'read-to-end': { as: 'TOKENS' } }],
+              else: [{ 'read-fixed': { length: 2, as: 'USER-LEN' } }] } },
+  ];
+  assert.ok(whenRun(spec, EYE).ids.includes('TOKENS'), 'guard matches → then');
+  assert.ok(whenRun(spec, NO_EYE).ids.includes('USER-LEN'), 'guard fails → else');
+});
+
+test('a condition that cannot be answered runs NEITHER branch', () => {
+  // Not knowing is not the same as false. Running `else` on a broken operand
+  // would turn a spec error into a plausible parse.
+  const r = cmpRun([
+    { 'read-fixed': { length: 2, as: 'LEN', type: 'ascii' } },
+    { when: { field: 'LEN', greater_than: { field: 'NEVER-READ' },
+              then: [{ 'read-fixed': { length: 1, as: 'THEN' } }],
+              else: [{ 'read-fixed': { length: 1, as: 'ELSE' } }] } },
+  ], ascii('05ABCDE'));
+  eq(r.ids.includes('THEN'), false, 'not then');
+  eq(r.ids.includes('ELSE'), false, 'and not else either');
+  assert.ok(r.errs.some(e => /NEVER-READ/.test(e)), 'the reason is on a row');
+});
+
+test('[REGRESSION] skip with a field-id length no longer poisons the cursor', () => {
+  // It did `cursor + "CNT"` — string concatenation into NaN — so the cursor
+  // became NaN and every block after it read nothing, silently. The baseline
+  // had recorded `"cursor": null` and nobody had looked at why.
+  const r = cmpRun([
+    { 'read-fixed': { length: 1, as: 'N', type: 'ascii' } },
+    { skip: { length: { field: 'N', as: 'ascii' } } },
+    { 'read-to-end': { as: 'REST' } },
+  ], ascii('3ABCDE'));
+  eq(Number.isFinite(r.ctx.cursor), true, 'the cursor is a number');
+  eq(r.ctx.fields.find(f => f.id === 'REST').value, 'DE', 'and three bytes really were skipped');
+});
+
+test('sizeof works wherever a length or a count is taken, not only in a comparison', () => {
+  // One resolver answers it, so read-fixed, skip, repeat and read-while all read
+  // the same number — the DDL's own.
+  const ddl = 'DEFINITION MSG.\n  02 PAD PIC X(2).\n  02 DATA PIC X(4).\nEND\n';
+  const readFixed = cmpRun([{ 'read-fixed': { length: { sizeof: 'DATA' }, as: 'D' } }], ascii('ABCDEF'), ddl);
+  eq(readFixed.ctx.fields.find(f => f.id === 'D').value, 'ABCD', 'read-fixed length');
+  const skipped = cmpRun([{ skip: { length: { sizeof: 'DATA' } } },
+                          { 'read-to-end': { as: 'REST' } }], ascii('ABCDEF'), ddl);
+  eq(skipped.ctx.fields.find(f => f.id === 'REST').value, 'EF', 'skip length');
+  const looped = cmpRun([{ repeat: { count: { sizeof: 'PAD' },
+                                     body: [{ 'read-fixed': { length: 1, as: 'IT' } }] } }], ascii('ABCDEF'), ddl);
+  eq(looped.ids.filter(i => i === 'IT').length, 2, 'repeat count — PAD declares 2');
+  // And a typo is an error in each of them, never a silent zero.
+  const typo = cmpRun([{ 'read-fixed': { length: { sizeof: 'NOPE' }, as: 'D' } }], ascii('ABCDEF'), ddl);
+  assert.ok(typo.errs.some(e => /NOPE/.test(e)), `read-fixed reports it, got ${JSON.stringify(typo.errs)}`);
+});
+
 test('not-bytes refuses the branch when the eye-catcher is sitting there', () => {
   // The whole point: this is the read that used to consume "& " as a length.
   const spec = [
@@ -6762,12 +7007,21 @@ test('a malformed guard is reported, not silently never-matching', () => {
   assert.ok(warns.some(w => /never match/.test(w)), `lint should flag it, got: ${JSON.stringify(warns)}`);
 });
 
-test('is/not still work, and a byte guard wins over a field', () => {
+test('the old is/not do not silently pass, and a byte guard wins over a field', () => {
+  // `is` used to be the equality operator. Unread it would leave the block with
+  // no operator at all — the presence test — and `then` would run on every
+  // message: a confidently wrong parse where an error belongs.
   const r = whenRun([
     { 'read-fixed': { length: 3, as: 'HDR' } },
     { when: { field: 'HDR', is: 'HDR', then: [{ 'read-fixed': { length: 2, as: 'A' } }] } },
   ], NO_EYE);
-  assert.ok(r.ids.includes('A'), 'the original form is untouched');
+  assert.ok(!r.ids.includes('A'), 'the branch does not run on the old name');
+  assert.ok(r.errs.some(e => /"is" is now "equal"/.test(e)), `and the row says why, got ${JSON.stringify(r.errs)}`);
+  const ok = whenRun([
+    { 'read-fixed': { length: 3, as: 'HDR' } },
+    { when: { field: 'HDR', equal: 'HDR', then: [{ 'read-fixed': { length: 2, as: 'A' } }] } },
+  ], NO_EYE);
+  assert.ok(ok.ids.includes('A'), 'renamed, it behaves exactly as it did');
   const warns = mePsLintWarns({}, [{ 'read-fixed': { length: 3, as: 'HDR' } },
     { when: { field: 'HDR', bytes: { type: 'ascii', length: 1 }, then: [] } }]);
   assert.ok(warns.some(w => /byte guard wins/.test(w)), `both given → lint says which, got: ${JSON.stringify(warns)}`);
@@ -7894,7 +8148,7 @@ END REC.
     parse_spec_binary: [
       { 'read-bitmap': { field: 'PRI-BIT-MAP', encoding: 'binary', length: 8 } },
       { 'read-bitmap-fields': { bitmap: 'PRI-BIT-MAP', de: {
-          '3': [{ 'read-length-prefix': { prefix: 'uint16-be', as: 'USER-DATA' } }] } } },
+          '3': [{ 'read-length-value': { length_encoding: 'uint16-be', as: 'USER-DATA' } }] } } },
     ] }, bytes);
   const tail = ctx.fields.find(f => f.id === 'TAIL');
   assert.ok(tail, `DE-4 must still be read, got ${JSON.stringify(ctx.fields.map(f => f.id))}`);
@@ -12653,6 +12907,119 @@ END
      'without it the built-in names do not match SIZE, so the group is fixed');
 });
 
+// A production message carried 23 bytes in an element the DDL declares 22 for.
+// The LEN said so and the parse warned — and then read 22 and left the 23rd byte
+// in the stream, so every DE after it started one byte early and read plausible
+// nonsense. `length_mode: "smart"` gives those bytes a row and ends the DE where
+// the wire said it ends. `strict` (the default) is the old behaviour untouched.
+// Reported 2026-08-21.
+const LM_DDL = `DEFINITION MSG.
+  02 BITMAP PIC X(8).
+  02 PAD PIC X(1).
+  02 EMV.
+    04 SIZE PIC 9(2).
+    04 DATA PIC X(4).
+  02 TAIL PIC X(4).
+END
+`;
+const lmRun = (mode, ddl, msg, extra) => {
+  S.ddlTree = { V: { S: { D: ddl || LM_DDL } } };
+  S.inputFormat = 'hex';
+  const b = [0x60, 0, 0, 0, 0, 0, 0, 0];                   // bits 2 and 3
+  for (const c of (msg || ('05' + 'ABCDE' + 'TAIL'))) b.push(c.charCodeAt(0));
+  const bf = { bitmap: 'BITMAP', vlg_identifier: 'SIZE', ...(extra || {}) };
+  if (mode !== undefined) bf.length_mode = mode;
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+      { 'read-bitmap-fields': bf },
+    ] }, b);
+};
+
+test('length_mode strict is the default, and leaves a too-long length exactly as it was', () => {
+  for (const mode of [undefined, 'strict']) {
+    const ctx = lmRun(mode);
+    const how = mode === undefined ? 'absent' : mode;
+    eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCD', `${how}: DATA stops at its declared 4`);
+    eq(vlgIdField(ctx, 'TAIL').value, 'ETAI',
+       `${how}: the surplus byte stays in the stream and TAIL reads it — the old behaviour`);
+    eq(ctx.fields.some(f => /<unmapped>/.test(f.id)), false, `${how}: and no row is invented`);
+    eq(/exceeds the 4 byte\(s\) "EMV" declares/.test(vlgIdField(ctx, 'EMV.SIZE').issue || ''), true,
+       `${how}: the LEN still says the length is too long`);
+  }
+});
+
+test('length_mode smart gives the surplus its own row, so the next DE lands right', () => {
+  const ctx = lmRun('smart');
+  eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABCD', 'DATA still stops at its declared 4');
+  const um = vlgIdField(ctx, 'EMV.<unmapped>');
+  eq(!!um, true, 'the byte the length counted but the DDL does not declare gets a row');
+  eq(um.value, 'E', 'holding exactly that byte');
+  eq(um.deNum, 2, 'stamped with the DE it belongs to');
+  eq(vlgIdField(ctx, 'TAIL').value, 'TAIL', 'and TAIL starts where the length said it would');
+  eq(/are read as "<unmapped>"/.test(vlgIdField(ctx, 'EMV.SIZE').issue || ''), true,
+     'the LEN says where the extra bytes went, rather than claiming they were dropped');
+});
+
+test('length_mode reaches the frame over a following element, not just a VLG group', () => {
+  // The LEN sizes the element AFTER it — same overrun, a different code path.
+  const ddl = `DEFINITION MSG.
+  02 BITMAP PIC X(8).
+  02 PAD PIC X(1).
+  02 SIZE PIC 9(2).
+  02 DATA PIC X(4).
+  02 TAIL PIC X(4).
+END
+`;
+  const ov = { overrides: { 'SIZE': { vlg: true } } };
+  eq(vlgIdField(lmRun('strict', ddl, '05' + 'ABCDE' + 'TAIL', ov), 'TAIL').value, 'ETAI',
+     'strict: the surplus shifts TAIL, as before');
+  const smart = lmRun('smart', ddl, '05' + 'ABCDE' + 'TAIL', ov);
+  eq(vlgIdField(smart, 'DATA.<unmapped>').value, 'E',
+     'smart: named after the element the frame sized');
+  eq(vlgIdField(smart, 'TAIL').value, 'TAIL', 'smart: and TAIL lands right');
+});
+
+test('length_mode reaches a "de" entry\'s frame — bytes its blocks never read are shown', () => {
+  // A "de" entry with a stated length owns those bytes whatever its blocks read.
+  // strict swallows the remainder silently; smart shows it.
+  const ddl = `DEFINITION MSG.
+  02 BITMAP PIC X(8).
+  02 PAD PIC X(1).
+  02 EMV PIC X(8).
+  02 TAIL PIC X(4).
+END
+`;
+  const de = { de: { '2': { length: 8, blocks: [{ 'read-fixed': { length: 5, as: 'HEAD' } }] } } };
+  const strict = lmRun('strict', ddl, 'HHHHH' + 'ttt' + 'TAIL', de);
+  eq(vlgIdField(strict, 'TAIL').value, 'TAIL', 'strict: the DE still occupies its whole length');
+  eq(strict.fields.some(f => /<unmapped>/.test(f.id)), false, 'strict: the unread bytes stay invisible');
+  const smart = lmRun('smart', ddl, 'HHHHH' + 'ttt' + 'TAIL', de);
+  eq(vlgIdField(smart, 'EMV.<unmapped>').value, 'ttt', 'smart: what the blocks did not read is shown');
+  eq(vlgIdField(smart, 'TAIL').value, 'TAIL', 'smart: and the next DE is unaffected');
+});
+
+test('length_mode: a message SHORTER than the DDL declares is untouched in both modes', () => {
+  for (const mode of ['strict', 'smart']) {
+    const ctx = lmRun(mode, null, '03' + 'ABC' + 'TAIL');
+    eq(vlgIdField(ctx, 'EMV.DATA').value, 'ABC', `${mode}: the payload just ends early`);
+    eq(vlgIdField(ctx, 'TAIL').value, 'TAIL', `${mode}: and TAIL follows it`);
+    eq(ctx.fields.some(f => /<unmapped>/.test(f.id)), false, `${mode}: nothing is unmapped`);
+  }
+});
+
+test('length_mode: a value that is neither strict nor smart is reported and read as strict', () => {
+  const ctx = lmRun('lenient');
+  eq(ctx.fields.some(f => f.error && /length_mode must be "strict" or "smart"/.test(f.error)), true,
+     'the typo is reported');
+  eq(vlgIdField(ctx, 'TAIL').value, 'ETAI', 'and the parse falls back to strict rather than inventing a third mode');
+  eq(mePsLintWarns({ ddl_bindings: [] },
+                   [{ 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+                    { 'read-bitmap-fields': { bitmap: 'BITMAP', length_mode: 'lenient' } }])
+       .some(w => /length_mode.*strict.*smart/.test(w)), true,
+     'and the linter catches it before the parse ever runs');
+});
+
 test('the VLG marker appears exactly once — on the group when collapsed, on the LEN when open', () => {
   // It used to print the LEN's field NAME on the group row and "LEN" on the leaf:
   // the same fact twice, and production field names are long enough to blow the
@@ -12688,7 +13055,7 @@ test('the Field Map reads vlg_identifier off the spec, and "" survives the trip'
   eq(meItemVlgIdentifier({ parse_spec_binary: [{ 'read-bitmap-fields': { bitmap: 'B', vlg_identifier: 'SIZE' } }] }),
      'SIZE', 'read-bitmap-fields carries it too');
   eq(meItemVlgIdentifier({ parse_spec_binary: [
-       { when: { field: 'F', is: '1', then: [{ 'read-ddl': { vlg_identifier: 'SZ' } }] } }] }),
+       { when: { field: 'F', equal: '1', then: [{ 'read-ddl': { vlg_identifier: 'SZ' } }] } }] }),
      'SZ', 'found inside a nested block');
   eq(meItemVlgIdentifier({ parse_spec_ascii: [{ 'read-ddl': { vlg_identifier: 'SZ' } }] }), 'SZ',
      'the ASCII spec counts as well');
@@ -12939,7 +13306,7 @@ const PS_EXEC_FNS = {
   'read':                ['_meExecReadField'],
   'read-fixed':          ['_meExecReadFixed'],
   'read-until':          ['_meExecReadUntil'],
-  'read-length-prefix':  ['_meExecReadLengthPrefix'],
+  'read-length-value':  ['_meExecReadLengthValue'],
   'read-to-end':         ['_meExecReadToEnd'],
   'read-bitmap':         ['_meExecReadBitmap', '_meExecSegMap', '_meExecReadSegMapFromFile'],
   'read-bitmap-fields':  ['_meExecBitmapFields'],
@@ -15001,6 +15368,23 @@ test('the synthetic-bitmap override case is demonstrated, not just described', (
     !Array.isArray(e) && /"length"/.test(JSON.stringify(e.spec)) && /"overrides"/.test(JSON.stringify(e.spec)));
   assert.ok(ex, 'read-bitmap ships a synthetic-map override example');
   assert.ok(/bitmap-list/.test(mePsHelpExampleHtml(ex)), 'and it runs');
+});
+
+test('the length_mode pair shows the contrast it promises — same bytes, TAIL in two places', () => {
+  // The two cards are the whole argument for the attribute: identical DDL and
+  // identical payload, and the only difference is where the next DE lands. If
+  // they ever stop disagreeing, the reference is claiming something untrue.
+  const [strict, smart] = ['"vlg_identifier": "SIZE"}}]', '"length_mode": "smart"}}]']
+    .map(m => psHelp['read-bitmap-fields'].examples.find(e =>
+      !Array.isArray(e) && e.payload && JSON.stringify(e.spec).replace(/\s/g, '').includes(m.replace(/\s/g, ''))
+      && /length_mode/.test(e.what)));
+  assert.ok(strict && smart, 'both length_mode examples are still shipped');
+  deepEq(strict.payload, smart.payload, 'they must run the SAME bytes, or they compare nothing');
+  const tailOf = ex => (mePsHelpRunExample(ex).fields.find(f => f.id === 'TAIL') || {}).value;
+  eq(tailOf(strict), 'ETAI', 'strict: TAIL is dragged a byte early, exactly as the card says');
+  eq(tailOf(smart),  'TAIL', 'smart: TAIL lands where the length said it would');
+  eq(mePsHelpRunExample(smart).fields.some(f => f.id === 'EMV.<unmapped>'), true,
+     'and the surplus byte is on screen under the name the card promises');
 });
 
 test('every executable example produces the fields it claims to', () => {

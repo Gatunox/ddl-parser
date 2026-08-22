@@ -10,6 +10,11 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-21 | **The byte guard is documented, and checked in both blocks that take it.** Reported: "I read it and I can't figure out what the attribute `bytes` does — there is only one example but it says it supports type, value, length, pattern, encoding." All five were listed as names with nothing to look at, and the one example was `literal`. The predicate is now written **once** and referenced from all three places that take it — `when`'s `bytes`, `when`'s `not-bytes` and `read-while`'s `while` — stating the window (`length`, defaulting to 1 except `literal`, which uses its own value's width), which companion attribute belongs to which `type`, that the class types test the **whole** window while `ascii` tests raw bytes and so ignores `encoding`, and that a regex is **unanchored**. They had already drifted: `read-while` called `length` "Required" while the matcher defaults it, and `when` described the shape as "same as read-while's" and left the reader to go and look. Five of the six types now have an example, including both sides of a guard that fails. The **lint** was one-sided the same way — `when`'s guard was checked and `read-while`'s was not, though they are the same object — so both now go through one checker, which also catches a `pattern` that will not compile, a `length` below 1, and an unknown `encoding`: each of those silently never matches, which reads as a dead branch rather than a broken guard. See §5.6. |
+| 2026-08-21 | **`when` gains its other branch, `sizeof` works wherever a size is taken, and `skip` stops poisoning the cursor.** Three findings from one pass. (1) **`else` was accepted and read by nothing** — the key parsed, linted clean and did nothing, so a spec with two branches ran one and silently dropped the other. It now runs the other branch, from the **same cursor**, with exactly one branch taken; a condition that cannot be *answered* runs **neither** and reports why, because not knowing is not the same as false. (2) **`sizeof` is accepted wherever a spec takes a number** — `read-fixed`'s `length`, `skip`'s `length`, `repeat`'s `count`, `read-while`'s `max`, a `de` entry's `length`, and every `when` comparison — resolved in the single helper they all call, so the size a condition compares against is the size a `read-fixed` would read. Documented once and referenced from each, the way `at` and `peek` are. (3) **`skip` with a field-id length computed `cursor + "CNT"`** — string concatenation into `NaN` — so the cursor became NaN and every block after it silently read nothing. The baseline had been recording `"cursor": null` for that case all along. Routing it through the shared resolver fixes it and gives `skip` the reference and `sizeof` forms at the same time. Also: an unresolvable length now reports **why** (`'NOPE' not yet read`) instead of `Cannot resolve length: [object Object]`. 34 baseline cases moved — 32 of them that one error string, plus the `else` case and the `skip` NaN. See §5.6, §5.19. |
+| 2026-08-21 | **`when` compares — six operators, one operand grammar, and `sizeof`.** A DE whose wire length disagrees with the DDL could not be *tested* in a spec at all: `is`/`not` compared text against a literal, so "is this length bigger than what the element declares" had no way to be written, and the only recourse was to take the DE over with a `de` entry. `when` now takes `equal`, `not_equal`, `greater_than`, `greater_or_equal`, `less_than`, `less_or_equal`, each accepting the same four operands — a literal, a list (equality only), `{"field": "OTHER"}`, and `{"sizeof": "ELEMENT"}`, which is what the DDL **declares** for an element and reads no bytes to say it. Equality compares text with trailing spaces trimmed, as before; the four numeric operators read **both** sides through the chain every other numeric reference in a spec already uses, so a `hex-char` length compares as 74 on both sides or on neither. A side that cannot be read as a number, an operand field never read, and an element no DDL declares are all **error rows naming which side** — a broken condition and a false one are indistinguishable from outside, since both show up only as a branch that did not run, and `{"sizeof": "TYPO"}` reading 0 would have fired `greater_than` on every message. Two comparisons on one block is an error rather than an implicit `and` — the first used to win silently. One behaviour change came out of the baseline rather than the design: a `when` with a field and **no** comparison is a presence test, which the reference has always described and the engine never did — `matched` stayed false, so such a block could not fire under any message. 10 of 1472 baseline cases moved, all of them `when` combos: 8 that set both operators (now an error row) and 2 that set neither (now the presence test they were documented to be). `is`/`not` are renamed to `equal`/`not_equal` with **no conversion** — a spec using them is edited by hand — and the lint reports them rather than letting them pass, because `is` left in place leaves the block with no operator, which is the presence test, so `then` would run unconditionally. See §5.6, §5.19. |
+| 2026-08-21 | **A wire length longer than the DDL no longer shifts every DE after it — `length_mode`.** Reported from production: an element carrying 23 bytes where the DDL declares 22. The LEN row warned that the length exceeded the declared size and the parse then read 22 and stopped, leaving the 23rd byte in the stream — so the DE ended a byte short of what the wire said, **every DE after it started a byte early**, and each read a plausible value that was wrong. The warning named the one element that was correct. Which of the two sources is right is not the engine's to decide, so `read-bitmap-fields` takes `length_mode`: `strict` (the default, and byte-for-byte what every existing spec already means) keeps the old behaviour, and `smart` gives the wire's length its bytes — the declared fields read as always, the surplus becomes a row of its own named `<ELEMENT>.<unmapped>`, and the next DE starts where the length said. It governs all three places a DE is framed — a VLG group with its own LEN, a LEN framing the element after it, and a `de` entry with a stated extent — so a bit means the same thing whichever shape the DDL has; in the third, `smart` also shows what an entry's blocks never read inside their own frame. A message carrying **less** than declared is ordinary and untouched in both modes. A `length_mode` that is neither is reported and read as `strict`, and the lint catches it before the parse runs. All 1472 baseline cases identical — the default moves nothing. See §8.2. |
+| 2026-08-21 | **`read-length-prefix` is now `read-length-value`, and says what it reads.** The old name described the *prefix* — the half you do not keep — and read as though the block only consumed a length; what it actually does is read a length off the wire and capture that many bytes as one row. The new name puts it in the vocabulary already there: `read-tlv` reads tag-length-value, this reads length-value. Its two attributes were named after the old block and are renamed with it — `prefix` → `length_encoding` (how the length is encoded) and `prefix_len` → `length_size` (how many bytes it occupies); `count`, `as`, `sentinels` and `eom` never mentioned the prefix and are unchanged. **Nothing is converted.** Unlike `bitmap-fields` → `read-bitmap-fields` (§12), there is no load-time migration and no runtime alias: a spec still written the old way fails as an unrecognised block, and is edited by hand. The lint is the one place that still knows the old name, and only to say what to write instead — held in a `_PS_RENAMED` table so the next rename is an entry rather than another special case. Error text quoting the old vocabulary was reworded with it. The golden was re-recorded and diffed with the renames normalised away: **0 of 1472 cases changed output**. See §5.1, §5.17. |
 | 2026-08-18 | **The field a VLG length sizes may be a group.** At the level where DEs are assigned, a LEN pairs with the next sibling — but only a plain **leaf** ever consumed that pairing, so the same marker read as one element beside `02 DATA` and as two beside `02 PAYLOAD. { … }`, the group drawing a number of its own and pushing everything after it along. A group now joins the LEN's element exactly as a leaf does, and passes that number down to its own leaves. One sibling and no further: the field after the pair is its own element either way. Inside a group the marker still changes no numbering — the group is one element by the sibling rule already. The pairing stays confined to the LEN's own scope, so a LEN that is the last field there pairs with nothing rather than reaching into the next branch of the record and taking a whole top-level group with it. See §8.0. |
 | 2026-08-18 | **`"children"` yields the groups above it, like every other way of numbering.** An explicit number or `de: true` inside a group makes that group yield — it cannot be one element while something inside it is numbered separately — and `"children"` says exactly the same thing one level down, but was left out of the rule. Stepping down a level at a time hid it, because each step yielded the one above it by hand; mark a deep group while its ancestors stay untouched and the numbering contradicted itself, the top-level group keeping DE 1 while its own grandchild took DE 2 and the leaves under that grandchild reported 1. Marking a deep group now agrees with stepping down through it. See §7.1. |
 | 2026-08-18 | **`de: false` outranks the promotion `"children"` hands out.** A group handing its DE to its children promotes every one of them, and the leaf branch applied promotion as *forced* — which skips the eligibility test, the only place `de: false` is read. So a child of a `"children"` group could not be left out: the exclusion was stored, drawn in the panel, and then overridden by the very promotion that had put the child in reach. Excluding a field is the one answer nothing overrides; *forced* still does its own job of letting `de: true` and a DE number reach a nested field the default rule would refuse. See §7.1. |
@@ -305,13 +310,13 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | `read` | Read a single DDL-defined field, **or a window of them from the cursor** | `field` (DDL field ID), `from`/`until` (walk a range at the cursor — `from` required, `until` inclusive), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13) |
 | `read-fixed` | Read N bytes inline — no DDL ref needed | `length` (int literal OR field ID ref), `type`, `encoding`, `as` (DDL field ID) |
 | `read-until` | Read bytes until sentinel(s) or EOM | `sentinels` (list of hex bytes), `eom` (bool), `as` (DDL field ID) |
-| `read-length-prefix` | Read length N then N bytes | `prefix` (any length encoding — §5.17), `prefix_len` (1–4, when the name implies no width), `count` (`bytes`\|`digits`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
+| `read-length-value` | Read length N then N bytes | `length_encoding` (any length encoding — §5.17), `length_size` (1–4, when the name implies no width), `count` (`bytes`\|`digits`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
 | `read-bitmap` | Read 8 or 16 bytes as bitmap, store result | `field` (DDL field ID), `encoding` (`binary`\|`ascii-hex`), `length` (explicit width in bytes when the DDL does not declare the map — §5.12) |
-| `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `overrides[…].de` (§7), honouring `overrides[…].vlg` (§8) | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14), `vlg_identifier` (§8), `overrides` (§8.1) |
+| `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `overrides[…].de` (§7), honouring `overrides[…].vlg` (§8) | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14), `vlg_identifier` (§8), `length_mode` (`strict`\|`smart` — §8.2), `overrides` (§8.1) |
 | `read-segment-fields` | Read only the segments a prior `read-bitmap` marks present (§5.16) | *(bare string)* or `map` — field id of the declared/file-read map, `binding` |
-| `skip` | Advance N bytes | `length` (int) |
+| `skip` | Advance N bytes | `length` (int, field ID, or `{sizeof}` — §5.19) |
 | `read-to-end` | Consume remaining bytes | `as` (DDL field ID) |
-| `when` | Branch on a prior field value | `field` (field ID), `is` / `not` (value, list, or range), `then` (block list) |
+| `when` | Branch on a prior field value | `field` (field ID), one of `equal` / `not_equal` / `greater_than` / `greater_or_equal` / `less_than` / `less_or_equal` (literal, list, `{field}` or `{sizeof}` — §5.6), `bytes` / `not-bytes` (a guard at the cursor), `then` (block list), `else` (block list — the other branch) |
 | `repeat` | Loop N times — N from a prior field | `count` (field ID), `body` (block list) |
 | `read-while` | Loop body blocks while a guard predicate matches at the cursor; use when iteration count is unknown or unreliable | `while` (guard), `body` (block list), `max` (int \| field id) |
 | `read-tlv` | Parse a DDL buffer field as repeating TLV triples until buffer exhausted | `field` (buffer; optional inside a `de` entry), `ber` (BER-TLV framing), `tag_length`/`length_length` (fixed-width form), `encoding` (`binary` \| `ascii` \| `ascii-hex`), `tags` (tag → DDL element), `tag_field`/`length_field`/`value_field`, `unknown` — §5.15 |
@@ -449,14 +454,91 @@ Any stop condition ends the read. All are optional but at least one must be spec
 
 ```yaml
 when: FIELD-ID
-  is: "1"                    # exact match
-  is: ["1", "2", "3"]        # set match (any of)
-  not: "B"                   # negation
-  not: ["1", "2", "3"]       # negation set
-  then: [...]                # block list to execute if condition matches
+  equal: "1"                     # exact match
+  equal: ["1", "2", "3"]         # set match (any of)
+  not_equal: "B"                 # negation
+  not_equal: ["1", "2", "3"]     # negation set
+  greater_than: 22               # numeric, strict
+  greater_or_equal: {field: MAX} # numeric, against another field
+  less_than: {sizeof: EMV.DATA}  # numeric, against what the DDL declares
+  less_or_equal: 22
+  then: [...]                    # block list to execute if condition matches
+  else: [...]                    # block list to execute if it does not
 ```
 
 Multiple `when` blocks on the same field act as if/else-if. Nested `when` blocks are supported.
+
+**The byte guard — `bytes` / `not-bytes`.** The other kind of condition: it looks
+at what is sitting **at the cursor** and consumes nothing, so it needs nothing to
+have been read and works as the first block of a spec. It is how a spec looks
+before it leaps — deciding whether an optional element is present before a block
+consumes those bytes as though it were.
+
+```json
+{"when": {"not-bytes": {"type": "literal", "value": "& "}, "then": [ … ]}}
+```
+
+The same object is `read-while`'s `while` — one predicate, one matcher, one lint.
+
+| Key | Applies to | Meaning |
+|-----|------------|---------|
+| `length` | all | The window: how many bytes from the cursor. Omitted, **1** — except `literal`, which uses its own `value`'s length. Fewer bytes left than the window is **no match**, never an error. |
+| `type` | — | `literal`, `regex`, `numeric`, `alphabetic`, `alphanumeric`, `ascii`. Anything else never matches. |
+| `value` | `literal` | The window must equal it exactly. |
+| `pattern` | `regex` | Tested against the window, **unanchored** — it matches anywhere inside, so write `^` yourself for "starts with". A pattern that will not compile never matches; the lint reports it. |
+| `encoding` | all but `ascii` | `ascii` (default) or `ebcdic` — how the bytes become characters before matching. |
+
+`numeric` / `alphabetic` / `alphanumeric` test the **whole window**, so with the
+default one-byte window they ask about a single character. `ascii` asks whether
+every **byte** is printable (`0x20`–`0x7E`) and therefore ignores `encoding`.
+
+The literal default is load-bearing: `{"type":"literal","value":"& "}` used to
+compare one byte against a two-character string and could never match — the guard
+was silently dead unless you also wrote `length: 2`.
+
+**One operand grammar, six operators** *(added 2026-08-21)*. Every operator takes
+the same operand shapes:
+
+| Operand | Means |
+|---------|-------|
+| `"1200"` / `22` | a literal |
+| `["A", "B"]` | a list — any one of them. **Equality only**; a range is two operators or two nested blocks |
+| `{"field": "OTHER"}` | another field already read |
+| `{"sizeof": "EMV.DATA"}` | what the **DDL declares** for an element, in bytes (§5.19) |
+
+`equal` / `not_equal` compare as **text**, trailing spaces trimmed, so a padded
+`PIC X` still matches. The other four compare as **numbers**, and both sides are
+read through the same chain as every other numeric reference in a spec: an
+explicit `as`, else the field's own Type override, else a guess that reports
+itself on the row (§5.17). A side that yields no number is an **error row naming
+which side** — a broken condition and a false condition must not look the same
+from the outside, since both show up only as a branch that did not run.
+
+**One comparison per block.** Two on the same `when` is an error, not an implicit
+`and`; nest a second `when` inside `then`. Previously the first of them silently
+won, so the second read as applied while doing nothing.
+
+`else` runs the other branch. Both branches read from the **same cursor**, and
+exactly one of them runs; omitted, a false condition reads nothing and the bytes
+go to the block after this one. A condition that cannot be **answered** — an
+operand field never read, an element no DDL declares — runs **neither** branch
+and reports why: not knowing is not the same as false. The key used to be
+accepted and read by nothing, so a spec with two branches ran one and silently
+dropped the other.
+
+With **no** comparison the block is a **presence test**: the field was read, so
+`then` runs. The reference has described it that way since it was written; the
+engine did not do it — `matched` stayed false, so a `when` with a field and no
+comparison could never fire under any message. A block that cannot fire is dead
+weight in a spec, and the documented reading is the only useful one, so the code
+now matches the reference. **This changes behaviour** for any spec relying on the
+old silence.
+
+`is` and `not` were renamed to `equal` and `not_equal`. **Nothing is converted** —
+a spec using them is edited by hand, and the lint says what to write instead. The
+old names are especially worth reporting rather than ignoring: left in place, `is`
+leaves the block with no operator at all, which is the presence test, so `then`
+would run unconditionally.
 
 ### 5.7 `read` — the DDL gives structure, the cursor gives position
 
@@ -543,7 +625,7 @@ Reliability is **derived from the operation type and field type** — no explici
 
 | Condition | Result |
 |-----------|--------|
-| `read-length-prefix` with binary prefix (`uint16-be` etc.) in ASCII input format | All fields in that block → `unreliable: true` |
+| `read-length-value` with binary prefix (`uint16-be` etc.) in ASCII input format | All fields in that block → `unreliable: true` |
 | `field_override` with binary type (`uint32-be`, `uint16-be`, etc.) in ASCII input | That field → `unreliable: true` |
 | DDL field declared as `BINARY` in ASCII input | That field → `unreliable: true` (existing behaviour, unchanged) |
 | `token-area` — individual tokens with binary content | Marked unreliable at token definition level (existing behaviour, unchanged) |
@@ -590,7 +672,7 @@ parse_spec:
       - repeat: NUM-SERVICES
         body:
           - read: <services OCCURS group field ID>
-      - read-length-prefix:
+      - read-length-value:
           prefix: uint16-be
           as: USER-DATA.BUFFER
           sentinels: [0x26, 0x20]
@@ -714,7 +796,7 @@ anything else is a big-endian integer.
 > *Extended 2026-08-17 — the encoding can be stated.* A bare number is the width
 > alone and leaves the rule above to guess, which cannot tell `00 74` meaning 74
 > from the same bytes meaning 116. The object form states all three questions in
-> the same words `read-length-prefix` uses (§5.17):
+> the same words `read-length-value` uses (§5.17):
 >
 > ```jsonc
 > "55": {"length_prefix": {"bytes": 2, "type": "hex-char", "count": "bytes"},
@@ -751,7 +833,7 @@ this DE holds. It consumes what it reads, so a DE framed only by a declared size
 still ends in the right place. See §5.18 for the header shape.
 
 **A DDL element is not required.** Whether one is needed is the *block's* business,
-and the blocks already say so themselves: `read-length-prefix`, `read-fixed`,
+and the blocks already say so themselves: `read-length-value`, `read-fixed`,
 `read-until` and `read-to-end` name their own output through `as` and need nothing
 declared — exactly how they behave at the top level of a spec, and a bit must mean
 the same thing in both places. Blocks that map bytes *onto* declared fields —
@@ -952,7 +1034,7 @@ Every length the engine reads off the wire answers the same three questions, and
 they are now asked in the same words wherever they are asked: **how many bytes** to
 take, **how to decode** them, and **what the number counts**.
 
-| Question | `read-length-prefix` | `length_prefix` (§5.13) | `read-tlv` `len` (§5.15) | A VLG LEN leaf (§8, §9) |
+| Question | `read-length-value` | `length_prefix` (§5.13) | `read-tlv` `len` (§5.15) | A VLG LEN leaf (§8, §9) |
 |----------|----------------------|-------------------------|--------------------------|---------------------|
 | How many bytes | `prefix_len` | `bytes` | `bytes` | the DDL's declared size |
 | How to decode | `prefix` | `type` | `type` | `type` |
@@ -961,7 +1043,7 @@ take, **how to decode** them, and **what the number counts**.
 **The encodings are the app's, not any one block's** — every name the Overrides
 **Type** column offers reads a length: `uint8` · `uint16-be` · `uint16-le` ·
 `uint-be` · `uint-le` · `binary` · `ascii` · `ebcdic` · `hex-char` ·
-`hex-ascii-decimal` · `hex-ebcdic-decimal`. `read-length-prefix` adds `bcd2`
+`hex-ascii-decimal` · `hex-ebcdic-decimal`. `read-length-value` adds `bcd2`
 (2 bytes of packed BCD), which is the one shape the shared decoder does not know.
 
 **Width.** `uint8` implies 1, `uint16-*` and `bcd2` imply 2, `uint32-*` imply 4.
@@ -973,7 +1055,7 @@ explicit width — the lint reports a missing one rather than letting the parse 
 bound downstream stays byte-based. The row still reports the number the message
 spells (`74 digits = 37 bytes`) — that is the number the user can see in the bytes.
 
-> *Why this exists.* `read-length-prefix` decoded with a private four-case switch —
+> *Why this exists.* `read-length-value` decoded with a private four-case switch —
 > `uint8`, `uint16-be`, `uint16-le`, `bcd2` — while VLG lengths, `length_prefix` and
 > the Type column all went through the shared decoder, which had read `hex-char`
 > since it was written. Two implementations of one fact, and the narrower one was
@@ -1010,6 +1092,47 @@ The shape is chosen in this order:
 The type code **decides**; detection is not allowed to overrule it. An STM class
 pointed at a text-header area therefore mis-reads it, and `header` is how you say so
 — the alternative would be a spec whose meaning changes with its payload.
+
+---
+
+### 5.19 `sizeof` — the DDL's declared size, anywhere a size is taken *(added 2026-08-21)*
+
+```json
+{"when": {"field": "LEN", "greater_than": {"sizeof": "EMV.DATA"}, "then": [ … ]}}
+```
+
+`{"sizeof": "ID"}` is the **declared** size of a DDL element in bytes: the
+element's own length when it is a leaf, and the sum of its non-REDEFINES leaves
+when it is a group. It reads no bytes, moves no cursor and emits no row — it is
+the DDL's own number, made available to a condition.
+
+It exists so a spec can ask the question `length_mode` answers structurally
+(§8.2): *is this message carrying more in the element than the DDL has room
+for?* — and act on it in the spec rather than only being told about it. It is
+also the honest way to write a fixed size that is really the DDL's: a literal
+`4` in a spec goes stale the day the DDL changes and says nothing about why it
+was 4.
+
+An id that names no element in the bound DDLs is an **error row**, not a zero.
+Silently reading 0 would make `greater_than {sizeof: TYPO}` fire on every
+message, which is worse than not running at all.
+
+Accepted **wherever a spec takes a number**, resolved in the one helper they all
+call (`_meNumRef`), so the size a condition compares against is the size a
+`read-fixed` would read:
+
+| Where | Example |
+|-------|---------|
+| `read-fixed` `length` | `{"read-fixed": {"length": {"sizeof": "EMV.DATA"}, "as": "D"}}` |
+| `skip` `length` | `{"skip": {"length": {"sizeof": "HDR"}}}` |
+| `repeat` `count` | `{"repeat": {"count": {"sizeof": "PAD"}, "body": [ … ]}}` |
+| `read-while` `max` | `{"read-while": {"max": {"sizeof": "TABLE"}, … }}` |
+| a `de` entry's `length` | `{"de": {"55": {"length": {"sizeof": "EMV"}, "blocks": [ … ]}}}` |
+| any `when` comparison (§5.6) | `{"when": {"field": "LEN", "greater_than": {"sizeof": "EMV.DATA"}, … }}` |
+
+Documented once and referenced from each of them, the way `at` and `peek` are
+(§5.11) — the same sentence repeated per block is the way two of them end up
+describing different behaviour.
 
 ---
 
@@ -1329,6 +1452,54 @@ two are layered, not alternatives.
 > block's inline overrides, so a spec carrying them shows a panel that does not
 > match what the parse uses. Projecting the stored map into the spec on save, and
 > extracting it back, is the intended next step.
+
+---
+
+### 8.2 A wire length longer than the DDL — `length_mode` *(added 2026-08-21)*
+
+A message may carry **more** in an element than the DDL declares room for: a LEN
+reading 23 over a group whose fields add up to 22. Which of the two is right is
+not the engine's to decide, so `read-bitmap-fields` takes the answer as an
+attribute:
+
+```json
+{"read-bitmap-fields": {"bitmap": "BMP", "length_mode": "smart"}}
+```
+
+| `length_mode` | Meaning |
+|---------------|---------|
+| `strict` *(default)* | The payload takes `min(LEN, what the DDL declares)`. The surplus stays in the stream, where the next DE reads it. The LEN row says the length exceeded the declared size. |
+| `smart` | The wire's length **owns its bytes**. The declared fields read as always; the surplus becomes a row of its own, `<ELEMENT>.<unmapped>`; and the next DE starts where the length said it would. |
+
+`strict` is the default because it is what every spec written before this
+attribute already means — the mode is opt-in, and no existing parse moves.
+
+**Why `strict` is a trap worth naming.** It does not merely truncate. The DE ends
+where its *fields* ran out, one byte short of what the wire said, so every DE
+after it starts one byte early and reads plausible values that are wrong. The
+warning on the LEN row is the only sign, and it names the element that is
+**correct**, not the ones that are damaged. Reported from production against a
+23-byte element declared 22.
+
+The mode governs all three places a DE gets framed, so a bit means the same thing
+whichever shape the DDL happens to have:
+
+| Framing | The `<unmapped>` row is named after |
+|---------|-------------------------------------|
+| A VLG group holding its own LEN (§8) | the group |
+| A LEN framing the element after it (§8.0) | that element — its own id for a single leaf, the shared parent for a payload of several |
+| A `de` entry with a stated extent (§5.14) | the entry's element, or `DE-<n>` when it has none |
+
+In the third case `smart` also shows what an entry's blocks **did not** read
+inside their own frame; `strict` swallows it silently, as it always has.
+
+A message carrying **less** than the DDL declares is untouched in both modes —
+that is ordinary, and the payload simply ends early (§8).
+
+The row is not a DDL field and never registers as one: `<unmapped>` is a name no
+DDL can collide with, it carries the DE number of the element it sits inside, and
+it states on its own row how many bytes the length counted that the DDL does not
+declare.
 
 ---
 

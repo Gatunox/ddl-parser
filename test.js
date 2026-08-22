@@ -14333,6 +14333,20 @@ test('the DDL panel header is only the collapsed strip now', () => {
     'the toolbar toggle collapses something other than the DDL panel');
 });
 
+test('the tree filters, and says so', () => {
+  // Both fields in this panel said "Search", and they do different things: the
+  // tree HIDES the rows that do not match (filterDDLTree), while the editor's ⌕
+  // steps through matches and hides nothing. Reported 2026-08-22.
+  const tree = (html.match(/<input id="treeSearch"[\s\S]*?>/) || [''])[0];
+  assert.ok(tree, 'the tree field is gone');
+  assert.ok(/placeholder="Filter"/.test(tree), 'the tree field still calls itself a search');
+  assert.ok(/filterDDLTree\(this\.value\)/.test(tree), 'the field no longer filters the tree');
+  // And the one that really is a search still says so, so the two read as the
+  // different things they are.
+  const ddl = (html.match(/<input id="ddlSearchInput"[\s\S]*?>/) || [''])[0];
+  assert.ok(/placeholder="Search the DDL/.test(ddl), 'the editor search lost its own name');
+});
+
 test('the DDL search opens on a row of its own, not inside the toolbar', () => {
   // One bar was holding a title, a search FIELD, its navigation controls and
   // four buttons. The controls are 80px at "0 / 0" and 110px at "128 / 999", so

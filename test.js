@@ -11077,11 +11077,13 @@ test('every editor writes on the main panel\'s ground, and every field on the fi
   // The Parse Spec forced its own ground with !important, which beat everything.
   assert.ok(/\.me-ps-cm \.cm-editor\{background:var\(--bg-panel\)!important/.test(css),
     'the Parse Spec editor still forces a ground of its own');
-  // Fields are the other half: .me-inp / .me-sel used --bg-deep where every
-  // other field uses --bg-input — in light, #f6f8fa against #eef1f3.
+  // The Class Editor's fields take the same two grounds its panels do: one you
+  // can type into is on the editable ground, one you cannot is on the readout.
   for (const sel of ['.me-inp', '.me-sel'])
-    assert.ok(/background:var\(--bg-input\)/.test(rule(new RegExp('\\' + sel + '\\{[^}]*\\}'))),
-      `${sel} does not use the app's field ground`);
+    assert.ok(/background:var\(--surface-edit\)/.test(rule(new RegExp('\\' + sel + '\\{[^}]*\\}'))),
+      `${sel} is not on the editable ground`);
+  assert.ok(/\.me-inp:disabled, \.me-inp\[readonly\], \.me-sel:disabled\{background:var\(--surface-read\)/.test(css),
+    'a field you cannot type into is not on the readout ground');
   // --surface-edit stays what it was for: the panel and section GROUNDS, which
   // is what says a surface takes input. It is not the editor's own ground.
   assert.ok(/\.pb-edit \{ background: var\(--surface-edit\); \}/.test(css),

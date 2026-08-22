@@ -11054,6 +11054,27 @@ test('the accent can be typed, and a half-typed one changes nothing', () => {
     'the field is overwritten while the user is typing in it');
 });
 
+test('the Test input reaches its panel border', () => {
+  // The container padded it 8px/12px off the panel edge and the editor drew a
+  // frame of its own, so there was a gap and then two lines. Reported
+  // 2026-08-22, the same shape as the Parse Spec and the Overrides table.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const main = (css.match(/\n\.me-test-main\{[^}]*\}/) || [''])[0];
+  assert.ok(/padding:0/.test(main), `the Test panel still insets its editor: ${main}`);
+  const box = (css.match(/\n\.me-test-cm\{[^}]*\}/) || [''])[0];
+  assert.ok(/border: var\(--bw-ctl\) solid transparent/.test(box),
+    `the Test editor draws a frame against the panel's own: ${box}`);
+  assert.ok(/border-radius:0/.test(box), `the Test editor still rounds its corners: ${box}`);
+  // Declared, not removed — the focus ring needs something to colour.
+  assert.ok(/\.me-test-cm:focus-within\{border-color:var\(--accent\)/.test(css),
+    'the Test editor has no focus ring');
+  // The container gave up its padding, so the RESULTS keep their own — they are
+  // text, and text against the panel edge reads as a mistake.
+  assert.ok(/\.me-test-out\{[^}]*padding:8px 12px/.test(css),
+    'the test results now run into the panel edge');
+});
+
 test('a section\'s drag bar spans the card and sits on its bottom edge', () => {
   // The bar belongs to the CARD, not to the padded content inside it. In the
   // Recognizers section it was inset 14px at each end and floated 14px above the

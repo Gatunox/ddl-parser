@@ -2477,7 +2477,10 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-sub-hdr .me-sidebar-title{color:var(--text);flex:none;}
 .me-test-summary{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}
 .me-test-win{font-size:9px;font-weight:700;color:#3fb950;border: var(--bw) solid #3fb950;border-radius:var(--r-sm);padding:0 4px;flex-shrink:0;}
-.me-test-main{flex:1;min-width:0;min-height:0;padding:8px 12px;display:flex;flex-direction:column;gap:6px;overflow:hidden;}
+/* No padding: the editor reaches the panel's border, the way the Parse Spec and
+   the Overrides table reach their cards'. The output below it keeps its own
+   inset instead, so only the parts that are TEXT are indented. */
+.me-test-main{flex:1;min-width:0;min-height:0;padding:0;display:flex;flex-direction:column;gap:0;overflow:hidden;}
 .me-test-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 /* A copy of #msgCfgBar's rule, because it IS that bar in another panel. Kept as
    its own selector rather than added to #msgCfgBar's: the main panel hides its
@@ -2497,8 +2500,13 @@ input.me-inp:focus{border-color:var(--accent);}
    what it accepts. 30% alone gave that only on a tall panel. min-height stays
    at the drag floor: dragging it small once you have pasted is still yours to
    do, this only settles where it starts. */
+/* Border declared but transparent, and no radius: the panel already draws the
+   edge, so a frame here put a second line right beside it. Same reasoning as
+   .me-ps-cm — and declared rather than removed so a focus ring still has
+   something to colour. */
 .me-test-cm{flex:none;height:max(30%, 180px);min-height:60px;background:var(--bg-panel);
-  border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);overflow:hidden;}
+  border: var(--bw-ctl) solid transparent;border-radius:0;overflow:hidden;}
+.me-test-cm:focus-within{border-color:var(--accent);}
 .me-test-cm .cm-editor{height:100%;}
 .me-test-cm .cm-content{color:var(--text-dim);}
 .me-test-cm .cm-editor.msg-has-hl .cm-content{color:var(--text-very-dim);}
@@ -2526,7 +2534,7 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-item.tv-fail.active:not(.me-item-forced),
 .me-item.tv-pass.active:not(.me-item-forced),
 .me-item.tv-win.active:not(.me-item-forced){color:var(--text);box-shadow:inset 3px 0 0 var(--accent);}
-.me-test-out{font-family:var(--mono);font-size:var(--sz-mono);flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:0;}
+.me-test-out{font-family:var(--mono);font-size:var(--sz-mono);flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:0;padding:8px 12px;}
 .me-test-pass{color:#3fb950;}
 .me-test-fail{color:var(--text-dim);}
 .me-test-err{color:#f85149;}
@@ -16953,7 +16961,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.7.0';
+const APP_VERSION  = '1.46.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

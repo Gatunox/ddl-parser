@@ -11054,6 +11054,27 @@ test('the accent can be typed, and a half-typed one changes nothing', () => {
     'the field is overwritten while the user is typing in it');
 });
 
+test('the spec editor has no frame at rest and no resize grabber', () => {
+  // The editor fills its card, and the card already has a border — a second one
+  // inside it drew a box within a box. The grabber sat in the corner beside the
+  // split's own drag bar, which is what resizes this editor. Reported
+  // 2026-08-22.
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const rule = (css.match(/\n\.me-ps-cm\{[^}]*\}/) || [''])[0];
+  assert.ok(/resize:none/.test(rule), `the grabber is back: ${rule}`);
+  assert.ok(/border: var\(--bw-ctl\) solid transparent/.test(rule),
+    `the editor draws a frame at rest: ${rule}`);
+  // Declared, not removed: the focus ring and the syntax-error ring are drawn
+  // WITH that border, so dropping the property would leave both nothing to
+  // colour.
+  assert.ok(/\.me-ps-cm:focus-within\{border-color:var\(--accent\)/.test(css),
+    'the focus ring lost the border it colours');
+  assert.ok(/\.me-ps-cm\[data-state="err"\][^{]*\{border-color:#f85149/.test(css),
+    'the syntax-error ring lost the border it colours');
+  // And the drag bar that actually resizes the editor is still there.
+  assert.ok(/id="me-ps-split-resizer"/.test(html), 'nothing resizes the spec editor now');
+});
+
 test('every editor writes on the main panel\'s ground, and every field on the field ground', () => {
   // Two kinds of editable thing, told apart:
   //   an EDITOR you type in   --bg-panel    it IS the surface

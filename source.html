@@ -2623,7 +2623,13 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-ps-ta::-webkit-resizer{background-color:var(--bg-deep);background-image:linear-gradient(135deg,transparent 0,transparent 45%,var(--text-dim) 45%,var(--text-dim) 55%,transparent 55%,transparent 70%,var(--text-dim) 70%,var(--text-dim) 80%,transparent 80%);}
 .me-ps-ta:focus{border-color:var(--accent);}
 /* CodeMirror host for the Parse Spec editor (replaces the textarea) */
-.me-ps-cm{flex:none;width:100%;min-height:220px;resize:vertical;overflow:hidden;background:var(--bg-panel);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);box-sizing:border-box;display:flex;flex-direction:column;}
+/* No frame at rest and no resize grabber. The editor fills its card — the card
+   already has a border, so a second one inside it drew a box within a box, and
+   the grabber sat in the corner beside the split's own drag bar, which is what
+   resizes this editor. The border is still DECLARED, transparent, because the
+   focus ring and the syntax-error ring are drawn with it: take the property out
+   and both states lose the thing they colour. */
+.me-ps-cm{flex:none;width:100%;min-height:220px;resize:none;overflow:hidden;background:var(--bg-panel);border: var(--bw-ctl) solid transparent;border-radius:var(--r-sm);box-sizing:border-box;display:flex;flex-direction:column;}
 .me-ps-cm:focus-within{border-color:var(--accent);}
 /* Syntax error — the same red border the DDL binding uses for a missing path.
    A one-line message under a 220px editor is easy to miss; the frame is not.
@@ -16935,7 +16941,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.3.0';
+const APP_VERSION  = '1.46.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

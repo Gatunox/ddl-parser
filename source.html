@@ -613,10 +613,26 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
 }
 /* Controls in a bar are outlines, not filled chips: a row of filled buttons
    reads as objects floating on a strip rather than as one set of controls. */
+/* One control height for everything IN a bar. The app's general --ctl-h is
+   taller (it tracks the font plus 12), so a component that used it — the
+   override chips, the selection badge, the filter — stood proud of the buttons
+   beside it by two to four pixels and broke the line the strip is meant to be.
+   Set here rather than on each component: they are the right height wherever
+   else they appear, and it is the BAR that says how tall its contents are. */
+.panel-bar { --bar-ctl-h: calc(var(--sz-mono) + 8px); }
 .panel-bar .btn { background:none; border: var(--bw-ctl) solid var(--border); color:var(--text-dim);
   font-family:var(--font-mono); font-size:var(--sz-mono); padding:0 8px;
-  height:calc(var(--sz-mono) + 8px); border-radius:var(--r-sm); cursor:pointer;
+  height:var(--bar-ctl-h); border-radius:var(--r-sm); cursor:pointer;
   display:inline-flex; align-items:center; justify-content:center; }
+.panel-bar .me-ovb,
+.panel-bar .me-ovb-clrall,
+.panel-bar .me-ovl-ro,
+.panel-bar .me-fm-filter,
+.panel-bar .res-filter-input,
+.panel-bar .me-ps-variant-tgl { height:var(--bar-ctl-h); box-sizing:border-box; }
+/* The badge is a chip in the strip, not a pill: same corner as every control
+   beside it. */
+.panel-bar .me-ovl-ro { border-radius:var(--r-sm); padding:0 8px; }
 .panel-bar .btn:hover { border-color: var(--h-gray-bd); color:var(--text); }
 .panel-bar select { background:var(--bg-panel); border: var(--bw-ctl) solid var(--border);
   color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono);
@@ -16825,7 +16841,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.41.0.0';
+const APP_VERSION  = '1.41.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

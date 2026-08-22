@@ -113,6 +113,11 @@
                                               else it sits beside */
   --panel-collapsed-w: calc(var(--ctl-h) + var(--sp-2) * 2);   /* toggle + breathing room */
   --row-h: 26px;      /* data-table row height — the density you feel most */
+  /* The sidebar entity row is TWO lines — a name and the chips under it — so it
+     does not answer to the single-line table height. On --row-h it carried 10px
+     of air around a 15px name and every class read taller than it needed to be.
+     Requested 2026-08-22. */
+  --me-item-line: 20px;
   --gap: 10px;      /* space between panel cards; also the resizer width   */
 }
 
@@ -2267,16 +2272,16 @@ td.c-err  { color: var(--accent2); }
    to the header above it. Same face and size as every other heading. */
 .me-sidebar-title{font-family:var(--mono);font-size:var(--sz-mono);font-weight:700;color:var(--text-dim);}
 .me-item-list{flex:0 0 auto;}
-.me-item{display:flex;flex-direction:column;align-items:stretch;padding:0 8px 0 5px;min-height:var(--row-h);cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;
+.me-item{display:flex;flex-direction:column;align-items:stretch;padding:0 8px 0 5px;min-height:var(--me-item-line);cursor:grab;font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);border-bottom: var(--bw) solid var(--border);box-sizing:border-box;
   border-left:3px solid var(--item-color, transparent);}
 /* The identity line carries the row height, so an entity with nothing to warn
    about is exactly as tall as it always was. */
-.me-item-main{display:flex;align-items:center;gap:5px;min-height:calc(var(--row-h) - var(--bw));}
+.me-item-main{display:flex;align-items:center;gap:5px;min-height:calc(var(--me-item-line) - var(--bw));}
 /* And the gaps sit under it, wrapping rather than pushing the name aside. The
    line keeps its height when it is empty, so every row in the list is the same
    size — a mix of one-line and two-line rows reads as ragged, and the eye spends
    longer on the raggedness than on the warnings. */
-.me-item-gaps{display:flex;flex-wrap:wrap;gap:3px;padding:0 0 3px 15px;}
+.me-item-gaps{display:flex;flex-wrap:wrap;gap:3px;padding:0 0 2px 15px;}
 /* Holds the line open when there is nothing to say. Hidden, not absent, so it
    still occupies exactly one chip's height — see the comment where it is made. */
 .me-gap-spacer{visibility:hidden;}
@@ -17004,7 +17009,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.16.0';
+const APP_VERSION  = '1.46.17.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

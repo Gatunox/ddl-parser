@@ -14375,9 +14375,15 @@ test('a configuration gap names itself instead of being counted', () => {
     'a file entity is asked for a volume it cannot use');
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   assert.ok(/\.me-item\{[^}]*flex-direction:column/.test(css), 'the row does not stack');
-  // A row with nothing to warn about must stay exactly as tall as before.
-  assert.ok(/\.me-item-main\{[^}]*min-height:calc\(var\(--row-h\) - var\(--bw\)\)/.test(css),
+  // The identity line carries a FIXED height, so a row with nothing to warn
+  // about is exactly as tall as one that has warnings — a mix of one-line and
+  // two-line rows reads as ragged. It is the sidebar's own height, not the data
+  // table's: this row is two lines, and on --row-h it wrapped 10px of air around
+  // a 15px name. Requested 2026-08-22.
+  assert.ok(/\.me-item-main\{[^}]*min-height:calc\(var\(--me-item-line\) - var\(--bw\)\)/.test(css),
     'the identity line no longer carries the row height');
+  assert.ok(!/\.me-item\{[^}]*min-height:var\(--row-h\)/.test(css),
+    'the entity row is back on the data-table height');
   // The counted badge is gone entirely, not merely unused.
   assert.ok(!/me-gap-badge/.test(html), 'the ⚠N badge survives somewhere');
 });

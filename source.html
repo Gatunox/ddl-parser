@@ -16789,7 +16789,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.38.0.0';
+const APP_VERSION  = '1.39.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19274,6 +19274,7 @@ const _PS_COMMON_ATTRS = [
 // number is the same in all of them.
 const _PS_SIZEOF_DESC = [
   ['<code>{"sizeof": "EMV.DATA"}</code>', 'What the <b>DDL declares</b> for an element, in bytes — the element\'s own length when it is a leaf, the sum of its non-REDEFINES leaves when it is a group. Reads no bytes and moves no cursor.'],
+  'A group that carries its own <b>length</b> reports what it declares for its <b>payload</b>: the length leaf is a statement <i>about</i> those bytes, not one of them. So <code>LEN(4) A(12) B(10)</code> is <b>22</b>, which is the number a wire length of 23 is disagreeing with — and the same 22 the engine prints when it reports the overrun.',
   'An id no bound DDL declares is an <b>error</b>, not a zero — a typo that silently sizes everything to nothing is the one outcome worse than saying so.',
 ];
 
@@ -19805,22 +19806,58 @@ const _PS_HELP = {
     // its absence to be inferred, which is only readable if you already know.
     dflts: {
       as: '<code>"TAIL"</code>',
+      end_at: '<code>"message"</code> — everything to the last byte of the message',
     },
-    desc: 'Consumes all remaining bytes in the message into one field. Typically used as the last block to capture a variable trailing section.',
+    desc: [
+      'Consumes everything left into one field: the rest of the <b>message</b>, or the rest of the <b>element</b> this block sits inside.',
+      'Typically the last block of a spec, capturing a variable trailing section — or, inside a <code>de</code> entry, whatever that element still holds after its declared fields have been read.',
+    ],
     useWhen: [
       'The message has a <b>variable-length trailer</b> you want captured as a single chunk.',
+      'An element carries <b>more than the DDL declares</b> for it, and you want those bytes named rather than left to shift the elements after it — <code>end_at: "field"</code>.',
       'You\'re writing a <b>catch-all</b> final block to surface whatever bytes remain.',
       'You want to <i>see</i> overflow / unparsed bytes during spec development.',
-      'No other byte-consuming block needs to run after this one.',
     ],
     attrs: [
       ['as', 'string', false, [
         'A name for the captured chunk.',
         'Without it the row is labelled <code>TAIL</code>.',
-        'The block takes everything from the cursor to the last byte — there is nothing else to configure.',
+      ]],
+      ['end_at', '"message" | "field"', false, [
+        'The end of <b>what</b>.',
+        ['<code>"message"</code>', 'Everything from the cursor to the last byte of the message. The default, and what every existing spec does.'],
+        ['<code>"field"</code>',   'Everything the <b>element this block sits inside</b> still has — its frame\'s last byte, not the message\'s.'],
+        'Inside a <code>de</code> entry the element states its own extent, so <code>"message"</code> reads straight through it: the only thing it could produce there was <code>its blocks read N byte(s) past the element\'s length</code>.',
+        'With nothing framing the block, <code>"field"</code> has no end to read to and says so, rather than quietly falling back to the message.',
+        'This is how a spec captures the bytes a wire length counted that the DDL does not declare — see the <code>{"sizeof"}</code> forms on <code>when</code>.',
       ]],
     ],
     examples: [
+      // The production case, end to end: a wire length of 23 over a group whose
+      // fields declare 22. The condition and the capture both come from the DDL,
+      // so the same spec handles one surplus byte or five.
+      { what: '<b>end_at</b> <code>"field"</code> — inside a <code>de</code> entry: LEN says 23, the group declares 22, and the odd byte is captured as part of DE-60 instead of shifting DE-61',
+        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 GRP.\n    04 LEN PIC 9(2).\n    04 A PIC X(2).\n    04 B PIC X(2).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '60 00 00 00 00 00 00 00 30 35 41 41 42 42 58 54 41 49 4C',
+        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+               {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
+                 "2": {"blocks": [
+                   {"read": "GRP.A"},
+                   {"read": "GRP.B"},
+                   {"when": {"field": "GRP.LEN", "greater_than": {"sizeof": "GRP"},
+                             "then": [{"read-to-end": {"as": "GRP.OVERFLOW", "end_at": "field"}}]}}]}}}}] },
+      { what: 'The same spec on a message whose length agrees with the DDL — the condition is false, nothing is captured, and TAIL lands in the same place either way',
+        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 GRP.\n    04 LEN PIC 9(2).\n    04 A PIC X(2).\n    04 B PIC X(2).\n  02 TAIL PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '60 00 00 00 00 00 00 00 30 34 41 41 42 42 54 41 49 4C',
+        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+               {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
+                 "2": {"blocks": [
+                   {"read": "GRP.A"},
+                   {"read": "GRP.B"},
+                   {"when": {"field": "GRP.LEN", "greater_than": {"sizeof": "GRP"},
+                             "then": [{"read-to-end": {"as": "GRP.OVERFLOW", "end_at": "field"}}]}}]}}}}] },
       { what: '<b>as</b> — two fields read, then everything left over in one row',
         payload: '41 42 43 44 45 46 47',
         spec: [{"read-fixed": {"length": 2, "as": "HDR"}},
@@ -21776,8 +21813,13 @@ function _mePsLintWarns(item, parsed) {
             warns.push(`[block ${n}] read-length-value "count" must be "bytes" or "digits", got ${JSON.stringify(attrs.count)}`);
           break;
         }
-        case 'read-until':
         case 'read-to-end': {
+          if (attrs?.end_at !== undefined && !/^(message|field)$/i.test(String(attrs.end_at)))
+            warns.push(`[block ${n}] read-to-end "end_at" must be "message" or "field", got ${JSON.stringify(attrs.end_at)}`);
+          if (attrs?.as) synthetic.add(attrs.as);
+          break;
+        }
+        case 'read-until': {
           if (attrs?.as) synthetic.add(attrs.as);
           break;
         }
@@ -29407,13 +29449,35 @@ function _meExecReadLengthValue(attrs, ctx) {
 
 // ── Block: read-to-end ──────────────────────────────────────────────────────
 
+// The end of WHAT. Inside a framed element — a `de` entry — "the end" meant the
+// end of the message, so the block read straight through the element's own
+// boundary and out the other side: the only thing it could produce there was
+// `its blocks read N byte(s) past the element's length`. Which end is now said
+// outright rather than assumed, because both are wanted: the trailing data of a
+// record, and whatever THIS element still has.
 function _meExecReadToEnd(attrs, ctx) {
+  const id  = (attrs && attrs.as) || 'TAIL';
+  const how = (attrs && attrs.end_at !== undefined) ? String(attrs.end_at).toLowerCase() : 'message';
+  if (how !== 'message' && how !== 'field') {
+    ctx.fields.push({ id, error: `read-to-end "end_at" must be "message" or "field", got ${JSON.stringify(attrs.end_at)}` });
+    return;
+  }
+  let end = ctx.bytes.length;
+  if (how === 'field') {
+    // No frame means no answer. Reading to the end of the message instead would
+    // be the very confusion this attribute exists to remove.
+    if (ctx._deLimit == null) {
+      ctx.fields.push({ id, error: 'read-to-end "end_at": "field" — nothing frames this block, so there is no element end to read to. It applies inside a "de" entry, whose element states its own extent.' });
+      return;
+    }
+    end = Math.min(ctx._deLimit, ctx.bytes.length);
+  }
   const start  = ctx.cursor;
-  const fBytes = Array.from(ctx.bytes.slice(start));
-  ctx.cursor   = ctx.bytes.length;
-  const id = (attrs && attrs.as) || 'TAIL';
-  const f  = _meMakeSyntheticField(id, fBytes, start, ctx.bytes.length - 1, ctx,
-    { description: 'read-to-end' });
+  if (end < start) end = start;               // the frame is already spent
+  const fBytes = Array.from(ctx.bytes.slice(start, end));
+  ctx.cursor   = end;
+  const f  = _meMakeSyntheticField(id, fBytes, start, end - 1, ctx,
+    { description: how === 'field' ? 'read-to-end (this element)' : 'read-to-end' });
   ctx.fields.push(f);
   ctx.fieldsById[id] = f;
 }
@@ -30116,15 +30180,31 @@ function _meGroupLeaves(groupId, ctx) {
 
 // Declared byte size of an element: its own length if elementary, otherwise the
 // sum of its non-REDEFINES leaves.
+// What the DDL declares for an element, in bytes. For a GROUP that carries its
+// own length, that is what it declares for its PAYLOAD — the length leaf is not
+// payload, it is a statement about it. A wire length of 23 over `LEN(4) A(12)
+// B(10)` is asking about the 22, and counting the LEN's own 4 would make the
+// only comparison anyone wants to write — "is the wire carrying more than this
+// element has room for" — compare two different things. It is also the number
+// the engine itself reports: `length 23 exceeds the 22 byte(s) "GRP60" declares
+// for its payload`.
+// Which leaf is the length is decided by the same rule the parse frames the
+// group with — an explicit VLG marker, else auto-detect under this block's
+// vlg_identifier — so the size and the framing can never disagree.
 function _meDeclaredSize(id, ctx) {
   const defs = _meCollectBindingDefs(ctx.resolvedBindings);
   const self = defs.find(d => d.id === id);
   if (self && self.length > 0 && !self.isGroup) return self.length;
   const prefix = id + '.';
+  const kids   = defs.filter(d => !d.isRedefines && !d.isGroup && d.id.startsWith(prefix));
+  const direct = kids.filter(d => !d.id.slice(prefix.length).includes('.'));
+  const vlg    = _meVlgLenMap(_meOvMergedItem(ctx));
+  const lenId  = _meVlgHas(vlg, id) ? (_meVlgGet(vlg, id) || direct[0]?.id)
+                                    : _meAutoLLVarLenId(direct, ctx.vlgIdentifier, kids.length);
   let total = 0;
-  for (const d of defs) {
-    if (d.isRedefines || d.isGroup) continue;
-    if (d.id.startsWith(prefix)) total += (d.length || 0);
+  for (const d of kids) {
+    if (lenId && _meVlgIsLen(lenId, d.id)) continue;
+    total += (d.length || 0);
   }
   return total;
 }

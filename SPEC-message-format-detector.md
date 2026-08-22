@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-22 | **The 23-over-22 case is now expressible in a spec, not only handled structurally.** Asked directly: can `when` solve it? It could state the condition and not act on it, and two things were in the way. (1) **`sizeof` on a group counted the group's own length leaf** — `LEN(4) A(12) B(10)` came back 26, so `greater_than {"sizeof": "GRP60"}` compared a wire length of 23 against a number that is not what it disagrees with. A group carrying its own length now reports what it declares for its **payload**, 22: the length leaf is a statement *about* those bytes, not one of them, and 22 is already the number the engine prints when it reports the overrun. Which leaf is the length is decided by the same rule that frames the group, so size and framing cannot disagree. (2) **There was no way to say "whatever this element still has"** — `read-to-end` meant the end of the *message*, so inside a `de` entry it read through the element's boundary and the only thing it could produce there was `its blocks read N byte(s) past the element's length`. It takes `end_at`: `"message"` (the default, unchanged) or `"field"`, the end of the frame this block sits inside; unframed, `"field"` says so rather than falling back. Together they make the whole case one condition and one read, with both halves coming from the DDL — so one spec covers a surplus of one byte, of five, or of none. Also recorded: a `de` entry on a group reads the **length leaf itself** as its frame before the blocks run, so the blocks read the payload only; reading it again in a block produces a second row under the same id and overwrites the first in the field table. See §5.19, §5.20. |
 | 2026-08-21 | **The byte guard is documented, and checked in both blocks that take it.** Reported: "I read it and I can't figure out what the attribute `bytes` does — there is only one example but it says it supports type, value, length, pattern, encoding." All five were listed as names with nothing to look at, and the one example was `literal`. The predicate is now written **once** and referenced from all three places that take it — `when`'s `bytes`, `when`'s `not-bytes` and `read-while`'s `while` — stating the window (`length`, defaulting to 1 except `literal`, which uses its own value's width), which companion attribute belongs to which `type`, that the class types test the **whole** window while `ascii` tests raw bytes and so ignores `encoding`, and that a regex is **unanchored**. They had already drifted: `read-while` called `length` "Required" while the matcher defaults it, and `when` described the shape as "same as read-while's" and left the reader to go and look. Five of the six types now have an example, including both sides of a guard that fails. The **lint** was one-sided the same way — `when`'s guard was checked and `read-while`'s was not, though they are the same object — so both now go through one checker, which also catches a `pattern` that will not compile, a `length` below 1, and an unknown `encoding`: each of those silently never matches, which reads as a dead branch rather than a broken guard. See §5.6. |
 | 2026-08-21 | **`when` gains its other branch, `sizeof` works wherever a size is taken, and `skip` stops poisoning the cursor.** Three findings from one pass. (1) **`else` was accepted and read by nothing** — the key parsed, linted clean and did nothing, so a spec with two branches ran one and silently dropped the other. It now runs the other branch, from the **same cursor**, with exactly one branch taken; a condition that cannot be *answered* runs **neither** and reports why, because not knowing is not the same as false. (2) **`sizeof` is accepted wherever a spec takes a number** — `read-fixed`'s `length`, `skip`'s `length`, `repeat`'s `count`, `read-while`'s `max`, a `de` entry's `length`, and every `when` comparison — resolved in the single helper they all call, so the size a condition compares against is the size a `read-fixed` would read. Documented once and referenced from each, the way `at` and `peek` are. (3) **`skip` with a field-id length computed `cursor + "CNT"`** — string concatenation into `NaN` — so the cursor became NaN and every block after it silently read nothing. The baseline had been recording `"cursor": null` for that case all along. Routing it through the shared resolver fixes it and gives `skip` the reference and `sizeof` forms at the same time. Also: an unresolvable length now reports **why** (`'NOPE' not yet read`) instead of `Cannot resolve length: [object Object]`. 34 baseline cases moved — 32 of them that one error string, plus the `else` case and the `skip` NaN. See §5.6, §5.19. |
 | 2026-08-21 | **`when` compares — six operators, one operand grammar, and `sizeof`.** A DE whose wire length disagrees with the DDL could not be *tested* in a spec at all: `is`/`not` compared text against a literal, so "is this length bigger than what the element declares" had no way to be written, and the only recourse was to take the DE over with a `de` entry. `when` now takes `equal`, `not_equal`, `greater_than`, `greater_or_equal`, `less_than`, `less_or_equal`, each accepting the same four operands — a literal, a list (equality only), `{"field": "OTHER"}`, and `{"sizeof": "ELEMENT"}`, which is what the DDL **declares** for an element and reads no bytes to say it. Equality compares text with trailing spaces trimmed, as before; the four numeric operators read **both** sides through the chain every other numeric reference in a spec already uses, so a `hex-char` length compares as 74 on both sides or on neither. A side that cannot be read as a number, an operand field never read, and an element no DDL declares are all **error rows naming which side** — a broken condition and a false one are indistinguishable from outside, since both show up only as a branch that did not run, and `{"sizeof": "TYPO"}` reading 0 would have fired `greater_than` on every message. Two comparisons on one block is an error rather than an implicit `and` — the first used to win silently. One behaviour change came out of the baseline rather than the design: a `when` with a field and **no** comparison is a presence test, which the reference has always described and the engine never did — `matched` stayed false, so such a block could not fire under any message. 10 of 1472 baseline cases moved, all of them `when` combos: 8 that set both operators (now an error row) and 2 that set neither (now the presence test they were documented to be). `is`/`not` are renamed to `equal`/`not_equal` with **no conversion** — a spec using them is edited by hand — and the lint reports them rather than letting them pass, because `is` left in place leaves the block with no operator, which is the presence test, so `then` would run unconditionally. See §5.6, §5.19. |
@@ -1106,6 +1107,15 @@ element's own length when it is a leaf, and the sum of its non-REDEFINES leaves
 when it is a group. It reads no bytes, moves no cursor and emits no row — it is
 the DDL's own number, made available to a condition.
 
+A group that carries **its own length** reports what it declares for its
+**payload**. The length leaf is a statement *about* those bytes, not one of them,
+so `LEN(4) A(12) B(10)` is **22** — the number a wire length of 23 is disagreeing
+with, and the same 22 the engine prints when it reports the overrun. Counting the
+LEN's own four bytes made the only comparison anyone wants to write compare two
+different things. Which leaf is the length is decided by the rule that frames the
+group (§8, §8.0) — an explicit `vlg` marker, else auto-detect under this block's
+`vlg_identifier` — so the size and the framing can never disagree.
+
 It exists so a spec can ask the question `length_mode` answers structurally
 (§8.2): *is this message carrying more in the element than the DDL has room
 for?* — and act on it in the spec rather than only being told about it. It is
@@ -1133,6 +1143,49 @@ call (`_meNumRef`), so the size a condition compares against is the size a
 Documented once and referenced from each of them, the way `at` and `peek` are
 (§5.11) — the same sentence repeated per block is the way two of them end up
 describing different behaviour.
+
+---
+
+### 5.20 `read-to-end` — the end of what (`end_at`) *(added 2026-08-22)*
+
+```json
+{"read-to-end": {"as": "GRP.OVERFLOW", "end_at": "field"}}
+```
+
+| `end_at` | Reads to |
+|----------|----------|
+| `"message"` *(default)* | The last byte of the message. What every existing spec does. |
+| `"field"` | The last byte of **the element this block sits inside** — its frame, not the message. |
+
+Inside a framed element — a `de` entry — "the end" meant the end of the
+**message**, so the block read straight through the element's boundary and the
+only thing it could produce there was `its blocks read N byte(s) past the
+element's length`. With nothing framing the block, `"field"` has no end to read
+to and **says so**, rather than quietly falling back to the message.
+
+Together with `{"sizeof"}` (§5.19) this is what makes the 23-over-22 case
+expressible **in a spec**, rather than only handled structurally by `length_mode`
+(§8.2):
+
+```json
+{"de": {"60": {"blocks": [
+  {"read": "GRP60.A"},
+  {"read": "GRP60.B"},
+  {"when": {"field": "GRP60.LEN", "greater_than": {"sizeof": "GRP60"},
+            "then": [{"read-to-end": {"as": "GRP60.OVERFLOW", "end_at": "field"}}]}}
+]}}}
+```
+
+Both halves come from the DDL, so one spec covers a surplus of one byte, of
+five, or of none — and the DE after it starts where the length said either way.
+
+> **Note — the entry reads the LEN itself.** A `de` entry on a group frames it by
+> reading its length leaf *before* the blocks run, so `GRP60.LEN` is already a row
+> and already in the field table (which is what `when` compares against). The
+> blocks read the **payload only**. Adding `{"read": "GRP60.LEN"}` reads it a
+> second time, four bytes further on, producing a second row under the same id
+> and overwriting the first in the field table — after which the condition
+> compares the wrong value.
 
 ---
 

@@ -6812,6 +6812,157 @@ test('with no comparison at all, when is a presence test', () => {
   ], ascii('05ABCDE')).ids.includes('HIT'), true, 'present → the branch runs');
 });
 
+// ── The production case, solved in a spec ──────────────────────────────────
+// A group declaring 22 bytes, carrying 23. Two pieces were missing: a `sizeof`
+// that answers the question actually being asked, and a way to say "whatever
+// this element still has". Reported 2026-08-22.
+
+const OVF_DDL = `DEFINITION MSG.
+  02 BITMAP PIC X(8).
+  02 PAD PIC X(1).
+  02 GRP.
+    04 LEN PIC 9(2).
+    04 A PIC X(2).
+    04 B PIC X(2).
+  02 TAIL PIC X(4).
+END
+`;
+const ovfRun = (body, ddl) => {
+  S.ddlTree = { V: { S: { D: ddl || OVF_DDL } } };
+  S.inputFormat = 'hex';
+  const b = [0x60, 0, 0, 0, 0, 0, 0, 0];                   // bits 2 and 3
+  for (const c of body) b.push(c.charCodeAt(0));
+  return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': { blocks: [
+        { read: 'GRP.A' },
+        { read: 'GRP.B' },
+        { when: { field: 'GRP.LEN', greater_than: { sizeof: 'GRP' },
+                  then: [{ 'read-to-end': { as: 'GRP.OVERFLOW', end_at: 'field' } }] } },
+      ] } } } },
+    ] }, b);
+};
+
+test('sizeof a group that carries its own length is what it declares for its PAYLOAD', () => {
+  // Counting the LEN's own bytes made the only comparison anyone wants to write
+  // compare two different things: 23 on the wire against 26 in the DDL, when the
+  // number being disagreed with is 22.
+  const sizeOf = (id, ddl) => {
+    S.ddlTree = { V: { S: { D: ddl || OVF_DDL } } };
+    S.inputFormat = 'hex';
+    const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+      parse_spec_binary: [{ 'read-fixed': { length: { sizeof: id }, as: 'OUT' } }] },
+      Uint8Array.from(Array.from({ length: 40 }, () => 0x41)));
+    const f = ctx.fields.find(x => x.id === 'OUT');
+    return f ? f.valueLength : ctx.fields.map(x => x.error).join('');
+  };
+  eq(sizeOf('GRP'), 4, 'GRP is A(2) + B(2) — its LEN is not payload');
+  eq(sizeOf('GRP.A'), 2, 'a leaf is its own declared length');
+  // A group with no length leaf still sums everything it has.
+  eq(sizeOf('PLAIN', `DEFINITION MSG.
+  02 PLAIN.
+    04 X PIC X(3).
+    04 Y PIC X(5).
+END
+`), 8, 'no length leaf → every leaf counts');
+});
+
+test('read-to-end end_at:"field" stops at the element, and "message" still does not', () => {
+  const framed = ovfRun('05' + 'AA' + 'BB' + 'X' + 'TAIL');
+  const id = i => framed.fields.filter(f => f.id === i)[0];
+  eq(id('GRP.OVERFLOW').value, 'X', 'the surplus byte is captured, named after its element');
+  eq(id('TAIL').value, 'TAIL', 'and the next DE lands where the length said');
+  eq(framed.fields.some(f => f.error), false, 'with no overrun reported');
+  // The default reads past the element and is reported, exactly as before.
+  S.ddlTree = { V: { S: { D: OVF_DDL } } }; S.inputFormat = 'hex';
+  const b = [0x60, 0, 0, 0, 0, 0, 0, 0];
+  for (const c of '05' + 'AA' + 'BB' + 'X' + 'TAIL') b.push(c.charCodeAt(0));
+  const loose = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': { blocks: [
+        { read: 'GRP.A' }, { read: 'GRP.B' },
+        { 'read-to-end': { as: 'GRP.OVERFLOW' } },
+      ] } } } },
+    ] }, b);
+  assert.ok(loose.fields.some(f => f.error && /past the element/.test(f.error)),
+    'end_at:"message" inside a frame reads through it and is reported');
+});
+
+test('end_at:"field" with nothing framing the block says so instead of taking the message', () => {
+  S.ddlTree = { V: { S: { D: OVF_DDL } } }; S.inputFormat = 'hex';
+  const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: [{ 'read-to-end': { as: 'X', end_at: 'field' } }] },
+    Uint8Array.from([0x41, 0x42, 0x43]));
+  assert.ok(ctx.fields.some(f => f.error && /nothing frames this block/.test(f.error)),
+    `it refuses rather than falling back, got ${JSON.stringify(ctx.fields)}`);
+  eq(ctx.cursor, 0, 'and reads nothing');
+  assert.ok(mePsLintWarns({ ddl_bindings: [] }, [{ 'read-to-end': { end_at: 'element' } }])
+    .some(w => /"message" or "field"/.test(w)), 'and the lint catches a bad value');
+});
+
+test('the whole production case: one spec, any surplus, or none', () => {
+  // The point of doing it in a spec rather than with length_mode: the condition
+  // and the capture both come from the DDL, so the same spec handles a message
+  // that agrees and one that does not.
+  const val = (ctx, id) => (ctx.fields.filter(f => f.id === id)[0] || {}).value;
+  const one   = ovfRun('05' + 'AA' + 'BB' + 'X'   + 'TAIL');
+  const three = ovfRun('07' + 'AA' + 'BB' + 'XYZ' + 'TAIL');
+  const exact = ovfRun('04' + 'AA' + 'BB' +         'TAIL');
+  eq(val(one,   'GRP.OVERFLOW'), 'X',   'one surplus byte');
+  eq(val(three, 'GRP.OVERFLOW'), 'XYZ', 'three, from the same spec');
+  eq(val(exact, 'GRP.OVERFLOW'), undefined, 'and none when the wire agrees');
+  for (const [ctx, what] of [[one, '23-over-22'], [three, '25-over-22'], [exact, 'exact']])
+    eq(val(ctx, 'TAIL'), 'TAIL', `${what}: TAIL lands right`);
+});
+
+test('the same spec works on the nested shape production actually has', () => {
+  // Reported: "each ITEM inside a subgroup are actually other groups with
+  // subgroups", four to six levels deep. One `read` of the group covers the
+  // whole subtree, and sizeof sums transitive leaves — the payload here is
+  // ITEM1(3+3) + ITEM2(2+2) = 10, declared across three levels below GRP.
+  const ddl = `DEFINITION MSG.
+  02 BITMAP PIC X(8).
+  02 PAD PIC X(1).
+  02 GRP.
+    04 LEN PIC 9(2).
+    04 SUB.
+      06 ITEM1.
+        08 A1 PIC X(3).
+        08 B1 PIC X(3).
+      06 ITEM2.
+        08 A2 PIC X(2).
+        08 B2 PIC X(2).
+  02 TAIL PIC X(4).
+END
+`;
+  const run = body => {
+    S.ddlTree = { V: { S: { D: ddl } } };
+    S.inputFormat = 'hex';
+    const b = [0x60, 0, 0, 0, 0, 0, 0, 0];
+    for (const c of body) b.push(c.charCodeAt(0));
+    return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+      parse_spec_binary: [
+        { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+        { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': { blocks: [
+          { read: 'GRP.SUB' },
+          { when: { field: 'GRP.LEN', greater_than: { sizeof: 'GRP' },
+                    then: [{ 'read-to-end': { as: 'GRP.OVERFLOW', end_at: 'field' } }] } },
+        ] } } } },
+      ] }, b);
+  };
+  const val = (ctx, id) => (ctx.fields.filter(f => f.id === id)[0] || {}).value;
+  const over = run('11' + 'AAABBB' + 'CC' + 'DD' + 'X' + 'TAIL');
+  eq(val(over, 'GRP.SUB.ITEM1.A1'), 'AAA', 'the whole subtree is read from one block');
+  eq(val(over, 'GRP.SUB.ITEM2.B2'), 'DD',  'down to the deepest leaf');
+  eq(val(over, 'GRP.OVERFLOW'), 'X', 'and 11 over a declared 10 leaves one byte, captured');
+  eq(val(over, 'TAIL'), 'TAIL', 'so the next DE still lands right');
+  const exact = run('10' + 'AAABBB' + 'CC' + 'DD' + 'TAIL');
+  eq(val(exact, 'GRP.OVERFLOW'), undefined, 'a wire that agrees captures nothing');
+  eq(val(exact, 'TAIL'), 'TAIL', 'and lands in the same place');
+});
+
 test('the guard is one predicate, so both blocks that take it are checked alike', () => {
   // when's `bytes` was checked and read-while's `while` was not, though they are
   // the same object matched by the same function — so a dead guard was reported

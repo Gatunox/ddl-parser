@@ -7807,7 +7807,8 @@ test('the lock reads dim-and-open, accent-and-shut', () => {
   assert.ok(/\.msg-lock \{[^}]*cursor: default/.test(css),   'the open lock looks clickable');
   assert.ok(/\.msg-lock\.locked \{[^}]*cursor: pointer/.test(css), 'the shut lock does not look clickable');
   // It lives in the Message Input bar, beside the line-width widget.
-  const bar = html.slice(html.indexOf('<div id="msgCfgBar">'), html.indexOf('<div class="panel-body"', html.indexOf('<div id="msgCfgBar">')));
+  const barAt = html.indexOf('<div id="msgCfgBar"');
+  const bar = html.slice(barAt, html.indexOf('<div class="panel-body"', barAt));
   assert.ok(bar.indexOf('id="msgLock"') > bar.indexOf('id="lwWidget"'), 'the lock is not next to the line-width widget');
 });
 
@@ -7911,8 +7912,13 @@ test('the DDL Doc has a title row, and its filter sits over the column it filter
   // it pushed onto a second row hanging at the LEFT — Hide Redef and the cog
   // ended at x=151 while the bar's right edge was 548, reading as two unrelated
   // groups of controls. Same shape, and the same fix, as .me-fm-toolbar.
+  // Wrapping is the shared bar's job now — Parse Results is one of six strips
+  // that used to carry their own copy of the same nine declarations.
+  const sharedBar = (html.match(/\.panel-bar \{[^}]*\}/) || [''])[0];
+  assert.ok(/flex-wrap:wrap/.test(sharedBar), 'the Parse Results controls cannot wrap');
+  // Right-alignment stays Parse Results' own — it is the delta from the shared
+  // rule, not part of what every bar does.
   const resBar = (html.match(/#resCfgControls \{[^}]*\}/) || [''])[0];
-  assert.ok(/flex-wrap:wrap/.test(resBar), 'the Parse Results controls cannot wrap');
   assert.ok(/justify-content:flex-end/.test(resBar),
     'a wrapped row of Parse Results buttons starts at the left instead of under the first');
   // The first line is packed by a flex:1 spacer in the markup, which is what
@@ -12279,9 +12285,14 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
   // spread over the full panel width read as five unrelated things, so they are
   // packed left now like the toolbar under them. What has to survive is that
   // the bar still wraps instead of overflowing a narrow panel.
-  const css = html.match(/\.me-fm-bar\{[^}]*\}/)[0];
+  // Wrapping is .panel-bar's job now — the action bar IS one of those strips,
+  // so what this asserts is that it still is one, and that the strip wraps.
+  assert.ok(/class="panel-bar me-fm-bar"/.test(html), 'the action bar is not a .panel-bar');
+  const css = html.match(/\.panel-bar \{[^}]*\}/)[0];
   assert.ok(/flex-wrap:\s*wrap/.test(css), 'the bar wraps');
-  assert.ok(/justify-content:\s*flex-end/.test(css), 'the controls are not packed right');
+  // Right-packing stays this bar's own — it is its delta from the shared strip.
+  const own = html.match(/\.me-fm-bar\{[^}]*\}/)[0];
+  assert.ok(/justify-content:\s*flex-end/.test(own), 'the controls are not packed right');
   // The badge is the subject, not one of the actions, so it holds the left edge
   // while the actions collect at the right.
   const pill = html.match(/\.me-ovl-ro\{[^}]*\}/)[0];
@@ -12310,12 +12321,12 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
   // the help "?" and the column chooser unreachable rather than merely tight.
   // Measured at a 495px panel: the last control sat 226px past the bar's right
   // edge; wrapped, the overflow is 0 and the bar is two rows instead of one.
-  assert.ok(/\.me-fm-toolbar\{[^}]*flex-wrap:wrap/.test(html),
-    'the filter row cannot wrap, so its buttons leave the panel with no way back');
-  // Both strips of controls in the section behave the same way — the action bar
-  // has wrapped since it was built, and this row is the one that did not.
-  assert.ok(/\.me-fm-bar\{[^}]*flex-wrap:wrap/.test(html),
-    'the action bar lost its wrapping');
+  // Same again: the filter row is a .panel-bar, and the strip is what wraps.
+  assert.ok(/class="panel-bar me-fm-toolbar"/.test(html),
+    'the filter row is not a .panel-bar, so it does not wrap and its buttons leave the panel');
+  // Both strips of controls in the section behave the same way — which is now
+  // guaranteed by them being the same strip, rather than by two rules agreeing.
+  assert.ok(/class="panel-bar me-fm-bar"/.test(html), 'the action bar lost its wrapping');
   // A wrapped line packs RIGHT, under the line above it, rather than starting
   // back at the field names. The first line is unaffected — #me-fm-ovr-btn's
   // auto margin has already taken its free space — so the filter stays over its
@@ -12348,8 +12359,8 @@ test('the action bar wraps rather than overflowing a narrow panel', () => {
 test('the selection badge heads the bar that acts on it', () => {
   // Moved out of the filter row: it is the subject the five controls act on,
   // so it reads at the bar's own height at the head of the bar.
-  const bar = html.slice(html.indexOf('<div class="me-fm-bar" id="me-fm-bar">'),
-                         html.indexOf('<div class="me-fm-toolbar">'));
+  const bar = html.slice(html.indexOf('me-fm-bar" id="me-fm-bar">'),
+                         html.indexOf('me-fm-toolbar">'));
   assert.ok(/id="me-fm-cnt"/.test(bar), 'the badge is not in the action bar');
   assert.ok(bar.indexOf('id="me-fm-cnt"') < bar.indexOf('me-ovb k-'),
     'the badge comes after the controls it is the subject of');
@@ -17275,6 +17286,48 @@ test('density moves shape and spacing only, never colour', () => {
   eq(bad.length, 0, `density must not set colour tokens: ${bad.join(', ')}`);
 });
 
+test('[REGRESSION] changing the format mode does not clear the active spec variant', () => {
+  // Both control groups in the Parse Spec bar carry .me-ps-variants, so the
+  // format toggle's selector matched the Binary / ASCII pair as well: pressing
+  // Compact marked Compact ON and, in the same pass, turned the active VARIANT
+  // off. The spec then looked like it had no variant selected until the next
+  // re-render put it back. Reported 2026-08-22 — it predates the bar work.
+  const fn = psFnSource('_mePsSetFmtMode');
+  assert.ok(/querySelectorAll\('#me-ps-fmt /.test(fn),
+    `the format toggle reaches outside its own group: ${fn}`);
+  assert.ok(!/\.me-ps-variants \.me-ps-variant-tgl/.test(fn),
+    'the broad selector is back — it matches the variant toggles too');
+  // And the group it scopes to is the one the markup builds.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/id="me-ps-fmt"/.test(src), 'the format group has no id to scope to');
+});
+
+test('[REGRESSION] every class a querySelector looks for is one the markup emits', () => {
+  // A restructure renamed .me-ps-toolbar to a .panel-bar and left
+  // _mePsSetFmtMode still querying the old name, so Compact / Expanded stopped
+  // showing which one was pressed. Nothing failed — the selector simply matched
+  // nothing. Found by reading, which is not a method. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // Class tokens named inside a querySelector / querySelectorAll literal.
+  const wanted = new Set();
+  for (const m of src.matchAll(/querySelector(?:All)?\(\s*'([^']+)'/g))
+    for (const c of m[1].matchAll(/\.([a-z][a-z0-9_-]*)/gi)) wanted.add(c[1]);
+  // A class exists if any markup writes it, or any code adds it to an element.
+  const emitted = new Set();
+  for (const m of src.matchAll(/class="([^"]*)"/g))
+    for (const t of m[1].split(/[\s${}?:'"]+/)) if (t) emitted.add(t);
+  for (const m of src.matchAll(/classList\.(?:add|toggle|remove|contains)\(\s*'([^']+)'/g))
+    emitted.add(m[1]);
+  for (const m of src.matchAll(/className\s*=\s*'([^']*)'/g))
+    for (const t of m[1].split(/\s+/)) if (t) emitted.add(t);
+  // A class is often built as a fragment — `isGroup ? 'me-fm-grp' : ''`, or
+  // `' tree-sel'` concatenated into a class attribute. Those are emitted too.
+  for (const m of src.matchAll(/'\s*([a-z][a-z0-9_-]*)\s*'/gi)) emitted.add(m[1]);
+  // CodeMirror puts its own classes on its own DOM; nothing here writes them.
+  const dead = [...wanted].filter(c => !emitted.has(c) && !/^cm-/.test(c)).sort();
+  deepEq(dead, [], 'querySelector looks for classes nothing ever puts on an element');
+});
+
 test('[REGRESSION] a help example can be selected — the app defaults to unselectable', () => {
   // `body { user-select: none }` covers the whole app, and every surface meant to
   // be READ opts back in. The example cards never did, so the only way to take
@@ -17321,13 +17374,17 @@ test('[REGRESSION] no component paints a background in translucent white', () =>
     .map(s => s.trim());
   eq(bad.length, 0,
     `a background painted in translucent white inverts in the light theme: ${bad.join(' | ')}`);
-  // And the six that were converted read from the shared token, so they cannot
-  // drift apart again.
-  for (const sel of ['#msgCfgBar', '.rec-meta', '#rawCfgBar', '#resCfgControls',
-                     '.me-test-cfg', '.audit-cfg-bar']) {
-    const rule = (css.match(new RegExp(sel.replace(/[.#]/g, '\\$&') + '\\s*\\{[^}]*\\}')) || [''])[0];
-    assert.ok(/background:\s*var\(--surface-subhead\)/.test(rule),
-      `${sel} does not take its surface from the shared token`);
+  // There is now ONE rule for a bar, so the token is read once...
+  const shared = (css.match(/\.panel-bar \{[^}]*\}/) || [''])[0];
+  assert.ok(/background:\s*var\(--surface-subhead\)/.test(shared),
+    'the shared bar does not take its surface from the token');
+  // ...and every bar in the app has to actually BE one, or it silently drops
+  // out of the primitive and grows its own look again — which is exactly how
+  // six copies came to exist.
+  for (const id of ['msgCfgBar', 'rawCfgBar', 'resCfgControls', 'recMetaRow', 'auditCfgBar', 'me-test-cfg']) {
+    const tag = (html.match(new RegExp('<div[^>]*id="' + id + '"[^>]*>')) || [''])[0];
+    assert.ok(/class="[^"]*\bpanel-bar\b/.test(tag),
+      `#${id} is not wired to .panel-bar — it will drift: ${tag}`);
   }
 });
 
@@ -17388,7 +17445,7 @@ test('the Overrides column reference has its "?" button', () => {
   assert.ok(/(?:function|const) _meFmToggleHelp\s*[(=]/.test(APP_SRC),
     'and the function it calls exists');
   // It sits with the other toolbar buttons, matching the two ? buttons elsewhere.
-  const tb = html.slice(html.indexOf('<div class="me-fm-toolbar">'),
+  const tb = html.slice(html.indexOf('me-fm-toolbar">'),
                         html.indexOf('</div>', html.indexOf('me-fm-cols-dlg')));
   assert.ok(/me-fm-help-btn/.test(tb), 'inside the Field Map toolbar');
   assert.ok(/class="btn"[^>]*id="me-fm-help-btn"/.test(html),

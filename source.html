@@ -593,12 +593,37 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
 #fmtForceSelect { background: var(--tint-bar); color: var(--text-dim); border: var(--bw) solid transparent; border-radius: 0; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 6px; height: auto; align-self: stretch; cursor: pointer; outline: none; }
 .lw-widget { display: flex; align-items: center; gap: 2px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--sz-mono); color: var(--text-dim); padding: 0 6px 0 4px; }
 .lw-widget.hidden { display: none !important; }
-#msgCfgBar {
-  display:none; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
+/* ── The bar ───────────────────────────────────────────────────────────────
+   A strip of controls sitting one level under a panel header: edge to edge, on
+   --surface-subhead, ruled off from the content below it, with its controls at
+   one height and one size. Written SIX times before this — #msgCfgBar,
+   .rec-meta, #rawCfgBar, #resCfgControls, .audit-cfg-bar and .me-test-cfg each
+   carried its own copy of the same nine declarations, which is how five of them
+   ended up with a hardcoded translucent white and had to be converted one at a
+   time (2026-08-19).
+   One definition now — and the Class Editor finally has one to use. Its sections
+   had no bar at all, so their controls sat inside a padded body: inset from the
+   edges, on the body background, with nothing ruling them off, and filled rather
+   than outlined. Same controls, different everything. Reported 2026-08-22. */
+.panel-bar {
+  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
   background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
   position:relative;
 }
+/* Controls in a bar are outlines, not filled chips: a row of filled buttons
+   reads as objects floating on a strip rather than as one set of controls. */
+.panel-bar .btn { background:none; border: var(--bw-ctl) solid var(--border); color:var(--text-dim);
+  font-family:var(--font-mono); font-size:var(--sz-mono); padding:0 8px;
+  height:calc(var(--sz-mono) + 8px); border-radius:var(--r-sm); cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center; }
+.panel-bar .btn:hover { border-color: var(--h-gray-bd); color:var(--text); }
+.panel-bar select { background:var(--bg-panel); border: var(--bw-ctl) solid var(--border);
+  color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono);
+  padding:0 4px; border-radius:var(--r-sm); height:calc(var(--sz-mono) + 8px); }
+.panel-bar select:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); }
+.panel-bar select:focus { outline:none; border-color:var(--accent); }
+#msgCfgBar { display:none; }   /* shown by script; the rest is .panel-bar */
 #msgCfgBar select { background:var(--bg-panel); border: var(--bw-ctl) solid var(--border); color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 4px; border-radius:var(--r-sm); height:calc(var(--sz-mono) + 8px); }
 #msgCfgBar select:focus { outline:none; border-color:var(--accent); }
 #msgCfgBar select:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); }
@@ -1285,12 +1310,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btype-user    { background: var(--h-gray-bg);  color: #50c878; border: var(--bw-ctl) solid #50c878; }
 
 /* ---- NETARD record metadata bar (top of parse results) ---- */
-.rec-meta {
-  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
-  border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
-  position:relative; font-family:var(--mono);
-}
+.rec-meta { font-family:var(--mono); }
 .rec-meta-pipe { color: var(--border); margin: 0 2px; }
 .rec-meta-route { color: var(--text); }
 .rec-meta-time  { color: var(--text-dim); }
@@ -1335,12 +1355,8 @@ tr.row-filter-hide  { display: none; }
 #resCfgControls .res-filter-input { background: transparent; border-color: transparent; }
 #resCfgControls .res-filter-input:focus { border-color: var(--accent); }
 #resCfgBar { display:none; flex-direction:column; flex-shrink:0; }
-#rawCfgBar {
-  display:none; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
-  border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:var(--surface-subhead); color:var(--text-dim); flex-wrap:wrap;
-  font-family:var(--font-mono); min-height:calc(var(--sz-mono) + 14px);
-}
+#rawCfgBar { display:none; color:var(--text-dim); font-family:var(--font-mono);
+  min-height:calc(var(--sz-mono) + 14px); }
 .panel.collapsed #rawCfgBar { display:none !important; }
 #rawCfgBar:hover { background: var(--tint-bar); cursor: default; }
 #ddlCfgBar {
@@ -1372,17 +1388,8 @@ tr.row-filter-hide  { display: none; }
   color:var(--warn-text); flex-wrap:wrap;
 }
 .res-stale-ico { flex-shrink:0; }
-#resCfgControls {
-  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
-  border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
-  justify-content:flex-end; position:relative;
-}
-#resCfgControls .btn { background:none; border: var(--bw-ctl) solid var(--border); color:var(--text-dim); font-family:var(--font-mono); font-size:var(--sz-mono); padding:0 8px; height:calc(var(--sz-mono) + 8px); border-radius:var(--r-sm); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
-#resCfgControls .btn:hover { border-color: var(--h-gray-bd); color:var(--text); }
-#resCfgControls select { background:var(--bg-panel); border: var(--bw-ctl) solid var(--border); color:var(--text); font-size:calc(var(--sz-mono) - 1px); font-family:var(--font-mono); padding:0 4px; border-radius:var(--r-sm); height:calc(var(--sz-mono) + 8px); align-self:auto; }
-#resCfgControls select:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); }
-#resCfgControls select:focus { outline:none; border-color:var(--accent); }
+#resCfgControls { justify-content:flex-end; }
+#resCfgControls select { align-self:auto; }
 
 /* ===== RESULTS TABLE ===== */
 .tbl-wrap { overflow-y: auto; flex: 1; min-height: 0; scrollbar-gutter: stable; }
@@ -1929,22 +1936,7 @@ td.c-err  { color: var(--accent2); }
 .audit-progress-track { height:5px; background:var(--border); border-radius:var(--r-sm); overflow:hidden; }
 .audit-progress-fill  { height:100%; background:var(--accent); border-radius:var(--r-sm); transition:width 0.12s linear; width:0%; }
 .audit-progress-count { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); }
-.audit-cfg-bar {
-  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
-  border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  /* Same surface as the Class Editor's sidebar section bars — both are a strip
-     of controls sitting one level under a panel header. Was a literal
-     rgba(255,255,255,0.05): a translucent WHITE, which lightens whatever is
-     behind it and so means the opposite thing in the light theme.
-     The other five bars of this shape — #msgCfgBar, .rec-meta, #rawCfgBar,
-     #resCfgControls, .me-test-cfg — carried the same literal and were converted
-     with it (2026-08-19), so every strip of this kind now reads from one token.
-     The literal survives in exactly one place: the --tint-bar definition, which
-     is the theme-correct version of it and is what #fmtForceSelect and the
-     Raw bar's hover use. */
-  background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
-  position:relative;
-}
+/* .audit-cfg-bar is that same bar again — see .panel-bar. */
 .audit-cfg-bar .audit-cfg-field { color:var(--text-dim); }
 .audit-cfg-bar .audit-cfg-val   { color:var(--warning); font-weight:700; }
 .audit-cfg-bar select, .audit-cfg-bar input[type=text] {
@@ -2308,8 +2300,15 @@ td.c-err  { color: var(--accent2); }
   font-size: calc(var(--sz-mono) + 2px); line-height: 1; box-sizing: border-box; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center; transition: all 0.1s; }
 .me-section-hdr:hover .me-section-arr { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
-.me-section-body{padding:14px;display:none;}
+/* The body no longer pads — its CONTENT does. That is what gives a section a
+   bar slot: a .panel-bar sits as a direct child and runs edge to edge, ruled off
+   from what is below it, exactly as on the main page. With the padding here,
+   every control row was inset 14px and floating on the body background, which is
+   what made this surface read as a different app. Reported 2026-08-22. */
+.me-section-body{padding:0;display:none;}
 .me-section-body.open{display:block;}
+.me-section-pad{padding:14px;}
+.me-section{overflow:hidden;}
 /* Gutter reserved, like #ddlTree / .tbl-wrap / .settings-body: without it the
    whole panel shifts sideways the moment content grows enough to need a
    scrollbar, and back again when it does not. */
@@ -2390,12 +2389,7 @@ input.me-inp{width:100%;}
 /* A copy of #msgCfgBar's rule, because it IS that bar in another panel. Kept as
    its own selector rather than added to #msgCfgBar's: the main panel hides its
    copy on body.audit-active and .panel.collapsed, neither of which applies here. */
-.me-test-cfg{
-  display:flex; align-items:center; gap:8px; padding:2px 8px; flex-shrink:0;
-  border-bottom: var(--bw) solid var(--border); font-size:calc(var(--sz-mono) - 1px);
-  background:var(--surface-subhead); color:var(--text); flex-wrap:wrap;
-  position:relative;
-}
+/* .me-test-cfg is that same bar in another panel — see .panel-bar. */
 .me-test-sub.collapsed .me-test-cfg{display:none;}
 .me-test-cfg select{background:var(--bg-panel);border: var(--bw-ctl) solid var(--border);color:var(--text);
   font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);padding:0 4px;border-radius:var(--r-sm);
@@ -2510,7 +2504,18 @@ input.me-inp{width:100%;}
 .me-test-tok-err{color:#f85149;font-style:italic;}
 /* ── Parse Spec ── */
 .me-ps-wrap{display:flex;flex-direction:column;gap:4px;}
-.me-ps-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+/* A section's own controls, in its header — the same place Message Input keeps
+   Audit / Parse / Clear. They were at the foot of the body, which is why every
+   section put its actions somewhere different from every panel on the main page. */
+.me-section-actions{display:flex;align-items:center;gap:6px;margin-left:auto;margin-right:8px;}
+.me-section-actions .btn{background:none;border: var(--bw-ctl) solid var(--border);color:var(--text-dim);
+  font-family:var(--font-mono);font-size:var(--sz-mono);padding:0 8px;
+  height:calc(var(--sz-mono) + 8px);border-radius:var(--r-sm);cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;font-weight:400;}
+.me-section-actions .btn:hover{border-color: var(--h-gray-bd);color:var(--text);}
+/* The Parse Spec's toolbar IS the section's bar now, so it stops being a bare
+   flex row with a margin and takes the shared strip. */
+.me-ps-bar{margin-bottom:0;}
 /* Format button glyph — indented code lines, masked SVG so it follows currentColor */
 .me-ps-fmt-ico{display:inline-block;width:1em;height:1em;vertical-align:-0.15em;background-color:currentColor;
   -webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
@@ -2832,8 +2837,7 @@ tbody tr:hover .me-ps-form-tbl td,
    line is unaffected: the auto margin below already absorbs its free space, so
    there is none left for justify-content to move, and the filter stays over its
    column. */
-.me-fm-toolbar{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;
-  gap:6px;margin-bottom:6px;}
+.me-fm-toolbar{justify-content:flex-end;}
 /* The buttons collect at the right, under the action bar's own controls. The
    filter cannot simply be pushed left by justify-content — its margin-left is
    computed to sit over the FIELD column — so the first button takes the space
@@ -2848,8 +2852,9 @@ input.me-fm-filter{flex:0 0 auto;min-width:0;height:22px;padding:0 8px;border: v
    and the eye sees three groups rather than nine loose pills of random width. */
 /* Packed right, so the controls sit over the end of the table rather than over
    the field names, and the eye meets the selection badge first on its way in. */
-.me-fm-bar{display:flex;align-items:center;justify-content:flex-end;gap:6px;
-  flex-wrap:wrap;margin:9px 0;padding:0 2px;}
+/* A bar now — .panel-bar supplies the surface, padding and height. What stays
+   here is its own alignment. */
+.me-fm-bar{justify-content:flex-end;}
 .me-fm-bar .me-fm-cnt{color:var(--accent);font-weight:700;min-width:78px;font-size:calc(var(--sz-mono) - 1px);}
 .me-fm-bar .me-fm-cnt.none{color:var(--text-very-dim);}
 .me-fm-bar .me-fm-gsep{width:2px;height:15px;background:var(--border);margin:0;}
@@ -3025,10 +3030,18 @@ body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-sele
 /* Parse-spec variant toggles (Binary / ASCII) — patterned after .me-vlg-len.
    Empty + unselected = dim; has-content (in use) = accent text; selected = accent border+bg. */
 .me-ps-variants{display:inline-flex;gap:6px;}
-.me-ps-variant-tgl{height:24px;padding:0 12px;font-size:11px;font-family:var(--mono);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-lg);background:transparent;color:var(--text-very-dim,var(--text-dim));cursor:pointer;letter-spacing:.04em;white-space:nowrap;}
+/* A toggle in a bar is a bar button that can be ON — same height, padding,
+   radius and tracking as Export / Collapse All beside it. It was a 24px pill
+   with its own font size and letter-spacing, which is why this strip read as
+   belonging to a different app. The ON state is .btn-accent-on's, so a pressed
+   toggle looks the same wherever it is. Reported 2026-08-22. */
+.me-ps-variant-tgl{height:calc(var(--sz-mono) + 8px);padding:0 8px;font-size:var(--sz-mono);
+  font-family:var(--font-mono);border: var(--bw-ctl) solid var(--border);border-radius:var(--r-sm);
+  background:none;color:var(--text-dim);cursor:pointer;white-space:nowrap;
+  display:inline-flex;align-items:center;justify-content:center;}
 .me-ps-variant-tgl:hover{color: var(--h-gray-fg);border-color: var(--h-gray-bd);}
 .me-ps-variant-tgl.in-use{color:var(--accent);}
-.me-ps-variant-tgl.on{color:var(--accent);border-color:var(--accent);background:rgba(var(--accent-rgb),0.14);font-weight:700;}
+.me-ps-variant-tgl.on{border-color:var(--accent);color:var(--accent);background:rgba(var(--accent-rgb),0.10);}
 .me-ps-variant-tgl .me-ps-vtgl-n{opacity:0.7;font-weight:400;}
 /* Test-bar format toggles: NETARD-wrapped input disables the toggles and shows a badge */
 /* ── Overrides panel: sparse list on top, read-only reference below ─────────
@@ -3327,7 +3340,7 @@ th.me-fm-colhi{color:var(--accent);}
         </div>
         <button class="panel-toggle" id="msgToggle" onclick="togglePanel('msgPanel','msgToggle','ddlResizer')" title="Hide panel">−</button>
       </div>
-      <div id="msgCfgBar">
+      <div id="msgCfgBar" class="panel-bar">
         <select id="fmtForceSelect" onchange="onFmtForceChange()" title="Force input format (overrides auto-detect)">
           <option value="">AUTO</option>
           <option value="ascii">ASCII</option>
@@ -3371,7 +3384,7 @@ th.me-fm-colhi{color:var(--accent);}
           <!-- Browser (shown when scan is done) -->
           <div id="auditBrowserReady" style="display:none;flex:1;flex-direction:column;min-height:0;overflow:hidden">
             <!-- Combined filter + cfg bar -->
-            <div id="auditCfgBar" class="audit-cfg-bar">
+            <div id="auditCfgBar" class="panel-bar audit-cfg-bar">
               <div id="auditFltGrpSrc" class="audit-flt-group">
                 <span class="audit-cfg-field">Source:</span>
                 <select id="auditFltSrc" onchange="auditApplyFilter()" style="max-width:calc(var(--sz-mono) * 11)"><option value="">All</option></select>
@@ -3484,7 +3497,7 @@ th.me-fm-colhi{color:var(--accent);}
           <span class="res-stale-ico">&#9888;</span>
           <span id="resStaleText">Showing an earlier parse &mdash; the message has changed since. Press Parse to refresh.</span>
         </div>
-        <div class="rec-meta" id="recMetaRow" style="display:none">
+        <div class="panel-bar rec-meta" id="recMetaRow" style="display:none">
           <span id="recMetaContent" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0"></span>
           <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0;margin-left:auto">
             <button class="btn" onclick="prevMsg()">&lt;</button>
@@ -3492,7 +3505,7 @@ th.me-fm-colhi{color:var(--accent);}
             <button class="btn" onclick="nextMsg()">&gt;</button>
           </div>
         </div>
-        <div id="resCfgControls">
+        <div id="resCfgControls" class="panel-bar">
           <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
           <span id="segMapBar" style="display:none;align-items:center;gap:5px;flex-shrink:0">
             <span style="font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);letter-spacing:0.04em">SEG-MAP</span>
@@ -3536,7 +3549,7 @@ th.me-fm-colhi{color:var(--accent);}
         <span class="panel-title" id="rawTitle">Raw Message</span>
         <button class="panel-toggle" id="rawToggle" onclick="togglePanel('rawPanel','rawToggle','resResizer')" title="Hide panel">−</button>
       </div>
-      <div id="rawCfgBar">
+      <div id="rawCfgBar" class="panel-bar">
         <span id="rawInfo"></span>
       </div>
       <div class="panel-body">
@@ -16812,7 +16825,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.40.0.0';
+const APP_VERSION  = '1.41.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19050,6 +19063,15 @@ const _ME_SECT_LOADING =
 const _ME_SECT_LOADING_DET =
   '<div class="me-sect-loading"><div class="me-progress"><div class="me-progress-fill"></div></div></div>';
 
+const _meRecActionsHtml = () =>
+  `<button class="btn" onclick="_meNewRec()">+ Add Recognizer</button>` +
+  `<button class="btn btn-ico" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>`;
+const _meBindActionsHtml = () =>
+  `<button class="btn" onclick="_meBindAdd()">+ Add Binding</button>`;
+// The spec's own controls stay in its bar — they belong with the variant
+// toggles they sit beside. The header carries nothing for this section.
+const _mePsActionsHtml = () => '';
+
 function _meRenderRight() {
   const seq = ++_meRenderSeq;
   // Capture the Field Map scroll position before the rebuild so DE/VLG/type
@@ -19074,33 +19096,42 @@ function _meRenderRight() {
   const isMsg  = _meState.section === 'msg';
   const secs   = _meState.sections;
   const stages = [];   // open sections, filled one per frame in order
-  const sect   = (key, title, fill) => {
+  // `actions` are the section's own controls, shown in its header the way
+  // Message Input shows Audit / Parse / Clear rather than loose in the body.
+  // They stop the click that would collapse the section.
+  const sect   = (key, title, fill, actions) => {
     const open = secs[key];
     if (open) stages.push({ key, fill });
     const loading = key === 'overrides' ? _ME_SECT_LOADING_DET : _ME_SECT_LOADING;
     return `<div class="me-section">
   <div class="me-section-hdr" onclick="_meSectionToggle('${key}')">
-    <span>${title}</span><span class="me-section-arr">${open ? '−' : '+'}</span>
+    <span>${title}</span>
+    <span class="me-section-actions" onclick="event.stopPropagation()">${open && actions ? actions : ''}</span>
+    <span class="me-section-arr">${open ? '−' : '+'}</span>
   </div>
   <div class="me-section-body${open ? ' open' : ''}" id="me-sect-body-${key}">${open ? loading : ''}</div>
 </div>`;
   };
-  const syncFill = build => (el, done) => { el.innerHTML = build(); done(); };
+  // What a section fills is padded CONTENT unless it says otherwise — a bar opts
+  // out by being emitted beside the pad rather than inside it.
+  const pad = html => `<div class="me-section-pad">${html}</div>`;
+  const syncFill = build => (el, done) => { el.innerHTML = pad(build()); done(); };
   let html = sect('identity',    'Identity',    syncFill(() => _meHtmlId(item)))
            + sect('recognizers', 'Recognizers', (el, done) => {
-               el.innerHTML = _meHtmlRecs(item);
+               el.innerHTML = pad(_meHtmlRecs(item));
                _meHelpInitSplit('rec');   // the reference beside the list
                done();
-             });
+             }, _meRecActionsHtml());
   if (isMsg) {
     // Bindings before the spec: the spec's blocks name fields the bindings
     // resolve, so the order down the page is the order the engine reads them in.
-    html += sect('ddl_bindings', 'DDL Bindings', syncFill(() => _meHtmlDDLBindings(item)))
+    html += sect('ddl_bindings', 'DDL Bindings', syncFill(() => _meHtmlDDLBindings(item)),
+                 _meBindActionsHtml())
           + sect('parse_spec',   'Parse Spec',  (el, done) => {
               el.innerHTML = _meHtmlParseSpec(item);
               _mePsMountCM(item);
               done();
-            })
+            }, _mePsActionsHtml())
           + sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done));
   }
   body.innerHTML = html;
@@ -19171,14 +19202,13 @@ function _meHtmlParseSpec(item) {
   // used to be added by the live toggle alone, so a re-render with the
   // reference open kept the column reserved around a display:none panel and the
   // editor sat at half width beside nothing.
-  return `<div class="me-ps-wrap side${_mePsHelpOpen() ? '' : ' nohelp'}" id="me-ps-wrap">
-  <div class="me-ps-toolbar">
+  return `<div class="panel-bar me-ps-bar">
     <div class="me-ps-variants" id="me-ps-variants">
       <button class="me-ps-variant-tgl ${binCls}" data-variant="binary" onclick="_mePsSwitchVariant('binary')" title="Binary Input — the default variant; used for hex / tandem-dump / ebcdic / netard-hex / etc.">Binary <span class="me-ps-vtgl-n">(${binCount})</span></button>
       <button class="me-ps-variant-tgl ${ascCls}" data-variant="ascii" onclick="_mePsSwitchVariant('ascii')" title="ASCII Input — used for ASCII-class input (ascii, netard-ascii, netard, fup-ascii); when empty it falls back to the Binary spec.">ASCII <span class="me-ps-vtgl-n">(${ascCount})</span></button>
     </div>
     <div id="me-spec-warns" class="me-warn-inline" style="margin-left:12px">${_meSpecWarnsHtml(item)}</div>
-    <div class="me-ps-variants" style="margin-left:auto" title="Re-format the spec: one line per block, or one line per attribute. Comments and trailing commas are preserved.">
+    <div class="me-ps-variants" id="me-ps-fmt" style="margin-left:auto" title="Re-format the spec: one line per block, or one line per attribute. Comments and trailing commas are preserved.">
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? ' on' : ''}" onclick="_mePsSetFmtMode('compact')">Compact</button>
       <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? '' : ' on'}" onclick="_mePsSetFmtMode('expanded')">Expanded</button>
     </div>
@@ -19190,6 +19220,8 @@ function _meHtmlParseSpec(item) {
     </span>
     <button class="btn" onclick="_mePsToggleHelp()" title="Block type reference">?</button>
   </div>
+  <div class="me-section-pad">
+  <div class="me-ps-wrap side${_mePsHelpOpen() ? '' : ' nohelp'}" id="me-ps-wrap">
   <div class="me-ps-split me-hs-fixed" id="me-ps-split">
     <div class="me-ps-cm cm-host" id="me-ps-ta-host"></div>
     <div class="me-ps-col-resizer" id="me-ps-col-resizer" title="Drag to resize the block reference"></div>
@@ -19198,7 +19230,8 @@ function _meHtmlParseSpec(item) {
   <div class="me-ps-split-resizer" id="me-ps-split-resizer" title="Drag to resize the spec editor"></div>
   <div id="me-ps-err" class="me-ps-err"></div>
   <div id="me-ps-lint" class="me-ps-lint"></div>
-</div>`;
+  </div>
+  </div>`;
   // Note: ${raw} no longer used here — the CodeMirror editor is mounted by
   // _meRenderRight() after innerHTML is set, seeded from item[srcField].
 }
@@ -22725,7 +22758,12 @@ function _mePsFmtMode() {
 }
 function _mePsSetFmtMode(mode) {
   try { localStorage.setItem(_ME_PS_FMT_KEY, mode === 'compact' ? 'compact' : 'expanded'); } catch (_) {}
-  document.querySelectorAll('.me-ps-toolbar .me-ps-variants .me-ps-variant-tgl').forEach(b =>
+  // #me-ps-fmt, not every .me-ps-variants in the bar: the Binary / ASCII group
+  // carries the same class, so the broad selector marked the format mode ON and
+  // in the same pass turned the ACTIVE VARIANT off. It looked like the spec had
+  // no variant selected until the next re-render put it back. Predates the bar
+  // work — found while checking it. Reported 2026-08-22.
+  document.querySelectorAll('#me-ps-fmt .me-ps-variant-tgl').forEach(b =>
     b.classList.toggle('on', b.textContent.trim().toLowerCase() === mode));
   _mePsFmt();     // the choice IS the action — re-format straight away
 }
@@ -22772,8 +22810,7 @@ function _meHtmlDDLBindings(item) {
   <button class="me-rb del" onclick="_meBindDel(${i})" title="Remove">✕</button>
 </div>`;
   });
-  h += `</div>
-<div style="display:flex;justify-content:flex-end"><button class="btn" onclick="_meBindAdd()" style="margin-top:6px">+ Add Binding</button></div>`;
+  h += `</div>`;   // + Add Binding is in the section header now
   return h;
 }
 
@@ -23089,11 +23126,13 @@ function _meOverridesPrep(item) {
   const colsRows = _ME_FM_COLS.map(([k, label]) =>
     `<div class="audit-cfg-row"><label>${label}</label><button class="panel-toggle" id="me-fm-ccol-${k}" onclick="_meFmToggleColVis('${k}')">−</button></div>`
   ).join('');
-  const chrome = bodyRows => warnHtml + `
-<div class="me-ps-wrap side${fmHelpOpen ? '' : ' nohelp'}" id="me-fm-wrap">
-<div class="me-ps-split" id="me-fm-split">
-<div class="me-hs-main" id="me-fm-pane">
-<div class="me-fm-bar" id="me-fm-bar">
+  // The two control rows are the section's BARS — hoisted out of the split so
+  // they run edge to edge under the header, the way Parse Results stacks its
+  // meta strip and its toolbar. Inside the split they were inset by the body's
+  // padding and sat on the body background, which is what made this surface read
+  // as a different app from the main page. Reported 2026-08-22.
+  const chrome = bodyRows => `
+<div class="panel-bar me-fm-bar" id="me-fm-bar">
   <span class="me-ovl-ro none" id="me-fm-cnt" title="What you have selected, and how much of it already carries each kind of override">0 fields</span>
   ${_ME_OV_KINDS.map(k => `
   <span class="me-ovb k-${k.id}" data-kind="${k.id}">
@@ -23102,7 +23141,7 @@ function _meOverridesPrep(item) {
   </span>`).join('')}
   <button class="btn me-ovb-clrall" id="me-fm-clr-all" disabled>\u2715 Clear</button>
 </div>
-<div class="me-fm-toolbar">
+<div class="panel-bar me-fm-toolbar">
   <input type="text" class="me-fm-filter" placeholder="Filter…" oninput="_meFmFilter(this.value)">
   <button class="btn" id="me-fm-ovr-btn" onclick="_meFmSetOvOnly(!(_meState \u0026\u0026 _meState.fmOvOnly))"
     title="Overridden 0 / All fields">Overridden (<span id="me-fm-ovr-n">0</span>)</button>
@@ -23127,6 +23166,11 @@ function _meOverridesPrep(item) {
     </div>
   </div>
 </div>
+<div class="me-section-pad">
+${warnHtml}
+<div class="me-ps-wrap side${fmHelpOpen ? '' : ' nohelp'}" id="me-fm-wrap">
+<div class="me-ps-split" id="me-fm-split">
+<div class="me-hs-main" id="me-fm-pane">
 <div class="me-fm-ed" id="me-fm-ed">
   <label id="me-fm-ed-lbl"></label>
   <select id="me-fm-ed-sel" style="display:none"></select>
@@ -26322,10 +26366,11 @@ function _meHtmlRecs(item) {
   // path shoved the field under the cursor. Sharing the button row, it occupies
   // space the row already reserves, so the section's height does not depend on
   // whether a warning is showing.
+  // The buttons moved to the section header — a section's actions belong where
+  // Message Input keeps Audit / Parse / Clear, not at the foot of its content.
+  // The warnings stay here, beside the list they describe.
   h += `<div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:8px">
     <div id="me-file-warns" class="me-warn-inline">${_meRecWarnsHtml(item)}</div>
-    <button class="btn" onclick="_meNewRec()">+ Add Recognizer</button>
-    <button class="btn" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>
   </div>`;
   if (_meState.editRec === -2) {
     const newRec = (_meState.pend && _meState.pend[-2] !== undefined) ? _meState.pend[-2] : { type: 'literal' };
@@ -33241,7 +33286,7 @@ function _meSave() {
                a format only that panel could force sent the user straight back.
                The one addition is SEG-MAP, which is a per-test override with no
                equivalent on the main panel. -->
-          <div class="me-test-cfg" id="me-test-cfg">
+          <div class="panel-bar me-test-cfg" id="me-test-cfg">
             <select id="me-test-fmt" onchange="_meTestFmtChange()" title="Force input format (overrides auto-detect)">
               <option value="">AUTO</option>
               <option value="ascii">ASCII</option>

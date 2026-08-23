@@ -384,8 +384,203 @@ function byName(fields, name) {
   return fields.find(f => f.name.toUpperCase() === name.toUpperCase());
 }
 
+// ── Inlined fixtures ────────────────────────────────────────────────────────
+// These were read from test/ at run time. That folder is deliberately untracked
+// — 46MB of DDL and audit captures, most of it nothing to do with the suite — so
+// a fresh clone had the harness but not the eight files it opens, and
+// `node test.js` died on ENOENT before running a single test. Copied in here
+// verbatim (a few KB); the originals stay on disk where they were.
+// TODO item 5, 2026-08-23.
+// test/DDL-Tests/DEF address.
+const FIX_DDL_ADDRESS = `* Test group definition with nested group descriptions and various PIC types
+DEF address.
+    03 street-address.
+        05 street-no PIC X(8).
+        05 street PIC X(12).
+        05 apt-no PIC X(4).
+    03 city PIC X(14).
+    03 state-cd PIC X(2).
+    03 zip PIC X(5).
+END.
+`;
+
+// test/DDL-Tests/DEF binary-pictures.
+const FIX_DDL_BINARY_PICS = `* Test PICTURE clauses for binary (COMP) storage types: 2-byte, 4-byte, and 8-byte integers
+DEF binary-pictures.
+    02 binary-int PIC 9(4) COMP. ! 2-byte unsigned integer
+    02 binary-int-s PIC 9S(4) COMP. ! 2-byte signed integer
+    02 binary-int2 PIC 9(5) COMP. ! 4-byte unsigned integer
+    02 binary-int2-s PIC S9(5) COMP. ! 4-byte signed integer
+    02 binary-int4 PIC 9(10) COMP. ! 8-byte unsigned integer
+    02 binary-int4-s PIC S9(10) COMP. ! 8-byte signed integer
+END.
+`;
+
+// test/DDL-Tests/DEF employee-odo.
+const FIX_DDL_EMPLOYEE_ODO = `* Test OCCURS DEPENDING ON clause for variable-length repetition
+* The number of dep-name repetitions depends on the value of num-dep at runtime
+DEF name.
+    02 last-name PIC X(12).
+    02 first-name PIC X(8).
+    02 midinit PIC X(2).
+END
+DEF addr.
+    02 address PIC X(22).
+    02 city PIC X(14).
+    02 state PIC X(2).
+    02 zip PIC 9(5).
+END
+DEF employee.
+    02 emp-name TYPE name.
+    02 emp-addr TYPE addr.
+    02 num-dep TYPE BINARY 16 MUST BE 0 THRU 12.
+    02 dep-name TYPE name
+        OCCURS 0 TO 12 TIMES
+        DEPENDING ON num-dep.
+END
+`;
+
+// test/DDL-Invalid/DEF missing-end.
+const FIX_BAD_MISSING_END = `* INVALID: Group definition is never closed — END statement is missing entirely
+DEF missing-end.
+    02 field-a PIC X(10).
+    02 field-b PIC 9(4).
+    02 inner-group.
+        04 sub-1 PIC X(5).
+        04 sub-2 PIC 9(2).
+`;
+
+// test/DDL-Invalid/DEF invalid-pic-char.
+const FIX_BAD_PIC_CHAR = `* INVALID: "Z" is not a valid PIC symbol — only X S A N P 9 V T are allowed
+DEF invalid-pic-char.
+    02 bad-field PIC Z(5).
+    02 good-field PIC X(5).
+END.
+`;
+
+// test/DDL-Invalid/DEF redefines-larger.
+const FIX_BAD_REDEF_LARGER = `* POTENTIAL ISSUE: COBOL requires a redefining structure not to be smaller than what it redefines
+* "larger-redef" is 22 bytes but "big-original" is 20 bytes — this is invalid.
+DEF redefines-smaller.
+    02 big-original PIC X(20).
+    02 larger-redef REDEFINES big-original.
+        04 only-two PIC 9(22).
+END.
+`;
+
+// test/FUP-test/fup-copy-ascii.txt
+const FIX_FUP_ASCII = `$PROD.MESSAGES.MSGIN  RECORD 0  KEY 0  (%0)  LEN 70  13MAY26 09;15
+    0:  ..00200000800000160.       90123456789.     67890123456 ....1P1A^SUPPO
+   35:              000001600123456789012345678901234567890123345678
+   70:  020 8901234567890123456789012345678
+  110:
+ 1100:  020 89012                                   34567890123456789012345678
+
+$PROD.MESSAGES.MSGIN  RECORD 1  KEY 1  (%1)  LEN 140  13MAY26 09;16
+000:  0200602000008000001600123456789012345678901234567890123456789012345678
+070:  9012345678901234567890123456789012345678901234567890123456789012345678
+
+$PROD.MESSAGES.MSGIN  RECORD 2  KEY 2  (%2)  LEN 35  13MAY26 09;17
+000:  02106020000080000016001234567890123456789012345678901234567
+
+
+
+
+ 1110..00200000800000160.       90123456789.     67890123456 ....1P1A^SUPPO
+ 2235              000001600123456789012345678901234567890123345678
+      020 8901234567890123456789012345678
+      
+ 1100  020 89012                                   34567890123456789012345678`;
+
+// test/FUP-test/fup-copy-hex.txt
+const FIX_FUP_HEX = `\\SYS1.$DATA.FINANCE.TXNLOG  RECORD 0  KEY 0  (%0)  LEN 20  13MAY26 14;30
+ 000:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 008:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 010:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 018:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 020:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 028:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 030:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 038:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 040:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 048:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 050:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 058:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 060:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 068:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 070:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 078:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 080:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 088:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 090:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 098:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 0A0:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 0A8:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 0B0:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 0B8:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 0C0:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 0C8:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 0D0:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 0D8:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 0E0:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 0E8:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 0F0:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 0F8:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 100:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+ 108:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+
+$DATA.FINANCE.TXNLOG  RECORD 1  KEY 1  (%1)  LEN 32  13MAY26 14;31
+ 000:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 016:   3536   3738   3930   3131    3232   3333   3434   3535 5678901122334455
+
+$DATA.FINANCE.TXNLOG  RECORD 5  KEY 1234567890  (%11145524722)  LEN 8  13MAY26 14;35
+ 000:   3033   3130   6020   0000    2020   2020   2020   2020 0310\` ..
+
+$DATA.FINANCE.TXNLOG  RECORD 9  KEY 99999999999999999999999999999999
+ 000:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
+ 016:   3536   3738   3930   2020    2020   2020   2020   2020 567890
+`;
+
+// test/DDL-Invalid/DEF redefines-smaller.
+const FIX_BAD_REDEF_SMALLER = `* POTENTIAL ISSUE: COBOL requires a redefining structure not to be smaller than what it redefines
+* "small-redef" is 2 bytes but "big-original" is 20 bytes — this is invalid in strict COBOL mode
+DEF redefines-smaller.
+    02 big-original PIC X(20).
+    02 small-redef REDEFINES big-original.
+        04 only-two PIC 9(2).
+END.
+`;
+
+// test/DDL-Invalid/DEF unresolved-type.
+const FIX_BAD_UNRESOLVED_TYPE = `* INVALID: TYPE references "nonexistent-def" which has never been defined in the dictionary
+DEF unresolved-type.
+    02 field-a PIC X(5).
+    02 field-b TYPE nonexistent-def.
+    02 field-c PIC 9(3).
+END.
+`;
+// Keyed by PATH so the call sites still name the file they came from — the path
+// is the fixture's identity, and a bare constant name loses where it lives.
+const FIXTURES = {
+  'test/DDL-Tests/DEF address.':            FIX_DDL_ADDRESS,
+  'test/DDL-Tests/DEF binary-pictures.':    FIX_DDL_BINARY_PICS,
+  'test/DDL-Tests/DEF employee-odo.':       FIX_DDL_EMPLOYEE_ODO,
+  'test/DDL-Invalid/DEF missing-end.':      FIX_BAD_MISSING_END,
+  'test/DDL-Invalid/DEF invalid-pic-char.': FIX_BAD_PIC_CHAR,
+  'test/DDL-Invalid/DEF redefines-larger.': FIX_BAD_REDEF_LARGER,
+  'test/DDL-Invalid/DEF redefines-smaller.': FIX_BAD_REDEF_SMALLER,
+  'test/DDL-Invalid/DEF unresolved-type.': FIX_BAD_UNRESOLVED_TYPE,
+  'test/FUP-test/fup-copy-ascii.txt':       FIX_FUP_ASCII,
+  'test/FUP-test/fup-copy-hex.txt':         FIX_FUP_HEX,
+};
+
 function fixtureText(relPath) {
-  return fs.readFileSync(relPath, 'utf8');
+  const inlined = FIXTURES[relPath];
+  if (inlined !== undefined) return inlined;
+  // Nothing should reach here. Reading a NEW fixture off disk brings the ENOENT
+  // back, so name the file rather than failing deep inside whichever test asked.
+  throw new Error(`fixture "${relPath}" is not inlined — add it to FIXTURES `
+    + `(test/ is untracked, so a fresh clone cannot read it)`);
 }
 
 // ── picSize ──────────────────────────────────────────────────────────────────

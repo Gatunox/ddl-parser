@@ -177,7 +177,7 @@ legacy hardcodes.
 
 ---
 
-## 5. [ ] Version the test fixtures
+## 5. [x] Version the test fixtures — *closed differently, 2026-08-23*
 
 `test/` is gitignored, so the segmented-file DDLs, generated samples and
 `gen-seg-samples.js` — the reproduction for all three Base24 seg-map variants —
@@ -190,9 +190,22 @@ existing only on this machine — 528 tests and 1472 baseline cases with no copy
 anywhere. They are tracked again, so `npm test` works on a fresh clone and the
 harness survives this laptop.
 
-What is still open is the original item: `test/` remains gitignored, so the
-segmented-file DDLs and generated samples — the reproduction for all three
-Base24 seg-map variants — are still single-copy.
+**Closed by removing the dependency instead, 2026-08-23.** `test/` stays
+untracked — that is settled, and it is 46MB of DDL and audit captures, 43 of them
+in AUDIT-Test alone. The problem worth solving was never the versioning: it was
+that the SUITE read ten files out of that folder, so a fresh clone had the
+harness and not its fixtures and `node test.js` died on ENOENT before running a
+single test.
+
+Those ten are inlined in `test.js` now (about 7KB), keyed by their original path
+so each call site still names the file it came from, and `fixtureText` throws by
+name if anyone adds an eleventh. Proven by cloning the repo to a temp directory —
+where `test/` does not exist — and running both harnesses there: 977 tests, 1472
+baseline cases.
+
+The originals stay on disk. What remains single-copy is the rest of `test/` — the
+segmented-file DDLs, the huge-DDL perf sample, the audit captures — none of which
+the suite opens. That is a backup question, not a repository one.
 
 ---
 

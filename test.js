@@ -5051,19 +5051,57 @@ test('an armed override actually parses, through the shared shell', () => {
   }
 });
 
-test('stop-if-empty is filed under Control, not under reading bytes', () => {
+test('stop with no condition is unconditional, and an unknown one is refused', () => {
+  // The block is `stop`: on its own it ends the run where it sits, and
+  // `condition` narrows that to a named situation. Designed that way so the set
+  // of conditions can grow — EOD is the first because it is the one a spec
+  // cannot otherwise express. Requested 2026-08-22.
+  S.ddlTree = { V: { S: { D: 'DEFINITION MSG.\n  02 A PIC X(2).\nEND\n' } } };
+  S.inputFormat = 'ascii';
+  const run = (blocks, msg) => meExecParseSpec(
+    migrateOverrides({ ddl_bindings: ['V/S/D/MSG'], parse_spec_binary: blocks }), Buffer.from(msg));
+
+  // No condition: stops even though there are bytes left.
+  const bare = run([{ 'read-fixed': { length: 2, as: 'HEAD' } },
+                    { 'stop': true },
+                    { 'read-fixed': { length: 2, as: 'NEVER' } }], 'ABCD');
+  eq(bare.fields.map(f => f.id).join(','), 'HEAD', 'a bare stop did not stop');
+  eq(bare.fields.filter(f => f.error).length, 0, 'a bare stop reported something');
+
+  // The empty object form is still "no condition given".
+  eq(run([{ 'stop': {} }, { 'read-fixed': { length: 2, as: 'NEVER' } }], 'ABCD')
+       .fields.length, 0, '{"stop": {}} did not stop');
+
+  // An unknown condition is REPORTED and IGNORED — it must not silently end a
+  // parse, and must not silently be skipped.
+  const bad = run([{ 'read-fixed': { length: 2, as: 'HEAD' } },
+                   { 'stop': { condition: 'WHENEVER' } },
+                   { 'read-fixed': { length: 2, as: 'AFTER' } }], 'ABCD');
+  assert.ok(bad.fields.some(f => /is not a condition/.test(f.error || '')),
+    `an unknown condition passed silently: ${JSON.stringify(bad.fields.map(f => f.error).filter(Boolean))}`);
+  assert.ok(bad.fields.some(f => f.id === 'AFTER'),
+    'an unknown condition ended the run — it must be ignored, not obeyed');
+
+  // Spelling: the condition is matched case- and separator-insensitively, so
+  // "eod" and "E-O-D" are the same word, not three different unknown ones.
+  for (const c of ['EOD', 'eod', 'E-O-D'])
+    eq(run([{ 'stop': { condition: c } }, { 'read-fixed': { length: 2, as: 'AFTER' } }], '')
+         .fields.filter(f => f.error).length, 0, `condition ${c} was not recognised`);
+});
+
+test('stop is filed under Control, not under reading bytes', () => {
   // It reads nothing and emits nothing — it ends the run. It was first filed
   // beside `skip` because that is where its help entry was written, which is a
   // reason about the source, not about what the block does. Reported 2026-08-22.
   const src = fs.readFileSync('./source.html', 'utf8');
   const groups = src.slice(src.indexOf('const _PS_GROUPS = ['), src.indexOf('// The block view is assembled'));
   const control = groups.slice(groups.indexOf("name: 'Control'"), groups.indexOf("name: 'Tokens'"));
-  assert.ok(/'stop-if-empty'/.test(control), 'the stop block is not grouped with the control blocks');
+  assert.ok(/'stop'/.test(control), 'the stop block is not grouped with the control blocks');
   const raw = groups.slice(groups.indexOf("name: 'Read raw bytes'"), groups.indexOf("name: 'Maps & nested'"));
-  assert.ok(!/'stop-if-empty'/.test(raw), 'it is still filed as a way of reading bytes');
+  assert.ok(!/'stop'/.test(raw), 'it is still filed as a way of reading bytes');
 });
 
-test('stop-if-empty: one spec reads the short shape and the long one', () => {
+test('stop condition EOD: one spec reads the short shape and the long one', () => {
   // Reported from production 2026-08-22: one record with two shapes — hoppers,
   // and hoppers WITH recycle. Two classes were merged into one because they were
   // nearly identical, and the long shape parsed fine. The short one did not: the
@@ -5074,7 +5112,7 @@ test('stop-if-empty: one spec reads the short shape and the long one', () => {
   S.inputFormat = 'ascii';
   const SPEC = [
     { 'read-fixed': { length: 2, as: 'HOPPERS' } },
-    { 'stop-if-empty': true },
+    { 'stop': { condition: 'EOD' } },
     { 'read-fixed': { length: 1, as: 'RECYCLE-FLAG' } },
     { 'when': { field: 'RECYCLE-FLAG', equal: 'Y',
                 then: [{ 'read-fixed': { length: 2, as: 'RECYCLE' } }] } },
@@ -5101,13 +5139,13 @@ test('stop-if-empty: one spec reads the short shape and the long one', () => {
 
   // Without the block, the reported failure: two errors on a correct message.
   const noStop = meExecParseSpec(migrateOverrides({ ddl_bindings: ['V/S/D/MSG'],
-    parse_spec_binary: SPEC.filter(b => !b['stop-if-empty']) }), Buffer.from('AB'));
+    parse_spec_binary: SPEC.filter(b => !b['stop']) }), Buffer.from('AB'));
   const errs = noStop.fields.filter(f => f.error).map(f => f.error);
   assert.ok(errs.some(e => /not yet read/.test(e)),
     `the "not yet read" error is gone, so this test no longer pins the reported case: ${errs.join(' | ')}`);
 });
 
-test('stop-if-empty ends the run at any depth, and only when nothing is left', () => {
+test('stop ends the run at any depth, and only when its condition holds', () => {
   // It ends the RUN, not the innermost block — a stop inside a loop body has to
   // end the loop too, or the next pass reads past the end anyway.
   S.ddlTree = { V: { S: { D: 'DEFINITION MSG.\n  02 A PIC X(2).\nEND\n' } } };
@@ -5121,7 +5159,7 @@ test('stop-if-empty ends the run at any depth, and only when nothing is left', (
   const rep = run([
     { 'read-fixed': { length: 1, as: 'CNT' } },
     { 'repeat': { count: 'CNT', body: [
-      { 'stop-if-empty': true },
+      { 'stop': { condition: 'EOD' } },
       { 'read-fixed': { length: 2, as: 'ITEM' } },
     ] } },
   ], '2AB');
@@ -5133,7 +5171,7 @@ test('stop-if-empty ends the run at any depth, and only when nothing is left', (
   // Inside a when branch: same rule, and blocks AFTER the when do not run either.
   const inWhen = run([
     { 'read-fixed': { length: 2, as: 'HEAD' } },
-    { 'when': { field: 'HEAD', equal: 'AB', then: [{ 'stop-if-empty': true }] } },
+    { 'when': { field: 'HEAD', equal: 'AB', then: [{ 'stop': { condition: 'EOD' } }] } },
     { 'read-fixed': { length: 2, as: 'NEVER' } },
   ], 'AB');
   eq(inWhen.fields.map(f => f.id).join(','), 'HEAD', 'a stop inside a branch did not end the run');
@@ -5146,7 +5184,7 @@ test('stop-if-empty ends the run at any depth, and only when nothing is left', (
     'the dispatcher no longer honours the stop, so only loop bodies respect it');
 
   // And it is a no-op with bytes left — not a stop, not an error, no row.
-  const plenty = run([{ 'stop-if-empty': true },
+  const plenty = run([{ 'stop': { condition: 'EOD' } },
                       { 'read-fixed': { length: 2, as: 'HEAD' } }], 'AB');
   eq(plenty.fields.map(f => f.id).join(','), 'HEAD', 'it stopped with bytes still to read');
 });
@@ -14610,7 +14648,7 @@ const PS_EXEC_FNS = {
   'skip':                ['_meExecBlockAt'],
   // Handled inline in the dispatcher — it sets a flag rather than reading
   // anything, so there is no exec function of its own to point at.
-  'stop-if-empty':       ['_meExecBlock'],
+  'stop':                ['_meExecBlock'],
   'when':                ['_meExecWhen'],
   'repeat':              ['_meExecRepeat'],
   'read-while':          ['_meExecReadWhile'],

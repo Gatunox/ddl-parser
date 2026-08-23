@@ -17055,7 +17055,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.40.0';
+const APP_VERSION  = '1.46.41.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19746,7 +19746,7 @@ const _PS_GROUPS = [
     ['when',                'Branch on a field already read'],
     ['repeat',              'Loop N times from a count'],
     ['read-while',          'Loop while a guard matches'],
-    ['stop-if-empty',       'End cleanly if the data ran out here'],
+    ['stop',                'End the run here, always or on a condition'],
   ]},
   { name: 'Tokens', items: [
     ['token-area',          'Cherry-pick the 2-byte-prefixed tokens'],
@@ -20760,36 +20760,50 @@ const _PS_HELP = {
         [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}}, "unknown": "skip"}}]],
     ],
   },
-  'stop-if-empty': {
-    desc: 'Ends the parse cleanly if there are no bytes left. If bytes remain, does nothing and the spec carries on.',
+  'stop': {
+    desc: 'Ends the run where it sits. On its own it always stops; with a <code>condition</code> it stops only in that situation and otherwise does nothing.',
+    dflts: {
+      condition: 'none — the stop is <b>unconditional</b>: the spec ends the moment this block is read',
+    },
     useWhen: [
-      'One record has <b>two shapes</b> — a short one and a longer one that carries extra groups — and you read them with a single spec.',
+      'The spec has read everything the message can hold and the blocks after it belong to a <b>longer shape</b> of the same record.',
+      'One record has <b>two shapes</b> — a short one, and a longer one carrying extra groups — and you read both with a single spec.',
       'The spec has to <b>read a field to decide</b> which shape it has, and on the short shape that field is not there.',
-      'You want the message that legitimately ENDS here to parse clean, while bytes running out <b>anywhere else</b> stays an error.',
     ],
-    attrs: [],
+    attrs: [
+      ['condition', '"EOD"', false, [
+        'When to stop. Leave it out and the stop is unconditional.',
+        '<code>"EOD"</code> — <b>end of data</b>: stop if no bytes are left at the cursor. If bytes remain the block does nothing and the spec carries on.',
+        'Inside a <code>de</code> entry the ELEMENT’s end counts as the end of data, not the message’s — the same rule <code>read-fixed</code> follows there.',
+        'A condition that is not recognised is <b>reported and ignored</b>: one nobody implemented must not silently end a parse.',
+        'More conditions can be added here; this is the place they go.',
+      ]],
+    ],
     notes: [
-      'Place it where ending is legal. Everything after it runs only if bytes remain.',
-      'Without it the read past the end fails, and a <code>when</code> that names the field it should have produced then reports <b>“Field … not yet read”</b> — two errors describing a message that is correct.',
       'It ends the whole run, at any depth: inside a <code>when</code> branch, a <code>repeat</code> body or a <code>read-while</code> body it stops the loop as well, not just that pass.',
-      'Inside a <code>de</code> entry the element’s own end counts as empty, not the message’s.',
-      'It is a block you PLACE, not a mode you switch on, because ending is only legal where the spec says it is.',
+      'Ending is only legal where the spec SAYS it is — which is why this is a block you place, not a mode you switch on. Bytes running out anywhere else stays a real error, because that is how a misread length announces itself.',
+      'Without it, a read past the end fails and a <code>when</code> naming the field it should have produced then reports <b>“Field … not yet read”</b> — two errors describing a message that is correct.',
     ],
     examples: [
-      { what: '<b>the short shape</b> — the record ends after the first group, so the flag that would say what follows is not there',
+      { what: '<b>condition EOD, the short shape</b> — the record ends after the first group, so the flag that would say what follows is not there',
         payload: '41 42',
         spec: [{"read-fixed": {"length": 2, "as": "HOPPERS"}},
-               {"stop-if-empty": true},
+               {"stop": {"condition": "EOD"}},
                {"read-fixed": {"length": 1, "as": "RECYCLE-FLAG"}},
                {"when": {"field": "RECYCLE-FLAG", "equal": "Y",
                          "then": [{"read-fixed": {"length": 2, "as": "RECYCLE"}}]}}] },
-      { what: '<b>the long shape</b> — same spec, bytes remain, so it reads straight on',
+      { what: '<b>the long shape</b> — same spec, bytes remain, so the stop does nothing and it reads straight on',
         payload: '41 42 59 43 44',
         spec: [{"read-fixed": {"length": 2, "as": "HOPPERS"}},
-               {"stop-if-empty": true},
+               {"stop": {"condition": "EOD"}},
                {"read-fixed": {"length": 1, "as": "RECYCLE-FLAG"}},
                {"when": {"field": "RECYCLE-FLAG", "equal": "Y",
                          "then": [{"read-fixed": {"length": 2, "as": "RECYCLE"}}]}}] },
+      { what: '<b>no condition</b> — everything after it is unreachable, which is how you park the tail of a spec while you work on the front',
+        payload: '41 42 43 44',
+        spec: [{"read-fixed": {"length": 2, "as": "HEAD"}},
+               {"stop": true},
+               {"read-fixed": {"length": 2, "as": "NEVER"}}] },
     ],
   },
   'skip': {
@@ -22516,7 +22530,7 @@ const _PS_RENAMED = {
 const _PS_KNOWN_BLOCKS = new Set([
   'read-ddl','read','read-fixed','read-until','read-length-value',
   'read-to-end','read-bitmap','read-bitmap-fields','read-segment-fields','read-tlv',
-  'when','repeat','read-while','skip','stop-if-empty','token-area',
+  'when','repeat','read-while','skip','stop','token-area',
 ]);
 
 // Token classes are the same hl-* classes the DDL editor uses, so the colors
@@ -32202,7 +32216,7 @@ function _meExecReadTLVMapped(attrs, ctx) {
 }
 
 function _meExecBlock(block, ctx) {
-  // A `stop-if-empty` earlier in the run ended it. THIS is what enforces the
+  // A `stop` earlier in the run ended it. THIS is what enforces the
   // stop, at every depth: the loops that walk blocks break as well, but only to
   // avoid spinning through a long body doing nothing — remove those breaks and
   // the output is identical, remove this line and nothing stops.
@@ -32264,7 +32278,7 @@ function _meExecBlockAt(type, attrs, ctx) {
     case 'repeat':              return _meExecRepeat(attrs, ctx);
     case 'read-while':          return _meExecReadWhile(attrs, ctx);
     case 'token-area':          return _meExecTokenArea(attrs, ctx);
-    // ── stop-if-empty ─────────────────────────────────────────────────────
+    // ── stop ──────────────────────────────────────────────────────────────
     // "If you got here and the data ran out, that is fine — stop."
     //
     // One record, two shapes: a short one that ends after the first group and a
@@ -32276,10 +32290,27 @@ function _meExecBlockAt(type, attrs, ctx) {
     // Ending is only legal where the spec SAYS it is, which is why this is a
     // block you place rather than a mode: bytes running out anywhere else is
     // still a real error. Requested 2026-08-22.
-    case 'stop-if-empty': {
-      const end = (ctx._deLimit != null && ctx._deLimit < ctx.bytes.length)
-        ? ctx._deLimit : ctx.bytes.length;
-      if (ctx.cursor >= end) ctx.stopped = true;
+    case 'stop': {
+      // Bare `{"stop": true}` ends the run where it sits — no condition, no
+      // question. `condition` narrows that to a named situation, and the set is
+      // meant to grow: EOD is the first because it is the one a spec cannot
+      // otherwise express.
+      const raw = (attrs && typeof attrs === 'object' && !Array.isArray(attrs))
+        ? attrs.condition : undefined;
+      if (raw === undefined) { ctx.stopped = true; return; }
+      const cond = String(raw).toUpperCase().replace(/[\s_-]/g, '');
+      if (cond === 'EOD') {
+        const end = (ctx._deLimit != null && ctx._deLimit < ctx.bytes.length)
+          ? ctx._deLimit : ctx.bytes.length;
+        if (ctx.cursor >= end) ctx.stopped = true;
+        return;
+      }
+      // Reported and IGNORED, not treated as a stop: a condition nobody
+      // implemented must not silently end a parse, and it must not silently be
+      // skipped either.
+      ctx.fields.push({ id: 'stop', error:
+        `stop "condition": ${JSON.stringify(raw)} is not a condition — the only one is "EOD" (end of data); ` +
+        `with no condition at all, stop is unconditional` });
       return;
     }
     case 'skip': {

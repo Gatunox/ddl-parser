@@ -316,7 +316,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `overrides[…].de` (§7), honouring `overrides[…].vlg` (§8) | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14), `vlg_identifier` (§8), `length_mode` (`strict`\|`smart` — §8.2), `overrides` (§8.1) |
 | `read-segment-fields` | Read only the segments a prior `read-bitmap` marks present (§5.16) | *(bare string)* or `map` — field id of the declared/file-read map, `binding` |
 | `skip` | Advance N bytes | `length` (int, field ID, or `{sizeof}` — §5.19) |
-| `stop-if-empty` | End the parse cleanly if no bytes are left; carry on if any remain | — (§5.21) |
+| `stop` | End the run — always, or on a named `condition` | `condition` (`"EOD"` — §5.21) |
 | `read-to-end` | Consume remaining bytes | `as` (DDL field ID) |
 | `when` | Branch on a prior field value | `field` (field ID), one of `equal` / `not_equal` / `greater_than` / `greater_or_equal` / `less_than` / `less_or_equal` (literal, list, `{field}` or `{sizeof}` — §5.6), `bytes` / `not-bytes` (a guard at the cursor), `then` (block list), `else` (block list — the other branch) |
 | `repeat` | Loop N times — N from a prior field | `count` (field ID), `body` (block list) |
@@ -1190,22 +1190,26 @@ five, or of none — and the DE after it starts where the length said either way
 
 ---
 
-### 5.21 `stop-if-empty` — where ending is legal *(added 2026-08-22)*
+### 5.21 `stop` — where a run may end *(added 2026-08-22)*
 
 ```json
-{"read-bitmap-fields": "BMP"},
-{"stop-if-empty": true},
-{"read-fixed": {"length": 1, "as": "RECYCLE-FLAG"}},
-{"when": {"field": "RECYCLE-FLAG", "equal": "Y", "then": [ … ]}}
+{"stop": true}                    // ends the run here, always
+{"stop": {"condition": "EOD"}}    // ends it only if no bytes are left
 ```
 
-No bytes left at the cursor → the run ends, with no error and nothing after it
-executed. Bytes remain → it does nothing at all and the spec carries on.
+| `condition` | Stops when |
+|-------------|------------|
+| *(absent)* | Always. The spec ends the moment the block is read; everything after it is unreachable. |
+| `"EOD"` | **End of data** — no bytes left at the cursor. Bytes remaining → the block does nothing and the spec carries on. |
 
-**The case it exists for.** One record with two shapes: a short one, and a longer
-one carrying extra groups. Read with a single spec, the spec has to read a field
-to decide which shape it has — and on the short shape that field is not there.
-The read falls off the end, and the `when` naming the field it should have
+A condition that is not recognised is **reported and ignored**: one nobody
+implemented must not silently end a parse, and must not be silently skipped
+either. The list is meant to grow — this is where a new condition goes.
+
+**The case `EOD` exists for.** One record with two shapes: a short one, and a
+longer one carrying extra groups. Read with a single spec, the spec has to read a
+field to decide which shape it has — and on the short shape that field is not
+there. The read falls off the end, and the `when` naming the field it should have
 produced then reports **“Field … not yet read”**. Two errors, both describing a
 message that is perfectly correct. Reported from production 2026-08-22, where the
 two shapes were hoppers and hoppers-with-recycle.
@@ -1217,8 +1221,8 @@ expresses. A flag on the spec would forgive every overrun in it.
 
 It ends the whole run at any depth: inside a `when` branch, a `repeat` body or a
 `read-while` body it stops the loop too, not only that pass. Inside a `de` entry
-(§5.14) the element's own end counts as empty, not the message's — the same rule
-`read-fixed` follows there.
+(§5.14) the element's own end counts as the end of data, not the message's — the
+same rule `read-fixed` follows there.
 
 ---
 

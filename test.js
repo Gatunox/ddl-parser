@@ -4356,6 +4356,35 @@ test('every field the loops read off the cache is actually put there', () => {
     `read off the cache but never put there: ${missing.join(', ')}`);
 });
 
+test('both flows ask for a DDL, and repaint, through the same code', () => {
+  // Two more blocks that were written out twice. The PICKER loop: ask once per
+  // unresolved type, remember a declined pick as null so the same type is not
+  // asked again, and treat Cancel as ending the run rather than as "no DDL for
+  // this type". The REPAINT: reset the previous parse's selection, then update
+  // badges, nav and the current view. Both had a copy per flow, and a repaint
+  // step missing from one of them is invisible until someone parses that way.
+  // Shared 2026-08-22.
+  const drain = psFnSource('_drainTypePickers');
+  assert.ok(drain, 'the shared picker loop is gone');
+  assert.ok(/_abortParseCleanup\(\)/.test(drain), 'Cancel no longer ends the run');
+  assert.ok(/sessionMappings\[msgType\.type\] = null/.test(drain),
+    'a declined pick is not remembered, so the same type is asked again');
+  assert.ok(/_meSpecNeedsBinding\(msgType\)/.test(drain), 'the picker lost its needs-binding hint');
+
+  const repaint = psFnSource('_repaintAfterParse');
+  assert.ok(/updateBadges\(\); updateNav\(\); renderCurrent\(\)/.test(repaint), 'the repaint is incomplete');
+  assert.ok((psFnSource('_resetParseSelection').match(/S\.track/g) || []).length >= 2,
+    'the previous parse\'s tracking state survives into the next one');
+
+  // Neither flow kept its own copy of either.
+  for (const fn of ['doParseNetardLog', 'doParseMessages']) {
+    const body = psFnSource(fn);
+    assert.ok(/_drainTypePickers\(/.test(body), `${fn} does not use the shared picker loop`);
+    assert.ok(/_repaintAfterParse\(\)/.test(body), `${fn} does not use the shared repaint`);
+    assert.ok(!/Awaiting DDL selection/.test(body), `${fn} still builds its own picker — the copy is back`);
+  }
+});
+
 test('both flows compile the DDL tree through the same driver', () => {
   // The compile block — cache hit, nothing-to-compile, and the chunked loop with
   // its "0 of N" step, its abort check and its cache stamp — was written out in

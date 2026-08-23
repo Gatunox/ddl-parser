@@ -10065,6 +10065,54 @@ function _compileDDLTreeThen(useCache, reg, secReg, done) {
   setTimeout(compileNext, 0);
 }
 
+// Ask the user once per unique unresolved type, remember the answer for the rest
+// of the run, then continue. Both flows had this loop, identical apart from the
+// name it recursed under and what it ran at the end — so the cancel path (abort
+// mid-picker leaves the run cleaned up, a declined pick is remembered as null so
+// the same type is not asked twice) was written twice and could drift.
+// Extracted 2026-08-22.
+function _drainTypePickers(queue, sessionMappings, done) {
+  (function next(idx) {
+    if (idx >= queue.length) { done(); return; }
+    const { msgType, allMatches } = queue[idx];
+    if (sessionMappings[msgType.type]) { next(idx + 1); return; }
+    const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
+    _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches,
+      ({ match }) => {
+        if (!match) {
+          // Cancel is not "no DDL for this type": it ends the run.
+          if (_parseAborted) { _abortParseCleanup(); return; }
+          sessionMappings[msgType.type] = null;
+          next(idx + 1);
+          return;
+        }
+        sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
+        next(idx + 1);
+      }, msgType, _meSpecNeedsBinding(msgType));
+  })(0);
+}
+
+// A parse just produced S.messages: drop whatever the previous one had selected,
+// then repaint. Written out at five sites — both finalizes and the three manual
+// override paths — which is how a repaint step goes missing from one of them.
+// Extracted 2026-08-22.
+function _resetParseSelection() {
+  S.selFieldId    = null;
+  S.trackMode     = false;
+  S.trackedFields = new Set();
+  _syncTrkColVisibility();
+}
+
+// Tokens for the first two messages are resolved eagerly because the renderer
+// reads them for the current message and the one it prefetches; the rest are
+// lazy.
+function _repaintAfterParse() {
+  _msgLock(true);
+  _resolveTokens(S.messages[0]);
+  _resolveTokens(S.messages[1]);
+  updateBadges(); updateNav(); renderCurrent();
+}
+
 function _persistCompiledCache(compiledByFile) {
   if (!_compiledCacheDB) return;
   // Drop entries whose file no longer hashes the same — they were recompiled.
@@ -10822,20 +10870,14 @@ function doParseNetardLog(text, opts = {}) {
               S.messages      = parsed.filter(p => p !== null);
               S.curIdx        = 0;
               S.isParsed      = true;
-              S.selFieldId    = null;
-              S.trackMode     = false;
-              S.trackedFields = new Set();
-              _syncTrkColVisibility();
+              _resetParseSelection();
               const _nfCounts = {};
               for (const r of S.messages) if (r.netardFmt) _nfCounts[r.netardFmt] = (_nfCounts[r.netardFmt] || 0) + 1;
               const _topFmt = Object.entries(_nfCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'standard';
               S.inputFormat = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[_topFmt] || (opts.fmtDefault || 'netard');
               syncParseBtn();
               _lwSetParsed(true);
-              _msgLock(true);
-              _resolveTokens(S.messages[0]);
-              _resolveTokens(S.messages[1]);
-              updateBadges(); updateNav(); renderCurrent();
+              _repaintAfterParse();
               const tc = {};
               S.messages.forEach(m => { const t = m.msgType.type; tc[t] = (tc[t]||0)+1; });
               const summary = Object.entries(tc).map(([t,n]) => `${n}\u00d7 ${t}`).join('  ');
@@ -10862,24 +10904,8 @@ function doParseNetardLog(text, opts = {}) {
               _parseProgressStep('Finalizing\u2026');
               setTimeout(() => _finalizeNetard(), 500);
             }
-            // Phase 1: show picker once per unique unresolved type, then trigger phase 2
-            function _showNetardTypePickers(idx) {
-              if (idx >= typePickerQueue.length) { _applyNetardDeferreds(); return; }
-              const { msgType, allMatches } = typePickerQueue[idx];
-              if (sessionMappings[msgType.type]) { _showNetardTypePickers(idx + 1); return; }
-              const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
-              _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
-                if (!match) {
-                  if (_parseAborted) { _abortParseCleanup(); return; }
-                  sessionMappings[msgType.type] = null;
-                  _showNetardTypePickers(idx + 1);
-                  return;
-                }
-                sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
-                _showNetardTypePickers(idx + 1);
-              }, msgType, _meSpecNeedsBinding(msgType));
-            }
-            setTimeout(() => _showNetardTypePickers(0), 300);
+            // Phase 1: ask once per unresolved type (shared), then phase 2.
+            setTimeout(() => _drainTypePickers(typePickerQueue, sessionMappings, _applyNetardDeferreds), 300);
           }, 300);
         }
 
@@ -11526,13 +11552,9 @@ function doParseMessages() {
                 m.time      = c.time;
                 delete m._auditChunk;
               });
-            S.selFieldId = null; S.trackMode = false; S.trackedFields = new Set();
-            _syncTrkColVisibility();
+            _resetParseSelection();
             syncParseBtn();
-            _msgLock(true);
-            _resolveTokens(S.messages[0]);
-            _resolveTokens(S.messages[1]);
-            updateBadges(); updateNav(); renderCurrent();
+            _repaintAfterParse();
             // Warn about unknown-type messages that could not be auto-detected
             const unkIdxs = finalParsed.map((m, i) => m.unknownType ? i + 1 : null).filter(Boolean);
             if (unkIdxs.length === 1 && finalParsed.length === 1) {
@@ -11582,24 +11604,7 @@ function doParseMessages() {
             setTimeout(() => _finalizeParse(), 500);
           }
           // Phase 1: show picker once per unique unresolved type, then trigger phase 2
-          function _showTypePickers(idx) {
-            if (idx >= typePickerQueue.length) { _applyDeferreds(); return; }
-            const { msgType, allMatches } = typePickerQueue[idx];
-            if (sessionMappings[msgType.type]) { _showTypePickers(idx + 1); return; }
-            const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
-            _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches, ({ match, saveRule }) => {
-              if (!match) {
-                if (_parseAborted) { _abortParseCleanup(); return; }
-                sessionMappings[msgType.type] = null;
-                _showTypePickers(idx + 1);
-                return;
-              }
-              sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
-              _showTypePickers(idx + 1);
-            }, msgType, _meSpecNeedsBinding(msgType));
-          }
-
-          setTimeout(() => _showTypePickers(0), 300);
+          setTimeout(() => _drainTypePickers(typePickerQueue, sessionMappings, _applyDeferreds), 300);
         }, 300);
       }
 
@@ -17024,7 +17029,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.35.0';
+const APP_VERSION  = '1.46.36.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

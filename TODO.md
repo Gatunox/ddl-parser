@@ -44,12 +44,38 @@ a bound-DDL warning fired for a spec with no DDL path, stalling the parse
 silently after detection; and the engine score was not carried through, so the
 below-95% warning could not report a real figure.
 
-### Remaining — the ORCHESTRATION is still duplicated
+### Done — the duplicated ORCHESTRATION (v1.46.34.0 – v1.46.37.0)
 
-`doParseNetardLog` and `doParseMessages` keep their own scoring loops, picker
-queues, deferred handling and result assembly — roughly 1200 lines. Lower risk
-now that the decision is centralised and the routing tests (item 2) are in
-place, but a separate piece of work.
+Four passes, one shared piece at a time, tests and baseline green after each:
+
+- `_ddlCacheReusableFiles` / `_ddlCollectCompileTasks` / `_ddlCommitCompiled` —
+  the per-file compile cache, written out in both flows.
+- `_compileDDLTreeThen` — compile with progress, abort check, cache stamp and the
+  yield between DEFs. The biggest block that was genuinely identical.
+- `_drainTypePickers` — ask once per unresolved type; a declined pick is
+  remembered so the type is not asked twice; Cancel ends the run.
+- `_repaintAfterParse` / `_resetParseSelection` — the finalize tail.
+- `_overrideProgressShell` / `_overridePath` — the manual-override overlay, which
+  existed three times. **One real bug**: only two of the three checked
+  `_parseAborted`, so Cancel could not stop a single-record override parse.
+
+242 lines removed. What stays per-flow is what differs: NETARD picks the input
+format from the records' own `netardFmt`; the paste flow drops unknown-type
+records in batch audit and carries audit metadata onto the message.
+
+Separately (v1.46.37.0), NETARD now scores **once per type** rather than once per
+record, which is what the paste flow always did — 8 DDL-walk calls became 2 on
+three records over two candidates. Sharing one candidate list needed
+`_fieldsForChosen`, so a record never shows the fields of the message that was
+scored for its type.
+
+### Remaining — the two scoring loops
+
+`doParseNetardLog` and `doParseMessages` keep their own scoring loops and their
+own deferred handling. They are closer in shape than they were — both now score
+one representative per type against the pool — but NETARD reaches that point
+through a per-record detection pre-pass and the paste flow through per-chunk
+verdicts, so merging them is a redesign of the pre-pass, not another extraction.
 
 **Risk.** Large refactor of the main parse path. Migrate one flow at a time,
 behind the routing tests.

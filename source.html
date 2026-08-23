@@ -4236,8 +4236,12 @@ function picSize(pic, comp) {
   if (cu === 'COMP' || cu === 'COMPUTATIONAL') {
     if (nineCount <=  4) return 2;
     if (nineCount <=  9) return 4;
-    if (nineCount <= 18) return 8;
-    return 4;
+    // 18 digits is the largest a binary field holds, and 8 bytes is the widest
+    // word there is — so anything past 18 is still 8, never less. The
+    // fall-through returned 4, which made 9(19) SMALLER than 9(18) and read the
+    // field four bytes short, taking the next field's bytes with it.
+    // Reported 2026-08-21 (session 1dec59).
+    return 8;
   }
   if (cu === 'COMP3' || cu === 'COMPUTATIONAL3' || cu === 'PACKEDDECIMAL') {
     return Math.ceil((nineCount + 1) / 2);
@@ -17085,7 +17089,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.29.0';
+const APP_VERSION  = '1.46.30.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29875,14 +29879,38 @@ function _meExecReadFixed(attrs, ctx) {
   }
   const start = ctx.cursor;
   const id    = attrs.as || 'read-fixed';
+  // A NEGATIVE length walks the cursor backwards: slice(start, start + len) is
+  // empty, so the field comes out blank with an end before its start, and every
+  // block after it re-reads bytes an earlier block already consumed — silently,
+  // because nothing here rejected it. `repeat` has refused a negative count
+  // since it was written; this is the same class of bad data arriving through a
+  // different attribute. Reported 2026-08-21 (session 1dec59).
+  if (len < 0) {
+    ctx.fields.push({ id, error: `length ${len} is negative — a read cannot run backwards; nothing read` });
+    return;
+  }
   // A length that overruns the payload is never real — it means the length
   // field itself was read from the wrong bytes (e.g. a PSTM USER-DATA length
   // taken from the "& " token eye-catcher when the record carries no user
   // data). Report it and leave the cursor put, so the blocks that follow still
   // see the bytes instead of parsing from far past the end.
-  const remaining = ctx.bytes.length - start;
+  //
+  // Inside a "de" entry the room is the ELEMENT's, not the message's. This used
+  // to measure against the message: a 12-byte read inside an 8-byte element was
+  // legal as long as the message had 12 bytes left, so the field came out
+  // holding 4 bytes belonging to the NEXT element. _meRunDeEntry does report the
+  // overrun and clamp the cursor afterwards — the following DEs are fine — but
+  // the row it emitted showed the wrong bytes as though they were read.
+  // read-to-end is deliberately NOT bounded this way: its contract is "to the
+  // end of the MESSAGE", and end_at:"field" is how a spec asks for the element.
+  // Reported 2026-08-21 (session 1dec59).
+  const inElement = ctx._deLimit != null && ctx._deLimit < ctx.bytes.length;
+  const roomEnd   = inElement ? ctx._deLimit : ctx.bytes.length;
+  const remaining = roomEnd - start;
   if (len > remaining) {
-    ctx.fields.push({ id, error: `length ${len} exceeds the ${remaining} byte(s) left in the message — the length field was probably read from the wrong position` });
+    ctx.fields.push({ id, error: inElement
+      ? `length ${len} exceeds the ${remaining} byte(s) left in this element — reading on would take bytes belonging to the next one`
+      : `length ${len} exceeds the ${remaining} byte(s) left in the message — the length field was probably read from the wrong position` });
     return;
   }
   const fBytes = Array.from(ctx.bytes.slice(start, start + len));
@@ -32235,6 +32263,14 @@ function _meExecBlockAt(type, attrs, ctx) {
       // Through the shared resolver, so "skip what this element declares" is
       // written the same way a read-fixed states its length.
       const n = (typeof attrs === 'number') ? attrs : (_meResolveLength(attrs?.length, ctx) || 0);
+      // Same hole as read-fixed's, and worse for being invisible: skip emits no
+      // row, so a negative n rewound the cursor with nothing on screen to say
+      // so, and the next block quietly re-read bytes that were already spent.
+      // Reported 2026-08-21 (session 1dec59).
+      if (n < 0) {
+        ctx.fields.push({ id: 'skip', error: `skip ${n} is negative — the cursor cannot run backwards; skipped nothing` });
+        return;
+      }
       ctx.cursor = Math.min(ctx.cursor + n, ctx.bytes.length);
       return;
     }

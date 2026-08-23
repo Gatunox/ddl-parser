@@ -6166,6 +6166,86 @@ test('names inside a "de" entry resolve within that element', () => {
     'the short name resolved against the DE element');
 });
 
+test('a read cannot run backwards — negative lengths on read-fixed and skip', () => {
+  // A negative length made slice(start, start + len) empty, so the field came
+  // out blank with an end BEFORE its start, and the cursor walked backwards —
+  // every block after it silently re-read bytes an earlier block had already
+  // consumed. skip was worse for emitting no row at all: the rewind happened
+  // with nothing on screen to say so. `repeat` has refused a negative count
+  // since it was written. Reported 2026-08-21 (session 1dec59).
+  S.ddlTree = { V: { S: { D: 'DEFINITION MSG.\n  02 A PIC X(4).\nEND\n' } } };
+  S.inputFormat = 'ascii';
+  const run = blocks => meExecParseSpec(
+    migrateOverrides({ ddl_bindings: ['V/S/D/MSG'], parse_spec_binary: blocks }),
+    Buffer.from('0123456789ABCDEFGHIJ'));
+
+  const rf = run([{ 'read-fixed': { length: 10, as: 'HEAD' } },
+                  { 'read-fixed': { length: -5, as: 'BACK' } }]);
+  const back = rf.fields.find(f => f.id === 'BACK');
+  assert.ok(/negative/.test(back.error || ''), `a backwards read was accepted: ${JSON.stringify(back)}`);
+  eq(back.rawHex || '', '', 'the refused read emitted bytes anyway');
+  eq(rf.cursor, 10, 'the cursor walked backwards past bytes already read');
+
+  const sk = run([{ 'read-fixed': { length: 10, as: 'HEAD' } }, { 'skip': -5 },
+                  { 'read-fixed': { length: 3, as: 'AFTER' } }]);
+  assert.ok(sk.fields.some(f => /negative/.test(f.error || '')),
+    'a negative skip rewound the cursor and said nothing');
+  // The proof it matters: AFTER must read the bytes that come NEXT, not the
+  // ones HEAD already consumed. Before the fix it read "567" — from inside HEAD.
+  eq(sk.fields.find(f => f.id === 'AFTER').value, 'ABC',
+     're-read bytes that an earlier block had already consumed');
+});
+
+test('a COMP field wider than 18 digits is 8 bytes, never 4', () => {
+  // The size table walked 2 / 4 / 8 by digit count and then FELL THROUGH to 4,
+  // so 9(19) COMP came out SMALLER than 9(18) COMP — the field read four bytes
+  // short and took the next field's bytes with it. 18 digits is the most a
+  // binary field holds and 8 bytes is the widest word there is, so everything
+  // past 18 stays 8. Nothing in the suite went past 9(4) COMP.
+  // Reported 2026-08-21 (session 1dec59).
+  eq(picSize('9(4)',  'COMP'), 2, '9(4) COMP');
+  eq(picSize('9(9)',  'COMP'), 4, '9(9) COMP');
+  eq(picSize('9(18)', 'COMP'), 8, '9(18) COMP');
+  for (const n of [19, 20, 31]) {
+    eq(picSize(`9(${n})`, 'COMP'), 8, `9(${n}) COMP fell through to a smaller size`);
+    assert.ok(picSize(`9(${n})`, 'COMP') >= picSize('9(18)', 'COMP'),
+      `9(${n}) COMP is smaller than 9(18) COMP — the size table goes backwards`);
+  }
+  // COMP-3 is a different table and must not have moved.
+  eq(picSize('9(19)', 'COMP-3'), 10, 'the packed-decimal size changed');
+});
+
+test('read-to-end still means the end of the MESSAGE, inside a de entry too', () => {
+  // Deliberately NOT bounded by the element: the reference says "consumes all
+  // remaining bytes in the MESSAGE", and end_at:"field" is how a spec asks for
+  // the element instead. Bounding it here would silently change what every spec
+  // that already uses it reads. The neighbouring read-fixed fix is bounded, so
+  // this is the line between them. Session 1dec59, explicitly out of scope.
+  S.ddlTree = { V: { S: { D3: `DEFINITION MSG.
+  02 BMP PIC X(16).
+  02 E2 PIC X(8).
+  02 E3 PIC X(8).
+END
+` } } };
+  S.inputFormat = 'ascii';
+  const item = migrateOverrides({ ddl_bindings: ['V/S/D3/MSG'],
+    overrides: { 'E2': { de: 2 }, 'E3': { de: 3 } },
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'read-bitmap-fields': { bitmap: 'BMP', de: {
+          '2': { length: 8, blocks: [{ 'read-to-end': { as: 'REST' } }] } } } },
+    ] });
+  const ctx = meExecParseSpec(item, Buffer.from('6000000000000000' + '22222222' + '33333333'));
+  const rest = ctx.fields.find(f => f.id === 'REST');
+  eq(rest.value, '2222222233333333', 'read-to-end stopped at the element — its contract is the message');
+  assert.ok(ctx.fields.some(f => f.error && /past the element's length/.test(f.error)),
+    'the overrun that follows from that is what reports it');
+  // The clamp happens mid-parse, so the proof is that the NEXT element still
+  // reads its own bytes rather than starting from wherever read-to-end stopped.
+  eq(ctx.fields.find(f => f.id === 'E3')?.value, '33333333',
+     'the clamp did not put the next element back on its own bytes');
+});
+
 test('a "de" entry cannot read past its element into the next DE', () => {
   // The window is 4 bytes; the block asks for 12. The engine must stop at the
   // boundary and say so, rather than let DE-56 be consumed by DE-55's blocks.
@@ -6178,8 +6258,18 @@ test('a "de" entry cannot read past its element into the next DE', () => {
           '2': { field: 'EMV-ELEMENT', length: 4,
                  blocks: [{ 'read-fixed': { length: 12, as: 'GREEDY' } }] } } } },
     ] }, EMV_BYTES);
-  assert.ok(ctx.fields.some(f => f.error && /past the element's length/.test(f.error)),
+  assert.ok(ctx.fields.some(f => f.error && /left in this element/.test(f.error)),
     `overrun must be reported, got: ${JSON.stringify(ctx.fields.filter(f => f.error))}`);
+  // CHANGED ON PURPOSE (2026-08-21, session 1dec59). This asserted only the
+  // error and the clamped cursor, and both were true while the bug was live:
+  // read-fixed measured its room against the MESSAGE, so with a long fixture
+  // the 12-byte read succeeded, GREEDY was emitted holding 8 bytes belonging to
+  // the NEXT element, and _meRunDeEntry reported the overrun afterwards. The
+  // row was the leak, so the row is what this has to check.
+  const greedy = ctx.fields.find(f => f.id === 'GREEDY');
+  assert.ok(greedy, 'the refused read still has to say something');
+  eq(greedy.rawHex || '', '', `GREEDY holds bytes it was refused: ${greedy.rawHex}`);
+  eq(greedy.value ?? '', '', `GREEDY shows a value it never read: ${JSON.stringify(greedy.value)}`);
   eq(ctx.cursor, 12, 'and the cursor resumes at the element boundary (8 + 4), so the next DE lines up');
 });
 

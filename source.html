@@ -10113,6 +10113,22 @@ function _repaintAfterParse() {
   updateBadges(); updateNav(); renderCurrent();
 }
 
+// Fields for THIS message under a chosen candidate.
+//
+// The candidate list is scored ONCE per type, off the longest message of that
+// type — so the `fields` on those entries belong to the representative, never to
+// the message being parsed. The spec's own parse_spec is preferred; when there
+// is none, the DDL walk is re-run against this message's bytes rather than
+// borrowing the representative's. Added 2026-08-22 with the per-type scoring.
+function _fieldsForChosen(msgType, match, parseBytes, rawBytes) {
+  const ps = _meParseWithChosenBinding(msgType, match, parseBytes,
+    { format: S.inputFormat, rawBytes });
+  if (ps) return { fields: ps.fields, tokens: ps.tokens ?? null,
+                   parsedBy: `parse-spec (${ps.parseSpecUsed || 'binary'})` };
+  const r = match.cand ? bestDDLMatch(parseBytes, [match.cand], rawBytes) : null;
+  return { fields: r ? r.fields : match.fields, tokens: null, parsedBy: 'DDL walk' };
+}
+
 function _persistCompiledCache(compiledByFile) {
   if (!_compiledCacheDB) return;
   // Drop entries whose file no longer hashes the same — they were recompiled.
@@ -10718,7 +10734,45 @@ function doParseNetardLog(text, opts = {}) {
             const _detectTraces   = []; // per-record { recNo, winner, trace } for the Detect step
             const _boundWarnings  = []; // bound DDL used but scored < 90% — surfaced on the overlay
             try {
-            // ── Score all records ────────────────────────────────────────────
+            // ── Score ONCE PER TYPE ──────────────────────────────────────────
+            // Scoring exists to fill a MISSING binding, and the picker asks once
+            // per type — so scoring every record of a type produced the same
+            // candidate list over and over, with no way to show the extra
+            // answers. One representative per type: the LONGEST message, which
+            // gives the scorer the most to judge against. The paste flow has
+            // worked this way since it was written. Reported 2026-08-22.
+            const _repByType = {};
+            for (let _ri = 0; _ri < records.length; _ri++) {
+              const _p = preDet[_ri];
+              if (_p.bound || !_p.winner?.vol) continue;
+              const key = _p.winner.type + ':' + _p.winner.vol;
+              const len = _p.dec.bytes.length;
+              if (!_repByType[key] || len > _repByType[key].len)
+                _repByType[key] = { len, dec: _p.dec, msgType: _p.winner };
+            }
+            const _typeMatchCache = {};
+            for (const [key, rep] of Object.entries(_repByType)) {
+              const pool = volSearchChain(rep.msgType.vol).flatMap(v => compiledByVol[v] || [])
+                .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
+              _typeMatchCache[key] = pool
+                .map(c => {
+                  try {
+                    const r = bestDDLMatch(rep.dec.parseBytes, [c], rep.dec.bytes);
+                    const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
+                    const nameBonus   = nameToCheck === rep.msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
+                    const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
+                    return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score, cand: c };
+                  } catch (err) {
+                    const label = c.path + (c.defName ? '/' + c.defName : '');
+                    console.warn('[NETARD scoring] DDL error —', label, err);
+                    _ddlErrors.push(label);
+                    return { ddlPath: c.path, defName: c.defName ?? null, fields: [], score: -1, cand: c };
+                  }
+                })
+                .filter(m => m.score > 0)
+                .sort((a, b) => b.score - a.score);
+            }
+
             for (let _ri = 0; _ri < records.length; _ri++) {
               const rec = records[_ri];
               const _pd = preDet[_ri];   // { dec, det, winner, bound } from the pre-pass
@@ -10780,25 +10834,7 @@ function doParseNetardLog(text, opts = {}) {
                   parsed.push({ ..._base, msgType, fields: [], ddlPath: null, tokens: [], noMatchDDL: true, unknownType: true, _diag });
                   continue;
                 }
-                const pool = volSearchChain(msgType.vol).flatMap(v => compiledByVol[v] || [])
-                  .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
-                const allMatches = pool
-                  .map(c => {
-                    try {
-                      const r = bestDDLMatch(parseBytes, [c], bytes);
-                      const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
-                      const nameBonus   = nameToCheck === msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
-                      const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
-                      return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score };
-                    } catch (err) {
-                      const label = c.path + (c.defName ? '/' + c.defName : '');
-                      console.warn('[NETARD scoring] DDL error —', label, err);
-                      _ddlErrors.push(label);
-                      return { ddlPath: c.path, defName: c.defName ?? null, fields: [], score: -1 };
-                    }
-                  })
-                  .filter(m => m.score > 0)
-                  .sort((a, b) => b.score - a.score);
+                const allMatches = _typeMatchCache[msgType.type + ':' + msgType.vol] || [];
                 if (allMatches.length === 0) {
                   parsed.push({ ..._base, msgType, fields: [], ddlPath: null, tokens: [], noMatchDDL: true });
                 } else if ((allMatches.length === 1 && !_meSpecNeedsBinding(msgType)) || sessionMappings[msgType.type]) {
@@ -10807,12 +10843,12 @@ function doParseNetardLog(text, opts = {}) {
                     ? (allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || allMatches[0])
                     : allMatches[0];
                   // The picked DDL fills the spec's missing binding — run its
-                  // parse_spec rather than the legacy fields scoring produced.
-                  const _ps = _meParseWithChosenBinding(msgType, match, parseBytes,
-                    { format: S.inputFormat, rawBytes: bytes });
-                  parsed.push({ ..._base, msgType, fields: _ps ? _ps.fields : match.fields,
-                    ddlPath: match.ddlPath, defName: match.defName, tokens: _ps?.tokens ?? null,
-                    parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk' });
+                  // parse_spec rather than the legacy fields scoring produced,
+                  // and never borrow the representative's fields.
+                  const _f = _fieldsForChosen(msgType, match, parseBytes, bytes);
+                  parsed.push({ ..._base, msgType, fields: _f.fields,
+                    ddlPath: match.ddlPath, defName: match.defName, tokens: _f.tokens,
+                    parsedBy: _f.parsedBy });
                 } else {
                   const pidx = parsed.length;
                   parsed.push(null);
@@ -10897,9 +10933,9 @@ function doParseNetardLog(text, opts = {}) {
                 const sm = sessionMappings[d.msgType.type];
                 if (!sm) continue; // type was cancelled — leave slot null (filtered in finalize)
                 const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
-                const _ps = _meParseWithChosenBinding(d.msgType, match, d.parseBytes,
-                  { format: S.inputFormat, rawBytes: d.rawBytes || d.parseBytes });
-                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: _ps ? _ps.fields : match.fields, ddlPath: match.ddlPath, defName: match.defName, tokens: _ps?.tokens ?? null, parsedBy: _ps ? `parse-spec (${_ps.parseSpecUsed || 'binary'})` : 'DDL walk' };
+                const _f = _fieldsForChosen(d.msgType, match, d.parseBytes, d.rawBytes || d.parseBytes);
+                parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: _f.fields,
+                  ddlPath: match.ddlPath, defName: match.defName, tokens: _f.tokens, parsedBy: _f.parsedBy };
               }
               _parseProgressStep('Finalizing\u2026');
               setTimeout(() => _finalizeNetard(), 500);
@@ -17029,7 +17065,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.36.0';
+const APP_VERSION  = '1.46.37.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

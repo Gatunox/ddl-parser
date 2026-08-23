@@ -273,7 +273,11 @@ _t.auditBeginLoad     = _auditBeginLoad;
 // parse — the function whose scoring callback shipped a TypeError past 498
 // tests because nothing could execute it.
 _t.doParseMessages    = doParseMessages;
+// The NETARD flow, so its scoring loop can be driven the same way.
+_t.doParseNetardLog   = doParseNetardLog;
 _t.specKey            = _specKey;
+// Fields for one message under a candidate chosen from a SHARED score list.
+_t.fieldsForChosen    = _fieldsForChosen;
 // The DDL-binding suggestion list: what a suggestion IS, and what matches one.
 _t.meDDLEntries       = _meDDLEntries;
 _t.meBindEntryMatch   = _meBindEntryMatch;
@@ -316,7 +320,7 @@ const {
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
-  meComputeAutoOrderAnchors, getDDLFromPath, meDDLEntries, meBindEntryMatch, S, P,
+  meComputeAutoOrderAnchors, getDDLFromPath, meDDLEntries, meBindEntryMatch, fieldsForChosen, S, P,
   meWalkDEFields: _rawWalkDEFields,
   renderFieldTable, meTestFieldTable, escSpaces, meOvEffectiveLen, expMsgLines, expWrapCell,
   meCanonSet, meVlgLenMap, meRowsForOverride, meNextSelection,
@@ -4354,6 +4358,114 @@ test('every field the loops read off the cache is actually put there', () => {
   const missing = [...used].filter(k => !pushed.has(k));
   assert.deepStrictEqual(missing, [],
     `read off the cache but never put there: ${missing.join(', ')}`);
+});
+
+test('a record never inherits the fields of the record scored for its type', () => {
+  // Scoring runs ONCE per type now, off the longest message of that type, so
+  // every entry in the candidate list carries THAT message's fields. Handing
+  // those to another record would show it values it does not contain — the
+  // hazard introduced by sharing the list. Reported/added 2026-08-22.
+  const prevTree = S.ddlTree, prevFmt = S.inputFormat;
+  try {
+    S.ddlTree = { V: { S: { D: 'DEF R.\n  02 AA PIC X(2).\n  02 BB PIC X(2).\nEND R.\n' } } };
+    S.inputFormat = 'ascii';
+    const cand  = getDDLFromPath('V/S/D/R');
+    // Byte VALUES, the form the walk takes — a Buffer reads as zeroes here.
+    const mine  = [87, 88, 89, 90];              // 'WXYZ', this record's own bytes
+    // The list entry as the representative left it: someone else's values.
+    const match = { ddlPath: 'V/S/D', defName: 'R', score: 1, cand,
+                    fields: [{ id: 'AA', value: 'RE' }, { id: 'BB', value: 'PP' }] };
+    // A type with no spec of its own falls through to the DDL walk, which is
+    // exactly the path that used to borrow match.fields.
+    const out = fieldsForChosen({ type: 'NOSUCHSPEC', label: 'NOSUCHSPEC' }, match, mine, mine);
+    const byId = Object.fromEntries((out.fields || []).map(f => [f.id, f.value]));
+    eq(byId.AA, 'WX', `AA came from the representative, not this record: ${JSON.stringify(byId)}`);
+    eq(byId.BB, 'YZ', `BB came from the representative, not this record: ${JSON.stringify(byId)}`);
+    eq(out.parsedBy, 'DDL walk', 'the walk did not run');
+    // With no candidate to re-walk there is nothing better than the list entry —
+    // but that is the fallback, not the normal path.
+    const noCand = fieldsForChosen({ type: 'NOSUCHSPEC', label: 'NOSUCHSPEC' },
+      { ...match, cand: undefined }, mine, mine);
+    eq(noCand.fields[0].value, 'RE', 'the fallback changed shape');
+  } finally { S.ddlTree = prevTree; S.inputFormat = prevFmt; }
+});
+
+test('[NETARD] three records of one unbound type are scored once, and each keeps its own fields', () => {
+  // The behavioural half of the change: drive doParseNetardLog itself. Records
+  // come in through opts.parsedRecords, so the log FORMAT is out of the way and
+  // what is under test is the scoring loop. Reported 2026-08-22.
+  const prevTree = S.ddlTree, prevFmt = S.inputFormat;
+  try {
+    // Two DEFs so the pool has more than one candidate to score.
+    S.ddlTree = { POS: { SV: {
+      A: 'DEF RA.\n  02 MTI PIC X(4).\n  02 AA PIC X(4).\nEND RA.\n',
+      B: 'DEF RB.\n  02 MTI PIC X(4).\n  02 BB PIC X(4).\nEND RB.\n',
+    } } };
+    sandbox._t.fmtSave(sandbox._t.fmtDefaultSpecs());
+    S.inputFormat = 'netard';
+    // PSTM: ships with a parse_spec and NO binding, so it needs a DDL — which is
+    // the only thing that makes the flow score at all.
+    const mk = (recNo, tail) => {
+      const rawMsg = '0210' + '02' + tail + 'X'.repeat(900);   // clears the 872-byte floor
+      return { recNo, rawMsg, length: rawMsg.length, time: '10:00:0' + recNo,
+               typeCode: '  ', typeDesc: '', source: 'S', dest: 'D',
+               netardFmt: 'standard', byteCharMap: [], charStart: 0, charEnd: rawMsg.length };
+    };
+    const records = [mk(1, 'AAAA'), mk(2, 'BBBB'), mk(3, 'CCCC')];
+    // The type is unbound with several candidates, so the flow stops at the DDL
+    // picker — correct, and it never returns in a test. Answer it with the top
+    // match, which is what a user picking the highest score would do.
+    const origPicker = sandbox._showProgressPicker;
+    sandbox._showProgressPicker = (_title, matches, cb) =>
+      cb({ match: matches[0] ? { ...matches[0], ddlPath: matches[0].ddlPath || matches[0].path } : null });
+    const errs = [];
+    const origErr = console.error, origWarn = console.warn;
+    console.error = (...a) => errs.push(a.join(' '));
+    console.warn  = () => {};
+    let pumped = 0;
+    const { calls } = withParserCounters(() => {
+      resetTimers();
+      try { sandbox._t.doParseNetardLog('', { parsedRecords: records }); pumped = pumpTimers(); }
+      finally { console.error = origErr; console.warn = origWarn;
+                sandbox._showProgressPicker = origPicker; }
+      return pumped;
+    });
+    assert.ok(pumped > 0, `the timer queue never ran (${errs.join(' | ')})`);
+    assert.ok(!errs.length, `the flow threw: ${errs.join(' | ')}`);
+    // All three are the same type, so the pool is scored ONCE — two candidates,
+    // two calls. Per record it would have been six.
+    assert.ok(calls.legacy <= 2,
+      `the pool was scored per record: ${calls.legacy} walk calls for 3 records over 2 candidates`);
+    // And every record still came out with the bytes it actually holds.
+    const msgs = S.messages || [];
+    eq(msgs.length, 3, `three records in, ${msgs.length} out`);
+    const tails = msgs.map(m => (m.fields || []).map(f => f.value).join('|'));
+    assert.ok(new Set(tails).size === 3 || tails.every(t => t === ''),
+      `records share one record's fields: ${JSON.stringify(tails)}`);
+  } finally { S.ddlTree = prevTree; S.inputFormat = prevFmt; }
+});
+
+test('NETARD scores a type once, not once per record', () => {
+  // Scoring exists to fill a MISSING binding, and the picker asks once per type
+  // — there is no UI that shows a second chance per record, so scoring each
+  // record of a type produced the same list repeatedly. On an audit file with
+  // many records of one unbound type that is the whole cost, repeated.
+  // Reported 2026-08-22.
+  const fn = psFnSource('doParseNetardLog');
+  assert.ok(/_repByType/.test(fn) && /_typeMatchCache/.test(fn),
+    'the per-type representative table is gone');
+  // The representative is the LONGEST of its type, as in the paste flow.
+  assert.ok(/len > _repByType\[key\]\.len/.test(fn),
+    'the representative is no longer the longest message of its type');
+  // And the per-record loop must not score again: the only bestDDLMatch calls
+  // left in this flow are the pre-pass, the binding resolve and the override.
+  const loopAt = fn.indexOf('for (let _ri = 0; _ri < records.length; _ri++) {',
+                            fn.indexOf('_typeMatchCache'));
+  const loop = fn.slice(loopAt);
+  assert.ok(!/bestDDLMatch\(parseBytes, \[c\]/.test(loop),
+    'the record loop still scores the whole pool per record');
+  assert.ok(/_typeMatchCache\[msgType\.type \+ ':' \+ msgType\.vol\]/.test(loop),
+    'the record loop does not read the shared list');
 });
 
 test('both flows ask for a DDL, and repaint, through the same code', () => {

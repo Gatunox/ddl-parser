@@ -17085,7 +17085,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.28.0';
+const APP_VERSION  = '1.46.29.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -30873,8 +30873,14 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
       _meLengthReadAs(lBytes, lType)}`);
     N = Math.max(0, available);
   } else if (capacity && N > capacity) {
-    lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` digit(s) = ${N} byte(s)` : ''} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload — ${
-      ctx.lenMode === 'smart' ? `the extra ${N - capacity} byte(s) are read as "<unmapped>"` : `read as ${capacity}`}`);
+    // SMART says one thing, because smart is the mode where nothing went wrong:
+    // the extra bytes are accounted for and the next element starts where the
+    // wire said it would. Spelling that out per field buried the parse in red.
+    // STRICT keeps the long form — there the length IS being ignored, and the
+    // reading you get is not the reading the wire asked for. Reported 2026-08-22.
+    lenErrs.push(ctx.lenMode === 'smart'
+      ? `${lenDef.id}: smart length mode in effect`
+      : `${lenDef.id}: length ${Nwritten}${lenInChars ? ` digit(s) = ${N} byte(s)` : ''} exceeds the ${capacity} byte(s) "${groupId}" declares for its payload — read as ${capacity}`);
   }
   ctx.cursor = lStart + lLen;
   // The complaint belongs ON the LEN field, not beside it. Pushing it as its own
@@ -30972,12 +30978,14 @@ function _meUnmappedRow(owner, frameEnd, ctx) {
   ctx.cursor  = end;
   return {
     id: `${owner}.<unmapped>`,
-    description: 'inside the element’s length, not declared in the DDL',
+    // Its ID already says what it is, and this row only exists in smart mode —
+    // where the bytes ARE handled. It carried a two-line issue explaining that,
+    // on every such row, which is most of what made a smart parse unreadable.
+    // Reported 2026-08-22.
+    description: 'not declared in the DDL',
     valueLength: bytes.length,
     value: _meBytesToStr(bytes), rawHex: _meBytesToHex(bytes),
     startByte: start, endByte: end - 1,
-    issue: `${bytes.length} byte(s) counted by the length that "${owner}" does not declare — `
-         + `read here so the next element starts where the length said it would`,
   };
 }
 
@@ -31077,9 +31085,10 @@ function _meExecBitmapFields(attrs, ctx) {
             // On the LEN's OWN row, as `issue` — the key the results table reads.
             // A row of its own under a key nothing renders is a warning nobody
             // ever sees, which is how the first version of this shipped.
-            const _note = `${entry.def.id}: length source says ${ctx.vlgFrame}, but what `
-              + `it sizes declares at most ${_tot} byte(s) — ${ctx.lenMode === 'smart'
-                ? `the extra ${ctx.vlgFrame - _tot} byte(s) are read as "<unmapped>"` : `read as ${_tot}`}`;
+            const _note = ctx.lenMode === 'smart'
+              ? `${entry.def.id}: smart length mode in effect`
+              : `${entry.def.id}: length source says ${ctx.vlgFrame}, but what `
+                + `it sizes declares at most ${_tot} byte(s) — read as ${_tot}`;
             _lenRow.issue = _lenRow.issue ? `${_lenRow.issue} · ${_note}` : _note;
           }
           if (_frameEnd != null) {

@@ -1521,8 +1521,8 @@ attribute:
 
 | `length_mode` | Meaning |
 |---------------|---------|
-| `strict` *(default)* | The payload takes `min(LEN, what the DDL declares)`. The surplus stays in the stream, where the next DE reads it. The LEN row says the length exceeded the declared size. |
-| `smart` | The wire's length **owns its bytes**. The declared fields read as always; the surplus becomes a row of its own, `<ELEMENT>.<unmapped>`; and the next DE starts where the length said it would. |
+| `strict` *(default)* | The payload takes `min(LEN, what the DDL declares)`. The surplus stays in the stream, where the next DE reads it. The LEN row says what the length claimed, what the DDL declares, and what was read instead. |
+| `smart` | The wire's length **owns its bytes**. The declared fields read as always; the surplus becomes a row of its own, `<ELEMENT>.<unmapped>`; and the next DE starts where the length said it would. The LEN row notes `smart length mode in effect` and nothing more — in this mode nothing went wrong. |
 
 `strict` is the default because it is what every spec written before this
 attribute already means — the mode is opt-in, and no existing parse moves.
@@ -1550,9 +1550,12 @@ A message carrying **less** than the DDL declares is untouched in both modes —
 that is ordinary, and the payload simply ends early (§8).
 
 The row is not a DDL field and never registers as one: `<unmapped>` is a name no
-DDL can collide with, it carries the DE number of the element it sits inside, and
-it states on its own row how many bytes the length counted that the DDL does not
-declare.
+DDL can collide with, and it carries the DE number of the element it sits inside.
+Its description is `not declared in the DDL`, and it carries no warning of its
+own *(changed 2026-08-22)*: the row exists only in `smart`, where those bytes are
+accounted for, and an explanation on every such row — plus a full account on
+every LEN above it — made a correct parse read as a wall of errors. `strict`
+keeps the long explanation, because there the length really is being ignored.
 
 ---
 

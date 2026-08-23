@@ -13700,8 +13700,78 @@ test('length_mode smart gives the surplus its own row, so the next DE lands righ
   eq(um.value, 'E', 'holding exactly that byte');
   eq(um.deNum, 2, 'stamped with the DE it belongs to');
   eq(vlgIdField(ctx, 'TAIL').value, 'TAIL', 'and TAIL starts where the length said it would');
-  eq(/are read as "<unmapped>"/.test(vlgIdField(ctx, 'EMV.SIZE').issue || ''), true,
-     'the LEN says where the extra bytes went, rather than claiming they were dropped');
+  // The LEN says smart mode is on and stops there. It used to narrate the whole
+  // arrangement on every over-long length — what the source said, what the DDL
+  // declared, how many bytes were left over and where they went — and with a
+  // matching two-line issue on each <unmapped> row beside it, a correct parse
+  // read as a wall of red. Reported 2026-08-22.
+  const lenIssue = vlgIdField(ctx, 'EMV.SIZE').issue || '';
+  eq(/smart length mode in effect/.test(lenIssue), true, 'the LEN does not say why it is fine');
+  eq(lenIssue.length < 60, true, `the short form grew back: ${lenIssue}`);
+  // And the row itself says only what it is — its id already says <unmapped>,
+  // and the row cannot exist outside smart mode, so there is nothing to explain.
+  eq(um.issue, undefined, 'the surplus row carries a complaint about being handled');
+  eq(um.description, 'not declared in the DDL', `the row narrates itself: ${um.description}`);
+  // STRICT still explains itself: there the length IS being ignored, and the
+  // reading you get is not the one the wire asked for.
+  const strictIssue = vlgIdField(lmRun('strict'), 'EMV.SIZE').issue || '';
+  eq(/read as/.test(strictIssue) && strictIssue.length > 60, true,
+     `strict lost the explanation it needs: ${strictIssue}`);
+});
+
+test('smart says one short thing on the bitmap path too, and strict still explains', () => {
+  // The production report came through read-bitmap-fields, which builds its own
+  // note — a SECOND place saying the same thing. Trimming only the VLG-group
+  // path left this one narrating the whole arrangement on every over-long
+  // length, which is what the screenshot showed. Reported 2026-08-22.
+  S.ddlTree = { VOL: { SV: { 'FRAME': `
+    DEF REC.
+      02 BMP PIC X(16).
+      02 GRP.
+        04 LEN1 PIC 9(4).
+        04 SUBGROUP1.
+          06 INNERGROUP1.
+            08 FIELD1 PIC X(12).
+            08 FIELD2 PIC X(10).
+      02 OUTERTAIL PIC X(4).
+    END REC.
+  ` } } };
+  const parse = mode => {
+    const item = migrateOverrides({ ddl_bindings: ['VOL/SV/FRAME/REC'],
+      overrides: { 'GRP': { de: 'children' }, 'GRP.LEN1': { de: 60, vlg: true } },
+      parse_spec_binary: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+                          { 'read-bitmap-fields': { bitmap: 'BMP', length_mode: mode } }] });
+    S.inputFormat = 'ascii';
+    // The production shape: LEN says 23 over a 22-byte group, and the 23rd byte
+    // IS on the wire. That is the whole point — smart consumes it and OUTERTAIL
+    // lands on its own bytes, strict leaves it and every field after shifts.
+    return meExecParseSpec(item,
+      Buffer.from('0000000000000018' + '0023' + 'A'.repeat(12) + 'B'.repeat(10) + 'X' + 'ZZZZ'));
+  };
+  const issues = ctx => ctx.fields.filter(f => f.issue).map(f => f.issue);
+
+  const smart = parse('smart');
+  const sIss = issues(smart);
+  eq(sIss.length, 1, `smart should say one thing, got: ${sIss.join(' | ')}`);
+  assert.ok(/smart length mode in effect/.test(sIss[0]), `smart is still narrating: ${sIss[0]}`);
+  assert.ok(sIss[0].length < 60, `the short form grew back: ${sIss[0]}`);
+  // The surplus row is there, doing its job, and says nothing beyond what it is.
+  const um = smart.fields.find(f => /<unmapped>/.test(f.id));
+  eq(!!um, true, 'smart no longer accounts for the surplus byte');
+  eq(um.value, 'X', 'the surplus row holds the byte the length counted');
+  eq(um.issue, undefined, `the surplus row complains about being handled: ${um.issue}`);
+  eq(smart.fields.find(f => f.id === 'OUTERTAIL')?.value, 'ZZZZ', 'and the next element still lands right');
+
+  // Strict is the mode where something IS being ignored, so it keeps the reason.
+  const strictCtx = parse('strict');
+  const strict = issues(strictCtx);
+  eq(strict.length, 1, `strict should say one thing, got: ${strict.join(' | ')}`);
+  assert.ok(/length source says 23/.test(strict[0]) && /declares at most 22/.test(strict[0]),
+    `strict lost the explanation it needs: ${strict[0]}`);
+  // And strict still shifts, which is the behaviour smart exists to avoid — the
+  // long explanation is earning its place there.
+  eq(strictCtx.fields.find(f => f.id === 'OUTERTAIL')?.value, 'XZZZ',
+     'strict stopped shifting, so the two modes no longer differ');
 });
 
 test('length_mode reaches the frame over a following element, not just a VLG group', () => {

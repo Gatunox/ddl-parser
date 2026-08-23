@@ -112,12 +112,16 @@ many times a block repeats.
 
 ---
 
-## 4. [ ] Give `when` a byte-peek guard
+## 4. [x] Give `when` a byte-peek guard — *done v1.21.13.0*
 
 **Problem.** The legacy PSTM parser protects the user-data read with
 `bytes[cursor] !== 0x26` — an eye-catcher check the spec language cannot express.
 
-**Why it matters.** Without it a `when` branch can consume the token eye-catcher
+**Done.** `when` takes `bytes` / `not-bytes`, matched against the cursor without
+reading — the eye-catcher case the legacy parser hardcoded is now expressible.
+Confirmed still working 2026-08-22 while re-probing session 1dec59.
+
+**Why it mattered.** Without it a `when` branch can consume the token eye-catcher
 `"& "` as a 2-byte length (0x2620 = 9760) and run the cursor thousands of bytes
 past the end. v1.1.2.368 made that fail loudly instead of silently, but the spec
 still cannot express the guard that would prevent it.
@@ -690,7 +694,7 @@ likely makes this easier, since the batching and cancel machinery is shared.
 
 ---
 
-## 19. [ ] Blocks read past the DE window and are caught afterwards
+## 19. [x] Blocks read past the DE window and are caught afterwards — *done v1.46.30.0*
 
 **Problem.** Inside a `de` entry, `ctx._deLimit` holds the last byte the element
 may reach. Exactly two blocks consult it while reading — `read-tlv` and
@@ -728,9 +732,15 @@ not the collapse.
 **Risk.** Low, but it touches every read path, so it wants the baseline run and
 a fixture per block type rather than a single case.
 
+**Done (v1.46.30.0).** `read-fixed` measures its room against the ELEMENT when
+it is inside a `de` entry, not the message — so the row it emits can no longer
+hold bytes belonging to the next element. `read-to-end` is deliberately NOT
+bounded this way: its contract is the end of the MESSAGE, and `end_at: "field"`
+is how a spec asks for the element. A test pins that line.
+
 ---
 
-## 20. [ ] `detectMsgType` still falls back to legacy regexes
+## 20. [x] `detectMsgType` still falls back to legacy regexes — *removed v1.46.31.0*
 
 **Problem.** `_fmtDetect` (Class Editor specs) runs first and wins whenever a
 spec matches. When none does, both `detectMsgType` and `detectMsgTypeTrace` fall
@@ -754,6 +764,13 @@ default coverage is genuinely wanted, the honest form is a set of default
 **Risk.** Behavioural: a message currently labelled by the legacy table would
 become UNKNOWN. Needs a look at what `_DEFAULT_DETECT_RULES` still catches that
 no shipped spec does — if the answer is "nothing", this is a deletion.
+
+**Done (v1.46.31.0).** Removed outright: `_DEFAULT_DETECT_RULES`, `_detectRules`,
+`MSG_TYPE_MAP`, `_rebuildMsgTypeMap`, `_loadDetectRules`, the `up_detect_rules`
+key and the fallback in both `detectMsgType` and `detectMsgTypeTrace`. A message
+no class claims is `UNKNOWN`, and the trace names every class that was tried. No
+shipped class lost coverage — one TEST fixture had been riding on the table (70
+bytes against the PSTM class's 872-byte floor) and now lifts that guard itself.
 
 ---
 

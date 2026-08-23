@@ -9906,6 +9906,97 @@ function _openCacheDB() {
 const DDL_COMPILER_VERSION = 1;
 
 // Takes a map of FILE key -> compiled entries for that file.
+// ── Shared DDL compile plumbing ─────────────────────────────────────────────
+// Both parse flows compile the same tree in the same three moves: reuse the
+// files whose content still hashes the same, collect DEF tasks for the rest,
+// and commit the result to the cache. They carried a copy each, identical apart
+// from local names (_nTasks / _tasks, _commitNetardCache / _commitP23Cache) —
+// which is exactly the drift risk TODO item 1 is about: a fix to one copy is a
+// fix to one flow. Extracted 2026-08-22.
+
+// Files whose compiled entries are still good: the content hash has not moved,
+// so an edit costs one recompile rather than its whole subvolume — BASE/DDL
+// alone is most of a 300-definition tree.
+function _ddlCacheReusableFiles() {
+  const reusable = {};
+  if (_ddlCompileCache.fileEntries && _ddlCompileCache.fileHashes) {
+    for (const [fk, entries] of Object.entries(_ddlCompileCache.fileEntries)) {
+      const [v, sv, f] = fk.split('/');
+      if (_ddlCompileCache.fileHashes[fk] === _fileHash(v, sv, f)) reusable[fk] = entries;
+    }
+  }
+  return reusable;
+}
+
+// One task per DEF that has to be compiled — skipping excluded nodes, files
+// already in the token map, and anything the cache above already serves.
+function _ddlCollectCompileTasks(cachedFiles) {
+  const tasks = [];
+  for (const vol of Object.keys(S.ddlTree)) {
+    if (isExcluded(vol)) continue;
+    for (const sv of Object.keys(S.ddlTree[vol] || {})) {
+      if (isExcluded(vol, sv)) continue;
+      for (const { path, content } of getDDLsForSv(vol, sv)) {
+        const file = path.split('/').pop();
+        if (S.tokenMap[file.toUpperCase()]) continue;
+        if (isExcluded(vol, sv, file)) continue;
+        if (cachedFiles[_fileKey(vol, sv, file)]) continue;
+        if (isHPEDDLText(content)) {
+          for (const dn of parseDEFNames(content)) tasks.push({ vol, sv, path, content, defName: dn });
+        } else {
+          tasks.push({ vol, sv, path, content, defName: null });
+        }
+      }
+    }
+  }
+  return tasks;
+}
+
+// Fold the per-file entries into the per-vol shape the scorer wants, re-hash
+// every file, and persist. Called with everything compiled this run plus
+// everything reused from cache.
+function _ddlCommitCompiled(compiledByFile) {
+  const compiledByVol = {};
+  for (const [fk, entries] of Object.entries(compiledByFile)) {
+    const vk = fk.split('/')[0];
+    (compiledByVol[vk] || (compiledByVol[vk] = [])).push(...entries);
+  }
+  const fileHashes = Object.assign({}, _ddlCompileCache.fileHashes || {});
+  for (const fk of Object.keys(compiledByFile)) {
+    const [v, sv, f] = fk.split('/');
+    fileHashes[fk] = _fileHash(v, sv, f);
+  }
+  _ddlCompileCache = { version: _ddlTreeVersion, byVol: compiledByVol, fileHashes, fileEntries: compiledByFile };
+  _persistCompiledCache(compiledByFile);
+}
+
+// The armed DDL's path, as the overlay names it. A DEF-level override carries
+// its own name; a file-level one stops at the file.
+function _overridePath(po) {
+  const o = po || parseOverrideScope() || S.scope;
+  return (o.type === 'def' && o.defName)
+    ? `${o.vol}/${o.sv}/${o.name}/${o.defName}`
+    : `${o.vol}/${o.sv}/${o.name}`;
+}
+
+// The overlay dance every manual override does: name the armed path in amber,
+// say what is NOT being used, then parse. It existed three times — NETARD
+// single-record, NETARD forceScopeAll, and the paste flow — differing only in
+// their timeouts (400 vs 500) and in whether they checked _parseAborted. The
+// abort check is the right behaviour, so the shared one always does it, and 500
+// is the common value. Extracted 2026-08-22.
+function _overrideProgressShell(p1Path, run) {
+  _parseProgressStep(`Manual override mode \u2014 ${p1Path}`,
+    'Identify \u00b7 Recognizers \u00b7 Parse-specs \u2014 not used',
+    '#e6a817', '#e6a817');
+  setTimeout(() => {
+    if (_parseAborted) return;
+    _parseProgressDoneLast();
+    _parseProgressStep('Parsing\u2026');
+    setTimeout(() => { if (_parseAborted) return; run(); }, 500);
+  }, 500);
+}
+
 function _persistCompiledCache(compiledByFile) {
   if (!_compiledCacheDB) return;
   // Drop entries whose file no longer hashes the same — they were recompiled.
@@ -10363,17 +10454,8 @@ function doParseNetardLog(text, opts = {}) {
 
     // ── Manual override on single record: mirror non-NETARD P1 parse exactly ──
     if (opts.showOverride) {
-      const _po = parseOverrideScope() || S.scope;
-      const p1Path = (_po.type === 'def' && _po.defName)
-        ? `${_po.vol}/${_po.sv}/${_po.name}/${_po.defName}`
-        : `${_po.vol}/${_po.sv}/${_po.name}`;
-      _parseProgressStep(`Manual override mode \u2014 ${p1Path}`,
-        'Identify \u00b7 Recognizers \u00b7 Parse-specs \u2014 not used',
-        '#e6a817', '#e6a817');
-      setTimeout(() => {
-        _parseProgressDoneLast();
-        _parseProgressStep('Parsing\u2026');
-        setTimeout(() => {
+      const p1Path = _overridePath();
+      _overrideProgressShell(p1Path, () => {
           const rec = records[0];
           const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic } = _netardEbcdic(rec.rawMsg);
           const resolved    = getDDLFromPath(p1Path);
@@ -10412,26 +10494,14 @@ function doParseNetardLog(text, opts = {}) {
           _lwSetParsed(true);
           _resolveTokens(S.messages[0]);
           updateBadges(); updateNav(); renderCurrent();
-        }, 400);
-      }, 400);
+      });
       return;
     }
 
     // ── FUP COPY: force selected scope for all records, no auto-detect ──
     if (opts.forceScopeAll) {
-      const _po = parseOverrideScope() || S.scope;
-      const p1Path = (_po.type === 'def' && _po.defName)
-        ? `${_po.vol}/${_po.sv}/${_po.name}/${_po.defName}`
-        : `${_po.vol}/${_po.sv}/${_po.name}`;
-      _parseProgressStep(`Manual override mode — ${p1Path}`,
-        'Identify · Recognizers · Parse-specs — not used',
-        '#e6a817', '#e6a817');
-      setTimeout(() => {
-        if (_parseAborted) return;
-        _parseProgressDoneLast();
-        _parseProgressStep('Parsing…');
-        setTimeout(() => {
-          if (_parseAborted) return;
+      const p1Path = _overridePath();
+      _overrideProgressShell(p1Path, () => {
           // Manual selection parses strictly per the DDL — field by field, all
           // segments as declared, ONCE. The segment engine only runs when the
           // user explicitly types a map in the SEG-MAP bar.
@@ -10495,8 +10565,7 @@ function doParseNetardLog(text, opts = {}) {
           syncParseBtn();
           _resolveTokens(S.messages[0]);
           updateBadges(); updateNav(); renderCurrent();
-        }, 400);
-      }, 400);
+      });
       return;
     }
 
@@ -10855,50 +10924,11 @@ function doParseNetardLog(text, opts = {}) {
           _cacheStampNote();
           _startNetardScoring(_ddlCompileCache.byVol, _preDet);
         } else {
-          // Per-FILE cache check: reuse every file whose content hash still
-          // matches, so an edit costs one recompile rather than its whole
-          // subvolume — BASE/DDL alone is most of a 300-definition tree.
-          const _cachedFiles = {};
-          if (_ddlCompileCache.fileEntries && _ddlCompileCache.fileHashes) {
-            for (const [fk, entries] of Object.entries(_ddlCompileCache.fileEntries)) {
-              const [v, sv, f] = fk.split('/');
-              if (_ddlCompileCache.fileHashes[fk] === _fileHash(v, sv, f)) _cachedFiles[fk] = entries;
-            }
-          }
+          // Three shared moves — see _ddlCacheReusableFiles.
+          const _cachedFiles   = _ddlCacheReusableFiles();
           const compiledByFile = { ..._cachedFiles };
-          // Collect DEF tasks — only for files not served by cache
-          const _nTasks = [];
-          for (const vol of Object.keys(S.ddlTree)) {
-            if (isExcluded(vol)) continue;
-            for (const sv of Object.keys(S.ddlTree[vol] || {})) {
-              if (isExcluded(vol, sv)) continue;
-              for (const { path, content } of getDDLsForSv(vol, sv)) {
-                const file = path.split('/').pop();
-                if (S.tokenMap[file.toUpperCase()]) continue;
-                if (isExcluded(vol, sv, file)) continue;
-                if (_cachedFiles[_fileKey(vol, sv, file)]) continue;
-                if (isHPEDDLText(content)) {
-                  for (const dn of parseDEFNames(content)) _nTasks.push({ vol, sv, path, content, defName: dn });
-                } else {
-                  _nTasks.push({ vol, sv, path, content, defName: null });
-                }
-              }
-            }
-          }
-          function _commitNetardCache() {
-            const compiledByVol = {};
-            for (const [fk, entries] of Object.entries(compiledByFile)) {
-              const vk = fk.split('/')[0];
-              (compiledByVol[vk] || (compiledByVol[vk] = [])).push(...entries);
-            }
-            const fileHashes = Object.assign({}, _ddlCompileCache.fileHashes || {});
-            for (const fk of Object.keys(compiledByFile)) {
-              const [v, sv, f] = fk.split('/');
-              fileHashes[fk] = _fileHash(v, sv, f);
-            }
-            _ddlCompileCache = { version: _ddlTreeVersion, byVol: compiledByVol, fileHashes, fileEntries: compiledByFile };
-            _persistCompiledCache(compiledByFile);
-          }
+          const _nTasks        = _ddlCollectCompileTasks(_cachedFiles);
+          const _commitNetardCache = () => _ddlCommitCompiled(compiledByFile);
           if (!_nTasks.length) {
             const _nSvs = Object.keys(_cachedFiles).length;
             _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
@@ -11102,21 +11132,17 @@ function doParseMessages() {
   // ── Priority 1: single message + explicit DDL selected ─────────────────
   // Show progress overlay and run parse directly — skipping auto-detect.
   if (parseOverrideScope()) {
+    // NB: the file-level form. A DEF-level override cannot be armed from this
+    // flow, so _overridePath's def branch never fires here — it is shared for
+    // the shell, not for the path shape.
     const _o = parseOverrideScope();
     const p1Path = `${_o.vol}/${_o.sv}/${_o.name}`;
     _parseProgressShow();
-    _parseProgressStep(`Manual override mode \u2014 ${p1Path}`,
-      'Identify \u00b7 Recognizers \u00b7 Parse-specs \u2014 not used',
-      '#e6a817', '#e6a817');
-    setTimeout(() => {
+    _overrideProgressShell(p1Path, () => {
+      _runP1Parse(chunks[0], msgText);
       _parseProgressDoneLast();
-      _parseProgressStep('Parsing\u2026');
-      setTimeout(() => {
-        _runP1Parse(chunks[0], msgText);
-        _parseProgressDoneLast();
-        _parseProgressHide();
-      }, 500);
-    }, 500);
+      _parseProgressHide();
+    });
     return;
   }
 
@@ -11606,48 +11632,11 @@ function doParseMessages() {
         _cacheStampNote();
         _startP23Scoring(_ddlCompileCache.byVol);
       } else {
-        // Per-FILE cache check — see the matching block in the NETARD flow.
-        const _cachedFiles = {};
-        if (_ddlCompileCache.fileEntries && _ddlCompileCache.fileHashes) {
-          for (const [fk, entries] of Object.entries(_ddlCompileCache.fileEntries)) {
-            const [v, sv, f] = fk.split('/');
-            if (_ddlCompileCache.fileHashes[fk] === _fileHash(v, sv, f)) _cachedFiles[fk] = entries;
-          }
-        }
+        // Three shared moves — see _ddlCacheReusableFiles.
+        const _cachedFiles   = _ddlCacheReusableFiles();
         const compiledByFile = { ..._cachedFiles };
-        // Collect DEF tasks — only for files not served by cache
-        const _tasks = [];
-        for (const vol of Object.keys(S.ddlTree)) {
-          if (isExcluded(vol)) continue;
-          for (const sv of Object.keys(S.ddlTree[vol] || {})) {
-            if (isExcluded(vol, sv)) continue;
-            for (const { path, content } of getDDLsForSv(vol, sv)) {
-              const file = path.split('/').pop();
-              if (S.tokenMap[file.toUpperCase()]) continue;
-              if (isExcluded(vol, sv, file)) continue;
-              if (_cachedFiles[_fileKey(vol, sv, file)]) continue;
-              if (isHPEDDLText(content)) {
-                for (const dn of parseDEFNames(content)) _tasks.push({ vol, sv, path, content, defName: dn });
-              } else {
-                _tasks.push({ vol, sv, path, content, defName: null });
-              }
-            }
-          }
-        }
-        function _commitP23Cache() {
-          const compiledByVol = {};
-          for (const [fk, entries] of Object.entries(compiledByFile)) {
-            const vk = fk.split('/')[0];
-            (compiledByVol[vk] || (compiledByVol[vk] = [])).push(...entries);
-          }
-          const fileHashes = Object.assign({}, _ddlCompileCache.fileHashes || {});
-          for (const fk of Object.keys(compiledByFile)) {
-            const [v, sv, f] = fk.split('/');
-            fileHashes[fk] = _fileHash(v, sv, f);
-          }
-          _ddlCompileCache = { version: _ddlTreeVersion, byVol: compiledByVol, fileHashes, fileEntries: compiledByFile };
-          _persistCompiledCache(compiledByFile);
-        }
+        const _tasks         = _ddlCollectCompileTasks(_cachedFiles);
+        const _commitP23Cache = () => _ddlCommitCompiled(compiledByFile);
         if (!_tasks.length) {
           const _nSvs = Object.keys(_cachedFiles).length;
           _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
@@ -17068,7 +17057,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.33.0';
+const APP_VERSION  = '1.46.34.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

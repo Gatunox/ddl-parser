@@ -4833,6 +4833,31 @@ function runParse(msgText, { format = 'hex' } = {}) {
   }
 }
 
+test('an armed override actually parses, through the shared shell', () => {
+  // The three manual-override sites became calls to _overrideProgressShell
+  // (2026-08-22, TODO item 1). Nothing exercised that path end to end — arming
+  // had tests, parsing under it did not — so a broken shell would have shipped
+  // green. This runs it: arm a DEF, parse, and check the message comes out
+  // parsed BY the override rather than by detection.
+  const S = sandbox._t.S;
+  const prevTree = S.ddlTree, prevOvr = S.parseOverride, prevScope = S.scope;
+  try {
+    S.ddlTree = { V: { S: { D: 'DEF R.\n  02 AA PIC X(2).\n  02 BB PIC X(2).\nEND R.\n' } } };
+    sandbox._t.toggleParseOverride('def', 'V', 'S', 'D', 'R');
+    assert.ok(sandbox._t.parseOverrideScope(), 'the fixture did not arm');
+    const r = runParse('41424344', { format: 'hex' });
+    assert.ok(r.callbacks > 0, 'the timer queue never ran — the shell dropped its callback');
+    eq(r.messages.length, 1, 'the override produced no message');
+    const m = r.messages[0];
+    eq(m.parsedBy, 'manual override', `parsed by something else: ${m.parsedBy}`);
+    eq(m.manualOverride, true, 'the message is not flagged as an override');
+    // And it read the ARMED DDL, not whatever detection would have chosen.
+    eq((m.fields || []).map(f => f.id).join(','), 'AA,BB', 'the armed DEF was not the one read');
+  } finally {
+    S.parseOverride = prevOvr; S.scope = prevScope; S.ddlTree = prevTree;
+  }
+});
+
 test('only the Classes name a message — no hidden fallback', () => {
   // There used to be nine regexes behind detection: NDC / STM / PSTM / B24 / ISO,
   // each handing an unmatched message a type, a label, a volume and a COLOUR
@@ -5209,18 +5234,38 @@ test('manual override: a display override is skipped too, not just the type', ()
 // without the flag. Every "Manual override mode" progress step must be followed by
 // a message assembly that marks the message AND records its provenance.
 test('every manual-override path flags the message and sets parsedBy', () => {
-  const STEP = '_parseProgressStep(`Manual override mode';
+  // Anchored on the CALL SITES of the shared shell, not on the notice text.
+  // The text used to appear three times, once per site; it is written once now
+  // (_overrideProgressShell, 2026-08-22) and searching for it would find the
+  // helper and nothing else. What has to hold is unchanged: a message parsed
+  // under a manual override carries the flag, or it inherits field_overrides
+  // from a same-named spec, and carries parsedBy, or the provenance line in
+  // Parse Results renders empty.
+  const CALL = '_overrideProgressShell(p1Path, () => {';
   const idxs = [];
-  for (let i = html.indexOf(STEP); i !== -1; i = html.indexOf(STEP, i + 1)) idxs.push(i);
+  for (let i = html.indexOf(CALL); i !== -1; i = html.indexOf(CALL, i + 1)) idxs.push(i);
   assert.ok(idxs.length >= 3,
-    `expected at least 3 manual-override sites, found ${idxs.length} — did the notice text change?`);
+    `expected at least 3 manual-override sites, found ${idxs.length} — was one inlined again?`);
+  // The shell itself must still say what is NOT being used, in the amber the
+  // armed DDL wears in the tree.
+  const shell = psFnSource('_overrideProgressShell');
+  assert.ok(/Manual override mode/.test(shell), 'the override notice is gone');
+  assert.ok(/Parse-specs/.test(shell) && /#e6a817/.test(shell),
+    'the notice no longer says what is skipped, or is not the armed colour');
+  assert.ok(/_parseAborted/.test(shell), 'Cancel cannot stop an override parse');
   idxs.forEach((start, n) => {
     const region = html.slice(start, idxs[n + 1] ?? start + 9000);
     const line   = html.slice(0, start).split('\n').length;
-    assert.ok(region.includes('manualOverride: true'),
+    // One site delegates to _runP1Parse; the flag lives there.
+    // _runP1Parse is declared INSIDE doParseMessages, so psFnSource (top-level
+    // only) cannot see it — slice from its declaration instead.
+    const p1i  = html.indexOf('function _runP1Parse(');
+    const body = /_runP1Parse\(/.test(region.slice(0, 200))
+      ? html.slice(p1i, p1i + 9000) : region;
+    assert.ok(body.includes('manualOverride: true'),
       `manual-override site at source.html:${line} does not set manualOverride: true — ` +
       `its message will inherit a same-named spec's field_overrides`);
-    assert.ok(region.includes("parsedBy: 'manual override'"),
+    assert.ok(body.includes("parsedBy: 'manual override'"),
       `manual-override site at source.html:${line} does not set parsedBy — ` +
       `the Parse Results provenance field renders empty instead of "manual override"`);
   });

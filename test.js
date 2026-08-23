@@ -5051,6 +5051,18 @@ test('an armed override actually parses, through the shared shell', () => {
   }
 });
 
+test('stop-if-empty is filed under Control, not under reading bytes', () => {
+  // It reads nothing and emits nothing — it ends the run. It was first filed
+  // beside `skip` because that is where its help entry was written, which is a
+  // reason about the source, not about what the block does. Reported 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const groups = src.slice(src.indexOf('const _PS_GROUPS = ['), src.indexOf('// The block view is assembled'));
+  const control = groups.slice(groups.indexOf("name: 'Control'"), groups.indexOf("name: 'Tokens'"));
+  assert.ok(/'stop-if-empty'/.test(control), 'the stop block is not grouped with the control blocks');
+  const raw = groups.slice(groups.indexOf("name: 'Read raw bytes'"), groups.indexOf("name: 'Maps & nested'"));
+  assert.ok(!/'stop-if-empty'/.test(raw), 'it is still filed as a way of reading bytes');
+});
+
 test('stop-if-empty: one spec reads the short shape and the long one', () => {
   // Reported from production 2026-08-22: one record with two shapes — hoppers,
   // and hoppers WITH recycle. Two classes were merged into one because they were

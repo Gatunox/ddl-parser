@@ -9997,6 +9997,74 @@ function _overrideProgressShell(p1Path, run) {
   }, 500);
 }
 
+// Compile every DEF the scorer will need, reporting progress, then hand the
+// compiled tree to `done`. Three ways in, and both flows had all three written
+// out: the whole tree still cached; nothing left to compile once the per-file
+// cache is applied; or a chunked compile loop that yields between DEFs so the
+// tab keeps painting and Cancel keeps working.
+//
+// The two copies differed only in their local names, their type registries and
+// which scorer they called at the end — so a fix to the compile progress, the
+// cache stamp or the abort check landed in one flow and not the other. That is
+// TODO item 1's drift risk, in the largest block that was actually identical.
+// Extracted 2026-08-22.
+function _compileDDLTreeThen(useCache, reg, secReg, done) {
+  if (useCache) {
+    const nSvs = Object.keys(_ddlCompileCache.fileEntries || {}).length;
+    _parseProgressStep(`Retrieving DDL definitions from ${nSvs} file${nSvs !== 1 ? 's' : ''}\u2026`);
+    _parseProgressDoneLast();
+    _cacheStampNote();
+    done(_ddlCompileCache.byVol);
+    return;
+  }
+  const cachedFiles    = _ddlCacheReusableFiles();
+  const compiledByFile = { ...cachedFiles };
+  const tasks          = _ddlCollectCompileTasks(cachedFiles);
+  const commit         = () => _ddlCommitCompiled(compiledByFile);
+
+  if (!tasks.length) {
+    const nSvs = Object.keys(cachedFiles).length;
+    _parseProgressStep(`Retrieving DDL definitions from ${nSvs} file${nSvs !== 1 ? 's' : ''}\u2026`);
+    commit();
+    _parseProgressDoneLast();
+    _cacheStampNote();
+    done(_ddlCompileCache.byVol);
+    return;
+  }
+
+  const nCached = Object.keys(cachedFiles).length;
+  if (nCached > 0) {
+    _parseProgressStep(`Retrieving DDL definitions from ${nCached} subvolume${nCached !== 1 ? 's' : ''}\u2026`);
+    _parseProgressDoneLast();
+  }
+  const nSvsToCompile = new Set(tasks.map(t => `${t.vol.toUpperCase()}/${t.sv.toUpperCase()}`)).size;
+  const svLabel = n => `${n} subvolume${n !== 1 ? 's' : ''}`;
+  _parseProgressStep(`Compiling DDL definitions from ${svLabel(nSvsToCompile)}\u2026 0 of ${tasks.length}`);
+  let ti = 0;
+  function compileNext() {
+    if (_parseAborted) return;
+    if (ti >= tasks.length) {
+      commit();
+      _parseProgressDoneLast();
+      _cacheStampNote();
+      done(_ddlCompileCache.byVol);
+      return;
+    }
+    const { vol, sv, path, content, defName } = tasks[ti++];
+    const defs = defName ? parseHPEDDL(content, reg, secReg, defName)
+                         : parseDDL(content, reg, secReg);
+    if (defName) applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
+    if (defs.length > 1 && !/(?:TKN|TKNX)$/i.test(defName || path.split('/').pop())) {
+      const fk = _fileKey(vol, sv, path.split('/').pop());
+      (compiledByFile[fk] || (compiledByFile[fk] = [])).push({ path, defName, defs });
+    }
+    _parseProgressUpdate(_ppSteps.length - 1,
+      `Compiling DDL definitions from ${svLabel(nSvsToCompile)}\u2026 ${ti} of ${tasks.length}`);
+    setTimeout(compileNext, 0);
+  }
+  setTimeout(compileNext, 0);
+}
+
 function _persistCompiledCache(compiledByFile) {
   if (!_compiledCacheDB) return;
   // Drop entries whose file no longer hashes the same — they were recompiled.
@@ -10914,62 +10982,13 @@ function doParseNetardLog(text, opts = {}) {
           const _anyUnbound = _preDet.some(p => !p.bound);
 
           if (!_anyUnbound) {
-          // MATCH-only — no candidate pool needed; go straight to scoring
-          // (which will short-circuit every record on its binding).
-          _startNetardScoring({}, _preDet);
-        } else if (useCache) {
-          const _nSvs = Object.keys(_ddlCompileCache.fileEntries || {}).length;
-          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
-          _parseProgressDoneLast();
-          _cacheStampNote();
-          _startNetardScoring(_ddlCompileCache.byVol, _preDet);
-        } else {
-          // Three shared moves — see _ddlCacheReusableFiles.
-          const _cachedFiles   = _ddlCacheReusableFiles();
-          const compiledByFile = { ..._cachedFiles };
-          const _nTasks        = _ddlCollectCompileTasks(_cachedFiles);
-          const _commitNetardCache = () => _ddlCommitCompiled(compiledByFile);
-          if (!_nTasks.length) {
-            const _nSvs = Object.keys(_cachedFiles).length;
-            _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
-            _commitNetardCache();
-            _parseProgressDoneLast();
-            _cacheStampNote();
-            _startNetardScoring(_ddlCompileCache.byVol, _preDet);
+            // MATCH-only — no candidate pool needed; go straight to scoring
+            // (which will short-circuit every record on its binding).
+            _startNetardScoring({}, _preDet);
           } else {
-          const _nCached = Object.keys(_cachedFiles).length;
-          if (_nCached > 0) {
-            _parseProgressStep(`Retrieving DDL definitions from ${_nCached} subvolume${_nCached !== 1 ? 's' : ''}\u2026`);
-            _parseProgressDoneLast();
+            _compileDDLTreeThen(useCache, _netardReg, _netardSecReg,
+              byVol => _startNetardScoring(byVol, _preDet));
           }
-          const _nSvsToCompile = new Set(_nTasks.map(t => `${t.vol.toUpperCase()}/${t.sv.toUpperCase()}`)).size;
-          const _svLabel = (n) => `${n} subvolume${n !== 1 ? 's' : ''}`;
-          _parseProgressStep(`Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 0 of ${_nTasks.length}`);
-          let _nti = 0;
-          function _netardCompileNext() {
-            if (_parseAborted) return;
-            if (_nti >= _nTasks.length) {
-              _commitNetardCache();
-              _parseProgressDoneLast();
-              _cacheStampNote();
-              _startNetardScoring(_ddlCompileCache.byVol, _preDet);
-              return;
-            }
-            const { vol, sv, path, content, defName } = _nTasks[_nti++];
-            const defs = defName
-              ? parseHPEDDL(content, _netardReg, _netardSecReg, defName)
-              : parseDDL(content, _netardReg, _netardSecReg);
-            if (defName) applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
-            if (defs.length > 1 && !/(?:TKN|TKNX)$/i.test(defName || path.split('/').pop())) {
-              const fk = _fileKey(vol, sv, path.split('/').pop());
-              (compiledByFile[fk] || (compiledByFile[fk] = [])).push({ path, defName, defs });
-            }
-            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 ${_nti} of ${_nTasks.length}`);
-            setTimeout(_netardCompileNext, 0);
-          }
-          setTimeout(_netardCompileNext, 0);
-          }  // end inner else (has tasks)
-        }  // end outer else (per-subvolume compile block)
         }  // end _afterBoundCompile
         _compileBoundNext();   // kick off: compile bound DDLs (if any), then _afterBoundCompile
       }, 500);
@@ -11625,59 +11644,7 @@ function doParseMessages() {
       const _needScore = _chunkInfo.some(ci => ci.verdict.kind === 'needs-ddl');
       if (!_needScore) { _startP23Scoring(null); return; }
 
-      if (useCache) {
-        const _nSvs = Object.keys(_ddlCompileCache.fileEntries || {}).length;
-        _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
-        _parseProgressDoneLast();
-        _cacheStampNote();
-        _startP23Scoring(_ddlCompileCache.byVol);
-      } else {
-        // Three shared moves — see _ddlCacheReusableFiles.
-        const _cachedFiles   = _ddlCacheReusableFiles();
-        const compiledByFile = { ..._cachedFiles };
-        const _tasks         = _ddlCollectCompileTasks(_cachedFiles);
-        const _commitP23Cache = () => _ddlCommitCompiled(compiledByFile);
-        if (!_tasks.length) {
-          const _nSvs = Object.keys(_cachedFiles).length;
-          _parseProgressStep(`Retrieving DDL definitions from ${_nSvs} file${_nSvs !== 1 ? 's' : ''}\u2026`);
-          _commitP23Cache();
-          _parseProgressDoneLast();
-          _cacheStampNote();
-          _startP23Scoring(_ddlCompileCache.byVol);
-        } else {
-          const _p23Cached = Object.keys(_cachedFiles).length;
-          if (_p23Cached > 0) {
-            _parseProgressStep(`Retrieving DDL definitions from ${_p23Cached} subvolume${_p23Cached !== 1 ? 's' : ''}\u2026`);
-            _parseProgressDoneLast();
-          }
-          const _nSvsToCompile = new Set(_tasks.map(t => `${t.vol.toUpperCase()}/${t.sv.toUpperCase()}`)).size;
-          const _svLabel = (n) => `${n} subvolume${n !== 1 ? 's' : ''}`;
-          _parseProgressStep(`Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 0 of ${_tasks.length}`);
-          let _ti = 0;
-          function _compileNext() {
-            if (_parseAborted) return;
-            if (_ti >= _tasks.length) {
-              _commitP23Cache();
-              _parseProgressDoneLast();
-              _cacheStampNote();
-              _startP23Scoring(_ddlCompileCache.byVol);
-              return;
-            }
-            const { vol, sv, path, content, defName } = _tasks[_ti++];
-            const defs = defName
-              ? parseHPEDDL(content, _repoReg, _repoSecReg, defName)
-              : parseDDL(content, _repoReg, _repoSecReg);
-            if (defName) applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
-            if (defs.length > 1 && !/(?:TKN|TKNX)$/i.test(defName || path.split('/').pop())) {
-              const fk = _fileKey(vol, sv, path.split('/').pop());
-              (compiledByFile[fk] || (compiledByFile[fk] = [])).push({ path, defName, defs });
-            }
-            _parseProgressUpdate(_ppSteps.length - 1, `Compiling DDL definitions from ${_svLabel(_nSvsToCompile)}\u2026 ${_ti} of ${_tasks.length}`);
-            setTimeout(_compileNext, 0);
-          }
-          setTimeout(_compileNext, 0);
-        }  // end inner else (has tasks)
-      }  // end outer else (per-subvolume compile block)
+      _compileDDLTreeThen(useCache, _repoReg, _repoSecReg, byVol => _startP23Scoring(byVol));
     }, 500);
   }, 500);
 }
@@ -17057,7 +17024,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.34.0';
+const APP_VERSION  = '1.46.35.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

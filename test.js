@@ -4356,6 +4356,36 @@ test('every field the loops read off the cache is actually put there', () => {
     `read off the cache but never put there: ${missing.join(', ')}`);
 });
 
+test('both flows compile the DDL tree through the same driver', () => {
+  // The compile block — cache hit, nothing-to-compile, and the chunked loop with
+  // its "0 of N" step, its abort check and its cache stamp — was written out in
+  // BOTH flows, differing only in local names, type registries and which scorer
+  // it called at the end. A fix to any of it landed in one flow and not the
+  // other, which is the drift TODO item 1 is about. Shared 2026-08-22.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const driver = psFnSource('_compileDDLTreeThen');
+  assert.ok(driver, 'the shared compile driver is gone');
+  // Everything the two copies used to each own, now owned once.
+  assert.ok(/_parseAborted/.test(driver), 'a compile loop that cannot be cancelled');
+  assert.ok(/_cacheStampNote\(\)/.test(driver), 'the cache stamp is no longer shown');
+  assert.ok(/_ddlCacheReusableFiles\(\)/.test(driver) && /_ddlCollectCompileTasks\(/.test(driver)
+    && /_ddlCommitCompiled\(/.test(driver), 'the driver stopped using the shared cache helpers');
+  assert.ok(/setTimeout\(compileNext, 0\)/.test(driver),
+    'the compile loop no longer yields between DEFs — the tab freezes on a big tree');
+  // Both flows call it, and neither kept a copy.
+  for (const fn of ['doParseNetardLog', 'doParseMessages']) {
+    const body = psFnSource(fn);
+    assert.ok(/_compileDDLTreeThen\(/.test(body), `${fn} does not use the shared driver`);
+    assert.ok(!/Compiling DDL definitions from/.test(body),
+      `${fn} still builds its own compile progress — the copy is back`);
+  }
+  // The registries stay per-flow: NETARD compiles against its own type registry.
+  assert.ok(/_compileDDLTreeThen\(useCache, _netardReg, _netardSecReg/.test(src),
+    'the NETARD flow lost its own type registry');
+  assert.ok(/_compileDDLTreeThen\(useCache, _repoReg, _repoSecReg/.test(src),
+    'the paste flow lost its own type registry');
+});
+
 test('compiling and scoring happen only when a chunk needs a DDL', () => {
   // Scoring exists to fill a MISSING binding — only the `needs-ddl` verdict
   // consults it. A spec that binds its own DDL resolves it with getDDLFromPath,
@@ -4365,8 +4395,11 @@ test('compiling and scoring happen only when a chunk needs a DDL', () => {
   assert.ok(/const _needScore = _chunkInfo\.some\(ci => ci\.verdict\.kind === 'needs-ddl'\)/.test(fn),
     'the condition is the verdict, not a guess');
   const gate = fn.indexOf('const _needScore');
-  const compile = fn.indexOf('if (useCache)', gate);
+  // The compile branches moved into _compileDDLTreeThen (2026-08-22), shared
+  // with the NETARD flow; what matters here is unchanged — the bail comes first.
+  const compile = fn.indexOf('_compileDDLTreeThen(', gate);
   const bail = fn.indexOf('if (!_needScore)', gate);
+  assert.ok(compile > 0, 'the compile path is gone from this flow entirely');
   assert.ok(bail > 0 && bail < compile,
     'and it short-circuits BEFORE the compile path, not after');
   // The scoring step must not announce itself when there is nothing to score.

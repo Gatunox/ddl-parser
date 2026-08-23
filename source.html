@@ -17055,7 +17055,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.41.0';
+const APP_VERSION  = '1.46.42.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23714,16 +23714,29 @@ function _meFmDeCellHtml(row, ctx) {
     // clue where it came from — which is exactly the case this exists for.
     const fromDDL = row._fromDDL;
     const _would = row.naturalDE != null ? ` It would otherwise be DE ${row.naturalDE}.` : '';
+    // An anchor that lands on the number the row ALREADY had changes no
+    // numbering — but it is still an override, and the table has to say so.
+    // It said nothing: the ↩ form was conditional on the two numbers DIFFERING,
+    // so pinning a row to its own number left an accent colour as the only
+    // clue, in the list and under the override filter alike. Reported
+    // 2026-08-23 against SETL-DE66 → 65, which sits at 65 anyway.
+    const _samePin = row.anchored && row.naturalDE != null && row.naturalDE === row.de;
     const tip = !row.anchored
       ? 'Follows on from the previous element. Anchor it with an override to renumber everything from here.'
+      : _samePin
+      ? `Anchored to DE ${row.de}, which is the number it would have had anyway — so nothing after it moves. Pinning it holds that number if the fields before it change; edit or clear it in the Overrides list above.`
       : row._deSrc === 'auto'
       ? `Anchored to DE ${row.de} by Auto Order, from the bound DDL's "Bit map position" comment — not typed by hand.${_would} Every element after it renumbers from here.`
       : `Anchored to DE ${row.de} by an override set by hand — the bound DDL does not comment this number.${_would} Every element after it renumbers from here; edit it in the Overrides list above.`;
-    // Same "<original> ↩ <in effect>" shape as the Type column.
+    // Same "<original> ↩ <in effect>" shape as the Type column. With no original
+    // to show — the anchor pins the number it already had — the arrow leads on
+    // its own, which still reads as "this was set" rather than "this followed on".
     const anchoredHtml = (row.anchored && row.naturalDE != null && row.naturalDE !== row.de)
       ? `<span class="c-ovr-orig">DE ${row.naturalDE}</span>`
         + `<span class="c-ovr-arrow"> ↩ </span>`
         + `<span class="c-ovr-new">${row.de}</span>`
+      : _samePin
+      ? `<span class="c-ovr-arrow">↩ </span><span class="c-ovr-new">DE ${row.de}</span>`
       : `DE ${row.de}`;
     return `<td class="me-fm-de${row.anchored ? ' me-fm-de-anchored' : ''}${fromDDL ? ' me-fm-de-fromddl' : ''}" data-sig="${sig}" title="${ea(tip)}">${anchoredHtml}</td>`;
   }
@@ -24362,8 +24375,27 @@ function _meFmCountUnresolvedUncached(path) {
 function _meCollectBindingDefs(resolvedBindings) {
   const defs = [];
   const seen = new Set();
+  // Several bindings are ONE layout, not several. They are element sets of the
+  // same bitmap message — DE 1 through 128 — so a second DDL continues the
+  // first rather than starting again at byte 0. It kept its own offsets, so the
+  // Field Map showed 5296 for the last element of the first DDL and then 0 for
+  // the first of the second, in a column that otherwise reads as one address
+  // space. Reported 2026-08-23.
+  //
+  // The shift is the declared extent of everything bound before it. Each def is
+  // COPIED — the resolved bindings come from the compile cache and are shared
+  // with every other reader of that DDL.
+  let base = 0;
   for (const r of (resolvedBindings || [])) {
+    let end = 0;
     for (const d of (r?.defs || [])) {
+      const dEnd = (d.offset || 0) + (d.length || 0);
+      if (dEnd > end) end = dEnd;
+    }
+    const shift = base;
+    base += end;
+    for (const d0 of (r?.defs || [])) {
+      const d = shift ? { ...d0, offset: (d0.offset || 0) + shift } : d0;
       // Dedup by id AND offset: two bindings resolving the same field merge,
       // but repeated FILLER items (same id, different offsets — the manual
       // allows FILLER in place of a name any number of times) must ALL

@@ -5051,6 +5051,60 @@ test('an armed override actually parses, through the shared shell', () => {
   }
 });
 
+test('an anchor that pins the number it already had still says it is an override', () => {
+  // The ↩ form drew only when the anchored number DIFFERED from the natural one,
+  // so an override that pins a row to the number it already had rendered as
+  // plain text — an accent colour was the only clue, in the list and under the
+  // override filter alike. Reported 2026-08-23 against SETL-DE66 → 65, which
+  // sat at 65 anyway. Such an anchor moves nothing after it, but it IS an
+  // override: it holds that number if the fields before it change.
+  const cell = psFnSource('_meFmDeCellHtml');
+  assert.ok(/_samePin/.test(cell), 'the pinned-to-itself case is not distinguished');
+  // Both branches present: original ↩ new when they differ, a lone ↩ when they
+  // do not — and never bare text for an anchored row.
+  assert.ok(/c-ovr-orig[\s\S]{0,200}c-ovr-arrow[\s\S]{0,200}c-ovr-new/.test(cell),
+    'the "<original> ↩ <in effect>" form is gone');
+  assert.ok(/_samePin[\s\S]{0,160}c-ovr-arrow[\s\S]{0,120}c-ovr-new/.test(cell),
+    'a pinned anchor renders as plain text again');
+  // And it says so in the tooltip rather than leaving the reader to guess why a
+  // number is marked but nothing moved.
+  assert.ok(/would have had anyway/.test(cell),
+    'the tooltip no longer explains an anchor that changes no numbering');
+});
+
+test('two bound DDLs are ONE layout: the second continues the first', () => {
+  // They are element sets of the same bitmap message — DE 1 through 128 — so a
+  // second binding continues the first rather than starting again at byte 0.
+  // It kept its own offsets: the Field Map showed 5296 for the last element of
+  // the first DDL and then 0 for the first of the second, in a column that
+  // otherwise reads as one address space. Reported 2026-08-23.
+  const prevTree = S.ddlTree;
+  try {
+    S.ddlTree = { V: { S: {
+      A: 'DEF RA.\n  02 A1 PIC X(4).\n  02 A2 PIC X(6).\nEND RA.\n',   // 10 bytes
+      B: 'DEF RB.\n  02 B1 PIC X(3).\n  02 B2 PIC X(2).\nEND RB.\n',
+    } } };
+    const defs = sandbox._t.meCollectBindingDefs(
+      ['V/S/A/RA', 'V/S/B/RB'].map(p => getDDLFromPath(p)));
+    const at = id => defs.find(d => d.id === id)?.offset;
+    eq(at('A1'), 0, 'the first binding moved');
+    eq(at('A2'), 4, 'the first binding moved');
+    // 4 + 6 = 10 bytes declared before it.
+    eq(at('B1'), 10, `the second binding restarted at its own byte 0: B1 at ${at('B1')}`);
+    eq(at('B2'), 13, `the second binding's later fields did not follow: B2 at ${at('B2')}`);
+
+    // A single binding is untouched — the shift for the first is always zero,
+    // which is why no baseline case moved (none of them binds two DDLs).
+    const one = sandbox._t.meCollectBindingDefs([getDDLFromPath('V/S/B/RB')]);
+    eq(one.find(d => d.id === 'B1').offset, 0, 'a single binding was shifted');
+
+    // The defs are COPIES: the resolved bindings come from the compile cache and
+    // are shared with every other reader of that DDL.
+    eq(getDDLFromPath('V/S/B/RB').defs.find(d => d.id === 'B1').offset, 0,
+       'the rebase wrote through to the cached DDL');
+  } finally { S.ddlTree = prevTree; }
+});
+
 test('stop with no condition is unconditional, and an unknown one is refused', () => {
   // The block is `stop`: on its own it ends the run where it sits, and
   // `condition` narrows that to a named situation. Designed that way so the set

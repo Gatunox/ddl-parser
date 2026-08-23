@@ -742,14 +742,19 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 /* The tree is a card inside the DDL panel, not a bordered-off column. Margin
    (not padding on the parent) so the resizer still measures the pane itself —
    the drag handler sets this element's width directly. */
-/* Same surface as .ddl-editor-pane beside it. On --bg-deep this card sat a
-   shade darker than its sibling, and because every border is 7% WHITE and
-   therefore translucent, the darker backdrop also dragged its outline down —
-   rgb(30,34,39) against the editor's rgb(38,43,49), a 27% luminance gap from an
-   identical declaration. Two cards of the same kind, side by side in one panel,
-   now share one surface and one rendered edge. */
+/* The ground comes from .pb-read on the element — a tree is something you READ
+   and click, not something you type into, and the editor pane beside it carries
+   .pb-edit for the same reason. No `background` here: this rule comes LATER in
+   the sheet than .pb-read and at equal specificity, so declaring one would win
+   and the marking would be silently lost — the trap already noted on
+   .ddl-editor-pane and .me-sidebar. Requested 2026-08-22; before it the pane
+   took --bg-panel, which is white in light.
+   (It was matched to the editor's surface when both sat on --bg-deep: every
+   border is translucent, so a darker backdrop dragged the outline down with it —
+   rgb(30,34,39) against rgb(38,43,49) from one identical declaration. Both cards
+   still resolve to the same colour in dark; only light separates them.) */
 .ddl-tree-pane   { width: 170px; flex-shrink: 0; overflow: hidden;
-  background: var(--bg-panel); display: flex; flex-direction: column;
+  display: flex; flex-direction: column;
   /* No border where the card meets the PANEL's own — flush against it, the two
      lines sat on top of each other and read as one thick edge. The tree keeps
      top and right: right faces the resizer gap, which is a real boundary.
@@ -3500,7 +3505,7 @@ th.me-fm-colhi{color:var(--accent);}
         <button class="panel-toggle" id="ddlToggle" onclick="togglePanel('ddlPanel','ddlToggle','ddlResizer')" title="Hide panel">−</button>
       </div>
       <div class="ddl-pane-split">
-        <div class="ddl-tree-pane" id="ddlTreePane">
+        <div class="ddl-tree-pane pb-read" id="ddlTreePane">
           <div class="tree-hdr">
             <span class="tree-hdr-title">DDL Tree</span>
             <button class="tree-hdr-exp" id="treeExpandAllBtn" onclick="toggleTreeExpandAll()" title="Expand all">+</button>
@@ -17063,7 +17068,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.32.0';
+const APP_VERSION  = '1.46.33.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

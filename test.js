@@ -12064,12 +12064,19 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
   assert.ok(/\.pb-read \{ background: var\(--surface-read\); \}/.test(css), '.pb-read does not take its token');
   const html = src;
   assert.ok(/<div class="ddl-editor-pane pb-edit">/.test(html), 'DDL Definition is not marked editable');
+  // The tree beside it is a READOUT: you click it, you do not type in it. It took
+  // --bg-panel until 2026-08-22, which is white in light. Its rule comes later in
+  // the sheet than .pb-read at equal specificity, so a background of its own
+  // would silently win — hence the no-own-ground check above covers it too.
+  assert.ok(/<div class="ddl-tree-pane pb-read" id="ddlTreePane">/.test(html),
+    'the DDL tree is not marked read-only');
   assert.ok(/<div class="panel-body pb-edit"/.test(html),      'Message Input is not marked editable');
   assert.ok(/<div class="panel-body pb-read" id="resContainer">/.test(html), 'Parse Results is not marked read-only');
   assert.ok(/<div class="panel-body pb-read">\s*<div id="rawDisplay"/.test(html), 'Raw Message is not marked read-only');
   // A surface that paints its own ground WINS over the class and the marking is
   // silently lost — which is what both of these used to do.
   for (const [sel, re] of [['.ddl-editor-pane', /\.ddl-editor-pane \{[^}]*\}/],
+                           ['.ddl-tree-pane',   /\.ddl-tree-pane\s+\{[^}]*\}/],
                            ['.me-sidebar',      /\n\.me-sidebar\{[^}]*\}/]]) {
     const rule = (css.match(re) || [''])[0];
     assert.ok(rule, `${sel} is gone`);

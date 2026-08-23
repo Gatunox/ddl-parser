@@ -4833,6 +4833,40 @@ function runParse(msgText, { format = 'hex' } = {}) {
   }
 }
 
+test('only the Classes name a message — no hidden fallback', () => {
+  // There used to be nine regexes behind detection: NDC / STM / PSTM / B24 / ISO,
+  // each handing an unmatched message a type, a label, a volume and a COLOUR
+  // that appeared nowhere in the Class Editor and could not be seen or edited.
+  // That is why classes renamed to ISO-PEPE / ISO-MDS still badged as ISO
+  // (reported 2026-08-18): the badge was moved off the table in v1.33.0.0, the
+  // parse path was not. Removed 2026-08-22 on the same report.
+  // Comments stripped: the tombstone where the table used to be names it on
+  // purpose, and that history is worth keeping.
+  const src = fs.readFileSync('./source.html', 'utf8')
+    .split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  assert.ok(!/MSG_TYPE_MAP/.test(src), 'the legacy detection table is back');
+  assert.ok(!/_DEFAULT_DETECT_RULES/.test(src), 'the legacy rules are back');
+  assert.ok(!/up_detect_rules/.test(src), 'the app still carries the saved legacy rules');
+  for (const fn of ['detectMsgType', 'detectMsgTypeTrace']) {
+    const body = psFnSource(fn);
+    assert.ok(body, `${fn} is gone`);
+    assert.ok(/UNKNOWN/.test(body), `${fn} no longer has an unmatched answer`);
+    assert.ok(!/legacy/i.test(body), `${fn} fell back to something again: ${body.slice(0, 200)}`);
+  }
+  // Behavioural: a message no class claims comes back UNKNOWN, with the trace
+  // showing every class that was tried — which the regex table never did.
+  sandbox._t.fmtSave(sandbox._t.fmtDefaultSpecs());
+  // "0210" + "02" matched the old ^0[1-9][012489][012345]02 rule outright; the
+  // PSTM class wants more than 872 bytes, so this is exactly a message the table
+  // used to claim and the classes do not.
+  const short = '0210' + '02' + '0'.repeat(20);
+  const det = sandbox.detectMsgTypeTrace(short, {});
+  eq(det.winner.type, 'UNKNOWN', 'a hidden rule still names this message');
+  assert.ok(det.trace.length > 0, 'and the trace shows nothing that was tried');
+  assert.ok(det.trace.some(t => t.name === 'PSTM' && !t.passed),
+    'the class that would have claimed it is not even reported');
+});
+
 test('end to end: a spec that binds its own DDL parses without any scoring', () => {
   // The v1.12.0.2 path exactly: recognized, binding present, so nothing needs a
   // DDL and the compile pass is skipped. The bug was that the pre-scoring pass
@@ -4842,6 +4876,19 @@ test('end to end: a spec that binds its own DDL parses without any scoring', () 
   const spec = fmtSpecByName('PSTM');
   const orig = spec.ddl_bindings;
   spec.ddl_bindings = ['POS/SV/PSTM/PSTM'];
+  // The PSTM class also demands more than 872 bytes, and this fixture is ~70.
+  // It used to be detected anyway — by the legacy regex table, which had no
+  // length rule — so removing that table (2026-08-22) left this message claimed
+  // by nothing. Detection is not what this test is about, so the guard is lifted
+  // for the duration and put back: the message is recognised by the CLASS now,
+  // which is the only thing that detects anything.
+  // Both halves: a spec is COMPILED, so the recognizer list is what you read and
+  // _fns is what actually runs. Dropping only the list leaves the compiled guard
+  // in place and the trace then blames an index that no longer exists.
+  const origRecs = spec.recognizers, origFns = spec._fns;
+  const keep = origRecs.map(r => r.type !== 'greater-than');
+  spec.recognizers = origRecs.filter((_, i) => keep[i]);
+  spec._fns        = origFns.filter((_, i) => keep[i]);
   try {
     const r = runParse(asHex(routeBytes()));
     assert.ok(r.callbacks > 0, 'the timer queue actually ran — a 0 here means this tests nothing');
@@ -4851,7 +4898,7 @@ test('end to end: a spec that binds its own DDL parses without any scoring', () 
     assert.ok(/parse-spec/.test(m.parsedBy || ''), `the engine produced it, not a guess: ${m.parsedBy}`);
     assert.ok((m.fields || []).length > 0, 'with fields');
     eq(routeSegCount(m.fields), 5, 'and the repeat block read exactly NUM-SERVICES services');
-  } finally { spec.ddl_bindings = orig; }
+  } finally { spec.ddl_bindings = orig; spec.recognizers = origRecs; spec._fns = origFns; }
 });
 
 test('end to end: an unrecognised message reaches its diagnostic instead of throwing', () => {

@@ -9083,48 +9083,10 @@ function parseMessage(bytes, defs, rawBytes) {
 // Add new entries here as new protocols are encountered.
 // Each entry: { test: fn(rawMsg) → bool, type, label, vol }
 // Helper: true when char code is alphanumeric (0-9, A-Z, a-z).
-const _DEFAULT_DETECT_RULES = [
-  { regex:'^(?:[12][0-9A-Z]\\?|[3-9]\\?)',      type:'NDC',  label:'NDC/912',            vol:'ATM',    color:'#ff6b35' },
-  { regex:'^990601|^990701',                     type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM',    color:'#00c8d4' },
-  { regex:'^990602|^990702',                     type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS',    color:'#5cd65c' },
-  { regex:'^0[1-9][012489][012345]01',           type:'STM',  label:'Base24 STM (ATM)',   vol:'ATM',    color:'#00c8d4' },
-  { regex:'^0[1-9][012489][012345]02',           type:'PSTM', label:'Base24 PSTM (POS)',  vol:'POS',    color:'#5cd65c' },
-  { regex:'^99\\d{2}',                           type:'B24',  label:'Base24 Generic',     vol:'BASE',   color:'#a47bff' },
-  { regex:'^ISO',                                type:'ISO',  label:'ISO 8583',           vol:'SWITCH', color:'#f5c542' },
-  { regex:'^0[1-9]\\d{2}(?![0-9A-Fa-f]{16})',   type:'ISO',  label:'ISO 8583',           vol:'SWITCH', color:'#f5c542' },
-  { regex:'^0[1-9]\\d{2}[0-9A-Fa-f]{16}',       type:'ISO',  label:'ISO 8583',           vol:'SWITCH', color:'#f5c542' },
-];
-
-let _detectRules = _DEFAULT_DETECT_RULES.map(r => ({...r}));
-
-function _rebuildMsgTypeMap() {
-  MSG_TYPE_MAP = _detectRules.map(r => {
-    let re; try { re = new RegExp(r.regex); } catch(e) { re = null; }
-    return { ...r, test: re ? s => re.test(s) : () => false };
-  });
-}
-
-function _loadDetectRules() {
-  try {
-    const s = _kvGet('up_detect_rules');
-    if (s) {
-      _detectRules = JSON.parse(s);
-      _detectRules.forEach(r => {
-        if (!r.color) {
-          const def = _DEFAULT_DETECT_RULES.find(d => d.type === r.type);
-          if (def?.color) r.color = def.color;
-        }
-      });
-    }
-  } catch(e) {}
-  _rebuildMsgTypeMap();
-}
-
-let MSG_TYPE_MAP = _detectRules.map(r => {
-  let re; try { re = new RegExp(r.regex); } catch(e) { re = null; }
-  return { ...r, test: re ? s => re.test(s) : () => false };
-});
-
+// The legacy detection table lived here: nine regexes mapping a message to a
+// type, label, volume and colour, loaded from up_detect_rules and rebuilt into
+// MSG_TYPE_MAP. Detection is the Class Editor's job alone now, so the table, its
+// loader and both fallbacks that read it are gone. Removed 2026-08-22.
 // Volume search hierarchy for auto-detect fallback.
 // When a message is typed, search its own vol first, then walk up to the parent.
 // ATM and POS are children of BASE; SWITCH is also a child of BASE.
@@ -9142,10 +9104,13 @@ function detectMsgType(rawMsg, ctx) {
   for (let i = 0; i < rawMsg.length; i++) bytes[i] = rawMsg.charCodeAt(i) & 0xFF;
   const newResult = _fmtDetect(bytes, ctx);
   if (newResult) return newResult;
-  // ── Legacy regex fallback ────────────────────────────────────────────────
-  for (const p of MSG_TYPE_MAP) {
-    if (p.test(rawMsg)) return { type:p.type, label:p.label, vol:p.vol, color:p.color||'' };
-  }
+  // Nothing else decides. A message is what the CLASSES say it is, and when no
+  // class claims it the honest answer is UNKNOWN. There used to be a table of
+  // nine regexes here — NDC / STM / PSTM / B24 / ISO — handing a message a type,
+  // a label, a volume and a colour that appeared nowhere in the Class Editor and
+  // could not be edited or even seen. It is why type codes renamed to ISO-PEPE /
+  // ISO-MDS still badged as ISO (reported 2026-08-18): the badge was moved off it
+  // in v1.33.0.0, the parse path was not. Removed 2026-08-22.
   return { type:'UNKNOWN', label:'Unknown', vol:null };
 }
 
@@ -9158,10 +9123,8 @@ function detectMsgTypeTrace(rawMsg, ctx) {
   for (let i = 0; i < rawMsg.length; i++) bytes[i] = rawMsg.charCodeAt(i) & 0xFF;
   const result = _fmtDetectTrace(bytes, ctx);
   if (result.winner) return result;
-  // Legacy regex fallback when no spec matched
-  for (const p of MSG_TYPE_MAP) {
-    if (p.test(rawMsg)) return { winner: { type:p.type, label:p.label, vol:p.vol, color:p.color||'' }, trace: result.trace, legacy: true };
-  }
+  // Same as detectMsgType: no class claimed it, so it is UNKNOWN — and the trace
+  // shows every class that was tried, which a hidden regex never did.
   return { winner: { type:'UNKNOWN', label:'Unknown', vol:null }, trace: result.trace };
 }
 
@@ -16930,7 +16893,7 @@ function confirmImport() {
 // ============================================================
 const _APP_KV_KEYS = [
   'up_ddl_tree', 'up_ddlmm', 'up_excl', 'de_overrides',
-  'up_tree_exp', 'up_detect_rules', 'up_settings', 'up_layout',
+  'up_tree_exp', 'up_settings', 'up_layout',
   'auditFltVis', 'up_ddl_versions'
 ];
 let _appKV   = {};
@@ -17089,7 +17052,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.30.0';
+const APP_VERSION  = '1.46.31.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18717,7 +18680,6 @@ document.addEventListener('DOMContentLoaded', () => {
   _openAppKV().then(() => {
     _fmtSyncDefaults();   // one-time (per sync version): reconcile saved specs with built-in defaults
     _fmtLoad();
-    _loadDetectRules();
     loadPrefs();
     _auditPrecomputeRowHeights();
     loadExcl();

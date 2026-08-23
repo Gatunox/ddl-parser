@@ -10129,6 +10129,48 @@ function _fieldsForChosen(msgType, match, parseBytes, rawBytes) {
   return { fields: r ? r.fields : match.fields, tokens: null, parsedBy: 'DDL walk' };
 }
 
+// Score the candidate pool ONCE per type, off the LONGEST message of that type.
+//
+// Scoring exists to fill a missing binding and the picker asks once per type, so
+// there is nothing that could use a second answer — and a longer message gives
+// the scorer more to judge against, so the list is better ordered. Each entry
+// keeps its compiled candidate, because the fields on it belong to the
+// representative and any other message has to be re-walked (_fieldsForChosen).
+//
+// `items` is whatever the flow already has: each needs { bytes, parseBytes,
+// msgType }, and the caller leaves out anything a binding already resolved.
+// Both flows had this written out; shared 2026-08-22 (TODO item 1).
+function _scorePoolByType(items, compiledByVol, ddlErrors) {
+  const longest = {};
+  for (const it of items) {
+    const { bytes, parseBytes, msgType } = it;
+    if (!msgType || !msgType.vol) continue;
+    const key = msgType.type + ':' + msgType.vol;
+    if (!longest[key] || bytes.length > longest[key].bytes.length)
+      longest[key] = { bytes, parseBytes, msgType };
+  }
+  const cache = {};
+  for (const [key, rep] of Object.entries(longest)) {
+    const pool = volSearchChain(rep.msgType.vol).flatMap(v => (compiledByVol || {})[v] || [])
+      .filter(c => { const [pv, ps, pn] = c.path.split('/'); return !isExcluded(pv, ps, pn, c.defName); });
+    cache[key] = pool.map(c => {
+      try {
+        const r         = bestDDLMatch(rep.parseBytes, [c], rep.bytes);
+        const nameCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
+        const bonus     = nameCheck === rep.msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
+        const score     = bonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
+        return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score, cand: c };
+      } catch (err) {
+        const label = c.path + (c.defName ? '/' + c.defName : '');
+        console.warn('[scoring] DDL error —', label, err);
+        ddlErrors.push(label);
+        return { ddlPath: c.path, defName: c.defName ?? null, fields: [], score: -1, cand: c };
+      }
+    }).filter(m => m.score > 0).sort((a, b) => b.score - a.score);
+  }
+  return cache;
+}
+
 function _persistCompiledCache(compiledByFile) {
   if (!_compiledCacheDB) return;
   // Drop entries whose file no longer hashes the same — they were recompiled.
@@ -10741,37 +10783,12 @@ function doParseNetardLog(text, opts = {}) {
             // answers. One representative per type: the LONGEST message, which
             // gives the scorer the most to judge against. The paste flow has
             // worked this way since it was written. Reported 2026-08-22.
-            const _repByType = {};
-            for (let _ri = 0; _ri < records.length; _ri++) {
-              const _p = preDet[_ri];
-              if (_p.bound || !_p.winner?.vol) continue;
-              const key = _p.winner.type + ':' + _p.winner.vol;
-              const len = _p.dec.bytes.length;
-              if (!_repByType[key] || len > _repByType[key].len)
-                _repByType[key] = { len, dec: _p.dec, msgType: _p.winner };
-            }
-            const _typeMatchCache = {};
-            for (const [key, rep] of Object.entries(_repByType)) {
-              const pool = volSearchChain(rep.msgType.vol).flatMap(v => compiledByVol[v] || [])
-                .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
-              _typeMatchCache[key] = pool
-                .map(c => {
-                  try {
-                    const r = bestDDLMatch(rep.dec.parseBytes, [c], rep.dec.bytes);
-                    const nameToCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
-                    const nameBonus   = nameToCheck === rep.msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
-                    const score       = nameBonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
-                    return { ddlPath: r.ddlPath, defName: c.defName ?? null, fields: r.fields, score, cand: c };
-                  } catch (err) {
-                    const label = c.path + (c.defName ? '/' + c.defName : '');
-                    console.warn('[NETARD scoring] DDL error —', label, err);
-                    _ddlErrors.push(label);
-                    return { ddlPath: c.path, defName: c.defName ?? null, fields: [], score: -1, cand: c };
-                  }
-                })
-                .filter(m => m.score > 0)
-                .sort((a, b) => b.score - a.score);
-            }
+            // A record whose binding already resolved never consults the pool,
+            // so it is not offered as a representative either.
+            const _typeMatchCache = _scorePoolByType(
+              preDet.filter(p => !p.bound)
+                    .map(p => ({ bytes: p.dec.bytes, parseBytes: p.dec.parseBytes, msgType: p.winner })),
+              compiledByVol, _ddlErrors);
 
             for (let _ri = 0; _ri < records.length; _ri++) {
               const rec = records[_ri];
@@ -11446,37 +11463,10 @@ function doParseMessages() {
           const _ddlErrors      = []; // DDLs that threw during scoring
           try {
           // ── Pre-scoring: score one representative per type against all DDLs ──
-          const typeMatchCache = {};
           // Only a 'needs-ddl' chunk ever reads this cache, and _scoring is false
           // exactly when no chunk came back that way — so scoring a matched
           // message is not just wasted work, it is work with no reader.
-          if (_scoring) {
-            const longestByType = {};
-            for (const ci of _chunkInfo) {
-              const { bytes, parseBytes, msgType } = ci;
-              if (!msgType.vol) continue;
-              // DDLMM pre-filter removed — Data Detection supersedes it.
-              const key = msgType.type + ':' + msgType.vol;
-              if (!longestByType[key] || bytes.length > longestByType[key].byteLen)
-                longestByType[key] = { parseBytes, bytes, byteLen: bytes.length, msgType };
-            }
-            for (const [key, rep] of Object.entries(longestByType)) {
-              const pool = volSearchChain(rep.msgType.vol).flatMap(v => _pool[v] || [])
-                .filter(c => { const [pv,ps,pn] = c.path.split('/'); return !isExcluded(pv,ps,pn,c.defName); });
-              typeMatchCache[key] = pool.map(c => {
-                try {
-                  const r         = bestDDLMatch(rep.parseBytes, [c], rep.bytes);
-                  const nameCheck = (c.defName || c.path.split('/').pop()).toUpperCase();
-                  const bonus     = nameCheck === rep.msgType.type.toUpperCase() && (r.score ?? 0) < 1.0;
-                  const score     = bonus ? Math.min(1.0, (r.score ?? 0) + 0.10) : (r.score ?? 0);
-                  return { ddlPath: r.ddlPath, defName: c.defName ?? null, score };
-                } catch (err) {
-                  _ddlErrors.push(c.path + (c.defName ? '/' + c.defName : ''));
-                  return { ddlPath: c.path, defName: c.defName ?? null, score: -1 };
-                }
-              }).filter(m => m.score > 0).sort((a, b) => b.score - a.score);
-            }
-          }
+          const typeMatchCache = _scoring ? _scorePoolByType(_chunkInfo, _pool, _ddlErrors) : {};
           for (const ci of _chunkInfo) {
             const { chunk, chunkStr, bytes, parseBytes, detectStr, detTrace: _detTrace } = ci;
             let msgType = ci.msgType;
@@ -17065,7 +17055,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.37.0';
+const APP_VERSION  = '1.46.38.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

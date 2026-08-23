@@ -4451,12 +4451,31 @@ test('NETARD scores a type once, not once per record', () => {
   // record of a type produced the same list repeatedly. On an audit file with
   // many records of one unbound type that is the whole cost, repeated.
   // Reported 2026-08-22.
-  const fn = psFnSource('doParseNetardLog');
-  assert.ok(/_repByType/.test(fn) && /_typeMatchCache/.test(fn),
-    'the per-type representative table is gone');
-  // The representative is the LONGEST of its type, as in the paste flow.
-  assert.ok(/len > _repByType\[key\]\.len/.test(fn),
+  // The table itself moved into _scorePoolByType, shared with the paste flow
+  // (2026-08-22) — so the rules live there and BOTH flows are checked against
+  // them, which is the point of item 1.
+  const scorer = psFnSource('_scorePoolByType');
+  assert.ok(scorer, 'the shared per-type scorer is gone');
+  assert.ok(/bytes\.length > longest\[key\]\.bytes\.length/.test(scorer),
     'the representative is no longer the longest message of its type');
+  assert.ok(/msgType\.type \+ ':' \+ msgType\.vol/.test(scorer),
+    'the cache is no longer keyed by type and volume');
+  assert.ok(/cand: c/.test(scorer),
+    'the entries dropped their compiled candidate, so another record cannot be re-walked');
+  for (const flow of ['doParseNetardLog', 'doParseMessages']) {
+    const body = psFnSource(flow);
+    assert.ok(/_scorePoolByType\(/.test(body), `${flow} does not use the shared scorer`);
+    assert.ok(!/longest(ByType)?\[key\]/.test(body), `${flow} kept its own representative table`);
+  }
+  const fn = psFnSource('doParseNetardLog');
+  assert.ok(/_typeMatchCache/.test(fn), 'the NETARD flow lost its score cache');
+  // A record already resolved by its binding never reads the pool, so it must
+  // not be offered as the representative either.
+  // On the SCORER CALL, not just anywhere in the flow — the progress step counts
+  // unbound records with the same expression, and matching that one instead
+  // made this assertion pass with the filter removed from the call.
+  assert.ok(/_scorePoolByType\(\s*\n?\s*preDet\.filter\(p => !p\.bound\)/.test(fn),
+    'a bound record can be picked as the type\'s representative');
   // And the per-record loop must not score again: the only bestDDLMatch calls
   // left in this flow are the pre-pass, the binding resolve and the override.
   const loopAt = fn.indexOf('for (let _ri = 0; _ri < records.length; _ri++) {',

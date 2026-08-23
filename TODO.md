@@ -8,7 +8,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partially done
 
 ---
 
-## 1. [~] Merge the two parse flows — *decision layer done v1.1.2.392*
+## 1. [x] Merge the two parse flows — *done v1.46.38.0*
 
 **Problem.** The NETARD flow and the plain-paste flow were near-duplicate
 implementations of the same pipeline, and they kept silently drifting:
@@ -69,7 +69,26 @@ three records over two candidates. Sharing one candidate list needed
 `_fieldsForChosen`, so a record never shows the fields of the message that was
 scored for its type.
 
-### Remaining — the two scoring loops
+### Done — the scoring loops too (v1.46.37.0 – v1.46.38.0)
+
+`_scorePoolByType` is the last shared piece: score the pool ONCE per type, off
+the longest message of that type, keyed `type:vol`, each entry keeping its
+compiled candidate. NETARD used to score per RECORD — 8 DDL-walk calls became 2
+on three records over two candidates — and the paste flow had its own copy of
+the same idea.
+
+Sharing one candidate list across messages needed `_fieldsForChosen`: the fields
+on a list entry belong to the representative, so any other message is re-walked
+against its own bytes rather than shown values it does not contain.
+
+**No run of 8+ identical lines remains between the two functions** (516 and 495
+lines). What is left apart is what genuinely differs: NETARD walks records with a
+detection pre-pass and picks the input format from their `netardFmt`; the paste
+flow walks chunks with per-chunk verdicts, drops unknown-type records in batch
+audit, and carries audit metadata onto the message. Those are different jobs, not
+two spellings of one.
+
+### Former plan — the two scoring loops
 
 `doParseNetardLog` and `doParseMessages` keep their own scoring loops and their
 own deferred handling. They are closer in shape than they were — both now score

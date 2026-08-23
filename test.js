@@ -5051,6 +5051,94 @@ test('an armed override actually parses, through the shared shell', () => {
   }
 });
 
+test('stop-if-empty: one spec reads the short shape and the long one', () => {
+  // Reported from production 2026-08-22: one record with two shapes — hoppers,
+  // and hoppers WITH recycle. Two classes were merged into one because they were
+  // nearly identical, and the long shape parsed fine. The short one did not: the
+  // spec reads a field to decide which shape it has, that field is not there, the
+  // read falls off the end, and the `when` naming it then reports "not yet read".
+  // Two errors describing a message that is correct.
+  S.ddlTree = { V: { S: { D: 'DEFINITION MSG.\n  02 A PIC X(2).\nEND\n' } } };
+  S.inputFormat = 'ascii';
+  const SPEC = [
+    { 'read-fixed': { length: 2, as: 'HOPPERS' } },
+    { 'stop-if-empty': true },
+    { 'read-fixed': { length: 1, as: 'RECYCLE-FLAG' } },
+    { 'when': { field: 'RECYCLE-FLAG', equal: 'Y',
+                then: [{ 'read-fixed': { length: 2, as: 'RECYCLE' } }] } },
+  ];
+  const run = msg => meExecParseSpec(
+    migrateOverrides({ ddl_bindings: ['V/S/D/MSG'], parse_spec_binary: SPEC }), Buffer.from(msg));
+
+  // SHORT: ends after the first group. No errors, and nothing invented.
+  const short = run('AB');
+  eq(short.fields.filter(f => f.error).length, 0,
+     `the short shape still errors: ${short.fields.filter(f => f.error).map(f => f.error).join(' | ')}`);
+  eq(short.fields.map(f => f.id).join(','), 'HOPPERS', 'the short shape read more than it holds');
+
+  // LONG: bytes remain, so the block does nothing and the spec runs on.
+  const long = run('ABYCD');
+  eq(long.fields.filter(f => f.error).length, 0, 'the long shape broke');
+  eq(long.fields.map(f => f.id).join(','), 'HOPPERS,RECYCLE-FLAG,RECYCLE',
+     'the long shape did not read its recycle group');
+
+  // The flag present but NOT set: the guard answers no, and that is not a stop.
+  const flagged = run('ABN');
+  eq(flagged.fields.map(f => f.id).join(','), 'HOPPERS,RECYCLE-FLAG',
+     'a false guard behaved like the end of data');
+
+  // Without the block, the reported failure: two errors on a correct message.
+  const noStop = meExecParseSpec(migrateOverrides({ ddl_bindings: ['V/S/D/MSG'],
+    parse_spec_binary: SPEC.filter(b => !b['stop-if-empty']) }), Buffer.from('AB'));
+  const errs = noStop.fields.filter(f => f.error).map(f => f.error);
+  assert.ok(errs.some(e => /not yet read/.test(e)),
+    `the "not yet read" error is gone, so this test no longer pins the reported case: ${errs.join(' | ')}`);
+});
+
+test('stop-if-empty ends the run at any depth, and only when nothing is left', () => {
+  // It ends the RUN, not the innermost block — a stop inside a loop body has to
+  // end the loop too, or the next pass reads past the end anyway.
+  S.ddlTree = { V: { S: { D: 'DEFINITION MSG.\n  02 A PIC X(2).\nEND\n' } } };
+  S.inputFormat = 'ascii';
+  const run = (blocks, msg) => meExecParseSpec(
+    migrateOverrides({ ddl_bindings: ['V/S/D/MSG'], parse_spec_binary: blocks }), Buffer.from(msg));
+
+  // Inside a repeat: 4 passes asked for, 2 bytes each, only 4 bytes on the wire.
+  // repeat's count names a FIELD, so the count is read off the wire: "2" says
+  // two items, and only one item's worth of bytes follows it.
+  const rep = run([
+    { 'read-fixed': { length: 1, as: 'CNT' } },
+    { 'repeat': { count: 'CNT', body: [
+      { 'stop-if-empty': true },
+      { 'read-fixed': { length: 2, as: 'ITEM' } },
+    ] } },
+  ], '2AB');
+  eq(rep.fields.filter(f => f.error).length, 0,
+     `the loop ran past the end: ${rep.fields.filter(f => f.error).map(f => f.error).join(' | ')}`);
+  eq(rep.fields.filter(f => f.id === 'ITEM').length, 1,
+     `the second pass ran with nothing left: ${rep.fields.map(f => f.id).join(',')}`);
+
+  // Inside a when branch: same rule, and blocks AFTER the when do not run either.
+  const inWhen = run([
+    { 'read-fixed': { length: 2, as: 'HEAD' } },
+    { 'when': { field: 'HEAD', equal: 'AB', then: [{ 'stop-if-empty': true }] } },
+    { 'read-fixed': { length: 2, as: 'NEVER' } },
+  ], 'AB');
+  eq(inWhen.fields.map(f => f.id).join(','), 'HEAD', 'a stop inside a branch did not end the run');
+
+  // The enforcement point, pinned: the loops break as an early exit, but what
+  // actually stops the run is the guard at the top of the dispatcher. Removing
+  // the loop breaks changes no output; removing this changes everything.
+  assert.ok(/function _meExecBlock\(block, ctx\) \{[\s\S]{0,400}?if \(ctx\.stopped\) return;/
+    .test(fs.readFileSync('./source.html', 'utf8')),
+    'the dispatcher no longer honours the stop, so only loop bodies respect it');
+
+  // And it is a no-op with bytes left — not a stop, not an error, no row.
+  const plenty = run([{ 'stop-if-empty': true },
+                      { 'read-fixed': { length: 2, as: 'HEAD' } }], 'AB');
+  eq(plenty.fields.map(f => f.id).join(','), 'HEAD', 'it stopped with bytes still to read');
+});
+
 test('only the Classes name a message — no hidden fallback', () => {
   // There used to be nine regexes behind detection: NDC / STM / PSTM / B24 / ISO,
   // each handing an unmatched message a type, a label, a volume and a COLOUR
@@ -14508,6 +14596,9 @@ const PS_EXEC_FNS = {
   'read-segment-fields': ['_meExecSegmentFields'],
   'read-tlv':            ['_meExecReadTLV', '_meExecReadTLVMapped'],
   'skip':                ['_meExecBlockAt'],
+  // Handled inline in the dispatcher — it sets a flag rather than reading
+  // anything, so there is no exec function of its own to point at.
+  'stop-if-empty':       ['_meExecBlock'],
   'when':                ['_meExecWhen'],
   'repeat':              ['_meExecRepeat'],
   'read-while':          ['_meExecReadWhile'],

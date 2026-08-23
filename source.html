@@ -17055,7 +17055,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.38.0';
+const APP_VERSION  = '1.46.39.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19735,6 +19735,7 @@ const _PS_GROUPS = [
     ['read-length-value',   'A length, then that many bytes'],
     ['read-to-end',         'Whatever is left'],
     ['skip',                'Advance the cursor, emit nothing'],
+    ['stop-if-empty',       'End cleanly if the data ran out here'],
   ]},
   { name: 'Maps & nested', items: [
     ['read-bitmap',         'Wire bitmap, or a declared segment map'],
@@ -20757,6 +20758,38 @@ const _PS_HELP = {
         "tag_field": "T", "length_field": "L", "value_field": "V", "tags": {"01": {"field": "ITEM"}}}}]],
       ['Inside a read-bitmap-fields "de" entry — no "field" needed: the element being read IS the buffer, and short names resolve inside it',
         [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}}, "unknown": "skip"}}]],
+    ],
+  },
+  'stop-if-empty': {
+    desc: 'Ends the parse cleanly if there are no bytes left. If bytes remain, does nothing and the spec carries on.',
+    useWhen: [
+      'One record has <b>two shapes</b> — a short one and a longer one that carries extra groups — and you read them with a single spec.',
+      'The spec has to <b>read a field to decide</b> which shape it has, and on the short shape that field is not there.',
+      'You want the message that legitimately ENDS here to parse clean, while bytes running out <b>anywhere else</b> stays an error.',
+    ],
+    attrs: [],
+    notes: [
+      'Place it where ending is legal. Everything after it runs only if bytes remain.',
+      'Without it the read past the end fails, and a <code>when</code> that names the field it should have produced then reports <b>“Field … not yet read”</b> — two errors describing a message that is correct.',
+      'It ends the whole run, at any depth: inside a <code>when</code> branch, a <code>repeat</code> body or a <code>read-while</code> body it stops the loop as well, not just that pass.',
+      'Inside a <code>de</code> entry the element’s own end counts as empty, not the message’s.',
+      'It is a block you PLACE, not a mode you switch on, because ending is only legal where the spec says it is.',
+    ],
+    examples: [
+      { what: '<b>the short shape</b> — the record ends after the first group, so the flag that would say what follows is not there',
+        payload: '41 42',
+        spec: [{"read-fixed": {"length": 2, "as": "HOPPERS"}},
+               {"stop-if-empty": true},
+               {"read-fixed": {"length": 1, "as": "RECYCLE-FLAG"}},
+               {"when": {"field": "RECYCLE-FLAG", "equal": "Y",
+                         "then": [{"read-fixed": {"length": 2, "as": "RECYCLE"}}]}}] },
+      { what: '<b>the long shape</b> — same spec, bytes remain, so it reads straight on',
+        payload: '41 42 59 43 44',
+        spec: [{"read-fixed": {"length": 2, "as": "HOPPERS"}},
+               {"stop-if-empty": true},
+               {"read-fixed": {"length": 1, "as": "RECYCLE-FLAG"}},
+               {"when": {"field": "RECYCLE-FLAG", "equal": "Y",
+                         "then": [{"read-fixed": {"length": 2, "as": "RECYCLE"}}]}}] },
     ],
   },
   'skip': {
@@ -22483,7 +22516,7 @@ const _PS_RENAMED = {
 const _PS_KNOWN_BLOCKS = new Set([
   'read-ddl','read','read-fixed','read-until','read-length-value',
   'read-to-end','read-bitmap','read-bitmap-fields','read-segment-fields','read-tlv',
-  'when','repeat','read-while','skip','token-area',
+  'when','repeat','read-while','skip','stop-if-empty','token-area',
 ]);
 
 // Token classes are the same hl-* classes the DDL editor uses, so the colors
@@ -30679,7 +30712,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
   ctx._deLimit = end;
   ctx._deBit   = de;      // which bit we are inside, for blocks that read the DE itself
   try {
-    for (const b of blocks) _meExecBlock(b, ctx);
+    for (const b of blocks) { _meExecBlock(b, ctx); if (ctx.stopped) break; }
   } finally {
     ctx._deScope = prevScope;
     ctx._deLimit = prevLimit;
@@ -31280,7 +31313,7 @@ function _meExecWhen(attrs, ctx) {
   // ANSWERED returns above without running either.
   const branch = matched ? attrs.then : attrs.else;
   if (Array.isArray(branch)) {
-    for (const b of branch) _meExecBlock(b, ctx);
+    for (const b of branch) { _meExecBlock(b, ctx); if (ctx.stopped) break; }
   }
 }
 
@@ -31340,7 +31373,8 @@ function _meExecRepeat(attrs, ctx) {
   }
 
   for (let i = 0; i < N; i++) {
-    for (const b of body) _meExecBlock(b, ctx);
+    for (const b of body) { _meExecBlock(b, ctx); if (ctx.stopped) break; }
+    if (ctx.stopped) break;   // early exit; the dispatcher's guard is what enforces it
   }
 }
 
@@ -31413,7 +31447,8 @@ function _meExecReadWhile(attrs, ctx) {
     if (!_meGuardMatches(attrs.while, ctx)) break;
     const before = ctx.cursor;
     const fieldsBefore = ctx.fields.length;
-    for (const b of attrs.body) _meExecBlock(b, ctx);
+    for (const b of attrs.body) { _meExecBlock(b, ctx); if (ctx.stopped) break; }
+    if (ctx.stopped) break;   // early exit; the dispatcher's guard is what enforces it
     // An iteration that runs off the end of the message never really existed —
     // the guard just matched trailing data that happens to look like another
     // element. Roll it back so it can't invent fields past the payload.
@@ -32167,6 +32202,11 @@ function _meExecReadTLVMapped(attrs, ctx) {
 }
 
 function _meExecBlock(block, ctx) {
+  // A `stop-if-empty` earlier in the run ended it. THIS is what enforces the
+  // stop, at every depth: the loops that walk blocks break as well, but only to
+  // avoid spinning through a long body doing nothing — remove those breaks and
+  // the output is identical, remove this line and nothing stops.
+  if (ctx.stopped) return;
   if (block == null) return;
   if (typeof block === 'string') {
     if (block === 'token-area') return _meExecTokenArea(null, ctx);
@@ -32224,6 +32264,24 @@ function _meExecBlockAt(type, attrs, ctx) {
     case 'repeat':              return _meExecRepeat(attrs, ctx);
     case 'read-while':          return _meExecReadWhile(attrs, ctx);
     case 'token-area':          return _meExecTokenArea(attrs, ctx);
+    // ── stop-if-empty ─────────────────────────────────────────────────────
+    // "If you got here and the data ran out, that is fine — stop."
+    //
+    // One record, two shapes: a short one that ends after the first group and a
+    // long one that carries more. A spec that reads the next field to decide
+    // which it has cannot read it on the short shape — the read falls off the
+    // end and the `when` after it then reports the field as "not yet read".
+    // Both errors describe a message that is perfectly correct.
+    //
+    // Ending is only legal where the spec SAYS it is, which is why this is a
+    // block you place rather than a mode: bytes running out anywhere else is
+    // still a real error. Requested 2026-08-22.
+    case 'stop-if-empty': {
+      const end = (ctx._deLimit != null && ctx._deLimit < ctx.bytes.length)
+        ? ctx._deLimit : ctx.bytes.length;
+      if (ctx.cursor >= end) ctx.stopped = true;
+      return;
+    }
     case 'skip': {
       // Through the shared resolver, so "skip what this element declares" is
       // written the same way a read-fixed states its length.
@@ -32286,7 +32344,7 @@ function _meExecParseSpec(item, bytes, opts) {
     // can carry EBCDIC content. The spec's own recognizers are what know.
     lenEnc: _meSpecEncodingInfo(item),
   };
-  for (const block of effectiveSpec) _meExecBlock(block, ctx);
+  for (const block of effectiveSpec) { _meExecBlock(block, ctx); if (ctx.stopped) break; }
   return ctx;
 }
 

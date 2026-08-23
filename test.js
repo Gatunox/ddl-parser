@@ -14582,6 +14582,19 @@ test('the tree filters, and says so', () => {
   assert.ok(/placeholder="Search the DDL/.test(ddl), 'the editor search lost its own name');
 });
 
+test('the search button is dead while the editor is empty', () => {
+  // Nothing to search in an empty pane. Decided in updateDDLEditorState, beside
+  // Save / Doc / Clear, rather than in a rule of its own — one place already
+  // answers "what can you do with this editor right now". Reported 2026-08-22.
+  const fn = psFnSource('updateDDLEditorState');
+  assert.ok(/ddlSearchBtn/.test(fn), 'the search button is not part of the editor state');
+  assert.ok(/srchBtn\.disabled = !hasContent/.test(fn),
+    'the button stays live over an empty editor');
+  // And it closes the row if the content disappears underneath it — otherwise the
+  // bar sits over an empty pane holding a query that cannot match anything.
+  assert.ok(/ddlSearchToggle\(\)/.test(fn), 'clearing the editor leaves the search row open');
+});
+
 test('the DDL search opens on a row of its own, not inside the toolbar', () => {
   // One bar was holding a title, a search FIELD, its navigation controls and
   // four buttons. The controls are 80px at "0 / 0" and 110px at "128 / 999", so

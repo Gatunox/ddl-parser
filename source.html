@@ -12296,6 +12296,17 @@ function updateDDLEditorState() {
   const clearBtn = document.getElementById('ddlClearBtn');
   if (clearBtn) clearBtn.disabled = !hasContent && S.scope === null;
 
+  // Search: there is nothing to search in an empty editor. It also CLOSES the
+  // row if the content goes away while it is open — otherwise the bar stays up
+  // over an empty pane, with a live query and no possible match.
+  // Reported 2026-08-22.
+  const srchBtn = document.getElementById('ddlSearchBtn');
+  if (srchBtn) srchBtn.disabled = !hasContent;
+  if (!hasContent) {
+    const row = document.getElementById('ddlSearchRow');
+    if (row && !row.classList.contains('hidden')) ddlSearchToggle();
+  }
+
   // Update dirty marker: use cached element refs (re-query only when disconnected)
   if (!_cachedSelDDLEl?.isConnected)
     _cachedSelDDLEl = document.querySelector('.tree-node.tree-sel[data-ntype="ddl"]');
@@ -17052,7 +17063,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.31.0';
+const APP_VERSION  = '1.46.32.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -5267,6 +5267,51 @@ test('an anchor that pins the number it already had still says it is an override
     'the tooltip no longer explains an anchor that changes no numbering');
 });
 
+test('a hand-picked EBCDIC is characters, encoded back to EBCDIC bytes', () => {
+  // Two pastes, one name, and WHO chose the format is what tells them apart —
+  // "01234567" is equally good hex and equally good text, so no content rule
+  // can. Detected by hex density = a dump. Picked by hand = the rendered
+  // message copied off a screen, whose wire bytes were EBCDIC.
+  // Requested 2026-08-23.
+  const prevFmt = S.inputFormat, prevForced = S.forcedFormat;
+  try {
+    const bytes = t => { const r = extractBytes(t, 'ebcdic');
+      return Array.isArray(r) ? r : r.bytes; };
+    const hex = b => b.map(x => x.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+
+    // PICKED BY HAND: characters → the EBCDIC bytes they were rendered from.
+    S.forcedFormat = 'ebcdic';
+    eq(hex(bytes('01234567')), 'F0 F1 F2 F3 F4 F5 F6 F7',
+       'the characters were not encoded back to EBCDIC');
+    eq(hex(bytes('AB')), 'C1 C2', 'letters did not encode');
+    eq(S._ebcdicAsChars, true, 'the character path was not recorded');
+    // Line breaks are not data.
+    eq(hex(bytes('01\n23')), 'F0 F1 F2 F3', 'a line break became a byte');
+
+    // DETECTED: a dump, paired and translated, exactly as before.
+    S.forcedFormat = null;
+    eq(hex(bytes('F0F8F0F0')), '30 38 30 30', 'a hex dump of EBCDIC stopped decoding');
+    eq(S._ebcdicAsChars, false, 'a dump was recorded as characters');
+  } finally { S.inputFormat = prevFmt; S.forcedFormat = prevForced; }
+});
+
+test('a BINARY field is unreliable when the paste was characters — EBCDIC included', () => {
+  // The flag excluded ebcdic outright, on the reasoning that a hex dump is
+  // byte-faithful. True for a dump; false for the OTHER thing EBCDIC means —
+  // text copied off a screen, where every non-printable byte was already lost.
+  // Reported 2026-08-23.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const fn = src.slice(src.indexOf('function parseFlatMessage('),
+                       src.indexOf('function parseFlatMessage(') + 3000);
+  assert.ok(/_ebcdicText\s*=\s*_fmt === 'ebcdic' && !!S\._ebcdicAsChars/.test(fn),
+    'character-EBCDIC is not part of the unreliable test');
+  assert.ok(/_binUnreliable[\s\S]{0,200}_ebcdicText/.test(fn),
+    'the unreliable flag ignores it again');
+  // It reads the recorded decision rather than re-deriving one.
+  assert.ok(!/_binUnreliable[\s\S]{0,200}test\(text\)/.test(fn),
+    'the rule is worked out twice, so the two can disagree');
+});
+
 test('a hex dump of EBCDIC is HEX, and a hand-picked EBCDIC is not binary', () => {
   // Two things were being called by one name. A paste of "F0F8 F0F0 …" is a HEX
   // dump whose bytes happen to spell EBCDIC — hex density detects it, and the
@@ -5277,6 +5322,10 @@ test('a hex dump of EBCDIC is HEX, and a hand-picked EBCDIC is not binary', () =
   const src = fs.readFileSync('./source.html', 'utf8');
   assert.ok(/'ebcdic':\s*\['badge-ebcdic',\s*'HEX <span[^>]*>\(EBCDIC\)<\/span>'\]/.test(src),
     'the EBCDIC badge no longer says it is a hex dump');
+  // And its pair: a plain hex paste is HEX (ASCII). One naming its encoding and
+  // the other not read as though only one HAD an encoding.
+  assert.ok(/'hex':\s*\['badge-hex',\s*'HEX <span[^>]*>\(ASCII\)<\/span>'\]/.test(src),
+    'the plain HEX badge does not name its encoding');
 
   // The variant is about BINARY FIDELITY, not about ASCII — so it is named for
   // that. Its field is still parse_spec_ascii; only what the user reads changed.

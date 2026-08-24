@@ -6533,6 +6533,39 @@ function extractBytesMapped(chunk, format, textOffset) {
     return { bytes, map };
   }
 
+  // "EBCDIC" covers two pastes that look nothing alike, and WHO chose the format
+  // is what tells them apart — no content rule can, since "01234567" is equally
+  // good hex and equally good text.
+  //
+  //   detected (AUTO, by hex density)  a hex DUMP of an EBCDIC record,
+  //                                    "F0F8 F0F0 …" — pair the digits.
+  //   picked by hand                   the RENDERED message, copied off a
+  //                                    screen. Those are CHARACTERS, and the
+  //                                    wire bytes behind them were EBCDIC — so
+  //                                    "01234567" is F0 F1 F2 F3 F4 F5 F6 F7.
+  //
+  // Pairing the second kind as hex digits produced silent nonsense: eight
+  // characters became the four bytes 01 83 E1 C5, with nothing said.
+  // Requested 2026-08-23.
+  const _ebcdicChars = format === 'ebcdic'
+    && typeof S !== 'undefined' && S && S.forcedFormat === 'ebcdic';
+  // Recorded, not re-derived: the decision is made HERE, and parseFlatMessage
+  // needs it to mark BINARY fields unreliable. Working it out a second time
+  // would be a second rule, free to disagree with this one.
+  if (typeof S !== 'undefined' && S) S._ebcdicAsChars = !!_ebcdicChars;
+  if (_ebcdicChars) {
+    // Each character back to the EBCDIC byte it was rendered from. 0x3F is
+    // EBCDIC's own substitute character — what an unmappable character becomes.
+    const bytes = [], map = [];
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charCodeAt(i);
+      if (ch === 10 || ch === 13) continue;         // line breaks are not data
+      bytes.push(_ASCII_TO_EBCDIC[ch] ?? 0x3F);
+      map.push({ s: off + i, e: off + i + 1 });
+    }
+    return { bytes, map };
+  }
+
   if (format === 'hex' || format === 'hex-partial' || format === 'ebcdic') {
     // Positions of every hex DIGIT that counts, in order; paired into bytes
     // below, so a byte's span is its two digits wherever they sit.
@@ -6944,10 +6977,19 @@ function parseFlatMessage(bytes, defs, rawBytes) {
   const fields = [];
   let seqOffset = 0; // sequential cursor — used only when def has no explicit offset
 
-  // In ASCII-like formats, BINARY fields cannot be reliably read — mark them unreliable.
-  // Reliable formats (hex, tandem-dump, netard-hex, netard-dump, ebcdic) are excluded.
+  // A BINARY field can only be trusted when the bytes reached us intact. Pastes
+  // made of CHARACTERS did not: every non-printable byte was already lost, as a
+  // "." or a "?" or nothing at all, before the app saw the text.
+  //
+  // A hex dump is intact whatever its bytes spell — including an EBCDIC one,
+  // which is why hex / tandem-dump / netard-hex / netard-dump are excluded. But
+  // EBCDIC is also what you pick when you copied the RENDERED message off a
+  // screen, and that paste is in exactly the same position as ASCII. It was
+  // treated as reliable. Reported 2026-08-23.
   const _fmt = S.inputFormat || '';
-  const _binUnreliable = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard' || _fmt === 'fup-ascii';
+  const _ebcdicText = _fmt === 'ebcdic' && !!S._ebcdicAsChars;
+  const _binUnreliable = _fmt === 'ascii' || _fmt === 'netard-ascii' || _fmt === 'netard'
+                      || _fmt === 'fup-ascii' || _ebcdicText;
 
   // Value renderer for TYPE BINARY fields (shared with the parse-spec engine).
   const _binValue = (srcB, dispB) => _binaryFieldValue(srcB, dispB, _fmt);
@@ -11299,9 +11341,17 @@ function doParseMessages() {
     const bytes = extractBytes(chunk, S.inputFormat);
     if (!bytes.length) { flash('Could not extract any message bytes from input.', 'error'); return; }
 
+    // A hand-picked EBCDIC paste is the rendered message, so extractBytes gave us
+    // the WIRE bytes it was rendered from (F0 F8 …). Those are correct and they
+    // are not readable: `bytes` stays the wire, `parseBytes` is what the fields
+    // are read from. Without this the values came out as [f0][f8] — right bytes,
+    // unreadable message. Requested 2026-08-23.
+    let parseBytes = bytes;
+    if (S._ebcdicAsChars) {
+      parseBytes = bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
+    } else
     // EBCDIC detection for hex-based formats — only in AUTO mode.
     // When the user explicitly forces a format, treat bytes as-is.
-    let parseBytes = bytes;
     if (!S.forcedFormat && (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex')) {
       let _f09 = 0;
       for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
@@ -11391,7 +11441,9 @@ function doParseMessages() {
       const bytes    = _isEbc ? wireBytes.map(b => _EBCDIC_TO_ASCII[b] ?? b) : wireBytes;
       if (!bytes.length) continue;
       let parseBytes = bytes;
-      if (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex') {
+      // Same as the chunk path above: hand-picked EBCDIC hands us wire bytes.
+      if (S._ebcdicAsChars) parseBytes = bytes.map(b => _EBCDIC_TO_ASCII[b] ?? b);
+      else if (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex') {
         let _f09 = 0;
         for (const b of bytes) { if (b >= 0xF0 && b <= 0xF9) _f09++; }
         const _mtiEbcdic = bytes.length >= 4 &&
@@ -14598,7 +14650,10 @@ function onFmtForceChange() {
 // Format → [badge class, label]. Module-level because the Class Editor's Test
 // panel shows the same badge for the same format; two copies would drift.
 const _FMT_BADGE = {
-  'hex':              ['badge-hex',          'HEX'],
+  // Format and encoding are two axes, so both badges name both. HEX alone beside
+  // HEX (EBCDIC) read as though one of them had an encoding and the other did
+  // not. Reported 2026-08-23.
+  'hex':              ['badge-hex',          'HEX <span style="opacity:.75">(ASCII)</span>'],
   // Detected by hex density: the paste is HEX, and the bytes it spells out are
   // EBCDIC. Labelling it "EBCDIC" alone read as a third kind of paste beside
   // HEX and ASCII, when it is a hex dump like any other. The name EBCDIC is
@@ -17060,7 +17115,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.43.0';
+const APP_VERSION  = '1.46.44.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

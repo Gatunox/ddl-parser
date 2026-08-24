@@ -13182,7 +13182,8 @@ function findField(msg, fid) {
     if (sp >= 0) {                       // a group inside a token's own table
       const tkn = msg.tokens?.find(t => t.id === rest.slice(0, sp));
       if (!tkn || tkn.dataStart === undefined) return null;
-      list = tkn.fields || []; base = tkn.dataStart;
+      // base stays 0: a token's fields are already absolute — see above.
+      list = tkn.fields || [];
     }
     const kids = list.filter(f => String(f.id || '').startsWith(path + '.') && f.startByte != null);
     if (!kids.length) return null;
@@ -13197,7 +13198,15 @@ function findField(msg, fid) {
     if (!tkn || tkn.dataStart === undefined) return null;
     const f = tkn.fields?.find(x => x.id === fieldId);
     if (!f) return null;
-    return { ...f, startByte: tkn.dataStart + f.startByte, endByte: tkn.dataStart + f.endByte };
+    // ALREADY ABSOLUTE. Both producers shift a token's fields onto the message
+    // before they are stored — parseTokenArea does it explicitly (`f.startByte
+    // += dataStart`), and the engine's token-area reads at the message cursor.
+    // Adding dataStart here counted it twice: P7 at 1244 resolved to 2488, past
+    // the end of a 1294-byte message, so the overlay clamped it to nothing and
+    // hovering or selecting that row highlighted NEITHER panel. The token's own
+    // row was fine, which is why it looked like only some rows were dead.
+    // Reported 2026-08-23.
+    return { ...f };
   }
   return msg.fields?.find(x => x.id === fid) || null;
 }
@@ -17140,7 +17149,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.46.0';
+const APP_VERSION  = '1.46.47.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

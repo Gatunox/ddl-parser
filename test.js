@@ -8972,14 +8972,48 @@ test('hovering a group row highlights the whole group in both panels', () => {
   assert.ok(/Math\.min\(\.\.\.kids\.map\(k => k\.startByte\)\)/.test(ff)
          && /Math\.max\(\.\.\.kids\.map\(k => k\.endByte\)\)/.test(ff),
     'the group span is not derived from what it contains');
-  // A token's own table prefixes its rows; a group inside one has to offset by
-  // the token's start like every other field in it does.
-  assert.ok(/base \+ Math\.min/.test(ff), 'a group inside a token highlights the wrong bytes');
+  // CHANGED ON PURPOSE (2026-08-23). This asserted that a group inside a token
+  // is offset by the token's start. It is not: a token's fields are stored
+  // ALREADY ABSOLUTE, so adding it counted the offset twice. `base` stays 0 for
+  // that case now — kept in the expression because the top-level group case
+  // reads the same way.
+  assert.ok(/let list = msg\.fields \|\| \[\], base = 0;/.test(ff),
+    'the group span no longer starts from a known base');
+  assert.ok(!/base = tkn\.dataStart/.test(ff),
+    'a group inside a token is offset by its token again — the offset is already in the field');
 
   // Both the hover path and the input-overlay path go through it.
   assert.ok(/findField\(msg, fid\)/.test(psFnSource('hoverField')), 'hover stopped using findField');
   assert.ok(/findField\(msg, fid\)/.test(psFnSource('_buildInputHLRanges')),
     'the Message Input overlay stopped using findField');
+});
+
+test('[REGRESSION] a token FIELD row highlights its own bytes, not twice its offset', () => {
+  // Reported 2026-08-23: hovering or selecting a row inside a token highlighted
+  // NEITHER panel. Its own token row was fine, so it looked like only some rows
+  // were dead.
+  //
+  // A token's fields are stored ALREADY ABSOLUTE — parseTokenArea shifts them
+  // (`f.startByte += dataStart`) and the engine's token-area reads at the
+  // message cursor — and findField added the token's start a second time. On the
+  // reported message, P7 sits at 1244 and resolved to 2488, past the end of a
+  // 1294-byte record: the overlay clamps to nothing and the raw dump has no such
+  // byte, so both panels stayed dark.
+  const msg = {
+    fields: [],
+    byteCharMap: Array.from({ length: 1294 }, (_, i) => ({ s: i, e: i + 1 })),
+    tokens: [{ id: 'P7', dataStart: 1244, rawBytes: new Array(50).fill(0x20),
+               fields: [{ id: 'DATA', startByte: 1244, endByte: 1278 }] }],
+  };
+  const ff = sandbox.findField;
+  eq(`${ff(msg, 'P7::DATA').startByte}-${ff(msg, 'P7::DATA').endByte}`, '1244-1278',
+     'the token offset is counted twice');
+  // The token's own rows were already right and must stay so.
+  eq(`${ff(msg, 'tkn::P7').startByte}-${ff(msg, 'tkn::P7').endByte}`, '1244-1293',
+     'the token row moved');
+  // Inside the message is the whole point — past the end highlights nothing.
+  assert.ok(ff(msg, 'P7::DATA').endByte < msg.byteCharMap.length,
+    'the field still resolves past the end of the message');
 });
 
 test('collapsing a group hides its whole subtree, and Collapse All flips its own label', () => {

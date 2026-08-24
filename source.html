@@ -14599,7 +14599,12 @@ function onFmtForceChange() {
 // panel shows the same badge for the same format; two copies would drift.
 const _FMT_BADGE = {
   'hex':              ['badge-hex',          'HEX'],
-  'ebcdic':           ['badge-ebcdic',       'EBCDIC'],
+  // Detected by hex density: the paste is HEX, and the bytes it spells out are
+  // EBCDIC. Labelling it "EBCDIC" alone read as a third kind of paste beside
+  // HEX and ASCII, when it is a hex dump like any other. The name EBCDIC is
+  // for what the USER picks by hand — characters copied out of an EBCDIC
+  // message. Reported 2026-08-23.
+  'ebcdic':           ['badge-ebcdic',       'HEX <span style="opacity:.75">(EBCDIC)</span>'],
   'tandem-dump':      ['badge-dump',         'HEXASCII'],
   'ascii':            ['badge-ascii',        'ASCII'],
   'oct':              ['badge-oct',          'OCT'],
@@ -17055,7 +17060,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.42.0';
+const APP_VERSION  = '1.46.43.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19515,8 +19520,8 @@ function _meHtmlParseSpec(item) {
   // editor sat at half width beside nothing.
   return `<div class="panel-bar me-ps-bar">
     <div class="me-ps-variants" id="me-ps-variants">
-      <button class="me-ps-variant-tgl ${binCls}" data-variant="binary" onclick="_mePsSwitchVariant('binary')" title="Binary Input — the default variant; used for hex / tandem-dump / ebcdic / netard-hex / etc.">Binary <span class="me-ps-vtgl-n">(${binCount})</span></button>
-      <button class="me-ps-variant-tgl ${ascCls}" data-variant="ascii" onclick="_mePsSwitchVariant('ascii')" title="ASCII Input — used for ASCII-class input (ascii, netard-ascii, netard, fup-ascii); when empty it falls back to the Binary spec.">ASCII <span class="me-ps-vtgl-n">(${ascCount})</span></button>
+      <button class="me-ps-variant-tgl ${binCls}" data-variant="binary" onclick="_mePsSwitchVariant('binary')" title="Binary Input — the default variant. Used whenever the bytes are BINARY-FAITHFUL: hex, tandem-dump, an auto-detected EBCDIC hex dump, netard-hex, audit.">Binary <span class="me-ps-vtgl-n">(${binCount})</span></button>
+      <button class="me-ps-variant-tgl ${ascCls}" data-variant="ascii" onclick="_mePsSwitchVariant('ascii')" title="Non-Binary Input — used when the bytes came from CHARACTERS and any non-printable byte was already lost: ascii, netard-ascii, netard, fup-ascii, and EBCDIC when you pick it by hand. When empty it falls back to the Binary spec.">Non-Binary <span class="me-ps-vtgl-n">(${ascCount})</span></button>
     </div>
     <div id="me-spec-warns" class="me-warn-inline" style="margin-left:12px">${_meSpecWarnsHtml(item)}</div>
     <div class="me-ps-variants" id="me-ps-fmt" style="margin-left:auto" title="Re-format the spec: one line per block, or one line per attribute. Comments and trailing commas are preserved.">
@@ -32375,7 +32380,16 @@ function _meExecParseSpec(item, bytes, opts) {
   // requested variant is empty, fall back to the other one so a single-variant
   // entity still works against either input class.
   const fmt = opts?.format ?? S.inputFormat ?? '';
-  const isAscii = (fmt === 'ascii' || fmt === 'netard-ascii' || fmt === 'netard' || fmt === 'fup-ascii');
+  // Which spec variant: the question is whether the bytes are BINARY-faithful,
+  // not whether they are ASCII. A hex dump is faithful whatever its bytes spell;
+  // characters typed or copied off a screen are not, because every non-printable
+  // byte was lost on the way. EBCDIC belongs on this side when the USER picked
+  // it — that is the "I copied 0123 out of an EBCDIC message" case, and it is as
+  // lossy as ASCII. An auto-detected ebcdic is a hex DUMP and stays binary.
+  // Requested 2026-08-23.
+  const forced  = (typeof S !== 'undefined' && S) ? S.forcedFormat : null;
+  const isAscii = (fmt === 'ascii' || fmt === 'netard-ascii' || fmt === 'netard' || fmt === 'fup-ascii'
+                   || (fmt === 'ebcdic' && forced === 'ebcdic'));
   const asciiSpec  = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii  : [];
   const binarySpec = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary : [];
   let parseSpec, parseSpecUsed;

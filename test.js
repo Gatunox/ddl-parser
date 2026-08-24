@@ -5267,6 +5267,47 @@ test('an anchor that pins the number it already had still says it is an override
     'the tooltip no longer explains an anchor that changes no numbering');
 });
 
+test('a hex dump of EBCDIC is HEX, and a hand-picked EBCDIC is not binary', () => {
+  // Two things were being called by one name. A paste of "F0F8 F0F0 …" is a HEX
+  // dump whose bytes happen to spell EBCDIC — hex density detects it, and the
+  // bytes are binary-faithful. Someone pasting "0123" copied out of an EBCDIC
+  // message has characters, and every non-printable byte is already gone. The
+  // badge said "EBCDIC" for the first, which read as a third kind of paste
+  // beside HEX and ASCII. Requested 2026-08-23.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/'ebcdic':\s*\['badge-ebcdic',\s*'HEX <span[^>]*>\(EBCDIC\)<\/span>'\]/.test(src),
+    'the EBCDIC badge no longer says it is a hex dump');
+
+  // The variant is about BINARY FIDELITY, not about ASCII — so it is named for
+  // that. Its field is still parse_spec_ascii; only what the user reads changed.
+  assert.ok(/data-variant="ascii"[^>]*>Non-Binary/.test(src),
+    'the second spec variant is still labelled ASCII');
+  assert.ok(/Non-Binary Input — used when the bytes came from CHARACTERS/.test(src),
+    'the variant does not say what puts an input on that side');
+
+  // And the routing: a FORCED ebcdic goes to the non-binary spec, a detected one
+  // stays binary.
+  const prevTree = S.ddlTree, prevFmt = S.inputFormat, prevForced = S.forcedFormat;
+  try {
+    S.ddlTree = { V: { S: { D: 'DEFINITION MSG.\n  02 A PIC X(2).\nEND\n' } } };
+    const item = migrateOverrides({ ddl_bindings: ['V/S/D/MSG'],
+      parse_spec_binary: [{ 'read-fixed': { length: 2, as: 'FROM_BINARY' } }],
+      parse_spec_ascii:  [{ 'read-fixed': { length: 2, as: 'FROM_NONBINARY' } }] });
+    const which = (fmt, forced) => {
+      S.inputFormat = fmt; S.forcedFormat = forced;
+      return meExecParseSpec(item, Buffer.from('AB'), { format: fmt })
+        .fields.map(f => f.id).join(',');
+    };
+    eq(which('ebcdic', 'ebcdic'), 'FROM_NONBINARY',
+       'a hand-picked EBCDIC still ran the binary spec');
+    eq(which('ebcdic', null), 'FROM_BINARY',
+       'an auto-detected EBCDIC hex dump was treated as characters');
+    // The rest of the classification is unchanged.
+    eq(which('hex', null),   'FROM_BINARY',   'hex moved');
+    eq(which('ascii', null), 'FROM_NONBINARY','ascii moved');
+  } finally { S.ddlTree = prevTree; S.inputFormat = prevFmt; S.forcedFormat = prevForced; }
+});
+
 test('two bound DDLs are ONE layout: the second continues the first', () => {
   // They are element sets of the same bitmap message — DE 1 through 128 — so a
   // second binding continues the first rather than starting again at byte 0.

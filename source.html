@@ -12504,6 +12504,18 @@ function renderFieldTable(msg) {
       if (f.error || f.endByte == null) continue;
       if (f.endByte + 1 > consumed) consumed = f.endByte + 1;
     }
+    // TOKENS COUNT. They are parsed — they have their own rows, their own
+    // fields and their own highlight — but they live on msg.tokens, not
+    // msg.fields, so this walked past them. On the reported record the DDL
+    // fields end at 872 and the token area runs to 1293: it read "872/1294
+    // bytes — 422 unparsed" in amber, about bytes that were parsed and on
+    // screen. Counted from the token's HEADER, which is message too — the
+    // "! P7?2" that introduces it. Reported 2026-08-23.
+    for (const t of (msg.tokens || [])) {
+      if (t.dataStart == null) continue;
+      const end = t.dataStart + (t.rawBytes?.length || 0);
+      if (end > consumed) consumed = end;
+    }
     // Which variant RAN, against the one the input called for. A binary spec
     // reading characters (or the reverse) parses something, and what it parses
     // is not the message — so it is worth the same amber the short-byte count
@@ -17149,7 +17161,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.47.0';
+const APP_VERSION  = '1.46.48.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

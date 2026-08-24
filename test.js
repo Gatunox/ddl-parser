@@ -5321,7 +5321,10 @@ test('the provenance says whether the spec variant matched the input', () => {
   assert.ok(/var\(--warn-text\)/.test(shrt) , 'the byte count changed colour');
 
   // The class is applied from the comparison, not hardcoded.
-  const prov = src.slice(src.indexOf('const _provHtml'), src.indexOf('const _provHtml') + 2200);
+  // Bounded by the function's own end, not a character count — the slice was
+  // 2200 chars and a comment pushed the branch out of range.
+  const _p0  = src.indexOf('const _provHtml');
+  const prov = src.slice(_p0, src.indexOf('return { by, bytesTxt };', _p0));
   assert.ok(/_variantOff\s*=\s*\/fallback\/\.test\(_by\) \|\| \(!!_used && _used !== _want\)/.test(prov),
     'the mismatch no longer covers both a fallback and a plain variant mismatch');
   // The variant name is read PAST the qualifier, or "fallback binary" reports
@@ -8986,6 +8989,25 @@ test('hovering a group row highlights the whole group in both panels', () => {
   assert.ok(/findField\(msg, fid\)/.test(psFnSource('hoverField')), 'hover stopped using findField');
   assert.ok(/findField\(msg, fid\)/.test(psFnSource('_buildInputHLRanges')),
     'the Message Input overlay stopped using findField');
+});
+
+test('[REGRESSION] the byte count includes the token area', () => {
+  // Tokens ARE parsed — own rows, own fields, own highlight — but they live on
+  // msg.tokens, not msg.fields, and the byte count only walked the latter. On
+  // the reported record the DDL fields end at 872 while the token area runs to
+  // 1293, so it said "872/1294 bytes — 422 unparsed", in amber, about bytes that
+  // were parsed and visible on screen. Reported 2026-08-23.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const _p0  = src.indexOf('const _provHtml');
+  const prov = src.slice(_p0, src.indexOf('return { by, bytesTxt };', _p0));
+  assert.ok(/for \(const t of \(msg\.tokens \|\| \[\]\)\)/.test(prov),
+    'the byte count walks fields only, so a token area reads as unparsed');
+  assert.ok(/t\.dataStart \+ \(t\.rawBytes\?\.length \|\| 0\)/.test(prov),
+    'a token contributes something other than the bytes it holds');
+  // Both sources feed ONE running maximum — a token that ends before the last
+  // DDL field must not pull the count backwards.
+  assert.ok(/if \(end > consumed\) consumed = end;/.test(prov),
+    'a token can now lower the byte count');
 });
 
 test('[REGRESSION] a token FIELD row highlights its own bytes, not twice its offset', () => {

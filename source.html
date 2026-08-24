@@ -12510,14 +12510,15 @@ function renderFieldTable(msg) {
     // uses, rather than sitting in the same dim grey as a parse that matched.
     // Requested 2026-08-23.
     const _by   = String(msg.parsedBy || '');
-    const _used = (_by.match(/parse-spec \(([a-z]+)/) || [])[1] || null;
+    // "fallback" is a qualifier, not the variant — read past it to the name.
+    const _used = (_by.match(/parse-spec \((?:fallback )?([a-z]+)/) || [])[1] || null;
     const _want = _meInputIsNonBinary(null) ? 'ascii' : 'binary';
     // A "(fallback)" is amber on its own account, whichever direction it went:
     // it means the variant the input called for does not exist, so the other one
     // ran. The comparison below needs S.inputFormat to describe THIS message,
     // which holds for a paste and not for a row picked out of an audit file —
     // the label travels with the message and is always right.
-    const _variantOff = /\(fallback\)/.test(_by) || (!!_used && _used !== _want);
+    const _variantOff = /fallback/.test(_by) || (!!_used && _used !== _want);
     const _byTip = !_used ? 'Parser that produced these fields'
       : _variantOff
       ? `Parsed by the ${_used === 'ascii' ? 'Non-Binary' : 'Binary'} spec, but the input is `
@@ -17139,7 +17140,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.45.0';
+const APP_VERSION  = '1.46.46.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -32492,8 +32493,8 @@ function _meExecParseSpec(item, bytes, opts) {
   let parseSpec, parseSpecUsed;
   if (isAscii && asciiSpec.length)  { parseSpec = asciiSpec;  parseSpecUsed = 'ascii'; }
   else if (binarySpec.length)       { parseSpec = binarySpec;
-                                      parseSpecUsed = isAscii ? 'binary (fallback)' : 'binary'; }
-  else if (asciiSpec.length)        { parseSpec = asciiSpec;  parseSpecUsed = 'ascii (fallback)'; }
+                                      parseSpecUsed = isAscii ? 'fallback binary' : 'binary'; }
+  else if (asciiSpec.length)        { parseSpec = asciiSpec;  parseSpecUsed = 'fallback ascii'; }
   else                              { parseSpec = [];         parseSpecUsed = 'default'; }
 
   // If no spec at all, fall back to "walk every DDL binding then read all tokens".

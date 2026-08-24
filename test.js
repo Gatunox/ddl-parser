@@ -3513,7 +3513,7 @@ test('falls back to ASCII parse_spec when binary input has no binary variant', (
     parse_spec_ascii: [{ 'read-fixed': { length: 1, as: 'ASC' } }],
   };
   const ctx = meExecParseSpec(item, Buffer.from('X'));
-  eq(ctx.parseSpecUsed, 'ascii (fallback)', 'ASCII fallback used');
+  eq(ctx.parseSpecUsed, 'fallback ascii', 'ASCII fallback used');
   deepEq(ctx.fields.map(x => x.id), ['ASC'], 'ASCII fallback emitted expected field');
 });
 
@@ -5294,9 +5294,9 @@ test('both spec-variant fallbacks are named, not just one', () => {
     eq(used('hex',   true,  true),  'binary', 'a hex input did not run the Binary spec');
     eq(used('ascii', true,  true),  'ascii',  'a character input did not run the Non-Binary spec');
     // Fallbacks, both directions — each says so.
-    eq(used('ascii', true,  false), 'binary (fallback)',
+    eq(used('ascii', true,  false), 'fallback binary',
        'character input on a Binary-only class is still labelled as a plain binary parse');
-    eq(used('hex',   false, true),  'ascii (fallback)',
+    eq(used('hex',   false, true),  'fallback ascii',
        'binary input on a Non-Binary-only class lost its fallback label');
     // No spec at all.
     eq(used('hex',   false, false), 'default', 'a class with no spec changed label');
@@ -5322,8 +5322,12 @@ test('the provenance says whether the spec variant matched the input', () => {
 
   // The class is applied from the comparison, not hardcoded.
   const prov = src.slice(src.indexOf('const _provHtml'), src.indexOf('const _provHtml') + 2200);
-  assert.ok(/_variantOff\s*=\s*\/\\\(fallback\\\)\/\.test\(_by\) \|\| \(!!_used && _used !== _want\)/.test(prov),
+  assert.ok(/_variantOff\s*=\s*\/fallback\/\.test\(_by\) \|\| \(!!_used && _used !== _want\)/.test(prov),
     'the mismatch no longer covers both a fallback and a plain variant mismatch');
+  // The variant name is read PAST the qualifier, or "fallback binary" reports
+  // its variant as "fallback".
+  assert.ok(prov.includes('(?:fallback )?([a-z]+)'),
+    'the variant is no longer read past the fallback qualifier');
   // BOTH fallbacks are amber on their own account, not only through the
   // comparison: the label travels with the message, while the comparison needs
   // S.inputFormat to describe THIS one — true for a paste, not for a row picked

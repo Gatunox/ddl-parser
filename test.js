@@ -276,6 +276,9 @@ _t.doParseMessages    = doParseMessages;
 // The NETARD flow, so its scoring loop can be driven the same way.
 _t.doParseNetardLog   = doParseNetardLog;
 _t.specKey            = _specKey;
+// Which side of binary-faithful an input format is on — the one rule the spec
+// chooser and the provenance line both read.
+_t.meInputIsNonBinary = _meInputIsNonBinary;
 // Fields for one message under a candidate chosen from a SHARED score list.
 _t.fieldsForChosen    = _fieldsForChosen;
 // The DDL-binding suggestion list: what a suggestion IS, and what matches one.
@@ -320,7 +323,8 @@ const {
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
-  meComputeAutoOrderAnchors, getDDLFromPath, meDDLEntries, meBindEntryMatch, fieldsForChosen, S, P,
+  meComputeAutoOrderAnchors, getDDLFromPath, meDDLEntries, meBindEntryMatch, fieldsForChosen,
+  meInputIsNonBinary, S, P,
   meWalkDEFields: _rawWalkDEFields,
   renderFieldTable, meTestFieldTable, escSpaces, meOvEffectiveLen, expMsgLines, expWrapCell,
   meCanonSet, meVlgLenMap, meRowsForOverride, meNextSelection,
@@ -5265,6 +5269,87 @@ test('an anchor that pins the number it already had still says it is an override
   // number is marked but nothing moved.
   assert.ok(/would have had anyway/.test(cell),
     'the tooltip no longer explains an anchor that changes no numbering');
+});
+
+test('both spec-variant fallbacks are named, not just one', () => {
+  // Four ways the variant is chosen, and two of them are fallbacks: an input
+  // whose own variant is missing, so the other one runs. Only ONE was named.
+  // Character input running the Binary spec came out as plain "binary" — which
+  // reads exactly like a binary input parsed by the spec written for it, and the
+  // two are opposite cases. Reported 2026-08-23.
+  const prevTree = S.ddlTree, prevFmt = S.inputFormat, prevForced = S.forcedFormat;
+  try {
+    S.ddlTree = { V: { S: { D: 'DEFINITION MSG.\n  02 A PIC X(2).\nEND\n' } } };
+    S.forcedFormat = null;
+    const BIN = [{ 'read-fixed': { length: 2, as: 'B' } }];
+    const ASC = [{ 'read-fixed': { length: 2, as: 'A' } }];
+    const used = (fmt, binary, ascii) => {
+      S.inputFormat = fmt;
+      const item = migrateOverrides({ ddl_bindings: ['V/S/D/MSG'],
+        ...(binary ? { parse_spec_binary: BIN } : {}),
+        ...(ascii  ? { parse_spec_ascii:  ASC } : {}) });
+      return meExecParseSpec(item, Buffer.from('AB'), { format: fmt }).parseSpecUsed;
+    };
+    // Matched, both directions.
+    eq(used('hex',   true,  true),  'binary', 'a hex input did not run the Binary spec');
+    eq(used('ascii', true,  true),  'ascii',  'a character input did not run the Non-Binary spec');
+    // Fallbacks, both directions — each says so.
+    eq(used('ascii', true,  false), 'binary (fallback)',
+       'character input on a Binary-only class is still labelled as a plain binary parse');
+    eq(used('hex',   false, true),  'ascii (fallback)',
+       'binary input on a Non-Binary-only class lost its fallback label');
+    // No spec at all.
+    eq(used('hex',   false, false), 'default', 'a class with no spec changed label');
+  } finally { S.ddlTree = prevTree; S.inputFormat = prevFmt; S.forcedFormat = prevForced; }
+});
+
+test('the provenance says whether the spec variant matched the input', () => {
+  // A Binary spec reading characters — or a Non-Binary spec reading a hex dump —
+  // parses SOMETHING, and what it parses is not the message. It sat in the same
+  // dim grey as a parse that matched. It takes the amber the short byte count
+  // uses when the variant is not the one the input called for.
+  // Requested 2026-08-23.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  // Matched reads as ordinary text; mismatched takes the SAME token as the
+  // short-byte count, so the two warnings on that line cannot drift apart.
+  assert.ok(/\.rec-meta-by\s*\{ color: var\(--text\); \}/.test(css),
+    'a matching parse is still dimmed like an aside');
+  const off  = (css.match(/\.rec-meta-by-off \{[^}]*\}/) || [''])[0];
+  const shrt = (css.match(/\.rec-meta-short \{[^}]*\}/) || [''])[0];
+  assert.ok(/var\(--warn-text\)/.test(off), 'the mismatch is not marked');
+  assert.ok(/var\(--warn-text\)/.test(shrt) , 'the byte count changed colour');
+
+  // The class is applied from the comparison, not hardcoded.
+  const prov = src.slice(src.indexOf('const _provHtml'), src.indexOf('const _provHtml') + 2200);
+  assert.ok(/_variantOff\s*=\s*\/\\\(fallback\\\)\/\.test\(_by\) \|\| \(!!_used && _used !== _want\)/.test(prov),
+    'the mismatch no longer covers both a fallback and a plain variant mismatch');
+  // BOTH fallbacks are amber on their own account, not only through the
+  // comparison: the label travels with the message, while the comparison needs
+  // S.inputFormat to describe THIS one — true for a paste, not for a row picked
+  // out of an audit file. Checked against the source of the branch, since the
+  // markup is written into the DOM rather than returned.
+  assert.ok(/_variantOff[\s\S]{0,120}fallback/.test(prov),
+    'a fallback is marked only when the input format happens to disagree');
+  assert.ok(/rec-meta-by\$\{_variantOff \? ' rec-meta-by-off' : ''\}/.test(prov),
+    'the class is not driven by that comparison');
+  // And it asks the SHARED rule which side the input is on — the same one that
+  // chose the variant in the first place.
+  assert.ok(/_meInputIsNonBinary\(null\)/.test(prov), 'the provenance re-implements the rule');
+  const chooser = psFnSource('_meExecParseSpec');
+  assert.ok(/const isAscii = _meInputIsNonBinary\(fmt\);/.test(chooser),
+    'the variant chooser no longer uses the shared rule, so the two can disagree');
+
+  // The rule itself, exercised.
+  const prevFmt = S.inputFormat, prevForced = S.forcedFormat;
+  try {
+    const nb = (fmt, forced) => { S.inputFormat = fmt; S.forcedFormat = forced;
+      return sandbox._t.meInputIsNonBinary(fmt); };
+    eq(nb('ascii', null), true,  'ascii is character data');
+    eq(nb('hex', null), false,   'a hex dump is binary-faithful');
+    eq(nb('ebcdic', 'ebcdic'), true,  'a hand-picked EBCDIC is character data');
+    eq(nb('ebcdic', null), false, 'a detected EBCDIC dump is binary-faithful');
+  } finally { S.inputFormat = prevFmt; S.forcedFormat = prevForced; }
 });
 
 test('a hand-picked EBCDIC is characters, encoded back to EBCDIC bytes', () => {

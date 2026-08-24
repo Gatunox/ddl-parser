@@ -1422,7 +1422,10 @@ input[type="text"]:focus { border-color: var(--accent); }
 .rec-meta-route { color: var(--text); }
 .rec-meta-time  { color: var(--text-dim); }
 /* Parse provenance: which parser ran, and coverage when it fell short */
-.rec-meta-by    { color: var(--text-dim); }
+.rec-meta-by    { color: var(--text); }
+/* The spec variant did not match the input class. Same amber as the short
+   byte count beside it: both say "this parsed, and you should look". */
+.rec-meta-by-off { color: var(--warn-text); }
 .rec-meta-short { color: var(--warn-text); }
 
 /* ---- Token area rows ---- */
@@ -12501,8 +12504,29 @@ function renderFieldTable(msg) {
       if (f.error || f.endByte == null) continue;
       if (f.endByte + 1 > consumed) consumed = f.endByte + 1;
     }
+    // Which variant RAN, against the one the input called for. A binary spec
+    // reading characters (or the reverse) parses something, and what it parses
+    // is not the message — so it is worth the same amber the short-byte count
+    // uses, rather than sitting in the same dim grey as a parse that matched.
+    // Requested 2026-08-23.
+    const _by   = String(msg.parsedBy || '');
+    const _used = (_by.match(/parse-spec \(([a-z]+)/) || [])[1] || null;
+    const _want = _meInputIsNonBinary(null) ? 'ascii' : 'binary';
+    // A "(fallback)" is amber on its own account, whichever direction it went:
+    // it means the variant the input called for does not exist, so the other one
+    // ran. The comparison below needs S.inputFormat to describe THIS message,
+    // which holds for a paste and not for a row picked out of an audit file —
+    // the label travels with the message and is always right.
+    const _variantOff = /\(fallback\)/.test(_by) || (!!_used && _used !== _want);
+    const _byTip = !_used ? 'Parser that produced these fields'
+      : _variantOff
+      ? `Parsed by the ${_used === 'ascii' ? 'Non-Binary' : 'Binary'} spec, but the input is `
+        + `${_want === 'ascii' ? 'character data — a Binary spec reads bytes that were never there'
+                               : 'binary-faithful — the Non-Binary spec is for characters'}. `
+        + `The variant that matches the input is ${_want === 'ascii' ? 'Non-Binary' : 'Binary'}.`
+      : `Parser that produced these fields — the ${_used === 'ascii' ? 'Non-Binary' : 'Binary'} spec, which matches this input`;
     const by = msg.parsedBy
-      ? `<span class="rec-meta-pipe">|</span><span class="rec-meta-by" title="Parser that produced these fields">${esc(msg.parsedBy)}</span>`
+      ? `<span class="rec-meta-pipe">|</span><span class="rec-meta-by${_variantOff ? ' rec-meta-by-off' : ''}" title="${esc(_byTip)}">${esc(msg.parsedBy)}</span>`
       : '';
     let bytesTxt = `<span>${total} bytes</span>`;
     if (total > 0 && consumed > 0) {
@@ -17115,7 +17139,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.44.0';
+const APP_VERSION  = '1.46.45.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -32425,6 +32449,20 @@ function _meExecBlockAt(type, attrs, ctx) {
   }
 }
 
+// Are these bytes BINARY-FAITHFUL, or did they come from characters?
+//
+// It decides which spec variant runs, and the provenance line reads it again to
+// say whether the variant that ran was the one the input called for. Two copies
+// of the rule would drift, and the second reader is exactly where that shows up
+// as a wrong colour rather than a wrong parse. A hand-picked EBCDIC is on the
+// character side; an auto-detected one is a hex dump.
+function _meInputIsNonBinary(fmt) {
+  const f = fmt || (typeof S !== 'undefined' && S ? S.inputFormat : '') || '';
+  const forced = (typeof S !== 'undefined' && S) ? S.forcedFormat : null;
+  return f === 'ascii' || f === 'netard-ascii' || f === 'netard' || f === 'fup-ascii'
+      || (f === 'ebcdic' && forced === 'ebcdic');
+}
+
 function _meExecParseSpec(item, bytes, opts) {
   const bindings  = item.ddl_bindings || [];
   const resolvedBindings = bindings.map(p => p ? getDDLFromPath(p) : null);
@@ -32442,16 +32480,21 @@ function _meExecParseSpec(item, bytes, opts) {
   // it — that is the "I copied 0123 out of an EBCDIC message" case, and it is as
   // lossy as ASCII. An auto-detected ebcdic is a hex DUMP and stays binary.
   // Requested 2026-08-23.
-  const forced  = (typeof S !== 'undefined' && S) ? S.forcedFormat : null;
-  const isAscii = (fmt === 'ascii' || fmt === 'netard-ascii' || fmt === 'netard' || fmt === 'fup-ascii'
-                   || (fmt === 'ebcdic' && forced === 'ebcdic'));
+  const isAscii = _meInputIsNonBinary(fmt);
   const asciiSpec  = Array.isArray(item.parse_spec_ascii)  ? item.parse_spec_ascii  : [];
   const binarySpec = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary : [];
+  // Both fallbacks are NAMED. Only one used to be: character input running the
+  // Binary spec because no other exists came out as plain "binary", which reads
+  // exactly like a binary input parsed by the spec written for it. The two cases
+  // are opposite — one is right, one is a spec reading bytes that were never on
+  // the wire — and the label was the only thing that could tell them apart.
+  // Reported 2026-08-23.
   let parseSpec, parseSpecUsed;
-  if (isAscii && asciiSpec.length)       { parseSpec = asciiSpec;  parseSpecUsed = 'ascii';  }
-  else if (binarySpec.length)            { parseSpec = binarySpec; parseSpecUsed = 'binary'; }
-  else if (asciiSpec.length)             { parseSpec = asciiSpec;  parseSpecUsed = 'ascii (fallback)'; }
-  else                                    { parseSpec = [];         parseSpecUsed = 'default'; }
+  if (isAscii && asciiSpec.length)  { parseSpec = asciiSpec;  parseSpecUsed = 'ascii'; }
+  else if (binarySpec.length)       { parseSpec = binarySpec;
+                                      parseSpecUsed = isAscii ? 'binary (fallback)' : 'binary'; }
+  else if (asciiSpec.length)        { parseSpec = asciiSpec;  parseSpecUsed = 'ascii (fallback)'; }
+  else                              { parseSpec = [];         parseSpecUsed = 'default'; }
 
   // If no spec at all, fall back to "walk every DDL binding then read all tokens".
   const effectiveSpec = parseSpec.length

@@ -837,8 +837,24 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
    frame — laid out at 40px and reflowing all the way out, which reads as a
    flicker. It stays hidden until the pane is the size it is going to be, then
    fades in. Same idea as .panel-fading, one step instead of three. */
-#ddlTreePane.tree-revealing > * { opacity: 0; }
-#ddlTreePane:not(.tree-collapsed) > * { transition: opacity 0.12s ease; }
+/* What is held back while the width animates: everything the expanded pane
+   shows, but NOT the collapse toggle — that control exists in both states and
+   blinking it draws the eye to the one thing that did not change.
+   The revealing rule is LAST on purpose: both selectors carry the same
+   specificity, so order decides, and `transition: none` has to win. Without it
+   the two rules land in the same frame and the contents animate 1 → 0 first —
+   the name is visible, fades out, and only then is held, which is the very
+   flicker this exists to remove. Hiding is instant; revealing is animated. */
+#ddlTreePane:not(.tree-collapsed) .tree-hdr-title,
+#ddlTreePane:not(.tree-collapsed) .tree-hdr-exp,
+#ddlTreePane:not(.tree-collapsed) .tree-hdr-count,
+#ddlTreePane:not(.tree-collapsed) .tree-search-wrap,
+#ddlTreePane:not(.tree-collapsed) #ddlTree { transition: opacity 0.18s ease; }
+#ddlTreePane.tree-revealing .tree-hdr-title,
+#ddlTreePane.tree-revealing .tree-hdr-exp,
+#ddlTreePane.tree-revealing .tree-hdr-count,
+#ddlTreePane.tree-revealing .tree-search-wrap,
+#ddlTreePane.tree-revealing #ddlTree { opacity: 0; transition: none; }
 /* The DDL panel is ONE panel split in two, not two cards side by side. So the
    collapsed strip is the panel's LEFT EDGE: it carries the panel silhouette
    (--r-lg, matching every other outer edge on screen — a collapsed Parse
@@ -17645,7 +17661,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.57.0';
+const APP_VERSION  = '1.46.58.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

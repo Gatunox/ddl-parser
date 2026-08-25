@@ -18302,8 +18302,19 @@ test('reopening waits for the width before painting the tree', () => {
   assert.ok(/if \(collapse\) \{[^}]*classList\.remove\('tree-revealing'\)/.test(fn.replace(/\n/g, ' ')),
     'collapsing leaves the reveal class on and hides the rail');
   const css = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/#ddlTreePane\.tree-revealing > \*\s*\{[^}]*opacity:\s*0/.test(css),
-    'the reveal class must actually hide the contents');
+  const reveal = (css.match(/#ddlTreePane\.tree-revealing [^{]*\{([^}]*)\}/) || [])[1] || '';
+  assert.ok(/opacity:\s*0/.test(reveal), 'the reveal class must actually hide the contents');
+  // Hiding has to be INSTANT. Both selectors carry the same specificity, so the
+  // transition rule would otherwise animate 1 → 0 first and the name would be
+  // visible, fade out, and only then be held.
+  assert.ok(/transition:\s*none/.test(reveal), 'the hide step animates, which is the flicker itself');
+  assert.ok(css.indexOf('#ddlTreePane.tree-revealing .tree-hdr-title')
+          > css.indexOf('#ddlTreePane:not(.tree-collapsed) .tree-hdr-title'),
+    'equal specificity — the revealing rule must come LAST or transition:none loses');
+  // The collapse toggle is in both states; blinking it draws the eye to the one
+  // thing that did not change.
+  assert.ok(!/tree-revealing[^{]*tree-hdr-collapse/.test(css),
+    'the toggle must not be hidden during the reveal');
 });
 
 test('the collapsed toggle is centred in its own header', () => {

@@ -783,6 +783,66 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
   cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
   transition: all 0.1s; }
 .tree-hdr-exp:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
+/* Collapse the whole tree pane to a strip. Shaped off .tree-hdr-exp beside it —
+   same gesture, same kind of control — and the collapsed strip is built the way
+   .panel.collapsed builds its: a rotated title plus the button that brings it
+   back. Added 2026-08-25. */
+.tree-hdr-collapse { margin-left: 4px; background: transparent; color: var(--text-dim);
+  border: var(--bw-ctl) solid var(--border); width: 22px; height: 18px; padding: 0;
+  border-radius: var(--r-sm); font-size: var(--sz-mono); line-height: 1; box-sizing: border-box;
+  cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  transition: all 0.1s; }
+.tree-hdr-collapse:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
+
+/* The collapsed rail: one initial per volume, hover for its contents.
+   Shown only while collapsed; the flyout itself is rendered at BODY level
+   because .ddl-pane-split is overflow:hidden and would clip it. */
+.tree-rail { display: none; }
+#ddlTreePane.tree-collapsed .tree-rail { display: flex; flex-direction: column; align-items: center;
+  gap: 2px; padding: 6px 0; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.tree-rail-vol { width: 22px; height: 22px; flex-shrink: 0; display: flex; align-items: center;
+  justify-content: center; font-family: var(--mono); font-size: var(--sz-mono); font-weight: 700;
+  color: var(--text-dim); border: var(--bw-ctl) solid transparent; border-radius: var(--r-sm);
+  cursor: pointer; user-select: none; transition: all 0.1s; }
+.tree-rail-vol:hover, .tree-rail-vol.is-open {
+  color: var(--h-gray-fg); background: var(--h-gray-bg); border-color: var(--h-gray-bd); }
+/* An empty volume is still listed — it is a place to put something — but it
+   must not read as having content. */
+.tree-rail-vol.is-empty { opacity: 0.35; }
+
+.tree-fly { position: fixed; z-index: 26000; min-width: 180px; max-width: 320px;
+  max-height: 60vh; overflow-y: auto; padding: 4px 0;
+  background: var(--bg-panel); border: var(--bw) solid var(--border);
+  border-radius: var(--r-md); box-shadow: var(--shadow-menu); }
+.tree-fly.hidden { display: none; }
+.tree-fly-hdr { padding: 4px 12px 6px; font-family: var(--mono); font-size: var(--sz-mono);
+  font-weight: 700; color: var(--text); border-bottom: var(--bw-ctl) solid var(--border);
+  margin-bottom: 4px; display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.tree-fly-ver { padding: 5px 12px 2px; font-family: var(--mono); font-size: var(--sz-badge);
+  color: var(--text-dim); letter-spacing: 0.5px; }
+.tree-fly-ddl { padding: 4px 12px 4px 24px; font-family: var(--mono); font-size: 11px;
+  color: var(--text); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree-fly-ddl:hover { background: var(--h-gray-bg); color: var(--h-gray-fg); }
+.tree-fly-empty { padding: 6px 12px; font-size: 11px; color: var(--text-dim); font-style: italic; }
+
+/* Width is inline (the resizer writes it), so the collapsed width has to win on
+   specificity — hence the id. Transition on width so it slides like a panel. */
+.ddl-tree-pane { transition: width 0.25s ease; }
+#ddlTreePane.tree-collapsed { width: 28px !important; min-width: 28px; }
+#ddlTreePane.tree-collapsed .tree-search-wrap,
+#ddlTreePane.tree-collapsed #ddlTree,
+#ddlTreePane.tree-collapsed .tree-hdr-exp,
+#ddlTreePane.tree-collapsed .tree-hdr-count { display: none; }
+/* height:auto, not 100% — the header used to fill the rail and push the volume
+   list off the bottom of the pane. The border moves to the pane itself so the
+   rail below the header sits inside the same outline. */
+#ddlTreePane.tree-collapsed .tree-hdr { flex-direction: column; justify-content: flex-start;
+  gap: 8px; padding: 4px 0 6px; height: auto; flex-shrink: 0; border-bottom: none;
+  border-right: none; border-radius: var(--r-md) 0 0 0; }
+#ddlTreePane.tree-collapsed { border-right: var(--bw) solid var(--border); }
+#ddlTreePane.tree-collapsed .tree-hdr-collapse { margin-left: 0; order: -1; }
+#ddlTreePane.tree-collapsed .tree-hdr-title { writing-mode: vertical-rl; transform: rotate(180deg);
+  letter-spacing: 1px; color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
 .tree-hdr-count { font-size: var(--sz-badge); font-weight: 700; padding: 2px 10px; flex-shrink: 0;
   min-width: 38px; text-align: center;   /* so "9" is still a pill, not a circle */
   border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--h-gray-fg);
@@ -3513,7 +3573,9 @@ th.me-fm-colhi{color:var(--accent);}
             <span class="tree-hdr-title">DDL Tree</span>
             <button class="tree-hdr-exp" id="treeExpandAllBtn" onclick="toggleTreeExpandAll()" title="Expand all">+</button>
             <span class="tree-hdr-count" id="ddlTreeCount">0</span>
+            <button class="tree-hdr-collapse" id="treePaneToggle" onclick="toggleTreePane()" title="Hide the tree">−</button>
           </div>
+          <div class="tree-rail" id="treeRail"></div>
           <div class="tree-search-wrap">
             <input id="treeSearch" class="tree-search" type="text" placeholder="Filter"
               title="Filter the tree — hides everything that does not match"
@@ -15042,6 +15104,9 @@ function _syncTreeCount(tree) {
 function renderDDLTree() {
   const tree = S.ddlTree;
   _syncTreeCount(tree);
+  // The collapsed rail mirrors this tree, so it is rebuilt from the same call
+  // rather than from its own listeners — one source, no drift.
+  if (typeof _renderTreeRail === 'function') _renderTreeRail();
   _syncTreeExpandBtn();
   const sc   = S.scope;
   const fq   = S.treeFilter.toLowerCase();   // filter query ('' = no filter)
@@ -17386,6 +17451,131 @@ function _syncTreeW() {
   if (tp && panel) panel.style.setProperty('--tree-w', tp.offsetWidth + 'px');
 }
 
+// The collapsed rail, and its hover flyout. Added 2026-08-25.
+//
+// Collapsed, the pane keeps a rail of volume initials. Hovering one opens a
+// flyout listing that volume's versions and DDLs, each clickable — so the tree
+// is condensed rather than hidden, and navigating does not require reopening it.
+//
+// The flyout is a BODY-level element: .ddl-pane-split is overflow:hidden and
+// would clip anything drawn inside the pane.
+let _treeFlyVol = null, _treeFlyTimer = null;
+
+function _renderTreeRail() {
+  const rail = document.getElementById('treeRail');
+  if (!rail) return;
+  const tree = S.ddlTree || {};
+  rail.innerHTML = Object.keys(tree).sort().map(vol => {
+    let n = 0;
+    for (const sv of Object.keys(tree[vol] || {})) n += Object.keys(tree[vol][sv] || {}).length;
+    return `<div class="tree-rail-vol${n ? '' : ' is-empty'}" data-vol="${esc(vol)}"
+      title="${esc(vol)} — ${n} DDL${n === 1 ? '' : 's'}">${esc(vol[0])}</div>`;
+  }).join('');
+}
+
+function _treeFlyHide(now) {
+  clearTimeout(_treeFlyTimer);
+  const go = () => {
+    document.getElementById('treeFly')?.classList.add('hidden');
+    document.querySelectorAll('.tree-rail-vol.is-open').forEach(e => e.classList.remove('is-open'));
+    _treeFlyVol = null;
+  };
+  // A short grace period, or the flyout closes while the pointer crosses the
+  // gap between the rail and it.
+  if (now) go(); else _treeFlyTimer = setTimeout(go, 180);
+}
+
+function _treeFlyShow(volEl) {
+  clearTimeout(_treeFlyTimer);
+  const vol = volEl.dataset.vol;
+  const fly = document.getElementById('treeFly');
+  if (!fly) return;
+  if (_treeFlyVol !== vol) {
+    const versions = S.ddlTree?.[vol] || {};
+    let n = 0;
+    const body = Object.keys(versions).sort().map(sv => {
+      const ddls = Object.keys(versions[sv] || {}).sort();
+      n += ddls.length;
+      return `<div class="tree-fly-ver">${esc(sv)}</div>` + (ddls.length
+        ? ddls.map(d => `<div class="tree-fly-ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}"
+             data-name="${esc(d)}" title="${esc(vol)}/${esc(sv)}/${esc(d)}">${esc(d)}</div>`).join('')
+        : '<div class="tree-fly-empty">no DDLs</div>');
+    }).join('');
+    fly.innerHTML = `<div class="tree-fly-hdr"><span>${esc(vol)}</span>`
+      + `<span class="tree-hdr-count">${n}</span></div>`
+      + (body || '<div class="tree-fly-empty">nothing here yet</div>');
+    _treeFlyVol = vol;
+  }
+  document.querySelectorAll('.tree-rail-vol.is-open').forEach(e => e.classList.remove('is-open'));
+  volEl.classList.add('is-open');
+  fly.classList.remove('hidden');
+  // Positioned after it is measurable, and flipped up when it would run off the
+  // bottom — the rail scrolls, so a volume near the foot of a long list is not
+  // an edge case.
+  const r = volEl.getBoundingClientRect();
+  fly.style.left = (r.right + 6) + 'px';
+  fly.style.top  = '0px';
+  const h = fly.offsetHeight;
+  fly.style.top = Math.max(6, Math.min(r.top - 4, window.innerHeight - h - 6)) + 'px';
+}
+
+function _initTreeRail() {
+  const rail = document.getElementById('treeRail');
+  const fly  = document.getElementById('treeFly');
+  if (!rail || !fly) return;
+  rail.addEventListener('mouseover', e => {
+    const v = e.target.closest('.tree-rail-vol');
+    if (v) _treeFlyShow(v);
+  });
+  rail.addEventListener('mouseleave', () => _treeFlyHide());
+  fly.addEventListener('mouseenter', () => clearTimeout(_treeFlyTimer));
+  fly.addEventListener('mouseleave', () => _treeFlyHide());
+  fly.addEventListener('click', e => {
+    const d = e.target.closest('.tree-fly-ddl');
+    if (!d) return;
+    _treeFlyHide(true);
+    selectScope('ddl', d.dataset.vol, d.dataset.sv, d.dataset.name);
+  });
+  // Clicking the initial reopens the pane on that volume — the flyout is for
+  // looking, the click is for going back in.
+  rail.addEventListener('click', e => {
+    const v = e.target.closest('.tree-rail-vol');
+    if (!v) return;
+    _treeFlyHide(true);
+    S.treeExp.add(v.dataset.vol);
+    toggleTreePane(false);
+    renderDDLTree();
+  });
+}
+
+// Collapse the DDL Tree pane to a strip. Added 2026-08-25.
+// Deliberately NOT togglePanel(): that one drives a .panel flex child through a
+// three-step fade, and this is a fixed-width sibling inside .ddl-pane-split. The
+// shared part is the vocabulary — a "−" that becomes "+", an inert resizer, the
+// state riding in up_layout with the width it replaces.
+function toggleTreePane(force) {
+  const pane    = document.getElementById('ddlTreePane');
+  const btn     = document.getElementById('treePaneToggle');
+  const resizer = document.getElementById('ddlTreeResizer');
+  if (!pane || !btn) return;
+  const collapse = force !== undefined ? !!force : !pane.classList.contains('tree-collapsed');
+  // The open width is remembered here rather than recomputed: reading
+  // offsetWidth after the class lands would read the collapsed 28px.
+  if (collapse && !pane.classList.contains('tree-collapsed'))
+    pane.dataset.openWidth = pane.style.width || (pane.offsetWidth + 'px');
+  pane.classList.toggle('tree-collapsed', collapse);
+  if (collapse) _renderTreeRail(); else _treeFlyHide(true);
+  if (!collapse && pane.dataset.openWidth) pane.style.width = pane.dataset.openWidth;
+  btn.textContent = collapse ? '+' : '−';
+  btn.title       = collapse ? 'Show the tree' : 'Hide the tree';
+  if (resizer) resizer.classList.toggle('inert', collapse);
+  // --tree-w feeds the editor pane's sizing; without this the editor keeps a
+  // 225px hole where the tree used to be.
+  requestAnimationFrame(_syncTreeW);
+  setTimeout(_syncTreeW, 260);      // again after the width transition settles
+  if (force === undefined) saveLayout();
+}
+
 function initTreePaneResizer() {
   const resizer  = document.getElementById('ddlTreeResizer');
   const treePane = document.getElementById('ddlTreePane');
@@ -17407,7 +17597,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.53.0';
+const APP_VERSION  = '1.46.54.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -17495,7 +17685,14 @@ function saveLayout() {
     });
     // Tree pane width
     const treePane = document.getElementById('ddlTreePane');
-    if (treePane && treePane.style.width) layout.treePaneWidth = treePane.style.width;
+    if (treePane) {
+      // The OPEN width, never the collapsed 28px — restoring that would reopen
+      // the pane into a strip.
+      const w = treePane.classList.contains('tree-collapsed')
+        ? treePane.dataset.openWidth : treePane.style.width;
+      if (w) layout.treePaneWidth = w;
+      if (treePane.classList.contains('tree-collapsed')) layout.treeCollapsed = true;
+    }
     // Audit record-detail pane height. Rides in up_layout beside the tree pane
     // rather than taking a storage key of its own — it is the same kind of
     // thing, and §13 has one fewer key to stay honest about.
@@ -17531,11 +17728,14 @@ function loadLayout() {
       const flex = layout[id + 'Flex'];
       if (flex) { const el = document.getElementById(id); if (el) el.style.flex = flex; }
     });
-    // Tree pane width
+    // Tree pane width, then its collapsed state — width first, so the pane has
+    // an open width to come back to. force:true so restoring does not write the
+    // layout it is in the middle of reading.
     if (layout.treePaneWidth) {
       const treePane = document.getElementById('ddlTreePane');
       if (treePane) { treePane.style.width = layout.treePaneWidth; requestAnimationFrame(_syncTreeW); }
     }
+    if (layout.treeCollapsed) toggleTreePane(true);
     // Audit record-detail pane height
     if (layout.auditDetailHeight) {
       const auditPane = document.getElementById('auditPopup');
@@ -19047,6 +19247,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTree();
     _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
     initTreePaneResizer();
+    _initTreeRail();
     initAuditDetailResizer();
     initDropZones();
     _syncOverlayScroll();
@@ -33606,6 +33807,7 @@ function _meSave() {
 
 <!-- ===== CONTEXT MENU ===== -->
 <div class="ctx-menu hidden" id="ctxMenu"></div>
+<div class="tree-fly hidden" id="treeFly"></div>
 
 <!-- ===== MSG EXPORT MODAL ===== -->
 <div class="modal-overlay hidden" id="msgExportOverlay" onmousedown="if(event.target===this)closeMsgExportModal()">

@@ -150,6 +150,8 @@ _t.parseFlatMessage   = parseFlatMessage;
 _t.parseMessage       = parseMessage;
 _t.parseHPEISOMessage = parseHPEISOMessage;
 _t.parseSimpleDDL     = parseSimpleDDL;
+_t.renderTreeRail     = _renderTreeRail;
+_t.toggleTreePane     = toggleTreePane;
 _t.msgByteCoverage    = _msgByteCoverage;
 _t.ISO8583_DDL        = ISO8583_DDL;
 _t.ISO8583_1993_DDL   = ISO8583_1993_DDL;
@@ -313,7 +315,7 @@ try {
 const {
   picSize, typeSize, buildDDLDocFields, expandTypeRefs,
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
-  parseSimpleDDL, msgByteCoverage, ISO8583_DDL, ISO8583_1993_DDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
+  parseSimpleDDL, renderTreeRail, toggleTreePane, msgByteCoverage, ISO8583_DDL, ISO8583_1993_DDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, extractBytesMapped,
   stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, auditBadgeType, fmtSave, fmtGetData, psHelp, psExamplesFor, meHelpDescHtml, psCommonAttrs, psCommonDflts,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
@@ -18080,8 +18082,10 @@ test('the vertical panel title stays scoped to collapsed panels', () => {
     const prev   = Math.max(before.lastIndexOf('}', open), before.lastIndexOf('{', open - 1));
     const sel    = before.slice(prev + 1, open).trim().replace(/\s+/g, ' ');
     found++;
-    assert.ok(/\.collapsed/.test(sel),
-      `vertical writing-mode must be scoped to a collapsed panel, found on: "${sel}"`);
+    // `.collapsed` or a prefixed variant of it (`.tree-collapsed`). The guard is
+    // "vertical text only while something is collapsed", not "only the panel".
+    assert.ok(/\.(?:[\w-]*-)?collapsed\b/.test(sel),
+      `vertical writing-mode must be scoped to a collapsed state, found on: "${sel}"`);
   }
   assert.ok(found > 0, 'the collapsed vertical-title rule still exists');
 });
@@ -18168,6 +18172,100 @@ test('the audit detail height survives a reload, and a layout reset', () => {
   assert.ok(/startH - \(ev\.clientY - startY\)/.test(rez),
     'the pane grows UPWARD — dragging the gutter down must shrink it');
   assert.ok(/Math\.max\(_AUDIT_DETAIL_MIN, Math\.min\(maxH/.test(rez), 'the drag is unclamped');
+});
+
+// ── DDL Tree pane collapse + rail ────────────────────────────────────────────
+console.log('\nDDL tree — collapsed rail and flyout');
+
+test('the rail lists every volume, marks the empty ones, and counts the DDLs', () => {
+  // Asserted on what the rail RENDERS, not on the shape of the function that
+  // renders it — the volume list is the whole point of the collapsed state.
+  const prevTree = S.ddlTree;
+  const rail = { innerHTML: '' };
+  const prevStub = elStubs.treeRail;
+  elStubs.treeRail = rail;
+  try {
+    S.ddlTree = {
+      SWITCH: { '1987': { 'Standard ISO': 'x' }, '1993': { 'Standard ISO': 'x' } },
+      ATM:    {},                                   // a volume with nothing in it
+      BASE:   { DDL: { A: 'x', B: 'x', C: 'x' } },
+    };
+    renderTreeRail();
+    const html = rail.innerHTML;
+    // One marker per volume, in sorted order, showing the initial.
+    deepEq([...html.matchAll(/data-vol="([^"]+)"/g)].map(m => m[1]), ['ATM', 'BASE', 'SWITCH'],
+      'the rail must list every volume, sorted');
+    deepEq([...html.matchAll(/>([A-Z])<\/div>/g)].map(m => m[1]), ['A', 'B', 'S'],
+      'each marker shows the volume initial');
+    // Counts are DDLs, summed across versions — not the number of versions.
+    assert.ok(/title="SWITCH — 2 DDLs"/.test(html), `SWITCH should count 2 DDLs across 2 versions: ${html}`);
+    assert.ok(/title="BASE — 3 DDLs"/.test(html), 'BASE should count 3');
+    assert.ok(/title="ATM — 0 DDLs"/.test(html), 'ATM should count 0');
+    // An empty volume is still a place to put something, so it is listed — but
+    // it must not read as having content.
+    assert.ok(/class="tree-rail-vol is-empty" data-vol="ATM"/.test(html), 'an empty volume is not dimmed');
+    assert.ok(/class="tree-rail-vol" data-vol="BASE"/.test(html), 'a volume with DDLs must not be dimmed');
+    // Singular/plural, because "1 DDLs" is the kind of thing that ships.
+    S.ddlTree = { POS: { V: { ONE: 'x' } } };
+    renderTreeRail();
+    assert.ok(/title="POS — 1 DDL"/.test(rail.innerHTML), `singular: ${rail.innerHTML}`);
+  } finally {
+    S.ddlTree = prevTree;
+    if (prevStub === undefined) delete elStubs.treeRail; else elStubs.treeRail = prevStub;
+  }
+});
+
+test('the rail is rebuilt by renderDDLTree, so it cannot drift from the tree', () => {
+  // Two renderers over one model drift the moment either is called on its own.
+  // The rail rides the tree's own render rather than listening for changes.
+  assert.ok(/_renderTreeRail\(\)/.test(psFnSource('renderDDLTree')),
+    'renderDDLTree does not rebuild the rail — add/delete a DDL and the rail goes stale');
+});
+
+test('collapsing remembers the open width, and restoring does not re-save it', () => {
+  const fn = psFnSource('toggleTreePane');
+  // The open width has to be captured BEFORE the class lands — reading
+  // offsetWidth afterwards reads the collapsed 28px, and the pane could never
+  // come back to the width it was dragged to.
+  const capture = fn.indexOf('dataset.openWidth =');
+  const toggle  = fn.indexOf("classList.toggle('tree-collapsed'");
+  assert.ok(capture >= 0 && toggle >= 0 && capture < toggle,
+    'the open width must be captured before the collapsed class is applied');
+  // Restoring at startup must not write the layout it is in the middle of reading.
+  assert.ok(/if \(force === undefined\) saveLayout\(\)/.test(fn),
+    'a forced toggle (layout restore) must not call saveLayout');
+  const save = psFnSource('saveLayout');
+  assert.ok(/tree-collapsed'\)\s*\?\s*treePane\.dataset\.openWidth/.test(save.replace(/\s+/g, ' ')) ||
+            /dataset\.openWidth\s*:\s*treePane\.style\.width/.test(save),
+    'saveLayout must persist the OPEN width, never the collapsed strip width');
+  assert.ok(/layout\.treeCollapsed = true/.test(save), 'saveLayout does not record the collapsed state');
+  const load = psFnSource('loadLayout');
+  assert.ok(/layout\.treeCollapsed/.test(load) && /toggleTreePane\(true\)/.test(load),
+    'loadLayout does not restore the collapsed state');
+  // Width first, then collapse — or the pane has no open width to come back to.
+  assert.ok(load.indexOf('layout.treePaneWidth') < load.indexOf('layout.treeCollapsed'),
+    'the width must be restored before the collapsed state');
+});
+
+test('the flyout is rendered at body level, because the pane clips it', () => {
+  // .ddl-pane-split is overflow:hidden, so a flyout drawn inside the pane is
+  // cut off at 28px — invisible, with nothing in the console to say why.
+  const html = fs.readFileSync('./source.html', 'utf8');
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.ok(/\.ddl-pane-split\s*\{[^}]*overflow:\s*hidden/.test(css),
+    'the premise changed: the split no longer clips, so this rule can relax');
+  const body = html.slice(html.indexOf('<body'));
+  assert.ok(/<div class="tree-fly hidden" id="treeFly"><\/div>/.test(body),
+    'the flyout element must sit at body level, outside the clipping pane');
+  assert.ok(/\.tree-fly\s*\{[^}]*position:\s*fixed/.test(css),
+    'a body-level flyout still needs fixed positioning to follow the rail marker');
+  // Closing on a timer, not on mouseleave alone: the pointer has to cross a gap
+  // between the rail and the flyout, and an instant close makes it unusable.
+  const hide = psFnSource('_treeFlyHide');
+  assert.ok(/setTimeout\(go, \d+\)/.test(hide), 'the flyout closes instantly — the gap becomes uncrossable');
+  const init = psFnSource('_initTreeRail');
+  assert.ok(/fly\.addEventListener\('mouseenter', \(\) => clearTimeout/.test(init),
+    'entering the flyout must cancel the pending close');
 });
 
 test('every collapsed panel title starts at the TOP of its rail', () => {

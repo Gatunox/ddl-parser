@@ -17688,13 +17688,15 @@ function _initTreeRail() {
   }
   // Clicking the initial reopens the pane on that volume — the flyout is for
   // looking, the click is for going back in.
+  // Clicking a letter opens its flyout and NOTHING else. It used to reopen the
+  // pane on that volume, which threw away the state you were in to answer a
+  // question the flyout answers where you stand. Reopening is the − / + button's
+  // job, and it is right there. The click matters for pointers with no hover at
+  // all — a tap is the only way in on touch. Reported 2026-08-25.
   rail.addEventListener('click', e => {
     const v = e.target.closest('.tree-rail-vol');
     if (!v) return;
-    _treeFlyHide(true);
-    S.treeExp.add(v.dataset.vol);
-    toggleTreePane(false);
-    renderDDLTree();
+    _treeFlyShow(v);
   });
 }
 
@@ -17796,7 +17798,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.59.0';
+const APP_VERSION  = '1.46.60.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

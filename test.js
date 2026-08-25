@@ -18417,6 +18417,19 @@ test('dragging the pane below the width its header needs collapses it', () => {
     'measuring while collapsed would read the strip, not the header');
 });
 
+test('[REGRESSION] clicking a rail letter opens its flyout, it does not reopen the pane', () => {
+  // It used to expand the pane on that volume — throwing away the collapsed
+  // state you chose, to answer a question the flyout already answers where you
+  // stand. Reopening belongs to the − / + button. Reported 2026-08-25.
+  const init = psFnSource('_initTreeRail');
+  const click = init.slice(init.indexOf("rail.addEventListener('click'"));
+  const body = click.slice(0, click.indexOf('});'));
+  assert.ok(/_treeFlyShow\(v\)/.test(body), 'the click must still open the flyout — a tap is the only way in without hover');
+  assert.ok(!/toggleTreePane/.test(body), 'the click must not reopen the pane');
+  assert.ok(!/renderDDLTree/.test(body), 'nothing about a click on the rail changes the tree');
+  assert.ok(!/treeExp/.test(body), 'the click must not expand nodes in a tree nobody is looking at');
+});
+
 test('the flyout is rendered at body level, because the pane clips it', () => {
   // .ddl-pane-split is overflow:hidden, so a flyout drawn inside the pane is
   // cut off at 28px — invisible, with nothing in the console to say why.

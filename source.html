@@ -809,6 +809,11 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 /* An empty volume is still listed — it is a place to put something — but it
    must not read as having content. */
 .tree-rail-vol.is-empty { opacity: 0.35; }
+/* The volume holding the current selection, in the same accent the expanded
+   tree paints on its Volume / subvol path (.tree-anc). Collapsing the pane
+   should not lose where you are. Declared AFTER :hover so hovering still
+   lights the chip without repainting the one fact the colour carries. */
+.tree-rail-vol.is-current, .tree-rail-vol.is-current:hover { color: var(--accent); }
 
 .tree-fly { position: fixed; z-index: 26000; min-width: 180px; max-width: 320px;
   max-height: 60vh; overflow-y: auto; padding: 4px 0;
@@ -17482,11 +17487,13 @@ function _renderTreeRail() {
   const rail = document.getElementById('treeRail');
   if (!rail) return;
   const tree = S.ddlTree || {};
+  const curVol = S.scope?.vol || null;
   rail.innerHTML = Object.keys(tree).sort().map(vol => {
     let n = 0;
     for (const sv of Object.keys(tree[vol] || {})) n += Object.keys(tree[vol][sv] || {}).length;
-    return `<div class="tree-rail-vol${n ? '' : ' is-empty'}" data-vol="${esc(vol)}"
-      title="${esc(vol)} — ${n} DDL${n === 1 ? '' : 's'}">${esc(vol[0])}</div>`;
+    const cls = (n ? '' : ' is-empty') + (vol === curVol ? ' is-current' : '');
+    return `<div class="tree-rail-vol${cls}" data-vol="${esc(vol)}"
+      title="${esc(vol)} — ${n} DDL${n === 1 ? '' : 's'}${vol === curVol ? ' — holds the current selection' : ''}">${esc(vol[0])}</div>`;
   }).join('');
 }
 
@@ -17614,7 +17621,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.55.0';
+const APP_VERSION  = '1.46.56.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

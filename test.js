@@ -18215,6 +18215,46 @@ test('the rail lists every volume, marks the empty ones, and counts the DDLs', (
   }
 });
 
+test('the rail marks the volume holding the current selection', () => {
+  // Collapsing must not lose where you are: the expanded tree paints the
+  // Volume / subvol path in the accent (.tree-anc), and the rail letter for
+  // that volume carries the same mark. Reported 2026-08-25.
+  const prevTree = S.ddlTree, prevScope = S.scope;
+  const rail = { innerHTML: '' };
+  const prevStub = elStubs.treeRail;
+  elStubs.treeRail = rail;
+  try {
+    S.ddlTree = { ATM: { V: { A: 'x' } }, SWITCH: { '1993': { 'Standard ISO': 'x' } } };
+    S.scope = { type: 'ddl', vol: 'SWITCH', sv: '1993', name: 'Standard ISO' };
+    renderTreeRail();
+    assert.ok(/data-vol="SWITCH"[^>]*>/.test(rail.innerHTML.replace(/\n\s*/g, ' ')), 'SWITCH is on the rail');
+    const marked = [...rail.innerHTML.matchAll(/class="tree-rail-vol([^"]*)" data-vol="([^"]+)"/g)]
+      .filter(m => /is-current/.test(m[1])).map(m => m[2]);
+    deepEq(marked, ['SWITCH'], 'exactly the selected volume is marked');
+    // No selection → nothing marked, rather than the first volume by accident.
+    S.scope = null;
+    renderTreeRail();
+    eq(/is-current/.test(rail.innerHTML), false, 'nothing is marked when nothing is selected');
+    // A scope that names a volume with no file still marks it — the tree does.
+    S.scope = { type: 'vol', vol: 'ATM' };
+    renderTreeRail();
+    const m2 = [...rail.innerHTML.matchAll(/class="tree-rail-vol([^"]*)" data-vol="([^"]+)"/g)]
+      .filter(m => /is-current/.test(m[1])).map(m => m[2]);
+    deepEq(m2, ['ATM'], 'a volume-level scope marks its own letter');
+    // The class has to PAINT, and paint the same accent the expanded tree uses
+    // for the path — a marker nobody can see is not a marker.
+    const css = fs.readFileSync('./source.html', 'utf8');
+    const rule = (css.match(/\.tree-rail-vol\.is-current[^{]*\{([^}]*)\}/) || [])[1];
+    assert.ok(rule && /color:\s*var\(--accent\)/.test(rule),
+      `.tree-rail-vol.is-current must set color: var(--accent), got: ${rule}`);
+    assert.ok(/\.tree-rail-vol\.is-current:hover/.test(css),
+      'hover must not repaint the selection colour — the chip lights, the colour stays');
+  } finally {
+    S.ddlTree = prevTree; S.scope = prevScope;
+    if (prevStub === undefined) delete elStubs.treeRail; else elStubs.treeRail = prevStub;
+  }
+});
+
 test('the rail is rebuilt by renderDDLTree, so it cannot drift from the tree', () => {
   // Two renderers over one model drift the moment either is called on its own.
   // The rail rides the tree's own render rather than listening for changes.

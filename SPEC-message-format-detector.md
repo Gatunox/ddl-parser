@@ -10,6 +10,9 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-24 | **`read-ddl` continues from the cursor — it is a list of reads, written once.** `read-ddl` exists so a long DDL need not be enumerated one `read` at a time, so whatever the spec did before it has to count, exactly as it would between hand-written reads. It did not: each field was placed at the offset the DDL declares, ignoring the cursor entirely. After a `read` that restart was **invisible** — the DDL describes byte 0 onward and the read had consumed byte 0 onward, so re-reading produced the same values and merely duplicated a row. After a `skip` it was **fatal**: `skip` is the one block that says "the layout does not start at byte 0", and the restart read the skipped prefix as the DDL's first fields, in silence. Same mechanism, different blast radius. The DDL is now anchored where the spec has reached and every declared offset is **added** to that anchor; `from` is not special — it names a field inside the layout, so `{"skip": 4}` + `{"read-ddl": {"from": "B"}}` reads B at 4 + 2 = 6. Five recorded cases moved, all the same bug in different clothes: `read-fixed` / `read-until` / `read-to-end` / `read-ddl` followed by `read-ddl`, plus `read-ddl at:6` — `at` was **inert** on `read-ddl` though it is documented (§5.11) as universal positioning. `read-to-end` → `read-ddl` now reports running off the end instead of silently re-reading the record from 0. `read {from, until}` is unchanged and stays the cursor-relative window: placing one field at the cursor and anchoring a layout there are different operations, and the tests now state that contrast rather than assuming it. See §5.2, §5.7. |
+| 2026-08-24 | **A skipped prefix is not a record overrun.** Reported: a class whose spec opens with `{"skip": 9}`, every field parsing correctly, and the byte count reading "348 bytes ⚠ — fields extend 8 past the end of the record". Nothing extended past anything. The count compared two numbers taken from **different origins**: `consumed` is an absolute index into the bytes the parser was handed, while the yardstick was `msg.recLength` — the length the NETARD header *line* declares, read out of the log text and independent of what the data lines decode to. A `skip` steps over a prefix the header does not count, so those bytes sat inside one number and outside the other. The yardstick is now the buffer the parser actually got, which is the same buffer every field offset refers to; where the declared length disagrees with what was decoded it rides along in the tooltip. `_msgByteCoverage` is lifted out of `renderFieldTable` so the rule is tested on numbers rather than by grepping the source of a closure. |
+| 2026-08-24 | **ISO 8583:1993 ships as a default DDL and class; the 1987 class is renamed and both move last.** `SWITCH/1993/Standard ISO` carries the header plus all 128 DEs — the 1993 list, not a relabelled 1987 one (DE 12 is 12 digits, DE 15 is 6, DE 22 is a 12-char POS data code, DE 43 is variable, reconciliation replaces settlement throughout). Framing is the **standard's**, not Base24's: the 1987 table opens with `ISO_PFX`, Base24's own 3-byte routing prefix, and ISO 8583 defines no prefix — so the 1993 table starts at the MTI and its class anchors on `mti@0 '1###'` plus `hex-density` over the 16 bitmap characters, since without a vendor literal "four digits starting with 1" would claim almost anything. `ISO 8583 Standard` becomes `ISO 8583 Standard 1987` with its MTI pinned to `0###`, and both Standard entities move to the **end** of the message order — not cosmetic: detection is first-match-wins, and Standard 1987 is looser than ISO 8583 BIC, so a BIC record whose 9-digit field opens with a valid `0###` MTI matched both and the generic entity was swallowing it. `_fmtSyncDefaults` (ver 3) gains a rename step ahead of every label lookup: it renames in place rather than adding a second copy, renames the deleted-defaults set so a default deleted under the old name stays deleted, and stands down if the new label is already taken. The 1987 retighten applies only to recognizers still byte-for-byte the shipped ones. The 1993 DDL is seeded **once**, so deleting it sticks. |
 | 2026-08-22 | **The 23-over-22 case is now expressible in a spec, not only handled structurally.** Asked directly: can `when` solve it? It could state the condition and not act on it, and two things were in the way. (1) **`sizeof` on a group counted the group's own length leaf** — `LEN(4) A(12) B(10)` came back 26, so `greater_than {"sizeof": "GRP60"}` compared a wire length of 23 against a number that is not what it disagrees with. A group carrying its own length now reports what it declares for its **payload**, 22: the length leaf is a statement *about* those bytes, not one of them, and 22 is already the number the engine prints when it reports the overrun. Which leaf is the length is decided by the same rule that frames the group, so size and framing cannot disagree. (2) **There was no way to say "whatever this element still has"** — `read-to-end` meant the end of the *message*, so inside a `de` entry it read through the element's boundary and the only thing it could produce there was `its blocks read N byte(s) past the element's length`. It takes `end_at`: `"message"` (the default, unchanged) or `"field"`, the end of the frame this block sits inside; unframed, `"field"` says so rather than falling back. Together they make the whole case one condition and one read, with both halves coming from the DDL — so one spec covers a surplus of one byte, of five, or of none. Also recorded: a `de` entry on a group reads the **length leaf itself** as its frame before the blocks run, so the blocks read the payload only; reading it again in a block produces a second row under the same id and overwrites the first in the field table. See §5.19, §5.20. |
 | 2026-08-21 | **The byte guard is documented, and checked in both blocks that take it.** Reported: "I read it and I can't figure out what the attribute `bytes` does — there is only one example but it says it supports type, value, length, pattern, encoding." All five were listed as names with nothing to look at, and the one example was `literal`. The predicate is now written **once** and referenced from all three places that take it — `when`'s `bytes`, `when`'s `not-bytes` and `read-while`'s `while` — stating the window (`length`, defaulting to 1 except `literal`, which uses its own value's width), which companion attribute belongs to which `type`, that the class types test the **whole** window while `ascii` tests raw bytes and so ignores `encoding`, and that a regex is **unanchored**. They had already drifted: `read-while` called `length` "Required" while the matcher defaults it, and `when` described the shape as "same as read-while's" and left the reader to go and look. Five of the six types now have an example, including both sides of a guard that fails. The **lint** was one-sided the same way — `when`'s guard was checked and `read-while`'s was not, though they are the same object — so both now go through one checker, which also catches a `pattern` that will not compile, a `length` below 1, and an unknown `encoding`: each of those silently never matches, which reads as a dead branch rather than a broken guard. See §5.6. |
 | 2026-08-21 | **`when` gains its other branch, `sizeof` works wherever a size is taken, and `skip` stops poisoning the cursor.** Three findings from one pass. (1) **`else` was accepted and read by nothing** — the key parsed, linted clean and did nothing, so a spec with two branches ran one and silently dropped the other. It now runs the other branch, from the **same cursor**, with exactly one branch taken; a condition that cannot be *answered* runs **neither** and reports why, because not knowing is not the same as false. (2) **`sizeof` is accepted wherever a spec takes a number** — `read-fixed`'s `length`, `skip`'s `length`, `repeat`'s `count`, `read-while`'s `max`, a `de` entry's `length`, and every `when` comparison — resolved in the single helper they all call, so the size a condition compares against is the size a `read-fixed` would read. Documented once and referenced from each, the way `at` and `peek` are. (3) **`skip` with a field-id length computed `cursor + "CNT"`** — string concatenation into `NaN` — so the cursor became NaN and every block after it silently read nothing. The baseline had been recording `"cursor": null` for that case all along. Routing it through the shared resolver fixes it and gives `skip` the reference and `sizeof` forms at the same time. Also: an unresolvable length now reports **why** (`'NOPE' not yet read`) instead of `Cannot resolve length: [object Object]`. 34 baseline cases moved — 32 of them that one error string, plus the `else` case and the `skip` NaN. See §5.6, §5.19. |
@@ -329,8 +332,36 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 ### 5.2 `read-ddl` — full DDL binding read
 
 > *Updated 2026-05-23 — added `binding: "ANY"`, `fields`, `from`, `until` attributes.*
+> *2026-08-24 — the walk is anchored at the cursor; declared offsets are added to it.*
 
-`read-ddl` walks the DDL specified in `ddl_bindings[binding]` and reads every field in declaration order, exactly as the DDL defines them (offset, length, type, encoding). No individual `read` blocks are needed.
+`read-ddl` walks the DDL specified in `ddl_bindings[binding]` and reads every field in declaration order, exactly as the DDL defines them (length, type, encoding). No individual `read` blocks are needed — **`read-ddl` is that list of reads, written once.**
+
+**Where the walk lands.** The DDL is a *layout*, and the layout is anchored where
+the spec has reached: `read-ddl` starts at the cursor and every declared offset is
+**added** to that anchor. Whatever ran before it counts, exactly as it would
+between hand-written reads.
+
+```jsonc
+// DDL: A(2) B(2) C(2) — declared offsets 0, 2, 4
+[{"read-ddl": {"binding": 0}}]                    // A@0  B@2  C@4
+[{"skip": 4}, {"read-ddl": {"binding": 0}}]       // A@4  B@6  C@8
+[{"read-ddl": {"binding": 0, "at": 10}}]          // A@10 B@12 C@14
+```
+
+`from` is not special: it names a field *inside* the layout, so its declared
+offset is added like any other. `{"skip": 4}` then `{"read-ddl": {"from": "B"}}`
+reads B at 4 + 2 = **6**. At the top of a message the anchor is 0 and every
+declared offset stands exactly as written.
+
+Contrast `read {from, until}` (§5.7), which walks from the cursor rather than
+anchoring a layout — that is what the two blocks are for, and why both exist.
+
+Until 2026-08-24 `read-ddl` placed each field at its declared offset and ignored
+the cursor entirely. After a `read` the restart was invisible: the DDL describes
+byte 0 onward and the read had consumed byte 0 onward, so re-reading produced the
+same values and merely duplicated a row. After a `skip` it was fatal — `skip` is
+the one block that says *"the layout does not start at byte 0"* — and the restart
+read the skipped prefix as the DDL's first fields, in silence.
 
 Use this for messages where:
 - All fixed fields are fully described in the DDL
@@ -562,6 +593,12 @@ DDL offset instead, so the skip moved the cursor and the next read ignored it �
 the block was inert exactly where it was needed. Reading a field in the middle
 without listing what precedes it is what `at` is for.
 
+Since 2026-08-24 `read-ddl` (§5.2) obeys the cursor too, by anchoring the whole
+DDL layout at it. The two are not the same operation: `read` places one field at
+the cursor, `read-ddl` places a *layout* there and adds each declared offset to
+it. `read {from, until}` is the cursor-relative window; `read-ddl {from, until}`
+is a window inside an anchored layout.
+
 `read` on a **group** resolves its structure from the DDL and reads it at the
 cursor, the same as a single field:
 
@@ -749,6 +786,11 @@ what every existing spec relies on. `at` overrides it:
 The anchor must be a field an **earlier** block produced. Resolution is done once
 in the block dispatcher, so it applies to every block type — including `skip`,
 which then needs its object form: `{"skip": {"length": 2, "at": 10}}`.
+
+Until 2026-08-24 this was true of every block *except* `read-ddl`, which placed
+its fields at their declared DDL offsets and so ignored `at` silently. It now
+anchors the layout at the position `at` resolves to, like everything else — see
+§5.2.
 
 The cursor **stays** where the positioned read ends, so following blocks continue
 from there. `"peek": true` restores it afterwards, for an overlay read that must

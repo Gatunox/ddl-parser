@@ -9687,6 +9687,59 @@ test('read-ddl still positions at the DECLARED offsets — unchanged', () => {
   eq(winAt(ctx, 'MORE'), 26, `declared position: 2 + 8 + 8x2 = 26, got ${winAt(ctx, 'MORE')}`);
 });
 
+test('[REGRESSION] skip moves read-ddl; a read before it still does not', () => {
+  // Reported 2026-08-24. read-ddl positions at declared DDL offsets, which made
+  // `skip` inert in front of it: a spec stepping over a 9-byte prefix the DDL
+  // does not describe had its DDL read from byte 0 anyway, over the prefix,
+  // without a word. A `read` consumes a field and read-ddl restarting after it
+  // is the documented behaviour above; `skip` consumes nothing and exists only
+  // to say "these bytes are not part of this layout".
+  S.inputFormat = 'ascii';
+  S.ddlTree = { V: { S: { D: 'DEFINITION R.\n  02 A PIC X(4).\n  02 B PIC X(4).\nEND\n' } } };
+  const at = (blocks, id) => {
+    const c = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/R'], parse_spec_binary: blocks },
+                              Buffer.from('#########AAAABBBB'));
+    const f = c.fields.find(x => x.id === id);
+    return f ? f.startByte : null;
+  };
+  eq(at([{ 'read-ddl': { binding: 0 } }], 'A'), 0, 'no skip: the DDL sits at its declared offsets');
+  eq(at([{ skip: 9 }, { 'read-ddl': { binding: 0 } }], 'A'), 9,
+     'skip 9 must place the DDL at 9 — it used to be read from 0, over the prefix');
+  eq(at([{ skip: 4 }, { skip: 5 }, { 'read-ddl': { binding: 0 } }], 'A'), 9,
+     'two skips ignore two stretches');
+  // The discriminating half: a real read still leaves read-ddl restarting.
+  eq(at([{ 'read-fixed': { length: 9, as: 'HDR' } }, { 'read-ddl': { binding: 0 } }], 'A'), 0,
+     'a read must NOT move the DDL — six recorded cases depend on it restarting');
+  // And the skip has to reach the field after the first one too, not just the
+  // anchor: a base that applied once would desync the rest of the walk.
+  eq(at([{ skip: 9 }, { 'read-ddl': { binding: 0 } }], 'B'), 13, 'the whole walk moves, not just the first field');
+});
+
+test('[REGRESSION] a skip inside a DE window does not shift the blocks after it', () => {
+  // skipBase is scoped like _deLimit. A `skip` inside an element says "these
+  // bytes of THIS element are not mine"; left to accumulate it would move every
+  // later read-ddl by an amount decided inside a DE, which nothing outside can
+  // see or reason about.
+  S.inputFormat = 'ascii';
+  S.ddlTree = { V: { S: { D: `DEFINITION R.
+  02 BMP PIC X(16).
+  02 E2 PIC X(8).
+  02 TAIL PIC X(4).
+END
+` } } };
+  const item = migrateOverrides({ ddl_bindings: ['V/S/D/R'], overrides: { 'E2': { de: 2 } },
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+      { 'read-bitmap-fields': { bitmap: 'BMP',
+          de: { '2': { length: 8, blocks: [{ skip: 4 }, { 'read-fixed': { length: 4, as: 'HALF' } }] } } } },
+      { 'read-ddl': { binding: 0, fields: ['TAIL'] } },
+    ] });
+  const ctx = meExecParseSpec(item, Buffer.from('4000000000000000' + '22223333' + 'TAIL'));
+  const tail = ctx.fields.find(f => f.id === 'TAIL');
+  eq(tail && tail.startByte, 24, `TAIL sits at its declared 24; a leaked skip would move it to 28`);
+  eq(tail && tail.value, 'TAIL', 'and it reads the right bytes');
+});
+
 test('until bounds the window, inclusively', () => {
   const ctx = winRun([{ read: { from: 'MORE', until: 'WHAT' } }]);
   eq(winAt(ctx, 'WHAT'), 16, 'WHAT is included');

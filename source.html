@@ -17407,7 +17407,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.51.0';
+const APP_VERSION  = '1.46.52.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21173,6 +21173,7 @@ const _PS_HELP = {
         ..._PS_SIZEOF_DESC,
         'Nothing is captured and no row is emitted — the bytes simply go unread.',
         'A skip past the end of the message stops at the end rather than failing.',
+        'A skip also moves <code>read-ddl</code>: the DDL\'s declared offsets are taken as relative to the record <b>minus</b> what was skipped, so a prefix the DDL does not describe can be stepped over. A <code>read</code> does not do this — read-ddl restarts at the declared offsets after one.',
         'Combine with <code>at</code> using the object form: <code>{"skip": {"length": 2, "at": 10}}</code>.',
       ]],
     ],
@@ -29101,7 +29102,10 @@ function _meReadOneFieldFromDef(def, ctx) {
   // it: shrink a 4-byte MSGTYPE to 2 and the two bytes left over must still be
   // there for the next field to read, not skipped because the DDL says the next
   // field starts at 4. ovShift carries that running correction across the walk.
-  const fStart = hasExplicit ? def.offset + (ctx.ovShift || 0) : ctx.cursor;
+  // Declared offsets are relative to the record MINUS what the spec skipped
+  // (ctx.skipBase — see the `skip` block) and corrected by any re-sizing that
+  // happened along the way (ctx.ovShift).
+  const fStart = hasExplicit ? def.offset + (ctx.skipBase || 0) + (ctx.ovShift || 0) : ctx.cursor;
   if (fStart >= ctx.bytes.length) return null;
 
   let len = def.length;
@@ -31106,6 +31110,10 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
   const end = windowLen != null && windowLen > 0 ? start + windowLen : null;
 
   const prevScope = ctx._deScope, prevLimit = ctx._deLimit, prevBit = ctx._deBit;
+  // skipBase travels with the DE window too. A `skip` inside an element says
+  // "these bytes of THIS element are not mine"; letting it accumulate past the
+  // element would shift every later read-ddl by an amount decided inside a DE.
+  const prevSkipBase = ctx.skipBase;
   ctx._deScope = scopeId;
   ctx._deLimit = end;
   ctx._deBit   = de;      // which bit we are inside, for blocks that read the DE itself
@@ -31115,6 +31123,7 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     ctx._deScope = prevScope;
     ctx._deLimit = prevLimit;
     ctx._deBit   = prevBit;
+    ctx.skipBase = prevSkipBase;
     if (end != null) {
       // Overrunning is always reported and always stops here, whatever the
       // window was: reading past the room an element has is malformed either
@@ -32709,7 +32718,23 @@ function _meExecBlockAt(type, attrs, ctx) {
         ctx.fields.push({ id: 'skip', error: `skip ${n} is negative — the cursor cannot run backwards; skipped nothing` });
         return;
       }
+      // SKIP MOVES THE DDL TOO. read-ddl positions each field at the offset the
+      // DDL declares, deliberately — several recorded cases depend on it
+      // restarting rather than following whatever the cursor happens to be. But
+      // that made `skip` inert in front of it: a spec that stepped over a 9-byte
+      // prefix the DDL does not describe got its DDL read from byte 0 anyway,
+      // silently, over the prefix. A `read` before read-ddl consumed a field and
+      // read-ddl still restarted, which is the documented behaviour; `skip`
+      // consumes nothing and exists only to say "these bytes are not part of
+      // this layout", so the layout has to start after them.
+      //
+      // Hence a base rather than a cursor: skip shifts where the declared
+      // offsets land, reads do not. Cumulative, because two skips ignore two
+      // stretches, and scoped to a DE window by _meRunDeEntry. Reported
+      // 2026-08-24.
+      const _before = ctx.cursor;
       ctx.cursor = Math.min(ctx.cursor + n, ctx.bytes.length);
+      ctx.skipBase = (ctx.skipBase || 0) + (ctx.cursor - _before);
       return;
     }
     default:

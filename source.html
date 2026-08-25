@@ -4022,6 +4022,155 @@ BMP      FIXED   16   B    "Primary Bitmap (ASCII hex encoded — 16 chars = 8 b
 128      FIXED    8   B    "Message Authentication Code (Secondary)"
 `;
 
+// ISO 8583:1993 — same simple columnar shape as the 1987 table above, but NOT
+// the same framing. The 1987 table is Base24's internal format and opens with
+// Base24's own 3-byte "ISO" routing prefix; the standard has no such prefix, so
+// this table starts where the standard does, at the MTI. Anything ahead of the
+// MTI on the wire is a carrier/scheme header, not part of ISO 8583.
+// 1993 keeps the MTI + bitmap skeleton but re-purposes many DEs (reconciliation
+// replaces settlement, DE 12/15 grow, DE 22/25/26/28-31 change meaning
+// outright), so it gets its own table rather than overrides on the 1987 one.
+const ISO8583_1993_DDL = `* ISO 8583:1993 — standard framing (no vendor prefix; MTI first)
+* Bitmap is ASCII-hex encoded: 16 printable hex chars represent 8 binary bytes.
+* A raw 8-byte binary bitmap is equally valid on the wire — change BMP to
+* FIXED 8 and the parse spec's encoding to "binary" for that carrier.
+* Format: FIELD_ID  TYPE  LENGTH  DATATYPE  "Description"
+* Types:  FIXED | LLVAR | LLLVAR | BMP
+* DataTypes: N=numeric  A=alpha  AN=alphanumeric  ANS=alphanumeric+special  B=binary  Z=track2/3
+
+MTI      FIXED    4   N    "Message Type Indicator (version digit 1 = 1993)"
+BMP      FIXED   16   B    "Primary Bitmap (ASCII hex encoded — 16 chars = 8 bytes)"
+
+1        BMP     16   B    "Secondary Bitmap (ASCII hex encoded — 16 chars = 8 bytes)"
+2        LLVAR   19   N    "Primary Account Number (PAN)"
+3        FIXED    6   N    "Processing Code"
+4        FIXED   12   N    "Amount, Transaction"
+5        FIXED   12   N    "Amount, Reconciliation"
+6        FIXED   12   N    "Amount, Cardholder Billing"
+7        FIXED   10   N    "Date & Time, Transmission (MMDDhhmmss)"
+8        FIXED    8   N    "Amount, Cardholder Billing Fee"
+9        FIXED    8   N    "Conversion Rate, Reconciliation"
+10       FIXED    8   N    "Conversion Rate, Cardholder Billing"
+11       FIXED    6   N    "Systems Trace Audit Number (STAN)"
+12       FIXED   12   N    "Date & Time, Local Transaction (YYMMDDhhmmss)"
+13       FIXED    4   N    "Date, Effective (YYMM)"
+14       FIXED    4   N    "Date, Expiration (YYMM)"
+15       FIXED    6   N    "Date, Settlement (YYMMDD)"
+16       FIXED    4   N    "Date, Conversion (MMDD)"
+17       FIXED    4   N    "Date, Capture (MMDD)"
+18       FIXED    4   N    "Merchant Type (MCC)"
+19       FIXED    3   N    "Country Code, Acquiring Institution"
+20       FIXED    3   N    "Country Code, Primary Account Number"
+21       FIXED    3   N    "Country Code, Forwarding Institution"
+22       FIXED   12   AN   "Point of Service Data Code"
+23       FIXED    3   N    "Card Sequence Number"
+24       FIXED    3   N    "Function Code"
+25       FIXED    4   N    "Message Reason Code"
+26       FIXED    4   N    "Card Acceptor Business Code"
+27       FIXED    1   N    "Approval Code Length"
+28       FIXED    6   N    "Date, Reconciliation (YYMMDD)"
+29       FIXED    3   N    "Reconciliation Indicator"
+30       FIXED   24   N    "Amounts, Original"
+31       LLVAR   99   ANS  "Acquirer Reference Data"
+32       LLVAR   11   N    "Acquiring Institution ID Code"
+33       LLVAR   11   N    "Forwarding Institution ID Code"
+34       LLVAR   28   ANS  "Primary Account Number, Extended"
+35       LLVAR   37   Z    "Track 2 Data"
+36       LLLVAR 104   Z    "Track 3 Data"
+37       FIXED   12   AN   "Retrieval Reference Number"
+38       FIXED    6   AN   "Approval Code"
+39       FIXED    3   N    "Action Code"
+40       FIXED    3   N    "Service Code"
+41       FIXED    8   ANS  "Card Acceptor Terminal ID"
+42       FIXED   15   ANS  "Card Acceptor ID Code"
+43       LLVAR   99   ANS  "Card Acceptor Name/Location"
+44       LLVAR   99   ANS  "Additional Response Data"
+45       LLVAR   76   ANS  "Track 1 Data"
+46       LLLVAR 204   AN   "Amounts, Fees"
+47       LLLVAR 999   ANS  "Additional Data — National"
+48       LLLVAR 999   ANS  "Additional Data — Private"
+49       FIXED    3   AN   "Currency Code, Transaction"
+50       FIXED    3   AN   "Currency Code, Reconciliation"
+51       FIXED    3   AN   "Currency Code, Cardholder Billing"
+52       FIXED    8   B    "PIN Data"
+53       LLVAR   48   AN   "Security Related Control Information"
+54       LLLVAR 120   AN   "Amounts, Additional"
+55       LLLVAR 255   B    "IC Card System Related Data (EMV)"
+56       LLVAR   35   N    "Original Data Elements"
+57       FIXED    3   N    "Authorization Life Cycle Code"
+58       LLVAR   11   N    "Authorizing Agent Institution ID Code"
+59       LLLVAR 999   ANS  "Transport Data"
+60       LLLVAR 999   ANS  "Reserved National"
+61       LLLVAR 999   ANS  "Reserved National"
+62       LLLVAR 999   ANS  "Reserved Private"
+63       LLLVAR 999   ANS  "Reserved Private"
+64       FIXED    8   B    "Message Authentication Code (MAC)"
+65       FIXED    8   B    "Reserved ISO"
+66       LLLVAR 204   AN   "Amounts, Original Fees"
+67       FIXED    2   N    "Extended Payment Data"
+68       FIXED    3   N    "Country Code, Receiving Institution"
+69       FIXED    3   N    "Country Code, Settlement Institution"
+70       FIXED    3   N    "Country Code, Authorizing Agent Institution"
+71       FIXED    8   N    "Message Number"
+72       LLLVAR 999   ANS  "Data Record"
+73       FIXED    6   N    "Date, Action (YYMMDD)"
+74       FIXED   10   N    "Credits, Number"
+75       FIXED   10   N    "Credits, Reversal Number"
+76       FIXED   10   N    "Debits, Number"
+77       FIXED   10   N    "Debits, Reversal Number"
+78       FIXED   10   N    "Transfer, Number"
+79       FIXED   10   N    "Transfer, Reversal Number"
+80       FIXED   10   N    "Inquiries, Number"
+81       FIXED   10   N    "Authorizations, Number"
+82       FIXED   10   N    "Inquiries, Reversal Number"
+83       FIXED   10   N    "Payments, Number"
+84       FIXED   10   N    "Payments, Reversal Number"
+85       FIXED   10   N    "Fee Collections, Number"
+86       FIXED   16   N    "Credits, Amount"
+87       FIXED   16   N    "Credits, Reversal Amount"
+88       FIXED   16   N    "Debits, Amount"
+89       FIXED   16   N    "Debits, Reversal Amount"
+90       FIXED   10   N    "Authorizations, Reversal Number"
+91       FIXED    3   N    "Country Code, Transaction Destination Institution"
+92       FIXED    3   N    "Country Code, Transaction Originator Institution"
+93       LLVAR   11   N    "Transaction Destination Institution ID Code"
+94       LLVAR   11   N    "Transaction Originator Institution ID Code"
+95       LLVAR   99   ANS  "Card Issuer Reference Data"
+96       LLLVAR 999   B    "Key Management Data"
+97       FIXED   17   AN   "Amount, Net Reconciliation (sign + 16 digits)"
+98       FIXED   25   ANS  "Payee"
+99       LLVAR   11   N    "Settlement Institution ID Code"
+100      LLVAR   11   N    "Receiving Institution ID Code"
+101      LLVAR   17   ANS  "File Name"
+102      LLVAR   28   ANS  "Account Identification 1"
+103      LLVAR   28   ANS  "Account Identification 2"
+104      LLLVAR 100   ANS  "Transaction Description"
+105      FIXED   16   N    "Credits, Chargeback Amount"
+106      FIXED   16   N    "Debits, Chargeback Amount"
+107      FIXED   10   N    "Credits, Chargeback Number"
+108      FIXED   10   N    "Debits, Chargeback Number"
+109      LLVAR   84   AN   "Credits, Fee Amounts"
+110      LLVAR   84   AN   "Debits, Fee Amounts"
+111      LLLVAR 999   ANS  "Reserved ISO"
+112      LLLVAR 999   ANS  "Reserved ISO"
+113      LLLVAR 999   ANS  "Reserved ISO"
+114      LLLVAR 999   ANS  "Reserved ISO"
+115      LLLVAR 999   ANS  "Reserved ISO"
+116      LLLVAR 999   ANS  "Reserved National"
+117      LLLVAR 999   ANS  "Reserved National"
+118      LLLVAR 999   ANS  "Reserved National"
+119      LLLVAR 999   ANS  "Reserved National"
+120      LLLVAR 999   ANS  "Reserved National"
+121      LLLVAR 999   ANS  "Reserved National"
+122      LLLVAR 999   ANS  "Reserved National"
+123      LLLVAR 999   ANS  "Reserved Private"
+124      LLLVAR 999   ANS  "Reserved Private"
+125      LLLVAR 999   ANS  "Reserved Private"
+126      LLLVAR 999   ANS  "Reserved Private"
+127      LLLVAR 999   ANS  "Reserved Private"
+128      FIXED    8   B    "Message Authentication Code (Secondary)"
+`;
+
 // ============================================================
 // RESIZE LOGIC
 // ============================================================
@@ -8484,29 +8633,6 @@ function parseMessage(bytes, defs, rawBytes) {
   // ── Default format specs ───────────────────────────────────────────────────
 
   const _DEFAULT_FMT_SPECS = [
-    { name:'ISO', label:'ISO 8583 Standard', color:'#f5f910', vol:'SWITCH',
-      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'####'},{type:'greater-than',value:22}],
-      ddl_bindings:['SWITCH/1987/Standard ISO'],
-      parse_spec_binary:[
-        {'read-ddl':{binding:0,from:'ISO_PFX',until:'MTI'}},
-        {'read-bitmap':{field:'BMP',encoding:'hex'}},
-        {'read-bitmap-fields':'BMP'}
-      ],
-      parse_spec_binary_source:
-`[
-  // ── Header: walk from the ISO routing prefix through the MTI (inclusive).
-  //    Standard ISO 8583:1987 — ISO_PFX(3) + MTI(4) precede the primary bitmap.
-  { "read-ddl": { "binding": 0, "from": "ISO_PFX", "until": "MTI" } },
-
-  // ── Bitmap: BMP is 16 hex chars (= 8 bytes / 64 bits, primary). "hex" means
-  //    ASCII or EBCDIC hex, resolved from the message's recognizer encoding. If
-  //    bit 1 is set the engine pulls a second 16-char bitmap (128 bits total).
-  { "read-bitmap": { "field": "BMP", "encoding": "hex" } },
-
-  /*  DEs: each set bit maps to the DDL field of that number (2..128), read in
-      bitmap order. LLVAR / LLLVAR DEs honor their LEN prefix automatically. */
-  { "read-bitmap-fields": "BMP" }
-]` },
     { name:'ISO', label:'ISO 8583 BIC', color:'#ffbb00', vol:'SWITCH',
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'numeric',offset:3,encoding:'ascii',length:9},{type:'mti',offset:12,value:'####'},{type:'hex-density',offset:16,length:16,min:1},{type:'greater-than',value:22}],
       ddl_bindings:['BASE/DDL/ISOPSEM/ISOPSEM','BASE/DDL/ISOSSEM/ISOSSEM'],
@@ -8676,6 +8802,65 @@ function parseMessage(bytes, defs, rawBytes) {
       recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'99'},{type:'literal',offset:2,encoding:'ascii',value:['06','07']},{type:'literal',offset:4,encoding:'ascii',value:'02'}] },
     { name:'NDC', label:'NDC', color:'#ff0000', vol:'ATM',
       recognizers:[{type:'regex',pattern:'^(11|12|22|4)\\x1c'}] },
+    // The two Standard entities are LAST among the messages, and it is not
+    // cosmetic: detection is first-match-wins in this order, and Standard
+    // 1987 is looser than ISO 8583 BIC — a BIC record whose 9-digit field
+    // happens to start with a valid 0### MTI matches both. Tried last, the
+    // specific entity gets its record and the generic one picks up the rest.
+    { name:'ISO', label:'ISO 8583 Standard 1987', color:'#f5f910', vol:'SWITCH',
+      // MTI position 1 is the version digit: pinned to 0 so this entity claims
+      // 1987 only and leaves 1### to the 1993 entity below.
+      recognizers:[{type:'literal',offset:0,encoding:'ascii',value:'ISO'},{type:'mti',offset:3,value:'0###'},{type:'greater-than',value:22}],
+      ddl_bindings:['SWITCH/1987/Standard ISO'],
+      parse_spec_binary:[
+        {'read-ddl':{binding:0,from:'ISO_PFX',until:'MTI'}},
+        {'read-bitmap':{field:'BMP',encoding:'hex'}},
+        {'read-bitmap-fields':'BMP'}
+      ],
+      parse_spec_binary_source:
+`[
+  // ── Header: walk from the ISO routing prefix through the MTI (inclusive).
+  //    Standard ISO 8583:1987 — ISO_PFX(3) + MTI(4) precede the primary bitmap.
+  { "read-ddl": { "binding": 0, "from": "ISO_PFX", "until": "MTI" } },
+
+  // ── Bitmap: BMP is 16 hex chars (= 8 bytes / 64 bits, primary). "hex" means
+  //    ASCII or EBCDIC hex, resolved from the message's recognizer encoding. If
+  //    bit 1 is set the engine pulls a second 16-char bitmap (128 bits total).
+  { "read-bitmap": { "field": "BMP", "encoding": "hex" } },
+
+  /*  DEs: each set bit maps to the DDL field of that number (2..128), read in
+      bitmap order. LLVAR / LLLVAR DEs honor their LEN prefix automatically. */
+  { "read-bitmap-fields": "BMP" }
+]` },
+    // Standard framing, so there is no vendor literal to anchor on — the MTI
+    // itself is offset 0. "Four digits whose version is 1" is far too loose on
+    // its own, so the 16 bitmap characters must all be hex for this to claim a
+    // record. Minimum body is MTI(4) + primary bitmap(16) = 20 bytes.
+    { name:'ISO', label:'ISO 8583 Standard 1993', color:'#7fe0ff', vol:'SWITCH',
+      recognizers:[{type:'mti',offset:0,encoding:'ascii',value:'1###'},{type:'hex-density',offset:4,length:16,min:1},{type:'greater-than',value:19}],
+      ddl_bindings:['SWITCH/1993/Standard ISO'],
+      parse_spec_binary:[
+        {'read':'MTI'},
+        {'read-bitmap':{field:'BMP',encoding:'hex'}},
+        {'read-bitmap-fields':'BMP'}
+      ],
+      parse_spec_binary_source:
+`[
+  // ── Header: the MTI, and nothing before it. ISO 8583:1993 defines no prefix
+  //    of its own — the 1987 entity's ISO_PFX is Base24's routing prefix, not
+  //    part of the standard. If your carrier adds a header, read it first.
+  { "read": "MTI" },
+
+  // ── Bitmap: BMP is 16 hex chars (= 8 bytes / 64 bits, primary). "hex" means
+  //    ASCII or EBCDIC hex, resolved from the message's recognizer encoding. If
+  //    bit 1 is set the engine pulls a second 16-char bitmap (128 bits total).
+  //    For a carrier that sends the bitmap as 8 raw bytes, use "binary".
+  { "read-bitmap": { "field": "BMP", "encoding": "hex" } },
+
+  /*  DEs: each set bit maps to the DDL field of that number (2..128), read in
+      bitmap order. LLVAR / LLLVAR DEs honor their LEN prefix automatically. */
+  { "read-bitmap-fields": "BMP" }
+]` },
     // Base24 segmented file (IDF) template. Ships WITHOUT a DDL binding — the
     // user binds their segmented-file DEFINITION and adjusts the filename
     // pattern; until then the missing-binding warning guides them.
@@ -8754,7 +8939,7 @@ function parseMessage(bytes, defs, rawBytes) {
 
   // Bump whenever the built-in defaults gain fields/entities that should reach
   // users who already have saved specs. Triggers a one-time reconcile per bump.
-  const _FMT_SYNC_VER = 1;
+  const _FMT_SYNC_VER = 3;
 
   // One-time (per sync version) reconciliation at app startup: bring saved specs
   // up to date with the built-in defaults without clobbering customizations —
@@ -8781,6 +8966,19 @@ function parseMessage(bytes, defs, rawBytes) {
     // 1. Migrate saved specs (array block/encoding renames + source text).
     data.specs.forEach(_migrateSpec);
 
+    // 1b. Entity renames. Everything below matches saved entities to defaults by
+    //     label, so a renamed default would otherwise look like a brand-new one
+    //     and be added alongside the copy you already have. Applied here, once,
+    //     ahead of every label lookup — and to the deleted-defaults set at step
+    //     3, so a rename cannot resurrect an entity you removed.
+    const _RENAMED = { 'ISO 8583 Standard': 'ISO 8583 Standard 1987' };
+    for (const spec of data.specs) {
+      const to = _RENAMED[spec.label || spec.name];
+      // Not if you already have an entity under the new name — that would give
+      // you two entities with one label and no way to tell them apart.
+      if (to && !data.specs.some(x => (x.label || x.name) === to)) spec.label = to;
+    }
+
     // 2. Field-overlay defaults onto matching saved entities (saved keys win).
     const defByLabel = new Map(_DEFAULT_FMT_SPECS.map(d => [d.label || d.name, d]));
     for (const spec of data.specs) {
@@ -8790,10 +8988,24 @@ function parseMessage(bytes, defs, rawBytes) {
         if (!(k in spec)) spec[k] = JSON.parse(JSON.stringify(def[k]));
     }
 
+    // 2b. "ISO 8583 Standard 1987" used to accept any MTI; it now pins the version
+    //     digit to 0 so the 1993 entity can claim 1###. Retighten it only when
+    //     the saved recognizers are still byte-for-byte the shipped ones — a
+    //     hand-edited entity is the user's, not ours.
+    //     Derived from the current default rather than spelled out again, so it
+    //     stays accurate if that entity gains a recognizer later.
+    const _iso87Def = _DEFAULT_FMT_SPECS.find(d => (d.label || d.name) === 'ISO 8583 Standard 1987');
+    const _OLD_ISO87_RECOGS = JSON.stringify(_iso87Def.recognizers).replace('"0###"', '"####"');
+    for (const spec of data.specs) {
+      if ((spec.label || spec.name) !== 'ISO 8583 Standard 1987') continue;
+      if (JSON.stringify(spec.recognizers) !== _OLD_ISO87_RECOGS) continue;
+      spec.recognizers[1].value = '0###';
+    }
+
     // 3. Add missing default entities (never resurrect a deleted one).
     let seen;
     try { seen = JSON.parse(localStorage.getItem('up_format_default_seen')); } catch(_) {}
-    seen = new Set(Array.isArray(seen) ? seen : []);
+    seen = new Set((Array.isArray(seen) ? seen : []).map(l => _RENAMED[l] || l));
     const have = new Set(data.specs.map(s => s.label || s.name));
     for (const def of _DEFAULT_FMT_SPECS) {
       const label = def.label || def.name;
@@ -17003,7 +17215,7 @@ function confirmImport() {
 const _APP_KV_KEYS = [
   'up_ddl_tree', 'up_ddlmm', 'up_excl', 'de_overrides',
   'up_tree_exp', 'up_settings', 'up_layout',
-  'auditFltVis', 'up_ddl_versions'
+  'auditFltVis', 'up_ddl_versions', 'up_seeded_iso1993'
 ];
 let _appKV   = {};
 let _appKVDB = null;
@@ -17120,6 +17332,17 @@ function loadTree() {
     S.ddlTree['SWITCH']['1987']['Standard ISO'] = ISO8583_DDL;
     saveTree();
   }
+  // Seed SWITCH/1993/Standard ISO — ONCE. Unlike the 1987 table above it is not
+  // restored on every load: a user who deletes it means it, and there is no
+  // parse spec that depends on it existing.
+  if (!_kvGet('up_seeded_iso1993')) {
+    if (!S.ddlTree['SWITCH']) S.ddlTree['SWITCH'] = {};
+    if (!S.ddlTree['SWITCH']['1993']) S.ddlTree['SWITCH']['1993'] = {};
+    if (!S.ddlTree['SWITCH']['1993']['Standard ISO'])
+      S.ddlTree['SWITCH']['1993']['Standard ISO'] = ISO8583_1993_DDL;
+    _kvSet('up_seeded_iso1993', '1');
+    saveTree();
+  }
   // Seed baseline volumes — ATM, POS, BASE, FILES — if not yet present
   let _baselineChanged = false;
   if (!S.ddlTree['BASE'])  { S.ddlTree['BASE']  = {}; _baselineChanged = true; }
@@ -17161,7 +17384,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.48.0';
+const APP_VERSION  = '1.46.50.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

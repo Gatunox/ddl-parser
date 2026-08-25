@@ -150,6 +150,8 @@ _t.parseFlatMessage   = parseFlatMessage;
 _t.parseMessage       = parseMessage;
 _t.parseHPEISOMessage = parseHPEISOMessage;
 _t.parseSimpleDDL     = parseSimpleDDL;
+_t.ISO8583_DDL        = ISO8583_DDL;
+_t.ISO8583_1993_DDL   = ISO8583_1993_DDL;
 _t.validateDDLErrors  = validateDDLErrors;
 _t.normalizeDataType  = normalizeDataType;
 _t.validateFieldContent = validateFieldContent;
@@ -310,7 +312,7 @@ try {
 const {
   picSize, typeSize, buildDDLDocFields, expandTypeRefs,
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
-  parseSimpleDDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
+  parseSimpleDDL, ISO8583_DDL, ISO8583_1993_DDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, extractBytesMapped,
   stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, auditBadgeType, fmtSave, fmtGetData, psHelp, psExamplesFor, meHelpDescHtml, psCommonAttrs, psCommonDflts,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
@@ -4042,7 +4044,137 @@ test('defaults: Base24 POS @4 = "02" (ATM stays "01"); all ISO 8583 vols = SWITC
   eq(lit4('Base24 POS Generic'), '02', 'POS @4 literal');
   eq(lit4('Base24 ATM Generic'), '01', 'ATM @4 literal');
   deepEq(specs.filter(s => s.name === 'ISO').map(s => s.vol),
-    ['SWITCH', 'SWITCH', 'SWITCH'], 'ISO 8583 Standard/BIC/Switch vol');
+    ['SWITCH', 'SWITCH', 'SWITCH', 'SWITCH'], 'ISO 8583 Standard/1993/BIC/Switch vol');
+});
+
+test('the 1993 default table is complete, and is the 1993 DE list — not a copy of 1987', () => {
+  const defs = parseSimpleDDL(ISO8583_1993_DDL);
+  const by = id => defs.find(d => d.id === String(id));
+  // The standard defines no prefix — the 1987 table's ISO_PFX is Base24's own
+  // routing prefix. Carrying it over would put a phantom field at offset 0 and
+  // shift every DE by three. Reported 2026-08-24.
+  deepEq(defs.slice(0, 2).map(d => d.id), ['MTI', 'BMP'], 'the table starts at the MTI');
+  eq(defs.some(d => d.id === 'ISO_PFX'), false, 'no vendor prefix anywhere in the table');
+  eq(parseSimpleDDL(ISO8583_DDL)[0].id, 'ISO_PFX', 'the 1987 table keeps its Base24 prefix');
+  const missing = [];
+  for (let n = 1; n <= 128; n++) if (!by(n)) missing.push(n);
+  deepEq(missing, [], 'every DE 1..128 is declared');
+  eq(by(1).type, 'BMP', 'DE 1 is the secondary bitmap');
+  // Where 1993 genuinely diverges from 1987. If someone ever pastes the 1987
+  // table in here by mistake, these are the rows that catch it.
+  const old = id => parseSimpleDDL(ISO8583_DDL).find(d => d.id === String(id));
+  eq(by(12).length, 12, 'DE 12 is YYMMDDhhmmss in 1993');   eq(old(12).length, 6);
+  eq(by(15).length, 6,  'DE 15 is YYMMDD in 1993');          eq(old(15).length, 4);
+  eq(by(22).length, 12, 'DE 22 is the 12-char POS data code'); eq(old(22).length, 3);
+  eq(by(43).type, 'LLVAR', 'DE 43 is variable in 1993');     eq(old(43).type, 'FIXED');
+  eq(by(28).description, 'Date, Reconciliation (YYMMDD)', 'DE 28 is a date, not a fee');
+});
+
+test('1987 is claimed by its Base24 prefix, 1993 by the bare MTI — neither claims the other', () => {
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();                        // _fmtDetect reads the compiled list
+  const specs = domEl._fmtGetData().specs;
+  const won = txt => {
+    const b = new Uint8Array(txt.length);
+    for (let i = 0; i < txt.length; i++) b[i] = txt.charCodeAt(i);
+    const d = domEl._fmtDetect(b, {});
+    return d ? (d.label || d.name) : null;
+  };
+  const bmp = '3020000000000000';
+  const iso93 = specs.find(s => s.label === 'ISO 8583 Standard 1993');
+  // The reported bug: the 1993 entity was born with the 1987 entity's literal,
+  // so it could only ever have matched Base24-framed records — i.e. never.
+  eq(iso93.recognizers.some(r => r.type === 'literal'), false,
+     'no vendor literal on a standard-framing entity');
+  eq(won('ISO0100' + bmp), 'ISO 8583 Standard 1987', 'Base24 prefix + 0### is 1987');
+  eq(won('1100' + bmp + '000000'), 'ISO 8583 Standard 1993', 'bare 1### MTI is 1993');
+  eq(won('ISO1100' + bmp), null, 'a Base24-prefixed 1993 MTI is claimed by nobody');
+  eq(won('0100' + bmp + '000000'), null, 'a bare 0### MTI is claimed by nobody');
+  // hex-density is the only anchor left — without it any 4 digits would do.
+  eq(won('1100' + 'NOTHEXNOTHEXNOTH' + '000000'), null, 'the 16 bitmap chars must be hex');
+  eq(iso93.ddl_bindings[0], 'SWITCH/1993/Standard ISO', '1993 binds its own table');
+});
+
+test('the two Standard entities are tried last, so the specific ISO entities win', () => {
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();
+  const specs = domEl._fmtGetData().specs;
+  const msgs = domEl._detectOrderIdxs(specs).map(i => specs[i])
+    .filter(s => s.kind !== 'file').map(s => s.label || s.name);
+  deepEq(msgs.slice(-2), ['ISO 8583 Standard 1987', 'ISO 8583 Standard 1993'],
+    'both Standard entities sit at the end of the message order');
+  // Why it matters, not just how it looks. Detection is first-match-wins, and
+  // Standard 1987 (literal ISO + any 0### at offset 3) is a prefix of what BIC
+  // matches: a BIC record whose 9-digit field opens with a valid 0### MTI
+  // satisfies both. Ahead of BIC, the generic entity would swallow it.
+  const b = txt => { const u = new Uint8Array(txt.length);
+    for (let i = 0; i < txt.length; i++) u[i] = txt.charCodeAt(i); return u; };
+  //           ISO | 9 digits starting "0100…" | MTI  | 16 hex bitmap
+  const bic = 'ISO' + '010012345' + '0200' + '3020000000000000';
+  const iso87 = specs.find(s => s.label === 'ISO 8583 Standard 1987');
+  eq(iso87.recognizers.every(r => domEl._fmtTestSpecs([{ name: 'X', recognizers: [r] }], b(bic))[0].passed),
+     true, 'the BIC record does satisfy every 1987 Standard recognizer');
+  eq(domEl._fmtDetect(b(bic), {})?.label, 'ISO 8583 BIC', 'but BIC is tried first and wins');
+});
+
+test('the path the 1993 entity binds is the one initTree seeds, with the 1993 table', () => {
+  // initTree is not exported, so the seed is asserted at the source. A binding
+  // that points at a volume nobody seeds is a dead entity; a seed that stores
+  // the 1987 table under /1993/ is worse — it parses, wrongly, in silence.
+  const m = APP_SRC.match(/S\.ddlTree\['SWITCH'\]\['1993'\]\['Standard ISO'\]\s*=\s*(\w+);/);
+  assert.ok(m, 'initTree seeds SWITCH/1993/Standard ISO');
+  eq(m[1], 'ISO8583_1993_DDL', 'seeded with the 1993 table, not the 1987 one');
+});
+
+test('startup sync renames the 1987 entity, retightens it, and leaves a hand-edited one alone', () => {
+  const oldRecogs = () => [{ type: 'literal', offset: 0, encoding: 'ascii', value: 'ISO' },
+                           { type: 'mti', offset: 3, value: '####' },
+                           { type: 'greater-than', value: 22 }];
+  const sync = saved => {
+    storage.removeItem('up_format_default_seen');
+    storage.removeItem('up_format_sync_ver');
+    storage.setItem('up_format_specs', JSON.stringify({ specs: [saved] }));
+    domEl._fmtSyncDefaults();
+    const all = JSON.parse(storage.getItem('up_format_specs')).specs;
+    eq(all.filter(x => /^ISO 8583 Standard 1987$/.test(x.label)).length, 1,
+       'renamed in place — not added alongside the copy you already had');
+    eq(all.some(x => x.label === 'ISO 8583 Standard'), false, 'the old label is gone');
+    return all.find(x => x.label === 'ISO 8583 Standard 1987')
+              .recognizers.find(r => r.type === 'mti').value;
+  };
+  eq(sync({ name: 'ISO', label: 'ISO 8583 Standard', recognizers: oldRecogs() }), '0###',
+     'the shipped recognizers are retightened to the version digit');
+  // Same entity, one hand-edited recognizer → the whole array is the user's.
+  const edited = oldRecogs(); edited[2].value = 99;
+  eq(sync({ name: 'ISO', label: 'ISO 8583 Standard', recognizers: edited }), '####',
+     'a customized entity is not rewritten');
+
+  // A rename must not resurrect a default you deleted: the deleted marker was
+  // written under the OLD label, so the set has to be renamed with the entity.
+  storage.setItem('up_format_default_seen', JSON.stringify(['ISO 8583 Standard']));
+  storage.removeItem('up_format_sync_ver');
+  storage.setItem('up_format_specs', JSON.stringify({ specs: [{ name: 'X', label: 'Mine', recognizers: [] }] }));
+  domEl._fmtSyncDefaults();
+  eq(JSON.parse(storage.getItem('up_format_specs')).specs.some(s => /^ISO 8583 Standard 198/.test(s.label)),
+     false, 'deleted under the old name stays deleted under the new one');
+
+  // And it must not collide: an entity already carrying the new label means the
+  // rename has to stand down, or you end up with two entities sharing one name.
+  storage.removeItem('up_format_default_seen');
+  storage.removeItem('up_format_sync_ver');
+  storage.setItem('up_format_specs', JSON.stringify({ specs: [
+    { name: 'ISO', label: 'ISO 8583 Standard',      recognizers: oldRecogs() },
+    { name: 'ISO', label: 'ISO 8583 Standard 1987', recognizers: oldRecogs() },
+  ] }));
+  domEl._fmtSyncDefaults();
+  const after = JSON.parse(storage.getItem('up_format_specs')).specs.map(s => s.label);
+  eq(after.filter(l => l === 'ISO 8583 Standard 1987').length, 1, 'exactly one entity holds the new label');
+  eq(after.includes('ISO 8583 Standard'), true, 'the loser keeps its old label rather than colliding');
+
+  storage.removeItem('up_format_specs');
+  storage.removeItem('up_format_default_seen');
+  storage.removeItem('up_format_sync_ver');
+  domEl._fmtLoad();
 });
 
 // ── Message / File detection split ────────────────────────────────────────────
@@ -4081,10 +4213,10 @@ test('startup sync: field-overlay fills missing default fields, adds missing ent
   eq(!!byLabel('My Custom'), true, 'saved custom entity kept');
   eq(!!byLabel('Segmented File'), true, 'a missing built-in default entity is added');
   // Field-overlay: the missing parse_spec is filled from the default…
-  eq(Array.isArray(byLabel('ISO 8583 Standard').parse_spec_binary)
-     && byLabel('ISO 8583 Standard').parse_spec_binary.length > 0, true, 'missing parse_spec filled from default');
+  eq(Array.isArray(byLabel('ISO 8583 Standard 1987').parse_spec_binary)
+     && byLabel('ISO 8583 Standard 1987').parse_spec_binary.length > 0, true, 'missing parse_spec filled from default');
   // …but the saved recognizers are preserved (your data wins on what you set).
-  eq(byLabel('ISO 8583 Standard').recognizers.length, 1, 'saved recognizers preserved, not overwritten');
+  eq(byLabel('ISO 8583 Standard 1987').recognizers.length, 1, 'saved recognizers preserved, not overwritten');
   const count1 = specs.length;
   // Idempotent within the sync version.
   domEl._fmtSyncDefaults();
@@ -6234,13 +6366,13 @@ test('migration shifts the value so the SAME inputs still match', () => {
 });
 
 test('the shipped recognizers moved with their values', () => {
-  // The five in-app specs used min-length 23 / 873. If the id changed without the
+  // The in-app specs used min-length 23 / 873. If the id changed without the
   // value, every one of them would have started rejecting messages exactly at its
   // boundary — silently, because a recognizer only returns a boolean.
   assert.ok(!/type:'min-length'/.test(APP_SRC) && !/type:'max-length'/.test(APP_SRC),
     'no shipped spec still uses the legacy ids');
   const shipped = [...APP_SRC.matchAll(/type:'greater-than',value:(\d+)/g)].map(m => +m[1]);
-  assert.deepStrictEqual(shipped.sort((a, b) => a - b), [22, 22, 22, 872, 872],
+  assert.deepStrictEqual(shipped.sort((a, b) => a - b), [19, 22, 22, 22, 872, 872],
     `values shifted by one, got: ${shipped}`);
 });
 

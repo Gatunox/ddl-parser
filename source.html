@@ -12705,29 +12705,51 @@ function _meFieldOvrAnnotation(f, fo) {
   };
 }
 
+// How much of a record its fields actually account for.
+//
+// TWO NUMBERS, ONE ORIGIN. `consumed` is an absolute index into the bytes the
+// parser was handed, so the yardstick has to be that same buffer. It used to be
+// msg.recLength — the length the NETARD header LINE declares, read out of the
+// log text and independent of what the data lines decode to. A spec that opens
+// with `{"skip": 9}` steps over a prefix the header does not count: those 9
+// bytes sit inside `consumed` and outside recLength, so a parse where every
+// field was read correctly still reported "348 bytes ⚠ — fields extend 8 past
+// the end of the record". Nothing extended past anything; the two numbers were
+// counted from different places. Reported 2026-08-24.
+//
+// The declared length is not discarded — where it disagrees with what was
+// decoded, that IS worth knowing, so it rides along in the tooltip.
+//
+// TOKENS COUNT toward `consumed`. They are parsed — own rows, own fields, own
+// highlight — but they live on msg.tokens, not msg.fields, and this walked past
+// them: on the reported record the DDL fields ended at 872 while the token area
+// ran to 1293, so it read "872/1294 bytes — 422 unparsed", in amber, about
+// bytes that were parsed and on screen. Counted from the token's HEADER, which
+// is message too — the "! P7?2" that introduces it. Reported 2026-08-23. Both
+// sources feed ONE running maximum, so a token ending before the last DDL field
+// cannot pull the count backwards.
+function _msgByteCoverage(msg) {
+  const total    = msg.bytes?.length || msg.recLength || 0;
+  const declared = msg.recLength != null && msg.recLength !== total ? msg.recLength : null;
+  let consumed = 0;
+  for (const f of (msg.fields || [])) {
+    if (f.error || f.endByte == null) continue;
+    if (f.endByte + 1 > consumed) consumed = f.endByte + 1;
+  }
+  for (const t of (msg.tokens || [])) {
+    if (t.dataStart == null) continue;
+    const end = t.dataStart + (t.rawBytes?.length || 0);
+    if (end > consumed) consumed = end;
+  }
+  return { total, declared, consumed };
+}
+
 function renderFieldTable(msg) {
   // Provenance for the metadata bar: which parser produced these fields, and
   // how much of the record they actually account for. "Did it use the parse
   // spec, and did it consume everything?" should be answerable at a glance.
   const _provHtml = (() => {
-    const total = msg.recLength || msg.bytes?.length || 0;
-    let consumed = 0;
-    for (const f of (msg.fields || [])) {
-      if (f.error || f.endByte == null) continue;
-      if (f.endByte + 1 > consumed) consumed = f.endByte + 1;
-    }
-    // TOKENS COUNT. They are parsed — they have their own rows, their own
-    // fields and their own highlight — but they live on msg.tokens, not
-    // msg.fields, so this walked past them. On the reported record the DDL
-    // fields end at 872 and the token area runs to 1293: it read "872/1294
-    // bytes — 422 unparsed" in amber, about bytes that were parsed and on
-    // screen. Counted from the token's HEADER, which is message too — the
-    // "! P7?2" that introduces it. Reported 2026-08-23.
-    for (const t of (msg.tokens || [])) {
-      if (t.dataStart == null) continue;
-      const end = t.dataStart + (t.rawBytes?.length || 0);
-      if (end > consumed) consumed = end;
-    }
+    const { total, declared, consumed } = _msgByteCoverage(msg);
     // Which variant RAN, against the one the input called for. A binary spec
     // reading characters (or the reverse) parses something, and what it parses
     // is not the message — so it is worth the same amber the short-byte count
@@ -12753,14 +12775,15 @@ function renderFieldTable(msg) {
     const by = msg.parsedBy
       ? `<span class="rec-meta-pipe">|</span><span class="rec-meta-by${_variantOff ? ' rec-meta-by-off' : ''}" title="${esc(_byTip)}">${esc(msg.parsedBy)}</span>`
       : '';
-    let bytesTxt = `<span>${total} bytes</span>`;
+    const _decl = declared ? ` The record header declares ${declared}.` : '';
+    let bytesTxt = `<span${declared ? ` title="${total} bytes decoded.${_decl}"` : ''}>${total} bytes</span>`;
     if (total > 0 && consumed > 0) {
       if (consumed < total) {
         // Trailing bytes no field accounts for — truncated loop, wrong DDL, or
         // a section the spec never reads.
-        bytesTxt = `<span class="rec-meta-short" title="${consumed} of ${total} bytes accounted for — ${total - consumed} unparsed">${consumed}/${total} bytes</span>`;
+        bytesTxt = `<span class="rec-meta-short" title="${consumed} of ${total} bytes accounted for — ${total - consumed} unparsed.${_decl}">${consumed}/${total} bytes</span>`;
       } else if (consumed > total) {
-        // Fields claim bytes beyond the record — a length or count read wrong.
+        // Fields claim bytes beyond the buffer — a length or count read wrong.
         bytesTxt = `<span class="rec-meta-short" title="Fields extend ${consumed - total} byte(s) past the end of the record">${total} bytes ⚠</span>`;
       }
     }
@@ -17384,7 +17407,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.50.0';
+const APP_VERSION  = '1.46.51.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

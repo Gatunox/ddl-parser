@@ -150,6 +150,7 @@ _t.parseFlatMessage   = parseFlatMessage;
 _t.parseMessage       = parseMessage;
 _t.parseHPEISOMessage = parseHPEISOMessage;
 _t.parseSimpleDDL     = parseSimpleDDL;
+_t.msgByteCoverage    = _msgByteCoverage;
 _t.ISO8583_DDL        = ISO8583_DDL;
 _t.ISO8583_1993_DDL   = ISO8583_1993_DDL;
 _t.validateDDLErrors  = validateDDLErrors;
@@ -312,7 +313,7 @@ try {
 const {
   picSize, typeSize, buildDDLDocFields, expandTypeRefs,
   parseDDLSections, parseHPEDDL, isHPEDDLText, parseFlatMessage, parseMessage, parseHPEISOMessage,
-  parseSimpleDDL, ISO8583_DDL, ISO8583_1993_DDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
+  parseSimpleDDL, msgByteCoverage, ISO8583_DDL, ISO8583_1993_DDL, validateDDLErrors, normalizeDataType, validateFieldContent, buildRedefSkipSet,
   detectFormat, isHexAsciiLine, hexAsciiStartCol, extractBytes, extractBytesMapped,
   stripJsonc, formatJsonc, compactJsonc, expandJsonc, migrateSpec, migrateOverrides, fmtTestSpecs, auditBadgeType, fmtSave, fmtGetData, psHelp, psExamplesFor, meHelpDescHtml, psCommonAttrs, psCommonDflts,
   psCommonExamples, mePsHelpExAttrs, mePsHelpRunExample, mePsHelpExampleHtml,
@@ -9129,17 +9130,40 @@ test('[REGRESSION] the byte count includes the token area', () => {
   // the reported record the DDL fields end at 872 while the token area runs to
   // 1293, so it said "872/1294 bytes — 422 unparsed", in amber, about bytes that
   // were parsed and visible on screen. Reported 2026-08-23.
-  const src = fs.readFileSync('./source.html', 'utf8');
-  const _p0  = src.indexOf('const _provHtml');
-  const prov = src.slice(_p0, src.indexOf('return { by, bytesTxt };', _p0));
-  assert.ok(/for \(const t of \(msg\.tokens \|\| \[\]\)\)/.test(prov),
-    'the byte count walks fields only, so a token area reads as unparsed');
-  assert.ok(/t\.dataStart \+ \(t\.rawBytes\?\.length \|\| 0\)/.test(prov),
-    'a token contributes something other than the bytes it holds');
+  const msg = { bytes: new Uint8Array(1294), recLength: 1294,
+    fields: [{ id: 'LAST', startByte: 860, endByte: 871 }],
+    tokens: [{ dataStart: 872, rawBytes: new Array(422) }] };
+  eq(msgByteCoverage(msg).consumed, 1294, 'the token area is counted as parsed');
   // Both sources feed ONE running maximum — a token that ends before the last
   // DDL field must not pull the count backwards.
-  assert.ok(/if \(end > consumed\) consumed = end;/.test(prov),
-    'a token can now lower the byte count');
+  eq(msgByteCoverage({ ...msg,
+    fields: [{ id: 'LAST', startByte: 0, endByte: 1293 }],
+    tokens: [{ dataStart: 0, rawBytes: new Array(4) }] }).consumed, 1294,
+    'an early-ending token lowered the count');
+});
+
+test('[REGRESSION] a skipped prefix is not a record overrun', () => {
+  // The reported record: a class whose spec opens with {"skip": 9}, everything
+  // parsing correctly, and the byte field reading "348 bytes ⚠ — fields extend
+  // 8 past the end of the record". Nothing extended past anything. `consumed`
+  // is an absolute index into the decoded buffer and included the 9 skipped
+  // bytes; `total` was msg.recLength, the length the NETARD header LINE
+  // declares, which does not. Two origins, compared as if they were one.
+  // Reported 2026-08-24.
+  const msg = { bytes: new Uint8Array(357), recLength: 348,
+    fields: [{ id: 'TYP', startByte: 9, endByte: 12 },
+             { id: 'LAST', startByte: 340, endByte: 355 }] };
+  const cov = msgByteCoverage(msg);
+  eq(cov.total, 357, 'the yardstick is the buffer the parser was handed');
+  eq(cov.declared, 348, 'the header length is kept, for the tooltip');
+  eq(cov.consumed > cov.total, false,
+     `a clean parse reported a ${cov.consumed - cov.total}-byte overrun`);
+  // The declared length only rides along when it actually disagrees.
+  eq(msgByteCoverage({ bytes: new Uint8Array(100), recLength: 100, fields: [] }).declared, null,
+     'an agreeing header length is noise, not information');
+  // A genuine overrun still warns — this must not have become unconditional.
+  eq(msgByteCoverage({ bytes: new Uint8Array(20),
+    fields: [{ id: 'X', startByte: 0, endByte: 24 }] }).consumed, 25, 'a real overrun is still visible');
 });
 
 test('[REGRESSION] a token FIELD row highlights its own bytes, not twice its offset', () => {

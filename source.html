@@ -828,7 +828,21 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 /* Width is inline (the resizer writes it), so the collapsed width has to win on
    specificity — hence the id. Transition on width so it slides like a panel. */
 .ddl-tree-pane { transition: width 0.25s ease; }
-#ddlTreePane.tree-collapsed { width: 28px !important; min-width: 28px; }
+/* The DDL panel is ONE panel split in two, not two cards side by side. So the
+   collapsed strip is the panel's LEFT EDGE: it carries the panel silhouette
+   (--r-lg, matching every other outer edge on screen — a collapsed Parse
+   Results rail is exactly this shape). The card radius it inherits while
+   expanded is 10px, which is why the left of the row read tighter than the
+   right until this was separated out. All four corners, not just the outer
+   two: the resizer leaves a real gap beside the strip, so it reads as its own
+   rail rather than as one half of a split card.
+
+   Width comes from --panel-collapsed-w, the token every other collapsed panel
+   uses, so the tree strip and a collapsed Parse Results rail are the same
+   width — in both densities, without this rule knowing either value. */
+#ddlTreePane.tree-collapsed { width: var(--panel-collapsed-w) !important;
+  min-width: var(--panel-collapsed-w);
+  border-radius: var(--r-lg); }
 #ddlTreePane.tree-collapsed .tree-search-wrap,
 #ddlTreePane.tree-collapsed #ddlTree,
 #ddlTreePane.tree-collapsed .tree-hdr-exp,
@@ -838,7 +852,10 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
    rail below the header sits inside the same outline. */
 #ddlTreePane.tree-collapsed .tree-hdr { flex-direction: column; justify-content: flex-start;
   gap: 8px; padding: 4px 0 6px; height: auto; flex-shrink: 0; border-bottom: none;
-  border-right: none; border-radius: var(--r-md) 0 0 0; }
+  border-right: none;
+  /* Both top corners, inset by the border width so the inner curve nests
+     inside the pane's rather than bulging against it. */
+  border-radius: calc(var(--r-lg) - var(--bw)) calc(var(--r-lg) - var(--bw)) 0 0; }
 #ddlTreePane.tree-collapsed { border-right: var(--bw) solid var(--border); }
 #ddlTreePane.tree-collapsed .tree-hdr-collapse { margin-left: 0; order: -1; }
 #ddlTreePane.tree-collapsed .tree-hdr-title { writing-mode: vertical-rl; transform: rotate(180deg);
@@ -17597,7 +17614,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.54.0';
+const APP_VERSION  = '1.46.55.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

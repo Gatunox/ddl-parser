@@ -833,6 +833,12 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 /* Width is inline (the resizer writes it), so the collapsed width has to win on
    specificity — hence the id. Transition on width so it slides like a panel. */
 .ddl-tree-pane { transition: width 0.25s ease; }
+/* Reopening animates the width, and the tree used to be painted from the first
+   frame — laid out at 40px and reflowing all the way out, which reads as a
+   flicker. It stays hidden until the pane is the size it is going to be, then
+   fades in. Same idea as .panel-fading, one step instead of three. */
+#ddlTreePane.tree-revealing > * { opacity: 0; }
+#ddlTreePane:not(.tree-collapsed) > * { transition: opacity 0.12s ease; }
 /* The DDL panel is ONE panel split in two, not two cards side by side. So the
    collapsed strip is the panel's LEFT EDGE: it carries the panel silhouette
    (--r-lg, matching every other outer edge on screen — a collapsed Parse
@@ -855,16 +861,18 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 /* height:auto, not 100% — the header used to fill the rail and push the volume
    list off the bottom of the pane. The border moves to the pane itself so the
    rail below the header sits inside the same outline. */
-#ddlTreePane.tree-collapsed .tree-hdr { flex-direction: column; justify-content: flex-start;
-  gap: 8px; padding: 4px 0 6px; height: auto; flex-shrink: 0; border-bottom: none;
+#ddlTreePane.tree-collapsed .tree-hdr { flex-direction: column; justify-content: center;
+  gap: 8px; padding: 0; height: auto; flex-shrink: 0; border-bottom: none;
   border-right: none;
   /* Both top corners, inset by the border width so the inner curve nests
      inside the pane's rather than bulging against it. */
   border-radius: calc(var(--r-lg) - var(--bw)) calc(var(--r-lg) - var(--bw)) 0 0; }
 #ddlTreePane.tree-collapsed { border-right: var(--bw) solid var(--border); }
 #ddlTreePane.tree-collapsed .tree-hdr-collapse { margin-left: 0; order: -1; }
-#ddlTreePane.tree-collapsed .tree-hdr-title { writing-mode: vertical-rl; transform: rotate(180deg);
-  letter-spacing: 1px; color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
+/* No rotated "DDL Tree" caption. The strip is 40px of vertical space that the
+   volume letters can use, and the letters say what this is better than a label
+   turned on its side does. */
+#ddlTreePane.tree-collapsed .tree-hdr-title { display: none; }
 .tree-hdr-count { font-size: var(--sz-badge); font-weight: 700; padding: 2px 10px; flex-shrink: 0;
   min-width: 38px; text-align: center;   /* so "9" is still a pill, not a circle */
   border-radius: var(--r-pill); background: var(--h-gray-bg); color: var(--h-gray-fg);
@@ -17588,7 +17596,23 @@ function toggleTreePane(force) {
   if (collapse && !pane.classList.contains('tree-collapsed'))
     pane.dataset.openWidth = pane.style.width || (pane.offsetWidth + 'px');
   pane.classList.toggle('tree-collapsed', collapse);
-  if (collapse) _renderTreeRail(); else _treeFlyHide(true);
+  if (collapse) { _renderTreeRail(); pane.classList.remove('tree-revealing'); }
+  else {
+    _treeFlyHide(true);
+    // Hide the contents for the length of the width animation, then fade them
+    // in — see .tree-revealing. transitionend is the real signal; the timer is
+    // the backstop for the case where no transition runs at all (reduced
+    // motion, or a toggle while the pane is already at that width).
+    pane.classList.add('tree-revealing');
+    const done = () => { pane.classList.remove('tree-revealing'); clearTimeout(tid); };
+    const onEnd = ev => {
+      if (ev.target !== pane || ev.propertyName !== 'width') return;
+      pane.removeEventListener('transitionend', onEnd);
+      done();
+    };
+    const tid = setTimeout(() => { pane.removeEventListener('transitionend', onEnd); done(); }, 320);
+    pane.addEventListener('transitionend', onEnd);
+  }
   if (!collapse && pane.dataset.openWidth) pane.style.width = pane.dataset.openWidth;
   btn.textContent = collapse ? '+' : '−';
   btn.title       = collapse ? 'Show the tree' : 'Hide the tree';
@@ -17621,7 +17645,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.56.0';
+const APP_VERSION  = '1.46.57.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

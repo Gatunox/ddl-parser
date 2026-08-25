@@ -18287,6 +18287,36 @@ test('collapsing remembers the open width, and restoring does not re-save it', (
     'the width must be restored before the collapsed state');
 });
 
+test('reopening waits for the width before painting the tree', () => {
+  // Expanding animates the width. The tree used to be painted from the first
+  // frame — laid out at 40px and reflowing all the way out, which reads as a
+  // flicker. Reported 2026-08-25.
+  const fn = psFnSource('toggleTreePane');
+  assert.ok(/classList\.add\('tree-revealing'\)/.test(fn), 'nothing hides the contents while the width animates');
+  assert.ok(/propertyName !== 'width'/.test(fn), 'the reveal must wait on the WIDTH transition, not the first one to end');
+  // A backstop, because transitionend never fires when no transition runs —
+  // reduced motion, or toggling to a width the pane already has.
+  assert.ok(/setTimeout\(\(\) => \{[^}]*done\(\)/.test(fn.replace(/\n/g, ' ')),
+    'without a timer a pane that does not animate stays blank forever');
+  // Collapsing must clear it, or the rail comes back invisible.
+  assert.ok(/if \(collapse\) \{[^}]*classList\.remove\('tree-revealing'\)/.test(fn.replace(/\n/g, ' ')),
+    'collapsing leaves the reveal class on and hides the rail');
+  const css = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/#ddlTreePane\.tree-revealing > \*\s*\{[^}]*opacity:\s*0/.test(css),
+    'the reveal class must actually hide the contents');
+});
+
+test('the collapsed toggle is centred in its own header', () => {
+  // It sat 4px from the top and 12px from the bottom — the strip is 40px wide
+  // and the button is the only thing in the header, so off-centre is visible.
+  const css = fs.readFileSync('./source.html', 'utf8');
+  const rule = (css.match(/#ddlTreePane\.tree-collapsed \.tree-hdr \{([^}]*)\}/) || [])[1] || '';
+  assert.ok(/justify-content:\s*center/.test(rule),
+    `the collapsed header must centre its single child, got: ${rule}`);
+  assert.ok(/padding:\s*0\s*;/.test(rule),
+    'asymmetric padding puts the button off-centre whatever justify-content says');
+});
+
 test('the flyout is rendered at body level, because the pane clips it', () => {
   // .ddl-pane-split is overflow:hidden, so a flyout drawn inside the pane is
   // cut off at 28px — invisible, with nothing in the console to say why.

@@ -829,6 +829,19 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
   color: var(--text); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tree-fly-ddl:hover { background: var(--h-gray-bg); color: var(--h-gray-fg); }
 .tree-fly-empty { padding: 6px 12px; font-size: 11px; color: var(--text-dim); font-style: italic; }
+/* The current selection, in the accent the expanded tree uses for its path. The
+   rail letter said which VOLUME you were in and stopped there. */
+.tree-fly-ver.is-current, .tree-fly-ddl.is-current, .tree-fly-def.is-current { color: var(--accent); }
+.tree-fly-ddl.is-current:hover, .tree-fly-def.is-current:hover { color: var(--accent); }
+/* A file that holds definitions opens a second level, so it gets the same
+   affordance a tree caret has: something to the right saying "there is more". */
+.tree-fly-ddl.has-defs { padding-right: 22px; position: relative; }
+.tree-fly-ddl.has-defs::after { content: '›'; position: absolute; right: 10px; top: 50%;
+  transform: translateY(-50%); color: var(--text-dim); font-size: 13px; line-height: 1; }
+.tree-fly-ddl.is-open { background: var(--h-gray-bg); }
+.tree-fly-def { padding: 4px 12px 4px 24px; font-family: var(--mono); font-size: 11px;
+  color: var(--text); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree-fly-def:hover { background: var(--h-gray-bg); color: var(--h-gray-fg); }
 
 /* Width is inline (the resizer writes it), so the collapsed width has to win on
    specificity — hence the id. Transition on width so it slides like a panel. */
@@ -17505,7 +17518,17 @@ function _syncTreeW() {
 //
 // The flyout is a BODY-level element: .ddl-pane-split is overflow:hidden and
 // would clip anything drawn inside the pane.
-let _treeFlyVol = null, _treeFlyTimer = null;
+let _treeFlyVol = null, _treeFlyTimer = null, _treeFly2Key = null;
+
+// Both flyouts cache their markup so re-hovering the same row does not rebuild
+// it. The cache key has to include the SELECTION as well as the identity: the
+// accent marks are rendered INTO that markup, so keying on the file alone
+// served a stale highlight the moment the scope moved without the file
+// changing — a def picked in another file stayed lit here.
+function _treeScopeSig() {
+  const sc = S.scope || {};
+  return `${sc.type || ''}|${sc.vol || ''}|${sc.sv || ''}|${sc.name || ''}|${sc.defName || ''}`;
+}
 
 function _renderTreeRail() {
   const rail = document.getElementById('treeRail');
@@ -17527,6 +17550,7 @@ function _treeFlyHide(now) {
     document.getElementById('treeFly')?.classList.add('hidden');
     document.querySelectorAll('.tree-rail-vol.is-open').forEach(e => e.classList.remove('is-open'));
     _treeFlyVol = null;
+    _treeFly2Hide();
   };
   // A short grace period, or the flyout closes while the pointer crosses the
   // gap between the rail and it.
@@ -17538,33 +17562,93 @@ function _treeFlyShow(volEl) {
   const vol = volEl.dataset.vol;
   const fly = document.getElementById('treeFly');
   if (!fly) return;
-  if (_treeFlyVol !== vol) {
+  const sig = vol + '\u0000' + _treeScopeSig();
+  if (_treeFlyVol !== sig) {
     const versions = S.ddlTree?.[vol] || {};
+    const sc = S.scope || {};
+    // The same accent the expanded tree paints on the path, carried into the
+    // flyout: the rail letter alone said WHICH VOLUME you were in and stopped
+    // there. Reported 2026-08-25.
+    const onPath = sc.vol === vol;
     let n = 0;
     const body = Object.keys(versions).sort().map(sv => {
       const ddls = Object.keys(versions[sv] || {}).sort();
       n += ddls.length;
-      return `<div class="tree-fly-ver">${esc(sv)}</div>` + (ddls.length
-        ? ddls.map(d => `<div class="tree-fly-ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}"
-             data-name="${esc(d)}" title="${esc(vol)}/${esc(sv)}/${esc(d)}">${esc(d)}</div>`).join('')
+      const svCur = onPath && sc.sv === sv ? ' is-current' : '';
+      return `<div class="tree-fly-ver${svCur}">${esc(sv)}</div>` + (ddls.length
+        ? ddls.map(d => {
+            const dCur = onPath && sc.sv === sv && sc.name === d ? ' is-current' : '';
+            const hasDefs = isHPEDDLText(versions[sv][d] || '');
+            return `<div class="tree-fly-ddl${dCur}${hasDefs ? ' has-defs' : ''}" data-vol="${esc(vol)}"
+              data-sv="${esc(sv)}" data-name="${esc(d)}"
+              title="${esc(vol)}/${esc(sv)}/${esc(d)}">${esc(d)}</div>`;
+          }).join('')
         : '<div class="tree-fly-empty">no DDLs</div>');
     }).join('');
     fly.innerHTML = `<div class="tree-fly-hdr"><span>${esc(vol)}</span>`
       + `<span class="tree-hdr-count">${n}</span></div>`
       + (body || '<div class="tree-fly-empty">nothing here yet</div>');
-    _treeFlyVol = vol;
+    _treeFlyVol = sig;
   }
   document.querySelectorAll('.tree-rail-vol.is-open').forEach(e => e.classList.remove('is-open'));
   volEl.classList.add('is-open');
   fly.classList.remove('hidden');
-  // Positioned after it is measurable, and flipped up when it would run off the
-  // bottom — the rail scrolls, so a volume near the foot of a long list is not
-  // an edge case.
-  const r = volEl.getBoundingClientRect();
-  fly.style.left = (r.right + 6) + 'px';
-  fly.style.top  = '0px';
-  const h = fly.offsetHeight;
-  fly.style.top = Math.max(6, Math.min(r.top - 4, window.innerHeight - h - 6)) + 'px';
+  _treeFlyPlace(fly, volEl.getBoundingClientRect());
+}
+
+// Second level: the DEFs inside one file. A DDL file is a container — the tree
+// expands it to its definitions, and the flyout had no way to reach them, so
+// collapsed the pane could open a file but never a definition inside it.
+// Requested 2026-08-25.
+function _treeFly2Show(ddlEl) {
+  clearTimeout(_treeFlyTimer);
+  const fly2 = document.getElementById('treeFly2');
+  if (!fly2) return;
+  const { vol, sv, name } = ddlEl.dataset;
+  const key = `${vol}/${sv}/${name}\u0000${_treeScopeSig()}`;
+  if (_treeFly2Key !== key) {
+    const text = S.ddlTree?.[vol]?.[sv]?.[name] || '';
+    const defs = isHPEDDLText(text) ? parseDEFNames(text) : [];
+    const sc = S.scope || {};
+    const here = sc.vol === vol && sc.sv === sv && sc.name === name;
+    fly2.innerHTML = `<div class="tree-fly-hdr"><span>${esc(name)}</span>`
+      + `<span class="tree-hdr-count">${defs.length}</span></div>`
+      + (defs.length
+        ? defs.map(dn => `<div class="tree-fly-def${here && sc.defName === dn ? ' is-current' : ''}"
+            data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(name)}"
+            data-def="${esc(dn)}" title="${esc(dn)}">${esc(dn)}</div>`).join('')
+        : '<div class="tree-fly-empty">no definitions</div>');
+    _treeFly2Key = key;
+  }
+  document.querySelectorAll('.tree-fly-ddl.is-open').forEach(e => e.classList.remove('is-open'));
+  ddlEl.classList.add('is-open');
+  fly2.classList.remove('hidden');
+  _treeFly2Place(fly2, ddlEl.getBoundingClientRect());
+}
+
+function _treeFly2Hide() {
+  document.getElementById('treeFly2')?.classList.add('hidden');
+  document.querySelectorAll('.tree-fly-ddl.is-open').forEach(e => e.classList.remove('is-open'));
+  _treeFly2Key = null;
+}
+
+// Shared placement: to the right of the anchor, flipped up when it would run
+// off the bottom. The rail scrolls, so a row near the foot of a long list is
+// not an edge case.
+function _treeFlyPlace(el, r) {
+  el.style.left = (r.right + 6) + 'px';
+  el.style.top  = '0px';
+  const h = el.offsetHeight;
+  el.style.top = Math.max(6, Math.min(r.top - 4, window.innerHeight - h - 6)) + 'px';
+}
+function _treeFly2Place(el, r) {
+  el.style.left = (r.right + 4) + 'px';
+  el.style.top  = '0px';
+  const h = el.offsetHeight;
+  el.style.top = Math.max(6, Math.min(r.top - 4, window.innerHeight - h - 6)) + 'px';
+  // Off the right edge → put it on the LEFT of the row instead.
+  if (r.right + 4 + el.offsetWidth > window.innerWidth - 6)
+    el.style.left = Math.max(6, r.left - el.offsetWidth - 4) + 'px';
 }
 
 function _initTreeRail() {
@@ -17578,12 +17662,30 @@ function _initTreeRail() {
   rail.addEventListener('mouseleave', () => _treeFlyHide());
   fly.addEventListener('mouseenter', () => clearTimeout(_treeFlyTimer));
   fly.addEventListener('mouseleave', () => _treeFlyHide());
+  // Hovering a FILE opens its definitions beside it; hovering anything else in
+  // the list closes that second level, so it tracks the row under the pointer.
+  fly.addEventListener('mouseover', e => {
+    const d = e.target.closest('.tree-fly-ddl');
+    if (d && d.classList.contains('has-defs')) _treeFly2Show(d);
+    else if (e.target.closest('.tree-fly-ver, .tree-fly-ddl, .tree-fly-hdr')) _treeFly2Hide();
+  });
   fly.addEventListener('click', e => {
     const d = e.target.closest('.tree-fly-ddl');
     if (!d) return;
     _treeFlyHide(true);
     selectScope('ddl', d.dataset.vol, d.dataset.sv, d.dataset.name);
   });
+  const fly2 = document.getElementById('treeFly2');
+  if (fly2) {
+    fly2.addEventListener('mouseenter', () => clearTimeout(_treeFlyTimer));
+    fly2.addEventListener('mouseleave', () => _treeFlyHide());
+    fly2.addEventListener('click', e => {
+      const d = e.target.closest('.tree-fly-def');
+      if (!d) return;
+      _treeFlyHide(true);
+      selectScope('def', d.dataset.vol, d.dataset.sv, d.dataset.name, d.dataset.def);
+    });
+  }
   // Clicking the initial reopens the pane on that volume — the flyout is for
   // looking, the click is for going back in.
   rail.addEventListener('click', e => {
@@ -17640,15 +17742,48 @@ function toggleTreePane(force) {
   if (force === undefined) saveLayout();
 }
 
+// The narrowest the OPEN pane can be and still show its header on one row.
+// Measured from the header's own children rather than guessed, so adding a
+// control to the bar moves the threshold with it. Cached after the first
+// successful read — the header must be expanded and laid out to measure.
+let _treeMinOpenW = 0;
+function _treeHdrMinW() {
+  const pane = document.getElementById('ddlTreePane');
+  const hdr  = pane?.querySelector('.tree-hdr');
+  if (!hdr || pane.classList.contains('tree-collapsed')) return _treeMinOpenW;
+  const cs = getComputedStyle(hdr);
+  const kids = [...hdr.children].filter(el => getComputedStyle(el).display !== 'none');
+  if (!kids.length) return _treeMinOpenW;
+  const gap = parseFloat(cs.gap) || 0;
+  const w = kids.reduce((t, el) => t + el.getBoundingClientRect().width, 0)
+          + gap * (kids.length - 1)
+          + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
+          + 2;   // the pane's own border
+  if (w > 0) _treeMinOpenW = Math.ceil(w);
+  return _treeMinOpenW;
+}
+
 function initTreePaneResizer() {
   const resizer  = document.getElementById('ddlTreeResizer');
   const treePane = document.getElementById('ddlTreePane');
   resizer.addEventListener('mousedown', e => {
     e.preventDefault();
     const startX = e.clientX, startW = treePane.offsetWidth;
+    const minW = _treeHdrMinW();
     resizer.classList.add('dragging');
     const onMove = e => {
-      treePane.style.width = Math.max(80, Math.min(400, startW + e.clientX - startX)) + 'px';
+      const want = startW + e.clientX - startX;
+      // Dragged past the point where the header stops fitting on one row: the
+      // pane collapses, exactly as the − button does. Squeezing it into a
+      // narrower-than-usable state and leaving it there is the alternative,
+      // and it leaves controls stacked or clipped. Requested 2026-08-25.
+      if (minW && want < minW) {
+        onUp();                 // ends the drag — and saves the width, not the state
+        toggleTreePane(true);   // forced, so it deliberately does not save
+        saveLayout();           // …which is why the state is written here
+        return;
+      }
+      treePane.style.width = Math.max(80, Math.min(400, want)) + 'px';
       _syncTreeW();
     };
     const onUp   = () => { resizer.classList.remove('dragging'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); saveLayout(); };
@@ -17661,7 +17796,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.58.0';
+const APP_VERSION  = '1.46.59.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -33872,6 +34007,7 @@ function _meSave() {
 <!-- ===== CONTEXT MENU ===== -->
 <div class="ctx-menu hidden" id="ctxMenu"></div>
 <div class="tree-fly hidden" id="treeFly"></div>
+<div class="tree-fly hidden" id="treeFly2"></div>
 
 <!-- ===== MSG EXPORT MODAL ===== -->
 <div class="modal-overlay hidden" id="msgExportOverlay" onmousedown="if(event.target===this)closeMsgExportModal()">

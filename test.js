@@ -151,6 +151,8 @@ _t.parseMessage       = parseMessage;
 _t.parseHPEISOMessage = parseHPEISOMessage;
 _t.parseSimpleDDL     = parseSimpleDDL;
 _t.renderTreeRail     = _renderTreeRail;
+_t.treeFlyShow        = _treeFlyShow;
+_t.treeFly2Show       = _treeFly2Show;
 _t.toggleTreePane     = toggleTreePane;
 _t.msgByteCoverage    = _msgByteCoverage;
 _t.ISO8583_DDL        = ISO8583_DDL;
@@ -18326,6 +18328,93 @@ test('the collapsed toggle is centred in its own header', () => {
     `the collapsed header must centre its single child, got: ${rule}`);
   assert.ok(/padding:\s*0\s*;/.test(rule),
     'asymmetric padding puts the button off-centre whatever justify-content says');
+});
+
+test('the flyout marks the selected subvol, file and definition', () => {
+  // The rail letter said which VOLUME you were in and stopped there — inside
+  // the flyout nothing carried the rest of the path. Reported 2026-08-25.
+  const prevTree = S.ddlTree, prevScope = S.scope;
+  const fly = { innerHTML: '', classList: { add(){}, remove(){}, contains(){ return false; } }, style: {}, offsetHeight: 100 };
+  const prevStub = elStubs.treeFly;
+  elStubs.treeFly = fly;
+  try {
+    // BBB deliberately exists in BOTH subvols: without that, "mark any file of
+    // this name" and "mark the file in this subvol" are indistinguishable.
+    S.ddlTree = { BASE: { DDL: { AAA: 'DEF ONE.\n  02 X PIC X(1).\nEND\n', BBB: 'x' },
+                          STM: { BBB: 'x', CCC: 'x' } } };
+    S.scope = { type: 'ddl', vol: 'BASE', sv: 'DDL', name: 'BBB' };
+    sandbox._t.treeFlyShow({ dataset: { vol: 'BASE' }, classList: { add(){} },
+                             getBoundingClientRect: () => ({ right: 40, top: 10 }) });
+    const h = fly.innerHTML;
+    assert.ok(/class="tree-fly-ver is-current">DDL</.test(h), `the subvol holding the file must be marked: ${h}`);
+    assert.ok(/class="tree-fly-ddl is-current[^"]*"[^>]*data-name="BBB"/.test(h.replace(/\n\s*/g, ' ')),
+      'the selected file must be marked');
+    eq((h.match(/is-current/g) || []).length, 2, 'exactly the subvol and the file, nothing else');
+    // A file whose text is HPE DDL gets the second-level affordance; a flat
+    // table has no definitions to open.
+    const flat = h.replace(/\n\s*/g, ' ');
+    assert.ok(/data-name="AAA"[^>]*>/.test(flat) && /has-defs[^>]*data-name="AAA"/.test(flat),
+      `a DDL file with DEFs must be marked has-defs: ${flat}`);
+    assert.ok(!/has-defs[^>]*data-name="BBB"/.test(flat), 'a flat table has no definitions to open');
+  } finally {
+    S.ddlTree = prevTree; S.scope = prevScope;
+    if (prevStub === undefined) delete elStubs.treeFly; else elStubs.treeFly = prevStub;
+  }
+});
+
+test('a file opens its definitions, and the selected one is marked', () => {
+  const prevTree = S.ddlTree, prevScope = S.scope;
+  const fly2 = { innerHTML: '', classList: { add(){}, remove(){}, contains(){ return false; } }, style: {}, offsetHeight: 100, offsetWidth: 100 };
+  const prevStub = elStubs.treeFly2;
+  elStubs.treeFly2 = fly2;
+  try {
+    S.ddlTree = { BASE: { DDL: { AAA: 'DEF ONE.\n  02 X PIC X(1).\nEND\nDEF TWO.\n  02 Y PIC X(1).\nEND\n' } } };
+    S.scope = { type: 'def', vol: 'BASE', sv: 'DDL', name: 'AAA', defName: 'TWO' };
+    sandbox._t.treeFly2Show({ dataset: { vol: 'BASE', sv: 'DDL', name: 'AAA' },
+                              classList: { add(){} },
+                              getBoundingClientRect: () => ({ right: 40, left: 10, top: 10 }) });
+    const h = fly2.innerHTML.replace(/\n\s*/g, ' ');
+    deepEq([...h.matchAll(/data-def="([^"]+)"/g)].map(m => m[1]), ['ONE', 'TWO'],
+      'every DEF in the file is listed');
+    assert.ok(/class="tree-fly-def is-current"[^>]*data-def="TWO"/.test(h),
+      `the selected definition must be marked: ${h}`);
+    eq((h.match(/is-current/g) || []).length, 1, 'only the selected definition');
+    // A different file, same def name — must NOT light up.
+    S.scope = { type: 'def', vol: 'BASE', sv: 'DDL', name: 'OTHER', defName: 'TWO' };
+    sandbox._t.treeFly2Show({ dataset: { vol: 'BASE', sv: 'DDL', name: 'AAA' },
+                              classList: { add(){} },
+                              getBoundingClientRect: () => ({ right: 40, left: 10, top: 10 }) });
+    eq(/is-current/.test(fly2.innerHTML), false, 'a def selected in ANOTHER file must not be marked here');
+  } finally {
+    S.ddlTree = prevTree; S.scope = prevScope;
+    if (prevStub === undefined) delete elStubs.treeFly2; else elStubs.treeFly2 = prevStub;
+  }
+});
+
+test('dragging the pane below the width its header needs collapses it', () => {
+  // Squeezing the pane into a narrower-than-usable state and leaving it there
+  // stacks or clips the header controls. Requested 2026-08-25.
+  const rez = psFnSource('initTreePaneResizer');
+  assert.ok(/const minW = _treeHdrMinW\(\)/.test(rez), 'the drag never measures a floor');
+  assert.ok(/if \(minW && want < minW\)/.test(rez), 'nothing collapses when the drag goes past it');
+  assert.ok(/toggleTreePane\(true\)/.test(rez), 'it must collapse, not just clamp');
+  // onUp() saves the WIDTH before the collapse, and a forced toggle
+  // deliberately does not save — so the state needs writing explicitly or the
+  // auto-collapse is forgotten on reload.
+  const from = rez.indexOf('if (minW && want < minW)');
+  const seg  = rez.slice(from, rez.indexOf('return;', from));   // the if-block ONLY —
+  // onUp()'s own saveLayout() sits further down the function and would satisfy
+  // this check whatever the block does.
+  assert.ok(/saveLayout\(\)/.test(seg), 'the auto-collapse never writes the state it just changed');
+  assert.ok(seg.indexOf('saveLayout()') > seg.indexOf('toggleTreePane(true)'),
+    'the collapsed state must be saved AFTER the toggle, or it is lost on reload');
+  // The floor is measured, not guessed, so adding a control moves it.
+  const min = psFnSource('_treeHdrMinW');
+  assert.ok(/hdr\.children/.test(min) && /getBoundingClientRect\(\)\.width/.test(min),
+    'the floor must come from the header\'s own children');
+  assert.ok(/display !== 'none'/.test(min), 'a hidden control must not count toward the floor');
+  assert.ok(/classList\.contains\('tree-collapsed'\)/.test(min),
+    'measuring while collapsed would read the strip, not the header');
 });
 
 test('the flyout is rendered at body level, because the pane clips it', () => {

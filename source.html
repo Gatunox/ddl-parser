@@ -17407,7 +17407,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.52.0';
+const APP_VERSION  = '1.46.53.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21173,7 +21173,7 @@ const _PS_HELP = {
         ..._PS_SIZEOF_DESC,
         'Nothing is captured and no row is emitted — the bytes simply go unread.',
         'A skip past the end of the message stops at the end rather than failing.',
-        'A skip also moves <code>read-ddl</code>: the DDL\'s declared offsets are taken as relative to the record <b>minus</b> what was skipped, so a prefix the DDL does not describe can be stepped over. A <code>read</code> does not do this — read-ddl restarts at the declared offsets after one.',
+        'Like every block, a skip moves where a later <code>read-ddl</code> starts — the DDL walk continues from the cursor, so a prefix the DDL does not describe can be stepped over.',
         'Combine with <code>at</code> using the object form: <code>{"skip": {"length": 2, "at": 10}}</code>.',
       ]],
     ],
@@ -29102,10 +29102,11 @@ function _meReadOneFieldFromDef(def, ctx) {
   // it: shrink a 4-byte MSGTYPE to 2 and the two bytes left over must still be
   // there for the next field to read, not skipped because the DDL says the next
   // field starts at 4. ovShift carries that running correction across the walk.
-  // Declared offsets are relative to the record MINUS what the spec skipped
-  // (ctx.skipBase — see the `skip` block) and corrected by any re-sizing that
-  // happened along the way (ctx.ovShift).
-  const fStart = hasExplicit ? def.offset + (ctx.skipBase || 0) + (ctx.ovShift || 0) : ctx.cursor;
+  // Declared offsets are relative to where the read-ddl walk STARTED
+  // (ctx.ddlBase — the cursor at that moment) and corrected by any re-sizing
+  // that happened along the way (ctx.ovShift). Outside a read-ddl walk ddlBase
+  // is unset, so an explicitly-positioned def still lands where it declares.
+  const fStart = hasExplicit ? def.offset + (ctx.ddlBase || 0) + (ctx.ovShift || 0) : ctx.cursor;
   if (fStart >= ctx.bytes.length) return null;
 
   let len = def.length;
@@ -29390,6 +29391,21 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
   }
   from  = _meResolveDefRef(resolved.defs, from,  'first');
   until = _meResolveDefRef(resolved.defs, until, 'last');
+
+  // WHERE THE WALK LANDS. The DDL's declared offsets are relative to the start
+  // of the layout, and the layout starts at the cursor — read-ddl is a
+  // collection of reads over every field present, so whatever the spec did
+  // before it counts, exactly as it would between hand-written reads.
+  //
+  // `from` needs no special handling: it names a field inside that layout, and
+  // that field's declared offset is ADDED to the base like every other one. At
+  // the top of the message the base is 0 and the declared offsets stand as
+  // written; anywhere else they all move together.
+  //
+  // Restored per binding, so several bindings run in sequence rather than
+  // stacking on one base. Reported 2026-08-24.
+  const _prevBase = ctx.ddlBase;
+  ctx.ddlBase = ctx.cursor;
   const picks   = Array.isArray(fields) ? new Set(fields) : null;
   const allMode = !picks && !from && !until;
   let started   = !from;
@@ -29437,7 +29453,7 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
       // with OCCURS it looked like the array simply had fewer occurrences.
       if (!ctx._ddlShort) {
         ctx._ddlShort = true;
-        const want = def.offset != null ? def.offset + (ctx.ovShift || 0) : ctx.cursor;
+        const want = def.offset != null ? def.offset + (ctx.ddlBase || 0) + (ctx.ovShift || 0) : ctx.cursor;
         ctx.fields.push({ id: def.id,
           error: `starts at byte ${want} but the message is ${ctx.bytes.length} byte(s) — `
                + `this field and everything after it could not be read` });
@@ -29462,6 +29478,7 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
     // until: inclusive — stop after the matching field is processed.
     if (until && def.id === until) break;
   }
+  ctx.ddlBase = _prevBase;
 }
 
 function _meExecReadDDL(attrs, ctx) {
@@ -29477,6 +29494,18 @@ function _meExecReadDDL(attrs, ctx) {
   // is read-ddl's own. Restored, not cleared, for the same nesting reason.
   const _prevVlg = ctx.vlgIdentifier;
   ctx.vlgIdentifier = vlgIdentifier;
+  // READ-DDL CONTINUES FROM THE CURSOR. It is shorthand for reading every field
+  // in turn — `{"read-ddl": …}` is `read A, read B, read C` written once — so
+  // whatever the spec did before it (skip, read-fixed, read-until) has to count,
+  // exactly as it would between two hand-written reads.
+  //
+  // It used to place each field at the offset the DDL declares, ignoring the
+  // cursor entirely. After a `read` that restart was invisible: the DDL
+  // describes byte 0 onward and the read consumed byte 0 onward, so re-reading
+  // produced the same values and merely duplicated a row. After a `skip` it was
+  // fatal — skip is the one block that says "the layout does not start at byte
+  // 0", and the restart read the skipped prefix as the DDL's first fields.
+  // Reported 2026-08-24.
   for (const idx of bindings) _meReadDDLBinding(idx, fields, from, until, ctx);
   ctx.vlgIdentifier = _prevVlg;
 }
@@ -31110,10 +31139,6 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
   const end = windowLen != null && windowLen > 0 ? start + windowLen : null;
 
   const prevScope = ctx._deScope, prevLimit = ctx._deLimit, prevBit = ctx._deBit;
-  // skipBase travels with the DE window too. A `skip` inside an element says
-  // "these bytes of THIS element are not mine"; letting it accumulate past the
-  // element would shift every later read-ddl by an amount decided inside a DE.
-  const prevSkipBase = ctx.skipBase;
   ctx._deScope = scopeId;
   ctx._deLimit = end;
   ctx._deBit   = de;      // which bit we are inside, for blocks that read the DE itself
@@ -31123,7 +31148,6 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     ctx._deScope = prevScope;
     ctx._deLimit = prevLimit;
     ctx._deBit   = prevBit;
-    ctx.skipBase = prevSkipBase;
     if (end != null) {
       // Overrunning is always reported and always stops here, whatever the
       // window was: reading past the room an element has is malformed either
@@ -32732,9 +32756,7 @@ function _meExecBlockAt(type, attrs, ctx) {
       // offsets land, reads do not. Cumulative, because two skips ignore two
       // stretches, and scoped to a DE window by _meRunDeEntry. Reported
       // 2026-08-24.
-      const _before = ctx.cursor;
       ctx.cursor = Math.min(ctx.cursor + n, ctx.bytes.length);
-      ctx.skipBase = (ctx.skipBase || 0) + (ctx.cursor - _before);
       return;
     }
     default:

@@ -19250,6 +19250,43 @@ test('the detection summary does not claim a forced run was evaluated', () => {
   assert.ok(/Matched as/.test(normal[1]), `normal verb, got: ${normal[1]}`);
 });
 
+test('[REGRESSION] a record parse says the class override is on, and stops claiming a match', () => {
+  // Two halves of one gap. v1.20.3.2 gave the PASTE flow an amber "class
+  // override" step and taught the summary not to describe work that did not
+  // happen; the RECORD flow got neither, and nothing noticed because the test
+  // for it drove _ppDetectDetails directly. Armed, a record parse printed
+  // "1 record evaluated — 1 matched" for a run where _fmtDetect short-circuited
+  // before any recognizer ran. Reported 2026-08-25.
+  //
+  // Asserted at the source: _parseProgressDismiss empties _ppSteps when the run
+  // ends, so nothing survives the flow to be read afterwards, and the steps are
+  // pushed by a top-level function the sandbox cannot intercept.
+  const rec = psFnSource('doParseNetardLog');
+
+  // 1 — the amber step, ahead of the detection step it qualifies.
+  const ovIdx  = rec.indexOf('Class override —');
+  const detIdx = rec.indexOf("_parseProgressStep('Detecting record types')");
+  assert.ok(ovIdx >= 0, 'the record flow never announces an armed class override');
+  assert.ok(detIdx >= 0 && ovIdx < detIdx,
+    'the override must be announced BEFORE detection is claimed');
+  assert.ok(/S\.specOverride && S\.specOverride\.label/.test(rec), 'it must read the armed label');
+  assert.ok(/'#e6a817', '#e6a817'/.test(rec.slice(ovIdx, detIdx)), 'the same amber both overrides use');
+  assert.ok(/Recognizers — not evaluated/.test(rec.slice(ovIdx, detIdx)),
+    'the step must say recognizers did not run');
+  // The wording is NOT the DDL override's: that one also skips the parse-spec
+  // and reads straight off the DDL, and overstating what was skipped is its own
+  // bug. v1.20.3.2 pinned that distinction; it holds here too.
+  const step = rec.slice(ovIdx, detIdx);
+  assert.ok(!/Manual override mode/.test(step), 'a class override is not a manual DDL override');
+  assert.ok(!/Parse-specs/i.test(step), 'the forced class STILL runs its parse-spec');
+
+  // 2 — the summary. _fmtDetectTrace marks the RESULT forced; this flow pushed
+  // only .trace, so _ppDetectDetails saw an ordinary passing trace and the
+  // forced branch was never reached from here.
+  assert.ok(/_detectTraces\.push\(\{[^}]*forced: !!_pd\.det\.forced/.test(rec.replace(/\n\s*/g, ' ')),
+    'the record trace drops `forced`, so the summary reports a short-circuit as a match');
+});
+
 test('an armed entity override is visible in the list that still exists', () => {
   // Was: "shows in Settings, not only in the editor" — the Class Editor marked
   // it and Settings → Data Detection did not, so the same fact was visible in

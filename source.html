@@ -11170,6 +11170,19 @@ function doParseNetardLog(text, opts = {}) {
     }
 
     // Step 1 — detecting types (informational)
+    // An armed CLASS override says so out loud here too. Deliberately the paste
+    // flow's wording, not _overrideProgressShell's: that one skips the parse-spec
+    // as well and reads straight off the DDL, while this skips recognizers only —
+    // the forced class's parse-spec and bindings still run. A notice that
+    // overstates what was skipped is its own bug, and v1.20.3.2 pinned that
+    // distinction with a test.
+    const _armedSpecRec = S.specOverride && S.specOverride.label;
+    if (_armedSpecRec) {
+      _parseProgressStep(`Class override — ${_armedSpecRec}`,
+        'Recognizers — not evaluated · every record parses as this class',
+        '#e6a817', '#e6a817');
+      _parseProgressDoneLast();
+    }
     _parseProgressStep('Detecting record types');
     setTimeout(() => {
       if (_parseAborted) return;
@@ -11233,7 +11246,15 @@ function doParseNetardLog(text, opts = {}) {
               };
               // Detection + binding were resolved once, up front, in the pre-pass.
               let msgType = _pd.winner;
-              _detectTraces.push({ recNo: rec.recNo, source: rec.source, winner: msgType, trace: _pd.det.trace || [], legacy: !!_pd.det.legacy });
+              // `forced` travels with the trace or the summary lies. _fmtDetectTrace
+              // marks the RESULT as forced, and this forwarded only .trace — so
+              // _ppDetectDetails saw an ordinary passing trace and printed
+              // "1 record evaluated — 1 matched" for a run where _fmtDetect had
+              // short-circuited before any recognizer ran. Fixed for the paste
+              // flow in v1.20.3.2; the record flow was outside that change.
+              // Reported 2026-08-25.
+              _detectTraces.push({ recNo: rec.recNo, source: rec.source, winner: msgType,
+                trace: _pd.det.trace || [], forced: !!_pd.det.forced, legacy: !!_pd.det.legacy });
               let fields = [], ddlPath = null, defName = null;
               if (!fields.length) {
                 // ── Recognized, but the spec defines no parse_spec ───────────
@@ -17960,7 +17981,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.61.0';
+const APP_VERSION  = '1.46.62.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -645,7 +645,30 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
 #parseBtn.btn-primary { background: var(--accent) !important; color: var(--on-accent) !important; border: var(--bw-ctl) solid var(--accent) !important; border-radius: var(--r-sm) !important; }
 #parseBtn.btn-primary:hover { background: var(--accent-hover) !important; border-color: var(--accent-hover) !important; color: var(--on-accent) !important; box-shadow: none !important; }
 #fmtForceSelect { background: var(--tint-bar); color: var(--text-dim); border: var(--bw) solid transparent; border-radius: 0; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 6px; height: auto; align-self: stretch; cursor: pointer; outline: none; }
+/* The class override, beside the format override: two answers to "stop guessing
+   and use THIS", so they are one pair of controls, not two inventions. It used
+   to live only behind a right-click in the Class Editor — a modal trip to arm
+   and the same trip to clear. Requested 2026-08-25. */
+#specForceSelect { background: var(--tint-bar); color: var(--text-dim); border: var(--bw) solid transparent; border-radius: 0; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 6px; height: auto; align-self: stretch; cursor: pointer; outline: none; max-width: 210px; }
+#specForceSelect:hover { border-color: var(--accent); color: var(--accent); }
+#specForceSelect.fmt-forced { color: var(--warning); border-color: var(--warning); }
+/* Disabled because a DDL override is answering the same question — dimmed, and
+   its cursor says so rather than inviting a click that cannot land. */
+#specForceSelect.is-inert { opacity: 0.45; cursor: not-allowed; border-color: transparent; }
 .lw-widget { display: flex; align-items: center; gap: 2px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--sz-mono); color: var(--text-dim); padding: 0 6px 0 4px; }
+/* Offered only for a formatless paste — ASCII, HEX, EBCDIC, OCT — where the
+   lines carry no column meaning. A columnar dump (HEXASCII, NETARD, FUPCOPY) is
+   a layout, and wrapping one destroys the thing you are reading it for, so the
+   control is not shown at all rather than shown and refused.
+   Requested 2026-08-25. */
+.wrap-widget { display: flex; align-items: center; gap: 3px; flex-shrink: 0; cursor: pointer;
+  font-family: var(--font-mono); font-size: var(--sz-mono); color: var(--text-dim);
+  padding: 0 6px; border: var(--bw-ctl) solid transparent; border-radius: var(--r-sm);
+  user-select: none; transition: all 0.1s; }
+.wrap-widget.hidden { display: none !important; }
+.wrap-widget:hover { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
+.wrap-widget.is-on { color: var(--accent); border-color: var(--accent); }
+.wrap-ico { font-size: calc(var(--sz-mono) + 2px); line-height: 1; }
 .lw-widget.hidden { display: none !important; }
 /* ── The bar ───────────────────────────────────────────────────────────────
    A strip of controls sitting one level under a panel header: edge to edge, on
@@ -714,7 +737,7 @@ body.audit-active #auditStats { display: flex !important; align-items: center; p
 .lw-widget.parsed .lw-val,
 .lw-widget.parsed .lw-reset { pointer-events: none; opacity: 0.2; cursor: default; }
 .lw-widget.parsed .lw-lbl { opacity: 0.25; }
-/* The lock states the Message Input's read-only fact: dim and open while the
+/* The lock states the Data Input's read-only fact: dim and open while the
    text can be edited, accent and shut once a parse has frozen it. Drawn rather
    than typed because the colour has to be ours — an emoji lock carries its own
    and ignores `color`. Both shackles ship in the markup and the class picks
@@ -1445,6 +1468,11 @@ input[type="text"]:focus { border-color: var(--accent); }
    so a panel with no type badge keeps its title flush against the header. */
 .pt-badge { display: flex; align-items: center; flex-shrink: 0; margin-left: var(--sp-1); }
 .pt-badge:empty { display: none; }
+/* …and again, stronger, for a badge inside a panel header: the header's own
+   `> span:not(.panel-title)` rule is more specific than `.pt-badge:empty`, so an
+   empty badge kept its display and its 4px of padding either side. It is 8px of
+   nothing, but it is 8px that moves the title when a badge appears. */
+.panel-header > span.pt-badge:empty { display: none; }
 
 /* An explicit line box, in pixels rather than a ratio: --sz-badge is a whole
    number, so +4px keeps the height whole at every font size. A unitless
@@ -2316,6 +2344,11 @@ td.c-err  { color: var(--accent2); }
 .cm-host .cm-editor.cm-focused { outline: none; }
 .cm-host .cm-scroller { flex: 1; overflow: auto; }
 .cm-host .cm-content { padding: 8px 0; white-space: pre; min-height: 100%; flex: 1; min-width: 0; }
+/* …unless the view is wrapping. CodeMirror's own lineWrapping extension sets
+   white-space on .cm-content through a theme, and the rule above is more
+   specific, so it won. The compartment reconfigured correctly and nothing
+   changed on screen. Found 2026-08-25. */
+.cm-host .cm-content.cm-lineWrapping { white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-host .cm-line { padding: 0 8px; }
 /* Native browser caret — already blinks by default */
 .cm-host .cm-content { caret-color: var(--text); }
@@ -2717,7 +2750,7 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-test-cfg select:focus{outline:none;border-color:var(--accent);}
 .me-test-cfg select:hover{border-color: var(--h-gray-bd);color: var(--h-gray-fg);}
 .me-test-cfg select.fmt-forced{color:var(--warning);border-color:var(--warning);}
-/* Same editor as the Message Input panel, so the same highlight classes apply.
+/* Same editor as the Data Input panel, so the same highlight classes apply.
    It takes a share of the subpanel and the results scroll under it. */
 /* The default has to show the whole placeholder — eight lines naming every
    accepted format — with room to spare, or the panel opens telling you half of
@@ -2838,7 +2871,7 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-test-tok-err{color:#f85149;font-style:italic;}
 /* ── Parse Spec ── */
 .me-ps-wrap{display:flex;flex-direction:column;gap:4px;}
-/* A section's own controls, in its header — the same place Message Input keeps
+/* A section's own controls, in its header — the same place Data Input keeps
    Audit / Parse / Clear. They were at the foot of the body, which is why every
    section put its actions somewhere different from every panel on the main page. */
 .me-section-actions{display:flex;align-items:center;gap:6px;margin-left:auto;margin-right:8px;}
@@ -3675,7 +3708,7 @@ th.me-fm-colhi{color:var(--accent);}
             <button class="panel-toggle" id="ddlToggleBar"
                     onclick="togglePanel('ddlPanel','ddlToggle','ddlResizer')" title="Hide panel">−</button>
           </div>
-          <!-- A second bar under the first, the way Message Input carries its
+          <!-- A second bar under the first, the way Data Input carries its
                format row under its header. Hidden until the magnifier is
                pressed; it takes no height while closed. -->
           <div id="ddlSearchRow" class="panel-bar ddl-search-row hidden">
@@ -3702,7 +3735,14 @@ th.me-fm-colhi{color:var(--accent);}
     <!-- MESSAGE INPUT PANEL -->
     <div class="panel" id="msgPanel">
       <div class="panel-header">
-        <span class="panel-title">Message Input</span>
+        <span class="panel-title">Data Input</span>
+        <!-- The detected format sits beside the title, where Parse Results puts
+             its message-type code. It used to live down in the config bar next
+             to the controls that OVERRIDE it, so the fact and the override read
+             as one row of equals. It is a readout, not a control.
+             Requested 2026-08-25. -->
+        <span id="fmtBadge" class="pt-badge"></span>
+        <span id="cntBadge" class="pt-badge"></span>
         <div style="flex:1;min-width:0;display:flex;align-items:center;gap:4px;padding-left:6px;overflow:hidden">
           <span id="msgFileName" style="color:var(--text-dim);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0"></span>
         </div>
@@ -3717,16 +3757,22 @@ th.me-fm-colhi{color:var(--accent);}
       </div>
       <div id="msgCfgBar" class="panel-bar">
         <select id="fmtForceSelect" onchange="onFmtForceChange()" title="Force input format (overrides auto-detect)">
-          <option value="">AUTO</option>
+          <option value="">INPUT: AUTO</option>
           <option value="ascii">ASCII</option>
           <option value="tandem-dump">HEXASCII</option>
           <option value="hex">HEX</option>
           <option value="ebcdic">EBCDIC</option>
           <option value="oct">OCT</option>
         </select>
-        <span id="fmtBadge" style="flex-shrink:0;padding:0 4px"></span>
-        <span id="cntBadge" style="flex-shrink:0"></span>
+        <select id="specForceSelect" onchange="onSpecForceChange()"
+          title="Parse every message as one class, skipping detection">
+          <option value="">CLASS: AUTO</option>
+        </select>
         <span style="flex:1"></span>
+        <span class="wrap-widget hidden" id="wrapWidget" onclick="toggleMsgWrap()"
+          title="Wrap long lines so nothing runs off the panel">
+          <span class="wrap-ico">&#8617;</span><span class="wrap-lbl">Wrap</span>
+        </span>
         <span class="lw-widget hidden" id="lwWidget" title="Line width — click value to type, ‹ › to step presets, ↺ to reset">
           <span class="lw-lbl">Line Width</span>
           <span class="lw-step" onclick="lwStep(-1)" title="Previous preset">&lt;</span>
@@ -3839,7 +3885,7 @@ th.me-fm-colhi{color:var(--accent);}
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-1)" title="Previous record (←)">&lt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle hex/ASCII dump view">HEX</button>
-                <button class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Message Input and parse">&#9654; Parse</button>
+                <button class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Data Input and parse">&#9654; Parse</button>
                 <button class="btn" style="height:20px;padding:0 6px" onclick="auditClosePopup()">&#10005;</button>
               </div>
               <div id="auditPopupBody" class="audit-popup-body">
@@ -6663,7 +6709,7 @@ function hexAsciiStartCol(text) {
     // Both dump shapes carry an "OFFSET: " prefix that is NOT data: the 4-char
     // "[ascii]" form and the Raw Message panel's "hh hh … |ascii|" form. Miss
     // the second and its offset digits get mapped as bytes, shifting every
-    // highlight in Message Input.
+    // highlight in Data Input.
     if (!isHexAsciiLine(line) && !isRawDumpLine(line)) continue;
     const t = line.trimStart();
     const body = t.replace(/^[0-9A-Fa-f]+:\s*/, '');
@@ -6744,7 +6790,7 @@ function detectFormat(text) {
 // hex pair in a dump line, buildByteCharMap matched 4-character groups. Every
 // input format was a fresh chance to be off by one, which is why the Raw panel
 // (which renders the bytes itself and simply labels each one) never had a
-// highlight bug and the Message Input panel had dozens.
+// highlight bug and the Data Input panel had dozens.
 //
 // The conversion knows the answer as it reads: record it there. `map[i]` is
 // { s, e } — half-open character offsets in the ORIGINAL text — plus `.ascii`
@@ -9044,6 +9090,8 @@ function parseMessage(bytes, defs, rawBytes) {
   function _fmtSave(specs) {
     try { localStorage.setItem('up_format_specs', JSON.stringify({ specs })); } catch(e) {}
     _fmtLoad();
+    // A renamed or deleted class must not leave a stale name in the picker.
+    if (typeof _syncSpecForceSelect === 'function') _syncSpecForceSelect();
   }
 
   function _fmtGetData() {
@@ -12090,8 +12138,13 @@ function syncParseBtn() {
   const hasInput = !!document.getElementById('msgInput').value.trim();
   if (b) { b.disabled = !hasInput; b.classList.toggle('btn-primary', hasInput); }
   if (c) c.disabled = !S.isParsed && !hasInput;
+  _syncSpecForceSelect();   // the class picker appears with the message, not before
   const bar = document.getElementById('msgCfgBar');
-  if (bar) bar.style.display = (hasInput || S.isParsed) ? 'flex' : 'none';
+  // An ARMED class override keeps the bar up even with nothing pasted. It is the
+  // control that clears it, and a forced state you cannot see is the same defect
+  // as a toast behind a modal: the app behaves differently and nothing says why.
+  const armed = !!(S.specOverride && S.specOverride.label);
+  if (bar) bar.style.display = (hasInput || S.isParsed || armed) ? 'flex' : 'none';
 }
 
 // Above this many records, ask before starting. The number is deliberately far
@@ -13058,7 +13111,7 @@ function renderFieldTable(msg) {
       .map((_, i) => g.path.split('.').slice(0, i + 1).join('.')).join('|');
     const coll  = S.resCollapsedGroups?.has(gid) ? ' grp-collapsed' : '';
     // data-fid and the hover handlers are what light the group's bytes up in the
-    // Message Input and the Raw panel. Without them the one row that stands for
+    // Data Input and the Raw panel. Without them the one row that stands for
     // a whole group was the one row that highlighted nothing.
     return `<tr class="res-grp-row${coll}${extraClass ? ' ' + extraClass : ''}"
       data-grp="${esc(gid)}" data-fid="grp::${esc(gid)}"${under ? ` data-under="${esc(under)}"` : ''}
@@ -13507,7 +13560,7 @@ function copyRawToClipboard() {
     const hexPart = (hex1 + (rowB.length > 8 ? '  ' + hex2 : '')).padEnd(48);
     const ascii = rowB.map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
     // "ADDR:" — the colon marks the offset so a copied dump can be pasted back
-    // into Message Input and parsed; without it the offset reads as data.
+    // into Data Input and parsed; without it the offset reads as data.
     lines.push(`${addr}: ${hexPart}  |${ascii}|`);
   }
   const text = lines.join('\n');
@@ -13757,7 +13810,7 @@ function clearHover() {
   renderInputOverlay();
 }
 
-// ---- Message Input overlay highlighting ----
+// ---- Data Input overlay highlighting ----
 // Collects highlight ranges for the selected/hovered field from the byte-char map.
 // A row that occupies no bytes must highlight none. `f.startByte | 0` turns the
 // absent offset of an error row — or of a field that took 0 bytes — into 0, so
@@ -15039,6 +15092,105 @@ function onMsgChange() {
   syncParseBtn();
 }
 
+// The class override, on the page rather than behind a right-click in the Class
+// Editor. Same decision as the format override beside it — "stop guessing and
+// use THIS" — so it is the same kind of control, in the same bar, amber when
+// armed. Arming it from the Class Editor still works and both stay in step.
+// Requested 2026-08-25.
+function _syncSpecForceSelect() {
+  const sel = document.getElementById('specForceSelect');
+  if (!sel || typeof _fmtGetData !== 'function') return;
+  const armed = (S.specOverride && S.specOverride.label) || '';
+  // Only MESSAGE entities: a file entity is chosen by filename, and "parse every
+  // message as this file spec" is not a thing anyone can mean.
+  const specs = (_fmtGetData().specs || []).filter(x => x.kind !== 'file');
+  const labels = specs.map(x => x.label || x.name);
+  // An armed label that no longer exists still lists itself, or the select would
+  // silently read AUTO while _fmtDetect is still forcing it.
+  if (armed && !labels.includes(armed)) labels.push(armed + '  (missing)');
+  const want = ['', ...labels].map(l => `${l}\u0000`).join('|');
+  if (sel.dataset.built !== want) {
+    sel.innerHTML = '<option value="">CLASS: AUTO</option>'
+      + labels.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+    sel.dataset.built = want;
+  }
+  sel.value = armed;
+  sel.classList.toggle('fmt-forced', !!armed);
+  // A DDL override parses straight off the DDL — detection does not run at all,
+  // so a class picked here could not be acted on. Read from S.parseOverride
+  // rather than parseOverrideScope(), which CLEARS a stale one as a side effect;
+  // a redraw is no place to change state. Requested 2026-08-25.
+  const ddlArmed = !!S.parseOverride;
+  sel.disabled = ddlArmed;
+  sel.classList.toggle('is-inert', ddlArmed);
+  // Nothing to classify until there is a message AND a format to read it as —
+  // the class list is meaningless before then, and offering it invites a choice
+  // that cannot be acted on. An ARMED override keeps it visible whatever the
+  // input says: it is the control that clears it. Requested 2026-08-25.
+  const hasMsg = !!document.getElementById('msgInput')?.value.trim();
+  const ready  = (hasMsg || S.isParsed) && !!S.inputFormat;
+  sel.style.display = (ready || armed) ? '' : 'none';
+
+  // The armed class's TYPE CODE, beside the format badge. Both are then the same
+  // kind of statement — "this is what it will be read as" — and the one the user
+  // just forced does not have to wait for a parse to show itself.
+  // The armed class's TYPE CODE goes to PARSE RESULTS, not here. A type code is
+  // that panel's vocabulary — it is the badge that panel shows for a parsed
+  // message — so putting a second one beside the format badge said the same kind
+  // of thing in two places and made the Data Input header answer a question it
+  // does not own. With detection skipped the answer is already known, so it is
+  // pre-placed there before any parse rather than made to wait for one.
+  //
+  // Only while nothing is parsed: once there are results the badge belongs to
+  // the message on screen, and overwriting it would be a forecast sitting on top
+  // of a fact. Requested 2026-08-25.
+  if (typeof _setResTypeBadge === 'function' && !S.isParsed) {
+    const hit = armed ? specs.find(x => (x.label || x.name) === armed) : null;
+    _setResTypeBadge(hit ? _btypeHtml(hit.name || hit.type || armed, hit.color) : '');
+  }
+  sel.title = ddlArmed
+    ? `A DDL override is armed (${[S.parseOverride.vol, S.parseOverride.sv, S.parseOverride.name, S.parseOverride.defName].filter(Boolean).join('/')}) — every Parse reads that DDL directly, so no class is consulted. Clear it in the DDL tree to choose a class.`
+    : armed
+    ? `Every message parses as "${armed}" — recognizers are not evaluated. Pick AUTO to go back to detection.`
+    : 'Parse every message as one class, skipping detection';
+}
+
+// Redraw the Class Editor's sidebar ONLY if it has state to draw. The element
+// #me-msg-list is in the markup whether or not the editor was ever opened, so
+// testing for it passed with _meState still null and _meRenderSpecList threw on
+// `_meState.specs`. Nothing hit it before because arming a class override meant
+// opening the editor first; the picker in the message bar removed that.
+// Found 2026-08-25 while wiring the DDL-override interlock.
+function _meSidebarRefreshIfOpen() {
+  if (typeof _meRenderSidebar !== 'function') return;
+  if (!_meState || !Array.isArray(_meState.specs)) return;
+  _meRenderSidebar();
+}
+
+function onSpecForceChange() {
+  const sel = document.getElementById('specForceSelect');
+  const label = sel.value || null;
+  S.specOverride = label ? { label } : null;
+  // Arming this and a DDL override at once would be two answers to one question.
+  // The entity is the more specific of the two, so it wins and the other is
+  // cleared — out loud, the same way toggleSpecOverride says it.
+  const alsoCleared = !!(label && S.parseOverride);
+  if (alsoCleared) {
+    S.parseOverride = null;
+    if (typeof renderDDLTree === 'function') renderDDLTree();
+  }
+  _syncSpecForceSelect();
+  if (typeof syncParseBtn === 'function') syncParseBtn();
+  // The Class Editor marks the armed entity in its sidebar; if it is open it has
+  // to agree with the bar rather than show yesterday's answer.
+  _meSidebarRefreshIfOpen();
+  flash(label
+    ? `Every message will parse as "${label}" until you pick AUTO`
+      + (alsoCleared ? ' — the DDL override was cleared' : '')
+    : 'Class override cleared — detection is back to normal',
+    label ? 'warn' : undefined);
+}
+
 function onFmtForceChange() {
   const sel = document.getElementById('fmtForceSelect');
   S.forcedFormat = sel.value || null;
@@ -15047,6 +15199,8 @@ function onFmtForceChange() {
   S.inputFormat = S.forcedFormat || detectFormat(text);
   S._badgeFmt   = S.inputFormat;   // frozen for badge — never overwritten by parser
   updateBadges();
+  _syncSpecForceSelect();
+  _syncMsgWrapWidget();
 }
 
 // Format → [badge class, label]. Module-level because the Class Editor's Test
@@ -15096,6 +15250,9 @@ function updateBadges() {
   const isAsciiFmt  = S.inputFormat === 'ascii' || S.forcedFormat === 'ascii';
   const isDumpFmt   = S.inputFormat === 'tandem-dump' || S.forcedFormat === 'tandem-dump';
   _lwSetVisible(isNetardFmt || isAsciiFmt || isDumpFmt);
+  // The wrap offer follows the format too: it exists for a formatless paste and
+  // must vanish the moment the format becomes one with columns.
+  _syncMsgWrapWidget();
   // Auto-detect ruler column from content as soon as text is present
   if (P.lineWidth === 0) {
     const ta = document.getElementById('msgInput');
@@ -16184,8 +16341,7 @@ function toggleParseOverride(type, vol, sv, name, defName) {
   if (!on && S.specOverride) {
     S.specOverride = null;
     _also = ' — the class override was cleared';
-    if (typeof _meRenderSidebar === 'function' && document.getElementById('me-msg-list'))
-      _meRenderSidebar();
+    _meSidebarRefreshIfOpen();
   }
   flash(on ? `Override off — parsing follows the parse spec again`
            : `Override on — every Parse uses ${path}${_also}`, on ? 'ok' : 'warn');
@@ -17779,7 +17935,13 @@ function initTreePaneResizer() {
       // pane collapses, exactly as the − button does. Squeezing it into a
       // narrower-than-usable state and leaving it there is the alternative,
       // and it leaves controls stacked or clipped. Requested 2026-08-25.
-      if (minW && want < minW) {
+      // `want < startW` matters as much as the floor. A pane already narrower
+      // than its header needs — dragged there before this rule existed, or left
+      // there when the header grew — would otherwise collapse the instant the
+      // divider moved AT ALL, including a drag trying to widen it back out. The
+      // floor is for shrinking past it, not for being below it.
+      // Reported 2026-08-25.
+      if (minW && want < minW && want < startW) {
         onUp();                 // ends the drag — and saves the width, not the state
         toggleTreePane(true);   // forced, so it deliberately does not save
         saveLayout();           // …which is why the state is written here
@@ -17798,7 +17960,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.60.0';
+const APP_VERSION  = '1.46.61.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18193,7 +18355,7 @@ function _lwUpdateDisplay() {
   const el = document.getElementById('lwDisplay');
   if (el) el.textContent = P.lineWidth > 0 ? String(P.lineWidth) : 'Auto';
   // The Test bar shows the same number; it repaints its own ruler from its own
-  // text, which is a different message from the one in the Message Input panel.
+  // text, which is a different message from the one in the Data Input panel.
   const meEl = document.getElementById('me-lw-display');
   if (meEl) meEl.textContent = P.lineWidth > 0 ? String(P.lineWidth) : 'Auto';
   if (typeof _meTestUpdateFmtState === 'function' && document.getElementById('me-test-fmt'))
@@ -18276,7 +18438,7 @@ function _lwSetVisible(show) {
   _lwUpdateRuler();
 }
 
-// The Message Input's read-only state and the lock icon are one fact, so one
+// The Data Input's read-only state and the lock icon are one fact, so one
 // function owns both. Parsing freezes the text on a dozen different paths and
 // clearing or aborting frees it again; if any of them set .readOnly directly
 // the icon would sit there claiming the opposite.
@@ -18299,7 +18461,69 @@ function _lwSetParsed(on) {
   if (w) w.classList.toggle('parsed', on);
 }
 
-// Two widgets, one preference. The Message Input panel's ids are the default;
+// WORD WRAP, for a paste that has no columns to protect.
+//
+// ASCII / HEX / EBCDIC / OCT are just bytes rendered as text: a line break is
+// wherever the capture happened to put one, so a long line running off the panel
+// is hiding content for no reason. HEXASCII, NETARD and FUPCOPY are the
+// opposite — the columns ARE the format, and wrapping one destroys what you
+// opened it to read. So the toggle exists only for the first group, and is not
+// shown at all for the second rather than shown and refused.
+//
+// It is also only offered when it would DO something: no overflow, no control.
+// Requested 2026-08-25.
+const _FREEFORM_FMTS = new Set(['ascii', 'hex', 'ebcdic', 'oct']);
+let _msgWrapOn = false;
+
+function _msgFmtIsFreeform(fmt) {
+  return _FREEFORM_FMTS.has(fmt || (S ? (S.forcedFormat || S.inputFormat) : '') || '');
+}
+
+function _msgOverflows() {
+  const v = window._msgInputCM;
+  if (!v) return false;
+  // With wrapping ON nothing overflows by definition, so the control has to stay
+  // offered on the strength of it being on — otherwise turning it on removes the
+  // only way to turn it off.
+  if (_msgWrapOn) return true;
+  const sd = v.scrollDOM;
+  return sd.scrollWidth > sd.clientWidth + 1;
+}
+
+function _msgWrapApply() {
+  const v = window._msgInputCM;
+  if (!v || !window._msgWrapComp || !window.CM) return;
+  v.dispatch({ effects: window._msgWrapComp.reconfigure(
+    _msgWrapOn ? window.CM.EditorView.lineWrapping : []) });
+}
+
+function toggleMsgWrap() {
+  _msgWrapOn = !_msgWrapOn;
+  _msgWrapApply();
+  _syncMsgWrapWidget();
+  // The ruler measures columns. Wrapped, a column position means nothing, so the
+  // marker is taken down rather than left pointing at a place that moved.
+  if (typeof updateMsgGutter === 'function') updateMsgGutter();
+  // The ruler marker is an absolute pixel column; wrapped, the column it points
+  // at is not where that byte is any more.
+  if (_msgWrapOn) document.getElementById('lwColMarker')?.classList.add('hidden');
+}
+
+function _syncMsgWrapWidget() {
+  const el = document.getElementById('wrapWidget');
+  if (!el) return;
+  const offer = _msgFmtIsFreeform() && _msgOverflows();
+  el.classList.toggle('hidden', !offer);
+  el.classList.toggle('is-on', _msgWrapOn);
+  el.title = _msgWrapOn
+    ? 'Wrapping on — long lines fold to fit. Click to let them run off again.'
+    : 'Wrap long lines so nothing runs off the panel';
+  // A format that CANNOT wrap must not keep a wrap that was armed under one that
+  // could: switching from ASCII to NETARD would otherwise fold the dump.
+  if (_msgWrapOn && !_msgFmtIsFreeform()) { _msgWrapOn = false; _msgWrapApply(); el.classList.remove('is-on'); }
+}
+
+// Two widgets, one preference. The Data Input panel's ids are the default;
 // the Class Editor's Test bar passes 'me-lw-'. P.lineWidth is a saved pref and
 // belongs to the app, not to a panel, so both edit the same number and
 // _lwUpdateDisplay repaints whichever of them exists.
@@ -18900,7 +19124,7 @@ const _TUT_STEPS = [
   },
   {
     target: '#msgPanel', prefer: 'left',
-    title: 'Message Input \u2014 top-right',
+    title: 'Data Input \u2014 top-right',
     body: 'Paste or drop a raw message here to parse it.\n\nThe format is auto-detected (ASCII, HEX, HEXASCII, EBCDIC, NETARD). Use the format selector to override, and press \u25b6 Parse or Ctrl+Enter to run.',
   },
   {
@@ -18951,7 +19175,7 @@ const _TUT_STEPS = [
   {
     target: '#auditOpenBtn', prefer: 'bottom',
     title: 'Binary Audit File Reader',
-    body: 'Click 📂 Audit to open a BIT PACKET binary audit file directly — no copy-pasting required.\n\nThe app indexes all records instantly. Click any row to open the record popup showing the raw NETARD dump. Press ▶ Parse to load that record\'s payload into Message Input and parse it against your DDL definitions.\n\nUse the HEX/ASCII toggle to switch between the text dump and a side-by-side hex view. Double-click the popup header bar to copy the full dump to the clipboard.',
+    body: 'Click 📂 Audit to open a BIT PACKET binary audit file directly — no copy-pasting required.\n\nThe app indexes all records instantly. Click any row to open the record popup showing the raw NETARD dump. Press ▶ Parse to load that record\'s payload into Data Input and parse it against your DDL definitions.\n\nUse the HEX/ASCII toggle to switch between the text dump and a side-by-side hex view. Double-click the popup header bar to copy the full dump to the clipboard.',
   },
   {
     target: '#trkBtn', prefer: 'left',
@@ -19142,6 +19366,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const msgEditableComp = new Compartment();
+    const msgWrapComp     = new Compartment();
+    window._msgWrapComp   = msgWrapComp;
     window._msgInputCM = new EditorView({
       state: EditorState.create({
         doc: '',
@@ -19149,6 +19375,9 @@ document.addEventListener('DOMContentLoaded', () => {
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           msgEditableComp.of(EditorView.editable.of(true)),
+          // Off by default: a columnar dump must never wrap, and the toggle that
+          // turns this on is only offered where wrapping cannot destroy a layout.
+          msgWrapComp.of([]),
           // Same list, same reason — see the Test input's placeholder below.
           placeholder('Paste one or more messages here, or drop a file.\n\nAccepted:\n  NETARD audit log\n  Pure hex\n  Hex with spaces\n  Tandem hex dump\n  ASCII raw bytes\n\nThis field locks after Parse is clicked.'),
           _msgHLField,
@@ -19241,7 +19470,7 @@ document.addEventListener('DOMContentLoaded', () => {
       view.dispatch({ effects: _auditDumpHLEffect.of(Decoration.set(marks)) });
     };
 
-    // Class Editor Test input — the same editor the Message Input panel uses,
+    // Class Editor Test input — the same editor the Data Input panel uses,
     // so a message can be worked on there without walking back to the main
     // panel. Its own highlight field: the two inputs hold different text and
     // the Test one has its own byte map.
@@ -19449,6 +19678,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _compiledCacheReady = _openCacheDB().then(() => _restoreCompiledCache()).then(() => { _compiledCacheReady = null; });
     initTreePaneResizer();
     _initTreeRail();
+    _syncSpecForceSelect();   // build the class list once the specs are loaded
     initAuditDetailResizer();
     initDropZones();
     _syncOverlayScroll();
@@ -20162,7 +20392,7 @@ function _meRenderRight() {
   const secs   = _meState.sections;
   const stages = [];   // open sections, filled one per frame in order
   // `actions` are the section's own controls, shown in its header the way
-  // Message Input shows Audit / Parse / Clear rather than loose in the body.
+  // Data Input shows Audit / Parse / Clear rather than loose in the body.
   // They stop the click that would collapse the section.
   const sect   = (key, title, fill, actions, badge) => {
     const open = secs[key];
@@ -27566,7 +27796,7 @@ function _meHtmlRecs(item) {
   // space the row already reserves, so the section's height does not depend on
   // whether a warning is showing.
   // The buttons moved to the section header — a section's actions belong where
-  // Message Input keeps Audit / Parse / Clear, not at the foot of its content.
+  // Data Input keeps Audit / Parse / Clear, not at the foot of its content.
   // The warnings stay here, beside the list they describe.
   h += `<div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:8px">
     <div id="me-file-warns" class="me-warn-inline">${_meRecWarnsHtml(item)}</div>
@@ -29305,6 +29535,10 @@ function toggleSpecOverride(idx) {
                 : `Every message will parse as "${label}" until you clear it`, on ? undefined : 'warn');
   }
   _meRenderSidebar();
+  // Two ways in, one state: the bar on the page has to say what this just did,
+  // and has to be VISIBLE to say it.
+  if (typeof _syncSpecForceSelect === 'function') _syncSpecForceSelect();
+  if (typeof syncParseBtn === 'function') syncParseBtn();
 }
 const isSpecOverride = label => !!(S.specOverride && S.specOverride.label === label);
 
@@ -33493,7 +33727,7 @@ function _meTestSyncSegMap() {
   if (blk) el.placeholder = blk.value ? `SEG-MAP (spec: ${blk.value})` : 'SEG-MAP (hex or binary)';
 }
 
-// Test format control — the Message Input panel's select, same six values, so
+// Test format control — the Data Input panel's select, same six values, so
 // a format that only that panel could force no longer sends the user back to
 // it. A full NETARD record (a SOURCE/DEST wrapper or a formatted H-/hexascii
 // block) is stripped + auto-detected by the run, so the select is locked to
@@ -33599,7 +33833,7 @@ function _meRunTest(opts) {
   const text = inp.value.trim();
   if (!text) { out.innerHTML = ''; if (summ) summ.textContent = ''; return; }
 
-  // — decode input bytes — mirror the Message Input pipeline. On "auto", run the
+  // — decode input bytes — mirror the Data Input pipeline. On "auto", run the
   //   full NETARD audit parser (SOURCE/DEST/H-/hexascii, autodetected) so users
   //   can paste real formatted data unstripped; otherwise honor the manual
   //   format. Character encoding (ASCII/EBCDIC) is resolved from THIS entity's
@@ -33621,7 +33855,7 @@ function _meRunTest(opts) {
   let testCtx = null;
   // S.netardRulerCol is the MAIN panel's ruler column, and the block below has
   // to set it because parseNetardLog reads it from there. Left set, a Test run
-  // in this editor silently moved the Message Input panel's ruler to whatever
+  // in this editor silently moved the Data Input panel's ruler to whatever
   // width the test snippet happened to have. Snapshot it and put it back.
   const _rulerColBefore = S.netardRulerCol;
   try {
@@ -33798,7 +34032,7 @@ function _meRunTest(opts) {
 
   out.innerHTML = parts.join('');
   // Hover or click a field row and its bytes light up in the input above —
-  // the same gesture the Message Input panel answers, so a parse can be read
+  // the same gesture the Data Input panel answers, so a parse can be read
   // against the actual bytes without leaving this panel.
   _meTestFields = ctx.fields;
   _meTestByteMap = netardBcm || _meTestBuildByteMap(text, inputFmt);
@@ -33818,7 +34052,7 @@ function _meRunTest(opts) {
 
 // ── Test input highlighting ────────────────────────────────────────────────
 // Byte → character span for the text currently in the Test input, plus the
-// fields the last run produced. Same model as the Message Input panel's
+// fields the last run produced. Same model as the Data Input panel's
 // byteCharMap; kept separate because the two inputs hold different text.
 let _meTestFields  = null;
 let _meTestByteMap = null;
@@ -34159,7 +34393,7 @@ function _meSave() {
         </div>
 
         <div class="settings-row">
-          <span class="settings-lbl">Message Input</span>
+          <span class="settings-lbl">Data Input</span>
           <button class="panel-toggle" id="ps_tog_msgPanel" onclick="setPanelDefaultToggle('msgPanel')" title="Expanded — click to collapse">−</button>
         </div>
 
@@ -34226,7 +34460,7 @@ function _meSave() {
             <ol style="padding-left:18px;margin:0">
               <li>Write or load a <strong>DDL definition</strong> in the top-left panel</li>
               <li>Select a <strong>Volume / Subvolume / DDL</strong> in the tree to set the parse scope</li>
-              <li>Paste or drop a <strong>message or file capture</strong> (NETARD / FUP COPY) in the Message Input panel</li>
+              <li>Paste or drop a <strong>message or file capture</strong> (NETARD / FUP COPY) in the Data Input panel</li>
               <li>Click <strong>▶ Parse</strong> — results appear in the bottom panels</li>
             </ol>
             <br>
@@ -34277,8 +34511,8 @@ function _meSave() {
             </ul>
           </div></div>
 
-          <!-- 4. Message Input -->
-          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Input <span class="h-sub-arrow">+</span></button>
+          <!-- 4. Data Input -->
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Data Input <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Paste one or more messages — separate them with a <strong>blank line</strong></li>
@@ -34638,7 +34872,7 @@ function _meSave() {
             <button class="btn" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
             <button class="panel-toggle" id="me-test-toggle" onclick="_meToggleTestSub()" title="Hide panel">−</button>
           </div>
-          <!-- The Message Input panel's config bar, same controls in the same
+          <!-- The Data Input panel's config bar, same controls in the same
                order, under the header exactly as it sits there. The point of
                Test is to solve a parse without walking back to the main panel;
                a format only that panel could force sent the user straight back.
@@ -34646,7 +34880,7 @@ function _meSave() {
                equivalent on the main panel. -->
           <div class="panel-bar me-test-cfg" id="me-test-cfg">
             <select id="me-test-fmt" onchange="_meTestFmtChange()" title="Force input format (overrides auto-detect)">
-              <option value="">AUTO</option>
+              <option value="">INPUT: AUTO</option>
               <option value="ascii">ASCII</option>
               <option value="tandem-dump">HEXASCII</option>
               <option value="hex">HEX</option>

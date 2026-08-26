@@ -6792,7 +6792,7 @@ END REC.
 
 // ── The byte map points at the characters the bytes came from ──────────────
 // The Raw panel renders the bytes itself and labels each one, so its highlight
-// cannot be off. Message Input shows the user's own capture and has to say
+// cannot be off. Data Input shows the user's own capture and has to say
 // where in THAT text each byte came from — which used to be a second algorithm
 // per format, re-deriving what the conversion already knew. Now it is one pass,
 // and that makes this property checkable: slice the recorded span back out of
@@ -6865,7 +6865,7 @@ test('a dump byte also points at its own character in the echo column', () => {
 test('buildByteCharMap is the same pass, not a second one', () => {
   // The whole point: one algorithm per format. If this ever grows its own
   // implementation again, the two can disagree — which is the bug class that
-  // gave Message Input dozens of highlight faults and Raw none.
+  // gave Data Input dozens of highlight faults and Raw none.
   const src = psFnSource('buildByteCharMap');
   assert.ok(/extractBytesMapped\(text, format, textOffset\)\.map/.test(src),
     'buildByteCharMap has stopped delegating and is parsing the text itself');
@@ -8857,7 +8857,7 @@ test('the DDL Doc reads like the Parse Results table', () => {
     'the buttons sit on a different ground to the ones they now match');
 });
 
-test('the Message Input lock is the only writer of its read-only state', () => {
+test('the Data Input lock is the only writer of its read-only state', () => {
   // The lock icon reports msgInput.readOnly. Parsing freezes the input on a
   // dozen paths and clearing or aborting frees it again — if any of them assign
   // .readOnly directly the icon sits there claiming the opposite.
@@ -8890,7 +8890,7 @@ test('the lock reads dim-and-open, accent-and-shut', () => {
   // Only the shut one invites a click.
   assert.ok(/\.msg-lock \{[^}]*cursor: default/.test(css),   'the open lock looks clickable');
   assert.ok(/\.msg-lock\.locked \{[^}]*cursor: pointer/.test(css), 'the shut lock does not look clickable');
-  // It lives in the Message Input bar, beside the line-width widget.
+  // It lives in the Data Input bar, beside the line-width widget.
   const barAt = html.indexOf('<div id="msgCfgBar"');
   const bar = html.slice(barAt, html.indexOf('<div class="panel-body"', barAt));
   assert.ok(bar.indexOf('id="msgLock"') > bar.indexOf('id="lwWidget"'), 'the lock is not next to the line-width widget');
@@ -9103,7 +9103,7 @@ test('hovering a group row highlights the whole group in both panels', () => {
     'the group row offers no hover gesture');
 
   // Resolved in findField, NOT in the hover handler: hovering, selecting and the
-  // Message Input overlay each look a field up through it, so putting the group
+  // Data Input overlay each look a field up through it, so putting the group
   // case anywhere else would have fixed one of the three.
   const ff = psFnSource('findField');
   assert.ok(/fid\.startsWith\('grp::'\)/.test(ff), 'findField cannot resolve a group id');
@@ -9125,7 +9125,7 @@ test('hovering a group row highlights the whole group in both panels', () => {
   // Both the hover path and the input-overlay path go through it.
   assert.ok(/findField\(msg, fid\)/.test(psFnSource('hoverField')), 'hover stopped using findField');
   assert.ok(/findField\(msg, fid\)/.test(psFnSource('_buildInputHLRanges')),
-    'the Message Input overlay stopped using findField');
+    'the Data Input overlay stopped using findField');
 });
 
 test('[REGRESSION] the byte count includes the token area', () => {
@@ -9304,7 +9304,7 @@ test('the Test panel and Parse Results report the same problems', () => {
 // that the walk cannot match.
 
 // ── NETARD formats: every byte knows which characters produced it ───────────
-// Reported: highlighting a field in the Message Input pane was wrong for
+// Reported: highlighting a field in the Data Input pane was wrong for
 // NETARD-HEX / -ASCII / -EBCDIC / -OCTAL, and right for plain NETARD and
 // -HEXASCII. Only the hexascii branch tracked columns; every other branch pushed
 // bytes with no position, so the map fell back to "highlight the whole line".
@@ -12976,7 +12976,47 @@ test('the two overrides clear each other, in BOTH directions', () => {
   // And each has to repaint the surface the other one owns, or the stale
   // marker sits there claiming an override that is gone.
   assert.ok(/renderDDLTree/.test(ent), 'the entity toggle repaints the tree');
-  assert.ok(/_meRenderSidebar/.test(ddl), 'the DDL toggle repaints the sidebar');
+  assert.ok(/_meSidebarRefreshIfOpen|_meRenderSidebar/.test(ddl), 'the DDL toggle repaints the sidebar');
+  // …and whatever it calls has to actually get there.
+  assert.ok(/_meRenderSidebar\(\)/.test(psFnSource('_meSidebarRefreshIfOpen')),
+    'the refresh helper never reaches the sidebar');
+});
+
+test('[REGRESSION] the sidebar refresh guards on STATE, not on a DOM node that is always there', () => {
+  // #me-msg-list is in the markup whether or not the Class Editor was ever
+  // opened, so testing for it passed with _meState still null and
+  // _meRenderSpecList threw on `_meState.specs`. Nothing hit it while arming a
+  // class override meant opening the editor first — the picker in the message
+  // bar removed that precondition. Found 2026-08-25.
+  const fn = psFnSource('_meSidebarRefreshIfOpen');
+  assert.ok(/_meState/.test(fn), 'the guard must look at the editor STATE');
+  assert.ok(!/getElementById\('me-msg-list'\)/.test(fn),
+    'the DOM node is present when closed — it never was the right thing to test');
+  assert.ok(/Array\.isArray\(_meState\.specs\)/.test(fn),
+    'a _meState without specs throws just the same');
+  // And nowhere else may go back to the old guard.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  eq((src.match(/getElementById\('me-msg-list'\)\)?\s*\n?\s*(try \{ )?_meRenderSidebar/g) || []).length, 0,
+     'a caller still guards the sidebar repaint on the DOM node');
+});
+
+test('a DDL override disables the class picker — nothing there could be acted on', () => {
+  // A DDL override parses straight off the DDL: detection does not run, so a
+  // class chosen in the bar would be inert. Requested 2026-08-25.
+  const fn = psFnSource('_syncSpecForceSelect');
+  assert.ok(/sel\.disabled = ddlArmed/.test(fn), 'the picker stays live while a DDL override answers the same question');
+  assert.ok(/const ddlArmed = !!S\.parseOverride/.test(fn),
+    'read the state directly — parseOverrideScope() CLEARS a stale override, and a redraw must not change state');
+  assert.ok(/is-inert/.test(fn), 'a disabled control that looks enabled is worse than no control');
+  // Clearing the DDL override has to re-enable it, which means the toggle must
+  // re-run the sync.
+  assert.ok(/syncParseBtn/.test(psFnSource('toggleParseOverride')),
+    'clearing the DDL override never re-enables the picker');
+  assert.ok(/_syncSpecForceSelect/.test(psFnSource('syncParseBtn')),
+    'syncParseBtn is the path that re-runs the picker sync');
+  const css = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/#specForceSelect\.is-inert\s*\{[^}]*cursor:\s*not-allowed/.test(css),
+    'the disabled state must say so on hover, not just look dim');
 });
 
 test('every destructive action asks the same way', () => {
@@ -13151,7 +13191,7 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
   // would silently win — hence the no-own-ground check above covers it too.
   assert.ok(/<div class="ddl-tree-pane pb-read" id="ddlTreePane">/.test(html),
     'the DDL tree is not marked read-only');
-  assert.ok(/<div class="panel-body pb-edit"/.test(html),      'Message Input is not marked editable');
+  assert.ok(/<div class="panel-body pb-edit"/.test(html),      'Data Input is not marked editable');
   assert.ok(/<div class="panel-body pb-read" id="resContainer">/.test(html), 'Parse Results is not marked read-only');
   assert.ok(/<div class="panel-body pb-read">\s*<div id="rawDisplay"/.test(html), 'Raw Message is not marked read-only');
   // A surface that paints its own ground WINS over the class and the marking is
@@ -15531,7 +15571,7 @@ test('an empty message editor does not open with a horizontal scrollbar', () => 
   // than the panel, so an EMPTY editor opened already scrolled sideways — and
   // that list is the first thing anyone reads there.
   const holders = [...APP_SRC.matchAll(/placeholder\('([^']*Accepted:[^']*)'\)/g)].map(m => m[1]);
-  eq(holders.length, 2, 'expected the Message Input and Test placeholders');
+  eq(holders.length, 2, 'expected the Data Input and Test placeholders');
   for (const text of holders) {
     assert.ok(/Accepted:\\n/.test(text),
       'the format list is still inline with its heading, so it runs long');
@@ -15699,7 +15739,7 @@ test('the DDL search opens on a row of its own, not inside the toolbar', () => {
   assert.ok(/id="ddlSearchBtn"[\s\S]{0,160}ddlSearchToggle\(\)/.test(bar),
     'the toolbar has no button to open the search');
   assert.ok(!/id="ddlSearchInput"/.test(bar), 'the field is still competing for the toolbar\'s width');
-  // The row is a second bar under the first, the way Message Input carries its
+  // The row is a second bar under the first, the way Data Input carries its
   // format row, and it costs nothing while closed.
   const row = html.slice(html.indexOf('<div id="ddlSearchRow"'), html.indexOf('<div id="ddlValidationBar"'));
   assert.ok(/class="panel-bar ddl-search-row hidden"/.test(html), 'the row is not a bar, or does not start closed');
@@ -18396,12 +18436,19 @@ test('dragging the pane below the width its header needs collapses it', () => {
   // stacks or clips the header controls. Requested 2026-08-25.
   const rez = psFnSource('initTreePaneResizer');
   assert.ok(/const minW = _treeHdrMinW\(\)/.test(rez), 'the drag never measures a floor');
-  assert.ok(/if \(minW && want < minW\)/.test(rez), 'nothing collapses when the drag goes past it');
+  assert.ok(/if \(minW && want < minW && want < startW\)/.test(rez),
+    'nothing collapses when the drag goes past it');
+  // …and it must be SHRINKING. A pane already below the floor — dragged there
+  // before this rule existed, or left there when the header grew — otherwise
+  // collapsed the instant the divider moved at all, including a drag trying to
+  // widen it back out, so it could never be recovered. Reported 2026-08-25.
+  assert.ok(/want < startW/.test(rez),
+    'a pane already below the floor can never be widened again — every drag collapses it');
   assert.ok(/toggleTreePane\(true\)/.test(rez), 'it must collapse, not just clamp');
   // onUp() saves the WIDTH before the collapse, and a forced toggle
   // deliberately does not save — so the state needs writing explicitly or the
   // auto-collapse is forgotten on reload.
-  const from = rez.indexOf('if (minW && want < minW)');
+  const from = rez.indexOf('if (minW && want < minW');
   const seg  = rez.slice(from, rez.indexOf('return;', from));   // the if-block ONLY —
   // onUp()'s own saveLayout() sits further down the function and would satisfy
   // this check whatever the block does.
@@ -18802,7 +18849,7 @@ test('every pane resizes the way its gutter implies, and all of them persist', (
     'restore clamps against a ceiling it cannot measure yet');
 });
 
-test('the Test input is the Message Input panel, not a lesser copy of it', () => {
+test('the Test input is the Data Input panel, not a lesser copy of it', () => {
   // The point of Test is solving a parse without walking back to the main
   // panel. A three-button AUTO/HEX/ASCII toggle sent the user straight back the
   // moment the bytes were EBCDIC, octal or a hexascii dump.
@@ -18862,7 +18909,7 @@ test('one Line Width preference, two widgets, no loop between them', () => {
 });
 
 test('a field row lights its own bytes in the Test input', () => {
-  // The gesture the Message Input panel answers, answered here — otherwise
+  // The gesture the Data Input panel answers, answered here — otherwise
   // reading a parse against the actual bytes still means leaving the panel.
   const tbl = psFnSource('_meTestFieldTable');
   assert.ok(/data-fid="/.test(tbl), 'field rows carry no id for the highlight to key on');

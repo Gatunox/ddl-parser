@@ -2077,7 +2077,8 @@ td.c-err  { color: var(--accent2); }
 .pick-ddl  { padding-left: 36px; }
 .pick-new  { color: var(--success); }
 .pick-over { color: var(--accent2); }
-.pick-over label::after { content: ' ⚠ overwrite'; font-size: 10px; opacity: 0.75; }
+/* The row's own markup carries the overwrite / new tag. A ::after repeating it
+   gave every conflicting row "overwrite ⚠ overwrite". */
 
 /* ===== UTILITY ===== */
 .hidden { display: none !important; }
@@ -2526,6 +2527,12 @@ td.c-err  { color: var(--accent2); }
    size — a mix of one-line and two-line rows reads as ragged, and the eye spends
    longer on the raggedness than on the warnings. */
 .me-item-gaps{display:flex;flex-wrap:wrap;gap:3px;padding:0 0 2px 15px;}
+/* Imported-in-this-session marker. Louder than a gap chip on purpose: it is the
+   one thing on the row that expires, and it expires when the list is saved. */
+.me-imp-chip{font-size:calc(var(--sz-badge) - 1px);line-height:1.4;padding:0 4px;border-radius:var(--r-sm);
+  font-weight:700;letter-spacing:.04em;border:var(--bw-ctl) solid transparent;cursor:default;}
+.me-imp-new{background:rgba(63,185,80,0.16);color:var(--success);border-color:var(--success);}
+.me-imp-over{background:rgba(230,168,23,0.16);color:var(--warning);border-color:var(--warning);}
 /* Holds the line open when there is nothing to say. Hidden, not absent, so it
    still occupies exactly one chip's height — see the comment where it is made. */
 .me-gap-spacer{visibility:hidden;}
@@ -17679,7 +17686,9 @@ function _showImportPreview(data) {
     }).filter(Boolean);
     if (missing.length) missingRefs++;
     const cls = isOver ? ' pick-over' : ' pick-new';
-    const overTag = isOver ? ' <span style="color:var(--accent2);font-size:0.85em">overwrite</span>' : ' <span style="color:var(--success);font-size:0.85em">new</span>';
+    const overTag = isOver
+      ? ' <span style="color:var(--accent2);font-size:0.85em">\u26a0 overwrite</span>'
+      : ' <span style="color:var(--success);font-size:0.85em">new</span>';
     const missTag = missing.length
       ? ` <span title="${esc(missing.join(', '))}" style="color:#f85149;font-size:0.85em">⚠ ${missing.length} missing DDL ref${missing.length !== 1 ? 's' : ''}</span>`
       : '';
@@ -17708,13 +17717,13 @@ function _showImportPreview(data) {
 
   // ── Summary ──
   const sParts = [];
-  if (incomingSpecs.length) sParts.push(`${incomingSpecs.length} message${incomingSpecs.length !== 1 ? 's' : ''}`);
+  if (incomingSpecs.length) sParts.push(`${incomingSpecs.length} class${incomingSpecs.length !== 1 ? 'es' : ''}`);
   if (totalDdl)             sParts.push(`${totalDdl} DDL${totalDdl !== 1 ? 's' : ''} across ${vols.length} volume${vols.length !== 1 ? 's' : ''}`);
   let summary = sParts.length ? sParts.join(' + ') : 'empty bundle';
   if (data.exported) summary += ` · saved ${data.exported.slice(0,10)}`;
   const conflicts = conflictsDdl + conflictsMsg;
   if (conflicts)   summary += ` · <span style="color:var(--accent2)">${conflicts} conflict(s) will be overwritten</span>`;
-  if (missingRefs) summary += ` · <span style="color:#f85149">${missingRefs} message${missingRefs !== 1 ? 's' : ''} with missing DDL refs</span>`;
+  if (missingRefs) summary += ` · <span style="color:#f85149">${missingRefs} class${missingRefs !== 1 ? 'es' : ''} with missing DDL refs</span>`;
   document.getElementById('importSummary').innerHTML = summary;
   document.getElementById('importOverlay').classList.remove('hidden');
 }
@@ -17806,8 +17815,8 @@ function confirmImport() {
     const byKey = new Map(currentSpecs.map((s, i) => [_specKey(s), i]));
     for (const s of pickedSpecs) {
       const k = _specKey(s);
-      if (byKey.has(k)) { currentSpecs[byKey.get(k)] = s; specOverwritten++; }
-      else              { currentSpecs.push(s); byKey.set(k, currentSpecs.length - 1); specAdded++; }
+      if (byKey.has(k)) { currentSpecs[byKey.get(k)] = s; specOverwritten++; _meMarkImported(s, 'over'); }
+      else              { currentSpecs.push(s); byKey.set(k, currentSpecs.length - 1); specAdded++; _meMarkImported(s, 'new'); }
     }
     if (editorOpen) {
       _meState.specs = currentSpecs;
@@ -17816,6 +17825,9 @@ function confirmImport() {
       _meRenderRight();
     } else {
       _fmtSave(currentSpecs);
+      // The editor was closed, so the marks wait for it to be opened. Saving
+      // there clears them, the same as any other import.
+      _meSidebarRefreshIfOpen();
     }
   }
 
@@ -17823,7 +17835,7 @@ function confirmImport() {
   const parts = [];
   if (ddlCount)          parts.push(`${ddlCount} DDL${ddlCount !== 1 ? 's' : ''}`);
   if (specAdded || specOverwritten) {
-    parts.push(`${specAdded + specOverwritten} message${(specAdded+specOverwritten) !== 1 ? 's' : ''} (${specAdded} new, ${specOverwritten} overwritten)`);
+    parts.push(`${specAdded + specOverwritten} class${(specAdded+specOverwritten) !== 1 ? 'es' : ''} (${specAdded} new, ${specOverwritten} overwritten)`);
   }
   flash(parts.length ? `Imported ${parts.join(' + ')}` : 'Nothing imported');
 }
@@ -18276,7 +18288,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.74.0';
+const APP_VERSION  = '1.46.75.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20455,6 +20467,21 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     const _gaps = _meItemNotes(s);
     const gapLine = document.createElement('div');
     gapLine.className = 'me-item-gaps';
+    // What the last import brought in, first on the line: an import drops
+    // classes into a list you already know, and these are the ones you have not
+    // checked against the original yet. Cleared by saving the list.
+    const _imp = _meImportMark(s);
+    if (_imp) {
+      const b = document.createElement('span');
+      b.className = 'me-imp-chip me-imp-' + _imp;
+      b.textContent = _imp === 'new' ? 'NEW' : 'OVERWRITTEN';
+      const _t = _imp === 'new'
+        ? 'Imported \u2014 this class did not exist before. Save the list to clear this badge.'
+        : 'Imported \u2014 this class REPLACED one you already had. Check it against your original, then save the list to clear this badge.';
+      b.onmouseenter = () => _tipShow(b, _t);
+      b.onmouseleave = () => _tipHide();
+      gapLine.appendChild(b);
+    }
     for (const gap of _gaps) {
       const g = document.createElement('span');
       g.className = gap.warn ? 'me-gap-chip' : 'me-fact-chip';
@@ -20469,7 +20496,7 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     // from --sz-badge was 2px short in compact and 3px in comfortable, because a
     // chip is a line-height plus two borders plus whatever the density does to
     // them. A chip reserves a chip's height exactly, at any density, for free.
-    if (!_gaps.length) {
+    if (!_gaps.length && !_imp) {
       const spacer = document.createElement('span');
       spacer.className = 'me-gap-chip me-gap-spacer';
       spacer.textContent = '\u00a0';
@@ -34572,6 +34599,27 @@ function _meTestTokenTable(tokens) {
   return `<table class="me-test-ftbl"><tbody>${rows.join('')}</tbody></table>`;
 }
 
+// What the last import brought in, by _specKey: 'new' or 'over'. An import can
+// drop a dozen classes into a list of forty, and the ones that landed are
+// exactly the ones the user has to check against their original — so the rows
+// say which they are until the list is saved.
+//
+// Session-only and deliberately not persisted: the badge means "you have not
+// looked at this yet", which stops being true the moment the list is saved.
+let _meImportMarks = new Map();
+function _meMarkImported(spec, kind) {
+  try { _meImportMarks.set(_specKey(spec), kind); } catch (_) {}
+}
+function _meImportMark(spec) {
+  if (!_meImportMarks.size || !spec) return null;
+  try { return _meImportMarks.get(_specKey(spec)) || null; } catch (_) { return null; }
+}
+function _meClearImportMarks() {
+  if (!_meImportMarks.size) return;
+  _meImportMarks = new Map();
+  if (typeof _meSidebarRefreshIfOpen === 'function') _meSidebarRefreshIfOpen();
+}
+
 function _meSave() {
   // Ordered before it is written, so what lands in storage — and in every export
   // taken from it — reads in DDL order whatever sequence the overrides were
@@ -34579,6 +34627,8 @@ function _meSave() {
   for (const s of (_meState.specs || [])) if (s && s.overrides) _meOvOrder(s);
   _fmtSave(_meState.specs);
   _meState.dirty = false;
+  // Saving IS the user signing off on what the import brought in.
+  _meImportMarks = new Map();
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;
   const s = document.getElementById('me-status');
@@ -35093,20 +35143,20 @@ function _meSave() {
 <div class="pick-overlay hidden" id="exportOverlay">
   <div class="pick-box">
     <div class="pick-title">⇧ Export Bundle</div>
-    <div class="pick-sub">Select Data and / or DDLs to include. Auto-include keeps references intact.</div>
+    <div class="pick-sub">Select Classes and / or DDLs to include. Auto-include keeps references intact.</div>
     <div class="pick-toolbar" style="flex-wrap:wrap;gap:8px">
       <button class="btn" onclick="exportPickAll(true)"  style="font-size:11px;padding:2px 8px">All</button>
       <button class="btn" onclick="exportPickAll(false)" style="font-size:11px;padding:2px 8px">None</button>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer">
         <input type="checkbox" id="expAutoIncludeDDLs" checked onchange="_expSyncAutoIncludeFromMsgs()">
-        Auto-include DDLs referenced by selected Data
+        Auto-include DDLs referenced by selected Classes
       </label>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer">
         <input type="checkbox" id="expAutoIncludeMsgs" onchange="_expSyncAutoIncludeFromDDLs()">
-        Also include Data that reference selected DDLs
+        Also include Classes that reference selected DDLs
       </label>
     </div>
-    <div style="font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">DATA</div>
+    <div style="font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">CLASSES</div>
     <div class="pick-tree" id="exportMsgList" style="max-height:180px"></div>
     <div style="font-size:11px;color:var(--accent);font-weight:700;margin:10px 0 2px;letter-spacing:.04em">DDLs</div>
     <div class="pick-tree" id="exportTree"></div>
@@ -35126,7 +35176,7 @@ function _meSave() {
       <button class="btn" onclick="importPickAll(true)"  style="font-size:11px;padding:2px 8px">All</button>
       <button class="btn" onclick="importPickAll(false)" style="font-size:11px;padding:2px 8px">None</button>
     </div>
-    <div id="importMsgsHdr" style="display:none;font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">DATA</div>
+    <div id="importMsgsHdr" style="display:none;font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">CLASSES</div>
     <div class="pick-tree" id="importMsgList" style="display:none;max-height:180px"></div>
     <div id="importDDLsHdr" style="display:none;font-size:11px;color:var(--accent);font-weight:700;margin:10px 0 2px;letter-spacing:.04em">DDLs</div>
     <div class="pick-tree" id="importTree"></div>

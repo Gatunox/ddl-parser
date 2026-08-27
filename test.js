@@ -1338,6 +1338,48 @@ test('[REGRESSION] the Files list shows the order detection actually uses', () =
   assert.ok(/_meState\.specs\.splice\(dst, 0, moved\)/.test(drop), 'the move must reach the array');
 });
 
+test('imported classes carry a NEW / OVERWRITTEN badge until the list is saved', () => {
+  // An import drops classes into a list you already know. The ones that landed
+  // are exactly the ones to check against the original, so the rows say which
+  // they are — and saving is the user signing off, which clears them.
+  // Requested 2026-08-27.
+  const marks = sandbox._meMarkImported, mark = sandbox._meImportMark, clear = sandbox._meClearImportMarks;
+  assert.ok(typeof marks === 'function' && typeof mark === 'function', 'the marks are not reachable');
+  clear();
+  const a = { name: 'A', label: 'Class A' }, b = { name: 'B', label: 'Class B' };
+  eq(mark(a), null, 'a class nobody imported must not be badged');
+  marks(a, 'over'); marks(b, 'new');
+  eq(mark(a), 'over', 'an overwritten class must say so');
+  eq(mark(b), 'new', 'a new one must say so');
+  // Keyed by _specKey — type code AND label, the same key the import matches on
+  // — so the badge follows the class the import wrote, not whichever row happens
+  // to sit at that index.
+  eq(mark({ name: 'A', label: 'Class A' }), 'over', 'the mark must key on the same thing the import does');
+  eq(mark({ name: 'A', label: 'Class A renamed' }), null, 'a different class must not inherit the badge');
+  clear();
+  eq(mark(a), null, 'clearing must actually clear');
+
+  // Saving the Class Editor drops them.
+  assert.ok(/_meImportMarks = new Map\(\);/.test(psFnSource('_meSave')),
+    'saving the list must clear the import badges — the badge means "not looked at yet"');
+  // And the row renders them.
+  const row = APP_SRC.slice(APP_SRC.indexOf('const _gaps = _meItemNotes(s);'), APP_SRC.indexOf('const _gaps = _meItemNotes(s);') + 1600);
+  assert.ok(/const _imp = _meImportMark\(s\)/.test(row), 'the row never asks whether it was imported');
+  assert.ok(/_imp === 'new' \? 'NEW' : 'OVERWRITTEN'/.test(row), 'the badge text is not the two words asked for');
+});
+
+test('[REGRESSION] a conflicting import row says "overwrite" once, not twice', () => {
+  // The row markup carried an overwrite tag AND .pick-over label::after added
+  // another, so every conflict read "overwrite ⚠ overwrite". Reported 2026-08-27.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(!/\.pick-over label::after/.test(src), 'the CSS still adds a second copy of the tag');
+  eq((src.match(/⚠ overwrite/g) || []).length >= 1, true, 'the warning glyph went with it');
+  // And the group is named the way the app names it everywhere else.
+  assert.ok(!/letter-spacing:\.04em">DATA<\/div>/.test(src), 'a picker still calls the class list "DATA"');
+  eq((src.match(/letter-spacing:\.04em">CLASSES<\/div>/g) || []).length, 2,
+     'both the import and the export picker head the list "CLASSES"');
+});
+
 test('[REGRESSION] a class dropped on another list JOINS that list', () => {
   // The drop handler decided only one thing: "the target list is Messages".
   // So dragging a message onto a Data row rewrote it as a message — dragging
@@ -16163,13 +16205,15 @@ test('a configuration gap names itself instead of being counted', () => {
   // Rendered as one chip per gap, each with its own sentence on hover, on a
   // line of its own BELOW the name — beside it they truncated the name they
   // were warning about.
+  // The window is generous: the import badge is built on this same line, ahead
+  // of the gap chips, so a tight slice pins the ORDER of two unrelated features.
   const src = APP_SRC.slice(APP_SRC.indexOf('const _gaps = _meItemNotes(s);'));
-  assert.ok(/for \(const gap of _gaps\)/.test(src.slice(0, 400)), 'the chips are not rendered per gap');
-  assert.ok(/g\.className = gap\.warn \? 'me-gap-chip' : 'me-fact-chip';/.test(src.slice(0, 700)),
+  assert.ok(/for \(const gap of _gaps\)/.test(src.slice(0, 1600)), 'the chips are not rendered per gap');
+  assert.ok(/g\.className = gap\.warn \? 'me-gap-chip' : 'me-fact-chip';/.test(src.slice(0, 2000)),
     'a warning and a value are not told apart');
-  assert.ok(/gapLine\.appendChild\(g\);/.test(src.slice(0, 800)),
+  assert.ok(/gapLine\.appendChild\(g\);/.test(src.slice(0, 2200)),
     'the chips go back beside the name instead of under it');
-  assert.ok(/\$\{gap\.short\} \\u2014 \$\{gap\.full\}/.test(src.slice(0, 700)),
+  assert.ok(/\$\{gap\.short\} \\u2014 \$\{gap\.full\}/.test(src.slice(0, 2000)),
     'the chip tooltip does not carry the full explanation');
 
   // A row states what it HAS as well as what it lacks: volume and DDL binding

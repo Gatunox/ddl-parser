@@ -18276,7 +18276,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.73.0';
+const APP_VERSION  = '1.46.74.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20534,15 +20534,17 @@ function _meSpecDrop(e, targetIdx) {
   let dst = before ? targetIdx : targetIdx + 1;
   if (dst > src) dst--; // removing the earlier item shifts later indices
   _meState._dragSpecIdx = null;
-  // The row it was dropped ON decides which list it lands in — and files are
-  // ordered now, so a drop inside the Files list moves it there rather than
-  // merely reclassifying it. Without this the one control for fixing a bad
-  // detection order was missing from the only list where order was invisible.
-  const tgtIsFile = _meState.specs[targetIdx]?.kind === 'file';
-  const srcKind   = _meState.specs[src]?.kind === 'file' ? 'file' : null;
-  if (dst === src && !!srcKind === tgtIsFile) return;
+  // The row it was dropped ON decides which list it lands in — all three of
+  // them. It used to decide only "Messages": a message dropped on a Data row
+  // was rewritten as a message and stayed where it was, so dragging into Data
+  // did nothing at all and dragging into Files only reclassified without
+  // moving. Now the drop lands the entity in the target's list, at the
+  // position it was dropped. Reported 2026-08-27.
+  const tgtKind = _meKindOf(_meState.specs[targetIdx]);   // 'msg' | 'other' | 'file'
+  const srcKind = _meKindOf(_meState.specs[src]);
+  if (dst === src && srcKind === tgtKind) return;
   const [moved] = _meState.specs.splice(src, 1);
-  if (tgtIsFile) moved.kind = 'file'; else delete moved.kind;
+  if (tgtKind === 'msg') delete moved.kind; else moved.kind = tgtKind;
   _meState.specs.splice(dst, 0, moved);
   // Keep the selection pinned to the moved entity (and update other indices).
   if (_meState.section === 'msg') {
@@ -20575,14 +20577,11 @@ function _meSpecDropOnList(kind) {
   if (!s) return;
   const srcKind = s.kind === 'file' ? 'file' : s.kind === 'other' ? 'other' : null;
   if (kind === srcKind) return;                // already in this list
-  if (kind === 'other') {
-    // Other is ranked but always after every message, so it needs no move.
-    s.kind = kind;
-  } else {
-    // Files and Messages are both ordered, and the empty space below a list
-    // means "the end of it" — so the entity moves to the end of the array,
-    // which is the end of both lists.
-    if (kind === 'file') s.kind = 'file'; else delete s.kind;
+  // Every list is ordered, and the empty space below one means "the end of it",
+  // so the entity moves to the end of the array — which is the end of whichever
+  // list it now belongs to.
+  if (kind === 'file' || kind === 'other') s.kind = kind; else delete s.kind;
+  {
     const [moved] = _meState.specs.splice(src, 1);
     _meState.specs.push(moved);
     const dst = _meState.specs.length - 1;

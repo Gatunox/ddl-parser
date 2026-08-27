@@ -1331,11 +1331,33 @@ test('[REGRESSION] the Files list shows the order detection actually uses', () =
   const drop = psFnSource('_meSpecDrop');
   assert.ok(!/only reclassifies — files are unordered/.test(drop),
     'dropping inside Files still refuses to reorder');
-  assert.ok(/const tgtIsFile = _meState\.specs\[targetIdx\]\?\.kind === 'file'/.test(drop),
-    'the row dropped ON decides the list, so a file drop stays a file');
-  assert.ok(/if \(tgtIsFile\) moved\.kind = 'file'; else delete moved\.kind;/.test(drop),
-    'a reordered file class must stay a file class');
+  assert.ok(/const tgtKind = _meKindOf\(_meState\.specs\[targetIdx\]\)/.test(drop),
+    'the row dropped ON decides the list — all three of them, not just Messages');
+  assert.ok(/if \(tgtKind === 'msg'\) delete moved\.kind; else moved\.kind = tgtKind;/.test(drop),
+    'a class dropped on Data or Files must BECOME one, not be rewritten as a message');
   assert.ok(/_meState\.specs\.splice\(dst, 0, moved\)/.test(drop), 'the move must reach the array');
+});
+
+test('[REGRESSION] a class dropped on another list JOINS that list', () => {
+  // The drop handler decided only one thing: "the target list is Messages".
+  // So dragging a message onto a Data row rewrote it as a message — dragging
+  // into Data did nothing at all — and dropping onto a file row reclassified
+  // without moving. The target row's kind decides all three now.
+  // Reported 2026-08-27.
+  const drop = psFnSource('_meSpecDrop');
+  assert.ok(!/delete moved\.kind;   \/\/ target list is Messages/.test(drop),
+    'the drop still assumes every target is the Messages list');
+  assert.ok(/const srcKind = _meKindOf\(_meState\.specs\[src\]\)/.test(drop),
+    'the no-op check must compare LISTS, or a cross-list drop onto the same slot is dropped');
+  assert.ok(/if \(dst === src && srcKind === tgtKind\) return;/.test(drop),
+    'only a move that changes neither list nor position is a no-op');
+
+  // Dropping on a list's empty space means the end of THAT list, whichever it is.
+  const onList = psFnSource('_meSpecDropOnList');
+  assert.ok(/if \(kind === 'file' \|\| kind === 'other'\) s\.kind = kind; else delete s\.kind;/.test(onList),
+    'the empty-space drop must set the kind of the list it landed in');
+  assert.ok(/_meState\.specs\.push\(moved\)/.test(onList),
+    'and move it to the end of the array, which is the end of that list');
 });
 
 test('[REGRESSION] the Test panel gives file classes the filename to match on', () => {

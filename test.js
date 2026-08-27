@@ -1338,32 +1338,6 @@ test('[REGRESSION] the Files list shows the order detection actually uses', () =
   assert.ok(/_meState\.specs\.splice\(dst, 0, moved\)/.test(drop), 'the move must reach the array');
 });
 
-test('Move up / Move down reorder within the entity\'s own list', () => {
-  // Detection rank is list order, so changing it must not depend on a drag
-  // landing. The array interleaves all three kinds, so a move steps to the
-  // previous/next entity of the SAME kind — stepping one array index would swap
-  // a file class with a message and change nothing visible. Added 2026-08-27.
-  const move = sandbox._meMoveItem;
-  const st = { section: 'msg', selIdx: -1, specs: [
-    { name: 'M1' }, { name: 'F1', kind: 'file' }, { name: 'M2' },
-    { name: 'F2', kind: 'file' }, { name: 'O1', kind: 'other' },
-  ] };
-  const prev = sandbox._t.meState;
-  sandbox._t.setMeState(st);
-  const names = () => st.specs.map(x => x.name).join(',');
-
-  move(3, -1);                       // F2 up: past F1, not past M2
-  eq(names(), 'M1,F2,F1,M2,O1', 'a file class moved past a message instead of past the file above it');
-  move(1, +1);                       // F2 back down
-  eq(names(), 'M1,F1,F2,M2,O1', 'the move did not come back');
-  move(0, -1);                       // M1 is already first
-  eq(names(), 'M1,F1,F2,M2,O1', 'moving the first item up must be a no-op, not a wrap');
-  move(4, +1);                       // O1 is the only 'other'
-  eq(names(), 'M1,F1,F2,M2,O1', 'a lone entity has nowhere to go');
-
-  sandbox._t.setMeState(prev);
-});
-
 test('[REGRESSION] the Test panel gives file classes the filename to match on', () => {
   // The Test panel built its context from a NETARD wrapper only — { source,
   // dest } — so a `filename` recognizer could never pass there whatever the

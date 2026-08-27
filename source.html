@@ -18276,7 +18276,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.72.0';
+const APP_VERSION  = '1.46.73.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29929,30 +29929,6 @@ function _meDeleteItem(section, idx) {
   });
 }
 
-// Move an entity one place within ITS OWN list. The array holds all three
-// kinds interleaved, so "one place" means the previous/next entity of the same
-// kind — stepping by one array index would swap a file class with a message and
-// change nothing anyone can see.
-function _meMoveItem(idx, dir) {
-  const s = _meState?.specs?.[idx];
-  if (!s) return;
-  const kindOf = x => _meKindOf(x);
-  const mine = kindOf(s);
-  const sameKind = _meState.specs
-    .map((x, i) => ({ x, i }))
-    .filter(({ x }) => kindOf(x) === mine)
-    .map(({ i }) => i);
-  const at = sameKind.indexOf(idx);
-  const to = at + dir;
-  if (at < 0 || to < 0 || to >= sameKind.length) return;   // already at the end
-  const dstIdx = sameKind[to];
-  const [moved] = _meState.specs.splice(idx, 1);
-  _meState.specs.splice(dstIdx, 0, moved);
-  if (_meState.section === 'msg' && _meState.selIdx === idx) _meState.selIdx = dstIdx;
-  _meSetDirty();
-  _meRenderSidebar();
-}
-
 function _meCtxMsg(e, idx) {
   const msg = _meState?.specs?.[idx];
   showCtxMenu(e.clientX, e.clientY, [
@@ -29961,12 +29937,6 @@ function _meCtxMsg(e, idx) {
       label: isSpecOverride(msg?.label || msg?.name)
         ? 'Clear parsing override' : 'Use for parsing (override)',
       fn: () => toggleSpecOverride(idx) },
-    { separator: true },
-    // Order is detection rank, so it needs a way to change that does not depend
-    // on a drag landing: dragging is fiddly in a scrolling list and impossible
-    // to do at all with a trackpad in some setups. Reported 2026-08-27.
-    { icon: '↑', label: 'Move up',   fn: () => _meMoveItem(idx, -1) },
-    { icon: '↓', label: 'Move down', fn: () => _meMoveItem(idx, +1) },
     { separator: true },
     { icon: '⧉', label: 'Duplicate', fn: () => _meDupItem(idx) },
     ...(_meKindOf(msg) !== 'msg'   ? [{ icon: '⇄', label: 'Move to Messages', fn: () => _meSetKind(idx, null) }]    : []),

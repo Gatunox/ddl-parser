@@ -1407,9 +1407,14 @@ const RECOGNIZER_CASES = [
   ['literal hex 0x-prefixed',        { type: 'literal', offset: 0, encoding: 'hex', value: '0x4354' }, '43 54', true],
 
   // isBinary / isAscii / isEbcdic — what KIND of data sits there
-  ['isBinary finds one raw byte',    { type: 'binary', offset: 0, length: 4 }, '41 00 42 43', true],
-  ['isBinary on clean text',         { type: 'binary', offset: 0, length: 4 }, '41 42 43 44', false],
-  ['isBinary past the end',          { type: 'binary', offset: 0, length: 9 }, '41 42', false],
+  ['non-printable finds one raw byte',        { type: 'non-printable', offset: 0, length: 4 }, '41 00 42 43', true],
+  ['non-printable on clean text',             { type: 'non-printable', offset: 0, length: 4 }, '41 42 43 44', false],
+  ['non-printable past the end',              { type: 'non-printable', offset: 0, length: 9 }, '41 42', false],
+  // The charset decides. EBCDIC "ABCD" is raw to ASCII eyes and vice versa.
+  ['non-printable ebcdic: EBCDIC text is printable', { type: 'non-printable', offset: 0, length: 4, encoding: 'ebcdic' }, 'C1 C2 C3 C4', false],
+  ['non-printable ebcdic: ASCII text is not',        { type: 'non-printable', offset: 0, length: 4, encoding: 'ebcdic' }, '41 42 43 44', true],
+  ['non-printable ascii: EBCDIC text is not',        { type: 'non-printable', offset: 0, length: 4 }, 'C1 C2 C3 C4', true],
+  ['non-printable ebcdic: a NUL is raw either way',  { type: 'non-printable', offset: 0, length: 4, encoding: 'ebcdic' }, 'C1 C2 00 C3', true],
   ['isAscii all printable',          { type: 'ascii', offset: 0, length: 4 }, '41 42 43 44', true],
   ['isAscii rejects a NUL',          { type: 'ascii', offset: 0, length: 4 }, '41 00 42 43', false],
   ['isAscii rejects 0x7F',           { type: 'ascii', offset: 0, length: 1 }, '7F', false],
@@ -4200,6 +4205,43 @@ test('message specs always rank first; file specs are only consulted for records
      'record without a wrapper filename can never be a file — file specs skipped');
   eq(domEl._fmtDetect(bytes('SOMETHING ELSE'), { filename: '$D.SV.ANYFILE' })?.type, 'FIL',
      'same bytes WITH a filename fall through to the file specs');
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();
+});
+
+test('a saved `binary` recognizer becomes non-printable on load', () => {
+  // The type is stored in the user's own specs, so a rename that only touched
+  // the code would have left every saved recognizer pointing at an evaluator
+  // that no longer exists — _compileSpec maps a missing type to `() => false`,
+  // so the spec would simply stop matching, silently. Converted on load like
+  // the parse-spec block renames; there is deliberately no runtime alias.
+  // Renamed 2026-08-25.
+  const spec = { name: 'X', label: 'Old spec', recognizers: [
+    { type: 'literal', offset: 0, encoding: 'ascii', value: 'A' },
+    { type: 'binary', offset: 2, length: 8 },
+  ] };
+  storage.setItem('up_format_specs', JSON.stringify({ specs: [spec] }));
+  const loaded = domEl._fmtGetData().specs[0];
+  deepEq(loaded.recognizers.map(r => r.type), ['literal', 'non-printable'],
+    'the saved type was not migrated');
+  // The evaluator has to exist under the new name, or the migration just moved
+  // the breakage: an unknown type compiles to a matcher that never fires.
+  const bytes = t => { const b = new Uint8Array(t.length); for (let i = 0; i < t.length; i++) b[i] = t.charCodeAt(i); return b; };
+  const raw = new Uint8Array([0x41, 0x42, 0x00, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49]);
+  eq(fmtTestSpecs([{ name: 'T', recognizers: [{ type: 'non-printable', offset: 2, length: 8 }] }], raw)[0].passed,
+     true, 'the new name must evaluate — a 0x00 in range is not printable ASCII');
+  eq(fmtTestSpecs([{ name: 'T', recognizers: [{ type: 'non-printable', offset: 0, length: 2 }] }], bytes('AB'))[0].passed,
+     false, 'all-printable must not match');
+  // The interim name from the same session migrates too, so a spec saved
+  // between the two renames is not stranded.
+  storage.setItem('up_format_specs', JSON.stringify({ specs: [
+    { name: 'Y', label: 'Interim', recognizers: [{ type: 'non-printable-ascii', offset: 0, length: 1 }] }] }));
+  deepEq(domEl._fmtGetData().specs[0].recognizers.map(r => r.type), ['non-printable'],
+    'the interim name was not migrated');
+  // And the OLD name must be gone from the engine, not left as a quiet alias —
+  // two names for one test is how the reference and the picker drift apart.
+  eq(fmtTestSpecs([{ name: 'T', recognizers: [{ type: 'binary', offset: 2, length: 8 }] }], raw)[0].passed,
+     false, 'the old type still evaluates — it should exist only as a migration');
   storage.removeItem('up_format_specs');
   domEl._fmtLoad();
 });
@@ -18194,6 +18236,105 @@ test('the audit detail pane and its resizer are opened and closed together', () 
   assert.ok(/onclick="auditClosePopup\(\)"/.test(src), 'the ✕ still closes the pane');
   assert.ok(/_auditSetDetailOpen\(false\)/.test(psFnSource('auditClosePopup')),
     'and closing goes through the setter, so the resizer goes with it');
+});
+
+test('[REGRESSION] the audit dump renders in the charset detection says, not always ASCII', () => {
+  // An EBCDIC record previewed as `ISO0810???????"+<? ??J?b????2?@!` — the bytes
+  // were fine, the yardstick was not. The recognizers already answer this:
+  // whichever class claims the record was written against ASCII or EBCDIC, and
+  // _specWinner carries it on `encoding`. The character view ignored it.
+  // Reported 2026-08-25.
+  const fn = psFnSource('_auditDumpIsEbcdic');
+  assert.ok(/_fmtDetect\(/.test(fn), 'the charset must come from detection, not from bytes alone');
+  assert.ok(/w\.encoding === 'ebcdic'/.test(fn), 'it must read the winning spec\'s encoding');
+  // Density stays as the fallback: a record nothing claims still has to render.
+  assert.ok(/0xF0 && pay\[i\] <= 0xF9/.test(fn) && /0\.30/.test(fn),
+    'the density fallback is gone — an unclaimed record has no charset at all');
+  assert.ok(/try \{/.test(fn), 'detection must not be able to break the preview');
+
+  // And the CHARACTER view has to use it. It decoded raw bytes directly.
+  const dump = psFnSource('_auditApplyDump');
+  assert.ok(/const isEbcdic = _auditDumpIsEbcdic\(pay\)/.test(dump),
+    'the decision must be made once for both views');
+  const charBranch = dump.slice(dump.indexOf('let raw ='), dump.indexOf('const indent'));
+  assert.ok(/_EBCDIC_TO_ASCII/.test(charBranch),
+    'the character view still decodes every record as ASCII');
+});
+
+test('auto-parse rides in up_settings, and fires only once the bytes are in', () => {
+  // Walking a filtered set meant a click and a Parse for every record. Off by
+  // default and remembered — parsing on selection is not free, and an arrow key
+  // through large records would parse each one. Requested 2026-08-25.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // A preference, not a key of its own: §13 has one fewer thing to stay honest
+  // about, which is the same call the audit detail height made.
+  assert.ok(/auditAutoParse: false/.test(src), 'the default must be OFF');
+  assert.ok(!/up_audit_autoparse/.test(src), 'it must not take a storage key of its own');
+  assert.ok(/P\.auditAutoParse = !P\.auditAutoParse/.test(psFnSource('auditToggleAutoParse')),
+    'the toggle must write the preference');
+  assert.ok(/savePrefs\(\)/.test(psFnSource('auditToggleAutoParse')), 'and persist it');
+  // Ordering: auditParseSelected reads _auditSt._inspectBuf, so firing before it
+  // is set would re-slice the file for bytes already in hand.
+  const insp = psFnSource('auditInspectRecord');
+  assert.ok(insp.indexOf('_auditSt._inspectBuf = buf') < insp.indexOf('if (P.auditAutoParse)'),
+    'auto-parse must fire AFTER the record bytes are stored, or it re-reads the file');
+  // With Auto on, Parse re-runs work that selecting the record already did —
+  // and two primaries side by side, one of them inert, says the opposite.
+  const sync = psFnSource('_auditSyncAutoParseBtn');
+  assert.ok(/auditParseBtn/.test(sync), 'the Parse button is never touched when Auto changes');
+  assert.ok(/pb\.disabled = !!P\.auditAutoParse/.test(sync), 'Parse must go dead while Auto is on');
+  assert.ok(/classList\.toggle\('btn-primary', !P\.auditAutoParse\)/.test(sync),
+    'a disabled button must not keep the primary fill');
+  assert.ok(/id="auditParseBtn"/.test(src), 'the Parse button needs an id to be reachable');
+});
+
+test('a previewed audit record is parsed once, not again on every revisit', () => {
+  // A multi-message paste is parsed once and then navigated; audit preview
+  // parses one record at a time, and walking BACK to a record you were just
+  // looking at re-ran the whole parse for an answer already computed. Comparing
+  // two records meant paying for both, twice, on every switch.
+  // Requested 2026-08-25.
+  const fn = psFnSource('auditParseSelected');
+  assert.ok(/_auditParseCache\.get\(rec\.offset\)/.test(fn), 'nothing is looked up before parsing');
+  // Keyed on offset: recNo and the filtered index can both be re-pointed by a
+  // filter change, and offset cannot.
+  assert.ok(!/_auditParseCache\.get\(rec\.recNo\)|_auditParseCache\.get\(_auditSt\.selIdx\)/.test(fn),
+    'a filter change would re-point recNo or the index onto another record');
+  assert.ok(fn.indexOf('_auditParseCache.get') < fn.indexOf('doParseMessages'),
+    'the cache must be consulted BEFORE the parse, or it saves nothing');
+
+  // The hit replays the tail of a parse rather than re-running one.
+  const apply = psFnSource('_auditParseCacheApply');
+  assert.ok(!/doParseMessages/.test(apply), 'a cache hit must not re-parse');
+  for (const line of ['S.isParsed = true', 'renderCurrent()', 'updateNav()', '_msgLock(true)'])
+    assert.ok(apply.includes(line), `the restore skips \`${line}\`, so the view is half-updated`);
+
+  // Stored only once the parse has actually landed — doParseMessages runs
+  // through the progress overlay's timers, so it is not on S when it returns.
+  const store = psFnSource('_auditParseCacheStoreWhenDone');
+  assert.ok(/S\.isParsed && Array\.isArray\(S\.messages\) && S\.messages\.length/.test(store),
+    'an unfinished or empty parse must not be cached as an answer');
+  assert.ok(/tries < \d+/.test(store), 'the poll must be bounded — an aborted parse would poll forever');
+
+  // Bounded: a 200,000-record file is a normal thing to open here.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/_AUDIT_PARSE_CACHE_MAX = \d+/.test(src), 'the cache is unbounded');
+  assert.ok(/while \(_auditParseCache\.size > _AUDIT_PARSE_CACHE_MAX\)/.test(psFnSource('_auditParseCacheStore')),
+    'nothing evicts, so the cap is decoration');
+  // FIFO, not LRU: oldest INSERTED out first. A Map keeps insertion order when
+  // an existing key is re-set, so re-inserting would quietly make this LRU and
+  // let a busy record hold its slot forever.
+  assert.ok(!/_auditParseCache\.delete\(key\)/.test(psFnSource('_auditParseCacheStore')),
+    'delete-then-set turns FIFO into LRU');
+  eq((src.match(/_AUDIT_PARSE_CACHE_MAX = (\d+)/) || [])[1], '20',
+     'the cap is what the slowest machine has to hold');
+
+  // Cleared where the key stops meaning anything: offsets are unique only
+  // within one file.
+  assert.ok(/_auditParseCacheClear\(\)/.test(psFnSource('_auditBeginLoad')),
+    'a new file would be served the previous file\'s record at the same offset');
+  assert.ok(/_auditParseCacheClear\(\)/.test(psFnSource('auditCloseMode')),
+    'leaving audit mode must drop the session cache');
 });
 
 test('the audit detail height survives a reload, and a layout reset', () => {

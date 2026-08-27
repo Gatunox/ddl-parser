@@ -3885,7 +3885,8 @@ th.me-fm-colhi{color:var(--accent);}
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-1)" title="Previous record (←)">&lt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle hex/ASCII dump view">HEX</button>
-                <button class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Data Input and parse">&#9654; Parse</button>
+                <button id="auditParseBtn" class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Data Input and parse">&#9654; Parse</button>
+                <button id="auditAutoParseBtn" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleAutoParse()" title="Auto-parse — parse each record as you select it, without pressing Parse">Auto</button>
                 <button class="btn" style="height:20px;padding:0 6px" onclick="auditClosePopup()">&#10005;</button>
               </div>
               <div id="auditPopupBody" class="audit-popup-body">
@@ -8472,18 +8473,48 @@ function parseMessage(bytes, defs, rawBytes) {
     return false;
   };
 
-  _R['binary'] = (bytes, { offset=0, length=1 }) => {
+  // What "printable" means, once, for both charsets. `ascii` / `ebcdic` assert it
+  // of every byte and `non-printable` asserts its negation of at least one, so
+  // the two can never drift apart on the definition.
+  const _PRINTABLE = {
+    ascii: b => b >= 0x20 && b < 0x7F,
+    ebcdic: b =>
+      b === 0x40 ||                        // space
+      (b >= 0x4C && b <= 0x4F) ||          // < ( + |
+      b === 0x50 ||                        // &
+      (b >= 0x5B && b <= 0x61) ||          // $ * ) ; ¬ - /
+      (b >= 0x6B && b <= 0x6F) ||          // , % _ > ?
+      b === 0x70 ||                        // °
+      (b >= 0x79 && b <= 0x7F) ||          // ` : # @ ' = "
+      (b >= 0x81 && b <= 0x89) ||          // a-i
+      (b >= 0x91 && b <= 0x99) ||          // j-r
+      (b >= 0xA2 && b <= 0xA9) ||          // s-z
+      (b >= 0xC1 && b <= 0xC9) ||          // A-I
+      (b >= 0xD1 && b <= 0xD9) ||          // J-R
+      (b >= 0xE2 && b <= 0xE9) ||          // S-Z
+      (b >= 0xF0 && b <= 0xF9),            // 0-9
+  };
+  const _printableFn = enc => _PRINTABLE[enc === 'ebcdic' ? 'ebcdic' : 'ascii'];
+
+  // Renamed from 'binary' 2026-08-25, then widened to both charsets. The old
+  // name collided with three other meanings of the word here — TYPE BINARY, the
+  // binary parse-spec variant, a binary bitmap encoding — while the test is
+  // narrower than any of them: is any byte in this range NOT printable, in the
+  // charset you name. Saved specs are migrated by _migrateSpec; no runtime alias.
+  _R['non-printable'] = (bytes, { offset=0, length=1, encoding='ascii' }) => {
     if (offset + length > bytes.length) return false;
+    const printable = _printableFn(encoding);
     for (let i = offset; i < offset+length; i++) {
-      if (bytes[i] < 0x20 || bytes[i] >= 0x7F) return true;
+      if (!printable(bytes[i])) return true;
     }
     return false;
   };
 
+
   _R['ascii'] = (bytes, { offset=0, length=1 }) => {
     if (offset + length > bytes.length) return false;
     for (let i = offset; i < offset+length; i++) {
-      if (bytes[i] < 0x20 || bytes[i] >= 0x7F) return false;
+      if (!_PRINTABLE.ascii(bytes[i])) return false;
     }
     return true;
   };
@@ -8491,23 +8522,7 @@ function parseMessage(bytes, defs, rawBytes) {
   _R['ebcdic'] = (bytes, { offset=0, length=1 }) => {
     if (offset + length > bytes.length) return false;
     for (let i = offset; i < offset+length; i++) {
-      const b = bytes[i];
-      const ok =
-        b === 0x40 ||                        // space
-        (b >= 0x4C && b <= 0x4F) ||          // < ( + |
-        b === 0x50 ||                        // &
-        (b >= 0x5B && b <= 0x61) ||          // $ * ) ; ¬ - /
-        (b >= 0x6B && b <= 0x6F) ||          // , % _ > ?
-        b === 0x70 ||                        // °
-        (b >= 0x79 && b <= 0x7F) ||          // ` : # @ ' = "
-        (b >= 0x81 && b <= 0x89) ||          // a-i
-        (b >= 0x91 && b <= 0x99) ||          // j-r
-        (b >= 0xA2 && b <= 0xA9) ||          // s-z
-        (b >= 0xC1 && b <= 0xC9) ||          // A-I
-        (b >= 0xD1 && b <= 0xD9) ||          // J-R
-        (b >= 0xE2 && b <= 0xE9) ||          // S-Z
-        (b >= 0xF0 && b <= 0xF9);            // 0-9
-      if (!ok) return false;
+      if (!_PRINTABLE.ebcdic(bytes[i])) return false;
     }
     return true;
   };
@@ -9263,6 +9278,15 @@ function parseMessage(bytes, defs, rawBytes) {
     }
     // priority was removed (sidebar order is manual now) — strip stale keys.
     if ('priority' in spec) delete spec.priority;
+    // Recognizer renames. 'binary' said the wrong thing three ways over: the app
+    // also uses that word for TYPE BINARY, for the binary parse-spec variant and
+    // for a binary bitmap encoding, while the test is narrower than any of them
+    // — is any byte here outside printable ASCII. Converted on load, like the
+    // parse-spec block renames; there is no runtime alias. Renamed 2026-08-25.
+    if (Array.isArray(spec.recognizers))
+      for (const r of spec.recognizers)
+        if (r && (r.type === 'binary' || r.type === 'non-printable-ascii'))
+          r.type = 'non-printable';
     // Parse-spec block renames + encoding unification (arrays + source text).
     for (const k of ['parse_spec_binary', 'parse_spec_ascii'])
       if (Array.isArray(spec[k])) spec[k].forEach(_migratePsBlock);
@@ -14192,6 +14216,9 @@ function onAuditFileOpen(input) {
 }
 
 function _auditBeginLoad(file) {
+  // Offsets are only unique WITHIN a file, so carrying the cache across one
+  // would serve another file's record for the same offset.
+  _auditParseCacheClear();
   _auditSt.file    = file;
   _auditSt.index   = [];
   _auditSt.filtered = [];
@@ -14638,6 +14665,20 @@ const _AUDIT_HDR_FIELDS = [
   { label:'Other Flags',      off:108, sz:2                                                     },
 ];
 
+// Detection decides the charset; density is the fallback. A record nothing
+// claims still has to render as something, and a payload that is 30%+ 0xF0-0xF9
+// is EBCDIC digits far more often than it is anything else.
+function _auditDumpIsEbcdic(pay) {
+  if (!pay || !pay.length) return false;
+  try {
+    const w = typeof _fmtDetect === 'function' ? _fmtDetect(pay, {}) : null;
+    if (w && w.encoding) return w.encoding === 'ebcdic';
+  } catch (e) {}
+  let f09 = 0;
+  for (let i = 0; i < pay.length; i++) if (pay[i] >= 0xF0 && pay[i] <= 0xF9) f09++;
+  return f09 / pay.length > 0.30;
+}
+
 function _auditApplyDump(u8, rec, recno) {
   const HDR = AUDIT_HDR_CFG.msgPayloadOffset;
   const origType = (rec.origTypeNum >> 12) & 0xF;
@@ -14661,14 +14702,20 @@ function _auditApplyDump(u8, rec, recno) {
   let payText = '';
   _auditPopupByteCharMap = null;
 
+  // WHICH CHARSET TO RENDER IN. The recognizers already answer this: whichever
+  // class claims the record was written against ASCII or EBCDIC, and
+  // _specWinner carries that on `encoding`. The character view ignored it and
+  // decoded every record as ASCII, so an EBCDIC payload previewed as
+  // `ISO0810???????"+<? ??J?b????2?@!` — the bytes were fine, the yardstick was
+  // not. Ask detection first; fall back to the F0-F9 density heuristic the hex
+  // view already used, which is all there is when nothing claims the record.
+  // Reported 2026-08-25.
+  const isEbcdic = _auditDumpIsEbcdic(pay);
+
   if (_auditPopupMode === 'hex') {
     if (!pay.length) {
       payText = '       (empty payload)\n';
     } else {
-      let f09 = 0;
-      for (let i = 0; i < pay.length; i++)
-        if (pay[i] >= 0xF0 && pay[i] <= 0xF9) f09++;
-      const isEbcdic = f09 / pay.length > 0.30;
       _auditPopupByteCharMap = new Array(pay.length);
       for (let lineOff = 0; lineOff < pay.length; lineOff += 16) {
         const n = Math.min(16, pay.length - lineOff);
@@ -14702,8 +14749,10 @@ function _auditApplyDump(u8, rec, recno) {
     }
   } else {
     let raw = '';
-    for (let i = 0; i < pay.length; i++)
-      raw += (pay[i] >= 0x20 && pay[i] <= 0x7E) ? String.fromCharCode(pay[i]) : '?';
+    for (let i = 0; i < pay.length; i++) {
+      const c2 = isEbcdic ? (_EBCDIC_TO_ASCII[pay[i]] ?? pay[i]) : pay[i];
+      raw += (c2 >= 0x20 && c2 <= 0x7E) ? String.fromCharCode(c2) : '?';
+    }
     const indent = '       ';
     for (let i = 0; i < raw.length; i += 68)
       payText += indent + raw.slice(i, i + 68) + '\n';
@@ -14718,6 +14767,39 @@ function _auditApplyDump(u8, rec, recno) {
   }
 
   window._auditDumpLoad?.(hdrLine + '\n\n' + srcLine + '\n' + dstLine + '\n\n' + payText);
+}
+
+// AUTO-PARSE. Walking a filtered set one record at a time meant a click and a
+// Parse for every one of them; the click alone is the whole gesture. Off by
+// default and remembered, because parsing on selection is not free — a large
+// record costs a full parse on every arrow key. Requested 2026-08-25.
+function _auditSyncAutoParseBtn() {
+  const b = document.getElementById('auditAutoParseBtn');
+  if (!b) return;
+  b.classList.toggle('btn-primary', !!P.auditAutoParse);
+  b.title = P.auditAutoParse
+    ? 'Auto-parse is ON — selecting a record parses it. Click to turn off.'
+    : 'Auto-parse — parse each record as you select it, without pressing Parse';
+  // Parse goes dead while Auto is on: selecting the record already did it, so
+  // the button re-runs work that is finished. Two primaries side by side, one of
+  // which does nothing, is the visible half of that. Reported 2026-08-25.
+  const pb = document.getElementById('auditParseBtn');
+  if (pb) {
+    pb.disabled = !!P.auditAutoParse;
+    pb.classList.toggle('btn-primary', !P.auditAutoParse);
+    pb.title = P.auditAutoParse
+      ? 'Auto-parse is on — selecting a record already parses it'
+      : 'Load payload into Data Input and parse';
+  }
+}
+
+function auditToggleAutoParse() {
+  P.auditAutoParse = !P.auditAutoParse;
+  savePrefs();
+  _auditSyncAutoParseBtn();
+  // Turning it ON acts on the record already selected, rather than waiting for
+  // the next click to prove it works.
+  if (P.auditAutoParse && _auditSt.selIdx >= 0) auditParseSelected();
 }
 
 function auditInspectRecord(filteredIdx) {
@@ -14742,6 +14824,9 @@ function auditInspectRecord(filteredIdx) {
     _auditSetDetailOpen(true);
     requestAnimationFrame(_auditSyncToggleWidth);
     _auditSt._inspectBuf = buf;
+    // After _inspectBuf is set: auditParseSelected reads it, and without it the
+    // parse would re-slice the file for bytes that are already here.
+    if (P.auditAutoParse) auditParseSelected();
   });
 }
 
@@ -14848,6 +14933,7 @@ function auditToggleDumpMode() {
 function _auditSyncToggleWidth() {
   const btn = document.getElementById('auditDumpToggle');
   if (!btn || !_auditDetailOpen()) return;
+  _auditSyncAutoParseBtn();
   btn.style.minWidth = '';
   const saved = btn.textContent;
   btn.textContent = 'ASCII'; const aw = btn.getBoundingClientRect().width;
@@ -14856,9 +14942,69 @@ function _auditSyncToggleWidth() {
   btn.style.minWidth = Math.ceil(Math.max(aw, hw)) + 'px';
 }
 
+// PREVIEW PARSE CACHE. A multi-message paste is parsed once and then navigated;
+// audit preview parses one record at a time, and walking BACK to a record you
+// were just looking at re-ran the whole parse for an answer already computed.
+// Comparing two records meant paying for both, twice, on every switch.
+//
+// Keyed on rec.offset — unique within the file, and unlike recNo or the filtered
+// index it cannot be re-pointed by a filter change. Session-only and in memory:
+// cleared when another file is opened, when audit mode exits, and by a reload.
+//
+// A plain in-memory Map — no localStorage, no IndexedDB. It holds references to
+// the parsed messages (their fields and the payload bytes), so it costs RAM for
+// as long as the page is open and nothing at all after a reload.
+//
+// Capped at 20 with FIFO retention: a 200,000-record file is a normal thing to
+// open here, and the machines this runs on are not always fast. Oldest inserted
+// out first — NOT least-recently-used. FIFO can evict a record you keep coming
+// back to, but only after twenty others have been previewed since, and the case
+// this exists for is comparing a handful.
+const _AUDIT_PARSE_CACHE_MAX = 20;
+let _auditParseCache = new Map();
+
+function _auditParseCacheClear() { _auditParseCache = new Map(); }
+
+function _auditParseCacheStore(key, hex) {
+  if (key == null) return;
+  // No delete-then-set. A Map keeps its original insertion order when an
+  // existing key is re-set, which is exactly FIFO: re-inserting would make this
+  // LRU and let a busy record hold its slot indefinitely.
+  _auditParseCache.set(key, {
+    hex, messages: S.messages, inputFormat: S.inputFormat, badgeFmt: S._badgeFmt,
+    batch: _auditBatchPayloads,
+  });
+  while (_auditParseCache.size > _AUDIT_PARSE_CACHE_MAX)
+    _auditParseCache.delete(_auditParseCache.keys().next().value);
+}
+
+// Replays the tail of a parse — the same lines doParseMessages ends on — with
+// the messages it produced last time. Nothing is re-detected, re-scored or
+// re-walked.
+function _auditParseCacheApply(hit) {
+  const msgEl = document.getElementById('msgInput');
+  _msgLock(false);
+  msgEl.value = hit.hex;
+  onMsgChange();                                   // input format + badges, no parse
+  _auditBatchPayloads = hit.batch;
+  S.messages   = hit.messages;
+  S.inputFormat = hit.inputFormat;
+  S._badgeFmt   = hit.badgeFmt;
+  S.curIdx = 0; S.isParsed = true; S.selFieldId = null;
+  S.trackMode = false; S.trackedFields = new Set();
+  _resSetStale(false);
+  _syncTrkColVisibility();
+  syncParseBtn();
+  _msgLock(true);
+  updateBadges(); updateNav(); renderCurrent();
+  window._auditDumpSetParsed?.();
+}
+
 function auditParseSelected() {
   const rec = _auditSt.filtered[_auditSt.selIdx];
   if (!rec || !_auditSt.file) return;
+  const hit = _auditParseCache.get(rec.offset);
+  if (hit) { _auditParseCacheApply(hit); return; }
   const load = buf => {
     const u8  = new Uint8Array(buf);
     const pay = u8.slice(AUDIT_HDR_CFG.msgPayloadOffset);
@@ -14871,9 +15017,28 @@ function auditParseSelected() {
     onMsgChange();
     doParseMessages();
     window._auditDumpSetParsed?.();
+    // Stored on the way out, not inside doParseMessages: the parse is async, so
+    // the record is only genuinely done once its messages are on S.
+    _auditParseCacheStoreWhenDone(rec.offset, hex);
   };
   if (_auditSt._inspectBuf) { load(_auditSt._inspectBuf); return; }
   _auditSt.file.slice(rec.offset, rec.offset + rec.length).arrayBuffer().then(load);
+}
+
+// doParseMessages runs through the progress overlay's setTimeout chain, so the
+// result is not on S when it returns. Wait for isParsed to land — bounded, so a
+// parse that never finishes (aborted, or an unmatched record) caches nothing
+// rather than leaving a timer running.
+function _auditParseCacheStoreWhenDone(key, hex) {
+  let tries = 0;
+  const poll = () => {
+    if (S.isParsed && Array.isArray(S.messages) && S.messages.length) {
+      _auditParseCacheStore(key, hex);
+      return;
+    }
+    if (++tries < 40) setTimeout(poll, 100);
+  };
+  setTimeout(poll, 100);
 }
 
 // Pre-built audit batch: set before calling doParseMessages so the P2/P3 pipeline
@@ -14932,6 +15097,8 @@ function _auditLazyParseNext() {
 }
 
 function auditCloseMode() {
+  // The cache belongs to ONE file's browsing session.
+  _auditParseCacheClear();
   document.body.classList.remove('audit-active');
   if (_auditSt.worker) { _auditSt.worker.terminate(); _auditSt.worker = null; }
   _auditSt.file     = null;
@@ -17981,7 +18148,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.62.0';
+const APP_VERSION  = '1.46.63.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18033,6 +18200,7 @@ function openFeedbackMail(type) {
 // ============================================================
 const _DEF_PREFS = {
   theme: 'dark', density: 'comfortable', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
+  auditAutoParse: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences
@@ -27865,7 +28033,7 @@ function _meRecSum(r) {
       };
       return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${fmtLit(r.value)}`);
     }
-    case 'binary':        return wrap(`@${r.offset} len:${r.length ?? 1}`);
+    case 'non-printable':  return wrap(`@${r.offset} len:${r.length ?? 1}${r.encoding === 'ebcdic' ? ' [ebcdic]' : ''}`);
     case 'ascii':         return wrap(`@${r.offset} len:${r.length ?? 1}`);
     case 'ebcdic':        return wrap(`@${r.offset} len:${r.length ?? 1}`);
     case 'numeric':       return wrap(`@${r.offset} len:${r.length ?? 1}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''}`);
@@ -27926,7 +28094,7 @@ const _REC_GROUPS = [
   { name: 'What the bytes look like', items: [
     ['ascii', 'Every byte printable ASCII'],
     ['ebcdic', 'Every byte printable EBCDIC'],
-    ['binary', 'At least one byte is not printable'],
+    ['non-printable', 'At least one byte is not printable (ASCII or EBCDIC)'],
     ['numeric', 'Digits only'],
     ['alphabetic', 'Letters only'],
     ['alphanumeric', 'Letters and digits only'],
@@ -28037,17 +28205,18 @@ const _REC_HELP = {
     ],
   },
 
-  'binary': {
+  'non-printable': {
     desc: [
-      'Passes when <b>at least one</b> byte in the range is outside printable ASCII.',
-      'Outside printable means below 0x20 or 0x7F and above.',
+      'Passes when <b>at least one</b> byte in the range is not printable in the charset you name.',
+      'Outside printable ASCII means below 0x20, or 0x7F and above. Outside printable EBCDIC means anything that is not a letter, digit, space or punctuation in that code page — the exact set <code>isEbcdic</code> accepts, negated.',
       'It is a presence test, not an all-or-nothing one — a single raw byte among text is enough.',
       'Compares nothing. It asks what <i>kind</i> of data sits there, never which value.',
     ],
     useWhen: [
       'Two message forms carry the same field, one as raw bytes and one as hex text, and you need to tell them apart.',
       'A binary bitmap or a length prefix should sit at a known offset and you want to confirm it is not text.',
-      'Pair it with <code>isAscii</code> on the same range in the competing spec, so exactly one of the two can win.',
+      'Pair it with <code>isAscii</code> (or <code>isEbcdic</code>) on the same range in the competing spec, so exactly one of the two can win.',
+      'On an EBCDIC message ASCII is the wrong yardstick: 0xC1 is a perfectly good <code>A</code> there and would read as raw. Name the charset the message is in.',
     ],
     attrs: [
       ['offset', 'int', false, ['Where the scan starts. Defaults to 0.']],
@@ -28055,20 +28224,31 @@ const _REC_HELP = {
         'How many bytes to scan. Defaults to 1.',
         'The whole range must be inside the message — a scan that runs off the end is a no match, not a short scan.',
       ]],
+      ['encoding', '"ascii" | "ebcdic"', false, [
+        'Which charset decides what counts as printable. Defaults to <code>ascii</code>.',
+        'The definition is shared with <code>isAscii</code> / <code>isEbcdic</code>, so this and they can never disagree about the same byte.',
+      ]],
     ],
     examples: [
       { what: 'An 8-byte <b>binary bitmap</b> after a 2-byte header',
-        rec: { type: 'binary', offset: 2, length: 8 },
+        rec: { type: 'non-printable', offset: 2, length: 8 },
         cases: [
           { payload: '30 32 42 10 00 00 00 00 00 00', note: 'raw bitmap bytes — 0x00 is not printable' },
           { payload: '30 32 34 32 31 30 30 30 30 30', note: 'the same bitmap as hex TEXT "4210000000"' },
           { payload: '30 32 42 10', note: 'the range runs past the end' },
         ] },
       { what: 'One byte — is the very first byte raw?',
-        rec: { type: 'binary', offset: 0, length: 1 },
+        rec: { type: 'non-printable', offset: 0, length: 1 },
         cases: [
           { payload: '02 30 30', note: '0x02 STX' },
           { payload: '30 30 30', note: '"000" — all printable' },
+        ] },
+      { what: 'The same question on an <b>EBCDIC</b> message',
+        rec: { type: 'non-printable', offset: 0, length: 4, encoding: 'ebcdic' },
+        cases: [
+          { payload: 'C1 C2 00 C3', note: '0x00 is not printable in any charset' },
+          { payload: 'C1 C2 C3 C4', note: '"ABCD" in EBCDIC — all printable' },
+          { payload: '41 42 43 44', note: '"ABCD" in ASCII — none of these are printable EBCDIC' },
         ] },
     ],
   },
@@ -29047,7 +29227,7 @@ const _meToggleRecListHelp = () => _meHelpToggle('rec');
 function _meRecForm(r, idx) {
   const _ALIAS = _REC_ALIAS;
   const types = [
-    ['literal','literal'], ['binary','isBinary'], ['ascii','isAscii'], ['ebcdic','isEbcdic'],
+    ['literal','literal'], ['non-printable','non-printable'], ['ascii','isAscii'], ['ebcdic','isEbcdic'],
     ['uint8','uint8 / byte'], ['uint16','uint16 / word'], ['uint32','uint32 / dword'],
     ['numeric','isNumeric'], ['alphabetic','isAlphabetic'], ['alphanumeric','isAlphanumeric'],
     ['greater-than','greater-than'], ['less-than','less-than'], ['mti','mti'], ['bitmap','bitmap'], ['regex','regex'],

@@ -218,7 +218,7 @@ A manually selected DDL still wins over any file spec (manual override, §2).
 | Type | What it checks | Key attributes |
 |------|---------------|----------------|
 | `literal` | Exact byte sequence at offset | `offset`, `value`, `encoding` (`ascii`\|`hex`\|`ebcdic`) |
-| `binary` | At least one byte in range is non-printable (< 0x20 or ≥ 0x7F) | `offset`, `length` |
+| `non-printable` | At least one byte in range is not printable in the named charset — ASCII (< 0x20 or ≥ 0x7F) or EBCDIC (the set `isEbcdic` accepts, negated) | `offset`, `length`, `encoding` (`ascii` \| `ebcdic`, default `ascii`) |
 | `ascii` | All bytes in range are printable ASCII (0x20–0x7E) | `offset`, `length` |
 | `ebcdic` | All bytes in range are valid EBCDIC characters | `offset`, `length` |
 | `numeric` | All bytes in range are ASCII/EBCDIC digits | `offset`, `length`, `encoding` (`ascii`\|`ebcdic`) |

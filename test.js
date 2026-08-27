@@ -1315,49 +1315,6 @@ test('[REGRESSION] a catch-all file class never shadows a specific one', () => {
   domEl._fmtLoad();
 });
 
-test('[REGRESSION] a file class that is skipped says why', () => {
-  // Skipped file classes used to `continue` without a trace row, so the progress
-  // overlay listed the message classes failing and never mentioned the file
-  // class — indistinguishable from a class that does not exist. "They are not
-  // even being evaluated" is the report this answers. Reported 2026-08-27.
-  const bytes = s => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; };
-  domEl._fmtSave([
-    { name: 'OK',   label: 'Bound file', kind: 'file', recognizers: [{ type: 'filename', pattern: '*.CPF' }],
-      ddl_bindings: ['V/S/D/REC'], parse_spec_binary: [{ 'read-ddl': {} }] },
-    { name: 'NONAME', label: 'No recognizer', kind: 'file', recognizers: [],
-      ddl_bindings: ['V/S/D/REC'], parse_spec_binary: [{ 'read-ddl': {} }] },
-    { name: 'INERT', label: 'Inert file', kind: 'file', recognizers: [{ type: 'filename', pattern: '*.CPF' }] },
-  ]);
-  domEl._fmtLoad();
-
-  const rows = ctx => {
-    const tr = domEl._fmtDetectTrace(bytes('DATA'), ctx).trace;
-    return Object.fromEntries(tr.map(t => [t.label, t.skipped ? t.note : (t.passed ? 'PASS' : 'fail')]));
-  };
-
-  // No filename on the record: every file class is skipped, and each says so.
-  const none = rows({});
-  eq(none['Bound file'], 'this record carries no filename', 'a skipped class vanished from the trace');
-  // A defect in the CLASS outranks a fact about the record: an inert class is
-  // broken for every record, so that is what it says.
-  eq(none['Inert file'], 'no DDL binding and no parse spec — nothing to parse with',
-     'the class\'s own defect is the more useful answer');
-
-  // With a filename the other two reasons show through. The filename deliberately
-  // does NOT match the usable class: detection stops at the first PASS, so a
-  // matching one would end the walk before the other two are ever reached.
-  const withName = rows({ filename: '$V.S.MINE.DAT' });
-  eq(withName['No recognizer'], 'no filename recognizer — a file class is keyed by one',
-     'a class that can never match must say that, not disappear');
-  eq(withName['Inert file'], 'no DDL binding and no parse spec — nothing to parse with',
-     'an inert class must say what it is missing');
-  eq(withName['Bound file'], 'fail', 'the usable class is EVALUATED, not skipped — it just does not match');
-  eq(rows({ filename: '$V.S.MINE.CPF' })['Bound file'], 'PASS', 'and it wins when it does match');
-
-  storage.removeItem('up_format_specs');
-  domEl._fmtLoad();
-});
-
 test('[REGRESSION] the Test panel gives file classes the filename to match on', () => {
   // The Test panel built its context from a NETARD wrapper only — { source,
   // dest } — so a `filename` recognizer could never pass there whatever the

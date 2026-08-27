@@ -9521,30 +9521,11 @@ function parseMessage(bytes, defs, rawBytes) {
                          note: 'forced by override — recognizers not evaluated' }] };
     }
     for (const spec of _fmtSpecs) {
-      // Same rule as _fmtDetect: file specs only exist for records that carry a
-      // wrapper filename, must themselves carry a filename recognizer, and must
-      // have something to parse with.
-      //
-      // Skipped ones used to `continue` without tracing, so the overlay listed
-      // the message classes failing and never mentioned the file class at all —
-      // indistinguishable from a class that does not exist. "They are not even
-      // being evaluated" is exactly right, and the panel has to say it rather
-      // than leave the user to guess which of three rules dropped it.
-      if (spec.kind === 'file') {
-        const skipWhy = spec._fileNoName
-              ? 'no filename recognizer — a file class is keyed by one'
-          : spec._fileInert
-              ? 'no DDL binding and no parse spec — nothing to parse with'
-          : !(ctx && ctx.filename)
-              ? 'this record carries no filename'
-          : null;
-        if (skipWhy) {
-          trace.push({ name: spec.name, label: spec.label || spec.name, color: spec.color || '',
-                       recognizers: (spec.recognizers || []).map(r => ({ type: r.type, id: r.id })),
-                       passed: false, failAt: null, skipped: true, note: skipWhy });
-          continue;
-        }
-      }
+      // Same rule as _fmtDetect: file specs only exist for records that
+      // carry a wrapper filename, must themselves carry a filename
+      // recognizer, and must have something to parse with — skip (and
+      // don't trace) otherwise.
+      if (spec.kind === 'file' && (spec._fileNoName || spec._fileInert || !(ctx && ctx.filename))) continue;
       let failAt = null;
       let passed = true;
       for (let i = 0; i < spec._fns.length; i++) {
@@ -10905,18 +10886,7 @@ function _ppDetectDetails(traces, noun) {
   let matched = 0, unknown = 0;
   const matchByLabel = new Map();
   const nearMissByMode = new Map();
-  // Classes that were never evaluated, by label + reason. Counted for every
-  // record, matched or not: a file class dropped from a run that matched
-  // something else is exactly the case the user cannot otherwise see.
-  const skippedByWhy = new Map();
   for (const tr of traces) {
-    for (const t of (tr.trace || [])) {
-      if (!t.skipped) continue;
-      const key = `${t.label}|${t.note}`;
-      const cur = skippedByWhy.get(key)
-               || { label: t.label, note: t.note, color: t.color || 'var(--text-dim)', count: 0 };
-      cur.count++; skippedByWhy.set(key, cur);
-    }
     const w = tr.winner;
     if (w && w.type !== 'UNKNOWN') {
       matched++;
@@ -10926,9 +10896,7 @@ function _ppDetectDetails(traces, noun) {
     } else {
       unknown++;
       let best = null;
-      // A SKIPPED class was never evaluated, so it has no failAt and cannot be a
-      // near miss — it gets its own lines below.
-      for (const t of (tr.trace || []).filter(x => !x.passed && !x.skipped)) {
+      for (const t of (tr.trace || []).filter(x => !x.passed)) {
         if (!best || t.failAt > best.failAt) best = t;
       }
       if (best) {
@@ -10983,18 +10951,6 @@ function _ppDetectDetails(traces, noun) {
       details.push({ html: `&nbsp;&nbsp;&nbsp;&nbsp;<span style="opacity:0.6">… and ${more} more near-miss pattern${plural(more)}</span>`,
                      color: 'var(--text-dim)' });
     }
-  }
-  // Never evaluated, and why. Last, because it is the answer to a question the
-  // rows above cannot raise: a class that was skipped appears nowhere in them,
-  // which reads as "my class is not being evaluated" — correctly, and with no
-  // way to find out which rule dropped it.
-  for (const info of [...skippedByWhy.values()].sort((a, b) => b.count - a.count)) {
-    details.push({
-      html: `&nbsp;&nbsp;&nbsp;&nbsp;⊘ Skipped <span style="color:${info.color}">${esc(info.label)}</span>`
-          + ` — <span style="color:#f39c12">${esc(info.note)}</span>`
-          + ` &nbsp;<span style="opacity:0.7">(${info.count} ${noun}${plural(info.count)})</span>`,
-      color: 'var(--text-dim)',
-    });
   }
   return details;
 }
@@ -18337,7 +18293,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.68.0';
+const APP_VERSION  = '1.46.69.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

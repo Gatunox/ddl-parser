@@ -1279,6 +1279,103 @@ test('detects FUP COPY fixtures as ASCII vs hex dumps before generic heuristics'
   eq(detectFormat(fixtureText('test/FUP-test/fup-copy-hex.txt')), 'fup-hex', 'FUP hex fixture');
 });
 
+test('[REGRESSION] a catch-all file class never shadows a specific one', () => {
+  // The shipped "Segmented File" template carries filename '*', which matches
+  // every record that has any filename at all. First-match-wins then handed it
+  // every file record and STOPPED — a class naming an actual file was never
+  // evaluated, and nothing on screen said so.
+  //
+  // List position cannot decide this: it depends on when each class was made and
+  // where _fmtSyncDefaults appended the template, so two browsers order the same
+  // two classes differently. Specificity decides. Reported 2026-08-27.
+  const bytes = s => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; };
+  const file = (name, label, pattern) => ({
+    name, label, kind: 'file', recognizers: [{ type: 'filename', pattern }],
+    ddl_bindings: ['V/S/D/REC'], parse_spec_binary: [{ 'read-ddl': {} }] });
+
+  for (const [order, where] of [[0, 'catch-all listed FIRST'], [1, 'catch-all listed last']]) {
+    const specific = file('CPF', 'CPF file', '$VOL1.SUBVOL.CPF');
+    const anyFile  = file('FILE', 'Any file', '*');
+    domEl._fmtSave(order === 0 ? [anyFile, specific] : [specific, anyFile]);
+    domEl._fmtLoad();
+    eq(domEl._fmtDetect(bytes('DATA'), { filename: '$VOL1.SUBVOL.CPF' })?.label, 'CPF file',
+       `the wildcard ate the record — ${where}`);
+    // The catch-all still does its job for everything the specific one declines.
+    eq(domEl._fmtDetect(bytes('DATA'), { filename: '$VOL1.SUBVOL.OTHER' })?.label, 'Any file',
+       `the fallback stopped falling back — ${where}`);
+  }
+
+  // An empty pattern is the same statement as '*'.
+  domEl._fmtSave([file('FILE', 'Any file', ''), file('CPF', 'CPF file', '$VOL1.SUBVOL.CPF')]);
+  domEl._fmtLoad();
+  eq(domEl._fmtDetect(bytes('DATA'), { filename: '$VOL1.SUBVOL.CPF' })?.label, 'CPF file',
+     'an empty filename pattern is a catch-all too');
+
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();
+});
+
+test('[REGRESSION] a file class that is skipped says why', () => {
+  // Skipped file classes used to `continue` without a trace row, so the progress
+  // overlay listed the message classes failing and never mentioned the file
+  // class — indistinguishable from a class that does not exist. "They are not
+  // even being evaluated" is the report this answers. Reported 2026-08-27.
+  const bytes = s => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; };
+  domEl._fmtSave([
+    { name: 'OK',   label: 'Bound file', kind: 'file', recognizers: [{ type: 'filename', pattern: '*.CPF' }],
+      ddl_bindings: ['V/S/D/REC'], parse_spec_binary: [{ 'read-ddl': {} }] },
+    { name: 'NONAME', label: 'No recognizer', kind: 'file', recognizers: [],
+      ddl_bindings: ['V/S/D/REC'], parse_spec_binary: [{ 'read-ddl': {} }] },
+    { name: 'INERT', label: 'Inert file', kind: 'file', recognizers: [{ type: 'filename', pattern: '*.CPF' }] },
+  ]);
+  domEl._fmtLoad();
+
+  const rows = ctx => {
+    const tr = domEl._fmtDetectTrace(bytes('DATA'), ctx).trace;
+    return Object.fromEntries(tr.map(t => [t.label, t.skipped ? t.note : (t.passed ? 'PASS' : 'fail')]));
+  };
+
+  // No filename on the record: every file class is skipped, and each says so.
+  const none = rows({});
+  eq(none['Bound file'], 'this record carries no filename', 'a skipped class vanished from the trace');
+  // A defect in the CLASS outranks a fact about the record: an inert class is
+  // broken for every record, so that is what it says.
+  eq(none['Inert file'], 'no DDL binding and no parse spec — nothing to parse with',
+     'the class\'s own defect is the more useful answer');
+
+  // With a filename the other two reasons show through. The filename deliberately
+  // does NOT match the usable class: detection stops at the first PASS, so a
+  // matching one would end the walk before the other two are ever reached.
+  const withName = rows({ filename: '$V.S.MINE.DAT' });
+  eq(withName['No recognizer'], 'no filename recognizer — a file class is keyed by one',
+     'a class that can never match must say that, not disappear');
+  eq(withName['Inert file'], 'no DDL binding and no parse spec — nothing to parse with',
+     'an inert class must say what it is missing');
+  eq(withName['Bound file'], 'fail', 'the usable class is EVALUATED, not skipped — it just does not match');
+  eq(rows({ filename: '$V.S.MINE.CPF' })['Bound file'], 'PASS', 'and it wins when it does match');
+
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();
+});
+
+test('[REGRESSION] the Test panel gives file classes the filename to match on', () => {
+  // The Test panel built its context from a NETARD wrapper only — { source,
+  // dest } — so a `filename` recognizer could never pass there whatever the
+  // pattern said, and file classes were excluded from the winner outright. The
+  // one control for working out why a file class does not match could not test
+  // file classes. Reported 2026-08-27.
+  const fn = psFnSource('_meRunTest');
+  assert.ok(/isFupCopyLog\(text\)[\s\S]{0,80}parseFupCopyLog\(text\)/.test(fn),
+    'a FUP COPY capture must be parsed for its wrapper, the way the real flow does');
+  assert.ok(/filename: rec\.filename \|\| rec\.filePath \|\| null/.test(fn),
+    'the wrapper filename never reaches the recognizers');
+  assert.ok(/_testHasFilename \|\| _meState\.specs\[i\]\?\.kind !== 'file'/.test(fn),
+    'file classes must compete for the win when the input carries a filename');
+  // And with no filename they stay out — they cannot win a real parse either.
+  assert.ok(/const _testHasFilename = !!\(testCtx && testCtx\.filename\)/.test(fn),
+    'the gate must read the context that was actually built');
+});
+
 test('[REGRESSION] a FUP COPY header without KEY is still FUP COPY', () => {
   // KEY n  (%n) is printed for a KEY-SEQUENCED file. An entry-sequenced,
   // relative or unstructured file has no key, and its header runs straight from
@@ -13718,9 +13815,9 @@ test('"Other" entities are ranked after every message, so the sidebar cannot lie
   // Source-level, since the function is module-private in some builds.
   const src = fs.readFileSync('./source.html', 'utf8');
   const fn = (src.match(/function _detectOrderIdxs[\s\S]*?\n  \}/) || [''])[0];
-  assert.ok(/const msgs = \[\], other = \[\], files = \[\]/.test(fn), 'three buckets');
-  assert.ok(/return msgs\.concat\(other, files\)/.test(fn),
-    `messages first, other next, files last: ${fn.slice(-120)}`);
+  assert.ok(/const msgs = \[\], other = \[\], files = \[\], anyFile = \[\]/.test(fn), 'four buckets');
+  assert.ok(/return msgs\.concat\(other, files, anyFile\)/.test(fn),
+    `messages first, other next, files, catch-all files last: ${fn.slice(-120)}`);
 });
 
 test('the three sidebar lists exist and nothing still assumes two', () => {

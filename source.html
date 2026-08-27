@@ -9113,13 +9113,35 @@ function parseMessage(bytes, defs, rawBytes) {
   // that hides precedence lies about it. They are therefore tried AFTER every
   // message rather than interleaved, so the sidebar reads top to bottom as the
   // order detection actually uses: Messages, then Other, then Files.
+  // A filename pattern of '*' (or empty) matches every record that carries any
+  // filename at all. A file class holding one is a FALLBACK, not a competitor —
+  // the shipped "Segmented File" template is exactly this — and first-match-wins
+  // means it swallows every file record and stops the walk before a class that
+  // names an actual file is ever evaluated. Its own recognizers never ran, so
+  // nothing in the trace said why: the class simply was not there.
+  //
+  // List position cannot be the answer. It depends on when each class was
+  // created and on where _fmtSyncDefaults appended the template, so the same two
+  // classes order differently in two browsers — reported from an install where
+  // the catch-all was deliberately left LAST and still won.
+  //
+  // So specificity decides: a catch-all file class ranks after every specific
+  // one, whatever the list says. Within each group the list order is kept, which
+  // is what orders two specific patterns against each other. Reported 2026-08-27.
+  function _fileIsCatchAll(s) {
+    const named = (s.recognizers || []).filter(r => r && r.type === 'filename');
+    if (!named.length) return false;
+    return named.every(r => { const p = String(r.pattern ?? '').trim(); return p === '' || p === '*'; });
+  }
+
   function _detectOrderIdxs(specs) {
-    const msgs = [], other = [], files = [];
+    const msgs = [], other = [], files = [], anyFile = [];
     (specs || []).forEach((s, i) => {
       const k = s && s.kind;
-      (k === 'file' ? files : k === 'other' ? other : msgs).push(i);
+      if (k === 'file') (_fileIsCatchAll(s) ? anyFile : files).push(i);
+      else (k === 'other' ? other : msgs).push(i);
     });
-    return msgs.concat(other, files);
+    return msgs.concat(other, files, anyFile);
   }
 
   function _fmtLoad() {
@@ -9499,11 +9521,30 @@ function parseMessage(bytes, defs, rawBytes) {
                          note: 'forced by override — recognizers not evaluated' }] };
     }
     for (const spec of _fmtSpecs) {
-      // Same rule as _fmtDetect: file specs only exist for records that
-      // carry a wrapper filename, must themselves carry a filename
-      // recognizer, and must have something to parse with — skip (and
-      // don't trace) otherwise.
-      if (spec.kind === 'file' && (spec._fileNoName || spec._fileInert || !(ctx && ctx.filename))) continue;
+      // Same rule as _fmtDetect: file specs only exist for records that carry a
+      // wrapper filename, must themselves carry a filename recognizer, and must
+      // have something to parse with.
+      //
+      // Skipped ones used to `continue` without tracing, so the overlay listed
+      // the message classes failing and never mentioned the file class at all —
+      // indistinguishable from a class that does not exist. "They are not even
+      // being evaluated" is exactly right, and the panel has to say it rather
+      // than leave the user to guess which of three rules dropped it.
+      if (spec.kind === 'file') {
+        const skipWhy = spec._fileNoName
+              ? 'no filename recognizer — a file class is keyed by one'
+          : spec._fileInert
+              ? 'no DDL binding and no parse spec — nothing to parse with'
+          : !(ctx && ctx.filename)
+              ? 'this record carries no filename'
+          : null;
+        if (skipWhy) {
+          trace.push({ name: spec.name, label: spec.label || spec.name, color: spec.color || '',
+                       recognizers: (spec.recognizers || []).map(r => ({ type: r.type, id: r.id })),
+                       passed: false, failAt: null, skipped: true, note: skipWhy });
+          continue;
+        }
+      }
       let failAt = null;
       let passed = true;
       for (let i = 0; i < spec._fns.length; i++) {
@@ -10864,7 +10905,18 @@ function _ppDetectDetails(traces, noun) {
   let matched = 0, unknown = 0;
   const matchByLabel = new Map();
   const nearMissByMode = new Map();
+  // Classes that were never evaluated, by label + reason. Counted for every
+  // record, matched or not: a file class dropped from a run that matched
+  // something else is exactly the case the user cannot otherwise see.
+  const skippedByWhy = new Map();
   for (const tr of traces) {
+    for (const t of (tr.trace || [])) {
+      if (!t.skipped) continue;
+      const key = `${t.label}|${t.note}`;
+      const cur = skippedByWhy.get(key)
+               || { label: t.label, note: t.note, color: t.color || 'var(--text-dim)', count: 0 };
+      cur.count++; skippedByWhy.set(key, cur);
+    }
     const w = tr.winner;
     if (w && w.type !== 'UNKNOWN') {
       matched++;
@@ -10874,7 +10926,9 @@ function _ppDetectDetails(traces, noun) {
     } else {
       unknown++;
       let best = null;
-      for (const t of (tr.trace || []).filter(x => !x.passed)) {
+      // A SKIPPED class was never evaluated, so it has no failAt and cannot be a
+      // near miss — it gets its own lines below.
+      for (const t of (tr.trace || []).filter(x => !x.passed && !x.skipped)) {
         if (!best || t.failAt > best.failAt) best = t;
       }
       if (best) {
@@ -10929,6 +10983,18 @@ function _ppDetectDetails(traces, noun) {
       details.push({ html: `&nbsp;&nbsp;&nbsp;&nbsp;<span style="opacity:0.6">… and ${more} more near-miss pattern${plural(more)}</span>`,
                      color: 'var(--text-dim)' });
     }
+  }
+  // Never evaluated, and why. Last, because it is the answer to a question the
+  // rows above cannot raise: a class that was skipped appears nowhere in them,
+  // which reads as "my class is not being evaluated" — correctly, and with no
+  // way to find out which rule dropped it.
+  for (const info of [...skippedByWhy.values()].sort((a, b) => b.count - a.count)) {
+    details.push({
+      html: `&nbsp;&nbsp;&nbsp;&nbsp;⊘ Skipped <span style="color:${info.color}">${esc(info.label)}</span>`
+          + ` — <span style="color:#f39c12">${esc(info.note)}</span>`
+          + ` &nbsp;<span style="opacity:0.7">(${info.count} ${noun}${plural(info.count)})</span>`,
+      color: 'var(--text-dim)',
+    });
   }
   return details;
 }
@@ -18271,7 +18337,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.67.0';
+const APP_VERSION  = '1.46.68.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -34196,13 +34262,22 @@ function _meRunTest(opts) {
     // manual format only overrides the label/engine format, it never re-adds the
     // wrapper. Only bare stripped input (no wrapper, no formatted block) falls
     // through to extractBytes, where the manual/detected format drives decoding.
-    const recs = parseNetardLog(text);
+    // A FUP COPY capture first: its wrapper carries the FILENAME, which is the
+    // only thing a file class matches on. Without this the panel handed the
+    // recognizers { source, dest } and nothing else, so a `filename` recognizer
+    // could never pass here whatever the pattern said — the one control for
+    // working out why a file class is not matching could not test file classes.
+    // Reported 2026-08-27.
+    const fupRecs = (typeof isFupCopyLog === 'function' && isFupCopyLog(text))
+      ? parseFupCopyLog(text) : [];
+    const recs = fupRecs.length ? fupRecs : parseNetardLog(text);
     const rec  = (recs && recs.length && recs[0].rawMsg && recs[0].rawMsg.length
                   && (recs[0].source || recs[0].dest || recs[0].netardFmt)) ? recs[0] : null;
     if (rec) {
       // The wrapper the panel just parsed IS the metadata the recognizers need;
       // the real record path passes exactly this at the detectMsgTypeTrace call.
-      testCtx   = { source: rec.source, dest: rec.dest };
+      testCtx   = { source: rec.source, dest: rec.dest,
+                    filename: rec.filename || rec.filePath || null };
       netardBcm = Array.isArray(rec.byteCharMap) ? rec.byteCharMap : null;
       rawBytes  = Array.from(rec.rawMsg, c => c.charCodeAt(0) & 0xFF);
       inputFmt  = fmtSel ? fmtSel : (rec.netardFmt || 'standard');
@@ -34228,10 +34303,15 @@ function _meRunTest(opts) {
   // detection), but the row verdicts are a diagnostic — they must show which
   // entities WOULD pass, not just the one that did.
   const all = _meState.specs.map(s => _fmtTestSpecs([s], bytes, testCtx)[0]);
-  // Real detection walks Messages in list order; file specs are keyed by the
-  // wrapper filename, which pasted test input doesn't carry — so they can never
-  // win here and are excluded from the winner computation.
-  const order     = _detectOrderIdxs(_meState.specs).filter(i => _meState.specs[i]?.kind !== 'file');
+  // Real detection walks Messages in list order, then file classes. A file class
+  // is keyed by the wrapper filename: when the test input carries one (a FUP
+  // COPY capture), file classes compete here exactly as they do in a real parse
+  // — anything else would make this panel disagree with the thing it exists to
+  // explain. With no filename in the input they cannot win a real parse either,
+  // so they stay out of the winner. Reported 2026-08-27.
+  const _testHasFilename = !!(testCtx && testCtx.filename);
+  const order     = _detectOrderIdxs(_meState.specs)
+    .filter(i => _testHasFilename || _meState.specs[i]?.kind !== 'file');
   const winnerIdx = order.find(i => all[i]?.passed) ?? -1;
   // Which entities the waterfall would actually have TRIED. It stops at the
   // first match, so everything after the winner in detection order was never

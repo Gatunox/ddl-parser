@@ -219,6 +219,10 @@
   --shadow-card: 0 1px 2px rgba(0,0,0,.30), 0 4px 14px -4px rgba(0,0,0,.35);
   --accent-hover: #79b8ff;
   --on-accent: #000000;
+  /* An audit row you have already looked at. A step ABOVE --bg-panel: at
+     #161B22 it was that token exactly, so on a panel-coloured list the mark was
+     invisible. */
+  --row-viewed: #1C222B;
   --scroll-thumb: #3a4049;
   --flash-warn-bg: #e6a817; --flash-warn-fg: #000000;
   --flash-error-bg: #c0392b; --flash-error-fg: #ffffff;
@@ -301,6 +305,7 @@
   --shadow-card: 0 1px 2px rgba(0,0,0,.05), 0 4px 14px -6px rgba(0,0,0,.10);
   --accent-hover: #0860ca;
   --on-accent: #ffffff;
+  --row-viewed: #F6F6F6;
   --scroll-thumb: #c3ccd6;
   --flash-warn-bg: #d97706; --flash-warn-fg: #ffffff;
   --flash-error-bg: #a93226; --flash-error-fg: #ffffff;
@@ -2235,7 +2240,7 @@ td.c-err  { color: var(--accent2); }
    height — the list would have pushed the pane off the bottom instead. */
 .audit-record-list { flex:1; min-height:0; overflow-y:auto; }
 .audit-record-row {
-  display:flex; flex-direction:column; padding:2px 8px 3px;
+  display:flex; flex-direction:column; padding:2px 8px 3px 5px;
   border-bottom: var(--bw) solid rgba(255,255,255,0.03);
   cursor:pointer; font-family:var(--font-mono); font-size:var(--sz-mono);
 }
@@ -2244,6 +2249,27 @@ td.c-err  { color: var(--accent2); }
 .ar-meta    { display:flex; align-items:center; overflow:hidden; white-space:nowrap; }
 .ar-preview { color:var(--text-dim); font-size:calc(var(--sz-mono) - 0.5px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:46px; line-height:1.4; }
 .ar-no-msg { color:var(--text-very-dim,var(--text-dim)); font-style:italic; }
+/* Where a row has been. No glyphs: at this type size a mark is about four
+   pixels of ink and vanishes in a list of fifty. Two properties the eye already
+   scans instead —
+     viewed — the GROUND shifts, lighter on dark and darker on light;
+     parsed — the LEFT GUTTER takes the message type's own colour, the same
+              colour its badge carries on that row, so the list says what was
+              parsed and what it was at the same time.
+   --row-gutter is written per row by _auditBuildRowHtml; the class only decides
+   whether the edge is drawn. */
+.audit-record-row { border-left: 3px solid transparent; }
+/* The ground says VIEWED and keeps saying it once the row is parsed — parsing
+   does not un-visit a record, and the gutter is what the parse adds on top. */
+.audit-record-row.aud-viewed,
+.audit-record-row.aud-parsed { background: var(--row-viewed); }
+.audit-record-row.aud-parsed { border-left-color: var(--row-gutter, var(--text-dim)); }
+/* Selection wins the ground — it is where you ARE, not where you have been —
+   and hover has to beat both or a marked row stops responding to the mouse. */
+.audit-record-row.aud-viewed:hover,
+.audit-record-row.aud-parsed:hover { background: var(--row-hover); }
+.audit-record-row.aud-viewed.aud-sel,
+.audit-record-row.aud-parsed.aud-sel { background: rgba(var(--accent-rgb),0.18); }
 .ac-idx   { min-width:calc(var(--sz-mono) * 4); text-align:right; padding-right:6px; color:var(--text-dim); flex-shrink:0; }
 .ac-badge { width:calc(var(--sz-mono) * 3.8); flex-shrink:0; padding-right:4px; display:flex; align-items:center; }
 .audit-record-row .btype { font-size:calc(var(--sz-mono) - 2px); padding:2px 3px 0; border-width: var(--bw-ctl); line-height:1; display:inline-block; vertical-align:middle; }
@@ -14526,8 +14552,13 @@ function _auditBuildRowHtml(r, absIdx) {
     ? `<span class="${_badgeSt ? 'btype' : _btypeClass(badge.type)}"${_badgeSt ? ` style="${_badgeSt}"` : ''}>${_auditEsc(_label)}</span>`
     : '';
   const fail = r.msgFailure ? String(r.msgFailure) : '';
-  return '<div id="aud-row-' + absIdx + '" class="audit-record-row' + (absIdx === _auditSt.selIdx ? ' aud-sel' : '')
-    + '" onclick="auditInspectRecord(' + absIdx + ')">'
+  // Parsed outranks viewed: you cannot parse without viewing, so one mark, and
+  // it is the further of the two states.
+  const seen = _auditParsed.has(r.offset) ? ' aud-parsed'
+             : _auditViewed.has(r.offset) ? ' aud-viewed' : '';
+  const gutter = badge && badge.color ? ' style="--row-gutter:' + _auditEsc(badge.color) + '"' : '';
+  return '<div id="aud-row-' + absIdx + '" class="audit-record-row' + seen + (absIdx === _auditSt.selIdx ? ' aud-sel' : '')
+    + '"' + gutter + ' onclick="auditInspectRecord(' + absIdx + ')">'
     + '<div class="ar-meta">'
     + '<span class="ac-idx">'   + r.recNo + '</span>'
     + '<span class="ac-badge">' + badgeHtml + '</span>'
@@ -14824,6 +14855,8 @@ function auditInspectRecord(filteredIdx) {
     _auditSetDetailOpen(true);
     requestAnimationFrame(_auditSyncToggleWidth);
     _auditSt._inspectBuf = buf;
+    _auditViewed.add(rec.offset);
+    if (!_auditParsed.has(rec.offset)) _auditMarkRow(filteredIdx, 'aud-viewed');
     // After _inspectBuf is set: auditParseSelected reads it, and without it the
     // parse would re-slice the file for bytes that are already here.
     if (P.auditAutoParse) auditParseSelected();
@@ -14963,7 +14996,32 @@ function _auditSyncToggleWidth() {
 const _AUDIT_PARSE_CACHE_MAX = 20;
 let _auditParseCache = new Map();
 
-function _auditParseCacheClear() { _auditParseCache = new Map(); }
+// What you have already looked at, and what you have already parsed. Both keyed
+// on rec.offset like the cache, both cleared with it — and both are plain Sets
+// of numbers, so they cost nothing to keep for a whole file.
+//
+// Parsed is tracked apart from the cache on purpose: the cache is capped at 20
+// and evicts FIFO, so a record whose entry is gone is still a record you parsed.
+// The mark is a history of what you did, not a readout of what is resident.
+let _auditViewed = new Set();
+let _auditParsed = new Set();
+
+function _auditParseCacheClear() {
+  _auditParsePendingKey = null;   // or an in-flight wait writes into the new file's cache
+  _auditParseCache = new Map();
+  _auditViewed = new Set();
+  _auditParsed = new Set();
+}
+
+// The row is drawn by the virtual list, which only rebuilds what scrolls into
+// view — so a mark that appears while you are looking at the row has to be
+// applied to the live node too.
+function _auditMarkRow(absIdx, cls) {
+  const el = document.getElementById('aud-row-' + absIdx);
+  if (!el) return;
+  el.classList.remove('aud-viewed', 'aud-parsed');
+  el.classList.add(cls);
+}
 
 function _auditParseCacheStore(key, hex) {
   if (key == null) return;
@@ -15003,6 +15061,8 @@ function _auditParseCacheApply(hit) {
 function auditParseSelected() {
   const rec = _auditSt.filtered[_auditSt.selIdx];
   if (!rec || !_auditSt.file) return;
+  _auditParsed.add(rec.offset);
+  _auditMarkRow(_auditSt.selIdx, 'aud-parsed');
   const hit = _auditParseCache.get(rec.offset);
   if (hit) { _auditParseCacheApply(hit); return; }
   const load = buf => {
@@ -15026,19 +15086,41 @@ function auditParseSelected() {
 }
 
 // doParseMessages runs through the progress overlay's setTimeout chain, so the
-// result is not on S when it returns. Wait for isParsed to land — bounded, so a
-// parse that never finishes (aborted, or an unmatched record) caches nothing
-// rather than leaving a timer running.
+// result is not on S when it returns.
+//
+// The wait is on the RUN, not on a stopwatch. A parse that needs a DDL stops and
+// asks, and the answer comes from a person — the first version gave up after
+// four seconds, so exactly the records that cost the most to parse were the ones
+// never cached, and they asked again on every visit. Reported 2026-08-25.
+//
+// It ends when: the result lands (cache it), another record starts a parse (this
+// one is no longer what is on screen), or the overlay closes without a result —
+// aborted, or an unmatched record. The absolute cap is a backstop against a
+// timer nobody clears, not the normal exit.
+let _auditParsePendingKey = null;
+const _AUDIT_PARSE_WAIT_MAX_MS = 10 * 60 * 1000;
+
 function _auditParseCacheStoreWhenDone(key, hex) {
-  let tries = 0;
+  _auditParsePendingKey = key;
+  const started = Date.now();
+  let afterClose = 0;
   const poll = () => {
+    if (_auditParsePendingKey !== key) return;            // superseded
     if (S.isParsed && Array.isArray(S.messages) && S.messages.length) {
       _auditParseCacheStore(key, hex);
+      _auditParsePendingKey = null;
       return;
     }
-    if (++tries < 40) setTimeout(poll, 100);
+    if (Date.now() - started > _AUDIT_PARSE_WAIT_MAX_MS) { _auditParsePendingKey = null; return; }
+    const ov = document.getElementById('parseProgressOverlay');
+    const running = ov && !ov.classList.contains('hidden');
+    // The overlay is dismissed around the same moment the result lands, so a
+    // closed overlay is not proof there will be no result — allow a short grace
+    // period before giving up.
+    if (!running && ++afterClose > 8) { _auditParsePendingKey = null; return; }
+    setTimeout(poll, 200);
   };
-  setTimeout(poll, 100);
+  setTimeout(poll, 150);
 }
 
 // Pre-built audit batch: set before calling doParseMessages so the P2/P3 pipeline
@@ -18148,7 +18230,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.63.0';
+const APP_VERSION  = '1.46.64.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

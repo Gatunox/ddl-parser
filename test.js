@@ -18314,7 +18314,19 @@ test('a previewed audit record is parsed once, not again on every revisit', () =
   const store = psFnSource('_auditParseCacheStoreWhenDone');
   assert.ok(/S\.isParsed && Array\.isArray\(S\.messages\) && S\.messages\.length/.test(store),
     'an unfinished or empty parse must not be cached as an answer');
-  assert.ok(/tries < \d+/.test(store), 'the poll must be bounded — an aborted parse would poll forever');
+  // The wait is on the RUN, not on a stopwatch: a parse that stops to ask for a
+  // DDL waits on a person, and a short deadline meant exactly the records that
+  // cost the most to parse were the ones never cached. Reported 2026-08-25.
+  assert.ok(/parseProgressOverlay/.test(store),
+    'the wait must follow the run — a fixed deadline drops any parse that asks for a DDL');
+  assert.ok(/_auditParsePendingKey !== key/.test(store),
+    'a newer parse must supersede this wait, or it caches a result belonging to another record');
+  assert.ok(/afterClose > \d+/.test(store),
+    'the overlay closes as the result lands — giving up the instant it hides loses the answer');
+  // Still bounded, but as a backstop rather than the normal exit.
+  assert.ok(/_AUDIT_PARSE_WAIT_MAX_MS/.test(store), 'an abandoned wait must still end');
+  assert.ok(/_auditParsePendingKey = null/.test(psFnSource('_auditParseCacheClear')),
+    'an in-flight wait would write into the next file\'s cache');
 
   // Bounded: a 200,000-record file is a normal thing to open here.
   const src = fs.readFileSync('./source.html', 'utf8');

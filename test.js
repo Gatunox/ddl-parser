@@ -1279,37 +1279,35 @@ test('detects FUP COPY fixtures as ASCII vs hex dumps before generic heuristics'
   eq(detectFormat(fixtureText('test/FUP-test/fup-copy-hex.txt')), 'fup-hex', 'FUP hex fixture');
 });
 
-test('[REGRESSION] a catch-all file class never shadows a specific one', () => {
-  // The shipped "Segmented File" template carries filename '*', which matches
-  // every record that has any filename at all. First-match-wins then handed it
-  // every file record and STOPPED — a class naming an actual file was never
-  // evaluated, and nothing on screen said so.
-  //
-  // List position cannot decide this: it depends on when each class was made and
-  // where _fmtSyncDefaults appended the template, so two browsers order the same
-  // two classes differently. Specificity decides. Reported 2026-08-27.
+test('file classes are walked in LIST order — the list is the user\'s statement of intent', () => {
+  // v1.46.68.0 ranked catch-all ('*' / empty) filename patterns after specific
+  // ones, on the theory that a wildcard should never shadow a named file. Taken
+  // back out: a user who puts the catch-all at the bottom has already said where
+  // it goes, and a rule that quietly re-sorts their list is a second opinion
+  // they did not ask for. Order is order. Reported 2026-08-27.
   const bytes = s => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; };
   const file = (name, label, pattern) => ({
     name, label, kind: 'file', recognizers: [{ type: 'filename', pattern }],
     ddl_bindings: ['V/S/D/REC'], parse_spec_binary: [{ 'read-ddl': {} }] });
+  const specific = () => file('CPF', 'CPF file', '$VOL1.SUBVOL.CPF');
+  const anyFile  = () => file('FILE', 'Any file', '*');
 
-  for (const [order, where] of [[0, 'catch-all listed FIRST'], [1, 'catch-all listed last']]) {
-    const specific = file('CPF', 'CPF file', '$VOL1.SUBVOL.CPF');
-    const anyFile  = file('FILE', 'Any file', '*');
-    domEl._fmtSave(order === 0 ? [anyFile, specific] : [specific, anyFile]);
-    domEl._fmtLoad();
-    eq(domEl._fmtDetect(bytes('DATA'), { filename: '$VOL1.SUBVOL.CPF' })?.label, 'CPF file',
-       `the wildcard ate the record — ${where}`);
-    // The catch-all still does its job for everything the specific one declines.
-    eq(domEl._fmtDetect(bytes('DATA'), { filename: '$VOL1.SUBVOL.OTHER' })?.label, 'Any file',
-       `the fallback stopped falling back — ${where}`);
-  }
-
-  // An empty pattern is the same statement as '*'.
-  domEl._fmtSave([file('FILE', 'Any file', ''), file('CPF', 'CPF file', '$VOL1.SUBVOL.CPF')]);
+  domEl._fmtSave([specific(), anyFile()]);
   domEl._fmtLoad();
   eq(domEl._fmtDetect(bytes('DATA'), { filename: '$VOL1.SUBVOL.CPF' })?.label, 'CPF file',
-     'an empty filename pattern is a catch-all too');
+     'the catch-all was left LAST — the class above it must win');
+  eq(domEl._fmtDetect(bytes('DATA'), { filename: '$VOL1.SUBVOL.OTHER' })?.label, 'Any file',
+     'and it still catches what nothing above it claims');
+
+  // The reverse order is the user saying the opposite, and it is honoured too.
+  domEl._fmtSave([anyFile(), specific()]);
+  domEl._fmtLoad();
+  eq(domEl._fmtDetect(bytes('DATA'), { filename: '$VOL1.SUBVOL.CPF' })?.label, 'Any file',
+     'a catch-all placed FIRST is a deliberate catch-all — do not re-sort the list');
+
+  // Nothing may reintroduce a specificity bucket.
+  const fn = (fs.readFileSync('./source.html', 'utf8').match(/function _detectOrderIdxs[\s\S]*?\n  \}/) || [''])[0];
+  assert.ok(/return msgs\.concat\(other, files\);/.test(fn), 'the file group is one bucket, in list order');
 
   storage.removeItem('up_format_specs');
   domEl._fmtLoad();
@@ -13772,9 +13770,9 @@ test('"Other" entities are ranked after every message, so the sidebar cannot lie
   // Source-level, since the function is module-private in some builds.
   const src = fs.readFileSync('./source.html', 'utf8');
   const fn = (src.match(/function _detectOrderIdxs[\s\S]*?\n  \}/) || [''])[0];
-  assert.ok(/const msgs = \[\], other = \[\], files = \[\], anyFile = \[\]/.test(fn), 'four buckets');
-  assert.ok(/return msgs\.concat\(other, files, anyFile\)/.test(fn),
-    `messages first, other next, files, catch-all files last: ${fn.slice(-120)}`);
+  assert.ok(/const msgs = \[\], other = \[\], files = \[\]/.test(fn), 'three buckets');
+  assert.ok(/return msgs\.concat\(other, files\)/.test(fn),
+    `messages first, other next, files last: ${fn.slice(-120)}`);
 });
 
 test('the three sidebar lists exist and nothing still assumes two', () => {

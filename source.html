@@ -9113,35 +9113,18 @@ function parseMessage(bytes, defs, rawBytes) {
   // that hides precedence lies about it. They are therefore tried AFTER every
   // message rather than interleaved, so the sidebar reads top to bottom as the
   // order detection actually uses: Messages, then Other, then Files.
-  // A filename pattern of '*' (or empty) matches every record that carries any
-  // filename at all. A file class holding one is a FALLBACK, not a competitor —
-  // the shipped "Segmented File" template is exactly this — and first-match-wins
-  // means it swallows every file record and stops the walk before a class that
-  // names an actual file is ever evaluated. Its own recognizers never ran, so
-  // nothing in the trace said why: the class simply was not there.
-  //
-  // List position cannot be the answer. It depends on when each class was
-  // created and on where _fmtSyncDefaults appended the template, so the same two
-  // classes order differently in two browsers — reported from an install where
-  // the catch-all was deliberately left LAST and still won.
-  //
-  // So specificity decides: a catch-all file class ranks after every specific
-  // one, whatever the list says. Within each group the list order is kept, which
-  // is what orders two specific patterns against each other. Reported 2026-08-27.
-  function _fileIsCatchAll(s) {
-    const named = (s.recognizers || []).filter(r => r && r.type === 'filename');
-    if (!named.length) return false;
-    return named.every(r => { const p = String(r.pattern ?? '').trim(); return p === '' || p === '*'; });
-  }
-
+  // Detection follows the LIST. Files are walked after messages, and within the
+  // Files list in exactly the order the user put them in — a catch-all left at
+  // the bottom is a fallback because that is where it was placed, and nothing
+  // here second-guesses that. Ordering by pattern specificity was tried in
+  // v1.46.68.0 and taken back out: the list is the user's statement of intent.
   function _detectOrderIdxs(specs) {
-    const msgs = [], other = [], files = [], anyFile = [];
+    const msgs = [], other = [], files = [];
     (specs || []).forEach((s, i) => {
       const k = s && s.kind;
-      if (k === 'file') (_fileIsCatchAll(s) ? anyFile : files).push(i);
-      else (k === 'other' ? other : msgs).push(i);
+      (k === 'file' ? files : k === 'other' ? other : msgs).push(i);
     });
-    return msgs.concat(other, files, anyFile);
+    return msgs.concat(other, files);
   }
 
   function _fmtLoad() {
@@ -18293,7 +18276,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.69.0';
+const APP_VERSION  = '1.46.70.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

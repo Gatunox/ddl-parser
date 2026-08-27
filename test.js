@@ -18338,8 +18338,10 @@ test('a previewed audit record is parsed once, not again on every revisit', () =
   // let a busy record hold its slot forever.
   assert.ok(!/_auditParseCache\.delete\(key\)/.test(psFnSource('_auditParseCacheStore')),
     'delete-then-set turns FIFO into LRU');
-  eq((src.match(/_AUDIT_PARSE_CACHE_MAX = (\d+)/) || [])[1], '20',
-     'the cap is what the slowest machine has to hold');
+  // 40 = a full page of the record list, so a pass down one screenful never
+  // evicts anything still visible.
+  eq((src.match(/_AUDIT_PARSE_CACHE_MAX = (\d+)/) || [])[1], '40',
+     'the cap is one full page of records');
 
   // Cleared where the key stops meaning anything: offsets are unique only
   // within one file.

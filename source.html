@@ -14988,12 +14988,15 @@ function _auditSyncToggleWidth() {
 // the parsed messages (their fields and the payload bytes), so it costs RAM for
 // as long as the page is open and nothing at all after a reload.
 //
-// Capped at 20 with FIFO retention: a 200,000-record file is a normal thing to
-// open here, and the machines this runs on are not always fast. Oldest inserted
-// out first — NOT least-recently-used. FIFO can evict a record you keep coming
-// back to, but only after twenty others have been previewed since, and the case
-// this exists for is comparing a handful.
-const _AUDIT_PARSE_CACHE_MAX = 20;
+// Capped at 40 with FIFO retention. 40 is a full page of the record list, so a
+// pass down one screenful never evicts anything you can still see — and a
+// 200,000-record file is a normal thing to open here, on machines that are not
+// always fast, so it does not grow past that.
+//
+// Oldest INSERTED out first — not least-recently-used. FIFO can evict a record
+// you keep returning to, but only after forty others have been previewed since,
+// and the case this exists for is comparing a handful.
+const _AUDIT_PARSE_CACHE_MAX = 40;
 let _auditParseCache = new Map();
 
 // What you have already looked at, and what you have already parsed. Both keyed
@@ -18230,7 +18233,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.64.0';
+const APP_VERSION  = '1.46.65.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

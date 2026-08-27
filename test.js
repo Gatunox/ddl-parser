@@ -1313,6 +1313,31 @@ test('file classes are walked in LIST order — the list is the user\'s statemen
   domEl._fmtLoad();
 });
 
+test('[REGRESSION] the Files list shows the order detection actually uses', () => {
+  // The Files list sorted itself alphabetically for display while detection
+  // walked the stored array — so a catch-all '*' class sitting FIRST in the
+  // array rendered LAST (S after C) and swallowed every file record, while the
+  // list on screen said the specific class came first. Hours were spent on
+  // "you are not following the order": the app wasn't, and the list said
+  // otherwise. Reported 2026-08-27.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const fn  = psFnSource('_meRenderSpecList');
+  assert.ok(!/localeCompare/.test(fn),
+    'the Files list must not re-sort what detection walks in array order');
+  assert.ok(!/idxs\.sort/.test(fn), 'no display-only ordering of any list');
+
+  // And the order must be changeable where it is shown: dropping a file row
+  // inside the Files list REORDERS it, rather than only flipping its kind.
+  const drop = psFnSource('_meSpecDrop');
+  assert.ok(!/only reclassifies — files are unordered/.test(drop),
+    'dropping inside Files still refuses to reorder');
+  assert.ok(/const tgtIsFile = _meState\.specs\[targetIdx\]\?\.kind === 'file'/.test(drop),
+    'the row dropped ON decides the list, so a file drop stays a file');
+  assert.ok(/if \(tgtIsFile\) moved\.kind = 'file'; else delete moved\.kind;/.test(drop),
+    'a reordered file class must stay a file class');
+  assert.ok(/_meState\.specs\.splice\(dst, 0, moved\)/.test(drop), 'the move must reach the array');
+});
+
 test('[REGRESSION] the Test panel gives file classes the filename to match on', () => {
   // The Test panel built its context from a NETARD wrapper only — { source,
   // dest } — so a `filename` recognizer could never pass there whatever the

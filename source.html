@@ -18276,7 +18276,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.70.0';
+const APP_VERSION  = '1.46.71.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20356,13 +20356,15 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     cont.innerHTML = `<div class="me-empty">${emptyMsg}</div>`;
     return;
   }
-  // Messages render in array order (drag-and-drop controls detection rank).
-  // File detections have no order — they match by filename — so the Files
-  // list displays alphabetically.
-  if (kind === 'file') {
-    const lbl = i => String(_meState.specs[i].label || _meState.specs[i].name || '');
-    idxs.sort((a, b) => lbl(a).localeCompare(lbl(b), undefined, { sensitivity: 'base' }));
-  }
+  // Every list renders in ARRAY order, because array order IS detection order.
+  //
+  // The Files list used to sort alphabetically, on the theory that file classes
+  // "have no order — they match by filename". They do have one: detection walks
+  // them in array order and stops at the first match, so a catch-all pattern
+  // ahead of a specific one decides everything. Sorting the display meant the
+  // list showed an order the app never used — a user who put the catch-all at
+  // the bottom saw it at the bottom (S sorts after C) while it sat FIRST in the
+  // array and swallowed every record. Reported 2026-08-27.
   for (const i of idxs) {
     const s = _meState.specs[i];
     const active = _meState.section === 'msg' && _meState.selIdx === i;
@@ -20526,17 +20528,20 @@ function _meSpecDrop(e, targetIdx) {
   const src = _meState._dragSpecIdx;
   e.currentTarget.classList.remove('drop-before', 'drop-after');
   if (src == null || src === targetIdx) { _meState._dragSpecIdx = null; return; }
-  // Dropping anywhere in the Files list only reclassifies — files are unordered.
-  if (_meState.specs[targetIdx]?.kind === 'file') { _meSpecDropOnList('file'); return; }
   const rect = e.currentTarget.getBoundingClientRect();
   const before = (e.clientY - rect.top) < rect.height / 2;
   let dst = before ? targetIdx : targetIdx + 1;
   if (dst > src) dst--; // removing the earlier item shifts later indices
   _meState._dragSpecIdx = null;
-  const srcKind = _meState.specs[src]?.kind === 'file' ? 'file' : null;
-  if (dst === src && !srcKind) return;
+  // The row it was dropped ON decides which list it lands in — and files are
+  // ordered now, so a drop inside the Files list moves it there rather than
+  // merely reclassifying it. Without this the one control for fixing a bad
+  // detection order was missing from the only list where order was invisible.
+  const tgtIsFile = _meState.specs[targetIdx]?.kind === 'file';
+  const srcKind   = _meState.specs[src]?.kind === 'file' ? 'file' : null;
+  if (dst === src && !!srcKind === tgtIsFile) return;
   const [moved] = _meState.specs.splice(src, 1);
-  delete moved.kind;   // target list is Messages
+  if (tgtIsFile) moved.kind = 'file'; else delete moved.kind;
   _meState.specs.splice(dst, 0, moved);
   // Keep the selection pinned to the moved entity (and update other indices).
   if (_meState.section === 'msg') {
@@ -20557,9 +20562,10 @@ function _meSpecDragEnd(_e) {
   });
 }
 
-// Drop on a list's empty space. Files are unordered, so moving INTO the
-// Files list just flips the kind in place; dropping into the Messages list
-// appends at the end of the detection order.
+// Drop on a list's empty space: the entity moves to the END of that list,
+// which is the end of the detection order for Messages and for Files alike.
+// Other is the exception — it is always walked after every message, so its
+// position in the array says nothing.
 function _meSpecDropOnList(kind) {
   const src = _meState._dragSpecIdx;
   _meState._dragSpecIdx = null;
@@ -20568,12 +20574,14 @@ function _meSpecDropOnList(kind) {
   if (!s) return;
   const srcKind = s.kind === 'file' ? 'file' : s.kind === 'other' ? 'other' : null;
   if (kind === srcKind) return;                // already in this list
-  if (kind === 'file' || kind === 'other') {
-    // Files match by filename and have no rank; Other is ranked but always
-    // after every message, so neither needs repositioning in the array.
+  if (kind === 'other') {
+    // Other is ranked but always after every message, so it needs no move.
     s.kind = kind;
   } else {
-    delete s.kind;
+    // Files and Messages are both ordered, and the empty space below a list
+    // means "the end of it" — so the entity moves to the end of the array,
+    // which is the end of both lists.
+    if (kind === 'file') s.kind = 'file'; else delete s.kind;
     const [moved] = _meState.specs.splice(src, 1);
     _meState.specs.push(moved);
     const dst = _meState.specs.length - 1;

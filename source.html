@@ -15374,17 +15374,40 @@ function _syncSpecForceSelect() {
   const sel = document.getElementById('specForceSelect');
   if (!sel || typeof _fmtGetData !== 'function') return;
   const armed = (S.specOverride && S.specOverride.label) || '';
-  // Only MESSAGE entities: a file entity is chosen by filename, and "parse every
-  // message as this file spec" is not a thing anyone can mean.
-  const specs = (_fmtGetData().specs || []).filter(x => x.kind !== 'file');
-  const labels = specs.map(x => x.label || x.name);
+  // Messages first, then FILES \u2014 grouped, because the two are chosen for
+  // different reasons and a flat list would not say which is which.
+  //
+  // Files used to be filtered out here, on the reasoning that a file entity is
+  // chosen by its wrapper filename so forcing one could not be meant. It can: a
+  // record copied out of a file arrives WITHOUT the file path, the filename
+  // recognizer then has nothing to match and can never fire, and forcing the
+  // class is the only way to parse the record at all. Forcing one already works
+  // \u2014 the Class Editor's own override arms exactly the same S.specOverride, and
+  // _fmtDetect returns the forced spec before it ever reaches the file rule \u2014 so
+  // leaving them out of this list only made the two controls disagree, and sent
+  // the user to the Class Editor for the one thing this bar exists to do.
+  // Reported 2026-08-27.
+  const _all   = _fmtGetData().specs || [];
+  const _msgs  = _all.filter(x => x.kind !== 'file').map(x => x.label || x.name);
+  const _files = _all.filter(x => x.kind === 'file').map(x => x.label || x.name);
+  const specs  = _all;
+  const labels = [..._msgs, ..._files];
   // An armed label that no longer exists still lists itself, or the select would
   // silently read AUTO while _fmtDetect is still forcing it.
-  if (armed && !labels.includes(armed)) labels.push(armed + '  (missing)');
-  const want = ['', ...labels].map(l => `${l}\u0000`).join('|');
+  const _missing = armed && !labels.includes(armed) ? armed + '  (missing)' : '';
+  if (_missing) labels.push(_missing);
+  // Which GROUP a label sits in is part of what gets drawn, so it is part of the
+  // cache key too \u2014 moving a class between the Messages and Files lists changes
+  // the markup without changing a single label.
+  const want = ['', ..._msgs, '', ..._files, '', _missing].map(l => `${l}\u0000`).join('|');
   if (sel.dataset.built !== want) {
+    const _opt = l => `<option value="${esc(l)}">${esc(l)}</option>`;
+    const _grp = (name, list) => list.length
+      ? `<optgroup label="${name}">${list.map(_opt).join('')}</optgroup>` : '';
     sel.innerHTML = '<option value="">CLASS: AUTO</option>'
-      + labels.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+      + (_files.length ? _grp('Messages', _msgs) + _grp('Files', _files)
+                       : _msgs.map(_opt).join(''))
+      + (_missing ? _opt(_missing) : '');
     sel.dataset.built = want;
   }
   sel.value = armed;
@@ -18233,7 +18256,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.65.0';
+const APP_VERSION  = '1.46.66.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -13061,6 +13061,66 @@ test('a DDL override disables the class picker — nothing there could be acted 
     'the disabled state must say so on hover, not just look dim');
 });
 
+test('[REGRESSION] the class picker lists FILE classes too — grouped, after the messages', () => {
+  // A file entity is normally chosen by its wrapper filename, so the picker
+  // filtered them out: `filter(x => x.kind !== 'file')`. But a record copied out
+  // of a file arrives WITHOUT the file path — the filename recognizer then has
+  // nothing to match and can NEVER fire, and forcing the class is the only way
+  // to parse the record at all. The Class Editor's override already allowed it
+  // and worked; only this list disagreed, sending the user there for the one
+  // thing this bar exists to do. Reported 2026-08-27.
+  const sel = { dataset: {}, style: {}, title: '', value: '', innerHTML: '', disabled: false,
+                classList: { add() {}, remove() {}, toggle() {} } };
+  elStubs.specForceSelect = sel;
+  elStubs.msgInput = { value: 'PASTED' };
+  const _ov = S.specOverride, _po = S.parseOverride, _fmt = S.inputFormat, _parsed = S.isParsed;
+  S.specOverride = null; S.parseOverride = null; S.inputFormat = 'hex'; S.isParsed = false;
+
+  const SPECS = [
+    { name: 'MSG', label: 'A message', vol: 'BASE', recognizers: [{ type: 'regex', pattern: '.' }] },
+    { name: 'IDF', label: 'IDF file', kind: 'file',
+      recognizers: [{ type: 'filename', pattern: '$DATA.IDF.*' }],
+      ddl_bindings: ['V/S/D/REC'], parse_spec_binary: [{ 'read-to-end': { as: 'D' } }] },
+  ];
+  domEl._fmtSave(SPECS);
+  domEl._fmtLoad();
+  sandbox._syncSpecForceSelect();
+
+  assert.ok(/<option value="IDF file">/.test(sel.innerHTML),
+    'the file class the user has to force is not even offered');
+  assert.ok(/optgroup label="Messages"[\s\S]*optgroup label="Files"/.test(sel.innerHTML),
+    'the two are chosen for different reasons — the list has to say which is which');
+  assert.ok(sel.innerHTML.indexOf('A message') < sel.innerHTML.indexOf('IDF file'),
+    'messages first: a file class is the unusual choice, not the default one');
+  assert.ok(/^<option value="">CLASS: AUTO<\/option>/.test(sel.innerHTML),
+    'AUTO stays first and outside both groups');
+
+  // The group a label sits in is part of the markup, so it is part of the cache
+  // key — flipping a class between the lists must redraw, not sit on the old
+  // options because the label set happens to be identical.
+  const built = sel.dataset.built;
+  domEl._fmtSave([{ ...SPECS[0], kind: 'file' }, { ...SPECS[1], kind: undefined }]);
+  domEl._fmtLoad();
+  sandbox._syncSpecForceSelect();
+  assert.notStrictEqual(sel.dataset.built, built, 'same labels, different lists — the cache key missed it');
+  assert.ok(sel.innerHTML.indexOf('IDF file') < sel.innerHTML.indexOf('A message'),
+    'the redraw kept yesterday\'s order');
+
+  // And the whole point: an armed file class wins detection for a record that
+  // carries no filename at all — which is what made the picker worth fixing.
+  domEl._fmtSave(SPECS);
+  domEl._fmtLoad();
+  S.specOverride = { label: 'IDF file' };
+  const w = sandbox.detectMsgType('ANYTHING AT ALL', {});
+  eq(w && w.label, 'IDF file', 'a forced file class must win with no filename in play');
+  eq(w && w.kind, 'file', 'and reach the pipeline as a file, so its parse spec runs');
+
+  delete elStubs.specForceSelect; delete elStubs.msgInput;
+  S.specOverride = _ov; S.parseOverride = _po; S.inputFormat = _fmt; S.isParsed = _parsed;
+  storage.removeItem('up_format_specs');
+  domEl._fmtLoad();
+});
+
 test('every destructive action asks the same way', () => {
   // The DDL tree asked for YES; the Class Editor asked for DELETE. Same gesture,
   // two words, and they differed on the verb (delete vs remove) and on whether

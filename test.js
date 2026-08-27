@@ -480,18 +480,18 @@ END.
 `;
 
 // test/FUP-test/fup-copy-ascii.txt
-const FIX_FUP_ASCII = `$PROD.MESSAGES.MSGIN  RECORD 0  KEY 0  (%0)  LEN 70  13MAY26 09;15
+const FIX_FUP_ASCII = `$PROD.MESSAGES.MSGIN  RECORD 0  KEY 0  (%0)  LEN 70  13MAY26 09:15
     0:  ..00200000800000160.       90123456789.     67890123456 ....1P1A^SUPPO
    35:              000001600123456789012345678901234567890123345678
    70:  020 8901234567890123456789012345678
   110:
  1100:  020 89012                                   34567890123456789012345678
 
-$PROD.MESSAGES.MSGIN  RECORD 1  KEY 1  (%1)  LEN 140  13MAY26 09;16
+$PROD.MESSAGES.MSGIN  RECORD 1  KEY 1  (%1)  LEN 140  13MAY26 09:16
 000:  0200602000008000001600123456789012345678901234567890123456789012345678
 070:  9012345678901234567890123456789012345678901234567890123456789012345678
 
-$PROD.MESSAGES.MSGIN  RECORD 2  KEY 2  (%2)  LEN 35  13MAY26 09;17
+$PROD.MESSAGES.MSGIN  RECORD 2  KEY 2  (%2)  LEN 35  13MAY26 09:17
 000:  02106020000080000016001234567890123456789012345678901234567
 
 
@@ -504,7 +504,7 @@ $PROD.MESSAGES.MSGIN  RECORD 2  KEY 2  (%2)  LEN 35  13MAY26 09;17
  1100  020 89012                                   34567890123456789012345678`;
 
 // test/FUP-test/fup-copy-hex.txt
-const FIX_FUP_HEX = `\\SYS1.$DATA.FINANCE.TXNLOG  RECORD 0  KEY 0  (%0)  LEN 20  13MAY26 14;30
+const FIX_FUP_HEX = `\\SYS1.$DATA.FINANCE.TXNLOG  RECORD 0  KEY 0  (%0)  LEN 20  13MAY26 14:30
  000:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
  008:   3536   3738   3930   2020    2020   2020   2020   2020 567890
  010:   3536   3738   3930   2020    2020   2020   2020   2020 567890
@@ -540,11 +540,11 @@ const FIX_FUP_HEX = `\\SYS1.$DATA.FINANCE.TXNLOG  RECORD 0  KEY 0  (%0)  LEN 20 
  100:   3536   3738   3930   2020    2020   2020   2020   2020 567890
  108:   3536   3738   3930   2020    2020   2020   2020   2020 567890
 
-$DATA.FINANCE.TXNLOG  RECORD 1  KEY 1  (%1)  LEN 32  13MAY26 14;31
+$DATA.FINANCE.TXNLOG  RECORD 1  KEY 1  (%1)  LEN 32  13MAY26 14:31
  000:   3032   3030   6020   0000    0000   0000   3132   3334 0200\` ......1234
  016:   3536   3738   3930   3131    3232   3333   3434   3535 5678901122334455
 
-$DATA.FINANCE.TXNLOG  RECORD 5  KEY 1234567890  (%11145524722)  LEN 8  13MAY26 14;35
+$DATA.FINANCE.TXNLOG  RECORD 5  KEY 1234567890  (%11145524722)  LEN 8  13MAY26 14:35
  000:   3033   3130   6020   0000    2020   2020   2020   2020 0310\` ..
 
 $DATA.FINANCE.TXNLOG  RECORD 9  KEY 99999999999999999999999999999999
@@ -1277,6 +1277,41 @@ test('detects EBCDIC-looking hex and decodes bytes to ASCII', () => {
 test('detects FUP COPY fixtures as ASCII vs hex dumps before generic heuristics', () => {
   eq(detectFormat(fixtureText('test/FUP-test/fup-copy-ascii.txt')), 'fup-ascii', 'FUP ASCII fixture');
   eq(detectFormat(fixtureText('test/FUP-test/fup-copy-hex.txt')), 'fup-hex', 'FUP hex fixture');
+});
+
+test('[REGRESSION] a FUP COPY header without KEY is still FUP COPY', () => {
+  // KEY n  (%n) is printed for a KEY-SEQUENCED file. An entry-sequenced,
+  // relative or unstructured file has no key, and its header runs straight from
+  // RECORD n to LEN n. The pattern demanded KEY, so those captures were not
+  // recognised as FUP COPY at all — no format badge, no record split, nothing
+  // parsed. Reported 2026-08-27.
+  const keyed   = fixtureText('test/FUP-test/fup-copy-hex.txt');
+  // Record 9 of the fixture is the long-key edge case and prints no (%…) part.
+  const keyless = keyed.replace(/ {2}KEY \S+(?: {2}\(%[^)]*\))?/g, '');
+  assert.ok(!/KEY/.test(keyless), 'the fixture under test still has a key in it');
+
+  eq(detectFormat(keyless), 'fup-hex', 'a keyless capture is not recognised as FUP COPY at all');
+  eq(sandbox.isFupCopyLog(keyless), true, 'the detector and the parser must agree on what a header is');
+
+  const recs = sandbox.parseFupCopyLog(keyless);
+  const kept = sandbox.parseFupCopyLog(keyed);
+  eq(recs.length, kept.length, 'the same capture must split into the same records with or without keys');
+  eq(recs.map(r => r.recNo).join('|'), kept.map(r => r.recNo).join('|'), 'record numbers survive');
+  eq(recs.map(r => r.rawMsg).join('|'), kept.map(r => r.rawMsg).join('|'),
+     'and so does every byte of the data');
+  eq(recs[0].keyNo, null, 'no key printed means no key — not the string "undefined"');
+  eq(kept[0].keyNo, '0', 'a printed key is still read');
+  // The source detail line is what the record list shows under the file path.
+  eq(recs[0].sourceDet, 'RECORD 0', 'a keyless record says which record it is');
+  eq(kept[0].sourceDet, 'KEY 0', 'a keyed one still says KEY');
+
+  // The system name is optional too, and always was — record 1 of the fixture
+  // carries no \\SYS1. prefix. Pinned so the two optional halves of the header
+  // cannot be broken by a change to the other.
+  eq(kept[0].filePath, '\\SYS1.$DATA.FINANCE.TXNLOG', 'the system name is kept when printed');
+  eq(kept[1].filePath, '$DATA.FINANCE.TXNLOG', 'and is not required');
+  eq(sandbox.isFupCopyLog('$DATA.FINANCE.TXNLOG  RECORD 0  LEN 20  13MAY26 14:30\n 000:   3031 3233\n'),
+     true, 'neither system name nor key — the plainest header FUP prints');
 });
 
 test('extracts pure hex, labelled hex, octal, and fixed-width ASCII bytes', () => {

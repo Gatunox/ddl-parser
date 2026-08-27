@@ -9925,9 +9925,23 @@ function isNetardLog(text) {
          /^\s+SOURCE\s+\S/m.test(text);
 }
 
+// One FUP COPY record header, written once. Three copies of this pattern lived
+// in three functions — the detector, the parser and the ASCII line padder — and
+// a header shape that any one of them read differently was a record that half
+// the pipeline could see.
+//
+//   [\SYS.]$VOL.SUBVOL.FILE  RECORD n  [KEY k  (%k)]  LEN n  ddMMMyy hh:mm
+//
+// KEY is OPTIONAL. A key-sequenced file prints it; an entry-sequenced,
+// relative or unstructured file has no key to print and the header goes
+// straight from RECORD n to LEN n. Requiring it meant those captures were not
+// recognised as FUP COPY at all — no format badge, no record split, nothing to
+// parse. Reported 2026-08-27.
+const FUPCOPY_HDR_RE =
+  /^\s*(?:\\([A-Z0-9]+)\.)?\$([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\s+RECORD\s+(\d+)(?:\s+KEY\s+(\S+))?/im;
+
 function isFupCopyLog(text) {
-  // [\SYS.]$VOL.SV.FILE  RECORD N  KEY N
-  return /^\s*(?:\\[A-Z0-9]+\.)?\$[A-Z0-9]{1,8}\.[A-Z0-9]{1,8}\.[A-Z0-9]{1,8}\s+RECORD\s+\d+\s+KEY\s+/im.test(text);
+  return FUPCOPY_HDR_RE.test(text);
 }
 
 function parseFupCopyLog(text) {
@@ -9936,7 +9950,7 @@ function parseFupCopyLog(text) {
   let cur       = null;
   let charPos   = 0;
 
-  const HDR_RE  = /^\s*(?:\\([A-Z0-9]+)\.)?\$([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\s+RECORD\s+(\d+)\s+KEY\s+(\S+)/i;
+  const HDR_RE  = FUPCOPY_HDR_RE;
   const LEN_RE  = /\bLEN\s+(\d+)/i;
   const DATA_RE = /^[0-9A-Fa-f]+:\s/;
 
@@ -10000,12 +10014,13 @@ function parseFupCopyLog(text) {
       const lenM  = LEN_RE.exec(line);
       const fpath = (hm[1] ? `\\${hm[1]}.` : '') + `$${hm[2]}.${hm[3]}.${hm[4]}`;
       cur = {
-        filePath: fpath, recNo: parseInt(hm[5], 10), keyNo: hm[6],
+        filePath: fpath, recNo: parseInt(hm[5], 10), keyNo: hm[6] ?? null,
         length: lenM ? parseInt(lenM[1], 10) : null,
         netardFmt: null, rawMsg: '', byteCharMap: [],
         charStart: lineStart, charEnd: lineStart + line.length,
         time: null, typeCode: null, typeDesc: null,
-        source: fpath, sourceDet: `KEY ${hm[6]}`, dest: null, destDet: null,
+        source: fpath, sourceDet: hm[6] != null ? `KEY ${hm[6]}` : `RECORD ${hm[5]}`,
+        dest: null, destDet: null,
         _dl: [],
       };
     } else if (cur) {
@@ -11574,7 +11589,7 @@ function doParseNetardLog(text, opts = {}) {
 
 function _padFupCopyAsciiLines(text) {
   const lines = text.split('\n');
-  const HDR_RE  = /^\s*(?:\\([A-Z0-9]+)\.)?\$([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\.([A-Z0-9]{1,8})\s+RECORD\s+(\d+)\s+KEY\s+(\S+)/i;
+  const HDR_RE  = FUPCOPY_HDR_RE;
   const DATA_RE = /^[0-9A-Fa-f]+:\s/;
   let changed = false;
   let curData = [];
@@ -18256,7 +18271,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.66.0';
+const APP_VERSION  = '1.46.67.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -34888,7 +34903,7 @@ function _meSave() {
               <li><strong>Tandem dump</strong> — <code>0000: F0 F2 .. |0200|</code></li>
               <li><strong>ASCII raw</strong> — character bytes interpreted as-is</li>
               <li><strong>NETARD capture</strong> — multi-record files with packet headers; sub-formats (HEX, DUMP, OCT, EBCDIC, ASCII) are detected per-record</li>
-              <li><strong>FUP COPY capture</strong> — file records with <code>$VOL.SUBVOL.FILE&nbsp;&nbsp;RECORD n&nbsp;&nbsp;KEY n</code> headers and hex or ASCII data lines — each record parses as a file record</li>
+              <li><strong>FUP COPY capture</strong> — file records with <code>$VOL.SUBVOL.FILE&nbsp;&nbsp;RECORD n</code> headers (<code>KEY n</code> follows on a key-sequenced file and is absent on the rest) and hex or ASCII data lines — each record parses as a file record</li>
             </ul>
           </div></div>
 

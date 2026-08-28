@@ -1541,9 +1541,9 @@ test('Track mode picks records; leaving it narrows Parse Results to them', () =>
 
   // And a selection must never outlive the messages it points at: the indices
   // would land on whatever the next parse put in those slots.
-  eq((src.match(/S\.trackedFields = new Set\(\); S\.trackPicked = new Set\(\); S\.viewFilter = null;/g) || []).length, 5,
-     'every place that resets tracking must reset the selection with it');
-  eq((src.match(/trackMode: false, trackedFields: new Set\(\), trackPicked: new Set\(\), viewFilter: null \}/g) || []).length, 2,
+  eq((src.match(/S\.trackedFields = new Set\(\); S\.trackPicked = new Set\(\); S\.viewFilter = null; S\.trackFilters = \{\};/g) || []).length, 5,
+     'every place that resets tracking must reset the selection AND the filters with it');
+  eq((src.match(/trackMode: false, trackedFields: new Set\(\), trackPicked: new Set\(\), viewFilter: null, trackFilters: \{\} \}/g) || []).length, 2,
      'including the two that reset state as an object literal');
 });
 
@@ -6702,6 +6702,33 @@ test('a hex-char override stops the field being painted red', () => {
   eq(f.typeOverride, 'hex-char', 'the override was applied');
   eq(f.dataType, 'PIC 9(4)', 'and the declared type is still there for the annotation');
   assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
+});
+
+test('Track columns carry an autofilter of the values actually in them', () => {
+  // Excel's autofilter: a select under each column header holding that column's
+  // distinct values, blank meaning no filter, several of them reading as AND.
+  // Requested 2026-08-28.
+  const render = psFnSource('renderTracking');
+  assert.ok(/const filterCols = \['ts', \.\.\.tracked\.map\(id => `f:\$\{id\}`\)\];/.test(render),
+    'every column but # gets a filter — # is unique per row, so filtering by it picks one row the hard way');
+  assert.ok(/for \(let i = 0; i < S\.messages\.length; i\+\+\) seen\.add\(cellValue\(S\.messages\[i\], col, i\)\);/.test(render),
+    'the options must be what the column HOLDS, not a guess at what it might');
+  assert.ok(/<option value=""\$\{cur === '' \? ' selected' : ''\}>\(all\)<\/option>/.test(render),
+    'blank means no filter and has to be selectable again');
+  // One place decides what a row holds in a column: the option list, the cell
+  // and the match test read it, and a value they disagreed about would be a
+  // filter that hides everything.
+  assert.ok(/const cellValue = \(msg, col, idx\) =>/.test(render), 'the value must be derived in one place');
+
+  const apply = psFnSource('_trackApplyRowFilters');
+  assert.ok(/tr\.style\.display = ok \? '' : 'none';/.test(apply),
+    'rows are hidden, not rebuilt — a rebuild loses the scroll position and the open select');
+  assert.ok(/if \(String\(have\) !== want\) \{ ok = false; break; \}/.test(apply),
+    'several filters must read as AND, the way a spreadsheet does');
+  const chg = psFnSource('trackFilterChange');
+  assert.ok(/if \(sel\.value === ''\) delete S\.trackFilters\[col\]; else S\.trackFilters\[col\] = sel\.value;/.test(chg),
+    'choosing blank must remove the filter, not store an empty one');
+  assert.ok(!/trackPicked/.test(chg), 'filtering must not touch the picks — hiding a row does not unpick it');
 });
 
 test('a FUP COPY capture is counted in RECORDS, not messages', () => {

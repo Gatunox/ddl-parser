@@ -2917,6 +2917,24 @@ body.track-mode #recMetaContent { display: none !important; }
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: var(--bw-ctl) solid var(--accent); border-radius: var(--r-sm); padding: 0 6px; }
 
+/* The autofilter row: one select per column, holding what that column actually
+   contains. Compact enough to read as part of the table rather than a form
+   pasted on top of it. Requested 2026-08-28. */
+.track-tbl tr.trk-filter-row td { padding: 1px 2px; background: var(--bg-panel);
+  border-bottom: var(--bw) solid var(--border); }
+.track-tbl select.trk-filter {
+  width: 100%; min-width: 0; height: 18px; padding: 0 2px;
+  font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px);
+  color: var(--text-dim); background: var(--bg-input);
+  border: var(--bw-ctl) solid var(--border); border-radius: var(--r-sm);
+}
+.track-tbl select.trk-filter:hover { color: var(--text); border-color: var(--border-strong); }
+/* A filter that is ON says so without being read: the column it sits in is the
+   one narrowing the list. */
+.track-tbl select.trk-filter:not([data-empty]) { color: var(--accent); border-color: var(--accent); }
+.trk-filter-count { color: var(--text-dim) !important; border-color: var(--border) !important;
+  background: var(--surface-raised) !important; }
+
 /* A picked Track row wears the audit list's "you have been here" ground, with a
    gutter in the message type's own colour. Same gesture, same look — the two
    lists are the same kind of list. Requested 2026-08-28. */
@@ -4099,6 +4117,7 @@ th.me-fm-colhi{color:var(--accent);}
                the left: a margin-left:auto on each piece only pushes while they
                share a line with something else. Reported 2026-08-28. -->
           <span id="recNavGroup" class="rec-nav-group">
+            <span id="trkFilterCount" class="trk-sel-count trk-filter-count" style="display:none"></span>
             <span id="trkSelCount" class="trk-sel-count" style="display:none"></span>
             <span id="resFilterLabel" class="res-filter-label" style="display:none"
                   title="Showing only the records picked in Track Mode">Filtered</span>
@@ -4197,6 +4216,9 @@ const S = {
   // Records picked in Track mode, by index into S.messages. On leaving Track
   // they become the view: Parse Results shows only these, and says so.
   trackPicked: new Set(),
+  // Track's per-column filters, keyed by the column's data-col ('ts' or
+  // 'f:<FIELD ID>'). A column with no entry filters nothing.
+  trackFilters: {},
   viewFilter: null,          // sorted array of indices, or null for "all"
 
   isParsed: false,
@@ -10791,7 +10813,7 @@ function _drainTypePickers(queue, sessionMappings, done) {
 function _resetParseSelection() {
   S.selFieldId    = null;
   S.trackMode     = false;
-  S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
+  S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null; S.trackFilters = {};
   _syncTrkColVisibility();
 }
 
@@ -11352,7 +11374,7 @@ function doParseNetardLog(text, opts = {}) {
           S.isParsed      = true;
           S.selFieldId    = null;
           S.trackMode     = false;
-          S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
+          S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null; S.trackFilters = {};
           _syncTrkColVisibility();
           _parseProgressDoneLast();
           _parseProgressHide();
@@ -11424,7 +11446,7 @@ function doParseNetardLog(text, opts = {}) {
           S.isParsed      = true;
           S.selFieldId    = null;
           S.trackMode     = false;
-          S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
+          S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null; S.trackFilters = {};
           _syncTrkColVisibility();
           _parseProgressDoneLast();
           _parseProgressHide();
@@ -12057,7 +12079,7 @@ function doParseMessages() {
       tokens: p1Tokens, manualOverride: true, parsedBy: 'manual override',
       msgType: { type: 'USER', label: 'User' } }];
     S.curIdx = 0; S.isParsed = true; S.selFieldId = null;
-    S.trackMode = false; S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
+    S.trackMode = false; S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null; S.trackFilters = {};
     _syncTrkColVisibility();
     syncParseBtn();
     _msgLock(true);
@@ -13037,7 +13059,7 @@ function updateDDLEditorState() {
 function _clearResultsOnly() {
   clearInputHL();
   Object.assign(S, { isParsed: false, messages: [], curIdx: 0,
-    selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set(), trackPicked: new Set(), viewFilter: null });
+    selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set(), trackPicked: new Set(), viewFilter: null, trackFilters: {} });
   _lwSetParsed(false);
   document.getElementById('cntBadge').innerHTML = '';
   document.getElementById('msgNav').style.display = 'none';
@@ -13071,7 +13093,7 @@ function clearAll() {
   _msgLock(false);
   el.value = '';
   Object.assign(S, { isParsed: false, messages: [], curIdx: 0, inputFormat: null, forcedFormat: null,
-    _badgeFmt: null, selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set(), trackPicked: new Set(), viewFilter: null });
+    _badgeFmt: null, selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set(), trackPicked: new Set(), viewFilter: null, trackFilters: {} });
   const fmtSel = document.getElementById('fmtForceSelect');
   if (fmtSel) { fmtSel.value = ''; fmtSel.classList.remove('fmt-forced'); }
   syncParseBtn();
@@ -15301,7 +15323,7 @@ function _auditParseCacheApply(hit) {
   S.inputFormat = hit.inputFormat;
   S._badgeFmt   = hit.badgeFmt;
   S.curIdx = 0; S.isParsed = true; S.selFieldId = null;
-  S.trackMode = false; S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
+  S.trackMode = false; S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null; S.trackFilters = {};
   _resSetStale(false);
   _syncTrkColVisibility();
   syncParseBtn();
@@ -15508,6 +15530,7 @@ function toggleTrackMode() {
     btn.classList.remove('btn-active');
     btn.classList.toggle('btn-primary', S.trackedFields.size > 0);
     _syncTrackSelCount();
+    _syncTrackFilterCount(0, 0);
     _trackApplyFilter();
     // Restore columns picker visibility based on parsed content
     const total = S.messages?.length ?? 0;
@@ -15531,6 +15554,16 @@ function renderTracking() {
 
   const descOf = id => { for (const m of S.messages) { const f = m.fields.find(x=>x.id===id); if(f) return f.description; } return id; };
 
+  // What a row holds in a column, in ONE place: the filter's option list, the
+  // cell and the match test all read it, and a value they disagreed about would
+  // be a filter that hides everything. Requested 2026-08-28.
+  const cellValue = (msg, col, idx) => {
+    if (col === 'ts')  return msg.timestamp || `Msg ${idx + 1}`;
+    if (col === 'num') return String(idx + 1);
+    const f = msg.fields.find(x => x.id === col.slice(2));
+    return f ? String(f.value ?? '') : '';
+  };
+
   // data-col names what a width belongs to: the two fixed columns by name, and
   // each value column by its FIELD id — so a column that leaves the tracking
   // and comes back returns the width it had.
@@ -15542,6 +15575,25 @@ function renderTracking() {
       `<br><small style="color:var(--text-dim);font-weight:normal">${esc(descOf(id).slice(0,22))}</small>` +
       `<span class="th-resize"></span></th>`),
   ].join('');
+
+  // Excel's autofilter, made of what the column actually holds: the distinct
+  // values in it, sorted, with a blank meaning "no filter". "#" is left out —
+  // every row has a different one, so filtering by it is picking one row the
+  // hard way.
+  const filterCols = ['ts', ...tracked.map(id => `f:${id}`)];
+  const filterRow = `<tr class="trk-filter-row">
+    <td></td>` + filterCols.map(col => {
+      const seen = new Set();
+      for (let i = 0; i < S.messages.length; i++) seen.add(cellValue(S.messages[i], col, i));
+      const opts = [...seen].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      const cur  = S.trackFilters[col] ?? '';
+      return `<td class="trk-filter-cell"><select class="trk-filter" data-col="${esc(col)}"
+        onchange="trackFilterChange(this)" onclick="event.stopPropagation()"
+        title="${esc(col === 'ts' ? 'Timestamp' : col.slice(2))} — ${opts.length} value${opts.length !== 1 ? 's' : ''}">` +
+        `<option value=""${cur === '' ? ' selected' : ''}>(all)</option>` +
+        opts.map(v => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(v) || '(empty)'}</option>`).join('') +
+        `</select></td>`;
+    }).join('') + `</tr>`;
 
   const rows = S.messages.map((msg, idx) => {
     const ts = msg.timestamp || `Msg ${idx+1}`;
@@ -15566,7 +15618,7 @@ function renderTracking() {
   document.getElementById('resContainer').innerHTML = `
     <div class="track-tbl-wrap">
       <table class="track-tbl">
-        <thead><tr>${heads}</tr></thead>
+        <thead><tr>${heads}</tr>${filterRow}</thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -15577,6 +15629,7 @@ function renderTracking() {
   // Same column machinery as the other four tables: saved widths applied, drag
   // handles live, the last column absorbing the slack.
   _meColInitResize(_ME_COLRZ.trk);
+  _trackApplyRowFilters();
 
   renderRaw(S.messages[S.curIdx]);
 }
@@ -15586,6 +15639,49 @@ function renderTracking() {
 // to row 1 on the way. Picking is the gesture now: pick the interesting records,
 // leave Track, and Parse Results shows those and only those.
 // Requested 2026-08-28.
+// A column's filter changed. The picks are left alone: hiding a row does not
+// unpick it, and clearing the filter brings it back still picked.
+function trackFilterChange(sel) {
+  const col = sel.dataset.col;
+  if (sel.value === '') delete S.trackFilters[col]; else S.trackFilters[col] = sel.value;
+  _trackApplyRowFilters();
+}
+
+// Rows are hidden, not rebuilt: a rebuild would lose the scroll position and
+// the open select. Several columns filtered at once read as AND, the way a
+// spreadsheet's do.
+function _trackApplyRowFilters() {
+  const cols = Object.keys(S.trackFilters);
+  const tbl  = document.querySelector('.track-tbl tbody');
+  if (!tbl) return;
+  let shown = 0;
+  for (const tr of tbl.querySelectorAll('tr[data-idx]')) {
+    const idx = +tr.dataset.idx;
+    const msg = S.messages[idx];
+    let ok = true;
+    for (const col of cols) {
+      const want = S.trackFilters[col];
+      const have = (col === 'ts') ? (msg.timestamp || `Msg ${idx + 1}`)
+                 : (msg.fields.find(x => x.id === col.slice(2))?.value ?? '');
+      if (String(have) !== want) { ok = false; break; }
+    }
+    tr.style.display = ok ? '' : 'none';
+    if (ok) shown++;
+  }
+  _syncTrackFilterCount(shown, cols.length);
+}
+
+// How much of the list a filter is hiding — the number a spreadsheet puts in
+// its status bar, because a filtered list that does not say so reads as a
+// shorter list.
+function _syncTrackFilterCount(shown, active) {
+  const el = document.getElementById('trkFilterCount');
+  if (!el) return;
+  const total = S.messages.length;
+  el.style.display = (S.trackMode && active) ? 'inline-block' : 'none';
+  if (active) el.textContent = `${shown} of ${total} shown`;
+}
+
 function trackPickRow(idx) {
   if (S.trackPicked.has(idx)) S.trackPicked.delete(idx); else S.trackPicked.add(idx);
   // Toggle the row where it is. Re-rendering the whole table rebuilt its HTML
@@ -18677,7 +18773,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.9.0';
+const APP_VERSION  = '1.47.10.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

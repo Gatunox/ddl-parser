@@ -1463,14 +1463,27 @@ test('[REGRESSION] a class row is not indented like a DDL nested under a volume'
   assert.ok(/class="pick-volchip"/.test(src), 'the class volume chip needs its own name');
 });
 
-test('an import that has not been acknowledged says so on the button that fixes it', () => {
+test('anything the Class Editor owes a Save says so on the button that fixes it', () => {
   // The two import doors leave the app in different states — staged-and-dirty
   // from inside the Class Editor, already-written from the DDL tree — but both
   // end at the same gesture: open the editor, look at what landed, press Save.
   // So both raise the same signal, on whichever button is the next step.
   // Requested 2026-08-27.
-  const fn = psFnSource('_meSyncImportAttention');
-  assert.ok(/const waiting = _meImportMarks\.size > 0/.test(fn), 'the signal is not tied to the marks');
+  const fn = psFnSource('_meSyncAttention');
+  // Unsaved edits raise it too: closing the editor does not discard them, so a
+  // change can sit unsaved with nothing on screen saying so. Requested
+  // 2026-08-27.
+  assert.ok(/const dirty   = !!\(typeof _meState !== 'undefined' && _meState && _meState\.dirty\)/.test(fn),
+    'a dirty editor must raise the signal, not just an import');
+  assert.ok(/const waiting = _meImportMarks\.size > 0 \|\| dirty/.test(fn),
+    'the signal is not tied to both reasons a Save is owed');
+  assert.ok(/_meSyncAttention\(\)/.test(psFnSource('_meSetDirty')),
+    'becoming dirty must raise the signal at the moment it happens');
+  // While it pulses, Save wears the same look as the pulsing Class Editor
+  // button — the two ends of one signal must be recognisably the same thing.
+  const css = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.attn-pulse\.btn-primary \{\s*\n\s*background: var\(--surface-raised\) !important;\s*\n\s*color: var\(--accent\) !important;/.test(css),
+    'the pulsing Save keeps its filled blue and swallows the glow');
   assert.ok(/save\.classList\.toggle\('attn-pulse', waiting && editorOpen\)/.test(fn),
     'with the editor open, Save is the next step');
   assert.ok(/open\.classList\.toggle\('attn-pulse', waiting && !editorOpen\)/.test(fn),
@@ -1486,7 +1499,7 @@ test('an import that has not been acknowledged says so on the button that fixes 
     ['closeMsgEditor',     'closing without saving moves it back'],
     ['_meSave',            'saving is the acknowledgement — it must come down'],
     ['_meClearImportMarks','clearing the marks must clear the signal'],
-  ]) assert.ok(/_meSyncImportAttention\(\)/.test(psFnSource(caller)), `${caller}: ${why}`);
+  ]) assert.ok(/_meSyncAttention\(\)/.test(psFnSource(caller)), `${caller}: ${why}`);
 
   // The pulse runs until the import is acknowledged: the check can outlast a
   // long look through a bundle of forty classes, and a signal that gives up

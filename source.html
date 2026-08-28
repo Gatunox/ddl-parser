@@ -2588,7 +2588,15 @@ td.c-err  { color: var(--accent2); }
   border-color: var(--accent) !important;
   color: var(--accent) !important;
 }
-.attn-pulse.btn-primary { color: var(--btn-primary-fg, #fff) !important; }
+/* Save is a filled primary button; while it is pulsing it takes the SAME look
+   as the pulsing Class Editor button — raised surface, accent border, accent
+   text — so the two ends of one signal are recognisably the same thing rather
+   than a blue-on-blue fill that swallows the glow. Requested 2026-08-27. */
+.attn-pulse.btn-primary {
+  background: var(--surface-raised) !important;
+  color: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
 @media (prefers-reduced-motion: reduce) { .attn-pulse { animation: none; } }
 
 /* Imported-in-this-session marker. Louder than a gap chip on purpose: it is the
@@ -17907,7 +17915,7 @@ function confirmImport() {
       // there clears them, the same as any other import.
       _meSidebarRefreshIfOpen();
     }
-    _meSyncImportAttention();
+    _meSyncAttention();
   }
 
   closeImportModal();
@@ -18367,7 +18375,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.86.0';
+const APP_VERSION  = '1.46.87.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20166,7 +20174,7 @@ function openMsgEditor() {
   document.getElementById('msgEditorOverlay').classList.remove('hidden');
   if (startIdx !== -1) _meSelectItem('msg', startIdx);
   _meInitSplitter();
-  _meSyncImportAttention();
+  _meSyncAttention();
 }
 
 // ── Resizers ────────────────────────────────────────────────────────────────
@@ -20266,7 +20274,7 @@ function closeMsgEditor() {
   document.getElementById('msgEditorOverlay').classList.add('hidden');
   // Closing without saving leaves the import unacknowledged, so the signal goes
   // back to the button that reopens the editor.
-  _meSyncImportAttention();
+  _meSyncAttention();
   // Cleared on the way out as well as the way in: the overlay is hidden, not
   // destroyed, so its toasts — and their Undo buttons — are still in the DOM.
   _meUndoOffer = null;
@@ -20278,6 +20286,7 @@ function _meSetDirty() {
   _meState.dirty = true;
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = false;
+  _meSyncAttention();
 }
 
 // ── One-level undo for the structural edits ─────────────────────────────────
@@ -34704,20 +34713,27 @@ function _meImportMark(spec) {
   if (!_meImportMarks.size || !spec) return null;
   try { return _meImportMarks.get(_specKey(spec)) || null; } catch (_) { return null; }
 }
-// An import leaves work behind whichever door it came through, and the two doors
-// leave it in different states:
+// Two things leave the Class Editor owing the user a Save, and they arrive by
+// different routes:
 //
-//   Class Editor open  — the specs are staged in _meState, unsaved. Save is the
-//                        only thing that commits them.
-//   DDL tree, editor closed — they were written straight to storage, so nothing
-//                        is unsaved. What is left is the CHECK: which classes
-//                        landed on top of yours, and were they what you wanted.
+//   Unsaved edits    — anything that calls _meSetDirty: a renamed class, an
+//                      edited recognizer, a dragged row. Save commits them, and
+//                      closing the editor does NOT discard them: _meState keeps
+//                      them, so a change can sit unsaved with nothing on screen
+//                      saying so.
+//   An import        — from inside the editor the specs are staged and dirty;
+//                      from the DDL tree with the editor closed they are already
+//                      written, so nothing is dirty but the CHECK is still owed:
+//                      which classes landed on top of yours, and were they what
+//                      you wanted.
 //
-// Both end at the same gesture — open the editor, look, press Save — so both
-// get the same signal: the Save button pulses, and while the editor is closed
-// the Class Editor button pulses in its place. Requested 2026-08-27.
-function _meSyncImportAttention() {
-  const waiting = _meImportMarks.size > 0;
+// All of it ends at the same gesture — open the editor, look, press Save — so
+// all of it raises one signal on whichever button is the next step: Save while
+// the editor is open, the Class Editor button while it is closed.
+// Requested 2026-08-27.
+function _meSyncAttention() {
+  const dirty   = !!(typeof _meState !== 'undefined' && _meState && _meState.dirty);
+  const waiting = _meImportMarks.size > 0 || dirty;
   const overlay = document.getElementById('msgEditorOverlay');
   const editorOpen = !!overlay && !overlay.classList.contains('hidden');
   const save = document.getElementById('me-save-btn');
@@ -34732,9 +34748,11 @@ function _meSyncImportAttention() {
   const open = document.getElementById('dataEditorBtn');
   if (open) {
     open.classList.toggle('attn-pulse', waiting && !editorOpen);
-    open.title = waiting && !editorOpen
+    open.title = !(waiting && !editorOpen)
+      ? 'Class Editor \u2014 message and file detection, parse specs, field overrides'
+      : _meImportMarks.size
       ? 'Imported classes are waiting to be checked \u2014 open the Class Editor, review the NEW / OVERWRITTEN rows, then Save'
-      : 'Class Editor \u2014 message and file detection, parse specs, field overrides';
+      : 'Unsaved changes in the Class Editor \u2014 open it and press Save';
   }
 }
 
@@ -34742,7 +34760,7 @@ function _meClearImportMarks() {
   if (!_meImportMarks.size) return;
   _meImportMarks = new Map();
   if (typeof _meSidebarRefreshIfOpen === 'function') _meSidebarRefreshIfOpen();
-  _meSyncImportAttention();
+  _meSyncAttention();
 }
 
 function _meSave() {
@@ -34757,7 +34775,7 @@ function _meSave() {
   // the badges stayed on screen until some other action redrew the list, which
   // reads as "Save did not clear them". Reported 2026-08-27.
   if (_meImportMarks.size) { _meImportMarks = new Map(); _meRenderSidebar(); }
-  _meSyncImportAttention();
+  _meSyncAttention();
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;
   const s = document.getElementById('me-status');

@@ -1508,6 +1508,10 @@ test('anything the Class Editor owes a Save says so on the button that fixes it'
   const css = fs.readFileSync('./source.html', 'utf8');
   assert.ok(/\.attn-pulse\.btn-primary \{\s*\n\s*background: var\(--surface-raised\) !important;\s*\n\s*color: var\(--accent\) !important;/.test(css),
     'the pulsing Save keeps its filled blue and swallows the glow');
+  // …and with nothing to save it is a quiet button, not a 32%-opacity blue one:
+  // ghosting the primary fill read as a broken control beside sharp neighbours.
+  assert.ok(/#me-save-btn:disabled \{\s*\n\s*opacity: 1;\s*\n\s*background: var\(--surface-raised\);/.test(css),
+    'the disabled Save is still a faded primary');
   assert.ok(/save\.classList\.toggle\('attn-pulse', waiting && editorOpen\)/.test(fn),
     'with the editor open, Save is the next step');
   assert.ok(/open\.classList\.toggle\('attn-pulse', waiting && !editorOpen\)/.test(fn),

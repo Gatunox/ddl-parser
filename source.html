@@ -2592,6 +2592,17 @@ td.c-err  { color: var(--accent2); }
    as the pulsing Class Editor button — raised surface, accent border, accent
    text — so the two ends of one signal are recognisably the same thing rather
    than a blue-on-blue fill that swallows the glow. Requested 2026-08-27. */
+/* A disabled Save is not a faded blue button — it is a button with nothing to
+   do. Ghosting the primary fill to 32% left a washed-out blue that read as a
+   broken control beside the sharp raised buttons around it. It wears the quiet
+   surface instead, and the accent comes back the moment there is something to
+   save. Reported 2026-08-27. */
+#me-save-btn:disabled {
+  opacity: 1;
+  background: var(--surface-raised);
+  color: var(--text-very-dim);
+  border-color: var(--border);
+}
 .attn-pulse.btn-primary {
   background: var(--surface-raised) !important;
   color: var(--accent) !important;
@@ -18375,7 +18386,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.88.0';
+const APP_VERSION  = '1.46.89.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -2080,21 +2080,27 @@ td.c-err  { color: var(--accent2); }
 .pick-row label { cursor: pointer; flex: 1; }
 .pick-vol  { font-weight: 700; color: var(--accent); margin-top: 3px; }
 .pick-vol:first-child { margin-top: 0; }
-.pick-sv   { padding-left: 18px; color: var(--warning); }
+.pick-sv   { padding-left: 18px; color: var(--accent); }
 .pick-ddl  { padding-left: 36px; }
 /* Classes are a flat list — no volume/subvolume above them to indent under. */
 .pick-class { padding-left: 2px; }
-/* A DDL name is the same kind of thing as a class's type code — the name of the
-   item being picked — so it is the same colour. The volume and subvolume rows
-   above it keep their own (accent bold / amber) as the tree's structure. */
-.pick-ddl > label { color: var(--accent); }
-/* Picked rows are the statement; the unpicked ones step back, so what will
-   actually be imported reads at a glance instead of by checkbox-hunting.
-   Opacity, so every colour inside the row keeps its relationships. */
-.pick-row > label { opacity: 0.6; transition: opacity 0.1s; }
-.pick-row > input:checked + label { opacity: 1; }
-.pick-row:hover > label { opacity: 0.85; }
-.pick-row > input:checked + label:hover { opacity: 1; }
+/* A DDL name reads like a class's LABEL, not like its type code: grey when the
+   row is not picked, plain text when it is. The type code stays accent in both
+   states — it is an identifier, not a selection. The volume and subvolume rows
+   keep their own colours: they are the tree's structure, not its contents. */
+.pick-ddl > label { color: var(--text-dim); transition: color 0.1s; }
+.pick-row > input:checked + label,
+.pick-row > input:checked + label .pick-lbl { color: var(--text); }
+/* A type code and a volume / subvolume name are identifiers, so they stay
+   accent — but an identifier for something you are NOT importing should not
+   read as loud as one you are. They dim instead of changing colour.
+   A volume or subvolume counts as picked when ANY DDL under it is: its own
+   checkbox is checked-or-indeterminate exactly then (see _syncImportParents). */
+.pick-row > input:not(:checked) + label .pick-code,
+.pick-vol > input:not(:checked):not(:indeterminate) + label,
+.pick-sv  > input:not(:checked):not(:indeterminate) + label { opacity: 0.45; }
+.pick-row > label .pick-code,
+.pick-vol > label, .pick-sv > label { transition: opacity 0.1s; }
 .pick-new  { color: var(--success); }
 .pick-over { color: var(--accent2); }
 /* A class row: swatch, type code, label, then the status tag against the right
@@ -17373,7 +17379,7 @@ function _openBundleExport(opts) {
     for (const s of Object.keys(tree[v] || {})) {
       html += `<div class="pick-row pick-sv">
         <input type="checkbox" class="pick-sv-cb" data-vol="${esc(v)}" data-sv="${esc(s)}" id="pcs_${esc(v)}_${esc(s)}">
-        <label for="pcs_${esc(v)}_${esc(s)}">📂 ${esc(s)}</label></div>`;
+        <label for="pcs_${esc(v)}_${esc(s)}"><span class="pick-ico">📂</span>${esc(s)}</label></div>`;
       for (const d of Object.keys((tree[v][s]) || {})) {
         const chk = preCheckDDLs.has(`${v}/${s}/${d}`) ? 'checked' : '';
         html += `<div class="pick-row pick-ddl">
@@ -17675,7 +17681,7 @@ function _showImportPreview(data) {
     for (const s of Object.keys(tree[v] || {})) {
       html += `<div class="pick-row pick-sv">
         <input type="checkbox" class="imp-sv-cb" data-vol="${esc(v)}" data-sv="${esc(s)}" id="ips_${esc(v)}_${esc(s)}" checked>
-        <label for="ips_${esc(v)}_${esc(s)}">📂 ${esc(s)}</label></div>`;
+        <label for="ips_${esc(v)}_${esc(s)}"><span class="pick-ico">📂</span>${esc(s)}</label></div>`;
       for (const d of Object.keys((tree[v][s]) || {})) {
         totalDdl++;
         const isOver = !!(S.ddlTree[v]?.[s]?.[d]);
@@ -18339,7 +18345,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.79.0';
+const APP_VERSION  = '1.46.81.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

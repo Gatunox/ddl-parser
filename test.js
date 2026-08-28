@@ -1395,15 +1395,36 @@ test('a picker row reads as picked or not, and names look like names', () => {
   // what will actually be imported reads at a glance rather than by
   // checkbox-hunting. Requested 2026-08-27.
   const src = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/\.pick-ddl > label \{ color: var\(--accent\); \}/.test(src),
-    'a DDL name is still a different colour from the class name');
-  assert.ok(/\.pick-row > label \{ opacity: 0\.6/.test(src), 'unpicked rows do not step back');
-  assert.ok(/\.pick-row > input:checked \+ label \{ opacity: 1; \}/.test(src),
-    'a picked row must be the bright one');
-  // The dimming is opacity, so the colours inside a row keep their relationships
-  // (accent name, dim label, amber warning) instead of being flattened to grey.
-  assert.ok(!/\.pick-row > input:checked \+ label \{ color:/.test(src),
-    'restating colours per state is how one of them drifts');
+  assert.ok(/\.pick-ddl > label \{ color: var\(--text-dim\)/.test(src),
+    'a DDL name must read like a class LABEL — grey until picked');
+  assert.ok(/\.pick-row > input:checked \+ label,\s*\n\s*\.pick-row > input:checked \+ label \.pick-lbl \{ color: var\(--text\); \}/.test(src),
+    'picking a row must brighten its name');
+  // The type code is an identifier, not a selection state — it stays accent in
+  // both, and nothing may restate it per state.
+  assert.ok(!/input:checked \+ label \.pick-code/.test(src),
+    'the type code must not change colour with the checkbox');
+});
+
+test('identifiers stay accent and dim when nothing under them is picked', () => {
+  // A type code, a volume and a subvolume are identifiers — they keep their
+  // colour in every state. What changes is loudness: an identifier for
+  // something you are NOT importing must not read as loud as one you are.
+  // A volume/subvolume counts as picked when ANY DDL under it is, which is
+  // exactly when _syncImportParents leaves it checked or indeterminate.
+  // Requested 2026-08-27.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.pick-sv   \{ padding-left: 18px; color: var\(--accent\); \}/.test(src),
+    'a subvolume is the same kind of row as a volume, one level down — not a warning');
+  assert.ok(/\.pick-row > input:not\(:checked\) \+ label \.pick-code,/.test(src),
+    'an unpicked type code must dim');
+  assert.ok(/\.pick-vol > input:not\(:checked\):not\(:indeterminate\) \+ label,/.test(src),
+    'a volume with SOME children picked must not read as unpicked');
+  assert.ok(/\.pick-sv  > input:not\(:checked\):not\(:indeterminate\) \+ label \{ opacity: 0\.45; \}/.test(src),
+    'the subvolume must follow the same rule as the volume');
+  // The indeterminate state is what makes "some children picked" visible, so the
+  // parent sync has to run when the preview opens, not only on the first click.
+  assert.ok(/cb\.checked = n > 0; cb\.indeterminate = n > 0 && n < ddls\.length;/.test(
+    psFnSource('_syncImportParents')), 'partial selection is not expressed as indeterminate');
 });
 
 test('[REGRESSION] a class row is not indented like a DDL nested under a volume', () => {

@@ -2908,8 +2908,7 @@ input.me-inp:focus{border-color:var(--accent);}
 body.track-mode #resCfgControls,
 body.track-mode #recMetaContent { display: none !important; }
 /* …and the navigator's row stays, because the picked count sits in it. */
-body.track-mode #msgNav { margin-left: 8px !important; }
-.trk-sel-count { flex-shrink: 0; margin-left: auto; font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
+.trk-sel-count { flex-shrink: 0; font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: var(--bw-ctl) solid var(--accent); border-radius: var(--r-sm); padding: 0 6px; }
 
@@ -2927,13 +2926,17 @@ body.track-mode #msgNav { margin-left: 8px !important; }
 
 /* "You are not looking at everything." A filter nobody can see is a filter that
    gets blamed on the parser. */
+/* The record controls travel together and stay right-aligned, on their own row
+   when the meta line wraps. */
+.rec-nav-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+
 .res-filter-label {
-  flex-shrink: 0; margin-left: auto; padding: 0 6px; border-radius: var(--r-sm);
+  flex-shrink: 0; padding: 0 6px; border-radius: var(--r-sm);
   font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: var(--bw-ctl) solid var(--accent);
 }
-#resViewAllBtn { height: 18px; padding: 0 6px; margin-left: 6px; font-size: calc(var(--sz-mono) - 1px); }
+#resViewAllBtn { height: 18px; padding: 0 6px; font-size: calc(var(--sz-mono) - 1px); }
 
 /* Test verdicts paint the ROW, not a 6px dot beside it — the dot was the same
    size as the colour swatch next to it and read as decoration. Colour never
@@ -4087,16 +4090,21 @@ th.me-fm-colhi{color:var(--accent);}
         </div>
         <div class="panel-bar rec-meta" id="recMetaRow" style="display:none">
           <span id="recMetaContent" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0"></span>
-          <span id="trkSelCount" class="trk-sel-count" style="display:none"></span>
-          <span id="resFilterLabel" class="res-filter-label" style="display:none"
-                title="Showing only the records picked in Track Mode">Filtered</span>
-          <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0;margin-left:auto">
-            <button class="btn" onclick="prevMsg()">&lt;</button>
-            <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
-            <button class="btn" onclick="nextMsg()">&gt;</button>
-          </div>
-          <button class="btn" id="resViewAllBtn" onclick="clearViewFilter()" style="display:none;flex-shrink:0"
-                  title="Show every record again">View all</button>
+          <!-- One group, so the row's wrap cannot break it apart or strand it on
+               the left: a margin-left:auto on each piece only pushes while they
+               share a line with something else. Reported 2026-08-28. -->
+          <span id="recNavGroup" class="rec-nav-group">
+            <span id="trkSelCount" class="trk-sel-count" style="display:none"></span>
+            <span id="resFilterLabel" class="res-filter-label" style="display:none"
+                  title="Showing only the records picked in Track Mode">Filtered</span>
+            <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0">
+              <button class="btn" onclick="prevMsg()">&lt;</button>
+              <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
+              <button class="btn" onclick="nextMsg()">&gt;</button>
+            </div>
+            <button class="btn" id="resViewAllBtn" onclick="clearViewFilter()" style="display:none;flex-shrink:0"
+                    title="Show every record again">View all</button>
+          </span>
         </div>
         <div id="resCfgControls" class="panel-bar">
           <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
@@ -15578,9 +15586,7 @@ function _syncViewFilterBar() {
   const on = !!(S.viewFilter && S.viewFilter.length);
   lbl.style.display = on ? 'inline-block' : 'none';
   btn.style.display = on ? 'inline-flex' : 'none';
-  // The label takes the push to the right when it is there, so the group does
-  // not split in two around a second auto margin.
-  if (nav) nav.style.marginLeft = on ? '6px' : 'auto';
+  // Spacing belongs to the group; nothing here has to push anything.
 }
 
 function clearViewFilter() {
@@ -18607,7 +18613,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.3.0';
+const APP_VERSION  = '1.47.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

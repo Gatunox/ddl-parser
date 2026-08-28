@@ -2907,7 +2907,9 @@ input.me-inp:focus{border-color:var(--accent);}
    the table. Reported 2026-08-28. */
 body.track-mode #resCfgControls,
 body.track-mode #recMetaContent { display: none !important; }
-.trk-sel-count { flex-shrink: 0; font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
+/* …and the navigator's row stays, because the picked count sits in it. */
+body.track-mode #msgNav { margin-left: 8px !important; }
+.trk-sel-count { flex-shrink: 0; margin-left: auto; font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: var(--bw-ctl) solid var(--accent); border-radius: var(--r-sm); padding: 0 6px; }
 
@@ -4075,7 +4077,6 @@ th.me-fm-colhi{color:var(--accent);}
       <div class="panel-header">
         <span class="panel-title" id="resPanelTitle" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;cursor:pointer">Parse Results</span>
         <span id="resTypeBadge" class="pt-badge"></span>
-        <span id="trkSelCount" class="trk-sel-count" style="display:none"></span>
         <span style="flex:1;min-width:0"></span>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
@@ -4087,6 +4088,7 @@ th.me-fm-colhi{color:var(--accent);}
         </div>
         <div class="panel-bar rec-meta" id="recMetaRow" style="display:none">
           <span id="recMetaContent" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0"></span>
+          <span id="trkSelCount" class="trk-sel-count" style="display:none"></span>
           <span id="resFilterBadge" class="res-filter-badge" style="display:none"
                 title="Showing only the records picked in Track Mode">
             <span id="resFilterBadgeText"></span>
@@ -15545,7 +15547,7 @@ function _syncTrackSelCount() {
   if (!el) return;
   const n = S.trackPicked.size;
   el.style.display = (S.trackMode && n) ? 'inline-block' : 'none';
-  if (n) el.textContent = `${n} of ${S.messages.length} selected`;
+  if (n) el.textContent = `${n} selected`;
 }
 
 // Leaving Track with records picked narrows Parse Results to them. The indices
@@ -18602,7 +18604,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.1.0';
+const APP_VERSION  = '1.47.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

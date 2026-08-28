@@ -1501,8 +1501,13 @@ test('Track mode picks records; leaving it narrows Parse Results to them', () =>
 
   // And the count of what has been picked sits where the picking happens.
   const cnt = psFnSource('_syncTrackSelCount');
-  assert.ok(/\$\{n\} of \$\{S\.messages\.length\} selected/.test(cnt),
-    'Track mode must say how many records are picked');
+  // Beside the navigator, which already says how many records there are — the
+  // count states only what is new. Requested 2026-08-28.
+  assert.ok(/`\$\{n\} selected`/.test(cnt),
+    'the count must say how many are picked, not repeat the total beside it');
+  const src2 = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/<span id="trkSelCount"[^>]*><\/span>\s*\n\s*<span id="resFilterBadge"/.test(src2),
+    'the count belongs in the navigator row, with the other record controls');
   assert.ok(/el\.style\.display = \(S\.trackMode && n\) \? 'inline-block' : 'none';/.test(cnt),
     'the count belongs to Track mode alone, and only once something is picked');
   const clear = psFnSource('clearViewFilter');

@@ -4833,6 +4833,10 @@ function parseHPEDDL(text, externalDefs, externalSections, targetDef = null) {
             id: myPrefix, type: 'FIXED', length: f.size, offset: f.offset + offDelta,
             description: f.desc, isRedefines: f.isRedefines || f.isInsideRedefines, redefTarget,
             _rawName: f.name, _dataType: f.dataType,
+            // An elementary OCCURS is read as ONE unit of unitSize × occurs, so
+            // the count is part of what the field is — "TYPE BINARY 16" over six
+            // bytes says nothing about why it is six. Reported 2026-08-28.
+            _occurs: f.occurs > 1 ? f.occurs : undefined,
           };
           if (occPath.length) {
             entry._occursPath = occPath;                 // full outer→inner occurrence path
@@ -5670,6 +5674,16 @@ function _meOverrideValidationType(type) {
 // "?" (0x3F) marks a byte lost when the input was captured as ASCII, so those
 // are flagged too. REDEFINES overlays are skipped — they re-view bytes that were
 // already judged where they were read.
+// The declared type as it should READ: "TYPE BINARY 16 ×3" rather than a bare
+// "TYPE BINARY 16" over six bytes. The DDL doc has an Occurs column to carry
+// this; the results table has one column for the type, so the count goes in it.
+// Requested 2026-08-28.
+function _fieldTypeLabel(f) {
+  const t = (f && (f.dataType || '')) || '';
+  const n = f && +f.occurs;
+  return (t && n > 1) ? `${t} \u00d7${n}` : t;
+}
+
 function _meContentLooksWrong(f) {
   if (!f || f.error || f.isRedefines || !f.rawBytes || !f.rawBytes.length) return false;
   const valType  = f.typeOverride ? _meOverrideValidationType(f.typeOverride) : (f.dataType || '');
@@ -7543,7 +7557,7 @@ function parseFlatMessage(bytes, defs, rawBytes) {
     const _isBinField = _binUnreliable && isBin;
     const _srcBytes  = (isBin && rawBytes) ? rawBytes.slice(dataStart, dataStart + len) : fBytes;
     fields.push({
-      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
+      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs,
       type: def.type, maxLength: def.length, lenPrefix,
       valueLength: fBytes.length,
       value: isBin ? _binValue(_srcBytes, fBytes) : bToStr(fBytes),
@@ -8133,7 +8147,7 @@ function parsePSTMMessageASCII(bytes, defs) {
     if (def.offset === undefined) seqOffset = fEnd;
     const isBin = /\bBINARY\b/i.test(def._dataType || '');
     fields.push({
-      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
+      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs,
       type: def.type, maxLength: def.length, lenPrefix: null,
       valueLength: fBytes.length,
       value:    isBin ? '[binary]' : bToStr(fBytes),
@@ -8185,7 +8199,7 @@ function parsePSTMMessageASCII(bytes, defs) {
           // Relabel only the OUTER (first) occurrence segment — the SERVICES loop
           // index — leaving any nested OCCURS labels intact (e.g. a service that
           // contains DETAIL OCCURS n keeps its DETAIL[nn] labels).
-          id: def.id.replace(/\[\d+\]/, `[${lbl}]`), description: def.description, dataType: def._dataType || def.dataType || '',
+          id: def.id.replace(/\[\d+\]/, `[${lbl}]`), description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs,
           type: def.type, maxLength: def.length, lenPrefix: null,
           valueLength: fBytes.length,
           value:    isBin ? '[binary]' : bToStr(fBytes),
@@ -8251,7 +8265,7 @@ function parsePSTMMessageBinary(bytes, defs) {
     const fEnd   = fStart + def.length;
     if (def.offset === undefined) seqOffset = fEnd;
     fields.push({
-      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
+      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs,
       type: def.type, maxLength: def.length, lenPrefix: null,
       valueLength: fBytes.length,
       value: bToStr(fBytes), rawHex: bToHex(fBytes), rawBytes: fBytes,
@@ -8286,7 +8300,7 @@ function parsePSTMMessageBinary(bytes, defs) {
     if (fStart + def.length > bytes.length) break;
     const fBytes = bytes.slice(fStart, fStart + def.length);
     fields.push({
-      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
+      id: def.id, description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs,
       type: def.type, maxLength: def.length, lenPrefix: null,
       valueLength: fBytes.length,
       value: bToStr(fBytes), rawHex: bToHex(fBytes), rawBytes: fBytes,
@@ -8382,7 +8396,7 @@ function parseMessage(bytes, defs, rawBytes) {
     const fStart = offset;
     const fB = read(def.length);
     if (!fB) return fields;
-    fields.push({ id: def.id, description: def.description, dataType: def._dataType || def.dataType || '',
+    fields.push({ id: def.id, description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs,
       type: def.type, maxLength: def.length, valueLength: fB.length,
       value: bToStr(fB), rawHex: bToHex(fB), rawBytes: fB,
       startByte: fStart, endByte: offset - 1 });
@@ -8460,7 +8474,7 @@ function parseMessage(bytes, defs, rawBytes) {
       lenPrefix = lB.map(b => String.fromCharCode(b)).join('');
       const n = parseInt(lenPrefix, 10);
       if (isNaN(n) || n > def.length) {
-        fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', value: `(invalid LL prefix)`,
+        fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs, value: `(invalid LL prefix)`,
           type: def.type, maxLength: def.length,
           rawHex: bToHex(lB), rawBytes: lB, startByte: fStart, endByte: offset-1, error: true });
         break;
@@ -8471,7 +8485,7 @@ function parseMessage(bytes, defs, rawBytes) {
       lenPrefix = lB.map(b => String.fromCharCode(b)).join('');
       const n = parseInt(lenPrefix, 10);
       if (isNaN(n) || n > def.length) {
-        fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', value: `(invalid LLL prefix)`,
+        fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs, value: `(invalid LLL prefix)`,
           type: def.type, maxLength: def.length,
           rawHex: bToHex(lB), rawBytes: lB, startByte: fStart, endByte: offset-1, error: true });
         break;
@@ -8480,14 +8494,14 @@ function parseMessage(bytes, defs, rawBytes) {
     }
 
     if (!fBytes) {
-      fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', value: '(truncated)',
+      fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs, value: '(truncated)',
         type: def.type, maxLength: def.length,
         rawHex: '', rawBytes: [], startByte: fStart, endByte: offset, error: true });
       break;
     }
 
     const allB = bytes.slice(fStart, offset);
-    fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', value: bToStr(fBytes),
+    fields.push({ id, description: def.description, dataType: def._dataType || def.dataType || '', occurs: def._occurs, value: bToStr(fBytes),
       type: def.type, maxLength: def.length, lenPrefix,
       valueLength: fBytes.length,
       rawHex: bToHex(allB), rawBytes: allB, startByte: fStart, endByte: offset - 1 });
@@ -13488,12 +13502,15 @@ function renderFieldTable(msg) {
     // An LLVAR prefix (lenPrefixOwnRow unset) still prints: it has no row.
     const prefixHtml = (f.lenPrefix && !f.lenPrefixOwnRow)
       ? `<span class="c-vlen">${esc(f.lenPrefix)}</span>` : '';
-    const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}` : '';
     // Use description only when it carries real info (differs from the field's own leaf name).
     // HPE DDL without HEADING sets desc = rawName, making description == field name — show dataType instead.
     const _idLeaf  = (f.id.split('.').pop() || '').toUpperCase();
     const _descReal = f.description && f.description.toUpperCase() !== _idLeaf;
-    const _origDesc = _descReal ? f.description : (f.dataType || '');
+    const _origDesc = _descReal ? f.description : _fieldTypeLabel(f);
+    // When the column shows a DESCRIPTION, the declared type is only reachable
+    // on hover — so it goes there, occurs count and all.
+    const ttType     = f.type && f.maxLength != null ? `${f.type}  ${f.maxLength}`
+                     : (_descReal ? _fieldTypeLabel(f) : '');
     // Annotate the Description with the field's configured overrides:
     //   "<declared type> ↩ <override>"  — same arrow the DDL uses for REDEFINES
     // plus " as <DISPLAY>" when a display override is set. Config comes from the
@@ -18632,7 +18649,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.6.0';
+const APP_VERSION  = '1.47.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -30645,7 +30662,7 @@ function _meReadOneFieldFromDef(def, ctx) {
   return {
     id: def.id,
     description: def.description,
-    dataType: def._dataType || def.dataType || '',
+    dataType: def._dataType || def.dataType || '', occurs: def._occurs,
     type: def.type,
     maxLength: def.length,
     lenPrefix,

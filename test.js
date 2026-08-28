@@ -6704,6 +6704,30 @@ test('a hex-char override stops the field being painted red', () => {
   assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
 });
 
+test('an OCCURS field says so in its type: TYPE BINARY 16 ×3', () => {
+  // An elementary OCCURS is read as ONE unit of unitSize × occurs, so "TYPE
+  // BINARY 16" printed over six bytes said nothing about why it was six. The
+  // DDL doc has an Occurs column for this; the results table has one column for
+  // the type, so the count goes in it. Requested 2026-08-28.
+  const prevTree = S.ddlTree;
+  try {
+    S.ddlTree = { V: { S: { D: 'DEF REC.\n  02 NAME PIC X(4).\n  02 CNT TYPE BINARY 16 OCCURS 3.\n  02 TAIL PIC X(2).\nEND\n' } } };
+    const resolved = getDDLFromPath('V/S/D/REC');
+    const cnt = resolved.defs.find(d => d.id === 'CNT');
+    eq(cnt.length, 6, 'three 16-bit occurrences are six bytes read as one unit');
+    eq(cnt._occurs, 3, 'the compiled field must carry the count');
+
+    // …and it survives into the parsed field, which is what the table renders.
+    const bytes = [0x41,0x41,0x41,0x41, 0x00,0x1F,0x3F,0xA3,0xC6,0x99, 0x5A,0x5A];
+    const parsed = parseFlatMessage(bytes, resolved.defs);
+    const f = (parsed.fields || parsed).find(x => x.id === 'CNT');
+    eq(f.occurs, 3, 'the parsed field lost the count on the way out of the walker');
+    eq(sandbox._fieldTypeLabel(f), 'TYPE BINARY 16 ×3', 'the type must say how many');
+    eq(sandbox._fieldTypeLabel({ dataType: 'PIC X(4)' }), 'PIC X(4)', 'and say nothing extra when there is one');
+    eq(sandbox._fieldTypeLabel({ dataType: 'PIC X(4)', occurs: 1 }), 'PIC X(4)', 'OCCURS 1 is not worth saying');
+  } finally { S.ddlTree = prevTree; }
+});
+
 test('[REGRESSION] 0x3F in a binary field is only suspect when the input came from characters', () => {
   // A "?" (0x3F) in a binary field means a byte lost on the way in — but only
   // for input captured as CHARACTERS, which cannot carry a non-printable. A hex

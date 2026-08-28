@@ -1487,6 +1487,12 @@ test('[REGRESSION] an import is never written until its own Save is pressed', ()
   assert.ok(/const treeBefore  = JSON\.parse\(JSON\.stringify\(S\.ddlTree\)\);/.test(fn),
     'without the tree snapshot a discard cannot put the tree back');
 
+  // The toast names the button AND where it lives: "press Save" only helps
+  // someone who already knows there is a Save in the Class Editor, and an import
+  // from the DDL tree is exactly the case where they are not looking at it.
+  assert.ok(/go to Class Editor and press Save to keep it/.test(fnAll),
+    'the toast must say where the Save is');
+
   // There is ONE Save in the app — the Class Editor's — and it commits the whole
   // bundle. Not saving IS the discard: the pending copy never reached storage,
   // so a reload comes back to the last saved state.

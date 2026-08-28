@@ -5674,8 +5674,14 @@ function _meContentLooksWrong(f) {
   if (!f || f.error || f.isRedefines || !f.rawBytes || !f.rawBytes.length) return false;
   const valType  = f.typeOverride ? _meOverrideValidationType(f.typeOverride) : (f.dataType || '');
   const isBinary = normalizeDataType(String(valType).replace(/^\s*TYPE\s+/i, '')) === 'B';
+  // The 0x3F rule only holds for input that came from CHARACTERS: an ASCII
+  // capture cannot carry a non-printable byte, so a "?" in a binary field is a
+  // byte that was lost on the way in. Binary-faithful input (hex, FUP hex, a
+  // tandem dump) loses nothing, and 0x3F there is simply the byte 0x3F —
+  // "001F 3FA3 C699" is data, not damage. One record in 440 held a 3F and was
+  // the only one painted red. Reported 2026-08-28.
   return !validateFieldContent(f.rawBytes, valType)
-      || (isBinary && Array.from(f.rawBytes).includes(0x3F));
+      || (isBinary && _meInputIsNonBinary(null) && Array.from(f.rawBytes).includes(0x3F));
 }
 
 // Build the set of field IDs that must be skipped for content validation.
@@ -18626,7 +18632,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.5.0';
+const APP_VERSION  = '1.47.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -6704,6 +6704,32 @@ test('a hex-char override stops the field being painted red', () => {
   assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
 });
 
+test('[REGRESSION] 0x3F in a binary field is only suspect when the input came from characters', () => {
+  // A "?" (0x3F) in a binary field means a byte lost on the way in — but only
+  // for input captured as CHARACTERS, which cannot carry a non-printable. A hex
+  // or FUP-hex capture loses nothing, so 0x3F there is just the byte 0x3F.
+  // One record in 440 held "001F 3FA3 C699" and was the only one painted red.
+  // Reported 2026-08-28.
+  const f = { id: 'CNT', dataType: 'TYPE BINARY 16', rawBytes: [0x00,0x1F,0x3F,0xA3,0xC6,0x99] };
+  const prevFmt = S.inputFormat, prevForced = S.forcedFormat;
+  try {
+    S.forcedFormat = null;
+    for (const fmt of ['fup-hex', 'hex', 'tandem-dump', 'netard-hex']) {
+      S.inputFormat = fmt;
+      assert.ok(!meContentLooksWrong(f), `${fmt}: binary-faithful input loses nothing — 0x3F is data`);
+    }
+    for (const fmt of ['ascii', 'fup-ascii', 'netard-ascii', 'netard']) {
+      S.inputFormat = fmt;
+      assert.ok(meContentLooksWrong(f), `${fmt}: a character capture cannot hold 0x3F as binary — flag it`);
+    }
+    // The real check is untouched: a PIC 9 holding letters is still wrong,
+    // whatever the input format was.
+    S.inputFormat = 'hex';
+    assert.ok(meContentLooksWrong({ id: 'N', dataType: 'PIC 9(4)', rawBytes: [0x41,0x42,0x43,0x44] }),
+      'the type-vs-content check must not be softened by this');
+  } finally { S.inputFormat = prevFmt; S.forcedFormat = prevForced; }
+});
+
 test('an ascii override still expects printable bytes', () => {
   // ascii maps to X, not to B: overriding to ascii is a claim ABOUT the bytes,
   // so a control byte is still worth flagging.

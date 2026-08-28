@@ -1443,6 +1443,97 @@ test('identifiers stay accent and dim when nothing under them is picked', () => 
     psFnSource('_syncImportParents')), 'partial selection is not expressed as indeterminate');
 });
 
+test('Track mode picks records; leaving it narrows Parse Results to them', () => {
+  // Clicking a Track row used to JUMP to that record — which meant leaving Track
+  // to see what you jumped to, and the table snapping back to row 1 on the way.
+  // Picking is the gesture now: pick the interesting records, leave Track, and
+  // Parse Results shows those and only those. Requested 2026-08-28.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const render = psFnSource('renderTracking');
+  assert.ok(/onclick="trackPickRow\(\$\{idx\}\)"/.test(render), 'a Track row must pick, not jump');
+  assert.ok(!/onclick="jumpTo\(\$\{idx\}\)"/.test(render), 'the jump-on-click is still wired');
+  assert.ok(/S\.trackPicked\.has\(idx\) \? ' trk-picked' : ''/.test(render), 'a picked row must look picked');
+  assert.ok(/--row-gutter:\$\{esc\(msg\.msgType\.color\)\}/.test(render),
+    'the gutter is the message type colour, as in the audit list');
+  assert.ok(/\.track-tbl tbody tr\.trk-picked \{ background: var\(--row-viewed\)/.test(src),
+    'picked rows must wear the same ground the audit list uses');
+  // The current-record tint paints the CELLS with !important, so a picked row
+  // that is also the current one lost its ground and read as unpicked.
+  assert.ok(/\.track-tbl tr\.trk-picked td \{ background: var\(--row-viewed\) !important; \}/.test(src),
+    'picked must win over the current-row tint, or the row you are on looks unpicked');
+
+  const pick = psFnSource('trackPickRow');
+  assert.ok(/if \(S\.trackPicked\.has\(idx\)\) S\.trackPicked\.delete\(idx\); else S\.trackPicked\.add\(idx\);/.test(pick),
+    'clicking must TOGGLE, or a mis-click cannot be taken back');
+
+  // Leaving Track applies the picks, and the walk follows them in record order.
+  assert.ok(/_trackApplyFilter\(\);/.test(psFnSource('toggleTrackMode')),
+    'leaving Track must apply what was picked');
+  const apply = psFnSource('_trackApplyFilter');
+  assert.ok(/\[\.\.\.S\.trackPicked\]\.sort\(\(a, b\) => a - b\)/.test(apply),
+    'the collection is walked in record order, not click order');
+  assert.ok(/if \(S\.viewFilter && !S\.viewFilter\.includes\(S\.curIdx\)\)/.test(apply),
+    'landing outside the selection would show a record the filter says is hidden');
+  // updateNav owns the counter AND the badge — applying the filter without it
+  // left "1 / 5" standing over a view holding two records. Found in the preview.
+  assert.ok(/updateNav\(\);/.test(apply), 'applying the filter must redraw the counter');
+
+  // One step function, so ‹ and › cannot disagree about what "next" means.
+  const step = psFnSource('_viewStep');
+  assert.ok(/S\.curIdx = S\.viewFilter\[to\];/.test(step), 'the arrows must walk the selection');
+  assert.ok(/_auditLazyParseNext\(\)/.test(step), 'and still pull lazily-parsed records when unfiltered');
+  for (const fn of ['prevMsg', 'nextMsg'])
+    assert.ok(/_viewStep\([-+]1\)/.test(psFnSource(fn)), `${fn} must go through the one step function`);
+
+  // The filter says so on screen and offers its own way out.
+  assert.ok(/id="resFilterBadge"/.test(src) && /onclick="clearViewFilter\(\)"/.test(src),
+    'a filter nobody can see is a filter that gets blamed on the parser');
+  const clear = psFnSource('clearViewFilter');
+  assert.ok(/S\.viewFilter = null;\s*\n\s*S\.trackPicked = new Set\(\);/.test(clear),
+    'View all must clear the picks too, or the next exit from Track re-applies them');
+
+  // And a selection must never outlive the messages it points at: the indices
+  // would land on whatever the next parse put in those slots.
+  eq((src.match(/S\.trackedFields = new Set\(\); S\.trackPicked = new Set\(\); S\.viewFilter = null;/g) || []).length, 5,
+     'every place that resets tracking must reset the selection with it');
+  eq((src.match(/trackMode: false, trackedFields: new Set\(\), trackPicked: new Set\(\), viewFilter: null \}/g) || []).length, 2,
+     'including the two that reset state as an object literal');
+});
+
+test('[REGRESSION] the audit dump toggle names the charset it returns to', () => {
+  // The preview decodes an EBCDIC payload as EBCDIC (v1.46.5x), but the toggle
+  // still read ASCII while in hex — promising a view the app does not produce.
+  // Reported 2026-08-28.
+  // psFnSource runs to the next top-level function, which here is the sync
+  // helper and then the toggle itself — bound it to this function's own body.
+  const labelAll = psFnSource('_auditToggleLabel');
+  // …and strip comments: the note explaining WHY it does not read _inspectBuf
+  // contains the word, and the assertion is about what the code does.
+  const label = labelAll.slice(0, labelAll.indexOf('\n}\n') + 3)
+    .replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(/if \(_auditPopupMode === 'ascii'\) return 'HEX';/.test(label),
+    'from the character view the toggle goes to hex, whatever the charset');
+  assert.ok(/_auditDumpCharset === 'ebcdic' \? 'EBCDIC' : 'ASCII'/.test(label),
+    'coming back from hex it must name the charset the record is actually shown in');
+  // Read from the dump that was drawn, not re-derived: the record body arrives
+  // asynchronously, so deciding at click time reads an empty buffer and every
+  // record answers ASCII. Found while verifying this fix.
+  assert.ok(!/_inspectBuf/.test(label),
+    'the label must not re-derive the charset from a buffer that may not be loaded yet');
+  assert.ok(/_auditDumpCharset = isEbcdic \? 'ebcdic' : 'ascii';/.test(psFnSource('_auditApplyDump')),
+    'the dump must record the charset it rendered in');
+  // The toggle is re-read when a record is drawn: the next record can be a
+  // different charset, and the button would otherwise keep the last one's word.
+  assert.ok(/_auditSyncDumpToggleLabel\(\)/.test(psFnSource('_auditApplyDump')),
+    'moving between records must re-read the label');
+  assert.ok(/_auditSyncDumpToggleLabel\(\);/.test(psFnSource('auditToggleDumpMode')),
+    'clicking it must re-read the label rather than hard-coding two words');
+  // Three labels now, so the width must hold the longest or the button jumps.
+  const w = psFnSource('_auditSyncToggleWidth');
+  assert.ok(/for \(const label of \['ASCII', 'EBCDIC', 'HEX'\]\)/.test(w),
+    'the button must be measured against every label it can show');
+});
+
 test('[REGRESSION] a class row is not indented like a DDL nested under a volume', () => {
   // Class rows reused .pick-ddl for their styling, and .pick-ddl carries the
   // DDL TREE's 36px indent — the room for "volume, then subvolume, then this".

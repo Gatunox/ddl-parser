@@ -2900,6 +2900,29 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-test-cm .cm-editor.msg-has-hl .cm-content{color:var(--text-very-dim);}
 .me-test-cm .cm-hl-active{background:var(--hl-active);border-radius:var(--r-sm);color:var(--hl-text);}
 .me-test-cm .cm-hl-hover {background:var(--hl-hover); border-radius:var(--r-sm);color:var(--hl-text);}
+/* A picked Track row wears the audit list's "you have been here" ground, with a
+   gutter in the message type's own colour. Same gesture, same look — the two
+   lists are the same kind of list. Requested 2026-08-28. */
+.track-tbl tbody tr { border-left: 3px solid transparent; }
+.track-tbl tbody tr.trk-picked { background: var(--row-viewed); border-left-color: var(--row-gutter, var(--accent)); }
+.track-tbl tbody tr.trk-picked:hover { background: var(--row-hover); }
+/* The current-record tint paints the CELLS with !important, so a picked row that
+   is also the current one lost its ground and looked unpicked. Picked wins:
+   which records you chose is the state you are working in, and the current one
+   still says so with its gutter and the counter. */
+.track-tbl tr.trk-picked td { background: var(--row-viewed) !important; }
+
+/* "You are not looking at everything." A filter nobody can see is a filter that
+   gets blamed on the parser. */
+.res-filter-badge {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: 8px;
+  padding: 1px 4px 1px 8px; border-radius: var(--r-sm);
+  font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: var(--bw-ctl) solid var(--accent);
+}
+.res-filter-badge .btn { height: 18px; padding: 0 6px; font-size: calc(var(--sz-mono) - 2px); }
+
 /* Test verdicts paint the ROW, not a 6px dot beside it — the dot was the same
    size as the colour swatch next to it and read as decoration. Colour never
    carries a verdict alone: the winner also gets the WINS badge, and a shadowed
@@ -4015,7 +4038,7 @@ th.me-fm-colhi{color:var(--accent);}
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-1)" title="Previous record (←)">&lt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
-                <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle hex/ASCII dump view">HEX</button>
+                <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle between the hex dump and the character view (ASCII or EBCDIC, whichever the record is)">HEX</button>
                 <button id="auditParseBtn" class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Data Input and parse">&#9654; Parse</button>
                 <button id="auditAutoParseBtn" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleAutoParse()" title="Auto-parse — parse each record as you select it, without pressing Parse">Auto</button>
                 <button class="btn" style="height:20px;padding:0 6px" onclick="auditClosePopup()">&#10005;</button>
@@ -4052,6 +4075,11 @@ th.me-fm-colhi{color:var(--accent);}
         </div>
         <div class="panel-bar rec-meta" id="recMetaRow" style="display:none">
           <span id="recMetaContent" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0"></span>
+          <span id="resFilterBadge" class="res-filter-badge" style="display:none"
+                title="Showing only the records picked in Track Mode">
+            <span id="resFilterBadgeText"></span>
+            <button class="btn" onclick="clearViewFilter()" title="Show every record again">View all</button>
+          </span>
           <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0;margin-left:auto">
             <button class="btn" onclick="prevMsg()">&lt;</button>
             <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
@@ -4141,6 +4169,11 @@ const S = {
   curIdx: 0,
   trackedFields: new Set(),
   trackMode: false,
+  // Records picked in Track mode, by index into S.messages. On leaving Track
+  // they become the view: Parse Results shows only these, and says so.
+  trackPicked: new Set(),
+  viewFilter: null,          // sorted array of indices, or null for "all"
+
   isParsed: false,
   selFieldId:   null,
   hoverFieldId: null,
@@ -10713,7 +10746,7 @@ function _drainTypePickers(queue, sessionMappings, done) {
 function _resetParseSelection() {
   S.selFieldId    = null;
   S.trackMode     = false;
-  S.trackedFields = new Set();
+  S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
   _syncTrkColVisibility();
 }
 
@@ -11274,7 +11307,7 @@ function doParseNetardLog(text, opts = {}) {
           S.isParsed      = true;
           S.selFieldId    = null;
           S.trackMode     = false;
-          S.trackedFields = new Set();
+          S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
           _syncTrkColVisibility();
           _parseProgressDoneLast();
           _parseProgressHide();
@@ -11346,7 +11379,7 @@ function doParseNetardLog(text, opts = {}) {
           S.isParsed      = true;
           S.selFieldId    = null;
           S.trackMode     = false;
-          S.trackedFields = new Set();
+          S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
           _syncTrkColVisibility();
           _parseProgressDoneLast();
           _parseProgressHide();
@@ -11979,7 +12012,7 @@ function doParseMessages() {
       tokens: p1Tokens, manualOverride: true, parsedBy: 'manual override',
       msgType: { type: 'USER', label: 'User' } }];
     S.curIdx = 0; S.isParsed = true; S.selFieldId = null;
-    S.trackMode = false; S.trackedFields = new Set();
+    S.trackMode = false; S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
     _syncTrkColVisibility();
     syncParseBtn();
     _msgLock(true);
@@ -12959,7 +12992,7 @@ function updateDDLEditorState() {
 function _clearResultsOnly() {
   clearInputHL();
   Object.assign(S, { isParsed: false, messages: [], curIdx: 0,
-    selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set() });
+    selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set(), trackPicked: new Set(), viewFilter: null });
   _lwSetParsed(false);
   document.getElementById('cntBadge').innerHTML = '';
   document.getElementById('msgNav').style.display = 'none';
@@ -12993,7 +13026,7 @@ function clearAll() {
   _msgLock(false);
   el.value = '';
   Object.assign(S, { isParsed: false, messages: [], curIdx: 0, inputFormat: null, forcedFormat: null,
-    _badgeFmt: null, selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set() });
+    _badgeFmt: null, selFieldId: null, hoverFieldId: null, trackMode: false, trackedFields: new Set(), trackPicked: new Set(), viewFilter: null });
   const fmtSel = document.getElementById('fmtForceSelect');
   if (fmtSel) { fmtSel.value = ''; fmtSel.classList.remove('fmt-forced'); }
   syncParseBtn();
@@ -14880,6 +14913,10 @@ function _auditApplyDump(u8, rec, recno) {
   // view already used, which is all there is when nothing claims the record.
   // Reported 2026-08-25.
   const isEbcdic = _auditDumpIsEbcdic(pay);
+  // A different record can be a different charset, so the toggle follows the
+  // dump being drawn rather than only what was clicked.
+  _auditDumpCharset = isEbcdic ? 'ebcdic' : 'ascii';
+  if (typeof _auditSyncDumpToggleLabel === 'function') _auditSyncDumpToggleLabel();
 
   if (_auditPopupMode === 'hex') {
     if (!pay.length) {
@@ -15081,10 +15118,31 @@ function auditCopyDumpToClipboard(e) {
   }
 }
 
+// The charset the popup last RENDERED, set by _auditApplyDump where it is
+// decided. The label follows the view instead of guessing at it again.
+let _auditDumpCharset = 'ascii';
+
+// The toggle names the view it will switch TO. In the character view that is
+// always HEX; coming back from hex it is whichever charset the record is
+// actually rendered in — the preview decodes EBCDIC payloads as EBCDIC, so a
+// button reading ASCII promised a view the app does not produce.
+// Reported 2026-08-28.
+function _auditToggleLabel() {
+  if (_auditPopupMode === 'ascii') return 'HEX';
+  // Read from the dump that was actually drawn, not re-derived here: the record
+  // body arrives asynchronously, so asking _auditSt._inspectBuf at click time
+  // reads an empty buffer and every record answers "ASCII".
+  return _auditDumpCharset === 'ebcdic' ? 'EBCDIC' : 'ASCII';
+}
+
+function _auditSyncDumpToggleLabel() {
+  const btn = document.getElementById('auditDumpToggle');
+  if (btn) btn.textContent = _auditToggleLabel();
+}
+
 function auditToggleDumpMode() {
   _auditPopupMode = _auditPopupMode === 'ascii' ? 'hex' : 'ascii';
-  const btn = document.getElementById('auditDumpToggle');
-  if (btn) btn.textContent = _auditPopupMode === 'ascii' ? 'HEX' : 'ASCII';
+  _auditSyncDumpToggleLabel();
   if (!_auditSt._inspectBuf) return;
   const rec = _auditSt.filtered[_auditSt.selIdx];
   if (!rec) return;
@@ -15107,10 +15165,15 @@ function _auditSyncToggleWidth() {
   _auditSyncAutoParseBtn();
   btn.style.minWidth = '';
   const saved = btn.textContent;
-  btn.textContent = 'ASCII'; const aw = btn.getBoundingClientRect().width;
-  btn.textContent = 'HEX';   const hw = btn.getBoundingClientRect().width;
+  // EBCDIC is the widest of the three labels, and the button must not resize as
+  // the user toggles or moves between records of different charsets.
+  let w = 0;
+  for (const label of ['ASCII', 'EBCDIC', 'HEX']) {
+    btn.textContent = label;
+    w = Math.max(w, btn.getBoundingClientRect().width);
+  }
   btn.textContent = saved;
-  btn.style.minWidth = Math.ceil(Math.max(aw, hw)) + 'px';
+  btn.style.minWidth = Math.ceil(w) + 'px';
 }
 
 // PREVIEW PARSE CACHE. A multi-message paste is parsed once and then navigated;
@@ -15190,7 +15253,7 @@ function _auditParseCacheApply(hit) {
   S.inputFormat = hit.inputFormat;
   S._badgeFmt   = hit.badgeFmt;
   S.curIdx = 0; S.isParsed = true; S.selFieldId = null;
-  S.trackMode = false; S.trackedFields = new Set();
+  S.trackMode = false; S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null;
   _resSetStale(false);
   _syncTrkColVisibility();
   syncParseBtn();
@@ -15394,6 +15457,7 @@ function toggleTrackMode() {
     btn.textContent = '⊞ Track Mode';
     btn.classList.remove('btn-active');
     btn.classList.toggle('btn-primary', S.trackedFields.size > 0);
+    _trackApplyFilter();
     // Restore columns picker visibility based on parsed content
     const total = S.messages?.length ?? 0;
     if (colPicker) colPicker.style.display = total > 0 ? 'inline-flex' : 'none';
@@ -15423,11 +15487,16 @@ function renderTracking() {
   const rows = S.messages.map((msg, idx) => {
     const ts = msg.timestamp || `Msg ${idx+1}`;
     const cur = idx === S.curIdx ? 'track-cur' : '';
+    const sel = S.trackPicked.has(idx) ? ' trk-picked' : '';
+    // The gutter is the message type's own colour, the same way an audit row
+    // wears its badge colour — so a picked row says WHICH type it is, not just
+    // that it was picked.
+    const col = msg.msgType && msg.msgType.color ? ` style="--row-gutter:${esc(msg.msgType.color)}"` : '';
     const cells = tracked.map(id => {
       const f = msg.fields.find(x => x.id === id);
       return `<td class="t-val">${f ? esc(f.value) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
     }).join('');
-    return `<tr class="${cur}" onclick="jumpTo(${idx})">
+    return `<tr class="${cur}${sel}"${col} onclick="trackPickRow(${idx})">
       <td class="t-ts">${idx+1}</td><td class="t-ts">${esc(ts)}</td>${cells}
     </tr>`;
   }).join('');
@@ -15443,6 +15512,54 @@ function renderTracking() {
   renderRaw(S.messages[S.curIdx]);
 }
 
+// Click a Track row to pick that record. It used to jump to it — which meant
+// leaving Track mode to look at what you jumped to, and the table snapping back
+// to row 1 on the way. Picking is the gesture now: pick the interesting records,
+// leave Track, and Parse Results shows those and only those.
+// Requested 2026-08-28.
+function trackPickRow(idx) {
+  if (S.trackPicked.has(idx)) S.trackPicked.delete(idx); else S.trackPicked.add(idx);
+  renderTracking();
+}
+
+// Leaving Track with records picked narrows Parse Results to them. The indices
+// are sorted so ‹ › walk the collection in the order the records are in, not
+// the order they were clicked.
+function _trackApplyFilter() {
+  S.viewFilter = S.trackPicked.size ? [...S.trackPicked].sort((a, b) => a - b) : null;
+  if (S.viewFilter && !S.viewFilter.includes(S.curIdx)) {
+    S.curIdx = S.viewFilter[0];
+    S.selFieldId = null;
+    clearInputHL();
+  }
+  // updateNav owns the counter AND the badge: leaving Track without it left
+  // "1 / 5" over a view that holds two records.
+  updateNav();
+}
+
+// "You are not looking at everything." A filter that cannot be seen is a filter
+// that gets blamed on the parser.
+function _syncViewFilterBar() {
+  const bar = document.getElementById('resFilterBadge');
+  if (!bar) return;
+  const n = S.viewFilter ? S.viewFilter.length : 0;
+  const total = _lazyTotalCount || S.messages.length;
+  bar.style.display = n ? 'inline-flex' : 'none';
+  if (n) {
+    const at = S.viewFilter.indexOf(S.curIdx);
+    document.getElementById('resFilterBadgeText').textContent =
+      `Selected ${at >= 0 ? at + 1 : 1}/${n} of ${total}`;
+  }
+}
+
+function clearViewFilter() {
+  S.viewFilter = null;
+  S.trackPicked = new Set();
+  _syncViewFilterBar();
+  updateNav();
+  if (S.trackMode) renderTracking(); else renderCurrent();
+}
+
 function jumpTo(idx) {
   while (_lazyDeferreds && _lazyDeferredIdx < _lazyDeferreds.length && S.messages.length <= idx + 1) _auditLazyParseNext();
   S.curIdx = Math.min(idx, S.messages.length - 1);
@@ -15454,13 +15571,33 @@ function jumpTo(idx) {
 // ============================================================
 // NAVIGATION
 // ============================================================
-function prevMsg() { if (S.curIdx > 0) { S.curIdx--; S.selFieldId = null; clearInputHL(); updateNav(); renderCurrent(); } }
-function nextMsg() {
+// ‹ › walk the SELECTED collection when Track mode left one behind, and every
+// record otherwise. Written as one step function so the two buttons cannot
+// disagree about what "next" means.
+function _viewStep(dir) {
+  if (S.viewFilter && S.viewFilter.length) {
+    const at = S.viewFilter.indexOf(S.curIdx);
+    const to = at < 0 ? 0 : at + dir;
+    if (to < 0 || to >= S.viewFilter.length) return false;
+    S.curIdx = S.viewFilter[to];
+    return true;
+  }
   const lazyTotal = _lazyTotalCount || S.messages.length;
-  if (S.curIdx >= lazyTotal - 1) return;
-  if (S.curIdx + 1 >= S.messages.length) _auditLazyParseNext();
-  S.curIdx++;
-  if (S.curIdx + 1 >= S.messages.length && _lazyDeferreds && _lazyDeferredIdx < _lazyDeferreds.length) _auditLazyParseNext();
+  const to = S.curIdx + dir;
+  if (to < 0 || to >= lazyTotal) return false;
+  if (dir > 0 && to >= S.messages.length) _auditLazyParseNext();
+  S.curIdx = to;
+  if (dir > 0 && S.curIdx + 1 >= S.messages.length && _lazyDeferreds && _lazyDeferredIdx < _lazyDeferreds.length)
+    _auditLazyParseNext();
+  return true;
+}
+
+function prevMsg() {
+  if (!_viewStep(-1)) return;
+  S.selFieldId = null; clearInputHL(); updateNav(); renderCurrent();
+}
+function nextMsg() {
+  if (!_viewStep(+1)) return;
   S.selFieldId = null; clearInputHL(); updateNav(); renderCurrent();
 }
 
@@ -15469,8 +15606,13 @@ function updateNav() {
   const msg   = S.messages[S.curIdx];
   const _set = (id, prop, val) => { const el = document.getElementById(id); if (el) el[prop] = val; };
   const _sty = (id, val) => { const el = document.getElementById(id); if (el) el.style.display = val; };
-  _set('msgCtr', 'textContent', `${S.curIdx+1} / ${total}`);
-  _sty('msgNav', total > 1 ? 'flex' : 'none');
+  // With a selection in play the counter counts THAT: "2 / 5" of the five you
+  // picked, not of the two hundred you parsed.
+  const fil = S.viewFilter && S.viewFilter.length ? S.viewFilter : null;
+  const at  = fil ? fil.indexOf(S.curIdx) : -1;
+  _set('msgCtr', 'textContent', fil ? `${(at < 0 ? 0 : at) + 1} / ${fil.length}` : `${S.curIdx+1} / ${total}`);
+  _sty('msgNav', (fil ? fil.length : total) > 1 ? 'flex' : 'none');
+  if (typeof _syncViewFilterBar === 'function') _syncViewFilterBar();
   _sty('trkBtn', S.trackedFields.size > 0 || S.trackMode ? 'inline-block' : 'none');
   _sty('exportBtn', total > 0 ? 'inline-flex' : 'none');
   _sty('colCfgBtn', total > 0 ? 'inline-flex' : 'none');
@@ -18434,7 +18576,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.97.0';
+const APP_VERSION  = '1.47.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

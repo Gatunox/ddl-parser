@@ -17910,31 +17910,50 @@ function confirmImport() {
     .map(s => JSON.parse(JSON.stringify(s)));   // deep clone
   let specAdded = 0, specOverwritten = 0;
   if (pickedSpecs.length) {
-    // "Editor open" must mean the Class Editor is actually VISIBLE — not merely
-    // that _meState was initialised earlier this session. When the editor is
-    // closed, imports persist directly (_fmtSave); staging into the editor's
-    // unsaved buffer would silently drop the spec on reload.
+    // An import lands in STORAGE, always — open editor or not.
+    //
+    // It used to be staged into the editor's unsaved buffer when the editor
+    // happened to be open, which made one action half-durable: the bundle's
+    // DDLs were written immediately either way, while its classes evaporated on
+    // a close. Same click, different outcome depending on whether a modal was
+    // up. All of it saves now, or none of it does. Reported 2026-08-27.
+    //
+    // Keyed by _specKey (label + type code), not name — a Map on name put every
+    // incoming ISO on one slot and ate the rest.
+    const apply = list => {
+      const byKey = new Map(list.map((s, i) => [_specKey(s), i]));
+      let added = 0, over = 0;
+      for (const s of pickedSpecs) {
+        const k = _specKey(s);
+        const copy = JSON.parse(JSON.stringify(s));
+        if (byKey.has(k)) { list[byKey.get(k)] = copy; over++; }
+        else              { list.push(copy); byKey.set(k, list.length - 1); added++; }
+      }
+      return { list, added, over };
+    };
+
+    // Storage takes the import on top of what is SAVED — never on top of the
+    // editor's unsaved buffer, or importing would silently commit edits the
+    // user has not finished making.
+    //
+    // What each class WAS is read before anything is applied: after the merge
+    // every one of them exists, and the badge would say "over" for all of them.
+    const before = new Set((_fmtGetData().specs || []).map(_specKey));
+    for (const s of pickedSpecs) _meMarkImported(s, before.has(_specKey(s)) ? 'over' : 'new');
+    const saved = apply(_fmtGetData().specs || []);
+    specAdded = saved.added; specOverwritten = saved.over;
+    _fmtSave(saved.list);
+
+    // …and the open editor shows it immediately, applied over whatever it is
+    // holding, so the list on screen is the list that was just imported into.
     const _meOverlay = document.getElementById('msgEditorOverlay');
     const editorOpen = !!_meOverlay && !_meOverlay.classList.contains('hidden')
       && (typeof _meState !== 'undefined' && _meState && Array.isArray(_meState.specs));
-    const currentSpecs = editorOpen ? _meState.specs : (_fmtGetData().specs || []);
-    // Keyed by _specKey (label), not name — see the note on _specKey. A Map on
-    // name put every incoming ISO on one slot and ate the rest.
-    const byKey = new Map(currentSpecs.map((s, i) => [_specKey(s), i]));
-    for (const s of pickedSpecs) {
-      const k = _specKey(s);
-      if (byKey.has(k)) { currentSpecs[byKey.get(k)] = s; specOverwritten++; _meMarkImported(s, 'over'); }
-      else              { currentSpecs.push(s); byKey.set(k, currentSpecs.length - 1); specAdded++; _meMarkImported(s, 'new'); }
-    }
     if (editorOpen) {
-      _meState.specs = currentSpecs;
-      _meSetDirty();
+      _meState.specs = apply(_meState.specs).list;
       _meRenderSidebar();
       _meRenderRight();
     } else {
-      _fmtSave(currentSpecs);
-      // The editor was closed, so the marks wait for it to be opened. Saving
-      // there clears them, the same as any other import.
       _meSidebarRefreshIfOpen();
     }
     _meSyncAttention();
@@ -18397,7 +18416,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.91.0';
+const APP_VERSION  = '1.46.92.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

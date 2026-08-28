@@ -1463,6 +1463,31 @@ test('[REGRESSION] a class row is not indented like a DDL nested under a volume'
   assert.ok(/class="pick-volchip"/.test(src), 'the class volume chip needs its own name');
 });
 
+test('[REGRESSION] an import is all-or-nothing, whether the editor is open or not', () => {
+  // A bundle's DDLs were written to storage immediately, while its classes were
+  // only STAGED when the Class Editor happened to be open — so the same click
+  // half-survived a close: DDLs kept, classes gone. And the ✕ then warned about
+  // "unsaved changes" that were the import itself. Reported 2026-08-27.
+  const fn = psFnSource('confirmImport');
+  assert.ok(/const saved = apply\(_fmtGetData\(\)\.specs \|\| \[\]\);/.test(fn),
+    'the import must land in storage, not only in the editor buffer');
+  assert.ok(/_fmtSave\(saved\.list\);/.test(fn), 'and be written there');
+  // Applied over what is SAVED — importing must not commit edits the user has
+  // not finished making.
+  assert.ok(!/apply\(_meState\.specs\)\.list;[\s\S]{0,80}_fmtSave/.test(fn),
+    'the editor buffer must not be the thing that gets saved');
+  assert.ok(/_meState\.specs = apply\(_meState\.specs\)\.list;/.test(fn),
+    'the open editor must still show what just landed');
+  // An import no longer makes the editor dirty: there is nothing left to lose,
+  // so closing must not claim there is.
+  assert.ok(!/_meSetDirty\(\)/.test(fn),
+    'an import that is already saved must not mark the editor dirty');
+  // The badge still says which each class WAS, read before the merge — after it
+  // they all exist and every one would read "over".
+  assert.ok(/const before = new Set\(\(_fmtGetData\(\)\.specs \|\| \[\]\)\.map\(_specKey\)\);/.test(fn),
+    'new-vs-overwritten must be decided before the merge, or everything is an overwrite');
+});
+
 test('[REGRESSION] closing the Class Editor with unsaved changes asks first', () => {
   // openMsgEditor rebuilds _meState from storage on every open, so unsaved
   // edits do not survive a close — they are thrown away with nothing to undo

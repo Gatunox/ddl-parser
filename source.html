@@ -18349,7 +18349,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.82.0';
+const APP_VERSION  = '1.46.83.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20476,10 +20476,15 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     main.append(title);
     // The type code after the label, quietly. It is what the parse output and
     // the recognizers refer to, so a row that shows only the friendly name
-    // makes you open the entity to learn which code it is. Skipped when the
-    // label IS the code, which is what a freshly created entity looks like.
+    // makes you open the entity to learn which code it is.
+    //
+    // It used to be skipped when the label WAS the code, to avoid "STM — STM".
+    // That saved a word and cost the column: three rows in five had a code and
+    // two did not, and the reader had to work out that the absence meant "same
+    // as the name" rather than "no code set". Every row states its code.
+    // Requested 2026-08-27.
     const _code = String(s.name || '').trim();
-    if (_code && _code !== nm.textContent) {
+    if (_code) {
       const tc = document.createElement('span');
       tc.className = 'me-item-code';
       tc.textContent = `- ${_code}`;

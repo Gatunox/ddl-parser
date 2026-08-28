@@ -16257,9 +16257,14 @@ test('an entity row carries the code every other surface refers it by', () => {
   // so anything after it still goes right.
   assert.ok(/title\.append\(tc\);/.test(src), 'the code is not grouped with the name');
   assert.ok(/`- \$\{_code\}`/.test(src), 'the code is not prefixed');
-  // A freshly created entity has label === code; saying it twice reads as a bug.
-  assert.ok(/_code !== nm\.textContent/.test(src),
-    'an entity whose label IS its code shows the code twice');
+  // EVERY row states its code, including the ones whose label is the same word.
+  // Skipping it there saved "STM — STM" and cost the column: some rows had a
+  // code and some did not, and the reader had to work out that the absence
+  // meant "same as the name" rather than "no code set". Requested 2026-08-27.
+  assert.ok(!/_code !== nm\.textContent/.test(src),
+    'the code is skipped when it matches the label — the column stops being a column');
+  assert.ok(/const _code = String\(s\.name \|\| ''\)\.trim\(\);\s*\n\s*if \(_code\) \{/.test(src),
+    'a row with a code must show it, unconditionally');
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   // Inside the pair it is the LABEL that gives way — the code is short, fixed,
   // and the thing the parse output names.

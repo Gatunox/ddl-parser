@@ -1900,9 +1900,14 @@ td.c-err  { color: var(--accent2); }
 
 /* ===== TRACKING TABLE ===== */
 .track-tbl-wrap { overflow: auto; flex: 1; min-height: 0; }
-.track-tbl thead th { white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+/* table-layout:fixed for the same reason the other three need it: without it
+   the browser re-derives every column from content and the widths a drag writes
+   are only hints. The header cells are positioned so the drag handle has
+   something to sit against. Requested 2026-08-28. */
+.track-tbl { table-layout: fixed; }
+.track-tbl thead th { position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-tbl td.t-ts  { color: var(--text-dim); font-size: var(--sz-mono); white-space: nowrap; }
-.track-tbl td.t-val { color: var(--success); word-break: break-all; max-width: 100px; white-space: pre-wrap; }
+.track-tbl td.t-val { color: var(--success); word-break: break-all; white-space: pre-wrap; }
 .track-tbl tr.track-cur td { background: rgba(var(--accent-rgb),0.1) !important; }
 
 /* ===== MISC ===== */
@@ -15526,9 +15531,17 @@ function renderTracking() {
 
   const descOf = id => { for (const m of S.messages) { const f = m.fields.find(x=>x.id===id); if(f) return f.description; } return id; };
 
-  const heads = ['#', 'Timestamp', ...tracked.map(id =>
-    `${esc(id)}<br><small style="color:var(--text-dim);font-weight:normal">${esc(descOf(id).slice(0,22))}</small>`
-  )].map(h => `<th>${h}</th>`).join('');
+  // data-col names what a width belongs to: the two fixed columns by name, and
+  // each value column by its FIELD id — so a column that leaves the tracking
+  // and comes back returns the width it had.
+  const heads = [
+    `<th data-col="num">#<span class="th-resize"></span></th>`,
+    `<th data-col="ts">Timestamp<span class="th-resize"></span></th>`,
+    ...tracked.map(id =>
+      `<th data-col="f:${esc(id)}" title="${esc(id)}">${esc(id)}` +
+      `<br><small style="color:var(--text-dim);font-weight:normal">${esc(descOf(id).slice(0,22))}</small>` +
+      `<span class="th-resize"></span></th>`),
+  ].join('');
 
   const rows = S.messages.map((msg, idx) => {
     const ts = msg.timestamp || `Msg ${idx+1}`;
@@ -15561,6 +15574,9 @@ function renderTracking() {
     const wrap = document.querySelector('.track-tbl-wrap');
     if (wrap) wrap.scrollTop = _scrollTop;
   }
+  // Same column machinery as the other four tables: saved widths applied, drag
+  // handles live, the last column absorbing the slack.
+  _meColInitResize(_ME_COLRZ.trk);
 
   renderRaw(S.messages[S.curIdx]);
 }
@@ -18661,7 +18677,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.8.0';
+const APP_VERSION  = '1.47.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27024,6 +27040,21 @@ const _ME_COLRZ = {
     // user set earlier.
     saveAll: false,
   },
+  // Field Tracking. Its columns are the tracked fields, so they come and go with
+  // the tracking — but a width belongs to the FIELD, keyed by its id, so a
+  // column that leaves and comes back returns the width it had.
+  // Requested 2026-08-28.
+  trk: {
+    table: '#resContainer table.track-tbl', wrap: '#resContainer .track-tbl-wrap',
+    key: 'up_trk_col_w', handle: '.th-resize',
+    // The last value column absorbs the slack: the fixed ones (#, timestamp)
+    // are at the left, so the table fills the panel without a gap.
+    flex: ths => (ths.length ? ths[ths.length - 1].dataset.col : 'ts'),
+    flexMin: 90, min: 36, pad: 4,
+    defaults: () => ({ num: 34, ts: 132 }),
+    visibleOnly: false,
+    saveAll: false,
+  },
   test: {
     table: '.me-test-ftbl-cols', wrap: '#me-test-out', key: 'up_me_test_col_w',
     handle: '.me-test-resizer', flex: 'fld', flexMin: 90, min: 36, pad: 4,
@@ -27065,10 +27096,13 @@ function _meColFit(cfg) {
   const defs  = cfg.defaults() || {};
   const w = c => saved[c] || defs[c] || 80;
   let fixed = 0;
-  ths.forEach(th => { if (th.dataset.col !== cfg.flex) fixed += w(th.dataset.col); });
+  // The flex column may be decided at fit time: Track's columns ARE the tracked
+  // fields, so which one absorbs the slack depends on what is being tracked.
+  const flexKey = typeof cfg.flex === 'function' ? cfg.flex(ths) : cfg.flex;
+  ths.forEach(th => { if (th.dataset.col !== flexKey) fixed += w(th.dataset.col); });
   const flexW = Math.max(cfg.flexMin, avail - fixed);
   ths.forEach(th => {
-    th.style.width = (th.dataset.col === cfg.flex ? flexW : w(th.dataset.col)) + 'px';
+    th.style.width = (th.dataset.col === flexKey ? flexW : w(th.dataset.col)) + 'px';
   });
   table.style.width = (flexW + fixed) + 'px';
   // Anything anchored to a column follows it from here: the fit is the single

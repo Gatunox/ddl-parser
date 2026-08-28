@@ -2128,6 +2128,7 @@ Once all messages are migrated and verified:
 | `up_ddldoc_col_w` | DDL Doc column widths. Had no storage at all before — the table was `table-layout:auto`, so a dragged width was discarded on the next render and there was nothing worth saving |
 | `up_res_col_w` | Parse Results column widths. Was carried inside `up_layout` as `colWidths`, which the auto-layout table then ignored on every render — the widths are owned by the shared column resizer now, under its own key like the other three tables' |
 | `up_me_fm_col_w` | Field Map column widths |
+| `up_trk_col_w` | Field Tracking column widths. Keyed by column: `num` and `ts` by name, each value column by its **field id** (`f:<ID>`) — so a column that leaves the tracking and comes back returns the width it had |
 | `up_me_fm_colvis` | Field Map column visibility — which columns the ⚙ chooser is showing |
 | `up_msg_export_cols` | Export Messages column selection — which of Field / Description / Value / Raw Hex the text file carries |
 | `up_me_ps_fmt` | Parse-spec **Format** shape — `compact` (one line per block) or `expanded` (one line per attribute). A reading preference, so it persists. |

@@ -1488,9 +1488,12 @@ test('an import that has not been acknowledged says so on the button that fixes 
     ['_meClearImportMarks','clearing the marks must clear the signal'],
   ]) assert.ok(/_meSyncImportAttention\(\)/.test(psFnSource(caller)), `${caller}: ${why}`);
 
-  // The pulse is finite. A control that blinks forever is one you stop seeing.
+  // The pulse runs until the import is acknowledged: the check can outlast a
+  // long look through a bundle of forty classes, and a signal that gives up
+  // before the work is done was not there when it was needed. Save stops it.
   const src = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/animation: attn-pulse [\d.]+s ease-in-out 4;/.test(src), 'the pulse must stop on its own');
+  assert.ok(/animation: attn-pulse [\d.]+s ease-in-out infinite;/.test(src),
+    'the pulse must last as long as the thing it is pointing at');
   assert.ok(/prefers-reduced-motion: reduce\) \{ \.attn-pulse \{ animation: none; \}/.test(src),
     'a blinking control has to be switchable off for motion sensitivity');
 });

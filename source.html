@@ -2927,14 +2927,13 @@ body.track-mode #msgNav { margin-left: 8px !important; }
 
 /* "You are not looking at everything." A filter nobody can see is a filter that
    gets blamed on the parser. */
-.res-filter-badge {
-  display: inline-flex; align-items: center; gap: 6px; margin-left: 8px;
-  padding: 1px 4px 1px 8px; border-radius: var(--r-sm);
+.res-filter-label {
+  flex-shrink: 0; margin-left: auto; padding: 0 6px; border-radius: var(--r-sm);
   font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: var(--bw-ctl) solid var(--accent);
 }
-.res-filter-badge .btn { height: 18px; padding: 0 6px; font-size: calc(var(--sz-mono) - 2px); }
+#resViewAllBtn { height: 18px; padding: 0 6px; margin-left: 6px; font-size: calc(var(--sz-mono) - 1px); }
 
 /* Test verdicts paint the ROW, not a 6px dot beside it — the dot was the same
    size as the colour swatch next to it and read as decoration. Colour never
@@ -4089,16 +4088,15 @@ th.me-fm-colhi{color:var(--accent);}
         <div class="panel-bar rec-meta" id="recMetaRow" style="display:none">
           <span id="recMetaContent" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0"></span>
           <span id="trkSelCount" class="trk-sel-count" style="display:none"></span>
-          <span id="resFilterBadge" class="res-filter-badge" style="display:none"
-                title="Showing only the records picked in Track Mode">
-            <span id="resFilterBadgeText"></span>
-            <button class="btn" onclick="clearViewFilter()" title="Show every record again">View all</button>
-          </span>
+          <span id="resFilterLabel" class="res-filter-label" style="display:none"
+                title="Showing only the records picked in Track Mode">Filtered</span>
           <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0;margin-left:auto">
             <button class="btn" onclick="prevMsg()">&lt;</button>
             <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
             <button class="btn" onclick="nextMsg()">&gt;</button>
           </div>
+          <button class="btn" id="resViewAllBtn" onclick="clearViewFilter()" style="display:none;flex-shrink:0"
+                  title="Show every record again">View all</button>
         </div>
         <div id="resCfgControls" class="panel-bar">
           <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
@@ -15567,17 +15565,22 @@ function _trackApplyFilter() {
 
 // "You are not looking at everything." A filter that cannot be seen is a filter
 // that gets blamed on the parser.
+// The filter reads as one sentence across the navigator: "Filtered ‹ 1 / 2 ›
+// View all". The word goes in front of the count it qualifies and the way out
+// goes after it — a badge carrying its own copy of the count said the same
+// number twice, a step away from the navigator that owns it.
+// Requested 2026-08-28.
 function _syncViewFilterBar() {
-  const bar = document.getElementById('resFilterBadge');
-  if (!bar) return;
-  const n = S.viewFilter ? S.viewFilter.length : 0;
-  const total = _lazyTotalCount || S.messages.length;
-  bar.style.display = n ? 'inline-flex' : 'none';
-  // The navigator beside it already reads "1 / 2" — of the selection, because
-  // that is what ‹ › walk. A second count here said the same number twice and
-  // read as a contradiction. This says what the count MEANS.
-  if (n) document.getElementById('resFilterBadgeText').textContent =
-    `Filtered — ${n} of ${total}`;
+  const lbl = document.getElementById('resFilterLabel');
+  const btn = document.getElementById('resViewAllBtn');
+  const nav = document.getElementById('msgNav');
+  if (!lbl || !btn) return;
+  const on = !!(S.viewFilter && S.viewFilter.length);
+  lbl.style.display = on ? 'inline-block' : 'none';
+  btn.style.display = on ? 'inline-flex' : 'none';
+  // The label takes the push to the right when it is there, so the group does
+  // not split in two around a second auto margin.
+  if (nav) nav.style.marginLeft = on ? '6px' : 'auto';
 }
 
 function clearViewFilter() {
@@ -18604,7 +18607,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.2.0';
+const APP_VERSION  = '1.47.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

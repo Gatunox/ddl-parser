@@ -1487,10 +1487,15 @@ test('Track mode picks records; leaving it narrows Parse Results to them', () =>
 
   // The filter says so on screen and offers its own way out — but it does NOT
   // repeat the navigator's count beside it, which reads as a contradiction.
-  assert.ok(/id="resFilterBadge"/.test(src) && /onclick="clearViewFilter\(\)"/.test(src),
-    'a filter nobody can see is a filter that gets blamed on the parser');
-  assert.ok(/`Filtered — \$\{n\} of \$\{total\}`/.test(psFnSource('_syncViewFilterBar')),
-    'the badge must say what the navigator is counting, not count it again');
+  // It reads as one sentence across the navigator: Filtered ‹ 1 / 2 › View all.
+  assert.ok(/id="resFilterLabel"[^>]*>Filtered<\/span>\s*\n\s*<div id="msgNav"/.test(src),
+    'the word must sit in FRONT of the count it qualifies');
+  assert.ok(/<\/div>\s*\n\s*<button class="btn" id="resViewAllBtn" onclick="clearViewFilter\(\)"/.test(src),
+    'the way out goes after the navigator');
+  const sync = psFnSource('_syncViewFilterBar');
+  assert.ok(!/textContent/.test(sync), 'the label must not carry a second copy of the count');
+  assert.ok(/nav\.style\.marginLeft = on \? '6px' : 'auto';/.test(sync),
+    'two auto margins would split the group in half');
 
   // Track mode is a table of many records, so the controls that act on ONE
   // record's field table — and the meta line describing it — are hidden.
@@ -1506,7 +1511,7 @@ test('Track mode picks records; leaving it narrows Parse Results to them', () =>
   assert.ok(/`\$\{n\} selected`/.test(cnt),
     'the count must say how many are picked, not repeat the total beside it');
   const src2 = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/<span id="trkSelCount"[^>]*><\/span>\s*\n\s*<span id="resFilterBadge"/.test(src2),
+  assert.ok(/<span id="trkSelCount"[^>]*><\/span>\s*\n\s*<span id="resFilterLabel"/.test(src2),
     'the count belongs in the navigator row, with the other record controls');
   assert.ok(/el\.style\.display = \(S\.trackMode && n\) \? 'inline-block' : 'none';/.test(cnt),
     'the count belongs to Track mode alone, and only once something is picked');

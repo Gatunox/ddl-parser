@@ -2900,6 +2900,17 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-test-cm .cm-editor.msg-has-hl .cm-content{color:var(--text-very-dim);}
 .me-test-cm .cm-hl-active{background:var(--hl-active);border-radius:var(--r-sm);color:var(--hl-text);}
 .me-test-cm .cm-hl-hover {background:var(--hl-hover); border-radius:var(--r-sm);color:var(--hl-text);}
+/* In Track mode the panel shows a table of many records, so the controls that
+   act on ONE record's field table — Export, Collapse All, Group Data, Hide
+   Redef, the filter box — and the meta line describing that one record are not
+   about anything. They are hidden rather than left to act on the record behind
+   the table. Reported 2026-08-28. */
+body.track-mode #resCfgControls,
+body.track-mode #recMetaContent { display: none !important; }
+.trk-sel-count { flex-shrink: 0; font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: var(--bw-ctl) solid var(--accent); border-radius: var(--r-sm); padding: 0 6px; }
+
 /* A picked Track row wears the audit list's "you have been here" ground, with a
    gutter in the message type's own colour. Same gesture, same look — the two
    lists are the same kind of list. Requested 2026-08-28. */
@@ -4064,6 +4075,7 @@ th.me-fm-colhi{color:var(--accent);}
       <div class="panel-header">
         <span class="panel-title" id="resPanelTitle" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;cursor:pointer">Parse Results</span>
         <span id="resTypeBadge" class="pt-badge"></span>
+        <span id="trkSelCount" class="trk-sel-count" style="display:none"></span>
         <span style="flex:1;min-width:0"></span>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
@@ -15447,16 +15459,19 @@ function toggleTrackMode() {
   S.trackMode = !S.trackMode;
   const btn = document.getElementById('trkBtn');
   const colPicker = document.getElementById('colCfgBtn');
+  document.body.classList.toggle('track-mode', S.trackMode);
   if (S.trackMode) {
     btn.textContent = '⊟ Exit Track';
     btn.classList.remove('btn-primary');
     btn.classList.add('btn-active');
     if (colPicker) colPicker.style.display = 'none';
     renderTracking();
+    _syncTrackSelCount();
   } else {
     btn.textContent = '⊞ Track Mode';
     btn.classList.remove('btn-active');
     btn.classList.toggle('btn-primary', S.trackedFields.size > 0);
+    _syncTrackSelCount();
     _trackApplyFilter();
     // Restore columns picker visibility based on parsed content
     const total = S.messages?.length ?? 0;
@@ -15520,6 +15535,17 @@ function renderTracking() {
 function trackPickRow(idx) {
   if (S.trackPicked.has(idx)) S.trackPicked.delete(idx); else S.trackPicked.add(idx);
   renderTracking();
+  _syncTrackSelCount();
+}
+
+// How many records are picked, beside the Field Tracking title — the number the
+// user is building while they click. Requested 2026-08-28.
+function _syncTrackSelCount() {
+  const el = document.getElementById('trkSelCount');
+  if (!el) return;
+  const n = S.trackPicked.size;
+  el.style.display = (S.trackMode && n) ? 'inline-block' : 'none';
+  if (n) el.textContent = `${n} of ${S.messages.length} selected`;
 }
 
 // Leaving Track with records picked narrows Parse Results to them. The indices
@@ -15545,11 +15571,11 @@ function _syncViewFilterBar() {
   const n = S.viewFilter ? S.viewFilter.length : 0;
   const total = _lazyTotalCount || S.messages.length;
   bar.style.display = n ? 'inline-flex' : 'none';
-  if (n) {
-    const at = S.viewFilter.indexOf(S.curIdx);
-    document.getElementById('resFilterBadgeText').textContent =
-      `Selected ${at >= 0 ? at + 1 : 1}/${n} of ${total}`;
-  }
+  // The navigator beside it already reads "1 / 2" — of the selection, because
+  // that is what ‹ › walk. A second count here said the same number twice and
+  // read as a contradiction. This says what the count MEANS.
+  if (n) document.getElementById('resFilterBadgeText').textContent =
+    `Filtered — ${n} of ${total}`;
 }
 
 function clearViewFilter() {
@@ -18576,7 +18602,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.0.0';
+const APP_VERSION  = '1.47.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

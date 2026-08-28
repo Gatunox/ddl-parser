@@ -1485,9 +1485,26 @@ test('Track mode picks records; leaving it narrows Parse Results to them', () =>
   for (const fn of ['prevMsg', 'nextMsg'])
     assert.ok(/_viewStep\([-+]1\)/.test(psFnSource(fn)), `${fn} must go through the one step function`);
 
-  // The filter says so on screen and offers its own way out.
+  // The filter says so on screen and offers its own way out — but it does NOT
+  // repeat the navigator's count beside it, which reads as a contradiction.
   assert.ok(/id="resFilterBadge"/.test(src) && /onclick="clearViewFilter\(\)"/.test(src),
     'a filter nobody can see is a filter that gets blamed on the parser');
+  assert.ok(/`Filtered — \$\{n\} of \$\{total\}`/.test(psFnSource('_syncViewFilterBar')),
+    'the badge must say what the navigator is counting, not count it again');
+
+  // Track mode is a table of many records, so the controls that act on ONE
+  // record's field table — and the meta line describing it — are hidden.
+  assert.ok(/body\.track-mode #resCfgControls,\s*\nbody\.track-mode #recMetaContent \{ display: none !important; \}/.test(src),
+    'the per-record controls must not sit over a table of many records');
+  assert.ok(/document\.body\.classList\.toggle\('track-mode', S\.trackMode\);/.test(psFnSource('toggleTrackMode')),
+    'entering and leaving Track must flip the panel into and out of that mode');
+
+  // And the count of what has been picked sits where the picking happens.
+  const cnt = psFnSource('_syncTrackSelCount');
+  assert.ok(/\$\{n\} of \$\{S\.messages\.length\} selected/.test(cnt),
+    'Track mode must say how many records are picked');
+  assert.ok(/el\.style\.display = \(S\.trackMode && n\) \? 'inline-block' : 'none';/.test(cnt),
+    'the count belongs to Track mode alone, and only once something is picked');
   const clear = psFnSource('clearViewFilter');
   assert.ok(/S\.viewFilter = null;\s*\n\s*S\.trackPicked = new Set\(\);/.test(clear),
     'View all must clear the picks too, or the next exit from Track re-applies them');

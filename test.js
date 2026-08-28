@@ -1465,6 +1465,17 @@ test('Track mode picks records; leaving it narrows Parse Results to them', () =>
   const pick = psFnSource('trackPickRow');
   assert.ok(/if \(S\.trackPicked\.has\(idx\)\) S\.trackPicked\.delete\(idx\); else S\.trackPicked\.add\(idx\);/.test(pick),
     'clicking must TOGGLE, or a mis-click cannot be taken back');
+  // Picking record 120 of 200 rebuilt the table and lost its scroll position,
+  // bouncing the list to row 1 under a mouse about to click row 121.
+  // Reported 2026-08-28.
+  assert.ok(/row\.classList\.toggle\('trk-picked', S\.trackPicked\.has\(idx\)\)/.test(pick),
+    'a pick must toggle the row in place, not rebuild the table');
+  assert.ok(/data-idx="\$\{idx\}"/.test(render), 'the row needs an id to be found by');
+  // …and a rebuild for any other reason comes back where it was.
+  const rt = psFnSource('renderTracking');
+  assert.ok(/const _scrollTop = document\.querySelector\('\.track-tbl-wrap'\)\?\.scrollTop \|\| 0;/.test(rt),
+    'a rebuild that lands somewhere else is one the user has to undo by scrolling');
+  assert.ok(/wrap\.scrollTop = _scrollTop;/.test(rt), 'and it must be put back');
 
   // Leaving Track applies the picks, and the walk follows them in record order.
   assert.ok(/_trackApplyFilter\(\);/.test(psFnSource('toggleTrackMode')),

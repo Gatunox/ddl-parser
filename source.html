@@ -15519,11 +15519,14 @@ function renderTracking() {
       const f = msg.fields.find(x => x.id === id);
       return `<td class="t-val">${f ? esc(f.value) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
     }).join('');
-    return `<tr class="${cur}${sel}"${col} onclick="trackPickRow(${idx})">
+    return `<tr class="${cur}${sel}"${col} data-idx="${idx}" onclick="trackPickRow(${idx})">
       <td class="t-ts">${idx+1}</td><td class="t-ts">${esc(ts)}</td>${cells}
     </tr>`;
   }).join('');
 
+  // A rebuild that lands somewhere else is a rebuild the user has to undo by
+  // scrolling — keep the position across it.
+  const _scrollTop = document.querySelector('.track-tbl-wrap')?.scrollTop || 0;
   document.getElementById('resContainer').innerHTML = `
     <div class="track-tbl-wrap">
       <table class="track-tbl">
@@ -15531,6 +15534,10 @@ function renderTracking() {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+  if (_scrollTop) {
+    const wrap = document.querySelector('.track-tbl-wrap');
+    if (wrap) wrap.scrollTop = _scrollTop;
+  }
 
   renderRaw(S.messages[S.curIdx]);
 }
@@ -15542,7 +15549,13 @@ function renderTracking() {
 // Requested 2026-08-28.
 function trackPickRow(idx) {
   if (S.trackPicked.has(idx)) S.trackPicked.delete(idx); else S.trackPicked.add(idx);
-  renderTracking();
+  // Toggle the row where it is. Re-rendering the whole table rebuilt its HTML
+  // and threw the scroll position away, so picking record 120 of 200 bounced
+  // the list back to row 1 — under a mouse that was about to click row 121.
+  // Reported 2026-08-28.
+  const row = document.querySelector(`.track-tbl tbody tr[data-idx="${idx}"]`);
+  if (row) row.classList.toggle('trk-picked', S.trackPicked.has(idx));
+  else renderTracking();
   _syncTrackSelCount();
 }
 
@@ -18613,7 +18626,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.4.0';
+const APP_VERSION  = '1.47.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

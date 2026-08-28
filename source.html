@@ -15878,6 +15878,13 @@ const _FMT_BADGE = {
   'fup-ascii':        ['badge-fup-ascii',    'FUPCOPY ASCII'],
 };
 
+// What the parsed things ARE, for anything that counts them. A FUP COPY capture
+// is a file: its contents are records. Everything else here is a message.
+function _countNoun() {
+  const f = S.forcedFormat || S.inputFormat || '';
+  return (f === 'fup-hex' || f === 'fup-ascii') ? 'recs' : 'msgs';
+}
+
 function updateBadges() {
   const fmtEl = document.getElementById('fmtBadge');
   const cntEl = document.getElementById('cntBadge');
@@ -15891,7 +15898,12 @@ function updateBadges() {
       fmtEl.innerHTML = `<span class="badge ${cls}">${lbl}</span>`;
     } else { fmtEl.innerHTML = ''; }
     if (S.isParsed) {
-      cntEl.innerHTML = S.messages.length > 1 ? `<span class="badge badge-count">${S.messages.length} msgs</span>` : '';
+      // A FUP COPY capture holds file RECORDS, not messages — the app says
+      // "record" everywhere else about them (the flash, the meta line, the audit
+      // list), and only this badge called them messages. Reported 2026-08-28.
+      const _noun = _countNoun();
+      cntEl.innerHTML = S.messages.length > 1
+        ? `<span class="badge badge-count">${S.messages.length} ${_noun}</span>` : '';
     } else { cntEl.innerHTML = ''; }
   }
   // Show LW widget for NETARD-family and ASCII formats
@@ -18649,7 +18661,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.7.0';
+const APP_VERSION  = '1.47.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

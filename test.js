@@ -6704,6 +6704,28 @@ test('a hex-char override stops the field being painted red', () => {
   assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
 });
 
+test('a FUP COPY capture is counted in RECORDS, not messages', () => {
+  // A FUP COPY capture is a file: its contents are records, and the app says so
+  // everywhere else about them — the load flash, the record meta line, the audit
+  // list. Only the count badge called them messages. Reported 2026-08-28.
+  const noun = sandbox._countNoun;
+  const prevFmt = S.inputFormat, prevForced = S.forcedFormat;
+  try {
+    S.forcedFormat = null;
+    for (const f of ['fup-hex', 'fup-ascii']) { S.inputFormat = f; eq(noun(), 'recs', `${f} holds records`); }
+    for (const f of ['ascii', 'hex', 'netard', 'netard-hex', 'tandem-dump']) {
+      S.inputFormat = f; eq(noun(), 'msgs', `${f} holds messages`);
+    }
+    // A forced format decides too — it is what the parse actually used.
+    S.inputFormat = 'ascii'; S.forcedFormat = 'fup-hex';
+    eq(noun(), 'recs', 'the format in force is what the count is about');
+  } finally { S.inputFormat = prevFmt; S.forcedFormat = prevForced; }
+  // The badge uppercases, so "recs" reaches the user as RECS.
+  const css = fs.readFileSync('./source.html', 'utf8');
+  const badge = css.slice(css.indexOf('.badge {'), css.indexOf('.badge {') + 400);
+  assert.ok(/text-transform: uppercase/.test(badge), 'the badge is expected to uppercase its text');
+});
+
 test('an OCCURS field says so in its type: TYPE BINARY 16 ×3', () => {
   // An elementary OCCURS is read as ONE unit of unitSize × occurs, so "TYPE
   // BINARY 16" printed over six bytes said nothing about why it was six. The

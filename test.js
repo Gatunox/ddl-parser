@@ -6704,6 +6704,25 @@ test('a hex-char override stops the field being painted red', () => {
   assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
 });
 
+test('[REGRESSION] clicking a Track column header highlights the column', () => {
+  // Parse Results, the DDL doc, the Field Map and the Test table all light the
+  // column you click. Track was the one table that never asked for it — and the
+  // ask matters here, because clicking a header is how you aim a resize.
+  // Reported 2026-08-28.
+  const render = psFnSource('renderTracking');
+  assert.ok(/_meInitColHighlight\('#resContainer table\.track-tbl'\)/.test(render),
+    'Track must use the shared highlight, not a second implementation of it');
+  // The shared one refuses to double-bind and ignores the resize handle, which
+  // is what lets a header be both a drag target and a click target.
+  const init = psFnSource('_meInitColHighlight');
+  assert.ok(/if \(!thead \|\| thead\._colHiBound\) return;/.test(init), 'binding twice would toggle twice per click');
+  assert.ok(/\.me-fm-resizer,\.th-resize,\.me-test-resizer/.test(init),
+    'a drag on the edge must not count as a click on the header');
+  // Track re-renders its table on every entry, so the binding has to be re-made
+  // each time — the flag lives on the thead, which is replaced with it.
+  assert.ok(/thead\._colHiBound = true;/.test(init), 'the flag belongs to the element that is replaced');
+});
+
 test('Track columns carry an autofilter of the values actually in them', () => {
   // Excel's autofilter: a select under each column header holding that column's
   // distinct values, blank meaning no filter, several of them reading as AND.

@@ -2917,6 +2917,9 @@ body.track-mode #recMetaContent { display: none !important; }
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: var(--bw-ctl) solid var(--accent); border-radius: var(--r-sm); padding: 0 6px; }
 
+.track-tbl thead th { cursor: pointer; }
+.track-tbl thead th .th-resize { cursor: col-resize; }
+
 /* The autofilter row: one select per column, holding what that column actually
    contains. Compact enough to read as part of the table rather than a form
    pasted on top of it. Requested 2026-08-28. */
@@ -15631,6 +15634,10 @@ function renderTracking() {
   // Same column machinery as the other four tables: saved widths applied, drag
   // handles live, the last column absorbing the slack.
   _meColInitResize(_ME_COLRZ.trk);
+  // The same column highlight Parse Results, the DDL doc, the Field Map and the
+  // Test table have: click a header, the column lights up. Track was the one
+  // table that never asked for it. Reported 2026-08-28.
+  _meInitColHighlight('#resContainer table.track-tbl');
   _trackApplyRowFilters();
 
   renderRaw(S.messages[S.curIdx]);
@@ -18776,7 +18783,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.11.0';
+const APP_VERSION  = '1.47.12.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

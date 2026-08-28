@@ -1360,8 +1360,14 @@ test('imported classes carry a NEW / OVERWRITTEN badge until the list is saved',
   eq(mark(a), null, 'clearing must actually clear');
 
   // Saving the Class Editor drops them.
-  assert.ok(/_meImportMarks = new Map\(\);/.test(psFnSource('_meSave')),
+  const save = psFnSource('_meSave');
+  assert.ok(/_meImportMarks = new Map\(\);/.test(save),
     'saving the list must clear the import badges — the badge means "not looked at yet"');
+  // Clearing the marks is invisible unless the list is redrawn: nothing else in
+  // _meSave repaints the sidebar, so the badges sat there until some other
+  // action happened to redraw. Reported 2026-08-27.
+  assert.ok(/_meImportMarks\.size\) \{ _meImportMarks = new Map\(\); _meRenderSidebar\(\); \}/.test(save),
+    'Save clears the marks but never repaints, so the badges stay on screen');
   // And the row renders them — on the FIRST line, beside the type code, because
   // it is a fact about the class itself and not one of the configuration notes
   // on the line below.

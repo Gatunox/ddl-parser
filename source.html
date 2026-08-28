@@ -18349,7 +18349,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.83.0';
+const APP_VERSION  = '1.46.84.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -34694,8 +34694,11 @@ function _meSave() {
   for (const s of (_meState.specs || [])) if (s && s.overrides) _meOvOrder(s);
   _fmtSave(_meState.specs);
   _meState.dirty = false;
-  // Saving IS the user signing off on what the import brought in.
-  _meImportMarks = new Map();
+  // Saving IS the user signing off on what the import brought in. Clearing the
+  // marks is not enough on its own — nothing else repaints the sidebar here, so
+  // the badges stayed on screen until some other action redrew the list, which
+  // reads as "Save did not clear them". Reported 2026-08-27.
+  if (_meImportMarks.size) { _meImportMarks = new Map(); _meRenderSidebar(); }
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;
   const s = document.getElementById('me-status');

@@ -1368,6 +1368,26 @@ test('imported classes carry a NEW / OVERWRITTEN badge until the list is saved',
   assert.ok(/_imp === 'new' \? 'NEW' : 'OVERWRITTEN'/.test(row), 'the badge text is not the two words asked for');
 });
 
+test('the pickers stop looking like a row of checkboxes', () => {
+  // The 📋 sat immediately right of the real checkbox and read as a second one.
+  // A class already has an identity here — its colour — so the row wears that.
+  // And the export had TWO toggles for the two directions of one idea (keep a
+  // class and its DDLs together), which left the obvious question of why anyone
+  // would want one without the other. Reported 2026-08-27.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(!/📋 \$\{esc\(nm\)\}/.test(src), 'a picker row still leads with the clipboard emoji');
+  eq((src.match(/class="pick-swatch"/g) || []).length, 2, 'both pickers show the class colour instead');
+
+  assert.ok(!/expAutoIncludeMsgs/.test(src), 'the second auto-include toggle is still there');
+  assert.ok(!/expAutoIncludeDDLs/.test(src), 'the first auto-include toggle kept its old id');
+  const linked = psFnSource('_expSyncLinked');
+  assert.ok(/_expSyncAutoIncludeFromMsgs\(\);[\s\S]*_expSyncAutoIncludeFromDDLs\(\);/.test(linked),
+    'one toggle must drive BOTH directions, or it is the old pair with a new label');
+  for (const fn of ['_expSyncAutoIncludeFromMsgs', '_expSyncAutoIncludeFromDDLs'])
+    assert.ok(/getElementById\('expLinkRefs'\)/.test(psFnSource(fn)),
+      `${fn} still reads its own retired checkbox`);
+});
+
 test('[REGRESSION] a conflicting import row says "overwrite" once, not twice', () => {
   // The row markup carried an overwrite tag AND .pick-over label::after added
   // another, so every conflict read "overwrite ⚠ overwrite". Reported 2026-08-27.

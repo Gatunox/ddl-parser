@@ -2046,6 +2046,13 @@ td.c-err  { color: var(--accent2); }
 }
 
 /* ===== EXPORT / IMPORT PICK MODALS ===== */
+/* Both pickers grow with the window. The lists were pinned at 180px inside a
+   narrow box, so a bundle of 25 classes was read seven rows at a time through a
+   letterbox. Reported 2026-08-27. */
+.pick-tree { max-height: min(38vh, 420px) !important; }
+.pick-link-tgl { display: flex; align-items: center; gap: 6px; font-size: 11px;
+  color: var(--text-dim); cursor: pointer; }
+.pick-link-tgl:hover { color: var(--text); }
 .pick-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.65);
   display: flex; align-items: center; justify-content: center; z-index: 21500;
@@ -2053,7 +2060,7 @@ td.c-err  { color: var(--accent2); }
 .pick-overlay.hidden { display: none; }
 .pick-box {
   background: var(--bg-panel); border: var(--bw) solid var(--border); border-radius: var(--r-md);
-  padding: 16px 18px 14px; width: 440px; max-width: 92vw; max-height: 82vh;
+  padding: 16px 18px 14px; width: min(760px, 94vw); max-width: 94vw; max-height: 86vh;
   box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; flex-direction: column; gap: 10px; overflow: hidden;
 }
 .pick-title   { font-size: 13px; color: var(--text); font-weight: 700; }
@@ -2077,6 +2084,19 @@ td.c-err  { color: var(--accent2); }
 .pick-ddl  { padding-left: 36px; }
 .pick-new  { color: var(--success); }
 .pick-over { color: var(--accent2); }
+/* A class row: swatch, type code, label, then the status tag against the right
+   edge. The 📋 that used to lead the row sat beside the real checkbox and read
+   as a second one — the class's own colour says the same thing without
+   pretending to be a control. Reported 2026-08-27. */
+.pick-row label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pick-swatch { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 2px;
+  border: var(--bw-ctl) solid rgba(255,255,255,0.18); }
+.pick-code { color: var(--accent); font-weight: 600; flex: 0 0 auto; }
+.pick-lbl { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-vol { color: var(--text-dim); font-size: 0.85em; opacity: 0.8; }
+/* Status tags (new / overwrite / missing refs) sit together on the right. */
+.pick-row label > span[style*="0.85em"]:last-child,
+.pick-row label > .pick-tag { margin-left: auto; flex: 0 0 auto; }
 /* The row's own markup carries the overwrite / new tag. A ::after repeating it
    gave every conflicting row "overwrite ⚠ overwrite". */
 
@@ -17308,9 +17328,10 @@ function _openBundleExport(opts) {
       return `<div class="pick-row pick-ddl">
         <input type="checkbox" class="pick-spec-cb" data-idx="${i}" data-name="${esc(String(s.name||''))}" id="pcms_${i}" ${isChk?'checked':''}>
         <label for="pcms_${i}">
-          <span style="color:var(--accent)">📋 ${esc(nm)}</span>
-          ${lbl && lbl !== nm ? ` <span style="color:var(--text-dim)">— ${esc(lbl)}</span>` : ''}
-          ${volS ? ` <span style="color:var(--text-dim);font-size:0.85em">[${esc(volS)}]</span>` : ''}
+          <span class="pick-swatch" style="background:${esc(s.color || '#888888')}"></span>
+          <span class="pick-code">${esc(nm)}</span>
+          ${lbl && lbl !== nm ? `<span class="pick-lbl">${esc(lbl)}</span>` : ''}
+          ${volS ? `<span class="pick-vol">${esc(volS)}</span>` : ''}
         </label></div>`;
     }).join('');
   } else {
@@ -17318,8 +17339,7 @@ function _openBundleExport(opts) {
   }
 
   // Restore toggle defaults
-  const autoDDL = document.getElementById('expAutoIncludeDDLs'); if (autoDDL) autoDDL.checked = true;
-  const autoMsg = document.getElementById('expAutoIncludeMsgs'); if (autoMsg) autoMsg.checked = false;
+  const linkRefs = document.getElementById('expLinkRefs'); if (linkRefs) linkRefs.checked = true;
 
   // Build checkbox tree HTML
   const treeEl = document.getElementById('exportTree');
@@ -17376,8 +17396,17 @@ function _openBundleExport(opts) {
 
 // When a Message is selected and the "Auto-include DDLs" toggle is ON,
 // ensure all its ddl_bindings DDLs become checked in the DDL tree.
+// The link runs BOTH ways off one control: tick a class and its DDLs come with
+// it, tick a DDL and the classes that bind it come with it. They were two
+// checkboxes saying the same thing from opposite ends, which left the obvious
+// question — why would anyone want one and not the other? Reported 2026-08-27.
+function _expSyncLinked() {
+  _expSyncAutoIncludeFromMsgs();
+  _expSyncAutoIncludeFromDDLs();
+}
+
 function _expSyncAutoIncludeFromMsgs() {
-  const auto = document.getElementById('expAutoIncludeDDLs');
+  const auto = document.getElementById('expLinkRefs');
   if (!auto?.checked) return;
   const specs = _exportGetSpecs();
   const checkedSpecs = [...document.querySelectorAll('#exportMsgList .pick-spec-cb:checked')]
@@ -17402,10 +17431,10 @@ function _expSyncAutoIncludeFromMsgs() {
   _syncExportParents();
 }
 
-// Reverse direction (opt-in): when DDLs are selected and the toggle is ON,
-// tick Messages whose ddl_bindings reference any selected DDL.
+// Reverse direction: when DDLs are selected, tick the classes whose
+// ddl_bindings reference any selected DDL.
 function _expSyncAutoIncludeFromDDLs() {
-  const auto = document.getElementById('expAutoIncludeMsgs');
+  const auto = document.getElementById('expLinkRefs');
   if (!auto?.checked) return;
   const treeEl = document.getElementById('exportTree');
   const pickedPaths = new Set(
@@ -17695,8 +17724,9 @@ function _showImportPreview(data) {
     return `<div class="pick-row pick-ddl${cls}">
       <input type="checkbox" class="imp-spec-cb" data-idx="${i}" id="ipms_${i}" checked>
       <label for="ipms_${i}">
-        <span style="color:var(--accent)">📋 ${esc(nm)}</span>
-        ${lbl && lbl !== nm ? ` <span style="color:var(--text-dim)">— ${esc(lbl)}</span>` : ''}
+        <span class="pick-swatch" style="background:${esc(s.color || '#888888')}"></span>
+        <span class="pick-code">${esc(nm)}</span>
+        ${lbl && lbl !== nm ? `<span class="pick-lbl">${esc(lbl)}</span>` : ''}
         ${overTag}${missTag}
       </label></div>`;
   }).join('');
@@ -18288,7 +18318,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.75.0';
+const APP_VERSION  = '1.46.76.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -35147,13 +35177,9 @@ function _meSave() {
     <div class="pick-toolbar" style="flex-wrap:wrap;gap:8px">
       <button class="btn" onclick="exportPickAll(true)"  style="font-size:11px;padding:2px 8px">All</button>
       <button class="btn" onclick="exportPickAll(false)" style="font-size:11px;padding:2px 8px">None</button>
-      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer">
-        <input type="checkbox" id="expAutoIncludeDDLs" checked onchange="_expSyncAutoIncludeFromMsgs()">
-        Auto-include DDLs referenced by selected Classes
-      </label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer">
-        <input type="checkbox" id="expAutoIncludeMsgs" onchange="_expSyncAutoIncludeFromDDLs()">
-        Also include Classes that reference selected DDLs
+      <label class="pick-link-tgl" title="A class and the DDLs it binds are one thing to import. Ticking either side ticks the other.">
+        <input type="checkbox" id="expLinkRefs" checked onchange="_expSyncLinked()">
+        Keep classes and their DDLs together
       </label>
     </div>
     <div style="font-size:11px;color:var(--accent);font-weight:700;margin:6px 0 2px;letter-spacing:.04em">CLASSES</div>

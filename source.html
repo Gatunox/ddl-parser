@@ -2579,10 +2579,11 @@ td.c-err  { color: var(--accent2); }
    (.cfg-dim). Scoped to the header: dimming the whole app would say "you cannot
    work until you deal with this", which is not true — the import is already
    saved, it is the CHECK that is owed. Requested 2026-08-27. */
-header.attn-dim { position: relative; }
-header.attn-dim::after { content: ''; position: absolute; inset: 0; z-index: 150;
-  background: rgba(0,0,0,0.55); pointer-events: none; }
-header.attn-dim #dataEditorBtn { position: relative; z-index: 151; }
+header.attn-dim, .me-header.attn-dim { position: relative; }
+header.attn-dim::after, .me-header.attn-dim::after { content: ''; position: absolute; inset: 0;
+  z-index: 150; background: rgba(0,0,0,0.55); pointer-events: none; }
+header.attn-dim #dataEditorBtn,
+.me-header.attn-dim #me-save-btn { position: relative; z-index: 151; }
 
 /* "Something is waiting for you here." Keeps pulsing until the import is
    acknowledged: the state can outlast a long look through a bundle of forty
@@ -18396,7 +18397,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.90.0';
+const APP_VERSION  = '1.46.91.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -34776,6 +34777,13 @@ function _meSyncAttention() {
   const waiting = _meImportMarks.size > 0 || dirty;
   const overlay = document.getElementById('msgEditorOverlay');
   const editorOpen = !!overlay && !overlay.classList.contains('hidden');
+  // The editor's own bar dims the same way the page's does, so the spotlight
+  // follows the user through the door instead of being a trick the top bar
+  // played. Both are driven by the IMPORT alone: once the badges are gone the
+  // next dirty edit pulses and nothing dims — the user's own work in progress
+  // does not need the room darkened for it. Requested 2026-08-27.
+  const meHdr = document.querySelector('#msgEditorOverlay .me-header');
+  if (meHdr) meHdr.classList.toggle('attn-dim', _meImportMarks.size > 0 && editorOpen);
   const save = document.getElementById('me-save-btn');
   if (save) {
     save.classList.toggle('attn-pulse', waiting && editorOpen);

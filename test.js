@@ -1521,11 +1521,19 @@ test('anything the Class Editor owes a Save says so on the button that fixes it'
   // their own work in progress and get no spotlight. Requested 2026-08-27.
   assert.ok(/hdr\.classList\.toggle\('attn-dim', _meImportMarks\.size > 0 && !editorOpen\)/.test(fn),
     'the scrim must follow the import alone, not every dirty state');
+  // …and it follows the user through the door: the editor's own bar dims while
+  // the import is unchecked, so the spotlight is not a trick the top bar played.
+  assert.ok(/meHdr\.classList\.toggle\('attn-dim', _meImportMarks\.size > 0 && editorOpen\)/.test(fn),
+    'the editor bar must dim while an import is unacknowledged');
+  // Once the badges are gone, the next dirty edit pulses and nothing dims —
+  // both scrims read _meImportMarks, never `dirty`.
+  assert.ok(!/attn-dim', *(waiting|dirty)/.test(fn),
+    'a plain unsaved edit must not darken the room');
   const dimCss = fs.readFileSync('./source.html', 'utf8');
   assert.ok(/header\.attn-dim::after \{ content: ''; position: absolute; inset: 0;/.test(dimCss),
     'the scrim covers the bar it belongs to');
-  assert.ok(/header\.attn-dim #dataEditorBtn \{ position: relative; z-index: 151; \}/.test(dimCss),
-    'the button that resolves it must sit ABOVE the scrim, or the spotlight points at nothing');
+  assert.ok(/header\.attn-dim #dataEditorBtn,\s*\n\.me-header\.attn-dim #me-save-btn \{ position: relative; z-index: 151; \}/.test(dimCss),
+    'the button that resolves it must sit ABOVE the scrim, in BOTH bars, or the spotlight points at nothing');
   assert.ok(/header\.attn-dim::after \{[^}]*pointer-events: none;/.test(dimCss),
     'the scrim must not swallow clicks — the app stays usable, the check is only owed');
   // An import from the tree leaves nothing dirty, so Save is disabled — and a

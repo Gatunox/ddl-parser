@@ -1516,6 +1516,18 @@ test('anything the Class Editor owes a Save says so on the button that fixes it'
     'with the editor open, Save is the next step');
   assert.ok(/open\.classList\.toggle\('attn-pulse', waiting && !editorOpen\)/.test(fn),
     'with it closed, the Class Editor button is');
+  // The top bar dims behind the lit button — but only for an IMPORT, which
+  // arrived without the user asking and has to be looked at. Unsaved edits are
+  // their own work in progress and get no spotlight. Requested 2026-08-27.
+  assert.ok(/hdr\.classList\.toggle\('attn-dim', _meImportMarks\.size > 0 && !editorOpen\)/.test(fn),
+    'the scrim must follow the import alone, not every dirty state');
+  const dimCss = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/header\.attn-dim::after \{ content: ''; position: absolute; inset: 0;/.test(dimCss),
+    'the scrim covers the bar it belongs to');
+  assert.ok(/header\.attn-dim #dataEditorBtn \{ position: relative; z-index: 151; \}/.test(dimCss),
+    'the button that resolves it must sit ABOVE the scrim, or the spotlight points at nothing');
+  assert.ok(/header\.attn-dim::after \{[^}]*pointer-events: none;/.test(dimCss),
+    'the scrim must not swallow clicks — the app stays usable, the check is only owed');
   // An import from the tree leaves nothing dirty, so Save is disabled — and a
   // pulsing button that cannot be pressed is worse than no signal at all.
   assert.ok(/if \(waiting && editorOpen\) save\.disabled = false;/.test(fn),

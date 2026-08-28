@@ -2574,6 +2574,16 @@ td.c-err  { color: var(--accent2); }
    size — a mix of one-line and two-line rows reads as ragged, and the eye spends
    longer on the raggedness than on the warnings. */
 .me-item-gaps{display:flex;flex-wrap:wrap;gap:3px;padding:0 0 2px 15px;}
+/* The top bar steps back and the one control that resolves the import stays lit
+   above the scrim — the same move the column chooser makes for its own panel
+   (.cfg-dim). Scoped to the header: dimming the whole app would say "you cannot
+   work until you deal with this", which is not true — the import is already
+   saved, it is the CHECK that is owed. Requested 2026-08-27. */
+header.attn-dim { position: relative; }
+header.attn-dim::after { content: ''; position: absolute; inset: 0; z-index: 150;
+  background: rgba(0,0,0,0.55); pointer-events: none; }
+header.attn-dim #dataEditorBtn { position: relative; z-index: 151; }
+
 /* "Something is waiting for you here." Keeps pulsing until the import is
    acknowledged: the state can outlast a long look through a bundle of forty
    classes, and a signal that gives up before the work is done is a signal that
@@ -18386,7 +18396,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.89.0';
+const APP_VERSION  = '1.46.90.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -34776,6 +34786,11 @@ function _meSyncAttention() {
     if (waiting && editorOpen) save.disabled = false;
   }
   const open = document.getElementById('dataEditorBtn');
+  // The top bar dims behind the lit button, but only for an IMPORT: that is the
+  // one that arrived without the user asking and has to be looked at. Unsaved
+  // edits are the user's own work in progress and need no spotlight.
+  const hdr = document.querySelector('header');
+  if (hdr) hdr.classList.toggle('attn-dim', _meImportMarks.size > 0 && !editorOpen);
   if (open) {
     open.classList.toggle('attn-pulse', waiting && !editorOpen);
     open.title = !(waiting && !editorOpen)

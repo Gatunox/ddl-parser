@@ -6704,6 +6704,35 @@ test('a hex-char override stops the field being painted red', () => {
   assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
 });
 
+test('the LAST Track column can be dragged, and keeps the width it is given', () => {
+  // A drag moves the boundary between two columns, taking width from the one on
+  // the right — so the last column's edge did nothing. On tables with a fixed,
+  // known set of columns that is fine. Track's columns ARE the tracked fields,
+  // so the last one is whichever field you tracked last and its edge is the one
+  // you reach for. Requested 2026-08-28.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const init = psFnSource('_meColInitResize');
+  assert.ok(/const growLast = !nextTh && cfg\.growLast;/.test(init),
+    'the last edge must be draggable where the table opts in');
+  assert.ok(/if \(!th \|\| \(!nextTh && !growLast\)\) return;/.test(init),
+    'and still refuse where it does not');
+  assert.ok(/table\.style\.width = \(startTableW \+ d\) \+ 'px';/.test(init),
+    'with nothing to steal from, the TABLE grows and the wrap scrolls');
+  assert.ok(/\(nextTh && c === nextTh\.dataset\.col\)/.test(init),
+    'the save path must not read a neighbour that is not there');
+  // Only Track opts in: the other four have a fixed column set, so their last
+  // edge is the table's own border.
+  eq((src.match(/growLast: true,/g) || []).length, 1, 'exactly one table may grow its last column');
+
+  // A flex column the user has SIZED keeps that size — absorbing the slack is
+  // what it does UNTIL someone states a width for it.
+  const fit = psFnSource('_meColFit');
+  assert.ok(/const flexW = \(cfg\.growLast && saved\[flexKey\]\)/.test(fit),
+    'a dragged last column must survive the next fit');
+  assert.ok(/: Math\.max\(cfg\.flexMin, avail - fixed\);/.test(fit),
+    'and absorb the slack until then');
+});
+
 test('[REGRESSION] clicking a Track column header highlights the column', () => {
   // Parse Results, the DDL doc, the Field Map and the Test table all light the
   // column you click. Track was the one table that never asked for it — and the

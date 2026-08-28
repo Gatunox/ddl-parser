@@ -18789,7 +18789,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.13.0';
+const APP_VERSION  = '1.47.14.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27163,6 +27163,9 @@ const _ME_COLRZ = {
     // are at the left, so the table fills the panel without a gap.
     flex: ths => (ths.length ? ths[ths.length - 1].dataset.col : 'ts'),
     flexMin: 90, min: 36, pad: 4,
+    // The one table whose column COUNT is unpredictable, so the last edge is a
+    // real target rather than the table's own border.
+    growLast: true,
     defaults: () => ({ num: 34, ts: 132 }),
     visibleOnly: false,
     saveAll: false,
@@ -27212,7 +27215,14 @@ function _meColFit(cfg) {
   // fields, so which one absorbs the slack depends on what is being tracked.
   const flexKey = typeof cfg.flex === 'function' ? cfg.flex(ths) : cfg.flex;
   ths.forEach(th => { if (th.dataset.col !== flexKey) fixed += w(th.dataset.col); });
-  const flexW = Math.max(cfg.flexMin, avail - fixed);
+  // A flex column the user has SIZED keeps that size. Absorbing the slack is
+  // what a column does until someone states a width for it — after that,
+  // re-deriving it would undo the drag on the next fit. Only where the last
+  // edge is draggable at all (growLast); everywhere else the flex column has
+  // no saved width to honour. Requested 2026-08-28.
+  const flexW = (cfg.growLast && saved[flexKey])
+    ? Math.max(cfg.min, saved[flexKey])
+    : Math.max(cfg.flexMin, avail - fixed);
   ths.forEach(th => {
     th.style.width = (th.dataset.col === flexKey ? flexW : w(th.dataset.col)) + 'px';
   });
@@ -27307,7 +27317,15 @@ function _meColInitResize(cfg) {
       e.stopPropagation();
       const th     = handle.closest('th');
       const nextTh = th && th.nextElementSibling;
-      if (!th || !nextTh) return;
+      // The LAST column has no right-hand neighbour to take width from, so its
+      // edge did nothing. On a table whose columns are fixed and known that is
+      // fine — there is always something to its right. Track's columns are the
+      // tracked fields, so the last one is whichever field you tracked last,
+      // and its edge is the one you reach for. With `growLast` the drag widens
+      // the TABLE instead of a neighbour, and the wrap scrolls, the way a
+      // spreadsheet does. Requested 2026-08-28.
+      const growLast = !nextTh && cfg.growLast;
+      if (!th || (!nextTh && !growLast)) return;
       // Pin every column AND the table to their rendered widths first:
       // table-layout:fixed honours absolute column widths only when the table
       // itself has one; otherwise dragging one column scales all the others.
@@ -27316,7 +27334,8 @@ function _meColInitResize(cfg) {
       table.style.width = ths.reduce((n, t) => n + parseInt(t.style.width, 10), 0) + 'px';
       const startX = e.clientX;
       const startW = th.getBoundingClientRect().width;
-      const nextW  = nextTh.getBoundingClientRect().width;
+      const nextW  = nextTh ? nextTh.getBoundingClientRect().width : 0;
+      const startTableW = table.getBoundingClientRect().width;
       handle.classList.add('active');
       document.body.classList.add('me-fm-resizing');
       // Steal from the right-hand neighbour, so columns further right stay put
@@ -27324,9 +27343,16 @@ function _meColInitResize(cfg) {
       const onMove = ev => {
         let d = ev.clientX - startX;
         d = Math.max(d, -(startW - cfg.min));
+        if (growLast) {
+          // Nothing to steal from: the column and the table grow together and
+          // the wrap scrolls.
+          th.style.width = (startW + d) + 'px';
+          table.style.width = (startTableW + d) + 'px';
+        } else {
         d = Math.min(d, nextW - cfg.min);
         th.style.width     = (startW + d) + 'px';
         nextTh.style.width = (nextW  - d) + 'px';
+        }
         // Anything anchored to a column has to follow it DURING the drag, not
         // only when the layout is re-fitted. _meColFit calls this at every other
         // moment — first render, panel resize, reset, hiding a column — so a
@@ -27341,7 +27367,7 @@ function _meColInitResize(cfg) {
         const map = _meColLoad(cfg);
         for (const t of ths) {
           const c = t.dataset.col;
-          if (cfg.saveAll || c === th.dataset.col || c === nextTh.dataset.col || !(c in map))
+          if (cfg.saveAll || c === th.dataset.col || (nextTh && c === nextTh.dataset.col) || !(c in map))
             map[c] = parseInt(t.style.width, 10);
         }
         _meColSave(cfg, map);

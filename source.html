@@ -17977,8 +17977,13 @@ function confirmImport() {
   if (specAdded || specOverwritten) {
     parts.push(`${specAdded + specOverwritten} class${(specAdded+specOverwritten) !== 1 ? 'es' : ''} (${specAdded} new, ${specOverwritten} overwritten)`);
   }
-  flash(parts.length ? `Imported ${parts.join(' + ')} — press Save to keep it` : 'Nothing imported',
-        parts.length ? 'warn' : undefined);
+  // Name the button AND where it lives: "press Save" only helps someone who
+  // already knows there is a Save in the Class Editor, and an import made from
+  // the DDL tree is exactly the case where they are not looking at it.
+  flash(parts.length
+    ? `Imported ${parts.join(' + ')} — go to Class Editor and press Save to keep it`
+    : 'Nothing imported',
+    parts.length ? 'warn' : undefined);
 }
 
 // ============================================================
@@ -18429,7 +18434,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.96.0';
+const APP_VERSION  = '1.46.97.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

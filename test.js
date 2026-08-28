@@ -6726,8 +6726,16 @@ test('Track columns carry an autofilter of the values actually in them', () => {
   assert.ok(/if \(String\(have\) !== want\) \{ ok = false; break; \}/.test(apply),
     'several filters must read as AND, the way a spreadsheet does');
   const chg = psFnSource('trackFilterChange');
-  assert.ok(/if \(sel\.value === ''\) delete S\.trackFilters\[col\]; else S\.trackFilters\[col\] = sel\.value;/.test(chg),
+  assert.ok(/if \(sel\.value === ''\) \{ delete S\.trackFilters\[col\]; sel\.removeAttribute\('data-on'\); \}/.test(chg),
     'choosing blank must remove the filter, not store an empty one');
+  // "(all)" is the resting state and must look like one: the accent marks the
+  // columns that are actually narrowing the list. Reported 2026-08-28.
+  assert.ok(/sel\.setAttribute\('data-on', ''\)/.test(chg), 'a live filter must mark itself');
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.track-tbl select\.trk-filter\[data-on\] \{ color: var\(--accent\); border-color: var\(--accent\); \}/.test(src),
+    'the accent belongs to the filters that are on, not to every column');
+  assert.ok(/\$\{cur \? ' data-on' : ''\}/.test(psFnSource('renderTracking')),
+    'a filter still set when the table redraws must come back marked');
   assert.ok(!/trackPicked/.test(chg), 'filtering must not touch the picks — hiding a row does not unpick it');
 });
 

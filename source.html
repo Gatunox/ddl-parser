@@ -2930,8 +2930,10 @@ body.track-mode #recMetaContent { display: none !important; }
 }
 .track-tbl select.trk-filter:hover { color: var(--text); border-color: var(--border-strong); }
 /* A filter that is ON says so without being read: the column it sits in is the
-   one narrowing the list. */
-.track-tbl select.trk-filter:not([data-empty]) { color: var(--accent); border-color: var(--accent); }
+   one narrowing the list. "(all)" is the resting state and looks like one — the
+   accent marked every column before, which said "filtered" about a table that
+   was not. Reported 2026-08-28. */
+.track-tbl select.trk-filter[data-on] { color: var(--accent); border-color: var(--accent); }
 .trk-filter-count { color: var(--text-dim) !important; border-color: var(--border) !important;
   background: var(--surface-raised) !important; }
 
@@ -15587,7 +15589,7 @@ function renderTracking() {
       for (let i = 0; i < S.messages.length; i++) seen.add(cellValue(S.messages[i], col, i));
       const opts = [...seen].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       const cur  = S.trackFilters[col] ?? '';
-      return `<td class="trk-filter-cell"><select class="trk-filter" data-col="${esc(col)}"
+      return `<td class="trk-filter-cell"><select class="trk-filter" data-col="${esc(col)}"${cur ? ' data-on' : ''}
         onchange="trackFilterChange(this)" onclick="event.stopPropagation()"
         title="${esc(col === 'ts' ? 'Timestamp' : col.slice(2))} — ${opts.length} value${opts.length !== 1 ? 's' : ''}">` +
         `<option value=""${cur === '' ? ' selected' : ''}>(all)</option>` +
@@ -15643,7 +15645,8 @@ function renderTracking() {
 // unpick it, and clearing the filter brings it back still picked.
 function trackFilterChange(sel) {
   const col = sel.dataset.col;
-  if (sel.value === '') delete S.trackFilters[col]; else S.trackFilters[col] = sel.value;
+  if (sel.value === '') { delete S.trackFilters[col]; sel.removeAttribute('data-on'); }
+  else { S.trackFilters[col] = sel.value; sel.setAttribute('data-on', ''); }
   _trackApplyRowFilters();
 }
 
@@ -18773,7 +18776,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.10.0';
+const APP_VERSION  = '1.47.11.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

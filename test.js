@@ -6721,6 +6721,16 @@ test('[REGRESSION] clicking a Track column header highlights the column', () => 
   // Track re-renders its table on every entry, so the binding has to be re-made
   // each time — the flag lives on the thead, which is replaced with it.
   assert.ok(/thead\._colHiBound = true;/.test(init), 'the flag belongs to the element that is replaced');
+  // The highlight is the whole COLUMN, wherever its cells live: Track's filter
+  // row is a row of <td> inside <thead>, and a highlight that stopped above it
+  // left that column's filter looking like it belonged to no column.
+  assert.ok(/thead td:nth-child\(\$\{i\}\)/.test(psFnSource('_meApplyColHighlight')),
+    'a header cell that is a td must light with its column');
+
+  // And the header does not print the field name twice: HPE DDL without HEADING
+  // sets description = field name, which put the same word under itself.
+  assert.ok(/d\.toUpperCase\(\) !== String\(id\)\.toUpperCase\(\)/.test(render),
+    'the description sub-line must be dropped when it IS the field name');
 });
 
 test('Track columns carry an autofilter of the values actually in them', () => {

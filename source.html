@@ -15575,10 +15575,16 @@ function renderTracking() {
   const heads = [
     `<th data-col="num">#<span class="th-resize"></span></th>`,
     `<th data-col="ts">Timestamp<span class="th-resize"></span></th>`,
-    ...tracked.map(id =>
-      `<th data-col="f:${esc(id)}" title="${esc(id)}">${esc(id)}` +
-      `<br><small style="color:var(--text-dim);font-weight:normal">${esc(descOf(id).slice(0,22))}</small>` +
-      `<span class="th-resize"></span></th>`),
+    ...tracked.map(id => {
+      // The sub-line is the DESCRIPTION. HPE DDL without HEADING sets it to the
+      // field's own name, which printed the same word twice under itself — the
+      // results table has always skipped it in that case. Reported 2026-08-28.
+      const d = descOf(id);
+      const sub = (d && d.toUpperCase() !== String(id).toUpperCase())
+        ? `<br><small style="color:var(--text-dim);font-weight:normal">${esc(d.slice(0,22))}</small>` : '';
+      return `<th data-col="f:${esc(id)}" title="${esc(id)}${d && d !== id ? ' — ' + esc(d) : ''}">${esc(id)}` +
+             sub + `<span class="th-resize"></span></th>`;
+    }),
   ].join('');
 
   // Excel's autofilter, made of what the column actually holds: the distinct
@@ -18783,7 +18789,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.12.0';
+const APP_VERSION  = '1.47.13.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27796,7 +27802,11 @@ function _meApplyColHighlight(sel, i) {
   if (!tbl) return;
   tbl.querySelectorAll('.me-fm-colhi').forEach(el => el.classList.remove('me-fm-colhi'));
   if (!i) return;
-  tbl.querySelectorAll(`thead th:nth-child(${i}), tbody td:nth-child(${i})`)
+  // thead td as well as thead th: Track's autofilter row lives in the header as
+  // a row of <td>, and a column highlight that stops above it leaves the filter
+  // for that column looking like it belongs to no column. No other table has a
+  // td in its header, so this costs them nothing. Reported 2026-08-28.
+  tbl.querySelectorAll(`thead th:nth-child(${i}), thead td:nth-child(${i}), tbody td:nth-child(${i})`)
      .forEach(el => el.classList.add('me-fm-colhi'));
 }
 const _meFmInitColHighlight  = () => _meInitColHighlight('.me-fm-table');

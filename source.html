@@ -2576,10 +2576,14 @@ td.c-err  { color: var(--accent2); }
 .me-item-gaps{display:flex;flex-wrap:wrap;gap:3px;padding:0 0 2px 15px;}
 /* Imported-in-this-session marker. Louder than a gap chip on purpose: it is the
    one thing on the row that expires, and it expires when the list is saved. */
-.me-imp-chip{font-size:calc(var(--sz-badge) - 1px);line-height:1.4;padding:0 4px;border-radius:var(--r-sm);
+.me-imp-chip{margin-left:5px;font-size:calc(var(--sz-badge) - 1px);line-height:1.4;padding:0 4px;border-radius:var(--r-sm);
   font-weight:700;letter-spacing:.04em;border:var(--bw-ctl) solid transparent;cursor:default;}
 .me-imp-new{background:rgba(63,185,80,0.16);color:var(--success);border-color:var(--success);}
-.me-imp-over{background:rgba(230,168,23,0.16);color:var(--warning);border-color:var(--warning);}
+/* The same colour the import dialog uses to say "overwrite" (--accent2), so the
+   two halves of one action — the dialog that warned, the row that landed —
+   speak with one voice. Requested 2026-08-27. */
+.me-imp-over{background:color-mix(in srgb, var(--accent2) 16%, transparent);
+  color:var(--accent2);border-color:var(--accent2);}
 /* Holds the line open when there is nothing to say. Hidden, not absent, so it
    still occupies exactly one chip's height — see the comment where it is made. */
 .me-gap-spacer{visibility:hidden;}
@@ -18345,7 +18349,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.81.0';
+const APP_VERSION  = '1.46.82.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20481,6 +20485,22 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
       tc.textContent = `- ${_code}`;
       title.append(tc);
     }
+    // What the last import brought in, on the FIRST line beside the type code:
+    // it is a fact about the class itself, like its name, not one of the
+    // configuration notes below. These are the rows to check against the
+    // original before saving — and saving is what clears them.
+    const _imp = _meImportMark(s);
+    if (_imp) {
+      const b = document.createElement('span');
+      b.className = 'me-imp-chip me-imp-' + _imp;
+      b.textContent = _imp === 'new' ? 'NEW' : 'OVERWRITTEN';
+      const _t = _imp === 'new'
+        ? 'Imported \u2014 this class did not exist before. Save the list to clear this badge.'
+        : 'Imported \u2014 this class REPLACED one you already had. Check it against your original, then save the list to clear this badge.';
+      b.onmouseenter = () => _tipShow(b, _t);
+      b.onmouseleave = () => _tipHide();
+      title.append(b);
+    }
     d.append(main);
     // Test verdicts, when a test has been run against the current input.
     //
@@ -20524,21 +20544,6 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     const _gaps = _meItemNotes(s);
     const gapLine = document.createElement('div');
     gapLine.className = 'me-item-gaps';
-    // What the last import brought in, first on the line: an import drops
-    // classes into a list you already know, and these are the ones you have not
-    // checked against the original yet. Cleared by saving the list.
-    const _imp = _meImportMark(s);
-    if (_imp) {
-      const b = document.createElement('span');
-      b.className = 'me-imp-chip me-imp-' + _imp;
-      b.textContent = _imp === 'new' ? 'NEW' : 'OVERWRITTEN';
-      const _t = _imp === 'new'
-        ? 'Imported \u2014 this class did not exist before. Save the list to clear this badge.'
-        : 'Imported \u2014 this class REPLACED one you already had. Check it against your original, then save the list to clear this badge.';
-      b.onmouseenter = () => _tipShow(b, _t);
-      b.onmouseleave = () => _tipHide();
-      gapLine.appendChild(b);
-    }
     for (const gap of _gaps) {
       const g = document.createElement('span');
       g.className = gap.warn ? 'me-gap-chip' : 'me-fact-chip';
@@ -20553,7 +20558,7 @@ function _meRenderSpecList(contId, match, emptyMsg, kind) {
     // from --sz-badge was 2px short in compact and 3px in comfortable, because a
     // chip is a line-height plus two borders plus whatever the density does to
     // them. A chip reserves a chip's height exactly, at any density, for free.
-    if (!_gaps.length && !_imp) {
+    if (!_gaps.length) {
       const spacer = document.createElement('span');
       spacer.className = 'me-gap-chip me-gap-spacer';
       spacer.textContent = '\u00a0';

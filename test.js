@@ -1362,10 +1362,20 @@ test('imported classes carry a NEW / OVERWRITTEN badge until the list is saved',
   // Saving the Class Editor drops them.
   assert.ok(/_meImportMarks = new Map\(\);/.test(psFnSource('_meSave')),
     'saving the list must clear the import badges — the badge means "not looked at yet"');
-  // And the row renders them.
-  const row = APP_SRC.slice(APP_SRC.indexOf('const _gaps = _meItemNotes(s);'), APP_SRC.indexOf('const _gaps = _meItemNotes(s);') + 1600);
-  assert.ok(/const _imp = _meImportMark\(s\)/.test(row), 'the row never asks whether it was imported');
-  assert.ok(/_imp === 'new' \? 'NEW' : 'OVERWRITTEN'/.test(row), 'the badge text is not the two words asked for');
+  // And the row renders them — on the FIRST line, beside the type code, because
+  // it is a fact about the class itself and not one of the configuration notes
+  // on the line below.
+  const fn = psFnSource('_meRenderSpecList');
+  assert.ok(/const _imp = _meImportMark\(s\)/.test(fn), 'the row never asks whether it was imported');
+  assert.ok(/_imp === 'new' \? 'NEW' : 'OVERWRITTEN'/.test(fn), 'the badge text is not the two words asked for');
+  assert.ok(/title\.append\(b\);/.test(fn), 'the badge belongs on the title line, not among the gap chips');
+  assert.ok(fn.indexOf('title.append(b);') < fn.indexOf('const _gaps = _meItemNotes(s);'),
+    'the badge must be built with the title, before the gaps line');
+  // The overwrite badge speaks with the same colour the import dialog used to
+  // warn about that overwrite.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.me-imp-over\{background:color-mix\(in srgb, var\(--accent2\) 16%, transparent\);\s*\n?\s*color:var\(--accent2\);border-color:var\(--accent2\);\}/.test(src),
+    'the OVERWRITTEN badge must use --accent2, the colour the import dialog says "overwrite" in');
 });
 
 test('the pickers stop looking like a row of checkboxes', () => {

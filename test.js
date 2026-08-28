@@ -1388,6 +1388,26 @@ test('the pickers stop looking like a row of checkboxes', () => {
       `${fn} still reads its own retired checkbox`);
 });
 
+test('[REGRESSION] a class row is not indented like a DDL nested under a volume', () => {
+  // Class rows reused .pick-ddl for their styling, and .pick-ddl carries the
+  // DDL TREE's 36px indent — the room for "volume, then subvolume, then this".
+  // A class list is flat, so every row opened with an empty column.
+  // Reported 2026-08-27.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.pick-class \{ padding-left: 2px; \}/.test(src), 'the flat-row style is gone');
+  eq((src.match(/class="pick-row pick-class/g) || []).length, 2,
+     'both pickers must use the flat class row, not the tree row');
+  assert.ok(!/pick-row pick-ddl\$\{cls\}">\s*<input type="checkbox" class="imp-spec-cb/.test(src),
+    'the import CLASS row is still borrowing the tree indent');
+
+  // .pick-vol is the TREE's volume row (bold, accent). The class's volume chip
+  // took the same name and overwrote it.
+  const volRow = (src.match(/\.pick-vol\s*\{[^}]*\}/g) || []);
+  eq(volRow.length, 1, 'two different things are styled as .pick-vol');
+  assert.ok(/font-weight: 700/.test(volRow[0]), 'the surviving .pick-vol is not the tree volume row');
+  assert.ok(/class="pick-volchip"/.test(src), 'the class volume chip needs its own name');
+});
+
 test('[REGRESSION] a conflicting import row says "overwrite" once, not twice', () => {
   // The row markup carried an overwrite tag AND .pick-over label::after added
   // another, so every conflict read "overwrite ⚠ overwrite". Reported 2026-08-27.

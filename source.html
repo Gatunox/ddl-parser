@@ -2082,6 +2082,8 @@ td.c-err  { color: var(--accent2); }
 .pick-vol:first-child { margin-top: 0; }
 .pick-sv   { padding-left: 18px; color: var(--warning); }
 .pick-ddl  { padding-left: 36px; }
+/* Classes are a flat list — no volume/subvolume above them to indent under. */
+.pick-class { padding-left: 2px; }
 .pick-new  { color: var(--success); }
 .pick-over { color: var(--accent2); }
 /* A class row: swatch, type code, label, then the status tag against the right
@@ -2101,7 +2103,7 @@ td.c-err  { color: var(--accent2); }
 .pick-code { color: var(--accent); font-weight: 600; flex: 0 0 auto; }
 .pick-lbl { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; flex: 0 1 auto; min-width: 0; }
-.pick-vol { color: var(--text-dim); font-size: 0.85em; opacity: 0.8; }
+.pick-volchip { color: var(--text-dim); font-size: 0.85em; opacity: 0.8; }
 /* The status tag sits beside the class it describes. Pushed to the right edge
    it read as a separate column belonging to nothing in particular, with a gap
    of dead space between a short name and its own warning. */
@@ -17333,13 +17335,13 @@ function _openBundleExport(opts) {
       const lbl   = s.label || '';
       const volS  = s.vol   || '';
       const isChk = preCheckSpecs.has(_specKey(s));
-      return `<div class="pick-row pick-ddl">
+      return `<div class="pick-row pick-class">
         <input type="checkbox" class="pick-spec-cb" data-idx="${i}" data-name="${esc(String(s.name||''))}" id="pcms_${i}" ${isChk?'checked':''}>
         <label for="pcms_${i}">
           <span class="pick-swatch" style="background:${esc(s.color || '#888888')}"></span>
           <span class="pick-code">${esc(nm)}</span>
           ${lbl && lbl !== nm ? `<span class="pick-lbl">${esc(lbl)}</span>` : ''}
-          ${volS ? `<span class="pick-vol">${esc(volS)}</span>` : ''}
+          ${volS ? `<span class="pick-volchip">${esc(volS)}</span>` : ''}
         </label></div>`;
     }).join('');
   } else {
@@ -17729,7 +17731,7 @@ function _showImportPreview(data) {
     const missTag = missing.length
       ? ` <span title="${esc(missing.join(', '))}" style="color:#f85149;font-size:0.85em">⚠ ${missing.length} missing DDL ref${missing.length !== 1 ? 's' : ''}</span>`
       : '';
-    return `<div class="pick-row pick-ddl${cls}">
+    return `<div class="pick-row pick-class${cls}">
       <input type="checkbox" class="imp-spec-cb" data-idx="${i}" id="ipms_${i}" checked>
       <label for="ipms_${i}">
         <span class="pick-swatch" style="background:${esc(s.color || '#888888')}"></span>
@@ -18326,7 +18328,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.77.0';
+const APP_VERSION  = '1.46.78.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

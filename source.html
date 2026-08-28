@@ -2574,6 +2574,21 @@ td.c-err  { color: var(--accent2); }
    size — a mix of one-line and two-line rows reads as ragged, and the eye spends
    longer on the raggedness than on the warnings. */
 .me-item-gaps{display:flex;flex-wrap:wrap;gap:3px;padding:0 0 2px 15px;}
+/* "Something is waiting for you here." Pulses for a few seconds, then holds a
+   steady outline: a control that blinks forever is a control you stop seeing,
+   and the state can outlast a long look through a bundle of forty classes. */
+@keyframes attn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.0); }
+  50%      { box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.45); }
+}
+.attn-pulse {
+  animation: attn-pulse 1.1s ease-in-out 4;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+.attn-pulse.btn-primary { color: var(--btn-primary-fg, #fff) !important; }
+@media (prefers-reduced-motion: reduce) { .attn-pulse { animation: none; } }
+
 /* Imported-in-this-session marker. Louder than a gap chip on purpose: it is the
    one thing on the row that expires, and it expires when the list is saved. */
 .me-imp-chip{margin-left:5px;font-size:calc(var(--sz-badge) - 1px);line-height:1.4;padding:0 4px;border-radius:var(--r-sm);
@@ -17890,6 +17905,7 @@ function confirmImport() {
       // there clears them, the same as any other import.
       _meSidebarRefreshIfOpen();
     }
+    _meSyncImportAttention();
   }
 
   closeImportModal();
@@ -18349,7 +18365,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.84.0';
+const APP_VERSION  = '1.46.85.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20148,6 +20164,7 @@ function openMsgEditor() {
   document.getElementById('msgEditorOverlay').classList.remove('hidden');
   if (startIdx !== -1) _meSelectItem('msg', startIdx);
   _meInitSplitter();
+  _meSyncImportAttention();
 }
 
 // ── Resizers ────────────────────────────────────────────────────────────────
@@ -20245,6 +20262,9 @@ function _meInitSplitter() {
 
 function closeMsgEditor() {
   document.getElementById('msgEditorOverlay').classList.add('hidden');
+  // Closing without saving leaves the import unacknowledged, so the signal goes
+  // back to the button that reopens the editor.
+  _meSyncImportAttention();
   // Cleared on the way out as well as the way in: the overlay is hidden, not
   // destroyed, so its toasts — and their Undo buttons — are still in the DOM.
   _meUndoOffer = null;
@@ -34677,14 +34697,50 @@ let _meImportMarks = new Map();
 function _meMarkImported(spec, kind) {
   try { _meImportMarks.set(_specKey(spec), kind); } catch (_) {}
 }
+function _meImportWaiting() { return _meImportMarks.size > 0; }
 function _meImportMark(spec) {
   if (!_meImportMarks.size || !spec) return null;
   try { return _meImportMarks.get(_specKey(spec)) || null; } catch (_) { return null; }
 }
+// An import leaves work behind whichever door it came through, and the two doors
+// leave it in different states:
+//
+//   Class Editor open  — the specs are staged in _meState, unsaved. Save is the
+//                        only thing that commits them.
+//   DDL tree, editor closed — they were written straight to storage, so nothing
+//                        is unsaved. What is left is the CHECK: which classes
+//                        landed on top of yours, and were they what you wanted.
+//
+// Both end at the same gesture — open the editor, look, press Save — so both
+// get the same signal: the Save button pulses, and while the editor is closed
+// the Class Editor button pulses in its place. Requested 2026-08-27.
+function _meSyncImportAttention() {
+  const waiting = _meImportMarks.size > 0;
+  const overlay = document.getElementById('msgEditorOverlay');
+  const editorOpen = !!overlay && !overlay.classList.contains('hidden');
+  const save = document.getElementById('me-save-btn');
+  if (save) {
+    save.classList.toggle('attn-pulse', waiting && editorOpen);
+    // An import from the tree leaves nothing dirty, so Save would be disabled —
+    // and a pulsing button you cannot press is worse than no signal at all.
+    // Pressing it re-writes the same specs and clears the badges, which is
+    // exactly the acknowledgement being asked for.
+    if (waiting && editorOpen) save.disabled = false;
+  }
+  const open = document.getElementById('dataEditorBtn');
+  if (open) {
+    open.classList.toggle('attn-pulse', waiting && !editorOpen);
+    open.title = waiting && !editorOpen
+      ? 'Imported classes are waiting to be checked \u2014 open the Class Editor, review the NEW / OVERWRITTEN rows, then Save'
+      : 'Class Editor \u2014 message and file detection, parse specs, field overrides';
+  }
+}
+
 function _meClearImportMarks() {
   if (!_meImportMarks.size) return;
   _meImportMarks = new Map();
   if (typeof _meSidebarRefreshIfOpen === 'function') _meSidebarRefreshIfOpen();
+  _meSyncImportAttention();
 }
 
 function _meSave() {
@@ -34699,6 +34755,7 @@ function _meSave() {
   // the badges stayed on screen until some other action redrew the list, which
   // reads as "Save did not clear them". Reported 2026-08-27.
   if (_meImportMarks.size) { _meImportMarks = new Map(); _meRenderSidebar(); }
+  _meSyncImportAttention();
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;
   const s = document.getElementById('me-status');

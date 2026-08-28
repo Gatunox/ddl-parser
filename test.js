@@ -1463,6 +1463,38 @@ test('[REGRESSION] a class row is not indented like a DDL nested under a volume'
   assert.ok(/class="pick-volchip"/.test(src), 'the class volume chip needs its own name');
 });
 
+test('an import that has not been acknowledged says so on the button that fixes it', () => {
+  // The two import doors leave the app in different states — staged-and-dirty
+  // from inside the Class Editor, already-written from the DDL tree — but both
+  // end at the same gesture: open the editor, look at what landed, press Save.
+  // So both raise the same signal, on whichever button is the next step.
+  // Requested 2026-08-27.
+  const fn = psFnSource('_meSyncImportAttention');
+  assert.ok(/const waiting = _meImportMarks\.size > 0/.test(fn), 'the signal is not tied to the marks');
+  assert.ok(/save\.classList\.toggle\('attn-pulse', waiting && editorOpen\)/.test(fn),
+    'with the editor open, Save is the next step');
+  assert.ok(/open\.classList\.toggle\('attn-pulse', waiting && !editorOpen\)/.test(fn),
+    'with it closed, the Class Editor button is');
+  // An import from the tree leaves nothing dirty, so Save is disabled — and a
+  // pulsing button that cannot be pressed is worse than no signal at all.
+  assert.ok(/if \(waiting && editorOpen\) save\.disabled = false;/.test(fn),
+    'the pulsing Save button must be pressable');
+  // Every edge that changes either half of the condition re-syncs.
+  for (const [caller, why] of [
+    ['confirmImport',      'the import itself must raise it'],
+    ['openMsgEditor',      'opening the editor moves it from the opener to Save'],
+    ['closeMsgEditor',     'closing without saving moves it back'],
+    ['_meSave',            'saving is the acknowledgement — it must come down'],
+    ['_meClearImportMarks','clearing the marks must clear the signal'],
+  ]) assert.ok(/_meSyncImportAttention\(\)/.test(psFnSource(caller)), `${caller}: ${why}`);
+
+  // The pulse is finite. A control that blinks forever is one you stop seeing.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/animation: attn-pulse [\d.]+s ease-in-out 4;/.test(src), 'the pulse must stop on its own');
+  assert.ok(/prefers-reduced-motion: reduce\) \{ \.attn-pulse \{ animation: none; \}/.test(src),
+    'a blinking control has to be switchable off for motion sensitivity');
+});
+
 test('[REGRESSION] a conflicting import row says "overwrite" once, not twice', () => {
   // The row markup carried an overwrite tag AND .pick-over label::after added
   // another, so every conflict read "overwrite ⚠ overwrite". Reported 2026-08-27.

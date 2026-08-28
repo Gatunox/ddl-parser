@@ -9232,6 +9232,15 @@ function parseMessage(bytes, defs, rawBytes) {
     return msgs.concat(other, files);
   }
 
+  // An unsaved import lives HERE, not in storage. Everything that reads classes
+  // goes through _fmtGetData, so setting this makes the app behave as though the
+  // import had happened — detection, the pickers, the Class Editor — while a
+  // reload still comes back to the last SAVED state. Nothing the user has not
+  // saved may survive a reload. Requested 2026-08-27.
+  let _pendingSpecs = null;
+  function _fmtSetPending(specs) { _pendingSpecs = specs ? JSON.parse(JSON.stringify(specs)) : null; _fmtLoad(); }
+  function _fmtPending() { return _pendingSpecs; }
+
   function _fmtLoad() {
     const raw = _fmtGetData();
     const specs = raw.specs || [];
@@ -9240,12 +9249,14 @@ function parseMessage(bytes, defs, rawBytes) {
 
   function _fmtSave(specs) {
     try { localStorage.setItem('up_format_specs', JSON.stringify({ specs })); } catch(e) {}
+    _pendingSpecs = null;          // saved: the pending copy IS the stored one now
     _fmtLoad();
     // A renamed or deleted class must not leave a stale name in the picker.
     if (typeof _syncSpecForceSelect === 'function') _syncSpecForceSelect();
   }
 
   function _fmtGetData() {
+    if (_pendingSpecs) return { specs: _pendingSpecs };
     try {
       const s = localStorage.getItem('up_format_specs');
       if (s !== null) {
@@ -9652,6 +9663,8 @@ function parseMessage(bytes, defs, rawBytes) {
   // Expose
   window._fmtLoad      = _fmtLoad;
   window._fmtSave      = _fmtSave;
+  window._fmtSetPending = _fmtSetPending;
+  window._fmtPending    = _fmtPending;
   window._fmtGetData   = _fmtGetData;
   window._fmtSyncDefaults = _fmtSyncDefaults;
   window._specEncoding = _specEncoding;
@@ -17862,113 +17875,101 @@ function closeImportModal() {
   _importData = null;
 }
 
+// An import in progress: applied to memory, written to nothing. Holds what the
+// SAVED state was, so Discard can put it back exactly.
+//
+// The rule this exists for: unsaved data is never persisted. An import used to
+// write DDLs on the spot and stage classes only when the Class Editor happened
+// to be open — so a reload kept things the user had not saved, and which half
+// survived depended on whether a modal was up. Now nothing is written until the
+// import's own Save is pressed. Requested 2026-08-27.
+let _pendingImport = null;
+
+
+// Save: the one place an import reaches storage.
+
+// Discard: put back exactly what was saved before it.
+
 function confirmImport() {
   if (!_importData) return;
-  // With the Class Editor open, NOTHING is written until Save: the editor's own
-  // rule is that its Save button is the only thing that commits, and an import
-  // is no exception. Both halves of the bundle are staged — the classes in
-  // _meState, the DDLs in memory with the saved tree snapshotted — so Save
-  // commits both and Cancel / ✕ puts both back.
-  //
-  // With it closed there is no Save to press and nothing to stage into, so the
-  // Import button IS the commit, exactly as before. Reported 2026-08-27.
-  const _meOv = document.getElementById('msgEditorOverlay');
-  const _stage = !!_meOv && !_meOv.classList.contains('hidden')
-    && (typeof _meState !== 'undefined' && _meState && Array.isArray(_meState.specs));
-  if (_stage && !_meState.treeSnapshot) _meState.treeSnapshot = JSON.parse(JSON.stringify(S.ddlTree));
-  const tree = _importData.data || {};
 
-  // ── DDL import ──
-  const checkedDDL = new Set();
-  document.querySelectorAll('#importTree .imp-chk:checked').forEach(c => {
-    checkedDDL.add(`${c.dataset.vol}\0${c.dataset.sv}\0${c.dataset.name}`);
-  });
+  // What is saved right now, kept whole so Discard is exact.
+  const treeBefore  = JSON.parse(JSON.stringify(S.ddlTree));
+  const specsBefore = JSON.parse(JSON.stringify(_fmtGetData().specs || []));
+
+  // ── DDLs: applied to the tree in memory. saveTree() waits for Save.
+  const checkedDDL = new Set(
+    [...document.querySelectorAll('#importTree .imp-chk:checked')]
+      .map(cb => `${cb.dataset.vol}\0${cb.dataset.sv}\0${cb.dataset.name}`)
+  );
+  const tree = _importData.data || {};
   let ddlCount = 0;
   for (const v of Object.keys(tree)) {
-    for (const s of Object.keys(tree[v] || {})) {
-      for (const d of Object.keys((tree[v][s]) || {})) {
-        if (!checkedDDL.has(`${v}\0${s}\0${d}`)) continue;
+    for (const sv of Object.keys(tree[v] || {})) {
+      for (const d of Object.keys((tree[v][sv]) || {})) {
+        if (!checkedDDL.has(`${v}\0${sv}\0${d}`)) continue;
         if (!S.ddlTree[v]) S.ddlTree[v] = {};
         S.treeExp.add(v);
-        if (!S.ddlTree[v][s]) S.ddlTree[v][s] = {};
-        S.treeExp.add(`${v}/${s}`);
-        S.ddlTree[v][s][d] = tree[v][s][d]; ddlCount++;
+        if (!S.ddlTree[v][sv]) S.ddlTree[v][sv] = {};
+        S.treeExp.add(`${v}/${sv}`);
+        S.ddlTree[v][sv][d] = tree[v][sv][d]; ddlCount++;
       }
     }
   }
+  // DE overrides ride with the DDLs they belong to, and wait for the same Save.
+  const pendingDeOverrides = {};
   if (_importData.deOverrides) {
     for (const [k, v] of Object.entries(_importData.deOverrides)) {
       const parts = k.split('/');
       if (parts.length >= 4 && checkedDDL.has(`${parts[0]}\0${parts[1]}\0${parts[2]}`)) {
+        pendingDeOverrides[k] = v;
         S.deOverrides[k] = v;
       }
     }
-    saveDeOverrides();
   }
-  // buildTokenMap is not optional here. Token IDs are derived from the DDL text
-  // itself — buildTokenMap rescans the tree for files that look like token maps
-  // — so freshly imported token maps only produce badges once it re-runs. Every
-  // other path that writes to the tree pairs it with saveTree; import did not,
-  // so DDLs arrived and their token badges did not.
   if (ddlCount) {
-    // Staged: the tree is live in memory so the bindings resolve and the user can
-    // see what arrived, but the write waits for Save.
-    if (_stage) _meState.pendingTree = true; else saveTree();
+    // buildTokenMap is not optional: token IDs are derived from the DDL text, so
+    // freshly imported token maps only produce badges once it re-runs.
+    _ddlTreeVersion++;
     buildTokenMap(); buildUnresolvedRefs(); renderDDLTree();
   }
 
-  // ── Message specs import ──
+  // ── Classes: applied to the pending list, which every reader sees.
   const incomingSpecs = Array.isArray(_importData.specs) ? _importData.specs : [];
   const checkedSpecIdx = new Set(
     [...document.querySelectorAll('#importMsgList .imp-spec-cb:checked')]
       .map(c => +c.dataset.idx)
   );
   const pickedSpecs = incomingSpecs.filter((_, i) => checkedSpecIdx.has(i))
-    .map(s => JSON.parse(JSON.stringify(s)));   // deep clone
+    .map(x => JSON.parse(JSON.stringify(x)));
   let specAdded = 0, specOverwritten = 0;
   if (pickedSpecs.length) {
-    // An import lands in STORAGE, always — open editor or not.
-    //
-    // It used to be staged into the editor's unsaved buffer when the editor
-    // happened to be open, which made one action half-durable: the bundle's
-    // DDLs were written immediately either way, while its classes evaporated on
-    // a close. Same click, different outcome depending on whether a modal was
-    // up. All of it saves now, or none of it does. Reported 2026-08-27.
-    //
-    // Keyed by _specKey (label + type code), not name — a Map on name put every
+    // What each class WAS is read before the merge: after it they all exist and
+    // every badge would read "over".
+    const before = new Set(specsBefore.map(_specKey));
+    for (const x of pickedSpecs) _meMarkImported(x, before.has(_specKey(x)) ? 'over' : 'new');
+    // Keyed by _specKey (label + type code) — a Map on name alone put every
     // incoming ISO on one slot and ate the rest.
-    const apply = list => {
-      const byKey = new Map(list.map((s, i) => [_specKey(s), i]));
-      let added = 0, over = 0;
-      for (const s of pickedSpecs) {
-        const k = _specKey(s);
-        const copy = JSON.parse(JSON.stringify(s));
-        if (byKey.has(k)) { list[byKey.get(k)] = copy; over++; }
-        else              { list.push(copy); byKey.set(k, list.length - 1); added++; }
-      }
-      return { list, added, over };
-    };
-
-    // What each class WAS is read before anything is applied: after the merge
-    // every one of them exists and the badge would say "over" for all of them.
-    const before = new Set(((_stage ? _meState.specs : _fmtGetData().specs) || []).map(_specKey));
-    for (const s of pickedSpecs) _meMarkImported(s, before.has(_specKey(s)) ? 'over' : 'new');
-
-    if (_stage) {
-      const staged = apply(_meState.specs);
-      specAdded = staged.added; specOverwritten = staged.over;
-      _meState.specs = staged.list;
-      _meSetDirty();                 // Save is what commits it — say so
-      _meRenderSidebar();
-      _meRenderRight();
-    } else {
-      const saved = apply(_fmtGetData().specs || []);
-      specAdded = saved.added; specOverwritten = saved.over;
-      _fmtSave(saved.list);
-      _meSidebarRefreshIfOpen();
+    const list = JSON.parse(JSON.stringify(specsBefore));
+    const byKey = new Map(list.map((x, i) => [_specKey(x), i]));
+    for (const x of pickedSpecs) {
+      const k = _specKey(x);
+      if (byKey.has(k)) { list[byKey.get(k)] = x; specOverwritten++; }
+      else              { list.push(x); byKey.set(k, list.length - 1); specAdded++; }
     }
-    _meSyncAttention();
+    _fmtSetPending(list);
+    if (typeof _meState !== 'undefined' && _meState && Array.isArray(_meState.specs))
+      _meState.specs = JSON.parse(JSON.stringify(list));
+    _meSidebarRefreshIfOpen();
+    if (typeof _meRenderRight === 'function' && _meState) _meRenderRight();
   }
+
+  if (ddlCount || pickedSpecs.length) {
+    _pendingImport = { treeBefore, specsBefore, ddlCount,
+                       classCount: specAdded + specOverwritten,
+                       specs: pickedSpecs.length > 0, deOverrides: pendingDeOverrides };
+  }
+  _meSyncAttention();
 
   closeImportModal();
   const parts = [];
@@ -17976,7 +17977,8 @@ function confirmImport() {
   if (specAdded || specOverwritten) {
     parts.push(`${specAdded + specOverwritten} class${(specAdded+specOverwritten) !== 1 ? 'es' : ''} (${specAdded} new, ${specOverwritten} overwritten)`);
   }
-  flash(parts.length ? `Imported ${parts.join(' + ')}` : 'Nothing imported');
+  flash(parts.length ? `Imported ${parts.join(' + ')} — press Save to keep it` : 'Nothing imported',
+        parts.length ? 'warn' : undefined);
 }
 
 // ============================================================
@@ -18427,7 +18429,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.93.0';
+const APP_VERSION  = '1.46.95.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20328,18 +20330,18 @@ function _meInitSplitter() {
 // leaving the flag set would pulse the opener over changes that no longer exist.
 function closeMsgEditor() {
   document.getElementById('msgEditorOverlay').classList.add('hidden');
-  // Staged DDLs go back with the staged classes — leaving them in memory would
-  // make the tree disagree with what is on disk until the next reload, which is
-  // the same half-saved state this staging exists to prevent.
-  if (typeof _meState !== 'undefined' && _meState && _meState.pendingTree) {
-    if (_meState.treeSnapshot) {
-      S.ddlTree = _meState.treeSnapshot;
-      _ddlTreeVersion++;
-      buildTokenMap(); buildUnresolvedRefs(); renderDDLTree();
-    }
-    _meState.pendingTree = false;
+  // A pending import is NOT discarded by closing the editor: it has its own bar
+  // with its own Save and Discard, and it survives with the editor shut.
+  if (typeof _meState !== 'undefined' && _meState) _meState.dirty = false;
+  // A badge points at a class that was imported. Discard the import and the
+  // class is gone, so the badge — and the pulse and the scrim it drives — must
+  // go with it. Marks for classes that ARE saved stay: those were committed by
+  // an earlier import and are still owed a look. Reported 2026-08-27.
+  if (_meImportMarks.size) {
+    const live = new Set((_fmtGetData().specs || []).map(_specKey));
+    for (const k of [..._meImportMarks.keys()]) if (!live.has(k)) _meImportMarks.delete(k);
+    _meSidebarRefreshIfOpen();
   }
-  if (typeof _meState !== 'undefined' && _meState) { _meState.treeSnapshot = null; _meState.dirty = false; }
   // An unacknowledged IMPORT does survive — those specs are in storage — so the
   // signal goes back to the button that reopens the editor.
   _meSyncAttention();
@@ -20356,15 +20358,11 @@ function closeMsgEditor() {
 // choosing to discard. Requested 2026-08-27.
 function _meCloseEditor() {
   const st = (typeof _meState !== 'undefined') ? _meState : null;
-  if (!(st && (st.dirty || st.pendingTree))) { closeMsgEditor(); return; }
-  // Name what is actually at stake. A staged import is the case where "changes"
-  // undersells it: a whole bundle of classes AND DDLs goes back.
-  const what = st.pendingTree
-    ? 'The imported classes and DDLs have not been saved yet. Closing puts everything back the way it was'
-    : 'The Class Editor has changes that have not been saved. Closing throws them away';
+  if (!(st && st.dirty)) { closeMsgEditor(); return; }
   showConfirmHTML(
-    '<b>Discard unsaved changes?</b><br><br>' + what +
-    ' \u2014 reopening reloads the saved list, so there is nothing to undo.',
+    '<b>Discard unsaved changes?</b><br><br>' +
+    'The Class Editor has changes that have not been saved. Closing throws them ' +
+    'away \u2014 reopening reloads the saved list, so there is nothing to undo.',
     ok => { if (ok) closeMsgEditor(); }
   );
 }
@@ -34820,7 +34818,11 @@ function _meImportMark(spec) {
 // Requested 2026-08-27.
 function _meSyncAttention() {
   const dirty   = !!(typeof _meState !== 'undefined' && _meState && _meState.dirty);
-  const waiting = _meImportMarks.size > 0 || dirty;
+  // A DDL-only import has no classes and therefore no badges, but it is exactly
+  // as unsaved as one that does — and it disappears on reload if it is not
+  // saved. It raises the same signal. Requested 2026-08-27.
+  const impPend = !!(typeof _pendingImport !== 'undefined' && _pendingImport);
+  const waiting = _meImportMarks.size > 0 || impPend || dirty;
   const overlay = document.getElementById('msgEditorOverlay');
   const editorOpen = !!overlay && !overlay.classList.contains('hidden');
   // The editor's own bar dims the same way the page's does, so the spotlight
@@ -34829,7 +34831,7 @@ function _meSyncAttention() {
   // next dirty edit pulses and nothing dims — the user's own work in progress
   // does not need the room darkened for it. Requested 2026-08-27.
   const meHdr = document.querySelector('#msgEditorOverlay .me-header');
-  if (meHdr) meHdr.classList.toggle('attn-dim', _meImportMarks.size > 0 && editorOpen);
+  if (meHdr) meHdr.classList.toggle('attn-dim', (_meImportMarks.size > 0 || impPend) && editorOpen);
   const save = document.getElementById('me-save-btn');
   if (save) {
     save.classList.toggle('attn-pulse', waiting && editorOpen);
@@ -34844,13 +34846,15 @@ function _meSyncAttention() {
   // one that arrived without the user asking and has to be looked at. Unsaved
   // edits are the user's own work in progress and need no spotlight.
   const hdr = document.querySelector('header');
-  if (hdr) hdr.classList.toggle('attn-dim', _meImportMarks.size > 0 && !editorOpen);
+  if (hdr) hdr.classList.toggle('attn-dim', (_meImportMarks.size > 0 || impPend) && !editorOpen);
   if (open) {
     open.classList.toggle('attn-pulse', waiting && !editorOpen);
     open.title = !(waiting && !editorOpen)
       ? 'Class Editor \u2014 message and file detection, parse specs, field overrides'
       : _meImportMarks.size
       ? 'Imported classes are waiting to be checked \u2014 open the Class Editor, review the NEW / OVERWRITTEN rows, then Save'
+      : impPend
+      ? 'An import has not been saved \u2014 open the Class Editor and press Save, or it is lost on reload'
       : 'Unsaved changes in the Class Editor \u2014 open it and press Save';
   }
 }
@@ -34868,10 +34872,13 @@ function _meSave() {
   // created in.
   for (const s of (_meState.specs || [])) if (s && s.overrides) _meOvOrder(s);
   _fmtSave(_meState.specs);
-  // A staged import's DDLs are written by the same press: the bundle is one
-  // thing, so it commits as one thing.
-  if (_meState.pendingTree) { saveTree(); _meState.pendingTree = false; }
-  _meState.treeSnapshot = null;
+  // A pending import's DDLs are written by the same press: the bundle is one
+  // thing, so it commits as one thing, from whichever Save the user reaches.
+  if (typeof _pendingImport !== 'undefined' && _pendingImport) {
+    if (_pendingImport.ddlCount) saveTree();
+    if (_pendingImport.deOverrides && Object.keys(_pendingImport.deOverrides).length) saveDeOverrides();
+    _pendingImport = null;
+    }
   _meState.dirty = false;
   // Saving IS the user signing off on what the import brought in. Clearing the
   // marks is not enough on its own — nothing else repaints the sidebar here, so

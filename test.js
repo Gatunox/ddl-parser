@@ -1463,45 +1463,79 @@ test('[REGRESSION] a class row is not indented like a DDL nested under a volume'
   assert.ok(/class="pick-volchip"/.test(src), 'the class volume chip needs its own name');
 });
 
-test('[REGRESSION] an import is all-or-nothing, and nothing is saved without Save', () => {
-  // Two halves of one bundle used to land differently: DDLs written to storage
-  // on the spot, classes merely staged whenever the Class Editor was open. So a
-  // close kept the DDLs and dropped the classes.
-  //
-  // With the editor open NOTHING is written until Save — its Save button is the
-  // only thing that commits, and an import is no exception. Both halves stage:
-  // classes in _meState, DDLs live in memory with the saved tree snapshotted.
-  // With it closed there is no Save to press and nothing to stage into, so the
-  // Import button is the commit. Reported 2026-08-27.
-  const fn = psFnSource('confirmImport');
-  assert.ok(/const _stage = !!_meOv && !_meOv\.classList\.contains\('hidden'\)/.test(fn),
-    'the import must know whether it has somewhere to stage into');
-  assert.ok(/if \(_stage && !_meState\.treeSnapshot\) _meState\.treeSnapshot = JSON\.parse\(JSON\.stringify\(S\.ddlTree\)\)/.test(fn),
-    'staging DDLs without snapshotting the saved tree leaves nothing to put back');
-  assert.ok(/if \(_stage\) _meState\.pendingTree = true; else saveTree\(\);/.test(fn),
-    'a staged import must not write the tree');
-  assert.ok(/_meSetDirty\(\);                 \/\/ Save is what commits it/.test(fn),
-    'a staged import must mark the editor dirty — Save is what commits it');
-  assert.ok(/_fmtSave\(saved\.list\);/.test(fn), 'with the editor closed the import still commits');
+test('[REGRESSION] an import is never written until its own Save is pressed', () => {
+  // The rule: unsaved data is never persisted. An import used to write DDLs on
+  // the spot and stage classes only when the Class Editor happened to be open,
+  // so a reload kept things the user had not saved — and WHICH half survived
+  // depended on whether a modal was up. Reported 2026-08-27.
+  // psFnSource runs to the next TOP-LEVEL function, and the KV store below
+  // confirmImport opens with a const — so slice the function by its own braces.
+  const fnAll = psFnSource('confirmImport');
+  // Comments say the word too ("saveTree() waits for Save"), so strip them: the
+  // assertion is about what the function DOES.
+  const fn = fnAll.slice(0, fnAll.indexOf('\n}\n') + 3)
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(!/saveTree\(\)/.test(fn), 'the import still writes the DDL tree');
+  assert.ok(!/_fmtSave\(/.test(fn), 'the import still writes the class list');
+  assert.ok(!/saveDeOverrides\(\)/.test(fn), 'the import still writes the DE overrides');
+  // It applies to MEMORY: the pending list every reader goes through, and the
+  // live tree — so the app behaves as though it happened, and a reload does not.
+  assert.ok(/_fmtSetPending\(list\);/.test(fn), 'the classes must be applied to the pending list');
+  assert.ok(/S\.ddlTree\[v\]\[sv\]\[d\] = tree\[v\]\[sv\]\[d\]; ddlCount\+\+;/.test(fn),
+    'the DDLs must be live in memory, or nothing can be tested against them');
+  // And what was saved before is kept whole, so Discard is exact.
+  assert.ok(/const treeBefore  = JSON\.parse\(JSON\.stringify\(S\.ddlTree\)\);/.test(fn),
+    'without the tree snapshot a discard cannot put the tree back');
 
-  // Save commits the whole bundle; closing puts the whole bundle back.
+  // There is ONE Save in the app — the Class Editor's — and it commits the whole
+  // bundle. Not saving IS the discard: the pending copy never reached storage,
+  // so a reload comes back to the last saved state.
   const save = psFnSource('_meSave');
-  assert.ok(/if \(_meState\.pendingTree\) \{ saveTree\(\); _meState\.pendingTree = false; \}/.test(save),
-    'Save must write the staged DDLs too — the bundle commits as one thing');
-  const close = psFnSource('closeMsgEditor');
-  assert.ok(/S\.ddlTree = _meState\.treeSnapshot;/.test(close),
-    'closing must put the staged DDLs back, or the tree disagrees with storage');
-  assert.ok(/buildTokenMap\(\); buildUnresolvedRefs\(\); renderDDLTree\(\);/.test(close),
-    'and the tree on screen has to be redrawn from what was restored');
+  assert.ok(/_fmtSave\(_meState\.specs\);/.test(save), 'the editor Save must write the classes');
+  assert.ok(/if \(_pendingImport\.ddlCount\) saveTree\(\);/.test(save),
+    'saving in the editor must commit the pending import\'s DDLs too');
+  assert.ok(/if \(_pendingImport\.deOverrides && Object\.keys\(_pendingImport\.deOverrides\)\.length\) saveDeOverrides\(\);/.test(save),
+    'and its DE overrides — the bundle commits as one thing');
+});
 
-  // The badge still says which each class WAS, read before the merge.
-  assert.ok(/const before = new Set\(\(\(_stage \? _meState\.specs : _fmtGetData\(\)\.specs\) \|\| \[\]\)\.map\(_specKey\)\);/.test(fn),
-    'new-vs-overwritten must be decided against the list being imported into, before the merge');
+test('the pending list is what everything reads, and it never touches storage', () => {
+  // _fmtGetData is the one door to the class list, so an unsaved import is
+  // expressed by putting it in front of storage rather than in it.
+  // These live inside the format module's IIFE, so they are indented — psFnSource
+  // only finds top-level declarations.
+  const inner = name => {
+    const i = APP_SRC.indexOf(`  function ${name}(`);
+    assert.ok(i >= 0, `${name} not found`);
+    return APP_SRC.slice(i, APP_SRC.indexOf('\n  }', i) + 4);
+  };
+  assert.ok(/if \(_pendingSpecs\) return \{ specs: _pendingSpecs \};/.test(inner('_fmtGetData')),
+    'readers must see the pending import');
+  assert.ok(!/localStorage/.test(inner('_fmtSetPending')),
+    'setting the pending list must not write anything');
+  assert.ok(/_pendingSpecs = null;/.test(inner('_fmtSave')),
+    'saving must clear the pending copy, or the stored list stays shadowed');
+});
+
+test('[REGRESSION] discarding a staged import takes its badges with it', () => {
+  // Cancel put the classes and DDLs back but left the NEW / OVERWRITTEN badges,
+  // the pulsing button and the dimmed top bar pointing at an import that no
+  // longer existed. Reported 2026-08-27.
+  const close = psFnSource('closeMsgEditor');
+  assert.ok(/const live = new Set\(\(_fmtGetData\(\)\.specs \|\| \[\]\)\.map\(_specKey\)\);/.test(close),
+    'the discard must check which marked classes actually survived');
+  assert.ok(/for \(const k of \[\.\.\._meImportMarks\.keys\(\)\]\) if \(!live\.has\(k\)\) _meImportMarks\.delete\(k\);/.test(close),
+    'a badge for a class that was just thrown away must go with it');
+  // …and only those: a mark on a class that IS saved was committed by an
+  // earlier import and is still owed a look.
+  assert.ok(!/_meImportMarks = new Map\(\)/.test(close),
+    'discarding one import must not clear badges owed by another');
+  // The signal is derived from the marks, so clearing them clears it.
+  assert.ok(/_meSyncAttention\(\)/.test(close), 'the pulse and scrim must be re-evaluated after the discard');
 });
 
 test('[REGRESSION] closing the Class Editor with unsaved changes asks first', () => {
   // openMsgEditor rebuilds _meState from storage on every open, so unsaved
-  // edits do not survive a close — they are thrown away with nothing to undo
+  // edits do not survive a close — they were thrown away with nothing to undo
   // them, and nothing used to ask. The ✕ is the button people hit on the way
   // past, so it asks; Cancel does not, because choosing Cancel IS choosing to
   // discard. Reported 2026-08-27.
@@ -1511,18 +1545,16 @@ test('[REGRESSION] closing the Class Editor with unsaved changes asks first', ()
   assert.ok(/<button class="btn" onclick="closeMsgEditor\(\)">Cancel<\/button>/.test(src),
     'Cancel must stay the silent discard — it is already an explicit choice');
   const guard = psFnSource('_meCloseEditor');
-  assert.ok(/if \(!\(st && \(st\.dirty \|\| st\.pendingTree\)\)\) \{ closeMsgEditor\(\); return; \}/.test(guard),
-    'a clean editor must close without a dialog, and a staged import is not clean');
-  assert.ok(/The imported classes and DDLs have not been saved yet/.test(guard),
-    'a staged import loses a whole bundle — the question must say so');
+  assert.ok(/if \(!\(st && st\.dirty\)\) \{ closeMsgEditor\(\); return; \}/.test(guard),
+    'a clean editor must close without a dialog');
   assert.ok(/Discard unsaved changes\?/.test(guard), 'the question is not asked in the user\'s words');
   assert.ok(/ok => \{ if \(ok\) closeMsgEditor\(\); \}/.test(guard),
     'answering no must keep the editor open');
-
-  // And the dirty flag dies with the close, whichever route: the changes are
-  // gone, so pulsing the opener over them would point at nothing.
-  assert.ok(/\{ _meState\.treeSnapshot = null; _meState\.dirty = false; \}/.test(
-    psFnSource('closeMsgEditor')), 'a discarded edit must stop claiming to be pending');
+  // A PENDING IMPORT is not the editor's to discard: it has its own bar, its own
+  // Save and its own Discard, and it outlives the editor being shut.
+  const close = psFnSource('closeMsgEditor');
+  assert.ok(!/_pendingImport = null/.test(close),
+    'closing the editor must not throw away an import it does not own');
 });
 
 test('anything the Class Editor owes a Save says so on the button that fixes it', () => {
@@ -1537,8 +1569,8 @@ test('anything the Class Editor owes a Save says so on the button that fixes it'
   // 2026-08-27.
   assert.ok(/const dirty   = !!\(typeof _meState !== 'undefined' && _meState && _meState\.dirty\)/.test(fn),
     'a dirty editor must raise the signal, not just an import');
-  assert.ok(/const waiting = _meImportMarks\.size > 0 \|\| dirty/.test(fn),
-    'the signal is not tied to both reasons a Save is owed');
+  assert.ok(/const waiting = _meImportMarks\.size > 0 \|\| impPend \|\| dirty/.test(fn),
+    'the signal must cover every reason a Save is owed: badges, a pending import, unsaved edits');
   assert.ok(/_meSyncAttention\(\)/.test(psFnSource('_meSetDirty')),
     'becoming dirty must raise the signal at the moment it happens');
   // While it pulses, Save wears the same look as the pulsing Class Editor
@@ -1557,15 +1589,19 @@ test('anything the Class Editor owes a Save says so on the button that fixes it'
   // The top bar dims behind the lit button — but only for an IMPORT, which
   // arrived without the user asking and has to be looked at. Unsaved edits are
   // their own work in progress and get no spotlight. Requested 2026-08-27.
-  assert.ok(/hdr\.classList\.toggle\('attn-dim', _meImportMarks\.size > 0 && !editorOpen\)/.test(fn),
+  assert.ok(/hdr\.classList\.toggle\('attn-dim', \(_meImportMarks\.size > 0 \|\| impPend\) && !editorOpen\)/.test(fn),
     'the scrim must follow the import alone, not every dirty state');
+  // A DDL-only import has no classes and so no badges, but it is exactly as
+  // unsaved as one that does — and it vanishes on reload if it is not saved.
+  assert.ok(/const impPend = !!\(typeof _pendingImport !== 'undefined' && _pendingImport\);/.test(fn),
+    'a DDL-only import must raise the signal too, or it is lost in silence');
   // …and it follows the user through the door: the editor's own bar dims while
   // the import is unchecked, so the spotlight is not a trick the top bar played.
-  assert.ok(/meHdr\.classList\.toggle\('attn-dim', _meImportMarks\.size > 0 && editorOpen\)/.test(fn),
+  assert.ok(/meHdr\.classList\.toggle\('attn-dim', \(_meImportMarks\.size > 0 \|\| impPend\) && editorOpen\)/.test(fn),
     'the editor bar must dim while an import is unacknowledged');
   // Once the badges are gone, the next dirty edit pulses and nothing dims —
   // both scrims read _meImportMarks, never `dirty`.
-  assert.ok(!/attn-dim', *(waiting|dirty)/.test(fn),
+  assert.ok(!/attn-dim', *(waiting|dirty)\b/.test(fn),
     'a plain unsaved edit must not darken the room');
   const dimCss = fs.readFileSync('./source.html', 'utf8');
   assert.ok(/header\.attn-dim::after \{ content: ''; position: absolute; inset: 0;/.test(dimCss),

@@ -18375,7 +18375,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.87.0';
+const APP_VERSION  = '1.46.88.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20270,16 +20270,35 @@ function _meInitSplitter() {
   document.addEventListener('mouseup', endDrag);
 }
 
+// Cancel: leave, discarding whatever was not saved. Deliberate, so it does not
+// ask — and the dirty flag goes with it, because openMsgEditor rebuilds
+// _meState from storage on every open. Unsaved edits do NOT survive a close;
+// leaving the flag set would pulse the opener over changes that no longer exist.
 function closeMsgEditor() {
   document.getElementById('msgEditorOverlay').classList.add('hidden');
-  // Closing without saving leaves the import unacknowledged, so the signal goes
-  // back to the button that reopens the editor.
+  if (typeof _meState !== 'undefined' && _meState) _meState.dirty = false;
+  // An unacknowledged IMPORT does survive — those specs are in storage — so the
+  // signal goes back to the button that reopens the editor.
   _meSyncAttention();
   // Cleared on the way out as well as the way in: the overlay is hidden, not
   // destroyed, so its toasts — and their Undo buttons — are still in the DOM.
   _meUndoOffer = null;
   const fc = document.getElementById('me-flash-container');
   if (fc) fc.innerHTML = '';
+}
+
+// The ✕ is the button people hit on the way past, and _meState is rebuilt from
+// storage on the next open — so a close with unsaved edits throws them away
+// with nothing to undo it. It asks. Cancel does not: choosing Cancel IS
+// choosing to discard. Requested 2026-08-27.
+function _meCloseEditor() {
+  if (!(typeof _meState !== 'undefined' && _meState && _meState.dirty)) { closeMsgEditor(); return; }
+  showConfirmHTML(
+    '<b>Discard unsaved changes?</b><br><br>' +
+    'The Class Editor has changes that have not been saved. Closing throws them ' +
+    'away \u2014 reopening reloads the saved list, so there is nothing to undo.',
+    ok => { if (ok) closeMsgEditor(); }
+  );
 }
 
 function _meSetDirty() {
@@ -35367,7 +35386,7 @@ function _meSave() {
         <button class="btn btn-danger" id="me-del-btn" onclick="_meDeleteSelected()">Delete</button>
         <button class="btn" onclick="closeMsgEditor()">Cancel</button>
         <button class="btn btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
-        <button class="btn" onclick="closeMsgEditor()" title="Close">&#x2715;</button>
+        <button class="btn" onclick="_meCloseEditor()" title="Close">&#x2715;</button>
       </span>
     </div>
 

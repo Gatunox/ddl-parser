@@ -1463,6 +1463,30 @@ test('[REGRESSION] a class row is not indented like a DDL nested under a volume'
   assert.ok(/class="pick-volchip"/.test(src), 'the class volume chip needs its own name');
 });
 
+test('[REGRESSION] closing the Class Editor with unsaved changes asks first', () => {
+  // openMsgEditor rebuilds _meState from storage on every open, so unsaved
+  // edits do not survive a close — they are thrown away with nothing to undo
+  // them, and nothing used to ask. The ✕ is the button people hit on the way
+  // past, so it asks; Cancel does not, because choosing Cancel IS choosing to
+  // discard. Reported 2026-08-27.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/onclick="_meCloseEditor\(\)" title="Close"/.test(src),
+    'the close box still discards silently');
+  assert.ok(/<button class="btn" onclick="closeMsgEditor\(\)">Cancel<\/button>/.test(src),
+    'Cancel must stay the silent discard — it is already an explicit choice');
+  const guard = psFnSource('_meCloseEditor');
+  assert.ok(/_meState\.dirty\)\) \{ closeMsgEditor\(\); return; \}/.test(guard),
+    'a clean editor must close without a dialog');
+  assert.ok(/Discard unsaved changes\?/.test(guard), 'the question is not asked in the user\'s words');
+  assert.ok(/ok => \{ if \(ok\) closeMsgEditor\(\); \}/.test(guard),
+    'answering no must keep the editor open');
+
+  // And the dirty flag dies with the close, whichever route: the changes are
+  // gone, so pulsing the opener over them would point at nothing.
+  assert.ok(/if \(typeof _meState !== 'undefined' && _meState\) _meState\.dirty = false;/.test(
+    psFnSource('closeMsgEditor')), 'a discarded edit must stop claiming to be pending');
+});
+
 test('anything the Class Editor owes a Save says so on the button that fixes it', () => {
   // The two import doors leave the app in different states — staged-and-dirty
   // from inside the Class Editor, already-written from the DDL tree — but both

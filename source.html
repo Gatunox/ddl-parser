@@ -2060,7 +2060,7 @@ td.c-err  { color: var(--accent2); }
 .pick-overlay.hidden { display: none; }
 .pick-box {
   background: var(--bg-panel); border: var(--bw) solid var(--border); border-radius: var(--r-md);
-  padding: 16px 18px 14px; width: min(760px, 94vw); max-width: 94vw; max-height: 86vh;
+  padding: 16px 18px 14px; width: min(560px, 94vw); max-width: 94vw; max-height: 86vh;
   box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; flex-direction: column; gap: 10px; overflow: hidden;
 }
 .pick-title   { font-size: 13px; color: var(--text); font-weight: 700; }
@@ -2091,12 +2091,20 @@ td.c-err  { color: var(--accent2); }
 .pick-row label { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .pick-swatch { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 2px;
   border: var(--bw-ctl) solid rgba(255,255,255,0.18); }
+/* Emoji render taller than the text beside them, so the DDL rows read a size
+   bigger than the class rows though both are 11px. Held to the line's size. */
+.pick-ico { flex: 0 0 auto; font-size: 10px; line-height: 1; opacity: 0.75;
+  font-family: var(--mono); }
+/* Class rows read a step larger than the DDL tree beside them: the class is
+   what the user is deciding about, the DDLs under it are the detail. */
+.pick-row .pick-code, .pick-row .pick-lbl { font-size: 12px; }
 .pick-code { color: var(--accent); font-weight: 600; flex: 0 0 auto; }
-.pick-lbl { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-lbl { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 .pick-vol { color: var(--text-dim); font-size: 0.85em; opacity: 0.8; }
-/* Status tags (new / overwrite / missing refs) sit together on the right. */
-.pick-row label > span[style*="0.85em"]:last-child,
-.pick-row label > .pick-tag { margin-left: auto; flex: 0 0 auto; }
+/* The status tag sits beside the class it describes. Pushed to the right edge
+   it read as a separate column belonging to nothing in particular, with a gap
+   of dead space between a short name and its own warning. */
 /* The row's own markup carries the overwrite / new tag. A ::after repeating it
    gave every conflicting row "overwrite ⚠ overwrite". */
 
@@ -17348,7 +17356,7 @@ function _openBundleExport(opts) {
     const vId = CSS.escape(`pcv_${v}`);
     html += `<div class="pick-row pick-vol">
       <input type="checkbox" class="pick-vol-cb" data-vol="${esc(v)}" id="pcv_${esc(v)}">
-      <label for="pcv_${esc(v)}">📁 ${esc(v)}</label></div>`;
+      <label for="pcv_${esc(v)}"><span class="pick-ico">\ud83d\udcc1</span>${esc(v)}</label></div>`;
     for (const s of Object.keys(tree[v] || {})) {
       html += `<div class="pick-row pick-sv">
         <input type="checkbox" class="pick-sv-cb" data-vol="${esc(v)}" data-sv="${esc(s)}" id="pcs_${esc(v)}_${esc(s)}">
@@ -17357,7 +17365,7 @@ function _openBundleExport(opts) {
         const chk = preCheckDDLs.has(`${v}/${s}/${d}`) ? 'checked' : '';
         html += `<div class="pick-row pick-ddl">
           <input type="checkbox" class="pick-ddl-cb" data-vol="${esc(v)}" data-sv="${esc(s)}" data-ddl="${esc(d)}" id="pcd_${esc(v)}_${esc(s)}_${esc(d)}" ${chk}>
-          <label for="pcd_${esc(v)}_${esc(s)}_${esc(d)}">📄 ${esc(d)}</label></div>`;
+          <label for="pcd_${esc(v)}_${esc(s)}_${esc(d)}"><span class="pick-ico">\ud83d\udcc4</span>${esc(d)}</label></div>`;
       }
     }
   }
@@ -17650,7 +17658,7 @@ function _showImportPreview(data) {
   for (const v of vols) {
     html += `<div class="pick-row pick-vol">
       <input type="checkbox" class="imp-vol-cb" data-vol="${esc(v)}" id="ipv_${esc(v)}" checked>
-      <label for="ipv_${esc(v)}">📁 ${esc(v)}</label></div>`;
+      <label for="ipv_${esc(v)}"><span class="pick-ico">\ud83d\udcc1</span>${esc(v)}</label></div>`;
     for (const s of Object.keys(tree[v] || {})) {
       html += `<div class="pick-row pick-sv">
         <input type="checkbox" class="imp-sv-cb" data-vol="${esc(v)}" data-sv="${esc(s)}" id="ips_${esc(v)}_${esc(s)}" checked>
@@ -17662,7 +17670,7 @@ function _showImportPreview(data) {
         const cls = isOver ? ' pick-over' : ' pick-new';
         html += `<div class="pick-row pick-ddl${cls}">
           <input type="checkbox" class="imp-chk" data-vol="${esc(v)}" data-sv="${esc(s)}" data-name="${esc(d)}" id="ipd_${esc(v)}_${esc(s)}_${esc(d)}" checked>
-          <label for="ipd_${esc(v)}_${esc(s)}_${esc(d)}">📄 ${esc(d)}${isOver ? ' <span style="color:var(--accent2);font-size:0.85em">overwrite</span>' : ''}</label></div>`;
+          <label for="ipd_${esc(v)}_${esc(s)}_${esc(d)}"><span class="pick-ico">\ud83d\udcc4</span>${esc(d)}${isOver ? ' <span style="color:var(--accent2);font-size:0.85em">\u26a0 overwrite</span>' : ''}</label></div>`;
       }
     }
   }
@@ -18318,7 +18326,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.76.0';
+const APP_VERSION  = '1.46.77.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

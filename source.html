@@ -17864,6 +17864,18 @@ function closeImportModal() {
 
 function confirmImport() {
   if (!_importData) return;
+  // With the Class Editor open, NOTHING is written until Save: the editor's own
+  // rule is that its Save button is the only thing that commits, and an import
+  // is no exception. Both halves of the bundle are staged — the classes in
+  // _meState, the DDLs in memory with the saved tree snapshotted — so Save
+  // commits both and Cancel / ✕ puts both back.
+  //
+  // With it closed there is no Save to press and nothing to stage into, so the
+  // Import button IS the commit, exactly as before. Reported 2026-08-27.
+  const _meOv = document.getElementById('msgEditorOverlay');
+  const _stage = !!_meOv && !_meOv.classList.contains('hidden')
+    && (typeof _meState !== 'undefined' && _meState && Array.isArray(_meState.specs));
+  if (_stage && !_meState.treeSnapshot) _meState.treeSnapshot = JSON.parse(JSON.stringify(S.ddlTree));
   const tree = _importData.data || {};
 
   // ── DDL import ──
@@ -17898,7 +17910,12 @@ function confirmImport() {
   // — so freshly imported token maps only produce badges once it re-runs. Every
   // other path that writes to the tree pairs it with saveTree; import did not,
   // so DDLs arrived and their token badges did not.
-  if (ddlCount) { saveTree(); buildTokenMap(); buildUnresolvedRefs(); renderDDLTree(); }
+  if (ddlCount) {
+    // Staged: the tree is live in memory so the bindings resolve and the user can
+    // see what arrived, but the write waits for Save.
+    if (_stage) _meState.pendingTree = true; else saveTree();
+    buildTokenMap(); buildUnresolvedRefs(); renderDDLTree();
+  }
 
   // ── Message specs import ──
   const incomingSpecs = Array.isArray(_importData.specs) ? _importData.specs : [];
@@ -17932,28 +17949,22 @@ function confirmImport() {
       return { list, added, over };
     };
 
-    // Storage takes the import on top of what is SAVED — never on top of the
-    // editor's unsaved buffer, or importing would silently commit edits the
-    // user has not finished making.
-    //
     // What each class WAS is read before anything is applied: after the merge
-    // every one of them exists, and the badge would say "over" for all of them.
-    const before = new Set((_fmtGetData().specs || []).map(_specKey));
+    // every one of them exists and the badge would say "over" for all of them.
+    const before = new Set(((_stage ? _meState.specs : _fmtGetData().specs) || []).map(_specKey));
     for (const s of pickedSpecs) _meMarkImported(s, before.has(_specKey(s)) ? 'over' : 'new');
-    const saved = apply(_fmtGetData().specs || []);
-    specAdded = saved.added; specOverwritten = saved.over;
-    _fmtSave(saved.list);
 
-    // …and the open editor shows it immediately, applied over whatever it is
-    // holding, so the list on screen is the list that was just imported into.
-    const _meOverlay = document.getElementById('msgEditorOverlay');
-    const editorOpen = !!_meOverlay && !_meOverlay.classList.contains('hidden')
-      && (typeof _meState !== 'undefined' && _meState && Array.isArray(_meState.specs));
-    if (editorOpen) {
-      _meState.specs = apply(_meState.specs).list;
+    if (_stage) {
+      const staged = apply(_meState.specs);
+      specAdded = staged.added; specOverwritten = staged.over;
+      _meState.specs = staged.list;
+      _meSetDirty();                 // Save is what commits it — say so
       _meRenderSidebar();
       _meRenderRight();
     } else {
+      const saved = apply(_fmtGetData().specs || []);
+      specAdded = saved.added; specOverwritten = saved.over;
+      _fmtSave(saved.list);
       _meSidebarRefreshIfOpen();
     }
     _meSyncAttention();
@@ -18416,7 +18427,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.92.0';
+const APP_VERSION  = '1.46.93.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20317,7 +20328,18 @@ function _meInitSplitter() {
 // leaving the flag set would pulse the opener over changes that no longer exist.
 function closeMsgEditor() {
   document.getElementById('msgEditorOverlay').classList.add('hidden');
-  if (typeof _meState !== 'undefined' && _meState) _meState.dirty = false;
+  // Staged DDLs go back with the staged classes — leaving them in memory would
+  // make the tree disagree with what is on disk until the next reload, which is
+  // the same half-saved state this staging exists to prevent.
+  if (typeof _meState !== 'undefined' && _meState && _meState.pendingTree) {
+    if (_meState.treeSnapshot) {
+      S.ddlTree = _meState.treeSnapshot;
+      _ddlTreeVersion++;
+      buildTokenMap(); buildUnresolvedRefs(); renderDDLTree();
+    }
+    _meState.pendingTree = false;
+  }
+  if (typeof _meState !== 'undefined' && _meState) { _meState.treeSnapshot = null; _meState.dirty = false; }
   // An unacknowledged IMPORT does survive — those specs are in storage — so the
   // signal goes back to the button that reopens the editor.
   _meSyncAttention();
@@ -20333,11 +20355,16 @@ function closeMsgEditor() {
 // with nothing to undo it. It asks. Cancel does not: choosing Cancel IS
 // choosing to discard. Requested 2026-08-27.
 function _meCloseEditor() {
-  if (!(typeof _meState !== 'undefined' && _meState && _meState.dirty)) { closeMsgEditor(); return; }
+  const st = (typeof _meState !== 'undefined') ? _meState : null;
+  if (!(st && (st.dirty || st.pendingTree))) { closeMsgEditor(); return; }
+  // Name what is actually at stake. A staged import is the case where "changes"
+  // undersells it: a whole bundle of classes AND DDLs goes back.
+  const what = st.pendingTree
+    ? 'The imported classes and DDLs have not been saved yet. Closing puts everything back the way it was'
+    : 'The Class Editor has changes that have not been saved. Closing throws them away';
   showConfirmHTML(
-    '<b>Discard unsaved changes?</b><br><br>' +
-    'The Class Editor has changes that have not been saved. Closing throws them ' +
-    'away \u2014 reopening reloads the saved list, so there is nothing to undo.',
+    '<b>Discard unsaved changes?</b><br><br>' + what +
+    ' \u2014 reopening reloads the saved list, so there is nothing to undo.',
     ok => { if (ok) closeMsgEditor(); }
   );
 }
@@ -34841,6 +34868,10 @@ function _meSave() {
   // created in.
   for (const s of (_meState.specs || [])) if (s && s.overrides) _meOvOrder(s);
   _fmtSave(_meState.specs);
+  // A staged import's DDLs are written by the same press: the bundle is one
+  // thing, so it commits as one thing.
+  if (_meState.pendingTree) { saveTree(); _meState.pendingTree = false; }
+  _meState.treeSnapshot = null;
   _meState.dirty = false;
   // Saving IS the user signing off on what the import brought in. Clearing the
   // marks is not enough on its own — nothing else repaints the sidebar here, so

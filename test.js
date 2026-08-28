@@ -1463,29 +1463,40 @@ test('[REGRESSION] a class row is not indented like a DDL nested under a volume'
   assert.ok(/class="pick-volchip"/.test(src), 'the class volume chip needs its own name');
 });
 
-test('[REGRESSION] an import is all-or-nothing, whether the editor is open or not', () => {
-  // A bundle's DDLs were written to storage immediately, while its classes were
-  // only STAGED when the Class Editor happened to be open — so the same click
-  // half-survived a close: DDLs kept, classes gone. And the ✕ then warned about
-  // "unsaved changes" that were the import itself. Reported 2026-08-27.
+test('[REGRESSION] an import is all-or-nothing, and nothing is saved without Save', () => {
+  // Two halves of one bundle used to land differently: DDLs written to storage
+  // on the spot, classes merely staged whenever the Class Editor was open. So a
+  // close kept the DDLs and dropped the classes.
+  //
+  // With the editor open NOTHING is written until Save — its Save button is the
+  // only thing that commits, and an import is no exception. Both halves stage:
+  // classes in _meState, DDLs live in memory with the saved tree snapshotted.
+  // With it closed there is no Save to press and nothing to stage into, so the
+  // Import button is the commit. Reported 2026-08-27.
   const fn = psFnSource('confirmImport');
-  assert.ok(/const saved = apply\(_fmtGetData\(\)\.specs \|\| \[\]\);/.test(fn),
-    'the import must land in storage, not only in the editor buffer');
-  assert.ok(/_fmtSave\(saved\.list\);/.test(fn), 'and be written there');
-  // Applied over what is SAVED — importing must not commit edits the user has
-  // not finished making.
-  assert.ok(!/apply\(_meState\.specs\)\.list;[\s\S]{0,80}_fmtSave/.test(fn),
-    'the editor buffer must not be the thing that gets saved');
-  assert.ok(/_meState\.specs = apply\(_meState\.specs\)\.list;/.test(fn),
-    'the open editor must still show what just landed');
-  // An import no longer makes the editor dirty: there is nothing left to lose,
-  // so closing must not claim there is.
-  assert.ok(!/_meSetDirty\(\)/.test(fn),
-    'an import that is already saved must not mark the editor dirty');
-  // The badge still says which each class WAS, read before the merge — after it
-  // they all exist and every one would read "over".
-  assert.ok(/const before = new Set\(\(_fmtGetData\(\)\.specs \|\| \[\]\)\.map\(_specKey\)\);/.test(fn),
-    'new-vs-overwritten must be decided before the merge, or everything is an overwrite');
+  assert.ok(/const _stage = !!_meOv && !_meOv\.classList\.contains\('hidden'\)/.test(fn),
+    'the import must know whether it has somewhere to stage into');
+  assert.ok(/if \(_stage && !_meState\.treeSnapshot\) _meState\.treeSnapshot = JSON\.parse\(JSON\.stringify\(S\.ddlTree\)\)/.test(fn),
+    'staging DDLs without snapshotting the saved tree leaves nothing to put back');
+  assert.ok(/if \(_stage\) _meState\.pendingTree = true; else saveTree\(\);/.test(fn),
+    'a staged import must not write the tree');
+  assert.ok(/_meSetDirty\(\);                 \/\/ Save is what commits it/.test(fn),
+    'a staged import must mark the editor dirty — Save is what commits it');
+  assert.ok(/_fmtSave\(saved\.list\);/.test(fn), 'with the editor closed the import still commits');
+
+  // Save commits the whole bundle; closing puts the whole bundle back.
+  const save = psFnSource('_meSave');
+  assert.ok(/if \(_meState\.pendingTree\) \{ saveTree\(\); _meState\.pendingTree = false; \}/.test(save),
+    'Save must write the staged DDLs too — the bundle commits as one thing');
+  const close = psFnSource('closeMsgEditor');
+  assert.ok(/S\.ddlTree = _meState\.treeSnapshot;/.test(close),
+    'closing must put the staged DDLs back, or the tree disagrees with storage');
+  assert.ok(/buildTokenMap\(\); buildUnresolvedRefs\(\); renderDDLTree\(\);/.test(close),
+    'and the tree on screen has to be redrawn from what was restored');
+
+  // The badge still says which each class WAS, read before the merge.
+  assert.ok(/const before = new Set\(\(\(_stage \? _meState\.specs : _fmtGetData\(\)\.specs\) \|\| \[\]\)\.map\(_specKey\)\);/.test(fn),
+    'new-vs-overwritten must be decided against the list being imported into, before the merge');
 });
 
 test('[REGRESSION] closing the Class Editor with unsaved changes asks first', () => {
@@ -1500,15 +1511,17 @@ test('[REGRESSION] closing the Class Editor with unsaved changes asks first', ()
   assert.ok(/<button class="btn" onclick="closeMsgEditor\(\)">Cancel<\/button>/.test(src),
     'Cancel must stay the silent discard — it is already an explicit choice');
   const guard = psFnSource('_meCloseEditor');
-  assert.ok(/_meState\.dirty\)\) \{ closeMsgEditor\(\); return; \}/.test(guard),
-    'a clean editor must close without a dialog');
+  assert.ok(/if \(!\(st && \(st\.dirty \|\| st\.pendingTree\)\)\) \{ closeMsgEditor\(\); return; \}/.test(guard),
+    'a clean editor must close without a dialog, and a staged import is not clean');
+  assert.ok(/The imported classes and DDLs have not been saved yet/.test(guard),
+    'a staged import loses a whole bundle — the question must say so');
   assert.ok(/Discard unsaved changes\?/.test(guard), 'the question is not asked in the user\'s words');
   assert.ok(/ok => \{ if \(ok\) closeMsgEditor\(\); \}/.test(guard),
     'answering no must keep the editor open');
 
   // And the dirty flag dies with the close, whichever route: the changes are
   // gone, so pulsing the opener over them would point at nothing.
-  assert.ok(/if \(typeof _meState !== 'undefined' && _meState\) _meState\.dirty = false;/.test(
+  assert.ok(/\{ _meState\.treeSnapshot = null; _meState\.dirty = false; \}/.test(
     psFnSource('closeMsgEditor')), 'a discarded edit must stop claiming to be pending');
 });
 

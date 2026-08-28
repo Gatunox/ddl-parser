@@ -2084,6 +2084,17 @@ td.c-err  { color: var(--accent2); }
 .pick-ddl  { padding-left: 36px; }
 /* Classes are a flat list — no volume/subvolume above them to indent under. */
 .pick-class { padding-left: 2px; }
+/* A DDL name is the same kind of thing as a class's type code — the name of the
+   item being picked — so it is the same colour. The volume and subvolume rows
+   above it keep their own (accent bold / amber) as the tree's structure. */
+.pick-ddl > label { color: var(--accent); }
+/* Picked rows are the statement; the unpicked ones step back, so what will
+   actually be imported reads at a glance instead of by checkbox-hunting.
+   Opacity, so every colour inside the row keeps its relationships. */
+.pick-row > label { opacity: 0.6; transition: opacity 0.1s; }
+.pick-row > input:checked + label { opacity: 1; }
+.pick-row:hover > label { opacity: 0.85; }
+.pick-row > input:checked + label:hover { opacity: 1; }
 .pick-new  { color: var(--success); }
 .pick-over { color: var(--accent2); }
 /* A class row: swatch, type code, label, then the status tag against the right
@@ -18328,7 +18339,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.46.78.0';
+const APP_VERSION  = '1.46.79.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -1388,6 +1388,24 @@ test('the pickers stop looking like a row of checkboxes', () => {
       `${fn} still reads its own retired checkbox`);
 });
 
+test('a picker row reads as picked or not, and names look like names', () => {
+  // A DDL name is the same kind of thing as a class's type code — the name of
+  // the item being picked — so it takes the same colour. And the picked rows
+  // are the statement the dialog is making: the unpicked ones step back, so
+  // what will actually be imported reads at a glance rather than by
+  // checkbox-hunting. Requested 2026-08-27.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.pick-ddl > label \{ color: var\(--accent\); \}/.test(src),
+    'a DDL name is still a different colour from the class name');
+  assert.ok(/\.pick-row > label \{ opacity: 0\.6/.test(src), 'unpicked rows do not step back');
+  assert.ok(/\.pick-row > input:checked \+ label \{ opacity: 1; \}/.test(src),
+    'a picked row must be the bright one');
+  // The dimming is opacity, so the colours inside a row keep their relationships
+  // (accent name, dim label, amber warning) instead of being flattened to grey.
+  assert.ok(!/\.pick-row > input:checked \+ label \{ color:/.test(src),
+    'restating colours per state is how one of them drifts');
+});
+
 test('[REGRESSION] a class row is not indented like a DDL nested under a volume', () => {
   // Class rows reused .pick-ddl for their styling, and .pick-ddl carries the
   // DDL TREE's 36px indent — the room for "volume, then subvolume, then this".

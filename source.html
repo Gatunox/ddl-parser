@@ -529,12 +529,40 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   flex: 0 0 var(--panel-collapsed-w) !important;
   min-width: 0;
 }
-/* Collapsed inside a column, the strip is horizontal: it is the HEIGHT that
-   goes, not the width. The old layout only ever collapsed panels side by side,
-   so this case did not exist. Requested 2026-08-28. */
+/* Collapsed inside a COLUMN the strip lies flat, so everything the side-by-side
+   collapse does has to be undone: the height goes instead of the width, the
+   title reads left to right instead of rotated, and the toggle sits where it
+   sits on an open panel — at the right-hand end — rather than centred in a rail
+   that no longer exists. The old layout only ever collapsed panels side by
+   side, so this case did not exist. Reported 2026-08-28. */
 .lay-col > .panel.collapsed {
-  flex: 0 0 var(--me-item-line, 26px) !important;
+  flex: 0 0 auto !important;
   min-height: 0;
+  min-width: 0;
+}
+.lay-col > .panel.collapsed .panel-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  border-right: none;
+  border-bottom: var(--bw) solid var(--border);
+  padding: 0 6px;
+  min-width: 0;
+  height: auto;
+}
+.lay-col > .panel.collapsed .panel-header .panel-title {
+  writing-mode: horizontal-tb;
+  transform: none;
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  padding: 0;
+  min-height: 0;
+}
+/* Pushed to the end, the way the open header places it. */
+.lay-col > .panel.collapsed .panel-header .panel-toggle {
+  order: 0;
+  margin-left: auto;
+  align-self: center;
 }
 .panel.collapsed { background: var(--bg-panel); }
 .panel.collapsed .panel-body { display: none; }
@@ -19108,7 +19136,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.1.0';
+const APP_VERSION  = '1.48.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -19607,7 +19607,10 @@ test('every collapsed panel title starts at the TOP of its rail', () => {
   const declares = (id, prop, val) => RULES.some(([sel, body]) =>
     sel.includes(`#${id}.collapsed`) && sel.includes('.panel-title') &&
     new RegExp(`${prop}\\s*:\\s*${val}\\b`).test(body));
-  const base = /\.panel\.collapsed \.panel-header \.panel-title \{([^}]*)\}/.exec(css);
+  // Anchored to the start of a rule: the column-collapse rules end with the same
+  // selector text, so an unanchored match found THEIR body and read the
+  // un-rotation as the base rule losing its rotation.
+  const base = /(?:^|\n)\.panel\.collapsed \.panel-header \.panel-title \{([^}]*)\}/.exec(css);
   assert.ok(base, 'the collapsed title rule is gone');
   assert.ok(/transform\s*:\s*rotate\(180deg\)/.test(base[1]),
     'the base rule still rotates, which is what flips the axis');

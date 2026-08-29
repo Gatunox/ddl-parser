@@ -2917,6 +2917,9 @@ body.track-mode #recMetaContent { display: none !important; }
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: var(--bw-ctl) solid var(--accent); border-radius: var(--r-sm); padding: 0 6px; }
 
+/* Shift-drag moves the edge and takes every column to its right along, so the
+   pointer says "this moves sideways" rather than "this resizes". */
+body.me-fm-resizing.col-shift, body.me-fm-resizing.col-shift * { cursor: ew-resize !important; }
 .track-tbl thead th { cursor: pointer; }
 .track-tbl thead th .th-resize { cursor: col-resize; }
 
@@ -18789,7 +18792,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.14.0';
+const APP_VERSION  = '1.47.15.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27217,10 +27220,10 @@ function _meColFit(cfg) {
   ths.forEach(th => { if (th.dataset.col !== flexKey) fixed += w(th.dataset.col); });
   // A flex column the user has SIZED keeps that size. Absorbing the slack is
   // what a column does until someone states a width for it — after that,
-  // re-deriving it would undo the drag on the next fit. Only where the last
-  // edge is draggable at all (growLast); everywhere else the flex column has
-  // no saved width to honour. Requested 2026-08-28.
-  const flexW = (cfg.growLast && saved[flexKey])
+  // re-deriving it would undo the drag on the next fit. A width only reaches
+  // storage for the flex column through a gesture that states one: a shift-drag
+  // or a drag of the last column's own edge. Requested 2026-08-28.
+  const flexW = saved[flexKey]
     ? Math.max(cfg.min, saved[flexKey])
     : Math.max(cfg.flexMin, avail - fixed);
   ths.forEach(th => {
@@ -27336,6 +27339,13 @@ function _meColInitResize(cfg) {
       const startW = th.getBoundingClientRect().width;
       const nextW  = nextTh ? nextTh.getBoundingClientRect().width : 0;
       const startTableW = table.getBoundingClientRect().width;
+      const flexKey = typeof cfg.flex === 'function' ? cfg.flex(ths) : cfg.flex;
+      // Held SHIFT means "move this edge, and take everything to the right of it
+      // along": the columns past this one keep the widths they have and shift
+      // bodily, so the table grows or shrinks by what the drag moved. Read live,
+      // so the key can be taken or released mid-drag and the drag re-computes
+      // from the same start. Requested 2026-08-28.
+      let shifted = false;
       handle.classList.add('active');
       document.body.classList.add('me-fm-resizing');
       // Steal from the right-hand neighbour, so columns further right stay put
@@ -27343,31 +27353,47 @@ function _meColInitResize(cfg) {
       const onMove = ev => {
         let d = ev.clientX - startX;
         d = Math.max(d, -(startW - cfg.min));
-        if (growLast) {
+        const withShift = ev.shiftKey && !!nextTh;
+        if (withShift) shifted = true;
+        if (withShift) {
+          // Nothing is taken from the neighbour: it and everything past it keep
+          // their widths and move as a block.
+          th.style.width = (startW + d) + 'px';
+          if (nextTh) nextTh.style.width = nextW + 'px';
+          table.style.width = (startTableW + d) + 'px';
+        } else if (growLast) {
           // Nothing to steal from: the column and the table grow together and
           // the wrap scrolls.
           th.style.width = (startW + d) + 'px';
           table.style.width = (startTableW + d) + 'px';
         } else {
-        d = Math.min(d, nextW - cfg.min);
-        th.style.width     = (startW + d) + 'px';
-        nextTh.style.width = (nextW  - d) + 'px';
+          d = Math.min(d, nextW - cfg.min);
+          th.style.width     = (startW + d) + 'px';
+          nextTh.style.width = (nextW  - d) + 'px';
+          table.style.width  = startTableW + 'px';
         }
         // Anything anchored to a column has to follow it DURING the drag, not
         // only when the layout is re-fitted. _meColFit calls this at every other
         // moment — first render, panel resize, reset, hiding a column — so a
         // drag was the one path that left the filter behind its column.
+        document.body.classList.toggle('col-shift', withShift);
         if (cfg.after) cfg.after();
       };
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         handle.classList.remove('active');
-        document.body.classList.remove('me-fm-resizing');
+        document.body.classList.remove('me-fm-resizing', 'col-shift');
         const map = _meColLoad(cfg);
+        // A shift-drag states a width for every column it moved, the last-column
+        // drag states one for the flex column itself. Otherwise the flex column
+        // is left unsaved on purpose: it is the one that absorbs the slack, and
+        // a width written for it would freeze the table at one panel size.
+        const pinFlex = shifted || (growLast && th.dataset.col === flexKey);
         for (const t of ths) {
           const c = t.dataset.col;
-          if (cfg.saveAll || c === th.dataset.col || (nextTh && c === nextTh.dataset.col) || !(c in map))
+          if (c === flexKey && !pinFlex) continue;
+          if (shifted || cfg.saveAll || c === th.dataset.col || (nextTh && c === nextTh.dataset.col) || !(c in map))
             map[c] = parseInt(t.style.width, 10);
         }
         _meColSave(cfg, map);

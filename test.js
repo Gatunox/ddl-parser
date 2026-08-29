@@ -6704,6 +6704,34 @@ test('a hex-char override stops the field being painted red', () => {
   assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
 });
 
+test('shift-drag moves an edge and takes every column to its right with it', () => {
+  // A plain drag trades width with the neighbour: the table's total never
+  // changes, so columns further right stay put. Held SHIFT means "move this
+  // edge and bring the rest along" — the columns past it keep their widths and
+  // shift bodily, and the table grows or shrinks by what the drag moved. All
+  // five tables. Requested 2026-08-28.
+  const init = psFnSource('_meColInitResize');
+  assert.ok(/const withShift = ev\.shiftKey && !!nextTh;/.test(init),
+    'the modifier must be read from the MOVE, so it can be taken or released mid-drag');
+  assert.ok(/if \(nextTh\) nextTh\.style\.width = nextW \+ 'px';/.test(init),
+    'the neighbour must keep the width it had — that is the whole point');
+  assert.ok(/table\.style\.width = \(startTableW \+ d\) \+ 'px';/.test(init),
+    'the table takes the difference');
+  // A plain drag still holds the table still, or the two gestures do the same
+  // thing.
+  assert.ok(/nextTh\.style\.width = \(nextW  - d\) \+ 'px';\s*\n\s*table\.style\.width  = startTableW \+ 'px';/.test(init),
+    'a plain drag must leave the table width alone');
+
+  // The flex column reaches storage only through a gesture that STATES a width
+  // for it — a shift-drag, or a drag of the last column's own edge. Left to
+  // itself it absorbs the slack, and a width written for it would freeze the
+  // table at one panel size.
+  assert.ok(/const pinFlex = shifted \|\| \(growLast && th\.dataset\.col === flexKey\);/.test(init),
+    'the flex column must not be pinned by an ordinary drag');
+  assert.ok(/if \(c === flexKey && !pinFlex\) continue;/.test(init),
+    '…including on the tables that save every column');
+});
+
 test('the LAST Track column can be dragged, and keeps the width it is given', () => {
   // A drag moves the boundary between two columns, taking width from the one on
   // the right — so the last column's edge did nothing. On tables with a fixed,
@@ -6727,7 +6755,7 @@ test('the LAST Track column can be dragged, and keeps the width it is given', ()
   // A flex column the user has SIZED keeps that size — absorbing the slack is
   // what it does UNTIL someone states a width for it.
   const fit = psFnSource('_meColFit');
-  assert.ok(/const flexW = \(cfg\.growLast && saved\[flexKey\]\)/.test(fit),
+  assert.ok(/const flexW = saved\[flexKey\]/.test(fit),
     'a dragged last column must survive the next fit');
   assert.ok(/: Math\.max\(cfg\.flexMin, avail - fixed\);/.test(fit),
     'and absorb the slack until then');

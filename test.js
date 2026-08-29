@@ -6745,13 +6745,26 @@ test('the layout is chosen, not hard-coded: five arrangements, panels placed by 
 
   // A stored list from an older version cannot leave a panel unreachable.
   const load = psFnSource('loadLayout');
-  assert.ok(/for \(const p of LAYOUT_DEFAULT_SLOTS\) if \(!slots\.includes\(p\)\) slots\.push\(p\);/.test(load),
-    'a panel missing from the stored slots must be appended, not lost');
+  assert.ok(/_laySlots = _layNormalizeSlots\(layout\.slots\)/.test(load),
+    'a stored assignment must be normalised, not trusted');
+  // A panel in two boxes is the state that breaks the DOM move: the second
+  // placement takes the element OUT of the first box, so one box ends up empty
+  // and a panel that should be on screen is parked. Reported 2026-08-28.
+  const norm = psFnSource('_layNormalizeSlots');
+  assert.ok(/if \(!known\.has\(id\) \|\| seen\.has\(id\)\) continue;/.test(norm),
+    'unknown and duplicated ids must both be dropped');
+  assert.ok(/for \(const id of LAYOUT_DEFAULT_SLOTS\) if \(!seen\.has\(id\)\)/.test(norm),
+    'and every panel must end up somewhere in the list');
+  assert.ok(/_laySlots = _layNormalizeSlots\(_laySlots\);/.test(psFnSource('_layApply')),
+    'the guard must run on the way in to a build, not only on load');
 
   // Reset goes back to the arrangement the app has always opened in.
   const reset = psFnSource('resetLayout');
   assert.ok(/_layMode  = 'quad';/.test(reset) && /_laySlots = \[\.\.\.LAYOUT_DEFAULT_SLOTS\];/.test(reset),
     'Reset Layout must restore the default arrangement, not just the sizes');
+  // …and it must be REMEMBERED: applying without saving left the next reload
+  // restoring the layout that had just been reset away. Reported 2026-08-28.
+  assert.ok(/_layApply\(true\);/.test(reset), 'a reset that is not saved is undone by the next reload');
 });
 
 test('collapse and resize read the CURRENT arrangement, not the old rows', () => {

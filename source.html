@@ -4598,6 +4598,8 @@ BMP      FIXED   16   B    "Primary Bitmap (ASCII hex encoded — 16 chars = 8 b
 //   h2       [0 / 1]              two rows
 //   top2     [0 | 1] over [2]     the bottom one spans
 //   bottom2  [0] over [1 | 2]     the top one spans
+//   left1    [0 | 1/2]            one full-height left, two stacked right
+//   right1   [0/1 | 2]            two stacked left, one full-height right
 //   quad     [0 | 1] / [2 | 3]    two columns, each split on its OWN
 //
 // quad is the one that needed care: its columns are independent, so the left
@@ -4610,6 +4612,8 @@ const LAYOUT_MODES = {
   h2:      { boxes: 2, label: 'Two rows' },
   top2:    { boxes: 3, label: 'Two on top, one below' },
   bottom2: { boxes: 3, label: 'One on top, two below' },
+  left1:   { boxes: 3, label: 'One left, two right' },
+  right1:  { boxes: 3, label: 'Two left, one right' },
 };
 const LAYOUT_PANELS = [
   { id: 'ddlPanel', label: 'DDL Definition' },
@@ -4622,6 +4626,22 @@ const LAYOUT_DEFAULT_SLOTS = ['ddlPanel', 'msgPanel', 'resPanel', 'rawPanel'];
 // mode + which panel sits in which box. Persisted in up_layout.
 let _layMode  = 'quad';
 let _laySlots = [...LAYOUT_DEFAULT_SLOTS];
+
+// A panel can only be in one box: placing it twice would MOVE the element out
+// of the first box, leaving that box empty and a panel parked that should be on
+// screen. Every path that sets the assignment goes through here, so no stored
+// value or older bundle can produce that state. Reported 2026-08-28.
+function _layNormalizeSlots(list) {
+  const known = new Set(LAYOUT_PANELS.map(p => p.id));
+  const seen  = new Set();
+  const out   = [];
+  for (const id of (Array.isArray(list) ? list : [])) {
+    if (!known.has(id) || seen.has(id)) continue;
+    seen.add(id); out.push(id);
+  }
+  for (const id of LAYOUT_DEFAULT_SLOTS) if (!seen.has(id)) { seen.add(id); out.push(id); }
+  return out;
+}
 
 const _layBox = (id, cls) => {
   const d = document.createElement('div');
@@ -4645,7 +4665,8 @@ function _layApply(save = true) {
   const root = document.getElementById('mainLayout');
   if (!root) return;
   const n = LAYOUT_MODES[_layMode]?.boxes || 4;
-  const slots = _laySlots.slice(0, n).filter(Boolean);
+  _laySlots = _layNormalizeSlots(_laySlots);
+  const slots = _laySlots.slice(0, n);
   const used  = new Set(slots);
   const panel = i => document.getElementById(slots[i]) || null;
 
@@ -4692,6 +4713,29 @@ function _layApply(save = true) {
       root.appendChild(row);
       pairs.push(['lay-rz-0', slots[0], 'lay-row-1', 'v']);
     }
+  } else if (_layMode === 'left1' || _layMode === 'right1') {
+    // A full-height panel beside a stacked pair. The pair's own split is
+    // independent of everything else, being a column of its own.
+    root.className = 'main-layout lay-row';
+    const stackOf = (id, a, b) => {
+      const col = _layBox(id, 'lay-col');
+      put(col, panel(a));
+      rz(col, id + '-rz', 'resizer-v');
+      put(col, panel(b));
+      pairs.push([id + '-rz', slots[a], slots[b], 'v']);
+      return col;
+    };
+    if (_layMode === 'left1') {
+      put(root, panel(0));
+      rz(root, 'lay-rz-0', 'resizer-h');
+      root.appendChild(stackOf('lay-col-1', 1, 2));
+      pairs.push(['lay-rz-0', slots[0], 'lay-col-1', 'h']);
+    } else {
+      root.appendChild(stackOf('lay-col-0', 0, 1));
+      rz(root, 'lay-rz-0', 'resizer-h');
+      put(root, panel(2));
+      pairs.push(['lay-rz-0', 'lay-col-0', slots[2], 'h']);
+    }
   } else {
     // quad — two columns, each with its own vertical split.
     root.className = 'main-layout lay-row';
@@ -4731,6 +4775,8 @@ const _LAY_DIAGRAM = {
   h2:      [[0,0,2,1],[0,1,2,1]],
   top2:    [[0,0,1,1],[1,0,1,1],[0,1,2,1]],
   bottom2: [[0,0,2,1],[0,1,1,1],[1,1,1,1]],
+  left1:   [[0,0,1,2],[1,0,1,1],[1,1,1,1]],
+  right1:  [[0,0,1,1],[0,1,1,1],[1,0,1,2]],
 };
 // Where each box sits, in words — the dropdown has to say which box it is
 // about, and "Box 3" alone means nothing on a screen showing four of them.
@@ -4740,6 +4786,8 @@ const _LAY_BOX_NAMES = {
   h2:      ['Top', 'Bottom'],
   top2:    ['Top left', 'Top right', 'Bottom'],
   bottom2: ['Top', 'Bottom left', 'Bottom right'],
+  left1:   ['Left', 'Right top', 'Right bottom'],
+  right1:  ['Left top', 'Left bottom', 'Right'],
 };
 
 function _laySyncSettings() {
@@ -19060,7 +19108,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.0.0';
+const APP_VERSION  = '1.48.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19191,14 +19239,10 @@ function loadLayout() {
     // The arrangement, then the panels' places in it. _layApply reads the sizes
     // for that mode itself.
     if (layout.mode && LAYOUT_MODES[layout.mode]) _layMode = layout.mode;
-    if (Array.isArray(layout.slots) && layout.slots.length) {
-      const known = new Set(LAYOUT_PANELS.map(p => p.id));
-      const slots = layout.slots.filter(x => known.has(x));
-      // Anything the stored list left out is appended, so a bundle written by an
-      // older version cannot leave a panel unreachable.
-      for (const p of LAYOUT_DEFAULT_SLOTS) if (!slots.includes(p)) slots.push(p);
-      _laySlots = slots;
-    }
+    // Anything unknown, duplicated or missing is corrected here, so a bundle
+    // written by an older version cannot leave a panel unreachable or in two
+    // boxes at once.
+    if (Array.isArray(layout.slots) && layout.slots.length) _laySlots = _layNormalizeSlots(layout.slots);
     _layApply(false);
     // Tree pane width, then its collapsed state — width first, so the pane has
     // an open width to come back to. force:true so restoring does not write the
@@ -19235,7 +19279,9 @@ function resetLayout() {
     const el = document.getElementById(p.id);
     if (el) el.style.flex = '';
   }
-  _layApply(false);
+  // Saved, not just applied: without this the next reload restored the layout
+  // the user had just reset away. Reported 2026-08-28.
+  _layApply(true);
   if (typeof _laySyncSettings === 'function') _laySyncSettings();
   // Reset tree pane width to CSS default (170px)
   const treePane = document.getElementById('ddlTreePane');

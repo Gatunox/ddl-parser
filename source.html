@@ -557,6 +557,20 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   justify-content: flex-start;
   padding: 0;
   min-height: 0;
+  /* .panel-title is width:var(--tree-w) so the DDL panel's title lines up with
+     the tree pane beside it. In a collapsed bar there is no tree to line up
+     with, and with the tree collapsed to a rail that width was 40px — enough
+     for "DDL De". It sizes to its own text here. Reported 2026-08-28. */
+  width: auto;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+/* The DDL panel anchors its rotated title at flex-end, which in a rail is the
+   TOP. Read left to right that same rule pins the END of "DDL Definition" and
+   clips the front of it — the bar showed "ition". Reported 2026-08-28. */
+.lay-col > #ddlPanel.collapsed .panel-header .panel-title {
+  justify-content: flex-start;
+  text-overflow: ellipsis;
 }
 /* Pushed to the end, the way the open header places it. */
 .lay-col > .panel.collapsed .panel-header .panel-toggle {
@@ -19136,7 +19150,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.2.0';
+const APP_VERSION  = '1.48.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

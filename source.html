@@ -6314,11 +6314,10 @@ function showDDLDoc() {
           '<th class="ddl-doc-size" data-col="size">Size</th>',
           '<th class="ddl-doc-off" data-col="off">Offset</th>',
           '<th data-col="desc">Description</th>']
-         // The same handle the Parse Results headers carry, so the same
-         // drag code drives both. The last column has none: there is nothing
-         // to its right to give the width to.
-         .map((th, i, a) => i < a.length - 1
-              ? th.replace('</th>', '<span class="th-resize"></span></th>') : th).join('')
+         // The same handle the Parse Results headers carry, so the same drag
+         // code drives both — including the LAST column, whose edge grows the
+         // table instead of stealing from a neighbour it does not have.
+         .map(th => th.replace('</th>', '<span class="th-resize"></span></th>')).join('')
        + '</tr></thead><tbody>';
 
   let grandTotal = 0;
@@ -13693,7 +13692,7 @@ function renderFieldTable(msg) {
           <th class="th-off" data-col="off" title="Bytes this field occupies in the message">Offset<span class="th-resize"></span></th>
           <th class="th-val" data-col="val">Value<span class="th-resize"></span></th>
           <th class="th-raw" data-col="raw">Raw Hex<span class="th-resize"></span></th>
-          <th class="th-trk" data-col="trk" title="Track field">Trk</th>
+          <th class="th-trk" data-col="trk" title="Track field">Trk<span class="th-resize"></span></th>
         </tr></thead>
         <tbody>${rows}</tbody>
        </table></div>`
@@ -18792,7 +18791,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.15.0';
+const APP_VERSION  = '1.47.16.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27118,6 +27117,10 @@ const _ME_COLRZ = {
   res: {
     table: '#resContainer table.res-tbl', wrap: '#resContainer .tbl-wrap',
     key: 'up_res_col_w', handle: '.th-resize',
+    // The last column has an edge too: with nothing to its right to take width
+    // from, a drag there grows the TABLE and the wrap scrolls. Requested
+    // 2026-08-28.
+    growLast: true,
     flex: 'val', flexMin: 120, min: 36, pad: 4,
     after: () => _syncFilterPos(),
     defaults: () => _RES_DEFAULT_COLW,
@@ -27132,6 +27135,10 @@ const _ME_COLRZ = {
   doc: {
     table: '#ddlDocBody table.ddl-doc-tbl', wrap: '#ddlDocBody',
     key: 'up_ddldoc_col_w', handle: '.th-resize',
+    // The last column has an edge too: with nothing to its right to take width
+    // from, a drag there grows the TABLE and the wrap scrolls. Requested
+    // 2026-08-28.
+    growLast: true,
     flex: 'desc', flexMin: 120, min: 36, pad: 4,
     after: () => _syncDDLDocFilterPos(),
     defaults: () => _DDLDOC_DEFAULT_COLW,
@@ -27141,6 +27148,10 @@ const _ME_COLRZ = {
   fm: {
     table: '.me-fm-table', wrap: '.me-fm-table-wrap', key: 'up_me_fm_col_w',
     handle: '.me-fm-resizer', flex: 'fld', flexMin: 120, min: 36, pad: 4,
+    // The last column has an edge too: with nothing to its right to take width
+    // from, a drag there grows the TABLE and the wrap scrolls. Requested
+    // 2026-08-28.
+    growLast: true,
     after: () => _meFmSyncFilterPos(),
     // Pinned, not measured: deriving the defaults from content made them depend
     // on which DDL happened to be bound, so no two "Reset columns" agreed. fld
@@ -27166,8 +27177,6 @@ const _ME_COLRZ = {
     // are at the left, so the table fills the panel without a gap.
     flex: ths => (ths.length ? ths[ths.length - 1].dataset.col : 'ts'),
     flexMin: 90, min: 36, pad: 4,
-    // The one table whose column COUNT is unpredictable, so the last edge is a
-    // real target rather than the table's own border.
     growLast: true,
     defaults: () => ({ num: 34, ts: 132 }),
     visibleOnly: false,
@@ -27176,6 +27185,9 @@ const _ME_COLRZ = {
   test: {
     table: '.me-test-ftbl-cols', wrap: '#me-test-out', key: 'up_me_test_col_w',
     handle: '.me-test-resizer', flex: 'fld', flexMin: 90, min: 36, pad: 4,
+    // As everywhere else: the last edge grows the table rather than doing
+    // nothing. Requested 2026-08-28.
+    growLast: true,
     defaults: () => Object.fromEntries(
       _ME_TEST_COLS.filter(c => !c.flex).map(c => [c.key, c.def])),
     visibleOnly: false,
@@ -35197,7 +35209,7 @@ function _meTestFieldTable(fields) {
   // width lasts until the next run.
   const head = _ME_TEST_COLS.map((c, i) =>
     `<th data-col="${c.key}" style="text-align:${c.align || 'left'}">${c.label}` +
-    (i < _ME_TEST_COLS.length - 1 ? `<span class="me-test-resizer" data-col="${c.key}" title="Drag to resize · double-click to reset all columns"></span>` : '') +
+    `<span class="me-test-resizer" data-col="${c.key}" title="Drag to resize · double-click to reset all columns"></span>` +
     `</th>`).join('');
   return `<table class="me-test-ftbl me-test-ftbl-cols"><thead><tr>${head}</tr></thead>` +
          `<tbody>${rows.join('')}</tbody></table>`;

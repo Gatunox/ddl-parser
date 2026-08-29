@@ -6750,7 +6750,10 @@ test('the LAST Track column can be dragged, and keeps the width it is given', ()
     'the save path must not read a neighbour that is not there');
   // Only Track opts in: the other four have a fixed column set, so their last
   // edge is the table's own border.
-  eq((src.match(/growLast: true,/g) || []).length, 1, 'exactly one table may grow its last column');
+  // Every table grows its last column now: the edge exists in all five, and
+  // with nothing to its right the drag grows the table instead. Track was first
+  // because its column count is unpredictable; the rest followed.
+  eq((src.match(/growLast: true,/g) || []).length, 5, 'every table must be able to grow its last column');
 
   // A flex column the user has SIZED keeps that size — absorbing the slack is
   // what it does UNTIL someone states a width for it.
@@ -9860,10 +9863,10 @@ test('the DDL Doc columns can be dragged and selected, like Parse Results', () =
     assert.ok(new RegExp(`data-col="${c}"`).test(html), `the DDL Doc ${c} column carries no data-col`);
   assert.ok(/_meInitColHighlight\('#ddlDocBody table\.ddl-doc-tbl'\)/.test(APP_SRC),
     'the DDL Doc columns cannot be selected');
-  // Every header but the last carries a handle — the last has nothing to its
-  // right to give the width to.
-  assert.ok(/i < a\.length - 1[\s\S]{0,80}th-resize/.test(APP_SRC),
-    'the resize handles are not put on every column but the last');
+  // EVERY header carries a handle, the last one included: with nothing to its
+  // right, a drag there grows the table and the wrap scrolls.
+  assert.ok(/\.map\(th => th\.replace\('<\/th>', '<span class="th-resize"><\/span><\/th>'\)\)/.test(APP_SRC),
+    'the resize handles are not put on every column');
 
   // Size reads right, like the same column in Parse Results and the Field Map.
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
@@ -14840,9 +14843,10 @@ test('[REGRESSION] every column has a handle, and double-click fits it to its co
   for (const c of ['num', 'id', 'desc', 'len', 'off', 'val', 'raw'])
     assert.ok(new RegExp(`data-col="${c}"[^>]*>[^<]*<span class="th-resize">`).test(head),
       `the ${c} column has no resize handle`);
-  // The last one has none — there is nothing to its right to take width from.
-  assert.ok(!/data-col="trk"[^>]*>[^<]*<span class="th-resize">/.test(head),
-    'the last column grew a handle, which has nothing to steal from');
+  // The last one has a handle too: with nothing to its right, the drag grows
+  // the table rather than doing nothing at all. Requested 2026-08-28.
+  assert.ok(/data-col="trk"[^>]*>[^<]*<span class="th-resize">/.test(head),
+    'the last column must be draggable like the rest');
 
   // Double-click fits the column to its widest content.
   const init = psFnSource('_meColInitResize');
@@ -19987,9 +19991,12 @@ test('the results table has real columns: named, sized, draggable', () => {
   // Exactly one column absorbs the slack, or the table either leaves a gap or
   // scrolls sideways.
   eq([...cols[1].matchAll(/flex: true/g)].length, 1, 'exactly one column must absorb the leftover width');
-  // The last column gets no handle: there is nothing on its right to take from.
-  assert.ok(/i < _ME_TEST_COLS\.length - 1/.test(tbl),
-    'the last column has a resize handle with no neighbour to steal from');
+  // The last column gets a handle like the rest: with nothing on its right to
+  // take from, the drag grows the table and the wrap scrolls (growLast).
+  assert.ok(!/i < _ME_TEST_COLS\.length - 1/.test(tbl),
+    'the last column must be draggable too');
+  assert.ok(/<span class="me-test-resizer" data-col="\$\{c\.key\}"/.test(tbl),
+    'every column carries the handle');
 
   const css = _DE_CSS();
   assert.ok(/\.me-test-ftbl-cols\{[^}]*table-layout:\s*fixed/.test(css),

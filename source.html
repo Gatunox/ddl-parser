@@ -427,15 +427,22 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   overflow: hidden;
   min-height: 0;
 }
-.top-row, .bottom-row {
+/* The boxes the layout engine builds. A row lays its children left to right, a
+   column top to bottom, and either can hold panels or more boxes — which is
+   what lets quad give each column its own vertical split. Requested 2026-08-28. */
+.lay-row, .lay-col {
   display: flex;
-  flex-direction: row;
+  flex: 1 1 50%;
+  min-width: 0;
   min-height: 0;
-  overflow: visible;          /* let card shadows escape the row box */
-  padding: 0 var(--gap);
+  overflow: visible;          /* let card shadows escape the box */
 }
-.top-row    { flex: 1 1 50%; padding-top: var(--gap); }
-.bottom-row { flex: 1 1 50%; padding-bottom: var(--gap); }
+.lay-row { flex-direction: row; }
+.lay-col { flex-direction: column; }
+/* The gap belongs to the outermost box, so panels breathe against the window
+   edge without every nested box adding another margin. */
+#mainLayout { padding: var(--gap); }
+#mainLayout .lay-row, #mainLayout .lay-col { padding: 0; }
 
 /* ===== RESIZE HANDLES ===== */
 /* Inert, not hidden: display:none removed the gutter entirely, so collapsing
@@ -522,8 +529,14 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   flex: 0 0 var(--panel-collapsed-w) !important;
   min-width: 0;
 }
-.top-row .panel.collapsed    { background: var(--bg-deep); }
-.bottom-row .panel.collapsed { background: var(--bg-panel); }
+/* Collapsed inside a column, the strip is horizontal: it is the HEIGHT that
+   goes, not the width. The old layout only ever collapsed panels side by side,
+   so this case did not exist. Requested 2026-08-28. */
+.lay-col > .panel.collapsed {
+  flex: 0 0 var(--me-item-line, 26px) !important;
+  min-height: 0;
+}
+.panel.collapsed { background: var(--bg-panel); }
 .panel.collapsed .panel-body { display: none; }
 .panel.collapsed .ddl-pane-split { display: none; }
 /* The DDL panel's header is not a bar any more — its title and its toggle moved
@@ -2158,6 +2171,27 @@ td.c-err  { color: var(--accent2); }
    A divider line said "these are separate"; a card says it and also gives the
    section a surface, which is what makes the drawer read as structured rather
    than as one long scroll. */
+/* The arrangement picker: five little diagrams of the boxes each one makes. */
+.lay-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+.lay-pick-btn {
+  padding: 3px; line-height: 0; cursor: pointer;
+  background: var(--surface-raised); color: var(--text-dim);
+  border: var(--bw-ctl) solid var(--border); border-radius: var(--r-sm);
+}
+.lay-pick-btn svg rect { fill: currentColor; opacity: 0.55; }
+.lay-pick-btn:hover { color: var(--text); border-color: var(--border-strong); }
+.lay-pick-btn.is-on { color: var(--accent); border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.lay-pick-btn.is-on svg rect { opacity: 1; }
+/* One row per box: which corner it is, and what goes in it. */
+.lay-slots { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.lay-slot { display: flex; align-items: center; gap: 6px; }
+.lay-slot-name { flex: 0 0 92px; font-size: 11px; color: var(--text-dim); }
+.lay-slot select { flex: 1; min-width: 0; height: 20px; font-family: var(--mono);
+  font-size: calc(var(--sz-mono) - 1px); color: var(--text);
+  background: var(--bg-input); border: var(--bw-ctl) solid var(--border); border-radius: var(--r-sm); }
+.lay-slot-note { font-size: 10.5px; color: var(--text-dim); padding-left: 98px; }
+
 .settings-section {
   background: var(--bg-panel);
   border: var(--bw) solid var(--border);
@@ -3847,13 +3881,13 @@ th.me-fm-colhi{color:var(--accent);}
   <button class="btn" id="settingsBtn" onclick="openSettings()" title="Settings">⚙</button>
 </header>
 
-<div class="main-layout" id="mainLayout">
-
-  <!-- ===== TOP ROW ===== -->
-  <div class="top-row" id="topRow">
-
-    <!-- DDL PANEL -->
-    <div class="panel" id="ddlPanel">
+<!-- The layout engine owns this container: it builds the boxes for the
+     chosen arrangement and moves the panels into them. The panels below are
+     the SAME elements wherever they end up, so their contents survive every
+     rearrangement. Requested 2026-08-28. -->
+<div class="main-layout lay-row" id="mainLayout"></div>
+<div id="layoutPark" hidden>
+<div class="panel" id="ddlPanel">
       <div class="panel-header">
         <span class="panel-title">DDL Definition</span>
         <span id="ddlScopePath" style="display:none"></span>
@@ -3929,8 +3963,6 @@ th.me-fm-colhi{color:var(--accent);}
         </div>
       </div>
     </div>
-
-    <div class="resizer-h" id="ddlResizer"></div>
 
     <!-- MESSAGE INPUT PANEL -->
     <div class="panel" id="msgPanel">
@@ -4098,15 +4130,9 @@ th.me-fm-colhi{color:var(--accent);}
       </div>
     </div>
 
-  </div><!-- end top-row -->
 
-  <div class="resizer-v" id="mainResizer"></div>
-
-  <!-- ===== BOTTOM ROW ===== -->
-  <div class="bottom-row" id="bottomRow">
-
-    <!-- PARSE RESULTS PANEL -->
-    <div class="panel" id="resPanel">
+  
+<div class="panel" id="resPanel">
       <div class="panel-header">
         <span class="panel-title" id="resPanelTitle" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;cursor:pointer">Parse Results</span>
         <span id="resTypeBadge" class="pt-badge"></span>
@@ -4174,7 +4200,7 @@ th.me-fm-colhi{color:var(--accent);}
       </div>
     </div>
 
-    <div class="resizer-h" id="resResizer"></div>
+    
 
     <!-- RAW / TRACKING VIEW PANEL -->
     <div class="panel" id="rawPanel">
@@ -4192,8 +4218,7 @@ th.me-fm-colhi{color:var(--accent);}
       </div>
     </div>
 
-  </div><!-- end bottom-row -->
-</div><!-- end main-layout -->
+</div><!-- end layoutPark: the panels live here until the engine places them -->
 
 <div id="flash-container"></div>
 
@@ -4559,6 +4584,233 @@ BMP      FIXED   16   B    "Primary Bitmap (ASCII hex encoded — 16 chars = 8 b
 `;
 
 // ============================================================
+// LAYOUT ENGINE
+// ============================================================
+// The window is a handful of BOXES, and the user says how many and where. The
+// panels themselves are untouched by this: each is a self-contained element
+// that gets moved into a box, so everything inside one goes on working exactly
+// as it did — CodeMirror, the tables, the audit browser.
+//
+// Five arrangements. Reading order numbers the boxes: 0 top-left, 1 top-right,
+// 2 bottom-left, 3 bottom-right.
+//
+//   v2       [0 | 1]              two columns
+//   h2       [0 / 1]              two rows
+//   top2     [0 | 1] over [2]     the bottom one spans
+//   bottom2  [0] over [1 | 2]     the top one spans
+//   quad     [0 | 1] / [2 | 3]    two columns, each split on its OWN
+//
+// quad is the one that needed care: its columns are independent, so the left
+// pair can be split at a different height from the right pair. That is why it
+// is built as two columns each holding a vertical split, and not as two rows —
+// rows would force one shared height across the middle. Requested 2026-08-28.
+const LAYOUT_MODES = {
+  quad:    { boxes: 4, label: 'Four panels' },
+  v2:      { boxes: 2, label: 'Two columns' },
+  h2:      { boxes: 2, label: 'Two rows' },
+  top2:    { boxes: 3, label: 'Two on top, one below' },
+  bottom2: { boxes: 3, label: 'One on top, two below' },
+};
+const LAYOUT_PANELS = [
+  { id: 'ddlPanel', label: 'DDL Definition' },
+  { id: 'msgPanel', label: 'Data Input' },
+  { id: 'resPanel', label: 'Parse Results' },
+  { id: 'rawPanel', label: 'Raw Output' },
+];
+const LAYOUT_DEFAULT_SLOTS = ['ddlPanel', 'msgPanel', 'resPanel', 'rawPanel'];
+
+// mode + which panel sits in which box. Persisted in up_layout.
+let _layMode  = 'quad';
+let _laySlots = [...LAYOUT_DEFAULT_SLOTS];
+
+const _layBox = (id, cls) => {
+  const d = document.createElement('div');
+  d.id = id; d.className = cls;
+  return d;
+};
+
+// A panel that is in no box is not on screen. It keeps its state — it is the
+// same element, parked — so putting it back costs nothing.
+function _layParkUnused(used) {
+  const park = document.getElementById('layoutPark');
+  for (const p of LAYOUT_PANELS) {
+    if (used.has(p.id)) continue;
+    const el = document.getElementById(p.id);
+    if (el && el.parentNode !== park) park.appendChild(el);
+  }
+}
+
+// Build the boxes for the current mode and move the panels into them.
+function _layApply(save = true) {
+  const root = document.getElementById('mainLayout');
+  if (!root) return;
+  const n = LAYOUT_MODES[_layMode]?.boxes || 4;
+  const slots = _laySlots.slice(0, n).filter(Boolean);
+  const used  = new Set(slots);
+  const panel = i => document.getElementById(slots[i]) || null;
+
+  // Detach the panels before the container is emptied, or emptying it would
+  // destroy them.
+  const park = document.getElementById('layoutPark');
+  for (const p of LAYOUT_PANELS) {
+    const el = document.getElementById(p.id);
+    if (el) park.appendChild(el);
+  }
+  root.innerHTML = '';
+
+  const put = (parent, el) => { if (el) parent.appendChild(el); };
+  const rz  = (parent, id, cls) => { const r = _layBox(id, cls); parent.appendChild(r); return r; };
+  const pairs = [];   // [resizerId, aId, bId, 'h'|'v'] — bound after the DOM exists
+
+  if (_layMode === 'v2' || _layMode === 'h2') {
+    const horiz = _layMode === 'v2';
+    root.className = 'main-layout ' + (horiz ? 'lay-row' : 'lay-col');
+    put(root, panel(0));
+    rz(root, 'lay-rz-0', horiz ? 'resizer-h' : 'resizer-v');
+    put(root, panel(1));
+    pairs.push(['lay-rz-0', slots[0], slots[1], horiz ? 'h' : 'v']);
+  } else if (_layMode === 'top2' || _layMode === 'bottom2') {
+    root.className = 'main-layout lay-col';
+    const rowOf = (id, a, b) => {
+      const row = _layBox(id, 'lay-row');
+      put(row, panel(a));
+      rz(row, id + '-rz', 'resizer-h');
+      put(row, panel(b));
+      pairs.push([id + '-rz', slots[a], slots[b], 'h']);
+      return row;
+    };
+    if (_layMode === 'top2') {
+      const row = rowOf('lay-row-0', 0, 1);
+      root.appendChild(row);
+      rz(root, 'lay-rz-0', 'resizer-v');
+      put(root, panel(2));
+      pairs.push(['lay-rz-0', 'lay-row-0', slots[2], 'v']);
+    } else {
+      put(root, panel(0));
+      rz(root, 'lay-rz-0', 'resizer-v');
+      const row = rowOf('lay-row-1', 1, 2);
+      root.appendChild(row);
+      pairs.push(['lay-rz-0', slots[0], 'lay-row-1', 'v']);
+    }
+  } else {
+    // quad — two columns, each with its own vertical split.
+    root.className = 'main-layout lay-row';
+    const colOf = (id, top, bottom) => {
+      const col = _layBox(id, 'lay-col');
+      put(col, panel(top));
+      rz(col, id + '-rz', 'resizer-v');
+      put(col, panel(bottom));
+      pairs.push([id + '-rz', slots[top], slots[bottom], 'v']);
+      return col;
+    };
+    root.appendChild(colOf('lay-col-0', 0, 2));
+    rz(root, 'lay-rz-0', 'resizer-h');
+    root.appendChild(colOf('lay-col-1', 1, 3));
+    pairs.push(['lay-rz-0', 'lay-col-0', 'lay-col-1', 'h']);
+  }
+
+  _layParkUnused(used);
+  for (const [rid, a, b, dir] of pairs) {
+    if (!document.getElementById(rid) || !document.getElementById(a) || !document.getElementById(b)) continue;
+    (dir === 'h' ? initHResizer : initVResizer)(rid, a, b);
+  }
+  _layRestoreSizes();
+  if (save) saveLayout();
+  // Anything measured against a panel's size has to be re-measured: the boxes
+  // just changed shape under them.
+  if (typeof _meColFit === 'function' && _ME_COLRZ.res) _meColFit(_ME_COLRZ.res);
+  if (typeof _syncFilterPos === 'function') _syncFilterPos();
+  if (typeof _syncTreeW === 'function') requestAnimationFrame(_syncTreeW);
+}
+
+// The picker: each arrangement drawn as the boxes it makes, because a diagram
+// says in one glance what "two on top, one below" takes a sentence to say.
+const _LAY_DIAGRAM = {
+  quad:    [[0,0,1,1],[1,0,1,1],[0,1,1,1],[1,1,1,1]],
+  v2:      [[0,0,1,2],[1,0,1,2]],
+  h2:      [[0,0,2,1],[0,1,2,1]],
+  top2:    [[0,0,1,1],[1,0,1,1],[0,1,2,1]],
+  bottom2: [[0,0,2,1],[0,1,1,1],[1,1,1,1]],
+};
+// Where each box sits, in words — the dropdown has to say which box it is
+// about, and "Box 3" alone means nothing on a screen showing four of them.
+const _LAY_BOX_NAMES = {
+  quad:    ['Top left', 'Top right', 'Bottom left', 'Bottom right'],
+  v2:      ['Left', 'Right'],
+  h2:      ['Top', 'Bottom'],
+  top2:    ['Top left', 'Top right', 'Bottom'],
+  bottom2: ['Top', 'Bottom left', 'Bottom right'],
+};
+
+function _laySyncSettings() {
+  const pick = document.getElementById('layPick');
+  if (pick) {
+    pick.innerHTML = Object.keys(LAYOUT_MODES).map(m => {
+      const cells = _LAY_DIAGRAM[m].map(([x, y, w, h]) =>
+        `<rect x="${1 + x * 15}" y="${1 + y * 15}" width="${w * 15 - 2}" height="${h * 15 - 2}" rx="2"/>`).join('');
+      return `<button class="lay-pick-btn${m === _layMode ? ' is-on' : ''}" onclick="setLayoutMode('${m}')"
+        title="${esc(LAYOUT_MODES[m].label)}"><svg viewBox="0 0 30 30" width="30" height="30">${cells}</svg></button>`;
+    }).join('');
+  }
+  const slots = document.getElementById('laySlots');
+  if (slots) {
+    const n = LAYOUT_MODES[_layMode]?.boxes || 4;
+    const names = _LAY_BOX_NAMES[_layMode] || [];
+    slots.innerHTML = Array.from({ length: n }, (_, i) => {
+      const opts = LAYOUT_PANELS.map(p =>
+        `<option value="${p.id}"${_laySlots[i] === p.id ? ' selected' : ''}>${esc(p.label)}</option>`).join('');
+      return `<label class="lay-slot"><span class="lay-slot-name">${esc(names[i] || ('Box ' + (i + 1)))}</span>` +
+             `<select onchange="setLayoutSlot(${i}, this.value)">${opts}</select></label>`;
+    }).join('') + (n < LAYOUT_PANELS.length
+      ? `<div class="lay-slot-note">${LAYOUT_PANELS.length - n} panel${LAYOUT_PANELS.length - n !== 1 ? 's' : ''} hidden in this arrangement</div>`
+      : '');
+  }
+}
+
+function setLayoutMode(mode) {
+  if (!LAYOUT_MODES[mode] || mode === _layMode) return;
+  _layMode = mode;
+  _layApply();
+  if (typeof _laySyncSettings === 'function') _laySyncSettings();
+}
+
+// Put a panel in a box. A panel can only be in one box, so choosing one that is
+// already placed SWAPS the two — anything else would silently empty a box.
+function setLayoutSlot(idx, panelId) {
+  const n = LAYOUT_MODES[_layMode]?.boxes || 4;
+  if (idx < 0 || idx >= n) return;
+  const cur = _laySlots.indexOf(panelId);
+  if (cur === idx) return;
+  if (cur !== -1 && cur < n) { _laySlots[cur] = _laySlots[idx]; }
+  _laySlots[idx] = panelId;
+  _layApply();
+  if (typeof _laySyncSettings === 'function') _laySyncSettings();
+}
+
+// Sizes are per mode: the split that suits four boxes is not the split that
+// suits two, and re-deriving one from the other would move panels the user
+// never touched.
+function _laySizeKey() { return 'sizes_' + _layMode; }
+function _layCollectSizes() {
+  const out = {};
+  for (const el of document.querySelectorAll('#mainLayout [id^="lay-"], #mainLayout > .panel, #mainLayout .lay-row > .panel, #mainLayout .lay-col > .panel')) {
+    if (el.id && el.style.flex) out[el.id] = el.style.flex;
+  }
+  return out;
+}
+function _layRestoreSizes() {
+  try {
+    const l = JSON.parse(_kvGet('up_layout') || '{}');
+    const sizes = l[_laySizeKey()];
+    if (!sizes) return;
+    for (const [id, flex] of Object.entries(sizes)) {
+      const el = document.getElementById(id);
+      if (el) el.style.flex = flex;
+    }
+  } catch (e) {}
+}
+
+// ============================================================
 // RESIZE LOGIC
 // ============================================================
 function initHResizer(resizerId, leftPanelId, rightPanelId) {
@@ -4631,13 +4883,30 @@ function initVResizer(resizerId, topRowId, bottomRowId) {
 // ============================================================
 // PANEL HIDE / SHOW
 // ============================================================
-// Each panel's sibling (the other panel sharing the same row)
-const _panelSibling = { ddlPanel:'msgPanel', msgPanel:'ddlPanel', resPanel:'rawPanel', rawPanel:'resPanel' };
+// Who shares a box with this panel, and which resizer sits beside it. Both used
+// to be hard-coded per row; with the layout chosen at run time they are read
+// from the DOM, which is the only thing that knows the current arrangement.
+// Requested 2026-08-28.
+function _panelSiblingOf(panelId) {
+  const el = document.getElementById(panelId);
+  if (!el || !el.parentNode) return null;
+  const sibs = [...el.parentNode.children].filter(c => c.classList.contains('panel') && c !== el);
+  return sibs.length ? sibs[0].id : null;
+}
+function _panelResizerOf(panelId) {
+  const el = document.getElementById(panelId);
+  if (!el) return null;
+  for (const s of [el.nextElementSibling, el.previousElementSibling])
+    if (s && (s.classList.contains('resizer-h') || s.classList.contains('resizer-v'))) return s.id;
+  return null;
+}
 
 function togglePanel(panelId, btnId, resizerId) {
   const panel   = document.getElementById(panelId);
   const btn     = document.getElementById(btnId);
-  const resizer = document.getElementById(resizerId);
+  // The id passed in is what the markup knew at build time; the layout decides
+  // it now. The argument stays for the call sites and is used as a fallback.
+  const resizer = document.getElementById(_panelResizerOf(panelId) || resizerId);
 
   // Guard: ignore clicks while an animation is in progress
   if (panel.classList.contains('panel-fading')) return;
@@ -4646,7 +4915,7 @@ function togglePanel(panelId, btnId, resizerId) {
 
   if (isCollapsing) {
     // Block collapse if the sibling panel is already collapsed
-    const siblingId = _panelSibling[panelId];
+    const siblingId = _panelSiblingOf(panelId);
     if (siblingId) {
       const sibling = document.getElementById(siblingId);
       if (sibling && sibling.classList.contains('collapsed')) {
@@ -18791,7 +19060,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.47.16.0';
+const APP_VERSION  = '1.48.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -18872,12 +19141,13 @@ function savePrefs() {
 
 function saveLayout() {
   try {
-    const layout = {};
-    // Panel / row flex splits
-    ['topRow','bottomRow','ddlPanel','msgPanel','resPanel','rawPanel'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el && el.style.flex) layout[id + 'Flex'] = el.style.flex;
-    });
+    // Read what is stored first: sizes are kept PER MODE, so saving one must
+    // not drop the splits the other arrangements were left at.
+    let layout = {};
+    try { layout = JSON.parse(_kvGet('up_layout') || '{}') || {}; } catch (e) { layout = {}; }
+    layout.mode  = _layMode;
+    layout.slots = _laySlots.slice();
+    layout[_laySizeKey()] = _layCollectSizes();
     // Tree pane width
     const treePane = document.getElementById('ddlTreePane');
     if (treePane) {
@@ -18918,11 +19188,18 @@ function loadLayout() {
     const s = _kvGet('up_layout');
     if (!s) return;
     const layout = JSON.parse(s);
-    // Panel / row flex splits
-    ['topRow','bottomRow','ddlPanel','msgPanel','resPanel','rawPanel'].forEach(id => {
-      const flex = layout[id + 'Flex'];
-      if (flex) { const el = document.getElementById(id); if (el) el.style.flex = flex; }
-    });
+    // The arrangement, then the panels' places in it. _layApply reads the sizes
+    // for that mode itself.
+    if (layout.mode && LAYOUT_MODES[layout.mode]) _layMode = layout.mode;
+    if (Array.isArray(layout.slots) && layout.slots.length) {
+      const known = new Set(LAYOUT_PANELS.map(p => p.id));
+      const slots = layout.slots.filter(x => known.has(x));
+      // Anything the stored list left out is appended, so a bundle written by an
+      // older version cannot leave a panel unreachable.
+      for (const p of LAYOUT_DEFAULT_SLOTS) if (!slots.includes(p)) slots.push(p);
+      _laySlots = slots;
+    }
+    _layApply(false);
     // Tree pane width, then its collapsed state — width first, so the pane has
     // an open width to come back to. force:true so restoring does not write the
     // layout it is in the middle of reading.
@@ -18951,11 +19228,15 @@ function loadLayout() {
 
 function resetLayout() {
   _kvDel('up_layout');
-  // Reset panel / row flex to CSS defaults
-  ['topRow','bottomRow','ddlPanel','msgPanel','resPanel','rawPanel'].forEach(id => {
-    const el = document.getElementById(id);
+  // Back to four boxes in the order the app has always opened in.
+  _layMode  = 'quad';
+  _laySlots = [...LAYOUT_DEFAULT_SLOTS];
+  for (const p of LAYOUT_PANELS) {
+    const el = document.getElementById(p.id);
     if (el) el.style.flex = '';
-  });
+  }
+  _layApply(false);
+  if (typeof _laySyncSettings === 'function') _laySyncSettings();
   // Reset tree pane width to CSS default (170px)
   const treePane = document.getElementById('ddlTreePane');
   if (treePane) { treePane.style.width = ''; requestAnimationFrame(_syncTreeW); }
@@ -19583,6 +19864,7 @@ function adjustLineWidth(delta) {
 }
 
 function openSettings() {
+  if (typeof _laySyncSettings === 'function') _laySyncSettings();
   document.getElementById('settingsOverlay').classList.remove('hidden');
   // Sync control states to current prefs
   _syncFontUI();
@@ -20529,12 +20811,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
 
-  // Horizontal resizers (within rows)
-  initHResizer('ddlResizer', 'ddlPanel', 'msgPanel');
-  initHResizer('resResizer', 'resPanel', 'rawPanel');
-
-  // Vertical resizer (between rows)
-  initVResizer('mainResizer', 'topRow', 'bottomRow');
+  // The layout builds its own boxes and binds their resizers. loadLayout has
+  // already run by here and set the mode; this is the case where it did not
+  // (no stored layout at all), which still needs the panels placed.
+  if (!document.querySelector('#mainLayout .panel')) _layApply(false);
 });
 
 // ─── Message Editor (Phase 2) ──────────────────────────────────────────────
@@ -35347,7 +35627,9 @@ function _meSave() {
 <!-- ===== CONTEXT MENU ===== -->
 <div class="ctx-menu hidden" id="ctxMenu"></div>
 <div class="tree-fly hidden" id="treeFly"></div>
-<div class="tree-fly hidden" id="treeFly2"></div>
+<div class="tree-fly hidden" id="treeFly2">
+</div>
+
 
 <!-- ===== MSG EXPORT MODAL ===== -->
 <div class="modal-overlay hidden" id="msgExportOverlay" onmousedown="if(event.target===this)closeMsgExportModal()">
@@ -35487,6 +35769,26 @@ function _meSave() {
         </div>
       </div>
 
+      <!-- ── LAYOUT ──────────────────────────────────── -->
+      <div class="settings-section">
+        <div class="settings-stitle">Layout</div>
+        <div class="settings-row" style="align-items:flex-start">
+          <span class="settings-lbl">Arrangement</span>
+          <div class="lay-pick" id="layPick"></div>
+        </div>
+        <div class="settings-row" style="align-items:flex-start">
+          <span class="settings-lbl">Panels</span>
+          <div class="lay-slots" id="laySlots"></div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-lbl">Reset</span>
+          <button class="btn settings-btn-20" style="flex:0 0 148px" onclick="resetLayout()" title="Four panels in the default arrangement, at their default sizes">↺ Reset Layout</button>
+        </div>
+        <div class="settings-row">
+          <span class="settings-lbl" style="color:var(--text-dim);font-size:11px">Panel sizes, column widths &amp; visibility are saved automatically</span>
+        </div>
+      </div>
+
       <!-- ── PANELS ──────────────────────────────────── -->
       <div class="settings-section">
         <div class="settings-stitle">Panels on startup</div>
@@ -35516,18 +35818,6 @@ function _meSave() {
         </div>
       </div>
 
-
-      <!-- ── LAYOUT ─────────────────────────────────── -->
-      <div class="settings-section">
-        <div class="settings-stitle">Layout</div>
-        <div class="settings-row">
-          <span class="settings-lbl" style="color:var(--text-dim);font-size:11px">Panel sizes, column widths &amp; visibility are saved automatically</span>
-        </div>
-        <div class="settings-row">
-          <span class="settings-lbl">Reset</span>
-          <button class="btn settings-btn-20" style="flex:0 0 148px" onclick="resetLayout()" title="Restore all panels and columns to default sizes">↺ Reset Layout</button>
-        </div>
-      </div>
 
       <!-- ── LOCAL DATA ─────────────────────────────────── -->
       <div class="settings-section">

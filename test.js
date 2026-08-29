@@ -6704,6 +6704,71 @@ test('a hex-char override stops the field being painted red', () => {
   assert.ok(!meContentLooksWrong(f), 'but the bytes are judged as hex, which is what the user said they are');
 });
 
+test('the layout is chosen, not hard-coded: five arrangements, panels placed by name', () => {
+  // The window used to be two fixed rows: one divider between them moved BOTH
+  // panels in each row at once, and nothing could be rearranged. It is boxes
+  // now, built for the chosen arrangement, with the panels moved into them.
+  // Requested 2026-08-28.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(!/id="topRow"|id="bottomRow"/.test(src), 'the fixed rows must be gone');
+  assert.ok(/<div class="main-layout lay-row" id="mainLayout"><\/div>/.test(src),
+    'the engine owns an empty container');
+  assert.ok(/<div id="layoutPark" hidden>/.test(src),
+    'a panel that is in no box must be parked, not destroyed');
+
+  const apply = psFnSource('_layApply');
+  // quad is the case the whole rework exists for: two COLUMNS, each split on
+  // its own, so the left pair can be a different height from the right pair.
+  // Two rows would force one shared height across the middle.
+  assert.ok(/root\.appendChild\(colOf\('lay-col-0', 0, 2\)\);/.test(apply) &&
+            /root\.appendChild\(colOf\('lay-col-1', 1, 3\)\);/.test(apply),
+    'quad must be two independent columns');
+  // The panels are MOVED, never rebuilt: their contents (CodeMirror, tables,
+  // the audit browser) survive because they are the same elements.
+  assert.ok(/park\.appendChild\(el\);/.test(apply), 'panels must be detached before the container is emptied');
+  assert.ok(!/innerHTML =[^\n]*panel/i.test(apply), 'a panel must never be re-created from markup');
+
+  // Placing a panel that is already placed SWAPS the two — anything else would
+  // silently empty a box.
+  const setSlot = psFnSource('setLayoutSlot');
+  assert.ok(/if \(cur !== -1 && cur < n\) \{ _laySlots\[cur\] = _laySlots\[idx\]; \}/.test(setSlot),
+    'choosing a placed panel must swap, not duplicate');
+
+  // Sizes are per arrangement: the split that suits four boxes is not the one
+  // that suits two, and saving one must not drop the others.
+  assert.ok(/function _laySizeKey\(\) \{ return 'sizes_' \+ _layMode; \}/.test(src), 'sizes must be keyed by mode');
+  const save = psFnSource('saveLayout');
+  assert.ok(/layout = JSON\.parse\(_kvGet\('up_layout'\) \|\| '\{\}'\)/.test(save),
+    'saving one mode must read the others first, or it drops them');
+  assert.ok(/layout\.mode  = _layMode;/.test(save) && /layout\.slots = _laySlots\.slice\(\);/.test(save),
+    'the arrangement and the assignment must persist');
+
+  // A stored list from an older version cannot leave a panel unreachable.
+  const load = psFnSource('loadLayout');
+  assert.ok(/for \(const p of LAYOUT_DEFAULT_SLOTS\) if \(!slots\.includes\(p\)\) slots\.push\(p\);/.test(load),
+    'a panel missing from the stored slots must be appended, not lost');
+
+  // Reset goes back to the arrangement the app has always opened in.
+  const reset = psFnSource('resetLayout');
+  assert.ok(/_layMode  = 'quad';/.test(reset) && /_laySlots = \[\.\.\.LAYOUT_DEFAULT_SLOTS\];/.test(reset),
+    'Reset Layout must restore the default arrangement, not just the sizes');
+});
+
+test('collapse and resize read the CURRENT arrangement, not the old rows', () => {
+  // Both were hard-coded per row: the sibling that must stay open, and the
+  // resizer to go inert. With the layout chosen at run time, the DOM is the
+  // only thing that knows. Requested 2026-08-28.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(!/const _panelSibling = \{/.test(src), 'the hard-coded sibling map must be gone');
+  const sib = psFnSource('_panelSiblingOf');
+  assert.ok(/\[\.\.\.el\.parentNode\.children\]\.filter\(c => c\.classList\.contains\('panel'\) && c !== el\)/.test(sib),
+    'the sibling is whoever shares the box now');
+  const rz = psFnSource('_panelResizerOf');
+  assert.ok(/resizer-h|resizer-v/.test(rz), 'the resizer beside a panel is found in the DOM');
+  assert.ok(/_panelResizerOf\(panelId\) \|\| resizerId/.test(psFnSource('togglePanel')),
+    'togglePanel must prefer the live resizer, keeping the argument as a fallback');
+});
+
 test('shift-drag moves an edge and takes every column to its right with it', () => {
   // A plain drag trades width with the neighbour: the table's total never
   // changes, so columns further right stay put. Held SHIFT means "move this

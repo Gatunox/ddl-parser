@@ -2064,6 +2064,31 @@ td.c-err  { color: var(--accent2); }
 .ctx-sep { height: 1px; background: var(--border); margin: 3px 0; }
 .ctx-icon { width: 13px; text-align: center; flex-shrink: 0; }
 
+/* ===== "View definition" popover — the DDL panel is not in the layout ===== */
+.defpop {
+  position: fixed; z-index: 26000;
+  background: var(--bg-panel);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.55);
+  max-width: min(680px, 90vw);
+}
+.defpop-hdr { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px;
+  border-bottom: var(--bw) solid var(--border); background: var(--surface-header); }
+.defpop-path { font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.defpop-x { margin-left: auto; background: none; border: none; color: var(--text-dim);
+  cursor: pointer; font-size: 11px; padding: 2px 5px; line-height: 1; }
+.defpop-x:hover { color: var(--text); }
+/* Fifteen lines, then it scrolls. The comment above a field can run to any
+   length, and a popover that grows to the height of the screen is a panel. */
+.defpop-body { max-height: calc(15 * 1.5em); overflow: auto; padding: 5px 0; }
+.defpop-line { font-family: var(--mono); font-size: var(--sz-mono); line-height: 1.5;
+  color: var(--text-dim); white-space: pre; padding: 0 10px 0 0; }
+.defpop-hit { color: var(--text); background: rgba(var(--accent-rgb),0.13); }
+.defpop-ln { display: inline-block; width: 3.5em; padding-right: 8px; text-align: right;
+  color: var(--text-very-dim); user-select: none; }
+
 /* ===== DRAG & DROP ZONES ===== */
 .drop-active { outline: 2px dashed var(--accent) !important; outline-offset: -3px; background: rgba(var(--accent-rgb),0.06) !important; }
 .drop-hint { font-size: 10px; color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
@@ -14160,6 +14185,10 @@ function renderFieldTable(msg) {
   if (typeof _resSetStale === 'function') _resSetStale(false);
   _meColInitResize(_ME_COLRZ.res);
   _meInitColHighlight('#resContainer table');
+  // Delegated, so field rows, group rows and token rows all get the same menu
+  // from the one place — they already all carry data-fid.
+  const _rcCtx = document.getElementById('resContainer');
+  if (_rcCtx) _rcCtx.oncontextmenu = _resCtxRow;
 
   // Always show filter and Hide Redef when a message is active; redef button is visually inert when no redefines present
   const _filterIn  = document.getElementById('resFilterInput');
@@ -14520,6 +14549,193 @@ function clearHover() {
   S.hoverFieldId = null;
   clearRawHL('hb-hover');
   renderInputOverlay();
+}
+
+// ── View definition — a Parse Results row back to the DDL that declared it ──
+// A row says what a field is called, how long it is and what it holds. What it
+// MEANS is in the DDL, and usually in the comment block sitting above the
+// declaration — which was a manual hunt through the tree, in a panel that may
+// not even be in the layout. Requested 2026-08-29.
+//
+// An item line: a level number, then the name. FILLER and 88-levels included —
+// the row you right-clicked is the line you want, whatever it declares.
+const _DDL_ITEM_RE = /^\s*(\d{1,2})\s+([A-Za-z0-9$_@#-]+)/;
+const _DDL_HEAD_RE = /^[^\S\n]*(?:DEF|DEFINITION|RECORD|END)\b/i;
+
+// Which DDL text a row's field came from, and under what name. Token rows carry
+// their own DDL — a token area is a different definition from the message's.
+function _resRowDdlRef(fid) {
+  const msg = S.messages?.[S.curIdx];
+  if (!msg || !fid) return null;
+  let path = msg.ddlPath, defName = msg.defName || null, fieldId = fid;
+  if (fid.startsWith('grp::')) {
+    const rest = fid.slice(5), sp = rest.indexOf('::');
+    fieldId = sp >= 0 ? rest.slice(sp + 2) : rest;
+    if (sp >= 0) {
+      const tkn = msg.tokens?.find(t => t.id === rest.slice(0, sp));
+      if (tkn) { path = tkn.ddlPath || path; defName = tkn.defName || null; }
+    }
+  } else {
+    const sep = fid.indexOf('::');
+    if (sep >= 0) {
+      const tkn = msg.tokens?.find(t => t.id === fid.slice(0, sep));
+      if (!tkn) return null;
+      path = tkn.ddlPath || path; defName = tkn.defName || null; fieldId = fid.slice(sep + 2);
+    }
+  }
+  if (!path || !fieldId) return null;
+  const [vol, sv, name] = path.split('/');
+  const text = ((S.ddlTree[vol] || {})[sv] || {})[name];
+  if (typeof text !== 'string') return null;
+  return { vol, sv, name, defName, text, fieldId };
+}
+
+// The line that declares fieldId, or -1. The id path is walked segment by
+// segment: a leaf name repeats under different groups, and matching the leaf
+// alone lands on whichever copy comes first in the file.
+function _ddlLocateField(text, defName, fieldId) {
+  const lines = text.split('\n');
+  let from = 0, to = lines.length;
+  if (defName) {
+    const re = new RegExp(`^[^\\S\\n]*(?:DEF|DEFINITION|RECORD)\\s+(?:IS\\s+)?${defName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    const at = lines.findIndex(l => re.test(l));
+    if (at >= 0) {
+      from = at + 1;
+      for (let n = from; n < lines.length; n++)
+        if (/^[^\S\n]*END\b/i.test(lines[n])) { to = n; break; }
+    }
+  }
+  const segs = fieldId.split('.').map(s => s.replace(/\[\d+\]$/, '')).filter(Boolean);
+  let found = -1, i = from;
+  for (let s = 0; s < segs.length; s++) {
+    let hit = -1;
+    for (let n = i; n < to; n++) {
+      const m = _DDL_ITEM_RE.exec(lines[n]);
+      if (m && m[2].toUpperCase() === segs[s].toUpperCase()) { hit = n; break; }
+    }
+    // A missing LEAF means the answer is "not here" — stopping at its parent
+    // would point at a group and call it the field you asked for. A missing
+    // link in the middle is only a lost anchor: keep looking for the leaf.
+    if (hit < 0) { if (s === segs.length - 1) return -1; continue; }
+    found = hit; i = hit + 1;
+  }
+  return found;
+}
+
+// Everything from the previous declaration down to this one. That gap is where
+// the comment lives, which is the reason to look at all — showing the single
+// declaration line would answer the least interesting half of the question.
+function _ddlDefBlockStart(lines, at) {
+  let s = at;
+  while (s > 0 && !_DDL_ITEM_RE.test(lines[s - 1]) && !_DDL_HEAD_RE.test(lines[s - 1])) s--;
+  return s;
+}
+
+// Is this panel actually placed in the current arrangement? Parked panels stay
+// in the DOM, so their existence proves nothing.
+function _layPanelVisible(id) {
+  const n = (LAYOUT_MODES[_layMode] || {}).boxes || 4;
+  return _laySlots.slice(0, n).includes(id);
+}
+
+function _scrollEditorToLine(lineIdx) {
+  const ta = document.getElementById('ddlEditor');
+  if (!ta) return;
+  const lines = String(ta.value || '').split('\n');
+  if (lineIdx < 0 || lineIdx >= lines.length) return;
+  let idx = 0;
+  for (let i = 0; i < lineIdx; i++) idx += lines[i].length + 1;
+  const _csEl     = window._ddlEditorCM ? window._ddlEditorCM.scrollDOM : ta;
+  const lineH     = parseFloat(getComputedStyle(_csEl).lineHeight) || 16;
+  const padTop    = parseFloat(getComputedStyle(_csEl).paddingTop)  || 0;
+  const targetTop = Math.max(0, padTop + lineIdx * lineH - lineH * 3);
+  // Same three moves as _scrollEditorToDef: set, select (which auto-scrolls),
+  // then reassert — all synchronous, so the last write wins.
+  ta.scrollTop = targetTop;
+  ta.focus();
+  ta.setSelectionRange(idx, idx + lines[lineIdx].length);
+  ta.scrollTop = targetTop;
+  updateDDLHighlight(true);
+}
+
+// selectScope loads the file synchronously UNLESS the editor holds unsaved work,
+// in which case it asks first and re-enters itself. Jump once the file we asked
+// for is the one in the editor, rather than into whatever is still there.
+let _defJumpTimer = null;
+function _ddlJumpWhenLoaded(want, lineIdx, tries = 25) {
+  clearTimeout(_defJumpTimer);
+  const step = n => {
+    const ta = document.getElementById('ddlEditor');
+    if (ta && ta.value === want) { _scrollEditorToLine(lineIdx); return; }
+    if (n > 0) _defJumpTimer = setTimeout(() => step(n - 1), 200);
+  };
+  step(tries);
+}
+
+function _resViewDefinition(fid) {
+  const ref = _resRowDdlRef(fid);
+  if (!ref) { flash('This row has no DDL definition behind it.', 'warn'); return; }
+  const at = _ddlLocateField(ref.text, ref.defName, ref.fieldId);
+  if (at < 0) { flash(`"${ref.fieldId}" is not declared in ${ref.name}.`, 'warn'); return; }
+  if (_layPanelVisible('ddlPanel')) {
+    selectScope('ddl', ref.vol, ref.sv, ref.name);
+    _ddlJumpWhenLoaded(ref.text, at);
+  } else {
+    _showDefPopover(ref, at);
+  }
+}
+
+// The definition, where the panel that would normally show it is not on screen.
+// It stays put rather than following the pointer: it is capped at 15 lines and
+// scrolls past that, and a tooltip you cannot reach the scrollbar of is no use.
+function _showDefPopover(ref, at) {
+  _hideDefPopover();
+  const lines = ref.text.split('\n');
+  const from  = _ddlDefBlockStart(lines, at);
+  const body  = lines.slice(from, at + 1).map((l, i) =>
+    `<div class="defpop-line${from + i === at ? ' defpop-hit' : ''}"><span class="defpop-ln">${from + i + 1}</span>${esc(l) || '&nbsp;'}</div>`).join('');
+  const el = document.createElement('div');
+  el.className = 'defpop';
+  el.id = 'defPopover';
+  el.innerHTML =
+    `<div class="defpop-hdr"><span class="defpop-path">${esc(`${ref.vol} / ${ref.sv} / ${ref.name}`)}${ref.defName ? esc(' / ' + ref.defName) : ''}</span>` +
+    `<button class="defpop-x" onclick="_hideDefPopover()" title="Close">✕</button></div>` +
+    `<div class="defpop-body">${body}</div>`;
+  document.body.append(el);
+  const x = _defPopAt.x, y = _defPopAt.y;
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+  requestAnimationFrame(() => {
+    const r = el.getBoundingClientRect();
+    if (r.right  > window.innerWidth)  el.style.left = Math.max(4, x - r.width)  + 'px';
+    if (r.bottom > window.innerHeight) el.style.top  = Math.max(4, window.innerHeight - r.height - 4) + 'px';
+    el.querySelector('.defpop-hit')?.scrollIntoView({ block: 'nearest' });
+  });
+  setTimeout(() => document.addEventListener('mousedown', _defPopAway), 0);
+  document.addEventListener('keydown', _defPopEsc);
+}
+let _defPopAt = { x: 0, y: 0 };
+function _defPopAway(e) { if (!e.target.closest('#defPopover')) _hideDefPopover(); }
+function _defPopEsc(e)  { if (e.key === 'Escape') _hideDefPopover(); }
+function _hideDefPopover() {
+  document.getElementById('defPopover')?.remove();
+  document.removeEventListener('mousedown', _defPopAway);
+  document.removeEventListener('keydown', _defPopEsc);
+}
+
+function _resCtxRow(e) {
+  const tr = e.target.closest?.('tr[data-fid]');
+  if (!tr) return;
+  e.preventDefault(); e.stopPropagation();
+  const fid = tr.dataset.fid;
+  _defPopAt = { x: e.clientX, y: e.clientY };
+  const has = !!_resRowDdlRef(fid);
+  showCtxMenu(e.clientX, e.clientY, [
+    { icon: '⌕', label: 'View definition', disabled: !has,
+      title: has ? 'Show where this field is declared in the DDL'
+                 : 'This row was not parsed from a DDL',
+      fn: () => _resViewDefinition(fid) },
+  ]);
 }
 
 // ---- Data Input overlay highlighting ----
@@ -17881,7 +18097,10 @@ function showCtxMenu(x, y, items) {
   items.forEach((item, i) => {
     if (item.separator) { html += '<div class="ctx-sep"></div>'; return; }
     const danger = item.danger ? ' ctx-danger' : '';
-    html += `<div class="ctx-item${danger}" data-idx="${i}">
+    // An action that cannot apply here is shown and greyed, not hidden: a menu
+    // that changes shape teaches nothing about why the entry is missing.
+    const off = item.disabled ? ' ctx-disabled' : '';
+    html += `<div class="ctx-item${danger}${off}" data-idx="${i}"${item.title ? ` title="${esc(item.title)}"` : ''}>
       <span class="ctx-icon">${item.icon || ''}</span>${esc(item.label)}
     </div>`;
   });
@@ -19184,7 +19403,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.4.0';
+const APP_VERSION  = '1.48.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

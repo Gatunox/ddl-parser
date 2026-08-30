@@ -13939,6 +13939,58 @@ test('[REGRESSION] Parse waits for the compiled-DDL cache instead of recompiling
     'the deferred click is never re-dispatched');
 });
 
+test('View definition finds the field line, scoped to its own DEF', () => {
+  // A leaf name repeats across DEFs and across groups, so a bare name search
+  // lands on whichever copy comes first in the file. The id path is walked
+  // segment by segment inside the DEF that actually parsed the message.
+  const ddl = [
+    'DEF STM-REC.',                       // 0
+    '  02 TO-ACCT-TYP PIC X(2).',         // 1
+    '  02 RTE.',                          // 2
+    '     03 STAT PIC 99.',               // 3
+    '*',                                  // 4
+    '* Routing decision, filled in by the switch.',  // 5
+    '* Blank when the transaction is on-us.',        // 6
+    '',                                   // 7
+    '     03 NOT-ON-US-FLG PIC 9.',       // 8
+    'END.',                               // 9
+    '',                                   // 10
+    'DEF OTHER-REC.',                     // 11
+    '  02 STAT PIC X(4).',                // 12
+    'END.',                               // 13
+  ].join('\n');
+  const at = sandbox._ddlLocateField(ddl, 'STM-REC', 'RTE.NOT-ON-US-FLG');
+  eq(at, 8, 'the declaration line');
+  eq(sandbox._ddlLocateField(ddl, 'STM-REC', 'RTE.STAT'), 3,
+     'STAT resolves inside STM-REC, not to OTHER-REC.STAT further down');
+  eq(sandbox._ddlLocateField(ddl, 'OTHER-REC', 'STAT'), 12, 'and the other DEF gets its own');
+  eq(sandbox._ddlLocateField(ddl, 'STM-REC', 'RTE.NOT-A-FIELD'), -1, 'a name that is not there');
+  // An OCCURS row's id carries the occurrence — the DDL declares it once.
+  eq(sandbox._ddlLocateField(ddl, 'STM-REC', 'RTE[02].STAT'), 3, 'the [nn] suffix is not part of the name');
+
+  // The block shown is everything back to the PREVIOUS declaration: that gap is
+  // where the comment lives, and the comment is the reason to look.
+  const lines = ddl.split('\n');
+  eq(sandbox._ddlDefBlockStart(lines, 8), 4, 'the comment block above the field comes with it');
+  eq(sandbox._ddlDefBlockStart(lines, 3), 3, 'a field that follows its neighbour directly stands alone');
+  eq(sandbox._ddlDefBlockStart(lines, 1), 1, 'the DEF line is a boundary, not part of the block');
+});
+
+test('the definition popover caps at 15 lines and scrolls past that', () => {
+  // A comment block runs to any length. Capping the HEIGHT and scrolling keeps
+  // every line reachable; truncating the text would drop the sentence that
+  // explains the field. Requested 2026-08-29.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const rule = (src.match(/\.defpop-body \{[^}]*\}/) || [''])[0];
+  assert.ok(/max-height:\s*calc\(15 \* 1\.5em\)/.test(rule), `15 lines is the cap: ${rule}`);
+  assert.ok(/overflow:\s*auto/.test(rule), `past the cap it has to scroll: ${rule}`);
+  // And the popover is only the fallback: with the DDL panel placed, the panel
+  // is where the definition belongs.
+  const fn = psFnSource('_resViewDefinition');
+  assert.ok(/_layPanelVisible\('ddlPanel'\)/.test(fn), 'the panel case is decided by the layout, not by the DOM');
+  assert.ok(/selectScope\('ddl'/.test(fn) && /_showDefPopover/.test(fn), 'both routes exist');
+});
+
 test('a DDL override disables the class picker — nothing there could be acted on', () => {
   // A DDL override parses straight off the DDL: detection does not run, so a
   // class chosen in the bar would be inert. Requested 2026-08-25.

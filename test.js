@@ -19537,8 +19537,8 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
   const hdr = (fs.readFileSync('./source.html', 'utf8')
     .match(/<div class="audit-popup-hdr"[\s\S]*?<\/div>/) || [''])[0];
   deepEq((hdr.match(/onclick="(auditNavPopup[^"]*)"/g) || []).map(s => s.slice(9, -1)),
-    ['auditNavPopupEnd(-1)', 'auditNavPopup(-AUDIT_NAV_JUMP)', 'auditNavPopup(-1)',
-     'auditNavPopup(1)', 'auditNavPopup(AUDIT_NAV_JUMP)', 'auditNavPopupEnd(1)'],
+    ['auditNavPopupEnd(-1)', 'auditNavPopup(-NAV_JUMP)', 'auditNavPopup(-1)',
+     'auditNavPopup(1)', 'auditNavPopup(NAV_JUMP)', 'auditNavPopupEnd(1)'],
     'the six nav controls, left to right');
   // Six controls beside a full record line: the title has to be the thing that
   // truncates, or a narrow detail pane pushes the buttons off the end.
@@ -19548,6 +19548,73 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
     `the title must yield first: ${t}`);
   assert.ok(/\.audit-popup-hdr > button \{[^}]*flex-shrink:\s*0/.test(css),
     'and the buttons must not be squeezed instead');
+});
+
+test('record counter nav: ends, jumps and Go-to work in the counter\'s own numbering', () => {
+  // With a Track selection in play the counter reads "2 / 5" of the five you
+  // picked. Every control here has to speak that numbering, or a number typed
+  // into Go-to disagrees with the label right beside it. Requested 2026-08-30.
+  const prev = { msgs: S.messages, idx: S.curIdx, vf: S.viewFilter, fmt: S.inputFormat };
+  const real = { render: sandbox.renderCurrent, nav: sandbox.updateNav,
+                 hl: sandbox.clearInputHL, prompt: sandbox.showPrompt };
+  sandbox.renderCurrent = () => {}; sandbox.updateNav = () => {}; sandbox.clearInputHL = () => {};
+  try {
+    S.messages = Array.from({ length: 25 }, (_, i) => ({ fields: [], recNo: i + 1 }));
+    S.viewFilter = null; S.inputFormat = 'hex';
+
+    const at = i => { S.curIdx = i; };
+    at(12); sandbox.msgNavStep(10);  eq(S.curIdx, 22, 'forward ten');
+    at(12); sandbox.msgNavStep(-10); eq(S.curIdx, 2,  'back ten');
+    at(3);  sandbox.msgNavStep(-10); eq(S.curIdx, 0,  'a short jump clamps to the first');
+    at(20); sandbox.msgNavStep(10);  eq(S.curIdx, 24, 'and to the last going forward');
+    at(7);  sandbox.msgNavEnd(-1);   eq(S.curIdx, 0,  'first');
+    at(7);  sandbox.msgNavEnd(1);    eq(S.curIdx, 24, 'last');
+    at(0);  sandbox.msgNavEnd(-1);   eq(S.curIdx, 0,  'already first — stays put');
+    at(24); sandbox.msgNavEnd(1);    eq(S.curIdx, 24, 'already last — stays put');
+
+    // Go-to takes the number the counter shows, 1-based, and clamps.
+    let asked = null;
+    sandbox.showPrompt = (label, def, cb) => { asked = { label, def }; cb('7'); };
+    at(3); sandbox.msgNavGoTo();
+    eq(S.curIdx, 6, 'typing 7 goes to the seventh, not to index 7');
+    eq(asked.def, '4', 'the box opens on where you already are');
+    assert.ok(/1 – 25/.test(asked.label), `the range is stated: ${asked.label}`);
+    sandbox.showPrompt = (l, d, cb) => cb('999'); at(3); sandbox.msgNavGoTo();
+    eq(S.curIdx, 24, 'past the end clamps to the last');
+    sandbox.showPrompt = (l, d, cb) => cb('0');   at(3); sandbox.msgNavGoTo();
+    eq(S.curIdx, 0, 'below the start clamps to the first');
+    // Cancel and nonsense must not move anything.
+    for (const v of [null, '', 'abc']) {
+      sandbox.showPrompt = (l, d, cb) => cb(v); at(9); sandbox.msgNavGoTo();
+      eq(S.curIdx, 9, `"${v}" leaves the position alone`);
+    }
+
+    // A Track selection re-numbers everything: five picked records are 1–5.
+    S.viewFilter = [2, 5, 11, 18, 23];
+    S.curIdx = 2;  sandbox.msgNavEnd(1);  eq(S.curIdx, 23, 'last of the SELECTION, not of the parse');
+    S.curIdx = 23; sandbox.msgNavStep(-10); eq(S.curIdx, 2, 'a jump clamps inside the selection');
+    sandbox.showPrompt = (l, d, cb) => cb('3'); S.curIdx = 2; sandbox.msgNavGoTo();
+    eq(S.curIdx, 11, 'the third PICKED record');
+  } finally {
+    Object.assign(sandbox, { renderCurrent: real.render, updateNav: real.nav,
+                             clearInputHL: real.hl, showPrompt: real.prompt });
+    S.messages = prev.msgs; S.curIdx = prev.idx; S.viewFilter = prev.vf; S.inputFormat = prev.fmt;
+  }
+
+  // Eight controls, in reading order, and the counter still sits in the middle.
+  const nav = (fs.readFileSync('./source.html', 'utf8')
+    .match(/<div id="msgNav"[\s\S]*?<\/div>/) || [''])[0];
+  deepEq((nav.match(/onclick="([a-zA-Z]+\([^"]*\))"/g) || []).map(s => s.slice(9, -1)),
+    ['msgNavEnd(-1)', 'msgNavStep(-NAV_JUMP)', 'prevMsg()',
+     'nextMsg()', 'msgNavStep(NAV_JUMP)', 'msgNavEnd(1)', 'msgNavGoTo()'],
+    'the counter nav, left to right');
+  // …with the counter itself between < and >, where it has always been.
+  assert.ok(/onclick="prevMsg\(\)"[^>]*>[^<]*<\/button>\s*<span id="msgCtr"[\s\S]*?<\/span>\s*<button[^>]*onclick="nextMsg\(\)"/.test(nav),
+    'the counter must stay between the single steps');
+  // One constant for both lists: two would drift and the difference would read
+  // as a bug.
+  assert.ok(/const NAV_JUMP = 10;/.test(fs.readFileSync('./source.html', 'utf8')),
+    'the jump size is shared with the audit browser');
 });
 
 test('the audit detail height survives a reload, and a layout reset', () => {

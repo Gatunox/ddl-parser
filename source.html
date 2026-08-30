@@ -4194,10 +4194,10 @@ th.me-fm-colhi{color:var(--accent);}
               <div class="audit-popup-hdr" ondblclick="auditCopyDumpToClipboard(event)" title="Double-click to copy dump to clipboard">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopupEnd(-1)" title="First record">|&lt;</button>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-AUDIT_NAV_JUMP)" title="Back 10 records">&lt;&lt;</button>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-NAV_JUMP)" title="Back 10 records">&lt;&lt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-1)" title="Previous record (←)">&lt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(AUDIT_NAV_JUMP)" title="Forward 10 records">&gt;&gt;</button>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(NAV_JUMP)" title="Forward 10 records">&gt;&gt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopupEnd(1)" title="Last record">&gt;|</button>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle between the hex dump and the character view (ASCII or EBCDIC, whichever the record is)">HEX</button>
                 <button id="auditParseBtn" class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected(true)" title="Load payload into Data Input and parse — always re-parses, even if this record was parsed before">&#9654; Parse</button>
@@ -4239,9 +4239,14 @@ th.me-fm-colhi{color:var(--accent);}
             <span id="resFilterLabel" class="res-filter-label" style="display:none"
                   title="Showing only the records picked in Track Mode">Filtered</span>
             <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0">
-              <button class="btn" onclick="prevMsg()">&lt;</button>
+              <button class="btn" onclick="msgNavEnd(-1)" title="First">|&lt;</button>
+              <button class="btn" onclick="msgNavStep(-NAV_JUMP)" title="Back 10">&lt;&lt;</button>
+              <button class="btn" onclick="prevMsg()" title="Previous">&lt;</button>
               <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
-              <button class="btn" onclick="nextMsg()">&gt;</button>
+              <button class="btn" onclick="nextMsg()" title="Next">&gt;</button>
+              <button class="btn" onclick="msgNavStep(NAV_JUMP)" title="Forward 10">&gt;&gt;</button>
+              <button class="btn" onclick="msgNavEnd(1)" title="Last">&gt;|</button>
+              <button class="btn" onclick="msgNavGoTo()" title="Go to a number">#</button>
             </div>
             <button class="btn" id="resViewAllBtn" onclick="clearViewFilter()" style="display:none;flex-shrink:0"
                     title="Show every record again">View all</button>
@@ -15788,10 +15793,12 @@ function auditInspectRecord(filteredIdx) {
   });
 }
 
-// How far << and >> move. Ten is the size of the step people take when they are
-// scanning rather than reading — small enough to keep your place, big enough to
-// beat holding the arrow down.
-const AUDIT_NAV_JUMP = 10;
+// How far << and >> move, in BOTH record lists — the audit browser and the Parse
+// Results counter. Ten is the size of the step people take when they are
+// scanning rather than reading: small enough to keep your place, big enough to
+// beat holding the arrow down. One constant because it is one gesture; two
+// would drift and the difference would read as a bug.
+const NAV_JUMP = 10;
 
 // Every nav control lands here. auditInspectRecord TOGGLES the detail pane shut
 // when handed the index it is already on, so an edge that resolves to "stay" has
@@ -16515,6 +16522,72 @@ function prevMsg() {
 function nextMsg() {
   if (!_viewStep(+1)) return;
   S.selFieldId = null; clearInputHL(); updateNav(); renderCurrent();
+}
+
+// ── Jumping around the record counter ──────────────────────────────────────
+// Everything here works in the counter's OWN numbering. With a Track selection
+// in play the counter reads "2 / 5" of the five you picked, so that is what a
+// number typed into it has to mean — anything else and the box disagrees with
+// the label right beside it.
+function _msgNavSpace() {
+  const fil   = S.viewFilter && S.viewFilter.length ? S.viewFilter : null;
+  const total = fil ? fil.length : (_lazyTotalCount || S.messages.length);
+  const at    = fil ? Math.max(0, fil.indexOf(S.curIdx)) : S.curIdx;
+  return { fil, total, at };
+}
+
+// Absolute move, clamped. Records past what has been parsed are parsed on the
+// way there — a record that does not exist yet cannot be shown — and a long
+// haul asks first: on a slow machine with a big DDL that is a freeze, not a
+// pause, and the same threshold already guards Parse All.
+function _msgNavTo(pos, confirmed) {
+  const { fil, total } = _msgNavSpace();
+  if (total <= 0) return;
+  const to = Math.max(0, Math.min(total - 1, pos));
+  if (fil) {
+    if (S.viewFilter[to] === S.curIdx) return;
+    S.curIdx = S.viewFilter[to];
+  } else {
+    if (to === S.curIdx) return;
+    const need = to + 1 - S.messages.length;
+    if (need > 0) {
+      if (need > _PARSE_WARN_RECORDS && !confirmed) {
+        showConfirmHTML(
+          `<b>Parse ${need.toLocaleString()} more ${_countNoun()} to get there?</b><br><br>` +
+          `Records are parsed as you reach them, so jumping this far has to work ` +
+          `through everything in between. On a slower machine the page will not ` +
+          `respond while it runs.`,
+          ok => { if (ok) _msgNavTo(pos, true); });
+        return;
+      }
+      for (let i = 0; i < need && _lazyDeferreds && _lazyDeferredIdx < _lazyDeferreds.length; i++)
+        _auditLazyParseNext();
+      // Nothing more could be parsed — the target does not exist after all.
+      if (to >= S.messages.length) return;
+    }
+    S.curIdx = to;
+  }
+  S.selFieldId = null; clearInputHL(); updateNav(); renderCurrent();
+}
+
+// A JUMP clamps; a single step does not — "back 10" three records in plainly
+// means the first, while "previous" at the first means nothing.
+function msgNavStep(delta) {
+  if (Math.abs(delta) === 1) { (delta < 0 ? prevMsg : nextMsg)(); return; }
+  _msgNavTo(_msgNavSpace().at + delta);
+}
+function msgNavEnd(dir) {
+  _msgNavTo(dir < 0 ? 0 : _msgNavSpace().total - 1);
+}
+function msgNavGoTo() {
+  const { total, at } = _msgNavSpace();
+  if (total <= 1) return;
+  showPrompt(`Go to ${_countNoun() === 'recs' ? 'record' : 'message'} (1 – ${total})`,
+    String(at + 1), v => {
+      const n = parseInt(String(v ?? '').trim(), 10);
+      if (!Number.isFinite(n)) return;      // cancelled, or not a number
+      _msgNavTo(n - 1);
+    });
 }
 
 function updateNav() {
@@ -19508,7 +19581,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.11.0';
+const APP_VERSION  = '1.48.12.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

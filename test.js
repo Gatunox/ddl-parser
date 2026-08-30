@@ -13901,6 +13901,44 @@ test('[REGRESSION] the sidebar refresh guards on STATE, not on a DOM node that i
      'a caller still guards the sidebar repaint on the DOM node');
 });
 
+test('[REGRESSION] Parse waits for the compiled-DDL cache instead of recompiling the tree', () => {
+  // The cache is opened and restored asynchronously at startup and NOTHING
+  // waited for it: _compiledCacheReady was assigned and never read. A parse
+  // started inside that window saw an empty _ddlCompileCache — so every
+  // definition recompiled — and _compiledCacheDB still null, so the results
+  // were never written back and the next session recompiled all over again.
+  // That is why a full recompile looked tied to new versions: a cold start is
+  // when the race is lost. Reported 2026-08-29.
+  const realDo = sandbox.doParseMessages, realSync = sandbox.syncParseBtn;
+  let started = 0;
+  sandbox.doParseMessages = () => { started++; };
+  sandbox.syncParseBtn    = () => {};
+  const setReady = expr => vm.runInContext('_compiledCacheReady = ' + expr, sandbox);
+  try {
+    // Still loading → the parse must not start.
+    setReady('new Promise(() => {})');
+    sandbox._parseBtnClick();
+    eq(started, 0, 'a parse started while the cache was still loading');
+    // The waiting label is scheduled, not painted immediately: the cache
+    // usually lands in a few ms and a label that appears and vanishes inside
+    // one frame reads as a glitch.
+    eq(_timerQ.some(t => t.ms >= 100), true, 'the waiting state is deferred, not flashed');
+    _timerQ.length = 0;
+    // Loaded → straight through, exactly as before.
+    setReady('null');
+    sandbox._parseBtnClick();
+    eq(started, 1, 'the parse still runs normally once the cache is in');
+  } finally {
+    setReady('null');
+    sandbox.doParseMessages = realDo;
+    sandbox.syncParseBtn    = realSync;
+  }
+  // And the gate has to release: the wait re-enters the click once the promise
+  // settles, or Parse would simply do nothing.
+  assert.ok(/p\.then\(\(\) => \{[\s\S]*then\(\);/.test(psFnSource('_parseWaitForCache')),
+    'the deferred click is never re-dispatched');
+});
+
 test('a DDL override disables the class picker — nothing there could be acted on', () => {
   // A DDL override parses straight off the DDL: detection does not run, so a
   // class chosen in the bar would be inert. Requested 2026-08-25.

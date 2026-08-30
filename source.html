@@ -704,6 +704,12 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
 #msgClearBtn { min-width:calc(var(--sz-mono) * 5.5); text-align:center; }
 #parseBtn.btn-primary { background: var(--accent) !important; color: var(--on-accent) !important; border: var(--bw-ctl) solid var(--accent) !important; border-radius: var(--r-sm) !important; }
 #parseBtn.btn-primary:hover { background: var(--accent-hover) !important; border-color: var(--accent-hover) !important; color: var(--on-accent) !important; box-shadow: none !important; }
+/* Parse is waiting on the compiled-DDL cache to finish loading. The wait is
+   short and its length is unknowable, so the fill slides rather than filling to
+   a percentage — the same indeterminate motion the Class Editor uses. */
+#parseBtn.parse-wait { position: relative; overflow: hidden; pointer-events: none; }
+#parseBtn.parse-wait::before { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 35%;
+  background: var(--on-accent); opacity: .25; animation: meProgSlide 1.1s linear infinite; }
 #fmtForceSelect { background: var(--tint-bar); color: var(--text-dim); border: var(--bw) solid transparent; border-radius: 0; font-family: var(--font-mono); font-size: var(--sz-mono); padding: 0 6px; height: auto; align-self: stretch; cursor: pointer; outline: none; }
 /* The class override, beside the format override: two answers to "stop guessing
    and use THIS", so they are one pair of controls, not two inventions. It used
@@ -12829,7 +12835,35 @@ function syncParseBtn() {
 // that is chunked the tab cannot paint or accept a Cancel while it works.
 const _PARSE_WARN_RECORDS = 2000;
 
+// The compiled-DDL cache is opened and restored asynchronously at startup and
+// nothing used to wait for it. Parsing inside that window found an empty
+// _ddlCompileCache — so every definition recompiled — and, worse, found
+// _compiledCacheDB still null, so _persistCompiledCache wrote nothing and the
+// NEXT session recompiled all over again. That is why a full recompile looked
+// random: it is a cold start losing a race, not a version change.
+//
+// Only the button is gated. The audit paths reach a parse through a file the
+// user has already loaded, which is seconds of interaction past this window,
+// and deferring them would run their post-parse follow-ups ahead of the parse.
+function _parseWaitForCache(then) {
+  const p = _compiledCacheReady;
+  const b = document.getElementById('parseBtn');
+  // Shown only if the wait is long enough to notice. The cache usually lands in
+  // a few milliseconds, and a label that appears and vanishes inside one frame
+  // reads as a glitch.
+  const t = setTimeout(() => {
+    if (b) { b.classList.add('parse-wait'); b.textContent = 'Loading DDL cache…'; }
+  }, 150);
+  p.then(() => {
+    clearTimeout(t);
+    if (b) b.classList.remove('parse-wait');
+    syncParseBtn();
+    then();
+  });
+}
+
 function _parseBtnClick() {
+  if (_compiledCacheReady) { _parseWaitForCache(_parseBtnClick); return; }
   const inAudit = document.body.classList.contains('audit-active');
   const n = inAudit ? (_auditSt.filtered || []).length : 0;
   if (n > _PARSE_WARN_RECORDS) {
@@ -19150,7 +19184,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.3.0';
+const APP_VERSION  = '1.48.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

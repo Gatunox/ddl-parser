@@ -19495,6 +19495,61 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('record nav: first / back 10 / step / forward 10 / last, and the edges hold', () => {
+  // << and >> jump by ten and CLAMP; |< and >| go to the ends. The clamp is the
+  // reason _auditNavTo exists: auditInspectRecord toggles the detail pane shut
+  // when handed the index it is already on, so ">| at the last record" would
+  // have closed the record being looked at. Requested 2026-08-30.
+  const st  = vm.runInContext('_auditSt', sandbox);
+  const real = sandbox.auditInspectRecord;
+  const went = [];
+  sandbox.auditInspectRecord = i => { went.push(i); st.selIdx = i; };
+  const prevFiltered = st.filtered, prevSel = st.selIdx;
+  try {
+    st.filtered = Array.from({ length: 25 }, (_, i) => ({ offset: i, recNo: i + 1 }));
+    const at = i => { st.selIdx = i; went.length = 0; };
+
+    at(12); sandbox.auditNavPopup(1);   deepEq(went, [13], 'next');
+    at(12); sandbox.auditNavPopup(-1);  deepEq(went, [11], 'previous');
+    at(12); sandbox.auditNavPopup(10);  deepEq(went, [22], 'forward ten');
+    at(12); sandbox.auditNavPopup(-10); deepEq(went, [2],  'back ten');
+    // Clamping, not refusing: "back 10" three rows from the top means the top.
+    at(3);  sandbox.auditNavPopup(-10); deepEq(went, [0],  'a short jump lands on the first record');
+    at(20); sandbox.auditNavPopup(10);  deepEq(went, [24], 'and on the last one going the other way');
+    at(0);  sandbox.auditNavPopupEnd(-1); deepEq(went, [], 'already first — nothing happens, it does not close the pane');
+    at(24); sandbox.auditNavPopupEnd(1);  deepEq(went, [], 'already last — same');
+    at(7);  sandbox.auditNavPopupEnd(-1); deepEq(went, [0],  'first');
+    at(7);  sandbox.auditNavPopupEnd(1);  deepEq(went, [24], 'last');
+    // A single step at the edge has always been a no-op and stays one.
+    at(0);  sandbox.auditNavPopup(-1);  deepEq(went, [], 'previous at the top');
+    at(24); sandbox.auditNavPopup(1);   deepEq(went, [], 'next at the bottom');
+    // No records at all: every control has to be inert, not throw.
+    st.filtered = []; st.selIdx = -1; went.length = 0;
+    for (const f of [() => sandbox.auditNavPopup(1), () => sandbox.auditNavPopup(-10),
+                     () => sandbox.auditNavPopupEnd(1), () => sandbox.auditNavPopupEnd(-1)]) f();
+    deepEq(went, [], 'an empty list moves nowhere');
+  } finally {
+    sandbox.auditInspectRecord = real;
+    st.filtered = prevFiltered; st.selIdx = prevSel;
+  }
+
+  // And all six controls are wired, in reading order.
+  const hdr = (fs.readFileSync('./source.html', 'utf8')
+    .match(/<div class="audit-popup-hdr"[\s\S]*?<\/div>/) || [''])[0];
+  deepEq((hdr.match(/onclick="(auditNavPopup[^"]*)"/g) || []).map(s => s.slice(9, -1)),
+    ['auditNavPopupEnd(-1)', 'auditNavPopup(-AUDIT_NAV_JUMP)', 'auditNavPopup(-1)',
+     'auditNavPopup(1)', 'auditNavPopup(AUDIT_NAV_JUMP)', 'auditNavPopupEnd(1)'],
+    'the six nav controls, left to right');
+  // Six controls beside a full record line: the title has to be the thing that
+  // truncates, or a narrow detail pane pushes the buttons off the end.
+  const css = fs.readFileSync('./source.html', 'utf8');
+  const t = (css.match(/\.audit-popup-title \{[^}]*\}/) || [''])[0];
+  assert.ok(/min-width:\s*0/.test(t) && /text-overflow:\s*ellipsis/.test(t),
+    `the title must yield first: ${t}`);
+  assert.ok(/\.audit-popup-hdr > button \{[^}]*flex-shrink:\s*0/.test(css),
+    'and the buttons must not be squeezed instead');
+});
+
 test('the audit detail height survives a reload, and a layout reset', () => {
   // Same round trip the tree pane width takes, and through the same key — a
   // pane you can resize but that forgets on reload is worse than a fixed one.

@@ -2496,7 +2496,13 @@ td.c-err  { color: var(--accent2); }
 }
 /* --text, like .panel-title, .me-pane-title and .me-header-title. This was the
    only title-bar text on --accent, which read as a link rather than a heading. */
-.audit-popup-title { flex:1; font-size:var(--sz-mono); color:var(--text); font-weight:700; }
+/* The title yields first. A flex item defaults to min-width:auto, so it refuses
+   to shrink below its own text — and the title is a full record line. With six
+   nav controls beside it, a narrow detail pane pushed the buttons off the end
+   rather than truncating the one thing that can be truncated. */
+.audit-popup-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:var(--sz-mono); color:var(--text); font-weight:700; }
+.audit-popup-hdr > button { flex-shrink:0; }
 .audit-popup-body  { flex:1; overflow:hidden; padding:0; font-family:var(--font-mono); font-size:var(--sz-mono); }
 .audit-field-row   { display:flex; flex-direction:column; padding:5px 0; border-bottom: var(--bw) solid var(--border); }
 .audit-field-label { font-size:calc(var(--sz-mono) - 1px); color:var(--text-very-dim); margin-bottom:2px; }
@@ -4187,8 +4193,12 @@ th.me-fm-colhi{color:var(--accent);}
             <div id="auditPopup" class="audit-popup" style="display:none">
               <div class="audit-popup-hdr" ondblclick="auditCopyDumpToClipboard(event)" title="Double-click to copy dump to clipboard">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopupEnd(-1)" title="First record">|&lt;</button>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-AUDIT_NAV_JUMP)" title="Back 10 records">&lt;&lt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-1)" title="Previous record (←)">&lt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(AUDIT_NAV_JUMP)" title="Forward 10 records">&gt;&gt;</button>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopupEnd(1)" title="Last record">&gt;|</button>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle between the hex dump and the character view (ASCII or EBCDIC, whichever the record is)">HEX</button>
                 <button id="auditParseBtn" class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected(true)" title="Load payload into Data Input and parse — always re-parses, even if this record was parsed before">&#9654; Parse</button>
                 <button id="auditAutoParseBtn" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleAutoParse()" title="Auto-parse — parse each record as you select it, without pressing Parse">Auto</button>
@@ -15778,11 +15788,18 @@ function auditInspectRecord(filteredIdx) {
   });
 }
 
-function auditNavPopup(delta) {
+// How far << and >> move. Ten is the size of the step people take when they are
+// scanning rather than reading — small enough to keep your place, big enough to
+// beat holding the arrow down.
+const AUDIT_NAV_JUMP = 10;
+
+// Every nav control lands here. auditInspectRecord TOGGLES the detail pane shut
+// when handed the index it is already on, so an edge that resolves to "stay" has
+// to stop before it reaches that — otherwise pressing >| at the last record
+// closes the record you were looking at.
+function _auditNavTo(next) {
   const n = _auditSt.filtered.length;
-  if (n === 0) return;
-  const next = _auditSt.selIdx + delta;
-  if (next < 0 || next >= n) return;
+  if (n === 0 || next < 0 || next >= n || next === _auditSt.selIdx) return;
   const listEl = document.getElementById('auditRecordList');
   if (listEl) {
     const rowH = _auditCurRowH;
@@ -15791,6 +15808,21 @@ function auditNavPopup(delta) {
       listEl.scrollTop = Math.max(0, rowTop - listEl.clientHeight / 2 + rowH / 2);
   }
   auditInspectRecord(next);
+}
+
+function auditNavPopup(delta) {
+  // A JUMP clamps; a single step does not. "Back 10" three rows from the top
+  // plainly means the top, while "previous" at the top means nothing and has
+  // always done nothing.
+  const next = _auditSt.selIdx + delta;
+  _auditNavTo(Math.abs(delta) > 1
+    ? Math.max(0, Math.min(_auditSt.filtered.length - 1, next))
+    : next);
+}
+
+// -1 first, +1 last.
+function auditNavPopupEnd(dir) {
+  _auditNavTo(dir < 0 ? 0 : _auditSt.filtered.length - 1);
 }
 
 // The detail pane and its resizer are one thing. Five places used to read or
@@ -19476,7 +19508,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.10.0';
+const APP_VERSION  = '1.48.11.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

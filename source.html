@@ -19591,7 +19591,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.15.0';
+const APP_VERSION  = '1.48.16.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28692,23 +28692,22 @@ const _meFmApplyColHighlight = i => _meApplyColHighlight('.me-fm-table', i);
 const _meFmColHiCur          = () => _meColHi.get('.me-fm-table') || 0;
 
 function _meOvlRowClick(qn, ev) {
-  const add   = !!(ev && (ev.metaKey || ev.ctrlKey));
   const range = !!(ev && ev.shiftKey);
   // A click in the overrides LIST arrives as a canonical id, which is not a row
   // id for an OCCURS field — so resolve it to the rows it actually governs.
   const targets = _meRowsForOverride(qn);
-  // Shift extends from the last plain click. Ctrl/Cmd picked rows off one at a
-  // time and Shift did nothing, so setting a type on twenty consecutive fields
-  // was twenty clicks — in the one panel where consecutive fields are the normal
-  // unit of work. Requested 2026-08-30.
+  // ONE modifier: Shift extends from the last plain click. Ctrl/Cmd used to
+  // toggle rows one at a time, which is not how this table is worked — the unit
+  // is a run of consecutive fields — and two modifiers doing different things to
+  // the same rows is a rule to remember rather than a control to use.
+  // Requested 2026-08-30.
   if (range && _meFmSelAnchor) {
     _meFmMultiSel = _meRangeSelection(_meFmSelAnchor, qn);
   } else {
-    _meFmMultiSel = _meNextSelection(qn, add, _meFmMultiSel);
+    _meFmMultiSel = _meNextSelection(qn, _meFmMultiSel);
     // The anchor is where a range would start FROM, so it moves on every click
-    // that is not itself a range — including a Ctrl-click, which is the row you
-    // last pointed at. A click that cleared the selection leaves nothing to
-    // extend from.
+    // that is not itself a range. A click that cleared the selection leaves
+    // nothing to extend from.
     _meFmSelAnchor = _meFmMultiSel.size ? qn : null;
   }
   _meOvlSel = _meFmMultiSel.has(targets[0]) ? targets[0] : null;
@@ -29323,19 +29322,13 @@ function _meSelCanon() { return _meCanonSet(_meFmMultiSel); }
 // What the selection becomes when `qn` is clicked. Pure, so the id-matching rule
 // can be tested without a DOM — the bug it fixes was entirely about which ids
 // compare equal.
-function _meNextSelection(qn, add, cur) {
+function _meNextSelection(qn, cur) {
   const targets = _meRowsForOverride(qn);
-  if (!add) {
-    // Clicking what is already selected clears it. Without this the only way to
-    // get back to no selection was to pick a different row, so a bar full of
-    // controls aimed at one field could never be aimed at nothing.
-    const same = cur && cur.size === targets.length && targets.every(t => cur.has(t));
-    return same ? new Set() : new Set(targets);
-  }
-  const next = new Set(cur);
-  const on = targets.every(t => next.has(t));
-  for (const t of targets) { if (on) next.delete(t); else next.add(t); }
-  return next;
+  // Clicking what is already selected clears it. Without this the only way to
+  // get back to no selection was to pick a different row, so a bar full of
+  // controls aimed at one field could never be aimed at nothing.
+  const same = cur && cur.size === targets.length && targets.every(t => cur.has(t));
+  return same ? new Set() : new Set(targets);
 }
 // Every row from the anchor to the clicked one, inclusive, in either direction.
 // Read off the VISIBLE list rather than every row the spec knows: a range is

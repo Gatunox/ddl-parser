@@ -11630,12 +11630,12 @@ test('clicking the rule selects every occurrence it drives', () => {
   setFmVirt({ all: occSelRows() });
   eq(meRowsForOverride('GRP.A').join(','), 'GRP[01].A,GRP[02].A,GRP[03].A,GRP[04].A',
      'one rule resolves to all four rows');
-  const sel = [...meNextSelection('GRP.A', false, new Set())].sort();
+  const sel = [...meNextSelection('GRP.A', new Set())].sort();
   eq(sel.join(','), 'GRP[01].A,GRP[02].A,GRP[03].A,GRP[04].A',
      `the table selects all four, got: ${sel}`);
-  // Cmd-click toggles the whole group off again rather than half of it.
-  const off = meNextSelection('GRP.A', true, new Set(sel));
-  eq(off.size, 0, 'toggling with the group already selected clears all four');
+  // Clicking it again clears the whole group rather than half of it.
+  const off = meNextSelection('GRP.A', new Set(sel));
+  eq(off.size, 0, 'clicking the selected group again clears all four');
 });
 
 test('Shift-click selects a range in the Overrides table', () => {
@@ -11668,7 +11668,12 @@ test('Shift-click selects a range in the Overrides table', () => {
   assert.ok(/_meFmSelAnchor = null/.test(clear), 'clearing the selection clears the anchor');
   const click = psFnSource('_meOvlRowClick');
   assert.ok(/const range = !!\(ev && ev\.shiftKey\)/.test(click), 'Shift is what starts a range');
-  assert.ok(/ev\.metaKey \|\| ev\.ctrlKey/.test(click), 'Ctrl/Cmd still toggles one row');
+  // ONE modifier. Ctrl/Cmd toggling rows one at a time is not how this table is
+  // worked, and two modifiers doing different things to the same rows is a rule
+  // to remember rather than a control to use. Requested 2026-08-30.
+  assert.ok(!/metaKey|ctrlKey/.test(click), 'Ctrl/Cmd must not select here any more');
+  assert.ok(!/metaKey|ctrlKey/.test(psFnSource('_meNextSelection')),
+    'and the toggle branch goes with it, or it is dead code pretending to be a feature');
   assert.ok(/_meFmSelAnchor = _meFmMultiSel\.size \? qn : null/.test(click),
     'the anchor follows the last non-range click, and goes when the selection does');
   // The browser's own shift-click drag-selects text; these rows are a control
@@ -12157,23 +12162,23 @@ test('each kind states both numbers, and one clear serves them all', () => {
 
 test('clicking the selection again clears it', () => {
   setFmVirt({ all: occSelRows() });
-  const sel = meNextSelection('GRP.A', false, new Set());
+  const sel = meNextSelection('GRP.A', new Set());
   eq(sel.size, 4, 'the first click selects every row the rule drives');
   // Same click again, no modifier: back to nothing. Without this the only way
   // out of a selection was to pick a different row, so a bar full of controls
   // aimed at one field could never be aimed at nothing.
-  eq(meNextSelection('GRP.A', false, sel).size, 0, 'clicking the same selection again clears it');
+  eq(meNextSelection('GRP.A', sel).size, 0, 'clicking the same selection again clears it');
   // A DIFFERENT row still replaces rather than clears.
-  eq(meNextSelection('GRP.B', false, sel).size > 0, true, 'clicking elsewhere clears everything');
+  eq(meNextSelection('GRP.B', sel).size > 0, true, 'clicking elsewhere clears everything');
   // "The same selection" means exactly these rows and no others. A selection
   // that CONTAINS them plus more must narrow to them, not clear — dropping the
   // size check makes every superset read as "the same" and wipes the extras.
   const superset = new Set([...sel, 'MAGIC']);
-  eq(meNextSelection('GRP.A', false, superset).size, 4,
+  eq(meNextSelection('GRP.A', superset).size, 4,
      'a selection containing these rows and more is treated as the same one');
   // And a partial overlap replaces too.
   const partial = new Set([...sel].slice(0, 2));
-  eq(meNextSelection('GRP.A', false, partial).size, 4, 'a partial selection is treated as the same one');
+  eq(meNextSelection('GRP.A', partial).size, 4, 'a partial selection is treated as the same one');
 });
 
 test('changing what the table lists never leaves the bar aimed off screen', () => {

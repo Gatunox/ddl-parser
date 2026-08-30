@@ -3614,6 +3614,11 @@ input.me-fm-filter{flex:0 0 auto;min-width:0;height:22px;padding:0 8px;border: v
   background:var(--surface-read);}
 /* Uniform row height — required by the virtualized window's spacer math. */
 .me-fm-table tbody tr{height:21px;}
+/* Shift-click extends the selection here, and the browser's own answer to a
+   shift-click is to drag-select the text between the two points — so a range
+   arrived smeared in blue highlight over rows that were already highlighted for
+   being selected. The rows are a control surface, not prose. */
+.me-fm-table tbody{user-select:none;}
 .me-fm-table tr.me-fm-spacer{height:auto;}
 .me-fm-table tr.me-fm-spacer td{padding:0;border:0;}
 /* No width:100% — with table-layout:fixed it would make column widths
@@ -19586,7 +19591,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.14.0';
+const APP_VERSION  = '1.48.15.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28615,6 +28620,11 @@ let _meOvlSel   = null;   // qualified id of the selected reference row
 // text-drag selection across rows, and two additive modifiers with different
 // rules read as unpredictable.
 let _meFmMultiSel = new Set();
+// Where a Shift-range extends FROM: the row of the last click that was not
+// itself a range. Null when nothing is selected — there is no anchor without a
+// selection, and extending from a stale one would light up rows the user has no
+// reason to expect.
+let _meFmSelAnchor = null;
 
 // Row count for the reference table. Stored inside the existing column-visibility
 // object so no new localStorage key is introduced. Empty = the CSS default (62vh).
@@ -28682,11 +28692,25 @@ const _meFmApplyColHighlight = i => _meApplyColHighlight('.me-fm-table', i);
 const _meFmColHiCur          = () => _meColHi.get('.me-fm-table') || 0;
 
 function _meOvlRowClick(qn, ev) {
-  const add = !!(ev && (ev.metaKey || ev.ctrlKey));
+  const add   = !!(ev && (ev.metaKey || ev.ctrlKey));
+  const range = !!(ev && ev.shiftKey);
   // A click in the overrides LIST arrives as a canonical id, which is not a row
   // id for an OCCURS field — so resolve it to the rows it actually governs.
   const targets = _meRowsForOverride(qn);
-  _meFmMultiSel = _meNextSelection(qn, add, _meFmMultiSel);
+  // Shift extends from the last plain click. Ctrl/Cmd picked rows off one at a
+  // time and Shift did nothing, so setting a type on twenty consecutive fields
+  // was twenty clicks — in the one panel where consecutive fields are the normal
+  // unit of work. Requested 2026-08-30.
+  if (range && _meFmSelAnchor) {
+    _meFmMultiSel = _meRangeSelection(_meFmSelAnchor, qn);
+  } else {
+    _meFmMultiSel = _meNextSelection(qn, add, _meFmMultiSel);
+    // The anchor is where a range would start FROM, so it moves on every click
+    // that is not itself a range — including a Ctrl-click, which is the row you
+    // last pointed at. A click that cleared the selection leaves nothing to
+    // extend from.
+    _meFmSelAnchor = _meFmMultiSel.size ? qn : null;
+  }
   _meOvlSel = _meFmMultiSel.has(targets[0]) ? targets[0] : null;
   document.querySelectorAll('.me-fm-table tbody tr.me-fm-row-sel')
     .forEach(tr => tr.classList.remove('me-fm-row-sel'));
@@ -29313,6 +29337,25 @@ function _meNextSelection(qn, add, cur) {
   for (const t of targets) { if (on) next.delete(t); else next.add(t); }
   return next;
 }
+// Every row from the anchor to the clicked one, inclusive, in either direction.
+// Read off the VISIBLE list rather than every row the spec knows: a range is
+// what the user can see between two rows, so a collapsed group or an active
+// filter has to bound it — otherwise Shift-clicking two adjacent rows on screen
+// could select a hundred hidden ones between them.
+function _meRangeSelection(fromQn, toQn) {
+  const rows = (_meFmVirt?.visible || _meFmVirt?.all || []);
+  const idx  = id => rows.findIndex(r => _canonFieldId(r.id) === _canonFieldId(id));
+  let a = idx(fromQn), b = idx(toQn);
+  // The anchor scrolled out of the list (filtered away, or its group collapsed).
+  // Fall back to a plain selection rather than an arbitrary span.
+  if (a < 0 || b < 0) return new Set(_meRowsForOverride(toQn));
+  if (a > b) { const t = a; a = b; b = t; }
+  const out = new Set();
+  for (let i = a; i <= b; i++)
+    for (const t of _meRowsForOverride(rows[i].id)) out.add(t);
+  return out;
+}
+
 // Every row the given override governs. For an ordinary field that is the row
 // itself; for an OCCURS field it is every occurrence, which is also the truth the
 // table should show — one rule really does drive all four.
@@ -29329,6 +29372,7 @@ function _meRowsForOverride(qn) {
 // it — one click and the action lands on a field you cannot see.
 function _meFmClearSelection() {
   _meFmMultiSel = new Set();
+  _meFmSelAnchor = null;
   _meOvlSel = null;
 }
 

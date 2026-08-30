@@ -11638,6 +11638,45 @@ test('clicking the rule selects every occurrence it drives', () => {
   eq(off.size, 0, 'toggling with the group already selected clears all four');
 });
 
+test('Shift-click selects a range in the Overrides table', () => {
+  // Ctrl/Cmd picked rows off one at a time and Shift did nothing, so setting a
+  // type on twenty consecutive fields was twenty clicks — in the one panel where
+  // consecutive fields are the normal unit of work. Requested 2026-08-30.
+  const rows = ['A', 'B', 'C', 'D', 'E'].map(id => ({ id, isGroup: false }));
+  setFmVirt({ all: rows, visible: rows });
+  const range = sandbox._meRangeSelection;
+  deepEq([...range('B', 'D')].sort(), ['B', 'C', 'D'], 'anchor before the click');
+  deepEq([...range('D', 'B')].sort(), ['B', 'C', 'D'], 'and after it — direction does not matter');
+  deepEq([...range('C', 'C')], ['C'], 'a range of one is that one row');
+  // The range is what you can SEE between two rows: a collapsed group or an
+  // active filter bounds it, or Shift-clicking two adjacent rows on screen would
+  // select every hidden row between them.
+  setFmVirt({ all: rows, visible: [rows[0], rows[3], rows[4]] });
+  deepEq([...range('A', 'E')].sort(), ['A', 'D', 'E'], 'hidden rows are not in the range');
+  // An anchor that has been filtered away cannot bound anything — fall back to
+  // the row actually clicked rather than an arbitrary span.
+  deepEq([...range('B', 'E')], ['E'], 'a vanished anchor selects just the click');
+
+  // An OCCURS row still resolves to every occurrence it governs.
+  setFmVirt({ all: occSelRows(), visible: occSelRows() });
+  assert.ok([...range('GRP[01].A', 'GRP[02].A')].includes('GRP[01].A'),
+    'a range over OCCURS rows keeps them whole');
+
+  // And the anchor is state that must be cleared with the selection, or the next
+  // Shift-click extends from a row nobody is pointing at any more.
+  const clear = psFnSource('_meFmClearSelection');
+  assert.ok(/_meFmSelAnchor = null/.test(clear), 'clearing the selection clears the anchor');
+  const click = psFnSource('_meOvlRowClick');
+  assert.ok(/const range = !!\(ev && ev\.shiftKey\)/.test(click), 'Shift is what starts a range');
+  assert.ok(/ev\.metaKey \|\| ev\.ctrlKey/.test(click), 'Ctrl/Cmd still toggles one row');
+  assert.ok(/_meFmSelAnchor = _meFmMultiSel\.size \? qn : null/.test(click),
+    'the anchor follows the last non-range click, and goes when the selection does');
+  // The browser's own shift-click drag-selects text; these rows are a control
+  // surface, so that has to be off or a range arrives smeared in highlight.
+  assert.ok(/\.me-fm-table tbody\{user-select:none;\}/.test(fs.readFileSync('./source.html', 'utf8')),
+    'shift-click must not drag-select the text as well');
+});
+
 test('a rule for a field with no rows still resolves to itself', () => {
   // A stale override left behind after a DDL edit must not vanish from the list or
   // throw — it resolves to its own id and simply matches nothing in the table.

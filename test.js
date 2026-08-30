@@ -5724,6 +5724,42 @@ test('verdicts: every kind is produced by the case that should produce it', () =
   eq(routeSegCount(v.fields), 5, 'and the fields are the spec\'s, not a guess');
 });
 
+test('[REGRESSION] a FILE class with no parse spec says so instead of asking for a DDL', () => {
+  // File classes were exempt from the no-parse-spec verdict, so one with a DDL
+  // already bound fell through to `needs-ddl` and the app opened the DDL picker
+  // — asking for the very thing the class was carrying. "No parse spec" is the
+  // same fact whichever list the class lives in. Reported 2026-08-30.
+  S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
+  S.inputFormat = 'hex';
+  const bytes = routeBytes();
+  const o = { format: 'hex', rawBytes: bytes };
+  const saved = storage.getItem('up_format_specs');
+  try {
+    domEl._fmtSave([
+      { name: 'CPF', label: 'CPF file', kind: 'file', vol: 'POS',
+        recognizers: [{ type: 'filename', pattern: '*.CPF*' }],
+        ddl_bindings: ['POS/SV/PSTM/PSTM'] },            // bound, but no parse_spec
+    ]);
+    const w = { type: 'CPF', label: 'CPF file', vol: 'POS', kind: 'file' };
+    eq(sandbox._t.meSpecHasNoParseSpec(w), true, 'a file class with no parse_spec has no parse_spec');
+    eq(parseVerdict(w, bytes, o).kind, 'no-spec',
+       'it must fail as no-spec, not walk off to the DDL picker');
+  } finally {
+    if (saved === null) storage.removeItem('up_format_specs');
+    else storage.setItem('up_format_specs', saved);
+    domEl._fmtLoad();
+  }
+
+  // And the diagnostic gains the line that was missing: the binding gets a row
+  // of its own, so the table says the DDL is there and the parse spec is not,
+  // instead of leaving the reader to wonder which piece was absent.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\$\{n \+ 1\}\. DDL binding/.test(src), 'the binding needs a row of its own');
+  assert.ok(/\$\{n \+ 2\}\. Parse spec/.test(src), 'and the parse-spec row moves down to make room');
+  assert.ok(/_meWinningSpec\(msg\.msgType\)\?\.ddl_bindings/.test(src),
+    'read the binding from the spec — a legacy or forced winner may not carry it');
+});
+
 test('verdicts: only needs-ddl requires the compiled candidate map', () => {
   // The gate in doParseMessages compiles nothing unless some chunk came back
   // needs-ddl. That is only safe if no OTHER kind consults a score — which is

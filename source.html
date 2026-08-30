@@ -14157,7 +14157,18 @@ function renderFieldTable(msg) {
             rows.push(`<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected — F0–F9 density: ${d.ebcdicDens}% (&gt;30%)`) : inf(`not detected — F0–F9 density: ${d.ebcdicDens}% (≤30%)`)}</td></tr>`);
           const n = rows.length + 1;
           rows.push(`<tr><td>${n}. Msg type</td><td>${ok(`recognized as <code>${_escH(d.typeLabel)}</code>`)}</td></tr>`);
-          rows.push(`<tr><td>${n + 1}. Parse spec</td><td>${fail(`none defined for <code>${_escH(d.typeLabel)}</code>`)}</td></tr>`);
+          // The binding gets a line of its own. Without it the table said the
+          // type was recognized and then that it could not be parsed, and the
+          // reader had no way to tell whether the DDL was the missing piece —
+          // which is exactly the question that sent people to the DDL picker.
+          // Read from the SPEC, not the winner: a legacy or forced winner does
+          // not always carry ddl_bindings, and a table that reports "none" for
+          // a class that has one is worse than no table. Requested 2026-08-30.
+          const _binds = (_meWinningSpec(msg.msgType)?.ddl_bindings || []).filter(Boolean);
+          rows.push(`<tr><td>${n + 1}. DDL binding</td><td>${_binds.length
+            ? ok(_binds.map(b => `<code>${_escH(b)}</code>`).join(', '))
+            : inf('none declared')}</td></tr>`);
+          rows.push(`<tr><td>${n + 2}. Parse spec</td><td>${fail(`none defined for <code>${_escH(d.typeLabel)}</code>`)}</td></tr>`);
           return `<table class="diag-table">${rows.join('')}</table>`;
         })() : ''}
         ${msg.unknownType && msg._diag ? (() => {
@@ -19430,7 +19441,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.7.0';
+const APP_VERSION  = '1.48.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -35227,7 +35238,12 @@ function _meItemNotes(s) {
 function _meSpecHasNoParseSpec(winner) {
   if (!winner || !winner.type || winner.type === 'UNKNOWN') return false;
   const spec = _meWinningSpec(winner);
-  if (!spec || spec.kind === 'file') return false;
+  // File classes used to be exempt, and the exemption cost them the answer: a
+  // file class with no parse_spec fell through to `needs-ddl` and the app asked
+  // for a DDL it already had bound. "No parse spec" is the same fact whichever
+  // list the class lives in, and the record has to fail saying so rather than
+  // sending the user hunting for a DDL. Reported 2026-08-30.
+  if (!spec) return false;
   return !(((spec.parse_spec_binary || []).length) || ((spec.parse_spec_ascii || []).length));
 }
 

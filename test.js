@@ -6767,6 +6767,34 @@ test('the layout is chosen, not hard-coded: five arrangements, panels placed by 
   assert.ok(/_layApply\(true\);/.test(reset), 'a reset that is not saved is undone by the next reload');
 });
 
+test('both quads exist — the free axis is the user\'s choice, not the engine\'s', () => {
+  // Four rectangles filling a window can only be cut one way: a first divider
+  // running the whole way across, then each side cut independently. So ONE
+  // middle seam is always shared and the other is free — staggering both would
+  // leave a hole, which is why a pinwheel needs five panes. quad frees the
+  // horizontal seams, quadr frees the vertical ones, and the user picks.
+  // Requested 2026-08-29.
+  const src   = fs.readFileSync('./source.html', 'utf8');
+  const apply = psFnSource('_layApply');
+  assert.ok(/quadr:\s*\{ boxes: 4/.test(src), 'the row-split quad has to be an arrangement of its own');
+  assert.ok(/root\.appendChild\(rowOf\('lay-row-0', 0, 1\)\);/.test(apply) &&
+            /root\.appendChild\(rowOf\('lay-row-1', 2, 3\)\);/.test(apply),
+    'quadr must be two independent rows');
+  // Same slot numbering in both, so switching between them leaves every panel
+  // where it was on screen: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right.
+  const names = vm.runInContext('_LAY_BOX_NAMES', sandbox);
+  eq(JSON.stringify(names.quadr), JSON.stringify(names.quad),
+     'the boxes are the same four places in both quads');
+  // Two 2×2 diagrams would be the same picture. Each is drawn with its own free
+  // seam staggered, so the picker shows what the difference actually is.
+  const d = vm.runInContext('_LAY_DIAGRAM', sandbox);
+  eq(d.quad[0][3] === d.quad[1][3], false, 'quad draws its two columns split at different heights');
+  eq(d.quadr[0][2] === d.quadr[1][2], false, 'quadr draws its two rows split at different widths');
+  // Sizes are keyed by mode, so the two quads cannot overwrite each other.
+  assert.ok(/function _laySizeKey\(\) \{ return 'sizes_' \+ _layMode; \}/.test(src),
+    'each quad has to remember its own splits');
+});
+
 test('collapse and resize read the CURRENT arrangement, not the old rows', () => {
   // Both were hard-coded per row: the sibling that must stay open, and the
   // resizer to go inert. With the layout chosen at run time, the DOM is the

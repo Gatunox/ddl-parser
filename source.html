@@ -15757,10 +15757,24 @@ function auditInspectRecord(filteredIdx) {
     requestAnimationFrame(_auditSyncToggleWidth);
     _auditSt._inspectBuf = buf;
     _auditViewed.add(rec.offset);
+    // _auditApplyDump reloads the dump, and the reload clears msg-parsed — the
+    // class that dims the text to say "this record has been parsed". Coming
+    // back to a record you had parsed therefore showed it undimmed, as though
+    // it never had been. The mark follows the HISTORY, not the cache: an entry
+    // evicted by the cap does not un-parse the record. Reported 2026-08-30.
+    if (_auditParsed.has(rec.offset)) window._auditDumpSetParsed?.();
     if (!_auditParsed.has(rec.offset)) _auditMarkRow(filteredIdx, 'aud-viewed');
     // After _inspectBuf is set: auditParseSelected reads it, and without it the
     // parse would re-slice the file for bytes that are already here.
-    if (P.auditAutoParse) auditParseSelected();
+    if (P.auditAutoParse) { auditParseSelected(); return; }
+    // Replaying an answer you already have is not parsing. With Auto off,
+    // arrowing back to a record you parsed a moment ago left Parse Results
+    // showing the OTHER record — which reads as the parse having been lost,
+    // and made the button the only way to see your own work again. A record
+    // with no cached answer is left alone: only Auto or the button ever starts
+    // a parse. Reported 2026-08-30.
+    const hit = _auditParseCache.get(rec.offset);
+    if (hit) _auditParseCacheApply(hit);
   });
 }
 
@@ -19462,7 +19476,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.9.0';
+const APP_VERSION  = '1.48.10.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -19457,8 +19457,27 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
   assert.ok(/onclick="auditParseSelected\(true\)"/.test(btn),
     `the button must force: ${btn}`);
   // Auto-parse is the case the cache exists for and must NOT force.
-  assert.ok(/if \(P\.auditAutoParse\) auditParseSelected\(\);/.test(src),
+  assert.ok(/auditParseSelected\(\);/.test(src) && !/auditParseSelected\(true\);/.test(src),
     'auto-parse still reads the cache — forcing there would re-parse on every arrow key');
+
+  // Selecting a record you have already parsed REPLAYS it. Replaying is not
+  // parsing — the answer is on hand — so it happens with Auto off too, which is
+  // the only state most people browse in. Without it, arrowing back to a record
+  // you parsed a moment ago left Parse Results showing the other record.
+  const insp = psFnSource('auditInspectRecord');
+  assert.ok(/const hit = _auditParseCache\.get\(rec\.offset\);\s*\n\s*if \(hit\) _auditParseCacheApply\(hit\);/.test(insp),
+    'selecting a parsed record must restore its result');
+  assert.ok(/if \(P\.auditAutoParse\) \{ auditParseSelected\(\); return; \}/.test(insp),
+    'Auto parses and returns — falling through would parse and then replay a stale entry over it');
+  assert.ok(!/doParseMessages/.test(insp),
+    'selecting must never START a parse — that is what Auto and the button are for');
+  // The dump reload clears msg-parsed, the class that dims a parsed record's
+  // text. Restoring it is keyed on the HISTORY, not on the cache: an entry the
+  // cap evicted does not un-parse the record.
+  assert.ok(/if \(_auditParsed\.has\(rec\.offset\)\) window\._auditDumpSetParsed\?\.\(\);/.test(insp),
+    'a record you parsed must come back dimmed');
+  assert.ok(!/_auditParseCache\.has\(rec\.offset\)\) window\._auditDumpSetParsed/.test(insp),
+    'keying the dim on the cache would undim a record only because it aged out');
 
   // And forcing one record is not enough on its own: every OTHER cached record
   // is just as stale after a class edit. The answers are dropped; the viewed /

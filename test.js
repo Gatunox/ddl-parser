@@ -12294,6 +12294,52 @@ test('the DE picker keeps the expansion rule its four buttons had', () => {
     assert.strictEqual(k.xact, k.act, `${k.label} needs no separate expansion act`);
 });
 
+test('[REGRESSION] a group\'s TYPE and SIZE skip its LENGTH leaf', () => {
+  // Reported: TYPE=binary clicked on a VLG group wrote itself onto the length
+  // leaf as well. The LEN held ASCII "16"; read as a binary integer that is
+  // 0x3136 = 12598, so the group tried to consume 12598 bytes and every field
+  // after it was destroyed — from one click on a row that has no bytes of its
+  // own. The length is a statement ABOUT the payload, not part of it.
+  // Reported 2026-08-30.
+  const rows = [
+    { id: 'PAN',      isGroup: true },
+    { id: 'PAN.LEN',  isGroup: false },
+    { id: 'PAN.DATA', isGroup: false },
+  ];
+  const ctx = {
+    leavesByGroup: new Map([['PAN', [{ id: 'PAN.LEN' }, { id: 'PAN.DATA' }]]]),
+    vlgIdentifier: null, vlgMap: new Map(), foByField: new Map(),
+  };
+  const prevVirt = meState() && null;   // _meFmVirt is module-level; restored below
+  setFmVirt({ all: rows, ctx });
+  deepEq(meFmExpandTargets('PAN', 'type'),  ['PAN.DATA'], 'TYPE skips the length');
+  deepEq(meFmExpandTargets('PAN', 'bytes'), ['PAN.DATA'], 'SIZE skips it too — it re-frames the read');
+  // SHOW only changes how a value is PRINTED, so it still reaches everything.
+  deepEq(meFmExpandTargets('PAN', 'display'), ['PAN.LEN', 'PAN.DATA'],
+     'SHOW can destroy nothing and still cascades');
+  // VLG keeps its own rule: the first leaf, which IS the length.
+  deepEq(meFmExpandTargets('PAN', 'vlg'), ['PAN.LEN'], 'VLG still marks the length itself');
+
+  // A group that is NOT variable-length has no length leaf to protect — every
+  // leaf is data and all of them must still be reached.
+  const plain = [
+    { id: 'G',   isGroup: true },
+    { id: 'G.A', isGroup: false },
+    { id: 'G.B', isGroup: false },
+  ];
+  setFmVirt({ all: plain, ctx: { ...ctx,
+    leavesByGroup: new Map([['G', [{ id: 'G.A' }, { id: 'G.B' }]]]) } });
+  deepEq(meFmExpandTargets('G', 'type'), ['G.A', 'G.B'], 'a plain group cascades to every leaf');
+
+  // And a group whose ONLY leaf is its length must not swallow the action —
+  // returning nothing would look like the panel ignoring the click.
+  setFmVirt({ all: [{ id: 'L', isGroup: true }, { id: 'L.LEN', isGroup: false }],
+              ctx: { ...ctx, leavesByGroup: new Map([['L', [{ id: 'L.LEN' }]]]) } });
+  deepEq(meFmExpandTargets('L', 'type'), ['L.LEN'],
+     'nothing left to apply to — the length takes it rather than the click vanishing');
+  setFmVirt(prevVirt);
+});
+
 test('"number…" reveals a box to type it in, while you are still choosing', () => {
   // Reported: "where should I type the number?" — nowhere. It used to open a
   // second editor on Apply, asking for the value AFTER the choice was made.

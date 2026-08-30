@@ -19586,7 +19586,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.13.0';
+const APP_VERSION  = '1.48.14.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28970,7 +28970,14 @@ function _meFmNoteExpansion(act, targets) {
   if (!groups.length || String(act).startsWith('de-')) return;
   const named = targets.filter(t => !_meFmMultiSel.has(t)).length;
   if (!named) return;
-  _meFlash(`A group has no bytes of its own — applied to ${named} field${named !== 1 ? 's' : ''} inside it`);
+  // Say when a LEN was held back, or the count silently disagrees with the
+  // number of leaves on screen and the panel looks like it missed one.
+  const skipped = (act === 'type' || act === 'bytes') && groups.some(g => {
+    const lenId = _meFmVirt?.ctx ? _meFmEffectiveVlg(g, _meFmVirt.ctx).lenId : null;
+    return lenId && !targets.some(t => _meVlgIsLen(lenId, t));
+  });
+  _meFlash(`A group has no bytes of its own — applied to ${named} field${named !== 1 ? 's' : ''} inside it`
+    + (skipped ? ' · the length field was left alone — set it there if you mean it' : ''));
 }
 
 function _meFmAfterAct() {
@@ -29019,6 +29026,25 @@ function _meFmExpandTargets(qn, act) {
   if (act === 'vlg') {
     const first = leaves.find(r => !r.isRedef);
     return first ? [first.id] : [qn];
+  }
+  // TYPE and SIZE skip the leaf carrying the group's LENGTH. The length is not
+  // part of the payload — it is a statement ABOUT the payload — and it is the
+  // one leaf where getting the reading wrong does more than mis-render: TYPE
+  // decides how the length INTEGER is decoded, so an ASCII "16" read as a
+  // binary integer becomes 0x3136 = 12598 and the group swallows the rest of
+  // the message, reporting an overrun from a field the user never named.
+  // Clicking a group means "read these bytes as X"; nobody means the counter
+  // that frames them. Setting it on the LEN leaf itself still works — that is
+  // the user pointing at it. SHOW still cascades everywhere: it only changes
+  // how a value is printed and can destroy nothing. Reported 2026-08-30.
+  if (act === 'type' || act === 'bytes') {
+    const lenId = _meFmVirt?.ctx ? _meFmEffectiveVlg(qn, _meFmVirt.ctx).lenId : null;
+    if (lenId) {
+      const kept = leaves.filter(r => !_meVlgIsLen(lenId, r.id));
+      // Never return nothing: a group whose only leaf is its length would
+      // silently swallow the action instead of doing something visible.
+      if (kept.length) return kept.map(r => r.id);
+    }
   }
   return leaves.map(r => r.id);
 }

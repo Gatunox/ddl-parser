@@ -1977,7 +1977,12 @@ td.c-err  { color: var(--accent2); }
 .msg-nav  { display: flex; align-items: center; gap: 1px; }
 .msg-ctr  { color: var(--text-dim); font-size: var(--sz-mono); white-space: nowrap; padding: 0 4px; text-align: center; }
 /* Prev/next nav buttons: borderless until hovered (2px kept, just transparent). */
-.msg-nav .btn { border-color: transparent; }
+/* The nav buttons carry the same dimmed border every other control in this bar
+   has. They used to drop it — border-color:transparent, border on hover only —
+   which read as restraint when there were two of them. At eight they read as
+   loose glyphs floating in the bar, with nothing saying where one ends and the
+   next begins. Requested 2026-08-30. */
+.msg-nav .btn { padding: 3px 6px; }
 .msg-nav .btn:hover { border-color: var(--h-gray-bd); }
 .empty-st {
   display: flex; align-items: center; justify-content: center;
@@ -19581,7 +19586,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.12.0';
+const APP_VERSION  = '1.48.13.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

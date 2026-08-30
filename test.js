@@ -19611,6 +19611,11 @@ test('record counter nav: ends, jumps and Go-to work in the counter\'s own numbe
   // …with the counter itself between < and >, where it has always been.
   assert.ok(/onclick="prevMsg\(\)"[^>]*>[^<]*<\/button>\s*<span id="msgCtr"[\s\S]*?<\/span>\s*<button[^>]*onclick="nextMsg\(\)"/.test(nav),
     'the counter must stay between the single steps');
+  // Eight controls need the same dimmed border every other control in the bar
+  // has, or they read as loose glyphs. Two could get away without one; eight
+  // cannot. Requested 2026-08-30.
+  assert.ok(!/\.msg-nav \.btn \{[^}]*border-color:\s*transparent/.test(fs.readFileSync('./source.html', 'utf8')),
+    'the nav buttons must not drop their border');
   // One constant for both lists: two would drift and the difference would read
   // as a bug.
   assert.ok(/const NAV_JUMP = 10;/.test(fs.readFileSync('./source.html', 'utf8')),

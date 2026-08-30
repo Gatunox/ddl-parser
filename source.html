@@ -4190,7 +4190,7 @@ th.me-fm-colhi{color:var(--accent);}
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-1)" title="Previous record (←)">&lt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle between the hex dump and the character view (ASCII or EBCDIC, whichever the record is)">HEX</button>
-                <button id="auditParseBtn" class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected()" title="Load payload into Data Input and parse">&#9654; Parse</button>
+                <button id="auditParseBtn" class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected(true)" title="Load payload into Data Input and parse — always re-parses, even if this record was parsed before">&#9654; Parse</button>
                 <button id="auditAutoParseBtn" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleAutoParse()" title="Auto-parse — parse each record as you select it, without pressing Parse">Auto</button>
                 <button class="btn" style="height:20px;padding:0 6px" onclick="auditClosePopup()">&#10005;</button>
               </div>
@@ -9775,6 +9775,8 @@ function parseMessage(bytes, defs, rawBytes) {
     try { localStorage.setItem('up_format_specs', JSON.stringify({ specs })); } catch(e) {}
     _pendingSpecs = null;          // saved: the pending copy IS the stored one now
     _fmtLoad();
+    // Every cached audit parse was produced by the classes as they were.
+    if (typeof _auditParseCacheInvalidate === 'function') _auditParseCacheInvalidate();
     // A renamed or deleted class must not leave a stale name in the picker.
     if (typeof _syncSpecForceSelect === 'function') _syncSpecForceSelect();
   }
@@ -15941,6 +15943,17 @@ function _auditParseCacheClear() {
   _auditParsed = new Set();
 }
 
+// The cached parses are answers the classes gave. Editing a class or arming an
+// override changes the answer, so the answers go — and only the answers: what
+// you have viewed and parsed is a history of what you did, not a readout of
+// what is resident, so those marks stay. Without this, forcing a re-parse fixed
+// the record you were on and every OTHER record kept replaying pre-edit
+// results. Reported 2026-08-30.
+function _auditParseCacheInvalidate() {
+  _auditParsePendingKey = null;
+  _auditParseCache = new Map();
+}
+
 // The row is drawn by the virtual list, which only rebuilds what scrolls into
 // view — so a mark that appears while you are looking at the row has to be
 // applied to the live node too.
@@ -15986,12 +15999,19 @@ function _auditParseCacheApply(hit) {
   window._auditDumpSetParsed?.();
 }
 
-function auditParseSelected() {
+// `force` is what pressing ▶ Parse means. Selecting a record replays the cached
+// parse, which is the whole point of the cache when browsing — but it also meant
+// a record you had already looked at could never be parsed AGAIN, so editing an
+// override or a parse spec in the Class Editor and pressing Parse gave you back
+// the answer from before the edit, with nothing saying why. The button always
+// parses; auto-parse still reads the cache. Reported 2026-08-30.
+function auditParseSelected(force = false) {
   const rec = _auditSt.filtered[_auditSt.selIdx];
   if (!rec || !_auditSt.file) return;
   _auditParsed.add(rec.offset);
   _auditMarkRow(_auditSt.selIdx, 'aud-parsed');
-  const hit = _auditParseCache.get(rec.offset);
+  if (force) _auditParseCache.delete(rec.offset);
+  const hit = force ? null : _auditParseCache.get(rec.offset);
   if (hit) { _auditParseCacheApply(hit); return; }
   const load = buf => {
     const u8  = new Uint8Array(buf);
@@ -17771,6 +17791,7 @@ function parseOverrideScope() {
 function toggleParseOverride(type, vol, sv, name, defName) {
   const on = isParseOverride(vol, sv, name, defName);
   S.parseOverride = on ? null : { type, vol, sv, name, defName: defName || null };
+  if (typeof _auditParseCacheInvalidate === 'function') _auditParseCacheInvalidate();
   const path = [vol, sv, name, defName].filter(Boolean).join('/');
   // Symmetry matters here. Arming an entity override already cleared this one;
   // arming this did NOT clear the entity, so both could be live at once —
@@ -19441,7 +19462,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.8.0';
+const APP_VERSION  = '1.48.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -31170,6 +31191,7 @@ function toggleSpecOverride(idx) {
   const label = s.label || s.name;
   const on = S.specOverride && S.specOverride.label === label;
   S.specOverride = on ? null : { label };
+  if (typeof _auditParseCacheInvalidate === 'function') _auditParseCacheInvalidate();
   // Arming this and a DDL override at once would be two answers to one
   // question. The entity is the more specific of the two, so it wins and the
   // other is cleared, out loud.

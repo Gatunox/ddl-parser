@@ -19439,6 +19439,43 @@ test('a previewed audit record is parsed once, not again on every revisit', () =
     'leaving audit mode must drop the session cache');
 });
 
+test('[REGRESSION] ▶ Parse always parses — the cache never answers for the button', () => {
+  // Selecting a record replays its cached parse, which is the point of the
+  // cache. But the button went through the same door, so a record you had
+  // already looked at could not be parsed AGAIN: editing an override or a parse
+  // spec in the Class Editor and pressing Parse handed back the answer from
+  // before the edit, with nothing saying why. Reported 2026-08-30.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const fn  = psFnSource('auditParseSelected');
+  assert.ok(/function auditParseSelected\(force = false\)/.test(fn),
+    'the button and auto-parse need to be told apart');
+  assert.ok(/const hit = force \? null : _auditParseCache\.get\(rec\.offset\)/.test(fn),
+    'a forced parse must not consult the cache');
+  assert.ok(/if \(force\) _auditParseCache\.delete\(rec\.offset\)/.test(fn),
+    'the stale entry has to go, or the next selection replays it again');
+  const btn = (src.match(/<button id="auditParseBtn"[^>]*>/) || [''])[0];
+  assert.ok(/onclick="auditParseSelected\(true\)"/.test(btn),
+    `the button must force: ${btn}`);
+  // Auto-parse is the case the cache exists for and must NOT force.
+  assert.ok(/if \(P\.auditAutoParse\) auditParseSelected\(\);/.test(src),
+    'auto-parse still reads the cache — forcing there would re-parse on every arrow key');
+
+  // And forcing one record is not enough on its own: every OTHER cached record
+  // is just as stale after a class edit. The answers are dropped; the viewed /
+  // parsed marks are history and stay.
+  const inv = psFnSource('_auditParseCacheInvalidate');
+  assert.ok(/_auditParseCache = new Map\(\)/.test(inv), 'the answers must go');
+  assert.ok(!/_auditViewed|_auditParsed/.test(inv),
+    'the row marks are what you did, not what is resident — they must survive');
+  for (const caller of ['toggleSpecOverride', 'toggleParseOverride'])
+    assert.ok(/_auditParseCacheInvalidate\(\)/.test(psFnSource(caller)),
+      `${caller} changes the answer and must drop the cached ones`);
+  // _fmtSave lives inside a block, so it is read from the source directly.
+  const saveFn = (src.match(/function _fmtSave\(specs\) \{[\s\S]*?\n  \}/) || [''])[0];
+  assert.ok(/_auditParseCacheInvalidate\(\)/.test(saveFn),
+    'saving the Class Editor changes the answer and must drop the cached ones');
+});
+
 test('the audit detail height survives a reload, and a layout reset', () => {
   // Same round trip the tree pane width takes, and through the same key — a
   // pane you can resize but that forgets on reload is worse than a fixed one.

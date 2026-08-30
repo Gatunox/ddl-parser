@@ -6760,8 +6760,11 @@ test('the layout is chosen, not hard-coded: five arrangements, panels placed by 
 
   // Reset goes back to the arrangement the app has always opened in.
   const reset = psFnSource('resetLayout');
-  assert.ok(/_layMode  = 'quad';/.test(reset) && /_laySlots = \[\.\.\.LAYOUT_DEFAULT_SLOTS\];/.test(reset),
+  assert.ok(/_layMode  = 'quadr';/.test(reset) && /_laySlots = \[\.\.\.LAYOUT_DEFAULT_SLOTS\];/.test(reset),
     'Reset Layout must restore the default arrangement, not just the sizes');
+  // Reset and a fresh install have to agree, or "reset" hands you an
+  // arrangement the app would never have opened in.
+  assert.ok(/let _layMode  = 'quadr';/.test(src), 'the startup default is the one Reset returns to');
   // …and it must be REMEMBERED: applying without saving left the next reload
   // restoring the layout that had just been reset away. Reported 2026-08-28.
   assert.ok(/_layApply\(true\);/.test(reset), 'a reset that is not saved is undone by the next reload');
@@ -6777,6 +6780,10 @@ test('both quads exist — the free axis is the user\'s choice, not the engine\'
   const src   = fs.readFileSync('./source.html', 'utf8');
   const apply = psFnSource('_layApply');
   assert.ok(/quadr:\s*\{ boxes: 4/.test(src), 'the row-split quad has to be an arrangement of its own');
+  // The picker renders in key order, and quadr is the arrangement the app has
+  // always opened in — so it leads. Requested 2026-08-29.
+  eq(Object.keys(vm.runInContext('LAYOUT_MODES', sandbox))[0], 'quadr',
+     'the default arrangement is the first one offered');
   assert.ok(/root\.appendChild\(rowOf\('lay-row-0', 0, 1\)\);/.test(apply) &&
             /root\.appendChild\(rowOf\('lay-row-1', 2, 3\)\);/.test(apply),
     'quadr must be two independent rows');

@@ -4682,12 +4682,12 @@ BMP      FIXED   16   B    "Primary Bitmap (ASCII hex encoded — 16 chars = 8 b
 // independently — so ONE of the two middle seams is always shared. Staggering
 // both would leave a hole; that is why the classic pinwheel needs five panes.
 // quad shares the vertical seam and frees the two horizontal ones; quadr does
-// the reverse, which is how the app behaved before the layout rework. Neither
-// is more capable than the other, so it is a choice, not a default.
-// Requested 2026-08-29.
+// the reverse. Neither is more capable than the other, so it is a choice — but
+// quadr is the one the app has always opened in, so it leads the picker and is
+// what a fresh install and Reset Layout give you. Requested 2026-08-29.
 const LAYOUT_MODES = {
-  quad:    { boxes: 4, label: 'Four panels — each column splits on its own' },
   quadr:   { boxes: 4, label: 'Four panels — each row splits on its own' },
+  quad:    { boxes: 4, label: 'Four panels — each column splits on its own' },
   v2:      { boxes: 2, label: 'Two columns' },
   h2:      { boxes: 2, label: 'Two rows' },
   top2:    { boxes: 3, label: 'Two on top, one below' },
@@ -4704,7 +4704,7 @@ const LAYOUT_PANELS = [
 const LAYOUT_DEFAULT_SLOTS = ['ddlPanel', 'msgPanel', 'resPanel', 'rawPanel'];
 
 // mode + which panel sits in which box. Persisted in up_layout.
-let _layMode  = 'quad';
+let _layMode  = 'quadr';
 let _laySlots = [...LAYOUT_DEFAULT_SLOTS];
 
 // A panel can only be in one box: placing it twice would MOVE the element out
@@ -19430,7 +19430,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.6.0';
+const APP_VERSION  = '1.48.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -19595,7 +19595,7 @@ function loadLayout() {
 function resetLayout() {
   _kvDel('up_layout');
   // Back to four boxes in the order the app has always opened in.
-  _layMode  = 'quad';
+  _layMode  = 'quadr';
   _laySlots = [...LAYOUT_DEFAULT_SLOTS];
   for (const p of LAYOUT_PANELS) {
     const el = document.getElementById(p.id);

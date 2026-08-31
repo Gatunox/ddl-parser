@@ -5697,6 +5697,74 @@ test('routing: falls back to legacy only when there is genuinely nothing to run'
 // thing testing that condition was a regex over the source. Every piece feeding
 // _parseVerdict was covered; the verdict itself was not, so "which kinds reach
 // the picker" was an assumption. It is a table now.
+test('tags: a badge a message earns by what it holds', () => {
+  // A class says what a message IS. A tag says something ABOUT one — recurring,
+  // reversal — which is a property of the values, not of the layout. Every
+  // condition has to hold: a tag is one statement, and "any of these" is two
+  // tags with one badge. Requested 2026-08-30.
+  const tagsFor = vm.runInContext('_meTagsFor', sandbox);
+  const msg = { fields: [
+    { id: 'PROC-CODE.TRAN-CODE', value: '28' },
+    { id: 'CURRENCY',            value: 'USD ' },      // space-padded, as PIC X is
+    { id: 'AMOUNT',              value: '000100' },
+    { id: 'BROKEN',              error: 'unreadable' },
+  ] };
+  const tag = (conditions, label = 'T') => ({ label, conditions });
+  const fired = (...conds) => tagsFor({ tags: [tag(conds)] }, msg).length === 1;
+
+  eq(fired({ field: 'PROC-CODE.TRAN-CODE', op: 'equals', value: '28' }), true, 'equals');
+  eq(fired({ field: 'PROC-CODE.TRAN-CODE', op: 'equals', value: '29' }), false, 'equals, no');
+  eq(fired({ field: 'PROC-CODE.TRAN-CODE', op: 'not',    value: '29' }), true,  'not');
+  eq(fired({ field: 'PROC-CODE.TRAN-CODE', op: 'not',    value: '28' }), false, 'not, no');
+  eq(fired({ field: 'PROC-CODE.TRAN-CODE', op: 'one-of', value: '27, 28, 29' }), true,  'one-of');
+  eq(fired({ field: 'PROC-CODE.TRAN-CODE', op: 'one-of', value: '30,31' }),      false, 'one-of, no');
+  eq(fired({ field: 'PROC-CODE.TRAN-CODE', op: 'one-of', value: ['27', '28'] }), true,  'one-of takes an array too');
+  // A PIC X field is space-padded on the wire and nobody should have to count
+  // the padding to write a tag.
+  eq(fired({ field: 'CURRENCY', op: 'equals', value: 'usd' }), true, 'trimmed and case-insensitive');
+  // Every condition, not any.
+  eq(tagsFor({ tags: [tag([{ field: 'PROC-CODE.TRAN-CODE', op: 'equals', value: '28' },
+                           { field: 'AMOUNT', op: 'equals', value: '000100' }])] }, msg).length, 1,
+     'both conditions hold');
+  eq(tagsFor({ tags: [tag([{ field: 'PROC-CODE.TRAN-CODE', op: 'equals', value: '28' },
+                           { field: 'AMOUNT', op: 'equals', value: '999' }])] }, msg).length, 0,
+     'one condition fails and the tag does not fire');
+  // A field the parse never produced supports no claim about itself — `not`
+  // included, or the tag would fire on every message missing the field.
+  eq(fired({ field: 'NOPE',   op: 'equals', value: 'x' }), false, 'absent field');
+  eq(fired({ field: 'NOPE',   op: 'not',    value: 'x' }), false, 'absent field, negated');
+  eq(fired({ field: 'BROKEN', op: 'equals', value: 'x' }), false, 'a field that errored is not a value');
+  // A tag being written is not a tag that matches everything.
+  eq(tagsFor({ tags: [tag([])] }, msg).length, 0, 'no conditions never fires');
+  eq(tagsFor({ tags: [tag([{ field: 'AMOUNT', op: 'equals', value: '' }])] }, msg).length, 0,
+     'and neither does an empty value');
+  // Several can be true at once, in the order they are defined.
+  const many = { tags: [tag([{ field: 'AMOUNT', op: 'equals', value: '000100' }], 'A'),
+                        tag([{ field: 'AMOUNT', op: 'equals', value: '999' }],    'B'),
+                        tag([{ field: 'CURRENCY', op: 'equals', value: 'USD' }],  'C')] };
+  deepEq(tagsFor(many, msg).map(t => t.label), ['A', 'C'], 'the ones that hold, in definition order');
+  // A display override is what the reader sees, so it is what a tag compares.
+  eq(tagsFor({ tags: [tag([{ field: 'X', op: 'equals', value: '14:30' }])] },
+             { fields: [{ id: 'X', value: '1430', displayValue: '14:30' }] }).length, 1,
+     'the displayed value is the one compared');
+});
+
+test('tags: the section and the badge are wired', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // Its own Class Editor section — a tag is a property of the values, so it does
+  // not belong in the parse spec.
+  assert.ok(/sect\('tags',\s*'Tags',/.test(src), 'Tags is a section of its own');
+  assert.ok(/tags: false/.test(src), 'and starts collapsed, like the other configured-later sections');
+  // Drawn beside the type code, on BOTH paths that set that badge — a record
+  // parse and a message parse are two different branches.
+  eq((src.match(/_setResTypeBadge\(_btypeHtml\(t\.type, t\.color\) \+ _meTagBadgesHtml\(msg\)\)/g) || []).length, 2,
+     'both meta-bar branches draw the tags');
+  assert.ok(/\.btype-tag\s*\{/.test(src), 'the badge has a style of its own');
+  // The reason is on the badge: one you have to look up in the Class Editor is
+  // a badge that explains nothing.
+  assert.ok(/Tagged because/.test(psFnSource('_meTagTitle')), 'the badge says why it is there');
+});
+
 test('map: a field is read through another DDL definition', () => {
   // A variable-length element declares LEN and DATA and nothing more, because
   // only the message knows what shape DATA is: three sub-fields for a purchase,
@@ -7244,11 +7312,17 @@ test('every manual-override path flags the message and sets parsedBy', () => {
 });
 
 test('the spec lookup that feeds field_overrides is guarded on manualOverride', () => {
-  const i = html.indexOf('window._fmtSpecByName(msg.msgType.type)');
-  assert.ok(i !== -1, 'spec lookup not found — was it renamed?');
-  const stmt = html.slice(html.lastIndexOf('const _msgSpec', i), i);
-  assert.ok(stmt.includes('!msg.manualOverride'),
+  // A manual DDL override means no class answered for the message, so there is
+  // nothing to read overrides — or tags — from. The lookup lives in one helper
+  // now, so the meta bar and the field table cannot disagree about which class a
+  // message came from; the guard has to be in it.
+  const fn = psFnSource('_meSpecForMsg');
+  assert.ok(/msg\.manualOverride/.test(fn),
     'the _msgSpec lookup must be skipped in manual override mode');
+  assert.ok(/_fmtFileSpecByName/.test(fn) && /_fmtSpecByName/.test(fn),
+    'and a file class still resolves through its own lookup');
+  assert.ok(/const _msgSpec = _meSpecForMsg\(msg\);/.test(html),
+    'renderFields must go through it rather than keeping a second copy');
 });
 
 // ── Type overrides: hex family, and the declared type survives ────────────────

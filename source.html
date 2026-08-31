@@ -1634,6 +1634,30 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btype-b24     { background: var(--h-gray-bg); color: var(--h-gray-fg); border: var(--bw-ctl) solid var(--h-gray-bd); }
 .btype-unknown { background: var(--h-gray-bg); color: #8b949e; border: var(--bw-ctl) solid #8b949e; }
 .btype-user    { background: var(--h-gray-bg);  color: #50c878; border: var(--bw-ctl) solid #50c878; }
+/* A custom tag. Same chip as the type code so the row reads as one strip, and a
+   left margin because several can be true at once and a run of touching pills is
+   one shape rather than three badges. The colour comes from the tag itself. */
+.btype-tag     { background: var(--h-gray-bg); color: var(--h-gray-fg); border: var(--bw-ctl) solid var(--h-gray-bd); margin-left: 4px; }
+
+/* ---- Class Editor: Tags ---- */
+.me-tag-list { display:flex; flex-direction:column; gap:8px; }
+.me-tag-row { border: var(--bw) solid var(--border); border-radius: var(--r-sm); background: var(--surface-read); }
+.me-tag-head { display:flex; align-items:center; gap:8px; padding:6px 8px;
+  border-bottom: var(--bw) solid var(--border); background: var(--surface-header); }
+.me-tag-label { flex:0 0 180px; text-transform:uppercase; }
+/* A native colour input is a chrome-coloured slab at its default size. Sized
+   down to a swatch it reads as the thing it sets, next to the badge it sets. */
+.me-tag-color { flex:0 0 24px; width:24px; height:20px; padding:0; cursor:pointer;
+  background:var(--surface-edit); border: var(--bw-ctl) solid var(--border-strong);
+  border-radius: var(--r-sm); }
+.me-tag-acts { margin-left:auto; }
+.me-tag-conds { display:flex; flex-direction:column; gap:4px; padding:6px 8px; }
+/* field · op · value · remove — the value box takes the slack, because a
+   one-of list is the only part with no natural width. */
+.me-tag-cond { display:grid; grid-template-columns: minmax(0,1.4fr) 90px minmax(0,1fr) 22px;
+  gap:6px; align-items:center; }
+.me-tag-note { color: var(--warning); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); }
+.me-tag-add { align-self:flex-start; padding:2px 8px; font-size: calc(var(--sz-mono) - 1px); }
 
 /* ---- NETARD record metadata bar (top of parse results) ---- */
 .rec-meta { font-family:var(--mono); }
@@ -7002,6 +7026,44 @@ function _btypeStyle(color) {
 function _setResTypeBadge(html) {
   const el = document.getElementById('resTypeBadge');
   if (el) el.innerHTML = html || '';
+}
+
+// The class a parsed message belongs to. A manual DDL override means no class
+// answered for it, so there is nothing to read overrides or tags from. Lifted
+// out of renderFields so the meta bar and the field table cannot disagree about
+// which class a message came from.
+function _meSpecForMsg(msg) {
+  if (!msg || msg.manualOverride || !msg.msgType?.type) return null;
+  if (typeof window._fmtSpecByName !== 'function') return null;
+  return msg.msgType.kind === 'file'
+    ? window._fmtFileSpecByName(msg.msgType.type)
+    : window._fmtSpecByName(msg.msgType.type);
+}
+
+// The tags a message earned, drawn like the type code beside it — same chip, the
+// tag's own colour. They sit AFTER the type: the type says what the message is,
+// which is the thing you read first; a tag qualifies it.
+function _meTagBadgesHtml(msg) {
+  const spec = (typeof _meSpecForMsg === 'function') ? _meSpecForMsg(msg) : null;
+  if (!spec) return '';
+  return _meTagsFor(spec, msg).map(t => {
+    const label = String(t.label || '').trim();
+    if (!label) return '';
+    const st = _btypeStyle(t.color);
+    return `<span class="btype btype-tag"${st ? ` style="${st}"` : ''}`
+         + ` title="${esc(_meTagTitle(t))}">${esc(label)}</span>`;
+  }).join('');
+}
+
+// Why the badge is there, on hover. A badge with no stated reason is a badge you
+// have to go and look up in the Class Editor.
+function _meTagTitle(t) {
+  const parts = (t.conditions || []).filter(c => c && c.field).map(c => {
+    const op = String(c.op || 'equals');
+    const vals = _meTagValues(c).join(', ');
+    return `${c.field} ${op === 'one-of' ? 'is one of' : op === 'not' ? 'is not' : 'is'} ${vals}`;
+  });
+  return parts.length ? `Tagged because ${parts.join(' · and ')}` : 'Tag';
 }
 
 function _btypeHtml(type, color) {
@@ -13767,7 +13829,7 @@ function renderFieldTable(msg) {
   if (msg.isNetard) {
     const t   = msg.msgType || { type:'UNKNOWN' };
     const recLabel = [msg.recNo != null ? `Rec #${msg.recNo}` : '', msg.typeDesc || ''].filter(Boolean).join(' · ');
-    _setResTypeBadge(_btypeHtml(t.type, t.color));
+    _setResTypeBadge(_btypeHtml(t.type, t.color) + _meTagBadgesHtml(msg));
     metaContent = `${recLabel ? `<span class="rec-meta-route">${esc(recLabel)}</span><span class="rec-meta-pipe">|</span>` : ''}
       <span class="rec-meta-route">${esc(msg.source||'?')} → ${esc(msg.dest||'?')}</span>
       <span class="rec-meta-pipe">|</span>
@@ -13778,7 +13840,7 @@ function renderFieldTable(msg) {
   } else if (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') {
     const t   = msg.msgType;
     const ddlName = msg.ddlPath ? (msg.ddlPath.split('/').pop() + (msg.defName ? '/' + msg.defName : '')) : '';
-    _setResTypeBadge(_btypeHtml(t.type, t.color));
+    _setResTypeBadge(_btypeHtml(t.type, t.color) + _meTagBadgesHtml(msg));
     metaContent = `${ddlName ? `<span>${esc(ddlName)}</span>` : ''}
       ${_provHtml.by}
       <span class="rec-meta-pipe">|</span>
@@ -13804,9 +13866,7 @@ function renderFieldTable(msg) {
   // to share a name with a spec (BASE/STM/DDLFSTM/STM vs the "STM" spec) silently
   // inherited that spec's field_overrides, contradicting the mode's own notice
   // that parse-specs are not used. Renaming either side changed the result.
-  const _msgSpec = (!msg.manualOverride && typeof window._fmtSpecByName === 'function' && msg.msgType?.type)
-    ? (msg.msgType.kind === 'file' ? window._fmtFileSpecByName(msg.msgType.type) : window._fmtSpecByName(msg.msgType.type))
-    : null;
+  const _msgSpec = _meSpecForMsg(msg);
 
   // Inline SEG-MAP bar — shown when this message's spec parses via seg-map,
   // OR when a manually selected segmented DDL parsed it (msg._segScopeKey).
@@ -19605,7 +19665,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.0.0';
+const APP_VERSION  = '1.49.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21391,7 +21451,7 @@ function openMsgEditor() {
     specs,
     section:  'msg',
     selIdx:   -1,
-    sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false },
+    sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false, tags: false },
     editRec:  -1,
     pend:     {},
     dirty:    false,
@@ -22147,7 +22207,8 @@ function _meRenderRight() {
               done();
             }, _mePsActionsHtml())
           + sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done),
-                 '', _meOvBadgeHtml());
+                 '', _meOvBadgeHtml())
+          + sect('tags',         'Tags',        syncFill(() => _meHtmlTags(item)), _meTagActionsHtml());
   }
   body.innerHTML = html;
 
@@ -29660,6 +29721,127 @@ function _meFileWarnsRefresh() {
   if (spec) spec.innerHTML = _meSpecWarnsHtml(item);
 }
 
+// ── Tags section ────────────────────────────────────────────────────────────
+// A class says what a message IS; a tag says something ABOUT one. It lives here
+// rather than in the parse spec because it is a property of the values, not of
+// the layout — nothing about a tag changes how a byte is read.
+function _meTagFieldIds(item) {
+  const bindings = (item?.ddl_bindings || []).filter(Boolean);
+  if (!bindings.length) return [];
+  try {
+    const defs = _meCollectBindingDefs(bindings.map(p => getDDLFromPath(p)));
+    return defs.filter(d => !d.isRedefines).map(d => d.id);
+  } catch (e) { return []; }
+}
+
+function _meHtmlTags(item) {
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const ids  = _meTagFieldIds(item);
+  const dl   = `<datalist id="me-tag-fields">${ids.map(i => `<option value="${_meOvEsc(i)}"></option>`).join('')}</datalist>`;
+  let h = `<div class="me-tag-list">${dl}`;
+  if (!tags.length) {
+    h += `<div class="me-empty">No tags yet. A tag badges a parsed message when every one of its conditions holds.</div>`;
+  }
+  tags.forEach((t, ti) => {
+    const conds = Array.isArray(t.conditions) ? t.conditions : [];
+    h += `<div class="me-tag-row">
+  <div class="me-tag-head">
+    <input class="me-inp me-tag-label" value="${_meOvEsc(t.label || '')}" placeholder="TAG NAME"
+           oninput="_meTagSet(${ti},'label',this.value)">
+    <input type="color" class="me-tag-color" value="${_meOvEsc(t.color || '#bc8cff')}"
+           title="Badge colour" oninput="_meTagSet(${ti},'color',this.value)">
+    <span class="btype btype-tag" style="${t.color ? `color:${_meOvEsc(t.color)};border-color:${_meOvEsc(t.color)}` : ''}"
+          >${_meOvEsc((t.label || 'TAG').trim() || 'TAG')}</span>
+    <span class="me-tag-acts">
+      <button class="me-rb del" onclick="_meTagDel(${ti})" title="Delete this tag">&#x00D7;</button>
+    </span>
+  </div>
+  <div class="me-tag-conds">`;
+    if (!conds.length) h += `<div class="me-tag-note">No conditions — this tag never fires.</div>`;
+    conds.forEach((c, ci) => {
+      h += `<div class="me-tag-cond">
+    <input class="me-inp" list="me-tag-fields" value="${_meOvEsc(c.field || '')}" placeholder="field id"
+           oninput="_meTagCondSet(${ti},${ci},'field',this.value)">
+    <select class="me-sel" onchange="_meTagCondSet(${ti},${ci},'op',this.value)">
+      ${_ME_TAG_OPS.map(o => `<option value="${o}"${(c.op || 'equals') === o ? ' selected' : ''}>${o}</option>`).join('')}
+    </select>
+    <input class="me-inp" value="${_meOvEsc(Array.isArray(c.value) ? c.value.join(', ') : (c.value || ''))}"
+           placeholder="${(c.op || 'equals') === 'one-of' ? 'value, value, …' : 'value'}"
+           oninput="_meTagCondSet(${ti},${ci},'value',this.value)">
+    <button class="me-rb del" onclick="_meTagCondDel(${ti},${ci})" title="Remove this condition">&#x00D7;</button>
+  </div>`;
+    });
+    h += `<button class="btn me-tag-add" onclick="_meTagCondAdd(${ti})">+ Condition</button>
+  </div>
+</div>`;
+  });
+  h += `</div>`;
+  return h;
+}
+
+const _meTagActionsHtml = () =>
+  `<button class="btn" onclick="_meTagAdd()" title="Add a tag">+ Add Tag</button>`;
+
+function _meTagsOf(item) {
+  if (!item) return [];
+  if (!Array.isArray(item.tags)) item.tags = [];
+  return item.tags;
+}
+function _meTagAfterEdit() { _meSetDirty(); _meRenderRight(); }
+function _meTagAdd() {
+  const it = _meCurItem(); if (!it) return;
+  _meTagsOf(it).push({ label: '', color: '#bc8cff', conditions: [{ field: '', op: 'equals', value: '' }] });
+  _meTagAfterEdit();
+}
+function _meTagDel(ti) {
+  const it = _meCurItem(); if (!it) return;
+  _meTagsOf(it).splice(ti, 1);
+  if (!it.tags.length) delete it.tags;
+  _meTagAfterEdit();
+}
+function _meTagSet(ti, key, val) {
+  const it = _meCurItem(); if (!it) return;
+  const t = _meTagsOf(it)[ti]; if (!t) return;
+  t[key] = val;
+  // The label is echoed in a live badge beside it, so a re-render on every
+  // keystroke would take the caret with it. Only the badge needs updating.
+  const row = document.querySelectorAll('.me-tag-row')[ti];
+  const chip = row && row.querySelector('.btype-tag');
+  if (chip) {
+    if (key === 'label') chip.textContent = (val || 'TAG').trim() || 'TAG';
+    if (key === 'color') { chip.style.color = val; chip.style.borderColor = val; }
+  }
+  _meSetDirty();
+}
+function _meTagCondAdd(ti) {
+  const it = _meCurItem(); if (!it) return;
+  const t = _meTagsOf(it)[ti]; if (!t) return;
+  (t.conditions || (t.conditions = [])).push({ field: '', op: 'equals', value: '' });
+  _meTagAfterEdit();
+}
+function _meTagCondDel(ti, ci) {
+  const it = _meCurItem(); if (!it) return;
+  const t = _meTagsOf(it)[ti]; if (!t || !Array.isArray(t.conditions)) return;
+  t.conditions.splice(ci, 1);
+  _meTagAfterEdit();
+}
+function _meTagCondSet(ti, ci, key, val) {
+  const it = _meCurItem(); if (!it) return;
+  const t = _meTagsOf(it)[ti]; if (!t || !Array.isArray(t.conditions)) return;
+  const c = t.conditions[ci]; if (!c) return;
+  c[key] = val;
+  // `op` changes the placeholder on the value box beside it, and nothing else —
+  // a full re-render on a dropdown would be fine, but on the two TEXT inputs it
+  // would drop the caret mid-word, so all three go through one quiet path.
+  if (key === 'op') {
+    const row = document.querySelectorAll('.me-tag-row')[ti];
+    const box = row && row.querySelectorAll('.me-tag-cond')[ci];
+    const val2 = box && box.querySelectorAll('input')[1];
+    if (val2) val2.placeholder = val === 'one-of' ? 'value, value, …' : 'value';
+  }
+  _meSetDirty();
+}
+
 function _meHtmlRecs(item) {
   const recs = item.recognizers || [];
   const _TYPE_LABEL = { ..._REC_TYPE_LABEL, uint8:'uint8 / byte', uint16:'uint16 / word', uint32:'uint32 / dword' };
@@ -32551,6 +32733,57 @@ function _meExecReadWindow(attrs, ctx) {
     ctx.fields.push(f);
     ctx.fieldsById[d.id] = f;
   }
+}
+
+// ── Tags: a badge a message earns by what it holds ──────────────────────────
+// A class says what a message IS. A tag says something ABOUT one — recurring,
+// reversal, high-risk — which is a property of the values in front of you, not
+// of the layout. Every condition has to hold: a tag is one statement, and "any
+// of these" is two tags with one badge. Requested 2026-08-30.
+//
+// Comparison is on the field's VALUE, trimmed and case-insensitively. A PIC X
+// field is space-padded on the wire and nobody should have to count the padding
+// to write a tag; a field that was never read matches nothing.
+const _ME_TAG_OPS = ['equals', 'not', 'one-of'];
+
+function _meTagValues(cond) {
+  const raw = cond == null ? '' : cond.value;
+  const list = Array.isArray(raw) ? raw : String(raw == null ? '' : raw).split(',');
+  return list.map(v => String(v).trim().toUpperCase()).filter(v => v !== '');
+}
+
+function _meTagCondHolds(cond, byId) {
+  if (!cond || !cond.field) return false;
+  const f = byId[_canonFieldId(cond.field)];
+  const want = _meTagValues(cond);
+  if (!want.length) return false;
+  // A field the parse never produced. `not` is deliberately false here too:
+  // "this field is not 28" reads as a claim ABOUT the field, and a field that is
+  // absent supports no claim about it. A tag that fired on every message missing
+  // the field would be worse than one that never fired.
+  if (!f || f.error) return false;
+  const have = String(f.displayValue != null ? f.displayValue : (f.value ?? '')).trim().toUpperCase();
+  switch (String(cond.op || 'equals')) {
+    case 'not':    return !want.includes(have);
+    case 'one-of': return want.includes(have);
+    default:       return have === want[0];
+  }
+}
+
+// Which of a class's tags this message earns, in the order they are defined —
+// the user's order, because that is the order they will read them in.
+function _meTagsFor(item, msg) {
+  const tags = Array.isArray(item?.tags) ? item.tags : [];
+  if (!tags.length || !msg) return [];
+  const byId = {};
+  for (const f of (msg.fields || [])) if (f && f.id && !f.error) byId[_canonFieldId(f.id)] = f;
+  return tags.filter(t => {
+    const conds = Array.isArray(t?.conditions) ? t.conditions.filter(c => c && c.field) : [];
+    // No conditions is not "always true": an empty tag is one being written, and
+    // badging every message while it is half-typed is noise.
+    if (!conds.length) return false;
+    return conds.every(c => _meTagCondHolds(c, byId));
+  });
 }
 
 // ── map: another DDL definition standing in for a field's shape ─────────────

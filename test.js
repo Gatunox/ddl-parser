@@ -5760,6 +5760,14 @@ test('tags: the section and the badge are wired', () => {
   eq((src.match(/_setResTypeBadge\(_btypeHtml\(t\.type, t\.color\) \+ _meTagBadgesHtml\(msg\)\)/g) || []).length, 2,
      'both meta-bar branches draw the tags');
   assert.ok(/\.btype-tag\s*\{/.test(src), 'the badge has a style of its own');
+  // ONE colour swatch in this editor. A native colour input only fills its box
+  // once the WebKit swatch pseudo-elements are stripped, and a second copy of
+  // that is how two swatches come to look different. Reported 2026-08-30.
+  assert.ok(/<input type="color" class="me-swatch"/.test(src),
+    'the tag colour reuses the Identity swatch rather than styling its own');
+  assert.ok(!/me-tag-color/.test(src), 'and the second implementation is gone');
+  assert.ok(/\.me-swatch::-webkit-color-swatch\{border:none/.test(src),
+    'which is the rule that makes the colour fill the square');
   // The reason is on the badge: one you have to look up in the Class Editor is
   // a badge that explains nothing.
   assert.ok(/Tagged because/.test(psFnSource('_meTagTitle')), 'the badge says why it is there');

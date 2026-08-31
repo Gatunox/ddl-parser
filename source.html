@@ -1645,11 +1645,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 .me-tag-head { display:flex; align-items:center; gap:8px; padding:6px 8px;
   border-bottom: var(--bw) solid var(--border); background: var(--surface-header); }
 .me-tag-label { flex:0 0 180px; text-transform:uppercase; }
-/* A native colour input is a chrome-coloured slab at its default size. Sized
-   down to a swatch it reads as the thing it sets, next to the badge it sets. */
-.me-tag-color { flex:0 0 24px; width:24px; height:20px; padding:0; cursor:pointer;
-  background:var(--surface-edit); border: var(--bw-ctl) solid var(--border-strong);
-  border-radius: var(--r-sm); }
 .me-tag-acts { margin-left:auto; }
 .me-tag-conds { display:flex; flex-direction:column; gap:4px; padding:6px 8px; }
 /* field · op · value · remove — the value box takes the slack, because a
@@ -19665,7 +19660,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.2.0';
+const APP_VERSION  = '1.49.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29748,7 +29743,7 @@ function _meHtmlTags(item) {
   <div class="me-tag-head">
     <input class="me-inp me-tag-label" value="${_meOvEsc(t.label || '')}" placeholder="TAG NAME"
            oninput="_meTagSet(${ti},'label',this.value)">
-    <input type="color" class="me-tag-color" value="${_meOvEsc(t.color || '#bc8cff')}"
+    <input type="color" class="me-swatch" value="${_meOvEsc(t.color || '#bc8cff')}"
            title="Badge colour" oninput="_meTagSet(${ti},'color',this.value)">
     <span class="btype btype-tag" style="${t.color ? `color:${_meOvEsc(t.color)};border-color:${_meOvEsc(t.color)}` : ''}"
           >${_meOvEsc((t.label || 'TAG').trim() || 'TAG')}</span>

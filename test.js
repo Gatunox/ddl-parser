@@ -5763,6 +5763,22 @@ test('tags: the section and the badge are wired', () => {
   // The reason is on the badge: one you have to look up in the Class Editor is
   // a badge that explains nothing.
   assert.ok(/Tagged because/.test(psFnSource('_meTagTitle')), 'the badge says why it is there');
+
+  // Editing repaints THIS section, never the whole right pane. _meRenderRight
+  // rebuilds every section from the top, so the pane scrolled back to Identity on
+  // every add and delete — and Tags is the last section on the page, so the row
+  // just clicked left the screen. Reported 2026-08-30.
+  const after = psFnSource('_meTagAfterEdit');
+  assert.ok(/me-sect-body-tags/.test(after), 'the section repaints itself');
+  assert.ok(/_meRenderRight\(\); return;/.test(after),
+    'with a full render only as the fallback when the section is not on screen');
+  for (const fn of ['_meTagAdd', '_meTagDel', '_meTagCondAdd', '_meTagCondDel'])
+    assert.ok(!/_meRenderRight/.test(psFnSource(fn)), `${fn} must not rebuild the pane`);
+  // The two that fire on every keystroke touch no markup at all beyond the live
+  // badge, or the caret would jump mid-word.
+  for (const fn of ['_meTagSet', '_meTagCondSet'])
+    assert.ok(!/innerHTML|_meRenderRight|_meTagAfterEdit/.test(psFnSource(fn)),
+      `${fn} runs per keystroke and must not re-render`);
 });
 
 test('map: a field is read through another DDL definition', () => {

@@ -19665,7 +19665,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.1.0';
+const APP_VERSION  = '1.49.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29787,11 +29787,32 @@ function _meTagsOf(item) {
   if (!Array.isArray(item.tags)) item.tags = [];
   return item.tags;
 }
-function _meTagAfterEdit() { _meSetDirty(); _meRenderRight(); }
+// Repaint THIS section, not the whole right pane. _meRenderRight rebuilds every
+// section from the top, so the pane scrolled back to Identity on every add and
+// delete — and Tags is the last section on the page, so the row you had just
+// clicked left the screen. Reported 2026-08-30.
+function _meTagAfterEdit(open) {
+  _meSetDirty();
+  const it = _meCurItem();
+  const el = document.getElementById('me-sect-body-tags');
+  if (!it || !el) { _meRenderRight(); return; }
+  // Adding from the header button while the section is collapsed has to open it,
+  // or the tag lands somewhere the user cannot see.
+  if (open && _meState?.sections && !_meState.sections.tags) {
+    _meState.sections.tags = true;
+    el.classList.add('open');
+    const arr = el.previousElementSibling?.querySelector('.me-section-arr');
+    if (arr) arr.textContent = '\u2212';
+  }
+  el.innerHTML = _mePad(_meHtmlTags(it));
+}
 function _meTagAdd() {
   const it = _meCurItem(); if (!it) return;
   _meTagsOf(it).push({ label: '', color: '#bc8cff', conditions: [{ field: '', op: 'equals', value: '' }] });
-  _meTagAfterEdit();
+  _meTagAfterEdit(true);
+  // Straight into the name box: a new tag with no label is not a tag yet.
+  const rows = document.querySelectorAll('.me-tag-row .me-tag-label');
+  rows[rows.length - 1]?.focus();
 }
 function _meTagDel(ti) {
   const it = _meCurItem(); if (!it) return;

@@ -19660,7 +19660,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.3.0';
+const APP_VERSION  = '1.49.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -35962,8 +35962,45 @@ function _meItemNotes(s) {
       short: binds.length > 1 ? `ddl: ${name} +${binds.length - 1}` : `ddl: ${name}`,
       full: binds.length > 1 ? `Bound DDLs:\n${binds.join('\n')}` : `Bound DDL — ${binds[0]}` });
   }
-  if (!(((s.parse_spec_binary || []).length) || ((s.parse_spec_ascii || []).length)))
+  // Which parse-spec variants exist, named the way the Parse Spec section's own
+  // two tabs name them. Absence is a warning; presence is a fact worth stating,
+  // because "which of the two does this class actually have" was only knowable
+  // by opening it. Requested 2026-08-30.
+  const nBin = (s.parse_spec_binary || []).length;
+  const nAsc = (s.parse_spec_ascii  || []).length;
+  if (!nBin && !nAsc)
     notes.push({ warn: true, short: 'No parse spec', full: 'a recognized message cannot be parsed' });
+  else {
+    const which = (nBin && nAsc) ? 'both' : (nBin ? 'binary' : 'non-binary');
+    notes.push({ warn: false, short: `spec: ${which}`, full:
+      `Parse spec — Binary: ${nBin || 'none'} · Non-Binary: ${nAsc || 'none'}`
+      + (nBin && nAsc ? '\nCharacter input runs Non-Binary; everything else runs Binary.'
+         : nBin ? '\nCharacter input falls back to the Binary spec.'
+                : '\nBinary input falls back to the Non-Binary spec.') });
+  }
+  // Overrides and tags: a count on the row, the detail on hover. Both are lists
+  // that live two clicks away, and their SIZE is the thing you want at a glance —
+  // an entity with forty overrides is a different proposition from one with two.
+  const ovAll = (s.overrides && typeof s.overrides === 'object') ? s.overrides : {};
+  const ovIds = Object.keys(ovAll).filter(k => ovAll[k] && Object.keys(ovAll[k]).length);
+  if (ovIds.length) {
+    const per = new Map();
+    for (const id of ovIds)
+      for (const k of _meOvKindsOf(ovAll[id])) per.set(k, (per.get(k) || 0) + 1);
+    // In _ME_OV_KINDS order, not in whichever order the fields happen to use it,
+    // so the tooltip reads the same way every time.
+    const lines = _ME_OV_KINDS.filter(k => per.has(k.id))
+      .map(k => `${k.label}: ${per.get(k.id)}`);
+    notes.push({ warn: false, short: `ovr: ${ovIds.length}`, full:
+      `${ovIds.length} field${ovIds.length !== 1 ? 's' : ''} overridden\n${lines.join('\n')}` });
+  }
+  const tags = Array.isArray(s.tags) ? s.tags.filter(t => t && (t.label || '').trim()) : [];
+  if (tags.length)
+    notes.push({ warn: false, short: `tags: ${tags.length}`, full:
+      `Tags\n${tags.map(t => {
+        const conds = (t.conditions || []).filter(c => c && c.field).length;
+        return `${String(t.label).trim()} — ${conds} condition${conds !== 1 ? 's' : ''}`;
+      }).join('\n')}` });
   return notes;
 }
 

@@ -17368,8 +17368,41 @@ test('a configuration gap names itself instead of being counted', () => {
     parse_spec_binary: [{}], ddl_bindings: ['TEST/DATA/ISO-0800-FLAT'] });
   // Labelled, so a bare volume code and a bare DDL name cannot be mistaken for
   // each other on a row that shows both.
-  assert.strictEqual(notes.map(n => n.short).join('|'), 'vol: TEST|ddl: ISO-0800-FLAT',
+  assert.strictEqual(notes.map(n => n.short).join('|'),
+    'vol: TEST|ddl: ISO-0800-FLAT|spec: binary',
     `a configured row says nothing about itself: ${JSON.stringify(notes)}`);
+  // Which parse-spec variants exist, named the way the Parse Spec section's own
+  // two tabs name them — "which of the two does this class have" was otherwise
+  // only knowable by opening it. Requested 2026-08-30.
+  const specOf = o => sandbox._t.meItemNotes({ kind: 'msg', vol: 'T', recognizers: [{}],
+    ddl_bindings: ['A/B/C'], ...o }).map(n => n.short).find(x => /^spec:/.test(x));
+  eq(specOf({ parse_spec_binary: [{}] }), 'spec: binary', 'binary only');
+  eq(specOf({ parse_spec_ascii:  [{}] }), 'spec: non-binary', 'non-binary only');
+  eq(specOf({ parse_spec_binary: [{}], parse_spec_ascii: [{}] }), 'spec: both', 'both');
+  eq(specOf({}), undefined, 'neither is a WARNING, not a fact — it already has its own chip');
+
+  // Counts on the row, detail on hover. The size is the thing you want at a
+  // glance; an entity with forty overrides is a different proposition from one
+  // with two, and the breakdown is two clicks away otherwise.
+  const rich = sandbox._t.meItemNotes({ kind: 'msg', vol: 'T', recognizers: [{}],
+    ddl_bindings: ['A/B/C'], parse_spec_binary: [{}],
+    overrides: { A: { type: 'uint8' }, B: { type: 'ascii', display: 'hex' },
+                 C: { vlg: true }, D: {} },
+    tags: [{ label: 'RECURRING', conditions: [{ field: 'X' }, { field: 'Y' }] },
+           { label: 'ONE', conditions: [{ field: 'Z' }] },
+           { label: '   ' }] });
+  const shortsOf = n => rich.find(x => x.short.startsWith(n));
+  eq(shortsOf('ovr:').short, 'ovr: 3', 'an entry with no keys left in it is not an override');
+  // In _ME_OV_KINDS order, so the tooltip reads the same way every time.
+  eq(shortsOf('ovr:').full, '3 fields overridden\nTYPE: 2\nSHOW: 1\nVLG: 1',
+     `the breakdown is per kind: ${JSON.stringify(shortsOf('ovr:').full)}`);
+  eq(shortsOf('tags:').short, 'tags: 2', 'a tag with no label is one being written, not a tag');
+  eq(shortsOf('tags:').full, 'Tags\nRECURRING — 2 conditions\nONE — 1 condition',
+     `every tag is listed: ${JSON.stringify(shortsOf('tags:').full)}`);
+  // Absent when there are none — a row of zeroes says nothing.
+  const plain = sandbox._t.meItemNotes({ kind: 'msg', vol: 'T', recognizers: [{}],
+    ddl_bindings: ['A/B/C'], parse_spec_binary: [{}] });
+  eq(plain.some(n => /^(ovr|tags):/.test(n.short)), false, 'no chip for nothing');
   assert.ok(notes.every(n => !n.warn), 'a configured value is styled as a warning');
   assert.ok(/TEST\/DATA\/ISO-0800-FLAT/.test(notes[1].full),
     'the binding tooltip drops the path the name came from');

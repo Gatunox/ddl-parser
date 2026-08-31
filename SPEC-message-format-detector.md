@@ -10,6 +10,9 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-08-30 | **`map` — a field read through another DDL definition.** A variable-length element declares only `LEN` and `DATA`, because what `DATA` holds depends on the **message**, not the layout: an online purchase carries three sub-fields there, a recurring payment that is also a purchase carries six. The DDL cannot say which. The `map` BLOCK is a declaration — it emits nothing and consumes no bytes — so it can sit inside a `when` and settle the shape before `read-ddl` walks the whole message; `read` takes a `map` attribute for the field-by-field case, applying to that read only. A reference is a bare DEF name, searched in the volumes and subvolumes the class already binds, or a fully qualified `VOL/SV/FILE/DEF`; a name that resolves to nothing is reported where it was written rather than as a silent no-op fields away. Rows are named after the mapped definition (`RECUR-PYMNT-DATA.AMT`, not `RESERVED-ELEMENT-48.DATA.AMT`) so the output says which layout was applied, and the prefix goes on the DEF **before** the read so an override written against what you see is the id the engine looks up. The element's own bytes are the window — a wire length still frames the payload, and `map` says what the bytes MEAN, never how many there are. A definition that does not fit reads what fits and reports the shortfall, or the bytes left over. The substitution is hooked in all three places a leaf is built, because the two variable-length paths construct their payload inline rather than through the shared reader — which is exactly where `map` is wanted. Mapped rows carry their own colour, `--mapped`: accent already means an override, accent2 and warning already mean something is wrong, and a field that simply came from another definition is neither. See §5.22. |
+| 2026-08-30 | **Custom tags — a badge a message earns by what it holds.** A class says what a message IS; a tag says something ABOUT one, which is a property of the values rather than of the layout — so it gets its own Class Editor section and nothing about it goes in the parse spec. Label, colour, and conditions on fields of the bound or mapped DDL, with `equals` / `not` / `one-of`; every condition must hold, because a tag is one statement and "any of these" is two tags wearing one badge. Comparison is on the DISPLAYED value, trimmed and case-insensitively — a PIC X field is space-padded and a display override is what the reader sees. A field the parse never produced supports no claim about itself, `not` included, or the tag would fire on every message missing it; a tag with no conditions never fires either. True tags render after the type code in the Parse Results bar and say on hover which conditions earned them. The class row in the sidebar gained three facts to match: `spec: binary | non-binary | both`, `ovr: N` and `tags: N`, with the per-kind breakdown and the tag list on hover. See §11. |
+| 2026-08-30 | **A group's TYPE and SIZE stop at its length leaf.** Reported: `TYPE=binary` clicked on a variable-length GROUP wrote itself onto the group's `LEN` as well. The LEN held ASCII `"16"`; read as a binary integer that is `0x3136` = 12598, so the group tried to consume 12598 bytes and every field after it was destroyed — from one click on a row that has no bytes of its own, with nothing but a toast counting the leaves it had reached. The length is a statement ABOUT the payload, not part of it, and it is the one leaf where a wrong reading does more than mis-render. Clicking a group means "read these bytes as X"; nobody means the counter that frames them. `SHOW` still cascades everywhere — it only changes how a value is printed — and setting either on the LEN leaf itself still works, because that is the user pointing at it deliberately. |
 | 2026-08-30 | **A file class with no parse_spec fails saying so; the diagnostic names the binding.** File specs were exempt from the `no-spec` verdict, and the exemption cost them the answer: one carrying a DDL binding but no `parse_spec` fell through to `needs-ddl`, so the app opened the scores picker and asked for the very DDL the class already had. "No parse spec" is the same fact whichever list the class lives in — the exemption is gone and the record now fails with the diagnostic message classes have always got. That diagnostic gains a **sixth line**: it used to say the type was recognized and then that parsing was impossible, with nothing in between, leaving the reader to guess whether the DDL was the missing piece — which is the guess that made the picker look like the right answer. The binding is read from the **spec**, not the winner: a legacy or forced winner does not always carry `ddl_bindings`, and a table reporting "none" for a class that has one is worse than no table. See §3.2. |
 | 2026-08-30 | **The audit's ▶ Parse always parses, and a class edit drops the cached answers.** Selecting a record replays its cached parse — that is what the cache is for — but the button went through the same door, so a record already looked at could not be parsed *again*: editing an override or a parse_spec and pressing Parse handed back the answer from before the edit, with nothing saying why. The button now forces and deletes the stale entry on the way through; auto-parse still reads the cache, or every arrow key would re-parse. Forcing one record is not enough on its own, so saving the Class Editor (`_fmtSave`) and arming either override now drop **all** cached answers — only the answers: what you viewed and parsed is a history of what you did, not a readout of what is resident, so those row marks survive. Separately, selecting a previously parsed record now **replays** it even with Auto off (replaying is not parsing; a record with no cached answer is left alone), and the record preview comes back **dimmed** — the dump reload clears the `msg-parsed` class, and the mark is restored from the parsed-history set rather than from the cache, since an entry the cap evicted does not un-parse the record. |
 | 2026-08-29 | **Parse waits for the compiled-DDL cache instead of racing it.** `_compiledCacheReady` was assigned at startup and never read — nothing waited for the IndexedDB open and restore. A parse started inside that window found an empty `_ddlCompileCache`, so **every definition recompiled**, and found `_compiledCacheDB` still null, so `_persistCompiledCache` wrote nothing and the next session recompiled all over again. That is why a full recompile looked tied to new releases: a cold start is when the race is lost, not when the version changes (the cache is keyed on `DDL_COMPILER_VERSION` and a per-file content hash, never on `APP_VERSION`). The Parse button now waits on the promise the code already built, and says so with an indeterminate fill after 150 ms — under that, nothing shows, so a warm start looks unchanged. |
@@ -330,7 +333,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | Block | Purpose | Key attributes |
 |-------|---------|----------------|
 | `read-ddl` | Read **all fields from the DDL Bindings** in DDL declaration order — no individual field listing needed | `binding` (int index into `ddl_bindings`, or `"ANY"`), `fields`, `from`, `until` — §5.2; `vlg_identifier` — §8; `overrides` — §8.1 |
-| `read` | Read a single DDL-defined field, **or a window of them from the cursor** | `field` (DDL field ID), `from`/`until` (walk a range at the cursor — `from` required, `until` inclusive), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13) |
+| `read` | Read a single DDL-defined field, **or a window of them from the cursor** | `field` (DDL field ID), `from`/`until` (walk a range at the cursor — `from` required, `until` inclusive), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13), `map` (read this field through another DEF, this read only — §5.22) |
 | `read-fixed` | Read N bytes inline — no DDL ref needed | `length` (int literal OR field ID ref), `type`, `encoding`, `as` (DDL field ID) |
 | `read-until` | Read bytes until sentinel(s) or EOM | `sentinels` (list of hex bytes), `eom` (bool), `as` (DDL field ID) |
 | `read-length-value` | Read length N then N bytes | `length_encoding` (any length encoding — §5.17), `length_size` (1–4, when the name implies no width), `count` (`bytes`\|`digits`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
@@ -343,6 +346,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | `when` | Branch on a prior field value | `field` (field ID), one of `equal` / `not_equal` / `greater_than` / `greater_or_equal` / `less_than` / `less_or_equal` (literal, list, `{field}` or `{sizeof}` — §5.6), `bytes` / `not-bytes` (a guard at the cursor), `then` (block list), `else` (block list — the other branch) |
 | `repeat` | Loop N times — N from a prior field | `count` (field ID), `body` (block list) |
 | `read-while` | Loop body blocks while a guard predicate matches at the cursor; use when iteration count is unknown or unreliable | `while` (guard), `body` (block list), `max` (int \| field id) |
+| `map` | Declare that a field is really shaped like another DDL definition, and read it that way (§5.22) | `field` (the id being replaced), `def` (DEF name, or `VOL/SV/FILE/DEF`) |
 | `read-tlv` | Parse a DDL buffer field as repeating TLV triples until buffer exhausted | `field` (buffer; optional inside a `de` entry), `ber` (BER-TLV framing), `tag_length`/`length_length` (fixed-width form), `encoding` (`binary` \| `ascii` \| `ascii-hex`), `tags` (tag → DDL element), `tag_field`/`length_field`/`value_field`, `unknown` — §5.15 |
 | `token-area` | Read tokens from the message (see §5.3) | `tokens` (`"ANY"` \| list), `from`, `until` |
 
@@ -1287,6 +1291,68 @@ same rule `read-fixed` follows there.
 
 ---
 
+### 5.22 `map` — a field read through another DDL definition *(added 2026-08-30)*
+
+A variable-length element often declares only its length and one opaque payload:
+
+```
+02 RESERVED-ELEMENT-48.
+    04 LEN     PIC 9(3).
+    04 DATA    PIC X(200).
+```
+
+What `DATA` holds depends on the **message**, not the layout: an online purchase
+carries three sub-fields there, a recurring payment that is also a purchase
+carries six. The DDL cannot say which. `map` names the definition that describes
+*this* message, so the element is read as what it actually is.
+
+```jsonc
+// Declared before the walk — a whole-message decision
+{ "when": { "field": "PROC-CODE.TRAN-CODE", "equal": "28",
+            "then": [ { "map": { "field": "RESERVED-ELEMENT-48.DATA",
+                                 "def":   "RECUR-PYMNT-DATA" } } ] } },
+{ "read-ddl": { "binding": 0 } }
+
+// Or on one read only
+{ "read": { "field": "RESERVED-ELEMENT-48", "map": "BASE/DDL/RECUR/RECUR-PYMNT-DATA" } }
+```
+
+**The block is a declaration, not a read.** It emits nothing and consumes no
+bytes — it settles what a field *means*, and whichever block reads that field
+then produces the sub-rows. That is what lets it sit inside a `when` and decide
+the shape before `read-ddl` walks the whole message.
+
+| Attribute | Holds |
+|-----------|-------|
+| `field` | The id being replaced — usually the `DATA` leaf of a variable-length element. Naming the **element** works too when its payload is a single leaf; the length is never the payload. With several payload leaves the element identifies nothing and the leaf must be named. |
+| `def` | The definition replacing it. A bare `DEF-NAME` is searched in the volumes and subvolumes the class already binds, the bound file first; `VOL/SV/FILE/DEF` reaches anywhere. |
+
+Rules:
+
+- **The field's own bytes are the window.** A length already on the wire still
+  frames the payload — `map` says what the bytes *mean*, never how many there are.
+- **Rows are named after the mapped definition** — `RECUR-PYMNT-DATA.AMT`, not
+  `RESERVED-ELEMENT-48.DATA.AMT` — so the output says which layout was applied.
+  The prefix is applied to the DEF *before* the read, so a field override written
+  against what you see is the id the engine looks up. The corollary: an override
+  written for one map does not apply when a different map wins.
+- **A later `map` on the same field replaces an earlier one**, so a `when`
+  cascade reads top to bottom like the rest of the spec.
+- **A mismatch reads what fits and says so.** A definition longer than the
+  element reports the shortfall; one that describes only part of it reports the
+  bytes left over. Both are their own row.
+- **An unresolvable name is reported where it was written** — on the `map` block —
+  not as a silent no-op fields away.
+- `read`'s `map` attribute applies to **that read only**, and only to the field it
+  names.
+- Mapped rows are drawn in their own colour (`--mapped`) in Parse Results, and say
+  on hover which definition they came from: they are not native to the bound DDL.
+
+> `read-segment-fields` also takes an attribute called `map`, which names a
+> bitmap field. Unrelated to this block, and the two never appear together.
+
+---
+
 ## 6. DDL Bindings (ddl_bindings)
 
 A Message can reference 1 to N DDL paths. These are the DDLs used for field metadata (names, descriptions, base types, lengths, offsets).
@@ -2075,6 +2141,49 @@ the row was wide — so a field whose pill did not fit had no way to be edited a
 all. The bar counts it, the columns show it, and the clear reaches every field
 the selection covers.
 
+**Tags** *(added 2026-08-30)*
+
+A class says what a message **is**. A tag says something **about** one —
+recurring, reversal, high-risk — which is a property of the values in front of
+you, not of the layout. So it lives in its own section rather than in the parse
+spec: nothing about a tag changes how a byte is read.
+
+A tag is a label, a colour, and one or more conditions on fields of the bound —
+or mapped (§5.22) — DDL. Stored on the class object as `tags`:
+
+```jsonc
+"tags": [
+  { "label": "RECURRING", "color": "#bc8cff",
+    "conditions": [
+      { "field": "PROC-CODE.TRAN-CODE", "op": "one-of", "value": "28, 29" },
+      { "field": "RESERVED-ELEMENT-48.LEN", "op": "equals", "value": "006" }
+    ] }
+]
+```
+
+| `op` | Holds when |
+|------|-----------|
+| `equals` | the field's value is this one |
+| `not` | it is none of the listed values |
+| `one-of` | it is any of them — a comma-separated list, or an array |
+
+Rules:
+
+- **Every condition must hold.** A tag is one statement; "any of these" is two
+  tags wearing one badge, which is why `one-of` exists for the common case.
+- Comparison is on the field's **displayed** value, trimmed and
+  case-insensitively. A `PIC X` field is space-padded on the wire and nobody
+  should have to count the padding; a display override is what the reader sees,
+  so it is what a tag compares.
+- **A field the parse never produced supports no claim about itself**, `not`
+  included — a tag that fired on every message *missing* a field would be worse
+  than one that never fired.
+- **A tag with no conditions never fires.** An empty tag is one being written,
+  and badging every message while it is half-typed is noise.
+- Several tags can be true at once. They render after the type code in the Parse
+  Results bar, in each tag's own colour, and say on hover which conditions
+  earned them.
+
 **Test Bar** (below the tab content area)
 - Collapsible panel. Format selector: Auto / Hex / ASCII.
 - Textarea for pasting raw message bytes (hex string or ASCII text).
@@ -2140,7 +2249,7 @@ Once all messages are migrated and verified:
 
 | Key | Holds |
 |-----|-------|
-| `up_format_specs` | The specs themselves (replaces `up_detect_rules`) |
+| `up_format_specs` | The specs themselves (replaces `up_detect_rules`) — including each class's `tags` (§11) |
 | `up_format_default_seen` | Every built-in default label ever offered, so a default the user **deleted** is not resurrected on the next run (§12) |
 | `up_format_sync_ver` | Version marker for the one-time startup reconcile of saved specs against defaults; bumping it re-runs the merge (§12) |
 | `up_me_last_sel` | Last-selected entity in the Class Editor |

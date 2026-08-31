@@ -5697,6 +5697,107 @@ test('routing: falls back to legacy only when there is genuinely nothing to run'
 // thing testing that condition was a regex over the source. Every piece feeding
 // _parseVerdict was covered; the verdict itself was not, so "which kinds reach
 // the picker" was an assumption. It is a table now.
+test('map: a field is read through another DDL definition', () => {
+  // A variable-length element declares LEN and DATA and nothing more, because
+  // only the message knows what shape DATA is: three sub-fields for a purchase,
+  // six for a recurring payment. `map` names the definition that describes THIS
+  // message, so the element reads as what it actually is. Requested 2026-08-30.
+  const DDL = 'DEFINITION MSG.\n  02 TRAN-TYPE PIC X(2).\n  02 ELEM.\n'
+            + '    04 LEN PIC 9(2).\n    04 DATA PIC X(8).\nEND\n'
+            + 'DEFINITION RECUR-DATA.\n  02 AMT PIC 9(6).\n  02 FREQ PIC X(2).\nEND\n';
+  const bytes = new Uint8Array([0x32,0x38,0x30,0x38,0x30,0x30,0x30,0x31,0x30,0x30,0x4D,0x31]);
+  const prevTree = S.ddlTree, prevFmt = S.inputFormat;
+  S.ddlTree = { HELP: { HELP: { HELP: DDL } } };
+  S.inputFormat = 'hex';
+  const run = spec => meExecParseSpec(
+    { name: 'HELP', ddl_bindings: ['HELP/HELP/HELP/MSG'], parse_spec_binary: spec }, bytes);
+  const ids = ctx => ctx.fields.map(f => f.id);
+  const val = (ctx, id) => (ctx.fields.find(f => f.id === id) || {}).value;
+  try {
+    // Declared before the walk, so read-ddl produces the mapped shape.
+    let c = run([{ map: { field: 'ELEM.DATA', def: 'RECUR-DATA' } }, { 'read-ddl': 'ANY' }]);
+    deepEq(ids(c), ['TRAN-TYPE', 'ELEM.LEN', 'RECUR-DATA.AMT', 'RECUR-DATA.FREQ'],
+       'ELEM.DATA is replaced by the rows the mapped definition produced');
+    eq(val(c, 'RECUR-DATA.AMT'), '000100', 'and they are read from the element\'s own bytes');
+    eq(val(c, 'RECUR-DATA.FREQ'), 'M1', 'in declaration order');
+    // The rows know where they came from — that is what colours them in the
+    // table as not native to the bound DDL.
+    const amt = c.fields.find(f => f.id === 'RECUR-DATA.AMT');
+    eq(amt.mappedFrom, 'ELEM.DATA', 'the row names the field it replaced');
+    eq(amt.mappedVia, 'RECUR-DATA', 'and the definition it was read through');
+
+    // Inside a `when`: the message chooses its own shape before the walk.
+    c = run([{ read: 'TRAN-TYPE' },
+             { when: { field: 'TRAN-TYPE', equal: '28',
+                       then: [{ map: { field: 'ELEM.DATA', def: 'RECUR-DATA' } }] } },
+             { read: 'ELEM' }]);
+    assert.ok(ids(c).includes('RECUR-DATA.AMT'), 'the branch that ran set the shape');
+    c = run([{ read: 'TRAN-TYPE' },
+             { when: { field: 'TRAN-TYPE', equal: '99',
+                       then: [{ map: { field: 'ELEM.DATA', def: 'RECUR-DATA' } }] } },
+             { read: 'ELEM' }]);
+    deepEq(ids(c), ['TRAN-TYPE', 'ELEM.LEN', 'ELEM.DATA'],
+       'a branch that did NOT run leaves the DDL\'s own shape alone');
+
+    // A later map wins, so a when-cascade reads top to bottom.
+    c = run([{ map: { field: 'ELEM.DATA', def: 'MSG' } },
+             { map: { field: 'ELEM.DATA', def: 'RECUR-DATA' } },
+             { 'read-ddl': 'ANY' }]);
+    assert.ok(ids(c).includes('RECUR-DATA.AMT'), 'the last map on a field is the one that applies');
+
+    // read's own attribute: that read only. Naming the ELEMENT works when its
+    // payload is a single leaf — the length is never the payload.
+    c = run([{ read: 'TRAN-TYPE' }, { read: { field: 'ELEM', map: 'RECUR-DATA' } }]);
+    deepEq(ids(c), ['TRAN-TYPE', 'ELEM.LEN', 'RECUR-DATA.AMT', 'RECUR-DATA.FREQ'],
+       'the element name reaches its payload leaf, never its length');
+    c = run([{ read: 'TRAN-TYPE' }, { read: 'ELEM' }]);
+    deepEq(ids(c), ['TRAN-TYPE', 'ELEM.LEN', 'ELEM.DATA'],
+       'and it is spent — the next read of the same field is unmapped');
+
+    // Fully qualified, for a definition outside the bound file.
+    c = run([{ map: { field: 'ELEM.DATA', def: 'HELP/HELP/HELP/RECUR-DATA' } }, { 'read-ddl': 'ANY' }]);
+    assert.ok(ids(c).includes('RECUR-DATA.AMT'), 'a VOL/SV/FILE/DEF path resolves');
+
+    // A name that resolves to nothing is reported WHERE IT WAS WRITTEN, not as a
+    // silent no-op fields away.
+    c = run([{ map: { field: 'ELEM.DATA', def: 'NOPE' } }, { 'read-ddl': 'ANY' }]);
+    const err = c.fields.find(f => f.error && /no DDL definition named/.test(f.error));
+    assert.ok(err, `an unresolvable def is reported: ${JSON.stringify(ids(c))}`);
+    assert.ok(ids(c).includes('ELEM.DATA'), 'and the field still reads as the DDL declares it');
+
+    // Read what fits, flag the rest — both directions.
+    const BIG = DDL + 'DEFINITION TOO-BIG.\n  02 A PIC X(20).\nEND\n';
+    S.ddlTree = { HELP: { HELP: { HELP: BIG } } };
+    c = run([{ map: { field: 'ELEM.DATA', def: 'TOO-BIG' } }, { 'read-ddl': 'ANY' }]);
+    assert.ok(c.fields.some(f => f.error && /needs 20 byte\(s\)/.test(f.error)),
+      `a definition longer than the element says so: ${JSON.stringify(c.fields.map(f => f.error).filter(Boolean))}`);
+    const SHORT = DDL + 'DEFINITION TOO-SMALL.\n  02 A PIC X(3).\nEND\n';
+    S.ddlTree = { HELP: { HELP: { HELP: SHORT } } };
+    c = run([{ map: { field: 'ELEM.DATA', def: 'TOO-SMALL' } }, { 'read-ddl': 'ANY' }]);
+    assert.ok(c.fields.some(f => f.id === 'TOO-SMALL.A'), 'the fields that fit are still read');
+    assert.ok(c.fields.some(f => f.error && /left over/.test(f.error)),
+      'and the bytes it does not describe are reported');
+  } finally { S.ddlTree = prevTree; S.inputFormat = prevFmt; }
+});
+
+test('map: the colour and the catalogue are wired, not just the engine', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // Its own hue: accent already means an override, accent2 and warning already
+  // mean something is wrong, and a mapped field is neither.
+  eq((src.match(/^  --mapped: #[0-9a-f]{6};$/gm) || []).length, 2,
+     'the token is defined in BOTH themes, or one of them falls back to nothing');
+  assert.ok(/#resContainer tr\.row-mapped td\.c-id \{ color: var\(--mapped\); \}/.test(src),
+    'the row carries the colour on its NAME — the value column already speaks in three others');
+  assert.ok(/f\.mappedFrom \? 'row-mapped' : ''/.test(src), 'and the class is applied from the field');
+  // The expansion happens ONCE, in the engine: the fields list is what coverage,
+  // Track and the exports read, so a row on screen but not in that list is a row
+  // half the app cannot see.
+  const exp = psFnSource('_meExpandMappedFields');
+  assert.ok(/ctx\.fields = out;/.test(exp), 'the mapped rows replace the field in the list');
+  assert.ok(/delete ctx\.fieldsById\[f\.id\];/.test(exp),
+    'and the replaced field stops answering by id, or a later block reads a row that is gone');
+});
+
 test('verdicts: every kind is produced by the case that should produce it', () => {
   S.ddlTree = { POS: { SV: { PSTM: ROUTE_DDL } } };
   S.inputFormat = 'hex';
@@ -16611,6 +16712,9 @@ const PS_EXEC_FNS = {
   'repeat':              ['_meExecRepeat'],
   'read-while':          ['_meExecReadWhile'],
   'token-area':          ['_meExecTokenArea'],
+  // The block only DECLARES the substitution; the reading is done by whatever
+  // block reads the field, through the one leaf reader every path shares.
+  'map':                 ['_meExecMap', '_meReadMappedFields', '_meResolveMapDef'],
 };
 
 function psFnSource(name) {

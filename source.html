@@ -178,6 +178,11 @@
   --hl-text: #ffffff;
   --success: #3fb950;
   --warning: #d29922;
+  /* A field that came from a `map` — read through a definition other than the
+     one the class binds. Its own hue on purpose: accent already means an
+     override, accent2 and warning already mean something is wrong, and a
+     mapped field is neither. */
+  --mapped: #bc8cff;
   --resizer-bg: transparent;
   /* neutral tints — dark lightens, light darkens. One token, two directions. */
   --tint-bar: rgba(255,255,255,0.05);
@@ -276,6 +281,7 @@
   --hl-text: var(--text);
   --success: #0d5523;
   --warning: #ca8a04;
+  --mapped: #8250df;
   --resizer-bg: transparent;
   --tint-bar: rgba(0,0,0,0.05);
   --tint-row: rgba(0,0,0,0.04);
@@ -1903,6 +1909,11 @@ td.c-err  { color: var(--accent2); }
 /* A collapsed group hides its whole subtree — every row naming it as an
    ancestor, at any depth. */
 #resContainer tr.row-grp-hidden { display: none; }
+/* A row read through a `map` — its shape came from a definition the class does
+   not bind, so it is not native to the DDL the rest of the table describes. The
+   NAME carries the colour: the value column already speaks in green, red and
+   dimmed white, and a fourth meaning there would fight three existing ones. */
+#resContainer tr.row-mapped td.c-id { color: var(--mapped); }
 /* The group's combined value is always in the markup; this is what shows it, so
    the toggle costs no re-render and cannot lose the scroll or the selection. */
 #resContainer .grp-val { display: none; }
@@ -14049,7 +14060,8 @@ function renderFieldTable(msg) {
     const deBadge    = _deBadgeFor(f.deNum);
     const unreliableBadge = f.unreliable
       ? `<span class="unreliable-badge">unreliable</span>` : '';
-    const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', f.unreliable ? 'row-unreliable' : '', extraClass].filter(Boolean).join(' ');
+    const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', f.unreliable ? 'row-unreliable' : '',
+                       f.mappedFrom ? 'row-mapped' : '', extraClass].filter(Boolean).join(' ');
     const searchStr = [fid, descText, f.value || '', f.displayValue || ''].join(' ').toLowerCase();
     // data-under lists every ancestor group, so collapsing one hides its whole
     // subtree without the rows needing to know how deep they are.
@@ -14065,7 +14077,9 @@ function renderFieldTable(msg) {
       onmouseenter="hoverField('${esc(fid)}')"
       onmouseleave="clearHover()">
       <td class="c-num">${_rowNum}</td>
-      <td class="c-id"${node.depth ? ` style="padding-left:${4 + node.depth * 12}px"` : ''}>${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
+      <td class="c-id"${node.depth ? ` style="padding-left:${4 + node.depth * 12}px"` : ''}${
+        f.mappedFrom ? ` title="${esc(`Read through map ${f.mappedVia || ''} — replaces ${f.mappedFrom}, and is not declared in the bound DDL`)}"` : ''
+      }>${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
       <td class="c-desc" title="${esc(descTip)}">${descHtml}${errLine}${det}</td>
       <td class="c-len">${lenCell}</td>
       <td class="c-off">${offCell}</td>
@@ -19591,7 +19605,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.48.16.0';
+const APP_VERSION  = '1.49.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22431,6 +22445,7 @@ const _PS_GROUPS = [
     ['read-bitmap-fields',  'The DEs a bitmap marks present'],
     ['read-segment-fields', 'Only the segments the map sets'],
     ['read-tlv',            'A tag-length-value buffer'],
+    ['map',                 'Read a field with another DDL definition'],
   ]},
   { name: 'Control', items: [
     ['when',                'Branch on a field already read'],
@@ -23494,6 +23509,62 @@ const _PS_HELP = {
         spec: [{"read-fixed": {"length": 2, "as": "HEAD"}},
                {"stop": true},
                {"read-fixed": {"length": 2, "as": "NEVER"}}] },
+    ],
+  },
+  'map': {
+    dflts: {
+      def: 'required — there is no default shape to fall back to',
+    },
+    desc: [
+      'Says that a field is really shaped like some other DDL definition, and reads it that way.',
+      'A <b>declaration</b>, not a read: it emits nothing and consumes no bytes. It settles what a field means, and the block that reads that field then produces the sub-rows.',
+      'Written before <code>read-ddl</code> it decides the shape for the whole walk — which is why it belongs inside a <code>when</code>, where the message itself chooses.',
+      'The field\'s own bytes are the window. A length already on the wire still frames the payload: <code>map</code> says what the bytes <b>mean</b>, never how many there are.',
+      'Rows come out named after the mapped definition, so the output says which layout was applied.',
+    ],
+    useWhen: [
+      'A variable-length element declares only <code>LEN</code> and <code>DATA</code>, and what <code>DATA</code> holds depends on the message — three sub-fields for a purchase, six for a recurring payment.',
+      'The same element carries a different structure per transaction type, and a <code>when</code> can tell them apart.',
+      'The layout you need lives in <b>another DDL</b> — give the full <code>VOL/SV/FILE/DEF</code> path.',
+    ],
+    attrs: [
+      ['field', 'field-id', true, [
+        'The field whose shape is being replaced — usually the <code>DATA</code> leaf of a variable-length element.',
+        'Its declared bytes become the window the mapped definition is read across.',
+      ]],
+      ['def', 'DEF-name | VOL/SV/FILE/DEF', true, [
+        'The definition that describes what those bytes really are.',
+        ['<code>"RECUR-PYMNT-DATA"</code>', 'A bare name — searched in the volumes and subvolumes this class already binds, the bound file first.'],
+        ['<code>"BASE/DDL/RECUR/RECUR-PYMNT-DATA"</code>', 'Fully qualified, for a definition that lives anywhere else.'],
+        'A name that resolves to nothing is reported <b>here</b>, where it was written, not as a silent no-op further down.',
+      ]],
+    ],
+    notes: [
+      'A later <code>map</code> on the same field replaces an earlier one, so a <code>when</code> cascade reads top to bottom like the rest of the spec.',
+      'When the definition does not fit, the fields that fit are still read and the shortfall — or the bytes left over — is reported as its own row.',
+      '<code>read</code> takes a <code>map</code> attribute for the one-off case: it applies to that read only, and only to the field it names.',
+    ],
+    examples: [
+      { what: '<b>field / def</b> — ELEM.DATA is eight opaque bytes in the DDL; the map reads them as RECUR-DATA, and the rows say so',
+        ddl: 'DEFINITION MSG.\n  02 TRAN-TYPE PIC X(2).\n  02 ELEM.\n    04 LEN PIC 9(2).\n    04 DATA PIC X(8).\nEND\nDEFINITION RECUR-DATA.\n  02 AMT PIC 9(6).\n  02 FREQ PIC X(2).\nEND\n',
+        def: 'MSG',
+        payload: '32 38 30 38 30 30 30 31 30 30 4D 31',
+        spec: [{"map": {"field": "ELEM.DATA", "def": "RECUR-DATA"}},
+               {"read-ddl": "ANY"}] },
+      { what: 'inside a <b>when</b> — the message picks its own shape, and the walk after it follows',
+        ddl: 'DEFINITION MSG.\n  02 TRAN-TYPE PIC X(2).\n  02 ELEM.\n    04 LEN PIC 9(2).\n    04 DATA PIC X(8).\nEND\nDEFINITION RECUR-DATA.\n  02 AMT PIC 9(6).\n  02 FREQ PIC X(2).\nEND\n',
+        def: 'MSG',
+        payload: '32 38 30 38 30 30 30 31 30 30 4D 31',
+        spec: [{"read": "TRAN-TYPE"},
+               {"when": {"field": "TRAN-TYPE", "equal": "28",
+                         "then": [{"map": {"field": "ELEM.DATA", "def": "RECUR-DATA"}}]}},
+               {"read": "ELEM"}] },
+      { what: '<b>map</b> on a single read — this read only, and only the field it names',
+        ddl: 'DEFINITION MSG.\n  02 TRAN-TYPE PIC X(2).\n  02 ELEM.\n    04 LEN PIC 9(2).\n    04 DATA PIC X(8).\nEND\nDEFINITION RECUR-DATA.\n  02 AMT PIC 9(6).\n  02 FREQ PIC X(2).\nEND\n',
+        def: 'MSG',
+        payload: '32 38 30 38 30 30 30 31 30 30 4D 31',
+        spec: [{"read": "TRAN-TYPE"},
+               {"read": {"field": "ELEM", "map": "RECUR-DATA"}}] },
     ],
   },
   'skip': {
@@ -25221,7 +25292,7 @@ const _PS_RENAMED = {
 const _PS_KNOWN_BLOCKS = new Set([
   'read-ddl','read','read-fixed','read-until','read-length-value',
   'read-to-end','read-bitmap','read-bitmap-fields','read-segment-fields','read-tlv',
-  'when','repeat','read-while','skip','stop','token-area',
+  'when','repeat','read-while','skip','stop','token-area','map',
 ]);
 
 // Token classes are the same hl-* classes the DDL editor uses, so the colors
@@ -31593,7 +31664,7 @@ function _meBytesToHex(bytes) {
   return bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
 }
 
-function _meReadOneFieldFromDef(def, ctx) {
+function _meReadOneFieldFromDef(def, ctx, alsoId) {
   const hasExplicit = def.offset !== undefined;
   // A "bytes" override re-sizes a field, which moves everything declared after
   // it: shrink a 4-byte MSGTYPE to 2 and the two bytes left over must still be
@@ -31753,7 +31824,7 @@ function _meReadOneFieldFromDef(def, ctx) {
   const srcB  = (isBin && ctx.rawBytes) ? Array.from(ctx.rawBytes.slice(dataStart, dataStart + len)) : fBytes;
   const binUnreliable = isBin && (fmt === 'ascii' || fmt === 'netard-ascii' || fmt === 'netard' || fmt === 'fup-ascii');
 
-  return {
+  const _f = {
     id: def.id,
     description: def.description,
     dataType: def._dataType || def.dataType || '', occurs: def._occurs,
@@ -31776,6 +31847,95 @@ function _meReadOneFieldFromDef(def, ctx) {
     unreliable: binUnreliable || undefined,
     maskInRaw:  binUnreliable || undefined,
   };
+  // A mapped field is read TWICE over the same bytes: once as the DDL declares
+  // it, so the span, the cursor and every caller's bookkeeping stay exactly as
+  // they were, and once through the mapped definition to produce the rows that
+  // replace it. Hanging the children off the field rather than pushing them here
+  // is what keeps this a single-field function — nine call sites expect one
+  // field back and each does its own pushing. renderFields splices them in.
+  const _mapRef = _meMapFor(def.id, ctx, ctx && ctx._inlineMap, alsoId);
+  if (_mapRef) {
+    _f.mappedTo  = _mapRef;
+    _f.mapFields = _meReadMappedFields(_mapRef, _f, ctx);
+  }
+  return _f;
+}
+
+// The `map` block: a DECLARATION, not a read. It records which definition
+// stands in for a field and emits nothing, so it can sit inside a `when` branch
+// and settle the message's shape BEFORE read-ddl walks it. A later map on the
+// same field replaces an earlier one, so a `when` cascade reads top to bottom
+// like the rest of the spec.
+function _meExecMap(attrs, ctx) {
+  const o     = (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) ? attrs : null;
+  const field = o ? o.field : null;
+  const def   = o ? (o.def ?? o.to) : null;
+  if (!field || !def) {
+    ctx.fields.push({ id: 'map', error: 'map needs "field" (the id being replaced) and "def" (the definition replacing it)' });
+    return;
+  }
+  // Resolved HERE, not at the read, so a name that does not exist is reported
+  // where it was written rather than as a silent no-op fields away.
+  if (!_meResolveMapDef(def, ctx)) {
+    ctx.fields.push({ id: 'map', error:
+      `map: no DDL definition named "${def}" — give a DEF in a bound volume, or a full VOL/SV/FILE/DEF path` });
+    return;
+  }
+  if (!ctx.maps) ctx.maps = {};
+  ctx.maps[_canonFieldId(field)] = String(def);
+}
+
+// The mapped definition read across the bytes the field frames. The window is
+// the field's own span, so a LEN that already sized the payload keeps sizing it —
+// `map` says what the bytes MEAN, never how many there are.
+function _meReadMappedFields(ref, f, ctx) {
+  const r = _meResolveMapDef(ref, ctx);
+  if (!r) return [{ id: String(ref), error:
+    `map: no DDL definition named "${ref}" — give a DEF in a bound volume, or a full VOL/SV/FILE/DEF path` }];
+  const start = f.startByte, end = f.endByte;
+  if (start == null || end == null || end < start) return [];
+  // Slicing the END off the buffer is what bounds the read: offsets stay
+  // absolute — so every span, highlight and byte-coverage sum still refers to
+  // the same message — while a definition longer than the element simply runs
+  // out of bytes instead of reading its neighbour's.
+  const sub = {
+    ...ctx, bytes: ctx.bytes.slice(0, end + 1), cursor: start,
+    fields: [], fieldsById: {},
+    ddlBase: start, ovShift: 0, _ovShiftSeen: new Set(),
+    // The map is spent. Without this a definition that happens to declare the
+    // mapped id would map itself, for ever.
+    maps: null, _inlineMap: null,
+  };
+  // Rows are named after the definition that produced them, so the output says
+  // which layout was applied — the whole point of a field that has more than
+  // one. The prefix is applied to the DEF before the read, not to the row after
+  // it, so a field override written against what you can see is the id the
+  // engine looks up.
+  const pre = String(r.defName || String(ref).split('/').pop() || 'MAP');
+  const out = [];
+  let ran = false;
+  for (const d of (r.defs || [])) {
+    if (sub.cursor > end) { ran = true; break; }
+    const kf = _meReadOneFieldFromDef({ ...d, id: `${pre}.${d.id}`, offset: undefined }, sub);
+    if (!kf) { ran = true; break; }
+    out.push(kf);
+    sub.cursor = (kf.endByte != null) ? kf.endByte + 1 : sub.cursor;
+  }
+  // Read what fits, and say what did not. Both directions are a mismatch worth
+  // seeing: a definition that wanted more bytes than the element carries is
+  // probably the wrong map, and bytes left over are a map that describes only
+  // part of it. Silence would make either look like a clean parse.
+  const declared = (r.defs || []).reduce((n, d) => n + (d.length || 0), 0);
+  const room     = end - start + 1;
+  if (ran || declared > room) {
+    out.push({ id: `${f.id}`, error:
+      `map ${r.defName || ref} needs ${declared} byte(s), ${f.id} carries ${room}` });
+  } else if (sub.cursor <= end) {
+    const left = end - sub.cursor + 1;
+    out.push({ id: `${f.id}`, error:
+      `map ${r.defName || ref} describes ${room - left} of ${room} byte(s) — ${left} left over` });
+  }
+  return out;
 }
 
 // Normalize read-ddl attrs into { binding, fields, from, until }.
@@ -32393,6 +32553,64 @@ function _meExecReadWindow(attrs, ctx) {
   }
 }
 
+// ── map: another DDL definition standing in for a field's shape ─────────────
+// A variable-length element like RESERVED-ELEMENT-48 declares LEN and DATA and
+// nothing more, because what DATA holds depends on the message: an online
+// purchase carries three sub-fields, a recurring payment six. The DDL cannot say
+// which — only the message can. `map` names the DEF that describes THIS
+// message's shape, so the element is read as what it actually is instead of one
+// opaque run of bytes. Requested 2026-08-30.
+//
+// A reference is either a bare DEF name, resolved against the volumes and
+// subvolumes the class already binds — a variant layout is nearly always
+// declared beside the layout it varies — or a fully qualified VOL/SV/FILE/DEF
+// for one that lives elsewhere.
+function _meResolveMapDef(ref, ctx) {
+  const raw = String(ref == null ? '' : ref).trim();
+  if (!raw) return null;
+  if (raw.includes('/')) {
+    const r = getDDLFromPath(raw);
+    return (r && r.defs && r.defs.length) ? r : null;
+  }
+  const seen = new Set();
+  for (const p of (ctx?.item?.ddl_bindings || [])) {
+    if (!p) continue;
+    const [vol, sv, file] = String(p).split('/');
+    if (!vol || !sv) continue;
+    // The binding's OWN file first, then the rest of that subvolume. Binding
+    // order decides, the same way it decides everything else here.
+    const names = [file, ...Object.keys((S.ddlTree?.[vol] || {})[sv] || {})];
+    for (const name of names) {
+      if (!name) continue;
+      const key = `${vol}/${sv}/${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const r = getDDLFromPath(`${key}/${raw}`);
+      if (r && r.defs && r.defs.length) return r;
+    }
+  }
+  return null;
+}
+
+// What a field is mapped to right now: the `map` attribute on this very read
+// wins over a `map` block declared earlier, because it is the more specific
+// statement — the same rule an inline type override follows.
+// `alsoId` is the enclosing element, passed only where naming it is unambiguous:
+// a variable-length group with ONE payload leaf. "Map RESERVED-ELEMENT-48 to
+// RECUR-DATA" is how anyone would write it — naming the element they can see
+// rather than the .DATA leaf inside it — and refusing that would be pedantry.
+// With several payload leaves the element does NOT identify one field, so it is
+// not accepted there and the leaf must be named.
+function _meMapFor(fieldId, ctx, inline, alsoId) {
+  const id  = _canonFieldId(fieldId);
+  const alt = alsoId ? _canonFieldId(alsoId) : null;
+  if (inline && inline.def && (inline.field === id || (alt && inline.field === alt)))
+    return inline.def;
+  const m = ctx && ctx.maps;
+  if (!m) return null;
+  return m[id] ?? (alt ? (m[alt] ?? null) : null);
+}
+
 function _meExecReadField(attrs, ctx) {
   if (attrs && typeof attrs === 'object' && (attrs.from !== undefined || attrs.until !== undefined)) {
     if (!attrs.from) {
@@ -32473,6 +32691,14 @@ function _meExecReadField(attrs, ctx) {
       // declaration order — each takes what it declares or what is left,
       // whichever is smaller. Every leaf is still emitted, so the DDL's shape
       // survives in the output even when the message carried fewer bytes.
+      // Which leaf a map naming the GROUP would mean. A length leaf is never it —
+      // the length frames the payload, it is not the payload — so with exactly
+      // one leaf left the element identifies that field and "map ELEM" is
+      // unambiguous. With more than one it identifies nothing, and the leaf has
+      // to be named.
+      const _lenId = _meAutoLLVarLenId(occ[k], ctx.vlgIdentifier, occ[k].length);
+      const _pay   = occ[k].filter(d => !_meVlgIsLen(_lenId, d.id));
+      const _soloPayload = _pay.length === 1 ? fieldId : null;
       let remaining = lpWindow;
       for (const d of occ[k]) {
         if (lpWindow != null) {
@@ -32499,7 +32725,11 @@ function _meExecReadField(attrs, ctx) {
         // Same rule as a single field: follow the cursor, not the declared
         // offset. (v1.1.2.412 made this read at declared positions to match
         // leaves; leaves now follow the cursor, so both agree again.)
-        const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
+        // Only the PAYLOAD leaf answers to the element's name. The length is what
+        // frames it, never what it holds — mapping that would read the counter
+        // as the content.
+        const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx,
+          _meVlgIsLen(_lenId, d.id) ? null : _soloPayload);
         if (!f) return;
         _meApplyTypeOverride(f, d, ctx, typeOverride);
         _meApplyDisplayOverride(f, d, ctx);
@@ -33889,6 +34119,17 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
     };
     _meApplyTypeOverride(cf, childDef, ctx, null);
     _meApplyDisplayOverride(cf, childDef, ctx);
+    // The payload of a variable-length element is THE case `map` exists for: the
+    // DDL says DATA is n opaque bytes because only the message knows what shape
+    // they are. This child is built inline rather than through the shared leaf
+    // reader — the length frames it, not the declared size — so the hook has to
+    // be here too, or a map would work everywhere except where it is wanted.
+    const _cMap = _meMapFor(childDef.id, ctx, ctx._inlineMap,
+                            dataDefs.length === 1 ? groupId : null);
+    if (_cMap && take > 0) {
+      cf.mappedTo  = _cMap;
+      cf.mapFields = _meReadMappedFields(_cMap, cf, ctx);
+    }
     out.push(cf);
     ctx.fieldsById[childDef.id] = cf;
   }
@@ -35156,6 +35397,15 @@ function _meExecBlock(block, ctx) {
   if (attrs && typeof attrs === 'object' && attrs.overrides !== undefined)
     ctx.blockOverrides = _meOvNormalizeInline(attrs.overrides);
 
+  // `read`'s own map attribute, for the one field this block names. Scoped to
+  // that id: a group read walks many leaves, and "read this field with that
+  // definition" must not silently reshape its siblings. `read-segment-fields`
+  // also has an attribute called `map` — it names a bitmap field, an unrelated
+  // thing — so this is deliberately read for `read` alone.
+  const _prevInlineMap = ctx._inlineMap;
+  if (type === 'read' && attrs && typeof attrs === 'object' && attrs.map)
+    ctx._inlineMap = { field: _canonFieldId(attrs.field || ''), def: String(attrs.map) };
+
   // Positioning is resolved once, here, so it applies to every block type.
   let _peekReturn = null;
   if (attrs && typeof attrs === 'object' && attrs.at !== undefined) {
@@ -35173,6 +35423,7 @@ function _meExecBlock(block, ctx) {
   } finally {
     if (_peekReturn !== null) ctx.cursor = _peekReturn;
     ctx.blockOverrides = _prevOvr;
+    ctx._inlineMap = _prevInlineMap;
   }
 }
 
@@ -35192,6 +35443,7 @@ function _meExecBlockAt(type, attrs, ctx) {
     case 'repeat':              return _meExecRepeat(attrs, ctx);
     case 'read-while':          return _meExecReadWhile(attrs, ctx);
     case 'token-area':          return _meExecTokenArea(attrs, ctx);
+    case 'map':                 return _meExecMap(attrs, ctx);
     // ── stop ──────────────────────────────────────────────────────────────
     // "If you got here and the data ran out, that is fine — stop."
     //
@@ -35332,7 +35584,32 @@ function _meExecParseSpec(item, bytes, opts) {
     lenEnc: _meSpecEncodingInfo(item),
   };
   for (const block of effectiveSpec) { _meExecBlock(block, ctx); if (ctx.stopped) break; }
+  _meExpandMappedFields(ctx);
   return ctx;
+}
+
+// A mapped field is REPLACED by the rows the mapped definition produced. Done
+// once, here, rather than at render time: the fields list is what byte coverage,
+// Track, the exports and the overlay all read, and a row that exists on screen
+// but not in that list is a row half the app cannot see. The parent's own bytes
+// are already covered by its children — keeping both would count them twice.
+function _meExpandMappedFields(ctx) {
+  if (!ctx || !Array.isArray(ctx.fields)) return;
+  if (!ctx.fields.some(f => f && f.mapFields)) return;
+  const out = [];
+  for (const f of ctx.fields) {
+    if (!f || !f.mapFields) { out.push(f); continue; }
+    for (const k of f.mapFields) {
+      // Where the row came from, so Parse Results can colour it as not native to
+      // the bound DDL, and so the reader can tell which layout was applied.
+      k.mappedFrom = f.id;
+      k.mappedVia  = f.mappedTo;
+      out.push(k);
+      if (k.id && !k.error) ctx.fieldsById[k.id] = k;
+    }
+    delete ctx.fieldsById[f.id];
+  }
+  ctx.fields = out;
 }
 
 // Ad-hoc SEG-MAP overrides for main-flow parses, keyed by spec name.

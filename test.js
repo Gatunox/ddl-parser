@@ -19941,6 +19941,14 @@ test('record counter nav: ends, jumps and Go-to work in the counter\'s own numbe
   // cannot. Requested 2026-08-30.
   assert.ok(!/\.msg-nav \.btn \{[^}]*border-color:\s*transparent/.test(fs.readFileSync('./source.html', 'utf8')),
     'the nav buttons must not drop their border');
+  // FOUR arrangements per row, fixed. On flex-wrap the count per row followed
+  // the drawer width, the font size and the density: eight arrangements came out
+  // 5 + 3 in production and 4 + 4 in development, so the two quads stopped
+  // sitting above each other. Reported 2026-08-31.
+  const pickCss = (fs.readFileSync('./source.html', 'utf8').match(/\.lay-pick \{[^}]*\}/) || [''])[0];
+  assert.ok(/grid-template-columns: repeat\(4, max-content\)/.test(pickCss),
+    `the picker must not reflow with the drawer: ${pickCss}`);
+  assert.ok(!/flex-wrap/.test(pickCss), 'and the wrap it replaced has to be gone');
   // One constant for both lists: two would drift and the difference would read
   // as a bug.
   assert.ok(/const NAV_JUMP = 10;/.test(fs.readFileSync('./source.html', 'utf8')),

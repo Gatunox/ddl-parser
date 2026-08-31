@@ -2279,8 +2279,13 @@ td.c-err  { color: var(--accent2); }
    A divider line said "these are separate"; a card says it and also gives the
    section a surface, which is what makes the drawer read as structured rather
    than as one long scroll. */
-/* The arrangement picker: five little diagrams of the boxes each one makes. */
-.lay-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+/* The arrangement picker: a little diagram of the boxes each arrangement makes.
+   FOUR per row, fixed. It used to wrap on flex, so how many landed on the first
+   row depended on the drawer's width, the font size and the density — eight
+   arrangements came out 5 + 3 on a production machine and 4 + 4 here, which
+   makes the same control a different shape for every user and the two quads no
+   longer sit above each other. Reported 2026-08-31. */
+.lay-pick { display: grid; grid-template-columns: repeat(4, max-content); gap: 6px; }
 .lay-pick-btn {
   padding: 3px; line-height: 0; cursor: pointer;
   background: var(--surface-raised); color: var(--text-dim);
@@ -19660,7 +19665,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.4.0';
+const APP_VERSION  = '1.49.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

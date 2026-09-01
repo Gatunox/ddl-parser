@@ -19853,18 +19853,66 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
     for (const f of [() => sandbox.auditNavPopup(1), () => sandbox.auditNavPopup(-10),
                      () => sandbox.auditNavPopupEnd(1), () => sandbox.auditNavPopupEnd(-1)]) f();
     deepEq(went, [], 'an empty list moves nowhere');
+    // Go-to: by the number ON the record. With a filter on, the numbers are
+    // sparse and the positions are not the numbers — which is the whole reason
+    // this takes one and not the other.
+    st.filtered = [{ offset: 0, recNo: 970001 }, { offset: 1, recNo: 970004 },
+                   { offset: 2, recNo: 970009 }];
+    const flashes = [];
+    const realFlash = sandbox.flash; sandbox.flash = m => flashes.push(String(m));
+    const realPrompt = sandbox.showPrompt;
+    const answer = v => { sandbox.showPrompt = (l, d, cb) => { asked = { l, d }; cb(v); }; };
+    let asked = null;
+    try {
+      at(0); answer('970009'); sandbox.auditNavGoTo();
+      deepEq(went, [2], 'the record NUMBER, not the position');
+      eq(asked.d, '970001', 'the box opens on the record you are already on');
+      assert.ok(/970001 – 970009/.test(asked.l), `the range is stated: ${asked.l}`);
+      at(0); answer('970005'); sandbox.auditNavGoTo();
+      deepEq(went, [], 'a number that is not in the filter moves nowhere');
+      assert.ok(/970005 is not in the current filter/.test(flashes.join('|')),
+        `and says so: ${flashes.join('|')}`);
+      // Position is NOT what it takes — "3" is a record number here, not the third row.
+      at(0); flashes.length = 0; answer('3'); sandbox.auditNavGoTo();
+      deepEq(went, [], 'a position typed by mistake is treated as a number and refused');
+      for (const v of [null, '', 'abc']) {
+        at(1); answer(v); sandbox.auditNavGoTo();
+        deepEq(went, [], `"${v}" leaves the position alone`);
+      }
+      // A file with no record numbers falls back to position, and Go-to follows.
+      st.filtered = [{ offset: 0 }, { offset: 1 }, { offset: 2 }];
+      at(0); answer('3'); sandbox.auditNavGoTo();
+      deepEq(went, [2], 'with no recNo the displayed number IS the position');
+    } finally { sandbox.flash = realFlash; sandbox.showPrompt = realPrompt; }
   } finally {
     sandbox.auditInspectRecord = real;
     st.filtered = prevFiltered; st.selIdx = prevSel;
   }
 
-  // And all six controls are wired, in reading order.
+  // Go-to takes the number ON the record, not its position in the list. Every
+  // surface here is labelled with the record number, so that is what anyone will
+  // type; with a filter on the numbers are sparse, and one that is filtered out
+  // has to say so rather than land somewhere near it. Requested 2026-08-31.
+  const go = psFnSource('auditNavGoTo');
+  assert.ok(/_auditRecNo\(r, k\) === n/.test(go), 'the number typed is matched against the DISPLAYED number');
+  assert.ok(/is not in the current filter/.test(go), 'a filtered-out record says so');
+  assert.ok(/showPrompt\(/.test(go), 'and it asks through the app\'s own prompt');
+  // The list, the detail header and Go-to must agree about what that number is.
+  const recNo = (fs.readFileSync('./source.html', 'utf8')
+    .match(/const _auditRecNo = [^;]+;/) || [''])[0];
+  assert.ok(/\(rec && rec\.recNo\) \|\| \(i \+ 1\)/.test(recNo),
+    `the fallback must match auditInspectRecord's own: ${recNo}`);
+  assert.ok(/const recno = _auditRecNo\(rec, filteredIdx\);/.test(fs.readFileSync('./source.html', 'utf8'))
+    || /const recno = rec\.recNo \|\| \(filteredIdx \+ 1\);/.test(fs.readFileSync('./source.html', 'utf8')),
+    'and the header still derives its number the same way');
+
+  // And all seven controls are wired, in reading order.
   const hdr = (fs.readFileSync('./source.html', 'utf8')
     .match(/<div class="audit-popup-hdr"[\s\S]*?<\/div>/) || [''])[0];
-  deepEq((hdr.match(/onclick="(auditNavPopup[^"]*)"/g) || []).map(s => s.slice(9, -1)),
+  deepEq((hdr.match(/onclick="(auditNav[^"]*)"/g) || []).map(s => s.slice(9, -1)),
     ['auditNavPopupEnd(-1)', 'auditNavPopup(-NAV_JUMP)', 'auditNavPopup(-1)',
-     'auditNavPopup(1)', 'auditNavPopup(NAV_JUMP)', 'auditNavPopupEnd(1)'],
-    'the six nav controls, left to right');
+     'auditNavPopup(1)', 'auditNavPopup(NAV_JUMP)', 'auditNavPopupEnd(1)', 'auditNavGoTo()'],
+    'the seven nav controls, left to right');
   // Six controls beside a full record line: the title has to be the thing that
   // truncates, or a narrow detail pane pushes the buttons off the end.
   const css = fs.readFileSync('./source.html', 'utf8');

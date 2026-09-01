@@ -4244,6 +4244,7 @@ th.me-fm-colhi{color:var(--accent);}
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(NAV_JUMP)" title="Forward 10 records">&gt;&gt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopupEnd(1)" title="Last record">&gt;|</button>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavGoTo()" title="Go to a record number">#</button>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle between the hex dump and the character view (ASCII or EBCDIC, whichever the record is)">HEX</button>
                 <button id="auditParseBtn" class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected(true)" title="Load payload into Data Input and parse — always re-parses, even if this record was parsed before">&#9654; Parse</button>
                 <button id="auditAutoParseBtn" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleAutoParse()" title="Auto-parse — parse each record as you select it, without pressing Parse">Auto</button>
@@ -15916,6 +15917,35 @@ function auditNavPopupEnd(dir) {
   _auditNavTo(dir < 0 ? 0 : _auditSt.filtered.length - 1);
 }
 
+// The number a row DISPLAYS — recNo, or its position when the file carries none.
+// One helper, because the list, the detail header and Go-to all have to agree
+// about what "record 970008" means. Matches auditInspectRecord's own fallback.
+const _auditRecNo = (rec, i) => (rec && rec.recNo) || (i + 1);
+
+// Go to a record by the number on it, not by its position in the list. Every
+// surface here — the rows, the detail header — is labelled with the record
+// number, so that is what anyone will type. With a filter on, the numbers are
+// sparse: one that is filtered out says so rather than jumping somewhere near
+// it. Requested 2026-08-31.
+function auditNavGoTo() {
+  const rows = _auditSt.filtered || [];
+  if (!rows.length) return;
+  const cur  = rows[_auditSt.selIdx];
+  const lo   = _auditRecNo(rows[0], 0);
+  const hi   = _auditRecNo(rows[rows.length - 1], rows.length - 1);
+  showPrompt(`Go to record (${lo} \u2013 ${hi})`,
+    String(cur ? _auditRecNo(cur, _auditSt.selIdx) : ''), v => {
+      const n = parseInt(String(v == null ? '' : v).trim(), 10);
+      if (!Number.isFinite(n)) return;          // cancelled, or not a number
+      const i = rows.findIndex((r, k) => _auditRecNo(r, k) === n);
+      if (i < 0) {
+        flash(`Record ${n} is not in the current filter.`, 'warn');
+        return;
+      }
+      _auditNavTo(i);
+    });
+}
+
 // The detail pane and its resizer are one thing. Five places used to read or
 // write the pane's display directly; a handle left behind by a pane that had
 // closed would be a gutter you could drag with nothing on the other side of it.
@@ -19665,7 +19695,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.5.0';
+const APP_VERSION  = '1.49.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

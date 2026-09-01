@@ -5760,6 +5760,20 @@ test('tags: the section and the badge are wired', () => {
   eq((src.match(/_setResTypeBadge\(_btypeHtml\(t\.type, t\.color\) \+ _meTagBadgesHtml\(msg\)\)/g) || []).length, 2,
      'both meta-bar branches draw the tags');
   assert.ok(/\.btype-tag\s*\{/.test(src), 'the badge has a style of its own');
+  // The field box is a combo over the bound DDL's ids. A native datalist opens
+  // from its own arrow and from nothing else, so clicking the box has to ask for
+  // it — otherwise the control reads as one that will not open.
+  assert.ok(/onclick="_meTagPickerOpen\(this\)"/.test(src), 'clicking the field box opens the list');
+  assert.ok(/try \{ el && el\.showPicker && el\.showPicker\(\); \} catch \(e\) \{\}/.test(src),
+    'guarded: showPicker throws where it is unavailable, and the arrow still works');
+  assert.ok(/list="me-tag-fields"/.test(src) && /<datalist id="me-tag-fields">/.test(src),
+    'and the list it opens is built from the bound DDL');
+  // The row is capped: three short controls stretched across a wide pane gave the
+  // field box half a screen to hold twelve characters.
+  assert.ok(/\.me-tag-row \{[^}]*max-width: 720px/.test(src), 'the condition row has a reading width');
+  assert.ok(/\.me-tag-cond > \* \{ min-width:0; \}/.test(src),
+    'and its items may shrink — a grid item defaults to its intrinsic min-width');
+
   // ONE colour swatch in this editor. A native colour input only fills its box
   // once the WebKit swatch pseudo-elements are stripped, and a second copy of
   // that is how two swatches come to look different. Reported 2026-08-30.

@@ -1645,7 +1645,13 @@ input[type="text"]:focus { border-color: var(--accent); }
 
 /* ---- Class Editor: Tags ---- */
 .me-tag-list { display:flex; flex-direction:column; gap:8px; }
-.me-tag-row { border: var(--bw) solid var(--border); border-radius: var(--r-sm); background: var(--surface-read); }
+/* Capped at a reading width. A condition is three short controls — a field id,
+   an operator, a value — and stretching them across a 900px pane gave the field
+   box half a screen to hold twelve characters while the operator and the value
+   drifted to the far edge. A maximum, so a narrow pane still shrinks the row
+   rather than overflowing it. Reported 2026-09-01. */
+.me-tag-row { border: var(--bw) solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-read); max-width: 720px; }
 .me-tag-head { display:flex; align-items:center; gap:8px; padding:6px 8px;
   border-bottom: var(--bw) solid var(--border); background: var(--surface-header); }
 .me-tag-label { flex:0 0 180px; text-transform:uppercase; }
@@ -1655,6 +1661,10 @@ input[type="text"]:focus { border-color: var(--accent); }
    one-of list is the only part with no natural width. */
 .me-tag-cond { display:grid; grid-template-columns: minmax(0,1.4fr) 90px minmax(0,1fr) 22px;
   gap:6px; align-items:center; }
+/* A grid item's min-width is `auto`, which for an <input> is its intrinsic size —
+   about twenty characters. Without this the two text boxes refuse to shrink past
+   that and push the operator and the delete button out of the row. */
+.me-tag-cond > * { min-width:0; }
 .me-tag-note { color: var(--warning); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); }
 .me-tag-add { align-self:flex-start; padding:2px 8px; font-size: calc(var(--sz-mono) - 1px); }
 
@@ -19753,7 +19763,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.12.0';
+const APP_VERSION  = '1.49.13.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29853,6 +29863,7 @@ function _meHtmlTags(item) {
     conds.forEach((c, ci) => {
       h += `<div class="me-tag-cond">
     <input class="me-inp" list="me-tag-fields" value="${_meOvEsc(c.field || '')}" placeholder="field id"
+           onclick="_meTagPickerOpen(this)"
            oninput="_meTagCondSet(${ti},${ci},'field',this.value)">
     <select class="me-sel" onchange="_meTagCondSet(${ti},${ci},'op',this.value)">
       ${_ME_TAG_OPS.map(o => `<option value="${o}"${(c.op || 'equals') === o ? ' selected' : ''}>${o}</option>`).join('')}
@@ -29873,6 +29884,15 @@ function _meHtmlTags(item) {
 
 const _meTagActionsHtml = () =>
   `<button class="btn" onclick="_meTagAdd()" title="Add a tag">+ Add Tag</button>`;
+
+// A native datalist opens from its own arrow and from nothing else: clicking the
+// box does nothing at all, which reads as a combo that will not open. showPicker
+// is the supported way to ask for it. It throws where it is unavailable, or
+// without user activation — both are fine, because the arrow still works and the
+// box is still free text. Reported 2026-09-01.
+function _meTagPickerOpen(el) {
+  try { el && el.showPicker && el.showPicker(); } catch (e) {}
+}
 
 function _meTagsOf(item) {
   if (!item) return [];

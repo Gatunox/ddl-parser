@@ -5828,22 +5828,46 @@ test('tags: the section and the badge are wired', () => {
     'and the form only exists while that row is open');
   // One open at a time, like the recognizer list.
   const tog = psFnSource('_meTagToggle');
-  assert.ok(/_meState\.editTag = \(_meState\.editTag === ti\) \? -1 : ti;/.test(tog),
-    'opening a row closes the one before it');
+  assert.ok(/if \(_meState\.editTag === ti\) \{ _meTagCancel\(ti\); return; \}/.test(tog),
+    'clicking the open row closes it');
+  assert.ok(/_meState\.tagPend = JSON\.parse\(JSON\.stringify/.test(tog),
+    'opening a row takes a PENDING copy — the tag itself is not edited in place');
   // Opening a row to READ it is not an edit. A Save button that lights up
   // because you looked at something teaches you to ignore it.
-  assert.ok(/_meTagRepaint\(\);/.test(tog) && !/_meSetDirty|_meTagAfterEdit/.test(tog),
-    'toggling a row must not mark the class dirty');
-  assert.ok(/_meSetDirty\(\);/.test(psFnSource('_meTagAfterEdit')),
-    'while an actual edit still does');
-  // Adding opens the new row: a collapsed summary of an unnamed tag with no
-  // conditions says nothing.
-  const add = psFnSource('_meTagAdd');
-  assert.ok(/_meState\.editTag = tags\.length - 1;/.test(add), 'a new tag opens for editing');
+  assert.ok(!/_meSetDirty/.test(tog), 'toggling a row must not mark the class dirty');
+
+  // Apply / Cancel, exactly as a recognizer has them: nothing reaches the class
+  // until Apply, so Cancel is a real cancel. Requested 2026-09-01.
+  const form = psFnSource('_meTagForm');
+  assert.ok(/onclick="_meTagCancel\(\$\{ti\}\)"/.test(form)
+         && /onclick="_meTagApply\(\$\{ti\}\)"/.test(form), 'the form has Cancel and Apply');
+  assert.ok(/class="me-rf-btnrow"/.test(form), 'in the same button row a recognizer uses');
+  const apply = psFnSource('_meTagApply');
+  assert.ok(/tags\[ti\] = _meState\.tagPend;/.test(apply), 'Apply commits the pending copy');
+  assert.ok(/_meSetDirty\(\);/.test(apply), 'and only THEN is the class dirty');
+  assert.ok(/_meRenderSidebar\(\);/.test(apply), 'and the row chip is recounted');
+  // Every editor writes to the pending copy, never to the class.
+  for (const fn of ['_meTagSet', '_meTagCondSet', '_meTagCondAdd', '_meTagCondDel']) {
+    const src2 = psFnSource(fn);
+    assert.ok(/_meState\.tagPend/.test(src2), `${fn} edits the pending copy`);
+    assert.ok(!/_meSetDirty/.test(src2), `${fn} must not dirty the class before Apply`);
+  }
+  // A new tag does NOT join the list until Apply. A collapsed "UNNAMED · never
+  // fires" summary of something still being typed describes nothing, and putting
+  // it in the list first means Cancel has to go and take it out again.
+  // Requested 2026-09-01.
+  const add2 = psFnSource('_meTagAdd');
+  assert.ok(/_meState\.editTag = _ME_TAG_NEW;/.test(add2), 'adding stages a tag, it does not push one');
+  assert.ok(!/\.push\(/.test(add2), 'nothing joins the class on Add');
+  assert.ok(/if \(ti === _ME_TAG_NEW\) tags\.push\(_meState\.tagPend\);/.test(apply),
+    'Apply is what puts it in the list');
+  assert.ok(/_meState\.editTag === _ME_TAG_NEW && _meState\.tagPend/.test(tagsHtml),
+    'and while adding, the form renders with no summary row above it');
+  assert.ok(!/tagNew/.test(src), 'the new-row bookkeeping is gone with the row it tracked');
   // Deleting shifts every index below it, so an open form must not stay attached
   // to what is now a different tag.
   const del = psFnSource('_meTagDel');
-  assert.ok(/if \(_meState\.editTag === ti\) _meState\.editTag = -1;/.test(del)
+  assert.ok(/if \(_meState\.editTag === ti\) \{ _meState\.editTag = -1; _meState\.tagPend = null; \}/.test(del)
          && /else if \(_meState\.editTag > ti\) _meState\.editTag--;/.test(del),
     'deleting keeps the open row pointing at the tag it was opened on');
   // The collapsed row has to SAY something, or it is a list of names.

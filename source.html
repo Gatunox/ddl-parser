@@ -19755,7 +19755,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.19.0';
+const APP_VERSION  = '1.49.20.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21544,6 +21544,7 @@ function openMsgEditor() {
     sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false, tags: false },
     editRec:  -1,
     editTag:  -1,
+    tagPend:  null,
     pend:     {},
     dirty:    false,
     testResults: null,              // last cross-entity Test verdicts, or null
@@ -21796,6 +21797,7 @@ function _meSectionToggle(sec) {
 function _meSelectItem(section, idx) {
   _meState.editRec = -1;
   _meState.editTag = -1;
+  _meState.tagPend = null;
   _meState.pend    = {};
   _meState.recTest = null;   // dots are per-entity, drop the old verdict
   _meState.section = section;
@@ -29852,8 +29854,12 @@ function _meHtmlTags(item) {
   let h = '<div class="me-rec-list">';
   if (!tags.length)
     h += `<div class="me-empty">No tags yet. A tag badges a parsed message when every one of its conditions holds.</div>`;
-  tags.forEach((t, ti) => {
+  tags.forEach((t0, ti) => {
     const editing = _meState.editTag === ti;
+    // While a row is open it shows the PENDING copy, so the badge and the
+    // summary above the form track what you are typing — and Cancel puts back
+    // what was there, because the tag itself was never touched.
+    const t       = editing && _meState.tagPend ? _meState.tagPend : t0;
     const label   = String(t.label || '').trim() || 'UNNAMED';
     const st      = t.color ? `color:${_meOvEsc(t.color)};border-color:${_meOvEsc(t.color)}` : '';
     h += `<div class="me-rec-row${editing ? ' editing' : ''}">
@@ -29867,9 +29873,19 @@ function _meHtmlTags(item) {
   ${editing ? _meTagForm(t, ti) : ''}
 </div>`;
   });
+  // Adding renders the form ALONE, with no row above it. A new tag does not
+  // exist yet — a collapsed "UNNAMED · never fires" summary of something you are
+  // still typing describes nothing, and putting it in the list before Apply
+  // means Cancel has to go and take it out again. -2 is the same sentinel the
+  // recognizer form uses for a row that is not in its list yet.
+  // Requested 2026-09-01.
+  if (_meState.editTag === _ME_TAG_NEW && _meState.tagPend)
+    h += `<div class="me-rec-row editing">${_meTagForm(_meState.tagPend, _ME_TAG_NEW)}</div>`;
   h += '</div>';
   return h;
 }
+
+const _ME_TAG_NEW = -2;
 
 function _meTagForm(t, ti) {
   const conds = Array.isArray(t.conditions) ? t.conditions : [];
@@ -29901,6 +29917,10 @@ function _meTagForm(t, ti) {
   });
   h += `<button class="btn me-tag-add" onclick="_meTagCondAdd(${ti})">+ Condition</button>
   </div>
+  <div class="me-rf-btnrow">
+    <button class="btn" onclick="_meTagCancel(${ti})">Cancel</button>
+    <button class="btn btn-primary" onclick="_meTagApply(${ti})">&#x2713; Apply</button>
+  </div>
 </div>`;
   return h;
 }
@@ -29908,7 +29928,33 @@ function _meTagForm(t, ti) {
 // One open row at a time, like the recognizer list: two forms open at once is
 // two places to look for the thing you are editing.
 function _meTagToggle(ti) {
-  _meState.editTag = (_meState.editTag === ti) ? -1 : ti;
+  if (_meState.editTag === ti) { _meTagCancel(ti); return; }
+  const it = _meCurItem(); if (!it) return;
+  // Opening another row abandons whatever was open, committed by nothing — the
+  // same as clicking away from a recognizer form.
+  _meState.editTag = ti;
+  _meState.tagPend = JSON.parse(JSON.stringify(_meTagsOf(it)[ti] || {}));
+  _meTagRepaint();
+}
+
+function _meTagApply(ti) {
+  const it = _meCurItem(); if (!it || !_meState.tagPend) return;
+  const tags = _meTagsOf(it);
+  if (ti === _ME_TAG_NEW) tags.push(_meState.tagPend);
+  else if (ti >= 0 && ti < tags.length) tags[ti] = _meState.tagPend;
+  else return;
+  _meState.tagPend = null;
+  _meState.editTag = -1;
+  // The class row's `tags: N` chip counts LABELLED tags, so applying one can
+  // change it — and the sidebar is the one thing this repaint does not cover.
+  _meSetDirty();
+  _meTagRepaint();
+  _meRenderSidebar();
+}
+
+function _meTagCancel(ti) {
+  _meState.tagPend = null;
+  _meState.editTag = -1;
   _meTagRepaint();
 }
 
@@ -29986,12 +30032,9 @@ function _meTagRepaint(open) {
 }
 function _meTagAdd() {
   const it = _meCurItem(); if (!it) return;
-  const tags = _meTagsOf(it);
-  tags.push({ label: '', color: '#bc8cff', conditions: [{ field: '', op: 'equals', value: '' }] });
-  // Open the new row: a collapsed summary of a tag with no name and no
-  // conditions says nothing, and the next thing to do is fill it in.
-  _meState.editTag = tags.length - 1;
-  _meTagAfterEdit(true);
+  _meState.editTag = _ME_TAG_NEW;
+  _meState.tagPend = { label: '', color: '#bc8cff', conditions: [{ field: '', op: 'equals', value: '' }] };
+  _meTagRepaint(true);
   document.querySelector('.me-rec-form.open .me-tag-label')?.focus();
 }
 function _meTagDel(ti) {
@@ -30000,13 +30043,16 @@ function _meTagDel(ti) {
   if (!it.tags.length) delete it.tags;
   // The indexes below the deleted row all shift up, so an open form would end up
   // attached to a different tag than the one it was opened on.
-  if (_meState.editTag === ti) _meState.editTag = -1;
+  if (_meState.editTag === ti) { _meState.editTag = -1; _meState.tagPend = null; }
   else if (_meState.editTag > ti) _meState.editTag--;
   _meTagAfterEdit();
+  _meRenderSidebar();
 }
+// Everything below edits the PENDING copy. Nothing reaches the class until
+// Apply, so Cancel is a real cancel and the Save button does not light up for a
+// tag you were only half-way through describing. Requested 2026-09-01.
 function _meTagSet(ti, key, val) {
-  const it = _meCurItem(); if (!it) return;
-  const t = _meTagsOf(it)[ti]; if (!t) return;
+  const t = _meState.tagPend; if (!t) return;
   t[key] = val;
   // The label is echoed in a live badge beside it, so a re-render on every
   // keystroke would take the caret with it. Only the badge needs updating.
@@ -30016,23 +30062,19 @@ function _meTagSet(ti, key, val) {
     if (key === 'label') chip.textContent = (val || 'UNNAMED').trim() || 'UNNAMED';
     if (key === 'color') { chip.style.color = val; chip.style.borderColor = val; }
   }
-  _meSetDirty();
 }
 function _meTagCondAdd(ti) {
-  const it = _meCurItem(); if (!it) return;
-  const t = _meTagsOf(it)[ti]; if (!t) return;
+  const t = _meState.tagPend; if (!t) return;
   (t.conditions || (t.conditions = [])).push({ field: '', op: 'equals', value: '' });
-  _meTagAfterEdit();
+  _meTagRepaint();
 }
 function _meTagCondDel(ti, ci) {
-  const it = _meCurItem(); if (!it) return;
-  const t = _meTagsOf(it)[ti]; if (!t || !Array.isArray(t.conditions)) return;
+  const t = _meState.tagPend; if (!t || !Array.isArray(t.conditions)) return;
   t.conditions.splice(ci, 1);
-  _meTagAfterEdit();
+  _meTagRepaint();
 }
 function _meTagCondSet(ti, ci, key, val) {
-  const it = _meCurItem(); if (!it) return;
-  const t = _meTagsOf(it)[ti]; if (!t || !Array.isArray(t.conditions)) return;
+  const t = _meState.tagPend; if (!t || !Array.isArray(t.conditions)) return;
   const c = t.conditions[ci]; if (!c) return;
   c[key] = val;
   // `op` changes the placeholder on the value box beside it, and nothing else —
@@ -30044,7 +30086,6 @@ function _meTagCondSet(ti, ci, key, val) {
     const val2 = box && box.querySelectorAll('input')[1];
     if (val2) val2.placeholder = val === 'one-of' ? 'value, value, …' : 'value';
   }
-  _meSetDirty();
 }
 
 function _meHtmlRecs(item) {

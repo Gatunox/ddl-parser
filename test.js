@@ -19853,37 +19853,33 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
     for (const f of [() => sandbox.auditNavPopup(1), () => sandbox.auditNavPopup(-10),
                      () => sandbox.auditNavPopupEnd(1), () => sandbox.auditNavPopupEnd(-1)]) f();
     deepEq(went, [], 'an empty list moves nowhere');
-    // Go-to: by the number ON the record. With a filter on, the numbers are
-    // sparse and the positions are not the numbers — which is the whole reason
-    // this takes one and not the other.
+    // Go-to takes a LINE — the row's position in the list as filtered. Record
+    // numbers are the identity, not a coordinate: once a filter is on they are
+    // scattered, so "the middle of these" is a line and no record number anyone
+    // could guess. Requested 2026-09-01.
     st.filtered = [{ offset: 0, recNo: 970001 }, { offset: 1, recNo: 970004 },
                    { offset: 2, recNo: 970009 }];
-    const flashes = [];
-    const realFlash = sandbox.flash; sandbox.flash = m => flashes.push(String(m));
     const realPrompt = sandbox.showPrompt;
-    const answer = v => { sandbox.showPrompt = (l, d, cb) => { asked = { l, d }; cb(v); }; };
     let asked = null;
+    const answer = v => { sandbox.showPrompt = (l, d, cb) => { asked = { l, d }; cb(v); }; };
     try {
+      at(0); answer('3'); sandbox.auditNavGoTo();
+      deepEq(went, [2], 'line 3 is the third row, whatever record numbers it holds');
+      eq(asked.d, '1', 'the box opens on the line you are already on');
+      assert.ok(/1 – 3/.test(asked.l), `the range is the list length: ${asked.l}`);
+      // A record number typed by mistake is a line past the end, and clamps —
+      // like every other jump here, where refusing would be pedantry.
       at(0); answer('970009'); sandbox.auditNavGoTo();
-      deepEq(went, [2], 'the record NUMBER, not the position');
-      eq(asked.d, '970001', 'the box opens on the record you are already on');
-      assert.ok(/970001 – 970009/.test(asked.l), `the range is stated: ${asked.l}`);
-      at(0); answer('970005'); sandbox.auditNavGoTo();
-      deepEq(went, [], 'a number that is not in the filter moves nowhere');
-      assert.ok(/970005 is not in the current filter/.test(flashes.join('|')),
-        `and says so: ${flashes.join('|')}`);
-      // Position is NOT what it takes — "3" is a record number here, not the third row.
-      at(0); flashes.length = 0; answer('3'); sandbox.auditNavGoTo();
-      deepEq(went, [], 'a position typed by mistake is treated as a number and refused');
+      deepEq(went, [2], 'past the end clamps to the last line');
+      at(2); answer('0'); sandbox.auditNavGoTo();
+      deepEq(went, [0], 'below the start clamps to the first');
+      at(1); answer('2'); sandbox.auditNavGoTo();
+      deepEq(went, [], 'the line you are already on moves nowhere');
       for (const v of [null, '', 'abc']) {
         at(1); answer(v); sandbox.auditNavGoTo();
         deepEq(went, [], `"${v}" leaves the position alone`);
       }
-      // A file with no record numbers falls back to position, and Go-to follows.
-      st.filtered = [{ offset: 0 }, { offset: 1 }, { offset: 2 }];
-      at(0); answer('3'); sandbox.auditNavGoTo();
-      deepEq(went, [2], 'with no recNo the displayed number IS the position');
-    } finally { sandbox.flash = realFlash; sandbox.showPrompt = realPrompt; }
+    } finally { sandbox.showPrompt = realPrompt; }
   } finally {
     sandbox.auditInspectRecord = real;
     st.filtered = prevFiltered; st.selIdx = prevSel;
@@ -19894,9 +19890,18 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
   // type; with a filter on the numbers are sparse, and one that is filtered out
   // has to say so rather than land somewhere near it. Requested 2026-08-31.
   const go = psFnSource('auditNavGoTo');
-  assert.ok(/_auditRecNo\(r, k\) === n/.test(go), 'the number typed is matched against the DISPLAYED number');
-  assert.ok(/is not in the current filter/.test(go), 'a filtered-out record says so');
+  assert.ok(/Go to line/.test(go), 'it asks for a LINE, and says so');
+  assert.ok(/rows\.length - 1, n - 1/.test(go), '1-based on the way in, clamped to the list');
+  assert.ok(!/_auditRecNo/.test(go), 'the record number is an identity, not a coordinate');
   assert.ok(/showPrompt\(/.test(go), 'and it asks through the app\'s own prompt');
+  // The Line column is what makes that number knowable — without it the user is
+  // being asked for a number nothing on screen shows.
+  const srcAll = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/<span class="ac-line">'  \+ \(absIdx \+ 1\) \+ '<\/span>/.test(srcAll),
+    'every row shows its line number');
+  assert.ok(/<span class="ac-line">Line<\/span>/.test(srcAll), 'and the column is headed');
+  assert.ok(/'<span class="ac-line">14000<\/span>' \+/.test(srcAll),
+    'the row-height probe carries it too, or the virtual list mis-measures every row');
   // The list, the detail header and Go-to must agree about what that number is.
   const recNo = (fs.readFileSync('./source.html', 'utf8')
     .match(/const _auditRecNo = [^;]+;/) || [''])[0];

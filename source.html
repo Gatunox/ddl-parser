@@ -2470,6 +2470,11 @@ td.c-err  { color: var(--accent2); }
 .audit-record-row.aud-parsed:hover { background: var(--row-hover); }
 .audit-record-row.aud-viewed.aud-sel,
 .audit-record-row.aud-parsed.aud-sel { background: rgba(var(--accent-rgb),0.18); }
+/* WHERE a row is, not WHICH record it is. Its own column because the two are
+   different questions and, once a filter is on, different numbers: line 7500 of
+   14,000 is findable, record 970008 is not guessable. Quieter than the record
+   number, which is the identity. */
+.ac-line  { min-width:calc(var(--sz-mono) * 4); text-align:right; padding-right:6px; color:var(--text-very-dim); flex-shrink:0; }
 .ac-idx   { min-width:calc(var(--sz-mono) * 4); text-align:right; padding-right:6px; color:var(--text-dim); flex-shrink:0; }
 .ac-badge { width:calc(var(--sz-mono) * 3.8); flex-shrink:0; padding-right:4px; display:flex; align-items:center; }
 .audit-record-row .btype { font-size:calc(var(--sz-mono) - 2px); padding:2px 3px 0; border-width: var(--bw-ctl); line-height:1; display:inline-block; vertical-align:middle; }
@@ -4217,6 +4222,7 @@ th.me-fm-colhi{color:var(--accent);}
             </div>
             <!-- Column header -->
             <div class="audit-list-header">
+              <span class="ac-line">Line</span>
               <span class="ac-idx">#</span>
               <span class="ac-badge"></span>
               <span class="ac-len">Len</span>
@@ -4244,7 +4250,7 @@ th.me-fm-colhi{color:var(--accent);}
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(NAV_JUMP)" title="Forward 10 records">&gt;&gt;</button>
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopupEnd(1)" title="Last record">&gt;|</button>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavGoTo()" title="Go to a record number">#</button>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavGoTo()" title="Go to a line number">#</button>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle between the hex dump and the character view (ASCII or EBCDIC, whichever the record is)">HEX</button>
                 <button id="auditParseBtn" class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected(true)" title="Load payload into Data Input and parse — always re-parses, even if this record was parsed before">&#9654; Parse</button>
                 <button id="auditAutoParseBtn" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleAutoParse()" title="Auto-parse — parse each record as you select it, without pressing Parse">Auto</button>
@@ -15557,6 +15563,7 @@ function _auditBuildRowHtml(r, absIdx) {
   return '<div id="aud-row-' + absIdx + '" class="audit-record-row' + seen + (absIdx === _auditSt.selIdx ? ' aud-sel' : '')
     + '"' + gutter + ' onclick="auditInspectRecord(' + absIdx + ')">'
     + '<div class="ar-meta">'
+    + '<span class="ac-line">'  + (absIdx + 1) + '</span>'
     + '<span class="ac-idx">'   + r.recNo + '</span>'
     + '<span class="ac-badge">' + badgeHtml + '</span>'
     + '<span class="ac-len">'   + r.messageLen + '</span>'
@@ -15635,6 +15642,7 @@ function _auditPrecomputeRowHeights() {
   probe.innerHTML =
     '<div class="audit-record-row">' +
       '<div class="ar-meta">' +
+        '<span class="ac-line">14000</span>' +
         '<span class="ac-idx">9999</span>' +
         '<span class="ac-badge"></span>' +
         '<span class="ac-len">1294</span>' +
@@ -15917,33 +15925,25 @@ function auditNavPopupEnd(dir) {
   _auditNavTo(dir < 0 ? 0 : _auditSt.filtered.length - 1);
 }
 
-// The number a row DISPLAYS — recNo, or its position when the file carries none.
-// One helper, because the list, the detail header and Go-to all have to agree
-// about what "record 970008" means. Matches auditInspectRecord's own fallback.
+// The number a row DISPLAYS as its identity — recNo, or its position when the
+// file carries none. Matches auditInspectRecord's own fallback, so the list and
+// the detail header cannot disagree about which record you are looking at.
 const _auditRecNo = (rec, i) => (rec && rec.recNo) || (i + 1);
 
-// Go to a record by the number on it, not by its position in the list. Every
-// surface here — the rows, the detail header — is labelled with the record
-// number, so that is what anyone will type. With a filter on, the numbers are
-// sparse: one that is filtered out says so rather than jumping somewhere near
-// it. Requested 2026-08-31.
+// Go to a LINE — the row's position in the list as filtered, which is the number
+// the Line column shows. Record numbers are the identity, not a coordinate: once
+// a filter is on they are scattered, so "the middle of these 14,000" is line
+// 7500 and no record number anyone could guess. Requested 2026-09-01.
 function auditNavGoTo() {
   const rows = _auditSt.filtered || [];
   if (!rows.length) return;
-  const cur  = rows[_auditSt.selIdx];
-  const lo   = _auditRecNo(rows[0], 0);
-  const hi   = _auditRecNo(rows[rows.length - 1], rows.length - 1);
-  showPrompt(`Go to record (${lo} \u2013 ${hi})`,
-    String(cur ? _auditRecNo(cur, _auditSt.selIdx) : ''), v => {
-      const n = parseInt(String(v == null ? '' : v).trim(), 10);
-      if (!Number.isFinite(n)) return;          // cancelled, or not a number
-      const i = rows.findIndex((r, k) => _auditRecNo(r, k) === n);
-      if (i < 0) {
-        flash(`Record ${n} is not in the current filter.`, 'warn');
-        return;
-      }
-      _auditNavTo(i);
-    });
+  showPrompt(`Go to line (1 \u2013 ${rows.length})`, String(_auditSt.selIdx + 1), v => {
+    const n = parseInt(String(v == null ? '' : v).trim(), 10);
+    if (!Number.isFinite(n)) return;            // cancelled, or not a number
+    // Clamped, like every other jump here: a number past the end plainly means
+    // the end, and refusing it would be pedantry over a list this long.
+    _auditNavTo(Math.max(0, Math.min(rows.length - 1, n - 1)));
+  });
 }
 
 // The detail pane and its resizer are one thing. Five places used to read or
@@ -19695,7 +19695,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.6.0';
+const APP_VERSION  = '1.49.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

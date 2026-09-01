@@ -1808,8 +1808,14 @@ tbody tr.row-alt td { background: var(--row-alt); }
 tbody tr:hover td { background: var(--hl-hover); }
 tbody tr.row-sel td { background: rgba(var(--accent-rgb),0.18) !important; color: var(--hl-text) !important; }
 tbody tr.row-redef td.c-id { color: rgba(var(--accent-rgb),0.65); }
-tbody tr.row-unreliable td { background: rgba(var(--accent-rgb),0.07); }
-.unreliable-badge { font-size:9px; font-weight:700; color: var(--h-gray-fg); margin-left:6px;
+/* Unreliable is a WARNING, and now says so. It used to borrow the accent, which
+   in this table means "chosen" — the selected row, an override in effect — so a
+   row flagged as untrustworthy wore the colour of a row the user had picked.
+   color-mix rather than an rgba() triple: --warning is a hex and there is no
+   --warning-rgb, and inventing one for a single tint is a second place for the
+   colour to drift. Requested 2026-09-01. */
+tbody tr.row-unreliable td { background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.unreliable-badge { font-size:9px; font-weight:700; color: var(--warning); margin-left:6px;
                     text-transform:uppercase; vertical-align:middle; letter-spacing:.3px; }
 /* "FIELD ↩ TARGET" in the Field column — same scheme as the override annotation and
    as DDL Doc: the arrow in accent-blue, the name it points TO in dimmed white. The
@@ -19747,7 +19753,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.11.0';
+const APP_VERSION  = '1.49.12.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

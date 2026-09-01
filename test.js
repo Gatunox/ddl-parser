@@ -19957,6 +19957,16 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
     'Parse Results has the rule, unscoped so it cannot outrank a state');
   assert.ok(!/#resContainer[^\n]*row-alt/.test(srcAll),
     'an id selector here silently kills hover on every striped row');
+  // Unreliable is a warning, not a selection. It used to borrow the accent —
+  // which in this table means "chosen" — so a row flagged as untrustworthy wore
+  // the colour of a row the user had picked. Requested 2026-09-01.
+  assert.ok(/tbody tr\.row-unreliable td \{ background: color-mix\(in srgb, var\(--warning\) 12%, transparent\); \}/.test(srcAll),
+    'the unreliable row is tinted with the warning colour');
+  assert.ok(/\.unreliable-badge \{[^}]*color: var\(--warning\)/.test(srcAll),
+    'and the badge agrees with the row it sits on');
+  assert.ok(!/row-unreliable td \{ background: rgba\(var\(--accent-rgb\)/.test(srcAll),
+    'the accent tint is gone — it reads as "selected" here');
+
   const iAlt2 = srcAll.indexOf('tbody tr.row-alt td {');
   for (const later of ['tbody tr:hover td {', 'tbody tr.row-sel td {', 'tbody tr.row-unreliable td {'])
     assert.ok(iAlt2 < srcAll.indexOf(later), `the stripe must be declared before ${later}`);

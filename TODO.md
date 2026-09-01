@@ -870,6 +870,40 @@ paying for.
 
 ---
 
+## 22. [ ] `map` means two different things in the spec vocabulary
+
+Added 2026-09-01, when the `map` block shipped (v1.49.0.0).
+
+Two unrelated attributes now share the name:
+
+```jsonc
+{ "map": { "field": "ELEM.DATA", "def": "RECUR-DATA" } }   // §5.22 — the BLOCK
+{ "read": { "field": "ELEM", "map": "RECUR-DATA" } }       // §5.22 — a definition
+{ "read-segment-fields": { "map": "SEG-MAP" } }            // §5.16 — a bitmap FIELD
+```
+
+The first two are the same idea. The third is older and unrelated: it names the
+field a preceding `read-bitmap` produced. Nothing breaks — they are different
+blocks and never appear together — but a reader who learns one meaning carries it
+to the other, and `map` is now the more prominent of the two.
+
+**Options.**
+
+- Rename `read-segment-fields`'s attribute to `from` or `bitmap`, matching what
+  `read-bitmap-fields` already calls the same thing, and accept the old name as
+  an alias. Costs a migration and a line in the reference; leaves one meaning of
+  `map`.
+- Rename the new one — `as`, `shape`, `def` — and leave the older attribute
+  alone. Cheaper, but `map` is the word the feature was asked for by, and the
+  block would have to be renamed with it.
+- Nothing, and let §5.22's note carry the warning. It is written already.
+
+**Risk.** Renaming either one touches saved specs, so whichever moves needs the
+alias `_migrateSpec` gives every other rename. Doing nothing costs nothing today
+and a little confusion for as long as the app lives.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

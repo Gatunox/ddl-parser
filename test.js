@@ -19904,6 +19904,21 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
   // columns, two questions: where the row is, and which record it is.
   assert.ok(/<span class="ac-idx">Rec#<\/span>/.test(srcAll),
     'the record-number column says which number it is');
+  // Zebra by ABSOLUTE index. The list is virtualised, so the DOM holds a moving
+  // window — nth-child would stripe by position within it and the bands would
+  // crawl as you scroll. Requested 2026-09-01.
+  assert.ok(/absIdx % 2 \? ' aud-alt' : ''/.test(srcAll), 'the stripe follows the row, not the DOM');
+  assert.ok(!/\.audit-record-row:nth-child/.test(srcAll), 'and never nth-child on a virtual list');
+  // It must lose to every state that means something. Equal specificity, so
+  // source order decides: the stripe is declared first.
+  const iAlt = srcAll.indexOf('.audit-record-row.aud-alt');
+  for (const later of ['.audit-record-row:hover', '.audit-record-row.aud-sel',
+                       '.audit-record-row.aud-viewed,'])
+    assert.ok(iAlt < srcAll.indexOf(later), `the stripe must not outrank ${later}`);
+  // A solid colour per theme: a translucent white would lighten the light theme
+  // too, which is the rule the whole palette already follows.
+  eq((srcAll.match(/^  --row-alt: #[0-9A-Fa-f]{6};$/gm) || []).length, 2,
+     'the stripe colour is defined in both themes');
   assert.ok(/'<span class="ac-line">14000<\/span>' \+/.test(srcAll),
     'the row-height probe carries it too, or the virtual list mis-measures every row');
   // The list, the detail header and Go-to must agree about what that number is.

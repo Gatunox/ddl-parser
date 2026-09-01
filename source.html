@@ -228,6 +228,9 @@
      #161B22 it was that token exactly, so on a panel-coloured list the mark was
      invisible. */
   --row-viewed: #1C222B;
+  /* Zebra for the audit list. A hair off the ground and no more: it is there to
+     keep the eye on one row across twelve columns, not to be seen. */
+  --row-alt: #14181E;
   --scroll-thumb: #3a4049;
   --flash-warn-bg: #e6a817; --flash-warn-fg: #000000;
   --flash-error-bg: #c0392b; --flash-error-fg: #ffffff;
@@ -312,6 +315,7 @@
   --accent-hover: #0860ca;
   --on-accent: #ffffff;
   --row-viewed: #F6F6F6;
+  --row-alt: #FBFBFB;
   --scroll-thumb: #c3ccd6;
   --flash-warn-bg: #d97706; --flash-warn-fg: #ffffff;
   --flash-error-bg: #a93226; --flash-error-fg: #ffffff;
@@ -2444,6 +2448,11 @@ td.c-err  { color: var(--accent2); }
   border-bottom: var(--bw) solid rgba(255,255,255,0.03);
   cursor:pointer; font-family:var(--font-mono); font-size:var(--sz-mono);
 }
+/* Every other row, by its position in the FILTERED list — not by nth-child. The
+   list is virtualised, so the DOM holds a moving window and nth-child would
+   stripe by position within that window: the bands would crawl as you scroll.
+   Declared ahead of hover / viewed / selected so all three outrank it. */
+.audit-record-row.aud-alt  { background:var(--row-alt); }
 .audit-record-row:hover    { background:var(--row-hover); }
 .audit-record-row.aud-sel  { background:rgba(var(--accent-rgb),0.18); }
 .ar-meta    { display:flex; align-items:center; overflow:hidden; white-space:nowrap; }
@@ -15560,7 +15569,8 @@ function _auditBuildRowHtml(r, absIdx) {
   const seen = _auditParsed.has(r.offset) ? ' aud-parsed'
              : _auditViewed.has(r.offset) ? ' aud-viewed' : '';
   const gutter = badge && badge.color ? ' style="--row-gutter:' + _auditEsc(badge.color) + '"' : '';
-  return '<div id="aud-row-' + absIdx + '" class="audit-record-row' + seen + (absIdx === _auditSt.selIdx ? ' aud-sel' : '')
+  return '<div id="aud-row-' + absIdx + '" class="audit-record-row' + seen
+    + (absIdx % 2 ? ' aud-alt' : '') + (absIdx === _auditSt.selIdx ? ' aud-sel' : '')
     + '"' + gutter + ' onclick="auditInspectRecord(' + absIdx + ')">'
     + '<div class="ar-meta">'
     + '<span class="ac-line">'  + (absIdx + 1) + '</span>'
@@ -19695,7 +19705,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.8.0';
+const APP_VERSION  = '1.49.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

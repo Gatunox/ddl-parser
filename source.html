@@ -1932,6 +1932,10 @@ td.c-err  { color: var(--accent2); }
 /* A collapsed group hides its whole subtree — every row naming it as an
    ancestor, at any depth. */
 #resContainer tr.row-grp-hidden { display: none; }
+/* Zebra, applied to the rows actually on screen (see _resRestripe). Declared
+   before the selected / redefines / unreliable / mapped rules so every one of
+   them outranks it: a stripe is decoration, and those say something. */
+#resContainer tbody tr.row-alt td { background: var(--row-alt); }
 /* A row read through a `map` — its shape came from a definition the class does
    not bind, so it is not native to the DDL the rest of the table describes. The
    NAME carries the colour: the value column already speaks in green, red and
@@ -3613,9 +3617,15 @@ input.me-fm-filter{flex:0 0 auto;min-width:0;height:22px;padding:0 8px;border: v
 /* Uniform inside a group, but narrow enough that four groups fit a side panel.
    82px was measured against a full-width prototype page. */
 .me-fm-bar .btn.dis{opacity:.3;pointer-events:none;}
+/* Zebra. Declared FIRST of the row backgrounds so multi-select, single select,
+   the error tints and hover all outrank it — this table paints its grounds on
+   the TD, so a stripe declared later would cover a state that means something. */
+.me-fm-table tbody tr.me-fm-alt td{background:var(--row-alt);}
 .me-fm-table tbody tr.me-fm-row-multi{background:rgba(var(--accent-rgb),0.18);
   box-shadow:inset 3px 0 0 var(--accent);}
-.me-fm-table tbody tr.me-fm-row-multi td{color:var(--text);}
+/* The multi-select ground is on the TR; the stripe is on the TD and would paint
+   over it. Restated here so the selection wins on its own cells. */
+.me-fm-table tbody tr.me-fm-row-multi td{color:var(--text);background:rgba(var(--accent-rgb),0.18);}
 /* Inline editor for the actions that need a value — anchored under the button
    that opened it. prompt() is blocked in some hosts, and would be wrong here. */
 /* Same again for the Overrides table: the value editor is the box you type in. */
@@ -14344,6 +14354,7 @@ function renderFieldTable(msg) {
   // from the one place — they already all carry data-fid.
   const _rcCtx = document.getElementById('resContainer');
   if (_rcCtx) _rcCtx.oncontextmenu = _resCtxRow;
+  _resRestripe();
 
   // Always show filter and Hide Redef when a message is active; redef button is visually inert when no redefines present
   const _filterIn  = document.getElementById('resFilterInput');
@@ -14555,6 +14566,32 @@ function filterParsePanel(q) {
     const matches = !query || searchTarget.includes(query);
     tr.classList.toggle('row-filter-hide', !matches);
   });
+  _resRestripe();
+}
+
+// Zebra over the rows that are ON SCREEN. Parse Results hides rows rather than
+// removing them — a collapsed group, Hide Redef, the filter — so a stripe baked
+// in at render time would double up wherever something is hidden. Recomputed
+// from the classes that do the hiding rather than from layout: reading
+// offsetParent on a few thousand rows costs a reflow per call, and the classes
+// are the same truth one step earlier.
+function _resRestripe() {
+  // Guarded on a REAL container, like every other DOM sweep here: the parse is
+  // exercised headlessly, where getElementById hands back a stub with no
+  // classList and a querySelectorAll that answers with something unwalkable.
+  const cont = document.getElementById('resContainer');
+  if (!cont || !cont.classList || typeof cont.querySelectorAll !== 'function') return;
+  let rows;
+  try { rows = Array.from(cont.querySelectorAll('tbody tr') || []); } catch (e) { return; }
+  const hideRedef = !!(cont.classList.contains && cont.classList.contains('hide-redef'));
+  let n = 0;
+  for (const tr of rows) {
+    const cl = tr && tr.classList;
+    if (!cl || !cl.contains || !cl.toggle) continue;
+    const hidden = cl.contains('row-grp-hidden') || cl.contains('row-filter-hide')
+                || (hideRedef && cl.contains('row-redef'));
+    cl.toggle('row-alt', !hidden && (n++ % 2 === 1));
+  }
 }
 
 // Collapsing is a class on the affected rows, not a re-render: rebuilding the
@@ -14574,6 +14611,7 @@ function _resApplyCollapse() {
   const all = [...document.querySelectorAll('#resContainer tr.res-grp-row')];
   if (btn) btn.textContent = (all.length && all.every(tr => c.has(tr.dataset.grp || '')))
     ? 'Expand All' : 'Collapse All';
+  _resRestripe();
 }
 function toggleResGroup(id) {
   const c = S.resCollapsedGroups;
@@ -14602,6 +14640,7 @@ function toggleHideRedefines() {
     btn.textContent = S.hideRedefines ? 'Show Redef' : 'Hide Redef';
     btn.classList.toggle('btn-accent-on', S.hideRedefines);
   }
+  _resRestripe();
 }
 
 function toggleDDLDocHideRedef() {
@@ -19705,7 +19744,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.9.0';
+const APP_VERSION  = '1.49.10.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -26644,7 +26683,7 @@ function _meFmEffectiveVlg(groupId, ctx) {
 }
 
 // One Field Map <tr>. counter.n numbers the leaves (groups stay blank).
-function _meFmRowHtml(row, ctx, counter) {
+function _meFmRowHtml(row, ctx, counter, absIdx) {
   const ea        = ctx.ea;
   const id        = ea(row.id);
   const depth     = row.id.split('.').length - 1;
@@ -26669,6 +26708,10 @@ function _meFmRowHtml(row, ctx, counter) {
   const overrideBadLen = overrideRequiredLen !== null && overrideRequiredLen !== effLen;
 
   const trCls     = [
+    // Zebra by position in the VISIBLE list, not nth-child: this table is
+    // virtualised too, so the DOM holds a moving window and nth-child would
+    // stripe within it — the bands would crawl as you scroll.
+    (absIdx % 2) ? 'me-fm-alt' : '',
     isGroup ? 'me-fm-grp' : '',
     row.isRedef ? 'me-fm-redef' : '',
     row.isTerminal ? 'me-fm-term' : '',
@@ -26871,7 +26914,7 @@ function _meHtmlOverrides(item) {
   if (prep.emptyHtml) return `<div class="me-ov-section">${prep.emptyHtml}</div>`;
   const counter = { n: 0 };
   let rows = '';
-  for (const row of prep.fieldList) rows += _meFmRowHtml(row, prep.ctx, counter);
+  prep.fieldList.forEach((row, i) => { rows += _meFmRowHtml(row, prep.ctx, counter, i); });
   const html = prep.chrome('').replace('<tbody></tbody>', `<tbody>${rows}</tbody>`);
   return `<div class="me-ov-section">${html}</div>`;
 }
@@ -26952,7 +26995,7 @@ function _meFmRenderWindow(force) {
   const counter = { n: 0 };
   for (let i = start; i < end; i++) {
     const row = v.visible[i];
-    let tr = _meFmRowHtml(row, v.ctx, counter);
+    let tr = _meFmRowHtml(row, v.ctx, counter, i);
     if (row.isGroup && collapsed.has(row.id)) tr = tr.replace('<tr class="', '<tr class="me-fm-grp-collapsed ');
     html += tr;
   }

@@ -19919,6 +19919,81 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
   // too, which is the rule the whole palette already follows.
   eq((srcAll.match(/^  --row-alt: #[0-9A-Fa-f]{6};$/gm) || []).length, 2,
      'the stripe colour is defined in both themes');
+
+  // The same stripe in the other two tables that read across many columns.
+  // Overrides is virtualised like the audit list, so it stripes by ABSOLUTE
+  // index for the same reason.
+  assert.ok(/\(absIdx % 2\) \? 'me-fm-alt' : ''/.test(srcAll),
+    'the Overrides table stripes by position in the visible list');
+  assert.ok(/\.me-fm-table tbody tr\.me-fm-alt td\{background:var\(--row-alt\);\}/.test(srcAll),
+    'on the TD, because that is where this table paints its grounds');
+  // Declared before every state that means something — this table paints on the
+  // TD, so a stripe declared later would cover the state rather than lose to it.
+  const iFmAlt = srcAll.indexOf('.me-fm-table tbody tr.me-fm-alt td');
+  for (const later of ['.me-fm-table tbody tr.me-fm-row-multi{',
+                       '.me-fm-table tbody tr:hover td{',
+                       '.me-fm-table tbody tr.me-fm-row-sel td{'])
+    assert.ok(iFmAlt < srcAll.indexOf(later), `the stripe must not outrank ${later}`);
+  // Multi-select paints on the TR, so it has to restate itself on the TD or the
+  // stripe covers it.
+  assert.ok(/tr\.me-fm-row-multi td\{color:var\(--text\);background:rgba\(var\(--accent-rgb\),0\.18\);\}/.test(srcAll),
+    'multi-select must win on its own cells');
+
+  // Parse Results hides rows rather than removing them, so its stripe is
+  // recomputed over what is actually on screen.
+  const re = psFnSource('_resRestripe');
+  assert.ok(/row-grp-hidden/.test(re) && /row-filter-hide/.test(re) && /row-redef/.test(re),
+    'every way a row can be hidden is accounted for');
+  assert.ok(!/offsetParent/.test(re),
+    'read the classes, not layout — offsetParent on thousands of rows is a reflow per call');
+  for (const caller of ['filterParsePanel', '_resApplyCollapse', 'toggleHideRedefines'])
+    assert.ok(/_resRestripe\(\)/.test(psFnSource(caller)),
+      `${caller} changes what is visible and must restripe`);
+  assert.ok(/#resContainer tbody tr\.row-alt td \{ background: var\(--row-alt\); \}/.test(srcAll),
+    'and Parse Results has the rule');
+});
+
+test('the Parse Results stripe counts only the rows on screen', () => {
+  const srcAll = fs.readFileSync('./source.html', 'utf8');
+  // Rows are hidden, not removed — a collapsed group, Hide Redef, the filter.
+  // Striping every row in the DOM would double up wherever something is hidden:
+  // hide one row and its neighbours are both the same shade. Requested 2026-09-01.
+  const mkRow = (...classes) => {
+    const set = new Set(classes);
+    return { classList: { contains: c => set.has(c), toggle: (c, on) => { on ? set.add(c) : set.delete(c); },
+                          add: c => set.add(c), remove: c => set.delete(c) },
+             has: c => set.has(c) };
+  };
+  const run = (rows, contClasses = []) => {
+    const cset = new Set(contClasses);
+    const prev = elStubs.resContainer;
+    elStubs.resContainer = {
+      classList: { contains: c => cset.has(c), toggle: () => {}, add: () => {}, remove: () => {} },
+      querySelectorAll: () => rows,
+    };
+    try { sandbox._resRestripe(); } finally {
+      if (prev === undefined) delete elStubs.resContainer; else elStubs.resContainer = prev;
+    }
+    return rows.map(r => r.has('row-alt') ? 'A' : '.');
+  };
+  deepEq(run([mkRow(), mkRow(), mkRow(), mkRow()]).join(''), '.A.A', 'plain alternation');
+  // The hidden row takes no turn, so the visible ones still alternate.
+  // Visible rows alternate plain / striped, so a hidden row takes no turn: the
+  // stripe lands on the next VISIBLE row rather than being skipped with it.
+  deepEq(run([mkRow(), mkRow('row-grp-hidden'), mkRow(), mkRow()]).join(''), '..A.',
+     'a collapsed row does not consume a stripe');
+  deepEq(run([mkRow(), mkRow('row-filter-hide'), mkRow(), mkRow()]).join(''), '..A.',
+     'nor does a filtered-out row');
+  // Redefines only count as hidden while Hide Redef is on.
+  deepEq(run([mkRow(), mkRow('row-redef'), mkRow(), mkRow()]).join(''), '.A.A',
+     'a redefines row is a row like any other while it is shown');
+  deepEq(run([mkRow(), mkRow('row-redef'), mkRow(), mkRow()], ['hide-redef']).join(''), '..A.',
+     'and takes no turn once it is hidden');
+  // A row that was striped and then hidden must lose the stripe, or it comes
+  // back wrong when it is shown again.
+  const rows = [mkRow(), mkRow('row-alt', 'row-grp-hidden'), mkRow()];
+  run(rows);
+  eq(rows[1].has('row-alt'), false, 'a hidden row is never left striped');
   assert.ok(/'<span class="ac-line">14000<\/span>' \+/.test(srcAll),
     'the row-height probe carries it too, or the virtual list mis-measures every row');
   // The list, the detail header and Go-to must agree about what that number is.

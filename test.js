@@ -5820,7 +5820,7 @@ test('tags: the section and the badge are wired', () => {
   // alike and are styled twice are two lists that drift apart.
   // Requested 2026-09-01.
   const tagsHtml = psFnSource('_meHtmlTags');
-  assert.ok(/class="me-rec-list"/.test(tagsHtml) && /class="me-rec-row/.test(tagsHtml)
+  assert.ok(/class="me-rec-list me-tag-rows"/.test(tagsHtml) && /class="me-rec-row/.test(tagsHtml)
          && /class="me-rec-head"/.test(tagsHtml) && /class="me-rec-sum"/.test(tagsHtml),
     'the tag list reuses the recognizer row rather than restyling one');
   assert.ok(/onclick="_meTagToggle\(\$\{ti\}\)"/.test(tagsHtml), 'clicking the row edits it');
@@ -5863,6 +5863,18 @@ test('tags: the section and the badge are wired', () => {
     'Apply is what puts it in the list');
   assert.ok(/_meState\.editTag === _ME_TAG_NEW && _meState\.tagPend/.test(tagsHtml),
     'and while adding, the form renders with no summary row above it');
+  // The same 6px the new-recognizer form carries. With no head above it, a form
+  // sits flush against the last row and reads as part of it.
+  assert.ok(/class="me-rec-row editing" style="margin-top:6px"/.test(tagsHtml),
+    'the standalone form is separated from the list, as the recognizer one is');
+  assert.ok(/<div class="me-rec-row" style="margin-top:6px">\$\{_meRecForm\(newRec, -2\)\}/.test(src),
+    'which is the rule it is matching — if that moves, this should follow');
+  // The recognizer list reserves 8px beneath itself for the warnings row below
+  // it. Tags has nothing there, so the same margin was a gap under the last
+  // button and the end of the section.
+  assert.ok(/\.me-rec-list\.me-tag-rows \{ margin-bottom:0; \}/.test(src),
+    'the tag list drops the margin it has no footer to fill — and on BOTH'
+    + ' selectors, or .me-rec-list wins on source order and nothing changes');
   assert.ok(!/tagNew/.test(src), 'the new-row bookkeeping is gone with the row it tracked');
   // Deleting shifts every index below it, so an open form must not stay attached
   // to what is now a different tag.

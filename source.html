@@ -1646,6 +1646,13 @@ input[type="text"]:focus { border-color: var(--accent); }
 /* ---- Class Editor: Tags ---- */
 .me-tag-label { text-transform:uppercase; }
 .me-tag-conds { display:flex; flex-direction:column; gap:4px; padding:6px 8px; }
+/* The recognizer list reserves 8px under itself for the warnings row that sits
+   below it. Tags has nothing there, so the same margin was just a gap between
+   the last button and the end of the section. Reported 2026-09-01. */
+/* Both selectors, so this does not depend on which rule the file happens to
+   declare first — .me-rec-list is defined further down and was winning on
+   source order alone. */
+.me-rec-list.me-tag-rows { margin-bottom:0; }
 /* Between conditions on a collapsed row: dimmed, so the summary reads as one
    line of facts rather than three competing ones. */
 .me-rec-sep { color:var(--text-very-dim); }
@@ -19755,7 +19762,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.20.0';
+const APP_VERSION  = '1.49.21.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29851,7 +29858,7 @@ function _meTagSum(t) {
 // styled twice are two lists that drift apart. Requested 2026-09-01.
 function _meHtmlTags(item) {
   const tags = Array.isArray(item.tags) ? item.tags : [];
-  let h = '<div class="me-rec-list">';
+  let h = '<div class="me-rec-list me-tag-rows">';
   if (!tags.length)
     h += `<div class="me-empty">No tags yet. A tag badges a parsed message when every one of its conditions holds.</div>`;
   tags.forEach((t0, ti) => {
@@ -29879,8 +29886,10 @@ function _meHtmlTags(item) {
   // means Cancel has to go and take it out again. -2 is the same sentinel the
   // recognizer form uses for a row that is not in its list yet.
   // Requested 2026-09-01.
+  // margin-top, matching the new-recognizer form exactly: a form with no head
+  // above it sits flush against the last row otherwise, and reads as part of it.
   if (_meState.editTag === _ME_TAG_NEW && _meState.tagPend)
-    h += `<div class="me-rec-row editing">${_meTagForm(_meState.tagPend, _ME_TAG_NEW)}</div>`;
+    h += `<div class="me-rec-row editing" style="margin-top:6px">${_meTagForm(_meState.tagPend, _ME_TAG_NEW)}</div>`;
   h += '</div>';
   return h;
 }

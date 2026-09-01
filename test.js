@@ -5811,14 +5811,45 @@ test('tags: the section and the badge are wired', () => {
   // and must still be nameable.
   assert.ok(/oninput="_meTagCondSet\(\$\{ti\},\$\{ci\},'field',this\.value\)/.test(src),
     'typing still sets the field, whatever is typed');
-  // The row fills its section like every other one. It was capped for a day; the
-  // complaint that prompted the cap was the field-id popup opening at the edge
-  // of the SCREEN, which was the native datalist and is fixed at its cause.
-  assert.ok(!/\.me-tag-row \{[^}]*max-width/.test(src),
-    'the condition row is not capped short of the panel edge');
   assert.ok(/\.me-tag-cond > \* \{ min-width:0; \}/.test(src),
     'its items may shrink — a grid item defaults to its intrinsic min-width, so'
     + ' two text boxes would otherwise push the operator out of a narrow pane');
+
+  // A tag is a collapsed summary row that opens to a form on click — the same
+  // shape as a recognizer, and deliberately the SAME markup: two lists that look
+  // alike and are styled twice are two lists that drift apart.
+  // Requested 2026-09-01.
+  const tagsHtml = psFnSource('_meHtmlTags');
+  assert.ok(/class="me-rec-list"/.test(tagsHtml) && /class="me-rec-row/.test(tagsHtml)
+         && /class="me-rec-head"/.test(tagsHtml) && /class="me-rec-sum"/.test(tagsHtml),
+    'the tag list reuses the recognizer row rather than restyling one');
+  assert.ok(/onclick="_meTagToggle\(\$\{ti\}\)"/.test(tagsHtml), 'clicking the row edits it');
+  assert.ok(/\$\{editing \? _meTagForm\(t, ti\) : ''\}/.test(tagsHtml),
+    'and the form only exists while that row is open');
+  // One open at a time, like the recognizer list.
+  const tog = psFnSource('_meTagToggle');
+  assert.ok(/_meState\.editTag = \(_meState\.editTag === ti\) \? -1 : ti;/.test(tog),
+    'opening a row closes the one before it');
+  // Opening a row to READ it is not an edit. A Save button that lights up
+  // because you looked at something teaches you to ignore it.
+  assert.ok(/_meTagRepaint\(\);/.test(tog) && !/_meSetDirty|_meTagAfterEdit/.test(tog),
+    'toggling a row must not mark the class dirty');
+  assert.ok(/_meSetDirty\(\);/.test(psFnSource('_meTagAfterEdit')),
+    'while an actual edit still does');
+  // Adding opens the new row: a collapsed summary of an unnamed tag with no
+  // conditions says nothing.
+  const add = psFnSource('_meTagAdd');
+  assert.ok(/_meState\.editTag = tags\.length - 1;/.test(add), 'a new tag opens for editing');
+  // Deleting shifts every index below it, so an open form must not stay attached
+  // to what is now a different tag.
+  const del = psFnSource('_meTagDel');
+  assert.ok(/if \(_meState\.editTag === ti\) _meState\.editTag = -1;/.test(del)
+         && /else if \(_meState\.editTag > ti\) _meState\.editTag--;/.test(del),
+    'deleting keeps the open row pointing at the tag it was opened on');
+  // The collapsed row has to SAY something, or it is a list of names.
+  const sum = psFnSource('_meTagSum');
+  assert.ok(/never fires/.test(sum), 'a tag with no conditions says so on its row');
+  assert.ok(/OP = \{ equals: '=', not: /.test(sum), 'and the operators are symbols on one line');
 
   // ONE colour swatch in this editor. A native colour input only fills its box
   // once the WebKit swatch pseudo-elements are stripped, and a second copy of
@@ -5836,7 +5867,7 @@ test('tags: the section and the badge are wired', () => {
   // rebuilds every section from the top, so the pane scrolled back to Identity on
   // every add and delete — and Tags is the last section on the page, so the row
   // just clicked left the screen. Reported 2026-08-30.
-  const after = psFnSource('_meTagAfterEdit');
+  const after = psFnSource('_meTagRepaint');
   assert.ok(/me-sect-body-tags/.test(after), 'the section repaints itself');
   assert.ok(/_meRenderRight\(\); return;/.test(after),
     'with a full render only as the fallback when the section is not on screen');

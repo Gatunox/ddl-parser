@@ -1644,20 +1644,11 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btype-tag     { background: var(--h-gray-bg); color: var(--h-gray-fg); border: var(--bw-ctl) solid var(--h-gray-bd); margin-left: 4px; }
 
 /* ---- Class Editor: Tags ---- */
-.me-tag-list { display:flex; flex-direction:column; gap:8px; }
-/* Full width, like every other section's content. It was capped at 720px for a
-   day: the complaint that prompted it — "the field appears way off" — was the
-   field id popup opening at the edge of the SCREEN, which was a native datalist
-   the page could not position and is now the app's own menu. The width was
-   never the cause, and a row that stops short of the panel edge looks like a
-   layout that failed rather than one that chose. Reported 2026-09-01. */
-.me-tag-row { border: var(--bw) solid var(--border); border-radius: var(--r-sm);
-  background: var(--surface-read); }
-.me-tag-head { display:flex; align-items:center; gap:8px; padding:6px 8px;
-  border-bottom: var(--bw) solid var(--border); background: var(--surface-header); }
-.me-tag-label { flex:0 0 180px; text-transform:uppercase; }
-.me-tag-acts { margin-left:auto; }
+.me-tag-label { text-transform:uppercase; }
 .me-tag-conds { display:flex; flex-direction:column; gap:4px; padding:6px 8px; }
+/* Between conditions on a collapsed row: dimmed, so the summary reads as one
+   line of facts rather than three competing ones. */
+.me-rec-sep { color:var(--text-very-dim); }
 /* field · op · value · remove — the value box takes the slack, because a
    one-of list is the only part with no natural width. */
 .me-tag-cond { display:grid; grid-template-columns: minmax(0,1.3fr) 90px minmax(0,1fr) 22px;
@@ -19764,7 +19755,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.17.0';
+const APP_VERSION  = '1.49.19.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21552,6 +21543,7 @@ function openMsgEditor() {
     selIdx:   -1,
     sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false, tags: false },
     editRec:  -1,
+    editTag:  -1,
     pend:     {},
     dirty:    false,
     testResults: null,              // last cross-entity Test verdicts, or null
@@ -21803,6 +21795,7 @@ function _meSectionToggle(sec) {
 
 function _meSelectItem(section, idx) {
   _meState.editRec = -1;
+  _meState.editTag = -1;
   _meState.pend    = {};
   _meState.recTest = null;   // dots are per-entity, drop the old verdict
   _meState.section = section;
@@ -29840,31 +29833,59 @@ function _meTagFieldIds(item) {
   } catch (e) { return []; }
 }
 
+function _meTagSum(t) {
+  const conds = (t && Array.isArray(t.conditions)) ? t.conditions.filter(c => c && c.field) : [];
+  if (!conds.length) return '<span class="me-tag-note">no conditions — never fires</span>';
+  // Symbols, not words: this line is one row of monospace beside a badge, and
+  // "is one of" three times over is longer than the field ids it is about.
+  const OP = { equals: '=', not: '\u2260', 'one-of': '\u2208' };
+  return conds.map(c =>
+    `${_meOvEsc(c.field)} ${OP[c.op || 'equals'] || '='} ${_meOvEsc(_meTagValues(c).join(', ')) || '?'}`
+  ).join('<span class="me-rec-sep"> · </span>');
+}
+
+// Collapsed rows with a summary, opening to a form on click — the same shape as
+// Recognizers, and deliberately the same CSS: two lists that look alike and are
+// styled twice are two lists that drift apart. Requested 2026-09-01.
 function _meHtmlTags(item) {
   const tags = Array.isArray(item.tags) ? item.tags : [];
-  const ids  = _meTagFieldIds(item);
-  let h = `<div class="me-tag-list">`;
-  if (!tags.length) {
+  let h = '<div class="me-rec-list">';
+  if (!tags.length)
     h += `<div class="me-empty">No tags yet. A tag badges a parsed message when every one of its conditions holds.</div>`;
-  }
   tags.forEach((t, ti) => {
-    const conds = Array.isArray(t.conditions) ? t.conditions : [];
-    h += `<div class="me-tag-row">
-  <div class="me-tag-head">
-    <input class="me-inp me-tag-label" value="${_meOvEsc(t.label || '')}" placeholder="TAG NAME"
-           oninput="_meTagSet(${ti},'label',this.value)">
-    <input type="color" class="me-swatch" value="${_meOvEsc(t.color || '#bc8cff')}"
-           title="Badge colour" oninput="_meTagSet(${ti},'color',this.value)">
-    <span class="btype btype-tag" style="${t.color ? `color:${_meOvEsc(t.color)};border-color:${_meOvEsc(t.color)}` : ''}"
-          >${_meOvEsc((t.label || 'TAG').trim() || 'TAG')}</span>
-    <span class="me-tag-acts">
+    const editing = _meState.editTag === ti;
+    const label   = String(t.label || '').trim() || 'UNNAMED';
+    const st      = t.color ? `color:${_meOvEsc(t.color)};border-color:${_meOvEsc(t.color)}` : '';
+    h += `<div class="me-rec-row${editing ? ' editing' : ''}">
+  <div class="me-rec-head" onclick="_meTagToggle(${ti})" title="${editing ? 'Close' : 'Click to edit'}">
+    <span class="btype btype-tag"${st ? ` style="${st}"` : ''}>${_meOvEsc(label)}</span>
+    <span class="me-rec-sum">${_meTagSum(t)}</span>
+    <span class="me-rec-acts" onclick="event.stopPropagation()">
       <button class="me-rb del" onclick="_meTagDel(${ti})" title="Delete this tag">&#x00D7;</button>
     </span>
   </div>
+  ${editing ? _meTagForm(t, ti) : ''}
+</div>`;
+  });
+  h += '</div>';
+  return h;
+}
+
+function _meTagForm(t, ti) {
+  const conds = Array.isArray(t.conditions) ? t.conditions : [];
+  let h = `<div class="me-rec-form open">
+  <div class="me-rf-row">
+    <div class="me-rf-fld"><div class="me-lbl">Name</div>
+      <input class="me-inp me-tag-label" style="width:180px" value="${_meOvEsc(t.label || '')}"
+             placeholder="TAG NAME" oninput="_meTagSet(${ti},'label',this.value)"></div>
+    <div class="me-rf-fld"><div class="me-lbl">Colour</div>
+      <input type="color" class="me-swatch" value="${_meOvEsc(t.color || '#bc8cff')}"
+             title="Badge colour" oninput="_meTagSet(${ti},'color',this.value)"></div>
+  </div>
   <div class="me-tag-conds">`;
-    if (!conds.length) h += `<div class="me-tag-note">No conditions — this tag never fires.</div>`;
-    conds.forEach((c, ci) => {
-      h += `<div class="me-tag-cond">
+  if (!conds.length) h += `<div class="me-tag-note">No conditions — this tag never fires.</div>`;
+  conds.forEach((c, ci) => {
+    h += `<div class="me-tag-cond">
     <input class="me-inp" value="${_meOvEsc(c.field || '')}" placeholder="field id"
            autocomplete="off" spellcheck="false"
            onclick="_meTagFieldSuggest(this,${ti},${ci},event)"
@@ -29877,13 +29898,18 @@ function _meHtmlTags(item) {
            oninput="_meTagCondSet(${ti},${ci},'value',this.value)">
     <button class="me-rb del" onclick="_meTagCondDel(${ti},${ci})" title="Remove this condition">&#x00D7;</button>
   </div>`;
-    });
-    h += `<button class="btn me-tag-add" onclick="_meTagCondAdd(${ti})">+ Condition</button>
+  });
+  h += `<button class="btn me-tag-add" onclick="_meTagCondAdd(${ti})">+ Condition</button>
   </div>
 </div>`;
-  });
-  h += `</div>`;
   return h;
+}
+
+// One open row at a time, like the recognizer list: two forms open at once is
+// two places to look for the thing you are editing.
+function _meTagToggle(ti) {
+  _meState.editTag = (_meState.editTag === ti) ? -1 : ti;
+  _meTagRepaint();
 }
 
 const _meTagActionsHtml = () =>
@@ -29938,6 +29964,13 @@ function _meTagsOf(item) {
 // clicked left the screen. Reported 2026-08-30.
 function _meTagAfterEdit(open) {
   _meSetDirty();
+  _meTagRepaint(open);
+}
+
+// Repaint WITHOUT marking the class dirty. Opening a row to read it is not an
+// edit, and a Save button that lights up because you looked at something teaches
+// you to ignore it. Reported 2026-09-01.
+function _meTagRepaint(open) {
   const it = _meCurItem();
   const el = document.getElementById('me-sect-body-tags');
   if (!it || !el) { _meRenderRight(); return; }
@@ -29953,16 +29986,22 @@ function _meTagAfterEdit(open) {
 }
 function _meTagAdd() {
   const it = _meCurItem(); if (!it) return;
-  _meTagsOf(it).push({ label: '', color: '#bc8cff', conditions: [{ field: '', op: 'equals', value: '' }] });
+  const tags = _meTagsOf(it);
+  tags.push({ label: '', color: '#bc8cff', conditions: [{ field: '', op: 'equals', value: '' }] });
+  // Open the new row: a collapsed summary of a tag with no name and no
+  // conditions says nothing, and the next thing to do is fill it in.
+  _meState.editTag = tags.length - 1;
   _meTagAfterEdit(true);
-  // Straight into the name box: a new tag with no label is not a tag yet.
-  const rows = document.querySelectorAll('.me-tag-row .me-tag-label');
-  rows[rows.length - 1]?.focus();
+  document.querySelector('.me-rec-form.open .me-tag-label')?.focus();
 }
 function _meTagDel(ti) {
   const it = _meCurItem(); if (!it) return;
   _meTagsOf(it).splice(ti, 1);
   if (!it.tags.length) delete it.tags;
+  // The indexes below the deleted row all shift up, so an open form would end up
+  // attached to a different tag than the one it was opened on.
+  if (_meState.editTag === ti) _meState.editTag = -1;
+  else if (_meState.editTag > ti) _meState.editTag--;
   _meTagAfterEdit();
 }
 function _meTagSet(ti, key, val) {
@@ -29971,10 +30010,10 @@ function _meTagSet(ti, key, val) {
   t[key] = val;
   // The label is echoed in a live badge beside it, so a re-render on every
   // keystroke would take the caret with it. Only the badge needs updating.
-  const row = document.querySelectorAll('.me-tag-row')[ti];
+  const row = document.querySelectorAll('.me-rec-row')[ti];
   const chip = row && row.querySelector('.btype-tag');
   if (chip) {
-    if (key === 'label') chip.textContent = (val || 'TAG').trim() || 'TAG';
+    if (key === 'label') chip.textContent = (val || 'UNNAMED').trim() || 'UNNAMED';
     if (key === 'color') { chip.style.color = val; chip.style.borderColor = val; }
   }
   _meSetDirty();
@@ -30000,7 +30039,7 @@ function _meTagCondSet(ti, ci, key, val) {
   // a full re-render on a dropdown would be fine, but on the two TEXT inputs it
   // would drop the caret mid-word, so all three go through one quiet path.
   if (key === 'op') {
-    const row = document.querySelectorAll('.me-tag-row')[ti];
+    const row = document.querySelectorAll('.me-rec-row')[ti];
     const box = row && row.querySelectorAll('.me-tag-cond')[ci];
     const val2 = box && box.querySelectorAll('input')[1];
     if (val2) val2.placeholder = val === 'one-of' ? 'value, value, …' : 'value';

@@ -1364,10 +1364,12 @@ test('imported classes carry a NEW / OVERWRITTEN badge until the list is saved',
   assert.ok(/_meImportMarks = new Map\(\);/.test(save),
     'saving the list must clear the import badges — the badge means "not looked at yet"');
   // Clearing the marks is invisible unless the list is redrawn: nothing else in
-  // _meSave repaints the sidebar, so the badges sat there until some other
-  // action happened to redraw. Reported 2026-08-27.
-  assert.ok(/_meImportMarks\.size\) \{ _meImportMarks = new Map\(\); _meRenderSidebar\(\); \}/.test(save),
-    'Save clears the marks but never repaints, so the badges stay on screen');
+  // _meSave repainted the sidebar, so the badges sat there until some other
+  // action happened to redraw. Reported 2026-08-27. The repaint is unconditional
+  // now — every OTHER chip on the row was going stale the same way — so what
+  // this pins is that clearing and redrawing still both happen on a save.
+  assert.ok(/_meImportMarks = new Map\(\);/.test(save) && /\n  _meRenderSidebar\(\);/.test(save),
+    'Save must clear the marks AND repaint, or the badges stay on screen');
   // And the row renders them — on the FIRST line, beside the type code, because
   // it is a fact about the class itself and not one of the configuration notes
   // on the line below.
@@ -5747,6 +5749,24 @@ test('tags: a badge a message earns by what it holds', () => {
   eq(tagsFor({ tags: [tag([{ field: 'X', op: 'equals', value: '14:30' }])] },
              { fields: [{ id: 'X', value: '1430', displayValue: '14:30' }] }).length, 1,
      'the displayed value is the one compared');
+});
+
+test('[REGRESSION] Save redraws the class rows, so their chips are not stale', () => {
+  // Every chip on a class row is DERIVED from the class — volume, bound DDL,
+  // which parse-spec variants exist, the override count, the tag count. The
+  // sidebar was only repainted when an import had left badges to clear, so after
+  // any other edit the row went on describing the class as it was when the
+  // editor opened. It reads as "Save did not take". Reported 2026-09-01.
+  const save = psFnSource('_meSave');
+  assert.ok(/\n  _meRenderSidebar\(\);/.test(save),
+    'the sidebar is redrawn on every save, not only when badges need clearing');
+  assert.ok(!/if \(_meImportMarks\.size\) \{ _meImportMarks = new Map\(\); _meRenderSidebar\(\); \}/.test(save),
+    'and no longer only inside the import-badge branch');
+  // The chips come from one place, so redrawing the list is enough to refresh
+  // all of them at once.
+  const notes = psFnSource('_meItemNotes');
+  for (const chip of ['vol: ', 'ddl: ', 'spec: ', 'ovr: ', 'tags: '])
+    assert.ok(notes.includes(chip), `${chip} is built by _meItemNotes`);
 });
 
 test('tags: the section and the badge are wired', () => {

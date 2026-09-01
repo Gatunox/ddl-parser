@@ -19764,7 +19764,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.16.0';
+const APP_VERSION  = '1.49.17.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -36912,11 +36912,16 @@ function _meSave() {
     _pendingImport = null;
     }
   _meState.dirty = false;
-  // Saving IS the user signing off on what the import brought in. Clearing the
-  // marks is not enough on its own — nothing else repaints the sidebar here, so
-  // the badges stayed on screen until some other action redrew the list, which
-  // reads as "Save did not clear them". Reported 2026-08-27.
-  if (_meImportMarks.size) { _meImportMarks = new Map(); _meRenderSidebar(); }
+  // Saving IS the user signing off on what the import brought in.
+  if (_meImportMarks.size) _meImportMarks = new Map();
+  // ...and the sidebar is redrawn EVERY save, not only when there were badges to
+  // clear. Every chip on a class row is derived from the class — the volume, the
+  // bound DDL, which parse-spec variants exist, how many fields are overridden,
+  // how many tags — and none of them was repainted on save, so a row went on
+  // describing the class as it was when the editor opened. It read as "Save did
+  // not take", which is the worst thing a save can look like.
+  // Reported 2026-08-27 (import badges) and 2026-09-01 (every other chip).
+  _meRenderSidebar();
   _meSyncAttention();
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;

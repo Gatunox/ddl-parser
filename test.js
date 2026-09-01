@@ -5738,6 +5738,13 @@ test('tags: a badge a message earns by what it holds', () => {
   eq(fired({ field: 'BROKEN', op: 'equals', value: 'x' }), false, 'a field that errored is not a value');
   // A tag being written is not a tag that matches everything.
   eq(tagsFor({ tags: [tag([])] }, msg).length, 0, 'no conditions never fires');
+  // A nameless tag renders nothing, which is why Apply refuses to create one.
+  // Any that predate that guard still have to be inert rather than badge-less
+  // clutter on the bar.
+  eq(tagsFor({ tags: [{ label: '   ', conditions: [{ field: 'AMOUNT', op: 'equals', value: '000100' }] }] },
+             msg).length, 1, 'a stored nameless tag still evaluates...');
+  assert.ok(!/>\s*<\/span>/.test(String(vm.runInContext('_meTagBadgesHtml', sandbox) || '')),
+    '...but the badge renderer skips blank labels rather than drawing an empty chip');
   eq(tagsFor({ tags: [tag([{ field: 'AMOUNT', op: 'equals', value: '' }])] }, msg).length, 0,
      'and neither does an empty value');
   // Several can be true at once, in the order they are defined.
@@ -5843,6 +5850,16 @@ test('tags: the section and the badge are wired', () => {
          && /onclick="_meTagApply\(\$\{ti\}\)"/.test(form), 'the form has Cancel and Apply');
   assert.ok(/class="me-rf-btnrow"/.test(form), 'in the same button row a recognizer uses');
   const apply = psFnSource('_meTagApply');
+  // A tag with no name cannot do anything — the label IS the badge, so a nameless
+  // one renders nothing on a parse and is not counted on the class row. It used
+  // to apply and save happily and then appear to have vanished; refusing it is
+  // the only place that state can be prevented rather than explained.
+  // Reported 2026-09-01.
+  assert.ok(/if \(!String\(_meState\.tagPend\.label \|\| ''\)\.trim\(\)\)/.test(apply),
+    'Apply refuses a tag with no name');
+  assert.ok(/A tag needs a name/.test(apply), 'and says why');
+  assert.ok(apply.indexOf('_meFlash') < apply.indexOf('tags[ti] = _meState.tagPend;'),
+    'before it commits anything');
   assert.ok(/tags\[ti\] = _meState\.tagPend;/.test(apply), 'Apply commits the pending copy');
   assert.ok(/_meSetDirty\(\);/.test(apply), 'and only THEN is the class dirty');
   assert.ok(/_meRenderSidebar\(\);/.test(apply), 'and the row chip is recounted');

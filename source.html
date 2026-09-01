@@ -19762,7 +19762,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.21.0';
+const APP_VERSION  = '1.49.22.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29948,6 +29948,16 @@ function _meTagToggle(ti) {
 
 function _meTagApply(ti) {
   const it = _meCurItem(); if (!it || !_meState.tagPend) return;
+  // A tag with no name cannot do anything: the label IS the badge, so a nameless
+  // one renders nothing on a parse and is not counted on the class row either.
+  // Refusing it here is the only place that state can be prevented rather than
+  // explained — it saved happily and then appeared to have vanished.
+  // Reported 2026-09-01.
+  if (!String(_meState.tagPend.label || '').trim()) {
+    _meFlash('A tag needs a name — it is what the badge shows.', 'warn');
+    document.querySelector('.me-rec-form.open .me-tag-label')?.focus();
+    return;
+  }
   const tags = _meTagsOf(it);
   if (ti === _ME_TAG_NEW) tags.push(_meState.tagPend);
   else if (ti >= 0 && ti < tags.length) tags[ti] = _meState.tagPend;

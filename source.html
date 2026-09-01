@@ -1645,13 +1645,14 @@ input[type="text"]:focus { border-color: var(--accent); }
 
 /* ---- Class Editor: Tags ---- */
 .me-tag-list { display:flex; flex-direction:column; gap:8px; }
-/* Capped at a reading width. A condition is three short controls — a field id,
-   an operator, a value — and stretching them across a 900px pane gave the field
-   box half a screen to hold twelve characters while the operator and the value
-   drifted to the far edge. A maximum, so a narrow pane still shrinks the row
-   rather than overflowing it. Reported 2026-09-01. */
+/* Full width, like every other section's content. It was capped at 720px for a
+   day: the complaint that prompted it — "the field appears way off" — was the
+   field id popup opening at the edge of the SCREEN, which was a native datalist
+   the page could not position and is now the app's own menu. The width was
+   never the cause, and a row that stops short of the panel edge looks like a
+   layout that failed rather than one that chose. Reported 2026-09-01. */
 .me-tag-row { border: var(--bw) solid var(--border); border-radius: var(--r-sm);
-  background: var(--surface-read); max-width: 720px; }
+  background: var(--surface-read); }
 .me-tag-head { display:flex; align-items:center; gap:8px; padding:6px 8px;
   border-bottom: var(--bw) solid var(--border); background: var(--surface-header); }
 .me-tag-label { flex:0 0 180px; text-transform:uppercase; }
@@ -1659,7 +1660,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 .me-tag-conds { display:flex; flex-direction:column; gap:4px; padding:6px 8px; }
 /* field · op · value · remove — the value box takes the slack, because a
    one-of list is the only part with no natural width. */
-.me-tag-cond { display:grid; grid-template-columns: minmax(0,1.4fr) 90px minmax(0,1fr) 22px;
+.me-tag-cond { display:grid; grid-template-columns: minmax(0,1.3fr) 90px minmax(0,1fr) 22px;
   gap:6px; align-items:center; }
 /* A grid item's min-width is `auto`, which for an <input> is its intrinsic size —
    about twenty characters. Without this the two text boxes refuse to shrink past
@@ -19763,7 +19764,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.15.0';
+const APP_VERSION  = '1.49.16.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

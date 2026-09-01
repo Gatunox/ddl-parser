@@ -5791,11 +5791,14 @@ test('tags: the section and the badge are wired', () => {
   // and must still be nameable.
   assert.ok(/oninput="_meTagCondSet\(\$\{ti\},\$\{ci\},'field',this\.value\)/.test(src),
     'typing still sets the field, whatever is typed');
-  // The row is capped: three short controls stretched across a wide pane gave the
-  // field box half a screen to hold twelve characters.
-  assert.ok(/\.me-tag-row \{[^}]*max-width: 720px/.test(src), 'the condition row has a reading width');
+  // The row fills its section like every other one. It was capped for a day; the
+  // complaint that prompted the cap was the field-id popup opening at the edge
+  // of the SCREEN, which was the native datalist and is fixed at its cause.
+  assert.ok(!/\.me-tag-row \{[^}]*max-width/.test(src),
+    'the condition row is not capped short of the panel edge');
   assert.ok(/\.me-tag-cond > \* \{ min-width:0; \}/.test(src),
-    'and its items may shrink — a grid item defaults to its intrinsic min-width');
+    'its items may shrink — a grid item defaults to its intrinsic min-width, so'
+    + ' two text boxes would otherwise push the operator out of a narrow pane');
 
   // ONE colour swatch in this editor. A native colour input only fills its box
   // once the WebKit swatch pseudo-elements are stripped, and a second copy of

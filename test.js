@@ -19900,6 +19900,10 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
   assert.ok(/<span class="ac-line">'  \+ \(absIdx \+ 1\) \+ '<\/span>/.test(srcAll),
     'every row shows its line number');
   assert.ok(/<span class="ac-line">Line<\/span>/.test(srcAll), 'and the column is headed');
+  // "#" beside a column called Line reads as "number of what?". Two labelled
+  // columns, two questions: where the row is, and which record it is.
+  assert.ok(/<span class="ac-idx">Rec#<\/span>/.test(srcAll),
+    'the record-number column says which number it is');
   assert.ok(/'<span class="ac-line">14000<\/span>' \+/.test(srcAll),
     'the row-height probe carries it too, or the virtual list mis-measures every row');
   // The list, the detail header and Go-to must agree about what that number is.

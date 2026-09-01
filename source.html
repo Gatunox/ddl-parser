@@ -1798,6 +1798,13 @@ thead th {
 .th-resize:hover { background: rgba(var(--accent-rgb),0.4); }
 .th-resize.th-resize-active { background: var(--accent); opacity: 0.7; }
 tbody tr { border-bottom: var(--bw) solid rgba(255,255,255,0.04); cursor: pointer; }
+/* Zebra, on the rows actually on screen (see _resRestripe). It sits FIRST and at
+   the same weight as the rules below — one class, one pseudo-class — so hover,
+   unreliable and the rest all outrank it on source order alone. Scoping it
+   `#resContainer` was the bug: an id outranks every state here, so a striped row
+   could not be hovered and an unreliable one lost its tint. `row-alt` is only
+   ever set inside Parse Results, so the plain selector is scope enough. */
+tbody tr.row-alt td { background: var(--row-alt); }
 tbody tr:hover td { background: var(--hl-hover); }
 tbody tr.row-sel td { background: rgba(var(--accent-rgb),0.18) !important; color: var(--hl-text) !important; }
 tbody tr.row-redef td.c-id { color: rgba(var(--accent-rgb),0.65); }
@@ -1932,10 +1939,6 @@ td.c-err  { color: var(--accent2); }
 /* A collapsed group hides its whole subtree — every row naming it as an
    ancestor, at any depth. */
 #resContainer tr.row-grp-hidden { display: none; }
-/* Zebra, applied to the rows actually on screen (see _resRestripe). Declared
-   before the selected / redefines / unreliable / mapped rules so every one of
-   them outranks it: a stripe is decoration, and those say something. */
-#resContainer tbody tr.row-alt td { background: var(--row-alt); }
 /* A row read through a `map` — its shape came from a definition the class does
    not bind, so it is not native to the DDL the rest of the table describes. The
    NAME carries the colour: the value column already speaks in green, red and
@@ -19744,7 +19747,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.10.0';
+const APP_VERSION  = '1.49.11.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

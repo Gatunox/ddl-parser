@@ -19949,8 +19949,17 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
   for (const caller of ['filterParsePanel', '_resApplyCollapse', 'toggleHideRedefines'])
     assert.ok(/_resRestripe\(\)/.test(psFnSource(caller)),
       `${caller} changes what is visible and must restripe`);
-  assert.ok(/#resContainer tbody tr\.row-alt td \{ background: var\(--row-alt\); \}/.test(srcAll),
-    'and Parse Results has the rule');
+  // At the SAME weight as the row states, and declared before them, so hover and
+  // the unreliable tint outrank it on source order. Scoping it `#resContainer`
+  // was the bug: an id beats every state here, so a striped row could not be
+  // hovered and an unreliable one lost its tint. Reported 2026-09-01.
+  assert.ok(/\ntbody tr\.row-alt td \{ background: var\(--row-alt\); \}/.test(srcAll),
+    'Parse Results has the rule, unscoped so it cannot outrank a state');
+  assert.ok(!/#resContainer[^\n]*row-alt/.test(srcAll),
+    'an id selector here silently kills hover on every striped row');
+  const iAlt2 = srcAll.indexOf('tbody tr.row-alt td {');
+  for (const later of ['tbody tr:hover td {', 'tbody tr.row-sel td {', 'tbody tr.row-unreliable td {'])
+    assert.ok(iAlt2 < srcAll.indexOf(later), `the stripe must be declared before ${later}`);
 });
 
 test('the Parse Results stripe counts only the rows on screen', () => {

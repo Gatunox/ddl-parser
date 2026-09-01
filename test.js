@@ -5754,20 +5754,43 @@ test('tags: the section and the badge are wired', () => {
   // Its own Class Editor section — a tag is a property of the values, so it does
   // not belong in the parse spec.
   assert.ok(/sect\('tags',\s*'Tags',/.test(src), 'Tags is a section of its own');
+  // Above Overrides: Tags is a handful of rows and Overrides is a table of
+  // hundreds, so below it the section sat a scroll away from everything else.
+  assert.ok(src.indexOf("sect('tags',") < src.indexOf("sect('overrides',"),
+    'Tags must come before Overrides on the page');
   assert.ok(/tags: false/.test(src), 'and starts collapsed, like the other configured-later sections');
   // Drawn beside the type code, on BOTH paths that set that badge — a record
   // parse and a message parse are two different branches.
   eq((src.match(/_setResTypeBadge\(_btypeHtml\(t\.type, t\.color\) \+ _meTagBadgesHtml\(msg\)\)/g) || []).length, 2,
      'both meta-bar branches draw the tags');
   assert.ok(/\.btype-tag\s*\{/.test(src), 'the badge has a style of its own');
-  // The field box is a combo over the bound DDL's ids. A native datalist opens
-  // from its own arrow and from nothing else, so clicking the box has to ask for
-  // it — otherwise the control reads as one that will not open.
-  assert.ok(/onclick="_meTagPickerOpen\(this\)"/.test(src), 'clicking the field box opens the list');
-  assert.ok(/try \{ el && el\.showPicker && el\.showPicker\(\); \} catch \(e\) \{\}/.test(src),
-    'guarded: showPicker throws where it is unavailable, and the arrow still works');
-  assert.ok(/list="me-tag-fields"/.test(src) && /<datalist id="me-tag-fields">/.test(src),
-    'and the list it opens is built from the bound DDL');
+  // The field box suggests ids from the bound DDL through the app's OWN menu.
+  // A native <datalist> opens from its own arrow and from nothing else, and
+  // asking for it with showPicker() put the list where the BROWSER wanted it:
+  // two hundred options at the far edge of the SCREEN, outside the window the
+  // page is in. A popup the page cannot position is one it cannot keep on
+  // screen. Reported 2026-09-01.
+  assert.ok(!/<datalist id=/.test(src) && !/list="me-tag-fields"/.test(src),
+    'no native datalist — its popup is placed by the browser, not by the page');
+  assert.ok(!/\.showPicker\(/.test(src), 'and nothing asks the browser to open one');
+  assert.ok(/onclick="_meTagFieldSuggest\(this,\$\{ti\},\$\{ci\},event\)"/.test(src),
+    'clicking the field box offers the ids');
+  const sug = psFnSource('_meTagFieldSuggest');
+  assert.ok(/showCtxMenu\(r\.left, r\.bottom \+ 2, items\)/.test(sug),
+    'through showCtxMenu, which is positioned in page coordinates and flips off the edges');
+  assert.ok(/_meTagFieldIds\(_meCurItem\(\)\)/.test(sug), 'from the bound DDL');
+  assert.ok(/hits\.slice\(0, _ME_TAG_SUGGEST_MAX\)/.test(sug),
+    'capped — a menu of two hundred is a scroll, not a choice');
+  assert.ok(/more — keep typing/.test(sug), 'and it says how many it is not showing');
+  // A document-level click handler closes the context menu, and this opens from
+  // a click: without stopping it the menu is built, positioned and hidden again
+  // in the same tick.
+  assert.ok(/if \(ev && ev\.stopPropagation\) ev\.stopPropagation\(\);/.test(sug),
+    'the opening click must not reach the handler that closes menus');
+  // Free text survives: a mapped definition's fields are not in the bound DDL
+  // and must still be nameable.
+  assert.ok(/oninput="_meTagCondSet\(\$\{ti\},\$\{ci\},'field',this\.value\)/.test(src),
+    'typing still sets the field, whatever is typed');
   // The row is capped: three short controls stretched across a wide pane gave the
   // field box half a screen to hold twelve characters.
   assert.ok(/\.me-tag-row \{[^}]*max-width: 720px/.test(src), 'the condition row has a reading width');

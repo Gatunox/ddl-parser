@@ -19763,7 +19763,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.13.0';
+const APP_VERSION  = '1.49.15.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22304,9 +22304,12 @@ function _meRenderRight() {
               _mePsMountCM(item);
               done();
             }, _mePsActionsHtml())
+          // Tags before Overrides: it is a handful of rows and Overrides is a
+          // table of hundreds, so below it the section was a scroll away from
+          // everything else on the page.
+          + sect('tags',         'Tags',        syncFill(() => _meHtmlTags(item)), _meTagActionsHtml())
           + sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done),
-                 '', _meOvBadgeHtml())
-          + sect('tags',         'Tags',        syncFill(() => _meHtmlTags(item)), _meTagActionsHtml());
+                 '', _meOvBadgeHtml());
   }
   body.innerHTML = html;
 
@@ -29839,8 +29842,7 @@ function _meTagFieldIds(item) {
 function _meHtmlTags(item) {
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const ids  = _meTagFieldIds(item);
-  const dl   = `<datalist id="me-tag-fields">${ids.map(i => `<option value="${_meOvEsc(i)}"></option>`).join('')}</datalist>`;
-  let h = `<div class="me-tag-list">${dl}`;
+  let h = `<div class="me-tag-list">`;
   if (!tags.length) {
     h += `<div class="me-empty">No tags yet. A tag badges a parsed message when every one of its conditions holds.</div>`;
   }
@@ -29862,9 +29864,10 @@ function _meHtmlTags(item) {
     if (!conds.length) h += `<div class="me-tag-note">No conditions — this tag never fires.</div>`;
     conds.forEach((c, ci) => {
       h += `<div class="me-tag-cond">
-    <input class="me-inp" list="me-tag-fields" value="${_meOvEsc(c.field || '')}" placeholder="field id"
-           onclick="_meTagPickerOpen(this)"
-           oninput="_meTagCondSet(${ti},${ci},'field',this.value)">
+    <input class="me-inp" value="${_meOvEsc(c.field || '')}" placeholder="field id"
+           autocomplete="off" spellcheck="false"
+           onclick="_meTagFieldSuggest(this,${ti},${ci},event)"
+           oninput="_meTagCondSet(${ti},${ci},'field',this.value);_meTagFieldSuggest(this,${ti},${ci})">
     <select class="me-sel" onchange="_meTagCondSet(${ti},${ci},'op',this.value)">
       ${_ME_TAG_OPS.map(o => `<option value="${o}"${(c.op || 'equals') === o ? ' selected' : ''}>${o}</option>`).join('')}
     </select>
@@ -29885,13 +29888,42 @@ function _meHtmlTags(item) {
 const _meTagActionsHtml = () =>
   `<button class="btn" onclick="_meTagAdd()" title="Add a tag">+ Add Tag</button>`;
 
-// A native datalist opens from its own arrow and from nothing else: clicking the
-// box does nothing at all, which reads as a combo that will not open. showPicker
-// is the supported way to ask for it. It throws where it is unavailable, or
-// without user activation — both are fine, because the arrow still works and the
-// box is still free text. Reported 2026-09-01.
-function _meTagPickerOpen(el) {
-  try { el && el.showPicker && el.showPicker(); } catch (e) {}
+// The field box suggests ids from the bound DDL, through the app's OWN menu.
+//
+// It was a native <datalist>. That opens from its own arrow and from nothing
+// else, so clicking the box did nothing; asking for it with showPicker() then
+// put the list where the BROWSER wanted it — two hundred options rendered at the
+// far edge of the screen, outside the window the page is in. A popup the page
+// cannot position is a popup the page cannot keep on screen. showCtxMenu is
+// placed in page coordinates and already flips itself away from the edges.
+//
+// Free text is preserved: the box still accepts anything, because a mapped
+// definition's fields (§5.22) are not in the bound DDL and must still be
+// nameable. Reported 2026-09-01.
+const _ME_TAG_SUGGEST_MAX = 12;
+function _meTagFieldSuggest(el, ti, ci, ev) {
+  if (!el) return;
+  // A document-level click handler closes the context menu, and this opens from
+  // a click — so without this the menu appeared and was dismissed by the very
+  // same event. It was built, positioned, and hidden again in one tick.
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  const ids = _meTagFieldIds(_meCurItem());
+  if (!ids.length) return;
+  const q    = String(el.value || '').trim().toUpperCase();
+  const hits = (q ? ids.filter(i => i.toUpperCase().includes(q)) : ids);
+  if (!hits.length) { hideCtxMenu(); return; }
+  // Capped, and the cap is stated: a menu of two hundred is a scroll, not a
+  // choice, and typing one more character is the faster way through it.
+  const shown = hits.slice(0, _ME_TAG_SUGGEST_MAX);
+  const items = shown.map(id => ({ label: id, fn: () => {
+    el.value = id;
+    _meTagCondSet(ti, ci, 'field', id);
+    el.focus();
+  } }));
+  if (hits.length > shown.length)
+    items.push({ separator: true }, { label: `+${hits.length - shown.length} more — keep typing`, disabled: true, fn: () => {} });
+  const r = el.getBoundingClientRect();
+  showCtxMenu(r.left, r.bottom + 2, items);
 }
 
 function _meTagsOf(item) {

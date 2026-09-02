@@ -5041,6 +5041,46 @@ test('ad-hoc override beats the spec value; leftover bytes are flagged', () => {
   eq(err?.error?.includes('SEG5'), true, 'absent segments listed as candidates');
 });
 
+test('read-segment-fields names its map `bitmap`, the same word its sibling uses', () => {
+  // Two blocks, one job — "the id of the field a preceding read-bitmap produced"
+  // — and they used two words for it: read-bitmap-fields said `bitmap`, this one
+  // said `map`. The vague name was fine while nothing else wanted it, and stopped
+  // being fine the day a `map` BLOCK arrived. Renamed 2026-09-01; no migration by
+  // request, so an old spec falls back to the most recent map rather than erroring.
+  S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
+  const spec = segBlock => ({
+    name: 'SEGF', kind: 'file', ddl_bindings: ['V/S/SEGFILE/FILE-DUMMY'],
+    parse_spec_binary: [
+      { 'read-bitmap': { field: 'FIID-SEG-MAP', encoding: 'ascii-hex', bits: 32, value: 'C0100000' } },
+      segBlock,
+    ],
+  });
+  const ids = ctx => ctx.fields.map(f => f.id);
+  const want = ['FIID-SEG-MAP', 'SEG0.B1', 'SEG0.B2', 'SEG1', 'SEG11'];
+
+  deepEq(ids(meExecParseSpec(spec({ 'read-segment-fields': { bitmap: 'FIID-SEG-MAP' } }),
+                             segBytes('AAAABBCCCXX'))), want, 'the object form names it `bitmap`');
+  deepEq(ids(meExecParseSpec(spec({ 'read-segment-fields': 'FIID-SEG-MAP' }),
+                             segBytes('AAAABBCCCXX'))), want, 'the bare string is the same value');
+  // Both siblings, one word.
+  assert.ok(/attrs\?\.bitmap/.test(psFnSource('_meExecBitmapFields')), 'read-bitmap-fields reads `bitmap`');
+  assert.ok(/a\.bitmap/.test(psFnSource('_meExecSegmentFields')), 'and so does read-segment-fields');
+  assert.ok(!/a\.map\b/.test(psFnSource('_meExecSegmentFields')), 'the old word is gone from the executor');
+
+  // The help has to say WHY the object form exists, or it reads as extra typing
+  // for its own sake. Requested 2026-09-01.
+  const seg = psHelp['read-segment-fields'];
+  const bare = seg.attrs.find(a => a[0] === '(bare string)');
+  assert.ok(bare, 'the shorthand is documented');
+  assert.ok(bare[3].some(l => typeof l === 'string' && /only reason the object form exists/.test(l)),
+    `the shorthand entry must say why the object form exists: ${JSON.stringify(bare[3])}`);
+  assert.ok(seg.attrs.some(a => a[0] === 'bitmap'), 'and the attribute is named bitmap');
+  assert.ok(!seg.attrs.some(a => a[0] === 'map'), 'with no `map` left to mean something else');
+  const bmf = psHelp['read-bitmap-fields'].attrs.find(a => a[0] === 'bitmap');
+  assert.ok(bmf[3].some(l => typeof l === 'string' && /only reason the object form exists/.test(l)),
+    'the sibling says it too — the pair is the point');
+});
+
 test('canonical form: read-bitmap declared mode (bits/value) + read-segment-fields reference', () => {
   S.ddlTree = { V: { S: { SEGFILE: SEG_DDL } } };
   const item = {

@@ -19762,7 +19762,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.22.0';
+const APP_VERSION  = '1.49.23.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23300,7 +23300,8 @@ const _PS_HELP = {
       ['bitmap', 'string', true, [
         'The field id of the <code>read-bitmap</code> block that ran before this one.',
         'That block decides which bits are set; this one reads the elements those bits point at.',
-        'Written as a bare string when it is the only attribute: <code>{"read-bitmap-fields": "BITMAP"}</code>.',
+        'Written as a bare string when it is the only attribute: <code>{"read-bitmap-fields": "BITMAP"}</code> — a bare string holds one value and the block already knows what that value is, so it needs no key.',
+        'The moment you need to say a <b>second</b> thing — <code>de</code>, <code>length_mode</code>, <code>vlg_identifier</code>, <code>overrides</code> — one string has nowhere to put it. That is the only reason the object form exists; neither form is preferred.',
       ]],
       ['vlg_identifier', 'string', false, _PS_VLG_IDENTIFIER_DESC],
       ['length_mode', '"strict" | "smart"', false, [
@@ -23420,7 +23421,8 @@ const _PS_HELP = {
     // stated: the reference used to describe what an attribute DOES and leave
     // its absence to be inferred, which is only readable if you already know.
     dflts: {
-      map: 'the segment map a previous <code>read-bitmap</code> produced',
+      '(bare string)': 'the object form, or nothing at all — with one <code>read-bitmap</code> in the spec neither form is needed',
+      bitmap: 'the map the most recent <code>read-bitmap</code> produced',
       binding: '<code>"ANY"</code> — every binding, in list order',
     },
     desc: [
@@ -23439,15 +23441,16 @@ const _PS_HELP = {
       'You want absent segments skipped entirely, exactly as Base24 reads/writes the file.',
     ],
     attrs: [
-      ['(bare string)', 'string', true, [
-        'The shorthand form: <code>{"read-segment-fields": "FIID-SEG-MAP"}</code>.',
-        'Names the field id of the preceding <code>read-bitmap</code> — same convention as <code>read-bitmap-fields</code>.',
-        'Use the object form instead when you also need <code>binding</code>.',
+      ['(bare string)', 'string', false, [
+        'The shorthand: <code>{"read-segment-fields": "FIID-SEG-MAP"}</code>, which is exactly <code>{"bitmap": "FIID-SEG-MAP"}</code> written short.',
+        'A bare string holds <b>one</b> value and the block already knows what that value is, so it needs no key.',
+        'The moment you need to say a <b>second</b> thing — <code>binding</code>, or a shared attribute like <code>at</code> — one string has nowhere to put it and no way to label which is which. That is the only reason the object form exists.',
+        'Neither form is preferred. Use the string when the map is all you are saying.',
       ]],
-      ['map', 'string', false, [
-        'The same thing as the bare string, written as an attribute.',
-        'Only needed in the object form, where the bare string has nowhere to go.',
-        'Omit it and the block falls back to the most recent map any <code>read-bitmap</code> produced.',
+      ['bitmap', 'string', false, [
+        'The field id of the map to read, produced by a preceding <code>read-bitmap</code>.',
+        'The same word — and the same meaning — <code>read-bitmap-fields</code> uses. The two blocks name the same thing the same way.',
+        'Omit it and the block uses the most recent map any <code>read-bitmap</code> produced, which is what you want whenever the spec has only one.',
       ]],
       ['binding', 'number', false, [
         'Which entry in the DDL Binding list holds the segmented file definition.',
@@ -23469,7 +23472,7 @@ const _PS_HELP = {
         def: 'FILE',
         payload: '46 49 49 44 43 41 52 44 30 31 4E 4F 54',
         spec: [{"read-bitmap": {"field": "SEG-MAP", "encoding": "ascii-bits", "bits": 8, "value": "11000100"}},
-               {"read-segment-fields": {"map": "SEG-MAP", "binding": 0}}] },
+               {"read-segment-fields": {"bitmap": "SEG-MAP", "binding": 0}}] },
       { what: 'A clear bit consumes nothing — the same DDL, with only SEG0 and SEG5 marked present',
         ddl: 'DEFINITION FILE.\n  02 SEG0.\n    04 FIID PIC X(4).\n  02 SEG1.\n    04 CARD PIC X(6).\n  02 SEG5.\n    04 NOTE PIC X(3).\nEND\n',
         def: 'FILE',
@@ -35314,11 +35317,15 @@ function _meExecSegMap(attrs, ctx) {
 }
 
 function _meExecSegmentFields(attrs, ctx) {
-  const a = (typeof attrs === 'string') ? { map: attrs } : (attrs || {});
-  const smField = (a.map && ctx.fieldsById[a.map]) || ctx.segMap;
+  // `bitmap`, the same word read-bitmap-fields uses for the same thing: the id
+  // of the field a preceding read-bitmap produced. It was `map` here, which said
+  // the same thing in a vaguer word and left `map` meaning two things once the
+  // map BLOCK arrived. Two siblings, one name. Renamed 2026-09-01.
+  const a = (typeof attrs === 'string') ? { bitmap: attrs } : (attrs || {});
+  const smField = (a.bitmap && ctx.fieldsById[a.bitmap]) || ctx.segMap;
   if (!smField?.segSet) {
-    ctx.fields.push({ id: 'read-segment-fields', error: a.map
-      ? `No declared map "${a.map}" — declare it in a read-bitmap block (bits/value) first`
+    ctx.fields.push({ id: 'read-segment-fields', error: a.bitmap
+      ? `No declared map "${a.bitmap}" — declare it in a read-bitmap block (bits/value) first`
       : 'No preceding read-bitmap block with a declared map (bits/value)' });
     return;
   }

@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | **`read-segment-fields` names its map `bitmap`, like its sibling — and the help says why the object form exists.** Two blocks, one job: name the field a preceding `read-bitmap` produced. `read-bitmap-fields` called it `bitmap`; `read-segment-fields` called it `map`. A vague name is fine right up until something else wants the word, and yesterday's `map` block (§5.22) wanted it — so the collision was never really caused by the new feature, it was caused by naming the same idea twice, once precisely and once not. Both say `bitmap` now. **No migration by request**: an old spec's `map` is ignored and the block falls back to the most recent map any `read-bitmap` produced, which is the same result in every spec that has one. Separately, both blocks' help now states what the shorthand and the object form are FOR — a bare string holds one value and the block already knows what it is, so it needs no key; the object form exists only because a second attribute has nowhere to go in a string. Neither is preferred, and saying so is the difference between a choice and apparently pointless extra typing. |
 | 2026-08-30 | **`map` — a field read through another DDL definition.** A variable-length element declares only `LEN` and `DATA`, because what `DATA` holds depends on the **message**, not the layout: an online purchase carries three sub-fields there, a recurring payment that is also a purchase carries six. The DDL cannot say which. The `map` BLOCK is a declaration — it emits nothing and consumes no bytes — so it can sit inside a `when` and settle the shape before `read-ddl` walks the whole message; `read` takes a `map` attribute for the field-by-field case, applying to that read only. A reference is a bare DEF name, searched in the volumes and subvolumes the class already binds, or a fully qualified `VOL/SV/FILE/DEF`; a name that resolves to nothing is reported where it was written rather than as a silent no-op fields away. Rows are named after the mapped definition (`RECUR-PYMNT-DATA.AMT`, not `RESERVED-ELEMENT-48.DATA.AMT`) so the output says which layout was applied, and the prefix goes on the DEF **before** the read so an override written against what you see is the id the engine looks up. The element's own bytes are the window — a wire length still frames the payload, and `map` says what the bytes MEAN, never how many there are. A definition that does not fit reads what fits and reports the shortfall, or the bytes left over. The substitution is hooked in all three places a leaf is built, because the two variable-length paths construct their payload inline rather than through the shared reader — which is exactly where `map` is wanted. Mapped rows carry their own colour, `--mapped`: accent already means an override, accent2 and warning already mean something is wrong, and a field that simply came from another definition is neither. See §5.22. |
 | 2026-08-30 | **Custom tags — a badge a message earns by what it holds.** A class says what a message IS; a tag says something ABOUT one, which is a property of the values rather than of the layout — so it gets its own Class Editor section and nothing about it goes in the parse spec. Label, colour, and conditions on fields of the bound or mapped DDL, with `equals` / `not` / `one-of`; every condition must hold, because a tag is one statement and "any of these" is two tags wearing one badge. Comparison is on the DISPLAYED value, trimmed and case-insensitively — a PIC X field is space-padded and a display override is what the reader sees. A field the parse never produced supports no claim about itself, `not` included, or the tag would fire on every message missing it; a tag with no conditions never fires either. True tags render after the type code in the Parse Results bar and say on hover which conditions earned them. The class row in the sidebar gained three facts to match: `spec: binary | non-binary | both`, `ovr: N` and `tags: N`, with the per-kind breakdown and the tag list on hover. See §11. |
 | 2026-08-30 | **A group's TYPE and SIZE stop at its length leaf.** Reported: `TYPE=binary` clicked on a variable-length GROUP wrote itself onto the group's `LEN` as well. The LEN held ASCII `"16"`; read as a binary integer that is `0x3136` = 12598, so the group tried to consume 12598 bytes and every field after it was destroyed — from one click on a row that has no bytes of its own, with nothing but a toast counting the leaves it had reached. The length is a statement ABOUT the payload, not part of it, and it is the one leaf where a wrong reading does more than mis-render. Clicking a group means "read these bytes as X"; nobody means the counter that frames them. `SHOW` still cascades everywhere — it only changes how a value is printed — and setting either on the LEN leaf itself still works, because that is the user pointing at it deliberately. |
@@ -339,7 +340,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | `read-length-value` | Read length N then N bytes | `length_encoding` (any length encoding — §5.17), `length_size` (1–4, when the name implies no width), `count` (`bytes`\|`digits`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
 | `read-bitmap` | Read 8 or 16 bytes as bitmap, store result | `field` (DDL field ID), `encoding` (`binary`\|`ascii-hex`), `length` (explicit width in bytes when the DDL does not declare the map — §5.12) |
 | `read-bitmap-fields` | Read all DE fields indicated by a bitmap, resolved via `overrides[…].de` (§7), honouring `overrides[…].vlg` (§8) | `bitmap` (ref to prior `read-bitmap` field ID), `de` (per-bit parsing — §5.14), `vlg_identifier` (§8), `length_mode` (`strict`\|`smart` — §8.2), `overrides` (§8.1) |
-| `read-segment-fields` | Read only the segments a prior `read-bitmap` marks present (§5.16) | *(bare string)* or `map` — field id of the declared/file-read map, `binding` |
+| `read-segment-fields` | Read only the segments a prior `read-bitmap` marks present (§5.16) | *(bare string)* or `bitmap` — field id of the declared/file-read map, `binding` |
 | `skip` | Advance N bytes | `length` (int, field ID, or `{sizeof}` — §5.19) |
 | `stop` | End the run — always, or on a named `condition` | `condition` (`"EOD"` — §5.21) |
 | `read-to-end` | Consume remaining bytes | `as` (DDL field ID) |
@@ -1077,10 +1078,25 @@ never a silent fallback to "all segments present", because that is exactly the
 A REDEFINES field carrying the map is emitted as an overlay row at its true
 position, so the map is visible where the DDL puts it.
 
-**Naming the map.** `{"read-segment-fields": "SEG-MAP"}` is the shorthand. The
-object form takes the same value as `map`, which is what you need when `binding`
-is also set: `{"read-segment-fields": {"map": "SEG-MAP", "binding": 0}}`. With
-neither, the block falls back to the most recent map any `read-bitmap` produced.
+**Naming the map** *(renamed `map` → `bitmap` 2026-09-01)*.
+`{"read-segment-fields": "SEG-MAP"}` is the shorthand: a bare string holds one
+value and the block already knows what that value is, so it needs no key. The
+object form takes the same value as **`bitmap`** — the word `read-bitmap-fields`
+already uses for the same thing — and exists for one reason: the moment you need
+to say a *second* thing, one string has nowhere to put it and no way to label
+which is which.
+
+```jsonc
+{"read-segment-fields": "SEG-MAP"}                          // the map, and nothing else
+{"read-segment-fields": {"bitmap": "SEG-MAP", "binding": 0}} // a second thing to say
+```
+
+With neither, the block falls back to the most recent map any `read-bitmap`
+produced — which is what you want whenever the spec has only one. It was called
+`map`, which said the same thing in a vaguer word and left `map` meaning two
+things once the `map` block arrived (§5.22). **No migration**: an old spec's
+`map` is ignored and the fallback applies, which is the same result in every
+spec that has one `read-bitmap`.
 
 **SEG-MAP bar.** Parse Results shows an inline SEG-MAP input whenever the parse
 used a segmented map — spec-driven or a manually selected segmented DDL. A value

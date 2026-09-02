@@ -870,7 +870,7 @@ paying for.
 
 ---
 
-## 22. [ ] `map` means two different things in the spec vocabulary
+## 22. [x] `map` means two different things in the spec vocabulary — *done v1.49.23.0*
 
 Added 2026-09-01, when the `map` block shipped (v1.49.0.0).
 
@@ -901,6 +901,24 @@ to the other, and `map` is now the more prominent of the two.
 **Risk.** Renaming either one touches saved specs, so whichever moves needs the
 alias `_migrateSpec` gives every other rename. Doing nothing costs nothing today
 and a little confusion for as long as the app lives.
+
+### Done — v1.49.23.0, the first option, without the migration
+
+`read-segment-fields` takes **`bitmap`**, the word `read-bitmap-fields` already
+used for the same thing. The collision was never really caused by the new block:
+it was caused by naming one idea twice, once precisely and once not, and the new
+block only walked into the space that left open.
+
+**No migration, by request.** An old spec's `map` is ignored, and the block falls
+back to the most recent map any `read-bitmap` produced — the same result in every
+spec that has one `read-bitmap`, which is all of them in practice.
+
+It also turned out the attribute was barely load-bearing: the bare string IS this
+value, and omitting both works. Which raised the real question — *why does the
+object form exist at all?* — and the answer was nowhere in the help. Both blocks
+now say it: a bare string holds one value and the block already knows what that
+value is, so it needs no key; the object form exists only because a second
+attribute has nowhere to go in a string. Neither form is preferred.
 
 ---
 

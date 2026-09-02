@@ -12697,7 +12697,19 @@ function doParseMessages() {
   _parseProgressStep('Detecting message types');
   setTimeout(() => {
     if (_parseAborted) return;
-    for (const chunk of chunks) {
+    // Sliced, like the compile step and the parse step: on a big paste this is
+    // one of the two phases whose length IS the message count, and in one turn
+    // it is a frozen tab under a step that never moves. The body is per-chunk
+    // and keeps nothing between iterations. Requested 2026-09-01.
+    const _dStep  = _ppSteps.length - 1;
+    const _dTotal = chunks.length;
+    const _D_SLICE = 250;
+    let _dAt = 0;
+    const _detectSlice = () => {
+    if (_parseAborted) return;
+    const _dEnd = Math.min(_dAt + _D_SLICE, _dTotal);
+    for (; _dAt < _dEnd; _dAt++) {
+      const chunk = chunks[_dAt];
       const chunkStr = typeof chunk === 'object' ? chunk.text : String(chunk);
       // With format 'ebcdic', extractBytes TRANSLATES as it decodes, so the wire
       // would be unrecoverable — a PIN block's C1 has become 41 before any field
@@ -12740,6 +12752,18 @@ function doParseMessages() {
       _p23Traces.push(detTrace);
       _chunkInfo.push({ chunk, chunkStr, bytes, wireBytes, parseBytes, detectStr, detTrace, msgType: detTrace.winner });
     }
+    if (_dAt < _dTotal) {
+      _parseProgressUpdate(_dStep,
+        `Detecting message types\u2026 ${_dAt.toLocaleString()} of ${_dTotal.toLocaleString()}`);
+      setTimeout(_detectSlice, 0);
+      return;
+    }
+    // _ppSetDetectDetails finds its step by LABEL, so the counter comes off
+    // before the summary is attached or the summary lands on nothing.
+    if (_dTotal > _D_SLICE) _parseProgressUpdate(_dStep, 'Detecting message types');
+    _afterDetect();
+    };
+    const _afterDetect = () => {
     // The summary belongs WITH the tick: it used to be back-filled onto this
     // step three steps later, so the panel showed a finished step with nothing
     // under it while its work had not yet run.
@@ -12966,12 +12990,22 @@ function doParseMessages() {
       // resolves it directly (getDDLFromPath), so compiling and scoring every
       // candidate answers a question nobody asked.
       _parseProgressStep('Parsing\u2026');
-      for (const ci of _chunkInfo) {
-        ci.verdict = ci.msgType.vol
-          ? _parseVerdict(ci.msgType, ci.parseBytes, { format: S.inputFormat, rawBytes: ci.wireBytes || ci.bytes })
-          : { kind: 'unknown' };
-      }
-      {
+      // In slices, so the panel can paint. This loop is per-message and keeps no
+      // state between iterations, which makes a slice boundary nothing more than
+      // a place to stop — and it is the step that takes the time on a big paste:
+      // fourteen thousand messages in one turn is a frozen tab showing "Parsing…"
+      // and no way to tell it apart from a hang. Requested 2026-09-01.
+      //
+      // The whole parse is not chunked by this — the per-record render loop still
+      // runs in one turn (TODO 23). This is the phase whose length is the message
+      // count, and the one the user was watching.
+      const _pStep  = _ppSteps.length - 1;
+      const _pTotal = _chunkInfo.length;
+      // Big enough that the per-turn cost is noise, small enough that a slow
+      // machine still repaints several times a second.
+      const _P_SLICE = 250;
+      let _pAt = 0;
+      const _afterVerdicts = () => {
         // Say what happened, and for the parsed ones WHICH DDL did it — the
         // question this step exists to answer.
         const _byKind = {};
@@ -12991,16 +13025,39 @@ function doParseMessages() {
           _lines.push(line);
         }
         _ppSetStepNote('Parsing\u2026', _lines);
-      }
-      _parseProgressDoneLast();
+        _parseProgressDoneLast();
 
-      // Scoring exists to fill a MISSING binding. With none missing there is
-      // nothing to compile and nothing to score.
-      const _needScore = _chunkInfo.some(ci => ci.verdict.kind === 'needs-ddl');
-      if (!_needScore) { _startP23Scoring(null); return; }
+        // Scoring exists to fill a MISSING binding. With none missing there is
+        // nothing to compile and nothing to score.
+        const _needScore = _chunkInfo.some(ci => ci.verdict.kind === 'needs-ddl');
+        if (!_needScore) { _startP23Scoring(null); return; }
 
-      _compileDDLTreeThen(useCache, _repoReg, _repoSecReg, byVol => _startP23Scoring(byVol));
+        _compileDDLTreeThen(useCache, _repoReg, _repoSecReg, byVol => _startP23Scoring(byVol));
+      };
+      const _verdictSlice = () => {
+        if (_parseAborted) return;
+        const end = Math.min(_pAt + _P_SLICE, _pTotal);
+        for (; _pAt < end; _pAt++) {
+          const ci = _chunkInfo[_pAt];
+          ci.verdict = ci.msgType.vol
+            ? _parseVerdict(ci.msgType, ci.parseBytes, { format: S.inputFormat, rawBytes: ci.wireBytes || ci.bytes })
+            : { kind: 'unknown' };
+        }
+        if (_pAt < _pTotal) {
+          _parseProgressUpdate(_pStep,
+            `Parsing\u2026 ${_pAt.toLocaleString()} of ${_pTotal.toLocaleString()}`);
+          setTimeout(_verdictSlice, 0);
+          return;
+        }
+        // _ppSetStepNote finds its step by LABEL, so the counter comes off first
+        // or the note lands on nothing.
+        if (_pTotal > _P_SLICE) _parseProgressUpdate(_pStep, 'Parsing\u2026');
+        _afterVerdicts();
+      };
+      _verdictSlice();
     }, 500);
+    };
+    _detectSlice();
   }, 500);
 }
 
@@ -19816,7 +19873,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.26.0';
+const APP_VERSION  = '1.49.27.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -37164,7 +37221,10 @@ function _meSave() {
 <div class="modal-overlay hidden" id="parseProgressOverlay">
   <div class="modal-box" style="min-width:640px;max-width:720px;gap:10px;position:relative">
     <button id="ppCloseBtn" class="hidden" style="position:absolute;top:6px;right:8px;background:none;border:none;color:var(--text-dim);font-size:1.1em;cursor:pointer;line-height:1;padding:2px 4px;opacity:0.7" title="Cancel">✕</button>
-    <div class="modal-label">Parsing…</div>
+    <!-- "Processing…", not "Parsing…": one of the steps inside is called Parsing,
+         and a panel with the same name as a line in it reads as that line having
+         scrolled to the top. Requested 2026-09-01. -->
+    <div class="modal-label">Processing…</div>
     <div id="parseProgressSteps" style="display:flex;flex-direction:column;gap:8px;padding:2px 0 4px"></div>
     <div id="ppPicker" class="hidden" style="display:flex;flex-direction:column;gap:6px;padding:4px 0 2px"></div>
   </div>

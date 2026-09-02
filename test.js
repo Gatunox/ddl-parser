@@ -20037,6 +20037,37 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('the two per-message phases run in slices, so the panel can count them', () => {
+  // On a big audit batch these are the phases whose length IS the message count.
+  // Run in one turn each, the browser cannot paint: the step sits there unmoving
+  // and is indistinguishable from a hang. Both are per-message and keep nothing
+  // between iterations, so a slice boundary is only a place to stop.
+  // Requested 2026-09-01.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  for (const [slice, label] of [['_D_SLICE', 'Detecting message types'], ['_P_SLICE', 'Parsing']]) {
+    assert.ok(new RegExp(`const ${slice} = \\d+;`).test(src), `${label} has a slice size`);
+    assert.ok(src.includes(`setTimeout(_${slice === '_D_SLICE' ? 'detect' : 'verdict'}Slice, 0)`),
+      `${label} yields between slices`);
+  }
+  // The counter has to come OFF before the summary is attached: both
+  // _ppSetDetectDetails and _ppSetStepNote find their step by LABEL, so a step
+  // still called "Parsing… 500 of 900" is a step the note cannot find.
+  assert.ok(/if \(_dTotal > _D_SLICE\) _parseProgressUpdate\(_dStep, 'Detecting message types'\);/.test(src),
+    'detection restores its label before the summary');
+  assert.ok(/if \(_pTotal > _P_SLICE\) _parseProgressUpdate\(_pStep, 'Parsing\\u2026'\);/.test(src),
+    'parsing restores its label before the note');
+  // Cancel is checked on every slice boundary — that is what chunking buys
+  // beyond the counter.
+  assert.ok(/const _detectSlice = \(\) => \{\n    if \(_parseAborted\) return;/.test(src),
+    'a slice checks for an abort before doing more work');
+
+  // The overlay is "Processing…", not "Parsing…": one of the steps inside is
+  // called Parsing, and a panel sharing a name with a line in it reads as that
+  // line having scrolled to the top. Requested 2026-09-01.
+  assert.ok(/<div class="modal-label">Processing…<\/div>/.test(src), 'the overlay title');
+  assert.ok(!/<div class="modal-label">Parsing…<\/div>/.test(src), 'and the old one is gone');
+});
+
 test('[REGRESSION] the detection summary lands on its step before the DDL steps exist', () => {
   // The step was ticked, then "Retrieving DDL definitions", "Compiling" and
   // "Scoring" were pushed and ticked, and only THEN did "N records evaluated"

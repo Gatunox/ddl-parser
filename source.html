@@ -4323,6 +4323,7 @@ th.me-fm-colhi{color:var(--accent);}
                the left: a margin-left:auto on each piece only pushes while they
                share a line with something else. Reported 2026-08-28. -->
           <span id="recNavGroup" class="rec-nav-group">
+            <button class="btn" id="trkSelAllBtn" onclick="trackPickShown()" style="display:none;flex-shrink:0"></button>
             <span id="trkFilterCount" class="trk-sel-count trk-filter-count" style="display:none"></span>
             <span id="trkSelCount" class="trk-sel-count" style="display:none"></span>
             <span id="resFilterLabel" class="res-filter-label" style="display:none"
@@ -16599,6 +16600,9 @@ function _syncTrackFilterCount(shown, active) {
   const total = S.messages.length;
   el.style.display = (S.trackMode && active) ? 'inline-block' : 'none';
   if (active) el.textContent = `${shown} of ${total} shown`;
+  // A filter changes WHICH rows are shown, so the button's count and its job
+  // both move with it.
+  _syncTrackSelAllBtn();
 }
 
 function trackPickRow(idx) {
@@ -16613,6 +16617,44 @@ function trackPickRow(idx) {
   _syncTrackSelCount();
 }
 
+// Pick every row the filters are showing, in one press. Narrowing 500 records to
+// nine and then clicking all nine is nine clicks to say something the filter
+// already said — and the filter is how you found them. Requested 2026-09-01.
+//
+// It toggles: with every shown row already picked it un-picks them, so the same
+// button undoes what it just did rather than leaving you to click back through
+// the list.
+function trackPickShown() {
+  const tbl = document.querySelector('.track-tbl tbody');
+  if (!tbl) return;
+  const rows = [...tbl.querySelectorAll('tr[data-idx]')].filter(tr => tr.style.display !== 'none');
+  if (!rows.length) return;
+  const add = !rows.every(tr => S.trackPicked.has(+tr.dataset.idx));
+  for (const tr of rows) {
+    const i = +tr.dataset.idx;
+    if (add) S.trackPicked.add(i); else S.trackPicked.delete(i);
+    tr.classList.toggle('trk-picked', add);
+  }
+  _syncTrackSelCount();
+}
+
+// The button says which of its two jobs it is about to do, counting only the
+// rows on screen — "Select 9 shown" is a promise; "Select all" beside a filter
+// is a question.
+function _syncTrackSelAllBtn() {
+  const el = document.getElementById('trkSelAllBtn');
+  if (!el) return;
+  const tbl  = S.trackMode ? document.querySelector('.track-tbl tbody') : null;
+  const rows = tbl ? [...tbl.querySelectorAll('tr[data-idx]')].filter(tr => tr.style.display !== 'none') : [];
+  el.style.display = rows.length ? 'inline-block' : 'none';
+  if (!rows.length) return;
+  const allPicked = rows.every(tr => S.trackPicked.has(+tr.dataset.idx));
+  el.textContent = allPicked ? `Clear ${rows.length} shown` : `Select ${rows.length} shown`;
+  el.title = allPicked
+    ? 'Unpick every record the filters are showing'
+    : 'Pick every record the filters are showing — then leave Track to work through just those';
+}
+
 // How many records are picked, beside the Field Tracking title — the number the
 // user is building while they click. Requested 2026-08-28.
 function _syncTrackSelCount() {
@@ -16621,6 +16663,8 @@ function _syncTrackSelCount() {
   const n = S.trackPicked.size;
   el.style.display = (S.trackMode && n) ? 'inline-block' : 'none';
   if (n) el.textContent = `${n} selected`;
+  // One call site: every path that changes what is picked already ends here.
+  _syncTrackSelAllBtn();
 }
 
 // Leaving Track with records picked narrows Parse Results to them. The indices
@@ -19762,7 +19806,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.24.0';
+const APP_VERSION  = '1.49.25.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

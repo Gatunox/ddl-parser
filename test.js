@@ -1474,6 +1474,27 @@ test('Track mode picks records; leaving it narrows Parse Results to them', () =>
     'a pick must toggle the row in place, not rebuild the table');
   assert.ok(/data-idx="\$\{idx\}"/.test(render), 'the row needs an id to be found by');
   // …and a rebuild for any other reason comes back where it was.
+  // Narrowing 500 records to nine and then clicking all nine is nine clicks to
+  // say what the filter already said — and the filter is how you found them.
+  // Requested 2026-09-01.
+  const all = psFnSource('trackPickShown');
+  assert.ok(/tr\.style\.display !== 'none'/.test(all),
+    'it picks the rows the filters are SHOWING, not every row in the table');
+  assert.ok(/const add = !rows\.every\(tr => S\.trackPicked\.has\(\+tr\.dataset\.idx\)\);/.test(all),
+    'and toggles — with everything shown already picked, the same button un-picks');
+  assert.ok(/tr\.classList\.toggle\('trk-picked', add\)/.test(all) && !/renderTracking/.test(all),
+    'rows are toggled in place, like a single pick — a rebuild would lose the scroll');
+  const btn = psFnSource('_syncTrackSelAllBtn');
+  assert.ok(/Select \$\{rows\.length\} shown/.test(btn) && /Clear \$\{rows\.length\} shown/.test(btn),
+    'the button counts the rows on screen and says which job it will do');
+  assert.ok(/rows\.length \? 'inline-block' : 'none'/.test(btn), 'and hides when there is nothing to pick');
+  // Both counters end every path that changes what is picked or what is shown,
+  // so the button rides along with them rather than needing its own call sites.
+  assert.ok(/_syncTrackSelAllBtn\(\);/.test(psFnSource('_syncTrackSelCount')),
+    'a pick refreshes the button');
+  assert.ok(/_syncTrackSelAllBtn\(\);/.test(psFnSource('_syncTrackFilterCount')),
+    'and so does a filter change — it decides which rows the button acts on');
+
   const rt = psFnSource('renderTracking');
   assert.ok(/const _scrollTop = document\.querySelector\('\.track-tbl-wrap'\)\?\.scrollTop \|\| 0;/.test(rt),
     'a rebuild that lands somewhere else is one the user has to undo by scrolling');

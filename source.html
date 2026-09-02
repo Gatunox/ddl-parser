@@ -2325,12 +2325,15 @@ td.c-err  { color: var(--accent2); }
 /* One row per box: which corner it is, and what goes in it. */
 .lay-slots { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
 .lay-slot { display: flex; align-items: center; gap: 6px; }
-.lay-slot-name { flex: 0 0 92px; font-size: 11px; color: var(--text-dim); }
+/* 73px + the 6px gap puts the selects' left edge on the arrangement grid's,
+   and the widest box name ("Right bottom") measures 69px. */
+.lay-slot-name { flex: 0 0 73px; font-size: 11px; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lay-slot select { flex: 1; min-width: 0; height: 20px; font-family: var(--mono);
   font-size: calc(var(--sz-mono) - 1px); color: var(--text);
   background: var(--bg-input); border: var(--bw-ctl) solid var(--border); border-radius: var(--r-sm); }
 .lay-slot .panel-toggle { flex: 0 0 26px; }
-.lay-slot-note { font-size: 10.5px; color: var(--text-dim); padding-left: 98px; }
+.lay-slot-note { font-size: 10.5px; color: var(--text-dim); padding-left: 79px; }
 
 .settings-section {
   background: var(--bg-panel);
@@ -19880,7 +19883,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.28.0';
+const APP_VERSION  = '1.49.29.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

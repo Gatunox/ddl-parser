@@ -20037,6 +20037,24 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('the box rows line up with the arrangement grid above them', () => {
+  // The name column is what sets where the selects start, so it is sized to the
+  // grid's left edge, not to the text. The two numbers move together: the note
+  // is indented by the column PLUS the 6px .lay-slot gap. Requested 2026-09-02.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const col = src.match(/\.lay-slot-name \{ flex: 0 0 (\d+)px;/);
+  const pad = src.match(/\.lay-slot-note \{[^}]*padding-left: (\d+)px;/);
+  const gap = src.match(/\.lay-slot \{[^}]*gap: (\d+)px;/);
+  assert.ok(col && pad && gap, 'all three are still declared');
+  assert.strictEqual(+pad[1], +col[1] + +gap[1],
+    'the note sits under the selects, not under the box names');
+  // The widest box name, "Right bottom", measures 69px at 11px system sans —
+  // under 73px, but not by much, so a wider font must ellipsize rather than
+  // wrap and make one row taller than the rest.
+  assert.ok(/\.lay-slot-name \{[^}]*text-overflow: ellipsis;/.test(src),
+    'a name too wide for the column is clipped, not wrapped');
+});
+
 test('a box in Settings carries both of its questions: which panel, and how it starts', () => {
   // The startup expanded/collapsed choice used to be its own "Panels on startup"
   // section, listing panels by name. You picked a startup state for "Raw Output"

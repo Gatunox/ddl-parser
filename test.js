@@ -20037,6 +20037,28 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('[REGRESSION] the detection summary lands on its step before the DDL steps exist', () => {
+  // The step was ticked, then "Retrieving DDL definitions", "Compiling" and
+  // "Scoring" were pushed and ticked, and only THEN did "N records evaluated"
+  // appear underneath the first one — the panel read as a list of finished steps
+  // that afterwards grew a paragraph in the middle. Detection has finished by the
+  // pre-pass, so the summary belongs there. Reported 2026-09-01.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const iSummary = src.indexOf("_ppSetDetectDetails('Detecting record types'");
+  assert.ok(iSummary > 0, 'the record flow still attaches a detection summary');
+  // It is built from the pre-pass, not from the traces the render loop collects.
+  const near = src.slice(iSummary, iSummary + 400);
+  assert.ok(/_det\.map\(d => \(\{ recNo: d\.rec\.recNo/.test(near),
+    `built from the pre-pass detection: ${near.slice(0, 120)}`);
+  // And it happens before the first DDL step is pushed.
+  const iDdlStep = src.indexOf('Compiling DDL definitions… 0 of ');
+  assert.ok(iDdlStep > 0 && iSummary < iDdlStep,
+    'the summary must be attached before any DDL step is pushed');
+  // Only once — the late call that used to do it is gone.
+  eq((src.match(/_ppSetDetectDetails\('Detecting record types'/g) || []).length, 1,
+     'one place sets it, or the two can disagree');
+});
+
 test('record nav: first / back 10 / step / forward 10 / last, and the edges hold', () => {
   // << and >> jump by ten and CLAMP; |< and >| go to the ends. The clamp is the
   // reason _auditNavTo exists: auditInspectRecord toggles the detail pane shut

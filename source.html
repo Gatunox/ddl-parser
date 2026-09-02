@@ -12187,10 +12187,8 @@ function doParseNetardLog(text, opts = {}) {
               console.warn('[NETARD scoring] DDL(s) with errors (skipped):', _ddlErrors);
               setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check the browser console for details.`, 'warn'), 350);
             }
-            // Detection histogram — shared with the plain-paste flow so both
-            // report identically (one line per matched spec, one per distinct
-            // near-miss; never one line per record).
-            _ppSetDetectDetails('Detecting record types', _detectTraces, 'record');
+            // (The detection histogram is attached to its step in the pre-pass,
+            //  where detection actually finishes — see _ppSetDetectDetails there.)
             if (_scoreStep) _parseProgressDoneLast();
             // Flag bound DDLs that were honoured but scored below 95% — the
             // binding was used regardless (the user's explicit choice). Render
@@ -12292,6 +12290,18 @@ function doParseNetardLog(text, opts = {}) {
           }
           return { rec, dec, det, winner, bindPath };
         });
+
+        // The detection summary goes on its step HERE, where detection has just
+        // finished — not after the DDL work, which is where it used to be set.
+        // The step was ticked, then "Retrieving DDL definitions", "Compiling" and
+        // "Scoring" were pushed and ticked, and only then did "N records
+        // evaluated" appear underneath the first one. The panel read as a list of
+        // finished steps that afterwards grew a paragraph in the middle.
+        // Reported 2026-09-01.
+        _ppSetDetectDetails('Detecting record types',
+          _det.map(d => ({ recNo: d.rec.recNo, source: d.rec.source, winner: d.winner,
+                           trace: d.det.trace || [], forced: !!d.det.forced, legacy: !!d.det.legacy })),
+          'record');
 
         // ── Compilation (independent of MATCH/NON-MATCH) ─────────────────────
         // A bound DDL is compiled into the in-memory cache when it isn't there
@@ -19806,7 +19816,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.25.0';
+const APP_VERSION  = '1.49.26.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

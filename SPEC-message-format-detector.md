@@ -1092,7 +1092,20 @@ which is which.
 ```
 
 With neither, the block falls back to the most recent map any `read-bitmap`
-produced — which is what you want whenever the spec has only one. It was called
+produced — which is what you want whenever the spec has only one.
+
+**`binding` — only with more than one bound DDL.** Segments are matched by
+**name**: the trailing number on a top-level field. Two bound DDLs that both
+declare `SEG0` both answer to bit 0, so both are read, one after the other, over
+different bytes. `binding` says which one describes this file. With a single
+binding — the ordinary case — it changes nothing.
+
+`read-bitmap-fields` needs no such attribute because DEs are matched by
+**number**, and the DE map holds one field per number (`if (map[row.de] !==
+undefined) continue`) — a second binding cannot claim a number the first already
+took. That is also why ISO binds two DDLs happily: `ISOPSEM` is DE 1–64,
+`ISOSSEM` is DE 65–128, so they continue each other. Names collide; numbers do
+not. It was called
 `map`, which said the same thing in a vaguer word and left `map` meaning two
 things once the `map` block arrived (§5.22). **No migration**: an old spec's
 `map` is ignored and the fallback applies, which is the same result in every

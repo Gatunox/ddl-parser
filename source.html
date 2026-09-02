@@ -19762,7 +19762,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.23.0';
+const APP_VERSION  = '1.49.24.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23423,7 +23423,6 @@ const _PS_HELP = {
     dflts: {
       '(bare string)': 'the object form, or nothing at all — with one <code>read-bitmap</code> in the spec neither form is needed',
       bitmap: 'the map the most recent <code>read-bitmap</code> produced',
-      binding: '<code>"ANY"</code> — every binding, in list order',
     },
     desc: [
       'Reads only the segments a prior <code>read-bitmap</code> marks present — whether that map was declared in the spec or read from the file.',
@@ -23453,9 +23452,11 @@ const _PS_HELP = {
         'Omit it and the block uses the most recent map any <code>read-bitmap</code> produced, which is what you want whenever the spec has only one.',
       ]],
       ['binding', 'number', false, [
-        'Which entry in the DDL Binding list holds the segmented file definition.',
-        'Omit it and every bound DDL is walked, in order.',
-        'Set it when several DDLs are bound and only one describes this file.',
+        '<b>Only matters when the class binds more than one DDL.</b> With one binding — the ordinary case — this changes nothing and can be left out.',
+        'Segments are matched by NAME: the trailing number on a top-level field. Two bound DDLs that both declare <code>SEG0</code> both answer to bit 0, so both are read, one after the other, over different bytes. Set <code>binding</code> to say which one describes this file.',
+        ['<code>0</code>', 'Walk only the first entry in the DDL Binding list.'],
+        ['<i>omitted</i>', 'Walk every bound DDL in order — right when only one of them is a segmented file, wrong when two are.'],
+        'This is why <code>read-bitmap-fields</code> has no such attribute: DEs are matched by NUMBER, and a DE map holds one field per number, so a second binding cannot claim a number the first already took. Names collide; numbers do not.',
       ]],
     ],
     examples: [

@@ -5079,6 +5079,18 @@ test('read-segment-fields names its map `bitmap`, the same word its sibling uses
   const bmf = psHelp['read-bitmap-fields'].attrs.find(a => a[0] === 'bitmap');
   assert.ok(bmf[3].some(l => typeof l === 'string' && /only reason the object form exists/.test(l)),
     'the sibling says it too — the pair is the point');
+
+  // `binding` is the one attribute here that earns its place, and only in one
+  // situation. The help has to name that situation, or the attribute reads as
+  // something you might need any time. Requested 2026-09-01.
+  const bind = seg.attrs.find(a => a[0] === 'binding');
+  const bindText = bind[3].filter(l => typeof l === 'string').join(' ');
+  assert.ok(/Only matters when the class binds more than one DDL/.test(bindText),
+    `the condition must be the FIRST thing it says: ${JSON.stringify(bind[3][0])}`);
+  assert.ok(/matched by NAME/.test(bindText) && /both are read/.test(bindText),
+    'and why two bindings collide — same segment name, same bit, read twice');
+  assert.ok(/read-bitmap-fields/.test(bindText) && /matched by NUMBER/.test(bindText),
+    'and why the sibling needs no such attribute — a DE map holds one field per number');
 });
 
 test('canonical form: read-bitmap declared mode (bits/value) + read-segment-fields reference', () => {

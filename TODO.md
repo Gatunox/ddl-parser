@@ -922,6 +922,45 @@ attribute has nowhere to go in a string. Neither form is preferred.
 
 ---
 
+## 23. [ ] The parse loop cannot report progress, because it never yields
+
+Reported 2026-09-01: *"when parsing we need the parsing to also count/update the
+progress, especially for large numbers of records on old machines."*
+
+The progress panel shows `Parsing…` and then, when it is all over, the totals:
+
+```
+9879 unrecognised · 2826 parsed · 591 no parse spec · 975 need a DDL
+```
+
+Nothing in between, because the per-record loop is synchronous:
+
+```js
+for (let _ri = 0; _ri < records.length; _ri++) { … }   // 14,271 records, one turn
+```
+
+The browser cannot paint until it returns, so a counter updated inside it would
+render once, at the end. `_PARSE_WARN_RECORDS` (2,000) exists precisely because
+of this — the confirm dialog is an apology for the freeze, not a fix.
+
+**What it needs.** Chunk the loop the way `_compileBoundNext` already chunks
+compilation: a slice per turn, `setTimeout(…, 0)` between slices, the step label
+updated with `_parseProgressUpdate` each time. Everything the loop touches is
+already per-record, so a slice boundary is only a place to stop.
+
+**What it also unlocks.** `_parseAborted` is checked between phases but cannot be
+checked mid-loop today, so Cancel does nothing once parsing starts. Chunking puts
+a check on every slice boundary and makes the button real. Same for the 2,000
+warning: with progress and a working Cancel, it could go.
+
+**Risk.** This is the hot path for every parse in the app. Slice size trades
+paint frequency against total time, and it has to be measured on the production
+machine, not here — the whole point is the case where 14,000 records take long
+enough to matter. Baseline (1,472 cases) covers the output, so a chunking that
+changes any result would be caught; what it cannot catch is a slowdown.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

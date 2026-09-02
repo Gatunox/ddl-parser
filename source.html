@@ -2329,6 +2329,7 @@ td.c-err  { color: var(--accent2); }
 .lay-slot select { flex: 1; min-width: 0; height: 20px; font-family: var(--mono);
   font-size: calc(var(--sz-mono) - 1px); color: var(--text);
   background: var(--bg-input); border: var(--bw-ctl) solid var(--border); border-radius: var(--r-sm); }
+.lay-slot .panel-toggle { flex: 0 0 26px; }
 .lay-slot-note { font-size: 10.5px; color: var(--text-dim); padding-left: 98px; }
 
 .settings-section {
@@ -5009,14 +5010,20 @@ function _laySyncSettings() {
   if (slots) {
     const n = LAYOUT_MODES[_layMode]?.boxes || 4;
     const names = _LAY_BOX_NAMES[_layMode] || [];
+    // Each box asks the two questions a box has: WHAT goes here, and does it
+    // start open. They used to live in different sections, which meant picking
+    // a startup state for "Raw Output" without being told where Raw Output is.
     slots.innerHTML = Array.from({ length: n }, (_, i) => {
       const opts = LAYOUT_PANELS.map(p =>
         `<option value="${p.id}"${_laySlots[i] === p.id ? ' selected' : ''}>${esc(p.label)}</option>`).join('');
-      return `<label class="lay-slot"><span class="lay-slot-name">${esc(names[i] || ('Box ' + (i + 1)))}</span>` +
-             `<select onchange="setLayoutSlot(${i}, this.value)">${opts}</select></label>`;
+      return `<div class="lay-slot"><label class="lay-slot-name" for="lay-sel-${i}">${esc(names[i] || ('Box ' + (i + 1)))}</label>` +
+             `<select id="lay-sel-${i}" onchange="setLayoutSlot(${i}, this.value)">${opts}</select>` +
+             `<button class="panel-toggle" id="ps_tog_${_laySlots[i]}" onclick="setPanelDefaultToggle('${_laySlots[i]}')">−</button></div>`;
     }).join('') + (n < LAYOUT_PANELS.length
       ? `<div class="lay-slot-note">${LAYOUT_PANELS.length - n} panel${LAYOUT_PANELS.length - n !== 1 ? 's' : ''} hidden in this arrangement</div>`
-      : '');
+      : '') + `<div class="lay-slot-note">− / + is how the panel starts</div>`;
+    // The buttons are new nodes with no state on them yet.
+    syncPanelSettingsUI();
   }
 }
 
@@ -19873,7 +19880,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.27.0';
+const APP_VERSION  = '1.49.28.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20744,8 +20751,9 @@ const _PANEL_META = {
   resPanel: ['resToggle','resResizer'],
   rawPanel: ['rawToggle','resResizer'],
 };
-// Sibling panels that share a row (can't both be collapsed)
-const _PANEL_PAIRS = { ddlPanel:'msgPanel', msgPanel:'ddlPanel', resPanel:'rawPanel', rawPanel:'resPanel' };
+// Which panels share a split is decided by the ARRANGEMENT, so it is read off
+// the live DOM (_panelSiblingOf) rather than kept in a table here. A table was
+// right only while the four panels could not move.
 
 function applyPanelDefaults() {
   if (!P.panelDefaults) return;
@@ -20760,9 +20768,9 @@ function applyPanelDefaults() {
 
 function setPanelDefault(panelId, state) {
   if (!P.panelDefaults) P.panelDefaults = { ..._DEF_PREFS.panelDefaults };
-  const sibling = _PANEL_PAIRS[panelId];
-  if (state === 'collapsed' && P.panelDefaults[sibling] === 'collapsed') {
-    flash('At least one panel per row must stay expanded', 'warn');
+  const sibling = _panelSiblingOf(panelId);
+  if (state === 'collapsed' && sibling && P.panelDefaults[sibling] === 'collapsed') {
+    flash('At least one panel in each split must stay expanded', 'warn');
     syncPanelSettingsUI();
     return;
   }
@@ -37318,35 +37326,6 @@ function _meSave() {
         </div>
         <div class="settings-row">
           <span class="settings-lbl" style="color:var(--text-dim);font-size:11px">Panel sizes, column widths &amp; visibility are saved automatically</span>
-        </div>
-      </div>
-
-      <!-- ── PANELS ──────────────────────────────────── -->
-      <div class="settings-section">
-        <div class="settings-stitle">Panels on startup</div>
-
-        <div class="settings-row">
-          <span class="settings-lbl">DDL Definition</span>
-          <button class="panel-toggle" id="ps_tog_ddlPanel" onclick="setPanelDefaultToggle('ddlPanel')" title="Expanded — click to collapse">−</button>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-lbl">Data Input</span>
-          <button class="panel-toggle" id="ps_tog_msgPanel" onclick="setPanelDefaultToggle('msgPanel')" title="Expanded — click to collapse">−</button>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-lbl">Parse Results</span>
-          <button class="panel-toggle" id="ps_tog_resPanel" onclick="setPanelDefaultToggle('resPanel')" title="Expanded — click to collapse">−</button>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-lbl">Raw Output</span>
-          <button class="panel-toggle" id="ps_tog_rawPanel" onclick="setPanelDefaultToggle('rawPanel')" title="Expanded — click to collapse">−</button>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-lbl" style="color:var(--text-dim);font-size:11px">Each row must keep at least one panel expanded</span>
         </div>
       </div>
 

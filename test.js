@@ -20037,6 +20037,42 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('a box in Settings carries both of its questions: which panel, and how it starts', () => {
+  // The startup expanded/collapsed choice used to be its own "Panels on startup"
+  // section, listing panels by name. You picked a startup state for "Raw Output"
+  // without being told where Raw Output was. It belongs on the box.
+  // Requested 2026-09-02.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(!src.includes('Panels on startup'), 'the separate section is gone');
+  assert.ok(!/id="ps_tog_ddlPanel"[^>]*onclick="setPanelDefaultToggle\('ddlPanel'\)"/.test(src),
+    'and its hardcoded per-panel buttons with it');
+  // The button is built from the slot, so it follows the panel between boxes.
+  assert.ok(src.includes('id="ps_tog_${_laySlots[i]}"') &&
+            src.includes("setPanelDefaultToggle('${_laySlots[i]}')"),
+    'each box renders the toggle for whatever panel is in it');
+  assert.ok(/slots\.innerHTML = [\s\S]{0,1400}syncPanelSettingsUI\(\);/.test(src),
+    'freshly built buttons get their state painted');
+});
+
+test('[REGRESSION] which panels share a split comes from the layout, not a fixed table', () => {
+  // _PANEL_PAIRS said ddl<->msg and res<->raw forever. That was true only while
+  // the panels could not move. In `quad` (columns split on their own) with the
+  // default slots, raw's partner is msg — so the table refused a legal collapse
+  // (raw+res) and allowed an illegal one (raw+msg, emptying a column).
+  // togglePanel had always asked the DOM; only setPanelDefault had the copy.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(!src.includes('_PANEL_PAIRS'), 'the stale table is gone');
+  const fn = src.slice(src.indexOf('function setPanelDefault(panelId, state)'));
+  const body = fn.slice(0, fn.indexOf('\nfunction '));
+  assert.ok(/const sibling = _panelSiblingOf\(panelId\);/.test(body),
+    'setPanelDefault reads the live arrangement');
+  assert.ok(/state === 'collapsed' && sibling && /.test(body),
+    'and a box with no partner — e.g. the lone panel in top2 — is unconstrained');
+  // Same rule, so it should not be described two different ways.
+  assert.ok(!src.includes('At least one panel per row must stay expanded'),
+    'the row-shaped wording is gone');
+});
+
 test('the two per-message phases run in slices, so the panel can count them', () => {
   // On a big audit batch these are the phases whose length IS the message count.
   // Run in one turn each, the browser cannot paint: the step sits there unmoving

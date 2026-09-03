@@ -12220,7 +12220,19 @@ function doParseNetardLog(text, opts = {}) {
                 } else {
                   const pidx = parsed.length;
                   parsed.push(null);
-                  deferreds.push({ parsedIdx: pidx, parseBytes, rawBytes: bytes, rec, base: _base, msgType, allMatches });
+                  deferreds.push({ parsedIdx: pidx, parseBytes, rawBytes: bytes, rec, base: _base, msgType, allMatches,
+                    // Built HERE because this is where the decode facts are in
+                    // scope. If the picker is declined the record still has to
+                    // render, and it renders from this.
+                    diag: {
+                      fmt: rec.netardFmt || 'standard',
+                      byteCount: parseBytes.length,
+                      bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
+                      isEbcdic: _isEbcdic, ebcdicHow: _ebcdicHow, ebcdicDens: Math.round(_ebcdicDens * 100),
+                      decodedMTI: parseRaw.slice(0, 4),
+                      msgTypeDetected: true, msgTypeLabel: msgType.label || msgType.type,
+                      volResolved: true, vol: msgType.vol,
+                    } });
                   if (!_typeSeen.has(msgType.type)) {
                     _typeSeen.add(msgType.type);
                     typePickerQueue.push({ msgType, allMatches });
@@ -12297,7 +12309,16 @@ function doParseNetardLog(text, opts = {}) {
             function _applyNetardDeferreds() {
               for (const d of deferreds) {
                 const sm = sessionMappings[d.msgType.type];
-                if (!sm) continue; // type was cancelled — leave slot null (filtered in finalize)
+                if (!sm) {
+                  // The picker was declined. The record is still a record — it
+                  // used to be left null and filtered away in finalize, so
+                  // declining a picker silently deleted every record of that
+                  // type from the results. Reported 2026-09-02.
+                  parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: [], ddlPath: null,
+                    tokens: [], noMatchDDL: true,
+                    _diag: { ...d.diag, candidates: d.allMatches.length } };
+                  continue;
+                }
                 const match = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
                 const _f = _fieldsForChosen(d.msgType, match, d.parseBytes, d.rawBytes || d.parseBytes);
                 parsed[d.parsedIdx] = { ...d.base, msgType: d.msgType, fields: _f.fields,
@@ -12940,7 +12961,15 @@ function doParseMessages() {
               } else {
                 const pidx = parsed.length;
                 parsed.push(null);
-                deferreds.push({ parsedIdx: pidx, chunk, bytes: parseBytes, rawBytes: bytes, chunkStr, charStart, byteCharMap, allMatches, msgType });
+                deferreds.push({ parsedIdx: pidx, chunk, bytes: parseBytes, rawBytes: bytes, chunkStr, charStart, byteCharMap, allMatches, msgType,
+                  diag: {
+                    isNetard: false, fmt: S.inputFormat,
+                    byteCount: bytes.length,
+                    bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
+                    decodedMTI: detectStr.slice(0, _diagRecogSpan(_detTrace.trace) || 4),
+                    msgTypeDetected: true, msgTypeLabel: msgType.label || msgType.type,
+                    volResolved: true, vol: msgType.vol,
+                  } });
                 if (!_typeSeen.has(msgType.type)) {
                   _typeSeen.add(msgType.type);
                   typePickerQueue.push({ msgType, allMatches });
@@ -12967,10 +12996,14 @@ function doParseMessages() {
           // ── Finalize: commit results and render ──────────────────────────────
           function _finalizeParse() {
             const isAuditMode  = !!chunks[0]?.recNo;
-            const isBatchAudit = isAuditMode && chunks.length > 1;
-            // Batch audit: silently drop unrecognised-type records (user sees no-badge in the list)
-            // Single-record audit or legacy: keep them so the diagnostic table is shown
-            const finalParsed = parsed.filter(p => p !== null && !(isBatchAudit && p.unknownType));
+            // Records in, records out. A batch audit used to drop every
+            // unrecognised record on the grounds that the audit LIST still shows
+            // it with no badge — but the Parse Results panel is where the user
+            // is looking, and a record that is simply absent from it cannot be
+            // told apart from one that was never read. They carry a diagnostic
+            // explaining why they did not parse; that is what it is for.
+            // Reported 2026-09-02.
+            const finalParsed = parsed.filter(p => p !== null);
             if (!finalParsed.length) { _parseProgressHide(); flash('Could not extract any message bytes from input.', 'error'); return; }
             S.messages = finalParsed; S.curIdx = 0; S.isParsed = true;
             _lazyTotalCount = _lazyDeferreds ? S.messages.length + _lazyDeferreds.length : 0;
@@ -13010,7 +13043,16 @@ function doParseMessages() {
             for (let i = 0; i < immediateCount; i++) {
               const d  = deferreds[i];
               const sm = sessionMappings[d.msgType.type];
-              if (!sm) continue;
+              if (!sm) {
+                // Declined picker — render the record, do not delete it. See the
+                // record flow.
+                parsed[d.parsedIdx] = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
+                  fields: [], ddlPath: null, msgType: d.msgType, tokens: [], byteCharMap: d.byteCharMap,
+                  charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length,
+                  noMatchDDL: true, _auditChunk: d.chunk,
+                  _diag: { ...d.diag, candidates: d.allMatches.length } };
+                continue;
+              }
               const chosen = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
               const cand   = allCompiled.find(c => c.path === chosen.ddlPath && (c.defName ?? null) === (chosen.defName ?? null));
               let fields = [], ddlPath = chosen.ddlPath, defName = chosen.defName;
@@ -14501,7 +14543,9 @@ function renderFieldTable(msg) {
                   ? ok(`detected <code>${_escH(d.msgTypeLabel || '')}</code>`)
                   : fail(`no detection matched <code>${_escH(prn(d.decodedMTI))}</code>`)
                     + (d.closest ? `<div style="margin-top:2px;padding-left:18px;opacity:0.75">closest <b>${_escH(d.closest.label)}</b> — ${d.closest.passedCount}/${d.closest.total} recognizers passed, stopped at #${(d.closest.failAt ?? 0) + 1}</div>` : '')}</td></tr>`,
-              `<tr><td>5. DDL pool</td><td>${d.volResolved
+              `<tr><td>5. DDL pool</td><td>${d.candidates
+                  ? fail(`${d.candidates} candidate DDL${d.candidates !== 1 ? 's' : ''} in <code>${_escH(d.vol || '')}</code> — none chosen`)
+                  : d.volResolved
                   ? fail(`no DDL in <code>${_escH(d.vol || '')}</code> defines <code>${_escH(d.msgTypeLabel || '')}</code>`)
                   : fail('no vol resolved — type UNKNOWN')}</td></tr>`,
             ];
@@ -14515,7 +14559,9 @@ function renderFieldTable(msg) {
                                    : inf(`detected <code>${_escH(d.msgTypeLabel)}</code> but no vol resolved`))
                   : fail(`no detection matched <code>${_escH(prn(d.decodedMTI))}</code>`)
                     + (d.closest ? `<div style="margin-top:2px;padding-left:18px;opacity:0.75">closest <b>${_escH(d.closest.label)}</b> — ${d.closest.passedCount}/${d.closest.total} recognizers passed, stopped at #${(d.closest.failAt ?? 0) + 1}</div>` : '')}</td></tr>`,
-              `<tr><td>4. DDL pool</td><td>${d.volResolved
+              `<tr><td>4. DDL pool</td><td>${d.candidates
+                  ? fail(`${d.candidates} candidate DDL${d.candidates !== 1 ? 's' : ''} in <code>${_escH(d.vol || '')}</code> — none chosen`)
+                  : d.volResolved
                   ? fail(`no DDL in <code>${_escH(d.vol || '')}</code> defines <code>${_escH(d.msgTypeLabel || '')}</code>`)
                   : fail('no vol resolved — type UNKNOWN')}</td></tr>`,
             ];
@@ -19984,7 +20030,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.32.0';
+const APP_VERSION  = '1.49.33.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

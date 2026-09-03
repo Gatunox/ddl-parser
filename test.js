@@ -1665,6 +1665,37 @@ test('[REGRESSION] an import is never written until its own Save is pressed', ()
     'and its DE overrides — the bundle commits as one thing');
 });
 
+test('[REGRESSION] records in, records out — a parse never deletes one', () => {
+  // Two ways a record used to disappear from Parse Results entirely:
+  //   1. Declining the DDL picker left parsed[idx] null ("leave slot null,
+  //      filtered in finalize"), so Skip silently deleted EVERY record of that
+  //      type — the user pressed Skip on one dialog and lost three records.
+  //   2. A batch audit dropped every unrecognised record outright.
+  // A record that is simply absent cannot be told apart from one that was never
+  // read. Both now render, carrying the diagnostic that says why.
+  // Reported 2026-09-02.
+  const src = fs.readFileSync('./source.html', 'utf8');
+
+  assert.ok(!/if \(!sm\) continue;/.test(src),
+    'a declined picker must not leave the slot null in either flow');
+  // Both flows fill the slot, and both mark it as the dead end it is.
+  const filled = src.match(/if \(!sm\) \{[\s\S]{0,900}?noMatchDDL: true,[\s\S]{0,300}?candidates: d\.allMatches\.length \}/g) || [];
+  assert.strictEqual(filled.length, 2,
+    'the record flow and the message flow both render the declined record');
+
+  assert.ok(/const finalParsed = parsed\.filter\(p => p !== null\);/.test(src),
+    'finalize keeps every unrecognised record');
+  assert.ok(!/isBatchAudit/.test(src), 'the batch-audit drop is gone entirely');
+
+  // The diagnostic has to be built where the decode facts are in scope — at the
+  // point the deferred is created, not where it is resolved.
+  assert.ok(/deferreds\.push\(\{[\s\S]{0,400}?diag: \{[\s\S]{0,500}?msgTypeDetected: true/.test(src),
+    'the deferred carries its own diagnostic');
+  // ...and the DDL-pool step distinguishes "none exist" from "none chosen".
+  assert.ok(/candidate DDL\$\{d\.candidates !== 1 \? 's' : ''\} in <code>/.test(src),
+    'the step says how many candidates went unchosen');
+});
+
 test('a record with no DDL is sent to the binding, not to the tree', () => {
   // Detection already chose the class; the one thing missing is a DDL on it.
   // The hint used to say "right-click a DDL in the tree and choose Use for
@@ -1721,10 +1752,12 @@ test('[REGRESSION] a recognised record with no DDL shows the same five-step diag
   // hardcoding the unknown-type failure.
   assert.ok(/4\. Msg type<\/td><td>\$\{d\.msgTypeDetected\n\s*\? ok\(`detected/.test(src),
     'a detected type reads as a PASS on step 4');
-  assert.ok(/5\. DDL pool<\/td><td>\$\{d\.volResolved\n\s*\? fail\(`no DDL in <code>\$\{_escH\(d\.vol \|\| ''\)\}<\/code> defines/.test(src),
-    'and step 5 names the volume that was searched');
+  assert.ok(/\? fail\(`no DDL in <code>\$\{_escH\(d\.vol \|\| ''\)\}<\/code> defines <code>\$\{_escH\(d\.msgTypeLabel \|\| ''\)\}/.test(src),
+    'and the DDL-pool step names the volume that was searched');
+  assert.ok(/5\. DDL pool<\/td><td>\$\{d\.candidates/.test(src),
+    'the DDL-pool step is driven by the diagnostic, not hardcoded');
   // The non-NETARD table has the same two steps one row earlier.
-  assert.ok(/4\. DDL pool<\/td><td>\$\{d\.volResolved/.test(src),
+  assert.ok(/4\. DDL pool<\/td><td>\$\{d\.candidates/.test(src),
     'the non-NETARD table reports the same thing');
   // A record with noMatchDDL but NO diagnostic (the bound-but-empty path) must
   // still render, not throw — the && guard is what allows that.

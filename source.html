@@ -2555,6 +2555,13 @@ td.c-err  { color: var(--accent2); }
 .audit-cfg-row .panel-toggle:hover { box-shadow: none; border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
 .audit-cfg-row .panel-toggle.is-collapsed { border-color: var(--h-gray-bd); color: var(--h-gray-fg); background: var(--h-gray-bg); }
 .audit-cfg-dialog.open { display:block; }
+/* Go to is two short rows, not a column list, so it does not want the chooser's
+   min-width; and its input is the row's content rather than a trailing control,
+   so it takes the space the labels would have had. */
+.msg-go-dlg { min-width: calc(var(--sz-mono) * 14); }
+.msg-go-dlg .audit-cfg-row input { flex: 1; width: auto; min-width: 0; }
+.msg-go-dlg .msg-go-ends { margin-bottom: 0; }
+.msg-go-dlg .msg-go-ends .btn { flex: 1; }
 .audit-cfg-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
 .audit-cfg-row label { color:var(--text-dim); }
 .audit-cfg-row input  {
@@ -4347,14 +4354,28 @@ th.me-fm-colhi{color:var(--accent);}
             <span id="resFilterLabel" class="res-filter-label" style="display:none"
                   title="Showing only the records picked in Track Mode">Filtered</span>
             <div id="msgNav" class="msg-nav" style="display:none;flex-shrink:0">
-              <button class="btn" onclick="msgNavEnd(-1)" title="First">|&lt;</button>
-              <button class="btn" onclick="msgNavStep(-NAV_JUMP)" title="Back 10">&lt;&lt;</button>
-              <button class="btn" onclick="prevMsg()" title="Previous">&lt;</button>
+              <!-- Eight buttons for one axis of movement. The two that get used
+                   stay as buttons; ±10 moves onto Shift (the tooltip says so, or
+                   nothing would); first and last move inside Go to, where they
+                   are simply the two ends of the range it already asks for.
+                   Requested 2026-09-02. -->
+              <button class="btn" onclick="msgNavRel(-1, event)" title="Previous — hold Shift for 10 back">&lt;</button>
               <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
-              <button class="btn" onclick="nextMsg()" title="Next">&gt;</button>
-              <button class="btn" onclick="msgNavStep(NAV_JUMP)" title="Forward 10">&gt;&gt;</button>
-              <button class="btn" onclick="msgNavEnd(1)" title="Last">&gt;|</button>
-              <button class="btn" onclick="msgNavGoTo()" title="Go to a number">#</button>
+              <button class="btn" onclick="msgNavRel(1, event)" title="Next — hold Shift for 10 forward">&gt;</button>
+              <button class="btn" id="msgGoBtn" onclick="toggleMsgGoDialog()" title="Go to a number">#</button>
+              <div id="msgGoDialog" class="audit-cfg-dialog msg-go-dlg">
+                <div class="audit-cfg-hdr"><span id="msgGoLabel">Go to</span>
+                  <button class="btn" onclick="toggleMsgGoDialog(false)" style="padding:1px 7px;font-size:13px">✕</button></div>
+                <div class="audit-cfg-row">
+                  <input type="text" id="msgGoInput" inputmode="numeric" autocomplete="off" spellcheck="false"
+                         onkeydown="msgGoKey(event)">
+                  <button class="btn" onclick="msgGoApply()">Go</button>
+                </div>
+                <div class="audit-cfg-row msg-go-ends">
+                  <button class="btn" onclick="msgGoEnd(-1)" title="First">|&lt; First</button>
+                  <button class="btn" onclick="msgGoEnd(1)" title="Last">Last &gt;|</button>
+                </div>
+              </div>
             </div>
             <button class="btn" id="resViewAllBtn" onclick="clearViewFilter()" style="display:none;flex-shrink:0"
                     title="Show every record again">View all</button>
@@ -17069,15 +17090,49 @@ function msgNavStep(delta) {
 function msgNavEnd(dir) {
   _msgNavTo(dir < 0 ? 0 : _msgNavSpace().total - 1);
 }
-function msgNavGoTo() {
+// One button, one step — unless Shift is down, which is what used to be << and
+// >>. msgNavStep already routes ±1 through prevMsg/nextMsg, so both cases keep
+// the behaviour they had.
+function msgNavRel(dir, ev) {
+  msgNavStep(dir * (ev && ev.shiftKey ? NAV_JUMP : 1));
+}
+
+// Go to — a popover on the bar, the same .audit-cfg-dialog the column chooser
+// uses, rather than a full-screen modal. Jumping to record 7,500 of 14,000 is a
+// bar operation; it should not black out the results you are jumping through.
+// Requested 2026-09-02.
+function toggleMsgGoDialog(force) {
+  const dlg = document.getElementById('msgGoDialog');
+  if (!dlg) return;
+  const open = (force === undefined) ? !dlg.classList.contains('open') : !!force;
+  dlg.classList.toggle('open', open);
+  const btn = document.getElementById('msgGoBtn');
+  if (btn) btn.classList.toggle('btn-on', open);
+  dlg.closest('.panel')?.classList.toggle('cfg-dim', open);
+  if (!open) return;
+  // The range is asked for fresh: a filter or a lazy parse moves both ends.
   const { total, at } = _msgNavSpace();
-  if (total <= 1) return;
-  showPrompt(`Go to ${_countNoun() === 'recs' ? 'record' : 'message'} (1 – ${total})`,
-    String(at + 1), v => {
-      const n = parseInt(String(v ?? '').trim(), 10);
-      if (!Number.isFinite(n)) return;      // cancelled, or not a number
-      _msgNavTo(n - 1);
-    });
+  const lbl = document.getElementById('msgGoLabel');
+  if (lbl) lbl.textContent = `${_countNoun() === 'recs' ? 'Record' : 'Message'} 1 – ${total}`;
+  const inp = document.getElementById('msgGoInput');
+  if (inp) { inp.value = String(at + 1); setTimeout(() => { inp.focus(); inp.select(); }, 20); }
+}
+
+function msgGoApply() {
+  const inp = document.getElementById('msgGoInput');
+  const n = parseInt(String(inp?.value ?? '').trim(), 10);
+  if (!Number.isFinite(n)) return;   // not a number: leave it open to be corrected
+  toggleMsgGoDialog(false);
+  _msgNavTo(n - 1);                  // clamps, and parses forward if it must
+}
+
+// First and last are the two ends of the range this dialog already names, so
+// they live here rather than as two more buttons on the bar.
+function msgGoEnd(dir) { toggleMsgGoDialog(false); msgNavEnd(dir); }
+
+function msgGoKey(ev) {
+  if (ev.key === 'Enter')  { ev.preventDefault(); msgGoApply(); }
+  if (ev.key === 'Escape') { ev.preventDefault(); toggleMsgGoDialog(false); }
 }
 
 function updateNav() {
@@ -20074,7 +20129,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.36.0';
+const APP_VERSION  = '1.49.37.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

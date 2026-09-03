@@ -20588,7 +20588,7 @@ test('record counter nav: ends, jumps and Go-to work in the counter\'s own numbe
   // into Go-to disagrees with the label right beside it. Requested 2026-08-30.
   const prev = { msgs: S.messages, idx: S.curIdx, vf: S.viewFilter, fmt: S.inputFormat };
   const real = { render: sandbox.renderCurrent, nav: sandbox.updateNav,
-                 hl: sandbox.clearInputHL, prompt: sandbox.showPrompt };
+                 hl: sandbox.clearInputHL };
   sandbox.renderCurrent = () => {}; sandbox.updateNav = () => {}; sandbox.clearInputHL = () => {};
   try {
     S.messages = Array.from({ length: 25 }, (_, i) => ({ fields: [], recNo: i + 1 }));
@@ -20604,49 +20604,61 @@ test('record counter nav: ends, jumps and Go-to work in the counter\'s own numbe
     at(0);  sandbox.msgNavEnd(-1);   eq(S.curIdx, 0,  'already first — stays put');
     at(24); sandbox.msgNavEnd(1);    eq(S.curIdx, 24, 'already last — stays put');
 
-    // Go-to takes the number the counter shows, 1-based, and clamps.
-    let asked = null;
-    sandbox.showPrompt = (label, def, cb) => { asked = { label, def }; cb('7'); };
-    at(3); sandbox.msgNavGoTo();
-    eq(S.curIdx, 6, 'typing 7 goes to the seventh, not to index 7');
-    eq(asked.def, '4', 'the box opens on where you already are');
-    assert.ok(/1 – 25/.test(asked.label), `the range is stated: ${asked.label}`);
-    sandbox.showPrompt = (l, d, cb) => cb('999'); at(3); sandbox.msgNavGoTo();
-    eq(S.curIdx, 24, 'past the end clamps to the last');
-    sandbox.showPrompt = (l, d, cb) => cb('0');   at(3); sandbox.msgNavGoTo();
-    eq(S.curIdx, 0, 'below the start clamps to the first');
-    // Cancel and nonsense must not move anything.
-    for (const v of [null, '', 'abc']) {
-      sandbox.showPrompt = (l, d, cb) => cb(v); at(9); sandbox.msgNavGoTo();
-      eq(S.curIdx, 9, `"${v}" leaves the position alone`);
-    }
+    // Go-to takes the number the counter shows, 1-based, and clamps. It is a
+    // popover on the bar now, so it is driven through its own input.
+    const inp = { value: '', focus(){}, select(){} };
+    const lbl = { textContent: '' };
+    elStubs.msgGoInput = inp; elStubs.msgGoLabel = lbl;
+    const go = v => { inp.value = v; sandbox.msgGoApply(); };
+    at(3); sandbox.toggleMsgGoDialog(true);
+    eq(inp.value, '4', 'the box opens on where you already are');
+    assert.ok(/1 – 25/.test(lbl.textContent), `the range is stated: ${lbl.textContent}`);
+    go('7');   eq(S.curIdx, 6,  'typing 7 goes to the seventh, not to index 7');
+    at(3); go('999'); eq(S.curIdx, 24, 'past the end clamps to the last');
+    at(3); go('0');   eq(S.curIdx, 0,  'below the start clamps to the first');
+    // Nonsense must not move anything — and must leave the box open to be fixed.
+    for (const v of ['', 'abc']) { at(9); go(v); eq(S.curIdx, 9, `"${v}" leaves the position alone`); }
+    // The two ends live in here now, and each closes the popover behind it.
+    at(9); sandbox.msgGoEnd(-1); eq(S.curIdx, 0,  'First, from inside Go to');
+    at(9); sandbox.msgGoEnd(1);  eq(S.curIdx, 24, 'Last, from inside Go to');
 
     // A Track selection re-numbers everything: five picked records are 1–5.
     S.viewFilter = [2, 5, 11, 18, 23];
     S.curIdx = 2;  sandbox.msgNavEnd(1);  eq(S.curIdx, 23, 'last of the SELECTION, not of the parse');
     S.curIdx = 23; sandbox.msgNavStep(-10); eq(S.curIdx, 2, 'a jump clamps inside the selection');
-    sandbox.showPrompt = (l, d, cb) => cb('3'); S.curIdx = 2; sandbox.msgNavGoTo();
+    S.curIdx = 2; go('3');
     eq(S.curIdx, 11, 'the third PICKED record');
+    S.curIdx = 2; sandbox.msgGoEnd(1); eq(S.curIdx, 23, 'and Last means last of the selection');
   } finally {
+    delete elStubs.msgGoInput; delete elStubs.msgGoLabel;
     Object.assign(sandbox, { renderCurrent: real.render, updateNav: real.nav,
-                             clearInputHL: real.hl, showPrompt: real.prompt });
+                             clearInputHL: real.hl });
     S.messages = prev.msgs; S.curIdx = prev.idx; S.viewFilter = prev.vf; S.inputFormat = prev.fmt;
   }
 
-  // Eight controls, in reading order, and the counter still sits in the middle.
-  const nav = (fs.readFileSync('./source.html', 'utf8')
-    .match(/<div id="msgNav"[\s\S]*?<\/div>/) || [''])[0];
+  // Three controls on the bar, in reading order, and the counter in the middle.
+  // Eight was overkill for one axis of movement: ±10 moved onto Shift, and the
+  // two ends moved inside Go to. Requested 2026-09-02.
+  const srcNow = fs.readFileSync('./source.html', 'utf8');
+  const nav = (srcNow.match(/<div id="msgNav"[\s\S]*?<div id="msgGoDialog"/) || [''])[0];
   deepEq((nav.match(/onclick="([a-zA-Z]+\([^"]*\))"/g) || []).map(s => s.slice(9, -1)),
-    ['msgNavEnd(-1)', 'msgNavStep(-NAV_JUMP)', 'prevMsg()',
-     'nextMsg()', 'msgNavStep(NAV_JUMP)', 'msgNavEnd(1)', 'msgNavGoTo()'],
+    ['msgNavRel(-1, event)', 'msgNavRel(1, event)', 'toggleMsgGoDialog()'],
     'the counter nav, left to right');
-  // …with the counter itself between < and >, where it has always been.
-  assert.ok(/onclick="prevMsg\(\)"[^>]*>[^<]*<\/button>\s*<span id="msgCtr"[\s\S]*?<\/span>\s*<button[^>]*onclick="nextMsg\(\)"/.test(nav),
+  assert.ok(/onclick="msgNavRel\(-1, event\)"[^>]*>[^<]*<\/button>\s*<span id="msgCtr"[\s\S]*?<\/span>\s*<button[^>]*onclick="msgNavRel\(1, event\)"/.test(nav),
     'the counter must stay between the single steps');
-  // Eight controls need the same dimmed border every other control in the bar
-  // has, or they read as loose glyphs. Two could get away without one; eight
-  // cannot. Requested 2026-08-30.
-  assert.ok(!/\.msg-nav \.btn \{[^}]*border-color:\s*transparent/.test(fs.readFileSync('./source.html', 'utf8')),
+  // The modifier is invisible unless the tooltip says it, and an undiscoverable
+  // shortcut is the same as a deleted feature.
+  for (const [dir, word] of [['-1', 'back'], ['1', 'forward']])
+    assert.ok(new RegExp(`onclick="msgNavRel\\(${dir}, event\\)"[^>]*title="[^"]*Shift for 10 ${word}`).test(nav),
+      `the ${word} button names its Shift step`);
+  assert.ok(/msgNavStep\(dir \* \(ev && ev\.shiftKey \? NAV_JUMP : 1\)\)/.test(psFnSource('msgNavRel')),
+    'and Shift is what makes it ten');
+  // Go to is a popover on the bar, not a full-screen modal: jumping to 7,500 of
+  // 14,000 should not black out the records being jumped through.
+  assert.ok(/<div id="msgGoDialog" class="audit-cfg-dialog msg-go-dlg">/.test(srcNow),
+    'Go to reuses the column chooser\'s popover, not showPrompt');
+  assert.ok(!/msgNavGoTo/.test(srcNow), 'the modal Go-to is gone, not left orphaned');
+  assert.ok(!/\.msg-nav \.btn \{[^}]*border-color:\s*transparent/.test(srcNow),
     'the nav buttons must not drop their border');
   // FOUR arrangements per row, fixed. On flex-wrap the count per row followed
   // the drawer width, the font size and the density: eight arrangements came out

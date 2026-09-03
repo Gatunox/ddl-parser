@@ -9918,8 +9918,17 @@ function parseMessage(bytes, defs, rawBytes) {
   function _fmtSetPending(specs) { _pendingSpecs = specs ? JSON.parse(JSON.stringify(specs)) : null; _fmtLoad(); }
   function _fmtPending() { return _pendingSpecs; }
 
+  // PARSING READS SAVED CLASSES, NOTHING ELSE. _fmtSpecs is what detection,
+  // overrides and parse specs are compiled from, so it is built from storage and
+  // never from the pending import. A parse is a result the user will act on and
+  // may export; it has to be reproducible from a state that survives a reload,
+  // and staged classes are gone on the next one.
+  //
+  // The Class Editor is unaffected — it works from _meState.specs, and its Test
+  // panel detects and parses straight off that, which is how unsaved edits stay
+  // testable in the one place built for testing them. Reported 2026-09-02.
   function _fmtLoad() {
-    const raw = _fmtGetData();
+    const raw = _fmtGetSaved();
     const specs = raw.specs || [];
     _fmtSpecs = _detectOrderIdxs(specs).map(i => _compileSpec(specs[i]));
   }
@@ -9934,8 +9943,16 @@ function parseMessage(bytes, defs, rawBytes) {
     if (typeof _syncSpecForceSelect === 'function') _syncSpecForceSelect();
   }
 
+  // What the app WOULD show: the staged import wins, because the Class Editor and
+  // the export are looking at work in progress.
   function _fmtGetData() {
     if (_pendingSpecs) return { specs: _pendingSpecs };
+    return _fmtGetSaved();
+  }
+
+  // What is actually committed. The parse path and the class-force picker use
+  // this, so neither can offer a class that a reload would take away.
+  function _fmtGetSaved() {
     try {
       const s = localStorage.getItem('up_format_specs');
       if (s !== null) {
@@ -10345,6 +10362,7 @@ function parseMessage(bytes, defs, rawBytes) {
   window._fmtSetPending = _fmtSetPending;
   window._fmtPending    = _fmtPending;
   window._fmtGetData   = _fmtGetData;
+  window._fmtGetSaved  = _fmtGetSaved;
   window._fmtSyncDefaults = _fmtSyncDefaults;
   window._specEncoding = _specEncoding;
   // Look up a compiled spec by its type/name (field_overrides survive _compileSpec).
@@ -13136,8 +13154,40 @@ function _parseWaitForCache(then) {
   });
 }
 
+// What the pulsing Class Editor button is pulsing ABOUT, as a sentence. Same
+// three sources _meSyncAttention reads, so the warning and the pulse can never
+// disagree about whether there is unsaved work.
+function _unsavedClassWork() {
+  const imp   = !!(typeof _pendingImport !== 'undefined' && _pendingImport);
+  const marks = !!(typeof _meImportMarks !== 'undefined' && _meImportMarks.size);
+  const dirty = !!(typeof _meState !== 'undefined' && _meState && _meState.dirty);
+  if (!imp && !marks && !dirty) return null;
+  return (imp || marks)
+    ? (dirty ? 'an unsaved import and unsaved edits' : 'an unsaved import')
+    : 'unsaved edits';
+}
+
 function _parseBtnClick() {
   if (_compiledCacheReady) { _parseWaitForCache(_parseBtnClick); return; }
+  // Parsing runs on the SAVED classes. Saying so before the run — not after, in
+  // a result the user has already started reading — is the difference between a
+  // warning and an explanation of why the answer is wrong. Requested 2026-09-02.
+  const _unsaved = _unsavedClassWork();
+  if (_unsaved) {
+    showConfirmHTML(
+      `<b>Parse with the saved classes?</b><br><br>` +
+      `The Class Editor has ${_unsaved}. Parsing uses the last <b>saved</b> ` +
+      `state, so that work will <b>not</b> be used here — and it is lost on ` +
+      `reload.<br><br>` +
+      `Open the Class Editor and press Save to parse with it.`,
+      ok => { if (ok) _parseBtnGo(); }
+    );
+    return;
+  }
+  _parseBtnGo();
+}
+
+function _parseBtnGo() {
   const inAudit = document.body.classList.contains('audit-active');
   const n = inAudit ? (_auditSt.filtered || []).length : 0;
   if (n > _PARSE_WARN_RECORDS) {
@@ -16958,7 +17008,10 @@ function _syncSpecForceSelect() {
   // leaving them out of this list only made the two controls disagree, and sent
   // the user to the Class Editor for the one thing this bar exists to do.
   // Reported 2026-08-27.
-  const _all   = _fmtGetData().specs || [];
+  // Saved, not staged: this bar arms S.specOverride, which _fmtDetect resolves
+  // against the compiled (saved) list. Offering a class from an unsaved import
+  // would arm a label the parse cannot find.
+  const _all   = _fmtGetSaved().specs || [];
   const _msgs  = _all.filter(x => x.kind !== 'file').map(x => x.label || x.name);
   const _files = _all.filter(x => x.kind === 'file').map(x => x.label || x.name);
   const specs  = _all;
@@ -19430,7 +19483,7 @@ function confirmImport() {
   // already knows there is a Save in the Class Editor, and an import made from
   // the DDL tree is exactly the case where they are not looking at it.
   flash(parts.length
-    ? `Imported ${parts.join(' + ')} — go to Class Editor and press Save to keep it`
+    ? `Imported ${parts.join(' + ')} — not used for parsing until you go to Class Editor and press Save`
     : 'Nothing imported',
     parts.length ? 'warn' : undefined);
 }
@@ -19883,7 +19936,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.29.0';
+const APP_VERSION  = '1.49.30.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -37113,10 +37166,10 @@ function _meSyncAttention() {
     open.title = !(waiting && !editorOpen)
       ? 'Class Editor \u2014 message and file detection, parse specs, field overrides'
       : _meImportMarks.size
-      ? 'Imported classes are waiting to be checked \u2014 open the Class Editor, review the NEW / OVERWRITTEN rows, then Save'
+      ? 'Imported classes are waiting to be checked \u2014 they are not used for parsing yet. Open the Class Editor, review the NEW / OVERWRITTEN rows, then Save'
       : impPend
-      ? 'An import has not been saved \u2014 open the Class Editor and press Save, or it is lost on reload'
-      : 'Unsaved changes in the Class Editor \u2014 open it and press Save';
+      ? 'An import has not been saved \u2014 it is not used for parsing, and is lost on reload. Open the Class Editor and press Save'
+      : 'Unsaved changes in the Class Editor \u2014 they are not used for parsing until you open it and press Save';
   }
 }
 

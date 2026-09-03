@@ -300,7 +300,7 @@ _t.detectMsgType      = detectMsgType;
 // ReferenceError the moment a test drove the real parse. Bridged here, so the
 // sandbox models the one browser behaviour this code depends on.
 for (const k of ['_fmtDetect','_fmtDetectTrace','_fmtSpecByName','_fmtSpecByLabel',
-                 '_fmtFileSpecByName','_fmtGetData','_fmtTestSpecs','_specEncoding',
+                 '_fmtFileSpecByName','_fmtGetData','_fmtGetSaved','_fmtTestSpecs','_specEncoding',
                  '_migrateSpec','_migrateSpecOverrides','_detectOrderIdxs']) {
   const v = window[k];
   if (typeof v !== 'undefined' && v !== null) globalThis[k] = v;
@@ -1651,8 +1651,8 @@ test('[REGRESSION] an import is never written until its own Save is pressed', ()
   // The toast names the button AND where it lives: "press Save" only helps
   // someone who already knows there is a Save in the Class Editor, and an import
   // from the DDL tree is exactly the case where they are not looking at it.
-  assert.ok(/go to Class Editor and press Save to keep it/.test(fnAll),
-    'the toast must say where the Save is');
+  assert.ok(/not used for parsing until you go to Class Editor and press Save/.test(fnAll),
+    'the toast must say where the Save is — and that nothing parses without it');
 
   // There is ONE Save in the app — the Class Editor's — and it commits the whole
   // bundle. Not saving IS the discard: the pending copy never reached storage,
@@ -1665,9 +1665,63 @@ test('[REGRESSION] an import is never written until its own Save is pressed', ()
     'and its DE overrides — the bundle commits as one thing');
 });
 
-test('the pending list is what everything reads, and it never touches storage', () => {
-  // _fmtGetData is the one door to the class list, so an unsaved import is
-  // expressed by putting it in front of storage rather than in it.
+test('[REGRESSION] a parse runs on saved classes, never on a staged import', () => {
+  // An import used to reach the parse path through _fmtGetData, so classes that
+  // a reload would take away produced results the user acted on and exported.
+  // A parse has to be reproducible from a state that survives a reload.
+  // Reported 2026-09-02.
+  const inner = name => {
+    const i = APP_SRC.indexOf(`  function ${name}(`);
+    assert.ok(i >= 0, `${name} not found`);
+    return APP_SRC.slice(i, APP_SRC.indexOf('\n  }', i) + 4);
+  };
+  // _fmtSpecs is what detection, overrides and parse specs compile from.
+  assert.ok(/const raw = _fmtGetSaved\(\);/.test(inner('_fmtLoad')),
+    'the compiled list must come from storage');
+  assert.ok(!/_fmtGetData\(\)/.test(inner('_fmtLoad')),
+    'and must not go through the door the pending import sits behind');
+  // ...while the editor still sees the import.
+  assert.ok(/if \(_pendingSpecs\) return \{ specs: _pendingSpecs \};/.test(inner('_fmtGetData')),
+    '_fmtGetData still shows work in progress');
+  assert.ok(!/_pendingSpecs/.test(inner('_fmtGetSaved')),
+    '_fmtGetSaved must not know the pending list exists');
+  // The class-force picker arms S.specOverride, which _fmtDetect resolves
+  // against the compiled list — offering a staged class arms a label the parse
+  // cannot find.
+  assert.ok(/const _all   = _fmtGetSaved\(\)\.specs \|\| \[\];/.test(APP_SRC),
+    'the class picker offers saved classes only');
+});
+
+test('[REGRESSION] pressing Parse with unsaved class work says so first', () => {
+  // The result is produced from the saved classes; saying that afterwards, in a
+  // result the user has already started reading, explains a wrong answer instead
+  // of preventing it. Requested 2026-09-02.
+  const click = psFnSource('_parseBtnClick');
+  assert.ok(/const _unsaved = _unsavedClassWork\(\);/.test(click), 'the check runs');
+  assert.ok(/if \(_unsaved\) \{[\s\S]*showConfirmHTML\(/.test(click), 'and it asks before parsing');
+  assert.ok(/will <b>not<\/b> be used here/.test(click), 'the dialog names the consequence');
+  assert.ok(/ok => \{ if \(ok\) _parseBtnGo\(\); \}/.test(click),
+    'confirming still parses — the warning informs, it does not block');
+  // The old body moved intact behind the gate; the record-count warning is part
+  // of it and must still fire.
+  const go = psFnSource('_parseBtnGo');
+  assert.ok(/n > _PARSE_WARN_RECORDS/.test(go) && /auditParseAll\(\)/.test(go) && /doParseMessages\(\)/.test(go),
+    'the parse itself is unchanged');
+
+  // The warning reads the SAME three sources the pulsing button does, or the two
+  // signals could disagree about whether anything is unsaved.
+  const un = psFnSource('_unsavedClassWork');
+  const at = psFnSource('_meSyncAttention');
+  for (const src of ['_pendingImport', '_meImportMarks', 'dirty']) {
+    assert.ok(un.includes(src), `the warning reads ${src}`);
+    assert.ok(at.includes(src), `and so does the pulse`);
+  }
+});
+
+test('the pending list is what the EDITOR reads, and it never touches storage', () => {
+  // An unsaved import is expressed by putting it in front of storage rather than
+  // in it. _fmtGetData is the door for anything showing work in progress;
+  // _fmtGetSaved is the door for anything that has to be reproducible.
   // These live inside the format module's IIFE, so they are indented — psFnSource
   // only finds top-level declarations.
   const inner = name => {

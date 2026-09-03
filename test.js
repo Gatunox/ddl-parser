@@ -20234,22 +20234,24 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
-test('the record metadata bar is one size, not two', () => {
+test('the parse-results bar is one size, and it is the small one', () => {
   // .panel-bar puts bare text a pixel under its controls, which suits a bar that
   // is mostly controls. The record meta row is the opposite — the metadata IS
   // the content, and it shares its line with the nav counter and the buttons, so
   // 11px text against their 12px read as two rows crammed into one.
   // Reported 2026-09-02.
   const src = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/\.rec-meta \{ font-family:var\(--mono\); font-size:var\(--sz-mono\); \}/.test(src),
-    'the row states its own size rather than inheriting the bar\'s smaller one');
-  // It must be the SAME token the controls beside it use — a hardcoded 12px
-  // would stop tracking the Font Size setting.
-  const btn = src.match(/\.panel-bar \.btn \{[^}]*font-size:\s*([^;]+);/);
-  assert.ok(btn && btn[1].trim() === 'var(--sz-mono)',
-    'the bar controls use --sz-mono, so the text must too');
-  assert.ok(/\.msg-ctr  \{ color: var\(--text-dim\); font-size: var\(--sz-mono\);/.test(src),
-    'and so does the record counter between them');
+  // The controls come DOWN to the data, not the data up to the controls.
+  assert.ok(/#resCfgBar \.btn,\n#resCfgBar \.msg-ctr,\n#resCfgBar input,\n#resCfgBar select \{ font-size: calc\(var\(--sz-mono\) - 1px\); \}/.test(src),
+    'every control in the bar takes the bar\'s own text size');
+  assert.ok(/\.rec-meta \{ font-family:var\(--mono\); \}/.test(src),
+    'the metadata keeps inheriting that size rather than overriding it');
+  // Scoped by id, which also outranks the app-wide .panel-bar .btn rule.
+  assert.ok(/\.panel-bar \.btn \{[^}]*font-size:var\(--sz-mono\);/.test(src),
+    'every OTHER panel bar keeps controls a pixel above their labels');
+  // Derived from --sz-mono, so it still tracks the Font Size setting.
+  assert.ok(!/#resCfgBar[^{]*\{ font-size: 11px/.test(src),
+    'the size is a token expression, never a frozen pixel value');
 });
 
 test('the box rows line up with the arrangement grid above them', () => {

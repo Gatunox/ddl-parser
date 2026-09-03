@@ -1668,12 +1668,21 @@ input[type="text"]:focus { border-color: var(--accent); }
 .me-tag-add { align-self:flex-start; padding:2px 8px; font-size: calc(var(--sz-mono) - 1px); }
 
 /* ---- NETARD record metadata bar (top of parse results) ---- */
-/* .panel-bar puts bare text one pixel under its controls, which reads fine on a
-   bar that is mostly controls. This row is the opposite: the metadata IS the
-   content, and it sits on the same line as the nav counter and the buttons — so
-   at 11px against their 12px the row looked like two rows crammed together.
-   One size for the whole row. Reported 2026-09-02. */
-.rec-meta { font-family:var(--mono); font-size:var(--sz-mono); }
+.rec-meta { font-family:var(--mono); }
+
+/* .panel-bar puts bare text one pixel UNDER its controls, which reads fine on a
+   bar that is mostly controls with the odd label. This bar is the opposite: both
+   its rows are dense record data — route, timestamp, byte count, the record
+   counter — and the controls sit on the same lines as that data, so the
+   one-pixel step made each row look like two. The controls come DOWN to the
+   text rather than the text going up: shrinking data to fit a control is
+   backwards, and the row is read far more often than it is clicked.
+   Scoped to this bar; every other panel bar keeps the app-wide rule.
+   Reported 2026-09-02. */
+#resCfgBar .btn,
+#resCfgBar .msg-ctr,
+#resCfgBar input,
+#resCfgBar select { font-size: calc(var(--sz-mono) - 1px); }
 .rec-meta-pipe { color: var(--border); margin: 0 2px; }
 .rec-meta-route { color: var(--text); }
 .rec-meta-time  { color: var(--text-dim); }
@@ -20065,7 +20074,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.35.0';
+const APP_VERSION  = '1.49.36.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

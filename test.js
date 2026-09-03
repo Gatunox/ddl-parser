@@ -1665,6 +1665,49 @@ test('[REGRESSION] an import is never written until its own Save is pressed', ()
     'and its DE overrides — the bundle commits as one thing');
 });
 
+test('[REGRESSION] a parse reads the saved DDL tree, not the staged import', () => {
+  // The classes were split in v1.49.30.0 but the DDLs were not, so a bundle
+  // import was half-live: its classes were ignored by the parse while its DDLs
+  // went straight into S.ddlTree and became scoring candidates. That is what
+  // raised the DDL picker on records that had no candidates a moment earlier —
+  // a staged import changed what a parse DID, which is exactly what staging is
+  // supposed to prevent. Requested 2026-09-02.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const beg = psFnSource('_parseTreeBegin');
+
+  // Default is the LIVE tree: the Class Editor's Test panel goes through these
+  // same functions and MUST see the staged DDLs — that is why they are staged
+  // live at all. Only the main parse opts out, for its own duration.
+  assert.ok(/function _ddlTreeRead\(\) \{ return _parseTree \|\| S\.ddlTree; \}/.test(src),
+    'the live tree is the default');
+  assert.ok(/_parseTree = null;[\s\S]{0,120}if \(typeof _pendingImport === 'undefined' \|\| !_pendingImport\) return;/.test(beg),
+    'with nothing staged the live tree IS the saved one — no read, no copy');
+  assert.ok(/JSON\.parse\(_kvGet\('up_ddl_tree'\) \|\| '\{\}'\)/.test(beg),
+    'the saved view comes from storage, not from a snapshot that goes stale when a DDL is edited');
+
+  // Every read the parse depends on.
+  for (const [fn, needle] of [
+    ['getDDLsForSv',            'const vTree = _ddlTreeRead()[vol];'],
+    ['_fileHash',               'const _t = _ddlTreeRead();'],
+    ['getDDLsForScope',         'const tree = _ddlTreeRead();'],
+    ['_ddlCollectCompileTasks', 'const _tree = _ddlTreeRead();'],
+  ]) assert.ok(psFnSource(fn).includes(needle), `${fn} reads through the accessor`);
+  // Both registries too: an imported DDL must not supply a TYPE or a section
+  // that changes how a SAVED one compiles.
+  assert.strictEqual((src.match(/const _t = _ddlTreeRead\(\);\n  for \(const vol of Object\.keys\(_t\)\)/g) || []).length, 2,
+    'the type and section registries walk the same tree the parse does');
+  // ...and their caches carry the mode, or a registry built during a parse
+  // would be handed straight back to the DDL editor.
+  assert.strictEqual((src.match(/const _tv = _ddlTreeVersion \+ \(_parseTree \? ':saved' : ''\);/g) || []).length, 2,
+    'the registry caches cannot be poisoned across modes');
+
+  // Boundaries: every entry opts in, and every exit hands it back.
+  for (const fn of ['doParseNetardLog', 'doFupCopyLog', 'doParseMessages'])
+    assert.ok(/^\s*_parseTreeBegin\(\);/m.test(psFnSource(fn)), `${fn} opts in`);
+  assert.ok(/_parseTreeEnd\(\);/.test(psFnSource('_parseProgressHide')),
+    'and the one exit every path takes hands it back');
+});
+
 test('[REGRESSION] records in, records out — a parse never deletes one', () => {
   // Two ways a record used to disappear from Parse Results entirely:
   //   1. Declining the DDL picker left parsed[idx] null ("leave slot null,

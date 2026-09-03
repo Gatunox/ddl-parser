@@ -6728,7 +6728,8 @@ function buildDDLDocFields(rawItems, typeRegistry) {
 // so that same-file cross-def TYPE references (e.g. DEF date + DEF B both in the editor) work.
 // Returns Map<string, number> — key is defName.toUpperCase(), value is total byte size.
 function buildRepoTypeRegistry(extraContent) {
-  if (!extraContent && _repoTypeRegCache.version === _ddlTreeVersion) return _repoTypeRegCache.reg;
+  const _tv = _ddlTreeVersion + (_parseTree ? ':saved' : '');
+  if (!extraContent && _repoTypeRegCache.version === _tv) return _repoTypeRegCache.reg;
   const reg = new Map();
 
   function ingest(text) {
@@ -6744,10 +6745,11 @@ function buildRepoTypeRegistry(extraContent) {
   }
 
   // Scan every DDL in the repository
-  for (const vol of Object.keys(S.ddlTree)) {
-    for (const sv of Object.keys(S.ddlTree[vol] || {})) {
-      for (const name of Object.keys(S.ddlTree[vol][sv] || {})) {
-        ingest(S.ddlTree[vol][sv][name]);
+  const _t = _ddlTreeRead();
+  for (const vol of Object.keys(_t)) {
+    for (const sv of Object.keys(_t[vol] || {})) {
+      for (const name of Object.keys(_t[vol][sv] || {})) {
+        ingest(_t[vol][sv][name]);
       }
     }
   }
@@ -6755,7 +6757,7 @@ function buildRepoTypeRegistry(extraContent) {
   // Also ingest the current editor buffer (may not be saved yet)
   if (extraContent) ingest(extraContent);
 
-  if (!extraContent) _repoTypeRegCache = { version: _ddlTreeVersion, reg };
+  if (!extraContent) _repoTypeRegCache = { version: _tv, reg };
   return reg;
 }
 
@@ -6764,7 +6766,8 @@ function buildRepoTypeRegistry(extraContent) {
 // TYPE * / TYPE name references can be expanded inline across files.
 // Returns Map<string, items[]> — key is defName.toUpperCase(), value is the raw item list.
 function buildRepoSectionRegistry(extraContent) {
-  if (!extraContent && _repoSecRegCache.version === _ddlTreeVersion) return _repoSecRegCache.reg;
+  const _tv = _ddlTreeVersion + (_parseTree ? ':saved' : '');
+  if (!extraContent && _repoSecRegCache.version === _tv) return _repoSecRegCache.reg;
   const reg = new Map();
 
   function ingest(text) {
@@ -6775,16 +6778,17 @@ function buildRepoSectionRegistry(extraContent) {
     }
   }
 
-  for (const vol of Object.keys(S.ddlTree)) {
-    for (const sv of Object.keys(S.ddlTree[vol] || {})) {
-      for (const name of Object.keys(S.ddlTree[vol][sv] || {})) {
-        ingest(S.ddlTree[vol][sv][name]);
+  const _t = _ddlTreeRead();
+  for (const vol of Object.keys(_t)) {
+    for (const sv of Object.keys(_t[vol] || {})) {
+      for (const name of Object.keys(_t[vol][sv] || {})) {
+        ingest(_t[vol][sv][name]);
       }
     }
   }
 
   if (extraContent) ingest(extraContent);
-  if (!extraContent) _repoSecRegCache = { version: _ddlTreeVersion, reg };
+  if (!extraContent) _repoSecRegCache = { version: _tv, reg };
   return reg;
 }
 
@@ -11155,7 +11159,8 @@ function _strHash(s) {
 // it. The compiled entries were always per-file ({ path, defName, defs }); only
 // the key and the hash were per-subvolume.
 function _fileHash(vol, sv, file) {
-  const vTree = S.ddlTree[vol] || S.ddlTree[vol.toLowerCase()] || S.ddlTree[vol.toUpperCase()];
+  const _t = _ddlTreeRead();
+  const vTree = _t[vol] || _t[vol.toLowerCase()] || _t[vol.toUpperCase()];
   const svTree = vTree && (vTree[sv] || vTree[sv.toLowerCase()] || vTree[sv.toUpperCase()]);
   const content = svTree && (svTree[file] ?? svTree[file.toUpperCase()]);
   return content == null ? '0' : _strHash(String(content));
@@ -11165,8 +11170,26 @@ function _fileKey(vol, sv, file) {
   return `${vol}/${sv}/${file}`.toUpperCase();
 }
 
+// PARSING READS THE SAVED DDL TREE. An import puts its DDLs straight into
+// S.ddlTree so the tree, the DDL panel and the Class Editor's Test panel can all
+// work with them — that is the point of staging. But the main parse has to
+// produce the answer a reload would produce, and a reload does not have them.
+// Same rule the classes follow (_fmtGetSaved).
+//
+// Default is the LIVE tree, so every other reader — the Test panel included —
+// is untouched; only the main parse opts in, for its own duration. Requested
+// 2026-09-02.
+let _parseTree = null;
+function _ddlTreeRead() { return _parseTree || S.ddlTree; }
+function _parseTreeBegin() {
+  _parseTree = null;                       // always reset: a leaked flag self-heals here
+  if (typeof _pendingImport === 'undefined' || !_pendingImport) return;
+  try { _parseTree = JSON.parse(_kvGet('up_ddl_tree') || '{}'); } catch(e) { _parseTree = {}; }
+}
+function _parseTreeEnd() { _parseTree = null; }
+
 function getDDLsForSv(vol, sv) {
-  const vTree = S.ddlTree[vol];
+  const vTree = _ddlTreeRead()[vol];
   if (!vTree) return [];
   const svTree = vTree[sv];
   if (!svTree) return [];
@@ -11243,9 +11266,10 @@ function _ddlCacheReusableFiles() {
 // already in the token map, and anything the cache above already serves.
 function _ddlCollectCompileTasks(cachedFiles) {
   const tasks = [];
-  for (const vol of Object.keys(S.ddlTree)) {
+  const _tree = _ddlTreeRead();
+  for (const vol of Object.keys(_tree)) {
     if (isExcluded(vol)) continue;
-    for (const sv of Object.keys(S.ddlTree[vol] || {})) {
+    for (const sv of Object.keys(_tree[vol] || {})) {
       if (isExcluded(vol, sv)) continue;
       for (const { path, content } of getDDLsForSv(vol, sv)) {
         const file = path.split('/').pop();
@@ -11775,6 +11799,9 @@ function _ppSetDetectDetails(stepLabel, traces, noun) {
 }
 
 function _parseProgressHide() {
+  // Every path out of a parse — finished, failed, cancelled — comes through
+  // here, so this is where the saved-tree view is handed back.
+  _parseTreeEnd();
   const allDone = _ppSteps.length > 0 && _ppSteps.every(s => s.done);
   if (P.keepParseLog && allDone && !_parseAborted) {
     // The log stays up for reading, but the picker is a pending QUESTION — with
@@ -11870,6 +11897,7 @@ function _netardEbcdic(rawMsg) {
 }
 
 function doParseNetardLog(text, opts = {}) {
+  _parseTreeBegin();   // this parse reads the SAVED DDL tree
   S.seenTypes.clear();
   const records = opts.parsedRecords || parseNetardLog(text);
   if (!records.length) { flash(opts.emptyMsg || 'No records with message text found in NETARD log', 'warn'); return; }
@@ -12493,6 +12521,7 @@ function _padFupCopyAsciiLines(text) {
 }
 
 function doFupCopyLog(text, opts = {}) {
+  _parseTreeBegin();   // this parse reads the SAVED DDL tree
   // Web terminals paste non-breaking spaces ( ) where data has 0x20 — normalize first.
   const nbspNorm = text.replace(/ /g, ' ');
   if (nbspNorm !== text) { document.getElementById('msgInput').value = nbspNorm; text = nbspNorm; }
@@ -12567,6 +12596,7 @@ function _remapByteCharMapForMargin(map, parseText, margin) {
 }
 
 function doParseMessages() {
+  _parseTreeBegin();   // this parse reads the SAVED DDL tree
   _clearResultsOnly();
   S.seenTypes.clear();
   const msgText = document.getElementById('msgInput').value;
@@ -17305,7 +17335,7 @@ function getDDLsForScope(scope) {
   const _s = scope || S.scope;
   if (!_s) return [];
   const { type, vol, sv, name } = _s;
-  const tree = S.ddlTree;
+  const tree = _ddlTreeRead();
   const results = [];
   if (type === 'vol') {
     for (const s of Object.keys(tree[vol] || {}).sort()) {
@@ -20030,7 +20060,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.33.0';
+const APP_VERSION  = '1.49.34.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

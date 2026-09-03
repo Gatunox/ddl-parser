@@ -20264,6 +20264,26 @@ test('the record bar keeps its height with one message, and points at the rest',
     'and so do the arrow keys, which move without touching the button');
 });
 
+test("[REGRESSION] read-segment-fields never calls its attribute \"map\"", () => {
+  // `map` is a DIFFERENT block — read a field through another DDL definition —
+  // and this one's attribute was renamed to `bitmap` so the two words stop
+  // meaning two things. The JSON was renamed; one example CAPTION was not, and
+  // a caption is the line a user reads before the JSON. Reported 2026-09-02.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const i = src.indexOf("'read-segment-fields': {");
+  assert.ok(i > 0, 'the help block is still there');
+  const block = src.slice(i, src.indexOf("\n  'read-tlv': {", i));
+  assert.ok(!/<b>map<\/b>/.test(block),
+    'nothing in this block may present the attribute as "map"');
+  assert.ok(!/"map":/.test(block) && !/\bmap:/.test(block),
+    'and no example may still emit the old key');
+  // The name it DOES use is the one read-bitmap-fields uses, which was the
+  // whole point of the rename.
+  assert.ok(/\['bitmap', 'string'/.test(block), 'the attribute is bitmap');
+  assert.ok(/"read-segment-fields": \{"bitmap": "SEG-MAP", "binding": 0\}/.test(block),
+    'and the object-form example emits it');
+});
+
 test('the parse-results bar is one size, and it is the small one', () => {
   // .panel-bar puts bare text a pixel under its controls, which suits a bar that
   // is mostly controls. The record meta row is the opposite — the metadata IS

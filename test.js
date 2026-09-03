@@ -20590,6 +20590,15 @@ test('the Parse Results stripe counts only the rows on screen', () => {
   // The popover anchors to the header, so the header must be the positioned one.
   assert.ok(/\.audit-popup-hdr \{[\s\S]{0,200}?position:relative;/.test(fs.readFileSync('./source.html', 'utf8')),
     'the header is the popover\'s positioned ancestor');
+  // It dims what it floats over, like every other chooser — and the host is the
+  // record preview, not closest('.panel'), which is the whole Data Input panel.
+  const tog = psFnSource('toggleAuditGoDialog');
+  assert.ok(/dlg\.closest\('\.audit-popup'\)\?\.classList\.toggle\('cfg-dim', open\);/.test(tog),
+    'the preview dims behind the Go-to');
+  assert.ok(!/dlg\.closest\('\.panel'\)/.test(tog),
+    'dimming the whole panel would make one header control look like a modal');
+  assert.ok(/btn\.classList\.toggle\('btn-on', open\)/.test(tog),
+    'and the button that opened it stays lit above the scrim as the way out');
   // The audit arrow handler runs BEFORE the app-wide input guards, so without
   // its own it would steal Left/Right from the Go-to field it now contains.
   assert.ok(/_auditDetailOpen\(\) && _aTag !== 'INPUT' && _aTag !== 'TEXTAREA'/.test(fs.readFileSync('./source.html', 'utf8')),

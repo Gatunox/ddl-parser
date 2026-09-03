@@ -16317,6 +16317,10 @@ function toggleAuditGoDialog(force) {
   dlg.classList.toggle('open', open);
   const btn = document.getElementById('auditGoBtn');
   if (btn) btn.classList.toggle('btn-on', open);
+  // The scrim's host is the record preview this belongs to — NOT closest('.panel'),
+  // which is the whole Data Input panel and would make one control in one header
+  // look like a modal over the app. Same rule the column chooser follows.
+  dlg.closest('.audit-popup')?.classList.toggle('cfg-dim', open);
   if (!open) return;
   const rows = _auditSt.filtered || [];
   const lbl = document.getElementById('auditGoLabel');
@@ -20173,7 +20177,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.38.0';
+const APP_VERSION  = '1.49.39.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

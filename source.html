@@ -1668,7 +1668,12 @@ input[type="text"]:focus { border-color: var(--accent); }
 .me-tag-add { align-self:flex-start; padding:2px 8px; font-size: calc(var(--sz-mono) - 1px); }
 
 /* ---- NETARD record metadata bar (top of parse results) ---- */
-.rec-meta { font-family:var(--mono); }
+/* .panel-bar puts bare text one pixel under its controls, which reads fine on a
+   bar that is mostly controls. This row is the opposite: the metadata IS the
+   content, and it sits on the same line as the nav counter and the buttons — so
+   at 11px against their 12px the row looked like two rows crammed together.
+   One size for the whole row. Reported 2026-09-02. */
+.rec-meta { font-family:var(--mono); font-size:var(--sz-mono); }
 .rec-meta-pipe { color: var(--border); margin: 0 2px; }
 .rec-meta-route { color: var(--text); }
 .rec-meta-time  { color: var(--text-dim); }
@@ -20060,7 +20065,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.34.0';
+const APP_VERSION  = '1.49.35.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

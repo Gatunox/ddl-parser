@@ -20234,6 +20234,24 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('the record metadata bar is one size, not two', () => {
+  // .panel-bar puts bare text a pixel under its controls, which suits a bar that
+  // is mostly controls. The record meta row is the opposite — the metadata IS
+  // the content, and it shares its line with the nav counter and the buttons, so
+  // 11px text against their 12px read as two rows crammed into one.
+  // Reported 2026-09-02.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.rec-meta \{ font-family:var\(--mono\); font-size:var\(--sz-mono\); \}/.test(src),
+    'the row states its own size rather than inheriting the bar\'s smaller one');
+  // It must be the SAME token the controls beside it use — a hardcoded 12px
+  // would stop tracking the Font Size setting.
+  const btn = src.match(/\.panel-bar \.btn \{[^}]*font-size:\s*([^;]+);/);
+  assert.ok(btn && btn[1].trim() === 'var(--sz-mono)',
+    'the bar controls use --sz-mono, so the text must too');
+  assert.ok(/\.msg-ctr  \{ color: var\(--text-dim\); font-size: var\(--sz-mono\);/.test(src),
+    'and so does the record counter between them');
+});
+
 test('the box rows line up with the arrangement grid above them', () => {
   // The name column is what sets where the selects start, so it is sized to the
   // grid's left edge, not to the text. The two numbers move together: the note

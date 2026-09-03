@@ -14524,8 +14524,17 @@ function renderFieldTable(msg) {
         })() : ''}
         <div style="margin-top:8px">${msg.noParseSpec ? `${msg.recNo ? `Record #${msg.recNo}: define` : 'Define'} a <strong>Parse Spec</strong> for <strong>${_escH(msg._diag?.typeLabel || '')}</strong> in the <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Class Editor</span> — or right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.`
             : msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule to recognize this message.` : 'Create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule for this message, or right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.')
-            : (msg.isNetard && msg.noMatchDDL) ? 'right-click a DDL in the tree and choose <strong>Use for parsing (override)</strong>, then click <strong>▶ Parse</strong> again to apply it to this record.'
-            : msg.noMatchDDL  ? 'Load a matching DDL, or use manual override: right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.'
+            : msg.noMatchDDL ? (() => {
+                // Detection already chose the class; what is missing is a DDL on
+                // it. Name that class and link straight to its DDL Bindings —
+                // the override stays offered as the one-off it is.
+                const _lbl = msg._diag?.msgTypeLabel || msg.msgType?.label || msg.msgType?.type || '';
+                const _thing = msg.isNetard ? 'this record' : 'this message';
+                return (_lbl
+                  ? `${msg.recNo ? `Record #${msg.recNo}: add` : 'Add'} a DDL to <strong>${_escH(_lbl)}</strong> in <span onclick="_meGoToBindings('${_escH(_lbl).replace(/'/g, "\\'")}')" style="cursor:pointer;text-decoration:underline;color:var(--accent)">DDL Bindings</span>`
+                  : 'Load a matching DDL')
+                  + ` — or, for a one-off, right-click a DDL in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong> to apply it to ${_thing}.`;
+              })()
             : msg.isNetard    ? 'right-click a DDL in the tree and choose <strong>Use for parsing (override)</strong>, then click <strong>▶ Parse</strong> again.'
             : 'Check your DDL definition.'}</div>
        </div>`;
@@ -19975,7 +19984,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.31.0';
+const APP_VERSION  = '1.49.32.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21999,6 +22008,24 @@ function _meSectSaved() {
 function _meSectFor(item, defaults) {
   const saved = _meSectSaved()[_meSectId(item)];
   return saved ? { ...defaults, ...saved } : { ...defaults };
+}
+
+// A record that was recognised but has no DDL is missing ONE thing: a binding on
+// the class detection already picked. Sending the user to a generic Class Editor
+// open — or to the tree, to arm a one-off override — is sending them somewhere
+// other than the fix. This lands on that class with DDL Bindings open.
+// Requested 2026-09-02.
+function _meGoToBindings(label) {
+  openMsgEditor();
+  const specs = (_meState && _meState.specs) || [];
+  const i = specs.findIndex(s => (s.label || s.name) === label);
+  if (i >= 0) _meSelectItem('msg', i);
+  // _meSectionToggle TOGGLES, so an already-open section would close.
+  if (_meState && !_meState.sections.ddl_bindings) _meSectionToggle('ddl_bindings');
+  setTimeout(() => {
+    const el = document.getElementById('me-sect-body-ddl_bindings');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }, 80);
 }
 
 function _meSectionToggle(sec) {

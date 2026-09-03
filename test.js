@@ -1665,6 +1665,39 @@ test('[REGRESSION] an import is never written until its own Save is pressed', ()
     'and its DE overrides — the bundle commits as one thing');
 });
 
+test('a record with no DDL is sent to the binding, not to the tree', () => {
+  // Detection already chose the class; the one thing missing is a DDL on it.
+  // The hint used to say "right-click a DDL in the tree and choose Use for
+  // parsing (override)" — a one-off that fixes this record and nothing after
+  // it, and never mentions the class the record actually landed on.
+  // Requested 2026-09-02.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const go = psFnSource('_meGoToBindings');
+
+  assert.ok(/openMsgEditor\(\);/.test(go), 'it opens the editor');
+  assert.ok(/specs\.findIndex\(s => \(s\.label \|\| s\.name\) === label\)/.test(go) &&
+            /_meSelectItem\('msg', i\)/.test(go),
+    'and selects the class the record was detected as');
+  // _meSectionToggle toggles, so calling it unconditionally would CLOSE an
+  // already-open section — landing the user on the one view they asked to see,
+  // collapsed.
+  assert.ok(/if \(_meState && !_meState\.sections\.ddl_bindings\) _meSectionToggle\('ddl_bindings'\);/.test(go),
+    'the section is opened, never toggled shut');
+  assert.ok(/me-sect-body-ddl_bindings[\s\S]{0,80}scrollIntoView/.test(go),
+    'and scrolled to, since it sits below Identity and Recognizers');
+
+  // The hint links there and names the class.
+  assert.ok(/a DDL to <strong>\$\{_escH\(_lbl\)\}<\/strong> in <span onclick="_meGoToBindings\(/.test(src),
+    'the hint names the class and links to its bindings');
+  assert.ok(/const _lbl = msg\._diag\?\.msgTypeLabel \|\| msg\.msgType\?\.label \|\| msg\.msgType\?\.type \|\| '';/.test(src),
+    'the label falls back through the diagnostic and the msgType');
+  assert.ok(/_lbl[\s\S]{0,400}: 'Load a matching DDL'/.test(src),
+    'with no label at all there is nothing to bind to, so it says the plain thing');
+  // The override is still offered — it is a legitimate one-off — but second.
+  assert.ok(/— or, for a one-off, right-click a DDL in the tree/.test(src),
+    'the override stays available as the one-off it is');
+});
+
 test('[REGRESSION] a recognised record with no DDL shows the same five-step diagnostic', () => {
   // An UNRECOGNISED record explained itself in five steps; a record that WAS
   // recognised but had no DDL said only "No matching DDL for this record" and

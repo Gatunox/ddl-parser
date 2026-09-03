@@ -20400,27 +20400,35 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
     // could guess. Requested 2026-09-01.
     st.filtered = [{ offset: 0, recNo: 970001 }, { offset: 1, recNo: 970004 },
                    { offset: 2, recNo: 970009 }];
-    const realPrompt = sandbox.showPrompt;
-    let asked = null;
-    const answer = v => { sandbox.showPrompt = (l, d, cb) => { asked = { l, d }; cb(v); }; };
+    // Driven through the popover's own input now, not showPrompt.
+    const inp = { value: '', focus(){}, select(){} };
+    const lbl = { textContent: '' };
+    elStubs.auditGoInput = inp; elStubs.auditGoLabel = lbl;
+    const answer = v => { inp.value = v; };
     try {
-      at(0); answer('3'); sandbox.auditNavGoTo();
+      at(0); sandbox.toggleAuditGoDialog(true);
+      eq(inp.value, '1', 'the box opens on the line you are already on');
+      assert.ok(/1 – 3/.test(lbl.textContent), `the range is the list length: ${lbl.textContent}`);
+      answer('3'); sandbox.auditGoApply();
       deepEq(went, [2], 'line 3 is the third row, whatever record numbers it holds');
-      eq(asked.d, '1', 'the box opens on the line you are already on');
-      assert.ok(/1 – 3/.test(asked.l), `the range is the list length: ${asked.l}`);
       // A record number typed by mistake is a line past the end, and clamps —
       // like every other jump here, where refusing would be pedantry.
-      at(0); answer('970009'); sandbox.auditNavGoTo();
+      at(0); answer('970009'); sandbox.auditGoApply();
       deepEq(went, [2], 'past the end clamps to the last line');
-      at(2); answer('0'); sandbox.auditNavGoTo();
+      at(2); answer('0'); sandbox.auditGoApply();
       deepEq(went, [0], 'below the start clamps to the first');
-      at(1); answer('2'); sandbox.auditNavGoTo();
+      at(1); answer('2'); sandbox.auditGoApply();
       deepEq(went, [], 'the line you are already on moves nowhere');
-      for (const v of [null, '', 'abc']) {
-        at(1); answer(v); sandbox.auditNavGoTo();
+      for (const v of ['', 'abc']) {
+        at(1); answer(v); sandbox.auditGoApply();
         deepEq(went, [], `"${v}" leaves the position alone`);
       }
-    } finally { sandbox.showPrompt = realPrompt; }
+      // The two ends live in here, and Shift is what makes a step a jump.
+      at(1); sandbox.auditGoEnd(-1); deepEq(went, [0], 'First, from inside Go to');
+      at(1); sandbox.auditGoEnd(1);  deepEq(went, [2], 'Last, from inside Go to');
+      at(0); sandbox.auditNavRel(1, { shiftKey: false }); deepEq(went, [1], 'a plain step is one');
+      at(0); sandbox.auditNavRel(1, { shiftKey: true });  deepEq(went, [2], 'Shift makes it ten, clamped');
+    } finally { delete elStubs.auditGoInput; delete elStubs.auditGoLabel; }
   } finally {
     sandbox.auditInspectRecord = real;
     st.filtered = prevFiltered; st.selIdx = prevSel;
@@ -20430,11 +20438,11 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
   // surface here is labelled with the record number, so that is what anyone will
   // type; with a filter on the numbers are sparse, and one that is filtered out
   // has to say so rather than land somewhere near it. Requested 2026-08-31.
-  const go = psFnSource('auditNavGoTo');
-  assert.ok(/Go to line/.test(go), 'it asks for a LINE, and says so');
+  const go = psFnSource('auditGoApply');
+  assert.ok(/Line 1 \\u2013/.test(psFnSource('toggleAuditGoDialog')), 'it asks for a LINE, and says so');
   assert.ok(/rows\.length - 1, n - 1/.test(go), '1-based on the way in, clamped to the list');
   assert.ok(!/_auditRecNo/.test(go), 'the record number is an identity, not a coordinate');
-  assert.ok(/showPrompt\(/.test(go), 'and it asks through the app\'s own prompt');
+  assert.ok(!/showPrompt\(/.test(go), 'and it is a popover on the header, not a full-screen modal');
   // The Line column is what makes that number knowable — without it the user is
   // being asked for a number nothing on screen shows.
   const srcAll = fs.readFileSync('./source.html', 'utf8');
@@ -20569,9 +20577,23 @@ test('the Parse Results stripe counts only the rows on screen', () => {
   const hdr = (fs.readFileSync('./source.html', 'utf8')
     .match(/<div class="audit-popup-hdr"[\s\S]*?<\/div>/) || [''])[0];
   deepEq((hdr.match(/onclick="(auditNav[^"]*)"/g) || []).map(s => s.slice(9, -1)),
-    ['auditNavPopupEnd(-1)', 'auditNavPopup(-NAV_JUMP)', 'auditNavPopup(-1)',
-     'auditNavPopup(1)', 'auditNavPopup(NAV_JUMP)', 'auditNavPopupEnd(1)', 'auditNavGoTo()'],
-    'the seven nav controls, left to right');
+    ['auditNavRel(-1, event)', 'auditNavRel(1, event)'],
+    'the two step controls, left to right');
+  // Same three-control shape as the Parse Results navigator: ±10 on Shift,
+  // first and last inside Go to. Requested 2026-09-02.
+  assert.ok(/onclick="toggleAuditGoDialog\(\)"/.test(hdr), 'and Go to beside them');
+  assert.ok(!/auditNavGoTo/.test(fs.readFileSync('./source.html', 'utf8')),
+    'the modal Go-to is gone, not left orphaned');
+  for (const [dir, word] of [['-1', 'back'], ['1', 'forward']])
+    assert.ok(new RegExp(`onclick="auditNavRel\\(${dir}, event\\)"[^>]*title="[^"]*Shift for 10 ${word}`).test(hdr),
+      `the ${word} button names its Shift step`);
+  // The popover anchors to the header, so the header must be the positioned one.
+  assert.ok(/\.audit-popup-hdr \{[\s\S]{0,200}?position:relative;/.test(fs.readFileSync('./source.html', 'utf8')),
+    'the header is the popover\'s positioned ancestor');
+  // The audit arrow handler runs BEFORE the app-wide input guards, so without
+  // its own it would steal Left/Right from the Go-to field it now contains.
+  assert.ok(/_auditDetailOpen\(\) && _aTag !== 'INPUT' && _aTag !== 'TEXTAREA'/.test(fs.readFileSync('./source.html', 'utf8')),
+    'arrows must not be stolen from a field inside the popup');
   // Six controls beside a full record line: the title has to be the thing that
   // truncates, or a narrow detail pane pushes the buttons off the end.
   const css = fs.readFileSync('./source.html', 'utf8');

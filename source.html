@@ -2592,6 +2592,9 @@ td.c-err  { color: var(--accent2); }
   display:flex; flex-direction:column;
 }
 .audit-popup-hdr {
+  /* Go to opens against this row (top:100%), so it must be the positioned
+     ancestor — otherwise it anchors to whatever is positioned further up. */
+  position:relative;
   display:flex; align-items:center; gap:6px; padding:4px 8px; flex-shrink:0;
   border-bottom: var(--bw) solid var(--border); background:rgba(var(--accent-rgb),0.07);
 }
@@ -4306,13 +4309,24 @@ th.me-fm-colhi{color:var(--accent);}
             <div id="auditPopup" class="audit-popup" style="display:none">
               <div class="audit-popup-hdr" ondblclick="auditCopyDumpToClipboard(event)" title="Double-click to copy dump to clipboard">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopupEnd(-1)" title="First record">|&lt;</button>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-NAV_JUMP)" title="Back 10 records">&lt;&lt;</button>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(-1)" title="Previous record (←)">&lt;</button>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(1)"  title="Next record (→)">&gt;</button>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopup(NAV_JUMP)" title="Forward 10 records">&gt;&gt;</button>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavPopupEnd(1)" title="Last record">&gt;|</button>
-                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavGoTo()" title="Go to a line number">#</button>
+                <!-- Same three controls the Parse Results navigator keeps: ±10 on
+                     Shift, first and last inside Go to. Requested 2026-09-02. -->
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavRel(-1, event)" title="Previous record (←) — hold Shift for 10 back">&lt;</button>
+                <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavRel(1, event)"  title="Next record (→) — hold Shift for 10 forward">&gt;</button>
+                <button class="btn" id="auditGoBtn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="toggleAuditGoDialog()" title="Go to a line number">#</button>
+                <div id="auditGoDialog" class="audit-cfg-dialog msg-go-dlg">
+                  <div class="audit-cfg-hdr"><span id="auditGoLabel">Go to</span>
+                    <button class="btn" onclick="toggleAuditGoDialog(false)" style="padding:1px 7px;font-size:13px">✕</button></div>
+                  <div class="audit-cfg-row">
+                    <input type="text" id="auditGoInput" inputmode="numeric" autocomplete="off" spellcheck="false"
+                           onkeydown="auditGoKey(event)">
+                    <button class="btn" onclick="auditGoApply()">Go</button>
+                  </div>
+                  <div class="audit-cfg-row msg-go-ends">
+                    <button class="btn" onclick="auditGoEnd(-1)" title="First record">|&lt; First</button>
+                    <button class="btn" onclick="auditGoEnd(1)" title="Last record">Last &gt;|</button>
+                  </div>
+                </div>
                 <button id="auditDumpToggle" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px);font-family:var(--font-mono);text-align:center;transition:none" onclick="auditToggleDumpMode()" title="Toggle between the hex dump and the character view (ASCII or EBCDIC, whichever the record is)">HEX</button>
                 <button id="auditParseBtn" class="btn btn-primary" style="height:20px;padding:0 8px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditParseSelected(true)" title="Load payload into Data Input and parse — always re-parses, even if this record was parsed before">&#9654; Parse</button>
                 <button id="auditAutoParseBtn" class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditToggleAutoParse()" title="Auto-parse — parse each record as you select it, without pressing Parse">Auto</button>
@@ -16288,16 +16302,46 @@ const _auditRecNo = (rec, i) => (rec && rec.recNo) || (i + 1);
 // the Line column shows. Record numbers are the identity, not a coordinate: once
 // a filter is on they are scattered, so "the middle of these 14,000" is line
 // 7500 and no record number anyone could guess. Requested 2026-09-01.
-function auditNavGoTo() {
+// auditNavPopup already draws the distinction between a jump (clamps) and a
+// single step (does not), so Shift changes nothing but the size of the move.
+function auditNavRel(dir, ev) {
+  auditNavPopup(dir * (ev && ev.shiftKey ? NAV_JUMP : 1));
+}
+
+// Go to, as a popover on the record header rather than a full-screen modal —
+// the same control the Parse Results navigator uses. Requested 2026-09-02.
+function toggleAuditGoDialog(force) {
+  const dlg = document.getElementById('auditGoDialog');
+  if (!dlg) return;
+  const open = (force === undefined) ? !dlg.classList.contains('open') : !!force;
+  dlg.classList.toggle('open', open);
+  const btn = document.getElementById('auditGoBtn');
+  if (btn) btn.classList.toggle('btn-on', open);
+  if (!open) return;
+  const rows = _auditSt.filtered || [];
+  const lbl = document.getElementById('auditGoLabel');
+  if (lbl) lbl.textContent = `Line 1 \u2013 ${rows.length}`;
+  const inp = document.getElementById('auditGoInput');
+  if (inp) { inp.value = String(_auditSt.selIdx + 1); setTimeout(() => { inp.focus(); inp.select(); }, 20); }
+}
+
+function auditGoApply() {
   const rows = _auditSt.filtered || [];
   if (!rows.length) return;
-  showPrompt(`Go to line (1 \u2013 ${rows.length})`, String(_auditSt.selIdx + 1), v => {
-    const n = parseInt(String(v == null ? '' : v).trim(), 10);
-    if (!Number.isFinite(n)) return;            // cancelled, or not a number
-    // Clamped, like every other jump here: a number past the end plainly means
-    // the end, and refusing it would be pedantry over a list this long.
-    _auditNavTo(Math.max(0, Math.min(rows.length - 1, n - 1)));
-  });
+  const inp = document.getElementById('auditGoInput');
+  const n = parseInt(String(inp?.value ?? '').trim(), 10);
+  if (!Number.isFinite(n)) return;   // not a number: leave it open to be corrected
+  toggleAuditGoDialog(false);
+  // Clamped, like every other jump here: a number past the end plainly means
+  // the end, and refusing it would be pedantry over a list this long.
+  _auditNavTo(Math.max(0, Math.min(rows.length - 1, n - 1)));
+}
+
+function auditGoEnd(dir) { toggleAuditGoDialog(false); auditNavPopupEnd(dir); }
+
+function auditGoKey(ev) {
+  if (ev.key === 'Enter')  { ev.preventDefault(); auditGoApply(); }
+  if (ev.key === 'Escape') { ev.preventDefault(); toggleAuditGoDialog(false); }
 }
 
 // The detail pane and its resizer are one thing. Five places used to read or
@@ -20129,7 +20173,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.37.0';
+const APP_VERSION  = '1.49.38.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21754,7 +21798,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // whole app and stray letters fired actions. Arrows move between records.
     // Nothing else is touched.
     {
-      if (_auditDetailOpen()) {
+      const _aTag = document.activeElement?.tagName;
+      if (_auditDetailOpen() && _aTag !== 'INPUT' && _aTag !== 'TEXTAREA'
+          && !document.activeElement?.isContentEditable) {
         if (e.key === 'ArrowUp'   || e.key === 'ArrowLeft')  { e.preventDefault(); auditNavPopup(-1); return; }
         if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); auditNavPopup(1);  return; }
         return;

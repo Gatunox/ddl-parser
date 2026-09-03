@@ -12185,7 +12185,26 @@ function doParseNetardLog(text, opts = {}) {
                 }
                 const allMatches = _typeMatchCache[msgType.type + ':' + msgType.vol] || [];
                 if (allMatches.length === 0) {
-                  parsed.push({ ..._base, msgType, fields: [], ddlPath: null, tokens: [], noMatchDDL: true });
+                  // Recognised, but nothing in its volume defines it. This is the
+                  // SAME kind of dead end as an unrecognised record and it gets
+                  // the same five-step diagnostic — it just fails at a later
+                  // step. Without it the record said only "No matching DDL" and
+                  // the user could not see that detection had in fact worked.
+                  // Reported 2026-09-02.
+                  parsed.push({ ..._base, msgType, fields: [], ddlPath: null, tokens: [], noMatchDDL: true,
+                    _diag: {
+                      fmt: rec.netardFmt || 'standard',
+                      byteCount: parseBytes.length,
+                      bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
+                      isEbcdic: _isEbcdic,
+                      ebcdicHow: _ebcdicHow,
+                      ebcdicDens: Math.round(_ebcdicDens * 100),
+                      decodedMTI: parseRaw.slice(0, 4),
+                      msgTypeDetected: true,
+                      msgTypeLabel: msgType.label || msgType.type,
+                      volResolved: true,
+                      vol: msgType.vol,
+                    } });
                 } else if ((allMatches.length === 1 && !_meSpecNeedsBinding(msgType)) || sessionMappings[msgType.type]) {
                   const sm    = sessionMappings[msgType.type];
                   const match = sm
@@ -12902,9 +12921,22 @@ function doParseMessages() {
               const allMatches = typeMatchCache[cacheKey] || [];
 
               if (allMatches.length === 0) {
+                // Same dead end as an unrecognised message, one step further in
+                // — so it shows the same diagnostic. See the record flow.
                 parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
                   fields: [], ddlPath: null, msgType, tokens: [], byteCharMap,
-                  charStart, charEnd: charStart + chunkStr.length, noMatchDDL: true, _auditChunk: chunk });
+                  charStart, charEnd: charStart + chunkStr.length, noMatchDDL: true, _auditChunk: chunk,
+                  _diag: {
+                    isNetard: false,
+                    fmt: S.inputFormat,
+                    byteCount: bytes.length,
+                    bytesSample: bytes.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' '),
+                    decodedMTI: detectStr.slice(0, _diagRecogSpan(_detTrace.trace) || 4),
+                    msgTypeDetected: true,
+                    msgTypeLabel: msgType.label || msgType.type,
+                    volResolved: true,
+                    vol: msgType.vol,
+                  } });
               } else {
                 const pidx = parsed.length;
                 parsed.push(null);
@@ -14444,7 +14476,7 @@ function renderFieldTable(msg) {
           rows.push(`<tr><td>${n + 2}. Parse spec</td><td>${fail(`none defined for <code>${_escH(d.typeLabel)}</code>`)}</td></tr>`);
           return `<table class="diag-table">${rows.join('')}</table>`;
         })() : ''}
-        ${msg.unknownType && msg._diag ? (() => {
+        ${(msg.unknownType || msg.noMatchDDL) && msg._diag ? (() => {
           const d = msg._diag;
           const fmtLabel = { hex:'HEX', 'tandem-dump':'HEXASCII', octal:'OCTAL', ebcdic:'EBCDIC', ascii:'ASCII', standard:'Standard' }[d.fmt] || (d.fmt || '').toUpperCase();
           const ok  = s => `<span class="diag-ok">✓ ${s}</span>`;
@@ -14465,9 +14497,13 @@ function renderFieldTable(msg) {
               `<tr><td>1. Format</td><td>${ok(`NETARD ${fmtLabel}`)}</td></tr>`,
               `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
               `<tr><td>3. EBCDIC</td><td>${d.isEbcdic ? ok(`detected — F0–F9 density: ${d.ebcdicDens}% (&gt;30%)`) : inf(`not detected — F0–F9 density: ${d.ebcdicDens}% (≤30%)`)}</td></tr>`,
-              `<tr><td>4. Msg type</td><td>${fail(`no detection matched <code>${_escH(prn(d.decodedMTI))}</code>`)
+              `<tr><td>4. Msg type</td><td>${d.msgTypeDetected
+                  ? ok(`detected <code>${_escH(d.msgTypeLabel || '')}</code>`)
+                  : fail(`no detection matched <code>${_escH(prn(d.decodedMTI))}</code>`)
                     + (d.closest ? `<div style="margin-top:2px;padding-left:18px;opacity:0.75">closest <b>${_escH(d.closest.label)}</b> — ${d.closest.passedCount}/${d.closest.total} recognizers passed, stopped at #${(d.closest.failAt ?? 0) + 1}</div>` : '')}</td></tr>`,
-              `<tr><td>5. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
+              `<tr><td>5. DDL pool</td><td>${d.volResolved
+                  ? fail(`no DDL in <code>${_escH(d.vol || '')}</code> defines <code>${_escH(d.msgTypeLabel || '')}</code>`)
+                  : fail('no vol resolved — type UNKNOWN')}</td></tr>`,
             ];
           } else {
             // Non-NETARD path
@@ -14475,10 +14511,13 @@ function renderFieldTable(msg) {
               `<tr><td>1. Format</td><td>${ok(fmtLabel || 'AUTO')}</td></tr>`,
               `<tr><td>2. Bytes</td><td>${d.byteCount > 0 ? ok(`${d.byteCount} bytes — <code>${_escH(d.bytesSample)}…</code>`) : fail('no bytes extracted')}</td></tr>`,
               `<tr><td>3. Msg type</td><td>${d.msgTypeDetected
-                  ? inf(`detected <code>${_escH(d.msgTypeLabel)}</code> but no vol resolved`)
+                  ? (d.volResolved ? ok(`detected <code>${_escH(d.msgTypeLabel)}</code>`)
+                                   : inf(`detected <code>${_escH(d.msgTypeLabel)}</code> but no vol resolved`))
                   : fail(`no detection matched <code>${_escH(prn(d.decodedMTI))}</code>`)
                     + (d.closest ? `<div style="margin-top:2px;padding-left:18px;opacity:0.75">closest <b>${_escH(d.closest.label)}</b> — ${d.closest.passedCount}/${d.closest.total} recognizers passed, stopped at #${(d.closest.failAt ?? 0) + 1}</div>` : '')}</td></tr>`,
-              `<tr><td>4. DDL pool</td><td>${fail('no vol resolved — type UNKNOWN')}</td></tr>`,
+              `<tr><td>4. DDL pool</td><td>${d.volResolved
+                  ? fail(`no DDL in <code>${_escH(d.vol || '')}</code> defines <code>${_escH(d.msgTypeLabel || '')}</code>`)
+                  : fail('no vol resolved — type UNKNOWN')}</td></tr>`,
             ];
           }
           return `<table class="diag-table">${rows.join('')}</table>`;
@@ -19936,7 +19975,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.30.0';
+const APP_VERSION  = '1.49.31.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

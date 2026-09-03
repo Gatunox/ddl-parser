@@ -1665,6 +1665,40 @@ test('[REGRESSION] an import is never written until its own Save is pressed', ()
     'and its DE overrides — the bundle commits as one thing');
 });
 
+test('[REGRESSION] a recognised record with no DDL shows the same five-step diagnostic', () => {
+  // An UNRECOGNISED record explained itself in five steps; a record that WAS
+  // recognised but had no DDL said only "No matching DDL for this record" and
+  // showed nothing. Same dead end, one step further along — so the user could
+  // not see that detection had actually worked, or which volume was searched.
+  // Reported 2026-09-02 against an audit file parsed with the data erased.
+  const src = fs.readFileSync('./source.html', 'utf8');
+
+  // Both producers must attach the diagnostic, or the renderer has nothing.
+  // NETARD record flow:
+  assert.ok(/noMatchDDL: true,\n\s*_diag: \{[\s\S]{0,600}?msgTypeDetected: true,[\s\S]{0,200}?volResolved: true,\n\s*vol: msgType\.vol,/.test(src),
+    'the record flow attaches a diagnostic to the recognised-but-no-DDL case');
+  // Message flow:
+  assert.ok(/noMatchDDL: true, _auditChunk: chunk,\n\s*_diag: \{[\s\S]{0,600}?msgTypeDetected: true,/.test(src),
+    'and so does the message flow');
+
+  // The renderer draws the table for BOTH dead ends, not just the unknown one.
+  assert.ok(src.includes('${(msg.unknownType || msg.noMatchDDL) && msg._diag ?'),
+    'the table is not gated on unknownType alone');
+  // ...and the last two steps report how far it actually got, rather than
+  // hardcoding the unknown-type failure.
+  assert.ok(/4\. Msg type<\/td><td>\$\{d\.msgTypeDetected\n\s*\? ok\(`detected/.test(src),
+    'a detected type reads as a PASS on step 4');
+  assert.ok(/5\. DDL pool<\/td><td>\$\{d\.volResolved\n\s*\? fail\(`no DDL in <code>\$\{_escH\(d\.vol \|\| ''\)\}<\/code> defines/.test(src),
+    'and step 5 names the volume that was searched');
+  // The non-NETARD table has the same two steps one row earlier.
+  assert.ok(/4\. DDL pool<\/td><td>\$\{d\.volResolved/.test(src),
+    'the non-NETARD table reports the same thing');
+  // A record with noMatchDDL but NO diagnostic (the bound-but-empty path) must
+  // still render, not throw — the && guard is what allows that.
+  assert.ok(!src.includes('${(msg.unknownType || msg.noMatchDDL) ? (() =>'),
+    'the diagnostic stays guarded on _diag existing');
+});
+
 test('[REGRESSION] a parse runs on saved classes, never on a staged import', () => {
   // An import used to reach the parse path through _fmtGetData, so classes that
   // a reload would take away produced results the user acted on and exported.

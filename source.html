@@ -1668,7 +1668,12 @@ input[type="text"]:focus { border-color: var(--accent); }
 .me-tag-add { align-self:flex-start; padding:2px 8px; font-size: calc(var(--sz-mono) - 1px); }
 
 /* ---- NETARD record metadata bar (top of parse results) ---- */
-.rec-meta { font-family:var(--mono); }
+/* One message means no navigator, and the row collapsed from 25px to 18px —
+   so parsing a single message made the panel below it jump. The row reserves
+   the height a control needs whether or not one is in it: the bar's control
+   height, plus its own padding and border (box-sizing is border-box).
+   Reported 2026-09-02. */
+.rec-meta { font-family:var(--mono); min-height: calc(var(--bar-ctl-h) + 4px + var(--bw)); }
 
 /* .panel-bar puts bare text one pixel UNDER its controls, which reads fine on a
    bar that is mostly controls with the odd label. This bar is the opposite: both
@@ -4375,7 +4380,7 @@ th.me-fm-colhi{color:var(--accent);}
                    Requested 2026-09-02. -->
               <button class="btn" onclick="msgNavRel(-1, event)" title="Previous — hold Shift for 10 back">&lt;</button>
               <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
-              <button class="btn" onclick="msgNavRel(1, event)" title="Next — hold Shift for 10 forward">&gt;</button>
+              <button class="btn" id="msgNextBtn" onclick="msgNavRel(1, event)" title="Next — hold Shift for 10 forward">&gt;</button>
               <button class="btn" id="msgGoBtn" onclick="toggleMsgGoDialog()" title="Go to a number">#</button>
               <div id="msgGoDialog" class="audit-cfg-dialog msg-go-dlg">
                 <div class="audit-cfg-hdr"><span id="msgGoLabel">Go to</span>
@@ -11480,7 +11485,13 @@ function _drainTypePickers(queue, sessionMappings, done) {
 // then repaint. Written out at five sites — both finalizes and the three manual
 // override paths — which is how a repaint step goes missing from one of them.
 // Extracted 2026-08-22.
+// A fresh result set has not been walked yet, so the "there is more here" hint
+// is owed again. Set once the user actually moves — the same shape as the Class
+// Editor's pulse, which stops when the thing it is asking for has been done.
+let _navHintOwed = false;
+
 function _resetParseSelection() {
+  _navHintOwed    = true;
   S.selFieldId    = null;
   S.trackMode     = false;
   S.trackedFields = new Set(); S.trackPicked = new Set(); S.viewFilter = null; S.trackFilters = {};
@@ -17142,6 +17153,7 @@ function msgNavEnd(dir) {
 // >>. msgNavStep already routes ±1 through prevMsg/nextMsg, so both cases keep
 // the behaviour they had.
 function msgNavRel(dir, ev) {
+  _navHintOwed = false;
   msgNavStep(dir * (ev && ev.shiftKey ? NAV_JUMP : 1));
 }
 
@@ -17170,13 +17182,14 @@ function msgGoApply() {
   const inp = document.getElementById('msgGoInput');
   const n = parseInt(String(inp?.value ?? '').trim(), 10);
   if (!Number.isFinite(n)) return;   // not a number: leave it open to be corrected
+  _navHintOwed = false;
   toggleMsgGoDialog(false);
   _msgNavTo(n - 1);                  // clamps, and parses forward if it must
 }
 
 // First and last are the two ends of the range this dialog already names, so
 // they live here rather than as two more buttons on the bar.
-function msgGoEnd(dir) { toggleMsgGoDialog(false); msgNavEnd(dir); }
+function msgGoEnd(dir) { _navHintOwed = false; toggleMsgGoDialog(false); msgNavEnd(dir); }
 
 function msgGoKey(ev) {
   if (ev.key === 'Enter')  { ev.preventDefault(); msgGoApply(); }
@@ -17193,7 +17206,13 @@ function updateNav() {
   const fil = S.viewFilter && S.viewFilter.length ? S.viewFilter : null;
   const at  = fil ? fil.indexOf(S.curIdx) : -1;
   _set('msgCtr', 'textContent', fil ? `${(at < 0 ? 0 : at) + 1} / ${fil.length}` : `${S.curIdx+1} / ${total}`);
-  _sty('msgNav', (fil ? fil.length : total) > 1 ? 'flex' : 'none');
+  const _navTotal = fil ? fil.length : total;
+  _sty('msgNav', _navTotal > 1 ? 'flex' : 'none');
+  // More than one record and none of them looked at yet: the > button says so,
+  // the way the Class Editor button says a Save is owed. It stops as soon as the
+  // user moves, so it is a hint and not a permanent animation on the bar.
+  const _next = document.getElementById('msgNextBtn');
+  if (_next) _next.classList.toggle('attn-pulse', _navTotal > 1 && _navHintOwed);
   if (typeof _syncViewFilterBar === 'function') _syncViewFilterBar();
   _sty('trkBtn', S.trackedFields.size > 0 || S.trackMode ? 'inline-block' : 'none');
   _sty('exportBtn', total > 0 ? 'inline-flex' : 'none');
@@ -20177,7 +20196,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.39.0';
+const APP_VERSION  = '1.49.40.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21849,6 +21868,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       if (!S.isParsed || S.messages.length <= 1) return;
       e.preventDefault();
+      _navHintOwed = false;
       if (e.key === 'ArrowLeft') prevMsg(); else nextMsg();
     }
 

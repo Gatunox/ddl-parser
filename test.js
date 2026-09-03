@@ -20234,6 +20234,36 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('the record bar keeps its height with one message, and points at the rest', () => {
+  // One message means no navigator, and the row collapsed 25px -> 18px, so
+  // parsing a single message made everything below it jump. It reserves the
+  // height a control needs whether or not one is in it. Reported 2026-09-02.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.rec-meta \{[^}]*min-height: calc\(var\(--bar-ctl-h\) \+ 4px \+ var\(--bw\)\)/.test(src),
+    'the row reserves a control height, plus its own padding and border');
+  assert.ok(/\*, \*::before, \*::after \{ box-sizing: border-box/.test(src),
+    'which only adds up because box-sizing is border-box');
+
+  // And with more than one record the > button says so, the way the Class
+  // Editor button says a Save is owed — using that same class, so the two read
+  // as one vocabulary and reduced-motion disables both.
+  const nav = psFnSource('updateNav');
+  assert.ok(/_next\.classList\.toggle\('attn-pulse', _navTotal > 1 && _navHintOwed\)/.test(nav),
+    'the hint needs somewhere to go AND a reason to still be owed');
+  assert.ok(/\.attn-pulse \{[\s\S]{0,120}animation: attn-pulse/.test(src) &&
+            /prefers-reduced-motion: reduce\) \{ \.attn-pulse \{ animation: none/.test(src),
+    'and it is the existing pulse, so reduced-motion still silences it');
+
+  // It is a hint, not a permanent animation on the bar: every deliberate move
+  // retires it, and a fresh parse owes it again.
+  assert.ok(/_navHintOwed    = true;/.test(psFnSource('_resetParseSelection')),
+    'a new result set has not been walked yet');
+  for (const fn of ['msgNavRel', 'msgGoApply', 'msgGoEnd'])
+    assert.ok(/_navHintOwed = false;/.test(psFnSource(fn)), `${fn} retires the hint`);
+  assert.ok(/_navHintOwed = false;\n\s*if \(e\.key === 'ArrowLeft'\) prevMsg\(\); else nextMsg\(\);/.test(src),
+    'and so do the arrow keys, which move without touching the button');
+});
+
 test('the parse-results bar is one size, and it is the small one', () => {
   // .panel-bar puts bare text a pixel under its controls, which suits a bar that
   // is mostly controls. The record meta row is the opposite — the metadata IS
@@ -20244,7 +20274,7 @@ test('the parse-results bar is one size, and it is the small one', () => {
   // The controls come DOWN to the data, not the data up to the controls.
   assert.ok(/#resCfgBar \.btn,\n#resCfgBar \.msg-ctr,\n#resCfgBar input,\n#resCfgBar select \{ font-size: calc\(var\(--sz-mono\) - 1px\); \}/.test(src),
     'every control in the bar takes the bar\'s own text size');
-  assert.ok(/\.rec-meta \{ font-family:var\(--mono\); \}/.test(src),
+  assert.ok(!/\.rec-meta \{[^}]*font-size/.test(src),
     'the metadata keeps inheriting that size rather than overriding it');
   // Scoped by id, which also outranks the app-wide .panel-bar .btn rule.
   assert.ok(/\.panel-bar \.btn \{[^}]*font-size:var\(--sz-mono\);/.test(src),

@@ -20320,6 +20320,24 @@ test('baselines: the table resizes and selects like every other table', () => {
     'the divider carries no resize handle');
 });
 
+test('baselines: deleting one asks for the word, like everything else destructive', () => {
+  // An OK button is one slip away from losing a saved parse that cannot be got
+  // back. Every other destructive action in the app asks for the word, and this
+  // is not the exception. Requested 2026-09-04.
+  const del = psFnSource('blDeleteSelected');
+  assert.ok(/confirmDelete\(`the baseline "\$\{b\.name\}" and the parse saved with it`/.test(del),
+    'it goes through the app\'s own delete gate, naming what will be lost');
+  assert.ok(!/showConfirmHTML/.test(del), 'not a plain OK/Cancel');
+  // The gate itself: the typed word is compared case-insensitively, and
+  // anything else — including a cancel, which arrives as null — does nothing.
+  const gate = psFnSource('confirmDelete');
+  assert.ok(/String\(ans \|\| ''\)\.trim\(\)\.toUpperCase\(\) !== DELETE_WORD/.test(gate),
+    'a near miss or a cancel must not delete');
+  // ...and the deletion leaves a valid selection rather than a dangling id.
+  assert.ok(/_blSel = _blAll\(\)\[0\]\?\.id \|\| null;/.test(del),
+    'the selection moves to whatever is left');
+});
+
 test('baselines: reachable from the header, with nothing parsed', () => {
   // Every other way in hangs off a parse — the ★ Baseline button appears with
   // the results, and Manage… lives inside its dialog — so with nothing parsed

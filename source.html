@@ -20301,7 +20301,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.5.0';
+const APP_VERSION  = '1.50.5.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22427,14 +22427,15 @@ function blSetMode(m) { _blMode = m; blRenderRight(); }
 function blDeleteSelected() {
   const b = _blAll().find(x => x.id === _blSel);
   if (!b) return;
-  showConfirmHTML(`<b>Delete "${_escHtml(b.name)}"?</b><br><br>The baseline and its saved parse go with it. This cannot be undone.`,
-    ok => {
-      if (!ok) return;
-      _blDelete(b.id);
-      _blSel = _blAll()[0]?.id || null;
-      blRenderSidebar(); blRenderRight();
-      flash('Baseline deleted');
-    });
+  // The app's own delete gate: an OK button is one slip away from losing a
+  // saved parse that cannot be got back, so this asks for the word like every
+  // other destructive action here. Requested 2026-09-04.
+  confirmDelete(`the baseline "${b.name}" and the parse saved with it`, () => {
+    _blDelete(b.id);
+    _blSel = _blAll()[0]?.id || null;
+    blRenderSidebar(); blRenderRight();
+    flash('Baseline deleted');
+  });
 }
 
 function blRenameSelected() {

@@ -20196,7 +20196,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.42.0';
+const APP_VERSION  = '1.49.43.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20942,20 +20942,41 @@ function _ddlSrchShow(moveFocus) {
   const ta = document.getElementById('ddlEditor');
   const q = document.getElementById('ddlSearchInput').value;
   const pos = _ddlSrchMatches[_ddlSrchIdx];
-  // Apply focus/selection FIRST so browser auto-scroll fires before our override
-  if (moveFocus) { ta.focus(); ta.setSelectionRange(pos, pos + q.length); }
-  // Then apply our scroll-into-view (overrides any browser auto-scroll)
-  const linesBefore = ta.value.substring(0, pos).split('\n');
-  const _csEl2   = window._ddlEditorCM ? window._ddlEditorCM.scrollDOM : ta;
-  const lineH    = parseFloat(getComputedStyle(_csEl2).lineHeight) || 16;
-  const padTop   = parseFloat(getComputedStyle(_csEl2).paddingTop) || 0;
-  const matchTop    = padTop + (linesBefore.length - 1) * lineH;
-  const matchBottom = matchTop + lineH;
-  const margin      = lineH * 2;
-  if (matchTop < ta.scrollTop + margin) {
-    ta.scrollTop = Math.max(0, matchTop - margin);
-  } else if (matchBottom > ta.scrollTop + ta.clientHeight - margin) {
-    ta.scrollTop = matchBottom - ta.clientHeight + margin;
+  const cm = window._ddlEditorCM;
+
+  if (cm) {
+    // CodeMirror measures the document itself — it virtualises, and estimates
+    // the height of lines it has not rendered — so it is the only thing that
+    // knows where a position actually is. The arithmetic below (used for the
+    // plain textarea) multiplied a line COUNT by one line height read off the
+    // scroller: no wrapped line, no gutter, no estimate. On a small file the
+    // answer happened to be close; on a big one it landed past the match, so
+    // the jump arrived with the hit already scrolled off the top. It also ran
+    // AFTER setSelectionRange had already centred the match correctly, and
+    // raced CodeMirror's own measure pass — which is why it only sometimes
+    // went wrong. Reported 2026-09-03.
+    const len  = cm.state.doc.length;
+    const from = Math.min(pos, len);
+    const to   = Math.min(pos + q.length, len);
+    // The proxy's setSelectionRange dispatches the selection AND the centring
+    // scroll in one go; without focus we want the reveal but not the caret.
+    if (moveFocus) { cm.focus(); ta.setSelectionRange(from, to); }
+    else cm.dispatch({ effects: window.CM.EditorView.scrollIntoView(from, { y: 'center' }) });
+  } else {
+    // Plain-textarea fallback: no virtualisation, no wrapping, so the
+    // arithmetic holds.
+    if (moveFocus) { ta.focus(); ta.setSelectionRange(pos, pos + q.length); }
+    const linesBefore = ta.value.substring(0, pos).split('\n');
+    const lineH    = parseFloat(getComputedStyle(ta).lineHeight) || 16;
+    const padTop   = parseFloat(getComputedStyle(ta).paddingTop) || 0;
+    const matchTop    = padTop + (linesBefore.length - 1) * lineH;
+    const matchBottom = matchTop + lineH;
+    const margin      = lineH * 2;
+    if (matchTop < ta.scrollTop + margin) {
+      ta.scrollTop = Math.max(0, matchTop - margin);
+    } else if (matchBottom > ta.scrollTop + ta.clientHeight - margin) {
+      ta.scrollTop = matchBottom - ta.clientHeight + margin;
+    }
   }
   document.getElementById('ddlSearchCount').textContent =
     `${_ddlSrchIdx + 1} / ${_ddlSrchMatches.length}`;

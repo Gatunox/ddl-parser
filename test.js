@@ -20322,6 +20322,41 @@ test('the box rows line up with the arrangement grid above them', () => {
     'a name too wide for the column is clipped, not wrapped');
 });
 
+test('[REGRESSION] DDL search lets CodeMirror find the match, and does not compute it', () => {
+  // _ddlSrchShow multiplied a line COUNT by one line height read off the
+  // scroller, then wrote scrollTop. That models a plain textarea: no wrapped
+  // lines, no virtualisation, no estimated heights. Against CodeMirror the
+  // error compounds with depth — measured on a 6,000-line DDL, match #500 was
+  // out by 604px and match #5,800 by 6,999px, parking the view BELOW the hit so
+  // it sat 2,408px above the top of the window. Hence "I have to scroll up".
+  // It also ran after setSelectionRange had already centred the match, racing
+  // CodeMirror's own measure pass, which is why it only sometimes went wrong.
+  // Reported 2026-09-03.
+  const fn = psFnSource('_ddlSrchShow');
+  const cmHalf = fn.slice(fn.indexOf('if (cm) {'), fn.indexOf('} else {'));
+  assert.ok(cmHalf.includes("window.CM.EditorView.scrollIntoView(from, { y: 'center' })"),
+    'CodeMirror is asked to reveal the position, since only it has measured it');
+  assert.ok(!/lineHeight|paddingTop|scrollTop/.test(cmHalf),
+    'and nothing in that branch computes or writes a scroll offset');
+  // Focus and no-focus both have to reveal it: typing in the box shows the
+  // first hit without stealing the caret.
+  assert.ok(/if \(moveFocus\) \{ cm\.focus\(\); ta\.setSelectionRange\(from, to\); \}/.test(cmHalf),
+    'with focus, the proxy centres it as part of the selection dispatch');
+  assert.ok(/else cm\.dispatch\(\{ effects:/.test(cmHalf),
+    'without focus, the scroll is dispatched on its own');
+  // The proxy is what makes the focused path correct — if it stops centring,
+  // this does too.
+  assert.ok(/setSelectionRange\(s, e\) \{[\s\S]{0,300}?EditorView\.scrollIntoView\(s, \{ y: 'center' \}\)/.test(
+    fs.readFileSync('./source.html', 'utf8')),
+    'the proxy still centres on selection');
+  // The textarea fallback keeps the arithmetic — there it is correct.
+  const taHalf = fn.slice(fn.indexOf('} else {'));
+  assert.ok(/lineH/.test(taHalf) && /ta\.scrollTop =/.test(taHalf),
+    'the no-CodeMirror path is unchanged');
+  assert.ok(!/_ddlEditorCM \? window\._ddlEditorCM\.scrollDOM : ta/.test(fn),
+    'and it no longer measures CodeMirror to scroll a textarea');
+});
+
 test('the startup toggle shows the STATE, not what a click would do', () => {
   // Everywhere else a .panel-toggle names the ACTION — the panel header shows −
   // meaning "collapse me". This row describes a stored default instead, so it

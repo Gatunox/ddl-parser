@@ -7504,12 +7504,11 @@ test('the LAST Track column can be dragged, and keeps the width it is given', ()
     'with nothing to steal from, the TABLE grows and the wrap scrolls');
   assert.ok(/\(nextTh && c === nextTh\.dataset\.col\)/.test(init),
     'the save path must not read a neighbour that is not there');
-  // Only Track opts in: the other four have a fixed column set, so their last
-  // edge is the table's own border.
-  // Every table grows its last column now: the edge exists in all five, and
-  // with nothing to its right the drag grows the table instead. Track was first
-  // because its column count is unpredictable; the rest followed.
-  eq((src.match(/growLast: true,/g) || []).length, 5, 'every table must be able to grow its last column');
+  // Every table grows its last column: the edge exists in all six, and with
+  // nothing to its right the drag grows the table instead. Track was first
+  // because its column count is unpredictable; the rest followed, Baselines
+  // included.
+  eq((src.match(/growLast: true,/g) || []).length, 6, 'every table must be able to grow its last column');
 
   // A flex column the user has SIZED keeps that size — absorbing the slack is
   // what it does UNTIL someone states a width for it.
@@ -20234,6 +20233,38 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('baselines: the table resizes and selects like every other table', () => {
+  // Requested 2026-09-03. Both behaviours are the app's shared ones — a sixth
+  // entry in _ME_COLRZ and the same header-click highlighter — not a second
+  // implementation for this one table.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const render = psFnSource('blRenderRight');
+  assert.ok(/_meColInitResize\(_ME_COLRZ\.bl\)/.test(render), 'columns resize');
+  assert.ok(/_meInitColHighlight\('#bl-right table'\)/.test(render), 'and a header click lights its column');
+
+  // A width only means something under a fixed layout: with `auto` the browser
+  // re-derives every column from content on the next render and the drag is
+  // silently discarded — the bug .res-tbl had before it was converted.
+  assert.ok(/\.bl-table \{[^}]*table-layout:fixed/.test(src), 'the table is fixed-layout');
+  // ...which also means cells no longer widen to fit, so the single-line ones
+  // must clip rather than overflow their column.
+  assert.ok(/\.bl-table \.bl-f \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis/.test(src),
+    'nowrap cells clip inside their column');
+
+  const cfg = src.slice(src.indexOf('  bl: {'), src.indexOf('  test: {'));
+  assert.ok(/key: 'up_bl_col_w'/.test(cfg), 'its own storage key');
+  assert.ok(/flex: 'l-val'/.test(cfg), 'the current-parse value column absorbs the slack');
+  assert.ok(/growLast: true/.test(cfg), 'and the last edge grows the table');
+  assert.ok(/defaults: \(\) => _BL_DEFAULT_COLW/.test(cfg), 'pinned defaults, not measured ones');
+  // l-val is deliberately absent from the defaults — it is the flex column.
+  const defs = src.slice(src.indexOf('const _BL_DEFAULT_COLW'), src.indexOf('const _blSize'));
+  assert.ok(!/'l-val'/.test(defs), 'the flex column states no default width');
+  assert.ok(/'mid': 10/.test(defs), 'the divider is pinned narrow');
+  // The divider is not draggable: it separates the halves, it is not a column.
+  assert.ok(/<th class="bl-mid" data-col="mid"><\/th>/.test(psFnSource('_blCompareHtml')),
+    'the divider carries no resize handle');
+});
+
 test('baselines: two panes and a gutter, the same shape as the Class Editor', () => {
   // The list was a card and the table was a bare region bleeding to the window
   // edge, so the two columns did not read as a pair. Both are panes now, with a
@@ -20323,9 +20354,16 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
   // value-first and reads back out. One short hop between the two values
   // instead of crossing ten columns. Requested 2026-09-03.
   const fn = psFnSource('_blCompareHtml');
-  const heads = (fn.match(/h\('([^']*)'\)/g) || []).map(x => x.slice(3, -2));
-  deepEq(heads, ['#','FIELD','TYPE-LEN','SIZE','OFFSET','VALUE','VALUE','OFFSET','SIZE','TYPE-LEN','FIELD','#'],
+  const cols = (fn.match(/_blTh\('([^']*)','([^']*)'\)/g) || [])
+    .map(x => x.match(/_blTh\('([^']*)','([^']*)'\)/).slice(1));
+  deepEq(cols.map(c => c[1]),
+    ['#','FIELD','TYPE-LEN','SIZE','OFFSET','VALUE','VALUE','OFFSET','SIZE','TYPE-LEN','FIELD','#'],
     'the right half is the left half reversed');
+  // Distinct column keys per side, or dragging one would silently drag the
+  // other and there would be no way back to two widths.
+  deepEq(cols.map(c => c[0]),
+    ['l-num','l-fld','l-typ','l-siz','l-off','l-val','r-val','r-off','r-siz','r-typ','r-fld','r-num'],
+    'each side owns its own column keys');
   assert.ok(/bl-v bl-v-l/.test(fn) && /bl-v bl-v-r/.test(fn), 'each side marks its own value cell');
   const css = fs.readFileSync('./source.html', 'utf8');
   assert.ok(/\.bl-cmp \.bl-v-l \{ text-align:right; \}/.test(css) &&

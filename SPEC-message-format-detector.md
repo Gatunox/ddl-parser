@@ -2293,6 +2293,7 @@ Once all messages are migrated and verified:
 | `up_msg_export_cols` | Export Messages column selection — which of Field / Description / Value / Raw Hex the text file carries |
 | `up_me_ps_fmt` | Parse-spec **Format** shape — `compact` (one line per block) or `expanded` (one line per attribute). A reading preference, so it persists. |
 | `up_me_sidebar_w` | Class Editor Entities column width |
+| `up_bl_col_w` | Baselines table column widths. The view table and the compare table's left half share keys (`l-…`) — the compare table is the view table twice, mirrored — while the right half keeps its own (`r-…`), so dragging one side never moves the other |
 | `up_bl_sidebar_w` | Baselines Saved-list column width. Shares the Class Editor's resizer table and drag handler — one gutter implementation, one saved-width restore |
 | `up_baselines` | Saved baselines (§14) — a parsed message kept to compare later ones against. **Its own store, in the IndexedDB KV rather than beside the specs**: a baseline is a record of what a message looked like, not a definition of how to read one, and it must not travel in a class export or be touched by a class save |
 | `up_me_sidebar_collapsed` | Class Editor Entities column collapsed to its rail |

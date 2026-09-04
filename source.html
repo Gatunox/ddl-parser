@@ -1705,13 +1705,20 @@ input[type="text"]:focus { border-color: var(--accent); }
   margin: var(--gap) var(--gap) var(--gap) 0; }
 .bl-pane-body { flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
 .bl-scroll { flex:1; min-height:0; overflow:auto; }
-.bl-table { border-collapse:collapse; width:100%; font-family:var(--mono); font-size:var(--sz-mono); }
+/* table-layout:fixed is what makes a dragged width mean anything: under `auto`
+   the browser re-derives every column from content on the next render and the
+   drag is silently discarded — the bug .res-tbl had. */
+.bl-table { border-collapse:collapse; table-layout:fixed; font-family:var(--mono); font-size:var(--sz-mono); }
 .bl-table th { position:sticky; top:0; z-index:2; background:var(--surface-subhead); color:var(--text-dim);
   font-weight:700; text-align:left; padding:3px 8px; border-bottom: var(--bw) solid var(--border); white-space:nowrap; }
 .bl-table td { padding:2px 8px; border-bottom: var(--bw) solid var(--border); vertical-align:top; }
 .bl-table .bl-n { color:var(--text-very-dim); text-align:right; width:1%; white-space:nowrap; }
-.bl-table .bl-f { color:var(--text); white-space:nowrap; }
-.bl-table .bl-t, .bl-table .bl-s, .bl-table .bl-o { color:var(--text-dim); white-space:nowrap; }
+/* Fixed layout means a cell no longer widens to fit — the ones that must stay
+   on one line clip instead. */
+.bl-table .bl-f { color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bl-table .bl-t, .bl-table .bl-s, .bl-table .bl-o { color:var(--text-dim); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; }
+.bl-table th { overflow:hidden; }
 .bl-table .bl-v { color:var(--success,#3fb950); word-break:break-all; }
 /* The two value columns are the ones being compared, so they sit against the
    divider — current's flush right, baseline's flush left — and the eye crosses
@@ -20275,7 +20282,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.1.0';
+const APP_VERSION  = '1.50.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22479,6 +22486,10 @@ function blRenderRight() {
   const ttl = document.getElementById('bl-pane-title');
   if (ttl) ttl.textContent = mode === 'compare' ? 'Current parse vs baseline' : 'Baseline';
   host.innerHTML = head + (mode === 'compare' ? _blCompareHtml(cur, b) : _blViewHtml(b));
+  // Same two behaviours every other table in the app has: drag an edge to
+  // resize (double-click one to reset), click a header to light its column.
+  if (typeof _meColInitResize === 'function') _meColInitResize(_ME_COLRZ.bl);
+  if (typeof _meInitColHighlight === 'function') _meInitColHighlight('#bl-right table');
 }
 
 // Numbering matches the parse panel: groups carry no number.
@@ -22486,6 +22497,14 @@ function _blNumber(fields) {
   let n = 0;
   return (fields || []).map(f => ({ f, n: (f.dataType || f.value != null) && !f.isGroup ? ++n : null }));
 }
+
+const _blTh = (col, label) => `<th data-col="${col}">${label}<span class="th-resize"></span></th>`;
+// l-val is absent on purpose: it absorbs whatever is left, which is what keeps
+// the layout right at any pane width. Same shape as the other four tables.
+const _BL_DEFAULT_COLW = {
+  'l-num': 34, 'l-fld': 200, 'l-typ': 118, 'l-siz': 46, 'l-off': 80, 'mid': 10,
+  'r-val': 170, 'r-off': 80, 'r-siz': 46, 'r-typ': 118, 'r-fld': 200, 'r-num': 34,
+};
 
 const _blSize = f => (f == null ? '' : (f.valueLength ?? f.maxLength ?? ''));
 const _blOff  = f => (f == null || f.startByte == null) ? '' : `${f.startByte}–${f.endByte}`;
@@ -22500,8 +22519,10 @@ function _blViewHtml(b) {
       <td class="bl-o">${_escHtml(_blOff(f))}</td>
       <td class="bl-v">${_escHtml(_blVal(f) ?? '')}</td>
     </tr>`).join('');
+  // The same keys the compare table's left half uses: it is the same six
+  // columns, so a width set in one place holds in the other.
   return `<div class="bl-scroll"><table class="bl-table">
-    <thead><tr><th>#</th><th>FIELD</th><th>TYPE-LEN</th><th>SIZE</th><th>OFFSET</th><th>VALUE</th></tr></thead>
+    <thead><tr>${_blTh('l-num','#')}${_blTh('l-fld','FIELD')}${_blTh('l-typ','TYPE-LEN')}${_blTh('l-siz','SIZE')}${_blTh('l-off','OFFSET')}${_blTh('l-val','VALUE')}</tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 
@@ -22551,12 +22572,14 @@ function _blCompareHtml(cur, b) {
       <span class="rec-meta-pipe">|</span><span class="bl-sum-side">baseline ▶</span>
     </div>`;
 
-  const h = (t) => `<th>${t}</th>`;
+  // Left and right get DISTINCT column keys. They look symmetric, but sharing a
+  // key would make dragging one side silently drag the other, and there is no
+  // way back from that to two different widths.
   return sum + `<div class="bl-scroll"><table class="bl-table bl-cmp">
     <thead><tr>
-      ${h('#')}${h('FIELD')}${h('TYPE-LEN')}${h('SIZE')}${h('OFFSET')}${h('VALUE')}
-      <th class="bl-mid"></th>
-      ${h('VALUE')}${h('OFFSET')}${h('SIZE')}${h('TYPE-LEN')}${h('FIELD')}${h('#')}
+      ${_blTh('l-num','#')}${_blTh('l-fld','FIELD')}${_blTh('l-typ','TYPE-LEN')}${_blTh('l-siz','SIZE')}${_blTh('l-off','OFFSET')}${_blTh('l-val','VALUE')}
+      <th class="bl-mid" data-col="mid"></th>
+      ${_blTh('r-val','VALUE')}${_blTh('r-off','OFFSET')}${_blTh('r-siz','SIZE')}${_blTh('r-typ','TYPE-LEN')}${_blTh('r-fld','FIELD')}${_blTh('r-num','#')}
     </tr></thead>
     <tbody>${body}</tbody></table></div>`;
 }
@@ -29294,6 +29317,19 @@ const _ME_COLRZ = {
     defaults: () => ({ num: 34, ts: 132 }),
     visibleOnly: false,
     saveAll: false,
+  },
+  // Baselines — the view table and the compare table are the same config: the
+  // compare table is the view table twice, mirrored, so its left half shares
+  // the view's column keys.
+  bl: {
+    table: '#bl-right table.bl-table', wrap: '#bl-right .bl-scroll',
+    key: 'up_bl_col_w', handle: '.th-resize',
+    growLast: true,
+    flex: 'l-val', flexMin: 120, min: 36, pad: 4,
+    defaults: () => _BL_DEFAULT_COLW,
+    visibleOnly: false,
+    saveAll: false,
+    resetOnDblClick: true,
   },
   test: {
     table: '.me-test-ftbl-cols', wrap: '#me-test-out', key: 'up_me_test_col_w',

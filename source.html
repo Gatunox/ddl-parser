@@ -1719,6 +1719,14 @@ input[type="text"]:focus { border-color: var(--accent); }
 .bl-table .bl-t, .bl-table .bl-s, .bl-table .bl-o { color:var(--text-dim); white-space:nowrap;
   overflow:hidden; text-overflow:ellipsis; }
 .bl-table th { overflow:hidden; }
+/* A column is the same column on both sides, so one class hides both halves —
+   which is what keeps the two mirrored layouts symmetric while comparing. */
+#bl-right.bl-hide-num [data-col="l-num"], #bl-right.bl-hide-num [data-col="r-num"] { display:none; }
+#bl-right.bl-hide-fld [data-col="l-fld"], #bl-right.bl-hide-fld [data-col="r-fld"] { display:none; }
+#bl-right.bl-hide-typ [data-col="l-typ"], #bl-right.bl-hide-typ [data-col="r-typ"] { display:none; }
+#bl-right.bl-hide-siz [data-col="l-siz"], #bl-right.bl-hide-siz [data-col="r-siz"] { display:none; }
+#bl-right.bl-hide-off [data-col="l-off"], #bl-right.bl-hide-off [data-col="r-off"] { display:none; }
+#bl-right.bl-hide-val [data-col="l-val"], #bl-right.bl-hide-val [data-col="r-val"] { display:none; }
 .bl-table .bl-v { color:var(--success,#3fb950); word-break:break-all; }
 /* The two value columns are the ones being compared, so they sit against the
    divider — current's flush right, baseline's flush left — and the eye crosses
@@ -20282,7 +20290,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.2.0';
+const APP_VERSION  = '1.50.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22365,6 +22373,9 @@ function openBaselines() {
   // Shared with the Class Editor: one drag handler, one saved-width restore,
   // and this overlay's gutter is just another row in its table.
   if (typeof _meInitSplitter === 'function') _meInitSplitter();
+  let sbC = false;
+  try { sbC = localStorage.getItem('up_bl_sidebar_collapsed') === '1'; } catch(e) {}
+  blSetSidebarCollapsed(sbC);
   const list = _blAll();
   if (!_blSel || !list.some(b => b.id === _blSel)) _blSel = list[0]?.id || null;
   blRenderSidebar();
@@ -22379,6 +22390,24 @@ function blTagToggle(tag) {
   const k = String(tag);
   if (_blPickedTags.has(k)) _blPickedTags.delete(k); else _blPickedTags.add(k);
   blRenderSidebar();
+}
+
+// Same shape as the Class Editor's own sidebar: the pane becomes a rail, the
+// gutter goes inert so it cannot be dragged to nothing, and the state is
+// remembered. Requested 2026-09-03.
+function blSetSidebarCollapsed(collapsed) {
+  const pane = document.getElementById('bl-sidebar');
+  if (!pane) return;
+  pane.classList.toggle('collapsed', collapsed);
+  document.getElementById('bl-splitter')?.classList.toggle('inert', collapsed);
+  _meSetToggleBtn('bl-sidebar-toggle', collapsed);
+  try { localStorage.setItem('up_bl_sidebar_collapsed', collapsed ? '1' : '0'); } catch(e) {}
+  // The table has more room than it had a moment ago, and under a fixed layout
+  // nothing takes it up unless the fit is re-run.
+  if (typeof _meColFit === 'function') _meColFit(_ME_COLRZ.bl);
+}
+function blToggleSidebar() {
+  blSetSidebarCollapsed(!document.getElementById('bl-sidebar')?.classList.contains('collapsed'));
 }
 
 function blSelect(id) { _blSel = id; blRenderSidebar(); blRenderRight(); }
@@ -22473,6 +22502,16 @@ function blRenderRight() {
       <button class="btn${mode === 'view' ? ' btn-on' : ''}" onclick="blSetMode('view')">View</button>
       <button class="btn${mode === 'compare' ? ' btn-on' : ''}" onclick="blSetMode('compare')"
         ${canCompare ? '' : 'disabled title="Parse a message first — there is nothing to compare against"'}>Compare with current</button>
+      <div style="position:relative;display:inline-flex">
+        <button class="btn" id="blColCfgBtn" onclick="toggleBlColCfg()" title="Column visibility"
+                style="padding:0 6px">⚙</button>
+        <div id="blColCfgDialog" class="audit-cfg-dialog">
+          <div class="audit-cfg-hdr"><span>Columns</span>
+            <button class="btn" onclick="toggleBlColCfg(false)" style="padding:1px 7px;font-size:13px">✕</button></div>
+          ${_BL_COLS.map(c => `<div class="audit-cfg-row"><label>${c.label}</label>`
+            + `<button class="panel-toggle" id="blcol_${c.key}" onclick="blToggleCol('${c.key}')">−</button></div>`).join('')}
+        </div>
+      </div>
     </div>
     <div class="panel-bar bl-meta">
       <span>${_escHtml(b.msgType?.label || b.msgType?.type || '—')}</span>
@@ -22488,6 +22527,7 @@ function blRenderRight() {
   host.innerHTML = head + (mode === 'compare' ? _blCompareHtml(cur, b) : _blViewHtml(b));
   // Same two behaviours every other table in the app has: drag an edge to
   // resize (double-click one to reset), click a header to light its column.
+  _blApplyColVis();
   if (typeof _meColInitResize === 'function') _meColInitResize(_ME_COLRZ.bl);
   if (typeof _meInitColHighlight === 'function') _meInitColHighlight('#bl-right table');
 }
@@ -22496,6 +22536,60 @@ function blRenderRight() {
 function _blNumber(fields) {
   let n = 0;
   return (fields || []).map(f => ({ f, n: (f.dataType || f.value != null) && !f.isGroup ? ++n : null }));
+}
+
+// One entry per PAIR: a column is the same column on both sides, so hiding it
+// hides both. Requested 2026-09-03.
+const _BL_COLS = [
+  { key: 'num', label: '#',        cols: ['l-num', 'r-num'] },
+  { key: 'fld', label: 'Field',    cols: ['l-fld', 'r-fld'] },
+  { key: 'typ', label: 'Type-Len', cols: ['l-typ', 'r-typ'] },
+  { key: 'siz', label: 'Size',     cols: ['l-siz', 'r-siz'] },
+  { key: 'off', label: 'Offset',   cols: ['l-off', 'r-off'] },
+  { key: 'val', label: 'Value',    cols: ['l-val', 'r-val'] },
+];
+const _BL_COLVIS_KEY = 'up_bl_colvis';
+let _blHidden = null;
+function _blHiddenSet() {
+  if (_blHidden) return _blHidden;
+  try {
+    const raw = localStorage.getItem(_BL_COLVIS_KEY);
+    _blHidden = new Set(raw ? JSON.parse(raw) : []);
+  } catch(e) { _blHidden = new Set(); }
+  return _blHidden;
+}
+// How many cells a half still spans — the gap cell's colspan, so a blank side
+// narrows along with everything else.
+function _blVisibleCols() {
+  return _BL_COLS.filter(c => !_blHiddenSet().has(c.key)).length || 1;
+}
+function _blApplyColVis() {
+  const host = document.getElementById('bl-right');
+  if (!host) return;
+  for (const c of _BL_COLS) {
+    const hidden = _blHiddenSet().has(c.key);
+    host.classList.toggle('bl-hide-' + c.key, hidden);
+    const btn = document.getElementById('blcol_' + c.key);
+    if (btn) { btn.classList.toggle('is-collapsed', hidden); btn.textContent = hidden ? '+' : '−'; }
+  }
+  // Under a fixed layout the columns left behind have to take up the width the
+  // hidden one gave back, or the table stops filling the pane.
+  if (typeof _meColFit === 'function') _meColFit(_ME_COLRZ.bl);
+}
+function blToggleCol(key) {
+  const set = _blHiddenSet();
+  if (set.has(key)) set.delete(key); else set.add(key);
+  try { localStorage.setItem(_BL_COLVIS_KEY, JSON.stringify([...set])); } catch(e) {}
+  // The gap cells' colspan is baked into the markup, so the table is rebuilt.
+  blRenderRight();
+}
+function toggleBlColCfg(force) {
+  const dlg = document.getElementById('blColCfgDialog');
+  if (!dlg) return;
+  const open = (force === undefined) ? !dlg.classList.contains('open') : !!force;
+  dlg.classList.toggle('open', open);
+  document.getElementById('blColCfgBtn')?.classList.toggle('btn-on', open);
+  dlg.closest('.me-pane')?.classList.toggle('cfg-dim', open);
 }
 
 const _blTh = (col, label) => `<th data-col="${col}">${label}<span class="th-resize"></span></th>`;
@@ -22512,12 +22606,12 @@ const _blType = f => (f == null ? '' : (_fieldTypeLabel(f) || (f.isGroup ? 'GROU
 
 function _blViewHtml(b) {
   const rows = _blNumber(b.fields).map(({ f, n }) => `<tr>
-      <td class="bl-n">${n ?? ''}</td>
-      <td class="bl-f">${_escHtml(f.id || '')}</td>
-      <td class="bl-t">${_escHtml(_blType(f))}</td>
-      <td class="bl-s">${_escHtml(String(_blSize(f)))}</td>
-      <td class="bl-o">${_escHtml(_blOff(f))}</td>
-      <td class="bl-v">${_escHtml(_blVal(f) ?? '')}</td>
+      <td class="bl-n" data-col="l-num">${n ?? ''}</td>
+      <td class="bl-f" data-col="l-fld">${_escHtml(f.id || '')}</td>
+      <td class="bl-t" data-col="l-typ">${_escHtml(_blType(f))}</td>
+      <td class="bl-s" data-col="l-siz">${_escHtml(String(_blSize(f)))}</td>
+      <td class="bl-o" data-col="l-off">${_escHtml(_blOff(f))}</td>
+      <td class="bl-v" data-col="l-val">${_escHtml(_blVal(f) ?? '')}</td>
     </tr>`).join('');
   // The same keys the compare table's left half uses: it is the same six
   // columns, so a width set in one place holds in the other.
@@ -22546,20 +22640,23 @@ function _blCompareHtml(cur, b) {
       // A missing field prints nothing at all, but the row still occupies its
       // place — that blank IS the finding, and collapsing it would shift every
       // row below and make the whole side look changed.
-      ? `<td class="bl-gapcell" colspan="6"></td>`
+      // A gap cell spans whatever is still showing, so hiding a column narrows
+      // the blank with everything else instead of leaving it hanging past the
+      // divider.
+      ? `<td class="bl-gapcell" colspan="${_blVisibleCols()}"></td>`
       : (side === 'l'
-        ? `<td class="bl-n">${byField.get(f) ?? ''}</td>
-           <td class="bl-f">${_escHtml(f.id || '')}</td>
-           <td class="bl-t">${_escHtml(_blType(f))}</td>
-           <td class="bl-s">${_escHtml(String(_blSize(f)))}</td>
-           <td class="bl-o">${_escHtml(_blOff(f))}</td>
-           <td class="bl-v bl-v-l">${_escHtml(_blVal(f) ?? '')}</td>`
-        : `<td class="bl-v bl-v-r">${_escHtml(_blVal(f) ?? '')}</td>
-           <td class="bl-o">${_escHtml(_blOff(f))}</td>
-           <td class="bl-s">${_escHtml(String(_blSize(f)))}</td>
-           <td class="bl-t">${_escHtml(_blType(f))}</td>
-           <td class="bl-f">${_escHtml(f.id || '')}</td>
-           <td class="bl-n">${byField.get(f) ?? ''}</td>`);
+        ? `<td class="bl-n" data-col="l-num">${byField.get(f) ?? ''}</td>
+           <td class="bl-f" data-col="l-fld">${_escHtml(f.id || '')}</td>
+           <td class="bl-t" data-col="l-typ">${_escHtml(_blType(f))}</td>
+           <td class="bl-s" data-col="l-siz">${_escHtml(String(_blSize(f)))}</td>
+           <td class="bl-o" data-col="l-off">${_escHtml(_blOff(f))}</td>
+           <td class="bl-v bl-v-l" data-col="l-val">${_escHtml(_blVal(f) ?? '')}</td>`
+        : `<td class="bl-v bl-v-r" data-col="r-val">${_escHtml(_blVal(f) ?? '')}</td>
+           <td class="bl-o" data-col="r-off">${_escHtml(_blOff(f))}</td>
+           <td class="bl-s" data-col="r-siz">${_escHtml(String(_blSize(f)))}</td>
+           <td class="bl-t" data-col="r-typ">${_escHtml(_blType(f))}</td>
+           <td class="bl-f" data-col="r-fld">${_escHtml(f.id || '')}</td>
+           <td class="bl-n" data-col="r-num">${byField.get(f) ?? ''}</td>`);
     return `<tr class="bl-row bl-${st}">${half(l, 'l')}<td class="bl-mid"></td>${half(r, 'r')}</tr>`;
   }).join('');
 
@@ -29327,7 +29424,9 @@ const _ME_COLRZ = {
     growLast: true,
     flex: 'l-val', flexMin: 120, min: 36, pad: 4,
     defaults: () => _BL_DEFAULT_COLW,
-    visibleOnly: false,
+    // The chooser can hide any of them; a hidden th measures 0, and that 0
+    // written back as a width sticks when it is shown again.
+    visibleOnly: true,
     saveAll: false,
     resetOnDblClick: true,
   },
@@ -38698,7 +38797,8 @@ function _meSave() {
     <div class="me-main">
       <div class="me-sidebar me-pane pb-read" id="bl-sidebar">
         <div class="me-pane-hdr"><span class="me-pane-title">Saved</span>
-          <span class="bl-count" id="bl-count"></span></div>
+          <span class="tree-hdr-count" id="bl-count">0</span>
+          <button class="panel-toggle" id="bl-sidebar-toggle" onclick="blToggleSidebar()" title="Hide panel">−</button></div>
         <div class="panel-bar">
           <input type="text" id="blFilter" class="res-filter-input" placeholder="Filter…"
                  oninput="blRenderSidebar()" style="flex:1;min-width:0">

@@ -20233,6 +20233,43 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('baselines: the Saved list counts, collapses, and its columns hide in pairs', () => {
+  // Requested 2026-09-03: the count takes the DDL tree header's pill, the list
+  // collapses to a rail, and a deselected column disappears from BOTH sides.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const ov = src.slice(src.indexOf('id="blOverlay"'), src.indexOf('id="msgEditorOverlay"'));
+
+  assert.ok(/<span class="tree-hdr-count" id="bl-count">0<\/span>/.test(ov),
+    'the count is the same pill the DDL tree header uses');
+  assert.ok(/<button class="panel-toggle" id="bl-sidebar-toggle" onclick="blToggleSidebar\(\)"/.test(ov),
+    'and the list has a collapse control beside it');
+
+  // Collapsing is the Class Editor's own shape — rail, inert gutter, remembered.
+  const col = psFnSource('blSetSidebarCollapsed');
+  assert.ok(/pane\.classList\.toggle\('collapsed', collapsed\)/.test(col), 'the pane becomes a rail');
+  assert.ok(/getElementById\('bl-splitter'\)\?\.classList\.toggle\('inert', collapsed\)/.test(col),
+    'the gutter goes inert, so a rail cannot be dragged');
+  assert.ok(/up_bl_sidebar_collapsed/.test(col) && /up_bl_sidebar_collapsed/.test(psFnSource('openBaselines')),
+    'the state is saved and restored');
+  assert.ok(/_meColFit\(_ME_COLRZ\.bl\)/.test(col),
+    'and the table takes up the width the rail gave back');
+
+  // ONE entry per pair: a column is the same column on both sides.
+  const cols = src.slice(src.indexOf('const _BL_COLS = ['), src.indexOf('const _BL_COLVIS_KEY'));
+  for (const [k, c] of [['num','num'],['fld','fld'],['typ','typ'],['siz','siz'],['off','off'],['val','val']]) {
+    assert.ok(new RegExp(`key: '${k}',[^\\n]*cols: \\['l-${c}', 'r-${c}'\\]`).test(cols),
+      `${k} names both halves`);
+    assert.ok(new RegExp(`#bl-right\\.bl-hide-${k} \\[data-col="l-${c}"\\], #bl-right\\.bl-hide-${k} \\[data-col="r-${c}"\\] \\{ display:none; \\}`).test(src),
+      `and one rule hides ${k} on both sides at once`);
+  }
+  // Cells carry their column, which is what lets one rule reach the body.
+  assert.ok(/<td class="bl-v bl-v-r" data-col="r-val">/.test(psFnSource('_blCompareHtml')),
+    'body cells are keyed too, not just the headers');
+  // A hidden th measures 0; writing that back as a width would stick.
+  assert.ok(/visibleOnly: true,/.test(src.slice(src.indexOf('  bl: {'), src.indexOf('  test: {'))),
+    'the resizer skips hidden columns');
+});
+
 test('baselines: the table resizes and selects like every other table', () => {
   // Requested 2026-09-03. Both behaviours are the app's shared ones — a sixth
   // entry in _ME_COLRZ and the same header-click highlighter — not a second
@@ -20370,8 +20407,12 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
             /\.bl-cmp \.bl-v-r \{ text-align:left; \}/.test(css),
     'and they are pushed against the divider between them');
   // A missing side prints nothing but still occupies the row.
-  assert.ok(/\? `<td class="bl-gapcell" colspan="6"><\/td>`/.test(fn),
+  assert.ok(/\? `<td class="bl-gapcell" colspan="\$\{_blVisibleCols\(\)\}"><\/td>`/.test(fn),
     'the gap is an empty cell spanning that side, not a dropped row');
+  // The span follows the chooser: with a column hidden the blank narrows with
+  // everything else instead of hanging past the divider.
+  assert.ok(/_BL_COLS\.filter\(c => !_blHiddenSet\(\)\.has\(c\.key\)\)\.length \|\| 1/.test(
+    psFnSource('_blVisibleCols')), 'it spans only the columns still showing');
 });
 
 test('baselines: tags are the user\'s own words, matched case-insensitively', () => {

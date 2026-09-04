@@ -1730,6 +1730,12 @@ input[type="text"]:focus { border-color: var(--accent); }
    widen a column until its content fits; the full text is in the tooltip. */
 .bl-table td { padding:2px 8px; border-bottom: var(--bw) solid var(--border);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* An empty cell has no inline content, so it has no line box and the row
+   collapses to its padding — half the height of the row it is supposed to sit
+   beside. A gap on the left then drifts out of line with the data on the right,
+   which is the one thing the split must never do. The space is in ::after, so
+   it never reaches textContent, a tooltip or a copy. Reported 2026-09-04. */
+.bl-table td:empty::after { content: '\00a0'; }
 .bl-table .bl-n { color:var(--text-very-dim); text-align:right; }
 .bl-table .bl-f { color:var(--text); }
 .bl-table .bl-t, .bl-table .bl-s, .bl-table .bl-o { color:var(--text-dim); }
@@ -20311,7 +20317,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.51.0.1';
+const APP_VERSION  = '1.51.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

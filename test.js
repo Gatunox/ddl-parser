@@ -20277,6 +20277,16 @@ test('baselines: two half tables, split down the middle, scrolling on their own'
   // ...and only vertical: the point of the split is that the two scroll
   // horizontally on their own.
   assert.ok(!/scrollLeft/.test(sync), 'horizontal stays independent');
+
+  // An empty cell has no inline content, so it has no line box and its row
+  // collapses to the padding — half the height of the row it sits beside. A gap
+  // on one side then drifts out of line with the data on the other, which is the
+  // one thing the split must never do. Reported 2026-09-04.
+  assert.ok(/\.bl-table td:empty::after \{ content: '\\00a0'; \}/.test(src),
+    'an empty cell still gets a line box, so its row matches its partner');
+  // In ::after, so it reaches no textContent, tooltip, copy or column fit.
+  assert.ok(!/&nbsp;|\\u00a0/.test(psFnSource('_blHalfHtml')),
+    'and the space is presentation only, never content');
 });
 
 test('baselines: tokens are saved and shown, and REDEFINES say so', () => {

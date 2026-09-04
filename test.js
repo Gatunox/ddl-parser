@@ -20398,26 +20398,31 @@ test('[REGRESSION] the divider is a rule, not a column to steal width from', () 
     'and the workaround that taught the resizer to skip it is gone with it');
 });
 
-test('baselines: double-clicking a column title fits it to its content', () => {
-  // Requested 2026-09-04. Measured against the cell font rather than read off
-  // the layout: scrollWidth per cell would thrash the layout once per row on a
-  // machine that cannot afford it, and under table-layout:fixed the text has
-  // already been clipped by the time it could be read.
+test('baselines: double-clicking a column fits it — title or edge, same result', () => {
+  // Requested 2026-09-04. It reuses _meColAutoFit rather than measuring text:
+  // a FIELD cell carries the ↩ REDEFINES mark as a child box, and text metrics
+  // miss it, leaving the widest cell still clipped by exactly that badge.
+  const src = fs.readFileSync('./source.html', 'utf8');
   const fit = psFnSource('blFitCol');
-  assert.ok(/_blMeasCtx\.measureText/.test(fit) && !/scrollWidth|offsetWidth/.test(fit),
-    'it measures text, it does not measure the DOM');
-  assert.ok(/measureText\(th\.textContent \|\| ''\)/.test(fit),
-    'the header counts too — a column narrower than its own title is not fitted');
-  assert.ok(/Math\.max\(cfg\.min, /.test(fit), 'never below the column minimum');
-  assert.ok(/_meColSave\(cfg, map\);[\s\S]{0,60}_meColFit\(cfg\);/.test(fit),
-    'the width is stated, so the next fit keeps it');
-  // A column belongs to one half, and the fit has to act on that half's table.
-  assert.ok(/const _blCfgFor = col => String\(col\)\.startsWith\('r-'\) \? _ME_COLRZ\.blR : _ME_COLRZ\.blL;/.test(fs.readFileSync('./source.html', 'utf8')),
-    'the right half is fitted against the right half');
+  assert.ok(/_meColAutoFit\(cfg, th\)/.test(fit), 'it uses the app\'s own fit');
+  assert.ok(!/measureText|canvas/.test(fit), 'and does not measure text beside it');
+  assert.ok(/const _blCfgFor = col => String\(col\)\.startsWith\('r-'\) \? _ME_COLRZ\.blR : _ME_COLRZ\.blL;/.test(src),
+    'a column belongs to one half, and is fitted against that half\'s table');
+
+  // The EDGE must fit too. On a 34px "#" the resize handle covers a quarter of
+  // the header, so a double-click meant for the title lands on the handle — and
+  // with resetOnDblClick it reset every column instead, which reads exactly like
+  // "it does not expand".
+  const cfg = src.slice(src.indexOf('  blL: {'), src.indexOf('  test: {'));
+  assert.strictEqual((cfg.match(/resetOnDblClick: false,/g) || []).length, 2,
+    'both halves fit on an edge double-click rather than resetting');
+  const init = psFnSource('_meColInitResize');
+  assert.ok(/if \(cfg\.resetOnDblClick\) _meColReset\(cfg\);\n\s*else _meColAutoFit\(cfg, handle\.closest\('th'\)\);/.test(init),
+    'which is what that flag already selects between');
 
   const bind = psFnSource('_blInitFitOnDblClick');
   assert.ok(/if \(e\.target\.closest\('\.th-resize'\)\) return;/.test(bind),
-    'the handle keeps its own double-click; this one is the title\'s');
+    'the title handler stands aside for the handle, which fits it anyway');
   assert.ok(/thead\._blFitBound/.test(bind), 'bound once per thead, not once per render');
   assert.ok(/querySelectorAll\('#bl-right table thead'\)/.test(bind), 'in both halves');
 });

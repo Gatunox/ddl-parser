@@ -20311,7 +20311,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.51.0.0';
+const APP_VERSION  = '1.51.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22625,40 +22625,16 @@ function _blApplyColVis() {
   // hidden one gave back, or the table stops filling the pane.
   if (typeof _meColFit === 'function') { _meColFit(_ME_COLRZ.blL); _meColFit(_ME_COLRZ.blR); }
 }
-// Measured, not laid out: reading scrollWidth per cell would thrash the layout
-// 213 times on a machine that cannot afford it, and under table-layout:fixed a
-// cell has already been clipped by the time you could read it. The text is
-// measured against the cell's own font instead, which needs no layout at all.
-// Requested 2026-09-04.
-let _blMeasCtx = null;
+// The app already fits a column to its content — _meColAutoFit — and it does it
+// by letting the browser shrink-wrap the column for one frame rather than by
+// measuring text. That matters here: a FIELD cell carries the ↩ REDEFINES mark
+// as a child box, and text metrics miss it entirely.
 const _blCfgFor = col => String(col).startsWith('r-') ? _ME_COLRZ.blR : _ME_COLRZ.blL;
 
 function blFitCol(col) {
   const cfg = _blCfgFor(col);
-  const tbl = document.querySelector(cfg.table);
-  const th  = tbl && tbl.querySelector(`thead th[data-col="${col}"]`);
-  if (!tbl || !th) return;
-  const cells = [...tbl.querySelectorAll(`tbody td[data-col="${col}"]`)];
-  const probe = cells[0] || th;
-  const cs = getComputedStyle(probe);
-  _blMeasCtx = _blMeasCtx || document.createElement('canvas').getContext('2d');
-  _blMeasCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-  let w = 0;
-  // The header counts: a column fitted narrower than its own title is not fitted.
-  const hcs = getComputedStyle(th);
-  _blMeasCtx.font = `${hcs.fontStyle} ${hcs.fontWeight} ${hcs.fontSize} ${hcs.fontFamily}`;
-  w = _blMeasCtx.measureText(th.textContent || '').width + 14;   // + the resize handle
-  _blMeasCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-  for (const c of cells) {
-    const t = c.textContent || '';
-    if (t) w = Math.max(w, _blMeasCtx.measureText(t).width);
-  }
-  const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
-  const want = Math.max(cfg.min, Math.ceil(w + pad + 2));
-  const map = _meColLoad(cfg);
-  map[col] = want;
-  _meColSave(cfg, map);
-  _meColFit(cfg);
+  const th  = document.querySelector(`${cfg.table} thead th[data-col="${col}"]`);
+  if (th) _meColAutoFit(cfg, th);
 }
 
 function _blInitFitOnDblClick() {
@@ -29567,14 +29543,18 @@ const _ME_COLRZ = {
     key: 'up_bl_col_w', handle: '.th-resize', growLast: true,
     flex: 'l-val', flexMin: 120, min: 36, pad: 4,
     defaults: () => _BL_DEFAULT_COLW,
-    visibleOnly: true, saveAll: false, resetOnDblClick: true,
+    // false, so the handle's double-click AUTO-FITS this column rather than
+    // resetting every column. On a 34px "#" the handle covers a quarter of the
+    // header, so a double-click meant to fit it landed on the edge and reset the
+    // table instead. Reported 2026-09-04.
+    visibleOnly: true, saveAll: false, resetOnDblClick: false,
   },
   blR: {
     table: '#bl-half-r table', wrap: '#bl-half-r',
     key: 'up_bl_col_w', handle: '.th-resize', growLast: true,
     flex: 'r-val', flexMin: 120, min: 36, pad: 4,
     defaults: () => _BL_DEFAULT_COLW,
-    visibleOnly: true, saveAll: false, resetOnDblClick: true,
+    visibleOnly: true, saveAll: false, resetOnDblClick: false,
   },
   test: {
     table: '.me-test-ftbl-cols', wrap: '#me-test-out', key: 'up_me_test_col_w',

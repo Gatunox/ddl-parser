@@ -20322,6 +20322,27 @@ test('the box rows line up with the arrangement grid above them', () => {
     'a name too wide for the column is clipped, not wrapped');
 });
 
+test('the startup toggle shows the STATE, not what a click would do', () => {
+  // Everywhere else a .panel-toggle names the ACTION — the panel header shows −
+  // meaning "collapse me". This row describes a stored default instead, so it
+  // shows what the panel WILL be: + starts open, − starts minimized. Inverted
+  // from the action reading it inherited. Requested 2026-09-03.
+  const sync = psFnSource('syncPanelSettingsUI');
+  assert.ok(/btn\.textContent = isCol \? '−' : '\+';/.test(sync),
+    'collapsed shows −, expanded shows +');
+  assert.ok(/isCol \? 'Starts collapsed[^']*' *\n?\s*: 'Starts expanded/.test(sync),
+    'and both titles say "Starts", because this is a startup default');
+  // The static glyph in the markup is what shows before the first sync, so it
+  // has to agree with the default it renders — expanded.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/setPanelDefaultToggle\('\$\{_laySlots\[i\]\}'\)">\+<\/button>/.test(src),
+    'the freshly built button starts on the expanded glyph');
+  // The panel's OWN header button keeps action semantics — the two are
+  // different questions and must not be levelled to match.
+  assert.ok(/btn\.textContent = '\+';[\s\S]{0,200}btn\.title = 'Show panel';/.test(psFnSource('togglePanel')),
+    'a collapsed panel header still offers + meaning "expand me"');
+});
+
 test('a box in Settings carries both of its questions: which panel, and how it starts', () => {
   // The startup expanded/collapsed choice used to be its own "Panels on startup"
   // section, listing panels by name. You picked a startup state for "Raw Output"

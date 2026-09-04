@@ -5075,7 +5075,7 @@ function _laySyncSettings() {
         `<option value="${p.id}"${_laySlots[i] === p.id ? ' selected' : ''}>${esc(p.label)}</option>`).join('');
       return `<div class="lay-slot"><label class="lay-slot-name" for="lay-sel-${i}">${esc(names[i] || ('Box ' + (i + 1)))}</label>` +
              `<select id="lay-sel-${i}" onchange="setLayoutSlot(${i}, this.value)">${opts}</select>` +
-             `<button class="panel-toggle" id="ps_tog_${_laySlots[i]}" onclick="setPanelDefaultToggle('${_laySlots[i]}')">−</button></div>`;
+             `<button class="panel-toggle" id="ps_tog_${_laySlots[i]}" onclick="setPanelDefaultToggle('${_laySlots[i]}')">+</button></div>`;
     }).join('') + (n < LAYOUT_PANELS.length
       ? `<div class="lay-slot-note">${LAYOUT_PANELS.length - n} panel${LAYOUT_PANELS.length - n !== 1 ? 's' : ''} hidden in this arrangement</div>`
       : '') + `<div class="lay-slot-note">− / + is how the panel starts</div>`;
@@ -20196,7 +20196,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.41.0';
+const APP_VERSION  = '1.49.42.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21132,8 +21132,14 @@ function syncPanelSettingsUI() {
     if (!btn) continue;
     const isCol = state === 'collapsed';
     btn.classList.toggle('is-collapsed', isCol);
-    btn.textContent = isCol ? '+' : '−';
-    btn.title = isCol ? 'Collapsed — click to expand' : 'Expanded — click to collapse';
+    // The glyph names the STATE, not the action. Everywhere else a .panel-toggle
+    // says what a click will do — the panel header shows − meaning "collapse
+    // me". Here the row is describing a stored default, so it shows what the
+    // panel WILL be: + for a panel that starts open, − for one that starts
+    // minimized. Requested 2026-09-03.
+    btn.textContent = isCol ? '−' : '+';
+    btn.title = isCol ? 'Starts collapsed — click to start expanded'
+                      : 'Starts expanded — click to start collapsed';
   }
 }
 

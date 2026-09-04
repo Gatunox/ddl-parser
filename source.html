@@ -1698,6 +1698,12 @@ input[type="text"]:focus { border-color: var(--accent); }
 .bl-sum-diff { color:var(--warn-text); font-weight:700; }
 .bl-sum-gap  { color:var(--text-dim); }
 .bl-sum-side { color:var(--text-very-dim); }
+/* Mirrors .me-sidebar's frame on the other side of the gutter, so the two
+   columns read as a pair rather than a card beside a bare region. */
+.bl-pane { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden;
+  border: var(--bw) solid var(--border); border-radius:var(--r-md);
+  margin: var(--gap) var(--gap) var(--gap) 0; }
+.bl-pane-body { flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
 .bl-scroll { flex:1; min-height:0; overflow:auto; }
 .bl-table { border-collapse:collapse; width:100%; font-family:var(--mono); font-size:var(--sz-mono); }
 .bl-table th { position:sticky; top:0; z-index:2; background:var(--surface-subhead); color:var(--text-dim);
@@ -20269,7 +20275,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.0.0';
+const APP_VERSION  = '1.50.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22349,6 +22355,9 @@ function openBaselines() {
   toggleBlSaveDialog(false);
   closeSettings();
   document.getElementById('blOverlay').classList.remove('hidden');
+  // Shared with the Class Editor: one drag handler, one saved-width restore,
+  // and this overlay's gutter is just another row in its table.
+  if (typeof _meInitSplitter === 'function') _meInitSplitter();
   const list = _blAll();
   if (!_blSel || !list.some(b => b.id === _blSel)) _blSel = list[0]?.id || null;
   blRenderSidebar();
@@ -22467,6 +22476,8 @@ function blRenderRight() {
       ${b.ddlPath ? `<span class="rec-meta-pipe">|</span><span>${_escHtml(b.ddlPath)}${b.defName ? ' / ' + _escHtml(b.defName) : ''}</span>` : ''}
     </div>`;
 
+  const ttl = document.getElementById('bl-pane-title');
+  if (ttl) ttl.textContent = mode === 'compare' ? 'Current parse vs baseline' : 'Baseline';
   host.innerHTML = head + (mode === 'compare' ? _blCompareHtml(cur, b) : _blViewHtml(b));
 }
 
@@ -22616,6 +22627,8 @@ const _ME_TEST_IN_MIN = 60;
 const _meElH = id => document.getElementById(id)?.getBoundingClientRect().height || 0;
 const _ME_RESIZERS = [
   { el: 'me-sidebar',  gutter: 'me-splitter',      key: 'up_me_sidebar_w', axis: 'x', sign: 1,
+    prop: 'width',  cursor: 'col-resize', min: () => _ME_SIDEBAR_MIN, max: () => _ME_SIDEBAR_MAX },
+  { el: 'bl-sidebar',  gutter: 'bl-splitter',      key: 'up_bl_sidebar_w', axis: 'x', sign: 1,
     prop: 'width',  cursor: 'col-resize', min: () => _ME_SIDEBAR_MIN, max: () => _ME_SIDEBAR_MAX },
   { el: 'me-test-sub', gutter: 'me-test-resizer',  key: 'up_me_test_h',    axis: 'y', sign: -1,
     prop: 'height', cursor: 'row-resize', min: () => _ME_TEST_H_MIN,
@@ -38657,7 +38670,19 @@ function _meSave() {
         <div class="bl-tagrail" id="bl-tagrail"></div>
         <div class="me-item-list" id="bl-list"></div>
       </div>
-      <div class="me-right" id="bl-right"><div class="bl-empty">No baselines yet. Parse a message and press &#9733; Baseline.</div></div>
+      <div class="resizer-h" id="bl-splitter" title="Drag to resize"></div>
+      <div class="me-right">
+        <!-- The table is a pane, like the sidebar and like everything in the
+             Class Editor: same border, same radius, same header bar. It was a
+             bare region bleeding to the window edge, which read as a different
+             application. Requested 2026-09-03. -->
+        <div class="me-pane pb-read bl-pane">
+          <div class="me-pane-hdr">
+            <span class="me-pane-title" id="bl-pane-title">Baseline</span>
+          </div>
+          <div class="bl-pane-body" id="bl-right"><div class="bl-empty">No baselines yet. Parse a message and press &#9733; Baseline.</div></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>

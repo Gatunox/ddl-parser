@@ -20234,6 +20234,32 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('baselines: two panes and a gutter, the same shape as the Class Editor', () => {
+  // The list was a card and the table was a bare region bleeding to the window
+  // edge, so the two columns did not read as a pair. Both are panes now, with a
+  // draggable gutter between them. Requested 2026-09-03.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const ov = src.slice(src.indexOf('id="blOverlay"'), src.indexOf('id="msgEditorOverlay"'));
+  assert.ok(/<div class="resizer-h" id="bl-splitter"/.test(ov), 'there is a gutter');
+  assert.ok(/id="bl-sidebar"[\s\S]*?bl-splitter[\s\S]*?class="me-pane pb-read bl-pane"/.test(ov),
+    'and it sits BETWEEN the two panes');
+  assert.ok(/<div class="me-pane pb-read bl-pane">\s*<div class="me-pane-hdr">/.test(ov),
+    'the table pane carries a pane header, like every other pane in the editor');
+
+  // One drag handler for the whole app: the gutter is a row in the Class
+  // Editor's resizer table, not a second implementation.
+  assert.ok(/\{ el: 'bl-sidebar',  gutter: 'bl-splitter',      key: 'up_bl_sidebar_w', axis: 'x', sign: 1,/.test(src),
+    'the gutter joins the shared resizer table');
+  assert.ok(/min: \(\) => _ME_SIDEBAR_MIN, max: \(\) => _ME_SIDEBAR_MAX \},\n  \{ el: 'me-test-sub'/.test(src),
+    'and takes the same floor and ceiling the other sidebar has');
+  assert.ok(/if \(typeof _meInitSplitter === 'function'\) _meInitSplitter\(\);/.test(psFnSource('openBaselines')),
+    'opening the overlay restores the saved width through that same init');
+  // Its own key — the two sidebars are different columns and must not share a
+  // width.
+  assert.ok(!/key: 'up_me_sidebar_w', axis: 'x', sign: 1,\n    prop: 'width',  cursor: 'col-resize', min: \(\) => _ME_SIDEBAR_MIN, max: \(\) => _ME_SIDEBAR_MAX \},\n  \{ el: 'bl-sidebar',  gutter: 'bl-splitter',      key: 'up_me_sidebar_w'/.test(src),
+    'the two sidebars do not share a stored width');
+});
+
 test('baselines: a saved parse, its own store, and nothing of the Class Editor', () => {
   // A baseline is a record of what a message LOOKED LIKE, not a definition of
   // how to read one, so it lives in its own key in the IndexedDB KV — never

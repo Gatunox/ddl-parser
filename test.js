@@ -20424,6 +20424,13 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
   assert.ok(/\.bl-cmp \.bl-v-l \{ text-align:right; \}/.test(css) &&
             /\.bl-cmp \.bl-v-r \{ text-align:left; \}/.test(css),
     'and they are pushed against the divider between them');
+  // A difference is stated in COLOUR, not a fill: the amber text already says
+  // it, and a wash behind it competes with the row hover underneath.
+  // Reported 2026-09-03.
+  assert.ok(/\.bl-row\.bl-diff \.bl-v \{ color:var\(--warn-text\); font-weight:700; \}/.test(css),
+    'a differing value is amber and bold, with no background of its own');
+  assert.ok(!/\.bl-row\.bl-diff[^{]*\{[^}]*background/.test(css),
+    'nothing in the diff rules paints a cell');
   // A missing side prints nothing but still occupies the row.
   assert.ok(/\? `<td class="bl-gapcell" colspan="\$\{_blVisibleCols\(\)\}"><\/td>`/.test(fn),
     'the gap is an empty cell spanning that side, not a dropped row');

@@ -20293,7 +20293,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.3.1';
+const APP_VERSION  = '1.50.3.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29439,7 +29439,9 @@ const _ME_COLRZ = {
     table: '#bl-right table.bl-table', wrap: '#bl-right .bl-scroll',
     key: 'up_bl_col_w', handle: '.th-resize',
     growLast: true,
-    flex: 'l-val', flexMin: 120, min: 36, pad: 4,
+    // BOTH value columns: they are the same column drawn twice, so they have to
+    // stay the same width or the mirror stops lining up.
+    flex: ['l-val', 'r-val'], flexMin: 120, min: 36, pad: 4,
     defaults: () => _BL_DEFAULT_COLW,
     // The chooser can hide any of them; a hidden th measures 0, and that 0
     // written back as a width sticks when it is shown again.
@@ -29480,6 +29482,13 @@ const _meColThs = cfg => {
 // flex one absorbs the leftover, so the table fills the panel with no gap and
 // no sideways scroll. Bails when the wrap has no width yet (panel not laid out)
 // — the ResizeObserver re-runs this once it reaches its real width.
+// `flex` is one column key, or an array of them, or a function returning either.
+// Always read through here so the fit and the drag agree on what is flexible.
+function _meColFlexKeys(cfg, ths) {
+  const raw = typeof cfg.flex === 'function' ? cfg.flex(ths) : cfg.flex;
+  return Array.isArray(raw) ? raw : [raw];
+}
+
 function _meColFit(cfg) {
   const table = document.querySelector(cfg.table);
   const wrap  = document.querySelector(cfg.wrap);
@@ -29493,20 +29502,34 @@ function _meColFit(cfg) {
   let fixed = 0;
   // The flex column may be decided at fit time: Track's columns ARE the tracked
   // fields, so which one absorbs the slack depends on what is being tracked.
-  const flexKey = typeof cfg.flex === 'function' ? cfg.flex(ths) : cfg.flex;
-  ths.forEach(th => { if (th.dataset.col !== flexKey) fixed += w(th.dataset.col); });
+  // One flex column, or several. Baselines has two — the mirrored VALUE columns
+  // — and slack that all went to one of them broke the mirror the moment the
+  // pane changed width: collapsing the Saved list grew the left value column
+  // and left the right one alone. Reported 2026-09-03.
+  const flexKeys = _meColFlexKeys(cfg, ths);
+  const isFlex   = c => flexKeys.includes(c);
+  ths.forEach(th => { if (!isFlex(th.dataset.col)) fixed += w(th.dataset.col); });
   // A flex column the user has SIZED keeps that size. Absorbing the slack is
   // what a column does until someone states a width for it — after that,
   // re-deriving it would undo the drag on the next fit. A width only reaches
   // storage for the flex column through a gesture that states one: a shift-drag
   // or a drag of the last column's own edge. Requested 2026-08-28.
-  const flexW = saved[flexKey]
-    ? Math.max(cfg.min, saved[flexKey])
-    : Math.max(cfg.flexMin, avail - fixed);
+  let sizedTotal = 0;
+  const free = [];
+  for (const k of flexKeys) {
+    if (saved[k]) sizedTotal += Math.max(cfg.min, saved[k]);
+    else free.push(k);
+  }
+  // Whatever is left is split EVENLY between the flex columns still free, which
+  // is what keeps two mirrored columns the same width at any pane size.
+  const each = free.length
+    ? Math.max(cfg.flexMin, Math.floor((avail - fixed - sizedTotal) / free.length)) : 0;
+  const flexW = k => saved[k] ? Math.max(cfg.min, saved[k]) : each;
   ths.forEach(th => {
-    th.style.width = (th.dataset.col === flexKey ? flexW : w(th.dataset.col)) + 'px';
+    const c = th.dataset.col;
+    th.style.width = (isFlex(c) ? flexW(c) : w(c)) + 'px';
   });
-  table.style.width = (flexW + fixed) + 'px';
+  table.style.width = (fixed + sizedTotal + each * free.length) + 'px';
   // Anything anchored to a column follows it from here: the fit is the single
   // point every path — first render, a drag, hiding a column, resizing the
   // panel — passes through.
@@ -29616,7 +29639,8 @@ function _meColInitResize(cfg) {
       const startW = th.getBoundingClientRect().width;
       const nextW  = nextTh ? nextTh.getBoundingClientRect().width : 0;
       const startTableW = table.getBoundingClientRect().width;
-      const flexKey = typeof cfg.flex === 'function' ? cfg.flex(ths) : cfg.flex;
+      const flexKeys = _meColFlexKeys(cfg, ths);
+      const isFlexCol = c => flexKeys.includes(c);
       // Held SHIFT means "move this edge, and take everything to the right of it
       // along": the columns past this one keep the widths they have and shift
       // bodily, so the table grows or shrinks by what the drag moved. Read live,
@@ -29666,10 +29690,10 @@ function _meColInitResize(cfg) {
         // drag states one for the flex column itself. Otherwise the flex column
         // is left unsaved on purpose: it is the one that absorbs the slack, and
         // a width written for it would freeze the table at one panel size.
-        const pinFlex = shifted || (growLast && th.dataset.col === flexKey);
+        const pinFlex = shifted || (growLast && isFlexCol(th.dataset.col));
         for (const t of ths) {
           const c = t.dataset.col;
-          if (c === flexKey && !pinFlex) continue;
+          if (isFlexCol(c) && !pinFlex) continue;
           if (shifted || cfg.saveAll || c === th.dataset.col || (nextTh && c === nextTh.dataset.col) || !(c in map))
             map[c] = parseInt(t.style.width, 10);
         }

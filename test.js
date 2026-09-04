@@ -7482,9 +7482,14 @@ test('shift-drag moves an edge and takes every column to its right with it', () 
   // for it — a shift-drag, or a drag of the last column's own edge. Left to
   // itself it absorbs the slack, and a width written for it would freeze the
   // table at one panel size.
-  assert.ok(/const pinFlex = shifted \|\| \(growLast && th\.dataset\.col === flexKey\);/.test(init),
+  assert.ok(/const pinFlex = shifted \|\| \(growLast && isFlexCol\(th\.dataset\.col\)\);/.test(init),
     'the flex column must not be pinned by an ordinary drag');
-  assert.ok(/if \(c === flexKey && !pinFlex\) continue;/.test(init),
+  // A table may have SEVERAL flex columns (Baselines mirrors two), so the drag
+  // asks the same shared reader the fit does rather than comparing to one key.
+  assert.ok(/const flexKeys = _meColFlexKeys\(cfg, ths\);/.test(init)
+         && /if \(isFlexCol\(c\) && !pinFlex\) continue;/.test(init),
+    'every flex column is left unsaved by an ordinary drag, not just the first');
+  assert.ok(/if \(isFlexCol\(c\) && !pinFlex\) continue;/.test(init),
     '…including on the tables that save every column');
 });
 
@@ -7513,10 +7518,14 @@ test('the LAST Track column can be dragged, and keeps the width it is given', ()
   // A flex column the user has SIZED keeps that size — absorbing the slack is
   // what it does UNTIL someone states a width for it.
   const fit = psFnSource('_meColFit');
-  assert.ok(/const flexW = saved\[flexKey\]/.test(fit),
+  assert.ok(/const flexW = k => saved\[k\] \? Math\.max\(cfg\.min, saved\[k\]\) : each;/.test(fit),
     'a dragged last column must survive the next fit');
-  assert.ok(/: Math\.max\(cfg\.flexMin, avail - fixed\);/.test(fit),
-    'and absorb the slack until then');
+  // Slack is split EVENLY between the flex columns still free — two mirrored
+  // columns stay the same width at any pane size, which is the whole point.
+  assert.ok(/Math\.floor\(\(avail - fixed - sizedTotal\) \/ free\.length\)/.test(fit),
+    'several flex columns share the slack rather than the first taking it all');
+  assert.ok(/Math\.max\(cfg\.flexMin, Math\.floor\(\(avail - fixed - sizedTotal\) \/ free\.length\)\)/.test(fit),
+    'and absorb the slack until then — never below flexMin, however many share it');
 });
 
 test('[REGRESSION] clicking a Track column header highlights the column', () => {
@@ -20295,7 +20304,11 @@ test('baselines: the table resizes and selects like every other table', () => {
 
   const cfg = src.slice(src.indexOf('  bl: {'), src.indexOf('  test: {'));
   assert.ok(/key: 'up_bl_col_w'/.test(cfg), 'its own storage key');
-  assert.ok(/flex: 'l-val'/.test(cfg), 'the current-parse value column absorbs the slack');
+  // Both value columns are flexible: they are the same column drawn twice, so
+  // slack going to one of them breaks the mirror the moment the pane changes
+  // width — collapsing the Saved list grew the left one and left the right
+  // alone. Reported 2026-09-03.
+  assert.ok(/flex: \['l-val', 'r-val'\]/.test(cfg), 'both value columns absorb the slack, evenly');
   assert.ok(/growLast: true/.test(cfg), 'and the last edge grows the table');
   assert.ok(/defaults: \(\) => _BL_DEFAULT_COLW/.test(cfg), 'pinned defaults, not measured ones');
   // l-val is deliberately absent from the defaults — it is the flex column.

@@ -1708,43 +1708,53 @@ input[type="text"]:focus { border-color: var(--accent); }
   margin: var(--gap) var(--gap) var(--gap) 0; }
 .bl-pane-body { flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
 .bl-scroll { flex:1; min-height:0; overflow:auto; }
+/* Two halves, each an exact half. There is no gutter to drag: the split is
+   always down the middle, and a table that outgrows its half scrolls INSIDE it —
+   the same relationship the parse table has with the Parse Results panel.
+   Requested 2026-09-04. */
+.bl-split { flex:1; min-height:0; display:flex; align-items:stretch; }
+.bl-half  { flex:0 0 calc(50% - 5px); width:calc(50% - 5px); min-width:0; overflow:auto; }
+.bl-rule  { flex:0 0 10px; background:var(--surface-subhead);
+  border-left: var(--bw) solid var(--border); border-right: var(--bw) solid var(--border); }
+
 /* table-layout:fixed is what makes a dragged width mean anything: under `auto`
    the browser re-derives every column from content on the next render and the
    drag is silently discarded — the bug .res-tbl had. */
 .bl-table { border-collapse:collapse; table-layout:fixed; font-family:var(--mono); font-size:var(--sz-mono); }
 .bl-table th { position:sticky; top:0; z-index:2; background:var(--surface-subhead); color:var(--text-dim);
-  font-weight:700; text-align:left; padding:3px 8px; border-bottom: var(--bw) solid var(--border); white-space:nowrap; }
-.bl-table td { padding:2px 8px; border-bottom: var(--bw) solid var(--border); vertical-align:top; }
-.bl-table .bl-n { color:var(--text-very-dim); text-align:right; width:1%; white-space:nowrap; }
-/* Fixed layout means a cell no longer widens to fit — the ones that must stay
-   on one line clip instead. */
-.bl-table .bl-f { color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.bl-table .bl-t, .bl-table .bl-s, .bl-table .bl-o { color:var(--text-dim); white-space:nowrap;
-  overflow:hidden; text-overflow:ellipsis; }
-.bl-table th { overflow:hidden; }
-/* A column is the same column on both sides, so one class hides both halves —
-   which is what keeps the two mirrored layouts symmetric while comparing. */
+  font-weight:700; text-align:left; padding:3px 8px; border-bottom: var(--bw) solid var(--border);
+  white-space:nowrap; overflow:hidden; }
+/* EVERY cell is one line. Two tables can only stay in step row for row if no
+   cell can be two lines tall — a wrapped value on one side would slide every
+   row below it out of line with its own other half. Double-click a title to
+   widen a column until its content fits; the full text is in the tooltip. */
+.bl-table td { padding:2px 8px; border-bottom: var(--bw) solid var(--border);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bl-table .bl-n { color:var(--text-very-dim); text-align:right; }
+.bl-table .bl-f { color:var(--text); }
+.bl-table .bl-t, .bl-table .bl-s, .bl-table .bl-o { color:var(--text-dim); }
+.bl-table .bl-v { color:var(--success,#3fb950); }
+/* The value columns sit against the rule, so the two meet across it. */
+.bl-v-l { text-align:right; }
+.bl-v-r { text-align:left; }
+.bl-row.bl-diff .bl-v { color:var(--warn-text); font-weight:700; }
+.bl-row.bl-diff .bl-f { color:var(--warn-text); }
+/* A row present on one side only. The blank IS the finding, so it is hatched —
+   in VIEW there is nothing to find and the empty half is left plain. */
+.bl-row.bl-gap.bl-blank td { background:repeating-linear-gradient(135deg,
+  transparent, transparent 5px, rgba(255,255,255,0.035) 5px, rgba(255,255,255,0.035) 10px); }
+/* REDEFINES, marked as Parse Results marks it. */
+.bl-row.bl-redef .bl-f { color: rgba(var(--accent-rgb),0.65); }
 #bl-right.bl-hide-num [data-col="l-num"], #bl-right.bl-hide-num [data-col="r-num"] { display:none; }
 #bl-right.bl-hide-fld [data-col="l-fld"], #bl-right.bl-hide-fld [data-col="r-fld"] { display:none; }
 #bl-right.bl-hide-typ [data-col="l-typ"], #bl-right.bl-hide-typ [data-col="r-typ"] { display:none; }
 #bl-right.bl-hide-siz [data-col="l-siz"], #bl-right.bl-hide-siz [data-col="r-siz"] { display:none; }
 #bl-right.bl-hide-off [data-col="l-off"], #bl-right.bl-hide-off [data-col="r-off"] { display:none; }
 #bl-right.bl-hide-val [data-col="l-val"], #bl-right.bl-hide-val [data-col="r-val"] { display:none; }
-.bl-table .bl-v { color:var(--success,#3fb950); word-break:break-all; }
-/* The two value columns are the ones being compared, so they sit against the
-   divider — current's flush right, baseline's flush left — and the eye crosses
-   one gap instead of ten columns. */
-.bl-cmp .bl-v-l { text-align:right; }
-.bl-cmp .bl-v-r { text-align:left; }
-.bl-cmp .bl-mid { width:10px; background:var(--surface-subhead); padding:0;
-  border-left: var(--bw) solid var(--border); border-right: var(--bw) solid var(--border); }
-/* Colour, not a fill. The amber text already says "these differ", and a wash
-   behind it only competes with the row-hover and the striping underneath.
-   Reported 2026-09-03. */
-.bl-row.bl-diff .bl-v { color:var(--warn-text); font-weight:700; }
-.bl-row.bl-diff .bl-f { color:var(--warn-text); }
-.bl-row.bl-gap .bl-gapcell { background:repeating-linear-gradient(135deg,
-  transparent, transparent 5px, rgba(255,255,255,0.035) 5px, rgba(255,255,255,0.035) 10px); }
+#bl-right.bl-hide-redef tr.bl-redef { display:none; }
+/* Token rows: a header naming the token and its DDL, then its fields. */
+.bl-row.bl-tokhdr td { background: rgba(var(--accent-rgb),0.10); color: var(--accent); font-weight:700; }
+.bl-row.bl-tok .bl-f { color: var(--text-dim); }
 .bl-row:hover td { background:var(--surface-hover); }
 
 /* ---- NETARD record metadata bar (top of parse results) ---- */
@@ -20301,7 +20311,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.6.1';
+const APP_VERSION  = '1.51.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22135,11 +22145,16 @@ function _blParseTags(str) {
 // Everything the field table needs, minus rawBytes — a per-field byte array is
 // the one thing here that is large, and rawHex already says the same thing in a
 // form that survives JSON.
+const _blStrip = f => { const { rawBytes, ...rest } = f; return rest; };
+
 function _blSnapshot(msg, name, tags) {
-  const fields = (msg.fields || []).map(f => {
-    const { rawBytes, ...rest } = f;
-    return rest;
-  });
+  const fields = (msg.fields || []).map(_blStrip);
+  // Tokens are parsed too — own rows, own fields — but they live on msg.tokens,
+  // not msg.fields, so a snapshot of the fields alone lost them entirely.
+  // Reported 2026-09-04.
+  const tokens = (msg.tokens || []).map(t => ({
+    ..._blStrip(t), fields: (t.fields || []).map(_blStrip),
+  }));
   return {
     id: 'bl_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7),
     name: String(name || '').trim() || 'Untitled baseline',
@@ -22151,7 +22166,7 @@ function _blSnapshot(msg, name, tags) {
     parsedBy: msg.parsedBy || null, inputFormat: S.inputFormat || null,
     recNo: msg.recNo || null, source: msg.source || null, dest: msg.dest || null,
     time: msg.time || msg.timestamp || null,
-    byteCount: (msg.bytes || []).length,
+    byteCount: (msg.bytes || []).length, tokens,
     // The bytes it came from, hex — so a baseline can still be re-parsed later.
     hex: (msg.bytes || []).map(b => b.toString(16).padStart(2, '0')).join(''),
     fields,
@@ -22415,7 +22430,7 @@ function blSetSidebarCollapsed(collapsed) {
   try { localStorage.setItem('up_bl_sidebar_collapsed', collapsed ? '1' : '0'); } catch(e) {}
   // The table has more room than it had a moment ago, and under a fixed layout
   // nothing takes it up unless the fit is re-run.
-  if (typeof _meColFit === 'function') _meColFit(_ME_COLRZ.bl);
+  if (typeof _meColFit === 'function') { _meColFit(_ME_COLRZ.blL); _meColFit(_ME_COLRZ.blR); }
 }
 function blToggleSidebar() {
   blSetSidebarCollapsed(!document.getElementById('bl-sidebar')?.classList.contains('collapsed'));
@@ -22522,6 +22537,9 @@ function blRenderRight() {
             <button class="btn" onclick="toggleBlColCfg(false)" style="padding:1px 7px;font-size:13px">✕</button></div>
           ${_BL_COLS.map(c => `<div class="audit-cfg-row"><label>${c.label}</label>`
             + `<button class="panel-toggle" id="blcol_${c.key}" onclick="blToggleCol('${c.key}')">−</button></div>`).join('')}
+          <div class="audit-cfg-section">Rows</div>
+          ${_BL_ROWOPTS.map(c => `<div class="audit-cfg-row"><label>${c.label}</label>`
+            + `<button class="panel-toggle" id="blcol_${c.key}" onclick="blToggleCol('${c.key}')">−</button></div>`).join('')}
         </div>
       </div>
     </div>
@@ -22541,9 +22559,25 @@ function blRenderRight() {
   // resize (double-click one to reset), click a header to light its column.
   _blApplyColVis();
   _blSyncColCfg();
-  if (typeof _meColInitResize === 'function') _meColInitResize(_ME_COLRZ.bl);
-  if (typeof _meInitColHighlight === 'function') _meInitColHighlight('#bl-right table');
+  if (typeof _meColInitResize === 'function') { _meColInitResize(_ME_COLRZ.blL); _meColInitResize(_ME_COLRZ.blR); }
+  if (typeof _meInitColHighlight === 'function') { _meInitColHighlight('#bl-half-l table'); _meInitColHighlight('#bl-half-r table'); }
   _blInitFitOnDblClick();
+  _blInitScrollSync();
+}
+
+// Fields and tokens as ONE list, because the comparison has to align them
+// together: a token present in one message and not the other is exactly the
+// kind of difference this table exists to show. A token is a group with its own
+// fields, so it contributes a header row and one row per field beneath it.
+function _blFlatten(src) {
+  const out = (src && src.fields ? src.fields.slice() : []);
+  for (const t of (src && src.tokens ? src.tokens : [])) {
+    out.push({ id: `⟨${t.id}⟩`, dataType: t.ddlName || 'TOKEN', _tokenHdr: true, _token: true,
+               startByte: t.headerStart, endByte: t.dataStart != null ? t.dataStart - 1 : t.headerStart,
+               value: t.error ? String(t.error) : '' });
+    for (const f of (t.fields || [])) out.push({ ...f, id: `${t.id}.${f.id}`, _token: true });
+  }
+  return out;
 }
 
 // Numbering matches the parse panel: groups carry no number.
@@ -22562,6 +22596,9 @@ const _BL_COLS = [
   { key: 'off', label: 'Offset',   cols: ['l-off', 'r-off'] },
   { key: 'val', label: 'Value',    cols: ['l-val', 'r-val'] },
 ];
+// Not a column, but it belongs on the same chooser: REDEFINES are half the rows
+// in a Base24 message, and Parse Results has always been able to put them away.
+const _BL_ROWOPTS = [{ key: 'redef', label: 'Redefines' }];
 const _BL_COLVIS_KEY = 'up_bl_colvis';
 let _blHidden = null;
 function _blHiddenSet() {
@@ -22574,13 +22611,11 @@ function _blHiddenSet() {
 }
 // How many cells a half still spans — the gap cell's colspan, so a blank side
 // narrows along with everything else.
-function _blVisibleCols() {
-  return _BL_COLS.filter(c => !_blHiddenSet().has(c.key)).length || 1;
-}
+
 function _blApplyColVis() {
   const host = document.getElementById('bl-right');
   if (!host) return;
-  for (const c of _BL_COLS) {
+  for (const c of [..._BL_COLS, ..._BL_ROWOPTS]) {
     const hidden = _blHiddenSet().has(c.key);
     host.classList.toggle('bl-hide-' + c.key, hidden);
     const btn = document.getElementById('blcol_' + c.key);
@@ -22588,7 +22623,7 @@ function _blApplyColVis() {
   }
   // Under a fixed layout the columns left behind have to take up the width the
   // hidden one gave back, or the table stops filling the pane.
-  if (typeof _meColFit === 'function') _meColFit(_ME_COLRZ.bl);
+  if (typeof _meColFit === 'function') { _meColFit(_ME_COLRZ.blL); _meColFit(_ME_COLRZ.blR); }
 }
 // Measured, not laid out: reading scrollWidth per cell would thrash the layout
 // 213 times on a machine that cannot afford it, and under table-layout:fixed a
@@ -22596,8 +22631,11 @@ function _blApplyColVis() {
 // measured against the cell's own font instead, which needs no layout at all.
 // Requested 2026-09-04.
 let _blMeasCtx = null;
+const _blCfgFor = col => String(col).startsWith('r-') ? _ME_COLRZ.blR : _ME_COLRZ.blL;
+
 function blFitCol(col) {
-  const tbl = document.querySelector('#bl-right table.bl-table');
+  const cfg = _blCfgFor(col);
+  const tbl = document.querySelector(cfg.table);
   const th  = tbl && tbl.querySelector(`thead th[data-col="${col}"]`);
   if (!tbl || !th) return;
   const cells = [...tbl.querySelectorAll(`tbody td[data-col="${col}"]`)];
@@ -22616,26 +22654,27 @@ function blFitCol(col) {
     if (t) w = Math.max(w, _blMeasCtx.measureText(t).width);
   }
   const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
-  const want = Math.max(_ME_COLRZ.bl.min, Math.ceil(w + pad + 2));
-  const map = _meColLoad(_ME_COLRZ.bl);
+  const want = Math.max(cfg.min, Math.ceil(w + pad + 2));
+  const map = _meColLoad(cfg);
   map[col] = want;
-  _meColSave(_ME_COLRZ.bl, map);
-  _meColFit(_ME_COLRZ.bl);
+  _meColSave(cfg, map);
+  _meColFit(cfg);
 }
 
 function _blInitFitOnDblClick() {
-  const thead = document.querySelector('#bl-right table.bl-table thead');
-  if (!thead || thead._blFitBound) return;
-  thead._blFitBound = true;
-  thead.addEventListener('dblclick', e => {
-    // The handle has its own double-click (reset); this is the title's.
-    if (e.target.closest('.th-resize')) return;
-    const th = e.target.closest('th');
-    const col = th && th.dataset.col;
-    if (!col || col === 'mid') return;
-    e.preventDefault();
-    blFitCol(col);
-  });
+  for (const thead of document.querySelectorAll('#bl-right table thead')) {
+    if (thead._blFitBound) continue;
+    thead._blFitBound = true;
+    thead.addEventListener('dblclick', e => {
+      // The handle has its own double-click (reset); this is the title's.
+      if (e.target.closest('.th-resize')) return;
+      const th = e.target.closest('th');
+      const col = th && th.dataset.col;
+      if (!col) return;
+      e.preventDefault();
+      blFitCol(col);
+    });
+  }
 }
 
 function blToggleCol(key) {
@@ -22671,79 +22710,113 @@ const _blTh = (col, label) => `<th data-col="${col}">${label}<span class="th-res
 // l-val is absent on purpose: it absorbs whatever is left, which is what keeps
 // the layout right at any pane width. Same shape as the other four tables.
 const _BL_DEFAULT_COLW = {
-  'l-num': 34, 'l-fld': 200, 'l-typ': 118, 'l-siz': 46, 'l-off': 80, 'mid': 10,
-  'r-val': 170, 'r-off': 80, 'r-siz': 46, 'r-typ': 118, 'r-fld': 200, 'r-num': 34,
+  'l-num': 34, 'l-fld': 200, 'l-typ': 118, 'l-siz': 46, 'l-off': 80,
+  'r-off': 80, 'r-siz': 46, 'r-typ': 118, 'r-fld': 200, 'r-num': 34,
 };
 
 const _blSize = f => (f == null ? '' : (f.valueLength ?? f.maxLength ?? ''));
 const _blOff  = f => (f == null || f.startByte == null) ? '' : `${f.startByte}–${f.endByte}`;
 const _blType = f => (f == null ? '' : (_fieldTypeLabel(f) || (f.isGroup ? 'GROUP' : '')));
 
-// ONE table for both modes. View is the same thirteen columns with the current
-// half left empty — not a narrower table — so a column never moves when you
-// switch modes and the eye keeps its place. Requested 2026-09-03.
+// TWO tables, one per side, each scrolling horizontally on its own so widening a
+// column on the left cannot push the right half around. Their vertical scroll is
+// tied together, and every cell is one line, so row N on the left is always row
+// N on the right. Requested 2026-09-04.
 //
-// The BASELINE is on the left, beside the list it was picked from, and the
-// current parse on the right; each half mirrors the other so the two values
-// meet at the divider.
+// The BASELINE is on the left, beside the list it was picked from; the current
+// parse on the right, mirrored, so the two values meet at the rule between them.
 const _BL_HALF = {
   l: [['bl-n','l-num'], ['bl-f','l-fld'], ['bl-t','l-typ'], ['bl-s','l-siz'], ['bl-o','l-off'], ['bl-v bl-v-l','l-val']],
   r: [['bl-v bl-v-r','r-val'], ['bl-o','r-off'], ['bl-s','r-siz'], ['bl-t','r-typ'], ['bl-f','r-fld'], ['bl-n','r-num']],
 };
-const _blEmptyHalf = side => _BL_HALF[side].map(([c, k]) => `<td class="${c}" data-col="${k}"></td>`).join('');
+const _BL_HEAD = {
+  l: [['l-num','#'], ['l-fld','FIELD'], ['l-typ','TYPE-LEN'], ['l-siz','SIZE'], ['l-off','OFFSET'], ['l-val','VALUE']],
+  r: [['r-val','VALUE'], ['r-off','OFFSET'], ['r-siz','SIZE'], ['r-typ','TYPE-LEN'], ['r-fld','FIELD'], ['r-num','#']],
+};
+
+// A REDEFINES row says so, the way Parse Results says it: the field name in
+// accent with the field it overlaps beside it. They were rendering as ordinary
+// rows, so half the table looked like fields that were simply there twice.
+// Reported 2026-09-04.
+const _blFieldCell = f => _escHtml(f.id || '')
+  + (f.isRedefines ? `<span class="c-redef-mark" title="REDEFINES — overlaps ${_escHtml(f.redefTarget || '?')}"> ↩${f.redefTarget ? ` <span class="c-redef-tgt">${_escHtml(f.redefTarget)}</span>` : ''}</span>` : '');
 
 function _blHalfHtml(f, side, num) {
-  if (f == null) return null;
+  if (f == null) return _BL_HALF[side].map(([c, k]) => `<td class="${c}" data-col="${k}"></td>`).join('');
   const cell = {
     'l-num': num,                           'r-num': num,
-    'l-fld': _escHtml(f.id || ''),          'r-fld': _escHtml(f.id || ''),
+    'l-fld': _blFieldCell(f),               'r-fld': _blFieldCell(f),
     'l-typ': _escHtml(_blType(f)),          'r-typ': _escHtml(_blType(f)),
     'l-siz': _escHtml(String(_blSize(f))),  'r-siz': _escHtml(String(_blSize(f))),
     'l-off': _escHtml(_blOff(f)),           'r-off': _escHtml(_blOff(f)),
     'l-val': _escHtml(_blVal(f) ?? ''),     'r-val': _escHtml(_blVal(f) ?? ''),
   };
-  return _BL_HALF[side].map(([c, k]) => `<td class="${c}" data-col="${k}">${cell[k] ?? ''}</td>`).join('');
+  return _BL_HALF[side].map(([c, k]) => `<td class="${c}" data-col="${k}" title="${_escHtml(String(cell[k]).replace(/<[^>]*>/g, ''))}">${cell[k] ?? ''}</td>`).join('');
+}
+
+function _blRowCls(row, st, side) {
+  const f = side === 'l' ? row.l : row.r;
+  return ['bl-row', 'bl-' + st,
+    f && f.isRedefines ? 'bl-redef' : '',
+    f && f._tokenHdr ? 'bl-tokhdr' : (f && f._token ? 'bl-tok' : ''),
+    f == null ? 'bl-blank' : ''].filter(Boolean).join(' ');
 }
 
 function _blTableHtml(b, cur, isCmp) {
   // l is the BASELINE, r is the current parse — the order _blAlign is given.
-  const rows = isCmp ? _blAlign(b.fields, cur.fields)
-                     : (b.fields || []).map(f => ({ l: f, r: null }));
+  const bf = _blFlatten(b), cf = isCmp ? _blFlatten(cur) : [];
+  const rows = isCmp ? _blAlign(bf, cf) : bf.map(f => ({ l: f, r: null }));
   const num = new Map();
-  for (const { f, n } of _blNumber(b.fields)) num.set(f, n);
-  if (isCmp) for (const { f, n } of _blNumber(cur.fields)) num.set(f, n);
+  for (const { f, n } of _blNumber(bf)) num.set(f, n);
+  if (isCmp) for (const { f, n } of _blNumber(cf)) num.set(f, n);
 
   let same = 0, diff = 0, gap = 0;
-  const body = rows.map(row => {
+  for (const row of rows) {
     const st = isCmp ? _blRowState(row) : 'view';
     if (st === 'same') same++; else if (st === 'diff') diff++; else if (st === 'gap') gap++;
-    // A missing field prints nothing and keeps its place. In compare that blank
-    // IS the finding, so it is hatched across the half; in view the current
-    // side is simply not filled in, and hatching every row would shout about
-    // something the mode already says.
-    const half = (f, side) => _blHalfHtml(f, side, num.get(f) ?? '')
-      ?? (isCmp ? `<td class="bl-gapcell" colspan="${_blVisibleCols()}"></td>` : _blEmptyHalf(side));
-    return `<tr class="bl-row bl-${st}">${half(row.l, 'l')}<td class="bl-mid" data-col="mid"></td>${half(row.r, 'r')}</tr>`;
-  }).join('');
+  }
+
+  const halfTable = side => {
+    const body = rows.map(row => {
+      const st = isCmp ? _blRowState(row) : 'view';
+      const f  = side === 'l' ? row.l : row.r;
+      return `<tr class="${_blRowCls(row, st, side)}">${_blHalfHtml(f, side, num.get(f) ?? '')}</tr>`;
+    }).join('');
+    return `<div class="bl-half" id="bl-half-${side}"><table class="bl-table bl-tbl-${side}">
+      <thead><tr>${_BL_HEAD[side].map(([k, l]) => _blTh(k, l)).join('')}</tr></thead>
+      <tbody>${body}</tbody></table></div>`;
+  };
 
   const tally = isCmp
     ? `<span class="bl-sum-diff">${diff} different</span>
        <span class="rec-meta-pipe">|</span><span class="bl-sum-gap">${gap} only on one side</span>
        <span class="rec-meta-pipe">|</span><span>${same} identical</span>`
-    : `<span>${(b.fields || []).length} fields</span>`;
+    : `<span>${bf.length} rows</span>`;
   const sum = `<div class="panel-bar bl-sum">${tally}
       <span style="flex:1"></span>
       <span class="bl-sum-side">◀ baseline</span>
       <span class="rec-meta-pipe">|</span><span class="bl-sum-side">current parse ▶</span>
     </div>`;
 
-  return sum + `<div class="bl-scroll"><table class="bl-table bl-cmp">
-    <thead><tr>
-      ${_blTh('l-num','#')}${_blTh('l-fld','FIELD')}${_blTh('l-typ','TYPE-LEN')}${_blTh('l-siz','SIZE')}${_blTh('l-off','OFFSET')}${_blTh('l-val','VALUE')}
-      <th class="bl-mid" data-col="mid"></th>
-      ${_blTh('r-val','VALUE')}${_blTh('r-off','OFFSET')}${_blTh('r-siz','SIZE')}${_blTh('r-typ','TYPE-LEN')}${_blTh('r-fld','FIELD')}${_blTh('r-num','#')}
-    </tr></thead>
-    <tbody>${body}</tbody></table></div>`;
+  return sum + `<div class="bl-split">${halfTable('l')}<div class="bl-rule"></div>${halfTable('r')}</div>`;
+}
+
+// The two halves scroll vertically as one — they are one table split in two, and
+// a row that drifts out of line with its own other half is worse than no split
+// at all. Guarded against the echo each assignment provokes in the other.
+let _blSyncing = false;
+function _blInitScrollSync() {
+  const L = document.getElementById('bl-half-l'), R = document.getElementById('bl-half-r');
+  if (!L || !R) return;
+  const tie = (from, to) => from.addEventListener('scroll', () => {
+    if (_blSyncing) return;
+    _blSyncing = true;
+    to.scrollTop = from.scrollTop;
+    // Cleared on the next frame, not synchronously: the assignment above fires
+    // the other element's scroll event asynchronously.
+    requestAnimationFrame(() => { _blSyncing = false; });
+  });
+  tie(L, R); tie(R, L);
 }
 
 function openMsgEditor() {
@@ -29483,21 +29556,25 @@ const _ME_COLRZ = {
   // Baselines — the view table and the compare table are the same config: the
   // compare table is the view table twice, mirrored, so its left half shares
   // the view's column keys.
-  bl: {
-    table: '#bl-right table.bl-table', wrap: '#bl-right .bl-scroll',
-    key: 'up_bl_col_w', handle: '.th-resize',
-    growLast: true,
-    // BOTH value columns: they are the same column drawn twice, so they have to
-    // stay the same width or the mirror stops lining up.
-    flex: ['l-val', 'r-val'], flexMin: 120, min: 36, pad: 4,
+  // Two tables, one per half, so each is its own resizer — a column widened on
+  // the left scrolls the LEFT half and leaves the right where it was. They share
+  // a storage key because their column names do not overlap. Each half's value
+  // column is genuinely last in its own table, so growLast applies to it: the
+  // table grows and that half scrolls, exactly as the parse table does inside
+  // Parse Results.
+  blL: {
+    table: '#bl-half-l table', wrap: '#bl-half-l',
+    key: 'up_bl_col_w', handle: '.th-resize', growLast: true,
+    flex: 'l-val', flexMin: 120, min: 36, pad: 4,
     defaults: () => _BL_DEFAULT_COLW,
-    // The chooser can hide any of them; a hidden th measures 0, and that 0
-    // written back as a width sticks when it is shown again.
-    visibleOnly: true,
-    saveAll: false,
-    resetOnDblClick: true,
-    // The divider is a rule, not a column.
-    noSteal: th => th.classList.contains('bl-mid'),
+    visibleOnly: true, saveAll: false, resetOnDblClick: true,
+  },
+  blR: {
+    table: '#bl-half-r table', wrap: '#bl-half-r',
+    key: 'up_bl_col_w', handle: '.th-resize', growLast: true,
+    flex: 'r-val', flexMin: 120, min: 36, pad: 4,
+    defaults: () => _BL_DEFAULT_COLW,
+    visibleOnly: true, saveAll: false, resetOnDblClick: true,
   },
   test: {
     table: '.me-test-ftbl-cols', wrap: '#me-test-out', key: 'up_me_test_col_w',
@@ -29669,13 +29746,7 @@ function _meColInitResize(cfg) {
       e.preventDefault();
       e.stopPropagation();
       const th     = handle.closest('th');
-      const _rawNext = th && th.nextElementSibling;
-      // Some neighbours are not columns. Baselines' divider separates the two
-      // halves and is pinned narrow; stealing from it made a drag on the value
-      // column balloon a 10px rule into a chasm. A column whose neighbour is
-      // one of those behaves as the last column of its group instead — the
-      // table grows and the pane scrolls. Reported 2026-09-04.
-      const nextTh = (_rawNext && cfg.noSteal && cfg.noSteal(_rawNext)) ? null : _rawNext;
+      const nextTh = th && th.nextElementSibling;
       // The LAST column has no right-hand neighbour to take width from, so its
       // edge did nothing. On a table whose columns are fixed and known that is
       // fine — there is always something to its right. Track's columns are the
@@ -29749,11 +29820,6 @@ function _meColInitResize(cfg) {
         const pinFlex = shifted || (growLast && isFlexCol(th.dataset.col));
         for (const t of ths) {
           const c = t.dataset.col;
-          // A rule between groups is not a column: never write a width for it,
-          // or the size it happened to have when some other edge was dragged
-          // becomes its size forever. This is how the divider got stuck at the
-          // 36px minimum. Reported 2026-09-04.
-          if (cfg.noSteal && cfg.noSteal(t)) continue;
           if (isFlexCol(c) && !pinFlex) continue;
           if (shifted || cfg.saveAll || c === th.dataset.col || (nextTh && c === nextTh.dataset.col) || !(c in map))
             map[c] = parseInt(t.style.width, 10);

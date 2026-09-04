@@ -7513,7 +7513,7 @@ test('the LAST Track column can be dragged, and keeps the width it is given', ()
   // nothing to its right the drag grows the table instead. Track was first
   // because its column count is unpredictable; the rest followed, Baselines
   // included.
-  eq((src.match(/growLast: true,/g) || []).length, 6, 'every table must be able to grow its last column');
+  eq((src.match(/growLast: true,/g) || []).length, 7, 'every table must be able to grow its last column');
 
   // A flex column the user has SIZED keeps that size — absorbing the slack is
   // what it does UNTIL someone states a width for it.
@@ -20247,6 +20247,64 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('baselines: two half tables, split down the middle, scrolling on their own', () => {
+  // One wide table meant widening a column on the left shoved the right half
+  // around, and its only horizontal scrollbar was the whole pane's. Two tables
+  // now, each an exact half with no gutter to drag: a table that outgrows its
+  // half scrolls INSIDE it, the way the parse table does inside Parse Results.
+  // Requested 2026-09-04.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.bl-half  \{ flex:0 0 calc\(50% - 5px\); width:calc\(50% - 5px\); min-width:0; overflow:auto; \}/.test(src),
+    'each half is exactly half, and scrolls itself');
+  // The rule between the halves is a plain div: no resizer class, no handle,
+  // nothing to drag. The split is always down the middle. (bl-splitter is the
+  // Saved list's own gutter, which IS draggable and is a different thing.)
+  assert.ok(/<div class="bl-rule"><\/div>/.test(psFnSource('_blTableHtml')),
+    'the split is a plain rule, not a gutter');
+  assert.ok(/\.bl-rule  \{ flex:0 0 10px;/.test(src) && !/bl-rule[^{]*resizer/.test(src),
+    'and nothing makes it draggable');
+  const fn = psFnSource('_blTableHtml');
+  assert.ok(/id="bl-half-\$\{side\}"/.test(fn), 'each half is its own scroll box');
+  assert.ok((fn.match(/halfTable\('[lr]'\)/g) || []).length === 2, 'one table per side');
+
+  // Vertical scroll is tied — they are one table split in two, and a row out of
+  // line with its own other half is worse than no split at all.
+  const sync = psFnSource('_blInitScrollSync');
+  assert.ok(/to\.scrollTop = from\.scrollTop;/.test(sync) && /tie\(L, R\); tie\(R, L\);/.test(sync),
+    'both directions');
+  assert.ok(/if \(_blSyncing\) return;/.test(sync) && /requestAnimationFrame\(\(\) => \{ _blSyncing = false; \}\)/.test(sync),
+    'guarded against the echo each assignment provokes, and cleared on the NEXT frame — the echo is async');
+  // ...and only vertical: the point of the split is that the two scroll
+  // horizontally on their own.
+  assert.ok(!/scrollLeft/.test(sync), 'horizontal stays independent');
+});
+
+test('baselines: tokens are saved and shown, and REDEFINES say so', () => {
+  // Both were missing. Tokens live on msg.tokens rather than msg.fields, so a
+  // snapshot of the fields alone never had them; REDEFINES were saved but
+  // rendered as ordinary rows, so half a Base24 message looked like fields that
+  // were simply there twice. Reported 2026-09-04.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const flat = psFnSource('_blFlatten');
+  assert.ok(/for \(const t of \(src && src\.tokens \? src\.tokens : \[\]\)\)/.test(flat),
+    'tokens join the row list');
+  assert.ok(/_tokenHdr: true/.test(flat) && /id: `\$\{t\.id\}\.\$\{f\.id\}`/.test(flat),
+    'a token contributes a header row and one row per field beneath it');
+  // They must go through the SAME list the alignment walks, or a token present
+  // in one message and missing from the other would not show as a difference.
+  assert.ok(/const bf = _blFlatten\(b\), cf = isCmp \? _blFlatten\(cur\) : \[\];/.test(psFnSource('_blTableHtml'))
+         && /_blAlign\(bf, cf\)/.test(psFnSource('_blTableHtml')),
+    'and are aligned with the fields, not appended after them');
+
+  assert.ok(/f\.isRedefines \? `<span class="c-redef-mark"/.test(src),
+    'a REDEFINES row carries the same ↩ mark Parse Results gives it');
+  assert.ok(/\.bl-row\.bl-redef \.bl-f \{ color: rgba\(var\(--accent-rgb\),0\.65\); \}/.test(src),
+    'and the same accent field name');
+  assert.ok(/#bl-right\.bl-hide-redef tr\.bl-redef \{ display:none; \}/.test(src)
+         && /const _BL_ROWOPTS = \[\{ key: 'redef', label: 'Redefines' \}\];/.test(src),
+    'and can be put away, like Parse Results can');
+});
+
 test('baselines: the Saved list counts, collapses, and its columns hide in pairs', () => {
   // Requested 2026-09-03: the count takes the DDL tree header's pill, the list
   // collapses to a rail, and a deselected column disappears from BOTH sides.
@@ -20265,8 +20323,8 @@ test('baselines: the Saved list counts, collapses, and its columns hide in pairs
     'the gutter goes inert, so a rail cannot be dragged');
   assert.ok(/up_bl_sidebar_collapsed/.test(col) && /up_bl_sidebar_collapsed/.test(psFnSource('openBaselines')),
     'the state is saved and restored');
-  assert.ok(/_meColFit\(_ME_COLRZ\.bl\)/.test(col),
-    'and the table takes up the width the rail gave back');
+  assert.ok(/_meColFit\(_ME_COLRZ\.blL\); _meColFit\(_ME_COLRZ\.blR\)/.test(col),
+    'and BOTH halves take up the width the rail gave back');
 
   // ONE entry per pair: a column is the same column on both sides.
   const cols = src.slice(src.indexOf('const _BL_COLS = ['), src.indexOf('const _BL_COLVIS_KEY'));
@@ -20274,14 +20332,13 @@ test('baselines: the Saved list counts, collapses, and its columns hide in pairs
     assert.ok(new RegExp(`key: '${k}',[^\\n]*cols: \\['l-${c}', 'r-${c}'\\]`).test(cols),
       `${k} names both halves`);
     assert.ok(new RegExp(`#bl-right\\.bl-hide-${k} \\[data-col="l-${c}"\\], #bl-right\\.bl-hide-${k} \\[data-col="r-${c}"\\] \\{ display:none; \\}`).test(src),
-      `and one rule hides ${k} on both sides at once`);
+      `and one rule hides ${k} in both halves at once`);
   }
   // Cells carry their column, which is what lets one rule reach the body.
-  assert.ok(/\['bl-v bl-v-r','r-val'\]/.test(fs.readFileSync('./source.html', 'utf8')),
-    'body cells are keyed too, not just the headers');
+  assert.ok(/\['bl-v bl-v-r','r-val'\]/.test(src), 'body cells are keyed too, not just the headers');
   // A hidden th measures 0; writing that back as a width would stick.
-  assert.ok(/visibleOnly: true,/.test(src.slice(src.indexOf('  bl: {'), src.indexOf('  test: {'))),
-    'the resizer skips hidden columns');
+  assert.strictEqual((src.slice(src.indexOf('  blL: {'), src.indexOf('  test: {')).match(/visibleOnly: true,/g) || []).length, 2,
+    'the resizer skips hidden columns, in both halves');
 });
 
 test('baselines: the table resizes and selects like every other table', () => {
@@ -20290,8 +20347,10 @@ test('baselines: the table resizes and selects like every other table', () => {
   // implementation for this one table.
   const src = fs.readFileSync('./source.html', 'utf8');
   const render = psFnSource('blRenderRight');
-  assert.ok(/_meColInitResize\(_ME_COLRZ\.bl\)/.test(render), 'columns resize');
-  assert.ok(/_meInitColHighlight\('#bl-right table'\)/.test(render), 'and a header click lights its column');
+  assert.ok(/_meColInitResize\(_ME_COLRZ\.blL\); _meColInitResize\(_ME_COLRZ\.blR\)/.test(render),
+    'each half resizes on its own');
+  assert.ok(/_meInitColHighlight\('#bl-half-l table'\); _meInitColHighlight\('#bl-half-r table'\)/.test(render),
+    'and a header click lights its column, in either half');
 
   // A width only means something under a fixed layout: with `auto` the browser
   // re-derives every column from content on the next render and the drag is
@@ -20299,44 +20358,44 @@ test('baselines: the table resizes and selects like every other table', () => {
   assert.ok(/\.bl-table \{[^}]*table-layout:fixed/.test(src), 'the table is fixed-layout');
   // ...which also means cells no longer widen to fit, so the single-line ones
   // must clip rather than overflow their column.
-  assert.ok(/\.bl-table \.bl-f \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis/.test(src),
-    'nowrap cells clip inside their column');
+  // EVERY cell, not just some: two tables can only stay in step row for row if
+  // no cell can be two lines tall.
+  assert.ok(/\.bl-table td \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis/.test(src),
+    'every cell is one line, and clips inside its column');
 
-  const cfg = src.slice(src.indexOf('  bl: {'), src.indexOf('  test: {'));
-  assert.ok(/key: 'up_bl_col_w'/.test(cfg), 'its own storage key');
-  // Both value columns are flexible: they are the same column drawn twice, so
-  // slack going to one of them breaks the mirror the moment the pane changes
-  // width — collapsing the Saved list grew the left one and left the right
-  // alone. Reported 2026-09-03.
-  assert.ok(/flex: \['l-val', 'r-val'\]/.test(cfg), 'both value columns absorb the slack, evenly');
-  assert.ok(/growLast: true/.test(cfg), 'and the last edge grows the table');
-  assert.ok(/defaults: \(\) => _BL_DEFAULT_COLW/.test(cfg), 'pinned defaults, not measured ones');
-  // l-val is deliberately absent from the defaults — it is the flex column.
+  const cfg = src.slice(src.indexOf('  blL: {'), src.indexOf('  test: {'));
+  assert.ok((cfg.match(/key: 'up_bl_col_w'/g) || []).length === 2,
+    'both halves share one storage key — their column names do not overlap');
+  // Each half's value column is the flex one AND genuinely last in its own
+  // table, so growLast applies to it: the table grows and THAT half scrolls.
+  assert.ok(/flex: 'l-val'/.test(cfg) && /flex: 'r-val'/.test(cfg),
+    'each half flexes on its own value column');
+  assert.ok((cfg.match(/growLast: true/g) || []).length === 2, 'and each last edge grows its own table');
+  assert.ok((cfg.match(/defaults: \(\) => _BL_DEFAULT_COLW/g) || []).length === 2,
+    'pinned defaults, not measured ones');
+  // The flex columns state no default — they absorb whatever is left.
   const defs = src.slice(src.indexOf('const _BL_DEFAULT_COLW'), src.indexOf('const _blSize'));
-  assert.ok(!/'l-val'/.test(defs), 'the flex column states no default width');
-  assert.ok(/'mid': 10/.test(defs), 'the divider is pinned narrow');
-  // The divider is not draggable: it separates the halves, it is not a column.
-  assert.ok(/<th class="bl-mid" data-col="mid"><\/th>/.test(psFnSource('_blTableHtml')),
-    'the divider carries no resize handle');
+  assert.ok(!/'l-val'/.test(defs) && !/'r-val'/.test(defs), 'the flex columns state no default width');
+  // The rule between the halves is a DIV, not a column — nothing can drag it,
+  // steal from it, hide it or save a width for it.
+  assert.ok(!/'mid'/.test(defs) && !/data-col="mid"/.test(src),
+    'the divider is not a column at all any more');
 });
 
 test('[REGRESSION] the divider is a rule, not a column to steal width from', () => {
-  // Dragging the left VALUE column's right edge took width from its neighbour —
-  // which is the 10px divider between the halves — so a pinned rule ballooned
-  // into a chasm. Worse, the drag then SAVED that width, so it stayed 36px (the
-  // column minimum) forever after. Reported 2026-09-04.
+  // It used to be a <th> in one wide table, so dragging the left VALUE column's
+  // right edge took width from it and a 10px rule became a chasm — and the drag
+  // SAVED that width, so it stayed at the 36px column minimum across reloads.
+  // Splitting the halves into two tables removes the possibility: the rule is a
+  // div between them, reachable by no drag, no chooser and no width map.
+  // Reported 2026-09-04.
   const src = fs.readFileSync('./source.html', 'utf8');
-  const cfg = src.slice(src.indexOf('  bl: {'), src.indexOf('  test: {'));
-  assert.ok(/noSteal: th => th\.classList\.contains\('bl-mid'\)/.test(cfg),
-    'the config names what is not a column');
-  const init = psFnSource('_meColInitResize');
-  assert.ok(/const nextTh = \(_rawNext && cfg\.noSteal && cfg\.noSteal\(_rawNext\)\) \? null : _rawNext;/.test(init),
-    'such a neighbour is no neighbour — the column behaves as the last of its group');
-  assert.ok(/if \(cfg\.noSteal && cfg\.noSteal\(t\)\) continue;/.test(init),
-    'and a width is never written for it, or one accident becomes permanent');
-  // growLast then applies, so the table grows and the pane scrolls.
-  assert.ok(/const growLast = !nextTh && cfg\.growLast;/.test(init),
-    'with no neighbour the drag grows the table instead of doing nothing');
+  assert.ok(/<div class="bl-rule"><\/div>/.test(psFnSource('_blTableHtml')),
+    'the rule is a div between the two tables');
+  assert.ok(!/data-col="mid"/.test(src) && !/'mid'/.test(src.slice(src.indexOf('const _BL_DEFAULT_COLW'), src.indexOf('const _blSize'))),
+    'nothing addresses it as a column any more');
+  assert.ok(!/noSteal/.test(src),
+    'and the workaround that taught the resizer to skip it is gone with it');
 });
 
 test('baselines: double-clicking a column title fits it to its content', () => {
@@ -20349,15 +20408,18 @@ test('baselines: double-clicking a column title fits it to its content', () => {
     'it measures text, it does not measure the DOM');
   assert.ok(/measureText\(th\.textContent \|\| ''\)/.test(fit),
     'the header counts too — a column narrower than its own title is not fitted');
-  assert.ok(/Math\.max\(_ME_COLRZ\.bl\.min, /.test(fit), 'never below the column minimum');
-  assert.ok(/_meColSave\(_ME_COLRZ\.bl, map\);[\s\S]{0,60}_meColFit\(_ME_COLRZ\.bl\);/.test(fit),
+  assert.ok(/Math\.max\(cfg\.min, /.test(fit), 'never below the column minimum');
+  assert.ok(/_meColSave\(cfg, map\);[\s\S]{0,60}_meColFit\(cfg\);/.test(fit),
     'the width is stated, so the next fit keeps it');
+  // A column belongs to one half, and the fit has to act on that half's table.
+  assert.ok(/const _blCfgFor = col => String\(col\)\.startsWith\('r-'\) \? _ME_COLRZ\.blR : _ME_COLRZ\.blL;/.test(fs.readFileSync('./source.html', 'utf8')),
+    'the right half is fitted against the right half');
 
   const bind = psFnSource('_blInitFitOnDblClick');
   assert.ok(/if \(e\.target\.closest\('\.th-resize'\)\) return;/.test(bind),
     'the handle keeps its own double-click; this one is the title\'s');
-  assert.ok(/if \(!col \|\| col === 'mid'\) return;/.test(bind), 'and the divider is not fittable');
-  assert.ok(/thead\._blFitBound/.test(bind), 'bound once, not once per render');
+  assert.ok(/thead\._blFitBound/.test(bind), 'bound once per thead, not once per render');
+  assert.ok(/querySelectorAll\('#bl-right table thead'\)/.test(bind), 'in both halves');
 });
 
 test('baselines: deleting one asks for the word, like everything else destructive', () => {
@@ -20440,8 +20502,14 @@ test('baselines: a saved parse, its own store, and nothing of the Class Editor',
   const snap = psFnSource('_blSnapshot');
   // The store keeps the parse AS IT WAS: editing a DDL later must not change
   // what a baseline says, which is the whole point of the word.
-  assert.ok(/const \{ rawBytes, \.\.\.rest \} = f;/.test(snap),
+  assert.ok(/const _blStrip = f => \{ const \{ rawBytes, \.\.\.rest \} = f; return rest; \};/.test(src),
     'the field snapshot drops rawBytes — the one large thing, and rawHex already says it');
+  // Tokens are parsed too, and they live on msg.tokens rather than msg.fields —
+  // so a snapshot of the fields alone lost them entirely. Reported 2026-09-04.
+  assert.ok(/const tokens = \(msg\.tokens \|\| \[\]\)\.map/.test(snap)
+         && /\.\.\._blStrip\(t\), fields: \(t\.fields \|\| \[\]\)\.map\(_blStrip\),/.test(snap),
+    'tokens travel with it, stripped at both levels');
+  assert.ok(/byteCount: \(msg\.bytes \|\| \[\]\)\.length, tokens,/.test(snap), 'and are stored');
   assert.ok(/hex: \(msg\.bytes \|\| \[\]\)\.map/.test(snap),
     'the bytes travel with it, so it can still be re-parsed later');
   for (const k of ['msgType', 'ddlPath', 'defName', 'parsedBy'])
@@ -20491,9 +20559,11 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
   // Left runs left-to-right and stops at its value; the baseline runs
   // value-first and reads back out. One short hop between the two values
   // instead of crossing ten columns. Requested 2026-09-03.
+  const src0 = fs.readFileSync('./source.html', 'utf8');
   const fn = psFnSource('_blTableHtml');
-  const cols = (fn.match(/_blTh\('([^']*)','([^']*)'\)/g) || [])
-    .map(x => x.match(/_blTh\('([^']*)','([^']*)'\)/).slice(1));
+  const head = src0.slice(src0.indexOf('const _BL_HEAD = {'), src0.indexOf('// A REDEFINES row'));
+  const cols = (head.match(/\['([lr]-[a-z]+)','([^']*)'\]/g) || [])
+    .map(x => x.match(/\['([lr]-[a-z]+)','([^']*)'\]/).slice(1));
   deepEq(cols.map(c => c[1]),
     ['#','FIELD','TYPE-LEN','SIZE','OFFSET','VALUE','VALUE','OFFSET','SIZE','TYPE-LEN','FIELD','#'],
     'the right half is the left half reversed');
@@ -20502,19 +20572,16 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
   deepEq(cols.map(c => c[0]),
     ['l-num','l-fld','l-typ','l-siz','l-off','l-val','r-val','r-off','r-siz','r-typ','r-fld','r-num'],
     'each side owns its own column keys');
-  const src2 = fs.readFileSync('./source.html', 'utf8');
+  const src2 = src0;
   assert.ok(/bl-v bl-v-l/.test(src2) && /bl-v bl-v-r/.test(src2), 'each side marks its own value cell');
-  // View is the SAME thirteen columns with the current half left empty — not a
+  // View is the SAME two tables with the current half left empty — not a
   // narrower table — so nothing moves when the mode changes.
-  assert.ok(/_blEmptyHalf\(side\)/.test(fn), 'view fills the other half with empty cells');
-  assert.ok(/const _blEmptyHalf = side => _BL_HALF\[side\]\.map/.test(src2)
-         && /data-col="\$\{k\}"><\/td>/.test(src2),
-    'and those cells are keyed, so hiding a column still reaches them');
-  assert.ok(!/_blViewHtml/.test(src2), 'there is no second renderer that could drift');
+  assert.ok(/if \(f == null\) return _BL_HALF\[side\]\.map\(\(\[c, k\]\) => `<td class="\$\{c\}" data-col="\$\{k\}"><\/td>`\)/.test(psFnSource('_blHalfHtml')),
+    'a missing field still emits its six keyed cells, so hiding a column reaches them');
+  assert.ok(!/_blViewHtml|_blCompareHtml/.test(src2), 'there is no second renderer that could drift');
   const css = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/\.bl-cmp \.bl-v-l \{ text-align:right; \}/.test(css) &&
-            /\.bl-cmp \.bl-v-r \{ text-align:left; \}/.test(css),
-    'and they are pushed against the divider between them');
+  assert.ok(/\.bl-v-l \{ text-align:right; \}/.test(css) && /\.bl-v-r \{ text-align:left; \}/.test(css),
+    'and they are pushed against the rule between them');
   // A difference is stated in COLOUR, not a fill: the amber text already says
   // it, and a wash behind it competes with the row hover underneath.
   // Reported 2026-09-03.
@@ -20522,20 +20589,13 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
     'a differing value is amber and bold, with no background of its own');
   assert.ok(!/\.bl-row\.bl-diff[^{]*\{[^}]*background/.test(css),
     'nothing in the diff rules paints a cell');
-  // A missing side prints nothing but still occupies the row.
-  assert.ok(/isCmp \? `<td class="bl-gapcell" colspan="\$\{_blVisibleCols\(\)\}"><\/td>`/.test(fn),
-    'the gap is an empty cell spanning that side, not a dropped row');
   // The BASELINE is on the left, next to the list it was picked from, and the
   // current parse on the right. Requested 2026-09-03.
-  assert.ok(/_blAlign\(b\.fields, cur\.fields\)/.test(fn),
+  assert.ok(/_blAlign\(bf, cf\)/.test(fn) && /const bf = _blFlatten\(b\), cf = isCmp \? _blFlatten\(cur\) : \[\];/.test(fn),
     'the left half is the baseline and the right half the current parse');
   assert.ok(/<span class="bl-sum-side">◀ baseline<\/span>/.test(fn)
          && /<span class="bl-sum-side">current parse ▶<\/span>/.test(fn),
     'and the summary bar says which side is which');
-  // The span follows the chooser: with a column hidden the blank narrows with
-  // everything else instead of hanging past the divider.
-  assert.ok(/_BL_COLS\.filter\(c => !_blHiddenSet\(\)\.has\(c\.key\)\)\.length \|\| 1/.test(
-    psFnSource('_blVisibleCols')), 'it spans only the columns still showing');
 });
 
 test('baselines: tags are the user\'s own words, matched case-insensitively', () => {

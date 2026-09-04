@@ -20320,6 +20320,46 @@ test('baselines: the table resizes and selects like every other table', () => {
     'the divider carries no resize handle');
 });
 
+test('[REGRESSION] the divider is a rule, not a column to steal width from', () => {
+  // Dragging the left VALUE column's right edge took width from its neighbour —
+  // which is the 10px divider between the halves — so a pinned rule ballooned
+  // into a chasm. Worse, the drag then SAVED that width, so it stayed 36px (the
+  // column minimum) forever after. Reported 2026-09-04.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const cfg = src.slice(src.indexOf('  bl: {'), src.indexOf('  test: {'));
+  assert.ok(/noSteal: th => th\.classList\.contains\('bl-mid'\)/.test(cfg),
+    'the config names what is not a column');
+  const init = psFnSource('_meColInitResize');
+  assert.ok(/const nextTh = \(_rawNext && cfg\.noSteal && cfg\.noSteal\(_rawNext\)\) \? null : _rawNext;/.test(init),
+    'such a neighbour is no neighbour — the column behaves as the last of its group');
+  assert.ok(/if \(cfg\.noSteal && cfg\.noSteal\(t\)\) continue;/.test(init),
+    'and a width is never written for it, or one accident becomes permanent');
+  // growLast then applies, so the table grows and the pane scrolls.
+  assert.ok(/const growLast = !nextTh && cfg\.growLast;/.test(init),
+    'with no neighbour the drag grows the table instead of doing nothing');
+});
+
+test('baselines: double-clicking a column title fits it to its content', () => {
+  // Requested 2026-09-04. Measured against the cell font rather than read off
+  // the layout: scrollWidth per cell would thrash the layout once per row on a
+  // machine that cannot afford it, and under table-layout:fixed the text has
+  // already been clipped by the time it could be read.
+  const fit = psFnSource('blFitCol');
+  assert.ok(/_blMeasCtx\.measureText/.test(fit) && !/scrollWidth|offsetWidth/.test(fit),
+    'it measures text, it does not measure the DOM');
+  assert.ok(/measureText\(th\.textContent \|\| ''\)/.test(fit),
+    'the header counts too — a column narrower than its own title is not fitted');
+  assert.ok(/Math\.max\(_ME_COLRZ\.bl\.min, /.test(fit), 'never below the column minimum');
+  assert.ok(/_meColSave\(_ME_COLRZ\.bl, map\);[\s\S]{0,60}_meColFit\(_ME_COLRZ\.bl\);/.test(fit),
+    'the width is stated, so the next fit keeps it');
+
+  const bind = psFnSource('_blInitFitOnDblClick');
+  assert.ok(/if \(e\.target\.closest\('\.th-resize'\)\) return;/.test(bind),
+    'the handle keeps its own double-click; this one is the title\'s');
+  assert.ok(/if \(!col \|\| col === 'mid'\) return;/.test(bind), 'and the divider is not fittable');
+  assert.ok(/thead\._blFitBound/.test(bind), 'bound once, not once per render');
+});
+
 test('baselines: deleting one asks for the word, like everything else destructive', () => {
   // An OK button is one slip away from losing a saved parse that cannot be got
   // back. Every other destructive action in the app asks for the word, and this

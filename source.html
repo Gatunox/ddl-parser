@@ -20301,7 +20301,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.5.1';
+const APP_VERSION  = '1.50.6.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22543,6 +22543,7 @@ function blRenderRight() {
   _blSyncColCfg();
   if (typeof _meColInitResize === 'function') _meColInitResize(_ME_COLRZ.bl);
   if (typeof _meInitColHighlight === 'function') _meInitColHighlight('#bl-right table');
+  _blInitFitOnDblClick();
 }
 
 // Numbering matches the parse panel: groups carry no number.
@@ -22589,6 +22590,54 @@ function _blApplyColVis() {
   // hidden one gave back, or the table stops filling the pane.
   if (typeof _meColFit === 'function') _meColFit(_ME_COLRZ.bl);
 }
+// Measured, not laid out: reading scrollWidth per cell would thrash the layout
+// 213 times on a machine that cannot afford it, and under table-layout:fixed a
+// cell has already been clipped by the time you could read it. The text is
+// measured against the cell's own font instead, which needs no layout at all.
+// Requested 2026-09-04.
+let _blMeasCtx = null;
+function blFitCol(col) {
+  const tbl = document.querySelector('#bl-right table.bl-table');
+  const th  = tbl && tbl.querySelector(`thead th[data-col="${col}"]`);
+  if (!tbl || !th) return;
+  const cells = [...tbl.querySelectorAll(`tbody td[data-col="${col}"]`)];
+  const probe = cells[0] || th;
+  const cs = getComputedStyle(probe);
+  _blMeasCtx = _blMeasCtx || document.createElement('canvas').getContext('2d');
+  _blMeasCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  let w = 0;
+  // The header counts: a column fitted narrower than its own title is not fitted.
+  const hcs = getComputedStyle(th);
+  _blMeasCtx.font = `${hcs.fontStyle} ${hcs.fontWeight} ${hcs.fontSize} ${hcs.fontFamily}`;
+  w = _blMeasCtx.measureText(th.textContent || '').width + 14;   // + the resize handle
+  _blMeasCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  for (const c of cells) {
+    const t = c.textContent || '';
+    if (t) w = Math.max(w, _blMeasCtx.measureText(t).width);
+  }
+  const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const want = Math.max(_ME_COLRZ.bl.min, Math.ceil(w + pad + 2));
+  const map = _meColLoad(_ME_COLRZ.bl);
+  map[col] = want;
+  _meColSave(_ME_COLRZ.bl, map);
+  _meColFit(_ME_COLRZ.bl);
+}
+
+function _blInitFitOnDblClick() {
+  const thead = document.querySelector('#bl-right table.bl-table thead');
+  if (!thead || thead._blFitBound) return;
+  thead._blFitBound = true;
+  thead.addEventListener('dblclick', e => {
+    // The handle has its own double-click (reset); this is the title's.
+    if (e.target.closest('.th-resize')) return;
+    const th = e.target.closest('th');
+    const col = th && th.dataset.col;
+    if (!col || col === 'mid') return;
+    e.preventDefault();
+    blFitCol(col);
+  });
+}
+
 function blToggleCol(key) {
   const set = _blHiddenSet();
   if (set.has(key)) set.delete(key); else set.add(key);
@@ -29447,6 +29496,8 @@ const _ME_COLRZ = {
     visibleOnly: true,
     saveAll: false,
     resetOnDblClick: true,
+    // The divider is a rule, not a column.
+    noSteal: th => th.classList.contains('bl-mid'),
   },
   test: {
     table: '.me-test-ftbl-cols', wrap: '#me-test-out', key: 'up_me_test_col_w',
@@ -29618,7 +29669,13 @@ function _meColInitResize(cfg) {
       e.preventDefault();
       e.stopPropagation();
       const th     = handle.closest('th');
-      const nextTh = th && th.nextElementSibling;
+      const _rawNext = th && th.nextElementSibling;
+      // Some neighbours are not columns. Baselines' divider separates the two
+      // halves and is pinned narrow; stealing from it made a drag on the value
+      // column balloon a 10px rule into a chasm. A column whose neighbour is
+      // one of those behaves as the last column of its group instead — the
+      // table grows and the pane scrolls. Reported 2026-09-04.
+      const nextTh = (_rawNext && cfg.noSteal && cfg.noSteal(_rawNext)) ? null : _rawNext;
       // The LAST column has no right-hand neighbour to take width from, so its
       // edge did nothing. On a table whose columns are fixed and known that is
       // fine — there is always something to its right. Track's columns are the
@@ -29692,6 +29749,11 @@ function _meColInitResize(cfg) {
         const pinFlex = shifted || (growLast && isFlexCol(th.dataset.col));
         for (const t of ths) {
           const c = t.dataset.col;
+          // A rule between groups is not a column: never write a width for it,
+          // or the size it happened to have when some other edge was dragged
+          // becomes its size forever. This is how the divider got stuck at the
+          // 36px minimum. Reported 2026-09-04.
+          if (cfg.noSteal && cfg.noSteal(t)) continue;
           if (isFlexCol(c) && !pinFlex) continue;
           if (shifted || cfg.saveAll || c === th.dataset.col || (nextTh && c === nextTh.dataset.col) || !(c in map))
             map[c] = parseInt(t.style.width, 10);

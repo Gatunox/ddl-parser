@@ -20320,6 +20320,31 @@ test('baselines: the table resizes and selects like every other table', () => {
     'the divider carries no resize handle');
 });
 
+test('baselines: reachable from the header, with nothing parsed', () => {
+  // Every other way in hangs off a parse — the ★ Baseline button appears with
+  // the results, and Manage… lives inside its dialog — so with nothing parsed
+  // the saved baselines could not be looked at. Requested 2026-09-04.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const hdr = src.slice(src.indexOf('<header>'), src.indexOf('</header>'));
+  assert.ok(/id="baselineBtn" onclick="openBaselines\(\)"/.test(hdr), 'the header opens it directly');
+  assert.ok(hdr.indexOf('id="baselineBtn"') < hdr.indexOf('id="dataEditorBtn"'),
+    'and it sits before the Class Editor, as asked');
+  // The button and the overlay say the same words.
+  assert.ok(/>★ Baseline Editor<\/button>/.test(hdr)
+         && /<span class="me-header-title">Baseline Editor<\/span>/.test(src),
+    'the button names the thing it opens');
+
+  // Opening with nothing parsed must not reach into a message that is not there:
+  // the mode falls back to view and Compare says why it cannot run.
+  const render = psFnSource('blRenderRight');
+  assert.ok(/const canCompare = !!\(cur && cur\.fields && cur\.fields\.length\);/.test(render),
+    'comparing needs a current parse, and knows when it has none');
+  assert.ok(/const mode = \(_blMode === 'compare' && canCompare\) \? 'compare' : 'view';/.test(render),
+    'without one it falls back to view rather than rendering half a comparison');
+  assert.ok(/disabled title="Parse a message first/.test(render),
+    'and the button says why it is disabled');
+});
+
 test('baselines: two panes and a gutter, the same shape as the Class Editor', () => {
   // The list was a card and the table was a bare region bleeding to the window
   // edge, so the two columns did not read as a pair. Both are panes now, with a

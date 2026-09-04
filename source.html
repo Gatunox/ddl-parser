@@ -4156,6 +4156,11 @@ th.me-fm-colhi{color:var(--accent);}
 <header>
   <h1 id="appLogo"><span class="brand-mark" aria-hidden="true">D</span>DDL Parser</h1>
   <span class="header-sub" style="flex:1">NonStop / Base24 / ISO8583 — multi-message analysis with field tracking</span>
+  <!-- Beside the Class Editor because it is the same kind of thing: a store you
+       manage, reachable without a parse. Everything else that reaches baselines
+       hangs off a parse, so with nothing parsed they were unreachable.
+       Requested 2026-09-04. -->
+  <button class="btn" id="baselineBtn" onclick="openBaselines()" title="Baseline Editor — saved parses to compare later ones against">★ Baseline Editor</button>
   <button class="btn" id="dataEditorBtn" onclick="openMsgEditor()" title="Class Editor — message and file detection, parse specs, field overrides">⊞ Class Editor</button>
   <button class="btn" id="settingsBtn" onclick="openSettings()" title="Settings">⚙</button>
 </header>
@@ -20296,7 +20301,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.4.0';
+const APP_VERSION  = '1.50.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -38821,7 +38826,7 @@ function _meSave() {
   <div class="me-shell">
     <div class="me-header">
       <span class="app-logo"><span class="brand-mark" aria-hidden="true">D</span>DDL Parser</span>
-      <span class="me-header-title">Baselines</span>
+      <span class="me-header-title">Baseline Editor</span>
       <span class="me-header-actions">
         <span class="me-status" id="bl-status"></span>
         <button class="btn btn-danger" id="bl-del-btn" onclick="blDeleteSelected()" disabled>Delete</button>

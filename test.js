@@ -14632,8 +14632,13 @@ test('[REGRESSION] the Class Editor scrim cannot outlive the chooser it belongs 
   assert.ok(!/\.me-shell:has\(\.audit-cfg-dialog/.test(html),
     'the chooser dims the whole editor rather than the card it belongs to');
   // The cog stays above the scrim here too — it is the way back out.
-  assert.ok(/\.me-section:has\(\.audit-cfg-dialog\.open\) \.btn\.btn-on \{[^}]*z-index: 200/.test(html),
+  // The selector is a group now — Baselines' table pane dims the same way — so
+  // match the member rather than the whole list.
+  assert.ok(/\.me-section:has\(\.audit-cfg-dialog\.open\) \.btn\.btn-on[,\s][^{]*\{[^}]*z-index: 200/.test(html),
     'the cog is dimmed along with everything else, so there is no way out');
+  assert.ok(/\.bl-pane:has\(\.audit-cfg-dialog\.open\)::after/.test(html)
+         && /\.bl-pane:has\(\.audit-cfg-dialog\.open\) \.btn\.btn-on[,\s][^{]*\{[^}]*z-index: 200/.test(html),
+    'the Baselines chooser dims its own pane and keeps its cog above the scrim');
   assert.ok(html.includes('id="me-fm-cols-btn"'), 'me-fm-cols-btn exists in the markup');
 });
 

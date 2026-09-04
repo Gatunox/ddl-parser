@@ -1238,15 +1238,18 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
    the Overrides bar answers for the Overrides card the same way. Dimming the
    whole editor made one card's control look like a modal over the app. */
 .cfg-dim,
-.me-section:has(.audit-cfg-dialog.open) { position: relative; }
+.me-section:has(.audit-cfg-dialog.open),
+.bl-pane:has(.audit-cfg-dialog.open) { position: relative; }
 .cfg-dim::after,
-.me-section:has(.audit-cfg-dialog.open)::after { content:''; position:absolute; inset:0; z-index:150;
+.me-section:has(.audit-cfg-dialog.open)::after,
+.bl-pane:has(.audit-cfg-dialog.open)::after { content:''; position:absolute; inset:0; z-index:150;
   background:rgba(0,0,0,0.55); pointer-events:none; }
 /* The control that opened the chooser stays out of the scrim — it is the way
    back out, so dimming it hides the one thing still worth clicking. Lifted only
    while the host is dimmed, so an active toggle elsewhere is unaffected. */
 .cfg-dim .btn.btn-on,
-.me-section:has(.audit-cfg-dialog.open) .btn.btn-on { position: relative; z-index: 200; }
+.me-section:has(.audit-cfg-dialog.open) .btn.btn-on,
+.bl-pane:has(.audit-cfg-dialog.open) .btn.btn-on { position: relative; z-index: 200; }
 .ddl-doc-hdr   { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-2) 0 16px; min-height: var(--panel-header-h); background: var(--surface-header); border-bottom: var(--bw) solid var(--border); flex-shrink: 0; }
 .ddl-doc-title { font-size: 12px; font-weight: 700; color: var(--text); font-family: var(--font-mono); }
 /* The controls row. Its left padding matches the table's first cell so the
@@ -20290,7 +20293,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.3.0';
+const APP_VERSION  = '1.50.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22528,6 +22531,7 @@ function blRenderRight() {
   // Same two behaviours every other table in the app has: drag an edge to
   // resize (double-click one to reset), click a header to light its column.
   _blApplyColVis();
+  _blSyncColCfg();
   if (typeof _meColInitResize === 'function') _meColInitResize(_ME_COLRZ.bl);
   if (typeof _meInitColHighlight === 'function') _meInitColHighlight('#bl-right table');
 }
@@ -22580,16 +22584,29 @@ function blToggleCol(key) {
   const set = _blHiddenSet();
   if (set.has(key)) set.delete(key); else set.add(key);
   try { localStorage.setItem(_BL_COLVIS_KEY, JSON.stringify([...set])); } catch(e) {}
-  // The gap cells' colspan is baked into the markup, so the table is rebuilt.
+  // The gap cells' colspan is baked into the markup, so the table is rebuilt —
+  // and the chooser is rebuilt with it. Its open state is held here rather than
+  // read off the DOM, so picking a column leaves the chooser standing and it is
+  // the ✕ that closes it. Reported 2026-09-03.
   blRenderRight();
 }
-function toggleBlColCfg(force) {
+
+// Held outside the markup: blRenderRight replaces the element this used to be
+// read from.
+let _blColCfgOpen = false;
+function _blSyncColCfg() {
   const dlg = document.getElementById('blColCfgDialog');
   if (!dlg) return;
-  const open = (force === undefined) ? !dlg.classList.contains('open') : !!force;
-  dlg.classList.toggle('open', open);
-  document.getElementById('blColCfgBtn')?.classList.toggle('btn-on', open);
-  dlg.closest('.me-pane')?.classList.toggle('cfg-dim', open);
+  dlg.classList.toggle('open', _blColCfgOpen);
+  document.getElementById('blColCfgBtn')?.classList.toggle('btn-on', _blColCfgOpen);
+  // NB: no cfg-dim class here. The scrim is derived from the dialog's own state
+  // in CSS, so it cannot outlive the element — toggling a class on the pane
+  // left the table dimmed with nothing open and no way out, exactly as the
+  // Class Editor's Overrides chooser once did.
+}
+function toggleBlColCfg(force) {
+  _blColCfgOpen = (force === undefined) ? !_blColCfgOpen : !!force;
+  _blSyncColCfg();
 }
 
 const _blTh = (col, label) => `<th data-col="${col}">${label}<span class="th-resize"></span></th>`;

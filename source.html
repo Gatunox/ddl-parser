@@ -1667,6 +1667,59 @@ input[type="text"]:focus { border-color: var(--accent); }
 .me-tag-note { color: var(--warning); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); }
 .me-tag-add { align-self:flex-start; padding:2px 8px; font-size: calc(var(--sz-mono) - 1px); }
 
+/* ---- Baselines ---- */
+.bl-save-dlg { min-width: calc(var(--sz-mono) * 22); }
+.bl-save-dlg .audit-cfg-row input { flex:1; width:auto; min-width:0; }
+.bl-save-dlg .bl-save-ends { margin-bottom:0; }
+.bl-save-dlg .bl-save-ends .btn { flex:1; }
+.bl-known { display:flex; flex-wrap:wrap; gap:4px; }
+
+.bl-count { font-family:var(--mono); font-size:calc(var(--sz-mono) - 1px); color:var(--text-dim); }
+.bl-tagrail { display:flex; flex-wrap:wrap; gap:4px; padding:6px 8px; flex-shrink:0;
+  border-bottom: var(--bw) solid var(--border); max-height:96px; overflow:auto; }
+.bl-tag { display:inline-flex; align-items:center; gap:4px; font-family:var(--mono);
+  font-size:calc(var(--sz-mono) - 2px); color:var(--text-dim); cursor:pointer;
+  border: var(--bw-ctl) solid var(--border); border-radius:var(--r-pill); padding:0 6px; }
+.bl-tag:hover { border-color:var(--h-gray-bd); color:var(--h-gray-fg); background:var(--h-gray-bg); }
+.bl-tag.is-on { border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),0.10); }
+.bl-tag-n { color:var(--text-very-dim); }
+.bl-item { padding:6px 10px; cursor:pointer; border-bottom: var(--bw) solid var(--border); }
+.bl-item:hover { background:var(--surface-hover); }
+.bl-item.is-sel { background:rgba(var(--accent-rgb),0.12); box-shadow: inset 2px 0 0 var(--accent); }
+.bl-item-name { font-family:var(--mono); font-size:var(--sz-mono); font-weight:700; color:var(--text);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bl-item-sub { font-family:var(--mono); font-size:calc(var(--sz-mono) - 2px); color:var(--text-dim); }
+.bl-item-when { color:var(--text-very-dim); }
+.bl-item-tags { display:flex; flex-wrap:wrap; gap:3px; margin-top:3px; }
+.bl-item-tags .bl-tag { cursor:default; }
+.bl-empty { padding:20px; color:var(--text-dim); font-family:var(--mono); font-size:var(--sz-mono); text-align:center; }
+.bl-bar, .bl-meta, .bl-sum { font-family:var(--mono); }
+.bl-title { font-weight:700; color:var(--text); }
+.bl-sum-diff { color:var(--warn-text); font-weight:700; }
+.bl-sum-gap  { color:var(--text-dim); }
+.bl-sum-side { color:var(--text-very-dim); }
+.bl-scroll { flex:1; min-height:0; overflow:auto; }
+.bl-table { border-collapse:collapse; width:100%; font-family:var(--mono); font-size:var(--sz-mono); }
+.bl-table th { position:sticky; top:0; z-index:2; background:var(--surface-subhead); color:var(--text-dim);
+  font-weight:700; text-align:left; padding:3px 8px; border-bottom: var(--bw) solid var(--border); white-space:nowrap; }
+.bl-table td { padding:2px 8px; border-bottom: var(--bw) solid var(--border); vertical-align:top; }
+.bl-table .bl-n { color:var(--text-very-dim); text-align:right; width:1%; white-space:nowrap; }
+.bl-table .bl-f { color:var(--text); white-space:nowrap; }
+.bl-table .bl-t, .bl-table .bl-s, .bl-table .bl-o { color:var(--text-dim); white-space:nowrap; }
+.bl-table .bl-v { color:var(--success,#3fb950); word-break:break-all; }
+/* The two value columns are the ones being compared, so they sit against the
+   divider — current's flush right, baseline's flush left — and the eye crosses
+   one gap instead of ten columns. */
+.bl-cmp .bl-v-l { text-align:right; }
+.bl-cmp .bl-v-r { text-align:left; }
+.bl-cmp .bl-mid { width:10px; background:var(--surface-subhead); padding:0;
+  border-left: var(--bw) solid var(--border); border-right: var(--bw) solid var(--border); }
+.bl-row.bl-diff .bl-v { background:rgba(230,168,23,0.16); color:var(--warn-text); font-weight:700; }
+.bl-row.bl-diff .bl-f { color:var(--warn-text); }
+.bl-row.bl-gap .bl-gapcell { background:repeating-linear-gradient(135deg,
+  transparent, transparent 5px, rgba(255,255,255,0.035) 5px, rgba(255,255,255,0.035) 10px); }
+.bl-row:hover td { background:var(--surface-hover); }
+
 /* ---- NETARD record metadata bar (top of parse results) ---- */
 /* One message means no navigator, and the row collapsed from 25px to 18px —
    so parsing a single message made the panel below it jump. The row reserves
@@ -4409,6 +4462,25 @@ th.me-fm-colhi{color:var(--accent);}
               oninput="_segMapApply()">
           </span>
           <span style="flex:1"></span>
+          <div style="position:relative;display:inline-flex">
+            <button class="btn" id="blSaveBtn" onclick="toggleBlSaveDialog()" style="display:none;flex-shrink:0"
+                    title="Keep this parse as a baseline to compare later ones against">&#9733; Baseline</button>
+            <div id="blSaveDialog" class="audit-cfg-dialog bl-save-dlg">
+              <div class="audit-cfg-hdr"><span>Save as baseline</span>
+                <button class="btn" onclick="toggleBlSaveDialog(false)" style="padding:1px 7px;font-size:13px">&#10005;</button></div>
+              <div class="audit-cfg-row"><label for="blSaveName">Name</label></div>
+              <div class="audit-cfg-row"><input type="text" id="blSaveName" autocomplete="off" spellcheck="false"
+                     placeholder="What this message is" onkeydown="blSaveKey(event)"></div>
+              <div class="audit-cfg-row"><label for="blSaveTags">Tags</label></div>
+              <div class="audit-cfg-row"><input type="text" id="blSaveTags" autocomplete="off" spellcheck="false"
+                     placeholder="comma separated" onkeydown="blSaveKey(event)"></div>
+              <div class="audit-cfg-row" id="blSaveKnown"></div>
+              <div class="audit-cfg-row bl-save-ends">
+                <button class="btn" onclick="openBaselines()">Manage&#8230;</button>
+                <button class="btn btn-primary" onclick="blSaveApply()">Save</button>
+              </div>
+            </div>
+          </div>
           <button class="btn" id="exportBtn" onclick="openMsgExportModal()" style="display:none;flex-shrink:0" title="Export messages">Export</button>
           <button class="btn" id="resCollapseBtn" onclick="toggleResCollapseAll()" style="display:none;flex-shrink:0;min-width:88px;" title="Collapse or expand every group">Collapse All</button>
           <button class="btn" id="resGroupDataBtn" onclick="toggleResGroupData()" style="display:none;flex-shrink:0;" title="Show each group's combined value on its group row">Group Data</button>
@@ -17216,6 +17288,7 @@ function updateNav() {
   if (typeof _syncViewFilterBar === 'function') _syncViewFilterBar();
   _sty('trkBtn', S.trackedFields.size > 0 || S.trackMode ? 'inline-block' : 'none');
   _sty('exportBtn', total > 0 ? 'inline-flex' : 'none');
+  if (typeof syncBlSaveBtn === 'function') syncBlSaveBtn();
   _sty('colCfgBtn', total > 0 ? 'inline-flex' : 'none');
   const _cfgBar2 = document.getElementById('resCfgBar');
   if (_cfgBar2) _cfgBar2.style.display = total > 0 ? 'flex' : 'none';
@@ -19754,7 +19827,7 @@ function confirmImport() {
 const _APP_KV_KEYS = [
   'up_ddl_tree', 'up_ddlmm', 'up_excl', 'de_overrides',
   'up_tree_exp', 'up_settings', 'up_layout',
-  'auditFltVis', 'up_ddl_versions', 'up_seeded_iso1993'
+  'auditFltVis', 'up_ddl_versions', 'up_seeded_iso1993', 'up_baselines'
 ];
 let _appKV   = {};
 let _appKVDB = null;
@@ -20196,7 +20269,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.49.43.0';
+const APP_VERSION  = '1.50.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21985,6 +22058,497 @@ document.addEventListener('DOMContentLoaded', () => {
 // ─── Message Editor (Phase 2) ──────────────────────────────────────────────
 
 let _meState = null;
+
+// ============================================================
+// BASELINES — a parsed message kept to compare later ones against
+// ============================================================
+// A baseline stores the parse AS IT WAS, plus the bytes it came from. The
+// snapshot is what gets compared, so editing a DDL or a class later never
+// silently changes what a baseline says — which is the whole point of calling
+// it a baseline. The bytes travel with it so it can still be re-parsed on
+// demand. Requested 2026-09-03.
+const _BL_KEY = 'up_baselines';
+let _blList = null;
+
+function _blAll() {
+  if (_blList) return _blList;
+  try {
+    const raw = _kvGet(_BL_KEY);
+    const d = raw ? JSON.parse(raw) : null;
+    _blList = Array.isArray(d?.baselines) ? d.baselines : [];
+  } catch(e) { _blList = []; }
+  return _blList;
+}
+
+function _blPersist() {
+  try { _kvSet(_BL_KEY, JSON.stringify({ baselines: _blAll() })); } catch(e) {}
+}
+
+// Tags are the user's own words, so they are normalised once here rather than
+// at every place that reads them: trimmed, de-duplicated, empties dropped.
+// Case is KEPT — "PROD" and "prod" look different to a reader — but matching
+// is case-insensitive everywhere.
+function _blParseTags(str) {
+  const out = [], seen = new Set();
+  for (const t of String(str || '').split(/[,\n]/)) {
+    const v = t.trim();
+    if (!v) continue;
+    const k = v.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(v);
+  }
+  return out;
+}
+
+// Everything the field table needs, minus rawBytes — a per-field byte array is
+// the one thing here that is large, and rawHex already says the same thing in a
+// form that survives JSON.
+function _blSnapshot(msg, name, tags) {
+  const fields = (msg.fields || []).map(f => {
+    const { rawBytes, ...rest } = f;
+    return rest;
+  });
+  return {
+    id: 'bl_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7),
+    name: String(name || '').trim() || 'Untitled baseline',
+    tags: Array.isArray(tags) ? tags : _blParseTags(tags),
+    savedAt: Date.now(),
+    // Provenance — what produced this parse, so the compare header can say so.
+    msgType: msg.msgType ? { type: msg.msgType.type, label: msg.msgType.label, vol: msg.msgType.vol } : null,
+    ddlPath: msg.ddlPath || null, defName: msg.defName || null,
+    parsedBy: msg.parsedBy || null, inputFormat: S.inputFormat || null,
+    recNo: msg.recNo || null, source: msg.source || null, dest: msg.dest || null,
+    time: msg.time || msg.timestamp || null,
+    byteCount: (msg.bytes || []).length,
+    // The bytes it came from, hex — so a baseline can still be re-parsed later.
+    hex: (msg.bytes || []).map(b => b.toString(16).padStart(2, '0')).join(''),
+    fields,
+  };
+}
+
+function _blAdd(msg, name, tags) {
+  const entry = _blSnapshot(msg, name, tags);
+  _blAll().unshift(entry);          // newest first: it is the one just saved
+  _blPersist();
+  return entry;
+}
+
+function _blDelete(id) {
+  const list = _blAll();
+  const i = list.findIndex(b => b.id === id);
+  if (i < 0) return false;
+  list.splice(i, 1);
+  _blPersist();
+  return true;
+}
+
+function _blUpdate(id, patch) {
+  const b = _blAll().find(x => x.id === id);
+  if (!b) return false;
+  Object.assign(b, patch);
+  _blPersist();
+  return true;
+}
+
+// Every tag in use, with how many baselines carry it — the filter rail is built
+// from this rather than from a second list that could drift.
+function _blTagCounts() {
+  const m = new Map();
+  for (const b of _blAll())
+    for (const t of (b.tags || [])) {
+      const k = t.toLowerCase();
+      const e = m.get(k) || { tag: t, n: 0 };
+      e.n++; m.set(k, e);
+    }
+  return [...m.values()].sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag));
+}
+
+// Text matches name, tags, class label or record number; picked tags are an AND
+// — each one narrows, which is what a tag rail is for.
+function _blFilter(list, q, picked) {
+  const s = String(q || '').trim().toLowerCase();
+  const want = [...(picked || [])].map(t => t.toLowerCase());
+  return list.filter(b => {
+    const tags = (b.tags || []).map(t => t.toLowerCase());
+    if (want.length && !want.every(t => tags.includes(t))) return false;
+    if (!s) return true;
+    return String(b.name || '').toLowerCase().includes(s)
+        || tags.some(t => t.includes(s))
+        || String(b.msgType?.label || b.msgType?.type || '').toLowerCase().includes(s)
+        || String(b.recNo || '').includes(s);
+  });
+}
+
+// ── Alignment ────────────────────────────────────────────────────────────────
+// Pairs the two field lists by id so a field missing on one side leaves a GAP
+// rather than shifting everything below it — without that the first extra field
+// makes every row after it look different.
+//
+// Common prefix and suffix are trimmed first, which on two parses of the same
+// message type collapses the problem to nothing. Only the middle is diffed, and
+// only when it is small enough to do exactly: a full LCS is O(n*m), and these
+// messages run to thousands of fields on a machine that cannot afford it. Past
+// the cap it falls back to a linear walk that re-syncs on the next matching id.
+const _BL_LCS_CAP = 40000;   // cells, i.e. a 200x200 middle
+
+function _blAlign(a, b) {
+  const A = a || [], B = b || [];
+  const key = f => String(f?.id ?? '');
+  let lo = 0;
+  while (lo < A.length && lo < B.length && key(A[lo]) === key(B[lo])) lo++;
+  let ea = A.length, eb = B.length;
+  while (ea > lo && eb > lo && key(A[ea - 1]) === key(B[eb - 1])) { ea--; eb--; }
+
+  const rows = [];
+  for (let i = 0; i < lo; i++) rows.push({ l: A[i], r: B[i] });
+
+  const ma = A.slice(lo, ea), mb = B.slice(lo, eb);
+  for (const p of (ma.length * mb.length <= _BL_LCS_CAP ? _blLcs(ma, mb, key) : _blWalk(ma, mb, key)))
+    rows.push(p);
+
+  for (let i = ea; i < A.length; i++) rows.push({ l: A[i], r: B[eb + (i - ea)] });
+  return rows;
+}
+
+function _blLcs(A, B, key) {
+  const n = A.length, m = B.length;
+  const d = new Uint32Array((n + 1) * (m + 1));
+  const at = (i, j) => i * (m + 1) + j;
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      d[at(i, j)] = key(A[i]) === key(B[j])
+        ? d[at(i + 1, j + 1)] + 1
+        : Math.max(d[at(i + 1, j)], d[at(i, j + 1)]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (key(A[i]) === key(B[j])) { out.push({ l: A[i], r: B[j] }); i++; j++; }
+    else if (d[at(i + 1, j)] >= d[at(i, j + 1)]) { out.push({ l: A[i], r: null }); i++; }
+    else { out.push({ l: null, r: B[j] }); j++; }
+  }
+  while (i < n) out.push({ l: A[i++], r: null });
+  while (j < m) out.push({ l: null, r: B[j++] });
+  return out;
+}
+
+// The fallback: on a mismatch, look a bounded distance ahead on both sides for
+// the other's current id and take the shorter jump. Linear, and on the shapes
+// this actually sees — a field added or dropped — it lands the same answer LCS
+// would.
+function _blWalk(A, B, key) {
+  const LOOK = 64;
+  const out = [];
+  let i = 0, j = 0;
+  while (i < A.length && j < B.length) {
+    if (key(A[i]) === key(B[j])) { out.push({ l: A[i], r: B[j] }); i++; j++; continue; }
+    let da = -1, db = -1;
+    for (let k = 1; k <= LOOK && (i + k < A.length || j + k < B.length); k++) {
+      if (da < 0 && i + k < A.length && key(A[i + k]) === key(B[j])) da = k;
+      if (db < 0 && j + k < B.length && key(B[j + k]) === key(A[i])) db = k;
+      if (da >= 0 || db >= 0) break;
+    }
+    if (da >= 0 && (db < 0 || da <= db)) { for (let k = 0; k < da; k++) out.push({ l: A[i++], r: null }); }
+    else if (db >= 0)                    { for (let k = 0; k < db; k++) out.push({ l: null, r: B[j++] }); }
+    // No anchor within the window: two gaps, never a pair. A paired row means
+    // "the same field on both sides" everywhere else, and pairing C with B here
+    // would print two different names on one row and call it a value
+    // difference — which is not what happened.
+    else { out.push({ l: A[i++], r: null }); out.push({ l: null, r: B[j++] }); }
+  }
+  while (i < A.length) out.push({ l: A[i++], r: null });
+  while (j < B.length) out.push({ l: null, r: B[j++] });
+  return out;
+}
+
+// What the comparison actually calls a difference: the value as DISPLAYED, so a
+// row reads as different exactly when it looks different.
+function _blVal(f) { return f == null ? null : String(f.displayValue ?? f.value ?? ''); }
+function _blRowState(row) {
+  if (!row.l || !row.r) return 'gap';
+  // A pair is always the same field id — both alignment paths guarantee it — so
+  // the only thing left to compare is the value.
+  return _blVal(row.l) === _blVal(row.r) ? 'same' : 'diff';
+}
+
+// ── Save control on the results bar ──────────────────────────────────────────
+function toggleBlSaveDialog(force) {
+  const dlg = document.getElementById('blSaveDialog');
+  if (!dlg) return;
+  const open = (force === undefined) ? !dlg.classList.contains('open') : !!force;
+  dlg.classList.toggle('open', open);
+  const btn = document.getElementById('blSaveBtn');
+  if (btn) btn.classList.toggle('btn-on', open);
+  dlg.closest('.panel')?.classList.toggle('cfg-dim', open);
+  if (!open) return;
+  const msg = S.messages[S.curIdx];
+  const nm = document.getElementById('blSaveName');
+  // Something to press Save on straight away: the class and record number are
+  // what the user would have typed anyway.
+  if (nm) {
+    nm.value = [msg?.msgType?.label || msg?.msgType?.type, msg?.recNo ? '#' + msg.recNo : '']
+      .filter(Boolean).join(' ');
+    setTimeout(() => { nm.focus(); nm.select(); }, 20);
+  }
+  const tg = document.getElementById('blSaveTags');
+  if (tg) tg.value = '';
+  // The tags already in use, so a second baseline joins an existing group
+  // instead of starting a near-duplicate of it.
+  const known = document.getElementById('blSaveKnown');
+  if (known) {
+    const tags = _blTagCounts().slice(0, 12);
+    known.innerHTML = tags.length
+      ? `<div class="bl-known">${tags.map(t =>
+          `<span class="bl-tag" onclick="blSaveAddTag('${_escHtml(t.tag).replace(/'/g, "\\'")}')">${_escHtml(t.tag)}</span>`).join('')}</div>`
+      : '';
+  }
+}
+
+function blSaveAddTag(tag) {
+  const tg = document.getElementById('blSaveTags');
+  if (!tg) return;
+  const cur = _blParseTags(tg.value);
+  if (!cur.some(t => t.toLowerCase() === tag.toLowerCase())) cur.push(tag);
+  tg.value = cur.join(', ');
+  tg.focus();
+}
+
+function blSaveApply() {
+  const msg = S.messages[S.curIdx];
+  if (!msg) { flash('Nothing parsed to save.', 'warn'); return; }
+  const name = document.getElementById('blSaveName')?.value || '';
+  const tags = _blParseTags(document.getElementById('blSaveTags')?.value || '');
+  if (!String(name).trim()) {
+    flash('A baseline needs a name — it is how you will find it again.', 'warn');
+    document.getElementById('blSaveName')?.focus();
+    return;
+  }
+  const entry = _blAdd(msg, name, tags);
+  toggleBlSaveDialog(false);
+  flash(`Saved "${entry.name}" as a baseline`);
+  syncBlSaveBtn();
+}
+
+function blSaveKey(ev) {
+  if (ev.key === 'Enter')  { ev.preventDefault(); blSaveApply(); }
+  if (ev.key === 'Escape') { ev.preventDefault(); toggleBlSaveDialog(false); }
+}
+
+// The button appears with the results, like Export — there is nothing to keep
+// as a baseline before a parse.
+function syncBlSaveBtn() {
+  const b = document.getElementById('blSaveBtn');
+  if (b) b.style.display = (S.isParsed && S.messages.length) ? 'inline-flex' : 'none';
+}
+
+// ── The manager ──────────────────────────────────────────────────────────────
+let _blSel = null;                 // selected baseline id
+let _blMode = 'view';              // 'view' | 'compare'
+let _blPickedTags = new Set();
+
+function openBaselines() {
+  toggleBlSaveDialog(false);
+  closeSettings();
+  document.getElementById('blOverlay').classList.remove('hidden');
+  const list = _blAll();
+  if (!_blSel || !list.some(b => b.id === _blSel)) _blSel = list[0]?.id || null;
+  blRenderSidebar();
+  blRenderRight();
+}
+
+function closeBaselines() {
+  document.getElementById('blOverlay').classList.add('hidden');
+}
+
+function blTagToggle(tag) {
+  const k = String(tag);
+  if (_blPickedTags.has(k)) _blPickedTags.delete(k); else _blPickedTags.add(k);
+  blRenderSidebar();
+}
+
+function blSelect(id) { _blSel = id; blRenderSidebar(); blRenderRight(); }
+function blSetMode(m) { _blMode = m; blRenderRight(); }
+
+function blDeleteSelected() {
+  const b = _blAll().find(x => x.id === _blSel);
+  if (!b) return;
+  showConfirmHTML(`<b>Delete "${_escHtml(b.name)}"?</b><br><br>The baseline and its saved parse go with it. This cannot be undone.`,
+    ok => {
+      if (!ok) return;
+      _blDelete(b.id);
+      _blSel = _blAll()[0]?.id || null;
+      blRenderSidebar(); blRenderRight();
+      flash('Baseline deleted');
+    });
+}
+
+function blRenameSelected() {
+  const b = _blAll().find(x => x.id === _blSel);
+  if (!b) return;
+  showPrompt('Baseline name', b.name, v => {
+    if (v == null || !String(v).trim()) return;
+    _blUpdate(b.id, { name: String(v).trim() });
+    blRenderSidebar(); blRenderRight();
+  });
+}
+
+function blRetagSelected() {
+  const b = _blAll().find(x => x.id === _blSel);
+  if (!b) return;
+  showPrompt('Tags (comma separated)', (b.tags || []).join(', '), v => {
+    if (v == null) return;
+    _blUpdate(b.id, { tags: _blParseTags(v) });
+    blRenderSidebar(); blRenderRight();
+  });
+}
+
+function blRenderSidebar() {
+  const q = document.getElementById('blFilter')?.value || '';
+  const all = _blAll();
+  const shown = _blFilter(all, q, _blPickedTags);
+
+  const rail = document.getElementById('bl-tagrail');
+  if (rail) {
+    const counts = _blTagCounts();
+    rail.innerHTML = counts.length
+      ? counts.map(t => `<span class="bl-tag${_blPickedTags.has(t.tag) ? ' is-on' : ''}"`
+          + ` onclick="blTagToggle('${_escHtml(t.tag).replace(/'/g, "\\'")}')">${_escHtml(t.tag)}`
+          + `<span class="bl-tag-n">${t.n}</span></span>`).join('')
+      : '';
+    rail.style.display = counts.length ? 'flex' : 'none';
+  }
+
+  const cnt = document.getElementById('bl-count');
+  if (cnt) cnt.textContent = shown.length === all.length
+    ? `${all.length}` : `${shown.length} / ${all.length}`;
+
+  const el = document.getElementById('bl-list');
+  if (!el) return;
+  el.innerHTML = shown.length ? shown.map(b => {
+    const when = new Date(b.savedAt || 0).toLocaleString();
+    const cls  = b.msgType?.label || b.msgType?.type || '';
+    return `<div class="bl-item${b.id === _blSel ? ' is-sel' : ''}" onclick="blSelect('${b.id}')">
+      <div class="bl-item-name">${_escHtml(b.name)}</div>
+      <div class="bl-item-sub">${_escHtml(cls)}${b.recNo ? ' · #' + b.recNo : ''} · ${b.fields.length} fields · ${b.byteCount} bytes</div>
+      <div class="bl-item-sub bl-item-when">${_escHtml(when)}</div>
+      ${(b.tags || []).length ? `<div class="bl-item-tags">${b.tags.map(t => `<span class="bl-tag">${_escHtml(t)}</span>`).join('')}</div>` : ''}
+    </div>`;
+  }).join('') : `<div class="bl-empty">${all.length ? 'Nothing matches that filter.' : 'No baselines saved yet.'}</div>`;
+
+  const del = document.getElementById('bl-del-btn');
+  if (del) del.disabled = !_blSel;
+}
+
+function blRenderRight() {
+  const host = document.getElementById('bl-right');
+  if (!host) return;
+  const b = _blAll().find(x => x.id === _blSel);
+  if (!b) { host.innerHTML = `<div class="bl-empty">No baselines yet. Parse a message and press ★ Baseline.</div>`; return; }
+
+  const cur = S.messages[S.curIdx];
+  const canCompare = !!(cur && cur.fields && cur.fields.length);
+  const mode = (_blMode === 'compare' && canCompare) ? 'compare' : 'view';
+
+  const head = `<div class="panel-bar bl-bar">
+      <span class="bl-title">${_escHtml(b.name)}</span>
+      ${(b.tags || []).map(t => `<span class="bl-tag">${_escHtml(t)}</span>`).join('')}
+      <span style="flex:1"></span>
+      <button class="btn" onclick="blRenameSelected()">Rename</button>
+      <button class="btn" onclick="blRetagSelected()">Tags</button>
+      <button class="btn${mode === 'view' ? ' btn-on' : ''}" onclick="blSetMode('view')">View</button>
+      <button class="btn${mode === 'compare' ? ' btn-on' : ''}" onclick="blSetMode('compare')"
+        ${canCompare ? '' : 'disabled title="Parse a message first — there is nothing to compare against"'}>Compare with current</button>
+    </div>
+    <div class="panel-bar bl-meta">
+      <span>${_escHtml(b.msgType?.label || b.msgType?.type || '—')}</span>
+      ${b.recNo ? `<span class="rec-meta-pipe">|</span><span>Rec #${b.recNo}</span>` : ''}
+      ${b.parsedBy ? `<span class="rec-meta-pipe">|</span><span>${_escHtml(b.parsedBy)}</span>` : ''}
+      <span class="rec-meta-pipe">|</span><span>${b.byteCount} bytes</span>
+      <span class="rec-meta-pipe">|</span><span>${_escHtml(new Date(b.savedAt || 0).toLocaleString())}</span>
+      ${b.ddlPath ? `<span class="rec-meta-pipe">|</span><span>${_escHtml(b.ddlPath)}${b.defName ? ' / ' + _escHtml(b.defName) : ''}</span>` : ''}
+    </div>`;
+
+  host.innerHTML = head + (mode === 'compare' ? _blCompareHtml(cur, b) : _blViewHtml(b));
+}
+
+// Numbering matches the parse panel: groups carry no number.
+function _blNumber(fields) {
+  let n = 0;
+  return (fields || []).map(f => ({ f, n: (f.dataType || f.value != null) && !f.isGroup ? ++n : null }));
+}
+
+const _blSize = f => (f == null ? '' : (f.valueLength ?? f.maxLength ?? ''));
+const _blOff  = f => (f == null || f.startByte == null) ? '' : `${f.startByte}–${f.endByte}`;
+const _blType = f => (f == null ? '' : (_fieldTypeLabel(f) || (f.isGroup ? 'GROUP' : '')));
+
+function _blViewHtml(b) {
+  const rows = _blNumber(b.fields).map(({ f, n }) => `<tr>
+      <td class="bl-n">${n ?? ''}</td>
+      <td class="bl-f">${_escHtml(f.id || '')}</td>
+      <td class="bl-t">${_escHtml(_blType(f))}</td>
+      <td class="bl-s">${_escHtml(String(_blSize(f)))}</td>
+      <td class="bl-o">${_escHtml(_blOff(f))}</td>
+      <td class="bl-v">${_escHtml(_blVal(f) ?? '')}</td>
+    </tr>`).join('');
+  return `<div class="bl-scroll"><table class="bl-table">
+    <thead><tr><th>#</th><th>FIELD</th><th>TYPE-LEN</th><th>SIZE</th><th>OFFSET</th><th>VALUE</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+// The two sides are MIRRORED, so the values meet down the middle: current runs
+// left-to-right and stops at its value, the baseline runs value-first and reads
+// back out to its own field name. Reading a difference is then one short
+// horizontal hop instead of crossing ten columns. Requested 2026-09-03.
+function _blCompareHtml(cur, b) {
+  const L = _blNumber(cur.fields), R = _blNumber(b.fields);
+  const byField = new Map();
+  for (const x of L) byField.set(x.f, x.n);
+  for (const x of R) byField.set(x.f, x.n);
+  const rows = _blAlign(cur.fields, b.fields);
+
+  let same = 0, diff = 0, gap = 0;
+  const body = rows.map(row => {
+    const st = _blRowState(row);
+    if (st === 'same') same++; else if (st === 'diff') diff++; else gap++;
+    const l = row.l, r = row.r;
+    const half = (f, side) => f == null
+      // A missing field prints nothing at all, but the row still occupies its
+      // place — that blank IS the finding, and collapsing it would shift every
+      // row below and make the whole side look changed.
+      ? `<td class="bl-gapcell" colspan="6"></td>`
+      : (side === 'l'
+        ? `<td class="bl-n">${byField.get(f) ?? ''}</td>
+           <td class="bl-f">${_escHtml(f.id || '')}</td>
+           <td class="bl-t">${_escHtml(_blType(f))}</td>
+           <td class="bl-s">${_escHtml(String(_blSize(f)))}</td>
+           <td class="bl-o">${_escHtml(_blOff(f))}</td>
+           <td class="bl-v bl-v-l">${_escHtml(_blVal(f) ?? '')}</td>`
+        : `<td class="bl-v bl-v-r">${_escHtml(_blVal(f) ?? '')}</td>
+           <td class="bl-o">${_escHtml(_blOff(f))}</td>
+           <td class="bl-s">${_escHtml(String(_blSize(f)))}</td>
+           <td class="bl-t">${_escHtml(_blType(f))}</td>
+           <td class="bl-f">${_escHtml(f.id || '')}</td>
+           <td class="bl-n">${byField.get(f) ?? ''}</td>`);
+    return `<tr class="bl-row bl-${st}">${half(l, 'l')}<td class="bl-mid"></td>${half(r, 'r')}</tr>`;
+  }).join('');
+
+  const sum = `<div class="panel-bar bl-sum">
+      <span class="bl-sum-diff">${diff} different</span>
+      <span class="rec-meta-pipe">|</span><span class="bl-sum-gap">${gap} only on one side</span>
+      <span class="rec-meta-pipe">|</span><span>${same} identical</span>
+      <span style="flex:1"></span>
+      <span class="bl-sum-side">◀ current parse</span>
+      <span class="rec-meta-pipe">|</span><span class="bl-sum-side">baseline ▶</span>
+    </div>`;
+
+  const h = (t) => `<th>${t}</th>`;
+  return sum + `<div class="bl-scroll"><table class="bl-table bl-cmp">
+    <thead><tr>
+      ${h('#')}${h('FIELD')}${h('TYPE-LEN')}${h('SIZE')}${h('OFFSET')}${h('VALUE')}
+      <th class="bl-mid"></th>
+      ${h('VALUE')}${h('OFFSET')}${h('SIZE')}${h('TYPE-LEN')}${h('FIELD')}${h('#')}
+    </tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
 
 function openMsgEditor() {
   closeSettings();
@@ -38069,6 +38633,34 @@ function _meSave() {
 
 <!-- ===== MESSAGE EDITOR MODAL ===== -->
 <div class="me-ddl-drop" id="me-ddl-drop"></div>
+
+<!-- ===== BASELINES ===== -->
+<div class="me-overlay hidden" id="blOverlay">
+  <div class="me-shell">
+    <div class="me-header">
+      <span class="app-logo"><span class="brand-mark" aria-hidden="true">D</span>DDL Parser</span>
+      <span class="me-header-title">Baselines</span>
+      <span class="me-header-actions">
+        <span class="me-status" id="bl-status"></span>
+        <button class="btn btn-danger" id="bl-del-btn" onclick="blDeleteSelected()" disabled>Delete</button>
+        <button class="btn" onclick="closeBaselines()" title="Close">&#10005;</button>
+      </span>
+    </div>
+    <div class="me-main">
+      <div class="me-sidebar me-pane pb-read" id="bl-sidebar">
+        <div class="me-pane-hdr"><span class="me-pane-title">Saved</span>
+          <span class="bl-count" id="bl-count"></span></div>
+        <div class="panel-bar">
+          <input type="text" id="blFilter" class="res-filter-input" placeholder="Filter…"
+                 oninput="blRenderSidebar()" style="flex:1;min-width:0">
+        </div>
+        <div class="bl-tagrail" id="bl-tagrail"></div>
+        <div class="me-item-list" id="bl-list"></div>
+      </div>
+      <div class="me-right" id="bl-right"><div class="bl-empty">No baselines yet. Parse a message and press &#9733; Baseline.</div></div>
+    </div>
+  </div>
+</div>
 
 <div class="me-overlay hidden" id="msgEditorOverlay">
   <div class="me-shell">

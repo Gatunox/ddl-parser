@@ -20234,6 +20234,103 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('baselines: a saved parse, its own store, and nothing of the Class Editor', () => {
+  // A baseline is a record of what a message LOOKED LIKE, not a definition of
+  // how to read one, so it lives in its own key in the IndexedDB KV — never
+  // beside the specs, never inside a class export, and untouched by a class
+  // save. Requested 2026-09-03.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/const _BL_KEY = 'up_baselines';/.test(src), 'its own key');
+  assert.ok(/'up_seeded_iso1993', 'up_baselines'/.test(src), 'registered with the KV store');
+  const snap = psFnSource('_blSnapshot');
+  // The store keeps the parse AS IT WAS: editing a DDL later must not change
+  // what a baseline says, which is the whole point of the word.
+  assert.ok(/const \{ rawBytes, \.\.\.rest \} = f;/.test(snap),
+    'the field snapshot drops rawBytes — the one large thing, and rawHex already says it');
+  assert.ok(/hex: \(msg\.bytes \|\| \[\]\)\.map/.test(snap),
+    'the bytes travel with it, so it can still be re-parsed later');
+  for (const k of ['msgType', 'ddlPath', 'defName', 'parsedBy'])
+    assert.ok(new RegExp(`${k}:`).test(snap), `provenance keeps ${k}`);
+  // Not entangled with the class store in either direction.
+  assert.ok(!/up_format_specs/.test(snap) && !/_fmtSave|_fmtGetData/.test(psFnSource('_blAdd')),
+    'saving a baseline touches nothing the Class Editor owns');
+});
+
+test('baselines: a gap keeps its row, so nothing below it shifts', () => {
+  // "if the message is not present in both, the field that does not have that
+  // element must show nothing, but position must be kept to indicate the gap"
+  // — which is an alignment, not a zip. Without it the first extra field makes
+  // every row after it read as changed. Requested 2026-09-03.
+  const F = (id, v) => ({ id, value: v });
+  const shape = rows => rows.map(r => `${r.l ? r.l.id : '.'}|${r.r ? r.r.id : '.'}`).join(' ');
+
+  const rows = sandbox._blAlign([F('A','1'), F('C','9'), F('D','4')],
+                                [F('A','1'), F('B','2'), F('D','4'), F('E','5')]);
+  eq(shape(rows), 'A|A C|. .|B D|D .|E', 'gaps on both sides, and D re-aligns after them');
+  // A paired row ALWAYS means the same field — otherwise the table prints two
+  // different names on one line and calls it a value difference.
+  assert.ok(rows.every(r => !r.l || !r.r || r.l.id === r.r.id), 'no pair of unlike fields');
+
+  // The state a row reports.
+  eq(sandbox._blRowState({ l: F('A','1'), r: F('A','1') }), 'same', 'equal values');
+  eq(sandbox._blRowState({ l: F('A','1'), r: F('A','2') }), 'diff', 'different values');
+  eq(sandbox._blRowState({ l: F('A','1'), r: null }),       'gap',  'missing on one side');
+  // The displayed value is what is compared, so a row reads as different
+  // exactly when it looks different.
+  eq(sandbox._blRowState({ l: { id:'A', value:'1', displayValue:'X' }, r: { id:'A', value:'2', displayValue:'X' } }),
+     'same', 'a display override is what the eye compares');
+
+  // The exact path is a full LCS, with a linear walk past the cell cap — these
+  // messages run to thousands of fields on a machine that cannot afford O(n*m).
+  const K = f => String(f.id);
+  for (const [a, b] of [
+    [[F('A','1'),F('C','9'),F('D','4')], [F('A','1'),F('B','2'),F('D','4'),F('E','5')]],
+    [[F('A','1')],                       [F('A','1'),F('B','2'),F('C','3')]],
+    [[],                                 [F('A','1')]],
+  ]) eq(shape(sandbox._blLcs(a,b,K)), shape(sandbox._blWalk(a,b,K)),
+        'the fallback lands where the exact answer does on the shapes that occur');
+  assert.ok(/_BL_LCS_CAP = \d+/.test(fs.readFileSync('./source.html','utf8')), 'the cap is stated');
+});
+
+test('baselines: the compare table is mirrored, so the values meet in the middle', () => {
+  // Left runs left-to-right and stops at its value; the baseline runs
+  // value-first and reads back out. One short hop between the two values
+  // instead of crossing ten columns. Requested 2026-09-03.
+  const fn = psFnSource('_blCompareHtml');
+  const heads = (fn.match(/h\('([^']*)'\)/g) || []).map(x => x.slice(3, -2));
+  deepEq(heads, ['#','FIELD','TYPE-LEN','SIZE','OFFSET','VALUE','VALUE','OFFSET','SIZE','TYPE-LEN','FIELD','#'],
+    'the right half is the left half reversed');
+  assert.ok(/bl-v bl-v-l/.test(fn) && /bl-v bl-v-r/.test(fn), 'each side marks its own value cell');
+  const css = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/\.bl-cmp \.bl-v-l \{ text-align:right; \}/.test(css) &&
+            /\.bl-cmp \.bl-v-r \{ text-align:left; \}/.test(css),
+    'and they are pushed against the divider between them');
+  // A missing side prints nothing but still occupies the row.
+  assert.ok(/\? `<td class="bl-gapcell" colspan="6"><\/td>`/.test(fn),
+    'the gap is an empty cell spanning that side, not a dropped row');
+});
+
+test('baselines: tags are the user\'s own words, matched case-insensitively', () => {
+  const p = sandbox._blParseTags;
+  deepEq(p('prod, approval ,, prod , PROD'), ['prod', 'approval'],
+    'trimmed, empties dropped, duplicates folded — but the first spelling is kept');
+  deepEq(p(''), [], 'nothing is nothing');
+  const list = [
+    { name: 'Golden 0200', tags: ['prod','approval'], msgType: { label: 'STM' }, recNo: 1 },
+    { name: 'Reversal',    tags: ['PROD'],            msgType: { label: 'STM' }, recNo: 2 },
+    { name: 'Odd one',     tags: [],                  msgType: { label: 'NDC' }, recNo: 3 },
+  ];
+  const names = r => r.map(x => x.name);
+  deepEq(names(sandbox._blFilter(list, '', new Set(['prod']))), ['Golden 0200', 'Reversal'],
+    'a picked tag matches whatever case it was saved in');
+  deepEq(names(sandbox._blFilter(list, '', new Set(['prod','approval']))), ['Golden 0200'],
+    'two picked tags narrow — a tag rail is an AND');
+  deepEq(names(sandbox._blFilter(list, 'ndc', new Set())), ['Odd one'], 'text also matches the class');
+  deepEq(names(sandbox._blFilter(list, '3', new Set())), ['Odd one'], 'and the record number');
+  deepEq(names(sandbox._blFilter(list, '2', new Set())), ['Golden 0200', 'Reversal'],
+    'a number in the NAME counts too — the box is one search, not a record-number field');
+});
+
 test('the record bar keeps its height with one message, and points at the rest', () => {
   // One message means no navigator, and the row collapsed 25px -> 18px, so
   // parsing a single message made everything below it jump. It reserves the

@@ -20277,7 +20277,7 @@ test('baselines: the Saved list counts, collapses, and its columns hide in pairs
       `and one rule hides ${k} on both sides at once`);
   }
   // Cells carry their column, which is what lets one rule reach the body.
-  assert.ok(/<td class="bl-v bl-v-r" data-col="r-val">/.test(psFnSource('_blCompareHtml')),
+  assert.ok(/\['bl-v bl-v-r','r-val'\]/.test(fs.readFileSync('./source.html', 'utf8')),
     'body cells are keyed too, not just the headers');
   // A hidden th measures 0; writing that back as a width would stick.
   assert.ok(/visibleOnly: true,/.test(src.slice(src.indexOf('  bl: {'), src.indexOf('  test: {'))),
@@ -20316,7 +20316,7 @@ test('baselines: the table resizes and selects like every other table', () => {
   assert.ok(!/'l-val'/.test(defs), 'the flex column states no default width');
   assert.ok(/'mid': 10/.test(defs), 'the divider is pinned narrow');
   // The divider is not draggable: it separates the halves, it is not a column.
-  assert.ok(/<th class="bl-mid" data-col="mid"><\/th>/.test(psFnSource('_blCompareHtml')),
+  assert.ok(/<th class="bl-mid" data-col="mid"><\/th>/.test(psFnSource('_blTableHtml')),
     'the divider carries no resize handle');
 });
 
@@ -20408,7 +20408,7 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
   // Left runs left-to-right and stops at its value; the baseline runs
   // value-first and reads back out. One short hop between the two values
   // instead of crossing ten columns. Requested 2026-09-03.
-  const fn = psFnSource('_blCompareHtml');
+  const fn = psFnSource('_blTableHtml');
   const cols = (fn.match(/_blTh\('([^']*)','([^']*)'\)/g) || [])
     .map(x => x.match(/_blTh\('([^']*)','([^']*)'\)/).slice(1));
   deepEq(cols.map(c => c[1]),
@@ -20419,7 +20419,15 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
   deepEq(cols.map(c => c[0]),
     ['l-num','l-fld','l-typ','l-siz','l-off','l-val','r-val','r-off','r-siz','r-typ','r-fld','r-num'],
     'each side owns its own column keys');
-  assert.ok(/bl-v bl-v-l/.test(fn) && /bl-v bl-v-r/.test(fn), 'each side marks its own value cell');
+  const src2 = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/bl-v bl-v-l/.test(src2) && /bl-v bl-v-r/.test(src2), 'each side marks its own value cell');
+  // View is the SAME thirteen columns with the current half left empty — not a
+  // narrower table — so nothing moves when the mode changes.
+  assert.ok(/_blEmptyHalf\(side\)/.test(fn), 'view fills the other half with empty cells');
+  assert.ok(/const _blEmptyHalf = side => _BL_HALF\[side\]\.map/.test(src2)
+         && /data-col="\$\{k\}"><\/td>/.test(src2),
+    'and those cells are keyed, so hiding a column still reaches them');
+  assert.ok(!/_blViewHtml/.test(src2), 'there is no second renderer that could drift');
   const css = fs.readFileSync('./source.html', 'utf8');
   assert.ok(/\.bl-cmp \.bl-v-l \{ text-align:right; \}/.test(css) &&
             /\.bl-cmp \.bl-v-r \{ text-align:left; \}/.test(css),
@@ -20432,8 +20440,15 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
   assert.ok(!/\.bl-row\.bl-diff[^{]*\{[^}]*background/.test(css),
     'nothing in the diff rules paints a cell');
   // A missing side prints nothing but still occupies the row.
-  assert.ok(/\? `<td class="bl-gapcell" colspan="\$\{_blVisibleCols\(\)\}"><\/td>`/.test(fn),
+  assert.ok(/isCmp \? `<td class="bl-gapcell" colspan="\$\{_blVisibleCols\(\)\}"><\/td>`/.test(fn),
     'the gap is an empty cell spanning that side, not a dropped row');
+  // The BASELINE is on the left, next to the list it was picked from, and the
+  // current parse on the right. Requested 2026-09-03.
+  assert.ok(/_blAlign\(b\.fields, cur\.fields\)/.test(fn),
+    'the left half is the baseline and the right half the current parse');
+  assert.ok(/<span class="bl-sum-side">◀ baseline<\/span>/.test(fn)
+         && /<span class="bl-sum-side">current parse ▶<\/span>/.test(fn),
+    'and the summary bar says which side is which');
   // The span follows the chooser: with a column hidden the blank narrows with
   // everything else instead of hanging past the divider.
   assert.ok(/_BL_COLS\.filter\(c => !_blHiddenSet\(\)\.has\(c\.key\)\)\.length \|\| 1/.test(

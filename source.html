@@ -20296,7 +20296,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.50.3.3';
+const APP_VERSION  = '1.50.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22529,8 +22529,8 @@ function blRenderRight() {
     </div>`;
 
   const ttl = document.getElementById('bl-pane-title');
-  if (ttl) ttl.textContent = mode === 'compare' ? 'Current parse vs baseline' : 'Baseline';
-  host.innerHTML = head + (mode === 'compare' ? _blCompareHtml(cur, b) : _blViewHtml(b));
+  if (ttl) ttl.textContent = mode === 'compare' ? 'Baseline vs current parse' : 'Baseline';
+  host.innerHTML = head + _blTableHtml(b, cur, mode === 'compare');
   // Same two behaviours every other table in the app has: drag an edge to
   // resize (double-click one to reset), click a header to light its column.
   _blApplyColVis();
@@ -22624,74 +22624,64 @@ const _blSize = f => (f == null ? '' : (f.valueLength ?? f.maxLength ?? ''));
 const _blOff  = f => (f == null || f.startByte == null) ? '' : `${f.startByte}–${f.endByte}`;
 const _blType = f => (f == null ? '' : (_fieldTypeLabel(f) || (f.isGroup ? 'GROUP' : '')));
 
-function _blViewHtml(b) {
-  const rows = _blNumber(b.fields).map(({ f, n }) => `<tr>
-      <td class="bl-n" data-col="l-num">${n ?? ''}</td>
-      <td class="bl-f" data-col="l-fld">${_escHtml(f.id || '')}</td>
-      <td class="bl-t" data-col="l-typ">${_escHtml(_blType(f))}</td>
-      <td class="bl-s" data-col="l-siz">${_escHtml(String(_blSize(f)))}</td>
-      <td class="bl-o" data-col="l-off">${_escHtml(_blOff(f))}</td>
-      <td class="bl-v" data-col="l-val">${_escHtml(_blVal(f) ?? '')}</td>
-    </tr>`).join('');
-  // The same keys the compare table's left half uses: it is the same six
-  // columns, so a width set in one place holds in the other.
-  return `<div class="bl-scroll"><table class="bl-table">
-    <thead><tr>${_blTh('l-num','#')}${_blTh('l-fld','FIELD')}${_blTh('l-typ','TYPE-LEN')}${_blTh('l-siz','SIZE')}${_blTh('l-off','OFFSET')}${_blTh('l-val','VALUE')}</tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+// ONE table for both modes. View is the same thirteen columns with the current
+// half left empty — not a narrower table — so a column never moves when you
+// switch modes and the eye keeps its place. Requested 2026-09-03.
+//
+// The BASELINE is on the left, beside the list it was picked from, and the
+// current parse on the right; each half mirrors the other so the two values
+// meet at the divider.
+const _BL_HALF = {
+  l: [['bl-n','l-num'], ['bl-f','l-fld'], ['bl-t','l-typ'], ['bl-s','l-siz'], ['bl-o','l-off'], ['bl-v bl-v-l','l-val']],
+  r: [['bl-v bl-v-r','r-val'], ['bl-o','r-off'], ['bl-s','r-siz'], ['bl-t','r-typ'], ['bl-f','r-fld'], ['bl-n','r-num']],
+};
+const _blEmptyHalf = side => _BL_HALF[side].map(([c, k]) => `<td class="${c}" data-col="${k}"></td>`).join('');
+
+function _blHalfHtml(f, side, num) {
+  if (f == null) return null;
+  const cell = {
+    'l-num': num,                           'r-num': num,
+    'l-fld': _escHtml(f.id || ''),          'r-fld': _escHtml(f.id || ''),
+    'l-typ': _escHtml(_blType(f)),          'r-typ': _escHtml(_blType(f)),
+    'l-siz': _escHtml(String(_blSize(f))),  'r-siz': _escHtml(String(_blSize(f))),
+    'l-off': _escHtml(_blOff(f)),           'r-off': _escHtml(_blOff(f)),
+    'l-val': _escHtml(_blVal(f) ?? ''),     'r-val': _escHtml(_blVal(f) ?? ''),
+  };
+  return _BL_HALF[side].map(([c, k]) => `<td class="${c}" data-col="${k}">${cell[k] ?? ''}</td>`).join('');
 }
 
-// The two sides are MIRRORED, so the values meet down the middle: current runs
-// left-to-right and stops at its value, the baseline runs value-first and reads
-// back out to its own field name. Reading a difference is then one short
-// horizontal hop instead of crossing ten columns. Requested 2026-09-03.
-function _blCompareHtml(cur, b) {
-  const L = _blNumber(cur.fields), R = _blNumber(b.fields);
-  const byField = new Map();
-  for (const x of L) byField.set(x.f, x.n);
-  for (const x of R) byField.set(x.f, x.n);
-  const rows = _blAlign(cur.fields, b.fields);
+function _blTableHtml(b, cur, isCmp) {
+  // l is the BASELINE, r is the current parse — the order _blAlign is given.
+  const rows = isCmp ? _blAlign(b.fields, cur.fields)
+                     : (b.fields || []).map(f => ({ l: f, r: null }));
+  const num = new Map();
+  for (const { f, n } of _blNumber(b.fields)) num.set(f, n);
+  if (isCmp) for (const { f, n } of _blNumber(cur.fields)) num.set(f, n);
 
   let same = 0, diff = 0, gap = 0;
   const body = rows.map(row => {
-    const st = _blRowState(row);
-    if (st === 'same') same++; else if (st === 'diff') diff++; else gap++;
-    const l = row.l, r = row.r;
-    const half = (f, side) => f == null
-      // A missing field prints nothing at all, but the row still occupies its
-      // place — that blank IS the finding, and collapsing it would shift every
-      // row below and make the whole side look changed.
-      // A gap cell spans whatever is still showing, so hiding a column narrows
-      // the blank with everything else instead of leaving it hanging past the
-      // divider.
-      ? `<td class="bl-gapcell" colspan="${_blVisibleCols()}"></td>`
-      : (side === 'l'
-        ? `<td class="bl-n" data-col="l-num">${byField.get(f) ?? ''}</td>
-           <td class="bl-f" data-col="l-fld">${_escHtml(f.id || '')}</td>
-           <td class="bl-t" data-col="l-typ">${_escHtml(_blType(f))}</td>
-           <td class="bl-s" data-col="l-siz">${_escHtml(String(_blSize(f)))}</td>
-           <td class="bl-o" data-col="l-off">${_escHtml(_blOff(f))}</td>
-           <td class="bl-v bl-v-l" data-col="l-val">${_escHtml(_blVal(f) ?? '')}</td>`
-        : `<td class="bl-v bl-v-r" data-col="r-val">${_escHtml(_blVal(f) ?? '')}</td>
-           <td class="bl-o" data-col="r-off">${_escHtml(_blOff(f))}</td>
-           <td class="bl-s" data-col="r-siz">${_escHtml(String(_blSize(f)))}</td>
-           <td class="bl-t" data-col="r-typ">${_escHtml(_blType(f))}</td>
-           <td class="bl-f" data-col="r-fld">${_escHtml(f.id || '')}</td>
-           <td class="bl-n" data-col="r-num">${byField.get(f) ?? ''}</td>`);
-    return `<tr class="bl-row bl-${st}">${half(l, 'l')}<td class="bl-mid"></td>${half(r, 'r')}</tr>`;
+    const st = isCmp ? _blRowState(row) : 'view';
+    if (st === 'same') same++; else if (st === 'diff') diff++; else if (st === 'gap') gap++;
+    // A missing field prints nothing and keeps its place. In compare that blank
+    // IS the finding, so it is hatched across the half; in view the current
+    // side is simply not filled in, and hatching every row would shout about
+    // something the mode already says.
+    const half = (f, side) => _blHalfHtml(f, side, num.get(f) ?? '')
+      ?? (isCmp ? `<td class="bl-gapcell" colspan="${_blVisibleCols()}"></td>` : _blEmptyHalf(side));
+    return `<tr class="bl-row bl-${st}">${half(row.l, 'l')}<td class="bl-mid" data-col="mid"></td>${half(row.r, 'r')}</tr>`;
   }).join('');
 
-  const sum = `<div class="panel-bar bl-sum">
-      <span class="bl-sum-diff">${diff} different</span>
-      <span class="rec-meta-pipe">|</span><span class="bl-sum-gap">${gap} only on one side</span>
-      <span class="rec-meta-pipe">|</span><span>${same} identical</span>
+  const tally = isCmp
+    ? `<span class="bl-sum-diff">${diff} different</span>
+       <span class="rec-meta-pipe">|</span><span class="bl-sum-gap">${gap} only on one side</span>
+       <span class="rec-meta-pipe">|</span><span>${same} identical</span>`
+    : `<span>${(b.fields || []).length} fields</span>`;
+  const sum = `<div class="panel-bar bl-sum">${tally}
       <span style="flex:1"></span>
-      <span class="bl-sum-side">◀ current parse</span>
-      <span class="rec-meta-pipe">|</span><span class="bl-sum-side">baseline ▶</span>
+      <span class="bl-sum-side">◀ baseline</span>
+      <span class="rec-meta-pipe">|</span><span class="bl-sum-side">current parse ▶</span>
     </div>`;
 
-  // Left and right get DISTINCT column keys. They look symmetric, but sharing a
-  // key would make dragging one side silently drag the other, and there is no
-  // way back from that to two different widths.
   return sum + `<div class="bl-scroll"><table class="bl-table bl-cmp">
     <thead><tr>
       ${_blTh('l-num','#')}${_blTh('l-fld','FIELD')}${_blTh('l-typ','TYPE-LEN')}${_blTh('l-siz','SIZE')}${_blTh('l-off','OFFSET')}${_blTh('l-val','VALUE')}

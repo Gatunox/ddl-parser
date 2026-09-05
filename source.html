@@ -2693,7 +2693,11 @@ td.c-err  { color: var(--accent2); }
    chooser's 192px however wide they were asked to be. A name and a
    comma-separated list of tags are both longer than a column width.
    Reported 2026-09-04. */
-.bl-save-dlg { min-width: calc(var(--sz-mono) * 38); }
+.bl-save-dlg { min-width: calc(var(--sz-mono) * 34); }
+/* Opens FROM the ★ Save button rightward, not from the button group's right
+   edge leftward: anchored right it reached 329px past the button it belongs to,
+   across the filter box and most of the bar. Requested 2026-09-04. */
+.bl-save-dlg { left: 0; right: auto; max-width: calc(100vw - 24px); }
 .bl-save-dlg .audit-cfg-row input { flex:1; width:auto; min-width:0; }
 .bl-save-dlg .bl-save-ends { margin-bottom:0; }
 .bl-save-dlg .bl-save-ends .btn { flex:1; }
@@ -20364,7 +20368,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.1.7';
+const APP_VERSION  = '1.52.1.8';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

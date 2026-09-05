@@ -20636,8 +20636,13 @@ test('[REGRESSION] the save dialog is as wide as it asks to be', () => {
   const mine = src.indexOf('.bl-save-dlg { min-width:');
   assert.ok(base > 0 && mine > base,
     'the override must come AFTER the rule it overrides, or it never applies');
-  assert.ok(/\.bl-save-dlg \{ min-width: calc\(var\(--sz-mono\) \* 38\); \}/.test(src),
+  assert.ok(/\.bl-save-dlg \{ min-width: calc\(var\(--sz-mono\) \* 34\); \}/.test(src),
     'a name and a comma-separated tag list need more than a column width');
+  // And it opens FROM the button it belongs to rather than past it: anchored to
+  // the group's right edge it reached 329px left of ★ Save, across the filter
+  // box and most of the bar. Requested 2026-09-04.
+  assert.ok(/\.bl-save-dlg \{ left: 0; right: auto; max-width: calc\(100vw - 24px\); \}/.test(src),
+    'it opens rightward from the button, and cannot run off the window');
 });
 
 test('baselines: a saved parse, its own store, and nothing of the Class Editor', () => {

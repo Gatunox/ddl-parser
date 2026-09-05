@@ -1718,13 +1718,15 @@ input[type="text"]:focus { border-color: var(--accent); }
 .bl-sides { display:flex; align-items:stretch; flex-shrink:0; font-family:var(--mono);
   font-size:calc(var(--sz-mono) - 1px); border-bottom: var(--bw) solid var(--border);
   background:var(--surface-subhead); }
-/* Centred within its own half, so each side's facts sit over the middle of the
-   table half they describe rather than crowding the outer edges.
+/* Each half pushed against the rule, so the two labels meet there and the facts
+   read outward — the same shape the VALUE columns have in the table below.
    Requested 2026-09-04. */
 .bl-side { flex:0 0 calc(50% - 5px); width:calc(50% - 5px); min-width:0;
-  display:flex; align-items:center; justify-content:center; gap:6px; padding:2px 8px;
+  display:flex; align-items:center; gap:6px; padding:2px 8px;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
-.bl-side-l > span:first-child, .bl-side-r > span:first-child { color:var(--text-very-dim); }
+.bl-side-l { justify-content:flex-end; }
+.bl-side-r { justify-content:flex-start; }
+.bl-side-name { color:var(--text-very-dim); }
 .bl-sides .bl-rule { border-bottom:0; }
 
 .bl-split { flex:1; min-height:0; display:flex; align-items:stretch; }
@@ -20351,7 +20353,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.1.1';
+const APP_VERSION  = '1.52.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22626,14 +22628,18 @@ function _blSideMeta(o, isBaseline) {
   const bytes = isBaseline ? o.byteCount : (o.bytes || []).length;
   const when  = isBaseline ? (o.savedAt ? 'saved ' + new Date(o.savedAt).toLocaleString() : '')
                            : (o.time || '');
-  const bits = [
-    isBaseline ? 'baseline' : 'current parse',
+  const facts = [
     o.recNo ? 'Rec #' + o.recNo : '',
     bytes ? bytes + ' bytes' : '',
     when,
   ].filter(Boolean);
-  return bits.map((t, i) => (i ? '<span class="rec-meta-pipe">|</span>' : '')
-    + `<span>${_escHtml(String(t))}</span>`).join('');
+  // Mirrored, like the table under it: the two labels meet at the rule and the
+  // facts read outward from there, so the same fact sits the same distance from
+  // the middle on both sides. Requested 2026-09-04.
+  const label = `<span class="bl-side-name">${isBaseline ? 'baseline' : 'current parse'}</span>`;
+  const cells = facts.map(t => `<span>${_escHtml(String(t))}</span>`);
+  const bits = isBaseline ? [...cells, label] : [label, ...cells.reverse()];
+  return bits.map((h, i) => (i ? '<span class="rec-meta-pipe">|</span>' : '') + h).join('');
 }
 
 function blRenderRight() {

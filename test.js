@@ -20278,10 +20278,14 @@ test('baselines: the metadata says which side each fact belongs to', () => {
   // Neither half may run past the rule into the other.
   assert.ok(/\.bl-side \{ flex:0 0 calc\(50% - 5px\); width:calc\(50% - 5px\); min-width:0;/.test(src),
     'the halves are the same geometry the table uses');
-  // Centred within its own half, so each side's facts sit over the middle of the
-  // table half they describe. Requested 2026-09-04.
-  assert.ok(/\.bl-side \{[^}]*justify-content:center;/.test(src),
-    'and each half centres its own facts');
+  // Mirrored around the rule, like the VALUE columns beneath: the two labels
+  // meet in the middle and the facts read outward, so the same fact sits the
+  // same distance from the middle on both sides. Requested 2026-09-04.
+  assert.ok(/\.bl-side-l \{ justify-content:flex-end; \}/.test(src)
+         && /\.bl-side-r \{ justify-content:flex-start; \}/.test(src),
+    'each half is pushed against the rule');
+  assert.ok(/const bits = isBaseline \? \[\.\.\.cells, label\] : \[label, \.\.\.cells\.reverse\(\)\];/.test(side),
+    'and the right half runs in the opposite order, so the pair is a mirror');
   assert.ok(/\.bl-side \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis;/.test(src),
     'and each clips rather than overflowing its half');
 });

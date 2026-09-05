@@ -1713,6 +1713,17 @@ input[type="text"]:focus { border-color: var(--accent); }
    always down the middle, and a table that outgrows its half scrolls INSIDE it —
    the same relationship the parse table has with the Parse Results panel.
    Requested 2026-09-04. */
+/* The same geometry as .bl-split below, so each side's facts sit over its own
+   table half — and each clips rather than running past the rule. */
+.bl-sides { display:flex; align-items:stretch; flex-shrink:0; font-family:var(--mono);
+  font-size:calc(var(--sz-mono) - 1px); border-bottom: var(--bw) solid var(--border);
+  background:var(--surface-subhead); }
+.bl-side { flex:0 0 calc(50% - 5px); width:calc(50% - 5px); min-width:0;
+  display:flex; align-items:center; gap:6px; padding:2px 8px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
+.bl-side-l > span:first-child, .bl-side-r > span:first-child { color:var(--text-very-dim); }
+.bl-sides .bl-rule { border-bottom:0; }
+
 .bl-split { flex:1; min-height:0; display:flex; align-items:stretch; }
 .bl-half  { flex:0 0 calc(50% - 5px); width:calc(50% - 5px); min-width:0; overflow:auto; }
 .bl-rule  { flex:0 0 10px; background:var(--surface-subhead);
@@ -20337,7 +20348,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.0.2';
+const APP_VERSION  = '1.52.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22604,6 +22615,24 @@ function blRenderSidebar() {
   if (del) del.disabled = !_blSel;
 }
 
+// The three things that are a property of THIS side and not of the pair: which
+// record it was, how many bytes it held, and when. A baseline knows when it was
+// saved; a live parse knows when the record was written.
+function _blSideMeta(o, isBaseline) {
+  if (!o) return '';
+  const bytes = isBaseline ? o.byteCount : (o.bytes || []).length;
+  const when  = isBaseline ? (o.savedAt ? 'saved ' + new Date(o.savedAt).toLocaleString() : '')
+                           : (o.time || '');
+  const bits = [
+    isBaseline ? 'baseline' : 'current parse',
+    o.recNo ? 'Rec #' + o.recNo : '',
+    bytes ? bytes + ' bytes' : '',
+    when,
+  ].filter(Boolean);
+  return bits.map((t, i) => (i ? '<span class="rec-meta-pipe">|</span>' : '')
+    + `<span>${_escHtml(String(t))}</span>`).join('');
+}
+
 function blRenderRight() {
   const host = document.getElementById('bl-right');
   if (!host) return;
@@ -22620,6 +22649,7 @@ function blRenderRight() {
   // Requested 2026-09-04.
   const comparable = !_blCmpKey || _blMatchKey(b) === _blCmpKey;
   const mode = (_blMode === 'compare' && canCompare && comparable) ? 'compare' : 'view';
+  const isCmpNow = mode === 'compare';
 
   const head = `<div class="panel-bar bl-bar">
       <span class="bl-title">${_escHtml(b.name)}</span>
@@ -22641,13 +22671,21 @@ function blRenderRight() {
         </div>
       </div>
     </div>
+    <!-- The facts that are SHARED. In a comparison these are identical on both
+         sides by construction — they are the match key — so stating them once
+         says more than stating them twice. -->
     <div class="panel-bar bl-meta">
       <span>${_escHtml(b.msgType?.label || b.msgType?.type || '—')}</span>
-      ${b.recNo ? `<span class="rec-meta-pipe">|</span><span>Rec #${b.recNo}</span>` : ''}
       ${b.parsedBy ? `<span class="rec-meta-pipe">|</span><span>${_escHtml(b.parsedBy)}</span>` : ''}
-      <span class="rec-meta-pipe">|</span><span>${b.byteCount} bytes</span>
-      <span class="rec-meta-pipe">|</span><span>${_escHtml(new Date(b.savedAt || 0).toLocaleString())}</span>
       ${b.ddlPath ? `<span class="rec-meta-pipe">|</span><span>${_escHtml(b.ddlPath)}${b.defName ? ' / ' + _escHtml(b.defName) : ''}</span>` : ''}
+    </div>
+    <!-- And the facts that DIFFER, each over the half it belongs to. Split the
+         same way the table is, so a value sits above its own side and cannot
+         run past the rule into the other. Reported 2026-09-04. -->
+    <div class="bl-sides">
+      <div class="bl-side bl-side-l">${_blSideMeta(b, true)}</div>
+      <div class="bl-rule"></div>
+      <div class="bl-side bl-side-r">${isCmpNow ? _blSideMeta(cur, false) : ''}</div>
     </div>`;
 
   const ttl = document.getElementById('bl-pane-title');

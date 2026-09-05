@@ -20247,6 +20247,41 @@ test('[REGRESSION] ▶ Parse always parses — the cache never answers for the b
     'saving the Class Editor changes the answer and must drop the cached ones');
 });
 
+test('baselines: the metadata says which side each fact belongs to', () => {
+  // One bar over two halves, describing only the baseline and saying so
+  // nowhere — and the three values it led with (type code, parse spec, DDL) are
+  // exactly the ones identical on both sides, while the two that differ (record
+  // number, byte count) were the ones you could not attribute.
+  // Reported 2026-09-04.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const fn = psFnSource('blRenderRight');
+  // Shared facts once: in a comparison they ARE the match key.
+  const shared = fn.slice(fn.indexOf('class="panel-bar bl-meta"'), fn.indexOf('class="bl-sides"'));
+  assert.ok(/msgType\?\.label/.test(shared) && /b\.parsedBy/.test(shared) && /b\.ddlPath/.test(shared),
+    'type code, parse spec and DDL are stated once');
+  assert.ok(!/recNo/.test(shared) && !/byteCount/.test(shared),
+    'and nothing that differs between the sides is in there');
+
+  // Per-side facts, left = baseline, right = current parse — the same order the
+  // table beneath uses.
+  assert.ok(/<div class="bl-side bl-side-l">\$\{_blSideMeta\(b, true\)\}<\/div>/.test(fn),
+    'the left half is the baseline');
+  assert.ok(/<div class="bl-side bl-side-r">\$\{isCmpNow \? _blSideMeta\(cur, false\) : ''\}<\/div>/.test(fn),
+    'the right half is the current parse, and is empty when not comparing');
+  const side = psFnSource('_blSideMeta');
+  assert.ok(/isBaseline \? 'baseline' : 'current parse'/.test(side), 'each half names itself');
+  assert.ok(/isBaseline \? o\.byteCount : \(o\.bytes \|\| \[\]\)\.length/.test(side),
+    'a baseline knows its byte count; a live parse is measured');
+  assert.ok(/'saved ' \+ new Date\(o\.savedAt\)/.test(side) && /\(o\.time \|\| ''\)/.test(side),
+    'and a baseline is dated by when it was SAVED, a record by when it was written');
+
+  // Neither half may run past the rule into the other.
+  assert.ok(/\.bl-side \{ flex:0 0 calc\(50% - 5px\); width:calc\(50% - 5px\); min-width:0;/.test(src),
+    'the halves are the same geometry the table uses');
+  assert.ok(/\.bl-side \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis;/.test(src),
+    'and each clips rather than overflowing its half');
+});
+
 test('baselines: two half tables, split down the middle, scrolling on their own', () => {
   // One wide table meant widening a column on the left shoved the right half
   // around, and its only horizontal scrollbar was the whole pane's. Two tables

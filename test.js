@@ -20749,8 +20749,8 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
     'the tally bar does not repeat what the metadata row already says');
   // It counts the comparison as a whole, belonging to neither side, so it is
   // centred rather than starting at one edge. Requested 2026-09-04.
-  assert.ok(/\.bl-sum \{ justify-content:center; \}/.test(fs.readFileSync('./source.html', 'utf8')),
-    'and it sits over the middle');
+  assert.ok(/\.bl-meta, \.bl-sum \{ justify-content:center; \}/.test(fs.readFileSync('./source.html', 'utf8')),
+    'and it sits over the middle — as does the shared row, for the same reason');
 });
 
 test('baselines: tags are the user\'s own words, matched case-insensitively', () => {

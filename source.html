@@ -15103,8 +15103,16 @@ function _resApplyCollapse() {
   });
   const btn = document.getElementById('resCollapseBtn');
   const all = [...document.querySelectorAll('#resContainer tr.res-grp-row')];
-  if (btn) btn.textContent = (all.length && all.every(tr => c.has(tr.dataset.grp || '')))
-    ? 'Expand All' : 'Collapse All';
+  if (btn) {
+    btn.textContent = (all.length && all.every(tr => c.has(tr.dataset.grp || '')))
+      ? 'Expand All' : 'Collapse All';
+    // Lit whenever ANY group is collapsed, not only when all are: it means the
+    // same thing Group Data and Hide Redef mean when they are lit — the table is
+    // not showing everything it has. Set here rather than in the button's own
+    // handler, so collapsing a single group by its own arrow lights it too.
+    // Requested 2026-09-04.
+    btn.classList.toggle('btn-accent-on', all.some(tr => c.has(tr.dataset.grp || '')));
+  }
   _resRestripe();
 }
 function toggleResGroup(id) {
@@ -20368,7 +20376,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.1.8';
+const APP_VERSION  = '1.52.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

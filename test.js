@@ -21172,6 +21172,24 @@ test('record nav: first / back 10 / step / forward 10 / last, and the edges hold
     assert.ok(iAlt2 < srcAll.indexOf(later), `the stripe must be declared before ${later}`);
 });
 
+test('Collapse All lights up like the toggles beside it', () => {
+  // Group Data and Hide Redef go accent when they are on, meaning "the table is
+  // not showing everything it has". Collapsing groups means exactly that and the
+  // button stayed grey. Requested 2026-09-04.
+  const fn = psFnSource('_resApplyCollapse');
+  assert.ok(/btn\.classList\.toggle\('btn-accent-on', all\.some\(tr => c\.has\(tr\.dataset\.grp \|\| ''\)\)\);/.test(fn),
+    'lit whenever ANY group is collapsed, not only when every one is');
+  // The same class its siblings use, so the three read as one control set.
+  for (const f of ['toggleResGroupData', 'toggleHideRedefines'])
+    assert.ok(/btn-accent-on/.test(psFnSource(f)), `${f} uses the same lit class`);
+  // Set where the state is applied, not in the All button's own handler —
+  // collapsing one group by its own arrow has to light it too.
+  assert.ok(!/btn-accent-on/.test(psFnSource('toggleResCollapseAll')),
+    'the All button does not light itself behind the state\'s back');
+  assert.ok(/_resApplyCollapse\(\);/.test(psFnSource('toggleResGroup')),
+    'and a single group goes through the same place');
+});
+
 test('the Parse Results stripe counts only the rows on screen', () => {
   const srcAll = fs.readFileSync('./source.html', 'utf8');
   // Rows are hidden, not removed — a collapsed group, Hide Redef, the filter.

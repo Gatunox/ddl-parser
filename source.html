@@ -1671,10 +1671,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 .me-tag-add { align-self:flex-start; padding:2px 8px; font-size: calc(var(--sz-mono) - 1px); }
 
 /* ---- Baselines ---- */
-.bl-save-dlg { min-width: calc(var(--sz-mono) * 22); }
-.bl-save-dlg .audit-cfg-row input { flex:1; width:auto; min-width:0; }
-.bl-save-dlg .bl-save-ends { margin-bottom:0; }
-.bl-save-dlg .bl-save-ends .btn { flex:1; }
 .bl-known { display:flex; flex-wrap:wrap; gap:4px; }
 
 .bl-count { font-family:var(--mono); font-size:calc(var(--sz-mono) - 1px); color:var(--text-dim); }
@@ -1689,6 +1685,11 @@ input[type="text"]:focus { border-color: var(--accent); }
 .bl-item { padding:6px 10px; cursor:pointer; border-bottom: var(--bw) solid var(--border); }
 .bl-item:hover { background:var(--surface-hover); }
 .bl-item.is-sel { background:rgba(var(--accent-rgb),0.12); box-shadow: inset 2px 0 0 var(--accent); }
+/* Not comparable with what is parsed. Dimmed rather than hidden or disabled:
+   they are still yours to read, and hiding them would make the list change
+   shape depending on how you got here. */
+.bl-item.is-dim { opacity: 0.38; }
+.bl-item.is-dim:hover { opacity: 0.7; }
 .bl-item-name { font-family:var(--mono); font-size:var(--sz-mono); font-weight:700; color:var(--text);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .bl-item-sub { font-family:var(--mono); font-size:calc(var(--sz-mono) - 2px); color:var(--text-dim); }
@@ -2659,6 +2660,16 @@ td.c-err  { color: var(--accent2); }
 /* Go to is two short rows, not a column list, so it does not want the chooser's
    min-width; and its input is the row's content rather than a trailing control,
    so it takes the space the labels would have had. */
+/* Beside .msg-go-dlg, and for the same reason: both override .audit-cfg-dialog's
+   min-width at EQUAL specificity, so they only win by coming after it. This
+   block sat 900 lines earlier and silently lost — the save fields stayed at the
+   chooser's 192px however wide they were asked to be. A name and a
+   comma-separated list of tags are both longer than a column width.
+   Reported 2026-09-04. */
+.bl-save-dlg { min-width: calc(var(--sz-mono) * 38); }
+.bl-save-dlg .audit-cfg-row input { flex:1; width:auto; min-width:0; }
+.bl-save-dlg .bl-save-ends { margin-bottom:0; }
+.bl-save-dlg .bl-save-ends .btn { flex:1; }
 .msg-go-dlg { min-width: calc(var(--sz-mono) * 14); }
 .msg-go-dlg .audit-cfg-row input { flex: 1; width: auto; min-width: 0; }
 .msg-go-dlg .msg-go-ends { margin-bottom: 0; }
@@ -4512,7 +4523,9 @@ th.me-fm-colhi{color:var(--accent);}
           <span style="flex:1"></span>
           <div style="position:relative;display:inline-flex">
             <button class="btn" id="blSaveBtn" onclick="toggleBlSaveDialog()" style="display:none;flex-shrink:0"
-                    title="Keep this parse as a baseline to compare later ones against">&#9733; Baseline</button>
+                    title="Keep this parse as a baseline to compare later ones against">&#9733; Save</button>
+            <button class="btn" id="blCmpBtn" onclick="blCompareCurrent()" style="display:none;flex-shrink:0"
+                    title="Compare this parse with a saved baseline">&#8646; Compare</button>
             <div id="blSaveDialog" class="audit-cfg-dialog bl-save-dlg">
               <div class="audit-cfg-hdr"><span>Save as baseline</span>
                 <button class="btn" onclick="toggleBlSaveDialog(false)" style="padding:1px 7px;font-size:13px">&#10005;</button></div>
@@ -19879,6 +19892,13 @@ const _APP_KV_KEYS = [
 ];
 let _appKV   = {};
 let _appKVDB = null;
+// The store hydrates ASYNCHRONOUSLY from IndexedDB. Until it has, _kvGet answers
+// for every key with null — which is indistinguishable from "nothing saved", and
+// anything that caches that answer, or writes a value derived from it, destroys
+// what is actually stored. Reported 2026-09-04, after exactly that: a read at
+// startup cached an empty baseline list and the next save persisted it over two
+// real ones.
+let _appKVLoaded = false;
 
 function _kvGet(key)        { return Object.prototype.hasOwnProperty.call(_appKV, key) ? _appKV[key] : null; }
 function _kvDel(key) {
@@ -20317,7 +20337,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.51.0.2';
+const APP_VERSION  = '1.52.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22063,6 +22083,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tutSkip')?.addEventListener('click', closeTutorial);
 
   _openAppKV().then(() => {
+    _appKVLoaded = true;
     _fmtSyncDefaults();   // one-time (per sync version): reconcile saved specs with built-in defaults
     _fmtLoad();
     loadPrefs();
@@ -22117,19 +22138,32 @@ let _meState = null;
 // demand. Requested 2026-09-03.
 const _BL_KEY = 'up_baselines';
 let _blList = null;
+let _blRaw  = null;   // the stored string the cache was built from
 
+// Keyed on what is actually stored rather than on "have I read once": a cache
+// built before the store hydrated used to answer [] forever, and the first save
+// then wrote that [] over everything. A string compare per call is nothing; a
+// JSON.parse only happens when the stored value has genuinely changed.
 function _blAll() {
-  if (_blList) return _blList;
+  let raw = null;
+  try { raw = _kvGet(_BL_KEY); } catch(e) {}
+  if (_blList && raw === _blRaw) return _blList;
   try {
-    const raw = _kvGet(_BL_KEY);
     const d = raw ? JSON.parse(raw) : null;
     _blList = Array.isArray(d?.baselines) ? d.baselines : [];
   } catch(e) { _blList = []; }
+  _blRaw = raw;
   return _blList;
 }
 
 function _blPersist() {
-  try { _kvSet(_BL_KEY, JSON.stringify({ baselines: _blAll() })); } catch(e) {}
+  // Never write before the store has hydrated. Whatever is in memory at that
+  // point was derived from an empty read, and writing it deletes the lot.
+  if (!_appKVLoaded) { flash('Storage is still loading — try that again in a moment.', 'warn'); return false; }
+  const json = JSON.stringify({ baselines: _blAll() });
+  try { _kvSet(_BL_KEY, json); } catch(e) { return false; }
+  _blRaw = json;   // the cache and the store agree again
+  return true;
 }
 
 // Tags are the user's own words, so they are normalised once here rather than
@@ -22177,6 +22211,23 @@ function _blSnapshot(msg, name, tags) {
     hex: (msg.bytes || []).map(b => b.toString(16).padStart(2, '0')).join(''),
     fields,
   };
+}
+
+// What makes two parses comparable: the same TYPE CODE, read from the same DDL
+// definition, through the same parse spec. Anything else is two different
+// shapes, and lining their fields up side by side would be a coincidence rather
+// than a comparison. Requested 2026-09-04.
+function _blMatchKey(o) {
+  if (!o) return null;
+  const t = o.msgType && (o.msgType.type || o.msgType.label);
+  if (!t) return null;
+  return [t, o.ddlPath || '', o.defName || '', o.parsedBy || ''].join('\u0000');
+}
+
+// Every saved baseline the current parse could be compared with.
+function _blMatchesFor(msg) {
+  const k = _blMatchKey(msg);
+  return k ? _blAll().filter(b => _blMatchKey(b) === k) : [];
 }
 
 function _blAdd(msg, name, tags) {
@@ -22381,6 +22432,20 @@ function blSaveApply() {
   syncBlSaveBtn();
 }
 
+// Straight into the comparison: the current parse on the right, and on the left
+// the first baseline that matches it. When several match, the rest stay
+// selectable and everything that does NOT match is dimmed, so the viable ones
+// are the ones that stand out. Requested 2026-09-04.
+function blCompareCurrent() {
+  const msg = S.messages[S.curIdx];
+  const hits = _blMatchesFor(msg);
+  if (!hits.length) { flash('No baseline saved yet for this type code, DDL and parse spec.', 'warn'); return; }
+  _blCmpKey = _blMatchKey(msg);
+  _blSel = hits[0].id;
+  _blMode = 'compare';
+  openBaselines({ keepSelection: true });
+}
+
 function blSaveKey(ev) {
   if (ev.key === 'Enter')  { ev.preventDefault(); blSaveApply(); }
   if (ev.key === 'Escape') { ev.preventDefault(); toggleBlSaveDialog(false); }
@@ -22389,18 +22454,38 @@ function blSaveKey(ev) {
 // The button appears with the results, like Export — there is nothing to keep
 // as a baseline before a parse.
 function syncBlSaveBtn() {
+  const on = !!(S.isParsed && S.messages.length);
   const b = document.getElementById('blSaveBtn');
-  if (b) b.style.display = (S.isParsed && S.messages.length) ? 'inline-flex' : 'none';
+  if (b) b.style.display = on ? 'inline-flex' : 'none';
+  // Compare appears only when there is something it could compare WITH: a
+  // baseline of the same type code, DDL definition and parse spec. With none,
+  // saving is the only thing this parse can do, and offering a button that
+  // cannot act is worse than not offering it.
+  const c = document.getElementById('blCmpBtn');
+  if (!c) return;
+  const n = on ? _blMatchesFor(S.messages[S.curIdx]).length : 0;
+  c.style.display = on ? 'inline-flex' : 'none';
+  c.disabled = !n;
+  c.title = n
+    ? `Compare with ${n === 1 ? 'the saved baseline' : 'one of ' + n + ' saved baselines'} for this message`
+    : 'No baseline saved yet for this type code, DDL and parse spec — save one first';
 }
 
 // ── The manager ──────────────────────────────────────────────────────────────
 let _blSel = null;                 // selected baseline id
 let _blMode = 'view';              // 'view' | 'compare'
 let _blPickedTags = new Set();
+// Set when the editor was opened BY Compare: the match key of the parse being
+// compared. Baselines that do not share it are dimmed — still there, still
+// readable, just not things this parse can be lined up against.
+let _blCmpKey = null;
 
-function openBaselines() {
+function openBaselines(opts) {
   toggleBlSaveDialog(false);
   closeSettings();
+  // Opened from the header, this is a plain browse: nothing is a candidate for
+  // anything, so nothing is dimmed.
+  if (!opts || !opts.keepSelection) { _blCmpKey = null; _blMode = 'view'; }
   document.getElementById('blOverlay').classList.remove('hidden');
   // Shared with the Class Editor: one drag handler, one saved-width restore,
   // and this overlay's gutter is just another row in its table.
@@ -22410,6 +22495,7 @@ function openBaselines() {
   blSetSidebarCollapsed(sbC);
   const list = _blAll();
   if (!_blSel || !list.some(b => b.id === _blSel)) _blSel = list[0]?.id || null;
+  _blColCfgOpen = false;
   blRenderSidebar();
   blRenderRight();
 }
@@ -22504,7 +22590,10 @@ function blRenderSidebar() {
   el.innerHTML = shown.length ? shown.map(b => {
     const when = new Date(b.savedAt || 0).toLocaleString();
     const cls  = b.msgType?.label || b.msgType?.type || '';
-    return `<div class="bl-item${b.id === _blSel ? ' is-sel' : ''}" onclick="blSelect('${b.id}')">
+    const dim = _blCmpKey && _blMatchKey(b) !== _blCmpKey;
+    return `<div class="bl-item${b.id === _blSel ? ' is-sel' : ''}${dim ? ' is-dim' : ''}"`
+      + ` title="${dim ? 'A different type code, DDL or parse spec — not comparable with what is parsed' : ''}"`
+      + ` onclick="blSelect('${b.id}')">
       <div class="bl-item-name">${_escHtml(b.name)}</div>
       <div class="bl-item-sub">${_escHtml(cls)}${b.recNo ? ' · #' + b.recNo : ''} · ${b.fields.length} fields · ${b.byteCount} bytes</div>
       <div class="bl-item-sub bl-item-when">${_escHtml(when)}</div>

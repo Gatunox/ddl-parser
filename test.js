@@ -20506,6 +20506,76 @@ test('baselines: two panes and a gutter, the same shape as the Class Editor', ()
     'the two sidebars do not share a stored width');
 });
 
+test('[REGRESSION] a read before the KV store hydrates cannot destroy what is in it', () => {
+  // _appKV fills in ASYNCHRONOUSLY from IndexedDB, and until it does _kvGet
+  // answers null for every key — indistinguishable from "nothing saved". The
+  // baseline list cached that answer on first read and kept it, so the next save
+  // wrote an empty list over everything stored. It took two real baselines with
+  // it. Reported 2026-09-04.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/let _appKVLoaded = false;/.test(src), 'the store says when it is ready');
+  assert.ok(/_openAppKV\(\)\.then\(\(\) => \{\n\s*_appKVLoaded = true;/.test(src),
+    'and says so exactly when it is');
+
+  const all = psFnSource('_blAll');
+  assert.ok(/if \(_blList && raw === _blRaw\) return _blList;/.test(all),
+    'the cache is keyed on the STORED STRING, so it cannot outlive a change to it');
+  assert.ok(!/if \(_blList\) return _blList;/.test(all),
+    'never on "have I read once" — that is what made an early empty read permanent');
+
+  const persist = psFnSource('_blPersist');
+  assert.ok(/if \(!_appKVLoaded\) \{[\s\S]{0,160}return false; \}/.test(persist),
+    'and nothing is written before the store has hydrated');
+  assert.ok(/_blRaw = json;/.test(persist), 'after a write the cache and the store agree again');
+});
+
+test('baselines: Save and Compare, and Compare only when something matches', () => {
+  // A parsed message has two things it can do with baselines. Compare needs
+  // something to compare WITH: the same type code, read from the same DDL
+  // definition, through the same parse spec. Requested 2026-09-04.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const key = psFnSource('_blMatchKey');
+  assert.ok(/\[t, o\.ddlPath \|\| '', o\.defName \|\| '', o\.parsedBy \|\| ''\]\.join/.test(key),
+    'the key is type code + DDL + def + parse spec');
+  assert.ok(/const t = o\.msgType && \(o\.msgType\.type \|\| o\.msgType\.label\);\n\s*if \(!t\) return null;/.test(key),
+    'and an unrecognised message has no key at all, so it matches nothing');
+
+  const sync = psFnSource('syncBlSaveBtn');
+  assert.ok(/c\.disabled = !n;/.test(sync), 'Compare is disabled when nothing matches');
+  assert.ok(/No baseline saved yet for this type code, DDL and parse spec/.test(sync),
+    'and says why, rather than being mysteriously dead');
+
+  const cmp = psFnSource('blCompareCurrent');
+  assert.ok(/_blCmpKey = _blMatchKey\(msg\);/.test(cmp) && /_blSel = hits\[0\]\.id;/.test(cmp)
+         && /_blMode = 'compare';/.test(cmp),
+    'it opens in compare mode with the first matching baseline already chosen');
+  assert.ok(/openBaselines\(\{ keepSelection: true \}\)/.test(cmp),
+    'and that choice survives the open');
+  // Opened from the header instead, nothing is a candidate for anything.
+  assert.ok(/if \(!opts \|\| !opts\.keepSelection\) \{ _blCmpKey = null; _blMode = 'view'; \}/.test(psFnSource('openBaselines')),
+    'a plain browse dims nothing');
+
+  // The others stay selectable — dimmed, not hidden or disabled.
+  assert.ok(/const dim = _blCmpKey && _blMatchKey\(b\) !== _blCmpKey;/.test(psFnSource('blRenderSidebar')),
+    'what cannot be compared is dimmed');
+  assert.ok(/\.bl-item\.is-dim \{ opacity: 0\.38; \}/.test(src) && /\.bl-item\.is-dim:hover/.test(src),
+    'and stays readable and clickable');
+});
+
+test('[REGRESSION] the save dialog is as wide as it asks to be', () => {
+  // .bl-save-dlg and .audit-cfg-dialog set min-width at EQUAL specificity, so
+  // the one that comes later wins. This block sat 900 lines earlier and lost
+  // silently: the fields stayed at the column chooser's 192px however wide they
+  // were asked to be. Reported 2026-09-04.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const base = src.indexOf('.audit-cfg-dialog {');
+  const mine = src.indexOf('.bl-save-dlg { min-width:');
+  assert.ok(base > 0 && mine > base,
+    'the override must come AFTER the rule it overrides, or it never applies');
+  assert.ok(/\.bl-save-dlg \{ min-width: calc\(var\(--sz-mono\) \* 38\); \}/.test(src),
+    'a name and a comma-separated tag list need more than a column width');
+});
+
 test('baselines: a saved parse, its own store, and nothing of the Class Editor', () => {
   // A baseline is a record of what a message LOOKED LIKE, not a definition of
   // how to read one, so it lives in its own key in the IndexedDB KV — never

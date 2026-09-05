@@ -20337,7 +20337,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.0.1';
+const APP_VERSION  = '1.52.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22529,7 +22529,6 @@ function blToggleSidebar() {
 }
 
 function blSelect(id) { _blSel = id; blRenderSidebar(); blRenderRight(); }
-function blSetMode(m) { _blMode = m; blRenderRight(); }
 
 function blDeleteSelected() {
   const b = _blAll().find(x => x.id === _blSel);
@@ -22613,7 +22612,14 @@ function blRenderRight() {
 
   const cur = S.messages[S.curIdx];
   const canCompare = !!(cur && cur.fields && cur.fields.length);
-  const mode = (_blMode === 'compare' && canCompare) ? 'compare' : 'view';
+  // Compare is a state you ARRIVE in, from the Compare button on Parse Results —
+  // never a toggle in here. Reached any other way (Manage…, the header button)
+  // this is a reader, and it stays one. A baseline that does not match the parse
+  // that opened the comparison reads in view too: the list dims it for exactly
+  // that reason, so selecting it cannot then claim to compare it.
+  // Requested 2026-09-04.
+  const comparable = !_blCmpKey || _blMatchKey(b) === _blCmpKey;
+  const mode = (_blMode === 'compare' && canCompare && comparable) ? 'compare' : 'view';
 
   const head = `<div class="panel-bar bl-bar">
       <span class="bl-title">${_escHtml(b.name)}</span>
@@ -22621,9 +22627,6 @@ function blRenderRight() {
       <span style="flex:1"></span>
       <button class="btn" onclick="blRenameSelected()">Rename</button>
       <button class="btn" onclick="blRetagSelected()">Tags</button>
-      <button class="btn${mode === 'view' ? ' btn-on' : ''}" onclick="blSetMode('view')">View</button>
-      <button class="btn${mode === 'compare' ? ' btn-on' : ''}" onclick="blSetMode('compare')"
-        ${canCompare ? '' : 'disabled title="Parse a message first — there is nothing to compare against"'}>Compare with current</button>
       <div style="position:relative;display:inline-flex">
         <button class="btn" id="blColCfgBtn" onclick="toggleBlColCfg()" title="Column visibility"
                 style="padding:0 6px">⚙</button>

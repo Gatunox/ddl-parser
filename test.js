@@ -20474,10 +20474,18 @@ test('baselines: reachable from the header, with nothing parsed', () => {
   const render = psFnSource('blRenderRight');
   assert.ok(/const canCompare = !!\(cur && cur\.fields && cur\.fields\.length\);/.test(render),
     'comparing needs a current parse, and knows when it has none');
-  assert.ok(/const mode = \(_blMode === 'compare' && canCompare\) \? 'compare' : 'view';/.test(render),
+  assert.ok(/const mode = \(_blMode === 'compare' && canCompare && comparable\) \? 'compare' : 'view';/.test(render),
     'without one it falls back to view rather than rendering half a comparison');
-  assert.ok(/disabled title="Parse a message first/.test(render),
-    'and the button says why it is disabled');
+  // Compare is a state you ARRIVE in, from Parse Results — there is no toggle
+  // in here to reach it. Reached any other way, this is a reader.
+  // Requested 2026-09-04.
+  const src2 = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(!/blSetMode/.test(src2), 'no mode toggle, and none left orphaned');
+  assert.ok(!/Compare with current/.test(src2), 'nor the button that was it');
+  // A dimmed baseline reads in view: the list dims it because it cannot be
+  // compared, so selecting it must not then claim to compare it.
+  assert.ok(/const comparable = !_blCmpKey \|\| _blMatchKey\(b\) === _blCmpKey;/.test(render),
+    'and a non-matching selection drops to view rather than comparing anyway');
 });
 
 test('baselines: two panes and a gutter, the same shape as the Class Editor', () => {

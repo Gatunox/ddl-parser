@@ -20269,7 +20269,7 @@ test('baselines: the metadata says which side each fact belongs to', () => {
   assert.ok(/<div class="bl-side bl-side-r">\$\{isCmpNow \? _blSideMeta\(cur, false\) : ''\}<\/div>/.test(fn),
     'the right half is the current parse, and is empty when not comparing');
   const side = psFnSource('_blSideMeta');
-  assert.ok(/isBaseline \? '◀ baseline' : 'current parse ▶'/.test(side),
+  assert.ok(/isBaseline \? '◀ baseline' : 'current ▶'/.test(side),
     'each half names itself, with the arrow pointing at the half it belongs to');
   assert.ok(/isBaseline \? o\.byteCount : \(o\.bytes \|\| \[\]\)\.length/.test(side),
     'a baseline knows its byte count; a live parse is measured');

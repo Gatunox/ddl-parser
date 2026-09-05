@@ -1723,9 +1723,13 @@ input[type="text"]:focus { border-color: var(--accent); }
 .bl-side { flex:0 0 calc(50% - 5px); width:calc(50% - 5px); min-width:0;
   display:flex; align-items:center; gap:6px; padding:2px 8px;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
-.bl-side-l { justify-content:flex-end; }
-.bl-side-r { justify-content:flex-start; }
-.bl-side-name { color:var(--text-very-dim); }
+/* The facts sit at the OUTER edge of their half and the label at the inner one,
+   so the two labels meet in the middle and each side's facts read from the edge
+   of the pane inward. Requested 2026-09-04. */
+.bl-side { justify-content:space-between; }
+.bl-side-facts { display:flex; align-items:center; gap:6px; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bl-side-name { color:var(--text-very-dim); flex:none; }
 /* The spacer stays, because it is what keeps these halves the same width as the
    table's; it is simply not drawn. The labels either side of it already say
    where the middle is. Requested 2026-09-04. */
@@ -20355,7 +20359,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.1.3';
+const APP_VERSION  = '1.52.1.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22642,8 +22646,14 @@ function _blSideMeta(o, isBaseline) {
   // two labels meet at.
   const label = `<span class="bl-side-name">${isBaseline ? '◀ baseline' : 'current parse ▶'}</span>`;
   const cells = facts.map(t => `<span>${_escHtml(String(t))}</span>`);
-  const bits = isBaseline ? [...cells, label] : [label, ...cells.reverse()];
-  return bits.map((h, i) => (i ? '<span class="rec-meta-pipe">|</span>' : '') + h).join('');
+  // ONE group, so the half can push the facts to its outer edge and the label to
+  // the inner one. Spread across seven separate children, space-between would
+  // have opened a gap between every pipe instead.
+  const group = `<span class="bl-side-facts">`
+    + (isBaseline ? cells : cells.reverse())
+        .map((h, i) => (i ? '<span class="rec-meta-pipe">|</span>' : '') + h).join('')
+    + `</span>`;
+  return isBaseline ? group + label : label + group;
 }
 
 function blRenderRight() {

@@ -20279,12 +20279,17 @@ test('baselines: the metadata says which side each fact belongs to', () => {
   // Neither half may run past the rule into the other.
   assert.ok(/\.bl-side \{ flex:0 0 calc\(50% - 5px\); width:calc\(50% - 5px\); min-width:0;/.test(src),
     'the halves are the same geometry the table uses');
-  // Mirrored around the rule, like the VALUE columns beneath: the two labels
-  // meet in the middle and the facts read outward, so the same fact sits the
-  // same distance from the middle on both sides. Requested 2026-09-04.
-  assert.ok(/\.bl-side-l \{ justify-content:flex-end; \}/.test(src)
-         && /\.bl-side-r \{ justify-content:flex-start; \}/.test(src),
-    'each half is pushed against the rule');
+  // Facts to the OUTER edge of each half, labels to the inner one, so the two
+  // labels meet in the middle and each side's facts read from the pane's edge
+  // inward. Requested 2026-09-04.
+  assert.ok(/\.bl-side \{ justify-content:space-between; \}/.test(src),
+    'each half pushes its facts and its label apart');
+  assert.ok(/return isBaseline \? group \+ label : label \+ group;/.test(side),
+    'baseline puts its label last and current parse first, so the two meet');
+  // The facts are ONE flex item: spread across seven children, space-between
+  // would open a gap between every pipe instead.
+  assert.ok(/const group = `<span class="bl-side-facts">`/.test(side),
+    'the facts travel as one group');
   // The spacer between them is NOT drawn — two labels meeting nose to nose
   // already say where the middle is — but it keeps its width, because that is
   // what holds these halves to the same size as the table's.
@@ -20292,7 +20297,7 @@ test('baselines: the metadata says which side each fact belongs to', () => {
     'the metadata row has no visible rule');
   assert.ok(/\.bl-rule  \{ flex:0 0 10px;/.test(src),
     'but the spacer still takes the rule\'s width, so the halves stay aligned');
-  assert.ok(/const bits = isBaseline \? \[\.\.\.cells, label\] : \[label, \.\.\.cells\.reverse\(\)\];/.test(side),
+  assert.ok(/\(isBaseline \? cells : cells\.reverse\(\)\)/.test(side),
     'and the right half runs in the opposite order, so the pair is a mirror');
   assert.ok(/\.bl-side \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis;/.test(src),
     'and each clips rather than overflowing its half');

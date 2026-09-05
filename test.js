@@ -20278,6 +20278,10 @@ test('baselines: the metadata says which side each fact belongs to', () => {
   // Neither half may run past the rule into the other.
   assert.ok(/\.bl-side \{ flex:0 0 calc\(50% - 5px\); width:calc\(50% - 5px\); min-width:0;/.test(src),
     'the halves are the same geometry the table uses');
+  // Centred within its own half, so each side's facts sit over the middle of the
+  // table half they describe. Requested 2026-09-04.
+  assert.ok(/\.bl-side \{[^}]*justify-content:center;/.test(src),
+    'and each half centres its own facts');
   assert.ok(/\.bl-side \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis;/.test(src),
     'and each clips rather than overflowing its half');
 });

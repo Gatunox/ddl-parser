@@ -1718,8 +1718,11 @@ input[type="text"]:focus { border-color: var(--accent); }
 .bl-sides { display:flex; align-items:stretch; flex-shrink:0; font-family:var(--mono);
   font-size:calc(var(--sz-mono) - 1px); border-bottom: var(--bw) solid var(--border);
   background:var(--surface-subhead); }
+/* Centred within its own half, so each side's facts sit over the middle of the
+   table half they describe rather than crowding the outer edges.
+   Requested 2026-09-04. */
 .bl-side { flex:0 0 calc(50% - 5px); width:calc(50% - 5px); min-width:0;
-  display:flex; align-items:center; gap:6px; padding:2px 8px;
+  display:flex; align-items:center; justify-content:center; gap:6px; padding:2px 8px;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-dim); }
 .bl-side-l > span:first-child, .bl-side-r > span:first-child { color:var(--text-very-dim); }
 .bl-sides .bl-rule { border-bottom:0; }
@@ -20348,7 +20351,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.1.0';
+const APP_VERSION  = '1.52.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

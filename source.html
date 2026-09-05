@@ -1698,6 +1698,9 @@ input[type="text"]:focus { border-color: var(--accent); }
 .bl-item-tags .bl-tag { cursor:default; }
 .bl-empty { padding:20px; color:var(--text-dim); font-family:var(--mono); font-size:var(--sz-mono); text-align:center; }
 .bl-bar, .bl-meta, .bl-sum { font-family:var(--mono); }
+/* The tally is about the comparison as a whole, not about either side, so it
+   sits over the middle rather than starting at one edge. Requested 2026-09-04. */
+.bl-sum { justify-content:center; }
 .bl-title { font-weight:700; color:var(--text); }
 .bl-sum-diff { color:var(--warn-text); font-weight:700; }
 .bl-sum-gap  { color:var(--text-dim); }
@@ -20359,7 +20362,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.1.5';
+const APP_VERSION  = '1.52.1.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

@@ -1701,7 +1701,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 .bl-title { font-weight:700; color:var(--text); }
 .bl-sum-diff { color:var(--warn-text); font-weight:700; }
 .bl-sum-gap  { color:var(--text-dim); }
-.bl-sum-side { color:var(--text-very-dim); }
 /* Mirrors .me-sidebar's frame on the other side of the gutter, so the two
    columns read as a pair rather than a card beside a bare region. */
 .bl-pane { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden;
@@ -1727,7 +1726,10 @@ input[type="text"]:focus { border-color: var(--accent); }
 .bl-side-l { justify-content:flex-end; }
 .bl-side-r { justify-content:flex-start; }
 .bl-side-name { color:var(--text-very-dim); }
-.bl-sides .bl-rule { border-bottom:0; }
+/* The spacer stays, because it is what keeps these halves the same width as the
+   table's; it is simply not drawn. The labels either side of it already say
+   where the middle is. Requested 2026-09-04. */
+.bl-sides .bl-rule { border:0; background:none; }
 
 .bl-split { flex:1; min-height:0; display:flex; align-items:stretch; }
 .bl-half  { flex:0 0 calc(50% - 5px); width:calc(50% - 5px); min-width:0; overflow:auto; }
@@ -20353,7 +20355,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.1.2';
+const APP_VERSION  = '1.52.1.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22636,7 +22638,9 @@ function _blSideMeta(o, isBaseline) {
   // Mirrored, like the table under it: the two labels meet at the rule and the
   // facts read outward from there, so the same fact sits the same distance from
   // the middle on both sides. Requested 2026-09-04.
-  const label = `<span class="bl-side-name">${isBaseline ? 'baseline' : 'current parse'}</span>`;
+  // The arrow points at the half the label belongs to, away from the rule the
+  // two labels meet at.
+  const label = `<span class="bl-side-name">${isBaseline ? '◀ baseline' : 'current parse ▶'}</span>`;
   const cells = facts.map(t => `<span>${_escHtml(String(t))}</span>`);
   const bits = isBaseline ? [...cells, label] : [label, ...cells.reverse()];
   return bits.map((h, i) => (i ? '<span class="rec-meta-pipe">|</span>' : '') + h).join('');
@@ -22914,9 +22918,6 @@ function _blTableHtml(b, cur, isCmp) {
        <span class="rec-meta-pipe">|</span><span>${same} identical</span>`
     : `<span>${bf.length} rows</span>`;
   const sum = `<div class="panel-bar bl-sum">${tally}
-      <span style="flex:1"></span>
-      <span class="bl-sum-side">◀ baseline</span>
-      <span class="rec-meta-pipe">|</span><span class="bl-sum-side">current parse ▶</span>
     </div>`;
 
   return sum + `<div class="bl-split">${halfTable('l')}<div class="bl-rule"></div>${halfTable('r')}</div>`;

@@ -20269,7 +20269,8 @@ test('baselines: the metadata says which side each fact belongs to', () => {
   assert.ok(/<div class="bl-side bl-side-r">\$\{isCmpNow \? _blSideMeta\(cur, false\) : ''\}<\/div>/.test(fn),
     'the right half is the current parse, and is empty when not comparing');
   const side = psFnSource('_blSideMeta');
-  assert.ok(/isBaseline \? 'baseline' : 'current parse'/.test(side), 'each half names itself');
+  assert.ok(/isBaseline \? '◀ baseline' : 'current parse ▶'/.test(side),
+    'each half names itself, with the arrow pointing at the half it belongs to');
   assert.ok(/isBaseline \? o\.byteCount : \(o\.bytes \|\| \[\]\)\.length/.test(side),
     'a baseline knows its byte count; a live parse is measured');
   assert.ok(/'saved ' \+ new Date\(o\.savedAt\)/.test(side) && /\(o\.time \|\| ''\)/.test(side),
@@ -20284,6 +20285,13 @@ test('baselines: the metadata says which side each fact belongs to', () => {
   assert.ok(/\.bl-side-l \{ justify-content:flex-end; \}/.test(src)
          && /\.bl-side-r \{ justify-content:flex-start; \}/.test(src),
     'each half is pushed against the rule');
+  // The spacer between them is NOT drawn — two labels meeting nose to nose
+  // already say where the middle is — but it keeps its width, because that is
+  // what holds these halves to the same size as the table's.
+  assert.ok(/\.bl-sides \.bl-rule \{ border:0; background:none; \}/.test(src),
+    'the metadata row has no visible rule');
+  assert.ok(/\.bl-rule  \{ flex:0 0 10px;/.test(src),
+    'but the spacer still takes the rule\'s width, so the halves stay aligned');
   assert.ok(/const bits = isBaseline \? \[\.\.\.cells, label\] : \[label, \.\.\.cells\.reverse\(\)\];/.test(side),
     'and the right half runs in the opposite order, so the pair is a mirror');
   assert.ok(/\.bl-side \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis;/.test(src),
@@ -20729,9 +20737,11 @@ test('baselines: the compare table is mirrored, so the values meet in the middle
   // current parse on the right. Requested 2026-09-03.
   assert.ok(/_blAlign\(bf, cf\)/.test(fn) && /const bf = _blFlatten\(b\), cf = isCmp \? _blFlatten\(cur\) : \[\];/.test(fn),
     'the left half is the baseline and the right half the current parse');
-  assert.ok(/<span class="bl-sum-side">◀ baseline<\/span>/.test(fn)
-         && /<span class="bl-sum-side">current parse ▶<\/span>/.test(fn),
-    'and the summary bar says which side is which');
+  // The side labels live on the metadata row, over the halves they name — the
+  // tally bar carried a second copy of the same pair, at the far right, where it
+  // read as part of the counts. Requested 2026-09-04.
+  assert.ok(!/bl-sum-side/.test(fs.readFileSync('./source.html', 'utf8')),
+    'the tally bar does not repeat what the metadata row already says');
 });
 
 test('baselines: tags are the user\'s own words, matched case-insensitively', () => {

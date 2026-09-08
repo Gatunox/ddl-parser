@@ -2178,7 +2178,8 @@ you, not of the layout. So it lives in its own section rather than in the parse
 spec: nothing about a tag changes how a byte is read.
 
 A tag is a label, a colour, and one or more conditions on fields of the bound —
-or mapped (§5.22) — DDL. Stored on the class object as `tags`:
+or mapped (§5.22) — DDL, or on a **token** (§5.3, §11.1 below). Stored on the
+class object as `tags`:
 
 ```jsonc
 "tags": [
@@ -2195,6 +2196,7 @@ or mapped (§5.22) — DDL. Stored on the class object as `tags`:
 | `equals` | the field's value is this one |
 | `not` | it is none of the listed values |
 | `one-of` | it is any of them — a comma-separated list, or an array |
+| `present` | the parse produced this id at all. Takes no value |
 
 Rules:
 
@@ -2212,6 +2214,39 @@ Rules:
 - Several tags can be true at once. They render after the type code in the Parse
   Results bar, in each tag's own colour, and say on hover which conditions
   earned them.
+
+### 11.1 Tokens in a tag *(added 2026-09-07)*
+
+A token is not in the DDL the class binds. It arrives inside the message with a
+2-character id, and what that id **means** is declared in a token map elsewhere
+in the repository — so a great deal of what a message is doing is stated by a
+token being there at all, or by a value inside one, and neither was nameable in a
+tag.
+
+The field box takes **either kind**, and its menu offers the tokens the
+repository knows before the DDL's own leaves, each beside the definition it
+resolves to (`B8 · TB8-TKN`) — nobody remembers that the routing data is under
+`B8`, and everybody remembers `TB8-TKN`, so the note is searched too.
+
+- **A token is addressed by its id**, and the only question you can ask about the
+  id on its own is `present`.
+- **Its fields are addressed by that id in front of the leaf.** The token's own
+  DDL qualification is dropped in favour of the id, so `TOKB4X.CARD-NUM` is
+  written `B4.CARD-NUM` and the name says which token the value came out of. Only
+  the first segment goes, so a group inside the token keeps its path
+  (`B4.GRP.SUB`). Token ids are two characters and DDL leaves never are, so the
+  two namespaces cannot collide.
+- **A token's fields are offered once the token is named** in one of that tag's
+  own conditions. Resolving a token's definition parses every candidate file it
+  passes, so doing it for every token in the map on the chance one gets used is a
+  scan of the whole repository per keystroke; it is done one id at a time and
+  cached on the DDL tree version.
+- **`present` is satisfied by a token whose DDL is not loaded.** Every other op
+  treats an entry that errored as no value at all, but a token with no definition
+  is still ON THE WIRE, and its being there is exactly what was asked about.
+- A tag on a token field fires only where tokens were actually read: a spec that
+  never reads a token area (§5.3) produces none, and the condition simply does
+  not hold.
 
 **Test Bar** (below the tab content area)
 - Collapsible panel. Format selector: Auto / Hex / ASCII.

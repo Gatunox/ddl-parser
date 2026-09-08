@@ -6028,6 +6028,116 @@ test('tags: a badge a message earns by what it holds', () => {
      'the displayed value is the one compared');
 });
 
+// A token is not in the DDL the class binds — it arrives inside the message with
+// a 2-character id, and what that id MEANS is declared in a token map elsewhere
+// in the repository. So a great deal of what a message is doing is stated by a
+// token being there at all, or by a value inside one, and neither was nameable
+// in a tag. Requested 2026-09-07.
+test('tags: a token is nameable by its id, and its fields by that id', () => {
+  const tagsFor = vm.runInContext('_meTagsFor', sandbox);
+  const msg = {
+    fields: [{ id: 'AMOUNT', value: '000100' }],
+    tokens: [
+      // A recognised token: parsed through its own DDL, whose leaves carry that
+      // DDL's qualification and not the class's.
+      { id: 'B4', fields: [{ id: 'TOKB4X.CARD-NUM', value: '4512 ' },
+                           { id: 'TOKB4X.GRP.SUB',  value: 'X' },
+                           { id: 'TOKB4X.TORN',     error: 'short' }] },
+      // On the wire, but its DDL is not loaded — parseTokenArea still returns it.
+      { id: 'ZZ', fields: [], error: 'Unknown token ID: ZZ' },
+    ],
+  };
+  const fired = (...conds) => tagsFor({ tags: [{ label: 'T', conditions: conds }] }, msg).length === 1;
+
+  eq(fired({ field: 'B4', op: 'present' }), true,  'the token id alone, with present');
+  eq(fired({ field: 'C0', op: 'present' }), false, 'a token that is not in the message');
+  // The whole point of a presence check on a token: one whose DDL is missing is
+  // still ON THE WIRE, and its being there is exactly what was asked about.
+  eq(fired({ field: 'ZZ', op: 'present' }), true, 'a token with no DDL is still present');
+  // present takes no value, and must not be defeated by the empty box beside it.
+  eq(fired({ field: 'B4', op: 'present', value: '' }), true, 'no value needed');
+  // A DDL field answers it too — it is one code path, not a token special case.
+  eq(fired({ field: 'AMOUNT', op: 'present' }), true,  'a plain field is present');
+  eq(fired({ field: 'NOPE',   op: 'present' }), false, 'and an absent one is not');
+
+  // The token's own DDL qualification is dropped in favour of the id, so the
+  // name says which token the value came out of.
+  eq(fired({ field: 'B4.CARD-NUM', op: 'equals', value: '4512' }), true, 'id + leaf, trimmed');
+  eq(fired({ field: 'B4.CARD-NUM', op: 'equals', value: '9999' }), false, 'id + leaf, no');
+  eq(fired({ field: 'TOKB4X.CARD-NUM', op: 'equals', value: '4512' }), false,
+     'the token DDL name is NOT how it is addressed');
+  // Only the FIRST segment goes, so a group inside the token keeps its path.
+  eq(fired({ field: 'B4.GRP.SUB', op: 'equals', value: 'X' }), true, 'a nested leaf keeps its path');
+  // A token field that errored is still not a value — same rule as a DDL field.
+  eq(fired({ field: 'B4.TORN', op: 'equals', value: 'x' }), false, 'a token field that errored');
+  // Both halves of one statement.
+  eq(fired({ field: 'B4', op: 'present' },
+            { field: 'AMOUNT', op: 'equals', value: '000100' }), true, 'token + field together');
+  eq(fired({ field: 'C0', op: 'present' },
+            { field: 'AMOUNT', op: 'equals', value: '000100' }), false, 'and both must hold');
+
+  // A message that was never token-parsed must not throw, and must not match.
+  eq(tagsFor({ tags: [{ label: 'T', conditions: [{ field: 'B4', op: 'present' }] }] },
+             { fields: [{ id: 'AMOUNT', value: '1' }] }).length, 0, 'no tokens on the message');
+  // The placeholder a detected-but-unreadable area returns carries no id, and
+  // must not become a key of its own.
+  eq(tagsFor({ tags: [{ label: 'T', conditions: [{ field: '', op: 'present' }] }] },
+             { fields: [], tokens: [{ id: null, fields: [], error: 'no definitions loaded' }] }).length, 0,
+     'the id-less placeholder is skipped');
+});
+
+test('tags: the field box takes a token id, and offers the tokens it knows', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // One box, either kind — a token id is not a second control.
+  assert.ok(/placeholder="field id \/ token id"/.test(src),
+    'the box says it takes either');
+  // present is an op like the others, so it needs no branch of its own anywhere
+  // the ops are listed.
+  const ops = vm.runInContext('_ME_TAG_OPS', sandbox);
+  deepEq(ops, ['equals', 'not', 'one-of', 'present'], 'present is offered in the dropdown');
+  // It takes no value, so the box beside it says so and stops accepting input
+  // rather than sitting there empty and looking unfinished.
+  const ph = vm.runInContext('_meTagValPlaceholder', sandbox);
+  eq(ph('present'), 'no value needed', 'the value box says nothing is needed');
+  eq(ph('one-of'),  'value, value, …',  'and the other placeholders are unchanged');
+  eq(ph('equals'),  'value');
+  assert.ok(/\$\{op === 'present' \? ' disabled' : ''\}/.test(psFnSource('_meTagForm')),
+    'and the box is disabled for present');
+  assert.ok(/val2\.disabled = val === 'present'/.test(psFnSource('_meTagCondSet')),
+    'including when the op is switched without a re-render');
+
+  // "B4 = ?" says the opposite of what a presence check means.
+  const sum = vm.runInContext('_meTagSum', sandbox);
+  assert.ok(/B4 present/.test(sum({ conditions: [{ field: 'B4', op: 'present' }] })),
+    'the summary writes it as a word, with no empty right-hand side');
+  assert.ok(!/\?/.test(sum({ conditions: [{ field: 'B4', op: 'present' }] })),
+    'and not as a symbol against a missing value');
+  const title = vm.runInContext('_meTagTitle', sandbox);
+  assert.ok(/B4 is present/.test(title({ conditions: [{ field: 'B4', op: 'present' }] })),
+    'and so does the badge tooltip');
+
+  // The token's DDL qualification is dropped in favour of the id.
+  const leaf = vm.runInContext('_meTagTokenLeaf', sandbox);
+  eq(leaf('TOKB4X.CARD-NUM'), 'CARD-NUM', 'the first segment goes');
+  eq(leaf('TOKB4X.GRP.SUB'),  'GRP.SUB',  'and only the first');
+  eq(leaf('CARD-NUM'),        'CARD-NUM', 'an unqualified leaf is left alone');
+
+  // findTokenDDL parses every candidate file it passes, and the suggestion box
+  // runs on each keystroke — so a token's leaves are resolved one id at a time,
+  // and only for ids the tag actually names.
+  const ids = psFnSource('_meTagFieldIds');
+  assert.ok(/for \(const c of \(tag\?\.conditions \|\| \[\]\)\)/.test(ids),
+    'the leaves offered come from the conditions already written');
+  assert.ok(/_meTagTokenLeaves\(item, head\)/.test(ids), 'resolved per id');
+  const leaves = psFnSource('_meTagTokenLeaves');
+  assert.ok(/if \(key in c\.leaves\) return c\.leaves\[key\]/.test(leaves),
+    'and cached, or every keystroke is a scan of the whole repository');
+  // Cached on the tree version, the same key the other repo scans use — a token
+  // map edited mid-session must not go on answering with what it used to say.
+  assert.ok(/_meTagTokCache\.treeV !== _ddlTreeVersion/.test(psFnSource('_meTagTokCacheFor')),
+    'the cache is invalidated when the DDL tree changes');
+});
+
 test('[REGRESSION] Save redraws the class rows, so their chips are not stale', () => {
   // Every chip on a class row is DERIVED from the class — volume, bound DDL,
   // which parse-spec variants exist, the override count, the tag count. The
@@ -6075,7 +6185,10 @@ test('tags: the section and the badge are wired', () => {
   const sug = psFnSource('_meTagFieldSuggest');
   assert.ok(/showCtxMenu\(r\.left, r\.bottom \+ 2, items\)/.test(sug),
     'through showCtxMenu, which is positioned in page coordinates and flips off the edges');
-  assert.ok(/_meTagFieldIds\(_meCurItem\(\)\)/.test(sug), 'from the bound DDL');
+  // The tag being edited goes in with the item: a token's fields are offered
+  // only once that token is named in one of ITS OWN conditions.
+  assert.ok(/_meTagFieldIds\(_meCurItem\(\), _meState\.tagPend\)/.test(sug),
+    'from the bound DDL, and the tag being edited');
   assert.ok(/hits\.slice\(0, _ME_TAG_SUGGEST_MAX\)/.test(sug),
     'capped — a menu of two hundred is a scroll, not a choice');
   assert.ok(/more — keep typing/.test(sug), 'and it says how many it is not showing');

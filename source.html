@@ -7337,6 +7337,7 @@ function _meTagBadgesHtml(msg) {
 function _meTagTitle(t) {
   const parts = (t.conditions || []).filter(c => c && c.field).map(c => {
     const op = String(c.op || 'equals');
+    if (op === 'present') return `${c.field} is present`;
     const vals = _meTagValues(c).join(', ');
     return `${c.field} ${op === 'one-of' ? 'is one of' : op === 'not' ? 'is not' : 'is'} ${vals}`;
   });
@@ -20376,7 +20377,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.52.2.0';
+const APP_VERSION  = '1.53.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -31353,13 +31354,96 @@ function _meFileWarnsRefresh() {
 // A class says what a message IS; a tag says something ABOUT one. It lives here
 // rather than in the parse spec because it is a property of the values, not of
 // the layout — nothing about a tag changes how a byte is read.
-function _meTagFieldIds(item) {
-  const bindings = (item?.ddl_bindings || []).filter(Boolean);
-  if (!bindings.length) return [];
+// ── Tokens in a tag ─────────────────────────────────────────────────────────
+// A token is not in the DDL the class binds. It arrives inside the message with
+// a 2-character id, and what that id MEANS is declared in a token map somewhere
+// else in the repository — so a great deal of what a message is doing is stated
+// by a token being there at all, or by a value inside one, and neither was
+// nameable in a tag. A token is addressed by its id; its fields by that id in
+// front of the leaf, so `TOKB4X.CARD-NUM` is written `B4.CARD-NUM` and the name
+// says which token the value came out of. Requested 2026-09-07.
+//
+// Both scans below walk every file in every volume, and the suggestion box runs
+// on each keystroke — so both are cached on the tree version, the same key
+// buildRepoTypeRegistry and the rest of the repo scans use.
+let _meTagTokCache = { treeV: -1, tree: null, map: null, leaves: {} };
+function _meTagTokCacheFor() {
+  if (_meTagTokCache.treeV !== _ddlTreeVersion || _meTagTokCache.tree !== S.ddlTree)
+    _meTagTokCache = { treeV: _ddlTreeVersion, tree: S.ddlTree, map: null, leaves: {} };
+  return _meTagTokCache;
+}
+function _meTagTokVol(item) {
+  return ((item?.ddl_bindings || []).find(Boolean) || '').split('/')[0] || null;
+}
+// id → the DDL name the token map gives it. Every token the repository knows,
+// because you have to be able to FIND the id before you can write it down.
+function _meTagTokenMap(item) {
+  const c = _meTagTokCacheFor();
+  if (c.map) return c.map;
+  let map = {};
   try {
-    const defs = _meCollectBindingDefs(bindings.map(p => getDDLFromPath(p)));
-    return defs.filter(d => !d.isRedefines).map(d => d.id);
-  } catch (e) { return []; }
+    const maps = getTokenMaps(_meTagTokVol(item));
+    if (maps.length) map = mergeTokenMaps(maps, _meTagTokVol(item));
+  } catch (e) { map = {}; }
+  c.map = map;
+  return map;
+}
+// The token's own DDL qualification, dropped in favour of the token id. Only the
+// FIRST segment goes, so a group inside the token keeps its path.
+function _meTagTokenLeaf(id) {
+  const s = _canonFieldId(id);
+  const i = s.indexOf('.');
+  return i > 0 ? s.slice(i + 1) : s;
+}
+// Resolved one id at a time, and only for ids a tag actually names: findTokenDDL
+// parses every candidate file it passes, so doing it for every token in the map
+// on the chance one gets used is a scan of the whole repository per keystroke.
+function _meTagTokenLeaves(item, tokId) {
+  const id = String(tokId || '').toUpperCase();
+  if (!id) return [];
+  const c = _meTagTokCacheFor();
+  const vol = _meTagTokVol(item);
+  const type = String(item?.type || item?.name || '').toUpperCase();
+  const isISO = type === 'ISO' || type === 'B24';
+  const key = `${vol}|${isISO ? 'iso' : 'stm'}|${id}`;
+  if (key in c.leaves) return c.leaves[key];
+  let out = [];
+  const ddlName = _meTagTokenMap(item)[id];
+  if (ddlName) {
+    try {
+      const entry = findTokenDDL(ddlName, vol, isISO);
+      if (entry) out = entry.defs.filter(d => !d.isRedefines && !d.isGroup)
+                                 .map(d => `${id}.${_meTagTokenLeaf(d.id)}`);
+    } catch (e) { out = []; }
+  }
+  c.leaves[key] = out;
+  return out;
+}
+
+// What the field box will accept, in the order it offers them. `tag` is the tag
+// being edited: a token's fields are nameable once the token itself is named in
+// one of ITS conditions, because the list is meant to be the fields you can
+// actually use and every field of every token in the repository is not that.
+function _meTagFieldIds(item, tag) {
+  const out = [];
+  const seen = new Set();
+  const add = (id, note) => { if (id && !seen.has(id)) { seen.add(id); out.push({ id, note }); } };
+  const tokMap = _meTagTokenMap(item);
+  for (const id of Object.keys(tokMap).sort()) add(id, tokMap[id]);
+  const bindings = (item?.ddl_bindings || []).filter(Boolean);
+  if (bindings.length) {
+    try {
+      const defs = _meCollectBindingDefs(bindings.map(p => getDDLFromPath(p)));
+      for (const d of defs) if (!d.isRedefines) add(d.id, null);
+    } catch (e) {}
+  }
+  for (const c of (tag?.conditions || [])) {
+    if (!c || !c.field) continue;
+    const head = String(c.field).split('.')[0].toUpperCase();
+    if (!tokMap[head]) continue;
+    for (const leaf of _meTagTokenLeaves(item, head)) add(leaf, tokMap[head]);
+  }
+  return out;
 }
 
 function _meTagSum(t) {
@@ -31368,9 +31452,13 @@ function _meTagSum(t) {
   // Symbols, not words: this line is one row of monospace beside a badge, and
   // "is one of" three times over is longer than the field ids it is about.
   const OP = { equals: '=', not: '\u2260', 'one-of': '\u2208' };
-  return conds.map(c =>
-    `${_meOvEsc(c.field)} ${OP[c.op || 'equals'] || '='} ${_meOvEsc(_meTagValues(c).join(', ')) || '?'}`
-  ).join('<span class="me-rec-sep"> · </span>');
+  return conds.map(c => {
+    // `present` has no right-hand side, so it is written as a word rather than a
+    // symbol against an empty value: "B4 = ?" says the opposite of what it means,
+    // which is that nothing more needs saying.
+    if ((c.op || 'equals') === 'present') return `${_meOvEsc(c.field)} present`;
+    return `${_meOvEsc(c.field)} ${OP[c.op || 'equals'] || '='} ${_meOvEsc(_meTagValues(c).join(', ')) || '?'}`;
+  }).join('<span class="me-rec-sep"> · </span>');
 }
 
 // Collapsed rows with a summary, opening to a form on click — the same shape as
@@ -31416,6 +31504,14 @@ function _meHtmlTags(item) {
 
 const _ME_TAG_NEW = -2;
 
+// `present` takes no value, so the box beside it says so and stops accepting
+// input rather than sitting there empty and looking unfinished.
+function _meTagValPlaceholder(op) {
+  return op === 'present' ? 'no value needed'
+       : op === 'one-of'  ? 'value, value, …'
+       : 'value';
+}
+
 function _meTagForm(t, ti) {
   const conds = Array.isArray(t.conditions) ? t.conditions : [];
   let h = `<div class="me-rec-form open">
@@ -31430,16 +31526,17 @@ function _meTagForm(t, ti) {
   <div class="me-tag-conds">`;
   if (!conds.length) h += `<div class="me-tag-note">No conditions — this tag never fires.</div>`;
   conds.forEach((c, ci) => {
+    const op = c.op || 'equals';
     h += `<div class="me-tag-cond">
-    <input class="me-inp" value="${_meOvEsc(c.field || '')}" placeholder="field id"
+    <input class="me-inp" value="${_meOvEsc(c.field || '')}" placeholder="field id / token id"
            autocomplete="off" spellcheck="false"
            onclick="_meTagFieldSuggest(this,${ti},${ci},event)"
            oninput="_meTagCondSet(${ti},${ci},'field',this.value);_meTagFieldSuggest(this,${ti},${ci})">
     <select class="me-sel" onchange="_meTagCondSet(${ti},${ci},'op',this.value)">
-      ${_ME_TAG_OPS.map(o => `<option value="${o}"${(c.op || 'equals') === o ? ' selected' : ''}>${o}</option>`).join('')}
+      ${_ME_TAG_OPS.map(o => `<option value="${o}"${op === o ? ' selected' : ''}>${o}</option>`).join('')}
     </select>
     <input class="me-inp" value="${_meOvEsc(Array.isArray(c.value) ? c.value.join(', ') : (c.value || ''))}"
-           placeholder="${(c.op || 'equals') === 'one-of' ? 'value, value, …' : 'value'}"
+           placeholder="${_meTagValPlaceholder(op)}"${op === 'present' ? ' disabled' : ''}
            oninput="_meTagCondSet(${ti},${ci},'value',this.value)">
     <button class="me-rb del" onclick="_meTagCondDel(${ti},${ci})" title="Remove this condition">&#x00D7;</button>
   </div>`;
@@ -31519,15 +31616,19 @@ function _meTagFieldSuggest(el, ti, ci, ev) {
   // a click — so without this the menu appeared and was dismissed by the very
   // same event. It was built, positioned, and hidden again in one tick.
   if (ev && ev.stopPropagation) ev.stopPropagation();
-  const ids = _meTagFieldIds(_meCurItem());
+  const ids = _meTagFieldIds(_meCurItem(), _meState.tagPend);
   if (!ids.length) return;
   const q    = String(el.value || '').trim().toUpperCase();
-  const hits = (q ? ids.filter(i => i.toUpperCase().includes(q)) : ids);
+  // The note is searched too, so the DDL name finds the token: nobody remembers
+  // that the card data is under "B4", and they do remember TOKB4X.
+  const hits = (q ? ids.filter(i => `${i.id} ${i.note || ''}`.toUpperCase().includes(q)) : ids);
   if (!hits.length) { hideCtxMenu(); return; }
   // Capped, and the cap is stated: a menu of two hundred is a scroll, not a
   // choice, and typing one more character is the faster way through it.
   const shown = hits.slice(0, _ME_TAG_SUGGEST_MAX);
-  const items = shown.map(id => ({ label: id, fn: () => {
+  // The note is shown but never inserted — what goes in the box is the id, and
+  // a label that is not what you get is a label that will be typed by hand.
+  const items = shown.map(({ id, note }) => ({ label: note ? `${id} · ${note}` : id, fn: () => {
     el.value = id;
     _meTagCondSet(ti, ci, 'field', id);
     el.focus();
@@ -31623,7 +31724,10 @@ function _meTagCondSet(ti, ci, key, val) {
     const row = document.querySelectorAll('.me-rec-row')[ti];
     const box = row && row.querySelectorAll('.me-tag-cond')[ci];
     const val2 = box && box.querySelectorAll('input')[1];
-    if (val2) val2.placeholder = val === 'one-of' ? 'value, value, …' : 'value';
+    if (val2) {
+      val2.placeholder = _meTagValPlaceholder(val);
+      val2.disabled = val === 'present';
+    }
   }
 }
 
@@ -34529,7 +34633,10 @@ function _meExecReadWindow(attrs, ctx) {
 // Comparison is on the field's VALUE, trimmed and case-insensitively. A PIC X
 // field is space-padded on the wire and nobody should have to count the padding
 // to write a tag; a field that was never read matches nothing.
-const _ME_TAG_OPS = ['equals', 'not', 'one-of'];
+// `present` is the odd one out and deliberately so: it takes no value, and it is
+// the only question you can ask about a token id on its own. Requested
+// 2026-09-07.
+const _ME_TAG_OPS = ['equals', 'not', 'one-of', 'present'];
 
 function _meTagValues(cond) {
   const raw = cond == null ? '' : cond.value;
@@ -34540,6 +34647,12 @@ function _meTagValues(cond) {
 function _meTagCondHolds(cond, byId) {
   if (!cond || !cond.field) return false;
   const f = byId[_canonFieldId(cond.field)];
+  // `present` asks whether the parse produced this id at all, and nothing about
+  // what it holds — so it takes no value and, unlike every op below, an entry
+  // carrying an error still satisfies it. That is the point for a token: one
+  // whose DDL is not loaded is still ON THE WIRE, and its being there is exactly
+  // what was asked about.
+  if (String(cond.op || 'equals') === 'present') return !!f;
   const want = _meTagValues(cond);
   if (!want.length) return false;
   // A field the parse never produced. `not` is deliberately false here too:
@@ -34562,6 +34675,22 @@ function _meTagsFor(item, msg) {
   if (!tags.length || !msg) return [];
   const byId = {};
   for (const f of (msg.fields || [])) if (f && f.id && !f.error) byId[_canonFieldId(f.id)] = f;
+  // Tokens are their own definitions, reached through the token map rather than
+  // the DDL the class binds, so a tag that asks about one has to be handed them
+  // separately. The id alone answers `present`; its leaves come in behind it as
+  // `B4.CARD-NUM`. Requested 2026-09-07.
+  for (const tk of (msg.tokens || [])) {
+    // The placeholder a detected-but-unreadable area returns carries no id.
+    if (!tk || !tk.id) continue;
+    const id = String(tk.id).toUpperCase();
+    // A marker, not the token object: `present` only needs the key to exist, and
+    // handing the raw token to the value ops would compare against nothing.
+    byId[id] = { id, value: '', isToken: true };
+    for (const f of (tk.fields || [])) {
+      if (!f || !f.id || f.error) continue;
+      byId[`${id}.${_meTagTokenLeaf(f.id)}`] = f;
+    }
+  }
   return tags.filter(t => {
     const conds = Array.isArray(t?.conditions) ? t.conditions.filter(c => c && c.field) : [];
     // No conditions is not "always true": an empty tag is one being written, and

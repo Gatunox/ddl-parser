@@ -6200,6 +6200,59 @@ test('[REGRESSION] a tag compares the value an override produced, on the first r
     'and it lives in a function of its own');
 });
 
+// The fix above is only worth having if it covers EVERY override, not the one
+// that was reported. Table-driven off the option lists themselves, so a new
+// override type cannot be added without either working here or failing loudly.
+test('every override the panel offers reaches a tag', () => {
+  const applyOvr = vm.runInContext('_msgApplyOverrides', sandbox);
+  const tagsFor  = vm.runInContext('_meTagsFor', sandbox);
+  const TYPES = vm.runInContext('_ME_TYPE_OPTS', sandbox).filter(Boolean);
+  const DISPS = vm.runInContext('_ME_DISP_OPTS', sandbox).filter(Boolean);
+  const mk = rawHex => ({ fields: [{ id: 'F', value: '?', rawHex,
+    rawBytes: rawHex.match(/../g).map(h => parseInt(h, 16)) }] });
+  // Each type is given bytes it can actually read: the hex-*-decimal pair take
+  // hex digits written as TEXT, so 00 00 00 01 is not a case they accept and
+  // testing them with it proves nothing about the path.
+  const BYTES = { 'hex-ascii-decimal': '30304646',    // ASCII  "00FF"
+                  'hex-ebcdic-decimal': 'F0F0C6C6' }; // EBCDIC "00FF"
+  const WANT = { 'uint-be': '1', 'uint-le': '16777216', 'binary': '0x00000001',
+                 'ascii': '....', 'ebcdic': '....', 'hex-char': '00000001',
+                 'hex-ascii-decimal': '255', 'hex-ebcdic-decimal': '255' };
+  for (const t of TYPES) {
+    const m = mk(BYTES[t] || '00000001');
+    applyOvr(m, { name: 'S', overrides: { F: { type: t } } });
+    eq(m.fields[0].typeOverride, t, `${t}: the override is applied`);
+    eq(String(m.fields[0].value), WANT[t], `${t}: and produces the value the column shows`);
+    // The whole point: a tag written against that value now holds.
+    eq(tagsFor({ tags: [{ label: 'X', conditions: [{ field: 'F', op: 'equals', value: WANT[t] }] }] },
+               m).length, 1, `${t}: a tag on it fires`);
+  }
+  for (const d of DISPS) {
+    const m = mk('00000001');
+    applyOvr(m, { name: 'S', overrides: { F: { display: d } } });
+    eq(m.fields[0].displayOverride, d, `${d}: the display override is applied`);
+    assert.ok(m.fields[0].displayValue != null, `${d}: and produces a displayValue`);
+    eq(tagsFor({ tags: [{ label: 'X', conditions: [
+      { field: 'F', op: 'equals', value: m.fields[0].displayValue }] }] },
+      m).length, 1, `${d}: a tag on what is displayed fires`);
+  }
+  // The width gate rejects a LEGACY fixed-width type on a field of another size,
+  // and must go on doing so — reading four bytes as a uint16 is not a narrowing,
+  // it is a different number. None of these are offered in the dropdown; they
+  // reach here only from an older imported spec.
+  const narrow = mk('00000001');
+  applyOvr(narrow, { name: 'S', overrides: { F: { type: 'uint16' } } });
+  eq(narrow.fields[0].typeOverride, undefined, 'uint16 on a 4-byte field is refused');
+  eq(String(narrow.fields[0].value), '?', 'and the value is left as it was read');
+  const fits = mk('00000001');
+  applyOvr(fits, { name: 'S', overrides: { F: { type: 'uint32' } } });
+  eq(String(fits.fields[0].value), '1', 'uint32 on a 4-byte field is read');
+  // A bytes override trims first, then the type reads what is left.
+  const trimmed = mk('00000001');
+  applyOvr(trimmed, { name: 'S', overrides: { F: { type: 'hex-char', bytes: 2 } } });
+  eq(String(trimmed.fields[0].value), '0000', 'bytes trims before the type reads');
+});
+
 test('[REGRESSION] Save redraws the class rows, so their chips are not stale', () => {
   // Every chip on a class row is DERIVED from the class — volume, bound DDL,
   // which parse-spec variants exist, the override count, the tag count. The

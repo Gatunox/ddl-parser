@@ -14322,7 +14322,13 @@ function _msgApplyOverrides(msg, spec) {
       const _eff = (_b > 0 && _b < _len) ? _b : _len;
       if (_req === null || _req === _eff) {
         const _u = _meReadApplyTypeOverride(_f, _o.type);
-        if (_u.value !== undefined) { _f.value = _u.value; _f.typeOverride = _o.type; }
+        // The reading the override replaced, kept rather than discarded: it is
+        // one of the three things the value tooltip offers, and one of the three
+        // a tag will accept.
+        if (_u.value !== undefined) {
+          if (_f.rawValue === undefined) _f.rawValue = _f.value;
+          _f.value = _u.value; _f.typeOverride = _o.type;
+        }
       }
     }
     if (_o.display && !_f.displayOverride) {
@@ -14663,7 +14669,7 @@ function renderFieldTable(msg) {
       <td class="c-desc" title="${esc(descTip)}">${descHtml}${errLine}${det}</td>
       <td class="c-len">${lenCell}</td>
       <td class="c-off">${offCell}</td>
-      <td class="${ecls}" data-tip="${esc(f.value)}">${prefixHtml}${escSpaces(val)}</td>
+      <td class="${ecls}" data-tip="${esc(_meValueTip(f))}">${prefixHtml}${escSpaces(val)}</td>
       <td class="c-raw" data-tip="${esc(f.rawHex||'')}">${rHex}</td>
       <td class="c-trk" style="text-align:center">
         <input type="checkbox" class="trk-chk" ${trk}
@@ -15231,6 +15237,32 @@ function _hideCellTip() {
   if (tip) tip.style.display = 'none';
 }
 // Event delegation — attach once after DOM ready; reads data-tip from td
+// What a value cell says on hover. It used to repeat the cell's own text, which
+// tells the reader nothing they were not already looking at — and once an
+// override is set the cell shows ONE of three readings, with no way to see the
+// others. Now each reading that exists is named:
+//
+//   RAW:  0000
+//   TYPE: 00000001            (only when a TYPE override rewrote the value)
+//   SHOW: 0x00000001          (only when a SHOW override formats it)
+//
+// The labels are the Overrides panel's own column names, so the line tells you
+// which override produced it. All three are things a tag will accept, which is
+// the point: a GMT timestamp is easier to write as the date on the SHOW line
+// than as the microsecond count on the RAW one. Requested 2026-09-09.
+function _meValueTip(f) {
+  if (!f) return '';
+  const raw  = f.rawValue !== undefined ? f.rawValue : f.value;
+  const rows = [['RAW', raw]];
+  if (f.typeOverride && f.value !== raw)          rows.push(['TYPE', f.value]);
+  if (f.displayOverride && f.displayValue != null) rows.push(['SHOW', f.displayValue]);
+  // Nothing overridden: one labelled line would be a label on the only thing
+  // there is. The cell already shows it, so say nothing rather than echo it.
+  if (rows.length === 1) return String(raw ?? '');
+  const w = Math.max(...rows.map(r => r[0].length));
+  return rows.map(([k, v]) => `${k.padEnd(w)} : ${String(v ?? '')}`).join('\n');
+}
+
 function _initCellTooltip() {
   const container = document.getElementById('resContainer');
   if (!container) return;
@@ -20396,7 +20428,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.53.1.0';
+const APP_VERSION  = '1.53.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -34563,7 +34595,11 @@ function _meApplyTypeOverride(f, def, ctx, inlineType) {
       return;
     }
   }
+  // The reading the override replaces, kept for the value tooltip and for tag
+  // matching — the same three candidates the legacy path preserves.
+  const _pre = f.value;
   Object.assign(f, _meReadApplyTypeOverride(f, typeOverride, _meWireHex(f, ctx)));
+  if (f.rawValue === undefined && f.value !== _pre) f.rawValue = _pre;
   _applyTrim();
 }
 
@@ -34663,6 +34699,25 @@ function _meTagValues(cond) {
   return list.map(v => String(v).trim().toUpperCase()).filter(v => v !== '');
 }
 
+// The readings of one field, in the order the value tooltip lists them: what the
+// bytes read as before any override, what a TYPE override made of them, and what
+// a SHOW override draws. Deduplicated, trimmed and upper-cased — a PIC X field
+// is space-padded on the wire and nobody should have to count the padding.
+// Shared with _meValueTip so the tooltip cannot offer a reading the comparison
+// would then refuse. Requested 2026-09-09.
+function _meTagReadings(f) {
+  if (!f) return [];
+  const out = [];
+  const add = v => { if (v != null && v !== '') out.push(v); };
+  add(f.rawValue); add(f.value); add(f.displayValue);
+  return out;
+}
+function _meTagHaves(f) {
+  const seen = new Set();
+  for (const v of _meTagReadings(f)) seen.add(String(v).trim().toUpperCase());
+  return [...seen];
+}
+
 function _meTagCondHolds(cond, byId) {
   if (!cond || !cond.field) return false;
   const f = byId[_canonFieldId(cond.field)];
@@ -34679,11 +34734,20 @@ function _meTagCondHolds(cond, byId) {
   // absent supports no claim about it. A tag that fired on every message missing
   // the field would be worse than one that never fired.
   if (!f || f.error) return false;
-  const have = String(f.displayValue != null ? f.displayValue : (f.value ?? '')).trim().toUpperCase();
+  // ANY of the readings the field carries, because any of them is a reasonable
+  // thing to have typed: they are the three the value tooltip offers side by
+  // side, so what you can read you can write. A GMT timestamp is far easier to
+  // type as the date the column shows than as the microsecond count behind it,
+  // and a hex-char element is easier as the "00000001" the column shows than as
+  // the control characters it came from — neither should be the only one
+  // accepted. Requested 2026-09-09.
+  const have = _meTagHaves(f);
   switch (String(cond.op || 'equals')) {
-    case 'not':    return !want.includes(have);
-    case 'one-of': return want.includes(have);
-    default:       return have === want[0];
+    // `not` holds when NONE of them is a listed value: the claim is about the
+    // field, and the field is all three of its readings at once.
+    case 'not':    return !have.some(h => want.includes(h));
+    case 'one-of': return have.some(h => want.includes(h));
+    default:       return have.includes(want[0]);
   }
 }
 

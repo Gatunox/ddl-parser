@@ -6022,10 +6022,30 @@ test('tags: a badge a message earns by what it holds', () => {
                         tag([{ field: 'AMOUNT', op: 'equals', value: '999' }],    'B'),
                         tag([{ field: 'CURRENCY', op: 'equals', value: 'USD' }],  'C')] };
   deepEq(tagsFor(many, msg).map(t => t.label), ['A', 'C'], 'the ones that hold, in definition order');
-  // A display override is what the reader sees, so it is what a tag compares.
-  eq(tagsFor({ tags: [tag([{ field: 'X', op: 'equals', value: '14:30' }])] },
-             { fields: [{ id: 'X', value: '1430', displayValue: '14:30' }] }).length, 1,
-     'the displayed value is the one compared');
+  // ANY reading the field carries is accepted — they are the ones the value
+  // tooltip lists side by side, so what you can read you can write. A GMT
+  // timestamp is far easier to type as the date the SHOW line gives than as the
+  // microsecond count behind it. Requested 2026-09-09.
+  const shown = { fields: [{ id: 'X', value: '1430', displayValue: '14:30' }] };
+  eq(tagsFor({ tags: [tag([{ field: 'X', op: 'equals', value: '1430' }])] }, shown).length, 1,
+     'the underlying value matches');
+  eq(tagsFor({ tags: [tag([{ field: 'X', op: 'equals', value: '14:30' }])] }, shown).length, 1,
+     'and so does the SHOW formatting');
+  eq(tagsFor({ tags: [tag([{ field: 'X', op: 'equals', value: '99:99' }])] }, shown).length, 0,
+     'but not a value that is neither');
+  // `not` is a claim about the FIELD, and the field is all of its readings at
+  // once — so it holds only when none of them is the listed value.
+  eq(tagsFor({ tags: [tag([{ field: 'X', op: 'not', value: '14:30' }])] }, shown).length, 0,
+     'not: the SHOW reading counts against it too');
+  eq(tagsFor({ tags: [tag([{ field: 'X', op: 'not', value: '99:99' }])] }, shown).length, 1,
+     'not: and holds when no reading matches');
+  // The reading a TYPE override replaced is kept and stays matchable, so a tag
+  // written before the override was set goes on working.
+  const pre = { fields: [{ id: 'X', rawValue: '....', value: '00000001', typeOverride: 'hex-char' }] };
+  eq(tagsFor({ tags: [tag([{ field: 'X', op: 'equals', value: '00000001' }])] }, pre).length, 1,
+     'the TYPE reading matches');
+  eq(tagsFor({ tags: [tag([{ field: 'X', op: 'equals', value: '....' }])] }, pre).length, 1,
+     'and the reading it replaced still does');
 });
 
 // A token is not in the DDL the class binds — it arrives inside the message with
@@ -6165,8 +6185,8 @@ test('[REGRESSION] a tag compares the value an override produced, on the first r
   eq(before.fields[0].value, '00000001', 'the override rewrites the value...');
   deepEq(tagsFor(spec, before).map(t => t.label), ['ECHO'], '...and the tag then holds');
 
-  // A display override lands in displayValue rather than value, and a tag
-  // compares what the reader SEES, so that path has to be applied just as early.
+  // A display override lands in displayValue rather than value. It is applied on
+  // the same pass, but it is NOT what a tag compares — see the SHOW rule below.
   const disp = { name: 'D', overrides: { 'TDE.DATA': { display: 'hex' } },
     tags: [{ label: 'D', conditions: [{ field: 'TDE.DATA', op: 'equals', value: '00 00 00 01' }] }] };
   const m2 = mkMsg();
@@ -6227,15 +6247,51 @@ test('every override the panel offers reaches a tag', () => {
     eq(tagsFor({ tags: [{ label: 'X', conditions: [{ field: 'F', op: 'equals', value: WANT[t] }] }] },
                m).length, 1, `${t}: a tag on it fires`);
   }
+  // SHOW leaves the value alone and formats it for the column — and that
+  // formatting is matchable too, because it is one of the readings the tooltip
+  // offers.
   for (const d of DISPS) {
     const m = mk('00000001');
     applyOvr(m, { name: 'S', overrides: { F: { display: d } } });
     eq(m.fields[0].displayOverride, d, `${d}: the display override is applied`);
     assert.ok(m.fields[0].displayValue != null, `${d}: and produces a displayValue`);
+    eq(String(m.fields[0].value), '?', `${d}: while the underlying value is untouched`);
+    eq(tagsFor({ tags: [{ label: 'X', conditions: [{ field: 'F', op: 'equals', value: '?' }] }] },
+       m).length, 1, `${d}: a tag on the underlying value fires`);
     eq(tagsFor({ tags: [{ label: 'X', conditions: [
       { field: 'F', op: 'equals', value: m.fields[0].displayValue }] }] },
-      m).length, 1, `${d}: a tag on what is displayed fires`);
+      m).length, 1, `${d}: and so does one on the SHOW formatting`);
   }
+  // TYPE and SHOW together — the combination the rule exists to settle. All
+  // three readings are offered by the tooltip, so all three must match.
+  const both = mk('00000001');
+  applyOvr(both, { name: 'S', overrides: { F: { type: 'hex-char', display: 'hex' } } });
+  eq(String(both.fields[0].value), '00000001', 'TYPE rewrites the value');
+  eq(String(both.fields[0].rawValue), '?', 'the reading it replaced is kept');
+  assert.ok(both.fields[0].displayValue !== '00000001', 'SHOW formats it for the column');
+  for (const [what, v] of [['RAW', '?'], ['TYPE', '00000001'],
+                           ['SHOW', both.fields[0].displayValue]])
+    eq(tagsFor({ tags: [{ label: 'X', conditions: [
+      { field: 'F', op: 'equals', value: v }] }] }, both).length, 1,
+      `the ${what} reading is matchable`);
+  // And the tooltip names exactly those three, in that order — it must not be
+  // able to offer a reading the comparison would refuse.
+  const tip = vm.runInContext('_meValueTip', sandbox)(both.fields[0]);
+  deepEq(tip.split('\n').map(l => l.split(' : ')[0].trim()), ['RAW', 'TYPE', 'SHOW'],
+    'the tooltip lists RAW, TYPE and SHOW');
+  for (const v of ['?', '00000001', String(both.fields[0].displayValue)])
+    assert.ok(tip.includes(v), `and shows the ${v} reading`);
+  // With nothing overridden there is only one reading, and labelling the only
+  // thing there is would be noise — the cell already shows it.
+  const plain = mk('00000001');
+  eq(vm.runInContext('_meValueTip', sandbox)(plain.fields[0]), '?',
+    'no override: the tooltip is just the value, unlabelled');
+  // And the value cell actually USES it. Without this the two above test a
+  // function nothing calls, and reverting the cell to data-tip="${esc(f.value)}"
+  // leaves every assertion here passing.
+  assert.ok(/<td class="\$\{ecls\}" data-tip="\$\{esc\(_meValueTip\(f\)\)\}"/.test(
+    fs.readFileSync('./source.html', 'utf8')),
+    'the value cell draws its tooltip from _meValueTip');
   // The width gate rejects a LEGACY fixed-width type on a field of another size,
   // and must go on doing so — reading four bytes as a uint16 is not a narrowing,
   // it is a different number. None of these are offered in the dropdown; they

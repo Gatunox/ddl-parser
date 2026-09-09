@@ -2202,10 +2202,16 @@ Rules:
 
 - **Every condition must hold.** A tag is one statement; "any of these" is two
   tags wearing one badge, which is why `one-of` exists for the common case.
-- Comparison is on the field's **displayed** value, trimmed and
-  case-insensitively. A `PIC X` field is space-padded on the wire and nobody
-  should have to count the padding; a display override is what the reader sees,
-  so it is what a tag compares.
+- Comparison is trimmed and case-insensitive — a `PIC X` field is space-padded on
+  the wire and nobody should have to count the padding — and it accepts **any
+  reading the field carries**: what the bytes read as before any override, what a
+  TYPE override made of them, and what a SHOW override draws. These are exactly
+  the three the value tooltip lists (§11.2), so what you can read you can write.
+  A GMT timestamp is far easier to type as the date the column shows than as the
+  microsecond count behind it, and neither should be the only one accepted.
+  `not` holds only when **none** of the readings is a listed value: the claim is
+  about the field, and the field is all of its readings at once.
+  *(Widened 2026-09-09; before that only the displayed value was compared.)*
 - **A field the parse never produced supports no claim about itself**, `not`
   included — a tag that fired on every message *missing* a field would be worse
   than one that never fired.
@@ -2261,6 +2267,38 @@ resolves to (`B8 · TB8-TKN`) — nobody remembers that the routing data is unde
 - Each message can be duplicated in two clicks (Copy button in sidebar), enabling fast creation of variants.
 
 ---
+
+### 11.2 The value tooltip — RAW, TYPE, SHOW *(added 2026-09-09)*
+
+Hovering a value in Parse Results used to repeat the cell's own text, which tells
+the reader nothing they were not already looking at. Once an override is set the
+cell shows **one** of three readings, and the others had nowhere to appear:
+
+```
+RAW  : 0000
+TYPE : 00000001
+SHOW : 0x00000001
+```
+
+`RAW` is the value as read before any override and is always present; `TYPE` and
+`SHOW` appear only when that override is set and actually changed something. The
+labels are the Overrides panel's own column names, so each line says which
+override produced it. With nothing overridden there is one reading and the
+tooltip is just the value, unlabelled — a label on the only thing there is would
+be noise.
+
+All three are matchable by a tag (§11), which is the point of showing them
+together: the tooltip must never offer a reading the comparison would refuse.
+
+**Where the overrides are applied.** They are applied to the field values once
+per message, by `_msgApplyOverrides`, as the **first** statement of the render —
+before the metadata bar, which draws the tag badges. It used to be a block
+partway down that render, sixty lines *below* those badges, so a tag was tested
+against the declared-type reading and the override was applied afterwards; the
+once-per-message flag then cached the result, so leaving the record and coming
+back made the same tag fire. A tag that works on the second look is worse than
+one that never works, because the first look is the one you believe.
+*(Reported 2026-09-09, against a `PIC X(4)` element overridden to `hex-char`.)*
 
 ## 12. Backwards Compatibility & Migration
 

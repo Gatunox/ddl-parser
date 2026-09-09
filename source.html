@@ -15253,12 +15253,23 @@ function _hideCellTip() {
 function _meValueTip(f) {
   if (!f) return '';
   const raw  = f.rawValue !== undefined ? f.rawValue : f.value;
-  const rows = [['RAW', raw]];
-  if (f.typeOverride && f.value !== raw)          rows.push(['TYPE', f.value]);
-  if (f.displayOverride && f.displayValue != null) rows.push(['SHOW', f.displayValue]);
-  // Nothing overridden: one labelled line would be a label on the only thing
-  // there is. The cell already shows it, so say nothing rather than echo it.
-  if (rows.length === 1) return String(raw ?? '');
+  const rows = [];
+  // A reading that repeats one already listed earns no line of its own. An
+  // override can leave a value untouched — a datetime SHOW on something that is
+  // not a date returns it unchanged — and "SHOW : 1430" under "RAW : 1430" is
+  // the same nothing the tooltip used to say when it echoed the cell.
+  const add = (k, v) => {
+    if (v == null) return;
+    if (rows.some(r => String(r[1]) === String(v))) return;
+    rows.push([k, v]);
+  };
+  add('RAW', raw);
+  if (f.typeOverride)    add('TYPE', f.value);
+  if (f.displayOverride) add('SHOW', f.displayValue);
+  // One reading — no override, or every override left the value as it was.
+  // Labelling the only thing there is would be a label on nothing, and the cell
+  // already shows it, so echo it plainly the way this tooltip always did.
+  if (rows.length <= 1) return String(raw ?? '');
   const w = Math.max(...rows.map(r => r[0].length));
   return rows.map(([k, v]) => `${k.padEnd(w)} : ${String(v ?? '')}`).join('\n');
 }
@@ -20428,7 +20439,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.53.2.0';
+const APP_VERSION  = '1.53.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

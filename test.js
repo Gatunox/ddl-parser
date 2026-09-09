@@ -6284,8 +6284,20 @@ test('every override the panel offers reaches a tag', () => {
   // With nothing overridden there is only one reading, and labelling the only
   // thing there is would be noise — the cell already shows it.
   const plain = mk('00000001');
-  eq(vm.runInContext('_meValueTip', sandbox)(plain.fields[0]), '?',
+  const valueTip = vm.runInContext('_meValueTip', sandbox);
+  eq(valueTip(plain.fields[0]), '?',
     'no override: the tooltip is just the value, unlabelled');
+  // An override can leave the value ALONE — a datetime SHOW on something that is
+  // not a date returns it unchanged — and "SHOW : 1430" under "RAW : 1430" is the
+  // same nothing the tooltip used to say when it echoed the cell.
+  eq(valueTip({ value: '1430', displayValue: '1430', displayOverride: 'datetime' }), '1430',
+    'a SHOW that changed nothing earns no line of its own');
+  eq(valueTip({ rawValue: '1430', value: '1430', typeOverride: 'ascii' }), '1430',
+    'nor does a TYPE that changed nothing');
+  // But one that DID change something is still named, and the label is the
+  // Overrides panel's own column name.
+  eq(valueTip({ value: '1430', displayValue: '14:30', displayOverride: 'datetime' }),
+    'RAW  : 1430\nSHOW : 14:30', 'a SHOW that changed the text is labelled');
   // And the value cell actually USES it. Without this the two above test a
   // function nothing calls, and reverting the cell to data-tip="${esc(f.value)}"
   // leaves every assertion here passing.

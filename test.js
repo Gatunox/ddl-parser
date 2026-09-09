@@ -6138,6 +6138,68 @@ test('tags: the field box takes a token id, and offers the tokens it knows', () 
     'the cache is invalidated when the DDL tree changes');
 });
 
+// Reported 2026-09-09. A PIC X(4) element overridden to hex-char showed
+// "00000001" in the value column; a tag written against exactly that never
+// fired. The comparison was right and the override was right — the ORDER was
+// not. renderFieldTable drew the tag badges in the metadata bar and applied the
+// spec's overrides sixty lines further down, so the tag was tested against the
+// declared-type reading of the bytes. `_ovrApplied` then cached the result, so
+// leaving the record and coming back made the same tag fire: a tag that works on
+// the second look, which is worse than one that never works.
+test('[REGRESSION] a tag compares the value an override produced, on the first render', () => {
+  const applyOvr = vm.runInContext('_msgApplyOverrides', sandbox);
+  const tagsFor  = vm.runInContext('_meTagsFor', sandbox);
+  // PIC X(4) carrying 00 00 00 01 — as text that is four control characters,
+  // as hex-char it is the "00000001" the table shows.
+  const mkMsg = () => ({ fields: [
+    { id: 'TDE.DATA', value: '   ', rawHex: '00000001',
+      rawBytes: [0, 0, 0, 1] },
+  ] });
+  const spec = { name: 'TSTO', overrides: { 'TDE.DATA': { type: 'hex-char' } },
+    tags: [{ label: 'ECHO', conditions: [{ field: 'TDE.DATA', op: 'equals', value: '00000001' }] }] };
+
+  // The bug, stated as the thing that must not happen again.
+  const before = mkMsg();
+  eq(tagsFor(spec, before).length, 0, 'the raw declared-type value is not what the user typed');
+  applyOvr(before, spec);
+  eq(before.fields[0].value, '00000001', 'the override rewrites the value...');
+  deepEq(tagsFor(spec, before).map(t => t.label), ['ECHO'], '...and the tag then holds');
+
+  // A display override lands in displayValue rather than value, and a tag
+  // compares what the reader SEES, so that path has to be applied just as early.
+  const disp = { name: 'D', overrides: { 'TDE.DATA': { display: 'hex' } },
+    tags: [{ label: 'D', conditions: [{ field: 'TDE.DATA', op: 'equals', value: '00 00 00 01' }] }] };
+  const m2 = mkMsg();
+  applyOvr(m2, disp);
+  assert.ok(m2.fields[0].displayValue != null, 'a display override produces displayValue');
+  eq(m2.fields[0].value, '   ', 'and leaves the underlying value alone');
+
+  // Applied once per message, and the guard is what made the bug intermittent —
+  // so it must stay, and must not re-convert an already-converted value.
+  const twice = mkMsg();
+  applyOvr(twice, spec); applyOvr(twice, spec);
+  eq(twice.fields[0].value, '00000001', 'a second call does not convert the conversion');
+  eq(twice._ovrApplied, true, 'and the message is marked');
+  // A spec with no overrides must not claim it applied any, or a spec that gains
+  // one later would never run it.
+  const none = mkMsg();
+  applyOvr(none, { name: 'N', overrides: {} });
+  eq(none._ovrApplied, undefined, 'nothing to apply is not the same as applied');
+
+  // The defect itself: the call has to come before anything reads a value.
+  const rft = psFnSource('renderFieldTable');
+  const iOvr = rft.indexOf('_msgApplyOverrides(msg');
+  const iTag = rft.indexOf('_meTagBadgesHtml(msg)');
+  assert.ok(iOvr > -1, 'renderFieldTable applies the overrides');
+  assert.ok(iTag > -1, 'and draws the tag badges');
+  assert.ok(iOvr < iTag,
+    'the overrides are applied BEFORE the tag badges compare the values');
+  // It is a function called at the top, not a block partway down — which is the
+  // shape that let the two drift apart in the first place.
+  assert.ok(/^function _msgApplyOverrides\(msg, spec\)/m.test(fs.readFileSync('./source.html', 'utf8')),
+    'and it lives in a function of its own');
+});
+
 test('[REGRESSION] Save redraws the class rows, so their chips are not stale', () => {
   // Every chip on a class row is DERIVED from the class — volume, bound DDL,
   // which parse-spec variants exist, the override count, the tag count. The

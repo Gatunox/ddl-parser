@@ -14280,7 +14280,73 @@ function _msgByteCoverage(msg) {
   return { total, declared, consumed };
 }
 
+// Apply the spec's overrides to the actual field VALUES of a parsed message,
+// once per message, so the value column reflects what the Type/Description
+// column advertises. The main parse renders declared types; overrides are
+// otherwise only executed by the parse-spec test engine. f.dataType is preserved
+// so the Type/Description column can still show "<override> ↩ <original>".
+//
+// A FUNCTION, called before anything reads a value, rather than a block partway
+// down renderFieldTable — which is where it used to sit, sixty lines BELOW the
+// tag badges that compare those very values. So on the render that mattered a
+// tag was tested against the declared-type reading, and an override was applied
+// only afterwards; `_ovrApplied` then cached the result, so leaving the record
+// and coming back made the tag fire. A tag that works on the second look is
+// worse than one that never works, because the first look is the one you
+// believe. Reported 2026-09-09, against a PIC X(4) element overridden to
+// hex-char and tagged on the "00000001" the table was showing.
+function _msgApplyOverrides(msg, spec) {
+  if (!msg || msg._ovrApplied) return;
+  const ovAll = (spec && spec.overrides) || null;
+  if (!ovAll) return;
+  const foMap = {};
+  for (const id in ovAll) if (ovAll[id]) foMap[id] = ovAll[id];
+  if (!Object.keys(foMap).length) return;
+  for (let _f of msg.fields || []) {
+    if (!_f || _f.error) continue;
+    const _o = foMap[_canonFieldId(_f.id)];
+    if (!_o) continue;
+    // Engine-parsed fields (file specs) already carry applied overrides —
+    // re-applying here would convert an already-converted value.
+    if (_o.type && !_f.typeOverride) {
+      const _req = _meReadTypeByteLen(_o.type);
+      const _len = _f.rawBytes ? _f.rawBytes.length : (_f.rawHex ? _f.rawHex.length / 2 : 0);
+      // This path re-renders fields the LEGACY parser already read at their
+      // declared lengths, so a "bytes" override can only trim what is here —
+      // it cannot reach bytes beyond the field. Growing one takes the parse
+      // spec engine, which re-reads from the message itself.
+      const _b = +_o.bytes || 0;
+      if (_b > 0 && _b < _len && _f.rawHex) {
+        _f = Object.assign(_f, { rawHex: _f.rawHex.slice(0, _b * 2) });
+      }
+      const _eff = (_b > 0 && _b < _len) ? _b : _len;
+      if (_req === null || _req === _eff) {
+        const _u = _meReadApplyTypeOverride(_f, _o.type);
+        if (_u.value !== undefined) { _f.value = _u.value; _f.typeOverride = _o.type; }
+      }
+    }
+    if (_o.display && !_f.displayOverride) {
+      let _out;
+      switch (_o.display) {
+        case 'datetime':           _out = _meFmtDateTime(_f.value); break;
+        case 'amount':             _out = _meFmtAmount(_f.value);   break;
+        case 'hex':                _out = _meFmtHex(_f);            break;
+        case 'ascii': case 'text': _out = _meFmtText(_f);          break;
+        case 'ebcdic':             _out = _meFmtEbcdic(_f);         break;
+        case 'gmt-ts':             _out = _meFmtJulianTs(_f);       break;
+        case 'bitmap':             _out = _meFmtBitmap(_f);         break;
+        case 'bitmap-list':        _out = _meFmtBitmapList(_f);     break;
+      }
+      if (_out != null) { _f.displayValue = String(_out); _f.displayOverride = _o.display; }
+    }
+  }
+  msg._ovrApplied = true;
+}
+
 function renderFieldTable(msg) {
+  // FIRST, before the metadata bar below draws the tag badges: a tag compares
+  // field values, and an override is what those values are.
+  _msgApplyOverrides(msg, _meSpecForMsg(msg));
   // Provenance for the metadata bar: which parser produced these fields, and
   // how much of the record they actually account for. "Did it use the parse
   // spec, and did it consume everything?" should be answerable at a glance.
@@ -14393,53 +14459,6 @@ function renderFieldTable(msg) {
   if (_msgSpec) {
     const _ovAll = _msgSpec.overrides || {};
     for (const _id in _ovAll) if (_ovAll[_id]) _foMap[_id] = _ovAll[_id];
-  }
-
-  // Apply the spec's field_overrides to the actual field values (once per message)
-  // so the value column reflects what the Type/Description column advertises. The
-  // main parse renders declared types; field_overrides are otherwise only executed
-  // by the parse-spec test engine. f.dataType is preserved so the Type/Description
-  // column can still show "<override> ↩ <original>".
-  if (!msg._ovrApplied && Object.keys(_foMap).length) {
-    for (const _f of msg.fields || []) {
-      if (!_f || _f.error) continue;
-      const _o = _foMap[_canonFieldId(_f.id)];
-      if (!_o) continue;
-      // Engine-parsed fields (file specs) already carry applied overrides —
-      // re-applying here would convert an already-converted value.
-      if (_o.type && !_f.typeOverride) {
-        const _req = _meReadTypeByteLen(_o.type);
-        const _len = _f.rawBytes ? _f.rawBytes.length : (_f.rawHex ? _f.rawHex.length / 2 : 0);
-        // This path re-renders fields the LEGACY parser already read at their
-        // declared lengths, so a "bytes" override can only trim what is here —
-        // it cannot reach bytes beyond the field. Growing one takes the parse
-        // spec engine, which re-reads from the message itself.
-        const _b = +_o.bytes || 0;
-        if (_b > 0 && _b < _len && _f.rawHex) {
-          _f = Object.assign(_f, { rawHex: _f.rawHex.slice(0, _b * 2) });
-        }
-        const _eff = (_b > 0 && _b < _len) ? _b : _len;
-        if (_req === null || _req === _eff) {
-          const _u = _meReadApplyTypeOverride(_f, _o.type);
-          if (_u.value !== undefined) { _f.value = _u.value; _f.typeOverride = _o.type; }
-        }
-      }
-      if (_o.display && !_f.displayOverride) {
-        let _out;
-        switch (_o.display) {
-          case 'datetime':           _out = _meFmtDateTime(_f.value); break;
-          case 'amount':             _out = _meFmtAmount(_f.value);   break;
-          case 'hex':                _out = _meFmtHex(_f);            break;
-          case 'ascii': case 'text': _out = _meFmtText(_f);          break;
-          case 'ebcdic':             _out = _meFmtEbcdic(_f);         break;
-          case 'gmt-ts':             _out = _meFmtJulianTs(_f);       break;
-          case 'bitmap':             _out = _meFmtBitmap(_f);         break;
-          case 'bitmap-list':        _out = _meFmtBitmapList(_f);     break;
-        }
-        if (_out != null) { _f.displayValue = String(_out); _f.displayOverride = _o.display; }
-      }
-    }
-    msg._ovrApplied = true;
   }
 
   let _rowNum = 0;
@@ -20377,7 +20396,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.53.0.0';
+const APP_VERSION  = '1.53.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

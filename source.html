@@ -2064,6 +2064,22 @@ td.c-err  { color: var(--accent2); }
   line-height: 1.5;
 }
 
+/* The "Why these tags" report. Wider than the column popovers beside it because
+   its content is field ids and values rather than labels, and it wraps rather
+   than truncating — a value you cannot read whole is the one thing this panel
+   exists to show you. An ID outranks .audit-cfg-dialog's class whatever the
+   source order, so this block does not need to sit after it — unlike the
+   class-vs-class pairs elsewhere in this file, where order decides. */
+#tagWhyDialog { min-width: calc(var(--sz-mono) * 30); max-width: min(560px, calc(100vw - 24px)); }
+#tagWhyDialog .tw-body { padding: 6px 8px; max-height: 50vh; overflow: auto; }
+.tw-row { font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px);
+  line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.tw-head { font-weight: 700; color: var(--text); }
+.tw-ok   { color: var(--ok-text, #3fb950); }
+.tw-bad  { color: var(--err-text, #f85149); }
+.tw-warn { color: var(--warn-text, #d29922); }
+.tw-dim  { color: var(--text-dim); }
+
 #appLogo, .app-logo { cursor: default; user-select: none; }
 
 #rawPanel > .panel-header { cursor: default; }
@@ -4577,6 +4593,13 @@ th.me-fm-colhi{color:var(--accent);}
           <button class="btn" id="resCollapseBtn" onclick="toggleResCollapseAll()" style="display:none;flex-shrink:0;min-width:88px;" title="Collapse or expand every group">Collapse All</button>
           <button class="btn" id="resGroupDataBtn" onclick="toggleResGroupData()" style="display:none;flex-shrink:0;" title="Show each group's combined value on its group row">Group Data</button>
           <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0;min-width:80px;" title="Hide/show REDEFINES fields">Hide Redef</button>
+          <div style="position:relative;display:inline-flex">
+            <button class="btn" id="tagWhyBtn" onclick="toggleTagWhyDialog()" style="display:none;flex-shrink:0;" title="Why did this message earn these tags — and why not the others?">Tags?</button>
+            <div id="tagWhyDialog" class="audit-cfg-dialog">
+              <div class="audit-cfg-hdr"><span>Why these tags</span><button class="btn" onclick="toggleTagWhyDialog()" style="padding:1px 7px;font-size:13px">✕</button></div>
+              <div class="tw-body"></div>
+            </div>
+          </div>
           <div style="position:relative;display:inline-flex">
             <button class="btn" id="colCfgBtn" onclick="toggleColCfgDialog()" title="Column visibility" style="display:none;padding:0 6px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">⚙</button>
             <div id="colCfgDialog" class="audit-cfg-dialog">
@@ -7311,10 +7334,10 @@ function _setResTypeBadge(html) {
 // which class a message came from.
 function _meSpecForMsg(msg) {
   if (!msg || msg.manualOverride || !msg.msgType?.type) return null;
-  if (typeof window._fmtSpecByName !== 'function') return null;
-  return msg.msgType.kind === 'file'
-    ? window._fmtFileSpecByName(msg.msgType.type)
-    : window._fmtSpecByName(msg.msgType.type);
+  const t = msg.msgType;
+  // By LABEL, which is unique, not by name, which is not — see _fmtSpecFor.
+  if (typeof window._fmtSpecFor !== 'function') return null;
+  return window._fmtSpecFor(t.type, t.label, t.kind);
 }
 
 // The tags a message earned, drawn like the type code beside it — same chip, the
@@ -10594,6 +10617,38 @@ function parseMessage(bytes, defs, rawBytes) {
   // Label is the only unique key — several specs can share a name (e.g. the
   // three "ISO" specs Standard/BIC/Switch). Detection winners carry the label.
   window._fmtSpecByLabel = label => _fmtSpecs.find(s => (s.label || '') === String(label || '')) || null;
+  // The class a PARSED message actually came from. Everything above resolves by
+  // name, and the comment above says why that cannot be right: a repository
+  // normally holds four classes called ISO and three called B24, so
+  // _fmtSpecByName hands back the first of them whichever one really parsed the
+  // message. Anything reading a property OFF that class — its tags, its
+  // bindings — was therefore reading another class's, and a tag written on
+  // "ISO 8583 Standard 1993" could never fire while one on "ISO 8583 BIC" fired
+  // for every ISO message in the file.
+  //
+  // The label decides, because a detection winner carries `spec.label ||
+  // spec.name`. The name is the fallback, for a message whose type did not come
+  // from detection at all (a DDL-derived pseudo-type names itself). A found
+  // label still has to agree on the name, or a spec whose LABEL happens to equal
+  // another's NAME would answer for it. Reported 2026-09-09, against two classes
+  // called TDE where the tags were on the second.
+  // Identity is _specKey — name + label — which is the app's OWN rule: it is
+  // what _meDupKeyIdxs flags collisions on and what _meUniqueLabel keeps unique
+  // when a class is created. Matching on it here rather than restating it means
+  // there is one definition of "the same class" instead of two that can drift.
+  window._fmtSpecFor = (name, label, kind) => {
+    const pool = kind === 'file' ? _fmtSpecs.filter(s => s.kind === 'file') : _fmtSpecs;
+    const nm = String(name || '').toUpperCase();
+    if (label && typeof _specKey === 'function') {
+      const want = _specKey({ name, label });
+      const hit = pool.find(s => _specKey(s) === want);
+      if (hit) return hit;
+    }
+    // No label at all — a DDL-derived pseudo-type names itself, and nothing
+    // identifies which class it came from because none did. The first of the
+    // name is all there is, and it is what every caller used to get.
+    return pool.find(s => (s.name || '').toUpperCase() === nm) || null;
+  };
   window._migrateSpec  = _migrateSpec;
   window._migrateSpecOverrides = _migrateSpecOverrides;
   window._fmtDetect      = _fmtDetect;
@@ -14121,6 +14176,7 @@ function _clearResultsOnly() {
   document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
+  { const _tw = document.getElementById('tagWhyBtn'); if (_tw && _tw.style) _tw.style.display = 'none'; }
   ['resCollapseBtn','resGroupDataBtn'].forEach(id => {
     const b = document.getElementById(id); if (b && b.style) b.style.display = 'none'; });
   const _cfgBar = document.getElementById('resCfgBar');
@@ -14162,6 +14218,7 @@ function clearAll() {
   document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
+  { const _tw = document.getElementById('tagWhyBtn'); if (_tw && _tw.style) _tw.style.display = 'none'; }
   ['resCollapseBtn','resGroupDataBtn'].forEach(id => {
     const b = document.getElementById(id); if (b && b.style) b.style.display = 'none'; });
   const _cfgBar3 = document.getElementById('resCfgBar');
@@ -14881,6 +14938,8 @@ function renderFieldTable(msg) {
   const _redefBtn  = document.getElementById('hideRedefBtn');
   if (_filterIn) { _filterIn.style.display = ''; _filterIn.value = ''; _syncFilterPos(); }
   if (_redefBtn) { _redefBtn.style.display = 'inline-flex'; }
+  // Shown only where there is something to explain — a class carrying tags.
+  syncTagWhyBtn();
   // Re-apply hide-redef class if state is active
   if (S.hideRedefines) document.getElementById('resContainer').classList.add('hide-redef');
   // The group view is not carried by the fresh markup, so it is re-applied here.
@@ -20439,7 +20498,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.53.4.0';
+const APP_VERSION  = '1.54.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -33222,7 +33281,11 @@ function _diagClosest(trace) {
 // Uses the closest-matching spec when there is one, else the widest span of any
 // spec, so the diagnostic shows the bytes that were really under test.
 function _diagRecogSpan(trace) {
-  const specOf = n => (typeof window._fmtSpecByName === 'function' ? window._fmtSpecByName(n) : null);
+  // By name AND label: a trace entry names the class it tried, and several
+  // classes share a name, so by name alone this measured another class's
+  // recognizers and reported a span for bytes that were never under test.
+  const specOf = e => (e && typeof window._fmtSpecFor === 'function')
+    ? window._fmtSpecFor(e.name, e.label) : null;
   const spanOf = spec => {
     let span = 0;
     for (const r of (spec?.recognizers || [])) {
@@ -33234,9 +33297,9 @@ function _diagRecogSpan(trace) {
     return span;
   };
   const closest = _diagClosest(trace);
-  if (closest) { const s = spanOf(specOf(closest.name)); if (s > 0) return s; }
+  if (closest) { const s = spanOf(specOf(closest)); if (s > 0) return s; }
   let widest = 0;
-  for (const t of (trace || [])) { const s = spanOf(specOf(t.name)); if (s > widest) widest = s; }
+  for (const t of (trace || [])) { const s = spanOf(specOf(t)); if (s > widest) widest = s; }
   return widest;
 }
 
@@ -34828,26 +34891,27 @@ function _meTagHaves(f) {
 // A function rather than logging on every parse: a badge is drawn for every
 // record rendered, and a console line per tag per record is noise that makes
 // the one interesting case harder to find, not easier. Requested 2026-09-09.
-function tagWhy() {
-  const L = (...a) => console.log(...a);
+// The walk itself, as DATA: one row per line, each carrying how it should read.
+// Built once so the panel and the console can never drift into telling two
+// different stories about the same message.
+function _tagWhyReport() {
+  const R = [];
+  const add = (kind, text, indent) => R.push({ kind, text, indent: indent || 0 });
   const msg = (typeof S !== 'undefined' && S.messages) ? S.messages[S.curIdx] : null;
-  if (!msg) { L('%ctagWhy: no message is parsed — parse one first.', 'color:#f85149'); return; }
+  if (!msg) { add('bad', 'No message is parsed — parse one first.'); return R; }
   const spec = _meSpecForMsg(msg);
-  L('%ctagWhy — ' + (msg.msgType?.type || 'UNKNOWN') + ' rec ' + (msg.recNo ?? S.curIdx),
-    'font-weight:bold');
-  if (!spec) { L('%c1. No class matched this message, so no tag can apply.', 'color:#f85149'); return; }
-  L('   class: ' + (spec.name || '?') + '   bindings: ' + JSON.stringify(spec.ddl_bindings || []));
+  add('head', (msg.msgType?.type || 'UNKNOWN') + ' — record ' + (msg.recNo ?? S.curIdx));
+  if (!spec) { add('bad', 'No class matched this message, so no tag can apply.'); return R; }
+  add('dim', 'class ' + (spec.name || '?') + ' · ' + ((spec.ddl_bindings || []).join(', ') || 'no binding'));
   const tags = Array.isArray(spec.tags) ? spec.tags : [];
-  // The editor's working copy, for the commonest cause of all: written, not saved.
+  // The commonest cause of all: written in the editor, never saved. Parsing only
+  // ever reads saved data, and each deployment has its own storage.
   const edit = (typeof _meCurItem === 'function' && _meState && _meState.selIdx >= 0)
     ? _meCurItem() : null;
-  if (edit && edit.name === spec.name) {
-    const nEdit = (edit.tags || []).length;
-    if (nEdit !== tags.length)
-      L('%c   the Class Editor holds ' + nEdit + ' tag(s) and the SAVED class has ' + tags.length +
-        ' — parsing reads the saved one. Press Save.', 'color:#d29922');
-  }
-  if (!tags.length) { L('%c2. This class has no tags saved.', 'color:#f85149'); return; }
+  if (edit && edit.name === spec.name && (edit.tags || []).length !== tags.length)
+    add('warn', 'The Class Editor holds ' + (edit.tags || []).length + ' tag(s) and the SAVED class has '
+      + tags.length + ' — parsing reads the saved one. Press Save.');
+  if (!tags.length) { add('bad', 'This class has no tags saved.'); return R; }
   const byId = {};
   for (const f of (msg.fields || [])) if (f && f.id && !f.error) byId[_canonFieldId(f.id)] = f;
   for (const tk of (msg.tokens || [])) {
@@ -34862,29 +34926,63 @@ function tagWhy() {
   for (const t of tags) {
     const conds = (t.conditions || []).filter(c => c && c.field);
     const fires = conds.length && conds.every(c => _meTagCondHolds(c, byId));
-    L('%c' + (fires ? '✓ ' : '✗ ') + (String(t.label || '').trim() || 'UNNAMED'),
-      'color:' + (fires ? '#3fb950' : '#f85149') + ';font-weight:bold');
-    if (!conds.length) { L('    no conditions — a tag with none never fires.'); continue; }
+    add(fires ? 'ok' : 'bad', (fires ? '✓ ' : '✗ ') + (String(t.label || '').trim() || 'UNNAMED'));
+    if (!conds.length) { add('dim', 'no conditions — a tag with none never fires.', 1); continue; }
     for (const c of conds) {
       const f    = byId[_canonFieldId(c.field)];
-      const want = _meTagValues(c);
       const ok   = _meTagCondHolds(c, byId);
+      const want = _meTagValues(c);
       const op   = String(c.op || 'equals');
-      L('    ' + (ok ? '✓' : '✗') + ' ' + c.field + ' ' + op + ' ' +
-        (op === 'present' ? '' : JSON.stringify(want)));
+      add(ok ? 'ok' : 'bad', (ok ? '✓' : '✗') + ' ' + c.field + ' ' + op +
+        (op === 'present' ? '' : ' ' + JSON.stringify(want)), 1);
       if (ok) continue;
-      if (!f) { L('%c        no such field in this parse — check the name against the list below.',
-                  'color:#d29922'); continue; }
+      if (!f) { add('warn', 'no such field in this parse — check the name against the list below.', 2); continue; }
       if (op === 'present') continue;
-      if (!want.length) { L('%c        the condition has no value.', 'color:#d29922'); continue; }
-      L('%c        the field holds ' + JSON.stringify(_meTagHaves(f)) +
-        ' — any ONE of those would have matched.', 'color:#d29922');
+      if (!want.length) { add('warn', 'the condition has no value.', 2); continue; }
+      // The readings are the whole answer when a name is right and a value is
+      // not: any ONE of them would have matched.
+      add('warn', 'the field holds ' + JSON.stringify(_meTagHaves(f)) +
+        ' — any ONE of those would have matched.', 2);
     }
   }
-  L('   fields in this parse (' + Object.keys(byId).length + '):', Object.keys(byId).join(', '));
+  add('dim', 'fields in this parse (' + Object.keys(byId).length + '): ' + Object.keys(byId).join(', '));
+  return R;
+}
+
+const _TAG_WHY_COLOR = { ok: '#3fb950', bad: '#f85149', warn: '#d29922', dim: '', head: '' };
+function tagWhy() {
+  for (const r of _tagWhyReport()) {
+    const pad = '    '.repeat(r.indent);
+    const col = _TAG_WHY_COLOR[r.kind];
+    if (col) console.log('%c' + pad + r.text, 'color:' + col);
+    else      console.log(pad + r.text);
+  }
   return undefined;
 }
 if (typeof window !== 'undefined') window.tagWhy = tagWhy;
+
+// The same report, in the app. The console needs DevTools open, the right
+// execution context and no active log filter — three ways to see nothing at all
+// and conclude the diagnostic is missing. A button cannot go wrong that way.
+// Requested 2026-09-09.
+function toggleTagWhyDialog() {
+  const d = document.getElementById('tagWhyDialog');
+  if (!d) return;
+  const open = d.classList.toggle('open');
+  if (!open) return;
+  const rows = _tagWhyReport().map(r =>
+    `<div class="tw-row tw-${r.kind}" style="padding-left:${r.indent * 14}px">${_escHtml(r.text)}</div>`
+  ).join('');
+  d.querySelector('.tw-body').innerHTML = rows;
+}
+function syncTagWhyBtn() {
+  const b = document.getElementById('tagWhyBtn');
+  if (!b) return;
+  const msg  = S.messages && S.messages[S.curIdx];
+  const spec = msg ? _meSpecForMsg(msg) : null;
+  // Only where there is something to explain: a class with tags on it.
+  b.style.display = (spec && (spec.tags || []).length) ? '' : 'none';
+}
 
 function _meTagCondHolds(cond, byId) {
   if (!cond || !cond.field) return false;
@@ -38024,14 +38122,13 @@ const _segMapOverrides = {};
 // all share the name "ISO".
 function _meWinningSpec(winner) {
   if (!winner) return null;
-  if (winner.label && typeof window._fmtSpecByLabel === 'function') {
-    const s = window._fmtSpecByLabel(winner.label);
-    if (s) return s;
-  }
-  if (!winner.type) return null;
-  return winner.kind === 'file'
-    ? window._fmtFileSpecByName(winner.type)
-    : window._fmtSpecByName(winner.type);
+  // ONE resolver, shared with _meSpecForMsg. There used to be two of these
+  // written separately — this one matched by label and was right, and the one
+  // every reader of a class's tags, bindings and overrides went through matched
+  // by NAME and was wrong, so the pipeline parsed with one class while
+  // everything else read another class of the same name. Two implementations of
+  // one rule is how they came to disagree; there is now only the rule.
+  return window._fmtSpecFor(winner.type, winner.label, winner.kind);
 }
 
 // ── The single routing decision for a recognized message ────────────────────

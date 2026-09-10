@@ -273,7 +273,14 @@ _t.meLengthReadAs     = _meLengthReadAs;
 _t.ME_TYPE_OPTS       = _ME_TYPE_OPTS;
 _t.meLenEncFor        = _meLenEncFor;
 _t.meLenEncSuspicion  = _meLenEncSuspicion;
-_t.setSpecLookup      = fn => { window._fmtSpecByName = fn; };
+// Both, because _meSpecForMsg resolves by LABEL through _fmtSpecFor — the name
+// is not unique and never was. A stub on _fmtSpecByName alone stopped
+// intercepting the moment that changed, and the tests using it went quietly
+// green against the real lookup instead of the one they meant to install.
+// The real resolver, kept before any test stubs it — setSpecLookup replaces it
+// permanently, so a test that needs the genuine one has to have taken it first.
+window.__realSpecFor  = window._fmtSpecFor;
+_t.setSpecLookup      = fn => { window._fmtSpecByName = fn; window._fmtSpecFor = fn; };
 _t.auditBeginLoad     = _auditBeginLoad;
 // The orchestration itself, reachable now that setTimeout queues instead of
 // dropping. Everything above this line is a piece of the parse; this is the
@@ -8061,8 +8068,16 @@ test('the spec lookup that feeds field_overrides is guarded on manualOverride', 
   const fn = psFnSource('_meSpecForMsg');
   assert.ok(/msg\.manualOverride/.test(fn),
     'the _msgSpec lookup must be skipped in manual override mode');
-  assert.ok(/_fmtFileSpecByName/.test(fn) && /_fmtSpecByName/.test(fn),
-    'and a file class still resolves through its own lookup');
+  // A file class still resolves among file classes: `kind` is passed through to
+  // the one resolver, which pools on it. It used to call a separate by-name
+  // lookup per kind — see "there is one rule for resolving a message back to its
+  // class" for why by-name was wrong for both.
+  assert.ok(/window\._fmtSpecFor\(t\.type, t\.label, t\.kind\)/.test(fn),
+    'and the kind is passed through, so a file class resolves as a file class');
+  const forFn = (fs.readFileSync('./source.html', 'utf8')
+    .match(/window\._fmtSpecFor = [\s\S]*?\n  \};/) || [''])[0];
+  assert.ok(/kind === 'file' \? _fmtSpecs\.filter\(s => s\.kind === 'file'\)/.test(forFn),
+    'the resolver pools file classes separately');
   assert.ok(/const _msgSpec = _meSpecForMsg\(msg\);/.test(html),
     'renderFields must go through it rather than keeping a second copy');
 });
@@ -15721,24 +15736,151 @@ test('no raw control characters in the sources', () => {
 // Typed into the console on the message in front of you. Every cause of "the
 // tag is not showing" looks identical from the bar, so it walks the chain in
 // order and names the first thing that is wrong. Requested 2026-09-09.
-test('tagWhy() explains a tag that did not fire', () => {
+// Reported 2026-09-09. A tag saved on a class never fired, and tagWhy() printed
+// the BINDINGS OF A DIFFERENT CLASS — the one the user had copied this one from.
+// _meSpecForMsg resolved by name, and the source said three lines below the
+// lookup that name is not unique: a normal repository holds four classes called
+// ISO (BIC, Switch, Standard 1987, Standard 1993) and three called B24, so
+// _fmtSpecByName returned the FIRST of them whichever one really parsed the
+// message. Everything read off that class — its tags, its bindings, its
+// overrides — belonged to another class. A tag on "ISO 8583 Standard 1993" could
+// never fire, and one on "ISO 8583 BIC" fired for every ISO message in the file.
+test('[REGRESSION] a message resolves to the class that parsed it, not the first of its name', () => {
+  // The genuine resolver, not whatever an earlier test left installed.
+  const specFor = vm.runInContext('window.__realSpecFor', sandbox);
+  const specForMsg = vm.runInContext('_meSpecForMsg', sandbox);
+  assert.ok(typeof specFor === 'function', '_fmtSpecFor exists');
+
+  // Through the window exports — the storage functions live inside an IIFE.
+  // _fmtSave reloads the in-memory list itself, so there is nothing else to call.
+  let stubbed;
+  const load = vm.runInContext('window._fmtLoad', sandbox);
+  const save = vm.runInContext('window._fmtSave', sandbox);
+  const keep = vm.runInContext('window._fmtGetSaved()', sandbox);
+  try {
+    // Two classes sharing a type code, which is the ordinary case rather than a
+    // corner one — and the tags are on the SECOND.
+    const first  = { name: 'TDE', label: 'TDE ORIGINAL', ddl_bindings: ['TDES/DDL/ATM TOTALS/ATM-TOTALS'], tags: [] };
+    const second = { name: 'TDE', label: 'TDE TEST', ddl_bindings: ['TEST/DATA/TDE/TDETEST'],
+      tags: [{ label: 'MODE', conditions: [{ field: 'CAPTR-MODE', op: 'equals', value: '00000001' }] }] };
+    stubbed = vm.runInContext('window._fmtSpecFor', sandbox);
+    sandbox.window._fmtSpecFor = specFor;
+    save([first, second]);
+    load();
+
+    // A detection winner carries `spec.label || spec.name`, so the label is what
+    // identifies it — and it is the only thing that can.
+    eq(specFor('TDE', 'TDE TEST').label, 'TDE TEST', 'the label picks the right one');
+    eq(specFor('TDE', 'TDE ORIGINAL').label, 'TDE ORIGINAL', 'and the other one too');
+    // Through the accessor the renderer actually calls.
+    const msg = { msgType: { type: 'TDE', label: 'TDE TEST' },
+      fields: [{ id: 'CAPTR-MODE', value: '00000001' }] };
+    const got = specForMsg(msg);
+    eq(got && got.label, 'TDE TEST', 'the message resolves to the class that parsed it');
+    deepEq(got.ddl_bindings, ['TEST/DATA/TDE/TDETEST'], 'so its bindings are its own');
+    // The whole point: the tag fires.
+    const tagsFor = vm.runInContext('_meTagsFor', sandbox);
+    deepEq(tagsFor(got, msg).map(t => t.label), ['MODE'], 'and its tags are evaluated');
+    // ...and reading the FIRST class would have produced neither.
+    eq(tagsFor(specFor('TDE', 'TDE ORIGINAL'), msg).length, 0,
+       'the other class of the same name has no tags — which is what used to be read');
+
+    // No label (a DDL-derived pseudo-type names itself) falls back to the name.
+    eq(specFor('TDE', null).label, 'TDE ORIGINAL', 'no label falls back to the first by name');
+    // A label belonging to a class of ANOTHER name must not answer for this one:
+    // the label hit has to agree on the name, or a spec whose label happens to
+    // equal another's name would be returned for it. It falls back to the name.
+    const cross = specFor('TDE', 'TDE ORIGINAL');
+    eq(cross.name, 'TDE', 'a resolved label always agrees on the name');
+    save([first, second, { name: 'OTHER', label: 'TDE TEST', ddl_bindings: [] }]);
+    load();
+    eq(specFor('TDE', 'TDE TEST').ddl_bindings[0], 'TEST/DATA/TDE/TDETEST',
+       'a same-label class of another name does not steal the lookup');
+    eq(specFor('OTHER', 'TDE TEST').name, 'OTHER', 'and that one still resolves by its own name');
+  } finally {
+    save((keep && keep.specs) || []);
+    load();
+    sandbox.window._fmtSpecFor = stubbed;
+  }
+});
+
+// "Classes must not share any data." They came to share it because there were
+// TWO ways to resolve a message back to its class: _meWinningSpec matched by
+// label and was right, and _meSpecForMsg matched by name and was wrong — so the
+// pipeline parsed with one class while its tags, bindings and overrides were
+// read off another of the same name. One rule, in one place, is the only thing
+// that keeps them from drifting apart again. Requested 2026-09-09.
+test('there is one rule for resolving a message back to its class', () => {
   const src = fs.readFileSync('./source.html', 'utf8');
-  const why = psFnSource('tagWhy');
-  assert.ok(why, 'tagWhy exists');
-  assert.ok(/window\.tagWhy = tagWhy/.test(src), 'and is reachable from the console');
+  // Identity is the app's own _specKey (name + label) — the same key
+  // _meDupKeyIdxs flags collisions on and _meUniqueLabel keeps unique.
+  const forFn = (src.match(/window\._fmtSpecFor = [\s\S]*?\n  \};/) || [''])[0];
+  assert.ok(forFn, '_fmtSpecFor is defined');
+  assert.ok(/_specKey/.test(forFn),
+    'the resolver matches on _specKey, rather than restating what identity means');
+  // Both entry points go through it.
+  assert.ok(/window\._fmtSpecFor\(t\.type, t\.label, t\.kind\)/.test(psFnSource('_meSpecForMsg')),
+    '_meSpecForMsg resolves through it');
+  assert.ok(/window\._fmtSpecFor\(winner\.type, winner\.label, winner\.kind\)/.test(psFnSource('_meWinningSpec')),
+    '_meWinningSpec resolves through it too — it used to have its own copy');
+  // And nothing else resolves a class by NAME behind their backs. The only
+  // permitted mentions are the definitions themselves and the fallback inside
+  // _fmtSpecFor; a new caller of the by-name lookup is a new way to read another
+  // class's data.
+  // Two definitions and one mention in the comment that explains why nothing
+  // should call them. Any more is a new caller, and a new caller of a by-name
+  // lookup is a new way to read another class's data.
+  const byName = [...src.matchAll(/_fmtSpecByName|_fmtFileSpecByName/g)].length;
+  eq(byName, 3, 'the by-name lookups exist only as their own definitions — ' +
+     'nothing calls them, because a name identifies several classes');
+  // The detection diagnostic measured recognizer spans by name too, so it could
+  // report a span for bytes another class had under test.
+  assert.ok(/window\._fmtSpecFor\(e\.name, e\.label\)/.test(psFnSource('_diagRecogSpan')),
+    'the recognizer-span diagnostic resolves by name AND label');
+});
+
+test('the tag report explains a tag that did not fire', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const rep = psFnSource('_tagWhyReport');
+  assert.ok(rep, '_tagWhyReport exists');
   // Each link in the chain, in the order it has to be checked.
-  assert.ok(/No class matched/.test(why),        '1. no class matched');
-  assert.ok(/has no tags saved/i.test(why),      '2. the class has no saved tags');
-  assert.ok(/SAVED class has/.test(why),         '   ...and the saved-vs-editing gap is called out by name');
-  assert.ok(/no such field in this parse/.test(why), '3. the condition names a field the parse never produced');
-  assert.ok(/would have matched/.test(why),      '4. the readings that WOULD have matched');
+  assert.ok(/No class matched/.test(rep),        '1. no class matched');
+  assert.ok(/has no tags saved/i.test(rep),      '2. the class has no saved tags');
+  assert.ok(/SAVED class has/.test(rep),         '   ...and the saved-vs-editing gap is called out by name');
+  assert.ok(/no such field in this parse/.test(rep), '3. the condition names a field the parse never produced');
+  assert.ok(/would have matched/.test(rep),      '4. the readings that WOULD have matched');
   // It reports what the badge does, so it must ask the same functions rather
   // than a second implementation that can drift from them.
   for (const fn of ['_meSpecForMsg', '_meTagCondHolds', '_meTagHaves', '_meTagValues'])
-    assert.ok(new RegExp(fn.replace(/\$/g, '\\$') + '\\(').test(why),
+    assert.ok(new RegExp(fn.replace(/\$/g, '\\$') + '\\(').test(rep),
       `it reuses ${fn} rather than reimplementing the check`);
-  // A function, NOT logging on every parse: a badge is drawn for every record
-  // rendered, and a line per tag per record buries the one interesting case.
+
+  // ONE walk feeding two surfaces. The console needs DevTools open, the right
+  // execution context and no active log filter — three ways to see nothing and
+  // conclude the diagnostic is missing, which is exactly what happened. The
+  // button cannot go wrong that way, and building the report twice would let the
+  // two tell different stories about the same message.
+  assert.ok(/_tagWhyReport\(\)/.test(psFnSource('tagWhy')), 'the console prints the report');
+  assert.ok(/_tagWhyReport\(\)/.test(psFnSource('toggleTagWhyDialog')), 'and the panel renders it');
+  assert.ok(/window\.tagWhy = tagWhy/.test(src), 'tagWhy stays reachable from the console');
+  assert.ok(/id="tagWhyBtn"[^>]*onclick="toggleTagWhyDialog\(\)"/.test(src),
+    'there is a button in the results bar');
+  assert.ok(/id="tagWhyDialog" class="audit-cfg-dialog"/.test(src),
+    'and it opens the same popover the other config dialogs use');
+  // Shown only where there is something to explain.
+  assert.ok(/\(spec && \(spec\.tags \|\| \[\]\)\.length\) \? '' : 'none'/.test(psFnSource('syncTagWhyBtn')),
+    'the button appears only for a class that carries tags');
+  // Hidden alongside its siblings when the results bar is torn down, or it
+  // outlives the message it describes.
+  eq((src.match(/const _tw = document\.getElementById\('tagWhyBtn'\)/g) || []).length, 2,
+     'it is hidden on both paths that clear the bar');
+  // The report escapes into the panel: field ids and VALUES come off the wire.
+  assert.ok(/_escHtml\(r\.text\)/.test(psFnSource('toggleTagWhyDialog')),
+    'row text is escaped — it carries values straight from the message');
+
+  // A function and a button, NOT logging on every parse: a badge is drawn for
+  // every record rendered, and a line per tag per record buries the one
+  // interesting case.
   assert.ok(!/console\.log/.test(psFnSource('_meTagBadgesHtml')),
     'the badge renderer stays silent');
   assert.ok(!/console\.log/.test(psFnSource('_meTagsFor')),

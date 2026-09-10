@@ -1647,7 +1647,12 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btype-tag     { background: var(--h-gray-bg); color: var(--h-gray-fg); border: var(--bw-ctl) solid var(--h-gray-bd); margin-left: 4px; }
 
 /* ---- Class Editor: Tags ---- */
-.me-tag-label { text-transform:uppercase; }
+/* The name box shows what was TYPED. It used to carry
+   text-transform:uppercase, so "Recurring" appeared as "RECURRING" while the
+   stored label stayed lower case — the field disagreed with itself, and there
+   was no way to see the value actually being saved. A tag label is free text the
+   user writes, not a type code. The BADGE is still upper case, from .btype,
+   which it shares with the type chips beside it. Reported 2026-09-09. */
 .me-tag-conds { display:flex; flex-direction:column; gap:4px; padding:6px 8px; }
 /* The recognizer list reserves 8px under itself for the warnings row that sits
    below it. Tags has nothing there, so the same margin was just a gap between
@@ -20498,7 +20503,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.54.0.0';
+const APP_VERSION  = '1.54.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27919,6 +27924,17 @@ function _meBindKeyDown(idx, ev) {
 }
 
 function _meBindPick(idx, path) {
+  // The value being REPLACED, read before anything overwrites it. Picking is the
+  // one path that knows the old and the new value at the same moment, so it
+  // needs no remembered signature — and the signature is exactly what made this
+  // fail: it is seeded when a class is selected, so if the seed had not happened
+  // for this item (the editor opened with no class auto-selected, or the item
+  // object was replaced since) the FIRST pick silently adopted the new value and
+  // cleared nothing. The second one worked, which is the worst possible
+  // behaviour: it looks like the feature is broken, then like it is haunted.
+  // Reported 2026-09-09.
+  const item = _meCurItem();
+  const before = (item && item.ddl_bindings) ? String(item.ddl_bindings[idx] ?? '') : '';
   const inp = document.getElementById('me-bind-inp-' + idx);
   if (inp) inp.value = path;
   _meBindSet(idx, path);
@@ -27933,6 +27949,11 @@ function _meBindPick(idx, path) {
   // here), and _meBindDeferredRefresh only ever ran from the blur handler. So a
   // rebind by picking cleared nothing and repainted nothing, which is exactly
   // "I change the DDL and see no change". Reported 2026-09-09.
+  //
+  // Immediately, and from the values in hand rather than a remembered one: the
+  // UI has to show the new DDL's state the moment the combo's value changes,
+  // not on the next blur and not on the second attempt.
+  if (item) _meBindCheckDdlChanged(item);
   _meBindDeferredRefresh();
 }
 
@@ -27959,17 +27980,55 @@ function _meBindHasFocus() {
 // every character typed, and every prefix of a path resolves to nothing on the
 // way to the one that resolves: clearing there would throw the overrides away
 // before the path was finished being typed. Requested 2026-09-09.
-let _meBindSig = { item: null, sig: null };
 const _meBindSigOf = item => (item?.ddl_bindings || []).join('\u0000');
-function _meBindSigSync(item) { _meBindSig = { item: item || null, sig: _meBindSigOf(item) }; }
+// What this class's bindings are IN STORAGE. The comparison is against saved
+// data and nothing else — not against a snapshot remembered when the class was
+// selected, which is what the first two attempts at this did. A remembered
+// snapshot has to be seeded, and every way of failing to seed it (the editor
+// opened with no class selected, the item object replaced since) made the FIRST
+// rebind clear nothing while the second worked. Storage cannot fail to be
+// seeded: it is simply what is there.
+function _meBindSavedSigOf(item) {
+  if (!item || typeof window._fmtGetSaved !== 'function') return null;
+  let saved = null;
+  try { saved = (window._fmtGetSaved().specs || []).find(s => _specKey(s) === _specKey(item)); }
+  catch (e) { return null; }
+  return saved ? _meBindSigOf(saved) : null;
+}
+// The binding value the clear has already run for. Without this, every blur
+// after a rebind would clear again — taking the overrides the user had just
+// written FOR the new DDL with it, because the binding still differs from what
+// is saved until they press Save.
+let _meBindCleared = { item: null, sig: null };
+// Kept as a no-op shim: the seeding calls are gone, but _meSave and the tests
+// still name it, and a function that does nothing is clearer than a call site
+// that has to know it should not exist.
+function _meBindSigSync(item) { _meBindCleared = { item: item || null, sig: _meBindSigOf(item) }; }
 
+// The signature-based check, for the TYPING path: _meBindSet has already
+// overwritten the old value character by character, so the only way to know what
+// it was is to have remembered it.
 function _meBindCheckDdlChanged(item) {
-  // A different class than the one the signature describes: adopt it rather
-  // than compare against another entity's bindings.
-  if (_meBindSig.item !== item) { _meBindSigSync(item); return; }
-  const sig = _meBindSigOf(item);
-  if (sig === _meBindSig.sig) return;
-  _meBindSig.sig = sig;
+  if (!item) return;
+  const now   = _meBindSigOf(item);
+  const saved = _meBindSavedSigOf(item);
+  // Nothing in storage to compare against (a class that has never been saved):
+  // there is no "changed from" and nothing to clear.
+  if (saved === null) return;
+  if (now === saved) return;
+  // Already cleared for exactly this binding — the user has since written
+  // overrides FOR the new DDL, and clearing again would take those.
+  if (_meBindCleared.item === item && _meBindCleared.sig === now) return;
+  _meBindDdlChanged(item);
+}
+
+// The change itself, once something has established that the DDL really moved.
+// Split out because the two paths KNOW that in different ways, and only one of
+// them needs a remembered signature — see _meBindPick.
+function _meBindDdlChanged(item) {
+  // Recorded first, so a second blur on the same binding does not clear again
+  // and take the overrides written for the NEW DDL with it.
+  _meBindCleared = { item, sig: _meBindSigOf(item) };
   // Everything on a class that names a DDL FIELD. An override is keyed by field
   // id; a tag's conditions name field ids too, and a tag that names a field the
   // new DDL does not have goes quiet without saying anything — which is the

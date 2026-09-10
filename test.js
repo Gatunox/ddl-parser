@@ -15584,103 +15584,117 @@ test('[REGRESSION] a binding edit re-renders only the bindings list', () => {
 // (40)" against a four-field DDL: thirty-six overrides naming fields that exist
 // nowhere, invisible in a table that lists the DDL's own fields, yet stored,
 // counted and exported.
-test('[REGRESSION] rebinding a class to another DDL starts its overrides from zero', () => {
-  const sig = vm.runInContext('_meBindSigOf', sandbox);
-  const sync  = vm.runInContext('_meBindSigSync', sandbox);
-  const check = vm.runInContext('_meBindCheckDdlChanged', sandbox);
-  // _meState is null until the Class Editor opens. The sandbox is shared with
-  // every other test in this file, so what is borrowed here is put back.
-  const keep = vm.runInContext('_meState', sandbox);
+// Reported 2026-09-09. A class was created by copying another and then rebound
+// to a different DDL. The Overrides section went on showing the OLD DDL's fields
+// until the user left the class and came back, and the count read "Overridden
+// (40)" against a four-field DDL.
+//
+// The rule, after two wrong attempts: the working class's bindings are compared
+// against WHAT IS IN STORAGE. Both earlier versions compared against a snapshot
+// remembered when the class was selected, and every way of failing to seed that
+// snapshot — the editor opened with no class auto-selected, the item object
+// replaced since — made the FIRST rebind clear nothing while the second worked.
+// Storage cannot fail to be seeded: it is simply what is there.
+test('[REGRESSION] rebinding a class clears its overrides and tags', () => {
+  const sync   = vm.runInContext('_meBindSigSync', sandbox);
+  const check  = vm.runInContext('_meBindCheckDdlChanged', sandbox);
+  const pick   = vm.runInContext('_meBindPick', sandbox);
+  const save   = vm.runInContext('window._fmtSave', sandbox);
+  const keptSpecs = vm.runInContext('window._fmtGetSaved()', sandbox);
+  const keepState = vm.runInContext('_meState', sandbox);
   vm.runInContext('_meState = { specs: [], selIdx: -1, dirty: false, sections: {} }', sandbox);
   const S2 = vm.runInContext('_meState', sandbox);
   try {
+    const stored = { name: 'TDE', label: 'TDE TEST', ddl_bindings: ['TEST/DATA/TDE/TDETEST'] };
+    save([stored]);
+    // The editor's working copy of that class, as _meState holds it.
+    const mk = () => ({ name: 'TDE', label: 'TDE TEST', ddl_bindings: ['TEST/DATA/TDE/TDETEST'],
+      overrides: { TDETEST: { type: 'hex-char' }, VER: { type: 'hex-char' },
+                   MODE: { type: 'hex-char' }, 'OV-U64LE': { type: 'uint-le' } },
+      tags: [{ label: 'MODE', conditions: [{ field: 'CAPTR-MODE', op: 'equals', value: '1' }] }],
+      parse_spec_binary: [{ 'read-ddl': 'ANY' }] });
 
-  const item = { name: 'TDE', ddl_bindings: ['TEST/DATA/TDE/TDETEST'],
-    overrides: { TDETEST: { type: 'hex-char' }, VER: { type: 'hex-char' },
-                 MODE: { type: 'hex-char' }, 'OV-U64LE': { type: 'uint-le' } },
-    // A tag names DDL field ids too, and one naming a field the new DDL does not
-    // have goes quiet without saying anything.
-    tags: [{ label: 'MODE', conditions: [{ field: 'CAPTR-MODE', op: 'equals', value: '00000001' }] }] };
-  S2.specs = [item]; S2.selIdx = 0; S2.dirty = false;
+    // Matching what is stored: nothing to clear.
+    let it = mk(); S2.specs = [it]; S2.selIdx = 0;
+    check(it);
+    eq(Object.keys(it.overrides).length, 4, 'a binding equal to the stored one clears nothing');
 
-  // Opening the class seeds the signature — the same path _meSelectItem takes.
-  sync(item);
-  // Nothing has changed yet, so nothing is cleared.
-  check(item);
-  eq(Object.keys(item.overrides).length, 4, 'a commit with no change clears nothing');
+    // Changed from what is stored — and with NO snapshot seeded anywhere, which
+    // is the situation that used to clear nothing at all.
+    it = mk(); S2.specs = [it]; S2.selIdx = 0;
+    vm.runInContext('_meBindCleared = { item: null, sig: null }', sandbox);
+    it.ddl_bindings[0] = 'TEST/DATA/OVERRIDE/TESTOVR';
+    check(it);
+    eq(Object.keys(it.overrides).length, 0, 'a changed binding clears every override');
+    eq(it.tags, undefined, 'and the tags, whose conditions name DDL field ids');
+    eq(S2.dirty, true, 'the class is dirty, so the change can be saved');
+    // The parse spec is spared: it is the most laborious thing on a class, and
+    // one written as a plain full-DDL walk stays valid against any DDL.
+    eq((it.parse_spec_binary || []).length, 1, 'the parse spec is not cleared');
 
-  // The hazard the whole design turns on: _meBindSet runs on EVERY keystroke, so
-  // the check must not see a half-typed path. Simulated by mutating the binding
-  // the way typing does and only then committing.
-  item.ddl_bindings[0] = 'TEST/DATA/OTHER/OTHERDEF';
-  check(item);
-  eq(Object.keys(item.overrides).length, 0, 'a committed DDL change clears them all');
-  // Everything that names a DDL FIELD goes, which is overrides AND tags.
-  eq(item.tags, undefined, 'the tags go too — their conditions name field ids');
-  // "From zero" is the whole instruction: overrides that would still have
-  // matched go too, because the user asked for a clean state rather than a merge.
-  eq(S2.dirty, true, 'and the class is dirty, so the change can be saved');
-  // The parse spec is deliberately spared: it is the most laborious thing on a
-  // class, and one written as a plain full-DDL walk stays valid against any DDL.
-  assert.ok(!/parse_spec/.test(psFnSource('_meBindCheckDdlChanged')),
-    'the parse spec is not cleared');
+    // Having cleared, the user writes overrides FOR the new DDL without saving.
+    // The binding still differs from storage, so a second blur must NOT clear
+    // again and take that work with it.
+    it.overrides = { NEWFIELD: { type: 'ascii' } };
+    check(it);
+    eq(Object.keys(it.overrides).length, 1, 'a second commit on the same binding clears nothing');
 
-  // A second commit on the same path must not fire again.
-  const before = JSON.stringify(item.overrides);
-  check(item);
-  eq(JSON.stringify(item.overrides), before, 'committing the same path twice is a no-op');
+    // Changing it AGAIN is a new binding, and does clear.
+    it.ddl_bindings[0] = 'TEST/DATA/ISO0800/ISO-0800-FLAT';
+    check(it);
+    eq(Object.keys(it.overrides).length, 0, 'changing it again clears again');
 
-  // Switching to another class adopts ITS bindings rather than comparing across
-  // two entities — otherwise selecting a class would look like a DDL change.
-  const other = { name: 'X', ddl_bindings: ['A/B/C'], overrides: { Q: { type: 'ascii' } } };
-  S2.specs = [other]; S2.selIdx = 0;
-  check(other);
-  eq(Object.keys(other.overrides).length, 1, 'selecting another class clears nothing');
+    // Picking from the suggestion list — how rebinding is really done — takes
+    // the same path, with no seeding of any kind.
+    it = mk(); S2.specs = [it]; S2.selIdx = 0;
+    vm.runInContext('_meBindCleared = { item: null, sig: null }', sandbox);
+    pick(0, 'TEST/DATA/OVERRIDE/TESTOVR');
+    eq(Object.keys(it.overrides).length, 0, 'the FIRST pick clears — no second attempt needed');
+    eq(it.tags, undefined, 'tags too');
 
-  eq(sig({ ddl_bindings: ['A/B/C', 'D/E/F'] }), 'A/B/C\u0000D/E/F',
-     'the signature covers every binding, joined on a character a path cannot contain');
+    // Picking the path it already has is not a change.
+    it = mk(); S2.specs = [it]; S2.selIdx = 0;
+    vm.runInContext('_meBindCleared = { item: null, sig: null }', sandbox);
+    pick(0, 'TEST/DATA/TDE/TDETEST');
+    eq(Object.keys(it.overrides).length, 4, 'picking the path it already had clears nothing');
 
-  } finally { sandbox._meState = keep; }
+    // A class that is not in storage at all has nothing to have changed FROM.
+    const fresh = { name: 'NEW', label: 'Brand New', ddl_bindings: ['A/B/C'],
+      overrides: { Q: { type: 'ascii' } } };
+    S2.specs = [fresh]; S2.selIdx = 0;
+    check(fresh);
+    eq(Object.keys(fresh.overrides).length, 1, 'an unsaved class clears nothing');
+  } finally {
+    save((keptSpecs && keptSpecs.specs) || []);
+    sandbox._meState = keepState;
+  }
 
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // Compared against STORAGE, not a remembered snapshot.
+  assert.ok(/_meBindSavedSigOf\(item\)/.test(psFnSource('_meBindCheckDdlChanged')),
+    'the comparison is against what is saved');
+  assert.ok(/window\._fmtGetSaved\(\)/.test(psFnSource('_meBindSavedSigOf')),
+    'which is read from storage');
   // On COMMIT, never per keystroke: _meBindSet writes the path on every
   // character, and every prefix of a real path resolves to nothing on the way.
   assert.ok(!/_meBindCheckDdlChanged/.test(psFnSource('_meBindSet')),
     'the check must not run from _meBindSet — that fires on every keystroke');
   assert.ok(/_meBindCheckDdlChanged\(item\)/.test(psFnSource('_meBindDeferredRefresh')),
     'it runs from the deferred (blur) refresh');
-  // ...and from the PICK path, which is how rebinding actually happens. Choosing
-  // a path from the suggestion list is a commit: a whole path, chosen
-  // deliberately, with no reason to wait for a blur. It reached none of this at
-  // first — _meBindSet returns early while the input has focus, which it still
-  // has during a pick, and the refresh only ever ran from the blur handler — so
-  // a rebind by picking cleared nothing and repainted nothing. Every assertion
-  // above passed throughout, because they all drive the commit function
-  // directly and never the path a person uses. Reported 2026-09-09.
-  assert.ok(/_meBindDeferredRefresh\(\)/.test(psFnSource('_meBindPick')),
-    'picking a DDL from the suggestion list commits the change');
-  // Both sections are showing the old DDL's fields, and both chips on the class
-  // row count what was just emptied.
-  const chkBody = psFnSource('_meBindCheckDdlChanged');
-  assert.ok(/_meTagRepaint\(\)/.test(chkBody), 'the Tags section is rebuilt too');
-  assert.ok(/_meRenderSidebar\(\)/.test(chkBody), 'and the class row chips are refreshed');
-  // Seeded when the class is OPENED. _meBindSet has already written the new path
-  // by the time blur fires, so a signature adopted at that point would be the
-  // changed one and the change would go unnoticed.
-  assert.ok(/_meBindSigSync\(_meState\.specs && _meState\.specs\[idx\]\)/.test(psFnSource('_meSelectItem')),
-    'the signature is seeded when a class is selected');
-  // Destructive, so it is offered back rather than done silently.
-  const chk = psFnSource('_meBindCheckDdlChanged');
-  assert.ok(/_meUndoable\(/.test(chk), 'clearing the overrides is undoable');
-  assert.ok(/_meOverridesRepaint\(\)/.test(chk),
-    'and the section is rebuilt — it is looking at the old DDL fields');
+  assert.ok(/_meBindCheckDdlChanged\(item\)/.test(psFnSource('_meBindPick')),
+    'and from the pick path, which is how rebinding actually happens');
+  // Destructive, so it is offered back rather than done silently, and both
+  // sections are rebuilt because both are showing the old DDL's fields.
+  const chk = psFnSource('_meBindDdlChanged');
+  assert.ok(/_meUndoable\(/.test(chk), 'clearing is undoable');
+  assert.ok(/_meOverridesRepaint\(\)/.test(chk), 'the Overrides section is rebuilt');
+  assert.ok(/_meTagRepaint\(\)/.test(chk), 'the Tags section too');
+  assert.ok(/_meRenderSidebar\(\)/.test(chk), 'and the class row chips are refreshed');
+  assert.ok(!/parse_spec/.test(chk), 'the parse spec is not cleared');
   // The count lives in the header badge, so rebuilding only the body leaves the
   // "Overridden (40)" the report was about still on screen.
   assert.ok(/_meOvBadgeHtml\(\)/.test(psFnSource('_meOverridesRepaint')),
     'the repaint refreshes the header badge too, not just the table');
-  // A save is a commit: without this the next blur reads the just-saved edit as
-  // a fresh DDL change and clears what the save wrote.
-  assert.ok(/_meBindSigSync\(_meCurItem\(\)\)/.test(psFnSource('_meSave')),
-    'saving re-seeds the signature');
 });
 
 // Reported 2026-09-09. A tag written in the Class Editor does not badge anything
@@ -15837,6 +15851,29 @@ test('there is one rule for resolving a message back to its class', () => {
   // report a span for bytes another class had under test.
   assert.ok(/window\._fmtSpecFor\(e\.name, e\.label\)/.test(psFnSource('_diagRecogSpan')),
     'the recognizer-span diagnostic resolves by name AND label');
+});
+
+// Reported 2026-09-09. The name box carried text-transform:uppercase, so
+// "Recurring" appeared as "RECURRING" while the stored label stayed lower case:
+// the field disagreed with itself, and there was no way to see the value being
+// saved. A tag label is free text the user writes, not a type code.
+test('[REGRESSION] the tag name box shows what was typed', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const rule = css.match(/\.me-tag-label\s*\{[^}]*\}/);
+  assert.ok(!rule || !/text-transform\s*:\s*uppercase/.test(rule[0]),
+    'the name input must not upper-case what the user types');
+  // The class stays on the input — two focus selectors use it, and dropping it
+  // to delete the rule would silently stop the box being focused on Add Tag.
+  assert.ok(/class="me-inp me-tag-label"/.test(src), 'the input keeps its class');
+  eq((src.match(/\.me-rec-form\.open \.me-tag-label'\)\?\.focus\(\)/g) || []).length, 2,
+     'and both focus selectors still find it');
+  // Nothing upper-cases the stored value either — the box and the store agree.
+  assert.ok(/_meTagSet\(\$\{ti\},'label',this\.value\)/.test(src),
+    'the raw value is what is stored');
+  // The BADGE stays upper case, from .btype, which it shares with the type chips
+  // beside it — a deliberate difference, not an oversight.
+  assert.ok(/\.btype-tag\s*\{/.test(css), 'the badge still has its own rule');
 });
 
 test('the tag report explains a tag that did not fire', () => {

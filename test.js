@@ -15892,28 +15892,13 @@ test('the tag report explains a tag that did not fire', () => {
     assert.ok(new RegExp(fn.replace(/\$/g, '\\$') + '\\(').test(rep),
       `it reuses ${fn} rather than reimplementing the check`);
 
-  // ONE walk feeding two surfaces. The console needs DevTools open, the right
-  // execution context and no active log filter — three ways to see nothing and
-  // conclude the diagnostic is missing, which is exactly what happened. The
-  // button cannot go wrong that way, and building the report twice would let the
-  // two tell different stories about the same message.
+  // The console is the only surface. A button in the results bar was tried and
+  // removed at the user's request 2026-09-09 — every trace of it goes, or the
+  // next reader finds half a feature and wonders which half is broken.
   assert.ok(/_tagWhyReport\(\)/.test(psFnSource('tagWhy')), 'the console prints the report');
-  assert.ok(/_tagWhyReport\(\)/.test(psFnSource('toggleTagWhyDialog')), 'and the panel renders it');
-  assert.ok(/window\.tagWhy = tagWhy/.test(src), 'tagWhy stays reachable from the console');
-  assert.ok(/id="tagWhyBtn"[^>]*onclick="toggleTagWhyDialog\(\)"/.test(src),
-    'there is a button in the results bar');
-  assert.ok(/id="tagWhyDialog" class="audit-cfg-dialog"/.test(src),
-    'and it opens the same popover the other config dialogs use');
-  // Shown only where there is something to explain.
-  assert.ok(/\(spec && \(spec\.tags \|\| \[\]\)\.length\) \? '' : 'none'/.test(psFnSource('syncTagWhyBtn')),
-    'the button appears only for a class that carries tags');
-  // Hidden alongside its siblings when the results bar is torn down, or it
-  // outlives the message it describes.
-  eq((src.match(/const _tw = document\.getElementById\('tagWhyBtn'\)/g) || []).length, 2,
-     'it is hidden on both paths that clear the bar');
-  // The report escapes into the panel: field ids and VALUES come off the wire.
-  assert.ok(/_escHtml\(r\.text\)/.test(psFnSource('toggleTagWhyDialog')),
-    'row text is escaped — it carries values straight from the message');
+  assert.ok(/window\.tagWhy = tagWhy/.test(src), 'tagWhy is reachable from the console');
+  for (const gone of ['tagWhyBtn', 'tagWhyDialog', 'toggleTagWhyDialog', 'syncTagWhyBtn', 'tw-body'])
+    assert.ok(!src.includes(gone), `the removed button left ${gone} behind`);
 
   // A function and a button, NOT logging on every parse: a badge is drawn for
   // every record rendered, and a line per tag per record buries the one

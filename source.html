@@ -2069,21 +2069,6 @@ td.c-err  { color: var(--accent2); }
   line-height: 1.5;
 }
 
-/* The "Why these tags" report. Wider than the column popovers beside it because
-   its content is field ids and values rather than labels, and it wraps rather
-   than truncating — a value you cannot read whole is the one thing this panel
-   exists to show you. An ID outranks .audit-cfg-dialog's class whatever the
-   source order, so this block does not need to sit after it — unlike the
-   class-vs-class pairs elsewhere in this file, where order decides. */
-#tagWhyDialog { min-width: calc(var(--sz-mono) * 30); max-width: min(560px, calc(100vw - 24px)); }
-#tagWhyDialog .tw-body { padding: 6px 8px; max-height: 50vh; overflow: auto; }
-.tw-row { font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px);
-  line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
-.tw-head { font-weight: 700; color: var(--text); }
-.tw-ok   { color: var(--ok-text, #3fb950); }
-.tw-bad  { color: var(--err-text, #f85149); }
-.tw-warn { color: var(--warn-text, #d29922); }
-.tw-dim  { color: var(--text-dim); }
 
 #appLogo, .app-logo { cursor: default; user-select: none; }
 
@@ -4598,13 +4583,6 @@ th.me-fm-colhi{color:var(--accent);}
           <button class="btn" id="resCollapseBtn" onclick="toggleResCollapseAll()" style="display:none;flex-shrink:0;min-width:88px;" title="Collapse or expand every group">Collapse All</button>
           <button class="btn" id="resGroupDataBtn" onclick="toggleResGroupData()" style="display:none;flex-shrink:0;" title="Show each group's combined value on its group row">Group Data</button>
           <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0;min-width:80px;" title="Hide/show REDEFINES fields">Hide Redef</button>
-          <div style="position:relative;display:inline-flex">
-            <button class="btn" id="tagWhyBtn" onclick="toggleTagWhyDialog()" style="display:none;flex-shrink:0;" title="Why did this message earn these tags — and why not the others?">Tags?</button>
-            <div id="tagWhyDialog" class="audit-cfg-dialog">
-              <div class="audit-cfg-hdr"><span>Why these tags</span><button class="btn" onclick="toggleTagWhyDialog()" style="padding:1px 7px;font-size:13px">✕</button></div>
-              <div class="tw-body"></div>
-            </div>
-          </div>
           <div style="position:relative;display:inline-flex">
             <button class="btn" id="colCfgBtn" onclick="toggleColCfgDialog()" title="Column visibility" style="display:none;padding:0 6px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">⚙</button>
             <div id="colCfgDialog" class="audit-cfg-dialog">
@@ -14181,7 +14159,6 @@ function _clearResultsOnly() {
   document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
-  { const _tw = document.getElementById('tagWhyBtn'); if (_tw && _tw.style) _tw.style.display = 'none'; }
   ['resCollapseBtn','resGroupDataBtn'].forEach(id => {
     const b = document.getElementById(id); if (b && b.style) b.style.display = 'none'; });
   const _cfgBar = document.getElementById('resCfgBar');
@@ -14223,7 +14200,6 @@ function clearAll() {
   document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
-  { const _tw = document.getElementById('tagWhyBtn'); if (_tw && _tw.style) _tw.style.display = 'none'; }
   ['resCollapseBtn','resGroupDataBtn'].forEach(id => {
     const b = document.getElementById(id); if (b && b.style) b.style.display = 'none'; });
   const _cfgBar3 = document.getElementById('resCfgBar');
@@ -14943,8 +14919,6 @@ function renderFieldTable(msg) {
   const _redefBtn  = document.getElementById('hideRedefBtn');
   if (_filterIn) { _filterIn.style.display = ''; _filterIn.value = ''; _syncFilterPos(); }
   if (_redefBtn) { _redefBtn.style.display = 'inline-flex'; }
-  // Shown only where there is something to explain — a class carrying tags.
-  syncTagWhyBtn();
   // Re-apply hide-redef class if state is active
   if (S.hideRedefines) document.getElementById('resContainer').classList.add('hide-redef');
   // The group view is not carried by the fresh markup, so it is re-applied here.
@@ -20503,7 +20477,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.54.1.1';
+const APP_VERSION  = '1.54.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -35019,29 +34993,6 @@ function tagWhy() {
   return undefined;
 }
 if (typeof window !== 'undefined') window.tagWhy = tagWhy;
-
-// The same report, in the app. The console needs DevTools open, the right
-// execution context and no active log filter — three ways to see nothing at all
-// and conclude the diagnostic is missing. A button cannot go wrong that way.
-// Requested 2026-09-09.
-function toggleTagWhyDialog() {
-  const d = document.getElementById('tagWhyDialog');
-  if (!d) return;
-  const open = d.classList.toggle('open');
-  if (!open) return;
-  const rows = _tagWhyReport().map(r =>
-    `<div class="tw-row tw-${r.kind}" style="padding-left:${r.indent * 14}px">${_escHtml(r.text)}</div>`
-  ).join('');
-  d.querySelector('.tw-body').innerHTML = rows;
-}
-function syncTagWhyBtn() {
-  const b = document.getElementById('tagWhyBtn');
-  if (!b) return;
-  const msg  = S.messages && S.messages[S.curIdx];
-  const spec = msg ? _meSpecForMsg(msg) : null;
-  // Only where there is something to explain: a class with tags on it.
-  b.style.display = (spec && (spec.tags || []).length) ? '' : 'none';
-}
 
 function _meTagCondHolds(cond, byId) {
   if (!cond || !cond.field) return false;

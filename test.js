@@ -15582,7 +15582,10 @@ test('[REGRESSION] rebinding a class to another DDL starts its overrides from ze
 
   const item = { name: 'TDE', ddl_bindings: ['TEST/DATA/TDE/TDETEST'],
     overrides: { TDETEST: { type: 'hex-char' }, VER: { type: 'hex-char' },
-                 MODE: { type: 'hex-char' }, 'OV-U64LE': { type: 'uint-le' } } };
+                 MODE: { type: 'hex-char' }, 'OV-U64LE': { type: 'uint-le' } },
+    // A tag names DDL field ids too, and one naming a field the new DDL does not
+    // have goes quiet without saying anything.
+    tags: [{ label: 'MODE', conditions: [{ field: 'CAPTR-MODE', op: 'equals', value: '00000001' }] }] };
   S2.specs = [item]; S2.selIdx = 0; S2.dirty = false;
 
   // Opening the class seeds the signature — the same path _meSelectItem takes.
@@ -15597,9 +15600,15 @@ test('[REGRESSION] rebinding a class to another DDL starts its overrides from ze
   item.ddl_bindings[0] = 'TEST/DATA/OTHER/OTHERDEF';
   check(item);
   eq(Object.keys(item.overrides).length, 0, 'a committed DDL change clears them all');
+  // Everything that names a DDL FIELD goes, which is overrides AND tags.
+  eq(item.tags, undefined, 'the tags go too — their conditions name field ids');
   // "From zero" is the whole instruction: overrides that would still have
   // matched go too, because the user asked for a clean state rather than a merge.
   eq(S2.dirty, true, 'and the class is dirty, so the change can be saved');
+  // The parse spec is deliberately spared: it is the most laborious thing on a
+  // class, and one written as a plain full-DDL walk stays valid against any DDL.
+  assert.ok(!/parse_spec/.test(psFnSource('_meBindCheckDdlChanged')),
+    'the parse spec is not cleared');
 
   // A second commit on the same path must not fire again.
   const before = JSON.stringify(item.overrides);
@@ -15624,6 +15633,21 @@ test('[REGRESSION] rebinding a class to another DDL starts its overrides from ze
     'the check must not run from _meBindSet — that fires on every keystroke');
   assert.ok(/_meBindCheckDdlChanged\(item\)/.test(psFnSource('_meBindDeferredRefresh')),
     'it runs from the deferred (blur) refresh');
+  // ...and from the PICK path, which is how rebinding actually happens. Choosing
+  // a path from the suggestion list is a commit: a whole path, chosen
+  // deliberately, with no reason to wait for a blur. It reached none of this at
+  // first — _meBindSet returns early while the input has focus, which it still
+  // has during a pick, and the refresh only ever ran from the blur handler — so
+  // a rebind by picking cleared nothing and repainted nothing. Every assertion
+  // above passed throughout, because they all drive the commit function
+  // directly and never the path a person uses. Reported 2026-09-09.
+  assert.ok(/_meBindDeferredRefresh\(\)/.test(psFnSource('_meBindPick')),
+    'picking a DDL from the suggestion list commits the change');
+  // Both sections are showing the old DDL's fields, and both chips on the class
+  // row count what was just emptied.
+  const chkBody = psFnSource('_meBindCheckDdlChanged');
+  assert.ok(/_meTagRepaint\(\)/.test(chkBody), 'the Tags section is rebuilt too');
+  assert.ok(/_meRenderSidebar\(\)/.test(chkBody), 'and the class row chips are refreshed');
   // Seeded when the class is OPENED. _meBindSet has already written the new path
   // by the time blur fires, so a signature adopted at that point would be the
   // changed one and the change would go unnoticed.
@@ -15692,6 +15716,33 @@ test('no raw control characters in the sources', () => {
     eq(hits.length, allowed,
       `${file}: raw control characters — write them as \\uXXXX escapes:\n  ${hits.join('\n  ')}`);
   }
+});
+
+// Typed into the console on the message in front of you. Every cause of "the
+// tag is not showing" looks identical from the bar, so it walks the chain in
+// order and names the first thing that is wrong. Requested 2026-09-09.
+test('tagWhy() explains a tag that did not fire', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const why = psFnSource('tagWhy');
+  assert.ok(why, 'tagWhy exists');
+  assert.ok(/window\.tagWhy = tagWhy/.test(src), 'and is reachable from the console');
+  // Each link in the chain, in the order it has to be checked.
+  assert.ok(/No class matched/.test(why),        '1. no class matched');
+  assert.ok(/has no tags saved/i.test(why),      '2. the class has no saved tags');
+  assert.ok(/SAVED class has/.test(why),         '   ...and the saved-vs-editing gap is called out by name');
+  assert.ok(/no such field in this parse/.test(why), '3. the condition names a field the parse never produced');
+  assert.ok(/would have matched/.test(why),      '4. the readings that WOULD have matched');
+  // It reports what the badge does, so it must ask the same functions rather
+  // than a second implementation that can drift from them.
+  for (const fn of ['_meSpecForMsg', '_meTagCondHolds', '_meTagHaves', '_meTagValues'])
+    assert.ok(new RegExp(fn.replace(/\$/g, '\\$') + '\\(').test(why),
+      `it reuses ${fn} rather than reimplementing the check`);
+  // A function, NOT logging on every parse: a badge is drawn for every record
+  // rendered, and a line per tag per record buries the one interesting case.
+  assert.ok(!/console\.log/.test(psFnSource('_meTagBadgesHtml')),
+    'the badge renderer stays silent');
+  assert.ok(!/console\.log/.test(psFnSource('_meTagsFor')),
+    'and so does the evaluator');
 });
 
 test('[REGRESSION] the section cards clear the scrollbar, not just its gutter', () => {

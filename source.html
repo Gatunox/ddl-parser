@@ -20439,7 +20439,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.53.3.0';
+const APP_VERSION  = '1.53.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27867,6 +27867,14 @@ function _meBindPick(idx, path) {
   const drop = document.getElementById('me-ddl-drop');
   if (drop) drop.style.display = 'none';
   _meDropEntries = []; _meDropBindIdx = -1; _meDropFocusIdx = -1;
+  // Choosing a path from the list IS a commit — it is a whole path, chosen
+  // deliberately, and the reason to wait for blur does not apply to it. This is
+  // the path most rebinding actually takes, and it reached none of the work
+  // below: _meBindSet returns early while the input has focus (it still does
+  // here), and _meBindDeferredRefresh only ever ran from the blur handler. So a
+  // rebind by picking cleared nothing and repainted nothing, which is exactly
+  // "I change the DDL and see no change". Reported 2026-09-09.
+  _meBindDeferredRefresh();
 }
 
 // True while the user is inside a binding input. Both the file-warnings block
@@ -27903,18 +27911,33 @@ function _meBindCheckDdlChanged(item) {
   const sig = _meBindSigOf(item);
   if (sig === _meBindSig.sig) return;
   _meBindSig.sig = sig;
-  const n = Object.keys(_meOvAll(item)).length;
-  if (!n) return;
+  // Everything on a class that names a DDL FIELD. An override is keyed by field
+  // id; a tag's conditions name field ids too, and a tag that names a field the
+  // new DDL does not have goes quiet without saying anything — which is the
+  // failure this was reported alongside. The parse spec is deliberately NOT
+  // cleared: it is the most laborious thing on a class, and one written as a
+  // plain full-DDL walk stays valid against any DDL.
+  const nOv  = Object.keys(_meOvAll(item)).length;
+  const nTag = Array.isArray(item.tags) ? item.tags.length : 0;
+  if (!nOv && !nTag) return;
+  const parts = [];
+  if (nOv)  parts.push(`${nOv} override${nOv === 1 ? '' : 's'}`);
+  if (nTag) parts.push(`${nTag} tag${nTag === 1 ? '' : 's'}`);
   // Destructive, so it is offered back: _meUndoable snapshots the whole class
   // before the change and puts an Undo beside the message.
-  _meUndoable(`Cleared ${n} override${n === 1 ? '' : 's'} — the DDL binding changed`, () => {
+  _meUndoable(`Cleared ${parts.join(' and ')} — the DDL binding changed`, () => {
     item.overrides = {};
+    delete item.tags;
     _meSetDirty();
   }, 'warn');
-  // The section is rebuilt because it is looking at the OLD DDL's fields — the
-  // reason a rebind only appeared to take effect after leaving the class and
+  // Both sections are rebuilt because both are looking at the OLD DDL's fields —
+  // the reason a rebind only appeared to take effect after leaving the class and
   // coming back to it.
   _meOverridesRepaint();
+  if (typeof _meTagRepaint === 'function') _meTagRepaint();
+  // The class row's `ovr: N` and `tags: N` chips are derived from exactly what
+  // was just emptied.
+  _meRenderSidebar();
 }
 
 function _meBindDeferredRefresh() {
@@ -34788,6 +34811,80 @@ function _meTagHaves(f) {
   for (const v of _meTagReadings(f)) seen.add(String(v).trim().toUpperCase());
   return [...seen];
 }
+
+// ── tagWhy() — why did this message not earn that tag? ──────────────────────
+// Typed into the console on the message in front of you. It walks the same
+// chain the badge does, in order, and stops at the first thing that is wrong —
+// because every one of them LOOKS like "the tag is broken" from the bar:
+//
+//   1. no class matched the message at all
+//   2. the class has no tags SAVED — parsing only ever reads saved data, so a
+//      tag still being edited badges nothing, and prod has its own storage
+//   3. the condition names a field the parse never produced (a rename, a
+//      rebind, a typo) — the field list is printed so the name can be found
+//   4. the field is there but no reading equals the value — all three readings
+//      are printed, and any of them would have matched
+//
+// A function rather than logging on every parse: a badge is drawn for every
+// record rendered, and a console line per tag per record is noise that makes
+// the one interesting case harder to find, not easier. Requested 2026-09-09.
+function tagWhy() {
+  const L = (...a) => console.log(...a);
+  const msg = (typeof S !== 'undefined' && S.messages) ? S.messages[S.curIdx] : null;
+  if (!msg) { L('%ctagWhy: no message is parsed — parse one first.', 'color:#f85149'); return; }
+  const spec = _meSpecForMsg(msg);
+  L('%ctagWhy — ' + (msg.msgType?.type || 'UNKNOWN') + ' rec ' + (msg.recNo ?? S.curIdx),
+    'font-weight:bold');
+  if (!spec) { L('%c1. No class matched this message, so no tag can apply.', 'color:#f85149'); return; }
+  L('   class: ' + (spec.name || '?') + '   bindings: ' + JSON.stringify(spec.ddl_bindings || []));
+  const tags = Array.isArray(spec.tags) ? spec.tags : [];
+  // The editor's working copy, for the commonest cause of all: written, not saved.
+  const edit = (typeof _meCurItem === 'function' && _meState && _meState.selIdx >= 0)
+    ? _meCurItem() : null;
+  if (edit && edit.name === spec.name) {
+    const nEdit = (edit.tags || []).length;
+    if (nEdit !== tags.length)
+      L('%c   the Class Editor holds ' + nEdit + ' tag(s) and the SAVED class has ' + tags.length +
+        ' — parsing reads the saved one. Press Save.', 'color:#d29922');
+  }
+  if (!tags.length) { L('%c2. This class has no tags saved.', 'color:#f85149'); return; }
+  const byId = {};
+  for (const f of (msg.fields || [])) if (f && f.id && !f.error) byId[_canonFieldId(f.id)] = f;
+  for (const tk of (msg.tokens || [])) {
+    if (!tk || !tk.id) continue;
+    const id = String(tk.id).toUpperCase();
+    byId[id] = { id, value: '', isToken: true };
+    for (const f of (tk.fields || [])) {
+      if (!f || !f.id || f.error) continue;
+      byId[`${id}.${_meTagTokenLeaf(f.id)}`] = f;
+    }
+  }
+  for (const t of tags) {
+    const conds = (t.conditions || []).filter(c => c && c.field);
+    const fires = conds.length && conds.every(c => _meTagCondHolds(c, byId));
+    L('%c' + (fires ? '✓ ' : '✗ ') + (String(t.label || '').trim() || 'UNNAMED'),
+      'color:' + (fires ? '#3fb950' : '#f85149') + ';font-weight:bold');
+    if (!conds.length) { L('    no conditions — a tag with none never fires.'); continue; }
+    for (const c of conds) {
+      const f    = byId[_canonFieldId(c.field)];
+      const want = _meTagValues(c);
+      const ok   = _meTagCondHolds(c, byId);
+      const op   = String(c.op || 'equals');
+      L('    ' + (ok ? '✓' : '✗') + ' ' + c.field + ' ' + op + ' ' +
+        (op === 'present' ? '' : JSON.stringify(want)));
+      if (ok) continue;
+      if (!f) { L('%c        no such field in this parse — check the name against the list below.',
+                  'color:#d29922'); continue; }
+      if (op === 'present') continue;
+      if (!want.length) { L('%c        the condition has no value.', 'color:#d29922'); continue; }
+      L('%c        the field holds ' + JSON.stringify(_meTagHaves(f)) +
+        ' — any ONE of those would have matched.', 'color:#d29922');
+    }
+  }
+  L('   fields in this parse (' + Object.keys(byId).length + '):', Object.keys(byId).join(', '));
+  return undefined;
+}
+if (typeof window !== 'undefined') window.tagWhy = tagWhy;
 
 function _meTagCondHolds(cond, byId) {
   if (!cond || !cond.field) return false;

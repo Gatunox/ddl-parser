@@ -20439,7 +20439,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.53.2.1';
+const APP_VERSION  = '1.53.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23339,6 +23339,12 @@ function _meSelectItem(section, idx) {
   _meState.recTest = null;   // dots are per-entity, drop the old verdict
   _meState.section = section;
   _meState.selIdx  = idx;
+  // The bindings as this class arrives, so a later commit can tell whether the
+  // DDL actually changed. Seeded HERE rather than lazily on the first commit:
+  // _meBindSet has already written the new path into the item by the time blur
+  // fires, so a signature adopted at that point would be the changed one and the
+  // change would go unnoticed.
+  _meBindSigSync(_meState.specs && _meState.specs[idx]);
   // Sections reflect the selected entity's content: panels WITH data open,
   // empty panels start collapsed. (User can still toggle manually after.)
   if (section === 'msg') {
@@ -27873,8 +27879,47 @@ function _meBindHasFocus() {
 }
 
 // Both deferred refreshes, run once focus has left the bindings.
+// ── Rebinding a class starts its overrides from zero ────────────────────────
+// An override names a FIELD of the DDL it was written against. Point the class
+// at another definition and those names describe nothing — and because the
+// Overrides table lists the DDL's OWN fields, the strays are invisible in it
+// while still being stored, counted and exported. A class copied from another
+// and then rebound showed "Overridden (40)" against a four-field DDL, thirty-six
+// of them naming fields that no longer exist anywhere.
+//
+// The signature is compared against the list as it stood when the class was
+// opened or last committed — NOT against each keystroke. _meBindSet runs on
+// every character typed, and every prefix of a path resolves to nothing on the
+// way to the one that resolves: clearing there would throw the overrides away
+// before the path was finished being typed. Requested 2026-09-09.
+let _meBindSig = { item: null, sig: null };
+const _meBindSigOf = item => (item?.ddl_bindings || []).join('\u0000');
+function _meBindSigSync(item) { _meBindSig = { item: item || null, sig: _meBindSigOf(item) }; }
+
+function _meBindCheckDdlChanged(item) {
+  // A different class than the one the signature describes: adopt it rather
+  // than compare against another entity's bindings.
+  if (_meBindSig.item !== item) { _meBindSigSync(item); return; }
+  const sig = _meBindSigOf(item);
+  if (sig === _meBindSig.sig) return;
+  _meBindSig.sig = sig;
+  const n = Object.keys(_meOvAll(item)).length;
+  if (!n) return;
+  // Destructive, so it is offered back: _meUndoable snapshots the whole class
+  // before the change and puts an Undo beside the message.
+  _meUndoable(`Cleared ${n} override${n === 1 ? '' : 's'} — the DDL binding changed`, () => {
+    item.overrides = {};
+    _meSetDirty();
+  }, 'warn');
+  // The section is rebuilt because it is looking at the OLD DDL's fields — the
+  // reason a rebind only appeared to take effect after leaving the class and
+  // coming back to it.
+  _meOverridesRepaint();
+}
+
 function _meBindDeferredRefresh() {
   const item = _meCurItem(); if (!item) return;
+  _meBindCheckDdlChanged(item);
   const { spec: specField } = _mePsFieldsForVariant(_mePsActiveVariant());
   if (Array.isArray(item[specField])) _mePsScheduleLint(item, item[specField]);
   _meFileWarnsRefresh();
@@ -28589,6 +28634,21 @@ function _meFmVirtRefresh(fieldList) {
 // Async section fill: prep (the only data-heavy step) runs off the paint,
 // then the chrome + first window land — constant DOM cost at any DDL size.
 // Aborts silently when seq no longer matches (item switched / editor closed).
+// Rebuild the Overrides section in place, the way _meTagRepaint does for Tags.
+// A full _meRenderRight would scroll the pane back to Identity and tear down the
+// parse-spec editor, and the reason to repaint is a binding edit happening two
+// sections above this one.
+function _meOverridesRepaint() {
+  const item = _meCurItem();
+  const el   = document.getElementById('me-sect-body-overrides');
+  if (!item || !el || !el.classList.contains('open')) return;
+  // The count lives in the header badge, not the body, so it goes stale on its
+  // own if only the table is rebuilt.
+  const badge = el.previousElementSibling?.querySelector('.pt-badge');
+  if (badge) badge.innerHTML = _meOvBadgeHtml();
+  _meFillOverridesSection(el, item, _meRenderSeq, () => {});
+}
+
 function _meFillOverridesSection(el, item, seq, done) {
   const prog = el.querySelector('.me-progress-fill');   // skeleton bar — reused
   const setP = p => { if (prog && prog.isConnected) prog.style.width = p + '%'; };
@@ -38777,6 +38837,20 @@ function _meSave() {
   if (typeof _mePsRefreshVariantLabels === 'function') {
     _mePsRefreshVariantLabels(_meCurItem());
   }
+  // The bindings are now the committed ones — a save is a commit, so a later
+  // blur must not read the edit that was just saved as a fresh DDL change and
+  // clear the overrides the save just wrote.
+  _meBindSigSync(_meCurItem());
+  // And the message on screen is redrawn, because its TAG BADGES are derived
+  // from the SAVED class: a tag written here does not badge anything until it is
+  // saved (parsing only ever reads saved data), and until now nothing repainted
+  // after the save either — so a correct, saved tag stayed invisible until the
+  // user navigated to another record and back. That is the same "works on the
+  // second look" failure a stale override caused, from the other end, and it is
+  // exactly as misleading. Cheap and safe: badges are computed at render time
+  // from values the parse already produced, so this re-renders and never
+  // re-parses. Reported 2026-09-09.
+  if (typeof renderCurrent === 'function' && S.messages && S.messages[S.curIdx]) renderCurrent();
 }
 
 </script>

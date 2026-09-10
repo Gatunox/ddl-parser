@@ -6172,7 +6172,7 @@ test('[REGRESSION] a tag compares the value an override produced, on the first r
   // PIC X(4) carrying 00 00 00 01 — as text that is four control characters,
   // as hex-char it is the "00000001" the table shows.
   const mkMsg = () => ({ fields: [
-    { id: 'TDE.DATA', value: '   ', rawHex: '00000001',
+    { id: 'TDE.DATA', value: '\u0000\u0000\u0000\u0001', rawHex: '00000001',
       rawBytes: [0, 0, 0, 1] },
   ] });
   const spec = { name: 'TSTO', overrides: { 'TDE.DATA': { type: 'hex-char' } },
@@ -6192,7 +6192,7 @@ test('[REGRESSION] a tag compares the value an override produced, on the first r
   const m2 = mkMsg();
   applyOvr(m2, disp);
   assert.ok(m2.fields[0].displayValue != null, 'a display override produces displayValue');
-  eq(m2.fields[0].value, '   ', 'and leaves the underlying value alone');
+  eq(m2.fields[0].value, '\u0000\u0000\u0000\u0001', 'and leaves the underlying value alone');
 
   // Applied once per message, and the guard is what made the bug intermittent —
   // so it must stay, and must not re-convert an already-converted value.
@@ -15561,6 +15561,137 @@ test('[REGRESSION] a binding edit re-renders only the bindings list', () => {
   assert.ok(/_mePsScheduleLint\(/.test(refresh) && /_meFileWarnsRefresh\(\)/.test(refresh),
     'the refresh no longer covers both of the things a binding feeds');
   assert.ok(/_mePad\(/.test(render), 'the refill loses the section padding');
+});
+
+// Reported 2026-09-09. A class was created by copying another and then rebound
+// to a different DDL. The Overrides section went on showing the OLD DDL's fields
+// until the user left the class and came back, and the count read "Overridden
+// (40)" against a four-field DDL: thirty-six overrides naming fields that exist
+// nowhere, invisible in a table that lists the DDL's own fields, yet stored,
+// counted and exported.
+test('[REGRESSION] rebinding a class to another DDL starts its overrides from zero', () => {
+  const sig = vm.runInContext('_meBindSigOf', sandbox);
+  const sync  = vm.runInContext('_meBindSigSync', sandbox);
+  const check = vm.runInContext('_meBindCheckDdlChanged', sandbox);
+  // _meState is null until the Class Editor opens. The sandbox is shared with
+  // every other test in this file, so what is borrowed here is put back.
+  const keep = vm.runInContext('_meState', sandbox);
+  vm.runInContext('_meState = { specs: [], selIdx: -1, dirty: false, sections: {} }', sandbox);
+  const S2 = vm.runInContext('_meState', sandbox);
+  try {
+
+  const item = { name: 'TDE', ddl_bindings: ['TEST/DATA/TDE/TDETEST'],
+    overrides: { TDETEST: { type: 'hex-char' }, VER: { type: 'hex-char' },
+                 MODE: { type: 'hex-char' }, 'OV-U64LE': { type: 'uint-le' } } };
+  S2.specs = [item]; S2.selIdx = 0; S2.dirty = false;
+
+  // Opening the class seeds the signature — the same path _meSelectItem takes.
+  sync(item);
+  // Nothing has changed yet, so nothing is cleared.
+  check(item);
+  eq(Object.keys(item.overrides).length, 4, 'a commit with no change clears nothing');
+
+  // The hazard the whole design turns on: _meBindSet runs on EVERY keystroke, so
+  // the check must not see a half-typed path. Simulated by mutating the binding
+  // the way typing does and only then committing.
+  item.ddl_bindings[0] = 'TEST/DATA/OTHER/OTHERDEF';
+  check(item);
+  eq(Object.keys(item.overrides).length, 0, 'a committed DDL change clears them all');
+  // "From zero" is the whole instruction: overrides that would still have
+  // matched go too, because the user asked for a clean state rather than a merge.
+  eq(S2.dirty, true, 'and the class is dirty, so the change can be saved');
+
+  // A second commit on the same path must not fire again.
+  const before = JSON.stringify(item.overrides);
+  check(item);
+  eq(JSON.stringify(item.overrides), before, 'committing the same path twice is a no-op');
+
+  // Switching to another class adopts ITS bindings rather than comparing across
+  // two entities — otherwise selecting a class would look like a DDL change.
+  const other = { name: 'X', ddl_bindings: ['A/B/C'], overrides: { Q: { type: 'ascii' } } };
+  S2.specs = [other]; S2.selIdx = 0;
+  check(other);
+  eq(Object.keys(other.overrides).length, 1, 'selecting another class clears nothing');
+
+  eq(sig({ ddl_bindings: ['A/B/C', 'D/E/F'] }), 'A/B/C\u0000D/E/F',
+     'the signature covers every binding, joined on a character a path cannot contain');
+
+  } finally { sandbox._meState = keep; }
+
+  // On COMMIT, never per keystroke: _meBindSet writes the path on every
+  // character, and every prefix of a real path resolves to nothing on the way.
+  assert.ok(!/_meBindCheckDdlChanged/.test(psFnSource('_meBindSet')),
+    'the check must not run from _meBindSet — that fires on every keystroke');
+  assert.ok(/_meBindCheckDdlChanged\(item\)/.test(psFnSource('_meBindDeferredRefresh')),
+    'it runs from the deferred (blur) refresh');
+  // Seeded when the class is OPENED. _meBindSet has already written the new path
+  // by the time blur fires, so a signature adopted at that point would be the
+  // changed one and the change would go unnoticed.
+  assert.ok(/_meBindSigSync\(_meState\.specs && _meState\.specs\[idx\]\)/.test(psFnSource('_meSelectItem')),
+    'the signature is seeded when a class is selected');
+  // Destructive, so it is offered back rather than done silently.
+  const chk = psFnSource('_meBindCheckDdlChanged');
+  assert.ok(/_meUndoable\(/.test(chk), 'clearing the overrides is undoable');
+  assert.ok(/_meOverridesRepaint\(\)/.test(chk),
+    'and the section is rebuilt — it is looking at the old DDL fields');
+  // The count lives in the header badge, so rebuilding only the body leaves the
+  // "Overridden (40)" the report was about still on screen.
+  assert.ok(/_meOvBadgeHtml\(\)/.test(psFnSource('_meOverridesRepaint')),
+    'the repaint refreshes the header badge too, not just the table');
+  // A save is a commit: without this the next blur reads the just-saved edit as
+  // a fresh DDL change and clears what the save wrote.
+  assert.ok(/_meBindSigSync\(_meCurItem\(\)\)/.test(psFnSource('_meSave')),
+    'saving re-seeds the signature');
+});
+
+// Reported 2026-09-09. A tag written in the Class Editor does not badge anything
+// until it is saved — parsing only ever reads saved data, which is deliberate.
+// But nothing repainted after the save either, so a correct, saved tag stayed
+// invisible until the user navigated to another record and back: the same "works
+// on the second look" failure a stale override caused, from the other end.
+test('[REGRESSION] saving the class redraws the message, so a saved tag badges at once', () => {
+  const save = psFnSource('_meSave');
+  assert.ok(/renderCurrent\(\)/.test(save),
+    'the message on screen is re-rendered on save');
+  // Guarded: the Class Editor opens with no message parsed at all.
+  assert.ok(/S\.messages && S\.messages\[S\.curIdx\]/.test(save),
+    'and only when there is a message to redraw');
+  // A RE-RENDER, never a re-parse. Badges are derived at render time from values
+  // the parse already produced, so this cannot change a parsed value — and
+  // re-parsing on every save would be a very different, much more expensive act.
+  assert.ok(!/\bparseMessages?\(|\bdoParse\(/.test(save),
+    'saving re-renders the message, it does not re-parse it');
+});
+
+// A raw control character in a source file is invisible in every tool that
+// shows it: grep printed a NUL as a space, so a literal that read as join(' ')
+// was really join('\0'), and the test comparing them reported two identical
+// strings as different. Written as an escape it is legible and greppable; typed
+// raw it is a landmine. Two crept in while fixing the rebinding bug, and the
+// only reason they were caught is that one of them happened to break an
+// assertion. Added 2026-09-09.
+test('no raw control characters in the sources', () => {
+  // NUL is the one that has actually happened; the rest of C0 is here because
+  // there is no legitimate reason for any of them to sit in a string literal.
+  // Tab, newline and carriage return are ordinary whitespace and excluded.
+  const isCtrl = c => { const n = c.charCodeAt(0);
+    // Tab (9), newline (10) and carriage return (13) are ordinary whitespace.
+    return n < 32 && n !== 9 && n !== 10 && n !== 13; };
+  for (const file of ['source.html', 'test.js']) {
+    const text = fs.readFileSync(`./${file}`, 'utf8');
+    const hits = [];
+    text.split('\n').forEach((line, i) => {
+      const m = [...line].filter(isCtrl);
+      if (m.length) hits.push(`${file}:${i + 1} — ${m.length} × ` +
+        m.map(c => 'U+' + c.charCodeAt(0).toString(16).padStart(4, '0')).join(', '));
+    });
+    // Two predate this guard, in _meCommentDECache's cache key. They are left
+    // alone rather than swept up with an unrelated fix; this pins the count so
+    // it cannot grow, and drops to 0 when they are cleaned up.
+    const allowed = file === 'source.html' ? 2 : 0;
+    eq(hits.length, allowed,
+      `${file}: raw control characters — write them as \\uXXXX escapes:\n  ${hits.join('\n  ')}`);
+  }
 });
 
 test('[REGRESSION] the section cards clear the scrollbar, not just its gutter', () => {

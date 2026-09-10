@@ -15876,6 +15876,52 @@ test('[REGRESSION] the tag name box shows what was typed', () => {
   assert.ok(/\.btype-tag\s*\{/.test(css), 'the badge still has its own rule');
 });
 
+// Reported 2026-09-09. `hex-char` means "the bytes as TRANSMITTED" — its own
+// comment says so. On an EBCDIC message every byte is translated to ASCII the
+// moment the text becomes bytes, before any field exists, so f.rawHex already
+// holds 41 where the wire held C1. The parse-spec engine passed the untranslated
+// slice (through _meWireHex) and was right; the legacy DDL walk passed nothing
+// and showed the translation. The same override, on the same message, read C1
+// through one parser and 41 through the other.
+test('[REGRESSION] hex-char shows the wire byte on an EBCDIC message, on both paths', () => {
+  const apply = vm.runInContext('_meReadApplyTypeOverride', sandbox);
+  // EBCDIC C1 D5 is "AN"; translated to ASCII that is 41 4E.
+  const translated = { rawHex: '414E' };
+  eq(apply(translated, 'hex-char').value, '414E',
+     'with no wire bytes it can only show what it has');
+  eq(apply(translated, 'hex-char', 'C1D5').value, 'C1D5',
+     'given the wire bytes it shows those instead');
+
+  // The legacy render path now supplies them, the way the engine always did.
+  const legacy = psFnSource('_msgApplyOverrides');
+  assert.ok(/_meReadApplyTypeOverride\(_f, _o\.type, _wireHexOf\(_f\)\)/.test(legacy),
+    'the legacy path passes the wire slice');
+  assert.ok(/msg\.wireBytes/.test(legacy), 'taken from the message');
+  assert.ok(/_meWireHex\(f, ctx\)/.test(psFnSource('_meApplyTypeOverride')),
+    'and the engine path still does too');
+
+  // The wire buffer survives extraction. Only the hex branch translates, so it
+  // is the only one that returns one — elsewhere the wire IS `bytes`.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/wire: format === 'ebcdic' \? wire : null/.test(src),
+    'the extractor returns the untranslated bytes for an ebcdic paste');
+  assert.ok(/function extractWireBytes/.test(src), 'and an accessor for them');
+
+  // Every message carries it. The trap: in the audit-chunk flow `bytes` is
+  // ALREADY the translation and the wire is `wireBytes` — carrying `bytes`
+  // there would hand back the translation and look exactly like a fix.
+  eq((src.match(/wireBytes: bytes,/g) || []).length, 3,
+     'the three NETARD constructions carry their wire buffer');
+  eq((src.match(/raw: chunkStr, wireBytes,/g) || []).length, 3,
+     'all three audit constructions carry theirs, which is NOT `bytes`');
+  assert.ok(/const \{ chunk, chunkStr, bytes, wireBytes, parseBytes/.test(src),
+    'the chunk loop binds the wire buffer');
+  // A forced 'ebcdic' paste is translated inside extractBytes itself, so `bytes`
+  // is not the wire there and has to be asked for.
+  assert.ok(/const wireBytes = extractWireBytes\(chunk, S\.inputFormat\) \|\| bytes;/.test(src),
+    'the pasted-message flow asks for the untranslated copy');
+});
+
 test('the tag report explains a tag that did not fire', () => {
   const src = fs.readFileSync('./source.html', 'utf8');
   const rep = psFnSource('_tagWhyReport');

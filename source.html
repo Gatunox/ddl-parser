@@ -7841,6 +7841,12 @@ function extractBytesMapped(chunk, format, textOffset) {
   const off   = textOffset || 0;
   const bytes = [];
   const map   = [];
+  // The bytes as TRANSMITTED. Only the hex branch below translates anything —
+  // an 'ebcdic' paste is turned into ASCII the moment it becomes bytes, before
+  // any field exists — so this is the only place the pre-translation value still
+  // exists. `hex-char` means "show me what was on the wire", and without this it
+  // had nothing to show but the translation. Reported 2026-09-09.
+  const wire  = [];
 
   if (format === 'tandem-dump') {
     let pos = off;
@@ -7956,9 +7962,10 @@ function extractBytesMapped(chunk, format, textOffset) {
       const hi = text[a - off], lo = text[b - off];
       const v = parseInt(hi + lo, 16);
       bytes.push(format === 'ebcdic' ? (_EBCDIC_TO_ASCII[v] ?? v) : v);
+      wire.push(v);
       map.push({ s: a, e: b + 1 });
     }
-    return { bytes, map };
+    return { bytes, map, wire: format === 'ebcdic' ? wire : null };
   }
 
   // ASCII: every column up to the ruler width is data, trailing spaces included.
@@ -8003,6 +8010,13 @@ function extractBytesMapped(chunk, format, textOffset) {
 // The bytes alone, for every caller that does not care where they came from.
 function extractBytes(chunk, format) {
   return extractBytesMapped(chunk, format).bytes;
+}
+
+// The same bytes BEFORE any EBCDIC translation. Null when nothing was
+// translated, which is every format but 'ebcdic' — callers read it as "the wire
+// is what you already have".
+function extractWireBytes(chunk, format) {
+  return extractBytesMapped(chunk, format).wire;
 }
 
 // The map alone. Kept as a name because several call sites read only this, and
@@ -12245,7 +12259,7 @@ function doParseNetardLog(text, opts = {}) {
           const _ddlLabel = defName || p1Path.split('/').pop();
           const msgType = { type: _ddlLabel, label: _ddlLabel, color: '#50c878' };
           const tokens  = extractTokensFromMessage(fields, parseBytes, msgType.type, ddlPath) ?? [];
-          const parsed  = [{ bytes: parseBytes, raw: parseRaw,
+          const parsed  = [{ bytes: parseBytes, raw: parseRaw, wireBytes: bytes,
             isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
             byteCharMap: rec.byteCharMap || [], charStart: rec.charStart, charEnd: rec.charEnd,
             recNo: rec.recNo, recLength: rec.length,
@@ -12315,7 +12329,7 @@ function doParseNetardLog(text, opts = {}) {
             const msgType = { type: _ddlLabel, label: _ddlLabel, color: '#50c878' };
             const tokens  = extractTokensFromMessage(fields, parseBytes, msgType.type, ddlPath) ?? [];
             parsed.push({
-              bytes: parseBytes, raw: parseRaw,
+              bytes: parseBytes, raw: parseRaw, wireBytes: bytes,
               isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
               byteCharMap: rec.byteCharMap || [], charStart: rec.charStart, charEnd: rec.charEnd,
               recNo: rec.recNo, recLength: rec.length,
@@ -12410,7 +12424,7 @@ function doParseNetardLog(text, opts = {}) {
               const _pd = preDet[_ri];   // { dec, det, winner, bound } from the pre-pass
               const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic, ebcdicDens: _ebcdicDens, ebcdicHow: _ebcdicHow } = _pd.dec;
               const _base = {
-                bytes: parseBytes, raw: parseRaw,
+                bytes: parseBytes, raw: parseRaw, wireBytes: bytes,
                 isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
                 byteCharMap: rec.byteCharMap || [],
                 charStart: rec.charStart, charEnd: rec.charEnd,
@@ -12972,6 +12986,10 @@ function doParseMessages() {
     if (!candidates.length) { flash('No valid field definitions found in selected scope.', 'warn'); return; }
 
     const bytes = extractBytes(chunk, S.inputFormat);
+    // For an 'ebcdic' paste extractBytes has already translated, so `bytes` is
+    // NOT the wire there — ask for the untranslated copy. Null for every other
+    // format, where `bytes` is the wire already.
+    const wireBytes = extractWireBytes(chunk, S.inputFormat) || bytes;
     if (!bytes.length) { flash('Could not extract any message bytes from input.', 'error'); return; }
 
     // A hand-picked EBCDIC paste is the rendered message, so extractBytes gave us
@@ -13013,7 +13031,7 @@ function doParseMessages() {
     const p1DetectStr = (S.inputFormat === 'tandem-dump' || S.inputFormat === 'hex')
       ? bytes.map(b => String.fromCharCode(b)).join('') : chunkStr;   // detect on RAW bytes (encoding-aware recognizers)
     const p1Tokens = extractTokensFromMessage(best.fields, parseBytes, detectMsgType(p1DetectStr).type, best.ddlPath);
-    S.messages      = [{ bytes: parseBytes, raw: chunk.text || chunk, timestamp: chunk.timestamp || null,
+    S.messages      = [{ bytes: parseBytes, raw: chunk.text || chunk, wireBytes, timestamp: chunk.timestamp || null,
       fields: best.fields, ddlPath: best.ddlPath, defName: (_ovr && _ovr.defName) || null, byteCharMap,
       charStart, charEnd: charStart + chunkStr.length,
       tokens: p1Tokens, manualOverride: true, parsedBy: 'manual override',
@@ -13177,7 +13195,10 @@ function doParseMessages() {
           // message is not just wasted work, it is work with no reader.
           const typeMatchCache = _scoring ? _scorePoolByType(_chunkInfo, _pool, _ddlErrors) : {};
           for (const ci of _chunkInfo) {
-            const { chunk, chunkStr, bytes, parseBytes, detectStr, detTrace: _detTrace } = ci;
+            // wireBytes: the untranslated copy. `bytes` here is ALREADY the EBCDIC
+            // translation (see where _chunkInfo is built), so hex-char must not
+            // read it.
+            const { chunk, chunkStr, bytes, wireBytes, parseBytes, detectStr, detTrace: _detTrace } = ci;
             let msgType = ci.msgType;
 
             // Auto-detect via volume-hierarchy scoring (DDLMM routing removed).
@@ -13202,7 +13223,7 @@ function doParseMessages() {
                   msgTypeLabel: msgType.type || null,
                   volResolved: false,
                 };
-                parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
+                parsed.push({ bytes: parseBytes, raw: chunkStr, wireBytes, timestamp: chunk.timestamp || null,
                   fields: [], ddlPath: null, msgType, tokens: [], byteCharMap,
                   charStart, charEnd: charStart + chunkStr.length,
                   noMatchDDL: true, unknownType: true, _diag, _auditChunk: chunk });
@@ -13210,7 +13231,7 @@ function doParseMessages() {
               }
 
               // Shared routing decision — identical to the record flow.
-              const _base = { bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
+              const _base = { bytes: parseBytes, raw: chunkStr, wireBytes, timestamp: chunk.timestamp || null,
                 msgType, byteCharMap, charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk };
               const _v = ci.verdict;
               if (_v.kind === 'no-spec') {
@@ -13237,7 +13258,7 @@ function doParseMessages() {
               if (allMatches.length === 0) {
                 // Same dead end as an unrecognised message, one step further in
                 // — so it shows the same diagnostic. See the record flow.
-                parsed.push({ bytes: parseBytes, raw: chunkStr, timestamp: chunk.timestamp || null,
+                parsed.push({ bytes: parseBytes, raw: chunkStr, wireBytes, timestamp: chunk.timestamp || null,
                   fields: [], ddlPath: null, msgType, tokens: [], byteCharMap,
                   charStart, charEnd: charStart + chunkStr.length, noMatchDDL: true, _auditChunk: chunk,
                   _diag: {
@@ -14335,6 +14356,18 @@ function _msgByteCoverage(msg) {
 // hex-char and tagged on the "00000001" the table was showing.
 function _msgApplyOverrides(msg, spec) {
   if (!msg || msg._ovrApplied) return;
+  // The bytes as TRANSMITTED, for the one override that means them: `hex-char`
+  // shows the wire, and on an EBCDIC message every byte was translated to ASCII
+  // before any field existed — so f.rawHex holds 41 where the wire held C1. The
+  // parse-spec engine has always passed this (through _meWireHex); this path
+  // never did, so the same override on the same message read C1 through one
+  // parser and 41 through the other. Reported 2026-09-09.
+  const _wire = msg.wireBytes || null;
+  const _wireHexOf = f => {
+    if (!_wire || f.startByte == null || f.endByte == null) return null;
+    const sl = Array.from(_wire.slice(f.startByte, f.endByte + 1));
+    return sl.length ? sl.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('') : null;
+  };
   const ovAll = (spec && spec.overrides) || null;
   if (!ovAll) return;
   const foMap = {};
@@ -14359,7 +14392,7 @@ function _msgApplyOverrides(msg, spec) {
       }
       const _eff = (_b > 0 && _b < _len) ? _b : _len;
       if (_req === null || _req === _eff) {
-        const _u = _meReadApplyTypeOverride(_f, _o.type);
+        const _u = _meReadApplyTypeOverride(_f, _o.type, _wireHexOf(_f));
         // The reading the override replaced, kept rather than discarded: it is
         // one of the three things the value tooltip offers, and one of the three
         // a tag will accept.
@@ -20477,7 +20510,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.54.1.2';
+const APP_VERSION  = '1.54.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

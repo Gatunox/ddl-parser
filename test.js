@@ -15922,6 +15922,18 @@ test('[REGRESSION] hex-char shows the wire byte on an EBCDIC message, on both pa
     'the pasted-message flow asks for the untranslated copy');
 });
 
+// A tooltip nobody holds still long enough to see is a tooltip that does not
+// exist: the RAW / TYPE / SHOW report read as missing twice on the day it was
+// added, because hovering a value and getting nothing is a reasonable way to
+// conclude a thing is not there. Reported 2026-09-09.
+test('the value tooltip appears before anyone gives up on it', () => {
+  const delay = vm.runInContext('_CELL_TIP_DELAY', sandbox);
+  assert.ok(delay <= 800, `the hover delay is ${delay}ms — too long to wait out by accident`);
+  assert.ok(delay >= 300, `${delay}ms would fire while scanning a table`);
+  assert.ok(/}, _CELL_TIP_DELAY\);/.test(psFnSource('_showCellTip')),
+    'the timer reads the constant, so the number lives in one place');
+});
+
 test('the tag report explains a tag that did not fire', () => {
   const src = fs.readFileSync('./source.html', 'utf8');
   const rep = psFnSource('_tagWhyReport');

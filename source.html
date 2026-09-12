@@ -15283,6 +15283,13 @@ function selectField(fid) {
 
 // ── Cell tooltip (replaces unreliable native title on value/raw cells) ──────
 let _cellTipTimer = null;
+// Long enough that scanning a table never triggers it, short enough that asking
+// for it feels like asking. Two seconds is longer than anyone holds a pointer
+// still on purpose: the value tooltip read as missing twice — hover, nothing
+// happens, conclude it is not there — and the second time it was the RAW / TYPE
+// / SHOW report that had just been added to answer a question. A tooltip nobody
+// waits long enough to see is a tooltip that does not exist. Reported 2026-09-09.
+const _CELL_TIP_DELAY = 600;
 function _showCellTip(e, text) {
   if (!text) return;
   _hideCellTip();
@@ -15293,7 +15300,7 @@ function _showCellTip(e, text) {
     tip.textContent = text;
     tip.style.display = 'block';
     _positionCellTip({ clientX: ex, clientY: ey }, tip);
-  }, 2000);
+  }, _CELL_TIP_DELAY);
 }
 function _positionCellTip(e, tip) {
   tip = tip || document.getElementById('cellTooltip');
@@ -20510,7 +20517,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.54.2.0';
+const APP_VERSION  = '1.54.2.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

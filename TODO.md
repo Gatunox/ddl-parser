@@ -922,7 +922,29 @@ attribute has nowhere to go in a string. Neither form is preferred.
 
 ---
 
-## 23. [ ] The parse loop cannot report progress, because it never yields
+## 23. [~] The parse loop cannot report progress, because it never yields
+
+**Partly done — verified 2026-09-12.** The chunk/paste path now slices both of
+its loops, with `setTimeout(…, 0)` between slices and a live counter:
+`_detectSlice` reports *"Detecting message types… N of M"* and `_verdictSlice`
+reports *"Parsing… N of M"*; DDL compilation reports *"Compiling DDL
+definitions… N of M"* as well. That is the progress a user sees today, and it is
+the reason this item looked finished.
+
+**What remains.** Three of the four parts:
+
+1. **The NETARD audit-record loop is still one synchronous turn** —
+   `for (let _ri = 0; _ri < records.length; _ri++)` in the record flow. No
+   slicing, no counter, no abort check. This is the loop the item was written
+   about: the 14,271-record audit file on an ordinary notebook.
+2. **Cancel is still only half-real.** `_verdictSlice` checks `_parseAborted`;
+   `_detectSlice` does not, and neither does the record loop.
+3. **`_PARSE_WARN_RECORDS` (2,000) is still there** — the confirm dialog that
+   exists as an apology for the freeze.
+
+The shape of the fix below applies unchanged to the record loop; the two sliced
+loops are the worked example of it.
+
 
 Reported 2026-09-01: *"when parsing we need the parsing to also count/update the
 progress, especially for large numbers of records on old machines."*

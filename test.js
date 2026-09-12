@@ -5720,8 +5720,10 @@ test('NETARD scores a type once, not once per record', () => {
     'a bound record can be picked as the type\'s representative');
   // And the per-record loop must not score again: the only bestDDLMatch calls
   // left in this flow are the pre-pass, the binding resolve and the override.
-  const loopAt = fn.indexOf('for (let _ri = 0; _ri < records.length; _ri++) {',
-                            fn.indexOf('_typeMatchCache'));
+  // The per-record work is a function driven a slice at a time (TODO 23), not
+  // a `for` any more — anchored on that rather than on the loop it replaced.
+  const loopAt = fn.indexOf('const _recStep = (_ri) => {', fn.indexOf('_typeMatchCache'));
+  assert.ok(loopAt > -1, 'the per-record step function is where the record work lives');
   const loop = fn.slice(loopAt);
   assert.ok(!/bestDDLMatch\(parseBytes, \[c\]/.test(loop),
     'the record loop still scores the whole pool per record');
@@ -16060,6 +16062,61 @@ test('[REGRESSION] the DDL tree remembers which nodes were open', () => {
     'and it is loadTree that reads the expansion state');
   assert.ok(!/intentionally NOT restored/.test(src),
     'the comment saying it is never restored is gone');
+});
+
+// TODO 23. The NETARD record loop was a single synchronous `for` over every
+// record, so on a large audit the tab could not paint until the whole file was
+// parsed: no counter, no Cancel, and _PARSE_WARN_RECORDS existed as an apology
+// for the freeze. The paste flow already sliced its detection and verdict loops;
+// this is the same treatment for the loop the report was actually about.
+test('the NETARD record parse runs a slice per turn, not one loop', () => {
+  const fn = psFnSource('doParseNetardLog');
+  assert.ok(fn, 'the NETARD flow is there');
+
+  // The `for` that blocked the tab is gone, replaced by a per-record step.
+  assert.ok(!/for \(let _ri = 0; _ri < records\.length; _ri\+\+\)/.test(fn),
+    'the single synchronous loop over every record is gone');
+  assert.ok(/const _recStep = \(_ri\) => \{/.test(fn), 'the record work is a per-record step');
+  assert.ok(/for \(; _rAt < _end; _rAt\+\+\) _recStep\(_rAt\);/.test(fn),
+    'driven a slice at a time');
+  assert.ok(/setTimeout\(_recSlice, 0\)/.test(fn),
+    'with a turn between slices, so the browser can paint');
+
+  // Cancel. It used to be checked only between phases, so the button did
+  // nothing once this loop began.
+  const sliceAt = fn.indexOf('const _recSlice = () => {');
+  assert.ok(sliceAt > -1, 'the slice runner is there');
+  const slice = fn.slice(sliceAt, fn.indexOf('_recSlice();', sliceAt));
+  assert.ok(/if \(_parseAborted\) return;/.test(slice), 'every slice boundary checks Cancel');
+
+  // A counter, which is the whole point — and the same shape the other two
+  // sliced loops print.
+  assert.ok(/Parsing\\u2026 \$\{_rAt\.toLocaleString\(\)\} of \$\{_rTotal\.toLocaleString\(\)\}/.test(slice),
+    'and reports how far it has got');
+
+  // The tail has to run AFTER every slice, not after the first one. It used to
+  // sit below the loop, where "after the loop" and "after the turn" were the
+  // same moment; they are not any more.
+  assert.ok(/const _afterRecordLoop = \(\) => \{/.test(fn), 'the post-loop work is a continuation');
+  assert.ok(/_afterRecordLoop\(\);/.test(slice), 'called only when the last slice is done');
+  const after = fn.slice(fn.indexOf('const _afterRecordLoop = () => {'));
+  assert.ok(/_drainTypePickers\(typePickerQueue, sessionMappings, _applyNetardDeferreds\)/.test(after),
+    'and it is what starts the picker drain — nothing may run before the records are done');
+  assert.ok(/_boundWarnings/.test(after), 'the bound-DDL warnings are summarised there too');
+
+  // A slice runs in its own turn, outside the original try — so the handler has
+  // to be re-stated, or an error mid-parse leaves the UI locked with the
+  // progress overlay up.
+  assert.ok(/_parseProgressHide\(\);/.test(slice) && /_msgLock\(false\);/.test(slice)
+            && /syncParseBtn\(\);/.test(slice),
+    'a slice that throws still unlocks the UI');
+
+  // Same slice size as the other two loops — one number to reason about.
+  const sizes = [...fn.matchAll(/_R_SLICE = (\d+)/g)].map(m => +m[1]);
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const others = [...src.matchAll(/_[DP]_SLICE = (\d+)/g)].map(m => +m[1]);
+  deepEq([...new Set([...sizes, ...others])], [250],
+    'all three sliced loops use one slice size');
 });
 
 test('the tag report explains a tag that did not fire', () => {

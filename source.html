@@ -12419,7 +12419,24 @@ function doParseNetardLog(text, opts = {}) {
                     .map(p => ({ bytes: p.dec.bytes, parseBytes: p.dec.parseBytes, msgType: p.winner })),
               compiledByVol, _ddlErrors);
 
-            for (let _ri = 0; _ri < records.length; _ri++) {
+            // ── One record per step, a slice per turn ───────────────────────────
+            // This was a single synchronous `for` over every record, so on a large
+            // audit the tab could not paint until the whole file was parsed: no
+            // counter, no Cancel, and the 2,000-record confirm existed as an apology
+            // for the freeze. Sliced the way the paste flow already slices detection
+            // and verdicts. Every iteration only ever APPENDED to parsed / deferreds /
+            // _detectTraces / _boundWarnings / typePickerQueue and read records[i] and
+            // preDet[i], so a slice boundary is nothing but a place to stop; the
+            // slices run in order, so the appends keep their order too. TODO 23.
+            const _rTotal = records.length;
+            // Big enough that the per-turn cost is noise, small enough that a slow
+            // machine still repaints several times a second — the same figure the
+            // other two sliced loops use.
+            const _R_SLICE = 250;
+            let _rAt = 0;
+            // `continue` in the original skipped to the next RECORD, which in a
+            // per-record function is `return`.
+            const _recStep = (_ri) => {
               const rec = records[_ri];
               const _pd = preDet[_ri];   // { dec, det, winner, bound } from the pre-pass
               const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic, ebcdicDens: _ebcdicDens, ebcdicHow: _ebcdicHow } = _pd.dec;
@@ -12459,7 +12476,7 @@ function doParseNetardLog(text, opts = {}) {
                       isEbcdic: _isEbcdic, ebcdicDens: Math.round(_ebcdicDens * 100),
                       typeLabel: msgType.label || msgType.type,
                     } });
-                  continue;
+                  return;
                 }
                 // ── MATCH path ───────────────────────────────────────────────
                 // The detected format declared a DDL binding that resolved (and
@@ -12470,7 +12487,7 @@ function doParseNetardLog(text, opts = {}) {
                   if (_pd.bound.score < 0.95) {
                     _boundWarnings.push({ recNo: rec.recNo, label: msgType.label || msgType.type, ddl: _pd.bound.ddlPath, pct: Math.round(_pd.bound.score * 100) });
                   }
-                  continue;
+                  return;
                 }
                 // ── NON-MATCH path ───────────────────────────────────────────
                 if (!msgType.vol) {
@@ -12486,7 +12503,7 @@ function doParseNetardLog(text, opts = {}) {
                     volResolved: false,
                   };
                   parsed.push({ ..._base, msgType, fields: [], ddlPath: null, tokens: [], noMatchDDL: true, unknownType: true, _diag });
-                  continue;
+                  return;
                 }
                 const allMatches = _typeMatchCache[msgType.type + ':' + msgType.vol] || [];
                 if (allMatches.length === 0) {
@@ -12543,10 +12560,11 @@ function doParseNetardLog(text, opts = {}) {
                     typePickerQueue.push({ msgType, allMatches });
                   }
                 }
-                continue;
+                return;
               }
               parsed.push({ ..._base, msgType, fields, ddlPath, defName, tokens: null });
-            }
+            };
+            const _afterRecordLoop = () => {
             if (_ddlErrors.length) {
               console.warn('[NETARD scoring] DDL(s) with errors (skipped):', _ddlErrors);
               setTimeout(() => flash(`${_ddlErrors.length} DDL${_ddlErrors.length !== 1 ? 's' : ''} skipped due to errors \u2014 check the browser console for details.`, 'warn'), 350);
@@ -12577,6 +12595,34 @@ function doParseNetardLog(text, opts = {}) {
               });
             }
             if (_boundWarnings.length) _parseProgressRender();
+              setTimeout(() => _drainTypePickers(typePickerQueue, sessionMappings, _applyNetardDeferreds), 300);
+            };
+            const _recSlice = () => {
+              // Cancel is checked on every boundary. It used to be checked only
+              // between phases, so the button did nothing once this loop began.
+              if (_parseAborted) return;
+              try {
+                const _end = Math.min(_rAt + _R_SLICE, _rTotal);
+                for (; _rAt < _end; _rAt++) _recStep(_rAt);
+              } catch (err) {
+                // The same handler the whole block had — it has to be re-stated
+                // because a slice runs in its own turn, outside the original try.
+                console.error('[NETARD scoring] unexpected error:', err);
+                _parseProgressHide();
+                _msgLock(false);
+                syncParseBtn();
+                flash('Scoring failed unexpectedly \u2014 check the browser console for details.', 'error');
+                return;
+              }
+              if (_rAt < _rTotal) {
+                if (_scoreStep) _parseProgressUpdate(_ppSteps.length - 1,
+                  `Parsing\u2026 ${_rAt.toLocaleString()} of ${_rTotal.toLocaleString()}`);
+                setTimeout(_recSlice, 0);
+                return;
+              }
+              _afterRecordLoop();
+            };
+            _recSlice();
             } catch (err) {
               console.error('[NETARD scoring] unexpected error:', err);
               _parseProgressHide();
@@ -12633,7 +12679,6 @@ function doParseNetardLog(text, opts = {}) {
               setTimeout(() => _finalizeNetard(), 500);
             }
             // Phase 1: ask once per unresolved type (shared), then phase 2.
-            setTimeout(() => _drainTypePickers(typePickerQueue, sessionMappings, _applyNetardDeferreds), 300);
           }, 300);
         }
 
@@ -20529,7 +20574,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.54.3.1';
+const APP_VERSION  = '1.55.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

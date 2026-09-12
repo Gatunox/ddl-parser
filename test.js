@@ -15738,11 +15738,10 @@ test('no raw control characters in the sources', () => {
       if (m.length) hits.push(`${file}:${i + 1} — ${m.length} × ` +
         m.map(c => 'U+' + c.charCodeAt(0).toString(16).padStart(4, '0')).join(', '));
     });
-    // Two predate this guard, in _meCommentDECache's cache key. They are left
-    // alone rather than swept up with an unrelated fix; this pins the count so
-    // it cannot grow, and drops to 0 when they are cleaned up.
-    const allowed = file === 'source.html' ? 2 : 0;
-    eq(hits.length, allowed,
+    // Zero, everywhere. The two that predated this guard were in
+    // _meCommentDECache's cache key and are now written as escapes too, so
+    // there is no allowance left to creep upward.
+    eq(hits.length, 0,
       `${file}: raw control characters — write them as \\uXXXX escapes:\n  ${hits.join('\n  ')}`);
   }
 });

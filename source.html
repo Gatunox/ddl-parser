@@ -20517,7 +20517,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.54.2.1';
+const APP_VERSION  = '1.54.2.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29595,7 +29595,7 @@ const _meCommentDECache = new WeakMap();
 function _meItemCommentDEs(item) {
   if (!item) return new Map();
   const hit = _meCommentDECache.get(item);
-  if (hit && hit.treeV === _ddlTreeVersion && hit.binds === (item.ddl_bindings || []).join(' '))
+  if (hit && hit.treeV === _ddlTreeVersion && hit.binds === (item.ddl_bindings || []).join('\u0000'))
     return hit.map;
   const map = new Map();
   for (const path of (item.ddl_bindings || [])) {
@@ -29605,7 +29605,7 @@ function _meItemCommentDEs(item) {
     for (const [k, v] of _meExtractCommentDEs(t.content, t.defName))
       if (!map.has(k)) map.set(k, v);
   }
-  _meCommentDECache.set(item, { treeV: _ddlTreeVersion, binds: (item.ddl_bindings || []).join(' '), map });
+  _meCommentDECache.set(item, { treeV: _ddlTreeVersion, binds: (item.ddl_bindings || []).join('\u0000'), map });
   return map;
 }
 

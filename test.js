@@ -15933,6 +15933,67 @@ test('the value tooltip appears before anyone gives up on it', () => {
     'the timer reads the constant, so the number lives in one place');
 });
 
+// Reported 2026-09-11, reproducible in production: editing the third tag renamed
+// the SECOND one's badge while typing. `.me-rec-row` is the Recognizers list's
+// class as well as the Tags list's — the two are deliberately styled as one
+// thing — and the lookup was document-wide, so the recognizer rows above pushed
+// every tag index that many rows early. With one recognizer, tag 2 wrote to tag
+// 1; with none it was correct, which is why it looked environment-specific.
+test('[REGRESSION] editing a tag writes to ITS OWN badge, not one above it', () => {
+  const setTag = vm.runInContext('_meTagSet', sandbox);
+  const mkRow = (withChip) => {
+    const chip = { textContent: '', style: {} };
+    return { chip, querySelector: sel => (withChip && sel === '.btype-tag') ? chip : null,
+             querySelectorAll: () => [] };
+  };
+  // One recognizer row above three tag rows — the shape that produced the bug.
+  const rec  = mkRow(false);
+  const tags = [mkRow(true), mkRow(true), mkRow(true)];
+  const all  = [rec, ...tags];
+
+  const prevState = vm.runInContext('_meState', sandbox);
+  const prevQSA   = sandbox.document.querySelectorAll;
+  const prevStub  = elStubs['me-sect-body-tags'];
+  try {
+    vm.runInContext('_meState = { specs: [], selIdx: 0, tagPend: { label: "", color: "#bc8cff" } }', sandbox);
+    // The document-wide list the old code read: recognizers FIRST.
+    sandbox.document.querySelectorAll = () => all;
+    // The Tags section, which is what the lookup must be scoped to.
+    elStubs['me-sect-body-tags'] = { querySelectorAll: () => tags };
+
+    setTag(2, 'label', 'AUTH PEPE 3');
+    eq(tags[2].chip.textContent, 'AUTH PEPE 3', 'the third tag row got the new name');
+    eq(tags[1].chip.textContent, '', 'and the second was left alone');
+    eq(tags[0].chip.textContent, '', 'as was the first');
+
+    setTag(0, 'label', 'FIRST');
+    eq(tags[0].chip.textContent, 'FIRST', 'the first tag row is reachable too');
+    // Without the scoping, index 0 landed on the recognizer row, which has no
+    // badge at all — so editing the first tag simply did nothing.
+    eq(tags[2].chip.textContent, 'AUTH PEPE 3', 'and nothing else moved');
+
+    // An empty name still shows something, rather than an empty chip.
+    setTag(1, 'label', '   ');
+    eq(tags[1].chip.textContent, 'UNNAMED', 'a blank name reads as UNNAMED');
+  } finally {
+    sandbox.document.querySelectorAll = prevQSA;
+    if (prevStub === undefined) delete elStubs['me-sect-body-tags']; else elStubs['me-sect-body-tags'] = prevStub;
+    sandbox._meState = prevState;
+  }
+
+  // Both live-update paths are scoped, not just the badge: the condition row's
+  // placeholder is written by index in exactly the same way.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/getElementById\('me-sect-body-tags'\)/.test(psFnSource('_meTagRowEl')),
+    'the row lookup is scoped to the Tags section');
+  for (const fn of ['_meTagSet', '_meTagCondSet']) {
+    const body = psFnSource(fn);
+    assert.ok(/_meTagRowEl\(ti\)/.test(body), `${fn} uses the scoped lookup`);
+    assert.ok(!/document\.querySelectorAll\('\.me-rec-row'\)/.test(body),
+      `${fn} still counts the Recognizers list's rows`);
+  }
+});
+
 test('the tag report explains a tag that did not fire', () => {
   const src = fs.readFileSync('./source.html', 'utf8');
   const rep = psFnSource('_tagWhyReport');

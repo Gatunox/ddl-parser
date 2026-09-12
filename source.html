@@ -20517,7 +20517,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.54.2.2';
+const APP_VERSION  = '1.54.2.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -31968,12 +31968,23 @@ function _meTagDel(ti) {
 // Everything below edits the PENDING copy. Nothing reaches the class until
 // Apply, so Cancel is a real cancel and the Save button does not light up for a
 // tag you were only half-way through describing. Requested 2026-09-01.
+// The Nth TAG row. Scoped to the Tags section, because `.me-rec-row` is the
+// Recognizers list's class too — the two lists are deliberately styled as one
+// thing — so a document-wide query counts the recognizer rows first and every
+// tag index lands that many rows early. With one recognizer on the class,
+// editing the third tag renamed the second while you typed; with none it was
+// correct, which is why it looked like it depended on where you ran it.
+// Reported 2026-09-11.
+function _meTagRowEl(ti) {
+  const list = document.getElementById('me-sect-body-tags');
+  return list ? list.querySelectorAll('.me-rec-row')[ti] : null;
+}
 function _meTagSet(ti, key, val) {
   const t = _meState.tagPend; if (!t) return;
   t[key] = val;
   // The label is echoed in a live badge beside it, so a re-render on every
   // keystroke would take the caret with it. Only the badge needs updating.
-  const row = document.querySelectorAll('.me-rec-row')[ti];
+  const row = _meTagRowEl(ti);
   const chip = row && row.querySelector('.btype-tag');
   if (chip) {
     if (key === 'label') chip.textContent = (val || 'UNNAMED').trim() || 'UNNAMED';
@@ -31998,7 +32009,9 @@ function _meTagCondSet(ti, ci, key, val) {
   // a full re-render on a dropdown would be fine, but on the two TEXT inputs it
   // would drop the caret mid-word, so all three go through one quiet path.
   if (key === 'op') {
-    const row = document.querySelectorAll('.me-rec-row')[ti];
+    // Same scoping as the badge above, and the same bug without it: the
+    // placeholder would be written into another tag's condition row.
+    const row = _meTagRowEl(ti);
     const box = row && row.querySelectorAll('.me-tag-cond')[ci];
     const val2 = box && box.querySelectorAll('input')[1];
     if (val2) {

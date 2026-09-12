@@ -15994,6 +15994,74 @@ test('[REGRESSION] editing a tag writes to ITS OWN badge, not one above it', () 
   }
 });
 
+// Reported 2026-09-12. The DDL tree came back fully collapsed on every reload,
+// so the path to whatever you were working on had to be reopened by hand each
+// time. The state was written on every toggle and then deliberately never read.
+test('[REGRESSION] the DDL tree remembers which nodes were open', () => {
+  const load = vm.runInContext('loadTree', sandbox);
+  const save = vm.runInContext('saveTreeExp', sandbox);
+  const S2   = vm.runInContext('S', sandbox);
+  const kvGet = vm.runInContext('_kvGet', sandbox);
+  const keepExp  = S2.treeExp;
+  const keepTree = S2.ddlTree;
+  const keepRaw  = kvGet('up_tree_exp');
+  try {
+    S2.treeExp = new Set(['BASE', 'BASE/DDL', 'BASE/DDL/ISOPSEM']);
+    save();
+    // A reload: the Set is gone and only storage remains.
+    S2.treeExp = new Set();
+    load();
+    deepEq([...S2.treeExp].sort(), ['BASE', 'BASE/DDL', 'BASE/DDL/ISOPSEM'],
+      'the open nodes come back');
+
+    // The reserved missing-refs key shares the Set, so it persists the same way.
+    S2.treeExp = new Set([vm.runInContext('_MISSREF_KEY', sandbox)]);
+    save();
+    S2.treeExp = new Set();
+    load();
+    assert.ok(S2.treeExp.has(vm.runInContext('_MISSREF_KEY', sandbox)),
+      'including the missing-refs section');
+
+    // Nothing stored, or something that is not a list, must not throw or leave
+    // treeExp as a non-Set — every render calls .has() on it.
+    for (const bad of [null, '', 'not json', '{"a":1}', '42']) {
+      S2.treeExp = new Set(['KEEP']);
+      vm.runInContext('_kvSet("up_tree_exp", ' + JSON.stringify(bad === null ? '' : bad) + ')', sandbox);
+      load();
+      assert.ok(S2.treeExp instanceof Set, `treeExp survives ${JSON.stringify(bad)} as a Set`);
+      assert.doesNotThrow(() => S2.treeExp.has('X'), 'and still answers .has()');
+    }
+    // The case the Array.isArray guard is actually for: valid JSON that is a
+    // STRING. Every value above throws inside JSON.parse or new Set and lands in
+    // the catch, so they prove nothing about the guard. A bare string is
+    // iterable — without the check it becomes a Set of single characters, and
+    // the tree would open whatever node happens to be called "B".
+    S2.treeExp = new Set(['KEEP']);
+    vm.runInContext('_kvSet("up_tree_exp", \'"BASE"\')', sandbox);
+    load();
+    deepEq([...S2.treeExp], ['KEEP'],
+      'a JSON string is refused rather than split into characters');
+  } finally {
+    vm.runInContext('_kvSet("up_tree_exp", ' + JSON.stringify(keepRaw || '') + ')', sandbox);
+    S2.treeExp = keepExp; S2.ddlTree = keepTree;
+  }
+
+  // Read where the store is known to be hydrated. _kvGet answers null for every
+  // key until _openAppKV resolves, and a read before that would quietly restore
+  // nothing — the same shape as the bug that once destroyed saved baselines.
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // Anchored on the call itself, not the phrase — the comment in loadTree
+  // mentions it too, and indexOf found that first.
+  const at = src.indexOf('_openAppKV().then(() => {');
+  assert.ok(at > -1, 'the KV open call is there');
+  const init = src.slice(at, at + 1400);
+  assert.ok(/loadTree\(\);/.test(init), 'loadTree runs after the KV store is open');
+  assert.ok(/_kvGet\('up_tree_exp'\)/.test(psFnSource('loadTree')),
+    'and it is loadTree that reads the expansion state');
+  assert.ok(!/intentionally NOT restored/.test(src),
+    'the comment saying it is never restored is gone');
+});
+
 test('the tag report explains a tag that did not fire', () => {
   const src = fs.readFileSync('./source.html', 'utf8');
   const rep = psFnSource('_tagWhyReport');
@@ -22258,12 +22326,23 @@ test('collapsing remembers the open width, and restoring does not re-save it', (
   assert.ok(/tree-collapsed'\)\s*\?\s*treePane\.dataset\.openWidth/.test(save.replace(/\s+/g, ' ')) ||
             /dataset\.openWidth\s*:\s*treePane\.style\.width/.test(save),
     'saveLayout must persist the OPEN width, never the collapsed strip width');
-  assert.ok(/layout\.treeCollapsed = true/.test(save), 'saveLayout does not record the collapsed state');
-  const load = psFnSource('loadLayout');
-  assert.ok(/layout\.treeCollapsed/.test(load) && /toggleTreePane\(true\)/.test(load),
-    'loadLayout does not restore the collapsed state');
+  // BOTH states, always. Writing only `true` made the flag one-way: collapsing
+  // the pane stuck, re-opening it was never recorded, and every reload after the
+  // first collapse brought the pane back as a rail whatever the user had left it
+  // as. Reported 2026-09-12.
+  assert.ok(/layout\.treeCollapsed = treePane\.classList\.contains\('tree-collapsed'\)/.test(save),
+    'saveLayout must record the collapsed state in both directions, not only when true');
+  assert.ok(!/layout\.treeCollapsed = true/.test(save),
+    'and never as a write-once true');
+  // The restore has to force both ways too, or the flag is still one-way at the
+  // other end: an explicit false must re-open a pane that is already collapsed.
+  const loadFn = psFnSource('loadLayout');
+  assert.ok(/if \(layout\.treeCollapsed !== undefined\) toggleTreePane\(!!layout\.treeCollapsed\)/.test(loadFn),
+    'loadLayout must apply the saved state in both directions');
+  // (superseded by the both-directions assertion above — toggleTreePane(true)
+  // was the one-way form)
   // Width first, then collapse — or the pane has no open width to come back to.
-  assert.ok(load.indexOf('layout.treePaneWidth') < load.indexOf('layout.treeCollapsed'),
+  assert.ok(loadFn.indexOf('layout.treePaneWidth') < loadFn.indexOf('layout.treeCollapsed'),
     'the width must be restored before the collapsed state');
 });
 

@@ -18095,9 +18095,9 @@ function renderDDLTree() {
 }
 
 // Reserved key in the Set it shares with volume/subvolume names. A colon
-// cannot appear in either, so this cannot collide. Note S.treeExp is saved but
-// deliberately never restored — the tree starts fully collapsed on reload — so
-// collapsing this section lasts the session, exactly like every other node.
+// cannot appear in either, so this cannot collide — and because that Set is now
+// restored on reload, collapsing this section persists exactly like every other
+// node rather than lasting only the session.
 const _MISSREF_KEY = '::missing-refs';
 
 function toggleMissingRefs() {
@@ -20157,7 +20157,19 @@ function saveTree() {
 
 function loadTree() {
   try { const s = _kvGet('up_ddl_tree'); if (s) S.ddlTree = JSON.parse(s); } catch(e) {}
-  // treeExp intentionally NOT restored — tree always starts fully collapsed on reload
+  // Which nodes were open, restored. It was written on every toggle and then
+  // deliberately never read — the tree started fully collapsed on every reload —
+  // and reopening the path to the definition you were working on, every time,
+  // is not a clean slate but a chore. Reported 2026-09-12.
+  //
+  // Safe to read here: loadTree runs inside _openAppKV().then(), so the KV store
+  // is hydrated and _kvGet answers with what is stored rather than null. Keys
+  // naming a volume that no longer exists are simply never matched by a render,
+  // so a stale entry costs nothing and needs no pruning.
+  try {
+    const e = _kvGet('up_tree_exp');
+    if (e) { const a = JSON.parse(e); if (Array.isArray(a)) S.treeExp = new Set(a); }
+  } catch(e) {}
   // Migrate old flat format
   try {
     const old = _kvGet('up_ddl_versions');
@@ -20517,7 +20529,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.54.2.3';
+const APP_VERSION  = '1.54.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -20613,7 +20625,11 @@ function saveLayout() {
       const w = treePane.classList.contains('tree-collapsed')
         ? treePane.dataset.openWidth : treePane.style.width;
       if (w) layout.treePaneWidth = w;
-      if (treePane.classList.contains('tree-collapsed')) layout.treeCollapsed = true;
+      // BOTH states, always. This used to write `true` and never anything else,
+      // so the flag was one-way: collapsing the pane stuck, and re-opening it was
+      // never recorded — every reload after the first collapse brought the pane
+      // back as a rail, whatever the user had left it as. Reported 2026-09-12.
+      layout.treeCollapsed = treePane.classList.contains('tree-collapsed');
     }
     // Audit record-detail pane height. Rides in up_layout beside the tree pane
     // rather than taking a storage key of its own — it is the same kind of
@@ -20660,7 +20676,11 @@ function loadLayout() {
       const treePane = document.getElementById('ddlTreePane');
       if (treePane) { treePane.style.width = layout.treePaneWidth; requestAnimationFrame(_syncTreeW); }
     }
-    if (layout.treeCollapsed) toggleTreePane(true);
+    // Forced either way, not only when collapsed: an explicit `false` has to put
+    // an already-collapsed pane back, or the flag is still one-way at the other
+    // end. `undefined` (a layout saved before the flag recorded both states)
+    // leaves the pane as it is, which is open.
+    if (layout.treeCollapsed !== undefined) toggleTreePane(!!layout.treeCollapsed);
     // Audit record-detail pane height
     if (layout.auditDetailHeight) {
       const auditPane = document.getElementById('auditPopup');

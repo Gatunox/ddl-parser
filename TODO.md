@@ -587,7 +587,24 @@ original "always 2px" rule had been protecting all along — see
 
 ---
 
-## 17. [ ] Chunk the large-record parse so the tab stays alive
+## 17. [~] Chunk the large-record parse so the tab stays alive
+
+**Cost 1 is done — v1.55.0.0, 2026-09-12.** Every loop whose length is the
+record count now slices at 250 and yields between slices, and `_parseAborted` is
+checked on the record loop's boundaries, so Cancel fires during parsing rather
+than only between stages. See item 23.
+
+**Costs 2 and 3 remain, and they are the memory half.** `auditParseAll` still
+reads every selected record up front — `await Promise.all(rows.map(r =>
+file.slice(…).arrayBuffer()))` at `source.html:17024` — and still hex-encodes all
+of them before any parsing begins. So the peak is unchanged: 14k slices resident
+simultaneously, then roughly doubled by the encoding, all before the first record
+is parsed. Slicing the parse made the tab responsive; it did not make the memory
+profile flat, and on a notebook the spike is its own failure mode.
+
+The fix below is unchanged for those two: slice, encode and parse a batch, then
+yield — rather than slice-all, encode-all, then parse in batches.
+
 
 **Reported 2026-08-10.** A 200,000-record audit file filtered to 14,171 parses
 fine on an M4 Mac mini and is punishing on an ordinary notebook. The guardrail

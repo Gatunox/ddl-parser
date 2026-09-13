@@ -1249,6 +1249,72 @@ describing different behaviour.
 
 ---
 
+### 5.19a A numeric reference is DECIMAL, unless it states a base *(added 2026-09-13)*
+
+Everywhere a spec takes a number — `read-fixed`'s `length`, `skip`'s `length`,
+`repeat`'s `count`, `read-while`'s `max`, a `de` entry's `length`, every `when`
+comparison — the reference may name a field, and the field's value has to be
+turned into a number. **That is base 10 unless the reference says otherwise.**
+
+```jsonc
+{"read-fixed": {"length": 16,       "as": "BUF"}}   // a literal, decimal
+{"read-fixed": {"length": "LEN",    "as": "BUF"}}   // the field, base 10
+{"read-fixed": {"length": "LEN:h",  "as": "BUF"}}   // the field, base 16
+{"read-fixed": {"length": "LEN:o",  "as": "BUF"}}   // the field, base 8
+{"read-fixed": {"length": "10:h",   "as": "BUF"}}   // a literal in hex   → 16
+{"read-fixed": {"length": "10:o",   "as": "BUF"}}   // a literal in octal → 8
+```
+
+**Digits before the suffix are always a LITERAL**, never a field that happens to
+be named in digits. Flat-format DDLs really do name ISO elements `63` and `126`,
+so `"63:h"` would otherwise mean two things; deciding by whether such a field
+happens to exist would be one more guess. A numeric field id takes the long form:
+
+```jsonc
+{"read-fixed": {"length": {"field": "63", "base": "h"}, "as": "BUF"}}
+```
+
+**`base` and `as` are not the same thing, and both are needed.** A base
+reinterprets the field's **characters**; `as` reinterprets its **bytes**. A field
+holding the text `"12"` — the bytes `31 32` — reads three different ways:
+
+| reference | reads |
+|-----------|-------|
+| `"LEN"` | **12** — its characters, base 10 |
+| `"LEN:h"` | **18** — its characters, base 16 |
+| `{"field": "LEN", "as": "uint16-be"}` | **12594** — its bytes, as an integer |
+
+An ASCII hex length wants `:h`; a binary counter wants `as`.
+
+**Order.** A stated base wins, because it is the most specific statement; then
+`as`; then a type override on the field (§9), which says it once for every spec
+that references it; then base 10.
+
+**A field that is not a number in the base asked for is an ERROR, not a guess.**
+
+```
+'CNT' holds "& ", which is not a decimal number — add ":h" (hex) or ":o"
+(octal) to the reference, or {"as": "uint16-be"} to read its bytes
+```
+
+The digits a base permits are checked before the value is believed: `parseInt`
+stops at the first character it dislikes and returns what it read, so `"1A"` in
+base 10 would come back as **1** — a wrong length that looks like a right one.
+
+#### What this replaced
+
+The old rule tried decimal if the text looked like digits, and otherwise read the
+raw bytes as hex. So the same field decoded two different ways depending on how
+its bytes happened to look, and nothing said which had happened. That is why a
+`TYPE BINARY 16` counter absent from an ASCII capture parsed to a plausible
+unrelated decimal and silently truncated the PSTM services loop — right often
+enough to be trusted, wrong often enough to matter.
+
+A spec that relied on the hex fallback now reports an error naming the field and
+both ways out. **All 1,472 baseline cases produce identical output** — the only
+change was the removal of the "nothing declares how to read it" note from 37 of
+them, which existed to confess a guess that no longer happens.
+
 ### 5.20 `read-to-end` — the end of what (`end_at`) *(added 2026-08-22)*
 
 ```json

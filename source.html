@@ -20574,7 +20574,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.55.0.0';
+const APP_VERSION  = '1.56.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24201,6 +24201,16 @@ const _PS_COMMON_ATTRS = [
 // comparison. Written once and referenced, exactly like `at` and `peek`, so the
 // same sentence cannot drift block to block; resolved once in _meNumRef, so the
 // number is the same in all of them.
+// A numeric reference's BASE. Spread into every attribute that takes one, the
+// way _PS_SIZEOF_DESC is: the same sentence written per block is how two of them
+// end up describing different behaviour. Added 2026-09-13.
+const _PS_NUMBASE_DESC = [
+  'A field reference is read as <b>base 10</b> unless it says otherwise. <code>":h"</code> reads its characters as <b>hex</b>, <code>":o"</code> as <b>octal</b> — <code>"LEN:h"</code>, <code>"LEN:o"</code>.',
+  ['<code>"10:h"</code> · <code>"10:o"</code>', 'Digits before the suffix are a <b>literal</b> in that base — 16 and 8. Always a literal, never a field that happens to be named in digits; a numeric field id takes <code>{"field": "63", "base": "h"}</code>.'],
+  'A <b>base</b> reinterprets the field\'s <b>characters</b>; <code>as</code> reinterprets its <b>bytes</b>. A field holding the text <code>"12"</code> is <b>12</b> in base 10, <b>18</b> with <code>:h</code>, and <b>12594</b> as <code>{"as": "uint16-be"}</code>. An ASCII hex length wants a base; a binary counter wants <code>as</code>.',
+  'A field that is <b>not a number in the base asked for is an error</b>, naming the field and both ways out. It is never guessed: reading the bytes as hex whenever the text did not look like digits is what made a BINARY 16 counter parse as a plausible unrelated decimal and truncate a services loop.',
+];
+
 const _PS_SIZEOF_DESC = [
   ['<code>{"sizeof": "EMV.DATA"}</code>', 'What the <b>DDL declares</b> for an element, in bytes — the element\'s own length when it is a leaf, the sum of its non-REDEFINES leaves when it is a group. Reads no bytes and moves no cursor.'],
   'A group that carries its own <b>length</b> reports what it declares for its <b>payload</b>: the length leaf is a statement <i>about</i> those bytes, not one of them. So <code>LEN(4) A(12) B(10)</code> is <b>22</b>, which is the number a wire length of 23 is disagreeing with — and the same 22 the engine prints when it reports the overrun.',
@@ -24594,6 +24604,7 @@ const _PS_HELP = {
         'A number is a literal byte count you know at spec time.',
         'A string is the <b>id of a field already read</b> — its value is used as the count, so the size can come off the wire.',
         ..._PS_SIZEOF_DESC,
+        ..._PS_NUMBASE_DESC,
         'The cursor advances by exactly this many bytes.',
       ]],
       ['type', '"X" | "9" | "BINARY"', false, [
@@ -25014,6 +25025,7 @@ const _PS_HELP = {
           'How many bytes this DE occupies, when the DDL\'s declared size is not the real one.',
           'The DE then occupies <b>exactly</b> this many bytes, so the next one starts at the end of it whatever the blocks read.',
           ..._PS_SIZEOF_DESC,
+        ..._PS_NUMBASE_DESC,
         ]),
         _psKey('length_prefix', 'int | {bytes, type, count}', 'optional', [
           'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it.',
@@ -25428,6 +25440,7 @@ const _PS_HELP = {
         'How many bytes to move the cursor forward.',
         'A string is the <b>id of a field already read</b> — its value is the distance, so a skip can be sized off the wire.',
         ..._PS_SIZEOF_DESC,
+        ..._PS_NUMBASE_DESC,
         'Nothing is captured and no row is emitted — the bytes simply go unread.',
         'A skip past the end of the message stops at the end rather than failing.',
         'Like every block, a skip moves where a later <code>read-ddl</code> starts — the DDL walk continues from the cursor, so a prefix the DDL does not describe can be stepped over.',
@@ -25505,6 +25518,7 @@ const _PS_HELP = {
         ['<code>["A", "B"]</code>',    'A list — any one of them matches.'],
         ['<code>{"field": "OTHER"}</code>', 'Another field already read — compare two fields to each other.'],
         ..._PS_SIZEOF_DESC,
+        ..._PS_NUMBASE_DESC,
         'Trailing spaces are trimmed before comparing, so a PIC X field padded on the wire still matches.',
         'Was called <code>is</code>. The old name is not converted — rename it.',
       ]],
@@ -25520,6 +25534,7 @@ const _PS_HELP = {
         ['<code>22</code>',                     'A literal.'],
         ['<code>{"field": "MAX-LEN"}</code>',   'Another field already read.'],
         ..._PS_SIZEOF_DESC,
+        ..._PS_NUMBASE_DESC,
         'The question this pair exists for: <b>is the wire carrying more than the DDL has room for?</b>',
         'Both sides are read as numbers through the same chain everything else uses: an <code>as</code> on the operand, else the field\'s own <b>Type</b> override, else a guess that reports itself on the row. So a <code>hex-char</code> length compares as 74 on both sides, or on neither.',
         'A side that yields no number is an <b>error row</b> naming which side — never a silent false.',
@@ -25683,6 +25698,7 @@ const _PS_HELP = {
         'How many times to run the body.',
         ['<code>"NUM-SERVICES"</code>', 'The id of an <b>already-read</b> field. Its value is the number of iterations.'],
         ..._PS_SIZEOF_DESC,
+        ..._PS_NUMBASE_DESC,
         'Or the object form, which says how to read that field as a number. Its two keys are below.',
         'A field that has not been read yet, or holds nothing numeric, is an error — the loop never runs on a guess.',
         'When the count cannot be trusted (a binary counter in an ASCII message), use <code>read-while</code> instead.',
@@ -25752,6 +25768,7 @@ const _PS_HELP = {
         ['<code>99</code>',            'A literal cap.'],
         ['<code>"NUM-ITEMS"</code>',   'The id of a field already read — its value is the cap.'],
         ..._PS_SIZEOF_DESC,
+        ..._PS_NUMBASE_DESC,
         'There is a hard cap of 10000 passes regardless, so a runaway spec cannot hang the app.',
         '<b>Do not use a field-id cap when the input is ASCII and the count field is not</b> — that is the exact case <code>read-while</code> exists to avoid.',
       ]],
@@ -35538,33 +35555,71 @@ function _meMakeSyntheticField(id, fBytes, startByte, endByte, ctx, opts) {
 //   - Otherwise decode rawHex as big-endian unsigned int (binary numeric fields)
 // Returns null when the field is missing or has no decodable numeric content.
 // Caller decides whether null → error or null → 0.
-function _meFieldAsInt(f) {
-  if (!f) return null;
-  const v = (f.value == null) ? '' : String(f.value).trim();
-  if (/^\d+$/.test(v)) {
-    const n = parseInt(v, 10);
-    if (Number.isFinite(n)) return n;
+// A numeric reference's BASE, stated as a suffix. Decimal unless it says
+// otherwise — which is the whole point: this replaces a guess that tried decimal
+// and silently fell back to reading the raw bytes as hex, so the same field
+// decoded two different ways depending on whether its bytes happened to look
+// like digits. A BINARY 16 counter absent from an ASCII capture read as a
+// plausible unrelated decimal and truncated the PSTM services loop.
+// Requested 2026-09-13.
+//
+//   "LEN"      the field, base 10        "10:h"   the literal 10 in hex  -> 16
+//   "LEN:h"    the field, base 16        "10:o"   the literal 10 in octal -> 8
+//   "LEN:o"    the field, base 8
+//
+// DIGITS BEFORE THE SUFFIX ARE A LITERAL, always — never a field that happens to
+// be named in digits. Flat-format DDLs really do name ISO elements `63` and
+// `126`, so "63:h" would otherwise mean two things; a numeric field id takes the
+// long form {"field": "63", "base": "h"}. Deciding by whether such a field
+// happens to exist would be another guess, which is what this removes.
+const _NUM_BASES = { h: 16, o: 8, d: 10 };
+function _meSplitNumBase(raw, refObj) {
+  const s = String(raw == null ? '' : raw);
+  // The long form states the base separately, so a field named in digits is
+  // still reachable.
+  const objBase = refObj && typeof refObj === 'object' ? refObj.base : null;
+  if (objBase != null) {
+    const b = _NUM_BASES[String(objBase).toLowerCase()] || (/^\d+$/.test(String(objBase)) ? +objBase : null);
+    if (!b || ![8, 10, 16].includes(b))
+      return { bad: String(objBase), name: s };
+    return { name: s, base: b, stated: true, literal: false };
   }
-  if (f.rawHex && f.rawHex.length > 0 && f.rawHex.length <= 12) {
-    const n = parseInt(f.rawHex, 16);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
+  const m = /^(.*):([A-Za-z0-9]+)$/.exec(s);
+  if (!m) return { name: s, base: 10, stated: false, literal: false };
+  const key = m[2].toLowerCase();
+  const b = _NUM_BASES[key] || (/^\d+$/.test(key) ? +key : null);
+  if (!b || ![8, 10, 16].includes(b)) return { bad: m[2], name: m[1] };
+  return { name: m[1], base: b, stated: true, literal: /^\d+$/.test(m[1]) };
 }
 
-// A reference to another field's value, read as a NUMBER. Two forms:
+// The digits a base actually permits — parseInt stops at the first character it
+// does not like and returns what it read, so "12ZZ" would come back as 12 and a
+// wrong length would look like a right one.
+const _NUM_BASE_RE = { 16: /^[0-9a-f]+$/i, 10: /^[0-9]+$/, 8: /^[0-7]+$/ };
+
+// A reference to another field's value, read as a NUMBER. Four forms, in the
+// order they are consulted:
 //
-//   "NUM-SERVICES"                              the field id alone
-//   {"field": "NUM-SERVICES", "as": "uint16-be"} the decode, stated outright
+//   "CNT:h"                                      a stated BASE — the field's
+//   "CNT:o"                                      CHARACTERS in base 16 or 8
+//   {"field": "CNT", "base": "h"}                the same, for a field named
+//                                                in digits
+//   {"field": "CNT", "as": "uint16-be"}          a stated TYPE — the field's
+//                                                BYTES as that number
+//   (a type override on the field)               the same, said once for every
+//                                                spec that references it
+//   "CNT"                                        nothing stated: base 10
 //
-// Without `as`, the field's own type override decides — the same chain a VLG
-// length follows, so "how is this field read as a number" has one answer rather
-// than one per block. Only when nothing declares anything does it fall back to
-// _meFieldAsInt's decimal-then-hex guess, and then it says that it guessed.
+// `base` and `as` answer different questions and both are needed: a base
+// reinterprets the CHARACTERS, `as` reinterprets the BYTES. A field holding the
+// text "12" is 12 in base 10, 18 in base 16, and 12594 as a uint16-be.
 //
-// That guess is why a BINARY 16 counter absent from an ASCII capture parsed to a
-// plausible unrelated decimal and silently truncated the PSTM services loop.
-// Reporting the assumption does not make it right, but it stops it being silent.
+// Nothing stated means DECIMAL, and a field that is not decimal is an ERROR.
+// There used to be a guess here — decimal if the text looked like digits, else
+// the raw bytes read as hex — and it is why a BINARY 16 counter absent from an
+// ASCII capture parsed to a plausible unrelated decimal and silently truncated
+// the PSTM services loop. Right often enough to be trusted, wrong often enough
+// to matter, and indistinguishable from outside. Requested 2026-09-13.
 function _meNumRef(ref, ctx) {
   // `{"sizeof": "ID"}` is not read off the message at all — it is what the DDL
   // DECLARES for an element, in bytes. Answered here rather than at each call
@@ -35581,11 +35636,36 @@ function _meNumRef(ref, ctx) {
     if (!def && !n) return { id: sid, error: `"sizeof": no element named '${sid}' in the bound DDLs` };
     return { id: sid, n };
   }
-  const id = (ref && typeof ref === 'object') ? ref.field : ref;
-  if (typeof id !== 'string' || !id)
-    return { error: `'${id}' is not a field name — a count/length/max reference names a field already read` };
+  const rawId = (ref && typeof ref === 'object') ? ref.field : ref;
+  if (typeof rawId !== 'string' || !rawId)
+    return { error: `'${rawId}' is not a field name — a count/length/max reference names a field already read` };
+  const bs = _meSplitNumBase(rawId, ref);
+  if (bs.bad)
+    return { id: rawId, error: `':${bs.bad}' is not a base — use ":h" for hex, ":o" for octal, or leave it off for decimal` };
+  const id = bs.name;
+
+  // A literal in a stated base — "10:h" is sixteen. Reads nothing off the
+  // message, so it needs no field and cannot fail later.
+  if (bs.literal) {
+    if (!_NUM_BASE_RE[bs.base].test(id))
+      return { id, error: `'${id}' is not a base-${bs.base} number` };
+    return { id, n: parseInt(id, bs.base), base: bs.base };
+  }
+
   const f = ctx.fieldsById[id];
   if (!f) return { id, error: `'${id}' not yet read` };
+
+  // A stated base reads the field's CHARACTERS in that base. It wins over a type
+  // override because it is the more specific statement — the same rule an inline
+  // type follows — and because the two answer different questions: a base
+  // reinterprets the characters, `as` reinterprets the bytes.
+  if (bs.stated) {
+    const txt = String(f.value == null ? '' : f.value).trim();
+    if (!_NUM_BASE_RE[bs.base].test(txt))
+      return { id, error: `'${id}' holds "${txt}", which is not a base-${bs.base} number` };
+    return { id, n: parseInt(txt, bs.base), base: bs.base };
+  }
+
   const asked = (ref && typeof ref === 'object') ? ref.as : null;
   const declared = asked || _meOvEffective(ctx, id)?.type || null;
   if (declared) {
@@ -35595,9 +35675,16 @@ function _meNumRef(ref, ctx) {
     if (Number.isFinite(n)) return { id, n, as: declared };
     return { id, error: `'${id}' cannot be read as ${declared}` };
   }
-  const n = _meFieldAsInt(f);
-  if (n == null) return { id, error: `'${id}' has no decodable numeric value` };
-  return { id, n, assumed: true };
+
+  // Nothing stated: DECIMAL, and an error if it is not one. This is where the
+  // guess used to be. Reading the bytes as hex when the text did not look like
+  // digits was right often enough to be trusted and wrong often enough to
+  // matter, and nothing distinguished the two from outside.
+  const txt = String(f.value == null ? '' : f.value).trim();
+  if (!_NUM_BASE_RE[10].test(txt))
+    return { id, error: `'${id}' holds "${txt}", which is not a decimal number — `
+      + `add ":h" (hex) or ":o" (octal) to the reference, or {"as": "uint16-be"} to read its bytes` };
+  return { id, n: parseInt(txt, 10) };
 }
 
 // Returns the number, or null. WHY it is null is left on ctx for the caller that

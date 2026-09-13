@@ -2776,9 +2776,23 @@ test('read-length-value decodes bcd2 prefixes and read-while max can come from a
   eq(ctx.fields[0].id, 'DATA', 'first field id');
   eq(ctx.fields[0].value, 'ABC', 'bcd2 payload');
   eq(ctx.fields[0].lenPrefix, '3', 'bcd2 decoded length');
-  deepEq(ctx.fields.map(x => x.id), ['DATA', 'COUNT', 'CH', 'CH'], 'read-while stops at binary max count');
-  deepEq(ctx.fields.filter(x => x.id === 'CH').map(x => x.value), ['D', 'E'], 'read-while emitted only max iterations');
-  eq(ctx.cursor, 8, 'cursor stops after max-limited iterations');
+  // A binary counter caps the loop, and now has to say it is binary: its byte
+  // 0x02 is not decimal text, and a bare reference no longer falls back to
+  // reading the raw bytes as hex. Requested 2026-09-13.
+  deepEq(ctx.fields.map(x => x.id), ['DATA', 'COUNT', 'CH', 'CH', 'CH'],
+    'undeclared, the binary max no longer caps — it is not a decimal number');
+  const capped = meExecParseSpec({ ddl_bindings: [], parse_spec_binary: [
+    { 'read-length-value': { length_encoding: 'bcd2', as: 'DATA' } },
+    { 'read-fixed': { length: 1, as: 'COUNT' } },
+    { 'read-while': { while: { type: 'alphabetic', length: 1 },
+        max: { field: 'COUNT', as: 'uint8' },
+        body: [{ 'read-fixed': { length: 1, as: 'CH' } }] } },
+  ] }, Uint8Array.from([0x00, 0x03, 0x41, 0x42, 0x43, 0x02, 0x44, 0x45, 0x46]));
+  deepEq(capped.fields.map(x => x.id), ['DATA', 'COUNT', 'CH', 'CH'],
+    'declared as uint8, the binary max caps at 2 exactly as it used to');
+  deepEq(capped.fields.filter(x => x.id === 'CH').map(x => x.value), ['D', 'E'],
+    'and it is the declared run that stops at max, not the undeclared one');
+  eq(capped.cursor, 8, 'the declared run stops after max-limited iterations');
 });
 
 // ── One DE anchor renumbers everything after it ──────────────────────────────
@@ -3303,7 +3317,11 @@ END
   ] };
   const ctx = meExecParseSpec(item, Uint8Array.from(bytes), { format: 'hex', rawBytes: bytes });
   eq(ctx.cursor <= bytes.length, true, 'cursor never runs past the payload');
-  const err = ctx.fields.find(f => f.error && /exceeds the/.test(f.error));
+  // Reported at the SOURCE now rather than after the fact: "& " is not a decimal
+  // number, so the reference is refused before it can become a length of 9760.
+  // It used to be read as hex off the raw bytes and then caught downstream for
+  // overrunning — the right outcome by the wrong route.
+  const err = ctx.fields.find(f => f.error && /(exceeds the|not a decimal number)/.test(f.error));
   eq(!!err, true, 'the impossible length is reported instead of silently consumed');
   eq(ctx.fields.some(f => f.id === 'UD.BUF' && !f.error), false, 'no phantom buffer field is emitted');
 });
@@ -10227,16 +10245,106 @@ test('the bytes that bit PSTM: 0x31 0x32 is 12594 as a number, 12 as text', () =
     `ascii must NOT read 12594, got: ${JSON.stringify(txt.errs)}`);
 });
 
-test('an undeclared reference still works, but says it guessed', () => {
-  // Not an error: existing specs rely on the fallback. It just stops being silent.
-  const r = numRefRun([
+test('an undeclared reference is DECIMAL, and says so when it is not one', () => {
+  // The rule, replacing the guess: a number is base 10 unless the reference says
+  // otherwise. Requested 2026-09-13.
+  const dec = numRefRun([
     { read: 'CNT' },
     { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 1, as: 'X' } }] } },
-  ], [0x30, 0x32]);
-  eq(r.errs.length, 0, 'no error — the guess still resolves');
-  assert.ok(r.issues.some(i => /nothing declares how to read it as a number/.test(i)),
-    `it reports the assumption, got: ${JSON.stringify(r.issues)}`);
-  assert.ok(r.issues.some(i => /"as": "uint16-be"/.test(i)), 'and names the fix');
+  ], [0x30, 0x32]);   // "02"
+  eq(dec.errs.length, 0, 'decimal text needs no declaration and raises nothing');
+  eq(dec.ids.filter(i => i === 'X').length, 2, 'and "02" loops twice');
+  eq(dec.issues.length, 0, 'nothing to confess — decimal is the rule, not a guess');
+
+  // The PSTM shape: bytes that are not decimal text. This used to fall back to
+  // reading the raw bytes as hex, which was right often enough to be trusted and
+  // wrong often enough to truncate a services loop.
+  const bin = numRefRun([
+    { read: 'CNT' },
+    { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 1, as: 'X' } }] } },
+  ], [0x00, 0x02]);
+  assert.ok(bin.errs.some(e => /not a decimal number/.test(e)),
+    `a non-decimal field is refused, got: ${JSON.stringify(bin.errs)}`);
+  assert.ok(bin.errs.some(e => /":h"/.test(e) && /uint16-be/.test(e)),
+    'and the error names both ways out — a base suffix, or reading the bytes');
+});
+
+test('a base suffix states how a reference is read', () => {
+  // The discriminator is a read-fixed LENGTH, because the error names the number
+  // it was given. A repeat count is capped by the bytes remaining, so 10 and 16
+  // both come out as 10 and prove nothing.
+  //
+  // "CNT" holds the characters "10", and numRefRun leaves 8 bytes after it.
+  const lenOf = (ref) => {
+    const r = numRefRun([{ read: 'CNT' }, { 'read-fixed': { length: ref, as: 'BUF' } }], [0x31, 0x30]);
+    const m = /length (\d+) exceeds/.exec(r.errs.join(' '));
+    if (m) return +m[1];
+    const buf = r.ctx.fields.find(f => f.id === 'BUF');
+    return buf && buf.endByte != null ? (buf.endByte - buf.startByte + 1) : ('errs: ' + JSON.stringify(r.errs));
+  };
+  eq(lenOf('CNT'),   10, 'no suffix: "10" is ten');
+  eq(lenOf('CNT:h'), 16, ':h — "10" is sixteen');
+  eq(lenOf('CNT:o'),  8, ':o — "10" is eight, which fits exactly');
+
+  // A value only ONE base can read, so nothing rests on the arithmetic above.
+  const hexOnly = numRefRun([{ read: 'CNT' },
+    { 'read-fixed': { length: 'CNT:h', as: 'BUF' } },
+  ], [0x31, 0x41]);   // "1A"
+  assert.ok(!hexOnly.errs.some(e => /not a base/.test(e)), '"1A" reads in base 16...');
+  const decFails = numRefRun([{ read: 'CNT' },
+    { 'read-fixed': { length: 'CNT', as: 'BUF' } },
+  ], [0x31, 0x41]);
+  assert.ok(decFails.errs.some(e => /not a decimal number/.test(e)), '...and not in base 10');
+  const octFails = numRefRun([{ read: 'CNT' },
+    { 'read-fixed': { length: 'CNT:o', as: 'BUF' } },
+  ], [0x31, 0x41]);
+  assert.ok(octFails.errs.some(e => /not a base-8 number/.test(e)), '...nor in base 8');
+
+  // parseInt stops at the first character it dislikes and returns what it read,
+  // so "1A" in base 10 would come back as 1 — a wrong length that looks right.
+  // The digits a base permits are checked before the number is believed.
+  assert.ok(!decFails.errs.some(e => /length 1 exceeds/.test(e)),
+    'a partial parse is refused, not silently truncated to 1');
+
+  // A suffix nobody defined is refused rather than ignored — ignoring it would
+  // silently read the wrong base.
+  const bad = numRefRun([{ read: 'CNT' },
+    { 'read-fixed': { length: 'CNT:z', as: 'BUF' } },
+  ], [0x31, 0x30]);
+  assert.ok(bad.errs.some(e => /is not a base/.test(e)),
+    `an unknown suffix is an error, got: ${JSON.stringify(bad.errs)}`);
+});
+
+test('a literal can state its base, and digits before the suffix are always one', () => {
+  const lenOf = (ref) => {
+    const r = numRefRun([{ read: 'CNT' }, { 'read-fixed': { length: ref, as: 'BUF' } }], [0x30, 0x30]);
+    const m = /length (\d+) exceeds/.exec(r.errs.join(' '));
+    if (m) return +m[1];
+    const buf = r.ctx.fields.find(f => f.id === 'BUF');
+    return buf && buf.endByte != null ? (buf.endByte - buf.startByte + 1) : ('errs: ' + JSON.stringify(r.errs));
+  };
+  eq(lenOf('10:h'), 16, '"10:h" is sixteen');
+  eq(lenOf('10:o'),  8, '"10:o" is eight');
+  // A literal reads nothing off the message, so no field of that name is needed.
+  const lit = numRefRun([{ 'read-fixed': { length: '4:h', as: 'BUF' } }], [0x30, 0x30]);
+  assert.ok(!lit.errs.some(e => /not yet read/.test(e)), 'a literal needs no field named "4"');
+
+  // Digits before the suffix are ALWAYS a literal — never a field that happens
+  // to be named in digits. Flat-format DDLs really do name ISO elements 63 and
+  // 126, so this is decided by rule rather than by whether such a field exists,
+  // which would be another guess.
+  const split = vm.runInContext('_meSplitNumBase', sandbox);
+  eq(split('63:h').literal, true, '"63:h" is the literal 0x63');
+  eq(split('63:h').name, '63');
+  eq(split('LEN:h').literal, false, '"LEN:h" is the field LEN');
+  eq(split('LEN:h').base, 16);
+  eq(split('LEN').base, 10, 'no suffix is base 10');
+  eq(split('LEN').stated, false, 'and says it was not stated');
+  eq(split('LEN:z').bad, 'z', 'an unknown suffix is reported, not ignored');
+  // The long form reaches a field named in digits.
+  const lf = split('63', { field: '63', base: 'h' });
+  eq(lf.literal, false, 'the long form names a numeric field without ambiguity');
+  eq(lf.base, 16);
 });
 
 test('the note rides ON the field, never as a second row', () => {
@@ -10262,11 +10370,18 @@ test('a field type override declares it, with no change to the spec', () => {
         { read: 'CNT' },
         { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 1, as: 'X' } }] } },
       ] }, Uint8Array.from([0x00, 0x02, ...Array.from({ length: 8 }, () => 0x41)]));
-    return ctx.fields.filter(f => f.issue).map(f => f.issue);
+    return { issues: ctx.fields.filter(f => f.issue).map(f => f.issue),
+             errs:   ctx.fields.filter(f => typeof f.error === 'string').map(f => f.error),
+             ids:    ctx.fields.map(f => f.id) };
   })();
-  assert.ok(r.issues.some(i => /nothing declares/.test(i)), 'undeclared warns');
-  assert.ok(!withOvr.some(i => /nothing declares/.test(i)),
-    `a type override counts as declaring it, got: ${JSON.stringify(withOvr)}`);
+  // Undeclared and not decimal: an ERROR now, where it used to warn and guess.
+  assert.ok(r.errs.some(e => /not a decimal number/.test(e)),
+    `undeclared and non-decimal is refused, got: ${JSON.stringify(r.errs)}`);
+  // The override declares it, so the same spec resolves with nothing to say.
+  assert.ok(!withOvr.errs.some(e => /not a decimal number/.test(e)),
+    `a type override counts as declaring it, got: ${JSON.stringify(withOvr.errs)}`);
+  eq(withOvr.issues.length, 0, 'and raises no note either — it was declared');
+  eq(withOvr.ids.filter(i => i === 'X').length, 2, 'uint-be reads 0x0002 as two');
 });
 
 test('all three reference sites take the declared form', () => {
@@ -16133,6 +16248,32 @@ test('the read-tlv help says the DDL is not consulted without tags', () => {
     'the help must say the DDL is not consulted without tags');
   assert.ok(/does <b>not<\/b> look for a DDL element named after the tag/.test(desc),
     'and must say it does not match an element by the tag name — the exact expectation TODO 8 came from');
+});
+
+// The base suffix is a change to the spec LANGUAGE, so it has to be documented
+// where specs are written, not only in SPEC.md. Written once and spread into
+// every attribute that takes a number — the same sentence per block is how two
+// of them end up describing different behaviour.
+test('every numeric attribute documents its base', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+  const shared = (src.match(/const _PS_NUMBASE_DESC = \[[\s\S]*?\n\];/) || [''])[0];
+  assert.ok(shared, '_PS_NUMBASE_DESC exists');
+  assert.ok(/base 10/.test(shared), 'it states the default');
+  assert.ok(/":h"/.test(shared) && /":o"/.test(shared), 'and both suffixes');
+  assert.ok(/literal/.test(shared), 'and that digits before the suffix are a literal');
+  assert.ok(/12594/.test(shared), 'and how a base differs from `as`, with the numbers');
+  assert.ok(/is an error/i.test(shared), 'and that a non-number is refused, not guessed');
+  // Spread into every attribute that takes a number — the same list sizeof uses,
+  // which is exactly the set of numeric references.
+  eq((src.match(/\.\.\._PS_NUMBASE_DESC,/g) || []).length,
+     (src.match(/\.\.\._PS_SIZEOF_DESC,/g) || []).length,
+     'every attribute that documents sizeof documents the base too');
+  // And SPEC says it.
+  const spec = fs.readFileSync('./SPEC-message-format-detector.md', 'utf8');
+  assert.ok(/A numeric reference is DECIMAL, unless it states a base/.test(spec),
+    'SPEC has the section');
+  assert.ok(/Digits before the suffix are always a LITERAL/.test(spec),
+    'including the rule that decides the one ambiguous case');
 });
 
 test('the tag report explains a tag that did not fire', () => {

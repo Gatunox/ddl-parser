@@ -587,23 +587,43 @@ original "always 2px" rule had been protecting all along — see
 
 ---
 
-## 17. [~] Chunk the large-record parse so the tab stays alive
+## 17. [x] Chunk the large-record parse — *cost 1 done v1.55.0.0; costs 2–3 closed as not worth paying, 2026-09-12*
 
-**Cost 1 is done — v1.55.0.0, 2026-09-12.** Every loop whose length is the
-record count now slices at 250 and yields between slices, and `_parseAborted` is
-checked on the record loop's boundaries, so Cancel fires during parsing rather
-than only between stages. See item 23.
+**Cost 1 — the freeze — is fixed.** Every loop whose length is the record count
+slices at 250 and yields between slices, and `_parseAborted` is checked on the
+record loop's boundaries, so Cancel fires during parsing rather than only between
+stages. See item 23. This is the part the user actually felt.
 
-**Costs 2 and 3 remain, and they are the memory half.** `auditParseAll` still
-reads every selected record up front — `await Promise.all(rows.map(r =>
-file.slice(…).arrayBuffer()))` at `source.html:17024` — and still hex-encodes all
-of them before any parsing begins. So the peak is unchanged: 14k slices resident
-simultaneously, then roughly doubled by the encoding, all before the first record
-is parsed. Slicing the parse made the tab responsive; it did not make the memory
-profile flat, and on a notebook the spike is its own failure mode.
+**Costs 2 and 3 — the memory — are closed without being done.** The premise was
+that reading and hex-encoding every record up front produced a spike worth
+engineering away. Measured against the real 200,000-record mock audit (mean
+payload 118 bytes), at the reported working set of 14,171 records:
 
-The fix below is unchanged for those two: slice, encode and parse a batch, then
-yield — rather than slice-all, encode-all, then parse in batches.
+| | |
+|---|---|
+| **Load-time peak** — what batching would address | |
+| &nbsp;&nbsp;ArrayBuffers | 1.7 MB |
+| &nbsp;&nbsp;hex strings | 6.7 MB |
+| **Retained after parsing** — what it would not | |
+| &nbsp;&nbsp;`raw` (the same hex text, kept per message) | 6.7 MB |
+| &nbsp;&nbsp;`bytes` + `wireBytes` | 13.4 MB |
+| &nbsp;&nbsp;`byteCharMap` | 80.3 MB |
+
+Two things follow, and they close the item.
+
+**The hex strings cannot be reclaimed by batching at all.** Every message keeps
+its text as `raw`, because that is what Message Input displays. Batching frees
+the ArrayBuffers and nothing else: **1.7 MB out of roughly 102 MB.**
+
+**And the real cost is somewhere this item never mentions** — `byteCharMap`, at
+80 MB, which is now item 24. Optimising 1.7 MB while 80 MB sits untouched is
+effort spent where the measurement says not to.
+
+*A note on how this was nearly got wrong.* The obvious-looking fix was "skip the
+hex encoding — the parse decodes it straight back". It is not redundant: it is
+the text shown in Message Input, and `buildByteCharMap` derives the byte↔character
+map from it, which is what lets hovering a field light its bytes. Removing it
+would delete the message representation the UI is built on.
 
 
 **Reported 2026-08-10.** A 200,000-record audit file filtered to 14,171 parses
@@ -965,9 +985,19 @@ button did nothing once parsing began.
 
 ### What remains
 
-1. **`_detectSlice` still does not check `_parseAborted`.** `_verdictSlice` and
-   `_recSlice` both do. Small, and the last gap in making Cancel mean the same
-   thing at every stage of a parse.
+1. **`_detectSlice` still does not check `_parseAborted`** — one line, and worth
+   knowing what it actually costs before spending it. Press Cancel during
+   *"Detecting message types…"* and nothing appears to happen; but detection is
+   already sliced, so the tab stays responsive, and the phase after it opens with
+   `setTimeout(() => { if (_parseAborted) return; … })`. So Cancel is **deferred
+   to the end of detection, not ignored**, and detection is the cheapest phase in
+   the parse — recognizers against the leading bytes, no DDL walk, no compile.
+   Nothing expensive starts in the meantime.
+
+   So this is a coherence gap, not a user-facing one: Cancel means "stop now" in
+   two loops and "stop shortly" in the third. Fix it for consistency or accept
+   it; either is defensible, and neither is urgent.
+
 2. **Runtime confirmation on the production machine.** The baseline proves the
    output has not moved (1,472 cases identical) and the structure is pinned by
    tests, but nobody has yet watched a large audit parse on the slow notebook
@@ -1017,6 +1047,45 @@ paint frequency against total time, and it has to be measured on the production
 machine, not here — the whole point is the case where 14,000 records take long
 enough to matter. Baseline (1,472 cases) covers the output, so a chunking that
 changes any result would be caught; what it cannot catch is a slowdown.
+
+---
+
+## 24. [ ] `byteCharMap` allocates one object per byte of every message
+
+**Found 2026-09-12 while measuring item 17**, which had assumed the load-time
+peak was the memory story. It is not: this is.
+
+Every parsed message carries a `byteCharMap` — an array with **one `{s, e}`
+object per byte** of that message, recording which characters of the input text
+produced it. For the reported working set (14,171 records, 118-byte mean
+payload) that is about **1.7 million objects, roughly 80 MB** — more than
+everything else a parse retains put together, and eight times the entire
+load-time peak item 17 was written about.
+
+**What it buys.** Hovering a field in Parse Results lights the bytes it came from
+in Message Input, and clicking one selects them. That is a genuinely good feature
+and it needs this mapping. The question is not whether to keep the capability; it
+is whether it has to be materialised, per byte, for every message at once.
+
+**Why it is probably avoidable.** The map is dense and almost always regular: for
+`hex` input every byte is exactly two characters at a fixed stride; for the dump
+formats it is regular within a line and only the line boundaries vary. A
+per-message *rule* — offset, stride, and the line breaks — would answer the same
+question in constant space, computed on demand for the one message being hovered.
+`extractBytesMapped` already knows the layout at the moment it builds the map, so
+the rule is available exactly where the array is being filled today.
+
+**Do not start this on the estimate.** 80 MB is arithmetic (1.7M objects × a
+conservative per-object size), not a measurement. Before building anything: parse
+a large audit with the browser's memory profiler open and confirm where the bytes
+actually are. If the profiler disagrees with this note, the note is what is wrong.
+
+**Only worth doing if memory is actually hurting.** Nothing has been reported —
+the complaint that started all of this was the freeze, and that is fixed. This is
+recorded so that if a memory failure does turn up, the search does not start from
+scratch and does not start in the wrong place, which is what item 17 would have
+had it do.
+
 
 ---
 

@@ -291,7 +291,33 @@ the offending `source.html:LINE` when one does not.
 
 ---
 
-## 8. [ ] `read-tlv`: fall back to an element whose name matches the tag
+## 8. [x] `read-tlv`: fall back to an element whose name matches the tag — *closed 2026-09-12, not built*
+
+**Closed without building it, and the help is what closes it.** For the fallback
+to ever fire, a DDL would have to name an element after a tag — an element
+literally called `9F26`. Real DDLs do not: tags are hex codes and element names
+are words (`CARD-TYPE`), so every spec needs the explicit `tags` map regardless.
+The feature would sit in the hot path of every TLV parse and never match.
+
+What made the item reasonable was never the feature — it was the **surprise**.
+A bare `read-tlv` looks like it ought to consult the DDL, and finding out it does
+not costs someone an afternoon. That is answered where the question is asked, in
+the block's own help:
+
+> *Without `tags`, **the DDL is never consulted.** Each triple becomes an invented
+> row named `<buffer>.<tag>` — `DE-48.0002` — carrying the raw value and nothing
+> else: no data type, no description.*
+>
+> *It does **not** look for a DDL element named after the tag. There is no
+> matching by name; if you want a triple in a real element you have to say so.*
+
+Both sentences are pinned by a test, because the reason this item is closed is
+that the help says this — trim it and the closure silently becomes wrong.
+
+**Re-open it** if a DDL that genuinely names elements after its tags ever shows
+up. The fix below still applies unchanged, and it costs nothing when it does not
+match.
+
 
 **Problem.** Without `tags`, `read-tlv` consults the DDL not at all. It invents a
 row `<buffer>.<tag>` holding the raw value — no data type, no description, nothing

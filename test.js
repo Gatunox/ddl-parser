@@ -16119,6 +16119,22 @@ test('the NETARD record parse runs a slice per turn, not one loop', () => {
     'all three sliced loops use one slice size');
 });
 
+// TODO 8 was "make read-tlv fall back to a DDL element named after the tag".
+// Closed 2026-09-12 as not worth building — for it to ever fire, a DDL would have
+// to name an element `9F26`, and real DDLs name them CARD-TYPE. What made the
+// item reasonable was the SURPRISE: a bare read-tlv looks like it should consult
+// the DDL. The help answers that, so the help is what keeps the item closed —
+// pinned here, or trimming it silently makes the closure wrong.
+test('the read-tlv help says the DDL is not consulted without tags', () => {
+  const tlv = vm.runInContext('_PS_HELP', sandbox)['read-tlv'];
+  assert.ok(tlv, 'the read-tlv help entry exists');
+  const desc = (tlv.desc || []).join(' ');
+  assert.ok(/the DDL is never consulted/.test(desc),
+    'the help must say the DDL is not consulted without tags');
+  assert.ok(/does <b>not<\/b> look for a DDL element named after the tag/.test(desc),
+    'and must say it does not match an element by the tag name — the exact expectation TODO 8 came from');
+});
+
 test('the tag report explains a tag that did not fire', () => {
   const src = fs.readFileSync('./source.html', 'utf8');
   const rep = psFnSource('_tagWhyReport');

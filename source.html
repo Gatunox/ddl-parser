@@ -2075,12 +2075,15 @@ td.c-err  { color: var(--accent2); }
    Red is reserved for a spec that cannot produce a parse at all.
 
    A hairline, not a bar. This sits beside a line of code that is otherwise
-   fine, and 3px read as a defect in the code rather than a note about it. */
+   fine, and 3px read as a defect in the code rather than a note about it. The
+   line NUMBER keeps its ordinary weight for the same reason: the tint and the
+   colour already say which lines these are, and bolding them made the gutter
+   shout over the code it is annotating. */
 .ps-line-ignored { box-shadow: inset 2px 0 0 0 var(--warn-text);
   background: color-mix(in srgb, var(--warn-text) 7%, transparent); }
 .cm-gutterElement.ps-gutter-ignored {
   background: color-mix(in srgb, var(--warn-text) 18%, transparent);
-  color: var(--warn-text); font-weight: 700; }
+  color: var(--warn-text); }
 
 /* RED, and only here: a spec that does not parse produces nothing at all. This
    is the one mark that means "no parse result", which is what separates it from
@@ -2089,7 +2092,7 @@ td.c-err  { color: var(--accent2); }
   background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .cm-gutterElement.ps-gutter-error {
   background: color-mix(in srgb, var(--danger) 22%, transparent);
-  color: var(--danger); font-weight: 700; }
+  color: var(--danger); }
 
 /* A run of marked lines is ONE region, so it is rounded at the ends rather than
    drawn as a stack of identical stripes. */
@@ -20600,7 +20603,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.5.1';
+const APP_VERSION  = '1.56.5.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

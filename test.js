@@ -16508,6 +16508,14 @@ test('a lint mark lands on the block it is about', () => {
   assert.ok(!rules.some(r => /--danger/.test(r)), 'neither is red');
   // A hairline. 3px read as a defect in the code rather than a note about it.
   assert.ok(/inset 2px 0 0 0 var\(--warn-text\)/.test(css), 'the rule is 2px, not a bar');
+
+  // The line NUMBER keeps the weight every other line number has. Bolding it
+  // made the gutter shout over the code it annotates, and the tint and colour
+  // already say which lines these are. Requested 2026-09-15. Both marks.
+  const gutters = css.match(/\.cm-gutterElement\.ps-gutter-(?:ignored|error)[^}]*\}/g) || [];
+  eq(gutters.length, 2, 'both gutter marks have a rule');
+  assert.ok(!gutters.some(r => /font-weight/.test(r)),
+    'neither gutter mark sets a weight of its own');
 });
 
 // Reported 2026-09-15. A spec was broken mid-edit: the bar correctly showed

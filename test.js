@@ -16276,6 +16276,305 @@ test('every numeric attribute documents its base', () => {
     'including the rule that decides the one ambiguous case');
 });
 
+// Reported 2026-09-15 from production. A `de` entry was written BESIDE
+// read-bitmap-fields instead of inside it — two top-level keys on one block — so
+// the engine took the first and discarded the second. The message parsed, the
+// tokens did not, and the reader saw nothing: the lint was right and was not
+// read. Something the engine DISCARDS is not a warning, and it has to be
+// visible without opening the section it is in.
+test('[REGRESSION] a discarded block is classified, and marked where it is written', () => {
+  const lint = vm.runInContext('_mePsLintWarns', sandbox);
+
+  // The exact spec from the report.
+  const theirs = [{ 'read-bitmap-fields': 'PRI-BIT-MAP',
+    de: { '57': [{ 'token-area': { tokens: 'ANY', header: 'binary' } }] } }];
+  const inert = new Map();
+  const warns = lint({}, theirs, inert);
+  assert.ok(warns.some(w => /"de" is outside the block and will be ignored/.test(w)),
+    `the stray key is reported, got: ${JSON.stringify(warns)}`);
+  eq(inert.size, 1, 'and it is classified as DISCARDED, not merely odd');
+  const [msg, meta] = [...inert][0];
+  assert.ok(msg.includes('"de"'), 'the discarded one is the de entry');
+  // It names WHICH key, so the mark can cover the key rather than the block —
+  // `read-bitmap-fields` itself parses exactly as written.
+  deepEq(meta.keys, ['de'], 'and which key inside the block is ignored');
+  eq(meta.block, '1', 'and which top-level block it is in');
+
+  // Nested correctly, there is nothing discarded.
+  const ok = new Map();
+  lint({}, [{ 'read-bitmap-fields': { bitmap: 'PRI-BIT-MAP',
+    de: { '57': [{ 'token-area': { tokens: 'ANY', header: 'binary' } }] } } }], ok);
+  eq(ok.size, 0, 'the correct nesting discards nothing');
+
+  // A misspelled attribute is the same class of problem — nothing reads it.
+  const typo = new Map();
+  lint({}, [{ 'read-fixed': { length: 2, lenth: 4 } }], typo);
+  eq(typo.size, 1, 'an attribute nothing reads is discarded too');
+  deepEq([...typo][0][1].keys, ['lenth'], 'and it names the attribute, not the block');
+
+  // Out-parameter, so the strings the bar and a dozen tests read are unchanged.
+  eq(typeof lint({}, theirs), 'object', 'the return is still the plain list');
+  eq(JSON.stringify(lint({}, theirs)), JSON.stringify(warns),
+     'and identical whether or not the set is asked for');
+
+  const src = fs.readFileSync('./source.html', 'utf8');
+  // AMBER, not red. Ignored content still parses — it just does less than it
+  // looks like it does. Red is reserved for a spec that cannot produce a parse
+  // at all, and colouring both the same would leave nothing to say when one
+  // really is broken. Requested 2026-09-15.
+  const bar = psFnSource('_mePsBarSync');
+  assert.ok(/severity: 'warning'/.test(bar), 'lint is amber');
+  assert.ok(!/\? 'error' : 'warning'/.test(bar), 'nothing in the lint is promoted to red');
+  // But FIRST — the bar opens on 1/N, so order is what decides which message is
+  // actually read, without needing a louder colour.
+  assert.ok(/lint\.sort\(\(a, b\) => \(a\.inert \? 0 : 1\) - \(b\.inert \? 0 : 1\)\)/.test(bar),
+    'ignored sorts ahead of the rest');
+
+  // A header badge was tried and removed 2026-09-15: once the gutter marks the
+  // ignored lines where they are written, a count on the header says less in
+  // more places. Every trace goes, or the next reader finds half a feature.
+  for (const gone of ['_mePsInertBadgeHtml', '_mePsSyncInertBadge',
+                      'ps-inert-badge', 'badgeAlways', 'me-ps-inert-badge'])
+    assert.ok(!src.includes(gone), `the removed badge left ${gone} behind`);
+  // sect() goes back to the signature it had before the badge needed a slot.
+  assert.ok(/const sect   = \(key, title, fill, actions, badge\) => \{/.test(src),
+    'sect has no always-visible slot any more');
+  // The Overrides badge is untouched by the removal.
+  assert.ok(/'', _meOvBadgeHtml\(\)\)/.test(src), 'Overrides keeps its own badge');
+});
+
+// The gutter mark has to land on the RIGHT line, and the spec is JSONC — a
+// brace inside a string or a comment must not move the count. Requested
+// 2026-09-15.
+test('a lint mark lands on the block it is about', () => {
+  const ranges = vm.runInContext('_mePsBlockLineRanges', sandbox);
+  // A minimal stand-in for a CodeMirror doc: the two methods the scanner uses.
+  const mkDoc = (text) => {
+    const lines = text.split('\n');
+    const starts = []; let at = 0;
+    for (const l of lines) { starts.push(at); at += l.length + 1; }
+    return { toString: () => text,
+             lines: lines.length,
+             // The three members the scanners use, matching CodeMirror's Text.
+             line: (n) => ({ number: n, from: starts[n - 1],
+                             to: starts[n - 1] + lines[n - 1].length }),
+             lineAt: (i) => ({ number: starts.filter(st => st <= i).length }) };
+  };
+  const doc = mkDoc([
+    '[',                                   // 1
+    '  { "read-ddl": "ANY" },',            // 2  block 1
+    '  // a comment with { braces } in it',// 3
+    '  { "read": { "field": "A{B" } },',   // 4  block 2  — an UNBALANCED brace in
+                                           //    a string: balanced ones would
+                                           //    still count out even if the
+                                           //    scanner ignored strings entirely
+    '  /* block comment',                  // 5
+    '     with { more } braces */',        // 6
+    '  { "read-bitmap-fields": "P",',      // 7  block 3
+    '    "de": { "57": [] } }',            // 8
+    ']',                                   // 9
+  ].join('\n'));
+  // The WHOLE block, not just its opening line: a single line against a ten-line
+  // block reads as "something about this brace" rather than "this block is
+  // discarded".
+  deepEq(ranges(doc), [{ from: 2, to: 2 }, { from: 4, to: 4 }, { from: 7, to: 8 }],
+    'three top-level blocks, each from its opening line to its closing one — ' +
+    'braces in strings and comments ignored');
+
+  // A block left unclosed mid-edit still marks, to the end of the document —
+  // vanishing at the moment it is most worth seeing would be the worst answer.
+  deepEq(ranges(mkDoc('[\n  { "read": "A" },\n  { "read-bitmap-fields": {')),
+    [{ from: 2, to: 2 }, { from: 3, to: 3 }],
+    'an unclosed block still marks from where it opened');
+
+  // The KEY's range, not the block's. This is the correction that matters: in
+  // the reported case `read-bitmap-fields` parses exactly as written and only
+  // the `de` beside it is dropped, so marking the whole block contradicted the
+  // message, which named the key. Requested 2026-09-15.
+  const keyRange = vm.runInContext('_mePsKeyLineRange', sandbox);
+  const blockDoc = mkDoc([
+    '[',                                    // 1
+    '  {',                                  // 2
+    '    "read-bitmap-fields": "PRI-BIT-MAP",', // 3  ← parsed, must NOT be marked
+    '    "de": {',                          // 4  ← ignored, from here…
+    '      "57": [',                        // 5
+    '        { "token-area": "ANY" }',      // 6
+    '      ]',                              // 7
+    '    }',                                // 8  ← …to here
+    '  }',                                  // 9
+    ']',                                    // 10
+  ].join('\n'));
+  const blocks = ranges(blockDoc);
+  deepEq(blocks, [{ from: 2, to: 9 }], 'one block, lines 2-9');
+  deepEq(keyRange(blockDoc, blocks[0], 'de'), { from: 4, to: 8 },
+    'the de entry alone — the read-bitmap-fields line is parsed and stays unmarked');
+  // A one-line value ends at its comma, not at the block.
+  deepEq(keyRange(blockDoc, blocks[0], 'read-bitmap-fields'), { from: 3, to: 3 },
+    'a single-line key is one line');
+  eq(keyRange(blockDoc, blocks[0], 'nope'), null, 'a key that is not there marks nothing');
+
+  // Ranges come from the lint's targets, and only IGNORED things are marked: an
+  // ordinary warning is about something that does run, and marking it too would
+  // leave a spec striped in amber with no way to tell which stripe meant "this
+  // does nothing".
+  const markRanges = vm.runInContext('_mePsMarkRanges', sandbox);
+  const prevInert = vm.runInContext('_mePsInertMsgs', sandbox);
+  const prevMsgs  = vm.runInContext('_mePsLintMsgs', sandbox);
+  try {
+    vm.runInContext(`_mePsLintMsgs = ['[block 1] "de" is outside the block', '[block 1] merely odd']`, sandbox);
+    vm.runInContext(`_mePsInertMsgs = new Map([['[block 1] "de" is outside the block', { block: '1', keys: ['de'] }]])`, sandbox);
+    deepEq(markRanges(blockDoc), [{ from: 4, to: 8 }],
+      'the ignored key is marked and the plain warning is not');
+    // No keys named (an older message, or a key since retyped) falls back to the
+    // block, rather than marking nothing at the moment it is most worth seeing.
+    vm.runInContext(`_mePsInertMsgs = new Map([['[block 1] x', { block: '1' }]])`, sandbox);
+    deepEq(markRanges(blockDoc), [{ from: 2, to: 9 }], 'with no key named, the block is marked');
+  } finally {
+    vm.runInContext(`_mePsLintMsgs = ${JSON.stringify(prevMsgs || [])}`, sandbox);
+    vm.runInContext('_mePsInertMsgs = new Map()', sandbox);
+  }
+
+  const src = fs.readFileSync('./source.html', 'utf8');
+  assert.ok(/_mePsLintDecoExtension\(\),/.test(src), 'the line marks are mounted');
+  // And the GUTTER — the line-number column itself, which is where the eye goes
+  // when scanning a long spec rather than reading one.
+  assert.ok(/_mePsLintGutterExtension\(\),/.test(src), 'the gutter marks are mounted too');
+  const gut = psFnSource('_mePsLintGutterExtension');
+  // A StateField, NOT gutterLineClass.compute(['doc']). A compute keyed on the
+  // document only re-runs when the DOCUMENT changes, and the lint is debounced
+  // 350ms behind the edit — so by the time the messages exist the doc has long
+  // settled and the facet keeps the value it computed before there were any.
+  // The marks never appeared. Reported 2026-09-15.
+  assert.ok(!/gutterLineClass\.compute\(/.test(gut),
+    'a doc-keyed compute cannot see a debounced lint');
+  assert.ok(/gutterLineClass\.from\(field\)/.test(gut), 'the gutter reads a state field');
+  assert.ok(/tr\.effects\.some\(e => e\.is\(effect\)\)/.test(gut),
+    'which rebuilds on the lint\'s own effect, not only on a doc change');
+  assert.ok(/_mePsLintEffect\.of\(null\)/.test(psFnSource('_mePsRunLint')),
+    'and the lint dispatches that effect — an empty transaction left the gutter blank');
+  assert.ok(/for \(let ln = r\.from; ln <= r\.to/.test(gut),
+    'every line of the block is marked in the gutter, not only its first');
+  // Sorting now happens once, in the shared resolver, and both marks collapse
+  // their ranges to a SET of lines — two ignored keys in one block can overlap,
+  // and neither RangeSet.of nor RangeSetBuilder will take a position twice.
+  assert.ok(/\[\.\.\.lines\.keys\(\)\]\.sort\(/.test(gut), 'the gutter adds lines in order');
+  assert.ok(/return out\.sort\(\(a, b\) => a\.from - b\.from/.test(psFnSource('_mePsMarkRanges')),
+    'and the shared resolver hands them over sorted');
+  assert.ok(/const lines = new Map\(\)/.test(gut),
+    'overlapping ranges collapse to distinct lines, each carrying its own marker');
+  // The three symbols arrived in the bundle on 2026-09-15; a stale cached bundle
+  // would otherwise throw on mount and take the whole editor with it.
+  assert.ok(/if \(!gutterLineClass \|\| !GutterMarker \|\| !RangeSet \|\| !StateField \|\| !StateEffect\) return \[\];/.test(gut),
+    'it degrades to nothing rather than breaking the editor on an old bundle');
+  const entry = fs.readFileSync('./codemirror-entry.js', 'utf8');
+  for (const sym of ['gutterLineClass', 'GutterMarker', 'RangeSet'])
+    assert.ok(new RegExp('\\b' + sym + ',').test(entry), `${sym} is exported from the bundle`);
+  // Sorted and de-duplicated, or RangeSetBuilder throws: the ranges come from
+  // the lint's messages, which are not in document order and can overlap.
+  const deco = psFnSource('_mePsLintDecoExtension');
+  assert.ok(/\[\.\.\.lines\.keys\(\)\]\.sort\(/.test(deco), 'the line marks are added in document order');
+  assert.ok(/const lines = new Map\(\)/.test(deco), 'and overlapping ranges collapse');
+  assert.ok(/for \(let ln = r\.from; ln <= r\.to/.test(deco),
+    'every line of the ignored range is marked, not only its first');
+  // Both marks read the SAME resolver, so they cannot disagree about what is
+  // ignored — one saying the key and the other the block is exactly the bug
+  // this round fixed.
+  assert.ok(/_mePsMarkRanges\(view\.state\.doc\)/.test(deco), 'the tint reads the shared resolver');
+  assert.ok(/_mePsMarkRanges\(state\.doc\)/.test(gut), 'and so does the gutter');
+  // The plugin reads module state that the lint has just replaced, so it needs a
+  // reason to rebuild.
+  assert.ok(/_mePsCM\.dispatch\(/.test(psFnSource('_mePsRunLint')),
+    'the editor is nudged to repaint after a lint');
+  // Every custom property the marks use must actually EXIST. --err-text did not:
+  // the rules parsed, matched the element, and painted nothing, because an
+  // unresolved var() makes the whole declaration invalid. Class presence looked
+  // right the whole time. Reported 2026-09-15.
+  const rootTokens = new Set();
+  for (const m of src.matchAll(/(--[a-z0-9-]+)\s*:/gi)) rootTokens.add(m[1]);
+  const markCss = (src.match(/\.(?:cm-gutterElement\.)?ps-(?:line|gutter)-ignored[^}]*\}/g) || []).join(' ');
+  const used = [...new Set([...markCss.matchAll(/var\((--[a-z0-9-]+)\)/gi)].map(m => m[1]))];
+  assert.ok(used.length, 'the marks use tokens');
+  deepEq(used.filter(t => !rootTokens.has(t)), [],
+    'every token the lint marks reference is defined somewhere in the stylesheet');
+
+  // Theme tokens, never hex — the same rule every other component rule follows.
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const rules = css.match(/\.(?:cm-gutterElement\.)?ps-(?:line|gutter)-ignored[^}]*\}/g) || [];
+  eq(rules.length, 2, 'the line tint and the gutter each have a rule');
+  assert.ok(!rules.some(r => /#[0-9a-f]{3,6}/i.test(r)), 'and neither hard-codes a colour');
+  // AMBER. Red would say "this does not run", which is not what an ignored
+  // attribute means — the spec parses, that part just does nothing.
+  assert.ok(rules.every(r => /--warn-text/.test(r)), 'both are amber');
+  assert.ok(!rules.some(r => /--danger/.test(r)), 'neither is red');
+  // A hairline. 3px read as a defect in the code rather than a note about it.
+  assert.ok(/inset 2px 0 0 0 var\(--warn-text\)/.test(css), 'the rule is 2px, not a bar');
+});
+
+// Reported 2026-09-15. A spec was broken mid-edit: the bar correctly showed
+// "Expected ':' after property name … (line 24 column 42)", and the header still
+// read "⚠ 1 ignored" with an amber band in the editor — both describing a spec
+// that no longer existed. And the error itself had no mark at all.
+test('[REGRESSION] a broken spec drops the stale marks and shows a red one', () => {
+  const src = fs.readFileSync('./source.html', 'utf8');
+
+  // JSON.parse reports against the STRIPPED text, and the reader is looking at
+  // the original — so stripping must not move a single line. Line comments
+  // already stopped at the newline; block comments swallowed theirs, shifting
+  // every line after a multi-line /* … */ by its height.
+  const strip = vm.runInContext('_stripJsonc', sandbox);
+  const withBlock = '[\n  {},\n  /* one\n     two\n     three */\n  {}\n]';
+  eq(strip(withBlock).split('\n').length, withBlock.split('\n').length,
+     'a multi-line block comment keeps its newlines, so line numbers survive');
+  const withLine = '[\n  {},\n  // a note\n  {}\n]';
+  eq(strip(withLine).split('\n').length, withLine.split('\n').length,
+     'and so does a line comment');
+  // Still actually strips — preserving lines must not mean keeping the comment.
+  assert.ok(!/one|two|three|a note/.test(strip(withBlock) + strip(withLine)),
+    'the comment text itself is gone');
+  assert.ok(JSON.parse(strip(withBlock)), 'and the result parses');
+
+  // The error's line is taken from the engine's own message.
+  const setErr = vm.runInContext('_mePsSetErr', sandbox);
+  const errLine = () => vm.runInContext('_mePsErrLine', sandbox);
+  setErr("Expected ':' after property name in JSON at position 264 (line 24 column 42)");
+  eq(errLine(), 24, 'the line is parsed out of the message');
+  setErr('something with no line in it');
+  eq(errLine(), null, 'a message without one marks nothing rather than guessing');
+  setErr('');
+  eq(errLine(), null, 'and clearing the error clears the line');
+
+  // A syntax error outranks the lint: there is no spec, so nothing is "ignored".
+  const markRanges = vm.runInContext('_mePsMarkRanges', sandbox);
+  const doc = { toString: () => '[\n{},\n{}\n]', lines: 4,
+                line: (n) => ({ number: n, from: 0, to: 1 }),
+                lineAt: () => ({ number: 1 }) };
+  vm.runInContext(`_mePsInertMsgs = new Map([['x', { block: '1', keys: ['de'] }]])`, sandbox);
+  setErr('oops in JSON at position 3 (line 2 column 1)');
+  deepEq(markRanges(doc), [{ from: 2, to: 2, error: true }],
+    'the error line is the only mark while the spec does not parse');
+  setErr('');
+  vm.runInContext('_mePsInertMsgs = new Map()', sandbox);
+
+  // And the stale state is cleared where the break is detected.
+  const change = psFnSource('_mePsChange');
+  assert.ok(/_mePsInertMsgs = new Map\(\);/.test(change),
+    'the classification is cleared, not just the message list');
+  assert.ok(/_mePsLintEffect\.of\(null\)/.test(change), 'and the editor marks are rebuilt');
+
+  // Red is only ever this. Amber never means "no parse".
+  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+  const err = (css.match(/\.(?:cm-gutterElement\.)?ps-(?:line|gutter)-error[^}]*\}/g) || []);
+  eq(err.length, 2, 'the error line and its gutter each have a rule');
+  assert.ok(err.every(r => /--danger/.test(r)), 'and both are red');
+  // Entirely red — checking only that --danger APPEARS let a half-amber rule
+  // through, since a rule can carry both.
+  assert.ok(!err.some(r => /--warn-text/.test(r)),
+    'with no amber left in them: red and amber mean different things');
+  const ign = (css.match(/\.(?:cm-gutterElement\.)?ps-(?:line|gutter)-ignored[^}]*\}/g) || []);
+  assert.ok(!ign.some(r => /--danger/.test(r)),
+    'and the ignored marks carry no red, for the same reason');
+});
+
 test('the tag report explains a tag that did not fire', () => {
   const src = fs.readFileSync('./source.html', 'utf8');
   const rep = psFnSource('_tagWhyReport');
@@ -17325,8 +17624,12 @@ test('several stray keys are reported together, in the plural', () => {
 
 test('a misspelled attribute is reported, with the name it probably meant', () => {
   const spec = [{ 'read-bitmap': { field: 'B', encoding: 'binary', lenth: 16 } }];
-  assert.ok(lintHas(spec, /"lenth" is not an attribute of read-bitmap.*did you mean "length"/),
+  // The message now also says it is IGNORED — a misspelled attribute is not
+  // read by anything, so the block runs with it unset, and "is not an attribute"
+  // alone left the reader to infer the consequence. Reworded 2026-09-15.
+  assert.ok(lintHas(spec, /"lenth" is not an attribute of read-bitmap — it is ignored/),
     `got: ${JSON.stringify(lintOf(spec))}`);
+  assert.ok(lintHas(spec, /Did you mean "length"\?/), 'and still names the likely fix');
 });
 
 test('an attribute far from any real one is reported without a wrong guess', () => {

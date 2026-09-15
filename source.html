@@ -2070,6 +2070,32 @@ td.c-err  { color: var(--accent2); }
 }
 
 
+/* The part of a spec the engine IGNORES, marked where it is written. AMBER, not
+   red: it still parses — that part simply does less than it looks like it does.
+   Red is reserved for a spec that cannot produce a parse at all.
+
+   A hairline, not a bar. This sits beside a line of code that is otherwise
+   fine, and 3px read as a defect in the code rather than a note about it. */
+.ps-line-ignored { box-shadow: inset 2px 0 0 0 var(--warn-text);
+  background: color-mix(in srgb, var(--warn-text) 7%, transparent); }
+.cm-gutterElement.ps-gutter-ignored {
+  background: color-mix(in srgb, var(--warn-text) 18%, transparent);
+  color: var(--warn-text); font-weight: 700; }
+
+/* RED, and only here: a spec that does not parse produces nothing at all. This
+   is the one mark that means "no parse result", which is what separates it from
+   the amber one — that spec parses, and merely does less than it looks like. */
+.ps-line-error { box-shadow: inset 2px 0 0 0 var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.cm-gutterElement.ps-gutter-error {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--danger); font-weight: 700; }
+
+/* A run of marked lines is ONE region, so it is rounded at the ends rather than
+   drawn as a stack of identical stripes. */
+.ps-line-first { border-top-left-radius: var(--r-sm); }
+.ps-line-last  { border-bottom-left-radius: var(--r-sm); }
+
 #appLogo, .app-logo { cursor: default; user-select: none; }
 
 #rawPanel > .panel-header { cursor: default; }
@@ -20574,7 +20600,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.0.0';
+const APP_VERSION  = '1.56.5.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23854,6 +23880,7 @@ const _ME_SECT_LOADING_DET =
 const _meOvBadgeHtml = () =>
   `<span class="me-ovl-ro none" id="me-fm-cnt" title="What you have selected, and how much of it already carries each kind of override"><span class="me-ovl-hd">no selection</span></span>`;
 
+
 const _meRecActionsHtml = () =>
   `<button class="btn" onclick="_meNewRec()">+ Add Recognizer</button>` +
   `<button class="btn btn-ico" onclick="_meToggleRecListHelp()" title="Recognizer type reference">?</button>`;
@@ -26514,8 +26541,16 @@ function _stripJsonc(src) {
       continue;
     }
     if (c === '/' && src[i + 1] === '*') {
+      // The newlines inside a block comment are KEPT. JSON.parse reports its
+      // errors against this stripped text — "line 24 column 42" — and the reader
+      // is looking at the original, so swallowing a four-line comment moved
+      // every line number after it by four. Line comments already stop at the
+      // newline and leave it; this is the branch that did not.
       i += 2;
-      while (i < n - 1 && !(src[i] === '*' && src[i + 1] === '/')) i++;
+      while (i < n - 1 && !(src[i] === '*' && src[i + 1] === '/')) {
+        if (src[i] === '\n') out += '\n';
+        i++;
+      }
       i += 2;
       continue;
     }
@@ -26531,11 +26566,38 @@ function _stripJsonc(src) {
 // two lists because they are produced by two passes: a syntax error stops the
 // semantic one, and lint warnings survive an edit that does not break the JSON.
 let _mePsErrMsg = '';
+// The line a syntax error is on, parsed out of the engine's own message. Kept
+// beside the text so the mark and the bar cannot disagree about where it is.
+let _mePsErrLine = null;
 let _mePsLintMsgs = [];
+// The subset of those messages that mean the engine will SILENTLY DISCARD
+// something the user wrote — a block attribute sitting outside its block, an
+// attribute name nothing reads. They are shown as ERRORS rather than warnings
+// and sorted to the front, because "warning" reads as "it still works" and these
+// are the ones where it does not: the spec parses, the parse runs, and the part
+// you added has no effect at all. Reported 2026-09-15, against a `de` entry
+// written beside `read-bitmap-fields` instead of inside it — the message parsed,
+// the tokens did not, and nothing said why.
+// message -> { block, keys } : which top-level block, and which key inside it
+// the engine discards. A Map rather than a Set because marking the whole block
+// was wrong: `read-bitmap-fields` IS parsed, and only the stray `de` beside it
+// is dropped. The message already says so; the mark has to agree with it.
+let _mePsInertMsgs = new Map();
 function _mePsBarSync() {
   const st = _vb('ps');
-  const msgs = (_mePsErrMsg ? [{ text: _mePsErrMsg, severity: 'error' }] : [])
-    .concat(_mePsLintMsgs.map(t => ({ text: t, severity: 'warning' })));
+  // All lint is AMBER. Red is reserved for something that stops a parse being
+  // produced at all — a broken spec, which is _mePsErrMsg above. Ignored content
+  // still parses; it simply does less than it looks like it does, and colouring
+  // that the same as "this does not run" would leave nothing to say when a spec
+  // really is broken.
+  //
+  // Ignored still sorts FIRST. Paging starts at 1/N, so order is what decides
+  // which message is actually read, and "this does nothing" outranks a style
+  // note without needing a louder colour.
+  const lint = _mePsLintMsgs.map(t => ({ text: t, severity: 'warning',
+    inert: _mePsInertMsgs.has(t) }));
+  lint.sort((a, b) => (a.inert ? 0 : 1) - (b.inert ? 0 : 1));
+  const msgs = (_mePsErrMsg ? [{ text: _mePsErrMsg, severity: 'error' }] : []).concat(lint);
   if (!msgs.length) { _vbarClose('ps'); return; }
   // Hold the reader's place across a re-lint, so typing does not throw them back
   // to the first of nine warnings on every keystroke.
@@ -26548,6 +26610,11 @@ function _mePsBarSync() {
 
 function _mePsSetErr(msg) {
   _mePsErrMsg = msg || '';
+  // "…in JSON at position 264 (line 24 column 42)". The line is only usable
+  // because _stripJsonc preserves them; a shape that does not carry one leaves
+  // the mark off rather than guessing at a line.
+  const m = /\(line (\d+)/.exec(_mePsErrMsg);
+  _mePsErrLine = m ? +m[1] : null;
   _mePsBarSync();
   const host = document.getElementById('me-ps-ta-host');
   if (host) { if (msg) host.setAttribute('data-state', 'err'); else host.removeAttribute('data-state'); }
@@ -26571,8 +26638,16 @@ function _mePsChange(val) {
     // Syntax broken — semantic lint would be noise; clear it. Set before the
     // error, so one render shows the final state rather than two showing a
     // list that is briefly wrong.
+    //
+    // The CLASSIFICATION has to go with the messages, and the things drawn from
+    // it have to be repainted. Clearing only the list left "⚠ 1 ignored" on the
+    // header and an amber band in the editor, both describing a spec that no
+    // longer parses — stale claims about text that had since changed.
+    // Reported 2026-09-15.
     _mePsLintMsgs = [];
+    _mePsInertMsgs = new Map();
     _mePsSetErr(e.message);
+    if (_mePsCM && _mePsLintEffect) _mePsCM.dispatch({ effects: _mePsLintEffect.of(null) });
   }
 }
 
@@ -26679,11 +26754,27 @@ function _mePsRunLint(item, parsed) {
   // No cap on how many are kept: the bar shows one at a time and pages through
   // them, so "… and 4 more" — which is what a stacked list needed — would now be
   // hiding warnings behind a message that cannot be paged to.
-  _mePsLintMsgs = _mePsLintWarns(item, parsed);
+  const inert = new Map();
+  _mePsLintMsgs  = _mePsLintWarns(item, parsed, inert);
+  _mePsInertMsgs = inert;
   _mePsBarSync();
+  // And the marks. Both read _mePsLintMsgs, which has just changed, so they need
+  // a reason to rebuild. The line decorations are a ViewPlugin and rebuild on
+  // ANY transaction; the gutter is a state field and rebuilds only on its own
+  // effect, so the effect is what is dispatched — an empty transaction updated
+  // the lines and left the gutter showing nothing.
+  if (_mePsCM) _mePsCM.dispatch(_mePsLintEffect ? { effects: _mePsLintEffect.of(null) } : {});
 }
 
-function _mePsLintWarns(item, parsed) {
+// `inertOut` is an optional Set the caller passes in to learn WHICH of the
+// returned messages describe something the engine will discard. Out-parameter
+// rather than a changed return shape: this function's strings are read by a
+// dozen tests and by the bar, and none of them should have to unwrap an object
+// to keep working.
+function _mePsLintWarns(item, parsed, inertOut) {
+  // `meta.keys` names the keys the engine will not read, so the mark can cover
+  // exactly those rather than the block that contains them.
+  const inert = (msg, meta) => { warns.push(msg); if (inertOut) inertOut.set(msg, meta || {}); };
   const blockTypes = new Set(Object.keys(_PS_HELP));
   const ddlIds = _mePsKnownDDLIds(item);
   const bindingCount = (item.ddl_bindings || []).filter(Boolean).length;
@@ -26810,8 +26901,9 @@ function _mePsLintWarns(item, parsed) {
       // the attribute simply never applies.
       if (keys.length > 1) {
         const stray = keys.slice(1);
-        warns.push(`[block ${n}] ${stray.map(k => `"${k}"`).join(', ')} ${stray.length > 1 ? 'are' : 'is'}`
-          + ` outside the block and will be ignored — attributes belong inside "${type}": { … }`);
+        inert(`[block ${n}] ${stray.map(k => `"${k}"`).join(', ')} ${stray.length > 1 ? 'are' : 'is'}`
+          + ` outside the block and will be ignored — attributes belong inside "${type}": { … }`,
+          { block: String(n).split('.')[0], keys: stray });
       }
       // Attribute names, checked against the help table. A typo used to be
       // inert in exactly the same way: "lenth" is not read by anything, so the
@@ -26821,8 +26913,9 @@ function _mePsLintWarns(item, parsed) {
         for (const k of Object.keys(attrs)) {
           if (allowed.has(k)) continue;
           const near = _mePsNearestAttr(k, allowed);
-          warns.push(`[block ${n}] "${k}" is not an attribute of ${type}`
-            + (near ? ` — did you mean "${near}"?` : ''));
+          inert(`[block ${n}] "${k}" is not an attribute of ${type} — it is ignored`
+            + (near ? `. Did you mean "${near}"?` : ''),
+            { block: String(n).split('.')[0], keys: [k] });
         }
       }
       // "at" is understood by every block, so it is checked once here rather
@@ -27394,6 +27487,252 @@ function _mePsBracketExtension() {
   }, { decorations: v => v.decorations });
 }
 
+// The line RANGE each top-level block of the spec occupies. The lint reports
+// `[block 3]` and `[block 3.de.57.1]` against the PARSED array; to mark a line
+// we need the same block's position in the TEXT, and the text is JSONC — string
+// literals and comments can both contain braces, so the depth has to be tracked
+// with those skipped rather than by counting characters.
+//
+// Only the top level is resolved. A nested path (`3.de.57.1`) marks the whole
+// of block 3, which is the block you would open to find it: exact enough to
+// point at, and without a second parser to keep in step with the first.
+//
+// The WHOLE block is marked, not just its opening line. A single line against a
+// ten-line block reads as "something about this brace" rather than "this block
+// is being discarded", and the block is the unit the message is about anyway.
+// Requested 2026-09-15.
+function _mePsBlockLineRanges(doc) {
+  const text = doc.toString();
+  const out = [];           // out[i] = { from, to } line numbers of block i+1
+  let depth = 0, inStr = false, esc = false, line = false, blockC = false;
+  let open = null;          // line the current top-level block opened on
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], n2 = text[i + 1];
+    if (line)   { if (c === '\n') line = false; continue; }
+    if (blockC) { if (c === '*' && n2 === '/') { blockC = false; i++; } continue; }
+    if (inStr)  {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '/' && n2 === '/') { line = true; i++; continue; }
+    if (c === '/' && n2 === '*') { blockC = true; i++; continue; }
+    if (c === '[' || c === '{') {
+      // depth 1 is inside the top-level array, so a `{` opening there is a block.
+      if (c === '{' && depth === 1) open = doc.lineAt(i).number;
+      depth++;
+    } else if (c === ']' || c === '}') {
+      depth--;
+      // Back to depth 1 means that block just closed.
+      if (c === '}' && depth === 1 && open != null) {
+        out.push({ from: open, to: doc.lineAt(i).number });
+        open = null;
+      }
+    }
+  }
+  // An unclosed block — the spec is mid-edit — still marks from where it opened
+  // to the end, rather than vanishing at the moment it is most worth seeing.
+  if (open != null) out.push({ from: open, to: doc.lines });
+  return out;
+}
+
+// The line range of one KEY inside a block — from the line it is written on to
+// the line its value ends on. The mark covers this rather than the whole block,
+// because the block is usually fine: in the reported case `read-bitmap-fields`
+// parses exactly as written and only the `de` beside it is dropped. Marking the
+// block contradicted the message, which named the key.
+//
+// Scanned in the same JSONC-aware way as the block ranges — a brace or a quote
+// inside a string or a comment must not move the depth. The first occurrence at
+// any depth wins: a stray key appears once, and an attribute name nothing reads
+// is inside the block's own attributes rather than beside them.
+function _mePsKeyLineRange(doc, range, key) {
+  const text = doc.toString();
+  const from = doc.line(range.from).from;
+  const to   = doc.line(Math.min(range.to, doc.lines)).to;
+  const want = '"' + key + '"';
+  let depth = 0, inStr = false, esc = false, line = false, blockC = false;
+  let keyAt = -1, valDepth = 0, sawColon = false;
+  for (let i = from; i < to; i++) {
+    const c = text[i], n2 = text[i + 1];
+    if (line)   { if (c === '\n') line = false; continue; }
+    if (blockC) { if (c === '*' && n2 === '/') { blockC = false; i++; } continue; }
+    if (inStr)  {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      // Only a KEY is followed by a colon; the same characters as a value are
+      // not what is being looked for.
+      if (keyAt < 0 && text.startsWith(want, i)) {
+        let j = i + want.length;
+        while (j < to && /\s/.test(text[j])) j++;
+        if (text[j] === ':') { keyAt = i; valDepth = depth; sawColon = true; i = j; continue; }
+      }
+      inStr = true; continue;
+    }
+    if (c === '/' && n2 === '/') { line = true; i++; continue; }
+    if (c === '/' && n2 === '*') { blockC = true; i++; continue; }
+    if (c === '[' || c === '{') depth++;
+    else if (c === ']' || c === '}') {
+      depth--;
+      // The value closed and we are back where the key was written. `<=`, not
+      // `<`: a value that OPENED a brace returns to exactly the key's depth when
+      // it closes, and only a scalar value — which never descended — is ended by
+      // the enclosing block's own closer, one level below.
+      if (sawColon && depth <= valDepth) return { from: doc.lineAt(keyAt).number, to: doc.lineAt(i).number };
+    } else if (c === ',' && sawColon && depth === valDepth) {
+      // A one-line value ends at its comma.
+      return { from: doc.lineAt(keyAt).number, to: doc.lineAt(i).number };
+    }
+  }
+  // Found the key but not the end of its value — mid-edit. Mark from the key to
+  // the end of the block rather than not at all.
+  if (keyAt >= 0) return { from: doc.lineAt(keyAt).number, to: range.to };
+  return null;
+}
+
+// The severity of each top-level block, from the messages the lint just
+// produced. `[block 3…]` → block 3; a block with anything discarded is an error
+// however many plain warnings it also has, because that is the one that changes
+// what the parse DOES.
+// What to mark: one entry per ignored thing, naming the block and the keys
+// inside it that the engine will not read.
+//
+// ONLY ignored content is marked. An ordinary warning is about something that
+// does run — it belongs in the bar, where it can be read in words — and marking
+// it too would leave a spec striped in amber with no way to tell which stripe
+// meant "this does nothing".
+function _mePsMarkTargets() {
+  const out = [];
+  if (!_mePsInertMsgs) return out;
+  for (const [msg, meta] of _mePsInertMsgs) {
+    const idx = +(meta && meta.block ? meta.block : (/^\[block (\d+)/.exec(msg) || [])[1]);
+    if (!idx) continue;
+    out.push({ block: idx, keys: (meta && meta.keys) || null });
+  }
+  return out;
+}
+
+// The mark itself: a coloured bar down the left edge of the block's opening
+// line, which sits against the line-number gutter. Rebuilt whenever the lint
+// changes, through the same effect-free path the override hints use — they are
+// both "read some state, decorate some lines".
+function _mePsLintDecoExtension() {
+  const { ViewPlugin, Decoration, RangeSetBuilder } = window.CM;
+  const build = view => {
+    const b = new RangeSetBuilder();
+    const ranges = _mePsMarkRanges(view.state.doc);
+    if (!ranges.length) return b.finish();
+    const lines = new Map();   // line -> class
+    for (const r of ranges)
+      for (let ln = r.from; ln <= r.to && ln <= view.state.doc.lines; ln++)
+        lines.set(ln, r.error ? 'ps-line-error' : 'ps-line-ignored');
+    for (const ln of [...lines.keys()].sort((a, b2) => a - b2)) {
+      const line = view.state.doc.line(ln);
+      // The ends of a RUN are rounded, so consecutive lines read as one band
+      // rather than a stack of identical stripes.
+      b.add(line.from, line.from, Decoration.line({
+        attributes: { class: lines.get(ln)
+          + (lines.has(ln - 1) ? '' : ' ps-line-first')
+          + (lines.has(ln + 1) ? '' : ' ps-line-last') },
+      }));
+    }
+    return b.finish();
+  };
+  return ViewPlugin.fromClass(class {
+    constructor(view) { this.decorations = build(view); }
+    update(u) { this.decorations = build(u.view); }
+  }, { decorations: v => v.decorations });
+}
+
+// The effect the LINT dispatches to say "the messages changed". It has to exist
+// outside the extension so _mePsRunLint can name it.
+//
+// This is the whole reason the gutter needed a state field rather than the
+// obvious `gutterLineClass.compute(['doc'], …)`: a compute keyed on the document
+// only re-runs when the DOCUMENT changes, and the lint is debounced 350ms behind
+// the edit. By the time the messages exist the doc is long since settled, so the
+// facet kept the value it computed when the doc changed — which was before there
+// were any messages. The marks never appeared. The line decorations did, because
+// a ViewPlugin rebuilds on every update rather than on a declared dependency.
+// Reported 2026-09-15.
+let _mePsLintEffect = null;
+
+// The mark in the GUTTER — the line-number column itself, not the line beside
+// it. The line tint says which block; this says it in the margin, where the eye
+// goes when scanning a long spec rather than reading one. Both, because they
+// answer at different distances. Requested 2026-09-15.
+// Every line range to mark, resolved from the lint's targets. A target names a
+// block and the keys inside it that are ignored; the KEY's range is used when it
+// can be found, and the block's only when it cannot — a key retyped since the
+// lint ran, say. Shared by both marks, so the gutter and the line tint can never
+// disagree about what is ignored.
+function _mePsMarkRanges(doc) {
+  // A syntax error outranks everything: the spec does not parse, so nothing is
+  // "ignored" — there is no spec to ignore part of. One red line, where the
+  // parser stopped. This is the only mark that means "no parse will be
+  // produced", which is why it is the only red one.
+  if (_mePsErrLine && _mePsErrLine >= 1 && _mePsErrLine <= doc.lines)
+    return [{ from: _mePsErrLine, to: _mePsErrLine, error: true }];
+  const targets = _mePsMarkTargets();
+  if (!targets.length) return [];
+  const blocks = _mePsBlockLineRanges(doc);
+  const out = [];
+  for (const t of targets) {
+    const br = blocks[t.block - 1];
+    if (!br) continue;
+    let any = false;
+    for (const k of (t.keys || [])) {
+      const kr = _mePsKeyLineRange(doc, br, k);
+      if (kr) { out.push(kr); any = true; }
+    }
+    if (!any) out.push(br);
+  }
+  return out.sort((a, b) => a.from - b.from || a.to - b.to);
+}
+
+function _mePsLintGutterExtension() {
+  const { gutterLineClass, GutterMarker, RangeSet, StateField, StateEffect } = window.CM;
+  // Bundled only since 2026-09-15; an older cached bundle would otherwise throw
+  // on mount and take the whole editor with it.
+  if (!gutterLineClass || !GutterMarker || !RangeSet || !StateField || !StateEffect) return [];
+  class _Mark extends GutterMarker {
+    constructor(cls) { super(); this.cls = cls; }
+    get elementClass() { return this.cls; }
+  }
+  const mark    = new _Mark('ps-gutter-ignored');
+  const errMark = new _Mark('ps-gutter-error');
+  if (!_mePsLintEffect) _mePsLintEffect = StateEffect.define();
+  const effect = _mePsLintEffect;
+
+  const build = (state) => {
+    const ranges = _mePsMarkRanges(state.doc);
+    if (!ranges.length) return RangeSet.empty;
+    // Collapsed to a set of lines: two ignored keys in one block can overlap,
+    // and RangeSet.of will not take the same position twice.
+    const lines = new Map();   // line -> marker
+    for (const r of ranges)
+      for (let ln = r.from; ln <= r.to && ln <= state.doc.lines; ln++)
+        lines.set(ln, r.error ? errMark : mark);
+    return RangeSet.of([...lines.keys()].sort((a, b) => a - b)
+      .map(ln => lines.get(ln).range(state.doc.line(ln).from)), true);
+  };
+
+  const field = StateField.define({
+    create: build,
+    // Rebuilt on a doc change AND on the lint's own effect. The second is the
+    // one that matters: the messages arrive after the typing has stopped.
+    update: (value, tr) =>
+      (tr.docChanged || tr.effects.some(e => e.is(effect))) ? build(tr.state) : value,
+  });
+  return [field, gutterLineClass.from(field)];
+}
+
 function _mePsOvrDecoExtension() {
   const { ViewPlugin, Decoration, RangeSetBuilder } = window.CM;
   const build = view => {
@@ -27480,6 +27819,8 @@ function _mePsMountCM(item) {
         placeholder('[ ]  // empty parse_spec — falls back to read-ddl ANY + token-area ANY'),
         _jsoncHighlightExtension(),
         _mePsOvrDecoExtension(),
+        _mePsLintDecoExtension(),
+        _mePsLintGutterExtension(),
         _mePsBracketExtension(),
         EditorView.updateListener.of(u => {
           if (u.docChanged) _mePsChange(u.state.doc.toString());

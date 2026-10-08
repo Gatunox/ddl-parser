@@ -7899,7 +7899,11 @@ test('Track columns carry an autofilter of the values actually in them', () => {
   const apply = psFnSource('_trackApplyRowFilters');
   assert.ok(/tr\.style\.display = ok \? '' : 'none';/.test(apply),
     'rows are hidden, not rebuilt — a rebuild loses the scroll position and the open select');
-  assert.ok(/if \(String\(have\) !== want\) \{ ok = false; break; \}/.test(apply),
+  // The row test lives in _trackRowShown since 2026-10-08, shared with Track's
+  // Export so the file holds exactly the rows on screen. AND is still the rule:
+  // the first filter a row fails rejects it.
+  assert.ok(/_trackRowShown\(/.test(apply), 'the table must filter rows with the shared row test');
+  assert.ok(/if \(String\(have\) !== want\) return false;/.test(psFnSource('_trackRowShown')),
     'several filters must read as AND, the way a spreadsheet does');
   const chg = psFnSource('trackFilterChange');
   assert.ok(/if \(sel\.value === ''\) \{ delete S\.trackFilters\[col\]; sel\.removeAttribute\('data-on'\); \}/.test(chg),
@@ -24437,6 +24441,124 @@ test('APP_VERSION is not behind the version in HEAD\'s subject line', () => {
   assert.ok(cmp >= 0,
     `APP_VERSION is ${m[1]} but the last commit shipped as ${claimed[1]} — bump it in source.html and rebuild`);
 });
+
+// ── Track mode's Export ──────────────────────────────────────────────────────
+// Reported 2026-10-08: after tracking fields across a set of parsed messages,
+// the tracking table could not be exported. The only Export lives in
+// #resCfgControls, which Track mode hides on purpose — and it exports one record
+// per block anyway, not the table. Track mode now has its own, which writes the
+// table as it is shown — for the rows the user SELECTED, and it stays disabled
+// until there is one (refined the same day).
+{
+  const trackLines = vm.runInContext('_trackExportLines', sandbox);
+  const mk = (ts, vals) => ({ timestamp: ts, fields: Object.entries(vals).map(([id, value]) =>
+    ({ id, value, description: id === 'RTE.STAT' ? 'STAT' : id })) });
+  const withTrack = fn => {
+    const S = vm.runInContext('S', sandbox);
+    const saved = { messages: S.messages, trackedFields: S.trackedFields, trackFilters: S.trackFilters,
+                    trackMode: S.trackMode, trackPicked: S.trackPicked };
+    try {
+      // The table from the report: three tracked fields, two messages without them.
+      S.messages = [
+        mk('19/09/20 11:25:12.33', { 'TRAN-CDE': '36', 'RTE.STAT': '00', 'CRD-LN': 'TES1' }),
+        mk('19/09/20 11:25:12.27', { 'TRAN-CDE': '36', 'RTE.STAT': '00', 'CRD-LN': '0000' }),
+        mk('19/09/20 11:25:13.01', {}),
+        mk('19/09/20 11:25:13.40', {}),
+        mk('19/09/20 11:25:14.02', { 'TRAN-CDE': '36', 'RTE.STAT': '00', 'CRD-LN': 'TES1' }),
+      ];
+      S.trackedFields = new Set(['TRAN-CDE', 'RTE.STAT', 'CRD-LN']);
+      S.trackFilters  = {};
+      S.trackPicked   = new Set();
+      S.trackMode     = true;
+      fn(S);
+    } finally { Object.assign(S, saved); }
+  };
+
+  test('[REGRESSION] Track mode exports the selected rows of the tracking table, as they are shown', () => {
+    withTrack(S => {
+      S.trackPicked = new Set([0, 1, 2, 4]);           // all but record 4
+      const { lines, count } = trackLines();
+      eq(count, 4, 'rows exported');
+      assert.ok(/^#\s+Timestamp\s+TRAN-CDE\s+RTE\.STAT\s+CRD-LN$/.test(lines[3]), 'header: ' + lines[3]);
+      // The description sub-line, only where it says something the id does not.
+      assert.ok(/^\s+STAT$/.test(lines[4]), 'description line: ' + JSON.stringify(lines[4]));
+      const body = lines.slice(6).filter(Boolean);
+      eq(body.map(l => l.split(/\s+/)[0]).join(','), '1,2,3,5', 'only the selected records');
+      assert.ok(/^1\s+19\/09\/20 11:25:12\.33\s+36\s+00\s+TES1$/.test(body[0]), 'row 1: ' + body[0]);
+      assert.ok(/^2\s+19\/09\/20 11:25:12\.27\s+36\s+00\s+0000$/.test(body[1]), 'row 2: ' + body[1]);
+      assert.ok(/^3\s+19\/09\/20 11:25:13\.01\s+—\s+—\s+—$/.test(body[2]), 'a missing field is —: ' + body[2]);
+      // Columns line up: every value of a column starts where its header does.
+      const col = lines[3].indexOf('CRD-LN');
+      assert.ok(body.every(l => l[col - 1] === ' ' && l[col] !== ' '),
+        'the CRD-LN column is not aligned under its header');
+    });
+  });
+
+  test('Track export holds the selected rows in record order, whatever the filters are showing', () => {
+    withTrack(S => {
+      S.trackPicked  = new Set([4, 0]);                 // clicked last-first
+      S.trackFilters = { 'f:CRD-LN': '0000' };          // shows record 2 only
+      const { lines, count } = trackLines();
+      eq(count, 2, 'selected rows');
+      eq(lines[1], 'Field Tracking  |  2 selected of 5 messages', 'title');
+      eq(lines.slice(6).filter(Boolean).map(l => l.split(/\s+/)[0]).join(','), '1,5', 'rows, in record order');
+    });
+  });
+
+  test('[REGRESSION] Track\'s Export sits outside the bar Track mode hides, and shows only in Track mode', () => {
+    const header = html.slice(html.indexOf('<div class="panel" id="resPanel">'), html.indexOf('<div id="resCfgBar">'));
+    assert.ok(/id="trkExportBtn"[^>]*onclick="exportTracking\(\)"/.test(header),
+      'Track\'s Export must be in the panel header — #resCfgControls is hidden in Track mode');
+    assert.ok(/'exportTracking'/.test(fs.readFileSync('./build.js', 'utf8')),
+      'exportTracking is called from an onclick, so build.js must keep its name');
+
+    const S = vm.runInContext('S', sandbox);
+    const saved = { messages: S.messages, trackedFields: S.trackedFields, trackMode: S.trackMode };
+    elStubs.trkExportBtn = { style: { display: 'inline-flex' } };
+    try {
+      S.trackMode = false; S.messages = [];
+      vm.runInContext('renderCurrent', sandbox)();
+      eq(elStubs.trkExportBtn.style.display, 'none', 'outside Track mode the button must be hidden');
+
+      S.trackMode = true; S.trackedFields = new Set(['TRAN-CDE']);
+      S.messages = [{ timestamp: 't', fields: [{ id: 'TRAN-CDE', value: '36', description: '' }] }];
+      try { vm.runInContext('renderTracking', sandbox)(); } catch (_) { /* the table's DOM work needs a real page */ }
+      eq(elStubs.trkExportBtn.style.display, 'inline-flex', 'in Track mode, with fields tracked, the button must show');
+    } finally {
+      Object.assign(S, saved);
+      delete elStubs.trkExportBtn;
+    }
+  });
+
+  test('[REGRESSION] Track\'s Export is disabled until a row is selected, and exports nothing before', () => {
+    assert.ok(/id="trkExportBtn"[^>]*\sdisabled[\s>]/.test(html), 'the button must start disabled');
+    assert.ok(/_syncTrkExportBtn\(\)/.test(psFnSource('_syncTrackSelCount')),
+      'every change to the selection passes through _syncTrackSelCount — it must update the button');
+
+    const S = vm.runInContext('S', sandbox);
+    const saved = { trackPicked: S.trackPicked, trackMode: S.trackMode, trackedFields: S.trackedFields };
+    const realCOU = sandbox.URL.createObjectURL;
+    let files = 0;
+    elStubs.trkExportBtn = { style: {}, disabled: false, title: '' };
+    try {
+      const sync = vm.runInContext('_syncTrkExportBtn', sandbox);
+      S.trackPicked = new Set(); sync();
+      eq(elStubs.trkExportBtn.disabled, true, 'with nothing selected the button must be disabled');
+      S.trackPicked = new Set([2]); sync();
+      eq(elStubs.trkExportBtn.disabled, false, 'with a row selected the button must be enabled');
+      assert.ok(/1 selected row/.test(elStubs.trkExportBtn.title), 'tooltip: ' + elStubs.trkExportBtn.title);
+
+      sandbox.URL.createObjectURL = () => { files++; return 'blob:stub'; };
+      S.trackMode = true; S.trackedFields = new Set(['TRAN-CDE']); S.trackPicked = new Set();
+      vm.runInContext('exportTracking', sandbox)();
+      eq(files, 0, 'with nothing selected, no file may be written');
+    } finally {
+      sandbox.URL.createObjectURL = realCOU;
+      Object.assign(S, saved);
+      delete elStubs.trkExportBtn;
+    }
+  });
+}
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);

@@ -4531,6 +4531,13 @@ th.me-fm-colhi{color:var(--accent);}
         <span class="panel-title" id="resPanelTitle" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;cursor:pointer">Parse Results</span>
         <span id="resTypeBadge" class="pt-badge"></span>
         <span style="flex:1;min-width:0"></span>
+        <!-- Track mode's own Export. Not the one in #resCfgControls: Track mode
+             hides that whole bar (its buttons act on one record's field table),
+             which left the tracking table with no way out of the app at all.
+             Shown by renderTracking, hidden by renderCurrent's normal path.
+             It exports the rows you SELECTED, so it stays disabled until there
+             is at least one — see _syncTrkExportBtn. Reported 2026-10-08. -->
+        <button class="btn" id="trkExportBtn" onclick="exportTracking()" style="display:none;flex-shrink:0" disabled title="Select one or more rows to export them">Export</button>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
         <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
       </div>
@@ -14251,6 +14258,7 @@ function _clearResultsOnly() {
   document.getElementById('msgNav').style.display = 'none';
   document.getElementById('trkBtn').style.display = 'none';
   document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('trkExportBtn').style.display = 'none';
   document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
@@ -14292,6 +14300,7 @@ function clearAll() {
   document.getElementById('msgNav').style.display = 'none';
   document.getElementById('trkBtn').style.display = 'none';
   document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('trkExportBtn').style.display = 'none';
   document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
   document.getElementById('hideRedefBtn').style.display = 'none';
@@ -14327,6 +14336,11 @@ function clearAll() {
 // ============================================================
 function renderCurrent() {
   if (S.trackMode) { renderTracking(); return; }
+  // Every way out of Track mode ends up here — the button, and the four resets
+  // that set S.trackMode = false without going through toggleTrackMode — so
+  // this is the one place that can always hide Track's Export.
+  const _trkExp = document.getElementById('trkExportBtn');
+  if (_trkExp) _trkExp.style.display = 'none';
   const msg = S.messages[S.curIdx];
   if (!msg) return;
   _resolveTokens(msg);
@@ -17183,6 +17197,8 @@ function toggleTrackMode() {
 function renderTracking() {
   const tracked = [...S.trackedFields];
   document.getElementById('resPanelTitle').textContent = 'Field Tracking';
+  document.getElementById('trkExportBtn').style.display = tracked.length ? 'inline-flex' : 'none';
+  _syncTrkExportBtn();
 
   if (!tracked.length) {
     document.getElementById('resContainer').innerHTML = `
@@ -17193,7 +17209,7 @@ function renderTracking() {
     return;
   }
 
-  const descOf = id => { for (const m of S.messages) { const f = m.fields.find(x=>x.id===id); if(f) return f.description; } return id; };
+  const descOf = _trackDescOf;
 
   // What a row holds in a column, in ONE place: the filter's option list, the
   // cell and the match test all read it, and a value they disagreed about would
@@ -17308,19 +17324,95 @@ function _trackApplyRowFilters() {
   if (!tbl) return;
   let shown = 0;
   for (const tr of tbl.querySelectorAll('tr[data-idx]')) {
-    const idx = +tr.dataset.idx;
-    const msg = S.messages[idx];
-    let ok = true;
-    for (const col of cols) {
-      const want = S.trackFilters[col];
-      const have = (col === 'ts') ? (msg.timestamp || `Msg ${idx + 1}`)
-                 : (msg.fields.find(x => x.id === col.slice(2))?.value ?? '');
-      if (String(have) !== want) { ok = false; break; }
-    }
+    const ok = _trackRowShown(+tr.dataset.idx);
     tr.style.display = ok ? '' : 'none';
     if (ok) shown++;
   }
   _syncTrackFilterCount(shown, cols.length);
+}
+
+// Whether the column filters let row `idx` through. One test for the table and
+// for its export, so the file can only ever hold the rows on screen.
+function _trackRowShown(idx) {
+  const msg = S.messages[idx];
+  for (const col of Object.keys(S.trackFilters)) {
+    const want = S.trackFilters[col];
+    const have = (col === 'ts') ? (msg.timestamp || `Msg ${idx + 1}`)
+               : (msg.fields.find(x => x.id === col.slice(2))?.value ?? '');
+    if (String(have) !== want) return false;
+  }
+  return true;
+}
+
+// The first description any message gives a field — the sub-line under each
+// Track column header.
+function _trackDescOf(id) {
+  for (const m of S.messages) { const f = m.fields.find(x => x.id === id); if (f) return f.description; }
+  return id;
+}
+
+// The tracking table as text: the same columns as on screen (#, Timestamp, one
+// per tracked field, its description underneath) and "—" where a message does
+// not have the field — exactly what the table shows. The rows are the ones you
+// SELECTED, in record order rather than click order; the column filters are how
+// you find them, the selection is what you chose to keep. A selected row a
+// filter is hiding is still selected, so it is still exported.
+// Laid out by the message export's own machinery (_expWrapCell, _EXP_MAX_COL,
+// _EXP_GUTTER), so the two files read the same way.
+// Pure — state in, lines out — so it is tested without a DOM or a download.
+function _trackExportLines() {
+  const tracked = [...S.trackedFields];
+  const heads = ['#', 'Timestamp', ...tracked];
+  const subs  = ['', '', ...tracked.map(id => {
+    const d = _trackDescOf(id);
+    return d && d.toUpperCase() !== String(id).toUpperCase() ? d : '';
+  })];
+  const rows = [];
+  for (const i of [...S.trackPicked].sort((a, b) => a - b)) {
+    const m = S.messages[i];
+    if (!m) continue;
+    rows.push([String(i + 1), m.timestamp || `Msg ${i + 1}`, ...tracked.map(id => {
+      const f = m.fields.find(x => x.id === id);
+      return f ? String(f.value ?? '') : '—';
+    })]);
+  }
+  const hasSub = subs.some(Boolean);
+  const width = heads.map((h, c) =>
+    Math.min(_EXP_MAX_COL, Math.max(h.length, hasSub ? subs[c].length : 0, ...rows.map(r => r[c].length), 1)));
+  const layout = cells => {
+    const wrapped = cells.map((c, i) => _expWrapCell(c, width[i]));
+    const height  = Math.max(...wrapped.map(w => w.length));
+    const out = [];
+    for (let ln = 0; ln < height; ln++)
+      out.push(wrapped.map((w, i) => (w[ln] || '').padEnd(width[i])).join(_EXP_GUTTER).replace(/\s+$/, ''));
+    return out;
+  };
+
+  const title = `Field Tracking  |  ${rows.length} selected of ${S.messages.length} messages`;
+  const tableW = width.reduce((a, b) => a + b, 0) + _EXP_GUTTER.length * (width.length - 1);
+  const ruleW  = Math.max(title.length, tableW);
+
+  const lines = ['='.repeat(ruleW), title, '='.repeat(ruleW)];
+  lines.push(...layout(heads));
+  if (hasSub) lines.push(...layout(subs));
+  lines.push('-'.repeat(ruleW));
+  for (const r of rows) lines.push(...layout(r));
+  lines.push('');
+  return { lines, count: rows.length };
+}
+
+function exportTracking() {
+  if (!S.trackMode || !S.trackedFields.size) { flash('Track at least one field to export', 'warn'); return; }
+  if (!S.trackPicked.size) { flash('Select one or more rows to export them', 'warn'); return; }
+  const { lines, count } = _trackExportLines();
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `track-export-${new Date().toISOString().slice(0,10)}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+  flash(`✓ Exported ${count} selected row${count !== 1 ? 's' : ''} from Field Tracking`);
 }
 
 // How much of the list a filter is hiding — the number a spreadsheet puts in
@@ -17397,6 +17489,18 @@ function _syncTrackSelCount() {
   if (n) el.textContent = `${n} selected`;
   // One call site: every path that changes what is picked already ends here.
   _syncTrackSelAllBtn();
+  _syncTrkExportBtn();
+}
+
+// Track's Export writes the selected rows and nothing else, so with none
+// selected there is nothing for it to do — disabled rather than a button that
+// answers with a warning. Requested 2026-10-08.
+function _syncTrkExportBtn() {
+  const el = document.getElementById('trkExportBtn');
+  if (!el) return;
+  const n = S.trackPicked.size;
+  el.disabled = n === 0;
+  el.title = n ? `Export the ${n} selected row${n !== 1 ? 's' : ''}` : 'Select one or more rows to export them';
 }
 
 // Leaving Track with records picked narrows Parse Results to them. The indices
@@ -20603,7 +20707,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.5.2';
+const APP_VERSION  = '1.56.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

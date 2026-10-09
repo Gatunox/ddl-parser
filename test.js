@@ -24574,7 +24574,7 @@ test('APP_VERSION is not behind the version in HEAD\'s subject line', () => {
 // own and CSS cannot colour them, so the app draws its own per theme. The rule
 // the user set: on the dark theme the pointer is never black, on the light theme
 // never white — and flat, with no outline.
-test('[REGRESSION] every resize pointer is the theme\'s own, white on dark and black on light', () => {
+test('[REGRESSION] every resize and text pointer is the theme\'s own, white on dark and black on light', () => {
   const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
   const blockOf = name => {
     const at = css.indexOf(`[data-theme="${name}"] {`);
@@ -24598,7 +24598,21 @@ test('[REGRESSION] every resize pointer is the theme\'s own, white on dark and b
       assert.ok(!svg.includes(never), `--cur-${k} on ${theme} contains ${never}`);
       assert.ok(!/stroke/.test(svg), `--cur-${k} on ${theme} has an outline — the pointer must be flat`);
     }
+    // The text pointer, the same way (reported the same day, over CodeMirror).
+    const tm = b.match(/--cur-text:\s*url\("data:image\/svg\+xml,([^"]*)"\) 12 12, text;/);
+    assert.ok(tm, `[data-theme="${theme}"] has no --cur-text, or its OS fallback is missing`);
+    const tsvg = decodeURIComponent(tm[1]);
+    assert.ok(tsvg.includes(`fill='${must}'`) && !tsvg.includes(never) && !/stroke/.test(tsvg),
+      `--cur-text on ${theme} must be flat ${must}, never ${never}`);
   }
+  // …and every editable field uses it: CodeMirror's content and the text inputs.
+  const rule = css.match(/([^{}]*)\{\s*cursor:\s*var\(--cur-text\);\s*\}/);
+  assert.ok(rule, 'nothing uses --cur-text');
+  // Comments out first: the one above the rule names .cm-content, and would
+  // answer for it even with the selector gone.
+  const sels = rule[1].replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const sel of ['.cm-content', 'input[type="text"]', 'input[type="number"]', 'textarea'])
+    assert.ok(sels.includes(sel), `${sel} does not get the theme's text pointer — it falls back to the OS's`);
 });
 
 // [REGRESSION] Re-parsing while in Track mode left the panel half in it. Five

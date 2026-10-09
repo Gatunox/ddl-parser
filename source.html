@@ -123,6 +123,18 @@
 
 /* ═══ Layer 3 — DARK ═══════════════════════════════════════════════════════ */
 [data-theme="dark"] {
+  /* Resize pointers, drawn by the app and coloured by the theme. The keyword
+     cursors (col-resize, row-resize, ew-resize, ns-resize) are the operating
+     system's own, and CSS cannot colour them: Chrome on some Windows machines
+     drew them black over the dark theme, where they all but vanished. These
+     are flat — no outline — white, never black, on the dark theme; the keyword after each is only the
+     fallback for a browser that refuses the image. Drawn after macOS's: a thin
+     bar between two filled triangles for resize, a thin double arrow where
+     the native rule used ew/ns (Shift-drag says "moves", not "resizes"). Reported 2026-10-09. */
+  --cur-col: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M11.25 4 H12.75 V20 H11.25 Z M3 12 L9.5 7 L9.5 17 Z M21 12 L14.5 7 L14.5 17 Z'/%3E%3C/svg%3E") 12 12, col-resize;
+  --cur-row: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath fill='%23ffffff' d='M11.25 4 H12.75 V20 H11.25 Z M3 12 L9.5 7 L9.5 17 Z M21 12 L14.5 7 L14.5 17 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, row-resize;
+  --cur-ew:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M7.5 11.25 H16.5 V12.75 H7.5 Z M2 12 L8 6.5 L8 17.5 Z M22 12 L16 6.5 L16 17.5 Z'/%3E%3C/svg%3E") 12 12, ew-resize;
+  --cur-ns:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath fill='%23ffffff' d='M7.5 11.25 H16.5 V12.75 H7.5 Z M2 12 L8 6.5 L8 17.5 Z M22 12 L16 6.5 L16 17.5 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, ns-resize;
   --bg-deep: #0d1117;
   --bg-panel: #161b22;
   /* A field is a field wherever it is. This was a ground of its own — in dark it
@@ -260,6 +272,18 @@
    of a `body.light .foo` patch rule, which is what lets those rules be
    deleted. Light and dark are peers — neither is a base for the other. */
 [data-theme="light"] {
+  /* Resize pointers, drawn by the app and coloured by the theme. The keyword
+     cursors (col-resize, row-resize, ew-resize, ns-resize) are the operating
+     system's own, and CSS cannot colour them: Chrome on some Windows machines
+     drew them black over the dark theme, where they all but vanished. These
+     are flat — no outline — black, never white, on the light theme; the keyword after each is only the
+     fallback for a browser that refuses the image. Drawn after macOS's: a thin
+     bar between two filled triangles for resize, a thin double arrow where
+     the native rule used ew/ns (Shift-drag says "moves", not "resizes"). Reported 2026-10-09. */
+  --cur-col: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23000000' d='M11.25 4 H12.75 V20 H11.25 Z M3 12 L9.5 7 L9.5 17 Z M21 12 L14.5 7 L14.5 17 Z'/%3E%3C/svg%3E") 12 12, col-resize;
+  --cur-row: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath fill='%23000000' d='M11.25 4 H12.75 V20 H11.25 Z M3 12 L9.5 7 L9.5 17 Z M21 12 L14.5 7 L14.5 17 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, row-resize;
+  --cur-ew:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23000000' d='M7.5 11.25 H16.5 V12.75 H7.5 Z M2 12 L8 6.5 L8 17.5 Z M22 12 L16 6.5 L16 17.5 Z'/%3E%3C/svg%3E") 12 12, ew-resize;
+  --cur-ns:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath fill='%23000000' d='M7.5 11.25 H16.5 V12.75 H7.5 Z M2 12 L8 6.5 L8 17.5 Z M22 12 L16 6.5 L16 17.5 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, ns-resize;
   --bg-deep: #f6f8fa;
   --bg-panel: #ffffff;
   --bg-input: var(--surface-edit);
@@ -463,7 +487,7 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   flex-shrink: 0;
   height: var(--resizer-size);
   background: var(--resizer-bg);
-  cursor: row-resize;
+  cursor: var(--cur-row);
   transition: background 0.15s;
   position: relative;
   z-index: 10;
@@ -501,7 +525,7 @@ header h1, .app-logo { font-size: calc(var(--sz-mono) + 4px); color: var(--text)
   flex-shrink: 0;
   width: var(--resizer-size);
   background: var(--resizer-bg);
-  cursor: col-resize;
+  cursor: var(--cur-col);
   transition: background 0.15s;
   position: relative;
   z-index: 10;
@@ -1948,7 +1972,7 @@ thead th {
   position: absolute;
   right: 0; top: 0; bottom: 0;
   width: 5px;
-  cursor: col-resize;
+  cursor: var(--cur-col);
   user-select: none;
   z-index: 2;
 }
@@ -3314,9 +3338,9 @@ body.track-mode #recMetaContent { display: none !important; }
 
 /* Shift-drag moves the edge and takes every column to its right along, so the
    pointer says "this moves sideways" rather than "this resizes". */
-body.me-fm-resizing.col-shift, body.me-fm-resizing.col-shift * { cursor: ew-resize !important; }
+body.me-fm-resizing.col-shift, body.me-fm-resizing.col-shift * { cursor: var(--cur-ew) !important; }
 .track-tbl thead th { cursor: pointer; }
-.track-tbl thead th .th-resize { cursor: col-resize; }
+.track-tbl thead th .th-resize { cursor: var(--cur-col); }
 
 /* The autofilter row: one select per column, holding what that column actually
    contains. Compact enough to read as part of the table rather than a form
@@ -3426,7 +3450,7 @@ body.me-fm-resizing.col-shift, body.me-fm-resizing.col-shift * { cursor: ew-resi
   font-size:calc(var(--sz-mono) - 2px);letter-spacing:.06em;white-space:nowrap;
   border-bottom: var(--bw) solid var(--border);}
 .me-test-ftbl-cols td{overflow:hidden;text-overflow:ellipsis;}
-.me-test-resizer{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:2;}
+.me-test-resizer{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:var(--cur-col);user-select:none;z-index:2;}
 .me-test-resizer:hover,.me-test-resizer.active{background:var(--accent);opacity:.6;}
 .me-test-ftbl td{padding:2px 8px 2px 0;vertical-align:top;border-bottom: var(--bw) solid rgba(255,255,255,.04);line-height:1.4;}
 .me-test-ftbl tr:last-child td{border-bottom:none;}
@@ -3542,7 +3566,7 @@ body.me-fm-resizing.col-shift, body.me-fm-resizing.col-shift * { cursor: ew-resi
 .me-ps-wrap:not(.nohelp) .me-ps-split{min-height:var(--hs-open-min,320px);}
 .me-ps-wrap.nohelp .me-ps-split{grid-template-columns:minmax(0,1fr);}
 .me-ps-wrap.nohelp .me-ps-help{display:none !important;}
-.me-ps-split-resizer{height:var(--hs-bar);margin:-2px 0 0;cursor:ns-resize;flex-shrink:0;
+.me-ps-split-resizer{height:var(--hs-bar);margin:-2px 0 0;cursor:var(--cur-ns);flex-shrink:0;
   background:transparent;border-radius:var(--hs-bar-r);}
 .me-ps-split-resizer:hover,.me-ps-split-resizer.dragging{background:rgba(var(--accent-rgb),0.45);}
 /* The drag bar belongs to the CARD, not to the padded content inside it: it
@@ -3564,7 +3588,7 @@ body.me-fm-resizing.col-shift, body.me-fm-resizing.col-shift * { cursor: ew-resi
    raw hex run — has no natural wrap point. */
 /* The width bar paints the same band on its own axis: the grid gives it an 8px
    column, so the band is centred in it rather than filling it. */
-.me-ps-col-resizer{grid-column:2;grid-row:1;cursor:ew-resize;background:transparent;
+.me-ps-col-resizer{grid-column:2;grid-row:1;cursor:var(--cur-ew);background:transparent;
   position:relative;}
 .me-ps-col-resizer::before{content:'';position:absolute;top:0;bottom:0;left:50%;
   width:var(--hs-bar);transform:translateX(-50%);
@@ -3924,9 +3948,9 @@ input.me-fm-filter{flex:0 0 auto;min-width:0;height:22px;padding:0 8px;border: v
 .me-fm-th-dt {width:140px;text-align:left;}
 .me-fm-th-de {width:120px;text-align:center;}
 .me-fm-th-vlg{width:76px;text-align:center;}
-.me-fm-resizer{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;user-select:none;z-index:2;}
+.me-fm-resizer{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:var(--cur-col);user-select:none;z-index:2;}
 .me-fm-resizer:hover,.me-fm-resizer.active{background:rgba(var(--accent-rgb),0.4);}
-body.me-fm-resizing,body.me-fm-resizing *{cursor:col-resize !important;user-select:none !important;}
+body.me-fm-resizing,body.me-fm-resizing *{cursor:var(--cur-col) !important;user-select:none !important;}
 .me-fm-num{color:var(--text-dim);font-size:10px;text-align:right;}
 .me-fm-len{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);text-align:right;font-variant-numeric:tabular-nums;}
 .me-fm-dt{color:var(--text-dim);font-size:calc(var(--sz-mono) - 1px);overflow:hidden;text-overflow:ellipsis;}
@@ -20707,7 +20731,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.6.0';
+const APP_VERSION  = '1.56.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23373,16 +23397,16 @@ const _ME_TEST_IN_MIN = 60;
 const _meElH = id => document.getElementById(id)?.getBoundingClientRect().height || 0;
 const _ME_RESIZERS = [
   { el: 'me-sidebar',  gutter: 'me-splitter',      key: 'up_me_sidebar_w', axis: 'x', sign: 1,
-    prop: 'width',  cursor: 'col-resize', min: () => _ME_SIDEBAR_MIN, max: () => _ME_SIDEBAR_MAX },
+    prop: 'width',  cursor: 'var(--cur-col)', min: () => _ME_SIDEBAR_MIN, max: () => _ME_SIDEBAR_MAX },
   { el: 'bl-sidebar',  gutter: 'bl-splitter',      key: 'up_bl_sidebar_w', axis: 'x', sign: 1,
-    prop: 'width',  cursor: 'col-resize', min: () => _ME_SIDEBAR_MIN, max: () => _ME_SIDEBAR_MAX },
+    prop: 'width',  cursor: 'var(--cur-col)', min: () => _ME_SIDEBAR_MIN, max: () => _ME_SIDEBAR_MAX },
   { el: 'me-test-sub', gutter: 'me-test-resizer',  key: 'up_me_test_h',    axis: 'y', sign: -1,
-    prop: 'height', cursor: 'row-resize', min: () => _ME_TEST_H_MIN,
+    prop: 'height', cursor: 'var(--cur-row)', min: () => _ME_TEST_H_MIN,
     // Leave the entity list at least a few rows: a subpanel that can eat the
     // whole column is a subpanel that can hide what it is annotating.
     max: () => Math.max(_ME_TEST_H_MIN, _meElH('me-sidebar') - 160) },
   { el: 'me-test-input', gutter: 'me-test-in-resizer', key: 'up_me_test_in_h', axis: 'y', sign: 1,
-    prop: 'height', cursor: 'row-resize', min: () => _ME_TEST_IN_MIN,
+    prop: 'height', cursor: 'var(--cur-row)', min: () => _ME_TEST_IN_MIN,
     // Bounded by the panel it lives in, not by a constant: the subpanel is
     // itself resizable, so a fixed ceiling would either be unreachable in a
     // tall panel or push the results off the bottom of a short one.
@@ -28029,7 +28053,7 @@ function _meHelpInitSplit(key) {
     if (Number.isFinite(savedW)) split.style.setProperty('--ps-help-w', Math.max(_ME_PS_HELP_MIN, savedW) + 'px');
   } catch(e) {}
 
-  _mePsDrag(document.getElementById(p.hRzId), 'ns-resize', () => {
+  _mePsDrag(document.getElementById(p.hRzId), 'var(--cur-ns)', () => {
     const startH = split.getBoundingClientRect().height;
     // A pane that scrolls forever may be dragged to any height — the spec editor
     // has no natural size to protect. A pane sized by its CONTENT may not be
@@ -28048,7 +28072,7 @@ function _meHelpInitSplit(key) {
   // Dragging left widens the reference, so the delta is subtracted. The ceiling
   // leaves the content its own floor — a reference that can eat the whole split
   // is a reference you have to undo before you can work again.
-  _mePsDrag(document.getElementById(p.wRzId), 'ew-resize', () => {
+  _mePsDrag(document.getElementById(p.wRzId), 'var(--cur-ew)', () => {
     const startW = help ? help.getBoundingClientRect().width : 0;
     const max = Math.max(_ME_PS_HELP_MIN, split.getBoundingClientRect().width - _ME_PS_HELP_MIN);
     return dx => {

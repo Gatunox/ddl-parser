@@ -20591,7 +20591,9 @@ test('the reference is resizable on both axes, and nothing it shows is clipped',
   // hides overflow-x on purpose (a wide example must not make the whole
   // reference scroll sideways), so anything too wide was simply cut off.
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  assert.ok(/\.me-ps-col-resizer\{[^}]*cursor:ew-resize/.test(css), 'there is no width drag bar');
+  // The pointer is the theme's drawn double arrow since 2026-10-09 (the native
+  // ew-resize is only its fallback, inside the token).
+  assert.ok(/\.me-ps-col-resizer\{[^}]*cursor:var\(--cur-ew\)/.test(css), 'there is no width drag bar');
   assert.ok(/grid-template-columns:minmax\(0,1fr\) 8px minmax\(0,var\(--ps-help-w,\s*46%\)\)/.test(css),
     'the reference width is not driven by a variable the drag can set');
   assert.ok(/\.me-ps-help-atbl td\{[^}]*overflow-wrap:anywhere/.test(css),
@@ -24559,6 +24561,39 @@ test('APP_VERSION is not behind the version in HEAD\'s subject line', () => {
     }
   });
 }
+
+// ── resize pointers follow the theme ─────────────────────────────────────────
+// Reported 2026-10-09: on some Windows machines Chrome drew the panel dividers'
+// resize pointer black over the dark theme. The keyword cursors are the OS's
+// own and CSS cannot colour them, so the app draws its own per theme. The rule
+// the user set: on the dark theme the pointer is never black, on the light theme
+// never white — and flat, with no outline.
+test('[REGRESSION] every resize pointer is the theme\'s own, white on dark and black on light', () => {
+  const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
+  const blockOf = name => {
+    const at = css.indexOf(`[data-theme="${name}"] {`);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+  // Outside the token definitions, no rule may name a resize keyword as its cursor.
+  const rules = css.replace(/--cur-(col|row|ew|ns):[^;]*;/g, '');
+  const bare = rules.match(/cursor\s*:\s*(col|row|ew|ns)-resize/g);
+  assert.ok(!bare, 'a rule still uses the OS cursor, which Windows may draw black: ' + (bare || []).join(', '));
+  // Nor any cursor set from script while dragging.
+  const js = APP_SRC.match(/cursor:\s*'(col|row|ew|ns)-resize'|\((?:document\.getElementById\([^)]*\)), '(?:col|row|ew|ns)-resize'/g);
+  assert.ok(!js, 'a drag sets the OS cursor from script: ' + (js || []).join(', '));
+
+  for (const [theme, must, never] of [['dark', '#ffffff', '#000000'], ['light', '#000000', '#ffffff']]) {
+    const b = blockOf(theme);
+    for (const k of ['col', 'row', 'ew', 'ns']) {
+      const m = b.match(new RegExp(`--cur-${k}:\\s*url\\("data:image/svg\\+xml,([^"]*)"\\) 12 12, ${k}-resize;`));
+      assert.ok(m, `[data-theme="${theme}"] has no --cur-${k}, or its OS fallback is missing`);
+      const svg = decodeURIComponent(m[1]);
+      assert.ok(svg.includes(`fill='${must}'`), `--cur-${k} on ${theme} is not ${must}`);
+      assert.ok(!svg.includes(never), `--cur-${k} on ${theme} contains ${never}`);
+      assert.ok(!/stroke/.test(svg), `--cur-${k} on ${theme} has an outline — the pointer must be flat`);
+    }
+  }
+});
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);

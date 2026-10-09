@@ -14360,11 +14360,10 @@ function clearAll() {
 // ============================================================
 function renderCurrent() {
   if (S.trackMode) { renderTracking(); return; }
-  // Every way out of Track mode ends up here — the button, and the four resets
+  // Every way out of Track mode ends up here — the button, and the five resets
   // that set S.trackMode = false without going through toggleTrackMode — so
-  // this is the one place that can always hide Track's Export.
-  const _trkExp = document.getElementById('trkExportBtn');
-  if (_trkExp) _trkExp.style.display = 'none';
+  // this is the one place that can always put the chrome back.
+  _syncTrackChrome();
   const msg = S.messages[S.curIdx];
   if (!msg) return;
   _resolveTokens(msg);
@@ -17194,20 +17193,13 @@ function toggleTrack(fid, checked) {
 
 function toggleTrackMode() {
   S.trackMode = !S.trackMode;
-  const btn = document.getElementById('trkBtn');
   const colPicker = document.getElementById('colCfgBtn');
-  document.body.classList.toggle('track-mode', S.trackMode);
+  _syncTrackChrome();
   if (S.trackMode) {
-    btn.textContent = '⊟ Exit Track';
-    btn.classList.remove('btn-primary');
-    btn.classList.add('btn-active');
     if (colPicker) colPicker.style.display = 'none';
     renderTracking();
     _syncTrackSelCount();
   } else {
-    btn.textContent = '⊞ Track Mode';
-    btn.classList.remove('btn-active');
-    btn.classList.toggle('btn-primary', S.trackedFields.size > 0);
     _syncTrackSelCount();
     _syncTrackFilterCount(0, 0);
     _trackApplyFilter();
@@ -17215,6 +17207,31 @@ function toggleTrackMode() {
     const total = S.messages?.length ?? 0;
     if (colPicker) colPicker.style.display = total > 0 ? 'inline-flex' : 'none';
     renderCurrent();
+  }
+}
+
+// What Track mode changes outside its table — the body class that hides the
+// one-record controls, and the button's label and state — drawn from
+// S.trackMode, so it can only ever say what is true.
+//
+// toggleTrackMode is not the only way out of Track mode. Every new parse, both
+// manual-override paths, the override parse and an audit replay clear
+// S.trackMode directly, and none of them took the class off: after re-parsing
+// from Track, #resCfgControls — the field filter, Collapse All, Export — stayed
+// hidden over the plain field table, and the button still read Exit Track.
+// All of those paths end in renderCurrent, which calls this. Reported 2026-10-09.
+function _syncTrackChrome() {
+  const on = !!S.trackMode;
+  document.body.classList.toggle('track-mode', on);
+  const btn = document.getElementById('trkBtn');
+  if (btn) {
+    btn.textContent = on ? '⊟ Exit Track' : '⊞ Track Mode';
+    btn.classList.toggle('btn-active', on);
+    btn.classList.toggle('btn-primary', !on && S.trackedFields.size > 0);
+  }
+  if (!on) {
+    const exp = document.getElementById('trkExportBtn');
+    if (exp) exp.style.display = 'none';
   }
 }
 
@@ -17248,9 +17265,12 @@ function renderTracking() {
   // data-col names what a width belongs to: the two fixed columns by name, and
   // each value column by its FIELD id — so a column that leaves the tracking
   // and comes back returns the width it had.
+  const hasTs = _trackHasTs();
+  // A filter on a column that is not there would hide rows for no visible reason.
+  if (!hasTs) delete S.trackFilters.ts;
   const heads = [
     `<th data-col="num">#<span class="th-resize"></span></th>`,
-    `<th data-col="ts">Timestamp<span class="th-resize"></span></th>`,
+    ...(hasTs ? [`<th data-col="ts">Timestamp<span class="th-resize"></span></th>`] : []),
     ...tracked.map(id => {
       // The sub-line is the DESCRIPTION. HPE DDL without HEADING sets it to the
       // field's own name, which printed the same word twice under itself — the
@@ -17267,7 +17287,7 @@ function renderTracking() {
   // values in it, sorted, with a blank meaning "no filter". "#" is left out —
   // every row has a different one, so filtering by it is picking one row the
   // hard way.
-  const filterCols = ['ts', ...tracked.map(id => `f:${id}`)];
+  const filterCols = [...(hasTs ? ['ts'] : []), ...tracked.map(id => `f:${id}`)];
   const filterRow = `<tr class="trk-filter-row">
     <td></td>` + filterCols.map(col => {
       const seen = new Set();
@@ -17295,7 +17315,7 @@ function renderTracking() {
       return `<td class="t-val">${f ? esc(f.value) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
     }).join('');
     return `<tr class="${cur}${sel}"${col} data-idx="${idx}" onclick="trackPickRow(${idx})">
-      <td class="t-ts">${idx+1}</td><td class="t-ts">${esc(ts)}</td>${cells}
+      <td class="t-ts">${idx+1}</td>${hasTs ? `<td class="t-ts">${esc(ts)}</td>` : ''}${cells}
     </tr>`;
   }).join('');
 
@@ -17368,6 +17388,15 @@ function _trackRowShown(idx) {
   return true;
 }
 
+// Whether the Timestamp column says anything. A row without a time shows
+// "Msg N", which only repeats the # column beside it — and a FUP COPY capture's
+// records carry no time at all, so for a parsed FILE the column was a second
+// row number. It appears when at least one row has a real time. One rule for
+// the table and its export. Requested 2026-10-09.
+function _trackHasTs() {
+  return S.messages.some(m => m.timestamp);
+}
+
 // The first description any message gives a field — the sub-line under each
 // Track column header.
 function _trackDescOf(id) {
@@ -17375,8 +17404,8 @@ function _trackDescOf(id) {
   return id;
 }
 
-// The tracking table as text: the same columns as on screen (#, Timestamp, one
-// per tracked field, its description underneath) and "—" where a message does
+// The tracking table as text: the same columns as on screen (#, Timestamp when
+// _trackHasTs says it is shown, one per tracked field, its description underneath) and "—" where a message does
 // not have the field — exactly what the table shows. The rows are the ones you
 // SELECTED, in record order rather than click order; the column filters are how
 // you find them, the selection is what you chose to keep. A selected row a
@@ -17386,8 +17415,9 @@ function _trackDescOf(id) {
 // Pure — state in, lines out — so it is tested without a DOM or a download.
 function _trackExportLines() {
   const tracked = [...S.trackedFields];
-  const heads = ['#', 'Timestamp', ...tracked];
-  const subs  = ['', '', ...tracked.map(id => {
+  const hasTs = _trackHasTs();
+  const heads = ['#', ...(hasTs ? ['Timestamp'] : []), ...tracked];
+  const subs  = ['', ...(hasTs ? [''] : []), ...tracked.map(id => {
     const d = _trackDescOf(id);
     return d && d.toUpperCase() !== String(id).toUpperCase() ? d : '';
   })];
@@ -17395,7 +17425,7 @@ function _trackExportLines() {
   for (const i of [...S.trackPicked].sort((a, b) => a - b)) {
     const m = S.messages[i];
     if (!m) continue;
-    rows.push([String(i + 1), m.timestamp || `Msg ${i + 1}`, ...tracked.map(id => {
+    rows.push([String(i + 1), ...(hasTs ? [m.timestamp || `Msg ${i + 1}`] : []), ...tracked.map(id => {
       const f = m.fields.find(x => x.id === id);
       return f ? String(f.value ?? '') : '—';
     })]);
@@ -20731,7 +20761,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.7.0';
+const APP_VERSION  = '1.56.7.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -39995,7 +40025,7 @@ function _meSave() {
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Data Input <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
-              <li>Paste one or more messages — separate them with a <strong>blank line</strong></li>
+              <li>Paste a message — everything pasted is parsed as <strong>one</strong> message, blank lines included. To parse many at once, paste a NETARD or FUP COPY capture (below), or open an audit file</li>
               <li><strong>Format auto-detect</strong> — the parser automatically identifies the input format (Pure Hex, Spaced Hex, HexAscii, ASCII, NETARD, etc.) on each parse</li>
               <li><strong>Format selector</strong> (<em>Auto</em> dropdown) — override auto-detection by selecting a specific format; the dropdown turns amber when a format is forced</li>
               <li>ISO timestamp prefixes (<code>YYYY-MM-DD HH:MM:SS</code>) are automatically stripped and displayed separately</li>
@@ -40052,7 +40082,7 @@ function _meSave() {
           <!-- 5. Message Formats -->
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message Formats <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
-            <p style="margin:0 0 6px">The format is auto-detected on each parse. Separate multiple messages with one or more <strong>blank lines</strong>.</p>
+            <p style="margin:0 0 6px">The format is auto-detected on each parse. Plain input — any of the first four below — is always <strong>one</strong> message; many messages come from a NETARD or FUP COPY capture, where each record is split out.</p>
             <ul style="padding-left:16px;margin:0">
               <li><strong>Pure hex</strong> — <code>F0200022000000...</code></li>
               <li><strong>Spaced hex</strong> — <code>F0 20 00 22 ...</code></li>

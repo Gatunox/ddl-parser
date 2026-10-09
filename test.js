@@ -1551,7 +1551,11 @@ test('Track mode picks records; leaving it narrows Parse Results to them', () =>
   // record's field table — and the meta line describing it — are hidden.
   assert.ok(/body\.track-mode #resCfgControls,\s*\nbody\.track-mode #recMetaContent \{ display: none !important; \}/.test(src),
     'the per-record controls must not sit over a table of many records');
-  assert.ok(/document\.body\.classList\.toggle\('track-mode', S\.trackMode\);/.test(psFnSource('toggleTrackMode')),
+  // The class is set in _syncTrackChrome since 2026-10-09, from S.trackMode, so
+  // the resets that clear S.trackMode directly take it off too.
+  assert.ok(/_syncTrackChrome\(\)/.test(psFnSource('toggleTrackMode')) &&
+            /document\.body\.classList\.toggle\('track-mode', on\)/.test(psFnSource('_syncTrackChrome')) &&
+            /const on = !!S\.trackMode;/.test(psFnSource('_syncTrackChrome')),
     'entering and leaving Track must flip the panel into and out of that mode');
 
   // And the count of what has been picked sits where the picking happens.
@@ -7885,7 +7889,9 @@ test('Track columns carry an autofilter of the values actually in them', () => {
   // distinct values, blank meaning no filter, several of them reading as AND.
   // Requested 2026-08-28.
   const render = psFnSource('renderTracking');
-  assert.ok(/const filterCols = \['ts', \.\.\.tracked\.map\(id => `f:\$\{id\}`\)\];/.test(render),
+  // Timestamp's filter exists only when the column does (2026-10-09: a FILE's
+  // records have no time, and the column is left out for them).
+  assert.ok(/const filterCols = \[\.\.\.\(hasTs \? \['ts'\] : \[\]\), \.\.\.tracked\.map\(id => `f:\$\{id\}`\)\];/.test(render),
     'every column but # gets a filter — # is unique per row, so filtering by it picks one row the hard way');
   assert.ok(/for \(let i = 0; i < S\.messages\.length; i\+\+\) seen\.add\(cellValue\(S\.messages\[i\], col, i\)\);/.test(render),
     'the options must be what the column HOLDS, not a guess at what it might');
@@ -24594,6 +24600,110 @@ test('[REGRESSION] every resize pointer is the theme\'s own, white on dark and b
     }
   }
 });
+
+// [REGRESSION] Re-parsing while in Track mode left the panel half in it. Five
+// paths — every new parse, both manual-override paths, the override parse, an
+// audit replay — clear S.trackMode directly instead of through toggleTrackMode,
+// and none took the body class off. So #resCfgControls (field filter, Collapse
+// All, Export) stayed hidden over the plain field table, and the button still
+// read "Exit Track". Reported 2026-10-09.
+test('[REGRESSION] re-parsing from Track mode puts the panel fully back in the normal view', () => {
+  const S = vm.runInContext('S', sandbox);
+  const saved = { trackMode: S.trackMode, trackedFields: S.trackedFields, trackPicked: S.trackPicked,
+                  trackFilters: S.trackFilters, viewFilter: S.viewFilter, messages: S.messages, curIdx: S.curIdx };
+  const cls = new Set();
+  const classList = { add: c => cls.add(c), remove: c => cls.delete(c), contains: c => cls.has(c),
+                      toggle: (c, on) => { (on === undefined ? !cls.has(c) : on) ? cls.add(c) : cls.delete(c); } };
+  const btnCls = new Set();
+  domElStore.set('body', { classList });
+  elStubs.trkBtn = { textContent: '', style: {}, classList: {
+    add: c => btnCls.add(c), remove: c => btnCls.delete(c), contains: c => btnCls.has(c),
+    toggle: (c, on) => { (on === undefined ? !btnCls.has(c) : on) ? btnCls.add(c) : btnCls.delete(c); } } };
+  elStubs.trkExportBtn = { style: { display: 'inline-flex' } };
+  try {
+    // In Track mode, the way toggleTrackMode leaves it.
+    S.trackMode = true; S.trackedFields = new Set(['3']);
+    vm.runInContext('_syncTrackChrome', sandbox)();
+    assert.ok(cls.has('track-mode') && elStubs.trkBtn.textContent === '⊟ Exit Track', 'setup: not in Track mode');
+
+    // A new parse: the reset every finalize runs, then the repaint.
+    vm.runInContext('_resetParseSelection', sandbox)();
+    S.messages = []; S.curIdx = 0;
+    vm.runInContext('renderCurrent', sandbox)();
+
+    eq(cls.has('track-mode'), false, 'the body still says Track — #resCfgControls stays hidden over the field table');
+    eq(elStubs.trkBtn.textContent, '⊞ Track Mode', 'the button still reads Exit Track');
+    eq(btnCls.has('btn-active'), false, 'the button is still lit as active');
+    eq(elStubs.trkExportBtn.style.display, 'none', "Track's Export is still showing");
+  } finally {
+    Object.assign(S, saved);
+    domElStore.delete('body');
+    delete elStubs.trkBtn; delete elStubs.trkExportBtn;
+  }
+});
+
+// [REGRESSION] The help said to separate multiple pasted messages with a blank
+// line. The parser has never done that: plain input is one chunk, and only a
+// NETARD capture, a FUP COPY capture or an audit batch yields many messages.
+// Someone following the help got one message holding all of them. Reported
+// 2026-10-09. If plain input ever does split on blank lines, this fails — and
+// that is the moment to put the sentence back.
+test('[REGRESSION] the help does not promise that a blank line separates pasted messages', () => {
+  const plainIsOneChunk = /\} else \{\s*chunks = \[_parseText\];\s*\}/.test(APP_SRC);
+  assert.ok(plainIsOneChunk, 'plain input no longer parses as one chunk — update the help to say how it splits');
+  assert.ok(!/[Ss]eparate (them|multiple messages) with (a|one or more) <strong>blank line/.test(html),
+    'the help still tells people to separate messages with a blank line, which the parser ignores');
+});
+
+// Requested 2026-10-09: for a parsed FILE the Track table's Timestamp column
+// only said "Msg 1, Msg 2…", repeating #. A FUP COPY capture's records carry no
+// time, so the column — and its filter, and its place in the export — appears
+// only when some row has a real one.
+{
+  const withMsgs = (msgs, fn) => {
+    const S = vm.runInContext('S', sandbox);
+    const saved = { messages: S.messages, trackedFields: S.trackedFields, trackFilters: S.trackFilters,
+                    trackPicked: S.trackPicked, trackMode: S.trackMode, curIdx: S.curIdx };
+    elStubs.resContainer = { innerHTML: '' };
+    elStubs.resPanelTitle = { textContent: '' };
+    elStubs.trkExportBtn = { style: {}, disabled: true, title: '' };
+    try {
+      S.messages = msgs; S.curIdx = 0; S.trackMode = true;
+      S.trackedFields = new Set(['TRAN-CDE']); S.trackPicked = new Set(msgs.map((_, i) => i));
+      fn(S, () => {
+        try { vm.runInContext('renderTracking', sandbox)(); } catch (_) { /* the rest needs a real page */ }
+        return elStubs.resContainer.innerHTML;
+      });
+    } finally {
+      Object.assign(S, saved);
+      delete elStubs.resContainer; delete elStubs.resPanelTitle; delete elStubs.trkExportBtn;
+    }
+  };
+  const rec = (ts, v) => ({ timestamp: ts, fields: [{ id: 'TRAN-CDE', value: v, description: '' }] });
+
+  test('[REGRESSION] Track shows no Timestamp column when no row has a time (a parsed file)', () => {
+    withMsgs([rec(undefined, '36'), rec(undefined, '00'), rec(null, '36')], (S, render) => {
+      S.trackFilters = { ts: 'Msg 2' };               // stale, from an earlier parse
+      const out = render();
+      assert.ok(/class="track-tbl"/.test(out), 'the table was not rendered');
+      assert.ok(!/data-col="ts"/.test(out), 'the Timestamp column is still there');
+      assert.ok(!/Msg \d/.test(out), '"Msg N" still fills a column that only repeats #');
+      eq(S.trackFilters.ts, undefined, 'a filter on the hidden column would hide rows for no visible reason');
+      const { lines } = vm.runInContext('_trackExportLines', sandbox)();
+      assert.ok(/^#\s+TRAN-CDE$/.test(lines[3]), 'the export still has a Timestamp column: ' + lines[3]);
+      assert.ok(/^1\s+36$/.test(lines[5]), 'export row: ' + lines[5]);
+    });
+  });
+
+  test('Track keeps the Timestamp column when rows carry a time', () => {
+    withMsgs([rec('19/09/20 11:25:12.33', '36'), rec('19/09/20 11:25:12.27', '00')], (S, render) => {
+      const out = render();
+      assert.ok(/data-col="ts"/.test(out) && /19\/09\/20 11:25:12\.33/.test(out), 'the Timestamp column is gone');
+      const { lines } = vm.runInContext('_trackExportLines', sandbox)();
+      assert.ok(/^#\s+Timestamp\s+TRAN-CDE$/.test(lines[3]), 'export header: ' + lines[3]);
+    });
+  });
+}
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);

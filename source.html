@@ -2389,6 +2389,30 @@ td.c-err  { color: var(--accent2); }
   z-index: 40000;
 }
 .modal-overlay.hidden { display: none; }
+
+/* Help → Specification: the rendered SPEC. Every colour is a theme token, so
+   it reads correctly on dark, light and anything after. */
+.spec-doc { padding: 16px 22px 40px; font-size: 13px; line-height: 1.55; color: var(--text); }
+.spec-doc h1 { font-size: 20px; margin: 0 0 10px; }
+.spec-doc h2 { font-size: 16px; margin: 26px 0 8px; padding-bottom: 4px; border-bottom: var(--bw) solid var(--border); }
+.spec-doc h3 { font-size: 14px; margin: 20px 0 6px; }
+.spec-doc h4 { font-size: 13px; margin: 16px 0 4px; }
+.spec-doc p, .spec-doc ul, .spec-doc ol, .spec-doc table, .spec-doc pre, .spec-doc blockquote { margin: 0 0 10px; }
+.spec-doc ul, .spec-doc ol { padding-left: 20px; }
+.spec-doc code { font-family: var(--font-mono); font-size: 0.92em; background: var(--tint-chip); padding: 0 3px; border-radius: var(--r-sm); }
+.spec-doc pre { background: var(--surface-read); border: var(--bw) solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; overflow: auto; }
+.spec-doc pre code { background: none; padding: 0; font-size: 12px; }
+.spec-doc table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+.spec-doc th, .spec-doc td { border: var(--bw) solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; }
+.spec-doc th { background: var(--surface-header); }
+.spec-doc blockquote { border-left: var(--bw) solid var(--border-strong); padding-left: 10px; color: var(--text-dim); }
+.spec-doc a { color: var(--accent); }
+.spec-doc hr { border: 0; border-top: var(--bw) solid var(--border); margin: 18px 0; }
+.spec-toc { border: var(--bw) solid var(--border); border-radius: var(--r-sm); padding: 10px 14px; margin: 0 0 18px; background: var(--surface-read); }
+.spec-toc-title { font-weight: 700; margin-bottom: 6px; }
+.spec-toc ul { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 24px; font-size: 12px; }
+.spec-toc li { break-inside: avoid; padding: 1px 0; }
+.spec-toc .spec-toc-3 { padding-left: 14px; }
 .modal-box {
   background: var(--bg-panel);
   border: var(--bw) solid var(--border);
@@ -7501,6 +7525,29 @@ function openMsgExportModal() {
 
 function closeMsgExportModal() {
   document.getElementById('msgExportOverlay').classList.add('hidden');
+}
+
+// Help → Specification. The rendered document is cloned out of its <template>
+// the first time, then kept. Links inside it to its own headings scroll the
+// document rather than setting location.hash — the page has no use for a hash,
+// and the modal is the only thing that should move.
+function openSpec() {
+  const body = document.getElementById('specBody');
+  if (!body.firstElementChild) {
+    body.appendChild(document.getElementById('specTpl').content.cloneNode(true));
+    body.addEventListener('click', e => {
+      const a = e.target.closest('a[href^="#"]');
+      if (!a) return;
+      e.preventDefault();
+      const to = body.querySelector('#' + CSS.escape(a.getAttribute('href').slice(1)));
+      if (to) to.scrollIntoView({ block: 'start' });
+    });
+  }
+  document.getElementById('specOverlay').classList.remove('hidden');
+}
+
+function closeSpec() {
+  document.getElementById('specOverlay').classList.add('hidden');
 }
 
 function expToggleAll(checked) {
@@ -20781,7 +20828,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.8.0';
+const APP_VERSION  = '1.56.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -39836,6 +39883,21 @@ function _meSave() {
 
 
 <!-- ===== MSG EXPORT MODAL ===== -->
+<!-- The specification, rendered into the build: build.js fills specTpl from
+     SPEC-message-format-detector.md (spec-render.js). A <template> is inert, so
+     the page does not carry 160 KB of live DOM until Help → Specification asks
+     for it. -->
+<template id="specTpl"><!--SPEC_HTML--></template>
+<div class="modal-overlay hidden" id="specOverlay" onmousedown="if(event.target===this)closeSpec()">
+  <div class="ddl-doc-modal" style="width:min(1040px,96vw)">
+    <div class="ddl-doc-hdr">
+      <span class="ddl-doc-title">Specification</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-ico" onclick="closeSpec()" title="Close">✕</button>
+    </div>
+    <div class="ddl-doc-body spec-doc" id="specBody"></div>
+  </div>
+</div>
 <div class="modal-overlay hidden" id="msgExportOverlay" onmousedown="if(event.target===this)closeMsgExportModal()">
   <div class="ddl-doc-modal" style="width:min(820px,96vw)">
     <div class="ddl-doc-hdr">
@@ -40241,6 +40303,13 @@ function _meSave() {
           <!-- AGPL §13: a version reached over a network must offer its users
                the source. The FSF's guidance is a source link in the interface —
                that is what the links below are, not decoration. -->
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Specification <span class="h-sub-arrow">+</span></button>
+          <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 8px">The technical specification of how messages and files are detected and parsed —
+              classes and recognizers, every parse-spec block, overrides, the Class Editor and storage —
+              as it stands in this version of the app.</p>
+            <button class="btn" onclick="openSpec()">Open the specification</button>
+          </div></div>
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Licence &amp; Copyright <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <p style="margin:0 0 8px">DDL Parser is <strong>Copyright © 2026 Gatunox</strong>, released under the

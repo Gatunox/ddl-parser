@@ -38,6 +38,7 @@ const RESERVED = [
   'toggleHelpSub', 'toggleHideRedefines', 'toggleMissingRefs', 'togglePanel',
   'toggleSettingsSection', 'toggleTokenArea', 'toggleTrack', 'toggleTrackMode',
   'toggleTreeExp', 'updateDDLEditorState', 'updateDDLHighlight', 'exportTracking',
+  'openSpec', 'closeSpec',
   'updateDDLValidationBar',
   // Audit file browser
   'openAuditFileDialog', 'onAuditFileOpen', 'auditCloseMode',
@@ -158,7 +159,16 @@ const sourceMap = result.getSourceMap();
 // interpreted as special replacement patterns (e.g. $& would re-insert the
 // original match, which contains </script>, breaking the HTML structure).
 const outHtml = html.replace(fullMatch, () => `<script>\n${obfuscatedCode}\n</script>`);
-fs.writeFileSync(OUT,  outHtml,   'utf8');
+
+// ── the specification, rendered into the page ─────────────────────────────
+// After obfuscation, so nothing in it can be mistaken for the app's script.
+// The app opens it from Settings → Help → Specification.
+const { renderSpec } = require('./spec-render');
+const SPEC_MD = path.join(__dirname, 'SPEC-message-format-detector.md');
+if (!outHtml.includes('<!--SPEC_HTML-->')) { console.error('ERROR: <!--SPEC_HTML--> placeholder not found'); process.exit(1); }
+const specHtml = renderSpec(fs.readFileSync(SPEC_MD, 'utf8'));
+const outWithSpec = outHtml.replace('<!--SPEC_HTML-->', () => specHtml);
+fs.writeFileSync(OUT,  outWithSpec, 'utf8');
 fs.writeFileSync(MAP,  sourceMap, 'utf8');
 
 const srcKB  = Math.round(fs.statSync(SRC).size / 1024);

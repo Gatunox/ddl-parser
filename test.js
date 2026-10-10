@@ -21183,18 +21183,44 @@ test('the spec is internally consistent', () => {
          [], 'malformed table rows');
 });
 
+// The specification describes only what is current since 2026-10-10; what was
+// retired lives in SPEC-CHANGELOG.md. DDLMM was the original case: removed, and
+// at risk of being read as live. So the spec must not name it at all, and the
+// history must still carry its record.
 test('decommissioned DDLMM is not described as live', () => {
-  const s10 = SPEC.indexOf('## 10. DDLMM — decommissioned'), e10 = SPEC.indexOf('## 11.');
-  assert.ok(s10 > 0, '§10 tombstone missing');
-  const offenders = SPEC.split('\n').map((l, i) => {
-    if (!/DDLMM/.test(l)) return null;
-    if (/^\| 20\d\d-/.test(l)) return null;                    // a changelog row is history
-    if (/§10/.test(l)) return null;                            // a deliberate cross-reference
-    const off = SPEC.split('\n').slice(0, i).join('\n').length;
-    if (off >= s10 - 1 && off < e10) return null;              // §10 itself
-    return 'line ' + (i + 1);
-  }).filter(Boolean);
-  deepEq(offenders, [], 'DDLMM described outside its tombstone');
+  const lines = SPEC.split('\n').map((l, i) => /DDLMM/.test(l) ? 'line ' + (i + 1) : null).filter(Boolean);
+  deepEq(lines, [], 'the specification names DDLMM — it was retired; its record belongs in SPEC-CHANGELOG.md');
+  const hist = fs.readFileSync('./SPEC-CHANGELOG.md', 'utf8');
+  assert.ok(/## 10\. DDLMM — decommissioned/.test(hist), "DDLMM's record is missing from the history");
+});
+
+// [2026-10-10] The specification is split in two: SPEC-message-format-detector.md
+// describes the app as it is, SPEC-CHANGELOG.md how it got there. And the app
+// carries the specification of its own version under Settings → Help.
+test('the specification holds only what is current; its history is a file of its own', () => {
+  assert.ok(!/^## Changelog/m.test(SPEC), 'the changelog is back in the specification');
+  assert.ok(!/\*\((added|changed|fixed|rewritten|renamed|corrected) 20\d\d/i.test(SPEC), 'a dated tag is back in the specification');
+  assert.ok(!/^> \*(Added|Updated|Settled|Corrected) 20\d\d/m.test(SPEC), 'a dated note is back in the specification');
+  const hist = fs.readFileSync('./SPEC-CHANGELOG.md', 'utf8');
+  assert.ok(/^## Changelog/m.test(hist) && /\| 2026-10-10 \| \*\*`when` gains `starts_with` and `ends_with`/.test(hist),
+    'the history does not carry the changelog, newest entry included');
+  assert.ok(/SPEC-CHANGELOG\.md/.test(SPEC.split('\n').slice(0, 10).join('\n')), 'the specification no longer says where its history is');
+});
+
+test('Settings → Help opens the specification the build rendered into the page', () => {
+  assert.ok(/<template id="specTpl"><!--SPEC_HTML--><\/template>/.test(html), 'the placeholder build.js fills is gone');
+  assert.ok(/onclick="openSpec\(\)"/.test(html), 'Help has no way to open the specification');
+  assert.ok(/'openSpec', 'closeSpec'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename openSpec / closeSpec');
+  // The built page must carry THIS specification: every top-level section, by
+  // id. A build older than the SPEC is caught here rather than shipped.
+  const built = fs.readFileSync('./index.html', 'utf8');
+  const tpl = built.slice(built.indexOf('<template id="specTpl">'), built.indexOf('</template>', built.indexOf('<template id="specTpl">')));
+  assert.ok(tpl.length > 50000, 'index.html carries no rendered specification — run npm run build');
+  const { renderSpec } = require('./spec-render');
+  const want = [...renderSpec(SPEC).matchAll(/<h2 id="([^"]+)"/g)].map(m => m[1]);
+  const missing = want.filter(id => !tpl.includes(`<h2 id="${id}"`));
+  deepEq(missing, [], 'index.html is older than the specification — run npm run build');
+  assert.ok(!/<\/template>|<script/i.test(renderSpec(SPEC)), 'the rendered specification would break out of its <template>');
 });
 
 // ── The diagnostic table colours the line, not the glyph ─────────────────────

@@ -532,3 +532,79 @@ showed a populated Bytes column one way and a blank one the other.)*
 - **§Sections (right panel)** — **Tags** *(added 2026-08-30)*
 - **§11.1 Tokens in a tag** — ### 11.1 Tokens in a tag *(added 2026-09-07)*
 - **§11.2 The value tooltip — RAW, TYPE, SHOW** — ### 11.2 The value tooltip — RAW, TYPE, SHOW *(added 2026-09-09)*
+
+### Dated remarks removed in a second pass (2026-10-10)
+
+The first pass left these in the body; each is quoted as it stood.
+
+- **§4.1 Engine behaviour**
+
+  > that order is authoritative (`priority` was removed 2026-05-31).
+
+- **§5.13 `length_prefix`**
+
+  > bytes of every STM record went missing under `RTE-GRP` (see changelog 2026-08-01).
+
+- **§5.13 `length_prefix`**
+
+  > > *Extended 2026-08-17 — the encoding can be stated.* A bare number is the width
+
+- **§5.14 `read-bitmap-fields`**
+
+  > **`token-area` inside an entry reads the DE's own bytes** *(2026-08-17)*. At the top
+
+- **§5.15 `read-tlv`**
+
+  > > *Extended 2026-08-01.*
+
+- **§5.21 `stop`**
+
+  > message that is perfectly correct. Reported from production 2026-08-22, where the
+  > two shapes were hoppers and hoppers-with-recycle.
+
+- **§8 Variable Length**
+
+  > — the rule set on 2026-08-02. *How many leaves
+
+- **§7 DE anchors**
+
+  > **Reading it as navigation** *(clarified 2026-08-18)*. The four
+
+- **§11 UI — Class Editor**
+
+  > **Settings carries no copy of the entity list and no way in.** It did until
+  > 2026-08-13, which meant the same list existed in two places and the same
+  > override had to be marked in both. One screen, one door.
+
+- **§11 Layout**
+
+  > > *Rewritten 2026-08-01 — the diagram still showed priority badges (removed
+  > > 2026-05-31), no Files list (shipped 2026-07-19) and no Test area.*
+
+- **§11 Sidebar**
+
+  > priority field — it was removed 2026-05-31 because two orderings that could
+  > disagree is one too many.
+
+- **§11 Sections — Identity**
+
+  > - No priority field — removed 2026-05-31; sidebar order is authoritative.
+
+- **§11 Sections — Tags**
+
+  >   *(Widened 2026-09-09; before that only the displayed value was compared.)*
+
+- **§8 Variable Length — the payload need not be a sibling leaf** (rewritten in the present tense)
+
+  > **The payload does not have to be a sibling leaf**. The
+  > guess needs the group to hold something besides the length, and that was counted
+  > over its **direct children** — so `ADD-DATA { LGTH, INFO { … } }`, whose payload
+  > is a nested group, had exactly one direct child and was rejected outright. The
+  > name matched; the shape disqualified it, and a genuine variable-length group had
+  > to be flagged by hand. The count is now the group's leaves at **any** depth.
+  >
+  > What is still direct-children-only is which leaf may *be* the length: a
+  > grandchild's `LEN` is the length of something inside the group, not of the group
+  > — the rule set on 2026-08-02. *How many leaves does this group hold* and *which
+  > leaf may be its length* are two different questions, and only one of them was
+  > ever answered correctly.

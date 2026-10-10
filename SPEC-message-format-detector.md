@@ -90,7 +90,7 @@ A manually selected DDL still wins over any file spec (manual override, §2).
 
 ### 4.1 Engine behaviour
 
-- Specs are compiled once at load, in **sidebar order** — that order is authoritative (`priority` was removed 2026-05-31).
+- Specs are compiled once at load, in **sidebar order** — that order is authoritative; there is no `priority` field.
 - Per message: iterate specs → run recognizers in order → **first failing recognizer short-circuits that spec**.
 - First spec where **all** recognizers pass → detected Message type.
 - No match → `UNKNOWN`.
@@ -698,7 +698,7 @@ omit it — but the bytes are still on the wire, and nothing else could say so.
 `"length_prefix": 4` means *four bytes of length sit here*; the payload is then
 framed by what they say instead of by the declared sizes. The prefix is emitted as
 its own row (`<field>.LEN-PREFIX`) — consuming bytes without a row is how four
-bytes of every STM record went missing under `RTE-GRP` (see changelog 2026-08-01).
+bytes of every STM record went missing under `RTE-GRP`.
 
 Sub-fields share the framed window in declaration order, each taking what it
 declares or what remains, whichever is smaller. A length past the end of the
@@ -709,7 +709,7 @@ are reported rather than silently skipped.
 parse as digits — which also covers EBCDIC, translated to ASCII upstream — and
 anything else is a big-endian integer.
 
-> *Extended 2026-08-17 — the encoding can be stated.* A bare number is the width
+> *The encoding can be stated.* A bare number is the width
 > alone and leaves the rule above to guess, which cannot tell `00 74` meaning 74
 > from the same bytes meaning 116. The object form states all three questions in
 > the same words `read-length-value` uses (§5.17):
@@ -738,7 +738,7 @@ The DE-to-element relation still comes from the Overrides panel (`overrides[…]
 this only says how that element's bytes are read. An optional `field` overrides
 which element the bit maps to.
 
-**`token-area` inside an entry reads the DE's own bytes** *(2026-08-17)*. At the top
+**`token-area` inside an entry reads the DE's own bytes**. At the top
 level the block derives the area's position from the message type — ISO/B24 inside
 DE-63/126, STM/PSTM after the last field — and from the rows already emitted. Inside
 a `de` entry none of that applies: the cursor is on the element's first byte and the
@@ -784,8 +784,6 @@ the distinction is the whole point of the previous paragraph:
 | the element's **declared size** | what the element **can hold** | where the blocks actually stopped |
 
 ### 5.15 `read-tlv` — BER framing and tag → element mapping
-
-> *Extended 2026-08-01.*
 
 `"ber": true` parses EMV BER-TLV: a tag is one byte unless its low five bits are
 all set (`0x1F`), in which case continuation bytes follow while the top bit stays
@@ -1177,8 +1175,8 @@ longer one carrying extra groups. Read with a single spec, the spec has to read 
 field to decide which shape it has — and on the short shape that field is not
 there. The read falls off the end, and the `when` naming the field it should have
 produced then reports **“Field … not yet read”**. Two errors, both describing a
-message that is perfectly correct. Reported from production 2026-08-22, where the
-two shapes were hoppers and hoppers-with-recycle.
+message that is perfectly correct. In production the two shapes were hoppers and
+hoppers-with-recycle.
 
 **Why a block and not a mode.** Running out of bytes is a real error nearly
 everywhere — it is how a misread length announces itself (§8). Ending is legal
@@ -1482,18 +1480,15 @@ that matched, so a 1-byte binary length works exactly like an LLLVAR's 3.
 Precedence is unchanged: an explicit `overrides[…].vlg` flag wins over all three.
 `vlg_identifier` governs the *guess*, not the user's own choice.
 
-**The payload does not have to be a sibling leaf**. The
-guess needs the group to hold something besides the length, and that was counted
-over its **direct children** — so `ADD-DATA { LGTH, INFO { … } }`, whose payload
-is a nested group, had exactly one direct child and was rejected outright. The
-name matched; the shape disqualified it, and a genuine variable-length group had
-to be flagged by hand. The count is now the group's leaves at **any** depth.
+**The payload does not have to be a sibling leaf**. The guess needs the group to
+hold something besides the length, and that is counted over the group's leaves at
+**any** depth — so `ADD-DATA { LGTH, INFO { … } }`, whose payload is a nested
+group, qualifies.
 
-What is still direct-children-only is which leaf may *be* the length: a
-grandchild's `LEN` is the length of something inside the group, not of the group
-— the rule set on 2026-08-02. *How many leaves does this group hold* and *which
-leaf may be its length* are two different questions, and only one of them was
-ever answered correctly.
+Which leaf may *be* the length is decided among the **direct children** only: a
+grandchild's `LEN` is the length of something inside the group, not of the group.
+*How many leaves does this group hold* and *which leaf may be its length* are two
+different questions.
 
 **A variable group's unreached tail is not rendered**. When
 the length is spent the walk stops. A **fixed** group's empty field is a field
@@ -1629,7 +1624,7 @@ now a default, overridable on the same `de` key:
 Only a **number** anchors. `+false` is 0, `+true` is 1 and `+"children"` is NaN,
 so the previous `+v || 1` coercion would have read all three as "anchor at DE 1".
 
-**Reading it as navigation** *(clarified 2026-08-18)*. The four values are one
+**Reading it as navigation**. The four values are one
 small vocabulary for walking a record: **count the siblings**, `false` skips one,
 `"children"` steps down a level. At whatever level you land on, the first element
 takes the number; from there you either leave it, skip it with `false`, or step
@@ -1772,16 +1767,12 @@ Flow:
 3. User edits entities and tests against real bytes.
 4. Cancel / ✓ Save / ✕ → back to the main app.
 
-**Settings carries no copy of the entity list and no way in.** It did until
-2026-08-13, which meant the same list existed in two places and the same
-override had to be marked in both. One screen, one door.
+**Settings carries no copy of the entity list and no way in.** The same list in
+two places would mean the same override marked in both. One screen, one door.
 
 No nested overlays.
 
 ### Layout
-
-> *Rewritten 2026-08-01 — the diagram still showed priority badges (removed
-> 2026-05-31), no Files list (shipped 2026-07-19) and no Test area.*
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -1812,8 +1803,7 @@ No nested overlays.
 
 **Sidebar — Messages, Data and Files.** Three lists over one array (§3.2), split
 by `kind`. Order is manual and authoritative in **all three**: there is no
-priority field — it was removed 2026-05-31 because two orderings that could
-disagree is one too many. That includes Files: detection walks it in array order
+priority field, because two orderings that could disagree is one too many. That includes Files: detection walks it in array order
 and stops at the first match, so the list renders in array order too. Entries drag to reorder within a list and to move between lists,
 which rewrites `kind`. Each entry shows a `⚠N` gap badge when the spec is missing
 a recognizer, a parse_spec or a DDL binding; hovering names which.
@@ -1912,7 +1902,7 @@ returned UNKNOWN.
 
 **Identity**
 - Type code (≤5 chars) | Label | Volume | Colour. `kind` marks a file spec (§3.2).
-- No priority field — removed 2026-05-31; sidebar order is authoritative.
+- No priority field; sidebar order is authoritative.
 
 **Recognizers**
 - Ordered, drag-reorderable list of recognizer rows
@@ -2047,7 +2037,6 @@ Rules:
   microsecond count behind it, and neither should be the only one accepted.
   `not` holds only when **none** of the readings is a listed value: the claim is
   about the field, and the field is all of its readings at once.
-  *(Widened 2026-09-09; before that only the displayed value was compared.)*
 - **A field the parse never produced supports no claim about itself**, `not`
   included — a tag that fired on every message *missing* a field would be worse
   than one that never fired.

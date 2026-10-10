@@ -21201,6 +21201,10 @@ test('the specification holds only what is current; its history is a file of its
   assert.ok(!/^## Changelog/m.test(SPEC), 'the changelog is back in the specification');
   assert.ok(!/\*\((added|changed|fixed|rewritten|renamed|corrected) 20\d\d/i.test(SPEC), 'a dated tag is back in the specification');
   assert.ok(!/^> \*(Added|Updated|Settled|Corrected) 20\d\d/m.test(SPEC), 'a dated note is back in the specification');
+  // Any date at all is history ("removed 2026-05-31", "reported 2026-08-22") —
+  // except inside a code sample, where it is example data.
+  const prose = SPEC.replace(/^```[\s\S]*?^```/gm, '');
+  deepEq(prose.match(/20\d\d-[01]\d-[0-3]\d/g) || [], [], 'a dated remark is back in the specification');
   const hist = fs.readFileSync('./SPEC-CHANGELOG.md', 'utf8');
   assert.ok(/^## Changelog/m.test(hist) && /\| 2026-10-10 \| \*\*`when` gains `starts_with` and `ends_with`/.test(hist),
     'the history does not carry the changelog, newest entry included');
@@ -24739,6 +24743,101 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
   assert.ok(!/[Ss]eparate (them|multiple messages) with (a|one or more) <strong>blank line/.test(html),
     'the help still tells people to separate messages with a blank line, which the parser ignores');
 });
+
+// [REGRESSION] Reviewed 2026-10-10: Help described an app several versions old.
+// It promised Esc closed any modal (that handler was removed), drew the Track
+// table transposed, said messages export to .json (they export .txt), listed
+// a column dropdown, a Copy button and a "Panels on Startup" setting that no
+// longer exist, used recognizer names since renamed, and said nothing of the
+// Class Editor, baselines, the audit browser, Raw Message or Settings. Each
+// check pairs what Help says with the code fact it describes, so the next
+// change to either side has to touch both.
+{
+  const HELP = (() => {
+    const a = html.indexOf('<div class="settings-help">'), b = html.indexOf('<!-- ── FEEDBACK');
+    return html.slice(a, b);
+  })();
+  const helpSection = title => {
+    const i = HELP.indexOf(`toggleHelpSub(this)">${title} <span`);
+    assert.ok(i >= 0, `Help has no "${title}" section`);
+    const j = HELP.indexOf('toggleHelpSub(this)', i + 30);
+    return HELP.slice(i, j < 0 ? HELP.length : j);
+  };
+
+  test('[REGRESSION] Help: Esc is not promised to close things the app no longer closes on Esc', () => {
+    assert.ok(/Escape used to close menus, modals and the parse overlay from here/.test(html),
+      'the global Esc handler is back — Help may say so again');
+    assert.ok(!/<kbd>Esc<\/kbd> closes any open modal/.test(HELP), 'Help still promises a global Esc');
+  });
+
+  test('[REGRESSION] Help: Track Mode is one row per message and is left by "⊟ Exit Track"', () => {
+    const t = helpSection('Track Mode');
+    assert.ok(/one row per message, one column per tracked field/.test(t), 'Help draws the Track table transposed');
+    assert.ok(/btn\.textContent = on \? '⊟ Exit Track' : '⊞ Track Mode'/.test(html) && t.includes('⊟ Exit Track'),
+      'Help does not name the button that leaves Track');
+    for (const w of ['Select N shown', 'filter', 'Export', 'View all'])
+      assert.ok(t.includes(w), `Help's Track Mode says nothing about "${w}"`);
+  });
+
+  test('[REGRESSION] Help: message exports are described in the format they are written in', () => {
+    assert.ok(/a\.download = `messages-export-\$\{[^`]*\}\.txt`/.test(html), 'the message export changed format — update Help');
+    assert.ok(/a\.download = `track-export-\$\{[^`]*\}\.txt`/.test(html), 'the Track export changed format — update Help');
+    const ex = helpSection('Export / Import');
+    assert.ok(!/messages to a <code>\.json<\/code>/.test(ex), 'Help still says messages export to .json');
+    assert.ok(/Track Mode — the selected rows/.test(ex), 'Help does not mention the Track export');
+  });
+
+  test('[REGRESSION] Help: Parse Results names every column the ⚙ dialog offers', () => {
+    const cols = [...html.matchAll(/<div class="audit-cfg-row"(?: id="ccol_raw_row")?><label>([^<]+)<\/label><button class="panel-toggle" id="ccol_/g)].map(m => m[1]);
+    deepEq(cols, ['Field', 'Description', 'Size', 'Offset', 'Value', 'Raw Hex', 'Trk']);
+    const pr = helpSection('Parse Results');
+    const list = pr.match(/<li><strong>⚙<\/strong> — show or hide the ([^.]*) columns/)?.[1] || '';
+    for (const c of cols) assert.ok(list.split(/, | and /).includes(c), `Help's ⚙ line does not name the "${c}" column`);
+    assert.ok(!/<strong>Columns<\/strong> dropdown/.test(pr), 'Help still describes the old Columns dropdown');
+  });
+
+  test('[REGRESSION] Help names no control that does not exist', () => {
+    assert.ok(!/id="ddlCopyBtn"|onclick="copyDDL\(\)"/.test(html) && !/<strong>Copy \(⎘\)<\/strong>/.test(HELP),
+      'Help describes a DDL Copy button the panel does not have');
+    assert.ok(!/Panels on Startup/.test(HELP), 'Help points at a "Panels on Startup" setting that does not exist');
+    assert.ok(/<span id="ddlScopePath" style="display:none">/.test(html) && !/<strong>Scope path<\/strong>/.test(HELP),
+      'Help describes a scope path the DDL header never shows');
+    assert.ok(/id="ddlDocBtn"/.test(html) && /<strong>Doc<\/strong>/.test(helpSection('DDL Definition')),
+      'Help does not mention the DDL Doc button');
+  });
+
+  test('[REGRESSION] Help uses the recognizer names detection uses', () => {
+    assert.ok(/_R\['greater-than'\]/.test(html) && /_R\['less-than'\]/.test(html));
+    const d = helpSection('Message &amp; File Detection · DDL Matching');
+    assert.ok(/<code>greater-than<\/code>/.test(d) && /<code>less-than<\/code>/.test(d), 'Help does not name greater-than / less-than');
+    assert.ok(!/<code>min-length<\/code>|<code>max-length<\/code>/.test(d), 'Help teaches the old recognizer names');
+  });
+
+  test('[REGRESSION] what the top bar calls Class Editor, nothing on screen calls Data Detection', () => {
+    assert.ok(/id="dataEditorBtn"[^>]*>⊞ Class Editor</.test(html));
+    // Comments may keep the old name; strings shown to the user may not.
+    const shown = html.split('\n').filter(l => !/^\s*(\/\/|\*|<!--)/.test(l) && /Data Detection/.test(l));
+    deepEq(shown, [], 'a user-visible string still says "Data Detection"');
+  });
+
+  test('[REGRESSION] Help covers every part of the app it used to skip', () => {
+    for (const s of ['Class Editor', 'Audit Files', 'Raw Message', 'Baselines', 'Settings']) helpSection(s);
+    // Each top-bar and panel door is named in Help.
+    for (const [id, label] of [['baselineBtn', '★ Baseline Editor'], ['dataEditorBtn', '⊞ Class Editor'], ['auditOpenBtn', '📂 Audit']]) {
+      assert.ok(new RegExp(`id="${id}"`).test(html), `${id} is gone — update Help`);
+      assert.ok(HELP.includes(label), `Help never mentions ${label}`);
+    }
+    // Every Settings section is described under Help → Settings.
+    const st = helpSection('Settings');
+    const titles = [...html.matchAll(/<div class="settings-stitle">([^<]+)<\/div>/g)].map(m => m[1]);
+    for (const t of titles) assert.ok(st.includes(t), `Help → Settings says nothing about "${t}"`);
+    // Every section the Class Editor renders is named in Help → Class Editor.
+    const ce = helpSection('Class Editor');
+    const secs = [...html.matchAll(/sect\('[a-z_]+',\s*'([^']+)'/g)].map(m => m[1]);
+    assert.ok(secs.length >= 6, 'the Class Editor sections moved — update this test');
+    for (const s of secs) assert.ok(ce.includes(s), `Help → Class Editor does not mention "${s}"`);
+  });
+}
 
 // Requested 2026-10-09: for a parsed FILE the Track table's Timestamp column
 // only said "Msg 1, Msg 2…", repeating #. A FUP COPY capture's records carry no

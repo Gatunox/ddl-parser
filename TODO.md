@@ -1137,6 +1137,12 @@ had it do.
 - [ ] Revisit usability properly: walk a real task end-to-end in the browser
       (e.g. "trace field X across 500 records", "onboard a new message type")
       and report friction, rather than inferring from the DOM.
+- [ ] **The tutorial is as stale as Help was** (found 2026-10-10, during the Help
+      review). Its "Manual DDL Override" step points at `#ddlScopePath`, which is
+      always `display:none`, and its steps were never checked against today's
+      app the way Help was. Review each step against the UI it targets.
+- [ ] Baseline Editor's empty state says *"press ★ Baseline"*; the button in
+      Parse Results reads **★ Save**.
 
 ---
 

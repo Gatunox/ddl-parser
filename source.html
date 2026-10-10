@@ -12775,7 +12775,7 @@ function doParseNetardLog(text, opts = {}) {
               const summary = Object.entries(tc).map(([t,n]) => `${n}\u00d7 ${t}`).join('  ');
               flash(`Loaded ${records.length} record(s) \u2014 ${summary}`);
               const unkRecs = S.messages.filter(m => m.unknownType).map(m => `#${m.recNo}`).join(', ');
-              if (unkRecs) setTimeout(() => flash(`Record(s) ${unkRecs}: unknown type \u2014 create Data Detection rules to recognize them.`, 'warn'), 300);
+              if (unkRecs) setTimeout(() => flash(`Record(s) ${unkRecs}: unknown type \u2014 define a class for them in the Class Editor.`, 'warn'), 300);
               // No toast for noParseSpec \u2014 the Parse Results panel states it.
               // Amber toast when any records have no matching DDL
               const noMatchCount = S.messages.filter(m => m.noMatchDDL && !m.unknownType && !m.noParseSpec).length;
@@ -13511,9 +13511,9 @@ function doParseMessages() {
             // Warn about unknown-type messages that could not be auto-detected
             const unkIdxs = finalParsed.map((m, i) => m.unknownType ? i + 1 : null).filter(Boolean);
             if (unkIdxs.length === 1 && finalParsed.length === 1) {
-              setTimeout(() => flash('Unknown message type \u2014 create a Data Detection rule, or right-click a DDL in the tree and choose "Use for parsing (override)".', 'warn'), 300);
+              setTimeout(() => flash('Unknown message type \u2014 define a class for it in the Class Editor, or right-click a DDL in the tree and choose "Use for parsing (override)".', 'warn'), 300);
             } else if (unkIdxs.length) {
-              setTimeout(() => flash(`Message(s) at position(s) ${unkIdxs.join(', ')}: unknown type \u2014 create Data Detection rules to recognize them.`, 'warn'), 300);
+              setTimeout(() => flash(`Message(s) at position(s) ${unkIdxs.join(', ')}: unknown type \u2014 define a class for them in the Class Editor.`, 'warn'), 300);
             }
             // No toast for noParseSpec \u2014 the Parse Results panel states it.
             // Amber toast when any message has no matching DDL
@@ -15098,7 +15098,7 @@ function renderFieldTable(msg) {
           return `<table class="diag-table">${rows.join('')}</table>`;
         })() : ''}
         <div style="margin-top:8px">${msg.noParseSpec ? `${msg.recNo ? `Record #${msg.recNo}: define` : 'Define'} a <strong>Parse Spec</strong> for <strong>${_escH(msg._diag?.typeLabel || '')}</strong> in the <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Class Editor</span> — or right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.`
-            : msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule to recognize this message.` : 'Create a <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Data Detection</span> rule for this message, or right-click it in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.')
+            : msg.unknownType ? (msg.recNo ? `Record #${msg.recNo}: define a class for this message in the <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Class Editor</span>.` : 'Define a class for this message in the <span onclick="openMsgEditor()" style="cursor:pointer;text-decoration:underline;color:var(--accent)">Class Editor</span>, or right-click a DDL in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong>.')
             : msg.noMatchDDL ? (() => {
                 // Detection already chose the class; what is missing is a DDL on
                 // it. Name that class and link straight to its DDL Bindings —
@@ -20828,7 +20828,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.9.0';
+const APP_VERSION  = '1.56.9.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -40092,40 +40092,45 @@ function _meSave() {
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Getting Started <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ol style="padding-left:18px;margin:0">
-              <li>Write or load a <strong>DDL definition</strong> in the top-left panel</li>
-              <li>Select a <strong>Volume / Subvolume / DDL</strong> in the tree to set the parse scope</li>
-              <li>Paste or drop a <strong>message or file capture</strong> (NETARD / FUP COPY) in the Data Input panel</li>
-              <li>Click <strong>▶ Parse</strong> — results appear in the bottom panels</li>
+              <li>Write or load a <strong>DDL definition</strong> in the top-left panel, or pick one in the tree</li>
+              <li>Paste or drop a <strong>message or file capture</strong> (NETARD / FUP COPY) in the Data Input panel — or open a binary file with <strong>📂 Audit</strong></li>
+              <li>Click <strong>▶ Parse</strong> — the message is detected, matched to a DDL and shown in <strong>Parse Results</strong> and <strong>Raw Message</strong></li>
+              <li>To teach the app a new kind of message or file, open <strong>⊞ Class Editor</strong> in the top bar</li>
             </ol>
             <br>
-            <strong>Keyboard shortcuts:</strong>
+            <strong>Keyboard:</strong>
             <ul style="padding-left:16px;margin:4px 0 0">
-              <li><kbd>← →</kbd> navigate previous / next message</li>
-              <li><kbd>↑ ↓</kbd> move selection up / down in Parse Results</li>
-              <li><kbd>Esc</kbd> closes any open modal, context menu, or search field</li>
+              <li><kbd>← →</kbd> previous / next message</li>
+              <li><kbd>↑ ↓</kbd> move the selection up / down in Parse Results</li>
+              <li>In the audit record view, the arrows step between records; in the DDL picker, <kbd>↑ ↓</kbd> move between candidates</li>
+              <li>Hold <kbd>Shift</kbd> while clicking <strong>&lt; &gt;</strong> to move 10 at a time</li>
             </ul>
+            <p style="margin:6px 0 0;color:var(--text-dim);font-size:10.5px">The arrows are ignored while you are typing in a field or editor. There are no other shortcuts — dialogs and menus close with their own ✕ or by clicking outside them.</p>
           </div></div>
 
           <!-- 2. DDL Definition -->
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Definition <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 6px">Two formats are read, told apart automatically:</p>
+            <ul style="padding-left:16px;margin:0 0 8px">
+              <li><strong>HPE NonStop DDL</strong> — <code>DEF</code> / <code>RECORD</code> sections with levels, <code>PIC</code>, <code>TYPE</code>, <code>REDEFINES</code>, <code>OCCURS</code>, <code>HEADING</code>, constants. A file can hold many definitions; each shows as a child of the file in the tree</li>
+              <li><strong>Flat field list</strong> — one field per line, used by the built-in ISO 8583 layouts:</li>
+            </ul>
             <div style="margin:0 0 6px;padding:6px 8px;background:var(--bg-input);border-radius:var(--r-md);font-family:var(--mono);font-size:10px;line-height:1.8">
               <span style="color:var(--text-dim)">* comment line</span><br>
-              <span style="color:var(--accent)">MTI</span>&nbsp;&nbsp; FIXED &nbsp;4&nbsp; <span style="color:var(--success)">"Message Type Indicator"</span><br>
-              <span style="color:var(--accent)">BMP</span>&nbsp;&nbsp; FIXED &nbsp;8&nbsp; <span style="color:var(--success)">"Primary Bitmap"</span><br>
-              <span style="color:var(--accent)">2</span>&nbsp;&nbsp;&nbsp;&nbsp; LLVAR &nbsp;19&nbsp; <span style="color:var(--success)">"Primary Account Number"</span><br>
-              <span style="color:var(--accent)">48</span>&nbsp;&nbsp; LLLVAR 999 <span style="color:var(--success)">"Additional Data"</span>
+              <span style="color:var(--accent)">MTI</span>&nbsp;&nbsp; FIXED &nbsp;4&nbsp; N &nbsp;&nbsp;<span style="color:var(--success)">"Message Type Indicator"</span><br>
+              <span style="color:var(--accent)">BMP</span>&nbsp;&nbsp; FIXED 16&nbsp; B &nbsp;&nbsp;<span style="color:var(--success)">"Primary Bitmap"</span><br>
+              <span style="color:var(--accent)">2</span>&nbsp;&nbsp;&nbsp;&nbsp; LLVAR 19&nbsp; N &nbsp;&nbsp;<span style="color:var(--success)">"Primary Account Number"</span><br>
+              <span style="color:var(--accent)">48</span>&nbsp;&nbsp; LLLVAR 999 ANS <span style="color:var(--success)">"Additional Data"</span>
             </div>
-            Field types: <code>FIXED</code> <code>LLVAR</code> <code>LLLVAR</code> <code>BMP</code><br>
-            Lines starting with <code>*</code> are comments.<br><br>
+            Flat types: <code>FIXED</code> <code>LLVAR</code> <code>LLLVAR</code> <code>BMP</code>. In both formats lines starting with <code>*</code> are comments.<br><br>
             <ul style="padding-left:16px;margin:0">
-              <li><strong>Scope path</strong> — the header shows the active Vol / SV / DDL; selecting a node in the tree sets the parse scope</li>
-              <li><strong>Search bar</strong> — type to find fields; use <strong>&lt; &gt;</strong> to step through matches (<kbd>Enter</kbd> / <kbd>Esc</kbd> to clear); matching lines are highlighted in the editor</li>
-              <li><strong>Save</strong> — stores the current editor content into the selected tree node; enabled only when content has changed</li>
-              <li><strong>Clear</strong> — wipes the editor</li>
-              <li><strong>Copy (⎘)</strong> — copies all DDL content to the clipboard as plain text</li>
+              <li><strong>Search (⌕)</strong> — opens a search row; <strong>&lt; &gt;</strong> or <kbd>↵</kbd> / <kbd>⇧↵</kbd> step through matches, <kbd>Esc</kbd> or ✕ closes it</li>
+              <li><strong>Save</strong> — stores the editor content into the selected tree node; enabled only when the content has changed</li>
+              <li><strong>Doc</strong> — the parsed layout of the definition: every field with its offset, size and type, with a filter, <em>Collapse All</em> and <em>Hide Redef</em></li>
+              <li><strong>Clear</strong> — empties the editor</li>
               <li><strong>Drag &amp; drop</strong> — drop a DDL text file onto the editor to preview it, then click <strong>Save</strong> to store it in the tree</li>
-              <li><strong>Validation bar</strong> — appears below the editor; shows errors, warnings, and unresolved TYPE references with &lt; &gt; navigation and a copy button</li>
+              <li><strong>Validation bar</strong> — under the editor; lists errors, warnings and unresolved TYPE references, with &lt; &gt; to step through them and a copy button</li>
               <li>Tree nodes show <strong>✖ / ⚠ badges</strong> for errors and warnings; a <em>Missing References</em> section appears automatically for unresolved TYPEs</li>
             </ul>
           </div></div>
@@ -40134,14 +40139,17 @@ function _meSave() {
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">DDL Tree <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
-              <li><strong>Filter box</strong> — type to narrow volumes / subvolumes / DDLs by name; <kbd>Esc</kbd> to clear</li>
-              <li>Click a <strong>chevron</strong> to expand or collapse a Volume or Subvolume</li>
-              <li>Click a <strong>DDL name</strong> to set it as the active parse scope (highlighted in accent color)</li>
-              <li>Right-click <strong>empty area</strong> → New Volume / Import… / Export All…</li>
-              <li>Right-click <strong>Volume</strong> → New Subvolume / Rename / Copy / Paste / Export… / Delete</li>
-              <li>Right-click <strong>Subvolume</strong> → New DDL / Rename / Copy / Paste / Export… / Delete</li>
-              <li>Right-click <strong>DDL</strong> → Rename / Copy / Export… / Delete</li>
-              <li>Drop a <code>.json</code> export file onto the tree pane to import it directly</li>
+              <li><strong>Filter box</strong> — type to hide everything that does not match; ✕ clears it</li>
+              <li><strong>+</strong> in the tree header expands everything; <strong>−</strong> hides the tree to a thin rail</li>
+              <li>Click a <strong>chevron</strong> to expand or collapse a Volume, Subvolume or file</li>
+              <li>Click a <strong>file or definition</strong> to open it in the editor. Opening it does <em>not</em> make Parse use it — see <em>Use for parsing</em> below</li>
+              <li>Right-click <strong>empty area</strong> → New Volume / Import / Export</li>
+              <li>Right-click <strong>Volume</strong> → New Subvolume / Paste / Copy / Export Volume… / Rename… / Exclude from auto-detect / Delete</li>
+              <li>Right-click <strong>Subvolume</strong> → New File / Paste / Copy / Export Subvolume… / Rename… / Exclude from auto-detect / Delete</li>
+              <li>Right-click <strong>file</strong> → Copy / Export… / Rename… / Exclude from auto-detect / Delete</li>
+              <li>Right-click <strong>definition (DEF)</strong> → Copy / <strong>Use for parsing (override)</strong> / Exclude DEF from parsing. A flat DDL has no definitions, so the file itself offers <em>Use for parsing</em></li>
+              <li><strong>Excluded</strong> nodes are never tried when the parser searches for a DDL</li>
+              <li>Drop a <code>.json</code> export file onto the tree pane to import it</li>
             </ul>
           </div></div>
 
@@ -40150,28 +40158,41 @@ function _meSave() {
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>Paste a message — everything pasted is parsed as <strong>one</strong> message, blank lines included. To parse many at once, paste a NETARD or FUP COPY capture (below), or open an audit file</li>
-              <li><strong>Format auto-detect</strong> — the parser automatically identifies the input format (Pure Hex, Spaced Hex, HexAscii, ASCII, NETARD, etc.) on each parse</li>
-              <li><strong>Format selector</strong> (<em>Auto</em> dropdown) — override auto-detection by selecting a specific format; the dropdown turns amber when a format is forced</li>
-              <li>ISO timestamp prefixes (<code>YYYY-MM-DD HH:MM:SS</code>) are automatically stripped and displayed separately</li>
-              <li>NETARD capture files are supported (multi-record, multi-message); a <strong>Line Width</strong> control appears in the header for NETARD input</li>
-              <li><strong>Files parse too</strong> — paste or drop a FUP COPY capture (<code>$VOL.SUBVOL.FILE&nbsp;&nbsp;RECORD n</code> headers); each record is split out and parsed like a message, matched against File detection types by its wrapper filename</li>
+              <li><strong>Format auto-detect</strong> — the input format (hex, spaced hex, HexAscii dump, ASCII, NETARD, FUP COPY…) is identified on each parse and shown as a <strong>badge</strong> beside the panel title, with a <strong>count badge</strong> when there are several messages</li>
+              <li><strong>INPUT: AUTO</strong> — force the input to be read as ASCII, HEXASCII, HEX, EBCDIC or OCT instead</li>
+              <li><strong>CLASS: AUTO</strong> — parse every message as one chosen class, skipping detection</li>
+              <li>ISO timestamp prefixes (<code>YYYY-MM-DD HH:MM:SS</code>) are stripped and shown separately</li>
+              <li><strong>Line Width</strong> — appears for NETARD, ASCII and dump input; click the value to type one, <strong>&lt; &gt;</strong> step through presets, ↺ goes back to Auto</li>
+              <li><strong>↩ Wrap</strong> — appears when free-form input (ASCII, HEX, EBCDIC, OCT) runs off the panel; wraps long lines to fit</li>
+              <li><strong>Padlock</strong> — the input locks when it is parsed, so a stray keystroke cannot change what the results show; click it to unlock and edit</li>
+              <li><strong>Files parse too</strong> — paste or drop a FUP COPY capture (<code>$VOL.SUBVOL.FILE&nbsp;&nbsp;RECORD n</code> headers); each record is split out and parsed like a message, matched against the File classes by its wrapper filename</li>
               <li>Drop any text or capture file onto the panel to load it</li>
-              <li><strong>✕ Clear</strong> button — clears all input and resets the parser</li>
-              <li>Use <strong>&lt; &gt;</strong> arrows in the header to navigate between messages when multiple are loaded</li>
-              <li>The header shows a <strong>format badge</strong> (e.g. <em>NETARD</em>, <em>HEX</em>) and a <strong>message count badge</strong> when multiple messages are present</li>
+              <li><strong>📂 Audit</strong> — opens a binary audit file in the record browser (see <em>Audit Files</em>)</li>
+              <li><strong>✕ Clear</strong> — clears the input and resets the parser</li>
+            </ul>
+          </div></div>
+
+          <!-- 4a. Audit Files -->
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Audit Files <span class="h-sub-arrow">+</span></button>
+          <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 6px"><strong>📂 Audit</strong> in the Data Input header opens a binary audit file and lists its records — line, Rec#, length, timestamp, origin and destination, message number and record type.</p>
+            <ul style="padding-left:16px;margin:0">
+              <li><strong>Filters</strong> — Source / Dest (<strong>OR</strong> or <strong>AND</strong>), Rec# range (▶ / ◀ sets the direction), Date and Time ranges, and a maximum Count. <strong>⚙</strong> chooses which filters are shown</li>
+              <li><strong>Click a record</strong> to inspect it: a dump opens beside the list; <strong>HEX</strong> toggles between the hex dump and the character view (ASCII or EBCDIC). Double-click its header to copy the dump</li>
+              <li><strong>&lt; &gt;</strong> or the arrow keys step between records (<kbd>Shift</kbd> for 10); <strong>#</strong> goes to a line number, or to the first / last record</li>
+              <li><strong>▶ Parse</strong> loads the record into Data Input and parses it; <strong>Auto</strong> parses each record as you select it</li>
             </ul>
           </div></div>
 
           <!-- 4b. Message & File Detection & DDL Matching -->
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Message &amp; File Detection · DDL Matching <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
-            <p style="margin:0 0 6px"><strong>Detection is configurable — for messages AND files.</strong> Open <strong>⊞ Class Editor</strong> from the top bar to define message and file types. Each type carries an ordered list of <strong>recognizers</strong> — byte-level conditions such as a <code>literal</code> at an offset, an <code>mti</code> pattern, <code>min-length</code>/<code>max-length</code>, a <code>numeric</code>/<code>regex</code> field, a <code>bitmap</code>, or a <code>source</code>/<code>destination</code>/<code>filename</code> match.</p>
+            <p style="margin:0 0 6px"><strong>Detection is configurable — for messages AND files.</strong> Each <strong>class</strong> in the <strong>⊞ Class Editor</strong> carries an ordered list of <strong>recognizers</strong> — byte-level conditions such as a <code>literal</code> at an offset, an <code>mti</code> pattern, a minimum or maximum length (<code>greater-than</code> / <code>less-than</code>), a <code>numeric</code> / <code>regex</code> field, a <code>bitmap</code>, or a <code>source</code> / <code>destination</code> / <code>filename</code> match.</p>
             <ul style="padding-left:16px;margin:0 0 8px;font-size:10.5px">
-              <li><strong>All</strong> recognizers of a type must pass for it to match (first failing one short-circuits).</li>
-              <li>Types are tried in <strong>sidebar order</strong>; the <strong>first</strong> whose recognizers all pass wins.</li>
-              <li><strong>File types</strong> (kind <em>file</em>) match FUP COPY records by their wrapper filename (<code>$VOL.SUBVOL.FILE</code>) via the <code>filename</code> recognizer; records without a wrapper filename never consult them, so they can't shadow message types.</li>
-              <li>Each type can also carry <strong>DDL bindings</strong>, a <strong>parse spec</strong>, a DE map, and field overrides.</li>
-              <li>Built-in defaults cover ISO 8583, STM, PSTM, Base24, NDC and a Segmented File template; edit or add your own. A message no type recognizes shows <em>Unknown</em> — click <em>Data Detection</em> in the results to define a rule.</li>
+              <li><strong>All</strong> recognizers of a class must pass for it to match (the first failing one short-circuits).</li>
+              <li>Classes are tried in <strong>sidebar order</strong>; the <strong>first</strong> whose recognizers all pass wins. <em>Data</em> classes are tried after every message class.</li>
+              <li><strong>File classes</strong> match FUP COPY records by their wrapper filename (<code>$VOL.SUBVOL.FILE</code>) via the <code>filename</code> recognizer; records without a wrapper filename never consult them, so they can't shadow message classes.</li>
+              <li>Built-in defaults cover ISO 8583, STM, PSTM, Base24, NDC and a Segmented File template; edit them or add your own. A message no class recognizes shows <em>Unknown</em> — the <em>Class Editor</em> link in the results opens the editor to define one.</li>
             </ul>
             <p style="margin:8px 0 4px"><strong>When ▶ Parse runs:</strong></p>
             <ol style="padding-left:18px;margin:0">
@@ -40186,6 +40207,23 @@ function _meSave() {
               </li>
             </ol>
             <p style="margin:6px 0 0;color:var(--text-dim);font-size:10.5px">The parse-progress overlay shows each step live — detection, any compilation (<em>Compiling 1 of N</em>), and scoring — so long DDL trees don't look frozen.</p>
+          </div></div>
+
+          <!-- 4d. Class Editor -->
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Class Editor <span class="h-sub-arrow">+</span></button>
+          <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 6px"><strong>⊞ Class Editor</strong> in the top bar is where the app learns what a message or file <em>is</em> and how to read it. It opens over the whole window; <strong>✓ Save</strong> keeps the changes, <strong>Cancel</strong> or ✕ drops them.</p>
+            <ul style="padding-left:16px;margin:0 0 8px">
+              <li><strong>Sidebar</strong> — three lists: <strong>Messages</strong>, <strong>Data</strong> (structures that are neither a whole message nor a file) and <strong>Files</strong>, each with <strong>+ New</strong>. Their order is the detection order; drag an entry to reorder it or move it to another list. A <strong>⚠N</strong> badge counts what the class is missing</li>
+              <li><strong>Identity</strong> — type code (up to 5 characters), label, volume and colour</li>
+              <li><strong>Recognizers</strong> — the conditions that identify the class (see <em>Detection</em>)</li>
+              <li><strong>DDL Bindings</strong> — the DDLs this class is parsed with; the first is the default</li>
+              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more</li>
+              <li><strong>Tags</strong> — labels such as <em>RECURRING</em> or <em>REVERSAL</em> that appear beside the type code when a message's field values meet their conditions</li>
+              <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
+              <li><strong>Test</strong> — paste a message under the list and press <strong>▶ Run</strong>: every class is marked as winner, shadowed, rejected or never reached, a failing recognizer says which condition failed, and the winner's fields are shown as the app would parse them</li>
+            </ul>
+            <p style="margin:0;color:var(--text-dim);font-size:10.5px">Every recognizer, parse-spec block and override is described in full in the <strong>Specification</strong> below.</p>
           </div></div>
 
           <!-- 4c. Segmented Files (Base24) -->
@@ -40221,20 +40259,32 @@ function _meSave() {
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Parse Results <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
-              <li>Click a row → highlights that field's bytes in the Raw hex dump and selects it (accent background)</li>
-              <li>Hover a row → previews byte highlighting without changing selection</li>
-              <li><kbd>↑ ↓</kbd> — move field selection up / down</li>
-              <li><strong>Filter bar</strong> — type to narrow results by field ID or value</li>
-              <li><strong>Columns</strong> dropdown — show or hide Field, Type / Description, Length, Value, Trk</li>
-              <li><strong>Type / Description</strong> column — shows the field's DDL type (or HEADING). When a field has an override configured for its message type it reads <span style="font-family:var(--font-mono);font-size:10px"><span style="color:rgba(88,166,255,.65)">declared ↩ </span><span style="color:var(--text-dim);font-weight:600">override</span></span> (same arrow the DDL uses for REDEFINES, e.g. <span style="font-family:var(--font-mono);font-size:10px">TYPE BINARY 16 ↩ uint-be</span>) plus <span style="font-family:var(--font-mono);font-size:10px">as DISPLAY</span> when a display override (amount, datetime, hex, ascii, ebcdic, gmt-ts, bitmap) is set — and the Value column shows the converted result.</li>
-              <li><strong>Raw Hex</strong> column appears automatically when the Raw Message panel is collapsed</li>
-              <li>Drag any <strong>column header edge</strong> to resize that column</li>
-              <li><strong>Hide Redef</strong> button — toggle visibility of REDEFINES fields</li>
-              <li><strong>Trk</strong> checkbox — mark fields you want to track across messages</li>
-              <li><strong>⊞ Track Mode</strong> button — appears when at least one Trk checkbox is checked; switches to cross-message matrix view</li>
-              <li><strong>⬇ Export</strong> button — appears when messages are parsed; opens the message export modal</li>
-              <li><strong>Double-click</strong> the panel title (e.g. <em>Rec #975415</em>) or the <strong>n / m</strong> counter to copy all fields of the current message to the clipboard as tab-separated text (Field ID, Description, Len, Value)</li>
-              <li><strong>Double-click</strong> any field row to copy just that field to the clipboard</li>
+              <li>The header shows the message's <strong>type code</strong>; the bar under it shows the record's details, its <strong>tags</strong>, and <strong>&lt; n / m &gt;</strong> to move between messages (<strong>#</strong> goes to a number, or to the first / last)</li>
+              <li>Click a row → selects it and highlights that field's bytes in Raw Message and Data Input; hovering previews the highlight</li>
+              <li><kbd>↑ ↓</kbd> — move the selection up / down</li>
+              <li>Hover a <strong>value</strong> → when an override changed it, the tooltip shows every reading: <strong>RAW</strong> (as read), <strong>TYPE</strong> and <strong>SHOW</strong></li>
+              <li>Right-click a row → <strong>View definition</strong> shows where the field is declared in its DDL, with the comments above it</li>
+              <li><strong>Filter…</strong> — narrows the rows by field ID or value</li>
+              <li><strong>Collapse All</strong> — collapses or expands every group; <strong>Group Data</strong> shows each group's combined value on its group row; <strong>Hide Redef</strong> hides REDEFINES fields</li>
+              <li><strong>⚙</strong> — show or hide the Field, Description, Size, Offset, Value, Raw Hex and Trk columns. <strong>Raw Hex</strong> appears when the Raw Message panel is collapsed</li>
+              <li><strong>Description</strong> column — the field's DDL type or HEADING. When a field has an override for its class it reads <span style="font-family:var(--font-mono);font-size:10px"><span style="color:rgba(88,166,255,.65)">declared ↩ </span><span style="color:var(--text-dim);font-weight:600">override</span></span> (e.g. <span style="font-family:var(--font-mono);font-size:10px">TYPE BINARY 16 ↩ uint-be</span>) plus <span style="font-family:var(--font-mono);font-size:10px">as DISPLAY</span> when a display override is set — and the Value column shows the converted result</li>
+              <li>Drag a <strong>column header edge</strong> to resize it; click a header to highlight the column</li>
+              <li><strong>SEG-MAP</strong> — for segmented files, type a segment map (hex or bits) and press ▶ Parse to read only those segments</li>
+              <li><strong>Trk</strong> checkbox — mark fields to compare across messages in <strong>⊞ Track Mode</strong></li>
+              <li><strong>★ Save</strong> / <strong>⇆ Compare</strong> — keep this parse as a baseline, or compare it with one (see <em>Baselines</em>); <strong>Export</strong> — save parsed messages to a file</li>
+              <li>An amber bar says when the message changed after it was parsed — press ▶ Parse to refresh</li>
+              <li>A message that fails says why — unknown type, no parse spec, no matching DDL — with a link to fix it</li>
+              <li><strong>Double-click</strong> the panel title or the <strong>n / m</strong> counter to copy every field of the message as tab-separated text (Field ID, Description, Len, Value); double-click a row to copy just that field</li>
+            </ul>
+          </div></div>
+
+          <!-- 6a. Raw Message -->
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Raw Message <span class="h-sub-arrow">+</span></button>
+          <div class="h-sub-body"><div class="h-sub-body-inner">
+            <ul style="padding-left:16px;margin:0">
+              <li>The message's bytes as a hex dump beside their characters; the field selected in Parse Results is highlighted here</li>
+              <li><strong>Double-click</strong> the panel header to copy the dump</li>
+              <li>Collapse the panel and Parse Results gains a <strong>Raw Hex</strong> column instead; <strong>Settings → Raw Hex</strong> chooses whether that column is truncated or shown in full</li>
             </ul>
           </div></div>
 
@@ -40242,29 +40292,44 @@ function _meSave() {
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Track Mode <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ol style="padding-left:16px;margin:0">
-              <li>Check <strong>Trk</strong> on any fields you want to compare</li>
+              <li>Check <strong>Trk</strong> on the fields you want to compare</li>
               <li>Click <strong>⊞ Track Mode</strong> in the Parse Results header</li>
-              <li>A cross-message matrix appears — one row per tracked field, one column per message</li>
+              <li>A table appears — <strong>one row per message, one column per tracked field</strong>. A Timestamp column is shown when the records carry a time</li>
             </ol>
             <br>
             <ul style="padding-left:16px;margin:0">
-              <li>Click <strong>⊞ Track Mode</strong> again to return to the normal field list</li>
-              <li>Trk selections are preserved when navigating between messages</li>
+              <li>Each column header has a <strong>filter</strong> listing the values in it; filters on several columns combine (AND)</li>
+              <li><strong>Click a row to select it</strong>; <strong>Select N shown</strong> selects every row the filters show (it reads <em>Clear N shown</em> once they are all selected)</li>
+              <li><strong>Export</strong> — saves the selected rows as a <code>.txt</code> file laid out like the table; disabled until a row is selected</li>
+              <li><strong>⊟ Exit Track</strong> — back to the field list. With rows selected, Parse Results then shows <strong>only those messages</strong> (marked <em>Filtered</em>); <strong>View all</strong> brings back the rest</li>
+              <li>Drag a header edge to resize a column; click a header to highlight it</li>
+              <li>Trk selections are kept while moving between messages</li>
+            </ul>
+          </div></div>
+
+          <!-- 7a. Baselines -->
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Baselines <span class="h-sub-arrow">+</span></button>
+          <div class="h-sub-body"><div class="h-sub-body-inner">
+            <p style="margin:0 0 6px">A baseline is a parse you keep, to compare later parses against.</p>
+            <ul style="padding-left:16px;margin:0">
+              <li><strong>★ Save</strong> in Parse Results — give it a name and optional tags (comma separated)</li>
+              <li><strong>⇆ Compare</strong> — appears when a baseline of the same class, DDL and parse spec exists; opens the two side by side, fields lined up by name, with differing values marked</li>
+              <li><strong>★ Baseline Editor</strong> in the top bar — the saved list: view, compare, delete. Baselines that cannot be compared with the current parse are dimmed</li>
             </ul>
           </div></div>
 
           <!-- 8. Export / Import -->
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Export / Import <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
-            <p style="margin:0 0 4px;font-weight:700">DDL Definitions:</p>
+            <p style="margin:0 0 4px;font-weight:700">Classes &amp; DDLs (bundles):</p>
             <ul style="padding-left:16px;margin:0 0 8px">
-              <li><strong>Export</strong> — saves a <code>.json</code> file; choose exactly which Volumes / Subvolumes / DDLs to include via the checklist; can export a single DDL, an entire Subvolume, a Volume, or everything</li>
-              <li><strong>Import</strong> — reads a previously exported <code>.json</code>; a preview modal shows conflicts before confirming</li>
-              <li>Drop a <code>.json</code> file onto the <strong>tree pane</strong> to import it directly</li>
+              <li><strong>Export</strong> — right-click the tree (empty area, Volume, Subvolume or file) → Export; tick the <strong>Classes</strong> and <strong>DDLs</strong> to include and save a <code>.json</code> bundle. <em>Keep classes and their DDLs together</em> ticks a class's DDLs with it, and the other way round</li>
+              <li><strong>Import</strong> — right-click → Import, or drop a <code>.json</code> bundle onto the tree; a preview lets you pick what to bring in and marks what will be <strong>overwritten</strong></li>
             </ul>
-            <p style="margin:0 0 4px;font-weight:700">Messages:</p>
+            <p style="margin:0 0 4px;font-weight:700">Parsed messages:</p>
             <ul style="padding-left:16px;margin:0">
-              <li><strong>⬇ Export</strong> button in the Parse Results header — opens a modal to select and export parsed messages to a <code>.json</code> file with full field data and metadata</li>
+              <li><strong>Export</strong> in Parse Results — pick messages (with a filter), choose the columns with <strong>⚙</strong>, and <strong>⬇ Download</strong> a <code>.txt</code> file</li>
+              <li><strong>Export</strong> in Track Mode — the selected rows of the tracking table, as a <code>.txt</code> file</li>
             </ul>
           </div></div>
 
@@ -40272,13 +40337,24 @@ function _meSave() {
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Layout <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
-              <li>Drag any <strong>splitter bar</strong> to resize panels horizontally or vertically</li>
-              <li>Drag the right edge of the <strong>tree pane</strong> to resize it</li>
-              <li>Each panel has a <strong>− toggle button</strong> to collapse it to a labeled strip; click again to expand</li>
-              <li>At least one panel per row must remain expanded</li>
-              <li><strong>Settings → Panels on Startup</strong> — set the default collapsed / expanded state for each panel at load time</li>
-              <li>All panel sizes, column widths, and column visibility are <strong>saved automatically</strong> in the browser</li>
-              <li>Go to <strong>Settings → Layout → ↺ Reset Layout</strong> to restore all defaults</li>
+              <li><strong>Settings → Layout → Arrangement</strong> — four panels, two columns, two rows, or one of the three-panel arrangements; <strong>Panels</strong> chooses which panel goes in each place</li>
+              <li>Drag any <strong>splitter bar</strong> to resize panels; drag the right edge of the <strong>tree pane</strong> to resize it</li>
+              <li>Each panel's <strong>−</strong> button collapses it to a labelled strip; <strong>+</strong> expands it again. At least one panel in each row stays visible</li>
+              <li>Panel sizes, column widths and column visibility are <strong>saved automatically</strong> in the browser</li>
+              <li><strong>Settings → Layout → ↺ Reset Layout</strong> restores the default arrangement and sizes</li>
+            </ul>
+          </div></div>
+
+          <!-- 9a. Settings -->
+          <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Settings <span class="h-sub-arrow">+</span></button>
+          <div class="h-sub-body"><div class="h-sub-body-inner">
+            <ul style="padding-left:16px;margin:0">
+              <li><strong>Appearance</strong> — Theme (Dark / Light), Font Size, Accent colour (Reset goes back to the theme's own), Density (Comfort / Compact), Raw Hex (Truncate / Full), and whether the parse steps pop-up closes by itself when parsing finishes</li>
+              <li><strong>Layout</strong> — see <em>Layout</em> above</li>
+              <li><strong>Local Data → ⚠ Erase All Data</strong> — removes every DDL, class, override, baseline and setting stored in this browser. Nothing is ever sent to a server, so export first what you want to keep</li>
+              <li><strong>Tutorial → ▶ Launch</strong> — a guided tour of the main features</li>
+              <li><strong>Feedback</strong> — <em>Report a Bug</em> / <em>Request a Feature</em> open your email client with diagnostic details filled in</li>
+              <li><strong>About</strong> — the version you are running, and the licence</li>
             </ul>
           </div></div>
 

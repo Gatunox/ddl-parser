@@ -20781,7 +20781,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.7.2';
+const APP_VERSION  = '1.56.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25677,6 +25677,8 @@ const _PS_HELP = {
       'not-bytes': 'none — with neither <code>bytes</code> nor <code>not-bytes</code> there is no byte guard',
       equal: 'none — with no comparison at all the test is <b>presence</b>: the field was read, so <code>then</code> runs',
       not_equal: 'none',
+      starts_with: 'none',
+      ends_with: 'none',
       'else': 'none — a false condition reads nothing, and the bytes go to the block after this one',
       greater_than: 'none',
       greater_or_equal: 'none',
@@ -25736,6 +25738,24 @@ const _PS_HELP = {
         ['<code>["A", "B"]</code>',    'Everything except these.'],
         'Use it for a default branch — one <code>when … equal</code> for the special case, one <code>when … not_equal</code> for the rest.',
         'Was called <code>not</code>. The old name is not converted — rename it.',
+      ]],
+      ['starts_with', 'value | [values] | {field} | {sizeof}', false, [
+        'Run <code>then</code> when the value <b>begins</b> with the operand. Compared as <b>text</b>.',
+        ['<code>"02"</code>',          'A prefix — an MTI of the 02xx family, say.'],
+        ['<code>["02", "04"]</code>',  'A list — any one of them as the prefix.'],
+        ['<code>{"field": "OTHER"}</code>', 'Another field already read, its value as the prefix.'],
+        ..._PS_SIZEOF_DESC,
+        ..._PS_NUMBASE_DESC,
+        'Both sides are trimmed first, as <code>equal</code> trims them, so a PIC X field padded on the wire answers to what it holds. Case-sensitive, like <code>equal</code>.',
+      ]],
+      ['ends_with', 'value | [values] | {field} | {sizeof}', false, [
+        'Run <code>then</code> when the value <b>ends</b> with the operand. Compared as <b>text</b>.',
+        ['<code>"02"</code>',          'A suffix.'],
+        ['<code>["01", "02"]</code>',  'A list — any one of them as the suffix.'],
+        ['<code>{"field": "OTHER"}</code>', 'Another field already read, its value as the suffix.'],
+        ..._PS_SIZEOF_DESC,
+        ..._PS_NUMBASE_DESC,
+        'Trimmed and case-sensitive, the same as <code>starts_with</code> — so the padding after a PIC X value does not hide the end of it.',
       ]],
       ['greater_than', 'number | {field} | {sizeof}', false, [
         'Run <code>then</code> when the field, <b>read as a number</b>, is greater than the operand.',
@@ -25834,6 +25854,14 @@ const _PS_HELP = {
         payload: '39 39 5A 5A',
         spec: [{"read-fixed": {"length": 2, "as": "FLAG"}},
                {"when": {"field": "FLAG", "not_equal": ["10", "20"], "then": [{"read-fixed": {"length": 2, "as": "EXTRA"}}]}}] },
+      { what: '<b>starts_with</b> — a whole family by its prefix: MTI 0210 begins with 02, so the branch fires',
+        payload: '30 32 31 30 41 42',
+        spec: [{"read-fixed": {"length": 4, "as": "MTI"}},
+               {"when": {"field": "MTI", "starts_with": "02", "then": [{"read-fixed": {"length": 2, "as": "AUTH-EXTRA"}}]}}] },
+      { what: '<b>ends_with</b> with a list — the source is P1A-EDX02, which ends with one of them',
+        payload: '50 31 41 2D 45 44 58 30 32 41 42',
+        spec: [{"read-fixed": {"length": 9, "as": "SOURCE"}},
+               {"when": {"field": "SOURCE", "ends_with": ["01", "02"], "then": [{"read-fixed": {"length": 2, "as": "ROUTE"}}]}}] },
       // The production question the comparisons exist for: the wire says one
       // thing, the DDL declares another, and the spec has to notice.
       { what: '<b>greater_than</b> <code>{"sizeof"}</code> — LEN says 5 where the DDL declares 4 for DATA, so the branch fires and the surplus is captured instead of shifting what follows',
@@ -27364,7 +27392,7 @@ function _mePsLintWarns(item, parsed, inertOut) {
             for (const o of _ops) {
               const v = attrs[o];
               if (Array.isArray(v) && _ME_WHEN_NUM().includes(o))
-                warns.push(`[block ${n}] when "${o}" cannot take a list — a list compares only with equal / not_equal`);
+                warns.push(`[block ${n}] when "${o}" cannot take a list — a list compares only with equal / not_equal / starts_with / ends_with`);
               if (v && typeof v === 'object' && !Array.isArray(v)) {
                 if (v.sizeof !== undefined) {
                   if (typeof v.sizeof !== 'string' || !v.sizeof)
@@ -37572,15 +37600,18 @@ function _meExecBitmapFields(attrs, ctx) {
 
 // ── Block: when ─────────────────────────────────────────────────────────────
 
-// The six comparisons in ONE place: which of them take numbers, and what each
-// one asks. The lists the lint and the executor work from are derived from it,
-// so a seventh operator is a row here rather than an entry in three lists that
-// have to agree forever. Built once, on first use.
+// The comparisons in ONE place: which of them take numbers, and what each one
+// asks. The lists the lint and the executor work from are derived from it, so a
+// new operator is a row here rather than an entry in three lists that have to
+// agree forever — starts_with and ends_with (2026-10-10) were exactly that.
+// Built once, on first use.
 let _ME_WHEN_CMP_TBL = null;
 function _meWhenCmp() {
   return _ME_WHEN_CMP_TBL || (_ME_WHEN_CMP_TBL = {
     'equal':            { numeric: false, test: (a, b) =>  _meMatchValue(a, b) },
     'not_equal':        { numeric: false, test: (a, b) => !_meMatchValue(a, b) },
+    'starts_with':      { numeric: false, test: (a, b) =>  _meMatchAffix(a, b, false) },
+    'ends_with':        { numeric: false, test: (a, b) =>  _meMatchAffix(a, b, true) },
     'greater_than':     { numeric: true,  test: (a, b) => a >  b },
     'greater_or_equal': { numeric: true,  test: (a, b) => a >= b },
     'less_than':        { numeric: true,  test: (a, b) => a <  b },
@@ -37595,6 +37626,17 @@ function _meMatchValue(value, matcher) {
   const v = String(value).trim();
   if (Array.isArray(matcher)) return matcher.some(m => String(m).trim() === v);
   return String(matcher).trim() === v;
+}
+
+// starts_with / ends_with: does the value begin (or end) with the operand — or,
+// for a list, with any one of them. Both sides trimmed first, exactly as equal
+// trims them, so a PIC X field padded on the wire answers to what it holds and
+// not to its padding. Case-sensitive, like equal.
+function _meMatchAffix(value, matcher, atEnd) {
+  if (matcher == null) return false;
+  const v = String(value).trim();
+  const one = m => { const a = String(m).trim(); return atEnd ? v.endsWith(a) : v.startsWith(a); };
+  return Array.isArray(matcher) ? matcher.some(one) : one(matcher);
 }
 
 // One operand grammar for every operator: a literal, a list (equality only), or
@@ -37625,7 +37667,7 @@ function _meWhenOperand(raw, numeric, ctx) {
     return { n: r.n };
   }
   if (Array.isArray(raw)) {
-    if (numeric) return { error: 'a list compares only with equal / not_equal — a range is two blocks, or two operators' };
+    if (numeric) return { error: 'a list compares only with equal / not_equal / starts_with / ends_with — a range is two blocks, or two operators' };
     return { list: raw };
   }
   if (!numeric) return { text: raw };

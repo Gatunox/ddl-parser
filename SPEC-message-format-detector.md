@@ -10,6 +10,7 @@ Status: **Partially implemented** — see §14 for what remains
 
 | Date | Change |
 |------|--------|
+| 2026-10-10 | **`when` gains `starts_with` and `ends_with`.** A condition could ask whether a value WAS something, or was above or below a number, but not whether it began or ended with something — so "any 02xx MTI" or "a source ending in 02" had to be spelled out as a list of every full value, which only works while the list is complete. Both take the same operands as `equal` — a value, a list (any one of them matches), or `{"field": …}` / `{"sizeof": …}` — compare as text, and trim both sides first exactly as `equal` does, so a PIC X field padded on the wire answers to what it holds rather than to its padding; matching is case-sensitive, like `equal`. They are two rows in `_meWhenCmp`, the one table the executor and the lint both derive from, so nothing else had to learn them: one comparison per block still holds (`starts_with` and `ends_with` together is an error naming both), and the lint's "cannot take a list" rule — which is derived from the numeric operators — lets lists through for both. The help documents each with an example, and those examples are executed by the test that runs every example the help ships. See §5.6. |
 | 2026-09-11 | **The value tooltip waits 600ms, not two seconds.** A tooltip nobody holds still long enough to see is a tooltip that does not exist — the RAW / TYPE / SHOW report read as missing twice on the day it was added, because hovering a value and getting nothing is a reasonable way to conclude a thing is not there. 600ms is still longer than scanning a table takes, so it does not fire on a passing glance. |
 | 2026-09-09 | **`hex-char` shows the wire byte on an EBCDIC message.** The override means "the bytes as TRANSMITTED" — its own comment says so. On an EBCDIC message every byte is translated to ASCII the moment the text becomes bytes, before any field exists, so `f.rawHex` already holds `41` where the wire held `C1`. The parse-spec engine passed the untranslated slice through `_meWireHex` and was right; the legacy DDL walk passed nothing and showed the translation — the same override, on the same message, read `C1` through one parser and `41` through the other. The untranslated bytes are now kept by `extractBytesMapped` (only the hex branch translates, so it is the only one that returns a wire buffer; `null` elsewhere means "the wire is what you already have"), carried on every message, and sliced per field. The trap in doing it is that the variable does not mean the same thing at every construction: in the NETARD flow `bytes` IS the wire, but in the audit-chunk flow `bytes` is already the translation and the wire is `wireBytes` — carrying `bytes` there would hand the translation back and look exactly like a fix. A forced `ebcdic` paste is translated inside `extractBytes` itself, so that flow asks for the copy explicitly. Non-EBCDIC formats are untouched; 1472 baseline cases identical. |
 | 2026-09-09 | **A message resolves to the class that PARSED it, not the first of its name.** A tag saved on a class never fired, and the diagnostic printed the bindings of a different class — the one it had been copied from. `_meSpecForMsg` resolved by name, and the source said three lines below that lookup that a name is not unique: a normal repository holds four classes called `ISO` (BIC, Switch, Standard 1987, Standard 1993) and three called `B24`, so the by-name lookup returned the FIRST of them whichever one really parsed the message. Everything read off that class — its tags, its bindings, its overrides — belonged to another class: a tag on "ISO 8583 Standard 1993" could never fire, and one on "ISO 8583 BIC" fired for every ISO message in the file. The parse pipeline was never wrong; `_meWinningSpec` matched by label and carried the same warning. That is the actual defect — **two resolvers written separately for one job**, so the pipeline parsed with one class while every reader of that class's data used another. There is now one, and identity is `_specKey` (name + label), the key the editor already uses to flag duplicates and to keep new labels unique — matched rather than restated. A label must still agree on the name; no label at all falls back to the name, which is all a DDL-derived pseudo-type has. The by-name lookups now have no callers, and a test pins that: a new caller is a new way to read another class's data. |
@@ -523,6 +524,8 @@ when: FIELD-ID
   equal: ["1", "2", "3"]         # set match (any of)
   not_equal: "B"                 # negation
   not_equal: ["1", "2", "3"]     # negation set
+  starts_with: "02"              # text prefix (list / {field} allowed)
+  ends_with: ["01", "02"]        # text suffix (list / {field} allowed)
   greater_than: 22               # numeric, strict
   greater_or_equal: {field: MAX} # numeric, against another field
   less_than: {sizeof: EMV.DATA}  # numeric, against what the DDL declares
@@ -532,6 +535,13 @@ when: FIELD-ID
 ```
 
 Multiple `when` blocks on the same field act as if/else-if. Nested `when` blocks are supported.
+
+**Text comparisons — `equal`, `not_equal`, `starts_with`, `ends_with`.** They
+compare the field's value as text, against a value, a list (any one matches), or
+`{"field": …}` / `{"sizeof": …}`. Both sides are trimmed first, so a PIC X field
+padded on the wire answers to what it holds; matching is case-sensitive. The four
+numeric ones read both sides as numbers and do not accept a list. A block asks one
+question: two comparisons on one `when` is an error, not an *and*.
 
 **The byte guard — `bytes` / `not-bytes`.** The other kind of condition: it looks
 at what is sitting **at the cursor** and consumes nothing, so it needs nothing to

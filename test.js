@@ -9765,6 +9765,51 @@ test('equal and not_equal still compare text, list included', () => {
   eq(fires('not_equal', '05'), false, 'and fails on a member');
 });
 
+// starts_with / ends_with, added 2026-10-10: does the value begin or end with
+// the operand — a value, a list (any one), or another field. Text, trimmed on
+// both sides as equal is, case-sensitive.
+// SRC is 'P1A-EDX02' padded to 12 on the wire, the way a PIC X field arrives.
+const affix = (op, operand, pfx) => {
+  const spec = [];
+  if (pfx) spec.push({ 'read-fixed': { length: pfx.length, as: 'PFX', type: 'ascii' } });
+  spec.push({ 'read-fixed': { length: 12, as: 'SRC', type: 'ascii' } });
+  spec.push({ when: { field: 'SRC', [op]: operand, then: [{ 'read-fixed': { length: 1, as: 'HIT' } }] } });
+  return cmpRun(spec, ascii((pfx || '') + 'P1A-EDX02   ' + 'Z'));
+};
+const affixHit = (...a) => affix(...a).ids.includes('HIT');
+
+test('starts_with asks whether the value begins with the operand', () => {
+  eq(affixHit('starts_with', 'P1A'), true,  'P1A-EDX02 starts with P1A');
+  eq(affixHit('starts_with', 'EDX'), false, 'and not with EDX');
+  eq(affixHit('starts_with', ['XX', 'P1']), true,  'a list — any one of them');
+  eq(affixHit('starts_with', ['XX', 'YY']), false, 'and none of them');
+  eq(affixHit('starts_with', 'p1a'), false, 'case-sensitive, like equal');
+  eq(affixHit('starts_with', { field: 'PFX' }, 'P1A'), true,  "another field's value as the prefix");
+  eq(affixHit('starts_with', { field: 'PFX' }, 'XYZ'), false, 'and a prefix that is not there');
+});
+
+test('ends_with asks whether the value ends with the operand, padding aside', () => {
+  // The value is padded with three spaces on the wire. Without the trim, no
+  // PIC X field could ever be asked what it ends with.
+  eq(affixHit('ends_with', '02'), true,  'P1A-EDX02 ends with 02, padding notwithstanding');
+  eq(affixHit('ends_with', '01'), false, 'and not with 01');
+  eq(affixHit('ends_with', ['01', '02']), true, 'a list — any one of them');
+  eq(affixHit('ends_with', { field: 'PFX' }, 'X02'), true, "another field's value as the suffix");
+});
+
+test('starts_with / ends_with keep the when rules: one question per block, lists allowed', () => {
+  const both = affix('starts_with', 'P1A', null);
+  eq(both.errs.length, 0, 'a plain starts_with raises nothing');
+  const two = cmpRun([{ 'read-fixed': { length: 12, as: 'SRC', type: 'ascii' } },
+    { when: { field: 'SRC', starts_with: 'P1A', ends_with: '02', then: [] } }], ascii('P1A-EDX02   '));
+  assert.ok(two.errs.some(e => /starts_with and ends_with on one "when"/.test(e)), `got: ${two.errs}`);
+  const w = mePsLintWarns({ ddl_bindings: [] },
+    [{ 'read-fixed': { length: 12, as: 'SRC' } },
+     { when: { field: 'SRC', starts_with: ['P1', 'P2'], then: [] } },
+     { when: { field: 'SRC', ends_with: ['01', '02'], then: [] } }]).join(' | ');
+  assert.ok(!/cannot take a list/.test(w), 'a list is a valid operand for both — got: ' + w);
+});
+
 test('an operand can be another field, or what the DDL declares for an element', () => {
   // {"sizeof"} is the whole point: DATA declares 4, the wire says 5.
   eq(fires('greater_than', { sizeof: 'DATA' }), true,

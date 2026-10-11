@@ -1131,18 +1131,19 @@ had it do.
       pattern (`◀ 1/N ▶` + message), which already exists and works well.
 - [ ] Field preview in the DDL picker — currently you choose on score alone.
       Matters more now that a pick can *fill a spec's missing binding*.
-- [ ] Make the Data Editor **Test** panel more prominent when authoring a spec —
-      it is a collapsed bar at the very bottom, and immediate feedback is the
-      whole point when writing a parse-spec.
+- [x] Make the Data Editor **Test** panel more prominent when authoring a spec —
+      *closed 2026-10-10, already true.* It is no longer a collapsed bar at the
+      bottom: it is a subpanel under the class list, open by default, resizable,
+      with its own format bar, and ▶ Run paints the verdict on every class row.
 - [ ] Revisit usability properly: walk a real task end-to-end in the browser
       (e.g. "trace field X across 500 records", "onboard a new message type")
       and report friction, rather than inferring from the DOM.
-- [ ] **The tutorial is as stale as Help was** (found 2026-10-10, during the Help
+- [x] *Fixed v1.56.9.2 — steps rewritten against the app and pinned by tests.* **The tutorial is as stale as Help was** (found 2026-10-10, during the Help
       review). Its "Manual DDL Override" step points at `#ddlScopePath`, which is
       always `display:none`, and its steps were never checked against today's
       app the way Help was. Review each step against the UI it targets.
-- [ ] Baseline Editor's empty state says *"press ★ Baseline"*; the button in
-      Parse Results reads **★ Save**.
+- [x] Baseline Editor's empty state said *"press ★ Baseline"*; the button in
+      Parse Results reads **★ Save** — *fixed v1.56.9.2.*
 
 ---
 

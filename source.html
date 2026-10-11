@@ -20828,7 +20828,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.9.1';
+const APP_VERSION  = '1.56.9.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22027,6 +22027,10 @@ function flash(msg, level, action) {
 // INIT
 // ============================================================
 // ─── Tutorial ────────────────────────────────────────────────────────────────
+// The tour names controls by their label and panels by their name, never by
+// position: the layout is the user's to rearrange, so "top-left" is true only
+// until they do. A step whose target is collapsed or out of the layout shows
+// centred, so its text must make sense without the spotlight.
 const _TUT_STEPS = [
   {
     target: null,
@@ -22035,73 +22039,73 @@ const _TUT_STEPS = [
   },
   {
     target: '#ddlPanel', prefer: 'right',
-    title: 'DDL Definition \u2014 top-left',
-    body: 'This is where you load and manage your DDL definitions.\n\nDefinitions are organized in a tree (Left Side): Volume \u2192 Subvolume \u2192 DDL. You can paste/drop the files used in your current Base24 (Right Side).',
-  },
-  {
-    target: '#msgPanel', prefer: 'left',
-    title: 'Data Input \u2014 top-right',
-    body: 'Paste or drop a raw message here to parse it.\n\nThe format is auto-detected (ASCII, HEX, HEXASCII, EBCDIC, NETARD). Use the format selector to override, and press \u25b6 Parse or Ctrl+Enter to run.',
-  },
-  {
-    target: '#resPanel', prefer: 'right',
-    title: 'Parse Results \u2014 bottom-left',
-    body: 'After parsing, this panel shows the decoded fields \u2014 name, type, offset, length, and value \u2014 for the active message.\n\nUse the navigation arrows to move between messages. Click a field row to highlight the corresponding bytes in the Raw Message panel.',
-  },
-  {
-    target: '#rawPanel', prefer: 'left',
-    title: 'Raw Message \u2014 bottom-right',
-    body: 'Displays the raw bytes of the active message as a hex and ASCII side-by-side dump.\n\nBytes belonging to the selected field are highlighted. The panel updates in sync with your selection in Parse Results.',
+    title: 'DDL Definition',
+    body: 'This is where you load and manage your DDL definitions.\n\nThe tree holds them as Volume \u2192 Subvolume \u2192 File; the editor beside it shows the file you open. Paste or drop the DDL files your Base24 uses.',
   },
   {
     target: '#ddlTreePane', prefer: 'right',
     title: 'Loading DDL Definitions',
-    body: 'Right-click to create a Volume \u2192 Subvolume \u2192 DDL File hierarchy.\n\nRight-click any volume to import a previously exported .json package. Each DDL describes the fields of a message type.',
+    body: 'Right-click an empty area of the tree to create a Volume or to import a previously exported .json bundle. Right-click a Volume or Subvolume to add what goes inside it.\n\nA file can hold HPE DDL (DEF / RECORD sections) or a flat field list; the format is recognized automatically.',
   },
   {
     target: '#ddlDocBtn', prefer: 'bottom',
     title: 'DDLDOC \u2014 Field Reference',
-    body: 'With a DDL selected in the tree, click Doc to open DDLDOC \u2014 a searchable field reference for the active definition.\n\nUse the filter to find fields by name. Toggle Hide Redef to show or hide REDEFINES groups.',
+    body: 'With a DDL open, click Doc for its parsed layout \u2014 every field with its offset, size and type.\n\nFilter by name, use Collapse All for the groups, and Hide Redef to hide REDEFINES.',
   },
   {
     target: '#msgPanel', prefer: 'left',
-    title: 'Pasting a Message',
-    body: 'Paste your raw message here. The format is auto-detected: ASCII, HEX, HEXASCII, or EBCDIC. Use the format selector on the left to override.\n\nThe line width control appears for NETARD input \u2014 adjust it to match the width of your terminal dump. Press \u25b6 Parse or Ctrl+Enter to run.',
+    title: 'Data Input',
+    body: 'Paste or drop a message here, then press \u25b6 Parse. The format is auto-detected (ASCII, HEX, HEXASCII, EBCDIC, NETARD, FUP COPY).\n\nINPUT: AUTO forces a format; CLASS: AUTO parses every message as one class. Line Width appears for NETARD, ASCII and dump input \u2014 set it to the width of your capture.\n\nEverything you paste is one message; a NETARD or FUP COPY capture holds many.',
   },
   {
-    target: '#ddlScopePath', prefer: 'bottom',
+    target: '#resPanel', prefer: 'right',
+    title: 'Parse Results',
+    body: 'After parsing, this panel shows the decoded fields \u2014 name, description, size, offset and value \u2014 for the active message.\n\n\u2039 \u203a move between messages. Click a row to highlight its bytes in Raw Message; right-click it \u2192 View definition to see where its DDL declares it.',
+  },
+  {
+    target: '#rawPanel', prefer: 'left',
+    title: 'Raw Message',
+    body: 'Displays the raw bytes of the active message as a hex and character side-by-side dump.\n\nBytes belonging to the selected field are highlighted. The panel updates in sync with your selection in Parse Results.',
+  },
+  {
+    target: '#ddlTreePane', prefer: 'right',
     title: 'Manual DDL Override',
-    body: 'Click any DDL node in the tree to make it the active scope \u2014 the path is shown here.\n\nWith a scope selected, pressing \u25b6 Parse forces that exact DDL: no identification, no recognizers and no parse-spec run \u2014 the input is parsed strictly per the selected DDL, element by element, once. Works for messages and FUP COPY file records alike.',
+    body: 'Parse finds the DDL by itself. To force one, right-click a definition (DEF) in the tree \u2192 Use for parsing (override); it turns amber.\n\nParse then reads the input strictly per that DDL, element by element \u2014 no recognizers, no parse spec \u2014 for a single message or a FUP COPY capture. Right-click it again to release it. Opening a DDL to edit it never arms it.',
+  },
+  {
+    target: '#ddlTreePane', prefer: 'right',
+    title: 'Exclusions',
+    body: 'Right-click a Volume, Subvolume or file \u2192 Exclude from auto-detect, or a single definition \u2192 Exclude DEF from parsing.\n\nExcluded nodes are dimmed, marked EXCL, and never tried when Parse searches for a DDL.',
   },
   {
     target: '#dataEditorBtn', prefer: 'left',
     title: 'Class Editor \u2014 Message Detection & Overrides',
-    body: 'Click \u229e Class Editor in the top bar to control how messages are recognized and parsed. It opens as a full page: Classes on the left, the selected class in the middle, Test on the right \u2014 both side panels resize and collapse.\n\nEach message type has an ordered list of recognizers \u2014 byte-level conditions (a literal at an offset, an MTI pattern, a length, a bitmap, a source/destination) that must all pass to match; the first matching type wins. A type can also carry DDL bindings, a parse spec, and field overrides that reinterpret a field (uint-be/le, ascii, ebcdic, hex) or format its value (amount, date/time, GMT timestamp).\n\nBuilt-in defaults cover ISO 8583, STM, PSTM, Base24 and NDC \u2014 edit them or add your own. The Test panel lets you paste a sample and see exactly what detects and parses.',
-  },
-  {
-    target: '#ddlTreePane', prefer: 'right',
-    title: 'Exclusions \u0026 Right-Click Menu',
-    body: 'Right-click any tree node for context options: create, rename, import/export, and Exclude from parsing.\n\nExcluded DDLs are greyed out and skipped during auto-detection scoring. Right-click a DEF sub-node to exclude only that specific definition, leaving the rest of the file active.',
+    body: 'Click \u229e Class Editor in the top bar to control how messages and files are recognized and parsed. It opens as a full page: the Messages, Data and Files lists on the left with the Test panel under them, the selected class on the right.\n\nA class carries recognizers \u2014 byte-level conditions that must all pass; the first matching class in list order wins \u2014 plus DDL bindings, a parse spec, tags, and field overrides that change how a field is read or shown.\n\nBuilt-in defaults cover ISO 8583, STM, PSTM, Base24, NDC and a Segmented File template. Paste a sample into Test and press \u25b6 Run to see which class wins and what it parses.',
   },
   {
     target: '#msgPanel', prefer: 'left',
     title: 'NETARD Audit Log Parsing',
-    body: 'Paste a NETARD multi-record audit log and press \u25b6 Parse. The parser detects all records, identifies EBCDIC/ASCII encoding per record, and scores each against your DDL tree.\n\nOnce parsed arrow buttons on the parse panel allow you step through all results. If you parse a single-record log and a DDL scope selected, Manual Override applies automatically. You can not Manual Override a multi-record file.',
+    body: 'Paste a NETARD multi-record capture and press \u25b6 Parse. Every record is detected, its encoding (EBCDIC / ASCII) identified, and parsed with its own class.\n\nStep through the results with \u2039 \u203a in Parse Results, or with the \u2190 \u2192 keys.',
   },
   {
     target: '#auditOpenBtn', prefer: 'bottom',
     title: 'Binary Audit File Reader',
-    body: 'Click 📂 Audit to open a BIT PACKET binary audit file directly — no copy-pasting required.\n\nThe app indexes all records instantly. Click any row to open the record popup showing the raw NETARD dump. Press ▶ Parse to load that record\'s payload into Data Input and parse it against your DDL definitions.\n\nUse the HEX/ASCII toggle to switch between the text dump and a side-by-side hex view. Double-click the popup header bar to copy the full dump to the clipboard.',
+    body: 'Click \ud83d\udcc2 Audit to open a binary audit file directly \u2014 no copy-pasting required. Its records are listed with their time, origin and destination, and can be filtered.\n\nClick a record to inspect its dump beside the list; HEX switches between the hex dump and the character view. \u25b6 Parse loads the record into Data Input and parses it; Auto parses each record as you select it.',
   },
   {
-    target: '#trkBtn', prefer: 'left',
-    title: 'Multi-record tracking',
-    body: 'Check Trk on any field in the parse results, then click \u229e Track Mode to compare that field across all parsed messages in a matrix view.\n\nOnly available for NETARD multi-record logs to spot patterns or anomalies across transactions.',
+    target: '#resPanel', prefer: 'right',
+    title: 'Track Mode',
+    body: 'With several messages parsed, check Trk on the fields you care about, then click \u229e Track Mode: one row per message, one column per field, each column with its own filter.\n\nClick rows to select them, then Export them \u2014 or leave Track and Parse Results shows only those messages.',
+  },
+  {
+    target: '#baselineBtn', prefer: 'bottom',
+    title: 'Baselines',
+    body: '\u2605 Save in Parse Results keeps a parse as a baseline; \u21c6 Compare lines a later parse up against it, field by field.\n\n\u2605 Baseline Editor in the top bar lists, compares and deletes what you saved.',
   },
   {
     target: null,
     title: 'Need Help?',
-    body: 'Open Settings (\u2699 top-right) and scroll to the Help section for further details.\n\nAdditionally, from there you can submit a Bug Report or a Feature Request directly \u2014 they\'ll include your app version and environment automatically.\n\nThank you for using DDL Parser!',
+    body: 'Open Settings (\u2699 top-right) \u2192 Help for every part of the app, and the full Specification of how messages are detected and parsed.\n\nFrom Settings you can also submit a Bug Report or a Feature Request \u2014 they\'ll include your app version and environment automatically.\n\nThank you for using DDL Parser!',
   },
 ];
 let _tutIdx = 0;
@@ -23137,7 +23141,7 @@ function blRenderRight() {
   const host = document.getElementById('bl-right');
   if (!host) return;
   const b = _blAll().find(x => x.id === _blSel);
-  if (!b) { host.innerHTML = `<div class="bl-empty">No baselines yet. Parse a message and press ★ Baseline.</div>`; return; }
+  if (!b) { host.innerHTML = `<div class="bl-empty">No baselines yet. Parse a message and press ★ Save in Parse Results.</div>`; return; }
 
   const cur = S.messages[S.curIdx];
   const canCompare = !!(cur && cur.fields && cur.fields.length);
@@ -40552,7 +40556,7 @@ function _meSave() {
           <div class="me-pane-hdr">
             <span class="me-pane-title" id="bl-pane-title">Baseline</span>
           </div>
-          <div class="bl-pane-body" id="bl-right"><div class="bl-empty">No baselines yet. Parse a message and press &#9733; Baseline.</div></div>
+          <div class="bl-pane-body" id="bl-right"><div class="bl-empty">No baselines yet. Parse a message and press &#9733; Save in Parse Results.</div></div>
         </div>
       </div>
     </div>

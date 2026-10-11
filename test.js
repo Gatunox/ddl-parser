@@ -19094,8 +19094,8 @@ test('the feature is called the Class Editor everywhere it is named', () => {
   deepEq(prose, [], 'user-visible text still calls a class an entity');
   // "identity" contains the same letters and must survive the rename.
   assert.ok(/the same identity to the app/.test(html), 'a word containing "entit" was corrupted');
-  assert.ok(/Classes on the left, the selected class in the middle/.test(html),
-    'the help still describes the pane as Entities');
+  assert.ok(/the Messages, Data and Files lists on the left/.test(html) && !/Entities on the left/.test(html),
+    'the tutorial still describes the pane as Entities');
 });
 
 test('the entity sidebar scrolls once, not three times', () => {
@@ -24818,6 +24818,67 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     // Comments may keep the old name; strings shown to the user may not.
     const shown = html.split('\n').filter(l => !/^\s*(\/\/|\*|<!--)/.test(l) && /Data Detection/.test(l));
     deepEq(shown, [], 'a user-visible string still says "Data Detection"');
+  });
+
+  // [REGRESSION] Reviewed 2026-10-10: the tutorial had drifted like Help. It
+  // promised a Ctrl+Enter that does not exist, taught that selecting a DDL
+  // forces it (arming is a right-click now) while spotlighting an element that
+  // is always hidden, limited Track to NETARD, put the Test panel on the wrong
+  // side, and titled panels by a position the layout picker can change.
+  {
+    const steps = () => vm.runInContext('_TUT_STEPS', sandbox);
+    const text = st => st.title + '\n' + st.body;
+
+    test('[REGRESSION] tutorial: every spotlight target exists and is not hidden by its markup', () => {
+      for (const st of steps()) {
+        if (!st.target) continue;
+        const id = st.target.slice(1);
+        const tag = html.match(new RegExp(`<[a-z]+[^>]*\\bid="${id}"[^>]*>`))?.[0];
+        assert.ok(tag, `"${st.title}" points at ${st.target}, which does not exist`);
+        assert.ok(!/style="[^"]*display:\s*none/.test(tag), `"${st.title}" points at ${st.target}, which starts hidden`);
+      }
+    });
+
+    test('[REGRESSION] tutorial: no shortcut, position or limit the app does not have', () => {
+      const all = steps().map(text).join('\n');
+      assert.ok(!/Ctrl\+Enter|Mod-Enter/.test(html.replace(/const _TUT_STEPS = \[[\s\S]*?\n\];/, '')) && !/Ctrl\+Enter/.test(all),
+        'the tutorial promises a Ctrl+Enter shortcut');
+      for (const st of steps())
+        assert.ok(!/\b(top|bottom)-(left|right)\b/.test(st.title), `"${st.title}" names a position the layout can change`);
+      assert.ok(!/Only available for NETARD/.test(all), 'the tutorial still limits Track to NETARD');
+      const titles = steps().map(s => s.title);
+      deepEq(titles.filter((t, i) => titles.indexOf(t) !== i), [], 'two tutorial steps share a title');
+      assert.ok(!titles.includes('Pasting a Message'), 'the duplicate Data Input step is back');
+    });
+
+    test('[REGRESSION] tutorial: menu items and buttons are named as the app labels them', () => {
+      const by = t => steps().find(s => s.title.startsWith(t));
+      const ovr = by('Manual DDL Override');
+      assert.ok(/'Use for parsing \(override\)'/.test(html) && ovr.body.includes('Use for parsing (override)'),
+        'the override step does not name the menu item that arms a DDL');
+      assert.ok(!/Click any DDL node in the tree to make it the active scope/.test(ovr.body), 'the override step teaches click-to-force again');
+      const exc = by('Exclusions');
+      for (const lbl of ['Exclude from auto-detect', 'Exclude DEF from parsing'])
+        assert.ok(html.includes(`'${lbl}'`) && exc.body.includes(lbl), `the exclusions step does not name "${lbl}"`);
+      assert.ok(/import a previously exported \.json/.test(by('Loading DDL').body) && /Right-click an empty area/.test(by('Loading DDL').body)
+        && /\{ icon: '⬇', label: 'Import'/.test(html.slice(html.indexOf('if (!node) {'), html.indexOf('if (!node) {') + 400)),
+        'Import lives on the empty-area menu; the tutorial must say so');
+      assert.ok(/Test panel under them/.test(by('Class Editor').body), 'the Class Editor step misplaces the Test panel');
+      const bl = by('Baselines');
+      assert.ok(bl.target === '#baselineBtn' && /id="blSaveBtn"[^>]*>&#9733; Save</.test(html) && bl.body.includes('★ Save'),
+        'the Baselines step does not match the buttons it names');
+    });
+  }
+
+  // [REGRESSION] The Baseline Editor's empty list told people to press
+  // "★ Baseline" — no such button; the one in Parse Results reads "★ Save".
+  // Reported 2026-10-10. The hint must name the button by its real label.
+  test('[REGRESSION] the empty Baseline Editor names the button that saves a baseline', () => {
+    const label = html.match(/id="blSaveBtn"[^>]*>([^<]+)<\/button>/)?.[1];
+    assert.strictEqual(label, '&#9733; Save', 'the save button was renamed — update the empty-state hints');
+    const hints = [...html.matchAll(/<div class="bl-empty">No baselines yet\.([^<]*)<\/div>/g)].map(m => m[1]);
+    assert.strictEqual(hints.length, 2, 'the two empty-state hints (markup + blRenderRight) moved');
+    for (const h of hints) assert.ok(/press (&#9733;|★) Save in Parse Results\./.test(h), `the empty state says "${h.trim()}"`);
   });
 
   test('[REGRESSION] Help covers every part of the app it used to skip', () => {

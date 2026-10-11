@@ -1549,7 +1549,7 @@ test('Track mode picks records; leaving it narrows Parse Results to them', () =>
 
   // Track mode is a table of many records, so the controls that act on ONE
   // record's field table — and the meta line describing it — are hidden.
-  assert.ok(/body\.track-mode #resCfgControls,\s*\nbody\.track-mode #recMetaContent \{ display: none !important; \}/.test(src),
+  assert.ok(/body\.track-mode #resCfgControls,\s*\n(body\.track-mode #resValidationBar,\s*\n)?body\.track-mode #recMetaContent \{ display: none !important; \}/.test(src),
     'the per-record controls must not sit over a table of many records');
   // The class is set in _syncTrackChrome since 2026-10-09, from S.trackMode, so
   // the resets that clear S.trackMode directly take it off too.
@@ -7039,41 +7039,34 @@ test('both spec-variant fallbacks are named, not just one', () => {
 
 test('the provenance says whether the spec variant matched the input', () => {
   // A Binary spec reading characters — or a Non-Binary spec reading a hex dump —
-  // parses SOMETHING, and what it parses is not the message. It sat in the same
-  // dim grey as a parse that matched. It takes the amber the short byte count
-  // uses when the variant is not the one the input called for.
-  // Requested 2026-08-23.
+  // parses SOMETHING, and what it parses is not the message. Requested
+  // 2026-08-23 as an amber label; since 2026-10-11 it is a warning in the issue
+  // bar, in words, and the label stays ordinary text.
   const src = fs.readFileSync('./source.html', 'utf8');
   const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
-  // Matched reads as ordinary text; mismatched takes the SAME token as the
-  // short-byte count, so the two warnings on that line cannot drift apart.
   assert.ok(/\.rec-meta-by\s*\{ color: var\(--text\); \}/.test(css),
     'a matching parse is still dimmed like an aside');
-  const off  = (css.match(/\.rec-meta-by-off \{[^}]*\}/) || [''])[0];
-  const shrt = (css.match(/\.rec-meta-short \{[^}]*\}/) || [''])[0];
-  assert.ok(/var\(--warn-text\)/.test(off), 'the mismatch is not marked');
-  assert.ok(/var\(--warn-text\)/.test(shrt) , 'the byte count changed colour');
+  assert.ok(!/rec-meta-by-off/.test(src), 'the label still turns amber on a mismatch');
 
-  // The class is applied from the comparison, not hardcoded.
-  // Bounded by the function's own end, not a character count — the slice was
-  // 2200 chars and a comment pushed the branch out of range.
+  // Bounded by the closure's own return, not a character count.
   const _p0  = src.indexOf('const _provHtml');
-  const prov = src.slice(_p0, src.indexOf('return { by, bytesTxt };', _p0));
+  const _p1  = src.indexOf('return { by, bytesTxt, warns };', _p0);
+  assert.ok(_p1 > _p0, 'the provenance no longer hands its warnings over');
+  const prov = src.slice(_p0, _p1);
   assert.ok(/_variantOff\s*=\s*\/fallback\/\.test\(_by\) \|\| \(!!_used && _used !== _want\)/.test(prov),
     'the mismatch no longer covers both a fallback and a plain variant mismatch');
   // The variant name is read PAST the qualifier, or "fallback binary" reports
   // its variant as "fallback".
   assert.ok(prov.includes('(?:fallback )?([a-z]+)'),
     'the variant is no longer read past the fallback qualifier');
-  // BOTH fallbacks are amber on their own account, not only through the
-  // comparison: the label travels with the message, while the comparison needs
+  // BOTH fallbacks count on their own account, not only through the comparison:
+  // the label travels with the message, while the comparison needs
   // S.inputFormat to describe THIS one — true for a paste, not for a row picked
-  // out of an audit file. Checked against the source of the branch, since the
-  // markup is written into the DOM rather than returned.
+  // out of an audit file.
   assert.ok(/_variantOff[\s\S]{0,120}fallback/.test(prov),
-    'a fallback is marked only when the input format happens to disagree');
-  assert.ok(/rec-meta-by\$\{_variantOff \? ' rec-meta-by-off' : ''\}/.test(prov),
-    'the class is not driven by that comparison');
+    'a fallback is flagged only when the input format happens to disagree');
+  assert.ok(/if \(_variantOff\) warns\.push\(\{ severity: 'warning', fid: null, text: _byTip \}\)/.test(prov),
+    'the mismatch does not reach the issue bar');
   // And it asks the SHARED rule which side the input is on — the same one that
   // chose the variant in the first place.
   assert.ok(/_meInputIsNonBinary\(null\)/.test(prov), 'the provenance re-implements the rule');
@@ -11098,7 +11091,10 @@ test('the DDL Doc columns can be dragged and selected, like Parse Results', () =
   // a hint the browser re-derived from content on the next render.
   assert.ok(!/function initColResize\(/.test(APP_SRC),
     'the second column-resize implementation is back');
-  const cfgKeys = (APP_SRC.match(/^\s{2}(res|doc|fm|test):\s*\{/gm) || []).length;
+  // Counted inside the registry only — another table of the same keys (the
+  // validation bars have a `res` too) is not a resizer.
+  const _colrz = APP_SRC.slice(APP_SRC.indexOf('const _ME_COLRZ = {'), APP_SRC.indexOf('\n};', APP_SRC.indexOf('const _ME_COLRZ = {')));
+  const cfgKeys = (_colrz.match(/^\s{2}(res|doc|fm|test):\s*\{/gm) || []).length;
   eq(cfgKeys, 4, 'the four tables are not all registered with the shared resizer');
 
   // Both gestures wired on the DDL Doc, against the shared implementations.
@@ -24867,6 +24863,223 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
       const bl = by('Baselines');
       assert.ok(bl.target === '#baselineBtn' && /id="blSaveBtn"[^>]*>&#9733; Save</.test(html) && bl.body.includes('★ Save'),
         'the Baselines step does not match the buttons it names');
+    });
+  }
+
+  // Requested 2026-10-11: errors and warnings sat in the table where they
+  // happened, so a 4,000-row record with three error rows showed them only to
+  // someone who scrolled past. A bar above the table counts them and walks to
+  // each one — errors first, then warnings, each in table order.
+  {
+    const resIssues = (...a) => vm.runInContext('_resIssues', sandbox)(...a);
+    const sync      = (...a) => vm.runInContext('_resSyncIssueBar', sandbox)(...a);
+    const vb        = () => vm.runInContext('_VBARS.res', sandbox);
+    const pic9 = (id, txt) => ({ id, dataType: 'PIC 9(3)', value: txt, rawBytes: [...Buffer.from(txt)] });
+    const msgOf = () => ({
+      fields: [
+        pic9('A', '123'),
+        pic9('B', '1X3'),                                      // warning: X in a PIC 9
+        { id: 'C', error: 'binding 0 could not be resolved' }, // error, message
+        { id: 'D', error: true, description: 'Bit 7 — no definition in DDL' }, // error, flag
+        { id: 'E', issue: 'length ran past the message' },     // error, issue
+        { id: 'F', issue: 'F: declares 4 byte(s), but the message ends after 2' }, // already names itself
+      ],
+      tokens: [
+        { id: 'Q1', anchorId: 'A', fields: [{ id: 'T1', error: 'bad tag' }] },  // after A
+        { id: 'Q2', error: 'no token map entry', rawBytes: [1, 2] },            // warning
+        { error: 'token header unreadable' },                                   // error
+      ],
+    });
+
+    test('issue bar: errors first, then warnings, each in table order, every kind counted', () => {
+      const got = resIssues(msgOf(), [{ severity: 'warning', fid: null, text: '3 of 10 bytes not parsed' }]);
+      deepEq(got.map(i => `${i.severity[0]} ${i.fid} ${i.text}`), [
+        'e Q1::T1 T1: bad tag',
+        'e C C: binding 0 could not be resolved',
+        'e D D: Bit 7 — no definition in DDL',
+        'e E E: length ran past the message',
+        'e F F: declares 4 byte(s), but the message ends after 2',
+        'e null Token area: token header unreadable',
+        'w null 3 of 10 bytes not parsed',
+        'w B B: \'X\' at position 2 is not valid for PIC 9(3)',
+        'w tkn::Q2 Token Q2: no definition found — no token map entry',
+      ]);
+      deepEq(resIssues({ fields: [pic9('A', '123')] }, []), [], 'a clean message has no issues');
+    });
+
+    // [REGRESSION] "value does not fit N" on an LLVAR PAN of 16 in a field of
+    // 19 was read as a size complaint; it was an X in the digits. Reported
+    // 2026-10-11. The text names the byte and where it is.
+    test('[REGRESSION] issue bar: a content warning names the byte and its position, not a size', () => {
+      const why = vm.runInContext('_meContentWhy', sandbox);
+      eq(why({ id: '2', dataType: 'N', rawBytes: [...Buffer.from('4111111111X11110')] }),
+        "'X' at position 11 is not valid for N");
+      eq(why({ id: '2', dataType: 'N', rawBytes: [...Buffer.from('41X1Y1')] }),
+        "'X' at position 3 (and 1 more) is not valid for N");
+      eq(why({ id: 'T', dataType: 'N', rawBytes: [0x31, 0x00, 0x32] }), '0x00 at position 2 is not valid for N');
+      eq(why({ id: '2', dataType: 'N', rawBytes: [...Buffer.from('4111111111')] }), null, 'a valid value has nothing to say');
+      // A short value in a variable-length field is not a content problem at all.
+      eq(why({ id: '2', dataType: 'N', maxLength: 19, rawBytes: [...Buffer.from('4111')] }), null);
+    });
+
+    test('issue bar: renders the counts, keeps its place on a re-render, resets on another message', () => {
+      const prev = elStubs.resValidationBar;
+      const bar = elStubs.resValidationBar = { style: {}, innerHTML: '', className: '' };
+      try {
+        const m1 = msgOf(), list = resIssues(m1, []);
+        sync(m1, list);
+        assert.strictEqual(bar.style.display, 'flex', 'the bar does not show when there are issues');
+        assert.ok(/vbar-error/.test(bar.className), 'the first issue is an error and the bar is not painted as one');
+        assert.ok(/✖ 6&ensp;⚠ 2/.test(bar.innerHTML), 'the counts are missing or wrong');
+        assert.ok(/1&thinsp;\/&thinsp;8/.test(bar.innerHTML), 'the position is missing');
+        assert.ok(/onclick="_vbarJumpToLine\('res'\)"/.test(bar.innerHTML), 'the message does not lead to its row');
+        vb().idx = 3; sync(m1, list);
+        assert.strictEqual(vb().idx, 3, 'a re-render of the same message lost the position');
+        vm.runInContext("_vbarDismiss('res')", sandbox);
+        sync(m1, list);
+        assert.strictEqual(bar.style.display, 'none', 'a re-render reopened a dismissed bar');
+        const m2 = msgOf(); sync(m2, resIssues(m2, []));
+        assert.strictEqual(vb().idx, 0, 'another message did not start at its first issue');
+        assert.strictEqual(bar.style.display, 'flex', 'another message did not bring the bar back');
+        sync(m2, []);
+        assert.strictEqual(bar.style.display, 'none', 'a message without issues still shows the bar');
+      } finally { if (prev) elStubs.resValidationBar = prev; else delete elStubs.resValidationBar; }
+    });
+
+    test('issue bar: Parse Results feeds it — unparsed bytes included — and Track hides it', () => {
+      const prevC = elStubs.resContainer, prevB = elStubs.resValidationBar;
+      elStubs.resContainer = { innerHTML: '', classList: { add(){}, remove(){}, toggle(){}, contains: () => false },
+        style: {}, querySelector: () => null, querySelectorAll: () => [] };
+      const bar = elStubs.resValidationBar = { style: {}, innerHTML: '', className: '' };
+      try {
+        renderFieldTable({ ...ovrMsg(true), bytes: new Array(10).fill(0x30),
+          fields: [{ ...ovrMsg(true).fields[0], startByte: 0, endByte: 3 }] });
+        assert.ok(/6 of 10 bytes not parsed/.test(bar.innerHTML), 'the short-coverage warning does not reach the bar');
+      } finally {
+        if (prevC) elStubs.resContainer = prevC; else delete elStubs.resContainer;
+        if (prevB) elStubs.resValidationBar = prevB; else delete elStubs.resValidationBar;
+      }
+      const cfg = html.slice(html.indexOf('<div id="resCfgBar">'), html.indexOf('id="resContainer"'));
+      assert.ok(cfg.includes('<div id="resValidationBar" class="vbar"></div>'), 'the bar is not above the results table');
+      assert.ok(/body\.track-mode #resValidationBar,/.test(html), 'the bar would sit over the Track table');
+    });
+  }
+
+  // [REGRESSION] Reported 2026-10-11 from the issue bar's own example: a FIXED
+  // 12 amount the message ended inside read 6 bytes and said nothing, an LLVAR
+  // prefix of 25 on a 19-digit PAN read 25, and "1X" read 1 — the legacy ISO
+  // reader refused all three, the parse-spec engine and parseFlatMessage did
+  // not. The rule is per FIELD, by how each block reads: a bitmap message is
+  // judged only on the DEs its bits mark present (the DDL declares every DE
+  // there is), a variable field only against what its length said (never its
+  // DDL maximum), a fixed layout must end where its DDL does, and a spec that
+  // decides at run time what is present (PSTM) is judged on what it read.
+  {
+    const read = (def, txt) => vm.runInContext('_meReadOneFieldFromDef', sandbox)(def,
+      { bytes: [...Buffer.from(txt)], cursor: 0, fields: [], fieldsById: {} });
+
+    test('[REGRESSION] a field the message ends inside is reported, against what it had to be', () => {
+      const fx = read({ id: '4', type: 'FIXED', length: 12, dataType: 'N' }, '000001');
+      eq(fx.issue, '4: declares 12 byte(s), but the message ends after 6 — read as 6');
+      const vl = read({ id: '2', type: 'LLVAR', length: 19, dataType: 'N' }, '164111111111');
+      eq(vl.issue, '2: its length says 16 byte(s), but the message ends after 10 — read as 10');
+      // A variable field shorter than its DDL maximum is simply a short field.
+      const ok = read({ id: '2', type: 'LLVAR', length: 19, dataType: 'N' }, '044111');
+      eq(ok.issue, undefined, 'a short LLVAR whose prefix is right was flagged');
+      eq(ok.value, '4111');
+      // A REDEFINES re-views bytes its base already judged.
+      eq(read({ id: 'R', type: 'FIXED', length: 12, isRedefines: true }, '000001').issue, undefined);
+    });
+
+    test('[REGRESSION] an LL/LLL prefix over the maximum, or not a number, is reported', () => {
+      const over = read({ id: '2', type: 'LLVAR', length: 19, dataType: 'N' }, '25' + '4'.repeat(25));
+      eq(over.issue, '2: length prefix says 25, but "2" declares at most 19 byte(s) — read as 19');
+      eq(over.valueLength, 19, 'the read is capped at the declared maximum');
+      const bad = read({ id: '2', type: 'LLVAR', length: 19, dataType: 'N' }, '1X4111');
+      eq(bad.issue, '2: length prefix "1X" is not a number — read as 0');
+      const lll = read({ id: '48', type: 'LLLVAR', length: 999 }, '0');
+      eq(lll.issue, '48: the message ends inside its 3-digit length prefix');
+    });
+
+    test('[REGRESSION] parseFlatMessage applies the same rules, and scoring counts them', () => {
+      const pfm = vm.runInContext('parseFlatMessage', sandbox);
+      const defs = [{ id: 'A', type: 'FIXED', length: 3 }, { id: 'B', type: 'LLVAR', length: 5 },
+                    { id: 'C', type: 'FIXED', length: 4 }];
+      const cut = pfm([...Buffer.from('ABC03XYZ12')], defs);
+      eq(cut.find(f => f.id === 'C').issue, 'C: declares 4 byte(s), but the message ends after 2 — read as 2');
+      const over = pfm([...Buffer.from('ABC09XYZXYZXY')], defs);
+      eq(over.find(f => f.id === 'B').issue, 'B: length prefix says 9, but "B" declares at most 5 byte(s) — read as 5');
+      const short = pfm([...Buffer.from('ABC03XYZ')], defs);
+      deepEq(short.map(f => f.id), ['A', 'B', 'C'], 'the field the message ended before has no row');
+      assert.ok(/^starts at byte 8 but the message is 8 byte\(s\)/.test(short[2].error), 'it is not reported');
+      eq(pfm([...Buffer.from('ABC03XYZ1234')], defs).filter(f => f.error || f.issue).length, 0, 'a complete message is clean');
+      assert.ok(/const hardErrs = f\.filter\(x => x\.error \|\| x\.issue\)\.length;/.test(html),
+        'scoring does not count a field the parse had to complain about');
+    });
+
+    test('[REGRESSION] a bitmap message is judged on the DEs its bits mark present, not on the DDL', () => {
+      S.ddlTree = { VOL: { SV: { 'BITDDL': `
+        DEF REC.
+          02 BMP PIC X(16).
+          02 F1 PIC X(1).
+          02 F2 PIC X(1).
+          02 F3 PIC X(1).
+        END REC.
+      ` } } };
+      S.inputFormat = 'ascii';
+      const item = { ddl_bindings: ['VOL/SV/BITDDL/REC'], de_map: [{ field: 'F1', de: 2 }], parse_spec_binary: [],
+        parse_spec_ascii: [{ 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } }, { 'read-bitmap-fields': 'BMP' }] };
+      // DE 2 only: F2 and F3 are declared, absent, and not owed.
+      const one = meExecParseSpec(item, Buffer.from('4000000000000000A'));
+      deepEq(one.fields.filter(f => f.error || f.issue), [], 'an absent DE was held against the message');
+      // DEs 2 and 4 set, the message ends after DE 2.
+      const cut = meExecParseSpec(item, Buffer.from('5000000000000000A'));
+      const e = cut.fields.find(f => f.error);
+      assert.ok(e && /^DE 4 marked present in the bitmap, but the message ended at byte 17$/.test(e.error),
+        `a present DE with no bytes left was not reported: ${e && e.error}`);
+    });
+
+    test('[REGRESSION] a token whose own size runs past the end is reported', () => {
+      const pta = vm.runInContext('parseTokenArea', sandbox);
+      const area = '& 0000200030! B200010 ABC';
+      const toks = pta([...Buffer.from(area)], 0, false, null, true);
+      eq(toks[0].issue, 'Token B2: its size says 10 byte(s), but only 3 are left — read as 3');
+      const fine = pta([...Buffer.from('& 0000200025! B200003 ABC')], 0, false, null, true);
+      eq(fine[0].issue, undefined, 'a token that fits was flagged');
+      deepEq(vm.runInContext('_resIssues', sandbox)({ fields: [], tokens: toks }, []).map(i => i.text).filter(t => /Token B2: its size/.test(t)).length, 1,
+        'the token issue does not reach the bar');
+    });
+
+    test('[REGRESSION] leftover bytes are an error only when the spec reads one fixed layout', () => {
+      const fixed = vm.runInContext('_meSpecIsFixedLayout', sandbox);
+      eq(fixed([{ 'read-ddl': { binding: 0 } }]), true, 'an STM-style read-ddl walk is a fixed layout');
+      eq(fixed([{ 'read-ddl': { binding: 0 } }, { 'token-area': {} }]), false, 'a token area makes it variable');
+      eq(fixed([{ 'read-bitmap': { field: 'BMP' } }, { 'read-bitmap-fields': 'BMP' }]), false, 'a bitmap makes it variable');
+      eq(fixed([{ read: { from: 'A' } }, { when: { field: 'A', equal: '1', then: [] } }]), false, 'a when (PSTM) makes it variable');
+      eq(fixed([]), false);
+      const prov = html.slice(html.indexOf('const _provHtml'), html.indexOf('return { by, bytesTxt, warns };'));
+      assert.ok(/_meSpecIsFixedLayout\(/.test(prov) && /warns\.push\(_fixed\s*\? \{ severity: 'error'/.test(prov),
+        'leftover bytes after a fixed layout are not an error');
+    });
+
+    test('[REGRESSION] a spec that decides what is present (PSTM) is judged only on what it read', () => {
+      S.ddlTree = { VOL: { SV: { 'PST': `
+        DEF REC.
+          02 FLG PIC X(1).
+          02 SVC PIC X(4).
+        END REC.
+      ` } } };
+      S.inputFormat = 'ascii';
+      const item = { ddl_bindings: ['VOL/SV/PST/REC'], parse_spec_binary: [],
+        parse_spec_ascii: [{ read: { from: 'FLG', until: 'FLG' } },
+                           { when: { field: 'FLG', equal: '1', then: [{ read: { from: 'SVC', until: 'SVC' } }] } }] };
+      deepEq(meExecParseSpec(item, Buffer.from('0')).fields.filter(f => f.error || f.issue), [],
+        'a section the spec skipped was held against the message');
+      const cut = meExecParseSpec(item, Buffer.from('1AB'));
+      eq(cut.fields.find(f => f.id === 'SVC')?.issue, 'SVC: declares 4 byte(s), but the message ends after 2 — read as 2');
+      const none = meExecParseSpec(item, Buffer.from('1'));
+      assert.ok(none.fields.some(f => f.id === 'SVC' && /^starts at byte 1 but the message is 1 byte/.test(f.error || '')),
+        'a section the spec decided to read, and the message ended before, was not reported');
     });
   }
 

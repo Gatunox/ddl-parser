@@ -1250,6 +1250,39 @@ Rules:
 > `read-segment-fields` also takes an attribute called `map`, which names a
 > bitmap field. Unrelated to this block, and the two never appear together.
 
+### 5.23 End of data — judged per field
+
+A message is never measured against the DDL's total size. The DDL declares every
+element there is; what one message owes depends on how the spec reads it, so the
+check is made **field by field, by the block that reads it**:
+
+| How it is read | What a short message owes |
+|---|---|
+| A fixed layout — the spec uses only `read-ddl`, `read`, `read-fixed`, `skip`, `map` (an STM record) | Every field. A field the message ends before is an error (*"starts at byte N but the message is M byte(s) — this field and everything after it could not be read"*), and so are bytes left after the layout ends |
+| `read-bitmap-fields` (ISO, Base24) | Only the DEs whose bits are set. A set bit with no bytes left is an error naming every DE that went missing (*"DE 4 (and 2 more: 7, 11) marked present in the bitmap, but the message ended at byte 53"*). An absent DE is never owed |
+| `when`, `repeat`, `read-while` (PSTM) | Only what the spec decided to read. A section it skipped is not owed; a section it chose to read and the message ended before is an error |
+| `token-area` | The area is variable; each token owes only its own size. A size past the end, or one that is not a number, is an error on that token |
+| Any other variable layout (TLV, `read-until`, `read-to-end`, a bitmap, tokens) | Bytes left after the last field are a **warning**, not an error |
+
+Within any of them, a field that **starts inside the message and ends past it** is
+an error, measured against what that field had to be:
+
+- a fixed field against its declared size — *"4: declares 12 byte(s), but the
+  message ends after 6 — read as 6"*;
+- a variable field (`LLVAR`, `LLLVAR`, or one sized by a length before it, §8)
+  against what its length said — *"its length says 16 byte(s), but the message
+  ends after 10"*. Never against its DDL size: that is the most it may be, so a
+  shorter value is simply a short field.
+
+An `LLVAR` / `LLLVAR` prefix is the field's length and the DDL's size its maximum:
+a prefix over the maximum is an error and is read as the maximum, the rule §8
+applies to every wire length; a prefix that is not a number is an error and reads
+nothing.
+
+The same rules hold in the DDL-only reader used for manual override and for
+scoring candidate DDLs, where a field the parse had to complain about counts as a
+hard error in the score.
+
 ---
 
 ## 6. DDL Bindings (ddl_bindings)
@@ -2118,6 +2151,33 @@ together: the tooltip must never offer a reading the comparison would refuse.
 **Where the overrides are applied.** They are applied to the field values once
 per message, by `_msgApplyOverrides`, as the **first** statement of the render —
 before the metadata bar, which draws the tag badges. So a tag is always tested against the reading the override produced.
+
+### 11.3 The issue bar — every problem of the message on screen
+
+Error rows stay red where they happened in Parse Results; the bar above the table
+says that they exist, how many, and walks to each one. It is the DDL editor's
+validation bar (one implementation, keyed by owner), shown only when the message
+has something to report:
+
+```
+‹ 1/3 ›  ✖ 1  ⚠ 2  4: declares 12 byte(s), but the message ends after 6 — read as 6   ⧉ ✕
+```
+
+- **Errors** (listed first): every row the parse marked as an error, and a token
+  area whose structure could not be read.
+- **Warnings**: a value its type does not allow — named by the byte and its
+  position (*"2: 'X' at position 11 is not valid for N"*), so it cannot be read as
+  a size complaint —, a `?` standing for a byte lost in a text capture, a token
+  with no definition, bytes left after a variable layout (§5.23), and a spec
+  variant that does not match the input class (a Binary spec on character data,
+  or the reverse). The variant is reported here only; the parser label in the
+  metadata bar stays ordinary text.
+- Each group is in table order, a token area where the table puts it.
+- **‹ ›** or a click on the text selects the row and scrolls it into view, opening
+  a collapsed group or the token area and clearing a filter that hides it.
+- **✕** hides the bar for that message; another message brings it back. A
+  re-render of the same message keeps the position and the dismissal.
+- Track mode hides it, with the rest of the per-record controls.
 
 ## 13. Storage
 

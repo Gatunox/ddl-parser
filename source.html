@@ -1253,6 +1253,7 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .vbar .vbar-copy:hover  { opacity: 1; }
 .vbar .vbar-close { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 2px; font-size: calc(var(--sz-mono) + 1px); }
 .vbar .vbar-close:hover { opacity: 1; }
+.vbar .vbar-counts { flex-shrink: 0; white-space: nowrap; font-size: calc(var(--sz-mono) - 1px); padding: 0 6px 0 2px; }
 .tree-node.tree-sel .tree-vol-lbl,
 .tree-node.tree-sel .tree-sv-lbl,
 .tree-node.tree-sel .tree-ddl-lbl,
@@ -1866,9 +1867,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 .rec-meta-time  { color: var(--text-dim); }
 /* Parse provenance: which parser ran, and coverage when it fell short */
 .rec-meta-by    { color: var(--text); }
-/* The spec variant did not match the input class. Same amber as the short
-   byte count beside it: both say "this parsed, and you should look". */
-.rec-meta-by-off { color: var(--warn-text); }
 .rec-meta-short { color: var(--warn-text); }
 
 /* ---- Token area rows ---- */
@@ -3374,6 +3372,7 @@ input.me-inp:focus{border-color:var(--accent);}
    about anything. They are hidden rather than left to act on the record behind
    the table. Reported 2026-08-28. */
 body.track-mode #resCfgControls,
+body.track-mode #resValidationBar,
 body.track-mode #recMetaContent { display: none !important; }
 /* …and the navigator's row stays, because the picked count sits in it. */
 .trk-sel-count { flex-shrink: 0; font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
@@ -4701,6 +4700,9 @@ th.me-fm-colhi{color:var(--accent);}
             </div>
           </div>
         </div>
+        <!-- Every error and warning of the message on screen, walked one by one;
+             filled by _resSyncIssueBar. -->
+        <div id="resValidationBar" class="vbar"></div>
       </div>
       <div class="panel-body pb-read" id="resContainer">
         <div class="empty-st">
@@ -6591,6 +6593,24 @@ function _meContentLooksWrong(f) {
   // the only one painted red. Reported 2026-08-28.
   return !validateFieldContent(f.rawBytes, valType)
       || (isBinary && _meInputIsNonBinary(null) && Array.from(f.rawBytes).includes(0x3F));
+}
+
+// What _meContentLooksWrong objects to, in words that point at it: the first
+// byte the type cannot hold and where it sits in the value, or the "?" standing
+// for a byte lost on the way in. "Value does not fit N" was read as a SIZE
+// complaint about a variable-length field that was the right size; it was an
+// "X" in a PAN. Reported 2026-10-11.
+function _meContentWhy(f) {
+  if (!_meContentLooksWrong(f)) return null;
+  const valType = f.typeOverride ? _meOverrideValidationType(f.typeOverride) : (f.dataType || '');
+  const bytes = Array.from(f.rawBytes);
+  const ch  = b => (b >= 0x20 && b < 0x7F) ? `'${String.fromCharCode(b)}'` : `0x${b.toString(16).padStart(2, '0').toUpperCase()}`;
+  const bad = bytes.reduce((a, b, i) => (validateFieldContent([b], valType) ? a : a.concat(i)), []);
+  const more = n => n > 1 ? ` (and ${n - 1} more)` : '';
+  if (bad.length)
+    return `${ch(bytes[bad[0]])} at position ${bad[0] + 1}${more(bad.length)} is not valid for ${f.typeOverride || f.dataType}`;
+  const lost = bytes.reduce((a, b, i) => (b === 0x3F ? a.concat(i) : a), []);
+  return `'?' at position ${lost[0] + 1}${more(lost.length)} — a byte lost when the input was captured as text`;
 }
 
 // Build the set of field IDs that must be skipped for content validation.
@@ -8494,6 +8514,7 @@ function parseFlatMessage(bytes, defs, rawBytes) {
 
   // OCCURS actual-count cache — nested-aware, keyed per (outer-context, group).
   const _occursActual = {};
+  let _short = false;   // the "message ended before this field" row is said once
 
   for (const def of defs) {
     // OCCURS: drop occurrences beyond the actual count of any enclosing frame.
@@ -8502,25 +8523,51 @@ function parseFlatMessage(bytes, defs, rawBytes) {
     const hasExplicit = def.offset !== undefined;
     const fStart = hasExplicit ? def.offset : seqOffset;
 
-    if (!hasExplicit && fStart >= bytes.length) break;
-    if ( hasExplicit && fStart >= bytes.length) continue;
+    // The DDL is the whole layout here — no bitmap, no spec deciding what is
+    // present — so a field the message ended before is a field missing from
+    // it. Said once, on the first one, the way the parse-spec read-ddl says it.
+    // Reported 2026-10-11.
+    if (fStart >= bytes.length) {
+      if (!_short && !def.isRedefines && (def.length || 0) > 0) {
+        _short = true;
+        fields.push({ id: def.id, description: def.description, startByte: fStart,
+          error: `starts at byte ${fStart} but the message is ${bytes.length} byte(s) — `
+               + `this field and everything after it could not be read` });
+      }
+      if (!hasExplicit) break;
+      continue;
+    }
 
     let len = def.length;
     let lenPrefix = null;
     let dataStart = fStart;
+    let issue = null;
+    const addIssue = t => { issue = issue ? `${issue} \u00b7 ${t}` : t; };
 
-    if (def.type === 'LLVAR') {
-      lenPrefix = bytes.slice(fStart, fStart + 2).map(b => String.fromCharCode(b)).join('');
-      len = parseInt(lenPrefix, 10) || 0;
-      dataStart = fStart + 2;
-    } else if (def.type === 'LLLVAR') {
-      lenPrefix = bytes.slice(fStart, fStart + 3).map(b => String.fromCharCode(b)).join('');
-      len = parseInt(lenPrefix, 10) || 0;
-      dataStart = fStart + 3;
+    // Same rules as the parse-spec reader (_meReadOneFieldFromDef): the prefix
+    // is the length, the DDL's size the most it may be, and a field the message
+    // ends inside is measured against what it had to be.
+    if (def.type === 'LLVAR' || def.type === 'LLLVAR') {
+      const pw = def.type === 'LLVAR' ? 2 : 3;
+      lenPrefix = bytes.slice(fStart, fStart + pw).map(b => String.fromCharCode(b)).join('');
+      dataStart = fStart + pw;
+      if (lenPrefix.length < pw) { addIssue(`${def.id}: the message ends inside its ${pw}-digit length prefix`); len = 0; }
+      else if (!/^\d+$/.test(lenPrefix)) { addIssue(`${def.id}: length prefix "${lenPrefix}" is not a number \u2014 read as 0`); len = 0; }
+      else {
+        len = parseInt(lenPrefix, 10);
+        if (def.length > 0 && len > def.length) {
+          addIssue(`${def.id}: length prefix says ${len}, but "${def.id}" declares at most ${def.length} byte(s) \u2014 read as ${def.length}`);
+          len = def.length;
+        }
+      }
     }
 
     const fBytes = bytes.slice(dataStart, dataStart + len);
     const fEnd   = dataStart + len;
+    if (len > 0 && fBytes.length < len && !def.isRedefines)
+      addIssue(lenPrefix != null
+        ? `${def.id}: its length says ${len} byte(s), but the message ends after ${fBytes.length} \u2014 read as ${fBytes.length}`
+        : `${def.id}: declares ${len} byte(s), but the message ends after ${fBytes.length} \u2014 read as ${fBytes.length}`);
 
     if (!hasExplicit) {
       seqOffset = fEnd;
@@ -8536,9 +8583,11 @@ function parseFlatMessage(bytes, defs, rawBytes) {
       valueLength: fBytes.length,
       value: isBin ? _binValue(_srcBytes, fBytes) : bToStr(fBytes),
       rawHex: bToHex(fBytes), rawBytes: fBytes,
-      startByte: fStart, endByte: fEnd - 1,
+      // What was READ: fEnd is the declared end, which may be past the message.
+      startByte: fStart, endByte: dataStart + fBytes.length - 1,
       isRedefines: def.isRedefines || false,
       redefTarget: def.redefTarget || null,
+      ...(issue ? { issue } : {}),
       unreliable: _isBinField || undefined,
       maskInRaw:  _isBinField || undefined,
     });
@@ -8712,6 +8761,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
 
     let dataBytes;
     let dataStart; // absolute byte offset of token data within `bytes`
+    let tknIssue = null;
     if (isBinary) {
       if (offset + 2 > bytes.length) break;
       const dataSize = (bytes[offset] << 8) | bytes[offset+1]; offset += 2;
@@ -8734,8 +8784,13 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       }
     } else {
       if (offset + 5 > bytes.length) break;
-      const dataSize = parseInt(_tokChars(bytes, offset, 5), 10);
+      const _sizeTxt = _tokChars(bytes, offset, 5);
+      const dataSize = parseInt(_sizeTxt, 10);
       offset += 5;
+      // The size is the token's own length — the one thing the area being
+      // variable does not excuse. A size that is not a number read nothing, and
+      // one past the end read what was left; neither said so. Reported 2026-10-11.
+      if (!/^\d{5}$/.test(_sizeTxt)) tknIssue = `Token ${tokenId}: size "${_sizeTxt}" is not a number`;
       // An ISO token puts a single SPACE between its header and its payload. It
       // terminates the header — `! ` + id + size + " " — and the size counts the
       // payload alone, so the space must be stepped over before the value
@@ -8749,6 +8804,9 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       dataStart = offset;
       dataBytes = bytes.slice(offset, offset + dataSize);
       offset += dataSize;
+      const _left = Math.max(0, Math.min(areaEnd, bytes.length) - dataStart);
+      if (!tknIssue && dataSize > _left)
+        tknIssue = `Token ${tokenId}: its size says ${dataSize} byte(s), but only ${_left} are left \u2014 read as ${dataBytes.length}`;
     }
 
     const ddlName = idMap[tokenId];
@@ -8791,6 +8849,7 @@ function parseTokenArea(bytes, startOffset, isBinary, preferredVol, isISO) {
       error: !tokenMaps.length ? 'Token area present — no token definitions loaded'
            : !ddlName  ? `Unknown token ID: ${tokenId}`
            : !ddlPath  ? 'DDL not found' : null,
+      ...(tknIssue ? { issue: tknIssue } : {}),
     });
   }
 
@@ -11505,7 +11564,9 @@ function bestDDLMatch(bytes, candidates, rawBytes) {
   for (const { path, defs } of candidates) {
     const f    = parseMessage(bytes, defs, rawBytes);
     if (!f.length) continue;
-    const hardErrs = f.filter(x => x.error).length;
+    // `issue` is the complaint about a field that WAS read (cut short, a bad
+    // length prefix) — as much a misfit as a row that could not be read.
+    const hardErrs = f.filter(x => x.error || x.issue).length;
 
     // Build per-def lookup and redefines skip set for content validation
     const defsById  = new Map(defs.map(d => [d.id, d]));
@@ -14164,6 +14225,9 @@ function updateDDLGutter() {
 const _VBARS = {
   ddl: { host: 'ddlValidationBar', msgs: [], idx: 0, scope: '', path: '', jump: true },
   ps:  { host: 'psValidationBar',  msgs: [], idx: 0, scope: '', path: '', jump: false },
+  // Parse Results: moving through the list moves the table to each row.
+  res: { host: 'resValidationBar', msgs: [], idx: 0, scope: '', path: '', jump: false,
+         onNav: it => _resGoToIssue(it) },
 };
 const _vb = key => _VBARS[key] || _VBARS.ddl;
 let _vbarForce = false; // set true right before a badge-click selection to force-show (and un-dismiss)
@@ -14188,14 +14252,19 @@ function _vbarRender(key = 'ddl') {
       `<button class="vbar-btn" onclick="_vbarNext('${key}')" ${st.idx === total - 1 ? 'disabled' : ''}>&gt;</button>` +
       (st.scope ? `<span class="vbar-scope" title="Showing issues for this definition only">DEF&nbsp;${_escH(st.scope)}</span>` : '') +
     `</span>` +
-    (st.jump
+    (st.counts
+      ? `<span class="vbar-counts">${[st.counts.error ? `\u2716 ${st.counts.error}` : '', st.counts.warning ? `\u26a0 ${st.counts.warning}` : ''].filter(Boolean).join('&ensp;')}</span>`
+      : '') +
+    (st.onNav && cur.fid
+      ? `<span class="vbar-msg" onclick="_vbarJumpToLine('${key}')" style="cursor:pointer;user-select:text" title="Click to show this row">${_escH(cur.text)}</span>`
+      : st.jump
       ? `<span class="vbar-msg" ondblclick="javascript:_vbarJumpToLine('${key}')" style="cursor:pointer;user-select:text" title="Double-click to jump to line">${_escH(cur.text)}</span>`
       : `<span class="vbar-msg" style="user-select:text">${_escH(cur.text)}</span>`) +
     `<span class="vbar-copy" onclick="_vbarCopyMsg('${key}')" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>` +
     `<span class="vbar-close" onclick="_vbarDismiss('${key}')" title="Dismiss">✕</span>`;
 }
-function _vbarPrev(key = 'ddl') { const st = _vb(key); if (st.idx > 0) { st.idx--; _vbarRender(key); } }
-function _vbarNext(key = 'ddl') { const st = _vb(key); if (st.idx < st.msgs.length - 1) { st.idx++; _vbarRender(key); } }
+function _vbarPrev(key = 'ddl') { const st = _vb(key); if (st.idx > 0) { st.idx--; _vbarRender(key); st.onNav?.(st.msgs[st.idx]); } }
+function _vbarNext(key = 'ddl') { const st = _vb(key); if (st.idx < st.msgs.length - 1) { st.idx++; _vbarRender(key); st.onNav?.(st.msgs[st.idx]); } }
 function _tipShow(el, text) {
   let tip = document.getElementById('_uiTip');
   if (!tip) {
@@ -14254,12 +14323,22 @@ function _vbarDismiss(key = 'ddl') {
   // Only the DDL bar remembers a dismissal: it is keyed by FILE, and the spec
   // bar belongs to whichever class is open rather than to a file.
   const st = _vb(key);
+  // The results bar is dismissed for the message on screen; the next message
+  // brings it back. Its list is kept, so a re-render of the same message does
+  // not reopen it either.
+  if (key === 'res') {
+    st.dismissed = true;
+    const bar = document.getElementById(st.host);
+    if (bar) bar.style.display = 'none';
+    return;
+  }
   if (key === 'ddl' && st.path) _vbarDismissed.add(_vbarFileKey(st.path));
   _vbarClose(key);
 }
 function _vbarJumpToLine(key = 'ddl') {
   const msg = _vb(key).msgs[_vb(key).idx];
   if (!msg) return;
+  if (_vb(key).onNav) { _vb(key).onNav(msg); return; }
   const ed = document.getElementById('ddlEditor');
   if (!ed) return;
   const m = msg.text.match(/\bline[:\s]+(\d+)\b|\bat\s+line\s+(\d+)\b|\(line\s+(\d+)\)/i);
@@ -14630,10 +14709,31 @@ function renderFieldTable(msg) {
         + `The variant that matches the input is ${_want === 'ascii' ? 'Non-Binary' : 'Binary'}.`
       : `Parser that produced these fields — the ${_used === 'ascii' ? 'Non-Binary' : 'Binary'} spec, which matches this input`;
     const by = msg.parsedBy
-      ? `<span class="rec-meta-pipe">|</span><span class="rec-meta-by${_variantOff ? ' rec-meta-by-off' : ''}" title="${esc(_byTip)}">${esc(msg.parsedBy)}</span>`
+      ? `<span class="rec-meta-pipe">|</span><span class="rec-meta-by" title="${esc(_byTip)}">${esc(msg.parsedBy)}</span>`
       : '';
     const _decl = declared ? ` The record header declares ${declared}.` : '';
     let bytesTxt = `<span${declared ? ` title="${total} bytes decoded.${_decl}"` : ''}>${total} bytes</span>`;
+    // A record the spec reads as one fixed layout must end where that layout
+    // does, so bytes after it are an error there; where the spec reads a bitmap,
+    // tokens, a TLV or decides what is present, the layout is variable and they
+    // stay a warning. Asked for 2026-10-11.
+    const _spec  = _meSpecForMsg(msg);
+    const _fixed = !!_spec && _meSpecIsFixedLayout(
+      _used === 'ascii' ? _spec.parse_spec_ascii : _used === 'binary' ? _spec.parse_spec_binary : null);
+    // The same facts, as lines for the issue bar. The variant mismatch is said
+    // there and only there: the label no longer turns amber for it, since the
+    // bar names it in words — asked for 2026-10-11.
+    const warns = [];
+    if (_variantOff) warns.push({ severity: 'warning', fid: null, text: _byTip });
+    if (total > 0 && consumed > 0) {
+      if (consumed < total) warns.push(_fixed
+        ? { severity: 'error', fid: null,
+            text: `${total - consumed} byte(s) after the end of the layout \u2014 a fixed-length record ends where its DDL does` }
+        : { severity: 'warning', fid: null,
+            text: `${total - consumed} of ${total} bytes not parsed \u2014 no field accounts for them` });
+      else if (consumed > total) warns.push({ severity: 'warning', fid: null,
+        text: `Fields extend ${consumed - total} byte(s) past the end of the record` });
+    }
     if (total > 0 && consumed > 0) {
       if (consumed < total) {
         // Trailing bytes no field accounts for — truncated loop, wrong DDL, or
@@ -14644,7 +14744,7 @@ function renderFieldTable(msg) {
         bytesTxt = `<span class="rec-meta-short" title="Fields extend ${consumed - total} byte(s) past the end of the record">${total} bytes ⚠</span>`;
       }
     }
-    return { by, bytesTxt };
+    return { by, bytesTxt, warns };
   })();
   // NETARD record metadata bar
   let metaContent = '';
@@ -14961,7 +15061,7 @@ function renderFieldTable(msg) {
                  message reads over two lines instead of spanning two columns. -->
             <td class="c-num"></td>
             <td class="c-id">${esc(tkn.id)}</td>
-            <td class="c-desc" style="color:var(--text-dim)" title="${esc(tkn.error || '')}">No definition found<br><span class="tkn-nodef-why">${esc(tkn.error || `token ${tkn.id}`)}</span></td>
+            <td class="c-desc" style="color:var(--text-dim)" title="${esc(tkn.error || '')}">No definition found<br><span class="tkn-nodef-why">${esc(tkn.error || `token ${tkn.id}`)}</span>${tkn.issue ? `<br><span class="c-row-err">${esc(tkn.issue)}</span>` : ''}</td>
             <td class="c-len">${tkn.rawBytes.length}</td>
             <td class="c-off">${tkn.dataStart != null ? tkn.dataStart + (tkn.rawBytes.length ? "–" + (tkn.dataStart + tkn.rawBytes.length - 1) : "") : ""}</td>
             <td class="c-val" style="word-break:break-all" title="${esc(val)}">${escSpaces(val)}</td>
@@ -14985,7 +15085,7 @@ function renderFieldTable(msg) {
           onmouseenter="hoverField('${esc(hfid)}')"
           onmouseleave="clearHover()">
           <td class="c-id">${esc(tkn.id)}</td>
-          <td colspan="6">${esc(ddlLabel)} &nbsp;·&nbsp; ${byteCount} byte${byteCount !== 1 ? 's' : ''}</td>
+          <td colspan="6">${esc(ddlLabel)} &nbsp;·&nbsp; ${byteCount} byte${byteCount !== 1 ? 's' : ''}${tkn.issue ? `<br><span class="c-row-err">${esc(tkn.issue)}</span>` : ''}</td>
         </tr>`;
         out += makeFieldRows(tkn.fields, tkn.id, `tkn-body-row${tknHideCls}`);
       }
@@ -15148,6 +15248,108 @@ function renderFieldTable(msg) {
     if (_gdBtn && _gdBtn.classList) _gdBtn.classList.toggle('btn-accent-on', S.resGroupData);
     if (_hasGrp) _resApplyCollapse();
   }
+  _resSyncIssueBar(msg, _resIssues(msg, _provHtml.warns));
+}
+
+// ── Parse Results issue bar ─────────────────────────────────────────────────
+// Every problem of the message on screen, in one place: the rows the parse
+// marked as errors first, then the warnings — a value its type does not allow,
+// a token with no definition, bytes nobody parsed or fields running past the
+// end, a spec variant that does not match the input. The rows stay red where
+// they are; the bar says that they exist, how many, and walks to each one. On a
+// 4,000-row record, three error rows were found by scrolling past them, or not
+// at all. Requested 2026-10-11.
+//
+// Errors and warnings are each listed in table order, token areas where the
+// table puts them: after the field they were read out of, or at the end.
+function _resIssues(msg, msgWarns = []) {
+  const errs = [], warns = [...msgWarns];
+  const field = (f, prefix) => {
+    const fid = prefix ? `${prefix}::${f.id}` : f.id;
+    if (f.error || f.issue) {
+      // `error` is a message on parse-spec rows and a bare flag on bitmap ones,
+      // whose description then says what went wrong.
+      const why = (typeof f.error === 'string' && f.error) || (typeof f.issue === 'string' && f.issue)
+               || f.description || 'parse error';
+      // Most engine messages already open with the field's id; say it once.
+      errs.push({ severity: 'error', fid, text: String(why).startsWith(`${f.id}:`) ? why : `${f.id}: ${why}` });
+    } else if (_meContentLooksWrong(f)) {
+      // The same test that paints the value red, and what it found.
+      warns.push({ severity: 'warning', fid, text: `${f.id}: ${_meContentWhy(f)}` });
+    }
+  };
+  const tokens = list => {
+    for (const t of list) {
+      // A token whose own size was wrong, on the row the table gives it.
+      if (t.issue) errs.push({ severity: 'error', text: t.issue,
+        fid: !t.error ? `tkn-hdr::${t.id}` : (t.id && t.rawBytes?.length) ? `tkn::${t.id}` : null });
+      if (!t.error) { for (const f of (t.fields || [])) field(f, t.id); continue; }
+      if (t.id && t.rawBytes?.length)
+        warns.push({ severity: 'warning', fid: `tkn::${t.id}`, text: `Token ${t.id}: no definition found — ${t.error}` });
+      else
+        errs.push({ severity: 'error', fid: null, text: `Token area: ${t.error}` });
+    }
+  };
+  const byAnchor = new Map(), trailing = [];
+  for (const t of (msg?.tokens || [])) {
+    if (!t.anchorId) { trailing.push(t); continue; }
+    if (!byAnchor.has(t.anchorId)) byAnchor.set(t.anchorId, []);
+    byAnchor.get(t.anchorId).push(t);
+  }
+  for (const f of (msg?.fields || [])) { field(f, null); if (byAnchor.has(f.id)) tokens(byAnchor.get(f.id)); }
+  tokens(trailing);
+  return [...errs, ...warns];
+}
+
+// Whether a parse spec reads one fixed layout: only blocks that walk the DDL
+// in order. Anything that reads a bitmap, tokens, a TLV, up to a delimiter or
+// to the end, or decides at run time what is present (when, repeat,
+// read-while, stop), makes the record's length variable.
+const _ME_FIXED_BLOCKS = new Set(['read-ddl', 'read', 'read-fixed', 'skip', 'map']);
+function _meSpecIsFixedLayout(blocks) {
+  if (!Array.isArray(blocks) || !blocks.length) return false;
+  return blocks.every(b => b && typeof b === 'object'
+    && Object.keys(b).filter(k => !/^(at|peek|overrides|comment)$/.test(k)).every(k => _ME_FIXED_BLOCKS.has(k)));
+}
+
+// Re-rendering the same message keeps the position in the list and a dismissal;
+// another message starts at its first issue, with the bar showing again.
+function _resSyncIssueBar(msg, issues) {
+  const st = _vb('res');
+  if (st.msg !== msg) { st.msg = msg; st.idx = 0; st.dismissed = false; }
+  st.msgs = issues;
+  st.idx = Math.min(st.idx, Math.max(0, issues.length - 1));
+  st.counts = { error: issues.filter(i => i.severity === 'error').length,
+                warning: issues.filter(i => i.severity === 'warning').length };
+  const bar = document.getElementById(st.host);
+  if (!issues.length || st.dismissed) {
+    if (bar && bar.style) { bar.style.display = 'none'; bar.innerHTML = ''; }
+    return;
+  }
+  _vbarRender('res');
+}
+
+// Bring an issue's row on screen and select it: open the groups and the token
+// area hiding it, and clear a filter that leaves it out.
+function _resGoToIssue(it) {
+  if (!it?.fid) return;
+  const find = () => document.querySelector(`#resContainer tr[data-fid="${CSS.escape(it.fid)}"]`);
+  let tr = find();
+  if (!tr) return;
+  const under = (tr.dataset.under || '').split('|').filter(Boolean);
+  if (under.some(p => S.resCollapsedGroups.has(p))) {
+    under.forEach(p => S.resCollapsedGroups.delete(p));
+    _resApplyCollapse();
+  }
+  if (tr.classList.contains('row-token-hidden')) toggleTokenArea();
+  if (tr.classList.contains('row-filter-hide')) {
+    const fi = document.getElementById('resFilterInput');
+    if (fi) fi.value = '';
+    filterParsePanel('');
+    tr = find() || tr;
+  }
+  if (S.selFieldId !== it.fid) selectField(it.fid);
+  tr.scrollIntoView({ block: 'center' });
 }
 
 // ============================================================
@@ -20828,7 +21030,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.56.9.2';
+const APP_VERSION  = '1.57.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -34767,6 +34969,7 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
   // Whatever it frees or claims shifts the rest of the record, exactly as a
   // "bytes" override does, counted once per field id so a REDEFINES re-read
   // cannot double-shift.
+  let _vlgSized = false;
   if (ctx.vlgPending != null) {
     // The length frames the whole PAYLOAD, which may be several fields — a group,
     // or a group of groups. It used to be spent on the next field alone, so a LEN
@@ -34792,6 +34995,7 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
       ctx.vlgPending = null;
     }
     if (_want !== null) {
+    _vlgSized = true;
     // The DDL's size is the MAXIMUM this element can ever be, not a default to be
     // discarded: PAN PIC X(19) sized by PAN-LEN reads 8 when the LEN says 08 and
     // 16 when it says 16 — and still 19 when it says 99. A wire length above the
@@ -34817,18 +35021,47 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
     }
   }
 
-  if (def.type === 'LLVAR') {
-    lenPrefix = Array.from(ctx.bytes.slice(fStart, fStart + 2)).map(b => String.fromCharCode(b)).join('');
-    len = parseInt(lenPrefix, 10) || 0;
-    dataStart = fStart + 2;
-  } else if (def.type === 'LLLVAR') {
-    lenPrefix = Array.from(ctx.bytes.slice(fStart, fStart + 3)).map(b => String.fromCharCode(b)).join('');
-    len = parseInt(lenPrefix, 10) || 0;
-    dataStart = fStart + 3;
+  // Whether `len` came off the wire (a prefix, or the LEN before this field)
+  // rather than from the DDL — which decides what an incomplete read is
+  // measured against below.
+  const _lenFromWire = _vlgSized || def.type === 'LLVAR' || def.type === 'LLLVAR';
+  const _addIssue = t => { _issue = _issue ? `${_issue} \u00b7 ${t}` : t; };
+  if (def.type === 'LLVAR' || def.type === 'LLLVAR') {
+    // The prefix is the field's length; the DDL's size is the most it may be.
+    // The legacy ISO reader always refused a prefix that was not a number or
+    // was over the maximum; the engine took parseInt's word for anything —
+    // "25" on a 19-digit PAN read 25 bytes, "1X" read one. Reported 2026-10-11.
+    const _pw  = def.type === 'LLVAR' ? 2 : 3;
+    const _max = len || 0;
+    lenPrefix = Array.from(ctx.bytes.slice(fStart, fStart + _pw)).map(b => String.fromCharCode(b)).join('');
+    dataStart = fStart + _pw;
+    if (lenPrefix.length < _pw) {
+      _addIssue(`${def.id}: the message ends inside its ${_pw}-digit length prefix`);
+      len = 0;
+    } else if (!/^\d+$/.test(lenPrefix)) {
+      _addIssue(`${def.id}: length prefix "${lenPrefix}" is not a number \u2014 read as 0`);
+      len = 0;
+    } else {
+      len = parseInt(lenPrefix, 10);
+      if (_max > 0 && len > _max) {
+        _addIssue(`${def.id}: length prefix says ${len}, but "${def.id}" declares at most ${_max} byte(s) \u2014 read as ${_max}`);
+        len = _max;
+      }
+    }
   }
 
   const fBytes = Array.from(ctx.bytes.slice(dataStart, dataStart + len));
   const fEnd   = dataStart + len;
+  // A field that starts inside the message and ends past it. Measured against
+  // what this field had to be: its declared size when the DDL fixes it, or what
+  // its length said when the wire does — never a variable field against its
+  // DDL maximum, which only says how long it MAY be. A REDEFINES re-views bytes
+  // the field it overlays already judged.
+  if (len > 0 && fBytes.length < len && !def.isRedefines) {
+    _addIssue(_lenFromWire
+      ? `${def.id}: its length says ${len} byte(s), but the message ends after ${fBytes.length} \u2014 read as ${fBytes.length}`
+      : `${def.id}: declares ${len} byte(s), but the message ends after ${fBytes.length} \u2014 read as ${fBytes.length}`);
+  }
   // Advance the cursor past this field even when the def carries an explicit
   // DDL offset — otherwise a read-ddl walk over HPE defs (which all have
   // offsets) leaves the cursor at 0 and every subsequent cursor-based block
@@ -34858,9 +35091,9 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
     // when the highlight walked it.
     const _avail = ctx.bytes.length - fEnd;
     if (_n > _avail) {
-      _issue = `${def.id}: length ${_written}${_inChars ? ` digit(s) = ${_n} byte(s)` : ''} `
+      _addIssue(`${def.id}: length ${_written}${_inChars ? ` digit(s) = ${_n} byte(s)` : ''} `
              + `runs past the end of the message (${_avail} byte(s) left) — read as `
-             + `${_meLengthReadAs(fBytes, _lt)}`;
+             + `${_meLengthReadAs(fBytes, _lt)}`);
       _n = Math.max(0, _avail);
     }
     ctx.vlgPending = _n;
@@ -35597,7 +35830,13 @@ function _meExecReadWindow(attrs, ctx) {
     const d = defs[i];
     if (!(d.length > 0)) continue;              // group rows carry no bytes of their own
     const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
-    if (!f) return;                             // ran out of bytes; the reader reported it
+    if (!f) {
+      // The reader returns nothing at the end of the data and says nothing, so
+      // the comment that stood here ("the reader reported it") was not true.
+      ctx.fields.push({ id: d.id, error: `starts at byte ${ctx.cursor} but the message is `
+        + `${ctx.bytes.length} byte(s) — this field and everything after it could not be read` });
+      return;
+    }
     _meApplyTypeOverride(f, d, ctx, attrs.type || null);
     _meApplyDisplayOverride(f, d, ctx);
     ctx.fields.push(f);
@@ -37557,6 +37796,19 @@ function _meExecBitmapFields(attrs, ctx) {
     try {
       const entry = deMap[de];
 
+      // A bit that says "present" with no bytes left to be it. Only the bits
+      // that are set are ever judged — the DDL declares every DE there is, so
+      // its total size says nothing about one message. This read nothing and
+      // said nothing, so a message cut short looked complete. One row names
+      // every DE that went missing. Reported 2026-10-11.
+      if (ctx.cursor >= ctx.bytes.length && !_meDeEntryFor(attrs, de)) {
+        const rest = bits.slice(bits.indexOf(de));
+        ctx.fields.push({ id: entry?.def?.id || entry?.groupId || `DE-${de}`,
+          error: `DE ${de}${rest.length > 1 ? ` (and ${rest.length - 1} more: ${rest.slice(1).join(', ')})` : ''} `
+               + `marked present in the bitmap, but the message ended at byte ${ctx.bytes.length}` });
+        break;
+      }
+
       // A "de" entry replaces the default read for that bit. Its blocks run with
       // the cursor at the DE's start and names resolved inside the DE's own group,
       // so "ARQC" means "EMV-ELEMENT.ARQC" without repeating the parent everywhere.
@@ -37634,9 +37886,14 @@ function _meExecBitmapFields(attrs, ctx) {
         const rows = _meVlgReadGroup(groupId, kids, cfgLenId, ctx);
         for (const r of rows) ctx.fields.push(r);
       } else {
-        // Fixed group — read every leaf sequentially.
+        // Fixed group — read every leaf sequentially. A leaf the message ended
+        // before is part of a DE the bitmap says is there, so it is reported.
         for (const kid of kids) {
-          if (!readSeq(kid)) break;   // ran out of bytes
+          if (!readSeq(kid)) {
+            ctx.fields.push({ id: kid.id, error:
+              `DE ${de}: the message ended at byte ${ctx.bytes.length}, before "${kid.id}"` });
+            break;
+          }
         }
       }
     } finally {
@@ -40276,6 +40533,7 @@ function _meSave() {
               <li><strong>SEG-MAP</strong> — for segmented files, type a segment map (hex or bits) and press ▶ Parse to read only those segments</li>
               <li><strong>Trk</strong> checkbox — mark fields to compare across messages in <strong>⊞ Track Mode</strong></li>
               <li><strong>★ Save</strong> / <strong>⇆ Compare</strong> — keep this parse as a baseline, or compare it with one (see <em>Baselines</em>); <strong>Export</strong> — save parsed messages to a file</li>
+              <li><strong>Issue bar</strong> — above the table when the message has problems: counts its errors (✖) and warnings (⚠), errors first; <strong>&lt; &gt;</strong> or a click on the text brings each row on screen and selects it, opening a collapsed group if needed; ✕ hides it for this message</li>
               <li>An amber bar says when the message changed after it was parsed — press ▶ Parse to refresh</li>
               <li>A message that fails says why — unknown type, no parse spec, no matching DDL — with a link to fix it</li>
               <li><strong>Double-click</strong> the panel title or the <strong>n / m</strong> counter to copy every field of the message as tab-separated text (Field ID, Description, Len, Value); double-click a row to copy just that field</li>

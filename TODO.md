@@ -1126,7 +1126,8 @@ had it do.
 - [x] **Byte-coverage readout on every parse** — *done v1.1.2.375*, folded into
       item 7 above; generalises the leftover-bytes warning `read-segment-fields`
       already emitted, and also flags the opposite case (fields past the end).
-- [ ] Error summary with jump-to at the top of Parse Results, instead of error
+- [x] Error summary with jump-to at the top of Parse Results — *done v1.57.0.0*:
+      the issue bar counts errors and warnings and walks to each row. Was: error
       rows interleaved with data rows. Reuse the DDL editor's validation-bar
       pattern (`◀ 1/N ▶` + message), which already exists and works well.
 - [ ] Field preview in the DDL picker — currently you choose on score alone.

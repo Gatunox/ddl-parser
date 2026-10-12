@@ -1115,6 +1115,57 @@ had it do.
 
 ---
 
+## 25. [ ] VS Code extension — what stands between the branch and the work machine
+
+**State (2026-10-11).** Branch `feat/vscode-extension`, one commit (`67d9203`,
+"read NonStop audit files over SFTP from a VS Code extension"). **Never pushed**,
+and **9 commits behind `main`**. Plan and decisions: `PLAN-vscode-extension.md`
+on the branch. Everything was proven against `mock/nonstop.js` (selftest + a
+36-check e2e in a throwaway VS Code), never against a real NonStop.
+
+### To bring it up to date
+
+1. **Merge `main` into the branch.** Main moved on: issue bar, end-of-data
+   checks, Help / tutorial / SPEC split, cursor tokens, Track export.
+2. **The theme blocks miss the five cursor tokens.** `vscode-dark` and
+   `vscode-light` were generated before `--cur-col`, `--cur-row`, `--cur-ew`,
+   `--cur-ns` and `--cur-text` existed, and the branch's own test requires every
+   theme block to carry the same token set — it fails after the merge until they
+   are added (white pointers on vscode-dark, black on vscode-light).
+3. **Version clash.** The branch commit says v1.57.1.0, but `main` is already at
+   v1.57.0.0 with different content. The merge commit takes the next number above
+   whatever `main` holds then.
+
+### To prove it
+
+4. **A real NonStop.** Connect, open a real audit file, follow it while it grows,
+   survive a host-side drop. Only the mock has done this.
+5. **Install the `.vsix` on the work machine** (`node extension/pack.js` →
+   Install from VSIX — sideloading is confirmed available there).
+6. **Measure the header walk on a real file over SFTP.** The index is built by
+   streaming the 110-byte headers host-side; how long a large real file takes to
+   index has never been measured.
+
+### Open design questions (from the plan)
+
+7. **Record count is the remaining ceiling.** Payloads never reach the webview,
+   but the index does — about 200 bytes of JSON per record, so a million records
+   is ~200 MB in the panel. If real files run to millions, the index needs
+   windowing: a design change, not an addition.
+8. **The scan exists twice** — the browser worker for local files, `scan.js` for
+   remote ones. test.js holds them to identical output, but the clean fix is one
+   walk over an abstract byte source.
+9. **Test hooks ship in the extension.** `bridge.js` answers `test-read-record`,
+   `extension.js` handles `test-load-local-result`, and `probe.js` (Phase 0's
+   storage probe) is still injected into every webview. Gate them behind a test
+   flag or strip them from the packaged build.
+
+**Rule that stays:** the SSH connection is never closed for inactivity — only the
+user or the host ends it (keepalives only detect a dead link).
+
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

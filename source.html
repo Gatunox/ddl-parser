@@ -21030,7 +21030,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.0.1';
+const APP_VERSION  = '1.57.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25666,6 +25666,7 @@ const _PS_HELP = {
       'You want every triple emitted as its own field for inspection / further processing.',
       'The buffer is <b>BER-TLV</b> (EMV) — set <code>ber</code>, because a fixed <code>tag_length</code> mis-frames the first 1-byte tag and garbles every triple after it.',
       'You want each tag <b>filed into its own DDL element</b> rather than emitted as anonymous rows — use <code>tags</code>.',
+      'A <b>subelement holds subfields of its own</b> — a dataset of ID + length + value, or a fixed layout — like the card networks\' DE-48 subelements. Give its <code>tags</code> entry <code>blocks</code>, and they read the value.',
     ],
     attrs: [
       ['field', 'string', false, [
@@ -25705,14 +25706,26 @@ const _PS_HELP = {
         'In <code>ascii</code> mode <code>tag_length</code> and <code>length_length</code> count <b>characters</b>; in <code>ascii-hex</code> they count <b>decoded bytes</b>, so four hex characters are 2.',
         'Only <code>ascii-hex</code> decodes the buffer, so only there do the result rows lose their byte positions — nothing in the message maps 1:1 to a decoded byte.',
       ]],
-      ['tags', '{ "<tag>": {field} }', false, [
+      ['tags', '{ "<tag>": {field, blocks} }', false, [
         'Files a tag into a DDL element. <b>This is the only way a triple reaches the DDL.</b>',
         ['<code>{"9F26": {"field": "ARQC"}}</code>', 'Tag 9F26 fills the ARQC element.'],
         ['<code>{"0002": {"field": "CARD-TYPE"}}</code>', 'The same in <code>ascii</code> mode — the key is the tag\'s <b>characters</b>.'],
+        ['<code>{"42": {"field": "SE42", "blocks": [ … ]}}</code>', 'The value is read by its <b>own blocks</b> instead of being filed whole.'],
         ['<i>omitted</i>', 'Every triple becomes an invented <code>&lt;buffer&gt;.&lt;tag&gt;</code> row instead, with no type and no description.'],
         'Leaving it out does <b>not</b> mean "match the tag to an element of the same name" — no such lookup happens. The mapping is only ever the one you write here.',
-        'The element\'s LEN and DATA leaves are filled from the triple.',
-        'Whether the tag itself is stored is read from the DDL: a subgroup declaring a TAG leaf gets it; one that does not is already identified by the element it lives in.',
+        'Each entry takes two keys:',
+        _psKey('field', 'string', 'required, unless the entry has blocks', [
+          'The element the triple is filed into. Its LEN and DATA leaves are filled from the triple.',
+          'Whether the tag itself is stored is read from the DDL: a subgroup declaring a TAG leaf gets it; one that does not is already identified by the element it lives in.',
+          'With <code>blocks</code> it is optional; without it the rows are named after the outer buffer and the tag.',
+        ]),
+        _psKey('blocks', 'block list', 'optional', [
+          'For a subelement whose value holds subfields of its own: a dataset (ID + length + value — read it with a nested <code>read-tlv</code>) or a fixed layout (read it with <code>read</code>). The engine frames the value — the triple\'s length says where it starts and ends — and the blocks only interpret it.',
+          ['Names', 'Resolve within the element: <code>"SF01"</code> means <code>SE42.SF01</code>. Nests to any depth.'],
+          ['Window', 'The blocks cannot read past the value\'s length; one that tries is reported and stopped there. A nested <code>read-tlv</code> needs no <code>field</code> — the value is its buffer.'],
+          ['Rows', 'The ID and length fill the element\'s TAG / LEN leaves when the DDL declares them — by name, or through <code>tag_field</code> / <code>length_field</code>. When it does not, they get no row: none is invented for data the DDL does not define. A subfield the DDL does not have is emitted as <code>&lt;element&gt;.&lt;id&gt;</code>.'],
+          ['Encoding', 'Not with <code>ascii-hex</code>: that decodes the buffer first, so nothing in the message is the value for the blocks to read — it is refused with a message saying so.'],
+        ]),
       ]],
       ['tag_field', 'string', false, [
         'The leaf that receives the tag, when the DDL does not call it TAG or TAG-ID.',
@@ -25784,6 +25797,21 @@ const _PS_HELP = {
         "tag_field": "T", "length_field": "L", "value_field": "V", "tags": {"01": {"field": "ITEM"}}}}]],
       ['Inside a read-bitmap-fields "de" entry — no "field" needed: the element being read IS the buffer, and short names resolve inside it',
         [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}}, "unknown": "skip"}}]],
+      { what: '<b>blocks</b> on a tag — subelement 42 holds a <b>dataset</b>, so its value is read by a nested read-tlv: 01 and 02 land in SE42\'s subfields; 10 is not mapped and stays an invented row. SE42 declares no TAG / LEN leaves, so its "4213" has no row',
+        ddl: 'DEFINITION MSG.\n  02 DE-48 PIC X(25).\n  02 SE42.\n    04 SF01 PIC X(3).\n    04 SF02 PIC X(2).\nEND\n',
+        def: 'MSG',
+        payload: '31 30 30 34 41 42 43 44 34 32 31 33 30 31 30 33 41 42 43 30 32 30 32 58 59',
+        spec: [{"read": "DE-48"},
+               {"read-tlv": {"field": "DE-48", "encoding": "ascii", "tag_length": 2, "length_length": 2,
+                 "tags": {"42": {"field": "SE42", "blocks": [
+                   {"read-tlv": {"encoding": "ascii", "tag_length": 2, "length_length": 2,
+                     "tags": {"01": {"field": "SF01"}, "02": {"field": "SF02"}}}}]}}}}] },
+      ['A DE-48-style element inside a "de" entry: a 1-character prefix, then optional subelements, one of them a dataset',
+        [{"read-fixed": {"length": 1, "as": "TCC"}},
+         {"read-tlv": {"encoding": "ascii", "tag_length": 2, "length_length": 2, "tags": {
+           "10": {"field": "SE10"},
+           "42": {"field": "SE42", "blocks": [{"read-tlv": {"encoding": "ascii", "tag_length": 2, "length_length": 2,
+             "tags": {"01": {"field": "SF01"}}}}]}}}}]],
     ],
   },
   'stop': {
@@ -27321,9 +27349,11 @@ function _mePsLintWarns(item, parsed, inertOut) {
       + `"${winner}" is used. Write the qualified name to pick another.`);
   };
 
+  let _lintScope = null;   // the element a tag's blocks run inside, if any
   const checkRef = (n, attr, id, allowSynthetic = true) => {
     if (typeof id !== 'string' || !id) return;
     if (allowSynthetic ? known(id) : ddlIds.has(id)) return;
+    if (_lintScope && ddlIds.has(`${_lintScope}.${id}`)) return;
     // "Not found in bound DDLs" is only true if there were bound DDLs to search.
     // With nothing bound, ddlIds is empty and EVERY reference reported missing —
     // a page of red about fields that are probably fine, caused by one thing the
@@ -27333,6 +27363,12 @@ function _mePsLintWarns(item, parsed, inertOut) {
     // A synthetic id declared by an earlier block is still checkable without a
     // binding, so only the DDL-backed half is suppressed.
     if (!bindingCount || !ddlIds.size) return;
+    // Inside an element, say which combination was looked for: the element is
+    // what the reader has to check against the DDL.
+    if (_lintScope) {
+      warns.push(`[block ${n}] ${attr}: "${id}" not found — no "${_lintScope}.${id}" in the bound DDLs`);
+      return;
+    }
     warns.push(`[block ${n}] ${attr}: "${id}" not found in ${allowSynthetic ? 'bound DDLs or earlier blocks' : 'bound DDLs'}`);
   };
 
@@ -27510,6 +27546,26 @@ function _mePsLintWarns(item, parsed, inertOut) {
           // like any other block list, so a bad reference deep in a "de" entry is
           // reported the same way as one at the top level.
           const deMapCfg = (attrs && typeof attrs === 'object') ? attrs.de : null;
+          // Which element a bit belongs to, by the SAME numbering the engine and
+          // the Field Map use — so a short name inside the entry is checked as
+          // ELEMENT.NAME, the way the parse resolves it. A DE number is an alias
+          // for whatever element the DDL puts at that position; it is not a name.
+          // Reported 2026-10-21: "SE10" inside DE 48's entry was flagged though
+          // the parse found FIELD-48.SE10.
+          let _deRows = null;
+          const _deElementOf = bit => {
+            if (_deRows === null) {
+              const defs = _bindingDefs();
+              let it = item;
+              if (attrs && typeof attrs === 'object' && attrs.overrides !== undefined) {
+                const merged = { ...(_meOvAll(item)) }, inl = _meOvNormalizeInline(attrs.overrides);
+                for (const id in inl) merged[id] = { ...(merged[id] || {}), ...inl[id] };
+                it = { ...item, overrides: merged };
+              }
+              _deRows = defs.length ? _meWalkDEFields(defs, it) : [];
+            }
+            return (_deRows.find(r => r.de === +bit) || {}).id || null;
+          };
           if (deMapCfg != null) {
             if (typeof deMapCfg !== 'object' || Array.isArray(deMapCfg)) {
               warns.push(`[block ${n}] read-bitmap-fields "de" must be an object keyed by bit number, e.g. {"55": [ … ]}`);
@@ -27518,11 +27574,18 @@ function _mePsLintWarns(item, parsed, inertOut) {
                 if (!/^\d+$/.test(bit) || +bit < 1 || +bit > 128)
                   warns.push(`[block ${n}] read-bitmap-fields "de" key "${bit}" is not a bit number between 1 and 128`);
                 const blocks = Array.isArray(ent) ? ent : ent?.blocks;
-                if (ent && !Array.isArray(ent) && typeof ent === 'object' && ent.field)
-                  checkRef(`${n}.de.${bit}`, 'de.field', ent.field, false);
+                const _entField = ent && !Array.isArray(ent) && typeof ent === 'object' ? ent.field : null;
+                if (_entField) checkRef(`${n}.de.${bit}`, 'de.field', _entField, false);
                 if (!Array.isArray(blocks) || !blocks.length)
                   warns.push(`[block ${n}] read-bitmap-fields "de" entry ${bit} has no blocks to run`);
-                else walk(blocks, `${n}.de.${bit}`);
+                else {
+                  // The scope the entry's blocks run in: its own "field" when it
+                  // names one, else the element the bit maps to.
+                  const _prevScope = _lintScope;
+                  _lintScope = (_entField && ddlIds.has(_entField)) ? _entField : _deElementOf(bit);
+                  walk(blocks, `${n}.de.${bit}`);
+                  _lintScope = _prevScope;
+                }
               }
             }
           }
@@ -27613,9 +27676,25 @@ function _mePsLintWarns(item, parsed, inertOut) {
               for (const [tag, m] of Object.entries(attrs.tags)) {
                 if (!/^[0-9A-Fa-f]{2,}$/.test(tag) || tag.length % 2)
                   warns.push(`[block ${n}] read-tlv tag "${tag}" is not an even-length hex value (e.g. "82", "9F26")`);
-                if (!m || typeof m !== 'object' || !m.field)
-                  warns.push(`[block ${n}] read-tlv tag "${tag}" needs a {"field": …} to file its value into`);
-                else checkRef(`${n}.tags.${tag}`, 'read-tlv.tags.field', m.field, false);
+                const _tb = m && typeof m === 'object' ? m.blocks : undefined;
+                if (!m || typeof m !== 'object' || (!m.field && _tb === undefined))
+                  warns.push(`[block ${n}] read-tlv tag "${tag}" needs a {"field": …} to file its value into, or "blocks" to read it`);
+                else if (m.field) checkRef(`${n}.tags.${tag}`, 'read-tlv.tags.field', m.field, false);
+                if (_tb !== undefined) {
+                  if (!Array.isArray(_tb) || !_tb.length)
+                    warns.push(`[block ${n}] read-tlv tag "${tag}" "blocks" must be a non-empty list of blocks`);
+                  else {
+                    // Names inside resolve within the tag's element, as they do
+                    // at run time.
+                    const _prevScope = _lintScope;
+                    // Scoped first, then as written — the engine's order.
+                    const _full = m.field && ((_lintScope && ddlIds.has(`${_lintScope}.${m.field}`)) ? `${_lintScope}.${m.field}`
+                      : ddlIds.has(m.field) ? m.field : null);
+                    _lintScope = _full || _lintScope;
+                    walk(_tb, `${n}.tags.${tag}`);
+                    _lintScope = _prevScope;
+                  }
+                }
               }
             }
           }
@@ -38925,6 +39004,16 @@ function _meExecReadTLVMapped(attrs, ctx) {
       continue;
     }
 
+    // A tag entry with `blocks`: the triple's VALUE is read by those blocks, the
+    // way a "de" entry reads a DE — a subelement whose value is itself a set of
+    // subfields (fixed, or a dataset of ID + length + value). Asked for
+    // 2026-10-19 for the card networks' DE-48-style subelements.
+    if (Array.isArray(mapped.blocks)) {
+      _meTlvRunTagBlocks(mapped, tagKey, t.bytes, lenBytes, l, tagAt, bufBase, attrs, ctx, defs, emit);
+      p = l.next + l.len;
+      continue;
+    }
+
     const groupName = mapped.field;
     const group = _meResolveScopedDef(groupName, ctx);
     if (!group) {
@@ -38955,6 +39044,61 @@ function _meExecReadTLVMapped(attrs, ctx) {
   // `p` is an offset into the TAGS, which start after the length — so the bytes
   // this block crossed are the length plus however far the walk got.
   if (consumes) ctx.cursor = Math.min(ctx.cursor + lenUsed + p, ctx.bytes.length);
+}
+
+// A mapped tag's value read by its own blocks. The engine frames it — the
+// triple's length says exactly where the value starts and ends — and the blocks
+// only interpret it, inside that window: names resolve within the tag's element
+// ("SF01" means DE48.SE42.SF01), a block that reads past the end is reported and
+// stopped there, and bytes the blocks leave unread are shown in `smart` mode.
+// The tag and length go onto the element's TAG / LEN leaves when the DDL declares
+// them (by name, or through tag_field / length_field) — and nowhere otherwise:
+// a row the DDL does not declare is not invented for them, the same rule a
+// mapped tag without blocks follows. Settled with the user 2026-10-21.
+function _meTlvRunTagBlocks(mapped, tagKey, tagBytes, lenBytes, l, tagAt, bufBase, attrs, ctx, defs, emit) {
+  const outer  = attrs.field || ctx._deScope || 'TLV';
+  const group  = mapped.field ? _meResolveScopedDef(mapped.field, ctx) : null;
+  if (mapped.field && !group) {
+    ctx.fields.push({ id: mapped.field, error: `TLV tag ${tagKey}: element "${mapped.field}" not found in the DDL` });
+    return;
+  }
+  const owner = group ? group.id : `${outer}.${tagKey}`;
+  if (!mapped.blocks.length) {
+    ctx.fields.push({ id: owner, error: `TLV tag ${tagKey}: "blocks" is empty — give the blocks that read its value, or leave "blocks" out` });
+    return;
+  }
+  // The blocks read message bytes in place. ascii-hex decodes the buffer first,
+  // so nothing in the message is the value any more.
+  if (bufBase == null) {
+    ctx.fields.push({ id: owner, error: `TLV tag ${tagKey}: "blocks" needs the value in place in the message — `
+      + `"encoding": "ascii-hex" decodes the buffer, so there is nothing for them to read` });
+    return;
+  }
+  const tagLeaf = group ? _meTlvLeaf(group.id, 'tag_field',    attrs, mapped, defs) : null;
+  const lenLeaf = group ? _meTlvLeaf(group.id, 'length_field', attrs, mapped, defs) : null;
+  if (tagLeaf) emit(tagLeaf.id, tagBytes, tagAt, { def: tagLeaf });
+  if (lenLeaf) emit(lenLeaf.id, lenBytes, tagAt + tagBytes.length, { def: lenLeaf });
+
+  const start = bufBase + l.next, end = start + l.len;
+  const prev = { cursor: ctx.cursor, scope: ctx._deScope, limit: ctx._deLimit };
+  ctx.cursor   = start;
+  ctx._deScope = group ? group.id : prev.scope;
+  ctx._deLimit = end;
+  try {
+    for (const b of mapped.blocks) { _meExecBlock(b, ctx); if (ctx.stopped) break; }
+    if (ctx.cursor > end) {
+      ctx.fields.push({ id: owner, error: `TLV tag ${tagKey}: its blocks read ${ctx.cursor - end} byte(s) past its length ${l.len}` });
+    } else {
+      const um = _meUnmappedRow(owner, end, ctx);
+      if (um) ctx.fields.push(um);
+    }
+  } finally {
+    // The TLV walk keeps its own position; the blocks only ever moved a cursor
+    // inside this one value.
+    ctx.cursor   = prev.cursor;
+    ctx._deScope = prev.scope;
+    ctx._deLimit = prev.limit;
+  }
 }
 
 function _meExecBlock(block, ctx) {

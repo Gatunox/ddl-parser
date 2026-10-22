@@ -25083,6 +25083,163 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     });
   }
 
+  // Asked for 2026-10-19: the card networks' DE-48-style elements hold optional
+  // subelements (ID + length + value), and some subelements hold subfields of
+  // their own — a dataset, or a fixed layout. A read-tlv tag entry could only
+  // file its value into one field; with `blocks` the value is read by blocks of
+  // its own, inside the window the triple's length gives it.
+  {
+    const MC_DDL = `
+      DEF REC.
+        02 BMP PIC X(16).
+        02 DE2 PIC X(2).
+        02 DE48.
+          03 LEN PIC 9(3).
+          03 TCC PIC X(1).
+          03 SE10 PIC X(10).
+          03 SE42.
+            04 SF01 PIC X(3).
+            04 SF02 PIC X(2).
+          03 SE61 PIC X(5).
+      END REC.`;
+    const de48Spec = se42 => ({ ddl_bindings: ['VOL/SV/MC/REC'], de_map: [{ field: 'DE2', de: 2 }, { field: 'DE48', de: 3 }],
+      parse_spec_binary: [], parse_spec_ascii: [
+        { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+        { 'read-bitmap-fields': { bitmap: 'BMP', de: { '3': { blocks: [
+          { 'read-fixed': { length: 1, as: 'TCC' } },
+          { 'read-tlv': { encoding: 'ascii', tag_length: 2, length_length: 2,
+              tags: { '10': { field: 'SE10' }, '42': se42, '61': { field: 'SE61' } } } }] } } } }] });
+    const de48Msg = de48 => '6000000000000000' + 'XY' + String(de48.length).padStart(3, '0') + de48;
+    const rows = ctx => ctx.fields.map(f => `${f.id}=${f.value}${f.error ? ' !' + f.error : ''}${f.issue ? ' !' + f.issue : ''}`);
+
+    test('a subelement holding a dataset is read by its own blocks; subfields resolve within it', () => {
+      S.ddlTree = { VOL: { SV: { MC: MC_DDL } } };
+      S.inputFormat = 'ascii';
+      const item = de48Spec({ field: 'SE42', blocks: [{ 'read-tlv': { encoding: 'ascii', tag_length: 2, length_length: 2,
+        tags: { '01': { field: 'SF01' }, '02': { field: 'SF02' } } } }] });
+      // TCC R · SE10 "ABCD" · SE42 = dataset 01 "ABC", 02 "XY", 03 "Q" (not in the DDL) · SE61 "12345"
+      const ctx = meExecParseSpec(item, Buffer.from(de48Msg('R' + '1004ABCD' + '4218' + '0103ABC0202XY0301Q' + '610512345')));
+      deepEq(rows(ctx).slice(3), ['TCC=R', 'DE48.SE10=ABCD',
+        'DE48.SE42.SF01=ABC', 'DE48.SE42.SF02=XY', 'DE48.SE42.03=Q', 'DE48.SE61=12345']);
+      // The length frames the dataset: a length shorter than its content cuts
+      // the walk there and says so, instead of reading into the next subelement.
+      const cut = meExecParseSpec(item, Buffer.from(de48Msg('R' + '4215' + '0103ABC0202XY0301Q')));
+      assert.ok(cut.fields.some(f => /TLV tag 03: length field is truncated/.test(f.error || '')),
+        `a dataset longer than its subelement's length was not cut there: ${rows(cut).join(' | ')}`);
+      // No row is invented for SE42's "4218": the DDL declares no TAG / LEN leaf.
+      assert.ok(!ctx.fields.some(f => /TAG-LEN/.test(f.id)), 'a row was invented for the ID and length');
+      const se10 = ctx.fields.find(f => f.id === 'DE48.SE10');
+      const sf1  = ctx.fields.find(f => f.id === 'DE48.SE42.SF01');
+      // SE42's header "4218" and SF01's own "0103" sit between SE10's value and SF01's.
+      eq(sf1.startByte, se10.endByte + 1 + 4 + 4, 'the first subfield is not where the dataset puts it');
+      // The dataset ends where SE42's length says; SE61's value follows its own "6105".
+      eq(ctx.fields.find(f => f.id === 'DE48.SE61').startByte, ctx.fields.find(f => f.id === 'DE48.SE42.03').endByte + 1 + 4,
+        'the next subelement is not where the dataset\'s end puts it');
+    });
+
+    test('with blocks, the ID and length fill TAG / LEN leaves only when the DDL declares them', () => {
+      S.ddlTree = { VOL: { SV: { MC: MC_DDL.replace('          03 SE42.\n', '          03 SE42.\n            04 SE-ID PIC X(2).\n            04 SE-LN PIC 9(2).\n') } } };
+      S.inputFormat = 'ascii';
+      const item = de48Spec({ field: 'SE42', tag_field: 'SE-ID', length_field: 'SE-LN',
+        blocks: [{ read: { from: 'SF01', until: 'SF02' } }] });
+      deepEq(rows(meExecParseSpec(item, Buffer.from(de48Msg('R' + '4205ABCXY')))).slice(3),
+        ['TCC=R', 'DE48.SE42.SE-ID=42', 'DE48.SE42.SE-LN=05', 'DE48.SE42.SF01=ABC', 'DE48.SE42.SF02=XY']);
+    });
+
+    test('a subelement with fixed subfields, and an absent one, read the same way', () => {
+      S.ddlTree = { VOL: { SV: { MC: MC_DDL } } };
+      S.inputFormat = 'ascii';
+      const item = de48Spec({ field: 'SE42', blocks: [{ read: { from: 'SF01', until: 'SF02' } }] });
+      deepEq(rows(meExecParseSpec(item, Buffer.from(de48Msg('R' + '4205ABCXY')))).slice(3),
+        ['TCC=R', 'DE48.SE42.SF01=ABC', 'DE48.SE42.SF02=XY']);
+      // SE42 absent: optional, so nothing is owed and nothing is reported.
+      const none = meExecParseSpec(item, Buffer.from(de48Msg('R' + '1004ABCD')));
+      deepEq(none.fields.filter(f => f.error || f.issue), []);
+    });
+
+    test('a binary dataset (1-byte ID, 2-byte length) opens into its own ID + length + value items', () => {
+      S.ddlTree = { VOL: { SV: { DS: `
+        DEF REC.
+          02 DS01.
+            03 X1 PIC X(3).
+      END REC.` } } };
+      S.inputFormat = 'hex';
+      const item = { ddl_bindings: ['VOL/SV/DS/REC'], parse_spec_ascii: [], parse_spec_binary: [
+        { 'read-tlv': { len: 2, tag_length: 1, length_length: 2, tags: {
+          '01': { field: 'DS01', blocks: [{ 'read-tlv': { tag_length: 1, length_length: 1, tags: { '0A': { field: 'X1' } } } }] } } } }] };
+      const ctx = meExecParseSpec(item, Buffer.from([0x00, 0x08, 0x01, 0x00, 0x05, 0x0A, 0x03, 0x41, 0x42, 0x43]));
+      eq(ctx.fields.find(f => f.id === 'DS01.X1')?.value, 'ABC', `the item inside the dataset was not read: ${rows(ctx).join(' | ')}`);
+      deepEq(ctx.fields.filter(f => f.error || f.issue), []);
+    });
+
+    test('the read-tlv help shows tag blocks with an example that really reads the dataset', () => {
+      const ex = psHelp['read-tlv'].examples.find(e => !Array.isArray(e) && /<b>blocks<\/b> on a tag/.test(e.what));
+      assert.ok(ex, 'the help has no runnable tag-blocks example');
+      const ids = mePsHelpRunExample(ex).fields.map(f => `${f.id}=${f.value}`);
+      for (const want of ['DE-48.10=ABCD', 'SE42.SF01=ABC', 'SE42.SF02=XY'])
+        assert.ok(ids.includes(want), `the example does not produce ${want}: ${ids.join(' | ')}`);
+      const tagsDoc = psHelp['read-tlv'].attrs.find(a => a[0] === 'tags');
+      deepEq(tagsDoc[3].filter(x => x && x.k).map(x => x.k), ['field', 'blocks'], 'the tags entry keys are not documented');
+    });
+
+    // [REGRESSION] Reported 2026-10-21: inside a "de" entry the lint looked a
+    // short name up on its own and flagged "SE10" as missing, while the parse
+    // resolved it within the DE's element. A DE number is an alias for whatever
+    // element the DDL puts at that bit; the lint has to find that element the
+    // way the engine does and check ELEMENT.NAME — and warn only when that
+    // combination does not exist.
+    test('[REGRESSION] the lint resolves names inside a "de" entry within the element the bit maps to', () => {
+      S.ddlTree = { VOL: { SV: { NW: `
+        DEF REC.
+          02 BMP PIC X(16).
+          02 PAN PIC X(2).
+          02 ADDL-DATA.
+            03 LEN PIC 9(3).
+            03 SE10 PIC X(10).
+            03 SE42.
+              04 SF01 PIC X(3).
+        END REC.` } } };
+      S.inputFormat = 'ascii';
+      const spec = tags => ({ ddl_bindings: ['VOL/SV/NW/REC'], de_map: [{ field: 'PAN', de: 2 }, { field: 'ADDL-DATA', de: 3 }],
+        parse_spec_binary: [], parse_spec_ascii: [
+          { 'read-bitmap': { field: 'BMP', encoding: 'ascii-hex' } },
+          { 'read-bitmap-fields': { bitmap: 'BMP', de: { '3': { blocks: [
+            { 'read-tlv': { encoding: 'ascii', tag_length: 2, length_length: 2, tags } }] } } } }] });
+      // The lint sees the class as loaded — de_map folded into overrides — as in the app.
+      const lint = it => { const m = migrateOverrides(it); return mePsLintWarns(m, m.parse_spec_ascii).filter(w => /not found/.test(w)); };
+      // Bit 3 is ADDL-DATA, so SE10, SE42 and — inside SE42's blocks — SF01 all exist.
+      deepEq(lint(spec({ '10': { field: 'SE10' }, '42': { field: 'SE42', blocks: [{ 'read-tlv': { encoding: 'ascii',
+        tag_length: 2, length_length: 2, tags: { '01': { field: 'SF01' } } } }] } })), []);
+      // A name the element does not have is flagged, naming the combination looked for.
+      const w = lint(spec({ '10': { field: 'SE99' } }));
+      eq(w.length, 1, `expected one warning, got ${JSON.stringify(w)}`);
+      assert.ok(/"SE99" not found — no "ADDL-DATA\.SE99" in the bound DDLs/.test(w[0]), w[0]);
+      // And the parse agrees with the lint.
+      const ctx = meExecParseSpec(spec({ '10': { field: 'SE10' } }), Buffer.from('6000000000000000' + 'XY' + '008' + '1004ABCD'));
+      eq(ctx.fields.find(f => f.id === 'ADDL-DATA.SE10')?.value, 'ABCD');
+    });
+
+    test('tag blocks: the lint walks them, an empty list is caught, ascii-hex is refused', () => {
+      S.ddlTree = { VOL: { SV: { MC: MC_DDL } } };
+      S.inputFormat = 'ascii';
+      const lint = items => { const m = migrateOverrides(items); return mePsLintWarns(m, m.parse_spec_ascii); };
+      // Short names throughout: SE42 within the DE's element, SF01 within SE42 —
+      // at run time and in the lint alike.
+      const ok = de48Spec({ field: 'SE42', blocks: [{ 'read-tlv': { encoding: 'ascii', tag_length: 2, length_length: 2,
+        tags: { '01': { field: 'SF01' } } } }] });
+      deepEq(lint(ok).filter(w => /SE42|SF01|tag "42"/.test(w)), [], 'a short name inside the tag\'s blocks was flagged');
+      assert.ok(lint(de48Spec({ field: 'SE42', blocks: [] })).some(w => /tag "42" "blocks" must be a non-empty list/.test(w)),
+        'an empty blocks list is not caught');
+      assert.ok(lint(de48Spec({ field: 'SE42', blocks: [{ 'read-tlv': { tag_length: 2, length_length: 2,
+        tags: { '01': { field: 'NOPE' } } } }] })).some(w => /"NOPE" not found/.test(w)), 'a bad name inside the blocks is not caught');
+      const hex = { ddl_bindings: ['VOL/SV/MC/REC'], parse_spec_binary: [], parse_spec_ascii: [{ 'read-tlv': { len: 2, encoding: 'ascii-hex',
+        tag_length: 1, length_length: 1, tags: { '42': { field: 'DE48.SE42', blocks: [{ read: { from: 'SF01' } }] } } } }] };
+      const hx = meExecParseSpec(hex, Buffer.from('06420100'));
+      const e = hx.fields.find(f => f.error);
+      assert.ok(e && /"blocks" needs the value in place/.test(e.error), `ascii-hex with tag blocks is not refused: ${rows(hx).join(' | ')}`);
+    });
+  }
+
   // [REGRESSION] The Baseline Editor's empty list told people to press
   // "★ Baseline" — no such button; the one in Parse Results reads "★ Save".
   // Reported 2026-10-10. The hint must name the button by its real label.

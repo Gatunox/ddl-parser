@@ -798,6 +798,7 @@ triple after it silently becomes garbage — so `ber` is required unless both
 | Attribute | Meaning |
 |-----------|---------|
 | `tags` | `{"9F26": {"field": "ARQC"}}` — tag → element receiving it |
+| `tags[…].blocks` | Blocks that read the tag's value instead of filing it whole — a subelement holding a dataset or a fixed layout (below) |
 | `tag_field` / `length_field` / `value_field` | Leaf names when they are not `TAG`/`TAG-ID`, `LEN`/`LGTH`/`LENGTH`, `DATA`/`VAL`/`VALUE`. Settable per read-tlv or per tag |
 | `unknown` | `emit` (default), `skip`, or `error` for a tag `tags` does not mention |
 
@@ -835,6 +836,38 @@ only the byte range widened.
 
 `field` names the buffer and is **optional inside a `de` entry**, where the element
 being read is itself the buffer.
+
+**A tag entry can read its value with `blocks`.** Some subelements hold subfields
+of their own — a dataset of ID + length + value, or a fixed layout — like the card
+networks' DE-48-style subelements. Filing such a value whole into one field loses
+the subfields, so a `tags` entry may carry `blocks`, exactly as a `de` entry does
+(§5.14):
+
+```jsonc
+{"read-tlv": {"encoding": "ascii", "tag_length": 2, "length_length": 2, "tags": {
+  "10": {"field": "SE10"},
+  "42": {"field": "SE42", "blocks": [
+    {"read-tlv": {"encoding": "ascii", "tag_length": 2, "length_length": 2,
+      "tags": {"01": {"field": "SF01"}, "02": {"field": "SF02"}}}}]}}}}
+```
+
+- **The engine frames the value, the blocks interpret it.** The triple's length
+  says where the value starts and ends; the blocks run inside that window and
+  cannot read past it — a block that tries is reported and stopped at the end.
+  Bytes they leave unread are shown in `smart` length mode (§8.2).
+- **Names resolve within the element**: `"SF01"` means `SE42.SF01`. It nests to
+  any depth, and a nested `read-tlv` needs no `field` — the value is its buffer.
+- **The ID and length go where the DDL says.** They fill the element's TAG / LEN
+  leaves when it declares them — by name, or named through `tag_field` /
+  `length_field` — and get no row when it does not: a row is never invented for
+  data the DDL does not define, the same as for a mapped tag without `blocks`. A
+  subfield the DDL does not declare is emitted as `<element>.<id>`.
+- `field` is optional with `blocks`; without it the rows are named after the
+  outer buffer and the tag.
+- Not with `"encoding": "ascii-hex"`: that decodes the buffer first, so nothing in
+  the message is the value for the blocks to read. It is refused, saying so.
+- A subelement that is absent is not owed (§5.23): presence is the tag's, not the
+  DDL's.
 
 **`encoding` — how the tag and length are written**
 

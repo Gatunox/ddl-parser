@@ -1166,6 +1166,35 @@ user or the host ends it (keepalives only detect a dead link).
 
 ---
 
+## 26. [ ] A bitmap inside a DE — subfields numbered by their own bitmap
+
+**Asked for 2026-10-19, parked 2026-10-21.** Some network DEs (Visa's 62 / 63, for
+instance) open with a bitmap of their own, and its bits number the DE's
+**subfields**, not the message's DEs. Today there is no way to say that:
+`read-bitmap-fields` maps every bit through the message's DE numbering (the Field
+Map / `overrides[…].de`), so inside a `de` entry a nested `read-bitmap` +
+`read-bitmap-fields` would map bit 1 to DE 1 of the message.
+
+The other two cases from the same request are done (v1.57.2.0): a subelement
+holding a dataset or a fixed layout, through `blocks` on a `read-tlv` tag entry.
+
+**What it needs.** A way for `read-bitmap-fields` to number bits **within a group**
+— bit *n* is the group's *n*-th subfield (or as anchored), resolved against the
+element the `de` entry is reading — instead of against the message's DEs. Open
+questions before designing it:
+
+- whether the subfields' numbering comes from declaration order or needs anchors
+  of its own (as `overrides[…].de` does for the message);
+- whether the sub-bitmap's width is fixed (Visa 62: 8 bytes, 63: 3 bytes) or
+  stated, and how its encoding is given (binary / ascii-hex), reusing
+  `read-bitmap`'s attributes;
+- how the Field Map shows numbering that is relative to a group.
+
+No network manual is available to design against; work from the user's examples.
+
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

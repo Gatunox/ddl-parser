@@ -123,22 +123,25 @@
 
 /* ═══ Layer 3 — DARK ═══════════════════════════════════════════════════════ */
 [data-theme="dark"] {
-  /* Resize pointers, drawn by the app and coloured by the theme. The keyword
-     cursors (col-resize, row-resize, ew-resize, ns-resize) are the operating
-     system's own, and CSS cannot colour them: Chrome on some Windows machines
-     drew them black over the dark theme, where they all but vanished. These
-     are flat — no outline — white, never black, on the dark theme; the keyword after each is only the
-     fallback for a browser that refuses the image. Drawn after macOS's: a thin
-     bar between two filled triangles for resize, a thin double arrow where
-     the native rule used ew/ns (Shift-drag says "moves", not "resizes"). Reported 2026-10-09. */
-  --cur-col: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M11.25 4 H12.75 V20 H11.25 Z M3 12 L9.5 7 L9.5 17 Z M21 12 L14.5 7 L14.5 17 Z'/%3E%3C/svg%3E") 12 12, col-resize;
-  --cur-row: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath fill='%23ffffff' d='M11.25 4 H12.75 V20 H11.25 Z M3 12 L9.5 7 L9.5 17 Z M21 12 L14.5 7 L14.5 17 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, row-resize;
-  --cur-ew:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M7.5 11.25 H16.5 V12.75 H7.5 Z M2 12 L8 6.5 L8 17.5 Z M22 12 L16 6.5 L16 17.5 Z'/%3E%3C/svg%3E") 12 12, ew-resize;
-  --cur-ns:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath fill='%23ffffff' d='M7.5 11.25 H16.5 V12.75 H7.5 Z M2 12 L8 6.5 L8 17.5 Z M22 12 L16 6.5 L16 17.5 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, ns-resize;
+  /* Resize and text pointers, drawn by the app. The keyword cursors
+     (col-resize, row-resize, …) are the browser's or the operating system's,
+     and CSS cannot colour them: Chrome on some Windows machines drew them black
+     over the dark theme, where they all but vanished. These are macOS's own
+     look — black filled, white outlined — so they read on any background, the
+     same in both themes: a rounded bar between two triangles for resize, an
+     outlined double arrow where the native rule used ew/ns (Shift-drag says
+     "moves", not "resizes"), an outlined I-beam for text. The keyword after
+     each is only the fallback for a browser that refuses the image. Settings →
+     Pointers → System gives the machine's own back (see [data-pointers]).
+     Reported 2026-10-09; redrawn after the native one 2026-10-23. */
+  --cur-col: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='%23000' stroke='%23fff' stroke-width='1' stroke-linejoin='round'%3E%3Crect x='10.4' y='5' width='3.2' height='14' rx='1.6'/%3E%3Cpath d='M2.5 12 L8.6 7.6 V16.4 Z M21.5 12 L15.4 7.6 V16.4 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, col-resize;
+  --cur-row: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='%23000' stroke='%23fff' stroke-width='1' stroke-linejoin='round'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Crect x='10.4' y='5' width='3.2' height='14' rx='1.6'/%3E%3Cpath d='M2.5 12 L8.6 7.6 V16.4 Z M21.5 12 L15.4 7.6 V16.4 Z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, row-resize;
+  --cur-ew:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='%23000' stroke='%23fff' stroke-width='1' stroke-linejoin='round'%3E%3Cpath d='M2.5 12 L8 7.5 V10.6 H16 V7.5 L21.5 12 L16 16.5 V13.4 H8 V16.5 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, ew-resize;
+  --cur-ns:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='%23000' stroke='%23fff' stroke-width='1' stroke-linejoin='round'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath d='M2.5 12 L8 7.5 V10.6 H16 V7.5 L21.5 12 L16 16.5 V13.4 H8 V16.5 Z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, ns-resize;
   /* The text pointer, for the same reason: the I-beam over an editable
      field is the OS's too, and stayed black over CodeMirror on the dark
      theme once the resize pointers were fixed. Reported 2026-10-09. */
-  --cur-text: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M8 3.5 H10 Q12 3.5 12 5.5 Q12 3.5 14 3.5 H16 V5 H14.5 Q12.75 5 12.75 7 V17 Q12.75 19 14.5 19 H16 V20.5 H14 Q12 20.5 12 18.5 Q12 20.5 10 20.5 H8 V19 H9.5 Q11.25 19 11.25 17 V7 Q11.25 5 9.5 5 H8 Z'/%3E%3C/svg%3E") 12 12, text;
+  --cur-text: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath stroke='%23fff' stroke-width='3.4' d='M9 4.5 H15 M12 4.5 V19.5 M9 19.5 H15'/%3E%3Cpath stroke='%23000' stroke-width='1.4' d='M9 4.5 H15 M12 4.5 V19.5 M9 19.5 H15'/%3E%3C/g%3E%3C/svg%3E") 12 12, text;
   --bg-deep: #0d1117;
   --bg-panel: #161b22;
   /* A field is a field wherever it is. This was a ground of its own — in dark it
@@ -276,22 +279,25 @@
    of a `body.light .foo` patch rule, which is what lets those rules be
    deleted. Light and dark are peers — neither is a base for the other. */
 [data-theme="light"] {
-  /* Resize pointers, drawn by the app and coloured by the theme. The keyword
-     cursors (col-resize, row-resize, ew-resize, ns-resize) are the operating
-     system's own, and CSS cannot colour them: Chrome on some Windows machines
-     drew them black over the dark theme, where they all but vanished. These
-     are flat — no outline — black, never white, on the light theme; the keyword after each is only the
-     fallback for a browser that refuses the image. Drawn after macOS's: a thin
-     bar between two filled triangles for resize, a thin double arrow where
-     the native rule used ew/ns (Shift-drag says "moves", not "resizes"). Reported 2026-10-09. */
-  --cur-col: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23000000' d='M11.25 4 H12.75 V20 H11.25 Z M3 12 L9.5 7 L9.5 17 Z M21 12 L14.5 7 L14.5 17 Z'/%3E%3C/svg%3E") 12 12, col-resize;
-  --cur-row: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath fill='%23000000' d='M11.25 4 H12.75 V20 H11.25 Z M3 12 L9.5 7 L9.5 17 Z M21 12 L14.5 7 L14.5 17 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, row-resize;
-  --cur-ew:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23000000' d='M7.5 11.25 H16.5 V12.75 H7.5 Z M2 12 L8 6.5 L8 17.5 Z M22 12 L16 6.5 L16 17.5 Z'/%3E%3C/svg%3E") 12 12, ew-resize;
-  --cur-ns:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath fill='%23000000' d='M7.5 11.25 H16.5 V12.75 H7.5 Z M2 12 L8 6.5 L8 17.5 Z M22 12 L16 6.5 L16 17.5 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, ns-resize;
+  /* Resize and text pointers, drawn by the app. The keyword cursors
+     (col-resize, row-resize, …) are the browser's or the operating system's,
+     and CSS cannot colour them: Chrome on some Windows machines drew them black
+     over the dark theme, where they all but vanished. These are macOS's own
+     look — black filled, white outlined — so they read on any background, the
+     same in both themes: a rounded bar between two triangles for resize, an
+     outlined double arrow where the native rule used ew/ns (Shift-drag says
+     "moves", not "resizes"), an outlined I-beam for text. The keyword after
+     each is only the fallback for a browser that refuses the image. Settings →
+     Pointers → System gives the machine's own back (see [data-pointers]).
+     Reported 2026-10-09; redrawn after the native one 2026-10-23. */
+  --cur-col: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='%23000' stroke='%23fff' stroke-width='1' stroke-linejoin='round'%3E%3Crect x='10.4' y='5' width='3.2' height='14' rx='1.6'/%3E%3Cpath d='M2.5 12 L8.6 7.6 V16.4 Z M21.5 12 L15.4 7.6 V16.4 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, col-resize;
+  --cur-row: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='%23000' stroke='%23fff' stroke-width='1' stroke-linejoin='round'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Crect x='10.4' y='5' width='3.2' height='14' rx='1.6'/%3E%3Cpath d='M2.5 12 L8.6 7.6 V16.4 Z M21.5 12 L15.4 7.6 V16.4 Z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, row-resize;
+  --cur-ew:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='%23000' stroke='%23fff' stroke-width='1' stroke-linejoin='round'%3E%3Cpath d='M2.5 12 L8 7.5 V10.6 H16 V7.5 L21.5 12 L16 16.5 V13.4 H8 V16.5 Z'/%3E%3C/g%3E%3C/svg%3E") 12 12, ew-resize;
+  --cur-ns:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='%23000' stroke='%23fff' stroke-width='1' stroke-linejoin='round'%3E%3Cg transform='rotate%2890 12 12%29'%3E%3Cpath d='M2.5 12 L8 7.5 V10.6 H16 V7.5 L21.5 12 L16 16.5 V13.4 H8 V16.5 Z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, ns-resize;
   /* The text pointer, for the same reason: the I-beam over an editable
      field is the OS's too, and stayed black over CodeMirror on the dark
      theme once the resize pointers were fixed. Reported 2026-10-09. */
-  --cur-text: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23000000' d='M8 3.5 H10 Q12 3.5 12 5.5 Q12 3.5 14 3.5 H16 V5 H14.5 Q12.75 5 12.75 7 V17 Q12.75 19 14.5 19 H16 V20.5 H14 Q12 20.5 12 18.5 Q12 20.5 10 20.5 H8 V19 H9.5 Q11.25 19 11.25 17 V7 Q11.25 5 9.5 5 H8 Z'/%3E%3C/svg%3E") 12 12, text;
+  --cur-text: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath stroke='%23fff' stroke-width='3.4' d='M9 4.5 H15 M12 4.5 V19.5 M9 19.5 H15'/%3E%3Cpath stroke='%23000' stroke-width='1.4' d='M9 4.5 H15 M12 4.5 V19.5 M9 19.5 H15'/%3E%3C/g%3E%3C/svg%3E") 12 12, text;
   --bg-deep: #f6f8fa;
   --bg-panel: #ffffff;
   --bg-input: var(--surface-edit);
@@ -367,6 +373,19 @@
   --shadow-modal: 0 8px 32px rgba(0,0,0,0.18);
   --shadow-drawer: -8px 0 28px rgba(0,0,0,0.15);
   --shadow-popup: -4px 0 14px rgba(0,0,0,0.15);
+}
+
+/* Settings → Appearance → Pointers → System: the browser's own pointers. The
+   custom ones above exist because Chrome on some Windows machines drew the
+   system's black over the dark theme; whoever is not on such a machine, or
+   prefers the native look, can have the OS's back. Stated on both attributes
+   so it outranks either theme block wherever it sits. Asked for 2026-10-23. */
+[data-theme][data-pointers="system"] {
+  --cur-col: col-resize;
+  --cur-row: row-resize;
+  --cur-ew:  ew-resize;
+  --cur-ns:  ns-resize;
+  --cur-text: text;
 }
 
 /* ═══ Density ══════════════════════════════════════════════════════════════
@@ -21030,7 +21049,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.2.1';
+const APP_VERSION  = '1.57.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21081,7 +21100,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', density: 'comfortable', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
+  theme: 'dark', density: 'comfortable', pointers: 'custom', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
   auditAutoParse: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
@@ -21345,6 +21364,7 @@ function applyPrefs(updateUI = true) {
   // component patch is gone, so the class it drove went with it.
   document.documentElement.setAttribute('data-theme', P.theme === 'light' ? 'light' : 'dark');
   document.documentElement.setAttribute('data-density', P.density === 'compact' ? 'compact' : 'comfortable');
+  document.documentElement.setAttribute('data-pointers', P.pointers === 'system' ? 'system' : 'custom');
   document.documentElement.style.setProperty('--sz-mono', P.monoSize + 'px');
   // Base comes from the active density block so the two cannot drift apart.
   const _hBase = P.density === 'compact' ? 27 : 34;
@@ -21415,6 +21435,19 @@ function setDensity(val) {
   applyPrefs();
   _syncDensityUI();
   _syncFontUI();
+}
+
+function _syncPointersUI() {
+  const sys = P.pointers === 'system';
+  document.getElementById('pointersCustom')?.classList.toggle('s-active', !sys);
+  document.getElementById('pointersSystem')?.classList.toggle('s-active', sys);
+}
+
+function setPointers(val) {
+  P.pointers = val === 'system' ? 'system' : 'custom';
+  savePrefs();
+  applyPrefs();
+  _syncPointersUI();
 }
 
 function setRawHexTruncate(val) {
@@ -21866,6 +21899,7 @@ function openSettings() {
   // Sync control states to current prefs
   _syncFontUI();
   _syncDensityUI();
+  _syncPointersUI();
   _syncAccentPickerUI();
   _lwUpdateDisplay();
   ['dark','light'].forEach(t => {
@@ -40426,6 +40460,13 @@ function _meSave() {
           </div>
         </div>
 
+        <div class="settings-row">
+          <span class="settings-lbl">Pointers</span>
+          <div class="settings-pill">
+            <button class="btn s-active" id="pointersCustom" onclick="setPointers('custom')" title="The app's own resize and text pointers — white on the dark theme, black on the light one, on every machine">Custom</button>
+            <button class="btn"          id="pointersSystem" onclick="setPointers('system')" title="The browser's and operating system's own pointers — their colour depends on the machine">System</button>
+          </div>
+        </div>
         <div class="settings-row" id="rawHexTruncRow">
           <span class="settings-lbl">Raw Hex</span>
           <div class="settings-pill">
@@ -40755,7 +40796,7 @@ function _meSave() {
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Settings <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
-              <li><strong>Appearance</strong> — Theme (Dark / Light), Font Size, Accent colour (Reset goes back to the theme's own), Density (Comfort / Compact), Raw Hex (Truncate / Full), and whether the parse steps pop-up closes by itself when parsing finishes</li>
+              <li><strong>Appearance</strong> — Theme (Dark / Light), Font Size, Accent colour (Reset goes back to the theme's own), Density (Comfort / Compact), Pointers (Custom — the app's own resize and text pointers, white on dark and black on light on every machine — or System, the machine's own, whose colour depends on its settings), Raw Hex (Truncate / Full), and whether the parse steps pop-up closes by itself when parsing finishes</li>
               <li><strong>Layout</strong> — see <em>Layout</em> above</li>
               <li><strong>Local Data → ⚠ Erase All Data</strong> — removes every DDL, class, override, baseline and setting stored in this browser. Nothing is ever sent to a server, so export first what you want to keep</li>
               <li><strong>Tutorial → ▶ Launch</strong> — a guided tour of the main features</li>

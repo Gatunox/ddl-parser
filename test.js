@@ -24639,13 +24639,14 @@ test('APP_VERSION is not behind the version in HEAD\'s subject line', () => {
   });
 }
 
-// ── resize pointers follow the theme ─────────────────────────────────────────
+// ── resize and text pointers ─────────────────────────────────────────────────
 // Reported 2026-10-09: on some Windows machines Chrome drew the panel dividers'
 // resize pointer black over the dark theme. The keyword cursors are the OS's
-// own and CSS cannot colour them, so the app draws its own per theme. The rule
-// the user set: on the dark theme the pointer is never black, on the light theme
-// never white — and flat, with no outline.
-test('[REGRESSION] every resize and text pointer is the theme\'s own, white on dark and black on light', () => {
+// own and CSS cannot colour them, so the app draws its own. First drawn flat,
+// white on dark and black on light; redrawn 2026-10-23 after the native macOS
+// pointer the user sent a photo of — black filled, white outlined, the same in
+// both themes, which reads on any background.
+test('[REGRESSION] every resize and text pointer is the app\'s own, black filled and white outlined', () => {
   const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
   const blockOf = name => {
     const at = css.indexOf(`[data-theme="${name}"] {`);
@@ -24659,23 +24660,28 @@ test('[REGRESSION] every resize and text pointer is the theme\'s own, white on d
   const js = APP_SRC.match(/cursor:\s*'(col|row|ew|ns)-resize'|\((?:document\.getElementById\([^)]*\)), '(?:col|row|ew|ns)-resize'/g);
   assert.ok(!js, 'a drag sets the OS cursor from script: ' + (js || []).join(', '));
 
-  for (const [theme, must, never] of [['dark', '#ffffff', '#000000'], ['light', '#000000', '#ffffff']]) {
+  const svgOf = (b, k, kw) => {
+    const m = b.match(new RegExp(`--cur-${k}:\\s*url\\("data:image/svg\\+xml,([^"]*)"\\) 12 12, ${kw};`));
+    return m ? decodeURIComponent(m[1]) : null;
+  };
+  for (const theme of ['dark', 'light']) {
     const b = blockOf(theme);
     for (const k of ['col', 'row', 'ew', 'ns']) {
-      const m = b.match(new RegExp(`--cur-${k}:\\s*url\\("data:image/svg\\+xml,([^"]*)"\\) 12 12, ${k}-resize;`));
-      assert.ok(m, `[data-theme="${theme}"] has no --cur-${k}, or its OS fallback is missing`);
-      const svg = decodeURIComponent(m[1]);
-      assert.ok(svg.includes(`fill='${must}'`), `--cur-${k} on ${theme} is not ${must}`);
-      assert.ok(!svg.includes(never), `--cur-${k} on ${theme} contains ${never}`);
-      assert.ok(!/stroke/.test(svg), `--cur-${k} on ${theme} has an outline — the pointer must be flat`);
+      const svg = svgOf(b, k, `${k}-resize`);
+      assert.ok(svg, `[data-theme="${theme}"] has no --cur-${k}, or its OS fallback is missing`);
+      assert.ok(/fill='#000'/.test(svg) && /stroke='#fff'/.test(svg),
+        `--cur-${k} on ${theme} is not black filled and white outlined`);
     }
-    // The text pointer, the same way (reported the same day, over CodeMirror).
-    const tm = b.match(/--cur-text:\s*url\("data:image\/svg\+xml,([^"]*)"\) 12 12, text;/);
-    assert.ok(tm, `[data-theme="${theme}"] has no --cur-text, or its OS fallback is missing`);
-    const tsvg = decodeURIComponent(tm[1]);
-    assert.ok(tsvg.includes(`fill='${must}'`) && !tsvg.includes(never) && !/stroke/.test(tsvg),
-      `--cur-text on ${theme} must be flat ${must}, never ${never}`);
+    const tsvg = svgOf(b, 'text', 'text');
+    assert.ok(tsvg, `[data-theme="${theme}"] has no --cur-text, or its OS fallback is missing`);
+    assert.ok(/stroke='#fff'/.test(tsvg) && /stroke='#000'/.test(tsvg), `--cur-text on ${theme} is not a black I-beam outlined in white`);
   }
+  // The resize pointer is the native shape: a rounded bar between two triangles.
+  const col = svgOf(blockOf('dark'), 'col', 'col-resize');
+  assert.ok(/<rect [^>]*rx=/.test(col) && (col.match(/ Z/g) || []).length === 2, 'the column pointer is not a rounded bar between two triangles');
+  // One drawing for both themes: an outlined pointer reads on either background.
+  for (const k of ['col', 'row', 'ew', 'ns'])
+    eq(svgOf(blockOf('dark'), k, `${k}-resize`), svgOf(blockOf('light'), k, `${k}-resize`), `--cur-${k} differs between the themes`);
   // …and every editable field uses it: CodeMirror's content and the text inputs.
   const rule = css.match(/([^{}]*)\{\s*cursor:\s*var\(--cur-text\);\s*\}/);
   assert.ok(rule, 'nothing uses --cur-text');
@@ -25239,6 +25245,40 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
       assert.ok(e && /"blocks" needs the value in place/.test(e.error), `ascii-hex with tag blocks is not refused: ${rows(hx).join(' | ')}`);
     });
   }
+
+  // Asked for 2026-10-23: the custom pointers (made because Chrome on some
+  // Windows machines drew the system's black over the dark theme) are not
+  // everyone's taste. Settings → Appearance → Pointers chooses between them and
+  // the system's own; Custom stays the default, since it is the one that holds
+  // on every machine.
+  test('Settings → Pointers switches every pointer token between custom and system', () => {
+    const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+    const tokensOf = sel => {
+      const i = css.indexOf(sel + ' {'); assert.ok(i >= 0, `no ${sel} block`);
+      const body = css.slice(i, css.indexOf('\n}', i));
+      return [...body.matchAll(/^\s*(--cur-[a-z]+):\s*([^;]+);/gm)].map(m => [m[1], m[2].trim()]);
+    };
+    const dark = tokensOf('[data-theme="dark"]').map(t => t[0]);
+    assert.ok(dark.length >= 5, 'the theme blocks carry no pointer tokens');
+    const sys = tokensOf('[data-theme][data-pointers="system"]');
+    deepEq(sys.map(t => t[0]), dark, 'System does not override every pointer token the themes define');
+    for (const [k, v] of sys) assert.ok(/^[a-z-]+$/.test(v), `System sets ${k} to "${v}", not a browser keyword`);
+    assert.ok(css.indexOf('[data-theme][data-pointers="system"]') > css.indexOf('[data-theme="light"] {'),
+      'the System rule must come after the theme blocks');
+    // The preference, its default, and the attribute applyPrefs writes.
+    const P = vm.runInContext('P', sandbox);
+    eq(vm.runInContext('_DEF_PREFS', sandbox).pointers, 'custom', 'Custom is no longer the default');
+    assert.ok(/setAttribute\('data-pointers', P\.pointers === 'system' \? 'system' : 'custom'\)/.test(html),
+      'applyPrefs does not write the choice onto <html>');
+    assert.ok(/onclick="setPointers\('custom'\)"/.test(html) && /onclick="setPointers\('system'\)"/.test(html),
+      'Settings has no Custom / System buttons');
+    assert.ok(/'setPointers'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename setPointers');
+    const saved = P.pointers;
+    try {
+      vm.runInContext("setPointers('system')", sandbox); eq(P.pointers, 'system');
+      vm.runInContext("setPointers('anything')", sandbox); eq(P.pointers, 'custom', 'an unknown value is not read as Custom');
+    } finally { P.pointers = saved; }
+  });
 
   // [REGRESSION] The Baseline Editor's empty list told people to press
   // "★ Baseline" — no such button; the one in Parse Results reads "★ Save".

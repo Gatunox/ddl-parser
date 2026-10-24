@@ -25280,6 +25280,22 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     } finally { P.pointers = saved; }
   });
 
+  // [REGRESSION] Reported 2026-10-24: dragging the divider between two PANELS
+  // lagged behind the pointer, the one between rows did not. `.panel` carries a
+  // flex transition (for collapse / expand) and the panel divider resizes by
+  // setting the panels' flex, so every mouse move became a 0.25 s animation.
+  // While a divider is dragged the transition is off.
+  test('[REGRESSION] a divider drag does not animate the panels it resizes', () => {
+    const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
+    assert.ok(/\.panel \{[^}]*transition: flex/.test(css), 'the collapse animation is gone — this test no longer guards anything');
+    assert.ok(/body\.panel-resizing \.panel \{ transition: none; \}/.test(css), 'nothing switches the flex transition off during a drag');
+    for (const fn of ['initHResizer', 'initVResizer']) {
+      const src = psFnSource(fn);
+      assert.ok(/document\.body\.classList\.add\('panel-resizing'\)/.test(src), `${fn} does not mark the drag`);
+      assert.ok(/document\.body\.classList\.remove\('panel-resizing'\)/.test(src), `${fn} leaves the drag marked after mouseup`);
+    }
+  });
+
   // [REGRESSION] The Baseline Editor's empty list told people to press
   // "★ Baseline" — no such button; the one in Parse Results reads "★ Save".
   // Reported 2026-10-10. The hint must name the button by its real label.

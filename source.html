@@ -595,6 +595,11 @@ textarea:not(:disabled),
    so its own was a third line around the other two. Gone while it is open; the
    collapsed strip keeps its border-right, which is all it ever draws. */
 #ddlPanel:not(.collapsed) { border: 0; box-shadow: none; }
+/* The flex transition is for collapse / expand. While a divider is dragged it
+   turned every mouse move into a quarter-second animation, so the panel trailed
+   the pointer — dividers between PANELS felt laggy while the one between rows,
+   which carry no transition, did not. Reported 2026-10-24. */
+body.panel-resizing .panel { transition: none; }
 /* Collapse/expand fade sequence */
 .panel > * { transition: opacity 0.15s ease; }
 .panel.panel-fading > * { opacity: 0; }
@@ -5436,6 +5441,7 @@ function initHResizer(resizerId, leftPanelId, rightPanelId) {
     const startLeft  = leftPanel.offsetWidth;
     const startRight = rightPanel.offsetWidth;
     resizer.classList.add('dragging');
+    document.body.classList.add('panel-resizing');
 
     const onMove = e => {
       if (leftPanel.classList.contains('collapsed') || rightPanel.classList.contains('collapsed')) return;
@@ -5449,6 +5455,7 @@ function initHResizer(resizerId, leftPanelId, rightPanelId) {
 
     const onUp = () => {
       resizer.classList.remove('dragging');
+      document.body.classList.remove('panel-resizing');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       saveLayout();
@@ -5470,6 +5477,7 @@ function initVResizer(resizerId, topRowId, bottomRowId) {
     const startTop    = topRow.offsetHeight;
     const startBottom = bottomRow.offsetHeight;
     resizer.classList.add('dragging');
+    document.body.classList.add('panel-resizing');
 
     const onMove = e => {
       const dy = e.clientY - startY;
@@ -5482,6 +5490,7 @@ function initVResizer(resizerId, topRowId, bottomRowId) {
 
     const onUp = () => {
       resizer.classList.remove('dragging');
+      document.body.classList.remove('panel-resizing');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       saveLayout();
@@ -21049,7 +21058,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.3.0';
+const APP_VERSION  = '1.57.3.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

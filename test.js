@@ -25288,12 +25288,29 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
   test('[REGRESSION] a divider drag does not animate the panels it resizes', () => {
     const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
     assert.ok(/\.panel \{[^}]*transition: flex/.test(css), 'the collapse animation is gone — this test no longer guards anything');
-    assert.ok(/body\.panel-resizing \.panel \{ transition: none; \}/.test(css), 'nothing switches the flex transition off during a drag');
-    for (const fn of ['initHResizer', 'initVResizer']) {
+    assert.ok(/body\.panel-resizing \.panel,\s*body\.panel-resizing \.ddl-tree-pane \{ transition: none; \}/.test(css),
+      'nothing switches the panels\' flex / the tree pane\'s width transition off during a drag');
+    // Reported 2026-10-24 for the DDL tree divider too: the pane slides its width.
+    assert.ok(/\.ddl-tree-pane \{ transition: width/.test(css), 'the tree pane no longer animates — this half guards nothing');
+    for (const fn of ['initHResizer', 'initVResizer', 'initTreePaneResizer']) {
       const src = psFnSource(fn);
       assert.ok(/document\.body\.classList\.add\('panel-resizing'\)/.test(src), `${fn} does not mark the drag`);
       assert.ok(/document\.body\.classList\.remove\('panel-resizing'\)/.test(src), `${fn} leaves the drag marked after mouseup`);
     }
+  });
+
+  // [REGRESSION] Reported 2026-10-24: the "DDL Definition" title in the editor
+  // bar was ~226px wide for ~110px of text — it inherited the shared panel
+  // header's tree-width sizing and #ddlPanel's 172px floor — and that space was
+  // taken from the buttons, which clipped as the panel narrowed.
+  test('[REGRESSION] the DDL editor bar\'s title is as wide as its text; the buttons stay right', () => {
+    const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
+    const rule = css.match(/#ddlPanel #ddlCfgBar \.ddl-cfg-title \{([^}]*)\}/);
+    assert.ok(rule && /width: auto/.test(rule[1]) && /min-width: 0/.test(rule[1]), 'the title still takes the panel header\'s width');
+    // It must outrank the rules it overrides, which name #ddlPanel too.
+    assert.ok(/#ddlPanel \.panel-title \{ min-width: 172px; \}/.test(css), 'the floor it overrides moved — recheck specificity');
+    const bar = html.slice(html.indexOf('<div id="ddlCfgBar">'), html.indexOf('id="ddlSearchBtn"'));
+    assert.ok(/ddl-cfg-title[\s\S]*<span style="flex:1"><\/span>/.test(bar), 'nothing between the title and the buttons pushes them right');
   });
 
   // [REGRESSION] The Baseline Editor's empty list told people to press

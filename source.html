@@ -599,7 +599,8 @@ textarea:not(:disabled),
    turned every mouse move into a quarter-second animation, so the panel trailed
    the pointer — dividers between PANELS felt laggy while the one between rows,
    which carry no transition, did not. Reported 2026-10-24. */
-body.panel-resizing .panel { transition: none; }
+body.panel-resizing .panel,
+body.panel-resizing .ddl-tree-pane { transition: none; }
 /* Collapse/expand fade sequence */
 .panel > * { transition: opacity 0.15s ease; }
 .panel.panel-fading > * { opacity: 0; }
@@ -665,7 +666,12 @@ body.panel-resizing .panel { transition: none; }
    rotated title, and the button that brings the panel back. Hidden only while
    expanded, so collapsing behaves exactly as it did. */
 #ddlPanel:not(.collapsed) > .panel-header { display: none; }
-#ddlCfgBar .ddl-cfg-title { flex-shrink: 0; padding-right: 4px; }
+/* As wide as its words. It is a .panel-title, which is sized for the shared
+   panel header — the tree's width, and #ddlPanel's 172px floor — and in this
+   bar that left ~120px of empty title the buttons could not have, so they were
+   clipped as the panel narrowed. The spacer after it keeps the buttons on the
+   right. The ids outrank `#ddlPanel .panel-title`. Reported 2026-10-24. */
+#ddlPanel #ddlCfgBar .ddl-cfg-title { flex-shrink: 0; padding-right: 4px; width: auto; min-width: 0; }
 .panel.collapsed .panel-header {
   border-bottom: none;
   border-right: var(--bw) solid var(--border);
@@ -21027,6 +21033,7 @@ function initTreePaneResizer() {
     const startX = e.clientX, startW = treePane.offsetWidth;
     const minW = _treeHdrMinW();
     resizer.classList.add('dragging');
+    document.body.classList.add('panel-resizing');
     const onMove = e => {
       const want = startW + e.clientX - startX;
       // Dragged past the point where the header stops fitting on one row: the
@@ -21048,7 +21055,8 @@ function initTreePaneResizer() {
       treePane.style.width = Math.max(80, Math.min(400, want)) + 'px';
       _syncTreeW();
     };
-    const onUp   = () => { resizer.classList.remove('dragging'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); saveLayout(); };
+    // The class comes off first, so the collapse a drag can end in still slides.
+    const onUp   = () => { resizer.classList.remove('dragging'); document.body.classList.remove('panel-resizing'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); saveLayout(); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup',   onUp);
   });
@@ -21058,7 +21066,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.3.1';
+const APP_VERSION  = '1.57.3.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

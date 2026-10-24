@@ -25313,6 +25313,41 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     assert.ok(/ddl-cfg-title[\s\S]*<span style="flex:1"><\/span>/.test(bar), 'nothing between the title and the buttons pushes them right');
   });
 
+  // Requested 2026-10-24: Collapse All, Group Data and Hide Redef sat in the
+  // results bar as three buttons; they live behind one View menu now, still
+  // toggles, and View lights up while any of them is on.
+  test('Parse Results: the three view toggles live in a View menu that lights while any is on', () => {
+    const ctl = html.slice(html.indexOf('<div id="resCfgControls"'), html.indexOf('id="resValidationBar"'));
+    const dlg = ctl.slice(ctl.indexOf('id="resViewDialog"'), ctl.indexOf('id="colCfgBtn"'));
+    for (const id of ['resCollapseBtn', 'resGroupDataBtn', 'hideRedefBtn'])
+      assert.ok(dlg.includes(`id="${id}"`), `${id} is not inside the View menu`);
+    assert.ok(/id="resViewBtn" onclick="toggleResViewDialog\(\)"/.test(ctl), 'there is no View button');
+    assert.ok(/'toggleResViewDialog'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename toggleResViewDialog');
+    const els = {};
+    const mk = (id, display, on) => (els[id] = { style: { display }, classList: { _on: !!on,
+      contains(c) { return c === 'btn-accent-on' && this._on; },
+      toggle(c, v) { if (c === 'btn-accent-on') this._on = v === undefined ? !this._on : !!v; } } });
+    const saved = {};
+    for (const id of ['resCollapseBtn', 'resGroupDataBtn', 'hideRedefBtn', 'resViewBtn', 'resViewDialog']) saved[id] = elStubs[id];
+    try {
+      Object.assign(elStubs, { resCollapseBtn: mk('c', 'none'), resGroupDataBtn: mk('g', 'none'), hideRedefBtn: mk('h', 'none'),
+        resViewBtn: mk('v', 'none'), resViewDialog: { classList: { contains: () => false } } });
+      const sync = vm.runInContext('_syncResViewBtn', sandbox);
+      sync(); eq(elStubs.resViewBtn.style.display, 'none', 'View shows with nothing in it');
+      elStubs.hideRedefBtn.style.display = 'inline-flex'; sync();
+      eq(elStubs.resViewBtn.style.display, 'inline-flex', 'View is hidden while an entry is available');
+      eq(elStubs.resViewBtn.classList._on, false, 'View is lit with nothing on');
+      elStubs.hideRedefBtn.classList._on = true; sync();
+      eq(elStubs.resViewBtn.classList._on, true, 'View does not light while a toggle is on');
+      eq(elStubs.resViewBtn.textContent, 'View \u00b7 1 \u25be', 'View does not say how many are on');
+      elStubs.hideRedefBtn.classList._on = false; sync();
+      eq(elStubs.resViewBtn.textContent, 'View \u25be', 'View keeps a count with nothing on');
+    } finally { for (const id in saved) { if (saved[id]) elStubs[id] = saved[id]; else delete elStubs[id]; } }
+    // Every path that changes an entry keeps View in step.
+    for (const fn of ['_resApplyCollapse', 'toggleResGroupData', 'toggleHideRedefines', 'renderFieldTable'])
+      assert.ok(/_syncResViewBtn\(\)/.test(psFnSource(fn)), `${fn} does not resync View`);
+  });
+
   // [REGRESSION] The Baseline Editor's empty list told people to press
   // "★ Baseline" — no such button; the one in Parse Results reads "★ Save".
   // Reported 2026-10-10. The hint must name the button by its real label.

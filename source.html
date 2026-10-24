@@ -1322,6 +1322,8 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 /* The control that opened the chooser stays out of the scrim — it is the way
    back out, so dimming it hides the one thing still worth clicking. Lifted only
    while the host is dimmed, so an active toggle elsewhere is unaffected. */
+/* The View menu's entries are toggles, one per line, lit while on. */
+.res-view-dlg .res-view-item { width: 100%; justify-content: flex-start; margin-top: 4px; }
 .cfg-dim .btn.btn-on,
 .me-section:has(.audit-cfg-dialog.open) .btn.btn-on,
 .bl-pane:has(.audit-cfg-dialog.open) .btn.btn-on { position: relative; z-index: 200; }
@@ -4713,9 +4715,18 @@ th.me-fm-colhi{color:var(--accent);}
             </div>
           </div>
           <button class="btn" id="exportBtn" onclick="openMsgExportModal()" style="display:none;flex-shrink:0" title="Export messages">Export</button>
-          <button class="btn" id="resCollapseBtn" onclick="toggleResCollapseAll()" style="display:none;flex-shrink:0;min-width:88px;" title="Collapse or expand every group">Collapse All</button>
-          <button class="btn" id="resGroupDataBtn" onclick="toggleResGroupData()" style="display:none;flex-shrink:0;" title="Show each group's combined value on its group row">Group Data</button>
-          <button class="btn" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none;flex-shrink:0;min-width:80px;" title="Hide/show REDEFINES fields">Hide Redef</button>
+          <!-- The three ways of showing the field table, behind one menu. The
+               toggles keep their ids and handlers; the menu only hosts them.
+               View lights up while any of them is on. Requested 2026-10-24. -->
+          <div style="position:relative;display:inline-flex">
+            <button class="btn" id="resViewBtn" onclick="toggleResViewDialog()" style="display:none;flex-shrink:0" title="How the field table is shown">View &#9662;</button>
+            <div id="resViewDialog" class="audit-cfg-dialog res-view-dlg">
+              <div class="audit-cfg-hdr"><span>View</span><button class="btn" onclick="toggleResViewDialog()" style="padding:1px 7px;font-size:13px">✕</button></div>
+              <button class="btn res-view-item" id="resCollapseBtn" onclick="toggleResCollapseAll()" style="display:none" title="Collapse or expand every group">Collapse All</button>
+              <button class="btn res-view-item" id="resGroupDataBtn" onclick="toggleResGroupData()" style="display:none" title="Show each group's combined value on its group row">Group Data</button>
+              <button class="btn res-view-item" id="hideRedefBtn" onclick="toggleHideRedefines()" style="display:none" title="Hide/show REDEFINES fields">Hide Redef</button>
+            </div>
+          </div>
           <div style="position:relative;display:inline-flex">
             <button class="btn" id="colCfgBtn" onclick="toggleColCfgDialog()" title="Column visibility" style="display:none;padding:0 6px;height:calc(var(--sz-mono) + 8px);font-size:calc(var(--sz-mono) - 1px)">⚙</button>
             <div id="colCfgDialog" class="audit-cfg-dialog">
@@ -14468,6 +14479,7 @@ function _clearResultsOnly() {
   document.getElementById('hideRedefBtn').style.display = 'none';
   ['resCollapseBtn','resGroupDataBtn'].forEach(id => {
     const b = document.getElementById(id); if (b && b.style) b.style.display = 'none'; });
+  _syncResViewBtn();
   const _cfgBar = document.getElementById('resCfgBar');
   if (_cfgBar) _cfgBar.style.display = 'none';
   const _recMetaC = document.getElementById('recMetaContent');
@@ -14510,6 +14522,7 @@ function clearAll() {
   document.getElementById('hideRedefBtn').style.display = 'none';
   ['resCollapseBtn','resGroupDataBtn'].forEach(id => {
     const b = document.getElementById(id); if (b && b.style) b.style.display = 'none'; });
+  _syncResViewBtn();
   const _cfgBar3 = document.getElementById('resCfgBar');
   if (_cfgBar3) _cfgBar3.style.display = 'none';
   const _recMetaC3 = document.getElementById('recMetaContent');
@@ -15282,6 +15295,7 @@ function renderFieldTable(msg) {
     if (_gdBtn && _gdBtn.classList) _gdBtn.classList.toggle('btn-accent-on', S.resGroupData);
     if (_hasGrp) _resApplyCollapse();
   }
+  _syncResViewBtn();
   _resSyncIssueBar(msg, _resIssues(msg, _provHtml.warns));
 }
 
@@ -15624,6 +15638,7 @@ function _resApplyCollapse() {
     // Requested 2026-09-04.
     btn.classList.toggle('btn-accent-on', all.some(tr => c.has(tr.dataset.grp || '')));
   }
+  _syncResViewBtn();
   _resRestripe();
 }
 function toggleResGroup(id) {
@@ -15643,6 +15658,7 @@ function toggleResGroupData() {
   document.getElementById('resContainer').classList.toggle('show-grp-data', S.resGroupData);
   const btn = document.getElementById('resGroupDataBtn');
   if (btn) btn.classList.toggle('btn-accent-on', S.resGroupData);
+  _syncResViewBtn();
 }
 
 function toggleHideRedefines() {
@@ -15653,6 +15669,7 @@ function toggleHideRedefines() {
     btn.textContent = S.hideRedefines ? 'Show Redef' : 'Hide Redef';
     btn.classList.toggle('btn-accent-on', S.hideRedefines);
   }
+  _syncResViewBtn();
   _resRestripe();
 }
 
@@ -17464,6 +17481,35 @@ function auditToggleCfgDialog() {
   if (btn) btn.classList.toggle('btn-on', open);
   dlg.closest('.panel')?.classList.toggle('cfg-dim', open);
 }
+function toggleResViewDialog() {
+  const dlg = document.getElementById('resViewDialog');
+  if (!dlg) return;
+  const open = dlg.classList.toggle('open');
+  const btn = document.getElementById('resViewBtn');
+  if (btn) btn.classList.toggle('btn-on', open);
+  dlg.closest('.panel')?.classList.toggle('cfg-dim', open);
+}
+// View is there whenever one of its entries is, and lit while any is on — the
+// table is then not showing everything it has, which is what the entries' own
+// light used to say from the bar.
+function _syncResViewBtn() {
+  const ids = ['resCollapseBtn', 'resGroupDataBtn', 'hideRedefBtn'];
+  const items = ids.map(id => document.getElementById(id)).filter(b => b && b.style);
+  const view = document.getElementById('resViewBtn');
+  if (!view || !view.style) return;
+  const shown = items.some(b => b.style.display && b.style.display !== 'none');
+  view.style.display = shown ? 'inline-flex' : 'none';
+  // Lit, and counted, while any entry is on — so the bar says the table is not
+  // showing everything it has without the menu being opened.
+  const on = items.filter(b => b.classList?.contains('btn-accent-on')).length;
+  view.classList?.toggle('btn-accent-on', on > 0);
+  view.textContent = on ? `View \u00b7 ${on} \u25be` : 'View \u25be';
+  if (!shown) {
+    const dlg = document.getElementById('resViewDialog');
+    if (dlg?.classList?.contains('open')) toggleResViewDialog();
+  }
+}
+
 function toggleColCfgDialog() {
   const dlg = document.getElementById('colCfgDialog');
   if (!dlg) return;
@@ -21066,7 +21112,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.3.3';
+const APP_VERSION  = '1.57.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -40728,7 +40774,7 @@ function _meSave() {
               <li>Hover a <strong>value</strong> → when an override changed it, the tooltip shows every reading: <strong>RAW</strong> (as read), <strong>TYPE</strong> and <strong>SHOW</strong></li>
               <li>Right-click a row → <strong>View definition</strong> shows where the field is declared in its DDL, with the comments above it</li>
               <li><strong>Filter…</strong> — narrows the rows by field ID or value</li>
-              <li><strong>Collapse All</strong> — collapses or expands every group; <strong>Group Data</strong> shows each group's combined value on its group row; <strong>Hide Redef</strong> hides REDEFINES fields</li>
+              <li><strong>View ▾</strong> — a menu of three toggles: <strong>Collapse All</strong> collapses or expands every group, <strong>Group Data</strong> shows each group's combined value on its group row, <strong>Hide Redef</strong> hides REDEFINES fields. View lights up while any of them is on; the group toggles appear only when the message has groups</li>
               <li><strong>⚙</strong> — show or hide the Field, Description, Size, Offset, Value, Raw Hex and Trk columns. <strong>Raw Hex</strong> appears when the Raw Message panel is collapsed</li>
               <li><strong>Description</strong> column — the field's DDL type or HEADING. When a field has an override for its class it reads <span style="font-family:var(--font-mono);font-size:10px"><span style="color:rgba(88,166,255,.65)">declared ↩ </span><span style="color:var(--text-dim);font-weight:600">override</span></span> (e.g. <span style="font-family:var(--font-mono);font-size:10px">TYPE BINARY 16 ↩ uint-be</span>) plus <span style="font-family:var(--font-mono);font-size:10px">as DISPLAY</span> when a display override is set — and the Value column shows the converted result</li>
               <li>Drag a <strong>column header edge</strong> to resize it; click a header to highlight the column</li>

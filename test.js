@@ -25348,6 +25348,46 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
       assert.ok(/_syncResViewBtn\(\)/.test(psFnSource(fn)), `${fn} does not resync View`);
   });
 
+  // Requested 2026-10-24: the record controls (‹ n / m › #, the Track counts,
+  // Filtered, View all) move from the meta row to the Parse Results header,
+  // right before the panel's − button. The meta row then carries metadata only,
+  // and Track mode, which hides that metadata, hides the row.
+  test('Parse Results: the record navigation sits in the header, beside the panel\'s − button', () => {
+    const hdr = html.slice(html.indexOf('<div class="panel" id="resPanel">'), html.indexOf('<div id="resCfgBar">'));
+    const g = hdr.indexOf('id="recNavGroup"'), t = hdr.indexOf('id="resToggle"');
+    assert.ok(g > 0 && t > g, 'the nav group is not in the header before the − button');
+    for (const id of ['msgNav', 'msgGoDialog', 'trkSelCount', 'resFilterLabel', 'resViewAllBtn'])
+      assert.ok(hdr.includes(`id="${id}"`), `${id} did not move with the group`);
+    const meta = html.slice(html.indexOf('id="recMetaRow"'), html.indexOf('<div id="resCfgControls"'));
+    assert.ok(!/recNavGroup|msgNav/.test(meta), 'the nav is still on the meta row');
+    assert.ok(/_recMetaRow\.style\.display = metaContent \? 'flex' : 'none';/.test(html), 'the meta row still shows for navigation alone');
+    assert.ok(/body\.track-mode #recMetaRow \{ display: none !important; \}/.test(html), 'Track mode would leave an empty meta row');
+  });
+
+  // [REGRESSION] Reported 2026-10-24: the counter grew a digit at a time
+  // ("9 / 125" → "10 / 125"), and with the group anchored right ‹ moved.
+  test('[REGRESSION] the message counter keeps one width across a set of messages', () => {
+    assert.ok(/\.msg-ctr\s*\{[^}]*font-variant-numeric: tabular-nums;/.test(html), 'digits are not all the same width');
+    const prev = elStubs.msgCtr;
+    const ctr = elStubs.msgCtr = { style: {}, textContent: '' };
+    const S = vm.runInContext('S', sandbox), saved = { messages: S.messages, curIdx: S.curIdx, viewFilter: S.viewFilter };
+    try {
+      S.messages = new Array(125).fill({}); S.viewFilter = null;
+      const widths = [0, 8, 9, 99, 124].map(i => { S.curIdx = i; vm.runInContext('updateNav', sandbox)(); return ctr.style.minWidth; });
+      deepEq([...new Set(widths)], ['9ch'], 'the counter\'s width changes while moving through 125 messages');
+      eq(ctr.textContent, '125 / 125');
+    } finally { Object.assign(S, saved); if (prev) elStubs.msgCtr = prev; else delete elStubs.msgCtr; }
+  });
+
+  // [REGRESSION] Reported 2026-10-24: Go to sat on top of Next's attention
+  // pulse. The gap must be at least the pulse's spread.
+  test('[REGRESSION] Go to leaves room for the Next button\'s pulse', () => {
+    const spread = +(html.match(/50%\s*\{ box-shadow: 0 0 0 (\d+)px rgba\(var\(--accent-rgb\)/) || [])[1];
+    const gap = +(html.match(/\.msg-nav #msgGoBtn \{ margin-left: (\d+)px; \}/) || [])[1];
+    assert.ok(spread > 0, 'the pulse changed shape — recheck');
+    assert.ok(gap >= spread, `Go to is ${gap || 0}px from Next, the pulse spreads ${spread}px`);
+  });
+
   // [REGRESSION] The Baseline Editor's empty list told people to press
   // "★ Baseline" — no such button; the one in Parse Results reads "★ Save".
   // Reported 2026-10-10. The hint must name the button by its real label.

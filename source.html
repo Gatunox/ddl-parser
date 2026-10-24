@@ -2283,7 +2283,10 @@ td.c-err  { color: var(--accent2); }
 .flex-row { display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
 .sep-v    { width: 1px; height: 14px; background: var(--border); flex-shrink: 0; }
 .msg-nav  { display: flex; align-items: center; gap: 1px; }
-.msg-ctr  { color: var(--text-dim); font-size: var(--sz-mono); white-space: nowrap; padding: 0 4px; text-align: center; }
+.msg-ctr  { color: var(--text-dim); font-size: var(--sz-mono); white-space: nowrap; padding: 0 4px; text-align: center;
+  /* Every digit the same width, and room for the widest "n / total" (set by
+     updateNav), so stepping from 9 to 10 does not push ‹ sideways. */
+  font-family: var(--mono); font-variant-numeric: tabular-nums; }
 /* Prev/next nav buttons: borderless until hovered (2px kept, just transparent). */
 /* The nav buttons carry the same dimmed border every other control in this bar
    has. They used to drop it — border-color:transparent, border on hover only —
@@ -2292,6 +2295,9 @@ td.c-err  { color: var(--accent2); }
    next begins. Requested 2026-08-30. */
 .msg-nav .btn { padding: 3px 6px; }
 .msg-nav .btn:hover { border-color: var(--h-gray-bd); }
+/* The Next button's attention pulse spreads 6px around it (attn-pulse); butted
+   against it, Go to sat on top of the glow. Room for it. Reported 2026-10-24. */
+.msg-nav #msgGoBtn { margin-left: 6px; }
 .empty-st {
   display: flex; align-items: center; justify-content: center;
   flex: 1; color: var(--text-dim); font-size: var(--sz-mono);
@@ -3406,7 +3412,7 @@ input.me-inp:focus{border-color:var(--accent);}
 body.track-mode #resCfgControls,
 body.track-mode #resValidationBar,
 body.track-mode #recMetaContent { display: none !important; }
-/* …and the navigator's row stays, because the picked count sits in it. */
+/* The picked count sits with the record controls, in the panel header. */
 .trk-sel-count { flex-shrink: 0; font-size: calc(var(--sz-mono) - 1px); color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: var(--bw-ctl) solid var(--accent); border-radius: var(--r-sm); padding: 0 6px; }
@@ -3454,6 +3460,16 @@ body.me-fm-resizing.col-shift, body.me-fm-resizing.col-shift * { cursor: var(--c
 /* The record controls travel together and stay right-aligned, on their own row
    when the meta line wraps. */
 .rec-nav-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+/* In the panel header the group centres on the header's height, anchors its Go
+   to dialog under itself, and leaves a gap before the panel's − button. */
+.panel-header .rec-nav-group { align-self: center; position: relative; margin: 0 6px 0 0; }
+.panel-header .rec-nav-group .btn { height: calc(var(--sz-mono) + 8px); padding: 0 6px;
+  font-size: calc(var(--sz-mono) - 1px); }
+.panel-header .rec-nav-group .msg-ctr { font-size: calc(var(--sz-mono) - 1px); }
+.panel-header .rec-nav-group .msg-go-dlg { top: calc(100% + 4px); right: 0; }
+/* Track mode hides the record's metadata; with the nav gone from it the row would
+   be an empty bar. */
+body.track-mode #recMetaRow { display: none !important; }
 
 .res-filter-label {
   flex-shrink: 0; padding: 0 6px; border-radius: var(--r-sm);
@@ -4638,18 +4654,9 @@ th.me-fm-colhi{color:var(--accent);}
              is at least one — see _syncTrkExportBtn. Reported 2026-10-08. -->
         <button class="btn" id="trkExportBtn" onclick="exportTracking()" style="display:none;flex-shrink:0" disabled title="Select one or more rows to export them">Export</button>
         <button class="btn" id="trkBtn" onclick="toggleTrackMode()" style="display:none;flex-shrink:0;min-width:92px;font-weight:700;text-align:center">⊞ Track Mode</button>
-        <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
-      </div>
-      <div id="resCfgBar">
-        <div class="res-stale" id="resStaleBar" style="display:none">
-          <span class="res-stale-ico">&#9888;</span>
-          <span id="resStaleText">Showing an earlier parse &mdash; the message has changed since. Press Parse to refresh.</span>
-        </div>
-        <div class="panel-bar rec-meta" id="recMetaRow" style="display:none">
-          <span id="recMetaContent" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0"></span>
-          <!-- One group, so the row's wrap cannot break it apart or strand it on
-               the left: a margin-left:auto on each piece only pushes while they
-               share a line with something else. Reported 2026-08-28. -->
+          <!-- The record controls, one group, in the header beside the panel's
+               own button — where moving between messages belongs with the title
+               it changes. They lived on the meta row below. Requested 2026-10-24. -->
           <span id="recNavGroup" class="rec-nav-group">
             <button class="btn" id="trkSelAllBtn" onclick="trackPickShown()" style="display:none;flex-shrink:0"></button>
             <span id="trkFilterCount" class="trk-sel-count trk-filter-count" style="display:none"></span>
@@ -4683,6 +4690,15 @@ th.me-fm-colhi{color:var(--accent);}
             <button class="btn" id="resViewAllBtn" onclick="clearViewFilter()" style="display:none;flex-shrink:0"
                     title="Show every record again">View all</button>
           </span>
+        <button class="panel-toggle" id="resToggle" onclick="togglePanel('resPanel','resToggle','resResizer')" title="Hide panel">−</button>
+      </div>
+      <div id="resCfgBar">
+        <div class="res-stale" id="resStaleBar" style="display:none">
+          <span class="res-stale-ico">&#9888;</span>
+          <span id="resStaleText">Showing an earlier parse &mdash; the message has changed since. Press Parse to refresh.</span>
+        </div>
+        <div class="panel-bar rec-meta" id="recMetaRow" style="display:none">
+          <span id="recMetaContent" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0"></span>
         </div>
         <div id="resCfgControls" class="panel-bar">
           <input type="text" id="resFilterInput" class="res-filter-input" placeholder="Filter…" title="Filter parse results" oninput="filterParsePanel(this.value)" style="display:none">
@@ -14822,7 +14838,8 @@ function renderFieldTable(msg) {
   // Keep the row visible when there's metadata OR more than one message to
   // navigate — the message nav (< N/N >) now lives here, right-aligned.
   const _navTotal = _lazyTotalCount || S.messages.length;
-  if (_recMetaRow) _recMetaRow.style.display = (metaContent || _navTotal > 1) ? 'flex' : 'none';
+  // The nav moved to the header, so the row carries metadata only.
+  if (_recMetaRow) _recMetaRow.style.display = metaContent ? 'flex' : 'none';
   const _resCfgBar = document.getElementById('resCfgBar');
   if (_resCfgBar) _resCfgBar.style.display = 'flex';
 
@@ -18101,6 +18118,11 @@ function updateNav() {
   const at  = fil ? fil.indexOf(S.curIdx) : -1;
   _set('msgCtr', 'textContent', fil ? `${(at < 0 ? 0 : at) + 1} / ${fil.length}` : `${S.curIdx+1} / ${total}`);
   const _navTotal = fil ? fil.length : total;
+  // As wide as the widest position it can show — both numbers at the total's
+  // digit count, plus " / " — so the counter never changes width while moving
+  // through one set of messages, and ‹ stays put. Reported 2026-10-24.
+  const _ctr = document.getElementById('msgCtr');
+  if (_ctr && _ctr.style) _ctr.style.minWidth = `${String(_navTotal).length * 2 + 3}ch`;
   _sty('msgNav', _navTotal > 1 ? 'flex' : 'none');
   // More than one record and none of them looked at yet: the > button says so,
   // the way the Class Editor button says a Save is owed. It stops as soon as the
@@ -21112,7 +21134,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.4.0';
+const APP_VERSION  = '1.57.5.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

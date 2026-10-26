@@ -18984,6 +18984,54 @@ function _syncAccentPickerUI() {
   if (rst) rst.classList.toggle('hidden', !P.accent);
 }
 
+// ── Text colour ──────────────────────────────────────────────────────────────
+// The text is one colour at three intensities: --text, --text-dim and
+// --text-very-dim, each the theme's text mixed toward its panel background by
+// a fixed amount. Settings → Text picks the BASE; the two dimmer ones keep the
+// theme's own proportions over it, measured from its shipped colours (dark:
+// #8b949e is 66% of #c9d1d9 over #161b22, #4d5561 is 32%; light: #656d76 is
+// 68% of #24292f over #ffffff, #9ba3ab is 43%). One base per theme — a light
+// text chosen for dark would vanish on light. Requested 2026-10-25.
+const _TEXT_MIX = { dark: [66, 32], light: [68, 43] };
+const _textKey = () => (P.theme === 'light' ? 'textColorLight' : 'textColorDark');
+function _textVars(hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return null;
+  const [dim, vdim] = _TEXT_MIX[P.theme === 'light' ? 'light' : 'dark'];
+  return {
+    '--text':          hex,
+    '--text-dim':      `color-mix(in srgb, ${hex} ${dim}%, var(--bg-panel))`,
+    '--text-very-dim': `color-mix(in srgb, ${hex} ${vdim}%, var(--bg-panel))`,
+  };
+}
+function _applyTextColor() {
+  const el = document.documentElement, v = _textVars(P[_textKey()]);
+  for (const k of ['--text', '--text-dim', '--text-very-dim'])
+    if (v) el.style.setProperty(k, v[k]); else el.style.removeProperty(k);
+  _syncTextPickerUI();
+}
+function _syncTextPickerUI() {
+  // The theme's own colour when none is chosen — read from the style in force,
+  // which a headless run (test.js) does not have.
+  const cs = typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement) : null;
+  const cur = (P[_textKey()] || (cs && typeof cs.getPropertyValue === 'function' ? cs.getPropertyValue('--text') : '') || '').trim();
+  const m = /^#([0-9a-f]{6})$/i.exec(cur);
+  const inp = document.getElementById('textPicker'), hex = document.getElementById('textHex');
+  if (inp && m) inp.value = '#' + m[1].toLowerCase();
+  if (hex && m && document.activeElement !== hex) { hex.value = '#' + m[1].toLowerCase(); hex.classList?.remove('pending'); }
+  document.getElementById('textResetBtn')?.classList?.toggle('hidden', !P[_textKey()]);
+}
+function setTextColor(hex) {
+  P[_textKey()] = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex.toLowerCase() : null;
+  savePrefs(); _applyTextColor();
+}
+// Like the accent's field: only a complete #rrggbb is applied.
+function setTextHex(text) {
+  const t = (text || '').trim(), ok = /^#[0-9a-fA-F]{6}$/.test(t);
+  document.getElementById('textHex')?.classList?.toggle('pending', !ok && !!t);
+  if (ok) setTextColor(t);
+}
+function resetTextColor() { setTextColor(null); }
+
 function setAccentColor(hex) { _applyAccent(hex); }
 // The typed field. Only a COMPLETE #rrggbb is applied: _applyAccent treats
 // anything it cannot parse as "back to the theme's own accent" and saves null,
@@ -21134,7 +21182,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.5.0';
+const APP_VERSION  = '1.57.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21185,7 +21233,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', density: 'comfortable', pointers: 'custom', monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
+  theme: 'dark', density: 'comfortable', pointers: 'custom', textColorDark: null, textColorLight: null, monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
   auditAutoParse: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
@@ -21480,6 +21528,7 @@ function applyPrefs(updateUI = true) {
     }
   }
   if (P.accent) _applyAccent(P.accent, false);
+  _applyTextColor();
   // Sync raw hex truncate button (always — needed on startup to reflect saved pref)
   _syncRawHexTruncateUI();
   _syncKeepParseLogUI();
@@ -21986,6 +22035,7 @@ function openSettings() {
   _syncDensityUI();
   _syncPointersUI();
   _syncAccentPickerUI();
+  _syncTextPickerUI();
   _lwUpdateDisplay();
   ['dark','light'].forEach(t => {
     const b = document.getElementById('theme_' + t);
@@ -22015,6 +22065,7 @@ function setTheme(t) {
   // With no custom accent the picker shows the THEME's accent, which just
   // changed underneath it.
   _syncAccentPickerUI();
+  _syncTextPickerUI();
 }
 
 // Three named sizes rather than a stepper. P.monoSize stays the pixel value —
@@ -40536,6 +40587,18 @@ function _meSave() {
                     style="padding:2px 8px;font-size:11px" title="Back to the theme's own accent">Reset</button>
           </div>
         </div>
+        <div class="settings-row">
+          <span class="settings-lbl">Text</span>
+          <div class="flex-row" style="gap:6px;align-items:center">
+            <input type="color" id="textPicker" class="accent-picker"
+                   oninput="setTextColor(this.value)" title="Pick the text colour — the dimmer text follows it">
+            <input type="text" id="textHex" class="accent-hex" placeholder="#rrggbb"
+                   autocomplete="off" spellcheck="false" maxlength="7"
+                   oninput="setTextHex(this.value)" title="Type the text colour">
+            <button class="btn hidden" id="textResetBtn" onclick="resetTextColor()"
+                    style="padding:2px 8px;font-size:11px" title="Back to the theme's own text colour">Reset</button>
+          </div>
+        </div>
 
         <div class="settings-row">
           <span class="settings-lbl">Density</span>
@@ -40548,7 +40611,7 @@ function _meSave() {
         <div class="settings-row">
           <span class="settings-lbl">Pointers</span>
           <div class="settings-pill">
-            <button class="btn s-active" id="pointersCustom" onclick="setPointers('custom')" title="The app's own resize and text pointers — white on the dark theme, black on the light one, on every machine">Custom</button>
+            <button class="btn s-active" id="pointersCustom" onclick="setPointers('custom')" title="The app's own resize and text pointers — black with a white outline, readable on any background, on every machine">Custom</button>
             <button class="btn"          id="pointersSystem" onclick="setPointers('system')" title="The browser's and operating system's own pointers — their colour depends on the machine">System</button>
           </div>
         </div>
@@ -40881,7 +40944,7 @@ function _meSave() {
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Settings <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
-              <li><strong>Appearance</strong> — Theme (Dark / Light), Font Size, Accent colour (Reset goes back to the theme's own), Density (Comfort / Compact), Pointers (Custom — the app's own resize and text pointers, white on dark and black on light on every machine — or System, the machine's own, whose colour depends on its settings), Raw Hex (Truncate / Full), and whether the parse steps pop-up closes by itself when parsing finishes</li>
+              <li><strong>Appearance</strong> — Theme (Dark / Light), Font Size, Accent colour (Reset goes back to the theme's own), Text colour (the base of all the text — the dimmer text keeps the theme's proportions over it; one per theme; Reset goes back to the theme's own), Density (Comfort / Compact), Pointers (Custom — the app's own resize and text pointers, white on dark and black on light on every machine — or System, the machine's own, whose colour depends on its settings), Raw Hex (Truncate / Full), and whether the parse steps pop-up closes by itself when parsing finishes</li>
               <li><strong>Layout</strong> — see <em>Layout</em> above</li>
               <li><strong>Local Data → ⚠ Erase All Data</strong> — removes every DDL, class, override, baseline and setting stored in this browser. Nothing is ever sent to a server, so export first what you want to keep</li>
               <li><strong>Tutorial → ▶ Launch</strong> — a guided tour of the main features</li>

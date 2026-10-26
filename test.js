@@ -25388,6 +25388,54 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     assert.ok(gap >= spread, `Go to is ${gap || 0}px from Next, the pulse spreads ${spread}px`);
   });
 
+  // Requested 2026-10-25: the text is one colour at three intensities. Settings
+  // → Text picks the base; --text-dim / --text-very-dim keep the theme's own
+  // proportions over it. One base per theme.
+  test('Settings → Text sets the base colour and derives the dimmer text from it, per theme', () => {
+    // The proportions really are the shipped colours': mixing the theme's text
+    // toward its panel by them gives back its own dim colours, within 6 per
+    // channel — the shipped greys are not exact mixes (both very-dims are a few
+    // units bluer), and with no base chosen they are used as they are.
+    const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
+    const tok = (theme, k) => {
+      const i = css.indexOf(`[data-theme="${theme}"] {`);
+      return (css.slice(i, css.indexOf('\n}', i)).match(new RegExp(`^\\s*${k}:\\s*(#[0-9a-f]{6});`, 'mi')) || [])[1];
+    };
+    const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const MIX = vm.runInContext('_TEXT_MIX', sandbox);
+    for (const theme of ['dark', 'light']) {
+      const t = rgb(tok(theme, '--text')), bg = rgb(tok(theme, '--bg-panel'));
+      for (const [k, pct] of [['--text-dim', MIX[theme][0]], ['--text-very-dim', MIX[theme][1]]]) {
+        const want = rgb(tok(theme, k)), got = t.map((c, i) => Math.round(c * pct / 100 + bg[i] * (1 - pct / 100)));
+        assert.ok(got.every((c, i) => Math.abs(c - want[i]) <= 6), `${theme} ${k}: ${pct}% gives ${got}, the theme has ${want}`);
+      }
+    }
+    // The base is kept per theme, and the vars derive from the active theme's.
+    const P = vm.runInContext('P', sandbox), saved = { theme: P.theme, d: P.textColorDark, l: P.textColorLight };
+    const vars = () => vm.runInContext('_textVars(P[_textKey()])', sandbox);
+    try {
+      P.theme = 'dark'; P.textColorDark = null; P.textColorLight = null;
+      vm.runInContext("setTextColor('#FFAA00')", sandbox);
+      eq(P.textColorDark, '#ffaa00', 'the dark base is not stored');
+      deepEq(vars(), { '--text': '#ffaa00',
+        '--text-dim': 'color-mix(in srgb, #ffaa00 66%, var(--bg-panel))',
+        '--text-very-dim': 'color-mix(in srgb, #ffaa00 32%, var(--bg-panel))' });
+      P.theme = 'light';
+      eq(vars(), null, 'the dark base leaked into the light theme');
+      vm.runInContext("setTextColor('#123456')", sandbox);
+      eq(P.textColorLight, '#123456'); eq(P.textColorDark, '#ffaa00', 'setting light touched dark');
+      eq(vars()['--text-dim'], 'color-mix(in srgb, #123456 68%, var(--bg-panel))');
+      vm.runInContext('resetTextColor()', sandbox);
+      eq(P.textColorLight, null, 'Reset kept the colour'); eq(vars(), null);
+      vm.runInContext("setTextHex('#12')", sandbox);
+      eq(P.textColorLight, null, 'a half-typed colour was applied');
+    } finally { Object.assign(P, { theme: saved.theme, textColorDark: saved.d, textColorLight: saved.l }); }
+    assert.ok(/el\.style\.setProperty\(k, v\[k\]\); else el\.style\.removeProperty\(k\);/.test(html), 'the vars are not written onto <html>');
+    assert.ok(/_applyTextColor\(\);/.test(psFnSource('applyPrefs')), 'the saved colour is not applied at start-up / on a theme change');
+    assert.ok(/'setTextColor', 'setTextHex', 'resetTextColor'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename the Text handlers');
+    assert.ok(/id="textPicker"[^>]*oninput="setTextColor\(this\.value\)"/.test(html), 'Settings has no Text picker');
+  });
+
   // [REGRESSION] The Baseline Editor's empty list told people to press
   // "★ Baseline" — no such button; the one in Parse Results reads "★ Save".
   // Reported 2026-10-10. The hint must name the button by its real label.

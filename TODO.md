@@ -1223,6 +1223,12 @@ No network manual is available to design against; work from the user's examples.
       review). Its "Manual DDL Override" step points at `#ddlScopePath`, which is
       always `display:none`, and its steps were never checked against today's
       app the way Help was. Review each step against the UI it targets.
+- [ ] **Error reds on a reddish panel** (found 2026-10-26, testing Settings →
+      Panel with #3b0d18). The error colours (`--danger`, the row-error text, the
+      issue bar's error tint) are fixed per theme, so on a burgundy panel they
+      lose contrast and an error row reads like ordinary text. Options: nudge the
+      error colour away from the panel's hue, or check contrast and switch to a
+      brighter red when it drops below a threshold.
 - [x] Baseline Editor's empty state said *"press ★ Baseline"*; the button in
       Parse Results reads **★ Save** — *fixed v1.56.9.2.*
 

@@ -25436,6 +25436,54 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     assert.ok(/id="textPicker"[^>]*oninput="setTextColor\(this\.value\)"/.test(html), 'Settings has no Text picker');
   });
 
+  // Requested 2026-10-26: Settings → Panel picks the panel colour; every other
+  // solid surface derives from it in the theme's proportions, per theme, and a
+  // colour on the wrong side of light for the theme is pulled back.
+  test('Settings → Panel sets the panel colour, derives the surfaces, and keeps each theme readable', () => {
+    const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
+    const tok = (theme, k) => {
+      const i = css.indexOf(`[data-theme="${theme}"] {`);
+      return (css.slice(i, css.indexOf('\n}', i)).match(new RegExp(`^\\s*${k}:\\s*(#[0-9a-fA-F]{6});`, 'm')) || [])[1];
+    };
+    const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const MIX = vm.runInContext('_PANEL_MIX', sandbox);
+    // The proportions reproduce the shipped surfaces from the shipped panel.
+    for (const theme of ['dark', 'light']) {
+      const base = rgb(tok(theme, '--bg-panel'));
+      for (const [k, pct] of Object.entries(MIX[theme])) {
+        const want = rgb(tok(theme, k)), t = Math.abs(pct) / 100, to = pct > 0 ? 255 : 0;
+        const got = base.map(c => Math.round(c + (to - c) * t));
+        assert.ok(got.every((c, i) => Math.abs(c - want[i]) <= 10), `${theme} ${k}: ${pct}% gives ${got}, the theme has ${want}`);
+      }
+    }
+    const P = vm.runInContext('P', sandbox), saved = { theme: P.theme, d: P.panelColorDark, l: P.panelColorLight };
+    const vars = () => vm.runInContext('_panelVars(P[_panelKey()])', sandbox);
+    const lum = h => vm.runInContext('_relLum', sandbox)(h);
+    try {
+      P.theme = 'dark'; P.panelColorDark = null; P.panelColorLight = null;
+      vm.runInContext("setPanelColor('#1A2233')", sandbox);
+      eq(P.panelColorDark, '#1a2233', 'a dark panel in Dark was changed');
+      const v = vars();
+      eq(v['--bg-panel'], '#1a2233');
+      eq(v['--bg-deep'], 'color-mix(in srgb, #000000 36.8%, #1a2233)');
+      eq(v['--surface-header'], 'color-mix(in srgb, #ffffff 2.6%, #1a2233)');
+      // A light colour in Dark is pulled back to a dark one.
+      vm.runInContext("setPanelColor('#e0e0e0')", sandbox);
+      assert.ok(lum(P.panelColorDark) <= 0.045, `Dark kept a light panel: ${P.panelColorDark}`);
+      // Light keeps its own, and a dark colour there is pulled up.
+      P.theme = 'light';
+      eq(vars(), null, 'the dark panel leaked into Light');
+      vm.runInContext("setPanelColor('#202020')", sandbox);
+      assert.ok(lum(P.panelColorLight) >= 0.78, `Light kept a dark panel: ${P.panelColorLight}`);
+      assert.ok(lum(P.panelColorDark) <= 0.045, 'setting Light touched Dark');
+      vm.runInContext('resetPanelColor()', sandbox);
+      eq(P.panelColorLight, null, 'Reset kept the colour'); eq(vars(), null);
+    } finally { Object.assign(P, { theme: saved.theme, panelColorDark: saved.d, panelColorLight: saved.l }); }
+    assert.ok(/_applyPanelColor\(\);/.test(psFnSource('applyPrefs')), 'the saved panel colour is not applied at start-up / on a theme change');
+    assert.ok(/'setPanelColor', 'setPanelHex', 'resetPanelColor'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename the Panel handlers');
+    assert.ok(/id="panelPicker"[^>]*onchange="setPanelColor\(this\.value\)"/.test(html), 'Settings has no Panel picker');
+  });
+
   // [REGRESSION] The Baseline Editor's empty list told people to press
   // "★ Baseline" — no such button; the one in Parse Results reads "★ Save".
   // Reported 2026-10-10. The hint must name the button by its real label.

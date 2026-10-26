@@ -19032,6 +19032,89 @@ function setTextHex(text) {
 }
 function resetTextColor() { setTextColor(null); }
 
+// ── Panel colour ─────────────────────────────────────────────────────────────
+// The surfaces are one colour at several shades: the page behind the panels,
+// the panel, its header and sub-bar, editors, raised controls, alternate and
+// viewed rows, inputs, the scrollbar thumb. Settings → Panel picks the PANEL;
+// every other shade is mixed from it toward black (−) or white (+) by the
+// amount the theme's shipped colours are from its panel (measured; within 4
+// per channel for most, 10 at most). Borders and hover tints are translucent
+// and follow by themselves. One colour per theme, and kept on its theme's side
+// of light: dark text on a light panel, or the reverse, would be unreadable —
+// a colour past the limit is pulled back to it, and the user told.
+// Requested 2026-10-26.
+const _PANEL_MIX = {
+  dark:  { '--bg-deep': -36.8, '--surface-edit': -19.6, '--surface-read': 0, '--surface-form': 0,
+           '--surface-header': 2.6, '--surface-subhead': 5.7, '--surface-raised': 4.8, '--row-viewed': 3.2,
+           '--row-alt': -10.7, '--input-focus-bg': -33.7, '--input-ro-bg': -41.3, '--scroll-thumb': 16.4 },
+  light: { '--bg-deep': -2.7, '--surface-read': -3.5, '--surface-form': -7.5, '--surface-header': -5.6,
+           '--surface-subhead': -7.6, '--surface-raised': -2.7, '--row-viewed': -3.5, '--row-alt': -1.6,
+           '--input-focus-bg': -7.5, '--input-ro-bg': -5.0, '--scroll-thumb': -19.9 },
+};
+// Relative luminance limits: dark panels stay at or below, light at or above.
+// The shipped panels are 0.011 (#161b22) and 1.0 (#ffffff).
+const _PANEL_LUM = { dark: { max: 0.045 }, light: { min: 0.78 } };
+const _panelKey = () => (P.theme === 'light' ? 'panelColorLight' : 'panelColorDark');
+function _hexRgb(h) { return [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); }
+function _rgbHex(c) { return '#' + c.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join(''); }
+function _relLum(h) {
+  return _hexRgb(h).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
+    .reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+}
+// Pulled toward black (dark) or white (light) until it is on its theme's side.
+function _panelClamp(hex, theme) {
+  const lim = _PANEL_LUM[theme], toward = theme === 'light' ? 255 : 0;
+  const ok = h => theme === 'light' ? _relLum(h) >= lim.min : _relLum(h) <= lim.max;
+  if (ok(hex)) return hex;
+  const c = _hexRgb(hex);
+  for (let t = 0.02; t <= 1; t += 0.02) {
+    const h = _rgbHex(c.map(v => v + (toward - v) * t));
+    if (ok(h)) return h;
+  }
+  return theme === 'light' ? '#ffffff' : '#000000';
+}
+function _panelVars(hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return null;
+  const mix = _PANEL_MIX[P.theme === 'light' ? 'light' : 'dark'];
+  const out = { '--bg-panel': hex };
+  for (const [k, pct] of Object.entries(mix))
+    out[k] = pct === 0 ? hex
+      : `color-mix(in srgb, ${pct > 0 ? '#ffffff' : '#000000'} ${Math.abs(pct)}%, ${hex})`;
+  return out;
+}
+const _PANEL_KEYS = ['--bg-panel', ...new Set(Object.values(_PANEL_MIX).flatMap(Object.keys))];
+function _applyPanelColor() {
+  const el = document.documentElement, v = _panelVars(P[_panelKey()]);
+  for (const k of _PANEL_KEYS) if (v && v[k]) el.style.setProperty(k, v[k]); else el.style.removeProperty(k);
+  _syncPanelPickerUI();
+}
+function _syncPanelPickerUI() {
+  const cs = typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement) : null;
+  const cur = (P[_panelKey()] || (cs && typeof cs.getPropertyValue === 'function' ? cs.getPropertyValue('--bg-panel') : '') || '').trim();
+  const m = /^#([0-9a-f]{6})$/i.exec(cur);
+  const inp = document.getElementById('panelPicker'), hex = document.getElementById('panelHex');
+  if (inp && m) inp.value = '#' + m[1].toLowerCase();
+  if (hex && m && document.activeElement !== hex) { hex.value = '#' + m[1].toLowerCase(); hex.classList?.remove('pending'); }
+  document.getElementById('panelResetBtn')?.classList?.toggle('hidden', !P[_panelKey()]);
+}
+function setPanelColor(hex) {
+  let v = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex.toLowerCase() : null;
+  if (v) {
+    const theme = P.theme === 'light' ? 'light' : 'dark', c = _panelClamp(v, theme);
+    if (c !== v && typeof flash === 'function')
+      flash(`Panel colour adjusted to ${c} — the ${theme} theme keeps ${theme} panels so its text stays readable`, 'warn');
+    v = c;
+  }
+  P[_panelKey()] = v;
+  savePrefs(); _applyPanelColor();
+}
+function setPanelHex(text) {
+  const t = (text || '').trim(), ok = /^#[0-9a-fA-F]{6}$/.test(t);
+  document.getElementById('panelHex')?.classList?.toggle('pending', !ok && !!t);
+  if (ok) setPanelColor(t);
+}
+function resetPanelColor() { setPanelColor(null); }
+
 function setAccentColor(hex) { _applyAccent(hex); }
 // The typed field. Only a COMPLETE #rrggbb is applied: _applyAccent treats
 // anything it cannot parse as "back to the theme's own accent" and saves null,
@@ -21182,7 +21265,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.6.0';
+const APP_VERSION  = '1.57.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21233,7 +21316,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', density: 'comfortable', pointers: 'custom', textColorDark: null, textColorLight: null, monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
+  theme: 'dark', density: 'comfortable', pointers: 'custom', textColorDark: null, textColorLight: null, panelColorDark: null, panelColorLight: null, monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
   auditAutoParse: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
@@ -21529,6 +21612,7 @@ function applyPrefs(updateUI = true) {
   }
   if (P.accent) _applyAccent(P.accent, false);
   _applyTextColor();
+  _applyPanelColor();
   // Sync raw hex truncate button (always — needed on startup to reflect saved pref)
   _syncRawHexTruncateUI();
   _syncKeepParseLogUI();
@@ -22036,6 +22120,7 @@ function openSettings() {
   _syncPointersUI();
   _syncAccentPickerUI();
   _syncTextPickerUI();
+  _syncPanelPickerUI();
   _lwUpdateDisplay();
   ['dark','light'].forEach(t => {
     const b = document.getElementById('theme_' + t);
@@ -22066,6 +22151,7 @@ function setTheme(t) {
   // changed underneath it.
   _syncAccentPickerUI();
   _syncTextPickerUI();
+  _syncPanelPickerUI();
 }
 
 // Three named sizes rather than a stepper. P.monoSize stays the pixel value —
@@ -40599,6 +40685,18 @@ function _meSave() {
                     style="padding:2px 8px;font-size:11px" title="Back to the theme's own text colour">Reset</button>
           </div>
         </div>
+        <div class="settings-row">
+          <span class="settings-lbl">Panel</span>
+          <div class="flex-row" style="gap:6px;align-items:center">
+            <input type="color" id="panelPicker" class="accent-picker"
+                   onchange="setPanelColor(this.value)" title="Pick the panel colour — headers, editors and rows follow it">
+            <input type="text" id="panelHex" class="accent-hex" placeholder="#rrggbb"
+                   autocomplete="off" spellcheck="false" maxlength="7"
+                   oninput="setPanelHex(this.value)" title="Type the panel colour">
+            <button class="btn hidden" id="panelResetBtn" onclick="resetPanelColor()"
+                    style="padding:2px 8px;font-size:11px" title="Back to the theme's own panel colour">Reset</button>
+          </div>
+        </div>
 
         <div class="settings-row">
           <span class="settings-lbl">Density</span>
@@ -40944,7 +41042,7 @@ function _meSave() {
           <button type="button" class="h-sub h-sub-toggle" onclick="toggleHelpSub(this)">Settings <span class="h-sub-arrow">+</span></button>
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
-              <li><strong>Appearance</strong> — Theme (Dark / Light), Font Size, Accent colour (Reset goes back to the theme's own), Text colour (the base of all the text — the dimmer text keeps the theme's proportions over it; one per theme; Reset goes back to the theme's own), Density (Comfort / Compact), Pointers (Custom — the app's own resize and text pointers, white on dark and black on light on every machine — or System, the machine's own, whose colour depends on its settings), Raw Hex (Truncate / Full), and whether the parse steps pop-up closes by itself when parsing finishes</li>
+              <li><strong>Appearance</strong> — Theme (Dark / Light), Font Size, Accent colour (Reset goes back to the theme's own), Text colour (the base of all the text — the dimmer text keeps the theme's proportions over it; one per theme; Reset goes back to the theme's own), Panel colour (the panels' background — headers, editors and rows follow it in the theme's proportions; one per theme, kept dark in Dark and light in Light so the text stays readable, adjusting a colour past that and saying so), Density (Comfort / Compact), Pointers (Custom — the app's own resize and text pointers, white on dark and black on light on every machine — or System, the machine's own, whose colour depends on its settings), Raw Hex (Truncate / Full), and whether the parse steps pop-up closes by itself when parsing finishes</li>
               <li><strong>Layout</strong> — see <em>Layout</em> above</li>
               <li><strong>Local Data → ⚠ Erase All Data</strong> — removes every DDL, class, override, baseline and setting stored in this browser. Nothing is ever sent to a server, so export first what you want to keep</li>
               <li><strong>Tutorial → ▶ Launch</strong> — a guided tour of the main features</li>

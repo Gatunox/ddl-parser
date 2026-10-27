@@ -2565,6 +2565,9 @@ td.c-err  { color: var(--accent2); }
 
 /* ===== UTILITY ===== */
 .hidden { display: none !important; }
+/* Hidden but keeping its place: Settings' colour Resets sit before the picker,
+   and appearing would shove an open picker sideways. */
+.invisible { visibility: hidden !important; }
 
 /* ===== SETTINGS DRAWER ===== */
 .settings-overlay { position: fixed; inset: 0; z-index: 30000; display: flex; justify-content: flex-end; }
@@ -18985,7 +18988,7 @@ function _syncAccentPickerUI() {
     hex.classList.remove('pending');
   }
   const rst = document.getElementById('accentResetBtn');
-  if (rst) rst.classList.toggle('hidden', !P.accent);
+  if (rst) rst.classList.toggle('invisible', !P.accent);
 }
 
 // ── Text colour ──────────────────────────────────────────────────────────────
@@ -19026,7 +19029,7 @@ function _syncTextPickerUI() {
   const inp = document.getElementById('textPicker'), hex = document.getElementById('textHex');
   if (inp && m) inp.value = '#' + m[1].toLowerCase();
   if (hex && m && document.activeElement !== hex) { hex.value = '#' + m[1].toLowerCase(); hex.classList?.remove('pending'); }
-  document.getElementById('textResetBtn')?.classList?.toggle('hidden', !P[_textKey()]);
+  document.getElementById('textResetBtn')?.classList?.toggle('invisible', !P[_textKey()]);
 }
 function setTextColor(hex) {
   P[_textKey()] = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex.toLowerCase() : null;
@@ -19109,7 +19112,7 @@ function _syncPanelPickerUI() {
   const inp = document.getElementById('panelPicker'), hex = document.getElementById('panelHex');
   if (inp && m) inp.value = '#' + m[1].toLowerCase();
   if (hex && m && document.activeElement !== hex) { hex.value = '#' + m[1].toLowerCase(); hex.classList?.remove('pending'); }
-  document.getElementById('panelResetBtn')?.classList?.toggle('hidden', !P[_panelKey()]);
+  document.getElementById('panelResetBtn')?.classList?.toggle('invisible', !P[_panelKey()]);
 }
 function setPanelColor(hex) {
   let v = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex.toLowerCase() : null;
@@ -21279,7 +21282,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.7.2';
+const APP_VERSION  = '1.57.7.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -40678,37 +40681,37 @@ function _meSave() {
         <div class="settings-row">
           <span class="settings-lbl">Accent</span>
           <div class="flex-row" style="gap:6px;align-items:center">
+            <button class="btn invisible" id="accentResetBtn" onclick="resetAccentColor()"
+                    style="padding:2px 8px;font-size:11px" title="Back to the theme's own accent">Reset</button>
             <input type="color" id="accentPicker" class="accent-picker"
                    oninput="setAccentColor(this.value)" title="Pick an accent colour">
             <input type="text" id="accentHex" class="accent-hex" placeholder="#rrggbb"
                    autocomplete="off" spellcheck="false" maxlength="7"
                    oninput="setAccentHex(this.value)" title="Type an accent colour">
-            <button class="btn hidden" id="accentResetBtn" onclick="resetAccentColor()"
-                    style="padding:2px 8px;font-size:11px" title="Back to the theme's own accent">Reset</button>
           </div>
         </div>
         <div class="settings-row">
           <span class="settings-lbl">Text</span>
           <div class="flex-row" style="gap:6px;align-items:center">
+            <button class="btn invisible" id="textResetBtn" onclick="resetTextColor()"
+                    style="padding:2px 8px;font-size:11px" title="Back to the theme's own text colour">Reset</button>
             <input type="color" id="textPicker" class="accent-picker"
                    oninput="setTextColor(this.value)" title="Pick the text colour — the dimmer text follows it">
             <input type="text" id="textHex" class="accent-hex" placeholder="#rrggbb"
                    autocomplete="off" spellcheck="false" maxlength="7"
                    oninput="setTextHex(this.value)" title="Type the text colour">
-            <button class="btn hidden" id="textResetBtn" onclick="resetTextColor()"
-                    style="padding:2px 8px;font-size:11px" title="Back to the theme's own text colour">Reset</button>
           </div>
         </div>
         <div class="settings-row">
           <span class="settings-lbl">Panel</span>
           <div class="flex-row" style="gap:6px;align-items:center">
+            <button class="btn invisible" id="panelResetBtn" onclick="resetPanelColor()"
+                    style="padding:2px 8px;font-size:11px" title="Back to the theme's own panel colour">Reset</button>
             <input type="color" id="panelPicker" class="accent-picker"
                    onchange="setPanelColor(this.value)" title="Pick the panel colour — headers, editors and rows follow it">
             <input type="text" id="panelHex" class="accent-hex" placeholder="#rrggbb"
                    autocomplete="off" spellcheck="false" maxlength="7"
                    oninput="setPanelHex(this.value)" title="Type the panel colour">
-            <button class="btn hidden" id="panelResetBtn" onclick="resetPanelColor()"
-                    style="padding:2px 8px;font-size:11px" title="Back to the theme's own panel colour">Reset</button>
           </div>
         </div>
 

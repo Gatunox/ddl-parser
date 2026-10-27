@@ -25494,6 +25494,13 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     assert.ok(/_applyPanelColor\(\);/.test(psFnSource('applyPrefs')), 'the saved panel colour is not applied at start-up / on a theme change');
     assert.ok(/'setPanelColor', 'setPanelHex', 'resetPanelColor'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename the Panel handlers');
     assert.ok(/id="panelPicker"[^>]*onchange="setPanelColor\(this\.value\)"/.test(html), 'Settings has no Panel picker');
+    // Reported 2026-10-27: Reset sat after the hex field, so a customised row's
+    // picker and field sat further left than an untouched one's. It comes first.
+    for (const k of ['accent', 'text', 'panel'])
+      assert.ok(html.indexOf(`id="${k}ResetBtn"`) < html.indexOf(`id="${k}Picker"`), `${k}: Reset is not before its picker`);
+    // …and hides without collapsing, or showing it would move an open picker.
+    for (const k of ['accent', 'text', 'panel'])
+      assert.ok(new RegExp(`class="btn invisible" id="${k}ResetBtn"`).test(html) && !new RegExp(`${k}ResetBtn'\\)[^;]*'hidden'`).test(html), `${k}: Reset collapses when hidden`);
   });
 
   // [REGRESSION] Reported 2026-10-26: hovering ⚙ Settings lit it in the

@@ -263,7 +263,7 @@
   --h-rose-bg:#200a10;   --h-rose-fg:#f43f5e;   --h-rose-bd:#f43f5e;
   --h-blue-bg:#1a2a3a;   --h-blue-fg:var(--accent); --h-blue-bd:var(--accent);
   --h-sky-bg:#001a2e;    --h-sky-fg:#38bdf8;    --h-sky-bd:#38bdf8;
-  --h-gray-bg:#232c37;   --h-gray-fg:#9aa5b1;   --h-gray-bd:#4d5b6a;
+  --h-gray-bg:#2d2d2d;   --h-gray-fg:#a0a6ac;   --h-gray-bd:#5c5c5c;
   --h-teal-bg:#0f1d1a;   --h-teal-fg:#34d399;   --h-teal-bd:#34d399;
   --h-violet-bg:#1d1840; --h-violet-fg:#b3a6ff; --h-violet-bd:#9482ff;
   --h-locked-bg:#2a1a1a; --h-locked-fg:var(--accent2); --h-locked-bd:var(--accent2);
@@ -364,7 +364,7 @@
   --h-rose-bg:#ffe4e6;   --h-rose-fg:#be123c;   --h-rose-bd:#f43f5e;
   --h-blue-bg:#ddf4ff;   --h-blue-fg:var(--accent); --h-blue-bd:var(--accent);
   --h-sky-bg:#e0f2fe;    --h-sky-fg:#0369a1;    --h-sky-bd:#38bdf8;
-  --h-gray-bg:#eaeef2;   --h-gray-fg:#5b6673;   --h-gray-bd:#c3ccd6;
+  --h-gray-bg:#eeeeee;   --h-gray-fg:#63676b;   --h-gray-bd:#cccccc;
   --h-teal-bg:#ccfbf1;   --h-teal-fg:#115e56;   --h-teal-bd:#14b8a6;
   --h-violet-bg:#e7e3ff; --h-violet-fg:#43349c; --h-violet-bd:#9482ff;
   --h-locked-bg:#fde8e8; --h-locked-fg:var(--accent2); --h-locked-bd:var(--accent2);
@@ -18997,20 +18997,23 @@ function _syncAccentPickerUI() {
 // #4d5561 is 32%; light: #656d76 is
 // 68% of #24292f over #ffffff, #9ba3ab is 43%). One base per theme — a light
 // text chosen for dark would vanish on light. Requested 2026-10-25.
-const _TEXT_MIX = { dark: [66, 32], light: [68, 43] };
+// The neutral chips' text (--h-gray-fg: tree counts, badges) follows too, at
+// the third amount — 76% / 71%, what #9aa5b1 / #5b6673 were (2026-10-27).
+const _TEXT_MIX = { dark: [66, 32, 76], light: [68, 43, 71] };
 const _textKey = () => (P.theme === 'light' ? 'textColorLight' : 'textColorDark');
 function _textVars(hex) {
   if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return null;
-  const [dim, vdim] = _TEXT_MIX[P.theme === 'light' ? 'light' : 'dark'];
+  const [dim, vdim, chip] = _TEXT_MIX[P.theme === 'light' ? 'light' : 'dark'];
   return {
     '--text':          hex,
     '--text-dim':      `color-mix(in srgb, ${hex} ${dim}%, var(--bg-panel))`,
     '--text-very-dim': `color-mix(in srgb, ${hex} ${vdim}%, var(--bg-panel))`,
+    '--h-gray-fg':     `color-mix(in srgb, ${hex} ${chip}%, var(--bg-panel))`,
   };
 }
 function _applyTextColor() {
   const el = document.documentElement, v = _textVars(P[_textKey()]);
-  for (const k of ['--text', '--text-dim', '--text-very-dim'])
+  for (const k of ['--text', '--text-dim', '--text-very-dim', '--h-gray-fg'])
     if (v) el.style.setProperty(k, v[k]); else el.style.removeProperty(k);
   _syncTextPickerUI();
 }
@@ -19044,7 +19047,8 @@ function resetTextColor() { setTextColor(null); }
 // every other shade is mixed from it toward black (−) or white (+) by the
 // amount the theme's shipped colours are from its panel (measured; within 4
 // per channel for most, 10 at most). Borders and hover tints are translucent
-// and follow by themselves. One colour per theme, and kept on its theme's side
+// and follow by themselves. So do the neutral chips (--h-gray-bg/-bd: tree
+// counts, badges, some hovers), once a fixed blue-grey (2026-10-27). One colour per theme, and kept on its theme's side
 // of light: dark text on a light panel, or the reverse, would be unreadable —
 // a colour past the limit is pulled back to it, and the user told.
 // Requested 2026-10-26. The same day the dark theme's own panel became neutral
@@ -19054,10 +19058,12 @@ function resetTextColor() { setTextColor(null); }
 const _PANEL_MIX = {
   dark:  { '--bg-deep': -36.8, '--surface-edit': -19.6, '--surface-read': 0, '--surface-form': 0,
            '--surface-header': 2.6, '--surface-subhead': 5.7, '--surface-raised': 4.8, '--row-viewed': 3.2,
-           '--row-alt': -10.7, '--input-focus-bg': -33.7, '--input-ro-bg': -41.3, '--scroll-thumb': 16.4 },
+           '--row-alt': -10.7, '--input-focus-bg': -33.7, '--input-ro-bg': -41.3, '--scroll-thumb': 16.4,
+           '--h-gray-bg': 7.5, '--h-gray-bd': 28 },
   light: { '--bg-deep': -2.7, '--surface-read': -3.5, '--surface-form': -7.5, '--surface-header': -5.6,
            '--surface-subhead': -7.6, '--surface-raised': -2.7, '--row-viewed': -3.5, '--row-alt': -1.6,
-           '--input-focus-bg': -7.5, '--input-ro-bg': -5.0, '--scroll-thumb': -19.9 },
+           '--input-focus-bg': -7.5, '--input-ro-bg': -5.0, '--scroll-thumb': -19.9,
+           '--h-gray-bg': -6.7, '--h-gray-bd': -20 },
 };
 // Relative luminance limits: dark panels stay at or below, light at or above.
 // The shipped panels are 0.011 (#1c1c1c) and 1.0 (#ffffff).
@@ -21273,7 +21279,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.7.1';
+const APP_VERSION  = '1.57.7.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

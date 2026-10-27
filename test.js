@@ -25401,7 +25401,7 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
     const tok = (theme, k) => {
       const i = css.indexOf(`[data-theme="${theme}"] {`);
-      return (css.slice(i, css.indexOf('\n}', i)).match(new RegExp(`^\\s*${k}:\\s*(#[0-9a-f]{6});`, 'mi')) || [])[1];
+      return (css.slice(i, css.indexOf('\n}', i)).match(new RegExp(`(?:^|;)\\s*${k}:\\s*(#[0-9a-f]{6});`, 'mi')) || [])[1];
     };
     const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
     const MIX = vm.runInContext('_TEXT_MIX', sandbox);
@@ -25410,7 +25410,7 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     const refPanel = { dark: '#161b22', light: tok('light', '--bg-panel') };
     for (const theme of ['dark', 'light']) {
       const t = rgb(tok(theme, '--text')), bg = rgb(refPanel[theme]);
-      for (const [k, pct] of [['--text-dim', MIX[theme][0]], ['--text-very-dim', MIX[theme][1]]]) {
+      for (const [k, pct] of [['--text-dim', MIX[theme][0]], ['--text-very-dim', MIX[theme][1]], ['--h-gray-fg', MIX[theme][2]]]) {
         const want = rgb(tok(theme, k)), got = t.map((c, i) => Math.round(c * pct / 100 + bg[i] * (1 - pct / 100)));
         assert.ok(got.every((c, i) => Math.abs(c - want[i]) <= 6), `${theme} ${k}: ${pct}% gives ${got}, the theme has ${want}`);
       }
@@ -25424,7 +25424,8 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
       eq(P.textColorDark, '#ffaa00', 'the dark base is not stored');
       deepEq(vars(), { '--text': '#ffaa00',
         '--text-dim': 'color-mix(in srgb, #ffaa00 66%, var(--bg-panel))',
-        '--text-very-dim': 'color-mix(in srgb, #ffaa00 32%, var(--bg-panel))' });
+        '--text-very-dim': 'color-mix(in srgb, #ffaa00 32%, var(--bg-panel))',
+        '--h-gray-fg': 'color-mix(in srgb, #ffaa00 76%, var(--bg-panel))' });
       P.theme = 'light';
       eq(vars(), null, 'the dark base leaked into the light theme');
       vm.runInContext("setTextColor('#123456')", sandbox);
@@ -25448,10 +25449,16 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
     const tok = (theme, k) => {
       const i = css.indexOf(`[data-theme="${theme}"] {`);
-      return (css.slice(i, css.indexOf('\n}', i)).match(new RegExp(`^\\s*${k}:\\s*(#[0-9a-fA-F]{6});`, 'm')) || [])[1];
+      return (css.slice(i, css.indexOf('\n}', i)).match(new RegExp(`(?:^|;)\\s*${k}:\\s*(#[0-9a-fA-F]{6});`, 'm')) || [])[1];
     };
     const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
     const MIX = vm.runInContext('_PANEL_MIX', sandbox);
+    // [REGRESSION] Reported 2026-10-27: the tree counts (and every neutral
+    // chip) kept the old blue-grey whatever the panel colour.
+    for (const theme of ['dark', 'light'])
+      for (const k of ['--h-gray-bg', '--h-gray-bd'])
+        assert.ok(k in MIX[theme], `${theme} ${k} does not follow the panel`);
+    assert.ok(/\.tree-cnt \{[^}]*background: var\(--h-gray-bg\)/.test(css), 'the tree count left the neutral chip colour');
     // The proportions reproduce the shipped surfaces from the shipped panel.
     for (const theme of ['dark', 'light']) {
       const base = rgb(tok(theme, '--bg-panel'));

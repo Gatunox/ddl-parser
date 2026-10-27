@@ -142,8 +142,8 @@
      field is the OS's too, and stayed black over CodeMirror on the dark
      theme once the resize pointers were fixed. Reported 2026-10-09. */
   --cur-text: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath stroke='%23fff' stroke-width='3.4' d='M9 4.5 H15 M12 4.5 V19.5 M9 19.5 H15'/%3E%3Cpath stroke='%23000' stroke-width='1.4' d='M9 4.5 H15 M12 4.5 V19.5 M9 19.5 H15'/%3E%3C/g%3E%3C/svg%3E") 12 12, text;
-  --bg-deep: #0d1117;
-  --bg-panel: #161b22;
+  --bg-deep: #121212;
+  --bg-panel: #1c1c1c;
   /* A field is a field wherever it is. This was a ground of its own — in dark it
      was the PAGE colour, so a field on the main page was a well cut through its
      panel while a Class Editor field sat flush on the editable ground. Two ideas
@@ -161,8 +161,8 @@
      1.46.14.0, when they were swapped on request. Anything that separates
      itself from one of these moves with them — see --surface-form and
      --fm-head-bg below, and the editors, which name the token now. */
-  --surface-edit: #11161C;
-  --surface-read: #161B22;
+  --surface-edit: #171717;
+  --surface-read: #1c1c1c;
   /* A FORM pane — a section that is a row of fields rather than one big editor.
      Its fields take --surface-edit, so a form on that same ground has nothing
      but borders to show where the boxes are. Dropping the pane one step lifts
@@ -170,13 +170,13 @@
      the pane below its white fields, and dark — where a typing surface is the
      recess — raises it, so the fields sink into the pane instead. Same idea,
      read the same way, in both. Requested 2026-08-22. */
-  --surface-form: #161B22;
-  --surface-header: #1c2128;
+  --surface-form: #1c1c1c;
+  --surface-header: #222222;
   /* Sidebar SECTION bars (Messages / Data / Files) — one level below a pane
      header, so they read as nested rather than as another panel. A token, not a
      hex in the rule: component selectors carry no colours here, which is what
      lets light and dark stay peers. */
-  --surface-subhead: #23282f;
+  --surface-subhead: #292929;
   --border: rgba(255,255,255,0.07);
   --border-hair: rgba(255,255,255,0.06);
   --rule-faint: rgba(255,255,255,0.04);
@@ -210,15 +210,15 @@
   --tint-chip: rgba(255,255,255,0.12);
   /* editor + dump surfaces */
   --gutter-num: #444d56;
-  --input-focus-bg: #0a1020;
-  --input-ro-bg: #0b0f18;
+  --input-focus-bg: #131313;
+  --input-ro-bg: #101010;
   /* The pinned header sits one step ABOVE the rows it labels, which is the
      direction light already had. It used to be a literal #0b0f15 — the one
      surface in the app below the page ground — so dark sank the header while
      light lifted it, and the same table read two different ways depending on
      the theme. Reported 2026-08-22.
-     Its rows are --surface-read, which the swap above made #161B22 — the same
-     colour --bg-panel names — so the header would have disappeared into them.
+     Its rows are --surface-read, which the swap above made the panel colour
+     itself — the same colour --bg-panel names — so the header would have disappeared into them.
      --surface-header is the step above a panel and keeps it lifting. */
   --fm-head-bg: var(--surface-header);
   --hb-masked: #566070;
@@ -236,21 +236,21 @@
   --sec-hdr-bg: rgba(var(--accent-rgb),0.10);
   --ta-ro-fg: var(--text-dim);
   --row-hover: var(--hl-hover);
-  --surface-raised: #21262d;
+  --surface-raised: #272727;
   --border-strong: rgba(255,255,255,0.16);
   --surface-hover: rgba(255,255,255,0.06);
   --shadow-sm: 0 1px 2px rgba(0,0,0,.40);
   --shadow-card: 0 1px 2px rgba(0,0,0,.30), 0 4px 14px -4px rgba(0,0,0,.35);
   --accent-hover: #79b8ff;
   --on-accent: #000000;
-  /* An audit row you have already looked at. A step ABOVE --bg-panel: at
-     #161B22 it was that token exactly, so on a panel-coloured list the mark was
+  /* An audit row you have already looked at. A step ABOVE --bg-panel: when it
+     equalled the panel colour exactly, so on a panel-coloured list the mark was
      invisible. */
-  --row-viewed: #1C222B;
+  --row-viewed: #232323;
   /* Zebra for the audit list. A hair off the ground and no more: it is there to
      keep the eye on one row across twelve columns, not to be seen. */
-  --row-alt: #14181E;
-  --scroll-thumb: #3a4049;
+  --row-alt: #191919;
+  --scroll-thumb: #414141;
   --flash-warn-bg: #e6a817; --flash-warn-fg: #000000;
   --flash-error-bg: #c0392b; --flash-error-fg: #ffffff;
   /* hue slots — every badge, message-type chip and tree badge draws from these.
@@ -1565,7 +1565,9 @@ input[type="text"]:focus { border-color: var(--accent); }
    header's content area — 18px looked similar but landed on a half pixel. */
 #settingsBtn { font-size: 28px; line-height: 1; padding: 0 6px; border-color: transparent; color: var(--text-dim); }
 [data-density="compact"] #settingsBtn { font-size: 19px; }
-#settingsBtn:hover { border-color: var(--accent) !important; color: var(--accent) !important; background: rgba(var(--accent-rgb),0.1) !important; }
+/* The same neutral hover as the panels' − buttons. It lit in the accent, the
+   one button in the chrome that did. Reported 2026-10-26. */
+#settingsBtn:hover { border-color: var(--border-strong) !important; color: var(--text) !important; background: var(--surface-hover) !important; }
 .btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
 .btn-primary:focus-visible { outline: none; border-color: var(--accent); }
@@ -2581,7 +2583,9 @@ td.c-err  { color: var(--accent2); }
   border-bottom: var(--bw) solid var(--border);
   display: flex; align-items: center; gap: 8px; flex-shrink: 0;
 }
-.settings-hdr-title { font-size: calc(var(--sz-mono) + 2px); font-weight: 700; color: var(--accent); flex: 1; }
+/* Ordinary text, like every other title in the chrome — it was the accent.
+   Reported 2026-10-26. */
+.settings-hdr-title { font-size: calc(var(--sz-mono) + 2px); font-weight: 700; color: var(--text); flex: 1; }
 .settings-body { flex: 1; overflow-y: scroll; scrollbar-gutter: stable; padding: var(--sp-3) 0 var(--sp-4); }
 /* Each section is its own card: the drawer is the page, sections sit on it.
    A divider line said "these are separate"; a card says it and also gives the
@@ -18989,7 +18993,8 @@ function _syncAccentPickerUI() {
 // --text-very-dim, each the theme's text mixed toward its panel background by
 // a fixed amount. Settings → Text picks the BASE; the two dimmer ones keep the
 // theme's own proportions over it, measured from its shipped colours (dark:
-// #8b949e is 66% of #c9d1d9 over #161b22, #4d5561 is 32%; light: #656d76 is
+// #8b949e is 66% of #c9d1d9 over #161b22 — the dark panel until 2026-10-26, #1c1c1c since —,
+// #4d5561 is 32%; light: #656d76 is
 // 68% of #24292f over #ffffff, #9ba3ab is 43%). One base per theme — a light
 // text chosen for dark would vanish on light. Requested 2026-10-25.
 const _TEXT_MIX = { dark: [66, 32], light: [68, 43] };
@@ -19042,7 +19047,10 @@ function resetTextColor() { setTextColor(null); }
 // and follow by themselves. One colour per theme, and kept on its theme's side
 // of light: dark text on a light panel, or the reverse, would be unreadable —
 // a colour past the limit is pulled back to it, and the user told.
-// Requested 2026-10-26.
+// Requested 2026-10-26. The same day the dark theme's own panel became neutral
+// (neutral, asked for as the new default; darkened to #1c1c1c the same day)
+// with every surface re-derived from it by these proportions — so Reset
+// returns to #1c1c1c.
 const _PANEL_MIX = {
   dark:  { '--bg-deep': -36.8, '--surface-edit': -19.6, '--surface-read': 0, '--surface-form': 0,
            '--surface-header': 2.6, '--surface-subhead': 5.7, '--surface-raised': 4.8, '--row-viewed': 3.2,
@@ -19052,7 +19060,7 @@ const _PANEL_MIX = {
            '--input-focus-bg': -7.5, '--input-ro-bg': -5.0, '--scroll-thumb': -19.9 },
 };
 // Relative luminance limits: dark panels stay at or below, light at or above.
-// The shipped panels are 0.011 (#161b22) and 1.0 (#ffffff).
+// The shipped panels are 0.011 (#1c1c1c) and 1.0 (#ffffff).
 const _PANEL_LUM = { dark: { max: 0.045 }, light: { min: 0.78 } };
 const _panelKey = () => (P.theme === 'light' ? 'panelColorLight' : 'panelColorDark');
 function _hexRgb(h) { return [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); }
@@ -21265,7 +21273,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.7.0';
+const APP_VERSION  = '1.57.7.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

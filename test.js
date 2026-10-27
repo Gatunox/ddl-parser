@@ -15473,11 +15473,12 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
   // The two that differ per theme are the point, and so is their DIRECTION.
   // Light raises what you type on. Dark sinks it, so a typing surface reads as a
   // recess and the readouts stand above it — swapped on request in 1.46.14.0.
-  // Both stay in the blue-grey family; a neutral grey read as a different
-  // palette rather than a darker one.
-  assert.ok(/--surface-edit: #11161C/.test(block('dark')),
+  // They were blue-grey (#11161C / #161B22) until 2026-10-26, when the user
+  // made the dark panel a neutral #1c1c1c and the surfaces were re-derived
+  // from it (Settings → Panel's proportions).
+  assert.ok(/--surface-edit: #171717/.test(block('dark')),
     'dark: the editable ground is not the one the editors write on');
-  assert.ok(/--surface-read: #161B22/.test(block('dark')),
+  assert.ok(/--surface-read: #1c1c1c/.test(block('dark')),
     'dark: the readouts do not stand above the ground you type on');
   // The relationship, not the hexes: the two themes run OPPOSITE ways, and a
   // later edit that quietly makes them agree is the regression to catch.
@@ -15493,8 +15494,9 @@ test('a panel says whether you can type into it, in BOTH themes', () => {
   assert.ok(lum(surf('light', 'surface-edit')) > lum(surf('light', 'surface-read')),
     'light: the ground you type on no longer rises above the readouts');
   // And the page ground is untouched. Moving it to make room was a fix nobody
-  // asked for, and it changed the ground under the whole app.
-  assert.ok(/--bg-deep: #0d1117;/.test(block('dark')), 'dark: the page ground moved');
+  // asked for, and it changed the ground under the whole app. (It did move on
+  // 2026-10-26, on request: re-derived from the new #1c1c1c panel.)
+  assert.ok(/--bg-deep: #121212;/.test(block('dark')), 'dark: the page ground moved');
   assert.ok(/--surface-edit: var\(--bg-panel\)/.test(block('light')), 'light: the editable panels are not the page white');
   assert.ok(/--surface-read: #F6F6F6/.test(block('light')), 'light: the readouts are not tinted');
   // Each panel carries the class, and the classes read their tokens.
@@ -15653,7 +15655,7 @@ test('a pane of fields stands off the fields on it, whichever way the theme runs
       `${theme}: the form pane separates from its fields the wrong way for this theme`);
   }
   assert.ok(/--surface-form: #E8ECF0/.test(block('light')), 'light: the form pane is not the requested tint');
-  assert.ok(/--surface-form: #161B22/.test(block('dark')), 'dark: the form pane is not the requested ground');
+  assert.ok(/--surface-form: #1c1c1c/.test(block('dark')), 'dark: the form pane is not the requested ground');
   assert.ok(/\.pb-form \{ background: var\(--surface-form\); \}/.test(css), '.pb-form does not take its token');
   // The classification decides it, so a new section still has to answer the
   // question — and an editor that FILLS its pane is not a form.
@@ -25403,8 +25405,11 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     };
     const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
     const MIX = vm.runInContext('_TEXT_MIX', sandbox);
+    // Measured against the panel they were shipped on — dark's was #161b22
+    // until the 2026-10-26 switch to #1c1c1c; the dim greys did not change.
+    const refPanel = { dark: '#161b22', light: tok('light', '--bg-panel') };
     for (const theme of ['dark', 'light']) {
-      const t = rgb(tok(theme, '--text')), bg = rgb(tok(theme, '--bg-panel'));
+      const t = rgb(tok(theme, '--text')), bg = rgb(refPanel[theme]);
       for (const [k, pct] of [['--text-dim', MIX[theme][0]], ['--text-very-dim', MIX[theme][1]]]) {
         const want = rgb(tok(theme, k)), got = t.map((c, i) => Math.round(c * pct / 100 + bg[i] * (1 - pct / 100)));
         assert.ok(got.every((c, i) => Math.abs(c - want[i]) <= 6), `${theme} ${k}: ${pct}% gives ${got}, the theme has ${want}`);
@@ -25482,6 +25487,24 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
     assert.ok(/_applyPanelColor\(\);/.test(psFnSource('applyPrefs')), 'the saved panel colour is not applied at start-up / on a theme change');
     assert.ok(/'setPanelColor', 'setPanelHex', 'resetPanelColor'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename the Panel handlers');
     assert.ok(/id="panelPicker"[^>]*onchange="setPanelColor\(this\.value\)"/.test(html), 'Settings has no Panel picker');
+  });
+
+  // [REGRESSION] Reported 2026-10-26: hovering ⚙ Settings lit it in the
+  // accent while the panels' − buttons hover neutral. They hover alike.
+  test('[REGRESSION] the Settings button hovers like the panel buttons, not in the accent', () => {
+    const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
+    const decl = sel => { const m = css.match(new RegExp(sel.replace(/[.#:]/g, c => '\\' + c) + '\\s*\\{([^}]*)\\}')); return m ? m[1] : ''; };
+    const s = decl('#settingsBtn:hover'), p = decl('.panel-toggle:hover');
+    assert.ok(s && !/accent/.test(s), '⚙ still lights in the accent on hover');
+    for (const v of ['var(--surface-hover)', 'var(--border-strong)', 'var(--text)'])
+      assert.ok(s.includes(v) && p.includes(v), `⚙ and − do not share ${v} on hover`);
+  });
+
+  // [REGRESSION] Reported 2026-10-26, right after: the Settings drawer's own
+  // title was in the accent too. It is ordinary text.
+  test('[REGRESSION] the Settings drawer title is ordinary text, not the accent', () => {
+    const m = html.match(/\.settings-hdr-title \{([^}]*)\}/);
+    assert.ok(m && /color: var\(--text\)/.test(m[1]) && !/accent/.test(m[1]), 'the Settings title is not ordinary text');
   });
 
   // [REGRESSION] The Baseline Editor's empty list told people to press

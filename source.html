@@ -8051,7 +8051,12 @@ function detectFormat(text) {
 //
 // `textOffset` is where this chunk starts inside the full textarea, so the
 // offsets are absolute and need no second remapping pass.
-function extractBytesMapped(chunk, format, textOffset) {
+//
+// `own` is for a caller that is NOT the Data Input panel — the Class Editor's
+// Test panel. Given, nothing is read from or written to that panel's state:
+// `own.width` is the ASCII data width of this text, `own.ebcdicChars` says
+// whether an EBCDIC paste is rendered characters. Reported 2026-10-28.
+function extractBytesMapped(chunk, format, textOffset, own) {
   const text = typeof chunk === 'object' ? chunk.text : chunk;
   const off   = textOffset || 0;
   const bytes = [];
@@ -8125,21 +8130,36 @@ function extractBytesMapped(chunk, format, textOffset) {
   // Pairing the second kind as hex digits produced silent nonsense: eight
   // characters became the four bytes 01 83 E1 C5, with nothing said.
   // Requested 2026-08-23.
-  const _ebcdicChars = format === 'ebcdic'
-    && typeof S !== 'undefined' && S && S.forcedFormat === 'ebcdic';
+  const _ebcdicChars = format === 'ebcdic' && (own ? !!own.ebcdicChars
+    : typeof S !== 'undefined' && S && S.forcedFormat === 'ebcdic');
   // Recorded, not re-derived: the decision is made HERE, and parseFlatMessage
   // needs it to mark BINARY fields unreliable. Working it out a second time
   // would be a second rule, free to disagree with this one.
-  if (typeof S !== 'undefined' && S) S._ebcdicAsChars = !!_ebcdicChars;
+  if (!own && typeof S !== 'undefined' && S) S._ebcdicAsChars = !!_ebcdicChars;
   if (_ebcdicChars) {
     // Each character back to the EBCDIC byte it was rendered from. 0x3F is
     // EBCDIC's own substitute character — what an unmappable character becomes.
+    // A screen copy drops trailing spaces, and a blank line keeps none: every
+    // line but the last is padded to the longest one, with EBCDIC spaces (0x40)
+    // pointing at the line end — as ASCII does. Reported 2026-10-28.
     const bytes = [], map = [];
-    for (let i = 0; i < text.length; i++) {
-      const ch = text.charCodeAt(i);
-      if (ch === 10 || ch === 13) continue;         // line breaks are not data
-      bytes.push(_ASCII_TO_EBCDIC[ch] ?? 0x3F);
-      map.push({ s: off + i, e: off + i + 1 });
+    const lines = text.replace(/\r/g, '').split('\n');
+    let s0 = 0, e0 = lines.length;
+    while (s0 < e0 && lines[s0].trim() === '') s0++;
+    while (e0 > s0 && lines[e0 - 1].trim() === '') e0--;
+    const W = Math.max(0, ...lines.slice(s0, e0).map(l => l.length));
+    let p = off;
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li], lineStart = p;
+      p += line.length + 1;
+      if (li < s0 || li >= e0) continue;
+      for (let c = 0; c < line.length; c++) {
+        bytes.push(_ASCII_TO_EBCDIC[line.charCodeAt(c)] ?? 0x3F);
+        map.push({ s: lineStart + c, e: lineStart + c + 1 });
+      }
+      if (li === e0 - 1) continue;
+      const eol = line.length > 0 ? { s: lineStart + line.length - 1, e: lineStart + line.length } : null;
+      for (let c = line.length; c < W; c++) { bytes.push(0x40); map.push(eol); }
     }
     return { bytes, map };
   }
@@ -8186,7 +8206,8 @@ function extractBytesMapped(chunk, format, textOffset) {
   // ASCII: every column up to the ruler width is data, trailing spaces included.
   // P.lineWidth is the total ruler column (margin+data); S.asciiRulerCol is the
   // data width alone.
-  const _asciiW = P.lineWidth > 0 ? Math.max(1, P.lineWidth - S.asciiMargin) : S.asciiRulerCol;
+  const _asciiW = own ? (own.width || 0)
+    : P.lineWidth > 0 ? Math.max(1, P.lineWidth - S.asciiMargin) : S.asciiRulerCol;
   if (_asciiW > 0) {
     const W = _asciiW;
     const rawLines = text.replace(/\r/g, '').split('\n');
@@ -8223,8 +8244,8 @@ function extractBytesMapped(chunk, format, textOffset) {
 }
 
 // The bytes alone, for every caller that does not care where they came from.
-function extractBytes(chunk, format) {
-  return extractBytesMapped(chunk, format).bytes;
+function extractBytes(chunk, format, own) {
+  return extractBytesMapped(chunk, format, 0, own).bytes;
 }
 
 // The same bytes BEFORE any EBCDIC translation. Null when nothing was
@@ -8236,8 +8257,8 @@ function extractWireBytes(chunk, format) {
 
 // The map alone. Kept as a name because several call sites read only this, and
 // it is now guaranteed to agree with the bytes — it is the same pass.
-function buildByteCharMap(text, format, textOffset) {
-  return extractBytesMapped(text, format, textOffset).map;
+function buildByteCharMap(text, format, textOffset, own) {
+  return extractBytesMapped(text, format, textOffset, own).map;
 }
 
 // Nested-OCCURS actual-count / skip decision. Given an expanded leaf `def` and the
@@ -11432,7 +11453,9 @@ function _detectNetardRuler(text, isSubFmt) {
     }, 0);
 }
 
-function parseNetardLog(text) {
+// `opts.rulerCol` is the ruler column for THIS text. The Class Editor's Test
+// panel passes its own; without it the Data Input panel's ruler is used.
+function parseNetardLog(text, opts = {}) {
   const lines    = text.split('\n');
   const records  = [];
   let   cur      = null;
@@ -11492,7 +11515,7 @@ function parseNetardLog(text) {
       // minus the left margin (number of leading spaces before data, from SOURCE/DEST).
       // Everything beyond the ruler column is discarded — not data, not highlighted.
       const lm  = cur.leftMargin ?? 7;
-      const rulerCol = (P.lineWidth > 0) ? P.lineWidth : S.netardRulerCol;
+      const rulerCol = opts.rulerCol > 0 ? opts.rulerCol : (P.lineWidth > 0) ? P.lineWidth : S.netardRulerCol;
       const W   = Math.max(1, rulerCol - lm);
       // Pad short lines to W; clip long lines at W (content beyond ruler is not data).
       const padded = cur._lines.map(line => line.slice(0, W).padEnd(W, ' '));
@@ -21297,7 +21320,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.7.4';
+const APP_VERSION  = '1.57.7.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -40051,20 +40074,17 @@ function _meRunTest(opts) {
   // below lives inside the try, and is shadowed later by a recognizer named
   // `rec`.
   let testCtx = null;
-  // S.netardRulerCol is the MAIN panel's ruler column, and the block below has
-  // to set it because parseNetardLog reads it from there. Left set, a Test run
-  // in this editor silently moved the Data Input panel's ruler to whatever
-  // width the test snippet happened to have. Snapshot it and put it back.
-  const _rulerColBefore = S.netardRulerCol;
+  // The Test panel never depends on the Data Input panel: the widths come from
+  // THIS text and are handed to the parsers, nothing is read from or written
+  // to that panel's ruler, margin or format. Reported 2026-10-28 — an ASCII
+  // test read the main panel's width, 0 when it held no ASCII, and blank or
+  // short lines lost their spaces.
+  const _own = { width: _detectAsciiLineMetrics(text).dataWidth, ebcdicChars: fmtSel === 'ebcdic' };
   try {
-    // Auto-detect the NETARD ruler width from the input — same as the Main panel
-    // does on every input change — so parseNetardLog clips/pads standard-format
-    // lines to the right width before stripping (without it W defaults to 1 and
-    // every line collapses to its first character).
-    if (!(P.lineWidth > 0)) {
-      const _rc = _detectNetardRuler(text, String(fmtSel).startsWith('netard-'));
-      if (_rc > 0) S.netardRulerCol = _rc;
-    }
+    // The NETARD ruler, as the Main panel detects it, so parseNetardLog
+    // clips/pads standard-format lines to the right width (without it W
+    // defaults to 1 and every line collapses to its first character).
+    const _rulerCol = _detectNetardRuler(text, String(fmtSel).startsWith('netard-'));
     // A formatted NETARD record (a SOURCE/DEST wrapper, or an H-/hexascii block)
     // is stripped + decoded by parseNetardLog for BOTH auto and manual — a
     // manual format only overrides the label/engine format, it never re-adds the
@@ -40078,7 +40098,7 @@ function _meRunTest(opts) {
     // Reported 2026-08-27.
     const fupRecs = (typeof isFupCopyLog === 'function' && isFupCopyLog(text))
       ? parseFupCopyLog(text) : [];
-    const recs = fupRecs.length ? fupRecs : parseNetardLog(text);
+    const recs = fupRecs.length ? fupRecs : parseNetardLog(text, { rulerCol: _rulerCol });
     const rec  = (recs && recs.length && recs[0].rawMsg && recs[0].rawMsg.length
                   && (recs[0].source || recs[0].dest || recs[0].netardFmt)) ? recs[0] : null;
     if (rec) {
@@ -40092,7 +40112,7 @@ function _meRunTest(opts) {
       engineFmt = _FMT_MAP[inputFmt] || 'netard';
     } else {
       inputFmt  = fmtSel || detectFormat(text);
-      rawBytes  = extractBytes(text, inputFmt);
+      rawBytes  = extractBytes(text, inputFmt, _own);
       engineFmt = _FMT_MAP[inputFmt] || inputFmt;
     }
     if (!rawBytes.length) throw new Error('no bytes could be extracted');
@@ -40101,8 +40121,6 @@ function _meRunTest(opts) {
     out.innerHTML = `<div class="me-test-err">Input error: ${e.message}</div>`;
     if (summ) { summ.textContent = '⚠ input error'; summ.style.color='#f85149'; }
     return;
-  } finally {
-    S.netardRulerCol = _rulerColBefore;
   }
 
   // ── 1. Detection ────────────────────────────────────────────────────────────
@@ -40247,7 +40265,7 @@ function _meRunTest(opts) {
   // the same gesture the Data Input panel answers, so a parse can be read
   // against the actual bytes without leaving this panel.
   _meTestFields = ctx.fields;
-  _meTestByteMap = netardBcm || _meTestBuildByteMap(text, inputFmt);
+  _meTestByteMap = netardBcm || _meTestBuildByteMap(text, inputFmt, _own);
   _meTestBindRowHL();
   _meTestInitColResize();
   // Same click-a-header-to-light-the-column as the Field Map and Parse Results:
@@ -40271,11 +40289,11 @@ let _meTestByteMap = null;
 let _meTestSelFid  = null;
 let _meTestHovFid  = null;
 
-function _meTestBuildByteMap(text, fmt) {
+function _meTestBuildByteMap(text, fmt, own) {
   // A NETARD wrapper is stripped before the bytes are read, and the map has to
   // describe the text on screen — so it is built from the same wrapper-aware
   // path the main panel uses, against the same format the run decoded with.
-  try { return buildByteCharMap(text, fmt, 0); }
+  try { return buildByteCharMap(text, fmt, 0, own); }
   catch(e) { return null; }
 }
 

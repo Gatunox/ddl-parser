@@ -2121,6 +2121,36 @@ test('[REGRESSION] FUP COPY pads blank and partly blank ASCII lines to full widt
   eq(raw.byteCharMap.length, raw.rawMsg.length, 'a padded byte has no place in the text');
 });
 
+// [REGRESSION] Reported 2026-10-28: the same capture problem in ASCII and in
+// EBCDIC pasted as characters, and the Class Editor's Test panel reading the
+// Data Input panel's width — 0 when that panel held no ASCII, so blank and
+// short lines lost their spaces. The Test panel never depends on the main one.
+test('[REGRESSION] ASCII and EBCDIC characters pad blank lines, with no main-panel state', () => {
+  const S = vm.runInContext('S', sandbox), P = vm.runInContext('P', sandbox);
+  const saved = { w: P.lineWidth, a: S.asciiRulerCol, m: S.asciiMargin, f: S.forcedFormat, e: S._ebcdicAsChars };
+  try {
+    P.lineWidth = 0; S.asciiRulerCol = 0; S.asciiMargin = 0; S.forcedFormat = null; S._ebcdicAsChars = 'untouched';
+    const text = 'ABCDEFGHIJ\n\nKLM\n0123456789';
+    const want = 'ABCDEFGHIJ' + ' '.repeat(10) + 'KLM' + ' '.repeat(7) + '0123456789';
+    // ASCII with the Test panel's own width, whatever the main panel holds.
+    const own = { width: sandbox._detectAsciiLineMetrics(text).dataWidth };
+    eq(String.fromCharCode(...sandbox.extractBytes(text, 'ascii', own)), want, 'ASCII lost its blanks');
+    S.asciiRulerCol = 3;   // a stale main-panel width must not reach it either
+    eq(String.fromCharCode(...sandbox.extractBytes(text, 'ascii', own)), want, 'the main panel\'s width leaked in');
+    // EBCDIC characters: 0x40 for every blank.
+    const eb = sandbox.extractBytes(text, 'ebcdic', { ebcdicChars: true });
+    eq(eb.length, 40, 'EBCDIC characters lost their blanks');
+    eq(eb.slice(10, 20).every(b => b === 0x40), true, 'a blank line is not EBCDIC spaces');
+    eq(sandbox.buildByteCharMap(text, 'ebcdic', 0, { ebcdicChars: true }).length, 40, 'the map and the bytes disagree');
+    eq(S._ebcdicAsChars, 'untouched', 'the Test path wrote the main panel\'s EBCDIC flag');
+  } finally { P.lineWidth = saved.w; S.asciiRulerCol = saved.a; S.asciiMargin = saved.m; S.forcedFormat = saved.f; S._ebcdicAsChars = saved.e; }
+  // The Test panel hands its own widths in and touches no main-panel ruler.
+  const run = psFnSource('_meRunTest');
+  assert.ok(/extractBytes\(text, inputFmt, _own\)/.test(run), 'the Test panel decodes with the main panel\'s widths');
+  assert.ok(/parseNetardLog\(text, \{ rulerCol: _rulerCol \}\)/.test(run), 'the Test panel parses NETADRD with the main panel\'s ruler');
+  assert.ok(!/S\.(netardRulerCol|asciiRulerCol|asciiMargin|forcedFormat)|P\.lineWidth/.test(run), 'the Test panel still reads the main panel\'s state');
+});
+
 // The NETADRD side of the same capture problem, fixed before FUP COPY but never
 // pinned: a blank middle line and a partly blank one are full-width spaces.
 test('[REGRESSION] NETADRD pads blank and partly blank lines to full width', () => {
@@ -8834,7 +8864,7 @@ test('buildByteCharMap is the same pass, not a second one', () => {
   // implementation again, the two can disagree — which is the bug class that
   // gave Data Input dozens of highlight faults and Raw none.
   const src = psFnSource('buildByteCharMap');
-  assert.ok(/extractBytesMapped\(text, format, textOffset\)\.map/.test(src),
+  assert.ok(/extractBytesMapped\(text, format, textOffset, own\)\.map/.test(src),
     'buildByteCharMap has stopped delegating and is parsing the text itself');
   assert.ok(src.split('\n').filter(l => l.trim() && !l.trim().startsWith('//')).length <= 4,
     'buildByteCharMap is doing more than delegating');
@@ -23593,7 +23623,7 @@ test('a field row lights its own bytes in the Test input', () => {
   assert.ok(/_meTestSelFid === fid \? null : fid/.test(bind), 'a pinned row cannot be unpinned');
   // The map is the Test input's own: the two inputs hold different text.
   const run = psFnSource('_meRunTest');
-  assert.ok(/_meTestByteMap = netardBcm \|\| _meTestBuildByteMap\(text, inputFmt\)/.test(run),
+  assert.ok(/_meTestByteMap = netardBcm \|\| _meTestBuildByteMap\(text, inputFmt, _own\)/.test(run),
     'the byte map is not rebuilt from the text and format the run actually used');
   // buildByteCharMap says it is for NON-NETARD input, and it is: a wrapped
   // record's map is built by parseNetardLog as it strips the wrapper. Handing

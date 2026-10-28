@@ -29,7 +29,7 @@ const RESERVED = [
   'ddlSearchUpdate', 'doExport', 'doMsgExport', 'doParseMessages',
   'expRowChange', 'expToggleAll', 'exportPickAll', 'filterDDLDoc',
   'filterDDLTree', 'filterExpTable', 'filterParsePanel', 'flash', 'hoverField',
-  'jumpTo', 'loadStagedDef', 'lwCancel', 'lwCommit', 'lwStartEdit', 'lwStep',
+  'jumpTo', 'loadStagedDef', 'lwCancel', 'lwCommit', 'lwReset', 'lwStartEdit', 'lwStep',
   'nextMsg', 'onColPickerChange', 'onFmtForceChange', 'onMsgChange',
   'openFeedbackMail', 'openMsgExportModal', 'openSettings', 'prevMsg',
   'resetLayout', 'resetAllData', 'toggleTreeExpandAll', 'saveDDL', 'selectDDLMM', 'selectField', 'selectScope',

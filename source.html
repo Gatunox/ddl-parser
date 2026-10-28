@@ -21320,7 +21320,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.7.5';
+const APP_VERSION  = '1.57.7.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21371,7 +21371,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', density: 'comfortable', pointers: 'custom', textColorDark: null, textColorLight: null, panelColorDark: null, panelColorLight: null, monoSize: 12, lineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
+  theme: 'dark', density: 'comfortable', pointers: 'custom', textColorDark: null, textColorLight: null, panelColorDark: null, panelColorLight: null, monoSize: 12, lineWidth: 0, testLineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
   auditAutoParse: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
@@ -21752,7 +21752,7 @@ function _lwUpdateDisplay() {
   // The Test bar shows the same number; it repaints its own ruler from its own
   // text, which is a different message from the one in the Data Input panel.
   const meEl = document.getElementById('me-lw-display');
-  if (meEl) meEl.textContent = P.lineWidth > 0 ? String(P.lineWidth) : 'Auto';
+  if (meEl) meEl.textContent = P.testLineWidth > 0 ? String(P.testLineWidth) : 'Auto';
   if (typeof _meTestUpdateFmtState === 'function' && document.getElementById('me-test-fmt'))
     _meTestUpdateFmtState();
   if (P.lineWidth > 0) {
@@ -21918,10 +21918,11 @@ function _syncMsgWrapWidget() {
   if (_msgWrapOn && !_msgFmtIsFreeform()) { _msgWrapOn = false; _msgWrapApply(); el.classList.remove('is-on'); }
 }
 
-// Two widgets, one preference. The Data Input panel's ids are the default;
-// the Class Editor's Test bar passes 'me-lw-'. P.lineWidth is a saved pref and
-// belongs to the app, not to a panel, so both edit the same number and
-// _lwUpdateDisplay repaints whichever of them exists.
+// Two widgets, two preferences. The Data Input panel's ids are the default and
+// edit P.lineWidth; the Class Editor's Test bar passes 'me-lw-' and edits
+// P.testLineWidth — the Test panel never depends on the main one (2026-10-28;
+// until then both edited P.lineWidth). _lwUpdateDisplay repaints both.
+const _lwKey = pfx => (pfx === 'me-lw-' ? 'testLineWidth' : 'lineWidth');
 function _lwEls(pfx = '') {
   return {
     display: document.getElementById(pfx ? pfx + 'display' : 'lwDisplay'),
@@ -21932,7 +21933,7 @@ function _lwEls(pfx = '') {
 function lwStartEdit(pfx) {
   const { display, input } = _lwEls(pfx);
   if (!display || !input) return;
-  input.value = P.lineWidth > 0 ? P.lineWidth : '';
+  input.value = P[_lwKey(pfx)] > 0 ? P[_lwKey(pfx)] : '';
   input.placeholder = 'Auto';
   display.classList.add('hidden');
   input.classList.remove('hidden');
@@ -21945,12 +21946,17 @@ function lwCommit(pfx) {
   if (!display || !input) return;
   const v = parseInt(input.value, 10);
   if (!isNaN(v) && v >= 16 && v <= 256) {
-    P.lineWidth = v;
+    P[_lwKey(pfx)] = v;
   } else if (input.value.trim() === '') {
-    P.lineWidth = 0;
+    P[_lwKey(pfx)] = 0;
   }
   input.classList.add('hidden');
   display.classList.remove('hidden');
+  savePrefs(); _lwUpdateDisplay();
+}
+
+function lwReset(pfx) {
+  P[_lwKey(pfx)] = 0;
   savePrefs(); _lwUpdateDisplay();
 }
 
@@ -21961,21 +21967,21 @@ function lwCancel(pfx) {
   display.classList.remove('hidden');
 }
 
-function lwStep(dir) {
+function lwStep(dir, pfx) {
   // Find current index in presets (or nearest)
-  const presets = _LW_PRESETS;
-  let idx = presets.indexOf(P.lineWidth);
+  const presets = _LW_PRESETS, key = _lwKey(pfx), cur = P[key];
+  let idx = presets.indexOf(cur);
   if (idx === -1) {
     // Not on a preset — snap to nearest in the direction of travel
     idx = dir > 0
-      ? presets.findIndex(p => p > P.lineWidth)
-      : presets.slice().reverse().findIndex(p => p < P.lineWidth || p === 0);
+      ? presets.findIndex(p => p > cur)
+      : presets.slice().reverse().findIndex(p => p < cur || p === 0);
     if (idx === -1) idx = dir > 0 ? presets.length - 1 : 0;
     else if (dir < 0) idx = presets.length - 1 - idx;
   } else {
     idx = Math.max(0, Math.min(presets.length - 1, idx + dir));
   }
-  P.lineWidth = presets[idx];
+  P[key] = presets[idx];
   savePrefs(); _lwUpdateDisplay();
 }
 
@@ -39998,7 +40004,7 @@ function _meTestByteCount(text, fmt) {
   catch(e) { return 0; }
 }
 
-// Line Width for the Test input — same widget, same P.lineWidth, its own ruler.
+// Line Width for the Test input — same widget, its own P.testLineWidth and ruler.
 // Visible for the formats where a column actually means something (the NETARD
 // family, ASCII and the hexascii dump), exactly as the main panel decides it.
 // Never calls _lwUpdateDisplay: that function calls back into this one.
@@ -40023,7 +40029,7 @@ function _meLwSync(fmt, forced, text) {
     marker.classList.remove('hidden');
   };
   if (!show || !text.trim()) { marker.classList.add('hidden'); return; }
-  if (P.lineWidth > 0) { at(P.lineWidth); return; }
+  if (P.testLineWidth > 0) { at(P.testLineWidth); return; }
   // Auto — mark where the width was detected, so "Auto" is not a claim the
   // user has to take on faith.
   if (isAscii || isDump) {
@@ -40079,12 +40085,14 @@ function _meRunTest(opts) {
   // to that panel's ruler, margin or format. Reported 2026-10-28 — an ASCII
   // test read the main panel's width, 0 when it held no ASCII, and blank or
   // short lines lost their spaces.
-  const _own = { width: _detectAsciiLineMetrics(text).dataWidth, ebcdicChars: fmtSel === 'ebcdic' };
+  // Its own Line Width (P.testLineWidth) when set, else detected from the text.
+  const _lw = P.testLineWidth > 0 ? P.testLineWidth : 0, _am = _detectAsciiLineMetrics(text);
+  const _own = { width: _lw ? Math.max(1, _lw - _am.margin) : _am.dataWidth, ebcdicChars: fmtSel === 'ebcdic' };
   try {
     // The NETARD ruler, as the Main panel detects it, so parseNetardLog
     // clips/pads standard-format lines to the right width (without it W
     // defaults to 1 and every line collapses to its first character).
-    const _rulerCol = _detectNetardRuler(text, String(fmtSel).startsWith('netard-'));
+    const _rulerCol = _lw || _detectNetardRuler(text, String(fmtSel).startsWith('netard-'));
     // A formatted NETARD record (a SOURCE/DEST wrapper, or an H-/hexascii block)
     // is stripped + decoded by parseNetardLog for BOTH auto and manual — a
     // manual format only overrides the label/engine format, it never re-adds the
@@ -41392,12 +41400,12 @@ function _meSave() {
             <span style="flex:1"></span>
             <span class="lw-widget hidden" id="me-lw-widget" title="Line width — click value to type, ‹ › to step presets, ↺ to reset">
               <span class="lw-lbl">Line Width</span>
-              <span class="lw-step" onclick="lwStep(-1)" title="Previous preset">&lt;</span>
+              <span class="lw-step" onclick="lwStep(-1, 'me-lw-')" title="Previous preset">&lt;</span>
               <span id="me-lw-display" class="lw-val" onclick="lwStartEdit('me-lw-')" title="Click to type a value">Auto</span>
               <input id="me-lw-input" class="lw-input hidden" type="text" inputmode="numeric" pattern="[0-9]*" size="3" maxlength="3"
                 onblur="lwCommit('me-lw-')" onkeydown="if(event.key==='Enter'){lwCommit('me-lw-');}if(event.key==='Escape'){lwCancel('me-lw-');}"/>
-              <span class="lw-step" onclick="lwStep(1)" title="Next preset">&gt;</span>
-              <span class="lw-reset" onclick="adjustLineWidth(0)" title="Reset to Auto">&#x21BA;</span>
+              <span class="lw-step" onclick="lwStep(1, 'me-lw-')" title="Next preset">&gt;</span>
+              <span class="lw-reset" onclick="lwReset('me-lw-')" title="Reset to Auto">&#x21BA;</span>
             </span>
           </div>
           <div class="me-test-main pb-edit" id="me-test-main">

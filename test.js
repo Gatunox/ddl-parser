@@ -23589,9 +23589,10 @@ test('the Test input is the Data Input panel, not a lesser copy of it', () => {
     'the Test bar does not use the shared badge map');
 });
 
-test('one Line Width preference, two widgets, no loop between them', () => {
-  // P.lineWidth is a saved preference and belongs to the app, so both bars edit
-  // the same number. The ids differ, so the handlers take a prefix.
+test('two Line Width preferences, two widgets, no loop between them', () => {
+  // The Data Input bar edits P.lineWidth, the Test bar P.testLineWidth — the
+  // Test panel never depends on the main one (2026-10-28; until then both
+  // edited P.lineWidth). The ids differ, so the handlers take a prefix.
   for (const fn of ['lwStartEdit', 'lwCommit', 'lwCancel']) {
     const src = psFnSource(fn);
     assert.ok(new RegExp(`function ${fn}\\(pfx\\)`).test(src), `${fn} cannot address the second widget`);
@@ -23606,6 +23607,24 @@ test('one Line Width preference, two widgets, no loop between them', () => {
   // sync, so the Test sync must never call _lwUpdateDisplay.
   assert.ok(!/_lwUpdateDisplay\(/.test(psFnSource('_meLwSync')),
     'the Line Width sync calls back into the function that calls it');
+  // [REGRESSION] 2026-10-28: each widget edits its own number. v1.57.7.5 made
+  // the Test run ignore P.lineWidth while its widget still edited it — a width
+  // typed there did nothing.
+  const P = vm.runInContext('P', sandbox), saved = { m: P.lineWidth, t: P.testLineWidth };
+  try {
+    P.lineWidth = 0; P.testLineWidth = 0;
+    vm.runInContext("lwStep(1, 'me-lw-')", sandbox);
+    assert.ok(P.testLineWidth > 0 && P.lineWidth === 0, 'stepping the Test width moved the main one');
+    vm.runInContext('lwStep(1)', sandbox);
+    eq(P.lineWidth, P.testLineWidth, 'the main width does not step');
+    vm.runInContext("lwReset('me-lw-')", sandbox);
+    assert.ok(P.testLineWidth === 0 && P.lineWidth > 0, 'resetting the Test width reset the main one');
+  } finally { P.lineWidth = saved.m; P.testLineWidth = saved.t; }
+  for (const h of ["lwStep(-1, 'me-lw-')", "lwStep(1, 'me-lw-')", "lwReset('me-lw-')"])
+    assert.ok(html.includes(`onclick="${h}"`), `the Test widget does not call ${h}`);
+  assert.ok(/'lwReset'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename lwReset');
+  // The Test run reads its own width.
+  assert.ok(/P\.testLineWidth > 0 \? P\.testLineWidth/.test(psFnSource('_meRunTest')), 'the Test run ignores its own Line Width');
 });
 
 test('a field row lights its own bytes in the Test input', () => {

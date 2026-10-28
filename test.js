@@ -2095,6 +2095,46 @@ test('[REGRESSION] a FUP COPY header without KEY is still FUP COPY', () => {
      true, 'neither system name nor key — the plainest header FUP prints');
 });
 
+// [REGRESSION] Reported 2026-10-28: win6530 copies drop trailing spaces, so a
+// FUP COPY ASCII line with no data is left as its bare offset ("   10:") and a
+// partly blank one is cut after its last character. Every line before the last
+// is full width; the blanks are data. The bare offset was not taken as a data
+// line at all — its bytes vanished and everything after it shifted.
+test('[REGRESSION] FUP COPY pads blank and partly blank ASCII lines to full width', () => {
+  const pad = text => sandbox.parseFupCopyLog(sandbox._padFupCopyAsciiLines(text))[0];
+  const hdr = '$PROD.M.F  RECORD 0  KEY 0  (%0)  LEN 40  13MAY26 09:15\n';
+  const r = pad(hdr + '    0:  ABCDEFGHIJ\n   10:\n   20:  KLM\n   30:  0123456789');
+  eq(r.netardFmt, 'ascii');
+  eq(r.rawMsg, 'ABCDEFGHIJ' + ' '.repeat(10) + 'KLM' + ' '.repeat(7) + '0123456789', 'a blank line keeps its 10 spaces');
+  // A blank FIRST line neither hides the width nor makes the record look hex.
+  const f = pad(hdr + '    0:\n   10:  ABCDEFGHIJ\n   20:  XY');
+  eq(f.netardFmt, 'ascii');
+  eq(f.rawMsg, ' '.repeat(10) + 'ABCDEFGHIJXY', 'a blank first line keeps its 10 spaces');
+  // The two spaces after the colon may survive on a blank line, or only one.
+  eq(pad(hdr + '    0:  ABCD\n    4: \n    8:  EF').rawMsg, 'ABCD    EF');
+  // HEX records are untouched: a hex line is never padded.
+  eq(pad(hdr + ' 000:   3031 3233\n 004:   3435').rawMsg, '012345');
+  // The parser pads on its own too: detection and the Class Editor's Test panel
+  // parse the text as typed, without the textarea padding.
+  const raw = sandbox.parseFupCopyLog(hdr + '    0:  ABCDEFGHIJ\n   10:\n   20:  KLM\n   30:  0123456789')[0];
+  eq(raw.rawMsg, r.rawMsg, 'the unpadded text parses to different bytes');
+  eq(raw.byteCharMap.length, raw.rawMsg.length, 'a padded byte has no place in the text');
+});
+
+// The NETADRD side of the same capture problem, fixed before FUP COPY but never
+// pinned: a blank middle line and a partly blank one are full-width spaces.
+test('[REGRESSION] NETADRD pads blank and partly blank lines to full width', () => {
+  const P = vm.runInContext('P', sandbox), saved = P.lineWidth;
+  try {
+    P.lineWidth = 17;   // 7-column margin + 10 data
+    const text = '975415     40 19/09/20 11:25:12.33                           70584       6\n\n'
+      + '       SOURCE P1A-AUTH          ( PRO 8 )\n       DEST   P1A-ED            ( %177777 )\n\n'
+      + '       ABCDEFGHIJ\n\n       KLM\n       0123456789\n';
+    const r = sandbox.parseNetardLog(text)[0];
+    eq(r.rawMsg, 'ABCDEFGHIJ' + ' '.repeat(10) + 'KLM' + ' '.repeat(7) + '0123456789');
+  } finally { P.lineWidth = saved; }
+});
+
 test('extracts pure hex, labelled hex, octal, and fixed-width ASCII bytes', () => {
   deepEq(extractBytes('30313233', 'hex'), [48, 49, 50, 51], 'pure hex');
   deepEq(extractBytes('payload = 41 42 43 44', 'hex'), [65, 66, 67, 68], 'labelled hex');

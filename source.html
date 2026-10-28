@@ -11301,12 +11301,12 @@ function parseFupCopyLog(text) {
 
   const HDR_RE  = FUPCOPY_HDR_RE;
   const LEN_RE  = /\bLEN\s+(\d+)/i;
-  const DATA_RE = /^[0-9A-Fa-f]+:\s/;
+  const DATA_RE = FUPCOPY_DATA_RE;
 
   const flush = () => {
     if (!cur || !cur._dl.length) { cur = null; return; }
-    const _ci = cur._dl[0].text.indexOf(':');
-    const _dac = _ci >= 0 ? cur._dl[0].text.slice(_ci + 1).trimStart() : '';
+    // HEX or ASCII from the first line that HAS data — a blank one says nothing.
+    const _dac = cur._dl.map(dl => dl.text.slice(dl.text.indexOf(':') + 1).trimStart()).find(Boolean) || '';
     const isHex = /^[0-9A-Fa-f]{4}\s/.test(_dac);
     cur.netardFmt = isHex ? 'hex' : 'ascii';
     const bytes = [], bcm = [];
@@ -11330,17 +11330,24 @@ function parseFupCopyLog(text) {
         }
       }
     } else {
-      for (const dl of cur._dl) {
-        const colonIdx = dl.text.indexOf(':');
-        if (colonIdx < 0) continue;
-        const pfxLen = colonIdx + 3; // colon + exactly 2 spaces
+      // Every line but the last is full width; what the copy cut off is
+      // spaces. Padded here too, not only in the textarea (doFupCopyLog), so
+      // callers that parse the text as typed — detection, the Class Editor's
+      // Test panel — get the same bytes. A padded byte points at its line end.
+      const pfxOf = dl => dl.text.indexOf(':') + 3; // colon + exactly 2 spaces
+      const W = Math.max(0, ...cur._dl.map(dl => dl.text.length - pfxOf(dl)));
+      cur._dl.forEach((dl, di) => {
+        const pfxLen = pfxOf(dl);
         const data = dl.text.slice(pfxLen);
         for (let ci = 0; ci < data.length; ci++) {
           bytes.push(data.charCodeAt(ci));
           const s = dl.lineStart + pfxLen + ci;
           bcm.push({ s, e: s + 1 });
         }
-      }
+        if (di === cur._dl.length - 1) return;
+        const eol = { s: dl.lineStart + Math.max(0, dl.text.length - 1), e: dl.lineStart + dl.text.length };
+        for (let ci = data.length; ci < W; ci++) { bytes.push(32); bcm.push(eol); }
+      });
     }
 
     const last = cur._dl[cur._dl.length - 1];
@@ -13063,10 +13070,17 @@ function doParseNetardLog(text, opts = {}) {
   }, 500);
 }
 
+// A line with no data at all is just its offset ("   10:"): the terminal
+// copy (win6530) drops trailing spaces, so a blank line loses even the two
+// after the colon. It is still a data line — its bytes are spaces — and is
+// padded like a partly blank one. Reported 2026-10-28; NETADRD had the same
+// fix, FUP COPY did not.
+const FUPCOPY_DATA_RE = /^[0-9A-Fa-f]+:(\s|$)/;
+
 function _padFupCopyAsciiLines(text) {
   const lines = text.split('\n');
   const HDR_RE  = FUPCOPY_HDR_RE;
-  const DATA_RE = /^[0-9A-Fa-f]+:\s/;
+  const DATA_RE = FUPCOPY_DATA_RE;
   let changed = false;
   let curData = [];
   let isHexRec = null;
@@ -13074,8 +13088,8 @@ function _padFupCopyAsciiLines(text) {
   const flushRec = () => {
     if (!isHexRec && curData.length > 1) {
       const maxLen = Math.max(...curData.map(d => d.dataLen));
-      for (const { li, dataLen } of curData.slice(0, -1)) {
-        if (dataLen < maxLen) { lines[li] += ' '.repeat(maxLen - dataLen); changed = true; }
+      for (const { li, pfx } of curData.slice(0, -1)) {
+        if (lines[li].length < pfx + maxLen) { lines[li] = lines[li].padEnd(pfx + maxLen, ' '); changed = true; }
       }
     }
     curData = []; isHexRec = null;
@@ -13090,8 +13104,9 @@ function _padFupCopyAsciiLines(text) {
       const ci = line.indexOf(':');
       if (ci < 0) continue;
       const pfx = ci + 3; // colon + exactly 2 spaces
-      if (isHexRec === null) isHexRec = /^[0-9A-Fa-f]{4}\s/.test(line.slice(ci + 1).trimStart());
-      curData.push({ li, dataLen: line.length - pfx });
+      const dac = line.slice(ci + 1).trimStart();
+      if (isHexRec === null && dac) isHexRec = /^[0-9A-Fa-f]{4}\s/.test(dac);
+      curData.push({ li, pfx, dataLen: Math.max(0, line.length - pfx) });
     }
   }
   flushRec();
@@ -21282,7 +21297,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.7.3';
+const APP_VERSION  = '1.57.7.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

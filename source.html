@@ -1394,6 +1394,7 @@ table.ddl-doc-tbl { table-layout: fixed; border-collapse: collapse; font-family:
 .ddl-doc-tbl td.ddl-doc-size, .ddl-doc-tbl th.ddl-doc-size {
   text-align: right; font-variant-numeric: tabular-nums; }
 /* ---- Export modal ---- */
+.exp-mask-lbl { display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--text-dim); white-space:nowrap; cursor:pointer; }
 .exp-tbl { width:100%; border-collapse:collapse; font-size:11px; font-family:var(--font-mono); }
 .exp-tbl th { position:sticky; top:0; background:var(--bg-deep); color:var(--text-dim); font-weight:600; text-align:left; padding:4px 6px; border-bottom: var(--bw) solid var(--border); white-space:nowrap; z-index:1; }
 .exp-tbl th:first-child { width:28px; text-align:center; }
@@ -3987,6 +3988,8 @@ input.me-fm-filter{flex:0 0 auto;min-width:0;height:22px;padding:0 8px;border: v
 .me-fm-ed input,.me-fm-ed select{height:19px;font-family:var(--mono);font-size:calc(var(--sz-mono) - 1px);
   background:var(--bg-deep);color:var(--text);border: var(--bw-ctl) solid var(--accent);border-radius:var(--r-sm);padding:0 5px;outline:none;}
 .me-fm-ed input{width:58px;}
+.me-fm-ed-mask{display:inline-flex;align-items:center;gap:6px;}
+.me-fm-ed input.me-fm-ed-mnum{width:34px;}
 /* A field whose value sizes the next one, and the field that depends on it. */
 .me-fm-vlg-src{color:var(--accent);font-weight:700;}
 /* A suppressed guess. Struck and dimmed so it reads as "this WOULD have been a
@@ -7515,6 +7518,139 @@ function _meSpecForMsg(msg) {
   return window._fmtSpecFor(t.type, t.label, t.kind);
 }
 
+// ── Sensitive-field masking ──────────────────────────────────────────────────
+// A class marks a field sensitive with the SHOW override "masked"
+// (`display: "masked"`); `mask` beside it says what is masked — "all" when absent:
+//   "all"                          the whole value
+//   { first: N } / { last: N }     the first / last N characters
+//   { from: I, count: N }          N characters starting I in from the start
+//   { fromEnd: I, count: N }       N characters ending I in from the end
+//   { keepFirst: A, keepLast: B }  everything between (a PAN of any length)
+// and with what — `with`: one character ("*", the default), "digit" or "alpha".
+// Leading and trailing spaces are padding, not data: the positions count from
+// the first and last non-space character, and the padding is left as it is.
+//
+// "digit" / "alpha" are random but CONSISTENT: drawn from a hash of the value
+// keyed with a secret made once per browser (P.maskKey), so one PAN masks the
+// same way in every record and every export — and, with the key unknown, the
+// six digits a 6+4 mask hides cannot be recovered by trying them all.
+//
+// Two switches (Settings → Mask sensitive fields): Screen (P.maskScreen, off by
+// default) and Export (P.maskExport, on): every file and clipboard copy that
+// carries message data. Requested 2026-10-28.
+const _MASK_SETS = { digit: '0123456789', alpha: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' };
+function _maskKey() {
+  if (!P.maskKey) {
+    const b = new Uint8Array(16);
+    (typeof crypto !== 'undefined' && crypto.getRandomValues) ? crypto.getRandomValues(b)
+      : b.forEach((_, i) => { b[i] = Math.floor(Math.random() * 256); });
+    P.maskKey = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    if (typeof savePrefs === 'function') savePrefs();
+  }
+  return P.maskKey;
+}
+// The [start, end) of a value of `len` characters that a mask covers.
+function _maskRange(m, len) {
+  const n = k => Math.max(0, Math.floor(+k) || 0);
+  let s = 0, e = len;
+  if (m === 'all' || m === true) {}
+  else if (!m || typeof m !== 'object') return null;
+  else if (m.first != null)    { e = n(m.first); }
+  else if (m.last != null)     { s = len - n(m.last); }
+  else if (m.from != null)     { s = n(m.from); e = s + n(m.count ?? len); }
+  else if (m.fromEnd != null)  { e = len - n(m.fromEnd); s = e - n(m.count ?? len); }
+  else if (m.keepFirst != null || m.keepLast != null) { s = n(m.keepFirst); e = len - n(m.keepLast); }
+  s = Math.max(0, Math.min(len, s)); e = Math.max(s, Math.min(len, e));
+  return [s, e];
+}
+// cyrb53 over the key and the value, then mulberry32 from it: fast, synchronous
+// and deterministic — the property wanted here is consistency, the key is what
+// keeps it from being reversible.
+function _maskSeed(str) {
+  const t = _maskKey() + '\u0000' + str;
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  return h1 >>> 0;
+}
+function _maskStr(str, m) {
+  str = String(str ?? '');
+  const lead = str.length - str.trimStart().length, core = str.trim();
+  const r = _maskRange(m, core.length);
+  if (!r || r[0] === r[1]) return str;
+  const w = (m && typeof m === 'object' && m.with) || '*';
+  const set = _MASK_SETS[w];
+  let seed = set ? _maskSeed(core) : 0;
+  const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  let out = '';
+  for (let i = 0; i < core.length; i++)
+    out += (i < r[0] || i >= r[1]) ? core[i] : set ? set[Math.floor(rnd() * set.length)] : String(w)[0];
+  return str.slice(0, lead) + out + str.slice(lead + core.length);
+}
+// The mask in force for a parsed field: its own, or "all" when a group above
+// it is masked — a group's bytes include its children's.
+function _maskFor(msg, f) {
+  if (!f || f.id == null) return null;
+  const ov = _meSpecForMsg(msg)?.overrides;
+  if (!ov) return null;
+  const parts = _canonFieldId(String(f.id)).split('.');
+  const own = ov[parts.join('.')];
+  if (own?.display === 'masked') return own.mask || 'all';
+  for (let k = parts.length - 1; k > 0; k--)
+    if (ov[parts.slice(0, k).join('.')]?.display === 'masked') return 'all';
+  return null;
+}
+const _maskHex = b => b.toString(16).padStart(2, '0').toUpperCase();
+// A field as it may be shown or exported: value, display value and hex masked
+// alike. The hex follows the value where the value IS the bytes — text, or the
+// hex digits themselves (hex-char); anything else hides every byte as "**".
+function _maskField(msg, f) {
+  const m = _maskFor(msg, f);
+  if (!m) return f;
+  const raw = f.rawBytes ? Array.from(f.rawBytes) : null;
+  const v = String(f.value ?? '');
+  const mv = _maskStr(v, m);
+  let hex;
+  if (raw && raw.length && v === String.fromCharCode(...raw)) hex = Array.from(mv, c => _maskHex(c.charCodeAt(0) & 0xFF)).join('');
+  else if (f.rawHex && v.toUpperCase() === String(f.rawHex).toUpperCase()) hex = mv.toUpperCase();
+  else hex = '**'.repeat(raw ? raw.length : Math.ceil(String(f.rawHex || '').length / 2));
+  return Object.assign(Object.create(Object.getPrototypeOf(f)), f, {
+    value: mv, rawHex: hex, masked: true,
+    displayValue: f.displayValue != null ? _maskStr(f.displayValue, m) : f.displayValue,
+    rawValue: f.rawValue !== undefined ? _maskStr(f.rawValue, m) : f.rawValue,
+  });
+}
+// The message's bytes with every masked field's bytes replaced: the masked
+// character where the field is text, null (shown "**") where it is not.
+function _maskBytes(msg, bytes) {
+  const out = Array.from(bytes || []);
+  for (const f of msg?.fields || []) {
+    if (f.startByte == null || f.endByte == null || !_maskFor(msg, f)) continue;
+    const mf = _maskField(msg, f), hx = String(mf.rawHex || '');
+    for (let i = f.startByte, k = 0; i <= f.endByte && i < out.length; i++, k++) {
+      const pair = hx.slice(k * 2, k * 2 + 2);
+      out[i] = /^[0-9A-F]{2}$/.test(pair) ? parseInt(pair, 16) : null;
+    }
+  }
+  return out;
+}
+// A mask in a few words, for the override chip.
+function _maskLabel(m) {
+  if (!m || typeof m !== 'object') return 'all';
+  const w = m.with === 'digit' ? ', digits' : m.with === 'alpha' ? ', letters' : m.with && m.with !== '*' ? `, ${m.with}` : '';
+  const what = m.first != null ? `first ${m.first}` : m.last != null ? `last ${m.last}`
+    : m.from != null ? `${m.count} from ${m.from}` : m.fromEnd != null ? `${m.count} from end ${m.fromEnd}`
+    : (m.keepFirst != null || m.keepLast != null) ? `keep ${m.keepFirst || 0}+${m.keepLast || 0}` : 'all';
+  return `(${what}${w})`;
+}
+const _maskScreenOn = () => !!P.maskScreen;
+const _maskExportOn = () => P.maskExport !== false;
+
 // The tags a message earned, drawn like the type code beside it — same chip, the
 // tag's own colour. They sit AFTER the type: the type says what the message is,
 // which is the thing you read first; a tag qualifies it.
@@ -7553,12 +7689,14 @@ function _msgMti(msg) {
   return msg.fields?.find(f => f.id === 'MTI')?.value || '';
 }
 
-function _msgPan(msg) {
+// `masked`: read through the field's mask (Settings → Mask sensitive fields).
+function _msgPan(msg, masked) {
+  const mk = f => (f && masked ? _maskField(msg, f) : f);
   if (_isStmMsg(msg)) {
-    const t2 = msg.fields?.find(f => f.id.startsWith('RQST.TRACK2'));
+    const t2 = mk(msg.fields?.find(f => f.id.startsWith('RQST.TRACK2')));
     return _panFromTrack2(t2?.value || '');
   }
-  return msg.fields?.find(f => f.id === '2')?.value || '';
+  return mk(msg.fields?.find(f => f.id === '2'))?.value || '';
 }
 
 function openMsgExportModal() {
@@ -7566,8 +7704,7 @@ function openMsgExportModal() {
 
   const rows = S.messages.map((msg, idx) => {
     const mti     = _msgMti(msg);
-    const pan     = _msgPan(msg);
-    const panDisp = pan;
+    const panDisp = _msgPan(msg, _maskScreenOn());
     const type    = msg.msgType?.type || '';
     const proc    = msg.typeDesc || _netardTypeLabel(msg.typeCode);
     const origin  = msg.isNetard ? (msg.source || '') : (msg.ddlPath ? (msg.ddlPath.split('/').pop() + (msg.defName ? '/' + msg.defName : '')) : '');
@@ -7607,6 +7744,8 @@ function openMsgExportModal() {
     </table>`;
   const expFlt = document.getElementById('expFilterInput');
   if (expFlt) { expFlt.value = ''; }
+  const expMask = document.getElementById('expMaskChk');
+  if (expMask) expMask.checked = _maskExportOn();
   _expRenderColsDlg();
   document.getElementById('msgExportOverlay').classList.remove('hidden');
 }
@@ -7745,6 +7884,9 @@ function _expWrapCell(text, w) {
   return out.map((chunk, i) => i < out.length - 1 ? chunk.padEnd(room) + ' ' + _EXP_CONT : chunk);
 }
 
+// Whether the export being written masks sensitive fields: the dialog's
+// checkbox, which starts from Settings → Mask sensitive fields → Export.
+let _expMaskOn = true;
 function _expMsgLines(msg, idx) {
   const lines = [];
   const type   = msg.msgType?.type || '';
@@ -7772,7 +7914,8 @@ function _expMsgLines(msg, idx) {
                          : k === 'bytes' ? bytesOf(f)
                          : k === 'value' ? (f.displayValue != null ? f.displayValue : f.value)
                          :                 f.rawHex;
-  const rows = (msg.fields || []).map(f => cols.map(([k]) => String(cell(f, k) ?? '')));
+  const _mk = f => (_expMaskOn ? _maskField(msg, f) : f);
+  const rows = (msg.fields || []).map(f => _mk(f)).map(f => cols.map(([k]) => String(cell(f, k) ?? '')));
 
   // Width per column: the widest thing in it, header included, capped.
   const width = cols.map(([, label], i) =>
@@ -7811,6 +7954,7 @@ function doMsgExport() {
 
   if (!selected.length) { flash('Select at least one message to export', 'warn'); return; }
 
+  _expMaskOn = document.getElementById('expMaskChk')?.checked ?? _maskExportOn();
   const lines = [];
   for (const idx of selected) lines.push(..._expMsgLines(S.messages[idx], idx));
 
@@ -14949,7 +15093,8 @@ function renderFieldTable(msg) {
       ? `${first.startByte}–${last.endByte}` : '';
     const size  = (first && last && last.endByte >= first.startByte)
       ? (last.endByte - first.startByte + 1) : '';
-    const val   = kids.map(k => String(k.displayValue != null ? k.displayValue : (k.value ?? ''))).join('');
+    const val   = kids.map(k => (_maskScreenOn() ? _maskField(msg, k) : k))
+      .map(k => String(k.displayValue != null ? k.displayValue : (k.value ?? ''))).join('');
     const under = g.path.split('.').slice(0, -1)
       .map((_, i) => g.path.split('.').slice(0, i + 1).join('.')).join('|');
     const coll  = S.resCollapsedGroups?.has(gid) ? ' grp-collapsed' : '';
@@ -15008,7 +15153,7 @@ function renderFieldTable(msg) {
   };
   const makeFieldRows = (fieldList, prefix, extraClass = '', injectAfter = null) => _resGroupPlan(fieldList).map(node => {
     if (node.isGrp) return _resGroupRowHtml(node, prefix, extraClass);
-    const f = node.f;
+    let f = node.f;
     _rowNum++;
     const fid    = prefix ? `${prefix}::${f.id}` : f.id;
     const sel    = S.selFieldId === fid ? 'row-sel' : '';
@@ -15026,6 +15171,8 @@ function renderFieldTable(msg) {
     // Prefer the display-override formatted string when available so the
     // user-chosen rendering (datetime/amount/hex/text) actually shows in the
     // output. The raw `f.value` is kept in the tooltip via data-tip.
+    // Settings → Mask sensitive fields → Screen: value, hex and tooltip alike.
+    if (_maskScreenOn()) f = _maskField(msg, f);
     const val    = f.displayValue != null ? f.displayValue : f.value;
     const _rFull = f.rawHex || '';
     const rHex   = (P.rawHexTruncate !== false) && _rFull.length > 22 ? _rFull.slice(0,22)+'…' : _rFull;
@@ -15466,7 +15613,8 @@ function _resGoToIssue(it) {
 // RENDERING — HEX DUMP
 // ============================================================
 function renderRaw(msg) {
-  const bytes = msg.bytes;
+  // Masked on screen: a masked byte with no character of its own is null.
+  const bytes = msg.bytes && _maskScreenOn() ? _maskBytes(msg, msg.bytes) : msg.bytes;
   if (!bytes || !bytes.length) {
     document.getElementById('rawDisplay').innerHTML = '<span style="color:var(--accent2)">No bytes.</span>';
     return;
@@ -15497,7 +15645,7 @@ function renderRaw(msg) {
       if (col < rowB.length) {
         const isNonPrintable = _isAsciiLike && (rowB[col] < 32 || rowB[col] > 126);
         const showDot = _rawMask.has(idx) || isNonPrintable;
-        const hex = showDot ? '??' : rowB[col].toString(16).padStart(2,'0').toUpperCase();
+        const hex = rowB[col] == null ? '**' : showDot ? '??' : rowB[col].toString(16).padStart(2,'0').toUpperCase();
         html += `<span class="hb${showDot ? ' hb-masked' : ''}" data-idx="${idx}">${hex}</span> `;
       } else {
         html += '   ';
@@ -15510,7 +15658,7 @@ function renderRaw(msg) {
       const b   = rowB[col];
       const isMasked = _rawMask.has(idx);
       const isNonPrintable = b < 0x20 || b > 0x7E;
-      const ch  = isMasked ? '?'
+      const ch  = b == null ? '*' : isMasked ? '?'
         : isNonPrintable ? '.'
         : (b === 60 ? '&lt;' : b === 62 ? '&gt;' : b === 38 ? '&amp;' : String.fromCharCode(b));
       html += `<span class="hb${(isMasked || isNonPrintable) ? ' hb-masked' : ''}" data-ascii-idx="${idx}">${ch}</span>`;
@@ -15536,17 +15684,19 @@ function renderRaw(msg) {
 function copyRawToClipboard() {
   if (!S.isParsed || !S.messages.length) return;
   const msg = S.messages[S.curIdx];
-  const bytes = msg && msg.bytes;
-  if (!bytes || !bytes.length) return;
+  if (!msg || !msg.bytes || !msg.bytes.length) return;
+  // A masked byte with no character of its own is null: "**" and "*".
+  const bytes = _maskExportOn() ? _maskBytes(msg, msg.bytes) : Array.from(msg.bytes);
   const COLS = 16;
   const lines = [];
+  const hx = b => b == null ? '**' : b.toString(16).padStart(2,'0').toUpperCase();
   for (let row = 0; row < bytes.length; row += COLS) {
     const rowB = bytes.slice(row, row + COLS);
     const addr = row.toString(16).padStart(6, '0').toUpperCase();
-    const hex1 = rowB.slice(0, 8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
-    const hex2 = rowB.slice(8).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+    const hex1 = rowB.slice(0, 8).map(hx).join(' ');
+    const hex2 = rowB.slice(8).map(hx).join(' ');
     const hexPart = (hex1 + (rowB.length > 8 ? '  ' + hex2 : '')).padEnd(48);
-    const ascii = rowB.map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+    const ascii = rowB.map(b => b == null ? '*' : (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
     // "ADDR:" — the colon marks the offset so a copied dump can be pasted back
     // into Data Input and parsed; without it the offset reads as data.
     lines.push(`${addr}: ${hexPart}  |${ascii}|`);
@@ -17669,8 +17819,10 @@ function renderTracking() {
   const cellValue = (msg, col, idx) => {
     if (col === 'ts')  return msg.timestamp || `Msg ${idx + 1}`;
     if (col === 'num') return String(idx + 1);
+    // Masked on screen, here and in _trackRowShown alike: a filter offers the
+    // values it shows, and a masked value is the same every time.
     const f = msg.fields.find(x => x.id === col.slice(2));
-    return f ? String(f.value ?? '') : '';
+    return f ? String((_maskScreenOn() ? _maskField(msg, f) : f).value ?? '') : '';
   };
 
   // data-col names what a width belongs to: the two fixed columns by name, and
@@ -17722,7 +17874,8 @@ function renderTracking() {
     // that it was picked.
     const col = msg.msgType && msg.msgType.color ? ` style="--row-gutter:${esc(msg.msgType.color)}"` : '';
     const cells = tracked.map(id => {
-      const f = msg.fields.find(x => x.id === id);
+      const f0 = msg.fields.find(x => x.id === id);
+      const f = f0 && _maskScreenOn() ? _maskField(msg, f0) : f0;
       return `<td class="t-val">${f ? esc(f.value) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
     }).join('');
     return `<tr class="${cur}${sel}"${col} data-idx="${idx}" onclick="trackPickRow(${idx})">
@@ -17792,8 +17945,9 @@ function _trackRowShown(idx) {
   const msg = S.messages[idx];
   for (const col of Object.keys(S.trackFilters)) {
     const want = S.trackFilters[col];
+    const _f = col === 'ts' ? null : msg.fields.find(x => x.id === col.slice(2));
     const have = (col === 'ts') ? (msg.timestamp || `Msg ${idx + 1}`)
-               : (msg.fields.find(x => x.id === col.slice(2))?.value ?? '');
+               : ((_f && _maskScreenOn() ? _maskField(msg, _f) : _f)?.value ?? '');
     if (String(have) !== want) return false;
   }
   return true;
@@ -17838,7 +17992,7 @@ function _trackExportLines() {
     if (!m) continue;
     rows.push([String(i + 1), ...(hasTs ? [m.timestamp || `Msg ${i + 1}`] : []), ...tracked.map(id => {
       const f = m.fields.find(x => x.id === id);
-      return f ? String(f.value ?? '') : '—';
+      return f ? String((_maskExportOn() ? _maskField(m, f) : f).value ?? '') : '—';
     })]);
   }
   const hasSub = subs.some(Boolean);
@@ -19188,8 +19342,9 @@ function resetAccentColor()  { _applyAccent(null); }
 function copyFieldToClipboard(fid) {
   const msg = S.messages?.[S.curIdx];
   if (!msg) return;
-  const f = msg.fields.find(x => x.id === fid);
-  if (!f) return;
+  const f0 = msg.fields.find(x => x.id === fid);
+  if (!f0) return;
+  const f = _maskExportOn() ? _maskField(msg, f0) : f0;
   // Same rule the table and the export use: a VLG group's LEN has its own row
   // and must not be billed to the field as well.
   const totalLen = f.valueLength !== undefined
@@ -19213,7 +19368,7 @@ function copyMsgToClipboard() {
   const msg = S.messages?.[S.curIdx];
   if (!msg) return;
   const lines = ['Field ID\tDescription\tLen\tValue'];
-  (msg.fields || []).forEach(f => {
+  (msg.fields || []).map(f => (_maskExportOn() ? _maskField(msg, f) : f)).forEach(f => {
     // Same own-row rule as the table, the export and the single-row copy: a VLG
     // group's LEN has a row of its own and must not be billed here as well.
     const len = f.valueLength !== undefined
@@ -21320,7 +21475,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.57.7.6';
+const APP_VERSION  = '1.58.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -21371,7 +21526,7 @@ function openFeedbackMail(type) {
 // SETTINGS — theme, font size
 // ============================================================
 const _DEF_PREFS = {
-  theme: 'dark', density: 'comfortable', pointers: 'custom', textColorDark: null, textColorLight: null, panelColorDark: null, panelColorLight: null, monoSize: 12, lineWidth: 0, testLineWidth: 0, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
+  theme: 'dark', density: 'comfortable', pointers: 'custom', textColorDark: null, textColorLight: null, panelColorDark: null, panelColorLight: null, monoSize: 12, lineWidth: 0, testLineWidth: 0, maskScreen: false, maskExport: true, maskKey: null, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
   auditAutoParse: false,
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
@@ -21721,6 +21876,30 @@ function setPointers(val) {
   savePrefs();
   applyPrefs();
   _syncPointersUI();
+}
+
+// Settings → Mask sensitive fields. Screen and Export are independent: a field
+// can be read in full while analysing and still leave the app masked. Turning
+// Export off asks first — it is the one that lets data out.
+function _syncMaskUI() {
+  document.getElementById('maskScreenBtn')?.classList.toggle('s-active', !!P.maskScreen);
+  document.getElementById('maskExportBtn')?.classList.toggle('s-active', P.maskExport !== false);
+}
+function setMaskScreen(on) {
+  P.maskScreen = !!on;
+  savePrefs(); _syncMaskUI(); renderCurrent();
+}
+function setMaskExport(on, done) {
+  const apply = v => { P.maskExport = v; savePrefs(); _syncMaskUI(); if (done) done(v); };
+  if (on) { apply(true); return; }
+  showConfirm('Export without masking? Sensitive fields will leave the app in full.', ok => { if (ok) apply(false); else { _syncMaskUI(); if (done) done(true); } });
+}
+// The export dialog's checkbox: starts from the Export switch; unticking it
+// asks the same question, for this export only.
+function expMaskChange(cb) {
+  if (cb.checked) return;
+  cb.checked = true;
+  showConfirm('Export without masking? Sensitive fields will leave the app in full.', ok => { cb.checked = !ok; });
 }
 
 function setRawHexTruncate(val) {
@@ -22182,6 +22361,7 @@ function openSettings() {
   _syncAccentPickerUI();
   _syncTextPickerUI();
   _syncPanelPickerUI();
+  _syncMaskUI();
   _lwUpdateDisplay();
   ['dark','light'].forEach(t => {
     const b = document.getElementById('theme_' + t);
@@ -29527,6 +29707,18 @@ ${warnHtml}
   <label id="me-fm-ed-lbl"></label>
   <select id="me-fm-ed-sel" style="display:none"></select>
   <input id="me-fm-ed-num" type="text" inputmode="numeric" autocomplete="off" spellcheck="false">
+  <span id="me-fm-ed-mask" class="me-fm-ed-mask" style="display:none">
+    <select id="me-fm-ed-mmode" title="Which part of the value is masked">
+      <option value="all">all</option><option value="first">first N</option><option value="last">last N</option>
+      <option value="from">N from start</option><option value="fromEnd">N from end</option><option value="keep">keep ends</option>
+    </select>
+    <label id="me-fm-ed-ml1"></label><input id="me-fm-ed-mn1" class="me-fm-ed-mnum" type="text" inputmode="numeric" autocomplete="off" spellcheck="false">
+    <label id="me-fm-ed-ml2"></label><input id="me-fm-ed-mn2" class="me-fm-ed-mnum" type="text" inputmode="numeric" autocomplete="off" spellcheck="false">
+    <label>with</label>
+    <select id="me-fm-ed-mwith" title="What replaces a masked character — random digits and letters are the same for the same value">
+      <option value="*">asterisk</option><option value="digit">digits</option><option value="alpha">letters</option>
+    </select>
+  </span>
   <button class="btn" id="me-fm-ed-ok">Apply</button>
   <button class="btn" id="me-fm-ed-cancel">Cancel</button>
 </div>
@@ -32118,11 +32310,57 @@ const _ME_FM_ED = {
   'type':      { label: 'Read as', kind: 'sel',
                  def: () => _meFmSelOvr()?.type || 'hex-char',
                  opts: () => _ME_TYPE_OPTS.filter(Boolean), set: (o, v) => { o.type = v; } },
+  // "masked" marks the field sensitive (see _maskStr); picking it opens the
+  // controls for which part and with what, and the answer goes in `mask`.
   'display':   { label: 'Show as', kind: 'sel',
                  def: () => _meFmSelOvr()?.display || 'bitmap-list',
-                 opts: () => _ME_DISP_OPTS.filter(Boolean), set: (o, v) => { o.display = v; } },
+                 opts: () => _ME_DISP_OPTS.filter(Boolean),
+                 withMask: v => v === 'masked',
+                 set: (o, v) => { o.display = v;
+                   if (v === 'masked' && _meFmEdMaskVal && _meFmEdMaskVal !== 'all') o.mask = _meFmEdMaskVal;
+                   else delete o.mask; } },
 };
 let _meFmEdAct = null;
+// The mask the editor's controls describe, read at commit by the display set.
+let _meFmEdMaskVal = null;
+// Which numbers each mask mode asks for, and what they are called.
+const _ME_MASK_NUMS = { all: [], first: ['N'], last: ['N'], from: ['at', 'N'], fromEnd: ['at', 'N'], keep: ['first', 'last'] };
+// The stored mask → the editor's controls, and back.
+function _meFmMaskToUi(m) {
+  if (!m || m === 'all' || typeof m !== 'object') return { mode: 'all', a: '', b: '', w: (m && m.with) || '*' };
+  const w = m.with || '*';
+  if (m.first != null)   return { mode: 'first', a: m.first, b: '', w };
+  if (m.last != null)    return { mode: 'last', a: m.last, b: '', w };
+  if (m.from != null)    return { mode: 'from', a: m.from, b: m.count ?? '', w };
+  if (m.fromEnd != null) return { mode: 'fromEnd', a: m.fromEnd, b: m.count ?? '', w };
+  return { mode: 'keep', a: m.keepFirst ?? 0, b: m.keepLast ?? 0, w };
+}
+function _meFmMaskFromUi(mode, a, b, w) {
+  const withPart = w && w !== '*' ? { with: w } : {};
+  if (mode === 'first')   return { first: +a, ...withPart };
+  if (mode === 'last')    return { last: +a, ...withPart };
+  if (mode === 'from')    return { from: +a, count: +b, ...withPart };
+  if (mode === 'fromEnd') return { fromEnd: +a, count: +b, ...withPart };
+  if (mode === 'keep')    return { keepFirst: +a, keepLast: +b, ...withPart };
+  return w && w !== '*' ? { with: w } : 'all';
+}
+function _meFmEdSyncMask() {
+  const cfg = _ME_FM_ED[_meFmEdAct], box = document.getElementById('me-fm-ed-mask');
+  const sel = document.getElementById('me-fm-ed-sel');
+  if (!box || !sel) return;
+  const want = !!(cfg && cfg.withMask && cfg.withMask(sel.value));
+  box.style.display = want ? '' : 'none';
+  if (want) {
+    const names = _ME_MASK_NUMS[document.getElementById('me-fm-ed-mmode').value] || [];
+    [1, 2].forEach(i => {
+      const show = !!names[i - 1];
+      document.getElementById('me-fm-ed-ml' + i).textContent = names[i - 1] || '';
+      document.getElementById('me-fm-ed-ml' + i).style.display = show ? '' : 'none';
+      document.getElementById('me-fm-ed-mn' + i).style.display = show ? '' : 'none';
+    });
+  }
+  _meFmEdPlace();
+}
 // The first selected row, and its stored override — what the editors open on.
 function _meFmSelRow() {
   const first = _meFmMultiSel.values().next().value;
@@ -32172,6 +32410,14 @@ function _meFmEdOpen(act) {
     _meFmEdSyncNum();
   }
   else num.value = _meFmEdDef(cfg);
+  if (cfg.withMask) {
+    const u = _meFmMaskToUi(_meFmSelOvr()?.mask);
+    document.getElementById('me-fm-ed-mmode').value = u.mode;
+    document.getElementById('me-fm-ed-mn1').value = u.a;
+    document.getElementById('me-fm-ed-mn2').value = u.b;
+    document.getElementById('me-fm-ed-mwith').value = u.w;
+  }
+  _meFmEdSyncMask();
   ed.classList.add('on');
   _meFmEdPlace();
   (cfg.kind === 'num' ? num : sel).focus();
@@ -32191,8 +32437,10 @@ function _meFmEdSyncNum() {
   _meFmEdPlace();
 }
 document.addEventListener('change', e => {
+  if (e.target?.id === 'me-fm-ed-mmode') { _meFmEdSyncMask(); return; }
   if (e.target?.id !== 'me-fm-ed-sel') return;
   _meFmEdSyncNum();
+  _meFmEdSyncMask();
   const num = document.getElementById('me-fm-ed-num');
   if (num && num.style.display !== 'none') { num.focus(); num.select(); }
 });
@@ -32209,6 +32457,16 @@ function _meFmEdCommit() {
     if (!/^[0-9]+$/.test(v)) { numEl.focus(); return; }
   } else {
     v = document.getElementById('me-fm-ed-sel').value;
+    _meFmEdMaskVal = null;
+    if (cfg.withMask && cfg.withMask(v)) {
+      const mode = document.getElementById('me-fm-ed-mmode').value;
+      const need = (_ME_MASK_NUMS[mode] || []).length;
+      const nums = [1, 2].map(i => document.getElementById('me-fm-ed-mn' + i));
+      for (let i = 0; i < need; i++)
+        if (!/^[0-9]+$/.test(nums[i].value.trim())) { nums[i].focus(); return; }
+      _meFmEdMaskVal = _meFmMaskFromUi(mode, nums[0].value.trim(), nums[1].value.trim(),
+        document.getElementById('me-fm-ed-mwith').value);
+    }
     if (cfg.withNum && cfg.withNum(v)) {
       const nv = numEl.value.trim();
       if (!/^[0-9]+$/.test(nv)) { numEl.focus(); return; }
@@ -32482,12 +32740,12 @@ document.addEventListener('click', e => {
   if (e.target?.id === 'me-fm-ed-cancel') _meFmEdClose();
 });
 document.addEventListener('input', e => {
-  if (e.target?.id !== 'me-fm-ed-num') return;
+  if (e.target?.id !== 'me-fm-ed-num' && !/^me-fm-ed-mn[12]$/.test(e.target?.id || '')) return;
   const clean = e.target.value.replace(/[^0-9]/g, '');
   if (clean !== e.target.value) e.target.value = clean;
 });
 document.addEventListener('keydown', e => {
-  if (e.target?.id === 'me-fm-ed-num' && e.key === 'Enter') _meFmEdCommit();
+  if (/^me-fm-ed-(num|mn[12])$/.test(e.target?.id || '') && e.key === 'Enter') _meFmEdCommit();
 });
 
 function _meFmSyncMultiClasses() {
@@ -32593,7 +32851,8 @@ function _meFmBarRefresh() {
 // belongs to the individual de-* actions.
 const _ME_OV_KINDS = [
   { id: 'type', label: 'TYPE', keys: ['type'],          act: 'type',    xact: 'type',    hint: 'how the bytes are read' },
-  { id: 'show', label: 'SHOW', keys: ['display'],       act: 'display', xact: 'display', hint: 'display format only' },
+  // `mask` rides with `display`: it only means something under "masked".
+  { id: 'show', label: 'SHOW', keys: ['display', 'mask'], act: 'display', xact: 'display', hint: 'display format only' },
   { id: 'size', label: 'SIZE', keys: ['bytes'],         act: 'bytes',   xact: 'bytes',   hint: 'read this many bytes instead' },
   // `de_src` rides with `de`, the way `count` rides with `vlg`: it records WHO
   // set the number — 'auto' for one Auto Order wrote — so clearing the DE takes
@@ -32609,7 +32868,8 @@ function _meOvlChipParts(o) {
   const c = [];
   if (o.type)         c.push({ kind: 'type', text: _meOvEsc(o.type) });
   if (o.bytes)        c.push({ kind: 'size', text: o.bytes + ' bytes' });
-  if (o.display)      c.push({ kind: 'show', text: 'as ' + _meOvEsc(o.display) });
+  if (o.display)      c.push({ kind: 'show', text: 'as ' + _meOvEsc(o.display)
+                              + (o.display === 'masked' && o.mask && o.mask !== 'all' ? ' ' + _meOvEsc(_maskLabel(o.mask)) : '') });
   // The de key carries four different things, and only one of them is a number.
   // "DE-false" and "DE-children" are what string concatenation produced.
   if (o.de === false)       c.push({ kind: 'de', text: 'not a DE' });
@@ -32749,7 +33009,7 @@ function _meOvlDelete(id) {
 // DDLs (thousands of rows) rendering two live selects per row up-front froze
 // the editor open for seconds.
 const _ME_TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-char','hex-ascii-decimal','hex-ebcdic-decimal'];
-const _ME_DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts','bitmap','bitmap-list'];
+const _ME_DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts','bitmap','bitmap-list','masked'];
 
 // ── Identity Tab ──────────────────────────────────────────────────────────
 
@@ -40623,6 +40883,7 @@ function _meSave() {
       <span class="ddl-doc-title">Export Messages</span>
       <input id="expFilterInput" placeholder="Filter messages…" oninput="filterExpTable()" autocomplete="off">
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <label class="exp-mask-lbl" title="Hide the fields a class shows as &quot;masked&quot; — starts from Settings → Mask sensitive fields → Export files"><input type="checkbox" id="expMaskChk" checked onchange="expMaskChange(this)"> Mask sensitive fields</label>
         <button class="btn btn-primary" onclick="doMsgExport()">⬇ Download</button>
         <div style="position:relative;display:inline-flex">
           <button class="btn btn-ico" id="exp-cols-btn" onclick="_expToggleColsDlg()" title="Choose which columns the file carries">⚙</button>
@@ -40769,6 +41030,13 @@ function _meSave() {
           <div class="settings-pill">
             <button class="btn s-active" id="pointersCustom" onclick="setPointers('custom')" title="The app's own resize and text pointers — black with a white outline, readable on any background, on every machine">Custom</button>
             <button class="btn"          id="pointersSystem" onclick="setPointers('system')" title="The browser's and operating system's own pointers — their colour depends on the machine">System</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-lbl">Mask sensitive fields</span>
+          <div class="settings-pill">
+            <button class="btn"          id="maskScreenBtn" onclick="setMaskScreen(!P.maskScreen)" title="Hide the fields a class shows as &quot;masked&quot; in Parse Results and the Raw panel">Screen</button>
+            <button class="btn s-active" id="maskExportBtn" onclick="setMaskExport(P.maskExport === false)" title="Hide them in every export file and clipboard copy">Export files</button>
           </div>
         </div>
         <div class="settings-row" id="rawHexTruncRow">

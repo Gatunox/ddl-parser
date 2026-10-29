@@ -2151,6 +2151,101 @@ test('[REGRESSION] ASCII and EBCDIC characters pad blank lines, with no main-pan
   assert.ok(!/S\.(netardRulerCol|asciiRulerCol|asciiMargin|forcedFormat)|P\.lineWidth/.test(run), 'the Test panel still reads the main panel\'s state');
 });
 
+// Requested 2026-10-28: SHOW "masked" marks a field sensitive; `mask` says which
+// part is hidden and with what. Screen and Export switch independently.
+test('masking: modes, consistent random, hex, bytes, groups and the two switches', () => {
+  const run = c => vm.runInContext(c, sandbox);
+  const P = run('P'), saved = { k: P.maskKey, s: P.maskScreen, e: P.maskExport };
+  const specSaved = run('_meSpecForMsg');
+  try {
+    P.maskKey = 'k1';
+    const ms = (v, m) => sandbox._maskStr(v, m);
+    eq(ms('4567890123456789', 'all'), '****************');
+    eq(ms('4567890123456789', { first: 6 }), '******0123456789');
+    eq(ms('4567890123456789', { last: 4 }), '456789012345****');
+    eq(ms('4567890123456789', { from: 6, count: 6 }), '456789******6789');
+    eq(ms('4567890123456789', { fromEnd: 4, count: 6 }), '456789******6789');
+    eq(ms('4567890123456789', { keepFirst: 6, keepLast: 4 }), '456789******6789');
+    eq(ms('4567890123456789012', { keepFirst: 6, keepLast: 4 }), '456789*********9012', 'a 19-digit PAN');
+    eq(ms('  4567890123456789   ', { keepFirst: 6, keepLast: 4 }), '  456789******6789   ', 'padding is not data');
+    eq(ms('ABCDEF', { last: 2, with: '#' }), 'ABCD##');
+    // Random digits: digits, consistent for one value, different for another,
+    // and keyed — another browser's key masks the same PAN differently.
+    const d1 = ms('4567890123456789', { keepFirst: 6, keepLast: 4, with: 'digit' });
+    assert.ok(/^456789\d{6}6789$/.test(d1), `random digits are not digits: ${d1}`);
+    eq(ms('4567890123456789', { keepFirst: 6, keepLast: 4, with: 'digit' }), d1, 'the same PAN masked differently');
+    assert.ok(ms('4567891111116789', { keepFirst: 6, keepLast: 4, with: 'digit' }) !== d1, 'two PANs masked alike');
+    assert.ok(/^[A-Z]{4}$/.test(ms('abcd', { with: 'alpha' })), 'random letters are not letters');
+    P.maskKey = 'k2';
+    assert.ok(ms('4567890123456789', { keepFirst: 6, keepLast: 4, with: 'digit' }) !== d1, 'the mask does not depend on the key');
+    // A field through its class's overrides: SHOW "masked" on PAN, on group G.
+    run(`_meSpecForMsg = () => ({ overrides: {
+      PAN: { display: 'masked', mask: { keepFirst: 2, keepLast: 2 } },
+      HX:  { display: 'masked', mask: { last: 2 } },
+      BIN: { display: 'masked' },
+      G:   { display: 'masked' },
+      PLAIN: { display: 'hex' } } })`);
+    const asc = s => Array.from(s, c => c.charCodeAt(0));
+    const msg = { bytes: asc('123456') .concat([0x0A, 0x0B]).concat(asc('ZZ')), fields: [
+      { id: 'PAN',   value: '123456', rawBytes: asc('123456'), rawHex: '313233343536', startByte: 0, endByte: 5 },
+      { id: 'BIN',   value: '2571',   rawBytes: [0x0A, 0x0B],  rawHex: '0A0B',         startByte: 6, endByte: 7 },
+      { id: 'G.SUB', value: 'ZZ',     rawBytes: asc('ZZ'),     rawHex: '5A5A',         startByte: 8, endByte: 9 },
+      { id: 'PLAIN', value: 'ok',     rawBytes: asc('ok'),     rawHex: '6F6B' },
+      { id: 'HX',    value: '0A0B',   rawBytes: [0x0A, 0x0B],  rawHex: '0A0B' } ] };
+    const mf = id => sandbox._maskField(msg, msg.fields.find(f => f.id === id));
+    eq(mf('PAN').value, '12**56'); eq(mf('PAN').rawHex, '31322A2A3536', 'text hex follows the value');
+    eq(mf('BIN').value, '****');   eq(mf('BIN').rawHex, '****', 'binary bytes hide as **');
+    eq(mf('G.SUB').value, '**', 'a masked group hides its children');
+    eq(mf('PLAIN').value, 'ok', 'another SHOW is not a mask');
+    eq(mf('HX').rawHex, '0A**', 'hex-char: the hex IS the value');
+    eq(msg.fields[0].value, '123456', 'masking changed the parsed field');
+    deepEq(sandbox._maskBytes(msg, msg.bytes), asc('12**56').concat([null, null]).concat(asc('**')));
+    // The export follows its switch; the dialog's checkbox starts from it.
+    run('_expMaskOn = true');
+    assert.ok(sandbox._expMsgLines(msg, 0).join('\n').includes('12**56'), 'the export is not masked');
+    assert.ok(!sandbox._expMsgLines(msg, 0).join('\n').includes('123456'), 'the export leaks the PAN');
+    run('_expMaskOn = false');
+    assert.ok(sandbox._expMsgLines(msg, 0).join('\n').includes('123456'), 'an unmasked export is masked');
+    run('_expMaskOn = true');
+    // Switches: Export on and Screen off by default; turning Export off asks.
+    const D = run('_DEF_PREFS');
+    eq(D.maskScreen, false, 'Screen masking is on by default'); eq(D.maskExport, true, 'Export masking is off by default');
+    P.maskExport = true;
+    run('globalThis.__realConfirm = showConfirm; globalThis.__asked = 0; showConfirm = (l, cb) => { globalThis.__asked++; cb(globalThis.__answer); }');
+    try {
+      run('globalThis.__answer = false'); sandbox.setMaskExport(false);
+      eq(P.maskExport, true, 'Export was turned off without confirming');
+      eq(run('globalThis.__asked'), 1, 'turning Export off did not ask');
+      run('globalThis.__answer = true'); sandbox.setMaskExport(false);
+      eq(P.maskExport, false, 'a confirmed Export-off was not applied');
+      sandbox.setMaskExport(true); eq(run('globalThis.__asked'), 2, 'turning Export ON asked');
+      sandbox.setMaskScreen(true); eq(P.maskScreen, true);
+      sandbox.setMaskScreen(false); eq(P.maskScreen, false);
+      eq(run('globalThis.__asked'), 2, 'the Screen switch asked');
+    } finally { run('showConfirm = globalThis.__realConfirm'); }
+  } finally {
+    run('_meSpecForMsg = ' + specSaved.toString());
+    Object.assign(P, { maskKey: saved.k, maskScreen: saved.s, maskExport: saved.e });
+  }
+  // SHOW offers it, its editor round-trips every mode, and the chip says it.
+  assert.ok(run('_ME_DISP_OPTS').includes('masked'), 'SHOW does not offer "masked"');
+  for (const m of ['all', { first: 3 }, { last: 4, with: 'digit' }, { from: 2, count: 5 },
+                   { fromEnd: 4, count: 6, with: 'alpha' }, { keepFirst: 6, keepLast: 4 }]) {
+    const u = sandbox._meFmMaskToUi(m);
+    deepEq(sandbox._meFmMaskFromUi(u.mode, u.a, u.b, u.w), m, `the editor loses ${JSON.stringify(m)}`);
+  }
+  assert.ok(run('_meOvlChips')({ display: 'masked', mask: { keepFirst: 6, keepLast: 4 } }).join().includes('keep 6+4'));
+  deepEq(run("_ME_OV_KINDS.find(k => k.id === 'show').keys"), ['display', 'mask'], 'clearing SHOW leaves the mask behind');
+  // Every outlet that carries message data goes through it.
+  for (const fn of ['copyRawToClipboard', 'copyFieldToClipboard', 'copyMsgToClipboard', '_trackExportLines'])
+    assert.ok(/_maskExportOn\(\)/.test(psFnSource(fn)), `${fn} ignores the Export switch`);
+  assert.ok(/_maskScreenOn\(\)/.test(psFnSource('renderRaw')), 'the Raw panel ignores the Screen switch');
+  assert.ok(/_maskScreenOn\(\)\) f = _maskField\(msg, f\)/.test(psFnSource('renderFieldTable')), 'Parse Results ignores the Screen switch');
+  assert.ok(/id="expMaskChk"[^>]*onchange="expMaskChange\(this\)"/.test(html), 'the export dialog has no mask checkbox');
+  for (const h of ['setMaskScreen', 'setMaskExport', 'expMaskChange'])
+    assert.ok(new RegExp(`'${h}'`).test(fs.readFileSync('./build.js', 'utf8')), `build.js would rename ${h}`);
+});
+
 // The NETADRD side of the same capture problem, fixed before FUP COPY but never
 // pinned: a blank middle line and a partly blank one are full-width spaces.
 test('[REGRESSION] NETADRD pads blank and partly blank lines to full width', () => {
@@ -6328,7 +6423,9 @@ test('every override the panel offers reaches a tag', () => {
   const applyOvr = vm.runInContext('_msgApplyOverrides', sandbox);
   const tagsFor  = vm.runInContext('_meTagsFor', sandbox);
   const TYPES = vm.runInContext('_ME_TYPE_OPTS', sandbox).filter(Boolean);
-  const DISPS = vm.runInContext('_ME_DISP_OPTS', sandbox).filter(Boolean);
+  // "masked" is not a formatting: it hides the value on the way out (screen,
+  // when switched on, and exports), and a tag still tests the real value.
+  const DISPS = vm.runInContext('_ME_DISP_OPTS', sandbox).filter(d => d && d !== 'masked');
   const mk = rawHex => ({ fields: [{ id: 'F', value: '?', rawHex,
     rawBytes: rawHex.match(/../g).map(h => parseInt(h, 16)) }] });
   // Each type is given bytes it can actually read: the hex-*-decimal pair take

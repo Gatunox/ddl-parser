@@ -1195,6 +1195,55 @@ No network manual is available to design against; work from the user's examples.
 
 ---
 
+## 27. [ ] Mask a message for sharing — *in design, started 2026-10-28*
+
+**Asked for 2026-10-28.** Export a message (or a whole log) with the PAN, track 2
+and other sensitive data masked, lengths kept, so it can go to a vendor or into a
+ticket without exposing data. First of the five ideas agreed that day; the
+definitions (which fields, how they are masked, what is exported) are being
+settled with the user before any code.
+
+
+---
+
+## 28. [ ] Parse journal — the per-log timeline of every decision
+
+**Asked for 2026-10-28.** Today the parse log only lists the steps run. The
+journal is, for each log, the full timeline of the parse field by field: which
+class won detection and against which, which block read each field, from which
+offset to which, and which rule flagged it. Looked at on demand, not shown by
+default. Not the existing `keepParseLog` — a new record of the decisions.
+
+
+---
+
+## 29. [ ] Business validation rules
+
+**Asked for 2026-10-28.** Beyond structure: rules such as "if DE3 is 00xxxx, DE4
+is mandatory" or "DE39 must be in this list", reported in the issue bar next to
+the parse errors.
+
+
+---
+
+## 30. [ ] Follow a transaction through a log
+
+**Asked for 2026-10-28.** In a NETADRD with thousands of records, click a STAN or
+an RRN and see the whole path: the 0200, its 0210, the reversals, with the time
+between them.
+
+
+---
+
+## 31. [ ] Generate test messages
+
+**Asked for 2026-10-28.** From a DDL and a class, build a valid message — or one
+broken on purpose (length exceeded, inconsistent bitmap) — in the chosen format
+(NETADRD, HEX, ASCII), to test the parser or the system.
+
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

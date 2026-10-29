@@ -1805,7 +1805,52 @@ of bytes.
 | `bitmap` | The map rendered as binary digits — `0010 0110 …` |
 | `bitmap-list` | The same map read out as the bit NUMBERS that are set — `Bits — 2, 3, 5, 11, …` (no count: the row's description already states it). Nobody counts columns across 16 bytes to discover DE 11 is present. Prefers the engine's own bitset, which is exactly what `read-bitmap-fields` walks, so it reflects the ISO rule that bit 1 is the secondary-bitmap indicator on a wire map but real data on an explicitly sized one |
 
+| `masked` | A sensitive field — see **Masking** below. Not a formatting: the value is hidden on the way out, and tags still test the real value |
+
 A `read-bitmap` row accepts both, and every other override — see §5.12.
+
+**Masking — `display: "masked"` and `mask`**
+
+`masked` marks a field sensitive; `mask` beside it says which part is hidden
+(the whole value when it is absent). Picking **masked** in the Overrides panel's
+SHOW editor opens the controls for it.
+
+| `mask` | Hides |
+|---|---|
+| `"all"` (or absent) | the whole value |
+| `{ "first": N }` / `{ "last": N }` | the first / last N characters |
+| `{ "from": I, "count": N }` | N characters starting I in from the start |
+| `{ "fromEnd": I, "count": N }` | N characters ending I in from the end |
+| `{ "keepFirst": A, "keepLast": B }` | everything between — a PAN of any length |
+
+`with` says what replaces a hidden character: one character (`"*"`, the default),
+`"digit"` or `"alpha"`. Random digits and letters are **consistent** — drawn from
+the value keyed with a secret made once per browser — so one PAN masks the same
+way in every record and every export, and the hidden digits cannot be recovered
+by trying them all without that key. Leading and trailing spaces are padding:
+positions count from the first and last non-space character.
+
+A group marked `masked` hides its children whole. The hex column follows the
+value where the value is the bytes (text, or `hex-char` digits); otherwise every
+hidden byte reads `**`. In a byte dump the field's bytes are replaced the same way.
+
+Where it applies — Settings → **Mask sensitive fields**, two switches:
+
+| Switch | Default | Covers |
+|---|---|---|
+| Screen | off | Parse Results and the Raw panel |
+| Export | on | every file and clipboard copy carrying message data: the message export, the tracking export, Copy Raw, a copied field or message |
+
+The export dialog's own checkbox starts from the Export switch. Turning masking
+off for an export, there or in Settings, asks for confirmation. Data Input is
+never masked: it is the user's own paste.
+
+```json
+"overrides": {
+  "PAN":    { "display": "masked", "mask": { "keepFirst": 6, "keepLast": 4, "with": "digit" } },
+  "TRACK2": { "display": "masked" }
+}
+```
 
 The declared DDL type is **preserved**, never replaced: Parse Results shows
 `declared ↩ override`, plus `as DISPLAY` when a display override is also set.

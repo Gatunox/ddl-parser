@@ -1394,6 +1394,26 @@ table.ddl-doc-tbl { table-layout: fixed; border-collapse: collapse; font-family:
 .ddl-doc-tbl td.ddl-doc-size, .ddl-doc-tbl th.ddl-doc-size {
   text-align: right; font-variant-numeric: tabular-nums; }
 /* ---- Export modal ---- */
+.journal-body { font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); white-space: pre-wrap; padding: 6px 0; }
+.jl { padding: 1px 8px; line-height: 1.5; }
+.jl-h { color: var(--text); font-weight: 700; margin-top: 8px; }
+.jl-block { color: var(--accent); }
+.jl-when { color: var(--h-violet-fg); }
+.jl-step { color: var(--text-dim); }
+.jl-field { color: var(--text); }
+.jl-why, .jl-note { color: var(--text-dim); }
+.jl-pass { color: var(--success, #3fb950); }
+.jl-fail, .jl-err { color: var(--danger); }
+.jl-warn { color: var(--warning); }
+.jl-focus { background: rgba(var(--accent-rgb), .14); }
+.why-pop { position: fixed; z-index: 70; max-width: min(640px, 92vw); max-height: 60vh; overflow: auto;
+  background: var(--surface-raised); border: var(--bw) solid var(--border-strong); border-radius: var(--r-md);
+  box-shadow: 0 6px 24px rgba(0,0,0,.35); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); padding-bottom: 6px; }
+.why-hdr { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-bottom: var(--bw) solid var(--border); color: var(--text); font-weight: 700; }
+.why-hdr span { flex: 1; }
+.row-why { display: none; margin-left: 6px; color: var(--text-dim); cursor: pointer; }
+tr:hover > td .row-why { display: inline; }
+.row-why:hover { color: var(--accent); }
 .exp-mask-lbl { display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--text-dim); white-space:nowrap; cursor:pointer; }
 .exp-tbl { width:100%; border-collapse:collapse; font-size:11px; font-family:var(--font-mono); }
 .exp-tbl th { position:sticky; top:0; background:var(--bg-deep); color:var(--text-dim); font-weight:600; text-align:left; padding:4px 6px; border-bottom: var(--bw) solid var(--border); white-space:nowrap; z-index:1; }
@@ -1401,9 +1421,9 @@ table.ddl-doc-tbl { table-layout: fixed; border-collapse: collapse; font-family:
 .exp-tbl th .th-label { display:block; font-size:10px; color:var(--text-dim); }
 /* font-size follows the app's setting like every other control. It was a hard
    12px, so this field alone ignored Small / Medium / Large. */
-#expFilterInput { flex:1; min-width:0; margin:0 10px; background:var(--bg-input,var(--bg)); border: var(--bw-ctl) solid var(--border); border-radius:var(--r-md); color:var(--text); font-size:var(--sz-mono); font-family:var(--mono); padding:3px 8px; outline:none; }
-#expFilterInput:focus { border-color:var(--accent); }
-#expFilterInput::placeholder { color:var(--text-dim); opacity:0.5; }
+#expFilterInput, #journalFilter { flex:1; min-width:0; margin:0 10px; background:var(--bg-input,var(--bg)); border: var(--bw-ctl) solid var(--border); border-radius:var(--r-md); color:var(--text); font-size:var(--sz-mono); font-family:var(--mono); padding:3px 8px; outline:none; }
+#expFilterInput:focus, #journalFilter:focus { border-color:var(--accent); }
+#expFilterInput::placeholder, #journalFilter::placeholder { color:var(--text-dim); opacity:0.5; }
 .exp-tbl td { padding:3px 8px; border-bottom: var(--bw) solid rgba(255,255,255,0.04); color:var(--text); white-space:nowrap; overflow:hidden; max-width:200px; text-overflow:ellipsis; }
 .exp-tbl td:last-child { max-width:none; min-width:160px; }
 .exp-tbl td:first-child { text-align:center; }
@@ -7596,7 +7616,7 @@ function _maskStr(str, m) {
 // it is masked — a group's bytes include its children's.
 function _maskFor(msg, f) {
   if (!f || f.id == null) return null;
-  const ov = _meSpecForMsg(msg)?.overrides;
+  const ov = (msg?._maskSpec || _meSpecForMsg(msg))?.overrides;
   if (!ov) return null;
   const parts = _canonFieldId(String(f.id)).split('.');
   const own = ov[parts.join('.')];
@@ -7650,6 +7670,326 @@ function _maskLabel(m) {
 }
 const _maskScreenOn = () => !!P.maskScreen;
 const _maskExportOn = () => P.maskExport !== false;
+
+// ── Parse journal (TODO 28) ─────────────────────────────────────────────────
+// The timeline of one record's parse, decision by decision: which class won
+// detection and against which, which DDL, which parser, then every block in
+// order — the cursor it entered and left at, each `when` with what it compared
+// and which branch it took — and every field with its offsets, where its length
+// came from, the overrides applied and what flagged it.
+//
+// Built ON DEMAND: nothing is recorded during a parse. Opening the journal
+// re-runs that one record with tracing on (ctx.trace), from the bytes, class,
+// DDL and format the parse used — so a log of thousands of records parses
+// exactly as fast as before. If the class or DDL changed since, the re-run can
+// disagree with Parse Results, and the journal says so. Requested 2026-10-28.
+//
+// A journal is a list of lines { depth, kind, text, fid }: rendered as HTML on
+// screen, joined as text for Copy / Download.
+function _jRecDesc(r) {
+  if (!r || typeof r !== 'object') return String(r);
+  const kv = Object.entries(r).filter(([k]) => k !== 'type' && k !== 'id')
+    .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`);
+  return r.type + (kv.length ? ' ' + kv.join(' ') : '');
+}
+function _jAttrs(a) {
+  if (a == null) return '';
+  if (typeof a !== 'object') return String(a);
+  const kv = Object.entries(a).filter(([k]) => !['then', 'else', 'blocks', 'overrides'].includes(k))
+    .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`);
+  const t = kv.join(' ');
+  return t.length > 140 ? t.slice(0, 139) + '…' : t;
+}
+// One field as journal lines: where, how long and why, overrides, problems.
+function _jFieldLines(f, depth, ov, mask) {
+  const mf = mask ? mask(f) : f;
+  const out = [];
+  const pos = f.startByte != null ? `@${f.startByte}${f.endByte >= f.startByte ? '–' + f.endByte : ''}` : '@—';
+  const n   = f.valueLength ?? (f.rawBytes ? f.rawBytes.length : null);
+  const val = mf.displayValue != null ? mf.displayValue : mf.value;
+  out.push({ depth, kind: f.error ? 'err' : 'field', fid: f.id,
+    text: `${f.id}  ${pos}${n != null ? `  (${n} byte${n !== 1 ? 's' : ''})` : ''}${val != null && val !== '' ? `  = "${val}"` : ''}` });
+  const why = [];
+  const o = ov ? ov[_canonFieldId(String(f.id))] : null;
+  if (f.lenPrefix && !f.lenPrefixOwnRow) why.push(`length from its ${f.lenPrefix.length}-byte prefix "${f.lenPrefix}"`);
+  else if (f.lenPrefixOwnRow) why.push(`length from its group's LEN field`);
+  else if (o && +o.bytes > 0) why.push(`length from the SIZE override: ${o.bytes}${f.maxLength != null ? ` (DDL declares ${f.maxLength})` : ''}`);
+  else if (f.maxLength != null) why.push(`length declared by the DDL: ${f.maxLength}`);
+  if (f.deNum != null) why.push(`DE-${f.deNum}`);
+  if (f.typeOverride || o?.type) why.push(`TYPE override: ${f.typeOverride || o.type}`);
+  if (f.displayOverride || o?.display) why.push(`SHOW override: ${f.displayOverride || o.display}${(f.displayOverride || o.display) === 'masked' ? ' ' + _maskLabel(o?.mask) : ''}`);
+  if (f.isRedefines) why.push(`REDEFINES ${f.redefTarget || ''}`.trim());
+  if (f.mappedFrom) why.push(`read through map ${f.mappedVia || ''}, replacing ${f.mappedFrom}`);
+  for (const w of why) out.push({ depth: depth + 1, kind: 'why', fid: f.id, text: w });
+  const prob = [];
+  if (typeof f.error === 'string') prob.push(`error: ${f.error}`);
+  else if (f.error) prob.push('error');
+  if (typeof f.issue === 'string') prob.push(`end of data: ${f.issue}`);
+  const cw = typeof _meContentWhy === 'function' ? _meContentWhy(f) : null;
+  if (cw) prob.push(`content: ${cw}`);
+  if (f.unreliable) prob.push('unreliable: a binary field read from character input');
+  for (const p of prob) out.push({ depth: depth + 1, kind: 'err', fid: f.id, text: p });
+  return out;
+}
+// One token of a token area: where its header and data sit, which DDL read it,
+// its fields, and what went wrong with it.
+function _jTokenLines(t, depth, ov, mask) {
+  const out = [];
+  const n = t.rawBytes ? t.rawBytes.length : 0;
+  const pos = t.dataStart != null ? `@${t.dataStart}${n ? '–' + (t.dataStart + n - 1) : ''}` : '@—';
+  const hdr = t.headerStart != null ? `, header @${t.headerStart}` : '';
+  out.push({ depth, kind: t.error ? 'err' : 'field', fid: t.id != null ? 'tkn::' + t.id : null,
+    text: `◆ token ${t.id ?? '?'}  ${pos}  (${n} byte${n !== 1 ? 's' : ''}${hdr})` });
+  if (t.ddlName || t.ddlPath) out.push({ depth: depth + 1, kind: 'why', text: `read with ${t.ddlName || '?'}${t.ddlPath ? ` (${t.ddlPath})` : ''}` });
+  if (t.error)  out.push({ depth: depth + 1, kind: 'err', text: `error: ${t.error}` });
+  if (t.issue)  out.push({ depth: depth + 1, kind: 'err', text: `end of data: ${t.issue}` });
+  for (const f of t.fields || []) out.push(..._jFieldLines(f, depth + 1, ov, mask));
+  return out;
+}
+// The block timeline: trace entries and the fields they made, in the order the
+// engine produced them. A field sits under the innermost block that made it.
+function _jTimeline(trace, fields, ov, mask) {
+  const owner = new Map(), idxOf = new Map(), tokOwner = new Map();
+  for (const e of trace) if (e.kind === 'block' && e.fields) {
+    e.fields.forEach((f, k) => { owner.set(f, e); idxOf.set(f, e.f0 + k); });
+    for (const t of e.tokens || []) tokOwner.set(t, e);
+  }
+  const ev = [];
+  trace.forEach((e, seq) => ev.push({ key: e.f0 ?? Infinity, seq, e }));
+  let last = -1;
+  fields.forEach((f, i) => { const k = idxOf.has(f) ? idxOf.get(f) : last; last = k; ev.push({ key: k + 0.5, seq: i, f }); });
+  // A `when` carries no field count: it sits where it was pushed, after the
+  // block that holds it.
+  let cur = 0;
+  for (const x of ev) { if (x.e && x.e.f0 == null) x.key = cur; else if (x.key !== Infinity) cur = x.key; }
+  ev.sort((a, b) => a.key - b.key || (a.e ? 0 : 1) - (b.e ? 0 : 1) || a.seq - b.seq);
+  const out = [];
+  for (const x of ev) {
+    if (x.e && x.e.kind === 'block') {
+      out.push({ depth: x.e.depth, kind: 'block',
+        text: `▸ ${x.e.type}${_jAttrs(x.e.attrs) ? '  ' + _jAttrs(x.e.attrs) : ''}  — cursor ${x.e.from} → ${x.e.to ?? '?'}` });
+      // Tokens are not fields: a token-area block files them apart, so they
+      // are listed under the block that read them. A nested block's tokens are
+      // its own, not its parent's.
+      for (const t of x.e.tokens || [])
+        if (tokOwner.get(t) === x.e) out.push(..._jTokenLines(t, x.e.depth + 1, ov, mask));
+    } else if (x.e && x.e.kind === 'step') {
+      out.push({ depth: x.e.depth, kind: 'step', text: `· ${x.e.text}` });
+    } else if (x.e && x.e.kind === 'when') {
+      const w = x.e;
+      const what = w.op === 'present' ? `${w.field} was read`
+        : w.op === 'bytes' || w.op === 'not-bytes' ? `${w.op} ${JSON.stringify(w.rhs)} at ${w.at}`
+        : `${w.field} ("${w.value ?? ''}") ${w.op} ${JSON.stringify(w.rhs)}`;
+      out.push({ depth: w.depth, kind: 'when',
+        text: `? when ${what} → ${w.matched ? 'true' : 'false'}, ${w.branch === 'none' ? 'no branch runs' : `runs "${w.branch}"`}` });
+    } else if (x.f) {
+      const o = owner.get(x.f);
+      out.push(..._jFieldLines(x.f, o ? o.depth + 1 : 0, ov, mask));
+    }
+  }
+  return out;
+}
+// The journal for a parsed message (Parse Results).
+function _journalForMsg(msg, mask) {
+  const L = [], add = (kind, text, depth = 0, fid) => L.push({ depth, kind, text, fid });
+  const spec = _meSpecForMsg(msg);
+  add('h', 'Detection');
+  const det = msg._det;
+  if (msg.manualOverride) add('note', 'Manual DDL override — detection did not run.', 1);
+  else if (!det) add('note', 'Not recorded for this record.', 1);
+  else if (det.forced) add('note', `${det.winner?.label || '?'} — forced by override, recognizers not evaluated.`, 1);
+  else {
+    for (const t of det.trace || []) {
+      const sp = typeof window._fmtSpecFor === 'function' ? window._fmtSpecFor(t.name, t.label) : null;
+      if (t.passed) add('pass', `✓ ${t.label} — every recognizer passed: wins (first match in the list)`, 1);
+      else add('fail', `✗ ${t.label} — failed at recognizer ${(t.failAt ?? 0) + 1}: ${_jRecDesc((sp?.recognizers || [])[t.failAt] || t.recognizers?.[t.failAt])}`, 1);
+    }
+    if (!(det.trace || []).some(t => t.passed)) add('fail', 'No class matched.', 1);
+  }
+  add('h', 'DDL');
+  const def = msg.ddlPath ? msg.ddlPath + (msg.defName ? '/' + msg.defName : '') : null;
+  const bound = (msg.msgType?.ddl_bindings || []).filter(Boolean);
+  if (!def) add('note', 'No DDL.', 1);
+  else if (msg.manualOverride) add('note', `${def} — picked by hand (override).`, 1);
+  else if (bound.length) add('note', `${def} — bound by the class (${bound.join(', ')}).`, 1);
+  else add('note', `${def} — chosen by score from the DDL tree${msg.score != null ? ` (${Math.round(msg.score * 100)}%)` : ''}.`, 1);
+  add('h', `Parse — ${msg.parsedBy || 'unknown parser'}`);
+  let fields = msg.fields || [], trace = null, stale = false;
+  if (/^parse-spec/.test(msg.parsedBy || '') && msg.msgType) {
+    const r = _meParseWithChosenBinding(msg.msgType, msg.ddlPath ? { ddlPath: msg.ddlPath, defName: msg.defName } : null,
+      msg.bytes, { format: msg._parseFmt ?? S.inputFormat, rawBytes: msg.wireBytes, trace: true });
+    if (r && r.trace) {
+      trace = r.trace; fields = r.fields;
+      const a = (msg.fields || []).map(f => f.id + '=' + f.value).join('\n');
+      const b = r.fields.map(f => f.id + '=' + f.value).join('\n');
+      stale = a !== b;
+    } else stale = true;
+  }
+  if (stale) add('warn', 'Re-running this record now gives a different result from Parse Results — the class or the DDL changed since the parse. The journal shows the run of now.', 1);
+  if (!trace) add('note', 'This parser runs no blocks: the fields below are what it read, in order.', 1);
+  const ov = spec?.overrides || null;
+  L.push(...(trace ? _jTimeline(trace, fields, ov, mask) : fields.flatMap(f => _jFieldLines(f, 1, ov, mask))));
+  // With no token-area block the tokens are found AFTER the parse, by position:
+  // inside DE-63 / 126 for ISO and Base24, after the last field for STM / PSTM.
+  const tracedTokens = trace ? trace.some(e => e.kind === 'block' && e.tokens && e.tokens.length) : false;
+  let tokens = [];
+  if (!tracedTokens) {
+    if (typeof _resolveTokens === 'function') _resolveTokens(msg);
+    tokens = (msg.tokens || []).filter(t => t && (t.id != null || t.error));
+    if (tokens.length) {
+      add('h', `Tokens — ${tokens.length}`);
+      add('note', 'Found after the parse, by position: inside DE-63 / 126 (ISO, Base24) or after the last field (STM, PSTM).', 1);
+      for (const t of tokens) L.push(..._jTokenLines(t, 1, ov, mask));
+    }
+  } else tokens = trace.filter(e => e.kind === 'block').flatMap(e => e.tokens || []);
+  _jProblems(L, fields, tokens, ov, mask);
+  return L;
+}
+// Every problem once, field by field and token by token, with its rule.
+function _jProblems(L, fields, tokens, ov, mask) {
+  const rows = [];
+  for (const f of fields) for (const l of _jFieldLines(f, 1, ov, mask).filter(l => l.kind === 'err' && l.depth === 2))
+    rows.push({ depth: 1, kind: 'err', fid: f.id, text: `${f.id}: ${l.text}` });
+  for (const t of [...new Set(tokens || [])]) {
+    if (t.error) rows.push({ depth: 1, kind: 'err', text: `token ${t.id ?? '?'}: error: ${t.error}` });
+    if (t.issue) rows.push({ depth: 1, kind: 'err', text: `token ${t.id ?? '?'}: end of data: ${t.issue}` });
+    for (const f of t.fields || []) for (const l of _jFieldLines(f, 1, ov, mask).filter(l => l.kind === 'err' && l.depth === 2))
+      rows.push({ depth: 1, kind: 'err', fid: f.id, text: `token ${t.id} · ${f.id}: ${l.text}` });
+  }
+  L.push({ depth: 0, kind: 'h', text: `Problems — ${rows.length}` });
+  if (!rows.length) L.push({ depth: 1, kind: 'pass', text: 'None.' });
+  L.push(...rows);
+}
+const _jText = L => L.map(l => (l.kind === 'h' ? '\n== ' + l.text + ' ==' : '  '.repeat(l.depth) + l.text)).join('\n').replace(/^\n/, '') + '\n';
+let _journalLines = [], _journalTitle = '';
+function _journalShow(title, lines, focusFid) {
+  _journalLines = lines; _journalTitle = title;
+  document.getElementById('journalTitle').textContent = title;
+  const f = document.getElementById('journalFilter'); if (f) f.value = '';
+  _journalRender(focusFid);
+  document.getElementById('journalOverlay').classList.remove('hidden');
+}
+function _journalRender(focusFid) {
+  const body = document.getElementById('journalBody');
+  if (!body) return;
+  const q = (document.getElementById('journalFilter')?.value || '').toLowerCase();
+  body.innerHTML = _journalLines.map((l, i) => {
+    const hit = !q || l.kind === 'h' || l.text.toLowerCase().includes(q);
+    const foc = focusFid != null && l.fid != null && String(l.fid) === String(focusFid);
+    return `<div class="jl jl-${l.kind}${foc ? ' jl-focus' : ''}${hit ? '' : ' hidden'}" data-i="${i}" style="padding-left:${8 + l.depth * 16}px">${_escHtml(l.text)}</div>`;
+  }).join('');
+  if (focusFid != null) body.querySelector('.jl-focus')?.scrollIntoView({ block: 'center' });
+}
+function journalFilter() { _journalRender(); }
+function closeJournal() { document.getElementById('journalOverlay')?.classList.add('hidden'); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !document.getElementById('journalOverlay')?.classList.contains('hidden')) closeJournal();
+});
+// Copy and Download carry the text masked by the Export switch, like every
+// other way out of the app; the screen follows the Screen switch.
+let _journalRebuild = null;
+function _journalExportText() {
+  const L = _journalRebuild ? _journalRebuild(_maskExportOn()) : _journalLines;
+  return `${_journalTitle}\n${'='.repeat(_journalTitle.length)}\n${_jText(L)}`;
+}
+function journalCopy() {
+  const text = _journalExportText();
+  if (navigator.clipboard && window.isSecureContext)
+    navigator.clipboard.writeText(text).then(() => showToast('✓ Journal copied to clipboard')).catch(() => _copyFallback(text, '✓ Journal copied to clipboard'));
+  else _copyFallback(text, '✓ Journal copied to clipboard');
+}
+function journalDownload() {
+  const blob = new Blob([_journalExportText()], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = `parse-journal-${new Date().toISOString().slice(0, 10)}.txt`;
+  a.click(); URL.revokeObjectURL(url);
+}
+// The whole journal of the record on screen — opened from a row's ⓘ popup
+// (Parse Results has no Journal button of its own: requested 2026-10-29).
+function openJournal(focusFid) {
+  const msg = S.messages?.[S.curIdx];
+  if (!msg) return;
+  const build = masked => _journalForMsg(msg, masked ? f => _maskField(msg, f) : null);
+  _journalRebuild = build;
+  const title = `Parse journal — ${msg.isNetard ? `Rec #${msg.recNo}` : `Msg #${S.curIdx + 1}`}${msg.msgType?.label ? ' · ' + msg.msgType.label : ''}`;
+  _journalShow(title, build(_maskScreenOn()), focusFid);
+}
+// A row's ⓘ: the journal of THAT field only, in a popup — how the engine got
+// to it (the enclosing blocks and conditions, and the steps right before it
+// that decided it) and the field itself. Journal is the whole record.
+function _journalWhyLines(L, fid) {
+  const i = L.findIndex(l => l.fid != null && String(l.fid) === String(fid) && (l.kind === 'field' || l.kind === 'err') && /@/.test(l.text));
+  if (i < 0) return null;
+  const d = L[i].depth, chain = [];
+  // The steps that led here: back to the previous field at this depth.
+  for (let k = i - 1; k >= 0 && L[k].depth >= d; k--) {
+    if (L[k].depth === d && (L[k].kind === 'field' || /@/.test(L[k].text) && L[k].fid != null)) break;
+    if (L[k].depth === d && L[k].kind === 'step') chain.unshift(L[k]);
+  }
+  // The enclosing blocks and conditions, outermost first.
+  let want = d - 1;
+  for (let k = i - 1; k >= 0 && want >= 0; k--)
+    if (L[k].depth === want && (L[k].kind === 'block' || L[k].kind === 'when')) { chain.unshift(L[k]); want--; }
+  const own = [L[i]];
+  for (let k = i + 1; k < L.length && L[k].depth > d; k++) own.push(L[k]);
+  const base = chain.length ? Math.min(...chain.map(l => l.depth)) : d;
+  return chain.concat(own).map(l => ({ ...l, depth: l.depth - base }));
+}
+function journalForField(fid, ev) {
+  fid = String(fid).split('::').pop();
+  const msg = S.messages?.[S.curIdx];
+  if (!msg) return;
+  const lines = _journalWhyLines(_journalForMsg(msg, _maskScreenOn() ? f => _maskField(msg, f) : null), fid);
+  const pop = document.getElementById('whyPop');
+  if (!pop) return;
+  pop.innerHTML = `<div class="why-hdr"><span>Why — ${_escHtml(fid)}</span>`
+    + `<button class="btn" onclick="closeWhy();openJournal(${_escHtml(JSON.stringify(fid))})" title="The whole parse journal of this record, at this field">Journal</button>`
+    + `<button class="btn btn-ico" onclick="closeWhy()">✕</button></div>`
+    + (lines ? lines.map(l => `<div class="jl jl-${l.kind}" style="padding-left:${8 + l.depth * 14}px">${_escHtml(l.text)}</div>`).join('')
+             : '<div class="jl jl-note">This field is not in the journal.</div>');
+  pop.classList.remove('hidden');
+  const r = ev?.target?.getBoundingClientRect?.() || { left: 40, bottom: 80 };
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 12)) + 'px';
+  pop.style.top  = (r.bottom + 4 + pop.offsetHeight > window.innerHeight ? Math.max(8, r.top - pop.offsetHeight - 4) : r.bottom + 4) + 'px';
+}
+function closeWhy() { document.getElementById('whyPop')?.classList.add('hidden'); }
+document.addEventListener('mousedown', e => {
+  const pop = document.getElementById('whyPop');
+  if (pop && !pop.classList.contains('hidden') && !pop.contains(e.target) && !e.target.closest?.('.row-why')) closeWhy();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeWhy(); });
+// Class Editor → Test → Journal: the same journal for the last Test run.
+let _meTestJournalIn = null;
+function _journalForTest(J, mask) {
+  const L = [], add = (kind, text, depth = 0) => L.push({ depth, kind, text });
+  add('h', 'Detection');
+  for (const i of J.order) {
+    const sp = J.specs[i], r = J.all[i];
+    if (!sp || !r) continue;
+    const name = sp.label || sp.name || '?';
+    if (r.passed) add('pass', `✓ ${name} — every recognizer passed${i === J.winnerIdx ? ': wins (first match in the list)' : ''}`, 1);
+    else add('fail', `✗ ${name} — failed at recognizer ${(r.failAt ?? 0) + 1}: ${_jRecDesc((sp.recognizers || [])[r.failAt])}`, 1);
+  }
+  if (J.winnerIdx === -1) add('fail', 'No class matched.', 1);
+  add('h', 'DDL');
+  const b = (J.item.ddl_bindings || []).filter(Boolean);
+  add('note', b.length ? `Bound by the class: ${b.join(', ')}` : 'The class binds no DDL.', 1);
+  const ctx = _meExecParseSpec(J.item, J.parseBytes, { ...J.opts, trace: true });
+  add('h', `Parse — ${J.item.label || J.item.name} · parse-spec (${ctx.parseSpecUsed || 'binary'})`);
+  const mk = mask ? f => mask(f, J.item) : null;
+  L.push(..._jTimeline(ctx.trace || [], ctx.fields, J.item.overrides || null, mk));
+  _jProblems(L, ctx.fields, ctx.tokens || [], J.item.overrides || null, mk);
+  return L;
+}
+function openTestJournal() {
+  const J = _meTestJournalIn;
+  if (!J) return;
+  // The Test run has no parsed message: the mask is read from the class itself.
+  const maskOf = (f, item) => _maskField({ fields: [], _maskSpec: item }, f);
+  const build = masked => _journalForTest(J, masked ? maskOf : null);
+  _journalRebuild = build;
+  _journalShow(`Parse journal — Test · ${J.item.label || J.item.name}`, build(_maskScreenOn()));
+}
 
 // The tags a message earned, drawn like the type code beside it — same chip, the
 // tag's own colour. They sit AFTER the type: the type says what the message is,
@@ -12872,6 +13212,10 @@ function doParseNetardLog(text, opts = {}) {
               const { bytes, parseBytes, parseRaw, isEbcdic: _isEbcdic, ebcdicDens: _ebcdicDens, ebcdicHow: _ebcdicHow } = _pd.dec;
               const _base = {
                 bytes: parseBytes, raw: parseRaw, wireBytes: bytes,
+                // For the parse journal: the detection that ran (already kept
+                // for the parse log, so a reference costs nothing) and the
+                // format the engine read with, so one record can be re-run.
+                _det: _pd.det, _parseFmt: _netardFmtOf(rec, opts),
                 isNetard: true, isEbcdic: _isEbcdic, netardFmt: rec.netardFmt,
                 byteCharMap: rec.byteCharMap || [],
                 charStart: rec.charStart, charEnd: rec.charEnd,
@@ -13202,7 +13546,7 @@ function doParseNetardLog(text, opts = {}) {
             // file specs resolve theirs internally (seg-map etc.).
             // Per-record input format (same mapping _finalizeNetard applies) so
             // BINARY fields decode correctly; original bytes for the decode.
-            const _fmt = (opts.fmtMap || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[d.rec.netardFmt] || (opts.fmtDefault || 'netard');
+            const _fmt = _netardFmtOf(d.rec, opts);
             // Shared routing decision — identical to the plain-paste flow.
             const _v = _parseVerdict(d.winner, d.dec.parseBytes, { format: _fmt, rawBytes: d.dec.bytes });
             if (_v.kind === 'parsed') {
@@ -13278,6 +13622,12 @@ function _padFupCopyAsciiLines(text) {
   }
   flushRec();
   return changed ? lines.join('\n') : text;
+}
+
+// The engine format of a NETARD / FUP COPY record, from its sub-format.
+function _netardFmtOf(rec, opts) {
+  return ((opts && opts.fmtMap) || { hex:'netard-hex', hexascii:'netard-dump', octal:'netard-oct', ebcdic:'netard-ebcdic', ascii:'netard-ascii', standard:'netard' })[rec.netardFmt]
+    || ((opts && opts.fmtDefault) || 'netard');
 }
 
 function doFupCopyLog(text, opts = {}) {
@@ -13715,7 +14065,8 @@ function doParseMessages() {
 
               // Shared routing decision — identical to the record flow.
               const _base = { bytes: parseBytes, raw: chunkStr, wireBytes, timestamp: chunk.timestamp || null,
-                msgType, byteCharMap, charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk };
+                msgType, byteCharMap, charStart, charEnd: charStart + chunkStr.length, _auditChunk: chunk,
+                _det: _detTrace, _parseFmt: S.inputFormat };
               const _v = ci.verdict;
               if (_v.kind === 'no-spec') {
                 parsed.push({ ..._base, fields: [], ddlPath: null, tokens: [], noParseSpec: true,
@@ -15270,7 +15621,7 @@ function renderFieldTable(msg) {
       <td class="c-num">${_rowNum}</td>
       <td class="c-id"${node.depth ? ` style="padding-left:${4 + node.depth * 12}px"` : ''}${
         f.mappedFrom ? ` title="${esc(`Read through map ${f.mappedVia || ''} — replaces ${f.mappedFrom}, and is not declared in the bound DDL`)}"` : ''
-      }>${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}</td>
+      }>${esc(f.id)}${redefMark}${deBadge}${unreliableBadge}<span class="row-why" onclick="event.stopPropagation();journalForField('${esc(fid)}', event)" title="Why? — how the engine read this field">ⓘ</span></td>
       <td class="c-desc" title="${esc(descTip)}">${descHtml}${errLine}${det}</td>
       <td class="c-len">${lenCell}</td>
       <td class="c-off">${offCell}</td>
@@ -21475,7 +21826,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.58.0.0';
+const APP_VERSION  = '1.59.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -36000,6 +36351,9 @@ function _meReadDDLBinding(idx, fields, from, until, ctx) {
   // stacking on one base. Reported 2026-08-24.
   const _prevBase = ctx.ddlBase;
   ctx.ddlBase = ctx.cursor;
+  _meStep(ctx, `binding ${idx}: ${ctx.item.ddl_bindings?.[idx] || resolved.path || '?'} (${resolved.defs.length} field(s) declared), `
+    + `declared offsets counted from ${ctx.cursor}`
+    + (Array.isArray(fields) ? `; reads only ${fields.join(', ')}` : (from || until) ? `; reads ${from || 'the first'} through ${until || 'the last'}` : '; reads every field'));
   const picks   = Array.isArray(fields) ? new Set(fields) : null;
   const allMode = !picks && !from && !until;
   let started   = !from;
@@ -36996,6 +37350,11 @@ function _meExecTokenArea(attrs, ctx) {
   const all = ctx._deBit != null
     ? _meTokenAreaInDE(ctx, header, ddlPath)
     : (extractTokensFromMessage(ctx.fields, ctx.bytes, msgType, ddlPath) || []);
+  _meStep(ctx, ctx._deBit != null
+    ? `token area read inside DE ${ctx._deBit}, from ${ctx.cursor}: ${all.filter(t => t.id != null).length} token(s)`
+    : `token area located by position for a ${msgType || '?'} message (ISO / Base24: inside DE-63 or 126; STM / PSTM: after the last field): `
+      + (all.length ? `${all.filter(t => t.id != null).length} token(s)` : 'none found')
+      + (tokens === 'ANY' && !from && !until ? '' : ` — keeps ${Array.isArray(tokens) ? tokens.join(', ') : `${from || 'the first'} through ${until || 'the last'}`}`));
 
   // Appended, not assigned: a spec may read a token area inside a DE and another
   // at the end of the message, and the second used to erase the first.
@@ -37316,6 +37675,9 @@ function _meExecReadUntil(attrs, ctx) {
     ctx.fields.push({ id: attrs.as || 'read-until', error: 'Sentinel not found and eom=false' });
     return;
   }
+  _meStep(ctx, end < ctx.bytes.length
+    ? `sentinel 0x${ctx.bytes[end].toString(16).padStart(2, '0').toUpperCase()} found at ${end}: reads ${start}–${end - 1}`
+    : `no sentinel before the end of the message: reads to the end (eom)`);
   const fBytes = Array.from(ctx.bytes.slice(start, end));
   ctx.cursor = end;
   const id = attrs.as || 'BUFFER';
@@ -37394,6 +37756,7 @@ function _meExecReadLengthValue(attrs, ctx) {
       error: `length ${_meBytesToHex(pBytes)} is not a number when read as ${attrs.length_encoding}` });
     return;
   }
+  _meStep(ctx, `length prefix at ${start}: ${pBytes.length} byte(s) ${_meBytesToHex(pBytes)} read as ${attrs.length_encoding} = ${N}${attrs.count ? ` ${attrs.count}` : ''}`);
   const dataLen   = N.bytes;
   const dataStart = start + pLen;
   let dataEnd = dataStart + dataLen;
@@ -37541,6 +37904,9 @@ function _meExecReadBitmap(attrs, ctx) {
   // Same reasoning: bit 1 is the secondary-present indicator in ISO 8583 only.
   // On an explicitly sized map it is a real bit and must be kept.
   if (explicitLen === null) bitSet.delete(1);
+  _meStep(ctx, `bitmap at ${start}: ${baseChunk} byte(s) ${isHexEnc ? 'of hex characters' : 'binary'}`
+    + (explicitLen !== null ? `, width stated by the spec (bit 1 is data)` : hasSecondary ? ', bit 1 set: a secondary bitmap follows' : ', bit 1 clear: no secondary bitmap')
+    + ` — DEs set: ${[...bitSet].sort((a, b) => a - b).join(', ') || 'none'}`);
 
   // Primary bitmap row — exactly baseChunk bytes, so Parse Results honors the
   // DDL's declared PIC width (X(8) raw binary / X(16) ascii-hex) instead of a
@@ -38259,6 +38625,8 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   // that normally means the length was misread.
   const capacity  = dataDefs.reduce((t, d) => t + _meEffLen(d, ctx), 0);
   const available = ctx.bytes.length - (lStart + lLen);
+  _meStep(ctx, `${lenDef.id} at ${lStart}: ${lLen} byte(s) "${lValue}" read as ${lType || ctx.lenEnc?.encoding || 'the spec encoding'} = ${Nwritten ?? '?'}`
+    + `${lenInChars ? ` digit(s) = ${N} byte(s)` : ' byte(s)'} of payload for ${dataDefs.map(d => d.id).join(', ')} (they declare ${capacity})`);
   if (N > available) {
     lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` digit(s) = ${N} byte(s)` : ''} runs past the end of the message (${available} byte(s) left) — read as ${
       _meLengthReadAs(lBytes, lType)}`);
@@ -38440,6 +38808,7 @@ function _meExecBitmapFields(attrs, ctx) {
     return f;
   };
 
+  _meStep(ctx, `walks ${bits.length} DE(s) in bit order: ${bits.join(', ')}`);
   for (const de of bits) {
     // Which DE these rows belong to, stamped on whatever the iteration emits.
     // The results table reads f.deNum to print the DE-nn badge, and only the
@@ -38469,7 +38838,7 @@ function _meExecBitmapFields(attrs, ctx) {
       // the cursor at the DE's start and names resolved inside the DE's own group,
       // so "ARQC" means "EMV-ELEMENT.ARQC" without repeating the parent everywhere.
       const ovr = _meDeEntryFor(attrs, de);
-      if (ovr) { _meRunDeEntry(de, entry, ovr, ctx); continue; }
+      if (ovr) { _meStep(ctx, `DE ${de}: read by its "de" entry, at ${ctx.cursor}`); _meRunDeEntry(de, entry, ovr, ctx); continue; }
 
       if (!entry) {
         ctx.fields.push({ id: `DE-${de}`, error: 'No DDL field mapped to this DE' });
@@ -38478,6 +38847,7 @@ function _meExecBitmapFields(attrs, ctx) {
 
       // ── Elementary DE ───────────────────────────────────────────────────────
       if (entry.def) {
+        _meStep(ctx, `DE ${de} → ${entry.def.id}${(entry.with || []).length ? ` (with ${entry.with.map(d => d.id).join(', ')})` : ''} at ${ctx.cursor}`);
         const _lenRow = readSeq(entry.def);
         if (_lenRow) {
           // Where the frame ends, taken BEFORE the payload is read: the single-leaf
@@ -38538,6 +38908,8 @@ function _meExecBitmapFields(attrs, ctx) {
         if (autoLenId) { isVarGroup = true; cfgLenId = autoLenId; }
       }
 
+      _meStep(ctx, `DE ${de} → group ${groupId} at ${ctx.cursor}: `
+        + (isVarGroup ? `variable length, sized by ${cfgLenId}${_meVlgHas(varGroups, groupId) ? ' (VLG override)' : ' (recognised by its name)'}` : `fixed, ${kids.length} field(s) in order`));
       if (isVarGroup) {
         const rows = _meVlgReadGroup(groupId, kids, cfgLenId, ctx);
         for (const r of rows) ctx.fields.push(r);
@@ -38720,6 +39092,14 @@ function _meExecWhen(attrs, ctx) {
   // cursor — exactly one of them runs, and a condition that could not be
   // ANSWERED returns above without running either.
   const branch = matched ? attrs.then : attrs.else;
+  if (ctx.trace) {
+    const op = guard !== null ? (attrs.bytes !== undefined ? 'bytes' : 'not-bytes')
+             : (_ME_WHEN_OPS().find(o => attrs[o] !== undefined) || 'present');
+    ctx.trace.push({ kind: 'when', depth: ctx._trDepth, at: ctx.cursor, f0: ctx.fields.length, field: attrs.field || null,
+      value: guard === null && attrs.field ? ctx.fieldsById[attrs.field]?.value : undefined,
+      op, rhs: guard !== null ? guard : attrs[op], matched,
+      branch: matched ? (attrs.then ? 'then' : 'none') : (attrs.else ? 'else' : 'none') });
+  }
   if (Array.isArray(branch)) {
     for (const b of branch) { _meExecBlock(b, ctx); if (ctx.stopped) break; }
   }
@@ -38780,7 +39160,9 @@ function _meExecRepeat(attrs, ctx) {
     N = ctx.bytes.length;
   }
 
+  _meStep(ctx, `count ${JSON.stringify(attrs.count)} = ${N0}${N !== N0 ? `, read as ${N}` : ''}: the body runs ${N} time(s)`);
   for (let i = 0; i < N; i++) {
+    _meStep(ctx, `iteration ${i + 1} of ${N}, at ${ctx.cursor}`);
     for (const b of body) { _meExecBlock(b, ctx); if (ctx.stopped) break; }
     if (ctx.stopped) break;   // early exit; the dispatcher's guard is what enforces it
   }
@@ -38852,7 +39234,8 @@ function _meExecReadWhile(attrs, ctx) {
   const HARD_CAP = 10000;
   let iters = 0;
   while (ctx.cursor < ctx.bytes.length) {
-    if (!_meGuardMatches(attrs.while, ctx)) break;
+    if (!_meGuardMatches(attrs.while, ctx)) { _meStep(ctx, `guard ${JSON.stringify(attrs.while)} does not match at ${ctx.cursor}: the loop ends after ${iters} iteration(s)`); break; }
+    _meStep(ctx, `guard matches at ${ctx.cursor}: iteration ${iters + 1}`);
     const before = ctx.cursor;
     const fieldsBefore = ctx.fields.length;
     for (const b of attrs.body) { _meExecBlock(b, ctx); if (ctx.stopped) break; }
@@ -39113,9 +39496,10 @@ function _meExecSegmentFields(attrs, ctx) {
     const m = /(\d+)$/.exec(seg);
     const segNo = m ? parseInt(m[1], 10) : null;
     // A top-level field without a trailing number is not a segment — always read.
-    if (segNo !== null && !smField.segSet.has(segNo)) { absent.push(seg); continue; }
+    if (segNo !== null && !smField.segSet.has(segNo)) { absent.push(seg); _meStep(ctx, `segment ${seg}: absent in the segment map — skipped`); continue; }
     const segDefs  = segLeaves.get(seg);
     const segStart = ctx.cursor;                              // where this segment landed
+    _meStep(ctx, `segment ${seg}: ${segNo === null ? 'not numbered, always read' : 'present in the segment map'} — ${segDefs.length} field(s) from ${segStart}`);
     const _offs    = segDefs.filter(d => d.offset != null).map(d => d.offset);
     const segBase  = _offs.length ? Math.min(..._offs) : 0;   // segment's declared base offset
     for (const d of segDefs) {
@@ -39283,6 +39667,7 @@ function _meExecReadTLV(attrs, ctx) {
     const tag      = _meTlvTagKey(tagBytes, ascii);
     p += tagLen;
     const L = _meTlvFixedLen(bufBytes.slice(p, p + lenLen), ascii);
+    _meStep(ctx, `tag ${tag}${bufBase != null ? ` at ${bufBase + tagAt}` : ''}: length ${L ?? '?'}`);
     if (L == null) {
       ctx.fields.push({ id: `${attrs.field}.${tag}`,
         error: `TLV tag ${tag}: length "${_meTlvChars(bufBytes.slice(p, p + lenLen))}" is not a decimal number` });
@@ -39563,6 +39948,9 @@ function _meExecReadTLVMapped(attrs, ctx) {
     const valBytes = bufBytes.slice(l.next, l.next + l.len);
     const lenBytes = bufBytes.slice(t.next, l.next);
     const mapped   = attrs.tags && (attrs.tags[tagKey] || attrs.tags[tagKey.toLowerCase()]);
+    _meStep(ctx, `tag ${tagKey}${bufBase != null ? ` at ${bufBase + tagAt}` : ''}: length ${l.len} — `
+      + (mapped ? `mapped to ${typeof mapped === 'string' ? mapped : (mapped.field || mapped.de || JSON.stringify(mapped))}`
+                : unknown === 'error' ? 'not mapped: an error' : unknown === 'skip' ? 'not mapped: skipped' : 'not mapped: one row for the whole triple'));
 
     if (!mapped) {
       if (unknown === 'error') {
@@ -39678,6 +40066,12 @@ function _meTlvRunTagBlocks(mapped, tagKey, tagBytes, lenBytes, l, tagAt, bufBas
   }
 }
 
+// A step INSIDE a block, for the parse journal: what the engine decided and
+// why, at the cursor it was at. Free when no journal was asked for.
+function _meStep(ctx, text) {
+  if (ctx && ctx.trace) ctx.trace.push({ kind: 'step', depth: ctx._trDepth, at: ctx.cursor, f0: ctx.fields.length, text });
+}
+
 function _meExecBlock(block, ctx) {
   // A `stop` earlier in the run ended it. THIS is what enforces the
   // stop, at every depth: the loops that walk blocks break as well, but only to
@@ -39724,11 +40118,19 @@ function _meExecBlock(block, ctx) {
       return;
     }
     if (attrs.peek) _peekReturn = ctx.cursor;
+    _meStep(ctx, `"at" ${JSON.stringify(attrs.at)} moves the cursor ${ctx.cursor} → ${r.pos}${attrs.peek ? ' (peek: it comes back after)' : ''}`);
     ctx.cursor = r.pos;
   }
+  // Journal: which block ran, at what depth, from which cursor to which, and
+  // which fields it produced. Fields keep the INNERMOST block that made them.
+  const _tr = ctx.trace ? { kind: 'block', type, attrs, depth: ctx._trDepth, from: ctx.cursor,
+                            f0: ctx.fields.length, t0: (ctx.tokens || []).length } : null;
+  if (_tr) { ctx.trace.push(_tr); ctx._trDepth++; }
   try {
     return _meExecBlockAt(type, attrs, ctx);
   } finally {
+    if (_tr) { ctx._trDepth--; _tr.to = ctx.cursor; _tr.fields = ctx.fields.slice(_tr.f0);
+               _tr.tokens = (ctx.tokens || []).slice(_tr.t0); }
     if (_peekReturn !== null) ctx.cursor = _peekReturn;
     ctx.blockOverrides = _prevOvr;
     ctx._inlineMap = _prevInlineMap;
@@ -39771,12 +40173,14 @@ function _meExecBlockAt(type, attrs, ctx) {
       // otherwise express.
       const raw = (attrs && typeof attrs === 'object' && !Array.isArray(attrs))
         ? attrs.condition : undefined;
-      if (raw === undefined) { ctx.stopped = true; return; }
+      if (raw === undefined) { _meStep(ctx, `stop: the run ends here, at ${ctx.cursor}`); ctx.stopped = true; return; }
       const cond = String(raw).toUpperCase().replace(/[\s_-]/g, '');
       if (cond === 'EOD') {
         const end = (ctx._deLimit != null && ctx._deLimit < ctx.bytes.length)
           ? ctx._deLimit : ctx.bytes.length;
         if (ctx.cursor >= end) ctx.stopped = true;
+        _meStep(ctx, ctx.stopped ? `stop at end of data: the cursor (${ctx.cursor}) reached ${end} — the run ends`
+                                 : `stop at end of data: ${end - ctx.cursor} byte(s) left — the run goes on`);
         return;
       }
       // Reported and IGNORED, not treated as a stop: a condition nobody
@@ -39813,6 +40217,7 @@ function _meExecBlockAt(type, attrs, ctx) {
       // offsets land, reads do not. Cumulative, because two skips ignore two
       // stretches, and scoped to a DE window by _meRunDeEntry. Reported
       // 2026-08-24.
+      _meStep(ctx, `skip ${n} byte(s): cursor ${ctx.cursor} → ${Math.min(ctx.cursor + n, ctx.bytes.length)}`);
       ctx.cursor = Math.min(ctx.cursor + n, ctx.bytes.length);
       return;
     }
@@ -39890,6 +40295,9 @@ function _meExecParseSpec(item, bytes, opts) {
     // how the text was pasted (hex, tandem dump), and a message pasted as hex
     // can carry EBCDIC content. The spec's own recognizers are what know.
     lenEnc: _meSpecEncodingInfo(item),
+    // The parse journal (TODO 28): only when asked — a journal is built by
+    // re-running one record, never during the parse of a whole log.
+    trace: opts?.trace ? [] : null, _trDepth: 0,
   };
   for (const block of effectiveSpec) { _meExecBlock(block, ctx); if (ctx.stopped) break; }
   _meExpandMappedFields(ctx);
@@ -40147,6 +40555,7 @@ function _meParseFileWithSpec(spec, bytes, opts) {
     segMapOverride: _segMapOverrides[spec.name] ?? null,
     format:   opts?.format,
     rawBytes: opts?.rawBytes,
+    trace:    !!opts?.trace,
   });
   for (const f of ctx.fields) {
     if (!f.rawBytes) f.rawBytes = f.rawHex ? f.rawHex.match(/.{2}/g).map(h => parseInt(h, 16)) : [];
@@ -40159,7 +40568,7 @@ function _meParseFileWithSpec(spec, bytes, opts) {
   // ran, and that null is the signal _resolveTokens uses to fall back to the
   // legacy position-based derivation — so a spec without the block behaves
   // exactly as before, while one WITH it is believed instead of second-guessed.
-  return { fields: ctx.fields, score, parseSpecUsed: ctx.parseSpecUsed, tokens: ctx.tokens };
+  return { fields: ctx.fields, score, parseSpecUsed: ctx.parseSpecUsed, tokens: ctx.tokens, trace: ctx.trace };
 }
 
 // Publish the per-entity verdicts to the Entities sidebar: a pass/fail dot on
@@ -40446,6 +40855,8 @@ function _meRunTest(opts) {
   if (!item) {
     out.innerHTML = parts.join('');
     if (summ) { summ.textContent = 'No match'; summ.style.color = '#f85149'; }
+    const _jb = document.getElementById('me-test-journal'); if (_jb) _jb.disabled = true;
+    _meTestJournalIn = null;
     return;
   }
 
@@ -40499,8 +40910,11 @@ function _meRunTest(opts) {
   // ── 2. Parse Spec execution ──────────────────────────────────────────────────
   // Run the user's parse_spec block-by-block against the input bytes.
   // Falls back to "read each binding then token-area" when parse_spec is empty.
-  const ctx = _meExecParseSpec(item, parseBytes,
-    { rawBytes, format: engineFmt, segMapOverride: document.getElementById('me-test-segmap')?.value || null });
+  const _psOpts = { rawBytes, format: engineFmt, segMapOverride: document.getElementById('me-test-segmap')?.value || null };
+  const ctx = _meExecParseSpec(item, parseBytes, _psOpts);
+  // What the Test journal re-runs with tracing on — the run just made, no other.
+  _meTestJournalIn = { specs: _meState.specs.slice(), all, order: [...reached], winnerIdx, item, parseBytes, opts: _psOpts, shown: ctx.fields };
+  const _jb = document.getElementById('me-test-journal'); if (_jb) _jb.disabled = false;
   const fieldCount = ctx.fields.filter(f => !f.error).length;
   const errCount   = ctx.fields.filter(f =>  f.error || f.issue).length;
   const fieldHtml  = ctx.fields.length
@@ -40875,6 +41289,21 @@ function _meSave() {
       <button class="btn btn-ico" onclick="closeSpec()" title="Close">✕</button>
     </div>
     <div class="ddl-doc-body spec-doc" id="specBody"></div>
+  </div>
+</div>
+<div class="why-pop hidden" id="whyPop"></div>
+<div class="modal-overlay hidden" id="journalOverlay" onmousedown="if(event.target===this)closeJournal()">
+  <div class="ddl-doc-modal" style="width:min(980px,96vw)">
+    <div class="ddl-doc-hdr">
+      <span class="ddl-doc-title" id="journalTitle">Parse journal</span>
+      <input id="journalFilter" placeholder="Filter lines…" oninput="journalFilter()" autocomplete="off">
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <button class="btn" onclick="journalCopy()" title="Copy the journal as text — masked by Settings → Mask sensitive fields → Export files">Copy</button>
+        <button class="btn btn-primary" onclick="journalDownload()" title="Download the journal as text — masked by Settings → Mask sensitive fields → Export files">⬇ Download</button>
+        <button class="btn btn-ico" onclick="closeJournal()">✕</button>
+      </div>
+    </div>
+    <div class="ddl-doc-body journal-body" id="journalBody"></div>
   </div>
 </div>
 <div class="modal-overlay hidden" id="msgExportOverlay" onmousedown="if(event.target===this)closeMsgExportModal()">
@@ -41642,6 +42071,7 @@ function _meSave() {
             <span class="me-sidebar-title">Test</span>
             <span class="me-test-summary" id="me-test-summary"></span>
             <button class="btn btn-primary" onclick="_meRunTest()">&#x25B6; Run</button>
+            <button class="btn" id="me-test-journal" onclick="openTestJournal()" disabled title="The parse journal of the last Test run: detection, every block and field, in order">Journal</button>
             <button class="btn" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
             <button class="panel-toggle" id="me-test-toggle" onclick="_meToggleTestSub()" title="Hide panel">−</button>
           </div>

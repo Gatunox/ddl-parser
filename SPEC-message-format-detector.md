@@ -2257,6 +2257,36 @@ has something to report:
   re-render of the same message keeps the position and the dismissal.
 - Track mode hides it, with the rest of the per-record controls.
 
+### 11.4 The parse journal — what the engine did, step by step
+
+The journal of one record: every decision the parse made, in order.
+
+| Section | Holds |
+|---|---|
+| Detection | each class tried, in list order: the recognizer it failed at, with its parameters, or ✓ for the one that won |
+| DDL | the definition used and why — bound by the class, chosen by score, or picked by hand |
+| Parse | the parser that ran; for a parse spec, every block with the cursor it entered and left at, each `when` with what it compared and the branch it took, the steps inside a block (bits set, DE → field, a VLG group's LEN and what it sizes, `repeat` count and iterations, `read-while` guards, a sentinel found, a length prefix, each TLV tag, segments present or absent, `at` / `skip` / `stop`), and every field: offsets, bytes, value, where its length came from (declared, SIZE override, length prefix, a group's LEN), DE, TYPE / SHOW overrides, REDEFINES, a map |
+| Tokens | each token under the block that read it — data and header offsets, the DDL that read it, its fields; found by position after the parse when no `token-area` block reads them |
+| Problems | every error and warning, with the rule that raised it: error, end of data, content, unreliable |
+
+A parser with no blocks (DDL walk, the ISO reader, a manual override) lists the
+fields it read, in order.
+
+**Built on demand.** A parse records nothing. Opening a journal re-runs that one
+record with tracing on, from the bytes, class, DDL and format the parse used — so
+a log of thousands of records parses as fast as before. When the class or DDL
+changed since, the re-run can disagree with Parse Results, and the journal says so.
+
+**Where.**
+
+- A Parse Results row's **ⓘ** (on hover) opens a popup with that field alone: the
+  blocks and conditions around it, the steps that decided it, and its own lines.
+  Its **Journal** button opens the whole journal at that field.
+- The Class Editor's Test panel has a **Journal** button for its last run.
+- The journal has a line filter, **Copy** and **Download**; it closes on Escape.
+  Values on screen follow Settings → Mask sensitive fields → Screen; Copy and
+  Download follow Export.
+
 ## 13. Storage
 
 - Message and file specs are stored in `localStorage` as JSON.

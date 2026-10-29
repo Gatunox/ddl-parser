@@ -1195,24 +1195,26 @@ No network manual is available to design against; work from the user's examples.
 
 ---
 
-## 27. [ ] Mask a message for sharing — *in design, started 2026-10-28*
+## 27. [x] Mask a message for sharing — *done v1.58.0.0*
 
-**Asked for 2026-10-28.** Export a message (or a whole log) with the PAN, track 2
-and other sensitive data masked, lengths kept, so it can go to a vendor or into a
-ticket without exposing data. First of the five ideas agreed that day; the
-definitions (which fields, how they are masked, what is exported) are being
-settled with the user before any code.
+**Asked for 2026-10-28.** SHOW `masked` + `mask` in the class overrides; Settings →
+Mask sensitive fields switches Screen and Export separately (SPEC §9).
+
+Left open:
+
+- **Audit "copy dump"** is not masked: the record is not parsed there, so no
+  field is known. Masking it needs the record parsed against its class first.
+- **A manual DDL override** parses with no class, so nothing is masked. Decide
+  whether masks should also be readable from the DDL picked by hand.
 
 
 ---
 
-## 28. [ ] Parse journal — the per-log timeline of every decision
+## 28. [x] Parse journal — the per-log timeline of every decision — *done v1.59.0.0*
 
-**Asked for 2026-10-28.** Today the parse log only lists the steps run. The
-journal is, for each log, the full timeline of the parse field by field: which
-class won detection and against which, which block read each field, from which
-offset to which, and which rule flagged it. Looked at on demand, not shown by
-default. Not the existing `keepParseLog` — a new record of the decisions.
+**Asked for 2026-10-28.** Built on demand by re-running one record with tracing on
+(SPEC §11.4). A row's ⓘ opens that field's popup; the whole journal opens from it,
+and from the Test panel.
 
 
 ---

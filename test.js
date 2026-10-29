@@ -2246,6 +2246,111 @@ test('masking: modes, consistent random, hex, bytes, groups and the two switches
     assert.ok(new RegExp(`'${h}'`).test(fs.readFileSync('./build.js', 'utf8')), `build.js would rename ${h}`);
 });
 
+// Requested 2026-10-28 (TODO 28): the parse journal — built on demand by
+// re-running one record with tracing on; the normal parse records nothing.
+test('parse journal: blocks, when, fields and problems in order, nothing traced by default', () => {
+  const run = c => vm.runInContext(c, sandbox);
+  const saved = { tree: S.ddlTree, fmt: S.inputFormat };
+  try {
+    S.ddlTree = { VOL: { SV: { 'TESTDDL': `
+      DEF REC.
+        02 HEAD PIC X(2).
+        02 CNT PIC 9(1).
+      END REC.
+    ` } } };
+    S.inputFormat = 'hex';
+    const item = { type: 'TST', ddl_bindings: ['VOL/SV/TESTDDL/REC'],
+      overrides: { LEN: { bytes: 1 }, PAYLOAD: { display: 'masked', mask: { last: 1 } } },
+      parse_spec_binary: [
+        { 'read-ddl': { fields: ['HEAD', 'CNT'] } },
+        { 'read-fixed': { length: 1, as: 'FLAG' } },
+        { 'read-fixed': { length: 1, as: 'LEN' } },
+        { when: { field: 'FLAG', not_equal: '0', then: [{ 'read-fixed': { length: 'LEN', as: 'PAYLOAD' } }] } },
+        { when: { field: 'FLAG', equal: '9', then: [{ 'read-fixed': { length: 1, as: 'NEVER' } }] } },
+        { 'read-to-end': { as: 'REST' } },
+      ] };
+    const bytes = Buffer.from('HHX13XYZEND');
+    // Off by default: the parse of a whole log carries no trace.
+    eq(sandbox._meExecParseSpec(item, bytes).trace, null, 'a normal parse records a trace');
+    const ctx = sandbox._meExecParseSpec(item, bytes, { trace: true });
+    const L = sandbox._jTimeline(ctx.trace, ctx.fields, item.overrides, null);
+    const texts = L.map(l => l.text);
+    const at = re => texts.findIndex(x => re.test(x));
+    // Every block, with the cursor it entered and left at.
+    assert.ok(at(/^▸ read-ddl .*cursor 0 → 3$/) >= 0, 'the read-ddl block or its cursor is missing:\n' + texts.join('\n'));
+    // Each `when`: what it compared, the answer, the branch.
+    assert.ok(at(/^\? when FLAG \("1"\) not_equal "0" → true, runs "then"$/) >= 0, 'the first when is missing');
+    assert.ok(at(/^\? when FLAG \("1"\) equal "9" → false, no branch runs$/) >= 0, 'the false when is missing');
+    // Fields in order, under the block that made them, with offsets.
+    const order = ['HEAD', 'CNT', 'FLAG', 'LEN', 'PAYLOAD', 'REST'].map(id => at(new RegExp('^' + id + '  @')));
+    assert.ok(order.every((v, i) => v >= 0 && (i === 0 || v > order[i - 1])), 'fields out of order: ' + order);
+    const pay = L[order[4]];
+    assert.ok(/^PAYLOAD  @5–7  \(3 bytes\)  = "XYZ"$/.test(pay.text), pay.text);
+    assert.ok(pay.depth > L[at(/^\? when FLAG \("1"\) not_equal/)].depth, 'PAYLOAD is not under its when');
+    // Where a length came from, and the overrides.
+    assert.ok(texts.includes('length from the SIZE override: 1'), 'the SIZE override is not named');
+    assert.ok(texts.some(x => /^SHOW override: masked \(last 1\)$/.test(x)), 'the masked SHOW is not named');
+    // The mask is honoured when asked for, and only then.
+    const mL = sandbox._jTimeline(ctx.trace, ctx.fields, item.overrides, f => sandbox._maskField({ fields: [], _maskSpec: item }, f));
+    assert.ok(mL.some(l => l.text.includes('= "XY*"')), 'the journal leaks a masked value');
+    // A problem names its rule: CNT is PIC 9 and holds "X".
+    assert.ok(texts.some(x => /^content: /.test(x)), 'the content problem is not reported');
+    // Steps INSIDE blocks: the engine's own decisions, not only their results.
+    const item2 = { type: 'TST', ddl_bindings: [], parse_spec_binary: [
+      { 'read-fixed': { length: 1, as: 'CNT' } },
+      { repeat: { count: 'CNT', body: [{ 'read-fixed': { length: 1, as: 'IT' } }] } },
+      { skip: 1 },
+      { 'read-until': { sentinels: ['0x26'], eom: true, as: 'U' } },
+      { stop: { condition: 'EOD' } },
+      { 'read-to-end': { as: 'R' } } ] };
+    const c2 = sandbox._meExecParseSpec(item2, Buffer.from('2AB-QQ&Z'), { trace: true });
+    const t2 = sandbox._jTimeline(c2.trace, c2.fields, null, null).map(l => l.text);
+    for (const want of ['· count "CNT" = 2: the body runs 2 time(s)', '· iteration 1 of 2, at 1', '· iteration 2 of 2, at 2',
+                        '· skip 1 byte(s): cursor 3 → 4', '· sentinel 0x26 found at 6: reads 4–5',
+                        '· stop at end of data: 2 byte(s) left — the run goes on'])
+      assert.ok(t2.includes(want), `missing step "${want}":\n${t2.join('\n')}`);
+    assert.ok(t2.indexOf('· iteration 2 of 2, at 2') < t2.findIndex(x => /^IT  @2/.test(x)), 'a step is out of order');
+    assert.ok(texts.some(x => /^· binding 0: VOL\/SV\/TESTDDL\/REC/.test(x)), 'read-ddl does not say which binding');
+    // Tokens: a token-area block's tokens are listed under it, with offsets.
+    const tk = [{ id: 'Q1', ddlName: 'TKN-Q1', ddlPath: 'BASE/TKN/Q1', dataStart: 40, headerStart: 34,
+                  rawBytes: [1, 2, 3, 4], fields: [{ id: 'Q1.A', value: 'x', rawBytes: [0x78], startByte: 40, endByte: 40 }] }];
+    const tl = sandbox._jTimeline([{ kind: 'block', type: 'token-area', attrs: 'ANY', depth: 0, from: 34, to: 44, f0: 0, fields: [], tokens: tk }], [], null, null).map(l => l.text);
+    assert.ok(tl.includes('◆ token Q1  @40–43  (4 bytes, header @34)'), 'a token or its offsets are missing:\n' + tl.join('\n'));
+    assert.ok(tl.includes('read with TKN-Q1 (BASE/TKN/Q1)'), 'the token DDL is missing');
+    assert.ok(tl.some(x => /^Q1\.A  @40/.test(x)), 'a token field is missing');
+    // A row's ⓘ: only that field — the blocks and conditions around it, the
+    // steps that decided it, and its own lines. Not the whole journal.
+    const W = sandbox._journalWhyLines(L, 'PAYLOAD').map(l => l.text);
+    assert.ok(W[0].startsWith('▸ when') || W.some(x => /^\? when FLAG \("1"\) not_equal/.test(x)), 'the condition that led to the field is missing:\n' + W.join('\n'));
+    assert.ok(W.some(x => /^PAYLOAD  @5–7/.test(x)), 'the field itself is missing');
+    assert.ok(W.some(x => /^SHOW override: masked/.test(x)), 'the field\'s own details are missing');
+    assert.ok(!W.some(x => /^(HEAD|CNT|FLAG|REST)  @/.test(x)), 'other fields leaked into the field popup:\n' + W.join('\n'));
+    assert.ok(!W.some(x => /equal "9"/.test(x)), 'an unrelated condition leaked in');
+    const W2 = sandbox._jTimeline(c2.trace, c2.fields, null, null);
+    const wIt = sandbox._journalWhyLines(W2, 'U').map(l => l.text);
+    assert.ok(wIt.includes('· sentinel 0x26 found at 6: reads 4–5'), 'the step that decided the field is missing:\n' + wIt.join('\n'));
+    assert.ok(!wIt.some(x => /iteration/.test(x)), 'steps of an earlier field leaked in');
+    // Text output keeps the sections and the indentation.
+    const txt = run('_jText')([{ depth: 0, kind: 'h', text: 'Parse' }, { depth: 1, kind: 'field', text: 'A' }]);
+    eq(txt, '== Parse ==\n  A\n');
+  } finally { S.ddlTree = saved.tree; S.inputFormat = saved.fmt; }
+  // Wired: the button, the row's ⓘ, the Test panel, the re-run with trace, masking on export.
+  // Parse Results has no Journal button: the whole journal opens from a row's
+  // ⓘ popup (requested 2026-10-29).
+  assert.ok(!/id="journalBtn"/.test(html), 'Parse Results still has a Journal button');
+  assert.ok(/onclick="closeWhy\(\);openJournal\(/.test(psFnSource('journalForField')), 'the ⓘ popup cannot open the whole journal');
+  // [REGRESSION] 2026-10-29: the filter box rendered as a bare browser input,
+  // white on the dark theme. It shares the export dialog's filter style.
+  assert.ok(/#expFilterInput, #journalFilter \{[^}]*background:var\(--bg-input/.test(html), 'the journal filter is not themed');
+  assert.ok(/class="row-why" onclick="event\.stopPropagation\(\);journalForField\('\$\{esc\(fid\)\}', event\)/.test(psFnSource('renderFieldTable')), 'a row has no ⓘ');
+  assert.ok(/getElementById\('whyPop'\)/.test(psFnSource('journalForField')) && !/_journalShow\(/.test(psFnSource('journalForField')), 'the ⓘ opens the whole journal, not the field popup');
+  assert.ok(/id="me-test-journal"[^>]*onclick="openTestJournal\(\)"/.test(html), 'the Test panel has no Journal button');
+  assert.ok(/trace: true/.test(psFnSource('_journalForMsg')), 'the journal does not re-run with tracing on');
+  assert.ok(/_maskExportOn\(\)/.test(psFnSource('_journalExportText')), 'Copy / Download ignore the Export mask');
+  for (const h of ['openJournal', 'journalForField', 'closeJournal', 'journalCopy', 'journalDownload', 'journalFilter', 'openTestJournal'])
+    assert.ok(new RegExp(`'${h}'`).test(fs.readFileSync('./build.js', 'utf8')), `build.js would rename ${h}`);
+});
+
 // The NETADRD side of the same capture problem, fixed before FUP COPY but never
 // pinned: a blank middle line and a partly blank one are full-width spaces.
 test('[REGRESSION] NETADRD pads blank and partly blank lines to full width', () => {

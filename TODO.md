@@ -1246,6 +1246,29 @@ broken on purpose (length exceeded, inconsistent bitmap) — in the chosen forma
 
 ---
 
+## 32. [x] `map` reads a field as a whole message CLASS — *done v1.60.0.0*
+
+**Asked for 2026-10-30.** An ILF (Interchange Log File) record carries the
+external message (SEM) in `ILF.DATOS-SEM`, and the SEM is itself an ISO 8583
+message — bitmaps, DEs. `"map": {"field": …, "def": …}` reads it as a DDL
+definition but cannot walk its bitmap; repeating the SEM's parse spec inside the
+ILF's would duplicate it. `"map": {"field": "ILF.DATOS-SEM", "class": "ISO 8583
+Switch"}` runs the named class's parse spec, bindings and overrides over the
+field's bytes. Agreed:
+
+1. Rows are prefixed with the class's bound DEF name (`SEM.TYP`), as `def` does.
+2. The ENCODING is the outer class's (the ILF's): the bytes are already decoded.
+3. The SEM class's overrides apply to its rows; the ILF class does not override them.
+4. The SEM's tokens become the record's tokens, offsets rebased.
+5. A named class skips detection: its DDL, parse spec and overrides only.
+   `"class": "AUTO"` (detect it) is a later stage.
+
+Also: concrete help examples for `map`, including a full path
+(`"def": "/BASE/DDL/INTERFAZ/SEM"`) — today's all share one DDL and payload.
+
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.

@@ -1257,7 +1257,8 @@ the shape before `read-ddl` walks the whole message.
 | Attribute | Holds |
 |-----------|-------|
 | `field` | The id being replaced — usually the `DATA` leaf of a variable-length element. Naming the **element** works too when its payload is a single leaf; the length is never the payload. With several payload leaves the element identifies nothing and the leaf must be named. |
-| `def` | The definition replacing it. A bare `DEF-NAME` is searched in the volumes and subvolumes the class already binds, the bound file first; `VOL/SV/FILE/DEF` reaches anywhere. |
+| `def` | The definition replacing it. A bare `DEF-NAME` is searched in the volumes and subvolumes the class already binds, the bound file first; `VOL/SV/FILE/DEF` reaches anywhere, with or without a leading `/`. |
+| `class` | Instead of `def`: a message **class**, named as the Classes list shows it. The field is read as a whole message of that class — see below. One of `def` / `class`, never both. |
 
 Rules:
 
@@ -1279,6 +1280,28 @@ Rules:
   names.
 - Mapped rows are drawn in their own colour (`--mapped`) in Parse Results, and say
   on hover which definition they came from: they are not native to the bound DDL.
+
+**`class` — a message inside a message.** An ILF record carries the external
+message (SEM) in `ILF.DATOS-SEM`, and the SEM is an ISO 8583 message with its own
+bitmap and DEs. A `def` lays the bytes out but cannot walk a bitmap; repeating the
+SEM's parse spec inside the ILF's would write it twice.
+
+```jsonc
+{ "map": { "field": "ILF.DATOS-SEM", "class": "ISO 8583 Switch" } },
+{ "read-ddl": "ANY" }
+```
+
+- **No detection.** The class named is the class used: its DDL bindings, its parse
+  spec and its overrides run over the field's bytes.
+- **Rows are named after the DEF the class binds** — `SEM.TYP`, `SEM.PBIT-MAP`,
+  `SEM.DE-2` — at their place in the record, with their DE numbers.
+- **The encoding is the outer class's**: the bytes were decoded with it.
+- **The class's overrides apply to its rows** — a SEM PAN shown `masked` stays
+  masked inside an ILF — and the outer class does not override them.
+- **Its tokens become the record's tokens**, at their place in the record.
+- **A class cannot be mapped into its own messages**; an unknown class, or one
+  with no parse spec, is reported on the `map` block.
+- The parse journal (§11.4) shows the class's own run nested where the field stood.
 
 > `read-segment-fields` also takes an attribute called `map`, which names a
 > bitmap field. Unrelated to this block, and the two never appear together.

@@ -7616,9 +7616,12 @@ function _maskStr(str, m) {
 // it is masked — a group's bytes include its children's.
 function _maskFor(msg, f) {
   if (!f || f.id == null) return null;
-  const ov = (msg?._maskSpec || _meSpecForMsg(msg))?.overrides;
+  // A row read through `map` "class" answers to THAT class's overrides, by its
+  // own id there (TODO 32).
+  const inner = f._ovSpec && typeof window !== 'undefined' && window._fmtSpecByLabel ? window._fmtSpecByLabel(f._ovSpec) : null;
+  const ov = inner ? inner.overrides : (msg?._maskSpec || _meSpecForMsg(msg))?.overrides;
   if (!ov) return null;
-  const parts = _canonFieldId(String(f.id)).split('.');
+  const parts = _canonFieldId(String(inner ? f._ovId : f.id)).split('.');
   const own = ov[parts.join('.')];
   if (own?.display === 'masked') return own.mask || 'all';
   for (let k = parts.length - 1; k > 0; k--)
@@ -7710,7 +7713,7 @@ function _jFieldLines(f, depth, ov, mask) {
   out.push({ depth, kind: f.error ? 'err' : 'field', fid: f.id,
     text: `${f.id}  ${pos}${n != null ? `  (${n} byte${n !== 1 ? 's' : ''})` : ''}${val != null && val !== '' ? `  = "${val}"` : ''}` });
   const why = [];
-  const o = ov ? ov[_canonFieldId(String(f.id))] : null;
+  const o = ov ? ov[_canonFieldId(String(f._ovId ?? f.id))] : null;
   if (f.lenPrefix && !f.lenPrefixOwnRow) why.push(`length from its ${f.lenPrefix.length}-byte prefix "${f.lenPrefix}"`);
   else if (f.lenPrefixOwnRow) why.push(`length from its group's LEN field`);
   else if (o && +o.bytes > 0) why.push(`length from the SIZE override: ${o.bytes}${f.maxLength != null ? ` (DDL declares ${f.maxLength})` : ''}`);
@@ -7748,7 +7751,7 @@ function _jTokenLines(t, depth, ov, mask) {
 }
 // The block timeline: trace entries and the fields they made, in the order the
 // engine produced them. A field sits under the innermost block that made it.
-function _jTimeline(trace, fields, ov, mask) {
+function _jTimeline(trace, fields, ov, mask, inRun) {
   const owner = new Map(), idxOf = new Map(), tokOwner = new Map();
   for (const e of trace) if (e.kind === 'block' && e.fields) {
     e.fields.forEach((f, k) => { owner.set(f, e); idxOf.set(f, e.f0 + k); });
@@ -7763,8 +7766,22 @@ function _jTimeline(trace, fields, ov, mask) {
   let cur = 0;
   for (const x of ev) { if (x.e && x.e.f0 == null) x.key = cur; else if (x.key !== Infinity) cur = x.key; }
   ev.sort((a, b) => a.key - b.key || (a.e ? 0 : 1) - (b.e ? 0 : 1) || a.seq - b.seq);
-  const out = [];
+  const out = [], runsDone = new Set();
   for (const x of ev) {
+    // Rows read through `map` "class": the class's own run, nested where the
+    // field stood — its blocks, steps and fields, once (TODO 32).
+    if (x.f && x.f._mapRun && x.f._mapRun !== inRun) {
+      const run = x.f._mapRun;
+      if (runsDone.has(run)) continue;
+      runsDone.add(run);
+      const d = (out.length ? out[out.length - 1].depth : 0);
+      const base = owner.get(x.f) ? owner.get(x.f).depth + 1 : Math.max(0, d);
+      out.push({ depth: base, kind: 'block', fid: run.field,
+        text: `↳ map: ${run.field} read as class "${run.label}" — parse-spec (${run.variant || 'binary'}), rows named ${run.pre}.*` });
+      for (const l of _jTimeline(run.trace || [], run.fields, run.overrides, mask, run))
+        out.push({ ...l, depth: l.depth + base + 1 });
+      continue;
+    }
     if (x.e && x.e.kind === 'block') {
       out.push({ depth: x.e.depth, kind: 'block',
         text: `▸ ${x.e.type}${_jAttrs(x.e.attrs) ? '  ' + _jAttrs(x.e.attrs) : ''}  — cursor ${x.e.from} → ${x.e.to ?? '?'}` });
@@ -11404,6 +11421,13 @@ function parseMessage(bytes, defs, rawBytes) {
     // identifies which class it came from because none did. The first of the
     // name is all there is, and it is what every caller used to get.
     return pool.find(s => (s.name || '').toUpperCase() === nm) || null;
+  };
+  // A message class by the name a person gives it: its label (unique), else its
+  // name. `map` with "class" names one this way.
+  window._fmtSpecByLabel = label => {
+    const want = String(label || '').trim();
+    return _fmtSpecs.find(s => s.kind !== 'file' && (s.label || s.name) === want)
+        || _fmtSpecs.find(s => s.kind !== 'file' && s.name === want) || null;
   };
   window._migrateSpec  = _migrateSpec;
   window._migrateSpecOverrides = _migrateSpecOverrides;
@@ -21826,7 +21850,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.59.0.0';
+const APP_VERSION  = '1.60.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -26710,7 +26734,8 @@ const _PS_HELP = {
   },
   'map': {
     dflts: {
-      def: 'required — there is no default shape to fall back to',
+      def: 'give def or class — there is no default shape to fall back to',
+      class: 'none — the field is read with def',
     },
     desc: [
       'Says that a field is really shaped like some other DDL definition, and reads it that way.',
@@ -26729,11 +26754,20 @@ const _PS_HELP = {
         'The field whose shape is being replaced — usually the <code>DATA</code> leaf of a variable-length element.',
         'Its declared bytes become the window the mapped definition is read across.',
       ]],
-      ['def', 'DEF-name | VOL/SV/FILE/DEF', true, [
-        'The definition that describes what those bytes really are.',
+      ['def', 'DEF-name | VOL/SV/FILE/DEF', false, [
+        'The definition that describes what those bytes really are. Give <code>def</code> or <code>class</code>, not both.',
         ['<code>"RECUR-PYMNT-DATA"</code>', 'A bare name — searched in the volumes and subvolumes this class already binds, the bound file first.'],
-        ['<code>"BASE/DDL/RECUR/RECUR-PYMNT-DATA"</code>', 'Fully qualified, for a definition that lives anywhere else.'],
+        ['<code>"/BASE/DDL/INTERFAZ/SEM"</code>', 'Fully qualified, for a definition that lives anywhere else. The leading <code>/</code> is optional.'],
         'A name that resolves to nothing is reported <b>here</b>, where it was written, not as a silent no-op further down.',
+      ]],
+      ['class', 'class name', false, [
+        'Read the field as a whole <b>message</b> of that class: its DDL, its parse spec and its overrides — bitmaps, DEs, length prefixes, tokens. For a message carried inside another, like the SEM inside an ILF record, so its spec is written once.',
+        ['<code>"ISO 8583 Switch"</code>', 'The class as the Classes list names it. No detection runs: the class named is the class used.'],
+        'The rows are named after the DEF the class binds — <code>SEM.TYP</code>, <code>SEM.PBIT-MAP</code>.',
+        'The bytes are read in the <b>outer</b> class\'s encoding: they were decoded with it.',
+        'The named class\'s overrides apply to its rows (a masked PAN stays masked); the outer class does not override them.',
+        'Tokens the class finds become the record\'s tokens, at their place in the record.',
+        'A class cannot be mapped into its own messages.',
       ]],
     ],
     notes: [
@@ -26747,6 +26781,24 @@ const _PS_HELP = {
         def: 'MSG',
         payload: '32 38 30 38 30 30 30 31 30 30 4D 31',
         spec: [{"map": {"field": "ELEM.DATA", "def": "RECUR-DATA"}},
+               {"read-ddl": "ANY"}] },
+      { what: '<b>def</b> as a <b>full path</b> — DATOS-SEM in an ILF record is ten opaque bytes; <code>/BASE/DDL/INTERFAZ/SEM</code> lays them out as TYP and AMT',
+        ddl: 'DEFINITION ILF-REC.\n  02 ILF.\n    04 TRAN-DAT PIC X(6).\n    04 TERM-ID PIC X(4).\n    04 DATOS-SEM PIC X(10).\nEND\n',
+        def: 'ILF-REC',
+        tree: { 'BASE/DDL/INTERFAZ': 'DEFINITION SEM.\n  02 TYP PIC X(4).\n  02 AMT PIC 9(6).\nEND\n' },
+        payload: '32 35 31 30 33 30 54 30 30 31 30 32 30 30 30 30 31 35 30 30',
+        spec: [{"map": {"field": "ILF.DATOS-SEM", "def": "/BASE/DDL/INTERFAZ/SEM"}},
+               {"read-ddl": "ANY"}] },
+      { what: '<b>class</b> — the SEM inside the ILF is an ISO 8583 message: <b>ISO 8583 Switch</b> reads its MTI, walks its bitmap (bits 2 and 4) and its DEs, and the rows come out as SEM.*',
+        ddl: 'DEFINITION ILF-REC.\n  02 ILF.\n    04 TRAN-DAT PIC X(6).\n    04 TERM-ID PIC X(4).\n    04 DATOS-SEM PIC X(20).\nEND\n',
+        def: 'ILF-REC',
+        tree: { 'BASE/DDL/INTERFAZ': 'DEFINITION SEM.\n  02 TYP PIC X(4).\n  02 PBIT-MAP PIC X(8).\n  02 DE-1 PIC X(4).\n  02 DE-2 PIC X(6).\n  02 DE-3 PIC X(3).\n  02 DE-4 PIC X(2).\nEND\n' },
+        classes: [{ name: 'ISO', label: 'ISO 8583 Switch', ddl_bindings: ['BASE/DDL/INTERFAZ/SEM'],
+                    parse_spec_binary: [{"read": "TYP"},
+                                        {"read-bitmap": {"field": "PBIT-MAP", "encoding": "binary"}},
+                                        {"read-bitmap-fields": "PBIT-MAP"}] }],
+        payload: '32 35 31 30 33 30 54 30 30 31 30 32 30 30 50 00 00 00 00 00 00 00 34 30 30 31 30 30 38 34',
+        spec: [{"map": {"field": "ILF.DATOS-SEM", "class": "ISO 8583 Switch"}},
                {"read-ddl": "ANY"}] },
       { what: 'inside a <b>when</b> — the message picks its own shape, and the walk after it follows',
         ddl: 'DEFINITION MSG.\n  02 TRAN-TYPE PIC X(2).\n  02 ELEM.\n    04 LEN PIC 9(2).\n    04 DATA PIC X(8).\nEND\nDEFINITION RECUR-DATA.\n  02 AMT PIC 9(6).\n  02 FREQ PIC X(2).\nEND\n',
@@ -27697,6 +27749,12 @@ function _mePsHelpRunExample(ex) {
   const savedTree = S.ddlTree, savedFmt = S.inputFormat;
   try {
     S.ddlTree = e.ddl ? { HELP: { HELP: { HELP: e.ddl } } } : {};
+    // An example may need DDL files elsewhere — a full-path `map` — given as
+    // { "VOL/SV/FILE": text }.
+    for (const [path, text] of Object.entries(e.tree || {})) {
+      const [v, sv, f] = path.split('/');
+      ((S.ddlTree[v] = S.ddlTree[v] || {})[sv] = S.ddlTree[v][sv] || {})[f] = text;
+    }
     S.inputFormat = 'hex';
     const ctx = _meExecParseSpec(
       // msgType is only consulted by token-area, which needs to know whether the
@@ -27704,7 +27762,9 @@ function _mePsHelpRunExample(ex) {
       { name: 'HELP', type: e.msgType || '',
         ddl_bindings: e.ddl ? ['HELP/HELP/HELP/' + (e.def || 'REC')] : [],
         parse_spec_binary: e.spec },
-      _mePsHexToBytes(e.payload));
+      _mePsHexToBytes(e.payload),
+      // The classes a `map` "class" example names, standing in for the Classes list.
+      e.classes ? { specPool: e.classes } : undefined);
     return ctx;
   } catch (err) {
     return { fields: [{ id: '(example failed)', error: String(err && err.message || err) }], cursor: 0 };
@@ -36143,7 +36203,7 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
   // field back and each does its own pushing. renderFields splices them in.
   const _mapRef = _meMapFor(def.id, ctx, ctx && ctx._inlineMap, alsoId);
   if (_mapRef) {
-    _f.mappedTo  = _mapRef;
+    _f.mappedTo  = typeof _mapRef === 'object' ? `class ${_mapRef.class}` : _mapRef;
     _f.mapFields = _meReadMappedFields(_mapRef, _f, ctx);
   }
   return _f;
@@ -36158,8 +36218,22 @@ function _meExecMap(attrs, ctx) {
   const o     = (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) ? attrs : null;
   const field = o ? o.field : null;
   const def   = o ? (o.def ?? o.to) : null;
+  const cls   = o ? o['class'] : null;
+  // "class": read the field as a whole message of that class — its DDL, parse
+  // spec and overrides, no detection (TODO 32).
+  if (field && cls != null && def == null) {
+    const r = _meMapClassResolve(cls, ctx);
+    if (r.error) { ctx.fields.push({ id: 'map', error: r.error }); return; }
+    if (!ctx.maps) ctx.maps = {};
+    ctx.maps[_canonFieldId(field)] = { class: String(cls) };
+    return;
+  }
+  if (field && cls != null && def != null) {
+    ctx.fields.push({ id: 'map', error: 'map takes "def" or "class", not both — a field is read either as a definition or as a message of a class' });
+    return;
+  }
   if (!field || !def) {
-    ctx.fields.push({ id: 'map', error: 'map needs "field" (the id being replaced) and "def" (the definition replacing it)' });
+    ctx.fields.push({ id: 'map', error: 'map needs "field" (the id being replaced) and "def" (the definition replacing it) — or "class" (a message class to read it as)' });
     return;
   }
   // Resolved HERE, not at the read, so a name that does not exist is reported
@@ -36176,7 +36250,60 @@ function _meExecMap(attrs, ctx) {
 // The mapped definition read across the bytes the field frames. The window is
 // the field's own span, so a LEN that already sized the payload keeps sizing it —
 // `map` says what the bytes MEAN, never how many there are.
+// The class a `map` names, ready to run — or why it cannot be.
+function _meMapClassResolve(cls, ctx) {
+  const name = String(cls || '').trim();
+  const pool = ctx.specPool;
+  const spec = Array.isArray(pool)
+    ? (pool.find(s => s && s.kind !== 'file' && (s.label || s.name) === name) || pool.find(s => s && s.kind !== 'file' && s.name === name))
+    : (typeof window !== 'undefined' && window._fmtSpecByLabel ? window._fmtSpecByLabel(name) : null);
+  if (!spec) return { error: `map: no message class named "${name}" — name it as the Classes list shows it` };
+  if (!((spec.parse_spec_binary || []).length || (spec.parse_spec_ascii || []).length))
+    return { error: `map: class "${name}" has no parse spec — there is nothing to read the field with` };
+  const self = ctx.item && (ctx.item.label || ctx.item.name);
+  if (spec === ctx.item || (self && (spec.label || spec.name) === self) || (ctx._mapDepth || 0) >= 4)
+    return { error: `map: class "${name}" would read itself — a class cannot be mapped into its own messages` };
+  return { spec };
+}
+// A field read as a whole message of a class: its parse spec run over the
+// field's bytes, offsets rebased onto the record, rows prefixed with the DEF
+// the class binds (SEM.TYP). The class's overrides apply to its rows; the outer
+// class does not override them. Its tokens become the record's (TODO 32).
+function _meReadMappedClass(ref, f, ctx) {
+  const start = f.startByte, end = f.endByte;
+  if (start == null || end == null || end < start) return [];
+  const r = _meMapClassResolve(ref.class, ctx);
+  if (r.error) return [{ id: f.id, error: r.error }];
+  const spec = r.spec;
+  const sub = _meExecParseSpec(spec, ctx.bytes.slice(start, end + 1), {
+    format: ctx.format, rawBytes: ctx.rawBytes ? ctx.rawBytes.slice(start, end + 1) : null,
+    lenEnc: ctx.lenEnc, trace: !!ctx.trace, specPool: ctx.specPool, _mapDepth: (ctx._mapDepth || 0) + 1,
+  });
+  const bind = (spec.ddl_bindings || []).filter(Boolean)[0] || '';
+  const pre  = String(bind.split('/')[3] || bind.split('/').pop() || spec.label || spec.name || 'MAP');
+  const label = spec.label || spec.name;
+  const shift = x => { if (x.startByte != null) x.startByte += start; if (x.endByte != null) x.endByte += start; };
+  for (const k of sub.fields) {
+    shift(k);
+    k._ovSpec = label; k._ovId = k.id;
+    k.id = `${pre}.${k.id}`;
+  }
+  const toks = (sub.tokens || []).map(t => {
+    if (t.dataStart != null) t.dataStart += start;
+    if (t.headerStart != null) t.headerStart += start;
+    for (const tf of t.fields || []) shift(tf);
+    return t;
+  });
+  if (toks.length) f.mapTokens = toks;
+  // For the journal: the run that made these rows, kept off the enumerable
+  // properties so a baseline or an export never serialises it.
+  const run = { field: f.id, label, pre, trace: sub.trace, fields: sub.fields, overrides: spec.overrides || null,
+                variant: sub.parseSpecUsed, end: sub.cursor + start, room: end - start + 1 };
+  for (const k of sub.fields) Object.defineProperty(k, '_mapRun', { value: run, enumerable: false, configurable: true });
+  return sub.fields;
+}
 function _meReadMappedFields(ref, f, ctx) {
+  if (ref && typeof ref === 'object' && ref.class != null) return _meReadMappedClass(ref, f, ctx);
   const r = _meResolveMapDef(ref, ctx);
   if (!r) return [{ id: String(ref), error:
     `map: no DDL definition named "${ref}" — give a DEF in a bound volume, or a full VOL/SV/FILE/DEF path` }];
@@ -37057,7 +37184,8 @@ function _meTagsFor(item, msg) {
 // declared beside the layout it varies — or a fully qualified VOL/SV/FILE/DEF
 // for one that lives elsewhere.
 function _meResolveMapDef(ref, ctx) {
-  const raw = String(ref == null ? '' : ref).trim();
+  // A leading "/" is how a path is often written — /BASE/DDL/INTERFAZ/SEM.
+  const raw = String(ref == null ? '' : ref).trim().replace(/^\/+/, '');
   if (!raw) return null;
   if (raw.includes('/')) {
     const r = getDDLFromPath(raw);
@@ -40294,7 +40422,13 @@ function _meExecParseSpec(item, bytes, opts) {
     // How to read a LEN that carries no type override. NOT ctx.format — that is
     // how the text was pasted (hex, tandem dump), and a message pasted as hex
     // can carry EBCDIC content. The spec's own recognizers are what know.
-    lenEnc: _meSpecEncodingInfo(item),
+    // A class read through `map` "class" takes the OUTER class's encoding: the
+    // bytes it is handed were decoded by that class (TODO 32).
+    lenEnc: opts?.lenEnc ?? _meSpecEncodingInfo(item),
+    // Where `map` "class" looks a class up — the Class Editor passes its working
+    // copy; the main parse uses the saved classes. _mapDepth stops a class that
+    // maps to itself, however indirectly.
+    specPool: opts?.specPool ?? null, _mapDepth: opts?._mapDepth || 0,
     // The parse journal (TODO 28): only when asked — a journal is built by
     // re-running one record, never during the parse of a whole log.
     trace: opts?.trace ? [] : null, _trDepth: 0,
@@ -40315,6 +40449,7 @@ function _meExpandMappedFields(ctx) {
   const out = [];
   for (const f of ctx.fields) {
     if (!f || !f.mapFields) { out.push(f); continue; }
+    if (f.mapTokens) ctx.tokens = (ctx.tokens || []).concat(f.mapTokens);
     for (const k of f.mapFields) {
       // Where the row came from, so Parse Results can colour it as not native to
       // the bound DDL, and so the reader can tell which layout was applied.
@@ -40910,7 +41045,10 @@ function _meRunTest(opts) {
   // ── 2. Parse Spec execution ──────────────────────────────────────────────────
   // Run the user's parse_spec block-by-block against the input bytes.
   // Falls back to "read each binding then token-area" when parse_spec is empty.
-  const _psOpts = { rawBytes, format: engineFmt, segMapOverride: document.getElementById('me-test-segmap')?.value || null };
+  // specPool: a `map` "class" names a class from the editor's working copy,
+  // so an unsaved change to the SEM class shows here at once.
+  const _psOpts = { rawBytes, format: engineFmt, segMapOverride: document.getElementById('me-test-segmap')?.value || null,
+                    specPool: _meState.specs };
   const ctx = _meExecParseSpec(item, parseBytes, _psOpts);
   // What the Test journal re-runs with tracing on — the run just made, no other.
   _meTestJournalIn = { specs: _meState.specs.slice(), all, order: [...reached], winnerIdx, item, parseBytes, opts: _psOpts, shown: ctx.fields };

@@ -21276,6 +21276,67 @@ test('every executable example produces the fields it claims to', () => {
   deepEq(bad, [], 'help examples that do not run');
 });
 
+// Requested 2026-10-30 (TODO 32): `map` "class" reads a field as a whole
+// message of a class — the SEM inside an ILF record — instead of repeating the
+// class's parse spec. Also: a full-path `def` with a leading "/".
+test('map "class": a field read as a message of another class', () => {
+  const exs = psHelp.map.examples.filter(e => !Array.isArray(e));
+  const byWhat = re => exs.find(e => re.test(e.what));
+  // A full path, leading "/" and all.
+  const pathEx = byWhat(/full path/);
+  const p = mePsHelpRunExample(pathEx);
+  deepEq(p.fields.map(f => `${f.id}=${f.value}`),
+    ['ILF.TRAN-DAT=251030', 'ILF.TERM-ID=T001', 'SEM.TYP=0200', 'SEM.AMT=001500'], 'the full-path def');
+  // The class: MTI, bitmap and DEs, rows named after the DEF the class binds,
+  // at their place in the RECORD (the SEM starts at byte 10).
+  const clsEx = byWhat(/<b>class<\/b>/);
+  const c = mePsHelpRunExample(clsEx);
+  const row = id => c.fields.find(f => f.id === id);
+  deepEq(c.fields.map(f => f.id), ['ILF.TRAN-DAT', 'ILF.TERM-ID', 'SEM.TYP', 'SEM.PBIT-MAP', 'SEM.DE-2', 'SEM.DE-4'],
+    'the SEM rows:\n' + c.fields.map(f => f.id + (f.error ? ' ! ' + f.error : '')).join('\n'));
+  eq(row('SEM.TYP').value, '0200');
+  eq(row('SEM.DE-2').value, '400100');
+  eq(row('SEM.DE-4').value, '84');
+  eq(row('SEM.TYP').startByte, 10, 'offsets are not rebased onto the record');
+  eq(row('SEM.DE-4').endByte, 29);
+  eq(row('SEM.DE-2').deNum, 2, 'the DE numbers are lost');
+  eq(row('SEM.TYP').mappedFrom, 'ILF.DATOS-SEM');
+  eq(row('SEM.TYP').mappedVia, 'class ISO 8583 Switch');
+  // The named class's overrides apply to its rows; the ILF's do not reach them.
+  const withOvr = JSON.parse(JSON.stringify(clsEx));
+  withOvr.classes[0].overrides = { 'DE-4': { type: 'hex-char' } };
+  eq(mePsHelpRunExample(withOvr).fields.find(f => f.id === 'SEM.DE-4').value, '3834', 'the SEM class\'s override did not apply');
+  // Errors where they are written: unknown class, a class with no parse spec,
+  // a class mapped into itself, def and class together.
+  const errOf = (spec, classes) => (mePsHelpRunExample({ ...clsEx, spec, classes: classes || clsEx.classes }).fields.find(f => f.id === 'map') || {}).error || '';
+  assert.ok(/no message class named "NOPE"/.test(errOf([{ map: { field: 'ILF.DATOS-SEM', class: 'NOPE' } }])), 'an unknown class is silent');
+  assert.ok(/has no parse spec/.test(errOf([{ map: { field: 'ILF.DATOS-SEM', class: 'EMPTY' } }], [{ name: 'E', label: 'EMPTY' }])), 'a class with no parse spec is silent');
+  assert.ok(/would read itself/.test(errOf([{ map: { field: 'ILF.DATOS-SEM', class: 'HELP' } }], [{ name: 'HELP', label: 'HELP', parse_spec_binary: [{ 'read-ddl': 'ANY' }] }])), 'a class mapped into itself is not refused');
+  assert.ok(/not both/.test(errOf([{ map: { field: 'ILF.DATOS-SEM', class: 'ISO 8583 Switch', def: 'SEM' } }])), 'def and class together are accepted');
+  // The outer class's encoding: the LEN reading is the ILF's, not the SEM's.
+  const src = psFnSource('_meReadMappedClass');
+  assert.ok(/lenEnc: ctx\.lenEnc/.test(src), 'the inner class reads lengths in its own encoding');
+  // Tokens: rebased and handed to the record.
+  assert.ok(/t\.dataStart \+= start/.test(src) && /f\.mapTokens = toks/.test(src), 'the inner tokens are not rebased onto the record');
+  assert.ok(/if \(f\.mapTokens\) ctx\.tokens = \(ctx\.tokens \|\| \[\]\)\.concat\(f\.mapTokens\)/.test(psFnSource('_meExpandMappedFields')), 'the inner tokens are dropped');
+  // Masks come from the inner class, by its own id.
+  assert.ok(/f\._ovSpec/.test(psFnSource('_maskFor')) && /f\._ovId/.test(psFnSource('_maskFor')), 'a SEM row is masked by the ILF\'s overrides');
+  // The journal nests the class's own run where the field stood.
+  const saved = { tree: S.ddlTree, fmt: S.inputFormat };
+  try {
+    S.ddlTree = { HELP: { HELP: { HELP: clsEx.ddl } }, BASE: { DDL: { INTERFAZ: clsEx.tree['BASE/DDL/INTERFAZ'] } } };
+    S.inputFormat = 'hex';
+    const ctx = sandbox._meExecParseSpec({ name: 'HELP', ddl_bindings: ['HELP/HELP/HELP/ILF-REC'], parse_spec_binary: clsEx.spec },
+      Buffer.from(clsEx.payload.replace(/\s+/g, ''), 'hex'), { trace: true, specPool: clsEx.classes });
+    const J = sandbox._jTimeline(ctx.trace, ctx.fields, null, null).map(l => l.text);
+    const at = re => J.findIndex(x => re.test(x));
+    assert.ok(at(/^↳ map: ILF\.DATOS-SEM read as class "ISO 8583 Switch"/) >= 0, 'the journal does not show the class run:\n' + J.join('\n'));
+    assert.ok(at(/^▸ read-bitmap-fields/) > at(/^↳ map/), 'the class\'s own blocks are missing');
+    assert.ok(at(/^SEM\.DE-4  @28–29/) > at(/^▸ read-bitmap-fields/), 'the SEM rows are not under the class run');
+    eq(J.filter(x => /^SEM\.TYP  @/.test(x)).length, 1, 'the class run is repeated');
+  } finally { S.ddlTree = saved.tree; S.inputFormat = saved.fmt; }
+});
+
 // ── Saving an override refreshes the ROW LIST, not just the rendering ───────
 
 console.log('\noverride save refreshes the field list');

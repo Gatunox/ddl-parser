@@ -21391,6 +21391,9 @@ test('follow a value: every message carrying it, columns by input, nothing assum
   } finally { run('_meSpecForMsg = ' + real.toString()); }
   // Matched in is a count that opens a list under the row, not a long line.
   const src = psFnSource('followValue');
+  // [REGRESSION] 2026-10-30: the window read "Follow", which is the action;
+  // once open it is the state, "Following".
+  assert.ok(/textContent = `Following "\$\{shown\}"`/.test(src), 'the title does not say Following');
   // Matched in: the fields as chips in the cell, two shown, the rest behind
   // "+N" in the same cell — never a row of their own (2026-10-30).
   assert.ok(/fw-chip\$\{j >= 2 \? ' fw-chip-more hidden' : ''\}/.test(src) && /\+\$\{h\.where\.length - 2\}/.test(src), 'Matched in is not two chips and +N');

@@ -1406,6 +1406,25 @@ table.ddl-doc-tbl { table-layout: fixed; border-collapse: collapse; font-family:
 .jl-fail, .jl-err { color: var(--danger); }
 .jl-warn { color: var(--warning); }
 .jl-focus { background: rgba(var(--accent-rgb), .14); }
+.fw-note { color: var(--text-dim); font-size: 11px; padding: 6px 10px; }
+.fw-tbl tbody tr { cursor: pointer; }
+.fw-tbl tbody tr:hover { background: var(--surface-hover); }
+.fw-tbl tr.fw-cur { background: rgba(var(--accent-rgb), .12); }
+.fw-dt { color: var(--text-dim); }
+.exp-tbl.fw-tbl { width: auto; }
+/* The export table caps a cell at 200px with an ellipsis; a timeline column
+   fits its content instead, so nothing is cut. */
+.exp-tbl.fw-tbl td { max-width: none; overflow: visible; text-overflow: clip; }
+.exp-tbl.fw-tbl td:first-child, .exp-tbl.fw-tbl th:first-child { text-align: left; width: auto; }
+.fw-tbl td { white-space: nowrap; vertical-align: top; }
+.fw-tbl.fw-frozen { table-layout: fixed; }
+.fw-tbl td.fw-where-td { white-space: normal; min-width: 220px; }
+.fw-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.fw-chip { padding: 0 6px; border: var(--bw-ctl) solid var(--border-strong); border-radius: var(--r-pill);
+  color: var(--text); font-size: 10px; line-height: 16px; white-space: nowrap; cursor: pointer; }
+.fw-chip:hover { border-color: var(--accent); color: var(--accent); }
+.fw-chip-plus { color: var(--text-dim); }
+.fw-open { color: var(--warning); }
 .why-pop { position: fixed; z-index: 70; max-width: min(640px, 92vw); max-height: 60vh; overflow: auto;
   background: var(--surface-raised); border: var(--bw) solid var(--border-strong); border-radius: var(--r-md);
   box-shadow: 0 6px 24px rgba(0,0,0,.35); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); padding-bottom: 6px; }
@@ -2060,6 +2079,7 @@ tbody tr { border-bottom: var(--bw) solid rgba(255,255,255,0.04); cursor: pointe
    ever set inside Parse Results, so the plain selector is scope enough. */
 tbody tr.row-alt td { background: var(--row-alt); }
 tbody tr:hover td { background: var(--hl-hover); }
+tbody tr.row-ctx td { background: var(--hl-hover); }
 tbody tr.row-sel td { background: rgba(var(--accent-rgb),0.18) !important; color: var(--hl-text) !important; }
 tbody tr.row-redef td.c-id { color: rgba(var(--accent-rgb),0.65); }
 /* Unreliable is a WARNING, and now says so. It used to borrow the accent, which
@@ -16584,14 +16604,212 @@ function _resCtxRow(e) {
   e.preventDefault(); e.stopPropagation();
   const fid = tr.dataset.fid;
   _defPopAt = { x: e.clientX, y: e.clientY };
+  // Moving onto the menu leaves the row, and its hover mark went with it —
+  // so nothing said which row the menu was for. It stays marked until the
+  // menu closes (2026-10-30).
+  document.querySelectorAll('.row-ctx').forEach(el => el.classList.remove('row-ctx'));
+  tr.classList.add('row-ctx');
   const has = !!_resRowDdlRef(fid);
+  const _fv = String(findField(S.messages?.[S.curIdx], fid)?.value ?? '').trim();
   showCtxMenu(e.clientX, e.clientY, [
     { icon: '⌕', label: 'View definition', disabled: !has,
       title: has ? 'Show where this field is declared in the DDL'
                  : 'This row was not parsed from a DDL',
       fn: () => _resViewDefinition(fid) },
+    { icon: '⇄', label: 'Follow this value', disabled: !_fv,
+      title: _fv ? 'Every message of the log that carries this value, in any field — the transaction, step by step'
+                 : 'This field has no value to follow',
+      fn: () => followValue(fid) },
   ]);
 }
+
+// ── Follow a transaction (TODO 30) ──────────────────────────────────────────
+// Right-click a row → Follow this value: every message in the log that carries
+// the same value in ANY field — a STAN, an RRN, a PAN — on one timeline,
+// whatever class or field name each one uses. The value is compared trimmed
+// (padding is not data) and exactly; a short or common value can match by
+// chance, and the timeline says how many messages it searched.
+//
+// Nothing is assumed about what was parsed: a FUP COPY file record has no time,
+// no route and no MTI, and a custom class need not be ISO. The columns follow
+// the input (2026-10-30):
+//   NETADRD, more than one record → Rec #, Time, Δ, Route, Class, and MTI / Step
+//                                   where the record's class reads an MTI
+//   FUP COPY                      → Rec #
+//   anything else                 → #, Class, and MTI / Step where read
+// The MTI is read ONLY where the message's class declares an `mti` recognizer —
+// at its offset, in its encoding — never guessed from a field name. Its third
+// digit names the step (0 request, 1 response, 2 advice, 3 advice response), a
+// second digit of 4 a reversal; a request or advice whose response is not in
+// the result is flagged. Requested 2026-10-30.
+function _followStep(mti) {
+  const m = /^\d{4}$/.test(mti || '') ? mti : null;
+  if (!m) return { label: '', kind: null };
+  const fn = { 0: 'request', 1: 'response', 2: 'advice', 3: 'advice response', 4: 'notification', 5: 'notification ack' }[m[2]] || 'other';
+  return { label: (m[1] === '4' ? 'reversal ' : '') + fn, kind: m[2], pairOf: (m[2] === '0' || m[2] === '2') ? m.slice(0, 2) + (+m[2] + 1) + m[3] : null };
+}
+// A record time as milliseconds: "MM/DD/YY HH:MM:SS.cc" (NETADRD) or any text
+// holding HH:MM:SS(.fff). null when there is none.
+function _followMs(t) {
+  const s = String(t || '');
+  const tm = /(\d{1,2}):(\d{2}):(\d{2})(?:[.,](\d+))?/.exec(s);
+  if (!tm) return null;
+  const d = /(\d{2})\/(\d{2})\/(\d{2,4})/.exec(s);
+  const frac = tm[4] ? +(tm[4] + '000').slice(0, 3) : 0;
+  const day = d ? Date.UTC(d[3].length === 2 ? 2000 + +d[3] : +d[3], +d[1] - 1, +d[2]) : 0;
+  return day + ((+tm[1] * 60 + +tm[2]) * 60 + +tm[3]) * 1000 + frac;
+}
+// The MTI the message's class reads with its `mti` recognizer, or ''.
+function _followMti(msg) {
+  const r = (_meSpecForMsg(msg)?.recognizers || []).find(x => x && x.type === 'mti');
+  if (!r) return '';
+  const src = msg.wireBytes || msg.bytes || [];
+  const off = +r.offset || 0;
+  const b = Array.from(src.slice ? src.slice(off, off + 4) : []);
+  if (b.length < 4) return '';
+  const t = b.map(x => String.fromCharCode(r.encoding === 'ebcdic' ? (_EBCDIC_TO_ASCII[x] ?? x) : x)).join('');
+  return /^\d{4}$/.test(t) ? t : '';
+}
+// What kind of input the result came from — it decides the columns.
+function _followKind(messages) {
+  const m = messages.find(Boolean);
+  if (!m) return 'other';
+  if (m.isNetard && m.filePath) return 'fup';
+  if (m.isNetard) return messages.length > 1 ? 'netard' : 'other';
+  return 'other';
+}
+// Every message carrying `value` (trimmed, exact) in any field or token field.
+function _followFind(messages, value) {
+  const want = String(value ?? '').trim();
+  const hits = [];
+  if (!want) return hits;
+  messages.forEach((msg, idx) => {
+    if (!msg) return;
+    if (msg.tokens === null && typeof _resolveTokens === 'function') _resolveTokens(msg);
+    const where = [];
+    for (const f of msg.fields || []) if (!f.error && String(f.value ?? '').trim() === want) where.push(f.id);
+    for (const t of msg.tokens || []) for (const f of t.fields || [])
+      if (!f.error && String(f.value ?? '').trim() === want) where.push(`${t.id}::${f.id}`);
+    if (where.length) hits.push({ idx, msg, where });
+  });
+  const kind = _followKind(messages);
+  for (const h of hits) {
+    h.mti = kind === 'fup' ? '' : _followMti(h.msg);
+    h.step = _followStep(h.mti);
+    h.ms = kind === 'netard' ? _followMs(h.msg.time) : null;
+  }
+  // NETADRD: in time order, so Δ counts from the earliest and is never
+  // negative — a log is not always written in the order things happened.
+  // Records with no time keep their place after the timed ones; ties keep
+  // log order.
+  if (kind === 'netard') hits.sort((a, b) => (a.ms ?? Infinity) - (b.ms ?? Infinity) || a.idx - b.idx);
+  const t0 = hits.map(h => h.ms).find(v => v != null);
+  for (const h of hits) h.elapsed = h.ms != null && t0 != null ? h.ms - t0 : null;
+  const mtis = new Set(hits.map(h => h.mti).filter(Boolean));
+  for (const h of hits) h.unanswered = !!(h.step.pairOf && !mtis.has(h.step.pairOf));
+  return hits;
+}
+// The columns for a result: [key, header], by input kind; MTI and Step only
+// when some row has an MTI.
+function _followCols(hits, messages) {
+  const kind = _followKind(messages);
+  const keys = ['num'];
+  if (kind !== 'fup') {
+    if (kind === 'netard') keys.push('time', 'dt', 'route');
+    keys.push('cls');
+    if (hits.some(h => h.mti)) keys.push('mti', 'step');
+  }
+  keys.push('where');
+  const head = { num: '#', time: 'Time', dt: 'Δ', route: 'Route', cls: 'Class', mti: 'MTI', step: 'Step', where: 'Matched in' };
+  return keys.map(k => ({ k, h: head[k] }));
+}
+let _followHits = [];
+function followValue(fid) {
+  const msg = S.messages?.[S.curIdx];
+  const f = msg && findField(msg, fid);
+  if (!f) return;
+  const value = String(f.value ?? '').trim();
+  _followHits = _followFind(S.messages, value);
+  const cols = _followCols(_followHits, S.messages);
+  const shown = _maskScreenOn() ? String(_maskField(msg, f).value ?? '').trim() : value;
+  const fmtMs = v => v == null ? '' : (v < 1000 ? `+${v} ms` : `+${(v / 1000).toFixed(v < 10000 ? 2 : 1)} s`);
+  const cell = (h, i, k) => {
+    const m = h.msg;
+    switch (k) {
+      case 'num':   return m.isNetard ? 'Rec ' + esc(String(m.recNo)) : 'Msg ' + (h.idx + 1);
+      case 'time':  return esc(m.time || '');
+      case 'dt':    return `<span class="fw-dt">${fmtMs(h.elapsed)}</span>`;
+      case 'route': return esc(`${m.source || '?'} → ${m.dest || '?'}`);
+      case 'cls':   return esc(m.msgType?.label || '');
+      case 'mti':   return esc(h.mti);
+      case 'step':  return h.step.label ? `<span class="${h.unanswered ? 'fw-open' : ''}">${esc(h.step.label)}${h.unanswered ? ' — no response in the log' : ''}</span>` : '';
+      // The fields as chips in the cell: two shown, the rest behind "+N", which
+      // opens them in the same cell. A chip goes to that field.
+      case 'where': return `<div class="fw-chips">` + h.where.map((w, j) =>
+          `<span class="fw-chip${j >= 2 ? ' fw-chip-more hidden' : ''}" onclick="event.stopPropagation();followGo(${i}, ${j})" title="Go to this message, at ${esc(w)}">${esc(w)}</span>`).join('')
+        + (h.where.length > 2 ? `<span class="fw-chip fw-chip-plus" onclick="event.stopPropagation();followToggle(${i})" title="Show every field">+${h.where.length - 2}</span>` : '')
+        + `</div>`;
+    }
+    return '';
+  };
+  const rows = _followHits.map((h, i) =>
+    `<tr data-i="${i}" class="${h.idx === S.curIdx ? 'fw-cur' : ''}" onclick="followGo(${i})" title="Go to this message">`
+    + cols.map(c => `<td${c.k === 'where' ? ' class="fw-where-td"' : ''}>${cell(h, i, c.k)}</td>`).join('') + `</tr>`).join('');
+  const common = value.length < 4 || _followHits.length > 50;
+  // Back to its full width before measuring: the last result narrowed it.
+  const _fwModal = document.querySelector('#followOverlay .ddl-doc-modal');
+  if (_fwModal) _fwModal.style.width = '';
+  document.getElementById('followTitle').textContent = `Follow "${shown}"`;
+  document.getElementById('followBody').innerHTML =
+    `<div class="fw-note">${_followHits.length} of ${S.messages.length} parsed message(s) carry this value`
+    + (common ? ' — a short or common value can match by chance: check the fields each one matched in' : '')
+    + (_followKind(S.messages) === 'netard' ? ', in time order' : '') + '.</div>'
+    // Each column fits its content, then the widths are frozen: opening a
+    // row's "+N" wraps its chips inside the cell instead of re-laying the whole
+    // table out, and no column carries empty space (2026-10-30).
+    + `<table class="exp-tbl fw-tbl"><colgroup>${cols.map(c => `<col class="fw-c-${c.k}">`).join('')}</colgroup>`
+    + `<thead><tr>${cols.map(c => `<th>${c.h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  document.getElementById('followOverlay').classList.remove('hidden');
+  _followFreeze();
+}
+// Measure the content-fitted columns once, then fix them.
+function _followFreeze() {
+  const tbl = document.querySelector('#followBody .fw-tbl');
+  if (!tbl) return;
+  const ths = tbl.querySelectorAll('thead th'), colEls = tbl.querySelectorAll('col');
+  const w = Array.from(ths, th => Math.ceil(th.getBoundingClientRect().width));
+  if (!w.some(Boolean)) return;
+  colEls.forEach((c, i) => { c.style.width = w[i] + 'px'; });
+  const tw = w.reduce((a, b) => a + b, 0);
+  tbl.style.width = tw + 'px';
+  tbl.classList.add('fw-frozen');
+  // The window fits the table, not the other way round: no empty strip after
+  // the last column (2026-10-30). Never wider than the screen allows.
+  const modal = tbl.closest('.ddl-doc-modal');
+  if (modal) modal.style.width = Math.min(tw + 2, Math.floor(window.innerWidth * 0.96)) + 'px';
+}
+// A row's "+N": shows the rest of its fields in the same cell, or hides them.
+function followToggle(i) {
+  const row = document.querySelector(`#followBody tr[data-i="${i}"]`);
+  if (!row) return;
+  const more = row.querySelectorAll('.fw-chip-more');
+  const open = more.length && more[0].classList.contains('hidden');
+  more.forEach(c => c.classList.toggle('hidden', !open));
+  const plus = row.querySelector('.fw-chip-plus');
+  if (plus) plus.textContent = open ? '−' : `+${more.length}`;
+}
+// A row, or one of its fields: that message, with the field selected.
+function followGo(i, j) {
+  const h = _followHits[i];
+  if (!h) return;
+  closeFollow();
+  S.selFieldId = h.where[j || 0] || null;
+  jumpTo(h.idx);
+}
+function closeFollow() { document.getElementById('followOverlay')?.classList.add('hidden'); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !document.getElementById('followOverlay')?.classList.contains('hidden')) closeFollow();
+});
 
 // ---- Data Input overlay highlighting ----
 // Collects highlight ranges for the selected/hovered field from the byte-char map.
@@ -20547,6 +20765,8 @@ function showCtxMenu(x, y, items) {
 
 function hideCtxMenu() {
   document.getElementById('ctxMenu')?.classList.add('hidden');
+  // The row a menu was opened on keeps its mark only while the menu is up.
+  document.querySelectorAll('.row-ctx').forEach(el => el.classList.remove('row-ctx'));
 }
 
 function buildCtxMenu(e) {
@@ -21850,7 +22070,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.60.0.0';
+const APP_VERSION  = '1.61.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41430,6 +41650,17 @@ function _meSave() {
   </div>
 </div>
 <div class="why-pop hidden" id="whyPop"></div>
+<div class="modal-overlay hidden" id="followOverlay" onmousedown="if(event.target===this)closeFollow()">
+  <div class="ddl-doc-modal" style="width:min(1300px,96vw)">
+    <div class="ddl-doc-hdr">
+      <span class="ddl-doc-title" id="followTitle">Follow</span>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;margin-left:auto">
+        <button class="btn btn-ico" onclick="closeFollow()">✕</button>
+      </div>
+    </div>
+    <div class="ddl-doc-body" id="followBody"></div>
+  </div>
+</div>
 <div class="modal-overlay hidden" id="journalOverlay" onmousedown="if(event.target===this)closeJournal()">
   <div class="ddl-doc-modal" style="width:min(980px,96vw)">
     <div class="ddl-doc-hdr">

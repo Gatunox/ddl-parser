@@ -1228,11 +1228,11 @@ the parse errors.
 
 ---
 
-## 30. [ ] Follow a transaction through a log
+## 30. [x] Follow a transaction through a log — *done v1.61.0.0*
 
-**Asked for 2026-10-28.** In a NETADRD with thousands of records, click a STAN or
-an RRN and see the whole path: the 0200, its 0210, the reversals, with the time
-between them.
+**Asked for 2026-10-28.** Right-click a row → Follow this value (SPEC §11.5).
+Linking by value in any field, no per-class keys. Left open: an audit file's
+deferred (not yet parsed) records are not searched.
 
 
 ---

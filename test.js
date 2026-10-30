@@ -21337,6 +21337,94 @@ test('map "class": a field read as a message of another class', () => {
   } finally { S.ddlTree = saved.tree; S.inputFormat = saved.fmt; }
 });
 
+// Requested 2026-10-30 (TODO 30): right-click a row → Follow this value.
+test('follow a value: every message carrying it, columns by input, nothing assumed', () => {
+  const F = (id, value, extra) => ({ id, value, ...(extra || {}) });
+  const A = s => Array.from(s, c => c.charCodeAt(0));
+  const iso = { recognizers: [{ type: 'mti', offset: 3, value: '####' }] };
+  const nomti = { recognizers: [{ type: 'literal', offset: 0, value: 'X' }] };
+  const run = c => vm.runInContext(c, sandbox);
+  const real = run('_meSpecForMsg');
+  globalThis.__specs = { ISO: iso, STM: nomti };
+  run('_meSpecForMsg = m => (globalThis.__specs || {})[m && m.msgType && m.msgType.label] || null');
+  sandbox.__specs = globalThis.__specs;
+  try {
+    const net = [
+      { isNetard: true, recNo: 0, time: '03/15/26 09:45:00.00', source: 'C910', dest: 'SWITCH', msgType: { label: 'STM' },
+        bytes: A('XYZ0200'), fields: [F('TYP', '0200'), F('RQST.STAN', '000123')], tokens: [] },
+      { isNetard: true, recNo: 1, time: '03/15/26 09:45:00.22', source: 'SWITCH', dest: 'HOST', msgType: { label: 'ISO' },
+        bytes: A('ISO0200'), fields: [F('MTI', '0200'), F('11', '000123 '), F('37', '000123')], tokens: [] },
+      { isNetard: true, recNo: 2, time: '03/15/26 09:45:01.50', msgType: { label: 'ISO' },
+        bytes: A('ISO0210'), fields: [F('MTI', '0210'), F('11', '000123')], tokens: [] },
+      { isNetard: true, recNo: 3, time: '03/15/26 09:45:09.00', msgType: { label: 'ISO' },
+        bytes: A('ISO0420'), fields: [F('MTI', '0420')], tokens: [{ id: 'Q1', fields: [F('Q1.REF', '000123')] }] },
+      { isNetard: true, recNo: 4, time: '03/15/26 09:46:00.00', msgType: { label: 'ISO' },
+        bytes: A('ISO0200'), fields: [F('MTI', '0200'), F('11', '000124')], tokens: [] },
+    ];
+    sandbox.__specs = { ISO: iso, STM: nomti };
+    const hits = sandbox._followFind(net, '000123');
+    deepEq(hits.map(h => h.idx), [0, 1, 2, 3], 'the wrong messages carry the value');
+    deepEq(hits.map(h => h.where.length), [1, 2, 1, 1], 'every field it is in, padding trimmed, tokens too');
+    // MTI only where the class reads one: the STM class has no mti recognizer,
+    // so its TYP "0200" is NOT taken for an MTI.
+    deepEq(hits.map(h => h.mti), ['', '0200', '0210', '0420']);
+    deepEq(hits.map(h => h.step.label), ['', 'request', 'response', 'reversal advice']);
+    deepEq(hits.map(h => h.unanswered), [false, false, false, true], 'the 0420 has no 0430');
+    deepEq(hits.map(h => h.elapsed), [0, 220, 1500, 9000]);
+    // NETADRD is in time order: a record logged after another but stamped
+    // earlier comes first, and no Δ is negative (2026-10-30).
+    const early = net.map(m => ({ ...m })); early[1] = { ...early[1], time: '03/15/26 09:44:59.94' };
+    const eh = sandbox._followFind(early, '000123');
+    deepEq(eh.map(h => h.idx), [1, 0, 2, 3], 'not in time order');
+    deepEq(eh.map(h => h.elapsed), [0, 60, 1560, 9060], 'a Δ is negative or not from the earliest');
+    deepEq(sandbox._followCols(hits, net).map(c => c.k), ['num', 'time', 'dt', 'route', 'cls', 'mti', 'step', 'where'], 'NETADRD columns');
+    // FUP COPY: a file record has no time, route or MTI — only the record.
+    const fup = net.map(m => ({ ...m, filePath: '$DATA.F.X', time: null }));
+    const fh = sandbox._followFind(fup, '000123');
+    deepEq(sandbox._followCols(fh, fup).map(c => c.k), ['num', 'where'], 'FUP COPY columns');
+    deepEq(fh.map(h => h.mti + h.step.label), ['', '', '', ''], 'a FUP record got an MTI');
+    // A plain paste, no class with an MTI: no time, no MTI, no step.
+    const plain = [{ msgType: { label: 'STM' }, bytes: A('X'), fields: [F('A', '7777')], tokens: [] },
+                   { msgType: { label: 'STM' }, bytes: A('X'), fields: [F('B', '7777')], tokens: [] }];
+    deepEq(sandbox._followCols(sandbox._followFind(plain, '7777'), plain).map(c => c.k), ['num', 'cls', 'where'], 'plain columns');
+    eq(sandbox._followFind(net, '   ').length, 0, 'an empty value matches every blank field');
+  } finally { run('_meSpecForMsg = ' + real.toString()); }
+  // Matched in is a count that opens a list under the row, not a long line.
+  const src = psFnSource('followValue');
+  // Matched in: the fields as chips in the cell, two shown, the rest behind
+  // "+N" in the same cell — never a row of their own (2026-10-30).
+  assert.ok(/fw-chip\$\{j >= 2 \? ' fw-chip-more hidden' : ''\}/.test(src) && /\+\$\{h\.where\.length - 2\}/.test(src), 'Matched in is not two chips and +N');
+  assert.ok(/followGo\(\$\{i\}, \$\{j\}\)/.test(src) && !/fw-sub/.test(src), 'the fields open as a row of their own');
+  // [REGRESSION] 2026-10-30: opening "+N" re-laid the table out and every column
+  // moved. The widths are fixed; the chips wrap inside their cell.
+  assert.ok(/<colgroup>\$\{cols\.map\(c => `<col class="fw-c-\$\{c\.k\}">`\)/.test(src), 'the columns have no fixed widths');
+  // [REGRESSION] 2026-10-30: fixed guesses left Route with nothing and other
+  // columns with empty space. Every column fits its content, then is frozen.
+  assert.ok(/_followFreeze\(\);/.test(src), 'the widths are not frozen after the table is drawn');
+  const fz = psFnSource('_followFreeze');
+  assert.ok(/getBoundingClientRect\(\)\.width/.test(fz) && /classList\.add\('fw-frozen'\)/.test(fz), 'the frozen widths are not the measured ones');
+  // [REGRESSION] 2026-10-30: the fitted table left an empty strip at the end of
+  // the window. The window narrows to the table; the table is not stretched.
+  assert.ok(/modal\.style\.width = Math\.min\(tw \+ 2,/.test(fz), 'the window does not fit the table');
+  assert.ok(!/avail - rest/.test(fz), 'a column is stretched to fill the window');
+  // [REGRESSION] 2026-10-30: .exp-tbl caps every cell at 200px with "…", which
+  // cut Route; the timeline lifts the cap.
+  assert.ok(/\.exp-tbl\.fw-tbl td \{ max-width: none; overflow: visible;/.test(html), 'the export table still cuts timeline cells');
+  // Specific enough to beat .exp-tbl's width:100%, which comes later.
+  assert.ok(/\.exp-tbl\.fw-tbl \{ width: auto; \}/.test(html) && /\.fw-tbl\.fw-frozen \{ table-layout: fixed; \}/.test(html), 'the table does not fit its content first');
+  assert.ok(!/DE ?39|deNum === 39/.test(psFnSource('_followFind')), 'a response code is still assumed');
+  const ctx = psFnSource('_resCtxRow');
+  assert.ok(/label: 'Follow this value'/.test(ctx) && /followValue\(fid\)/.test(ctx), 'the right-click menu has no Follow');
+  // [REGRESSION] 2026-10-30: moving onto the menu left the row unmarked. The
+  // right-clicked row keeps the hover mark until the menu closes.
+  assert.ok(/tr\.classList\.add\('row-ctx'\)/.test(ctx), 'the right-clicked row is not marked');
+  assert.ok(/classList\.remove\('row-ctx'\)/.test(psFnSource('hideCtxMenu')), 'the mark outlives the menu');
+  assert.ok(/tbody tr\.row-ctx td \{ background: var\(--hl-hover\); \}/.test(html), 'the mark has no style');
+  assert.ok(/jumpTo\(h\.idx\)/.test(psFnSource('followGo')), 'a timeline row does not go to its message');
+  for (const h of ['followGo', 'followToggle', 'closeFollow'])
+    assert.ok(new RegExp(`'${h}'`).test(fs.readFileSync('./build.js', 'utf8')), `build.js would rename ${h}`);
+});
+
 // ── Saving an override refreshes the ROW LIST, not just the rendering ───────
 
 console.log('\noverride save refreshes the field list');

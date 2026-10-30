@@ -2310,6 +2310,40 @@ changed since, the re-run can disagree with Parse Results, and the journal says 
   Values on screen follow Settings → Mask sensitive fields → Screen; Copy and
   Download follow Export.
 
+### 11.5 Follow a value — a transaction through the log
+
+Right-click a Parse Results row → **Follow this value**: every parsed message in
+the log that carries the same value — a STAN, an RRN, a PAN — in any field or
+token field, whatever its class or field name. Values compare trimmed (padding
+is not data) and exactly. A short value (under 4 characters) or one in more than
+50 messages is flagged as possibly matching by chance.
+
+Nothing is assumed about what was parsed; the columns follow the input:
+
+| Input | Columns |
+|---|---|
+| NETADRD, more than one record | Rec #, Time, Δ, Route, Class, MTI, Step, Matched in |
+| FUP COPY | Rec #, Matched in |
+| anything else | #, Class, MTI, Step, Matched in |
+
+- **MTI** is read only where the message's class declares an `mti` recognizer —
+  at its offset, in its encoding — never guessed from a field name. MTI and Step
+  appear only when some row has one.
+- **Step** comes from the MTI: its third digit is the function (request,
+  response, advice, advice response, notification), a second digit of 4 a
+  reversal. A request or advice whose response is not in the result is flagged
+  "no response in the log".
+- **NETADRD rows are in time order**, so Δ counts from the earliest and is never
+  negative; records with no time follow, ties keep log order.
+- **Matched in** shows the fields as chips — two, then **+N**, which opens the
+  rest in the same cell. A chip goes to that message with that field selected; a
+  row goes to its message.
+- Each column fits its content and is then fixed, so opening a row's chips does
+  not move the others; the window fits the table.
+- The right-clicked row keeps its mark while the menu is open.
+- Only parsed messages are searched: an audit file's deferred records are not.
+- On screen, the followed value follows Settings → Mask sensitive fields → Screen.
+
 ## 13. Storage
 
 - Message and file specs are stored in `localStorage` as JSON.

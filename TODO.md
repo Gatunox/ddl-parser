@@ -1200,12 +1200,9 @@ No network manual is available to design against; work from the user's examples.
 **Asked for 2026-10-28.** SHOW `masked` + `mask` in the class overrides; Settings →
 Mask sensitive fields switches Screen and Export separately (SPEC §9).
 
-Left open:
-
-- **Audit "copy dump"** is not masked: the record is not parsed there, so no
-  field is known. Masking it needs the record parsed against its class first.
-- **A manual DDL override** parses with no class, so nothing is masked. Decide
-  whether masks should also be readable from the DDL picked by hand.
+Left open, closed in v1.63.1.0: the audit copy dump is masked from the record's
+parse; a manual DDL override masks nothing and says so (one DDL can be bound to
+several classes, so no class is guessed).
 
 
 ---
@@ -1248,8 +1245,9 @@ this list".
 ## 30. [x] Follow a transaction through a log — *done v1.61.0.0*
 
 **Asked for 2026-10-28.** Right-click a row → Follow this value (SPEC §11.5).
-Linking by value in any field, no per-class keys. Left open: an audit file's
-deferred (not yet parsed) records are not searched.
+Linking by value in any field, no per-class keys. Left open, closed in
+v1.63.1.0: an audit file's records not parsed yet are searched by their bytes,
+in slices with a progress bar.
 
 
 ---

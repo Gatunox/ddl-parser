@@ -1407,6 +1407,8 @@ table.ddl-doc-tbl { table-layout: fixed; border-collapse: collapse; font-family:
 .jl-warn { color: var(--warning); }
 .jl-focus { background: rgba(var(--accent-rgb), .14); }
 .fw-note { color: var(--text-dim); font-size: 11px; padding: 6px 10px; }
+.fw-prog { height: 6px; margin: 4px 10px 10px; min-width: 320px; background: var(--bg-input); border-radius: var(--r-sm); overflow: hidden; }
+.fw-prog-bar { height: 100%; background: var(--accent); transition: width .1s linear; }
 .fw-tbl tbody tr { cursor: pointer; }
 .fw-tbl tbody tr:hover { background: var(--surface-hover); }
 .fw-tbl tr.fw-cur { background: rgba(var(--accent-rgb), .12); }
@@ -15417,6 +15419,11 @@ function renderFieldTable(msg) {
       else if (consumed > total) warns.push({ severity: 'warning', fid: null,
         text: `Fields extend ${consumed - total} byte(s) past the end of the record` });
     }
+    // Masks live in a class's overrides, and an override parse has no class.
+    // Not guessed from the DDL: one DDL can be bound to several classes.
+    if (msg.manualOverride && (_maskScreenOn() || _maskExportOn()))
+      warns.push({ severity: 'warning', fid: null,
+        text: 'Manual DDL override \u2014 no class, so no field is masked on screen or in exports' });
     if (total > 0 && consumed > 0) {
       if (consumed < total) {
         // Trailing bytes no field accounts for — truncated loop, wrong DDL, or
@@ -16714,6 +16721,15 @@ function _followKind(messages) {
   if (m.isNetard) return messages.length > 1 ? 'netard' : 'other';
   return 'other';
 }
+// The fields of one message carrying `want` (trimmed, exact), token fields too.
+function _followMatch(msg, want) {
+  if (msg.tokens === null && typeof _resolveTokens === 'function') _resolveTokens(msg);
+  const where = [];
+  for (const f of msg.fields || []) if (!f.error && String(f.value ?? '').trim() === want) where.push(f.id);
+  for (const t of msg.tokens || []) for (const f of t.fields || [])
+    if (!f.error && String(f.value ?? '').trim() === want) where.push(`${t.id}::${f.id}`);
+  return where;
+}
 // Every message carrying `value` (trimmed, exact) in any field or token field.
 function _followFind(messages, value) {
   const want = String(value ?? '').trim();
@@ -16721,13 +16737,13 @@ function _followFind(messages, value) {
   if (!want) return hits;
   messages.forEach((msg, idx) => {
     if (!msg) return;
-    if (msg.tokens === null && typeof _resolveTokens === 'function') _resolveTokens(msg);
-    const where = [];
-    for (const f of msg.fields || []) if (!f.error && String(f.value ?? '').trim() === want) where.push(f.id);
-    for (const t of msg.tokens || []) for (const f of t.fields || [])
-      if (!f.error && String(f.value ?? '').trim() === want) where.push(`${t.id}::${f.id}`);
+    const where = _followMatch(msg, want);
     if (where.length) hits.push({ idx, msg, where });
   });
+  return _followOrder(hits, messages);
+}
+// MTI, step and time for each hit, in the order the input calls for.
+function _followOrder(hits, messages) {
   const kind = _followKind(messages);
   for (const h of hits) {
     h.mti = kind === 'fup' ? '' : _followMti(h.msg);
@@ -16759,15 +16775,77 @@ function _followCols(hits, messages) {
   const head = { num: '#', time: 'Time', dt: 'Δ', route: 'Route', cls: 'Class', mti: 'MTI', step: 'Step', where: 'Matched in' };
   return keys.map(k => ({ k, h: head[k] }));
 }
+// The bytes a value can be stored as: ASCII, EBCDIC, packed BCD for digits (an
+// odd count padded with a leading 0 or a trailing F), and the bytes an even run
+// of hex digits spells.
+function _followByteForms(value) {
+  const v = String(value ?? '').trim();
+  if (!v) return [];
+  const hexBytes = h => h.match(/../g).map(x => parseInt(x, 16));
+  const forms = [Array.from(v, c => c.charCodeAt(0) & 0xFF),
+                 Array.from(v, c => _ASCII_TO_EBCDIC[c.charCodeAt(0)] ?? 0x3F)];
+  if (/^\d+$/.test(v) && v.length % 2) forms.push(hexBytes('0' + v), hexBytes(v + 'F'));
+  if (/^[0-9A-Fa-f]+$/.test(v) && v.length % 2 === 0) forms.push(hexBytes(v));
+  return forms;
+}
+function _bytesHave(bytes, pat) {
+  if (!bytes || !pat.length) return false;
+  outer: for (let i = 0; i + pat.length <= bytes.length; i++) {
+    for (let k = 0; k < pat.length; k++) if (bytes[i + k] !== pat[k]) continue outer;
+    return true;
+  }
+  return false;
+}
 let _followHits = [];
+// The search runs in slices of ~30 ms so the page never freezes on a large log:
+// the window opens at once with a progress bar, and closing it stops the search.
+// The audit records not parsed yet (_lazyDeferreds) are searched by their bytes
+// first, and only those holding the value are parsed — parsing them all is what
+// a slow machine on a large file cannot afford.
+let _followRun = 0;
 function followValue(fid) {
   const msg = S.messages?.[S.curIdx];
   const f = msg && findField(msg, fid);
   if (!f) return;
   const value = String(f.value ?? '').trim();
-  _followHits = _followFind(S.messages, value);
-  const cols = _followCols(_followHits, S.messages);
   const shown = _maskScreenOn() ? String(_maskField(msg, f).value ?? '').trim() : value;
+  const run = ++_followRun;
+  const left = _lazyDeferreds ? _lazyDeferreds.slice(_lazyDeferredIdx) : [];
+  const n = S.messages.length, total = n + left.length;
+  const forms = left.length ? _followByteForms(value) : [];
+  const pool = S.messages.slice(), hits = [];
+  const _fwModal = document.querySelector('#followOverlay .ddl-doc-modal');
+  if (_fwModal) _fwModal.style.width = '';
+  document.getElementById('followTitle').textContent = `Following "${shown}"`;
+  document.getElementById('followOverlay').classList.remove('hidden');
+  let i = 0;
+  const tick = () => {
+    if (run !== _followRun) return;
+    const t0 = Date.now(), from = i;
+    for (; i < total && (i === from || Date.now() - t0 < 30); i++) {
+      let m = pool[i];
+      if (i >= n) {
+        const d = left[i - n];
+        m = pool[i] = forms.some(p => _bytesHave(d.bytes, p) || _bytesHave(d.rawBytes, p)) ? _lazyBuildMsg(d) : null;
+      }
+      const where = m && value ? _followMatch(m, value) : [];
+      if (where.length) hits.push({ idx: i, msg: m, where });
+    }
+    if (i < total) {
+      const pct = Math.floor(i * 100 / total);
+      document.getElementById('followBody').innerHTML =
+        `<div class="fw-note">Searching… ${i} of ${total} message(s)</div>`
+        + `<div class="fw-prog"><div class="fw-prog-bar" style="width:${pct}%"></div></div>`;
+      setTimeout(tick, 0);
+      return;
+    }
+    _followShow(value, _followOrder(hits, pool), pool, left.length);
+  };
+  tick();
+}
+function _followShow(value, hits, pool, unparsed) {
+  _followHits = hits;
+  const cols = _followCols(_followHits, pool);
   const fmtMs = v => v == null ? '' : (v < 1000 ? `+${v} ms` : `+${(v / 1000).toFixed(v < 10000 ? 2 : 1)} s`);
   const cell = (h, i, k) => {
     const m = h.msg;
@@ -16792,20 +16870,16 @@ function followValue(fid) {
     `<tr data-i="${i}" class="${h.idx === S.curIdx ? 'fw-cur' : ''}" onclick="followGo(${i})" title="Go to this message">`
     + cols.map(c => `<td${c.k === 'where' ? ' class="fw-where-td"' : ''}>${cell(h, i, c.k)}</td>`).join('') + `</tr>`).join('');
   const common = value.length < 4 || _followHits.length > 50;
-  // Back to its full width before measuring: the last result narrowed it.
-  const _fwModal = document.querySelector('#followOverlay .ddl-doc-modal');
-  if (_fwModal) _fwModal.style.width = '';
-  document.getElementById('followTitle').textContent = `Following "${shown}"`;
   document.getElementById('followBody').innerHTML =
-    `<div class="fw-note">${_followHits.length} of ${S.messages.length} parsed message(s) carry this value`
+    `<div class="fw-note">${_followHits.length} of ${pool.length} message(s) carry this value`
+    + (unparsed ? ` (${unparsed} not parsed yet were searched by their bytes)` : '')
     + (common ? ' — a short or common value can match by chance: check the fields each one matched in' : '')
-    + (_followKind(S.messages) === 'netard' ? ', in time order' : '') + '.</div>'
+    + (_followKind(pool) === 'netard' ? ', in time order' : '') + '.</div>'
     // Each column fits its content, then the widths are frozen: opening a
     // row's "+N" wraps its chips inside the cell instead of re-laying the whole
     // table out, and no column carries empty space (2026-10-30).
     + `<table class="exp-tbl fw-tbl"><colgroup>${cols.map(c => `<col class="fw-c-${c.k}">`).join('')}</colgroup>`
     + `<thead><tr>${cols.map(c => `<th>${c.h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
-  document.getElementById('followOverlay').classList.remove('hidden');
   _followFreeze();
 }
 // Measure the content-fitted columns once, then fix them.
@@ -16840,9 +16914,12 @@ function followGo(i, j) {
   if (!h) return;
   closeFollow();
   S.selFieldId = h.where[j || 0] || null;
-  jumpTo(h.idx);
+  // A record found among the unparsed ones joins Parse Results in log order:
+  // the records before it are parsed on the way.
+  while (!S.messages.includes(h.msg) && _lazyDeferreds && _lazyDeferredIdx < _lazyDeferreds.length) _auditLazyParseNext();
+  jumpTo(S.messages.indexOf(h.msg));
 }
-function closeFollow() { document.getElementById('followOverlay')?.classList.add('hidden'); }
+function closeFollow() { _followRun++; document.getElementById('followOverlay')?.classList.add('hidden'); }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !document.getElementById('followOverlay')?.classList.contains('hidden')) closeFollow();
 });
@@ -17680,6 +17757,18 @@ function _auditDumpIsEbcdic(pay) {
 }
 
 function _auditApplyDump(u8, rec, recno) {
+  const d = _auditDumpBuild(u8, rec, recno);
+  _auditPopupByteCharMap = d.map;
+  // A different record can be a different charset, so the toggle follows the
+  // dump being drawn rather than only what was clicked.
+  _auditDumpCharset = d.isEbcdic ? 'ebcdic' : 'ascii';
+  if (typeof _auditSyncDumpToggleLabel === 'function') _auditSyncDumpToggleLabel();
+  window._auditDumpLoad?.(d.text);
+}
+// The dump's text in the current view, and where each payload byte sits in it.
+// `shown` replaces the payload bytes: a null is a masked byte with no character
+// of its own, drawn "**" in hex and "*" as a character.
+function _auditDumpBuild(u8, rec, recno, shown) {
   const HDR = AUDIT_HDR_CFG.msgPayloadOffset;
   const origType = (rec.origTypeNum >> 12) & 0xF;
   const origNum  = rec.origTypeNum & 0xFFF;
@@ -17699,8 +17788,13 @@ function _auditApplyDump(u8, rec, recno) {
   const pay = u8.slice(HDR);
   const payloadStart = hdrLine.length + 2 + srcLine.length + 1 + dstLine.length + 2;
 
-  let payText = '';
-  _auditPopupByteCharMap = null;
+  let payText = '', map = null;
+  const at = i => shown ? shown[i] : pay[i];
+  const ch = (b, bad) => {
+    if (b == null) return '*';
+    const c = isEbcdic ? (_EBCDIC_TO_ASCII[b] ?? b) : b;
+    return (c >= 0x20 && c <= 0x7E) ? String.fromCharCode(c) : bad;
+  };
 
   // WHICH CHARSET TO RENDER IN. The recognizers already answer this: whichever
   // class claims the record was written against ASCII or EBCDIC, and
@@ -17711,31 +17805,23 @@ function _auditApplyDump(u8, rec, recno) {
   // view already used, which is all there is when nothing claims the record.
   // Reported 2026-08-25.
   const isEbcdic = _auditDumpIsEbcdic(pay);
-  // A different record can be a different charset, so the toggle follows the
-  // dump being drawn rather than only what was clicked.
-  _auditDumpCharset = isEbcdic ? 'ebcdic' : 'ascii';
-  if (typeof _auditSyncDumpToggleLabel === 'function') _auditSyncDumpToggleLabel();
 
   if (_auditPopupMode === 'hex') {
     if (!pay.length) {
       payText = '       (empty payload)\n';
     } else {
-      _auditPopupByteCharMap = new Array(pay.length);
+      map = new Array(pay.length);
       for (let lineOff = 0; lineOff < pay.length; lineOff += 16) {
         const n = Math.min(16, pay.length - lineOff);
         let hexPart = '';
         for (let g = 0; g < 8; g++) {
           if (g > 0) hexPart += ' ';
           const b0 = lineOff + g * 2, b1 = b0 + 1;
-          hexPart += b0 < pay.length ? pay[b0].toString(16).toUpperCase().padStart(2, '0') : '  ';
-          hexPart += b1 < pay.length ? pay[b1].toString(16).toUpperCase().padStart(2, '0') : '  ';
+          hexPart += b0 < pay.length ? (at(b0) == null ? '**' : at(b0).toString(16).toUpperCase().padStart(2, '0')) : '  ';
+          hexPart += b1 < pay.length ? (at(b1) == null ? '**' : at(b1).toString(16).toUpperCase().padStart(2, '0')) : '  ';
         }
         let charStr = '';
-        for (let i = 0; i < n; i++) {
-          const b = pay[lineOff + i];
-          const c = isEbcdic ? (_EBCDIC_TO_ASCII[b] ?? b) : b;
-          charStr += (c >= 0x20 && c <= 0x7E) ? String.fromCharCode(c) : '.';
-        }
+        for (let i = 0; i < n; i++) charStr += ch(at(lineOff + i), '.');
         // Where this line STARTS, taken from the text already built rather than
         // from a per-line constant. It was `l * 69`; a full line is 6 + ': ' +
         // 39 hex + '  [' + 16 chars + ']' + newline = 68, so every line after
@@ -17747,30 +17833,27 @@ function _auditApplyDump(u8, rec, recno) {
         for (let p = 0; p < n; p++) {
           const g = Math.floor(p / 2), bi = p % 2;
           const s = lineStart + 8 + g * 5 + bi * 2;   // 8 = the "     0: " prefix
-          _auditPopupByteCharMap[lineOff + p] = { s, e: s + 2 };
+          map[lineOff + p] = { s, e: s + 2 };
         }
       }
     }
   } else {
     let raw = '';
-    for (let i = 0; i < pay.length; i++) {
-      const c2 = isEbcdic ? (_EBCDIC_TO_ASCII[pay[i]] ?? pay[i]) : pay[i];
-      raw += (c2 >= 0x20 && c2 <= 0x7E) ? String.fromCharCode(c2) : '?';
-    }
+    for (let i = 0; i < pay.length; i++) raw += ch(at(i), '?');
     const indent = '       ';
     for (let i = 0; i < raw.length; i += 68)
       payText += indent + raw.slice(i, i + 68) + '\n';
     if (!payText) payText = indent + '(empty payload)\n';
     if (pay.length > 0) {
-      _auditPopupByteCharMap = new Array(pay.length);
+      map = new Array(pay.length);
       for (let b = 0; b < pay.length; b++) {
         const pos = payloadStart + Math.floor(b / 68) * 76 + 7 + (b % 68);
-        _auditPopupByteCharMap[b] = { s: pos, e: pos + 1 };
+        map[b] = { s: pos, e: pos + 1 };
       }
     }
   }
 
-  window._auditDumpLoad?.(hdrLine + '\n\n' + srcLine + '\n' + dstLine + '\n\n' + payText);
+  return { text: hdrLine + '\n\n' + srcLine + '\n' + dstLine + '\n\n' + payText, map, isEbcdic };
 }
 
 // AUTO-PARSE. Walking a filtered set one record at a time meant a click and a
@@ -17996,10 +18079,48 @@ function initAuditDetailResizer() {
   });
 }
 
+// The record's parse, to know where its masked fields are: Parse Results when
+// it is showing this record, the parse cache, or — never parsed — a quiet run of
+// the class that detects it, which touches nothing on screen. null when there is
+// no class or its parse spec cannot run without a DDL picked by hand.
+function _auditMsgForMask(rec, pay) {
+  const same = m => m && m.bytes && m.bytes.length === pay.length;
+  const shown = (S.messages || []).find(m => m && m.recNo === rec.recNo && same(m));
+  if (shown) return shown;
+  const hit = _auditParseCache.get(rec.offset)?.messages?.[0];
+  if (same(hit) && !hit.manualOverride) return hit;
+  const w = typeof _fmtDetect === 'function' ? _fmtDetect(pay, {}) : null;
+  if (!w) return null;
+  const bytes = w.encoding === 'ebcdic' ? Array.from(pay, b => _EBCDIC_TO_ASCII[b] ?? b) : Array.from(pay);
+  const r = _meParseWithChosenBinding(w, null, bytes, { format: 'hex', rawBytes: Array.from(pay) });
+  return r ? { bytes, fields: r.fields, msgType: w } : null;
+}
+// The payload as the copy may carry it. The parse reads EBCDIC as ASCII byte for
+// byte, so a masked character goes back to EBCDIC where the record is EBCDIC.
+// `failed` when the class masks fields but the record could not be parsed.
+function _auditMaskedPayload(rec, pay) {
+  const msg = _auditMsgForMask(rec, pay);
+  if (!msg) {
+    const w = typeof _fmtDetect === 'function' ? _fmtDetect(pay, {}) : null;
+    const ov = w && window._fmtSpecFor ? window._fmtSpecFor(w.type, w.label, w.kind)?.overrides : null;
+    return { shown: null, failed: !!ov && Object.values(ov).some(o => o?.display === 'masked') };
+  }
+  const m = _maskBytes(msg, msg.bytes);
+  const shown = Array.from(pay, (b, i) => m[i] === msg.bytes[i] ? b
+    : m[i] == null ? null : msg.bytes[i] === b ? m[i] : (_ASCII_TO_EBCDIC[m[i]] ?? 0x3F));
+  return { shown, failed: false };
+}
 function auditCopyDumpToClipboard(e) {
   if (e.target.closest('button')) return;
-  const text = window._auditDumpCM?.state.doc.toString();
+  let text = window._auditDumpCM?.state.doc.toString();
   if (!text) return;
+  const rec = _auditSt.filtered[_auditSt.selIdx];
+  if (_maskExportOn() && rec && _auditSt._inspectBuf) {
+    const u8 = new Uint8Array(_auditSt._inspectBuf);
+    const { shown, failed } = _auditMaskedPayload(rec, u8.slice(AUDIT_HDR_CFG.msgPayloadOffset));
+    if (shown) text = _auditDumpBuild(u8, rec, rec.recNo || (_auditSt.selIdx + 1), shown).text;
+    else if (failed) flash('Copied unmasked — this record could not be parsed, so its masked fields are not known.', 'warn');
+  }
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(text)
       .then(() => showToast('✓ Audit dump copied to clipboard'))
@@ -18271,9 +18392,18 @@ async function auditParseAll() {
 
 function _auditLazyParseNext() {
   if (!_lazyDeferreds || _lazyDeferredIdx >= _lazyDeferreds.length) return;
-  const d  = _lazyDeferreds[_lazyDeferredIdx++];
+  const d   = _lazyDeferreds[_lazyDeferredIdx++];
+  const msg = _lazyBuildMsg(d);
+  if (!msg) { if (_lazyDeferredIdx < _lazyDeferreds.length) _auditLazyParseNext(); return; }
+  S.messages.push(msg);
+}
+// One deferred record as a message, or null when its type's picker was declined.
+// Built once: Follow may build it ahead of navigation, and the message it found
+// must be the one navigation then shows.
+function _lazyBuildMsg(d) {
+  if (d._built) return d._built;
   const sm = _lazySessionMappings?.[d.msgType.type];
-  if (!sm) { if (_lazyDeferredIdx < _lazyDeferreds.length) _auditLazyParseNext(); return; }
+  if (!sm) return null;
   const chosen = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
   const cand   = _lazyAllCompiled?.find(c => c.path === chosen.ddlPath && (c.defName ?? null) === (chosen.defName ?? null));
   let fields = [], ddlPath = chosen.ddlPath, defName = chosen.defName;
@@ -18288,7 +18418,7 @@ function _auditLazyParseNext() {
     isNetard: true, recNo: d.chunk.recNo, source: d.chunk.source, dest: d.chunk.dest,
     recLength: d.chunk.recLength, time: d.chunk.time };
   _resolveTokens(msg);
-  S.messages.push(msg);
+  return (d._built = msg);
 }
 
 function auditCloseMode() {
@@ -22106,7 +22236,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.63.0.1';
+const APP_VERSION  = '1.63.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

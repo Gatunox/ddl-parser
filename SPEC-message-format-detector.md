@@ -1862,11 +1862,21 @@ Where it applies — Settings → **Mask sensitive fields**, two switches:
 | Switch | Default | Covers |
 |---|---|---|
 | Screen | off | Parse Results and the Raw panel |
-| Export | on | every file and clipboard copy carrying message data: the message export, the tracking export, Copy Raw, a copied field or message |
+| Export | on | every file and clipboard copy carrying message data: the message export, the tracking export, Copy Raw, the audit record's copy dump, a copied field or message |
 
 The export dialog's own checkbox starts from the Export switch. Turning masking
 off for an export, there or in Settings, asks for confirmation. Data Input is
 never masked: it is the user's own paste.
+
+- **Audit copy dump** (double-click the record header): the record's parse says
+  where its masked fields are — Parse Results when it shows that record, the
+  parse cache, or else a quiet run of the class that detects it, which changes
+  nothing on screen. In an EBCDIC record a masked character is written back in
+  EBCDIC. When the class masks fields but the record cannot be parsed, it is
+  copied unmasked and a warning says so.
+- **Manual DDL override**: no class, so nothing is masked, and Parse Results
+  says so in the issue bar. The masks are not borrowed from a class bound to the
+  same DDL — one DDL can be bound to several.
 
 ```json
 "overrides": {
@@ -2296,7 +2306,13 @@ Nothing is assumed about what was parsed; the columns follow the input:
 - Each column fits its content and is then fixed, so opening a row's chips does
   not move the others; the window fits the table.
 - The right-clicked row keeps its mark while the menu is open.
-- Only parsed messages are searched: an audit file's deferred records are not.
+- An audit file's records not parsed yet (past the first two of a type whose
+  DDL was picked by hand) are searched by their bytes first — ASCII, EBCDIC,
+  packed BCD for digits, the bytes of an even run of hex digits — and only those
+  holding the value are parsed. Going to one parses the records before it, in
+  log order. A value stored any other way (a binary number) is not found there.
+- The search runs in slices: the window opens at once with a progress bar, the
+  page never freezes, and closing the window stops it.
 - On screen, the followed value follows Settings → Mask sensitive fields → Screen.
 
 ### 11.6 Business rules — what a message must carry

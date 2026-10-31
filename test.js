@@ -1601,7 +1601,7 @@ test('[REGRESSION] the audit dump toggle names the charset it returns to', () =>
   // record answers ASCII. Found while verifying this fix.
   assert.ok(!/_inspectBuf/.test(label),
     'the label must not re-derive the charset from a buffer that may not be loaded yet');
-  assert.ok(/_auditDumpCharset = isEbcdic \? 'ebcdic' : 'ascii';/.test(psFnSource('_auditApplyDump')),
+  assert.ok(/_auditDumpCharset = d\.isEbcdic \? 'ebcdic' : 'ascii';/.test(psFnSource('_auditApplyDump')),
     'the dump must record the charset it rendered in');
   // The toggle is re-read when a record is drawn: the next record can be a
   // different charset, and the button would otherwise keep the last one's word.
@@ -19538,8 +19538,8 @@ test('loading a dump still clears both state classes', () => {
 console.log('\naudit dump byte map');
 
 test('the line start comes from the text, not a per-line constant', () => {
-  const src = psFnSource('_auditApplyDump');
-  const at  = src.indexOf('_auditPopupByteCharMap = new Array(pay.length)');
+  const src = psFnSource('_auditDumpBuild');
+  const at  = src.indexOf('map = new Array(pay.length)');
   assert.ok(at !== -1, 'the hex byte map is gone');
   const region = src.slice(at, at + 2600);   // must reach the byte-offset line
   assert.ok(/const lineStart = payloadStart \+ payText\.length/.test(region),
@@ -21168,7 +21168,7 @@ test('follow a value: every message carrying it, columns by input, nothing assum
     eq(sandbox._followFind(net, '   ').length, 0, 'an empty value matches every blank field');
   } finally { run('_meSpecForMsg = ' + real.toString()); }
   // Matched in is a count that opens a list under the row, not a long line.
-  const src = psFnSource('followValue');
+  const src = psFnSource('followValue') + psFnSource('_followShow');
   // [REGRESSION] 2026-10-30: the window read "Follow", which is the action;
   // once open it is the state, "Following".
   assert.ok(/textContent = `Following "\$\{shown\}"`/.test(src), 'the title does not say Following');
@@ -21201,9 +21201,120 @@ test('follow a value: every message carrying it, columns by input, nothing assum
   assert.ok(/tr\.classList\.add\('row-ctx'\)/.test(ctx), 'the right-clicked row is not marked');
   assert.ok(/classList\.remove\('row-ctx'\)/.test(psFnSource('hideCtxMenu')), 'the mark outlives the menu');
   assert.ok(/tbody tr\.row-ctx td \{ background: var\(--hl-hover\); \}/.test(html), 'the mark has no style');
-  assert.ok(/jumpTo\(h\.idx\)/.test(psFnSource('followGo')), 'a timeline row does not go to its message');
+  assert.ok(/jumpTo\(S\.messages\.indexOf\(h\.msg\)\)/.test(psFnSource('followGo')), 'a timeline row does not go to its message');
   for (const h of ['followGo', 'followToggle', 'closeFollow'])
     assert.ok(new RegExp(`'${h}'`).test(fs.readFileSync('./build.js', 'utf8')), `build.js would rename ${h}`);
+});
+
+// TODO 30 left open: an audit Parse All keeps the records past the first two of
+// a DDL-picker type unparsed (_lazyDeferreds), and Follow never looked at them.
+// They are searched by their bytes and only the ones holding the value are
+// parsed — in slices, so a large file never freezes the page (2026-10-31).
+test('[REGRESSION] follow searches the audit records not parsed yet, by their bytes, in slices', () => {
+  const run = c => vm.runInContext(c, sandbox);
+  const A = s => Array.from(s, c => c.charCodeAt(0));
+  const a2e = run('_ASCII_TO_EBCDIC');
+  const E = s => Array.from(s, c => a2e[c.charCodeAt(0)]);
+  const forms = v => run(`_followByteForms(${JSON.stringify(v)})`).map(f => Array.from(f).join(','));
+  deepEq(forms('000123'), [A('000123'), E('000123'), [0x00, 0x01, 0x23]].map(f => f.join(',')), 'byte forms of an even run of digits');
+  assert.ok(forms('12345').includes('1,35,69'), 'an odd BCD is not padded with a leading 0');
+  assert.ok(forms('12345').includes('18,52,95'), 'an odd BCD is not padded with a trailing F');
+  const saved = run('({ m: S.messages, c: S.curIdx, d: _lazyDeferreds, i: _lazyDeferredIdx, sm: _lazySessionMappings, p: _meParseWithChosenBinding, j: jumpTo })');
+  const realNow = Date.now;
+  const els = ['followBody', 'followTitle', 'followOverlay'];
+  try {
+    resetTimers();
+    for (const id of els) elStubs[id] = { innerHTML: '', textContent: '', classList: { add() {}, remove() {}, contains: () => false } };
+    sandbox.__built = [];
+    sandbox.__jumped = [];
+    run(`_meParseWithChosenBinding = (w, ch, bytes) => { __built.push(bytes); return { fields: [{ id: '11', value: bytes.__v }], tokens: [] }; }`);
+    run('jumpTo = i => __jumped.push(i)');
+    const rec = (v, bytes, recNo) => { bytes.__v = v; return { bytes, rawBytes: bytes, chunkStr: '', charStart: 0,
+      chunk: { recNo }, msgType: { type: 'ISO', label: 'ISO' }, allMatches: [{ ddlPath: 'X', defName: null }] }; };
+    sandbox.__lazy = [rec('000123', A('ISO000123'), 2), rec('999999', A('ISO999999'), 3), rec('000123', E('ISO000123'), 4)];
+    run(`S.messages = [{ msgType: { label: 'ISO' }, bytes: [], fields: [{ id: '11', value: '000123' }], tokens: [] }]; S.curIdx = 0;
+         _lazyDeferreds = __lazy; _lazyDeferredIdx = 0; _lazySessionMappings = { ISO: { ddlPath: 'X', defName: null } };`);
+    // A slow machine: every clock read is 31 ms later, so each slice does one.
+    let t = 0; Date.now = () => (t += 31);
+    run('followValue("11")');
+    assert.ok(/fw-prog-bar/.test(elStubs.followBody.innerHTML) && /Searching… 1 of 4/.test(elStubs.followBody.innerHTML),
+      'the window does not show progress while the search runs');
+    pumpTimers();
+    Date.now = realNow;
+    deepEq(run('_followHits.map(h => h.idx)'), [0, 1, 3], 'a record not parsed yet is not searched (ASCII, then EBCDIC)');
+    eq(sandbox.__built.length, 2, 'a record without the value in its bytes was parsed');
+    eq(run('_lazyDeferredIdx'), 0, 'searching moved the records into Parse Results');
+    assert.ok(/3 of 4 message\(s\) carry this value \(3 not parsed yet were searched by their bytes\)/.test(elStubs.followBody.innerHTML),
+      'the note does not say the unparsed records were searched');
+    // Going to the EBCDIC record parses the ones before it, in log order.
+    run('followGo(2)');
+    eq(run('S.messages.length'), 4, 'the records before the target were not parsed on the way');
+    deepEq(sandbox.__jumped, [3], 'the row went to the wrong message');
+    eq(run('S.messages[3] === _followHits[2].msg'), true, 'navigation shows another parse than the one found');
+    // Closing the window stops the search.
+    run('S.messages = S.messages.slice(0, 1); _lazyDeferredIdx = 0;');
+    elStubs.followBody.innerHTML = '';
+    Date.now = () => (t += 31);
+    run('followValue("11")');
+    run('closeFollow()');
+    pumpTimers();
+    assert.ok(!/carry this value/.test(elStubs.followBody.innerHTML), 'a closed window kept searching');
+  } finally {
+    Date.now = realNow;
+    for (const id of els) delete elStubs[id];
+    sandbox.__saved = saved;
+    run(`S.messages = __saved.m; S.curIdx = __saved.c; _lazyDeferreds = __saved.d; _lazyDeferredIdx = __saved.i;
+         _lazySessionMappings = __saved.sm; _meParseWithChosenBinding = __saved.p; jumpTo = __saved.j;`);
+    resetTimers();
+  }
+});
+
+// TODO 27 left open: the audit "copy dump" (double-click on the record header)
+// copied the record raw, PAN and all. The record's parse says where the masked
+// fields are; a masked EBCDIC character goes back to EBCDIC (2026-10-31).
+test('[REGRESSION] the audit copy dump masks what Export masks', () => {
+  const run = c => vm.runInContext(c, sandbox);
+  const A = s => Array.from(s, c => c.charCodeAt(0));
+  const a2e = run('_ASCII_TO_EBCDIC');
+  const E = s => Array.from(s, c => a2e[c.charCodeAt(0)]);
+  const saved = run('({ m: S.messages, f: _auditSt.filtered, s: _auditSt.selIdx, b: _auditSt._inspectBuf, cm: window._auditDumpCM, mode: _auditPopupMode, me: P.maskExport })');
+  const realWrite = sandbox.navigator.clipboard.writeText;
+  let copied = null;
+  try {
+    const pay = E('XX4111111111111111YY');
+    const u8 = new Uint8Array(110 + pay.length); u8.set(pay, 110);
+    sandbox.__rec = { recNo: 7, offset: 0, length: u8.length, tsBytes: [0, 0, 0, 0, 0, 0] };
+    sandbox.__buf = u8.buffer;
+    sandbox.__pan = { id: 'PAN', value: '4111111111111111', rawBytes: A('4111111111111111'), startByte: 2, endByte: 17 };
+    run(`S.messages = [{ recNo: 7, bytes: ${JSON.stringify(A('XX4111111111111111YY'))}, fields: [__pan],
+           _maskSpec: { overrides: { PAN: { display: 'masked', mask: { keepLast: 4 } } } } }];
+         _auditSt.filtered = [__rec]; _auditSt.selIdx = 0; _auditSt._inspectBuf = __buf; _auditPopupMode = 'ascii';
+         window._auditDumpCM = { state: { doc: { toString: () => 'XX4111111111111111YY' } } }; P.maskExport = true;`);
+    const { shown } = run('_auditMaskedPayload(__rec, new Uint8Array(__buf).slice(110))');
+    deepEq(Array.from(shown), E('XX************1111YY'), 'the payload is not masked, or not back in EBCDIC');
+    sandbox.navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };
+    run('auditCopyDumpToClipboard({ target: { closest: () => null } })');
+    assert.ok(copied && copied.includes('XX************1111YY') && !copied.includes('4111111111111111'), 'the copied dump carries the PAN');
+    run('_auditPopupMode = "hex"');
+    run('auditCopyDumpToClipboard({ target: { closest: () => null } })');
+    assert.ok(!/F4F1 F1F1/.test(copied) && /5C5C/.test(copied) && /\[XX\*{12}11\]/.test(copied) && /\[11YY\]/.test(copied), 'the hex view carries the PAN');
+    run('P.maskExport = false; _auditPopupMode = "ascii"');
+    run('auditCopyDumpToClipboard({ target: { closest: () => null } })');
+    eq(copied, 'XX4111111111111111YY', 'Export masking off still masks the copy');
+  } finally {
+    sandbox.navigator.clipboard.writeText = realWrite;
+    sandbox.__saved = saved;
+    run(`S.messages = __saved.m; _auditSt.filtered = __saved.f; _auditSt.selIdx = __saved.s; _auditSt._inspectBuf = __saved.b;
+         window._auditDumpCM = __saved.cm; _auditPopupMode = __saved.mode; P.maskExport = __saved.me;`);
+  }
+});
+
+// TODO 27 left open: a manual DDL override parses with no class, so nothing is
+// masked. Not guessed from the DDL — one DDL can be bound to several classes —
+// only said (2026-10-31).
+test('[REGRESSION] a manual DDL override says no field is masked', () => {
+  assert.ok(/if \(msg\.manualOverride && \(_maskScreenOn\(\) \|\| _maskExportOn\(\)\)\)\s*warns\.push\(\{ severity: 'warning', fid: null,\s*text: 'Manual DDL override \\u2014 no class, so no field is masked/.test(APP_SRC),
+    'the override parse does not warn that nothing is masked');
 });
 
 // ── Saving an override refreshes the ROW LIST, not just the rendering ───────
@@ -21733,11 +21844,12 @@ test('[REGRESSION] the audit dump renders in the charset detection says, not alw
   assert.ok(/try \{/.test(fn), 'detection must not be able to break the preview');
 
   // And the CHARACTER view has to use it. It decoded raw bytes directly.
-  const dump = psFnSource('_auditApplyDump');
+  const dump = psFnSource('_auditDumpBuild');
   assert.ok(/const isEbcdic = _auditDumpIsEbcdic\(pay\)/.test(dump),
     'the decision must be made once for both views');
   const charBranch = dump.slice(dump.indexOf('let raw ='), dump.indexOf('const indent'));
-  assert.ok(/_EBCDIC_TO_ASCII/.test(charBranch),
+  const decode = dump.slice(dump.indexOf('const ch ='), dump.indexOf('if (_auditPopupMode'));
+  assert.ok(/ch\(at\(i\)/.test(charBranch) && /isEbcdic \? \(_EBCDIC_TO_ASCII/.test(decode),
     'the character view still decodes every record as ASCII');
 });
 

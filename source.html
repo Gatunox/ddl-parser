@@ -8053,13 +8053,17 @@ function openTestJournal() {
 function _meTagBadgesHtml(msg) {
   const spec = (typeof _meSpecForMsg === 'function') ? _meSpecForMsg(msg) : null;
   if (!spec) return '';
-  return _meTagsFor(spec, msg).map(t => {
-    const label = String(t.label || '').trim();
+  const chip = (label, color, title) => {
+    label = String(label || '').trim();
     if (!label) return '';
-    const st = _btypeStyle(t.color);
-    return `<span class="btype btype-tag"${st ? ` style="${st}"` : ''}`
-         + ` title="${esc(_meTagTitle(t))}">${esc(label)}</span>`;
-  }).join('');
+    const st = _btypeStyle(color);
+    return `<span class="btype btype-tag"${st ? ` style="${st}"` : ''} title="${esc(title)}">${esc(label)}</span>`;
+  };
+  // A business rule with a tag badges the message like a tag when it is MET —
+  // it applies and passes. One that fails shows only under the rules badge.
+  return _meTagsFor(spec, msg).map(t => chip(t.label, t.color, _meTagTitle(t))).join('')
+       + _meRulesFor(spec, msg).filter(r => !r.failed.length)
+           .map(r => chip(r.rule.tag, r.rule.color, `Business rule met: ${String(r.rule.name || '').trim()}`)).join('');
 }
 
 // Why the badge is there, on hover. A badge with no stated reason is a badge you
@@ -22089,7 +22093,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.62.0.0';
+const APP_VERSION  = '1.62.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -34279,6 +34283,7 @@ function _meHtmlRules(item) {
     h += `<div class="me-rec-row${editing ? ' editing' : ''}">
   <div class="me-rec-head" onclick="_meRuleToggle(${ri})" title="${editing ? 'Close' : 'Click to edit'}">
     <span class="me-rule-name">${_meOvEsc(String(r.name || '').trim() || 'Unnamed rule')}</span>
+    ${String(r.tag || '').trim() ? `<span class="btype btype-tag"${r.color ? ` style="color:${_meOvEsc(r.color)};border-color:${_meOvEsc(r.color)}"` : ''}>${_meOvEsc(String(r.tag).trim())}</span>` : ''}
     <span class="me-rec-sum">${_meRuleSum(r)}</span>
     <span class="me-rec-acts" onclick="event.stopPropagation()">
       <button class="me-rb del" onclick="_meRuleDel(${ri})" title="Delete this rule">&#x00D7;</button>
@@ -34297,6 +34302,13 @@ function _meRuleForm(r, ri) {
     <div class="me-rf-fld"><div class="me-lbl">Name</div>
       <input class="me-inp me-rule-label" style="width:320px" value="${_meOvEsc(r.name || '')}"
              placeholder="e.g. A 0200 never carries DE-70" oninput="_meRuleSet('name',this.value)"></div>
+    <div class="me-rf-fld"><div class="me-lbl">Tag name</div>
+      <input class="me-inp" style="width:140px" value="${_meOvEsc(r.tag || '')}"
+             placeholder="optional" title="Shown as a tag beside the type when the rule is met"
+             oninput="_meRuleSet('tag',this.value)"></div>
+    <div class="me-rf-fld"><div class="me-lbl">Colour</div>
+      <input type="color" class="me-swatch" value="${_meOvEsc(r.color || '#bc8cff')}"
+             title="Tag colour" oninput="_meRuleSet('color',this.value)"></div>
   </div>`;
   for (const [list, title] of _ME_RULE_LISTS) {
     const conds = Array.isArray(r[list]) ? r[list] : [];
@@ -34363,6 +34375,8 @@ function _meRuleApply(ri) {
     _meFlash('A rule needs at least one "Must hold" condition — it is what is checked.', 'warn');
     return;
   }
+  if (String(r.tag || '').trim()) { r.tag = String(r.tag).trim(); r.color = r.color || '#bc8cff'; }
+  else { delete r.tag; delete r.color; }
   const rules = _meRulesOf(it);
   if (ri === _ME_RULE_NEW) rules.push(r);
   else if (ri >= 0 && ri < rules.length) rules[ri] = r;

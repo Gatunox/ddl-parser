@@ -26114,6 +26114,17 @@ test('business rules: evaluate on any field, badge per message, popup names the 
     assert.ok(/rules-some[^>]*>rules 2\/3</.test(badge(msg('0800'))), 'some failing is not amber');
     const allBad = { msgType: { type: 'ISO' }, fields: [F('MTI', '0800'), F('TERM-ID', 'POS1')], tokens: [] };
     assert.ok(/rules-bad[^>]*>rules 0\/3</.test(badge(allBad)), 'all failing is not red: ' + badge(allBad));
+    // A rule with a tag badges the message like a tag when it is met — applies
+    // and passes — and not when it fails or does not apply (2026-10-31).
+    const tagged = { rules: [
+      { name: 'Net mgmt ok', tag: 'NETMGMT', color: '#00ff00', when: [{ field: 'MTI', op: 'starts-with', value: '08' }], must: [{ field: 'DE-70', op: 'present' }] },
+      { name: 'No tag', when: [], must: [{ field: 'MTI', op: 'present' }] } ] };
+    run('_meSpecForMsg = () => (' + JSON.stringify(tagged) + ')');
+    const tagsOf = m => (sandbox._meTagBadgesHtml(m).match(/btype-tag[^>]*>[^<]*</g) || []).map(x => x.split('>')[1].slice(0, -1)).join(',');
+    eq(tagsOf(msg('0800', [F('NET-MGMT-CDE', '301', 70)])), 'NETMGMT', 'a met rule with a tag shows no tag');
+    eq(tagsOf(msg('0800')), '', 'a failed rule shows its tag');
+    eq(tagsOf(msg('0200')), '', 'a rule that does not apply shows its tag');
+    assert.ok(/color:#00ff00/.test(sandbox._meTagBadgesHtml(msg('0800', [F('X', '1', 70)]))), 'the rule tag lost its colour');
     run('_meSpecForMsg = () => ({ tags: [] })');
     eq(badge(msg('0200')), '', 'a class with no rules shows a badge');
     run('_meSpecForMsg = () => (' + JSON.stringify(item) + ')');

@@ -2377,12 +2377,16 @@ parse. A rule is business, not an issue — it is shown apart from the issue bar
   the type and its tags — `rules ok/n` over the rules that apply to it: green
   when all pass, amber when some fail, red when all fail. No rule applies → no
   badge.
+- **A rule's tag.** A rule may carry `tag` (and `color`): when the rule is met —
+  it applies and passes — the tag badges the message exactly like a class tag,
+  after them. A rule that fails or does not apply shows no tag; its result is
+  only under the rules badge.
 - **The popup.** Clicking the badge lists the rules that failed: the name, why it
   applied (`applies: MTI = 0200`) and what failed
   (`failed: DE-70 is present ("301")`). Values follow Settings → Mask sensitive
   fields → Screen.
 - **Class Editor → Business Rules.** Rows with a summary that open to a form —
-  Name, *When* and *Must hold* condition lists, with field suggestions — edited
+  Name, Tag name and Colour, *When* and *Must hold* condition lists, with field suggestions — edited
   on a copy until Apply. The class row counts them (`rules: N`).
 
 ## 13. Storage

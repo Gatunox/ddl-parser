@@ -2397,6 +2397,17 @@ td.c-err  { color: var(--accent2); }
   font-size: 11px; line-height: 1; opacity: 0.6; cursor: pointer; user-select: none;
 }
 .flash-copy:hover, .flash-x:hover { opacity: 1; }
+/* A toast never covers the page. One that named every record of a big file
+   (4000 positions) grew into a wall over the panels; the width is capped and a
+   list shows three items and "+N" — the rest opens in the toast and scrolls. */
+.flash, .me-flash { max-width: min(720px, calc(100vw - 32px)); box-sizing: border-box; }
+.flash-txt { display: block; overflow-wrap: anywhere; }
+.flash-open .flash-txt { max-height: 40vh; overflow: auto; }
+.flash-more {
+  display: inline-block; border: var(--bw-ctl) solid currentColor; border-radius: var(--r-sm);
+  padding: 0 5px; margin: 0 2px 0 6px; font-weight: 700; cursor: pointer; pointer-events: auto;
+}
+.flash-more:hover { opacity: 0.8; }
 
 /* ===== CONTEXT MENU ===== */
 .ctx-menu {
@@ -13465,8 +13476,8 @@ function doParseNetardLog(text, opts = {}) {
               S.messages.forEach(m => { const t = m.msgType.type; tc[t] = (tc[t]||0)+1; });
               const summary = Object.entries(tc).map(([t,n]) => `${n}\u00d7 ${t}`).join('  ');
               flash(`Loaded ${records.length} record(s) \u2014 ${summary}`);
-              const unkRecs = S.messages.filter(m => m.unknownType).map(m => `#${m.recNo}`).join(', ');
-              if (unkRecs) setTimeout(() => flash(`Record(s) ${unkRecs}: unknown type \u2014 define a class for them in the Class Editor.`, 'warn'), 300);
+              const unkRecs = S.messages.filter(m => m.unknownType).map(m => `#${m.recNo}`);
+              if (unkRecs.length) setTimeout(() => flash({ head: 'Record(s) ', items: unkRecs, tail: ': unknown type \u2014 define a class for them in the Class Editor.' }, 'warn'), 300);
               // No toast for noParseSpec \u2014 the Parse Results panel states it.
               // Amber toast when any records have no matching DDL
               const noMatchCount = S.messages.filter(m => m.noMatchDDL && !m.unknownType && !m.noParseSpec).length;
@@ -14219,7 +14230,7 @@ function doParseMessages() {
             if (unkIdxs.length === 1 && finalParsed.length === 1) {
               setTimeout(() => flash('Unknown message type \u2014 define a class for it in the Class Editor, or right-click a DDL in the tree and choose "Use for parsing (override)".', 'warn'), 300);
             } else if (unkIdxs.length) {
-              setTimeout(() => flash(`Message(s) at position(s) ${unkIdxs.join(', ')}: unknown type \u2014 define a class for them in the Class Editor.`, 'warn'), 300);
+              setTimeout(() => flash({ head: 'Message(s) at position(s) ', items: unkIdxs, tail: ': unknown type \u2014 define a class for them in the Class Editor.' }, 'warn'), 300);
             }
             // No toast for noParseSpec \u2014 the Parse Results panel states it.
             // Amber toast when any message has no matching DDL
@@ -20067,7 +20078,7 @@ function splitHPEDDL(text) {
 
   if (name && buf.length) defs.push({ name, content: buf.join('\n') });   // flush final
   if (warnings.length) {
-    setTimeout(() => flash('DDL validation: ' + warnings.join('; '), 'warn'), 100);
+    setTimeout(() => flash({ head: 'DDL validation: ', items: warnings, sep: '; ' }, 'warn'), 100);
   }
   return defs;
 }
@@ -20649,7 +20660,7 @@ function saveDDL() {
     const _seen = new Set();
     const _dups = [...new Set(defNames.filter(n => _seen.has(n) || !_seen.add(n)))];
     if (_dups.length) {
-      flash(`Duplicate DEF name${_dups.length > 1 ? 's' : ''}: ${_dups.join(', ')}`, 'error');
+      flash({ head: `Duplicate DEF name${_dups.length > 1 ? 's' : ''}: `, items: _dups }, 'error');
       return;
     }
     // Fall through — whole file stored under the filename key (sc.name)
@@ -22070,7 +22081,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.61.0.1';
+const APP_VERSION  = '1.61.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23271,6 +23282,36 @@ function _flashActionBtn(action, dismiss) {
 // `action` is optional: { label, run }. A toast that can DO something is how an
 // edit gets taken back — the alternative was a confirm() in front of every
 // change, which asks before you can know whether you were wrong.
+// A toast message is a string, or { head, items, tail } when it names a list:
+// the first three items show and "+N" opens the rest in the same toast, like
+// Follow's "Matched in". Returns the whole text — Copy and the [line N] jump
+// read it, never the shortened one on screen.
+function _flashText(el, msg, onOpen) {
+  if (typeof msg === 'string') { el.textContent = msg; return msg; }
+  const { head = '', items = [], tail = '', sep = ', ' } = msg;
+  const full = head + items.join(sep) + tail;
+  const t = document.createElement('span');
+  t.className = 'flash-txt';
+  if (items.length <= 3) t.textContent = full;
+  else {
+    const rest = document.createElement('span');
+    rest.className = 'flash-rest hidden';
+    rest.textContent = sep + items.slice(3).join(sep);
+    const more = document.createElement('span');
+    more.className = 'flash-more';
+    more.textContent = `+${items.length - 3}`;
+    more.title = 'Show all';
+    more.addEventListener('click', e => {
+      e.stopPropagation();
+      rest.classList.remove('hidden'); more.remove(); el.classList.add('flash-open');
+      if (onOpen) onOpen();
+    });
+    t.append(head + items.slice(0, 3).join(sep), rest, more, tail);
+  }
+  el.appendChild(t);
+  return full;
+}
+
 function flash(msg, level, action) {
   const container = document.getElementById('flash-container');
   if (!container) return;
@@ -23282,7 +23323,8 @@ function flash(msg, level, action) {
   const el = document.createElement('div');
   el.className = 'flash' + (level === 'warn' ? ' warn' : level === 'error' ? ' error' : '')
                          + (action ? ' has-act' : '');
-  el.textContent = msg;
+  // An opened list is being read: it stays until it is closed.
+  msg = _flashText(el, msg, () => clearTimeout(timer));
   if (action) el.appendChild(_flashActionBtn(action, () => { clearTimeout(timer); el.remove(); }));
   const x = document.createElement('span');
   x.className = 'flash-x'; x.textContent = '✕';
@@ -31673,7 +31715,7 @@ function _meFlash(msg, level, action) {
   const ms = level === 'warn' ? 20000 : action ? 20000 : 10000;
   const el = document.createElement('div');
   el.className = 'me-flash' + (level === 'warn' ? ' warn' : '');
-  el.textContent = msg;
+  _flashText(el, msg, () => clearTimeout(t));
   if (action) el.appendChild(_flashActionBtn(action, () => { clearTimeout(t); el.remove(); }));
   const x = document.createElement('span');
   x.className = 'me-flash-x'; x.textContent = '✕';
@@ -31871,7 +31913,7 @@ function _meFmAutoOrder() {
   if (scopeNotes.length)
     setTimeout(() => _meFlash(scopeNotes.join(' · ')), 500);
   if (suspects.length)
-    setTimeout(() => _meFlash(`⚠ name vs comment mismatch: ${suspects.slice(0, 3).join(', ')}${suspects.length > 3 ? '…' : ''} — verify these`, 'warn'), 900);
+    setTimeout(() => _meFlash({ head: '⚠ name vs comment mismatch: ', items: suspects, tail: ' — verify these' }, 'warn'), 900);
 }
 
 // ── Field Map UI-state persistence (per message spec) ───────────────────────

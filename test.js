@@ -26042,6 +26042,39 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
       assert.ok(/^#\s+Timestamp\s+TRAN-CDE$/.test(lines[3]), 'export header: ' + lines[3]);
     });
   });
+
+  // [REGRESSION] 2026-10-31: a toast that named every unknown record of a big
+  // file (1100 records) grew into a wall over the panels. A list shows three
+  // items and "+N"; the rest opens in the same toast; Copy keeps the whole text.
+  test('[REGRESSION] A toast with a long list shows three items and +N', () => {
+    const mk = () => { const e = { kids: [], classes: new Set(), on: {}, textContent: '',
+      classList: { add: c => e.classes.add(c), remove: c => e.classes.delete(c) },
+      appendChild: k => (e.kids.push(k), k), append: (...k) => e.kids.push(...k),
+      addEventListener: (n, f) => { e.on[n] = f; }, remove: () => { e.removed = true; } };
+      Object.defineProperty(e, 'className', { set: v => v.split(' ').forEach(c => c && e.classes.add(c)), get: () => [...e.classes].join(' ') });
+      return e; };
+    const txt = e => typeof e === 'string' ? e : e.removed || e.classes.has('hidden') ? '' : (e.textContent || '') + e.kids.map(txt).join('');
+    const prev = sandbox.document.createElement;
+    sandbox.document.createElement = () => mk();
+    try {
+      const ft = vm.runInContext('_flashText', sandbox);
+      const items = Array.from({ length: 440 }, (_, i) => '#' + (975000 + i));
+      const el = mk(); let opened = 0;
+      const full = ft(el, { head: 'Record(s) ', items, tail: ': unknown type' }, () => opened++);
+      eq(full, 'Record(s) ' + items.join(', ') + ': unknown type', 'Copy does not get the whole list');
+      eq(txt(el), 'Record(s) #975000, #975001, #975002+437: unknown type', 'the toast shows the whole list');
+      const more = el.kids[0].kids.find(k => k.classes && k.classes.has('flash-more'));
+      more.on.click({ stopPropagation() {} });
+      eq(txt(el), 'Record(s) ' + items.join(', ') + ': unknown type', '+N does not open the rest');
+      assert.ok(el.classes.has('flash-open') && opened === 1, 'an opened list still expires');
+      eq(ft(mk(), 'plain'), 'plain', 'a plain toast changed');
+      const short = mk(); ft(short, { head: 'Dups: ', items: ['A', 'B'] });
+      eq(txt(short), 'Dups: A, B', 'a short list grew a +N');
+    } finally { sandbox.document.createElement = prev; }
+    for (const re of [/flash\(\{ head: 'Record\(s\) ', items: unkRecs/, /flash\(\{ head: 'Message\(s\) at position\(s\) ', items: unkIdxs/,
+                      /flash\(\{ head: 'DDL validation: ', items: warnings/, /items: _dups \}/, /_meFlash\(\{ head: '⚠ name vs comment mismatch: ', items: suspects/])
+      assert.ok(re.test(APP_SRC), 'a list toast joins its list into the text again: ' + re);
+  });
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────────

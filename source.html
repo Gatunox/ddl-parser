@@ -1765,6 +1765,13 @@ input[type="text"]:focus { border-color: var(--accent); }
    one shape rather than three badges. The colour comes from the tag itself. */
 .btype-tag     { background: var(--h-gray-bg); color: var(--h-gray-fg); border: var(--bw-ctl) solid var(--h-gray-bd); margin-left: 4px; }
 
+/* Business rules: the verdict of the rules that apply to this message, in the
+   theme's pass / warn / fail colours. A button — it opens the detail. */
+.btype-rules   { background: var(--h-gray-bg); border: var(--bw-ctl) solid currentColor; margin-left: 4px; cursor: pointer; }
+.btype-rules.rules-ok   { color: var(--success); }
+.btype-rules.rules-some { color: var(--warning); }
+.btype-rules.rules-bad  { color: var(--danger); }
+
 /* ---- Class Editor: Tags ---- */
 /* The name box shows what was TYPED. It used to carry
    text-transform:uppercase, so "Recurring" appeared as "RECURRING" while the
@@ -1780,6 +1787,7 @@ input[type="text"]:focus { border-color: var(--accent); }
    declare first — .me-rec-list is defined further down and was winning on
    source order alone. */
 .me-rec-list.me-tag-rows { margin-bottom:0; }
+.me-rule-name { font-weight:700; color:var(--text); white-space:nowrap; }
 /* Between conditions on a collapsed row: dimmed, so the summary reads as one
    line of facts rather than three competing ones. */
 .me-rec-sep { color:var(--text-very-dim); }
@@ -8003,7 +8011,7 @@ function journalForField(fid, ev) {
 function closeWhy() { document.getElementById('whyPop')?.classList.add('hidden'); }
 document.addEventListener('mousedown', e => {
   const pop = document.getElementById('whyPop');
-  if (pop && !pop.classList.contains('hidden') && !pop.contains(e.target) && !e.target.closest?.('.row-why')) closeWhy();
+  if (pop && !pop.classList.contains('hidden') && !pop.contains(e.target) && !e.target.closest?.('.row-why, .btype-rules')) closeWhy();
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeWhy(); });
 // Class Editor → Test → Journal: the same journal for the last Test run.
@@ -15409,7 +15417,7 @@ function renderFieldTable(msg) {
   if (msg.isNetard) {
     const t   = msg.msgType || { type:'UNKNOWN' };
     const recLabel = [msg.recNo != null ? `Rec #${msg.recNo}` : '', msg.typeDesc || ''].filter(Boolean).join(' · ');
-    _setResTypeBadge(_btypeHtml(t.type, t.color) + _meTagBadgesHtml(msg));
+    _setResTypeBadge(_btypeHtml(t.type, t.color) + _meTagBadgesHtml(msg) + _meRulesBadgeHtml(msg));
     metaContent = `${recLabel ? `<span class="rec-meta-route">${esc(recLabel)}</span><span class="rec-meta-pipe">|</span>` : ''}
       <span class="rec-meta-route">${esc(msg.source||'?')} → ${esc(msg.dest||'?')}</span>
       <span class="rec-meta-pipe">|</span>
@@ -15420,7 +15428,7 @@ function renderFieldTable(msg) {
   } else if (msg.msgType?.type && msg.msgType.type !== 'UNKNOWN') {
     const t   = msg.msgType;
     const ddlName = msg.ddlPath ? (msg.ddlPath.split('/').pop() + (msg.defName ? '/' + msg.defName : '')) : '';
-    _setResTypeBadge(_btypeHtml(t.type, t.color) + _meTagBadgesHtml(msg));
+    _setResTypeBadge(_btypeHtml(t.type, t.color) + _meTagBadgesHtml(msg) + _meRulesBadgeHtml(msg));
     metaContent = `${ddlName ? `<span>${esc(ddlName)}</span>` : ''}
       ${_provHtml.by}
       <span class="rec-meta-pipe">|</span>
@@ -22081,7 +22089,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.61.0.2';
+const APP_VERSION  = '1.62.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24795,10 +24803,12 @@ function openMsgEditor() {
     specs,
     section:  'msg',
     selIdx:   -1,
-    sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false, tags: false },
+    sections: { identity: true, recognizers: true, parse_spec: false, ddl_bindings: false, overrides: false, tags: false, rules: false },
     editRec:  -1,
     editTag:  -1,
     tagPend:  null,
+    editRule: -1,
+    rulePend: null,
     pend:     {},
     dirty:    false,
     testResults: null,              // last cross-entity Test verdicts, or null
@@ -25072,6 +25082,8 @@ function _meSelectItem(section, idx) {
   _meState.editRec = -1;
   _meState.editTag = -1;
   _meState.tagPend = null;
+  _meState.editRule = -1;
+  _meState.rulePend = null;
   _meState.pend    = {};
   _meState.recTest = null;   // dots are per-entity, drop the old verdict
   _meState.section = section;
@@ -25585,6 +25597,8 @@ function _meRenderRight() {
           // table of hundreds, so below it the section was a scroll away from
           // everything else on the page.
           + sect('tags',         'Tags',        syncFill(() => _meHtmlTags(item)), _meTagActionsHtml())
+          + sect('rules',        'Business Rules', syncFill(() => _meHtmlRules(item)),
+                 `<button class="btn" onclick="_meRuleAdd()" title="Add a business rule">+ Add Rule</button>`)
           + sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done),
                  '', _meOvBadgeHtml());
   }
@@ -34235,6 +34249,185 @@ function _meTagCondSet(ti, ci, key, val) {
   }
 }
 
+// ── Business rules: the Class Editor section ─────────────────────────────────
+// The same rows and form as Tags — a collapsed summary opening to a form, edits
+// on a pending copy until Apply — with two condition lists instead of one:
+// "When" (empty: every message of the class) and "Must hold".
+const _ME_RULE_NEW = -2;
+const _ME_RULE_LISTS = [['when', 'When — all hold (empty: every message)'], ['must', 'Must hold']];
+function _meRulesOf(item) {
+  if (!item) return [];
+  if (!Array.isArray(item.rules)) item.rules = [];
+  return item.rules;
+}
+function _meRuleSum(r) {
+  const must = _meRuleConds(r.must);
+  if (!must.length) return '<span class="me-tag-note">nothing to check — never applies</span>';
+  const when = _meRuleConds(r.when);
+  const sep = '<span class="me-rec-sep"> · </span>';
+  return (when.length ? `${when.map(c => _meOvEsc(_meRuleCondText(c))).join(sep)}<span class="me-rec-sep"> \u2192 </span>` : '')
+       + must.map(c => _meOvEsc(_meRuleCondText(c))).join(sep);
+}
+function _meHtmlRules(item) {
+  const rules = Array.isArray(item.rules) ? item.rules : [];
+  let h = '<div class="me-rec-list me-tag-rows">';
+  if (!rules.length)
+    h += `<div class="me-empty">No business rules yet. A rule says what a message must carry — or must not — and every parsed message gets a verdict badge.</div>`;
+  rules.forEach((r0, ri) => {
+    const editing = _meState.editRule === ri;
+    const r = editing && _meState.rulePend ? _meState.rulePend : r0;
+    h += `<div class="me-rec-row${editing ? ' editing' : ''}">
+  <div class="me-rec-head" onclick="_meRuleToggle(${ri})" title="${editing ? 'Close' : 'Click to edit'}">
+    <span class="me-rule-name">${_meOvEsc(String(r.name || '').trim() || 'Unnamed rule')}</span>
+    <span class="me-rec-sum">${_meRuleSum(r)}</span>
+    <span class="me-rec-acts" onclick="event.stopPropagation()">
+      <button class="me-rb del" onclick="_meRuleDel(${ri})" title="Delete this rule">&#x00D7;</button>
+    </span>
+  </div>
+  ${editing ? _meRuleForm(r, ri) : ''}
+</div>`;
+  });
+  if (_meState.editRule === _ME_RULE_NEW && _meState.rulePend)
+    h += `<div class="me-rec-row editing" style="margin-top:6px">${_meRuleForm(_meState.rulePend, _ME_RULE_NEW)}</div>`;
+  return h + '</div>';
+}
+function _meRuleForm(r, ri) {
+  let h = `<div class="me-rec-form open">
+  <div class="me-rf-row">
+    <div class="me-rf-fld"><div class="me-lbl">Name</div>
+      <input class="me-inp me-rule-label" style="width:320px" value="${_meOvEsc(r.name || '')}"
+             placeholder="e.g. A 0200 never carries DE-70" oninput="_meRuleSet('name',this.value)"></div>
+  </div>`;
+  for (const [list, title] of _ME_RULE_LISTS) {
+    const conds = Array.isArray(r[list]) ? r[list] : [];
+    h += `<div class="me-tag-conds me-rule-${list}"><div class="me-lbl">${title}</div>`;
+    conds.forEach((c, ci) => {
+      const op = c.op || 'equals', noVal = op === 'present' || op === 'absent';
+      h += `<div class="me-tag-cond">
+    <input class="me-inp" value="${_meOvEsc(c.field || '')}" placeholder="field id / token id / DE-n"
+           autocomplete="off" spellcheck="false"
+           onclick="_meRuleFieldSuggest(this,'${list}',${ci},event)"
+           oninput="_meRuleCondSet('${list}',${ci},'field',this.value);_meRuleFieldSuggest(this,'${list}',${ci})">
+    <select class="me-sel" onchange="_meRuleCondSet('${list}',${ci},'op',this.value)">
+      ${_ME_RULE_OPS.map(o => `<option value="${o}"${op === o ? ' selected' : ''}>${o}</option>`).join('')}
+    </select>
+    <input class="me-inp" value="${_meOvEsc(Array.isArray(c.value) ? c.value.join(', ') : (c.value || ''))}"
+           placeholder="${noVal ? 'no value needed' : _meTagValPlaceholder(op)}"${noVal ? ' disabled' : ''}
+           oninput="_meRuleCondSet('${list}',${ci},'value',this.value)">
+    <button class="me-rb del" onclick="_meRuleCondDel('${list}',${ci})" title="Remove this condition">&#x00D7;</button>
+  </div>`;
+    });
+    h += `<button class="btn me-tag-add" onclick="_meRuleCondAdd('${list}')">+ Condition</button></div>`;
+  }
+  return h + `<div class="me-rf-btnrow">
+    <button class="btn" onclick="_meRuleCancel()">Cancel</button>
+    <button class="btn btn-primary" onclick="_meRuleApply(${ri})">&#x2713; Apply</button>
+  </div>
+</div>`;
+}
+function _meRuleRepaint(open) {
+  const it = _meCurItem();
+  const el = document.getElementById('me-sect-body-rules');
+  if (!it || !el) { _meRenderRight(); return; }
+  if (open && _meState?.sections && !_meState.sections.rules) {
+    _meState.sections.rules = true;
+    el.classList.add('open');
+    const arr = el.previousElementSibling?.querySelector('.me-section-arr');
+    if (arr) arr.textContent = '\u2212';
+  }
+  el.innerHTML = _mePad(_meHtmlRules(it));
+}
+function _meRuleToggle(ri) {
+  if (_meState.editRule === ri) { _meRuleCancel(); return; }
+  const it = _meCurItem(); if (!it) return;
+  _meState.editRule = ri;
+  _meState.rulePend = JSON.parse(JSON.stringify(_meRulesOf(it)[ri] || {}));
+  _meRuleRepaint();
+}
+function _meRuleAdd() {
+  const it = _meCurItem(); if (!it) return;
+  _meState.editRule = _ME_RULE_NEW;
+  _meState.rulePend = { name: '', when: [], must: [{ field: '', op: 'present', value: '' }] };
+  _meRuleRepaint(true);
+  document.querySelector('.me-rec-form.open .me-rule-label')?.focus();
+}
+function _meRuleApply(ri) {
+  const it = _meCurItem(), r = _meState.rulePend; if (!it || !r) return;
+  // The name is what the failure popup says, so a nameless rule fails as nothing.
+  if (!String(r.name || '').trim()) {
+    _meFlash('A rule needs a name — it is what a failure is reported as.', 'warn');
+    document.querySelector('.me-rec-form.open .me-rule-label')?.focus();
+    return;
+  }
+  if (!_meRuleConds(r.must).length) {
+    _meFlash('A rule needs at least one "Must hold" condition — it is what is checked.', 'warn');
+    return;
+  }
+  const rules = _meRulesOf(it);
+  if (ri === _ME_RULE_NEW) rules.push(r);
+  else if (ri >= 0 && ri < rules.length) rules[ri] = r;
+  else return;
+  _meState.rulePend = null;
+  _meState.editRule = -1;
+  _meSetDirty();
+  _meRuleRepaint();
+  _meRenderSidebar();
+}
+function _meRuleCancel() {
+  _meState.rulePend = null;
+  _meState.editRule = -1;
+  _meRuleRepaint();
+}
+function _meRuleDel(ri) {
+  const it = _meCurItem(); if (!it) return;
+  _meRulesOf(it).splice(ri, 1);
+  if (!it.rules.length) delete it.rules;
+  if (_meState.editRule === ri) { _meState.editRule = -1; _meState.rulePend = null; }
+  else if (_meState.editRule > ri) _meState.editRule--;
+  _meSetDirty();
+  _meRuleRepaint();
+  _meRenderSidebar();
+}
+// Name and values edit the pending copy quietly — a repaint per keystroke would
+// take the caret. An op repaints, because it enables or disables the value box.
+function _meRuleSet(key, val) { if (_meState.rulePend) _meState.rulePend[key] = val; }
+function _meRuleCondAdd(list) {
+  const r = _meState.rulePend; if (!r) return;
+  (Array.isArray(r[list]) ? r[list] : (r[list] = [])).push({ field: '', op: 'equals', value: '' });
+  _meRuleRepaint();
+}
+function _meRuleCondDel(list, ci) {
+  const r = _meState.rulePend; if (!r || !Array.isArray(r[list])) return;
+  r[list].splice(ci, 1);
+  _meRuleRepaint();
+}
+function _meRuleCondSet(list, ci, key, val) {
+  const c = _meState.rulePend?.[list]?.[ci]; if (!c) return;
+  c[key] = val;
+  if (key === 'op') _meRuleRepaint();
+}
+// The field box suggests the class's ids through the app's own menu, as Tags do.
+function _meRuleFieldSuggest(el, list, ci, ev) {
+  if (!el) return;
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  const r = _meState.rulePend || {};
+  const ids = _meTagFieldIds(_meCurItem(), { conditions: [..._meRuleConds(r.when), ..._meRuleConds(r.must)] });
+  if (!ids.length) return;
+  const q = String(el.value || '').trim().toUpperCase();
+  const hits = q ? ids.filter(i => `${i.id} ${i.note || ''}`.toUpperCase().includes(q)) : ids;
+  if (!hits.length) { hideCtxMenu(); return; }
+  const shown = hits.slice(0, _ME_TAG_SUGGEST_MAX);
+  const items = shown.map(({ id, note }) => ({ label: note ? `${id} · ${note}` : id, fn: () => {
+    el.value = id;
+    _meRuleCondSet(list, ci, 'field', id);
+    el.focus();
+  } }));
+  if (hits.length > shown.length)
+    items.push({ separator: true }, { label: `+${hits.length - shown.length} more — keep typing`, disabled: true, fn: () => {} });
+  const b = el.getBoundingClientRect();
+  showCtxMenu(b.left, b.bottom + 2, items);
+}
+
 function _meHtmlRecs(item) {
   const recs = item.recognizers || [];
   const _TYPE_LABEL = { ..._REC_TYPE_LABEL, uint8:'uint8 / byte', uint16:'uint16 / word', uint32:'uint32 / dword' };
@@ -37377,6 +37570,9 @@ function _meTagCondHolds(cond, byId) {
   // whose DDL is not loaded is still ON THE WIRE, and its being there is exactly
   // what was asked about.
   if (String(cond.op || 'equals') === 'present') return !!f;
+  // `absent` is its mirror, and only a business rule offers it: "a 0200 never
+  // carries DE-70".
+  if (String(cond.op) === 'absent') return !f;
   const want = _meTagValues(cond);
   if (!want.length) return false;
   // A field the parse never produced. `not` is deliberately false here too:
@@ -37397,6 +37593,7 @@ function _meTagCondHolds(cond, byId) {
     // field, and the field is all three of its readings at once.
     case 'not':    return !have.some(h => want.includes(h));
     case 'one-of': return have.some(h => want.includes(h));
+    case 'starts-with': return have.some(h => want.some(w => h.startsWith(w)));
     default:       return have.includes(want[0]);
   }
 }
@@ -37406,8 +37603,25 @@ function _meTagCondHolds(cond, byId) {
 function _meTagsFor(item, msg) {
   const tags = Array.isArray(item?.tags) ? item.tags : [];
   if (!tags.length || !msg) return [];
+  const byId = _meCondIndex(msg);
+  return tags.filter(t => {
+    const conds = Array.isArray(t?.conditions) ? t.conditions.filter(c => c && c.field) : [];
+    // No conditions is not "always true": an empty tag is one being written, and
+    // badging every message while it is half-typed is noise.
+    if (!conds.length) return false;
+    return conds.every(c => _meTagCondHolds(c, byId));
+  });
+}
+
+// Every name a condition can use for a field of this message: its id, a token
+// and its leaves, and `DE-n` for the first field carrying ISO data element n —
+// so "DE-70" names the element whichever DDL field it was read into.
+function _meCondIndex(msg) {
   const byId = {};
-  for (const f of (msg.fields || [])) if (f && f.id && !f.error) byId[_canonFieldId(f.id)] = f;
+  for (const f of (msg.fields || [])) if (f && f.id && !f.error) {
+    byId[_canonFieldId(f.id)] = f;
+    if (f.deNum != null && !byId[`DE-${f.deNum}`]) byId[`DE-${f.deNum}`] = f;
+  }
   // Tokens are their own definitions, reached through the token map rather than
   // the DDL the class binds, so a tag that asks about one has to be handed them
   // separately. The id alone answers `present`; its leaves come in behind it as
@@ -37424,13 +37638,86 @@ function _meTagsFor(item, msg) {
       byId[`${id}.${_meTagTokenLeaf(f.id)}`] = f;
     }
   }
-  return tags.filter(t => {
-    const conds = Array.isArray(t?.conditions) ? t.conditions.filter(c => c && c.field) : [];
-    // No conditions is not "always true": an empty tag is one being written, and
-    // badging every message while it is half-typed is noise.
-    if (!conds.length) return false;
-    return conds.every(c => _meTagCondHolds(c, byId));
-  });
+  return byId;
+}
+
+// ── Business rules (SPEC §11.6) ─────────────────────────────────────────────
+// item.rules = [{ name, when: [cond…], must: [cond…] }] — "when these hold,
+// these must hold". A condition is a tag's ({ field, op, value }), with two more
+// ops: starts-with, and absent for "never carries". No `when` → the rule applies
+// to every message of the class. A rule judges what was read and never touches
+// the parse; it is business, not an issue. Requested 2026-10-31.
+const _ME_RULE_OPS = ['equals', 'not', 'one-of', 'starts-with', 'present', 'absent'];
+const _meRuleConds = l => (Array.isArray(l) ? l : []).filter(c => c && c.field);
+// The rules that apply to this message, each with the conditions it failed.
+function _meRulesFor(item, msg) {
+  const rules = Array.isArray(item?.rules) ? item.rules : [];
+  if (!rules.length || !msg) return [];
+  const byId = _meCondIndex(msg), out = [];
+  for (const rule of rules) {
+    const must = _meRuleConds(rule?.must);
+    // A rule with nothing to check is one being written, like an empty tag.
+    if (!must.length || !_meRuleConds(rule.when).every(c => _meTagCondHolds(c, byId))) continue;
+    out.push({ rule, failed: must.filter(c => !_meTagCondHolds(c, byId)), byId });
+  }
+  return out;
+}
+const _ME_RULE_OP_TXT = { equals: '=', not: '\u2260', 'one-of': 'is one of', 'starts-with': 'starts with', present: 'is present', absent: 'is absent' };
+function _meRuleCondText(c) {
+  const op = String(c.op || 'equals');
+  if (op === 'present' || op === 'absent') return `${c.field} ${_ME_RULE_OP_TXT[op]}`;
+  return `${c.field} ${_ME_RULE_OP_TXT[op] || '='} ${_meTagValues(c).join(', ')}`;
+}
+// What the message holds instead — through the screen mask, like every value.
+function _meRuleFailText(c, f, msg) {
+  const op = String(c.op || 'equals');
+  const shown = f && !f.isToken ? (_maskScreenOn() ? _maskField(msg, f) : f) : null;
+  const v = shown ? JSON.stringify(String(shown.displayValue ?? shown.value ?? '').trim()) : '';
+  if (op === 'absent')  return `${c.field} is present${v ? ` (${v})` : ''}`;
+  if (op === 'present' || !f) return `${c.field} is missing${op === 'present' ? '' : ` — expected ${_meRuleCondText(c)}`}`;
+  return `${c.field} is ${v} — expected ${_meRuleCondText(c)}`;
+}
+// The badge beside the type: green when every rule that applies passes, amber
+// when some fail, red when all do. No rule applies → no badge.
+function _meRulesBadgeHtml(msg) {
+  const spec = (typeof _meSpecForMsg === 'function') ? _meSpecForMsg(msg) : null;
+  const res = spec ? _meRulesFor(spec, msg) : [];
+  if (!res.length) return '';
+  const n = res.length, ok = res.filter(r => !r.failed.length).length;
+  const st = ok === n ? 'ok' : ok === 0 ? 'bad' : 'some';
+  return `<span class="btype btype-rules rules-${st}" onclick="openRulesPop(event)"`
+       + ` title="${ok} of ${n} business rule${n !== 1 ? 's' : ''} pass — click for the detail">rules ${ok}/${n}</span>`;
+}
+// The popup: the rules that failed, why each applied and what failed.
+function _meRulesPopLines(msg) {
+  const spec = _meSpecForMsg(msg);
+  const res = spec ? _meRulesFor(spec, msg) : [];
+  const bad = res.filter(r => r.failed.length), L = [];
+  if (!bad.length) { L.push({ kind: 'pass', text: `All ${res.length} rule${res.length !== 1 ? 's' : ''} that apply pass.`, depth: 0 }); return L; }
+  for (const { rule, failed, byId } of bad) {
+    L.push({ kind: 'h', text: String(rule.name || '').trim() || 'Unnamed rule', depth: 0 });
+    const when = _meRuleConds(rule.when);
+    L.push({ kind: 'note', text: `applies: ${when.length ? when.map(_meRuleCondText).join(' · and ') : 'every message of the class'}`, depth: 1 });
+    for (const c of failed)
+      L.push({ kind: 'fail', text: `failed:  ${_meRuleFailText(c, byId[_canonFieldId(c.field)], msg)}`, depth: 1 });
+  }
+  return L;
+}
+function openRulesPop(ev) {
+  const msg = S.messages?.[S.curIdx];
+  const pop = document.getElementById('whyPop');
+  if (!msg || !pop) return;
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  const spec = _meSpecForMsg(msg);
+  const res = spec ? _meRulesFor(spec, msg) : [];
+  const nBad = res.filter(r => r.failed.length).length;
+  pop.innerHTML = `<div class="why-hdr"><span>Business rules — ${nBad} of ${res.length} failed</span>`
+    + `<button class="btn btn-ico" onclick="closeWhy()">✕</button></div>`
+    + _meRulesPopLines(msg).map(l => `<div class="jl jl-${l.kind}" style="padding-left:${8 + l.depth * 14}px">${_escHtml(l.text)}</div>`).join('');
+  pop.classList.remove('hidden');
+  const r = ev?.target?.getBoundingClientRect?.() || { left: 40, top: 40, bottom: 80 };
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 12)) + 'px';
+  pop.style.top  = (r.bottom + 4 + pop.offsetHeight > window.innerHeight ? Math.max(8, r.top - pop.offsetHeight - 4) : r.bottom + 4) + 'px';
 }
 
 // ── map: another DDL definition standing in for a field's shape ─────────────
@@ -40864,6 +41151,10 @@ function _meItemNotes(s) {
         const conds = (t.conditions || []).filter(c => c && c.field).length;
         return `${String(t.label).trim()} — ${conds} condition${conds !== 1 ? 's' : ''}`;
       }).join('\n')}` });
+  const rules = Array.isArray(s.rules) ? s.rules.filter(r => r && _meRuleConds(r.must).length) : [];
+  if (rules.length)
+    notes.push({ warn: false, short: `rules: ${rules.length}`, full:
+      `Business rules\n${rules.map(r => String(r.name || 'Unnamed rule').trim()).join('\n')}` });
   return notes;
 }
 
@@ -42078,6 +42369,7 @@ function _meSave() {
               <li><strong>DDL Bindings</strong> — the DDLs this class is parsed with; the first is the default</li>
               <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more</li>
               <li><strong>Tags</strong> — labels such as <em>RECURRING</em> or <em>REVERSAL</em> that appear beside the type code when a message's field values meet their conditions</li>
+              <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed</li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>Test</strong> — paste a message under the list and press <strong>▶ Run</strong>: every class is marked as winner, shadowed, rejected or never reached, a failing recognizer says which condition failed, and the winner's fields are shown as the app would parse them</li>
             </ul>

@@ -1219,12 +1219,29 @@ and from the Test panel.
 
 ---
 
-## 29. [ ] Business validation rules
+## 29. [x] Business validation rules
 
-**Asked for 2026-10-28.** Beyond structure: rules such as "if DE3 is 00xxxx, DE4
-is mandatory" or "DE39 must be in this list", reported in the issue bar next to
-the parse errors.
+**Asked for 2026-10-28.** Beyond structure: rules such as "a network management
+message must carry DE-70", "a 0200 never carries DE-70" or "DE-39 must be in
+this list".
 
+**Agreed 2026-10-31:**
+- A `rules` section of the class, beside `parse_spec` and `overrides` — not
+  inside the parse spec: rules judge what was read and never change the parse.
+  Edited in its own section of the Class Editor.
+- Each rule: `name`, optional `when: [cond…]` and `must: [cond…]` — "when these
+  hold, these must hold". A condition is a tag's (`field`, `op`, `value`), on any
+  field: a DDL field name (STM too), a token, or `DE-n`. Ops: equals, not,
+  one-of, starts-with, present, absent. No `when` → it applies to every message
+  of the class. (Replaced the first draft's require / forbid / check, which
+  could not test a value in forbid.)
+- Not an issue: issues are data/format; a rule is business. Shown apart.
+- A badge PER MESSAGE in the Parse Results title, beside the type badge, from
+  that message's rules that apply: green all pass, amber some fail, red all
+  fail. No rules, or none applies → no badge.
+- Clicking it opens a popup with the rules that FAILED: name, why it applied,
+  what failed (e.g. `applies: MTI = 0200` / `failed: DE-70 is present ("301")`).
+- Done in v1.62.0.0 — SPEC §11.6.
 
 ---
 

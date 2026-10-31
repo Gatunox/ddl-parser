@@ -6654,7 +6654,7 @@ test('tags: the section and the badge are wired', () => {
   assert.ok(/tags: false/.test(src), 'and starts collapsed, like the other configured-later sections');
   // Drawn beside the type code, on BOTH paths that set that badge — a record
   // parse and a message parse are two different branches.
-  eq((src.match(/_setResTypeBadge\(_btypeHtml\(t\.type, t\.color\) \+ _meTagBadgesHtml\(msg\)\)/g) || []).length, 2,
+  eq((src.match(/_setResTypeBadge\(_btypeHtml\(t\.type, t\.color\) \+ _meTagBadgesHtml\(msg\)/g) || []).length, 2,
      'both meta-bar branches draw the tags');
   assert.ok(/\.btype-tag\s*\{/.test(src), 'the badge has a style of its own');
   // The field box suggests ids from the bound DDL through the app's OWN menu.
@@ -26076,6 +26076,67 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
       assert.ok(re.test(APP_SRC), 'a list toast joins its list into the text again: ' + re);
   });
 }
+
+// Business rules (TODO 29): a class's rules judge each parsed message — "when
+// these hold, these must hold" — on any field, token or DE-n, and the message
+// gets a green / amber / red verdict badge whose popup names what failed.
+test('business rules: evaluate on any field, badge per message, popup names the failure', () => {
+  const run = c => vm.runInContext(c, sandbox);
+  const P = run('P'), savedScreen = P.maskScreen;
+  const real = run('_meSpecForMsg');
+  const F = (id, value, deNum) => ({ id, value, deNum });
+  const msg = (mti, extra = []) => ({ msgType: { type: 'ISO' },
+    fields: [F('MTI', mti), F('PROC-CODE', '000000', 3), F('TERM-ID', 'ATM00042 ', 41), ...extra],
+    tokens: [{ id: 'B4', fields: [] }] });
+  const rules = [
+    { name: 'Network management requires DE-70', when: [{ field: 'MTI', op: 'starts-with', value: '08' }], must: [{ field: 'DE-70', op: 'present' }] },
+    { name: 'A 0200 never carries DE-70',        when: [{ field: 'MTI', op: 'equals', value: '0200' }],    must: [{ field: 'DE-70', op: 'absent' }] },
+    { name: 'Terminal is an ATM',                must: [{ field: 'TERM-ID', op: 'starts-with', value: 'ATM' }] },
+    { name: 'Token B4 is there',                 must: [{ field: 'B4', op: 'present' }] },
+    { name: 'Being written',                     must: [] },
+  ];
+  const item = { rules };
+  const verdict = m => sandbox._meRulesFor(item, m).map(r => `${r.rule.name}:${r.failed.length ? 'fail' : 'pass'}`);
+  try {
+    P.maskScreen = false;
+    // 0800 without DE-70 fails the first; the 0200 rule does not apply; a rule
+    // with no "when" applies to every message; an empty one never does.
+    eq(verdict(msg('0800')).join(' | '),
+       'Network management requires DE-70:fail | Terminal is an ATM:pass | Token B4 is there:pass');
+    eq(verdict(msg('0800', [F('NET-MGMT-CDE', '301', 70)]))[0], 'Network management requires DE-70:pass', 'DE-70 is named by its DE number');
+    eq(verdict(msg('0200', [F('NET-MGMT-CDE', '301', 70)]))[0], 'A 0200 never carries DE-70:fail', 'absent does not fail on a present DE');
+    eq(verdict(msg('0200'))[0], 'A 0200 never carries DE-70:pass');
+
+    // The badge: one per message, from the rules that apply to it.
+    run('_meSpecForMsg = () => (' + JSON.stringify(item) + ')');
+    const badge = m => sandbox._meRulesBadgeHtml(m);
+    assert.ok(/rules-ok[^>]*>rules 3\/3</.test(badge(msg('0200'))), 'all pass is not green: ' + badge(msg('0200')));
+    assert.ok(/rules-some[^>]*>rules 2\/3</.test(badge(msg('0800'))), 'some failing is not amber');
+    const allBad = { msgType: { type: 'ISO' }, fields: [F('MTI', '0800'), F('TERM-ID', 'POS1')], tokens: [] };
+    assert.ok(/rules-bad[^>]*>rules 0\/3</.test(badge(allBad)), 'all failing is not red: ' + badge(allBad));
+    run('_meSpecForMsg = () => ({ tags: [] })');
+    eq(badge(msg('0200')), '', 'a class with no rules shows a badge');
+    run('_meSpecForMsg = () => (' + JSON.stringify(item) + ')');
+
+    // The popup: only what failed — the rule, why it applied, what failed.
+    const lines = m => sandbox._meRulesPopLines(m).map(l => `${l.kind}|${l.text}`);
+    const same = (a, b, m) => eq(a.join('\n'), b.join('\n'), m);
+    same(lines(msg('0200', [F('NET-MGMT-CDE', '301', 70)])),
+       ['h|A 0200 never carries DE-70', 'note|applies: MTI = 0200', 'fail|failed:  DE-70 is present ("301")']);
+    same(lines(allBad).filter(l => l.startsWith('fail')),
+       ['fail|failed:  DE-70 is missing', 'fail|failed:  TERM-ID is "POS1" — expected TERM-ID starts with ATM', 'fail|failed:  B4 is missing']);
+    assert.ok(lines(allBad).includes('note|applies: every message of the class'), 'a rule with no when does not say it always applies');
+    same(lines(msg('0200')), ['pass|All 3 rules that apply pass.']);
+  } finally { run('_meSpecForMsg = ' + real.toString()); P.maskScreen = savedScreen; }
+
+  // Wiring: beside the type on both meta-bar paths, its own Class Editor
+  // section, a count on the class row, the popup survives its own click.
+  eq((APP_SRC.match(/_meTagBadgesHtml\(msg\) \+ _meRulesBadgeHtml\(msg\)\)/g) || []).length, 2, 'both meta-bar branches draw the rules badge');
+  assert.ok(/sect\('rules',\s*'Business Rules'/.test(APP_SRC) && /rules: false/.test(APP_SRC), 'no Business Rules section');
+  assert.ok(/short: `rules: \$\{rules\.length\}`/.test(APP_SRC), 'the class row has no rules count');
+  assert.ok(/closest\?\.\('\.row-why, \.btype-rules'\)/.test(APP_SRC), 'clicking the badge closes its own popup');
+  assert.ok(/'openRulesPop'/.test(fs.readFileSync(__dirname + '/build.js', 'utf8')), 'openRulesPop is not reserved in build.js');
+});
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);

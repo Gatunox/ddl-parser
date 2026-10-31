@@ -2344,6 +2344,47 @@ Nothing is assumed about what was parsed; the columns follow the input:
 - Only parsed messages are searched: an audit file's deferred records are not.
 - On screen, the followed value follows Settings → Mask sensitive fields → Screen.
 
+### 11.6 Business rules — what a message must carry
+
+A class's `rules` are what the business requires of its messages: "a network
+management message must carry DE-70", "a 0200 never carries DE-70", "the
+response code is one of these". They sit beside `parse_spec` and `overrides`,
+not inside the parse spec: a rule judges what was read and never changes the
+parse. A rule is business, not an issue — it is shown apart from the issue bar.
+
+```json
+"rules": [
+  { "name": "A 0200 never carries DE-70",
+    "when": [{ "field": "MTI",   "op": "equals", "value": "0200" }],
+    "must": [{ "field": "DE-70", "op": "absent" }] },
+  { "name": "Valid response code",
+    "must": [{ "field": "RESP-CDE", "op": "one-of", "value": "00, 05, 51, 91" }] }
+]
+```
+
+- **When these hold, these must hold.** `when` is optional — without it the rule
+  applies to every message of the class. Every condition of a list has to hold.
+  A rule with no `must` is one being written and applies to nothing.
+- **A condition is a tag's** (`field`, `op`, `value`), so the field is anything a
+  tag can name: a DDL field id (`TERM-ID`, `PROC-CODE.TRAN-CODE`), a token or its
+  leaf (`B4`, `B4.CARD-NUM`), or `DE-n` — the first field carrying ISO data
+  element n. A value matches any of the field's readings (raw, TYPE, SHOW),
+  trimmed and case-insensitive.
+- **Operators:** `equals`, `not`, `one-of` (comma-separated), `starts-with`,
+  `present`, `absent`. `present` / `absent` ask whether the parse produced the
+  field at all and take no value.
+- **The badge.** Each parsed message gets one in the Parse Results title, after
+  the type and its tags — `rules ok/n` over the rules that apply to it: green
+  when all pass, amber when some fail, red when all fail. No rule applies → no
+  badge.
+- **The popup.** Clicking the badge lists the rules that failed: the name, why it
+  applied (`applies: MTI = 0200`) and what failed
+  (`failed: DE-70 is present ("301")`). Values follow Settings → Mask sensitive
+  fields → Screen.
+- **Class Editor → Business Rules.** Rows with a summary that open to a form —
+  Name, *When* and *Must hold* condition lists, with field suggestions — edited
+  on a copy until Apply. The class row counts them (`rules: N`).
+
 ## 13. Storage
 
 - Message and file specs are stored in `localStorage` as JSON.

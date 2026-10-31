@@ -38,7 +38,7 @@ const RESERVED = [
   'toggleHelpSub', 'toggleHideRedefines', 'toggleMissingRefs', 'togglePanel',
   'toggleSettingsSection', 'toggleTokenArea', 'toggleTrack', 'toggleTrackMode',
   'toggleTreeExp', 'updateDDLEditorState', 'updateDDLHighlight', 'exportTracking',
-  'openSpec', 'closeSpec',
+  'openSpec', 'closeSpec', 'openRulesPop',
   'updateDDLValidationBar',
   // Audit file browser
   'openAuditFileDialog', 'onAuditFileOpen', 'auditCloseMode',

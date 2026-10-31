@@ -1828,7 +1828,7 @@ of bytes.
 | `bitmap` | The map rendered as binary digits — `0010 0110 …` |
 | `bitmap-list` | The same map read out as the bit NUMBERS that are set — `Bits — 2, 3, 5, 11, …` (no count: the row's description already states it). Nobody counts columns across 16 bytes to discover DE 11 is present. Prefers the engine's own bitset, which is exactly what `read-bitmap-fields` walks, so it reflects the ISO rule that bit 1 is the secondary-bitmap indicator on a wire map but real data on an explicitly sized one |
 
-| `masked` | A sensitive field — see **Masking** below. Not a formatting: the value is hidden on the way out, and tags still test the real value |
+| `masked` | A sensitive field — see **Masking** below. Not a formatting: the value is hidden on the way out, and business rules still test the real value |
 
 A `read-bitmap` row accepts both, and every other override — see §5.12.
 
@@ -2130,63 +2130,18 @@ the row was wide — so a field whose pill did not fit had no way to be edited a
 all. The bar counts it, the columns show it, and the clear reaches every field
 the selection covers.
 
-**Tags**
+**Business Rules**
 
-A class says what a message **is**. A tag says something **about** one —
-recurring, reversal, high-risk — which is a property of the values in front of
-you, not of the layout. So it lives in its own section rather than in the parse
-spec: nothing about a tag changes how a byte is read.
+The class's business rules (§11.6) — what its messages must carry, and the tags
+they earn. Rows with a summary that open to a form, edited on a copy until Apply.
 
-A tag is a label, a colour, and one or more conditions on fields of the bound —
-or mapped (§5.22) — DDL, or on a **token** (§5.3, §11.1 below). Stored on the
-class object as `tags`:
-
-```jsonc
-"tags": [
-  { "label": "RECURRING", "color": "#bc8cff",
-    "conditions": [
-      { "field": "PROC-CODE.TRAN-CODE", "op": "one-of", "value": "28, 29" },
-      { "field": "RESERVED-ELEMENT-48.LEN", "op": "equals", "value": "006" }
-    ] }
-]
-```
-
-| `op` | Holds when |
-|------|-----------|
-| `equals` | the field's value is this one |
-| `not` | it is none of the listed values |
-| `one-of` | it is any of them — a comma-separated list, or an array |
-| `present` | the parse produced this id at all. Takes no value |
-
-Rules:
-
-- **Every condition must hold.** A tag is one statement; "any of these" is two
-  tags wearing one badge, which is why `one-of` exists for the common case.
-- Comparison is trimmed and case-insensitive — a `PIC X` field is space-padded on
-  the wire and nobody should have to count the padding — and it accepts **any
-  reading the field carries**: what the bytes read as before any override, what a
-  TYPE override made of them, and what a SHOW override draws. These are exactly
-  the three the value tooltip lists (§11.2), so what you can read you can write.
-  A GMT timestamp is far easier to type as the date the column shows than as the
-  microsecond count behind it, and neither should be the only one accepted.
-  `not` holds only when **none** of the readings is a listed value: the claim is
-  about the field, and the field is all of its readings at once.
-- **A field the parse never produced supports no claim about itself**, `not`
-  included — a tag that fired on every message *missing* a field would be worse
-  than one that never fired.
-- **A tag with no conditions never fires.** An empty tag is one being written,
-  and badging every message while it is half-typed is noise.
-- Several tags can be true at once. They render after the type code in the Parse
-  Results bar, in each tag's own colour, and say on hover which conditions
-  earned them.
-
-### 11.1 Tokens in a tag
+### 11.1 Tokens in a condition
 
 A token is not in the DDL the class binds. It arrives inside the message with a
 2-character id, and what that id **means** is declared in a token map elsewhere
 in the repository — so a great deal of what a message is doing is stated by a
 token being there at all, or by a value inside one, and neither was nameable in a
-tag.
+condition.
 
 The field box takes **either kind**, and its menu offers the tokens the
 repository knows before the DDL's own leaves, each beside the definition it
@@ -2201,7 +2156,7 @@ resolves to (`B8 · TB8-TKN`) — nobody remembers that the routing data is unde
   the first segment goes, so a group inside the token keeps its path
   (`B4.GRP.SUB`). Token ids are two characters and DDL leaves never are, so the
   two namespaces cannot collide.
-- **A token's fields are offered once the token is named** in one of that tag's
+- **A token's fields are offered once the token is named** in one of that rule's
   own conditions. Resolving a token's definition parses every candidate file it
   passes, so doing it for every token in the map on the chance one gets used is a
   scan of the whole repository per keystroke; it is done one id at a time and
@@ -2209,7 +2164,7 @@ resolves to (`B8 · TB8-TKN`) — nobody remembers that the routing data is unde
 - **`present` is satisfied by a token whose DDL is not loaded.** Every other op
   treats an entry that errored as no value at all, but a token with no definition
   is still ON THE WIRE, and its being there is exactly what was asked about.
-- A tag on a token field fires only where tokens were actually read: a spec that
+- A condition on a token field holds only where tokens were actually read: a spec that
   never reads a token area (§5.3) produces none, and the condition simply does
   not hold.
 
@@ -2365,29 +2320,43 @@ parse. A rule is business, not an issue — it is shown apart from the issue bar
 - **When these hold, these must hold.** `when` is optional — without it the rule
   applies to every message of the class. Every condition of a list has to hold.
   A rule with no `must` is one being written and applies to nothing.
-- **A condition is a tag's** (`field`, `op`, `value`), so the field is anything a
-  tag can name: a DDL field id (`TERM-ID`, `PROC-CODE.TRAN-CODE`), a token or its
-  leaf (`B4`, `B4.CARD-NUM`), or `DE-n` — the first field carrying ISO data
-  element n. A value matches any of the field's readings (raw, TYPE, SHOW),
-  trimmed and case-insensitive.
+- **A condition** is `field`, `op`, `value`. The field is a DDL field id
+  (`TERM-ID`, `PROC-CODE.TRAN-CODE`) of the bound or mapped (§5.22) DDL, a token
+  or its leaf (`B4`, `B4.CARD-NUM`, §11.1), or `DE-n` — the first field carrying
+  ISO data element n.
+- Comparison is trimmed and case-insensitive — a `PIC X` field is space-padded on
+  the wire — and accepts **any reading the field carries**: what the bytes read
+  as before any override, what a TYPE override made of them, and what a SHOW
+  override draws, the three the value tooltip lists (§11.2). `not` holds only
+  when **none** of the readings is a listed value.
+- **A field the parse never produced supports no claim about itself**: every op
+  but `absent` is false on it, `not` included.
 - **Operators:** `equals`, `not`, `one-of` (comma-separated), `starts-with`,
   `present`, `absent`. `present` / `absent` ask whether the parse produced the
   field at all and take no value.
 - **The badge.** Each parsed message gets one in the Parse Results title, after
-  the type and its tags — `rules ok/n` over the rules that apply to it: green
+  the type and the tags — `rules ok/n` over the rules that apply to it: green
   when all pass, amber when some fail, red when all fail. No rule applies → no
   badge.
-- **A rule's tag.** A rule may carry `tag` (and `color`): when the rule is met —
-  it applies and passes — the tag badges the message exactly like a class tag,
-  after them. A rule that fails or does not apply shows no tag; its result is
-  only under the rules badge.
+- **A rule's tag.** A rule may carry `tag` and `color`: when the rule is met —
+  its `when` holds and so does every `must` — the tag badges the message after
+  the type code, in its colour, and says on hover why. A rule that fails or does
+  not apply shows no tag; its result is only under the rules badge.
+- **A rule with no `must` classifies.** With a `when` and a tag it says something
+  *about* a message — recurring, reversal — and is not a requirement: it shows
+  its tag when the `when` holds, and never counts in the rules badge or popup. A
+  rule with neither `must` nor a tag on a `when` does nothing — it is one being
+  written.
+- **Stored tags become rules on load.** A class's old `tags` are migrated: each
+  becomes a rule named after the tag, its conditions the `when`, no `must`.
 - **The popup.** Clicking the badge lists the rules that failed: the name, why it
   applied (`applies: MTI = 0200`) and what failed
   (`failed: DE-70 is present ("301")`). Values follow Settings → Mask sensitive
   fields → Screen.
 - **Class Editor → Business Rules.** Rows with a summary that open to a form —
   Name, Tag name and Colour, *When* and *Must hold* condition lists, with field suggestions — edited
-  on a copy until Apply. The class row counts them (`rules: N`).
+  on a copy until Apply. The class row counts them (`rules: N`). Rebinding the
+  class's DDL keeps them; only overrides are cleared.
 
 ## 13. Storage
 
@@ -2396,7 +2365,7 @@ parse. A rule is business, not an issue — it is shown apart from the issue bar
 
 | Key | Holds |
 |-----|-------|
-| `up_format_specs` | The specs themselves (replaces `up_detect_rules`) — including each class's `tags` (§11) |
+| `up_format_specs` | The specs themselves (replaces `up_detect_rules`) — including each class's `rules` (§11.6) |
 | `up_format_default_seen` | Every built-in default label ever offered, so a default the user **deleted** is not resurrected on the next run |
 | `up_format_sync_ver` | Version marker for the one-time startup reconcile of saved specs against defaults; bumping it re-runs the merge |
 | `up_me_last_sel` | Last-selected entity in the Class Editor |

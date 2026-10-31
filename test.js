@@ -6270,12 +6270,21 @@ test('routing: falls back to legacy only when there is genuinely nothing to run'
 // thing testing that condition was a regex over the source. Every piece feeding
 // _parseVerdict was covered; the verdict itself was not, so "which kinds reach
 // the picker" was an assumption. It is a table now.
+// Tags became business rules on 2026-10-31: a stored tag is migrated into a
+// rule with only "when" and a tag. These tests keep their tag-shaped classes and
+// run them through that migration, so they prove an old tag behaves as it did.
+function legacyTagsFor(spec, msg) {
+  const s = JSON.parse(JSON.stringify(spec || {}));
+  vm.runInContext('window._migrateSpec', sandbox)(s);
+  return vm.runInContext('_meRuleTagsFor', sandbox)(s, msg).map(r => ({ label: r.tag, color: r.color, conditions: r.when }));
+}
+
 test('tags: a badge a message earns by what it holds', () => {
   // A class says what a message IS. A tag says something ABOUT one — recurring,
   // reversal — which is a property of the values, not of the layout. Every
   // condition has to hold: a tag is one statement, and "any of these" is two
   // tags with one badge. Requested 2026-08-30.
-  const tagsFor = vm.runInContext('_meTagsFor', sandbox);
+  const tagsFor = legacyTagsFor;
   const msg = { fields: [
     { id: 'PROC-CODE.TRAN-CODE', value: '28' },
     { id: 'CURRENCY',            value: 'USD ' },      // space-padded, as PIC X is
@@ -6309,11 +6318,10 @@ test('tags: a badge a message earns by what it holds', () => {
   eq(fired({ field: 'BROKEN', op: 'equals', value: 'x' }), false, 'a field that errored is not a value');
   // A tag being written is not a tag that matches everything.
   eq(tagsFor({ tags: [tag([])] }, msg).length, 0, 'no conditions never fires');
-  // A nameless tag renders nothing, which is why Apply refuses to create one.
-  // Any that predate that guard still have to be inert rather than badge-less
-  // clutter on the bar.
+  // A nameless tag renders nothing. One stored before Apply refused it is
+  // dropped by the migration to rules rather than becoming a nameless rule.
   eq(tagsFor({ tags: [{ label: '   ', conditions: [{ field: 'AMOUNT', op: 'equals', value: '000100' }] }] },
-             msg).length, 1, 'a stored nameless tag still evaluates...');
+             msg).length, 0, 'a stored nameless tag is dropped...');
   assert.ok(!/>\s*<\/span>/.test(String(vm.runInContext('_meTagBadgesHtml', sandbox) || '')),
     '...but the badge renderer skips blank labels rather than drawing an empty chip');
   eq(tagsFor({ tags: [tag([{ field: 'AMOUNT', op: 'equals', value: '' }])] }, msg).length, 0,
@@ -6355,7 +6363,7 @@ test('tags: a badge a message earns by what it holds', () => {
 // token being there at all, or by a value inside one, and neither was nameable
 // in a tag. Requested 2026-09-07.
 test('tags: a token is nameable by its id, and its fields by that id', () => {
-  const tagsFor = vm.runInContext('_meTagsFor', sandbox);
+  const tagsFor = legacyTagsFor;
   const msg = {
     fields: [{ id: 'AMOUNT', value: '000100' }],
     tokens: [
@@ -6407,56 +6415,40 @@ test('tags: a token is nameable by its id, and its fields by that id', () => {
      'the id-less placeholder is skipped');
 });
 
-test('tags: the field box takes a token id, and offers the tokens it knows', () => {
+test('business rules: the field box takes a token id or DE-n, and present / absent take no value', () => {
   const src = fs.readFileSync('./source.html', 'utf8');
-  // One box, either kind — a token id is not a second control.
-  assert.ok(/placeholder="field id \/ token id"/.test(src),
-    'the box says it takes either');
-  // present is an op like the others, so it needs no branch of its own anywhere
-  // the ops are listed.
-  const ops = vm.runInContext('_ME_TAG_OPS', sandbox);
-  deepEq(ops, ['equals', 'not', 'one-of', 'present'], 'present is offered in the dropdown');
-  // It takes no value, so the box beside it says so and stops accepting input
-  // rather than sitting there empty and looking unfinished.
+  assert.ok(/placeholder="field id \/ token id \/ DE-n"/.test(src), 'the box says what it takes');
+  deepEq(vm.runInContext('_ME_RULE_OPS', sandbox), ['equals', 'not', 'one-of', 'starts-with', 'present', 'absent'],
+    'the operators offered');
   const ph = vm.runInContext('_meTagValPlaceholder', sandbox);
-  eq(ph('present'), 'no value needed', 'the value box says nothing is needed');
-  eq(ph('one-of'),  'value, value, …',  'and the other placeholders are unchanged');
-  eq(ph('equals'),  'value');
-  assert.ok(/\$\{op === 'present' \? ' disabled' : ''\}/.test(psFnSource('_meTagForm')),
-    'and the box is disabled for present');
-  assert.ok(/val2\.disabled = val === 'present'/.test(psFnSource('_meTagCondSet')),
-    'including when the op is switched without a re-render');
-
-  // "B4 = ?" says the opposite of what a presence check means.
-  const sum = vm.runInContext('_meTagSum', sandbox);
-  assert.ok(/B4 present/.test(sum({ conditions: [{ field: 'B4', op: 'present' }] })),
-    'the summary writes it as a word, with no empty right-hand side');
-  assert.ok(!/\?/.test(sum({ conditions: [{ field: 'B4', op: 'present' }] })),
-    'and not as a symbol against a missing value');
+  eq(ph('one-of'), 'value, value, …');
+  eq(ph('equals'), 'value');
+  assert.ok(/noVal = op === 'present' \|\| op === 'absent'/.test(psFnSource('_meRuleForm'))
+         && /\$\{noVal \? ' disabled' : ''\}/.test(psFnSource('_meRuleForm')),
+    'the value box is disabled for present and absent');
   const title = vm.runInContext('_meTagTitle', sandbox);
-  assert.ok(/B4 is present/.test(title({ conditions: [{ field: 'B4', op: 'present' }] })),
-    'and so does the badge tooltip');
-
+  assert.ok(/B4 is present/.test(title({ conditions: [{ field: 'B4', op: 'present' }] })), 'the tooltip writes it as words');
+  assert.ok(/MTI starts with 08/.test(title({ conditions: [{ field: 'MTI', op: 'starts-with', value: '08' }] })));
   // The token's DDL qualification is dropped in favour of the id.
   const leaf = vm.runInContext('_meTagTokenLeaf', sandbox);
   eq(leaf('TOKB4X.CARD-NUM'), 'CARD-NUM', 'the first segment goes');
   eq(leaf('TOKB4X.GRP.SUB'),  'GRP.SUB',  'and only the first');
-  eq(leaf('CARD-NUM'),        'CARD-NUM', 'an unqualified leaf is left alone');
-
-  // findTokenDDL parses every candidate file it passes, and the suggestion box
-  // runs on each keystroke — so a token's leaves are resolved one id at a time,
-  // and only for ids the tag actually names.
+  // A token's leaves are resolved one id at a time, only for ids the rule names,
+  // and cached on the tree version.
   const ids = psFnSource('_meTagFieldIds');
-  assert.ok(/for \(const c of \(tag\?\.conditions \|\| \[\]\)\)/.test(ids),
-    'the leaves offered come from the conditions already written');
-  assert.ok(/_meTagTokenLeaves\(item, head\)/.test(ids), 'resolved per id');
-  const leaves = psFnSource('_meTagTokenLeaves');
-  assert.ok(/if \(key in c\.leaves\) return c\.leaves\[key\]/.test(leaves),
-    'and cached, or every keystroke is a scan of the whole repository');
-  // Cached on the tree version, the same key the other repo scans use — a token
-  // map edited mid-session must not go on answering with what it used to say.
-  assert.ok(/_meTagTokCache\.treeV !== _ddlTreeVersion/.test(psFnSource('_meTagTokCacheFor')),
-    'the cache is invalidated when the DDL tree changes');
+  assert.ok(/for \(const c of \(tag\?\.conditions \|\| \[\]\)\)/.test(ids) && /_meTagTokenLeaves\(item, head\)/.test(ids),
+    'resolved per id named');
+  assert.ok(/_meTagTokCache\.treeV !== _ddlTreeVersion/.test(psFnSource('_meTagTokCacheFor')), 'and cached on the tree');
+  // Old tags migrate into rules that only classify.
+  const sp = { tags: [{ label: 'REV', color: '#ff0000', conditions: [{ field: 'MTI', op: 'equals', value: '0420' }] }, { label: ' ' }] };
+  vm.runInContext('window._migrateSpec', sandbox)(sp);
+  eq(JSON.stringify({ tags: sp.tags, rules: sp.rules }), JSON.stringify({ rules: [{ name: 'REV', tag: 'REV', color: '#ff0000',
+     when: [{ field: 'MTI', op: 'equals', value: '0420' }], must: [] }] }), 'a tag becomes a classifying rule');
+  // A classifying rule tags and is not judged: it never reaches the rules badge.
+  const m0420 = { fields: [{ id: 'MTI', value: '0420' }] }, m0200 = { fields: [{ id: 'MTI', value: '0200' }] };
+  eq(vm.runInContext('_meRuleTagsFor', sandbox)(sp, m0420).length, 1, 'it tags the message it matches');
+  eq(vm.runInContext('_meRuleTagsFor', sandbox)(sp, m0200).length, 0, 'and not one it does not');
+  eq(vm.runInContext('_meRulesFor', sandbox)(sp, m0200).length, 0, 'and a message it does not match is no failure');
 });
 
 // Reported 2026-09-09. A PIC X(4) element overridden to hex-char showed
@@ -6469,7 +6461,7 @@ test('tags: the field box takes a token id, and offers the tokens it knows', () 
 // the second look, which is worse than one that never works.
 test('[REGRESSION] a tag compares the value an override produced, on the first render', () => {
   const applyOvr = vm.runInContext('_msgApplyOverrides', sandbox);
-  const tagsFor  = vm.runInContext('_meTagsFor', sandbox);
+  const tagsFor  = legacyTagsFor;
   // PIC X(4) carrying 00 00 00 01 — as text that is four control characters,
   // as hex-char it is the "00000001" the table shows.
   const mkMsg = () => ({ fields: [
@@ -6526,7 +6518,7 @@ test('[REGRESSION] a tag compares the value an override produced, on the first r
 // override type cannot be added without either working here or failing loudly.
 test('every override the panel offers reaches a tag', () => {
   const applyOvr = vm.runInContext('_msgApplyOverrides', sandbox);
-  const tagsFor  = vm.runInContext('_meTagsFor', sandbox);
+  const tagsFor  = legacyTagsFor;
   const TYPES = vm.runInContext('_ME_TYPE_OPTS', sandbox).filter(Boolean);
   // "masked" is not a formatting: it hides the value on the way out (screen,
   // when switched on, and exports), and a tag still tests the real value.
@@ -6642,164 +6634,61 @@ test('[REGRESSION] Save redraws the class rows, so their chips are not stale', (
     assert.ok(notes.includes(chip), `${chip} is built by _meItemNotes`);
 });
 
-test('tags: the section and the badge are wired', () => {
+test('business rules: the section and the editor are wired', () => {
   const src = fs.readFileSync('./source.html', 'utf8');
-  // Its own Class Editor section — a tag is a property of the values, so it does
-  // not belong in the parse spec.
-  assert.ok(/sect\('tags',\s*'Tags',/.test(src), 'Tags is a section of its own');
-  // Above Overrides: Tags is a handful of rows and Overrides is a table of
-  // hundreds, so below it the section sat a scroll away from everything else.
-  assert.ok(src.indexOf("sect('tags',") < src.indexOf("sect('overrides',"),
-    'Tags must come before Overrides on the page');
-  assert.ok(/tags: false/.test(src), 'and starts collapsed, like the other configured-later sections');
-  // Drawn beside the type code, on BOTH paths that set that badge — a record
-  // parse and a message parse are two different branches.
+  // Its own Class Editor section, above Overrides — a handful of rows above a
+  // table of hundreds. Tags was this section until 2026-10-31.
+  assert.ok(/sect\('rules',\s*'Business Rules',/.test(src), 'Business Rules is a section of its own');
+  assert.ok(!/sect\('tags',/.test(src), 'and Tags is gone — a tag is a rule now');
+  assert.ok(src.indexOf("sect('rules',") < src.indexOf("sect('overrides',"),
+    'Business Rules must come before Overrides on the page');
+  // The tags rules earn are drawn beside the type code on BOTH paths that set
+  // that badge — a record parse and a message parse are two different branches.
   eq((src.match(/_setResTypeBadge\(_btypeHtml\(t\.type, t\.color\) \+ _meTagBadgesHtml\(msg\)/g) || []).length, 2,
      'both meta-bar branches draw the tags');
-  assert.ok(/\.btype-tag\s*\{/.test(src), 'the badge has a style of its own');
-  // The field box suggests ids from the bound DDL through the app's OWN menu.
-  // A native <datalist> opens from its own arrow and from nothing else, and
-  // asking for it with showPicker() put the list where the BROWSER wanted it:
-  // two hundred options at the far edge of the SCREEN, outside the window the
-  // page is in. A popup the page cannot position is one it cannot keep on
-  // screen. Reported 2026-09-01.
-  assert.ok(!/<datalist id=/.test(src) && !/list="me-tag-fields"/.test(src),
-    'no native datalist — its popup is placed by the browser, not by the page');
-  assert.ok(!/\.showPicker\(/.test(src), 'and nothing asks the browser to open one');
-  assert.ok(/onclick="_meTagFieldSuggest\(this,\$\{ti\},\$\{ci\},event\)"/.test(src),
-    'clicking the field box offers the ids');
-  const sug = psFnSource('_meTagFieldSuggest');
-  assert.ok(/showCtxMenu\(r\.left, r\.bottom \+ 2, items\)/.test(sug),
-    'through showCtxMenu, which is positioned in page coordinates and flips off the edges');
-  // The tag being edited goes in with the item: a token's fields are offered
-  // only once that token is named in one of ITS OWN conditions.
-  assert.ok(/_meTagFieldIds\(_meCurItem\(\), _meState\.tagPend\)/.test(sug),
-    'from the bound DDL, and the tag being edited');
-  assert.ok(/hits\.slice\(0, _ME_TAG_SUGGEST_MAX\)/.test(sug),
-    'capped — a menu of two hundred is a scroll, not a choice');
-  assert.ok(/more — keep typing/.test(sug), 'and it says how many it is not showing');
-  // A document-level click handler closes the context menu, and this opens from
-  // a click: without stopping it the menu is built, positioned and hidden again
-  // in the same tick.
+  assert.ok(/\.btype-tag\s*\{/.test(src), 'the tag badge has a style of its own');
+  assert.ok(/Tagged because/.test(psFnSource('_meTagTitle')), 'a classifying tag says why it is there');
+  // The field box suggests ids through the app's OWN menu, never a native
+  // <datalist>, whose popup the browser places. Reported 2026-09-01.
+  assert.ok(!/<datalist id=/.test(src) && !/\.showPicker\(/.test(src), 'no native datalist');
+  const sug = psFnSource('_meRuleFieldSuggest');
+  assert.ok(/showCtxMenu\(b\.left, b\.bottom \+ 2, items\)/.test(sug), 'through showCtxMenu');
+  assert.ok(/hits\.slice\(0, _ME_TAG_SUGGEST_MAX\)/.test(sug) && /more — keep typing/.test(sug),
+    'capped, and it says how many it is not showing');
   assert.ok(/if \(ev && ev\.stopPropagation\) ev\.stopPropagation\(\);/.test(sug),
     'the opening click must not reach the handler that closes menus');
-  // Free text survives: a mapped definition's fields are not in the bound DDL
-  // and must still be nameable.
-  assert.ok(/oninput="_meTagCondSet\(\$\{ti\},\$\{ci\},'field',this\.value\)/.test(src),
-    'typing still sets the field, whatever is typed');
-  assert.ok(/\.me-tag-cond > \* \{ min-width:0; \}/.test(src),
-    'its items may shrink — a grid item defaults to its intrinsic min-width, so'
-    + ' two text boxes would otherwise push the operator out of a narrow pane');
-
-  // A tag is a collapsed summary row that opens to a form on click — the same
-  // shape as a recognizer, and deliberately the SAME markup: two lists that look
-  // alike and are styled twice are two lists that drift apart.
-  // Requested 2026-09-01.
-  const tagsHtml = psFnSource('_meHtmlTags');
-  assert.ok(/class="me-rec-list me-tag-rows"/.test(tagsHtml) && /class="me-rec-row/.test(tagsHtml)
-         && /class="me-rec-head"/.test(tagsHtml) && /class="me-rec-sum"/.test(tagsHtml),
-    'the tag list reuses the recognizer row rather than restyling one');
-  assert.ok(/onclick="_meTagToggle\(\$\{ti\}\)"/.test(tagsHtml), 'clicking the row edits it');
-  assert.ok(/\$\{editing \? _meTagForm\(t, ti\) : ''\}/.test(tagsHtml),
-    'and the form only exists while that row is open');
-  // One open at a time, like the recognizer list.
-  const tog = psFnSource('_meTagToggle');
-  assert.ok(/if \(_meState\.editTag === ti\) \{ _meTagCancel\(ti\); return; \}/.test(tog),
-    'clicking the open row closes it');
-  assert.ok(/_meState\.tagPend = JSON\.parse\(JSON\.stringify/.test(tog),
-    'opening a row takes a PENDING copy — the tag itself is not edited in place');
-  // Opening a row to READ it is not an edit. A Save button that lights up
-  // because you looked at something teaches you to ignore it.
-  assert.ok(!/_meSetDirty/.test(tog), 'toggling a row must not mark the class dirty');
-
-  // Apply / Cancel, exactly as a recognizer has them: nothing reaches the class
-  // until Apply, so Cancel is a real cancel. Requested 2026-09-01.
-  const form = psFnSource('_meTagForm');
-  assert.ok(/onclick="_meTagCancel\(\$\{ti\}\)"/.test(form)
-         && /onclick="_meTagApply\(\$\{ti\}\)"/.test(form), 'the form has Cancel and Apply');
-  assert.ok(/class="me-rf-btnrow"/.test(form), 'in the same button row a recognizer uses');
-  const apply = psFnSource('_meTagApply');
-  // A tag with no name cannot do anything — the label IS the badge, so a nameless
-  // one renders nothing on a parse and is not counted on the class row. It used
-  // to apply and save happily and then appear to have vanished; refusing it is
-  // the only place that state can be prevented rather than explained.
-  // Reported 2026-09-01.
-  assert.ok(/if \(!String\(_meState\.tagPend\.label \|\| ''\)\.trim\(\)\)/.test(apply),
-    'Apply refuses a tag with no name');
-  assert.ok(/A tag needs a name/.test(apply), 'and says why');
-  assert.ok(apply.indexOf('_meFlash') < apply.indexOf('tags[ti] = _meState.tagPend;'),
-    'before it commits anything');
-  assert.ok(/tags\[ti\] = _meState\.tagPend;/.test(apply), 'Apply commits the pending copy');
-  assert.ok(/_meSetDirty\(\);/.test(apply), 'and only THEN is the class dirty');
-  assert.ok(/_meRenderSidebar\(\);/.test(apply), 'and the row chip is recounted');
-  // Every editor writes to the pending copy, never to the class.
-  for (const fn of ['_meTagSet', '_meTagCondSet', '_meTagCondAdd', '_meTagCondDel']) {
-    const src2 = psFnSource(fn);
-    assert.ok(/_meState\.tagPend/.test(src2), `${fn} edits the pending copy`);
-    assert.ok(!/_meSetDirty/.test(src2), `${fn} must not dirty the class before Apply`);
-  }
-  // A new tag does NOT join the list until Apply. A collapsed "UNNAMED · never
-  // fires" summary of something still being typed describes nothing, and putting
-  // it in the list first means Cancel has to go and take it out again.
-  // Requested 2026-09-01.
-  const add2 = psFnSource('_meTagAdd');
-  assert.ok(/_meState\.editTag = _ME_TAG_NEW;/.test(add2), 'adding stages a tag, it does not push one');
-  assert.ok(!/\.push\(/.test(add2), 'nothing joins the class on Add');
-  assert.ok(/if \(ti === _ME_TAG_NEW\) tags\.push\(_meState\.tagPend\);/.test(apply),
-    'Apply is what puts it in the list');
-  assert.ok(/_meState\.editTag === _ME_TAG_NEW && _meState\.tagPend/.test(tagsHtml),
-    'and while adding, the form renders with no summary row above it');
-  // The same 6px the new-recognizer form carries. With no head above it, a form
-  // sits flush against the last row and reads as part of it.
-  assert.ok(/class="me-rec-row editing" style="margin-top:6px"/.test(tagsHtml),
-    'the standalone form is separated from the list, as the recognizer one is');
-  assert.ok(/<div class="me-rec-row" style="margin-top:6px">\$\{_meRecForm\(newRec, -2\)\}/.test(src),
-    'which is the rule it is matching — if that moves, this should follow');
-  // The recognizer list reserves 8px beneath itself for the warnings row below
-  // it. Tags has nothing there, so the same margin was a gap under the last
-  // button and the end of the section.
-  assert.ok(/\.me-rec-list\.me-tag-rows \{ margin-bottom:0; \}/.test(src),
-    'the tag list drops the margin it has no footer to fill — and on BOTH'
-    + ' selectors, or .me-rec-list wins on source order and nothing changes');
-  assert.ok(!/tagNew/.test(src), 'the new-row bookkeeping is gone with the row it tracked');
-  // Deleting shifts every index below it, so an open form must not stay attached
-  // to what is now a different tag.
-  const del = psFnSource('_meTagDel');
-  assert.ok(/if \(_meState\.editTag === ti\) \{ _meState\.editTag = -1; _meState\.tagPend = null; \}/.test(del)
-         && /else if \(_meState\.editTag > ti\) _meState\.editTag--;/.test(del),
-    'deleting keeps the open row pointing at the tag it was opened on');
-  // The collapsed row has to SAY something, or it is a list of names.
-  const sum = psFnSource('_meTagSum');
-  assert.ok(/never fires/.test(sum), 'a tag with no conditions says so on its row');
-  assert.ok(/OP = \{ equals: '=', not: /.test(sum), 'and the operators are symbols on one line');
-
-  // ONE colour swatch in this editor. A native colour input only fills its box
-  // once the WebKit swatch pseudo-elements are stripped, and a second copy of
-  // that is how two swatches come to look different. Reported 2026-08-30.
-  assert.ok(/<input type="color" class="me-swatch"/.test(src),
-    'the tag colour reuses the Identity swatch rather than styling its own');
-  assert.ok(!/me-tag-color/.test(src), 'and the second implementation is gone');
-  assert.ok(/\.me-swatch::-webkit-color-swatch\{border:none/.test(src),
-    'which is the rule that makes the colour fill the square');
-  // The reason is on the badge: one you have to look up in the Class Editor is
-  // a badge that explains nothing.
-  assert.ok(/Tagged because/.test(psFnSource('_meTagTitle')), 'the badge says why it is there');
-
-  // Editing repaints THIS section, never the whole right pane. _meRenderRight
-  // rebuilds every section from the top, so the pane scrolled back to Identity on
-  // every add and delete — and Tags is the last section on the page, so the row
-  // just clicked left the screen. Reported 2026-08-30.
-  const after = psFnSource('_meTagRepaint');
-  assert.ok(/me-sect-body-tags/.test(after), 'the section repaints itself');
-  assert.ok(/_meRenderRight\(\); return;/.test(after),
-    'with a full render only as the fallback when the section is not on screen');
-  for (const fn of ['_meTagAdd', '_meTagDel', '_meTagCondAdd', '_meTagCondDel'])
+  assert.ok(/\.me-tag-cond > \* \{ min-width:0; \}/.test(src), 'the condition row may shrink');
+  // Rows with a summary, opening to a form; one open at a time; edits on a
+  // PENDING copy, so Cancel is a real cancel. Requested 2026-09-01 for tags.
+  const html = psFnSource('_meHtmlRules');
+  assert.ok(/class="me-rec-head"/.test(html) && /onclick="_meRuleToggle\(\$\{ri\}\)"/.test(html), 'clicking the row edits it');
+  const tog = psFnSource('_meRuleToggle');
+  assert.ok(/_meState\.rulePend = JSON\.parse\(JSON\.stringify/.test(tog), 'opening takes a pending copy');
+  assert.ok(!/_meSetDirty/.test(tog), 'looking at a row is not an edit');
+  for (const fn of ['_meRuleSet', '_meRuleCondSet', '_meRuleCondAdd', '_meRuleCondDel'])
+    assert.ok(/_meState\.rulePend/.test(psFnSource(fn)) && !/_meSetDirty/.test(psFnSource(fn)),
+      `${fn} edits the pending copy and must not dirty the class before Apply`);
+  // Apply refuses what cannot do anything, before it commits.
+  const apply = psFnSource('_meRuleApply');
+  assert.ok(/A rule needs a name/.test(apply) && /_meRuleLive\(r\)/.test(apply), 'Apply refuses a nameless or empty rule');
+  assert.ok(apply.indexOf('_meFlash') < apply.indexOf('rules.push(r)'), 'before it commits anything');
+  assert.ok(/_meSetDirty\(\);/.test(apply) && /_meRenderSidebar\(\);/.test(apply), 'then dirty, and the row chip recounted');
+  // A new rule joins the list only on Apply.
+  const add = psFnSource('_meRuleAdd');
+  assert.ok(/_meState\.editRule = _ME_RULE_NEW;/.test(add) && !/\.push\(/.test(add), 'adding stages a rule');
+  // Deleting shifts the indexes below it.
+  const del = psFnSource('_meRuleDel');
+  assert.ok(/else if \(_meState\.editRule > ri\) _meState\.editRule--;/.test(del), 'the open row keeps its rule');
+  // Repaint THIS section, never the whole pane — it scrolled back to the top.
+  assert.ok(/me-sect-body-rules/.test(psFnSource('_meRuleRepaint')), 'the section repaints itself');
+  for (const fn of ['_meRuleAdd', '_meRuleDel', '_meRuleCondAdd', '_meRuleCondDel'])
     assert.ok(!/_meRenderRight/.test(psFnSource(fn)), `${fn} must not rebuild the pane`);
-  // The two that fire on every keystroke touch no markup at all beyond the live
-  // badge, or the caret would jump mid-word.
-  for (const fn of ['_meTagSet', '_meTagCondSet'])
-    assert.ok(!/innerHTML|_meRenderRight|_meTagAfterEdit/.test(psFnSource(fn)),
-      `${fn} runs per keystroke and must not re-render`);
+  // Typing in a box must not re-render under the caret.
+  assert.ok(!/innerHTML|_meRenderRight|_meRuleRepaint/.test(psFnSource('_meRuleSet')), 'the name box does not re-render');
+  assert.ok(/if \(key === 'op'\) _meRuleRepaint\(\);/.test(psFnSource('_meRuleCondSet')),
+    'only the operator re-renders — it enables or disables the value box');
+  // One colour swatch implementation in this editor.
+  assert.ok(/<input type="color" class="me-swatch"/.test(psFnSource('_meRuleForm')), 'the tag colour reuses the swatch');
 });
 
 test('map: a field is read through another DDL definition', () => {
@@ -16037,7 +15926,7 @@ test('[REGRESSION] a binding edit re-renders only the bindings list', () => {
 // snapshot — the editor opened with no class auto-selected, the item object
 // replaced since — made the FIRST rebind clear nothing while the second worked.
 // Storage cannot fail to be seeded: it is simply what is there.
-test('[REGRESSION] rebinding a class clears its overrides and tags', () => {
+test('[REGRESSION] rebinding a class clears its overrides, and keeps its business rules', () => {
   const sync   = vm.runInContext('_meBindSigSync', sandbox);
   const check  = vm.runInContext('_meBindCheckDdlChanged', sandbox);
   const pick   = vm.runInContext('_meBindPick', sandbox);
@@ -16053,7 +15942,7 @@ test('[REGRESSION] rebinding a class clears its overrides and tags', () => {
     const mk = () => ({ name: 'TDE', label: 'TDE TEST', ddl_bindings: ['TEST/DATA/TDE/TDETEST'],
       overrides: { TDETEST: { type: 'hex-char' }, VER: { type: 'hex-char' },
                    MODE: { type: 'hex-char' }, 'OV-U64LE': { type: 'uint-le' } },
-      tags: [{ label: 'MODE', conditions: [{ field: 'CAPTR-MODE', op: 'equals', value: '1' }] }],
+      rules: [{ name: 'MODE', tag: 'MODE', when: [{ field: 'CAPTR-MODE', op: 'equals', value: '1' }], must: [] }],
       parse_spec_binary: [{ 'read-ddl': 'ANY' }] });
 
     // Matching what is stored: nothing to clear.
@@ -16068,7 +15957,8 @@ test('[REGRESSION] rebinding a class clears its overrides and tags', () => {
     it.ddl_bindings[0] = 'TEST/DATA/OVERRIDE/TESTOVR';
     check(it);
     eq(Object.keys(it.overrides).length, 0, 'a changed binding clears every override');
-    eq(it.tags, undefined, 'and the tags, whose conditions name DDL field ids');
+    // Business rules are the business's, and most name the MTI or a DE.
+    eq((it.rules || []).length, 1, 'the business rules are kept');
     eq(S2.dirty, true, 'the class is dirty, so the change can be saved');
     // The parse spec is spared: it is the most laborious thing on a class, and
     // one written as a plain full-DDL walk stays valid against any DDL.
@@ -16092,7 +15982,7 @@ test('[REGRESSION] rebinding a class clears its overrides and tags', () => {
     vm.runInContext('_meBindCleared = { item: null, sig: null }', sandbox);
     pick(0, 'TEST/DATA/OVERRIDE/TESTOVR');
     eq(Object.keys(it.overrides).length, 0, 'the FIRST pick clears — no second attempt needed');
-    eq(it.tags, undefined, 'tags too');
+    eq((it.rules || []).length, 1, 'rules kept here too');
 
     // Picking the path it already has is not a change.
     it = mk(); S2.specs = [it]; S2.selIdx = 0;
@@ -16130,7 +16020,7 @@ test('[REGRESSION] rebinding a class clears its overrides and tags', () => {
   const chk = psFnSource('_meBindDdlChanged');
   assert.ok(/_meUndoable\(/.test(chk), 'clearing is undoable');
   assert.ok(/_meOverridesRepaint\(\)/.test(chk), 'the Overrides section is rebuilt');
-  assert.ok(/_meTagRepaint\(\)/.test(chk), 'the Tags section too');
+  assert.ok(!/item\.rules\s*=|delete item\.rules/.test(chk), 'the business rules are not cleared');
   assert.ok(/_meRenderSidebar\(\)/.test(chk), 'and the class row chips are refreshed');
   assert.ok(!/parse_spec/.test(chk), 'the parse spec is not cleared');
   // The count lives in the header badge, so rebuilding only the body leaves the
@@ -16234,7 +16124,7 @@ test('[REGRESSION] a message resolves to the class that parsed it, not the first
     eq(got && got.label, 'TDE TEST', 'the message resolves to the class that parsed it');
     deepEq(got.ddl_bindings, ['TEST/DATA/TDE/TDETEST'], 'so its bindings are its own');
     // The whole point: the tag fires.
-    const tagsFor = vm.runInContext('_meTagsFor', sandbox);
+    const tagsFor = legacyTagsFor;
     deepEq(tagsFor(got, msg).map(t => t.label), ['MODE'], 'and its tags are evaluated');
     // ...and reading the FIRST class would have produced neither.
     eq(tagsFor(specFor('TDE', 'TDE ORIGINAL'), msg).length, 0,
@@ -16294,28 +16184,6 @@ test('there is one rule for resolving a message back to its class', () => {
     'the recognizer-span diagnostic resolves by name AND label');
 });
 
-// Reported 2026-09-09. The name box carried text-transform:uppercase, so
-// "Recurring" appeared as "RECURRING" while the stored label stayed lower case:
-// the field disagreed with itself, and there was no way to see the value being
-// saved. A tag label is free text the user writes, not a type code.
-test('[REGRESSION] the tag name box shows what was typed', () => {
-  const src = fs.readFileSync('./source.html', 'utf8');
-  const css = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
-  const rule = css.match(/\.me-tag-label\s*\{[^}]*\}/);
-  assert.ok(!rule || !/text-transform\s*:\s*uppercase/.test(rule[0]),
-    'the name input must not upper-case what the user types');
-  // The class stays on the input — two focus selectors use it, and dropping it
-  // to delete the rule would silently stop the box being focused on Add Tag.
-  assert.ok(/class="me-inp me-tag-label"/.test(src), 'the input keeps its class');
-  eq((src.match(/\.me-rec-form\.open \.me-tag-label'\)\?\.focus\(\)/g) || []).length, 2,
-     'and both focus selectors still find it');
-  // Nothing upper-cases the stored value either — the box and the store agree.
-  assert.ok(/_meTagSet\(\$\{ti\},'label',this\.value\)/.test(src),
-    'the raw value is what is stored');
-  // The BADGE stays upper case, from .btype, which it shares with the type chips
-  // beside it — a deliberate difference, not an oversight.
-  assert.ok(/\.btype-tag\s*\{/.test(css), 'the badge still has its own rule');
-});
 
 // Reported 2026-09-09. `hex-char` means "the bytes as TRANSMITTED" — its own
 // comment says so. On an EBCDIC message every byte is translated to ASCII the
@@ -16375,66 +16243,6 @@ test('the value tooltip appears before anyone gives up on it', () => {
     'the timer reads the constant, so the number lives in one place');
 });
 
-// Reported 2026-09-11, reproducible in production: editing the third tag renamed
-// the SECOND one's badge while typing. `.me-rec-row` is the Recognizers list's
-// class as well as the Tags list's — the two are deliberately styled as one
-// thing — and the lookup was document-wide, so the recognizer rows above pushed
-// every tag index that many rows early. With one recognizer, tag 2 wrote to tag
-// 1; with none it was correct, which is why it looked environment-specific.
-test('[REGRESSION] editing a tag writes to ITS OWN badge, not one above it', () => {
-  const setTag = vm.runInContext('_meTagSet', sandbox);
-  const mkRow = (withChip) => {
-    const chip = { textContent: '', style: {} };
-    return { chip, querySelector: sel => (withChip && sel === '.btype-tag') ? chip : null,
-             querySelectorAll: () => [] };
-  };
-  // One recognizer row above three tag rows — the shape that produced the bug.
-  const rec  = mkRow(false);
-  const tags = [mkRow(true), mkRow(true), mkRow(true)];
-  const all  = [rec, ...tags];
-
-  const prevState = vm.runInContext('_meState', sandbox);
-  const prevQSA   = sandbox.document.querySelectorAll;
-  const prevStub  = elStubs['me-sect-body-tags'];
-  try {
-    vm.runInContext('_meState = { specs: [], selIdx: 0, tagPend: { label: "", color: "#bc8cff" } }', sandbox);
-    // The document-wide list the old code read: recognizers FIRST.
-    sandbox.document.querySelectorAll = () => all;
-    // The Tags section, which is what the lookup must be scoped to.
-    elStubs['me-sect-body-tags'] = { querySelectorAll: () => tags };
-
-    setTag(2, 'label', 'AUTH PEPE 3');
-    eq(tags[2].chip.textContent, 'AUTH PEPE 3', 'the third tag row got the new name');
-    eq(tags[1].chip.textContent, '', 'and the second was left alone');
-    eq(tags[0].chip.textContent, '', 'as was the first');
-
-    setTag(0, 'label', 'FIRST');
-    eq(tags[0].chip.textContent, 'FIRST', 'the first tag row is reachable too');
-    // Without the scoping, index 0 landed on the recognizer row, which has no
-    // badge at all — so editing the first tag simply did nothing.
-    eq(tags[2].chip.textContent, 'AUTH PEPE 3', 'and nothing else moved');
-
-    // An empty name still shows something, rather than an empty chip.
-    setTag(1, 'label', '   ');
-    eq(tags[1].chip.textContent, 'UNNAMED', 'a blank name reads as UNNAMED');
-  } finally {
-    sandbox.document.querySelectorAll = prevQSA;
-    if (prevStub === undefined) delete elStubs['me-sect-body-tags']; else elStubs['me-sect-body-tags'] = prevStub;
-    sandbox._meState = prevState;
-  }
-
-  // Both live-update paths are scoped, not just the badge: the condition row's
-  // placeholder is written by index in exactly the same way.
-  const src = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/getElementById\('me-sect-body-tags'\)/.test(psFnSource('_meTagRowEl')),
-    'the row lookup is scoped to the Tags section');
-  for (const fn of ['_meTagSet', '_meTagCondSet']) {
-    const body = psFnSource(fn);
-    assert.ok(/_meTagRowEl\(ti\)/.test(body), `${fn} uses the scoped lookup`);
-    assert.ok(!/document\.querySelectorAll\('\.me-rec-row'\)/.test(body),
-      `${fn} still counts the Recognizers list's rows`);
-  }
-});
 
 // Reported 2026-09-12. The DDL tree came back fully collapsed on every reload,
 // so the path to whatever you were working on had to be reopened by hand each
@@ -16908,38 +16716,6 @@ test('[REGRESSION] a broken spec drops the stale marks and shows a red one', () 
     'and the ignored marks carry no red, for the same reason');
 });
 
-test('the tag report explains a tag that did not fire', () => {
-  const src = fs.readFileSync('./source.html', 'utf8');
-  const rep = psFnSource('_tagWhyReport');
-  assert.ok(rep, '_tagWhyReport exists');
-  // Each link in the chain, in the order it has to be checked.
-  assert.ok(/No class matched/.test(rep),        '1. no class matched');
-  assert.ok(/has no tags saved/i.test(rep),      '2. the class has no saved tags');
-  assert.ok(/SAVED class has/.test(rep),         '   ...and the saved-vs-editing gap is called out by name');
-  assert.ok(/no such field in this parse/.test(rep), '3. the condition names a field the parse never produced');
-  assert.ok(/would have matched/.test(rep),      '4. the readings that WOULD have matched');
-  // It reports what the badge does, so it must ask the same functions rather
-  // than a second implementation that can drift from them.
-  for (const fn of ['_meSpecForMsg', '_meTagCondHolds', '_meTagHaves', '_meTagValues'])
-    assert.ok(new RegExp(fn.replace(/\$/g, '\\$') + '\\(').test(rep),
-      `it reuses ${fn} rather than reimplementing the check`);
-
-  // The console is the only surface. A button in the results bar was tried and
-  // removed at the user's request 2026-09-09 — every trace of it goes, or the
-  // next reader finds half a feature and wonders which half is broken.
-  assert.ok(/_tagWhyReport\(\)/.test(psFnSource('tagWhy')), 'the console prints the report');
-  assert.ok(/window\.tagWhy = tagWhy/.test(src), 'tagWhy is reachable from the console');
-  for (const gone of ['tagWhyBtn', 'tagWhyDialog', 'toggleTagWhyDialog', 'syncTagWhyBtn', 'tw-body'])
-    assert.ok(!src.includes(gone), `the removed button left ${gone} behind`);
-
-  // A function and a button, NOT logging on every parse: a badge is drawn for
-  // every record rendered, and a line per tag per record buries the one
-  // interesting case.
-  assert.ok(!/console\.log/.test(psFnSource('_meTagBadgesHtml')),
-    'the badge renderer stays silent');
-  assert.ok(!/console\.log/.test(psFnSource('_meTagsFor')),
-    'and so does the evaluator');
-});
 
 test('[REGRESSION] the section cards clear the scrollbar, not just its gutter', () => {
   // The reserved gutter was being counted as the cards' right margin. That is a
@@ -19493,21 +19269,23 @@ test('a configuration gap names itself instead of being counted', () => {
     ddl_bindings: ['A/B/C'], parse_spec_binary: [{}],
     overrides: { A: { type: 'uint8' }, B: { type: 'ascii', display: 'hex' },
                  C: { vlg: true }, D: {} },
-    tags: [{ label: 'RECURRING', conditions: [{ field: 'X' }, { field: 'Y' }] },
-           { label: 'ONE', conditions: [{ field: 'Z' }] },
-           { label: '   ' }] });
+    rules: [{ name: 'Recurring', tag: 'RECURRING', when: [{ field: 'X' }, { field: 'Y' }], must: [] },
+            { name: 'DE-70 required', when: [], must: [{ field: 'DE-70', op: 'present' }] },
+            { name: 'Being written', when: [], must: [] }] });
   const shortsOf = n => rich.find(x => x.short.startsWith(n));
   eq(shortsOf('ovr:').short, 'ovr: 3', 'an entry with no keys left in it is not an override');
   // In _ME_OV_KINDS order, so the tooltip reads the same way every time.
   eq(shortsOf('ovr:').full, '3 fields overridden\nTYPE: 2\nSHOW: 1\nVLG: 1',
      `the breakdown is per kind: ${JSON.stringify(shortsOf('ovr:').full)}`);
-  eq(shortsOf('tags:').short, 'tags: 2', 'a tag with no label is one being written, not a tag');
-  eq(shortsOf('tags:').full, 'Tags\nRECURRING — 2 conditions\nONE — 1 condition',
-     `every tag is listed: ${JSON.stringify(shortsOf('tags:').full)}`);
+  // Tags are business rules since 2026-10-31: a classifying rule and a checking
+  // one both count; one with nothing to check and no tag is being written.
+  eq(shortsOf('rules:').short, 'rules: 2', 'a rule being written is counted');
+  eq(shortsOf('rules:').full, 'Business rules\nRecurring\nDE-70 required',
+     `every rule is listed: ${JSON.stringify(shortsOf('rules:').full)}`);
   // Absent when there are none — a row of zeroes says nothing.
   const plain = sandbox._t.meItemNotes({ kind: 'msg', vol: 'T', recognizers: [{}],
     ddl_bindings: ['A/B/C'], parse_spec_binary: [{}] });
-  eq(plain.some(n => /^(ovr|tags):/.test(n.short)), false, 'no chip for nothing');
+  eq(plain.some(n => /^(ovr|rules):/.test(n.short)), false, 'no chip for nothing');
   assert.ok(notes.every(n => !n.warn), 'a configured value is styled as a warning');
   assert.ok(/TEST\/DATA\/ISO-0800-FLAT/.test(notes[1].full),
     'the binding tooltip drops the path the name came from');

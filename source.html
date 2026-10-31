@@ -22106,7 +22106,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.63.0.0';
+const APP_VERSION  = '1.63.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23441,7 +23441,7 @@ const _TUT_STEPS = [
   {
     target: '#dataEditorBtn', prefer: 'left',
     title: 'Class Editor \u2014 Message Detection & Overrides',
-    body: 'Click \u229e Class Editor in the top bar to control how messages and files are recognized and parsed. It opens as a full page: the Messages, Data and Files lists on the left with the Test panel under them, the selected class on the right.\n\nA class carries recognizers \u2014 byte-level conditions that must all pass; the first matching class in list order wins \u2014 plus DDL bindings, a parse spec, tags, and field overrides that change how a field is read or shown.\n\nBuilt-in defaults cover ISO 8583, STM, PSTM, Base24, NDC and a Segmented File template. Paste a sample into Test and press \u25b6 Run to see which class wins and what it parses.',
+    body: 'Click \u229e Class Editor in the top bar to control how messages and files are recognized and parsed. It opens as a full page: the Messages, Data and Files lists on the left with the Test panel under them, the selected class on the right.\n\nA class carries recognizers \u2014 byte-level conditions that must all pass; the first matching class in list order wins \u2014 plus DDL bindings, a parse spec, business rules \u2014 what its messages must carry, and the tags they earn \u2014 and field overrides that change how a field is read or shown.\n\nBuilt-in defaults cover ISO 8583, STM, PSTM, Base24, NDC and a Segmented File template. Paste a sample into Test and press \u25b6 Run to see which class wins and what it parses.',
   },
   {
     target: '#msgPanel', prefer: 'left',
@@ -42066,6 +42066,7 @@ function _meSave() {
               <li><strong>Trk</strong> checkbox — mark fields to compare across messages in <strong>⊞ Track Mode</strong></li>
               <li><strong>★ Save</strong> / <strong>⇆ Compare</strong> — keep this parse as a baseline, or compare it with one (see <em>Baselines</em>); <strong>Export</strong> — save parsed messages to a file</li>
               <li><strong>Issue bar</strong> — above the table when the message has problems: counts its errors (✖) and warnings (⚠), errors first; <strong>&lt; &gt;</strong> or a click on the text brings each row on screen and selects it, opening a collapsed group if needed; ✕ hides it for this message</li>
+              <li><strong>rules ok/n</strong> badge — after the type code, when the class has business rules that apply to the message: green when all pass, amber when some fail, red when all do. Click it for the rules that failed, why each applied and what failed. A met rule with a tag shows that tag beside it</li>
               <li>An amber bar says when the message changed after it was parsed — press ▶ Parse to refresh</li>
               <li>A message that fails says why — unknown type, no parse spec, no matching DDL — with a link to fix it</li>
               <li><strong>Double-click</strong> the panel title or the <strong>n / m</strong> counter to copy every field of the message as tab-separated text (Field ID, Description, Len, Value); double-click a row to copy just that field</li>

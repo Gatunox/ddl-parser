@@ -25925,6 +25925,12 @@ test('business rules: evaluate on any field, badge per message, popup names the 
   assert.ok(/short: `rules: \$\{rules\.length\}`/.test(APP_SRC), 'the class row has no rules count');
   assert.ok(/closest\?\.\('\.row-why, \.btype-rules'\)/.test(APP_SRC), 'clicking the badge closes its own popup');
   assert.ok(/'openRulesPop'/.test(fs.readFileSync(__dirname + '/build.js', 'utf8')), 'openRulesPop is not reserved in build.js');
+  // Help and the tour say so (2026-10-31): Parse Results explains the badge, the
+  // tour's Class Editor step names business rules, and nothing mentions Tags as a
+  // section of its own any more.
+  assert.ok(/<strong>rules ok\/n<\/strong> badge/.test(html), 'Help → Parse Results does not explain the rules badge');
+  assert.ok(/a parse spec, business rules/.test(APP_SRC), 'the tour still lists tags as a section');
+  assert.ok(!/<li><strong>Tags<\/strong>/.test(html), 'Help still describes a Tags section');
 });
 
 // ── Summary ───────────────────────────────────────────────────────────────────

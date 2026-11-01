@@ -26420,6 +26420,8 @@ console.log('\ngenerate a message');
     assert.ok(/\.hidden = !_genSt\.fldOpen/.test(psFnSource('genFldToggle')), 'folding does not hide the fields');
     assert.ok(/pt-badge"># Tokens \$\{_genSt\.toks\.length\}/.test(psFnSource('_genTokRender')), 'the Token buffer header does not say # Tokens');
     assert.ok(/'genFldToggle'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename genFldToggle');
+    // Reported 2026-11-01: centred between title and fold, the two counts did not line up.
+    assert.ok(/\.gen-tok \.me-section-hdr \.pt-badge \{ margin: 0 10px 0 auto; \}/.test(html), 'the counts are not set beside the fold');
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

@@ -2444,10 +2444,17 @@ class: its parse spec run in reverse, each block writing what it would read.
   read them: an STM writes none, an ISO one says the tokens were not read back.
   An empty buffer writes no area — tokens are optional. The buffer is kept per
   class with the settings (`genTokens`), each token with its fixed values.
-- Written: `read`, `read-ddl` (with `fields` / `from` / `until`), `read-fixed`,
-  `skip`, `read-bitmap` (binary or hex), `read-bitmap-fields`, `when` on a field,
-  `stop`, `token-area`. Anything else — `read-tlv`, `map`, `de` entries, `repeat`, `at`
-  — is named in the dialog and skipped, never guessed.
+- Written: `read` (an OCCURS field or group takes the next occurrence each
+  time), `read-ddl` (with `fields` / `from` / `until`), `read-fixed`, `skip`,
+  `read-bitmap` (binary or hex), `read-bitmap-fields`, `when` on a field, `repeat`,
+  `stop`, `token-area`. A `read-fixed` whose length names a field written before it
+  writes its data, then sets that field to the data's length; a `repeat` writes
+  its body as many times as its count field's value (once when none is given, at
+  most the DDL's OCCURS) and sets the count to what was written — each number
+  spelled as the parse reads it back: by its `as`, a stated base, or the field's
+  own type. A `when` with the old `is` / `not` is refused, as the parse refuses
+  it. Anything else — `read-tlv`, `map`, `de` entries, `at` — is named in the
+  dialog and skipped, never guessed.
 
 ## 13. Storage
 

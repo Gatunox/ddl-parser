@@ -22292,7 +22292,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.1.3';
+const APP_VERSION  = '1.64.1.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41186,6 +41186,7 @@ function _genBlocks(blocks, g) {
       case 'read-bitmap':        _genBitmap(attrs, g); break;
       case 'read-bitmap-fields': _genBitmapFields(attrs, g); break;
       case 'when':               _genWhen(attrs, g); break;
+      case 'repeat':             _genRepeat(attrs, g); break;
       case 'stop':               g.stopped = true; break;
       // Tokens are optional, so a message without them is a whole message: a
       // note, not a problem. An STM / PSTM carries them after its last field;
@@ -41334,8 +41335,57 @@ function _genRead(attrs, g) {
   // leaves in order at the cursor.
   if (def) { _genField(def, def.offset != null ? def.offset : g.cursor, g); return; }
   const kids = defs.filter(d => !d.isRedefines && d.id.startsWith(id + '.'));
-  if (!kids.length) { g.problems.push(`read ${id}: no such field in the bound DDL — skipped`); return; }
-  for (const k of kids) _genField(k, g.cursor, g);
+  if (kids.length) { for (const k of kids) _genField(k, g.cursor, g); return; }
+  // An OCCURS field or group: each read takes the next occurrence, as the parse
+  // does — SRVCS[01], then SRVCS[02].
+  const occ = _meOccurrenceBuckets(id, g);
+  if (!occ) { g.problems.push(`read ${id}: no such field in the bound DDL — skipped`); return; }
+  if (!g.occNext) g.occNext = {};
+  const k = occ.length > 1 ? (g.occNext[id] || 0) : 0;
+  if (k >= occ.length) { g.problems.push(`read ${id}: all ${occ.length} occurrences already written — skipped`); return; }
+  if (occ.length > 1) g.occNext[id] = k + 1;
+  for (const d of occ[k]) if (!d.isRedefines) _genField(d, g.cursor, g);
+}
+// The body as many times as its count field says — the value given for that
+// field, else once — and the count field set to what was written, spelled the
+// way the parse reads it: by its "as", a stated base, or its own type.
+function _genRepeat(attrs, g) {
+  const ref = attrs?.count;
+  const name = ref && typeof ref === 'object' ? ref.field : ref;
+  let N, cnt = null;
+  if (typeof ref === 'number') N = ref;
+  else {
+    const bs = typeof name === 'string' && name ? _meSplitNumBase(name, ref) : { bad: true };
+    if (bs.bad || ref.sizeof !== undefined) { g.problems.push('repeat: only a count from a field or a number is generated yet — skipped'); return; }
+    if (bs.literal) N = parseInt(bs.name, bs.base);
+    else {
+      cnt = { id: bs.name, bs, as: String((typeof ref === 'object' && ref.as) || (!bs.stated && _meOvEffective(g, bs.name)?.type) || '') };
+      if (!g.spans[cnt.id]) { g.problems.push(`repeat: its count, ${cnt.id}, was not written before it — skipped`); return; }
+      const given = Object.prototype.hasOwnProperty.call(g.values, cnt.id) ? String(g.values[cnt.id]).trim() : '';
+      N = given === '' ? 1 : parseInt(given, bs.stated ? bs.base : 10);
+    }
+  }
+  if (!Number.isInteger(N) || N < 0) { g.problems.push(`repeat: the count ${cnt ? cnt.id + ' ' : ''}is not a whole number — written as 0`); N = 0; }
+  // The DDL's OCCURS is the most the body can take — once, for a field without one.
+  const body = Array.isArray(attrs.body) ? attrs.body : [];
+  const occMax = Math.max(0, ...body.map(b => { const a = b?.read; const f = typeof a === 'string' ? a : a?.field;
+    return f ? (_meOccurrenceBuckets(f, g) || []).length : 0; }));
+  if (occMax > 0 && N > occMax) { g.problems.push(`repeat: ${N} is more than the ${occMax} occurrences the DDL declares — written ${occMax}`); N = occMax; }
+  for (let i = 0; i < N && !g.stopped; i++) _genBlocks(body, g);
+  if (!cnt) return;
+  const [pos, w] = g.spans[cnt.id];
+  const def = _genDefs(g).find(d => d.id === cnt.id) || { id: cnt.id, length: w, _dataType: 'PIC X' };
+  let bytes, shown;
+  if (/^(u?int|binary)/i.test(cnt.as)) {
+    bytes = []; for (let i = 0, x = N; i < w; i++, x = Math.floor(x / 256)) bytes.unshift(x % 256);
+    if (/-le$/i.test(cnt.as)) bytes.reverse();
+    shown = String(N);
+  } else if (cnt.bs.stated) { shown = N.toString(cnt.bs.base).toUpperCase().padStart(w, '0'); bytes = _genText(shown, g.enc); }
+  else ({ bytes, shown } = _genEncode(def, String(N), w, g));
+  const cur = g.cursor;
+  _genPut(g, pos, bytes);
+  g.cursor = cur;
+  if (g.written[cnt.id] !== undefined) { g.written[cnt.id] = shown; g.hexOf[cnt.id] = _meBytesToHex(bytes).replace(/\s/g, '').toUpperCase(); }
 }
 // Every field up to `until` is on the wire, whatever `fields` / `from` show —
 // the parse reads them all to keep its place — so all are written; only the
@@ -41383,9 +41433,44 @@ function _genReadDDL(attrs, g) {
 }
 function _genReadFixed(attrs, g) {
   const n = attrs?.length, id = attrs?.as;
+  if (id && n != null && typeof n !== 'number') return _genReadFixedRef(attrs, g);
   if (!Number.isInteger(n) || n < 0 || !id) { g.problems.push('read-fixed: only a fixed length with "as" is generated yet — skipped'); return; }
   const def = { id, length: n, _dataType: /^(uint|binary)/i.test(attrs.type || '') ? 'BINARY' : 'PIC X' };
   _genField(def, g.cursor, g, n);
+}
+// A length taken from a field written before it — PSTM's USER-DATA.LENGTH: the
+// data is written, then that field is set to its length, spelled the way the
+// parse reads the number back — decimal text unless the reference states a base
+// (":h") or a binary type ("as", or the field's type override).
+function _genReadFixedRef(attrs, g) {
+  const ref = attrs.length, id = attrs.as;
+  const name = typeof ref === 'object' ? ref.field : ref;
+  const bs = typeof name === 'string' && name ? _meSplitNumBase(name, ref) : { bad: true };
+  if (bs.bad || ref.sizeof !== undefined) { g.problems.push(`read-fixed ${id}: only a length from a field or a number is generated yet — skipped`); return; }
+  if (bs.literal) return _genReadFixed({ ...attrs, length: parseInt(bs.name, bs.base) }, g);
+  const lenId = bs.name, at = g.spans[lenId];
+  if (!at) { g.problems.push(`read-fixed ${id}: its length, ${lenId}, was not written before it — skipped`); return; }
+  const [pos, w] = at;
+  const as = String((typeof ref === 'object' && ref.as) || (!bs.stated && _meOvEffective(g, lenId)?.type) || '');
+  const bin = /^(u?int|binary)/i.test(as);
+  if (as && !bin) { g.problems.push(`read-fixed ${id}: a length read as ${as} is not generated yet — skipped`); return; }
+  const max = bin ? 256 ** w - 1 : (bs.base || 10) ** w - 1;
+  const ddl = _genDefs(g).find(d => d.id === id);
+  const given = Object.prototype.hasOwnProperty.call(g.values, id);
+  let v = given ? String(g.values[id]) : 'X'.repeat(Math.min(ddl ? _meEffLen(ddl, g) || 0 : 0, max));
+  if (v.length > max) { g.problems.push(`read-fixed ${id}: ${v.length} bytes do not fit in ${lenId} — cut to ${max}`); v = v.slice(0, max); }
+  const n = v.length;
+  _genField({ id, length: n, _dataType: 'PIC X' }, g.cursor, g, n);
+  g.written[id] = v;
+  let bytes;
+  if (bin) { bytes = []; for (let i = 0, x = n; i < w; i++, x = Math.floor(x / 256)) bytes.unshift(x % 256); if (/-le$/i.test(as)) bytes.reverse(); }
+  else bytes = _genText(n.toString(bs.base || 10).toUpperCase().padStart(w, '0'), g.enc);
+  const cur = g.cursor;
+  _genPut(g, pos, bytes);
+  g.cursor = cur;
+  g.written[lenId] = String(n);
+  g.hexOf[lenId] = _meBytesToHex(bytes).replace(/\s/g, '').toUpperCase();
+  g.lenIds.add(lenId);
 }
 // The DEs a bitmap carries: those asked for, else every DE the DDL maps.
 function _genDeMap(g) { return g._deMap || (g._deMap = _meBuildDEMap(g)); }
@@ -41438,6 +41523,11 @@ function _genGroupLenId(e, varGroups) {
 function _genWhen(attrs, g) {
   if (!attrs || attrs.bytes !== undefined || attrs['not-bytes'] !== undefined || !attrs.field) {
     g.problems.push('when: only a condition on a field is generated yet — skipped'); return;
+  }
+  // The old names: the parse refuses them, and taken as a presence test they
+  // would write `then` whatever the field holds.
+  for (const [was, now] of [['is', 'equal'], ['not', 'not_equal']]) if (attrs[was] !== undefined) {
+    g.problems.push(`when ${attrs.field}: "${was}" is now "${now}" — rename it; neither branch written`); return;
   }
   const v = g.written[attrs.field];
   const op = _ME_WHEN_OPS().find(k => attrs[k] !== undefined);

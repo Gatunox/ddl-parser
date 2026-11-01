@@ -26133,6 +26133,56 @@ console.log('\ngenerate a message');
     deepEq(gen(sandbox.__item, {}).problems, [], 'a from the DDL has is reported');
   }));
 
+  test('generate: a read-fixed length from a field is set to what follows; a when with an old name is refused', () => withTree(() => {
+    // PSTM (2026-11-01): USER-DATA's first bytes are the length of its buffer.
+    const ud = len => ({ name: 'UD', label: 'UD', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [
+      { read: 'HDR' },
+      { when: { field: 'HDR', equal: 'ONE', then: [{ 'read-fixed': { length: 2, as: 'UD.LEN' } }, { 'read-fixed': { length: len, as: 'UD.BUF' } }] } }] });
+    let r = gen(ud('UD.LEN'), { values: { HDR: 'ONE', 'UD.BUF': 'HELLO' } });
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors'); deepEq(r.v.diffs, [], 'diffs');
+    eq(String.fromCharCode(...r.out), 'ONE05HELLO', 'the length is not the decimal size of what follows');
+    r = gen(ud({ field: 'UD.LEN', as: 'uint16-be' }), { values: { HDR: 'ONE', 'UD.BUF': 'HELLO' } });
+    deepEq(r.v.diffs, [], 'binary diffs'); deepEq(r.v.errors, [], 'binary errors');
+    deepEq(r.out.slice(3, 5), [0, 5], 'a uint16-be length is not written as two binary bytes');
+    r = gen(ud('UD.LEN:h'), { values: { HDR: 'ONE', 'UD.BUF': 'X'.repeat(20) } });
+    deepEq(r.v.diffs, [], 'hex diffs'); eq(String.fromCharCode(...r.out.slice(3, 5)), '14', 'a ":h" length is not written in hex');
+    r = gen(ud('UD.LEN'), { values: { HDR: 'ONE', 'UD.BUF': 'X'.repeat(120) } });
+    assert.ok(r.problems.some(p => /120 bytes do not fit in UD.LEN — cut to 99/.test(p)), 'a buffer longer than its length can say is not reported');
+    // "is" is the old "equal": taken as a presence test it wrote `then` whatever HDR held.
+    const old = ud('UD.LEN'); old.parse_spec_binary[1].when = { field: 'HDR', is: 'ONE', then: old.parse_spec_binary[1].when.then };
+    r = gen(old, { values: { HDR: 'TWO' } });
+    assert.ok(r.problems.some(p => /when HDR: "is" is now "equal" — rename it; neither branch written/.test(p)), 'an old "is" is not reported');
+    eq(String.fromCharCode(...r.out), 'TWO', 'a branch was written under an old "is"');
+  }));
+
+  test('generate: a repeat writes its body as many times as the count says, and the count says what was written', () => withTree(() => {
+    // PSTM (2026-11-01): NUM-SERVICES, then that many SRVCS.
+    sandbox.__svc = 'DEFINITION SVC.\n  02 HDR PIC X(2).\n  02 NUM PIC 9(2).\n  02 SRVCS OCCURS 3 TIMES.\n    03 CDE PIC X(2).\n    03 AMT PIC 9(3).\nEND\n'
+      + 'DEFINITION SVB.\n  02 HDR PIC X(2).\n  02 NUM TYPE BINARY 16.\n  02 SRVCS.\n    03 CDE PIC X(2).\n    03 AMT PIC 9(3).\nEND\n';
+    run('S.ddlTree.BASE.DDL.SVC = __svc; _ddlTreeVersion++;');
+    const svc = (def, count) => ({ name: 'SVC', label: 'SVC', ddl_bindings: [`BASE/DDL/SVC/${def}`],
+      parse_spec_binary: [{ 'read-ddl': { until: 'NUM' } }, { repeat: { count, body: [{ read: 'SRVCS' }] } }] });
+    // OCCURS: each pass takes the next occurrence.
+    let r = gen(svc('SVC', 'NUM'), { values: { HDR: 'AB', NUM: '2', 'SRVCS[02].CDE': 'ZZ' } });
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors'); deepEq(r.v.diffs, [], 'diffs');
+    eq(String.fromCharCode(...r.out), 'AB02XX000ZZ000', 'two occurrences are not written after a count of 02');
+    // No count given: once, and the count says 01.
+    r = gen(svc('SVC', 'NUM'), {});
+    eq(String.fromCharCode(...r.out), 'XX01XX000', 'a repeat with no count given is not written once');
+    eq(r.written.NUM, '01', 'the count is not what was written');
+    // More than OCCURS: capped and said.
+    r = gen(svc('SVC', 'NUM'), { values: { NUM: '5' } });
+    assert.ok(r.problems.some(p => /5 is more than the 3 occurrences the DDL declares — written 3/.test(p)), 'a count above OCCURS is not reported');
+    deepEq(r.v.diffs, [], 'capped diffs');
+    // A binary count read as uint16-be; without OCCURS the group is there once, as the parse reads it.
+    r = gen(svc('SVB', { field: 'NUM', as: 'uint16-be' }), { values: { NUM: '1' } });
+    deepEq(r.v.errors, [], 'binary errors'); deepEq(r.v.diffs, [], 'binary diffs');
+    deepEq(r.out.slice(2, 4), [0, 1], 'a uint16-be count is not two binary bytes');
+    r = gen(svc('SVB', { field: 'NUM', as: 'uint16-be' }), { values: { NUM: '3' } });
+    assert.ok(r.problems.some(p => /3 is more than the 1 occurrences the DDL declares — written 1/.test(p)), 'a group without OCCURS is written more than once');
+    deepEq(r.v.errors, [], 'capped binary errors'); eq(r.out.length, 2 + 2 + 5, 'the group without OCCURS is not written once');
+  }));
+
   test('generate: a when takes the branch the written values take; an unsupported block is named, not guessed', () => withTree(() => {
     const item = { name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [
       { read: 'HDR' },

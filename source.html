@@ -22292,7 +22292,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.1.5';
+const APP_VERSION  = '1.64.2.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41128,13 +41128,14 @@ function _genMessage(item, opts) {
     fields: [], fieldsById: {}, out: [], cursor: 0, written: {}, hexOf: {},
     values: o.values || {}, des: o.des || null, bitmaps: {}, problems: [],
     enc: _meSpecEncodingInfo(item).enc, stopped: false, lenIds: new Set(), notes: [], spans: {},
-    raw: o.raw || {}, tokenArea: o.tokenArea || null, tokWritten: [], unshown: {},
+    raw: o.raw || {}, tokenArea: o.tokenArea || null, tokWritten: [], unshown: {}, checks: [],
   };
   for (const t of [g.tokenArea, ...Object.values(g.raw)]) if (t?.problems) g.problems.push(...t.problems);
   // A pattern's first alternative; an MTI's # digits are taken from 0200, a
   // request, so "0###" writes 0200 and "1###" writes 1200 — an all-zero MTI is
   // not one the recognizer accepts.
-  const recVal = r => { const v = String(r.value).split('|')[0];
+  const recVal = r => { const v0 = Array.isArray(r.value) ? r.value[0] : r.value;
+    const v = String(v0 && typeof v0 === 'object' ? v0.from : v0).split('|')[0];
     return r.type === 'mti' ? Array.from(v, (c, i) => c === '#' ? '0200'[i] ?? '0' : c).join('') : v; };
   // A numeric recognizer takes zeros over its length — it may span several
   // fields, PIC X ones among them, whose default X's it would reject.
@@ -41144,9 +41145,19 @@ function _genMessage(item, opts) {
       ? (recVal(r).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16))
       : _genText(r.type === 'numeric' ? '0'.repeat(Math.max(1, +r.length || 1)) : recVal(r), r.encoding === 'ebcdic' ? 'ebcdic' : 'ascii') }));
   _genBlocks(_genSpec(item, o.format === 'ascii'), g);
+  // What only the finished message can say: what follows a read-until, what comes after a read-to-end.
+  for (const c of g.checks) c();
   // Tokens carried in a DE are checked on the way back like those at the end.
   for (const id of Object.keys(g.raw)) if (g.written[id] !== undefined && g.raw[id].tokens) g.tokWritten.push(...g.raw[id].tokens);
   return g;
+}
+// The recognizers' bytes laid over `bytes` written at `pos` — the part of each
+// that falls inside.
+const _genRecsOver = (g, pos, n) => g.recs.some(r => r.off < pos + n && r.off + r.bytes.length > pos);
+function _genRecsOn(g, pos, bytes) {
+  const out = bytes.slice();
+  for (const r of g.recs) for (let i = Math.max(r.off, pos); i < Math.min(r.off + r.bytes.length, pos + out.length); i++) out[i - pos] = r.bytes[i - r.off];
+  return out;
 }
 // The spec the generator walks — the one the parse would use. With none, the
 // parse reads the DDL and then the tokens, so that is what is written.
@@ -41177,10 +41188,15 @@ function _genBlocks(blocks, g) {
       case 'read':               _genRead(attrs, g); break;
       case 'read-ddl':           _genReadDDL(attrs, g); break;
       case 'read-fixed':         _genReadFixed(attrs, g); break;
+      case 'read-until':         _genReadUntil(attrs, g); break;
+      case 'read-length-value':  _genReadLengthValue(attrs, g); break;
+      case 'read-to-end':        _genReadToEnd(attrs, g); break;
       case 'skip': {
-        const n = typeof attrs === 'number' ? attrs : attrs?.length;
-        if (!Number.isInteger(n) || n < 0) { g.problems.push('skip: only a fixed length is generated yet — skipped'); break; }
-        _genPut(g, g.cursor, _genText(' '.repeat(n), g.enc));
+        const n = typeof attrs === 'number' ? attrs : _genNum(attrs?.length, g, 'skip');
+        if (n == null) break;
+        if (!Number.isInteger(n) || n < 0) { g.problems.push(`skip: ${n} is not a whole number of bytes — skipped`); break; }
+        // Bytes no field owns: a recognizer that sits there is written there.
+        _genPut(g, g.cursor, _genRecsOn(g, g.cursor, _genText(' '.repeat(n), g.enc)));
         break;
       }
       case 'read-bitmap':        _genBitmap(attrs, g); break;
@@ -41207,7 +41223,7 @@ function _genBlocks(blocks, g) {
 // What kind of bytes a field holds: 'int' (a binary number), 'hex' (hex-char:
 // the value is the bytes' hex spelling), 'num' (digits) or 'text'.
 function _genKind(def, g) {
-  const t = String(_meOvEffective(g, def.id)?.type || '').trim();
+  const t = String(def._genType || _meOvEffective(g, def.id)?.type || '').trim();
   if (t) return /^(uint|binary\s*\d|byte$|word$|dword$)/i.test(t) ? 'int' : /^hex-char$/i.test(t) ? 'hex' : 'text';
   const dt = String(def._dataType || '');
   if (!dt && def.dataType) {
@@ -41227,7 +41243,7 @@ function _genEncode(def, value, len, g) {
     const out = [];
     const B256 = BigInt(256);
     for (let i = 0; i < len; i++) { out.unshift(Number(n % B256)); n /= B256; }
-    if (/-le$/i.test(String(_meOvEffective(g, def.id)?.type || ''))) out.reverse();
+    if (/-le$/i.test(String(def._genType || _meOvEffective(g, def.id)?.type || ''))) out.reverse();
     return { bytes: out, shown: String(value ?? '0').trim() || '0' };
   }
   if (kind === 'hex') {
@@ -41236,7 +41252,7 @@ function _genEncode(def, value, len, g) {
   }
   const v = String(value ?? '');
   const s = kind === 'num' ? v.replace(/\D/g, '').padStart(len, '0').slice(-len) : v.padEnd(len, ' ').slice(0, len);
-  return { bytes: _genText(s, g.enc), shown: s };
+  return { bytes: _genText(s, def._genEnc || g.enc), shown: s };
 }
 // A default the user can recognise: zeros for digits, the field's name for text.
 // The default by type and length: digits are zeros, text is X — the whole
@@ -41266,10 +41282,8 @@ function _genField(def, pos, g, len) {
     return;
   }
   let { bytes, shown } = _genEncode(def, given ? g.values[def.id] : _genDefault(def, g), L, g);
-  if (!given) for (const r of g.recs) {
-    const a = Math.max(r.off, pos), b = Math.min(r.off + r.bytes.length, pos + bytes.length);
-    if (a >= b) continue;
-    bytes = bytes.slice(); for (let i = a; i < b; i++) bytes[i - pos] = r.bytes[i - r.off];
+  if (!given && _genRecsOver(g, pos, bytes.length)) {
+    bytes = _genRecsOn(g, pos, bytes);
     if (_genKind(def, g) !== 'int') shown = bytes.map(x => String.fromCharCode(g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[x] ?? x) : x)).join('');
   }
   _genPut(g, pos, bytes);
@@ -41325,26 +41339,149 @@ function _genRawField(def, pos, g, L) {
 }
 function _genDefs(g) { return _meCollectBindingDefs(g.resolvedBindings); }
 function _genRead(attrs, g) {
-  if (attrs && typeof attrs === 'object' && Object.keys(attrs).some(k => k !== 'field')) {
-    g.problems.push(`read ${attrs.field || ''}: only a plain field read is generated yet — skipped`); return;
-  }
-  const id = typeof attrs === 'string' ? attrs : attrs?.field;
+  const o = attrs && typeof attrs === 'object' ? attrs : {};
+  if (o.from !== undefined || o.until !== undefined) return _genReadWindow(o, g);
+  const other = Object.keys(o).find(k => !['field', 'type', 'length_prefix'].includes(k));
+  if (other) { g.problems.push(`read ${o.field || ''}: "${other}" is not generated yet — skipped`); return; }
+  const id = typeof attrs === 'string' ? attrs : o.field;
+  const lp = o.length_prefix;
+  if (lp != null && (!Number.isInteger(lp) || lp <= 0)) { g.problems.push(`read ${id}: "length_prefix" must be a whole number of bytes above 0 — skipped`); return; }
+  // A read's own type is the field's for this read only.
+  const typed = d => o.type ? { ...d, _genType: o.type } : d;
+  const at = g.cursor;
+  if (lp) _genPut(g, at, new Array(lp).fill(0));
+  const start = g.cursor;
   const defs = _genDefs(g);
   const def = defs.find(d => d.id === id);
-  // A leaf outside a walk lands where the DDL declares it; a group reads its
-  // leaves in order at the cursor.
-  if (def) { _genField(def, def.offset != null ? def.offset : g.cursor, g); return; }
-  const kids = defs.filter(d => !d.isRedefines && d.id.startsWith(id + '.'));
-  if (kids.length) { for (const k of kids) _genField(k, g.cursor, g); return; }
-  // An OCCURS field or group: each read takes the next occurrence, as the parse
-  // does — SRVCS[01], then SRVCS[02].
-  const occ = _meOccurrenceBuckets(id, g);
-  if (!occ) { g.problems.push(`read ${id}: no such field in the bound DDL — skipped`); return; }
-  if (!g.occNext) g.occNext = {};
-  const k = occ.length > 1 ? (g.occNext[id] || 0) : 0;
-  if (k >= occ.length) { g.problems.push(`read ${id}: all ${occ.length} occurrences already written — skipped`); return; }
-  if (occ.length > 1) g.occNext[id] = k + 1;
-  for (const d of occ[k]) if (!d.isRedefines) _genField(d, g.cursor, g);
+  // A field read at the cursor, as the parse reads it; a group reads its leaves
+  // in order. Under a length prefix a text leaf takes only what its value needs.
+  if (def) {
+    const given = Object.prototype.hasOwnProperty.call(g.values, def.id);
+    const w = lp && given && !['int', 'hex'].includes(_genKind(typed(def), g)) ? Math.min(_meEffLen(def, g), String(g.values[def.id]).length) : undefined;
+    _genField(typed(def), g.cursor, g, w);
+  } else {
+    let leaves = defs.filter(d => !d.isRedefines && d.id.startsWith(id + '.'));
+    if (!leaves.length) {
+      // An OCCURS field or group: each read takes the next occurrence, as the
+      // parse does — SRVCS[01], then SRVCS[02].
+      const occ = _meOccurrenceBuckets(id, g);
+      if (!occ) { g.problems.push(`read ${id}: no such field in the bound DDL — skipped`); g.cursor = at; return; }
+      if (!g.occNext) g.occNext = {};
+      const k = occ.length > 1 ? (g.occNext[id] || 0) : 0;
+      if (k >= occ.length) { g.problems.push(`read ${id}: all ${occ.length} occurrences already written — skipped`); g.cursor = at; return; }
+      if (occ.length > 1) g.occNext[id] = k + 1;
+      leaves = occ[k].filter(d => !d.isRedefines);
+    }
+    for (const d of leaves) _genField(typed(d), g.cursor, g);
+  }
+  if (!lp) return;
+  // The prefix: the bytes that follow it, as digits when they fit, else binary —
+  // what the parse, given no type for it, reads back.
+  const n = g.cursor - start, end = g.cursor;
+  const pre = _genLenBytes(n, '', lp, g.enc) || _genLenBytes(n, 'uint', lp, g.enc);
+  if (!pre || _meDecodeLength(pre, null, { enc: g.enc }) !== n) g.problems.push(`read ${id}: ${n} byte(s) cannot be said in a ${lp}-byte length prefix the parse reads back`);
+  _genPut(g, at, pre || new Array(lp).fill(0));
+  g.cursor = end;
+}
+// read { from, until }: the DDL's fields in that range, one after the other at
+// the cursor — not at their declared offsets.
+function _genReadWindow(o, g) {
+  if (!o.from) { g.problems.push('read: "until" needs a "from" — skipped'); return; }
+  const defs = _genDefs(g);
+  const s = defs.findIndex(d => d.id === _meResolveDefRef(defs, o.from, 'first'));
+  const e = o.until ? defs.findIndex(d => d.id === _meResolveDefRef(defs, o.until, 'last')) : defs.length - 1;
+  if (s < 0 || e < 0) { g.problems.push(`read: "${s < 0 ? o.from : o.until}" is not in the bound DDL — skipped`); return; }
+  if (e < s) { g.problems.push(`read: "${o.until}" comes before "${o.from}" — nothing written`); return; }
+  for (let i = s; i <= e; i++) if (defs[i].length > 0) _genField(o.type ? { ...defs[i], _genType: o.type } : defs[i], g.cursor, g);
+}
+// A length's bytes in `w`, as `type` reads them: a binary integer, BCD, hex
+// characters or hex text, else digits — in ASCII or EBCDIC when the type says,
+// else in `enc`. Null when the number does not fit.
+function _genLenBytes(n, type, w, enc) {
+  const t = String(type || '').trim();
+  let b;
+  if (/^bcd2$/i.test(t)) { const d = String(n).padStart(4, '0'); b = d.length > 4 ? [] : [(+d[0] << 4) | +d[1], (+d[2] << 4) | +d[3]]; }
+  else if (/^uint$/i.test(t) || _meLenTypeIsInt(t)) {
+    if (n >= 256 ** w) return null;
+    b = []; for (let i = 0, x = n; i < w; i++, x = Math.floor(x / 256)) b.unshift(x % 256);
+    if (_meLenTypeIsLE(t)) b.reverse();
+  } else if (_meLenTypeIsHexChar(t)) b = (String(n).padStart(w * 2, '0').match(/../g) || []).map(h => parseInt(h, 16));
+  else if (_meLenTypeIsHexText(t)) b = _genText(n.toString(16).toUpperCase().padStart(w, '0'), /ebcdic/i.test(t) ? 'ebcdic' : 'ascii');
+  else b = _genText(String(n).padStart(w, '0'), _meLenTypeIsEbcdic(t) ? 'ebcdic' : _meLenTypeIsAscii(t) ? 'ascii' : enc);
+  return b.length === w ? b : null;
+}
+// A number a block takes from a field written before it, or as stated.
+function _genNum(ref, g, what) {
+  if (typeof ref === 'number') return ref;
+  if (ref && typeof ref === 'object' && ref.sizeof !== undefined) {
+    const n = _meDeclaredSize(ref.sizeof, g);
+    if (!n) g.problems.push(`${what}: "sizeof": no element named '${ref.sizeof}' in the bound DDLs — skipped`);
+    return n || null;
+  }
+  const name = ref && typeof ref === 'object' ? ref.field : ref;
+  const bs = typeof name === 'string' && name ? _meSplitNumBase(name, ref) : { bad: true };
+  if (bs.bad) { g.problems.push(`${what}: ${JSON.stringify(ref)} is not a length — skipped`); return null; }
+  if (bs.literal) return parseInt(bs.name, bs.base);
+  if (g.written[bs.name] === undefined) { g.problems.push(`${what}: ${bs.name} was not written before it — skipped`); return null; }
+  return parseInt(String(g.written[bs.name]).trim(), bs.stated ? bs.base : 10);
+}
+// The value of a field a block names but the DDL may not declare: as given, else
+// the DDL's default for it, else eight X.
+function _genFreeValue(id, g) {
+  if (Object.prototype.hasOwnProperty.call(g.values, id)) return String(g.values[id]);
+  const def = _genDefs(g).find(d => d.id === id);
+  return def ? String(_genDefault(def, g)) : 'XXXXXXXX';
+}
+// The ASCII a sentinel is matched against: the parse compares the message as
+// read, EBCDIC already turned to ASCII.
+const _genAsAscii = (b, g) => g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[b] ?? b) : b;
+// read-until: the value, then — from whatever follows — a sentinel, or the end
+// of the message when eom allows it. A sentinel inside the value is said.
+function _genReadUntil(attrs, g) {
+  const sent = _meParseSentinels(attrs?.sentinels), eom = !!attrs?.eom, id = attrs?.as || 'BUFFER';
+  if (!sent.size && !eom) { g.problems.push(`read-until ${id}: no sentinels and no eom — skipped`); return; }
+  const v = _genFreeValue(id, g), bytes = _genText(v, g.enc);
+  const bad = bytes.findIndex(b => sent.has(_genAsAscii(b, g)));
+  if (bad >= 0) g.problems.push(`read-until ${id}: its value holds a sentinel at character ${bad + 1} — the parse stops there`);
+  _genField({ id, length: bytes.length, _dataType: 'PIC X' }, g.cursor, g, bytes.length);
+  const end = g.cursor;
+  g.checks.push(() => {
+    if (end < g.out.length ? !sent.has(_genAsAscii(g.out[end], g)) : !eom)
+      g.problems.push(`read-until ${id}: ${end < g.out.length ? `what follows it does not start with one of its sentinels` : 'nothing follows it and "eom" is off'} — the parse does not stop where it ends`);
+  });
+}
+// read-length-value: the length, in the encoding and width it is read in, then
+// the data — its digits packed two to a byte when the length counts digits.
+function _genReadLengthValue(attrs, g) {
+  const id = attrs?.as || 'LEN-DATA';
+  const w = attrs?.length_encoding ? _mePrefixWidth(attrs.length_encoding, attrs.length_size) : null;
+  if (w == null) { g.problems.push(`read-length-value ${id}: its length has no width — add "length_size" (1-4); skipped`); return; }
+  const digits = /^digits$/i.test(String(attrs.count || '').trim());
+  let v = _genFreeValue(id, g), data, n;
+  if (digits) {
+    v = v.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+    data = ((v.length % 2 ? v + '0' : v).match(/../g) || []).map(h => parseInt(h, 16)); n = v.length;
+  } else { data = _genText(v, g.enc); n = data.length; }
+  const e = String(attrs.encoding || '').toLowerCase();
+  const pre = _genLenBytes(n, attrs.length_encoding, w, e === 'ascii' || e === 'ebcdic' ? e : g.enc);
+  if (!pre) { g.problems.push(`read-length-value ${id}: ${n} does not fit in a ${w}-byte ${attrs.length_encoding} length — skipped`); return; }
+  const sent = _meParseSentinels(attrs.sentinels);
+  if (data.some(b => sent.has(_genAsAscii(b, g)))) g.problems.push(`read-length-value ${id}: its data holds a sentinel — the parse stops there`);
+  const pos = g.cursor;
+  _genPut(g, pos, pre.concat(data));
+  g.spans[id] = [pos + w, data.length];
+  g.written[id] = v;
+  g.hexOf[id] = _meBytesToHex(data).replace(/\s/g, '').toUpperCase();
+}
+// read-to-end: the value, which must be the last thing written — the parse
+// takes everything after it as part of it.
+function _genReadToEnd(attrs, g) {
+  const id = attrs?.as || 'TAIL';
+  if (attrs?.end_at !== undefined && String(attrs.end_at).toLowerCase() !== 'message') { g.problems.push(`read-to-end ${id}: "end_at": ${JSON.stringify(attrs.end_at)} is not generated yet — skipped`); return; }
+  const n = _genText(_genFreeValue(id, g), g.enc).length;
+  _genField({ id, length: n, _dataType: 'PIC X' }, g.cursor, g, n);
+  const end = g.cursor;
+  g.checks.push(() => { if (g.out.length > end) g.problems.push(`read-to-end ${id}: ${g.out.length - end} byte(s) are written after it — the parse reads them as part of it`); });
 }
 // The body as many times as its count field says — the value given for that
 // field, else once — and the count field set to what was written, spelled the
@@ -41432,10 +41569,12 @@ function _genReadDDL(attrs, g) {
   }
 }
 function _genReadFixed(attrs, g) {
-  const n = attrs?.length, id = attrs?.as;
-  if (id && n != null && typeof n !== 'number') return _genReadFixedRef(attrs, g);
-  if (!Number.isInteger(n) || n < 0 || !id) { g.problems.push('read-fixed: only a fixed length with "as" is generated yet — skipped'); return; }
-  const def = { id, length: n, _dataType: /^(uint|binary)/i.test(attrs.type || '') ? 'BINARY' : 'PIC X' };
+  const n = attrs?.length, id = attrs?.as || 'read-fixed';
+  if (n != null && typeof n !== 'number') return _genReadFixedRef({ ...attrs, as: id }, g);
+  if (!Number.isInteger(n) || n < 0) { g.problems.push(`read-fixed ${id}: ${JSON.stringify(n)} is not a length — skipped`); return; }
+  const e = String(attrs.encoding || '').toLowerCase();
+  if (e === 'bcd') { g.problems.push(`read-fixed ${id}: "encoding": "bcd" is not implemented in the parse — skipped`); return; }
+  const def = { id, length: n, _dataType: /^(uint|binary)/i.test(attrs.type || '') ? 'BINARY' : 'PIC X', ...(e === 'ascii' || e === 'ebcdic' ? { _genEnc: e } : {}) };
   _genField(def, g.cursor, g, n);
 }
 // A length taken from a field written before it — PSTM's USER-DATA.LENGTH: the

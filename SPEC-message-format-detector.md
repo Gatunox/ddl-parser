@@ -2394,7 +2394,8 @@ class: its parse spec run in reverse, each block writing what it would read.
   - **Fixed** — as typed; the default is the type at its full width, digits
     zeros and text X. A recognizer's literal or MTI is the default where it
     sits, a numeric recognizer's zeros over its length — each across every field
-    it spans; an MTI pattern's `#` digits come from `0200`.
+    it spans, and over bytes a `skip` steps over; a literal listing alternatives
+    takes the first; an MTI pattern's `#` digits come from `0200`.
   - **Random num**, **Random alpha**, **Random hex** — digits, letters A–Z or
     hex digits, a new set each time. A field offers only what its type holds:
     a numeric field Random num, a binary number Random num, a `B` field Random
@@ -2444,8 +2445,13 @@ class: its parse spec run in reverse, each block writing what it would read.
   read them: an STM writes none, an ISO one says the tokens were not read back.
   An empty buffer writes no area — tokens are optional. The buffer is kept per
   class with the settings (`genTokens`), each token with its fixed values.
-- Written: `read` (an OCCURS field or group takes the next occurrence each
-  time), `read-ddl` (with `fields` / `from` / `until`), `read-fixed`, `skip`,
+- Written: `read` at the cursor (with `type`, `length_prefix`, `from` / `until`;
+  an OCCURS field or group takes the next occurrence each time), `read-ddl` (with
+  `fields` / `from` / `until`), `read-fixed` (with `type` / `encoding`), `skip`
+  (a number, a field or `sizeof`), `read-until` (the bytes that follow must start
+  with a sentinel, or end the message under `eom`), `read-length-value` (the length
+  in its encoding and width, digits packed two to a byte under `count: digits`),
+  `read-to-end` (said when anything is written after it),
   `read-bitmap` (binary or hex), `read-bitmap-fields`, `when` on a field, `repeat`,
   `stop`, `token-area`. A `read-fixed` whose length names a field written before it
   writes its data, then sets that field to the data's length; a `repeat` writes

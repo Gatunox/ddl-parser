@@ -26183,6 +26183,59 @@ console.log('\ngenerate a message');
     deepEq(r.v.errors, [], 'capped binary errors'); eq(r.out.length, 2 + 2 + 5, 'the group without OCCURS is not written once');
   }));
 
+  test('generate: read-until, read-length-value and read-to-end are written as the parse reads them', () => withTree(() => {
+    const fix = blocks => ({ name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: blocks });
+    const s = r => String.fromCharCode(...r.out);
+    const clean = (r, tag) => { deepEq(r.problems, [], `${tag}: problems`); deepEq(r.v.errors, [], `${tag}: errors`); deepEq(r.v.diffs, [], `${tag}: diffs`); };
+    // read-until: the value, then whatever follows starts with a sentinel.
+    let r = gen(fix([{ 'read-until': { sentinels: ['0x26'], as: 'BUF' } }, { 'read-fixed': { length: 2, as: 'AMP' } }]), { values: { BUF: 'HELLO', AMP: '&X' } });
+    clean(r, 'read-until'); eq(s(r), 'HELLO&X', 'read-until is not its value then what follows');
+    r = gen(fix([{ 'read-until': { sentinels: ['0x26'], eom: true, as: 'BUF' } }]), { values: { BUF: 'HELLO' } });
+    clean(r, 'read-until eom'); eq(s(r), 'HELLO', 'read-until with eom is not the value to the end');
+    r = gen(fix([{ 'read-until': { sentinels: ['0x26'], as: 'BUF' } }, { 'read-fixed': { length: 2, as: 'AMP' } }]), { values: { BUF: 'HE&LO', AMP: 'ZZ' } });
+    assert.ok(r.problems.some(p => /BUF: its value holds a sentinel at character 3/.test(p)), 'a sentinel inside the value is not said');
+    assert.ok(r.problems.some(p => /BUF: what follows it does not start with one of its sentinels/.test(p)), 'a read-until not followed by a sentinel is not said');
+    // read-length-value: ASCII digits, a binary length, a count of digits.
+    r = gen(fix([{ 'read-length-value': { length_encoding: 'ascii', length_size: 3, as: 'LV' } }]), { values: { LV: 'HELLO' } });
+    clean(r, 'lv ascii'); eq(s(r), '005HELLO', 'an ASCII length is not three digits before the data');
+    r = gen(fix([{ 'read-length-value': { length_encoding: 'uint16-be', as: 'LV' } }]), { values: { LV: 'HI' } });
+    clean(r, 'lv uint16'); deepEq(r.out.slice(0, 2), [0, 2], 'a uint16-be length is not two binary bytes');
+    r = gen(fix([{ 'read-length-value': { length_encoding: 'uint8', count: 'digits', as: 'LV' } }]), { values: { LV: '12345' } });
+    clean(r, 'lv digits'); deepEq(r.out, [5, 0x12, 0x34, 0x50], 'digits are not counted and packed two to a byte');
+    r = gen(fix([{ 'read-length-value': { length_encoding: 'ascii', length_size: 1, as: 'LV' } }]), { values: { LV: 'X'.repeat(12) } });
+    assert.ok(r.problems.some(p => /LV: 12 does not fit in a 1-byte ascii length/.test(p)), 'a length too long for its width is not said');
+    // read-to-end: last, or said.
+    r = gen(fix([{ read: 'HDR' }, { 'read-to-end': { as: 'REST' } }]), { values: { HDR: 'ABC', REST: 'TAIL!' } });
+    clean(r, 'read-to-end'); eq(s(r), 'ABCTAIL!', 'read-to-end is not the value at the end');
+    r = gen(fix([{ 'read-to-end': { as: 'REST' } }, { read: 'HDR' }]), { values: { HDR: 'ABC', REST: 'T' } });
+    assert.ok(r.problems.some(p => /REST: 3 byte\(s\) are written after it/.test(p)), 'bytes after a read-to-end are not said');
+  }));
+
+  test('generate: read with a type, a length prefix or a window; read-fixed encoding; skip by a field', () => withTree(() => {
+    const fix = blocks => ({ name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: blocks });
+    const s = r => String.fromCharCode(...r.out);
+    const clean = (r, tag) => { deepEq(r.problems, [], `${tag}: problems`); deepEq(r.v.errors, [], `${tag}: errors`); deepEq(r.v.diffs, [], `${tag}: diffs`); };
+    // A read lands at the cursor, as the parse reads it — not at the declared offset.
+    let r = gen(fix([{ 'read-fixed': { length: 2, as: 'PRE' } }, { read: 'CNT' }]), { values: { PRE: 'ZZ', CNT: '7' } });
+    clean(r, 'cursor'); eq(s(r), 'ZZ0007', 'a read is not written at the cursor');
+    r = gen(fix([{ read: { field: 'CNT', type: 'uint32-be' } }]), { values: { CNT: '258' } });
+    clean(r, 'typed'); deepEq(r.out, [0, 0, 1, 2], 'a read with a type is not written in that type');
+    r = gen(fix([{ read: { field: 'TAIL', length_prefix: 2 } }]), { values: { TAIL: 'AB' } });
+    clean(r, 'length_prefix'); eq(s(r), '02AB', 'a length prefix is not the digits of what follows');
+    r = gen(fix([{ read: { from: 'CNT', until: 'VAR.VAR-DATA' } }]), { values: { CNT: '42', 'VAR.VAR-LEN': '005', 'VAR.VAR-DATA': 'HELLO' } });
+    clean(r, 'window'); eq(s(r).slice(0, 7), '0042005', 'a read window does not start at the cursor with from');
+    r = gen(fix([{ 'read-fixed': { length: 3, as: 'E', encoding: 'ascii' } }]), { values: { E: 'ABC' } });
+    clean(r, 'encoding'); eq(s(r), 'ABC', 'read-fixed with an encoding is not written');
+    r = gen(fix([{ read: 'CNT' }, { skip: { length: 'CNT' } }, { 'read-fixed': { length: 1, as: 'Z' } }]), { values: { CNT: '3', Z: 'Q' } });
+    clean(r, 'skip'); eq(s(r), '0003   Q', 'a skip by a field does not skip that many bytes');
+
+    // HPDH (2026-11-01): its literal, a list of alternatives, sits in the bytes a skip steps over.
+    const hp = { ...fix([{ skip: { length: 3 } }, { read: 'CNT' }]), recognizers: [{ type: 'literal', offset: 0, encoding: 'hex', value: ['60', '43'] }] };
+    r = gen(hp, {});
+    clean(r, 'skip literal'); eq(r.out[0], 0x60, 'a recognizer in skipped bytes is not written, or its first alternative is not taken');
+    eq(r.v.own?.passed, true, 'the class does not pass its own recognizers');
+  }));
+
   test('generate: a when takes the branch the written values take; an unsupported block is named, not guessed', () => withTree(() => {
     const item = { name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [
       { read: 'HDR' },

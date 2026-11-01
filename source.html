@@ -22291,7 +22291,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.1.1';
+const APP_VERSION  = '1.64.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41745,7 +41745,7 @@ function openGenerate() {
   const kept = (P.genTokens || {})[key] || {};
   _genSt = { key, model: _genModel(item), des: (c.des || []).slice(), rows: JSON.parse(JSON.stringify(c.rows || {})), fmt: c.fmt || 'hex',
     place: _genTokenPlace(item), toks: (kept.list || []).filter(t => t && t.id).map(t => ({ id: t.id, values: { ...(t.values || {}) }, ...(t.raw != null ? { raw: t.raw } : {}) })),
-    tokModel: {}, tokOpen: true, tokDraft: null };
+    tokModel: {}, tokOpen: true, fldOpen: true, tokDraft: null };
   const binds = (item.ddl_bindings || []).filter(Boolean);
   const ddl = binds.length
     ? binds.map(p => `<code>${esc(p)}</code>${getDDLFromPath(p) ? '' : ' <span class="gen-bad">⚠ not in the DDL tree</span>'}`).join(', ')
@@ -41760,10 +41760,13 @@ function openGenerate() {
       </select><span class="fw-note" style="padding:0">in ${_meSpecEncodingInfo(item).enc.toUpperCase()}, the class's encoding</span>
       <span style="flex:1"></span><button class="btn btn-primary" onclick="genRun()">Generate</button></div>`
     + `<div class="gen-res" id="genRes"></div>`
+    // The fields fold like the Token buffer; folded, they stay in the page — hidden, not dropped.
+    + `<div class="me-section gen-tok" id="genFlds"><div class="me-section-hdr" onclick="genFldToggle()"><span>Fields</span>`
+    + `<span class="pt-badge" id="genFldCount"></span><span class="me-section-arr" id="genFldArr">−</span></div><div id="genFldBody">`
     + (_genSt.model.bitmap ? `<div class="gen-row"><label>Add a DE — by number or name</label>
         <input class="me-inp" id="genFind" placeholder="e.g. 4, or PAN" oninput="genFind()" onkeydown="if(event.key==='Enter'){event.preventDefault();genAddFirst();}">
         <div class="gen-find" id="genFindList"></div></div>` : '')
-    + `<table class="exp-tbl gen-tbl"><thead><tr><th>DE</th><th>Field</th><th>Type</th><th>Value from</th><th>Value</th><th></th></tr></thead><tbody id="genRows"></tbody></table>`
+    + `<table class="exp-tbl gen-tbl"><thead><tr><th>DE</th><th>Field</th><th>Type</th><th>Value from</th><th>Value</th><th></th></tr></thead><tbody id="genRows"></tbody></table></div></div>`
     + (_genSt.place ? `<div class="me-section gen-tok" id="genTok"></div>` : '');
   _genRows();
   genFind();
@@ -41820,8 +41823,15 @@ function _genRowHtml({ de, f }) {
     + `<td>${de == null ? '' : `<button class="btn btn-ico" onclick="genDelDe(${de})" title="Leave DE ${de} out">✕</button>`}</td></tr>`;
 }
 function _genRows() {
-  document.getElementById('genRows').innerHTML = _genVisible().map(_genRowHtml).join('')
+  const rows = _genVisible();
+  document.getElementById('genRows').innerHTML = rows.map(_genRowHtml).join('')
     || `<tr><td colspan="6" class="fw-note">This class writes no field.</td></tr>`;
+  document.getElementById('genFldCount').textContent = `# Fields ${rows.length}`;
+}
+function genFldToggle() {
+  _genSt.fldOpen = !_genSt.fldOpen;
+  document.getElementById('genFldBody').hidden = !_genSt.fldOpen;
+  document.getElementById('genFldArr').textContent = _genSt.fldOpen ? '−' : '+';
 }
 function genMode(sel) {
   _genKeep();
@@ -41911,7 +41921,7 @@ function _genTokRender() {
       + `<td><button class="btn btn-ico" onclick="genTokDel('${id}')" title="Take token ${id} out">✕</button></td></tr>`;
   }).join('');
   el.innerHTML = `<div class="me-section-hdr" onclick="genTokToggle()"><span>Token buffer</span>`
-    + `<span class="pt-badge">${_genSt.toks.length || ''}</span><span class="me-section-arr">${_genSt.tokOpen ? '−' : '+'}</span></div>`
+    + `<span class="pt-badge"># Tokens ${_genSt.toks.length}</span><span class="me-section-arr">${_genSt.tokOpen ? '−' : '+'}</span></div>`
     + (_genSt.tokOpen ? `<div class="fw-note">${where}</div>${noBlock}`
       + `<div class="gen-row"><label>Add a token — by id or DDL name</label>
           <input class="me-inp" id="genTokFind" placeholder="e.g. B4" oninput="genTokFind()" onkeydown="if(event.key==='Enter'){event.preventDefault();genTokPickFirst();}">

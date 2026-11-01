@@ -2381,7 +2381,8 @@ The Class Editor's Test panel → **Generate** builds a message from the selecte
 class: its parse spec run in reverse, each block writing what it would read.
 
 - **The dialog** names the class and the DDL it is bound to (⚠ when none, or
-  when it is not in the tree), then a row per field with a value to edit. The
+  when it is not in the tree), then a **Fields** section — its header counts the
+  rows (`# Fields n`) and folds them — with a row per field with a value to edit. The
   fields outside the bitmap — prefix, MTI — are always rows, and so is every field
   written to the wire, those a `read-ddl` window (`from` / `until`) does not show
   included; a `from` or `until` the DDL does not have is reported. A spec that walks a
@@ -2421,7 +2422,7 @@ class: its parse spec run in reverse, each block writing what it would read.
   away and why, or which class earlier in the list takes it. Only a clean
   message goes to the Test: Clear first, then the message in the input, not
   run — ▶ Run parses it. With an error the Test is left as it was.
-- **Token buffer** — a section of its own below the rows, shown for a class
+- **Token buffer** — a section of its own below the Fields, its header counting them (`# Tokens n`), shown for a class
   whose type code places tokens: STM / PSTM after the last field, ISO / Base24
   in DE 63 or 126. A token is picked from a finder over the token maps (id or
   DDL name); picking it shows its fields as rows, valued like any other row,

@@ -26410,6 +26410,17 @@ console.log('\ngenerate a message');
     for (const h of ['openGenerate', 'closeGenerate', 'genRun', 'genFind', 'genAddDe', 'genAddFirst', 'genDelDe', 'genMode', 'genTokToggle', 'genTokFind', 'genTokAdd', 'genTokPick', 'genTokPickFirst', 'genTokCancel', 'genTokDel', 'genTokEdit'])
       assert.ok(new RegExp(`'${h}'`).test(fs.readFileSync('./build.js', 'utf8')), `build.js would rename ${h}`);
   });
+
+  test('generate: the fields fold like the Token buffer, and both headers count what they hold', () => {
+    // Requested 2026-11-01: "# Tokens" named, and the fields a section of their own.
+    const og = psFnSource('openGenerate');
+    assert.ok(/onclick="genFldToggle\(\)"><span>Fields<\/span>/.test(og), 'the fields have no header that folds them');
+    assert.ok(/id="genFldBody">[\s\S]*id="genFind"[\s\S]*id="genRows"[\s\S]*<\/div><\/div>`/.test(og), 'the finder and the rows are not inside the folding body');
+    assert.ok(/genFldCount'\)\.textContent = `# Fields \$\{rows\.length\}`/.test(psFnSource('_genRows')), 'the fields header does not count the rows');
+    assert.ok(/\.hidden = !_genSt\.fldOpen/.test(psFnSource('genFldToggle')), 'folding does not hide the fields');
+    assert.ok(/pt-badge"># Tokens \$\{_genSt\.toks\.length\}/.test(psFnSource('_genTokRender')), 'the Token buffer header does not say # Tokens');
+    assert.ok(/'genFldToggle'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename genFldToggle');
+  });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);

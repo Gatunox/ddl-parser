@@ -38,7 +38,7 @@ const RESERVED = [
   'toggleHelpSub', 'toggleHideRedefines', 'toggleMissingRefs', 'togglePanel',
   'toggleSettingsSection', 'toggleTokenArea', 'toggleTrack', 'toggleTrackMode',
   'toggleTreeExp', 'updateDDLEditorState', 'updateDDLHighlight', 'exportTracking',
-  'openSpec', 'closeSpec', 'openRulesPop', 'openGenerate', 'closeGenerate', 'genRun', 'genFind', 'genAddDe', 'genAddFirst', 'genDelDe', 'genMode', 'genTokToggle', 'genTokFind', 'genTokAdd', 'genTokPick', 'genTokPickFirst', 'genTokCancel', 'genTokDel', 'genTokEdit',
+  'openSpec', 'closeSpec', 'openRulesPop', 'openGenerate', 'closeGenerate', 'genRun', 'genFind', 'genAddDe', 'genAddFirst', 'genDelDe', 'genMode', 'genTokToggle', 'genFldToggle', 'genTokFind', 'genTokAdd', 'genTokPick', 'genTokPickFirst', 'genTokCancel', 'genTokDel', 'genTokEdit',
   'updateDDLValidationBar',
   // Audit file browser
   'openAuditFileDialog', 'onAuditFileOpen', 'auditCloseMode',

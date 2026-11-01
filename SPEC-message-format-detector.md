@@ -2382,7 +2382,9 @@ class: its parse spec run in reverse, each block writing what it would read.
 
 - **The dialog** names the class and the DDL it is bound to (⚠ when none, or
   when it is not in the tree), then a row per field with a value to edit. The
-  fields outside the bitmap — prefix, MTI — are always rows. A spec that walks a
+  fields outside the bitmap — prefix, MTI — are always rows, and so is every field
+  written to the wire, those a `read-ddl` window (`from` / `until`) does not show
+  included; a `from` or `until` the DDL does not have is reported. A spec that walks a
   bitmap adds a **finder**: type a DE number or a name, Enter or a click adds that
   DE's rows, ✕ leaves it out; the exact number comes first. DE numbers are the
   Field Map's. A DE above 64 adds the secondary bitmap and bit 1.
@@ -2390,7 +2392,8 @@ class: its parse spec run in reverse, each block writing what it would read.
   description, and says where its value comes from:
   - **Fixed** — as typed; the default is the type at its full width, digits
     zeros and text X. A recognizer's literal or MTI is the default where it
-    sits; an MTI pattern's `#` digits come from `0200`.
+    sits, a numeric recognizer's zeros over its length — each across every field
+    it spans; an MTI pattern's `#` digits come from `0200`.
   - **Random num**, **Random alpha**, **Random hex** — digits, letters A–Z or
     hex digits, a new set each time. A field offers only what its type holds:
     a numeric field Random num, a binary number Random num, a `B` field Random

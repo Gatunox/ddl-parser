@@ -22291,7 +22291,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.1.0';
+const APP_VERSION  = '1.64.1.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41127,7 +41127,7 @@ function _genMessage(item, opts) {
     fields: [], fieldsById: {}, out: [], cursor: 0, written: {}, hexOf: {},
     values: o.values || {}, des: o.des || null, bitmaps: {}, problems: [],
     enc: _meSpecEncodingInfo(item).enc, stopped: false, lenIds: new Set(), notes: [], spans: {},
-    raw: o.raw || {}, tokenArea: o.tokenArea || null, tokWritten: [],
+    raw: o.raw || {}, tokenArea: o.tokenArea || null, tokWritten: [], unshown: {},
   };
   for (const t of [g.tokenArea, ...Object.values(g.raw)]) if (t?.problems) g.problems.push(...t.problems);
   // A pattern's first alternative; an MTI's # digits are taken from 0200, a
@@ -41135,11 +41135,13 @@ function _genMessage(item, opts) {
   // not one the recognizer accepts.
   const recVal = r => { const v = String(r.value).split('|')[0];
     return r.type === 'mti' ? Array.from(v, (c, i) => c === '#' ? '0200'[i] ?? '0' : c).join('') : v; };
-  g.recs = (item.recognizers || []).filter(r => r && (r.type === 'literal' || r.type === 'mti')
-    && r.value != null && /^[^?*]+$/.test(recVal(r)) && Number.isInteger(+r.offset))
+  // A numeric recognizer takes zeros over its length — it may span several
+  // fields, PIC X ones among them, whose default X's it would reject.
+  g.recs = (item.recognizers || []).filter(r => r && Number.isInteger(+r.offset) && (r.type === 'numeric'
+    || (r.type === 'literal' || r.type === 'mti') && r.value != null && /^[^?*]+$/.test(recVal(r))))
     .map(r => ({ off: +r.offset, bytes: r.type === 'literal' && r.encoding === 'hex'
       ? (recVal(r).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16))
-      : _genText(recVal(r), r.encoding === 'ebcdic' ? 'ebcdic' : 'ascii') }));
+      : _genText(r.type === 'numeric' ? '0'.repeat(Math.max(1, +r.length || 1)) : recVal(r), r.encoding === 'ebcdic' ? 'ebcdic' : 'ascii') }));
   _genBlocks(_genSpec(item, o.format === 'ascii'), g);
   // Tokens carried in a DE are checked on the way back like those at the end.
   for (const id of Object.keys(g.raw)) if (g.written[id] !== undefined && g.raw[id].tokens) g.tokWritten.push(...g.raw[id].tokens);
@@ -41244,7 +41246,7 @@ function _genDefault(def, g) {
   return (kind === 'num' ? '0' : 'X').repeat(len);
 }
 // Write one field at `pos`, `len` bytes (its effective width when absent).
-// With no value given, a recognizer that falls inside it wins.
+// With no value given, the part of each recognizer that falls inside it wins.
 function _genField(def, pos, g, len) {
   const L = len ?? _meEffLen(def, g);
   if (g.raw[def.id]) return _genRawField(def, pos, g, L);
@@ -41263,8 +41265,9 @@ function _genField(def, pos, g, len) {
   }
   let { bytes, shown } = _genEncode(def, given ? g.values[def.id] : _genDefault(def, g), L, g);
   if (!given) for (const r of g.recs) {
-    if (r.off < pos || r.off + r.bytes.length > pos + L) continue;
-    bytes = bytes.slice(); r.bytes.forEach((x, i) => { bytes[r.off - pos + i] = x; });
+    const a = Math.max(r.off, pos), b = Math.min(r.off + r.bytes.length, pos + bytes.length);
+    if (a >= b) continue;
+    bytes = bytes.slice(); for (let i = a; i < b; i++) bytes[i - pos] = r.bytes[i - r.off];
     if (_genKind(def, g) !== 'int') shown = bytes.map(x => String.fromCharCode(g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[x] ?? x) : x)).join('');
   }
   _genPut(g, pos, bytes);
@@ -41345,6 +41348,9 @@ function _genReadDDL(attrs, g) {
     const defs = g.resolvedBindings[idx]?.defs;
     if (!defs?.length) { g.problems.push(`read-ddl: binding ${idx} does not resolve — skipped`); continue; }
     const from = _meResolveDefRef(defs, a.from, 'first'), until = _meResolveDefRef(defs, a.until, 'last');
+    // A from / until the DDL does not have: the parse shows nothing of this read.
+    for (const [k, ref] of [['from', from], ['until', until]]) if (ref && !defs.some(d => d.id === ref))
+      g.problems.push(`read-ddl: ${k} "${ref}" is not a field of binding ${idx} (${g.item.ddl_bindings?.[idx] || '?'}) — the parse does not show this read`);
     const picks = Array.isArray(a.fields) ? new Set(a.fields) : null;
     const base = g.cursor, w0 = Object.keys(g.written).length;
     const shown = new Set();
@@ -41369,7 +41375,9 @@ function _genReadDDL(attrs, g) {
       seen(d.id);
       if (until && d.id === until) break;
     }
-    for (const id of Object.keys(g.written).slice(w0)) if (!shown.has(id)) { delete g.written[id]; delete g.hexOf[id]; }
+    // What the parse does not show is not checked, but it is on the wire: the
+    // dialog still offers it as a row.
+    for (const id of Object.keys(g.written).slice(w0)) if (!shown.has(id)) { g.unshown[id] = g.written[id]; delete g.written[id]; delete g.hexOf[id]; }
   }
 }
 function _genReadFixed(attrs, g) {
@@ -41631,9 +41639,10 @@ function _genLeaf(d, g, dflt) {
 function _genModel(item) {
   const g0 = _genMessage(item, { des: [] });
   const defs = new Map(_genDefs(g0).map(d => [d.id, d]));
-  const head = Object.keys(g0.written).filter(id => !g0.lenIds.has(id)).map(id => defs.has(id)
-    ? _genLeaf(defs.get(id), g0, g0.written[id])
-    : { id, len: String(g0.written[id]).length, kind: 'text', pic: '', dflt: g0.written[id] });
+  const all = { ...g0.unshown, ...g0.written };
+  const head = Object.keys(all).filter(id => !g0.lenIds.has(id)).map(id => defs.has(id)
+    ? _genLeaf(defs.get(id), g0, all[id])
+    : { id, len: String(all[id]).length, kind: 'text', pic: '', dflt: all[id] });
   const des = {};
   if (_genUsesBitmap(item)) {
     const deMap = _meBuildDEMap(g0), varGroups = _meVlgLenMap(_meOvMergedItem(g0));

@@ -26108,6 +26108,31 @@ console.log('\ngenerate a message');
     eq(String.fromCharCode(...u.out), 'XXX0007', 'until on a plain field did not stop there');
   }));
 
+  test('generate: a numeric recognizer spanning PIC X fields writes zeros there, literal and MTI beside it', () => withTree(() => {
+    // ISO 8583 BIC (2026-11-01): "ISO", 9 digits over PROD-ID … DEST, then the MTI.
+    sandbox.__bic = 'DEFINITION BIC.\n  02 STRT-OF-TXT PIC X(3).\n  02 PROD-ID PIC X(2).\n  02 REL-NRO PIC X(2).\n  02 STAT PIC X(3).\n'
+      + '  02 ORIG PIC X.\n  02 DEST PIC X.\n  02 TYP PIC X(4).\nEND\n';
+    run('S.ddlTree.BASE.DDL.BIC = __bic; _ddlTreeVersion++;');
+    const item = { name: 'BIC', label: 'BIC', ddl_bindings: ['BASE/DDL/BIC/BIC'], parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+      recognizers: [{ type: 'literal', offset: 0, encoding: 'ascii', value: 'ISO' }, { type: 'numeric', offset: 3, encoding: 'ascii', length: 9 },
+        { type: 'mti', offset: 12, encoding: 'ascii', value: '####' }] };
+    const r = gen(item, {});
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors'); deepEq(r.v.diffs, [], 'diffs');
+    eq(String.fromCharCode(...r.out), 'ISO0000000000200', 'the numeric recognizer was not written across the fields it spans');
+    eq(r.v.own?.passed, true, 'the class recognizers do not pass on its own message');
+    eq(r.written['STAT'], '000', 'the dialog default of a field under the numeric recognizer is not digits');
+    // The class reads its header with from / until: every field on the wire is a
+    // row in the dialog, and a from the DDL lacks is said — the parse shows none of it.
+    sandbox.__item = { ...item, parse_spec_binary: [{ 'read-ddl': { binding: 0, from: 'STRT-OF-TEXT', until: 'TYP' } }] };
+    const head = JSON.parse(run('JSON.stringify(_genModel(__item).head.map(f => f.id + "=" + f.dflt))'));
+    deepEq(head, ['STRT-OF-TXT=ISO', 'PROD-ID=00', 'REL-NRO=00', 'STAT=000', 'ORIG=0', 'DEST=0', 'TYP=0200'], 'the header fields are not rows of the dialog');
+    const bad = gen(sandbox.__item, {});
+    assert.ok(bad.problems.some(p => /read-ddl: from "STRT-OF-TEXT" is not a field of binding 0/.test(p)), 'a from the DDL lacks is not reported');
+    sandbox.__item = { ...item, parse_spec_binary: [{ 'read-ddl': { binding: 0, from: 'PROD-ID', until: 'TYP' } }] };
+    eq(JSON.parse(run('JSON.stringify(_genModel(__item).head.map(f => f.id))'))[0], 'STRT-OF-TXT', 'a field before from is not a row, though it is written');
+    deepEq(gen(sandbox.__item, {}).problems, [], 'a from the DDL has is reported');
+  }));
+
   test('generate: a when takes the branch the written values take; an unsupported block is named, not guessed', () => withTree(() => {
     const item = { name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [
       { read: 'HDR' },

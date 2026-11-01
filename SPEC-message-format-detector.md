@@ -2395,6 +2395,7 @@ class: its parse spec run in reverse, each block writing what it would read.
     hex digits, a new set each time. A field offers only what its type holds:
     a numeric field Random num, a binary number Random num, a `B` field Random
     hex, a text field all three.
+  - **Blanks** — spaces at the field's full width; text fields only.
   - **Increment** — the last generation plus one, padded to the field. The app
     keeps the count per class and field with the settings (`genCounters`), so a
     value is not handed out twice across sessions; past what the field holds it
@@ -2417,11 +2418,31 @@ class: its parse spec run in reverse, each block writing what it would read.
   away and why, or which class earlier in the list takes it. Only a clean
   message goes to the Test: Clear first, then the message in the input, not
   run — ▶ Run parses it. With an error the Test is left as it was.
-- **Tokens** are optional and not generated yet: the message carries none, which
-  is a note, not a problem.
+- **Token buffer** — a section of its own below the rows, shown for a class
+  whose type code places tokens: STM / PSTM after the last field, ISO / Base24
+  in DE 63 or 126. A token is picked from a finder over the token maps (id or
+  DDL name); picking it shows its fields as rows, valued like any other row,
+  and **Add** puts it in the buffer — **Cancel** drops it and what was typed.
+  Value from belongs to that draft: Add fixes the values (a random or a date is
+  drawn then, an increment spent then), and in the buffer a token is one row —
+  its id, its DDL name, its length and the value it carries; ✕ takes it out.
+  Every Generate writes those same values. The value is a one-line text area
+  that can be edited: what is typed is the token, byte for byte, and its length
+  follows. The
+  token's DDL is the one the parse uses (an ISO token tries `NAME` + `X`
+  first). The area is written as the parse reads it: `& `, the count (tokens +
+  1) and the area's size, then per token `! `, its id, its size and its bytes —
+  two-byte integers for STM / PSTM, five digits and a space before the bytes for
+  ISO / Base24; a `token-area` block's `header` decides when it says. STM / PSTM
+  write the buffer at their `token-area` block; an ISO class writes it in the
+  DE 63 / 126 row whose Value from is **Token buffer**. Each token must come
+  back with its fields as written. A class with no `token-area` block cannot
+  read them: an STM writes none, an ISO one says the tokens were not read back.
+  An empty buffer writes no area — tokens are optional. The buffer is kept per
+  class with the settings (`genTokens`), each token with its fixed values.
 - Written: `read`, `read-ddl` (with `fields` / `from` / `until`), `read-fixed`,
   `skip`, `read-bitmap` (binary or hex), `read-bitmap-fields`, `when` on a field,
-  `stop`. Anything else — `read-tlv`, `map`, `de` entries, `repeat`, `at`
+  `stop`, `token-area`. Anything else — `read-tlv`, `map`, `de` entries, `repeat`, `at`
   — is named in the dialog and skipped, never guessed.
 
 ## 13. Storage

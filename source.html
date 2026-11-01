@@ -1430,6 +1430,25 @@ table.ddl-doc-tbl { table-layout: fixed; border-collapse: collapse; font-family:
 .gen-res .gen-ok { color: var(--success); }
 .gen-res .gen-bad { color: var(--warning); }
 .gen-res ul { margin: 4px 0 0 16px; padding: 0; max-height: 160px; overflow: auto; }
+.gen-tok { margin: 10px 10px 6px; }
+.gen-tok .me-section-hdr { cursor: pointer; }
+.gen-tok .gen-bad, .gen-tbl .gen-bad { color: var(--warning); }
+.gen-tok-hdr td { font-weight: 600; }
+.exp-tbl.gen-tokbuf { margin: 0 10px 8px; width: calc(100% - 20px); table-layout: fixed; }
+.exp-tbl.gen-tokbuf td, .exp-tbl.gen-tokbuf th { max-width: none; vertical-align: middle; }
+.exp-tbl.gen-tokbuf th:nth-child(1) { width: 58px; }
+.exp-tbl.gen-tokbuf th:nth-child(2) { width: 140px; }
+.exp-tbl.gen-tokbuf th:nth-child(3) { width: 56px; }
+.exp-tbl.gen-tokbuf th:nth-child(5) { width: 40px; }
+.exp-tbl.gen-tokbuf td:last-child { overflow: visible; padding: 3px 4px; }
+.gen-tokbuf .gen-de { color: var(--text-dim); white-space: nowrap; }
+.gen-tokbuf .gen-tokarea { display: block; width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: var(--sz-mono);
+  resize: none; white-space: pre; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.gen-tokbuf .gen-tokarea::-webkit-scrollbar { display: none; }
+.gen-tok-draft { border: var(--bw, 2px) solid var(--accent); border-radius: 4px; margin: 0 10px 8px; padding-top: 4px; }
+.gen-tok-draft .exp-tbl.gen-tbl { margin: 0 4px; width: calc(100% - 8px); }
+.gen-tok-draft .gen-acts { padding: 6px 4px 6px; }
+.gen-find .fw-chip.on { border-color: var(--accent); color: var(--accent); }
 .fw-prog { height: 6px; margin: 4px 10px 10px; min-width: 320px; background: var(--bg-input); border-radius: var(--r-sm); overflow: hidden; }
 .fw-prog-bar { height: 100%; background: var(--accent); transition: width .1s linear; }
 .fw-tbl tbody tr { cursor: pointer; }
@@ -9551,13 +9570,23 @@ function extractTokensFromMessage(fields, bytes, msgTypeStr, ddlPath) {
     // the field id is a qualified name like ISOPSEM.ADD-DATA-PRVT.DATA).
     // The eyecatcher check is also inside the predicate so we skip the LEN
     // sub-field (2-3 ASCII digits, never starts with '&').
-    const tkField = fields.find(f =>
-      (f.id === '63' || f.id === '126' || f.deNum === 63 || f.deNum === 126) &&
-      f.rawBytes?.length >= 2 &&
-      f.rawBytes[0] === 0x26 && f.rawBytes[1] === 0x20
-    );
+    //
+    // A field from the spec engine carries only rawHex while the parse runs —
+    // rawBytes is added once it is over — so the eyecatcher is looked for in
+    // either. And an ISO LLVAR / LLLVAR's startByte is its length prefix, not
+    // its data: the area starts where the DE's bytes do, counted back from its
+    // end. Both made a token-area block find nothing in DE 63 / 126.
+    const dataOf = f => f.rawBytes?.length ? f.rawBytes
+      : f.rawHex ? (String(f.rawHex).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16)) : [];
+    const tkField = fields.find(f => {
+      if (!(f.id === '63' || f.id === '126' || f.deNum === 63 || f.deNum === 126)) return false;
+      const d = dataOf(f);
+      return d.length >= 2 && d[0] === 0x26 && d[1] === 0x20;
+    });
     if (tkField) {
-      return parseTokenArea(bytes, tkField.startByte, false, preferredVol, true);
+      const at = bytes[tkField.startByte] === 0x26 && bytes[tkField.startByte + 1] === 0x20
+        ? tkField.startByte : tkField.endByte - dataOf(tkField).length + 1;
+      return parseTokenArea(bytes, at, false, preferredVol, true);
     }
   } else if (msgTypeStr === 'STM' || msgTypeStr === 'PSTM') {
     // Use the highest endByte across ALL fields — REDEFINES overlays can make
@@ -22262,7 +22291,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.0.1';
+const APP_VERSION  = '1.64.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22318,6 +22347,8 @@ const _DEF_PREFS = {
   // Generate's increment counters, "class|field" → the next value, so a value
   // is not handed out twice across sessions (TODO 31).
   genCounters: {},
+  // Generate's Token buffer per class: the tokens chosen and their rows' values.
+  genTokens: {},
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences
@@ -41096,7 +41127,9 @@ function _genMessage(item, opts) {
     fields: [], fieldsById: {}, out: [], cursor: 0, written: {}, hexOf: {},
     values: o.values || {}, des: o.des || null, bitmaps: {}, problems: [],
     enc: _meSpecEncodingInfo(item).enc, stopped: false, lenIds: new Set(), notes: [], spans: {},
+    raw: o.raw || {}, tokenArea: o.tokenArea || null, tokWritten: [],
   };
+  for (const t of [g.tokenArea, ...Object.values(g.raw)]) if (t?.problems) g.problems.push(...t.problems);
   // A pattern's first alternative; an MTI's # digits are taken from 0200, a
   // request, so "0###" writes 0200 and "1###" writes 1200 — an all-zero MTI is
   // not one the recognizer accepts.
@@ -41107,12 +41140,17 @@ function _genMessage(item, opts) {
     .map(r => ({ off: +r.offset, bytes: r.type === 'literal' && r.encoding === 'hex'
       ? (recVal(r).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16))
       : _genText(recVal(r), r.encoding === 'ebcdic' ? 'ebcdic' : 'ascii') }));
-  const ascii = o.format === 'ascii';
+  _genBlocks(_genSpec(item, o.format === 'ascii'), g);
+  // Tokens carried in a DE are checked on the way back like those at the end.
+  for (const id of Object.keys(g.raw)) if (g.written[id] !== undefined && g.raw[id].tokens) g.tokWritten.push(...g.raw[id].tokens);
+  return g;
+}
+// The spec the generator walks — the one the parse would use. With none, the
+// parse reads the DDL and then the tokens, so that is what is written.
+function _genSpec(item, ascii) {
   const a = Array.isArray(item.parse_spec_ascii) ? item.parse_spec_ascii : [];
   const b = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary : [];
-  const spec = (ascii && a.length) ? a : b.length ? b : a.length ? a : [{ 'read-ddl': 'ANY' }];
-  _genBlocks(spec, g);
-  return g;
+  return (ascii && a.length) ? a : b.length ? b : a.length ? a : [{ 'read-ddl': 'ANY' }, { 'token-area': 'ANY' }];
 }
 // Text in the class's encoding, one byte per character.
 function _genText(s, enc) {
@@ -41147,8 +41185,17 @@ function _genBlocks(blocks, g) {
       case 'when':               _genWhen(attrs, g); break;
       case 'stop':               g.stopped = true; break;
       // Tokens are optional, so a message without them is a whole message: a
-      // note, not a problem.
-      case 'token-area': g.notes.push('no tokens written — tokens are not generated yet'); break;
+      // note, not a problem. An STM / PSTM carries them after its last field;
+      // an ISO one carries them in DE 63 or 126, written with that DE.
+      case 'token-area':
+        if (g.tokenArea && !g.tokDone && _genTokenPlace(g.item) === 'end') {
+          const at = g.out.length;
+          _genPut(g, at, g.tokenArea.bytes);
+          g.spans['TOKEN AREA'] = [at, g.tokenArea.bytes.length];
+          g.tokWritten.push(...g.tokenArea.tokens);
+          g.tokDone = true;
+        } else if (!g.tokDone && !Object.keys(g.raw).length) g.notes.push('no tokens written');
+        break;
       default: g.problems.push(`${type}: not generated yet (stage 2) — skipped`);
     }
   }
@@ -41200,6 +41247,7 @@ function _genDefault(def, g) {
 // With no value given, a recognizer that falls inside it wins.
 function _genField(def, pos, g, len) {
   const L = len ?? _meEffLen(def, g);
+  if (g.raw[def.id]) return _genRawField(def, pos, g, L);
   const given = Object.prototype.hasOwnProperty.call(g.values, def.id);
   // An ISO LLVAR / LLLVAR carries its own length: digits, then that many bytes,
   // the declared size being the most it may hold.
@@ -41235,9 +41283,9 @@ function _genFramed(before, lenDef, data, g) {
   data.forEach((d, i) => {
     const declared = _meEffLen(d, g);
     const given = Object.prototype.hasOwnProperty.call(g.values, d.id);
-    const v = String(given ? g.values[d.id] : _genDefault(d, g));
+    const v = g.raw[d.id] ? { length: g.raw[d.id].bytes.length } : String(given ? g.values[d.id] : _genDefault(d, g));
     const last = i === data.length - 1;
-    const w = last && _genKind(d, g) !== 'int' ? Math.min(declared, Math.max(_genKind(d, g) === 'hex' ? Math.ceil(v.length / 2) : v.length, 0)) : declared;
+    const w = last && g.raw[d.id] ? Math.min(declared, v.length) : last && _genKind(d, g) !== 'int' ? Math.min(declared, Math.max(_genKind(d, g) === 'hex' ? Math.ceil(v.length / 2) : v.length, 0)) : declared;
     _genField(d, g.cursor, g, w);
     total += w;
   });
@@ -41252,6 +41300,23 @@ function _genFramed(before, lenDef, data, g) {
   g.lenIds.add(lenDef.id);
   g.hexOf[lenDef.id] = enc.bytes.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
   g.cursor = end;
+}
+// A field whose bytes are given whole — a token area in DE 63 / 126. An ISO
+// LLVAR / LLLVAR gets its length in front; a fixed field is padded to its width.
+// Bytes past what the field holds are cut, and said.
+function _genRawField(def, pos, g, L) {
+  let data = g.raw[def.id].bytes;
+  if (L && data.length > L) {
+    g.problems.push(`${def.id}: the Token buffer is ${data.length} bytes, the field holds ${L} — cut`);
+    data = data.slice(0, L);
+  }
+  const pw = def.type === 'LLVAR' ? 2 : def.type === 'LLLVAR' ? 3 : 0;
+  const pad = !pw && L > data.length ? new Array(L - data.length).fill(g.enc === 'ebcdic' ? 0x40 : 0x20) : [];
+  const bytes = (pw ? _genText(String(data.length).padStart(pw, '0'), g.enc) : []).concat(data, pad);
+  _genPut(g, pos, bytes);
+  g.spans[def.id] = [pos, bytes.length];
+  g.written[def.id] = data.concat(pad).map(x => String.fromCharCode(g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[x] ?? x) : x)).join('');
+  g.hexOf[def.id] = _meBytesToHex(data.concat(pad));
 }
 function _genDefs(g) { return _meCollectBindingDefs(g.resolvedBindings); }
 function _genRead(attrs, g) {
@@ -41377,6 +41442,78 @@ function _genWhen(attrs, g) {
   }
   _genBlocks(holds ? attrs.then : attrs.else, g);
 }
+// ── Tokens ──
+// Where a class carries its tokens, by its type code — the rule the parse finds
+// them by: STM / PSTM after the last field, ISO / Base24 inside DE 63 or 126.
+// Any other type has no place the parse looks, so it gets no Token buffer.
+function _genTokenPlace(item) {
+  const t = String(item.type || item.name || '').toUpperCase();
+  return t === 'STM' || t === 'PSTM' ? 'end' : t === 'ISO' || t === 'B24' ? 'de' : null;
+}
+// The header's shape — binary for STM / PSTM, text for ISO / Base24 — decided
+// as the parse decides it, a token-area block's "header" included.
+function _genTokenBinary(item) {
+  const blk = JSON.stringify(_genSpec(item, false)).match(/"token-area":\{[^}]*"header":"(\w+)"/);
+  return _meTokenHeaderOrder({ item }, blk ? blk[1] : null)[0];
+}
+const _genTokVol = item => String((item.ddl_bindings || [])[0] || '').split('/')[0] || null;
+// The tokens the token maps define, id → DDL name.
+function _genTokenIds(item) {
+  const vol = _genTokVol(item), maps = getTokenMaps(vol);
+  return maps.length ? mergeTokenMaps(maps, vol) : {};
+}
+// A token's DDL, found as the parse finds it (an ISO token tries NAME + X first).
+function _genTokenDDL(item, id) {
+  const ddlName = _genTokenIds(item)[id];
+  if (!ddlName) return { error: `no token map defines ${id}` };
+  const entry = findTokenDDL(ddlName, _genTokVol(item), !_genTokenBinary(item));
+  return entry ? { ddlName, path: entry.path, defs: entry.defs } : { ddlName, error: `DDL ${ddlName} not found` };
+}
+// A generator of its own for a token's buffer: its fields at their offsets.
+function _genTokenG(item, defs, values) {
+  return { item: { name: item.name }, resolvedBindings: [{ defs }], out: [], cursor: 0, written: {}, hexOf: {},
+    values: values || {}, recs: [], enc: _meSpecEncodingInfo(item).enc, spans: {}, lenIds: new Set(),
+    problems: [], notes: [], raw: {} };
+}
+const _genTokLeaves = defs => defs.filter(d => !d.isRedefines && d.length > 0);
+// The token area: "& ", the count (tokens + 1) and the area's whole size, then
+// per token "! ", its id, its size and its bytes — two-byte integers in the
+// binary form; five digits, and a space before the bytes, in the text form.
+// One token's bytes: its fields at their offsets, from `values` by field id —
+// or, when the value was edited in the buffer, exactly the text typed, each
+// field then being the slice of it that falls at its offset.
+function _genTokenData(item, id, values, raw) {
+  const r = _genTokenDDL(item, id);
+  if (r.error) return r;
+  const tg = _genTokenG(item, r.defs, values);
+  if (raw != null) {
+    const data = _genText(raw, tg.enc), written = {}, hexOf = {};
+    for (const d of _genTokLeaves(r.defs)) {
+      const off = d.offset != null ? d.offset : 0, L = _meEffLen(d, tg) || 0;
+      if (off >= data.length) continue;
+      written[d.id] = raw.substr(off, L);
+      hexOf[d.id] = _meBytesToHex(data.slice(off, off + L));
+    }
+    return { ddlName: r.ddlName, data, written, hexOf };
+  }
+  for (const d of _genTokLeaves(r.defs)) _genField(d, d.offset != null ? d.offset : tg.cursor, tg);
+  return { ddlName: r.ddlName, data: tg.out, written: tg.written, hexOf: tg.hexOf };
+}
+function _genTokenArea(item, tokens) {
+  const bin = _genTokenBinary(item), enc = _meSpecEncodingInfo(item).enc;
+  const T = s => _genText(s, enc), u16 = n => [(n >> 8) & 0xFF, n & 0xFF], d5 = n => T(String(n).padStart(5, '0'));
+  const problems = [], parts = [], written = [];
+  for (const t of tokens) {
+    const r = _genTokenData(item, t.id, t.values, t.raw);
+    if (r.error) { problems.push(`token ${t.id}: ${r.error} — left out`); continue; }
+    parts.push(T('! ').concat(T(t.id), bin ? u16(r.data.length) : d5(r.data.length).concat(T(' ')), r.data));
+    written.push({ id: t.id, written: r.written, hexOf: r.hexOf });
+  }
+  const body = [].concat(...parts);
+  const size = body.length + (bin ? 6 : 12);
+  const head = T('& ').concat(bin ? u16(parts.length + 1).concat(u16(size)) : d5(parts.length + 1).concat(d5(size)));
+  return { bytes: head.concat(body), tokens: written, problems };
+}
 // Parse the message back with the same class: every field written must read
 // back as written, and nothing may be reported. Also which class detection
 // picks for it.
@@ -41397,6 +41534,28 @@ function _genVerify(item, g, format) {
       || String(f.rawHex || '').toUpperCase() === g.hexOf[id]
       || _meBytesToHex(Array.from(wire.slice(f.startByte, f.endByte + 1))).replace(/\s/g, '').toUpperCase() === g.hexOf[id];
     if (!same) diffs.push(`${id}: wrote "${String(v).trim()}", read "${String(f.value ?? '').trim()}"`);
+  }
+  // Each token written must come back, in its place, with its fields as written.
+  // A class that reads no token area cannot show them: said, not failed.
+  if (g.tokWritten.length) {
+    if (!JSON.stringify(_genSpec(item, format === 'ascii')).includes('"token-area"'))
+      g.notes.push('the parse spec has no token-area block, so the tokens were not read back');
+    else {
+      const got = (r.tokens || []).filter(t => t.id);
+      for (const t of r.tokens || []) if (t.error || t.issue) errors.push(`token ${t.id || '?'}: ${t.error || t.issue}`);
+      g.tokWritten.forEach((t, i) => {
+        const back = got[i];
+        if (!back || back.id !== t.id) { diffs.push(`token ${t.id}: not read back${back ? ` — found ${back.id} in its place` : ''}`); return; }
+        const fb = {};
+        for (const f of back.fields || []) if (f && f.id) fb[f.id] = f;
+        for (const [id, v] of Object.entries(t.written)) {
+          const f = fb[id];
+          if (!f) { diffs.push(`token ${t.id} ${id}: not read back`); continue; }
+          if (String(f.value ?? '').trim() !== String(v).trim() && String(f.rawHex || '').toUpperCase() !== t.hexOf[id])
+            diffs.push(`token ${t.id} ${id}: wrote "${String(v).trim()}", read "${String(f.value ?? '').trim()}"`);
+        }
+      });
+    }
   }
   let detected = null;
   try { detected = window._fmtDetect(new Uint8Array(wire), {})?.label || null; } catch (e) {}
@@ -41484,6 +41643,9 @@ function _genModel(item) {
       if (e.def) leaves = (e.with || []).length ? e.with : [e.def];
       else { const lenId = _genGroupLenId(e, varGroups); leaves = e.kids.filter(k => k.id !== lenId); }
       des[n] = { name: e.def ? e.def.id : e.groupId, leaves: leaves.map(d => _genLeaf(d, g0)) };
+      // An ISO class carries its tokens in DE 63 or 126: the field that holds
+      // the DE's bytes can take the Token buffer.
+      if ((n === 63 || n === 126) && _genTokenPlace(item) === 'de' && des[n].leaves.length) des[n].leaves[des[n].leaves.length - 1].tokSlot = true;
     }
   }
   return { head, des, bitmap: _genUsesBitmap(item) };
@@ -41496,11 +41658,12 @@ function _genModel(item) {
 const _GEN_DATE_FMTS = ['MMDD', 'YYMM', 'hhmm', 'YYMMDD', 'DDMMYY', 'hhmmss', 'YYYYMMDD', 'MMDDhhmm', 'MMDDhhmmss', 'YYMMDDhhmmss', 'YYYYMMDDhhmmss'];
 function _genModes(f) {
   const F = ['fixed', 'Fixed'], N = ['rnum', 'Random num'], A = ['ralpha', 'Random alpha'], H = ['rhex', 'Random hex'],
-        I = ['inc', 'Increment'], D = ['date', 'Date / time'], P = ['pan', 'PAN'];
+        I = ['inc', 'Increment'], D = ['date', 'Date / time'], P = ['pan', 'PAN'], B = ['blank', 'Blanks'];
+  const T = f.tokSlot ? [['tokens', 'Token buffer']] : [];
   if (f.kind === 'int') return [F, N, I];
-  if (f.kind === 'hex') return [F, H];
+  if (f.kind === 'hex') return [F, H, ...T];
   if (f.kind === 'num') return [F, N, I, D, P];
-  return [F, N, A, H, I, D, P];
+  return [F, B, N, A, H, I, D, P, ...T];
 }
 const _genDateFmts = f => _GEN_DATE_FMTS.filter(x => x.length <= f.len);
 function _genFmtDate(fmt, d) {
@@ -41539,6 +41702,7 @@ function _genRowValue(f) {
     case 'rnum': return f.kind === 'int' ? String(Math.floor(Math.random() * Math.min(Number(_genIncMax(f)), 2 ** 31)))
       : _genRand(f.len, '0123456789');
     case 'ralpha': return _genRand(f.len, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    case 'blank': return ' '.repeat(f.len);
     case 'inc': {
       const v = String(st.val ?? _genIncNext(f)).replace(/\D/g, '') || '0';
       return f.kind === 'int' ? v : v.padStart(f.len, '0').slice(-f.len);
@@ -41569,7 +41733,10 @@ function openGenerate() {
   if (!item) { flash('Select a class to generate a message from.', 'warn'); return; }
   const key = item.label || item.name;
   const c = _genChoice[key] || {};
-  _genSt = { key, model: _genModel(item), des: (c.des || []).slice(), rows: JSON.parse(JSON.stringify(c.rows || {})), fmt: c.fmt || 'hex' };
+  const kept = (P.genTokens || {})[key] || {};
+  _genSt = { key, model: _genModel(item), des: (c.des || []).slice(), rows: JSON.parse(JSON.stringify(c.rows || {})), fmt: c.fmt || 'hex',
+    place: _genTokenPlace(item), toks: (kept.list || []).filter(t => t && t.id).map(t => ({ id: t.id, values: { ...(t.values || {}) }, ...(t.raw != null ? { raw: t.raw } : {}) })),
+    tokModel: {}, tokOpen: true, tokDraft: null };
   const binds = (item.ddl_bindings || []).filter(Boolean);
   const ddl = binds.length
     ? binds.map(p => `<code>${esc(p)}</code>${getDDLFromPath(p) ? '' : ' <span class="gen-bad">⚠ not in the DDL tree</span>'}`).join(', ')
@@ -41587,14 +41754,16 @@ function openGenerate() {
     + (_genSt.model.bitmap ? `<div class="gen-row"><label>Add a DE — by number or name</label>
         <input class="me-inp" id="genFind" placeholder="e.g. 4, or PAN" oninput="genFind()" onkeydown="if(event.key==='Enter'){event.preventDefault();genAddFirst();}">
         <div class="gen-find" id="genFindList"></div></div>` : '')
-    + `<table class="exp-tbl gen-tbl"><thead><tr><th>DE</th><th>Field</th><th>Type</th><th>Value from</th><th>Value</th><th></th></tr></thead><tbody id="genRows"></tbody></table>`;
+    + `<table class="exp-tbl gen-tbl"><thead><tr><th>DE</th><th>Field</th><th>Type</th><th>Value from</th><th>Value</th><th></th></tr></thead><tbody id="genRows"></tbody></table>`
+    + (_genSt.place ? `<div class="me-section gen-tok" id="genTok"></div>` : '');
   _genRows();
   genFind();
+  _genTokRender();
   document.getElementById('genOverlay').classList.remove('hidden');
 }
 // What is typed or picked in the rows, kept before they are redrawn.
 function _genKeep() {
-  document.querySelectorAll('#genRows [data-id]').forEach(el => {
+  document.querySelectorAll('#genBody [data-id]').forEach(el => {
     const st = _genSt.rows[el.dataset.id] || (_genSt.rows[el.dataset.id] = {});
     if (el.classList.contains('gen-val')) st.val = el.value;
     else if (el.classList.contains('gen-fmt')) st.fmt = el.value;
@@ -41607,34 +41776,42 @@ function _genVisible() {
   return m.head.map(f => ({ de: null, f })).concat(_genSt.des.filter(n => m.des[n]).sort((x, y) => x - y)
     .flatMap(n => m.des[n].leaves.map(f => ({ de: n, f }))));
 }
-function _genRows() {
-  const id = f => esc(f.id);
-  const cell = f => {
-    const st = _genSt.rows[f.id] || {};
-    switch (st.mode || 'fixed') {
-      case 'rnum': case 'ralpha': case 'rhex': return `<span class="fw-note" style="padding:0">a new one each time</span>`;
-      case 'inc': return `<input class="me-inp gen-val" data-id="${id(f)}" value="${esc(f.kind === 'int' ? st.val ?? _genIncNext(f) : String(st.val ?? _genIncNext(f)).padStart(f.len, '0'))}" title="The next value. Each Generate uses it and adds one; past what the field holds it starts again at 0. The app keeps the count." spellcheck="false">`;
-      case 'date': {
-        const fmts = _genDateFmts(f);
-        if (!fmts.length) return `<span class="gen-bad">too short for a date</span>`;
-        const cur = st.fmt && fmts.includes(st.fmt) ? st.fmt : (fmts.find(x => x.length === f.len) || fmts[fmts.length - 1]);
-        return `<select class="me-sel gen-fmt" data-id="${id(f)}">${fmts.map(x => `<option${x === cur ? ' selected' : ''}>${x}</option>`).join('')}</select>`;
-      }
-      case 'pan': return `<input class="me-inp gen-len" data-id="${id(f)}" type="number" min="12" max="${Math.min(19, f.len || 19)}" value="${esc(st.len || Math.min(16, f.len || 16))}" title="PAN length — the last digit is the Luhn check"> digits`;
-      default: return `<input class="me-inp gen-val" data-id="${id(f)}" value="${esc(st.val ?? f.dflt)}" spellcheck="false">`;
+const _genEsc = f => esc(f.id);
+function _genCell(f) {
+  const id = _genEsc;
+  const st = _genSt.rows[f.id] || {};
+  switch (st.mode || 'fixed') {
+    case 'rnum': case 'ralpha': case 'rhex': return `<span class="fw-note" style="padding:0">a new one each time</span>`;
+    case 'blank': return `<span class="fw-note" style="padding:0">spaces, the full width</span>`;
+    case 'inc': return `<input class="me-inp gen-val" data-id="${id(f)}" value="${esc(f.kind === 'int' ? st.val ?? _genIncNext(f) : String(st.val ?? _genIncNext(f)).padStart(f.len, '0'))}" title="The next value. Each Generate uses it and adds one; past what the field holds it starts again at 0. The app keeps the count." spellcheck="false">`;
+    case 'date': {
+      const fmts = _genDateFmts(f);
+      if (!fmts.length) return `<span class="gen-bad">too short for a date</span>`;
+      const cur = st.fmt && fmts.includes(st.fmt) ? st.fmt : (fmts.find(x => x.length === f.len) || fmts[fmts.length - 1]);
+      return `<select class="me-sel gen-fmt" data-id="${id(f)}">${fmts.map(x => `<option${x === cur ? ' selected' : ''}>${x}</option>`).join('')}</select>`;
     }
-  };
-  const row = ({ de, f }) => {
-    const mode = (_genSt.rows[f.id] || {}).mode || 'fixed';
-    // A field named after its own DE number says nothing the DE column does not.
-    const name = (f.id === String(de) ? '' : esc(f.id)) + (f.desc ? `${f.id === String(de) ? '' : ' '}<span class="gen-desc">${esc(f.desc)}</span>` : '');
-    return `<tr><td class="gen-de">${de == null ? '' : 'DE ' + de}</td><td>${name}</td>`
-      + `<td class="gen-de">${esc(f.pic)}</td>`
-      + `<td><select class="me-sel gen-mode" data-mode-id="${id(f)}" onchange="genMode(this)">${_genModes(f).map(([v, l]) => `<option value="${v}"${v === mode ? ' selected' : ''}>${l}</option>`).join('')}</select></td>`
-      + `<td>${cell(f)}</td>`
-      + `<td>${de == null ? '' : `<button class="btn btn-ico" onclick="genDelDe(${de})" title="Leave DE ${de} out">✕</button>`}</td></tr>`;
-  };
-  document.getElementById('genRows').innerHTML = _genVisible().map(row).join('')
+    case 'pan': return `<input class="me-inp gen-len" data-id="${id(f)}" type="number" min="12" max="${Math.min(19, f.len || 19)}" value="${esc(st.len || Math.min(16, f.len || 16))}" title="PAN length — the last digit is the Luhn check"> digits`;
+    case 'tokens': return _genSt.toks.length
+      ? `<span class="fw-note" style="padding:0">the Token buffer — ${_genSt.toks.map(t => esc(t.id)).join(', ')}</span>`
+      : `<span class="gen-bad">the Token buffer is empty — add tokens below</span>`;
+    default: return `<input class="me-inp gen-val" data-id="${id(f)}" value="${esc(st.val ?? f.dflt)}" spellcheck="false">`;
+  }
+}
+function _genRowHtml({ de, f }) {
+  const id = _genEsc;
+  const mode = (_genSt.rows[f.id] || {}).mode || 'fixed';
+  // A field named after its own DE number says nothing the DE column does not.
+  // A token's row keys its state apart from the message's fields; its name is the field's.
+  const fid = f.fid ?? f.id;
+  const name = (fid === String(de) ? '' : esc(fid)) + (f.desc ? `${fid === String(de) ? '' : ' '}<span class="gen-desc">${esc(f.desc)}</span>` : '');
+  return `<tr><td class="gen-de">${de == null ? '' : 'DE ' + de}</td><td>${name}</td>`
+    + `<td class="gen-de">${esc(f.pic)}</td>`
+    + `<td><select class="me-sel gen-mode" data-mode-id="${id(f)}" onchange="genMode(this)">${_genModes(f).map(([v, l]) => `<option value="${v}"${v === mode ? ' selected' : ''}>${l}</option>`).join('')}</select></td>`
+    + `<td>${_genCell(f)}</td>`
+    + `<td>${de == null ? '' : `<button class="btn btn-ico" onclick="genDelDe(${de})" title="Leave DE ${de} out">✕</button>`}</td></tr>`;
+}
+function _genRows() {
+  document.getElementById('genRows').innerHTML = _genVisible().map(_genRowHtml).join('')
     || `<tr><td colspan="6" class="fw-note">This class writes no field.</td></tr>`;
 }
 function genMode(sel) {
@@ -41643,7 +41820,7 @@ function genMode(sel) {
   // A typed value belongs to the mode it was typed in.
   if (st.mode !== sel.value) delete st.val;
   st.mode = sel.value;
-  _genRows();
+  _genRows(); _genTokRender();
 }
 // The DEs not added yet that match what is typed: the number, or the name.
 function _genMatches() {
@@ -41676,6 +41853,147 @@ function genDelDe(n) {
   _genSt.des = _genSt.des.filter(x => x !== n);
   _genRows(); genFind();
 }
+// ── The Token buffer ──
+// A section of its own: tokens picked from the token maps, each with its
+// fields as rows, valued like any other row. An STM / PSTM writes the buffer
+// after its last field; an ISO one where a DE 63 / 126 row says Token buffer.
+// Kept per class with the settings.
+function _genTokModel(id) {
+  if (_genSt.tokModel[id]) return _genSt.tokModel[id];
+  const item = _meCurItem(), r = _genTokenDDL(item, id);
+  const m = { ddlName: r.ddlName || '', error: r.error || null, leaves: [] };
+  if (!r.error) {
+    const tg = _genTokenG(item, r.defs, {});
+    m.leaves = _genTokLeaves(r.defs).map(d => ({ ..._genLeaf(d, tg), id: `tok:${id}|${d.id}`, fid: d.id }));
+  }
+  return (_genSt.tokModel[id] = m);
+}
+function _genTokSave() {
+  if (!P.genTokens) P.genTokens = {};
+  P.genTokens[_genSt.key] = { list: _genSt.toks.map(t => ({ id: t.id, values: { ...t.values }, ...(t.raw != null ? { raw: t.raw } : {}) })) };
+  if (typeof savePrefs === 'function') savePrefs();
+}
+// A token's value as the buffer shows it: its bytes as characters, a byte that
+// is not one as a dot.
+function _genTokShown(item, t) {
+  const r = _genTokenData(item, t.id, t.values, t.raw);
+  if (r.error) return { error: r.error, ddlName: r.ddlName || '' };
+  const enc = _meSpecEncodingInfo(item).enc;
+  const text = r.data.map(b => { const c = enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[b] ?? b) : b; return c >= 0x20 && c <= 0x7E ? String.fromCharCode(c) : '.'; }).join('');
+  return { ddlName: r.ddlName, text, len: r.data.length };
+}
+function _genTokRender() {
+  const el = document.getElementById('genTok');
+  if (!el) return;
+  const item = _meCurItem();
+  const where = _genSt.place === 'end'
+    ? 'Written after the last field, in the binary header.'
+    : 'Written in DE 63 or 126 — set that DE\'s Value from to <b>Token buffer</b>. Text header.';
+  const noBlock = !JSON.stringify(_genSpec(item, false)).includes('"token-area"')
+    ? `<div class="gen-bad" style="padding:0 10px 6px">The parse spec has no token-area block, so ${_genSt.place === 'end' ? 'no token is written' : 'the tokens are not read back'}.</div>` : '';
+  // Once added, a token is one row: its id, its DDL name, its length and the
+  // value it carries — fixed when it was added, so Value from belongs to the
+  // draft only. The value can still be edited here, as text.
+  const rows = _genSt.toks.map(t => {
+    const v = _genTokShown(item, t), id = esc(t.id);
+    return `<tr><td class="gen-de">! ${id}</td><td>${esc(v.ddlName)}</td><td class="gen-de" id="genTokLen-${id}">${v.error ? '' : v.len}</td>`
+      + `<td class="gen-tokval">${v.error ? `<span class="gen-bad">⚠ ${esc(v.error)}</span>`
+          : `<textarea class="me-inp gen-tokarea" rows="1" wrap="off" spellcheck="false" oninput="genTokEdit('${id}',this)" onchange="_genTokSave()">${esc(v.text)}</textarea>`}</td>`
+      + `<td><button class="btn btn-ico" onclick="genTokDel('${id}')" title="Take token ${id} out">✕</button></td></tr>`;
+  }).join('');
+  el.innerHTML = `<div class="me-section-hdr" onclick="genTokToggle()"><span>Token buffer</span>`
+    + `<span class="pt-badge">${_genSt.toks.length || ''}</span><span class="me-section-arr">${_genSt.tokOpen ? '−' : '+'}</span></div>`
+    + (_genSt.tokOpen ? `<div class="fw-note">${where}</div>${noBlock}`
+      + `<div class="gen-row"><label>Add a token — by id or DDL name</label>
+          <input class="me-inp" id="genTokFind" placeholder="e.g. B4" oninput="genTokFind()" onkeydown="if(event.key==='Enter'){event.preventDefault();genTokPickFirst();}">
+          <div class="gen-find" id="genTokList"></div></div>`
+      + _genTokDraftHtml()
+      + (rows ? `<table class="exp-tbl gen-tokbuf"><thead><tr><th>Token</th><th>Name</th><th>Length</th><th>Value</th><th></th></tr></thead><tbody id="genTokRows">${rows}</tbody></table>` : '') : '');
+  genTokFind();
+}
+function genTokToggle() { _genKeep(); _genSt.tokOpen = !_genSt.tokOpen; _genTokRender(); }
+// The tokens the maps define and the buffer does not hold yet, matching what is typed.
+function _genTokMatches() {
+  const q = String(document.getElementById('genTokFind')?.value || '').trim().toUpperCase();
+  const ids = _genTokenIds(_meCurItem());
+  return Object.keys(ids).filter(id => !_genSt.toks.some(t => t.id === id) && (!q || id.includes(q) || String(ids[id]).toUpperCase().includes(q)))
+    .sort((x, y) => (y === q) - (x === q) || x.localeCompare(y));
+}
+function genTokFind() {
+  const el = document.getElementById('genTokList');
+  if (!el) return;
+  const ids = _genTokenIds(_meCurItem());
+  if (!Object.keys(ids).length) { el.innerHTML = '<span class="gen-bad">No token map in the DDL tree — load one to add tokens.</span>'; return; }
+  const hits = _genTokMatches();
+  el.innerHTML = hits.slice(0, 60).map(id => `<span class="fw-chip${id === _genSt.tokDraft ? ' on' : ''}" onclick="genTokPick('${esc(id)}')" title="Set the values of token ${esc(id)}">${esc(id)} · ${esc(ids[id])}</span>`).join('')
+    + (hits.length > 60 ? `<span class="fw-note" style="padding:0 4px">+${hits.length - 60} more — type to narrow</span>` : '')
+    || '<span class="fw-note" style="padding:0">No token left that matches.</span>';
+}
+// Picking a token shows its fields to value first; Add puts it in the buffer,
+// Cancel drops it and what was typed for it.
+function _genTokDraftHtml() {
+  const id = _genSt.tokDraft;
+  if (!id) return '';
+  const m = _genTokModel(id);
+  return `<div class="gen-tok-draft"><table class="exp-tbl gen-tbl"><thead><tr><th>Token</th><th>Field</th><th>Type</th><th>Value from</th><th>Value</th><th></th></tr></thead><tbody>`
+    + `<tr class="gen-tok-hdr"><td class="gen-de">! ${esc(id)}</td><td colspan="5">${esc(m.ddlName)}${m.error ? ` <span class="gen-bad">⚠ ${esc(m.error)}</span>` : ''}</td></tr>`
+    + m.leaves.map(f => _genRowHtml({ de: null, f })).join('')
+    + `</tbody></table><div class="gen-acts"><span style="flex:1"></span>`
+    + `<button class="btn" onclick="genTokCancel()">Cancel</button>`
+    + `<button class="btn btn-primary" onclick="genTokAdd()"${m.error ? ' disabled' : ''}>Add</button></div></div>`;
+}
+function genTokPick(id) {
+  _genKeep();
+  if (_genSt.tokDraft && _genSt.tokDraft !== id) _genTokForget(_genSt.tokDraft);
+  _genSt.tokDraft = id;
+  const f = document.getElementById('genTokFind');
+  if (f) f.value = '';
+  _genTokRender();
+  // The whole draft in view: a dropdown at the window's edge scrolled it when
+  // clicked, and the click that followed picked another option.
+  document.querySelector('#genBody .gen-tok-draft')?.scrollIntoView({ block: 'nearest' });
+}
+function genTokPickFirst() { const id = _genTokMatches()[0]; if (id) genTokPick(id); }
+// The values typed for a token not added.
+function _genTokForget(id) { for (const k of Object.keys(_genSt.rows)) if (k.startsWith(`tok:${id}|`)) delete _genSt.rows[k]; }
+function genTokCancel() {
+  _genKeep();
+  if (_genSt.tokDraft) _genTokForget(_genSt.tokDraft);
+  _genSt.tokDraft = null;
+  _genTokRender();
+}
+// Add fixes the draft's values — a random or a date drawn now, an increment
+// spent now — and the token joins the buffer with them.
+function genTokAdd() {
+  _genKeep();
+  const id = _genSt.tokDraft;
+  if (!id) return;
+  const leaves = _genTokModel(id).leaves, values = {};
+  for (const f of leaves) values[f.fid] = _genRowValue(f);
+  _genAdvance(leaves);
+  _genSt.toks = _genSt.toks.filter(t => t.id !== id).concat({ id, values });
+  _genTokForget(id);
+  _genSt.tokDraft = null;
+  _genTokSave();
+  _genTokRender(); _genRows();
+  document.getElementById('genTokFind')?.focus();
+}
+// A buffer value edited by hand: those characters are the token, as typed —
+// one line, so a newline is dropped. Kept on change, not on every key.
+function genTokEdit(id, el) {
+  const t = _genSt.toks.find(x => x.id === id);
+  if (!t) return;
+  if (/[\r\n]/.test(el.value)) el.value = el.value.replace(/[\r\n]/g, '');
+  t.raw = el.value;
+  const len = document.getElementById(`genTokLen-${id}`);
+  if (len) len.textContent = _genText(t.raw, _meSpecEncodingInfo(_meCurItem()).enc).length;
+}
+function genTokDel(id) {
+  _genKeep();
+  _genSt.toks = _genSt.toks.filter(t => t.id !== id);
+  _genTokSave();
+  _genTokRender(); _genRows();
+}
 function closeGenerate() { document.getElementById('genOverlay')?.classList.add('hidden'); }
 function genRun() {
   const item = _meCurItem();
@@ -41684,16 +42002,23 @@ function genRun() {
   const fmt = _genSt.fmt = document.getElementById('genFmt')?.value || 'hex';
   // Only the rows on screen: a value set for a DE since removed stays out.
   const rows = _genVisible().map(r => r.f);
-  const values = {};
-  for (const f of rows) values[f.id] = _genRowValue(f);
-  const g = _genMessage(item, { values, des: _genSt.model.bitmap ? _genSt.des.slice() : null, format: fmt === 'ascii' ? 'ascii' : 'hex' });
+  const values = {}, raw = {};
+  // The Token buffer: after the last field (STM / PSTM), or in each DE row set
+  // to it (ISO). An unknown token stays in the list, named, and out of the area.
+  const tokens = _genSt.toks.length ? _genTokenArea(item, _genSt.toks) : null;
+  const slots = rows.filter(f => (_genSt.rows[f.id] || {}).mode === 'tokens');
+  for (const f of rows) if (!slots.includes(f)) values[f.id] = _genRowValue(f);
+  for (const f of slots) raw[f.id] = tokens || { bytes: [], tokens: [], problems: [`${f.id}: the Token buffer is empty`] };
+  const g = _genMessage(item, { values, raw, tokenArea: _genSt.place === 'end' ? tokens : null,
+    des: _genSt.model.bitmap ? _genSt.des.slice() : null, format: fmt === 'ascii' ? 'ascii' : 'hex' });
   const res = document.getElementById('genRes');
   const out = _genFormat(g, fmt);
   if (out.error) { res.innerHTML = `<span class="gen-bad">${esc(out.error)}</span>`; document.getElementById('genBody').scrollTop = 0; return; }
   // The message exists, so its increments are spent.
   _genAdvance(rows);
   _genChoice[_genSt.key] = { des: _genSt.des.slice(), rows: JSON.parse(JSON.stringify(_genSt.rows)), fmt };
-  _genRows();
+  _genTokSave();
+  _genRows(); _genTokRender();
   const v = _genVerify(item, g, fmt === 'ascii' ? 'ascii' : 'hex');
   const issues = [...g.problems, ...v.errors, ...v.diffs];
   const key = _genSt.key;
@@ -42835,7 +43160,7 @@ function _meSave() {
               <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed. A rule with a <em>Tag name</em> also shows that tag beside the type when it is met; one with only <em>When</em> and a tag just labels the messages it matches, such as <em>RECURRING</em> or <em>REVERSAL</em></li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>Test</strong> — paste a message under the list and press <strong>▶ Run</strong>: every class is marked as winner, shadowed, rejected or never reached, a failing recognizer says which condition failed, and the winner's fields are shown as the app would parse them</li>
-              <li><strong>Generate</strong> — beside ▶ Run: builds a message from the selected class, its parse spec run in reverse. It shows the class and the DDL it is bound to, and a row per field with a value you can edit: the fields outside the bitmap are always there, and a DE is added from the finder by number or name (✕ leaves it out). Each row shows the field's type and says where its value comes from: <strong>Fixed</strong> (default: zeros for digits, X for text, at the full width), <strong>Random num</strong>, <strong>Random alpha</strong>, <strong>Random hex</strong> (each field offers only what its type can hold), <strong>Increment</strong> (the last generation plus one — the app keeps the count, so values are not repeated, and wraps to 0 past what the field holds), <strong>Date / time</strong> in a format you pick, or <strong>PAN</strong> of the length you set (Luhn-valid). Lengths are computed, never rows. HEX, ASCII or NETADRD, in the class's encoding. The message is parsed back with the class and the dialog says whether it came back as written and which class detects it; then, only when it comes back clean, the Test is cleared and it lands in the Test input, ready for ▶ Run — it is not parsed there for you. If it comes back clean and detected as the class, the window closes and a flash says so; otherwise what went wrong is shown at the top of the window — which recognizer turns it away, which field came back different. Tokens are optional and not generated yet, so the message has none. Not yet generated, and named when met: <code>read-tlv</code>, <code>map</code>, <code>de</code> entries, <code>repeat</code>.</li>
+              <li><strong>Generate</strong> — beside ▶ Run: builds a message from the selected class, its parse spec run in reverse. It shows the class and the DDL it is bound to, and a row per field with a value you can edit: the fields outside the bitmap are always there, and a DE is added from the finder by number or name (✕ leaves it out). Each row shows the field's type and says where its value comes from: <strong>Fixed</strong> (default: zeros for digits, X for text, at the full width), <strong>Random num</strong>, <strong>Random alpha</strong>, <strong>Random hex</strong>, <strong>Blanks</strong> (spaces at the full width; each field offers only what its type can hold), <strong>Increment</strong> (the last generation plus one — the app keeps the count, so values are not repeated, and wraps to 0 past what the field holds), <strong>Date / time</strong> in a format you pick, or <strong>PAN</strong> of the length you set (Luhn-valid). Lengths are computed, never rows. HEX, ASCII or NETADRD, in the class's encoding. The message is parsed back with the class and the dialog says whether it came back as written and which class detects it; then, only when it comes back clean, the Test is cleared and it lands in the Test input, ready for ▶ Run — it is not parsed there for you. If it comes back clean and detected as the class, the window closes and a flash says so; otherwise what went wrong is shown at the top of the window — which recognizer turns it away, which field came back different. <strong>Token buffer</strong> — a section below the rows for an STM / PSTM or ISO / Base24 class: pick a token by id or DDL name from the token maps, value its fields like any row, then <strong>Add</strong> puts it in the buffer with those values fixed (Cancel drops it); the buffer shows each token as its id, name, length and value — the value can be edited there, and what is typed is the token. STM / PSTM carry the buffer after the last field; on an ISO class set DE 63 or 126 to <strong>Token buffer</strong>. The buffer is kept per class. Not yet generated, and named when met: <code>read-tlv</code>, <code>map</code>, <code>de</code> entries, <code>repeat</code>.</li>
             </ul>
             <p style="margin:0;color:var(--text-dim);font-size:10.5px">Every recognizer, parse-spec block and override is described in full in the <strong>Specification</strong> below.</p>
           </div></div>

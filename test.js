@@ -26117,7 +26117,7 @@ console.log('\ngenerate a message');
     eq(String.fromCharCode(...r.out), 'ABCOK', 'then was not taken');
     // Tokens are optional: a message without them is whole — a note, not a problem.
     assert.ok(!r.problems.some(p => /token-area/.test(p)), 'no tokens counts as a problem');
-    eq(JSON.parse(run(`JSON.stringify(_genMessage(__item, { values: { HDR: 'ABC', YES: 'OK' } }).notes)`))[0], 'no tokens written — tokens are not generated yet', 'the missing tokens are not noted');
+    eq(JSON.parse(run(`JSON.stringify(_genMessage(__item, { values: { HDR: 'ABC', YES: 'OK' } }).notes)`))[0], 'no tokens written', 'the missing tokens are not noted');
     r = gen(item, { values: { HDR: 'XYZ' } });
     eq(String.fromCharCode(...r.out), 'XYZXXX', 'else was not taken');
     // A "de" entry replaces a DE's read with blocks of its own: stage 2.
@@ -26205,13 +26205,15 @@ console.log('\ngenerate a message');
       sandbox.__saves = 0;
       run(`_genSt = { key: 'K', des: [], rows: {
         A: { mode: 'rnum' }, B: { mode: 'inc' }, C: { mode: 'date', fmt: 'YYMMDD' }, D: { mode: 'pan', len: '16' },
-        E: { mode: 'rhex' }, F: { mode: 'inc', val: '99' }, G: { mode: 'fixed', val: 'HI' }, H: { mode: 'ralpha' } }, model: { head: [], des: {}, bitmap: false } }`);
+        E: { mode: 'rhex' }, F: { mode: 'inc', val: '99' }, G: { mode: 'fixed', val: 'HI' }, H: { mode: 'ralpha' }, J: { mode: 'blank' } }, model: { head: [], des: {}, bitmap: false } }`);
       const f = (id, kind, len) => `({ id: '${id}', kind: '${kind}', len: ${len}, dflt: '' })`;
       assert.ok(/^\d{6}$/.test(run(`_genRowValue(${f('A', 'text', 6)})`)), 'Random num is not six digits');
       assert.ok(/^[A-Z]{6}$/.test(run(`_genRowValue(${f('H', 'text', 6)})`)), 'Random alpha is not six letters');
       // Requested 2026-10-31: three randoms, and only those a field's type holds.
       deepEq(run(`_genModes({ kind: 'num' }).map(m => m[0])`), ['fixed', 'rnum', 'inc', 'date', 'pan'], 'a numeric field offers letters or hex');
-      deepEq(run(`_genModes({ kind: 'text' }).map(m => m[1])`), ['Fixed', 'Random num', 'Random alpha', 'Random hex', 'Increment', 'Date / time', 'PAN'], 'a text field options');
+      deepEq(run(`_genModes({ kind: 'text' }).map(m => m[1])`), ['Fixed', 'Blanks', 'Random num', 'Random alpha', 'Random hex', 'Increment', 'Date / time', 'PAN'], 'a text field options');
+      // Requested 2026-11-01: Blanks fills a text field with spaces, the full width.
+      eq(run(`_genRowValue(${f('J', 'text', 5)})`), '     ', 'Blanks is not five spaces');
       deepEq(run(`_genModes({ kind: 'int' }).map(m => m[0])`), ['fixed', 'rnum', 'inc'], 'a binary number options');
       eq(run(`_genRowValue(${f('B', 'num', 6)})`), '000001', 'an increment does not start at 1, padded to the field');
       assert.ok(/^\d{6}$/.test(run(`_genRowValue(${f('C', 'num', 6)})`)), 'a date is not in its format');
@@ -26247,6 +26249,125 @@ console.log('\ngenerate a message');
     assert.ok(/all pass, but OTHER comes before it/.test(run(`_genDetectLine('ISO', { detected: 'OTHER', own: { passed: true } }, 18)`)), 'a class shadowed by an earlier one is not said');
   }));
 
+  // ── Tokens (TODO 31, stage 2) ──
+  // A Token buffer is written where the parse looks for it: after the last
+  // field for STM / PSTM (binary header), inside DE 63 / 126 for ISO (text).
+  const TOK_MAP = '"B4" = TB4TKN\n"C0" = TC0TKN\n';
+  const TB4 = 'DEFINITION TB4TKN.\n  02 PT-SRV PIC X(3).\n  02 CNT PIC 9(4).\nEND\n';
+  const TC0 = 'DEFINITION TC0TKN.\n  02 CVD PIC X(5).\nEND\n';
+  const TC0X = 'DEFINITION TC0TKNX.\n  02 CVD PIC X(5).\n  02 FLG PIC X(1).\nEND\n';
+  const ISOTOK_DDL = 'DEFINITION ISOTOK.\n  02 TYP PIC X(4).\n  02 PBIT-MAP PIC X(8).\n  02 SBIT-MAP PIC X(8).\n  02 DE-2 PIC 9(6).\n'
+    + Array.from({ length: 60 }, (_, i) => `  02 DE-${i + 3} PIC X(2).\n`).join('')
+    + '  02 DE-63.\n    04 DE-63-LEN PIC 9(3).\n    04 DE-63-DATA PIC X(200).\nEND\n';
+  const withTok = fn => {
+    const saved = run('({ t: S.ddlTree })');
+    Object.assign(sandbox, { __fix: FIX_DDL, __tm: TOK_MAP, __b4: TB4, __c0: TC0, __c0x: TC0X, __isot: ISOTOK_DDL });
+    run('S.ddlTree = { BASE: { DDL: { FIX: __fix, ISOTOK: __isot, TOKENS: __tm, TB4TKN: __b4, TC0TKN: __c0, TC0TKNX: __c0x } } }; _ddlTreeVersion++;');
+    try { return fn(); } finally { sandbox.__saved = saved; run('S.ddlTree = __saved.t; _ddlTreeVersion++;'); }
+  };
+  const genTok = (item, tokens, opts = {}) => {
+    sandbox.__item = item; sandbox.__toks = tokens; sandbox.__o = opts;
+    return JSON.parse(run(`(() => { const ta = _genTokenArea(__item, __toks);
+      const o = Object.assign({}, __o);
+      if (o.rawId) { o.raw = { [o.rawId]: ta }; delete o.rawId; } else o.tokenArea = ta;
+      const g = _genMessage(__item, o); const v = _genVerify(__item, g, 'hex');
+      return JSON.stringify({ out: g.out, area: ta.bytes, problems: g.problems, notes: g.notes, v }); })()`));
+  };
+  const stm = { name: 'STM', label: 'STM', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [{ 'read-ddl': 'ANY' }, { 'token-area': 'ANY' }] };
+
+  test('generate tokens: an STM carries them after its last field, binary header, read back field by field', () => withTok(() => {
+    const r = genTok(stm, [{ id: 'B4', values: { 'PT-SRV': 'ABC', CNT: '7' } }, { id: 'C0', values: { CVD: 'XYZ12' } }]);
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors'); deepEq(r.v.diffs, [], 'diffs');
+    // "& " count=3 size=6+(6+7)+(6+5)=30, then "! B4" 0x0007 ABC0007, "! C0" 0x0005 XYZ12
+    const hex = r.area.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    eq(hex, '2620' + '0003' + '001E' + '21204234' + '0007' + '414243' + '30303037' + '21204330' + '0005' + '58595A3132', 'the binary area');
+    eq(r.out.length, 35 + 30, 'the area does not follow the 35-byte record');
+  }));
+
+  test('generate tokens: an ISO carries them in DE 63, text header, the token DDL with X first', () => withTok(() => {
+    const item = { name: 'ISO', label: 'ISO', ddl_bindings: ['BASE/DDL/ISOTOK/ISOTOK'],
+      parse_spec_binary: [{ read: 'TYP' }, { 'read-bitmap': { field: 'PBIT-MAP', encoding: 'binary' } }, { 'read-bitmap-fields': 'PBIT-MAP' }, { 'token-area': 'ANY' }] };
+    const r = genTok(item, [{ id: 'C0', values: { CVD: 'AB' } }], { des: [63], rawId: 'DE-63.DE-63-DATA' });
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors'); deepEq(r.v.diffs, [], 'diffs');
+    // TC0TKNX (6 bytes) is the ISO one: "& 0000200028! C000006 AB   X" — FLG takes its default
+    eq(String.fromCharCode(...r.area), '& 0000200028! C000006 AB   X', 'the text area');
+    eq(String.fromCharCode(...r.out.slice(12, 15)), '028', 'DE 63 does not carry the area length');
+  }));
+
+  // Found while building the Token buffer: a token-area block never found the
+  // tokens of an ISO DE 63 — the spec engine's fields carry no rawBytes until the
+  // parse ends, and an LLLVAR's startByte is its length prefix. Both are parser
+  // bugs, so both are checked with the parse alone as well as through Generate.
+  test('token-area finds the tokens of an ISO LLLVAR DE 63 (the shipped 1987 layout)', () => withTok(() => {
+    run('S.ddlTree.SWITCH = { 1987: { "Standard ISO": ISO8583_DDL } }; _ddlTreeVersion++;');
+    const item = { name: 'ISO', label: 'ISO 87', ddl_bindings: ['SWITCH/1987/Standard ISO'],
+      parse_spec_binary: [{ 'read-ddl': { binding: 0, from: 'ISO_PFX', until: 'MTI' } }, { 'read-bitmap': { field: 'BMP', encoding: 'hex' } },
+        { 'read-bitmap-fields': 'BMP' }, { 'token-area': 'ANY' }] };
+    const r = genTok(item, [{ id: 'B4', values: { 'PT-SRV': 'ABC', CNT: '12' } }], { des: [3, 63], rawId: '63' });
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors');
+    deepEq(r.v.diffs, [], 'the token in DE 63 was not read back');
+    sandbox.__pb = r.out;
+    eq(run(`(_meParseFileWithSpec(__item, __pb.slice(), { format: 'hex' }).tokens || []).map(t => t.id + ':' + t.fields.map(f => f.value.trim()).join('/')).join(',')`),
+      'B4:ABC/0012', 'the parse alone does not find the token');
+  }));
+
+  test('generate tokens: only DE 63 / 126 of an ISO class offer the Token buffer; the class type decides where it goes', () => withTok(() => {
+    run('S.ddlTree.SWITCH = { 1987: { "Standard ISO": ISO8583_DDL } }; _ddlTreeVersion++;');
+    sandbox.__item = { name: 'ISO', label: 'ISO 87', ddl_bindings: ['SWITCH/1987/Standard ISO'],
+      parse_spec_binary: [{ 'read-ddl': { binding: 0, from: 'ISO_PFX', until: 'MTI' } }, { 'read-bitmap': { field: 'BMP', encoding: 'hex' } }, { 'read-bitmap-fields': 'BMP' }] };
+    const m = JSON.parse(run(`(() => { const m = _genModel(__item); const has = n => _genModes(m.des[n].leaves.at(-1)).some(([v]) => v === 'tokens');
+      return JSON.stringify({ d63: has(63), d126: has(126), d48: has(48), d3: has(3) }); })()`));
+    deepEq(m, { d63: true, d126: true, d48: false, d3: false }, 'the wrong DEs offer the Token buffer');
+    eq(run(`_genTokenPlace({ name: 'STM' }) + _genTokenPlace({ name: 'PSTM' }) + _genTokenPlace({ name: 'B24' }) + _genTokenPlace({ name: 'NDC' })`), 'endenddenull', 'where the tokens go');
+    eq(run(`_genTokenBinary({ name: 'STM' }) + ',' + _genTokenBinary({ name: 'ISO' })`), 'true,false', 'the header shape');
+    eq(run(`_genTokShown({ name: 'STM' }, { id: 'B4', values: { 'PT-SRV': 'ABC', CNT: '7' } }).text`), 'ABC0007', 'the buffer row does not show the token value');
+    // Requested 2026-11-01: the value is one text area, whole and unseparated, to move through.
+    // Then (same day): editable, not read-only — what is typed is the token.
+    assert.ok(/<textarea class="me-inp gen-tokarea" rows="1"[^>]*oninput="genTokEdit\(/.test(psFnSource('_genTokRender')), 'the buffer value is not an editable text area');
+    assert.ok(!/gen-tokarea" readonly/.test(psFnSource('_genTokRender')), 'the buffer value is still read-only');
+    // STM's binary header is not text: ASCII names the token area it cannot carry.
+    sandbox.__stm = stm;
+    assert.ok(/TOKEN AREA/.test(run(`_genFormat(_genMessage(__stm, { tokenArea: _genTokenArea(__stm, [{ id: 'C0', values: {} }]) }), 'ascii').error`)), 'ASCII does not name the token area');
+  }));
+
+  // Reported 2026-11-01: picking a token added it at once. Its fields are shown
+  // to value first; only Add puts it in the buffer, Cancel drops it.
+  test('generate tokens: picking a token shows its fields; only Add puts it in the buffer', () => {
+    const chips = psFnSource('genTokFind'), pick = psFnSource('genTokPick'), add = psFnSource('genTokAdd'), cancel = psFnSource('genTokCancel');
+    assert.ok(/onclick="genTokPick\(/.test(chips) && !/genTokAdd\(/.test(chips), 'a token chip still adds the token');
+    assert.ok(/genTokPickFirst\(\)/.test(psFnSource('_genTokRender')), 'Enter in the finder still adds the token');
+    assert.ok(/tokDraft = id/.test(pick) && !/toks\.push/.test(pick), 'picking puts the token in the buffer');
+    assert.ok(/\.gen-tok-draft'\)\?\.scrollIntoView\(/.test(pick), 'the picked token is not scrolled into view');
+    assert.ok(/concat\(\{ id, values \}\)/.test(add) && /tokDraft = null/.test(add), 'Add does not put the picked token in the buffer');
+    // Requested 2026-11-01: Value from belongs to the draft. Add fixes the values
+    // (an increment is spent then), and the buffer shows one row per token —
+    // Token, Type, Value — not its fields.
+    assert.ok(/_genRowValue\(f\)/.test(add) && /_genAdvance\(leaves\)/.test(add), 'Add does not fix the values the draft chose');
+    const render = psFnSource('_genTokRender');
+    assert.ok(/<th>Token<\/th><th>Name<\/th><th>Length<\/th><th>Value<\/th><th><\/th>/.test(render), 'the buffer is not Token / Name / Length / Value');
+    assert.ok(!/_genRowHtml/.test(render.replace(psFnSource('_genTokDraftHtml'), '')), 'the buffer still lists the token fields');
+    assert.ok(/_genTokenArea\(item, _genSt\.toks\)/.test(psFnSource('genRun')), 'Generate draws the token values again instead of using those fixed at Add');
+    assert.ok(/_genTokForget/.test(cancel) && !/toks\.push/.test(cancel), 'Cancel does not drop the token');
+    assert.ok(/onclick="genTokAdd\(\)"/.test(psFnSource('_genTokDraftHtml')), 'the picked token has no Add button');
+  });
+
+  test('generate tokens: a value edited in the buffer is the token, byte for byte, and reads back', () => withTok(() => {
+    const r = genTok(stm, [{ id: 'B4', values: { 'PT-SRV': 'ABC', CNT: '7' }, raw: 'XYZ9876' }]);
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors'); deepEq(r.v.diffs, [], 'diffs');
+    eq(String.fromCharCode(...r.area.slice(-7)), 'XYZ9876', 'the edited value is not what was written');
+    eq(run(`_genTokShown({ name: 'STM' }, { id: 'B4', values: {}, raw: 'XYZ9876' }).len`), 7, 'the length is not the edited value\'s');
+  }));
+
+  test('generate tokens: an unknown token is named and left out; a class with no token-area block says it', () => withTok(() => {
+    let r = genTok(stm, [{ id: 'ZZ', values: {} }, { id: 'C0', values: {} }]);
+    assert.ok(r.problems.some(p => /token ZZ: no token map defines ZZ/.test(p)), 'the unknown token is not named');
+    deepEq(r.v.diffs, [], 'the known token did not come back');
+    const item = { ...stm, name: 'ISO', ddl_bindings: ['BASE/DDL/ISOTOK/ISOTOK'],
+      parse_spec_binary: [{ read: 'TYP' }, { 'read-bitmap': { field: 'PBIT-MAP', encoding: 'binary' } }, { 'read-bitmap-fields': 'PBIT-MAP' }] };
+    r = genTok(item, [{ id: 'C0', values: {} }], { des: [63], rawId: 'DE-63.DE-63-DATA' });
+    assert.ok(r.notes.some(n => /no token-area block/.test(n)), 'no note that the tokens were not read back');
+  }));
+
   test('generate: the Test panel has the button and the dialog is wired', () => {
     assert.ok(/onclick="openGenerate\(\)"/.test(html), 'the Test bar has no Generate button');
     assert.ok(/id="genOverlay"/.test(html), 'the dialog is missing');
@@ -26261,7 +26382,7 @@ console.log('\ngenerate a message');
     assert.ok(ok.indexOf('_meTestClear()') > -1 && ok.indexOf('_meTestClear()') < ok.indexOf('inp.value = out.text'), 'Generate does not clear the Test before putting the message in');
     eq((gr.match(/_meTestClear\(\)|inp\.value = /g) || []).length, 2, 'the Test is cleared or written outside the success branch');
     assert.ok(/lands in the Test input, ready for ▶ Run/.test(html), 'Help still says the message is parsed for you');
-    for (const h of ['openGenerate', 'closeGenerate', 'genRun', 'genFind', 'genAddDe', 'genAddFirst', 'genDelDe', 'genMode'])
+    for (const h of ['openGenerate', 'closeGenerate', 'genRun', 'genFind', 'genAddDe', 'genAddFirst', 'genDelDe', 'genMode', 'genTokToggle', 'genTokFind', 'genTokAdd', 'genTokPick', 'genTokPickFirst', 'genTokCancel', 'genTokDel', 'genTokEdit'])
       assert.ok(new RegExp(`'${h}'`).test(fs.readFileSync('./build.js', 'utf8')), `build.js would rename ${h}`);
   });
 }

@@ -1277,7 +1277,14 @@ encoding; the message lands in the Test input, parsed.
 - **Asked 2026-10-31, for later:** generate N messages at once (random and
   increments moving per message) to paste into Data Input. Increments are
   already kept by the app (`genCounters`) so a batch would not repeat values.
-- **Stage 2:** tokens, `read-tlv`, `map` "class", `de` entries, `repeat` — and
+- **Tokens — done in v1.64.1.0 (SPEC §11.7):** a Token buffer section in the
+  dialog, tokens picked from the token maps and valued row by row, kept per
+  class. STM / PSTM write it after the last field (binary header), ISO / Base24
+  in the DE 63 / 126 row set to Token buffer (text header). Building it found a
+  parser bug, fixed in the same version: a `token-area` block never found the
+  tokens of an ISO DE 63 / 126 (no `rawBytes` during the parse; an LLLVAR's
+  `startByte` is its prefix). Not yet: a token area inside a `de` entry.
+- **Stage 2:** `read-tlv`, `map` "class", `de` entries, `repeat` — and
   broken-on-purpose messages: LLVAR over its max, bit on with no data / data with
   bit off, truncated, a letter in a numeric field.
 - **Stage 3:** business rules steer the values (a 0800 that must carry DE-70

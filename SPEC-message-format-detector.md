@@ -2451,8 +2451,12 @@ class: its parse spec run in reverse, each block writing what it would read.
   (a number, a field or `sizeof`), `read-until` (the bytes that follow must start
   with a sentinel, or end the message under `eom`), `read-length-value` (the length
   in its encoding and width, digits packed two to a byte under `count: digits`),
-  `read-to-end` (said when anything is written after it),
-  `read-bitmap` (binary or hex), `read-bitmap-fields`, `when` on a field, `repeat`,
+  `read-to-end` (said when anything is written after it), `read-while` (one pass,
+  none when its bytes cannot match the guard; said when what follows still
+  matches it), `when` on bytes (`bytes` / `not-bytes`: `then`, unless the bytes
+  written cannot answer it so — then `else`, the message written again),
+  `read-bitmap` (binary or hex), `read-bitmap-fields`, `when` on a field (against
+  a value, a list, another field written before or a `sizeof`), `repeat`,
   `stop`, `token-area`. A `read-fixed` whose length names a field written before it
   writes its data, then sets that field to the data's length; a `repeat` writes
   its body as many times as its count field's value (once when none is given, at

@@ -22292,7 +22292,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.2.0';
+const APP_VERSION  = '1.64.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41122,13 +41122,25 @@ function _meTestRenderList(results, winnerIdx, reached) {
 // always computed from what it frames. A recognizer's literal or MTI is written
 // where it sits, so the message detects as its class.
 function _genMessage(item, opts) {
-  const o = opts || {};
+  // A guard on bytes not written yet — a "when" on bytes, a "read-while" — is
+  // answered by a choice: then, one pass. The finished message is checked
+  // against each; a choice it contradicts is turned the other way and the
+  // message written again.
+  const flips = new Set();
+  for (let t = 0; ; t++) {
+    const g = _genOnce(item, opts || {}, flips);
+    if (g.guardMiss == null || flips.has(g.guardMiss) || t >= 8) return g;
+    flips.add(g.guardMiss);
+  }
+}
+function _genOnce(item, o, flips) {
   const g = {
     item, resolvedBindings: (item.ddl_bindings || []).map(p => p ? getDDLFromPath(p) : null),
     fields: [], fieldsById: {}, out: [], cursor: 0, written: {}, hexOf: {},
     values: o.values || {}, des: o.des || null, bitmaps: {}, problems: [],
     enc: _meSpecEncodingInfo(item).enc, stopped: false, lenIds: new Set(), notes: [], spans: {},
     raw: o.raw || {}, tokenArea: o.tokenArea || null, tokWritten: [], unshown: {}, checks: [],
+    flips, guardSeq: 0, guardMiss: null,
   };
   for (const t of [g.tokenArea, ...Object.values(g.raw)]) if (t?.problems) g.problems.push(...t.problems);
   // A pattern's first alternative; an MTI's # digits are taken from 0200, a
@@ -41202,6 +41214,7 @@ function _genBlocks(blocks, g) {
       case 'read-bitmap':        _genBitmap(attrs, g); break;
       case 'read-bitmap-fields': _genBitmapFields(attrs, g); break;
       case 'when':               _genWhen(attrs, g); break;
+      case 'read-while':         _genReadWhile(attrs, g); break;
       case 'repeat':             _genRepeat(attrs, g); break;
       case 'stop':               g.stopped = true; break;
       // Tokens are optional, so a message without them is a whole message: a
@@ -41574,7 +41587,10 @@ function _genReadFixed(attrs, g) {
   if (!Number.isInteger(n) || n < 0) { g.problems.push(`read-fixed ${id}: ${JSON.stringify(n)} is not a length — skipped`); return; }
   const e = String(attrs.encoding || '').toLowerCase();
   if (e === 'bcd') { g.problems.push(`read-fixed ${id}: "encoding": "bcd" is not implemented in the parse — skipped`); return; }
-  const def = { id, length: n, _dataType: /^(uint|binary)/i.test(attrs.type || '') ? 'BINARY' : 'PIC X', ...(e === 'ascii' || e === 'ebcdic' ? { _genEnc: e } : {}) };
+  // A field the DDL declares keeps its type — and so its default — unless the block states one.
+  const ddl = !attrs.type && _genDefs(g).find(d => d.id === id);
+  const def = { ...(ddl ? { ...ddl, offset: undefined } : { _dataType: /^(uint|binary)/i.test(attrs.type || '') ? 'BINARY' : 'PIC X' }),
+    id, length: n, ...(e === 'ascii' || e === 'ebcdic' ? { _genEnc: e } : {}) };
   _genField(def, g.cursor, g, n);
 }
 // A length taken from a field written before it — PSTM's USER-DATA.LENGTH: the
@@ -41660,25 +41676,79 @@ function _genGroupLenId(e, varGroups) {
 }
 // A `when` on a field takes the branch the values written so far take.
 function _genWhen(attrs, g) {
-  if (!attrs || attrs.bytes !== undefined || attrs['not-bytes'] !== undefined || !attrs.field) {
-    g.problems.push('when: only a condition on a field is generated yet — skipped'); return;
+  if (attrs && (attrs.bytes !== undefined || attrs['not-bytes'] !== undefined)) {
+    const pos = (attrs.bytes !== undefined) ? 'bytes' : 'not-bytes', guard = attrs[pos];
+    if (!guard || typeof guard !== 'object') { g.problems.push(`when: a ${pos} guard must be an object — skipped`); return; }
+    const then = !_genGuardChoice(g, guard, pos === 'bytes');
+    _genBlocks(then ? attrs.then : attrs.else, g);
+    return;
   }
+  if (!attrs || !attrs.field) { g.problems.push('when: no field and no bytes to ask about — skipped'); return; }
   // The old names: the parse refuses them, and taken as a presence test they
   // would write `then` whatever the field holds.
   for (const [was, now] of [['is', 'equal'], ['not', 'not_equal']]) if (attrs[was] !== undefined) {
     g.problems.push(`when ${attrs.field}: "${was}" is now "${now}" — rename it; neither branch written`); return;
   }
   const v = g.written[attrs.field];
-  const op = _ME_WHEN_OPS().find(k => attrs[k] !== undefined);
+  const ops = _ME_WHEN_OPS().filter(k => attrs[k] !== undefined), op = ops[0];
+  if (ops.length > 1) { g.problems.push(`when ${attrs.field}: ${ops.join(' and ')} on one "when" — neither branch written`); return; }
   let holds;
   if (!op) holds = v !== undefined;
-  else if (v === undefined || (attrs[op] && typeof attrs[op] === 'object' && !Array.isArray(attrs[op]))) {
-    g.problems.push(`when ${attrs.field}: ${v === undefined ? 'the field was not written' : 'a field operand is not generated yet'} — neither branch written`); return;
-  } else {
-    const c = _meWhenCmp()[op];
-    holds = c.numeric ? c.test(parseInt(String(v).trim(), 10), +attrs[op]) : c.test(v, attrs[op]);
+  else if (v === undefined) { g.problems.push(`when ${attrs.field}: the field was not written — neither branch written`); return; }
+  else {
+    // The other side: as stated, a list, or a field written before / a DDL size.
+    const c = _meWhenCmp()[op], raw = attrs[op];
+    let rhs = raw;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      if (raw.sizeof === undefined && !c.numeric) {
+        if (g.written[raw.field] === undefined) { g.problems.push(`when ${attrs.field}: ${raw.field} was not written before it — neither branch written`); return; }
+        rhs = g.written[raw.field];
+      } else if ((rhs = _genNum(raw, g, `when ${attrs.field}`)) == null) return;
+    }
+    holds = c.numeric ? c.test(parseInt(String(v).trim(), 10), +rhs) : c.test(v, rhs);
   }
   _genBlocks(holds ? attrs.then : attrs.else, g);
+}
+// A guard on what comes next: `want` is what it should answer at the cursor. The
+// choice is checked once the message is whole; the first one it contradicts is
+// noted, and the next writing takes it the other way. Returns whether this one
+// was turned.
+function _genGuardChoice(g, guard, want, seqOut) {
+  const seq = g.guardSeq++, flipped = g.flips.has(seq), pos = g.cursor;
+  const expect = flipped ? !want : want;
+  g.checks.push(() => {
+    const hit = _genGuardAt(g, guard, pos);
+    if (hit === expect) return;
+    if (g.guardMiss == null) g.guardMiss = seq;
+    g.problems.push(`guard ${JSON.stringify(guard)} at byte ${pos}: the bytes written there ${hit ? 'match' : 'do not match'} it — the parse takes the other way`);
+  });
+  if (seqOut) seqOut.seq = seq;
+  return flipped;
+}
+// Does `guard` match at `pos` of the message as the parse reads it?
+function _genGuardAt(g, guard, pos) {
+  const bytes = g.out.map(b => _genAsAscii(b, g));
+  return _meGuardMatches(guard, { bytes, cursor: pos });
+}
+// read-while: one pass of its body — none when that choice is turned. Each pass
+// must start where the guard matches, and the bytes after the last must not.
+function _genReadWhile(attrs, g) {
+  if (!attrs?.while || typeof attrs.while !== 'object' || !Array.isArray(attrs.body)) { g.problems.push('read-while: no "while" guard or no body — skipped'); return; }
+  const max = attrs.max == null ? null : _genNum(attrs.max, g, 'read-while max');
+  const passes = (_genGuardChoice(g, attrs.while, true) ? 0 : 1);
+  const n = max == null ? passes : Math.min(passes, max);
+  for (let i = 0; i < n && !g.stopped; i++) {
+    if (i) _genGuardChoice(g, attrs.while, true);
+    _genBlocks(attrs.body, g);
+  }
+  // Past the last pass the loop must stop: the guard does not match there, or the message ends.
+  if (max == null || n < max) {
+    const pos = g.cursor;
+    g.checks.push(() => {
+      if (pos >= g.out.length || !_genGuardAt(g, attrs.while, pos)) return;
+      g.problems.push(`read-while: the bytes after its last pass, at byte ${pos}, match its guard ${JSON.stringify(attrs.while)} — the parse reads one more pass`);
+    });
+  }
 }
 // ── Tokens ──
 // Where a class carries its tokens, by its type code — the rule the parse finds

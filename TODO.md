@@ -1284,9 +1284,20 @@ encoding; the message lands in the Test input, parsed.
   parser bug, fixed in the same version: a `token-area` block never found the
   tokens of an ISO DE 63 / 126 (no `rawBytes` during the parse; an LLLVAR's
   `startByte` is its prefix). Not yet: a token area inside a `de` entry.
-- **Stage 2:** `read-tlv`, `map` "class", `de` entries, `repeat` — and
-  broken-on-purpose messages: LLVAR over its max, bit on with no data / data with
-  bit off, truncated, a letter in a numeric field.
+- **Every block (asked 2026-11-01 — the generator must take any spec, since no
+  one knows beforehand which blocks a class uses).** Done: `repeat` and a
+  `read-fixed` length from a field (v1.64.1.5); `read-until`,
+  `read-length-value`, `read-to-end`, `read` with `type` / `length_prefix` /
+  `from`–`until`, `read-fixed` `encoding`, `skip` by a field (v1.64.2.0); `when`
+  on bytes and against a field, `read-while` (v1.64.3.0). Batch 3, in progress:
+  `read-tlv`, `de` entries, `map`, `read-segment-fields`, a declared
+  `read-bitmap` (`bits` / `value`), `at`.
+- **Open in the dialog:** `read-while` always writes one pass — no way to ask for
+  more; the rows come from the defaults, so the fields of a `when` branch the
+  defaults do not take (PSTM's USER-DATA.BUFFER under USER-FLG = X) are not rows,
+  and a `repeat` count raised above 1 adds no rows for the later occurrences.
+- **Stage 2:** broken-on-purpose messages: LLVAR over its max, bit on with no
+  data / data with bit off, truncated, a letter in a numeric field.
 - **Stage 3:** business rules steer the values (a 0800 that must carry DE-70
   gets one).
 

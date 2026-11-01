@@ -26226,6 +26226,11 @@ console.log('\ngenerate a message');
     clean(r, 'window'); eq(s(r).slice(0, 7), '0042005', 'a read window does not start at the cursor with from');
     r = gen(fix([{ 'read-fixed': { length: 3, as: 'E', encoding: 'ascii' } }]), { values: { E: 'ABC' } });
     clean(r, 'encoding'); eq(s(r), 'ABC', 'read-fixed with an encoding is not written');
+    // PSTM (2026-11-01): USER-DATA.LENGTH is BINARY 16 — its default is zeros, not XX that a letters guard takes for a service.
+    sandbox.__bin = 'DEFINITION BIN.\n  02 HDR PIC X(2).\n  02 LEN TYPE BINARY 16.\nEND\n';
+    run('S.ddlTree.BASE.DDL.BIN = __bin; _ddlTreeVersion++;');
+    r = gen({ name: 'BIN', label: 'BIN', ddl_bindings: ['BASE/DDL/BIN/BIN'], parse_spec_binary: [{ read: 'HDR' }, { 'read-fixed': { length: 2, as: 'LEN' } }] }, { values: { HDR: 'AB' } });
+    deepEq(r.out.slice(2), [0, 0], 'a read-fixed of a BINARY field does not default to binary zeros');
     r = gen(fix([{ read: 'CNT' }, { skip: { length: 'CNT' } }, { 'read-fixed': { length: 1, as: 'Z' } }]), { values: { CNT: '3', Z: 'Q' } });
     clean(r, 'skip'); eq(s(r), '0003   Q', 'a skip by a field does not skip that many bytes');
 
@@ -26234,6 +26239,37 @@ console.log('\ngenerate a message');
     r = gen(hp, {});
     clean(r, 'skip literal'); eq(r.out[0], 0x60, 'a recognizer in skipped bytes is not written, or its first alternative is not taken');
     eq(r.v.own?.passed, true, 'the class does not pass its own recognizers');
+  }));
+
+  test('generate: a when on bytes and read-while take the way the written bytes take; when compares with a field', () => withTree(() => {
+    const fix = blocks => ({ name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: blocks });
+    const s = r => String.fromCharCode(...r.out);
+    const clean = (r, tag) => { deepEq(r.problems, [], `${tag}: problems`); deepEq(r.v.errors, [], `${tag}: errors`); deepEq(r.v.diffs, [], `${tag}: diffs`); };
+    // when on bytes: then when what then writes matches; else when it cannot.
+    const amp = fix([{ read: 'HDR' }, { when: { bytes: { type: 'literal', value: '&' },
+      then: [{ 'read-fixed': { length: 2, as: 'AMP' } }], else: [{ 'read-fixed': { length: 3, as: 'NO' } }] } }]);
+    let r = gen(amp, { values: { HDR: 'ABC', AMP: '&X' } });
+    clean(r, 'bytes then'); eq(s(r), 'ABC&X', 'a when on bytes did not take then');
+    r = gen(amp, { values: { HDR: 'ABC', AMP: 'ZZ', NO: 'NOP' } });
+    clean(r, 'bytes else'); eq(s(r), 'ABCNOP', 'a when on bytes then could not satisfy did not take else');
+    r = gen(fix([{ read: 'HDR' }, { when: { 'not-bytes': { type: 'literal', value: '&' }, then: [{ 'read-fixed': { length: 2, as: 'AMP' } }] } }]), { values: { HDR: 'ABC', AMP: 'OK' } });
+    clean(r, 'not-bytes'); eq(s(r), 'ABCOK', 'a when on not-bytes did not take then');
+    // when compares with a field written before, or a DDL size.
+    const two = op => fix([{ 'read-fixed': { length: 3, as: 'A' } }, { 'read-fixed': { length: 3, as: 'B' } },
+      { when: { field: 'A', ...op, then: [{ 'read-fixed': { length: 1, as: 'Y' } }], else: [{ 'read-fixed': { length: 1, as: 'N' } }] } }]);
+    r = gen(two({ equal: { field: 'B' } }), { values: { A: 'QQQ', B: 'QQQ', Y: 'y' } });
+    clean(r, 'field operand'); eq(s(r), 'QQQQQQy', 'a when against another field did not take then');
+    r = gen(two({ less_than: { sizeof: 'TAIL' } }), { values: { A: '004', B: 'BBB', Y: 'y' } });
+    clean(r, 'sizeof'); eq(s(r), '004BBBy', 'a when against a DDL size did not take then');
+    // read-while: a pass when its bytes match, none when they cannot; more after it is said.
+    const loop = fix([{ 'read-while': { while: { type: 'regex', length: 2, pattern: '^[A-Z]{2}$' }, body: [{ 'read-fixed': { length: 2, as: 'S' } }] } },
+      { 'read-fixed': { length: 2, as: 'T' } }]);
+    r = gen(loop, { values: { S: 'AB', T: '12' } });
+    clean(r, 'while one'); eq(s(r), 'AB12', 'read-while did not write one pass');
+    r = gen(loop, { values: { S: '99', T: '12' } });
+    clean(r, 'while none'); eq(s(r), '12', 'read-while whose pass cannot match was written anyway');
+    r = gen(loop, { values: { S: 'AB', T: 'CD' } });
+    assert.ok(r.problems.some(p => /read-while: the bytes after its last pass, at byte 2, match its guard/.test(p)), 'bytes after the loop that match its guard are not said');
   }));
 
   test('generate: a when takes the branch the written values take; an unsupported block is named, not guessed', () => withTree(() => {

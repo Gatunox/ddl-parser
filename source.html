@@ -1407,6 +1407,29 @@ table.ddl-doc-tbl { table-layout: fixed; border-collapse: collapse; font-family:
 .jl-warn { color: var(--warning); }
 .jl-focus { background: rgba(var(--accent-rgb), .14); }
 .fw-note { color: var(--text-dim); font-size: 11px; padding: 6px 10px; }
+.gen-row { display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; }
+.gen-row .me-inp { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: var(--sz-mono); }
+/* .exp-tbl's width:100%, centred first cell and 160px last cell are for the
+   export tables; here they pushed the table past the dialog's edge. */
+.exp-tbl.gen-tbl { margin: 0 10px; width: calc(100% - 20px); table-layout: fixed; }
+.exp-tbl.gen-tbl td:first-child, .exp-tbl.gen-tbl th:first-child { text-align: left; width: 58px; text-overflow: clip; }
+.exp-tbl.gen-tbl td:last-child, .exp-tbl.gen-tbl th:last-child { min-width: 0; width: 40px; padding: 3px 4px; overflow: visible; }
+.exp-tbl.gen-tbl th:nth-child(3) { width: 72px; }
+.exp-tbl.gen-tbl th:nth-child(4) { width: 128px; }
+.exp-tbl.gen-tbl th:nth-child(5) { width: 32%; }
+.exp-tbl.gen-tbl td { max-width: none; }
+.gen-tbl td { vertical-align: middle; }
+.gen-tbl .gen-de { color: var(--text-dim); white-space: nowrap; }
+.gen-tbl .gen-val { width: 100%; box-sizing: border-box; font-family: var(--font-mono); }
+.gen-tbl .gen-len { width: 56px; }
+.gen-tbl .gen-desc { color: var(--text-dim); font-size: 11px; }
+.gen-tbl .gen-mode, .gen-tbl .gen-fmt { font-size: 11px; max-width: 100%; }
+.gen-find { display: flex; flex-wrap: wrap; gap: 4px; max-height: 96px; overflow: auto; }
+.gen-acts { display: flex; gap: 6px; align-items: center; padding: 6px 10px 10px; }
+.gen-res { padding: 0 10px 10px; font-size: 11px; }
+.gen-res .gen-ok { color: var(--success); }
+.gen-res .gen-bad { color: var(--warning); }
+.gen-res ul { margin: 4px 0 0 16px; padding: 0; max-height: 160px; overflow: auto; }
 .fw-prog { height: 6px; margin: 4px 10px 10px; min-width: 320px; background: var(--bg-input); border-radius: var(--r-sm); overflow: hidden; }
 .fw-prog-bar { height: 100%; background: var(--accent); transition: width .1s linear; }
 .fw-tbl tbody tr { cursor: pointer; }
@@ -16923,6 +16946,9 @@ function closeFollow() { _followRun++; document.getElementById('followOverlay')?
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !document.getElementById('followOverlay')?.classList.contains('hidden')) closeFollow();
 });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !document.getElementById('genOverlay')?.classList.contains('hidden')) closeGenerate();
+});
 
 // ---- Data Input overlay highlighting ----
 // Collects highlight ranges for the selected/hovered field from the byte-char map.
@@ -17768,7 +17794,7 @@ function _auditApplyDump(u8, rec, recno) {
 // The dump's text in the current view, and where each payload byte sits in it.
 // `shown` replaces the payload bytes: a null is a masked byte with no character
 // of its own, drawn "**" in hex and "*" as a character.
-function _auditDumpBuild(u8, rec, recno, shown) {
+function _auditDumpBuild(u8, rec, recno, shown, mode = _auditPopupMode) {
   const HDR = AUDIT_HDR_CFG.msgPayloadOffset;
   const origType = (rec.origTypeNum >> 12) & 0xF;
   const origNum  = rec.origTypeNum & 0xFFF;
@@ -17806,7 +17832,7 @@ function _auditDumpBuild(u8, rec, recno, shown) {
   // Reported 2026-08-25.
   const isEbcdic = _auditDumpIsEbcdic(pay);
 
-  if (_auditPopupMode === 'hex') {
+  if (mode === 'hex') {
     if (!pay.length) {
       payText = '       (empty payload)\n';
     } else {
@@ -22236,7 +22262,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.63.1.0';
+const APP_VERSION  = '1.64.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22289,6 +22315,9 @@ function openFeedbackMail(type) {
 const _DEF_PREFS = {
   theme: 'dark', density: 'comfortable', pointers: 'custom', textColorDark: null, textColorLight: null, panelColorDark: null, panelColorLight: null, monoSize: 12, lineWidth: 0, testLineWidth: 0, maskScreen: false, maskExport: true, maskKey: null, rawHexTruncate: true, keepParseLog: false, tutorialSeen: false,
   auditAutoParse: false,
+  // Generate's increment counters, "class|field" → the next value, so a value
+  // is not handed out twice across sessions (TODO 31).
+  genCounters: {},
   panelDefaults: { ddlPanel:'expanded', msgPanel:'expanded', resPanel:'expanded', rawPanel:'expanded' }
 };
 let P = { ..._DEF_PREFS };   // active preferences
@@ -41044,6 +41073,653 @@ function _meTestRenderList(results, winnerIdx, reached) {
 }
 
 // Reset the Test bar: input, results, verdict list, summary, recognizer dots.
+// ── Generate a message (TODO 31) ─────────────────────────────────────────────
+// Parsing in reverse: the class's parse spec is walked block by block, and each
+// block WRITES the bytes it would read. The result is then parsed back with the
+// same class (_genVerify) — the round trip is the generator's own check, so a
+// block it gets wrong shows up as a difference rather than as a message that
+// merely looks right.
+//
+// Stage 1 writes read, read-ddl, read-fixed, skip, read-bitmap (binary / hex,
+// primary + secondary), read-bitmap-fields (fixed DEs, length-framed groups),
+// when on a field, and stop. Anything else is named in `problems` and skipped,
+// never guessed at.
+//
+// Values: `values` by field id, else a default by type — zeros for digits, the
+// field's own name for text, which shows where each field landed. A length is
+// always computed from what it frames. A recognizer's literal or MTI is written
+// where it sits, so the message detects as its class.
+function _genMessage(item, opts) {
+  const o = opts || {};
+  const g = {
+    item, resolvedBindings: (item.ddl_bindings || []).map(p => p ? getDDLFromPath(p) : null),
+    fields: [], fieldsById: {}, out: [], cursor: 0, written: {}, hexOf: {},
+    values: o.values || {}, des: o.des || null, bitmaps: {}, problems: [],
+    enc: _meSpecEncodingInfo(item).enc, stopped: false, lenIds: new Set(), notes: [], spans: {},
+  };
+  // A pattern's first alternative; an MTI's # digits are taken from 0200, a
+  // request, so "0###" writes 0200 and "1###" writes 1200 — an all-zero MTI is
+  // not one the recognizer accepts.
+  const recVal = r => { const v = String(r.value).split('|')[0];
+    return r.type === 'mti' ? Array.from(v, (c, i) => c === '#' ? '0200'[i] ?? '0' : c).join('') : v; };
+  g.recs = (item.recognizers || []).filter(r => r && (r.type === 'literal' || r.type === 'mti')
+    && r.value != null && /^[^?*]+$/.test(recVal(r)) && Number.isInteger(+r.offset))
+    .map(r => ({ off: +r.offset, bytes: r.type === 'literal' && r.encoding === 'hex'
+      ? (recVal(r).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16))
+      : _genText(recVal(r), r.encoding === 'ebcdic' ? 'ebcdic' : 'ascii') }));
+  const ascii = o.format === 'ascii';
+  const a = Array.isArray(item.parse_spec_ascii) ? item.parse_spec_ascii : [];
+  const b = Array.isArray(item.parse_spec_binary) ? item.parse_spec_binary : [];
+  const spec = (ascii && a.length) ? a : b.length ? b : a.length ? a : [{ 'read-ddl': 'ANY' }];
+  _genBlocks(spec, g);
+  return g;
+}
+// Text in the class's encoding, one byte per character.
+function _genText(s, enc) {
+  return Array.from(String(s), c => enc === 'ebcdic' ? (_ASCII_TO_EBCDIC[c.charCodeAt(0)] ?? 0x40) : (c.charCodeAt(0) & 0xFF));
+}
+function _genPut(g, pos, bytes) {
+  const fill = g.enc === 'ebcdic' ? 0x40 : 0x20;
+  while (g.out.length < pos) g.out.push(fill);
+  for (let i = 0; i < bytes.length; i++) g.out[pos + i] = bytes[i];
+  g.cursor = pos + bytes.length;
+}
+function _genBlocks(blocks, g) {
+  for (const blk of blocks || []) {
+    if (g.stopped) return;
+    if (!blk || typeof blk !== 'object') continue;
+    const type = Object.keys(blk)[0], attrs = blk[type];
+    if (attrs && typeof attrs === 'object' && !Array.isArray(attrs) && attrs.at !== undefined) {
+      g.problems.push(`${type}: "at" is not generated yet — skipped`); continue;
+    }
+    switch (type) {
+      case 'read':               _genRead(attrs, g); break;
+      case 'read-ddl':           _genReadDDL(attrs, g); break;
+      case 'read-fixed':         _genReadFixed(attrs, g); break;
+      case 'skip': {
+        const n = typeof attrs === 'number' ? attrs : attrs?.length;
+        if (!Number.isInteger(n) || n < 0) { g.problems.push('skip: only a fixed length is generated yet — skipped'); break; }
+        _genPut(g, g.cursor, _genText(' '.repeat(n), g.enc));
+        break;
+      }
+      case 'read-bitmap':        _genBitmap(attrs, g); break;
+      case 'read-bitmap-fields': _genBitmapFields(attrs, g); break;
+      case 'when':               _genWhen(attrs, g); break;
+      case 'stop':               g.stopped = true; break;
+      // Tokens are optional, so a message without them is a whole message: a
+      // note, not a problem.
+      case 'token-area': g.notes.push('no tokens written — tokens are not generated yet'); break;
+      default: g.problems.push(`${type}: not generated yet (stage 2) — skipped`);
+    }
+  }
+}
+// What kind of bytes a field holds: 'int' (a binary number), 'hex' (hex-char:
+// the value is the bytes' hex spelling), 'num' (digits) or 'text'.
+function _genKind(def, g) {
+  const t = String(_meOvEffective(g, def.id)?.type || '').trim();
+  if (t) return /^(uint|binary\s*\d|byte$|word$|dword$)/i.test(t) ? 'int' : /^hex-char$/i.test(t) ? 'hex' : 'text';
+  const dt = String(def._dataType || '');
+  if (!dt && def.dataType) {
+    // A layout DDL (ISO style) types by class: N digits, B binary — written as
+    // the hex of its bytes — and A / AN / ANS text.
+    const c = String(def.dataType).toUpperCase();
+    return c === 'N' ? 'num' : c === 'B' ? 'hex' : 'text';
+  }
+  if (/BINARY|NATIVE|\bCOMP\b(?!-3)/i.test(dt)) return 'int';
+  return /PIC\s*S?9/i.test(dt) && !/[XA]/i.test(dt.replace(/^PIC/i, '')) ? 'num' : 'text';
+}
+// One field's bytes for `value` at `len`; the value as the parser will show it.
+function _genEncode(def, value, len, g) {
+  const kind = _genKind(def, g);
+  if (kind === 'int') {
+    let n; try { n = BigInt(String(value ?? '0').trim() || '0'); } catch (e) { n = BigInt(0); }
+    const out = [];
+    const B256 = BigInt(256);
+    for (let i = 0; i < len; i++) { out.unshift(Number(n % B256)); n /= B256; }
+    if (/-le$/i.test(String(_meOvEffective(g, def.id)?.type || ''))) out.reverse();
+    return { bytes: out, shown: String(value ?? '0').trim() || '0' };
+  }
+  if (kind === 'hex') {
+    const h = String(value ?? '').replace(/[^0-9A-Fa-f]/g, '').padEnd(len * 2, '0').slice(0, len * 2);
+    return { bytes: h.match(/../g)?.map(x => parseInt(x, 16)) || [], shown: h.toUpperCase() };
+  }
+  const v = String(value ?? '');
+  const s = kind === 'num' ? v.replace(/\D/g, '').padStart(len, '0').slice(-len) : v.padEnd(len, ' ').slice(0, len);
+  return { bytes: _genText(s, g.enc), shown: s };
+}
+// A default the user can recognise: zeros for digits, the field's name for text.
+// The default by type and length: digits are zeros, text is X — the whole
+// declared width, a variable field included.
+function _genDefault(def, g) {
+  const kind = _genKind(def, g), len = _meEffLen(def, g) || 0;
+  if (kind === 'int') return '0';
+  if (kind === 'hex') return '00'.repeat(len);
+  return (kind === 'num' ? '0' : 'X').repeat(len);
+}
+// Write one field at `pos`, `len` bytes (its effective width when absent).
+// With no value given, a recognizer that falls inside it wins.
+function _genField(def, pos, g, len) {
+  const L = len ?? _meEffLen(def, g);
+  const given = Object.prototype.hasOwnProperty.call(g.values, def.id);
+  // An ISO LLVAR / LLLVAR carries its own length: digits, then that many bytes,
+  // the declared size being the most it may hold.
+  const pw = def.type === 'LLVAR' ? 2 : def.type === 'LLLVAR' ? 3 : 0;
+  if (pw) {
+    const v = String(given ? g.values[def.id] : _genDefault(def, g)).slice(0, L);
+    const data = _genText(v, g.enc);
+    _genPut(g, pos, _genText(String(v.length).padStart(pw, '0'), g.enc).concat(data));
+    g.spans[def.id] = [pos, pw + data.length];
+    g.written[def.id] = v;
+    g.hexOf[def.id] = _meBytesToHex(data);
+    return;
+  }
+  let { bytes, shown } = _genEncode(def, given ? g.values[def.id] : _genDefault(def, g), L, g);
+  if (!given) for (const r of g.recs) {
+    if (r.off < pos || r.off + r.bytes.length > pos + L) continue;
+    bytes = bytes.slice(); r.bytes.forEach((x, i) => { bytes[r.off - pos + i] = x; });
+    if (_genKind(def, g) !== 'int') shown = bytes.map(x => String.fromCharCode(g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[x] ?? x) : x)).join('');
+  }
+  _genPut(g, pos, bytes);
+  g.spans[def.id] = [pos, bytes.length];
+  g.written[def.id] = shown;
+  g.hexOf[def.id] = bytes.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+// A length and what it frames: the payload first, then its length, written in
+// front of it. One payload leaf takes exactly its value; several keep their
+// declared widths except the last.
+function _genFramed(before, lenDef, data, g) {
+  for (const d of before) _genField(d, g.cursor, g);
+  const lenPos = g.cursor, lenLen = _meEffLen(lenDef, g);
+  _genPut(g, lenPos, new Array(lenLen).fill(0));
+  let total = 0;
+  data.forEach((d, i) => {
+    const declared = _meEffLen(d, g);
+    const given = Object.prototype.hasOwnProperty.call(g.values, d.id);
+    const v = String(given ? g.values[d.id] : _genDefault(d, g));
+    const last = i === data.length - 1;
+    const w = last && _genKind(d, g) !== 'int' ? Math.min(declared, Math.max(_genKind(d, g) === 'hex' ? Math.ceil(v.length / 2) : v.length, 0)) : declared;
+    _genField(d, g.cursor, g, w);
+    total += w;
+  });
+  const end = g.cursor;
+  const n = _meVlgCountsDigits(_meOvEffective(g, lenDef.id)) ? total * 2 : total;
+  const lk = _genKind(lenDef, g);
+  const shown = lk === 'int' ? String(n) : String(n).padStart(lenLen, '0').slice(-lenLen);
+  const enc = _genEncode(lenDef, shown, lenLen, g);
+  _genPut(g, lenPos, enc.bytes);
+  g.spans[lenDef.id] = [lenPos, enc.bytes.length];
+  g.written[lenDef.id] = enc.shown;
+  g.lenIds.add(lenDef.id);
+  g.hexOf[lenDef.id] = enc.bytes.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+  g.cursor = end;
+}
+function _genDefs(g) { return _meCollectBindingDefs(g.resolvedBindings); }
+function _genRead(attrs, g) {
+  if (attrs && typeof attrs === 'object' && Object.keys(attrs).some(k => k !== 'field')) {
+    g.problems.push(`read ${attrs.field || ''}: only a plain field read is generated yet — skipped`); return;
+  }
+  const id = typeof attrs === 'string' ? attrs : attrs?.field;
+  const defs = _genDefs(g);
+  const def = defs.find(d => d.id === id);
+  // A leaf outside a walk lands where the DDL declares it; a group reads its
+  // leaves in order at the cursor.
+  if (def) { _genField(def, def.offset != null ? def.offset : g.cursor, g); return; }
+  const kids = defs.filter(d => !d.isRedefines && d.id.startsWith(id + '.'));
+  if (!kids.length) { g.problems.push(`read ${id}: no such field in the bound DDL — skipped`); return; }
+  for (const k of kids) _genField(k, g.cursor, g);
+}
+// Every field up to `until` is on the wire, whatever `fields` / `from` show —
+// the parse reads them all to keep its place — so all are written; only the
+// ones the parse shows are checked on the way back.
+function _genReadDDL(attrs, g) {
+  const a = attrs && typeof attrs === 'object' ? attrs : {};
+  const binding = typeof attrs === 'object' ? (a.binding ?? 'ANY') : attrs;
+  const idxs = binding === 'ANY' || binding == null
+    ? g.resolvedBindings.map((r, i) => r?.defs?.length ? i : -1).filter(i => i >= 0) : [+binding];
+  for (const idx of idxs) {
+    const defs = g.resolvedBindings[idx]?.defs;
+    if (!defs?.length) { g.problems.push(`read-ddl: binding ${idx} does not resolve — skipped`); continue; }
+    const from = _meResolveDefRef(defs, a.from, 'first'), until = _meResolveDefRef(defs, a.until, 'last');
+    const picks = Array.isArray(a.fields) ? new Set(a.fields) : null;
+    const base = g.cursor, w0 = Object.keys(g.written).length;
+    const shown = new Set();
+    let started = !from, shift = 0;
+    const seen = id => { if (!started && id === from) started = true; if (picks ? picks.has(id) : started) shown.add(id); };
+    const runs = _meDDLVlgRuns(defs, g);
+    for (let i = 0; i < defs.length; i++) {
+      const run = runs.get(i);
+      if (run) {
+        const lenIdx = Math.max(0, run.leaves.findIndex(d => d.id === run.lenId));
+        const before = g.cursor, declared = run.leaves.reduce((t, d) => t + (d.length || 0), 0);
+        _genFramed(run.leaves.slice(0, lenIdx), run.leaves[lenIdx], run.leaves.slice(lenIdx + 1), g);
+        shift += (g.cursor - before) - declared;
+        run.leaves.forEach(d => seen(d.id));
+        i = run.end - 1;
+        if (until && run.leaves.some(d => d.id === until)) break;
+        continue;
+      }
+      const d = defs[i];
+      if (d.isRedefines) continue;
+      _genField(d, d.offset != null ? d.offset + base + shift : g.cursor, g);
+      seen(d.id);
+      if (until && d.id === until) break;
+    }
+    for (const id of Object.keys(g.written).slice(w0)) if (!shown.has(id)) { delete g.written[id]; delete g.hexOf[id]; }
+  }
+}
+function _genReadFixed(attrs, g) {
+  const n = attrs?.length, id = attrs?.as;
+  if (!Number.isInteger(n) || n < 0 || !id) { g.problems.push('read-fixed: only a fixed length with "as" is generated yet — skipped'); return; }
+  const def = { id, length: n, _dataType: /^(uint|binary)/i.test(attrs.type || '') ? 'BINARY' : 'PIC X' };
+  _genField(def, g.cursor, g, n);
+}
+// The DEs a bitmap carries: those asked for, else every DE the DDL maps.
+function _genDeMap(g) { return g._deMap || (g._deMap = _meBuildDEMap(g)); }
+function _genBitmap(attrs, g) {
+  if (!attrs?.field || attrs.length !== undefined || attrs.bits !== undefined || attrs.value !== undefined) {
+    g.problems.push('read-bitmap: only an ISO bitmap read from the message is generated yet — skipped'); return;
+  }
+  const deMap = _genDeMap(g);
+  const known = Object.keys(deMap).map(Number).filter(n => n > 1);
+  const want = (g.des ? g.des.map(Number) : known).filter(n => n > 1 && n <= 128);
+  for (const n of want) if (!deMap[n]) g.problems.push(`DE ${n}: the bound DDL maps no field to it — left out`);
+  const des = [...new Set(want.filter(n => deMap[n]))].sort((x, y) => x - y);
+  const sec = des.some(n => n > 64);
+  const raw = new Array(sec ? 16 : 8).fill(0);
+  for (const n of sec ? [1, ...des] : des) raw[(n - 1) >> 3] |= 0x80 >> ((n - 1) & 7);
+  const hex = raw.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+  const isHex = attrs.encoding === 'hex' || attrs.encoding === 'ascii-hex';
+  g.spans[attrs.field] = [g.cursor, isHex ? hex.length : raw.length];
+  _genPut(g, g.cursor, isHex ? _genText(hex, g.enc) : raw);
+  g.bitmaps[attrs.field] = des;
+}
+function _genBitmapFields(attrs, g) {
+  const id = typeof attrs === 'string' ? attrs : attrs?.bitmap;
+  const des = g.bitmaps[id];
+  if (!des) { g.problems.push(`read-bitmap-fields: no bitmap "${id}" was written before it — skipped`); return; }
+  const deMap = _genDeMap(g);
+  const varGroups = _meVlgLenMap(_meOvMergedItem(g));
+  for (const de of des) {
+    if (_meDeEntryFor(attrs, de)) { g.problems.push(`DE ${de}: a "de" entry is not generated yet (stage 2) — its bytes are missing`); continue; }
+    const e = deMap[de];
+    if (e.def) {
+      if ((e.with || []).length) _genFramed([], e.def, e.with, g);
+      else _genField(e.def, g.cursor, g);
+      continue;
+    }
+    const lenId = _genGroupLenId(e, varGroups);
+    if (!lenId) { for (const k of e.kids) _genField(k, g.cursor, g); continue; }
+    const li = Math.max(0, e.kids.findIndex(k => k.id === lenId));
+    _genFramed(e.kids.slice(0, li), e.kids[li], e.kids.slice(li + 1), g);
+  }
+}
+// The leaf that frames a group DE, or null when the group is fixed — the rule
+// read-bitmap-fields reads it by.
+function _genGroupLenId(e, varGroups) {
+  const direct = e.kids.filter(d => !d.id.slice(e.groupId.length + 1).includes('.'));
+  return _meVlgHas(varGroups, e.groupId) ? _meVlgGet(varGroups, e.groupId)
+    : _meAutoLLVarLenId(direct, undefined, e.kids.length);
+}
+// A `when` on a field takes the branch the values written so far take.
+function _genWhen(attrs, g) {
+  if (!attrs || attrs.bytes !== undefined || attrs['not-bytes'] !== undefined || !attrs.field) {
+    g.problems.push('when: only a condition on a field is generated yet — skipped'); return;
+  }
+  const v = g.written[attrs.field];
+  const op = _ME_WHEN_OPS().find(k => attrs[k] !== undefined);
+  let holds;
+  if (!op) holds = v !== undefined;
+  else if (v === undefined || (attrs[op] && typeof attrs[op] === 'object' && !Array.isArray(attrs[op]))) {
+    g.problems.push(`when ${attrs.field}: ${v === undefined ? 'the field was not written' : 'a field operand is not generated yet'} — neither branch written`); return;
+  } else {
+    const c = _meWhenCmp()[op];
+    holds = c.numeric ? c.test(parseInt(String(v).trim(), 10), +attrs[op]) : c.test(v, attrs[op]);
+  }
+  _genBlocks(holds ? attrs.then : attrs.else, g);
+}
+// Parse the message back with the same class: every field written must read
+// back as written, and nothing may be reported. Also which class detection
+// picks for it.
+function _genVerify(item, g, format) {
+  const wire = g.out;
+  const pb = g.enc === 'ebcdic' ? wire.map(b => _EBCDIC_TO_ASCII[b] ?? b) : wire.slice();
+  let r;
+  try { r = _meParseFileWithSpec(item, pb, { format, rawBytes: wire }); }
+  catch (e) { return { errors: [`the parse threw: ${e.message}`], diffs: [], detected: null }; }
+  const byId = {};
+  for (const f of r.fields) if (f && f.id && !f.error) byId[f.id] = f;
+  const errors = r.fields.filter(f => f && (f.error || f.issue)).map(f => `${f.id}: ${f.error || f.issue}`);
+  const diffs = [];
+  for (const [id, v] of Object.entries(g.written)) {
+    const f = byId[id];
+    if (!f) { diffs.push(`${id}: not read back`); continue; }
+    const same = String(f.value ?? '').trim() === String(v).trim()
+      || String(f.rawHex || '').toUpperCase() === g.hexOf[id]
+      || _meBytesToHex(Array.from(wire.slice(f.startByte, f.endByte + 1))).replace(/\s/g, '').toUpperCase() === g.hexOf[id];
+    if (!same) diffs.push(`${id}: wrote "${String(v).trim()}", read "${String(f.value ?? '').trim()}"`);
+  }
+  let detected = null;
+  try { detected = window._fmtDetect(new Uint8Array(wire), {})?.label || null; } catch (e) {}
+  // The class's own recognizers against the message — the working copy, so an
+  // edit not yet saved is what is judged: which one fails, if any.
+  let own = null;
+  try {
+    const t = window._fmtTestSpecs([item], new Uint8Array(wire), {})[0];
+    own = t.passed ? { passed: true } : { failAt: t.failAt, rec: (item.recognizers || [])[t.failAt] || null };
+  } catch (e) {}
+  return { errors, diffs, detected, own };
+}
+// What detection makes of the message, in words: detected as the class, or
+// which recognizer of the class turns it away and why — or, when the class
+// accepts it, which class earlier in the list takes it first.
+function _genDetectLine(key, v, n) {
+  const k = esc(key);
+  if (v.detected === key) return `Detected as ${k}.`;
+  let why;
+  if (v.own?.passed) why = `${k}'s recognizers all pass, but ${esc(v.detected)} comes before it in the class list and takes the message.`;
+  else if (v.own?.rec) why = `${k} does not detect it: recognizer ${v.own.failAt + 1} (${esc(v.own.rec.type)} ${_meRecSum(v.own.rec)}) fails — the message is ${n} bytes.`
+    + (v.detected ? ` Detection picks ${esc(v.detected)}.` : '');
+  else why = v.detected ? `Detection picks ${esc(v.detected)}, not ${k}.` : `No class detects it.`;
+  return why + (v.detected ? '' : ` The Test parses it with ${k} because it is selected.`);
+}
+// Does this spec walk a bitmap? Then the DEs are the user's to pick.
+function _genUsesBitmap(item) {
+  const scan = bl => (bl || []).some(x => x && typeof x === 'object'
+    && ('read-bitmap-fields' in x || scan(x.when?.then) || scan(x.when?.else)));
+  return scan(item.parse_spec_binary) || scan(item.parse_spec_ascii);
+}
+// The message as the chosen format writes it. ASCII carries characters only, so
+// a non-printable byte (a binary bitmap) is refused rather than lost.
+function _genFormat(g, fmt) {
+  if (fmt === 'ascii') {
+    const chars = g.out.map(b => g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[b] ?? b) : b);
+    const bad = chars.map((c, i) => c < 0x20 || c > 0x7E ? i : -1).filter(i => i >= 0);
+    if (bad.length) {
+      // Named by field — a count of bytes said nothing about where they are.
+      const names = Object.entries(g.spans).filter(([, [p, n]]) => bad.some(i => i >= p && i < p + n))
+        .sort((a, b) => a[1][0] - b[1][0]).map(([id]) => id);
+      return { error: `ASCII cannot carry the binary field${names.length === 1 ? '' : 's'} ${names.join(', ') || '(unnamed bytes)'} `
+        + `(${bad.length} byte${bad.length === 1 ? '' : 's'} that are not characters) — use HEX or NETADRD` };
+    }
+    return { text: String.fromCharCode(...chars) };
+  }
+  if (fmt === 'netadrd') {
+    const HDR = AUDIT_HDR_CFG.msgPayloadOffset;
+    const u8 = new Uint8Array(HDR + g.out.length); u8.set(g.out, HDR);
+    // The record time is now, in the audit header's 10 ms ticks.
+    let v = Math.max(0, Math.floor((Date.now() - 157680000000) / 10));
+    const ts = []; for (let i = 0; i < 6; i++) { ts.unshift(v % 256); v = Math.floor(v / 256); }
+    const rec = { length: g.out.length, tsBytes: ts, msgNumber: 1, source: 'GENERATED', dest: 'TEST', origTypeNum: 0, destTypeNum: 0 };
+    return { text: _auditDumpBuild(u8, rec, 1, null, 'hex').text };
+  }
+  return { text: _meBytesToHex(g.out) };
+}
+// The dialog: the class and its DDL, a row per field with its value, and a
+// finder that adds a DE's rows. The fields outside the bitmap are always there;
+// lengths are never rows, they are computed. Kept per class for the session.
+const _genChoice = {};
+let _genSt = null;
+// A row: the field, its width and kind, its default, and the DDL type to show.
+function _genLeaf(d, g, dflt) {
+  const pw = d.type === 'LLVAR' ? 'LL' : d.type === 'LLLVAR' ? 'LLL' : '';
+  return { id: d.id, len: _meEffLen(d, g) || 0, kind: pw ? (_genKind(d, g) === 'num' ? 'num' : 'text') : _genKind(d, g),
+    pic: (pw ? pw + ' ' : '') + (d._dataType ? String(d._dataType).replace(/^PIC\s*/i, '') : d.dataType ? `${d.dataType} ${d.length}` : ''),
+    desc: d.description && d.description !== d.id && d.description !== String(d.id).split('.').pop() ? d.description : '',
+    dflt: dflt ?? (_genKind(d, g) === 'int' ? '0' : String(_genEncode(d, _genDefault(d, g), _meEffLen(d, g), g).shown)) };
+}
+// What the class writes with no DE at all — its header — and, for a bitmap
+// class, every DE with the fields that carry its value.
+function _genModel(item) {
+  const g0 = _genMessage(item, { des: [] });
+  const defs = new Map(_genDefs(g0).map(d => [d.id, d]));
+  const head = Object.keys(g0.written).filter(id => !g0.lenIds.has(id)).map(id => defs.has(id)
+    ? _genLeaf(defs.get(id), g0, g0.written[id])
+    : { id, len: String(g0.written[id]).length, kind: 'text', pic: '', dflt: g0.written[id] });
+  const des = {};
+  if (_genUsesBitmap(item)) {
+    const deMap = _meBuildDEMap(g0), varGroups = _meVlgLenMap(_meOvMergedItem(g0));
+    for (const n of Object.keys(deMap).map(Number).filter(n => n > 1).sort((x, y) => x - y)) {
+      const e = deMap[n];
+      let leaves;
+      if (e.def) leaves = (e.with || []).length ? e.with : [e.def];
+      else { const lenId = _genGroupLenId(e, varGroups); leaves = e.kids.filter(k => k.id !== lenId); }
+      des[n] = { name: e.def ? e.def.id : e.groupId, leaves: leaves.map(d => _genLeaf(d, g0)) };
+    }
+  }
+  return { head, des, bitmap: _genUsesBitmap(item) };
+}
+// ── How a row's value is made ──
+// fixed: as typed · random digits, letters or hex digits · increment: +1 on
+// the last generation, kept by the app and wrapping to zero past what the field
+// holds · date: a format chosen from those that fit · pan: a Luhn-valid PAN of
+// the length asked. A field offers only what its type can hold.
+const _GEN_DATE_FMTS = ['MMDD', 'YYMM', 'hhmm', 'YYMMDD', 'DDMMYY', 'hhmmss', 'YYYYMMDD', 'MMDDhhmm', 'MMDDhhmmss', 'YYMMDDhhmmss', 'YYYYMMDDhhmmss'];
+function _genModes(f) {
+  const F = ['fixed', 'Fixed'], N = ['rnum', 'Random num'], A = ['ralpha', 'Random alpha'], H = ['rhex', 'Random hex'],
+        I = ['inc', 'Increment'], D = ['date', 'Date / time'], P = ['pan', 'PAN'];
+  if (f.kind === 'int') return [F, N, I];
+  if (f.kind === 'hex') return [F, H];
+  if (f.kind === 'num') return [F, N, I, D, P];
+  return [F, N, A, H, I, D, P];
+}
+const _genDateFmts = f => _GEN_DATE_FMTS.filter(x => x.length <= f.len);
+function _genFmtDate(fmt, d) {
+  const p = n => String(n).padStart(2, '0');
+  return fmt.replace(/YYYY|YY|MM|DD|hh|mm|ss/g, t => ({ YYYY: d.getFullYear(), YY: p(d.getFullYear() % 100),
+    MM: p(d.getMonth() + 1), DD: p(d.getDate()), hh: p(d.getHours()), mm: p(d.getMinutes()), ss: p(d.getSeconds()) })[t]);
+}
+const _genRand = (n, set) => Array.from({ length: Math.max(0, n) }, () => set[Math.floor(Math.random() * set.length)]).join('');
+// The Luhn check digit for `body`.
+function _genLuhn(body) {
+  let sum = 0;
+  for (let i = 0; i < body.length; i++) {
+    let d = +body[body.length - 1 - i];
+    if (i % 2 === 0) { d *= 2; if (d > 9) d -= 9; }
+    sum += d;
+  }
+  return String((10 - sum % 10) % 10);
+}
+function _genPan(n) { const body = '4' + _genRand(Math.max(1, n - 2), '0123456789'); return body + _genLuhn(body); }
+// The largest value an increment may reach before it wraps: what the field's
+// digits — or its bytes, for a binary number — can hold.
+function _genIncMax(f) {
+  return f.kind === 'int' ? BigInt(256) ** BigInt(Math.max(1, f.len)) - BigInt(1)
+                          : BigInt(10) ** BigInt(Math.max(1, Math.min(f.len, 30))) - BigInt(1);
+}
+function _genIncKey(id) { return `${_genSt.key}|${id}`; }
+// The value an increment row will use next: the count the app keeps, else 1.
+function _genIncNext(f) {
+  const c = P.genCounters && P.genCounters[_genIncKey(f.id)];
+  return c != null ? String(c) : '1';
+}
+// A row's value for this generation.
+function _genRowValue(f) {
+  const st = _genSt.rows[f.id] || {};
+  switch (st.mode || 'fixed') {
+    case 'rnum': return f.kind === 'int' ? String(Math.floor(Math.random() * Math.min(Number(_genIncMax(f)), 2 ** 31)))
+      : _genRand(f.len, '0123456789');
+    case 'ralpha': return _genRand(f.len, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    case 'inc': {
+      const v = String(st.val ?? _genIncNext(f)).replace(/\D/g, '') || '0';
+      return f.kind === 'int' ? v : v.padStart(f.len, '0').slice(-f.len);
+    }
+    case 'date': return _genFmtDate(st.fmt || _genDateFmts(f)[0] || 'MMDD', new Date());
+    case 'pan': return _genPan(Math.min(f.len || 19, Math.max(12, +st.len || 16)));
+    case 'rhex': return _genRand(f.kind === 'hex' ? f.len * 2 : f.len, '0123456789ABCDEF');
+    default: return st.val ?? f.dflt;
+  }
+}
+// After a generation, every increment row moves on by one — wrapping to zero
+// past what the field holds — and the count is kept with the settings.
+function _genAdvance(rows) {
+  if (!P.genCounters) P.genCounters = {};
+  for (const f of rows) {
+    const st = _genSt.rows[f.id];
+    if (st?.mode !== 'inc') continue;
+    let n;
+    try { n = BigInt(String(st.val ?? _genIncNext(f)).replace(/\D/g, '') || '0') + BigInt(1); } catch (e) { n = BigInt(0); }
+    if (n > _genIncMax(f)) n = BigInt(0);
+    st.val = String(n);
+    P.genCounters[_genIncKey(f.id)] = st.val;
+  }
+  if (typeof savePrefs === 'function') savePrefs();
+}
+function openGenerate() {
+  const item = _meCurItem();
+  if (!item) { flash('Select a class to generate a message from.', 'warn'); return; }
+  const key = item.label || item.name;
+  const c = _genChoice[key] || {};
+  _genSt = { key, model: _genModel(item), des: (c.des || []).slice(), rows: JSON.parse(JSON.stringify(c.rows || {})), fmt: c.fmt || 'hex' };
+  const binds = (item.ddl_bindings || []).filter(Boolean);
+  const ddl = binds.length
+    ? binds.map(p => `<code>${esc(p)}</code>${getDDLFromPath(p) ? '' : ' <span class="gen-bad">⚠ not in the DDL tree</span>'}`).join(', ')
+    : '<span class="gen-bad">⚠ none bound — the class has no DDL to write</span>';
+  document.getElementById('genTitle').textContent = `Generate — ${key}`;
+  // Everything to act on and the outcome sit at the top: a class like STM has
+  // dozens of rows, and a button or a result below them was off-screen.
+  document.getElementById('genBody').innerHTML =
+    `<div class="fw-note">Class <b>${esc(key)}</b> · DDL ${ddl}<br>Each field gets a value by its type and length — or random, an increment, a date, a PAN, hex; lengths are computed. The message is then parsed back with the class to check it.</div>`
+    + `<div class="gen-acts"><select id="genFmt" class="me-sel">
+        ${[['hex', 'HEX'], ['ascii', 'ASCII'], ['netadrd', 'NETADRD']].map(([v, l]) => `<option value="${v}"${_genSt.fmt === v ? ' selected' : ''}>${l}</option>`).join('')}
+      </select><span class="fw-note" style="padding:0">in ${_meSpecEncodingInfo(item).enc.toUpperCase()}, the class's encoding</span>
+      <span style="flex:1"></span><button class="btn btn-primary" onclick="genRun()">Generate</button></div>`
+    + `<div class="gen-res" id="genRes"></div>`
+    + (_genSt.model.bitmap ? `<div class="gen-row"><label>Add a DE — by number or name</label>
+        <input class="me-inp" id="genFind" placeholder="e.g. 4, or PAN" oninput="genFind()" onkeydown="if(event.key==='Enter'){event.preventDefault();genAddFirst();}">
+        <div class="gen-find" id="genFindList"></div></div>` : '')
+    + `<table class="exp-tbl gen-tbl"><thead><tr><th>DE</th><th>Field</th><th>Type</th><th>Value from</th><th>Value</th><th></th></tr></thead><tbody id="genRows"></tbody></table>`;
+  _genRows();
+  genFind();
+  document.getElementById('genOverlay').classList.remove('hidden');
+}
+// What is typed or picked in the rows, kept before they are redrawn.
+function _genKeep() {
+  document.querySelectorAll('#genRows [data-id]').forEach(el => {
+    const st = _genSt.rows[el.dataset.id] || (_genSt.rows[el.dataset.id] = {});
+    if (el.classList.contains('gen-val')) st.val = el.value;
+    else if (el.classList.contains('gen-fmt')) st.fmt = el.value;
+    else if (el.classList.contains('gen-len')) st.len = el.value;
+  });
+}
+// The rows on screen: the header's fields, then each DE added, in DE order.
+function _genVisible() {
+  const m = _genSt.model;
+  return m.head.map(f => ({ de: null, f })).concat(_genSt.des.filter(n => m.des[n]).sort((x, y) => x - y)
+    .flatMap(n => m.des[n].leaves.map(f => ({ de: n, f }))));
+}
+function _genRows() {
+  const id = f => esc(f.id);
+  const cell = f => {
+    const st = _genSt.rows[f.id] || {};
+    switch (st.mode || 'fixed') {
+      case 'rnum': case 'ralpha': case 'rhex': return `<span class="fw-note" style="padding:0">a new one each time</span>`;
+      case 'inc': return `<input class="me-inp gen-val" data-id="${id(f)}" value="${esc(f.kind === 'int' ? st.val ?? _genIncNext(f) : String(st.val ?? _genIncNext(f)).padStart(f.len, '0'))}" title="The next value. Each Generate uses it and adds one; past what the field holds it starts again at 0. The app keeps the count." spellcheck="false">`;
+      case 'date': {
+        const fmts = _genDateFmts(f);
+        if (!fmts.length) return `<span class="gen-bad">too short for a date</span>`;
+        const cur = st.fmt && fmts.includes(st.fmt) ? st.fmt : (fmts.find(x => x.length === f.len) || fmts[fmts.length - 1]);
+        return `<select class="me-sel gen-fmt" data-id="${id(f)}">${fmts.map(x => `<option${x === cur ? ' selected' : ''}>${x}</option>`).join('')}</select>`;
+      }
+      case 'pan': return `<input class="me-inp gen-len" data-id="${id(f)}" type="number" min="12" max="${Math.min(19, f.len || 19)}" value="${esc(st.len || Math.min(16, f.len || 16))}" title="PAN length — the last digit is the Luhn check"> digits`;
+      default: return `<input class="me-inp gen-val" data-id="${id(f)}" value="${esc(st.val ?? f.dflt)}" spellcheck="false">`;
+    }
+  };
+  const row = ({ de, f }) => {
+    const mode = (_genSt.rows[f.id] || {}).mode || 'fixed';
+    // A field named after its own DE number says nothing the DE column does not.
+    const name = (f.id === String(de) ? '' : esc(f.id)) + (f.desc ? `${f.id === String(de) ? '' : ' '}<span class="gen-desc">${esc(f.desc)}</span>` : '');
+    return `<tr><td class="gen-de">${de == null ? '' : 'DE ' + de}</td><td>${name}</td>`
+      + `<td class="gen-de">${esc(f.pic)}</td>`
+      + `<td><select class="me-sel gen-mode" data-mode-id="${id(f)}" onchange="genMode(this)">${_genModes(f).map(([v, l]) => `<option value="${v}"${v === mode ? ' selected' : ''}>${l}</option>`).join('')}</select></td>`
+      + `<td>${cell(f)}</td>`
+      + `<td>${de == null ? '' : `<button class="btn btn-ico" onclick="genDelDe(${de})" title="Leave DE ${de} out">✕</button>`}</td></tr>`;
+  };
+  document.getElementById('genRows').innerHTML = _genVisible().map(row).join('')
+    || `<tr><td colspan="6" class="fw-note">This class writes no field.</td></tr>`;
+}
+function genMode(sel) {
+  _genKeep();
+  const st = _genSt.rows[sel.dataset.modeId] || (_genSt.rows[sel.dataset.modeId] = {});
+  // A typed value belongs to the mode it was typed in.
+  if (st.mode !== sel.value) delete st.val;
+  st.mode = sel.value;
+  _genRows();
+}
+// The DEs not added yet that match what is typed: the number, or the name.
+function _genMatches() {
+  const q = String(document.getElementById('genFind')?.value || '').trim().toUpperCase();
+  // The DE with exactly that number first, then the names that contain it.
+  return Object.keys(_genSt.model.des).map(Number).filter(n => !_genSt.des.includes(n)
+    && (!q || String(n) === q || _genSt.model.des[n].name.toUpperCase().includes(q)
+        || _genSt.model.des[n].leaves.some(f => f.id.toUpperCase().includes(q) || String(f.desc || '').toUpperCase().includes(q))))
+    .sort((x, y) => (String(y) === q) - (String(x) === q) || x - y);
+}
+function genFind() {
+  const el = document.getElementById('genFindList');
+  if (!el) return;
+  const hits = _genMatches();
+  const label = n => { const nm = _genSt.model.des[n].name; return nm === String(n) ? `DE ${n}` : `DE ${n} · ${esc(nm)}`; };
+  el.innerHTML = hits.slice(0, 60).map(n => `<span class="fw-chip" onclick="genAddDe(${n})" title="Add DE ${n}">${label(n)}</span>`).join('')
+    + (hits.length > 60 ? `<span class="fw-note" style="padding:0 4px">+${hits.length - 60} more — type to narrow</span>` : '')
+    || '<span class="fw-note" style="padding:0">No DE left that matches.</span>';
+}
+function genAddDe(n) {
+  _genKeep();
+  if (!_genSt.des.includes(n)) _genSt.des.push(n);
+  const f = document.getElementById('genFind');
+  if (f) f.value = '';
+  _genRows(); genFind();
+}
+function genAddFirst() { const n = _genMatches()[0]; if (n != null) genAddDe(n); }
+function genDelDe(n) {
+  _genKeep();
+  _genSt.des = _genSt.des.filter(x => x !== n);
+  _genRows(); genFind();
+}
+function closeGenerate() { document.getElementById('genOverlay')?.classList.add('hidden'); }
+function genRun() {
+  const item = _meCurItem();
+  if (!item || !_genSt) return;
+  _genKeep();
+  const fmt = _genSt.fmt = document.getElementById('genFmt')?.value || 'hex';
+  // Only the rows on screen: a value set for a DE since removed stays out.
+  const rows = _genVisible().map(r => r.f);
+  const values = {};
+  for (const f of rows) values[f.id] = _genRowValue(f);
+  const g = _genMessage(item, { values, des: _genSt.model.bitmap ? _genSt.des.slice() : null, format: fmt === 'ascii' ? 'ascii' : 'hex' });
+  const res = document.getElementById('genRes');
+  const out = _genFormat(g, fmt);
+  if (out.error) { res.innerHTML = `<span class="gen-bad">${esc(out.error)}</span>`; document.getElementById('genBody').scrollTop = 0; return; }
+  // The message exists, so its increments are spent.
+  _genAdvance(rows);
+  _genChoice[_genSt.key] = { des: _genSt.des.slice(), rows: JSON.parse(JSON.stringify(_genSt.rows)), fmt };
+  _genRows();
+  const v = _genVerify(item, g, fmt === 'ascii' ? 'ascii' : 'hex');
+  const issues = [...g.problems, ...v.errors, ...v.diffs];
+  const key = _genSt.key;
+  const notes = g.notes.length ? ` (${g.notes.join('; ')})` : '';
+  const inp = document.getElementById('me-test-input');
+  const sel = document.getElementById('me-test-fmt');
+  if (inp) inp.value = out.text;
+  if (sel) { sel.value = fmt === 'netadrd' ? '' : fmt; sel.classList.toggle('fmt-forced', !!sel.value); }
+  // Clean and detected as the class: nothing to read here, so the window
+  // closes and a flash says what landed in the Test. Anything else stays open,
+  // said at the top, where it is seen without scrolling.
+  if (!issues.length && v.detected === key) {
+    closeGenerate();
+    _meFlash(`Generated ${g.out.length} bytes — parsed back as written, detected as ${key}${notes}. It is in the Test input — ▶ Run parses it.`);
+  } else {
+    res.innerHTML = `<div class="gen-bad">${g.out.length} bytes — `
+      + (issues.length ? `${issues.length} problem(s) on the way back` : 'parsed back as written, nothing reported')
+      + `${esc(notes)}. ${_genDetectLine(key, v, g.out.length)}</div>`
+      + (issues.length ? `<ul>${issues.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '');
+    document.getElementById('genBody').scrollTop = 0;
+  }
+  // Left in the input, not run: parsing is the user's step (▶ Run). Only the
+  // format and byte-count badges follow the new text.
+  _meTestUpdateFmtState();
+}
+
 function _meTestClear() {
   const inp = document.getElementById('me-test-input');
   if (inp) inp.value = '';
@@ -41757,6 +42433,17 @@ function _meSave() {
   </div>
 </div>
 <div class="why-pop hidden" id="whyPop"></div>
+<div class="modal-overlay hidden" id="genOverlay" onmousedown="if(event.target===this)closeGenerate()">
+  <div class="ddl-doc-modal" style="width:min(880px,96vw)">
+    <div class="ddl-doc-hdr">
+      <span class="ddl-doc-title" id="genTitle">Generate</span>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;margin-left:auto">
+        <button class="btn btn-ico" onclick="closeGenerate()">✕</button>
+      </div>
+    </div>
+    <div class="ddl-doc-body" id="genBody"></div>
+  </div>
+</div>
 <div class="modal-overlay hidden" id="followOverlay" onmousedown="if(event.target===this)closeFollow()">
   <div class="ddl-doc-modal" style="width:min(1300px,96vw)">
     <div class="ddl-doc-hdr">
@@ -42145,6 +42832,7 @@ function _meSave() {
               <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed. A rule with a <em>Tag name</em> also shows that tag beside the type when it is met; one with only <em>When</em> and a tag just labels the messages it matches, such as <em>RECURRING</em> or <em>REVERSAL</em></li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>Test</strong> — paste a message under the list and press <strong>▶ Run</strong>: every class is marked as winner, shadowed, rejected or never reached, a failing recognizer says which condition failed, and the winner's fields are shown as the app would parse them</li>
+              <li><strong>Generate</strong> — beside ▶ Run: builds a message from the selected class, its parse spec run in reverse. It shows the class and the DDL it is bound to, and a row per field with a value you can edit: the fields outside the bitmap are always there, and a DE is added from the finder by number or name (✕ leaves it out). Each row shows the field's type and says where its value comes from: <strong>Fixed</strong> (default: zeros for digits, X for text, at the full width), <strong>Random num</strong>, <strong>Random alpha</strong>, <strong>Random hex</strong> (each field offers only what its type can hold), <strong>Increment</strong> (the last generation plus one — the app keeps the count, so values are not repeated, and wraps to 0 past what the field holds), <strong>Date / time</strong> in a format you pick, or <strong>PAN</strong> of the length you set (Luhn-valid). Lengths are computed, never rows. HEX, ASCII or NETADRD, in the class's encoding. The message is parsed back with the class and the dialog says whether it came back as written and which class detects it; then it lands in the Test input, ready for ▶ Run — it is not parsed there for you. If it comes back clean and detected as the class, the window closes and a flash says so; otherwise what went wrong is shown at the top of the window — which recognizer turns it away, which field came back different. Tokens are optional and not generated yet, so the message has none. Not yet generated, and named when met: <code>read-tlv</code>, <code>map</code>, <code>de</code> entries, <code>repeat</code>.</li>
             </ul>
             <p style="margin:0;color:var(--text-dim);font-size:10.5px">Every recognizer, parse-spec block and override is described in full in the <strong>Specification</strong> below.</p>
           </div></div>
@@ -42548,6 +43236,7 @@ function _meSave() {
             <span class="me-sidebar-title">Test</span>
             <span class="me-test-summary" id="me-test-summary"></span>
             <button class="btn btn-primary" onclick="_meRunTest()">&#x25B6; Run</button>
+            <button class="btn" onclick="openGenerate()" title="Build a message from this class — its parse spec run in reverse — and parse it here">Generate</button>
             <button class="btn" id="me-test-journal" onclick="openTestJournal()" disabled title="The parse journal of the last Test run: detection, every block and field, in order">Journal</button>
             <button class="btn" onclick="_meTestClear()" title="Clear the test input and results">Clear</button>
             <button class="panel-toggle" id="me-test-toggle" onclick="_meToggleTestSub()" title="Hide panel">−</button>

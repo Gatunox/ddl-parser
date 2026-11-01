@@ -26045,6 +26045,221 @@ test('business rules: evaluate on any field, badge per message, popup names the 
   assert.ok(!/<li><strong>Tags<\/strong>/.test(html), 'Help still describes a Tags section');
 });
 
+
+// ── Generate a message (TODO 31, stage 1) ───────────────────────────────────
+// The parse spec run in reverse, checked by parsing the result back with the
+// same class. Every case here is a round trip: written → parsed → the same.
+console.log('\ngenerate a message');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const ISO_DDL = 'DEFINITION ISOMSG.\n  02 TYP PIC X(4).\n  02 PBIT-MAP PIC X(8).\n  02 SBIT-MAP PIC X(8).\n'
+    + '  02 DE-2.\n    04 DE-2-LEN PIC 9(2).\n    04 PAN PIC X(19).\n  02 DE-3 PIC 9(6).\n  02 DE-4 PIC 9(12).\n  02 DE-5 TYPE BINARY 16.\n'
+    + Array.from({ length: 64 }, (_, i) => `  02 DE-${i + 6} PIC X(2).\n`).join('') + 'END\n';
+  const FIX_DDL = 'DEFINITION FIXREC.\n  02 HDR PIC X(3).\n  02 CNT PIC 9(4).\n  02 VAR.\n    04 VAR-LEN PIC 9(3).\n    04 VAR-DATA PIC X(20).\n  02 TAIL PIC X(5).\nEND\n';
+  const withTree = fn => {
+    const saved = run('({ t: S.ddlTree })');
+    sandbox.__iso = ISO_DDL; sandbox.__fix = FIX_DDL;
+    run('S.ddlTree = { BASE: { DDL: { ISO: __iso, FIX: __fix } } }; _ddlTreeVersion++;');
+    try { return fn(); } finally { sandbox.__saved = saved; run('S.ddlTree = __saved.t; _ddlTreeVersion++;'); }
+  };
+  const iso = (enc, bm) => ({ name: 'ISO', label: 'ISO', ddl_bindings: ['BASE/DDL/ISO/ISOMSG'],
+    recognizers: [{ type: 'mti', offset: 0, value: '0200', encoding: enc }],
+    parse_spec_binary: [{ read: 'TYP' }, { 'read-bitmap': { field: 'PBIT-MAP', encoding: bm } }, { 'read-bitmap-fields': 'PBIT-MAP' }] });
+  const gen = (item, opts, fmt = 'hex') => {
+    sandbox.__item = item; sandbox.__opt = opts; sandbox.__fmt = fmt;
+    return JSON.parse(run(`(() => { const g = _genMessage(__item, __opt); const v = _genVerify(__item, g, __fmt);
+      return JSON.stringify({ out: g.out, written: g.written, problems: g.problems, v }); })()`));
+  };
+
+  test('generate: an ISO message round-trips in ASCII and EBCDIC, binary and hex bitmap, secondary included', () => withTree(() => {
+    for (const enc of ['ascii', 'ebcdic']) for (const bm of ['binary', 'hex']) {
+      const r = gen(iso(enc, bm), { values: { 'DE-2.PAN': '4111111111111111', 'DE-5': '513', 'DE-69': 'ZZ' }, des: [2, 3, 5, 69] });
+      const tag = `${enc}/${bm}`;
+      deepEq(r.problems, [], `${tag}: problems`);
+      deepEq(r.v.errors, [], `${tag}: the parse back reported`);
+      deepEq(r.v.diffs, [], `${tag}: a field read back differently`);
+      eq(r.written['TYP'], '0200', `${tag}: the MTI recognizer was not written where it sits`);
+      eq(r.written['DE-2.DE-2-LEN'], '16', `${tag}: the LL length is not the payload's`);
+      // DE 69 is past 64: the secondary bitmap is there, bit 1 set.
+      const first = bm === 'binary' ? r.out[4] : parseInt(String.fromCharCode(...r.out.slice(4, 6).map(b => enc === 'ebcdic' ? run('_EBCDIC_TO_ASCII')[b] : b)), 16);
+      eq((first & 0x80) !== 0, true, `${tag}: no secondary bitmap for DE 69`);
+    }
+  }));
+
+  test('generate: DEs left out of the bitmap are not written, and a DE the DDL does not map is said', () => withTree(() => {
+    const r = gen(iso('ascii', 'binary'), { des: [3, 99] });
+    deepEq(Object.keys(r.written).sort(), ['DE-3', 'TYP'], 'only TYP and DE 3 should be written');
+    assert.ok(r.problems.some(p => /DE 99: the bound DDL maps no field/.test(p)), 'an unmapped DE is not reported');
+    eq(r.out.length, 4 + 8 + 6, 'the message is not TYP + primary bitmap + DE 3');
+  }));
+
+  test('generate: read-ddl writes a fixed layout and a length-framed group, later offsets follow', () => withTree(() => {
+    const item = { name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [{ 'read-ddl': 'ANY' }] };
+    const r = gen(item, { values: { 'VAR.VAR-DATA': 'HELLO', CNT: '42' } });
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors'); deepEq(r.v.diffs, [], 'diffs');
+    eq(String.fromCharCode(...r.out), 'XXX0042005HELLOXXXXX', 'the record is not laid out as the parse reads it, text not X to its width');
+    // from / until: every field up to `until` is on the wire; only the window is shown and checked.
+    const win = { ...item, parse_spec_binary: [{ 'read-ddl': { binding: 0, from: 'CNT', until: 'VAR.VAR-DATA' } }] };
+    const w = gen(win, { values: { 'VAR.VAR-DATA': 'HELLO', CNT: '42' } });
+    deepEq(w.problems, [], 'from/until problems'); deepEq(w.v.diffs, [], 'from/until diffs'); deepEq(w.v.errors, [], 'from/until errors');
+    eq(String.fromCharCode(...w.out), 'XXX0042005HELLO', 'from / until did not stop after until, or dropped what comes before from');
+    eq(w.written.HDR, undefined, 'a field before from is checked though the parse does not show it');
+    const u = gen({ ...item, parse_spec_binary: [{ 'read-ddl': { binding: 0, until: 'CNT' } }] }, { values: { CNT: '7' } });
+    eq(String.fromCharCode(...u.out), 'XXX0007', 'until on a plain field did not stop there');
+  }));
+
+  test('generate: a when takes the branch the written values take; an unsupported block is named, not guessed', () => withTree(() => {
+    const item = { name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [
+      { read: 'HDR' },
+      { when: { field: 'HDR', equal: 'ABC', then: [{ 'read-fixed': { length: 2, as: 'YES' } }], else: [{ 'read-fixed': { length: 3, as: 'NO' } }] } },
+      { 'token-area': 'ANY' }] };
+    let r = gen(item, { values: { HDR: 'ABC', YES: 'OK' } });
+    eq(String.fromCharCode(...r.out), 'ABCOK', 'then was not taken');
+    // Tokens are optional: a message without them is whole — a note, not a problem.
+    assert.ok(!r.problems.some(p => /token-area/.test(p)), 'no tokens counts as a problem');
+    eq(JSON.parse(run(`JSON.stringify(_genMessage(__item, { values: { HDR: 'ABC', YES: 'OK' } }).notes)`))[0], 'no tokens written — tokens are not generated yet', 'the missing tokens are not noted');
+    r = gen(item, { values: { HDR: 'XYZ' } });
+    eq(String.fromCharCode(...r.out), 'XYZXXX', 'else was not taken');
+    // A "de" entry replaces a DE's read with blocks of its own: stage 2.
+    const de = iso('ascii', 'binary');
+    de.parse_spec_binary[2] = { 'read-bitmap-fields': { bitmap: 'PBIT-MAP', de: { '3': [{ 'read-fixed': { length: 6, as: 'X' } }] } } };
+    r = gen(de, { des: [3, 4] });
+    assert.ok(r.problems.some(p => /^DE 3: a "de" entry is not generated yet/.test(p)), 'a de entry is written as if it were not there');
+    eq(r.written['DE-3'], undefined, 'DE 3 was written through its de entry anyway');
+  }));
+
+  test('generate: the formats — HEX, NETADRD that parses back, ASCII refuses non-printable bytes', () => withTree(() => {
+    sandbox.__item = iso('ascii', 'binary');
+    const hex = run(`_genFormat(_genMessage(__item, { des: [3] }), 'hex').text`);
+    eq(hex, '30323030' + '2000000000000000' + '303030303030', 'HEX');
+    const nd = run(`_genFormat(_genMessage(__item, { des: [3] }), 'netadrd').text`);
+    sandbox.__nd = nd;
+    eq(run('isNetardLog(__nd)'), true, 'NETADRD text is not recognised as a NETADRD log');
+    eq(run(`Array.from(parseNetardLog(__nd)[0].rawMsg, c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('').toUpperCase()`), hex, 'NETADRD does not carry the same bytes');
+    // Reported 2026-10-31: "66 non-printable byte(s)" did not say which. Named by field.
+    eq(run(`_genFormat(_genMessage(__item, { des: [3, 5] }), 'ascii').error`),
+      'ASCII cannot carry the binary fields PBIT-MAP, DE-5 (9 bytes that are not characters) — use HEX or NETADRD',
+      'ASCII did not refuse the binary fields by name');
+  }));
+
+  test('generate: an ISO LLVAR writes its own length; an MTI pattern takes its digits from 0200', () => withTree(() => {
+    sandbox.__item = { name: 'X', label: 'X', ddl_bindings: [] };
+    const r = JSON.parse(run(`(() => { const g = _genMessage(__item, { values: { PAN: '4111111111111111' } });
+      _genField({ id: 'PAN', type: 'LLVAR', length: 19, _dataType: 'PIC X(19)' }, 0, g);
+      _genField({ id: 'AMT', type: 'LLLVAR', length: 12, _dataType: 'PIC 9(12)' }, g.cursor, g);
+      return JSON.stringify({ txt: String.fromCharCode(...g.out), w: g.written }); })()`));
+    eq(r.txt, '164111111111111111' + '012000000000000', 'the LLVAR / LLLVAR prefix is not the length of what follows, or a default is not zeros to its width');
+    eq(r.w.PAN, '4111111111111111', 'the LLVAR value is checked with its prefix');
+    const it = iso('ascii', 'binary'); it.recognizers = [{ type: 'mti', offset: 0, value: '1###' }];
+    eq(gen(it, { des: [3] }).written.TYP, '1200', 'an MTI pattern is not filled from 0200');
+  }));
+
+  // Reported 2026-10-31: a list of numbers and a FIELD=value box was not a way to
+  // build a message. Each field is a row with a value; a DE is added by name.
+  test('generate: the dialog lists the header fields and each DE with the fields that carry its value', () => withTree(() => {
+    sandbox.__item = iso('ascii', 'binary');
+    const m = JSON.parse(run('JSON.stringify(_genModel(__item))'));
+    deepEq(m.head.map(f => [f.id, f.dflt, f.pic]), [['TYP', '0200', 'X(4)']], 'the header row is not TYP with the MTI the recognizer writes');
+    deepEq(m.des[2].leaves.map(f => f.id), ['DE-2.PAN'], 'a framed DE offers its length as a row');
+    eq(m.des[2].name, 'DE-2', 'the DE is not named after its group');
+    deepEq([m.des[5].leaves[0].dflt, m.des[5].leaves[0].kind], ['0', 'int'], 'a binary DE does not default to 0');
+    eq(m.des[3].leaves[0].dflt, '000000', 'a numeric DE does not default to zeros to its width');
+    eq(m.des[2].leaves[0].dflt, 'X'.repeat(19), 'a text DE does not default to X to its width');
+    eq(m.bitmap, true, 'a bitmap class is not seen as one');
+    const fixed = JSON.parse(run(`JSON.stringify(_genModel({ name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [{ 'read-ddl': 'ANY' }] }))`));
+    deepEq(fixed.head.map(f => f.id), ['HDR', 'CNT', 'VAR.VAR-DATA', 'TAIL'], 'a fixed layout does not list its fields, or lists a length');
+    eq(fixed.bitmap, false, 'a fixed layout offers DEs');
+    // A layout DDL (the shipped ISO ones) types by class, not by PIC: N is digits.
+    deepEq(run(`['N', 'AN', 'B'].map(c => _genKind({ id: 'Z', dataType: c, length: 6 }, { item: {} }))`), ['num', 'text', 'hex'], 'N / AN / B kinds');
+  }));
+
+  // Reported 2026-10-31: typing 11, Enter, then 4 added DE 114 — the finder kept
+  // its text — and "4" could put DE 14 ahead of DE 4.
+  test('generate: the finder puts the exact number first and empties after adding', () => {
+    const run = c => vm.runInContext(c, sandbox);
+    const ids = ['genFind', 'genFindList', 'genRows'];
+    try {
+      elStubs.genFind = { value: '4' }; elStubs.genFindList = { innerHTML: '' }; elStubs.genRows = { innerHTML: '' };
+      run(`_genSt = { key: 'X', des: [], rows: {}, model: { head: [], bitmap: true, des: Object.fromEntries([14, 4, 40, 114].map(n => [n, { name: 'DATA-' + n, leaves: [{ id: 'F' + n, dflt: '' }] }])) } }`);
+      deepEq(run('_genMatches()'), [4, 14, 40, 114], 'the DE numbered 4 is not first');
+      // A field named by number is found by what it is: its description.
+      run(`_genSt.model.des[14].leaves[0].desc = 'Primary Account Number (PAN)'`);
+      elStubs.genFind.value = 'pan';
+      deepEq(run('_genMatches()'), [14], 'a DE is not found by its description');
+      elStubs.genFind.value = '4';
+      run('genAddFirst()');
+      deepEq(run('_genSt.des'), [4], 'Enter did not add DE 4');
+      eq(elStubs.genFind.value, '', 'the finder kept what was typed, so the next number is appended to it');
+    } finally { for (const id of ids) delete elStubs[id]; run('_genSt = null'); }
+  });
+
+  // Requested 2026-10-31: each row says where its value comes from — fixed,
+  // random, an increment on the last generation, a date in a chosen format, a
+  // PAN of a chosen length, hex. The increment is kept by the app so a value is
+  // not handed out twice, and wraps to zero past what the field holds.
+  test('generate: a row value comes from its mode; increments are kept and wrap', () => {
+    const run = c => vm.runInContext(c, sandbox);
+    const saved = run('({ c: P.genCounters, s: savePrefs })');
+    try {
+      run('P.genCounters = {}; savePrefs = () => { globalThis.__saves = (globalThis.__saves || 0) + 1; }');
+      sandbox.__saves = 0;
+      run(`_genSt = { key: 'K', des: [], rows: {
+        A: { mode: 'rnum' }, B: { mode: 'inc' }, C: { mode: 'date', fmt: 'YYMMDD' }, D: { mode: 'pan', len: '16' },
+        E: { mode: 'rhex' }, F: { mode: 'inc', val: '99' }, G: { mode: 'fixed', val: 'HI' }, H: { mode: 'ralpha' } }, model: { head: [], des: {}, bitmap: false } }`);
+      const f = (id, kind, len) => `({ id: '${id}', kind: '${kind}', len: ${len}, dflt: '' })`;
+      assert.ok(/^\d{6}$/.test(run(`_genRowValue(${f('A', 'text', 6)})`)), 'Random num is not six digits');
+      assert.ok(/^[A-Z]{6}$/.test(run(`_genRowValue(${f('H', 'text', 6)})`)), 'Random alpha is not six letters');
+      // Requested 2026-10-31: three randoms, and only those a field's type holds.
+      deepEq(run(`_genModes({ kind: 'num' }).map(m => m[0])`), ['fixed', 'rnum', 'inc', 'date', 'pan'], 'a numeric field offers letters or hex');
+      deepEq(run(`_genModes({ kind: 'text' }).map(m => m[1])`), ['Fixed', 'Random num', 'Random alpha', 'Random hex', 'Increment', 'Date / time', 'PAN'], 'a text field options');
+      deepEq(run(`_genModes({ kind: 'int' }).map(m => m[0])`), ['fixed', 'rnum', 'inc'], 'a binary number options');
+      eq(run(`_genRowValue(${f('B', 'num', 6)})`), '000001', 'an increment does not start at 1, padded to the field');
+      assert.ok(/^\d{6}$/.test(run(`_genRowValue(${f('C', 'num', 6)})`)), 'a date is not in its format');
+      eq(run(`_genFmtDate('YYYYMMDDhhmmss', new Date(2026, 9, 31, 7, 5, 9))`), '20261031070509', 'the date format');
+      const pan = run(`_genRowValue(${f('D', 'text', 19)})`);
+      eq(pan.length, 16, 'the PAN is not the length asked');
+      eq(run(`_genLuhn(${JSON.stringify(pan.slice(0, -1))})`), pan.slice(-1), 'the PAN fails Luhn');
+      eq(run(`_genLuhn('7992739871')`), '3', 'the Luhn check digit');
+      assert.ok(/^[0-9A-F]{8}$/.test(run(`_genRowValue(${f('E', 'text', 8)})`)), 'hex is not hex digits to the width');
+      eq(run(`_genRowValue(${f('G', 'text', 4)})`), 'HI', 'a fixed value is not as typed');
+      // After a generation every increment moves on, is kept, and wraps.
+      run(`_genAdvance([${f('B', 'num', 6)}, ${f('F', 'num', 2)}, ${f('G', 'text', 4)}])`);
+      deepEq(run('JSON.parse(JSON.stringify(P.genCounters))'), { 'K|B': '2', 'K|F': '0' }, 'the counts are not kept, or 99 in two digits did not wrap to 0');
+      eq(sandbox.__saves, 1, 'the counts are not saved with the settings');
+      // A new dialog for the same class starts from the kept count.
+      run(`_genSt.rows.B = { mode: 'inc' }`);
+      eq(run(`_genRowValue(${f('B', 'num', 6)})`), '000002', 'the next generation repeats the last value');
+    } finally { sandbox.__saved = saved; run('P.genCounters = __saved.c; savePrefs = __saved.s; _genSt = null'); }
+  });
+
+  // Reported 2026-10-31: "No class detects it" on an STM left the user guessing.
+  // The line names the recognizer of the class that turns the message away.
+  test('generate: the dialog says which recognizer of the class turns the message away', () => withTree(() => {
+    const it = iso('ascii', 'binary');
+    it.recognizers = [{ type: 'mti', offset: 0, value: '0200' }, { type: 'greater-than', value: 18 }];
+    const r = gen(it, { des: [3] });
+    eq(r.out.length, 18, 'fixture: TYP + bitmap + DE 3 is 18 bytes');
+    deepEq(r.v.own, { failAt: 1, rec: { type: 'greater-than', value: 18 } }, 'the failing recognizer is not found');
+    sandbox.__v = r.v;
+    const line = run(`_genDetectLine('ISO', __v, 18)`);
+    assert.ok(/ISO does not detect it: recognizer 2 \(greater-than > 18 bytes\) fails — the message is 18 bytes/.test(line), `the line does not name it: ${line}`);
+    eq(run(`_genDetectLine('ISO', { detected: 'ISO' }, 18)`), 'Detected as ISO.', 'a detected message');
+    assert.ok(/all pass, but OTHER comes before it/.test(run(`_genDetectLine('ISO', { detected: 'OTHER', own: { passed: true } }, 18)`)), 'a class shadowed by an earlier one is not said');
+  }));
+
+  test('generate: the Test panel has the button and the dialog is wired', () => {
+    assert.ok(/onclick="openGenerate\(\)"/.test(html), 'the Test bar has no Generate button');
+    assert.ok(/id="genOverlay"/.test(html), 'the dialog is missing');
+    assert.ok(/<li><strong>Generate<\/strong> — beside ▶ Run/.test(html), 'Help does not explain Generate');
+    // Reported 2026-10-31: parsing on its own was confusing — the message is left
+    // in the Test input for ▶ Run.
+    const gr = psFnSource('genRun');
+    assert.ok(!/_meRunTest\(/.test(gr) && /_meTestUpdateFmtState\(\)/.test(gr), 'Generate still runs the Test by itself');
+    assert.ok(/lands in the Test input, ready for ▶ Run/.test(html), 'Help still says the message is parsed for you');
+    for (const h of ['openGenerate', 'closeGenerate', 'genRun', 'genFind', 'genAddDe', 'genAddFirst', 'genDelDe', 'genMode'])
+      assert.ok(new RegExp(`'${h}'`).test(fs.readFileSync('./build.js', 'utf8')), `build.js would rename ${h}`);
+  });
+}
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

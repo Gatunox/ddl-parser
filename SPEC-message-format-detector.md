@@ -2374,6 +2374,55 @@ parse. A rule is business, not an issue — it is shown apart from the issue bar
   on a copy until Apply. The class row counts them (`rules: N`). Rebinding the
   class's DDL keeps them; only overrides are cleared.
 
+
+### 11.7 Generate a message
+
+The Class Editor's Test panel → **Generate** builds a message from the selected
+class: its parse spec run in reverse, each block writing what it would read.
+
+- **The dialog** names the class and the DDL it is bound to (⚠ when none, or
+  when it is not in the tree), then a row per field with a value to edit. The
+  fields outside the bitmap — prefix, MTI — are always rows. A spec that walks a
+  bitmap adds a **finder**: type a DE number or a name, Enter or a click adds that
+  DE's rows, ✕ leaves it out; the exact number comes first. DE numbers are the
+  Field Map's. A DE above 64 adds the secondary bitmap and bit 1.
+- **Values**: each row shows the field's type (`X(4)`, `N 6`, `LL N 19`) and
+  description, and says where its value comes from:
+  - **Fixed** — as typed; the default is the type at its full width, digits
+    zeros and text X. A recognizer's literal or MTI is the default where it
+    sits; an MTI pattern's `#` digits come from `0200`.
+  - **Random num**, **Random alpha**, **Random hex** — digits, letters A–Z or
+    hex digits, a new set each time. A field offers only what its type holds:
+    a numeric field Random num, a binary number Random num, a `B` field Random
+    hex, a text field all three.
+  - **Increment** — the last generation plus one, padded to the field. The app
+    keeps the count per class and field with the settings (`genCounters`), so a
+    value is not handed out twice across sessions; past what the field holds it
+    starts again at 0.
+  - **Date / time** — now, in a format chosen from those that fit the field
+    (`MMDD`, `YYMMDD`, `hhmmss`, `MMDDhhmmss`, `YYYYMMDDhhmmss`, …); the one as
+    long as the field is preselected.
+  - **PAN** — a Luhn-valid PAN of the length asked (12 to 19, at most the field).
+  A layout DDL (ISO style) types by class: `N` digits, `B` binary written as the
+  hex of its bytes, `A` / `AN` / `ANS` text. A length is never a row — it is
+  computed from what it frames: a LEN leaf, a length-framed group, an ISO
+  LLVAR / LLLVAR. The rows are kept per class for the session.
+- **Format**: HEX, ASCII or NETADRD (a HEXASCII record with SOURCE / DEST), in
+  the class's encoding. ASCII refuses a message with non-printable bytes.
+- **The check**: the message is parsed back with the class, and detection is
+  asked which class it is. Clean and detected as the class, the window closes
+  and a flash says so. Otherwise the window stays open with what went wrong at
+  its top: the fields that came back different, what the parse reported, and —
+  when the class does not detect it — which of its recognizers turns the message
+  away and why, or which class earlier in the list takes it. Either way the
+  message lands in the Test input, not run: ▶ Run parses it.
+- **Tokens** are optional and not generated yet: the message carries none, which
+  is a note, not a problem.
+- Written: `read`, `read-ddl` (with `fields` / `from` / `until`), `read-fixed`,
+  `skip`, `read-bitmap` (binary or hex), `read-bitmap-fields`, `when` on a field,
+  `stop`. Anything else — `read-tlv`, `map`, `de` entries, `repeat`, `at`
+  — is named in the dialog and skipped, never guessed.
+
 ## 13. Storage
 
 - Message and file specs are stored in `localStorage` as JSON.

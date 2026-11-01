@@ -1258,6 +1258,31 @@ in slices with a progress bar.
 broken on purpose (length exceeded, inconsistent bitmap) — in the chosen format
 (NETADRD, HEX, ASCII), to test the parser or the system.
 
+**Agreed 2026-10-31.** Generating is parsing in reverse: the generator walks the
+class's parse spec and writes bytes where the parser reads them, then the result
+is parsed back with the same class and must come out clean — the round trip is
+the generator's own check. In the Class Editor's Test panel, a **Generate**
+button: pick the DEs (bitmap classes), override any field's value
+(`FIELD=value`, defaults by type), choose HEX / ASCII / NETADRD in the class's
+encoding; the message lands in the Test input, parsed.
+
+- **Stage 1 — done in v1.64.0.0 (SPEC §11.7):** `read`, `read-ddl` (with
+  `fields` / `from` / `until`), `read-fixed`, `skip`, `read-bitmap` (binary /
+  hex, primary + secondary), `read-bitmap-fields` (fixed DEs, length-framed
+  groups, ISO LLVAR / LLLVAR), `when` on a field, `stop`; recognizer literals and
+  MTI written where they sit; round-trip check and detection reported. The
+  shipped ISO 8583 1987 and 1993 classes generate, come back clean and detect
+  as themselves. Not yet: a leaf marked as a length source (`vlg: true` on a
+  field), `read` with `length_prefix` / `type` / `map`.
+- **Asked 2026-10-31, for later:** generate N messages at once (random and
+  increments moving per message) to paste into Data Input. Increments are
+  already kept by the app (`genCounters`) so a batch would not repeat values.
+- **Stage 2:** tokens, `read-tlv`, `map` "class", `de` entries, `repeat` — and
+  broken-on-purpose messages: LLVAR over its max, bit on with no data / data with
+  bit off, truncated, a letter in a numeric field.
+- **Stage 3:** business rules steer the values (a 0800 that must carry DE-70
+  gets one).
+
 
 ---
 

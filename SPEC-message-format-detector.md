@@ -2414,8 +2414,9 @@ class: its parse spec run in reverse, each block writing what it would read.
   and a flash says so. Otherwise the window stays open with what went wrong at
   its top: the fields that came back different, what the parse reported, and —
   when the class does not detect it — which of its recognizers turns the message
-  away and why, or which class earlier in the list takes it. Either way the
-  message lands in the Test input, not run: ▶ Run parses it.
+  away and why, or which class earlier in the list takes it. Only a clean
+  message goes to the Test: Clear first, then the message in the input, not
+  run — ▶ Run parses it. With an error the Test is left as it was.
 - **Tokens** are optional and not generated yet: the message carries none, which
   is a note, not a problem.
 - Written: `read`, `read-ddl` (with `fields` / `from` / `until`), `read-fixed`,

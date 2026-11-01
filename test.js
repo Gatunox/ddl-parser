@@ -26255,6 +26255,11 @@ console.log('\ngenerate a message');
     // in the Test input for ▶ Run.
     const gr = psFnSource('genRun');
     assert.ok(!/_meRunTest\(/.test(gr) && /_meTestUpdateFmtState\(\)/.test(gr), 'Generate still runs the Test by itself');
+    // Requested 2026-10-31: the last run's results went with the old message.
+    // Only on success: with an error nothing is pasted, so the Test is left as it was.
+    const ok = gr.slice(gr.indexOf('if (!issues.length && v.detected === key) {'), gr.indexOf('} else {', gr.indexOf('if (!issues.length && v.detected === key) {')));
+    assert.ok(ok.indexOf('_meTestClear()') > -1 && ok.indexOf('_meTestClear()') < ok.indexOf('inp.value = out.text'), 'Generate does not clear the Test before putting the message in');
+    eq((gr.match(/_meTestClear\(\)|inp\.value = /g) || []).length, 2, 'the Test is cleared or written outside the success branch');
     assert.ok(/lands in the Test input, ready for ▶ Run/.test(html), 'Help still says the message is parsed for you');
     for (const h of ['openGenerate', 'closeGenerate', 'genRun', 'genFind', 'genAddDe', 'genAddFirst', 'genDelDe', 'genMode'])
       assert.ok(new RegExp(`'${h}'`).test(fs.readFileSync('./build.js', 'utf8')), `build.js would rename ${h}`);

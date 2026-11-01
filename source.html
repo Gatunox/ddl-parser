@@ -22262,7 +22262,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.0.0';
+const APP_VERSION  = '1.64.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41698,14 +41698,20 @@ function genRun() {
   const issues = [...g.problems, ...v.errors, ...v.diffs];
   const key = _genSt.key;
   const notes = g.notes.length ? ` (${g.notes.join('; ')})` : '';
-  const inp = document.getElementById('me-test-input');
-  const sel = document.getElementById('me-test-fmt');
-  if (inp) inp.value = out.text;
-  if (sel) { sel.value = fmt === 'netadrd' ? '' : fmt; sel.classList.toggle('fmt-forced', !!sel.value); }
-  // Clean and detected as the class: nothing to read here, so the window
-  // closes and a flash says what landed in the Test. Anything else stays open,
-  // said at the top, where it is seen without scrolling.
+  // Clean and detected as the class: the Test is cleared — the last run's
+  // results and verdict dots belong to the old message — the message goes in,
+  // the window closes and a flash says so. Anything else touches nothing in the
+  // Test: the window stays open with what went wrong at its top, where it is
+  // seen without scrolling.
   if (!issues.length && v.detected === key) {
+    _meTestClear();
+    const inp = document.getElementById('me-test-input');
+    const sel = document.getElementById('me-test-fmt');
+    if (inp) inp.value = out.text;
+    if (sel) { sel.value = fmt === 'netadrd' ? '' : fmt; sel.classList.toggle('fmt-forced', !!sel.value); }
+    // Left in the input, not run: parsing is the user's step (▶ Run). Only the
+    // format and byte-count badges follow the new text.
+    _meTestUpdateFmtState();
     closeGenerate();
     _meFlash(`Generated ${g.out.length} bytes — parsed back as written, detected as ${key}${notes}. It is in the Test input — ▶ Run parses it.`);
   } else {
@@ -41715,9 +41721,6 @@ function genRun() {
       + (issues.length ? `<ul>${issues.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '');
     document.getElementById('genBody').scrollTop = 0;
   }
-  // Left in the input, not run: parsing is the user's step (▶ Run). Only the
-  // format and byte-count badges follow the new text.
-  _meTestUpdateFmtState();
 }
 
 function _meTestClear() {
@@ -42832,7 +42835,7 @@ function _meSave() {
               <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed. A rule with a <em>Tag name</em> also shows that tag beside the type when it is met; one with only <em>When</em> and a tag just labels the messages it matches, such as <em>RECURRING</em> or <em>REVERSAL</em></li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>Test</strong> — paste a message under the list and press <strong>▶ Run</strong>: every class is marked as winner, shadowed, rejected or never reached, a failing recognizer says which condition failed, and the winner's fields are shown as the app would parse them</li>
-              <li><strong>Generate</strong> — beside ▶ Run: builds a message from the selected class, its parse spec run in reverse. It shows the class and the DDL it is bound to, and a row per field with a value you can edit: the fields outside the bitmap are always there, and a DE is added from the finder by number or name (✕ leaves it out). Each row shows the field's type and says where its value comes from: <strong>Fixed</strong> (default: zeros for digits, X for text, at the full width), <strong>Random num</strong>, <strong>Random alpha</strong>, <strong>Random hex</strong> (each field offers only what its type can hold), <strong>Increment</strong> (the last generation plus one — the app keeps the count, so values are not repeated, and wraps to 0 past what the field holds), <strong>Date / time</strong> in a format you pick, or <strong>PAN</strong> of the length you set (Luhn-valid). Lengths are computed, never rows. HEX, ASCII or NETADRD, in the class's encoding. The message is parsed back with the class and the dialog says whether it came back as written and which class detects it; then it lands in the Test input, ready for ▶ Run — it is not parsed there for you. If it comes back clean and detected as the class, the window closes and a flash says so; otherwise what went wrong is shown at the top of the window — which recognizer turns it away, which field came back different. Tokens are optional and not generated yet, so the message has none. Not yet generated, and named when met: <code>read-tlv</code>, <code>map</code>, <code>de</code> entries, <code>repeat</code>.</li>
+              <li><strong>Generate</strong> — beside ▶ Run: builds a message from the selected class, its parse spec run in reverse. It shows the class and the DDL it is bound to, and a row per field with a value you can edit: the fields outside the bitmap are always there, and a DE is added from the finder by number or name (✕ leaves it out). Each row shows the field's type and says where its value comes from: <strong>Fixed</strong> (default: zeros for digits, X for text, at the full width), <strong>Random num</strong>, <strong>Random alpha</strong>, <strong>Random hex</strong> (each field offers only what its type can hold), <strong>Increment</strong> (the last generation plus one — the app keeps the count, so values are not repeated, and wraps to 0 past what the field holds), <strong>Date / time</strong> in a format you pick, or <strong>PAN</strong> of the length you set (Luhn-valid). Lengths are computed, never rows. HEX, ASCII or NETADRD, in the class's encoding. The message is parsed back with the class and the dialog says whether it came back as written and which class detects it; then, only when it comes back clean, the Test is cleared and it lands in the Test input, ready for ▶ Run — it is not parsed there for you. If it comes back clean and detected as the class, the window closes and a flash says so; otherwise what went wrong is shown at the top of the window — which recognizer turns it away, which field came back different. Tokens are optional and not generated yet, so the message has none. Not yet generated, and named when met: <code>read-tlv</code>, <code>map</code>, <code>de</code> entries, <code>repeat</code>.</li>
             </ul>
             <p style="margin:0;color:var(--text-dim);font-size:10.5px">Every recognizer, parse-spec block and override is described in full in the <strong>Specification</strong> below.</p>
           </div></div>

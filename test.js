@@ -26272,6 +26272,93 @@ console.log('\ngenerate a message');
     assert.ok(r.problems.some(p => /read-while: the bytes after its last pass, at byte 2, match its guard/.test(p)), 'bytes after the loop that match its guard are not said');
   }));
 
+  test('generate: read-tlv writes its tags in a field, at the cursor after a length, mapped to DDL groups or BER', () => withTree(() => {
+    sandbox.__tlvd = 'DEFINITION TLVD.\n  02 HDR PIC X(3).\n  02 AMT.\n    04 TAG PIC X(2).\n    04 LEN PIC 9(2).\n    04 DATA PIC X(12).\nEND\n';
+    run('S.ddlTree.BASE.DDL.TLVD = __tlvd; _ddlTreeVersion++;');
+    const s = r => String.fromCharCode(...r.out);
+    const clean = (r, tag) => { deepEq(r.problems, [], `${tag}: problems`); deepEq(r.v.errors, [], `${tag}: errors`); deepEq(r.v.diffs, [], `${tag}: diffs`); };
+    // In a length-framed field: the field's bytes are the TLVs, its length theirs.
+    let r = gen({ name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [{ 'read-ddl': { until: 'VAR.VAR-DATA' } },
+      { 'read-tlv': { field: 'VAR.VAR-DATA', tag_length: 2, length_length: 2, encoding: 'ascii' } }] },
+      { values: { HDR: 'ABC', CNT: '1', 'VAR.VAR-DATA.T1': 'ABC', 'VAR.VAR-DATA.T2': 'Z' } });
+    clean(r, 'in a field'); eq(s(r), 'ABC0001012T103ABCT201Z', 'the TLVs are not the bytes of the field they are read from');
+    // Mapped: each tag's value under its group's DATA, to the end of the message.
+    const tl = blocks => ({ name: 'TLVD', label: 'TLVD', ddl_bindings: ['BASE/DDL/TLVD/TLVD'], parse_spec_binary: blocks });
+    r = gen(tl([{ read: 'HDR' }, { 'read-tlv': { tag_length: 2, length_length: 2, encoding: 'ascii', tags: { A1: { field: 'AMT' } } } }]), { values: { HDR: 'ABC', 'AMT.DATA': 'HELLO' } });
+    clean(r, 'mapped'); eq(s(r), 'ABCA105HELLO', 'a mapped tag is not written with its value leaf');
+    // BER, after a binary length.
+    r = gen(tl([{ read: 'HDR' }, { 'read-tlv': { ber: true, len: { bytes: 2, type: 'uint16-be' } } }, { 'read-fixed': { length: 1, as: 'END' } }]),
+      { values: { HDR: 'ABC', 'TLV.9F02': '000000001000', 'TLV.5A': '41', END: '!' } });
+    clean(r, 'ber'); deepEq(r.out.slice(3, 9), [0, 19, 0x9F, 0x02, 12, 0x30], 'a BER TLV is not its length, a two-byte tag and its length');
+    eq(r.out.length, 3 + 2 + 19 + 1, 'what follows a TLV with a length is not after it');
+    // With no length, whatever follows is read as more tags: said.
+    r = gen(tl([{ 'read-tlv': { tag_length: 2, length_length: 2, encoding: 'ascii', tags: { A1: { field: 'AMT' } } } }, { read: 'HDR' }]), { values: { HDR: 'ABC' } });
+    assert.ok(r.problems.some(p => /read-tlv: 3 byte\(s\) are written after it/.test(p)), 'bytes after a TLV with no length are not said');
+  }));
+
+  test('generate: a "de" entry writes its DE in the frame the parse reads it by', () => withTree(() => {
+    const clean = (r, tag) => { deepEq(r.problems, [], `${tag}: problems`); deepEq(r.v.errors, [], `${tag}: errors`); deepEq(r.v.diffs, [], `${tag}: diffs`); };
+    const withDe = entry => { const it = iso('ascii', 'binary'); it.parse_spec_binary[2] = { 'read-bitmap-fields': { bitmap: 'PBIT-MAP', de: { '2': entry } } }; return it; };
+    // DE 2 is the group DE-2 (DE-2-LEN, PAN): its length leaf frames what the blocks write.
+    let r = gen(withDe([{ read: 'DE-2.PAN' }]), { des: [2], values: { 'DE-2.PAN': '4111111111111111' } });
+    clean(r, 'group length'); eq(String.fromCharCode(...r.out.slice(12)), '194111111111111111   ', 'the group length leaf does not frame what the blocks wrote');
+    // A length prefix the DDL does not declare.
+    r = gen(withDe({ length_prefix: 3, blocks: [{ 'read-fixed': { length: 4, as: 'Q' } }] }), { des: [2], values: { Q: 'WXYZ' } });
+    clean(r, 'length_prefix'); eq(String.fromCharCode(...r.out.slice(12)), '004WXYZ', 'a de length_prefix is not the size of what follows');
+    // A stated length: the rest of it is filled.
+    r = gen(withDe({ field: 'NONE', length: 6, blocks: [{ 'read-fixed': { length: 4, as: 'Q' } }] }), { des: [2, 3], values: { Q: 'WXYZ', 'DE-3': '123456' } });
+    deepEq(r.problems, [], 'stated problems'); deepEq(r.v.diffs, [], 'stated diffs');
+    eq(String.fromCharCode(...r.out.slice(12)), 'WXYZ  123456', 'a stated length is not filled to its end before the next DE');
+    // The dialog's rows for that DE are what its blocks write.
+    sandbox.__item = withDe({ length_prefix: 3, blocks: [{ 'read-fixed': { length: 4, as: 'Q' } }] });
+    deepEq(JSON.parse(run('JSON.stringify(_genModel(__item).des[2].leaves.map(f => f.id))')), ['Q'], 'the rows of a DE with a de entry are not what its blocks write');
+  }));
+
+  test('generate: a mapped field is written as its definition, or as a message of its class', () => withTree(() => {
+    sandbox.__mapd = 'DEFINITION REC.\n  02 HDR PIC X(3).\n  02 BODY PIC X(5).\nEND\nDEFINITION SUB.\n  02 A PIC X(2).\n  02 B PIC 9(3).\nEND\n';
+    run('S.ddlTree.BASE.DDL.MAPD = __mapd; _ddlTreeVersion++;');
+    const s = r => String.fromCharCode(...r.out);
+    const clean = (r, tag) => { deepEq(r.problems, [], `${tag}: problems`); deepEq(r.v.errors, [], `${tag}: errors`); deepEq(r.v.diffs, [], `${tag}: diffs`); };
+    const rec = map => ({ name: 'REC', label: 'REC', ddl_bindings: ['BASE/DDL/MAPD/REC'], parse_spec_binary: [{ map: { field: 'BODY', ...map } }, { 'read-ddl': 'ANY' }] });
+    let r = gen(rec({ def: 'SUB' }), { values: { HDR: 'ABC', 'SUB.A': 'XY', 'SUB.B': '7' } });
+    clean(r, 'def'); eq(s(r), 'ABCXY007', 'a field mapped to a definition is not that definition\'s fields');
+    eq(r.written.BODY, undefined, 'the mapped field is checked as itself as well as by its rows');
+    // A class: a whole message of it, its rows prefixed with the DEF it binds.
+    sandbox.__inner = { name: 'INNER', label: 'INNER', ddl_bindings: ['BASE/DDL/MAPD/SUB'], parse_spec_binary: [{ 'read-ddl': 'ANY' }] };
+    run('window.__sbl = window._fmtSpecByLabel; window._fmtSpecByLabel = globalThis._fmtSpecByLabel = n => n === "INNER" ? __inner : window.__sbl(n);');
+    try {
+      r = gen(rec({ class: 'INNER' }), { values: { HDR: 'ABC', 'SUB.A': 'QQ' } });
+      clean(r, 'class'); eq(s(r), 'ABCQQ000', 'a field mapped to a class is not a message of it');
+    } finally { run('window._fmtSpecByLabel = globalThis._fmtSpecByLabel = window.__sbl;'); }
+  }));
+
+  test('generate: a declared segment map writes the segments it marks, in order', () => withTree(() => {
+    sandbox.__segs = 'DEFINITION SEGS.\n  02 SEG0.\n    03 A PIC X(2).\n  02 SEG1.\n    03 B PIC X(3).\n  02 SEG2.\n    03 C PIC X(1).\nEND\n';
+    run('S.ddlTree.BASE.DDL.SEGS = __segs; _ddlTreeVersion++;');
+    const seg = value => ({ name: 'SEGS', label: 'SEGS', ddl_bindings: ['BASE/DDL/SEGS/SEGS'],
+      parse_spec_binary: [{ 'read-bitmap': { field: 'SEG-MAP', bits: 32, value } }, { 'read-segment-fields': 'SEG-MAP' }] });
+    let r = gen(seg('A0000000'), { values: { 'SEG0.A': 'AA', 'SEG1.B': 'BBB', 'SEG2.C': 'C' } });
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors'); deepEq(r.v.diffs, [], 'diffs');
+    eq(String.fromCharCode(...r.out), 'AAC', 'only the segments the map marks are not written, or not in order');
+    r = gen(seg('E0000000'), { values: { 'SEG0.A': 'AA', 'SEG1.B': 'BBB', 'SEG2.C': 'C' } });
+    deepEq(r.v.diffs, [], 'all diffs'); eq(String.fromCharCode(...r.out), 'AABBBC', 'a segment the map marks is left out');
+  }));
+
+  test('generate: "at" writes where it points, "peek" comes back, inline overrides and maps hold for one block', () => withTree(() => {
+    const fix = blocks => ({ name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: blocks });
+    const s = r => String.fromCharCode(...r.out);
+    const clean = (r, tag) => { deepEq(r.problems, [], `${tag}: problems`); deepEq(r.v.errors, [], `${tag}: errors`); deepEq(r.v.diffs, [], `${tag}: diffs`); };
+    let r = gen(fix([{ read: 'HDR' }, { read: { field: 'TAIL', at: 5 } }]), { values: { HDR: 'ABC', TAIL: 'ZZZZZ' } });
+    clean(r, 'at'); eq(s(r), 'ABC  ZZZZZ', 'a read "at" a byte is not written there');
+    r = gen(fix([{ read: 'HDR' }, { read: { field: 'TAIL', at: { field: 'HDR', offset: 1 } } }]), { values: { HDR: 'ABC', TAIL: 'ZZZZZ' } });
+    clean(r, 'anchor'); eq(s(r), 'ABC ZZZZZ', 'a read "at" a field anchor is not written there');
+    r = gen(fix([{ read: 'HDR' }, { read: { field: 'TAIL', at: 7, peek: true } }, { read: 'CNT' }]), { values: { HDR: 'ABC', TAIL: 'ZZZZZ', CNT: '1' } });
+    clean(r, 'peek');
+    eq(s(r).slice(0, 7), 'ABC0001', 'after a peek the next block does not come back to the cursor');
+    r = gen(fix([{ read: { field: 'CNT', overrides: { CNT: { type: 'uint32-be' } } } }]), { values: { CNT: '258' } });
+    clean(r, 'inline override'); deepEq(r.out, [0, 0, 1, 2], 'an inline override is not written in its type');
+  }));
+
   test('generate: a when takes the branch the written values take; an unsupported block is named, not guessed', () => withTree(() => {
     const item = { name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [
       { read: 'HDR' },
@@ -26284,12 +26371,13 @@ console.log('\ngenerate a message');
     eq(JSON.parse(run(`JSON.stringify(_genMessage(__item, { values: { HDR: 'ABC', YES: 'OK' } }).notes)`))[0], 'no tokens written', 'the missing tokens are not noted');
     r = gen(item, { values: { HDR: 'XYZ' } });
     eq(String.fromCharCode(...r.out), 'XYZXXX', 'else was not taken');
-    // A "de" entry replaces a DE's read with blocks of its own: stage 2.
+    // A "de" entry replaces a DE's read with blocks of its own: they write it (2026-11-01).
     const de = iso('ascii', 'binary');
     de.parse_spec_binary[2] = { 'read-bitmap-fields': { bitmap: 'PBIT-MAP', de: { '3': [{ 'read-fixed': { length: 6, as: 'X' } }] } } };
-    r = gen(de, { des: [3, 4] });
-    assert.ok(r.problems.some(p => /^DE 3: a "de" entry is not generated yet/.test(p)), 'a de entry is written as if it were not there');
-    eq(r.written['DE-3'], undefined, 'DE 3 was written through its de entry anyway');
+    r = gen(de, { des: [3, 4], values: { X: 'ABCDEF' } });
+    deepEq(r.problems, [], 'de entry problems'); deepEq(r.v.errors, [], 'de entry errors'); deepEq(r.v.diffs, [], 'de entry diffs');
+    eq(String.fromCharCode(...r.out.slice(12, 18)), 'ABCDEF', 'DE 3 is not written by its de entry');
+    eq(r.written['DE-3'], undefined, 'DE 3 was written by the DDL as well as by its de entry');
   }));
 
   test('generate: the formats — HEX, NETADRD that parses back, ASCII refuses non-printable bytes', () => withTree(() => {

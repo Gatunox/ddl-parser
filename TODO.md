@@ -1289,9 +1289,10 @@ encoding; the message lands in the Test input, parsed.
   `read-fixed` length from a field (v1.64.1.5); `read-until`,
   `read-length-value`, `read-to-end`, `read` with `type` / `length_prefix` /
   `from`–`until`, `read-fixed` `encoding`, `skip` by a field (v1.64.2.0); `when`
-  on bytes and against a field, `read-while` (v1.64.3.0). Batch 3, in progress:
-  `read-tlv`, `de` entries, `map`, `read-segment-fields`, a declared
-  `read-bitmap` (`bits` / `value`), `at`.
+  on bytes and against a field, `read-while` (v1.64.3.0); `read-tlv`, `de`
+  entries, `map`, `read-segment-fields`, a declared `read-bitmap`, `at` / `peek`
+  / inline `overrides` / inline `map` (v1.64.4.0). Not yet: a TLV tag read by
+  `blocks`; a segmented file whose SEG-MAP is read from the file.
 - **Open in the dialog:** `read-while` always writes one pass — no way to ask for
   more; the rows come from the defaults, so the fields of a `when` branch the
   defaults do not take (PSTM's USER-DATA.BUFFER under USER-FLG = X) are not rows,

@@ -22292,7 +22292,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.3.0';
+const APP_VERSION  = '1.64.4.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41138,8 +41138,8 @@ function _genOnce(item, o, flips) {
     item, resolvedBindings: (item.ddl_bindings || []).map(p => p ? getDDLFromPath(p) : null),
     fields: [], fieldsById: {}, out: [], cursor: 0, written: {}, hexOf: {},
     values: o.values || {}, des: o.des || null, bitmaps: {}, problems: [],
-    enc: _meSpecEncodingInfo(item).enc, stopped: false, lenIds: new Set(), notes: [], spans: {},
-    raw: o.raw || {}, tokenArea: o.tokenArea || null, tokWritten: [], unshown: {}, checks: [],
+    enc: o.enc || _meSpecEncodingInfo(item).enc, stopped: false, lenIds: new Set(), notes: [], spans: {},
+    depth: o.depth || 0, maps: {}, raw: { ...(o.raw || {}) }, tokenArea: o.tokenArea || null, tokWritten: [], unshown: {}, checks: [],
     flips, guardSeq: 0, guardMiss: null,
   };
   for (const t of [g.tokenArea, ...Object.values(g.raw)]) if (t?.problems) g.problems.push(...t.problems);
@@ -41156,7 +41156,22 @@ function _genOnce(item, o, flips) {
     .map(r => ({ off: +r.offset, bytes: r.type === 'literal' && r.encoding === 'hex'
       ? (recVal(r).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16))
       : _genText(r.type === 'numeric' ? '0'.repeat(Math.max(1, +r.length || 1)) : recVal(r), r.encoding === 'ebcdic' ? 'ebcdic' : 'ascii') }));
-  _genBlocks(_genSpec(item, o.format === 'ascii'), g);
+  const spec = _genSpec(item, o.format === 'ascii');
+  // A TLV read out of a field already written: the field's bytes are the TLVs,
+  // built before the walk reaches the field.
+  (function walk(x) {
+    if (Array.isArray(x)) return x.forEach(walk);
+    if (!x || typeof x !== 'object') return;
+    const t = x['read-tlv'];
+    if (t && typeof t === 'object' && t.field && t.len == null && !g.raw[t.field]
+      && !Object.prototype.hasOwnProperty.call(g.values, t.field)) {
+      const b = _genTlvBytes(t, g);
+      if (b) g.raw[t.field] = { bytes: b.bytes, tokens: [], problems: [], what: 'the TLVs',
+        padNote: n => `the TLVs leave ${n} byte(s) of the field — the parse reads them as more tags` };
+    }
+    Object.values(x).forEach(walk);
+  })(spec);
+  _genBlocks(spec, g);
   // What only the finished message can say: what follows a read-until, what comes after a read-to-end.
   for (const c of g.checks) c();
   // Tokens carried in a DE are checked on the way back like those at the end.
@@ -41193,9 +41208,36 @@ function _genBlocks(blocks, g) {
     if (g.stopped) return;
     if (!blk || typeof blk !== 'object') continue;
     const type = Object.keys(blk)[0], attrs = blk[type];
-    if (attrs && typeof attrs === 'object' && !Array.isArray(attrs) && attrs.at !== undefined) {
-      g.problems.push(`${type}: "at" is not generated yet — skipped`); continue;
+    const o = attrs && typeof attrs === 'object' && !Array.isArray(attrs) ? attrs : null;
+    // "at": the block writes where it points — past what is written, the gap
+    // filled; over bytes already written it would read them again, so it writes
+    // nothing. "peek" comes back after. Inline overrides and a read's inline map
+    // hold for this block only.
+    let back = null;
+    if (o?.at !== undefined) {
+      const pos = _genAt(o.at, g);
+      if (pos == null) continue;
+      if (pos < g.out.length) { g.notes.push(`${type}${o.field ? ' ' + o.field : ''}: "at" ${pos} reads bytes already written — nothing written for it`); continue; }
+      if (o.peek) back = g.cursor;
+      _genPut(g, pos, []);
     }
+    const prevOvr = g.blockOverrides, prevMaps = g.maps;
+    if (o?.overrides !== undefined) g.blockOverrides = _meOvNormalizeInline(o.overrides);
+    if (type === 'read' && o?.map) g.maps = { ...g.maps, [_canonFieldId(o.field || '')]: { def: String(o.map) } };
+    try { _genBlock(type, attrs, g); }
+    finally { g.blockOverrides = prevOvr; g.maps = prevMaps; if (back !== null) g.cursor = back; }
+  }
+}
+// Where an "at" points: a byte, or a field written before — its start or end, plus an offset.
+function _genAt(at, g) {
+  if (typeof at === 'number' && Number.isInteger(at) && at >= 0) return at;
+  const sp = at && typeof at === 'object' ? g.spans[at.field] : null;
+  if (!sp) { g.problems.push(`"at" ${JSON.stringify(at)}: ${at?.field ? `${at.field} was not written before it` : 'not a byte or a field anchor'} — skipped`); return null; }
+  const from = String(at.from || 'end').toLowerCase();
+  return (from === 'start' ? sp[0] : sp[0] + sp[1]) + (at.offset ?? 0);
+}
+function _genBlock(type, attrs, g) {
+  {
     switch (type) {
       case 'read':               _genRead(attrs, g); break;
       case 'read-ddl':           _genReadDDL(attrs, g); break;
@@ -41215,6 +41257,15 @@ function _genBlocks(blocks, g) {
       case 'read-bitmap-fields': _genBitmapFields(attrs, g); break;
       case 'when':               _genWhen(attrs, g); break;
       case 'read-while':         _genReadWhile(attrs, g); break;
+      case 'read-tlv':           _genReadTLV(attrs, g); break;
+      case 'read-segment-fields': _genSegmentFields(attrs, g); break;
+      // A declaration: the field it names, written later, carries that layout.
+      case 'map': {
+        const f = attrs?.field, d = attrs?.def ?? attrs?.to, c = attrs?.['class'];
+        if (!f || (d == null) === (c == null)) { g.problems.push('map: needs "field" and one of "def" or "class" — skipped'); break; }
+        g.maps[_canonFieldId(f)] = c != null ? { class: String(c) } : { def: String(d) };
+        break;
+      }
       case 'repeat':             _genRepeat(attrs, g); break;
       case 'stop':               g.stopped = true; break;
       // Tokens are optional, so a message without them is a whole message: a
@@ -41280,6 +41331,7 @@ function _genDefault(def, g) {
 // With no value given, the part of each recognizer that falls inside it wins.
 function _genField(def, pos, g, len) {
   const L = len ?? _meEffLen(def, g);
+  _genMapRaw(def, g);
   if (g.raw[def.id]) return _genRawField(def, pos, g, L);
   const given = Object.prototype.hasOwnProperty.call(g.values, def.id);
   // An ISO LLVAR / LLLVAR carries its own length: digits, then that many bytes,
@@ -41315,6 +41367,7 @@ function _genFramed(before, lenDef, data, g) {
   data.forEach((d, i) => {
     const declared = _meEffLen(d, g);
     const given = Object.prototype.hasOwnProperty.call(g.values, d.id);
+    _genMapRaw(d, g);
     const v = g.raw[d.id] ? { length: g.raw[d.id].bytes.length } : String(given ? g.values[d.id] : _genDefault(d, g));
     const last = i === data.length - 1;
     const w = last && g.raw[d.id] ? Math.min(declared, v.length) : last && _genKind(d, g) !== 'int' ? Math.min(declared, Math.max(_genKind(d, g) === 'hex' ? Math.ceil(v.length / 2) : v.length, 0)) : declared;
@@ -41339,22 +41392,26 @@ function _genFramed(before, lenDef, data, g) {
 function _genRawField(def, pos, g, L) {
   let data = g.raw[def.id].bytes;
   if (L && data.length > L) {
-    g.problems.push(`${def.id}: the Token buffer is ${data.length} bytes, the field holds ${L} — cut`);
+    g.problems.push(`${def.id}: ${g.raw[def.id].what || 'the Token buffer'} is ${data.length} bytes, the field holds ${L} — cut`);
     data = data.slice(0, L);
   }
   const pw = def.type === 'LLVAR' ? 2 : def.type === 'LLLVAR' ? 3 : 0;
   const pad = !pw && L > data.length ? new Array(L - data.length).fill(g.enc === 'ebcdic' ? 0x40 : 0x20) : [];
+  if (pad.length && g.raw[def.id].padNote) g.problems.push(`${def.id}: ${g.raw[def.id].padNote(pad.length)}`);
   const bytes = (pw ? _genText(String(data.length).padStart(pw, '0'), g.enc) : []).concat(data, pad);
   _genPut(g, pos, bytes);
   g.spans[def.id] = [pos, bytes.length];
   g.written[def.id] = data.concat(pad).map(x => String.fromCharCode(g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[x] ?? x) : x)).join('');
   g.hexOf[def.id] = _meBytesToHex(data.concat(pad));
+  // A mapped field's rows replace it, as they do in the parse.
+  const sub = g.raw[def.id].written;
+  if (sub) { delete g.written[def.id]; delete g.hexOf[def.id]; Object.assign(g.written, sub.written); Object.assign(g.hexOf, sub.hexOf); }
 }
 function _genDefs(g) { return _meCollectBindingDefs(g.resolvedBindings); }
 function _genRead(attrs, g) {
   const o = attrs && typeof attrs === 'object' ? attrs : {};
   if (o.from !== undefined || o.until !== undefined) return _genReadWindow(o, g);
-  const other = Object.keys(o).find(k => !['field', 'type', 'length_prefix'].includes(k));
+  const other = Object.keys(o).find(k => !['field', 'type', 'length_prefix', 'at', 'peek', 'overrides', 'map'].includes(k));
   if (other) { g.problems.push(`read ${o.field || ''}: "${other}" is not generated yet — skipped`); return; }
   const id = typeof attrs === 'string' ? attrs : o.field;
   const lp = o.length_prefix;
@@ -41490,11 +41547,13 @@ function _genReadLengthValue(attrs, g) {
 // takes everything after it as part of it.
 function _genReadToEnd(attrs, g) {
   const id = attrs?.as || 'TAIL';
-  if (attrs?.end_at !== undefined && String(attrs.end_at).toLowerCase() !== 'message') { g.problems.push(`read-to-end ${id}: "end_at": ${JSON.stringify(attrs.end_at)} is not generated yet — skipped`); return; }
+  // Inside a "de" entry the element ends where its frame says: nothing to check.
+  const how = attrs?.end_at === undefined ? 'message' : String(attrs.end_at).toLowerCase();
+  if (how !== 'message' && !(how === 'field' && g.inDe)) { g.problems.push(`read-to-end ${id}: "end_at": ${JSON.stringify(attrs.end_at)} applies only inside a "de" entry — skipped`); return; }
   const n = _genText(_genFreeValue(id, g), g.enc).length;
   _genField({ id, length: n, _dataType: 'PIC X' }, g.cursor, g, n);
   const end = g.cursor;
-  g.checks.push(() => { if (g.out.length > end) g.problems.push(`read-to-end ${id}: ${g.out.length - end} byte(s) are written after it — the parse reads them as part of it`); });
+  if (!g.inDe) g.checks.push(() => { if (g.out.length > end) g.problems.push(`read-to-end ${id}: ${g.out.length - end} byte(s) are written after it — the parse reads them as part of it`); });
 }
 // The body as many times as its count field says — the value given for that
 // field, else once — and the count field set to what was written, spelled the
@@ -41630,7 +41689,18 @@ function _genReadFixedRef(attrs, g) {
 // The DEs a bitmap carries: those asked for, else every DE the DDL maps.
 function _genDeMap(g) { return g._deMap || (g._deMap = _meBuildDEMap(g)); }
 function _genBitmap(attrs, g) {
-  if (!attrs?.field || attrs.length !== undefined || attrs.bits !== undefined || attrs.value !== undefined) {
+  // A declared map (bits / value) is on no wire: it says which segments follow.
+  if (attrs && (attrs.bits !== undefined || attrs.value !== undefined)) {
+    const bits = Number(attrs.bits) > 0 && Number(attrs.bits) % 4 === 0 ? Number(attrs.bits) : 32;
+    const label = attrs.field || attrs.label || 'SEG-MAP';
+    if (attrs.value == null || String(attrs.value).trim() === '') { g.problems.push(`${label}: a declared map with no "value" — skipped`); return; }
+    const r = _meParseSegMap(attrs.value, bits, attrs.bit0 === 'right' ? 'right' : 'left', attrs.encoding);
+    if (r.error) { g.problems.push(`${label}: declared map: ${r.error} — skipped`); return; }
+    g.segMaps = { ...(g.segMaps || {}), [label]: r.set };
+    g.segMap = r.set;
+    return;
+  }
+  if (!attrs?.field || attrs.length !== undefined) {
     g.problems.push('read-bitmap: only an ISO bitmap read from the message is generated yet — skipped'); return;
   }
   const deMap = _genDeMap(g);
@@ -41654,8 +41724,8 @@ function _genBitmapFields(attrs, g) {
   const deMap = _genDeMap(g);
   const varGroups = _meVlgLenMap(_meOvMergedItem(g));
   for (const de of des) {
-    if (_meDeEntryFor(attrs, de)) { g.problems.push(`DE ${de}: a "de" entry is not generated yet (stage 2) — its bytes are missing`); continue; }
-    const e = deMap[de];
+    const e = deMap[de], ovr = _meDeEntryFor(attrs, de);
+    if (ovr) { _genDeEntry(de, e, ovr, g); continue; }
     if (e.def) {
       if ((e.with || []).length) _genFramed([], e.def, e.with, g);
       else _genField(e.def, g.cursor, g);
@@ -41665,6 +41735,46 @@ function _genBitmapFields(attrs, g) {
     if (!lenId) { for (const k of e.kids) _genField(k, g.cursor, g); continue; }
     const li = Math.max(0, e.kids.findIndex(k => k.id === lenId));
     _genFramed(e.kids.slice(0, li), e.kids[li], e.kids.slice(li + 1), g);
+  }
+}
+// A "de" entry: its blocks write the DE, in the frame the parse reads it by — a length prefix, the group's own length
+// leaf, or a stated length — each set to what the blocks wrote.
+function _genDeEntry(de, e, ovr, g) {
+  const scopeDef = ovr.field ? _meFindDefById(ovr.field, g) : null;
+  const scope = scopeDef ? scopeDef.id : ovr.field || e?.groupId || e?.def?.id || null;
+  const blocks = Array.isArray(ovr.blocks) ? ovr.blocks : [];
+  if (!blocks.length) { g.problems.push(`DE ${de}: its "de" entry has no blocks — nothing written`); return; }
+  let frame = null, fixed = null;
+  if (ovr.length_prefix != null) {
+    const cfg = typeof ovr.length_prefix === 'object' ? ovr.length_prefix : { bytes: ovr.length_prefix };
+    if (!Number.isInteger(+cfg.bytes) || +cfg.bytes <= 0) { g.problems.push(`DE ${de}: "length_prefix" must be a whole number of bytes above 0 — skipped`); return; }
+    frame = { w: +cfg.bytes, type: cfg.type, digits: /^digits$/i.test(String(cfg.count || '')) };
+  } else if (scope) {
+    const kids = _meGroupLeaves(scope, g), direct = kids.filter(d => !d.id.slice(scope.length + 1).includes('.'));
+    const vlg = _meVlgLenMap(_meOvMergedItem(g));
+    const lenId = _meVlgHas(vlg, scope) ? (_meVlgGet(vlg, scope) || direct[0]?.id) : _meAutoLLVarLenId(direct, undefined, kids.length);
+    const lenDef = lenId ? direct.find(k => _meVlgIsLen(lenId, k.id)) : null;
+    if (lenDef) frame = { w: _meEffLen(lenDef, g), type: _meOvEffective(g, lenDef.id)?.type, id: lenDef.id };
+    else if (ovr.length != null) fixed = _genNum(ovr.length, g, `DE ${de}`);
+  } else if (ovr.length != null) fixed = _genNum(ovr.length, g, `DE ${de}`);
+  const at = g.cursor;
+  if (frame) _genPut(g, at, new Array(frame.w).fill(0));
+  // _deScope, as the parse names it: a TLV inside resolves its groups there first.
+  const start = g.cursor, prev = g._deScope;
+  g._deScope = scope; g.inDe = (g.inDe || 0) + 1;
+  try { _genBlocks(blocks, g); } finally { g._deScope = prev; g.inDe--; }
+  const n = g.cursor - start;
+  if (frame) {
+    const N = frame.digits ? n * 2 : n, b = _genLenBytes(N, frame.type, frame.w, g.enc);
+    if (!b) { g.problems.push(`DE ${de}: ${N} does not fit its ${frame.w}-byte length`); return; }
+    const end = g.cursor;
+    _genPut(g, at, b);
+    g.cursor = end;
+    if (frame.id) { g.written[frame.id] = String(N); g.hexOf[frame.id] = _meBytesToHex(b).replace(/\s/g, '').toUpperCase(); g.lenIds.add(frame.id); }
+  } else if (fixed != null) {
+    // A stated length: the parse goes on from its end, whatever the blocks read.
+    if (n > fixed) g.problems.push(`DE ${de}: its blocks wrote ${n} bytes, ${n - fixed} past its length of ${fixed}`);
+    else if (n < fixed) _genPut(g, g.cursor, _genText(' '.repeat(fixed - n), g.enc));
   }
 }
 // The leaf that frames a group DE, or null when the group is fixed — the rule
@@ -41749,6 +41859,143 @@ function _genReadWhile(attrs, g) {
       g.problems.push(`read-while: the bytes after its last pass, at byte ${pos}, match its guard ${JSON.stringify(attrs.while)} — the parse reads one more pass`);
     });
   }
+}
+// read-segment-fields: each top-level segment of the DDL in order, at the
+// cursor — a numbered one only when the declared map has it.
+function _genSegmentFields(attrs, g) {
+  const a = typeof attrs === 'string' ? { bitmap: attrs } : (attrs || {});
+  const set = (a.bitmap && g.segMaps?.[a.bitmap]) || g.segMap;
+  if (!set) { g.problems.push(`read-segment-fields: no declared map${a.bitmap ? ` "${a.bitmap}"` : ''} before it — skipped`); return; }
+  const idxs = a.binding !== undefined && a.binding !== 'ANY' ? [a.binding] : g.resolvedBindings.map((r, i) => r?.defs?.length ? i : -1).filter(i => i >= 0);
+  const defs = idxs.flatMap(i => g.resolvedBindings[i]?.defs || []);
+  const top = id => String(id).replace(/\[\d+\]/g, '').split('.')[0];
+  const segs = [...new Set(defs.map(d => top(d.id)))];
+  for (const seg of segs) {
+    const m = /(\d+)$/.exec(seg);
+    if (m && !set.has(parseInt(m[1], 10))) continue;
+    for (const d of defs) if (top(d.id) === seg && !d.isRedefines) _genField(d, g.cursor, g);
+  }
+}
+// ── map ──
+// A field a `map` names, with no value of its own: its bytes are the mapped
+// definition's fields, each at its width, or a whole message of the mapped class
+// — in this message's encoding — and its rows are theirs, prefixed as the parse
+// prefixes them.
+function _genMapRaw(def, g) {
+  if (g.raw[def.id] || Object.prototype.hasOwnProperty.call(g.values, def.id)) return;
+  const m = g.maps?.[_canonFieldId(def.id)];
+  if (!m) return;
+  const written = {}, hexOf = {};
+  let bytes = [];
+  if (m.def) {
+    const r = _meResolveMapDef(m.def, g);
+    if (!r) { g.problems.push(`map: no DDL definition named "${m.def}" — ${def.id} written as itself`); return; }
+    const pre = String(r.defName || m.def.split('/').pop() || 'MAP');
+    for (const d of r.defs || []) {
+      const id = `${pre}.${d.id}`, given = Object.prototype.hasOwnProperty.call(g.values, id);
+      const e = _genEncode(d, given ? g.values[id] : _genDefault(d, g), d.length || 0, g);
+      bytes = bytes.concat(e.bytes);
+      written[id] = e.shown; hexOf[id] = _meBytesToHex(e.bytes).replace(/\s/g, '').toUpperCase();
+    }
+  } else {
+    const r = _meMapClassResolve(m.class, g);
+    if (r.error || g.depth >= 4) { g.problems.push(`${r.error || `map: class "${m.class}" nests too deep`} — ${def.id} written as itself`); return; }
+    const bind = (r.spec.ddl_bindings || []).filter(Boolean)[0] || '';
+    const pre = String(bind.split('/')[3] || bind.split('/').pop() || r.spec.label || r.spec.name || 'MAP');
+    const vals = {};
+    for (const [k, v] of Object.entries(g.values)) if (k.startsWith(pre + '.')) vals[k.slice(pre.length + 1)] = v;
+    const sub = _genMessage(r.spec, { values: vals, enc: g.enc, depth: g.depth + 1, des: g.des });
+    g.problems.push(...sub.problems.map(p => `${def.id} (${m.class}): ${p}`));
+    bytes = sub.out;
+    for (const [k, v] of Object.entries(sub.written)) { written[`${pre}.${k}`] = v; if (sub.hexOf[k]) hexOf[`${pre}.${k}`] = sub.hexOf[k]; }
+  }
+  g.raw[def.id] = { bytes, tokens: [], problems: [], what: `the ${m.def ? `mapped ${m.def}` : `${m.class} message`}`, written: { written, hexOf } };
+}
+// ── TLV ──
+// The elements a read-tlv carries, each { id, tag, value, def }: its mapped tags
+// in order — each value under its group's value leaf — else, with no map, the
+// values given as <field>.<tag>.
+function _genTlvElems(attrs, g) {
+  const defs = _genDefs(g), outer = attrs.field || g._deScope || 'TLV', out = [];
+  if (attrs.tags && typeof attrs.tags === 'object') {
+    for (const [tag, m] of Object.entries(attrs.tags)) {
+      if (!m || typeof m !== 'object' || !m.field) { g.problems.push(`read-tlv tag ${tag}: only a tag mapped to a DDL group is generated yet — left out`); continue; }
+      if (Array.isArray(m.blocks)) { g.problems.push(`read-tlv tag ${tag}: a tag read by "blocks" is not generated yet — left out`); continue; }
+      const grp = _meResolveScopedDef(m.field, g);
+      if (!grp) { g.problems.push(`read-tlv tag ${tag}: "${m.field}" is not in the DDL — left out`); continue; }
+      const tl = _meTlvLeaf(grp.id, 'tag_field', attrs, m, defs), ll = _meTlvLeaf(grp.id, 'length_field', attrs, m, defs);
+      const vl = _meTlvLeaf(grp.id, 'value_field', attrs, m, defs) || _meTlvValueLeafByElimination(grp.id, defs, [tl?.id, ll?.id].filter(Boolean));
+      const id = vl ? vl.id : grp.id;
+      const v = Object.prototype.hasOwnProperty.call(g.values, id) ? String(g.values[id]) : vl ? String(_genDefault(vl, g)) : 'XXXX';
+      out.push({ id, tag, value: v, def: vl });
+    }
+  } else {
+    for (const [id, v] of Object.entries(g.values)) if (id.startsWith(outer + '.') && !defs.some(d => d.id === id))
+      out.push({ id, tag: id.slice(outer.length + 1), value: String(v), def: null });
+  }
+  return out;
+}
+// The TLVs' bytes: each tag, its length and its value — the tag as characters
+// (ASCII) or hex, the length as digits (ASCII), binary or BER — and the whole
+// spelled in hex characters under "ascii-hex". Null, said, when it cannot be.
+function _genTlvBytes(attrs, g) {
+  const ber = !!attrs.ber, ascii = _meTlvIsAscii(attrs.encoding);
+  const tl = attrs.tag_length || 0, ll = attrs.length_length || 0;
+  if (!ber && (!tl || !ll)) { g.problems.push('read-tlv: needs "ber": true, or both tag_length and length_length — skipped'); return null; }
+  const elems = _genTlvElems(attrs, g);
+  let bytes = [];
+  for (const e of elems) {
+    const tag = ascii ? _genText(e.tag, g.enc) : (String(e.tag).match(/../g) || []).map(h => parseInt(h, 16));
+    if ((!ber && tag.length !== tl) || tag.some(x => Number.isNaN(x))) { g.problems.push(`read-tlv tag ${e.tag}: not a ${ber ? 'hex' : tl + '-byte'} tag — left out`); continue; }
+    const val = e.def && _genKind(e.def, g) === 'hex'
+      ? (e.value.replace(/[^0-9A-Fa-f]/g, '').match(/../g) || []).map(h => parseInt(h, 16)) : _genText(e.value, g.enc);
+    const n = val.length;
+    let len;
+    if (ber) len = n < 0x80 ? [n] : n < 0x100 ? [0x81, n] : [0x82, n >> 8, n & 0xFF];
+    else if (ascii) len = _genText(String(n).padStart(ll, '0'), g.enc);
+    else { len = []; for (let i = 0, x = n; i < ll; i++, x = Math.floor(x / 256)) len.unshift(x % 256); }
+    if (len.length !== (ber ? len.length : ll) || (!ber && !ascii && n >= 256 ** ll)) { g.problems.push(`read-tlv tag ${e.tag}: a value of ${n} bytes does not fit its length — left out`); continue; }
+    bytes = bytes.concat(tag, len, val);
+    e.hex = _meBytesToHex(val).replace(/\s/g, '').toUpperCase();
+  }
+  if (attrs.encoding === 'ascii-hex') bytes = _genText(_meBytesToHex(bytes).replace(/\s/g, '').toUpperCase(), g.enc);
+  return { bytes, elems };
+}
+// read-tlv: out of a field (its bytes were built before the walk), or at the
+// cursor — after its length when it has one, else to the end of the message.
+function _genReadTLV(attrs, g) {
+  if (!attrs || typeof attrs !== 'object') { g.problems.push('read-tlv: no attributes — skipped'); return; }
+  const inField = attrs.field && attrs.len == null;
+  let tlv;
+  if (inField) {
+    if (!g.raw[attrs.field]?.bytes) return;   // a value was given for the field itself, or the TLVs could not be built
+    tlv = { elems: _genTlvElems(attrs, g) };
+  } else {
+    tlv = _genTlvBytes(attrs, g);
+    if (!tlv) return;
+    let pre = [];
+    if (attrs.len != null) {
+      const ls = _meTlvLenSpec(attrs, g);
+      if (ls?.error) { g.problems.push(`read-tlv: ${ls.error} — skipped`); return; }
+      if (String(ls.count || '').toLowerCase() === 'digits') { g.problems.push('read-tlv: a "len" counting digits is not generated yet — skipped'); return; }
+      pre = _genLenBytes(tlv.bytes.length, ls.type, ls.bytes, g.enc);
+      if (!pre) { g.problems.push(`read-tlv: ${tlv.bytes.length} bytes of TLVs do not fit its ${ls.bytes}-byte length — skipped`); return; }
+    }
+    const at = g.cursor;
+    _genPut(g, at, pre.concat(tlv.bytes));
+    if (attrs.len == null && !g.inDe) {
+      const end = g.cursor;
+      g.checks.push(() => { if (g.out.length > end) g.problems.push(`read-tlv: ${g.out.length - end} byte(s) are written after it — with no "len", the parse reads them as more tags`); });
+    }
+  }
+  // Each value is checked on the way back under the id the parse gives it; the
+  // field the TLVs fill is theirs, not a row of its own.
+  for (const e of tlv.elems) {
+    g.written[e.id] = e.value;
+    const val = e.def && _genKind(e.def, g) === 'hex' ? (e.value.replace(/[^0-9A-Fa-f]/g, '').match(/../g) || []).map(h => parseInt(h, 16)) : _genText(e.value, g.enc);
+    g.hexOf[e.id] = _meBytesToHex(val).replace(/\s/g, '').toUpperCase();
+  }
+  if (inField) { delete g.written[attrs.field]; delete g.hexOf[attrs.field]; }
 }
 // ── Tokens ──
 // Where a class carries its tokens, by its type code — the rule the parse finds
@@ -41946,12 +42193,26 @@ function _genModel(item) {
   const des = {};
   if (_genUsesBitmap(item)) {
     const deMap = _meBuildDEMap(g0), varGroups = _meVlgLenMap(_meOvMergedItem(g0));
+    const entries = new Set();
+    (function walk(x) {
+      if (Array.isArray(x)) return x.forEach(walk);
+      if (!x || typeof x !== 'object') return;
+      const b = x['read-bitmap-fields'];
+      if (b && typeof b === 'object' && b.de && typeof b.de === 'object') Object.keys(b.de).forEach(k => entries.add(+k));
+      Object.values(x).forEach(walk);
+    })(_genSpec(item, false));
     for (const n of Object.keys(deMap).map(Number).filter(n => n > 1).sort((x, y) => x - y)) {
       const e = deMap[n];
       let leaves;
       if (e.def) leaves = (e.with || []).length ? e.with : [e.def];
       else { const lenId = _genGroupLenId(e, varGroups); leaves = e.kids.filter(k => k.id !== lenId); }
       des[n] = { name: e.def ? e.def.id : e.groupId, leaves: leaves.map(d => _genLeaf(d, g0)) };
+      // A DE a "de" entry writes: its rows are what those blocks write.
+      if (entries.has(n)) {
+        const gn = _genMessage(item, { des: [n] });
+        des[n].leaves = Object.keys(gn.written).filter(id => !(id in g0.written) && !gn.lenIds.has(id)).map(id => defs.has(id)
+          ? _genLeaf(defs.get(id), gn, gn.written[id]) : { id, len: String(gn.written[id]).length, kind: 'text', pic: '', dflt: gn.written[id] });
+      }
       // An ISO class carries its tokens in DE 63 or 126: the field that holds
       // the DE's bytes can take the Token buffer.
       if ((n === 63 || n === 126) && _genTokenPlace(item) === 'de' && des[n].leaves.length) des[n].leaves[des[n].leaves.length - 1].tokSlot = true;

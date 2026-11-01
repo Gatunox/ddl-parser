@@ -2463,8 +2463,19 @@ class: its parse spec run in reverse, each block writing what it would read.
   most the DDL's OCCURS) and sets the count to what was written — each number
   spelled as the parse reads it back: by its `as`, a stated base, or the field's
   own type. A `when` with the old `is` / `not` is refused, as the parse refuses
-  it. Anything else — `read-tlv`, `map`, `de` entries, `at` — is named in the
-  dialog and skipped, never guessed.
+  it. `read-tlv` writes its tags — in a field, whose bytes and length become
+  theirs, or at the cursor, after its `len` or to the end — mapped to DDL groups,
+  as given (`<field>.<tag>`) or BER. A `de` entry's blocks write the DE in the
+  frame the parse reads it by: its `length_prefix`, the group's length leaf, or a
+  stated `length` filled to its end; its rows in the dialog are what those blocks
+  write. A field a `map` names is written as the mapped definition's fields, or as
+  a whole message of the mapped class in this message's encoding, its rows
+  prefixed as the parse prefixes them. A declared `read-bitmap` (`bits` /
+  `value`) puts nothing on the wire; `read-segment-fields` writes the segments
+  it marks, in order. `at` writes where it points (gap filled); over bytes
+  already written it writes nothing, noted; `peek` comes back after; inline
+  `overrides` and a `read`'s inline `map` hold for that block. A TLV tag read by
+  `blocks` is named and left out, never guessed.
 
 ## 13. Storage
 

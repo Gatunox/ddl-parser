@@ -22292,7 +22292,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.4.0';
+const APP_VERSION  = '1.64.4.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41845,7 +41845,11 @@ function _genGuardAt(g, guard, pos) {
 function _genReadWhile(attrs, g) {
   if (!attrs?.while || typeof attrs.while !== 'object' || !Array.isArray(attrs.body)) { g.problems.push('read-while: no "while" guard or no body — skipped'); return; }
   const max = attrs.max == null ? null : _genNum(attrs.max, g, 'read-while max');
-  const passes = (_genGuardChoice(g, attrs.while, true) ? 0 : 1);
+  // How many passes: the dialog's "read-while #n — passes" row, else one.
+  const key = `read-while #${(g.whileRows || (g.whileRows = [])).length + 1}`;
+  g.whileRows.push({ id: key, at: Object.keys({ ...g.unshown, ...g.written }).length });
+  const asked = parseInt(String(g.values[key] ?? '1').trim(), 10);
+  const passes = _genGuardChoice(g, attrs.while, true) ? 0 : Number.isInteger(asked) && asked >= 0 ? asked : 1;
   const n = max == null ? passes : Math.min(passes, max);
   for (let i = 0; i < n && !g.stopped; i++) {
     if (i) _genGuardChoice(g, attrs.while, true);
@@ -42183,13 +42187,20 @@ function _genLeaf(d, g, dflt) {
 }
 // What the class writes with no DE at all — its header — and, for a bitmap
 // class, every DE with the fields that carry its value.
-function _genModel(item) {
-  const g0 = _genMessage(item, { des: [] });
+// The rows are those of a message written with `values` — the dialog's own, so a
+// value that takes a `when` branch or raises a count brings that branch's or
+// those occurrences' fields in.
+function _genModel(item, values, ascii) {
+  const fmt = ascii ? 'ascii' : 'hex';
+  const g0 = _genMessage(item, { des: [], values: values || {}, format: fmt });
   const defs = new Map(_genDefs(g0).map(d => [d.id, d]));
   const all = { ...g0.unshown, ...g0.written };
   const head = Object.keys(all).filter(id => !g0.lenIds.has(id)).map(id => defs.has(id)
     ? _genLeaf(defs.get(id), g0, all[id])
     : { id, len: String(all[id]).length, kind: 'text', pic: '', dflt: all[id] });
+  // A read-while's passes: a row where the loop sits.
+  [...(g0.whileRows || [])].reverse().forEach(w => head.splice(Math.min(w.at, head.length), 0,
+    { id: w.id, len: 3, kind: 'passes', pic: 'passes', dflt: '1' }));
   const des = {};
   if (_genUsesBitmap(item)) {
     const deMap = _meBuildDEMap(g0), varGroups = _meVlgLenMap(_meOvMergedItem(g0));
@@ -42209,7 +42220,7 @@ function _genModel(item) {
       des[n] = { name: e.def ? e.def.id : e.groupId, leaves: leaves.map(d => _genLeaf(d, g0)) };
       // A DE a "de" entry writes: its rows are what those blocks write.
       if (entries.has(n)) {
-        const gn = _genMessage(item, { des: [n] });
+        const gn = _genMessage(item, { des: [n], values: values || {}, format: fmt });
         des[n].leaves = Object.keys(gn.written).filter(id => !(id in g0.written) && !gn.lenIds.has(id)).map(id => defs.has(id)
           ? _genLeaf(defs.get(id), gn, gn.written[id]) : { id, len: String(gn.written[id]).length, kind: 'text', pic: '', dflt: gn.written[id] });
       }
@@ -42230,6 +42241,7 @@ function _genModes(f) {
   const F = ['fixed', 'Fixed'], N = ['rnum', 'Random num'], A = ['ralpha', 'Random alpha'], H = ['rhex', 'Random hex'],
         I = ['inc', 'Increment'], D = ['date', 'Date / time'], P = ['pan', 'PAN'], B = ['blank', 'Blanks'];
   const T = f.tokSlot ? [['tokens', 'Token buffer']] : [];
+  if (f.kind === 'passes') return [F];
   if (f.kind === 'int') return [F, N, I];
   if (f.kind === 'hex') return [F, H, ...T];
   if (f.kind === 'num') return [F, N, I, D, P];
@@ -42304,7 +42316,9 @@ function openGenerate() {
   const key = item.label || item.name;
   const c = _genChoice[key] || {};
   const kept = (P.genTokens || {})[key] || {};
-  _genSt = { key, model: _genModel(item), des: (c.des || []).slice(), rows: JSON.parse(JSON.stringify(c.rows || {})), fmt: c.fmt || 'hex',
+  const rows0 = JSON.parse(JSON.stringify(c.rows || {}));
+  _genSt = { key, rows: rows0, deciders: _genDeciders(item) };
+  _genSt = { ..._genSt, model: _genModel(item, _genProbeValues(), c.fmt === 'ascii'), des: (c.des || []).slice(), rows: rows0, fmt: c.fmt || 'hex',
     place: _genTokenPlace(item), toks: (kept.list || []).filter(t => t && t.id).map(t => ({ id: t.id, values: { ...(t.values || {}) }, ...(t.raw != null ? { raw: t.raw } : {}) })),
     tokModel: {}, tokOpen: true, fldOpen: true, tokDraft: null };
   const binds = (item.ddl_bindings || []).filter(Boolean);
@@ -42316,7 +42330,7 @@ function openGenerate() {
   // dozens of rows, and a button or a result below them was off-screen.
   document.getElementById('genBody').innerHTML =
     `<div class="fw-note">Class <b>${esc(key)}</b> · DDL ${ddl}<br>Each field gets a value by its type and length — or random, an increment, a date, a PAN, hex; lengths are computed. The message is then parsed back with the class to check it.</div>`
-    + `<div class="gen-acts"><select id="genFmt" class="me-sel">
+    + `<div class="gen-acts"><select id="genFmt" class="me-sel" onchange="genRowChange(this)">
         ${[['hex', 'HEX'], ['ascii', 'ASCII'], ['netadrd', 'NETADRD']].map(([v, l]) => `<option value="${v}"${_genSt.fmt === v ? ' selected' : ''}>${l}</option>`).join('')}
       </select><span class="fw-note" style="padding:0">in ${_meSpecEncodingInfo(item).enc.toUpperCase()}, the class's encoding</span>
       <span style="flex:1"></span><button class="btn btn-primary" onclick="genRun()">Generate</button></div>`
@@ -42367,7 +42381,7 @@ function _genCell(f) {
     case 'tokens': return _genSt.toks.length
       ? `<span class="fw-note" style="padding:0">the Token buffer — ${_genSt.toks.map(t => esc(t.id)).join(', ')}</span>`
       : `<span class="gen-bad">the Token buffer is empty — add tokens below</span>`;
-    default: return `<input class="me-inp gen-val" data-id="${id(f)}" value="${esc(st.val ?? f.dflt)}" spellcheck="false">`;
+    default: return `<input class="me-inp gen-val" data-id="${id(f)}" value="${esc(st.val ?? f.dflt)}" spellcheck="false" onchange="genRowChange(this)">`;
   }
 }
 function _genRowHtml({ de, f }) {
@@ -42394,6 +42408,37 @@ function genFldToggle() {
   document.getElementById('genFldBody').hidden = !_genSt.fldOpen;
   document.getElementById('genFldArr').textContent = _genSt.fldOpen ? '−' : '+';
 }
+// The fields whose value shapes the message — a "when" asks about them, a
+// "repeat" counts by them, a length is taken from them — and the read-while
+// passes: changing one redraws the rows.
+function _genDeciders(item) {
+  const out = new Set(), ref = r => { const n = r && typeof r === 'object' ? r.field : r; if (typeof n === 'string') out.add(n.replace(/:[a-z]$/i, '')); };
+  (function walk(x) {
+    if (Array.isArray(x)) return x.forEach(walk);
+    if (!x || typeof x !== 'object') return;
+    if (x.when?.field) out.add(x.when.field);
+    if (x.repeat) ref(x.repeat.count);
+    if (x['read-fixed'] && typeof x['read-fixed'].length !== 'number') ref(x['read-fixed'].length);
+    if (x.skip && typeof x.skip === 'object') ref(x.skip.length);
+    Object.values(x).forEach(walk);
+  })([item.parse_spec_binary, item.parse_spec_ascii]);
+  return out;
+}
+// The values the rows hold now, as typed — the random kinds left to their defaults.
+function _genProbeValues() {
+  const v = {};
+  for (const [id, st] of Object.entries(_genSt.rows)) if ((!st.mode || st.mode === 'fixed') && st.val != null) v[id] = st.val;
+  return v;
+}
+// The format picked counts too: an ASCII class may read with a spec of its own.
+function genRowChange(el) {
+  const id = el?.dataset?.id || el?.dataset?.modeId;
+  if (el?.id !== 'genFmt' && (!id || !(_genSt.deciders.has(id) || id.startsWith('read-while #')))) return;
+  _genKeep();
+  _genSt.fmt = document.getElementById('genFmt')?.value || _genSt.fmt;
+  _genSt.model = _genModel(_meCurItem(), _genProbeValues(), _genSt.fmt === 'ascii');
+  _genRows(); genFind(); _genTokRender();
+}
 function genMode(sel) {
   _genKeep();
   const st = _genSt.rows[sel.dataset.modeId] || (_genSt.rows[sel.dataset.modeId] = {});
@@ -42401,6 +42446,7 @@ function genMode(sel) {
   if (st.mode !== sel.value) delete st.val;
   st.mode = sel.value;
   _genRows(); _genTokRender();
+  genRowChange(sel);
 }
 // The DEs not added yet that match what is typed: the number, or the name.
 function _genMatches() {

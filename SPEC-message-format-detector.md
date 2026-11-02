@@ -2389,6 +2389,11 @@ class: its parse spec run in reverse, each block writing what it would read.
   bitmap adds a **finder**: type a DE number or a name, Enter or a click adds that
   DE's rows, ✕ leaves it out; the exact number comes first. DE numbers are the
   Field Map's. A DE above 64 adds the secondary bitmap and bit 1.
+  The rows are those the dialog's own values write, in the chosen format: a
+  `read-while` is a row of its own (`read-while #1`, its passes, Fixed only);
+  changing a value that shapes the message — a `when`'s field, a `repeat`'s count,
+  a length taken from a field, a `read-while`'s passes — or the format rebuilds
+  the rows, so a `when` branch taken and a `repeat`'s later occurrences show.
 - **Values**: each row shows the field's type (`X(4)`, `N 6`, `LL N 19`) and
   description, and says where its value comes from:
   - **Fixed** — as typed; the default is the type at its full width, digits
@@ -2451,9 +2456,9 @@ class: its parse spec run in reverse, each block writing what it would read.
   (a number, a field or `sizeof`), `read-until` (the bytes that follow must start
   with a sentinel, or end the message under `eom`), `read-length-value` (the length
   in its encoding and width, digits packed two to a byte under `count: digits`),
-  `read-to-end` (said when anything is written after it), `read-while` (one pass,
-  none when its bytes cannot match the guard; said when what follows still
-  matches it), `when` on bytes (`bytes` / `not-bytes`: `then`, unless the bytes
+  `read-to-end` (said when anything is written after it), `read-while` (the
+  passes its row asks for, one by default, none when its bytes cannot match the
+  guard; said when what follows still matches it), `when` on bytes (`bytes` / `not-bytes`: `then`, unless the bytes
   written cannot answer it so — then `else`, the message written again),
   `read-bitmap` (binary or hex), `read-bitmap-fields`, `when` on a field (against
   a value, a list, another field written before or a `sizeof`), `repeat`,

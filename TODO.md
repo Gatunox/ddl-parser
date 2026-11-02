@@ -1293,10 +1293,10 @@ encoding; the message lands in the Test input, parsed.
   entries, `map`, `read-segment-fields`, a declared `read-bitmap`, `at` / `peek`
   / inline `overrides` / inline `map` (v1.64.4.0). Not yet: a TLV tag read by
   `blocks`; a segmented file whose SEG-MAP is read from the file.
-- **Open in the dialog:** `read-while` always writes one pass — no way to ask for
-  more; the rows come from the defaults, so the fields of a `when` branch the
-  defaults do not take (PSTM's USER-DATA.BUFFER under USER-FLG = X) are not rows,
-  and a `repeat` count raised above 1 adds no rows for the later occurrences.
+- **The dialog follows its values — done in v1.64.4.1:** a `read-while` has a
+  passes row; a value that shapes the message (a `when` field, a `repeat` count,
+  a length from a field, the passes) or the format rebuilds the rows, so a
+  `when` branch taken and a `repeat`'s later occurrences show.
 - **Stage 2:** broken-on-purpose messages: LLVAR over its max, bit on with no
   data / data with bit off, truncated, a letter in a numeric field.
 - **Stage 3:** business rules steer the values (a 0800 that must carry DE-70

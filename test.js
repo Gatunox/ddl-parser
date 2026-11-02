@@ -26359,6 +26359,38 @@ console.log('\ngenerate a message');
     clean(r, 'inline override'); deepEq(r.out, [0, 0, 1, 2], 'an inline override is not written in its type');
   }));
 
+  test('generate: the dialog rows follow its values — a when branch, a repeat count, read-while passes', () => withTree(() => {
+    // Asked 2026-11-01: PSTM's USER-DATA.BUFFER was never a row (USER-FLG defaults to X),
+    // a count of 3 left SRVCS[02] and [03] without rows, and read-while wrote one pass only.
+    sandbox.__svc = 'DEFINITION SVC.\n  02 FLG PIC X.\n  02 NUM PIC 9(2).\n  02 SRVCS OCCURS 3 TIMES.\n    03 CDE PIC X(2).\nEND\n';
+    run('S.ddlTree.BASE.DDL.SVC = __svc; _ddlTreeVersion++;');
+    sandbox.__item = { name: 'SVC', label: 'SVC', ddl_bindings: ['BASE/DDL/SVC/SVC'], parse_spec_binary: [
+      { 'read-ddl': { until: 'NUM' } }, { repeat: { count: 'NUM', body: [{ read: 'SRVCS' }] } },
+      { when: { field: 'FLG', equal: '1', then: [{ 'read-fixed': { length: 3, as: 'BUF' } }] } }] };
+    const rows = v => { sandbox.__v = v; return JSON.parse(run('JSON.stringify(_genModel(__item, __v).head.map(f => f.id))')); };
+    assert.ok(!rows({}).includes('BUF'), 'a branch the defaults do not take has rows');
+    assert.ok(rows({ FLG: '1' }).includes('BUF'), 'a branch the dialog values take has no rows');
+    deepEq(rows({ NUM: '3' }).filter(id => /SRVCS/.test(id)), ['SRVCS[01].CDE', 'SRVCS[02].CDE', 'SRVCS[03].CDE'], 'a raised count does not bring the later occurrences in as rows');
+    deepEq([...JSON.parse(run('JSON.stringify([..._genDeciders(__item)])'))].sort(), ['FLG', 'NUM'], 'the fields that shape the message are not known');
+    // read-while: its passes are a row, in place, and the passes asked are written.
+    sandbox.__item = { name: 'SVC', label: 'SVC', ddl_bindings: ['BASE/DDL/SVC/SVC'], parse_spec_binary: [{ read: 'FLG' },
+      { 'read-while': { while: { type: 'regex', length: 2, pattern: '^[A-Z]{2}$' }, body: [{ read: 'SRVCS' }] } }, { 'read-fixed': { length: 2, as: 'END' } }] };
+    deepEq(rows({}), ['FLG', 'read-while #1', 'SRVCS[01].CDE', 'END'], 'the read-while passes are not a row where the loop sits');
+    const r = gen(sandbox.__item, { values: { FLG: 'F', 'read-while #1': '3', 'SRVCS[01].CDE': 'AA', 'SRVCS[02].CDE': 'BB', 'SRVCS[03].CDE': 'CC', END: '12' } });
+    deepEq(r.problems, [], 'passes problems'); deepEq(r.v.errors, [], 'passes errors'); deepEq(r.v.diffs, [], 'passes diffs');
+    eq(String.fromCharCode(...r.out), 'FAABBCC12', 'the passes asked for are not written');
+    eq(run(`JSON.stringify(_genModes({ kind: 'passes' }))`), JSON.stringify([['fixed', 'Fixed']]), 'the passes row offers more than a number');
+    // Wired: a value typed, or a mode picked, redraws the rows when it shapes the message.
+    assert.ok(/onchange="genRowChange\(this\)"/.test(psFnSource('_genCell')), 'a typed value does not redraw the rows');
+    assert.ok(/genRowChange\(sel\)/.test(psFnSource('genMode')), 'a mode picked does not redraw the rows');
+    assert.ok(/'genRowChange'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename genRowChange');
+    // The rows are the picked format's: PSTM reads its services with read-while only in ASCII.
+    sandbox.__item = { ...sandbox.__item, parse_spec_ascii: sandbox.__item.parse_spec_binary, parse_spec_binary: [{ read: 'FLG' }] };
+    deepEq(JSON.parse(run('JSON.stringify(_genModel(__item, {}, false).head.map(f => f.id))')), ['FLG'], 'the HEX rows are not the binary spec\'s');
+    assert.ok(JSON.parse(run('JSON.stringify(_genModel(__item, {}, true).head.map(f => f.id))')).includes('read-while #1'), 'the ASCII rows are not the ASCII spec\'s');
+    assert.ok(/id="genFmt" class="me-sel" onchange="genRowChange\(this\)"/.test(psFnSource('openGenerate')), 'picking a format does not redraw the rows');
+  }));
+
   test('generate: a when takes the branch the written values take; an unsupported block is named, not guessed', () => withTree(() => {
     const item = { name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: [
       { read: 'HDR' },

@@ -15856,6 +15856,30 @@ test('[REGRESSION] a recognizer edit re-renders only the recognizer list', () =>
   assert.ok(/const _mePad = html =>/.test(src), '_mePad is not shared');
 });
 
+test('[REGRESSION] folding a Class Editor section rebuilds only that section', () => {
+  // _meSectionToggle called _meRenderRight: every open section went back to its
+  // loading skeleton and refilled a frame at a time, the Parse Spec editor was
+  // torn down and remounted, the Overrides table rebuilt — so the whole pane
+  // shifted and flashed on every fold, in every section. Reported 2026-11-08.
+  const body = psFnSource('_meSectionToggle');
+  assert.ok(body, '_meSectionToggle is gone');
+  assert.ok((body.match(/_meRenderRight\(\)/g) || []).length === 1,
+    'a fold still rebuilds the whole pane');
+  assert.ok(/if \(!card \|\| !d\) \{ _meRenderRight\(\); return; \}/.test(body),
+    'only a section that is not on screen may fall back to the full render');
+  assert.ok(/card\.outerHTML = _meSectHtml\(d, open\)/.test(body), 'the folded section is not rebuilt on its own');
+  assert.ok(/if \(sec === 'parse_spec'\) _mePsUnmountCM\(\)/.test(body),
+    'closing the Parse Spec leaves its editor attached to a detached node');
+  // The full render and the fold build a card from the same markup, or the two
+  // drift apart and a folded section comes back looking different.
+  assert.ok(/html \+= _meSectHtml\(d, secs\[d\.key\]\)/.test(psFnSource('_meRenderRight')),
+    'the full render builds its cards some other way');
+  // A section closed while an earlier full render is still filling must not be
+  // filled behind the user's back.
+  assert.ok(/if \(!secs\[st\.key\]\) \{ step\(\); return; \}/.test(psFnSource('_meRenderRight')),
+    'a pending stage fills a section that was closed meanwhile');
+});
+
 test('a field is the same box wherever it is in the app', () => {
   // --bg-input was a ground of its OWN, and in dark it was the page colour — so
   // a main-page field was a well cut through its panel while a Class Editor
@@ -16470,7 +16494,7 @@ test('[REGRESSION] a discarded block is classified, and marked where it is writt
                       'ps-inert-badge', 'badgeAlways', 'me-ps-inert-badge'])
     assert.ok(!src.includes(gone), `the removed badge left ${gone} behind`);
   // sect() goes back to the signature it had before the badge needed a slot.
-  assert.ok(/const sect   = \(key, title, fill, actions, badge\) => \{/.test(src),
+  assert.ok(/const sect = \(key, title, fill, actions, badge\) => \(\{ key, title, fill, actions, badge \}\)/.test(src),
     'sect has no always-visible slot any more');
   // The Overrides badge is untouched by the removal.
   assert.ok(/'', _meOvBadgeHtml\(\)\)/.test(src), 'Overrides keeps its own badge');
@@ -17470,7 +17494,7 @@ test('the selection badge sits beside the section title, like the type badge', (
   // it sits; what has to hold is that it is in the header and not in the bar.
   assert.ok(/const _meOvBadgeHtml = \(\) =>[\s\S]{0,400}id="me-fm-cnt"/.test(APP_SRC),
     'the badge markup is gone');
-  assert.ok(/<span class="pt-badge">\$\{open && badge/.test(APP_SRC),
+  assert.ok(/<span class="pt-badge">\$\{open && d\.badge/.test(APP_SRC),
     'the section header has no slot beside its title for a badge');
   assert.ok(/sect\('overrides'[\s\S]{0,200}_meOvBadgeHtml\(\)/.test(APP_SRC),
     'the Overrides section does not pass its badge to the header');

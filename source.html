@@ -22292,7 +22292,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.4.1';
+const APP_VERSION  = '1.64.4.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25281,7 +25281,20 @@ function _meSectionToggle(sec) {
       localStorage.setItem(_ME_SECT_KEY, JSON.stringify(all));
     } catch(e) {}
   }
-  _meRenderRight();
+  // Only this section is rebuilt. A full _meRenderRight refilled every open
+  // section behind its loading skeleton — the page shifted and flashed on every
+  // fold. Reported 2026-11-08.
+  const item = _meCurItem();
+  const card = document.querySelector(`#me-tab-body .me-section[data-sect="${sec}"]`);
+  const d    = item && _meSectDefs(item, _meRenderSeq).find(x => x.key === sec);
+  if (!card || !d) { _meRenderRight(); return; }
+  if (sec === 'parse_spec') _mePsUnmountCM();
+  if (sec === 'overrides')  _meFmVirt = null;
+  card.outerHTML = _meSectHtml(d, open);
+  if (!open) return;
+  d.fill(document.getElementById('me-sect-body-' + sec), () => {
+    if (sec === 'overrides' && typeof _meFmReapplyState === 'function') _meFmReapplyState();
+  });
 }
 
 function _meSelectItem(section, idx) {
@@ -25738,6 +25751,57 @@ function _meRenderBindings() {
   _meBindDeferredRefresh();
 }
 
+// One section card. `actions` are the section's own controls, shown in its
+// header the way Data Input shows Audit / Parse / Clear rather than loose in the
+// body. They stop the click that would collapse the section.
+function _meSectHtml(d, open) {
+  const loading = d.key === 'overrides' ? _ME_SECT_LOADING_DET : _ME_SECT_LOADING;
+  return `<div class="me-section" data-sect="${d.key}">
+  <div class="me-section-hdr" onclick="_meSectionToggle('${d.key}')">
+    <span>${d.title}</span>
+    <span class="pt-badge">${open && d.badge ? d.badge : ''}</span>
+    <span class="me-section-actions" onclick="event.stopPropagation()">${open && d.actions ? d.actions : ''}</span>
+    <span class="me-section-arr">${open ? '−' : '+'}</span>
+  </div>
+  <div class="me-section-body ${_meSectSurface(d.key)}${open ? ' open' : ''}" id="me-sect-body-${d.key}">${open ? loading : ''}</div>
+</div>`;
+}
+
+// The sections of the selected item, in page order: key, title, how its body
+// fills (fill(el, done)), its header actions and badge.
+function _meSectDefs(item, seq) {
+  const isMsg = _meState.section === 'msg';
+  const pad = _mePad;
+  const syncFill = build => (el, done) => { el.innerHTML = pad(build()); done(); };
+  const sect = (key, title, fill, actions, badge) => ({ key, title, fill, actions, badge });
+  const defs = [
+    sect('identity',    'Identity',    syncFill(() => _meHtmlId(item))),
+    sect('recognizers', 'Recognizers', (el, done) => {
+      el.innerHTML = pad(_meHtmlRecs(item));
+      _meHelpInitSplit('rec');   // the reference beside the list
+      done();
+    }, _meRecActionsHtml()),
+  ];
+  if (isMsg) defs.push(
+    // Bindings before the spec: the spec's blocks name fields the bindings
+    // resolve, so the order down the page is the order the engine reads them in.
+    sect('ddl_bindings', 'DDL Bindings', syncFill(() => _meHtmlDDLBindings(item)),
+         _meBindActionsHtml()),
+    sect('parse_spec',   'Parse Spec',  (el, done) => {
+      el.innerHTML = _meHtmlParseSpec(item);
+      _mePsMountCM(item);
+      done();
+    }, _mePsActionsHtml()),
+    // Rules before Overrides: it is a handful of rows and Overrides is a
+    // table of hundreds, so below it the section was a scroll away from
+    // everything else on the page.
+    sect('rules',        'Business Rules', syncFill(() => _meHtmlRules(item)),
+         `<button class="btn" onclick="_meRuleAdd()" title="Add a business rule">+ Add Rule</button>`),
+    sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done),
+         '', _meOvBadgeHtml()));
+  return defs;
+}
+
 function _meRenderRight() {
   const seq = ++_meRenderSeq;
   // Capture the Field Map scroll position before the rebuild so DE/VLG/type
@@ -25759,51 +25823,12 @@ function _meRenderRight() {
     body.innerHTML = '<div class="me-no-sel">Select an item from the sidebar.</div>';
     return;
   }
-  const isMsg  = _meState.section === 'msg';
   const secs   = _meState.sections;
   const stages = [];   // open sections, filled one per frame in order
-  // `actions` are the section's own controls, shown in its header the way
-  // Data Input shows Audit / Parse / Clear rather than loose in the body.
-  // They stop the click that would collapse the section.
-  const sect   = (key, title, fill, actions, badge) => {
-    const open = secs[key];
-    if (open) stages.push({ key, fill });
-    const loading = key === 'overrides' ? _ME_SECT_LOADING_DET : _ME_SECT_LOADING;
-    return `<div class="me-section">
-  <div class="me-section-hdr" onclick="_meSectionToggle('${key}')">
-    <span>${title}</span>
-    <span class="pt-badge">${open && badge ? badge : ''}</span>
-    <span class="me-section-actions" onclick="event.stopPropagation()">${open && actions ? actions : ''}</span>
-    <span class="me-section-arr">${open ? '−' : '+'}</span>
-  </div>
-  <div class="me-section-body ${_meSectSurface(key)}${open ? ' open' : ''}" id="me-sect-body-${key}">${open ? loading : ''}</div>
-</div>`;
-  };
-  const pad = _mePad;
-  const syncFill = build => (el, done) => { el.innerHTML = pad(build()); done(); };
-  let html = sect('identity',    'Identity',    syncFill(() => _meHtmlId(item)))
-           + sect('recognizers', 'Recognizers', (el, done) => {
-               el.innerHTML = pad(_meHtmlRecs(item));
-               _meHelpInitSplit('rec');   // the reference beside the list
-               done();
-             }, _meRecActionsHtml());
-  if (isMsg) {
-    // Bindings before the spec: the spec's blocks name fields the bindings
-    // resolve, so the order down the page is the order the engine reads them in.
-    html += sect('ddl_bindings', 'DDL Bindings', syncFill(() => _meHtmlDDLBindings(item)),
-                 _meBindActionsHtml())
-          + sect('parse_spec',   'Parse Spec',  (el, done) => {
-              el.innerHTML = _meHtmlParseSpec(item);
-              _mePsMountCM(item);
-              done();
-            }, _mePsActionsHtml())
-          // Rules before Overrides: it is a handful of rows and Overrides is a
-          // table of hundreds, so below it the section was a scroll away from
-          // everything else on the page.
-          + sect('rules',        'Business Rules', syncFill(() => _meHtmlRules(item)),
-                 `<button class="btn" onclick="_meRuleAdd()" title="Add a business rule">+ Add Rule</button>`)
-          + sect('overrides',    'Overrides',    (el, done) => _meFillOverridesSection(el, item, seq, done),
-                 '', _meOvBadgeHtml());
+  let html = '';
+  for (const d of _meSectDefs(item, seq)) {
+    if (secs[d.key]) stages.push(d);
+    html += _meSectHtml(d, secs[d.key]);
   }
   body.innerHTML = html;
 
@@ -25819,6 +25844,8 @@ function _meRenderRight() {
     if (seq !== _meRenderSeq) return;
     const st = stages.shift();
     if (!st) { finish(); return; }
+    // Closed by a toggle while the stages before it were filling.
+    if (!secs[st.key]) { step(); return; }
     const el = document.getElementById('me-sect-body-' + st.key);
     if (!el) { _meDefer(step); return; }
     st.fill(el, () => _meDefer(step));

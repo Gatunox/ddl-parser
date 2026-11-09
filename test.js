@@ -193,6 +193,8 @@ _t.meItemNotes         = _meItemNotes;
 _t.meResetLayout       = _meResetLayout;
 _t.meSectFor           = _meSectFor;
 _t.meSectionToggle     = _meSectionToggle;
+_t.meToggleListSect    = _meToggleListSect;
+_t.meListSectSaved     = _meListSectSaved;
 _t.meFmSelWithKind     = _meFmSelWithKind;
 _t.meOvKinds           = _ME_OV_KINDS;
 _t.meOvSet             = _meOvSet;
@@ -332,7 +334,7 @@ const {
   meContentLooksWrong, meFieldOvrAnnotation, meHtmlOverrides, meOvlChips,
   meOvlChipParts, meOvKindsOf, meOvKinds, meOvSet, meFmSelWithKind,
   meSpecGaps,
-  meResetLayout, meSectFor, meSectionToggle,
+  meResetLayout, meSectFor, meSectionToggle, meToggleListSect, meListSectSaved,
   meFmExpandTargets, meFmDeCellHtml, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
@@ -20364,6 +20366,54 @@ test('toggling writes the choice through to storage', () => {
   });
 });
 
+test('[REGRESSION] Messages, Data and Files fold to their header, like Test', () => {
+  // The three lists grow without end; someone working on one class needs the
+  // others put away. Requested 2026-11-08.
+  for (const k of ['msgs', 'other', 'files'])
+    assert.ok(new RegExp(`id="me-sect-${k}-toggle" onclick="_meToggleListSect\\('${k}'\\)"`).test(html),
+      `the ${k} header has no fold button`);
+  assert.ok(/\.me-sidebar-sect\.collapsed \.me-item-list\{display:none;\}/.test(html),
+    'a folded section still shows its list');
+  // Restored on open through the same setter the button uses.
+  assert.ok(/_meSetListSectCollapsed\(k, !!_meListSectSaved\(\)\[k\]\)/.test(APP_SRC),
+    'the folds are not restored when the editor opens');
+  withSectStore(store => {
+    const cls = new Set();
+    const sect = { classList: { toggle: (c, on) => on ? cls.add(c) : cls.delete(c), contains: c => cls.has(c) } };
+    const saved = elStubs['me-sect-msgs'];
+    elStubs['me-sect-msgs'] = sect;
+    try {
+      meToggleListSect('msgs');
+      assert.ok(cls.has('collapsed'), 'the button does not fold the section');
+      deepEq(meListSectSaved(), { msgs: true }, 'the fold is not stored');
+      meToggleListSect('msgs');
+      assert.ok(!cls.has('collapsed'), 'a second press does not unfold it');
+      deepEq(meListSectSaved(), {}, 'an unfolded section stays in storage');
+    } finally { if (saved) elStubs['me-sect-msgs'] = saved; else delete elStubs['me-sect-msgs']; }
+  });
+});
+
+test('the Test bar is a title bar, its palette in both themes', () => {
+  // Requested 2026-11-08: Test is where the work happens and must stand out. A
+  // title bar is painted amber with its buttons in the bar's own colour — a step
+  // lighter, a step darker under the pointer — and each theme has its own
+  // values: the dark theme's #3F3522 hover read badly on the light one.
+  assert.ok(/<div class="me-sub-hdr tbar">\s*<span class="me-sidebar-title">Test<\/span>/.test(html),
+    'the Test bar is not a title bar');
+  const theme = t => (html.match(new RegExp('\\[data-theme="' + t + '"\\] \\{[\\s\\S]*?\\n\\}')) || [''])[0];
+  const want = {
+    dark:  { bg: '#E69802', fg: '#1F1400', 'btn-bg': '#F0AB2C', 'btn-hover-bg': '#C98500' },
+    light: { bg: '#F7C25A', fg: '#3D2700', 'btn-bg': '#FBD58A', 'btn-hover-bg': '#EDAA2E' },
+  };
+  for (const t in want) for (const k in want[t])
+    assert.ok(theme(t).includes(`--tbar-${k}:${want[t][k]};`), `${t}: --tbar-${k} is not ${want[t][k]}`);
+  assert.ok(!/#3F3522/i.test(html), 'the old hover colour is still used');
+  assert.ok(/\.tbar \.btn:not\(\.btn-primary\):not\(:disabled\):hover,[^{]*\{\s*background:var\(--tbar-btn-hover-bg\)/.test(html),
+    'the title bar buttons do not hover in the bar\'s colour');
+  assert.ok(/\.tbar \.btn:not\(\.btn-primary\),\.tbar \.panel-toggle[^{]*\{\s*background:var\(--tbar-btn-bg\)/.test(html),
+    'the title bar buttons are not in the bar\'s colour');
+});
+
 test('the defaults object is never mutated', () => {
   // _meSelectItem builds the defaults inline, but the non-msg branch passes
   // _meState.sections itself — spreading rather than assigning keeps a stored
@@ -23830,7 +23880,7 @@ test('the Test input is the Data Input panel, not a lesser copy of it', () => {
 
   // Same bar, under the header, as on the main panel — not crammed into it.
   const sub = html.slice(html.indexOf('id="me-test-sub"'), html.indexOf('id="me-test-out"'));
-  const iHdr = sub.indexOf('class="me-sub-hdr"');
+  const iHdr = sub.indexOf('class="me-sub-hdr');
   const iCfg = sub.indexOf('id="me-test-cfg"');
   const iCm  = sub.indexOf('id="me-test-input"');
   assert.ok(iHdr >= 0 && iCfg > iHdr && iCm > iCfg,

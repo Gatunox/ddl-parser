@@ -2520,6 +2520,7 @@ class: its parse spec run in reverse, each block writing what it would read.
 | `up_me_fm_split_h` | Overrides table / reference split height |
 | `up_me_fm_help_w` | Column-reference width |
 | `up_me_test_collapsed` | Class Editor Test subpanel collapsed to its header |
+| `up_me_list_collapsed` | Class Editor sidebar sections (Messages / Data / Files) folded to their header — `{ msgs, other, files }`, a section never folded absent |
 | `up_cc_…` | Per-editor column-chooser state (prefix) |
 
 Only `up_format_specs` is exported (§13.2); the rest is local view state.

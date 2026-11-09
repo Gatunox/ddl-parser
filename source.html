@@ -258,6 +258,13 @@
      33 values instead of every badge being hand-written once per theme. */
   --h-purple-bg:#1a0f35; --h-purple-fg:#8b5cf6; --h-purple-bd:#8b5cf6;
   --h-amber-bg:#1a1000;  --h-amber-fg:#f59e0b;  --h-amber-bd:#f59e0b;
+  /* Title bar — a bar painted to catch the eye (the Class Editor's Test). Its
+     buttons are the bar's own colour a step lighter, a step darker under the
+     pointer, the way the grey bars' buttons sit on theirs. */
+  --tbar-bg:#E69802;  --tbar-fg:#1F1400;
+  --tbar-btn-bg:#F0AB2C;  --tbar-btn-bd:#B37600;
+  --tbar-btn-hover-bg:#C98500;  --tbar-btn-hover-bd:#8A5B00;
+  --tbar-off-bd:#C98A12;  --tbar-off-fg:#8A5E10;
   --h-green-bg:#052016;  --h-green-fg:#10b981;  --h-green-bd:#10b981;
   --h-cyan-bg:#051a20;   --h-cyan-fg:#06b6d4;   --h-cyan-bd:#06b6d4;
   --h-rose-bg:#200a10;   --h-rose-fg:#f43f5e;   --h-rose-bd:#f43f5e;
@@ -359,6 +366,13 @@
   --flash-error-bg: #a93226; --flash-error-fg: #ffffff;
   --h-purple-bg:#ede9ff; --h-purple-fg:#6d28d9; --h-purple-bd:#8b5cf6;
   --h-amber-bg:#fef3c7;  --h-amber-fg:#92400e;  --h-amber-bd:#f59e0b;
+  /* Title bar — a bar painted to catch the eye (the Class Editor's Test). Its
+     buttons are the bar's own colour a step lighter, a step darker under the
+     pointer, the way the grey bars' buttons sit on theirs. */
+  --tbar-bg:#F7C25A;  --tbar-fg:#3D2700;
+  --tbar-btn-bg:#FBD58A;  --tbar-btn-bd:#C98A12;
+  --tbar-btn-hover-bg:#EDAA2E;  --tbar-btn-hover-bd:#A86F00;
+  --tbar-off-bd:#D9A440;  --tbar-off-fg:#9A7230;
   --h-green-bg:#d1fae5;  --h-green-fg:#065f46;  --h-green-bd:#10b981;
   --h-cyan-bg:#cffafe;   --h-cyan-fg:#0e7490;   --h-cyan-bd:#06b6d4;
   --h-rose-bg:#ffe4e6;   --h-rose-fg:#be123c;   --h-rose-bd:#f43f5e;
@@ -3171,6 +3185,10 @@ td.c-err  { color: var(--accent2); }
    lot; the two flex overrides that used to referee them are gone with the
    competition they refereed. */
 #me-sect-files{flex:0 1 auto;max-height:50%;}
+/* A section folds to its header, like Test, so someone working on one class can
+   put the other lists away. Requested 2026-11-08. */
+.me-sidebar-sect.collapsed .me-item-list{display:none;}
+.me-sidebar-hdr .btn{margin-left:auto;}
 /* A strip of controls under a panel header — which is what .panel-bar is. It
    carried its own copy of that rule, which is why it was the one strip in the
    app that never picked up the shared treatment. Its own bits: it is pinned, it
@@ -3479,6 +3497,16 @@ input.me-inp:focus{border-color:var(--accent);}
 .me-sub-hdr{display:flex;align-items:center;gap:var(--sp-2);padding:2px 8px;height:var(--panel-header-h);box-sizing:border-box;
   background:var(--surface-header);flex-shrink:0;border-bottom: var(--bw) solid var(--border);}
 .me-sub-hdr .me-sidebar-title{color:var(--text);flex:none;}
+/* A title bar: painted to catch the eye, its buttons in the bar's colour.
+   Test carries it — the workspace, the one subpanel in the sidebar that should
+   stand out. Requested 2026-11-08. ▶ Run keeps its own primary blue. */
+.tbar{background:var(--tbar-bg);}
+.tbar .me-sidebar-title,.tbar .me-test-summary{color:var(--tbar-fg);}
+.tbar .btn:not(.btn-primary),.tbar .panel-toggle,.tbar .panel-toggle.is-collapsed{
+  background:var(--tbar-btn-bg);border-color:var(--tbar-btn-bd);color:var(--tbar-fg);}
+.tbar .btn:not(.btn-primary):not(:disabled):hover,.tbar .panel-toggle:hover,.tbar .panel-toggle.is-collapsed:hover{
+  background:var(--tbar-btn-hover-bg);border-color:var(--tbar-btn-hover-bd);color:var(--tbar-fg);box-shadow:none;}
+.tbar .btn:not(.btn-primary):disabled{background:transparent;border-color:var(--tbar-off-bd);color:var(--tbar-off-fg);}
 .me-test-summary{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}
 .me-test-win{font-size:9px;font-weight:700;color:#3fb950;border: var(--bw) solid #3fb950;border-radius:var(--r-sm);padding:0 4px;flex-shrink:0;}
 /* No padding: the editor reaches the panel's border, the way the Parse Spec and
@@ -22292,7 +22320,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.4.2';
+const APP_VERSION  = '1.64.5.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25092,6 +25120,7 @@ function _meInitSplitter() {
   } catch(e) {}
   _meSetSidebarCollapsed(sbC);
   _meSetTestSubCollapsed(tsC);
+  for (const k of ['msgs', 'other', 'files']) _meSetListSectCollapsed(k, !!_meListSectSaved()[k]);
   if (_meSplitterWired) return;
   _meSplitterWired = true;
   let drag = null;   // { cfg, el, gut, start, startSize }
@@ -36355,6 +36384,24 @@ function _meSetTestSubCollapsed(collapsed) {
   _meSetToggleBtn('me-test-toggle', collapsed);
   try { localStorage.setItem('up_me_test_collapsed', collapsed ? '1' : '0'); } catch(e) {}
 }
+// Messages / Data / Files each fold to their header. Stored as one object, a
+// section never folded being absent.
+function _meListSectSaved() {
+  try { return JSON.parse(localStorage.getItem('up_me_list_collapsed') || '{}') || {}; } catch(e) { return {}; }
+}
+function _meSetListSectCollapsed(key, collapsed) {
+  const sect = document.getElementById('me-sect-' + key);
+  if (!sect) return;
+  sect.classList.toggle('collapsed', collapsed);
+  _meSetToggleBtn('me-sect-' + key + '-toggle', collapsed);
+  const all = _meListSectSaved();
+  if (collapsed) all[key] = true; else delete all[key];
+  try { localStorage.setItem('up_me_list_collapsed', JSON.stringify(all)); } catch(e) {}
+}
+function _meToggleListSect(key) {
+  const sect = document.getElementById('me-sect-' + key);
+  if (sect) _meSetListSectCollapsed(key, !sect.classList.contains('collapsed'));
+}
 function _meToggleTestSub() {
   const sub = document.getElementById('me-test-sub');
   if (sub) _meSetTestSubCollapsed(!sub.classList.contains('collapsed'));
@@ -44187,6 +44234,7 @@ function _meSave() {
             <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title">Messages</span>
               <button class="btn" onclick="_meAddMsg()">+ New</button>
+              <button class="panel-toggle" id="me-sect-msgs-toggle" onclick="_meToggleListSect('msgs')" title="Hide panel">−</button>
             </div>
             <div class="me-item-list" id="me-msg-list"></div>
           </div>
@@ -44194,6 +44242,7 @@ function _meSave() {
             <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title" title="Structures that are neither a whole message nor a file — recognized from bytes like a message, but tried after every message">Data</span>
               <button class="btn" onclick="_meAddOther()">+ New</button>
+              <button class="panel-toggle" id="me-sect-other-toggle" onclick="_meToggleListSect('other')" title="Hide panel">−</button>
             </div>
             <div class="me-item-list" id="me-other-list"></div>
           </div>
@@ -44201,6 +44250,7 @@ function _meSave() {
             <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title">Files</span>
               <button class="btn" onclick="_meAddFile()">+ New</button>
+              <button class="panel-toggle" id="me-sect-files-toggle" onclick="_meToggleListSect('files')" title="Hide panel">−</button>
             </div>
             <div class="me-item-list" id="me-file-list"></div>
           </div>
@@ -44213,7 +44263,7 @@ function _meSave() {
              edges of the screen. -->
         <div class="resizer-v" id="me-test-resizer" title="Drag to resize the Test panel"></div>
         <div class="me-test-sub" id="me-test-sub">
-          <div class="me-sub-hdr">
+          <div class="me-sub-hdr tbar">
             <span class="me-sidebar-title">Test</span>
             <span class="me-test-summary" id="me-test-summary"></span>
             <button class="btn btn-primary" onclick="_meRunTest()">&#x25B6; Run</button>

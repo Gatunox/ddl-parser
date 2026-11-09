@@ -265,6 +265,7 @@
   --tbar-btn-bg:#F0AB2C;  --tbar-btn-bd:#B37600;
   --tbar-btn-hover-bg:#C98500;  --tbar-btn-hover-bd:#8A5B00;
   --tbar-off-bd:#C98A12;  --tbar-off-fg:#8A5E10;
+  --tbar-ok-bg:#1A7F37;  --tbar-bad-bg:#C62828;  --tbar-pill-fg:#FFFFFF;
   --h-green-bg:#052016;  --h-green-fg:#10b981;  --h-green-bd:#10b981;
   --h-cyan-bg:#051a20;   --h-cyan-fg:#06b6d4;   --h-cyan-bd:#06b6d4;
   --h-rose-bg:#200a10;   --h-rose-fg:#f43f5e;   --h-rose-bd:#f43f5e;
@@ -373,6 +374,7 @@
   --tbar-btn-bg:#FBD58A;  --tbar-btn-bd:#C98A12;
   --tbar-btn-hover-bg:#EDAA2E;  --tbar-btn-hover-bd:#A86F00;
   --tbar-off-bd:#D9A440;  --tbar-off-fg:#9A7230;
+  --tbar-ok-bg:#1A7F37;  --tbar-bad-bg:#CF222E;  --tbar-pill-fg:#FFFFFF;
   --h-green-bg:#d1fae5;  --h-green-fg:#065f46;  --h-green-bd:#10b981;
   --h-cyan-bg:#cffafe;   --h-cyan-fg:#0e7490;   --h-cyan-bd:#06b6d4;
   --h-rose-bg:#ffe4e6;   --h-rose-fg:#be123c;   --h-rose-bd:#f43f5e;
@@ -3507,6 +3509,9 @@ input.me-inp:focus{border-color:var(--accent);}
 .tbar .btn:not(.btn-primary):not(:disabled):hover,.tbar .panel-toggle:hover,.tbar .panel-toggle.is-collapsed:hover{
   background:var(--tbar-btn-hover-bg);border-color:var(--tbar-btn-hover-bd);color:var(--tbar-fg);box-shadow:none;}
 .tbar .btn:not(.btn-primary):disabled{background:transparent;border-color:var(--tbar-off-bd);color:var(--tbar-off-fg);}
+/* The Test verdict on the bar: a pill, green or red — coloured text on amber does not read. */
+.me-test-verdict{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;padding:0 6px;border-radius:var(--r-sm);font-weight:600;color:var(--tbar-pill-fg);background:var(--tbar-bad-bg);}
+.me-test-verdict.ok{background:var(--tbar-ok-bg);}
 .me-test-summary{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}
 .me-test-win{font-size:9px;font-weight:700;color:#3fb950;border: var(--bw) solid #3fb950;border-radius:var(--r-sm);padding:0 4px;flex-shrink:0;}
 /* No padding: the editor reaches the panel's border, the way the Parse Spec and
@@ -22320,7 +22325,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.5.7';
+const APP_VERSION  = '1.64.5.9';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -42786,11 +42791,17 @@ function _meTestClear() {
   const out = document.getElementById('me-test-out');
   if (out) out.innerHTML = '';
   const summ = document.getElementById('me-test-summary');
-  if (summ) { summ.textContent = ''; summ.style.color = ''; }
+  if (summ) summ.textContent = '';
   if (_meState) { _meState.recTest = null; _meState.testResults = null; }
   document.querySelectorAll('.me-rec-dot').forEach(d => { d.className = 'me-rec-dot'; d.title = ''; });
   _meRenderSidebar();        // drop the verdict dots with everything else
   _meTestUpdateFmtState();   // input cleared → re-enable format toggles
+}
+
+// The Test verdict, a pill on the title bar: green when it passes, red otherwise.
+function _meTestVerdict(summ, text, ok) {
+  if (!summ) return;
+  summ.innerHTML = `<span class="me-test-verdict${ok ? ' ok' : ''}">${esc(text)}</span>`;
 }
 
 // First seg-map block of an entity's parse spec (either variant, including
@@ -42994,7 +43005,7 @@ function _meRunTest(opts) {
     bytes      = rawBytes;                  // recognizers + the input dump run on RAW bytes
   } catch(e) {
     out.innerHTML = `<div class="me-test-err">Input error: ${e.message}</div>`;
-    if (summ) { summ.textContent = '⚠ input error'; summ.style.color='#f85149'; }
+    _meTestVerdict(summ, '⚠ input error', false);
     return;
   }
 
@@ -43052,7 +43063,7 @@ function _meRunTest(opts) {
 
   if (!item) {
     out.innerHTML = parts.join('');
-    if (summ) { summ.textContent = 'No match'; summ.style.color = '#f85149'; }
+    _meTestVerdict(summ, 'No match', false);
     const _jb = document.getElementById('me-test-journal'); if (_jb) _jb.disabled = true;
     _meTestJournalIn = null;
     return;
@@ -43157,9 +43168,8 @@ function _meRunTest(opts) {
   if (summ) {
     // Same vocabulary as the Detection list: Pass / Fail for the recognizer
     // outcome, Wins when this entity is the one detection would pick.
-    summ.textContent = !recPassed ? 'Fail'
-      : `${detWinner ? 'Wins' : 'Pass'} · ${fieldCount} field(s)`;
-    summ.style.color = recPassed ? '#3fb950' : '#f85149';
+    _meTestVerdict(summ, !recPassed ? 'Fail'
+      : `${detWinner ? `${item.label || item.name || '?'} wins` : 'Pass'} · ${fieldCount} field(s)`, recPassed);
   }
 }
 

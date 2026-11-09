@@ -2032,7 +2032,11 @@ without walking back to the main panel.
   that never happened. Then *what does that entity make of the bytes?* — the
   winner **becomes the selection**, so the fields shown are the fields the app
   would really have produced. No match means nothing is selected. Clicking a row
-  overrides the pick and the re-run leaves it alone.
+  overrides the pick and the re-run leaves it alone. The verdict also sits on
+  the Test title bar as a pill — green for a pass, naming the class when it
+  wins (`ISO 8583 BIC wins · 8 field(s)`), red for Fail, No match or an input
+  error — its colours tokens of each theme (`--tbar-ok-bg`, `--tbar-bad-bg`,
+  `--tbar-pill-fg`).
 - **Results** — Input, Detection, Recognition, Parse Spec and Tokens. The field
   table has named, resizable columns (FIELD · SIZE · OFFSET · VALUE · HEX);
   clicking a header lights the column, and hovering or clicking a row lights that

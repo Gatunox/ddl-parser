@@ -10,6 +10,7 @@ changes, corrections and decisions along the way, and why each was made.
 
 | Date | Change |
 |------|--------|
+| 2026-11-09 | **The Test verdict is a pill that names the winner.** "Wins · 213 field(s)" in green on the amber title bar barely read, and did not say which class won. The verdict is now a pill — green for a pass, red for Fail / No match / an input error — from tokens in each theme, and a win names the class before "wins". |
 | 2026-11-09 | **Generate: a segment map read from the file.** A segmented file whose SEG-MAP (or FIID-SEG-MAP) lives in SEG0 was skipped. The map is now a hex row, every segment the DDL declares by default; its bits pick the segments written, and it is written where the field sits, over the bytes it redefines (§11.7). |
 | 2026-11-08 | **The Test bar is a title bar.** Test is where a parse gets solved, and its bar looked like every list header around it. A title bar is painted amber, its buttons in the bar's own colour — a step lighter, a step darker under the pointer — with its own values in each theme (`--tbar-*`): `#E69802` in dark, `#F7C25A` in light, where full amber was too loud. ▶ Run keeps its primary blue; a disabled button is unfilled. The class (`.tbar`) is there for any other bar that has to stand out. |
 | 2026-11-08 | **Messages, Data and Files fold like Test.** The three lists grow without end, and someone working on one class had no way to put the others away. Each header gains a − / + beside + New that folds the list to its header; the folds are kept with the settings (`up_me_list_collapsed`). |

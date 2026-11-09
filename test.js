@@ -20414,6 +20414,25 @@ test('the Test bar is a title bar, its palette in both themes', () => {
     'the title bar buttons are not in the bar\'s colour');
 });
 
+test('[REGRESSION] the Test verdict is a pill on the title bar, never coloured text', () => {
+  // Reported 2026-11-09: "Wins · 213 field(s)" in #3fb950 on the amber bar
+  // barely read. The verdict is a pill, green or red, from tokens in each theme.
+  assert.ok(!/summ\.style\.color/.test(APP_SRC), 'the verdict is still coloured text');
+  const theme = t => (html.match(new RegExp('\\[data-theme="' + t + '"\\] \\{[\\s\\S]*?\\n\\}')) || [''])[0];
+  for (const t of ['dark', 'light']) for (const k of ['ok-bg', 'bad-bg', 'pill-fg'])
+    assert.ok(new RegExp(`--tbar-${k}:#[0-9A-F]{6};`, 'i').test(theme(t)), `${t}: no --tbar-${k}`);
+  assert.ok(/\.me-test-verdict\{[^}]*color:var\(--tbar-pill-fg\);background:var\(--tbar-bad-bg\)/.test(html), 'the red pill');
+  assert.ok(/\.me-test-verdict\.ok\{background:var\(--tbar-ok-bg\);\}/.test(html), 'the green pill');
+  const summ = { innerHTML: '' };
+  vm.runInContext('_meTestVerdict', sandbox)(summ, 'Wins · 3 field(s)', true);
+  eq(summ.innerHTML, '<span class="me-test-verdict ok">Wins · 3 field(s)</span>', 'a pass is not a green pill');
+  vm.runInContext('_meTestVerdict', sandbox)(summ, 'No match', false);
+  eq(summ.innerHTML, '<span class="me-test-verdict">No match</span>', 'a fail is not a red pill');
+  // Asked 2026-11-09: the pill names the class that wins, before "wins".
+  assert.ok(/\$\{detWinner \? `\$\{item\.label \|\| item\.name \|\| '\?'\} wins` : 'Pass'\}/.test(APP_SRC),
+    'the winning class is not named in the pill');
+});
+
 test('the defaults object is never mutated', () => {
   // _meSelectItem builds the defaults inline, but the non-msg branch passes
   // _meState.sections itself — spreading rather than assigning keeps a stored

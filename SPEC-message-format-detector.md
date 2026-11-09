@@ -2477,7 +2477,11 @@ class: its parse spec run in reverse, each block writing what it would read.
   a whole message of the mapped class in this message's encoding, its rows
   prefixed as the parse prefixes them. A declared `read-bitmap` (`bits` /
   `value`) puts nothing on the wire; `read-segment-fields` writes the segments
-  it marks, in order. `at` writes where it points (gap filled); over bytes
+  it marks, in order. A map read from the file (a `read-bitmap` naming a SEG0
+  field, no `bits` / `value`) is a hex row, every segment the DDL declares by
+  default, written in SEG0 where the field sits — over the bytes it redefines,
+  when it is a REDEFINES; changing it redraws the rows, and an all-zero map is
+  flagged. `at` writes where it points (gap filled); over bytes
   already written it writes nothing, noted; `peek` comes back after; inline
   `overrides` and a `read`'s inline `map` hold for that block. A TLV tag read by
   `blocks` is named and left out, never guessed.

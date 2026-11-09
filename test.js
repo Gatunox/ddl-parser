@@ -26418,6 +26418,38 @@ console.log('\ngenerate a message');
     deepEq(r.v.diffs, [], 'all diffs'); eq(String.fromCharCode(...r.out), 'AABBBC', 'a segment the map marks is left out');
   }));
 
+  test('[REGRESSION] generate: a segment map read from the file is written in SEG0, its bits pick the segments', () => withTree(() => {
+    sandbox.__fmap = SEGMAP_FILE_DDL;
+    run('S.ddlTree.BASE.DDL.FMAP = __fmap; _ddlTreeVersion++;');
+    const item = field => ({ name: 'FMAP', label: 'FMAP', kind: 'file', ddl_bindings: ['BASE/DDL/FMAP/FILEMAP'],
+      parse_spec_binary: [{ 'read-bitmap': { field } }, { 'read-segment-fields': field }] });
+    const vals = { 'SEG0.B1': 'AAAA', SEG1: 'CCC', SEG5: 'PPPPP', SEG11: 'XX' };
+    const hex = r => r.out.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    // SEG-MAP REDEFINES SEG-MAP-R: the map takes LW / RW's bytes; every segment by default.
+    let r = gen(item('SEG-MAP'), { values: vals });
+    deepEq(r.problems, [], 'problems'); deepEq(r.v.errors, [], 'errors'); deepEq(r.v.diffs, [], 'diffs');
+    eq(hex(r).slice(4, 12), 'C4100000', 'the map is not every segment of the DDL, at SEG-MAP\'s offset');
+    eq(String.fromCharCode(...r.out.slice(10)), 'AAAACCCPPPPPXX', 'the segments are not all written');
+    // A map typed leaves the segments it does not mark out.
+    r = gen(item('SEG-MAP'), { values: { ...vals, 'SEG0.SEG-MAP': 'C0100000' } });
+    deepEq(r.v.errors, [], 'typed: errors'); deepEq(r.v.diffs, [], 'typed: diffs');
+    eq(String.fromCharCode(...r.out.slice(10)), 'AAAACCCXX', 'SEG5 is written though the map leaves it out');
+    // FIID-SEG-MAP is no REDEFINES: written in its own place.
+    r = gen(item('FIID-SEG-MAP'), { values: { ...vals, 'SEG0.FIID-SEG-MAP': 'C0000000' } });
+    deepEq(r.v.errors, [], 'FIID: errors'); deepEq(r.v.diffs, [], 'FIID: diffs');
+    eq(hex(r).slice(12, 20), 'C0000000', 'FIID-SEG-MAP is not written at its offset');
+    eq(String.fromCharCode(...r.out.slice(10)), 'AAAACCC', 'FIID: the segments are not those the map marks');
+    // The map is a row, hex, and a value that shapes the rows.
+    sandbox.__item = item('SEG-MAP'); sandbox.__v = { 'SEG0.SEG-MAP': 'C0000000' };
+    const m = JSON.parse(run('JSON.stringify(_genModel(__item, __v))'));
+    eq(m.segMapId, 'SEG0.SEG-MAP', 'the map is not the row that shapes the message');
+    const row = m.head.find(f => f.id === 'SEG0.SEG-MAP');
+    eq(row?.kind, 'hex', 'the map row does not take hex');
+    eq(m.head.some(f => f.id.startsWith('SEG11')), false, 'a segment the map leaves out still has rows');
+    r = gen(item('SEG-MAP'), { values: { ...vals, 'SEG0.SEG-MAP': '00000000' } });
+    eq(r.problems.some(p => p.includes('all zeros')), true, 'an all-zero map is not flagged');
+  }));
+
   test('generate: "at" writes where it points, "peek" comes back, inline overrides and maps hold for one block', () => withTree(() => {
     const fix = blocks => ({ name: 'FIX', label: 'FIX', ddl_bindings: ['BASE/DDL/FIX/FIXREC'], parse_spec_binary: blocks });
     const s = r => String.fromCharCode(...r.out);

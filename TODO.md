@@ -1291,8 +1291,9 @@ encoding; the message lands in the Test input, parsed.
   `from`–`until`, `read-fixed` `encoding`, `skip` by a field (v1.64.2.0); `when`
   on bytes and against a field, `read-while` (v1.64.3.0); `read-tlv`, `de`
   entries, `map`, `read-segment-fields`, a declared `read-bitmap`, `at` / `peek`
-  / inline `overrides` / inline `map` (v1.64.4.0). Not yet: a TLV tag read by
-  `blocks`; a segmented file whose SEG-MAP is read from the file.
+  / inline `overrides` / inline `map` (v1.64.4.0). A segmented file whose
+  SEG-MAP is read from the file (v1.64.5.7). Not yet: a TLV tag read by
+  `blocks`.
 - **The dialog follows its values — done in v1.64.4.1:** a `read-while` has a
   passes row; a value that shapes the message (a `when` field, a `repeat` count,
   a length from a field, the passes) or the format rebuilds the rows, so a

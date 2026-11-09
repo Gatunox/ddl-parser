@@ -22320,7 +22320,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.5.6';
+const APP_VERSION  = '1.64.5.7';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -41231,6 +41231,7 @@ function _genOnce(item, o, flips) {
       ? (recVal(r).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16))
       : _genText(r.type === 'numeric' ? '0'.repeat(Math.max(1, +r.length || 1)) : recVal(r), r.encoding === 'ebcdic' ? 'ebcdic' : 'ascii') }));
   const spec = _genSpec(item, o.format === 'ascii');
+  g.segSpec = spec.some(b => b && typeof b === 'object' && 'read-segment-fields' in b);
   // A TLV read out of a field already written: the field's bytes are the TLVs,
   // built before the walk reaches the field.
   (function walk(x) {
@@ -41361,6 +41362,7 @@ function _genBlock(type, attrs, g) {
 // What kind of bytes a field holds: 'int' (a binary number), 'hex' (hex-char:
 // the value is the bytes' hex spelling), 'num' (digits) or 'text'.
 function _genKind(def, g) {
+  if (g?.segFile?.def.id === def.id) return 'hex';
   const t = String(def._genType || _meOvEffective(g, def.id)?.type || '').trim();
   if (t) return /^(uint|binary\s*\d|byte$|word$|dword$)/i.test(t) ? 'int' : /^hex-char$/i.test(t) ? 'hex' : 'text';
   const dt = String(def._dataType || '');
@@ -41396,6 +41398,7 @@ function _genEncode(def, value, len, g) {
 // The default by type and length: digits are zeros, text is X — the whole
 // declared width, a variable field included.
 function _genDefault(def, g) {
+  if (g.segFile?.def.id === def.id) return g.segFile.dflt;
   const kind = _genKind(def, g), len = _meEffLen(def, g) || 0;
   if (kind === 'int') return '0';
   if (kind === 'hex') return '00'.repeat(len);
@@ -41774,6 +41777,7 @@ function _genBitmap(attrs, g) {
     g.segMap = r.set;
     return;
   }
+  if (attrs?.field && attrs.length === undefined && g.segSpec) return _genSegMapFromFile(attrs, g);
   if (!attrs?.field || attrs.length !== undefined) {
     g.problems.push('read-bitmap: only an ISO bitmap read from the message is generated yet — skipped'); return;
   }
@@ -41940,6 +41944,26 @@ function _genReadWhile(attrs, g) {
 }
 // read-segment-fields: each top-level segment of the DDL in order, at the
 // cursor — a numbered one only when the declared map has it.
+// A segment map read from the file: a field of SEG0 (Base24 SEG-MAP, or
+// FIID-SEG-MAP) whose bits say which segments follow. Its row takes hex, every
+// segment the DDL declares by default; read-segment-fields writes it in SEG0.
+function _genSegMapFromFile(attrs, g) {
+  const label = attrs.field, canon = s => String(s).replace(/\[\d+\]/g, ''), defs = _genDefs(g);
+  const def = defs.find(d => canon(d.id) === label) || defs.find(d => canon(d.id).split('.').pop() === label);
+  if (!def || !(def.length > 0)) { g.problems.push(`${label}: the segment map is read from this field, and the bound DDL has none — skipped`); return; }
+  const bits = def.length * 8;
+  const nums = new Set(defs.map(d => /(\d+)$/.exec(canon(d.id).split('.')[0])).filter(Boolean).map(m => +m[1]));
+  let dflt = '';
+  for (let i = 0; i < bits; i += 4) dflt += [0, 1, 2, 3].reduce((x, b) => x | (nums.has(i + b) ? 8 >> b : 0), 0).toString(16).toUpperCase();
+  g.segFile = { def, dflt };
+  const given = Object.prototype.hasOwnProperty.call(g.values, def.id);
+  const hex = _genEncode(def, given ? g.values[def.id] : dflt, def.length, g).shown;
+  const set = new Set();
+  for (let i = 0; i < bits; i++) if (parseInt(hex[i >> 2], 16) & (8 >> (i & 3))) set.add(i);
+  if (!set.size) g.problems.push(`${label}: all zeros — the parse reads that as "the map is on the IDF" and stops`);
+  g.segMaps = { ...(g.segMaps || {}), [label]: set };
+  g.segMap = set;
+}
 function _genSegmentFields(attrs, g) {
   const a = typeof attrs === 'string' ? { bitmap: attrs } : (attrs || {});
   const set = (a.bitmap && g.segMaps?.[a.bitmap]) || g.segMap;
@@ -41948,10 +41972,18 @@ function _genSegmentFields(attrs, g) {
   const defs = idxs.flatMap(i => g.resolvedBindings[i]?.defs || []);
   const top = id => String(id).replace(/\[\d+\]/g, '').split('.')[0];
   const segs = [...new Set(defs.map(d => top(d.id)))];
+  // A map read from the file is written in SEG0 where it sits — over the bytes
+  // it redefines, when it is a REDEFINES.
+  const mf = g.segFile?.def, inMap = d => mf.isRedefines && d.offset >= mf.offset && d.offset < mf.offset + mf.length;
+  let mapDone = false;
   for (const seg of segs) {
     const m = /(\d+)$/.exec(seg);
     if (m && !set.has(parseInt(m[1], 10))) continue;
-    for (const d of defs) if (top(d.id) === seg && !d.isRedefines) _genField(d, g.cursor, g);
+    for (const d of defs) {
+      if (top(d.id) !== seg) continue;
+      if (mf && (d.id === mf.id || !d.isRedefines && inMap(d))) { if (!mapDone) _genField(mf, g.cursor, g); mapDone = true; continue; }
+      if (!d.isRedefines) _genField(d, g.cursor, g);
+    }
   }
 }
 // ── map ──
@@ -42303,7 +42335,7 @@ function _genModel(item, values, ascii) {
       if ((n === 63 || n === 126) && _genTokenPlace(item) === 'de' && des[n].leaves.length) des[n].leaves[des[n].leaves.length - 1].tokSlot = true;
     }
   }
-  return { head, des, bitmap: _genUsesBitmap(item) };
+  return { head, des, bitmap: _genUsesBitmap(item), segMapId: g0.segFile?.def.id };
 }
 // ── How a row's value is made ──
 // fixed: as typed · random digits, letters or hex digits · increment: +1 on
@@ -42507,7 +42539,7 @@ function _genProbeValues() {
 // The format picked counts too: an ASCII class may read with a spec of its own.
 function genRowChange(el) {
   const id = el?.dataset?.id || el?.dataset?.modeId;
-  if (el?.id !== 'genFmt' && (!id || !(_genSt.deciders.has(id) || id.startsWith('read-while #')))) return;
+  if (el?.id !== 'genFmt' && (!id || !(_genSt.deciders.has(id) || id === _genSt.model?.segMapId || id.startsWith('read-while #')))) return;
   _genKeep();
   _genSt.fmt = document.getElementById('genFmt')?.value || _genSt.fmt;
   _genSt.model = _genModel(_meCurItem(), _genProbeValues(), _genSt.fmt === 'ascii');

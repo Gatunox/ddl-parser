@@ -7190,15 +7190,24 @@ function buildDDLDocFields(rawItems, typeRegistry) {
   // Third pass — shift offsets of every field that follows an OCCURS group
   // (occurs > 1 only; the second pass already sets the full group size, but sibling
   //  offsets were computed during the first pass when the group size was 0).
-  for (let i = 0; i < result.length; i++) {
-    if (!result[i].isGroup) continue;
+  // DEEPEST groups first, and the one-occurrence span is re-measured just before
+  // the shift: an inner OCCURS moves the siblings that follow it INSIDE the outer
+  // group, so the span the second pass measured is short by exactly that shift.
+  // In index order the outer group shifted first, with the short span — OUTER
+  // OCCURS 2 holding A X(2), INNER OCCURS 5 of X(3), B X(4) got 17 instead of 21,
+  // and every occurrence after the first, and everything after, read wrong bytes.
+  for (const i of _groupsDeepFirst) {
     const occ = result[i].occurs || 1;
     if (occ <= 1) continue;
-    const extra = result[i].occursChildSize * (occ - 1);
     const gl    = result[i].level;
     // Find the index of the first item that is NOT a descendant of this group
     let j = i + 1;
     while (j < result.length && result[j].level > gl) j++;
+    let unitEnd = result[i].offset;
+    for (let d = i + 1; d < j; d++) unitEnd = Math.max(unitEnd, result[d].offset + result[d].size);
+    result[i].occursChildSize = unitEnd - result[i].offset;
+    result[i].size            = result[i].occursChildSize * occ;
+    const extra = result[i].occursChildSize * (occ - 1);
     // Shift subsequent fields — but never past the nearest enclosing REDEFINES
     // overlay. An overlay re-views existing bytes, so growth inside it must not
     // advance the outer layout: with `OPTIONS-AREA REDEFINES DATA-AREA` holding
@@ -8706,12 +8715,15 @@ function extractBytesMapped(chunk, format, textOffset, own) {
       let restAt = lineStart + lead + preN;
       // The ASCII echo column ([ … ] or | … |) is not data. Its position is
       // kept: each byte on the line also lights its own character in there.
+      // The |…| column is looked for FIRST: a `[` is an ordinary character inside
+      // it, and cutting there left `|01` in the hex half — a phantom 0x01 byte that
+      // shifted every later offset. [ … ] is the column only when the line ends in ].
       let asciiAt = -1;
-      const bi = rest.indexOf('[');
-      if (bi >= 0) { asciiAt = restAt + bi + 1; rest = rest.slice(0, bi).trimEnd(); }
+      const pi = /\]\s*$/.test(rest) ? -1 : rest.search(/\|[^|]*\|?\s*$/);
+      if (pi >= 0) { asciiAt = restAt + pi + 1; rest = rest.slice(0, pi).trimEnd(); }
       else {
-        const pi = rest.search(/\|[^|]*\|?\s*$/);
-        if (pi >= 0) { asciiAt = restAt + pi + 1; rest = rest.slice(0, pi).trimEnd(); }
+        const bi = rest.indexOf('[');
+        if (bi >= 0) { asciiAt = restAt + bi + 1; rest = rest.slice(0, bi).trimEnd(); }
       }
       let lineByte = 0;
       for (const m of rest.matchAll(/[0-9a-fA-F]{2}/g)) {
@@ -8795,7 +8807,10 @@ function extractBytesMapped(chunk, format, textOffset, own) {
       const lineStart = pos;
       pos += line.length + 1;
       const candidate = line.trim().replace(/\s/g, '');
-      if (/^[0-9a-fA-F]{8,}$/.test(candidate)) {
+      // Once a line has qualified, a SHORT all-hex line is the wrapped tail of
+      // the same paste, not prose: `…4546` then `4142` lost its last two bytes.
+      if (/^[0-9a-fA-F]{8,}$/.test(candidate) ||
+          (anyLine && /^(?:[0-9a-fA-F]{2})+$/.test(candidate))) {
         anyLine = true;
         let p = lineStart + (line.length - line.trimStart().length);
         for (const ch of line.trimStart()) { if (/[0-9a-fA-F]/.test(ch)) digits.push(p); p++; }
@@ -11083,14 +11098,19 @@ function parseMessage(bytes, defs, rawBytes) {
     _fmtSpecs = _detectOrderIdxs(specs).map(i => _compileSpec(specs[i]));
   }
 
+  // Returns false when nothing was written (storage full or blocked). It used to
+  // swallow the error and clear the pending copy anyway, so the Class Editor said
+  // "Saved." and the work was gone on the next reload.
   function _fmtSave(specs) {
-    try { localStorage.setItem('up_format_specs', JSON.stringify({ specs })); } catch(e) {}
+    try { localStorage.setItem('up_format_specs', JSON.stringify({ specs })); }
+    catch(e) { return false; }
     _pendingSpecs = null;          // saved: the pending copy IS the stored one now
     _fmtLoad();
     // Every cached audit parse was produced by the classes as they were.
     if (typeof _auditParseCacheInvalidate === 'function') _auditParseCacheInvalidate();
     // A renamed or deleted class must not leave a stale name in the picker.
     if (typeof _syncSpecForceSelect === 'function') _syncSpecForceSelect();
+    return true;
   }
 
   // What the app WOULD show: the staged import wins, because the Class Editor and
@@ -12367,11 +12387,20 @@ function _strHash(s) {
 // hashing the whole subvolume meant editing one file recompiled every file in
 // it. The compiled entries were always per-file ({ path, defName, defs }); only
 // the key and the hash were per-subvolume.
+// Several callers pass pieces of the UPPER-CASED cache key, so every level is
+// looked up case-insensitively. Trying only the exact, lower and upper spellings
+// missed every mixed-case name — the shipped "Standard ISO" among them — which
+// hashed to '0' before AND after an edit, so the compile cache was reused for an
+// edited file (and a deleted one stayed in the scoring pool) until a reload.
+function _ciKey(obj, key) {
+  if (!obj) return undefined;
+  if (Object.prototype.hasOwnProperty.call(obj, key)) return obj[key];
+  const up = String(key).toUpperCase();
+  for (const k of Object.keys(obj)) if (k.toUpperCase() === up) return obj[k];
+  return undefined;
+}
 function _fileHash(vol, sv, file) {
-  const _t = _ddlTreeRead();
-  const vTree = _t[vol] || _t[vol.toLowerCase()] || _t[vol.toUpperCase()];
-  const svTree = vTree && (vTree[sv] || vTree[sv.toLowerCase()] || vTree[sv.toUpperCase()]);
-  const content = svTree && (svTree[file] ?? svTree[file.toUpperCase()]);
+  const content = _ciKey(_ciKey(_ciKey(_ddlTreeRead(), vol), sv), file);
   return content == null ? '0' : _strHash(String(content));
 }
 // 'VOL/SV/FILE', upper-cased — the cache key and the id used throughout.
@@ -16301,11 +16330,25 @@ function applyRawHL(fid, cls) {
   const f = findField(msg, fid);
   if (!f) return;
   const raw = document.getElementById('rawDisplay');
-  for (let i = f.startByte; i <= f.endByte; i++) {
-    raw.querySelector(`[data-idx="${i}"]`)?.classList.add(cls);
-    raw.querySelector(`[data-ascii-idx="${i}"]`)?.classList.add(cls);
-  }
+  _rawHLMark(raw, f, msg, cls);
   raw.querySelector(`[data-idx="${f.startByte}"]`)?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+// Lights a field's bytes in the raw dump. One pass over the spans that exist,
+// instead of two subtree searches per byte of the field: a row whose endByte ran
+// far past the message (a length read off the wire, a large "bytes" override)
+// looped until the tab stopped answering — on HOVER — and a 4 000-byte group
+// cost 8 000 searches per mouseenter. _buildInputHLRanges was clamped for the
+// same reason; these two were not.
+function _rawHLMark(raw, f, msg, cls) {
+  if (!raw || f.startByte == null || f.endByte == null) return;
+  const hi = Math.min(f.endByte, ((msg && msg.bytes && msg.bytes.length) || 0) - 1);
+  const lo = f.startByte;
+  if (hi < lo) return;
+  for (const el of raw.querySelectorAll('[data-idx],[data-ascii-idx]')) {
+    const i = +(el.dataset.idx ?? el.dataset.asciiIdx);
+    if (i >= lo && i <= hi) el.classList.add(cls);
+  }
 }
 
 function clearRawHL(cls) {
@@ -16541,11 +16584,7 @@ function hoverField(fid) {
   if (!msg) return;
   const f = findField(msg, fid);
   if (!f) return;
-  const raw = document.getElementById('rawDisplay');
-  for (let i = f.startByte; i <= f.endByte; i++) {
-    raw.querySelector(`[data-idx="${i}"]`)?.classList.add('hb-hover');
-    raw.querySelector(`[data-ascii-idx="${i}"]`)?.classList.add('hb-hover');
-  }
+  _rawHLMark(document.getElementById('rawDisplay'), f, msg, 'hb-hover');
   renderInputOverlay();
 }
 
@@ -17665,7 +17704,16 @@ function auditApplyFilter() {
   });
   if (document.getElementById('auditFltDtDir').textContent.trim() === '◀') filtered = filtered.slice().reverse();
   if (hasCount) filtered = filtered.slice(0, countV);
+  // selIdx indexes the FILTERED list, and the open detail pane holds that
+  // record's bytes. Re-pointed at the same record when the filter keeps it;
+  // otherwise the selection and the pane go. Left as it was, Parse in the pane
+  // read record A's bytes under whichever record B now sat at that index.
+  const _selRec = _auditSt.selIdx >= 0 ? _auditSt.filtered[_auditSt.selIdx] : null;
   _auditSt.filtered = filtered;
+  if (_selRec) {
+    _auditSt.selIdx = filtered.indexOf(_selRec);
+    if (_auditSt.selIdx < 0) auditClosePopup();
+  }
   document.getElementById('auditStats').textContent =
     _auditSt.filtered.length.toLocaleString() + ' / ' + _auditSt.index.length.toLocaleString() + ' records';
   syncParseBtn();
@@ -21774,6 +21822,7 @@ function confirmImport() {
   );
   const tree = _importData.data || {};
   let ddlCount = 0;
+  const ddlPaths = [];   // which DDLs are pending — saveTree keeps them out of storage
   for (const v of Object.keys(tree)) {
     for (const sv of Object.keys(tree[v] || {})) {
       for (const d of Object.keys((tree[v][sv]) || {})) {
@@ -21783,6 +21832,7 @@ function confirmImport() {
         if (!S.ddlTree[v][sv]) S.ddlTree[v][sv] = {};
         S.treeExp.add(`${v}/${sv}`);
         S.ddlTree[v][sv][d] = tree[v][sv][d]; ddlCount++;
+        ddlPaths.push([v, sv, d]);
       }
     }
   }
@@ -21835,7 +21885,7 @@ function confirmImport() {
   }
 
   if (ddlCount || pickedSpecs.length) {
-    _pendingImport = { treeBefore, specsBefore, ddlCount,
+    _pendingImport = { treeBefore, specsBefore, ddlCount, ddlPaths,
                        classCount: specAdded + specOverwritten,
                        specs: pickedSpecs.length > 0, deOverrides: pendingDeOverrides };
   }
@@ -21884,13 +21934,26 @@ function _kvDel(key) {
   }
 }
 function _kvSet(key, value) {
+  // On a failed write the in-memory copy goes back to what is stored, so a
+  // reader in this session cannot see a value a reload will not have.
+  const had = Object.prototype.hasOwnProperty.call(_appKV, key), prev = _appKV[key];
+  const undo = () => { if (had) _appKV[key] = prev; else delete _appKV[key]; return false; };
   _appKV[key] = value;
   if (_appKVDB) {
-    try { _appKVDB.transaction('kv', 'readwrite').objectStore('kv').put({ key, value }); } catch(e) { return false; }
+    try {
+      const tx = _appKVDB.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put({ key, value });
+      // A full disk fails the put LATER, by aborting the transaction — the try
+      // only sees synchronous throws, so the caller had already said "Saved".
+      tx.onabort = () => _kvWriteFailed(key);
+    } catch(e) { return undo(); }
   } else {
-    try { localStorage.setItem(key, value); } catch(e) { return false; }
+    try { localStorage.setItem(key, value); } catch(e) { return undo(); }
   }
   return true;
+}
+function _kvWriteFailed(key) {
+  try { flash(`Not saved (${key}) — browser storage is full or blocked. Export your work before reloading.`, 'error'); } catch(e) {}
 }
 function _openAppKV() {
   return new Promise(resolve => {
@@ -21925,7 +21988,10 @@ function _openAppKV() {
           }
           resolve();
         };
-        all.onerror = () => resolve();
+        // A failed read must not look like an empty store: the app would seed
+        // defaults and the next saveTree() would write them over the real tree.
+        // Drop to localStorage instead, which leaves the IndexedDB copy untouched.
+        all.onerror = () => { _appKVDB = null; _kvWriteFailed('read'); _fallback(); };
       };
       req.onerror = _fallback;
     } catch(e) { _fallback(); }
@@ -21944,9 +22010,36 @@ function saveTree() {
   } else {
     for (const v of Object.keys(S.ddlTree)) localStorage.removeItem('up_cc_' + v.toUpperCase());
   }
-  if (!_kvSet('up_ddl_tree', JSON.stringify(S.ddlTree))) return false;
+  if (!_kvSet('up_ddl_tree', JSON.stringify(_treeForStorage()))) return false;
   saveTreeExp();
   return true;
+}
+
+// The tree as storage may hold it. While an import is pending its DDLs live in
+// S.ddlTree but are not saved — and saveTree has two dozen callers (rename,
+// paste, delete, new volume…). Each of them wrote the WHOLE tree, so any of them
+// committed the import behind the user's back, and parsing (which reads the
+// stored tree) started using DDLs the UI still called unsaved. Each pending path
+// is written as it was before the import: its old text, or absent.
+function _treeForStorage() {
+  const imp = typeof _pendingImport !== 'undefined' ? _pendingImport : null;
+  if (!imp || !imp.ddlPaths || !imp.ddlPaths.length) return S.ddlTree;
+  const out = JSON.parse(JSON.stringify(S.ddlTree));
+  const before = imp.treeBefore || {};
+  for (const [v, sv, d] of imp.ddlPaths) {
+    const was = before[v] && before[v][sv] ? before[v][sv][d] : undefined;
+    if (was !== undefined) {
+      if (!out[v]) out[v] = {};
+      if (!out[v][sv]) out[v][sv] = {};
+      out[v][sv][d] = was;
+      continue;
+    }
+    if (!out[v] || !out[v][sv]) continue;
+    delete out[v][sv][d];
+    if (!Object.keys(out[v][sv]).length && !(before[v] && before[v][sv])) delete out[v][sv];
+    if (!Object.keys(out[v]).length && !before[v]) delete out[v];
+  }
+  return out;
 }
 
 function loadTree() {
@@ -22325,7 +22418,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.5.9';
+const APP_VERSION  = '1.64.6.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -23441,42 +23534,47 @@ function initDropZones() {
     const r = new FileReader();
     r.onload = ev => {
       const content = ev.target.result;
+      const hpe = isHPEDDLText(content);
+      const defNames = hpe ? parseDEFNames(content) : [];
+      if (hpe && !defNames.length) { flash('No DEF/RECORD definitions found in file', 'warn'); return; }
+      const base = file.name.replace(/\.[^.]+$/, '').toUpperCase();
 
-      if (isHPEDDLText(content)) {
-        const defNames = parseDEFNames(content);
-        if (!defNames.length) { flash('No DEF/RECORD definitions found in file', 'warn'); return; }
-
-        // Stage as a single file entry — whole content, filename from dropped file
-        const base = file.name.replace(/\.[^.]+$/, '').toUpperCase();
-        S.stagingDefs   = [{ name: base, content }];
+      const stage = () => {
+        // Added to what is staged, not in place of it: a Missing Reference stub
+        // staged earlier was silently thrown away by the next drop.
+        S.stagingDefs   = S.stagingDefs.filter(d => d.name !== base).concat({ name: base, content });
         S.stagingActive = base;
         S.editorBaseline = null;
+        // Demoted exactly as loadStagedDef does. With a file still selected,
+        // Save took THAT file's name — dropping B over an open A and pressing
+        // Save replaced A with B's text.
+        if (S.scope?.type === 'ddl' || S.scope?.type === 'def') {
+          S.scope = { type: 'sv', vol: S.scope.vol, sv: S.scope.sv };
+        }
 
         ddlTA.value = content;
-        document.getElementById('ddlScopePath').textContent =
-          `"${base}" staged (${defNames.length} DEF${defNames.length > 1 ? 's' : ''}) — select Vol/SV then Save`;
+        document.getElementById('ddlScopePath').textContent = hpe
+          ? `"${base}" staged (${defNames.length} DEF${defNames.length > 1 ? 's' : ''}) — select Vol/SV then Save`
+          : `"${base}" staged — select Vol/SV then Save`;
 
         renderDDLTree();
         updateDDLEditorState();
         updateDDLHighlight();
-        const defCount = defNames.length === 1 ? '1 definition' : `${defNames.length} definitions`;
-        flash(`Loaded "${file.name}" — ${defCount} staged in tree`);
-      } else {
-        // Simple format — stage as single entry
-        const base = file.name.replace(/\.[^.]+$/, '').toUpperCase();
-        S.stagingDefs   = [{ name: base, content }];
-        S.stagingActive = base;
-        S.editorBaseline = null;
+        if (hpe) {
+          const defCount = defNames.length === 1 ? '1 definition' : `${defNames.length} definitions`;
+          flash(`Loaded "${file.name}" — ${defCount} staged in tree`);
+        } else {
+          flash(`Loaded "${file.name}" — staged in tree`);
+        }
+      };
 
-        ddlTA.value = content;
-        document.getElementById('ddlScopePath').textContent =
-          `"${base}" staged — select Vol/SV then Save`;
-
-        renderDDLTree();
-        updateDDLEditorState();
-        updateDDLHighlight();
-        flash(`Loaded "${file.name}" — staged in tree`);
+      // Same guard as opening another file from the tree: a drop replaces the
+      // editor's text, and unsaved edits went with it without a word.
+      if (_ddlEditorDirty()) {
+        showConfirm('You have unsaved changes. Discard and continue?', ok => { if (ok) stage(); });
+        return;
       }
+      stage();
     };
     r.readAsText(file);
   });
@@ -24249,7 +24347,12 @@ function _blPersist() {
   // point was derived from an empty read, and writing it deletes the lot.
   if (!_appKVLoaded) { flash('Storage is still loading — try that again in a moment.', 'warn'); return false; }
   const json = JSON.stringify({ baselines: _blAll() });
-  try { _kvSet(_BL_KEY, json); } catch(e) { return false; }
+  // _kvSet reports a failed write by RETURNING false, not by throwing — the old
+  // try/catch never fired, so a baseline over the quota said "Saved" and was gone
+  // on reload.
+  let ok = false;
+  try { ok = _kvSet(_BL_KEY, json); } catch(e) { ok = false; }
+  if (!ok) { flash('Baseline NOT saved — browser storage is full or blocked.', 'error'); return false; }
   _blRaw = json;   // the cache and the store agree again
   return true;
 }
@@ -24321,7 +24424,8 @@ function _blMatchesFor(msg) {
 function _blAdd(msg, name, tags) {
   const entry = _blSnapshot(msg, name, tags);
   _blAll().unshift(entry);          // newest first: it is the one just saved
-  _blPersist();
+  // Not written: take it back out, so the list on screen is the list stored.
+  if (!_blPersist()) { _blList = null; return null; }   // re-read from what is stored
   return entry;
 }
 
@@ -24515,6 +24619,7 @@ function blSaveApply() {
     return;
   }
   const entry = _blAdd(msg, name, tags);
+  if (!entry) return;               // _blPersist already said why; the dialog stays open
   toggleBlSaveDialog(false);
   flash(`Saved "${entry.name}" as a baseline`);
   syncBlSaveBtn();
@@ -25227,7 +25332,7 @@ function _meSetDirty() {
 // not a history — a deeper stack would have to survive re-renders, entity
 // switches and Save, none of which it could do honestly. Text edits are not
 // wrapped: the spec editor has its own undo and inputs have the browser's.
-let _meUndoOffer = null;   // { snap, idx, nSpecs, label }
+let _meUndoOffer = null;   // { snap, obj, label } — obj is the live class it was made on
 
 // `level` is what the action DID, not how it went: removing configuration is
 // amber and adding it is green, so the colour answers "what just happened"
@@ -25241,7 +25346,7 @@ function _meUndoable(label, run, level) {
   // offering to undo nothing is worse than staying quiet.
   const changed = run();
   if (!snap || changed === false) return;
-  _meUndoOffer = { snap, idx: _meState.selIdx, nSpecs: _meState.specs.length, label };
+  _meUndoOffer = { snap, obj: item, label };
   // _meFlash, not flash: this only ever fires with the Class Editor open, and
   // the page's toast container is BELOW that overlay — the first version put a
   // perfectly working Undo button where nobody could see it.
@@ -25252,14 +25357,16 @@ function _meUndoApply() {
   const o = _meUndoOffer;
   _meUndoOffer = null;
   if (!o || !_meState) return;
-  // The offer addresses an entity by index. If entities were added or removed
-  // in between, that index means something else and restoring would overwrite
-  // a different entity with this one's contents.
-  if (_meState.specs.length !== o.nSpecs || !_meState.specs[o.idx]) {
+  // The offer addresses the class OBJECT it was made on, found again wherever it
+  // now sits. An index was checked only against the list's length, and a drag
+  // reorder keeps the length: undo then overwrote whichever class had moved into
+  // that slot with this one's contents — one class lost, the other duplicated.
+  const idx = _meState.specs.indexOf(o.obj);
+  if (idx < 0) {
     _meFlash('Cannot undo \u2014 the class list changed since then', 'warn');
     return;
   }
-  _meState.specs[o.idx] = o.snap;
+  _meState.specs[idx] = o.snap;
   _meSetDirty();
   _meRenderSidebar();
   _meRenderRight();
@@ -28494,7 +28601,31 @@ function _stripJsonc(src) {
     }
     out += c; i++;
   }
-  return out.replace(/,(\s*[}\]])/g, '$1');
+  return _jsoncDropTrailingCommas(out);
+}
+
+// Trailing commas out, strings left alone. The old `/,(\s*[}\]])/g` ran over
+// string contents too: a guard "^[0-9,]" parsed as "^[0-9]" and a value ",}" as
+// "}", while the editor went on showing what was written. The text has no
+// comments left by now, so strings are the only thing to step over.
+function _jsoncDropTrailingCommas(src) {
+  let out = '', i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    if (c === '"') {
+      const start = i++;
+      while (i < n) { if (src[i] === '\\') { i += 2; continue; } if (src[i] === '"') { i++; break; } i++; }
+      out += src.slice(start, i); continue;
+    }
+    if (c === ',') {
+      let j = i + 1;
+      while (j < n && /\s/.test(src[j])) j++;
+      if (src[j] === '}' || src[j] === ']') { i++; continue; }
+    }
+    out += c; i++;
+  }
+  return out;
 }
 
 // The error message and the frame are set together — two call sites used to set
@@ -30015,9 +30146,10 @@ function _compactJsonc(src) {
       if (span) {
         const body = src.slice(i, span);
         if (!/\/\/|\/\*/.test(body)) {
-          // Whitespace runs to one space, and no space just inside the braces of
-          // the innermost objects — "{ "read": "MSGTYPE" }" reads best.
-          out.push(body.replace(/\s+/g, ' ').replace(/\{ +/g, '{ ').replace(/ +\}/g, ' }'));
+          // Whitespace runs to one space — OUTSIDE strings. Collapsing inside
+          // them turned "equal": "    " (a space-padded compare) into " ", and
+          // since Compact goes through _mePsChange the spec itself changed.
+          out.push(_jsoncCollapseWs(body));
           i = span; continue;
         }
       }
@@ -30026,6 +30158,24 @@ function _compactJsonc(src) {
     out.push(c); i++;
   }
   return out.join('');
+}
+
+// Every whitespace run outside a string becomes one space; strings are copied
+// as written.
+function _jsoncCollapseWs(src) {
+  let out = '', i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    if (c === '"') {
+      const start = i++;
+      while (i < n) { if (src[i] === '\\') { i += 2; continue; } if (src[i] === '"') { i++; break; } i++; }
+      out += src.slice(start, i); continue;
+    }
+    if (/\s/.test(c)) { while (i < n && /\s/.test(src[i])) i++; out += ' '; continue; }
+    out += c; i++;
+  }
+  return out;
 }
 
 // The index just past the object opening at `from`, or null if unbalanced.
@@ -38832,7 +38982,9 @@ function _meDecodeLength(bytes, type, enc) {
     return Number.isFinite(n) ? n : null;
   }
   const ordered = _meLenTypeIsLE(type) ? [...bytes].reverse() : bytes;
-  return ordered.reduce((a, b) => (a << 8) | b, 0);
+  // Multiply, never shift: `<<` is signed 32-bit, so a 4-byte length with the top
+  // bit set came out negative and the cursor moved BACKWARDS over bytes already read.
+  return ordered.reduce((a, b) => a * 256 + b, 0);
 }
 // Which branch the decode actually took, so the error message cannot claim
 // "read as digits" for bytes a type override forced through as an integer.
@@ -40156,7 +40308,8 @@ const _meTlvChars   = bytes => bytes.map(b => String.fromCharCode(b)).join('');
 // value and shift every triple after it, which is exactly how the VLG length bug
 // behaved before it was reported.
 function _meTlvFixedLen(bytes, ascii) {
-  if (!ascii) return bytes.reduce((a, b) => (a << 8) | b, 0);
+  // Unsigned, as in _meDecodeLength: a negative length rewound the TLV walk forever.
+  if (!ascii) return bytes.reduce((a, b) => a * 256 + b, 0);
   const txt = _meTlvChars(bytes).trim();
   if (!/^\d+$/.test(txt)) return null;
   return parseInt(txt, 10);
@@ -40182,7 +40335,9 @@ function _meBerLen(buf, p) {
   const n = b & 0x7F;
   if (n === 0 || p + 1 + n > buf.length) return null;   // indefinite form is not valid here
   let len = 0;
-  for (let i = 0; i < n; i++) len = (len << 8) | buf[p + 1 + i];
+  // Unsigned: `<<` made 84 FF FF FF FA a length of -6, the walk stepped back onto
+  // the same tag and pushed rows until the tab ran out of memory.
+  for (let i = 0; i < n; i++) len = len * 256 + buf[p + 1 + i];
   return { len, next: p + 1 + n };
 }
 
@@ -43433,13 +43588,22 @@ function _meSave() {
   // taken from it — reads in DDL order whatever sequence the overrides were
   // created in.
   for (const s of (_meState.specs || [])) if (s && s.overrides) _meOvOrder(s);
-  _fmtSave(_meState.specs);
+  if (!_fmtSave(_meState.specs)) {
+    // Nothing was written: the editor stays dirty, Save stays live, and the
+    // import (if any) stays pending — a failed save must not look like a save.
+    const st = document.getElementById('me-status');
+    if (st) st.textContent = 'Not saved — browser storage is full or blocked.';
+    flash('Classes NOT saved — browser storage is full or blocked. Export them before reloading.', 'error');
+    return false;
+  }
   // A pending import's DDLs are written by the same press: the bundle is one
   // thing, so it commits as one thing, from whichever Save the user reaches.
+  // Cleared BEFORE saveTree, which otherwise keeps a pending import's DDLs out.
   if (typeof _pendingImport !== 'undefined' && _pendingImport) {
-    if (_pendingImport.ddlCount) saveTree();
-    if (_pendingImport.deOverrides && Object.keys(_pendingImport.deOverrides).length) saveDeOverrides();
+    const imp = _pendingImport;
     _pendingImport = null;
+    if (imp.ddlCount) saveTree();
+    if (imp.deOverrides && Object.keys(imp.deOverrides).length) saveDeOverrides();
     }
   _meState.dirty = false;
   // Saving IS the user signing off on what the import brought in.

@@ -310,7 +310,7 @@ _t.detectMsgType      = detectMsgType;
 // sandbox models the one browser behaviour this code depends on.
 for (const k of ['_fmtDetect','_fmtDetectTrace','_fmtSpecByName','_fmtSpecByLabel',
                  '_fmtFileSpecByName','_fmtGetData','_fmtGetSaved','_fmtTestSpecs','_specEncoding',
-                 '_migrateSpec','_migrateSpecOverrides','_detectOrderIdxs']) {
+                 '_migrateSpec','_migrateSpecOverrides','_detectOrderIdxs','_fmtSave']) {
   const v = window[k];
   if (typeof v !== 'undefined' && v !== null) globalThis[k] = v;
 }
@@ -1671,11 +1671,14 @@ test('[REGRESSION] an import is never written until its own Save is pressed', ()
   // bundle. Not saving IS the discard: the pending copy never reached storage,
   // so a reload comes back to the last saved state.
   const save = psFnSource('_meSave');
-  assert.ok(/_fmtSave\(_meState\.specs\);/.test(save), 'the editor Save must write the classes');
-  assert.ok(/if \(_pendingImport\.ddlCount\) saveTree\(\);/.test(save),
+  assert.ok(/if \(!_fmtSave\(_meState\.specs\)\)/.test(save), 'the editor Save must write the classes');
+  assert.ok(/if \(imp\.ddlCount\) saveTree\(\);/.test(save),
     'saving in the editor must commit the pending import\'s DDLs too');
-  assert.ok(/if \(_pendingImport\.deOverrides && Object\.keys\(_pendingImport\.deOverrides\)\.length\) saveDeOverrides\(\);/.test(save),
+  assert.ok(/if \(imp\.deOverrides && Object\.keys\(imp\.deOverrides\)\.length\) saveDeOverrides\(\);/.test(save),
     'and its DE overrides — the bundle commits as one thing');
+  // Cleared BEFORE saveTree: while it is set, saveTree keeps the pending DDLs out.
+  assert.ok(save.indexOf('_pendingImport = null;') < save.indexOf('if (imp.ddlCount) saveTree();'),
+    'the import is still pending when its own Save writes the tree');
 });
 
 test('[REGRESSION] a parse reads the saved DDL tree, not the staged import', () => {
@@ -1701,7 +1704,7 @@ test('[REGRESSION] a parse reads the saved DDL tree, not the staged import', () 
   // Every read the parse depends on.
   for (const [fn, needle] of [
     ['getDDLsForSv',            'const vTree = _ddlTreeRead()[vol];'],
-    ['_fileHash',               'const _t = _ddlTreeRead();'],
+    ['_fileHash',               '_ciKey(_ciKey(_ciKey(_ddlTreeRead(), vol), sv), file)'],
     ['getDDLsForScope',         'const tree = _ddlTreeRead();'],
     ['_ddlCollectCompileTasks', 'const _tree = _ddlTreeRead();'],
   ]) assert.ok(psFnSource(fn).includes(needle), `${fn} reads through the accessor`);
@@ -13312,8 +13315,8 @@ test('undo snapshots BEFORE the change, and refuses when the index went stale', 
     'the snapshot is taken after the change, which snapshots the change');
   assert.ok(/changed === false/.test(fn), 'a caller cannot decline to offer an undo it did not earn');
   const ap = psFnSource('_meUndoApply');
-  assert.ok(/_meState\.specs\.length !== o\.nSpecs/.test(ap),
-    'undo restores by index without checking the list is the same length — it would overwrite another entity');
+  assert.ok(/const idx = _meState\.specs\.indexOf\(o\.obj\);[\s\S]{0,40}if \(idx < 0\)/.test(ap),
+    'undo restores into a slot without finding the class it was made on — it would overwrite another entity');
   assert.ok(/_meUndoOffer = null;/.test(ap), 'the offer is not consumed, so undo can be applied twice');
   assert.ok(ap.indexOf('_meUndoOffer = null') < ap.indexOf('if (!o'),
     'the offer survives an early return and can be replayed onto a later state');
@@ -26806,6 +26809,214 @@ console.log('\ngenerate a message');
     assert.ok(/'genFldToggle'/.test(fs.readFileSync('./build.js', 'utf8')), 'build.js would rename genFldToggle');
     // Reported 2026-11-01: centred between title and fold, the two counts did not line up.
     assert.ok(/\.gen-tok \.me-section-hdr \.pt-badge \{ margin: 0 10px 0 auto; \}/.test(html), 'the counts are not set beside the fold');
+  });
+}
+// ── Review 2026-11-11: the critical findings, one regression case each ───────
+console.log('\nreview 2026-11-11 — critical fixes');
+{
+  const run = c => vm.runInContext(c, sandbox);
+
+  test('[REGRESSION] an OCCURS group holding an inner OCCURS and a later sibling is sized from settled offsets', () => {
+    // OUTER OCCURS 2 = A X(2) + INNER OCCURS 5 of X(3) + B X(4) = 21 bytes per
+    // occurrence. The outer span was measured before INNER pushed B along, so it
+    // came out 17: OUTER[02].A sat on B's bytes and AFTER at 38 instead of 42.
+    const { fields, totalSize } = buildDDLDocFields([
+      f(2, 'OUTER', { occurs: 2 }), f(3, 'A', { pic: 'X(2)' }), f(3, 'INNER', { occurs: 5 }),
+      f(4, 'N', { pic: 'X(3)' }), f(3, 'B', { pic: 'X(4)' }), f(2, 'AFTER', { pic: 'X(1)' }),
+    ]);
+    const by = n => fields.find(x => x.qualName === n);
+    eq(by('OUTER').occursChildSize, 21, 'one OUTER occurrence');
+    eq(by('OUTER.B').offset, 17, 'B follows the five N');
+    eq(by('AFTER').offset, 42, 'AFTER follows both occurrences');
+    eq(totalSize, 43, 'record size');
+    const rows = parseHPEDDL(`DEF T.\n02 OUTER OCCURS 2.\n 03 A PIC X(2).\n 03 INNER OCCURS 5.\n  04 N PIC X(3).\n 03 B PIC X(4).\n02 AFTER PIC X(1).\nEND`);
+    const r = id => rows.find(x => x.id === id);
+    eq(r('OUTER[02].A').offset, 21, 'the second occurrence starts after the first');
+    eq(r('OUTER[02].B').offset, 38, 'and ends where AFTER begins');
+    eq(r('AFTER').offset, 42, 'the expanded rows agree');
+  });
+
+  test('[REGRESSION] a 4-byte length with the top bit set is a large positive number, never negative', () => {
+    // `(a << 8) | b` is signed 32-bit. 84 FF FF FF FA decoded as -6, the TLV walk
+    // stepped back onto the same tag and pushed rows until the tab died.
+    eq(run('_meBerLen')([0x84, 0xFF, 0xFF, 0xFF, 0xFA], 0).len, 0xFFFFFFFA, 'BER long-form length');
+    eq(run('_meTlvFixedLen')([0x80, 0, 0, 0], false), 0x80000000, 'fixed binary TLV length');
+    eq(run('_meDecodeLength')([0x80, 0, 0, 0], ''), 0x80000000, 'a uint32 length prefix');
+    // ...and the walks end, reporting nothing past the buffer.
+    const fixed = meExecParseSpec({ ddl_bindings: [], parse_spec_binary: [
+      { 'read-fixed': { length: 6, as: 'BUF' } },
+      { 'read-tlv': { field: 'BUF', tag_length: 1, length_length: 4 } },
+    ] }, Uint8Array.from([0x9F, 0x80, 0x00, 0x00, 0x00, 0x41]));
+    assert.ok(!fixed.fields.some(x => x.id === 'BUF.9F' && !x.error), 'a length past the buffer produced a value row');
+  });
+
+  test('[REGRESSION] a wrapped hex paste keeps its short last line', () => {
+    // A line qualified only with 8+ hex digits, so "4142" after a full line was
+    // dropped — the message silently lost its last two bytes.
+    const b = Array.from(extractBytes('30323130 30313233\n4142', 'hex'));
+    eq(b.length, 10, 'byte count');
+    eq(b.slice(-2).map(x => x.toString(16)).join(' '), '41 42', 'the tail bytes');
+    eq(extractBytesMapped('30323130 30313233\n4142', 'hex', 0).map.length, 10, 'map and bytes agree');
+  });
+
+  test('[REGRESSION] a "[" inside a |ascii| column is not where the column starts', () => {
+    // The `[` test ran first, so `|01[AB|` was cut at the bracket and the "01"
+    // left in the hex half became a phantom byte, shifting every later offset.
+    eq(Array.from(extractBytes('000000: 30 31 5B 41 42  |01[AB|', 'tandem-dump')).map(x => x.toString(16)).join(' '),
+       '30 31 5b 41 42', 'pipe column with a bracket in it');
+    eq(Array.from(extractBytes('000000: 30 31 5B 41 42  [01[AB]', 'tandem-dump')).map(x => x.toString(16)).join(' '),
+       '30 31 5b 41 42', 'bracket column still read');
+  });
+
+  test('[REGRESSION] a save that writes nothing does not say Saved', () => {
+    // _fmtSave swallowed the quota error and cleared the pending copy, so the
+    // Class Editor said "Saved." and the classes were gone on reload.
+    // A full disk: reads answer, every write throws.
+    const fullDisk = new Proxy(storage, { get: (t, k) => k === 'setItem'
+      ? () => { throw new Error('QuotaExceededError'); }
+      : (typeof t[k] === 'function' ? t[k].bind(t) : t[k]) });
+    try {
+      run('window._fmtSetPending')([{ name: 'PEND', label: 'Pending' }]);
+      sandbox.localStorage = fullDisk;
+      eq(fmtSave([{ name: 'PEND', label: 'Pending' }]), false, '_fmtSave reports the failure');
+      assert.ok(run('window._fmtPending')(), 'the pending copy is kept — it is the only copy');
+      // _meSave keeps the editor dirty.
+      const st = meState();
+      setMeState({ specs: [{ name: 'PEND', label: 'Pending' }], selIdx: 0, dirty: true, sections: {} });
+      eq(run('_meSave')(), false, '_meSave reports the failure');
+      eq(meState().dirty, true, 'the editor stays dirty');
+      setMeState(st);
+      // Baselines: _kvSet RETURNS false, it does not throw.
+      run('_appKVLoaded = true');
+      const before = run('_blAll()').length;
+      const realSnap = run('_blSnapshot');
+      run('_blSnapshot = (m, n, t) => ({ id: "x1", name: n, tags: t, fields: [] })');
+      try {
+        eq(run('_blAdd')({}, 'B1', []), null, '_blAdd reports the failure');
+        eq(run('_blAll()').length, before, 'the list on screen is the list stored');
+      } finally { sandbox._blSnapshotReal = realSnap; run('_blSnapshot = _blSnapshotReal'); }
+    } finally {
+      sandbox.localStorage = storage;
+      run('window._fmtSetPending')(null);
+    }
+  });
+
+  test('[REGRESSION] a pending import stays out of storage whoever calls saveTree', () => {
+    // confirmImport puts the DDLs in S.ddlTree; any rename, paste or new volume
+    // then wrote the whole tree and committed the import behind the user's back.
+    const S0 = run('S'), treeWas = S0.ddlTree, kvWas = run("_kvGet('up_ddl_tree')");
+    try {
+      S0.ddlTree = { V: { S1: { A: 'new A', B: 'imported B' }, NEW: { C: 'imported C' } } };
+      run(`_pendingImport = { treeBefore: { V: { S1: { A: 'old A' } } }, ddlCount: 3,
+            ddlPaths: [['V','S1','A'], ['V','S1','B'], ['V','NEW','C']] }`);
+      run('saveTree()');
+      deepEq(JSON.parse(run("_kvGet('up_ddl_tree')")), { V: { S1: { A: 'old A' } } },
+        'what storage holds is the tree as it was before the import');
+      deepEq(Object.keys(S0.ddlTree.V.S1).sort(), ['A', 'B'], 'memory still has the import');
+      // Its own Save commits it: the pending flag is cleared before the write.
+      run('_pendingImport = null');
+      run('saveTree()');
+      eq(JSON.parse(run("_kvGet('up_ddl_tree')")).V.S1.B, 'imported B', 'with nothing pending the tree is written whole');
+    } finally {
+      run('_pendingImport = null'); S0.ddlTree = treeWas;
+      if (kvWas == null) run("delete _appKV['up_ddl_tree']"); else sandbox.__kv = kvWas, run("_appKV['up_ddl_tree'] = __kv");
+    }
+  });
+
+  test('[REGRESSION] dropping a file on the DDL editor releases the open file and guards unsaved edits', () => {
+    // Scope stayed on the open file, so Save took ITS name: dropping B over an
+    // open A and pressing Save replaced A with B's text. Unsaved edits went too.
+    const src = psFnSource('initDropZones');
+    const drop = src.slice(src.indexOf('makeDrop(ddlTA'));
+    assert.ok(/if \(S\.scope\?\.type === 'ddl' \|\| S\.scope\?\.type === 'def'\) \{\s*S\.scope = \{ type: 'sv'/.test(drop),
+      'the open file stays the Save target');
+    assert.ok(/if \(_ddlEditorDirty\(\)\) \{\s*showConfirm\(/.test(drop), 'unsaved edits are dropped without a prompt');
+    assert.ok(/S\.stagingDefs\s*=\s*S\.stagingDefs\.filter\(/.test(drop), 'what was already staged is thrown away');
+  });
+
+  test('[REGRESSION] a mixed-case DDL file hashes its content, so an edit invalidates the compile cache', () => {
+    // Callers pass pieces of the UPPER-CASED key; "Standard ISO" was looked up as
+    // "STANDARD ISO", missed, and hashed '0' before and after every edit.
+    const S0 = run('S'), was = S0.ddlTree;
+    try {
+      S0.ddlTree = { SWITCH: { '1987': { 'Standard ISO': 'MTI FIXED 4 N "x"' } } };
+      const h1 = run('_fileHash')('SWITCH', '1987', 'STANDARD ISO');
+      assert.notStrictEqual(h1, '0', 'the file was not found');
+      S0.ddlTree.SWITCH['1987']['Standard ISO'] = 'MTI FIXED 4 AN "x"';
+      assert.notStrictEqual(run('_fileHash')('SWITCH', '1987', 'STANDARD ISO'), h1, 'an edit does not change the hash');
+      eq(run('_fileHash')('SWITCH', '1987', 'GONE'), '0', 'a missing file still hashes 0');
+    } finally { S0.ddlTree = was; }
+  });
+
+  test('[REGRESSION] changing the audit filter keeps the selection on the same record, or drops it', () => {
+    // selIdx indexes the FILTERED list; the pane's Parse read record A's bytes
+    // under whichever record now sat at that index.
+    const ids = ['auditFltSrc', 'auditFltDst', 'auditFltFrom', 'auditFltTo', 'auditFltCount',
+                 'auditFltDtFrom', 'auditFltDtTo', 'auditFltTmFrom', 'auditFltTmTo'];
+    const saved = {};
+    for (const id of [...ids, 'auditFltSdOp', 'auditFltDtDir', 'auditStats']) saved[id] = elStubs[id];
+    for (const id of ids) elStubs[id] = { value: '' };
+    elStubs.auditFltSdOp = { textContent: 'AND' };
+    elStubs.auditFltDtDir = { textContent: '▶' };
+    elStubs.auditStats = {};
+    const st = run('_auditSt'), was = { index: st.index, filtered: st.filtered, selIdx: st.selIdx, buf: st._inspectBuf };
+    try {
+      const recs = [1, 2, 3].map(n => ({ recNo: n, source: 'S', dest: 'D', offset: n * 100 }));
+      st.index = recs; st.filtered = recs.slice();
+      st.selIdx = 1; st._inspectBuf = 'B-bytes';
+      elStubs.auditFltFrom.value = '2';
+      run('auditApplyFilter')();
+      eq(st.filtered[st.selIdx], recs[1], 'the selection follows record 2 to its new index');
+      eq(st._inspectBuf, 'B-bytes', 'its bytes stay with it');
+      elStubs.auditFltFrom.value = '3';
+      run('auditApplyFilter')();
+      eq(st.selIdx, -1, 'a record filtered out is no longer selected');
+      eq(st._inspectBuf, null, 'and its bytes are not left behind for the next Parse');
+    } finally {
+      Object.assign(st, { index: was.index, filtered: was.filtered, selIdx: was.selIdx, _inspectBuf: was.buf });
+      for (const id in saved) { if (saved[id] === undefined) delete elStubs[id]; else elStubs[id] = saved[id]; }
+    }
+  });
+
+  test('[REGRESSION] lighting a field in the raw dump stops at the end of the message', () => {
+    // Two subtree searches per byte, unbounded: a field whose endByte ran far past
+    // the message hung the tab on HOVER.
+    const marked = [];
+    const els = Array.from({ length: 10 }, (_, i) => ({ dataset: { idx: String(i) }, classList: { add: () => marked.push(i) } }));
+    run('_rawHLMark')({ querySelectorAll: () => els }, { startByte: 2, endByte: 1e9 }, { bytes: [1, 2, 3, 4] }, 'hb-hover');
+    deepEq(marked, [2, 3], 'only the bytes the message has');
+    for (const fn of ['hoverField', 'applyRawHL'])
+      assert.ok(/_rawHLMark\(/.test(psFnSource(fn)) && !/for \(let i = f\.startByte; i <= f\.endByte/.test(psFnSource(fn)),
+        `${fn} still walks the field byte by byte`);
+  });
+
+  test('[REGRESSION] Compact and the JSONC reader leave string contents alone', () => {
+    // Compact collapsed whitespace inside strings ("    " → " "), and the
+    // trailing-comma pass ran over strings ("^[0-9,]" → "^[0-9]").
+    const c = compactJsonc('[\n  { "when": {\n    "field": "X",\n    "equal": "    "\n  } }\n]');
+    assert.ok(c.includes('"equal": "    "'), 'the padded compare value was collapsed: ' + c);
+    assert.ok(c.includes('{ "when": { "field": "X", "equal": "    " } }'), 'the block is still on one line: ' + c);
+    const v = JSON.parse(stripJsonc('{ "pattern": "^[0-9,]", "v": ",}", "a": [1, 2, ], }'));
+    eq(v.pattern, '^[0-9,]', 'a comma before ] inside a string');
+    eq(v.v, ',}', 'a comma before } inside a string');
+    deepEq(v.a, [1, 2], 'a real trailing comma is still dropped');
+  });
+
+  test('[REGRESSION] undo finds its class after the list was reordered', () => {
+    // The offer held an index, checked only against the list LENGTH; a drag kept
+    // the length and undo overwrote the class that had moved into the slot.
+    const st = meState();
+    const A = { name: 'A', label: 'A', recognizers: [{ type: 'literal' }] }, B = { name: 'B', label: 'B' };
+    try {
+      setMeState({ specs: [A, B], selIdx: 0, dirty: false, sections: {} });
+      run('_meUndoable')('Recognizer removed', () => { A.recognizers = []; });
+      meState().specs = [B, A];                       // what a drag does
+      run('_meUndoApply')();
+      const sp = meState().specs;
+      eq(sp[0], B, 'the class that moved into the slot is untouched');
+      eq(sp[1].name, 'A', 'A is restored where it now sits');
+      eq(sp[1].recognizers.length, 1, 'with what it held before the change');
+    } finally { setMeState(st); }
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

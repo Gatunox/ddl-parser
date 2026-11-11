@@ -27059,6 +27059,21 @@ console.log('\nreview 2026-11-11 — critical fixes');
       setMeState(keepState);
     }
   });
+
+  test('[REGRESSION] the deploy serves the page only, never the source map', () => {
+    // vercel.json served the repository root, so /index.js.map — the private
+    // source map — was public on ddl-parser.gu2.dev. Found 2026-11-10.
+    const vc = JSON.parse(fs.readFileSync('./vercel.json', 'utf8'));
+    eq(vc.outputDirectory, 'dist/web', 'Vercel serves a folder of its own');
+    const b = fs.readFileSync('./build.js', 'utf8');
+    assert.ok(/const WEB = path\.join\(__dirname, 'dist', 'web'\);/.test(b), 'the build writes that folder');
+    assert.ok(/fs\.rmSync\(WEB, \{ recursive: true, force: true \}\);/.test(b), 'starting empty, so nothing stale is served');
+    const writes = b.slice(b.indexOf('const WEB')).match(/(?:copyFileSync|writeFileSync)\([^;]*;/g) || [];
+    deepEq(writes, ["copyFileSync(OUT, path.join(WEB, 'index.html'));"], 'only the page goes in it');
+    // The page must stand alone: anything it loads by a relative path would 404.
+    const page = fs.readFileSync('./source.html', 'utf8').replace(/<script src="codemirror\.bundle\.js"><\/script>/, '');
+    deepEq(page.match(/\b(?:src|href)="(?![a-z]+:|#|\/\/)[^"]+"/gi) || [], [], 'the page loads nothing beside itself');
+  });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);

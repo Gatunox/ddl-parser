@@ -171,6 +171,17 @@ const outWithSpec = outHtml.replace('<!--SPEC_HTML-->', () => specHtml);
 fs.writeFileSync(OUT,  outWithSpec, 'utf8');
 fs.writeFileSync(MAP,  sourceMap, 'utf8');
 
+// ── what Vercel serves ─────────────────────────────────────────────────────
+// Only the page. vercel.json used to serve the repository root, so the private
+// source map (index.js.map) was public at /index.js.map — the one file this
+// build says must never be deployed — alongside build.js, test.js and the rest.
+// index.html is self-contained (CodeMirror and the SPEC are inlined), so it is
+// the whole site. dist/ is gitignored; the folder is rebuilt from scratch.
+const WEB = path.join(__dirname, 'dist', 'web');
+fs.rmSync(WEB, { recursive: true, force: true });
+fs.mkdirSync(WEB, { recursive: true });
+fs.copyFileSync(OUT, path.join(WEB, 'index.html'));
+
 const srcKB  = Math.round(fs.statSync(SRC).size / 1024);
 const outKB  = Math.round(fs.statSync(OUT).size / 1024);
 const mapKB  = Math.round(fs.statSync(MAP).size / 1024);

@@ -15982,7 +15982,7 @@ test('[REGRESSION] rebinding a class clears its overrides, and keeps its busines
     // Changed from what is stored — and with NO snapshot seeded anywhere, which
     // is the situation that used to clear nothing at all.
     it = mk(); S2.specs = [it]; S2.selIdx = 0;
-    vm.runInContext('_meBindCleared = { item: null, sig: null }', sandbox);
+    vm.runInContext('_meBindCleared = { key: null, sig: null }', sandbox);
     it.ddl_bindings[0] = 'TEST/DATA/OVERRIDE/TESTOVR';
     check(it);
     eq(Object.keys(it.overrides).length, 0, 'a changed binding clears every override');
@@ -16008,14 +16008,14 @@ test('[REGRESSION] rebinding a class clears its overrides, and keeps its busines
     // Picking from the suggestion list — how rebinding is really done — takes
     // the same path, with no seeding of any kind.
     it = mk(); S2.specs = [it]; S2.selIdx = 0;
-    vm.runInContext('_meBindCleared = { item: null, sig: null }', sandbox);
+    vm.runInContext('_meBindCleared = { key: null, sig: null }', sandbox);
     pick(0, 'TEST/DATA/OVERRIDE/TESTOVR');
     eq(Object.keys(it.overrides).length, 0, 'the FIRST pick clears — no second attempt needed');
     eq((it.rules || []).length, 1, 'rules kept here too');
 
     // Picking the path it already has is not a change.
     it = mk(); S2.specs = [it]; S2.selIdx = 0;
-    vm.runInContext('_meBindCleared = { item: null, sig: null }', sandbox);
+    vm.runInContext('_meBindCleared = { key: null, sig: null }', sandbox);
     pick(0, 'TEST/DATA/TDE/TDETEST');
     eq(Object.keys(it.overrides).length, 4, 'picking the path it already had clears nothing');
 
@@ -27017,6 +27017,47 @@ console.log('\nreview 2026-11-11 — critical fixes');
       eq(sp[1].name, 'A', 'A is restored where it now sits');
       eq(sp[1].recognizers.length, 1, 'with what it held before the change');
     } finally { setMeState(st); }
+  });
+
+  test('[REGRESSION] adding a DDL binding keeps the overrides, and undoing a clear sticks', () => {
+    // The check compared the raw joined list, so "+ binding" (an empty row) or a
+    // second DDL counted as "the DDL changed" and cleared every override written
+    // for the first DDL, still bound. And the "already cleared" guard compared
+    // the class OBJECT, which Undo replaces — so the next blur cleared again.
+    const check = run('_meBindCheckDdlChanged');
+    const save = run('window._fmtSave');
+    const keptSpecs = run('window._fmtGetSaved()');
+    const keepState = meState();
+    try {
+      save([{ name: 'TDE', label: 'TDE TEST', ddl_bindings: ['TEST/DATA/TDE/TDETEST'] }]);
+      const mk = bindings => ({ name: 'TDE', label: 'TDE TEST', ddl_bindings: bindings,
+        overrides: { VER: { type: 'hex-char' }, MODE: { type: 'hex-char' } } });
+      for (const [why, b] of [
+        ['an empty row added by + binding', ['TEST/DATA/TDE/TDETEST', '']],
+        ['a second DDL beside the first', ['TEST/DATA/TDE/TDETEST', 'TEST/DATA/OTHER/X']],
+        ['the same DDLs in another order', ['TEST/DATA/OTHER/X', 'test/data/tde/tdetest']],
+      ]) {
+        const it = mk(b);
+        setMeState({ specs: [it], selIdx: 0, dirty: false, sections: {} });
+        run('_meBindCleared = { key: null, sig: null }');
+        check(it);
+        eq(Object.keys(it.overrides).length, 2, `${why} cleared the overrides`);
+      }
+      // A saved DDL that is gone does clear — and Undo of that clear holds.
+      const it = mk(['TEST/DATA/OTHER/X']);
+      setMeState({ specs: [it], selIdx: 0, dirty: false, sections: {} });
+      run('_meBindCleared = { key: null, sig: null }');
+      check(it);
+      eq(Object.keys(it.overrides).length, 0, 'replacing the DDL clears');
+      run('_meUndoApply')();
+      const back = meState().specs[0];
+      eq(Object.keys(back.overrides).length, 2, 'undo brings them back');
+      check(back);                                    // the next blur
+      eq(Object.keys(back.overrides).length, 2, 'and the next blur does not clear them again');
+    } finally {
+      save((keptSpecs && keptSpecs.specs) || []);
+      setMeState(keepState);
+    }
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

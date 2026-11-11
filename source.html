@@ -22418,7 +22418,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.6.0';
+const APP_VERSION  = '1.64.6.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -30556,7 +30556,14 @@ function _meBindHasFocus() {
 // every character typed, and every prefix of a path resolves to nothing on the
 // way to the one that resolves: clearing there would throw the overrides away
 // before the path was finished being typed. Requested 2026-09-09.
-const _meBindSigOf = item => (item?.ddl_bindings || []).join('\u0000');
+// The DDLs a class reads, as a SET: blank rows dropped, case and order ignored.
+// The raw joined list counted "+ binding" (an empty row) and adding a second DDL
+// as a change, and cleared every override written for the first DDL, which was
+// still bound. _meCollectBindingDefs reads the bindings as one layout, so only a
+// DDL that is no longer bound takes its field names away.
+const _meBindPaths = item => [...new Set((item?.ddl_bindings || [])
+  .map(p => String(p || '').trim().toUpperCase()).filter(Boolean))].sort();
+const _meBindSigOf = item => _meBindPaths(item).join('\u0000');
 // What this class's bindings are IN STORAGE. The comparison is against saved
 // data and nothing else — not against a snapshot remembered when the class was
 // selected, which is what the first two attempts at this did. A remembered
@@ -30571,15 +30578,25 @@ function _meBindSavedSigOf(item) {
   catch (e) { return null; }
   return saved ? _meBindSigOf(saved) : null;
 }
+// Did a DDL that is saved on this class stop being bound? Only that strands
+// overrides; a DDL added beside it does not.
+function _meBindLostSaved(item, savedSig) {
+  if (!savedSig) return false;
+  const now = new Set(_meBindPaths(item));
+  return savedSig.split('\u0000').some(p => !now.has(p));
+}
 // The binding value the clear has already run for. Without this, every blur
 // after a rebind would clear again — taking the overrides the user had just
 // written FOR the new DDL with it, because the binding still differs from what
 // is saved until they press Save.
-let _meBindCleared = { item: null, sig: null };
+// Keyed by the class's identity (_specKey), not by the object: Undo replaces the
+// object with its snapshot, and an object compare then failed, so the next blur
+// cleared the overrides again — the Undo the toast offered did not stick.
+let _meBindCleared = { key: null, sig: null };
 // Kept as a no-op shim: the seeding calls are gone, but _meSave and the tests
 // still name it, and a function that does nothing is clearer than a call site
 // that has to know it should not exist.
-function _meBindSigSync(item) { _meBindCleared = { item: item || null, sig: _meBindSigOf(item) }; }
+function _meBindSigSync(item) { _meBindCleared = { key: item ? _specKey(item) : null, sig: _meBindSigOf(item) }; }
 
 // The signature-based check, for the TYPING path: _meBindSet has already
 // overwritten the old value character by character, so the only way to know what
@@ -30592,9 +30609,10 @@ function _meBindCheckDdlChanged(item) {
   // there is no "changed from" and nothing to clear.
   if (saved === null) return;
   if (now === saved) return;
+  if (!_meBindLostSaved(item, saved)) return;   // only added — nothing stranded
   // Already cleared for exactly this binding — the user has since written
   // overrides FOR the new DDL, and clearing again would take those.
-  if (_meBindCleared.item === item && _meBindCleared.sig === now) return;
+  if (_meBindCleared.key === _specKey(item) && _meBindCleared.sig === now) return;
   _meBindDdlChanged(item);
 }
 
@@ -30604,7 +30622,7 @@ function _meBindCheckDdlChanged(item) {
 function _meBindDdlChanged(item) {
   // Recorded first, so a second blur on the same binding does not clear again
   // and take the overrides written for the NEW DDL with it.
-  _meBindCleared = { item, sig: _meBindSigOf(item) };
+  _meBindCleared = { key: _specKey(item), sig: _meBindSigOf(item) };
   // The overrides are keyed by DDL field id, so they belong to the old DDL. The
   // parse spec is deliberately NOT cleared: it is the most laborious thing on a
   // class, and one written as a plain full-DDL walk stays valid against any DDL.

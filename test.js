@@ -20692,7 +20692,8 @@ test('a re-render with the reference open does not reserve a column for nothing'
   // the first from the flag. The second was added by the live toggle alone, so
   // ANY re-render while the reference was open produced a reserved 726px column
   // holding a display:none panel.
-  const sect = APP_SRC.slice(APP_SRC.indexOf('me-ps-wrap side'), APP_SRC.indexOf('me-ps-split-resizer'));
+  const _ps = APP_SRC.indexOf('me-ps-wrap side');
+  const sect = APP_SRC.slice(_ps, APP_SRC.indexOf('me-ps-split-resizer', _ps));
   assert.ok(/me-ps-wrap side\$\{_mePsHelpOpen\(\) \? '' : ' nohelp'\}/.test(sect),
     'the wrap no longer takes nohelp from the open flag');
   assert.ok(/class="me-ps-help\$\{_mePsHelpOpen\(\) \? ' open' : ''\}"/.test(sect),
@@ -25374,7 +25375,7 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
         assert.ok(/vbar-error/.test(bar.className), 'the first issue is an error and the bar is not painted as one');
         assert.ok(/✖ 6&ensp;⚠ 2/.test(bar.innerHTML), 'the counts are missing or wrong');
         assert.ok(/1&thinsp;\/&thinsp;8/.test(bar.innerHTML), 'the position is missing');
-        assert.ok(/onclick="_vbarJumpToLine\('res'\)"/.test(bar.innerHTML), 'the message does not lead to its row');
+        assert.ok(/onclick="_vbarToggleOpen\('res'\);_vbarJumpToLine\('res'\)"/.test(bar.innerHTML), 'the message does not lead to its row');
         vb().idx = 3; sync(m1, list);
         assert.strictEqual(vb().idx, 3, 'a re-render of the same message lost the position');
         vm.runInContext("_vbarDismiss('res')", sandbox);
@@ -28062,6 +28063,133 @@ console.log('\nCopy — one icon in every title, one on the hovered row');
       run('_mePsDraftSet')(it, 'binary', '[ {');
       eq(run('_mePsCopyText()'), '[ {', 'the unfinished text, as the editor would show it');
     } finally { sandbox.__ms = keep; sandbox.__cm = cm; run('_meState = __ms; _mePsCM = __cm'); }
+  });
+}
+console.log('\nreview 2026-11-11 — part 1: issue bar, narrow screens, keyboard');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withDoc = (k, fn, body) => { domElStore.set(k, fn); try { return body(); } finally { domElStore.delete(k); } };
+
+  test('[REGRESSION] a click on the issue bar unfolds the whole message, and folds it back', () => {
+    // A long message was cut with "…" and readable only from the tooltip.
+    const st = run("_vb('ddl')"), was = { msgs: st.msgs, idx: st.idx, open: st.open };
+    const bar = { className: '', style: {}, innerHTML: '', classList: { toggle(c, on) { bar.open = on; } } };
+    elStubs[st.host] = bar;
+    try {
+      st.msgs = [{ severity: 'error', text: 'a long message' }]; st.idx = 0; st.open = false;
+      // Every kind of bar: plain, jump-to-line, and show-the-row.
+      for (const [jump, onNav, fid, want] of [
+        [false, null, null, /class="vbar-msg" onclick="_vbarToggleOpen\('ddl'\)" style=/],
+        [true, null, null, /class="vbar-msg" onclick="_vbarToggleOpen\('ddl'\)" ondblclick=/],
+        [false, () => {}, 'X', /class="vbar-msg" onclick="_vbarToggleOpen\('ddl'\);_vbarJumpToLine\('ddl'\)"/]]) {
+        const keep = { jump: st.jump, onNav: st.onNav };
+        st.jump = jump; st.onNav = onNav; st.msgs[0].fid = fid;
+        try { run("_vbarRender('ddl')"); } finally { st.jump = keep.jump; st.onNav = keep.onNav; }
+        assert.ok(want.test(bar.innerHTML), `the message does not unfold on click (jump=${jump}, nav=${!!onNav})`);
+      }
+      delete st.msgs[0].fid;
+      run("_vbarRender('ddl')");
+      assert.ok(!/vbar-open/.test(bar.className), 'it starts unfolded');
+      run("_vbarToggleOpen('ddl')");
+      eq(st.open, true, 'the click did not unfold it'); eq(bar.open, true, 'the bar was not told');
+      run("_vbarRender('ddl')");
+      assert.ok(/vbar-open/.test(bar.className), '‹ › lose the unfolded state');
+      run("_vbarToggleOpen('ddl')");
+      eq(st.open, false, 'a second click does not fold it');
+    } finally { delete elStubs[st.host]; st.msgs = was.msgs; st.idx = was.idx; st.open = was.open; }
+    assert.ok(/\.vbar\.vbar-open \.vbar-msg \{ white-space: pre-wrap;/.test(html), 'the unfolded message does not wrap');
+  });
+
+  test('[REGRESSION] on a narrow panel VALUE stays in view: Description, then Field, give way', () => {
+    // At 1024px the fixed columns summed past the panel and VALUE was off screen.
+    const th = col => ({ dataset: { col }, style: {} });
+    const ths = ['num', 'id', 'desc', 'len', 'off', 'val'].map(th);
+    const shrunk = {};
+    const table = { style: {}, classList: { toggle: (c, on) => { shrunk[c] = on; } } };
+    const fit = avail => withDoc('querySelector', sel => sel === 'T' ? table : { clientWidth: avail + 4 }, () =>
+      withDoc('querySelectorAll', () => ths, () => run('_meColFit')({
+        table: 'T', wrap: 'W', key: 'test_no_such_cols', flex: 'val', flexMin: 120, min: 36, pad: 4,
+        shrink: [['desc', 90], ['id', 90]],
+        defaults: () => ({ num: 28, id: 140, desc: 220, len: 44, off: 72 }) })));
+    const width = c => parseInt(ths.find(t => t.dataset.col === c).style.width, 10);
+    fit(1000);
+    eq(width('desc'), 220, 'a wide panel shrinks nothing'); eq(shrunk['col-shrunk-desc'], false, 'no ellipsis when wide');
+    fit(491);   // the 1024px case: 504 of fixed columns
+    eq(width('val'), 120, 'VALUE keeps its floor');
+    eq(width('desc') + width('id') + 28 + 44 + 72 + 120, 491, 'the table no longer overflows the panel');
+    eq(width('desc'), 90, 'Description is spent first'); eq(width('id'), 137, 'then Field gives the rest');
+    eq(shrunk['col-shrunk-desc'], true, 'the shrunk description does not end in "…"');
+    fit(560);
+    eq(width('desc'), 156, 'Description absorbs a small shortfall'); eq(width('id'), 140, 'Field gave way before Description was spent');
+    fit(300);
+    eq(width('desc'), 90, 'Description stops at its floor'); eq(width('id'), 90, 'then Field');
+    assert.ok(/shrink: \[\['desc', 90\], \['id', 90\]\],/.test(APP_SRC), 'Parse Results lost its shrink order');
+    assert.ok(/table\.col-shrunk-desc td\.c-desc \{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; \}/.test(html), 'no ellipsis rule');
+  });
+
+  test('[REGRESSION] buttons a bar has no room for go behind ⋯ instead of being cut off', () => {
+    // At 1024px the DDL bar cut "Clear" in half and hid the panel toggle.
+    const mk = id => { const cl = new Set(); return { id, dataset: { label: id }, textContent: id, disabled: false, clicked: 0,
+      click() { this.clicked++; }, classList: { add: c => cl.add(c), remove: c => cl.delete(c), contains: c => cl.has(c) } }; };
+    const ids = ['ddlClearBtn', 'ddlDocBtn', 'ddlSaveBtn', 'ddlSearchBtn'];
+    const btns = Object.fromEntries(ids.map(i => [i, mk(i)]));
+    const more = { style: { display: 'none' }, getBoundingClientRect: () => ({ left: 0, bottom: 0 }) };
+    let need = 375;
+    const bar = { offsetParent: {}, clientWidth: 315, get scrollWidth() { return need - ids.filter(i => btns[i].classList.contains('bar-over')).length * 45; } };
+    Object.assign(elStubs, btns, { ddlCfgBar: bar, ddlCfgBarMore: more });
+    let menu = null;
+    sandbox.__menu = (x, y, items) => { menu = items; };
+    run('__scm = showCtxMenu; showCtxMenu = __menu');
+    try {
+      run("_barFit('ddlCfgBar')");
+      eq(ids.filter(i => btns[i].classList.contains('bar-over')).join(), 'ddlClearBtn,ddlDocBtn', 'the wrong buttons gave way');
+      eq(more.style.display, '', 'the ⋯ is not shown');
+      run("_barMore")('ddlCfgBar', { currentTarget: more });
+      eq(menu.map(m => m.label).join(), 'ddlDocBtn,ddlClearBtn', 'the menu does not list them in bar order');
+      menu[1].fn();
+      eq(btns.ddlClearBtn.clicked, 1, 'the menu entry does not do what the button does');
+      need = 300;
+      run("_barFit('ddlCfgBar')");
+      eq(ids.filter(i => btns[i].classList.contains('bar-over')).length, 0, 'a bar with room keeps them hidden');
+      eq(more.style.display, 'none', 'a bar with room shows ⋯');
+    } finally { run('showCtxMenu = __scm'); for (const k of [...ids, 'ddlCfgBar', 'ddlCfgBarMore']) delete elStubs[k]; }
+    assert.ok(/\.bar-over \{ display: none !important; \}/.test(html), 'a button given way still shows');
+  });
+
+  test('[REGRESSION] the tree, the lists, the Field Map and the separators answer the keyboard', () => {
+    // They answered only to the mouse, focus was invisible, and Esc left a confirm open.
+    const mkItem = (name, sel) => ({ name, offsetParent: {}, sel, clicks: 0, click() { this.clicks++; }, scrollIntoView() {},
+      ondblclick: null, classList: { contains: c => c === 'tree-open' ? false : false } });
+    const items = [mkItem('A'), mkItem('B', true), mkItem('C')];
+    const box = { focus() {}, querySelectorAll: () => items, querySelector: () => items.find(i => i.sel) };
+    const cfg = run("_KB_LISTS.find(c => c.box === '#ddlTree')");
+    run('_kbListMove')(cfg, box, 'ArrowDown');
+    eq(items.map(i => i.clicks).join(), '0,0,1', 'Down does not select the next item');
+    run('_kbListMove')(cfg, box, 'ArrowUp');
+    eq(items.map(i => i.clicks).join(), '1,0,1', 'Up does not select the previous item');
+    items[1].sel = false; items[2].sel = true;
+    run('_kbListMove')(cfg, box, 'ArrowDown');
+    eq(items[2].clicks, 1, 'Down past the end moved');
+    let toggled = 0; items[2].ondblclick = () => { toggled++; };
+    run('_kbListMove')(cfg, box, 'ArrowRight');
+    eq(toggled, 1, '→ does not open a closed node');
+    for (const b of ['#ddlTree', '#me-ent-list', '#bl-list'])
+      assert.ok(run(`_KB_LISTS.some(c => c.box === '${b}')`), `${b} has no keyboard`);
+    // A separator moves by the same gesture a drag makes.
+    const fired = [];
+    const sep = { getBoundingClientRect: () => ({ left: 100, top: 50, width: 4, height: 200 }), focus() {},
+      dispatchEvent: ev => fired.push(['el', ev.type, ev.clientX, ev.buttons]) };
+    withDoc('dispatchEvent', ev => fired.push(['doc', ev.type, ev.clientX, ev.buttons]), () => {
+      sandbox.MouseEvent = function (type, o) { return Object.assign({ type }, o); };
+      try { run('_kbSplitMove')(sep, 'ArrowRight'); } finally { delete sandbox.MouseEvent; }
+    });
+    eq(JSON.stringify(fired), JSON.stringify([['el', 'mousedown', 102, 1], ['doc', 'mousemove', 118, 1], ['doc', 'mouseup', 118, 0]]),
+      'the separator is not dragged 16px');
+    assert.ok(/'\.resizer-h, \.resizer-v, \.me-ps-split-resizer, \.me-ps-col-resizer, \.me-test-resizer'/.test(APP_SRC), 'a separator kind lost its keyboard');
+    assert.ok(/if \(t\.matches\('\.me-fm-table-wrap'\)\)/.test(APP_SRC), 'the Field Map has no keyboard');
+    // Focus can be seen, and Esc is Cancel on a confirm whatever has focus.
+    assert.ok(/\n:focus-visible \{ outline: var\(--bw-ctl\) solid var\(--accent\); outline-offset: -2px; \}/.test(html), 'focus is invisible');
+    assert.ok(/if \(e\.key !== 'Escape' \|\| e\.target === _mInput\) return;[\s\S]{0,200}_closeModal\(null\);/.test(APP_SRC), 'Esc does not cancel a confirm');
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

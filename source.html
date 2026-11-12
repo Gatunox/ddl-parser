@@ -1295,6 +1295,8 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .vbar .vbar-ctr   { font-size: calc(var(--sz-mono) - 1px); color: inherit; opacity: 0.7; white-space: nowrap; padding: 0 2px; }
 .vbar .vbar-scope { font-size: calc(var(--sz-mono) - 2px); font-family: var(--font-mono); background: var(--tint-chip); border-radius: var(--r-sm); padding: 0 5px; margin-left: 3px; white-space: nowrap; opacity: 0.85; }
 .vbar .vbar-msg   { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vbar.vbar-open   { height: auto; min-height: calc(var(--sz-mono) + 15px); align-items: flex-start; padding-top: 3px; padding-bottom: 3px; }
+.vbar.vbar-open .vbar-msg { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
 .vbar .vbar-copy  { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 2px; font-size: calc(var(--sz-mono) + 1px); }
 .vbar .vbar-copy:hover  { opacity: 1; }
 /* The copy icon every panel title carries, and the one a row shows under the
@@ -1302,7 +1304,13 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .cp-ico { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 4px; line-height: 1;
           font-size: calc(var(--sz-mono) + 1px); user-select: none; color: var(--text); }
 .cp-ico:hover { opacity: 1; }
-.cp-ico.cp-empty { display: none !important; }   /* over .panel-header > span's display:flex */
+.cp-ico.cp-empty { display: none !important; }
+/* Where the keyboard is: one ring for everything that takes focus and has no
+   focus style of its own (buttons and fields keep theirs). Requested 2026-11-12. */
+:focus-visible { outline: var(--bw-ctl) solid var(--accent); outline-offset: -2px; }
+.cm-content:focus-visible, .cm-editor:focus-visible { outline: none; }
+/* A button a narrow bar has no room for; it is listed under the bar's ⋯. */
+.bar-over { display: none !important; }   /* over .panel-header > span's display:flex */
 /* The panel headers spread their items (space-between): without this the
    icon floated to the middle of the bar instead of sitting by its title. */
 .panel-header > .cp-ico { margin-right: auto; }
@@ -2199,6 +2207,10 @@ tbody td { padding: 0 6px; height: var(--row-h); vertical-align: middle; font-si
 td.c-num { color: var(--text-very-dim); text-align: right; min-width: 28px; padding-right: 8px; font-variant-numeric: tabular-nums; user-select: none; }
 td.c-id   { color: var(--text); font-weight: 700; white-space: nowrap; }
 td.c-desc { color: var(--text-dim); }
+/* A description squeezed to make room for VALUE ends in "…"; the cell's
+   tooltip has it whole. */
+table.col-shrunk-desc td.c-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+table.col-shrunk-desc td.c-id   { overflow: hidden; text-overflow: ellipsis; }
 .c-sp { opacity: .38; user-select: none; }
 td.c-val  { color: var(--success); word-break: break-all; text-overflow: clip; overflow: visible; white-space: pre-wrap; }
 /* Value whose bytes don't match the field's data type — invalid for the type
@@ -4581,7 +4593,7 @@ th.me-fm-colhi{color:var(--accent);}
                  text sliding beneath. It opens on a row of its own now, so both
                  have room. Requested 2026-08-22. -->
             <span style="flex:1"></span>
-            <button class="btn btn-ico" id="ddlSearchBtn" onclick="ddlSearchToggle()"
+            <button class="btn btn-ico" id="ddlSearchBtn" onclick="ddlSearchToggle()" data-label="Search"
                     title="Search the DDL definition">
               <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"
                 stroke-linecap="round" aria-hidden="true">
@@ -4592,6 +4604,8 @@ th.me-fm-colhi{color:var(--accent);}
             <button class="btn" id="ddlSaveBtn" onclick="saveDDL()">Save</button>
             <button class="btn" id="ddlDocBtn" onclick="showDDLDoc()" title="View parsed layout: offsets, sizes, types">Doc</button>
             <button class="btn" id="ddlClearBtn" onclick="clearDDLEditor()" title="Clear editor">Clear</button>
+            <button class="btn btn-ico bar-more" id="ddlCfgBarMore" onclick="event.stopPropagation();_barMore('ddlCfgBar', event)"
+                    title="More actions" style="display:none">⋯</button>
             <!-- Collapses the whole DDL panel, exactly as the header button did:
                  same call, same arguments, so togglePanel still drives the
                  header's own button and nothing about collapsing changes. This
@@ -15182,7 +15196,8 @@ function _vbarRender(key = 'ddl') {
   if (!bar || !st.msgs.length) return;
   const total = st.msgs.length;
   const cur   = st.msgs[st.idx];
-  bar.className = 'vbar ' + (cur.severity === 'error' ? 'vbar-error' : cur.severity === 'unresolved' ? 'vbar-unresolved' : 'vbar-warning');
+  bar.className = 'vbar ' + (cur.severity === 'error' ? 'vbar-error' : cur.severity === 'unresolved' ? 'vbar-unresolved' : 'vbar-warning')
+                + (st.open ? ' vbar-open' : '');
   bar.style.display = 'flex';
   bar.innerHTML =
     `<span class="vbar-nav">` +
@@ -15194,13 +15209,23 @@ function _vbarRender(key = 'ddl') {
     (st.counts
       ? `<span class="vbar-counts">${[st.counts.error ? `\u2716 ${st.counts.error}` : '', st.counts.warning ? `\u26a0 ${st.counts.warning}` : ''].filter(Boolean).join('&ensp;')}</span>`
       : '') +
+    // A click unfolds a long message onto as many lines as it needs, and folds
+    // it back — it used to be readable only from the tooltip. The bar keeps
+    // the choice while ‹ › steps through the issues. Requested 2026-11-12.
     (st.onNav && cur.fid
-      ? `<span class="vbar-msg" onclick="_vbarJumpToLine('${key}')" style="cursor:pointer;user-select:text" title="Click to show this row">${_escH(cur.text)}</span>`
+      ? `<span class="vbar-msg" onclick="_vbarToggleOpen('${key}');_vbarJumpToLine('${key}')" style="cursor:pointer;user-select:text" title="Click to show this row and the whole message">${_escH(cur.text)}</span>`
       : st.jump
-      ? `<span class="vbar-msg" ondblclick="javascript:_vbarJumpToLine('${key}')" style="cursor:pointer;user-select:text" title="Double-click to jump to line">${_escH(cur.text)}</span>`
-      : `<span class="vbar-msg" style="user-select:text">${_escH(cur.text)}</span>`) +
+      ? `<span class="vbar-msg" onclick="_vbarToggleOpen('${key}')" ondblclick="javascript:_vbarJumpToLine('${key}')" style="cursor:pointer;user-select:text" title="Click to show the whole message — double-click to jump to line">${_escH(cur.text)}</span>`
+      : `<span class="vbar-msg" onclick="_vbarToggleOpen('${key}')" style="cursor:pointer;user-select:text" title="Click to show the whole message">${_escH(cur.text)}</span>`) +
     `<span class="vbar-copy" onclick="_vbarCopyMsg('${key}')" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>` +
     `<span class="vbar-close" onclick="_vbarDismiss('${key}')" title="Dismiss">✕</span>`;
+}
+function _vbarToggleOpen(key = 'ddl') {
+  const st = _vb(key);
+  // A click that ends a text selection is a selection, not a toggle.
+  if (String(window.getSelection?.() || '')) return;
+  st.open = !st.open;
+  document.getElementById(st.host)?.classList.toggle('vbar-open', st.open);
 }
 function _vbarPrev(key = 'ddl') { const st = _vb(key); if (st.idx > 0) { st.idx--; _vbarRender(key); st.onNav?.(st.msgs[st.idx]); } }
 function _vbarNext(key = 'ddl') { const st = _vb(key); if (st.idx < st.msgs.length - 1) { st.idx++; _vbarRender(key); st.onNav?.(st.msgs[st.idx]); } }
@@ -21708,6 +21733,144 @@ function showCtxMenu(x, y, items) {
   });
 }
 
+// ── Keyboard: lists, the Field Map, separators ─────────────────────────────────
+// The tree, the class and baseline lists, the Field Map and the separators
+// between panels answered only to the mouse. Each list now takes focus (a click
+// in it gives it focus too) and moves its selection with ↑ ↓; the tree opens
+// and closes with → ←; a focused separator moves 16px per arrow. The keys are
+// taken only while that element has focus, so the app-wide arrows (fields and
+// messages in Parse Results) are untouched everywhere else.
+// Requested 2026-11-12.
+const _KB_LISTS = [
+  { box: '#ddlTree',     item: '.tree-node',  cur: '.tree-sel' },
+  { box: '#me-ent-list', item: '.me-item',    cur: '.me-item.active' },
+  { box: '#bl-list',     item: '.bl-item',    cur: '.bl-item.is-sel' },
+];
+const _KB_SPLIT = '.resizer-h, .resizer-v, .me-ps-split-resizer, .me-ps-col-resizer, .me-test-resizer';
+const _KB_STEP = 16;
+function _kbListMove(cfg, box, key) {
+  const items = [...box.querySelectorAll(cfg.item)].filter(el => el.offsetParent !== null);
+  if (!items.length) return;
+  const cur = box.querySelector(cfg.cur);
+  const i = items.indexOf(cur);
+  if (key === 'Enter') { if (cur) cur.click(); return; }
+  // The tree opens and closes with → ←, through the node's own double-click.
+  if (key === 'ArrowRight' || key === 'ArrowLeft') {
+    if (cur && cur.ondblclick && cur.classList.contains('tree-open') === (key === 'ArrowLeft'))
+      cur.ondblclick({ stopPropagation() {}, preventDefault() {} });
+    return;
+  }
+  const ni = i < 0 ? 0 : Math.max(0, Math.min(items.length - 1, i + (key === 'ArrowDown' ? 1 : -1)));
+  if (ni === i) return;
+  items[ni].click();
+  // A click can redraw the list; find the selection again to keep it in view.
+  (box.querySelector(cfg.cur) || items[ni]).scrollIntoView?.({ block: 'nearest' });
+  if (document.activeElement !== box) box.focus({ preventScroll: true });
+}
+function _kbFieldMapMove(key) {
+  const v = _meFmVirt;
+  if (!v || !v.visible || !v.visible.length) return;
+  const ids = v.visible.map(r => r.id);
+  const i = ids.indexOf(_meOvlSel || _meFmSelAnchor);
+  const ni = i < 0 ? 0 : Math.max(0, Math.min(ids.length - 1, i + (key === 'ArrowDown' ? 1 : -1)));
+  if (ni === i) return;
+  // The table draws only what is in view: bring the row in first, then select.
+  const rowH = v.rowH || 24, top = ni * rowH, w = v.wrap;
+  const headH = w.querySelector('thead')?.offsetHeight || rowH;
+  if (top < w.scrollTop) w.scrollTop = top;
+  else if (top + rowH > w.scrollTop + w.clientHeight - headH) w.scrollTop = top + rowH - w.clientHeight + headH;
+  _meFmRenderWindow(true);
+  _meOvlRowClick(ids[ni], null);
+}
+function _kbSplitMove(el, key) {
+  const r = el.getBoundingClientRect();
+  const x = r.left + r.width / 2, y = r.top + r.height / 2;
+  const dx = key === 'ArrowRight' ? _KB_STEP : key === 'ArrowLeft' ? -_KB_STEP : 0;
+  const dy = key === 'ArrowDown'  ? _KB_STEP : key === 'ArrowUp'   ? -_KB_STEP : 0;
+  // The same gesture the mouse makes, so every separator keeps its one
+  // implementation of what a drag means.
+  const ev = (type, cx, cy, target) => target.dispatchEvent(new MouseEvent(type,
+    { bubbles: true, cancelable: true, clientX: cx, clientY: cy, buttons: type === 'mouseup' ? 0 : 1, button: 0 }));
+  ev('mousedown', x, y, el);
+  ev('mousemove', x + dx, y + dy, document);
+  ev('mouseup', x + dx, y + dy, document);
+  el.focus({ preventScroll: true });
+}
+// Made focusable on the way in — a Tab, or a press inside one — rather than in
+// every template that draws them: the separators of the Class Editor are
+// redrawn with their panels.
+const _KB_FOCUSABLE = [_KB_SPLIT, '.me-fm-table-wrap', ..._KB_LISTS.map(c => c.box)].join(', ');
+function _kbTabbable(root) {
+  for (const el of (root || document).querySelectorAll(_KB_FOCUSABLE)) {
+    if (el.hasAttribute('tabindex')) continue;
+    el.tabIndex = 0;
+    if (el.matches(_KB_SPLIT)) { el.setAttribute('role', 'separator'); el.setAttribute('aria-label', 'Resize — arrow keys move it'); }
+  }
+}
+document.addEventListener('keydown', e => { if (e.key === 'Tab') _kbTabbable(); }, true);
+document.addEventListener('mousedown', e => {
+  const el = e.target?.closest?.(_KB_FOCUSABLE);
+  if (el && !el.hasAttribute('tabindex')) { el.tabIndex = 0; if (el.matches(_KB_SPLIT)) el.setAttribute('role', 'separator'); }
+}, true);
+document.addEventListener('keydown', e => {
+  const k = e.key;
+  if (!/^(ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Enter)$/.test(k) || e.altKey || e.ctrlKey || e.metaKey) return;
+  const t = e.target;
+  if (!t || !t.matches) return;
+  if (t.matches(_KB_SPLIT)) {
+    if (k === 'Enter') return;
+    e.preventDefault(); e.stopPropagation();
+    _kbSplitMove(t, k);
+    return;
+  }
+  if (t.matches('.me-fm-table-wrap')) {
+    if (k !== 'ArrowUp' && k !== 'ArrowDown') return;
+    e.preventDefault(); e.stopPropagation();
+    _kbFieldMapMove(k);
+    return;
+  }
+  for (const cfg of _KB_LISTS) {
+    if (!t.matches(cfg.box)) continue;
+    e.preventDefault(); e.stopPropagation();
+    _kbListMove(cfg, t, k);
+    return;
+  }
+}, true);
+
+// Buttons that do not fit a bar go behind a ⋯ that lists them, instead of
+// being cut off at the edge; the bar keeps its height and the panel toggle at
+// its end stays put. Listed in the order they give way. Requested 2026-11-12.
+const _BAR_FIT = { ddlCfgBar: ['ddlClearBtn', 'ddlDocBtn', 'ddlSaveBtn', 'ddlSearchBtn'] };
+function _barFit(barId) {
+  const bar = document.getElementById(barId), more = document.getElementById(barId + 'More');
+  if (!bar || !more || !bar.offsetParent) return;
+  const btns = _BAR_FIT[barId].map(id => document.getElementById(id)).filter(Boolean);
+  btns.forEach(b => b.classList.remove('bar-over'));
+  more.style.display = 'none';
+  for (const b of btns) {
+    if (bar.scrollWidth <= bar.clientWidth + 1) break;
+    b.classList.add('bar-over');
+    more.style.display = '';
+  }
+}
+function _barMore(barId, ev) {
+  const items = _BAR_FIT[barId].slice().reverse().map(id => document.getElementById(id))
+    .filter(b => b && b.classList.contains('bar-over'))
+    .map(b => ({ label: b.dataset.label || b.textContent.trim(), disabled: b.disabled, fn: () => b.click() }));
+  const r = (ev.currentTarget || ev.target).getBoundingClientRect();
+  showCtxMenu(r.left, r.bottom + 2, items);
+}
+function _barFitWatch() {
+  for (const id of Object.keys(_BAR_FIT)) {
+    const bar = document.getElementById(id);
+    if (!bar) continue;
+    _barFit(id);
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => _barFit(id)).observe(bar);
+  }
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _barFitWatch);
+else _barFitWatch();
+
 function hideCtxMenu() {
   document.getElementById('ctxMenu')?.classList.add('hidden');
   // The row a menu was opened on keeps its mark only while the menu is up.
@@ -23106,7 +23269,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.65.0.2';
+const APP_VERSION  = '1.66.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -24858,6 +25021,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Enter')  _closeModal(_mInput.value.trim());
     if (e.key === 'Escape') _closeModal(null);
   });
+  // A confirm has no field to type in — focus sits on OK — so Esc never
+  // reached the handler above and the dialog could only be closed by mouse.
+  // Esc is Cancel wherever focus is. Requested 2026-11-12.
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || e.target === _mInput) return;
+    if (document.getElementById('modalOverlay')?.classList.contains('hidden')) return;
+    e.preventDefault(); e.stopPropagation();
+    _closeModal(null);
+  }, true);
   // ---- end modal init ----
 
   // ---- context menu ----
@@ -33288,6 +33460,12 @@ const _ME_COLRZ = {
     // 2026-08-28.
     growLast: true,
     flex: 'val', flexMin: 120, min: 36, pad: 4,
+    // On a narrow panel these give up width, in this order and down to these
+    // floors, before VALUE is pushed out of view — it is what the table is
+    // read for. Only the drawn widths change; saved ones stay. A shrunk
+    // description ends in "…" and its tooltip carries the whole text.
+    // Requested 2026-11-12.
+    shrink: [['desc', 90], ['id', 90]],
     after: () => _syncFilterPos(),
     defaults: () => _RES_DEFAULT_COLW,
     // The column chooser can hide any of them; a hidden th measures 0, and that
@@ -33426,6 +33604,7 @@ function _meColFit(cfg) {
   const defs  = cfg.defaults() || {};
   const w = c => saved[c] || defs[c] || 80;
   let fixed = 0;
+  const shrunk = {};
   // The flex column may be decided at fit time: Track's columns ARE the tracked
   // fields, so which one absorbs the slack depends on what is being tracked.
   // One flex column, or several. Baselines has two — the mirrored VALUE columns
@@ -33448,12 +33627,21 @@ function _meColFit(cfg) {
   }
   // Whatever is left is split EVENLY between the flex columns still free, which
   // is what keeps two mirrored columns the same width at any pane size.
+  // Too narrow for the flex columns' floor: the shrinkable columns give way.
+  let over = fixed + sizedTotal + cfg.flexMin * free.length - avail;
+  const shown = new Set(ths.map(th => th.dataset.col));
+  for (const [c, floor] of (cfg.shrink || [])) {
+    if (over <= 0 || !shown.has(c) || isFlex(c)) continue;
+    const take = Math.min(over, Math.max(0, w(c) - floor));
+    if (take > 0) { shrunk[c] = w(c) - take; fixed -= take; over -= take; }
+  }
+  table.classList.toggle('col-shrunk-desc', 'desc' in shrunk);
   const each = free.length
     ? Math.max(cfg.flexMin, Math.floor((avail - fixed - sizedTotal) / free.length)) : 0;
   const flexW = k => saved[k] ? Math.max(cfg.min, saved[k]) : each;
   ths.forEach(th => {
     const c = th.dataset.col;
-    th.style.width = (isFlex(c) ? flexW(c) : w(c)) + 'px';
+    th.style.width = (isFlex(c) ? flexW(c) : (shrunk[c] ?? w(c))) + 'px';
   });
   table.style.width = (fixed + sizedTotal + each * free.length) + 'px';
   // Anything anchored to a column follows it from here: the fit is the single

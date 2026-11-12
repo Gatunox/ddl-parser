@@ -2242,7 +2242,7 @@ test('masking: modes, consistent random, hex, bytes, groups and the two switches
   assert.ok(run('_meOvlChips')({ display: 'masked', mask: { keepFirst: 6, keepLast: 4 } }).join().includes('keep 6+4'));
   deepEq(run("_ME_OV_KINDS.find(k => k.id === 'show').keys"), ['display', 'mask'], 'clearing SHOW leaves the mask behind');
   // Every outlet that carries message data goes through it.
-  for (const fn of ['copyRawToClipboard', 'copyFieldToClipboard', 'copyMsgToClipboard', '_trackExportLines'])
+  for (const fn of ['_rawDumpLines', 'copyFieldToClipboard', '_resCopyText', '_trackExportLines'])
     assert.ok(/_maskExportOn\(\)/.test(psFnSource(fn)), `${fn} ignores the Export switch`);
   assert.ok(/_maskScreenOn\(\)/.test(psFnSource('renderRaw')), 'the Raw panel ignores the Screen switch');
   assert.ok(/_maskScreenOn\(\)\) f = _maskField\(msg, f\)/.test(psFnSource('renderFieldTable')), 'Parse Results ignores the Screen switch');
@@ -11193,11 +11193,11 @@ test('the DDL Doc has a title row, and its filter sits over the column it filter
   // buttons — the shape Parse Results has, which is what leaves room for the
   // filter to line up with a column instead of being crowded beside the title.
   const hdr = html.slice(html.indexOf('<div class="ddl-doc-hdr">'), html.indexOf('id="ddlDocBody"'));
-  assert.ok(/<span id="ddlDocTitle"[^>]*><\/span>\s*\n\s*<button class="btn" onclick="closeDDLDoc\(\)"/.test(hdr),
+  assert.ok(/<span id="ddlDocTitle"[^>]*><\/span>\s*\n\s*<span class="cp-ico" data-cp="ddlDoc"[^>]*>⧉<\/span>\s*\n\s*<button class="btn" onclick="closeDDLDoc\(\)"/.test(hdr),
     'the title row does not hold the title alone');
   assert.ok(/<div class="ddl-doc-ctl" id="ddlDocControls">[\s\S]*?ddlDocFilterInput/.test(hdr),
     'the filter is not on the controls row');
-  for (const b of ['ddlDocCollapseAllBtn', 'ddlDocHideRedefBtn', 'copyDDLDoc'])
+  for (const b of ['ddlDocCollapseAllBtn', 'ddlDocHideRedefBtn'])  // Copy moved to the title's ⧉ (2026-11-12)
     assert.ok(hdr.slice(hdr.indexOf('ddl-doc-ctl')).includes(b), `${b} is not on the controls row`);
 
   // One positioner for both tables. A second copy would be a second set of edge
@@ -17023,16 +17023,16 @@ test('.nojekyll exists — markdown must not be run through Liquid', () => {
   }
 });
 
-test('double-clicking a Field Map row copies a name a parse spec can use', () => {
+test('the Field Map row copy icon copies a name a parse spec can use', () => {
   // Requested so a field name can be pasted straight into a parse spec. The
   // subtlety is WHICH name: the table shows GROUP[01].AA, but a parse spec
   // references GROUP.AA — pasting the row label would fail in a way that looks
   // like the spec's fault rather than a bad paste.
   const src = fs.readFileSync('./source.html', 'utf8');
-  assert.ok(/ondblclick="_meFmCopyFieldName\('\$\{id\}', event\)"/.test(src),
-    'every row carries the handler');
-  assert.ok(/title="Double-click to copy the field name"/.test(src),
-    'and says so, since a double-click is not discoverable on its own');
+  // A double-click is not discoverable; the row's hover icon is (2026-11-12).
+  assert.ok(/\['\.me-fm-table tr\[data-qn\]', el => _meFmCopyFieldName\(el\.dataset\.qn\)\]/.test(src),
+    'the row icon does not copy the field name');
+  assert.ok(!/ondblclick="_meFmCopyFieldName/.test(src), 'a double-click still copies');
   const fn = psFnSource('_meFmCopyFieldName');
   assert.ok(/_canonFieldId\(qn\)/.test(fn),
     `the CANONICAL id is copied, not the row label: ${fn.slice(0, 200)}`);
@@ -27924,6 +27924,129 @@ console.log('\nreview 2026-11-11 — part 2 (UI)');
     } finally { domElStore.delete('execCommand'); }
     eq(toast, '', 'a refused copy said it copied');
     eq(warn, 'Copy failed', 'a refused copy was not reported');
+  });
+}
+console.log('\nCopy — one icon in every title, one on the hovered row');
+{
+  const run = c => vm.runInContext(c, sandbox);
+
+  test('[REGRESSION] nothing copies on double-click any more', () => {
+    // It worked, but nothing said so: the copy was found by accident or never.
+    const dbl = [...html.matchAll(/ondblclick="([^"]*)"/g)].map(m => m[1]).filter(h => /copy|clipboard/i.test(h));
+    eq(JSON.stringify(dbl), '[]', 'a double-click still copies');
+    for (const m of APP_SRC.matchAll(/addEventListener\('dblclick',([\s\S]{0,400})/g))
+      assert.ok(!/clipboard|_cpWrite|copyTo/i.test(m[1]), 'a dblclick listener copies: ' + m[1].slice(0, 120));
+  });
+
+  test('[REGRESSION] every panel icon has a copy, and every copy has an icon', () => {
+    const keys = run('Object.keys(_CP)');
+    const used = new Set([...html.matchAll(/data-cp="([^"$]+)"/g)].map(m => m[1])
+      .concat([...APP_SRC.matchAll(/_cpIco\('([^']+)'\)/g)].map(m => m[1])));
+    // The Class Editor sections build their key from the section's own.
+    for (const k of keys.filter(k => k.startsWith('me-sect-'))) used.add(k);
+    for (const k of used) assert.ok(keys.includes(k), `icon "${k}" has no copy`);
+    for (const k of keys) assert.ok(used.has(k), `copy "${k}" has no icon`);
+    assert.ok(/\$\{_CP\['me-sect-' \+ d\.key\] \? _cpIco\('me-sect-' \+ d\.key\) : ''\}/.test(psFnSource('_meSectHtml')),
+      'the Class Editor sections carry no icon');
+    for (const k of ['ddl', 'tree', 'input', 'auditPop', 'res', 'raw', 'spec', 'follow', 'journal', 'ddlDoc',
+                     'meClasses', 'meMsgs', 'meOther', 'meFiles', 'me-sect-recognizers', 'me-sect-ddl_bindings',
+                     'me-sect-parse_spec', 'me-sect-rules', 'me-sect-overrides', 'genFlds', 'genTok', 'blSaved', 'blPane', 'defpop', '@'])
+      assert.ok(keys.includes(k), `the ${k} panel lost its copy`);
+  });
+
+  test('[REGRESSION] the icon hides on an empty panel and the copy is refused', () => {
+    const st = run('S'), was = { p: st.isParsed, m: st.messages, i: st.curIdx };
+    try {
+      st.isParsed = false; st.messages = [];
+      eq(run('_cpHas')('res'), false, 'Parse Results with nothing parsed');
+      eq(run('_cpHas')('raw'), false, 'Raw with nothing parsed');
+      eq(run('_cpHas')('nope'), false, 'an unknown key');
+      let warned = '';
+      sandbox.__f = (m, l) => { if (l === 'warn') warned = m; };
+      run('__of = flash; flash = __f');
+      try { run('_cpCopy')('res'); } finally { run('flash = __of'); }
+      eq(warned, 'Nothing to copy', 'an empty panel copied');
+      st.isParsed = true; st.messages = [{ fields: [], bytes: [0x41, 0x42] }]; st.curIdx = 0;
+      eq(run('_cpHas')('res'), true, 'a parsed message');
+      eq(JSON.stringify(run('_rawDumpLines()')), JSON.stringify(['000000: ' + '41 42'.padEnd(48) + '  |AB|']), 'the dump line');
+    } finally { st.isParsed = was.p; st.messages = was.m; st.curIdx = was.i; }
+    const sync = psFnSource('_cpSync');
+    assert.ok(/classList\.toggle\('cp-empty', !_cpHas\(el\.dataset\.cp, el\)\)/.test(sync), 'the sync does not hide empty panels');
+    // !important: .panel-header > span:not(.panel-title) sets display:flex and
+    // outranks the class pair, so the icon showed on every empty main panel.
+    assert.ok(/\.cp-ico\.cp-empty \{ display: none !important; \}/.test(html), 'cp-empty loses to the panel header rule');
+    // The headers spread their items; the icon has to claim the space after it.
+    assert.ok(/\.panel-header > \.cp-ico \{ margin-right: auto; \}/.test(html), 'the icon floats away from its title');
+  });
+
+  test('[REGRESSION] a row shows the copy icon after a pause, and copies that row alone', () => {
+    eq(run('_CP_ROW_DELAY'), 1000, 'the pause');
+    const rows = run('_CP_ROWS.map(r => r[0])').join(' ');
+    for (const sel of ['#resContainer tr[data-fid]', '.me-fm-table tr[data-qn]', '#rawDisplay .dump-row', '#ddlTree .tree-node',
+                       '#auditRecordList .audit-record-row', '#ddlDocBody tr', '#journalBody .jl', '.me-test-section tr',
+                       '#genRows tr', '#bl-right tr', '.defpop-line', '.tree-fly-ddl', '#followBody tr'])
+      assert.ok(rows.includes(sel), `${sel} rows have no copy`);
+    // What the two double-clicks copied, the icon copies.
+    assert.ok(/\['#resContainer tr\[data-fid\]', el => copyFieldToClipboard\(el\.dataset\.fid\)\]/.test(APP_SRC), 'a Parse Results row');
+    assert.ok(/\['\.me-fm-table tr\[data-qn\]', el => _meFmCopyFieldName\(el\.dataset\.qn\)\]/.test(APP_SRC), 'a Field Map row');
+    // The raw rows are addressable, one per 16 bytes.
+    assert.ok(/<span class="dump-row" data-row="\$\{row\}">/.test(psFnSource('renderRaw')), 'raw lines are not rows');
+    const show = psFnSource('_cpRowShow');
+    assert.ok(/scrollWidth > p\.clientWidth/.test(show), 'the icon is not kept inside what scrolls');
+  });
+
+  test('[REGRESSION] the Parse Results title copies the panel as shown, masked for export', () => {
+    // It copied four columns of every field, not what the panel shows.
+    const cls = (c, list) => list.split(/[ ,]+/).some(x => x && c.split(' ').includes(x.replace(/^\./, '')));
+    const cell = (c, text, shown = true) => ({ offsetParent: shown ? {} : null, innerText: text, textContent: text,
+                                               matches: sel => cls(c, sel) });
+    const row = (cells, fid, shown = true) => ({ offsetParent: shown ? {} : null, children: cells, dataset: fid ? { fid } : {} });
+    const head = row([cell('th-num', '#'), cell('th-id', 'Field'), cell('th-val', 'Value'), cell('th-raw', 'Raw Hex', false), cell('th-trk', 'Trk')]);
+    const body = [
+      row([cell('c-num', '1'), cell('c-id', 'PAN'), cell('c-val', '4111111111111111'), cell('c-raw', 'F4', false), cell('c-trk', '')], 'PAN'),
+      row([cell('c-num', '2'), cell('c-id', 'HIDDEN'), cell('c-val', 'x'), cell('c-raw', '', false), cell('c-trk', '')], 'HIDDEN', false),
+      row([cell('c-num', ''), cell('c-id', '  Group   A '), cell('c-val', ''), cell('c-raw', '', false), cell('c-trk', '')]),
+    ];
+    const box = { querySelectorAll: sel => sel === 'thead tr' ? [head] : sel === 'tbody tr' ? body : [] };
+    const st = run('S'), was = { m: st.messages, i: st.curIdx, t: st.trackMode };
+    elStubs.resContainer = box;
+    try {
+      st.messages = [{ fields: [{ id: 'PAN', value: '4111111111111111', rawHex: 'F4' }] }]; st.curIdx = 0; st.trackMode = false;
+      const setMask = (exp, scr) => run(`P.maskExport = ${exp}; P.maskScreen = ${scr}`);
+      run('__pe = P.maskExport; __ps = P.maskScreen; __mf = _maskField;'
+        + ' _maskField = (m, f) => Object.assign({}, f, { value: "411111******1111" })');
+      setMask(false, false);
+      try {
+        eq(run('_resCopyText()'), '#\tField\tValue\n1\tPAN\t4111111111111111\n\tGroup A\t',
+          'visible columns without Trk, visible rows only, groups kept');
+        setMask(true, false);
+        assert.ok(run('_resCopyText()').includes('1\tPAN\t411111******1111'), 'Export masking is not applied');
+        setMask(true, true);
+        assert.ok(run('_resCopyText()').includes('1\tPAN\t4111111111111111'), 'already masked on screen: read as shown');
+      } finally { run('P.maskExport = __pe; P.maskScreen = __ps; _maskField = __mf'); }
+    } finally { delete elStubs.resContainer; st.messages = was.m; st.curIdx = was.i; st.trackMode = was.t; }
+    assert.ok(/if \(S\.trackMode\) return _trackExportLines\(\)\.lines\.join/.test(psFnSource('_resCopyText')), 'Track mode copies its table');
+    assert.ok(/res: +\{[^\n]*copy: \(\) => _cpWrite\(_resCopyText\(\)/.test(APP_SRC), 'the title icon does not copy the panel');
+  });
+
+  test('[REGRESSION] the copied text: tree, row cells, parse spec without the editor', () => {
+    const st = run('S'), was = st.ddlTree;
+    try {
+      st.ddlTree = { V: { S1: { F: 'x', G: 'y' } } };
+      eq(run('_treeCopyText()'), 'V\n  S1\n    F\n    G', 'the tree list');
+    } finally { st.ddlTree = was; }
+    const cell = (text, value) => ({ innerText: text, querySelector: () => value == null ? null : { value } });
+    eq(run('_cpRowText')({ tagName: 'TR', children: [cell(' A  b '), cell('', '7'), cell('C')] }), 'A b\t7\tC', 'cells, a box by its value');
+    eq(run('_cpRowText')({ tagName: 'DIV', innerText: '  line  \n' }), 'line', 'a line');
+    const keep = run('_meState'), cm = run('_mePsCM');
+    const it = { name: 'A', parse_spec_binary: [{ a: 1 }] };
+    try {
+      sandbox.__ms = { specs: [it], selIdx: 0, sections: {}, parseSpecVariant: 'binary' };
+      run('_meState = __ms; _mePsCM = null');
+      eq(run('_mePsCopyText()'), JSON.stringify([{ a: 1 }], null, 2), 'the spec of a collapsed section');
+      run('_mePsDraftSet')(it, 'binary', '[ {');
+      eq(run('_mePsCopyText()'), '[ {', 'the unfinished text, as the editor would show it');
+    } finally { sandbox.__ms = keep; sandbox.__cm = cm; run('_meState = __ms; _mePsCM = __cm'); }
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

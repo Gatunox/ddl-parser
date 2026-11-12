@@ -1297,6 +1297,21 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .vbar .vbar-msg   { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vbar .vbar-copy  { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 2px; font-size: calc(var(--sz-mono) + 1px); }
 .vbar .vbar-copy:hover  { opacity: 1; }
+/* The copy icon every panel title carries, and the one a row shows under the
+   pointer — one look, so the user learns it once. */
+.cp-ico { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 4px; line-height: 1;
+          font-size: calc(var(--sz-mono) + 1px); user-select: none; color: var(--text); }
+.cp-ico:hover { opacity: 1; }
+.cp-ico.cp-empty { display: none !important; }   /* over .panel-header > span's display:flex */
+/* The panel headers spread their items (space-between): without this the
+   icon floated to the middle of the bar instead of sitting by its title. */
+.panel-header > .cp-ico { margin-right: auto; }
+.me-test-sec-hdr .cp-ico, .tree-fly-hdr .cp-ico { margin-left: auto; }
+#cpRowIco { position: fixed; z-index: 99000; display: none; cursor: pointer; user-select: none;
+            padding: 0 5px; line-height: 1.4; border-radius: 4px; color: var(--text);
+            font-size: calc(var(--sz-mono) + 1px);
+            background: var(--bg-panel); border: var(--bw-ctl) solid var(--border-strong); }
+#cpRowIco:hover { color: var(--accent); }
 .vbar .vbar-close { flex-shrink: 0; cursor: pointer; opacity: 0.5; padding: 0 2px; font-size: calc(var(--sz-mono) + 1px); }
 .vbar .vbar-close:hover { opacity: 1; }
 .vbar .vbar-counts { flex-shrink: 0; white-space: nowrap; font-size: calc(var(--sz-mono) - 1px); padding: 0 6px 0 2px; }
@@ -4537,6 +4552,7 @@ th.me-fm-colhi{color:var(--accent);}
         <div class="ddl-tree-pane pb-read" id="ddlTreePane">
           <div class="tree-hdr">
             <span class="tree-hdr-title">DDL Tree</span>
+            <span class="cp-ico" data-cp="tree" onclick="event.stopPropagation();_cpCopy('tree', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
             <button class="tree-hdr-exp" id="treeExpandAllBtn" onclick="toggleTreeExpandAll()" title="Expand all">+</button>
             <span class="tree-hdr-count" id="ddlTreeCount">0</span>
             <button class="tree-hdr-collapse" id="treePaneToggle" onclick="toggleTreePane()" title="Hide the tree">−</button>
@@ -4556,6 +4572,7 @@ th.me-fm-colhi{color:var(--accent);}
         <div class="ddl-editor-pane pb-edit">
           <div id="ddlCfgBar">
             <span class="panel-title ddl-cfg-title">DDL Definition</span>
+            <span class="cp-ico" data-cp="ddl" onclick="event.stopPropagation();_cpCopy('ddl', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
             <!-- The search used to live HERE, flex:1 between the title and the
                  buttons. Its field and its navigation controls were competing
                  for one bar's width: the controls are 80-110px depending on the
@@ -4608,6 +4625,7 @@ th.me-fm-colhi{color:var(--accent);}
     <div class="panel" id="msgPanel">
       <div class="panel-header">
         <span class="panel-title">Data Input</span>
+        <span class="cp-ico" data-cp="input" onclick="event.stopPropagation();_cpCopy('input', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
         <!-- The detected format sits beside the title, where Parse Results puts
              its message-type code. It used to live down in the config bar next
              to the controls that OVERRIDE it, so the fact and the override read
@@ -4753,8 +4771,9 @@ th.me-fm-colhi{color:var(--accent);}
                  with its resizer by _auditSetDetailOpen — never separately. -->
             <div class="resizer-v" id="auditDetailResizer" style="display:none"></div>
             <div id="auditPopup" class="audit-popup" style="display:none">
-              <div class="audit-popup-hdr" ondblclick="auditCopyDumpToClipboard(event)" title="Double-click to copy dump to clipboard">
+              <div class="audit-popup-hdr">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
+                <span class="cp-ico" data-cp="auditPop" onclick="event.stopPropagation();_cpCopy('auditPop', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
                 <!-- Same three controls the Parse Results navigator keeps: ±10 on
                      Shift, first and last inside Go to. Requested 2026-09-02. -->
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavRel(-1, event)" title="Previous record (←) — hold Shift for 10 back">&lt;</button>
@@ -4791,7 +4810,8 @@ th.me-fm-colhi{color:var(--accent);}
   
 <div class="panel" id="resPanel">
       <div class="panel-header">
-        <span class="panel-title" id="resPanelTitle" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;cursor:pointer">Parse Results</span>
+        <span class="panel-title" id="resPanelTitle" style="flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis">Parse Results</span>
+        <span class="cp-ico" data-cp="res" onclick="event.stopPropagation();_cpCopy('res', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
         <span id="resTypeBadge" class="pt-badge"></span>
         <span style="flex:1;min-width:0"></span>
         <!-- Track mode's own Export. Not the one in #resCfgControls: Track mode
@@ -4818,7 +4838,7 @@ th.me-fm-colhi{color:var(--accent);}
                    are simply the two ends of the range it already asks for.
                    Requested 2026-09-02. -->
               <button class="btn" onclick="msgNavRel(-1, event)" title="Previous — hold Shift for 10 back">&lt;</button>
-              <span id="msgCtr" class="msg-ctr" ondblclick="copyMsgToClipboard()" title="Double-click to copy message to clipboard" style="cursor:pointer">1 / 1</span>
+              <span id="msgCtr" class="msg-ctr">1 / 1</span>
               <button class="btn" id="msgNextBtn" onclick="msgNavRel(1, event)" title="Next — hold Shift for 10 forward">&gt;</button>
               <button class="btn" id="msgGoBtn" onclick="toggleMsgGoDialog()" title="Go to a number">#</button>
               <div id="msgGoDialog" class="audit-cfg-dialog msg-go-dlg">
@@ -4921,8 +4941,9 @@ th.me-fm-colhi{color:var(--accent);}
 
     <!-- RAW / TRACKING VIEW PANEL -->
     <div class="panel" id="rawPanel">
-      <div class="panel-header" ondblclick="copyRawToClipboard()" title="Double-click to copy raw dump to clipboard">
+      <div class="panel-header">
         <span class="panel-title" id="rawTitle">Raw Message</span>
+        <span class="cp-ico" data-cp="raw" onclick="event.stopPropagation();_cpCopy('raw', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
         <button class="panel-toggle" id="rawToggle" onclick="togglePanel('rawPanel','rawToggle','resResizer')" title="Hide panel">−</button>
       </div>
       <div id="rawCfgBar" class="panel-bar">
@@ -8154,7 +8175,7 @@ function journalForField(fid, ev) {
   const lines = _journalWhyLines(_journalForMsg(msg, _maskScreenOn() ? f => _maskField(msg, f) : null), fid);
   const pop = document.getElementById('whyPop');
   if (!pop) return;
-  pop.innerHTML = `<div class="why-hdr"><span>Why — ${_escHtml(fid)}</span>`
+  pop.innerHTML = `<div class="why-hdr"><span>Why — ${_escHtml(fid)}</span>${_cpIco('@')}`
     + `<button class="btn" onclick="closeWhy();openJournal(${_escHtml(JSON.stringify(fid))})" title="The whole parse journal of this record, at this field">Journal</button>`
     + `<button class="btn btn-ico" onclick="closeWhy()">✕</button></div>`
     + (lines ? lines.map(l => `<div class="jl jl-${l.kind}" style="padding-left:${8 + l.depth * 14}px">${_escHtml(l.text)}</div>`).join('')
@@ -15231,6 +15252,257 @@ function _copyFallback(text, msg) {
   if (ok) showToast(msg || '✓ Copied to clipboard'); else flash('Copy failed', 'warn');
   document.body.removeChild(ta);
 }
+// ── Copy: one icon, everywhere ───────────────────────────────────────────────
+// Every panel with content carries a ⧉ in its title that copies all of it, and
+// a row under the pointer shows the same ⧉ after a pause to copy that row
+// alone. Double-click no longer copies anything: it worked, but nothing said
+// so, and it was found by accident or not at all. Requested 2026-11-12.
+//
+// _CP (panels) and _CP_ROWS (rows) are filled further down, next to nothing in
+// particular: each entry only calls functions, so the order does not matter.
+function _cpWrite(text, what) {
+  if (!text) { flash('Nothing to copy', 'warn'); return; }
+  const msg = `\u2713 ${what} copied to clipboard`;
+  if (navigator.clipboard && window.isSecureContext)
+    navigator.clipboard.writeText(text).then(() => showToast(msg)).catch(() => _copyFallback(text, msg));
+  else _copyFallback(text, msg);
+}
+// A row as text: a table row's cells joined by tabs, anything else its text.
+function _cpRowText(el) {
+  if (!el) return '';
+  // A cell holding a control (Generate's value boxes) contributes its value.
+  if (el.tagName === 'TR') return [...el.children].map(td => {
+    const f = td.querySelector('input, select, textarea');
+    return (f ? f.value : (td.innerText || td.textContent || '')).replace(/\s+/g, ' ').trim();
+  }).join('\t');
+  return (el.innerText || el.textContent || '').replace(/[ \t]+$/gm, '').trim();
+}
+// A rendered table (or list) as text, rows on lines and cells on tabs — the
+// shape a spreadsheet pastes. Hidden rows (filtered, collapsed) stay out.
+function _cpElText(el, rowSel) {
+  if (!el) return '';
+  if (!rowSel) return (el.innerText || el.textContent || '').trim();
+  return [...el.querySelectorAll(rowSel)].filter(r => r.offsetParent !== null)
+    .map(_cpRowText).filter(Boolean).join('\n');
+}
+function _cpIco(key) {
+  return `<span class="cp-ico" data-cp="${key}" onclick="event.stopPropagation();_cpCopy('${key}', this)" ondblclick="event.stopPropagation()"`
+       + ` onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">\u29C9</span>`;
+}
+// key '@' is "whatever this header's panel shows": the popups and result
+// cards that are rebuilt whole, where the content IS the copy.
+function _cpHas(key, el) {
+  const p = _CP[key];
+  try { return !!(p && p.has(el)); } catch (e) { return false; }
+}
+function _cpCopy(key, el) {
+  _tipHide();
+  if (!_cpHas(key, el)) { flash('Nothing to copy', 'warn'); return; }
+  _CP[key].copy(el);
+}
+// The text of the panel an '@' icon heads: everything after its header, minus
+// line numbers and "nothing here" notes.
+const _CP_SKIP = '.defpop-ln, .tree-fly-empty, .jl-note, .cp-ico';
+function _cpOfText(ico) {
+  const hdr = ico && ico.parentElement, cont = hdr && hdr.parentElement;
+  if (!cont) return '';
+  const out = [];
+  for (let c = hdr.nextElementSibling; c; c = c.nextElementSibling) {
+    if (c.matches(_CP_SKIP)) continue;
+    const t = c.querySelector('tr') ? _cpElText(c, 'tr') : _cpRowText(c);
+    if (t) out.push(t);
+  }
+  return out.join('\n');
+}
+// The icon shows only where there is something to copy. Re-checked shortly
+// after anything the user does, rather than from every render that could
+// change a panel — the checks are a few length tests.
+let _cpSyncT = null;
+function _cpSync() {
+  _cpSyncT = null;
+  document.querySelectorAll('.cp-ico[data-cp]').forEach(el => el.classList.toggle('cp-empty', !_cpHas(el.dataset.cp, el)));
+}
+function _cpSyncSoon() { if (!_cpSyncT) _cpSyncT = setTimeout(_cpSync, 150); }
+['mouseover', 'keyup', 'click', 'input'].forEach(ev => document.addEventListener(ev, _cpSyncSoon, true));
+
+// The row icon: one floating ⧉ placed at the right end of the row the pointer
+// has rested on, inside whatever scrolls it.
+const _CP_ROW_DELAY = 1000;
+let _cpRowT = null, _cpRowEl = null, _cpRowFn = null;
+function _cpRowIcoEl() {
+  let b = document.getElementById('cpRowIco');
+  if (!b) {
+    b = document.createElement('span');
+    b.id = 'cpRowIco'; b.textContent = '\u29C9'; b.title = 'Copy this row';
+    b.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      const el = _cpRowEl, fn = _cpRowFn;
+      _cpRowHide();
+      if (el && fn) fn(el);
+    });
+    b.addEventListener('dblclick', e => e.stopPropagation());
+    document.body.appendChild(b);
+  }
+  return b;
+}
+function _cpRowHide() {
+  clearTimeout(_cpRowT); _cpRowT = null;
+  _cpRowEl = null; _cpRowFn = null;
+  const b = document.getElementById('cpRowIco');
+  if (b) b.style.display = 'none';
+}
+function _cpRowShow() {
+  _cpRowT = null;
+  const row = _cpRowEl;
+  if (!row || !row.isConnected) return;
+  const r = row.getClientRects()[0] || row.getBoundingClientRect();
+  if (!r || !r.height) return;
+  let right = Math.min(r.right, window.innerWidth);
+  // Clipped to the first ancestor that scrolls, so a wide table does not put
+  // the icon past the visible edge.
+  for (let p = row.parentElement; p && p !== document.body; p = p.parentElement) {
+    if (p.scrollWidth > p.clientWidth + 1 || p.scrollHeight > p.clientHeight + 1) {
+      const pr = p.getBoundingClientRect();
+      right = Math.min(right, pr.left + p.clientWidth);
+      break;
+    }
+  }
+  const b = _cpRowIcoEl();
+  b.style.display = 'block';
+  b.style.left = Math.max(0, right - b.offsetWidth - 4) + 'px';
+  b.style.top  = (r.top + (r.height - b.offsetHeight) / 2) + 'px';
+}
+document.addEventListener('mouseover', e => {
+  const t = e.target;
+  if (!t || !t.closest || t.id === 'cpRowIco') return;
+  let hit = null, fn = null;
+  for (const [sel, f] of _CP_ROWS) { const r = t.closest(sel); if (r) { hit = r; fn = f; break; } }
+  if (hit === _cpRowEl) return;
+  _cpRowHide();
+  if (!hit) return;
+  _cpRowEl = hit; _cpRowFn = fn;
+  _cpRowT = setTimeout(_cpRowShow, _CP_ROW_DELAY);
+}, true);
+document.addEventListener('scroll', () => { if (_cpRowEl) _cpRowHide(); }, true);
+document.addEventListener('mousedown', e => { if (_cpRowEl && e.target && e.target.id !== 'cpRowIco') _cpRowHide(); }, true);
+
+const _cpById = id => document.getElementById(id);
+const _cpShown = id => { const e = _cpById(id); return !!(e && e.offsetParent !== null); };
+const _cpNames = sel => [...document.querySelectorAll(sel)].map(e => e.textContent.trim()).filter(Boolean).join('\n');
+// Panels, by the key their title icon carries.
+const _CP = {
+  '@':        { has: el => !!_cpOfText(el), copy: el => _cpWrite(_cpOfText(el), 'Content') },
+  ddl:        { has: () => !!window._ddlEditorCM?.state.doc.length,
+                copy: () => _cpWrite(window._ddlEditorCM.state.doc.toString(), 'DDL') },
+  tree:       { has: () => Object.keys(S.ddlTree || {}).length > 0, copy: () => _cpWrite(_treeCopyText(), 'DDL tree') },
+  // Data Input shows the audit record list in place of the editor while an
+  // audit file is open; the icon copies whichever is on screen.
+  input:      { has: () => _cpShown('auditBrowser') ? !!_auditSt.filtered.length : !!window._msgInputCM?.state.doc.length,
+                copy: () => _cpShown('auditBrowser') ? _cpWrite(_auditListText(_auditSt.filtered), 'Record list')
+                                                     : _cpWrite(window._msgInputCM.state.doc.toString(), 'Input') },
+  auditPop:   { has: () => !!window._auditDumpCM?.state.doc.length, copy: () => auditCopyDumpToClipboard({ target: document.body }) },
+  res:        { has: () => !!(S.isParsed && S.messages?.[S.curIdx]), copy: () => _cpWrite(_resCopyText(), S.trackMode ? 'Tracking table' : 'Parse Results') },
+  raw:        { has: () => _rawDumpLines().length > 0, copy: () => copyRawToClipboard() },
+  spec:       { has: () => !!_cpById('specBody')?.firstElementChild, copy: () => _cpWrite(_cpElText(_cpById('specBody')), 'Specification') },
+  follow:     { has: () => !!_cpById('followBody')?.querySelector('tr[data-i]'), copy: () => _cpWrite(_cpElText(_cpById('followBody'), 'tr'), 'Results') },
+  journal:    { has: () => _journalLines.length > 0, copy: () => journalCopy() },
+  ddlDoc:     { has: () => !!_cpById('ddlDocBody')?.querySelector('tr'), copy: () => copyDDLDoc() },
+  meClasses:  { has: () => !!document.querySelector('#me-ent-list .me-item-name'), copy: () => _cpWrite(_cpNames('#me-ent-list .me-item-name'), 'Class names') },
+  meMsgs:     { has: () => !!document.querySelector('#me-msg-list .me-item-name'), copy: () => _cpWrite(_cpNames('#me-msg-list .me-item-name'), 'Message names') },
+  meOther:    { has: () => !!document.querySelector('#me-other-list .me-item-name'), copy: () => _cpWrite(_cpNames('#me-other-list .me-item-name'), 'Data names') },
+  meFiles:    { has: () => !!document.querySelector('#me-file-list .me-item-name'), copy: () => _cpWrite(_cpNames('#me-file-list .me-item-name'), 'File names') },
+  'me-sect-recognizers': { has: () => !!_meCurItem()?.recognizers?.length,
+                copy: () => _cpWrite(JSON.stringify(_meCurItem().recognizers, null, 2), 'Recognizers') },
+  'me-sect-ddl_bindings': { has: () => !!(_meCurItem()?.ddl_bindings || []).some(Boolean),
+                copy: () => _cpWrite(_meCurItem().ddl_bindings.filter(Boolean).join('\n'), 'DDL bindings') },
+  'me-sect-parse_spec': { has: () => !!_mePsCopyText().trim(), copy: () => _cpWrite(_mePsCopyText(), 'Parse Spec') },
+  'me-sect-rules': { has: () => !!_meCurItem()?.rules?.length,
+                copy: () => _cpWrite(JSON.stringify(_meCurItem().rules, null, 2), 'Business rules') },
+  'me-sect-overrides': { has: () => !!(_meFmVirt && _meFmVirt.tbody?.isConnected && _meFmVirt.all.length),
+                copy: () => _cpWrite(_meFmAllText(), 'Field Map') },
+  genFlds:    { has: () => !!_cpById('genRows')?.querySelector('tr'), copy: () => _cpWrite(_cpElText(_cpById('genRows').closest('table'), 'tr'), 'Fields') },
+  genTok:     { has: () => !!_cpById('genTokRows')?.querySelector('tr'), copy: () => _cpWrite(_cpElText(_cpById('genTokRows').closest('table'), 'tr'), 'Token buffer') },
+  blSaved:    { has: () => !!document.querySelector('#bl-list .bl-item-name'), copy: () => _cpWrite(_cpNames('#bl-list .bl-item-name'), 'Baseline names') },
+  blPane:     { has: () => !!_cpById('bl-right')?.querySelector('tr'), copy: () => _cpWrite(_cpElText(_cpById('bl-right'), 'tr'), 'Baseline') },
+  defpop:     { has: () => !!_defPopText, copy: () => _cpWrite(_defPopText, 'Definition') },
+};
+// Rows: [selector, copy(rowEl)]. First match wins.
+const _CP_ROWS = [
+  ['#ddlTree .tree-node[data-ntype]', el => _cpWrite([el.dataset.vol, el.dataset.sv, el.dataset.name, el.dataset.def].filter(Boolean).join('/'), 'Path')],
+  ['#auditRecordList .audit-record-row', el => _cpWrite(_auditRowText(el), 'Record')],
+  ['#resContainer tr[data-fid]', el => copyFieldToClipboard(el.dataset.fid)],
+  ['#rawDisplay .dump-row', el => _cpWrite(_rawDumpLines()[+el.dataset.row / 16] || '', 'Line')],
+  ['#followBody tr[data-i]', el => _cpWrite(_cpRowText(el), 'Row')],
+  ['#journalBody .jl, #whyPop .jl', el => _cpWrite(_cpRowText(el), 'Line')],
+  ['#ddlDocBody tr', el => _cpWrite(_cpRowText(el), 'Row')],
+  ['.me-item-list .me-item', el => _cpWrite(el.querySelector('.me-item-name')?.textContent.trim() || '', 'Name')],
+  ['.me-fm-table tr[data-qn]', el => _meFmCopyFieldName(el.dataset.qn)],
+  ['.me-test-section tr', el => _cpWrite(_cpRowText(el), 'Row')],
+  ['#genRows tr, #genTokRows tr', el => _cpWrite(_cpRowText(el), 'Row')],
+  ['#bl-list .bl-item', el => _cpWrite(el.querySelector('.bl-item-name')?.textContent.trim() || '', 'Name')],
+  ['#bl-right tr', el => _cpWrite(_cpRowText(el), 'Row')],
+  ['.defpop-line', el => _cpWrite([...el.childNodes].filter(n => !(n.classList && n.classList.contains('defpop-ln'))).map(n => n.textContent).join('').replace(/\u00a0/g, '').trimEnd(), 'Line')],
+  ['.tree-fly-ddl, .tree-fly-def', el => _cpWrite(_cpRowText(el), 'Name')],
+];
+
+// Parse Results as the panel shows it: the visible columns (not Trk, a
+// checkbox) and the visible rows — a filter, a collapsed group or Hide Redef
+// leaves its rows out — groups and the token area included. Value and Raw Hex
+// follow the Export masking switch: when Export masks and the screen does not,
+// each field's cells are re-read masked. Track mode copies the tracking table
+// through its export, which masks the same way.
+function _resCopyText() {
+  if (S.trackMode) return _trackExportLines().lines.join('\n');
+  const box = document.getElementById('resContainer');
+  if (!box) return '';
+  const vis = el => el.offsetParent !== null;
+  const cells = tr => [...tr.children].filter(c => vis(c) && !c.matches('.c-trk, .th-trk'));
+  const msg = S.messages?.[S.curIdx];
+  const remask = !!(msg && _maskExportOn() && !_maskScreenOn());
+  const out = [];
+  const head = [...box.querySelectorAll('thead tr')].filter(vis).map(tr => cells(tr).map(c => c.textContent.trim()).join('\t'));
+  out.push(...head.filter(Boolean));
+  for (const tr of box.querySelectorAll('tbody tr')) {
+    if (!vis(tr)) continue;
+    const f0 = remask && tr.dataset.fid ? msg.fields.find(x => x.id === tr.dataset.fid) : null;
+    const f = f0 ? _maskField(msg, f0) : null;
+    out.push(cells(tr).map(c => {
+      if (f && c.matches('.c-val')) return String(f.value ?? '');
+      if (f && c.matches('.c-raw')) return String(f.rawHex ?? '');
+      return (c.innerText || c.textContent || '').replace(/\s+/g, ' ').trim();
+    }).join('\t'));
+  }
+  return out.join('\n');
+}
+
+// The tree as an indented list: volume, subvolume, file.
+function _treeCopyText() {
+  const out = [];
+  for (const [vol, svs] of Object.entries(S.ddlTree || {})) {
+    out.push(vol);
+    for (const [sv, files] of Object.entries(svs || {})) {
+      out.push('  ' + sv);
+      for (const f of Object.keys(files || {})) out.push('    ' + f);
+    }
+  }
+  return out.join('\n');
+}
+// The audit record list as columns: the header row, then every record the
+// filter keeps — built from the data, since the list draws only what is in view.
+function _auditRowText(row) {
+  return [...row.querySelectorAll('.ar-meta > span')].map(s => s.textContent.trim()).join('\t');
+}
+function _auditListText(recs) {
+  const out = [[...document.querySelectorAll('.audit-list-header > span')].map(s => s.textContent.trim()).join('\t')];
+  const tmp = document.createElement('div');
+  for (let i = 0; i < recs.length; i += 2000) {
+    tmp.innerHTML = recs.slice(i, i + 2000).map((r, j) => _auditBuildRowHtml(r, i + j)).join('');
+    tmp.querySelectorAll('.audit-record-row').forEach(r => out.push(_auditRowText(r)));
+  }
+  return out.join('\n');
+}
+
 function _vbarClose(key = 'ddl') {
   const st  = _vb(key);
   const bar = document.getElementById(st.host);
@@ -15941,7 +16213,6 @@ function renderFieldTable(msg) {
     const _after = (injectAfter && injectAfter[f.id]) || '';
     return `<tr class="${rowCls}${_hid}" data-fid="${esc(fid)}" data-search="${esc(searchStr)}" data-raw="${esc((f.rawHex||'').toLowerCase())}"${_under ? ` data-under="${esc(_under)}"` : ''}
       onclick="selectField('${esc(fid)}')"
-      ondblclick="copyFieldToClipboard('${esc(fid)}')"
       onmouseenter="hoverField('${esc(fid)}')"
       onmouseleave="clearHover()">
       <td class="c-num">${_rowNum}</td>
@@ -16320,7 +16591,7 @@ function renderRaw(msg) {
 
   for (let row = 0; row < bytes.length; row += COLS) {
     const rowB = bytes.slice(row, row + COLS);
-    html += `<span class="dump-offset">${row.toString(16).padStart(6,'0').toUpperCase()}</span><span class="dump-sep">  </span>`;
+    html += `<span class="dump-row" data-row="${row}"><span class="dump-offset">${row.toString(16).padStart(6,'0').toUpperCase()}</span><span class="dump-sep">  </span>`;
 
     for (let col = 0; col < COLS; col++) {
       if (col === COLS / 2) html += '<span class="dump-sep"> </span>';
@@ -16346,7 +16617,7 @@ function renderRaw(msg) {
         : (b === 60 ? '&lt;' : b === 62 ? '&gt;' : b === 38 ? '&amp;' : String.fromCharCode(b));
       html += `<span class="hb${(isMasked || isNonPrintable) ? ' hb-masked' : ''}" data-ascii-idx="${idx}">${ch}</span>`;
     }
-    html += '|</span>\n';
+    html += '|</span>\n</span>';
   }
 
   document.getElementById('rawDisplay').innerHTML = html;
@@ -16364,10 +16635,12 @@ function renderRaw(msg) {
   }
 }
 
-function copyRawToClipboard() {
-  if (!S.isParsed || !S.messages.length) return;
+// The Raw Message as copied text, one 16-byte line per entry — the whole-dump
+// copy and the one-line copy are the same lines.
+function _rawDumpLines() {
+  if (!S.isParsed || !S.messages || !S.messages.length) return [];
   const msg = S.messages[S.curIdx];
-  if (!msg || !msg.bytes || !msg.bytes.length) return;
+  if (!msg || !msg.bytes || !msg.bytes.length) return [];
   // A masked byte with no character of its own is null: "**" and "*".
   const bytes = _maskExportOn() ? _maskBytes(msg, msg.bytes) : Array.from(msg.bytes);
   const COLS = 16;
@@ -16384,7 +16657,11 @@ function copyRawToClipboard() {
     // into Data Input and parsed; without it the offset reads as data.
     lines.push(`${addr}: ${hexPart}  |${ascii}|`);
   }
-  const text = lines.join('\n');
+  return lines;
+}
+function copyRawToClipboard() {
+  const text = _rawDumpLines().join('\n');
+  if (!text) return;
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(text)
       .then(() => showToast('✓ Raw dump copied to clipboard'))
@@ -16867,11 +17144,12 @@ function _showDefPopover(ref, at) {
   const from  = _ddlDefBlockStart(lines, at);
   const body  = lines.slice(from, at + 1).map((l, i) =>
     `<div class="defpop-line${from + i === at ? ' defpop-hit' : ''}"><span class="defpop-ln">${from + i + 1}</span>${esc(l) || '&nbsp;'}</div>`).join('');
+  _defPopText = lines.slice(from, at + 1).join('\n');
   const el = document.createElement('div');
   el.className = 'defpop';
   el.id = 'defPopover';
   el.innerHTML =
-    `<div class="defpop-hdr"><span class="defpop-path">${esc(`${ref.vol} / ${ref.sv} / ${ref.name}`)}${ref.defName ? esc(' / ' + ref.defName) : ''}</span>` +
+    `<div class="defpop-hdr"><span class="defpop-path">${esc(`${ref.vol} / ${ref.sv} / ${ref.name}`)}${ref.defName ? esc(' / ' + ref.defName) : ''}</span>${_cpIco('defpop')}` +
     `<button class="defpop-x" onclick="_hideDefPopover()" title="Close">✕</button></div>` +
     `<div class="defpop-body">${body}</div>`;
   document.body.append(el);
@@ -16888,9 +17166,11 @@ function _showDefPopover(ref, at) {
   document.addEventListener('keydown', _defPopEsc);
 }
 let _defPopAt = { x: 0, y: 0 };
+let _defPopText = '';   // the source lines the popover shows — its copy
 function _defPopAway(e) { if (!e.target.closest('#defPopover')) _hideDefPopover(); }
 function _defPopEsc(e)  { if (e.key === 'Escape') _hideDefPopover(); }
 function _hideDefPopover() {
+  _defPopText = '';
   document.getElementById('defPopover')?.remove();
   document.removeEventListener('mousedown', _defPopAway);
   document.removeEventListener('keydown', _defPopEsc);
@@ -20488,30 +20768,6 @@ function copyFieldToClipboard(fid) {
   if (ok) showToast(`Field ${fid} copied to clipboard`); else flash(`Field ${fid} — copy failed`, 'warn');
 }
 
-// ---- Copy full parsed message to clipboard on double-click of record counter ----
-function copyMsgToClipboard() {
-  const msg = S.messages?.[S.curIdx];
-  if (!msg) return;
-  const lines = ['Field ID\tDescription\tLen\tValue'];
-  (msg.fields || []).map(f => (_maskExportOn() ? _maskField(msg, f) : f)).forEach(f => {
-    // Same own-row rule as the table, the export and the single-row copy: a VLG
-    // group's LEN has a row of its own and must not be billed here as well.
-    const len = f.valueLength !== undefined
-      ? f.valueLength + ((f.lenPrefix && !f.lenPrefixOwnRow) ? f.lenPrefix.length : 0)
-      : '';
-    lines.push(`${f.id}\t${f.description || ''}\t${len}\t${f.value || ''}`);
-  });
-  const text = lines.join('\n');
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
-  const ok = document.execCommand('copy');
-  document.body.removeChild(ta);
-  if (ok) showToast(`✓ Message ${S.curIdx + 1} copied to clipboard`); else flash('Copy failed', 'warn');
-}
 
 // A volume, subvolume or file name as the tree stores it: trimmed and upper-
 // cased, never empty, never holding "/" — every path is split on it, so
@@ -22619,7 +22875,7 @@ function _treeFlyShow(volEl) {
         : '<div class="tree-fly-empty">no DDLs</div>');
     }).join('');
     fly.innerHTML = `<div class="tree-fly-hdr"><span>${esc(vol)}</span>`
-      + `<span class="tree-hdr-count">${n}</span></div>`
+      + `<span class="tree-hdr-count">${n}</span>${_cpIco('@')}</div>`
       + (body || '<div class="tree-fly-empty">nothing here yet</div>');
     _treeFlyVol = sig;
   }
@@ -22645,7 +22901,7 @@ function _treeFly2Show(ddlEl) {
     const sc = S.scope || {};
     const here = sc.vol === vol && sc.sv === sv && sc.name === name;
     fly2.innerHTML = `<div class="tree-fly-hdr"><span>${esc(name)}</span>`
-      + `<span class="tree-hdr-count">${defs.length}</span></div>`
+      + `<span class="tree-hdr-count">${defs.length}</span>${_cpIco('@')}</div>`
       + (defs.length
         ? defs.map(dn => `<div class="tree-fly-def${here && sc.defName === dn ? ' is-current' : ''}"
             data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(name)}"
@@ -22839,7 +23095,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.10.1';
+const APP_VERSION  = '1.65.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -26337,7 +26593,7 @@ function _meSectHtml(d, open) {
   const loading = d.key === 'overrides' ? _ME_SECT_LOADING_DET : _ME_SECT_LOADING;
   return `<div class="me-section" data-sect="${d.key}">
   <div class="me-section-hdr" onclick="_meSectionToggle('${d.key}')">
-    <span>${d.title}</span>
+    <span>${d.title}</span>${_CP['me-sect-' + d.key] ? _cpIco('me-sect-' + d.key) : ''}
     <span class="pt-badge">${open && d.badge ? d.badge : ''}</span>
     <span class="me-section-actions" onclick="event.stopPropagation()">${open && d.actions ? d.actions : ''}</span>
     <span class="me-section-arr">${open ? '−' : '+'}</span>
@@ -29144,6 +29400,19 @@ function _mePsDraftSet(item, variant, text) {
   if (Object.keys(d).length) _mePsDrafts.set(item, d); else _mePsDrafts.delete(item);
 }
 
+// What the Parse Spec copy icon copies: the editor's text while it is open,
+// otherwise the active variant's saved text (or its spec, formatted).
+function _mePsCopyText() {
+  if (_mePsCM && _mePsCM.dom?.isConnected) return _mePsCM.state.doc.toString();
+  const item = _meCurItem(); if (!item) return '';
+  const variant = _mePsActiveVariant();
+  const draft = _mePsDraftGet(item, variant);
+  if (draft != null) return draft;
+  const { spec, src } = _mePsFieldsForVariant(variant);
+  if (typeof item[src] === 'string' && item[src].trim()) return item[src];
+  return Array.isArray(item[spec]) && item[spec].length ? JSON.stringify(item[spec], null, 2) : '';
+}
+
 function _mePsChange(val) {
   const item = _meCurItem();
   if (!item) return;
@@ -31704,9 +31973,7 @@ function _meFmRowHtml(row, ctx, counter, absIdx) {
     ? `<span class="c-ovr-as"> as </span><span class="c-ovr-new">${ea(String(foEntry.display).toUpperCase())}</span>`
     : '';
   const dtCell = `<td class="me-fm-dt${overrideBadLen ? ' me-fm-dt-bad' : ''}">${typePart}${asPart}${warnIcon}</td>`;
-  return `<tr class="${trCls}" ${dataAttrs} onclick="_meOvlRowClick('${id}', event)"`
-    + ` ondblclick="_meFmCopyFieldName('${id}', event)"`
-    + ` title="Double-click to copy the field name">${numCell}${fieldCell}${dtCell}${lenCell}${offCell}${deCell}${vlgCell}</tr>`;
+  return `<tr class="${trCls}" ${dataAttrs} onclick="_meOvlRowClick('${id}', event)">${numCell}${fieldCell}${dtCell}${lenCell}${offCell}${deCell}${vlgCell}</tr>`;
 }
 
 // Double-click a Field Map row to copy its name, so it can be pasted straight
@@ -31729,6 +31996,24 @@ function _meFmCopyFieldName(qn, ev) {
   try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
   document.body.removeChild(ta);
   if (ok) showToast(`Field name ${name} copied to the clipboard`); else flash(`${name} — copy failed`, 'warn');
+}
+
+// The whole Field Map as columns — every row, not only the ones the virtual
+// window has drawn — in the shape the table shows them.
+function _meFmAllText() {
+  const v = _meFmVirt;
+  if (!v || !v.all || !v.all.length) return '';
+  const head = [...(v.tbody?.closest('table')?.querySelectorAll('thead th') || [])].map(th => th.textContent.trim());
+  const out = head.length ? [head.join('\t')] : [];
+  const tb = document.createElement('tbody');
+  const counter = { n: 0 };
+  for (let i = 0; i < v.all.length; i += 1000) {
+    let h = '';
+    for (let j = i; j < Math.min(v.all.length, i + 1000); j++) h += _meFmRowHtml(v.all[j], v.ctx, counter, j);
+    tb.innerHTML = h;
+    for (const tr of tb.children) out.push(_cpRowText(tr));
+  }
+  return out.join('\n');
 }
 
 // Synchronous full build — kept for small DDLs and non-staged callers.
@@ -38337,7 +38622,7 @@ function openRulesPop(ev) {
   const spec = _meSpecForMsg(msg);
   const res = spec ? _meRulesFor(spec, msg) : [];
   const nBad = res.filter(r => r.failed.length).length;
-  pop.innerHTML = `<div class="why-hdr"><span>Business rules — ${nBad} of ${res.length} failed</span>`
+  pop.innerHTML = `<div class="why-hdr"><span>Business rules — ${nBad} of ${res.length} failed</span>${_cpIco('@')}`
     + `<button class="btn btn-ico" onclick="closeWhy()">✕</button></div>`
     + _meRulesPopLines(msg).map(l => `<div class="jl jl-${l.kind}" style="padding-left:${8 + l.depth * 14}px">${_escHtml(l.text)}</div>`).join('');
   pop.classList.remove('hidden');
@@ -43163,7 +43448,7 @@ function openGenerate() {
       <span style="flex:1"></span><button class="btn btn-primary" onclick="genRun()">Generate</button></div>`
     + `<div class="gen-res" id="genRes"></div>`
     // The fields fold like the Token buffer; folded, they stay in the page — hidden, not dropped.
-    + `<div class="me-section gen-tok" id="genFlds"><div class="me-section-hdr" onclick="genFldToggle()"><span>Fields</span>`
+    + `<div class="me-section gen-tok" id="genFlds"><div class="me-section-hdr" onclick="genFldToggle()"><span>Fields</span>${_cpIco('genFlds')}`
     + `<span class="pt-badge" id="genFldCount"></span><span class="me-section-arr" id="genFldArr">−</span></div><div id="genFldBody">`
     + (_genSt.model.bitmap ? `<div class="gen-row"><label>Add a DE — by number or name</label>
         <input class="me-inp" id="genFind" placeholder="e.g. 4, or PAN" oninput="genFind()" onkeydown="if(event.key==='Enter'){event.preventDefault();genAddFirst();}">
@@ -43354,7 +43639,7 @@ function _genTokRender() {
           : `<textarea class="me-inp gen-tokarea" rows="1" wrap="off" spellcheck="false" oninput="genTokEdit('${id}',this)" onchange="_genTokSave()">${esc(v.text)}</textarea>`}</td>`
       + `<td><button class="btn btn-ico" onclick="genTokDel('${id}')" title="Take token ${id} out">✕</button></td></tr>`;
   }).join('');
-  el.innerHTML = `<div class="me-section-hdr" onclick="genTokToggle()"><span>Token buffer</span>`
+  el.innerHTML = `<div class="me-section-hdr" onclick="genTokToggle()"><span>Token buffer</span>${_cpIco('genTok')}`
     + `<span class="pt-badge"># Tokens ${_genSt.toks.length}</span><span class="me-section-arr">${_genSt.tokOpen ? '−' : '+'}</span></div>`
     + (_genSt.tokOpen ? `<div class="fw-note">${where}</div>${noBlock}`
       + `<div class="gen-row"><label>Add a token — by id or DDL name</label>
@@ -43767,7 +44052,7 @@ function _meRunTest(opts) {
   const dumpBytes = Array.from(bytes.slice(0, 32)).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
   const dumpMore  = bytes.length > 32 ? `…+${bytes.length - 32}` : '';
   const fmtBadge  = `${bytes.length} bytes · ${inputFmt} · ${msgEnc}`;
-  parts.push(`<div class="me-test-section"><div class="me-test-sec-hdr"><span>Input</span><span class="me-test-sec-badge" style="background:var(--bg-deep);color:var(--text-dim)">${fmtBadge}</span></div>` +
+  parts.push(`<div class="me-test-section"><div class="me-test-sec-hdr"><span>Input</span><span class="me-test-sec-badge" style="background:var(--bg-deep);color:var(--text-dim)">${fmtBadge}</span>${_cpIco('@')}</div>` +
     `<div style="font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);word-break:break-all">${_escHtml(dumpBytes)}${dumpMore}</div></div>`);
 
   // The verdict, stated before any field table: what would detection pick?
@@ -43971,7 +44256,7 @@ function _meTestBindRowHL() {
 function _meTestSection(title, color, body, badge) {
   const dot = color ? `<span style="color:${color};font-size:10px">●</span> ` : '';
   const bdg = badge ? ` <span class="me-test-sec-badge" style="background:rgba(${color?'var(--accent-rgb)':'128,128,128'},0.15);color:${color||'var(--text-dim)'}">${badge}</span>` : '';
-  return `<div class="me-test-section"><div class="me-test-sec-hdr">${dot}${title}${bdg}</div>${body}</div>`;
+  return `<div class="me-test-section"><div class="me-test-sec-hdr">${dot}${title}${bdg}${_cpIco('@')}</div>${body}</div>`;
 }
 
 function _meTestFmtVal(raw) {
@@ -44235,6 +44520,7 @@ function _meSave() {
   <div class="ddl-doc-modal" style="width:min(1040px,96vw)">
     <div class="ddl-doc-hdr">
       <span class="ddl-doc-title">Specification</span>
+      <span class="cp-ico" data-cp="spec" onclick="event.stopPropagation();_cpCopy('spec', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
       <span style="flex:1"></span>
       <button class="btn btn-ico" onclick="closeSpec()" title="Close">✕</button>
     </div>
@@ -44257,6 +44543,7 @@ function _meSave() {
   <div class="ddl-doc-modal" style="width:min(1300px,96vw)">
     <div class="ddl-doc-hdr">
       <span class="ddl-doc-title" id="followTitle">Following</span>
+      <span class="cp-ico" data-cp="follow" onclick="event.stopPropagation();_cpCopy('follow', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;margin-left:auto">
         <button class="btn btn-ico" onclick="closeFollow()">✕</button>
       </div>
@@ -44268,9 +44555,9 @@ function _meSave() {
   <div class="ddl-doc-modal" style="width:min(980px,96vw)">
     <div class="ddl-doc-hdr">
       <span class="ddl-doc-title" id="journalTitle">Parse journal</span>
+      <span class="cp-ico" data-cp="journal" onclick="event.stopPropagation();_cpCopy('journal', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
       <input id="journalFilter" placeholder="Filter lines…" oninput="journalFilter()" autocomplete="off">
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-        <button class="btn" onclick="journalCopy()" title="Copy the journal as text — masked by Settings → Mask sensitive fields → Export files">Copy</button>
         <button class="btn btn-primary" onclick="journalDownload()" title="Download the journal as text — masked by Settings → Mask sensitive fields → Export files">⬇ Download</button>
         <button class="btn btn-ico" onclick="closeJournal()">✕</button>
       </div>
@@ -44305,6 +44592,7 @@ function _meSave() {
          instead of being crowded in beside the name of the dialog. -->
     <div class="ddl-doc-hdr">
       <span id="ddlDocTitle" class="ddl-doc-title"></span>
+      <span class="cp-ico" data-cp="ddlDoc" onclick="event.stopPropagation();_cpCopy('ddlDoc', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
       <button class="btn" onclick="closeDDLDoc()" title="Close">✕</button>
     </div>
     <div class="ddl-doc-ctl" id="ddlDocControls">
@@ -44312,7 +44600,6 @@ function _meSave() {
       <span style="flex:1"></span>
       <button class="btn" id="ddlDocCollapseAllBtn" data-state="expanded" onclick="toggleDDLDocCollapseAll()" title="Collapse or expand all groups">Collapse All</button>
       <button class="btn" id="ddlDocHideRedefBtn" onclick="toggleDDLDocHideRedef()" title="Hide/show REDEFINES fields">Hide Redef</button>
-      <button class="btn" onclick="copyDDLDoc()" title="Copy as text">⎘ Copy</button>
     </div>
     <div class="ddl-doc-body" id="ddlDocBody"></div>
   </div>
@@ -44955,6 +45242,7 @@ function _meSave() {
     <div class="me-main">
       <div class="me-sidebar me-pane pb-read" id="bl-sidebar">
         <div class="me-pane-hdr"><span class="me-pane-title">Saved</span>
+          <span class="cp-ico" data-cp="blSaved" onclick="event.stopPropagation();_cpCopy('blSaved', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
           <span class="tree-hdr-count" id="bl-count">0</span>
           <button class="panel-toggle" id="bl-sidebar-toggle" onclick="blToggleSidebar()" title="Hide panel">−</button></div>
         <div class="panel-bar">
@@ -44973,6 +45261,7 @@ function _meSave() {
         <div class="me-pane pb-read bl-pane">
           <div class="me-pane-hdr">
             <span class="me-pane-title" id="bl-pane-title">Baseline</span>
+            <span class="cp-ico" data-cp="blPane" onclick="event.stopPropagation();_cpCopy('blPane', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
           </div>
           <div class="bl-pane-body" id="bl-right"><div class="bl-empty">No baselines yet. Parse a message and press &#9733; Save in Parse Results.</div></div>
         </div>
@@ -45008,12 +45297,14 @@ function _meSave() {
       <div class="me-sidebar me-pane pb-read" id="me-sidebar" oncontextmenu="_meCtxEntityPanel(event)">
         <div class="me-pane-hdr">
           <span class="me-pane-title">Classes</span>
+          <span class="cp-ico" data-cp="meClasses" onclick="event.stopPropagation();_cpCopy('meClasses', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
           <button class="panel-toggle" id="me-sidebar-toggle" onclick="_meToggleSidebar()" title="Hide panel">−</button>
         </div>
         <div class="me-ent-list" id="me-ent-list">
           <div class="me-sidebar-sect" id="me-sect-msgs">
             <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title">Messages</span>
+              <span class="cp-ico" data-cp="meMsgs" onclick="event.stopPropagation();_cpCopy('meMsgs', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
               <button class="btn" onclick="_meAddMsg()">+ New</button>
               <button class="panel-toggle" id="me-sect-msgs-toggle" onclick="_meToggleListSect('msgs')" title="Hide panel">−</button>
             </div>
@@ -45022,6 +45313,7 @@ function _meSave() {
           <div class="me-sidebar-sect" id="me-sect-other">
             <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title" title="Structures that are neither a whole message nor a file — recognized from bytes like a message, but tried after every message">Data</span>
+              <span class="cp-ico" data-cp="meOther" onclick="event.stopPropagation();_cpCopy('meOther', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
               <button class="btn" onclick="_meAddOther()">+ New</button>
               <button class="panel-toggle" id="me-sect-other-toggle" onclick="_meToggleListSect('other')" title="Hide panel">−</button>
             </div>
@@ -45030,6 +45322,7 @@ function _meSave() {
           <div class="me-sidebar-sect" id="me-sect-files">
             <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title">Files</span>
+              <span class="cp-ico" data-cp="meFiles" onclick="event.stopPropagation();_cpCopy('meFiles', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
               <button class="btn" onclick="_meAddFile()">+ New</button>
               <button class="panel-toggle" id="me-sect-files-toggle" onclick="_meToggleListSect('files')" title="Hide panel">−</button>
             </div>
